@@ -290,6 +290,7 @@ export function suggestEdgeSlots(proj: Project, mapName: string, count: number):
 
 **Requirements:**
 - `suggestSpecies` ranks by true encounter percentage from Plan 1 Task 26, so signs match what is actually catchable.
+- **It must consider every one of the map's variants**, not just the first. 125 maps carry day/night tables holding different species; ranking off the first alone silently excludes half the candidates. Rank by the highest rate a species reaches in any variant and report which variant that was, so the user can see why. `SignSuggestion` therefore carries `variant` (and `rod`, for fishing, whose percentages are per-rod).
 - `suggestEdgeSlots` returns border-adjacent, walkable (collision 0), elevation-3 tiles that are **not** warps, not on a connection seam, and not already occupied by an object event.
 - `facing` is chosen so the sprite faces inward — `MOVEMENT_TYPE_FACE_RIGHT` on a left edge, and so on, matching the `CeladonCity` Poliwrath precedent.
 - Returns fewer slots than asked rather than proposing a bad tile. A short list is honest; a bad placement corrupts a map.

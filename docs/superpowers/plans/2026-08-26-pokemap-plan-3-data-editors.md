@@ -76,7 +76,9 @@ export function removeConnection(session: EditSession, mapName: string, index: n
 
 **Requirements:**
 - Edit species, min and max level per slot, and the `encounter_rate` per method.
-- **The percentage is shown live beside every slot**, from the same `speciesChances` used by the atlas. Editing slot 0 of `land_mons` should visibly say 20%, because slot position is the single most misunderstood part of this data.
+- **Edit each variant separately.** A map may have several tables (day, night, two more; nine for `MAP_ALTERING_CAVE`), distinguished only by `base_label`. The editor selects among them explicitly and never merges them — writing a day edit into the night table would be silent data loss.
+- **Fishing edits are scoped to a rod.** Its ten slots are three distributions (Old 2, Good 3, Super 5), each summing to 100. The editor shows rod boundaries and per-rod percentages, because a slot's number means nothing without knowing which rod it belongs to.
+- **The percentage is shown live beside every slot**, from the same `speciesChances` used by the atlas. Editing slot 0 of `land_mons` should visibly say 20%, because slot position is the single most misunderstood part of this data. Slot 0 of `fishing_mons` says 70% *of Old Rod*, never 70% outright.
 - Adding a method to a map that lacks one is an explicit action, using `insertArrayElement` — matching the "never invent keys" rule.
 - A species field validates against the project's real species list; an unknown constant is a refusal with the closest matches listed.
 - Editing here immediately updates the encounter atlas and any wild signs whose species is now off-table get flagged in the sign list. The two features stay coherent.

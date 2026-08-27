@@ -4089,15 +4089,15 @@ git commit -m "feat(ui): stitched world canvas with culling, LOD, drag placement
 ```ts
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
-import { parseEncounters, speciesChances } from "../../src/load/encounters.js";
+import { parseEncounters, speciesChances, FISHING_RODS } from "../../src/load/encounters.js";
 import { projectPaths } from "../../src/config/paths.js";
-import { SUBJECT_ROOT } from "../helpers/corpus.js";
+import { SUBJECT_ROOT, itWithCorpus } from "../helpers/corpus.js";
 
 const P = projectPaths(SUBJECT_ROOT);
 const enc = parseEncounters(readFileSync(P.wildEncountersJson, "utf8"));
 
 describe("parseEncounters", () => {
-  it("reads all three groups with their slot weights", () => {
+  itWithCorpus("reads all three groups with their slot weights", () => {
     expect(enc.groups.get("gWildMonHeaders")!.entries.length).toBe(497);
     const fields = enc.groups.get("gWildMonHeaders")!.fields;
     expect(fields.get("land_mons")!.length).toBe(12);
@@ -4106,35 +4106,86 @@ describe("parseEncounters", () => {
     expect(fields.get("fishing_mons")!.length).toBe(10);
   });
 
-  it("slot weights sum to 100", () => {
-    for (const [, weights] of enc.groups.get("gWildMonHeaders")!.fields) {
-      expect(weights.reduce((a, b) => a + b, 0)).toBe(100);
+  itWithCorpus("land, water and rock smash sum to 100 -- fishing sums to 300", () => {
+    const fields = enc.groups.get("gWildMonHeaders")!.fields;
+    for (const m of ["land_mons", "water_mons", "rock_smash_mons"] as const) {
+      expect(fields.get(m)!.reduce((a, b) => a + b, 0)).toBe(100);
+    }
+    // Fishing is THREE independent distributions -- one per rod -- packed into
+    // one array: [70,30 | 60,20,20 | 40,40,15,4,1]. Summing the whole thing and
+    // calling it a probability yields 300%.
+    expect(fields.get("fishing_mons")!.reduce((a, b) => a + b, 0)).toBe(300);
+    for (const { from, count } of FISHING_RODS) {
+      expect(fields.get("fishing_mons")!.slice(from, from + count).reduce((a, b) => a + b, 0)).toBe(100);
     }
   });
 
-  it("finds Route 101's table", () => {
-    const e = enc.forMap("MAP_ROUTE101")!;
-    expect(e.methods.land_mons!.encounterRate).toBe(20);
-    expect(e.methods.land_mons!.mons.length).toBe(12);
+  itWithCorpus("returns EVERY entry for a map, not just the first", () => {
+    // 125 maps here carry more than one table. `.find()` would silently hide
+    // three quarters of Route 101's data and present the day table as if it
+    // were the only one that existed.
+    const entries = enc.forMap("MAP_ROUTE101");
+    expect(entries.map((e) => e.baseLabel)).toEqual([
+      "gRoute101", "gRoute101_Night", "gRoute101_DayC", "gRoute101_NightC",
+    ]);
+    expect(entries[0]!.methods.land_mons!.encounterRate).toBe(20);
+    expect(entries[0]!.methods.land_mons!.mons.length).toBe(12);
+  });
+
+  itWithCorpus("distinct variants really do hold distinct species", () => {
+    const entries = enc.forMap("MAP_ROUTE101");
+    expect(entries[0]!.methods.land_mons!.mons[0]!.species).toBe("SPECIES_ESPEON");
+    expect(entries[1]!.methods.land_mons!.mons[0]!.species).toBe("SPECIES_UMBREON");
+  });
+
+  itWithCorpus("counts the maps carrying multiple tables", () => {
+    const byMap = new Map<string, number>();
+    for (const e of enc.groups.get("gWildMonHeaders")!.entries) {
+      byMap.set(e.map, (byMap.get(e.map) ?? 0) + 1);
+    }
+    expect(byMap.size).toBe(227);                                    // distinct maps
+    expect([...byMap.values()].filter((n) => n > 1).length).toBe(125);
+    expect(Math.max(...byMap.values())).toBe(9);                     // MAP_ALTERING_CAVE
+  });
+
+  itWithCorpus("returns an empty array for a map with no table", () => {
+    expect(enc.forMap("MAP_NO_SUCH_MAP")).toEqual([]);
   });
 });
 
 describe("speciesChances", () => {
-  it("weights by slot rate, not slot count", () => {
+  itWithCorpus("weights by slot rate, not slot count", () => {
     const chances = speciesChances(enc, "MAP_ROUTE101", "land_mons")!;
-    // Route 101 is all one species in this tree, so it must total 100%.
     expect(chances.reduce((a, c) => a + c.percent, 0)).toBeCloseTo(100, 5);
   });
 
-  it("merges duplicate species across slots and reports a level band", () => {
+  itWithCorpus("reads the requested variant, not always the first", () => {
+    const day = speciesChances(enc, "MAP_ROUTE101", "land_mons")!;
+    const night = speciesChances(enc, "MAP_ROUTE101", "land_mons", { entry: 1 })!;
+    expect(day[0]!.species).toBe("SPECIES_ESPEON");
+    expect(night[0]!.species).toBe("SPECIES_UMBREON");
+  });
+
+  itWithCorpus("computes fishing percentages PER ROD, so each rod totals 100", () => {
+    // Without the rod split a species in Old Rod slot 0 reads as 70% of all
+    // fishing encounters rather than 70% of Old Rod ones, and every map's
+    // fishing figures sum to 300%.
+    const withFishing = enc.groups.get("gWildMonHeaders")!.entries.find((e) => e.methods.fishing_mons)!;
+    for (const { rod } of FISHING_RODS) {
+      const chances = speciesChances(enc, withFishing.map, "fishing_mons", { rod })!;
+      expect(chances.reduce((a, c) => a + c.percent, 0)).toBeCloseTo(100, 5);
+    }
+  });
+
+  itWithCorpus("merges duplicate species across slots and reports a level band", () => {
     const chances = speciesChances(enc, "MAP_ROUTE101", "land_mons")!;
     const espeon = chances.find((c) => c.species === "SPECIES_ESPEON")!;
     expect(espeon.percent).toBeCloseTo(100, 5);
     expect(espeon.minLevel).toBe(2);
-    expect(espeon.maxLevel).toBeGreaterThanOrEqual(3);
+    expect(espeon.slots.length).toBe(12);
   });
 
-  it("returns undefined for a map with no table", () => {
+  itWithCorpus("returns undefined for a map with no table", () => {
     expect(speciesChances(enc, "MAP_NO_SUCH_MAP", "land_mons")).toBeUndefined();
   });
 });
@@ -4153,22 +4204,54 @@ export type Method = "land_mons" | "water_mons" | "rock_smash_mons" | "fishing_m
 
 export interface Mon { minLevel: number; maxLevel: number; species: string; }
 export interface MethodTable { encounterRate: number; mons: Mon[]; }
-export interface EncounterEntry { map: string; baseLabel: string; methods: Partial<Record<Method, MethodTable>>; }
+export interface EncounterEntry {
+  map: string;
+  /** e.g. "gRoute101_Night" -- the only thing distinguishing a map's variants. */
+  baseLabel: string;
+  methods: Partial<Record<Method, MethodTable>>;
+}
 export interface EncounterGroup { label: string; fields: Map<Method, number[]>; entries: EncounterEntry[]; }
+
+export type Rod = "old" | "good" | "super";
+
+/**
+ * fishing_mons packs THREE distributions into one 10-slot array, one per rod,
+ * each summing to 100: [70,30 | 60,20,20 | 40,40,15,4,1]. Treating it as a
+ * single distribution makes every fishing percentage wrong and the totals 300%.
+ */
+export const FISHING_RODS: readonly { rod: Rod; from: number; count: number }[] = [
+  { rod: "old", from: 0, count: 2 },
+  { rod: "good", from: 2, count: 3 },
+  { rod: "super", from: 5, count: 5 },
+];
 
 export interface Encounters {
   groups: Map<string, EncounterGroup>;
-  forMap(mapId: string, group?: string): EncounterEntry | undefined;
+  /**
+   * ALL entries for a map, in file order -- 125 maps in the subject tree have
+   * more than one (day, night and two further variants; MAP_ALTERING_CAVE has
+   * nine). Returning just the first would hide most of the data while looking
+   * like an answer.
+   */
+  forMap(mapId: string, group?: string): EncounterEntry[];
   fieldsFor(group: string): Map<Method, number[]>;
 }
 
 export interface SpeciesChance {
   species: string;
-  /** True probability from the slot weights, 0-100. */
+  /** True probability within its distribution, 0-100. For fishing that means
+   *  within the selected rod, not across all ten slots. */
   percent: number;
   minLevel: number;
   maxLevel: number;
   slots: number[];
+}
+
+export interface ChanceOptions {
+  /** Which of the map's entries (day/night/variant). Defaults to the first. */
+  entry?: number;
+  /** Required in practice for fishing; ignored for other methods. Defaults to "old". */
+  rod?: Rod;
 }
 
 export function parseEncounters(text: string): Encounters {
@@ -4201,7 +4284,8 @@ export function parseEncounters(text: string): Encounters {
   return {
     groups,
     fieldsFor: (g) => groups.get(g)?.fields ?? new Map(),
-    forMap: (mapId, group = "gWildMonHeaders") => groups.get(group)?.entries.find((e) => e.map === mapId),
+    forMap: (mapId, group = "gWildMonHeaders") =>
+      (groups.get(group)?.entries ?? []).filter((e) => e.map === mapId),
   };
 }
 
@@ -4212,16 +4296,25 @@ export function parseEncounters(text: string): Encounters {
  * A species in slots 0 and 1 is a 40% encounter; one in slots 10 and 11 is 2%.
  */
 export function speciesChances(
-  enc: Encounters, mapId: string, method: Method, group = "gWildMonHeaders",
+  enc: Encounters, mapId: string, method: Method,
+  opts: ChanceOptions = {}, group = "gWildMonHeaders",
 ): SpeciesChance[] | undefined {
-  const entry = enc.forMap(mapId, group);
-  const table = entry?.methods[method];
+  const entries = enc.forMap(mapId, group);
+  const table = entries[opts.entry ?? 0]?.methods[method];
   if (!table) return undefined;
 
   const weights = enc.fieldsFor(group).get(method) ?? [];
+
+  // Fishing is scoped to one rod; every other method spans all its slots.
+  const segment = method === "fishing_mons"
+    ? FISHING_RODS.find((r) => r.rod === (opts.rod ?? "old"))!
+    : { from: 0, count: table.mons.length };
+
   const by = new Map<string, SpeciesChance>();
 
-  table.mons.forEach((mon, slot) => {
+  for (let slot = segment.from; slot < segment.from + segment.count; slot++) {
+    const mon = table.mons[slot];
+    if (!mon) continue;
     const weight = weights[slot] ?? 0;
     const found = by.get(mon.species);
     if (found) {
@@ -4235,7 +4328,7 @@ export function speciesChances(
         minLevel: mon.minLevel, maxLevel: mon.maxLevel, slots: [slot],
       });
     }
-  });
+  }
 
   return [...by.values()].sort((a, b) => b.percent - a.percent);
 }
@@ -4244,7 +4337,7 @@ export function speciesChances(
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run packages/core/test/load/encounters.test.ts`
-Expected: PASS, 6 tests.
+Expected: PASS, 11 tests.
 
 - [ ] **Step 5: Commit**
 
@@ -4278,8 +4371,19 @@ describe("whereSpecies", () => {
     expect(hits.length).toBeGreaterThan(0);
     const route101 = hits.find((h) => h.mapId === "MAP_ROUTE101")!;
     expect(route101.method).toBe("land_mons");
+    expect(route101.variant).toBe("gRoute101");
     expect(route101.percent).toBeCloseTo(100, 5);
     expect(route101.minLevel).toBe(2);
+  });
+
+  itWithCorpus("finds a species that exists only in a NIGHT variant", () => {
+    // The decisive test for variant support. Umbreon is on Route 101 at night
+    // and absent from its day table, so a search reading only each map's first
+    // entry reports that it cannot be caught anywhere at all.
+    const hits = whereSpecies(proj, "SPECIES_UMBREON");
+    const route101 = hits.find((h) => h.mapId === "MAP_ROUTE101");
+    expect(route101).toBeDefined();
+    expect(route101!.variant).toBe("gRoute101_Night");
   });
 
   itWithCorpus("returns nothing for a species that appears nowhere", () => {
@@ -4288,10 +4392,15 @@ describe("whereSpecies", () => {
 });
 
 describe("coverage", () => {
-  itWithCorpus("counts maps with and without encounter tables", () => {
+  itWithCorpus("counts DISTINCT maps, not tables", () => {
     const c = coverage(proj);
-    expect(c.mapsWithEncounters).toBe(497);
-    expect(c.mapsWithoutEncounters.length).toBe(proj.mapNames().length - 497);
+    // 497 tables spread across 227 maps. Reporting 497 as "maps with
+    // encounters" overstates coverage by more than double and makes the whole
+    // gap analysis useless, because 125 maps carry several variants each.
+    expect(c.encounterTables).toBe(497);
+    expect(c.mapsWithEncounters).toBe(227);
+    expect(c.mapsWithoutEncounters.length).toBe(982);
+    expect(c.mapsWithEncounters + c.mapsWithoutEncounters.length).toBe(proj.mapNames().length);
   });
 
   itWithCorpus("reports an average level per map for the level-curve lens", () => {
@@ -4325,11 +4434,18 @@ const METHODS: Method[] = ["land_mons", "water_mons", "rock_smash_mons", "fishin
 
 export interface SpeciesHit {
   mapId: string; mapName?: string; method: Method;
+  /** Which of the map's tables this hit came from, e.g. "gRoute101_Night". */
+  variant: string;
+  rod?: Rod;
   percent: number; minLevel: number; maxLevel: number;
 }
 
 export interface Coverage {
+  /** DISTINCT maps carrying at least one table -- not the table count, which is
+   *  far higher because 125 maps have several variants each. */
   mapsWithEncounters: number;
+  /** Total tables across all maps, counting every day/night variant. */
+  encounterTables: number;
   mapsWithoutEncounters: string[];
   levelByMap: { mapId: string; averageLevel: number }[];
   unusedSpecies: string[];
@@ -4345,15 +4461,37 @@ export function whereSpecies(proj: Project, species: string): SpeciesHit[] {
   const idToName = new Map(proj.mapNames().map((n) => [proj.map(n).id, n]));
   const out: SpeciesHit[] = [];
 
-  for (const entry of enc.groups.get("gWildMonHeaders")?.entries ?? []) {
+  const entries = enc.groups.get("gWildMonHeaders")?.entries ?? [];
+
+  // Search EVERY variant, not just each map's first table. A night-only species
+  // would otherwise be reported as appearing nowhere -- the search would
+  // confidently return an empty list for a Pokemon the player can catch.
+  const indexWithinMap = new Map<EncounterEntry, number>();
+  const seenPerMap = new Map<string, number>();
+  for (const e of entries) {
+    const n = seenPerMap.get(e.map) ?? 0;
+    indexWithinMap.set(e, n);
+    seenPerMap.set(e.map, n + 1);
+  }
+
+  for (const entry of entries) {
     for (const method of METHODS) {
-      const chances = speciesChances(enc, entry.map, method);
-      const hit = chances?.find((c) => c.species === species);
-      if (!hit) continue;
-      out.push({
-        mapId: entry.map, mapName: idToName.get(entry.map), method,
-        percent: hit.percent, minLevel: hit.minLevel, maxLevel: hit.maxLevel,
-      });
+      const rods: (Rod | undefined)[] = method === "fishing_mons"
+        ? FISHING_RODS.map((r) => r.rod)
+        : [undefined];
+
+      for (const rod of rods) {
+        const chances = speciesChances(enc, entry.map, method, {
+          entry: indexWithinMap.get(entry)!, rod,
+        });
+        const hit = chances?.find((c) => c.species === species);
+        if (!hit) continue;
+        out.push({
+          mapId: entry.map, mapName: idToName.get(entry.map), method,
+          variant: entry.baseLabel, rod,
+          percent: hit.percent, minLevel: hit.minLevel, maxLevel: hit.maxLevel,
+        });
+      }
     }
   }
 
@@ -4369,23 +4507,43 @@ export function coverage(proj: Project): Coverage {
   const levelByMap: Coverage["levelByMap"] = [];
   const byMethod = { land_mons: 0, water_mons: 0, rock_smash_mons: 0, fishing_mons: 0 } as Record<Method, number>;
 
+  // The level curve is per MAP, averaged over every variant that map carries,
+  // so a route is not counted four times merely because it has four tables.
+  const perMap = new Map<string, { weighted: number; total: number }>();
+  const seenPerMap = new Map<string, number>();
+
   for (const e of entries) {
-    let weighted = 0, total = 0;
+    const entryIndex = seenPerMap.get(e.map) ?? 0;
+    seenPerMap.set(e.map, entryIndex + 1);
+
     for (const method of METHODS) {
-      const chances = speciesChances(enc, e.map, method);
-      if (!chances) continue;
-      byMethod[method]++;
-      for (const c of chances) {
-        seen.add(c.species);
-        weighted += ((c.minLevel + c.maxLevel) / 2) * c.percent;
-        total += c.percent;
+      const rods: (Rod | undefined)[] = method === "fishing_mons"
+        ? FISHING_RODS.map((r) => r.rod)
+        : [undefined];
+
+      for (const rod of rods) {
+        const chances = speciesChances(enc, e.map, method, { entry: entryIndex, rod });
+        if (!chances) continue;
+        // Count a method once per table, not once per rod.
+        if (rod === undefined || rod === "old") byMethod[method]++;
+        const acc = perMap.get(e.map) ?? { weighted: 0, total: 0 };
+        for (const c of chances) {
+          seen.add(c.species);
+          acc.weighted += ((c.minLevel + c.maxLevel) / 2) * c.percent;
+          acc.total += c.percent;
+        }
+        perMap.set(e.map, acc);
       }
     }
-    levelByMap.push({ mapId: e.map, averageLevel: total ? weighted / total : 0 });
+  }
+
+  for (const [mapId, a] of perMap) {
+    levelByMap.push({ mapId, averageLevel: a.total ? a.weighted / a.total : 0 });
   }
 
   return {
     mapsWithEncounters: withTable.size,
+    encounterTables: entries.length,
     mapsWithoutEncounters: proj.mapNames().filter((n) => !withTable.has(proj.map(n).id)),
     levelByMap,
     unusedSpecies: allSpecies(proj).filter((s) => !seen.has(s)),
@@ -4628,26 +4786,26 @@ const LENSES = ["level-curve", "empty-maps", "unused-species", "method"] as cons
 
 describe("LensPanel", () => {
   it("starts with every lens off", () => {
-    render(<LensPanel active={null} onChange={() => {}} summary={{ emptyMaps: 717, unusedSpecies: 12 }} />);
+    render(<LensPanel active={null} onChange={() => {}} summary={{ emptyMaps: 982, unusedSpecies: 12 }} />);
     for (const l of LENSES) expect(screen.getByLabelText(new RegExp(l, "i")).getAttribute("aria-pressed")).toBe("false");
   });
 
   it("shows a legend the moment a lens is turned on", () => {
     const onChange = vi.fn();
-    render(<LensPanel active="level-curve" onChange={onChange} summary={{ emptyMaps: 717, unusedSpecies: 12 }} />);
+    render(<LensPanel active="level-curve" onChange={onChange} summary={{ emptyMaps: 982, unusedSpecies: 12 }} />);
     expect(screen.getByRole("note")).toBeTruthy();
     expect(screen.getByText(/average encounter level/i)).toBeTruthy();
   });
 
   it("states the finding in plain words with a next action", () => {
-    render(<LensPanel active="empty-maps" onChange={() => {}} summary={{ emptyMaps: 717, unusedSpecies: 12 }} />);
-    expect(screen.getByText(/717 maps have no encounters/i)).toBeTruthy();
+    render(<LensPanel active="empty-maps" onChange={() => {}} summary={{ emptyMaps: 982, unusedSpecies: 12 }} />);
+    expect(screen.getByText(/982 maps have no encounters/i)).toBeTruthy();
     expect(screen.getByRole("button", { name: /list them/i })).toBeTruthy();
   });
 
   it("only one lens is active at a time", () => {
     const onChange = vi.fn();
-    render(<LensPanel active="level-curve" onChange={onChange} summary={{ emptyMaps: 717, unusedSpecies: 12 }} />);
+    render(<LensPanel active="level-curve" onChange={onChange} summary={{ emptyMaps: 982, unusedSpecies: 12 }} />);
     fireEvent.click(screen.getByLabelText(/empty-maps/i));
     expect(onChange).toHaveBeenCalledWith("empty-maps");
   });
@@ -4708,7 +4866,7 @@ Invoke `frontend-design` and `ui-ux-pro-max`, follow `packages/ui/DESIGN.md`.
 - **`SpeciesSpotlight`** — a search box; on a hit, the world canvas dims non-matching maps and lights matches with their percentage and level band. Debounce input; never block the canvas while fetching.
 - **`LensPanel`** — one active lens at a time, all off by default, each with a legend that says what the colours mean **and what to do next**. Required copy, per spec §9:
   - *level-curve*: "Colour is the average encounter level, weighted by encounter rate. Blue is low, red is high. Look for maps that jump several levels above their neighbours."
-  - *empty-maps*: "717 maps have no encounters. Some should not — buildings, corridors. Click to list them."
+  - *empty-maps*: "982 maps have no encounters. Many should not — buildings, corridors, single rooms. Click to list them."
   - *unused-species*: "N species appear in no encounter table. They may still be gifts, statics or trades."
   - *method*: "Which maps reward surfing, fishing or rock smash."
 

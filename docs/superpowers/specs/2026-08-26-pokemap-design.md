@@ -256,14 +256,21 @@ Off by default when the user disables dungeon stitching. When enabled, a warp-gr
 
 ## 9. Encounter atlas (read-only)
 
-Data: `src/data/wild_encounters.json` — 497 map entries in `gWildMonHeaders`, plus `gBattlePyramidWildMonHeaders` (7) and `gBattlePikeWildMonHeaders` (4). Four methods with per-slot weights: `land_mons` (12 slots), `water_mons` (5), `rock_smash_mons` (5), `fishing_mons` (10).
+Data: `src/data/wild_encounters.json` — **497 tables across 227 distinct maps** in `gWildMonHeaders`, plus `gBattlePyramidWildMonHeaders` (7) and `gBattlePikeWildMonHeaders` (4). Four methods with per-slot weights: `land_mons` (12 slots), `water_mons` (5), `rock_smash_mons` (5), `fishing_mons` (10).
+
+Two properties of this data are easy to get wrong and both produce confidently incorrect answers:
+
+**A map can have several tables.** 125 of the 227 carry more than one — day, night, and two further variants distinguished only by `base_label` (`gRoute101`, `gRoute101_Night`, `gRoute101_DayC`, `gRoute101_NightC`). `MAP_ALTERING_CAVE` has nine. The variants hold genuinely different species: Route 101 is Espeon by day and Umbreon by night. Any lookup that takes a map's *first* table and presents it as *the* table hides most of the data while looking like an answer — and a species search would report a night-only Pokémon as uncatchable anywhere.
+
+**Fishing is three distributions, not one.** `fishing_mons`'s ten weights are `[70,30 | 60,20,20 | 40,40,15,4,1]` — Old Rod (2 slots), Good Rod (3), Super Rod (5), each summing to 100, total 300. Percentages must be computed within a rod. Treating the array as one distribution reports a species in Old Rod slot 0 as 70% of all fishing encounters rather than 70% of Old Rod ones, and makes every map's fishing figures sum to 300%.
 
 - **Per-map gutter**: species icons from `graphics/pokemon/<species>/icon.png` along the map edge, grouped by method. Hover gives species, level range, and **true percentage computed from `encounter_rates` weights** — not slot count. Slot 0 of `land_mons` is 20%; slot 11 is 1%.
+- **Variant selector**: a control for which table is shown (day, night, and any further variants that map has), defaulting to the first. A map with several variants says so, rather than silently showing one.
 - **Species spotlight**: type a species; the stitched world dims except maps containing it, each lit with rate and level band. The design question "where can I catch X, and at what level" answered by looking, across 1,209 maps.
-- **Coverage lenses**: level-curve heatmap; maps with no encounter table; species appearing in zero tables; per-method coverage.
+- **Coverage lenses**: level-curve heatmap (averaged per map across its variants, so a four-table route is not counted four times); the **982** maps with no encounter table; species appearing in zero tables *across all variants*; per-method coverage.
 - **UI guidance**: overlays default off behind one obvious toggle. Turning a lens on opens a legend panel stating in plain words what the colours mean and what to do next. No lens is ever active without its legend visible. Empty states explain rather than sit blank.
 
-CLI: `pokemap encounters <map>`, `pokemap where <species>`, `pokemap coverage`.
+CLI: `pokemap encounters <map> [--variant N] [--rod old|good|super]`, `pokemap where <species>` (reports which variant and rod each hit came from), `pokemap coverage`.
 
 ---
 
@@ -273,7 +280,9 @@ Heart & Soul places overworld Pokémon at map edges to tell the *player* what is
 
 **Mechanism:** an ordinary object event whose `graphics_id` is `OBJ_EVENT_GFX_SPECIES(NAME)` (`include/constants/event_objects.h`: `OBJ_EVENT_GFX_MON_BASE 0x200`). PokeMap renders them with the real overworld sprite from `graphics/object_events/pics/pokemon/<species>.png` (1,304 files present). **Porymap renders these as nothing**, so this is currently blind work.
 
-**Flow:** select a map → PokeMap reads its encounter table → offers species **ranked by real encounter rate**, so signs match what is actually catchable → user picks one or more → PokeMap proposes edge positions (border-adjacent, walkable, elevation 3, clear of warps and connection seams) → user drags to adjust → save.
+**Flow:** select a map → PokeMap reads its encounter tables → offers species **ranked by real encounter rate**, so signs match what is actually catchable → user picks one or more → PokeMap proposes edge positions (border-adjacent, walkable, elevation 3, clear of warps and connection seams) → user drags to adjust → save.
+
+**Ranking across variants.** A map with day and night tables has two different answers to "what is catchable here". The picker ranks by the **highest** rate a species reaches in any of that map's variants and labels which one, so a night-only Pokémon is offered rather than hidden and the user can see why it scored where it did. Ranking off the first table alone would silently exclude half the species on 125 maps.
 
 **Writes, per sign**, matching the existing `CeladonCity` Poliwrath template exactly:
 
@@ -326,7 +335,7 @@ pokemap render <map|layout> --out shot.png [--grid] [--collision] [--events] [--
 pokemap render-world --bbox x,y,w,h --out world.png
 pokemap validate [--metatile-range] [--warps] [--connections] [--layout-version]
 pokemap query <map> --events | --header | --connections
-pokemap encounters <map>
+pokemap encounters <map> [--variant N] [--rod old|good|super]
 pokemap where <species>
 pokemap coverage [--empty] [--unused]
 pokemap sign add|list|suggest
