@@ -47,6 +47,31 @@ describe("engineProfile", () => {
     expect(defaultProfile("pokeemerald").supportsLayoutVersion).toBe(false);
   });
 
+  it("reads masks from the cfg rather than falling through to defaults", () => {
+    // Every mask in a REAL cfg happens to equal this engine's default, so a
+    // parser that ignored the file entirely would still pass the corpus tests
+    // below. Deliberately non-default values are the only way to prove the
+    // keys are actually read. Same trap that made Task 3's swap test useless.
+    const p = engineProfile(parseCfg([
+      "base_game_version=pokeemerald",
+      "block_metatile_id_mask=0x1FF",
+      "block_collision_mask=0x600",
+      "block_elevation_mask=0x7800",
+      "metatile_attributes_size=4",
+      "metatile_behavior_mask=0x3F",
+      "metatile_layer_type_mask=0x0F00",
+    ].join("\n")));
+
+    expect(p.blockMetatileIdMask).toBe(0x1ff);
+    expect(p.blockCollisionMask).toBe(0x600);
+    expect(p.blockCollisionShift).toBe(9);
+    expect(p.blockElevationMask).toBe(0x7800);
+    expect(p.blockElevationShift).toBe(11);
+    expect(p.metatileAttributesSize).toBe(4);
+    expect(p.metatileBehaviorMask).toBe(0x3f);
+    expect(p.metatileLayerTypeMask).toBe(0x0f00);
+  });
+
   itWithCorpus("parses the subject repo's real porymap.project.cfg", () => {
     const p = projectPaths(SUBJECT_ROOT);
     const cfg = parseCfg(readFileSync(p.porymapCfg, "utf8"));
