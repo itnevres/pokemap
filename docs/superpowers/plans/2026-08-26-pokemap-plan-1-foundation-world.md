@@ -1073,7 +1073,9 @@ git commit -m "feat(core): load map groups and map headers across engines"
 
 Invariant **I4**. Never mangle a symbol into a directory name.
 
-This is not hypothetical caution. **12 of the subject tree's 230 tilesets have a directory no naming rule could produce**, and `gTileset_TrainerHill_Courtyard` → `battle_tower_outer` is not a mangling at all — it is a different name. `SecretBasePrimary` and `SecretBaseSecondary` both point at one `secret_base` directory, so the relation is not injective either. The subject repo's own `rules.md` records a mangling attempt getting this wrong before. The mapping is data; read it.
+This is not hypothetical caution. Measured against the tree: **22 of its 242 tilesets have a directory no naming rule could produce**, and `gTileset_TrainerHill_Courtyard` → `battle_tower_outer` is not a mangling at all — it is a different name.
+
+Worse, the relation is **many-to-one**, so no function from symbol to path can exist regardless of how clever the rule is. Nine symbols share `primary/building` (`gTileset_Building` plus the eight Frontier facilities) and six share `secondary/secret_base`. The subject repo's own `rules.md` records a mangling attempt getting this wrong before. The mapping is data; read it.
 
 **Files:**
 - Create: `packages/core/src/load/tilesets.ts`
@@ -1113,18 +1115,39 @@ describe("parseTilesetPaths", () => {
   });
 
   itWithCorpus("resolves tilesets no name-mangling scheme could reach", () => {
-    // 12 of this tree's 230 tilesets have a directory that cannot be derived
-    // from the symbol by any rule. These four are the proof of invariant I4:
-    // the mapping is DATA, read from INCBIN, not a transformation of the name.
+    // 22 of this tree's 242 tilesets have a directory that cannot be derived
+    // from the symbol by any rule. This is the proof of invariant I4: the
+    // mapping is DATA, read from INCBIN, not a transformation of the name.
     const t = read();
     // Nothing about "TrainerHill_Courtyard" suggests "battle_tower_outer".
     expect(t.get("gTileset_TrainerHill_Courtyard")!.dir).toBe("data/tilesets/secondary/battle_tower_outer");
-    // The symbol carries a word the directory simply drops.
-    expect(t.get("gTileset_InsideBuilding")!.dir).toBe("data/tilesets/primary/building");
+    // Directories that drop or rewrite words the symbol carries.
     expect(t.get("gTileset_GoldenrodCity_TrainStation")!.dir).toBe("data/tilesets/secondary/goldenrod_station");
-    // TWO symbols share ONE directory, so the relation is not even injective.
-    expect(t.get("gTileset_SecretBasePrimary")!.dir).toBe("data/tilesets/primary/secret_base");
-    expect(t.get("gTileset_SecretBaseSecondary")!.dir).toBe("data/tilesets/secondary/secret_base");
+    expect(t.get("gTileset_SaffronCity_FightingDojoVIP")!.dir).toBe("data/tilesets/secondary/saffron_city_dojo_vip");
+    expect(t.get("gTileset_SSAnne")!.dir).toBe("data/tilesets/secondary/ss_anne");
+    expect(t.get("gTileset_RuinsOfAlph_B1F")!.dir).toBe("data/tilesets/secondary/ruins_of_alph_b1_f");
+  });
+
+  itWithCorpus("handles the many-to-one case that makes mangling impossible in principle", () => {
+    // NINE symbols share one directory, and six share another. No function
+    // from symbol to path can produce that, however the rule is written --
+    // which is why the mapping has to be read rather than derived.
+    const t = read();
+    const byDir = new Map<string, string[]>();
+    for (const [symbol, paths] of t) {
+      (byDir.get(paths.dir) ?? byDir.set(paths.dir, []).get(paths.dir)!).push(symbol);
+    }
+    expect(byDir.get("data/tilesets/primary/building")).toHaveLength(9);
+    expect(byDir.get("data/tilesets/secondary/secret_base")).toHaveLength(6);
+    expect(t.get("gTileset_Building")!.dir).toBe("data/tilesets/primary/building");
+    expect(t.get("gTileset_Building_Pyramid")!.dir).toBe("data/tilesets/primary/building");
+  });
+
+  itWithCorpus("parses every Tileset struct in headers.h", () => {
+    // 242 today. A regex that silently stopped matching some of them would
+    // still satisfy the coverage test below, since layouts.json names only a
+    // subset -- so pin the total independently.
+    expect(read().size).toBe(242);
   });
 
   itWithCorpus("covers every tileset named by layouts.json", () => {
@@ -1206,7 +1229,7 @@ export function parseTilesetPaths(headersH: string, metatilesH: string, graphics
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run packages/core/test/load/tilesets.test.ts`
-Expected: PASS, 4 tests. If the "covers every tileset" test reports missing symbols, the `headers.h` struct regex needs widening — fix it rather than adding a fallback mangler.
+Expected: PASS, 7 tests. If the "covers every tileset" test reports missing symbols, the `headers.h` struct regex needs widening — fix it rather than adding a fallback mangler.
 
 - [ ] **Step 5: Commit**
 
