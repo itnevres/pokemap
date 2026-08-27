@@ -1,6 +1,3 @@
-export type BaseGameVersion =
-  | "pokeemerald" | "pokefirered" | "pokeruby" | "pokeemerald-expansion";
-
 export interface EngineProfile {
   baseGameVersion: string;
   blockMetatileIdMask: number;
@@ -75,6 +72,10 @@ export function defaultProfile(version: string): EngineProfile {
   };
 }
 
+// Adding a cfg-backed field to EngineProfile? Add its override below too.
+// The `...base` spread makes every field structurally satisfied, so a forgotten
+// override type-checks fine and silently returns the default instead of the
+// value the cfg asked for.
 export function engineProfile(cfg: Record<string, string>): EngineProfile {
   const base = defaultProfile(cfg.base_game_version ?? "pokeemerald");
   const collision = num(cfg.block_collision_mask, base.blockCollisionMask);

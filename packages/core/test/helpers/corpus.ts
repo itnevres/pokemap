@@ -1,6 +1,11 @@
 import { existsSync, readFileSync } from "node:fs";
 import { it } from "vitest";
+import { projectPaths } from "../../src/config/paths.js";
 
+// Read at module load, resolved against the process cwd: run vitest from the
+// repo root. Roughly fifteen test files import this, so a missing or malformed
+// pokemap.config.json surfaces as one collection error per importing file
+// rather than a single one — noisy, but each message names the real cause.
 const config = JSON.parse(readFileSync("pokemap.config.json", "utf8")) as {
   projectPath: string;
   referenceProjects: string[];
@@ -11,7 +16,7 @@ export const REFERENCE_ROOTS = config.referenceProjects;
 
 /** A decomp checkout is "present" if the one file every engine has is there. */
 export const hasProject = (root: string): boolean =>
-  existsSync(`${root}/data/layouts/layouts.json`);
+  existsSync(projectPaths(root).layoutsJson);
 
 /** Skips rather than fails when the subject decomp is not on this machine. */
 export const itWithCorpus = it.skipIf(!hasProject(SUBJECT_ROOT));
@@ -24,4 +29,4 @@ export const availableReferenceRoots = (): string[] => REFERENCE_ROOTS.filter(ha
  * so a caller can skip rather than fail.
  */
 export const referenceRoot = (name: string): string | undefined =>
-  REFERENCE_ROOTS.find((r) => r.replace(/\\/g, "/").split("/").pop() === name && hasProject(r));
+  REFERENCE_ROOTS.find((r) => projectPaths(r).root.split("/").pop() === name && hasProject(r));
