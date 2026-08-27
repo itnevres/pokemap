@@ -2033,13 +2033,21 @@ const proj = openProject(SUBJECT_ROOT);
 
 describe("renderLayout", () => {
   itWithCorpus("renders PetalburgCity at 16px per block", () => {
-    const r = renderLayout(proj, "PetalburgCity");
+    // renderLayout takes a LAYOUT name, which ends in _Layout. Passing the map
+    // name "PetalburgCity" throws -- the three namespaces (map, layout, layout
+    // directory) look alike and are not interchangeable.
+    const r = renderLayout(proj, "PetalburgCity_Layout");
     expect(r.width).toBe(30 * 16);
     expect(r.height).toBe(30 * 16);
   });
 
+  itWithCorpus("refuses a map name where a layout name is required", () => {
+    expect(() => renderLayout(proj, "PetalburgCity")).toThrow(/unknown layout/);
+    expect(proj.layoutForMap("PetalburgCity").name).toBe("PetalburgCity_Layout");
+  });
+
   itWithCorpus("renders an emerald and an hns layout in the same session, both fully in range", () => {
-    const emerald = proj.layoutByName("PetalburgCity")!;
+    const emerald = proj.layoutForMap("PetalburgCity");
     const hns = proj.layouts.find((l) => l.layoutVersion === "hns")!;
     expect(emerald.layoutVersion).toBe("emerald");
     expect(renderLayout(proj, emerald.name).outOfRangeCount).toBe(0);
@@ -2089,8 +2097,14 @@ export interface Project {
   constants: FieldmapConstants;
   layouts: Layout[];
   groups: MapGroups;
+  /** Layout names end in `_Layout` -- "PetalburgCity_Layout", not
+   *  "PetalburgCity". The directory under data/layouts/ uses the short form,
+   *  and the map that uses it is a third name again. Do not conflate them. */
   layoutByName(name: string): Layout | undefined;
   layoutById(id: string): Layout | undefined;
+  /** The layout a MAP uses. Most callers start from a map name, so reach for
+   *  this rather than guessing at the layout's name. */
+  layoutForMap(mapName: string): Layout;
   splitFor(layout: Layout): Split;
   tileset(symbol: string): Tileset;
   map(name: string): MapData;
@@ -2129,6 +2143,12 @@ export function openProject(root: string): Project {
     paths, profile, constants, layouts, groups,
     layoutByName: (n) => layouts.find((l) => l.name === n),
     layoutById: (id) => layouts.find((l) => l.id === id),
+    layoutForMap(mapName) {
+      const map = this.map(mapName);
+      const layout = layouts.find((l) => l.id === map.layout);
+      if (!layout) throw new Error(`map ${mapName} references unknown layout ${map.layout}`);
+      return layout;
+    },
     splitFor: (l) => resolveSplit(l, constants),
     tileset(symbol) {
       let t = tilesetCache.get(symbol);
@@ -2483,7 +2503,7 @@ git commit -m "feat(cli): encode rasters to PNG, add render and query commands"
 
 ```json
 {
-  "layouts": [
+  "maps": [
     "PetalburgCity",
     "NewBarkTown",
     "ViridianForest",
@@ -2493,6 +2513,12 @@ git commit -m "feat(cli): encode rasters to PNG, add render and query commands"
   ]
 }
 ```
+
+**These are MAP names, and the harness resolves each to its layout via
+`proj.layoutForMap`.** They are not layout names: `NavelRock_Base`'s layout is
+`NavelRockBase_Layout`, and every other entry gains a `_Layout` suffix. Naming
+the file's key `layouts` while filling it with map names is exactly the sort of
+quiet mismatch that makes a later reader trust the wrong thing.
 
 `PetalburgCity` is `emerald` (512 boundary). `NewBarkTown` is `hns` (640). `ViridianForest` and `SafariZoneCenter` are two of the seven 3×2-border layouts. The two NavelRock maps are the documented Emerald/FRLG art mismatch — a real rendering difference that must stay visible.
 
@@ -2507,14 +2533,14 @@ import { renderLayout } from "../../src/render/layout.js";
 import { SUBJECT_ROOT, itWithCorpus } from "../helpers/corpus.js";
 
 const proj = openProject(SUBJECT_ROOT);
-const list = JSON.parse(readFileSync("fixtures/visual-list.json", "utf8")) as { layouts: string[] };
+const list = JSON.parse(readFileSync("fixtures/visual-list.json", "utf8")) as { maps: string[] };
 const HASHES = "fixtures/visual-hashes.json";
 
 describe("visual regression", () => {
   itWithCorpus("renders the fixed list to stable hashes", () => {
     const actual: Record<string, string> = {};
-    for (const name of list.layouts) {
-      const r = renderLayout(proj, name, { border: 1 });
+    for (const name of list.maps) {
+      const r = renderLayout(proj, proj.layoutForMap(name).name, { border: 1 });
       actual[name] = createHash("sha256").update(Buffer.from(r.data)).digest("hex").slice(0, 16);
     }
     if (!existsSync(HASHES)) {
@@ -2525,10 +2551,11 @@ describe("visual regression", () => {
   });
 
   itWithCorpus("covers both metatile boundaries and a 3x2 border", () => {
-    const versions = new Set(list.layouts.map((n) => proj.layoutByName(n)?.layoutVersion ?? "emerald"));
+    const layouts = list.maps.map((n) => proj.layoutForMap(n));
+    const versions = new Set(layouts.map((l) => l.layoutVersion ?? "emerald"));
     expect(versions.has("emerald")).toBe(true);
     expect([...versions].some((v) => v === "hns" || v === "frlg")).toBe(true);
-    expect(list.layouts.some((n) => proj.layoutByName(n)?.borderWidth === 3)).toBe(true);
+    expect(layouts.some((l) => l.borderWidth === 3)).toBe(true);
   });
 });
 ```
@@ -2581,7 +2608,10 @@ const proj = openProject(SUBJECT_ROOT);
 describe("validateMetatileRange", () => {
   itWithCorpus("agrees with the subject repo's Python checker: only Saffron_Temp is out of range", () => {
     const findings = validateMetatileRange(proj);
-    expect(findings.map((f) => f.layout).sort()).toEqual(["Saffron_Temp"]);
+    // The Python tool names layouts, and layout names carry the _Layout suffix.
+    expect(findings.map((f) => f.layout).sort()).toEqual(["Saffron_Temp_Layout"]);
+    expect(findings[0]!.split.version).toBe("hns");
+    expect(findings[0]!.source).toBe("map");
   }, 900_000);
 
   itWithCorpus("reports the layout's own split version on every finding", () => {
@@ -2978,7 +3008,7 @@ describe("server", () => {
   it("returns a map's header, split and layout metadata", async () => {
     const body = await (await get("/api/map/NewBarkTown")).json() as any;
     expect(body.map.id).toBe("MAP_NEW_BARK_TOWN");
-    expect(body.layout.name).toBe("NewBarkTown");
+    expect(body.layout.name).toBe("NewBarkTown_Layout");
     expect(body.split.metatiles).toBe(640);
     expect(body.split.version).toBe("hns");
   });
@@ -3283,7 +3313,7 @@ const proj = openProject(SUBJECT_ROOT);
 
 describe("overlays", () => {
   itWithCorpus("drawGrid only touches pixels on 16px boundaries", () => {
-    const r = renderLayout(proj, "PetalburgCity");
+    const r = renderLayout(proj, proj.layoutForMap("PetalburgCity").name);
     const before = Buffer.from(r.data);
     drawGrid(r, 16);
     const changedInterior = (() => {
@@ -3297,14 +3327,14 @@ describe("overlays", () => {
   });
 
   itWithCorpus("drawCollision marks every non-zero collision block", () => {
-    const r = renderLayout(proj, "PetalburgCity");
+    const r = renderLayout(proj, proj.layoutForMap("PetalburgCity").name);
     const blocked = r.blocks.filter((b) => b.collision !== 0).length;
     expect(blocked).toBeGreaterThan(0);
     expect(() => drawCollision(r)).not.toThrow();
   });
 
   itWithCorpus("drawEvents marks warps, objects and bg events distinctly", () => {
-    const r = renderLayout(proj, "CeladonCity");
+    const r = renderLayout(proj, proj.layoutForMap("CeladonCity").name);
     const map = proj.map("CeladonCity");
     const marks = drawEvents(r, map);
     expect(marks.filter((m) => m.kind === "object").length).toBe(map.objectEvents.length);
@@ -3440,10 +3470,11 @@ describe("buildWorld", () => {
     const w = buildWorld(proj);
     const town = w.placements.get("NewBarkTown")!;
     const route = w.placements.get("Route29")!;
-    const townLayout = proj.layoutByName("NewBarkTown")!;
-    expect(route.x).toBe(town.x - proj.layoutByName("Route29")!.width);
+    expect(route.x).toBe(town.x - proj.layoutForMap("Route29").width);
     expect(route.y).toBe(town.y + -5);
-    expect(townLayout.width).toBeGreaterThan(0);
+    // NewBarkTown's layout is NewBarkTown_Layout; layoutByName("NewBarkTown")
+    // returns undefined, which is why placements are keyed by MAP name.
+    expect(proj.layoutForMap("NewBarkTown").name).toBe("NewBarkTown_Layout");
   });
 
   itWithCorpus("excludes dive and emerge from planar placement but records them as links", () => {
@@ -4899,7 +4930,7 @@ Per `superpowers:verification-before-completion`, run each of these and paste th
 - [ ] `npm test` — all suites green, including the 5-engine identity corpus
 - [ ] `npm run typecheck` — clean
 - [ ] `npx tsx packages/cli/src/index.ts validate --metatile-range` — one finding, `Saffron_Temp`, matching the Python tool
-- [ ] `npx tsx packages/cli/src/index.ts render PetalburgCity --out /tmp/a.png` and `render NewBarkTown --out /tmp/b.png` — **both correct, no edit to `include/fieldmap.h` between them**
+- [ ] `npx tsx packages/cli/src/index.ts render PetalburgCity --out /tmp/a.png` and `render NewBarkTown --out /tmp/b.png` — **both correct, no edit to `include/fieldmap.h` between them.** The CLI accepts a map OR a layout name via `layoutNameFor`; confirm both spellings work, since the two namespaces differ by a `_Layout` suffix
 - [ ] `npx tsx packages/cli/src/index.ts where ESPEON` — Route 101 at 100.0%, Lv 2–3
 - [ ] `git status` in `C:\Programming Projects\Pokemon Game\game` — **clean.** PokeMap must not have written a single byte to the decomp in this entire plan. If anything is modified, find out what wrote it before going further.
 - [ ] The world view pans the full overworld smoothly, and a dragged dungeon floor survives a reload
