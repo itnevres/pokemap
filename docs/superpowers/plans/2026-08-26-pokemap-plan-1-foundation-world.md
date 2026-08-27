@@ -10,6 +10,10 @@
 
 **Spec:** [`docs/superpowers/specs/2026-08-26-pokemap-design.md`](../specs/2026-08-26-pokemap-design.md)
 
+**Test convention, binding on every task in this plan.** Tests that read a real decomp import `SUBJECT_ROOT`, `itWithCorpus`, `hasProject` and `availableReferenceRoots` from `packages/core/test/helpers/corpus.ts` (created in Task 3). They never hardcode an absolute path, and every assertion against real data uses `itWithCorpus` rather than `it`, so a machine without the checkout **skips** instead of failing the suite with `ENOENT`. Code samples below show `SUBJECT_ROOT` already substituted; add the import when you write the file.
+
+Corollary worth stating, because it is the failure this convention can cause: a suite that skips its real-data tests and reports green is worse than one that fails loudly. When a task's expected output says a real-data test passes, verify with `--reporter=verbose` that it actually **ran**.
+
 **Success criteria — demonstrated, not asserted:**
 1. `pokemap render PetalburgCity --out shot.png` produces a correct PNG.
 2. An `emerald` layout and an `frlg` layout render correctly **in the same session**, with no edit to `include/fieldmap.h`.
@@ -300,7 +304,7 @@ const SRC = `
 
 #define NUM_METATILES_IN_PRIMARY 640
 #define NUM_METATILES_IN_PRIMARY_EMERALD 512
-#define NUM_METATILES_TOTAL 1024
+#define NUM_METATILES_TOTAL 999
 #define NUM_PALS_IN_PRIMARY 7
 #define NUM_PALS_IN_PRIMARY_EMERALD 6
 `;
@@ -314,12 +318,16 @@ describe("parseFieldmapConstants", () => {
     expect(c.metatilesInPrimaryEmerald).toBe(512);
     expect(c.palsInPrimary).toBe(7);
     expect(c.palsInPrimaryEmerald).toBe(6);
-    expect(c.metatilesTotal).toBe(1024);
+    expect(c.metatilesTotal).toBe(999);
   });
 
   it("follows the header when the owner swaps the values", () => {
-    const swapped = SRC.replace("NUM_METATILES_IN_PRIMARY 640", "NUM_METATILES_IN_PRIMARY 512");
-    expect(parseFieldmapConstants(swapped).metatilesInPrimary).toBe(512);
+    // 704 is deliberately neither the fixture's value (640) nor the field's
+    // fallback (512). Asserting 512 here would be tautological: a regex that
+    // matched nothing would also produce 512, so the test could not tell
+    // "read from the header" from "silently fell back".
+    const swapped = SRC.replace("NUM_METATILES_IN_PRIMARY 640", "NUM_METATILES_IN_PRIMARY 704");
+    expect(parseFieldmapConstants(swapped).metatilesInPrimary).toBe(704);
   });
 
   it("falls back to Emerald stock values when the _EMERALD names are absent", () => {
@@ -381,15 +389,45 @@ export function parseFieldmapConstants(src: string): FieldmapConstants {
 Run: `npx vitest run packages/core/test/config/fieldmap.test.ts`
 Expected: PASS, 3 tests.
 
-- [ ] **Step 5: Add a test against the real header**
+- [ ] **Step 5: Create the corpus test helper**
+
+Roughly fifteen later tests in this plan assert against the real decomp checkouts. Written naively, each is a bare `readFileSync` on an absolute path outside the repo, so on any machine without that checkout the whole suite fails with `ENOENT` rather than skipping. Establish the pattern once, here, before it is copied fifteen times.
+
+```ts
+// packages/core/test/helpers/corpus.ts
+import { existsSync, readFileSync } from "node:fs";
+import { it } from "vitest";
+
+const config = JSON.parse(readFileSync("pokemap.config.json", "utf8")) as {
+  projectPath: string;
+  referenceProjects: string[];
+};
+
+export const SUBJECT_ROOT = config.projectPath;
+export const REFERENCE_ROOTS = config.referenceProjects;
+
+/** A decomp checkout is "present" if the one file every engine has is there. */
+export const hasProject = (root: string): boolean =>
+  existsSync(`${root}/data/layouts/layouts.json`);
+
+/** Skips rather than fails when the subject decomp is not on this machine. */
+export const itWithCorpus = it.skipIf(!hasProject(SUBJECT_ROOT));
+
+export const availableReferenceRoots = (): string[] => REFERENCE_ROOTS.filter(hasProject);
+```
+
+Note it reads `pokemap.config.json` rather than hardcoding a path, so a contributor with the decomp elsewhere only edits one file.
+
+- [ ] **Step 6: Add a test against the real header**
 
 ```ts
 // append to the same test file
 import { readFileSync } from "node:fs";
 import { projectPaths } from "../../src/config/paths.js";
+import { SUBJECT_ROOT, itWithCorpus } from "../helpers/corpus.js";
 
-it("parses the subject repo's real fieldmap.h", () => {
-  const p = projectPaths("C:/Programming Projects/Pokemon Game/game");
+itWithCorpus("parses the subject repo's real fieldmap.h", () => {
+  const p = projectPaths(SUBJECT_ROOT);
   const c = parseFieldmapConstants(readFileSync(p.fieldmapH, "utf8"));
   expect(c.metatilesInPrimary).toBe(640);
   expect(c.metatilesInPrimaryEmerald).toBe(512);
@@ -399,12 +437,14 @@ it("parses the subject repo's real fieldmap.h", () => {
 ```
 
 Run: `npx vitest run packages/core/test/config/fieldmap.test.ts`
-Expected: PASS, 4 tests.
+Expected: PASS, 4 tests — and the fourth must actually **run**, not skip, on a machine that has the decomp. Confirm with `--reporter=verbose`; a suite that skips its only real-data assertion while reporting green is the failure mode this helper must not introduce.
 
-- [ ] **Step 6: Commit**
+**Every later task in this plan that asserts against a real decomp uses `itWithCorpus` and `SUBJECT_ROOT`, never a hardcoded absolute path.**
+
+- [ ] **Step 7: Commit**
 
 ```bash
-git add packages/core/src/config/fieldmap.ts packages/core/test/config/fieldmap.test.ts
+git add packages/core/src/config/fieldmap.ts packages/core/test/config/fieldmap.test.ts packages/core/test/helpers/corpus.ts
 git commit -m "feat(core): parse per-layout split constants from fieldmap.h"
 ```
 
@@ -628,7 +668,7 @@ describe("resolveSplit", () => {
 
 describe("parseLayouts", () => {
   it("parses the subject repo's layouts.json with the documented version counts", () => {
-    const p = projectPaths("C:/Programming Projects/Pokemon Game/game");
+    const p = projectPaths(SUBJECT_ROOT);
     const { layouts } = parseLayouts(readFileSync(p.layoutsJson, "utf8"));
     const byVersion: Record<string, number> = {};
     for (const l of layouts) byVersion[l.layoutVersion ?? "(none)"] = (byVersion[l.layoutVersion ?? "(none)"] ?? 0) + 1;
@@ -638,7 +678,7 @@ describe("parseLayouts", () => {
   });
 
   it("defaults border size to 2x2 and preserves the seven 3x2 layouts", () => {
-    const p = projectPaths("C:/Programming Projects/Pokemon Game/game");
+    const p = projectPaths(SUBJECT_ROOT);
     const { layouts } = parseLayouts(readFileSync(p.layoutsJson, "utf8"));
     const wide = layouts.filter((l) => l.borderWidth === 3 && l.borderHeight === 2).map((l) => l.name).sort();
     expect(wide).toHaveLength(7);
@@ -772,7 +812,7 @@ import { readFileSync } from "node:fs";
 import { parseMapGroups, parseMap } from "../../src/load/maps.js";
 import { projectPaths } from "../../src/config/paths.js";
 
-const P = projectPaths("C:/Programming Projects/Pokemon Game/game");
+const P = projectPaths(SUBJECT_ROOT);
 
 describe("parseMapGroups", () => {
   it("reads group order and membership", () => {
@@ -919,7 +959,7 @@ import { readFileSync } from "node:fs";
 import { parseTilesetPaths } from "../../src/load/tilesets.js";
 import { projectPaths } from "../../src/config/paths.js";
 
-const P = projectPaths("C:/Programming Projects/Pokemon Game/game");
+const P = projectPaths(SUBJECT_ROOT);
 const read = () => parseTilesetPaths(
   readFileSync(P.tilesetHeadersH, "utf8"),
   readFileSync(P.tilesetMetatilesH, "utf8"),
@@ -1063,7 +1103,7 @@ describe("parseJascPal", () => {
 
   it("parses the subject repo's real palette", () => {
     const pal = parseJascPal(readFileSync(
-      "C:/Programming Projects/Pokemon Game/game/data/tilesets/primary/general/palettes/00.pal", "utf8"));
+      `${SUBJECT_ROOT}/data/tilesets/primary/general/palettes/00.pal`, "utf8"));
     expect(pal).toHaveLength(16);
     expect(pal.every((c) => c.r <= 255 && c.g <= 255 && c.b <= 255)).toBe(true);
   });
@@ -1131,7 +1171,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { readIndexedPng } from "../../src/load/png.js";
 
-const G = "C:/Programming Projects/Pokemon Game/game";
+const G = SUBJECT_ROOT;
 
 describe("readIndexedPng", () => {
   it("reads a depth-8 indexed PNG (primary/general tiles)", () => {
@@ -1285,7 +1325,7 @@ import { projectPaths } from "../../src/config/paths.js";
 import { defaultProfile } from "../../src/config/engine.js";
 import { readFileSync } from "node:fs";
 
-const P = projectPaths("C:/Programming Projects/Pokemon Game/game");
+const P = projectPaths(SUBJECT_ROOT);
 const PATHS = parseTilesetPaths(
   readFileSync(P.tilesetHeadersH, "utf8"),
   readFileSync(P.tilesetMetatilesH, "utf8"),
@@ -1431,7 +1471,7 @@ import { parseBlocks } from "../../src/load/blocks.js";
 import { defaultProfile } from "../../src/config/engine.js";
 
 const PROFILE = defaultProfile("pokeemerald");
-const G = "C:/Programming Projects/Pokemon Game/game";
+const G = SUBJECT_ROOT;
 
 describe("parseBlocks", () => {
   it("decodes id, collision and elevation from a u16", () => {
@@ -1652,7 +1692,7 @@ import { parseTilesetPaths } from "../../src/load/tilesets.js";
 import { projectPaths } from "../../src/config/paths.js";
 import { defaultProfile } from "../../src/config/engine.js";
 
-const P = projectPaths("C:/Programming Projects/Pokemon Game/game");
+const P = projectPaths(SUBJECT_ROOT);
 const PROFILE = defaultProfile("pokeemerald");
 const PATHS = parseTilesetPaths(
   readFileSync(P.tilesetHeadersH, "utf8"),
@@ -1846,7 +1886,7 @@ import { describe, it, expect } from "vitest";
 import { renderLayout } from "../../src/render/layout.js";
 import { openProject } from "../../src/project.js";
 
-const proj = openProject("C:/Programming Projects/Pokemon Game/game");
+const proj = openProject(SUBJECT_ROOT);
 
 describe("renderLayout", () => {
   it("renders PetalburgCity at 16px per block", () => {
@@ -2322,7 +2362,7 @@ import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { openProject } from "../../src/project.js";
 import { renderLayout } from "../../src/render/layout.js";
 
-const proj = openProject("C:/Programming Projects/Pokemon Game/game");
+const proj = openProject(SUBJECT_ROOT);
 const list = JSON.parse(readFileSync("fixtures/visual-list.json", "utf8")) as { layouts: string[] };
 const HASHES = "fixtures/visual-hashes.json";
 
@@ -2391,7 +2431,7 @@ import { describe, it, expect } from "vitest";
 import { validateMetatileRange } from "../../src/validate/metatileRange.js";
 import { openProject } from "../../src/project.js";
 
-const proj = openProject("C:/Programming Projects/Pokemon Game/game");
+const proj = openProject(SUBJECT_ROOT);
 
 describe("validateMetatileRange", () => {
   it("agrees with the subject repo's Python checker: only Saffron_Temp is out of range", () => {
@@ -2775,7 +2815,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createServer, type PokemapServer } from "../src/index.js";
 
 let s: PokemapServer;
-beforeAll(async () => { s = await createServer({ projectPath: "C:/Programming Projects/Pokemon Game/game", port: 0 }); });
+beforeAll(async () => { s = await createServer({ projectPath: SUBJECT_ROOT, port: 0 }); });
 afterAll(async () => { await s.close(); });
 
 const get = async (path: string) => fetch(`http://127.0.0.1:${s.port}${path}`);
@@ -3092,7 +3132,7 @@ import { openProject } from "../../src/project.js";
 import { renderLayout } from "../../src/render/layout.js";
 import { drawGrid, drawCollision, drawEvents } from "../../src/render/overlays.js";
 
-const proj = openProject("C:/Programming Projects/Pokemon Game/game");
+const proj = openProject(SUBJECT_ROOT);
 
 describe("overlays", () => {
   it("drawGrid only touches pixels on 16px boundaries", () => {
@@ -3245,7 +3285,7 @@ import { describe, it, expect } from "vitest";
 import { buildWorld } from "../../src/world/connections.js";
 import { openProject } from "../../src/project.js";
 
-const proj = openProject("C:/Programming Projects/Pokemon Game/game");
+const proj = openProject(SUBJECT_ROOT);
 
 describe("buildWorld", () => {
   it("places NewBarkTown's left neighbour to its left, at the stated offset", () => {
@@ -3460,7 +3500,7 @@ import { autoLayoutUnplaced } from "../../src/world/warpGraph.js";
 import { buildWorld } from "../../src/world/connections.js";
 import { openProject } from "../../src/project.js";
 
-const proj = openProject("C:/Programming Projects/Pokemon Game/game");
+const proj = openProject(SUBJECT_ROOT);
 
 describe("autoLayoutUnplaced", () => {
   it("places every map that has no planar connections", () => {
@@ -3746,7 +3786,7 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createServer, type PokemapServer } from "../src/index.js";
 
 let s: PokemapServer;
-beforeAll(async () => { s = await createServer({ projectPath: "C:/Programming Projects/Pokemon Game/game", port: 0 }); });
+beforeAll(async () => { s = await createServer({ projectPath: SUBJECT_ROOT, port: 0 }); });
 afterAll(async () => { await s.close(); });
 
 describe("world api", () => {
@@ -3896,7 +3936,7 @@ import { readFileSync } from "node:fs";
 import { parseEncounters, speciesChances } from "../../src/load/encounters.js";
 import { projectPaths } from "../../src/config/paths.js";
 
-const P = projectPaths("C:/Programming Projects/Pokemon Game/game");
+const P = projectPaths(SUBJECT_ROOT);
 const enc = parseEncounters(readFileSync(P.wildEncountersJson, "utf8"));
 
 describe("parseEncounters", () => {
@@ -4072,7 +4112,7 @@ import { describe, it, expect } from "vitest";
 import { whereSpecies, coverage } from "../../src/analyse/coverage.js";
 import { openProject } from "../../src/project.js";
 
-const proj = openProject("C:/Programming Projects/Pokemon Game/game");
+const proj = openProject(SUBJECT_ROOT);
 
 describe("whereSpecies", () => {
   it("finds every map containing a species, with rate and level band", () => {
@@ -4292,7 +4332,7 @@ import { describe, it, expect } from "vitest";
 import { renderSpeciesIcon, speciesToDirName } from "../../src/render/species.js";
 import { openProject } from "../../src/project.js";
 
-const proj = openProject("C:/Programming Projects/Pokemon Game/game");
+const proj = openProject(SUBJECT_ROOT);
 
 describe("speciesToDirName", () => {
   it("lowercases a plain species constant", () => {
