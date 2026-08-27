@@ -1,0 +1,4 @@
+node_modules/
+dist/
+.pokemap/cache/
+*.log
