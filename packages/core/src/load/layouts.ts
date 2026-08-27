@@ -24,6 +24,8 @@ export function parseLayouts(text: string): { tableLabel: string; layouts: Layou
   };
 }
 
+const KNOWN_VERSIONS: readonly LayoutVersion[] = ["emerald", "frlg", "hns"];
+
 /**
  * Invariant I1. Every render, validate and write path takes its boundary from
  * here and never from an ambient constant.
@@ -32,7 +34,23 @@ export function parseLayouts(text: string): { tableLabel: string; layouts: Layou
  * `default:` branch of the engine's GetNumMetatilesInPrimary().
  */
 export function resolveSplit(layout: Pick<Layout, "layoutVersion">, c: FieldmapConstants): Split {
-  const version: LayoutVersion = layout.layoutVersion ?? "emerald";
+  const raw = layout.layoutVersion;
+
+  // A MISSING key defaults to emerald -- that is the engine's own `default:`
+  // branch, not a guess. An UNRECOGNISED VALUE is a different thing entirely
+  // and must not be guessed at: the ternary below would send it down the
+  // non-emerald path and hand back 640 purely by accident of the comparison,
+  // with nothing to signal that a boundary had been invented. A wrong boundary
+  // corrupts map.bin on save, so refuse instead (invariant I7).
+  if (raw !== undefined && !KNOWN_VERSIONS.includes(raw)) {
+    throw new Error(
+      `unknown layout_version ${JSON.stringify(raw)}; ` +
+      `expected one of ${KNOWN_VERSIONS.join(", ")}. ` +
+      `Add its boundary to resolveSplit rather than letting it default.`,
+    );
+  }
+
+  const version: LayoutVersion = raw ?? "emerald";
   return version === "emerald"
     ? { version, tiles: c.tilesInPrimaryEmerald, metatiles: c.metatilesInPrimaryEmerald, pals: c.palsInPrimaryEmerald }
     : { version, tiles: c.tilesInPrimary, metatiles: c.metatilesInPrimary, pals: c.palsInPrimary };

@@ -32,6 +32,11 @@ describe("resolveSplit", () => {
   it("treats a missing layout_version as emerald, matching GetNumMetatilesInPrimary's default branch", () => {
     expect(resolveSplit({ layoutVersion: undefined } as never, CONSTANTS).metatiles).toBe(512);
   });
+
+  it("refuses an unrecognised layout_version rather than inventing a boundary", () => {
+    expect(() => resolveSplit({ layoutVersion: "radical_red" } as never, CONSTANTS))
+      .toThrow(/unknown layout_version/);
+  });
 });
 
 describe("parseLayouts", () => {
@@ -45,7 +50,7 @@ describe("parseLayouts", () => {
     expect(byVersion.hns).toBe(282);
   });
 
-  itWithCorpus("defaults border size to 2x2 and preserves the seven 3x2 layouts", () => {
+  itWithCorpus("reads the seven 3x2 borders; every layout here has explicit border keys", () => {
     const p = projectPaths(SUBJECT_ROOT);
     const { layouts } = parseLayouts(readFileSync(p.layoutsJson, "utf8"));
     const wide = layouts.filter((l) => l.borderWidth === 3 && l.borderHeight === 2).map((l) => l.name).sort();
@@ -62,5 +67,16 @@ describe("parseLayouts", () => {
     // would be the Porymap 6 failure (inventing keys into 726 layouts).
     expect(layouts[0]!.borderWidth).toBe(2);
     expect(layouts[0]!.layoutVersion).toBeUndefined();
+  });
+
+  const frlg = referenceRoot("pokefirered");
+  it.skipIf(!frlg)("preserves an explicit border of 0 rather than defaulting it to 2", () => {
+    // 28 of pokefirered's 383 layouts are indoor rooms with border_width 0.
+    // The undefined-check must stay `=== undefined`, not falsy: `!l.border_width`
+    // would give every one of those a 2x2 border it does not have.
+    const { layouts } = parseLayouts(readFileSync(projectPaths(frlg!).layoutsJson, "utf8"));
+    const zero = layouts.filter((l) => l.borderWidth === 0);
+    expect(zero.length).toBe(28);
+    expect(zero.every((l) => l.borderHeight === 0)).toBe(true);
   });
 });
