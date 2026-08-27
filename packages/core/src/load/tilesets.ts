@@ -1,10 +1,14 @@
 export interface TilesetPaths {
   symbol: string;
+  /** The directory of `.metatiles` and `.metatileAttributes` ONLY. The art and
+   *  palettes can live elsewhere, so never build another path from this. */
   dir: string;
   isSecondary: boolean;
   metatilesBin: string;
   attributesBin: string;
-  /** Preferred source. `tiles.4bpp.lz` from graphics.h is a build artifact (I3). */
+  /** Resolved from the `.tiles` field's own INCBIN path, which is NOT always in
+   *  `dir` -- 15 tilesets differ. The INCBIN names `tiles.4bpp.lz`, a gitignored
+   *  build artifact (I3); its directory is right, the filename is not. */
   tilesPng: string;
   /** .gbapal paths as INCBINed; the .pal sibling is the committed source (I3). */
   palettes: string[];
@@ -19,6 +23,13 @@ export interface TilesetPaths {
  * parentheses and a digit. The tolerated-character class below has to include
  * `()` or every ALIGNED-qualified palette array in graphics.h -- roughly 150
  * of them -- silently fails to match and vanishes from the map.
+ *
+ * The lazy `[\s\S]*?;` terminator is comment-blind: it stops at the first `;`
+ * it finds, including one inside an inline `//` comment written before the
+ * real closing brace. That would yield a truncated, partial INCBIN list
+ * rather than a missing one, which the non-empty-palette guard would not
+ * catch either. Not present in this corpus today -- headers.h already has
+ * commented-out fields in that style, so the next file to grow one could.
  */
 function incbinMap(src: string): Map<string, string[]> {
   const out = new Map<string, string[]>();
@@ -63,15 +74,20 @@ export function parseTilesetPaths(
 
     const metatilesBin = data.get(field("metatiles") ?? "")?.[0];
     const attributesBin = data.get(field("metatileAttributes") ?? "")?.[0];
+    const tilesBin = data.get(field("tiles") ?? "")?.[0];
     const palettes = data.get(field("palettes") ?? "") ?? [];
     if (!metatilesBin || !attributesBin) continue;
 
-    const dir = metatilesBin.slice(0, metatilesBin.lastIndexOf("/"));
+    const dirOf = (p: string) => p.slice(0, p.lastIndexOf("/"));
+    const dir = dirOf(metatilesBin);
     out.set(symbol, {
       symbol, dir,
       isSecondary: /\.isSecondary\s*=\s*TRUE/.test(body),
       metatilesBin, attributesBin,
-      tilesPng: `${dir}/tiles.png`,
+      // From `.tiles`, not from `dir`. They differ for 15 tilesets, and eight
+      // of those have a tiles.png at the wrong path too, so getting this wrong
+      // renders another tileset's art with no error at all.
+      tilesPng: `${tilesBin ? dirOf(tilesBin) : dir}/tiles.png`,
       palettes,
     });
   }

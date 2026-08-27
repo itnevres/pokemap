@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { parseTilesetPaths } from "../../src/load/tilesets.js";
 import { projectPaths } from "../../src/config/paths.js";
 import { SUBJECT_ROOT, itWithCorpus } from "../helpers/corpus.js";
@@ -86,5 +86,36 @@ describe("parseTilesetPaths", () => {
     const named = new Set(layouts.flatMap((l) => [l.primary_tileset, l.secondary_tileset]));
     const empty = [...named].filter((k) => (t.get(k)?.palettes.length ?? 0) === 0);
     expect(empty).toEqual([]);
+  });
+
+  itWithCorpus("resolves tilesPng from .tiles, not from the metatiles directory", () => {
+    const t = read();
+    expect(t.get("gTileset_Building_Frontier")!.tilesPng)
+      .toBe("data/tilesets/primary/building_frontier/tiles.png");
+    expect(t.get("gTileset_Building_Frontier")!.dir)
+      .toBe("data/tilesets/primary/building");
+    // Measured directly against the corpus: .tiles for SecretBaseTree is
+    // "secondary/secret_base/tree", not "secondary/tree" -- there is no
+    // "secondary/tree" directory in this tree at all.
+    expect(t.get("gTileset_SecretBaseTree")!.tilesPng)
+      .toBe("data/tilesets/secondary/secret_base/tree/tiles.png");
+    expect(t.get("gTileset_FrlgSilphCo")!.tilesPng)
+      .toBe("data/tilesets/secondary/condominiums/tiles.png");
+    // And the ordinary case still agrees with dir.
+    expect(t.get("gTileset_Petalburg")!.tilesPng)
+      .toBe("data/tilesets/secondary/petalburg/tiles.png");
+  });
+
+  itWithCorpus("every tilesPng a layout depends on actually exists on disk", () => {
+    // The guard for this whole class: a path that is merely plausible resolves
+    // silently. Only the filesystem settles it.
+    const t = read();
+    const { layouts } = JSON.parse(readFileSync(P.layoutsJson, "utf8")) as { layouts: any[] };
+    const named = new Set(layouts.flatMap((l) => [l.primary_tileset, l.secondary_tileset]));
+    const missing = [...named].filter((k) => {
+      const png = t.get(k)?.tilesPng;
+      return !png || !existsSync(`${SUBJECT_ROOT}/${png}`);
+    });
+    expect(missing).toEqual([]);
   });
 });
