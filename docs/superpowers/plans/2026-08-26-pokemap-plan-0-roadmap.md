@@ -136,7 +136,55 @@ No stray files in the decomp. No modifications to `include/fieldmap.h` — the c
 
 ---
 
-## 7. Risk register
+## 7. Test-design rules, learned the hard way
+
+Executing Plan 1 turned up defects at roughly 1.5 per task, **every one in the
+plan rather than in an implementation**. The plan hands over code verbatim, so a
+mistake written here is reproduced faithfully. These are the classes that
+actually occurred. Check every new or edited test against them.
+
+**A test must be able to fail.** Four distinct ways one silently could not:
+
+1. **Asserting the code's own fallback.** Task 3's test swapped a constant to
+   512 and asserted 512 — which was also that field's default, so a parser that
+   matched nothing passed. Pick a value that is neither the input nor any
+   default.
+2. **Aliased fixture fields.** Task 5's fixture set tiles and metatiles both to
+   512/640, mirroring the real header, so swapping the two fields inside a
+   branch was invisible. Give every field in a fixture a distinct value.
+3. **Positive-only assertions.** Task 6 checked that *some* FireRed map carries
+   `floor_number`; all 425 do, so an implementation inventing the field passed.
+   Assert the negative too — that a map without the key leaves it `undefined`.
+4. **Silent skips.** A corpus test that skips reports green. Guard real-data
+   tests with `itWithCorpus` / `referenceRoot` / `describe.skipIf`, then confirm
+   with `--reporter=verbose` that they actually **ran**. And guard *only* tests
+   that read a decomp — guarding a pure unit test deletes coverage on the
+   machines where it is the last thing still able to run.
+
+**Verify every number against the source file, never a directory listing.** Two
+counts in this plan were wrong because they came from `ls | wc -l`, which
+counted sibling files as entries. It is 1,209 maps and 1,020 layouts, from
+`map_groups.json` and `layouts.json`.
+
+**Make a test prove its own claim.** Task 7's invariant-I4 test used a tileset
+whose directory a naive mangler would guess correctly, so the test guarding "we
+never mangle names" could not have caught mangling. Pick the case that actually
+discriminates — here, `gTileset_TrainerHill_Courtyard` → `battle_tower_outer`.
+
+**Three namespaces look alike and are not interchangeable:** map name
+(`NewBarkTown`), layout name (`NewBarkTown_Layout`), layout directory
+(`NewBarkTown`). `renderLayout` takes a layout name; most callers hold a map
+name and want `proj.layoutForMap`.
+
+**Model the data as it is, not as it looks at first glance.** Two examples that
+would have shipped wrong answers: a map can own several encounter tables
+(day/night variants — 125 maps do, and `.find()` hid three quarters of them),
+and `fishing_mons` is three rod distributions packed into one array summing to
+300, not one summing to 100.
+
+---
+
+## 8. Risk register
 
 | Risk | Mitigation |
 |---|---|

@@ -1463,7 +1463,7 @@ import { parseTilesetPaths } from "../../src/load/tilesets.js";
 import { projectPaths } from "../../src/config/paths.js";
 import { defaultProfile } from "../../src/config/engine.js";
 import { readFileSync } from "node:fs";
-import { SUBJECT_ROOT } from "../helpers/corpus.js";
+import { SUBJECT_ROOT, itWithCorpus } from "../helpers/corpus.js";
 
 const P = projectPaths(SUBJECT_ROOT);
 const PATHS = parseTilesetPaths(
@@ -1474,7 +1474,7 @@ const PATHS = parseTilesetPaths(
 const PROFILE = defaultProfile("pokeemerald");
 
 describe("loadTileset", () => {
-  it("loads gTileset_General with its real metatile count", () => {
+  itWithCorpus("loads gTileset_General with its real metatile count", () => {
     const t = loadTileset(P, PATHS.get("gTileset_General")!, PROFILE);
     expect(t.metatileCount).toBe(512);
     expect(t.attributes).toHaveLength(512);
@@ -1483,12 +1483,12 @@ describe("loadTileset", () => {
     expect(t.palettes[0]).toHaveLength(16);
   });
 
-  it("loads a secondary tileset", () => {
+  itWithCorpus("loads a secondary tileset", () => {
     const t = loadTileset(P, PATHS.get("gTileset_Petalburg")!, PROFILE);
     expect(t.metatileCount).toBe(144);
   });
 
-  it("decodes a metatile's eight tile entries", () => {
+  itWithCorpus("decodes a metatile's eight tile entries", () => {
     const t = loadTileset(P, PATHS.get("gTileset_General")!, PROFILE);
     const entries = t.metatile(1);
     expect(entries).toHaveLength(8);
@@ -1498,7 +1498,7 @@ describe("loadTileset", () => {
     }
   });
 
-  it("exposes layer type from attributes", () => {
+  itWithCorpus("exposes layer type from attributes", () => {
     const t = loadTileset(P, PATHS.get("gTileset_General")!, PROFILE);
     expect(t.layerType(1)).toBeGreaterThanOrEqual(0);
     expect(t.layerType(1)).toBeLessThanOrEqual(15);
@@ -1832,7 +1832,7 @@ import { loadTileset } from "../../src/load/tilesetData.js";
 import { parseTilesetPaths } from "../../src/load/tilesets.js";
 import { projectPaths } from "../../src/config/paths.js";
 import { defaultProfile } from "../../src/config/engine.js";
-import { SUBJECT_ROOT } from "../helpers/corpus.js";
+import { SUBJECT_ROOT, itWithCorpus } from "../helpers/corpus.js";
 
 const P = projectPaths(SUBJECT_ROOT);
 const PROFILE = defaultProfile("pokeemerald");
@@ -1848,34 +1848,47 @@ const EMERALD = { version: "emerald", tiles: 512, metatiles: 512, pals: 6 } as c
 const HNS = { version: "hns", tiles: 640, metatiles: 640, pals: 7 } as const;
 
 describe("renderMetatile", () => {
-  it("renders a 16x16 RGBA tile", () => {
+  itWithCorpus("renders a 16x16 RGBA tile", () => {
     const r = renderMetatile(1, primary, secondary, EMERALD, PROFILE);
     expect(r.width).toBe(16);
     expect(r.height).toBe(16);
     expect(r.data).toHaveLength(16 * 16 * 4);
   });
 
-  it("produces opaque output for a normal ground metatile", () => {
+  itWithCorpus("paints every pixel of a ground metatile from its own palette", () => {
     const r = renderMetatile(1, primary, secondary, EMERALD, PROFILE);
+
+    // A ground tile is fully opaque -- 256 of 256 pixels. "> 0" would pass
+    // against a renderer that drew a single pixel and left the rest blank.
     let opaque = 0;
     for (let i = 3; i < r.data.length; i += 4) if (r.data[i] === 255) opaque++;
-    expect(opaque).toBeGreaterThan(0);
+    expect(opaque).toBe(16 * 16);
+
+    // And every colour it used must come from a palette this metatile's own
+    // tile entries reference -- not an arbitrary fill.
+    const allowed = new Set<string>();
+    for (const e of primary.metatile(1)) {
+      for (const c of primary.palettes[e.palette] ?? []) allowed.add(`${c.r},${c.g},${c.b}`);
+    }
+    for (let i = 0; i < r.data.length; i += 4) {
+      expect(allowed.has(`${r.data[i]},${r.data[i + 1]},${r.data[i + 2]}`)).toBe(true);
+    }
   });
 
-  it("routes id 512 to the SECONDARY tileset under the emerald split", () => {
+  itWithCorpus("routes id 512 to the SECONDARY tileset under the emerald split", () => {
     // gTileset_General holds exactly 512 metatiles, so 512 is the first
     // secondary id for an emerald layout.
     expect(renderMetatile(512, primary, secondary, EMERALD, PROFILE).outOfRange).toBe(false);
   });
 
-  it("flags id 512 as out of range under the hns split", () => {
+  itWithCorpus("flags id 512 as out of range under the hns split", () => {
     // Under the 640 split, 512 is a PRIMARY id -- but gTileset_General only has
     // 512 metatiles, so this is exactly open-bugs.md #41. It must be
     // detectable, not silently rendered as garbage.
     expect(renderMetatile(512, primary, secondary, HNS, PROFILE).outOfRange).toBe(true);
   });
 
-  it("honours x flips", () => {
+  itWithCorpus("honours x flips", () => {
     const entries = primary.metatile(1);
     const flipped = renderMetatile(1, primary, secondary, EMERALD, PROFILE, {
       overrideEntries: entries.map((e) => ({ ...e, xFlip: !e.xFlip })),
@@ -2988,7 +3001,7 @@ git commit -m "feat(core): surgical JSON editing with an identity corpus gate ac
 ```ts
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createServer, type PokemapServer } from "../src/index.js";
-import { SUBJECT_ROOT } from "@pokemap/core/test/helpers/corpus.js";
+import { SUBJECT_ROOT, hasProject } from "@pokemap/core/test/helpers/corpus.js";
 
 let s: PokemapServer;
 beforeAll(async () => { s = await createServer({ projectPath: SUBJECT_ROOT, port: 0 }); });
@@ -2996,7 +3009,9 @@ afterAll(async () => { await s.close(); });
 
 const get = async (path: string) => fetch(`http://127.0.0.1:${s.port}${path}`);
 
-describe("server", () => {
+// beforeAll opens the real project, so an individual it-level guard is too
+// late -- the hook throws first and every test in the file fails.
+describe.skipIf(!hasProject(SUBJECT_ROOT))("server", () => {
   it("lists map groups", async () => {
     const r = await get("/api/groups");
     expect(r.status).toBe(200);
@@ -3326,11 +3341,27 @@ describe("overlays", () => {
     expect(changedInterior).toBe(false);
   });
 
-  itWithCorpus("drawCollision marks every non-zero collision block", () => {
+  itWithCorpus("drawCollision tints exactly the blocked cells and nothing else", () => {
     const r = renderLayout(proj, proj.layoutForMap("PetalburgCity").name);
+    expect(r.blocks.length).toBe(900);
     const blocked = r.blocks.filter((b) => b.collision !== 0).length;
-    expect(blocked).toBeGreaterThan(0);
-    expect(() => drawCollision(r)).not.toThrow();
+    expect(blocked).toBe(429);
+
+    const before = Buffer.from(r.data);
+    drawCollision(r);
+
+    // "does not throw" would pass against a function with an empty body. Count
+    // the cells whose centre pixel actually changed and match it to the data.
+    let changed = 0;
+    for (let by = 0; by < r.blockHeight; by++) {
+      for (let bx = 0; bx < r.blockWidth; bx++) {
+        const px = r.originX + bx * 16 + 8;
+        const py = r.originY + by * 16 + 8;
+        const i = (py * r.width + px) * 4;
+        if (before[i] !== r.data[i] || before[i + 1] !== r.data[i + 1] || before[i + 2] !== r.data[i + 2]) changed++;
+      }
+    }
+    expect(changed).toBe(blocked);
   });
 
   itWithCorpus("drawEvents marks warps, objects and bg events distinctly", () => {
@@ -3465,6 +3496,13 @@ import { SUBJECT_ROOT, itWithCorpus } from "../helpers/corpus.js";
 
 const proj = openProject(SUBJECT_ROOT);
 
+/**
+ * Set this to whatever the first correct run reports, then leave it alone.
+ * A change here means a connection in the decomp started disagreeing with
+ * itself -- a real finding to investigate, not a number to bump.
+ */
+const CONFLICT_BASELINE = 0;
+
 describe("buildWorld", () => {
   itWithCorpus("places NewBarkTown's left neighbour to its left, at the stated offset", () => {
     const w = buildWorld(proj);
@@ -3483,22 +3521,45 @@ describe("buildWorld", () => {
     for (const l of w.verticalLinks) expect(["dive", "emerge"]).toContain(l.direction);
   });
 
-  itWithCorpus("groups maps into connected components", () => {
+  itWithCorpus("groups maps into the three landmasses plus the loose rooms", () => {
     const w = buildWorld(proj);
-    expect(w.components.length).toBeGreaterThan(1);
-    const total = w.components.reduce((n, c) => n + c.maps.length, 0);
-    expect(total).toBe(w.placements.size);
+    expect(w.placements.size).toBe(1209);
+    expect(w.components.length).toBe(1045);
+
+    const sizes = w.components.map((c) => c.maps.length).sort((a, b) => b - a);
+    // Hoenn, Johto, Kanto. Only 182 maps have any planar connection; the rest
+    // are interiors and dungeon floors reached solely by warps.
+    expect(sizes.slice(0, 3)).toEqual([51, 40, 37]);
+    expect(sizes.filter((n) => n === 1).length).toBe(1028);
+    expect(sizes.filter((n) => n > 1).length).toBe(17);
+
+    expect(w.components.reduce((n, c) => n + c.maps.length, 0)).toBe(w.placements.size);
+  });
+
+  itWithCorpus("puts the right maps in the right landmass", () => {
+    const w = buildWorld(proj);
+    const componentOf = (m: string) => w.components[w.placements.get(m)!.component]!;
+    // Same region -> same component; different regions -> different ones.
+    expect(componentOf("NewBarkTown")).toBe(componentOf("CherrygroveCity"));
+    expect(componentOf("NewBarkTown")).not.toBe(componentOf("CeladonCity"));
+    expect(componentOf("NewBarkTown")).not.toBe(componentOf("PetalburgCity"));
+    expect(componentOf("PetalburgCity").maps.length).toBe(51);
   });
 
   itWithCorpus("reports contradictions instead of silently picking one", () => {
     const w = buildWorld(proj);
     for (const c of w.conflicts) {
-      expect(c).toHaveProperty("map");
-      expect(c).toHaveProperty("viaA");
-      expect(c).toHaveProperty("viaB");
+      expect(c.map).toBeTypeOf("string");
+      expect(c.viaA.from).toBeTypeOf("string");
+      expect(c.viaB.from).toBeTypeOf("string");
+      // A conflict means two paths disagree; identical coordinates are not one.
+      expect([c.viaA.x, c.viaA.y]).not.toEqual([c.viaB.x, c.viaB.y]);
     }
-    // Record the current count so a new connection bug shows up as a diff.
-    expect(w.conflicts.length).toBeLessThanOrEqual(w.placements.size);
+    // Pin the count. `toBeLessThanOrEqual(placements.size)` was near-vacuous --
+    // it holds for almost any implementation, including one reporting none.
+    // Record whatever the first correct run produces and treat a change as a
+    // finding about the decomp's connection data, not noise to re-baseline.
+    expect(w.conflicts.length).toBe(CONFLICT_BASELINE);
   });
 
   itWithCorpus("gives every component a non-overlapping bounding box", () => {
@@ -3970,16 +4031,16 @@ git commit -m "feat(core): persist world layout to .pokemap/world.json"
 ```ts
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createServer, type PokemapServer } from "../src/index.js";
-import { SUBJECT_ROOT } from "@pokemap/core/test/helpers/corpus.js";
+import { SUBJECT_ROOT, hasProject } from "@pokemap/core/test/helpers/corpus.js";
 
 let s: PokemapServer;
 beforeAll(async () => { s = await createServer({ projectPath: SUBJECT_ROOT, port: 0 }); });
 afterAll(async () => { await s.close(); });
 
-describe("world api", () => {
+describe.skipIf(!hasProject(SUBJECT_ROOT))("world api", () => {
   it("returns placements, components, conflicts and vertical links", async () => {
     const w = await (await fetch(`http://127.0.0.1:${s.port}/api/world`)).json() as any;
-    expect(Object.keys(w.placements).length).toBeGreaterThan(1000);
+    expect(Object.keys(w.placements).length).toBe(1209);
     expect(w.verticalLinks.length).toBe(14);
     expect(Array.isArray(w.conflicts)).toBe(true);
   }, 300_000);

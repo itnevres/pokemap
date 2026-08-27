@@ -234,6 +234,10 @@ Opt-in git integration (refuse to save into a dirty tree; auto-commit each save)
 
 Breadth-first traversal of the `connections` graph using `direction` ∈ {`up`,`down`,`left`,`right`} and `offset` in tiles, producing global tile coordinates for every reachable map. Disconnected regions form separate components, laid out side by side.
 
+**There is no single overworld, and the design must not pretend otherwise.** Measured against the subject tree: only **182 of 1,209 maps carry any planar connection at all**, and they form **three substantial landmasses** — Hoenn (51 maps), Johto (40) and Kanto (37) — plus 14 smaller clusters, mostly Safari Zone sub-grids. The remaining **1,028 maps are singletons**: interiors, dungeon floors and rooms reached only by warps. Total: 1,045 components.
+
+So the world view's job is not "render one continuous map". It is to lay out three big islands, a handful of small ones, and a thousand loose rooms, in a way that stays navigable. That is what makes the dungeon placement of §8.2 the majority case rather than an afterthought.
+
 `dive` and `emerge` connections (7 each in the subject repo) are **excluded from planar layout** and drawn as vertical link badges.
 
 Conflicts — where two paths through the graph disagree about a map's position — are reported, not silently resolved, and the offending connection pair is highlighted. This makes connection bugs visible as geometry.
@@ -389,6 +393,6 @@ Deliberately excluded, each recorded in Plan 5 rather than forgotten: poryscript
 
 1. Every one of the 1,209 subject maps opens and renders correctly — both boundaries at once, no constant swapping, no restart.
 2. The round-trip corpus test passes at zero bytes changed across all six repos.
-3. The whole overworld pans as one continuous image; dungeons can be placed and persist.
+3. Each of the three landmasses — Hoenn, Johto, Kanto — pans as one continuous image, laid out without overlapping; dungeons and interiors can be placed and persist.
 4. An AI agent can edit a map, render it to PNG, and inspect the result without building the ROM.
 5. Wild signs can be authored and land in the ROM identically to hand-written ones.
