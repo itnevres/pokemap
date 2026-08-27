@@ -142,6 +142,6 @@ No stray files in the decomp. No modifications to `include/fieldmap.h` — the c
 |---|---|
 | A write bug damages the subject repo | I2, I5, I6, diff preview; subject repo is under git; Plan 1 is read-only, so no write path exists until Plan 2 |
 | Renderer subtly wrong, discovered late | Visual regression against emulator screenshots in `tools/verify/scratch/mapshot/` from Task 14 of Plan 1 onward |
-| 1,214-map world view too slow | Per-map buffer cache, viewport culling, LOD mips designed in from Plan 1 Task 23 |
+| 1,209-map world view too slow | Per-map buffer cache, viewport culling, LOD mips designed in from Plan 1 Task 23 |
 | Engine portability rots | Corpus test spans 5 reference engines from Plan 1, not bolted on later |
 | Plans 2–4 drift from reality | Explicit re-granularisation pass, §1 |

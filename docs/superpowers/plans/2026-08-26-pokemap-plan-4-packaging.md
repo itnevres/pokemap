@@ -65,7 +65,7 @@ Wraps the command surface that Plans 1–3 settled. Designing these tools *after
 | `pokemap_sign_add` | `sign add --write` | **Write.** Gated, see below |
 
 **Requirements:**
-- Read tools are unrestricted. **Write tools are off unless the server is started with `--allow-writes`**, and the refusal names the flag. An agent that can silently repaint 1,214 maps is not a feature.
+- Read tools are unrestricted. **Write tools are off unless the server is started with `--allow-writes`**, and the refusal names the flag. An agent that can silently repaint 1,209 maps is not a feature.
 - Every write tool returns the `SavePlan` diff in its result, so the agent sees what it did.
 - `pokemap_render` returns real image content, not a file path. The whole point is that the agent can check its own work by looking.
 - Errors return refusal codes and fix text verbatim from `write/guards.ts` — an agent that gets "missing-layout-version: run classify_layout_versions.py --write" can act on it.
@@ -114,7 +114,7 @@ The feature deferred from the design discussion: strictly additive protection ov
 Only now, with the real feature set in place, is it worth optimising.
 
 **Targets, each measured before and after:**
-- Cold open of the subject repo (1,214 maps, 1,020 layouts): under 3 seconds to an interactive map list.
+- Cold open of the subject repo (1,209 maps, 1,020 layouts): under 3 seconds to an interactive map list.
 - Full world view at minimum zoom: under 2 seconds to first paint, using cached LOD buffers.
 - Pan at any zoom: 60fps with no fetch stalls.
 - `pokemap render` for one map: under 300ms including process start — this is the number that decides whether an agent's check-your-work loop feels instant or annoying.

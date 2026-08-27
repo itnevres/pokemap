@@ -250,7 +250,7 @@ Off by default when the user disables dungeon stitching. When enabled, a warp-gr
 
 ### 8.4 Scale
 
-1,214 maps. Each map renders once to an offscreen buffer, cached per §6; the world view applies viewport culling and LOD mip levels so zoomed-out panning stays interactive.
+1,209 maps. Each map renders once to an offscreen buffer, cached per §6; the world view applies viewport culling and LOD mip levels so zoomed-out panning stays interactive.
 
 ---
 
@@ -259,7 +259,7 @@ Off by default when the user disables dungeon stitching. When enabled, a warp-gr
 Data: `src/data/wild_encounters.json` — 497 map entries in `gWildMonHeaders`, plus `gBattlePyramidWildMonHeaders` (7) and `gBattlePikeWildMonHeaders` (4). Four methods with per-slot weights: `land_mons` (12 slots), `water_mons` (5), `rock_smash_mons` (5), `fishing_mons` (10).
 
 - **Per-map gutter**: species icons from `graphics/pokemon/<species>/icon.png` along the map edge, grouped by method. Hover gives species, level range, and **true percentage computed from `encounter_rates` weights** — not slot count. Slot 0 of `land_mons` is 20%; slot 11 is 1%.
-- **Species spotlight**: type a species; the stitched world dims except maps containing it, each lit with rate and level band. The design question "where can I catch X, and at what level" answered by looking, across 1,214 maps.
+- **Species spotlight**: type a species; the stitched world dims except maps containing it, each lit with rate and level band. The design question "where can I catch X, and at what level" answered by looking, across 1,209 maps.
 - **Coverage lenses**: level-curve heatmap; maps with no encounter table; species appearing in zero tables; per-method coverage.
 - **UI guidance**: overlays default off behind one obvious toggle. Turning a lens on opens a legend panel stating in plain words what the colours mean and what to do next. No lens is ever active without its legend visible. Empty states explain rather than sit blank.
 

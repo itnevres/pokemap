@@ -692,6 +692,7 @@ import { readFileSync } from "node:fs";
 import { parseLayouts, resolveSplit } from "../../src/load/layouts.js";
 import { parseFieldmapConstants } from "../../src/config/fieldmap.js";
 import { projectPaths } from "../../src/config/paths.js";
+import { SUBJECT_ROOT, itWithCorpus, referenceRoot } from "../helpers/corpus.js";
 
 // Tiles and metatiles are deliberately given DIFFERENT values here, unlike the
 // real headers where both are 512/640. With them equal, a tiles<->metatiles
@@ -909,6 +910,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { parseMapGroups, parseMap } from "../../src/load/maps.js";
 import { projectPaths } from "../../src/config/paths.js";
+import { SUBJECT_ROOT, itWithCorpus, referenceRoot } from "../helpers/corpus.js";
 
 const P = projectPaths(SUBJECT_ROOT);
 
@@ -918,7 +920,7 @@ describe("parseMapGroups", () => {
     expect(g.groupOrder[0]).toBe("gMapGroup_TownsAndRoutes");
     expect(g.groupOrder).toHaveLength(28);
     expect(g.allMapNames()).toContain("NewBarkTown");
-    expect(g.allMapNames().length).toBe(1214);
+    expect(g.allMapNames().length).toBe(1209);
   });
 });
 
@@ -1065,6 +1067,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { parseTilesetPaths } from "../../src/load/tilesets.js";
 import { projectPaths } from "../../src/config/paths.js";
+import { SUBJECT_ROOT, itWithCorpus } from "../helpers/corpus.js";
 
 const P = projectPaths(SUBJECT_ROOT);
 const read = () => parseTilesetPaths(
@@ -1199,6 +1202,7 @@ git commit -m "feat(core): resolve tileset directories through INCBIN, never by 
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { parseJascPal } from "../../src/load/pal.js";
+import { SUBJECT_ROOT, itWithCorpus } from "../helpers/corpus.js";
 
 describe("parseJascPal", () => {
   it("parses a 16-colour JASC palette", () => {
@@ -1277,6 +1281,7 @@ git commit -m "feat(core): parse JASC-PAL tileset palettes"
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { readIndexedPng } from "../../src/load/png.js";
+import { SUBJECT_ROOT, itWithCorpus } from "../helpers/corpus.js";
 
 const G = SUBJECT_ROOT;
 
@@ -1431,6 +1436,7 @@ import { parseTilesetPaths } from "../../src/load/tilesets.js";
 import { projectPaths } from "../../src/config/paths.js";
 import { defaultProfile } from "../../src/config/engine.js";
 import { readFileSync } from "node:fs";
+import { SUBJECT_ROOT } from "../helpers/corpus.js";
 
 const P = projectPaths(SUBJECT_ROOT);
 const PATHS = parseTilesetPaths(
@@ -1576,6 +1582,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { parseBlocks } from "../../src/load/blocks.js";
 import { defaultProfile } from "../../src/config/engine.js";
+import { SUBJECT_ROOT, itWithCorpus } from "../helpers/corpus.js";
 
 const PROFILE = defaultProfile("pokeemerald");
 const G = SUBJECT_ROOT;
@@ -1798,6 +1805,7 @@ import { loadTileset } from "../../src/load/tilesetData.js";
 import { parseTilesetPaths } from "../../src/load/tilesets.js";
 import { projectPaths } from "../../src/config/paths.js";
 import { defaultProfile } from "../../src/config/engine.js";
+import { SUBJECT_ROOT } from "../helpers/corpus.js";
 
 const P = projectPaths(SUBJECT_ROOT);
 const PROFILE = defaultProfile("pokeemerald");
@@ -1992,6 +2000,7 @@ git commit -m "feat(core): render metatiles against a per-layout split"
 import { describe, it, expect } from "vitest";
 import { renderLayout } from "../../src/render/layout.js";
 import { openProject } from "../../src/project.js";
+import { SUBJECT_ROOT, itWithCorpus } from "../helpers/corpus.js";
 
 const proj = openProject(SUBJECT_ROOT);
 
@@ -2468,6 +2477,7 @@ import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { openProject } from "../../src/project.js";
 import { renderLayout } from "../../src/render/layout.js";
+import { SUBJECT_ROOT, itWithCorpus } from "../helpers/corpus.js";
 
 const proj = openProject(SUBJECT_ROOT);
 const list = JSON.parse(readFileSync("fixtures/visual-list.json", "utf8")) as { layouts: string[] };
@@ -2537,6 +2547,7 @@ git commit -m "test(core): lock visual regression across both metatile boundarie
 import { describe, it, expect } from "vitest";
 import { validateMetatileRange } from "../../src/validate/metatileRange.js";
 import { openProject } from "../../src/project.js";
+import { SUBJECT_ROOT, itWithCorpus } from "../helpers/corpus.js";
 
 const proj = openProject(SUBJECT_ROOT);
 
@@ -2920,6 +2931,7 @@ git commit -m "feat(core): surgical JSON editing with an identity corpus gate ac
 ```ts
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createServer, type PokemapServer } from "../src/index.js";
+import { SUBJECT_ROOT } from "@pokemap/core/test/helpers/corpus.js";
 
 let s: PokemapServer;
 beforeAll(async () => { s = await createServer({ projectPath: SUBJECT_ROOT, port: 0 }); });
@@ -3068,7 +3080,7 @@ Skill(skill="frontend-design")
 Skill(skill="ui-ux-pro-max")
 ```
 
-Brief them with: a desktop map editor for a 1,214-map ROM hack; dense information; long scrolling tree with 28 groups; a canvas that must dominate the screen; used for hours at a time; dark mode matters because the user works at night; it will be wrapped in Electron. Take their layout, spacing, type and colour decisions as the design system for every later UI task and record it in `packages/ui/DESIGN.md` so Plans 2–4 stay consistent.
+Brief them with: a desktop map editor for a 1,209-map ROM hack; dense information; long scrolling tree with 28 groups; a canvas that must dominate the screen; used for hours at a time; dark mode matters because the user works at night; it will be wrapped in Electron. Take their layout, spacing, type and colour decisions as the design system for every later UI task and record it in `packages/ui/DESIGN.md` so Plans 2–4 stay consistent.
 
 **Files:**
 - Create: `packages/ui/package.json`, `packages/ui/vite.config.ts`, `packages/ui/index.html`
@@ -3238,6 +3250,7 @@ import { describe, it, expect } from "vitest";
 import { openProject } from "../../src/project.js";
 import { renderLayout } from "../../src/render/layout.js";
 import { drawGrid, drawCollision, drawEvents } from "../../src/render/overlays.js";
+import { SUBJECT_ROOT, itWithCorpus } from "../helpers/corpus.js";
 
 const proj = openProject(SUBJECT_ROOT);
 
@@ -3391,6 +3404,7 @@ git commit -m "feat(ui): single-map canvas with grid, collision, elevation and e
 import { describe, it, expect } from "vitest";
 import { buildWorld } from "../../src/world/connections.js";
 import { openProject } from "../../src/project.js";
+import { SUBJECT_ROOT, itWithCorpus } from "../helpers/corpus.js";
 
 const proj = openProject(SUBJECT_ROOT);
 
@@ -3606,6 +3620,7 @@ import { describe, it, expect } from "vitest";
 import { autoLayoutUnplaced } from "../../src/world/warpGraph.js";
 import { buildWorld } from "../../src/world/connections.js";
 import { openProject } from "../../src/project.js";
+import { SUBJECT_ROOT, itWithCorpus } from "../helpers/corpus.js";
 
 const proj = openProject(SUBJECT_ROOT);
 
@@ -3891,6 +3906,7 @@ git commit -m "feat(core): persist world layout to .pokemap/world.json"
 ```ts
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createServer, type PokemapServer } from "../src/index.js";
+import { SUBJECT_ROOT } from "@pokemap/core/test/helpers/corpus.js";
 
 let s: PokemapServer;
 beforeAll(async () => { s = await createServer({ projectPath: SUBJECT_ROOT, port: 0 }); });
@@ -3948,7 +3964,7 @@ if (url.pathname === "/api/world/placement" && req.method === "POST") {
 }
 ```
 
-Cache the `buildWorld` result — it walks 1,214 maps and must not run per request.
+Cache the `buildWorld` result — it walks 1,209 maps and must not run per request.
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -3960,7 +3976,7 @@ Expected: PASS, 2 tests.
 Invoke `frontend-design` and `ui-ux-pro-max`, follow `packages/ui/DESIGN.md`.
 
 Requirements, each with a test in `packages/ui/test/WorldCanvas.test.tsx`:
-- **Culling:** only maps intersecting the viewport are fetched and drawn. With 1,214 maps this is what makes the view usable at all — assert that a viewport containing 3 maps issues 3 image requests, not 1,214.
+- **Culling:** only maps intersecting the viewport are fetched and drawn. With 1,209 maps this is what makes the view usable at all — assert that a viewport containing 3 maps issues 3 image requests, not 1,214.
 - **LOD:** below a zoom threshold, draw cached downscaled buffers rather than full-resolution PNGs.
 - **Pan/zoom:** drag to pan, wheel to zoom about the cursor, and a "fit world" control.
 - **Drag to place:** dragging a map posts to `/api/world/placement` and the position survives a reload.
@@ -4042,6 +4058,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { parseEncounters, speciesChances } from "../../src/load/encounters.js";
 import { projectPaths } from "../../src/config/paths.js";
+import { SUBJECT_ROOT } from "../helpers/corpus.js";
 
 const P = projectPaths(SUBJECT_ROOT);
 const enc = parseEncounters(readFileSync(P.wildEncountersJson, "utf8"));
@@ -4218,6 +4235,7 @@ git commit -m "feat(core): load wild encounters and compute true species percent
 import { describe, it, expect } from "vitest";
 import { whereSpecies, coverage } from "../../src/analyse/coverage.js";
 import { openProject } from "../../src/project.js";
+import { SUBJECT_ROOT, itWithCorpus } from "../helpers/corpus.js";
 
 const proj = openProject(SUBJECT_ROOT);
 
@@ -4438,6 +4456,7 @@ git commit -m "feat(cli): encounters, where and coverage commands for agents and
 import { describe, it, expect } from "vitest";
 import { renderSpeciesIcon, speciesToDirName } from "../../src/render/species.js";
 import { openProject } from "../../src/project.js";
+import { SUBJECT_ROOT, itWithCorpus } from "../helpers/corpus.js";
 
 const proj = openProject(SUBJECT_ROOT);
 
