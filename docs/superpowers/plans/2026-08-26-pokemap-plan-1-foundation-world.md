@@ -1343,7 +1343,7 @@ git commit -m "feat(core): resolve tileset directories through INCBIN, never by 
 
 ```ts
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { parseJascPal } from "../../src/load/pal.js";
 import { SUBJECT_ROOT, itWithCorpus } from "../helpers/corpus.js";
 
@@ -1359,11 +1359,50 @@ describe("parseJascPal", () => {
     const pal = parseJascPal(readFileSync(
       `${SUBJECT_ROOT}/data/tilesets/primary/general/palettes/00.pal`, "utf8"));
     expect(pal).toHaveLength(16);
-    expect(pal.every((c) => c.r <= 255 && c.g <= 255 && c.b <= 255)).toBe(true);
+    // Real values. `every(c => c.r <= 255)` would pass against a parser that
+    // returned sixteen blacks, which is exactly what the `?? 0` fallback
+    // produces on a line it fails to read.
+    expect(pal[0]).toEqual({ r: 24, g: 41, b: 82 });
+    expect(pal[1]).toEqual({ r: 255, g: 255, b: 255 });
+    expect(pal[2]).toEqual({ r: 222, g: 230, b: 238 });
+    expect(new Set(pal.map((c) => `${c.r},${c.g},${c.b}`)).size).toBe(15);
   });
+
+  itWithCorpus("reads every .pal in the tree, honouring each declared count", () => {
+    // 3,724 files. Almost all declare 16 colours, but one declares 10 and one
+    // declares 15 -- so the count is read from the file, never assumed.
+    const dir = `${SUBJECT_ROOT}/data/tilesets`;
+    const walk = (d: string): string[] =>
+      readdirSync(d, { withFileTypes: true }).flatMap((e) =>
+        e.isDirectory() ? walk(`${d}/${e.name}`) : e.name.endsWith(".pal") ? [`${d}/${e.name}`] : []);
+
+    const files = walk(dir);
+    expect(files.length).toBe(3724);
+
+    const sizes = new Map<number, number>();
+    for (const f of files) {
+      const pal = parseJascPal(readFileSync(f, "utf8"));
+      sizes.set(pal.length, (sizes.get(pal.length) ?? 0) + 1);
+    }
+    expect(sizes.get(16)).toBe(3722);
+    expect(sizes.get(15)).toBe(1);
+    expect(sizes.get(10)).toBe(1);
+  }, 120_000);
 
   it("rejects a file that is not JASC-PAL", () => {
     expect(() => parseJascPal("RIFF...")).toThrow(/JASC-PAL/);
+  });
+
+  it("refuses a malformed colour line rather than silently calling it black", () => {
+    // `parts[0] ?? 0` would turn "24 41" into {24,41,0} -- a plausible colour
+    // that is simply wrong, and indistinguishable from a real dark blue.
+    const short = "JASC-PAL\r\n0100\r\n2\r\n24 41\r\n255 255 255\r\n";
+    expect(() => parseJascPal(short)).toThrow(/malformed/i);
+  });
+
+  it("refuses a file with fewer colour lines than it declares", () => {
+    const truncated = "JASC-PAL\r\n0100\r\n4\r\n1 2 3\r\n4 5 6\r\n";
+    expect(() => parseJascPal(truncated)).toThrow(/declares 4/);
   });
 });
 ```
@@ -1386,11 +1425,27 @@ import type { RGB } from "../model/types.js";
 export function parseJascPal(text: string): RGB[] {
   const lines = text.split(/\r?\n/);
   if (lines[0]?.trim() !== "JASC-PAL") throw new Error("not a JASC-PAL file");
+
+  // Read the declared count; do not assume 16. Of this tree's 3,724 palettes,
+  // one declares 10 and one declares 15.
   const count = Number(lines[2]);
+  if (!Number.isInteger(count) || count < 1) {
+    throw new Error(`JASC-PAL header declares a bad colour count: ${JSON.stringify(lines[2])}`);
+  }
+
   const out: RGB[] = [];
   for (let i = 0; i < count; i++) {
-    const parts = (lines[3 + i] ?? "").trim().split(/\s+/).map(Number);
-    out.push({ r: parts[0] ?? 0, g: parts[1] ?? 0, b: parts[2] ?? 0 });
+    const raw = lines[3 + i];
+    if (raw === undefined || raw.trim() === "") {
+      throw new Error(`JASC-PAL declares ${count} colours but has only ${i}`);
+    }
+    const parts = raw.trim().split(/\s+/).map(Number);
+    // Refusing beats `?? 0`, which turns "24 41" into a plausible dark blue
+    // that is simply wrong and looks like real data downstream (I7).
+    if (parts.length !== 3 || parts.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) {
+      throw new Error(`JASC-PAL colour ${i} is malformed: ${JSON.stringify(raw)}`);
+    }
+    out.push({ r: parts[0]!, g: parts[1]!, b: parts[2]! });
   }
   return out;
 }
@@ -1399,7 +1454,7 @@ export function parseJascPal(text: string): RGB[] {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run packages/core/test/load/pal.test.ts`
-Expected: PASS, 3 tests.
+Expected: PASS, 6 tests.
 
 - [ ] **Step 5: Commit**
 
