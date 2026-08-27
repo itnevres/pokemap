@@ -741,10 +741,13 @@ describe("parseLayouts", () => {
     expect(layouts.every((l) => l.borderWidth >= 2 && l.borderHeight >= 2)).toBe(true);
   });
 
-  it("parses pokeemerald's layouts.json, which has no border or version keys", () => {
-    const p = projectPaths("C:/Programming Projects/Pokemon Game/refs/pokeemerald");
-    const { layouts } = parseLayouts(readFileSync(p.layoutsJson, "utf8"));
+  const emerald = referenceRoot("pokeemerald");
+  it.skipIf(!emerald)("parses pokeemerald's layouts.json, which has no border or version keys", () => {
+    const { layouts } = parseLayouts(readFileSync(projectPaths(emerald!).layoutsJson, "utf8"));
     expect(layouts.length).toBeGreaterThan(0);
+    // Stock pokeemerald has neither key. borderWidth must DEFAULT to 2 rather
+    // than being read, and layoutVersion must stay undefined -- writing it back
+    // would be the Porymap 6 failure (inventing keys into 726 layouts).
     expect(layouts[0]!.borderWidth).toBe(2);
     expect(layouts[0]!.layoutVersion).toBeUndefined();
   });
@@ -901,12 +904,21 @@ describe("parseMap", () => {
     });
   });
 
-  it("reads a firered map with floor_number", () => {
-    const fp = projectPaths("C:/Programming Projects/Pokemon Game/refs/pokefirered");
+  const frlg = referenceRoot("pokefirered");
+  it.skipIf(!frlg)("reads a firered map, and finds one carrying floor_number", () => {
+    const fp = projectPaths(frlg!);
     const groups = parseMapGroups(readFileSync(fp.mapGroupsJson, "utf8"));
-    const name = groups.allMapNames()[0]!;
-    const m = parseMap(readFileSync(fp.mapJson(name), "utf8"));
-    expect(m.id).toMatch(/^MAP_/);
+    const names = groups.allMapNames();
+    expect(names.length).toBeGreaterThan(0);
+    expect(parseMap(readFileSync(fp.mapJson(names[0]!), "utf8")).id).toMatch(/^MAP_/);
+
+    // floor_number is FireRed-only. Prove the parser surfaces it rather than
+    // dropping it -- at least one FRLG map has it, and asserting that is what
+    // makes this a portability test instead of a smoke test.
+    const withFloor = names
+      .map((n) => parseMap(readFileSync(fp.mapJson(n), "utf8")))
+      .filter((m) => m.floorNumber !== undefined);
+    expect(withFloor.length).toBeGreaterThan(0);
   });
 });
 ```
