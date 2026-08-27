@@ -69,10 +69,18 @@ export interface MapGroups {
 
 export function parseMapGroups(text: string): MapGroups {
   const raw = JSON.parse(text) as Record<string, unknown>;
-  const groupOrder = raw.group_order as string[];
+  const groupOrder = raw.group_order;
+  // Every one of the six target trees has this key. Without the check, a fork
+  // that named it differently would fail as a bare "undefined is not iterable"
+  // naming no file and no cause -- the opposite of invariant I7's "refuse and
+  // say what to fix".
+  if (!Array.isArray(groupOrder)) {
+    throw new Error("map_groups.json has no `group_order` array; cannot enumerate maps");
+  }
+  const order: string[] = groupOrder;
   const groups: Record<string, string[]> = {};
-  for (const g of groupOrder) groups[g] = (raw[g] as string[]) ?? [];
-  return { groupOrder, groups, allMapNames: () => groupOrder.flatMap((g) => groups[g] ?? []) };
+  for (const g of order) groups[g] = (raw[g] as string[]) ?? [];
+  return { groupOrder: order, groups, allMapNames: () => order.flatMap((g) => groups[g] ?? []) };
 }
 
 export function parseMap(text: string): MapData {

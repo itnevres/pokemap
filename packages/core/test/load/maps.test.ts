@@ -14,6 +14,10 @@ describe("parseMapGroups", () => {
     expect(g.allMapNames()).toContain("NewBarkTown");
     expect(g.allMapNames().length).toBe(1209);
   });
+
+  it("refuses a map_groups.json with no group_order", () => {
+    expect(() => parseMapGroups('{"gMapGroup_Foo": []}')).toThrow(/group_order/);
+  });
 });
 
 describe("parseMap", () => {
@@ -52,5 +56,15 @@ describe("parseMap", () => {
       .map((n) => parseMap(readFileSync(fp.mapJson(n), "utf8")))
       .filter((m) => m.floorNumber !== undefined);
     expect(withFloor.length).toBeGreaterThan(0);
+  });
+
+  itWithCorpus("leaves floorNumber undefined on an engine that has no such key", () => {
+    // The positive assertion above passes even against an implementation that
+    // hardcodes a floorNumber, since all 425 FireRed maps carry the key. Only
+    // the negative case proves the value is read rather than invented -- the
+    // same discipline the layouts suite applies to layout_version.
+    const m = parseMap(readFileSync(P.mapJson("NewBarkTown"), "utf8"));
+    expect(m.floorNumber).toBeUndefined();
+    expect(m.region).toBeUndefined();
   });
 });
