@@ -101,6 +101,14 @@ No stray files in the decomp. No modifications to `include/fieldmap.h` — the c
 
 **UI work:** every UI task invokes the `frontend-design` and `ui-ux-pro-max` skills before writing components. This is written into the individual steps.
 
+**Subagent models.** Implementers run on Sonnet — they have consistently caught
+plan defects by verifying before writing, and nothing suggests a stronger model
+is needed. **Reviews of the design-heavy tasks run on Opus**: Plan 1 Tasks 9, 13,
+18, 22 and 25, and every UI task. Those are where judgement rather than
+verification is the bottleneck and where a missed defect is expensive. Note that
+`SendMessage` cannot change a model — a resumed agent keeps the one it started
+with — so pick correctly at dispatch.
+
 **Naming:** types are singular nouns (`Layout`, `Tileset`); loaders are `loadX`; renderers are `renderX`; writers are `writeX`; validators are `validateX`. Method signatures established in Plan 1 are not renamed in later plans.
 
 ---
