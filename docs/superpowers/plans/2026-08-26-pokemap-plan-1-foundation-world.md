@@ -196,6 +196,7 @@ describe("projectPaths", () => {
     expect(p.wildEncountersJson).toBe("C:/proj/src/data/wild_encounters.json");
     expect(p.regionMapDir).toBe("C:/proj/src/data/region_map");
     expect(p.regionMapSections).toBe("C:/proj/src/data/region_map/region_map_sections.json");
+    expect(p.tilesetGraphicsC).toBe("C:/proj/src/graphics.c");
     expect(p.mapDir("NewBarkTown")).toBe("C:/proj/data/maps/NewBarkTown");
     expect(p.layoutDir("NewBarkTown")).toBe("C:/proj/data/layouts/NewBarkTown");
   });
@@ -232,6 +233,10 @@ export interface ProjectPaths {
   tilesetHeadersH: string;
   tilesetMetatilesH: string;
   tilesetGraphicsH: string;
+  /** Three tilesets -- gTileset_General among them -- declare their palettes
+   *  here rather than in src/data/tilesets/graphics.h. Reading only the header
+   *  leaves 242 of 1,020 layouts with an empty palette array. */
+  tilesetGraphicsC: string;
   eventObjectsH: string;
   sidecar: string;
   mapDir(name: string): string;
@@ -258,6 +263,7 @@ export function projectPaths(root: string): ProjectPaths {
     tilesetHeadersH: `${r}/src/data/tilesets/headers.h`,
     tilesetMetatilesH: `${r}/src/data/tilesets/metatiles.h`,
     tilesetGraphicsH: `${r}/src/data/tilesets/graphics.h`,
+    tilesetGraphicsC: `${r}/src/graphics.c`,
     eventObjectsH: `${r}/include/constants/event_objects.h`,
     sidecar: `${r}/.pokemap/world.json`,
     mapDir: (n) => `${r}/data/maps/${n}`,
@@ -1077,6 +1083,14 @@ This is not hypothetical caution. Measured against the tree: **22 of its 242 til
 
 Worse, the relation is **many-to-one**, so no function from symbol to path can exist regardless of how clever the rule is. Nine symbols share `primary/building` (`gTileset_Building` plus the eight Frontier facilities) and six share `secondary/secret_base`. The subject repo's own `rules.md` records a mangling attempt getting this wrong before. The mapping is data; read it.
 
+**Palette declarations are split across two files.** `gTileset_General`,
+`gTileset_General_Frontier_East` and `gTileset_General_Frontier_West` declare
+their palettes in `src/graphics.c`, not `src/data/tilesets/graphics.h`. Reading
+only the header gives those three an empty palette array — and since
+`gTileset_General` is the primary tileset for 240 layouts, **242 of 1,020
+layouts would render every pixel transparent.** Nothing would throw; the maps
+would simply come out blank. Both files must be read.
+
 **Files:**
 - Create: `packages/core/src/load/tilesets.ts`
 - Test: `packages/core/test/load/tilesets.test.ts`
@@ -1094,7 +1108,7 @@ const P = projectPaths(SUBJECT_ROOT);
 const read = () => parseTilesetPaths(
   readFileSync(P.tilesetHeadersH, "utf8"),
   readFileSync(P.tilesetMetatilesH, "utf8"),
-  readFileSync(P.tilesetGraphicsH, "utf8"),
+  [readFileSync(P.tilesetGraphicsH, "utf8"), readFileSync(P.tilesetGraphicsC, "utf8")],
 );
 
 describe("parseTilesetPaths", () => {
@@ -1104,6 +1118,20 @@ describe("parseTilesetPaths", () => {
     expect(t.attributesBin).toBe("data/tilesets/primary/general/metatile_attributes.bin");
     expect(t.dir).toBe("data/tilesets/primary/general");
     expect(t.isSecondary).toBe(false);
+    // Declared in src/graphics.c, not graphics.h. Reading only the header
+    // leaves this empty and every map using General renders transparent.
+    expect(t.palettes).toHaveLength(16);
+    expect(t.palettes[0]).toBe("data/tilesets/primary/general/palettes/00.gbapal");
+  });
+
+  itWithCorpus("every tileset layouts.json names resolves a non-empty palette list", () => {
+    // The blank-render trap, pinned. An empty palettes array throws nothing --
+    // it renders a fully transparent map, which no "does it throw" test catches.
+    const t = read();
+    const { layouts } = JSON.parse(readFileSync(P.layoutsJson, "utf8")) as { layouts: any[] };
+    const named = new Set(layouts.flatMap((l) => [l.primary_tileset, l.secondary_tileset]));
+    const empty = [...named].filter((k) => (t.get(k)?.palettes.length ?? 0) === 0);
+    expect(empty).toEqual([]);
   });
 
   itWithCorpus("resolves a secondary tileset and its palette list", () => {
@@ -1183,10 +1211,17 @@ export interface TilesetPaths {
   palettes: string[];
 }
 
-/** `const u16 gMetatiles_General[] = INCBIN_U16("data/.../metatiles.bin");` */
+/**
+ * `const u16 gMetatiles_General[] = INCBIN_U16("data/.../metatiles.bin");`
+ *
+ * The character class must admit parentheses. Palette declarations are written
+ * `const u16 ALIGNED(4) gTilesetPalettes_Petalburg[][16] = ...`, and a class of
+ * `[\w\s*]` cannot step past `ALIGNED(` to reach the symbol -- which silently
+ * drops 148 of graphics.h's 494 declarations, every one of them a palette list.
+ */
 function incbinMap(src: string): Map<string, string[]> {
   const out = new Map<string, string[]>();
-  const re = /const\s+[\w\s*]+?\b(g\w+)\s*(?:\[\s*\]|\[\s*\]\s*\[\s*\d+\s*\])\s*=\s*([\s\S]*?);/g;
+  const re = /const\s+[\w\s*()]+?\b(g\w+)\s*(?:\[\s*\]|\[\s*\]\s*\[\s*\d+\s*\])\s*=\s*([\s\S]*?);/g;
   for (let m = re.exec(src); m; m = re.exec(src)) {
     const paths = [...m[2]!.matchAll(/INCBIN_\w+\(\s*"([^"]+)"\s*\)/g)].map((p) => p[1]!);
     if (paths.length) out.set(m[1]!, paths);
@@ -1199,8 +1234,14 @@ function incbinMap(src: string): Map<string, string[]> {
  * link — then resolve those symbols to paths through metatiles.h and
  * graphics.h. Directory names are never derived from symbol names (I4).
  */
-export function parseTilesetPaths(headersH: string, metatilesH: string, graphicsH: string): Map<string, TilesetPaths> {
-  const data = new Map([...incbinMap(metatilesH), ...incbinMap(graphicsH)]);
+export function parseTilesetPaths(
+  headersH: string, metatilesH: string, graphicsSources: string | string[],
+): Map<string, TilesetPaths> {
+  const graphics = Array.isArray(graphicsSources) ? graphicsSources : [graphicsSources];
+  const data = new Map([
+    ...incbinMap(metatilesH),
+    ...graphics.flatMap((g) => [...incbinMap(g)]),
+  ]);
   const out = new Map<string, TilesetPaths>();
 
   const structRe = /const\s+struct\s+Tileset\s+(g\w+)\s*=\s*\{([\s\S]*?)\n\};/g;
@@ -1229,7 +1270,7 @@ export function parseTilesetPaths(headersH: string, metatilesH: string, graphics
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run packages/core/test/load/tilesets.test.ts`
-Expected: PASS, 7 tests. If the "covers every tileset" test reports missing symbols, the `headers.h` struct regex needs widening — fix it rather than adding a fallback mangler.
+Expected: PASS, 8 tests. If the "covers every tileset" test reports missing symbols, the `headers.h` struct regex needs widening — fix it rather than adding a fallback mangler.
 
 - [ ] **Step 5: Commit**
 
