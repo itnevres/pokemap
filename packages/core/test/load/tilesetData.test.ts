@@ -4,7 +4,7 @@ import { parseTilesetPaths } from "../../src/load/tilesets.js";
 import { projectPaths } from "../../src/config/paths.js";
 import { defaultProfile } from "../../src/config/engine.js";
 import { readFileSync } from "node:fs";
-import { SUBJECT_ROOT, itWithCorpus } from "../helpers/corpus.js";
+import { SUBJECT_ROOT, itWithCorpus, referenceRoot } from "../helpers/corpus.js";
 
 const P = projectPaths(SUBJECT_ROOT);
 const PATHS = parseTilesetPaths(
@@ -76,6 +76,38 @@ describe("loadTileset", () => {
     const cianwood = loadTileset(P, PATHS.get("gTileset_CianwoodCity")!, PROFILE);
     expect(cianwood.palettes[9]).toHaveLength(16);
     expect(barn.palettes.every((p) => p.length === 16)).toBe(true);
+  });
+
+  const frlg = referenceRoot("pokefirered");
+  it.skipIf(!frlg)("reads FireRed's 4-byte attributes, where a 2-byte read doubles the count", () => {
+    // FireRed's gTileset_General has 640 metatiles and a 2,560-byte
+    // attributes.bin. Read as u16 (Emerald's width) that yields 1,280
+    // entries for 640 metatiles, and every layerType comes from the wrong
+    // half of a word -- while metatileCount, palettes and tile entries all
+    // stay correct, so nothing else in this suite would notice. FireRed's
+    // masks also differ: layer type is 0x60000000, bits a 16-bit read
+    // cannot see at all, and behaviour is 9 bits (0x1FF) rather than
+    // Emerald's 8.
+    const FP = projectPaths(frlg!);
+    const FPATHS = parseTilesetPaths(
+      readFileSync(FP.tilesetHeadersH, "utf8"),
+      readFileSync(FP.tilesetMetatilesH, "utf8"),
+      [readFileSync(FP.tilesetGraphicsH, "utf8"), readFileSync(FP.tilesetGraphicsC, "utf8")],
+    );
+    const t = loadTileset(FP, FPATHS.get("gTileset_General")!, defaultProfile("pokefirered"));
+
+    expect(t.metatileCount).toBe(640);
+    expect(t.attributes).toHaveLength(640);          // 2560 / 4, not 2560 / 2
+    expect(t.attributes.slice(0, 6)).toEqual([0, 0, 0x20000084, 0x20000084, 0x20000000, 0x20000000]);
+
+    expect([0, 1, 2, 3, 4, 5].map((i) => t.layerType(i))).toEqual([0, 0, 1, 1, 1, 1]);
+    const frlgHist = new Map<number, number>();
+    for (let id = 0; id < t.metatileCount; id++) {
+      frlgHist.set(t.layerType(id), (frlgHist.get(t.layerType(id)) ?? 0) + 1);
+    }
+    expect([...frlgHist.entries()].sort((a, b) => a[0] - b[0])).toEqual([[0, 341], [1, 299]]);
+
+    expect([0, 1, 2, 3, 4, 5].map((i) => t.behavior(i))).toEqual([0, 0, 132, 132, 0, 0]);
   });
 
   itWithCorpus("exposes layer type and behaviour from attributes", () => {
