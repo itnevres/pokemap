@@ -723,7 +723,7 @@ describe("resolveSplit", () => {
 });
 
 describe("parseLayouts", () => {
-  it("parses the subject repo's layouts.json with the documented version counts", () => {
+  itWithCorpus("parses the subject repo's layouts.json with the documented version counts", () => {
     const p = projectPaths(SUBJECT_ROOT);
     const { layouts } = parseLayouts(readFileSync(p.layoutsJson, "utf8"));
     const byVersion: Record<string, number> = {};
@@ -733,7 +733,12 @@ describe("parseLayouts", () => {
     expect(byVersion.hns).toBe(282);
   });
 
-  it("defaults border size to 2x2 and preserves the seven 3x2 layouts", () => {
+  it("refuses an unrecognised layout_version rather than inventing a boundary", () => {
+    expect(() => resolveSplit({ layoutVersion: "radical_red" } as never, CONSTANTS))
+      .toThrow(/unknown layout_version/);
+  });
+
+  itWithCorpus("reads the seven 3x2 borders; every layout here has explicit border keys", () => {
     const p = projectPaths(SUBJECT_ROOT);
     const { layouts } = parseLayouts(readFileSync(p.layoutsJson, "utf8"));
     const wide = layouts.filter((l) => l.borderWidth === 3 && l.borderHeight === 2).map((l) => l.name).sort();
@@ -750,6 +755,17 @@ describe("parseLayouts", () => {
     // would be the Porymap 6 failure (inventing keys into 726 layouts).
     expect(layouts[0]!.borderWidth).toBe(2);
     expect(layouts[0]!.layoutVersion).toBeUndefined();
+  });
+
+  const frlg = referenceRoot("pokefirered");
+  it.skipIf(!frlg)("preserves an explicit border of 0 rather than defaulting it to 2", () => {
+    // 28 of pokefirered's 383 layouts are indoor rooms with border_width 0.
+    // The undefined-check must stay `=== undefined`, not falsy: `!l.border_width`
+    // would give every one of those a 2x2 border it does not have.
+    const { layouts } = parseLayouts(readFileSync(projectPaths(frlg!).layoutsJson, "utf8"));
+    const zero = layouts.filter((l) => l.borderWidth === 0);
+    expect(zero.length).toBe(28);
+    expect(zero.every((l) => l.borderHeight === 0)).toBe(true);
   });
 });
 ```
@@ -835,8 +851,26 @@ export function parseLayouts(text: string): { tableLabel: string; layouts: Layou
  * A layout with no `layout_version` resolves to emerald, matching the
  * `default:` branch of the engine's GetNumMetatilesInPrimary().
  */
+const KNOWN_VERSIONS: readonly LayoutVersion[] = ["emerald", "frlg", "hns"];
+
 export function resolveSplit(layout: Pick<Layout, "layoutVersion">, c: FieldmapConstants): Split {
-  const version: LayoutVersion = layout.layoutVersion ?? "emerald";
+  const raw = layout.layoutVersion;
+
+  // A MISSING key defaults to emerald -- that is the engine's own `default:`
+  // branch, not a guess. An UNRECOGNISED VALUE is a different thing entirely
+  // and must not be guessed at: the ternary below would send it down the
+  // non-emerald path and hand back 640 purely by accident of the comparison,
+  // with nothing to signal that a boundary had been invented. A wrong boundary
+  // corrupts map.bin on save, so refuse instead (invariant I7).
+  if (raw !== undefined && !KNOWN_VERSIONS.includes(raw)) {
+    throw new Error(
+      `unknown layout_version ${JSON.stringify(raw)}; ` +
+      `expected one of ${KNOWN_VERSIONS.join(", ")}. ` +
+      `Add its boundary to resolveSplit rather than letting it default.`,
+    );
+  }
+
+  const version: LayoutVersion = raw ?? "emerald";
   return version === "emerald"
     ? { version, tiles: c.tilesInPrimaryEmerald, metatiles: c.metatilesInPrimaryEmerald, pals: c.palsInPrimaryEmerald }
     : { version, tiles: c.tilesInPrimary, metatiles: c.metatilesInPrimary, pals: c.palsInPrimary };
@@ -846,7 +880,7 @@ export function resolveSplit(layout: Pick<Layout, "layoutVersion">, c: FieldmapC
 - [ ] **Step 5: Run test to verify it passes**
 
 Run: `npx vitest run packages/core/test/load/layouts.test.ts`
-Expected: PASS, 6 tests.
+Expected: PASS, 8 tests.
 
 - [ ] **Step 6: Commit**
 
