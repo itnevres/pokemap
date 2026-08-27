@@ -1270,7 +1270,7 @@ export function parseTilesetPaths(
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run packages/core/test/load/tilesets.test.ts`
-Expected: PASS, 8 tests. If the "covers every tileset" test reports missing symbols, the `headers.h` struct regex needs widening — fix it rather than adding a fallback mangler.
+Expected: PASS, 7 tests. If the "covers every tileset" test reports missing symbols, the `headers.h` struct regex needs widening — fix it rather than adding a fallback mangler.
 
 - [ ] **Step 5: Commit**
 
