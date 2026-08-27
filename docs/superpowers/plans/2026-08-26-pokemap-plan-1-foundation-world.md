@@ -98,15 +98,27 @@ npm init -y
     "target": "ES2023",
     "module": "ESNext",
     "moduleResolution": "Bundler",
+    "lib": ["ES2023"],
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "types": ["node"]
   },
-  "include": ["packages/*/src/**/*.ts", "packages/*/test/**/*.ts"]
+  "include": [
+    "packages/*/src/**/*.ts",
+    "packages/*/src/**/*.tsx",
+    "packages/*/test/**/*.ts",
+    "packages/*/test/**/*.tsx"
+  ]
 }
 ```
+
+Three details that are load-bearing:
+
+- **`lib: ["ES2023"]` with no `DOM`.** Without it, TypeScript includes DOM types by default and `document.title` type-checks happily inside `core` — which makes "`core` never touches the DOM" a convention with nothing enforcing it. Task 20's `ui` package overrides this with `"lib": ["ES2023", "DOM", "DOM.Iterable"]` in its own tsconfig.
+- **`.tsx` must be included.** With `.ts` only, a `.tsx` file with a blatant type error is invisible to `npm run typecheck`, which exits 0 and reports green. Get this right before `ui` exists.
+- **Four separate entries, NOT `*.{ts,tsx}`.** TypeScript's `include` matcher supports `*`, `?` and `**/` and **does not expand brace groups**. `"packages/*/src/**/*.{ts,tsx}"` matches zero files, and an `include` that matches nothing makes `tsc` fail outright with `TS18003` — worse than the bug it was meant to fix. Verified against TypeScript 5.9.3 via `ts.parseJsonConfigFileContent`. Note this does *not* apply to vitest's `include` in Task 20, which uses minimatch and does support brace groups.
 
 - [ ] **Step 4: Write `pokemap.config.json`**
 
@@ -132,10 +144,11 @@ npm init -y
   "name": "@pokemap/core",
   "version": "0.0.0",
   "type": "module",
-  "main": "./src/index.ts",
-  "exports": { ".": "./src/index.ts" }
+  "main": "./src/index.ts"
 }
 ```
+
+**No `exports` field, deliberately.** Later packages import `core` by deep source path — `import { openProject } from "@pokemap/core/src/project.js"` — and an `exports` map encapsulates the package so that every such path is refused. An `exports` map cannot rescue this either: the specifier ends in `.js` while the file on disk is `.ts`, so a `"./src/*": "./src/*"` wildcard resolves to a file that does not exist. Adding `exports` breaks `tsc --noEmit` (TS2307), `tsx` (`ERR_PACKAGE_PATH_NOT_EXPORTED`) and `vitest` (missing specifier) simultaneously. Leave it out.
 
 `packages/core/src/index.ts`:
 
@@ -2976,6 +2989,14 @@ npm install -w @pokemap/ui @testing-library/react @testing-library/jest-dom jsdo
 ```
 
 Set `vitest.config.ts` `environment: "jsdom"` for `packages/ui/**`, and proxy `/api` to `http://127.0.0.1:5174` in `vite.config.ts`.
+
+**Also widen the vitest `include` glob.** Task 1 set it to `packages/*/test/**/*.test.ts`, which matches only `.test.ts`. This task's tests are `.test.tsx`, so without the change they are silently collected as zero tests and everything "passes". Change it to:
+
+```ts
+include: ["packages/*/test/**/*.test.{ts,tsx}"],
+```
+
+Then confirm the count: `npx vitest run --reporter=verbose` must list the `MapTree` tests by name. A green run that names no tests is a failing run.
 
 - [ ] **Step 4: Write `MapTree`**
 
