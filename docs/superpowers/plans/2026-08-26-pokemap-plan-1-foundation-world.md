@@ -1669,6 +1669,18 @@ describe("loadTileset", () => {
     }
   });
 
+  itWithCorpus("pads a short palette to 16 so no colour index is undefined", () => {
+    // gTileset_Barn's palette 9 declares 10 colours and gTileset_CianwoodCity's
+    // declares 15, yet 12 and 126 metatile entries respectively select index 9.
+    // Unpadded, drawTile gets `undefined` for the missing indices and skips the
+    // pixel -- holes in the map rather than a visible error.
+    const barn = loadTileset(P, PATHS.get("gTileset_Barn")!, PROFILE);
+    expect(barn.palettes[9]).toHaveLength(16);
+    const cianwood = loadTileset(P, PATHS.get("gTileset_CianwoodCity")!, PROFILE);
+    expect(cianwood.palettes[9]).toHaveLength(16);
+    expect(barn.palettes.every((p) => p.length === 16)).toBe(true);
+  });
+
   itWithCorpus("exposes layer type from attributes", () => {
     const t = loadTileset(P, PATHS.get("gTileset_General")!, PROFILE);
     expect(t.layerType(1)).toBeGreaterThanOrEqual(0);
@@ -1726,7 +1738,19 @@ export function loadTileset(paths: ProjectPaths, tp: TilesetPaths, profile: Engi
   const tiles = readIndexedPng(readFileSync(abs(tp.tilesPng)));
 
   // I3: read the committed .pal, not the gitignored .gbapal that graphics.h INCBINs.
-  const palettes = tp.palettes.map((g) => parseJascPal(readFileSync(abs(g.replace(/\.gbapal$/, ".pal")), "utf8")));
+  //
+  // Pad to 16. A GBA palette bank is always 16 entries, but gbagfx's
+  // WriteGbaPalette emits only as many as the .pal declares, and two files here
+  // declare fewer: secondary/barn/palettes/09.pal has 10 colours and
+  // secondary/cianwood_city/palettes/09.pal has 15. Both are reachable -- 12
+  // and 126 metatile tile-entries respectively select palette index 9 -- so
+  // without padding, palette[idx] is undefined for the missing indices and
+  // drawTile skips the pixel, punching holes in the map rather than erroring.
+  const palettes = tp.palettes.map((g) => {
+    const pal = parseJascPal(readFileSync(abs(g.replace(/\.gbapal$/, ".pal")), "utf8"));
+    while (pal.length < 16) pal.push({ r: 0, g: 0, b: 0 });
+    return pal;
+  });
 
   const layerShift = profile.metatileLayerTypeMask === 0 ? 0 :
     (() => { let s = 0; while (((profile.metatileLayerTypeMask >>> s) & 1) === 0) s++; return s; })();
@@ -1987,6 +2011,18 @@ git commit -m "feat(core): RGBA raster primitives for the renderer"
 ## Task 13: Tile and metatile rendering
 
 Where the split is applied. `renderMetatile` takes a `Split` and never reads a global constant — invariant **I1**.
+
+**Two tilesets have short palettes, already padded at load by Task 10.**
+`gTileset_Barn` palette 9 declares 10 colours and `gTileset_CianwoodCity` palette
+9 declares 15, yet both are selected by real metatile entries — 12 and 126
+respectively. Task 10 pads every palette to 16 with black so no index comes back
+`undefined`, which `drawTile` would skip, punching holes rather than raising
+anything. **Settle whether any pixel actually uses the padded indices**: you have
+a PNG decoder by this point, so decode those two tilesets’ `tiles.png` and check
+whether any pixel drawn with palette 9 carries an index at or above the declared
+count. If none do, the padding is belt-and-braces and worth saying so. If some
+do, those pixels render black here and something else on hardware — report it
+rather than quietly painting over it.
 
 **Files:**
 - Create: `packages/core/src/render/tile.ts`
