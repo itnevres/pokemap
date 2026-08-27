@@ -504,6 +504,32 @@ describe("engineProfile", () => {
     expect(defaultProfile("pokeemerald-expansion").supportsLayoutVersion).toBe(true);
     expect(defaultProfile("pokeemerald").supportsLayoutVersion).toBe(false);
   });
+
+  it("reads masks from the cfg rather than falling through to defaults", () => {
+    // Every mask in a REAL cfg happens to equal this engine's default, so a
+    // parser that ignored the file entirely would still pass the corpus tests
+    // below. Deliberately non-default values are the only way to prove the
+    // keys are actually read. Same trap that made Task 3's swap test useless.
+    const p = engineProfile(parseCfg([
+      "base_game_version=pokeemerald",
+      "block_metatile_id_mask=0x1FF",
+      "block_collision_mask=0x600",
+      "block_elevation_mask=0x7800",
+      "metatile_attributes_size=4",
+      "metatile_behavior_mask=0x3F",
+      "metatile_layer_type_mask=0x0F00",
+    ].join("
+")));
+
+    expect(p.blockMetatileIdMask).toBe(0x1ff);
+    expect(p.blockCollisionMask).toBe(0x600);
+    expect(p.blockCollisionShift).toBe(9);
+    expect(p.blockElevationMask).toBe(0x7800);
+    expect(p.blockElevationShift).toBe(11);
+    expect(p.metatileAttributesSize).toBe(4);
+    expect(p.metatileBehaviorMask).toBe(0x3f);
+    expect(p.metatileLayerTypeMask).toBe(0x0f00);
+  });
 });
 ```
 
@@ -549,8 +575,9 @@ export function parseCfg(text: string): Record<string, string> {
   return out;
 }
 
+/** `Number()` parses "0x1FF" natively, so hex and decimal both just work. */
 const num = (v: string | undefined, dflt: number): number =>
-  v === undefined || v === "" ? dflt : Number(v.startsWith("0x") || v.startsWith("0X") ? v : v);
+  v === undefined || v === "" ? dflt : Number(v);
 
 /** Bit position of the lowest set bit, i.e. the shift a mask implies. */
 export function maskShift(mask: number): number {
@@ -608,7 +635,13 @@ Note: `supportsLayoutVersion` is *also* set true whenever `layouts.json` actuall
 Run: `npx vitest run packages/core/test/config/engine.test.ts`
 Expected: PASS, 4 tests.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Add real-corpus tests**
+
+Using `itWithCorpus`/`SUBJECT_ROOT`/`hasProject` from `packages/core/test/helpers/corpus.ts`, parse the two real cfgs in the corpus — the subject repo's (`base_game_version=pokeemerald`, 2-byte attrs, behaviour `0xFF`, layer type `0xF000`, **28** warp behaviours) and `refs/pokefirered`'s (4-byte attrs, behaviour `0x1FF`, layer type `0x60000000`, terrain `0x3E00`, encounter `0x7000000`, **17** warp behaviours). Those two files are the only real cfgs across the six trees.
+
+Assert `warpBehaviors.length` in both. It is the one field with no default — `defaultProfile` always returns `[]` — so it is the only assertion in either test that a do-nothing parser cannot satisfy. The mask assertions are worth keeping as documentation of what the files say, but Step 1's non-default-mask test is what actually guards the parser.
+
+- [ ] **Step 6: Commit**
 
 ```bash
 git add packages/core/src/config/engine.ts packages/core/test/config/engine.test.ts
