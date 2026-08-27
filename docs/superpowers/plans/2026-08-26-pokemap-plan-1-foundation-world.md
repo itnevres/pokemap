@@ -414,9 +414,24 @@ export const hasProject = (root: string): boolean =>
 export const itWithCorpus = it.skipIf(!hasProject(SUBJECT_ROOT));
 
 export const availableReferenceRoots = (): string[] => REFERENCE_ROOTS.filter(hasProject);
+
+/**
+ * A reference engine by directory name, e.g. `referenceRoot("pokefirered")`.
+ * Returns undefined when that engine is not configured or not checked out,
+ * so a caller can skip rather than fail.
+ */
+export const referenceRoot = (name: string): string | undefined =>
+  REFERENCE_ROOTS.find((r) => r.replace(/\/g, "/").split("/").pop() === name && hasProject(r));
 ```
 
 Note it reads `pokemap.config.json` rather than hardcoding a path, so a contributor with the decomp elsewhere only edits one file.
+
+`referenceRoot` exists because several later tasks assert against **one named** engine — Task 4 against `pokefirered`'s cfg, Task 5 against `pokeemerald`'s `layouts.json`. Reaching for a literal path in those tests defeats the helper: on a machine whose config points elsewhere the test silently skips despite a perfectly good checkout being declared. Use:
+
+```ts
+const frlg = referenceRoot("pokefirered");
+it.skipIf(!frlg)("...", () => { /* frlg is defined here */ });
+```
 
 - [ ] **Step 6: Add a test against the real header**
 
