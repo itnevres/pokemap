@@ -114,7 +114,7 @@ The feature deferred from the design discussion: strictly additive protection ov
 Only now, with the real feature set in place, is it worth optimising.
 
 **Targets, each measured before and after:**
-- Cold open of the subject repo (1,214 maps, 1,026 layouts): under 3 seconds to an interactive map list.
+- Cold open of the subject repo (1,214 maps, 1,020 layouts): under 3 seconds to an interactive map list.
 - Full world view at minimum zoom: under 2 seconds to first paint, using cached LOD buffers.
 - Pan at any zoom: 60fps with no fetch stalls.
 - `pokemap render` for one map: under 300ms including process start — this is the number that decides whether an agent's check-your-work loop feels instant or annoying.

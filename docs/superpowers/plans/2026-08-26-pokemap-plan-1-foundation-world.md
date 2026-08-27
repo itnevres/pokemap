@@ -2165,7 +2165,7 @@ export function renderLayout(proj: Project, layoutName: string, opts: RenderLayo
 - [ ] **Step 5: Run test to verify it passes**
 
 Run: `npx vitest run packages/core/test/render/layout.test.ts`
-Expected: PASS, 4 tests. The last test walks all 1,026 layouts and is slow by design — it is the first real proof the whole tree renders.
+Expected: PASS, 4 tests. The last test walks all 1,020 layouts and is slow by design — it is the first real proof the whole tree renders.
 
 - [ ] **Step 6: Commit**
 

@@ -107,7 +107,7 @@ Uses `encodeBlocks` from Plan 1 Task 11, whose exact-inverse property is already
 **Key tests:**
 - Unchanged blocks → `null`.
 - One changed block → a write whose `changedBlocks` is `[index]` and whose bytes differ from disk in exactly 2 bytes.
-- Round-trip: `planBlockdataWrite(parseBlocks(disk))` is `null` for all 1,026 layouts. This is the binary half of invariant **I5**.
+- Round-trip: `planBlockdataWrite(parseBlocks(disk))` is `null` for all 1,020 layouts. This is the binary half of invariant **I5**.
 
 ---
 

@@ -152,7 +152,7 @@ it("cannot reproduce the 2026-08-18 porymap 6 failure", () => {
 - Edit metatile attributes: behaviour, layer type, and on FireRed the terrain and encounter types — read from the profile masks, never hardcoded.
 - Edit palettes as 16 colours; colours are GBA BGR555, so the editor must quantise to 5 bits per channel and show the quantised value. A colour picker offering 24-bit precision that silently rounds is a lie about what the hardware will show.
 - **The tile picker and metatile list respect the current layout's split**, with the boundary labelled — same rule as Plan 2 Task 7.
-- Changing a metatile invalidates the render cache for every layout using that tileset, and the world view updates. There is a test asserting the invalidation is by tileset, not global — with 1,026 layouts, invalidating everything is a several-second stall.
+- Changing a metatile invalidates the render cache for every layout using that tileset, and the world view updates. There is a test asserting the invalidation is by tileset, not global — with 1,020 layouts, invalidating everything is a several-second stall.
 - **Warn loudly before saving a tileset**: a metatile edit changes every map using it. The dialog names how many layouts are affected and lists them. Porymap gives no such warning and this is a real way to break many maps at once.
 
 ---
