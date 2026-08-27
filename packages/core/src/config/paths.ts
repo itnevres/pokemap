@@ -20,7 +20,9 @@ export interface ProjectPaths {
   mapJson(name: string): string;
   mapScriptsInc(name: string): string;
   layoutDir(name: string): string;
+  /** `speciesLower` is the lowercase directory form, e.g. "espeon" — not the C `SPECIES_ESPEON` constant. */
   monIconPng(speciesLower: string): string;
+  /** `speciesLower` is the lowercase directory form, e.g. "espeon" — not the C `SPECIES_ESPEON` constant. */
   monOverworldPng(speciesLower: string): string;
 }
 
