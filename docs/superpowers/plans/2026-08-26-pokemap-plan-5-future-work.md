@@ -102,6 +102,7 @@ Two mechanisms exist — the older `LIGHT_PAL` macro and the newer `.pla` files 
 | **Secret base editing** | `enable_event_secret_base=1`. Rare event type; the generic event editor from Plan 2 Task 10 may already cover it — check before planning work. |
 | **Weather triggers** | `enable_event_weather_trigger=1`. Same: likely already covered by the generic editor. |
 | **Map allow-flags** | `enable_map_allow_flags=1`. Covered by Plan 3 Task 2's header editor. |
+| **`tRNS` and non-zero transparent indices** | The PNG reader ignores `tRNS` and treats index 0 as transparent. Verified safe for everything Plan 1 reads (zero violations across 245 tileset sheets, 1,059 icons, 960 overworld sprites). But two battle sprites — `graphics/pokemon/togedemaru/front.png` and `anim_front.png` — use index **15** as transparent and index 0 as opaque. Any feature that widens scope to `graphics/pokemon/*/front.png` must read `tRNS` rather than assuming index 0, or those two render inverted. |
 | **Multi-user editing** | Explicitly out of scope. PokeMap is a single-user desktop tool. |
 | **ROM building / emulator integration** | Out of scope. PokeMap's answer to "does this look right" is `render`, which is faster than a build and does not need one. |
 | **`region_map_sections.json.txt` template editing** | The Inja template drives what keys the build requires. Plan 3 Task 4 *reads* it to derive the contract; editing it is a build-system change and does not belong in a map editor. |

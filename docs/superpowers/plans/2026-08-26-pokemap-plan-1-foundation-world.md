@@ -2060,6 +2060,15 @@ git commit -m "feat(core): RGBA raster primitives for the renderer"
 
 Where the split is applied. `renderMetatile` takes a `Split` and never reads a global constant — invariant **I1**.
 
+**Index 0 is transparent — verified, not assumed.** `drawTile` skips index 0
+unconditionally. Task 9 scanned all 8,768 PNGs in the subject repo: 2,605 carry a
+`tRNS` chunk, and exactly **two** declare a transparent index other than 0
+(`graphics/pokemon/togedemaru/front.png` and `anim_front.png`, both using index
+15). Neither is read by any task in this plan. Narrowed to what Plan 1 actually
+touches — 245 tileset `tiles.png`, 1,059 species `icon.png`, 960 overworld
+sprites — there are **zero** violations. The assumption holds; the reader ignores
+`tRNS` by design and `IndexedImage` has no field for it.
+
 **Two tilesets have short palettes, already padded at load by Task 10.**
 `gTileset_Barn` palette 9 declares 10 colours and `gTileset_CianwoodCity` palette
 9 declares 15, yet both are selected by real metatile entries — 12 and 126
