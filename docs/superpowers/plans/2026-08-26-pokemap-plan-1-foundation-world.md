@@ -961,6 +961,16 @@ describe("parseMap", () => {
       .filter((m) => m.floorNumber !== undefined);
     expect(withFloor.length).toBeGreaterThan(0);
   });
+
+  itWithCorpus("leaves floorNumber undefined on an engine that has no such key", () => {
+    // The positive assertion above passes even against an implementation that
+    // hardcodes a floorNumber, since all 425 FireRed maps carry the key. Only
+    // the negative case proves the value is read rather than invented -- the
+    // same discipline the layouts suite applies to layout_version.
+    const m = parseMap(readFileSync(P.mapJson("NewBarkTown"), "utf8"));
+    expect(m.floorNumber).toBeUndefined();
+    expect(m.region).toBeUndefined();
+  });
 });
 ```
 
@@ -1007,7 +1017,14 @@ export interface MapGroups {
 
 export function parseMapGroups(text: string): MapGroups {
   const raw = JSON.parse(text) as Record<string, unknown>;
-  const groupOrder = raw.group_order as string[];
+  const groupOrder = raw.group_order;
+  // Every one of the six target trees has this key. Without the check, a fork
+  // that named it differently would fail as a bare "undefined is not iterable"
+  // naming no file and no cause -- the opposite of invariant I7's "refuse and
+  // say what to fix".
+  if (!Array.isArray(groupOrder)) {
+    throw new Error("map_groups.json has no `group_order` array; cannot enumerate maps");
+  }
   const groups: Record<string, string[]> = {};
   for (const g of groupOrder) groups[g] = (raw[g] as string[]) ?? [];
   return { groupOrder, groups, allMapNames: () => groupOrder.flatMap((g) => groups[g] ?? []) };
@@ -1041,7 +1058,7 @@ export function parseMap(text: string): MapData {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run packages/core/test/load/maps.test.ts`
-Expected: PASS, 4 tests.
+Expected: PASS, 5 tests.
 
 - [ ] **Step 5: Commit**
 
@@ -3506,6 +3523,12 @@ export function buildWorld(proj: Project): World {
     return l ? { width: l.width, height: l.height } : { width: 0, height: 0 };
   };
 
+  // Built ONCE. Connections name their target by map id, and resolving that
+  // with `mapNames().find(...)` inside the BFS below would rescan all 1,209
+  // maps per connection edge -- quadratic for no reason. warpGraph.ts already
+  // does it this way; this keeps the two consistent.
+  const idToName = new Map(proj.mapNames().map((n) => [proj.map(n).id, n]));
+
   const remaining = new Set(proj.mapNames());
 
   while (remaining.size > 0) {
@@ -3524,7 +3547,7 @@ export function buildWorld(proj: Project): World {
       const here = placements.get(name)!;
 
       for (const c of proj.map(name).connections) {
-        const target = proj.mapNames().find((n) => proj.map(n).id === c.map);
+        const target = idToName.get(c.map);
         if (!target) continue;
 
         if (!PLANAR.has(c.direction)) {
