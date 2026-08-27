@@ -693,9 +693,13 @@ import { parseLayouts, resolveSplit } from "../../src/load/layouts.js";
 import { parseFieldmapConstants } from "../../src/config/fieldmap.js";
 import { projectPaths } from "../../src/config/paths.js";
 
+// Tiles and metatiles are deliberately given DIFFERENT values here, unlike the
+// real headers where both are 512/640. With them equal, a tiles<->metatiles
+// crossover inside a branch is invisible: both fields would still read back the
+// number the test expects. The +1 makes a swap fail loudly.
 const CONSTANTS = parseFieldmapConstants(`
-#define NUM_TILES_IN_PRIMARY 640
-#define NUM_TILES_IN_PRIMARY_EMERALD 512
+#define NUM_TILES_IN_PRIMARY 641
+#define NUM_TILES_IN_PRIMARY_EMERALD 513
 #define NUM_METATILES_IN_PRIMARY 640
 #define NUM_METATILES_IN_PRIMARY_EMERALD 512
 #define NUM_METATILES_TOTAL 1024
@@ -706,12 +710,13 @@ const CONSTANTS = parseFieldmapConstants(`
 describe("resolveSplit", () => {
   it("gives emerald layouts the 512 boundary", () => {
     const s = resolveSplit({ layoutVersion: "emerald" } as never, CONSTANTS);
-    expect(s).toEqual({ version: "emerald", tiles: 512, metatiles: 512, pals: 6 });
+    expect(s).toEqual({ version: "emerald", tiles: 513, metatiles: 512, pals: 6 });
   });
 
   it("gives frlg and hns layouts the 640 boundary", () => {
     for (const v of ["frlg", "hns"] as const) {
       const s = resolveSplit({ layoutVersion: v } as never, CONSTANTS);
+      expect(s.tiles).toBe(641);
       expect(s.metatiles).toBe(640);
       expect(s.pals).toBe(7);
     }
