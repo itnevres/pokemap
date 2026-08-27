@@ -1143,8 +1143,10 @@ describe("parseTilesetPaths", () => {
       .toBe("data/tilesets/primary/building_frontier/tiles.png");
     expect(t.get("gTileset_Building_Frontier")!.dir)
       .toBe("data/tilesets/primary/building");
+    // Nested one level deeper than its metatiles, not a sibling directory --
+    // secondary/secret_base/tree, not secondary/tree.
     expect(t.get("gTileset_SecretBaseTree")!.tilesPng)
-      .toBe("data/tilesets/secondary/tree/tiles.png");
+      .toBe("data/tilesets/secondary/secret_base/tree/tiles.png");
     expect(t.get("gTileset_FrlgSilphCo")!.tilesPng)
       .toBe("data/tilesets/secondary/condominiums/tiles.png");
     // And the ordinary case still agrees with dir.
