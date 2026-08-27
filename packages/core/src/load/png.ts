@@ -42,6 +42,17 @@ export function readIndexedPng(buf: Buffer): IndexedImage {
 
   const raw = inflateSync(Buffer.concat(idat));
   const bytesPerRow = Math.ceil((width * depth) / 8);
+
+  // A stream short by a few bytes is the one truncation that does not announce
+  // itself: the final row's filter byte still reads, `src[x]` comes back
+  // undefined, and Buffer's setter coerces that to 0 -- so the last row turns
+  // black instead of throwing. Every other truncation point fails loudly.
+  if (raw.length !== (bytesPerRow + 1) * height) {
+    throw new Error(
+      `truncated IDAT: expected ${(bytesPerRow + 1) * height} bytes for ${width}x${height} at depth ${depth}, got ${raw.length}`,
+    );
+  }
+
   const unfiltered = Buffer.alloc(bytesPerRow * height);
 
   // bpp is 1 for both supported depths (sub-byte samples filter as 1 byte).
