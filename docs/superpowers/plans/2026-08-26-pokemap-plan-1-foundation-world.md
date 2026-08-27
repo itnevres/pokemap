@@ -1073,6 +1073,8 @@ git commit -m "feat(core): load map groups and map headers across engines"
 
 Invariant **I4**. Never mangle a symbol into a directory name.
 
+This is not hypothetical caution. **12 of the subject tree's 230 tilesets have a directory no naming rule could produce**, and `gTileset_TrainerHill_Courtyard` → `battle_tower_outer` is not a mangling at all — it is a different name. `SecretBasePrimary` and `SecretBaseSecondary` both point at one `secret_base` directory, so the relation is not injective either. The subject repo's own `rules.md` records a mangling attempt getting this wrong before. The mapping is data; read it.
+
 **Files:**
 - Create: `packages/core/src/load/tilesets.ts`
 - Test: `packages/core/test/load/tilesets.test.ts`
@@ -1094,7 +1096,7 @@ const read = () => parseTilesetPaths(
 );
 
 describe("parseTilesetPaths", () => {
-  it("resolves gTileset_General to the primary/general directory", () => {
+  itWithCorpus("resolves gTileset_General to the primary/general directory", () => {
     const t = read().get("gTileset_General")!;
     expect(t.metatilesBin).toBe("data/tilesets/primary/general/metatiles.bin");
     expect(t.attributesBin).toBe("data/tilesets/primary/general/metatile_attributes.bin");
@@ -1102,7 +1104,7 @@ describe("parseTilesetPaths", () => {
     expect(t.isSecondary).toBe(false);
   });
 
-  it("resolves a secondary tileset and its palette list", () => {
+  itWithCorpus("resolves a secondary tileset and its palette list", () => {
     const t = read().get("gTileset_Petalburg")!;
     expect(t.dir).toBe("data/tilesets/secondary/petalburg");
     expect(t.isSecondary).toBe(true);
@@ -1110,11 +1112,19 @@ describe("parseTilesetPaths", () => {
     expect(t.palettes[0]).toBe("data/tilesets/secondary/petalburg/palettes/00.gbapal");
   });
 
-  it("resolves a tileset whose directory name is not the mangled symbol", () => {
-    // gTileset_General_Frontier_West -> primary/general_frontier_west, which a
-    // naive mangler would also get right; the point is that we never guess.
-    const t = read().get("gTileset_General_Frontier_West")!;
-    expect(t.metatilesBin).toContain("/general_frontier_west/");
+  itWithCorpus("resolves tilesets no name-mangling scheme could reach", () => {
+    // 12 of this tree's 230 tilesets have a directory that cannot be derived
+    // from the symbol by any rule. These four are the proof of invariant I4:
+    // the mapping is DATA, read from INCBIN, not a transformation of the name.
+    const t = read();
+    // Nothing about "TrainerHill_Courtyard" suggests "battle_tower_outer".
+    expect(t.get("gTileset_TrainerHill_Courtyard")!.dir).toBe("data/tilesets/secondary/battle_tower_outer");
+    // The symbol carries a word the directory simply drops.
+    expect(t.get("gTileset_InsideBuilding")!.dir).toBe("data/tilesets/primary/building");
+    expect(t.get("gTileset_GoldenrodCity_TrainStation")!.dir).toBe("data/tilesets/secondary/goldenrod_station");
+    // TWO symbols share ONE directory, so the relation is not even injective.
+    expect(t.get("gTileset_SecretBasePrimary")!.dir).toBe("data/tilesets/primary/secret_base");
+    expect(t.get("gTileset_SecretBaseSecondary")!.dir).toBe("data/tilesets/secondary/secret_base");
   });
 
   itWithCorpus("covers every tileset named by layouts.json", () => {
