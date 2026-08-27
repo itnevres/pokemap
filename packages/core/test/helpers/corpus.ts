@@ -17,3 +17,11 @@ export const hasProject = (root: string): boolean =>
 export const itWithCorpus = it.skipIf(!hasProject(SUBJECT_ROOT));
 
 export const availableReferenceRoots = (): string[] => REFERENCE_ROOTS.filter(hasProject);
+
+/**
+ * A reference engine by directory name, e.g. `referenceRoot("pokefirered")`.
+ * Returns undefined when that engine is not configured or not checked out,
+ * so a caller can skip rather than fail.
+ */
+export const referenceRoot = (name: string): string | undefined =>
+  REFERENCE_ROOTS.find((r) => r.replace(/\\/g, "/").split("/").pop() === name && hasProject(r));

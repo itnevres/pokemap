@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { parseCfg, engineProfile, defaultProfile } from "../../src/config/engine.js";
 import { projectPaths } from "../../src/config/paths.js";
-import { SUBJECT_ROOT, itWithCorpus, hasProject } from "../helpers/corpus.js";
+import { SUBJECT_ROOT, itWithCorpus, referenceRoot } from "../helpers/corpus.js";
 
 describe("parseCfg", () => {
   it("reads key=value, hex, ints and comma lists", () => {
@@ -90,11 +90,9 @@ describe("engineProfile", () => {
     expect(profile.warpBehaviors[0]).toBe(0x62);
   });
 
-  const FIRERED_ROOT = "C:/Programming Projects/Pokemon Game/refs/pokefirered";
-  it.skipIf(!hasProject(FIRERED_ROOT))("parses pokefirered's real porymap.project.cfg", () => {
-    const p = projectPaths(FIRERED_ROOT);
-    const cfg = parseCfg(readFileSync(p.porymapCfg, "utf8"));
-    const profile = engineProfile(cfg);
+  const frlg = referenceRoot("pokefirered");
+  it.skipIf(!frlg)("parses pokefirered's real porymap.project.cfg", () => {
+    const profile = engineProfile(parseCfg(readFileSync(projectPaths(frlg!).porymapCfg, "utf8")));
     expect(profile.baseGameVersion).toBe("pokefirered");
     expect(profile.metatileAttributesSize).toBe(4);
     expect(profile.metatileBehaviorMask).toBe(0x1ff);
