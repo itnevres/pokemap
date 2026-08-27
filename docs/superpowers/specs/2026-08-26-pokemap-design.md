@@ -378,7 +378,7 @@ Deliberately excluded, each recorded in Plan 5 rather than forgotten: poryscript
 
 ## 16. Success criteria
 
-1. Every one of the 1,214 subject maps opens and renders correctly — both boundaries at once, no constant swapping, no restart.
+1. Every one of the 1,209 subject maps opens and renders correctly — both boundaries at once, no constant swapping, no restart.
 2. The round-trip corpus test passes at zero bytes changed across all six repos.
 3. The whole overworld pans as one continuous image; dungeons can be placed and persist.
 4. An AI agent can edit a map, render it to PNG, and inspect the result without building the ROM.

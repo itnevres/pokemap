@@ -20,7 +20,7 @@
 - A Poryscript parser and compiler, or shelling out to the real `poryscript` binary.
 - Round-trip fidelity for `.pory` → `.inc`, which is genuinely hard: the compiler is not injective, so PokeMap could not reliably edit a `.inc` that a `.pory` produced.
 - A script editor with syntax highlighting, and jump-to-definition from an event to its script.
-- Symbol indexing across all 1,214 `scripts.inc` files.
+- Symbol indexing across all 1,209 `scripts.inc` files.
 
 **Open question to settle first:** whether PokeMap should edit scripts at all, or link out to the user's editor with the right file and line. The second is a fraction of the work and might be the better product. The subject repo's own `docs/human-porymap.md` draws a hard line — scripts and JSON are "an agent's job", tiles are the human's — which argues that a script editor inside a *map* tool may be solving the wrong problem.
 

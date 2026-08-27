@@ -17,7 +17,7 @@ Corollary worth stating, because it is the failure this convention can cause: a 
 **Success criteria — demonstrated, not asserted:**
 1. `pokemap render PetalburgCity --out shot.png` produces a correct PNG.
 2. An `emerald` layout and an `frlg` layout render correctly **in the same session**, with no edit to `include/fieldmap.h`.
-3. All 1,214 subject maps and all layouts across 5 reference engines load without error.
+3. All 1,209 subject maps and all layouts across 5 reference engines load without error.
 4. The JSON identity corpus test passes at zero bytes changed.
 5. The whole overworld pans as one continuous image in the browser.
 6. `pokemap where PIKACHU` lists every map, rate, and level band.
@@ -3976,7 +3976,7 @@ Expected: PASS, 2 tests.
 Invoke `frontend-design` and `ui-ux-pro-max`, follow `packages/ui/DESIGN.md`.
 
 Requirements, each with a test in `packages/ui/test/WorldCanvas.test.tsx`:
-- **Culling:** only maps intersecting the viewport are fetched and drawn. With 1,209 maps this is what makes the view usable at all — assert that a viewport containing 3 maps issues 3 image requests, not 1,214.
+- **Culling:** only maps intersecting the viewport are fetched and drawn. With 1,209 maps this is what makes the view usable at all — assert that a viewport containing 3 maps issues 3 image requests, not 1,209.
 - **LOD:** below a zoom threshold, draw cached downscaled buffers rather than full-resolution PNGs.
 - **Pan/zoom:** drag to pan, wheel to zoom about the cursor, and a "fit world" control.
 - **Drag to place:** dragging a map posts to `/api/world/placement` and the position survives a reload.
