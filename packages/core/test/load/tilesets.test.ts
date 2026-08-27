@@ -8,7 +8,7 @@ const P = projectPaths(SUBJECT_ROOT);
 const read = () => parseTilesetPaths(
   readFileSync(P.tilesetHeadersH, "utf8"),
   readFileSync(P.tilesetMetatilesH, "utf8"),
-  readFileSync(P.tilesetGraphicsH, "utf8"),
+  [readFileSync(P.tilesetGraphicsH, "utf8"), readFileSync(P.tilesetGraphicsC, "utf8")],
 );
 
 describe("parseTilesetPaths", () => {
@@ -18,6 +18,10 @@ describe("parseTilesetPaths", () => {
     expect(t.attributesBin).toBe("data/tilesets/primary/general/metatile_attributes.bin");
     expect(t.dir).toBe("data/tilesets/primary/general");
     expect(t.isSecondary).toBe(false);
+    // Declared in src/graphics.c, not graphics.h. Reading only the header
+    // leaves this empty and every map using General renders transparent.
+    expect(t.palettes).toHaveLength(16);
+    expect(t.palettes[0]).toBe("data/tilesets/primary/general/palettes/00.gbapal");
   });
 
   itWithCorpus("resolves a secondary tileset and its palette list", () => {
@@ -72,5 +76,15 @@ describe("parseTilesetPaths", () => {
       for (const k of [l.primary_tileset, l.secondary_tileset]) if (!paths.has(k)) missing.add(k);
     }
     expect([...missing]).toEqual([]);
+  });
+
+  itWithCorpus("every tileset layouts.json names resolves a non-empty palette list", () => {
+    // The blank-render trap, pinned. An empty palettes array throws nothing --
+    // it renders a fully transparent map, which no "does it throw" test catches.
+    const t = read();
+    const { layouts } = JSON.parse(readFileSync(P.layoutsJson, "utf8")) as { layouts: any[] };
+    const named = new Set(layouts.flatMap((l) => [l.primary_tileset, l.secondary_tileset]));
+    const empty = [...named].filter((k) => (t.get(k)?.palettes.length ?? 0) === 0);
+    expect(empty).toEqual([]);
   });
 });

@@ -14,6 +14,10 @@ export interface ProjectPaths {
   tilesetHeadersH: string;
   tilesetMetatilesH: string;
   tilesetGraphicsH: string;
+  /** `gTileset_General` and its two Frontier siblings INCBIN their palettes
+   *  here rather than in graphics.h — miss this file and those three
+   *  tilesets resolve an empty palette list and render fully transparent. */
+  tilesetGraphicsC: string;
   eventObjectsH: string;
   sidecar: string;
   mapDir(name: string): string;
@@ -42,6 +46,7 @@ export function projectPaths(root: string): ProjectPaths {
     tilesetHeadersH: `${r}/src/data/tilesets/headers.h`,
     tilesetMetatilesH: `${r}/src/data/tilesets/metatiles.h`,
     tilesetGraphicsH: `${r}/src/data/tilesets/graphics.h`,
+    tilesetGraphicsC: `${r}/src/graphics.c`,
     eventObjectsH: `${r}/include/constants/event_objects.h`,
     sidecar: `${r}/.pokemap/world.json`,
     mapDir: (n) => `${r}/data/maps/${n}`,

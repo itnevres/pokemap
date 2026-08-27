@@ -32,11 +32,28 @@ function incbinMap(src: string): Map<string, string[]> {
 
 /**
  * Bind gTileset_X to its data symbols through headers.h — the authoritative
- * link — then resolve those symbols to paths through metatiles.h and
- * graphics.h. Directory names are never derived from symbol names (I4).
+ * link — then resolve those symbols to paths through metatiles.h and one or
+ * more graphics sources. Directory names are never derived from symbol
+ * names (I4).
+ *
+ * `graphicsSources` accepts more than one file because not every tileset's
+ * palettes are declared in graphics.h: `gTileset_General` and its two
+ * Frontier siblings INCBIN theirs from `src/graphics.c` instead. Reading
+ * only graphics.h leaves those three resolving an empty `palettes` array --
+ * which throws nothing, since an empty array is a valid value, and instead
+ * renders every map that uses them fully transparent (242 of 1,020 layouts
+ * measured against the subject repo).
  */
-export function parseTilesetPaths(headersH: string, metatilesH: string, graphicsH: string): Map<string, TilesetPaths> {
-  const data = new Map([...incbinMap(metatilesH), ...incbinMap(graphicsH)]);
+export function parseTilesetPaths(
+  headersH: string,
+  metatilesH: string,
+  graphicsSources: string | string[],
+): Map<string, TilesetPaths> {
+  const graphics = Array.isArray(graphicsSources) ? graphicsSources : [graphicsSources];
+  const data = new Map([
+    ...incbinMap(metatilesH),
+    ...graphics.flatMap((g) => [...incbinMap(g)]),
+  ]);
   const out = new Map<string, TilesetPaths>();
 
   const structRe = /const\s+struct\s+Tileset\s+(g\w+)\s*=\s*\{([\s\S]*?)\n\};/g;

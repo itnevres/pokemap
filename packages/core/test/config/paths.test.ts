@@ -15,6 +15,7 @@ describe("projectPaths", () => {
     expect(p.tilesetHeadersH).toBe("C:/proj/src/data/tilesets/headers.h");
     expect(p.tilesetMetatilesH).toBe("C:/proj/src/data/tilesets/metatiles.h");
     expect(p.tilesetGraphicsH).toBe("C:/proj/src/data/tilesets/graphics.h");
+    expect(p.tilesetGraphicsC).toBe("C:/proj/src/graphics.c");
     expect(p.eventObjectsH).toBe("C:/proj/include/constants/event_objects.h");
     expect(p.sidecar).toBe("C:/proj/.pokemap/world.json");
     expect(p.mapDir("NewBarkTown")).toBe("C:/proj/data/maps/NewBarkTown");
