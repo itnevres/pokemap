@@ -1996,7 +1996,7 @@ import { openProject } from "../../src/project.js";
 const proj = openProject(SUBJECT_ROOT);
 
 describe("renderLayout", () => {
-  it("renders PetalburgCity at 16px per block", () => {
+  itWithCorpus("renders PetalburgCity at 16px per block", () => {
     const r = renderLayout(proj, "PetalburgCity");
     expect(r.width).toBe(30 * 16);
     expect(r.height).toBe(30 * 16);
@@ -2541,18 +2541,18 @@ import { openProject } from "../../src/project.js";
 const proj = openProject(SUBJECT_ROOT);
 
 describe("validateMetatileRange", () => {
-  it("agrees with the subject repo's Python checker: only Saffron_Temp is out of range", () => {
+  itWithCorpus("agrees with the subject repo's Python checker: only Saffron_Temp is out of range", () => {
     const findings = validateMetatileRange(proj);
     expect(findings.map((f) => f.layout).sort()).toEqual(["Saffron_Temp"]);
   }, 900_000);
 
-  it("reports the layout's own split version on every finding", () => {
+  itWithCorpus("reports the layout's own split version on every finding", () => {
     for (const f of validateMetatileRange(proj)) {
       expect(["emerald", "frlg", "hns"]).toContain(f.split.version);
     }
   }, 900_000);
 
-  it("checking every layout against one global constant is the bug, not the test", () => {
+  itWithCorpus("checking every layout against one global constant is the bug, not the test", () => {
     // Forcing the 640 boundary onto emerald layouts must produce many findings.
     const forced = { ...proj, splitFor: () => ({ version: "hns" as const, tiles: 640, metatiles: 640, pals: 7 }) };
     expect(validateMetatileRange(forced as typeof proj).length).toBeGreaterThan(100);
@@ -3242,7 +3242,7 @@ import { drawGrid, drawCollision, drawEvents } from "../../src/render/overlays.j
 const proj = openProject(SUBJECT_ROOT);
 
 describe("overlays", () => {
-  it("drawGrid only touches pixels on 16px boundaries", () => {
+  itWithCorpus("drawGrid only touches pixels on 16px boundaries", () => {
     const r = renderLayout(proj, "PetalburgCity");
     const before = Buffer.from(r.data);
     drawGrid(r, 16);
@@ -3256,7 +3256,7 @@ describe("overlays", () => {
     expect(changedInterior).toBe(false);
   });
 
-  it("drawCollision marks every non-zero collision block", () => {
+  itWithCorpus("drawCollision marks every non-zero collision block", () => {
     const r = renderLayout(proj, "PetalburgCity");
     const blocked = r.blocks.filter((b) => b.collision !== 0).length;
     expect(blocked).toBeGreaterThan(0);
@@ -3405,20 +3405,20 @@ describe("buildWorld", () => {
     expect(townLayout.width).toBeGreaterThan(0);
   });
 
-  it("excludes dive and emerge from planar placement but records them as links", () => {
+  itWithCorpus("excludes dive and emerge from planar placement but records them as links", () => {
     const w = buildWorld(proj);
     expect(w.verticalLinks.length).toBe(14); // 7 dive + 7 emerge
     for (const l of w.verticalLinks) expect(["dive", "emerge"]).toContain(l.direction);
   });
 
-  it("groups maps into connected components", () => {
+  itWithCorpus("groups maps into connected components", () => {
     const w = buildWorld(proj);
     expect(w.components.length).toBeGreaterThan(1);
     const total = w.components.reduce((n, c) => n + c.maps.length, 0);
     expect(total).toBe(w.placements.size);
   });
 
-  it("reports contradictions instead of silently picking one", () => {
+  itWithCorpus("reports contradictions instead of silently picking one", () => {
     const w = buildWorld(proj);
     for (const c of w.conflicts) {
       expect(c).toHaveProperty("map");
@@ -3429,7 +3429,7 @@ describe("buildWorld", () => {
     expect(w.conflicts.length).toBeLessThanOrEqual(w.placements.size);
   });
 
-  it("gives every component a non-overlapping bounding box", () => {
+  itWithCorpus("gives every component a non-overlapping bounding box", () => {
     const w = buildWorld(proj);
     for (let i = 0; i < w.components.length; i++) {
       for (let j = i + 1; j < w.components.length; j++) {
@@ -3610,7 +3610,7 @@ import { openProject } from "../../src/project.js";
 const proj = openProject(SUBJECT_ROOT);
 
 describe("autoLayoutUnplaced", () => {
-  it("places every map that has no planar connections", () => {
+  itWithCorpus("places every map that has no planar connections", () => {
     const world = buildWorld(proj);
     const before = world.placements.size;
     const placed = autoLayoutUnplaced(proj, world);
@@ -3618,7 +3618,7 @@ describe("autoLayoutUnplaced", () => {
     expect(world.placements.size).toBe(before); // buildWorld's result is not mutated
   });
 
-  it("clusters maps linked by warps near each other", () => {
+  itWithCorpus("clusters maps linked by warps near each other", () => {
     const world = buildWorld(proj);
     const placed = autoLayoutUnplaced(proj, world);
     const base = placed.get("NavelRock_Base");
@@ -3629,7 +3629,7 @@ describe("autoLayoutUnplaced", () => {
     }
   });
 
-  it("produces no overlapping placements", () => {
+  itWithCorpus("produces no overlapping placements", () => {
     const world = buildWorld(proj);
     const all = [...autoLayoutUnplaced(proj, world).values()];
     for (let i = 0; i < all.length; i++) {
@@ -3641,7 +3641,7 @@ describe("autoLayoutUnplaced", () => {
     }
   });
 
-  it("returns an empty map when auto-layout is disabled", () => {
+  itWithCorpus("returns an empty map when auto-layout is disabled", () => {
     const world = buildWorld(proj);
     expect(autoLayoutUnplaced(proj, world, { enabled: false }).size).toBe(0);
   });
@@ -4222,7 +4222,7 @@ import { openProject } from "../../src/project.js";
 const proj = openProject(SUBJECT_ROOT);
 
 describe("whereSpecies", () => {
-  it("finds every map containing a species, with rate and level band", () => {
+  itWithCorpus("finds every map containing a species, with rate and level band", () => {
     const hits = whereSpecies(proj, "SPECIES_ESPEON");
     expect(hits.length).toBeGreaterThan(0);
     const route101 = hits.find((h) => h.mapId === "MAP_ROUTE101")!;
@@ -4231,7 +4231,7 @@ describe("whereSpecies", () => {
     expect(route101.minLevel).toBe(2);
   });
 
-  it("returns nothing for a species that appears nowhere", () => {
+  itWithCorpus("returns nothing for a species that appears nowhere", () => {
     expect(whereSpecies(proj, "SPECIES_NOT_A_REAL_MON")).toEqual([]);
   });
 });
@@ -4243,14 +4243,14 @@ describe("coverage", () => {
     expect(c.mapsWithoutEncounters.length).toBe(proj.mapNames().length - 497);
   });
 
-  it("reports an average level per map for the level-curve lens", () => {
+  itWithCorpus("reports an average level per map for the level-curve lens", () => {
     const c = coverage(proj);
     const withLevels = c.levelByMap.filter((m) => m.averageLevel > 0);
     expect(withLevels.length).toBeGreaterThan(400);
     for (const m of withLevels) expect(m.averageLevel).toBeGreaterThan(1);
   });
 
-  it("lists species that appear in zero encounter tables", () => {
+  itWithCorpus("lists species that appear in zero encounter tables", () => {
     const c = coverage(proj);
     expect(Array.isArray(c.unusedSpecies)).toBe(true);
   });
@@ -4453,7 +4453,7 @@ describe("speciesToDirName", () => {
 });
 
 describe("renderSpeciesIcon", () => {
-  it("renders a 32x32 icon frame", () => {
+  itWithCorpus("renders a 32x32 icon frame", () => {
     const r = renderSpeciesIcon(proj, "SPECIES_ESPEON")!;
     expect(r.width).toBe(32);
     expect(r.height).toBe(32);
@@ -4462,11 +4462,11 @@ describe("renderSpeciesIcon", () => {
     expect(opaque).toBeGreaterThan(50);
   });
 
-  it("returns undefined for a species with no art rather than throwing", () => {
+  itWithCorpus("returns undefined for a species with no art rather than throwing", () => {
     expect(renderSpeciesIcon(proj, "SPECIES_NOT_A_REAL_MON")).toBeUndefined();
   });
 
-  it("renders the overworld sprite used by wild signs", () => {
+  itWithCorpus("renders the overworld sprite used by wild signs", () => {
     const r = renderSpeciesIcon(proj, "SPECIES_POLIWRATH", { source: "overworld" })!;
     expect(r.width).toBeGreaterThan(0);
   });
