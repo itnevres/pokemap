@@ -1083,6 +1083,15 @@ This is not hypothetical caution. Measured against the tree: **22 of its 242 til
 
 Worse, the relation is **many-to-one**, so no function from symbol to path can exist regardless of how clever the rule is. Nine symbols share `primary/building` (`gTileset_Building` plus the eight Frontier facilities) and six share `secondary/secret_base`. The subject repo's own `rules.md` records a mangling attempt getting this wrong before. The mapping is data; read it.
 
+**A tileset's art does not always live beside its metatiles.** `.tiles` and
+`.metatiles` are separate fields pointing at separate INCBIN paths, and for **15
+of the 242 tilesets they are in different directories** — `gTileset_Building_Frontier`
+has metatiles in `primary/building` but art in `primary/building_frontier`.
+Deriving the `tiles.png` path from the metatiles directory sends **93 layouts** to
+another tileset's art, and for the eight `Building_*` cases a `tiles.png` exists
+at the wrong path too, so nothing errors: the map simply renders wrong. Resolve
+each field from its own INCBIN entry.
+
 **Palette declarations are split across two files.** `gTileset_General`,
 `gTileset_General_Frontier_East` and `gTileset_General_Frontier_West` declare
 their palettes in `src/graphics.c`, not `src/data/tilesets/graphics.h`. Reading
@@ -1099,7 +1108,7 @@ would simply come out blank. Both files must be read.
 
 ```ts
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { parseTilesetPaths } from "../../src/load/tilesets.js";
 import { projectPaths } from "../../src/config/paths.js";
 import { SUBJECT_ROOT, itWithCorpus } from "../helpers/corpus.js";
@@ -1122,6 +1131,38 @@ describe("parseTilesetPaths", () => {
     // leaves this empty and every map using General renders transparent.
     expect(t.palettes).toHaveLength(16);
     expect(t.palettes[0]).toBe("data/tilesets/primary/general/palettes/00.gbapal");
+  });
+
+  itWithCorpus("resolves tilesPng from .tiles, not from the metatiles directory", () => {
+    // 15 tilesets keep their art in a different directory from their metatiles.
+    // Deriving one from the other renders 93 layouts with another tileset's
+    // art -- and for the Building_* cases a tiles.png exists at the wrong path
+    // too, so there is no error to notice, just a wrong map.
+    const t = read();
+    expect(t.get("gTileset_Building_Frontier")!.tilesPng)
+      .toBe("data/tilesets/primary/building_frontier/tiles.png");
+    expect(t.get("gTileset_Building_Frontier")!.dir)
+      .toBe("data/tilesets/primary/building");
+    expect(t.get("gTileset_SecretBaseTree")!.tilesPng)
+      .toBe("data/tilesets/secondary/tree/tiles.png");
+    expect(t.get("gTileset_FrlgSilphCo")!.tilesPng)
+      .toBe("data/tilesets/secondary/condominiums/tiles.png");
+    // And the ordinary case still agrees with dir.
+    expect(t.get("gTileset_Petalburg")!.tilesPng)
+      .toBe("data/tilesets/secondary/petalburg/tiles.png");
+  });
+
+  itWithCorpus("every tilesPng a layout depends on actually exists on disk", () => {
+    // The guard for this whole class: a path that is merely plausible resolves
+    // silently. Only the filesystem settles it.
+    const t = read();
+    const { layouts } = JSON.parse(readFileSync(P.layoutsJson, "utf8")) as { layouts: any[] };
+    const named = new Set(layouts.flatMap((l) => [l.primary_tileset, l.secondary_tileset]));
+    const missing = [...named].filter((k) => {
+      const png = t.get(k)?.tilesPng;
+      return !png || !existsSync(`${SUBJECT_ROOT}/${png}`);
+    });
+    expect(missing).toEqual([]);
   });
 
   itWithCorpus("every tileset layouts.json names resolves a non-empty palette list", () => {
@@ -1201,11 +1242,15 @@ Expected: FAIL — cannot find module.
 // packages/core/src/load/tilesets.ts
 export interface TilesetPaths {
   symbol: string;
+  /** The directory of `.metatiles` and `.metatileAttributes` ONLY. The art and
+   *  palettes can live elsewhere, so never build another path from this. */
   dir: string;
   isSecondary: boolean;
   metatilesBin: string;
   attributesBin: string;
-  /** Preferred source. `tiles.4bpp.lz` from graphics.h is a build artifact (I3). */
+  /** Resolved from the `.tiles` field's own INCBIN path, which is NOT always in
+   *  `dir` -- 15 tilesets differ. The INCBIN names `tiles.4bpp.lz`, a gitignored
+   *  build artifact (I3); its directory is right, the filename is not. */
   tilesPng: string;
   /** .gbapal paths as INCBINed; the .pal sibling is the committed source (I3). */
   palettes: string[];
@@ -1251,15 +1296,20 @@ export function parseTilesetPaths(
 
     const metatilesBin = data.get(field("metatiles") ?? "")?.[0];
     const attributesBin = data.get(field("metatileAttributes") ?? "")?.[0];
+    const tilesBin = data.get(field("tiles") ?? "")?.[0];
     const palettes = data.get(field("palettes") ?? "") ?? [];
     if (!metatilesBin || !attributesBin) continue;
 
-    const dir = metatilesBin.slice(0, metatilesBin.lastIndexOf("/"));
+    const dirOf = (p: string) => p.slice(0, p.lastIndexOf("/"));
+    const dir = dirOf(metatilesBin);
     out.set(symbol, {
       symbol, dir,
       isSecondary: /\.isSecondary\s*=\s*TRUE/.test(body),
       metatilesBin, attributesBin,
-      tilesPng: `${dir}/tiles.png`,
+      // From `.tiles`, not from `dir`. They differ for 15 tilesets, and eight
+      // of those have a tiles.png at the wrong path too, so getting this wrong
+      // renders another tileset's art with no error at all.
+      tilesPng: `${tilesBin ? dirOf(tilesBin) : dir}/tiles.png`,
       palettes,
     });
   }
@@ -1270,7 +1320,7 @@ export function parseTilesetPaths(
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run packages/core/test/load/tilesets.test.ts`
-Expected: PASS, 7 tests. If the "covers every tileset" test reports missing symbols, the `headers.h` struct regex needs widening — fix it rather than adding a fallback mangler.
+Expected: PASS, 9 tests. If the "covers every tileset" test reports missing symbols, the `headers.h` struct regex needs widening — fix it rather than adding a fallback mangler.
 
 - [ ] **Step 5: Commit**
 
