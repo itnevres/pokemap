@@ -397,7 +397,12 @@ Roughly fifteen later tests in this plan assert against the real decomp checkout
 // packages/core/test/helpers/corpus.ts
 import { existsSync, readFileSync } from "node:fs";
 import { it } from "vitest";
+import { projectPaths } from "../../src/config/paths.js";
 
+// Read at module load, resolved against the process cwd: run vitest from the
+// repo root. Roughly fifteen test files import this, so a missing or malformed
+// pokemap.config.json surfaces as one collection error per importing file
+// rather than a single one — noisy, but each message names the real cause.
 const config = JSON.parse(readFileSync("pokemap.config.json", "utf8")) as {
   projectPath: string;
   referenceProjects: string[];
@@ -408,7 +413,7 @@ export const REFERENCE_ROOTS = config.referenceProjects;
 
 /** A decomp checkout is "present" if the one file every engine has is there. */
 export const hasProject = (root: string): boolean =>
-  existsSync(`${root}/data/layouts/layouts.json`);
+  existsSync(projectPaths(root).layoutsJson);
 
 /** Skips rather than fails when the subject decomp is not on this machine. */
 export const itWithCorpus = it.skipIf(!hasProject(SUBJECT_ROOT));
@@ -421,7 +426,7 @@ export const availableReferenceRoots = (): string[] => REFERENCE_ROOTS.filter(ha
  * so a caller can skip rather than fail.
  */
 export const referenceRoot = (name: string): string | undefined =>
-  REFERENCE_ROOTS.find((r) => r.replace(/\/g, "/").split("/").pop() === name && hasProject(r));
+  REFERENCE_ROOTS.find((r) => projectPaths(r).root.split("/").pop() === name && hasProject(r));
 ```
 
 Note it reads `pokemap.config.json` rather than hardcoding a path, so a contributor with the decomp elsewhere only edits one file.
@@ -432,6 +437,8 @@ Note it reads `pokemap.config.json` rather than hardcoding a path, so a contribu
 const frlg = referenceRoot("pokefirered");
 it.skipIf(!frlg)("...", () => { /* frlg is defined here */ });
 ```
+
+Both helpers route through `projectPaths`, which already normalises backslashes and strips trailing slashes. Do not hand-roll that here: a configured root written as `"C:/repos/pokefirered/"` would make a naive `.split("/").pop()` return `""`, the lookup would miss, and the test would **silently skip** — losing that engine's coverage with no signal that anything broke.
 
 - [ ] **Step 6: Add a test against the real header**
 
@@ -557,9 +564,6 @@ Expected: FAIL — cannot find module.
 
 ```ts
 // packages/core/src/config/engine.ts
-export type BaseGameVersion =
-  | "pokeemerald" | "pokefirered" | "pokeruby" | "pokeemerald-expansion";
-
 export interface EngineProfile {
   baseGameVersion: string;
   blockMetatileIdMask: number;
@@ -622,6 +626,10 @@ export function defaultProfile(version: string): EngineProfile {
   };
 }
 
+// Adding a cfg-backed field to EngineProfile? Add its override below too.
+// The `...base` spread makes every field structurally satisfied, so a forgotten
+// override type-checks fine and silently returns the default instead of the
+// value the cfg asked for.
 export function engineProfile(cfg: Record<string, string>): EngineProfile {
   const base = defaultProfile(cfg.base_game_version ?? "pokeemerald");
   const collision = num(cfg.block_collision_mask, base.blockCollisionMask);
