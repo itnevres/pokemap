@@ -913,7 +913,7 @@ import { projectPaths } from "../../src/config/paths.js";
 const P = projectPaths(SUBJECT_ROOT);
 
 describe("parseMapGroups", () => {
-  it("reads group order and membership", () => {
+  itWithCorpus("reads group order and membership", () => {
     const g = parseMapGroups(readFileSync(P.mapGroupsJson, "utf8"));
     expect(g.groupOrder[0]).toBe("gMapGroup_TownsAndRoutes");
     expect(g.groupOrder).toHaveLength(28);
@@ -923,7 +923,7 @@ describe("parseMapGroups", () => {
 });
 
 describe("parseMap", () => {
-  it("reads NewBarkTown's header, connections and events", () => {
+  itWithCorpus("reads NewBarkTown's header, connections and events", () => {
     const m = parseMap(readFileSync(P.mapJson("NewBarkTown"), "utf8"));
     expect(m.id).toBe("MAP_NEW_BARK_TOWN");
     expect(m.layout).toBe("LAYOUT_NEW_BARK_TOWN");
@@ -933,7 +933,7 @@ describe("parseMap", () => {
     expect(m.objectEvents.length).toBeGreaterThan(0);
   });
 
-  it("preserves species object events verbatim", () => {
+  itWithCorpus("preserves species object events verbatim", () => {
     const m = parseMap(readFileSync(P.mapJson("CeladonCity"), "utf8"));
     const sign = m.objectEvents.find((o) => o.graphicsId.startsWith("OBJ_EVENT_GFX_SPECIES"));
     expect(sign).toMatchObject({
@@ -1097,7 +1097,7 @@ describe("parseTilesetPaths", () => {
     expect(t.metatilesBin).toContain("/general_frontier_west/");
   });
 
-  it("covers every tileset named by layouts.json", () => {
+  itWithCorpus("covers every tileset named by layouts.json", () => {
     const paths = read();
     const { layouts } = JSON.parse(readFileSync(P.layoutsJson, "utf8")) as { layouts: any[] };
     const missing = new Set<string>();
@@ -1208,7 +1208,7 @@ describe("parseJascPal", () => {
     expect(pal[1]).toEqual({ r: 255, g: 255, b: 255 });
   });
 
-  it("parses the subject repo's real palette", () => {
+  itWithCorpus("parses the subject repo's real palette", () => {
     const pal = parseJascPal(readFileSync(
       `${SUBJECT_ROOT}/data/tilesets/primary/general/palettes/00.pal`, "utf8"));
     expect(pal).toHaveLength(16);
@@ -1281,7 +1281,7 @@ import { readIndexedPng } from "../../src/load/png.js";
 const G = SUBJECT_ROOT;
 
 describe("readIndexedPng", () => {
-  it("reads a depth-8 indexed PNG (primary/general tiles)", () => {
+  itWithCorpus("reads a depth-8 indexed PNG (primary/general tiles)", () => {
     const img = readIndexedPng(readFileSync(`${G}/data/tilesets/primary/general/tiles.png`));
     expect(img.width).toBe(128);
     expect(img.height).toBe(256);
@@ -1289,7 +1289,7 @@ describe("readIndexedPng", () => {
     expect(Math.max(...img.indices)).toBeLessThanOrEqual(15);
   });
 
-  it("reads a depth-4 indexed PNG (secondary/petalburg tiles)", () => {
+  itWithCorpus("reads a depth-4 indexed PNG (secondary/petalburg tiles)", () => {
     const img = readIndexedPng(readFileSync(`${G}/data/tilesets/secondary/petalburg/tiles.png`));
     expect(img.width).toBe(128);
     expect(img.height).toBe(80);
@@ -1297,12 +1297,12 @@ describe("readIndexedPng", () => {
     expect(Math.max(...img.indices)).toBeLessThanOrEqual(15);
   });
 
-  it("reads a mon overworld sprite", () => {
+  itWithCorpus("reads a mon overworld sprite", () => {
     const img = readIndexedPng(readFileSync(`${G}/graphics/object_events/pics/pokemon/espeon.png`));
     expect([img.width, img.height]).toEqual([192, 32]);
   });
 
-  it("throws a clear error on an unsupported colour type", () => {
+  itWithCorpus("throws a clear error on an unsupported colour type", () => {
     const truecolour = Buffer.from(readFileSync(`${G}/data/tilesets/primary/general/tiles.png`));
     truecolour[25] = 6; // colourType 6
     expect(() => readIndexedPng(truecolour)).toThrow(/colour type/i);
@@ -1589,14 +1589,14 @@ describe("parseBlocks", () => {
     expect(b).toEqual({ metatileId: 0x123, collision: 1, elevation: 3 });
   });
 
-  it("reads NewBarkTown's real map.bin", () => {
+  itWithCorpus("reads NewBarkTown's real map.bin", () => {
     const blocks = parseBlocks(readFileSync(`${G}/data/layouts/NewBarkTown/map.bin`), PROFILE);
     expect(blocks).toHaveLength(1170);
     expect(blocks.every((b) => b.metatileId <= 0x3ff)).toBe(true);
     expect(blocks.every((b) => b.elevation <= 15)).toBe(true);
   });
 
-  it("block count equals width * height for every layout", () => {
+  itWithCorpus("block count equals width * height for every layout", () => {
     const { layouts } = JSON.parse(readFileSync(`${G}/data/layouts/layouts.json`, "utf8")) as { layouts: any[] };
     const bad: string[] = [];
     for (const l of layouts) {
@@ -2002,7 +2002,7 @@ describe("renderLayout", () => {
     expect(r.height).toBe(30 * 16);
   });
 
-  it("renders an emerald and an hns layout in the same session, both fully in range", () => {
+  itWithCorpus("renders an emerald and an hns layout in the same session, both fully in range", () => {
     const emerald = proj.layoutByName("PetalburgCity")!;
     const hns = proj.layouts.find((l) => l.layoutVersion === "hns")!;
     expect(emerald.layoutVersion).toBe("emerald");
@@ -2010,7 +2010,7 @@ describe("renderLayout", () => {
     expect(renderLayout(proj, hns.name).outOfRangeCount).toBe(0);
   });
 
-  it("includes the border when asked, honouring a 3x2 border", () => {
+  itWithCorpus("includes the border when asked, honouring a 3x2 border", () => {
     const wide = proj.layouts.find((l) => l.borderWidth === 3)!;
     const plain = renderLayout(proj, wide.name);
     const bordered = renderLayout(proj, wide.name, { border: 1 });
@@ -2018,7 +2018,7 @@ describe("renderLayout", () => {
     expect(bordered.height).toBe(plain.height + 2 * 2 * 16);
   });
 
-  it("renders every layout in the subject repo without throwing", () => {
+  itWithCorpus("renders every layout in the subject repo without throwing", () => {
     const failures: string[] = [];
     for (const l of proj.layouts) {
       try { renderLayout(proj, l.name); } catch (e) { failures.push(`${l.name}: ${(e as Error).message}`); }
@@ -2474,7 +2474,7 @@ const list = JSON.parse(readFileSync("fixtures/visual-list.json", "utf8")) as { 
 const HASHES = "fixtures/visual-hashes.json";
 
 describe("visual regression", () => {
-  it("renders the fixed list to stable hashes", () => {
+  itWithCorpus("renders the fixed list to stable hashes", () => {
     const actual: Record<string, string> = {};
     for (const name of list.layouts) {
       const r = renderLayout(proj, name, { border: 1 });
@@ -2487,7 +2487,7 @@ describe("visual regression", () => {
     expect(actual).toEqual(JSON.parse(readFileSync(HASHES, "utf8")));
   });
 
-  it("covers both metatile boundaries and a 3x2 border", () => {
+  itWithCorpus("covers both metatile boundaries and a 3x2 border", () => {
     const versions = new Set(list.layouts.map((n) => proj.layoutByName(n)?.layoutVersion ?? "emerald"));
     expect(versions.has("emerald")).toBe(true);
     expect([...versions].some((v) => v === "hns" || v === "frlg")).toBe(true);
@@ -3263,7 +3263,7 @@ describe("overlays", () => {
     expect(() => drawCollision(r)).not.toThrow();
   });
 
-  it("drawEvents marks warps, objects and bg events distinctly", () => {
+  itWithCorpus("drawEvents marks warps, objects and bg events distinctly", () => {
     const r = renderLayout(proj, "CeladonCity");
     const map = proj.map("CeladonCity");
     const marks = drawEvents(r, map);
@@ -3395,7 +3395,7 @@ import { openProject } from "../../src/project.js";
 const proj = openProject(SUBJECT_ROOT);
 
 describe("buildWorld", () => {
-  it("places NewBarkTown's left neighbour to its left, at the stated offset", () => {
+  itWithCorpus("places NewBarkTown's left neighbour to its left, at the stated offset", () => {
     const w = buildWorld(proj);
     const town = w.placements.get("NewBarkTown")!;
     const route = w.placements.get("Route29")!;
@@ -4237,7 +4237,7 @@ describe("whereSpecies", () => {
 });
 
 describe("coverage", () => {
-  it("counts maps with and without encounter tables", () => {
+  itWithCorpus("counts maps with and without encounter tables", () => {
     const c = coverage(proj);
     expect(c.mapsWithEncounters).toBe(497);
     expect(c.mapsWithoutEncounters.length).toBe(proj.mapNames().length - 497);
