@@ -393,7 +393,7 @@ export function parseFieldmapConstants(src: string): FieldmapConstants {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run packages/core/test/config/fieldmap.test.ts`
-Expected: PASS, 3 tests.
+Expected: PASS, 5 tests.
 
 - [ ] **Step 5: Create the corpus test helper**
 
@@ -662,7 +662,7 @@ Note: `supportsLayoutVersion` is *also* set true whenever `layouts.json` actuall
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run packages/core/test/config/engine.test.ts`
-Expected: PASS, 4 tests.
+Expected: PASS, 5 tests.
 
 - [ ] **Step 5: Add real-corpus tests**
 
@@ -2229,7 +2229,7 @@ it("encodeBlocks refuses a field too wide for its mask", () => {
 ```
 
 Run: `npx vitest run packages/core/test/load/blocks.test.ts`
-Expected: PASS, 6 tests.
+Expected: PASS, 7 tests.
 
 - [ ] **Step 5: Commit**
 
@@ -2934,7 +2934,7 @@ export function renderLayout(proj: Project, layoutName: string, opts: RenderLayo
 - [ ] **Step 5: Run test to verify it passes**
 
 Run: `npx vitest run packages/core/test/render/layout.test.ts`
-Expected: PASS, 4 tests. The last test walks all 1,020 layouts and is slow by design — it is the first real proof the whole tree renders.
+Expected: PASS, 5 tests. The last test walks all 1,020 layouts and is slow by design — it is the first real proof the whole tree renders.
 
 - [ ] **Step 6: Commit**
 
@@ -3577,7 +3577,7 @@ function enterIndex(s: string, arrStart: number, index: number): number {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run packages/core/test/write/jsonEdit.test.ts`
-Expected: PASS, 5 tests.
+Expected: PASS, 9 tests.
 
 - [ ] **Step 5: Write the corpus gate**
 
@@ -4380,7 +4380,7 @@ function layOutComponents(components: Component[], placements: Map<string, Place
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run packages/core/test/world/connections.test.ts`
-Expected: PASS, 5 tests.
+Expected: PASS, 6 tests.
 
 If the conflicts list is large, that is a finding about the subject repo, not necessarily a bug in this code. Print it and check a couple by hand against `data/maps/<Name>/map.json` before adjusting the algorithm.
 
@@ -5317,7 +5317,7 @@ function allSpecies(proj: Project): string[] {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run packages/core/test/analyse/coverage.test.ts`
-Expected: PASS, 5 tests.
+Expected: PASS, 6 tests.
 
 - [ ] **Step 5: Add the CLI commands**
 
