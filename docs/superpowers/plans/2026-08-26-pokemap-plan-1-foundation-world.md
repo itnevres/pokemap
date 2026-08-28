@@ -2442,7 +2442,7 @@ export function blitScaled(dst: Raster, src: Raster, dx: number, dy: number, sca
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run packages/core/test/render/raster.test.ts`
-Expected: PASS, 7 tests.
+Expected: PASS, 8 tests.
 
 - [ ] **Step 5: Commit**
 
