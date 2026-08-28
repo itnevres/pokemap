@@ -2041,11 +2041,43 @@ describe("parseBlocks", () => {
   });
 
   itWithCorpus("reads NewBarkTown's real map.bin", () => {
+    // `metatileId <= 0x3ff` and `elevation <= 15` cannot fail -- both are masked
+    // to those widths on the way out, so they hold for any input whatsoever.
+    // Measured values instead.
     const blocks = parseBlocks(readFileSync(`${G}/data/layouts/NewBarkTown/map.bin`), PROFILE);
     expect(blocks).toHaveLength(1170);
-    expect(blocks.every((b) => b.metatileId <= 0x3ff)).toBe(true);
-    expect(blocks.every((b) => b.elevation <= 15)).toBe(true);
+    expect(blocks.slice(0, 6)).toEqual([
+      { metatileId: 20, collision: 1, elevation: 0 },
+      { metatileId: 21, collision: 1, elevation: 0 },
+      { metatileId: 20, collision: 1, elevation: 0 },
+      { metatileId: 19, collision: 1, elevation: 0 },
+      { metatileId: 120, collision: 0, elevation: 3 },
+      { metatileId: 121, collision: 0, elevation: 3 },
+    ]);
+    expect(blocks.filter((b) => b.collision !== 0)).toHaveLength(807);
+    expect(blocks.reduce((t, b) => t + b.elevation, 0)).toBe(1073);
   });
+
+  itWithCorpus("the three fields are independent -- a wrong shift moves them together", () => {
+    // Across all 869,427 blocks in the tree, collision only ever takes 0 or 1
+    // (despite a 2-bit mask) and elevation takes 10 of its 16 possible values.
+    // A shift that was off by even one bit would smear those distributions.
+    const { layouts } = JSON.parse(readFileSync(`${G}/data/layouts/layouts.json`, "utf8")) as { layouts: any[] };
+    const col = new Map<number, number>(), elev = new Map<number, number>();
+    for (const l of layouts) {
+      for (const f of [l.blockdata_filepath, l.border_filepath]) {
+        for (const b of parseBlocks(readFileSync(`${G}/${f}`), PROFILE)) {
+          col.set(b.collision, (col.get(b.collision) ?? 0) + 1);
+          elev.set(b.elevation, (elev.get(b.elevation) ?? 0) + 1);
+        }
+      }
+    }
+    expect([...col.entries()].sort((a, b) => a[0] - b[0])).toEqual([[0, 396942], [1, 472485]]);
+    expect([...elev.entries()].sort((a, b) => a[0] - b[0])).toEqual([
+      [0, 493285], [1, 109599], [2, 722], [3, 242163], [4, 16536],
+      [5, 5060], [6, 418], [7, 845], [9, 112], [15, 687],
+    ]);
+  }, 300_000);
 
   itWithCorpus("block count equals width * height for every layout", () => {
     const { layouts } = JSON.parse(readFileSync(`${G}/data/layouts/layouts.json`, "utf8")) as { layouts: any[] };
@@ -2084,12 +2116,35 @@ export function parseBlocks(buf: Buffer, p: EngineProfile): Block[] {
   return out;
 }
 
+/**
+ * The exact inverse of `parseBlocks`, and Plan 2's whole write path depends on
+ * that being true rather than approximately true.
+ *
+ * It refuses a field that will not fit its mask instead of masking it away.
+ * `(4 << 10) & 0xC00` is 0 and `(7 << 10) & 0xC00` is 3, so a caller writing an
+ * out-of-range collision would silently store a different, perfectly legal
+ * value -- invisible to any round-trip over real data, because real data is
+ * always in range (I7).
+ */
 export function encodeBlocks(blocks: Block[], p: EngineProfile): Buffer {
+  const fits = (value: number, mask: number, shift: number) => ((value << shift) & mask) >>> shift === value;
+
   const buf = Buffer.alloc(blocks.length * 2);
-  blocks.forEach((b, i) => buf.writeUInt16LE(
-    (b.metatileId & p.blockMetatileIdMask) |
-    ((b.collision << p.blockCollisionShift) & p.blockCollisionMask) |
-    ((b.elevation << p.blockElevationShift) & p.blockElevationMask), i * 2));
+  blocks.forEach((b, i) => {
+    if ((b.metatileId & p.blockMetatileIdMask) !== b.metatileId) {
+      throw new Error(`block ${i}: metatileId ${b.metatileId} does not fit mask 0x${p.blockMetatileIdMask.toString(16)}`);
+    }
+    if (!fits(b.collision, p.blockCollisionMask, p.blockCollisionShift)) {
+      throw new Error(`block ${i}: collision ${b.collision} does not fit mask 0x${p.blockCollisionMask.toString(16)}`);
+    }
+    if (!fits(b.elevation, p.blockElevationMask, p.blockElevationShift)) {
+      throw new Error(`block ${i}: elevation ${b.elevation} does not fit mask 0x${p.blockElevationMask.toString(16)}`);
+    }
+    buf.writeUInt16LE(
+      b.metatileId |
+      ((b.collision << p.blockCollisionShift) & p.blockCollisionMask) |
+      ((b.elevation << p.blockElevationShift) & p.blockElevationMask), i * 2);
+  });
   return buf;
 }
 ```
@@ -2101,17 +2156,47 @@ Add to the test file:
 ```ts
 import { encodeBlocks } from "../../src/load/blocks.js";
 
-it("encodeBlocks is the exact inverse of parseBlocks for every real layout", () => {
+itWithCorpus("encodeBlocks is the exact inverse of parseBlocks, every layout, both files", () => {
+  // Plan 2's entire write path rests on this property, so it is checked over
+  // the whole corpus rather than a sample: 1,020 map.bin plus 1,020 border.bin,
+  // 869,427 blocks. An earlier draft took `layouts.slice(0, 50)` and skipped
+  // border.bin altogether -- the borders being exactly the data Porymap is
+  // documented to have destroyed on this tree.
   const { layouts } = JSON.parse(readFileSync(`${G}/data/layouts/layouts.json`, "utf8")) as { layouts: any[] };
-  for (const l of layouts.slice(0, 50)) {
-    const orig = readFileSync(`${G}/${l.blockdata_filepath}`);
-    expect(encodeBlocks(parseBlocks(orig, PROFILE), PROFILE).equals(orig)).toBe(true);
+  const failures: string[] = [];
+  let blocks = 0;
+
+  for (const l of layouts) {
+    for (const [kind, file] of [["map", l.blockdata_filepath], ["border", l.border_filepath]] as const) {
+      const orig = readFileSync(`${G}/${file}`);
+      const parsed = parseBlocks(orig, PROFILE);
+      blocks += parsed.length;
+      if (!encodeBlocks(parsed, PROFILE).equals(orig)) failures.push(`${l.name} ${kind}`);
+    }
   }
+
+  expect(failures).toEqual([]);
+  expect(blocks).toBe(869427);
+}, 300_000);
+
+it("encodeBlocks refuses a field too wide for its mask", () => {
+  // Silent truncation is the hazard here, and it is invisible to any
+  // round-trip over real data because real data is always in range. Measured:
+  // collision 4 encodes to 0 and collision 7 to 3, so a paint tool writing an
+  // out-of-range value would quietly store a different, legal one.
+  const bad = [{ metatileId: 0, collision: 4, elevation: 0 }];
+  expect(() => encodeBlocks(bad, PROFILE)).toThrow(/collision/i);
+  expect(() => encodeBlocks([{ metatileId: 0x400, collision: 0, elevation: 0 }], PROFILE))
+    .toThrow(/metatileId/i);
+  expect(() => encodeBlocks([{ metatileId: 0, collision: 0, elevation: 16 }], PROFILE))
+    .toThrow(/elevation/i);
+  // The widest legal value of each field still encodes.
+  expect(() => encodeBlocks([{ metatileId: 0x3ff, collision: 3, elevation: 15 }], PROFILE)).not.toThrow();
 });
 ```
 
 Run: `npx vitest run packages/core/test/load/blocks.test.ts`
-Expected: PASS, 4 tests.
+Expected: PASS, 6 tests.
 
 - [ ] **Step 5: Commit**
 
