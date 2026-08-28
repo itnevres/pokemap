@@ -2252,7 +2252,7 @@ git commit -m "feat(core): decode and encode map.bin blockdata"
 
 ```ts
 import { describe, it, expect } from "vitest";
-import { createRaster, blit, fillRect } from "../../src/render/raster.js";
+import { createRaster, blit, blitScaled, fillRect } from "../../src/render/raster.js";
 
 describe("raster", () => {
   it("creates a transparent RGBA buffer", () => {
@@ -2273,12 +2273,87 @@ describe("raster", () => {
     expect([...dst.data.slice(4, 8)]).toEqual([10, 20, 30, 255]);
   });
 
-  it("clips a blit that runs past the destination edge", () => {
+  it("clips a blit that runs past the far edge, writing only the overlap", () => {
+    // "does not throw" would pass against an empty function body. Check which
+    // pixels actually changed.
     const dst = createRaster(2, 2);
     const src = createRaster(2, 2);
     src.data.fill(255);
-    expect(() => blit(dst, src, 1, 1)).not.toThrow();
-    expect([...dst.data.slice(0, 4)]).toEqual([0, 0, 0, 0]);
+    blit(dst, src, 1, 1);
+    const px = (x: number, y: number) => [...dst.data.slice((y * 2 + x) * 4, (y * 2 + x) * 4 + 4)];
+    expect(px(0, 0)).toEqual([0, 0, 0, 0]);
+    expect(px(1, 0)).toEqual([0, 0, 0, 0]);
+    expect(px(0, 1)).toEqual([0, 0, 0, 0]);
+    expect(px(1, 1)).toEqual([255, 255, 255, 255]);   // the single overlapping pixel
+  });
+
+  it("clips a blit at negative offsets, taking the source's far corner", () => {
+    const dst = createRaster(2, 2);
+    const src = createRaster(2, 2);
+    // Distinguish the four source pixels so we can tell which one landed.
+    for (let i = 0; i < 4; i++) src.data.set([i + 1, 0, 0, 255], i * 4);
+    blit(dst, src, -1, -1);
+    const px = (x: number, y: number) => [...dst.data.slice((y * 2 + x) * 4, (y * 2 + x) * 4 + 4)];
+    // src (1,1) -- its fourth pixel, value 4 -- is the only one still on screen.
+    expect(px(0, 0)).toEqual([4, 0, 0, 255]);
+    expect(px(1, 0)).toEqual([0, 0, 0, 0]);
+    expect(px(0, 1)).toEqual([0, 0, 0, 0]);
+  });
+
+  it("fillRect clamps to the raster instead of writing out of bounds", () => {
+    const r = createRaster(2, 2);
+    // Deliberately overhangs on every side.
+    fillRect(r, -5, -5, 100, 100, { r: 1, g: 2, b: 3, a: 4 });
+    expect([...r.data]).toEqual([
+      1, 2, 3, 4, 1, 2, 3, 4,
+      1, 2, 3, 4, 1, 2, 3, 4,
+    ]);
+  });
+
+  it("fillRect writes only the rectangle it is given", () => {
+    const r = createRaster(3, 1);
+    fillRect(r, 1, 0, 1, 1, { r: 9, g: 9, b: 9, a: 255 });
+    expect([...r.data]).toEqual([
+      0, 0, 0, 0,
+      9, 9, 9, 255,
+      0, 0, 0, 0,
+    ]);
+  });
+
+  it("blitScaled at scale 1 is byte-identical to blit", () => {
+    const src = createRaster(4, 4);
+    for (let i = 0; i < 16; i++) src.data.set([i * 16, i, 255 - i, 255], i * 4);
+
+    const viaBlit = createRaster(4, 4);
+    blit(viaBlit, src, 0, 0);
+    const viaScaled = createRaster(4, 4);
+    blitScaled(viaScaled, src, 0, 0, 1);
+
+    expect([...viaScaled.data]).toEqual([...viaBlit.data]);
+  });
+
+  it("blitScaled at 0.25 samples every fourth pixel, nearest-neighbour", () => {
+    // The world view draws 1,209 maps at a fraction of full size. Smoothing
+    // would blend adjacent metatiles into colours that exist in neither, so
+    // this must sample rather than average.
+    const src = createRaster(8, 8);
+    for (let y = 0; y < 8; y++) {
+      for (let x = 0; x < 8; x++) src.data.set([x * 8, y * 8, 0, 255], (y * 8 + x) * 4);
+    }
+    const dst = createRaster(2, 2);
+    blitScaled(dst, src, 0, 0, 0.25);
+
+    const px = (x: number, y: number) => [...dst.data.slice((y * 2 + x) * 4, (y * 2 + x) * 4 + 4)];
+    // Destination (0,0) samples source (0,0); (1,1) samples source (4,4).
+    expect(px(0, 0)).toEqual([0, 0, 0, 255]);
+    expect(px(1, 0)).toEqual([32, 0, 0, 255]);
+    expect(px(0, 1)).toEqual([0, 32, 0, 255]);
+    expect(px(1, 1)).toEqual([32, 32, 0, 255]);
+    // Every value present must come from the source; nothing averaged.
+    for (let i = 0; i < dst.data.length; i += 4) {
+      expect(dst.data[i]! % 8).toBe(0);
+      expect(dst.data[i + 1]! % 8).toBe(0);
+    }
   });
 });
 ```
@@ -2332,12 +2407,42 @@ export function blit(dst: Raster, src: Raster, dx: number, dy: number): void {
     }
   }
 }
+
+/**
+ * Nearest-neighbour scaled blit, for the world view's LOD levels.
+ *
+ * Sampling, never averaging: blending adjacent metatiles produces colours that
+ * exist in neither, and a blurred tile is a lie about the art. `scale === 1`
+ * must be byte-identical to `blit`.
+ */
+export function blitScaled(dst: Raster, src: Raster, dx: number, dy: number, scale: number): void {
+  const w = Math.max(1, Math.round(src.width * scale));
+  const h = Math.max(1, Math.round(src.height * scale));
+
+  for (let y = 0; y < h; y++) {
+    const ty = dy + y;
+    if (ty < 0 || ty >= dst.height) continue;
+    const sy = Math.min(src.height - 1, Math.floor(y / scale));
+    for (let x = 0; x < w; x++) {
+      const tx = dx + x;
+      if (tx < 0 || tx >= dst.width) continue;
+      const sx = Math.min(src.width - 1, Math.floor(x / scale));
+      const si = (sy * src.width + sx) * 4;
+      if (src.data[si + 3] === 0) continue;
+      const di = (ty * dst.width + tx) * 4;
+      dst.data[di] = src.data[si]!;
+      dst.data[di + 1] = src.data[si + 1]!;
+      dst.data[di + 2] = src.data[si + 2]!;
+      dst.data[di + 3] = src.data[si + 3]!;
+    }
+  }
+}
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run packages/core/test/render/raster.test.ts`
-Expected: PASS, 3 tests.
+Expected: PASS, 7 tests.
 
 - [ ] **Step 5: Commit**
 
