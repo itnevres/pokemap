@@ -2478,6 +2478,29 @@ count. If none do, the padding is belt-and-braces and worth saying so. If some
 do, those pixels render black here and something else on hardware — report it
 rather than quietly painting over it.
 
+**Secondary palettes are indexed absolutely, not offset by the split.** Palette
+index `p >= split.pals` reads `secondary.palettes[p]` — the secondary tileset's
+own `palettes/PP.pal` — and **not** `secondary.palettes[p - split.pals]`.
+`src/fieldmap.c:1012` loads the secondary with
+`LoadTilesetPalette(secondaryTileset, palsInPrimary * 16, …)`, and the body at
+`src/fieldmap.c:955` copies from `tileset->palettes[palsInPrimary]`: source
+index equals destination slot, under either split. Porymap's
+`Tileset::getBlockPalettes` does the same, taking
+`secondaryTileset->palettes.at(i)` for absolute `i`. The short-palette note
+above is only coherent under this rule — `gTileset_Barn`'s twelve entries that
+select palette **9** are what reach `secondary/barn/palettes/09.pal`; under an
+offset rule they would land on `03.pal`, which is full-length, and `09.pal`
+would be unreachable.
+
+**Layer order does not depend on the layer type.** Entries 0–3 paint first,
+entries 4–7 paint over them, for all of NORMAL, COVERED and SPLIT.
+`DrawMetatile` in `src/field_camera.c` varies only *which* background layer each
+half lands on — Bg3 bottom, Bg2 middle, Bg1 top — which decides whether the
+player sprite is drawn between the halves. In all three cases the bottom half
+goes to a lower-priority background than the top half. 283 of
+`gTileset_General`'s 512 metatiles are COVERED, so reordering on layer type
+would hide the top half of most of the tileset.
+
 **Files:**
 - Create: `packages/core/src/render/tile.ts`
 - Create: `packages/core/src/render/metatile.ts`
@@ -2489,7 +2512,7 @@ rather than quietly painting over it.
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { renderMetatile } from "../../src/render/metatile.js";
-import { loadTileset } from "../../src/load/tilesetData.js";
+import { loadTileset, type TileEntry } from "../../src/load/tilesetData.js";
 import { parseTilesetPaths } from "../../src/load/tilesets.js";
 import { projectPaths } from "../../src/config/paths.js";
 import { defaultProfile } from "../../src/config/engine.js";
@@ -2500,7 +2523,11 @@ const PROFILE = defaultProfile("pokeemerald");
 const PATHS = parseTilesetPaths(
   readFileSync(P.tilesetHeadersH, "utf8"),
   readFileSync(P.tilesetMetatilesH, "utf8"),
-  readFileSync(P.tilesetGraphicsH, "utf8"),
+  // BOTH graphics sources. gTileset_General INCBINs its palettes from
+  // src/graphics.c, not graphics.h. With graphics.h alone `palettes` comes back
+  // empty, every colour lookup misses, drawTile skips every pixel, and this
+  // whole file fails for a reason that has nothing to do with rendering.
+  [readFileSync(P.tilesetGraphicsH, "utf8"), readFileSync(P.tilesetGraphicsC, "utf8")],
 );
 const primary = loadTileset(P, PATHS.get("gTileset_General")!, PROFILE);
 const secondary = loadTileset(P, PATHS.get("gTileset_Petalburg")!, PROFILE);
@@ -2508,7 +2535,42 @@ const secondary = loadTileset(P, PATHS.get("gTileset_Petalburg")!, PROFILE);
 const EMERALD = { version: "emerald", tiles: 512, metatiles: 512, pals: 6 } as const;
 const HNS = { version: "hns", tiles: 640, metatiles: 640, pals: 7 } as const;
 
+const BLANK: TileEntry = { tile: 0, xFlip: false, yFlip: false, palette: 0 };
+
+/** The distinct RGB triples among the non-transparent pixels. */
+const colours = (r: { data: Uint8ClampedArray }): Set<string> => {
+  const s = new Set<string>();
+  for (let i = 0; i < r.data.length; i += 4) {
+    if (r.data[i + 3] !== 0) s.add(`${r.data[i]},${r.data[i + 1]},${r.data[i + 2]}`);
+  }
+  return s;
+};
+
+const opaqueCount = (r: { data: Uint8ClampedArray }): number => {
+  let n = 0;
+  for (let i = 3; i < r.data.length; i += 4) if (r.data[i] === 255) n++;
+  return n;
+};
+
 describe("renderMetatile", () => {
+  // Every test below names a specific metatile and expects specific art. If the
+  // subject repo's tilesets change, this says which assumption died instead of
+  // letting five other tests fail obscurely.
+  itWithCorpus("the fixtures still have the shape the rest of this file assumes", () => {
+    expect(primary.metatileCount).toBe(512); // makes 512 the first secondary id
+    expect(secondary.metatileCount).toBe(144);
+    expect(primary.palettes[2]?.length).toBe(16); // proves graphics.c was read
+    expect(primary.layerType(9)).toBe(0); // NORMAL
+    expect(primary.layerType(4)).toBe(1); // COVERED
+    expect(primary.layerType(16)).toBe(2); // SPLIT
+    // Petalburg metatile 135 is drawn entirely in palette index 9, which is past
+    // the emerald split of 6 -- the case that tells absolute palette indexing
+    // apart from split-offset indexing.
+    const drawn = secondary.metatile(135).filter((e) => e.tile !== 0);
+    expect(drawn.length).toBe(4);
+    expect(drawn.every((e) => e.palette === 9)).toBe(true);
+  });
+
   itWithCorpus("renders a 16x16 RGBA tile", () => {
     const r = renderMetatile(1, primary, secondary, EMERALD, PROFILE);
     expect(r.width).toBe(16);
@@ -2521,9 +2583,12 @@ describe("renderMetatile", () => {
 
     // A ground tile is fully opaque -- 256 of 256 pixels. "> 0" would pass
     // against a renderer that drew a single pixel and left the rest blank.
-    let opaque = 0;
-    for (let i = 3; i < r.data.length; i += 4) if (r.data[i] === 255) opaque++;
-    expect(opaque).toBe(16 * 16);
+    expect(opaqueCount(r)).toBe(16 * 16);
+
+    // Metatile 1 is four copies of tiles 2 and 3 in palette 2, and that art uses
+    // exactly three colours. Checking only "every colour is allowed" would pass
+    // against a renderer that flood-filled one allowed colour.
+    expect(colours(r)).toEqual(new Set(["115,197,164", "65,180,131", "164,213,197"]));
 
     // And every colour it used must come from a palette this metatile's own
     // tile entries reference -- not an arbitrary fill.
@@ -2531,15 +2596,36 @@ describe("renderMetatile", () => {
     for (const e of primary.metatile(1)) {
       for (const c of primary.palettes[e.palette] ?? []) allowed.add(`${c.r},${c.g},${c.b}`);
     }
-    for (let i = 0; i < r.data.length; i += 4) {
-      expect(allowed.has(`${r.data[i]},${r.data[i + 1]},${r.data[i + 2]}`)).toBe(true);
-    }
+    for (const c of colours(r)) expect(allowed.has(c)).toBe(true);
   });
 
   itWithCorpus("routes id 512 to the SECONDARY tileset under the emerald split", () => {
     // gTileset_General holds exactly 512 metatiles, so 512 is the first
     // secondary id for an emerald layout.
     expect(renderMetatile(512, primary, secondary, EMERALD, PROFILE).outOfRange).toBe(false);
+
+    // Petalburg metatile 0 is blank, so id 512 proves routing but not art.
+    // 512 + 135 proves the pixels really come off the secondary sheet.
+    const r = renderMetatile(512 + 135, primary, secondary, EMERALD, PROFILE);
+    expect(r.outOfRange).toBe(false);
+    expect(opaqueCount(r)).toBe(16 * 16);
+  });
+
+  itWithCorpus("indexes a secondary palette absolutely, not offset by the split", () => {
+    // src/fieldmap.c copies from `tileset->palettes[palsInPrimary]` into VRAM
+    // slot `palsInPrimary`, so slot p is the secondary's own palettes/PP.pal --
+    // never palettes[p - split.pals]. Petalburg metatile 135 draws entirely in
+    // palette 9; under the offset rule it would come from palettes[3], and all
+    // nine of its colours are absent from palettes[3], so this cannot pass by
+    // coincidence.
+    const r = renderMetatile(512 + 135, primary, secondary, EMERALD, PROFILE);
+    const right = new Set((secondary.palettes[9] ?? []).map((c) => `${c.r},${c.g},${c.b}`));
+    const wrong = new Set((secondary.palettes[3] ?? []).map((c) => `${c.r},${c.g},${c.b}`));
+    const got = colours(r);
+
+    expect(got.size).toBe(9);
+    for (const c of got) expect(right.has(c)).toBe(true);
+    for (const c of got) expect(wrong.has(c)).toBe(false);
   });
 
   itWithCorpus("flags id 512 as out of range under the hns split", () => {
@@ -2549,10 +2635,47 @@ describe("renderMetatile", () => {
     expect(renderMetatile(512, primary, secondary, HNS, PROFILE).outOfRange).toBe(true);
   });
 
+  // Layer order is the same for all three layer types. All three of these
+  // metatiles have both halves fully opaque, and their halves differ in 256,
+  // 186 and 128 of 256 pixels respectively, so a reversed order is visible.
+  for (const [id, type] of [[9, "NORMAL"], [4, "COVERED"], [16, "SPLIT"]] as const) {
+    itWithCorpus(`paints entries 4-7 over entries 0-3 for a ${type} metatile`, () => {
+      const e = primary.metatile(id);
+      const plain = renderMetatile(id, primary, secondary, EMERALD, PROFILE);
+
+      // If the top half wins, the result is identical to drawing the top half
+      // alone into the bottom slots with a blank top.
+      const topOnly = renderMetatile(id, primary, secondary, EMERALD, PROFILE, {
+        overrideEntries: [e[4]!, e[5]!, e[6]!, e[7]!, BLANK, BLANK, BLANK, BLANK],
+      });
+      expect(opaqueCount(plain)).toBe(16 * 16);
+      expect(opaqueCount(topOnly)).toBe(16 * 16);
+      expect(Buffer.from(plain.data).equals(Buffer.from(topOnly.data))).toBe(true);
+
+      // ...and not identical to drawing the bottom half alone, which is what a
+      // renderer that reorders on layerType would produce for COVERED.
+      const bottomOnly = renderMetatile(id, primary, secondary, EMERALD, PROFILE, {
+        overrideEntries: [e[0]!, e[1]!, e[2]!, e[3]!, BLANK, BLANK, BLANK, BLANK],
+      });
+      expect(Buffer.from(plain.data).equals(Buffer.from(bottomOnly.data))).toBe(false);
+    });
+  }
+
   itWithCorpus("honours x flips", () => {
     const entries = primary.metatile(1);
     const flipped = renderMetatile(1, primary, secondary, EMERALD, PROFILE, {
       overrideEntries: entries.map((e) => ({ ...e, xFlip: !e.xFlip })),
+    });
+    const plain = renderMetatile(1, primary, secondary, EMERALD, PROFILE);
+    expect(Buffer.from(flipped.data).equals(Buffer.from(plain.data))).toBe(false);
+  });
+
+  itWithCorpus("honours y flips", () => {
+    // Tiles 2 and 3 are asymmetric on both axes -- 9 and 7 mismatched row pairs
+    // -- so this discriminates rather than relying on luck.
+    const entries = primary.metatile(1);
+    const flipped = renderMetatile(1, primary, secondary, EMERALD, PROFILE, {
+      overrideEntries: entries.map((e) => ({ ...e, yFlip: !e.yFlip })),
     });
     const plain = renderMetatile(1, primary, secondary, EMERALD, PROFILE);
     expect(Buffer.from(flipped.data).equals(Buffer.from(plain.data))).toBe(false);
@@ -2616,8 +2739,14 @@ import { createRaster, type Raster } from "./raster.js";
 import { drawTile } from "./tile.js";
 
 export interface MetatileRaster extends Raster {
-  /** True when the id, or a tile it references, falls outside its tileset's
-   *  real range for this split. open-bugs.md #41, made visible. */
+  /** True when the metatile ID falls outside its tileset's real metatile count
+   *  for this split. open-bugs.md #41, made visible.
+   *
+   *  Scoped to the id deliberately. A tile index past the end of its sheet is a
+   *  separate failure that `drawTile` clips silently; no primary tileset in the
+   *  subject repo has one, and Task 17's port of check_metatile_range.py is
+   *  where that gets audited across the corpus. Do not widen this flag's
+   *  meaning without widening its test. */
   outOfRange: boolean;
 }
 
@@ -2629,7 +2758,16 @@ export interface RenderMetatileOptions { overrideEntries?: TileEntry[]; }
  *   id  <  split.metatiles  -> primary,   index id
  *   id  >= split.metatiles  -> secondary, index id - split.metatiles
  *
- * The same rule governs tile indices (split.tiles) and palettes (split.pals).
+ * Tile indices follow the same subtracting rule against split.tiles, because
+ * the two sheets are concatenated into one VRAM range.
+ *
+ * Palettes do NOT. A secondary tileset's palette array is indexed absolutely:
+ * VRAM slot p is loaded from that tileset's own palettes/PP.pal, so the lookup
+ * is secondary.palettes[p], not [p - split.pals]. See src/fieldmap.c:1012 and
+ * :955, and Porymap's Tileset::getBlockPalettes.
+ *
+ * `profile` is unused here today. It stays in the signature because Task 14
+ * passes it and Plan 0 fixes Plan 1's signatures for the later plans.
  */
 export function renderMetatile(
   id: number, primary: Tileset, secondary: Tileset,
@@ -2648,22 +2786,25 @@ export function renderMetatile(
   }
 
   const entries = opts.overrideEntries ?? owner.metatile(local);
-  const layerType = owner.layerType(local);
 
+  // Absolute, not offset -- see the header comment.
   const paletteFor = (p: number): RGB[] =>
-    p < split.pals ? (primary.palettes[p] ?? []) : (secondary.palettes[p - split.pals] ?? []);
+    p < split.pals ? (primary.palettes[p] ?? []) : (secondary.palettes[p] ?? []);
 
   const sheetFor = (t: number) =>
     t < split.tiles
       ? { sheet: primary.tiles, index: t }
       : { sheet: secondary.tiles, index: t - split.tiles };
 
-  // Entries 0-3 are the bottom layer, 4-7 the top. layerType 1 (covered) draws
-  // the top set first so the bottom overwrites it, matching how the hardware
-  // composites the BG layers for that type.
-  const order = layerType === 1 ? [4, 5, 6, 7, 0, 1, 2, 3] : [0, 1, 2, 3, 4, 5, 6, 7];
-
-  for (const i of order) {
+  // Entries 0-3 are the bottom layer, 4-7 the top, and the top always paints
+  // over the bottom. `layerType` decides which background layer each half lands
+  // on -- Bg3 bottom, Bg2 middle, Bg1 top -- and so whether the player sprite
+  // is drawn between them. It never reverses the two halves. See DrawMetatile
+  // in src/field_camera.c: NORMAL is Bg2/Bg1, COVERED is Bg3/Bg2, SPLIT is
+  // Bg3/Bg1, and in each the bottom half is the lower-priority background.
+  // So `owner.layerType(local)` is deliberately not consulted here. Task 21
+  // reads it to render the halves separately for the layer-toggle overlay.
+  for (const i of [0, 1, 2, 3, 4, 5, 6, 7]) {
     const e = entries[i];
     if (!e) continue;
     const { sheet, index } = sheetFor(e.tile);
@@ -2677,7 +2818,10 @@ export function renderMetatile(
 - [ ] **Step 5: Run test to verify it passes**
 
 Run: `npx vitest run packages/core/test/render/metatile.test.ts`
-Expected: PASS, 5 tests.
+Expected: PASS, 11 tests (the three layer-order cases are generated by a loop).
+
+Run with `--reporter=verbose` and confirm all 11 **ran** rather than skipped —
+they are all `itWithCorpus`, and a skipped corpus test reports green.
 
 - [ ] **Step 6: Commit**
 
