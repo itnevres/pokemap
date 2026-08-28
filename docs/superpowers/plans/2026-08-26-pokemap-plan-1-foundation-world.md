@@ -2079,12 +2079,45 @@ describe("parseBlocks", () => {
     ]);
   }, 300_000);
 
-  itWithCorpus("block count equals width * height for every layout", () => {
+  itWithCorpus("19 layouts carry one trailing block beyond width * height", () => {
+    // This asserted `bad).toEqual([])` in an earlier draft, which is simply not
+    // true of the data. 19 layouts have exactly one extra block in map.bin, and
+    // the extra word is 0x0000 in every case. It is inherited from upstream --
+    // vanilla pokeemerald has 20 such layouts, expansion 20, modern-emerald 19,
+    // pokeclassic 21 -- so it is a generation artifact of these stub layouts,
+    // not corruption in this tree.
+    //
+    // Harmless for rendering, which indexes width * height and ignores the
+    // tail. NOT harmless for writing: a writer that rebuilds the file from a
+    // width x height grid drops two bytes from each of these, which is exactly
+    // the class of damage invariant I5 exists to prevent. See Plan 2 Task 2.
+    const { layouts } = JSON.parse(readFileSync(`${G}/data/layouts/layouts.json`, "utf8")) as { layouts: any[] };
+    const over: { name: string; diff: number; tail: number }[] = [];
+
+    for (const l of layouts) {
+      const buf = readFileSync(`${G}/${l.blockdata_filepath}`);
+      const diff = buf.length / 2 - l.width * l.height;
+      if (diff !== 0) over.push({ name: l.name, diff, tail: buf.readUInt16LE(buf.length - 2) });
+    }
+
+    expect(over).toHaveLength(19);
+    expect(over.every((o) => o.diff === 1)).toBe(true);
+    expect(over.every((o) => o.tail === 0)).toBe(true);
+    expect(over.map((o) => o.name)).toContain("UnusedContestRoom1_Layout");
+    expect(over.map((o) => o.name)).toContain("CaveOfOrigin_Unused_B4F_Lava_Layout");
+    // Never short. A file with fewer blocks than its dimensions would break
+    // the renderer, and none does.
+    expect(over.every((o) => o.diff > 0)).toBe(true);
+  });
+
+  itWithCorpus("border.bin always matches borderWidth * borderHeight exactly", () => {
+    // No tolerance here -- borders are the data Porymap is documented to have
+    // shrunk on this tree, so any drift is a finding rather than a quirk.
     const { layouts } = JSON.parse(readFileSync(`${G}/data/layouts/layouts.json`, "utf8")) as { layouts: any[] };
     const bad: string[] = [];
     for (const l of layouts) {
-      const buf = readFileSync(`${G}/${l.blockdata_filepath}`);
-      if (buf.length / 2 !== l.width * l.height) bad.push(l.name);
+      const expected = (l.border_width ?? 2) * (l.border_height ?? 2);
+      if (readFileSync(`${G}/${l.border_filepath}`).length / 2 !== expected) bad.push(l.name);
     }
     expect(bad).toEqual([]);
   });

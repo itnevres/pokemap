@@ -104,10 +104,26 @@ export function planBlockdataWrite(proj: Project, layoutName: string, blocks: Bl
 
 Uses `encodeBlocks` from Plan 1 Task 11, whose exact-inverse property is already tested. Compares against the bytes currently on disk and returns `null` on equality, so opening a map and saving it without edits produces no write at all.
 
+**19 layouts carry a trailing block beyond `width * height`, and it must survive.**
+Measured in Plan 1 Task 11: 19 `map.bin` files hold exactly one extra block past
+their declared dimensions, always `0x0000`. It is an upstream artifact — vanilla
+pokeemerald has 20 of them — and it is invisible to the renderer, which indexes
+`width * height` and ignores the tail.
+
+It is **not** invisible to a writer. An editor holding a `width × height` grid
+and re-encoding from it drops two bytes from each of those files, and the
+zero-bytes-changed gate fails on exactly 19 layouts for a reason nobody would
+guess from the diff. `planBlockdataWrite` therefore encodes the whole `Block[]`
+that `parseBlocks` produced — which already includes the tail, since it reads
+`buf.length >> 1` — and never reconstructs length from the layout's dimensions.
+`border.bin` has no such tail: all 1,020 match `borderWidth * borderHeight`
+exactly, and any drift there is a finding, not a quirk.
+
 **Key tests:**
 - Unchanged blocks → `null`.
 - One changed block → a write whose `changedBlocks` is `[index]` and whose bytes differ from disk in exactly 2 bytes.
-- Round-trip: `planBlockdataWrite(parseBlocks(disk))` is `null` for all 1,020 layouts. This is the binary half of invariant **I5**.
+- Round-trip: `planBlockdataWrite(parseBlocks(disk))` is `null` for all 1,020 layouts, **including the 19 with a trailing block**. This is the binary half of invariant **I5**.
+- Editing one block in a trailing-block layout writes a file the same length as the original, not two bytes shorter.
 
 ---
 
