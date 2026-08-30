@@ -28,7 +28,24 @@ describe("renderLayout", () => {
     // nothing throws, and outOfRangeCount is about metatile ids rather than
     // palettes. An outdoor town is opaque in all 230,400 of its pixels, so the
     // exact count is the assertion, not "> 0".
-    expect(opaqueCount(r)).toBe(30 * 16 * 30 * 16);
+    expect(opaqueCount(r)).toBe(r.width * r.height);
+  });
+
+  itWithCorpus("supportsLayoutVersion survives a Porymap save that deletes layout_version keys", () => {
+    // The subject cfg says base_game_version=pokeemerald, and Porymap deletes
+    // every `layout_version` key it does not recognise when it saves
+    // layouts.json -- it did exactly that to this repo two days before this
+    // test was written. If supportsLayoutVersion depended only on the cfg term
+    // and the layouts.json scan, a post-save read of this project would come
+    // back false, Plan 2's missing-layout-version refusal would never fire,
+    // and every hns/frlg layout would silently resolve to the emerald 512
+    // boundary. hasSplitConstants in project.ts is the term that survives that
+    // save, because Porymap never writes include/fieldmap.h (I8).
+    expect(proj.constants.metatilesInPrimary).not.toBe(proj.constants.metatilesInPrimaryEmerald);
+    // Pin that the flag is NOT coming from the cfg term -- this tree's cfg
+    // says plain pokeemerald, which defaults supportsLayoutVersion to false.
+    expect(proj.profile.baseGameVersion).toBe("pokeemerald");
+    expect(proj.profile.supportsLayoutVersion).toBe(true);
   });
 
   itWithCorpus("refuses a map name where a layout name is required", () => {
@@ -81,6 +98,11 @@ describe("renderLayout", () => {
     const bordered = renderLayout(proj, wide!.name, { border: 1 });
     expect(bordered.width).toBe(plain.width + 3 * 2 * 16);
     expect(bordered.height).toBe(plain.height + 2 * 2 * 16);
+    // The two assertions above come from padX/padY, not from the border loop
+    // itself -- delete the loop body entirely and both still pass. This is
+    // the only thing in the file that proves the loop actually paints
+    // something into the ring it creates.
+    expect(opaqueCount(bordered)).toBe(bordered.width * bordered.height);
   });
 
   itWithCorpus("renders every layout in the subject repo, and only one is out of range", () => {
@@ -97,5 +119,5 @@ describe("renderLayout", () => {
     // it is the baseline Task 17's port of check_metatile_range.py has to
     // reproduce independently.
     expect(outOfRange).toEqual(["Saffron_Temp_Layout"]);
-  }, 900_000);
+  }, 120_000);
 });

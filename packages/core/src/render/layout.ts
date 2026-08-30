@@ -12,6 +12,16 @@ export interface LayoutRaster extends Raster {
   /** Pixel offset of block (0,0). Non-zero when a border is drawn. */
   originX: number;
   originY: number;
+  /**
+   * How many of the layout's own map blocks (not border blocks) rendered an
+   * out-of-range metatile -- see `MetatileRaster.outOfRange`. This counts
+   * blocks, not distinct metatile ids: the same bad id used on ten blocks
+   * adds ten, not one.
+   *
+   * Border blocks are blitted the same way but never touch this counter, so
+   * it is identical whether or not `opts.border` is set -- it answers "is
+   * this layout's own data corrupt", not "did anything on screen look wrong".
+   */
   outOfRangeCount: number;
   blocks: Block[];
 }
@@ -23,13 +33,31 @@ export interface RenderLayoutOptions {
 
 export function renderLayout(proj: Project, layoutName: string, opts: RenderLayoutOptions = {}): LayoutRaster {
   const layout = proj.layoutByName(layoutName);
-  if (!layout) throw new Error(`unknown layout ${layoutName}`);
+  if (!layout) {
+    throw new Error(
+      `unknown layout ${layoutName}: not among the ${proj.layouts.length} layouts in ` +
+      `${proj.paths.layoutsJson}. Have a map name instead? Use proj.layoutForMap(name).`,
+    );
+  }
 
   const split = proj.splitFor(layout);
   const primary = proj.tileset(layout.primaryTileset);
   const secondary = proj.tileset(layout.secondaryTileset);
 
-  const blocks = parseBlocks(readFileSync(`${proj.paths.root}/${layout.blockdataFilepath}`), proj.profile);
+  const blockdataPath = `${proj.paths.root}/${layout.blockdataFilepath}`;
+  const blocks = parseBlocks(readFileSync(blockdataPath), proj.profile);
+  const wantBlocks = layout.width * layout.height;
+  // A short file is a guess wearing the shape of a render: `blocks[i]` would
+  // come back `undefined` mid-grid and `!b` would skip it silently, leaving a
+  // partly transparent map with no complaint. Measured across the subject
+  // repo: 1,001 blockdata files exact, 19 over by rounding, 0 short -- so this
+  // never fires on real data (I7) and is cheap insurance against a corrupt one.
+  if (blocks.length < wantBlocks) {
+    throw new Error(
+      `${blockdataPath} holds ${blocks.length} blocks but ${layout.name} declares ` +
+      `${layout.width}x${layout.height} = ${wantBlocks}`,
+    );
+  }
 
   const rings = opts.border ?? 0;
   const padX = rings * layout.borderWidth;
