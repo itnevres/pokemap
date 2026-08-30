@@ -699,18 +699,35 @@ git commit -m "feat(core): build engine profile from porymap.project.cfg with pe
 The heart of invariant **I1**.
 
 **Known gap, found during Task 14's review and deliberately not fixed here.**
-`parseFieldmapConstants` reads `NUM_*_IN_PRIMARY_EMERALD` as the second
-boundary set. `pokeemerald-expansion` names its second set
-`NUM_*_IN_PRIMARY_FRLG` — 640/640/7 against a 512/512/6 base — and that name
-is not read, so `resolveSplit` sends a `layout_version: "frlg"` layout down the
-base branch and returns 512 where that engine's own header says 640. Harmless
-for the subject tree, where `frlg` and `hns` both resolve to 640 anyway and all
-349 frlg layouts are verified in range; wrong the moment the expansion tree is
-opened, which Plan 0 §6 requires before any plan is done. Checked across all
-seven reference engines: only `pokeemerald-expansion` uses the `_FRLG` name,
-and only it and `hns-v2` declare a second set at all. Fix it when the corpus
-gate starts exercising expansion, and give it a test that opens that tree
-rather than the subject one.
+Three places assume the second boundary set is spelled `_EMERALD`, and
+`pokeemerald-expansion` spells its `_FRLG` — `NUM_*_IN_PRIMARY_FRLG` at
+640/640/7 against a 512/512/6 base. Checked across all seven reference
+checkouts: only expansion uses that name, and only it and `hns-v2` declare a
+second set at all.
+
+1. `parseFieldmapConstants` does not read `_FRLG`, so its `*_EMERALD` fields
+   collapse onto the base and `resolveSplit` sends a `layout_version: "frlg"`
+   layout down the base branch, returning 512 where that engine's header says
+   640.
+2. `guessVersion` in Task 14's `openProject` greps for
+   `NUM_METATILES_IN_PRIMARY_EMERALD` to recognise an engine that supports
+   per-layout versions, so it reads expansion as plain `pokeemerald`.
+3. `hasSplitConstants`, also Task 14, compares the same collapsed fields and
+   therefore reads false.
+
+These compound rather than cover for one another, and the reason is worth
+writing down because an earlier note here got it wrong: **none of the reference
+checkouts except `pokefirered` ships a `porymap.project.cfg`**, so the cfg term
+that would otherwise rescue expansion never fires either. On that tree all
+three signals say "no per-layout split" and only the presence of
+`layout_version` keys in `layouts.json` carries it — the single source Task 14
+proved is destroyed by a Porymap save.
+
+Harmless for the subject tree, where `frlg` and `hns` both resolve to 640 and
+all 349 frlg layouts are verified in range. Wrong the moment the expansion tree
+is opened, which Plan 0 §6 requires before any plan is done. Fix all three
+together when the corpus gate starts exercising expansion, and test it by
+opening that tree rather than the subject one.
 
 **Files:**
 - Create: `packages/core/src/model/types.ts`
