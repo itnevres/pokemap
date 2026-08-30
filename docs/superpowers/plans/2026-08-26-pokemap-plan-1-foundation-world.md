@@ -3202,7 +3202,32 @@ git commit -m "feat(core): project facade and whole-layout rendering with border
 
 **Files:**
 - Create: `packages/cli/package.json`, `packages/cli/src/png.ts`, `packages/cli/src/index.ts`
-- Test: `packages/cli/test/png.test.ts`
+- Test: `packages/cli/test/png.test.ts`, `packages/cli/test/query.test.ts`
+
+**This is the first task that needs new dependencies.** Neither is installed:
+`commander` (the CLI framework) and `tsx` (which is how every `npx tsx` line
+below actually runs a TypeScript entry point — the repo has vitest, vite,
+esbuild and tsc, but no tsx). Install before Step 1, from the repo root:
+
+```bash
+npm install --save-dev tsx
+```
+
+and add `commander` to `packages/cli/package.json` as written in Step 4, then
+`npm install` again from the root so the workspace links it. If the machine is
+offline and neither can be fetched, stop and report BLOCKED rather than
+inventing a substitute — an argv parser hand-rolled to dodge an install is a
+worse outcome than a paused task.
+
+**Known risk, settle it early: the cross-package import.** Step 4 imports
+`@pokemap/core/src/project.js`. `packages/core/package.json` declares only
+`"main": "./src/index.ts"` with no `exports` map, and the file on disk is
+`.ts`, not `.js`. Vitest resolves this shape; `tsx` externalises `node_modules`
+by default and may not. Check it works under **both** before writing the rest
+of the CLI. If it does not, the fallbacks in order of preference are: add an
+`"exports"` map to `packages/core/package.json` exposing `"./src/*"`, or fall
+back to a relative import (`../../core/src/project.js`). Pick one, say which
+and why. Do not leave a command that only runs under the test runner.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -3221,9 +3246,17 @@ describe("encodePng", () => {
     expect(buf[25]).toBe(6); // colour type RGBA
   });
 
-  it("round-trips pixel data through zlib", () => {
-    const src = new Uint8ClampedArray([1,2,3,4, 5,6,7,8]);
-    const buf = encodePng({ width: 2, height: 1, data: src });
+  it("round-trips pixel data through zlib, with a filter byte per row", () => {
+    // Two rows, not one. A 2x1 image cannot catch a stride bug: the encoder
+    // emits a filter byte per ROW, so a single-row fixture passes against an
+    // implementation that writes one filter byte for the whole image, or that
+    // copies rows at the wrong offset. Every byte here is distinct so a
+    // misplaced row is visible rather than aliased.
+    const row0 = [1,2,3,4, 5,6,7,8];
+    const row1 = [9,10,11,12, 13,14,15,16];
+    const src = new Uint8ClampedArray([...row0, ...row1]);
+    const buf = encodePng({ width: 2, height: 2, data: src });
+
     let off = 8, idat: Buffer | null = null;
     while (off + 8 <= buf.length) {
       const len = buf.readUInt32BE(off);
@@ -3231,8 +3264,44 @@ describe("encodePng", () => {
       off += 12 + len;
     }
     const raw = inflateSync(idat!);
-    expect(raw[0]).toBe(0); // filter byte
-    expect([...raw.subarray(1)]).toEqual([...src]);
+
+    // 2 rows x (1 filter byte + 8 data bytes).
+    expect(raw.length).toBe(2 * (1 + 8));
+    expect(raw[0]).toBe(0);
+    expect([...raw.subarray(1, 9)]).toEqual(row0);
+    expect(raw[9]).toBe(0);
+    expect([...raw.subarray(10, 18)]).toEqual(row1);
+  });
+
+  it("emits a correct CRC for every chunk", () => {
+    // Without this the encoder can be self-consistently wrong: our own reader
+    // would round-trip happily while no other decoder accepts the file. Walk
+    // the chunks and recompute each CRC over type+data, the way a decoder does.
+    const buf = encodePng({ width: 3, height: 2, data: new Uint8ClampedArray(3 * 2 * 4).fill(200) });
+
+    const table = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) {
+      let c = n;
+      for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+      table[n] = c >>> 0;
+    }
+    const crc = (b: Buffer) => {
+      let c = 0xffffffff;
+      for (const x of b) c = table[(c ^ x) & 0xff]! ^ (c >>> 8);
+      return (c ^ 0xffffffff) >>> 0;
+    };
+
+    const seen: string[] = [];
+    let off = 8;
+    while (off + 12 <= buf.length) {
+      const len = buf.readUInt32BE(off);
+      const type = buf.toString("ascii", off + 4, off + 8);
+      seen.push(type);
+      expect(buf.readUInt32BE(off + 8 + len)).toBe(crc(buf.subarray(off + 4, off + 8 + len)));
+      off += 12 + len;
+    }
+    expect(seen).toEqual(["IHDR", "IDAT", "IEND"]);
+    expect(off).toBe(buf.length); // no trailing bytes
   });
 });
 ```
@@ -3358,12 +3427,21 @@ program.parse();
 - [ ] **Step 5: Run the test, then the real command**
 
 Run: `npx vitest run packages/cli/test/png.test.ts`
-Expected: PASS, 2 tests.
+Expected: PASS, 3 tests.
 
 Run: `npx tsx packages/cli/src/index.ts render PetalburgCity --out shot.png`
 Expected: `shot.png 480x480 outOfRange=0`
 
 **Open `shot.png` and look at it.** Per `superpowers:verification-before-completion`, this task is not done until someone has seen the image and confirmed it looks like Petalburg City rather than noise.
+
+Two things to check on it beyond "not noise", because both have a specific
+failure mode that a plausible-looking image would hide:
+
+- **It must be fully opaque.** `PetalburgCity_Layout` is opaque in all 230,400
+  of its pixels. Transparent patches mean a palette failed to resolve.
+- **Write it somewhere outside the repo** — the scratchpad — or delete it after.
+  `shot.png` in the working tree is the sort of thing that gets committed by a
+  later `git add`, and I8 says PokeMap writes no stray files.
 
 - [ ] **Step 6: Add `pokemap query`**
 
@@ -3403,10 +3481,49 @@ program
   });
 ```
 
-Add a test in `packages/cli/test/query.test.ts` asserting that `query NewBarkTown` reports `split.metatiles === 640` and `layout.layoutVersion === "hns"`, and that `query PetalburgCity` reports `512` and `"emerald"`.
+`packages/cli/test/query.test.ts`. Test the projection, not the argv parsing —
+spawning the CLI per case buys nothing here and makes the failure message
+useless. Both fixtures are verified against the tree: `NewBarkTown_Layout` is
+hns, 30×39, `gTileset_Johto_General` over `gTileset_NewBarkTown`;
+`PetalburgCity_Layout` is emerald, 30×30.
+
+```ts
+import { describe, expect } from "vitest";
+import { openProject } from "@pokemap/core/src/project.js";
+import { SUBJECT_ROOT, itWithCorpus } from "../../core/test/helpers/corpus.js";
+import { layoutNameFor } from "../src/index.js";
+
+const proj = openProject(SUBJECT_ROOT);
+
+describe("query", () => {
+  itWithCorpus("reports each map's own split, not a global one", () => {
+    const split = (map: string) => proj.splitFor(proj.layoutById(proj.map(map).layout)!);
+
+    // The whole tool exists because these two differ. Asserting only one of
+    // them would pass against any hardcoded constant.
+    expect(split("NewBarkTown")).toEqual({ version: "hns", tiles: 640, metatiles: 640, pals: 7 });
+    expect(split("PetalburgCity")).toEqual({ version: "emerald", tiles: 512, metatiles: 512, pals: 6 });
+  });
+
+  itWithCorpus("resolves a target that is a map name or a layout name", () => {
+    expect(layoutNameFor(proj, "PetalburgCity")).toBe("PetalburgCity_Layout");
+    expect(layoutNameFor(proj, "PetalburgCity_Layout")).toBe("PetalburgCity_Layout");
+    expect(() => layoutNameFor(proj, "NoSuchPlace")).toThrow();
+  });
+});
+```
+
+`layoutNameFor` is imported from `index.ts`, which calls `program.parse()` at
+module scope. Importing it therefore runs the parser against vitest's own
+argv. Guard the parse — `if (process.argv[1]?.endsWith("index.ts")) program.parse();`
+or an equivalent — and say which you used. If instead you move `layoutNameFor`
+and `resolveProject` into their own module, that is fine too, but say so; it
+changes the file list this task declares.
 
 Run: `npx tsx packages/cli/src/index.ts query NewBarkTown --header`
 Expected: JSON including `"layoutVersion": "hns"` and `"metatiles": 640`.
+
+Expected across the task: **5 tests** — 3 in `png.test.ts`, 2 in `query.test.ts`.
 
 - [ ] **Step 7: Commit**
 
