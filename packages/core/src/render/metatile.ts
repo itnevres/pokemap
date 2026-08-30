@@ -23,11 +23,18 @@ export interface RenderMetatileOptions { overrideEntries?: TileEntry[]; }
 
 /**
  * A tile entry's palette field is 4 bits wide, so it can name palette indices
- * 13, 14 and 15 -- but NUM_PALS_TOTAL is 13, and most secondary tilesets ship
- * only palettes/00.pal through 12.pal. Measured across the subject repo: 14
- * tilesets carry 2,534 tile entries selecting index 13, 14 or 15, and 13 of
- * those tilesets have no palette file at the index named (gTileset_Petalburg
- * is the benign exception -- it ships all 16). This constant is that missing
+ * 13, 14 and 15 -- but NUM_PALS_TOTAL is 13, and most secondary tilesets
+ * INCBIN only palettes 00 through 12 into their gTilesetPalettes_ array.
+ * Measured across the subject repo: 14 tilesets carry 2,534 tile entries
+ * selecting index 13, 14 or 15, and for 13 of them the array is too short to
+ * answer (gTileset_Petalburg is the benign exception -- it INCBINs all 16).
+ *
+ * The length that matters is the INCBIN list's, not the directory's:
+ * gTileset_DepartmentStore and gTileset_ShopRooftop both have all 16 .pal
+ * files on disk yet INCBIN only 00-12, so an audit that greps for a missing
+ * 15.pal will find it present and wrongly conclude this note is stale.
+ * `tilesets.ts` draws the same distinction in its own header. This constant
+ * is that missing
  * lookup made explicit and named, not an accident of `?? []`: those tiles
  * render with zero pixels, the same failure Task 13's tile.ts comment already
  * documents for a missing tile index. On real hardware they draw with
