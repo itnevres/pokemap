@@ -2831,6 +2831,36 @@ git add packages/core/src/render/tile.ts packages/core/src/render/metatile.ts pa
 git commit -m "feat(core): render metatiles against a per-layout split"
 ```
 
+**What shipped differs from the blocks above in five ways** — all from the
+code-quality review, none changing what the renderer draws. Read the code, not
+this section, if you need the current shape: `7973054`, `84ac95b`, `76120bf`.
+
+1. `paletteFor`'s `?? []` became a named `MISSING_PALETTE` constant. Behaviour
+   identical; the point was to stop a silent-drop path from looking like an
+   accident. Its comment carries the corpus numbers and hands the audit to
+   Task 17.
+2. `if (local >= owner.metatileCount)` gained `!Number.isInteger(id) || local < 0`.
+   A negative id previously threw an uncaught `RangeError` from inside the
+   loader, and a fractional one silently read the wrong row of tile entries.
+   Task 14 masks every id so neither can arrive from there, but the tile picker
+   and the CLI will call this with computed ids.
+3. `createRaster(16, 16) as MetatileRaster` became a spread construction, which
+   does not assert a shape that is not yet true.
+4. The loop iterates `let i = 0; i < 8` rather than an array literal.
+5. Two tests added — 13, not 11. One pins the *secondary* arm of the range
+   check, which had no coverage at all: swapping `owner.metatileCount` for
+   `primary.metatileCount` left all eleven original tests green. The other
+   pins the contract for a tile index past the end of its sheet.
+
+On that last one, an honest negative result worth keeping: `tile.ts`'s
+`if (sy + 8 > sheet.height) return;` can be deleted with all 13 tests still
+green. `indices` is exactly `width * height`, every sheet in the corpus has a
+height that is a multiple of 8, so the guard is equivalent to a bounds check
+the `idx === 0` / `!c` path already performs. It is not dead in general — a
+sheet whose height is not a multiple of 8 would paint half a garbage tile
+without it — merely unreachable here. The test pins the contract, not that
+line.
+
 ---
 
 ## Task 14: Project facade and layout rendering
