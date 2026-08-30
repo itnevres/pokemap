@@ -2468,8 +2468,9 @@ sprites — there are **zero** violations. The assumption holds; the reader igno
 
 **Two tilesets have short palettes, already padded at load by Task 10.**
 `gTileset_Barn` palette 9 declares 10 colours and `gTileset_CianwoodCity` palette
-9 declares 15, yet both are selected by real metatile entries — 12 and 126
-respectively. Task 10 pads every palette to 16 with black so no index comes back
+9 declares 15, yet both are selected by real tile entries — 12 and 126
+respectively, spread across 3 and 34 metatiles. (Tile entries, not metatiles:
+each metatile holds 8 of them.) Task 10 pads every palette to 16 with black so no index comes back
 `undefined`, which `drawTile` would skip, punching holes rather than raising
 anything. **Settle whether any pixel actually uses the padded indices**: you have
 a PNG decoder by this point, so decode those two tilesets’ `tiles.png` and check
@@ -2483,8 +2484,8 @@ index `p >= split.pals` reads `secondary.palettes[p]` — the secondary tileset'
 own `palettes/PP.pal` — and **not** `secondary.palettes[p - split.pals]`.
 `src/fieldmap.c:1012` loads the secondary with
 `LoadTilesetPalette(secondaryTileset, palsInPrimary * 16, …)`, and the body at
-`src/fieldmap.c:955` copies from `tileset->palettes[palsInPrimary]`: source
-index equals destination slot, under either split. Porymap's
+`src/fieldmap.c:958`/`:960` copies from `tileset->palettes[palsInPrimary]`:
+source index equals destination slot, under either split. Porymap's
 `Tileset::getBlockPalettes` does the same, taking
 `secondaryTileset->palettes.at(i)` for absolute `i`. The short-palette note
 above is only coherent under this rule — `gTileset_Barn`'s twelve entries that
@@ -2764,7 +2765,7 @@ export interface RenderMetatileOptions { overrideEntries?: TileEntry[]; }
  * Palettes do NOT. A secondary tileset's palette array is indexed absolutely:
  * VRAM slot p is loaded from that tileset's own palettes/PP.pal, so the lookup
  * is secondary.palettes[p], not [p - split.pals]. See src/fieldmap.c:1012 and
- * :955, and Porymap's Tileset::getBlockPalettes.
+ * :958, and Porymap's Tileset::getBlockPalettes.
  *
  * `profile` is unused here today. It stays in the signature because Task 14
  * passes it and Plan 0 fixes Plan 1's signatures for the later plans.
@@ -3408,6 +3409,25 @@ git commit -m "test(core): lock visual regression across both metatile boundarie
 # Phase D — Validation and the corpus gate
 
 ## Task 17: Port `check_metatile_range.py`
+
+**Also audit palette indices, not just metatile ids.** The Task 13 review turned
+this up and it does not belong in Task 13. A tile entry's palette field is 4
+bits, so it can name any of 16 palettes — but `NUM_PALS_TOTAL` is 13, and most
+secondary tilesets ship only `palettes/00.pal`–`12.pal`. Measured against the
+subject repo: **14 tilesets carry tile entries selecting palette index 13, 14 or
+15 — 2,534 entries in all**, and in 13 of those tilesets there is no palette
+file at the index named. `gTileset_Cave_Green` alone has 1,732 entries on index
+15. `gTileset_Petalburg` is the one benign case: it ships 16 palette files, so
+its 8 entries on index 14 resolve.
+
+Today `paletteFor` returns `[]` for a missing palette and `drawTile` skips every
+pixel, so those tiles render as transparent holes — the failure mode Task 13's
+own prose warns about, reached by a different route than the padded-index
+question it asked about. On hardware they draw with whatever non-tileset palette
+happens to be resident in slots 13–15, so they render as *something*, never as
+holes. Report these as findings alongside the out-of-range metatile ids; decide
+what to *paint* only once there is a Porymap build to compare against (Task 16's
+visual regression harness), and do not guess at parity before then.
 
 **Files:**
 - Create: `packages/core/src/validate/metatileRange.ts`

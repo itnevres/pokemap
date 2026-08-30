@@ -30,7 +30,7 @@ export interface RenderMetatileOptions { overrideEntries?: TileEntry[]; }
  * Palettes do NOT. A secondary tileset's palette array is indexed absolutely:
  * VRAM slot p is loaded from that tileset's own palettes/PP.pal, so the lookup
  * is secondary.palettes[p], not [p - split.pals]. See src/fieldmap.c:1012 and
- * :955, and Porymap's Tileset::getBlockPalettes.
+ * :958, and Porymap's Tileset::getBlockPalettes.
  *
  * `profile` is unused here today. It stays in the signature because Task 14
  * passes it and Plan 0 fixes Plan 1's signatures for the later plans.
