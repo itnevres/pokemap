@@ -1155,7 +1155,9 @@ export function parseMap(text: string): MapData {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run packages/core/test/load/maps.test.ts`
-Expected: PASS, 7 tests.
+Expected: PASS, 10 tests. (Six before the connections work, plus the four
+below: the three shapes are cleaner as separate cases than as one, and the
+whole-tree walk is the fourth.)
 
 - [ ] **Step 5: Commit**
 
