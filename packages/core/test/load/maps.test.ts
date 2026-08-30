@@ -67,4 +67,44 @@ describe("parseMap", () => {
     expect(m.floorNumber).toBeUndefined();
     expect(m.region).toBeUndefined();
   });
+
+  // The decomp writes `"connections": 0` for a map with no connections, not
+  // `null` or `[]`. Measured across the subject repo: 185 maps a real array,
+  // 633 the literal `0`, 391 `null`, 0 anything else -- so `0 ?? []` (which
+  // returns `0`, because `0` is not nullish) throws on over half the tree the
+  // first time `.map` runs on it. This has been green since Task 6 only
+  // because nothing before this walked every map: `renders every layout`
+  // walks layouts, which never calls parseMap.
+  itWithCorpus("treats connections: 0 the same as no connections", () => {
+    const m = parseMap(readFileSync(P.mapJson("NewBarkTown_Lab"), "utf8"));
+    expect(m.connections).toEqual([]);
+  });
+
+  itWithCorpus("treats connections: null the same as no connections", () => {
+    const m = parseMap(readFileSync(P.mapJson("TrainerHill_Courtyard"), "utf8"));
+    expect(m.connections).toEqual([]);
+  });
+
+  itWithCorpus("still reads a real connections array with its actual entries", () => {
+    // Guards against a fix that returns [] unconditionally: NewBarkTown's own
+    // two connections (already asserted above) prove the array shape survives
+    // whatever guard handles the 0/null shapes.
+    const m = parseMap(readFileSync(P.mapJson("NewBarkTown"), "utf8"));
+    expect(m.connections).toHaveLength(2);
+  });
+
+  itWithCorpus("parses all 1,209 maps in the subject repo without throwing", () => {
+    const groups = parseMapGroups(readFileSync(P.mapGroupsJson, "utf8"));
+    const names = groups.allMapNames();
+    expect(names.length).toBe(1209);
+    const failures: string[] = [];
+    for (const name of names) {
+      try {
+        parseMap(readFileSync(P.mapJson(name), "utf8"));
+      } catch (e) {
+        failures.push(`${name}: ${(e as Error).message}`);
+      }
+    }
+    expect(failures).toEqual([]);
+  });
 });

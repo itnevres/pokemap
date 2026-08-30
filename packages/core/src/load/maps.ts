@@ -95,7 +95,15 @@ export function parseMap(text: string): MapData {
     weather: r.weather,
     floorNumber: r.floor_number,
     region: r.region,
-    connections: (r.connections ?? []).map((c: any) => ({
+    // `connections` is the one event array the decomp ever writes as the bare
+    // number `0` instead of `null` or `[]` for "no connections" -- measured
+    // across the subject repo: 185 maps a real array, 633 the literal `0`, 391
+    // `null`, 0 anything else. `0 ?? []` returns `0` because `0` is not
+    // nullish, so `.map` then throws on more than half the tree. The four
+    // sibling arrays below (object_events, warp_events, coord_events,
+    // bg_events) never use this idiom, so they keep the plain `?? []` rather
+    // than all being swept with the same guard.
+    connections: (Array.isArray(r.connections) ? r.connections : []).map((c: any) => ({
       map: c.map,
       offset: Number(c.offset),
       direction: c.direction,
