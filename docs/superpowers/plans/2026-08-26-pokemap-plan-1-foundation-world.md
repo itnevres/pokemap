@@ -2059,7 +2059,7 @@ describe("parseBlocks", () => {
   });
 
   itWithCorpus("the three fields are independent -- a wrong shift moves them together", () => {
-    // Across all 869,427 blocks in the tree, collision only ever takes 0 or 1
+    // Across all 869,988 blocks in the tree, collision only ever takes 0 or 1
     // (despite a 2-bit mask) and elevation takes 10 of its 16 possible values.
     // A shift that was off by even one bit would smear those distributions.
     const { layouts } = JSON.parse(readFileSync(`${G}/data/layouts/layouts.json`, "utf8")) as { layouts: any[] };
@@ -2072,9 +2072,9 @@ describe("parseBlocks", () => {
         }
       }
     }
-    expect([...col.entries()].sort((a, b) => a[0] - b[0])).toEqual([[0, 396942], [1, 472485]]);
+    expect([...col.entries()].sort((a, b) => a[0] - b[0])).toEqual([[0, 397250], [1, 472738]]);
     expect([...elev.entries()].sort((a, b) => a[0] - b[0])).toEqual([
-      [0, 493285], [1, 109599], [2, 722], [3, 242163], [4, 16536],
+      [0, 493832], [1, 109599], [2, 722], [3, 242177], [4, 16536],
       [5, 5060], [6, 418], [7, 845], [9, 112], [15, 687],
     ]);
   }, 300_000);
@@ -2192,7 +2192,7 @@ import { encodeBlocks } from "../../src/load/blocks.js";
 itWithCorpus("encodeBlocks is the exact inverse of parseBlocks, every layout, both files", () => {
   // Plan 2's entire write path rests on this property, so it is checked over
   // the whole corpus rather than a sample: 1,020 map.bin plus 1,020 border.bin,
-  // 869,427 blocks. An earlier draft took `layouts.slice(0, 50)` and skipped
+  // 869,988 blocks. An earlier draft took `layouts.slice(0, 50)` and skipped
   // border.bin altogether -- the borders being exactly the data Porymap is
   // documented to have destroyed on this tree.
   const { layouts } = JSON.parse(readFileSync(`${G}/data/layouts/layouts.json`, "utf8")) as { layouts: any[] };
@@ -2209,7 +2209,7 @@ itWithCorpus("encodeBlocks is the exact inverse of parseBlocks, every layout, bo
   }
 
   expect(failures).toEqual([]);
-  expect(blocks).toBe(869427);
+  expect(blocks).toBe(869988);
 }, 300_000);
 
 it("encodeBlocks refuses a field too wide for its mask", () => {

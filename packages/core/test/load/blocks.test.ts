@@ -35,9 +35,17 @@ describe("parseBlocks", () => {
   });
 
   itWithCorpus("the three fields are independent -- a wrong shift moves them together", () => {
-    // Across all 869,427 blocks in the tree, collision only ever takes 0 or 1
+    // Across all 869,988 blocks in the tree, collision only ever takes 0 or 1
     // (despite a 2-bit mask) and elevation takes 10 of its 16 possible values.
     // A shift that was off by even one bit would smear those distributions.
+    //
+    // The counts moved on 2026-08-30 because the subject tree changed, not the
+    // parser: LAYOUT_NAVEL_ROCK_ZYGARDE_CHAMBER was resized in Porymap from
+    // 11x9 to 30x22, adding exactly 561 blocks. Every delta below sums to that
+    // 561 -- collision +308/+253, elevation +547 on 0 and +14 on 3 -- and the
+    // shape is unchanged: still only two collision values, still the same ten
+    // elevation values. Re-derived with bit maths written outside parseBlocks,
+    // since asserting the loader's own output back at it proves nothing.
     const { layouts } = JSON.parse(readFileSync(`${G}/data/layouts/layouts.json`, "utf8")) as { layouts: any[] };
     const col = new Map<number, number>(), elev = new Map<number, number>();
     for (const l of layouts) {
@@ -48,9 +56,9 @@ describe("parseBlocks", () => {
         }
       }
     }
-    expect([...col.entries()].sort((a, b) => a[0] - b[0])).toEqual([[0, 396942], [1, 472485]]);
+    expect([...col.entries()].sort((a, b) => a[0] - b[0])).toEqual([[0, 397250], [1, 472738]]);
     expect([...elev.entries()].sort((a, b) => a[0] - b[0])).toEqual([
-      [0, 493285], [1, 109599], [2, 722], [3, 242163], [4, 16536],
+      [0, 493832], [1, 109599], [2, 722], [3, 242177], [4, 16536],
       [5, 5060], [6, 418], [7, 845], [9, 112], [15, 687],
     ]);
   }, 300_000);
@@ -101,7 +109,10 @@ describe("parseBlocks", () => {
   itWithCorpus("encodeBlocks is the exact inverse of parseBlocks, every layout, both files", () => {
     // Plan 2's entire write path rests on this property, so it is checked over
     // the whole corpus rather than a sample: 1,020 map.bin plus 1,020 border.bin,
-    // 869,427 blocks. An earlier draft took `layouts.slice(0, 50)` and skipped
+    // 869,988 blocks -- 869,969 by declared geometry plus the 19 trailing
+    // blocks the test above pins, so the total is derivable from the tree
+    // rather than copied out of a previous run.
+    // An earlier draft took `layouts.slice(0, 50)` and skipped
     // border.bin altogether -- the borders being exactly the data Porymap is
     // documented to have destroyed on this tree.
     const { layouts } = JSON.parse(readFileSync(`${G}/data/layouts/layouts.json`, "utf8")) as { layouts: any[] };
@@ -118,7 +129,7 @@ describe("parseBlocks", () => {
     }
 
     expect(failures).toEqual([]);
-    expect(blocks).toBe(869427);
+    expect(blocks).toBe(869988);
   }, 300_000);
 
   it("encodeBlocks refuses a field too wide for its mask", () => {
