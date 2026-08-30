@@ -1021,8 +1021,48 @@ describe("parseMap", () => {
     expect(m.floorNumber).toBeUndefined();
     expect(m.region).toBeUndefined();
   });
+
+  itWithCorpus("handles all three shapes the connections key actually takes", () => {
+    // `"connections": 0` is the decomp's idiom for "none", and 0 is not
+    // nullish, so `?? []` passes it through and `.map` throws. Measured across
+    // the tree: 185 maps carry a real array, 391 carry null, 633 carry 0.
+    // Reading only a map with real connections -- as every other test in this
+    // file does -- leaves the majority shape untested.
+    const conns = (map: string) => parseMap(readFileSync(P.mapJson(map), "utf8")).connections;
+
+    // A map with a real array must still report it. Asserting only that the
+    // other two yield [] would pass against a parser that always returns [].
+    expect(conns("PetalburgCity").length).toBeGreaterThan(0);
+    expect(conns("PetalburgCity").every((c) => typeof c.map === "string" && c.direction)).toBe(true);
+
+    const zeroMap = ZERO_CONNECTION_MAP;
+    const nullMap = NULL_CONNECTION_MAP;
+    expect(conns(zeroMap)).toEqual([]);
+    expect(conns(nullMap)).toEqual([]);
+  });
+
+  itWithCorpus("parses every map in the tree without throwing", () => {
+    // This is the assertion that would have caught the connections bug. Nothing
+    // walked all 1,209 maps until Task 14's facade did, and by then it had been
+    // green for eight tasks.
+    const groups = parseMapGroups(readFileSync(P.mapGroupsJson, "utf8"));
+    const names = groups.allMapNames();
+    expect(names.length).toBe(1209);
+
+    const failures: string[] = [];
+    for (const n of names) {
+      try { parseMap(readFileSync(P.mapJson(n), "utf8")); }
+      catch (e) { failures.push(`${n}: ${(e as Error).message}`); }
+    }
+    expect(failures).toEqual([]);
+  }, 120_000);
 });
 ```
+
+Pick `ZERO_CONNECTION_MAP` and `NULL_CONNECTION_MAP` by grepping the tree
+rather than guessing, and write the two names in as literals with a comment
+saying which shape each one has — a test that discovers its own fixtures can
+silently start testing the same shape twice.
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -1086,7 +1126,14 @@ export function parseMap(text: string): MapData {
     id: r.id, name: r.name, layout: r.layout, music: r.music,
     regionMapSection: r.region_map_section, mapType: r.map_type, weather: r.weather,
     floorNumber: r.floor_number, region: r.region,
-    connections: (r.connections ?? []).map((c: any) => ({ map: c.map, offset: Number(c.offset), direction: c.direction })),
+    // `Array.isArray`, NOT `?? []`. The decomp writes `"connections": 0` for a
+    // map with no connections, and 0 is not nullish, so `??` passes it through
+    // and `.map` throws. Counted across the subject tree: 185 maps carry a real
+    // array, 391 carry null, and **633 carry 0** -- so `?? []` throws on more
+    // than half the tree. The four event arrays below never use the 0 idiom
+    // (measured: zero occurrences each), so they stay `?? []`; a blanket sweep
+    // would hide which field actually has the quirk.
+    connections: (Array.isArray(r.connections) ? r.connections : []).map((c: any) => ({ map: c.map, offset: Number(c.offset), direction: c.direction })),
     objectEvents: (r.object_events ?? []).map((o: any) => ({
       graphicsId: o.graphics_id, x: Number(o.x), y: Number(o.y), elevation: Number(o.elevation),
       movementType: o.movement_type, movementRangeX: Number(o.movement_range_x), movementRangeY: Number(o.movement_range_y),
@@ -1108,7 +1155,7 @@ export function parseMap(text: string): MapData {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run packages/core/test/load/maps.test.ts`
-Expected: PASS, 5 tests.
+Expected: PASS, 7 tests.
 
 - [ ] **Step 5: Commit**
 
