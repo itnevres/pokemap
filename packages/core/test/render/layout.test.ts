@@ -99,10 +99,18 @@ describe("renderLayout", () => {
     expect(bordered.width).toBe(plain.width + 3 * 2 * 16);
     expect(bordered.height).toBe(plain.height + 2 * 2 * 16);
     // The two assertions above come from padX/padY, not from the border loop
-    // itself -- delete the loop body entirely and both still pass. This is
-    // the only thing in the file that proves the loop actually paints
-    // something into the ring it creates.
-    expect(opaqueCount(bordered)).toBe(bordered.width * bordered.height);
+    // itself -- delete the loop body entirely and both still pass. Assert the
+    // ring, not the frame: full-frame opacity is not a property of a bordered
+    // render (171 of 1,020 layouts are not fully opaque even borderless, e.g.
+    // a single stray transparent pixel deep in the map body), so asserting
+    // `opaqueCount(bordered) === bordered.width * bordered.height` would only
+    // pass because `.find()` happens to return a fully-opaque layout first --
+    // coupled to array order exactly the way the comment above warns against,
+    // and CherrygroveCity is pinned by name elsewhere in this file to avoid.
+    // The delta is immune to whatever transparency the layout's own body
+    // already has, and still fails if the border loop body is deleted.
+    expect(opaqueCount(bordered) - opaqueCount(plain))
+      .toBe(bordered.width * bordered.height - plain.width * plain.height);
   });
 
   itWithCorpus("renders every layout in the subject repo, and only one is out of range", () => {

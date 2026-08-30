@@ -35,6 +35,49 @@ export interface Project {
   mapNames(): string[];
 }
 
+/**
+ * The cfg's base_game_version does not say whether this tree carries
+ * per-layout versions. The data does -- but a layouts.json scan alone is
+ * disarmed by the exact event it exists to detect: Porymap deletes
+ * `layout_version` keys it does not recognise when it saves, and that is
+ * precisely when the diagnostic downstream (Plan 2's missing-layout-version
+ * refusal) is needed most.
+ *
+ * `hasSplitConstants` is the term that survives that save: a tree only
+ * defines a second boundary set if its layouts choose between them, and
+ * Porymap never writes include/fieldmap.h. It is also false on
+ * pokeemerald-expansion, whose second set is named `*_FRLG` rather than
+ * `*_EMERALD` -- and unlike the subject tree, none of the seven reference
+ * checkouts except pokefirered ship a porymap.project.cfg, so on
+ * pokeemerald-expansion `guessVersion`'s cfg fallback does not catch it
+ * either (it greps for `*_EMERALD` too). That tree is a real gap in this
+ * detection, not one either term closes; fixing it is not in scope here.
+ *
+ * Extracted as a pure function -- profile/constants/layouts in, boolean out
+ * -- so it can be unit-tested directly (see project.test.ts) without a
+ * corpus tree. The corpus-backed test in layout.test.ts could not tell this
+ * term apart from `layouts.some(...)`, because the subject repo's
+ * layouts.json still carries all its `layout_version` keys today; only a
+ * hand-built FieldmapConstants with no layout_version data at all forces the
+ * two terms apart.
+ */
+export function computeSupportsLayoutVersion(
+  profileBase: Pick<EngineProfile, "supportsLayoutVersion">,
+  constants: FieldmapConstants,
+  layouts: readonly Pick<Layout, "layoutVersion">[],
+): boolean {
+  const hasSplitConstants =
+    constants.metatilesInPrimary !== constants.metatilesInPrimaryEmerald ||
+    constants.tilesInPrimary !== constants.tilesInPrimaryEmerald ||
+    constants.palsInPrimary !== constants.palsInPrimaryEmerald;
+
+  return (
+    profileBase.supportsLayoutVersion ||
+    hasSplitConstants ||
+    layouts.some((l) => l.layoutVersion !== undefined)
+  );
+}
+
 export function openProject(root: string): Project {
   const paths = projectPaths(root);
 
@@ -53,30 +96,9 @@ export function openProject(root: string): Project {
   const constants = parseFieldmapConstants(readFileSync(paths.fieldmapH, "utf8"));
   const { layouts } = parseLayouts(readFileSync(paths.layoutsJson, "utf8"));
 
-  // A tree only defines a second boundary set if its layouts choose between
-  // them, and Porymap does not write include/fieldmap.h. Unlike the
-  // layouts.json scan below, this evidence survives a Porymap save -- which is
-  // the case that matters, because that save is what removes the other
-  // evidence. Absent on pokeemerald-expansion, whose second set is named
-  // *_FRLG rather than *_EMERALD, so the cfg term stays too.
-  const hasSplitConstants =
-    constants.metatilesInPrimary !== constants.metatilesInPrimaryEmerald ||
-    constants.tilesInPrimary !== constants.tilesInPrimaryEmerald ||
-    constants.palsInPrimary !== constants.palsInPrimaryEmerald;
-
-  // The cfg's base_game_version does not say whether this tree carries
-  // per-layout versions. The data does -- but the layouts.json scan alone is
-  // disarmed by the exact event it exists to detect: Porymap deletes
-  // `layout_version` keys it does not recognise when it saves, and that is
-  // precisely when the diagnostic downstream (Plan 2's missing-layout-version
-  // refusal) is needed most. hasSplitConstants is the term that survives that
-  // save.
   const profile: EngineProfile = {
     ...profileBase,
-    supportsLayoutVersion:
-      profileBase.supportsLayoutVersion ||
-      hasSplitConstants ||
-      layouts.some((l) => l.layoutVersion !== undefined),
+    supportsLayoutVersion: computeSupportsLayoutVersion(profileBase, constants, layouts),
   };
 
   const groups = parseMapGroups(readFileSync(paths.mapGroupsJson, "utf8"));
@@ -150,6 +172,8 @@ export function openProject(root: string): Project {
 }
 
 function guessVersion(paths: ProjectPaths): string {
-  const src = existsSync(paths.fieldmapH) ? readFileSync(paths.fieldmapH, "utf8") : "";
+  // openProject already refused a missing fieldmap.h before this can run, so
+  // the existsSync fallback this once needed is unreachable now.
+  const src = readFileSync(paths.fieldmapH, "utf8");
   return /NUM_METATILES_IN_PRIMARY_EMERALD/.test(src) ? "pokeemerald-expansion" : "pokeemerald";
 }
