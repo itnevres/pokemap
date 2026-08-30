@@ -3638,13 +3638,15 @@ git commit -m "feat(cli): encode rasters to PNG, add render and query commands"
 
 `fixtures/visual-list.json` — must span both boundaries and the 3×2 border case:
 
+`fixtures/` does not exist yet — create it.
+
 ```json
 {
   "maps": [
     "PetalburgCity",
     "NewBarkTown",
     "ViridianForest",
-    "SafariZoneCenter",
+    "SafariZone_Center",
     "NavelRock_Base",
     "NavelRock_Bottom"
   ]
@@ -3652,12 +3654,40 @@ git commit -m "feat(cli): encode rasters to PNG, add render and query commands"
 ```
 
 **These are MAP names, and the harness resolves each to its layout via
-`proj.layoutForMap`.** They are not layout names: `NavelRock_Base`'s layout is
-`NavelRockBase_Layout`, and every other entry gains a `_Layout` suffix. Naming
-the file's key `layouts` while filling it with map names is exactly the sort of
-quiet mismatch that makes a later reader trust the wrong thing.
+`proj.layoutForMap`.** Do not assume a layout name can be derived from them —
+all three namespaces appear here and none of the rules is general:
 
-`PetalburgCity` is `emerald` (512 boundary). `NewBarkTown` is `hns` (640). `ViridianForest` and `SafariZoneCenter` are two of the seven 3×2-border layouts. The two NavelRock maps are the documented Emerald/FRLG art mismatch — a real rendering difference that must stay visible.
+| map | layout |
+|---|---|
+| `PetalburgCity` | `PetalburgCity_Layout` — suffix added |
+| `SafariZone_Center` | `SafariZoneCenter_Layout` — suffix added, **underscore removed** |
+| `NavelRock_Base` | `NavelRockBase_Layout` — same |
+| `NavelRock_Bottom` | `NavelRock_Bottom_Layout` — suffix added, underscore **kept** |
+
+The last two are the same dungeon and they disagree, which is why this is
+resolved through `layoutForMap` rather than string surgery. An earlier draft of
+this list wrote `SafariZoneCenter`, the *layout* name minus its suffix; there is
+no map by that name and `layoutForMap` refuses it. That is the three-namespace
+trap from Plan 0 §7, in the file whose own prose warns about it.
+
+Coverage, measured rather than assumed:
+
+- `PetalburgCity` — `emerald`, the 512 boundary, 30×30.
+- `NewBarkTown` — `hns`, the 640 boundary, 30×39.
+- `ViridianForest` — **`frlg`**, and a 3×2 border, 54×69. It carries two of
+  Plan 0 §6's four requirements at once; an earlier draft described it only as
+  a border case and left `frlg` uncovered on paper.
+- `SafariZone_Center` — the second 3×2 border, so the border case does not rest
+  on a single map.
+- `NavelRock_Base` (`frlg`) and `NavelRock_Bottom` (`emerald`) — the documented
+  Emerald/FRLG art mismatch, and better than that: **the same dungeon resolving
+  to different boundaries on adjacent floors.** If any single fixture is the
+  point of this project, it is this pair.
+
+Of the 1,209 maps, 437 are emerald, 490 frlg and 282 hns. Seven maps have a 3×2
+border: `SafariZone_Center`, `SafariZone_East`, `KantoSafariZone_North`,
+`SafariZone_West`, `ViridianForest`, `SixIsland_PatternBush`,
+`ThreeIsland_BerryForest`.
 
 - [ ] **Step 2: Write the failing test**
 
@@ -3687,12 +3717,24 @@ describe("visual regression", () => {
     expect(actual).toEqual(JSON.parse(readFileSync(HASHES, "utf8")));
   });
 
-  itWithCorpus("covers both metatile boundaries and a 3x2 border", () => {
+  itWithCorpus("covers all three layout versions and a 3x2 border", () => {
+    // Plan 0 §6 requires at least one emerald, one frlg, one hns and one 3x2
+    // border. An earlier draft accepted "hns OR frlg", which would have passed
+    // with frlg entirely uncovered. Assert each one separately so a failure
+    // names the version that went missing.
     const layouts = list.maps.map((n) => proj.layoutForMap(n));
-    const versions = new Set(layouts.map((l) => l.layoutVersion ?? "emerald"));
+    const versions = new Set(layouts.map((l) => l.layoutVersion));
+
     expect(versions.has("emerald")).toBe(true);
-    expect([...versions].some((v) => v === "hns" || v === "frlg")).toBe(true);
-    expect(layouts.some((l) => l.borderWidth === 3)).toBe(true);
+    expect(versions.has("frlg")).toBe(true);
+    expect(versions.has("hns")).toBe(true);
+
+    // Not `?? "emerald"`. A tree whose layout_version keys Porymap has stripped
+    // must fail this loudly rather than defaulting its way to green -- that
+    // default is what made the earlier draft's assertion unfalsifiable.
+    expect(layouts.every((l) => l.layoutVersion !== undefined)).toBe(true);
+
+    expect(layouts.filter((l) => l.borderWidth === 3).length).toBeGreaterThanOrEqual(2);
   });
 });
 ```
@@ -3704,11 +3746,28 @@ Expected: FAIL with "baseline written".
 
 - [ ] **Step 4: Inspect the baseline BEFORE locking it**
 
+Render them **outside the repo**. Step 6 stages three files and none of these
+PNGs is among them, so writing them into `fixtures/` leaves six untracked
+images lying in the working tree for a later `git add` to sweep up. Put them in
+the scratchpad:
+
 ```bash
-for m in PetalburgCity NewBarkTown ViridianForest SafariZoneCenter NavelRock_Base NavelRock_Bottom; do npx tsx packages/cli/src/index.ts render "$m" --border 1 --out "fixtures/baseline-$m.png"; done
+for m in PetalburgCity NewBarkTown ViridianForest SafariZone_Center NavelRock_Base NavelRock_Bottom; do npx tsx packages/cli/src/index.ts render "$m" --border 1 --out "$SCRATCH/baseline-$m.png"; done
 ```
 
-Compare `fixtures/baseline-NavelRock_Base.png` and `fixtures/baseline-NavelRock_Bottom.png` against the subject repo's emulator screenshots at `tools/verify/scratch/mapshot/02_navel_rock_base.png` and `00_navel_rock_bottom.png`. Those came from a real emulator and are ground truth. **If the renderer disagrees with them, the renderer is wrong — fix it, do not lock the baseline.**
+Compare `baseline-NavelRock_Base.png` and `baseline-NavelRock_Bottom.png`
+against the subject repo's emulator screenshots at
+`tools/verify/scratch/mapshot/02_navel_rock_base.png` and
+`00_navel_rock_bottom.png` (both confirmed present). Those came from a real
+emulator and are ground truth. **If the renderer disagrees with them, the
+renderer is wrong — fix it, do not lock the baseline.**
+
+Note what the comparison is and is not. The emulator shot is a 240×160 GBA
+frame of one screenful, with sprites and possibly a weather or tint layer over
+it; the render is the whole layout at 16 px per block with none of that. So
+this is a human judgement about tiles, palettes and layer order in the region
+the shot covers — not a pixel diff, and not something to automate here. Say
+what you compared and what you concluded.
 
 - [ ] **Step 5: Re-run to lock in**
 
