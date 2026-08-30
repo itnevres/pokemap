@@ -2896,27 +2896,50 @@ describe("renderLayout", () => {
   });
 
   itWithCorpus("renders an emerald and an hns layout in the same session, both fully in range", () => {
+    // If this fails with layoutVersion undefined, layouts.json has been saved
+    // by Porymap, which drops the key it does not know. That is the tool gap
+    // this project exists to close; splice the keys back before reading on.
     const emerald = proj.layoutForMap("PetalburgCity");
-    const hns = proj.layouts.find((l) => l.layoutVersion === "hns")!;
+    const hns = proj.layouts.find((l) => l.layoutVersion === "hns");
     expect(emerald.layoutVersion).toBe("emerald");
+    expect(hns).toBeDefined();
     expect(renderLayout(proj, emerald.name).outOfRangeCount).toBe(0);
-    expect(renderLayout(proj, hns.name).outOfRangeCount).toBe(0);
+    expect(renderLayout(proj, hns!.name).outOfRangeCount).toBe(0);
+
+    // Assert the negative too. Three zeroes prove nothing about a counter that
+    // is never incremented -- Saffron_Temp_Layout is the one layout in the tree
+    // that really is out of range (worst metatile id 924 against a 640 primary
+    // and a 230 secondary, under the hns split), so it is what makes the three
+    // zeroes above mean something.
+    expect(renderLayout(proj, "Saffron_Temp_Layout").outOfRangeCount).toBeGreaterThan(0);
   });
 
   itWithCorpus("includes the border when asked, honouring a 3x2 border", () => {
-    const wide = proj.layouts.find((l) => l.borderWidth === 3)!;
-    const plain = renderLayout(proj, wide.name);
-    const bordered = renderLayout(proj, wide.name, { border: 1 });
+    // All 7 wide-border layouts in the tree are 3x2, but the height assertion
+    // below hardcodes the 2, so pin both dimensions in the search rather than
+    // letting a 3x3 layout appear later and fail somewhere confusing.
+    const wide = proj.layouts.find((l) => l.borderWidth === 3 && l.borderHeight === 2);
+    expect(wide).toBeDefined();
+    const plain = renderLayout(proj, wide!.name);
+    const bordered = renderLayout(proj, wide!.name, { border: 1 });
     expect(bordered.width).toBe(plain.width + 3 * 2 * 16);
     expect(bordered.height).toBe(plain.height + 2 * 2 * 16);
   });
 
-  itWithCorpus("renders every layout in the subject repo without throwing", () => {
+  itWithCorpus("renders every layout in the subject repo, and only one is out of range", () => {
     const failures: string[] = [];
+    const outOfRange: string[] = [];
     for (const l of proj.layouts) {
-      try { renderLayout(proj, l.name); } catch (e) { failures.push(`${l.name}: ${(e as Error).message}`); }
+      try {
+        if (renderLayout(proj, l.name).outOfRangeCount > 0) outOfRange.push(l.name);
+      } catch (e) { failures.push(`${l.name}: ${(e as Error).message}`); }
     }
     expect(failures).toEqual([]);
+    // The walk is already paid for, so assert what it found rather than only
+    // that nothing threw. This is open-bugs.md #41 across the whole tree, and
+    // it is the baseline Task 17's port of check_metatile_range.py has to
+    // reproduce independently.
+    expect(outOfRange).toEqual(["Saffron_Temp_Layout"]);
   }, 900_000);
 });
 ```
@@ -2979,10 +3002,18 @@ export function openProject(root: string): Project {
   };
 
   const groups = parseMapGroups(readFileSync(paths.mapGroupsJson, "utf8"));
+  // BOTH graphics sources, as in Tasks 10 and 13. gTileset_General and its two
+  // Frontier siblings INCBIN their palettes from src/graphics.c, not
+  // graphics.h. With graphics.h alone their `palettes` array is empty, every
+  // colour lookup misses, and the 242 layouts that use them render fully
+  // transparent -- silently. Nothing in this task's tests would catch it:
+  // renderLayout still returns the right dimensions, still throws nothing, and
+  // still reports outOfRangeCount 0. Task 15's PNG output is where you would
+  // finally see it, one task too late.
   const tsPaths: Map<string, TilesetPaths> = parseTilesetPaths(
     readFileSync(paths.tilesetHeadersH, "utf8"),
     readFileSync(paths.tilesetMetatilesH, "utf8"),
-    readFileSync(paths.tilesetGraphicsH, "utf8"),
+    [readFileSync(paths.tilesetGraphicsH, "utf8"), readFileSync(paths.tilesetGraphicsC, "utf8")],
   );
 
   const tilesetCache = new Map<string, Tileset>();
@@ -3060,20 +3091,21 @@ export function renderLayout(proj: Project, layoutName: string, opts: RenderLayo
   const secondary = proj.tileset(layout.secondaryTileset);
 
   const blocks = parseBlocks(readFileSync(`${proj.paths.root}/${layout.blockdataFilepath}`), proj.profile);
-  const borderBlocks = parseBlocks(readFileSync(`${proj.paths.root}/${layout.borderFilepath}`), proj.profile);
 
   const rings = opts.border ?? 0;
   const padX = rings * layout.borderWidth;
   const padY = rings * layout.borderHeight;
 
-  const dst = createRaster((layout.width + padX * 2) * 16, (layout.height + padY * 2) * 16) as LayoutRaster;
-  dst.layoutName = layout.name;
-  dst.blockWidth = layout.width;
-  dst.blockHeight = layout.height;
-  dst.originX = padX * 16;
-  dst.originY = padY * 16;
-  dst.outOfRangeCount = 0;
-  dst.blocks = blocks;
+  const dst: LayoutRaster = {
+    ...createRaster((layout.width + padX * 2) * 16, (layout.height + padY * 2) * 16),
+    layoutName: layout.name,
+    blockWidth: layout.width,
+    blockHeight: layout.height,
+    originX: padX * 16,
+    originY: padY * 16,
+    outOfRangeCount: 0,
+    blocks,
+  };
 
   const cache = new Map<number, MetatileRaster>();
   const tile = (id: number): MetatileRaster => {
@@ -3083,6 +3115,13 @@ export function renderLayout(proj: Project, layoutName: string, opts: RenderLayo
   };
 
   if (rings > 0) {
+    // Read border.bin only when it is going to be drawn. The world view renders
+    // 1,209 maps borderless, and reading a file per map to discard it is the
+    // kind of cost that is invisible until Task 25.
+    const borderBlocks = parseBlocks(readFileSync(`${proj.paths.root}/${layout.borderFilepath}`), proj.profile);
+    // padX is rings * borderWidth, so it is an exact multiple of borderWidth
+    // and `x % borderWidth` keeps the same phase as the unpadded grid would.
+    // That stops holding if padding is ever computed any other way.
     for (let y = 0; y < layout.height + padY * 2; y++) {
       for (let x = 0; x < layout.width + padX * 2; x++) {
         if (x >= padX && x < padX + layout.width && y >= padY && y < padY + layout.height) continue;
@@ -3109,7 +3148,14 @@ export function renderLayout(proj: Project, layoutName: string, opts: RenderLayo
 - [ ] **Step 5: Run test to verify it passes**
 
 Run: `npx vitest run packages/core/test/render/layout.test.ts`
-Expected: PASS, 5 tests. The last test walks all 1,020 layouts and is slow by design — it is the first real proof the whole tree renders.
+Expected: PASS, 5 tests. The last test walks all 1,020 layouts and is slow by
+design — it is the first real proof the whole tree renders. Run it with
+`--reporter=verbose` and confirm all 5 **ran**; they are all `itWithCorpus`.
+
+The corpus walk allocates a full raster per layout, and the largest —
+`Route47_Layout` at 120×61 blocks, so 1920×976 px — is 7.5 MB. They are not
+retained, so peak memory is one raster at a time, but if it does need more
+headroom the flag is `NODE_OPTIONS=--max-old-space-size=4096`.
 
 - [ ] **Step 6: Commit**
 
