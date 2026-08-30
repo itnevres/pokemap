@@ -6,7 +6,10 @@ import { drawTile } from "./tile.js";
 
 export interface MetatileRaster extends Raster {
   /** True when the metatile ID falls outside its tileset's real metatile count
-   *  for this split. open-bugs.md #41, made visible.
+   *  for this split. open-bugs.md #41, made visible. Also true for a negative
+   *  or non-integer id -- `renderMetatile` is public API that Task 21's tile
+   *  picker and the CLI will call with computed ids, not just ids Task 14 has
+   *  already masked to a valid range.
    *
    *  Scoped to the id deliberately. A tile index past the end of its sheet is a
    *  separate failure that `drawTile` clips silently; no primary tileset in the
@@ -17,6 +20,23 @@ export interface MetatileRaster extends Raster {
 }
 
 export interface RenderMetatileOptions { overrideEntries?: TileEntry[]; }
+
+/**
+ * A tile entry's palette field is 4 bits wide, so it can name palette indices
+ * 13, 14 and 15 -- but NUM_PALS_TOTAL is 13, and most secondary tilesets ship
+ * only palettes/00.pal through 12.pal. Measured across the subject repo: 14
+ * tilesets carry 2,534 tile entries selecting index 13, 14 or 15, and 13 of
+ * those tilesets have no palette file at the index named (gTileset_Petalburg
+ * is the benign exception -- it ships all 16). This constant is that missing
+ * lookup made explicit and named, not an accident of `?? []`: those tiles
+ * render with zero pixels, the same failure Task 13's tile.ts comment already
+ * documents for a missing tile index. On real hardware they draw with
+ * whatever non-tileset palette happens to be resident in VRAM slots 13-15 --
+ * not a colour this renderer can know or should guess at. Deciding what (if
+ * anything) to paint instead is a parity question for Task 16's visual
+ * regression harness; Task 17 owns auditing where this constant gets hit.
+ */
+const MISSING_PALETTE: RGB[] = [];
 
 /**
  * Invariant I1: the boundary arrives as `split`. There is no ambient constant.
@@ -39,14 +59,13 @@ export function renderMetatile(
   id: number, primary: Tileset, secondary: Tileset,
   split: Split, profile: EngineProfile, opts: RenderMetatileOptions = {},
 ): MetatileRaster {
-  const dst = createRaster(16, 16) as MetatileRaster;
-  dst.outOfRange = false;
+  const dst: MetatileRaster = { ...createRaster(16, 16), outOfRange: false };
 
   const inSecondary = id >= split.metatiles;
   const owner = inSecondary ? secondary : primary;
   const local = inSecondary ? id - split.metatiles : id;
 
-  if (local >= owner.metatileCount) {
+  if (!Number.isInteger(id) || local < 0 || local >= owner.metatileCount) {
     dst.outOfRange = true;
     return dst;
   }
@@ -55,7 +74,7 @@ export function renderMetatile(
 
   // Absolute, not offset -- see the header comment.
   const paletteFor = (p: number): RGB[] =>
-    p < split.pals ? (primary.palettes[p] ?? []) : (secondary.palettes[p] ?? []);
+    p < split.pals ? (primary.palettes[p] ?? MISSING_PALETTE) : (secondary.palettes[p] ?? MISSING_PALETTE);
 
   const sheetFor = (t: number) =>
     t < split.tiles
@@ -70,7 +89,7 @@ export function renderMetatile(
   // Bg3/Bg1, and in each the bottom half is the lower-priority background.
   // So `owner.layerType(local)` is deliberately not consulted here. Task 21
   // reads it to render the halves separately for the layer-toggle overlay.
-  for (const i of [0, 1, 2, 3, 4, 5, 6, 7]) {
+  for (let i = 0; i < 8; i++) {
     const e = entries[i];
     if (!e) continue;
     const { sheet, index } = sheetFor(e.tile);

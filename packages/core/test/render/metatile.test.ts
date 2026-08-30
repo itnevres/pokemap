@@ -98,6 +98,19 @@ describe("renderMetatile", () => {
     const r = renderMetatile(512 + 135, primary, secondary, EMERALD, PROFILE);
     expect(r.outOfRange).toBe(false);
     expect(opaqueCount(r)).toBe(16 * 16);
+
+    // The secondary arm of the range check has its own boundary, one past
+    // Petalburg's last real metatile. Deriving the id from
+    // secondary.metatileCount rather than hardcoding 656 means this keeps
+    // testing the right boundary if the corpus's tileset ever grows or
+    // shrinks -- the fixture test above already pins metatileCount at 144.
+    // A range check that accidentally compared against primary.metatileCount
+    // instead of owner.metatileCount would pass every other test in this file
+    // (the hns case below routes to primary and never touches this arm) but
+    // fail this one, since 144 < primary's 512.
+    expect(
+      renderMetatile(512 + secondary.metatileCount, primary, secondary, EMERALD, PROFILE).outOfRange,
+    ).toBe(true);
   });
 
   itWithCorpus("indexes a secondary palette absolutely, not offset by the split", () => {
@@ -122,6 +135,34 @@ describe("renderMetatile", () => {
     // 512 metatiles, so this is exactly open-bugs.md #41. It must be
     // detectable, not silently rendered as garbage.
     expect(renderMetatile(512, primary, secondary, HNS, PROFILE).outOfRange).toBe(true);
+  });
+
+  itWithCorpus("flags a negative or non-integer id as out of range", () => {
+    // renderMetatile is public API that later tasks (the Task 21 tile picker,
+    // the CLI) call with computed ids, not just ids Task 14 has already
+    // masked to a valid range. A negative id would otherwise read a negative
+    // byte offset out of the metatile binary; a fractional id would silently
+    // read the wrong row of entries.
+    expect(renderMetatile(-1, primary, secondary, EMERALD, PROFILE).outOfRange).toBe(true);
+    expect(renderMetatile(1.5, primary, secondary, EMERALD, PROFILE).outOfRange).toBe(true);
+  });
+
+  itWithCorpus("leaves a tile blank when its index runs past the end of its sheet", () => {
+    // Pins the behavioural contract exercised nowhere else in this file: a
+    // wildly out-of-range tile index must not paint garbage. It does not by
+    // itself pin tile.ts's early-return line -- for a well-formed IndexedImage
+    // (height always an exact multiple of 8, indices sized exactly
+    // width*height) an out-of-sheet read is already `undefined` from the
+    // typed array itself, so the guard and its absence are behaviourally
+    // identical for every index this test can construct; verified by removing
+    // the guard and confirming this assertion still passes. It still locks in
+    // the observable contract in case that invariant ever changes.
+    const entries: TileEntry[] = [
+      { tile: 1_000_000, xFlip: false, yFlip: false, palette: 2 },
+      BLANK, BLANK, BLANK, BLANK, BLANK, BLANK, BLANK,
+    ];
+    const r = renderMetatile(1, primary, secondary, EMERALD, PROFILE, { overrideEntries: entries });
+    expect(opaqueCount(r)).toBe(0);
   });
 
   // Layer order is the same for all three layer types. All three of these
