@@ -657,7 +657,20 @@ export function engineProfile(cfg: Record<string, string>): EngineProfile {
 }
 ```
 
-Note: `supportsLayoutVersion` is *also* set true whenever `layouts.json` actually contains the key — that override lands in Task 5, where the layouts file is available.
+Note: `supportsLayoutVersion` is *also* set true by two further pieces of
+evidence, and the override lands in **Task 14**'s `openProject` (not Task 5,
+as an earlier draft of this line said) because that is where both the layouts
+file and the fieldmap constants are in hand.
+
+The two extra terms are `include/fieldmap.h` declaring a second boundary set,
+and `layouts.json` actually carrying the key. **The fieldmap term is the one
+that matters**, and it is not redundant: `layouts.json` is a file Porymap
+rewrites and strips the key from on every save — it did so to the subject repo
+on 2026-08-29 — whereas `include/fieldmap.h` is one PokeMap and Porymap both
+leave alone (I8). Without the fieldmap term, a Porymap save flips the flag to
+false, Plan 2's `missing-layout-version` refusal never fires, and 631 layouts
+resolve to the wrong boundary silently. The detector would be disarmed by
+precisely the event it exists to detect. See Task 14.
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -684,6 +697,20 @@ git commit -m "feat(core): build engine profile from porymap.project.cfg with pe
 ## Task 5: Layouts and split resolution
 
 The heart of invariant **I1**.
+
+**Known gap, found during Task 14's review and deliberately not fixed here.**
+`parseFieldmapConstants` reads `NUM_*_IN_PRIMARY_EMERALD` as the second
+boundary set. `pokeemerald-expansion` names its second set
+`NUM_*_IN_PRIMARY_FRLG` — 640/640/7 against a 512/512/6 base — and that name
+is not read, so `resolveSplit` sends a `layout_version: "frlg"` layout down the
+base branch and returns 512 where that engine's own header says 640. Harmless
+for the subject tree, where `frlg` and `hns` both resolve to 640 anyway and all
+349 frlg layouts are verified in range; wrong the moment the expansion tree is
+opened, which Plan 0 §6 requires before any plan is done. Checked across all
+seven reference engines: only `pokeemerald-expansion` uses the `_FRLG` name,
+and only it and `hns-v2` declare a second set at all. Fix it when the corpus
+gate starts exercising expansion, and give it a test that opens that tree
+rather than the subject one.
 
 **Files:**
 - Create: `packages/core/src/model/types.ts`
