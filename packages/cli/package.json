@@ -1,0 +1,7 @@
+{
+  "name": "@pokemap/cli",
+  "version": "0.0.0",
+  "type": "module",
+  "bin": { "pokemap": "./src/index.ts" },
+  "dependencies": { "@pokemap/core": "*", "commander": "^12.1.0" }
+}
