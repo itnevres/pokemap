@@ -1,9 +1,10 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { mkdtempSync, rmSync, existsSync, readFileSync, readdirSync } from "node:fs";
+import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readSidecar, writeSidecar, applySidecar, type Sidecar } from "../../src/world/sidecar.js";
 import type { Placement } from "../../src/world/connections.js";
+import { projectPaths } from "../../src/config/paths.js";
 
 const roots: string[] = [];
 const tempRoot = () => { const r = mkdtempSync(join(tmpdir(), "pokemap-")); roots.push(r); return r; };
@@ -61,5 +62,47 @@ describe("sidecar", () => {
     const root = tempRoot();
     writeSidecar(root, readSidecar(root));
     expect(readdirSync(root)).toEqual([".pokemap"]);
+  });
+
+  // Review fix (I7): readSidecar previously trusted `JSON.parse(...) as
+  // Partial<Sidecar>` unchecked. Invalid JSON threw a bare SyntaxError with
+  // no file path -- technically a refusal, but not an I7-quality one.
+  it("refuses a corrupted (invalid JSON) sidecar file, naming the file", () => {
+    const root = tempRoot();
+    writeSidecar(root, readSidecar(root)); // establishes a valid .pokemap/world.json
+    writeFileSync(projectPaths(root).sidecar, "{ not valid json");
+    expect(() => readSidecar(root)).toThrow(projectPaths(root).sidecar);
+  });
+
+  // Review fix (I7): syntactically-valid-but-wrong-shaped data was worse --
+  // no throw at all. A hand-edited `"manualPlacements": "oops"` made
+  // applySidecar's `Object.entries(s.manualPlacements)` iterate the
+  // string's characters, fabricating bogus single-character placements with
+  // no crash and no refusal. This is the concrete case that must now refuse.
+  it("refuses a manualPlacements that is not an object, naming the file", () => {
+    const root = tempRoot();
+    writeSidecar(root, readSidecar(root));
+    writeFileSync(
+      projectPaths(root).sidecar,
+      JSON.stringify({ version: 1, dungeonAutoLayout: true, manualPlacements: "oops", view: { x: 0, y: 0, zoom: 1 } }),
+    );
+    expect(() => readSidecar(root)).toThrow(projectPaths(root).sidecar);
+    expect(() => readSidecar(root)).toThrow(/manualPlacements/);
+  });
+
+  // Review fix: sidecar.ts had its own root-normalizer that stripped
+  // backslashes but not a trailing slash, diverging from the shared, tested
+  // `projectPaths` helper (which strips both) -- a real duplicate with a
+  // real bug, not just style. Proven here via the refusal message itself
+  // rather than filesystem existence: Windows/Node silently collapses a
+  // redundant "//" for file access (verified separately), so an existence
+  // check alone cannot tell the buggy path from the canonical one. The
+  // message text can, because string interpolation isn't
+  // filesystem-normalized.
+  it("names the canonical projectPaths(...).sidecar path in refusals, even from a trailing-slash root", () => {
+    const root = tempRoot();
+    writeSidecar(root, readSidecar(root));
+    writeFileSync(projectPaths(root).sidecar, "{ not valid json");
+    expect(() => readSidecar(`${root}/`)).toThrow(projectPaths(root).sidecar);
   });
 });
