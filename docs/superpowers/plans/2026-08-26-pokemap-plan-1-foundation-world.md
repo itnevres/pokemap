@@ -4644,6 +4644,16 @@ export async function createServer(opts: { projectPath: string; port?: number })
 Run: `npx vitest run packages/server/test/api.test.ts`
 Expected: PASS, 5 tests.
 
+**Layering debt, recorded so it is not rediscovered.** `packages/server`
+depends on `@pokemap/cli` purely to reach `encodePng` and `parseBorder`. That
+is backwards — a server should not depend on a CLI, and doing so couples it to
+`commander` for two small pure functions. `encodePng` is already core-shaped;
+`parseBorder`'s only CLI-specific quality is that it throws commander's
+`InvalidArgumentError`. Not worth moving for one consumer. **Move both into
+`@pokemap/core` when Plan 4's MCP server becomes the third**, with
+`parseBorder` returning a plain error and the CLI wrapping it at its own
+boundary.
+
 - [ ] **Step 5: Commit**
 
 ```bash
