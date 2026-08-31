@@ -3769,6 +3769,34 @@ this is a human judgement about tiles, palettes and layer order in the region
 the shot covers — not a pixel diff, and not something to automate here. Say
 what you compared and what you concluded.
 
+**This comparison has already been done once, against the Task 15 renderer, and
+it passed.** Recorded here so the answer is not rediscovered from scratch, and
+so a *different* result is recognised as a regression rather than a puzzle.
+
+The subject repo states the expected outcome itself, at
+`docs/human-porymap.md:194`: "NAVEL ROCK's two halves do not MATCH — and this
+one is a decision, not a defect. `_Bottom` and `_Top` (Emerald's `navel_rock`
+art) are **olive and tan**; `_Base` and `_Summit` (pokefirered's
+`FrlgNavelRock`) are **grey**."
+
+Rendered with `--border 1`: `NavelRock_Base` came out grey, `NavelRock_Bottom`
+olive and tan. Both correct, both `outOfRange=0`, in one process — `_Base`
+resolving to the 640 boundary as `frlg` and `_Bottom` to 512 as `emerald`.
+That is the per-layout split demonstrated against ground truth rather than
+against itself.
+
+Two things seen while comparing, so they are not mistaken for defects later:
+
+- The emulator shot `02_navel_rock_base.png` contains green that the render
+  does not. It is the location-name banner and sprites — UI and object events,
+  neither of which `renderLayout` draws. `NavelRock_Base` has no connections,
+  so it is not a neighbouring map bleeding in, and the map's own art is grey
+  throughout, as the doc says it should be.
+- `NavelRock_Bottom` renders two solid white blocks. Those are the subject
+  repo's own documented issue — `docs/human-porymap.md:116`, "NAVEL ROCK — five
+  warp tiles with no door art" — not a renderer fault. A missing palette
+  renders transparent, not white, so an opaque white block is real art.
+
 - [ ] **Step 5: Re-run to lock in**
 
 Run: `npx vitest run packages/core/test/render/visual.test.ts`
