@@ -2968,7 +2968,8 @@ line.
 ```ts
 import { describe, it, expect } from "vitest";
 import { renderLayout } from "../../src/render/layout.js";
-import { openProject } from "../../src/project.js";
+import { projectPaths } from "../../src/config/paths.js";
+import { parseMapGroups } from "../../src/load/maps.js";
 import { SUBJECT_ROOT, itWithCorpus } from "../helpers/corpus.js";
 
 const proj = openProject(SUBJECT_ROOT);
@@ -4348,6 +4349,20 @@ const cfg = JSON.parse(readFileSync("pokemap.config.json", "utf8")) as {
 };
 const roots = [cfg.projectPath, ...cfg.referenceProjects].filter((r) => existsSync(`${r}/data/layouts/layouts.json`));
 
+// Deliberately NOT openProject. This is the JSON identity gate: it needs map
+// names and file paths, and not one tileset, palette or metatile. openProject
+// eagerly parses tileset paths, and pokeclassic has no src/data/tilesets/ and
+// no gTileset_ struct at all -- a structurally different tree -- so depending
+// on it would put a whole reference engine outside invariant I5, the one
+// Plan 0 §6 says no plan may merge without. projectPaths + parseMapGroups need
+// none of that, and pokeclassic has map_groups.json, 779 map.json and
+// layouts.json, so it participates fully.
+const namesFor = (root: string) => {
+  const paths = projectPaths(root);
+  const groups = parseMapGroups(readFileSync(paths.mapGroupsJson, "utf8"));
+  return { paths, names: groups.allMapNames() };
+};
+
 describe("identity corpus (invariant I5)", () => {
   it("has every reference engine available", () => {
     expect(roots.length).toBeGreaterThanOrEqual(5);
@@ -4415,6 +4430,25 @@ pokeemerald 518, pokefirered 425, pokeemerald-expansion 939, modern-emerald
 557, pokeclassic 779 -- each edited and restored byte-identically, plus the
 six layouts.json. Every one of the 4,427 carries a `music` key; measured, no
 exceptions, which is why the gate can use it as the universal edit target.
+
+Two measured caveats, both found while implementing:
+
+- **4,423 of the 4,427 are reachable through `allMapNames()`.** Four
+  `UnusedHouse`-style `map.json` files in pokeemerald-expansion exist on disk
+  but are registered in no map group, so the walk never visits them. Immaterial
+  to the gate, but the two numbers are different and should not be reconciled
+  by assuming one is a typo.
+- **The corpus does not exercise the container-skip fix.** No real `map.json`
+  or `layouts.json` ever needs to skip past an object containing an array to
+  reach a later key, so the `valueEnd` correction above is proved only by the
+  synthetic unit test. `wild_encounters.json` is the one file in the tree with
+  that shape and it belongs to Task 26. A green corpus gate is therefore not
+  evidence the parser is right — say so in the test file, because this project
+  has twice been caught assuming a broad test covered a narrow fix.
+
+Exactly one file in the whole corpus uses CRLF —
+`data/maps/RocketHideout_Elevator/map.json` in the subject tree — so the gate
+independently confirms the CRLF handling that the unit test also covers.
 
 If a reference repo is missing, the first test fails and names the gap. Clone it rather than deleting the assertion — engine portability that is not tested is engine portability that has already rotted.
 
