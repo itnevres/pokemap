@@ -3842,7 +3842,7 @@ visual regression harness), and do not guess at parity before then.
 
 ```ts
 import { describe, it, expect } from "vitest";
-import { validateMetatileRange } from "../../src/validate/metatileRange.js";
+import { validateMetatileRange, validatePaletteRange } from "../../src/validate/metatileRange.js";
 import { openProject } from "../../src/project.js";
 import { SUBJECT_ROOT, itWithCorpus } from "../helpers/corpus.js";
 
@@ -3865,13 +3865,49 @@ describe("validateMetatileRange", () => {
 
   itWithCorpus("checking every layout against one global constant is the bug, not the test", () => {
     // Forcing the 640 boundary onto emerald layouts must produce many findings.
+    // Measured: 558, of which 333 are map-source. The threshold is 100 so the
+    // test states a floor rather than a brittle exact count, but the gap
+    // between 1 and 558 is the actual signal.
     const forced = { ...proj, splitFor: () => ({ version: "hns" as const, tiles: 640, metatiles: 640, pals: 7 }) };
     expect(validateMetatileRange(forced as typeof proj).length).toBeGreaterThan(100);
+  }, 900_000);
+
+  itWithCorpus("reports tile entries naming a palette the tileset has no .pal for", () => {
+    const findings = validatePaletteRange(proj);
+
+    // Every finding must name only indices the tileset genuinely lacks --
+    // asserting a count alone would pass against a function that flagged
+    // everything.
+    for (const f of findings) {
+      const ts = proj.tileset(f.tileset);
+      expect(f.indices.length).toBeGreaterThan(0);
+      for (const i of f.indices) expect(ts.palettes[i]).toBeUndefined();
+      expect(f.entries).toBeGreaterThanOrEqual(f.indices.length);
+    }
+
+    // And the negative: gTileset_Petalburg names palette 14 on 8 tile entries
+    // and INCBINs all 16 palettes, so it must NOT appear. A checker that
+    // flagged "index >= NUM_PALS_TOTAL" rather than "index the tileset lacks"
+    // would wrongly include it.
+    expect(findings.map((f) => f.tileset)).not.toContain("gTileset_Petalburg");
+
+    // gTileset_Cave_Green is the worst offender in the tree.
+    expect(findings.map((f) => f.tileset)).toContain("gTileset_Cave_Green");
+    expect(findings.length).toBeGreaterThan(0);
   }, 900_000);
 });
 ```
 
-The third test encodes the whole point of the tool: it fails loudly if anyone reintroduces a global boundary.
+The third test encodes the whole point of the tool: it fails loudly if anyone
+reintroduces a global boundary.
+
+The fourth is the palette half. Measured across the subject tree before this
+task was written: 14 tilesets carry tile entries naming palette index 13, 14 or
+15, and 13 of them have no `.pal` at the index named — `gTileset_Cave_Green`
+alone accounts for 1,732 such entries, all on index 15. `gTileset_Petalburg` is
+the one benign case and is asserted as a negative for that reason. **Verify
+these counts yourself rather than trusting them**; if the implementation
+reports a different set, find out which of you is right before adjusting either.
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -3888,12 +3924,24 @@ import { parseBlocks } from "../load/blocks.js";
 import type { Split } from "../model/types.js";
 
 export interface RangeFinding {
+  kind: "metatile-range";
   layout: string;
   split: Split;
   /** Distinct offending metatile ids, with how often each appears. */
   ids: { id: number; count: number }[];
   source: "map" | "border";
 }
+
+export interface PaletteFinding {
+  kind: "palette-range";
+  tileset: string;
+  /** Palette indices named by tile entries that this tileset has no .pal for. */
+  indices: number[];
+  /** How many tile entries name one of them. */
+  entries: number;
+}
+
+export type Finding = RangeFinding | PaletteFinding;
 
 /**
  * Port of tools/verify/check_metatile_range.py.
@@ -3922,6 +3970,7 @@ export function validateMetatileRange(proj: Project): RangeFinding[] {
       }
       if (counts.size) {
         out.push({
+          kind: "metatile-range",
           layout: layout.name, split, source,
           ids: [...counts].map(([id, count]) => ({ id, count })).sort((a, b) => b.count - a.count),
         });
@@ -3931,12 +3980,62 @@ export function validateMetatileRange(proj: Project): RangeFinding[] {
 
   return out;
 }
+
+/**
+ * The palette half of the same question, promised in this task's preamble and
+ * previously not implemented anywhere.
+ *
+ * A tile entry's palette field is 4 bits, so it can name 0-15, but
+ * NUM_PALS_TOTAL is 13 and most secondary tilesets INCBIN only 00-12 into their
+ * gTilesetPalettes_ array. `renderMetatile`'s MISSING_PALETTE then resolves to
+ * an empty list and `drawTile` skips every pixel, so those tiles come out as
+ * transparent holes. On hardware they draw with whatever non-tileset palette is
+ * resident in VRAM slots 13-15, which is not a colour this tool can know.
+ *
+ * So: report, do not repaint. Deciding what to draw instead is a parity
+ * question that needs a Porymap build to compare against.
+ *
+ * This walks tilesets rather than blockdata, so it is cheap, and it is
+ * split-independent: a secondary tileset's palettes are indexed absolutely, so
+ * "does this tileset have a .pal at the index its own metatiles name" is the
+ * whole question. Note `Tileset.palettes` comes from the INCBIN list, not from
+ * the directory listing -- gTileset_DepartmentStore and gTileset_ShopRooftop
+ * both ship 16 .pal files on disk while INCBINing only 00-12.
+ */
+export function validatePaletteRange(proj: Project): PaletteFinding[] {
+  const out: PaletteFinding[] = [];
+
+  for (const symbol of proj.tilesetSymbols()) {
+    const ts = proj.tileset(symbol);
+    const counts = new Map<number, number>();
+    for (let m = 0; m < ts.metatileCount; m++) {
+      for (const e of ts.metatile(m)) {
+        if (ts.palettes[e.palette] === undefined) counts.set(e.palette, (counts.get(e.palette) ?? 0) + 1);
+      }
+    }
+    if (counts.size) {
+      out.push({
+        kind: "palette-range",
+        tileset: symbol,
+        indices: [...counts.keys()].sort((a, b) => a - b),
+        entries: [...counts.values()].reduce((a, b) => a + b, 0),
+      });
+    }
+  }
+
+  return out.sort((a, b) => b.entries - a.entries);
+}
 ```
+
+`Project` has no `tilesetSymbols()` yet — add one, returning the keys of the
+map `parseTilesetPaths` produced. It is a one-line accessor and every later
+validator will want it. Plan 0 freezes Plan 1's signatures, so adding it now is
+free and adding it in Plan 2 is not.
 
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run packages/core/test/validate/metatileRange.test.ts`
-Expected: PASS, 3 tests.
+Expected: PASS, 4 tests.
 
 If the first test finds layouts beyond `Saffron_Temp`, cross-check against the Python tool before changing anything:
 
@@ -3950,19 +4049,36 @@ Whichever disagrees with the engine's own `GetNumMetatilesInPrimary()` is the on
 
 In `packages/cli/src/index.ts`:
 
+`resolveProject` now lives in `packages/cli/src/context.ts`, not `index.ts` —
+Task 15's review moved it there so later commands and Plan 4's MCP wrapper can
+import a library rather than an entry point. Import it from there.
+
 ```ts
 program
   .command("validate")
   .description("run static checks over the project")
   .option("--metatile-range", "check every metatile id against its layout's split")
+  .option("--palette-range", "check every tile entry's palette index resolves")
   .option("--json", "machine-readable output")
-  .action((opts: { metatileRange?: boolean; json?: boolean }) => {
+  .action((opts: { metatileRange?: boolean; paletteRange?: boolean; json?: boolean }) => {
     const proj = resolveProject(program.opts().project);
-    const findings = opts.metatileRange === false ? [] : validateMetatileRange(proj);
-    if (opts.json) { process.stdout.write(JSON.stringify(findings, null, 2)); }
+
+    // Selecting no check runs every check. `opts.metatileRange === false` is
+    // never true -- commander sets a bare flag to `true` or leaves it
+    // `undefined`, so that comparison made the flag decorative and ran the
+    // check unconditionally. This is the same inert-flag defect as Task 15's
+    // `--json`, and `query` already uses the pattern below.
+    const all = !opts.metatileRange && !opts.paletteRange;
+    const findings = [
+      ...(all || opts.metatileRange ? validateMetatileRange(proj) : []),
+      ...(all || opts.paletteRange ? validatePaletteRange(proj) : []),
+    ];
+    if (opts.json) { process.stdout.write(`${JSON.stringify(findings, null, 2)}\n`); }
     else {
       for (const f of findings) {
-        process.stdout.write(`${f.layout} (${f.split.version}, ${f.source}): ${f.ids.length} bad id(s), worst 0x${f.ids[0]!.id.toString(16)} x${f.ids[0]!.count}\n`);
+        process.stdout.write(f.kind === "metatile-range"
+          ? `${f.layout} (${f.split.version}, ${f.source}): ${f.ids.length} bad id(s), worst 0x${f.ids[0]!.id.toString(16)} x${f.ids[0]!.count}\n`
+          : `${f.tileset}: ${f.entries} tile entr(ies) name palette ${f.indices.join(", ")}, which it has no .pal for\n`);
       }
       process.stdout.write(`${findings.length} finding(s)\n`);
     }
@@ -3972,6 +4088,9 @@ program
 
 Run: `npx tsx packages/cli/src/index.ts validate --metatile-range`
 Expected: one finding, `Saffron_Temp`.
+
+Run: `npx tsx packages/cli/src/index.ts validate`
+Expected: the `Saffron_Temp` finding plus the palette findings, and exit 1.
 
 - [ ] **Step 6: Commit**
 
