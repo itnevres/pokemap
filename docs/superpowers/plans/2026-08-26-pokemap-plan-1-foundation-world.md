@@ -1547,7 +1547,7 @@ export function parseJascPal(text: string): RGB[] {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run packages/core/test/load/pal.test.ts`
-Expected: PASS, 6 tests.
+Expected: PASS, 7 tests.
 
 - [ ] **Step 5: Commit**
 
@@ -5174,11 +5174,26 @@ import { SUBJECT_ROOT, itWithCorpus } from "../helpers/corpus.js";
 const proj = openProject(SUBJECT_ROOT);
 
 /**
- * Set this to whatever the first correct run reports, then leave it alone.
- * A change here means a connection in the decomp started disagreeing with
- * itself -- a real finding to investigate, not a number to bump.
+ * Measured, not guessed: **19**. A change here means a connection in the decomp
+ * started disagreeing with itself -- a real finding to investigate, not a
+ * number to bump.
+ *
+ * These are genuine inconsistencies in the subject tree's connection data, not
+ * artefacts of this algorithm. Worked one through by hand to be sure:
+ * `SafariZone_Top_Right` says `down offset 0 -> Low_Right`, and `Low_Right`
+ * says `up offset 0 -> Top_Right`. That reciprocal pair is self-consistent --
+ * substitute one into the other and you get back where you started. The
+ * disagreement comes from the *third* path, round through `Low_Mid`, which
+ * places `Low_Right` 8 tiles off from where `Top_Right` puts it. The Safari
+ * Zone quadrants do not tile as a clean rectangle.
+ *
+ * Two more of the same shape: `RuinsOfAlph_Outside` vs `Route36` (20 x, 3 y
+ * apart) and `EcruteakCity` vs `Route42` (27 x, 4 y apart).
+ *
+ * Reporting these is a feature. It is a class of defect Porymap does not
+ * surface at all, because Porymap never builds a global coordinate space.
  */
-const CONFLICT_BASELINE = 0;
+const CONFLICT_BASELINE = 19;
 
 describe("buildWorld", () => {
   itWithCorpus("places NewBarkTown's left neighbour to its left, at the stated offset", () => {
@@ -5237,6 +5252,24 @@ describe("buildWorld", () => {
     // Record whatever the first correct run produces and treat a change as a
     // finding about the decomp's connection data, not noise to re-baseline.
     expect(w.conflicts.length).toBe(CONFLICT_BASELINE);
+  });
+
+  itWithCorpus("packs components into rows rather than one endless strip", () => {
+    const w = buildWorld(proj);
+    const maxX = Math.max(...w.components.map((c) => c.bounds.x + c.bounds.width));
+    const maxY = Math.max(...w.components.map((c) => c.bounds.y + c.bounds.height));
+
+    // 1,045 components in a single row is tens of thousands of tiles wide and
+    // one component tall, which is what an unwrapped cursor produces and what
+    // Task 25 would then have to render. Assert the world has real extent in
+    // both axes rather than merely that nothing overlaps.
+    expect(maxY).toBeGreaterThan(0);
+    expect(maxX / maxY).toBeLessThan(10);
+
+    // The three landmasses are packed first, so the largest component starts
+    // in the first row.
+    const biggest = [...w.components].sort((a, b) => b.maps.length - a.maps.length)[0]!;
+    expect(biggest.bounds.y).toBe(0);
   });
 
   itWithCorpus("gives every component a non-overlapping bounding box", () => {
@@ -5299,7 +5332,16 @@ export function buildWorld(proj: Project): World {
 
   const sizeOf = (name: string) => {
     const l = proj.layoutById(proj.map(name).layout);
-    return l ? { width: l.width, height: l.height } : { width: 0, height: 0 };
+    // Refuse rather than return a zero-sized map (I7). A silent {0,0} would
+    // place a neighbour exactly on top of its origin and be reported as a
+    // coordinate conflict somewhere else entirely, which is the worst kind of
+    // bug to chase. Measured: 0 of 1,209 maps hit this today.
+    if (!l) {
+      throw new Error(
+        `${proj.paths.mapJson(name)} names layout ${proj.map(name).layout}, which is not an id in ${proj.paths.layoutsJson}.`,
+      );
+    }
+    return { width: l.width, height: l.height };
   };
 
   // Built ONCE. Connections name their target by map id, and resolving that
@@ -5307,6 +5349,9 @@ export function buildWorld(proj: Project): World {
   // maps per connection edge -- quadratic for no reason. warpGraph.ts already
   // does it this way; this keeps the two consistent.
   const idToName = new Map(proj.mapNames().map((n) => [proj.map(n).id, n]));
+
+  /** Which map's connection put each placement where it is, for conflict reporting. */
+  const placedBy = new Map<string, string>();
 
   const remaining = new Set(proj.mapNames());
 
@@ -5347,12 +5392,18 @@ export function buildWorld(proj: Project): World {
             conflicts.push({
               map: target,
               viaA: { from: name, x: pos.x, y: pos.y },
-              viaB: { from: "(already placed)", x: existing.x, y: existing.y },
+              // The map that actually placed it, not the string
+              // "(already placed)". A conflict you cannot trace to both of its
+              // causes is most of the way to useless, and the test asserts
+              // `viaB.from` is a string, which that literal satisfied without
+              // meaning anything.
+              viaB: { from: placedBy.get(target) ?? seed, x: existing.x, y: existing.y },
             });
           }
           continue;
         }
 
+        placedBy.set(target, name);
         placements.set(target, { map: target, ...pos, ...size, component: index });
         remaining.delete(target);
         maps.push(target);
@@ -5377,18 +5428,44 @@ function boundsOf(maps: string[], placements: Map<string, Placement>): Bounds {
   return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
 }
 
-/** Shelf-pack components left to right so no two overlap. */
+/**
+ * Shelf-pack components into rows so no two overlap.
+ *
+ * An earlier draft advanced only `cursorX` and never wrapped, which put all
+ * **1,045** components in a single row — the three landmasses and 1,028
+ * single-map interiors strung out in one strip tens of thousands of tiles
+ * wide. That satisfies "no two overlap" and is unusable as a world: Task 25
+ * has to render it, and Task 23 places the loose rooms within it.
+ *
+ * Big components first, so the three landmasses land together at the top left
+ * rather than being scattered between interiors. Row width is a target, not a
+ * cap — a component wider than the target still gets its own row rather than
+ * being clipped.
+ */
 function layOutComponents(components: Component[], placements: Map<string, Placement>): void {
   const GAP = 8;
-  let cursorX = 0;
-  for (const c of components) {
+  const ROW_TARGET = 512; // tiles; ~8k px at 16px/tile
+
+  const order = [...components].sort((a, b) => b.maps.length - a.maps.length);
+
+  let cursorX = 0, rowY = 0, rowHeight = 0;
+  for (const c of order) {
+    if (cursorX > 0 && cursorX + c.bounds.width > ROW_TARGET) {
+      cursorX = 0;
+      rowY += rowHeight + GAP;
+      rowHeight = 0;
+    }
     const dx = cursorX - c.bounds.x;
+    const dy = rowY - c.bounds.y;
     for (const m of c.maps) {
       const p = placements.get(m)!;
       p.x += dx;
+      p.y += dy;
     }
     c.bounds.x += dx;
+    c.bounds.y += dy;
     cursorX += c.bounds.width + GAP;
+    rowHeight = Math.max(rowHeight, c.bounds.height);
   }
 }
 ```
@@ -5396,9 +5473,21 @@ function layOutComponents(components: Component[], placements: Map<string, Place
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run packages/core/test/world/connections.test.ts`
-Expected: PASS, 6 tests.
+Expected: PASS, 7 tests.
 
-If the conflicts list is large, that is a finding about the subject repo, not necessarily a bug in this code. Print it and check a couple by hand against `data/maps/<Name>/map.json` before adjusting the algorithm.
+**Print the full conflict list and put it in the commit message.** Nineteen
+maps in this tree cannot be placed consistently, and that list is a deliverable
+— it is a class of defect Porymap cannot surface, because Porymap never builds
+a global coordinate space. Check two or three by hand against
+`data/maps/<Name>/map.json` before believing any of them, as was done for the
+Safari Zone case documented above.
+
+Note the count is deterministic but **order-dependent**: which of two
+disagreeing paths reaches a map first decides which one is reported as the
+conflict. The *existence* of a disagreement is order-independent; the reported
+pairing is not. So if you change the traversal, expect the list to change shape
+even when the underlying data has not — do not read that as having fixed
+anything.
 
 - [ ] **Step 5: Commit**
 
@@ -6333,7 +6422,7 @@ function allSpecies(proj: Project): string[] {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run packages/core/test/analyse/coverage.test.ts`
-Expected: PASS, 6 tests.
+Expected: PASS, 7 tests.
 
 - [ ] **Step 5: Add the CLI commands**
 
