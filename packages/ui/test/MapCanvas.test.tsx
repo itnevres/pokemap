@@ -84,9 +84,33 @@ function makeFakeCtx(): FakeCtx {
   };
 }
 
+// A controllable stand-in for the real ResizeObserver, which jsdom does not
+// implement at all (MapCanvas guards with `typeof ResizeObserver !==
+// "undefined"` and simply skips live resize tracking without it). Stubbing
+// this global lets a test fire the exact callback the component registers,
+// with a chosen new size, instead of only ever exercising the one-shot
+// measurement `fit()` takes at mount.
+class FakeResizeObserver {
+  static instances: FakeResizeObserver[] = [];
+  callback: ResizeObserverCallback;
+  constructor(callback: ResizeObserverCallback) {
+    this.callback = callback;
+    FakeResizeObserver.instances.push(this);
+  }
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+  fire() {
+    this.callback([] as unknown as ResizeObserverEntry[], this as unknown as ResizeObserver);
+  }
+}
+
 let originalGetContext: typeof HTMLCanvasElement.prototype.getContext;
 
 beforeEach(() => {
+  FakeResizeObserver.instances = [];
+  vi.stubGlobal("ResizeObserver", FakeResizeObserver);
+
   originalGetContext = HTMLCanvasElement.prototype.getContext;
   // @ts-expect-error -- test stub, narrower than the real overload set
   HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, kind: string) {
@@ -110,6 +134,7 @@ beforeEach(() => {
 afterEach(() => {
   HTMLCanvasElement.prototype.getContext = originalGetContext;
   ctxByCanvas.clear();
+  vi.unstubAllGlobals();
 });
 
 /** Mounts, loads the source image, and waits for the first composite+blit to
@@ -228,6 +253,47 @@ describe("MapCanvas", () => {
     fireEvent.click(screen.getByRole("button", { name: "Grid" })); // back off
     await waitFor(() => expect(canvas).toBeTruthy());
     expect(baseCtx.putImageData).toHaveBeenCalledTimes(1); // no repaint when nothing is on
+  });
+
+  it("regression: a container resize after a toggle turns the legend on does not leave the canvas blank", async () => {
+    // Root cause of a real bug: turning an overlay on makes the legend row
+    // appear, which is a sibling of the viewport inside the same flex
+    // column -- so it shrinks `.map-canvas__viewport`'s box the instant the
+    // toggle lands. That fires the ResizeObserver watching the viewport,
+    // which updates `viewport` state, which changes the stage canvas's
+    // width/height JSX attributes -- and setting a canvas's width or height
+    // attribute clears its bitmap to fully transparent, per the HTML spec,
+    // regardless of anything React or this component does. The blit effect
+    // that would repaint it MUST depend on `viewport`, or nothing redraws
+    // it and the map stays blank until some unrelated state change happens
+    // to touch zoom/pan/compositeVersion. This is exactly that resize,
+    // fired in isolation with no other state change, so only the
+    // `viewport` dependency can be what rescues it.
+    const { canvas, stageCtx } = await mountReady();
+    fireEvent.click(screen.getByRole("button", { name: "Collision" }));
+    await waitFor(() => expect(screen.getByText("Collision", { selector: ".map-canvas__legend-item" })).toBeTruthy());
+
+    const drawCallsBeforeResize = stageCtx.drawImage.mock.calls.length;
+    expect(drawCallsBeforeResize).toBeGreaterThan(0);
+
+    // Simulate the legend row shrinking the viewport: a smaller size on the
+    // observed container, then fire the exact callback MapCanvas registered
+    // -- not a synthetic DOM "resize" event, which nothing here listens for.
+    const viewport = document.querySelector(".map-canvas__viewport") as HTMLElement;
+    Object.defineProperty(viewport, "clientWidth", { value: PIXEL_SIZE - 8, configurable: true });
+    Object.defineProperty(viewport, "clientHeight", { value: PIXEL_SIZE - 8, configurable: true });
+    expect(FakeResizeObserver.instances.length).toBeGreaterThan(0);
+    FakeResizeObserver.instances[0]!.fire();
+
+    // The canvas's own width/height attributes must have followed the
+    // smaller viewport (proving the resize was actually observed)...
+    await waitFor(() => expect(canvas.width).toBe(PIXEL_SIZE - 8));
+    // ...and the stage must have been redrawn afterward, not left however
+    // the attribute change cleared it. A broken version of this effect
+    // (missing `viewport` in its dependency array) calls drawImage exactly
+    // as many times here as before the resize -- this is the assertion
+    // that tells the two apart.
+    await waitFor(() => expect(stageCtx.drawImage.mock.calls.length).toBeGreaterThan(drawCallsBeforeResize));
   });
 
   it("hovering a block shows its metatile id (hex), collision, elevation and behaviour", async () => {

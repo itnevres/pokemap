@@ -169,6 +169,19 @@ export function MapCanvas({ mapName, data }: MapCanvasProps) {
   }, [imgLoaded, toggles, blocks, layout, map, pixelWidth, pixelHeight, originX, originY]);
 
   // Step 2: cheap re-blit of the already-composited buffer for pan/zoom.
+  //
+  // Must depend on `viewport` too, not just compositeVersion/zoom/pan: the
+  // stage canvas's `width`/`height` JSX attributes are driven by
+  // `viewport.w || pixelWidth` / `viewport.h || pixelHeight` (below), and
+  // setting a canvas's width/height attribute -- even attributes React
+  // writes on its behalf -- clears its bitmap to fully transparent, per the
+  // HTML spec, independent of anything this effect does. The overlay legend
+  // row is a sibling of the viewport inside the same flex column, so it
+  // changes `.map-canvas__viewport`'s box size the instant a toggle turns
+  // on, which fires the ResizeObserver, which updates `viewport`, which
+  // changes the canvas's attributes and blanks it -- and without `viewport`
+  // in this dependency list, nothing redraws it afterward. This was the
+  // root cause of "toggling an overlay blanks the canvas."
   useEffect(() => {
     const canvas = canvasRef.current;
     const base = baseCanvasRef.current;
@@ -178,8 +191,7 @@ export function MapCanvas({ mapName, data }: MapCanvasProps) {
     ctx.imageSmoothingEnabled = false;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(base, 0, 0, pixelWidth, pixelHeight, pan.x, pan.y, pixelWidth * zoom, pixelHeight * zoom);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [compositeVersion, zoom, pan, pixelWidth, pixelHeight]);
+  }, [compositeVersion, zoom, pan, pixelWidth, pixelHeight, viewport]);
 
   const toggle = (key: keyof Toggles) => setToggles((t) => ({ ...t, [key]: !t[key] }));
 
