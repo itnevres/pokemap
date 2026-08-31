@@ -1,6 +1,8 @@
+import { readFileSync } from "node:fs";
 import { createServer as createHttp, type Server } from "node:http";
 import { openProject, type Project } from "@pokemap/core/src/project.js";
 import { renderLayout } from "@pokemap/core/src/render/layout.js";
+import { parseBlocks } from "@pokemap/core/src/load/blocks.js";
 import { encodePng } from "@pokemap/cli/src/png.js";
 import { parseBorder } from "@pokemap/cli/src/args.js";
 
@@ -35,7 +37,38 @@ export async function createServer(opts: { projectPath: string; port?: number })
         const map = project.map(name);
         const layout = project.layoutById(map.layout);
         if (!layout) return send(404, { error: `no layout ${map.layout}` });
-        return send(200, { map, layout, split: project.splitFor(layout) });
+        const split = project.splitFor(layout);
+
+        // Raw blocks, plus each one's resolved tile behaviour -- the canvas
+        // draws collision/elevation overlays and a hover status strip
+        // entirely off this payload, with no per-hover round trip. Ownership
+        // (primary vs secondary tileset) follows the same id/split rule as
+        // renderMetatile: below split.metatiles is primary at that index,
+        // at or above it is secondary at (id - split.metatiles).
+        const primary = project.tileset(layout.primaryTileset);
+        const secondary = project.tileset(layout.secondaryTileset);
+        const behaviorCache = new Map<number, number>();
+        const behaviorFor = (metatileId: number): number => {
+          let b = behaviorCache.get(metatileId);
+          if (b === undefined) {
+            const inSecondary = metatileId >= split.metatiles;
+            const owner = inSecondary ? secondary : primary;
+            const local = inSecondary ? metatileId - split.metatiles : metatileId;
+            b = local >= 0 && local < owner.metatileCount ? owner.behavior(local) : 0;
+            behaviorCache.set(metatileId, b);
+          }
+          return b;
+        };
+
+        const rawBlocks = parseBlocks(readFileSync(`${project.paths.root}/${layout.blockdataFilepath}`), project.profile);
+        const blocks = rawBlocks.slice(0, layout.width * layout.height).map((b) => ({
+          metatileId: b.metatileId,
+          collision: b.collision,
+          elevation: b.elevation,
+          behavior: behaviorFor(b.metatileId),
+        }));
+
+        return send(200, { map, layout, split, blocks });
       }
 
       const renderMatch = /^\/api\/render\/(.+)\.png$/.exec(url.pathname);

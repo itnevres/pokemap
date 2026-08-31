@@ -8,6 +8,7 @@
     "build": "vite build"
   },
   "dependencies": {
+    "@pokemap/core": "*",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },

@@ -1,28 +1,13 @@
-import { useEffect, useState } from "react";
-import { MapTree, type MapGroupsData } from "./components/MapTree.js";
+import { useState } from "react";
+import { MapTree } from "./components/MapTree.js";
+import { MapCanvas } from "./components/MapCanvas.js";
+import { useMapGroups } from "./hooks/useMapGroups.js";
+import { useMapLayout } from "./hooks/useMapLayout.js";
 
 export function App() {
-  const [data, setData] = useState<MapGroupsData | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/groups")
-      .then((r) => {
-        if (!r.ok) throw new Error(`GET /api/groups -> ${r.status}`);
-        return r.json() as Promise<MapGroupsData>;
-      })
-      .then((d) => {
-        if (!cancelled) setData(d);
-      })
-      .catch((e: unknown) => {
-        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const { data, error } = useMapGroups();
+  const layout = useMapLayout(selected);
 
   return (
     <div className="app">
@@ -41,7 +26,15 @@ export function App() {
           )}
         </aside>
         <main className="app__canvas">
-          {selected ? `${selected} — canvas arrives in Task 21` : "Select a map"}
+          {!selected ? (
+            <p className="app__canvas-placeholder">Select a map</p>
+          ) : layout.error ? (
+            <p className="app__canvas-placeholder">Could not load {selected}: {layout.error}</p>
+          ) : layout.data ? (
+            <MapCanvas mapName={selected} data={layout.data} />
+          ) : (
+            <p className="app__canvas-placeholder">Loading {selected}…</p>
+          )}
         </main>
       </div>
     </div>

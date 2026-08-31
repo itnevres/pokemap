@@ -28,6 +28,28 @@ export function fillRect(r: Raster, x0: number, y0: number, w: number, h: number
   }
 }
 
+/**
+ * Source-over alpha compositing, for overlays that must tint rather than
+ * replace. `fillRect` overwrites, which is correct when you are painting a
+ * solid, and destroys the image underneath when you are painting a wash.
+ */
+export function blendRect(r: Raster, x0: number, y0: number, w: number, h: number, c: RGBA): void {
+  const sa = c.a / 255;
+  if (sa <= 0) return;
+  for (let y = Math.max(0, y0); y < Math.min(r.height, y0 + h); y++) {
+    for (let x = Math.max(0, x0); x < Math.min(r.width, x0 + w); x++) {
+      const i = (y * r.width + x) * 4;
+      const da = (r.data[i + 3] ?? 0) / 255;
+      const out = sa + da * (1 - sa);
+      if (out <= 0) continue;
+      r.data[i] = Math.round((c.r * sa + (r.data[i] ?? 0) * da * (1 - sa)) / out);
+      r.data[i + 1] = Math.round((c.g * sa + (r.data[i + 1] ?? 0) * da * (1 - sa)) / out);
+      r.data[i + 2] = Math.round((c.b * sa + (r.data[i + 2] ?? 0) * da * (1 - sa)) / out);
+      r.data[i + 3] = Math.round(out * 255);
+    }
+  }
+}
+
 /** Source-over blit. Fully transparent source pixels are skipped. */
 export function blit(dst: Raster, src: Raster, dx: number, dy: number): void {
   for (let y = 0; y < src.height; y++) {

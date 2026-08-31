@@ -30,6 +30,27 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("server", () => {
     expect(body.split.version).toBe("hns");
   });
 
+  it("includes per-block collision/elevation/behaviour so the canvas can overlay and hover them", async () => {
+    // MapCanvas draws collision/elevation overlays and a hover status strip
+    // client-side, entirely off data already on the page -- no per-hover
+    // network round trip. That requires the raw block grid, which the PNG
+    // route (pixels only) and the map route (header metadata only, until now)
+    // do not carry.
+    const body = await (await get("/api/map/PetalburgCity")).json() as any;
+    expect(Array.isArray(body.blocks)).toBe(true);
+    // 30x30, matching layout.width * layout.height -- same fixture, same
+    // count Task 21's core overlay test measures independently.
+    expect(body.blocks.length).toBe(900);
+    const blocked = body.blocks.filter((b: any) => b.collision !== 0).length;
+    expect(blocked).toBe(429);
+    for (const b of body.blocks) {
+      expect(typeof b.metatileId).toBe("number");
+      expect(typeof b.collision).toBe("number");
+      expect(typeof b.elevation).toBe("number");
+      expect(typeof b.behavior).toBe("number");
+    }
+  });
+
   it("serves a rendered layout as a PNG", async () => {
     const r = await get("/api/render/PetalburgCity.png?border=1");
     expect(r.headers.get("content-type")).toBe("image/png");

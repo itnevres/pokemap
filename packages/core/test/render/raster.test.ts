@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { createRaster, blit, blitScaled, fillRect } from "../../src/render/raster.js";
+import { createRaster, blit, blitScaled, fillRect, blendRect } from "../../src/render/raster.js";
 
 describe("raster", () => {
   it("creates a transparent RGBA buffer", () => {
@@ -101,5 +101,46 @@ describe("raster", () => {
       expect(dst.data[i]! % 8).toBe(0);
       expect(dst.data[i + 1]! % 8).toBe(0);
     }
+  });
+
+  it("blendRect composites source-over instead of overwriting", () => {
+    // Opaque white background, blend opaque-ish red at half alpha over it.
+    // Source-over math: out = sa + da*(1-sa); with da=1 the result stays fully
+    // opaque, and each channel moves toward the source in proportion to sa.
+    // fillRect would instead replace the pixel outright with (255,0,0,128) --
+    // still opaque-looking in isolation, but a plainly different, wrong,
+    // colour and alpha than a true blend produces. That distinguishes this
+    // test from one that would pass against fillRect renamed to blendRect.
+    const r = createRaster(1, 1);
+    fillRect(r, 0, 0, 1, 1, { r: 255, g: 255, b: 255, a: 255 });
+    blendRect(r, 0, 0, 1, 1, { r: 255, g: 0, b: 0, a: 128 });
+    const [red, green, blue, alpha] = [...r.data];
+    expect(red).toBe(255);
+    expect(green).toBeGreaterThanOrEqual(125);
+    expect(green).toBeLessThanOrEqual(130);
+    expect(blue).toBe(green);
+    expect(alpha).toBe(255);
+  });
+
+  it("blendRect at a:0 is a no-op, catching an implementation that ignores source alpha", () => {
+    // A blendRect that assigns straight into the buffer (i.e. degenerates to
+    // fillRect regardless of alpha) would still change these pixels even at
+    // a:0. Only a real alpha-aware compositor leaves them untouched.
+    const r = createRaster(2, 1);
+    fillRect(r, 0, 0, 2, 1, { r: 10, g: 20, b: 30, a: 200 });
+    const before = [...r.data];
+    blendRect(r, 0, 0, 2, 1, { r: 255, g: 255, b: 255, a: 0 });
+    expect([...r.data]).toEqual(before);
+  });
+
+  it("blendRect clamps to the raster instead of writing out of bounds", () => {
+    const r = createRaster(2, 2);
+    fillRect(r, 0, 0, 2, 2, { r: 0, g: 0, b: 0, a: 255 });
+    // Deliberately overhangs on every side, mirroring fillRect's own clamp test.
+    blendRect(r, -5, -5, 100, 100, { r: 255, g: 255, b: 255, a: 255 });
+    expect([...r.data]).toEqual([
+      255, 255, 255, 255, 255, 255, 255, 255,
+      255, 255, 255, 255, 255, 255, 255, 255,
+    ]);
   });
 });
