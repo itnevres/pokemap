@@ -1,0 +1,7 @@
+{
+  "name": "@pokemap/server",
+  "version": "0.0.0",
+  "type": "module",
+  "main": "./src/index.ts",
+  "dependencies": { "@pokemap/core": "*", "@pokemap/cli": "*" }
+}
