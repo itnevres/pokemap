@@ -24,6 +24,7 @@ function stubProject(overrides: Partial<Project>): Project {
     layoutForMap: unused("layoutForMap"),
     splitFor: unused("splitFor"),
     tileset: unused("tileset"),
+    tilesetSymbols: unused("tilesetSymbols"),
     map: unused("map"),
     mapNames: () => [],
     ...overrides,

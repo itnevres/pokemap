@@ -31,6 +31,8 @@ export interface Project {
   layoutForMap(mapName: string): Layout;
   splitFor(layout: Layout): Split;
   tileset(symbol: string): Tileset;
+  /** Every tileset symbol resolved from headers.h, e.g. "gTileset_General". */
+  tilesetSymbols(): string[];
   map(name: string): MapData;
   mapNames(): string[];
 }
@@ -166,6 +168,7 @@ export function openProject(root: string): Project {
     layoutForMap,
     splitFor: (l) => resolveSplit(l, constants),
     tileset: getTileset,
+    tilesetSymbols: () => [...tsPaths.keys()],
     map: getMap,
     mapNames: () => groups.allMapNames(),
   };

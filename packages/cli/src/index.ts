@@ -2,6 +2,7 @@
 import { Command } from "commander";
 import { writeFileSync } from "node:fs";
 import { renderLayout } from "@pokemap/core/src/render/layout.js";
+import { validateMetatileRange, validatePaletteRange } from "@pokemap/core/src/validate/metatileRange.js";
 import { encodePng } from "./png.js";
 import { resolveProject, layoutNameFor } from "./context.js";
 import { parseBorder } from "./args.js";
@@ -52,6 +53,37 @@ program
       out.events = { object: m.objectEvents, warp: m.warpEvents, coord: m.coordEvents, bg: m.bgEvents };
     }
     process.stdout.write(`${JSON.stringify(out, null, 2)}\n`);
+  });
+
+program
+  .command("validate")
+  .description("run static checks over the project")
+  .option("--metatile-range", "check every metatile id against its layout's split")
+  .option("--palette-range", "check every tile entry's palette index resolves")
+  .option("--json", "machine-readable output")
+  .action((opts: { metatileRange?: boolean; paletteRange?: boolean; json?: boolean }) => {
+    const proj = resolveProject(program.opts().project);
+
+    // Selecting no check runs every check. `opts.metatileRange === false` is
+    // never true -- commander sets a bare flag to `true` or leaves it
+    // `undefined`, so that comparison made the flag decorative and ran the
+    // check unconditionally. This is the same inert-flag defect as Task 15's
+    // `--json`, and `query` already uses the pattern below.
+    const all = !opts.metatileRange && !opts.paletteRange;
+    const findings = [
+      ...(all || opts.metatileRange ? validateMetatileRange(proj) : []),
+      ...(all || opts.paletteRange ? validatePaletteRange(proj) : []),
+    ];
+    if (opts.json) { process.stdout.write(`${JSON.stringify(findings, null, 2)}\n`); }
+    else {
+      for (const f of findings) {
+        process.stdout.write(f.kind === "metatile-range"
+          ? `${f.layout} (${f.split.version}, ${f.source}): ${f.ids.length} bad id(s), worst 0x${f.ids[0]!.id.toString(16)} x${f.ids[0]!.count}\n`
+          : `${f.tileset}: ${f.entries} tile entr(ies) name palette ${f.indices.join(", ")}, which it has no .pal for\n`);
+      }
+      process.stdout.write(`${findings.length} finding(s)\n`);
+    }
+    process.exitCode = findings.length ? 1 : 0;
   });
 
 // parseAsync, not a sync parse()+try/catch: every action handler today is
