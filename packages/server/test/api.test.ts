@@ -53,4 +53,17 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("server", () => {
     expect((await get("/api/render/PetalburgCity.png?border=abc")).status).toBe(400);
     expect((await get("/api/render/PetalburgCity.png?border=1.5")).status).toBe(400);
   });
+
+  it("keys the PNG cache on the border, not just the map", async () => {
+    // Collapsing the cache key to the map name alone serves the first-rendered
+    // size forever. Every other test in this file requests each target once, so
+    // nothing else can catch it.
+    const plain = Buffer.from(await (await get("/api/render/PetalburgCity.png")).arrayBuffer());
+    const bordered = Buffer.from(await (await get("/api/render/PetalburgCity.png?border=1")).arrayBuffer());
+
+    // IHDR width is at byte 16; 30 blocks at 16px, plus one 2-block ring each side.
+    expect(plain.readUInt32BE(16)).toBe(30 * 16);
+    expect(bordered.readUInt32BE(16)).toBe((30 + 4) * 16);
+    expect(plain.equals(bordered)).toBe(false);
+  });
 });

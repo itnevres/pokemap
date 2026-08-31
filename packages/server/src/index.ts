@@ -72,6 +72,7 @@ export async function createServer(opts: { projectPath: string; port?: number })
 
       return send(404, { error: "not found" });
     } catch (e) {
+      console.error(e);
       return send(500, { error: (e as Error).message });
     }
   });
