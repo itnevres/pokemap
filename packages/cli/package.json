@@ -2,6 +2,9 @@
   "name": "@pokemap/cli",
   "version": "0.0.0",
   "type": "module",
-  "bin": { "pokemap": "./src/index.ts" },
+  "comment": "No \"bin\" entry: node packages/cli/src/index.ts fails with ERR_MODULE_NOT_FOUND on the @pokemap/core/src/*.js deep import (Node 24's type stripping does not rewrite .js -> .ts specifiers, and core ships no exports map). Only `tsx` can run this file today, so `bin` comes back once there is a build step producing real .js. Until then, use `npm run pokemap` below.",
+  "scripts": {
+    "pokemap": "tsx src/index.ts"
+  },
   "dependencies": { "@pokemap/core": "*", "commander": "^12.1.0" }
 }

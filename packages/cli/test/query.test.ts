@@ -1,7 +1,7 @@
 import { describe, expect } from "vitest";
 import { openProject } from "@pokemap/core/src/project.js";
 import { SUBJECT_ROOT, itWithCorpus } from "../../core/test/helpers/corpus.js";
-import { layoutNameFor } from "../src/index.js";
+import { layoutNameFor } from "../src/context.js";
 
 const proj = openProject(SUBJECT_ROOT);
 
