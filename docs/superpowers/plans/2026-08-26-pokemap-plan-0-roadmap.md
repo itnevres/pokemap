@@ -201,6 +201,20 @@ the branch directly, because no corpus fixture for it exists — it would requir
 a form of tree corruption the subject repo should not contain. Tightening an
 assertion feels like progress; only the mutation tells you whether it was.
 
+**An agent can be killed mid-edit. Check the tree; never assume either way.**
+Twice now a usage limit has stopped an implementer between "break something on
+purpose" and "put it back", and the two cases needed opposite responses. Task
+16's agent left a reversed draw loop in `renderMetatile` — had the visual
+baseline been generated from it, the harness would have locked a wrong renderer
+in as the reference. Task 21's agent left 172 passing tests and a coherent body
+of uncommitted work, which a reflexive `git reset --hard` would have destroyed.
+
+So on resuming an interrupted agent: `git status`, `git diff`, run the suite,
+and read what is there before doing anything. Then decide. The corollary for
+implementers is to **commit green work before going back to refine it** — the
+window between "this passes" and "this is committed" is the only window in
+which an interruption can cost anything.
+
 **Reviews are where the defects are now, including reviews of reviews.** Three
 of the loops in Plan 1 fixed something a *previous* review had introduced or
 overstated: a border assertion coupled to whichever layout `.find()` returned,
