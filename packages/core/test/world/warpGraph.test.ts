@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { autoLayoutUnplaced } from "../../src/world/warpGraph.js";
+import { autoLayoutUnplaced, unplacedMapNames } from "../../src/world/warpGraph.js";
 import { buildWorld, type World } from "../../src/world/connections.js";
 import { openProject, type Project } from "../../src/project.js";
 import type { MapData } from "../../src/load/maps.js";
@@ -9,11 +9,10 @@ const proj = openProject(SUBJECT_ROOT);
 
 /**
  * A minimal stub, not the corpus: every map in the subject repo has a layout
- * id that resolves (connections.ts's sibling sizeOf measured 0 of 1,209 maps
- * hitting that refusal), so the I7 test below has no real fixture to reach
- * for. Mirrors packages/cli/test/context.test.ts's stubProject -- unused
- * fields are wired to throw-on-call sentinels so a wrong code path fails
- * loudly (wrong stub touched) rather than by coincidence.
+ * id that resolves, so the delegation test below has no real fixture to
+ * reach for. Mirrors packages/cli/test/context.test.ts's stubProject --
+ * unused fields are wired to throw-on-call sentinels so a wrong code path
+ * fails loudly (wrong stub touched) rather than by coincidence.
  */
 function stubProject(overrides: Partial<Project>): Project {
   const unused = (fn: string) => (): never => { throw new Error(`stub: ${fn} should not be called`); };
@@ -40,7 +39,11 @@ describe("autoLayoutUnplaced", () => {
     const world = buildWorld(proj);
     const before = world.placements.size;
     const placed = autoLayoutUnplaced(proj, world);
-    expect(placed.size).toBeGreaterThan(0);
+    // Pinned, not just non-zero -- matches connections.test.ts's own pin of
+    // the same number (sizes.filter(n => n === 1).length). Measured directly
+    // against the corpus twice (the existing sibling test, and a standalone
+    // buildWorld + count run), not guessed.
+    expect(placed.size).toBe(1028);
     expect(world.placements.size).toBe(before); // buildWorld's result is not mutated
   });
 
@@ -79,22 +82,24 @@ describe("autoLayoutUnplaced", () => {
     expect(autoLayoutUnplaced(proj, world, { enabled: false }).size).toBe(0);
   });
 
-  it("refuses rather than guess a 0x0 size when a map's layout id does not resolve (I7)", () => {
-    // Untested on the real corpus by construction -- every map's layout id
-    // resolves there. Present anyway, for the same reason connections.ts's
-    // sibling sizeOf is: a silent {0,0} here would also defeat the "no
-    // overlapping placements" test above, since a zero-size box can never
-    // overlap anything -- the bug would hide behind a passing test rather
-    // than tripping one.
+  it("delegates layout resolution to Project.layoutForMap, not a hand-rolled lookup (I7)", () => {
+    // Proves the delegation itself, not just a message string: if sizeOf
+    // regressed to re-deriving the lookup with proj.map(name).layout +
+    // proj.layoutById(...), it would call the stubbed layoutById (returns
+    // undefined) and then the stubbed paths (throws "stub: paths should not
+    // be called") while building its own message -- which does NOT match
+    // /DELEGATED/ -- so this fails loudly on that regression instead of
+    // passing by accident. Mirrors packages/cli/test/context.test.ts's
+    // layoutNameFor test exactly, including the rationale: layoutForMap
+    // already throws an I7-quality message naming both map.json and
+    // layouts.json, so warpGraph has no business reimplementing it.
     const dangling = { id: "MAP_DANGLING", layout: "LAYOUT_DANGLING", warpEvents: [] } as unknown as MapData;
     const stubbed = stubProject({
-      paths: {
-        mapJson: (n: string) => `data/maps/${n}/map.json`,
-        layoutsJson: "data/layouts/layouts.json",
-      } as unknown as Project["paths"],
       mapNames: () => ["Dangling"],
       map: () => dangling,
-      layoutById: () => undefined,
+      layoutForMap: (name: string) => {
+        throw new Error(`DELEGATED: map ${name} references a layout not in layouts.json`);
+      },
     });
     const world: World = {
       placements: new Map(),
@@ -103,8 +108,29 @@ describe("autoLayoutUnplaced", () => {
       conflicts: [],
     };
 
-    expect(() => autoLayoutUnplaced(stubbed, world)).toThrow(/data\/maps\/Dangling\/map\.json/);
-    expect(() => autoLayoutUnplaced(stubbed, world)).toThrow(/LAYOUT_DANGLING/);
-    expect(() => autoLayoutUnplaced(stubbed, world)).toThrow(/layouts\.json/);
+    expect(() => autoLayoutUnplaced(stubbed, world)).toThrow(/DELEGATED/);
+  });
+});
+
+describe("unplacedMapNames", () => {
+  it("returns exactly the maps in 1-map components, not those sharing a larger one", () => {
+    // Corpus-free by design: pins the negative case (members of the 3-map
+    // component must NOT appear) that autoLayoutUnplaced's corpus tests
+    // cannot -- they only assert the result is non-empty and that two
+    // specific singleton names appear in it, neither of which would catch an
+    // over-inclusive filter (e.g. `maps.length >= 1`, which would return
+    // every map from every component).
+    const world: World = {
+      placements: new Map(),
+      components: [
+        { index: 0, maps: ["A", "B", "C"], bounds: { x: 0, y: 0, width: 0, height: 0 } },
+        { index: 1, maps: ["D"], bounds: { x: 0, y: 0, width: 0, height: 0 } },
+        { index: 2, maps: ["E"], bounds: { x: 0, y: 0, width: 0, height: 0 } },
+      ],
+      verticalLinks: [],
+      conflicts: [],
+    };
+
+    expect(unplacedMapNames(world)).toEqual(new Set(["D", "E"]));
   });
 });

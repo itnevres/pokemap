@@ -73,19 +73,18 @@ export function autoLayoutUnplaced(proj: Project, world: World, opts: AutoLayout
   }
 
   const sizeOf = (name: string) => {
-    const l = proj.layoutById(proj.map(name).layout);
-    // Refuse rather than return a zero-sized map (I7) -- mirrors
-    // connections.ts's sizeOf exactly. A silent {0,0} here would also defeat
-    // "produces no overlapping placements": a zero-size box can never
-    // overlap anything, so the bug would hide behind a passing test rather
-    // than tripping one. Untested on the real corpus by construction, same
-    // as the sibling (every map's layout id resolves there today).
-    if (!l) {
-      throw new Error(
-        `${proj.paths.mapJson(name)} names layout ${proj.map(name).layout}, which is not an id in ${proj.paths.layoutsJson}.`,
-      );
-    }
-    return { width: l.width, height: l.height };
+    // Delegates to layoutForMap rather than re-deriving layoutById(map(name)
+    // .layout) by hand: that pair is exactly what layoutForMap already does,
+    // including the I7 refusal (throws naming both map.json and
+    // layouts.json) when the id doesn't resolve. Hand-rolling it here too
+    // would silently drop that message the moment the two implementations
+    // drift -- see packages/cli/src/context.ts's layoutNameFor for the same
+    // lesson, and its regression test for how to prove the delegation
+    // itself rather than just a message string. (connections.ts's own
+    // sizeOf has this same hand-rolled shape; that one predates this file
+    // and is a separate fast-follow, not this task's scope.)
+    const { width, height } = proj.layoutForMap(name);
+    return { width, height };
   };
 
   // Shelf-pack: clusters left to right, maps within a cluster in rows.
