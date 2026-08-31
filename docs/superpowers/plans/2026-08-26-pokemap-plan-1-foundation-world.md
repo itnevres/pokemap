@@ -5128,7 +5128,9 @@ Invoke `frontend-design` and `ui-ux-pro-max` first, and follow `packages/ui/DESI
 - Loads `/api/render/<map>.png?border=1` into an `<img>` and draws it to a `<canvas>` at integer zoom levels 1×, 2×, 4× — nearest-neighbour, never smoothed, because a blurred metatile is a lie about the art.
 - Wheel zooms about the cursor; drag pans; a "fit" control resets.
 - A toolbar toggles grid, collision, elevation and events independently. **Every toggle starts off** (spec §9) and turning one on reveals its legend.
-- Hovering a block shows metatile id, collision, elevation and behaviour in a status strip — the id shown in hex, matching how `docs/human-porymap.md` writes them.
+- Hovering a block shows metatile id, collision, elevation and behaviour in a status strip — the id shown in hex, matching how the **subject repo's** `docs/human-porymap.md` writes them (`0x347`, `0x33B`). That file is in the decomp at `C:/Programming Projects/Pokemon Game/game/docs/`, not in this repo; Task 21's implementer looked here, did not find it, and reasonably concluded it did not exist.
+
+  This bullet and the two overlays above it need per-block data — metatile id, collision, elevation, behaviour — and **no endpoint served it**: `/api/render` returns baked pixels and `/api/map` returned header metadata only. So this task also extends `/api/map/:name` to return `blocks`, which is why `packages/server/src/index.ts` is in its diff without being in its Files list.
 - The status strip always shows the layout's `layout_version` and resolved split. That number is the thing this tool exists to get right; it should never be more than a glance away.
 
 - [ ] **Step 6: Run the UI tests**
