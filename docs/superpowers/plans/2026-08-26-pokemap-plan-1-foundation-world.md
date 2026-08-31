@@ -4479,14 +4479,17 @@ import { createServer, type PokemapServer } from "../src/index.js";
 import { SUBJECT_ROOT, hasProject } from "@pokemap/core/test/helpers/corpus.js";
 
 let s: PokemapServer;
-beforeAll(async () => { s = await createServer({ projectPath: SUBJECT_ROOT, port: 0 }); });
-afterAll(async () => { await s.close(); });
-
 const get = async (path: string) => fetch(`http://127.0.0.1:${s.port}${path}`);
 
-// beforeAll opens the real project, so an individual it-level guard is too
-// late -- the hook throws first and every test in the file fails.
+// The hooks live INSIDE the describe, not beside it. `createServer` opens the
+// real project, so an `it`-level guard is too late -- but so is a
+// `describe.skipIf` with the hooks hoisted above it, because a file-level
+// `beforeAll` is not covered by a suite's skip and runs anyway. Putting them
+// inside is what actually makes the skip work.
 describe.skipIf(!hasProject(SUBJECT_ROOT))("server", () => {
+  beforeAll(async () => { s = await createServer({ projectPath: SUBJECT_ROOT, port: 0 }); });
+  afterAll(async () => { await s?.close(); });
+
   it("lists map groups", async () => {
     const r = await get("/api/groups");
     expect(r.status).toBe(200);
@@ -4512,6 +4515,19 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("server", () => {
 
   it("404s an unknown map rather than throwing", async () => {
     expect((await get("/api/map/NoSuchMap")).status).toBe(404);
+  });
+
+  it("404s an unknown render target too, and refuses a bad border", async () => {
+    // The render route resolves its target through project.map(), which throws
+    // for an unknown name. Without a guard that throw reaches the outer catch
+    // and becomes a 500 -- the right answer is 404, the same as /api/map.
+    expect((await get("/api/render/NoSuchMap.png")).status).toBe(404);
+
+    // `Number("abc")` is NaN, which propagates into the raster dimensions.
+    // Task 15 fixed exactly this on the CLI; the server reuses that parser
+    // rather than growing its own second-best copy.
+    expect((await get("/api/render/PetalburgCity.png?border=abc")).status).toBe(400);
+    expect((await get("/api/render/PetalburgCity.png?border=1.5")).status).toBe(400);
   });
 });
 ```
@@ -4541,11 +4557,18 @@ import { createServer as createHttp, type Server } from "node:http";
 import { openProject, type Project } from "@pokemap/core/src/project.js";
 import { renderLayout } from "@pokemap/core/src/render/layout.js";
 import { encodePng } from "@pokemap/cli/src/png.js";
+import { parseBorder } from "@pokemap/cli/src/args.js";
 
 export interface PokemapServer { port: number; project: Project; close(): Promise<void>; }
 
 export async function createServer(opts: { projectPath: string; port?: number }): Promise<PokemapServer> {
   const project = openProject(opts.projectPath);
+
+  // Unbounded on purpose for now, and worth knowing why: the whole corpus is
+  // 1,209 maps and the largest PNG is a few hundred KB, but Route47 at
+  // 1920x976 is not, and a client that walks every map pins all of it. Task 23
+  // designs the real cache with an eviction policy; until then this is a
+  // single-user dev server and the ceiling is understood rather than enforced.
   const pngCache = new Map<string, Buffer>();
 
   const http: Server = createHttp((req, res) => {
@@ -4573,13 +4596,27 @@ export async function createServer(opts: { projectPath: string; port?: number })
       const renderMatch = /^\/api\/render\/(.+)\.png$/.exec(url.pathname);
       if (renderMatch) {
         const name = decodeURIComponent(renderMatch[1]!);
-        const border = Number(url.searchParams.get("border") ?? "0");
+
+        // Same parser the CLI uses, so `?border=abc` and `?border=1.5` are
+        // refused here exactly as `--border abc` is there. It throws
+        // commander's InvalidArgumentError, which is a plain Error subclass --
+        // catching it to answer 400 rather than letting the outer catch call
+        // it a 500.
+        let border: number;
+        try { border = parseBorder(url.searchParams.get("border") ?? "0"); }
+        catch (e) { return send(400, { error: (e as Error).message }); }
+
         const key = `${name}:${border}`;
         let png = pngCache.get(key);
         if (!png) {
+          // Resolve without throwing. `project.map(name)` refuses an unknown
+          // name, and that refusal must become a 404 here, not a 500 from the
+          // outer catch.
           const layoutName = project.layoutByName(name)
             ? name
-            : project.layoutById(project.map(name).layout)?.name;
+            : project.mapNames().includes(name)
+              ? project.layoutById(project.map(name).layout)?.name
+              : undefined;
           if (!layoutName) return send(404, { error: `no layout or map ${name}` });
           png = encodePng(renderLayout(project, layoutName, { border }));
           pngCache.set(key, png);
@@ -4605,7 +4642,7 @@ export async function createServer(opts: { projectPath: string; port?: number })
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run packages/server/test/api.test.ts`
-Expected: PASS, 4 tests.
+Expected: PASS, 5 tests.
 
 - [ ] **Step 5: Commit**
 
