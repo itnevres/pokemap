@@ -190,6 +190,25 @@ would have shipped wrong answers: a map can own several encounter tables
 and `fishing_mons` is three rod distributions packed into one array summing to
 300, not one summing to 100.
 
+**A stronger assertion is not automatically a discriminating one — check the
+path is reached.** Task 15's review asked for a bare `.toThrow()` to be pinned
+to the error message it was supposed to be about. That is strictly stronger and
+still did not discriminate: for a name that is not a map at all, `proj.map()`
+throws first, so the branch the assertion meant to pin is never reached and the
+old implementation passes it too. Found by the implementer mutation-proving a
+change they had been told to make. The fix was a stubbed `Project` exercising
+the branch directly, because no corpus fixture for it exists — it would require
+a form of tree corruption the subject repo should not contain. Tightening an
+assertion feels like progress; only the mutation tells you whether it was.
+
+**Reviews are where the defects are now, including reviews of reviews.** Three
+of the loops in Plan 1 fixed something a *previous* review had introduced or
+overstated: a border assertion coupled to whichever layout `.find()` returned,
+a teeth claim true only for one of two chunk-reorder mutations, and a
+top-level error handler that improved the common paths while making a
+present-but-broken config strictly less informative than the stack trace it
+replaced. Re-review the fix, not just the original.
+
 ---
 
 ## 8. Risk register
