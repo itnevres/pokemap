@@ -4935,14 +4935,32 @@ describe("overlays", () => {
     const r = renderLayout(proj, proj.layoutForMap("PetalburgCity").name);
     const before = Buffer.from(r.data);
     drawGrid(r, 16);
-    const changedInterior = (() => {
-      for (let y = 1; y < 16; y++) for (let x = 1; x < 16; x++) {
+
+    // Interior pixels of every cell must be untouched...
+    let interior = 0;
+    for (let y = 0; y < r.height; y++) {
+      for (let x = 0; x < r.width; x++) {
+        if (x % 16 === 0 || y % 16 === 0) continue;
         const i = (y * r.width + x) * 4;
-        if (before[i] !== r.data[i]) return true;
+        if (before[i] !== r.data[i] || before[i + 1] !== r.data[i + 1] || before[i + 2] !== r.data[i + 2]) interior++;
       }
-      return false;
-    })();
-    expect(changedInterior).toBe(false);
+    }
+    expect(interior).toBe(0);
+
+    // ...and the lines must actually have been drawn. Checking only that the
+    // interior is unchanged passes against a drawGrid with an empty body,
+    // which is the whole failure mode this test exists to prevent. Every pixel
+    // on a boundary changes, because the map is opaque everywhere and the wash
+    // is white at a=40.
+    let onLines = 0;
+    for (let y = 0; y < r.height; y++) {
+      for (let x = 0; x < r.width; x++) {
+        if (x % 16 !== 0 && y % 16 !== 0) continue;
+        const i = (y * r.width + x) * 4;
+        if (before[i] !== r.data[i] || before[i + 1] !== r.data[i + 1] || before[i + 2] !== r.data[i + 2]) onLines++;
+      }
+    }
+    expect(onLines).toBeGreaterThan(0);
   });
 
   itWithCorpus("drawCollision tints exactly the blocked cells and nothing else", () => {
@@ -4968,12 +4986,28 @@ describe("overlays", () => {
     expect(changed).toBe(blocked);
   });
 
-  itWithCorpus("drawEvents marks warps, objects and bg events distinctly", () => {
-    const r = renderLayout(proj, proj.layoutForMap("CeladonCity").name);
-    const map = proj.map("CeladonCity");
+  itWithCorpus("drawEvents marks all four event kinds distinctly", () => {
+    // PetalburgCity, not CeladonCity. Celadon has 0 coord events, so a test
+    // written against it asserts 0 === 0 for that kind and would pass against a
+    // drawEvents that dropped coord events entirely. Petalburg has all four:
+    // 11 objects, 6 warps, 8 coord, 8 bg -- measured.
+    const r = renderLayout(proj, proj.layoutForMap("PetalburgCity").name);
+    const map = proj.map("PetalburgCity");
+    const before = Buffer.from(r.data);
     const marks = drawEvents(r, map);
-    expect(marks.filter((m) => m.kind === "object").length).toBe(map.objectEvents.length);
-    expect(marks.filter((m) => m.kind === "warp").length).toBe(map.warpEvents.length);
+
+    for (const [kind, expected] of [
+      ["object", map.objectEvents.length],
+      ["warp", map.warpEvents.length],
+      ["coord", map.coordEvents.length],
+      ["bg", map.bgEvents.length],
+    ] as const) {
+      expect(expected, `${kind} fixture is empty, so this assertion proves nothing`).toBeGreaterThan(0);
+      expect(marks.filter((m) => m.kind === kind).length, kind).toBe(expected);
+    }
+
+    // Returning the marks is not the same as painting them.
+    expect(Buffer.from(r.data).equals(before)).toBe(false);
   });
 });
 ```
@@ -4985,18 +5019,55 @@ Expected: FAIL — cannot find module.
 
 - [ ] **Step 3: Write the overlays**
 
+**First add `blendRect` to `packages/core/src/render/raster.ts`.** Task 12's
+`fillRect` *overwrites* — it assigns `c.r/g/b/a` straight into the buffer — so
+every overlay here would replace the art rather than tint it. A collision cell
+would become flat `(220,40,40)` at alpha 110 over the page background, with the
+metatile underneath simply gone, and `drawElevation` touches every cell, so it
+would erase the entire map. `fillRect` is right for what Task 12 built it for
+(clearing and solid fills) and must not change; overlays need compositing:
+
+```ts
+/**
+ * Source-over alpha compositing, for overlays that must tint rather than
+ * replace. `fillRect` overwrites, which is correct when you are painting a
+ * solid, and destroys the image underneath when you are painting a wash.
+ */
+export function blendRect(r: Raster, x0: number, y0: number, w: number, h: number, c: RGBA): void {
+  const sa = c.a / 255;
+  if (sa <= 0) return;
+  for (let y = Math.max(0, y0); y < Math.min(r.height, y0 + h); y++) {
+    for (let x = Math.max(0, x0); x < Math.min(r.width, x0 + w); x++) {
+      const i = (y * r.width + x) * 4;
+      const da = (r.data[i + 3] ?? 0) / 255;
+      const out = sa + da * (1 - sa);
+      if (out <= 0) continue;
+      r.data[i] = Math.round((c.r * sa + (r.data[i] ?? 0) * da * (1 - sa)) / out);
+      r.data[i + 1] = Math.round((c.g * sa + (r.data[i + 1] ?? 0) * da * (1 - sa)) / out);
+      r.data[i + 2] = Math.round((c.b * sa + (r.data[i + 2] ?? 0) * da * (1 - sa)) / out);
+      r.data[i + 3] = Math.round(out * 255);
+    }
+  }
+}
+```
+
+Give it its own test in `packages/core/test/render/raster.test.ts`: blending
+opaque red at half alpha over opaque white must land near `(255,128,128)` and
+stay fully opaque, and blending at `a: 0` must be a no-op — the second is what
+catches an implementation that ignores the source alpha entirely.
+
 ```ts
 // packages/core/src/render/overlays.ts
 import type { MapData } from "../load/maps.js";
 import type { LayoutRaster } from "./layout.js";
-import { fillRect, type RGBA } from "./raster.js";
+import { blendRect, type RGBA } from "./raster.js";
 
 const GRID: RGBA = { r: 255, g: 255, b: 255, a: 40 };
 const COLLISION: RGBA = { r: 220, g: 40, b: 40, a: 110 };
 
 export function drawGrid(r: LayoutRaster, step = 16): void {
-  for (let x = 0; x < r.width; x += step) fillRect(r, x, 0, 1, r.height, GRID);
-  for (let y = 0; y < r.height; y += step) fillRect(r, 0, y, r.width, 1, GRID);
+  for (let x = 0; x < r.width; x += step) blendRect(r, x, 0, 1, r.height, GRID);
+  for (let y = 0; y < r.height; y += step) blendRect(r, 0, y, r.width, 1, GRID);
 }
 
 export function drawCollision(r: LayoutRaster): void {
@@ -5004,7 +5075,7 @@ export function drawCollision(r: LayoutRaster): void {
     for (let x = 0; x < r.blockWidth; x++) {
       const b = r.blocks[y * r.blockWidth + x];
       if (!b || b.collision === 0) continue;
-      fillRect(r, r.originX + x * 16, r.originY + y * 16, 16, 16, COLLISION);
+      blendRect(r, r.originX + x * 16, r.originY + y * 16, 16, 16, COLLISION);
     }
   }
 }
@@ -5015,7 +5086,7 @@ export function drawElevation(r: LayoutRaster): void {
       const b = r.blocks[y * r.blockWidth + x];
       if (!b) continue;
       const v = Math.round((b.elevation / 15) * 255);
-      fillRect(r, r.originX + x * 16, r.originY + y * 16, 16, 16, { r: v, g: 0, b: 255 - v, a: 90 });
+      blendRect(r, r.originX + x * 16, r.originY + y * 16, 16, 16, { r: v, g: 0, b: 255 - v, a: 90 });
     }
   }
 }
@@ -5039,7 +5110,7 @@ export function drawEvents(r: LayoutRaster, map: MapData): EventMark[] {
     bg: { r: 60, g: 160, b: 240, a: 150 },
   };
 
-  for (const m of marks) fillRect(r, r.originX + m.x * 16, r.originY + m.y * 16, 16, 16, colour[m.kind]);
+  for (const m of marks) blendRect(r, r.originX + m.x * 16, r.originY + m.y * 16, 16, 16, colour[m.kind]);
   return marks;
 }
 ```
