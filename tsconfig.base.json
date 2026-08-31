@@ -15,5 +15,6 @@
     "packages/*/src/**/*.tsx",
     "packages/*/test/**/*.ts",
     "packages/*/test/**/*.tsx"
-  ]
+  ],
+  "exclude": ["packages/ui/**"]
 }

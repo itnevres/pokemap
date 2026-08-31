@@ -4,6 +4,8 @@ export default defineConfig({
   test: {
     globals: false,
     environment: "node",
-    include: ["packages/*/test/**/*.test.ts"]
+    environmentMatchGlobs: [["packages/ui/**", "jsdom"]],
+    include: ["packages/*/test/**/*.test.{ts,tsx}"],
+    setupFiles: ["packages/ui/test/setup.ts"]
   }
 });

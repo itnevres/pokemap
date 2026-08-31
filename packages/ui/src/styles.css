@@ -1,0 +1,222 @@
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap");
+
+:root {
+  --bg-canvas: #0a0e16;
+  --bg-app: #0f172a;
+  --bg-panel: #161f33;
+  --bg-panel-raised: #1e293b;
+  --bg-hover: #253552;
+  --bg-selected: #2c4470;
+  --border: #293b5c;
+  --border-strong: #3d5480;
+
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+
+  --accent: #22c55e;
+  --accent-strong: #4ade80;
+
+  --focus-ring: #60a5fa;
+
+  --font-ui: "IBM Plex Sans", system-ui, sans-serif;
+  --font-data: "JetBrains Mono", ui-monospace, "Cascadia Code", monospace;
+
+  --text-2xs: 11px;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-base: 14px;
+  --text-lg: 16px;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+}
+
+[data-theme="light"] {
+  --bg-canvas: #e2e8f0;
+  --bg-app: #f8fafc;
+  --bg-panel: #f1f5f9;
+  --bg-panel-raised: #ffffff;
+  --bg-hover: #e2e8f0;
+  --bg-selected: #dbeafe;
+  --border: #cbd5e1;
+  --border-strong: #94a3b8;
+
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #64748b;
+
+  --accent: #16a34a;
+  --accent-strong: #15803d;
+
+  --focus-ring: #2563eb;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg-app);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  line-height: 1.4;
+}
+
+button,
+input {
+  font-family: inherit;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.app__toolbar {
+  height: 40px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0 var(--space-3);
+  background: var(--bg-panel-raised);
+  border-bottom: 1px solid var(--border);
+}
+
+.app__title {
+  font-size: var(--text-lg);
+  font-weight: 600;
+  margin: 0;
+}
+
+.app__body {
+  flex: 1 1 auto;
+  display: flex;
+  min-height: 0;
+}
+
+.app__sidebar {
+  width: 280px;
+  flex: 0 0 auto;
+  overflow-y: auto;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--border);
+}
+
+.app__canvas {
+  flex: 1 1 auto;
+  min-width: 480px;
+  background: var(--bg-canvas);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-family: var(--font-data);
+}
+
+.app__status {
+  color: var(--text-secondary);
+  font-size: var(--text-2xs);
+}
+
+.map-tree {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-2);
+}
+
+.map-tree__filter {
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-primary);
+  padding: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-2);
+  font-size: var(--text-sm);
+}
+
+.map-tree__group {
+  border-bottom: 1px solid var(--border);
+}
+
+.map-tree__summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-2) var(--space-1);
+  cursor: pointer;
+  font-weight: 500;
+  list-style: none;
+}
+
+.map-tree__summary::-webkit-details-marker {
+  display: none;
+}
+
+.map-tree__group-name {
+  font-family: var(--font-data);
+  font-size: var(--text-sm);
+}
+
+.map-tree__count {
+  font-family: var(--font-data);
+  font-size: var(--text-2xs);
+  color: var(--text-secondary);
+  background: var(--bg-panel-raised);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+
+.map-tree__list {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 var(--space-2) 0;
+}
+
+.map-tree__map {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-family: var(--font-data);
+  font-size: var(--text-sm);
+  padding: var(--space-1) var(--space-3);
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.map-tree__map:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.map-tree__map[aria-current="true"] {
+  background: var(--bg-selected);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.map-tree__empty {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  padding: var(--space-3);
+}
