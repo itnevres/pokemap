@@ -4433,11 +4433,13 @@ exceptions, which is why the gate can use it as the universal edit target.
 
 Two measured caveats, both found while implementing:
 
-- **4,423 of the 4,427 are reachable through `allMapNames()`.** Four
-  `UnusedHouse`-style `map.json` files in pokeemerald-expansion exist on disk
-  but are registered in no map group, so the walk never visits them. Immaterial
-  to the gate, but the two numbers are different and should not be reconciled
-  by assuming one is a typo.
+- **4,422 of the 4,427 are reachable through `allMapNames()`.** Five `map.json`
+  files exist on disk but are registered in no map group, so the walk never
+  visits them: four `UnusedHouse`-style stubs in pokeemerald-expansion, and
+  `SafariZone_RestHouse` in pokeclassic — which only surfaced once pokeclassic
+  was let into the gate. It is a gap in those trees' `map_groups.json`, not an
+  artifact of which loader walks them. Immaterial to the gate, but the two
+  numbers differ and should not be reconciled by assuming one is a typo.
 - **The corpus does not exercise the container-skip fix.** No real `map.json`
   or `layouts.json` ever needs to skip past an object containing an array to
   reach a later key, so the `valueEnd` correction above is proved only by the
