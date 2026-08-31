@@ -4724,6 +4724,14 @@ describe("MapTree", () => {
     fireEvent.change(screen.getByPlaceholderText(/filter/i), { target: { value: "zzzz" } });
     expect(screen.getByText(/no maps match/i)).toBeTruthy();
   });
+
+  it("marks the selected map for assistive tech, not just visually", () => {
+    // `selected` is otherwise accepted and never asserted on, so a component
+    // that ignored the prop entirely would pass every test above.
+    render(<MapTree data={GROUPS} selected="Route29" onSelect={() => {}} />);
+    expect(screen.getByText("Route29").getAttribute("aria-current")).toBe("true");
+    expect(screen.getByText("NewBarkTown").getAttribute("aria-current")).toBeNull();
+  });
 });
 ```
 
@@ -4736,20 +4744,73 @@ Expected: FAIL — cannot find module.
 
 - [ ] **Step 3: Scaffold the app**
 
+**Do not run `npm create vite`.** It scaffolds a dozen files this task does not
+list — `eslint.config.js`, `public/`, `src/assets/`, its own `tsconfig`s, a
+demo `App.css` — and it names the package `ui`, from the directory, so the
+`npm install -w @pokemap/ui` on the next line cannot resolve it yet. Write the
+four files by hand instead; between them they are about forty lines and every
+one of them is listed above.
+
 ```bash
-npm create vite@latest packages/ui -- --template react-ts
-npm install -w @pokemap/ui @testing-library/react @testing-library/jest-dom jsdom
+npm install -w @pokemap/ui react react-dom
+npm install -w @pokemap/ui -D @vitejs/plugin-react @types/react @types/react-dom @testing-library/react jsdom
 ```
 
-Set `vitest.config.ts` `environment: "jsdom"` for `packages/ui/**`, and proxy `/api` to `http://127.0.0.1:5174` in `vite.config.ts`.
+Create `packages/ui/package.json` first, with `"name": "@pokemap/ui"`, or the
+`-w` flag has nothing to match. `@testing-library/jest-dom` is **not** in that
+list on purpose: the tests below use `toBeTruthy()`, not `toBeInTheDocument()`,
+so it would be an unused dependency and an unused setup file.
 
-**Also widen the vitest `include` glob.** Task 1 set it to `packages/*/test/**/*.test.ts`, which matches only `.test.ts`. This task's tests are `.test.tsx`, so without the change they are silently collected as zero tests and everything "passes". Change it to:
+**Three config changes, all of which this task fails without.**
 
-```ts
-include: ["packages/*/test/**/*.test.{ts,tsx}"],
-```
+1. `vitest.config.ts` — widen the include glob **and** give the UI a DOM. Task 1
+   set `include: ["packages/*/test/**/*.test.ts"]`, which matches only `.test.ts`;
+   this task's tests are `.test.tsx`, so without the change they are silently
+   collected as zero tests and everything "passes". The environment is `node`
+   globally and React needs `jsdom`, which on vitest 2.x is per-glob:
 
-Then confirm the count: `npx vitest run --reporter=verbose` must list the `MapTree` tests by name. A green run that names no tests is a failing run.
+   ```ts
+   test: {
+     globals: false,
+     environment: "node",
+     environmentMatchGlobs: [["packages/ui/**", "jsdom"]],
+     include: ["packages/*/test/**/*.test.{ts,tsx}"],
+   }
+   ```
+
+2. **TypeScript needs JSX and the DOM, and `packages/core` must not get them.**
+   `tsconfig.base.json` today is `lib: ["ES2023"]` with no `jsx`, and its
+   `include` already globs `**/*.tsx` — so the moment a `.tsx` file exists,
+   `npm run typecheck` fails. The lazy fix is to add `"DOM"` to the shared lib,
+   which would also let `core` reference `document` and `window` with no
+   complaint, and core must never touch either. So split it:
+
+   - `tsconfig.base.json`: add `"exclude": ["packages/ui/**"]`.
+   - New `packages/ui/tsconfig.json`:
+     ```json
+     {
+       "extends": "../../tsconfig.base.json",
+       "compilerOptions": {
+         "jsx": "react-jsx",
+         "lib": ["ES2023", "DOM", "DOM.Iterable"],
+         "types": ["node", "vite/client"]
+       },
+       "include": ["src/**/*.ts", "src/**/*.tsx", "test/**/*.ts", "test/**/*.tsx"],
+       "exclude": []
+     }
+     ```
+   - Root `package.json` typecheck script runs both:
+     `"typecheck": "tsc --noEmit -p tsconfig.base.json && tsc --noEmit -p packages/ui/tsconfig.json"`
+
+   Prove the split works rather than assuming: put `document.title` in a
+   `packages/core` source file, confirm `tsc -p tsconfig.base.json` rejects it,
+   and remove it.
+
+3. `packages/ui/vite.config.ts` — proxy `/api` to `http://127.0.0.1:5174`, the
+   port Task 19's server defaults to, and use `@vitejs/plugin-react`.
+
+Then confirm the count: `npx vitest run --reporter=verbose` must list the
+`MapTree` tests by name. A green run that names no tests is a failing run.
 
 - [ ] **Step 4: Write `MapTree`**
 
@@ -4814,7 +4875,7 @@ export function MapTree({ data, selected, onSelect }: MapTreeProps) {
 - [ ] **Step 5: Run test to verify it passes**
 
 Run: `npx vitest run packages/ui/test/MapTree.test.tsx`
-Expected: PASS, 4 tests.
+Expected: PASS, 5 tests.
 
 - [ ] **Step 6: Record the design system**
 
