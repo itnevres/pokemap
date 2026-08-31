@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { inflateSync } from "node:zlib";
-import { encodePng } from "../src/png.js";
+import { encodePng, scanlineByteLength } from "../src/png.js";
 
 describe("encodePng", () => {
   it("writes a valid signature and IHDR", () => {
@@ -68,5 +68,28 @@ describe("encodePng", () => {
     }
     expect(seen).toEqual(["IHDR", "IDAT", "IEND"]);
     expect(off).toBe(buf.length); // no trailing bytes
+  });
+
+  it("rejects a raster whose data length doesn't match width x height x 4", () => {
+    // Otherwise a short buffer silently trails off into transparent black
+    // (Buffer.alloc zero-fills) or throws ERR_OUT_OF_RANGE from inside
+    // Buffer.copy, naming neither the raster nor the actual mismatch.
+    expect(() => encodePng({ width: 4, height: 4, data: new Uint8ClampedArray(60) })).toThrow(/4x4/);
+    expect(() => encodePng({ width: 4, height: 4, data: new Uint8ClampedArray(60) })).toThrow(/expected 64/);
+  });
+
+  it("rejects non-positive dimensions", () => {
+    // 0x0 would otherwise produce a PNG the spec (11.2.2) forbids.
+    expect(() => encodePng({ width: 0, height: 0, data: new Uint8ClampedArray(0) })).toThrow();
+    expect(() => encodePng({ width: -1, height: 4, data: new Uint8ClampedArray(0) })).toThrow();
+  });
+
+  it("draws zlib's 4 GiB scanline boundary exactly at 32768", () => {
+    // (4W + 1) x H is the byte length deflate must consume through zlib's
+    // 32-bit avail_in; past 2**32 - 1 it wraps and truncates silently rather
+    // than throwing. Asserted on the arithmetic directly -- allocating
+    // either buffer for real would need on the order of 4 GiB.
+    expect(scanlineByteLength(32767, 32767)).toBeLessThanOrEqual(0xffffffff);
+    expect(scanlineByteLength(32768, 32768)).toBeGreaterThan(0xffffffff);
   });
 });
