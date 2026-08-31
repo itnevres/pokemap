@@ -39,6 +39,16 @@ export function validateMetatileRange(proj: Project): RangeFinding[] {
     const split = proj.splitFor(layout);
     const primaryCount = proj.tileset(layout.primaryTileset).metatileCount;
     const secondaryCount = proj.tileset(layout.secondaryTileset).metatileCount;
+    // This min() cannot bind against the subject corpus, and mutation-testing
+    // this file will find that out: `parseBlocks` already masks every id
+    // through `blockMetatileIdMask` (10 bits) before it ever reaches `bad`
+    // below, so no id here can exceed 1023 -- one less than the default
+    // NUM_METATILES_TOTAL of 1024. The unclamped sum DOES exceed it somewhere
+    // in this tree (BattleFrontier_OutsideWest_Layout, frlg, secondary 510
+    // metatiles on a 640 split, sums to 1150), but no real id value can ever
+    // land in the [1024, 1150) gap that clamping would close, so deleting this
+    // clamp changes nothing observable here. It stays for an engine that
+    // defines a smaller NUM_METATILES_TOTAL than 1024, where it is load-bearing.
     const ceiling = Math.min(split.metatiles + secondaryCount, proj.constants.metatilesTotal);
 
     const bad = (id: number) => (id < split.metatiles ? id >= primaryCount : id >= ceiling);

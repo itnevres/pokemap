@@ -14,19 +14,31 @@ describe("validateMetatileRange", () => {
     expect(findings[0]!.source).toBe("map");
   }, 900_000);
 
-  itWithCorpus("reports the layout's own split version on every finding", () => {
-    for (const f of validateMetatileRange(proj)) {
-      expect(["emerald", "frlg", "hns"]).toContain(f.split.version);
-    }
+  itWithCorpus("a finding reports the split actually used, not the layout's stored version", () => {
+    // PetalburgCity_Layout is emerald in the tree. Force hns onto everything and
+    // it must appear with version "hns" -- a finding that echoed the layout's own
+    // layout_version instead of the split it was checked against would say
+    // "emerald" here. Test 1 cannot catch that, because in the real run the two
+    // always agree.
+    const forced = { ...proj, splitFor: () => ({ version: "hns" as const, tiles: 640, metatiles: 640, pals: 7 }) };
+    const petalburg = validateMetatileRange(forced as typeof proj).find((f) => f.layout === "PetalburgCity_Layout");
+    expect(petalburg).toBeDefined();
+    expect(petalburg!.split.version).toBe("hns");
+    expect(proj.layoutByName("PetalburgCity_Layout")!.layoutVersion).toBe("emerald");
   }, 900_000);
 
   itWithCorpus("checking every layout against one global constant is the bug, not the test", () => {
-    // Forcing the 640 boundary onto emerald layouts must produce many findings.
-    // Measured: 558, of which 333 are map-source. The threshold is 100 so the
-    // test states a floor rather than a brittle exact count, but the gap
-    // between 1 and 558 is the actual signal.
-    const forced = { ...proj, splitFor: () => ({ version: "hns" as const, tiles: 640, metatiles: 640, pals: 7 }) };
-    expect(validateMetatileRange(forced as typeof proj).length).toBeGreaterThan(100);
+    // Both directions. Forcing 640 alone cannot catch an implementation
+    // hardcoded to 640 -- the override becomes a no-op and the assertion passes
+    // for the wrong reason. Forcing 512 catches that one; forcing 640 catches a
+    // hardcode to 512. Measured: 558 and 546 findings respectively, against 1
+    // when each layout is asked for its own split.
+    const force = (metatiles: number, version: "emerald" | "hns", pals: number) =>
+      validateMetatileRange({ ...proj, splitFor: () => ({ version, tiles: metatiles, metatiles, pals }) } as typeof proj).length;
+
+    expect(force(640, "hns", 7)).toBeGreaterThan(100);
+    expect(force(512, "emerald", 6)).toBeGreaterThan(100);
+    expect(validateMetatileRange(proj).length).toBe(1);
   }, 900_000);
 
   itWithCorpus("reports tile entries naming a palette the tileset has no .pal for", () => {
