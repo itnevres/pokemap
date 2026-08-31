@@ -201,6 +201,30 @@ the branch directly, because no corpus fixture for it exists — it would requir
 a form of tree corruption the subject repo should not contain. Tightening an
 assertion feels like progress; only the mutation tells you whether it was.
 
+**"It changed" is not an assertion. "It changed to this" is.** The single most
+repeated defect in this project, in four different disguises: Task 18's corpus
+gate was `expect(x).toBe(x)` because `editJson(src, [])` returns early; Task
+14's out-of-range assertions were three zeroes against a counter nothing ever
+incremented; Task 19's PNG cache key could drop `border` entirely because each
+target was requested once; and Task 21's overlays **erased the canvas to fully
+transparent** while passing a check that every toggle "changes a large,
+non-zero pixel count" — because erasing an image is an enormous change. Pin the
+value. And pin the *unaffected* case too: what would have caught Task 21 in
+milliseconds is asserting that a cell with no collision is byte-identical to
+the base image.
+
+**Run the UI and look at it.** Task 21's blanking bug survived 183 passing
+tests, a clean typecheck, a programmatic Step 7 that fetched real PNGs over the
+real proxy, and an implementer who had browser automation available and did not
+think to use it for this. It took one click. Its cause was worth the trip:
+turning on an overlay renders the legend row, which shrinks the viewport, which
+fires a `ResizeObserver`, which rewrites the canvas `width` attribute — and
+setting `width` clears a canvas bitmap per spec — while the blit effect did not
+list `viewport` among its dependencies, so nothing redrew it. No test at that
+level was ever going to find that. `.claude/launch.json` and
+`packages/server/src/serve.ts` exist so the next person can be looking at the
+app inside a minute.
+
 **An agent can be killed mid-edit. Check the tree; never assume either way.**
 Twice now a usage limit has stopped an implementer between "break something on
 purpose" and "put it back", and the two cases needed opposite responses. Task
