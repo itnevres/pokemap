@@ -4087,7 +4087,20 @@ program
 ```
 
 Run: `npx tsx packages/cli/src/index.ts validate --metatile-range`
-Expected: one finding, `Saffron_Temp`.
+
+Expected, exactly — and cross-checked against the subject repo's own Python
+tool, which reports the same layout, source, split and id set:
+
+```
+Saffron_Temp_Layout (hns, map): 18 bad id(s), worst 0x36f x63
+1 finding(s)
+```
+
+219 cells across 18 distinct ids. Note **worst means most frequent**, not
+highest-valued: `ids` is sorted count-descending, so `ids[0]` is 879 (`0x36f`,
+63 cells). The highest id present is 924 (`0x39c`) and it appears twice. An
+earlier note in this project's history called 924 "worst", which is what the
+other sort order would give — mention the sort whenever quoting a worst id.
 
 Run: `npx tsx packages/cli/src/index.ts validate`
 Expected: the `Saffron_Temp` finding plus the palette findings, and exit 1.
