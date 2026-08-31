@@ -15,6 +15,11 @@ describe("MapTree", () => {
     render(<MapTree data={GROUPS} selected={null} onSelect={() => {}} />);
     expect(screen.getByText(/TownsAndRoutes/)).toBeTruthy();
     expect(screen.getByText("2")).toBeTruthy();
+    // A substring regex matches the raw `gMapGroup_TownsAndRoutes` key just as
+    // well as the stripped label, so the assertion above cannot tell whether
+    // the prefix was stripped at all. Verified by mutation: deleting the
+    // `.replace()` left all five tests green.
+    expect(screen.queryByText(/^gMapGroup_/)).toBeNull();
   });
 
   it("filters maps as the user types, keeping groups that still match", () => {
