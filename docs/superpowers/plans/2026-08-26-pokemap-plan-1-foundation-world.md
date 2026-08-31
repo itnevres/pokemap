@@ -4703,6 +4703,12 @@ describe("MapTree", () => {
     render(<MapTree data={GROUPS} selected={null} onSelect={() => {}} />);
     expect(screen.getByText(/TownsAndRoutes/)).toBeTruthy();
     expect(screen.getByText("2")).toBeTruthy();
+
+    // A substring regex matches the raw `gMapGroup_TownsAndRoutes` key just as
+    // well as the stripped label, so the assertion above cannot tell whether
+    // the prefix was stripped at all. Verified by mutation: deleting the
+    // `.replace()` in the component left all five tests green.
+    expect(screen.queryByText(/^gMapGroup_/)).toBeNull();
   });
 
   it("filters maps as the user types, keeping groups that still match", () => {
@@ -4808,6 +4814,21 @@ so it would be an unused dependency and an unused setup file.
 
 3. `packages/ui/vite.config.ts` — proxy `/api` to `http://127.0.0.1:5174`, the
    port Task 19's server defaults to, and use `@vitejs/plugin-react`.
+
+4. **A `packages/ui/test/setup.ts`, wired through `setupFiles`.** Found the hard
+   way: with `globals: false`, `@testing-library/react` looks for a *global*
+   `afterEach` to hang its auto-cleanup on, does not find one, and never
+   unmounts. DOM from earlier tests in a file then leaks into later queries, and
+   the fifth test below fails with "multiple elements found" on names the third
+   test rendered. The test file as written cannot pass without this.
+
+   ```ts
+   import { afterEach } from "vitest";
+   import { cleanup } from "@testing-library/react";
+   // Guarded so this is inert for the node-environment test files, which share
+   // the same setupFiles list but have no document.
+   afterEach(() => { if (typeof document !== "undefined") cleanup(); });
+   ```
 
 Then confirm the count: `npx vitest run --reporter=verbose` must list the
 `MapTree` tests by name. A green run that names no tests is a failing run.
