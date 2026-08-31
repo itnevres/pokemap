@@ -1,73 +1,35 @@
 # Resuming PokeMap in a new session
 
-Paste the block below as the first message of a fresh Claude Code session started
-in `C:\Programming Projects\PokeMap`.
+Paste the block below as the first message of a fresh Claude Code session
+started in `C:\Programming Projects\PokeMap`.
 
-The full handoff lives at `.remember/remember.md`. That directory is gitignored
-by the remember plugin, so it is local-only — this file is the committed copy of
-how to pick the work back up.
+`.remember/remember.md` holds a longer local-only copy. That directory is
+gitignored, and it has been clobbered before — this file is the committed one.
 
 ---
 
 ## The prompt
 
-> I'm resuming work on PokeMap, a Porymap-parity map editor for pokeemerald-family
-> GBA decomp projects. Read `.remember/remember.md` first — it is the handoff from
-> the previous session and explains what this is, what has been built, and the
-> specific ways the plan has been wrong.
+> I'm resuming work on PokeMap, a Porymap-parity map editor for
+> pokeemerald-family GBA decomp projects.
 >
-> **State:** Tasks 1–12 of 29 in Plan 1 are done, 77 tests passing, all green, on
-> branch `plan-1-foundation`. The subject decomp at
-> `C:\Programming Projects\Pokemon Game\game` is read-only for all of Plan 1 and
-> must stay untouched — verify with `git status` there before and after.
+> **State:** Tasks 1–22 of 29 in Plan 1 are done, **190 tests passing**, all
+> green, `npm run typecheck` clean (it runs two tsconfigs), on branch
+> `plan-1-foundation`. The subject decomp at
+> `C:\Programming Projects\Pokemon Game\game` is read-only for all of Plan 1.
 >
-> **Next:** Task 13, metatile rendering against the per-layout metatile split.
-> This is the task the whole project exists for.
+> **Next:** Task 23, dungeon auto-layout from the warp graph.
 >
-> Execute with `superpowers:subagent-driven-development`: a fresh implementer
-> subagent per task with the **full task text pasted into the prompt** (never make
-> it read the plan file), then a spec-compliance review, then a code-quality
-> review, looping fixes back to the same implementer via `SendMessage`.
+> Execute with `superpowers:subagent-driven-development`. **Audit each task's
+> text against the subject repo before dispatching it** — roughly eighty
+> defects have been found so far and *every one was in the plan or in a
+> review, never in an implementation that followed a correct spec*. The audit
+> is the highest-value thing you do; a clean implementer report is not
+> evidence the task was right.
 >
-> Before dispatching Task 13, audit its text in
-> `docs/superpowers/plans/2026-08-26-pokemap-plan-1-foundation-world.md` against
-> the defect classes listed in the handoff and in Plan 0 §7. Roughly thirty
-> defects have been found so far and **every one was in the plan, not in an
-> implementation** — so auditing the task before dispatch is the highest-value
-> thing you can do, and a clean implementer report is not evidence the task was
-> right.
-
----
-
-## Operating rules that are easy to lose
-
-These cost real time to learn. They are in the handoff too, repeated here because
-a new session will otherwise rediscover them the hard way.
-
-**Heredocs fail in this environment**, especially containing `/`. Write scripts
-and commit messages to a file with the Write tool, then run the file or use
-`git commit -F <file>`. A heredoc escaping bug once truncated the plan from 5,535
-lines to 240 — recovered from the last commit, but verify line count and
-`grep -c "^## Task"` after any scripted plan edit. Prefer the Edit tool.
-
-**Make every check fail on purpose before trusting it.** Two measurement scripts
-reported clean results while testing nothing: one had a mangled regex and reported
-zero mismatches, nearly killing a correct critical finding; another printed only a
-path's last segment, producing a wrong parent directory. This is the same failure
-the project exists to prevent.
-
-**Ask every implementer for four things.** They have repeatedly found what the
-reviews missed: a tautology audit of each assertion, independent verification of
-every count the plan states, a willingness to question the instructions rather
-than follow them, and a teeth proof for any test claimed to guard something —
-break the thing, watch it go red, restore it.
-
-**Model policy:** implementers on Sonnet; reviews of Tasks 13, 18, 22, 25 and all
-UI tasks on Opus. `SendMessage` cannot change a model — a resumed agent keeps the
-one it started with, so choose at dispatch.
-
-**Count tests with the script in the handoff**, never by eye. Four hand-counts
-were wrong, and scripting it found seven more across the plan.
+> Read `docs/superpowers/plans/2026-08-26-pokemap-plan-0-roadmap.md` §3
+> (invariants I1–I8) and §7 (test-design rules) first. §7 is the accumulated
+> scar tissue and it is what makes the audits work.
 
 ---
 
@@ -75,14 +37,78 @@ were wrong, and scripting it found seven more across the plan.
 
 | Thing | Path |
 |---|---|
-| Handoff (local-only) | `.remember/remember.md` |
-| Design spec | `docs/superpowers/specs/2026-08-26-pokemap-design.md` |
-| Plan 0 — roadmap, invariants I1–I8, test-design rules §7 | `docs/superpowers/plans/2026-08-26-pokemap-plan-0-roadmap.md` |
+| Plan 0 — roadmap, invariants, test-design rules | `docs/superpowers/plans/2026-08-26-pokemap-plan-0-roadmap.md` |
 | Plan 1 — 29 tasks, full TDD steps ← executing | `docs/superpowers/plans/2026-08-26-pokemap-plan-1-foundation-world.md` |
 | Plans 2–5 | same directory; task-level only, **re-granularise before executing** |
+| Design system, binding on all UI tasks | `packages/ui/DESIGN.md` |
 | Subject decomp | `C:\Programming Projects\Pokemon Game\game` |
 | Reference engines | `C:\Programming Projects\Pokemon Game\refs\` |
 
-`git log --oneline` tells the real story. Plan corrections are separate commits
-with `docs:` prefixes, and their messages record what was wrong and why — they are
-the most useful reading in the repo after the plan itself.
+`git log --oneline` is the real story. Plan corrections are separate `docs:`
+commits and their messages record what was wrong and why.
+
+## Running it
+
+```bash
+npx tsx packages/server/src/serve.ts        # API on 127.0.0.1:5174
+npm run dev --workspace=@pokemap/ui         # Vite on 5173, proxies /api
+```
+
+`.claude/launch.json` lets the browser tooling start the UI by name.
+**Open the app and click things.** Task 21's overlays blanked the canvas
+entirely; it survived 183 green tests, a clean typecheck, and a programmatic
+check that fetched real PNGs through the real proxy. One click found it.
+
+## Things that will bite you
+
+**The decomp baseline moves.** The user works in that repo concurrently — it
+was 27 `git status --porcelain` entries early in the last session and 14 by the
+end, with a completely different file list. **Measure it at session start and
+give implementers that number**, rather than inheriting one from a handoff.
+
+**Porymap strips `layout_version` from `layouts.json` on save.** It did this to
+all 1,020 layouts mid-session. Symptoms: `layouts.test.ts` fails its
+389/349/282 version counts, and every layout silently resolves to the emerald
+512 boundary. Fix by splicing the keys back from `git show HEAD:...` keyed on
+layout id — **not** `git checkout`, which would also throw away real edits
+(there was a `NavelRock_ZygardeChamber` resize from 11×9 to 30×22 living in the
+same uncommitted diff). Verify afterwards that the file differs from HEAD by
+*only* the intended edits.
+
+**`include/fieldmap.h` has a commented-out alternative constant block.** The
+live values must be `NUM_*_IN_PRIMARY` 640/640/7 and `NUM_*_IN_PRIMARY_EMERALD`
+512/512/6. That hand-swapping is the workaround invariant I8 exists to
+eliminate.
+
+**Heredocs are unreliable in this environment**, and `python`/`python3` are not
+on PATH. Use Write/Edit and `git commit -F <file>`. Shell interpolation ate a
+backticked word out of a plan comment last session.
+
+**Agents get killed mid-edit.** Twice now. Once it left a live reversed draw
+loop in `renderMetatile`; once it left 172 passing tests and a coherent body of
+uncommitted work. Opposite correct responses, so: read the tree, run the suite,
+*then* decide. Plan 0 §7 has this written up.
+
+## Open items carried forward
+
+- **19 connection conflicts** are reported by `buildWorld` and pinned as
+  `CONFLICT_BASELINE`. They are real inconsistencies in the decomp — the Safari
+  Zone quadrants, Ruins of Alph/Route 36, Ecruteak/Route 42, and a Saffron City
+  cluster that disagrees by 84 tiles. This is a defect class Porymap cannot
+  surface. The full list is in commit `361a662`.
+- **`sizeOf`'s I7 refusal in `connections.ts` is an untested branch** — no
+  fixture in the corpus reaches it, and removing it breaks no test.
+- **`connections.ts` has a forward-looking comment** claiming `warpGraph.ts`
+  "already does it this way". That file does not exist yet; Task 23 creates it.
+  Make it true rather than deleting the comment.
+- **2,534 tile entries across 14 tilesets name a palette index their tileset
+  has no `.pal` for**, and render as transparent holes. Reported by
+  `pokemap validate`; the parity decision needs a Porymap build to compare
+  against.
+- **`pokeemerald-expansion` names its second constant set `_FRLG`**, which
+  three places assume is spelled `_EMERALD`. Harmless on the subject tree,
+  wrong the moment Plan 0 §6's corpus gate opens that engine. Written up under
+  Task 5.
+- **`packages/server` depends on `@pokemap/cli`** for `encodePng` and
+  `parseBorder`. Backwards layering; move both into core when Plan 4's MCP
+  server becomes the third consumer.
