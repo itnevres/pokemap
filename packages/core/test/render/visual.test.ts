@@ -16,6 +16,22 @@ describe("visual regression", () => {
       const r = renderLayout(proj, proj.layoutForMap(name).name, { border: 1 });
       actual[name] = createHash("sha256").update(Buffer.from(r.data)).digest("hex").slice(0, 16);
     }
+    // If this test is RED, do not delete fixtures/visual-hashes.json.
+    //
+    // The branch below regenerates the baseline from whatever the renderer
+    // currently does, and the run after that is green. So deleting the file
+    // "fixes" a genuine rendering regression by promoting it to the reference
+    // -- silently, and in a commit whose diff is six opaque hex strings that no
+    // reviewer can evaluate. This harness exists to catch exactly the change
+    // that deleting it would launder.
+    //
+    // A red result means one of two things. Either the renderer regressed, in
+    // which case fix the renderer; or the change was deliberate, in which case
+    // re-do Step 4 of Task 13 -- render the six maps, look at them, compare
+    // NavelRock_Base and NavelRock_Bottom against the emulator screenshots in
+    // the subject repo's tools/verify/scratch/mapshot/ -- and say in the commit
+    // message what changed and why the new image is right. Regenerating is the
+    // last step of that process, never the first.
     if (!existsSync(HASHES)) {
       writeFileSync(HASHES, JSON.stringify(actual, null, 2));
       throw new Error("baseline written; inspect the PNGs, then re-run to lock it in");
