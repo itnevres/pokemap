@@ -76,6 +76,18 @@ describe("encodePng", () => {
     // Buffer.copy, naming neither the raster nor the actual mismatch.
     expect(() => encodePng({ width: 4, height: 4, data: new Uint8ClampedArray(60) })).toThrow(/4x4/);
     expect(() => encodePng({ width: 4, height: 4, data: new Uint8ClampedArray(60) })).toThrow(/expected 64/);
+    // The oversize side, not just short: an implementation using '<' instead
+    // of '!==' would let this through and silently ignore the trailing bytes.
+    expect(() => encodePng({ width: 4, height: 4, data: new Uint8ClampedArray(80) })).toThrow(/expected 64/);
+  });
+
+  it("rejects non-integer dimensions", () => {
+    // A fractional width would otherwise pass the length check by
+    // coincidence for some data lengths, then write an IHDR that lies about
+    // the row width while the actual scanline stride keeps a fractional
+    // byte count -- structurally invalid, no throw.
+    expect(() => encodePng({ width: 2.5, height: 1, data: new Uint8ClampedArray(10) })).toThrow();
+    expect(() => encodePng({ width: 4, height: 1.5, data: new Uint8ClampedArray(24) })).toThrow();
   });
 
   it("rejects non-positive dimensions", () => {
@@ -84,11 +96,17 @@ describe("encodePng", () => {
     expect(() => encodePng({ width: -1, height: 4, data: new Uint8ClampedArray(0) })).toThrow();
   });
 
-  it("draws zlib's 4 GiB scanline boundary exactly at 32768", () => {
+  it("computes the scanline byte length zlib's 4 GiB boundary is drawn against", () => {
     // (4W + 1) x H is the byte length deflate must consume through zlib's
     // 32-bit avail_in; past 2**32 - 1 it wraps and truncates silently rather
     // than throwing. Asserted on the arithmetic directly -- allocating
     // either buffer for real would need on the order of 4 GiB.
+    //
+    // This tests scanlineByteLength's arithmetic, not encodePng's '>' vs
+    // '>=' comparison against the boundary -- changing that operator to
+    // '>=' leaves this test green too. Proving the comparison itself would
+    // need a raster whose scanline data is exactly 2**32 - 1 bytes, which is
+    // the same multi-gigabyte allocation this test exists to avoid.
     expect(scanlineByteLength(32767, 32767)).toBeLessThanOrEqual(0xffffffff);
     expect(scanlineByteLength(32768, 32768)).toBeGreaterThan(0xffffffff);
   });

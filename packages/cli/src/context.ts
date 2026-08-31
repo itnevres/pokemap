@@ -21,8 +21,24 @@ export function resolveProject(explicit?: string): Project {
       `Run pokemap from the repo root, or pass --project explicitly.`,
     );
   }
-  const cfg = JSON.parse(readFileSync(configPath, "utf8")) as { projectPath: string };
-  return openProject(cfg.projectPath);
+
+  const raw = readFileSync(configPath, "utf8");
+  let cfg: unknown;
+  try {
+    cfg = JSON.parse(raw);
+  } catch (e) {
+    throw new Error(
+      `${configPath} is not valid JSON: ${e instanceof Error ? e.message : String(e)}`,
+    );
+  }
+  const projectPath = (cfg as { projectPath?: unknown } | null)?.projectPath;
+  if (typeof projectPath !== "string") {
+    throw new Error(
+      `${configPath} has no string "projectPath" key (found ${JSON.stringify(projectPath)}). ` +
+      `Expected e.g. { "projectPath": "/path/to/decomp" }.`,
+    );
+  }
+  return openProject(projectPath);
 }
 
 /**

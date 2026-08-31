@@ -18,6 +18,10 @@ describe("query", () => {
   itWithCorpus("resolves a target that is a map name or a layout name", () => {
     expect(layoutNameFor(proj, "PetalburgCity")).toBe("PetalburgCity_Layout");
     expect(layoutNameFor(proj, "PetalburgCity_Layout")).toBe("PetalburgCity_Layout");
-    expect(() => layoutNameFor(proj, "NoSuchPlace")).toThrow();
+    // Pins the I7 message this whole change is about: it must come from
+    // Project.layoutForMap (naming map_groups.json), not a hand-rolled
+    // "no layout or map named X" that would pass just as well against
+    // the old, less informative implementation.
+    expect(() => layoutNameFor(proj, "NoSuchPlace")).toThrow(/map_groups.json/);
   });
 });

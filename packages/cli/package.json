@@ -2,7 +2,7 @@
   "name": "@pokemap/cli",
   "version": "0.0.0",
   "type": "module",
-  "comment": "No \"bin\" entry: node packages/cli/src/index.ts fails with ERR_MODULE_NOT_FOUND on the @pokemap/core/src/*.js deep import (Node 24's type stripping does not rewrite .js -> .ts specifiers, and core ships no exports map). Only `tsx` can run this file today, so `bin` comes back once there is a build step producing real .js. Until then, use `npm run pokemap` below.",
+  "comment": "No \"bin\" entry: node packages/cli/src/index.ts fails with ERR_MODULE_NOT_FOUND on the @pokemap/core/src/*.js deep import (Node 24's type stripping does not rewrite .js -> .ts specifiers, and core ships no exports map). Only `tsx` can run this file today, so `bin` comes back once there is a build step producing real .js. Until then, prefer the root package.json's `npm run pokemap` (cwd is the repo root, so pokemap.config.json's fallback resolution works) or `npx tsx packages/cli/src/index.ts` from the repo root. The `pokemap` script below runs with cwd = packages/cli, so pokemap.config.json is not found there without --project; it exists for consistency, not as the recommended invocation.",
   "scripts": {
     "pokemap": "tsx src/index.ts"
   },

@@ -56,9 +56,17 @@ export function encodePng(r: RasterLike): Buffer {
   // A short buffer would otherwise either leave trailing rows as transparent
   // black (silently -- Buffer.alloc zero-fills) or throw ERR_OUT_OF_RANGE
   // from deep inside Buffer.copy naming neither the raster nor the mismatch.
-  // 0x0 raster would produce a PNG that the spec (11.2.2) forbids. Symmetric
-  // with the same guard in load/png.ts's readIndexedPng.
-  if (r.width <= 0 || r.height <= 0 || r.data.length !== stride * r.height) {
+  // 0x0 raster would produce a PNG that the spec (11.2.2) forbids. A
+  // fractional width/height (e.g. 2.5x1) would otherwise pass the length
+  // check by coincidence, then write an IHDR that lies about the row width
+  // while the actual scanline stride keeps its fractional byte count --
+  // structurally invalid, no throw. Symmetric with the same guard in
+  // load/png.ts's readIndexedPng.
+  if (
+    r.width <= 0 || r.height <= 0 ||
+    !Number.isInteger(r.width) || !Number.isInteger(r.height) ||
+    r.data.length !== stride * r.height
+  ) {
     throw new Error(
       `raster is ${r.width}x${r.height} with ${r.data.length} bytes; expected ${stride * r.height}`,
     );
