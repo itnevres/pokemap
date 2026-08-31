@@ -4163,10 +4163,55 @@ describe("editJson", () => {
     expect(editJson(crlf, [])).toBe(crlf);
     expect(editJson(crlf, [{ path: ["id"], value: "X" }])).toContain("\r\n");
   });
+
+  // The container scanner has to skip a value it is not interested in, to reach
+  // a later key. Every shape it can meet has to be exercised, and the object
+  // containing an array is the one an earlier draft got wrong -- the bug
+  // survived because the five tests above only ever skip past strings and
+  // numbers, never past a container.
+  it("skips past a nested value of every shape to reach a later key", () => {
+    const shapes: [string, string][] = [
+      ["array of objects", '[{ "a": 1 }, { "b": 2 }]'],
+      ["object with array", '{ "a": [1, 2] }'],
+      ["object in object", '{ "a": { "b": 1 } }'],
+      ["array of arrays", "[[1], [2]]"],
+      // The exact shape of wild_encounters.json, which Task 26 reads.
+      ["encounter table", '{ "encounter_rate": 20, "mons": [{ "min_level": 2 }] }'],
+    ];
+    for (const [label, nested] of shapes) {
+      const src = `{\n  "skipme": ${nested},\n  "target": 1\n}`;
+      expect(editJson(src, [{ path: ["target"], value: 2 }]), label)
+        .toBe(src.replace('"target": 1', '"target": 2'));
+    }
+  });
+
+  it("edits a value nested inside a skipped-over container", () => {
+    const src = '{ "wild": { "encounter_rate": 20, "mons": [{ "min_level": 2 }] }, "after": 0 }';
+    expect(editJson(src, [{ path: ["wild", "mons", 0, "min_level"], value: 7 }]))
+      .toBe(src.replace('"min_level": 2', '"min_level": 7'));
+  });
+
+  it("refuses an index that is past the end of an array", () => {
+    expect(() => editJson(SRC, [{ path: ["connections", 3, "map"], value: "X" }]))
+      .toThrow(/not present/i);
+  });
+
+  it("applies several edits at once without disturbing each other's offsets", () => {
+    // Edits are applied right-to-left so earlier offsets stay valid. Two edits
+    // whose replacement lengths differ from the originals is the case that
+    // catches a left-to-right implementation.
+    const out = editJson(SRC, [
+      { path: ["id"], value: "A_MUCH_LONGER_MAP_NAME" },
+      { path: ["connections", 0, "offset"], value: -12345 },
+    ]);
+    expect(out).toBe(SRC
+      .replace('"MAP_TEST"', '"A_MUCH_LONGER_MAP_NAME"')
+      .replace('"offset": -5', '"offset": -12345'));
+  });
 });
 ```
 
-The fourth test is the direct countermeasure to Porymap 6 injecting `border_width` into 726 layouts. Adding a key is a separate, explicit operation (Plan 3), never a side effect of saving.
+The `border_width` test is the direct countermeasure to Porymap 6 injecting that key into 726 layouts. Adding a key is a separate, explicit operation (Plan 3), never a side effect of saving.
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -4233,13 +4278,20 @@ export function valueEnd(s: string, i: number): number {
   const c = s[i];
   if (c === '"') return readString(s, i).end;
   if (c === "{" || c === "[") {
-    const close = c === "{" ? "}" : "]";
+    // Both closers decrement, on one shared depth. An earlier draft tracked
+    // `close = c === "{" ? "}" : "]"` and tested `ch === "}" || ch === close`,
+    // which for an object is `"}" || "}"` -- so `]` never decremented and any
+    // object containing an array ran off the end and threw "unterminated
+    // container". `{"encounter_rate":20,"mons":[...]}` is exactly that shape and
+    // is what wild_encounters.json is made of, so Task 26 would have hit it.
+    // JSON is well formed by the time we are here, so one depth counter across
+    // both bracket kinds is correct and the `close` variable is unnecessary.
     let depth = 0;
     while (i < s.length) {
       const ch = s[i];
       if (ch === '"') { i = readString(s, i).end; continue; }
       if (ch === "{" || ch === "[") depth++;
-      else if (ch === "}" || ch === close) { depth--; if (depth === 0) return i + 1; }
+      else if (ch === "}" || ch === "]") { depth--; if (depth === 0) return i + 1; }
       i++;
     }
     throw new Error("unterminated container");
@@ -4278,7 +4330,9 @@ function enterIndex(s: string, arrStart: number, index: number): number {
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx vitest run packages/core/test/write/jsonEdit.test.ts`
-Expected: PASS, 9 tests.
+Expected: PASS, 9 tests. (Five from the original draft plus the four added
+above: the nested-shape skip, the edit inside a skipped container, the
+out-of-range index, and the multi-edit offset case.)
 
 - [ ] **Step 5: Write the corpus gate**
 
@@ -4299,37 +4353,56 @@ describe("identity corpus (invariant I5)", () => {
     expect(roots.length).toBeGreaterThanOrEqual(5);
   });
 
-  it.each(roots)("round-trips every map.json in %s with zero bytes changed", (root) => {
+  // NOT `editJson(src, [])`. That returns `src` by an early return before any
+  // parsing happens, so asserting it equals `src` is `expect(x).toBe(x)` -- it
+  // would pass against an editJson whose body was deleted. An earlier draft
+  // made that the corpus gate, which is to say the gate Plan 0 §6 names as the
+  // thing no plan may merge without was testing nothing at all.
+  //
+  // The real property is: a round trip through an actual edit is byte-identical,
+  // AND the intermediate genuinely differs. Both halves are needed -- a no-op
+  // editJson satisfies the first on its own.
+  it.each(roots)("edits and restores every map.json in %s, byte for byte", (root) => {
     const proj = openProject(root);
-    const changed: string[] = [];
+    const unchanged: string[] = [];
+    const notRestored: string[] = [];
+    let checked = 0;
+
     for (const name of proj.mapNames()) {
       const path = proj.paths.mapJson(name);
       if (!existsSync(path)) continue;
+      checked++;
       const src = readFileSync(path, "utf8");
-      if (editJson(src, []) !== src) changed.push(name);
+      const original = JSON.parse(src).music as string;
+
+      const edited = editJson(src, [{ path: ["music"], value: "MUS_PLACEHOLDER_XYZZY" }]);
+      if (edited === src) unchanged.push(name);
+      if (editJson(edited, [{ path: ["music"], value: original }]) !== src) notRestored.push(name);
     }
-    expect(changed).toEqual([]);
+
+    // Every map.json in all six engines carries a `music` key -- verified, 0
+    // exceptions across 4,427 files -- so a skipped file means the walk broke,
+    // not that the data varies.
+    expect(checked).toBeGreaterThan(400);
+    expect(unchanged).toEqual([]);
+    expect(notRestored).toEqual([]);
   }, 900_000);
 
-  it.each(roots)("round-trips layouts.json in %s with zero bytes changed", (root) => {
+  it.each(roots)("edits and restores layouts.json in %s, byte for byte", (root) => {
     const proj = openProject(root);
     const src = readFileSync(proj.paths.layoutsJson, "utf8");
-    expect(editJson(src, [])).toBe(src);
-  });
+    const original = JSON.parse(src).layouts_table_label as string;
 
-  it.each(roots)("edits one value in every map.json and changes nothing else (%s)", (root) => {
-    const proj = openProject(root);
-    const offenders: string[] = [];
-    for (const name of proj.mapNames().slice(0, 200)) {
-      const path = proj.paths.mapJson(name);
-      if (!existsSync(path)) continue;
-      const src = readFileSync(path, "utf8");
-      const out = editJson(src, [{ path: ["music"], value: "MUS_PLACEHOLDER" }]);
-      // Exactly one substitution: lengths differ only by the literal delta.
-      const restored = editJson(out, [{ path: ["music"], value: JSON.parse(src).music }]);
-      if (restored !== src) offenders.push(name);
-    }
-    expect(offenders).toEqual([]);
+    const edited = editJson(src, [{ path: ["layouts_table_label"], value: "gPlaceholderXyzzy" }]);
+    expect(edited).not.toBe(src);
+    expect(editJson(edited, [{ path: ["layouts_table_label"], value: original }])).toBe(src);
+
+    // And an edit deep inside the layouts array, which requires skipping past
+    // every preceding layout object to get there.
+    const width = JSON.parse(src).layouts[0].width as number;
+    const deep = editJson(src, [{ path: ["layouts", 0, "width"], value: width + 1 }]);
+    expect(deep).not.toBe(src);
+    expect(editJson(deep, [{ path: ["layouts", 0, "width"], value: width }])).toBe(src);
   }, 900_000);
 });
 ```
@@ -4337,7 +4410,11 @@ describe("identity corpus (invariant I5)", () => {
 - [ ] **Step 6: Run the corpus gate**
 
 Run: `npx vitest run packages/core/test/write/corpus.test.ts`
-Expected: PASS. Roughly 5,000 files across 5–6 engines, all byte-identical.
+Expected: PASS. **4,427 map.json across six engines** -- subject 1,209,
+pokeemerald 518, pokefirered 425, pokeemerald-expansion 939, modern-emerald
+557, pokeclassic 779 -- each edited and restored byte-identically, plus the
+six layouts.json. Every one of the 4,427 carries a `music` key; measured, no
+exceptions, which is why the gate can use it as the universal edit target.
 
 If a reference repo is missing, the first test fails and names the gap. Clone it rather than deleting the assertion — engine portability that is not tested is engine portability that has already rotted.
 
