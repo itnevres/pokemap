@@ -44,6 +44,18 @@
   --link-dive: var(--overlay-elevation-low);
   --link-emerge: var(--overlay-elevation-high);
 
+  /* Encounter gutter (Task 28): one hue per wild-encounter method, its own
+     small semantic group -- not a reuse of the event-kind colours above,
+     which already mean something else (object/warp/coord/bg event) and
+     could co-occur on screen with these in principle. Not overridden in
+     light mode, matching the event-kind and elevation tokens' own precedent
+     just above: these sit on small swatches/borders, not body text, so a
+     single value clears contrast in both themes. */
+  --encounter-land: #65a30d;
+  --encounter-water: #06b6d4;
+  --encounter-rock-smash: #a8763c;
+  --encounter-fishing: #6366f1;
+
   --font-ui: "IBM Plex Sans", system-ui, sans-serif;
   --font-data: "JetBrains Mono", ui-monospace, "Cascadia Code", monospace;
 
@@ -729,4 +741,263 @@ input {
 
 .world-canvas__hover--empty {
   color: var(--text-muted);
+}
+
+/* Encounter gutter (Task 28): a floating overlay layer meant to be mounted
+   once inside .world-canvas__viewport (position: relative, set above), so
+   its own left/top inline styles per map are relative to that same
+   viewport WorldCanvas already positions the canvas, tooltip and toast
+   against. The root is pointer-events: none so it never steals the
+   canvas's own pan/drag handling -- only the toggle and each icon button
+   opt back in. */
+.encounter-gutter {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.encounter-gutter__control {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  /* Confirmed live: with no explicit z-index here, plain DOM order put this
+     BELOW the per-map badges/strips that follow it in EncounterGutter.tsx's
+     JSX (later siblings paint over earlier ones at the same stacking level),
+     so a badge could sit on top of the legend's own explanatory text --
+     exactly backwards, since the legend exists to be read before the data
+     it explains. z-index makes the paint order explicit rather than an
+     accident of source order. */
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-2);
+  pointer-events: auto;
+}
+
+.encounter-gutter__toggle {
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  padding: var(--space-1) var(--space-2);
+  border-radius: 4px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  transition: background-color 150ms ease-out, border-color 150ms ease-out, color 150ms ease-out;
+}
+
+.encounter-gutter__toggle:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.encounter-gutter__toggle[aria-pressed="true"] {
+  background: var(--bg-selected);
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+.encounter-gutter__legend {
+  width: 240px;
+  padding: var(--space-3);
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.encounter-gutter__legend-title {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.encounter-gutter__legend-body {
+  margin: 0 0 var(--space-2);
+  line-height: 1.4;
+}
+
+.encounter-gutter__legend-key {
+  list-style: none;
+  margin: 0 0 var(--space-2);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.encounter-gutter__legend-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.encounter-gutter__legend-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex: 0 0 auto;
+}
+
+.encounter-gutter__legend-swatch--land {
+  background: var(--encounter-land);
+}
+
+.encounter-gutter__legend-swatch--water {
+  background: var(--encounter-water);
+}
+
+.encounter-gutter__legend-swatch--rock-smash {
+  background: var(--encounter-rock-smash);
+}
+
+.encounter-gutter__legend-swatch--fishing {
+  background: var(--encounter-fishing);
+}
+
+.encounter-gutter__legend-hint {
+  margin: 0;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  line-height: 1.4;
+}
+
+/* Low-zoom collapse target -- see LOW_ZOOM_THRESHOLD's own comment in
+   EncounterGutter.tsx for why a plain count replaces icons here rather than
+   shrinking them further. */
+.encounter-gutter__badge {
+  position: absolute;
+  z-index: 1;
+  padding: 2px var(--space-2);
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  font-family: var(--font-data);
+  font-size: var(--text-2xs);
+  font-weight: 500;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.encounter-gutter__strip {
+  position: absolute;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 280px;
+}
+
+.encounter-gutter__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 2px var(--space-1);
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+.encounter-gutter__method-tag {
+  flex: 0 0 auto;
+  padding: 1px var(--space-1);
+  border-radius: 3px;
+  font-family: var(--font-ui);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  color: var(--text-on-accent);
+  white-space: nowrap;
+}
+
+.encounter-gutter__method-tag--land {
+  background: var(--encounter-land);
+}
+
+.encounter-gutter__method-tag--water {
+  background: var(--encounter-water);
+}
+
+.encounter-gutter__method-tag--rock-smash {
+  background: var(--encounter-rock-smash);
+}
+
+.encounter-gutter__method-tag--fishing {
+  background: var(--encounter-fishing);
+}
+
+.encounter-gutter__icons {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-wrap: wrap;
+}
+
+.encounter-gutter__icon {
+  position: relative;
+  display: block;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: border-color 150ms ease-out, transform 150ms ease-out;
+}
+
+.encounter-gutter__icon:hover,
+.encounter-gutter__icon:focus-visible {
+  border-color: var(--focus-ring);
+  transform: scale(1.15);
+  z-index: 1;
+}
+
+.encounter-gutter__icon-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+.encounter-gutter__more {
+  font-family: var(--font-data);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  padding: 0 2px;
+}
+
+.encounter-gutter__tooltip {
+  position: absolute;
+  /* Above .encounter-gutter__control's z-index: 3 too -- the one thing
+     actively under the pointer should never be the thing a legend or
+     another map's badge covers. */
+  z-index: 4;
+  left: 50%;
+  bottom: calc(100% + 6px);
+  transform: translateX(-50%);
+  padding: var(--space-1) var(--space-2);
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  font-family: var(--font-data);
+  font-size: var(--text-2xs);
+  color: var(--text-primary);
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 2;
 }

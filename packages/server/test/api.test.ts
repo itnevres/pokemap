@@ -87,4 +87,68 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("server", () => {
     expect(bordered.readUInt32BE(16)).toBe((30 + 4) * 16);
     expect(plain.equals(bordered)).toBe(false);
   });
+
+  it("serves a species icon as a 32x32 PNG", async () => {
+    const r = await get("/api/species/SPECIES_ESPEON/icon.png");
+    expect(r.status).toBe(200);
+    expect(r.headers.get("content-type")).toBe("image/png");
+    const buf = Buffer.from(await r.arrayBuffer());
+    expect(buf.readUInt32BE(0)).toBe(0x89504e47);
+    expect(buf.readUInt32BE(16)).toBe(32);
+    expect(buf.readUInt32BE(20)).toBe(32);
+  });
+
+  it("serves the overworld sprite via ?source=overworld", async () => {
+    const icon = Buffer.from(await (await get("/api/species/SPECIES_POLIWRATH/icon.png")).arrayBuffer());
+    const overworld = Buffer.from(await (await get("/api/species/SPECIES_POLIWRATH/icon.png?source=overworld")).arrayBuffer());
+    expect(overworld.readUInt32BE(16)).toBe(32);
+    expect(overworld.readUInt32BE(20)).toBe(32);
+    // Same nominal size, different sheet (icon.png vs the object-event pic) --
+    // a route that silently ignored ?source= would serve byte-identical PNGs.
+    expect(icon.equals(overworld)).toBe(false);
+  });
+
+  it("404s a species with no art rather than throwing", async () => {
+    expect((await get("/api/species/SPECIES_NOT_A_REAL_MON/icon.png")).status).toBe(404);
+  });
+
+  it("400s an unrecognised ?source=", async () => {
+    expect((await get("/api/species/SPECIES_ESPEON/icon.png?source=bogus")).status).toBe(400);
+  });
+
+  it("returns a map's per-method species chances as true percentages, not slot counts", async () => {
+    // Route101's day table: every land_mons slot is SPECIES_ESPEON (weights
+    // 20+20+10+10+10+10+5+5+4+4+1+1 = 100), matching
+    // packages/core/test/load/encounters.test.ts's own fixture facts exactly.
+    const body = await (await get("/api/encounters/Route101")).json() as any;
+    expect(body.mapId).toBe("MAP_ROUTE101");
+    expect(body.methods.land_mons.length).toBe(1);
+    const espeon = body.methods.land_mons[0];
+    expect(espeon.species).toBe("SPECIES_ESPEON");
+    expect(espeon.percent).toBeCloseTo(100, 5);
+    expect(espeon.minLevel).toBe(2);
+    expect(espeon.maxLevel).toBe(3);
+    // 12 slots collapse to one entry -- the count that would leak through if
+    // a caller mistakenly displayed slots.length as if it were the percentage.
+    expect(espeon.slots.length).toBe(12);
+  });
+
+  it("defaults to entry 0 (day), not a map's other variants", async () => {
+    const body = await (await get("/api/encounters/Route101")).json() as any;
+    expect(body.methods.land_mons[0].species).toBe("SPECIES_ESPEON");
+    expect(body.methods.land_mons.some((c: any) => c.species === "SPECIES_UMBREON")).toBe(false);
+  });
+
+  it("returns an empty methods object for a map with no encounter table, not a 404", async () => {
+    // 982 of 1,209 maps carry no table at all (spec §9) -- an ordinary state,
+    // not an error. NewBarkTown_Lab is a plain interior with none.
+    const r = await get("/api/encounters/NewBarkTown_Lab");
+    expect(r.status).toBe(200);
+    const body = await r.json() as any;
+    expect(body.methods).toEqual({});
+  });
+
+  it("404s an unknown map for /api/encounters too", async () => {
+    expect((await get("/api/encounters/NoSuchMap")).status).toBe(404);
+  });
 });

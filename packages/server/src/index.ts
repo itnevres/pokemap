@@ -2,7 +2,9 @@ import { readFileSync } from "node:fs";
 import { createServer as createHttp, type IncomingMessage, type Server } from "node:http";
 import { openProject, type Project } from "@pokemap/core/src/project.js";
 import { renderLayout } from "@pokemap/core/src/render/layout.js";
+import { renderSpeciesIcon } from "@pokemap/core/src/render/species.js";
 import { parseBlocks } from "@pokemap/core/src/load/blocks.js";
+import { parseEncounters, speciesChances, type Encounters } from "@pokemap/core/src/load/encounters.js";
 import { buildWorld, resolveWorldPlacements } from "@pokemap/core/src/world/resolve.js";
 import { readSidecar, writeSidecar } from "@pokemap/core/src/world/sidecar.js";
 import { encodePng } from "@pokemap/cli/src/png.js";
@@ -42,6 +44,17 @@ export async function createServer(opts: { projectPath: string; port?: number })
   // never touch /api/world (most of api.test.ts) don't pay for it.
   let worldCache: ReturnType<typeof buildWorld> | undefined;
   const getWorld = () => (worldCache ??= buildWorld(project));
+
+  // Species icon PNGs, keyed by species+source+frame -- same reasoning and
+  // the same "unbounded for now" ceiling as pngCache above, but with far less
+  // to hold: at most a few thousand 32x32 frames across the whole species
+  // list, not one entry per map.
+  const iconCache = new Map<string, Buffer>();
+
+  // wild_encounters.json is parsed once and reused for the lifetime of this
+  // (read-only, per-process) server -- same reasoning as worldCache above.
+  let encountersCache: Encounters | undefined;
+  const getEncounters = () => (encountersCache ??= parseEncounters(readFileSync(project.paths.wildEncountersJson, "utf8")));
 
   const http: Server = createHttp((req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
@@ -126,6 +139,80 @@ export async function createServer(opts: { projectPath: string; port?: number })
         }
         res.writeHead(200, { "content-type": "image/png", "cache-control": "no-cache" });
         return res.end(png);
+      }
+
+      // `:name` is a raw species constant (e.g. "SPECIES_ESPEON"), exactly the
+      // string speciesChances already puts in every SpeciesChance -- so the
+      // encounter gutter builds this URL straight from that field, with no
+      // client-side transform of its own to get wrong. `[^/]+`, not `.+`
+      // (unlike /api/render/(.+)\.png above): a species constant never
+      // contains a slash, and the tighter match keeps a stray extra segment
+      // from being silently swallowed into the capture.
+      const speciesIconMatch = /^\/api\/species\/([^/]+)\/icon\.png$/.exec(url.pathname);
+      if (speciesIconMatch) {
+        const species = decodeURIComponent(speciesIconMatch[1]!);
+
+        const sourceParam = url.searchParams.get("source");
+        if (sourceParam !== null && sourceParam !== "icon" && sourceParam !== "overworld") {
+          return send(400, { error: `?source= must be "icon" or "overworld", got ${JSON.stringify(sourceParam)}` });
+        }
+        const source = (sourceParam ?? "icon") as "icon" | "overworld";
+
+        // Same shape as ?border= above: refuse a non-integer or negative
+        // frame here rather than letting it become a nonsensical (or
+        // negative-index-wrapping) row offset inside renderSpeciesIcon.
+        const frameParam = url.searchParams.get("frame");
+        let frame = 0;
+        if (frameParam !== null) {
+          frame = Number(frameParam);
+          if (!Number.isInteger(frame) || frame < 0) {
+            return send(400, { error: `?frame= must be a non-negative integer, got ${JSON.stringify(frameParam)}` });
+          }
+        }
+
+        const key = `${species}:${source}:${frame}`;
+        let png = iconCache.get(key);
+        if (!png) {
+          const raster = renderSpeciesIcon(project, species, { source, frame });
+          // No art for this species/source (or the species itself doesn't
+          // exist) -- a 404, not a thrown ENOENT the outer catch would turn
+          // into a 500.
+          if (!raster) return send(404, { error: `no ${source} art for ${species}` });
+          png = encodePng(raster);
+          iconCache.set(key, png);
+        }
+        res.writeHead(200, { "content-type": "image/png", "cache-control": "no-cache" });
+        return res.end(png);
+      }
+
+      // The world view's per-map encounter gutter: true percentages per
+      // method for one map's FIRST table (day, or the only variant most maps
+      // have) -- same default `entry: 0` speciesChances itself uses, and the
+      // same one `pokemap encounters` reports by default. A variant selector
+      // for the rest of a multi-table map is a later task's job, not this
+      // route's.
+      const encountersMatch = /^\/api\/encounters\/(.+)$/.exec(url.pathname);
+      if (encountersMatch) {
+        const name = decodeURIComponent(encountersMatch[1]!);
+        if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
+        const mapId = project.map(name).id;
+        const enc = getEncounters();
+
+        // Object.fromEntries + filter, mirroring the CLI's `encounters`
+        // command exactly (packages/cli/src/index.ts) -- a map missing a
+        // method's table entirely (e.g. no water_mons) is left OUT of
+        // `methods` rather than present as `null` or `[]`, so the gutter can
+        // tell "this method has no table" from "this method's table is
+        // empty" without a second signal. A map with no encounters at all
+        // (982 of 1,209 -- spec §9) still answers 200 with `methods: {}`:
+        // that is real data, not an error.
+        const methods = Object.fromEntries(
+          (["land_mons", "water_mons", "rock_smash_mons", "fishing_mons"] as const)
+            .map((m) => [m, speciesChances(enc, mapId, m)])
+            .filter(([, v]) => v),
+        );
+
+        return send(200, { mapName: name, mapId, methods });
       }
 
       if (url.pathname === "/api/world") {

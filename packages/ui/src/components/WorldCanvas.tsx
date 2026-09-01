@@ -1,5 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Placement, Component as WorldComponentInfo, Conflict, VerticalLink } from "@pokemap/core/src/world/connections.js";
+import type { Method, SpeciesChance } from "@pokemap/core/src/load/encounters.js";
+import { EncounterGutter, type EncounterGutterMapEntry } from "./EncounterGutter.js";
 
 /** The pixel size a placement's PNG renders at natively (`renderLayout`,
  *  border 0): 16px per tile, same constant the CLI's `render-world --scale
@@ -53,6 +55,17 @@ interface ImageCacheEntry {
   loaded: boolean;
   img?: HTMLImageElement;
   small?: HTMLCanvasElement;
+}
+
+/** Mirrors ImageCacheEntry's own shape exactly, for the same reason: a
+ *  placeholder is written synchronously before the fetch starts, so a second
+ *  effect run for the same map (another placement scrolling into view, or a
+ *  pan that doesn't drop this one) sees `.has(map)` and never double-fetches.
+ *  `methods` stays unset on a failed fetch -- EncounterGutter already treats
+ *  an unset map as "nothing to show", not an error banner. */
+interface EncounterCacheEntry {
+  loaded: boolean;
+  methods?: Partial<Record<Method, SpeciesChance[]>>;
 }
 
 type DragState =
@@ -149,6 +162,7 @@ export function WorldCanvas() {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageCacheRef = useRef<Map<string, ImageCacheEntry>>(new Map());
+  const encounterCacheRef = useRef<Map<string, EncounterCacheEntry>>(new Map());
   const dragRef = useRef<DragState>(null);
   const conflictBadgesRef = useRef<Array<{ x: number; y: number; text: string }>>([]);
 
@@ -181,6 +195,7 @@ export function WorldCanvas() {
   const [pan, setPan] = useState<Pan>({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [compositeVersion, setCompositeVersion] = useState(0);
+  const [encounterVersion, setEncounterVersion] = useState(0);
   const [railFilter, setRailFilter] = useState("");
   const [hover, setHover] = useState<HoverInfo | null>(null);
   const [tooltip, setTooltip] = useState<TooltipInfo | null>(null);
@@ -403,6 +418,58 @@ export function WorldCanvas() {
       img.src = `/api/render/${encodeURIComponent(p.map)}.png`;
     }
   }, [visible, sizeByMap]);
+
+  // Fetches each visible placement's encounter data at most once per map,
+  // mirroring the image-loading effect just above exactly (same
+  // cache-by-ref placeholder + version-bump-on-arrival shape). Unconditional
+  // on the encounter gutter's own enabled state -- that toggle is
+  // EncounterGutter's own local state, not lifted here, so it stays a
+  // self-contained component; fetching for every visible map regardless
+  // means turning the toggle on shows data immediately rather than kicking
+  // off a fetch at that moment, the same "fetch what's visible, let a
+  // toggle only control display" choice the image cache above already
+  // makes.
+  useEffect(() => {
+    for (const p of visible) {
+      if (encounterCacheRef.current.has(p.map)) continue;
+      const entry: EncounterCacheEntry = { loaded: false };
+      encounterCacheRef.current.set(p.map, entry);
+      fetch(`/api/encounters/${encodeURIComponent(p.map)}`)
+        .then((r) => {
+          if (!r.ok) throw new Error(`GET /api/encounters/${p.map} -> ${r.status}`);
+          return r.json() as Promise<{ methods: Partial<Record<Method, SpeciesChance[]>> }>;
+        })
+        .then((d) => {
+          entry.loaded = true;
+          entry.methods = d.methods;
+          setEncounterVersion((v) => v + 1);
+        })
+        .catch(() => {
+          // Best-effort, matching the image cache's own posture: a failed
+          // fetch just leaves this one map's gutter entry empty, not a
+          // banner over an otherwise-working canvas. Still marked loaded so
+          // this effect does not retry it forever.
+          entry.loaded = true;
+          setEncounterVersion((v) => v + 1);
+        });
+    }
+  }, [visible]);
+
+  // Screen-space rect per visible placement, in EncounterGutter's own prop
+  // shape -- the exact same dx/dy/dw/dh formula the draw effect below uses
+  // for each placement's own image blit, so the gutter always lines up with
+  // the map it describes.
+  const encounterEntries = useMemo<EncounterGutterMapEntry[]>(() => {
+    return visible.map((p) => {
+      const size = sizeOfPlacement(p, sizeByMap);
+      const cache = encounterCacheRef.current.get(p.map);
+      return {
+        map: p.map,
+        rect: { x: p.x * zoom + pan.x, y: p.y * zoom + pan.y, width: size.width * zoom, height: size.height * zoom },
+        methods: cache?.loaded ? (cache.methods ?? {}) : undefined,
+      };
+    });
+  }, [visible, sizeByMap, pan, zoom, encounterVersion]);
 
   // The actual draw. Reads only from state already current in this render's
   // closure (never a stale ref captured by an earlier effect), so an image
@@ -740,6 +807,7 @@ export function WorldCanvas() {
             onDragOver={onDragOverCanvas}
             onDrop={onDropOnCanvas}
           />
+          <EncounterGutter maps={encounterEntries} zoom={zoom} />
           {tooltip && (
             <div className="world-canvas__tooltip" style={{ left: tooltip.x + 12, top: tooltip.y + 12 }} role="tooltip">
               {tooltip.text}
