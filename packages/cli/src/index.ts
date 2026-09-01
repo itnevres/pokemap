@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 import { Command } from "commander";
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { renderLayout } from "@pokemap/core/src/render/layout.js";
 import { validateMetatileRange, validatePaletteRange } from "@pokemap/core/src/validate/metatileRange.js";
 import { buildWorld, resolveWorldPlacements } from "@pokemap/core/src/world/resolve.js";
 import { readSidecar } from "@pokemap/core/src/world/sidecar.js";
 import { createRaster, blitScaled } from "@pokemap/core/src/render/raster.js";
+import { parseEncounters, speciesChances, type SpeciesChance } from "@pokemap/core/src/load/encounters.js";
+import { whereSpecies, coverage } from "@pokemap/core/src/analyse/coverage.js";
 import { encodePng } from "./png.js";
 import { resolveProject, layoutNameFor } from "./context.js";
 import { parseBorder, parseBbox, parseScale } from "./args.js";
@@ -130,6 +132,57 @@ program
       process.stdout.write(`${findings.length} finding(s)\n`);
     }
     process.exitCode = findings.length ? 1 : 0;
+  });
+
+program
+  .command("encounters <map>")
+  .description("wild encounters for a map, with true percentages")
+  .option("--json", "machine-readable output")
+  .action((map: string, opts: { json?: boolean }) => {
+    const proj = resolveProject(program.opts().project);
+    const enc = parseEncounters(readFileSync(proj.paths.wildEncountersJson, "utf8"));
+    const mapId = proj.map(map).id;
+    const result = Object.fromEntries(
+      (["land_mons", "water_mons", "rock_smash_mons", "fishing_mons"] as const)
+        .map((m) => [m, speciesChances(enc, mapId, m)])
+        .filter(([, v]) => v),
+    );
+    if (opts.json) return void process.stdout.write(JSON.stringify(result, null, 2));
+    for (const [method, chances] of Object.entries(result)) {
+      process.stdout.write(`${method}\n`);
+      for (const c of chances as SpeciesChance[]) {
+        process.stdout.write(`  ${c.percent.toFixed(1).padStart(5)}%  Lv ${c.minLevel}-${c.maxLevel}  ${c.species}\n`);
+      }
+    }
+  });
+
+program
+  .command("where <species>")
+  .description("every map a species can be caught on")
+  .option("--json", "machine-readable output")
+  .action((species: string, opts: { json?: boolean }) => {
+    const proj = resolveProject(program.opts().project);
+    const hits = whereSpecies(proj, species.startsWith("SPECIES_") ? species : `SPECIES_${species.toUpperCase()}`);
+    if (opts.json) return void process.stdout.write(JSON.stringify(hits, null, 2));
+    if (hits.length === 0) return void process.stdout.write(`${species} appears in no encounter table\n`);
+    for (const h of hits) {
+      process.stdout.write(`${(h.mapName ?? h.mapId).padEnd(32)} ${h.percent.toFixed(1).padStart(5)}%  Lv ${h.minLevel}-${h.maxLevel}  ${h.method}\n`);
+    }
+  });
+
+program
+  .command("coverage")
+  .description("encounter design gaps across the project")
+  .option("--empty", "list maps with no encounter table")
+  .option("--unused", "list species in no encounter table")
+  .option("--json", "machine-readable output")
+  .action((opts: { empty?: boolean; unused?: boolean; json?: boolean }) => {
+    const proj = resolveProject(program.opts().project);
+    const c = coverage(proj);
+    if (opts.json) return void process.stdout.write(JSON.stringify(c, null, 2));
+    process.stdout.write(`${c.mapsWithEncounters} maps with encounters, ${c.mapsWithoutEncounters.length} without\n`);
+    if (opts.empty) for (const m of c.mapsWithoutEncounters) process.stdout.write(`  ${m}\n`);
+    if (opts.unused) for (const s of c.unusedSpecies) process.stdout.write(`  ${s}\n`);
   });
 
 // parseAsync, not a sync parse()+try/catch: every action handler today is
