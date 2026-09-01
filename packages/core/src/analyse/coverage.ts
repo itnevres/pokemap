@@ -9,13 +9,17 @@ const METHODS: Method[] = ["land_mons", "water_mons", "rock_smash_mons", "fishin
 
 export interface SpeciesHit {
   mapId: string; mapName?: string; method: Method;
+  /** Which of the map's tables this hit came from, e.g. "gRoute101_Night". */
   variant: string;
   rod?: Rod;
   percent: number; minLevel: number; maxLevel: number;
 }
 
 export interface Coverage {
+  /** DISTINCT maps carrying at least one table -- not the table count, which is
+   *  far higher because 125 maps have several variants each. */
   mapsWithEncounters: number;
+  /** Total tables across all maps, counting every day/night variant. */
   encounterTables: number;
   mapsWithoutEncounters: string[];
   /** One entry per DISTINCT map that carries at least one table. The level
@@ -37,6 +41,9 @@ export function whereSpecies(proj: Project, species: string): SpeciesHit[] {
 
   const entries = enc.groups.get("gWildMonHeaders")?.entries ?? [];
 
+  // Search EVERY variant, not just each map's first table. A night-only species
+  // would otherwise be reported as appearing nowhere -- the search would
+  // confidently return an empty list for a Pokemon the player can catch.
   const indexWithinMap = new Map<EncounterEntry, number>();
   const seenPerMap = new Map<string, number>();
   for (const e of entries) {
@@ -93,6 +100,7 @@ export function coverage(proj: Project): Coverage {
       for (const rod of rods) {
         const chances = speciesChances(enc, e.map, method, { entry: entryIndex, rod });
         if (!chances) continue;
+        // Count a method once per table, not once per rod.
         if (rod === undefined || rod === "old") byMethod[method]++;
         const acc = perMap.get(e.map) ?? { weighted: 0, total: 0 };
         for (const c of chances) {
@@ -119,6 +127,7 @@ export function coverage(proj: Project): Coverage {
   };
 }
 
+/** Species the project actually has art for -- the honest denominator. */
 function allSpecies(proj: Project): string[] {
   const dir = `${proj.paths.root}/graphics/pokemon`;
   if (!existsSync(dir)) return [];
