@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Placement, Component as WorldComponentInfo, Conflict, VerticalLink } from "@pokemap/core/src/world/connections.js";
 
 /** The pixel size a placement's PNG renders at natively (`renderLayout`,
@@ -58,9 +58,9 @@ interface ImageCacheEntry {
 type DragState =
   | { kind: "pan"; startX: number; startY: number; startPan: Pan }
   // startTileX/Y is the placement's OWN position at the moment the drag
-  // began, kept so mouseup can tell "did this actually move to a
+  // began, kept so commitMapDrag can tell "did this actually move to a
   // different tile" from "the user grabbed it and let go again" -- see
-  // onMouseUp's review-fix comment.
+  // its own review-fix comment.
   | { kind: "map"; map: string; grabDX: number; grabDY: number; startTileX: number; startTileY: number }
   | null;
 
@@ -154,6 +154,15 @@ export function WorldCanvas() {
 
   const [world, setWorld] = useState<WorldState | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // Review fix: postPlacement's and toggleDungeons' own failures used to
+  // either be silently discarded or written into loadError -- the same
+  // state used for "the whole world failed to load", which only resets at
+  // the top of a SUCCESSFUL /api/world fetch. That let a single failed
+  // save show a permanent, wrongly-labeled banner over a fully working
+  // canvas. saveError is a separate, dismissible slot for "your change
+  // failed to save"; loadError stays scoped to the actual load failure it
+  // names.
+  const [saveError, setSaveError] = useState<string | null>(null);
   // Review fix: this used to be a purely local override that only changed
   // the query string on the NEXT fetch -- nothing ever persisted
   // sidecar.dungeonAutoLayout, so a reload silently discarded it, even
@@ -161,8 +170,11 @@ export function WorldCanvas() {
   // that field exists specifically to be persisted, the same way manual
   // placements are. dungeonsOn is now derived purely from the server's own
   // sidecar value; dungeonsPending is only a same-frame optimistic echo of
-  // an in-flight POST, cleared on failure so a rejected write doesn't leave
-  // the switch showing something that was never actually saved.
+  // an in-flight POST, cleared on failure (so a rejected write doesn't
+  // leave the switch showing something that was never actually saved) AND
+  // cleared once a SUCCESSFUL toggle's own refetch lands (so it cannot
+  // permanently shadow the server's value for the rest of the page
+  // session -- see the /api/world effect's success handler below).
   const [dungeonsPending, setDungeonsPending] = useState<boolean | null>(null);
   const [refetchGen, setRefetchGen] = useState(0);
   const [viewport, setViewport] = useState<Viewport>({ w: 0, h: 0 });
@@ -198,8 +210,11 @@ export function WorldCanvas() {
   // plain fetch always reflects whatever was last saved, exactly like a
   // real reload would. refetchGen exists only to give this effect a
   // dependency to re-run on after that POST succeeds; it carries no data
-  // of its own. `/api/world?dungeons=` itself is unchanged and still used
-  // by the CLI's --no-dungeons for a one-off, non-persisting override.
+  // of its own. `/api/world?dungeons=` itself is unchanged, but review fix:
+  // nothing in this app calls it that way any more -- the CLI's
+  // --no-dungeons calls resolveWorldPlacements directly (no HTTP involved
+  // at all), so the query param is kept only for the server route's own
+  // API completeness and packages/server/test/world.test.ts's coverage.
   useEffect(() => {
     let cancelled = false;
     setLoadError(null);
@@ -218,6 +233,13 @@ export function WorldCanvas() {
           sidecarDungeonAutoLayout: d.sidecar.dungeonAutoLayout,
         });
         setCompositeVersion((v) => v + 1);
+        // Review fix: the server's own truth has now landed -- stop
+        // shadowing it with a stale optimistic value. Harmless when this
+        // runs for a reason OTHER than a successful toggle (initial mount:
+        // already null; a failed toggle already nulled it before this
+        // effect could re-run at all, since only a SUCCESSFUL POST bumps
+        // refetchGen).
+        setDungeonsPending(null);
       })
       .catch((e: unknown) => {
         if (!cancelled) setLoadError(e instanceof Error ? e.message : String(e));
@@ -233,7 +255,8 @@ export function WorldCanvas() {
   // new saved state -- not just the switch's own visual position.
   // dungeonsPending gives instant feedback on the switch itself without
   // waiting on the round trip; it is cleared on failure so a rejected
-  // write does not leave the switch lying about what got saved.
+  // write does not leave the switch lying about what got saved (and, on
+  // success, by the /api/world effect above once its own refetch lands).
   const toggleDungeons = () => {
     const next = !dungeonsOn;
     setDungeonsPending(next);
@@ -244,7 +267,11 @@ export function WorldCanvas() {
       })
       .catch((e: unknown) => {
         setDungeonsPending(null);
-        setLoadError(e instanceof Error ? e.message : String(e));
+        // Review fix: this used to write into loadError -- the same state
+        // "the whole world failed to load" uses, which only resets at the
+        // top of a SUCCESSFUL /api/world fetch. A failed toggle isn't that;
+        // the canvas is still fully working, so this is saveError's job.
+        setSaveError(e instanceof Error ? e.message : String(e));
       });
   };
 
@@ -254,17 +281,38 @@ export function WorldCanvas() {
   // singleton component's bounds ARE that one map's own rect). Used to size
   // side-rail entries and to recover a component:-1 placement's real size
   // -- see sizeOfPlacement above.
+  //
+  // Review fix: depended on [world] (the whole object) before -- world.
+  // components is genuinely all this reads, but `world` itself is a NEW
+  // object on every map drag/mousemove (onMouseMove's map-drag branch
+  // calls setWorld every frame), which needlessly rebuilt this 1,209-entry
+  // Map once per drag frame even though the component data driving it had
+  // not changed. `world?.components` is the actual dependency.
   const sizeByMap = useMemo(() => {
     const m = new Map<string, { width: number; height: number }>();
     if (world) for (const c of world.components) if (c.maps.length === 1) m.set(c.maps[0]!, { width: c.bounds.width, height: c.bounds.height });
     return m;
-  }, [world]);
+  }, [world?.components]);
 
   // Singleton maps not currently in `placements` -- i.e. hidden by the
   // dungeon toggle being off (or not yet auto-placed). A map the user has
   // manually dragged onto the canvas already appears in `placements` (via
   // applySidecar's override, regardless of the toggle) and so drops out of
   // this list on its own.
+  //
+  // Review fix: also depended on [world] before, for the same needless-
+  // rebuild-per-drag-frame reason as sizeByMap above (a ~1,028-item sort,
+  // there). Unlike sizeByMap, this genuinely reads world.placements too
+  // (not just .components) -- but only WHICH keys are present, never their
+  // x/y, so `world?.placements.size` is enough to catch every change that
+  // can actually move a name into or out of this list (a drop from the
+  // rail, or the dungeon toggle) while still not reacting to a plain
+  // reposition of an already-placed map, which never changes the key set
+  // or the size. (`world?.components` alone -- mirroring sizeByMap exactly
+  // -- would miss a drop from the rail: the dropped map's own component
+  // entry does not change, only which of world.placements' keys it's
+  // under, and the existing "lists singleton maps... lets one be dragged
+  // onto the canvas" test below catches that regression concretely.)
   const unplacedNames = useMemo(() => {
     if (!world) return [] as string[];
     const out: string[] = [];
@@ -273,12 +321,7 @@ export function WorldCanvas() {
       if (name && !world.placements.has(name)) out.push(name);
     }
     return out.sort();
-  }, [world]);
-
-  const filteredUnplaced = useMemo(() => {
-    const q = railFilter.trim().toLowerCase();
-    return q ? unplacedNames.filter((n) => n.toLowerCase().includes(q)) : unplacedNames;
-  }, [unplacedNames, railFilter]);
+  }, [world?.components, world?.placements.size]);
 
   // Deliberately NOT auto-fit-to-the-whole-world on load: culling is what
   // makes 1,209 maps usable at all, and fitting the whole world into view
@@ -468,12 +511,22 @@ export function WorldCanvas() {
     fetch("/api/world/placement", {
       method: "POST",
       body: JSON.stringify({ map, x, y }),
-    }).catch(() => {
-      // Best-effort: the optimistic local move already reflects the drag.
-      // A failed POST means it will not survive a reload, not that the
-      // in-session view is wrong -- there is nothing actionable to show the
-      // user mid-drag for a single-user dev server.
-    });
+    })
+      .then((r) => {
+        // Review fix: fetch only rejects on a network-level failure -- a
+        // 400 (e.g. a malformed body) or 500 (e.g. readSidecar's own I7
+        // refusal on a corrupted world.json) resolves normally and landed
+        // here silently discarded, with no banner and no console output.
+        if (!r.ok) throw new Error(`POST /api/world/placement -> ${r.status}`);
+      })
+      .catch((e: unknown) => {
+        // The optimistic local move already reflects the drag -- a failed
+        // POST means it will not survive a reload, so this goes through
+        // saveError (dismissible, does not disturb the canvas) rather than
+        // loadError (which claims the whole world failed to load, over a
+        // canvas that is working fine).
+        setSaveError(e instanceof Error ? e.message : String(e));
+      });
   };
 
   // Review fix: a plain mousedown used to start a map-drag whenever the
@@ -538,7 +591,10 @@ export function WorldCanvas() {
     setHover({ map: hit.map, component: componentOfPlacement(hit, world.components) });
   };
 
-  const onMouseUp = () => {
+  // Review fix: extracted so onMouseLeaveCanvas can run the identical
+  // commit check -- see its own comment below for why leaving the canvas
+  // mid-drag needs this too, not just mouseup.
+  const commitMapDrag = () => {
     const drag = dragRef.current;
     if (drag?.kind === "map") {
       const p = world?.placements.get(drag.map);
@@ -548,15 +604,59 @@ export function WorldCanvas() {
       // unchanged position and spend a write for nothing.
       if (p && (p.x !== drag.startTileX || p.y !== drag.startTileY)) postPlacement(drag.map, p.x, p.y);
     }
+  };
+
+  const onMouseUp = () => {
+    commitMapDrag();
     dragRef.current = null;
     setIsDraggingMap(false);
   };
 
+  // Review fix: releasing a Shift+drag outside the canvas (toward the side
+  // rail or the status bar is a completely normal gesture) used to clear
+  // the drag state here WITHOUT running onMouseUp's commit logic -- the map
+  // had already been moved visually (onMouseMove writes straight into
+  // `world`), so it looked placed, but nothing was ever POSTed, and it
+  // silently reverted on the next reload. Runs the exact same commit
+  // onMouseUp does before clearing state, so this outcome now matches an
+  // ordinary mouseup.
+  //
+  // onPointerDownCapture below (setPointerCapture) is the primary, more
+  // robust fix in a real browser: once captured, mousemove/mouseup stay
+  // targeted at the canvas even past its bounds -- or past the browser
+  // window entirely -- until the button is released, so mouseleave
+  // normally does not fire mid-drag at all, and the eventual commit
+  // reflects wherever the button actually came up, not just wherever the
+  // cursor first crossed the canvas edge. jsdom has no hit-testing/capture
+  // model, so fireEvent.mouseLeave fires unconditionally in tests
+  // regardless of any capture call -- which is exactly what makes this
+  // fallback the one half of the fix a unit test can pin (see the "not
+  // mouseup" test below); the capture half was confirmed by hand in a real
+  // browser instead (setPointerCapture actually invoked and accepted --
+  // canvas.hasPointerCapture(id) true immediately after a real pointerdown,
+  // false again after the matching pointerup).
   const onMouseLeaveCanvas = () => {
+    commitMapDrag();
     dragRef.current = null;
     setIsDraggingMap(false);
     setHover(null);
     setTooltip(null);
+  };
+
+  // Review fix: captures the pointer so this gesture's mousemove/mouseup
+  // (the browser's "compatibility mouse events" for the same pointer, per
+  // the Pointer Events spec) stay targeted at the canvas even once the
+  // cursor leaves its bounds -- or the browser window entirely -- until the
+  // button is released. Best-effort: absence or failure here just means
+  // this gesture falls back to onMouseLeaveCanvas's own commit-on-leave
+  // handling above, not a crash.
+  const onPointerDownCapture = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    try {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    } catch {
+      // Some environments (older browsers, non-mouse pointer types) may
+      // not support or allow capture here -- see the comment above.
+    }
   };
 
   const onDragOverCanvas = (e: React.DragEvent<HTMLCanvasElement>) => {
@@ -592,6 +692,7 @@ export function WorldCanvas() {
             type="button"
             role="switch"
             aria-checked={dungeonsOn}
+            aria-label="Dungeon auto-layout"
             className="world-canvas__switch"
             onClick={toggleDungeons}
           >
@@ -631,6 +732,7 @@ export function WorldCanvas() {
             className={stageClassName}
             width={viewport.w}
             height={viewport.h}
+            onPointerDown={onPointerDownCapture}
             onMouseDown={onMouseDown}
             onMouseMove={onMouseMove}
             onMouseUp={onMouseUp}
@@ -643,40 +745,22 @@ export function WorldCanvas() {
               {tooltip.text}
             </div>
           )}
+          {saveError && (
+            <div className="world-canvas__toast" role="alert">
+              <span className="world-canvas__toast-text">{saveError}</span>
+              <button
+                type="button"
+                className="world-canvas__toast-dismiss"
+                onClick={() => setSaveError(null)}
+                aria-label="Dismiss error"
+              >
+                ×
+              </button>
+            </div>
+          )}
         </div>
 
-        <aside className="world-canvas__rail" aria-label="Unplaced maps">
-          <div className="world-canvas__rail-header">
-            <span className="world-canvas__rail-title">Unplaced</span>
-            <span className="world-canvas__rail-count">{unplacedNames.length}</span>
-          </div>
-          <input
-            className="world-canvas__rail-filter"
-            placeholder="Filter…"
-            value={railFilter}
-            onChange={(e) => setRailFilter(e.target.value)}
-          />
-          {filteredUnplaced.length === 0 ? (
-            <p className="world-canvas__rail-empty">
-              {unplacedNames.length === 0 ? "Every map is placed." : `No matches for “${railFilter}”.`}
-            </p>
-          ) : (
-            <ul className="world-canvas__rail-list">
-              {filteredUnplaced.map((name) => (
-                <li key={name}>
-                  <button
-                    type="button"
-                    className="world-canvas__rail-item"
-                    draggable
-                    onDragStart={(e) => e.dataTransfer.setData("text/plain", name)}
-                  >
-                    {name}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </aside>
+        <UnplacedRail unplacedNames={unplacedNames} filter={railFilter} onFilterChange={setRailFilter} />
       </div>
 
       <div className="world-canvas__status">
@@ -697,6 +781,74 @@ export function WorldCanvas() {
     </section>
   );
 }
+
+interface UnplacedRailProps {
+  unplacedNames: string[];
+  filter: string;
+  onFilterChange: (value: string) => void;
+}
+
+/**
+ * Review fix: this used to be built inline inside WorldCanvas's own render,
+ * so canvas-state churn that has nothing to do with the rail -- pan and
+ * hover state, both updated at pointer frequency by onMouseMove -- forced a
+ * full re-render and re-reconciliation of all 1,028 <li> rows (the live
+ * corpus's unplaced-singleton count with the dungeon toggle off) on every
+ * single frame. That defeats Task 25's own "panning stays smooth"
+ * acceptance criterion in exactly the one mode (dungeons off) this rail
+ * exists to serve -- likely missed by prior spec-review passes because the
+ * default sidecar has dungeons ON, where the rail is empty.
+ *
+ * Wrapped in React.memo and given only the three props it actually needs
+ * (the raw unplaced-names list, the current filter string, and a
+ * filter-change callback -- NOT a pre-filtered list, so the filtering
+ * itself also lives here, out of WorldCanvas's own per-render work), so a
+ * pan or hover update -- which changes neither -- leaves this whole subtree
+ * untouched. `onFilterChange` must stay a `useState` setter passed straight
+ * through by its caller (never a fresh inline arrow function) for the memo
+ * comparison to actually hold across those unrelated re-renders.
+ */
+export const UnplacedRail = memo(function UnplacedRail({ unplacedNames, filter, onFilterChange }: UnplacedRailProps) {
+  const filtered = useMemo(() => {
+    const q = filter.trim().toLowerCase();
+    return q ? unplacedNames.filter((n) => n.toLowerCase().includes(q)) : unplacedNames;
+  }, [unplacedNames, filter]);
+
+  return (
+    <aside className="world-canvas__rail" aria-label="Unplaced maps">
+      <div className="world-canvas__rail-header">
+        <span className="world-canvas__rail-title">Unplaced</span>
+        <span className="world-canvas__rail-count">{unplacedNames.length}</span>
+      </div>
+      <input
+        className="world-canvas__rail-filter"
+        placeholder="Filter…"
+        value={filter}
+        onChange={(e) => onFilterChange(e.target.value)}
+      />
+      {filtered.length === 0 ? (
+        <p className="world-canvas__rail-empty">
+          {unplacedNames.length === 0 ? "Every map is placed." : `No matches for “${filter}”.`}
+        </p>
+      ) : (
+        <ul className="world-canvas__rail-list">
+          {filtered.map((name) => (
+            <li key={name}>
+              <button
+                type="button"
+                className="world-canvas__rail-item"
+                draggable
+                onDragStart={(e) => e.dataTransfer.setData("text/plain", name)}
+              >
+                {name}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </aside>
+  );
+});
 
 function drawTriangle(ctx: CanvasRenderingContext2D, cx: number, cy: number, size: number, pointDown: boolean, color: string): void {
   ctx.fillStyle = color;

@@ -51,3 +51,22 @@ export function parseBbox(value: string): Bbox {
   }
   return { x, y, w, h };
 }
+
+/**
+ * commander's `argParser` for `render-world --scale`. The exact
+ * unvalidated-input problem parseBbox exists to prevent, in the same
+ * command: `Number(opts.scale)` let "abc" become NaN (createRaster(NaN,
+ * NaN) is a raster with NaN dimensions, not a throw) and "0" become a
+ * silently empty 0x0 PNG, both failing confusingly downstream instead of
+ * naming --scale.
+ */
+export function parseScale(value: string): number {
+  if (!/^\d+$/.test(value)) {
+    throw new InvalidArgumentError(`--scale must be a positive integer, got ${JSON.stringify(value)}`);
+  }
+  const n = Number(value);
+  if (n <= 0) {
+    throw new InvalidArgumentError(`--scale must be a positive integer, got ${JSON.stringify(value)}`);
+  }
+  return n;
+}

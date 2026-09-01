@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, fireEvent, screen, waitFor, act } from "@testing-library/react";
 import { WorldCanvas } from "../src/components/WorldCanvas.js";
-import { computeFit } from "../src/components/WorldCanvas.js";
+import { computeFit, UnplacedRail } from "../src/components/WorldCanvas.js";
 
 /**
  * jsdom/testing-library's `fireEvent.drop(el, {clientX, clientY, ...})` does
@@ -496,6 +496,57 @@ describe("WorldCanvas", () => {
     expect(calls.some((c) => c.url === "/api/world/placement")).toBe(false);
   });
 
+  // Review fix: onMouseLeaveCanvas used to clear the drag state without
+  // running onMouseUp's commit logic -- the map had already been moved
+  // visually (onMouseMove writes straight into `world`), so it looked
+  // placed, but nothing was ever POSTed, and it silently reverted on the
+  // next reload. Dragging toward the side rail or the status bar (both
+  // just outside the canvas) is a completely normal gesture that ends
+  // exactly this way, with mouseleave firing instead of mouseup.
+  it("releasing a Shift+drag by leaving the canvas (not mouseup) still posts the new position", async () => {
+    const fixture = makeWorld({ placements: { Solo: { map: "Solo", x: 0, y: 0, width: 10, height: 10, component: 0 } } });
+    const { impl, calls } = makeFetchMock(fixture);
+    const { canvas } = await mountReady(impl);
+
+    // Same drag as "dragging a placed map posts its new position" above
+    // (grabbed 5 tiles in from Solo's origin, so it should land at
+    // (15,15)), but ended with mouseLeave instead of mouseUp.
+    fireEvent.mouseDown(canvas, { clientX: 5, clientY: 5, button: 0, shiftKey: true });
+    fireEvent.mouseMove(canvas, { clientX: 20, clientY: 20, shiftKey: true });
+    fireEvent.mouseLeave(canvas);
+
+    await waitFor(() => expect(calls.some((c) => c.url === "/api/world/placement")).toBe(true));
+    const post = calls.find((c) => c.url === "/api/world/placement")!;
+    expect(JSON.parse(String(post.init?.body))).toEqual({ map: "Solo", x: 15, y: 15 });
+  });
+
+  // Review fix: postPlacement used to only .catch() a network-level
+  // rejection -- fetch does not reject on a 4xx/5xx response, so a real
+  // server refusal (e.g. readSidecar's I7 refusal on a corrupted
+  // world.json) landed in .then and was silently discarded: no banner, no
+  // console output, and the drag just quietly failed to persist.
+  it("a failed placement POST surfaces a dismissible save error instead of failing silently", async () => {
+    const fixture = makeWorld({ placements: { Solo: { map: "Solo", x: 0, y: 0, width: 10, height: 10, component: 0 } } });
+    const { impl } = makeFetchMock(fixture);
+    const failing = vi.fn((url: string, init?: RequestInit) =>
+      url.startsWith("/api/world/placement")
+        ? Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({ error: "boom" }) } as Response)
+        : impl(url, init),
+    );
+    const { canvas } = await mountReady(failing);
+
+    fireEvent.mouseDown(canvas, { clientX: 5, clientY: 5, button: 0, shiftKey: true });
+    fireEvent.mouseMove(canvas, { clientX: 20, clientY: 20, shiftKey: true });
+    fireEvent.mouseUp(canvas);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toMatch(/api\/world\/placement/);
+    // Must not have landed in the SAME state loadError uses -- the canvas
+    // (already rendering Solo) is working fine, so nothing should claim
+    // the whole world failed to load.
+    expect(screen.queryByText(/Could not load the world/)).toBeNull();
+  });
+
   // -------------------------------------------------------------------
   // Dungeon toggle + side rail
   // -------------------------------------------------------------------
@@ -572,7 +623,7 @@ describe("WorldCanvas", () => {
     expect(screen.getByText(/dungeon auto-layout on/i)).toBeTruthy();
   });
 
-  it("a failed dungeon-layout POST reverts the switch instead of showing an unsaved state as saved", async () => {
+  it("a failed dungeon-layout POST reverts the switch instead of showing an unsaved state as saved, and surfaces a dismissible save error instead of a permanent load-error banner", async () => {
     const { impl } = makeFetchMock(makeWorld({ placements: {}, dungeonAutoLayout: false }));
     // Force every /api/world/dungeons call to fail, leaving /api/world
     // itself untouched.
@@ -592,6 +643,133 @@ describe("WorldCanvas", () => {
     // ...reverted once the POST is known to have failed, rather than left
     // showing "on" for a value that was never actually saved.
     await waitFor(() => expect(toggle.getAttribute("aria-checked")).toBe("false"));
+
+    // Review fix: this failure used to write into the SAME state slot as
+    // "the whole world failed to load" -- which only resets at the top of
+    // a SUCCESSFUL /api/world fetch, so a failed toggle used to show
+    // "Could not load the world: POST /api/world/dungeons -> 500" forever,
+    // over a fully working canvas. It must now surface as a separate,
+    // dismissible error instead.
+    expect(screen.queryByText(/Could not load the world/)).toBeNull();
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toMatch(/api\/world\/dungeons/);
+
+    fireEvent.click(screen.getByRole("button", { name: /dismiss/i }));
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  // Review fix: dungeonsPending (the optimistic echo of an in-flight POST)
+  // used to only ever be cleared on FAILURE -- a successful toggle left it
+  // set forever, permanently shadowing world.sidecarDungeonAutoLayout
+  // (dungeonsOn reads dungeonsPending first). Two rapid clicks resolving
+  // out of order is the realistic way this bites in the live app; isolated
+  // here without needing to engineer a real race: a POST that reports
+  // success but whose OWN refetch reports the server's real, disagreeing
+  // value -- exactly what the losing side of such a race looks like from
+  // the client's point of view. Pins the one mechanism the fix is about:
+  // does a successful refetch actually clear dungeonsPending?
+  it("clears the optimistic pending value once a successful toggle's refetch lands, instead of shadowing the server value forever", async () => {
+    const fixture = makeWorld({ placements: {}, dungeonAutoLayout: false });
+    const impl = vi.fn((url: string) => {
+      if (url.startsWith("/api/world/dungeons")) {
+        // Succeeds, but deliberately does NOT flip the fixture's own
+        // dungeonAutoLayout -- the next GET below still reports it false,
+        // standing in for the server's real, disagreeing truth.
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ ok: true }) } as Response);
+      }
+      if (url.startsWith("/api/world")) {
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(fixture) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected fetch ${url}`));
+    });
+    await mountReady(impl);
+
+    const toggle = await screen.findByRole("switch");
+    await waitFor(() => expect(toggle.getAttribute("aria-checked")).toBe("false"));
+
+    fireEvent.click(toggle);
+    // Instant optimistic feedback.
+    await waitFor(() => expect(toggle.getAttribute("aria-checked")).toBe("true"));
+    // The POST "succeeded" (no revert-on-failure path involved at all),
+    // but the refetch it triggers reports the server's real value is still
+    // false. Without the fix, dungeonsPending stays "true" forever and
+    // permanently shadows that real value; with the fix, it is cleared
+    // once the refetch lands, so the switch reflects the server's actual
+    // (disagreeing) state.
+    await waitFor(() => expect(toggle.getAttribute("aria-checked")).toBe("false"));
+  });
+
+  // -------------------------------------------------------------------
+  // Accessibility
+  // -------------------------------------------------------------------
+  // Review fix: the switch's only child was a decorative, textless thumb
+  // element, and the visible "Dungeon auto-layout on/off" text lives in a
+  // separate, unassociated sibling -- so the switch's computed accessible
+  // name was empty. packages/ui/DESIGN.md's accessibility baseline calls
+  // for state to be expressed in the DOM for assistive tech, not just
+  // visually next to it (aria-checked already covers the on/off part;
+  // this is the "what am I" part).
+  it("the dungeon toggle has an accessible name", async () => {
+    const { impl } = makeFetchMock(makeWorld({ placements: {} }));
+    await mountReady(impl);
+    expect(screen.getByRole("switch", { name: "Dungeon auto-layout" })).toBeTruthy();
+  });
+
+  // -------------------------------------------------------------------
+  // UnplacedRail extraction + memoization (side rail performance)
+  // -------------------------------------------------------------------
+  describe("UnplacedRail", () => {
+    // Review fix: this used to be built inline inside WorldCanvas's own
+    // render, so canvas-state churn that has nothing to do with the rail --
+    // panning and hovering, both firing at pointer frequency -- re-rendered
+    // and re-reconciled all 1,028 <li> rows on every frame. That defeated
+    // Task 25's own "panning stays smooth" acceptance criterion in exactly
+    // the one mode (dungeons off) the rail exists to serve.
+    //
+    // Whether React.memo's bail-out actually SKIPS calling the wrapped
+    // render function has no externally observable effect in jsdom that
+    // isn't ALSO produced by ordinary reconciliation quietly leaving
+    // unchanged DOM nodes alone -- so this pins the structural fact (memo()
+    // was actually applied, catching a regression where it is dropped) and
+    // relies on React's own documented memo() contract for the
+    // render-skipping behaviour itself: a memoized component's render
+    // function is not called again while its props are shallow-equal to
+    // the previous render, full stop, independent of what that function
+    // does internally.
+    it("is wrapped in React.memo", () => {
+      expect((UnplacedRail as unknown as { $$typeof?: symbol }).$$typeof).toBe(Symbol.for("react.memo"));
+    });
+
+    it("renders the unfiltered count, filters by substring, and reports filter changes via the callback", () => {
+      const onFilterChange = vi.fn();
+      const { rerender } = render(
+        <UnplacedRail unplacedNames={["Alpha", "Beta", "Gamma"]} filter="" onFilterChange={onFilterChange} />,
+      );
+      expect(screen.getByText("3")).toBeTruthy(); // the unfiltered count
+      expect(screen.getByRole("button", { name: "Alpha" })).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Beta" })).toBeTruthy();
+
+      fireEvent.change(screen.getByPlaceholderText("Filter…"), { target: { value: "al" } });
+      expect(onFilterChange).toHaveBeenCalledWith("al");
+
+      // Controlled component -- re-render with the new filter value, the
+      // same way WorldCanvas itself would once the callback updates its
+      // own railFilter state.
+      rerender(<UnplacedRail unplacedNames={["Alpha", "Beta", "Gamma"]} filter="al" onFilterChange={onFilterChange} />);
+      expect(screen.getByRole("button", { name: "Alpha" })).toBeTruthy();
+      expect(screen.queryByRole("button", { name: "Beta" })).toBeNull();
+      // The header count stays the UNFILTERED total, distinct from how
+      // many matched the filter.
+      expect(screen.getByText("3")).toBeTruthy();
+    });
+
+    it("shows a distinct empty state for zero unplaced maps vs zero filter matches", () => {
+      const { rerender } = render(<UnplacedRail unplacedNames={[]} filter="" onFilterChange={() => {}} />);
+      expect(screen.getByText("Every map is placed.")).toBeTruthy();
+
+      rerender(<UnplacedRail unplacedNames={["Alpha"]} filter="zzz" onFilterChange={() => {}} />);
+      expect(screen.getByText(/No matches for/)).toBeTruthy();
+    });
   });
 
   // -------------------------------------------------------------------

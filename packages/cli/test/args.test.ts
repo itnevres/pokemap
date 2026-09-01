@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { InvalidArgumentError } from "commander";
-import { parseBorder, parseBbox } from "../src/args.js";
+import { parseBorder, parseBbox, parseScale } from "../src/args.js";
 
 describe("parseBorder", () => {
   it("accepts non-negative integers", () => {
@@ -81,5 +81,34 @@ describe("parseBbox", () => {
   it("rejects a zero or negative width/height", () => {
     expect(() => parseBbox("0,0,0,400")).toThrow(InvalidArgumentError);
     expect(() => parseBbox("0,0,400,-1")).toThrow(InvalidArgumentError);
+  });
+});
+
+// Review fix: render-world's own `--scale` had the exact unvalidated-input
+// problem parseBbox exists to prevent, in the same command: `Number(opts.scale)`
+// let "abc" become NaN (createRaster(NaN, NaN) is a raster with NaN
+// dimensions, not a throw) and "0" become a silently empty 0x0 PNG, both
+// failing confusingly downstream instead of naming --scale.
+describe("parseScale", () => {
+  it("accepts a positive integer", () => {
+    expect(parseScale("4")).toBe(4);
+    expect(parseScale("16")).toBe(16);
+  });
+
+  it("rejects non-numeric input with a message naming the flag, not node:buffer or a NaN raster", () => {
+    expect(() => parseScale("abc")).toThrow(InvalidArgumentError);
+    expect(() => parseScale("abc")).toThrow(/--scale/);
+  });
+
+  it("rejects zero instead of silently producing a 0x0 raster", () => {
+    expect(() => parseScale("0")).toThrow(InvalidArgumentError);
+  });
+
+  it("rejects a negative value", () => {
+    expect(() => parseScale("-4")).toThrow(InvalidArgumentError);
+  });
+
+  it("rejects a fractional value instead of silently truncating it", () => {
+    expect(() => parseScale("1.5")).toThrow(InvalidArgumentError);
   });
 });

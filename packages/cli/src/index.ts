@@ -8,7 +8,8 @@ import { readSidecar } from "@pokemap/core/src/world/sidecar.js";
 import { createRaster, blitScaled } from "@pokemap/core/src/render/raster.js";
 import { encodePng } from "./png.js";
 import { resolveProject, layoutNameFor } from "./context.js";
-import { parseBorder, parseBbox } from "./args.js";
+import { parseBorder, parseBbox, parseScale } from "./args.js";
+import { resolvePlacementRect } from "./renderWorld.js";
 
 const program = new Command();
 program.name("pokemap").option("-p, --project <path>", "decomp root");
@@ -30,12 +31,12 @@ program
   .description("render a region of the stitched world to a PNG")
   .requiredOption("--bbox <x,y,w,h>", "region in tiles", parseBbox)
   .option("-o, --out <file>", "output path", "world.png")
-  .option("--scale <n>", "pixels per tile (16 = full size, 4 = overview)", "4")
+  .option("--scale <n>", "pixels per tile (16 = full size, 4 = overview)", parseScale, 4)
   .option("--no-dungeons", "exclude auto-placed dungeon maps")
-  .action((opts: { bbox: ReturnType<typeof parseBbox>; out: string; scale: string; dungeons: boolean }) => {
+  .action((opts: { bbox: ReturnType<typeof parseBbox>; out: string; scale: number; dungeons: boolean }) => {
     const proj = resolveProject(program.opts().project);
     const { x: bx, y: by, w: bw, h: bh } = opts.bbox;
-    const scale = Number(opts.scale);
+    const { scale } = opts;
 
     const world = buildWorld(proj);
     const sidecar = readSidecar(proj.paths.root);
@@ -48,18 +49,18 @@ program
     const dst = createRaster(bw * scale, bh * scale);
     let drawn = 0;
     for (const p of placements.values()) {
-      // A placement from applySidecar's fallback branch (component: -1, a
-      // stale or not-yet-placed manual entry -- see
-      // packages/core/test/world/sidecar.test.ts) carries width:0,
-      // height:0. sizeOfPlacement in WorldCanvas.tsx recovers this client-
-      // side from the map's own singleton component; this batch tool has
-      // no equivalent per-request cheap lookup, so it skips it instead --
-      // an honest "not rendered" rather than a NaN destination offset that
-      // silently paints nothing while still counting toward `drawn`.
-      if (p.width <= 0 || p.height <= 0) continue;
-      if (p.x + p.width <= bx || p.x >= bx + bw || p.y + p.height <= by || p.y >= by + bh) continue;
-      const layoutName = proj.layoutForMap(p.map).name;
-      blitScaled(dst, renderLayout(proj, layoutName), (p.x - bx) * scale, (p.y - by) * scale, scale / 16);
+      // Review fix: this used to skip every component:-1 placement (a
+      // stale or not-yet-clustered manual entry -- see
+      // packages/core/test/world/sidecar.test.ts) outright, reasoning
+      // there was no cheap way to size it. resolvePlacementRect recovers
+      // the real size via proj.layoutForMap instead (see its own doc
+      // comment for why that reasoning was wrong) -- null only for the
+      // genuinely unrecoverable case, a manual placement naming a map no
+      // longer in the project at all.
+      const rect = resolvePlacementRect(proj, p);
+      if (!rect) continue;
+      if (p.x + rect.width <= bx || p.x >= bx + bw || p.y + rect.height <= by || p.y >= by + bh) continue;
+      blitScaled(dst, renderLayout(proj, rect.layoutName), (p.x - bx) * scale, (p.y - by) * scale, scale / 16);
       drawn++;
     }
 
