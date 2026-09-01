@@ -81,6 +81,26 @@ function makeFetchMock(initial: WorldFixture) {
     if (url.startsWith("/api/world")) {
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(world) } as Response);
     }
+    // Task 29: WorldCanvas now fetches /api/coverage unconditionally on
+    // every mount (useCoverage). Left unhandled, the catch-all reject
+    // below fired it on EVERY test in this file -- not just ones that
+    // care about coverage -- populating coverageError and rendering a
+    // second role="alert" element that collided with saveError's own
+    // toast. Confirmed live: broke two unrelated dungeon/placement-POST
+    // tests with "Found multiple elements with the role alert". A
+    // minimal, well-shaped empty response is enough here -- no test in
+    // this file exercises the lens panel's own numbers.
+    if (url.startsWith("/api/coverage")) {
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({
+          mapsWithEncounters: 0, encounterTables: 0, mapsWithoutEncounters: [],
+          levelByMap: [], unusedSpecies: [],
+          byMethod: { land_mons: 0, water_mons: 0, rock_smash_mons: 0, fishing_mons: 0 },
+        }),
+      } as Response);
+    }
     return Promise.reject(new Error(`unexpected fetch ${url}`));
   });
   return { impl, calls, currentWorld: () => world };
@@ -679,6 +699,20 @@ describe("WorldCanvas", () => {
       }
       if (url.startsWith("/api/world")) {
         return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(fixture) } as Response);
+      }
+      // Same reason as makeFetchMock's own /api/coverage handler above --
+      // this test builds its own standalone mock rather than using
+      // makeFetchMock, so it needs the same stub independently.
+      if (url.startsWith("/api/coverage")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({
+            mapsWithEncounters: 0, encounterTables: 0, mapsWithoutEncounters: [],
+            levelByMap: [], unusedSpecies: [],
+            byMethod: { land_mons: 0, water_mons: 0, rock_smash_mons: 0, fishing_mons: 0 },
+          }),
+        } as Response);
       }
       return Promise.reject(new Error(`unexpected fetch ${url}`));
     });

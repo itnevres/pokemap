@@ -470,6 +470,18 @@ input {
   justify-content: center;
 }
 
+/* Review fix: a failed /api/coverage fetch replaces LensPanel with this,
+   rather than silently rendering the lens controls with a `?? 0` fallback
+   that would lie about "0 maps have no encounters". */
+.world-canvas__toolbar-error {
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  color: var(--danger);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .world-canvas__dungeon-label {
   font-size: var(--text-xs);
   color: var(--text-secondary);
@@ -1190,8 +1202,20 @@ input {
   z-index: 2;
 }
 
+/* Review fix: this had no opacity/alpha at all -- `lerpColor` (WorldCanvas.tsx)
+   returns solid `rgb()` and the empty-maps/method tints use solid
+   `var(--warn)`/`var(--encounter-*)`, so with only `position: absolute`
+   here the tint painted as a flat, fully opaque colour block over each
+   map, erasing its art rather than tinting it (confirmed live: turning on
+   level-curve made all 227 encounter-carrying maps indistinguishable flat
+   colour rectangles). DESIGN.md's own overlay precedent
+   (`--overlay-collision: rgba(220, 40, 40, 0.55)`) is semi-transparent for
+   exactly this reason -- 0.5 opacity here matches that precedent and,
+   confirmed live afterward, still shows the underlying map art clearly
+   through the tint. */
 .world-canvas__lens-tint {
   position: absolute;
+  opacity: 0.5;
 }
 
 .world-canvas__spotlight-dim {

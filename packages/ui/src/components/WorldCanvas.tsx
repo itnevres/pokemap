@@ -216,7 +216,20 @@ export function WorldCanvas() {
   // lenses' own numbers and (level-curve, empty-maps) their per-map
   // overlays below. Fetched once, like `world` above -- the project is
   // read-only for all of Plan 1 (I8), so this can never go stale.
-  const { data: coverageData } = useCoverage();
+  //
+  // Review fix: `error` used to be discarded entirely (destructured as
+  // just `{ data: coverageData }`), so a failed fetch left `coverageData`
+  // null forever and the toolbar's own `?? 0` fallback rendered "0 maps
+  // have no encounters" as if that were real data -- in precisely the
+  // copy this whole task is about, and exactly the class of bug this
+  // project already has a postmortem on not doing (Task 25's review: a
+  // fetch failure must surface, not get silently misrouted or dropped).
+  // `coverageError` is its own dedicated slot, mirroring `loadError`
+  // (the `/api/world` fetch) and `saveError` (placement/dungeon POSTs)
+  // below -- each fetch's failure gets its own named state here rather
+  // than overloading one of the others, the same separation this file's
+  // own review history already established for exactly this reason.
+  const { data: coverageData, error: coverageError } = useCoverage();
 
   // Measure the viewport, mirroring MapCanvas's established pattern exactly
   // (Task 21's canvas-blanking postmortem: a redraw effect that does not
@@ -503,12 +516,35 @@ export function WorldCanvas() {
     [coverageData],
   );
 
-  // mapName -> a blue(low)/red(high) colour string, normalised across
-  // every map that actually has a level (spec §9's "Blue is low, red is
-  // high"). Deliberately its OWN memo, keyed only on `coverageData` --
-  // coverageData is fetched once and never again (I8: the project is
-  // read-only for all of Plan 1), so this runs once, not on every
-  // pan/zoom frame the way lensOverlayEntries below necessarily does.
+  // mapName -> a blue(low)/red(high) colour string (spec §9's "Blue is
+  // low, red is high"). Deliberately its OWN memo, keyed only on
+  // `coverageData` -- coverageData is fetched once and never again (I8:
+  // the project is read-only for all of Plan 1), so this runs once, not on
+  // every pan/zoom frame the way lensOverlayEntries below necessarily
+  // does.
+  //
+  // Review fix: this used to be a linear min-max scale across all 227
+  // maps' averageLevel. That is technically correct but visually useless
+  // for the design goal spec §9 actually states -- "look for maps that
+  // jump several levels above their neighbours" -- because the corpus-wide
+  // range (~2.5 to ~66.35) is set almost entirely by a handful of
+  // post-game caves (Mt Silver, Cerulean Cave), while ~200 ordinary routes
+  // actually span only about 3-31. A linear scale anchored on the true
+  // extremes compresses that whole ordinary range into roughly the bottom
+  // third of the ramp, so neighbouring routes a few levels apart end up
+  // nearly the same shade -- confirmed live: Johto read as one shade with
+  // a couple of outliers, not a gradient.
+  //
+  // Fixed by colouring on PERCENTILE RANK among all 227 levels instead of
+  // the raw value: `t` is a map's position in the level-sorted list,
+  // normalised to [0, 1]. This is still monotonic in level -- the lowest-
+  // level map is always the most blue and the highest always the most
+  // red, so "blue is low, red is high" still holds map-to-map -- but it
+  // spreads colour across the FULL ramp everywhere real data actually
+  // sits, rather than letting a few extreme outliers compress everything
+  // else. Verified against the real corpus: Route101 (2.5, Johto's own
+  // start) to Route28 (30.8, Johto's last route before Kanto) spans 0% to
+  // 85% of the ramp by rank, vs only 0% to 44% under the old linear scale.
   //
   // Reads --overlay-elevation-low/--danger live via getComputedStyle, the
   // same call the conflict/dive/emerge badge colours in the draw effect
@@ -525,16 +561,25 @@ export function WorldCanvas() {
       (e): e is typeof e & { mapName: string } => !!e.mapName,
     );
     if (entries.length === 0) return out;
-    let min = Infinity, max = -Infinity;
-    for (const e of entries) {
-      min = Math.min(min, e.averageLevel);
-      max = Math.max(max, e.averageLevel);
-    }
+    const sortedLevels = entries.map((e) => e.averageLevel).sort((a, b) => a - b);
+    const n = sortedLevels.length;
+    // Lowest index whose level is >= `level` -- a plain binary search
+    // (sortedLevels is sorted ascending), not a linear scan, since this
+    // runs once per entry (227 times) against a 227-length array.
+    const rankOf = (level: number): number => {
+      let lo = 0, hi = n;
+      while (lo < hi) {
+        const mid = (lo + hi) >>> 1;
+        if (sortedLevels[mid]! < level) lo = mid + 1;
+        else hi = mid;
+      }
+      return lo;
+    };
     const style = typeof getComputedStyle === "function" ? getComputedStyle(document.documentElement) : null;
     const low = parseHexColor(style?.getPropertyValue("--overlay-elevation-low").trim() || "#3b82f6");
     const high = parseHexColor(style?.getPropertyValue("--danger").trim() || "#ef4444");
     for (const e of entries) {
-      const t = max > min ? (e.averageLevel - min) / (max - min) : 0.5;
+      const t = n > 1 ? rankOf(e.averageLevel) / (n - 1) : 0.5;
       out.set(e.mapName, lerpColor(low, high, t));
     }
     return out;
@@ -938,15 +983,28 @@ export function WorldCanvas() {
         </div>
         <div className="world-canvas__toolbar-group world-canvas__toolbar-group--grow">
           <SpeciesSpotlight onHits={setSpotlightHits} />
-          <LensPanel
-            active={lens}
-            onChange={setLens}
-            summary={{
-              emptyMaps: coverageData?.mapsWithoutEncounters.length ?? 0,
-              unusedSpecies: coverageData?.unusedSpecies.length ?? 0,
-            }}
-            onListEmptyMaps={focusEmptyMaps}
-          />
+          {/* Review fix: a failed /api/coverage fetch used to fall through
+              to LensPanel anyway via `?? 0`, rendering "0 maps have no
+              encounters" as if that were a real, checked answer. A failed
+              fetch replaces the lens controls with a visible error instead
+              -- SpeciesSpotlight above is unaffected (it hits
+              /api/where/:species directly, not /api/coverage), so a
+              coverage failure degrades only the lenses, not the spotlight. */}
+          {coverageError ? (
+            <span className="world-canvas__toolbar-error" role="alert">
+              Coverage lenses unavailable: {coverageError}
+            </span>
+          ) : (
+            <LensPanel
+              active={lens}
+              onChange={setLens}
+              summary={{
+                emptyMaps: coverageData?.mapsWithoutEncounters.length ?? 0,
+                unusedSpecies: coverageData?.unusedSpecies.length ?? 0,
+              }}
+              onListEmptyMaps={focusEmptyMaps}
+            />
+          )}
         </div>
         <div className="world-canvas__toolbar-group">
           <span className="world-canvas__zoom-readout">{Math.round((zoom / TILE_PX) * 100)}%</span>
