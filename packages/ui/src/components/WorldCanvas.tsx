@@ -57,7 +57,11 @@ interface ImageCacheEntry {
 
 type DragState =
   | { kind: "pan"; startX: number; startY: number; startPan: Pan }
-  | { kind: "map"; map: string; grabDX: number; grabDY: number }
+  // startTileX/Y is the placement's OWN position at the moment the drag
+  // began, kept so mouseup can tell "did this actually move to a
+  // different tile" from "the user grabbed it and let go again" -- see
+  // onMouseUp's review-fix comment.
+  | { kind: "map"; map: string; grabDX: number; grabDY: number; startTileX: number; startTileY: number }
   | null;
 
 interface HoverInfo {
@@ -150,7 +154,17 @@ export function WorldCanvas() {
 
   const [world, setWorld] = useState<WorldState | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [dungeonsOverride, setDungeonsOverride] = useState<boolean | null>(null);
+  // Review fix: this used to be a purely local override that only changed
+  // the query string on the NEXT fetch -- nothing ever persisted
+  // sidecar.dungeonAutoLayout, so a reload silently discarded it, even
+  // though Step 5 calls this "a visible switch for dungeonAutoLayout" and
+  // that field exists specifically to be persisted, the same way manual
+  // placements are. dungeonsOn is now derived purely from the server's own
+  // sidecar value; dungeonsPending is only a same-frame optimistic echo of
+  // an in-flight POST, cleared on failure so a rejected write doesn't leave
+  // the switch showing something that was never actually saved.
+  const [dungeonsPending, setDungeonsPending] = useState<boolean | null>(null);
+  const [refetchGen, setRefetchGen] = useState(0);
   const [viewport, setViewport] = useState<Viewport>({ w: 0, h: 0 });
   const [pan, setPan] = useState<Pan>({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
@@ -160,7 +174,7 @@ export function WorldCanvas() {
   const [tooltip, setTooltip] = useState<TooltipInfo | null>(null);
   const [isDraggingMap, setIsDraggingMap] = useState(false);
 
-  const dungeonsOn = dungeonsOverride ?? world?.sidecarDungeonAutoLayout ?? true;
+  const dungeonsOn = dungeonsPending ?? world?.sidecarDungeonAutoLayout ?? true;
 
   // Measure the viewport, mirroring MapCanvas's established pattern exactly
   // (Task 21's canvas-blanking postmortem: a redraw effect that does not
@@ -179,14 +193,17 @@ export function WorldCanvas() {
     };
   }, []);
 
-  // Fetch /api/world. Omits ?dungeons= until the user actually touches the
-  // toggle, so the first load honours whatever the sidecar has stored
-  // rather than silently overriding it with a hardcoded default.
+  // Fetch /api/world. No ?dungeons= override here -- the toggle now
+  // persists to sidecar.dungeonAutoLayout (see toggleDungeons below), so a
+  // plain fetch always reflects whatever was last saved, exactly like a
+  // real reload would. refetchGen exists only to give this effect a
+  // dependency to re-run on after that POST succeeds; it carries no data
+  // of its own. `/api/world?dungeons=` itself is unchanged and still used
+  // by the CLI's --no-dungeons for a one-off, non-persisting override.
   useEffect(() => {
     let cancelled = false;
     setLoadError(null);
-    const qs = dungeonsOverride === null ? "" : `?dungeons=${dungeonsOverride ? 1 : 0}`;
-    fetch(`/api/world${qs}`)
+    fetch("/api/world")
       .then((r) => {
         if (!r.ok) throw new Error(`GET /api/world -> ${r.status}`);
         return r.json() as Promise<WorldPayload>;
@@ -208,7 +225,28 @@ export function WorldCanvas() {
     return () => {
       cancelled = true;
     };
-  }, [dungeonsOverride]);
+  }, [refetchGen]);
+
+  // Persists the toggle to sidecar.dungeonAutoLayout (POST
+  // /api/world/dungeons, mirroring /api/world/placement's own shape) and
+  // refetches once it lands, so the placements shown actually reflect the
+  // new saved state -- not just the switch's own visual position.
+  // dungeonsPending gives instant feedback on the switch itself without
+  // waiting on the round trip; it is cleared on failure so a rejected
+  // write does not leave the switch lying about what got saved.
+  const toggleDungeons = () => {
+    const next = !dungeonsOn;
+    setDungeonsPending(next);
+    fetch("/api/world/dungeons", { method: "POST", body: JSON.stringify({ enabled: next }) })
+      .then((r) => {
+        if (!r.ok) throw new Error(`POST /api/world/dungeons -> ${r.status}`);
+        setRefetchGen((g) => g + 1);
+      })
+      .catch((e: unknown) => {
+        setDungeonsPending(null);
+        setLoadError(e instanceof Error ? e.message : String(e));
+      });
+  };
 
   // Every map's true tile size, independent of which placements are
   // currently shown -- world.components lists every map in the project
@@ -438,14 +476,25 @@ export function WorldCanvas() {
     });
   };
 
+  // Review fix: a plain mousedown used to start a map-drag whenever the
+  // cursor happened to be over a placement, with no way to tell that
+  // apart from "the user just wants to pan from here" -- and placements
+  // cover most of the viewport (measured live: ~35% at the default zoom,
+  // ~100% once panned inside a landmass), so panning was effectively
+  // broken exactly where it matters most. A plain drag now ALWAYS pans,
+  // matching every other map-like tool (Google Maps, Porymap's own
+  // connection editor); moving a placement is the special case and
+  // requires holding Shift while the drag starts over it -- surfaced to
+  // the user via the hover status strip's "Shift+drag to move" hint
+  // below, not left undiscoverable.
   const onMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (e.button !== 0) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
     const w = screenToWorld(sx, sy);
-    const hit = hitTest(w.x, w.y);
+    const hit = e.shiftKey ? hitTest(w.x, w.y) : null;
     if (hit) {
-      dragRef.current = { kind: "map", map: hit.map, grabDX: w.x - hit.x, grabDY: w.y - hit.y };
+      dragRef.current = { kind: "map", map: hit.map, grabDX: w.x - hit.x, grabDY: w.y - hit.y, startTileX: hit.x, startTileY: hit.y };
       setIsDraggingMap(true);
     } else {
       dragRef.current = { kind: "pan", startX: e.clientX, startY: e.clientY, startPan: pan };
@@ -493,7 +542,11 @@ export function WorldCanvas() {
     const drag = dragRef.current;
     if (drag?.kind === "map") {
       const p = world?.placements.get(drag.map);
-      if (p) postPlacement(drag.map, p.x, p.y);
+      // Review fix: only write when the placement actually landed on a
+      // different tile than it started on -- a Shift+click (or a Shift+drag
+      // that rounds back to the same tile) must not silently POST an
+      // unchanged position and spend a write for nothing.
+      if (p && (p.x !== drag.startTileX || p.y !== drag.startTileY)) postPlacement(drag.map, p.x, p.y);
     }
     dragRef.current = null;
     setIsDraggingMap(false);
@@ -540,7 +593,7 @@ export function WorldCanvas() {
             role="switch"
             aria-checked={dungeonsOn}
             className="world-canvas__switch"
-            onClick={() => setDungeonsOverride(!dungeonsOn)}
+            onClick={toggleDungeons}
           >
             <span className="world-canvas__switch-thumb" />
           </button>
@@ -635,6 +688,7 @@ export function WorldCanvas() {
           <span className="world-canvas__status-item world-canvas__hover">
             {hover.map}
             {hover.component ? ` · ${hover.component.maps.length}-map component` : " · manual placement (unknown component)"}
+            {" · Shift+drag to move"}
           </span>
         ) : (
           <span className="world-canvas__status-item world-canvas__hover world-canvas__hover--empty">Hover the world…</span>

@@ -82,4 +82,40 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("world api", () => {
       else writeFileSync(sidecarPath, before);
     }
   }, 300_000);
+
+  // Review fix: the world-canvas dungeon-layout switch previously only
+  // changed a local query string used for its own next fetch -- nothing
+  // ever persisted sidecar.dungeonAutoLayout, so a reload silently
+  // discarded it. Same restore-afterward discipline as the placement
+  // persistence test above.
+  it("persists the dungeon-layout flag, reflected in the next GET /api/world's sidecar", async () => {
+    const sidecarPath = projectPaths(SUBJECT_ROOT).sidecar;
+    const before = existsSync(sidecarPath) ? readFileSync(sidecarPath, "utf8") : null;
+
+    try {
+      const flipped = await (await fetch(`http://127.0.0.1:${s.port}/api/world`)).json() as any;
+      const target = !flipped.sidecar.dungeonAutoLayout;
+
+      const post = await fetch(`http://127.0.0.1:${s.port}/api/world/dungeons`, {
+        method: "POST",
+        body: JSON.stringify({ enabled: target }),
+      });
+      expect(post.status).toBe(200);
+      expect(await post.json()).toEqual({ ok: true });
+
+      const after = await (await fetch(`http://127.0.0.1:${s.port}/api/world`)).json() as any;
+      expect(after.sidecar.dungeonAutoLayout).toBe(target);
+    } finally {
+      if (before === null) rmSync(sidecarPath, { force: true });
+      else writeFileSync(sidecarPath, before);
+    }
+  }, 300_000);
+
+  it("400s a malformed dungeon-layout body instead of hanging the request", async () => {
+    const r = await fetch(`http://127.0.0.1:${s.port}/api/world/dungeons`, {
+      method: "POST",
+      body: JSON.stringify({ enabled: "yes" }), // string, not boolean
+    });
+    expect(r.status).toBe(400);
+  }, 300_000);
 });

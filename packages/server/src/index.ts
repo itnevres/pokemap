@@ -170,6 +170,35 @@ export async function createServer(opts: { projectPath: string; port?: number })
           });
       }
 
+      // Review fix: the dungeon-layout switch (packages/ui's WorldCanvas)
+      // only ever changed the query string used for its own next fetch --
+      // nothing persisted sidecar.dungeonAutoLayout, so a reload silently
+      // discarded it. Mirrors /api/world/placement's own shape exactly
+      // (JSON-parse guard, shape guard, read-mutate-write, outer .catch()
+      // for the same "runs after the try/catch below has returned" reason).
+      if (url.pathname === "/api/world/dungeons" && req.method === "POST") {
+        return readBody(req)
+          .then((body) => {
+            let parsed: { enabled?: unknown };
+            try {
+              parsed = JSON.parse(body) as typeof parsed;
+            } catch (e) {
+              return send(400, { error: `invalid JSON body: ${(e as Error).message}` });
+            }
+            if (typeof parsed.enabled !== "boolean") {
+              return send(400, { error: `expected { enabled: boolean }, got ${body}` });
+            }
+            const sidecar = readSidecar(project.paths.root);
+            sidecar.dungeonAutoLayout = parsed.enabled;
+            writeSidecar(project.paths.root, sidecar);
+            return send(200, { ok: true });
+          })
+          .catch((e: unknown) => {
+            console.error(e);
+            send(500, { error: e instanceof Error ? e.message : String(e) });
+          });
+      }
+
       return send(404, { error: "not found" });
     } catch (e) {
       console.error(e);

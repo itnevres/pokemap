@@ -73,6 +73,11 @@ function makeFetchMock(initial: WorldFixture) {
       } } };
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ ok: true }) } as Response);
     }
+    if (url.startsWith("/api/world/dungeons")) {
+      const body = JSON.parse(String(init?.body)) as { enabled: boolean };
+      world = { ...world, sidecar: { ...world.sidecar, dungeonAutoLayout: body.enabled } };
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ ok: true }) } as Response);
+    }
     if (url.startsWith("/api/world")) {
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(world) } as Response);
     }
@@ -405,9 +410,11 @@ describe("WorldCanvas", () => {
 
     // Grab a point inside Solo (its rect is [0,10)x[0,10)) and drop it at
     // world (20,20) -- grabbed 5 tiles in from its origin, so it should
-    // land at (15,15), not snap its origin to the cursor.
-    fireEvent.mouseDown(canvas, { clientX: 5, clientY: 5, button: 0 });
-    fireEvent.mouseMove(canvas, { clientX: 20, clientY: 20 });
+    // land at (15,15), not snap its origin to the cursor. shiftKey is
+    // required (review fix): a plain drag over a placement pans instead --
+    // see the "plain drag over a placed map pans" test below.
+    fireEvent.mouseDown(canvas, { clientX: 5, clientY: 5, button: 0, shiftKey: true });
+    fireEvent.mouseMove(canvas, { clientX: 20, clientY: 20, shiftKey: true });
     fireEvent.mouseUp(canvas);
 
     await waitFor(() => expect(calls.some((c) => c.url === "/api/world/placement")).toBe(true));
@@ -424,6 +431,69 @@ describe("WorldCanvas", () => {
 
     // At zoom=1, pan={0,0}: Solo at (15,15) draws at destination (15,15).
     expect(after.stageCtx.drawImage.mock.calls.at(-1)!.slice(1, 3)).toEqual([15, 15]);
+  });
+
+  // Review fix: a plain mousedown+drag used to start a map-drag whenever
+  // the cursor happened to land over a placement -- and placements cover
+  // most of the viewport (measured live: ~35% at the default zoom, ~100%
+  // once panned inside a landmass), so panning was effectively broken
+  // exactly where it matters, and every accidental pan-that-became-a-drag
+  // permanently POSTed a manual placement with no undo.
+  it("a plain drag (no Shift) starting over a placed map pans the view instead of moving it, and never posts", async () => {
+    // Two placements: Solo (under the drag's start point) and Other (well
+    // away from it). A genuine pan moves BOTH by the same screen delta,
+    // since panning shifts the whole view -- the old bug moved only Solo
+    // (reassigning its own x/y) and left Other's drawn position untouched,
+    // which is what actually tells the two apart. Checking only Solo's own
+    // drawn position cannot distinguish them: dragging either the view or
+    // Solo alone by the same mouse delta moves Solo on screen by the exact
+    // same amount.
+    const fixture = makeWorld({
+      placements: {
+        Solo: { map: "Solo", x: 0, y: 0, width: 10, height: 10, component: 0 },
+        Other: { map: "Other", x: 50, y: 0, width: 10, height: 10, component: 1 },
+      },
+    });
+    const { impl, calls } = makeFetchMock(fixture);
+    const { canvas, stageCtx } = await mountReady(impl);
+    for (const img of FakeImage.instances) act(() => img.onload?.());
+    await waitFor(() => expect(stageCtx.drawImage).toHaveBeenCalled());
+
+    // Sanity check before dragging: Solo (dx=0) and Other (dx=50) both
+    // drawn at their unpanned positions.
+    expect(stageCtx.drawImage.mock.calls.some((c) => c[1] === 0 && c[2] === 0 && c[3] === 10)).toBe(true);
+    expect(stageCtx.drawImage.mock.calls.some((c) => c[1] === 50 && c[2] === 0 && c[3] === 10)).toBe(true);
+
+    // Grab a point inside Solo -- no shiftKey -- and drag by (20,20).
+    fireEvent.mouseDown(canvas, { clientX: 5, clientY: 5, button: 0 });
+    fireEvent.mouseMove(canvas, { clientX: 25, clientY: 25 });
+    // Other's dx: 50 unpanned -> 70 once the WHOLE VIEW has panned by +20.
+    await waitFor(() => {
+      const call = stageCtx.drawImage.mock.calls.find((c) => c[1] === 70 && c[2] === 20);
+      expect(call).toBeTruthy();
+    });
+    // And Solo panned by the identical delta, confirming this is one
+    // consistent view pan, not a coincidence of Other's own math.
+    expect(stageCtx.drawImage.mock.calls.find((c) => c[1] === 20 && c[2] === 20 && c[3] === 10)).toBeTruthy();
+    fireEvent.mouseUp(canvas);
+
+    // The whole point: this never touched Solo's own placement, so nothing
+    // was ever posted.
+    expect(calls.some((c) => c.url === "/api/world/placement")).toBe(false);
+  });
+
+  it("Shift+mousedown on a placement with no real movement does not post (a click, not a drag)", async () => {
+    // Defense in depth alongside the Shift requirement above: even an
+    // intentional Shift+grab must not write an unchanged position, so a
+    // Shift+click is never mistaken for "the user confirmed a move".
+    const fixture = makeWorld({ placements: { Solo: { map: "Solo", x: 0, y: 0, width: 10, height: 10, component: 0 } } });
+    const { impl, calls } = makeFetchMock(fixture);
+    const { canvas } = await mountReady(impl);
+
+    fireEvent.mouseDown(canvas, { clientX: 5, clientY: 5, button: 0, shiftKey: true });
+    fireEvent.mouseUp(canvas);
+
+    expect(calls.some((c) => c.url === "/api/world/placement")).toBe(false);
   });
 
   // -------------------------------------------------------------------
@@ -463,9 +533,19 @@ describe("WorldCanvas", () => {
     await waitFor(() => expect(screen.queryByRole("button", { name: "Hidden" })).toBeNull());
   });
 
-  it("the dungeon-layout switch reflects the sidecar's stored state and toggles on click", async () => {
-    const { impl } = makeFetchMock(makeWorld({ placements: {}, dungeonAutoLayout: false }));
-    await mountReady(impl);
+  // Review fix: this used to only assert that a click flipped the switch's
+  // own local state and that a second fetch fired -- neither of which
+  // would have caught the actual bug (nothing ever POSTed to persist
+  // sidecar.dungeonAutoLayout, so a reload silently discarded it). This
+  // version pins the actual persistence call's body, then proves survival
+  // across a REAL reload the same way the drag-to-place test does:
+  // unmount and remount against the same stateful mock, which only
+  // reflects the new value because the mock's own /api/world/dungeons
+  // handler wrote it back into the sidecar it serves on the next GET --
+  // exactly mirroring what the real server does.
+  it("the dungeon-layout switch persists to the sidecar and survives a reload", async () => {
+    const { impl, calls } = makeFetchMock(makeWorld({ placements: {}, dungeonAutoLayout: false }));
+    const { unmount } = await mountReady(impl);
 
     const toggle = await screen.findByRole("switch");
     await waitFor(() => expect(toggle.getAttribute("aria-checked")).toBe("false"));
@@ -475,12 +555,43 @@ describe("WorldCanvas", () => {
     await waitFor(() => expect(toggle.getAttribute("aria-checked")).toBe("true"));
     expect(screen.getByText(/dungeon auto-layout on/i)).toBeTruthy();
 
-    // The click also changes dungeonsOverride, which re-fires /api/world --
-    // wait for that second request to actually land before the test ends,
-    // or its resolution (and the resulting re-render/redraw) lands after
-    // this test's own afterEach has restored the real, unmocked
-    // HTMLCanvasElement.getContext, which jsdom logs a warning for.
-    await waitFor(() => expect(impl).toHaveBeenCalledTimes(2));
+    // The actual persistence call, not just the switch's own local echo of
+    // it -- dropping this POST entirely would still flip the switch
+    // visually (dungeonsPending) and would previously have passed this
+    // test right up to here.
+    await waitFor(() => expect(calls.some((c) => c.url === "/api/world/dungeons")).toBe(true));
+    const post = calls.find((c) => c.url === "/api/world/dungeons")!;
+    expect(JSON.parse(String(post.init?.body))).toEqual({ enabled: true });
+
+    // Reload: a fresh mount reads the switch's state from the server's own
+    // sidecar, not from anything client-side left over from the click.
+    unmount();
+    await mountReady(impl);
+    const reloadedToggle = await screen.findByRole("switch");
+    expect(reloadedToggle.getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByText(/dungeon auto-layout on/i)).toBeTruthy();
+  });
+
+  it("a failed dungeon-layout POST reverts the switch instead of showing an unsaved state as saved", async () => {
+    const { impl } = makeFetchMock(makeWorld({ placements: {}, dungeonAutoLayout: false }));
+    // Force every /api/world/dungeons call to fail, leaving /api/world
+    // itself untouched.
+    const failing = vi.fn((url: string, init?: RequestInit) =>
+      url.startsWith("/api/world/dungeons")
+        ? Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({ error: "boom" }) } as Response)
+        : impl(url, init),
+    );
+    await mountReady(failing);
+
+    const toggle = await screen.findByRole("switch");
+    await waitFor(() => expect(toggle.getAttribute("aria-checked")).toBe("false"));
+
+    fireEvent.click(toggle);
+    // Instant optimistic feedback...
+    await waitFor(() => expect(toggle.getAttribute("aria-checked")).toBe("true"));
+    // ...reverted once the POST is known to have failed, rather than left
+    // showing "on" for a value that was never actually saved.
+    await waitFor(() => expect(toggle.getAttribute("aria-checked")).toBe("false"));
   });
 
   // -------------------------------------------------------------------
