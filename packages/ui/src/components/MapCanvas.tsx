@@ -212,15 +212,33 @@ export function MapCanvas({ mapName, data }: MapCanvasProps) {
     return c ? [c.width / 2, c.height / 2] : [0, 0];
   };
 
-  const onWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
-    e.preventDefault();
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - rect.left;
-    const y = e.clientY - rect.top;
-    const idx = ZOOM_LEVELS.indexOf(zoom);
-    const nextIdx = e.deltaY < 0 ? Math.min(ZOOM_LEVELS.length - 1, idx + 1) : Math.max(0, idx - 1);
-    applyZoom(ZOOM_LEVELS[nextIdx]!, x, y);
-  };
+  // A NATIVE listener with { passive: false }, not React's onWheel prop.
+  // React attaches wheel listeners as passive by default (for scroll
+  // performance), which makes e.preventDefault() inside a React onWheel
+  // handler a silent no-op -- confirmed against the real running app, not
+  // hypothetical: it logs "Unable to preventDefault inside passive event
+  // listener invocation" and, more importantly, the PAGE scrolls underneath
+  // the canvas at the same time the canvas is trying to zoom. Same defect,
+  // same fix, as WorldCanvas.tsx's own wheel handler (Task 25) -- this file
+  // predates that fix and carried the identical bug. No jsdom-based test
+  // catches this (jsdom does not enforce passive listener semantics the way
+  // a real browser does), which is exactly why this project's own
+  // test-design rules call for actually running the UI.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const handler = (e: WheelEvent) => {
+      e.preventDefault();
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      const idx = ZOOM_LEVELS.indexOf(zoom);
+      const nextIdx = e.deltaY < 0 ? Math.min(ZOOM_LEVELS.length - 1, idx + 1) : Math.max(0, idx - 1);
+      applyZoom(ZOOM_LEVELS[nextIdx]!, x, y);
+    };
+    canvas.addEventListener("wheel", handler, { passive: false });
+    return () => canvas.removeEventListener("wheel", handler);
+  }, [zoom]);
 
   const hoverAt = (clientX: number, clientY: number) => {
     const canvas = canvasRef.current;
@@ -349,7 +367,6 @@ export function MapCanvas({ mapName, data }: MapCanvasProps) {
           className="map-canvas__stage"
           width={viewport.w || pixelWidth}
           height={viewport.h || pixelHeight}
-          onWheel={onWheel}
           onMouseDown={onMouseDown}
           onMouseMove={onMouseMove}
           onMouseUp={onMouseUp}
