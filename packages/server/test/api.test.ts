@@ -197,4 +197,42 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("server", () => {
   it("404s an unknown map for /api/encounters too", async () => {
     expect((await get("/api/encounters/NoSuchMap")).status).toBe(404);
   });
+
+  it("returns coverage summary counts, and resolves a map name onto each levelByMap entry", async () => {
+    const body = await (await get("/api/coverage")).json() as any;
+    // Same real numbers packages/core/test/analyse/coverage.test.ts pins
+    // directly against coverage() -- this route is a thin wire wrapper
+    // around that exact function, so these must agree.
+    expect(body.encounterTables).toBe(497);
+    expect(body.mapsWithEncounters).toBe(227);
+    expect(body.mapsWithoutEncounters.length).toBe(982);
+    expect(body.unusedSpecies).toContain("SPECIES_ABOMASNOW");
+
+    // The one thing this route adds beyond coverage() itself: mapName
+    // resolved onto every levelByMap entry, since the world view keys its
+    // placements by map NAME, not mapId (world/connections.ts's own
+    // Placement.map) -- coverage()'s own levelByMap is keyed by mapId only.
+    const route101 = body.levelByMap.find((m: any) => m.mapId === "MAP_ROUTE101");
+    expect(route101).toBeDefined();
+    expect(route101.mapName).toBe("Route101");
+    expect(route101.averageLevel).toBeGreaterThan(1);
+  });
+
+  it("finds where a species appears, case-insensitively and with or without the SPECIES_ prefix", async () => {
+    const body = await (await get("/api/where/ESPEON")).json() as any;
+    const route101 = body.find((h: any) => h.mapId === "MAP_ROUTE101");
+    expect(route101).toBeDefined();
+    expect(route101.method).toBe("land_mons");
+    expect(route101.percent).toBeCloseTo(100, 5);
+    expect(route101.minLevel).toBe(2);
+
+    expect(await (await get("/api/where/espeon")).json()).toEqual(body);
+    expect(await (await get("/api/where/SPECIES_ESPEON")).json()).toEqual(body);
+  });
+
+  it("returns an empty array for a species that appears nowhere, not a 404", async () => {
+    const r = await get("/api/where/NOT_A_REAL_MON");
+    expect(r.status).toBe(200);
+    expect(await r.json()).toEqual([]);
+  });
 });

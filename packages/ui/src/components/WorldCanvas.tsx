@@ -1,6 +1,10 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Placement, Component as WorldComponentInfo, Conflict, VerticalLink } from "@pokemap/core/src/world/connections.js";
+import type { SpeciesHit } from "@pokemap/core/src/analyse/coverage.js";
 import { EncounterGutter, type EncounterGutterMapEntry, type EncounterGutterRow } from "./EncounterGutter.js";
+import { SpeciesSpotlight } from "./SpeciesSpotlight.js";
+import { LensPanel, type LensId } from "./LensPanel.js";
+import { useCoverage } from "../hooks/useCoverage.js";
 
 /** The pixel size a placement's PNG renders at natively (`renderLayout`,
  *  border 0): 16px per tile, same constant the CLI's `render-world --scale
@@ -199,8 +203,20 @@ export function WorldCanvas() {
   const [hover, setHover] = useState<HoverInfo | null>(null);
   const [tooltip, setTooltip] = useState<TooltipInfo | null>(null);
   const [isDraggingMap, setIsDraggingMap] = useState(false);
+  // Task 29: species spotlight + coverage lenses. `spotlightHits` is
+  // SpeciesSpotlight's own onHits contract exactly (null = no active
+  // search, [] = searched and found nowhere, otherwise the hit array) --
+  // see that component's doc comment for why the three states matter.
+  const [spotlightHits, setSpotlightHits] = useState<SpeciesHit[] | null>(null);
+  const [lens, setLens] = useState<LensId | null>(null);
 
   const dungeonsOn = dungeonsPending ?? world?.sidecarDungeonAutoLayout ?? true;
+
+  // /api/coverage backs both the level-curve/empty-maps/unused-species
+  // lenses' own numbers and (level-curve, empty-maps) their per-map
+  // overlays below. Fetched once, like `world` above -- the project is
+  // read-only for all of Plan 1 (I8), so this can never go stale.
+  const { data: coverageData } = useCoverage();
 
   // Measure the viewport, mirroring MapCanvas's established pattern exactly
   // (Task 21's canvas-blanking postmortem: a redraw effect that does not
@@ -469,6 +485,160 @@ export function WorldCanvas() {
       };
     });
   }, [visible, sizeByMap, pan, zoom, encounterVersion]);
+
+  // Task 29: species spotlight + coverage lenses. Both are DOM overlays,
+  // not canvas draw calls -- the same "presentational rects positioned by
+  // the exact dx/dy/dw/dh formula the encounter gutter's own `rect` prop
+  // uses" split as encounterEntries just above, kept out of the imperative
+  // draw effect below (already dense, and already the subject of several
+  // review-fix postmortems in this file) rather than adding a second kind
+  // of per-pixel drawing to it.
+
+  // Map NAMES with no encounter table at all -- coverage()'s own
+  // mapsWithoutEncounters is already keyed by name (proj.mapNames()
+  // filtered), so this needs no id/name reconciliation, unlike
+  // levelColorByMap below.
+  const emptyMapNames = useMemo(
+    () => new Set(coverageData?.mapsWithoutEncounters ?? []),
+    [coverageData],
+  );
+
+  // mapName -> a blue(low)/red(high) colour string, normalised across
+  // every map that actually has a level (spec §9's "Blue is low, red is
+  // high"). Deliberately its OWN memo, keyed only on `coverageData` --
+  // coverageData is fetched once and never again (I8: the project is
+  // read-only for all of Plan 1), so this runs once, not on every
+  // pan/zoom frame the way lensOverlayEntries below necessarily does.
+  //
+  // Reads --overlay-elevation-low/--danger live via getComputedStyle, the
+  // same call the conflict/dive/emerge badge colours in the draw effect
+  // below already make -- but, unlike those (re-read every frame), this
+  // is NOT reactive to a live theme toggle mid-session: it is computed
+  // once, when coverageData arrives, and cached until coverageData itself
+  // changes (never, in practice). Accepted as a minor imperfection for a
+  // desktop tool not expected to flip theme mid-session, rather than
+  // re-deriving 227 interpolated colours on every mouse-move frame for a
+  // toggle nothing else in this file reacts to live either.
+  const levelColorByMap = useMemo(() => {
+    const out = new Map<string, string>();
+    const entries = (coverageData?.levelByMap ?? []).filter(
+      (e): e is typeof e & { mapName: string } => !!e.mapName,
+    );
+    if (entries.length === 0) return out;
+    let min = Infinity, max = -Infinity;
+    for (const e of entries) {
+      min = Math.min(min, e.averageLevel);
+      max = Math.max(max, e.averageLevel);
+    }
+    const style = typeof getComputedStyle === "function" ? getComputedStyle(document.documentElement) : null;
+    const low = parseHexColor(style?.getPropertyValue("--overlay-elevation-low").trim() || "#3b82f6");
+    const high = parseHexColor(style?.getPropertyValue("--danger").trim() || "#ef4444");
+    for (const e of entries) {
+      const t = max > min ? (e.averageLevel - min) / (max - min) : 0.5;
+      out.set(e.mapName, lerpColor(low, high, t));
+    }
+    return out;
+  }, [coverageData]);
+
+  // Which non-land method (if any) a visible map's already-fetched
+  // encounter rows include, reusing encounterCacheRef -- populated by the
+  // effect above FOR the encounter gutter, but the data it holds (which
+  // methods a map has) is exactly what the method lens also needs, so this
+  // is a second reader of that same cache, not a second fetch. Water >
+  // fishing > rock smash is a fixed display priority for a map with more
+  // than one, not a ranking of importance.
+  const methodTintFor = useCallback((map: string): string | null => {
+    const rows = encounterCacheRef.current.get(map)?.methods;
+    if (!rows) return null;
+    if (rows.some((r) => r.method === "water_mons")) return "var(--encounter-water)";
+    if (rows.some((r) => r.method === "fishing_mons")) return "var(--encounter-fishing)";
+    if (rows.some((r) => r.method === "rock_smash_mons")) return "var(--encounter-rock-smash)";
+    return null;
+  }, []);
+
+  const lensOverlayEntries = useMemo(() => {
+    if (!lens) return [] as Array<{ map: string; rect: EncounterGutterMapEntry["rect"]; color: string }>;
+    const out: Array<{ map: string; rect: EncounterGutterMapEntry["rect"]; color: string }> = [];
+    for (const p of visible) {
+      let color: string | null = null;
+      if (lens === "level-curve") color = levelColorByMap.get(p.map) ?? null;
+      else if (lens === "empty-maps") color = emptyMapNames.has(p.map) ? "var(--warn)" : null;
+      else if (lens === "method") color = methodTintFor(p.map);
+      // "unused-species" has no per-map visual -- see LensPanel's own
+      // legend copy for that lens: it is a fact about species, not about a
+      // place on the map, so there is nothing here to tint.
+      if (!color) continue;
+      const size = sizeOfPlacement(p, sizeByMap);
+      out.push({
+        map: p.map,
+        rect: { x: p.x * zoom + pan.x, y: p.y * zoom + pan.y, width: size.width * zoom, height: size.height * zoom },
+        color,
+      });
+    }
+    return out;
+    // encounterVersion, not encounterCacheRef itself (a ref, so it would
+    // never usefully appear in a dependency array) -- the method lens
+    // reads that ref via methodTintFor, and encounterVersion is exactly
+    // the signal the encounter-fetch effect above already bumps whenever
+    // that ref's contents change.
+  }, [lens, visible, sizeByMap, pan, zoom, levelColorByMap, emptyMapNames, methodTintFor, encounterVersion]);
+
+  // mapName -> its best (highest-percent) hit -- whereSpecies already
+  // sorts by percent descending, so "first hit seen per map" is already
+  // the right one; a map can appear more than once in `spotlightHits` (a
+  // species reachable by two methods, or two variants) and only the
+  // strongest showing is worth a badge.
+  const spotlightByMap = useMemo(() => {
+    const out = new Map<string, SpeciesHit>();
+    if (!spotlightHits) return out;
+    for (const h of spotlightHits) {
+      if (!h.mapName) continue;
+      const existing = out.get(h.mapName);
+      if (!existing || h.percent > existing.percent) out.set(h.mapName, h);
+    }
+    return out;
+  }, [spotlightHits]);
+
+  const spotlightOverlayEntries = useMemo(() => {
+    if (!spotlightHits) return [] as Array<{ map: string; rect: EncounterGutterMapEntry["rect"]; hit: SpeciesHit | null }>;
+    return visible.map((p) => {
+      const size = sizeOfPlacement(p, sizeByMap);
+      return {
+        map: p.map,
+        rect: { x: p.x * zoom + pan.x, y: p.y * zoom + pan.y, width: size.width * zoom, height: size.height * zoom },
+        hit: spotlightByMap.get(p.map) ?? null,
+      };
+    });
+  }, [spotlightHits, visible, sizeByMap, pan, zoom, spotlightByMap]);
+
+  // LensPanel's empty-maps legend "next action" (spec §9: a legend states
+  // what to do next, not just what colours mean). Reuses fitWorld's own
+  // worldBoundsOf/computeFit pair AND its exact "connected landmasses only"
+  // filter (componentOfPlacement(...).maps.length > 1) -- confirmed live
+  // this filter is not optional here either: most of the 982 empty maps
+  // are singleton interiors scattered across autoLayoutUnplaced's own
+  // singleton shelf (fitWorld's own comment: ~25,600 tiles wide), so an
+  // unfiltered bbox of every empty placement is dominated by that shelf and
+  // zooms out to a single-digit percent showing nothing usable -- the same
+  // failure mode fitWorld's own comment already documents and excludes
+  // singletons to avoid. Restricting to landmass members still leaves a
+  // real, useful view: most towns/routes' own interior buildings (empty)
+  // sit inside a multi-map component together with their route.
+  const focusEmptyMaps = useCallback(() => {
+    if (!world) return;
+    const empty = new Map(
+      [...world.placements].filter(([name, p]) => {
+        if (!emptyMapNames.has(name)) return false;
+        const comp = componentOfPlacement(p, world.components);
+        return comp !== null && comp.maps.length > 1;
+      }),
+    );
+    const bounds = worldBoundsOf(empty.size > 0 ? empty : world.placements, sizeByMap);
+    if (bounds.width <= 0 || bounds.height <= 0) return;
+    const fit = computeFit(bounds, viewport);
+    setZoom(fit.zoom);
+    setPan(fit.pan);
+  }, [world, emptyMapNames, sizeByMap, viewport]);
 
   // The actual draw. Reads only from state already current in this render's
   // closure (never a stale ref captured by an earlier effect), so an image
@@ -766,6 +936,18 @@ export function WorldCanvas() {
           </button>
           <span className="world-canvas__dungeon-label">Dungeon auto-layout {dungeonsOn ? "on" : "off"}</span>
         </div>
+        <div className="world-canvas__toolbar-group world-canvas__toolbar-group--grow">
+          <SpeciesSpotlight onHits={setSpotlightHits} />
+          <LensPanel
+            active={lens}
+            onChange={setLens}
+            summary={{
+              emptyMaps: coverageData?.mapsWithoutEncounters.length ?? 0,
+              unusedSpecies: coverageData?.unusedSpecies.length ?? 0,
+            }}
+            onListEmptyMaps={focusEmptyMaps}
+          />
+        </div>
         <div className="world-canvas__toolbar-group">
           <span className="world-canvas__zoom-readout">{Math.round((zoom / TILE_PX) * 100)}%</span>
           <button type="button" className="map-canvas__btn" onClick={fitWorld}>
@@ -807,6 +989,40 @@ export function WorldCanvas() {
             onDrop={onDropOnCanvas}
           />
           <EncounterGutter maps={encounterEntries} zoom={zoom} />
+          {lens && lensOverlayEntries.length > 0 && (
+            <div className="world-canvas__lens" aria-hidden="true">
+              {lensOverlayEntries.map((e) => (
+                <div
+                  key={e.map}
+                  className="world-canvas__lens-tint"
+                  style={{ left: e.rect.x, top: e.rect.y, width: e.rect.width, height: e.rect.height, background: e.color }}
+                />
+              ))}
+            </div>
+          )}
+          {spotlightHits !== null && (
+            <div className="world-canvas__spotlight" aria-hidden="true">
+              {spotlightOverlayEntries.map((e) =>
+                e.hit ? (
+                  <div
+                    key={e.map}
+                    className="world-canvas__spotlight-hit"
+                    style={{ left: e.rect.x, top: e.rect.y, width: e.rect.width, height: e.rect.height }}
+                  >
+                    <span className="world-canvas__spotlight-badge">
+                      {`${e.hit.percent.toFixed(0)}% Lv ${e.hit.minLevel}-${e.hit.maxLevel}`}
+                    </span>
+                  </div>
+                ) : (
+                  <div
+                    key={e.map}
+                    className="world-canvas__spotlight-dim"
+                    style={{ left: e.rect.x, top: e.rect.y, width: e.rect.width, height: e.rect.height }}
+                  />
+                ),
+              )}
+            </div>
+          )}
           {tooltip && (
             <div className="world-canvas__tooltip" style={{ left: tooltip.x + 12, top: tooltip.y + 12 }} role="tooltip">
               {tooltip.text}
@@ -942,4 +1158,27 @@ function drawDiamond(ctx: CanvasRenderingContext2D, cx: number, cy: number, size
   ctx.lineTo(cx - size, cy);
   ctx.closePath();
   ctx.fill();
+}
+
+/** `#rrggbb` -> `[r, g, b]`, for the level-curve lens's blue/red
+ *  interpolation (levelColorByMap above) -- falls back to white on
+ *  anything that doesn't parse, rather than throwing over a CSS variable
+ *  that failed to resolve (e.g. jsdom in a test, or a stylesheet not yet
+ *  loaded). */
+function parseHexColor(hex: string): [number, number, number] {
+  const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})/i.exec(hex);
+  return m ? [parseInt(m[1]!, 16), parseInt(m[2]!, 16), parseInt(m[3]!, 16)] : [255, 255, 255];
+}
+
+/** Linear RGB interpolation between `a` and `b` at `t` (clamped to
+ *  [0, 1]) -- deliberately plain RGB lerp, not perceptual (Lab/LCH)
+ *  interpolation: the spec's own required copy is "Blue is low, red is
+ *  high", a two-point read, not a request for a perceptually-uniform
+ *  ramp across many steps. */
+function lerpColor(a: [number, number, number], b: [number, number, number], t: number): string {
+  const c = Math.min(1, Math.max(0, t));
+  const r = Math.round(a[0] + (b[0] - a[0]) * c);
+  const g = Math.round(a[1] + (b[1] - a[1]) * c);
+  const bl = Math.round(a[2] + (b[2] - a[2]) * c);
+  return `rgb(${r}, ${g}, ${bl})`;
 }

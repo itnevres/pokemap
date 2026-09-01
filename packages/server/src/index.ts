@@ -5,6 +5,7 @@ import { renderLayout } from "@pokemap/core/src/render/layout.js";
 import { renderSpeciesIcon } from "@pokemap/core/src/render/species.js";
 import { parseBlocks } from "@pokemap/core/src/load/blocks.js";
 import { parseEncounters, speciesChances, FISHING_RODS, type Encounters, type Method, type Rod, type SpeciesChance } from "@pokemap/core/src/load/encounters.js";
+import { coverage, whereSpecies } from "@pokemap/core/src/analyse/coverage.js";
 import { buildWorld, resolveWorldPlacements } from "@pokemap/core/src/world/resolve.js";
 import { readSidecar, writeSidecar } from "@pokemap/core/src/world/sidecar.js";
 import { encodePng } from "@pokemap/cli/src/png.js";
@@ -55,6 +56,18 @@ export async function createServer(opts: { projectPath: string; port?: number })
   // (read-only, per-process) server -- same reasoning as worldCache above.
   let encountersCache: Encounters | undefined;
   const getEncounters = () => (encountersCache ??= parseEncounters(readFileSync(project.paths.wildEncountersJson, "utf8")));
+
+  // coverage(project) walks all 497 tables across every map (Task 29) --
+  // same "read-only project, compute once" reasoning as worldCache and
+  // encountersCache just above: the project can never change out from
+  // under a live server process (I8), so the answer can't either. Computed
+  // on the first request that actually needs it (/api/coverage), not
+  // eagerly at startup. whereSpecies is NOT cached here -- it takes a
+  // species argument and returns a different answer per call, so there is
+  // nothing shaped like "the one answer" to memoize the way there is for
+  // coverage()'s single, argument-free result.
+  let coverageCache: ReturnType<typeof coverage> | undefined;
+  const getCoverage = () => (coverageCache ??= coverage(project));
 
   const http: Server = createHttp((req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
@@ -226,6 +239,34 @@ export async function createServer(opts: { projectPath: string; port?: number })
         }
 
         return send(200, { mapName: name, mapId, methods });
+      }
+
+      // Task 29's coverage lenses: level-curve, empty-maps, unused-species
+      // and method, all driven off one coverage() call (cached above).
+      // levelByMap comes back keyed by mapId only (coverage.ts's own
+      // documented shape), but the world view's placements are keyed by
+      // map NAME (world/connections.ts's Placement.map) -- so this route
+      // enriches each entry with its display name here, at the wire layer,
+      // rather than changing coverage()'s own tested core shape for a
+      // UI-only need. Same idToName-by-mapId lookup whereSpecies below
+      // already builds, for the identical reason.
+      if (url.pathname === "/api/coverage") {
+        const c = getCoverage();
+        const idToName = new Map(project.mapNames().map((n) => [project.map(n).id, n]));
+        return send(200, { ...c, levelByMap: c.levelByMap.map((m) => ({ ...m, mapName: idToName.get(m.mapId) })) });
+      }
+
+      // `[^/]+`, not `.+` -- same reasoning as the species-icon route
+      // above: a species constant never contains a slash, and the tighter
+      // match keeps a stray extra path segment from being silently
+      // swallowed into the capture. `:species` is tolerant of whatever the
+      // spotlight search box sends -- "pikachu", "PIKACHU" or
+      // "SPECIES_PIKACHU" -- normalised the same way the CLI's own
+      // `pokemap where` is.
+      const whereMatch = /^\/api\/where\/([^/]+)$/.exec(url.pathname);
+      if (whereMatch) {
+        const s = decodeURIComponent(whereMatch[1]!);
+        return send(200, whereSpecies(project, s.startsWith("SPECIES_") ? s : `SPECIES_${s.toUpperCase()}`));
       }
 
       if (url.pathname === "/api/world") {
