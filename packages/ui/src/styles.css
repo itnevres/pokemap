@@ -980,15 +980,33 @@ input {
   padding: 0 2px;
 }
 
+/*
+ * Review fix: this used to be nested inside .encounter-gutter__icon inside
+ * .encounter-gutter__strip, positioned via `bottom: 100%` relative to its
+ * own parent. That put it inside TWO nested stacking contexts (the strip's
+ * own `position: absolute` + `z-index: 1`, and the icon's `position:
+ * relative` + `z-index: 1` from its own :hover/:focus-visible rule below)
+ * neither of which it could ever escape -- a CSS stacking context traps
+ * every descendant's z-index inside it, however high, so no number here
+ * could ever have painted this above .encounter-gutter__control's legend.
+ * (This file previously also declared z-index twice in this same rule --
+ * 4, then 2 further down winning by cascade order -- compounding the same
+ * underlying bug rather than causing it.)
+ *
+ * Fixed on the JSX side (EncounterGutter.tsx): the tooltip is now a
+ * top-level sibling of .encounter-gutter__control, .encounter-gutter__strip
+ * and .encounter-gutter__badge, not nested inside any of them, positioned
+ * via `left`/`top` computed from the hovered icon's own
+ * getBoundingClientRect() at hover time -- the same pattern
+ * .world-canvas__tooltip already uses. `left`/`top` here are therefore the
+ * anchor point (the icon's own top-center), not this element's own
+ * top-left; `transform` both centers it on that point and lifts it clear
+ * above the icon.
+ */
 .encounter-gutter__tooltip {
   position: absolute;
-  /* Above .encounter-gutter__control's z-index: 3 too -- the one thing
-     actively under the pointer should never be the thing a legend or
-     another map's badge covers. */
   z-index: 4;
-  left: 50%;
-  bottom: calc(100% + 6px);
-  transform: translateX(-50%);
+  transform: translate(-50%, calc(-100% - 6px));
   padding: var(--space-1) var(--space-2);
   background: var(--bg-panel-raised);
   border: 1px solid var(--border-strong);
@@ -999,5 +1017,4 @@ input {
   color: var(--text-primary);
   white-space: nowrap;
   pointer-events: none;
-  z-index: 2;
 }

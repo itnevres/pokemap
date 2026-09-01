@@ -4,7 +4,7 @@ import { openProject, type Project } from "@pokemap/core/src/project.js";
 import { renderLayout } from "@pokemap/core/src/render/layout.js";
 import { renderSpeciesIcon } from "@pokemap/core/src/render/species.js";
 import { parseBlocks } from "@pokemap/core/src/load/blocks.js";
-import { parseEncounters, speciesChances, type Encounters } from "@pokemap/core/src/load/encounters.js";
+import { parseEncounters, speciesChances, FISHING_RODS, type Encounters, type Method, type Rod, type SpeciesChance } from "@pokemap/core/src/load/encounters.js";
 import { buildWorld, resolveWorldPlacements } from "@pokemap/core/src/world/resolve.js";
 import { readSidecar, writeSidecar } from "@pokemap/core/src/world/sidecar.js";
 import { encodePng } from "@pokemap/cli/src/png.js";
@@ -198,19 +198,32 @@ export async function createServer(opts: { projectPath: string; port?: number })
         const mapId = project.map(name).id;
         const enc = getEncounters();
 
-        // Object.fromEntries + filter, mirroring the CLI's `encounters`
-        // command exactly (packages/cli/src/index.ts) -- a map missing a
-        // method's table entirely (e.g. no water_mons) is left OUT of
-        // `methods` rather than present as `null` or `[]`, so the gutter can
-        // tell "this method has no table" from "this method's table is
+        // One row per (method) -- or, for fishing_mons, per (method, rod)
+        // that actually has a table. A method/rod with no table contributes
+        // no row at all, rather than one present as `null` or `[]`, so the
+        // gutter can tell "no table for this" from "table exists but is
         // empty" without a second signal. A map with no encounters at all
-        // (982 of 1,209 -- spec §9) still answers 200 with `methods: {}`:
+        // (982 of 1,209 -- spec §9) still answers 200 with `methods: []`:
         // that is real data, not an error.
-        const methods = Object.fromEntries(
-          (["land_mons", "water_mons", "rock_smash_mons", "fishing_mons"] as const)
-            .map((m) => [m, speciesChances(enc, mapId, m)])
-            .filter(([, v]) => v),
-        );
+        //
+        // fishing_mons gets THREE rows, one per rod, not one. Review fix:
+        // this used to call speciesChances(enc, mapId, "fishing_mons") with
+        // no `opts`, which defaults to `rod: "old"` (ChanceOptions' own
+        // default) -- silently showing only the Old Rod's 2-slot segment
+        // under a plain "Fishing" label, with nothing in the response
+        // disclosing that Good Rod and Super Rod species were left out
+        // entirely. Exactly the kind of hidden-behind-a-percentage gap
+        // encounters.ts's own FISHING_RODS split exists to prevent (see its
+        // "three distributions packed into one array" comment there).
+        const methods: Array<{ method: Method; rod?: Rod; chances: SpeciesChance[] }> = [];
+        for (const m of ["land_mons", "water_mons", "rock_smash_mons"] as const) {
+          const chances = speciesChances(enc, mapId, m);
+          if (chances) methods.push({ method: m, chances });
+        }
+        for (const { rod } of FISHING_RODS) {
+          const chances = speciesChances(enc, mapId, "fishing_mons", { rod });
+          if (chances) methods.push({ method: "fishing_mons", rod, chances });
+        }
 
         return send(200, { mapName: name, mapId, methods });
       }

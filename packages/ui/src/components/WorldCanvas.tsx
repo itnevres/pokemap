@@ -1,7 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Placement, Component as WorldComponentInfo, Conflict, VerticalLink } from "@pokemap/core/src/world/connections.js";
-import type { Method, SpeciesChance } from "@pokemap/core/src/load/encounters.js";
-import { EncounterGutter, type EncounterGutterMapEntry } from "./EncounterGutter.js";
+import { EncounterGutter, type EncounterGutterMapEntry, type EncounterGutterRow } from "./EncounterGutter.js";
 
 /** The pixel size a placement's PNG renders at natively (`renderLayout`,
  *  border 0): 16px per tile, same constant the CLI's `render-world --scale
@@ -65,7 +64,7 @@ interface ImageCacheEntry {
  *  an unset map as "nothing to show", not an error banner. */
 interface EncounterCacheEntry {
   loaded: boolean;
-  methods?: Partial<Record<Method, SpeciesChance[]>>;
+  methods?: EncounterGutterRow[];
 }
 
 type DragState =
@@ -437,7 +436,7 @@ export function WorldCanvas() {
       fetch(`/api/encounters/${encodeURIComponent(p.map)}`)
         .then((r) => {
           if (!r.ok) throw new Error(`GET /api/encounters/${p.map} -> ${r.status}`);
-          return r.json() as Promise<{ methods: Partial<Record<Method, SpeciesChance[]>> }>;
+          return r.json() as Promise<{ methods: EncounterGutterRow[] }>;
         })
         .then((d) => {
           entry.loaded = true;
@@ -466,7 +465,7 @@ export function WorldCanvas() {
       return {
         map: p.map,
         rect: { x: p.x * zoom + pan.x, y: p.y * zoom + pan.y, width: size.width * zoom, height: size.height * zoom },
-        methods: cache?.loaded ? (cache.methods ?? {}) : undefined,
+        methods: cache?.loaded ? (cache.methods ?? []) : undefined,
       };
     });
   }, [visible, sizeByMap, pan, zoom, encounterVersion]);

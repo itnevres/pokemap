@@ -116,14 +116,24 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("server", () => {
     expect((await get("/api/species/SPECIES_ESPEON/icon.png?source=bogus")).status).toBe(400);
   });
 
+  it("404s a frame past the sheet's last real one, rather than 200ing a blank PNG", async () => {
+    // Espeon's icon.png has exactly 2 frames -- inherited from
+    // renderSpeciesIcon's own bounds check (packages/core/src/render/
+    // species.ts), not reimplemented here.
+    expect((await get("/api/species/SPECIES_ESPEON/icon.png?frame=99")).status).toBe(404);
+  });
+
   it("returns a map's per-method species chances as true percentages, not slot counts", async () => {
     // Route101's day table: every land_mons slot is SPECIES_ESPEON (weights
     // 20+20+10+10+10+10+5+5+4+4+1+1 = 100), matching
     // packages/core/test/load/encounters.test.ts's own fixture facts exactly.
     const body = await (await get("/api/encounters/Route101")).json() as any;
     expect(body.mapId).toBe("MAP_ROUTE101");
-    expect(body.methods.land_mons.length).toBe(1);
-    const espeon = body.methods.land_mons[0];
+    const landRows = body.methods.filter((r: any) => r.method === "land_mons");
+    expect(landRows.length).toBe(1);
+    expect(landRows[0].rod).toBeUndefined(); // rod is fishing-only
+    expect(landRows[0].chances.length).toBe(1);
+    const espeon = landRows[0].chances[0];
     expect(espeon.species).toBe("SPECIES_ESPEON");
     expect(espeon.percent).toBeCloseTo(100, 5);
     expect(espeon.minLevel).toBe(2);
@@ -135,17 +145,53 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("server", () => {
 
   it("defaults to entry 0 (day), not a map's other variants", async () => {
     const body = await (await get("/api/encounters/Route101")).json() as any;
-    expect(body.methods.land_mons[0].species).toBe("SPECIES_ESPEON");
-    expect(body.methods.land_mons.some((c: any) => c.species === "SPECIES_UMBREON")).toBe(false);
+    const landChances = body.methods.find((r: any) => r.method === "land_mons").chances;
+    expect(landChances[0].species).toBe("SPECIES_ESPEON");
+    expect(landChances.some((c: any) => c.species === "SPECIES_UMBREON")).toBe(false);
   });
 
-  it("returns an empty methods object for a map with no encounter table, not a 404", async () => {
+  it("splits fishing into three separate rod rows, not one Old-Rod-only default", async () => {
+    // Route102's real fishing_mons: mons
+    // [Magikarp,Goldeen,Magikarp,Goldeen,Corphish x6], weights
+    // [70,30,60,20,20,40,40,15,4,1]. FISHING_RODS segments this as
+    // old=[0,2) good=[2,5) super=[5,10) -- verified directly against the
+    // subject decomp's own wild_encounters.json before writing this test,
+    // not assumed.
+    const body = await (await get("/api/encounters/Route102")).json() as any;
+    const fishing = body.methods.filter((r: any) => r.method === "fishing_mons");
+    expect(fishing.length).toBe(3);
+    expect(fishing.map((r: any) => r.rod).sort()).toEqual(["good", "old", "super"]);
+
+    const byRod = Object.fromEntries(fishing.map((r: any) => [r.rod, r.chances]));
+    const oldSpecies = Object.fromEntries(byRod.old.map((c: any) => [c.species, c.percent]));
+    expect(oldSpecies.SPECIES_MAGIKARP).toBeCloseTo(70, 5);
+    expect(oldSpecies.SPECIES_GOLDEEN).toBeCloseTo(30, 5);
+    expect(oldSpecies.SPECIES_CORPHISH).toBeUndefined(); // Corphish is Good/Super Rod only
+
+    const goodSpecies = Object.fromEntries(byRod.good.map((c: any) => [c.species, c.percent]));
+    expect(goodSpecies.SPECIES_MAGIKARP).toBeCloseTo(60, 5);
+    expect(goodSpecies.SPECIES_GOLDEEN).toBeCloseTo(20, 5);
+    expect(goodSpecies.SPECIES_CORPHISH).toBeCloseTo(20, 5);
+
+    const superSpecies = Object.fromEntries(byRod.super.map((c: any) => [c.species, c.percent]));
+    expect(Object.keys(superSpecies)).toEqual(["SPECIES_CORPHISH"]);
+    expect(superSpecies.SPECIES_CORPHISH).toBeCloseTo(100, 5); // 40+40+15+4+1 across 5 slots
+
+    // Each rod totals 100 independently -- not 300 for treating all 10
+    // slots as one distribution, and not silently just the Old Rod's 100.
+    for (const rod of ["old", "good", "super"]) {
+      const total = byRod[rod].reduce((a: number, c: any) => a + c.percent, 0);
+      expect(total).toBeCloseTo(100, 5);
+    }
+  });
+
+  it("returns an empty methods array for a map with no encounter table, not a 404", async () => {
     // 982 of 1,209 maps carry no table at all (spec §9) -- an ordinary state,
     // not an error. NewBarkTown_Lab is a plain interior with none.
     const r = await get("/api/encounters/NewBarkTown_Lab");
     expect(r.status).toBe(200);
     const body = await r.json() as any;
-    expect(body.methods).toEqual({});
+    expect(body.methods).toEqual([]);
   });
 
   it("404s an unknown map for /api/encounters too", async () => {

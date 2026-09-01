@@ -30,6 +30,23 @@ describe("renderSpeciesIcon", () => {
     expect(renderSpeciesIcon(proj, "SPECIES_NOT_A_REAL_MON")).toBeUndefined();
   });
 
+  // Review fix: a frame past the sheet's last real one used to fall through
+  // the pixel loop's own bounds check (every x/y skipped, one at a time) and
+  // return a fully transparent 32x32 raster -- indistinguishable from a
+  // blank Pokemon at a glance, and inconsistent with "no art" (a missing
+  // file) already answering undefined. Espeon's icon.png has exactly 2
+  // frames (32x64 -- confirmed above); frame 2 is the first one that does
+  // not exist.
+  itWithCorpus("returns undefined for a frame past the sheet's last real one, not a blank raster", () => {
+    expect(renderSpeciesIcon(proj, "SPECIES_ESPEON", { frame: 2 })).toBeUndefined();
+    expect(renderSpeciesIcon(proj, "SPECIES_ESPEON", { frame: 99 })).toBeUndefined();
+    // Same check applies to the overworld sheet, which steps by width
+    // instead of height -- Poliwrath's is 192x32, six 32px frames (0-5).
+    expect(renderSpeciesIcon(proj, "SPECIES_POLIWRATH", { source: "overworld", frame: 6 })).toBeUndefined();
+    // frame 1 (still real) must be unaffected by the new bounds check.
+    expect(renderSpeciesIcon(proj, "SPECIES_ESPEON", { frame: 1 })).not.toBeUndefined();
+  });
+
   itWithCorpus("renders the overworld sprite used by wild signs", () => {
     const r = renderSpeciesIcon(proj, "SPECIES_POLIWRATH", { source: "overworld" })!;
     // The overworld sheet is always cropped to a square size x size frame

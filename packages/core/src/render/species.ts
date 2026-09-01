@@ -27,6 +27,19 @@ export function renderSpeciesIcon(proj: Project, species: string, opts: SpeciesI
   const frame = opts.frame ?? 0;
   const size = opts.source === "overworld" ? Math.min(img.height, 32) : 32;
 
+  // A frame the sheet doesn't have (negative, or past the last real one --
+  // e.g. ?frame=99 against a 2-frame icon sheet) used to fall through to the
+  // pixel loop below, where every `sx + x >= img.width || sy + y >=
+  // img.height` check quietly skipped every pixel, returning a fully
+  // transparent 32x32 raster rather than the same "no art here" signal a
+  // missing file already gets. `undefined` here is what makes the server's
+  // existing `if (!raster) return send(404, ...)` (packages/server/src/
+  // index.ts) apply uniformly, rather than a blank PNG answering 200.
+  // Overworld sheets step horizontally (frameCount = width / size); icon
+  // sheets step vertically (frameCount = height / size) -- see sx/sy below.
+  const frameCount = opts.source === "overworld" ? Math.floor(img.width / size) : Math.floor(img.height / size);
+  if (frame < 0 || frame >= frameCount) return undefined;
+
   const palPath = `${proj.paths.root}/graphics/pokemon/${dir}/normal.pal`;
   const palette = existsSync(palPath) ? parseJascPal(readFileSync(palPath, "utf8")) : img.palette;
 

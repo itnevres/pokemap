@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 import { EncounterGutter, type EncounterGutterMapEntry } from "../src/components/EncounterGutter.js";
 
 // Task 28's own file list has no "Test:" entry for this component -- every
@@ -21,12 +21,15 @@ function oneMap(overrides: Partial<EncounterGutterMapEntry> = {}): EncounterGutt
     {
       map: "Route101",
       rect: RECT,
-      methods: {
-        land_mons: [
-          { species: "SPECIES_ESPEON", percent: 37.5, minLevel: 2, maxLevel: 4, slots: [0, 1] },
-          { species: "SPECIES_RATTATA", percent: 12.5, minLevel: 2, maxLevel: 3, slots: [2] },
-        ],
-      },
+      methods: [
+        {
+          method: "land_mons",
+          chances: [
+            { species: "SPECIES_ESPEON", percent: 37.5, minLevel: 2, maxLevel: 4, slots: [0, 1] },
+            { species: "SPECIES_RATTATA", percent: 12.5, minLevel: 2, maxLevel: 3, slots: [2] },
+          ],
+        },
+      ],
       ...overrides,
     },
   ];
@@ -46,7 +49,12 @@ describe("EncounterGutter", () => {
       <EncounterGutter
         maps={oneMap({
           map: "Route102",
-          methods: { water_mons: [{ species: "SPECIES_MARILL", percent: 95, minLevel: 10, maxLevel: 35, slots: [0, 1, 2] }] },
+          methods: [
+            {
+              method: "water_mons",
+              chances: [{ species: "SPECIES_MARILL", percent: 95, minLevel: 10, maxLevel: 35, slots: [0, 1, 2] }],
+            },
+          ],
         })}
         zoom={16}
       />,
@@ -64,10 +72,10 @@ describe("EncounterGutter", () => {
     render(
       <EncounterGutter
         maps={oneMap({
-          methods: {
-            land_mons: [{ species: "SPECIES_ESPEON", percent: 100, minLevel: 2, maxLevel: 3, slots: [0] }],
-            water_mons: [{ species: "SPECIES_MARILL", percent: 95, minLevel: 10, maxLevel: 35, slots: [0] }],
-          },
+          methods: [
+            { method: "land_mons", chances: [{ species: "SPECIES_ESPEON", percent: 100, minLevel: 2, maxLevel: 3, slots: [0] }] },
+            { method: "water_mons", chances: [{ species: "SPECIES_MARILL", percent: 95, minLevel: 10, maxLevel: 35, slots: [0] }] },
+          ],
         })}
         zoom={16}
       />,
@@ -110,6 +118,28 @@ describe("EncounterGutter", () => {
     expect(screen.queryByRole("tooltip")).toBeNull();
   });
 
+  // Review fix: a hovered/focused icon's tooltip used to be a DOM child of
+  // the icon button, positioned via CSS `bottom: 100%` relative to it --
+  // which put it inside two nested stacking contexts (the strip's own
+  // `position: absolute` + `z-index`, and the icon's own on :hover/
+  // :focus-visible) that trapped it no matter how high its own z-index was
+  // set, so it painted underneath the legend rather than above it. jsdom
+  // does not lay out real pixels, so a test cannot assert the fix's visual
+  // effect the way live-browser verification did -- but it CAN assert the
+  // structural fix that makes escaping possible: the tooltip must be a
+  // sibling of the legend region, not a descendant of any per-map strip.
+  it("renders the tooltip as a sibling of the legend region, not nested inside a map's strip", () => {
+    const { container } = render(<EncounterGutter maps={oneMap()} zoom={16} />);
+    fireEvent.click(screen.getByRole("button", { name: /encounters/i }));
+    fireEvent.mouseEnter(screen.getByRole("button", { name: /espeon/i }));
+
+    const tooltip = screen.getByRole("tooltip");
+    const root = container.querySelector(".encounter-gutter");
+    const strip = container.querySelector(".encounter-gutter__strip");
+    expect(tooltip.parentElement).toBe(root);
+    expect(strip?.contains(tooltip)).toBe(false);
+  });
+
   it("collapses to a count badge instead of icons below the readable-icon zoom threshold", () => {
     render(<EncounterGutter maps={oneMap()} zoom={1} />);
     fireEvent.click(screen.getByRole("button", { name: /encounters/i }));
@@ -131,7 +161,7 @@ describe("EncounterGutter", () => {
   });
 
   it("renders nothing extra for a map with no encounter table, rather than an error or a stray badge", () => {
-    render(<EncounterGutter maps={oneMap({ methods: {} })} zoom={16} />);
+    render(<EncounterGutter maps={oneMap({ methods: [] })} zoom={16} />);
     fireEvent.click(screen.getByRole("button", { name: /encounters/i }));
     expect(screen.queryByRole("button", { name: /espeon/i })).toBeNull();
     expect(screen.queryByText(/species$/i)).toBeNull();
@@ -143,17 +173,68 @@ describe("EncounterGutter", () => {
   });
 
   it("gives each of several visible maps its own strip, positioned at its own rect", () => {
-    const maps = [
+    const maps: EncounterGutterMapEntry[] = [
       ...oneMap({ map: "Route101" }),
       {
         map: "Route102",
         rect: { x: 500, y: 40, width: 32, height: 32 },
-        methods: { water_mons: [{ species: "SPECIES_MARILL", percent: 95, minLevel: 10, maxLevel: 35, slots: [0] }] },
+        methods: [
+          {
+            method: "water_mons",
+            chances: [{ species: "SPECIES_MARILL", percent: 95, minLevel: 10, maxLevel: 35, slots: [0] }],
+          },
+        ],
       },
     ];
     render(<EncounterGutter maps={maps} zoom={16} />);
     fireEvent.click(screen.getByRole("button", { name: /encounters/i }));
     expect(screen.getByRole("button", { name: /espeon/i })).toBeTruthy();
     expect(screen.getByRole("button", { name: /marill/i })).toBeTruthy();
+  });
+
+  // Review fix: fishing_mons is three independent 100%-summing distributions
+  // (Old/Good/Super Rod -- packages/core/src/load/encounters.ts's own
+  // FISHING_RODS), not one. The server used to call speciesChances with no
+  // `rod` option, silently defaulting to Old Rod under a plain "Fishing"
+  // label with no disclosure that Good/Super Rod species were omitted
+  // entirely. Each rod is now its own row (EncounterGutterRow.rod), so this
+  // pins that the gutter (a) shows all three as distinct rows, (b) labels
+  // each one honestly by rod, and (c) never blends two rods' species into
+  // one row or one percentage.
+  it("shows fishing as three separate, honestly-labelled rod rows -- never a silent Old-Rod-only default", () => {
+    const { container } = render(
+      <EncounterGutter
+        maps={oneMap({
+          methods: [
+            { method: "fishing_mons", rod: "old", chances: [{ species: "SPECIES_MAGIKARP", percent: 70, minLevel: 5, maxLevel: 10, slots: [0] }] },
+            { method: "fishing_mons", rod: "good", chances: [{ species: "SPECIES_GOLDEEN", percent: 60, minLevel: 10, maxLevel: 15, slots: [0] }] },
+            { method: "fishing_mons", rod: "super", chances: [{ species: "SPECIES_GYARADOS", percent: 40, minLevel: 20, maxLevel: 25, slots: [0] }] },
+          ],
+        })}
+        zoom={16}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /encounters/i }));
+
+    // Each rod's own species is present...
+    expect(screen.getByRole("button", { name: /magikarp/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /goldeen/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /gyarados/i })).toBeTruthy();
+
+    // ...as three separate rows...
+    const strip = container.querySelector(".encounter-gutter__strip");
+    expect(strip).toBeTruthy();
+    const rows = within(strip as HTMLElement).getAllByText(/fishing/i, { selector: ".encounter-gutter__method-tag" });
+    expect(rows.length).toBe(3);
+
+    // ...each naming its rod explicitly rather than a bare "Fishing" that
+    // would silently imply "the whole method". Scoped to the strip's own
+    // row tags (not screen-wide) because the legend's explanatory prose
+    // above also mentions "Old", "Good" and "Super Rod" in passing.
+    const tagText = rows.map((r) => r.textContent);
+    expect(tagText).toContain("Fishing (Old Rod)");
+    expect(tagText).toContain("Fishing (Good Rod)");
+    expect(tagText).toContain("Fishing (Super Rod)");
+    expect(tagText).not.toContain("Fishing");
   });
 });
