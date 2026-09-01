@@ -6,6 +6,7 @@ describe("SpeciesSpotlight", () => {
   it("dims every map except the hits", async () => {
     const onHits = vi.fn();
     global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
       json: async () => ([{ mapName: "Route29", percent: 20, minLevel: 3, maxLevel: 5, method: "land_mons" }]),
     }) as never;
 
@@ -15,8 +16,30 @@ describe("SpeciesSpotlight", () => {
     expect(onHits.mock.calls.at(-1)![0]).toEqual([expect.objectContaining({ mapName: "Route29" })]);
   });
 
+  // Added after review (Critical): whereSpecies returns one hit per
+  // (map, method, rod, variant) combination, not one per map -- 125 of the
+  // corpus's 227 encounter-carrying maps have more than one table. Route29
+  // here has TWO hits (day/night variants, both land_mons), so a naive
+  // `hits.length` would read "2 maps" for a species found on exactly one
+  // map. Measured against the real corpus before this fix: MAGIKARP showed
+  // "614 maps" here while only 114 distinct maps actually lit up on the
+  // canvas.
+  it("counts DISTINCT maps, not hits -- a map with two variant tables is one map, not two", async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ([
+        { mapName: "Route29", percent: 80, minLevel: 3, maxLevel: 5, method: "land_mons", variant: "gRoute29" },
+        { mapName: "Route29", percent: 20, minLevel: 4, maxLevel: 6, method: "land_mons", variant: "gRoute29_Night" },
+      ]),
+    }) as never;
+    render(<SpeciesSpotlight onHits={() => {}} />);
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "HOOTHOOT" } });
+    await waitFor(() => expect(screen.getByText(/1 map\b/i)).toBeTruthy());
+    expect(screen.queryByText(/2 maps/i)).toBeNull();
+  });
+
   it("says so plainly when a species appears nowhere", async () => {
-    global.fetch = vi.fn().mockResolvedValue({ json: async () => [] }) as never;
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => [] }) as never;
     render(<SpeciesSpotlight onHits={() => {}} />);
     fireEvent.change(screen.getByRole("searchbox"), { target: { value: "MISSINGNO" } });
     await waitFor(() => expect(screen.getByText(/appears in no encounter table/i)).toBeTruthy());
@@ -49,7 +72,7 @@ describe("SpeciesSpotlight", () => {
 
   it("calls onHits with an empty array (not null) when a search genuinely finds nowhere", async () => {
     const onHits = vi.fn();
-    global.fetch = vi.fn().mockResolvedValue({ json: async () => [] }) as never;
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => [] }) as never;
     render(<SpeciesSpotlight onHits={onHits} />);
     fireEvent.change(screen.getByRole("searchbox"), { target: { value: "MISSINGNO" } });
     await waitFor(() => expect(onHits).toHaveBeenCalled());
@@ -63,6 +86,7 @@ describe("SpeciesSpotlight", () => {
   it("calls onHits(null) when the box is cleared after a real search, not [] again", async () => {
     const onHits = vi.fn();
     global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
       json: async () => ([{ mapName: "Route29", percent: 20, minLevel: 3, maxLevel: 5, method: "land_mons" }]),
     }) as never;
     render(<SpeciesSpotlight onHits={onHits} />);
@@ -78,7 +102,7 @@ describe("SpeciesSpotlight", () => {
 
   it("debounces: several rapid keystrokes collapse into a single fetch", async () => {
     const onHits = vi.fn();
-    const fetchMock = vi.fn().mockResolvedValue({ json: async () => [] });
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => [] });
     global.fetch = fetchMock as never;
     render(<SpeciesSpotlight onHits={onHits} />);
     const box = screen.getByRole("searchbox");
@@ -91,5 +115,26 @@ describe("SpeciesSpotlight", () => {
     await waitFor(() => expect(onHits).toHaveBeenCalled());
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("PIKA"));
+  });
+
+  // Added after review: a 404/500 response body still parses as valid JSON
+  // (the server's own `{ error: "..." }` shape -- packages/server/src/
+  // index.ts's outer catch and final "not found" fallback), so without an
+  // `r.ok` gate this would have reached `onHits` typed as `SpeciesHit[]`
+  // while actually being `{ error: string }` -- WorldCanvas's own
+  // `for (const h of spotlightHits)` is not Array.isArray-guarded, so that
+  // would throw "not iterable" mid-render. Pins the gate the previous
+  // round's review added.
+  it("surfaces a non-ok response as an error instead of forwarding it to onHits as if it were hits", async () => {
+    const onHits = vi.fn();
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 500,
+      json: async () => ({ error: "boom" }),
+    }) as never;
+    render(<SpeciesSpotlight onHits={onHits} />);
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "PIKACHU" } });
+    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+    expect(onHits).not.toHaveBeenCalled();
   });
 });

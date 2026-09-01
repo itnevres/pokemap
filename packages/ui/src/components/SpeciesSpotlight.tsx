@@ -83,13 +83,27 @@ export function SpeciesSpotlight({ onHits }: SpeciesSpotlightProps) {
     setFetchError(null);
 
     const timer = setTimeout(() => {
-      // No `r.ok` gate here, unlike this package's other fetch hooks
-      // (useMapGroups, useMapLayout): /api/where/:species always answers
-      // 200 -- an empty array IS the answer for "found nowhere" (see
-      // onHits' own doc comment above), never a 404 -- so there is no
-      // failure status this route can return for `.ok` to usefully gate.
+      // Review fix: this used to skip the `!r.ok` gate every other fetch
+      // in this package uses (useCoverage, useMapGroups, useMapLayout) on
+      // the theory that /api/where/:species always answers 200. That is
+      // wrong -- the server's outer catch answers 500 with an error body
+      // on any thrown exception, and an unmatched route answers 404 with
+      // one too (packages/server/src/index.ts's own outer catch and final
+      // `not found` fallback) -- and a 500/404 body still parses as valid
+      // JSON (`{ error: "..." }`), so without this gate it would reach
+      // `onHits` typed as `SpeciesHit[]` while actually being a plain
+      // object. WorldCanvas's own `for (const h of spotlightHits)` is not
+      // Array.isArray-guarded (it trusts this component's own contract),
+      // so that non-array value would throw "not iterable" mid-render and
+      // unmount the whole world view -- a reachable crash, not a
+      // hypothetical one, and the exact class of bug the `as
+      // Promise<SpeciesHit[]>` cast just below was silently hiding from
+      // TypeScript.
       fetch(`/api/where/${encodeURIComponent(trimmed)}`)
-        .then((r) => r.json() as Promise<SpeciesHit[]>)
+        .then((r) => {
+          if (!r.ok) throw new Error(`GET /api/where/${trimmed} -> ${r.status}`);
+          return r.json() as Promise<SpeciesHit[]>;
+        })
         .then((data) => {
           if (cancelled) return;
           setHits(data);
@@ -112,6 +126,21 @@ export function SpeciesSpotlight({ onHits }: SpeciesSpotlightProps) {
     };
   }, [query, onHits]);
 
+  // Review fix: this used to render `hits.length` directly. `whereSpecies`
+  // returns one hit per (map, method, rod, variant) combination it finds,
+  // not one per map -- 125 of the corpus's 227 encounter-carrying maps
+  // have more than one table (spec §9's own "day/night and further
+  // variants" lesson), so a species reachable through several of a map's
+  // tables, or through several methods on the same map, inflates
+  // `hits.length` well past the number of maps that actually light up.
+  // Measured against the real corpus: MAGIKARP showed "614 maps" here
+  // while only 114 distinct maps were actually lit on the canvas (5.4x
+  // over); TENTACOOL 415 vs 58; ZUBAT 78 vs 48. `mapCount` mirrors
+  // spotlightByMap's own dedupe in WorldCanvas.tsx exactly (a `Set` of
+  // `mapName`, skipping any hit missing one) so this label can never
+  // disagree with what the canvas actually shows next to it.
+  const mapCount = hits ? new Set(hits.map((h) => h.mapName).filter((n): n is string => !!n)).size : 0;
+
   return (
     <div className="species-spotlight">
       <input
@@ -132,12 +161,12 @@ export function SpeciesSpotlight({ onHits }: SpeciesSpotlightProps) {
           {fetchError}
         </span>
       )}
-      {!loading && !fetchError && hits && hits.length > 0 && (
+      {!loading && !fetchError && hits && mapCount > 0 && (
         <span className="species-spotlight__status">
-          {hits.length} map{hits.length === 1 ? "" : "s"}
+          {mapCount} map{mapCount === 1 ? "" : "s"}
         </span>
       )}
-      {!loading && !fetchError && hits && hits.length === 0 && (
+      {!loading && !fetchError && hits && mapCount === 0 && (
         <p className="species-spotlight__empty" role="status">
           {displaySpecies(query)} appears in no encounter table anywhere in the project.
         </p>

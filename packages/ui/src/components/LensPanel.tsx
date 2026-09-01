@@ -44,6 +44,26 @@ const LEGEND_COPY: Record<LensId, (s: LensPanelSummary) => string> = {
 };
 
 /**
+ * Review fix: the method lens used to paint three tints (WorldCanvas.tsx's
+ * methodTintFor: water/fishing/rock-smash) with no key anywhere mapping a
+ * colour to what it means -- the required copy above says WHICH methods
+ * exist, but not which swatch is which, violating DESIGN.md's own stated
+ * rule verbatim ("Colour is never the sole carrier of meaning: every
+ * overlay kind pairs with a distinct shape or label in its legend"). The
+ * other three lenses already clear that bar (level-curve names its
+ * endpoints in its own copy; empty-maps/unused-species are single-state,
+ * so there is nothing to disambiguate). `slug` matches WorldCanvas's own
+ * CSS var names exactly (`--encounter-water` etc.) and this file's own
+ * swatch classes below, the same slug EncounterGutter's legend key
+ * already established for the identical three colours.
+ */
+const METHOD_LENS_KEY: Array<{ slug: "water" | "fishing" | "rock-smash"; label: string }> = [
+  { slug: "water", label: "Water (surfing)" },
+  { slug: "fishing", label: "Fishing" },
+  { slug: "rock-smash", label: "Rock Smash" },
+];
+
+/**
  * Coverage lenses (spec §9): level-curve, empty-maps, unused-species and
  * method. One active at a time, all off by default, and -- per spec's own
  * "no lens is ever active without its legend visible" -- the legend is not
@@ -84,6 +104,16 @@ export function LensPanel({ active, onChange, summary, onListEmptyMaps }: LensPa
         <div className="lens-panel__legend" role="note">
           <p className="lens-panel__legend-title">{LENS_LABEL[active]}</p>
           <p className="lens-panel__legend-body">{LEGEND_COPY[active](summary)}</p>
+          {active === "method" && (
+            <ul className="lens-panel__legend-key">
+              {METHOD_LENS_KEY.map((m) => (
+                <li key={m.slug} className="lens-panel__legend-item">
+                  <i className={`lens-panel__legend-swatch lens-panel__legend-swatch--${m.slug}`} />
+                  <span>{m.label}</span>
+                </li>
+              ))}
+            </ul>
+          )}
           {active === "empty-maps" && (
             <button type="button" className="lens-panel__legend-action" onClick={onListEmptyMaps}>
               List them

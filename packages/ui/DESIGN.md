@@ -81,6 +81,14 @@ whatever OS theme is active.
   --encounter-rock-smash: #a8763c;
   --encounter-fishing: #6366f1;
 
+  /* Species spotlight (Task 29): darkens every non-matching map so the
+     hits read as lit by contrast, not by a colour of their own. Overridden
+     in light mode below, matching --overlay-grid/--overlay-collision's own
+     precedent -- a plain rgba() literal with no light-mode value was this
+     file's only unthemed overlay colour until this task's own review
+     caught it. */
+  --overlay-spotlight-dim: rgba(4, 8, 16, 0.72);
+
   --focus-ring: #60a5fa;
 }
 
@@ -107,6 +115,10 @@ whatever OS theme is active.
 
   --overlay-grid: rgba(15, 23, 42, 0.14);
   --overlay-collision: rgba(200, 30, 30, 0.5);
+  /* Same near-black-slate darkening approach as dark mode's own value, just
+     proportioned for a light background -- --text-primary's own dark value
+     (#0f172a) at high opacity, not literal black. */
+  --overlay-spotlight-dim: rgba(15, 23, 42, 0.65);
   --focus-ring: #2563eb;
 }
 ```

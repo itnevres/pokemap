@@ -568,6 +568,41 @@ describe("WorldCanvas", () => {
   });
 
   // -------------------------------------------------------------------
+  // Coverage lenses (Task 29)
+  // -------------------------------------------------------------------
+  // Review fix: useCoverage()'s `error` used to be destructured away
+  // entirely, and the toolbar's own `coverageData?.mapsWithoutEncounters
+  // .length ?? 0` fallback rendered "0 maps have no encounters" as if that
+  // were real, checked data on a failed fetch -- in precisely the copy
+  // this whole task is about, and the exact class of bug this file already
+  // has two postmortems on for saveError/loadError above (don't silently
+  // misroute or drop a fetch failure). This was the one Task 29 failure
+  // path with no test coverage at all before this fix -- the mock
+  // infrastructure already existed (the placement/dungeon POST tests just
+  // above use the identical `impl` + `failing` override shape), so nothing
+  // new was needed to close it.
+  it("a failed /api/coverage fetch surfaces a visible error and hides the lens toggles, instead of silently defaulting to 0", async () => {
+    const { impl } = makeFetchMock(makeWorld({ placements: {} }));
+    const failing = vi.fn((url: string, init?: RequestInit) =>
+      url.startsWith("/api/coverage")
+        ? Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({ error: "boom" }) } as Response)
+        : impl(url, init),
+    );
+    await mountReady(failing);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toMatch(/Coverage lenses unavailable/i);
+    expect(alert.textContent).toMatch(/api\/coverage/);
+
+    // The lens toggles themselves must not render at all -- rendering them
+    // anyway (with the `?? 0` fallback) is exactly the silent-lie failure
+    // mode this test pins closed, not just an incomplete-looking panel.
+    expect(screen.queryByRole("group", { name: /coverage lenses/i })).toBeNull();
+    expect(screen.queryByLabelText(/level-curve/i)).toBeNull();
+    expect(screen.queryByLabelText(/empty-maps/i)).toBeNull();
+  });
+
+  // -------------------------------------------------------------------
   // Dungeon toggle + side rail
   // -------------------------------------------------------------------
   it("lists singleton maps absent from placements in the side rail, and lets one be dragged onto the canvas", async () => {

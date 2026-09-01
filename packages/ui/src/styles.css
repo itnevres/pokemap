@@ -56,6 +56,17 @@
   --encounter-rock-smash: #a8763c;
   --encounter-fishing: #6366f1;
 
+  /* Species spotlight (Task 29): darkens every non-matching map so the
+     hits (their own outline + badge, not a colour of their own) read as
+     lit by contrast. Review fix: this used to be a bare rgba() literal
+     inline on .world-canvas__spotlight-dim below, with no light-theme
+     override at all -- the only raw colour left in this file, and in
+     light mode it dimmed the world to near-black instead of the muted
+     grey every other overlay achieves via its own light-mode override
+     just below. A themed token, overridden in [data-theme="light"] like
+     --overlay-grid/--overlay-collision above, not a hardcoded constant. */
+  --overlay-spotlight-dim: rgba(4, 8, 16, 0.72);
+
   --font-ui: "IBM Plex Sans", system-ui, sans-serif;
   --font-data: "JetBrains Mono", ui-monospace, "Cascadia Code", monospace;
 
@@ -91,11 +102,16 @@
   --warn: #d97706;
   --danger: #dc2626;
 
-  /* DESIGN.md only overrides these two overlay tokens for light mode -- the
+  /* DESIGN.md only overrides these overlay tokens for light mode -- the
      rest (elevation, event-kind colours, text-on-accent) are shared across
      both themes by design, defined once on :root above. */
   --overlay-grid: rgba(15, 23, 42, 0.14);
   --overlay-collision: rgba(200, 30, 30, 0.5);
+  /* Same near-black-slate darkening approach as dark mode's own value,
+     just proportioned for a light background -- --text-primary's own dark
+     value (#0f172a) at high opacity, not literal black, so a dimmed map
+     still reads as "muted" rather than "a hole punched in the page." */
+  --overlay-spotlight-dim: rgba(15, 23, 42, 0.65);
   --focus-ring: #2563eb;
 }
 
@@ -1170,6 +1186,49 @@ input {
   line-height: 1.4;
 }
 
+/* Review fix: the method lens's swatch+label key, added because colour
+   alone conveyed which tint meant which method -- mirrors
+   .encounter-gutter__legend-key's own shape exactly (same list-reset,
+   flex-column, 10px swatch), including the identical swatch colours (the
+   two files intentionally do not share a class name -- lens-panel and
+   encounter-gutter are independent overlays that can be visible at once,
+   and coupling their CSS would make one's markup change silently affect
+   the other). */
+.lens-panel__legend-key {
+  list-style: none;
+  margin: 0 0 var(--space-2);
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.lens-panel__legend-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.lens-panel__legend-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex: 0 0 auto;
+}
+
+.lens-panel__legend-swatch--water {
+  background: var(--encounter-water);
+}
+
+.lens-panel__legend-swatch--fishing {
+  background: var(--encounter-fishing);
+}
+
+.lens-panel__legend-swatch--rock-smash {
+  background: var(--encounter-rock-smash);
+}
+
 .lens-panel__legend-action {
   background: var(--accent);
   border: none;
@@ -1220,7 +1279,7 @@ input {
 
 .world-canvas__spotlight-dim {
   position: absolute;
-  background: rgba(4, 8, 16, 0.72);
+  background: var(--overlay-spotlight-dim);
 }
 
 .world-canvas__spotlight-hit {
