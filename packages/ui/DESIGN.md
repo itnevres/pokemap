@@ -69,6 +69,18 @@ whatever OS theme is active.
   --event-coord: #c850f0;
   --event-bg: #3ca0f0;
 
+  /* Encounter gutter (Task 28): one hue per wild-encounter method, its own
+     small semantic group -- not a reuse of the event-kind colours above,
+     which already mean something else (object/warp/coord/bg event) and
+     could co-occur on screen with these in principle. Not overridden in
+     light mode, matching the event-kind and elevation tokens' own
+     precedent just above: these sit on small swatches/borders, not body
+     text, so a single value clears contrast in both themes. */
+  --encounter-land: #65a30d;
+  --encounter-water: #06b6d4;
+  --encounter-rock-smash: #a8763c;
+  --encounter-fishing: #6366f1;
+
   --focus-ring: #60a5fa;
 }
 

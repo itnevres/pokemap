@@ -272,6 +272,16 @@ export function EncounterGutter({ maps, zoom }: EncounterGutterProps) {
         )}
       </div>
 
+      {/* Review note (deferred, not fixed): neither this map list nor the
+          strip/row/icon elements it produces are memoized, so with the
+          toggle on, every WorldCanvas pan frame re-renders this entire tree
+          -- up to ~70 visible maps x up to 6 rows x up to 6 icons each at
+          full scale. `rows` (`entry.methods`) itself is stable between
+          fetches; it's only the positioning wrapper's `left`/`top` inline
+          style that actually needs to change per frame. If this becomes a
+          real bottleneck, extract a `React.memo`'d `<MapStrip>` component
+          (rows/icons) so only that wrapper churns per frame, not the whole
+          subtree underneath it. */}
       {enabled &&
         maps.map((entry) => {
           const rows = entry.methods;
@@ -282,15 +292,18 @@ export function EncounterGutter({ maps, zoom }: EncounterGutterProps) {
           const top = entry.rect.y + entry.rect.height + 4;
 
           if (collapsed) {
+            // Review fix: this badge used to carry the map name only in a
+            // `title` attribute -- but .encounter-gutter__badge is
+            // `pointer-events: none` (see styles.css), so it never receives
+            // hover and that tooltip could never actually appear. At low
+            // zoom there can be dozens of these small pills scattered over
+            // the canvas; the map name has to be in the badge's own visible
+            // text, or nothing on screen says which map a given badge
+            // belongs to.
             const count = distinctSpeciesCount(rows);
             return (
-              <div
-                key={entry.map}
-                className="encounter-gutter__badge"
-                style={{ left, top }}
-                title={`${entry.map}: ${count} encounter species`}
-              >
-                {count} species
+              <div key={entry.map} className="encounter-gutter__badge" style={{ left, top }}>
+                {entry.map} &middot; {count} species
               </div>
             );
           }

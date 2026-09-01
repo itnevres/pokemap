@@ -199,6 +199,23 @@ describe("EncounterGutter", () => {
     expect(screen.getByText(/2 species/i)).toBeTruthy();
   });
 
+  // Review fix: the badge used to name its map only via a `title` attribute
+  // -- dead, since .encounter-gutter__badge is `pointer-events: none` (see
+  // styles.css) and a non-hit-target element never receives hover, so that
+  // tooltip could never actually appear. With dozens of these small pills
+  // possibly on screen at once, the badge's own visible text is now the
+  // only thing that says which map it belongs to, so this pins the map name
+  // into that text directly rather than into a `title` nobody can trigger.
+  it("names its map in the badge's own visible text, not a dead title attribute", () => {
+    const { container } = render(<EncounterGutter maps={oneMap({ map: "Route101" })} zoom={1} />);
+    fireEvent.click(screen.getByRole("button", { name: /encounters/i }));
+
+    const badge = container.querySelector(".encounter-gutter__badge");
+    expect(badge).toBeTruthy();
+    expect(badge?.textContent).toMatch(/Route101/);
+    expect(badge?.hasAttribute("title")).toBe(false);
+  });
+
   it("shows full icon detail again once zoom crosses back above the threshold", () => {
     const { rerender } = render(<EncounterGutter maps={oneMap()} zoom={1} />);
     fireEvent.click(screen.getByRole("button", { name: /encounters/i }));
