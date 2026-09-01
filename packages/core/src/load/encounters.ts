@@ -53,10 +53,19 @@ export interface ChanceOptions {
 }
 
 export function parseEncounters(text: string): Encounters {
-  const raw = JSON.parse(text) as { wild_encounter_groups: any[] };
+  const raw = JSON.parse(text) as Record<string, unknown>;
+  // Every one of the six target trees has this key. Without the check, a fork
+  // that named it differently would fail as a bare "undefined is not
+  // iterable" naming no file and no cause -- the opposite of invariant I7's
+  // "refuse and say what to fix" (mirrors the identical guard in
+  // parseMapGroups, load/maps.ts, for map_groups.json's `group_order`).
+  if (!Array.isArray(raw.wild_encounter_groups)) {
+    throw new Error("wild_encounters.json has no `wild_encounter_groups` array; cannot parse encounters");
+  }
+  const groupsRaw = raw.wild_encounter_groups as any[];
   const groups = new Map<string, EncounterGroup>();
 
-  for (const g of raw.wild_encounter_groups) {
+  for (const g of groupsRaw) {
     const fields = new Map<Method, number[]>();
     for (const f of g.fields ?? []) fields.set(f.type as Method, f.encounter_rates as number[]);
 
@@ -113,6 +122,18 @@ export function speciesChances(
   for (let slot = segment.from; slot < segment.from + segment.count; slot++) {
     const mon = table.mons[slot];
     if (!mon) continue;
+    // `?? 0`, not a refusal: 26 (map, variant, method) entries across 14 real
+    // maps -- nearly every major Johto town's water table, plus MAP_ROUTE30's
+    // fishing_mons -- carry more `mons` slots than their group declares
+    // weights for (measured: 24 water_mons entries at 12 mons vs. 5 weights,
+    // 2 fishing_mons at 12 vs. 10). A slot past the declared weight array is
+    // indistinguishable here from a slot genuinely weighted at zero.
+    // Concretely: MAP_LAKE_OF_RAGE's water_mons is 12 slots but only 5
+    // weights ([60,30,5,4,1]); Gyarados occupies slot 4 (weight 1) plus
+    // unweighted slots 6-11, so it reports exactly 1% rather than its real
+    // share of that table. Whether that reflects the game's actual encounter
+    // logic or an authoring gap in the source data is outside this parser's
+    // job to decide -- it reports what the data says, not what it should say.
     const weight = weights[slot] ?? 0;
     const found = by.get(mon.species);
     if (found) {
