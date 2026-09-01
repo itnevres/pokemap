@@ -3,9 +3,12 @@ import { Command } from "commander";
 import { writeFileSync } from "node:fs";
 import { renderLayout } from "@pokemap/core/src/render/layout.js";
 import { validateMetatileRange, validatePaletteRange } from "@pokemap/core/src/validate/metatileRange.js";
+import { buildWorld, resolveWorldPlacements } from "@pokemap/core/src/world/resolve.js";
+import { readSidecar } from "@pokemap/core/src/world/sidecar.js";
+import { createRaster, blitScaled } from "@pokemap/core/src/render/raster.js";
 import { encodePng } from "./png.js";
 import { resolveProject, layoutNameFor } from "./context.js";
-import { parseBorder } from "./args.js";
+import { parseBorder, parseBbox } from "./args.js";
 
 const program = new Command();
 program.name("pokemap").option("-p, --project <path>", "decomp root");
@@ -20,6 +23,48 @@ program
     const r = renderLayout(proj, layoutNameFor(proj, target), { border: opts.border });
     writeFileSync(opts.out, encodePng(r));
     process.stdout.write(`${opts.out} ${r.width}x${r.height} outOfRange=${r.outOfRangeCount}\n`);
+  });
+
+program
+  .command("render-world")
+  .description("render a region of the stitched world to a PNG")
+  .requiredOption("--bbox <x,y,w,h>", "region in tiles", parseBbox)
+  .option("-o, --out <file>", "output path", "world.png")
+  .option("--scale <n>", "pixels per tile (16 = full size, 4 = overview)", "4")
+  .option("--no-dungeons", "exclude auto-placed dungeon maps")
+  .action((opts: { bbox: ReturnType<typeof parseBbox>; out: string; scale: string; dungeons: boolean }) => {
+    const proj = resolveProject(program.opts().project);
+    const { x: bx, y: by, w: bw, h: bh } = opts.bbox;
+    const scale = Number(opts.scale);
+
+    const world = buildWorld(proj);
+    const sidecar = readSidecar(proj.paths.root);
+    // Same shared helper the server's /api/world route uses
+    // (packages/core/src/world/resolve.ts) -- see its own doc comment for
+    // why the dungeons-off case has to positively delete unplaced maps
+    // from the base set, not just skip repositioning them.
+    const placements = resolveWorldPlacements(proj, world, sidecar, { dungeons: opts.dungeons });
+
+    const dst = createRaster(bw * scale, bh * scale);
+    let drawn = 0;
+    for (const p of placements.values()) {
+      // A placement from applySidecar's fallback branch (component: -1, a
+      // stale or not-yet-placed manual entry -- see
+      // packages/core/test/world/sidecar.test.ts) carries width:0,
+      // height:0. sizeOfPlacement in WorldCanvas.tsx recovers this client-
+      // side from the map's own singleton component; this batch tool has
+      // no equivalent per-request cheap lookup, so it skips it instead --
+      // an honest "not rendered" rather than a NaN destination offset that
+      // silently paints nothing while still counting toward `drawn`.
+      if (p.width <= 0 || p.height <= 0) continue;
+      if (p.x + p.width <= bx || p.x >= bx + bw || p.y + p.height <= by || p.y >= by + bh) continue;
+      const layoutName = proj.layoutForMap(p.map).name;
+      blitScaled(dst, renderLayout(proj, layoutName), (p.x - bx) * scale, (p.y - by) * scale, scale / 16);
+      drawn++;
+    }
+
+    writeFileSync(opts.out, encodePng(dst));
+    process.stdout.write(`${opts.out} ${dst.width}x${dst.height} maps=${drawn}\n`);
   });
 
 program

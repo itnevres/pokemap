@@ -1,12 +1,28 @@
 import { readFileSync } from "node:fs";
-import { createServer as createHttp, type Server } from "node:http";
+import { createServer as createHttp, type IncomingMessage, type Server } from "node:http";
 import { openProject, type Project } from "@pokemap/core/src/project.js";
 import { renderLayout } from "@pokemap/core/src/render/layout.js";
 import { parseBlocks } from "@pokemap/core/src/load/blocks.js";
+import { buildWorld, resolveWorldPlacements } from "@pokemap/core/src/world/resolve.js";
+import { readSidecar, writeSidecar } from "@pokemap/core/src/world/sidecar.js";
 import { encodePng } from "@pokemap/cli/src/png.js";
 import { parseBorder } from "@pokemap/cli/src/args.js";
 
 export interface PokemapServer { port: number; project: Project; close(): Promise<void>; }
+
+/**
+ * Buffers a request body to a string. `/api/world/placement` is the first
+ * POST route this server has ever needed -- every route before it only ever
+ * reads.
+ */
+function readBody(req: IncomingMessage): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    req.on("data", (c: Buffer) => chunks.push(c));
+    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    req.on("error", reject);
+  });
+}
 
 export async function createServer(opts: { projectPath: string; port?: number }): Promise<PokemapServer> {
   const project = openProject(opts.projectPath);
@@ -17,6 +33,15 @@ export async function createServer(opts: { projectPath: string; port?: number })
   // designs the real cache with an eviction policy; until then this is a
   // single-user dev server and the ceiling is understood rather than enforced.
   const pngCache = new Map<string, Buffer>();
+
+  // buildWorld walks all 1,209 maps' connections (~4s against the real
+  // corpus, per packages/core/test/world/connections.test.ts) and the
+  // project is read-only for all of Plan 1, so its answer can never change
+  // for the lifetime of one server process. Computed at most once, on the
+  // first request that needs it -- not eagerly at startup, so routes that
+  // never touch /api/world (most of api.test.ts) don't pay for it.
+  let worldCache: ReturnType<typeof buildWorld> | undefined;
+  const getWorld = () => (worldCache ??= buildWorld(project));
 
   const http: Server = createHttp((req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
@@ -101,6 +126,48 @@ export async function createServer(opts: { projectPath: string; port?: number })
         }
         res.writeHead(200, { "content-type": "image/png", "cache-control": "no-cache" });
         return res.end(png);
+      }
+
+      if (url.pathname === "/api/world") {
+        const dungeons = url.searchParams.get("dungeons") !== "0";
+        const world = getWorld();
+        const sidecar = readSidecar(project.paths.root);
+        const merged = resolveWorldPlacements(project, world, sidecar, { dungeons });
+        return send(200, {
+          placements: Object.fromEntries(merged),
+          components: world.components,
+          conflicts: world.conflicts,
+          verticalLinks: world.verticalLinks,
+          sidecar,
+        });
+      }
+
+      if (url.pathname === "/api/world/placement" && req.method === "POST") {
+        return readBody(req)
+          .then((body) => {
+            let parsed: { map?: unknown; x?: unknown; y?: unknown };
+            try {
+              parsed = JSON.parse(body) as typeof parsed;
+            } catch (e) {
+              return send(400, { error: `invalid JSON body: ${(e as Error).message}` });
+            }
+            if (typeof parsed.map !== "string" || typeof parsed.x !== "number" || typeof parsed.y !== "number") {
+              return send(400, { error: `expected { map: string, x: number, y: number }, got ${body}` });
+            }
+            const sidecar = readSidecar(project.paths.root);
+            sidecar.manualPlacements[parsed.map] = { x: parsed.x, y: parsed.y };
+            writeSidecar(project.paths.root, sidecar);
+            return send(200, { ok: true });
+          })
+          // This chain runs after the try/catch below has already returned,
+          // so a throw in here (bad JSON, wrong shape, or readSidecar's own
+          // I7 refusal on a corrupted world.json) would otherwise become an
+          // unhandled rejection and leave the request hanging forever
+          // instead of answering it.
+          .catch((e: unknown) => {
+            console.error(e);
+            send(500, { error: e instanceof Error ? e.message : String(e) });
+          });
       }
 
       return send(404, { error: "not found" });

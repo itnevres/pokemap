@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { InvalidArgumentError } from "commander";
-import { parseBorder } from "../src/args.js";
+import { parseBorder, parseBbox } from "../src/args.js";
 
 describe("parseBorder", () => {
   it("accepts non-negative integers", () => {
@@ -38,5 +38,48 @@ describe("parseBorder", () => {
   it("accepts the top of the allowed range and rejects one past it", () => {
     expect(parseBorder("1000")).toBe(1000);
     expect(() => parseBorder("1001")).toThrow(InvalidArgumentError);
+  });
+});
+
+describe("parseBbox", () => {
+  it("accepts four comma-separated integers as {x,y,w,h}", () => {
+    expect(parseBbox("0,0,400,400")).toEqual({ x: 0, y: 0, w: 400, h: 400 });
+  });
+
+  it("accepts negative x/y (a bbox can legitimately start before the world origin) but not negative w/h", () => {
+    expect(parseBbox("-10,-20,5,6")).toEqual({ x: -10, y: -20, w: 5, h: 6 });
+  });
+
+  // render-world's own culling test (`p.x + p.width <= bx || ...`) and the
+  // blit destination (`(p.x - bx) * scale`) both silently do the wrong
+  // thing on NaN rather than throwing: a NaN comparison is always false (so
+  // the x-bounds exclusion clause never fires, over-including maps outside
+  // the intended column) and a NaN destination index is a silent no-op
+  // write on a Uint8ClampedArray (so `drawn++` still counts a map that
+  // never actually painted a pixel). Both are confidently-wrong output, not
+  // a crash -- the worse of the two failure modes this project's own test
+  // rules call out repeatedly.
+  it("rejects a non-numeric component instead of letting it become NaN downstream", () => {
+    expect(() => parseBbox("abc,0,400,400")).toThrow(InvalidArgumentError);
+    expect(() => parseBbox("abc,0,400,400")).toThrow(/--bbox/);
+  });
+
+  it("rejects a fractional component instead of silently truncating it", () => {
+    expect(() => parseBbox("0,0,400.5,400")).toThrow(InvalidArgumentError);
+  });
+
+  it("rejects the wrong number of components", () => {
+    expect(() => parseBbox("0,0,400")).toThrow(InvalidArgumentError);
+    expect(() => parseBbox("0,0,400,400,1")).toThrow(InvalidArgumentError);
+  });
+
+  // createRaster(bw*scale, bh*scale) with a zero or negative dimension does
+  // not throw either -- `new Uint8ClampedArray(0)` (or a negative length,
+  // which ToIndex clamps) just silently allocates an empty buffer, and
+  // encodePng's own guard would report it as a confusing "raster is 0x400"
+  // rather than naming --bbox at all.
+  it("rejects a zero or negative width/height", () => {
+    expect(() => parseBbox("0,0,0,400")).toThrow(InvalidArgumentError);
+    expect(() => parseBbox("0,0,400,-1")).toThrow(InvalidArgumentError);
   });
 });

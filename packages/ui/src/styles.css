@@ -33,6 +33,17 @@
 
   --focus-ring: #60a5fa;
 
+  /* World canvas badges (Task 25): dive/emerge reuse the elevation
+     low/high hues -- "goes down" / "comes up" already means something in
+     this palette, and neither is overridden in light mode (see the
+     [data-theme="light"] block's own comment), so these two are safe to
+     read as theme-independent constants from JS rather than re-resolving
+     getComputedStyle per badge kind on every redraw. --conflict-badge
+     mirrors --danger and IS re-read live (see WorldCanvas's redraw),
+     because --danger does differ by theme. */
+  --link-dive: var(--overlay-elevation-low);
+  --link-emerge: var(--overlay-elevation-high);
+
   --font-ui: "IBM Plex Sans", system-ui, sans-serif;
   --font-data: "JetBrains Mono", ui-monospace, "Cascadia Code", monospace;
 
@@ -402,5 +413,275 @@ input {
 }
 
 .map-canvas__hover--empty {
+  color: var(--text-muted);
+}
+
+/* App-level mode switch (Map / World) -- Task 25 adds a second top-level
+   view, so App.tsx's toolbar needs a way to pick between them. */
+.app__mode {
+  display: flex;
+  gap: var(--space-1);
+  margin-left: var(--space-2);
+}
+
+.world-canvas {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.world-canvas__toolbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-panel-raised);
+  border-bottom: 1px solid var(--border);
+}
+
+.world-canvas__toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.world-canvas__dungeon-label {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  user-select: none;
+}
+
+/* A real switch, not a checkbox -- role="switch" + aria-checked, per the
+   accessibility baseline (colour is never the only signal: the thumb
+   position and the label text both carry the state too). */
+.world-canvas__switch {
+  position: relative;
+  width: 34px;
+  height: 18px;
+  flex: 0 0 auto;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-canvas);
+  cursor: pointer;
+  transition: background-color 150ms ease-out, border-color 150ms ease-out;
+}
+
+.world-canvas__switch[aria-checked="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.world-canvas__switch-thumb {
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--text-primary);
+  transition: transform 150ms ease-out;
+}
+
+.world-canvas__switch[aria-checked="true"] .world-canvas__switch-thumb {
+  transform: translateX(16px);
+  background: var(--text-on-accent);
+}
+
+.world-canvas__zoom-readout {
+  font-family: var(--font-data);
+  font-size: var(--text-2xs);
+  color: var(--text-secondary);
+  min-width: 3.5em;
+  text-align: right;
+}
+
+.world-canvas__legend {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding: var(--space-1) var(--space-3);
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+  font-size: var(--text-2xs);
+  color: var(--text-secondary);
+}
+
+.world-canvas__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.world-canvas__swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.world-canvas__swatch--conflict {
+  background: var(--danger);
+  transform: rotate(45deg);
+}
+
+.world-canvas__swatch--dive {
+  background: var(--link-dive);
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+}
+
+.world-canvas__swatch--emerge {
+  background: var(--link-emerge);
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
+
+.world-canvas__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+}
+
+.world-canvas__viewport {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+  background: var(--bg-canvas);
+}
+
+.world-canvas__stage {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+.world-canvas__stage--dragging-map {
+  cursor: grabbing;
+}
+
+.world-canvas__tooltip {
+  position: absolute;
+  z-index: 10;
+  max-width: 320px;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  font-size: var(--text-xs);
+  color: var(--text-primary);
+  pointer-events: none;
+}
+
+.world-canvas__tooltip strong {
+  font-family: var(--font-data);
+  color: var(--danger);
+}
+
+.world-canvas__rail {
+  flex: 0 0 240px;
+  width: 240px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-panel);
+  border-left: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.world-canvas__rail-header {
+  flex: 0 0 auto;
+  padding: var(--space-2) var(--space-3) 0;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.world-canvas__rail-title {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.world-canvas__rail-count {
+  font-family: var(--font-data);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+}
+
+.world-canvas__rail-filter {
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-primary);
+  padding: var(--space-2) var(--space-3);
+  margin: var(--space-2) var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.world-canvas__rail-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  list-style: none;
+  margin: 0;
+  padding: 0 var(--space-2) var(--space-2);
+}
+
+.world-canvas__rail-item {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-family: var(--font-data);
+  font-size: var(--text-sm);
+  padding: var(--space-1) var(--space-2);
+  cursor: grab;
+  border-radius: 4px;
+}
+
+.world-canvas__rail-item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.world-canvas__rail-empty {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  padding: var(--space-3);
+}
+
+.world-canvas__status {
+  flex: 0 0 auto;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: 0 var(--space-3);
+  background: var(--bg-panel-raised);
+  border-top: 1px solid var(--border);
+  font-family: var(--font-data);
+  font-size: var(--text-2xs);
+  color: var(--text-secondary);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.world-canvas__status-item strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.world-canvas__hover--empty {
   color: var(--text-muted);
 }

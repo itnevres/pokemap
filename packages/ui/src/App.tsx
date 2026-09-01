@@ -1,10 +1,14 @@
 import { useState } from "react";
 import { MapTree } from "./components/MapTree.js";
 import { MapCanvas } from "./components/MapCanvas.js";
+import { WorldCanvas } from "./components/WorldCanvas.js";
 import { useMapGroups } from "./hooks/useMapGroups.js";
 import { useMapLayout } from "./hooks/useMapLayout.js";
 
+type Mode = "map" | "world";
+
 export function App() {
+  const [mode, setMode] = useState<Mode>("map");
   const [selected, setSelected] = useState<string | null>(null);
   const { data, error } = useMapGroups();
   const layout = useMapLayout(selected);
@@ -13,7 +17,25 @@ export function App() {
     <div className="app">
       <header className="app__toolbar">
         <h1 className="app__title">PokeMap</h1>
-        {selected && <span className="app__status">{selected}</span>}
+        <div className="app__mode" role="group" aria-label="View">
+          <button
+            type="button"
+            className="map-canvas__btn"
+            aria-pressed={mode === "map"}
+            onClick={() => setMode("map")}
+          >
+            Map
+          </button>
+          <button
+            type="button"
+            className="map-canvas__btn"
+            aria-pressed={mode === "world"}
+            onClick={() => setMode("world")}
+          >
+            World
+          </button>
+        </div>
+        {mode === "map" && selected && <span className="app__status">{selected}</span>}
       </header>
       <div className="app__body">
         <aside className="app__sidebar">
@@ -26,7 +48,9 @@ export function App() {
           )}
         </aside>
         <main className="app__canvas">
-          {!selected ? (
+          {mode === "world" ? (
+            <WorldCanvas />
+          ) : !selected ? (
             <p className="app__canvas-placeholder">Select a map</p>
           ) : layout.error ? (
             <p className="app__canvas-placeholder">Could not load {selected}: {layout.error}</p>

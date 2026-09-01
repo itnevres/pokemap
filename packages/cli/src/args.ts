@@ -25,3 +25,29 @@ export function parseBorder(value: string): number {
   }
   return n;
 }
+
+export interface Bbox { x: number; y: number; w: number; h: number; }
+
+/**
+ * commander's `argParser` for `render-world --bbox`. Four comma-separated
+ * integers, width/height strictly positive -- rejected here rather than
+ * travelling as NaN into render-world's culling test (`p.x + p.width <= bx
+ * || ...`, where a NaN comparison is always false, silently disabling that
+ * exclusion instead of throwing) or into `blitScaled`'s destination offset
+ * (a NaN index is a silent no-op write on a Uint8ClampedArray, so `drawn++`
+ * would still count a map that painted nothing). x/y may be negative --
+ * a bbox legitimately can start before the world origin -- but a
+ * zero-or-negative width/height would reach `createRaster` as a silently
+ * empty buffer rather than a refusal naming this flag.
+ */
+export function parseBbox(value: string): Bbox {
+  const parts = value.split(",");
+  if (parts.length !== 4 || parts.some((p) => !/^-?\d+$/.test(p))) {
+    throw new InvalidArgumentError(`--bbox must be four comma-separated integers x,y,w,h, got ${JSON.stringify(value)}`);
+  }
+  const [x, y, w, h] = parts.map(Number) as [number, number, number, number];
+  if (w <= 0 || h <= 0) {
+    throw new InvalidArgumentError(`--bbox width and height must be positive, got w=${w} h=${h}`);
+  }
+  return { x, y, w, h };
+}
