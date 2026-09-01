@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import type { Method, Rod, SpeciesChance } from "@pokemap/core/src/load/encounters.js";
 
 /** Screen-space rect of one map placement in the world view -- the same
@@ -191,9 +191,7 @@ export function EncounterGutter({ maps, zoom }: EncounterGutterProps) {
   // WorldCanvas.tsx's onMouseMove: `e.currentTarget.getBoundingClientRect()`
   // read at the moment of the event, stored in state, rendered as a single
   // top-level sibling positioned via absolute left/top) -- not a new
-  // pattern invented for this file. Computing the rect at hover time means
-  // no per-frame position tracking is needed; the icon does not move while
-  // its own tooltip is showing.
+  // pattern invented for this file.
   const showTooltip = (e: { currentTarget: HTMLElement }, key: string, label: string) => {
     const iconRect = e.currentTarget.getBoundingClientRect();
     const containerRect = containerRef.current?.getBoundingClientRect();
@@ -205,6 +203,39 @@ export function EncounterGutter({ maps, zoom }: EncounterGutterProps) {
     });
   };
   const hideTooltip = (key: string) => setTooltip((t) => (t?.key === key ? null : t));
+
+  // Review fix: lifting the tooltip out to the top level (above) fixed WHERE
+  // it paints, but left WHEN it disappears entirely up to the icon's own
+  // onMouseLeave/onBlur -- neither of which fires when the icon instead
+  // moves, un-renders, or the whole gutter is switched off out from under
+  // it. Confirmed live, three ways: (1) focus an icon, wheel-zoom without
+  // crossing the low-zoom threshold -- the icon's screen position moves
+  // every frame (`maps[i].rect` is recomputed from pan/zoom in WorldCanvas)
+  // but the tooltip's x/y, captured once at focus time, does not, so it
+  // ends up pointing at nothing; (2) zoom out PAST the threshold so strips
+  // collapse to badges (the icon unmounts) -- the tooltip keeps floating
+  // over the now-collapsed view; (3) click the Encounters toggle off (no
+  // legend, no badges, no strips left at all) -- the tooltip was still
+  // floating over the bare canvas, directly contradicting "off by default
+  // behind one toggle" (spec §9): toggling off did not remove all of this
+  // overlay's UI.
+  //
+  // `enabled`/`collapsed` alone (gating the render below on
+  // `enabled && !collapsed`) closes (2) and (3) but not (1) -- collapsed
+  // stays false throughout an ordinary zoom that never crosses the
+  // threshold, so the render guard alone still shows a tooltip, just at a
+  // stale position. `zoom` and `maps` (whose every entry's `rect` is
+  // recomputed on every pan/zoom frame in WorldCanvas) are what actually
+  // change during (1), so both are watched here too: ANY reason the
+  // anchoring icon might have moved, disappeared, or been switched off
+  // clears the tooltip's STATE, not just its render -- so a later
+  // toggle-back-on cannot resurrect a stale tooltip nobody is hovering.
+  // useLayoutEffect, not useEffect, so this resolves before the browser
+  // paints the stale position at all, rather than clearing it one frame
+  // late.
+  useLayoutEffect(() => {
+    setTooltip(null);
+  }, [enabled, collapsed, zoom, maps]);
 
   return (
     <div className="encounter-gutter" ref={containerRef}>
@@ -328,8 +359,14 @@ export function EncounterGutter({ maps, zoom }: EncounterGutterProps) {
           long comment on showTooltip above for why nesting is what broke
           this the first time. Anchored at the hovered/focused icon's own
           top-center point (computed once, at hover time); CSS centers and
-          lifts it above that point via `transform`. */}
-      {tooltip && (
+          lifts it above that point via `transform`.
+          `enabled && !collapsed`, not just `tooltip` -- belt-and-suspenders
+          alongside the useLayoutEffect above: that effect clears `tooltip`
+          itself (so a later toggle-back-on can't resurrect a stale one),
+          this guard additionally makes the render impossible during the
+          one render pass between a state flip and the effect that reacts
+          to it, however briefly that window is. */}
+      {enabled && !collapsed && tooltip && (
         <span className="encounter-gutter__tooltip" role="tooltip" style={{ left: tooltip.x, top: tooltip.y }}>
           {tooltip.label}
         </span>

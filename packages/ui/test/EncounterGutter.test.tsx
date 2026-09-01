@@ -140,6 +140,55 @@ describe("EncounterGutter", () => {
     expect(strip?.contains(tooltip)).toBe(false);
   });
 
+  // Review fix: lifting the tooltip out to a top-level sibling (previous
+  // fix, above) also lifted it out of its anchor icon's LIFETIME -- nothing
+  // cleared `tooltip` state when the icon that opened it moved, unmounted,
+  // or the whole gutter switched off out from under it. Confirmed live,
+  // three ways (see the long comment on the useLayoutEffect in
+  // EncounterGutter.tsx for the full account); these three tests pin each
+  // one directly against the component's own state, not just its CSS.
+  it("toggling the feature off clears an open tooltip, not just the strips it belonged to", () => {
+    render(<EncounterGutter maps={oneMap()} zoom={16} />);
+    const toggle = screen.getByRole("button", { name: /encounters/i });
+    fireEvent.click(toggle);
+    fireEvent.focus(screen.getByRole("button", { name: /espeon/i }));
+    expect(screen.getByRole("tooltip")).toBeTruthy();
+
+    fireEvent.click(toggle); // off -- legend, strips and the tooltip should all go
+    expect(screen.queryByRole("tooltip")).toBeNull();
+  });
+
+  it("zooming past the collapse threshold clears an open tooltip rather than leaving it floating over a badge", () => {
+    const { rerender } = render(<EncounterGutter maps={oneMap()} zoom={16} />);
+    fireEvent.click(screen.getByRole("button", { name: /encounters/i }));
+    fireEvent.focus(screen.getByRole("button", { name: /espeon/i }));
+    expect(screen.getByRole("tooltip")).toBeTruthy();
+
+    rerender(<EncounterGutter maps={oneMap()} zoom={1} />); // crosses LOW_ZOOM_THRESHOLD -- the icon itself unmounts
+    expect(screen.queryByRole("tooltip")).toBeNull();
+  });
+
+  // The bug's narrowest, easiest-to-miss form: a zoom change that never
+  // crosses the collapse threshold at all (both 16 and 10 are well above
+  // LOW_ZOOM_THRESHOLD=4) still moves every icon's real screen position --
+  // WorldCanvas recomputes each map's `rect` from pan/zoom on every frame --
+  // so a tooltip whose x/y were captured once, at focus time, would end up
+  // pointing at stale coordinates even though `collapsed` never changed and
+  // the icon never unmounted. Gating the tooltip's render on
+  // `enabled && !collapsed` alone (without also watching `zoom`/`maps`)
+  // would NOT catch this case -- both stay true throughout. This is the
+  // one manifestation a render-only guard cannot fix; only clearing the
+  // STATE on every zoom change does.
+  it("zooming without crossing the collapse threshold still clears a stale tooltip, since the icon moved anyway", () => {
+    const { rerender } = render(<EncounterGutter maps={oneMap()} zoom={16} />);
+    fireEvent.click(screen.getByRole("button", { name: /encounters/i }));
+    fireEvent.focus(screen.getByRole("button", { name: /espeon/i }));
+    expect(screen.getByRole("tooltip")).toBeTruthy();
+
+    rerender(<EncounterGutter maps={oneMap()} zoom={10} />); // still well above the threshold -- never collapses
+    expect(screen.queryByRole("tooltip")).toBeNull();
+  });
+
   it("collapses to a count badge instead of icons below the readable-icon zoom threshold", () => {
     render(<EncounterGutter maps={oneMap()} zoom={1} />);
     fireEvent.click(screen.getByRole("button", { name: /encounters/i }));
