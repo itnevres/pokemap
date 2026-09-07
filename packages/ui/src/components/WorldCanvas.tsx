@@ -210,6 +210,12 @@ export function WorldCanvas() {
   const [spotlightHits, setSpotlightHits] = useState<SpeciesHit[] | null>(null);
   const [lens, setLens] = useState<LensId | null>(null);
 
+  // Feature: multi-select move. Plain click selects one map (clearing the
+  // rest); Ctrl/Cmd+click toggles; a marquee (Step 5) replaces the
+  // selection outright. Set of map NAMES, matching how everything else in
+  // this file keys placements.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
   const dungeonsOn = dungeonsPending ?? world?.sidecarDungeonAutoLayout ?? true;
 
   // /api/coverage backs both the level-curve/empty-maps/unused-species
@@ -656,6 +662,17 @@ export function WorldCanvas() {
     });
   }, [spotlightHits, visible, sizeByMap, pan, zoom, spotlightByMap]);
 
+  const selectionOverlayEntries = useMemo(() => {
+    if (selected.size === 0) return [] as Array<{ map: string; rect: EncounterGutterMapEntry["rect"] }>;
+    const out: Array<{ map: string; rect: EncounterGutterMapEntry["rect"] }> = [];
+    for (const p of visible) {
+      if (!selected.has(p.map)) continue;
+      const size = sizeOfPlacement(p, sizeByMap);
+      out.push({ map: p.map, rect: { x: p.x * zoom + pan.x, y: p.y * zoom + pan.y, width: size.width * zoom, height: size.height * zoom } });
+    }
+    return out;
+  }, [selected, visible, sizeByMap, pan, zoom]);
+
   // LensPanel's empty-maps legend "next action" (spec §9: a legend states
   // what to do next, not just what colours mean). Reuses fitWorld's own
   // worldBoundsOf/computeFit pair AND its exact "connected landmasses only"
@@ -826,6 +843,21 @@ export function WorldCanvas() {
     const rect = e.currentTarget.getBoundingClientRect();
     const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
     const w = screenToWorld(sx, sy);
+
+    if (e.ctrlKey || e.metaKey) {
+      const hit = hitTest(w.x, w.y);
+      if (hit) {
+        setSelected((prev) => {
+          const next = new Set(prev);
+          if (next.has(hit.map)) next.delete(hit.map);
+          else next.add(hit.map);
+          return next;
+        });
+      }
+      // Ctrl/Cmd+drag starting on empty space becomes a marquee -- Step 5.
+      return;
+    }
+
     const hit = e.shiftKey ? hitTest(w.x, w.y) : null;
     if (hit) {
       dragRef.current = { kind: "map", map: hit.map, grabDX: w.x - hit.x, grabDY: w.y - hit.y, startTileX: hit.x, startTileY: hit.y };
@@ -833,6 +865,21 @@ export function WorldCanvas() {
     } else {
       dragRef.current = { kind: "pan", startX: e.clientX, startY: e.clientY, startPan: pan };
     }
+  };
+
+  // Native click, not a custom mousedown/mouseup movement-threshold check:
+  // the browser already suppresses `click` after a real drag (mousedown
+  // and mouseup at meaningfully different positions), so this only ever
+  // fires for a genuine click -- no new "was this a drag" logic needed.
+  // Ctrl/Cmd+click and Shift+click are both handled entirely in
+  // onMouseDown (toggle, or a map/group drag) and must not ALSO trigger
+  // this plain-select behaviour, hence the guard.
+  const onCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (e.ctrlKey || e.metaKey || e.shiftKey) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const w = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
+    const hit = hitTest(w.x, w.y);
+    setSelected(hit ? new Set([hit.map]) : new Set());
   };
 
   const onMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -1042,11 +1089,23 @@ export function WorldCanvas() {
             onMouseDown={onMouseDown}
             onMouseMove={onMouseMove}
             onMouseUp={onMouseUp}
+            onClick={onCanvasClick}
             onMouseLeave={onMouseLeaveCanvas}
             onDragOver={onDragOverCanvas}
             onDrop={onDropOnCanvas}
           />
           <EncounterGutter maps={encounterEntries} zoom={zoom} />
+          {selectionOverlayEntries.length > 0 && (
+            <div className="world-canvas__selection" aria-hidden="true">
+              {selectionOverlayEntries.map((e) => (
+                <div
+                  key={e.map}
+                  className="world-canvas__selection-outline"
+                  style={{ left: e.rect.x, top: e.rect.y, width: e.rect.width, height: e.rect.height }}
+                />
+              ))}
+            </div>
+          )}
           {lens && lensOverlayEntries.length > 0 && (
             <div className="world-canvas__lens" aria-hidden="true">
               {lensOverlayEntries.map((e) => (

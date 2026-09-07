@@ -955,4 +955,69 @@ describe("WorldCanvas", () => {
     // normally alongside it.
     await waitFor(() => expect(FakeImage.instances.some((i) => i.src.includes("Solo"))).toBe(true));
   });
+
+  // -------------------------------------------------------------------
+  // Multi-select move
+  // -------------------------------------------------------------------
+  describe("multi-select", () => {
+    function threeMapsWorld() {
+      return makeWorld({
+        placements: {
+          A: { map: "A", x: 0, y: 0, width: 10, height: 10, component: 0 },
+          B: { map: "B", x: 20, y: 0, width: 10, height: 10, component: 1 },
+          C: { map: "C", x: 0, y: 20, width: 10, height: 10, component: 2 },
+        },
+      });
+    }
+
+    it("plain click on a map selects only that map", async () => {
+      const { impl } = makeFetchMock(threeMapsWorld());
+      const { canvas } = await mountReady(impl);
+
+      fireEvent.mouseDown(canvas, { clientX: 5, clientY: 5, button: 0 }); // inside A
+      fireEvent.mouseUp(canvas, { clientX: 5, clientY: 5 });
+      fireEvent.click(canvas, { clientX: 5, clientY: 5 });
+
+      expect(canvas.parentElement!.querySelectorAll(".world-canvas__selection-outline").length).toBe(1);
+    });
+
+    it("plain click on empty canvas clears the selection", async () => {
+      const { impl } = makeFetchMock(threeMapsWorld());
+      const { canvas } = await mountReady(impl);
+
+      fireEvent.mouseDown(canvas, { clientX: 5, clientY: 5, button: 0 });
+      fireEvent.mouseUp(canvas, { clientX: 5, clientY: 5 });
+      fireEvent.click(canvas, { clientX: 5, clientY: 5 });
+      expect(canvas.parentElement!.querySelectorAll(".world-canvas__selection-outline").length).toBe(1);
+
+      fireEvent.mouseDown(canvas, { clientX: 90, clientY: 90, button: 0 }); // empty space
+      fireEvent.mouseUp(canvas, { clientX: 90, clientY: 90 });
+      fireEvent.click(canvas, { clientX: 90, clientY: 90 });
+      expect(canvas.parentElement!.querySelectorAll(".world-canvas__selection-outline").length).toBe(0);
+    });
+
+    it("Ctrl+click toggles a map in and out of the selection without starting a drag", async () => {
+      const { impl } = makeFetchMock(threeMapsWorld());
+      const { canvas } = await mountReady(impl);
+
+      fireEvent.mouseDown(canvas, { clientX: 5, clientY: 5, button: 0, ctrlKey: true }); // A
+      fireEvent.mouseDown(canvas, { clientX: 25, clientY: 5, button: 0, ctrlKey: true }); // B
+      expect(canvas.parentElement!.querySelectorAll(".world-canvas__selection-outline").length).toBe(2);
+
+      fireEvent.mouseDown(canvas, { clientX: 5, clientY: 5, button: 0, ctrlKey: true }); // toggle A off
+      expect(canvas.parentElement!.querySelectorAll(".world-canvas__selection-outline").length).toBe(1);
+    });
+
+    it("a plain drag over a map still pans and does not change the selection", async () => {
+      const { impl } = makeFetchMock(threeMapsWorld());
+      const { canvas } = await mountReady(impl);
+
+      fireEvent.mouseDown(canvas, { clientX: 5, clientY: 5, button: 0, ctrlKey: true }); // select A
+      fireEvent.mouseDown(canvas, { clientX: 25, clientY: 5, button: 0 }); // plain drag starting on B
+      fireEvent.mouseMove(canvas, { clientX: 40, clientY: 20 });
+      fireEvent.mouseUp(canvas, { clientX: 40, clientY: 20 });
+
+      expect(canvas.parentElement!.querySelectorAll(".world-canvas__selection-outline").length).toBe(1);
+    });
+  });
 });
