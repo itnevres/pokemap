@@ -78,6 +78,7 @@ type DragState =
   // different tile" from "the user grabbed it and let go again" -- see
   // its own review-fix comment.
   | { kind: "map"; map: string; grabDX: number; grabDY: number; startTileX: number; startTileY: number }
+  | { kind: "marquee"; startX: number; startY: number }
   | null;
 
 interface HoverInfo {
@@ -118,6 +119,14 @@ function componentOfPlacement(p: Placement, components: WorldComponentInfo[]): W
  *  consistent. */
 function intersects(px: number, py: number, pw: number, ph: number, x0: number, y0: number, x1: number, y1: number): boolean {
   return !(px + pw <= x0 || px >= x1 || py + ph <= y0 || py >= y1);
+}
+
+/** Full-containment AABB test, in world-tile space -- the "dragged right"
+ *  half of the marquee's direction-sensitive selection (Step 9 below).
+ *  `intersects` (already in this file) is the "dragged left" / crossing
+ *  half. */
+function contains(px: number, py: number, pw: number, ph: number, x0: number, y0: number, x1: number, y1: number): boolean {
+  return px >= x0 && py >= y0 && px + pw <= x1 && py + ph <= y1;
 }
 
 interface FitResult {
@@ -215,6 +224,7 @@ export function WorldCanvas() {
   // selection outright. Set of map NAMES, matching how everything else in
   // this file keys placements.
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [marqueeRect, setMarqueeRect] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
 
   const dungeonsOn = dungeonsPending ?? world?.sidecarDungeonAutoLayout ?? true;
 
@@ -853,8 +863,10 @@ export function WorldCanvas() {
           else next.add(hit.map);
           return next;
         });
+      } else {
+        dragRef.current = { kind: "marquee", startX: sx, startY: sy };
+        setMarqueeRect({ x0: sx, y0: sy, x1: sx, y1: sy });
       }
-      // Ctrl/Cmd+drag starting on empty space becomes a marquee -- Step 5.
       return;
     }
 
@@ -903,6 +915,11 @@ export function WorldCanvas() {
       setCompositeVersion((v) => v + 1);
       return;
     }
+    if (drag?.kind === "marquee") {
+      const rect = e.currentTarget.getBoundingClientRect();
+      setMarqueeRect({ x0: drag.startX, y0: drag.startY, x1: e.clientX - rect.left, y1: e.clientY - rect.top });
+      return;
+    }
 
     // Not dragging: hover for the status strip and conflict tooltips.
     const rect = e.currentTarget.getBoundingClientRect();
@@ -934,10 +951,29 @@ export function WorldCanvas() {
     }
   };
 
+  const commitMarquee = () => {
+    const drag = dragRef.current;
+    if (drag?.kind !== "marquee" || !marqueeRect) return;
+    const draggedRight = marqueeRect.x1 > marqueeRect.x0;
+    const wA = screenToWorld(marqueeRect.x0, marqueeRect.y0);
+    const wB = screenToWorld(marqueeRect.x1, marqueeRect.y1);
+    const x0 = Math.min(wA.x, wB.x), x1 = Math.max(wA.x, wB.x);
+    const y0 = Math.min(wA.y, wB.y), y1 = Math.max(wA.y, wB.y);
+    const hits = new Set<string>();
+    for (const p of visible) {
+      const size = sizeOfPlacement(p, sizeByMap);
+      const test = draggedRight ? contains : intersects;
+      if (test(p.x, p.y, size.width, size.height, x0, y0, x1, y1)) hits.add(p.map);
+    }
+    setSelected(hits);
+  };
+
   const onMouseUp = () => {
     commitMapDrag();
+    commitMarquee();
     dragRef.current = null;
     setIsDraggingMap(false);
+    setMarqueeRect(null);
   };
 
   // Review fix: releasing a Shift+drag outside the canvas (toward the side
@@ -965,10 +1001,12 @@ export function WorldCanvas() {
   // false again after the matching pointerup).
   const onMouseLeaveCanvas = () => {
     commitMapDrag();
+    commitMarquee();
     dragRef.current = null;
     setIsDraggingMap(false);
     setHover(null);
     setTooltip(null);
+    setMarqueeRect(null);
   };
 
   // Review fix: captures the pointer so this gesture's mousemove/mouseup
@@ -1105,6 +1143,17 @@ export function WorldCanvas() {
                 />
               ))}
             </div>
+          )}
+          {marqueeRect && (
+            <div
+              className="world-canvas__marquee"
+              style={{
+                left: Math.min(marqueeRect.x0, marqueeRect.x1),
+                top: Math.min(marqueeRect.y0, marqueeRect.y1),
+                width: Math.abs(marqueeRect.x1 - marqueeRect.x0),
+                height: Math.abs(marqueeRect.y1 - marqueeRect.y0),
+              }}
+            />
           )}
           {lens && lensOverlayEntries.length > 0 && (
             <div className="world-canvas__lens" aria-hidden="true">

@@ -1019,5 +1019,57 @@ describe("WorldCanvas", () => {
 
       expect(canvas.parentElement!.querySelectorAll(".world-canvas__selection-outline").length).toBe(1);
     });
+
+    it("Ctrl+drag right selects only maps fully enclosed by the marquee", async () => {
+      const { impl } = makeFetchMock(threeMapsWorld());
+      const { canvas } = await mountReady(impl);
+
+      // A is [0,10)x[0,10), B is [20,30)x[0,10), C is [0,10)x[20,30).
+      // Starting the drag AT (0,0) would land directly inside A's own
+      // hit-box and take the plain Ctrl+click toggle path instead of ever
+      // starting a marquee -- (-5,-5) is genuinely empty space, so this
+      // actually exercises the marquee's containment test. A marquee from
+      // (-5,-5) to (12,12) fully encloses A only (B's left edge is at 20,
+      // C's top edge is at 20 -- neither fits).
+      fireEvent.mouseDown(canvas, { clientX: -5, clientY: -5, button: 0, ctrlKey: true });
+      fireEvent.mouseMove(canvas, { clientX: 12, clientY: 12, ctrlKey: true });
+      fireEvent.mouseUp(canvas, { clientX: 12, clientY: 12 });
+
+      const outlines = canvas.parentElement!.querySelectorAll(".world-canvas__selection-outline");
+      expect(outlines.length).toBe(1);
+    });
+
+    it("Ctrl+drag left selects every map the marquee touches at all", async () => {
+      const { impl } = makeFetchMock(threeMapsWorld());
+      const { canvas } = await mountReady(impl);
+
+      // A marquee from (25,-5) back to (5,15) (end.x < start.x: a
+      // left-drag). Its world x-span is [5,25] (y-span [-5,15], covering
+      // both A and B's own y-band). A's rect [0,10)x[0,10) sticks out
+      // past the marquee's left edge (0 < 5); B's rect [20,30)x[0,10)
+      // sticks out past its right edge (30 > 25) -- both merely crossed,
+      // neither fully enclosed, and C ([0,10)x[20,30)) sits entirely
+      // below the marquee's y-span and is untouched.
+      fireEvent.mouseDown(canvas, { clientX: 25, clientY: -5, button: 0, ctrlKey: true });
+      fireEvent.mouseMove(canvas, { clientX: 5, clientY: 15, ctrlKey: true });
+      fireEvent.mouseUp(canvas, { clientX: 5, clientY: 15 });
+
+      const outlines = canvas.parentElement!.querySelectorAll(".world-canvas__selection-outline");
+      expect(outlines.length).toBe(2);
+    });
+
+    it("a Ctrl+drag over empty space selects nothing and clears any prior selection", async () => {
+      const { impl } = makeFetchMock(threeMapsWorld());
+      const { canvas } = await mountReady(impl);
+
+      fireEvent.mouseDown(canvas, { clientX: 5, clientY: 5, button: 0, ctrlKey: true }); // select A
+      expect(canvas.parentElement!.querySelectorAll(".world-canvas__selection-outline").length).toBe(1);
+
+      fireEvent.mouseDown(canvas, { clientX: 60, clientY: 60, button: 0, ctrlKey: true });
+      fireEvent.mouseMove(canvas, { clientX: 70, clientY: 70, ctrlKey: true });
+      fireEvent.mouseUp(canvas, { clientX: 70, clientY: 70 });
+
+      expect(canvas.parentElement!.querySelectorAll(".world-canvas__selection-outline").length).toBe(0);
+    });
   });
 });
