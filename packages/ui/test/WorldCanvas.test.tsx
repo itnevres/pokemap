@@ -1029,11 +1029,19 @@ describe("WorldCanvas", () => {
       // hit-box and take the plain Ctrl+click toggle path instead of ever
       // starting a marquee -- (-5,-5) is genuinely empty space, so this
       // actually exercises the marquee's containment test. A marquee from
-      // (-5,-5) to (12,12) fully encloses A only (B's left edge is at 20,
-      // C's top edge is at 20 -- neither fits).
+      // (-5,-5) to (25,15) fully encloses A (C's top edge is at 20, out of
+      // the y-span) but only PARTIALLY overlaps B (B's rect is
+      // [20,30)x[0,10) -- the marquee's x-span [-5,25] covers B's left
+      // portion, 20 to 25, but not its right portion, 25 to 30). B
+      // therefore intersects the marquee without being contained by it --
+      // this is deliberate, not incidental: if a right-drag ever used the
+      // crossing test (`intersects`) instead of the enclosure test
+      // (`contains`), B would wrongly join the selection here too, and
+      // this test would catch it (confirmed live: a deliberate swap of
+      // contains/intersects in the implementation turns this test red).
       fireEvent.mouseDown(canvas, { clientX: -5, clientY: -5, button: 0, ctrlKey: true });
-      fireEvent.mouseMove(canvas, { clientX: 12, clientY: 12, ctrlKey: true });
-      fireEvent.mouseUp(canvas, { clientX: 12, clientY: 12 });
+      fireEvent.mouseMove(canvas, { clientX: 25, clientY: 15, ctrlKey: true });
+      fireEvent.mouseUp(canvas, { clientX: 25, clientY: 15 });
 
       const outlines = canvas.parentElement!.querySelectorAll(".world-canvas__selection-outline");
       expect(outlines.length).toBe(1);
