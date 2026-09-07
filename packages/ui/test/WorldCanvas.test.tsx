@@ -1071,5 +1071,56 @@ describe("WorldCanvas", () => {
 
       expect(canvas.parentElement!.querySelectorAll(".world-canvas__selection-outline").length).toBe(0);
     });
+
+    it("Shift+drag on a selected map moves every selected map together, preserving offsets", async () => {
+      const { impl, calls } = makeFetchMock(threeMapsWorld());
+      const { canvas } = await mountReady(impl);
+
+      fireEvent.mouseDown(canvas, { clientX: 5, clientY: 5, button: 0, ctrlKey: true }); // select A
+      fireEvent.mouseDown(canvas, { clientX: 25, clientY: 5, button: 0, ctrlKey: true }); // select B
+
+      // Shift+drag starting on A (grabbed at its own origin), moved by
+      // world-delta (5,5).
+      fireEvent.mouseDown(canvas, { clientX: 0, clientY: 0, button: 0, shiftKey: true });
+      fireEvent.mouseMove(canvas, { clientX: 5, clientY: 5, shiftKey: true });
+      fireEvent.mouseUp(canvas);
+
+      const placementCalls = calls.filter((c) => c.url.startsWith("/api/world/placement"));
+      const bodies = placementCalls.map((c) => JSON.parse(String(c.init?.body)) as { map: string; x: number; y: number });
+      expect(bodies).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ map: "A", x: 5, y: 5 }),
+          expect.objectContaining({ map: "B", x: 25, y: 5 }),
+        ]),
+      );
+      // C was never selected and must not have moved or been posted.
+      expect(bodies.some((b) => b.map === "C")).toBe(false);
+    });
+
+    it("Shift+drag on an unselected map moves only that one map, even with a selection active", async () => {
+      const { impl, calls } = makeFetchMock(threeMapsWorld());
+      const { canvas } = await mountReady(impl);
+
+      fireEvent.mouseDown(canvas, { clientX: 5, clientY: 5, button: 0, ctrlKey: true }); // select A only
+
+      fireEvent.mouseDown(canvas, { clientX: 25, clientY: 5, button: 0, shiftKey: true }); // Shift+drag B, not selected
+      fireEvent.mouseMove(canvas, { clientX: 30, clientY: 10, shiftKey: true });
+      fireEvent.mouseUp(canvas);
+
+      const placementCalls = calls.filter((c) => c.url.startsWith("/api/world/placement"));
+      const bodies = placementCalls.map((c) => JSON.parse(String(c.init?.body)) as { map: string });
+      expect(bodies).toEqual([expect.objectContaining({ map: "B" })]);
+    });
+
+    it("Escape clears the selection", async () => {
+      const { impl } = makeFetchMock(threeMapsWorld());
+      const { canvas } = await mountReady(impl);
+
+      fireEvent.mouseDown(canvas, { clientX: 5, clientY: 5, button: 0, ctrlKey: true }); // select A
+      expect(canvas.parentElement!.querySelectorAll(".world-canvas__selection-outline").length).toBe(1);
+
+      fireEvent.keyDown(canvas, { key: "Escape" });
+      expect(canvas.parentElement!.querySelectorAll(".world-canvas__selection-outline").length).toBe(0);
+    });
   });
 });

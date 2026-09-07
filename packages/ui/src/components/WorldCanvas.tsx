@@ -78,6 +78,7 @@ type DragState =
   // different tile" from "the user grabbed it and let go again" -- see
   // its own review-fix comment.
   | { kind: "map"; map: string; grabDX: number; grabDY: number; startTileX: number; startTileY: number }
+  | { kind: "group"; anchorMap: string; grabDX: number; grabDY: number; starts: Map<string, { x: number; y: number }> }
   | { kind: "marquee"; startX: number; startY: number }
   | null;
 
@@ -872,7 +873,16 @@ export function WorldCanvas() {
 
     const hit = e.shiftKey ? hitTest(w.x, w.y) : null;
     if (hit) {
-      dragRef.current = { kind: "map", map: hit.map, grabDX: w.x - hit.x, grabDY: w.y - hit.y, startTileX: hit.x, startTileY: hit.y };
+      if (selected.has(hit.map) && selected.size > 1) {
+        const starts = new Map<string, { x: number; y: number }>();
+        for (const name of selected) {
+          const p = world?.placements.get(name);
+          if (p) starts.set(name, { x: p.x, y: p.y });
+        }
+        dragRef.current = { kind: "group", anchorMap: hit.map, grabDX: w.x - hit.x, grabDY: w.y - hit.y, starts };
+      } else {
+        dragRef.current = { kind: "map", map: hit.map, grabDX: w.x - hit.x, grabDY: w.y - hit.y, startTileX: hit.x, startTileY: hit.y };
+      }
       setIsDraggingMap(true);
     } else {
       dragRef.current = { kind: "pan", startX: e.clientX, startY: e.clientY, startPan: pan };
@@ -915,6 +925,24 @@ export function WorldCanvas() {
       setCompositeVersion((v) => v + 1);
       return;
     }
+    if (drag?.kind === "group") {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const w = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
+      const anchorStart = drag.starts.get(drag.anchorMap)!;
+      const rawX = w.x - drag.grabDX, rawY = w.y - drag.grabDY;
+      const dx = Math.round(rawX) - anchorStart.x, dy = Math.round(rawY) - anchorStart.y;
+      setWorld((prev) => {
+        if (!prev) return prev;
+        const next = new Map(prev.placements);
+        for (const [name, start] of drag.starts) {
+          const existing = next.get(name);
+          if (existing) next.set(name, { ...existing, x: start.x + dx, y: start.y + dy });
+        }
+        return { ...prev, placements: next };
+      });
+      setCompositeVersion((v) => v + 1);
+      return;
+    }
     if (drag?.kind === "marquee") {
       const rect = e.currentTarget.getBoundingClientRect();
       setMarqueeRect({ x0: drag.startX, y0: drag.startY, x1: e.clientX - rect.left, y1: e.clientY - rect.top });
@@ -951,6 +979,15 @@ export function WorldCanvas() {
     }
   };
 
+  const commitGroupDrag = () => {
+    const drag = dragRef.current;
+    if (drag?.kind !== "group") return;
+    for (const [name, start] of drag.starts) {
+      const p = world?.placements.get(name);
+      if (p && (p.x !== start.x || p.y !== start.y)) postPlacement(name, p.x, p.y);
+    }
+  };
+
   const commitMarquee = () => {
     const drag = dragRef.current;
     if (drag?.kind !== "marquee" || !marqueeRect) return;
@@ -970,6 +1007,7 @@ export function WorldCanvas() {
 
   const onMouseUp = () => {
     commitMapDrag();
+    commitGroupDrag();
     commitMarquee();
     dragRef.current = null;
     setIsDraggingMap(false);
@@ -1001,6 +1039,7 @@ export function WorldCanvas() {
   // false again after the matching pointerup).
   const onMouseLeaveCanvas = () => {
     commitMapDrag();
+    commitGroupDrag();
     commitMarquee();
     dragRef.current = null;
     setIsDraggingMap(false);
@@ -1023,6 +1062,10 @@ export function WorldCanvas() {
       // Some environments (older browsers, non-mouse pointer types) may
       // not support or allow capture here -- see the comment above.
     }
+  };
+
+  const onCanvasKeyDown = (e: React.KeyboardEvent<HTMLCanvasElement>) => {
+    if (e.key === "Escape") setSelected(new Set());
   };
 
   const onDragOverCanvas = (e: React.DragEvent<HTMLCanvasElement>) => {
@@ -1128,6 +1171,8 @@ export function WorldCanvas() {
             onMouseMove={onMouseMove}
             onMouseUp={onMouseUp}
             onClick={onCanvasClick}
+            onKeyDown={onCanvasKeyDown}
+            tabIndex={0}
             onMouseLeave={onMouseLeaveCanvas}
             onDragOver={onDragOverCanvas}
             onDrop={onDropOnCanvas}
