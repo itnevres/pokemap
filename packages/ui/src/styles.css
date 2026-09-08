@@ -1312,6 +1312,23 @@ input {
   border-radius: 2px;
 }
 
+/* Map-list jump (Task 2): wrapped in the SAME .world-canvas__selection
+   z-index:6 container as the real selection outlines above (see that
+   rule's own review-fix comment) -- a bare sibling div here would
+   reproduce the exact layering bug that fix already covers, since
+   .world-canvas__lens/.world-canvas__spotlight each establish their own
+   stacking context and would still paint over an unwrapped z-index:auto
+   element regardless of DOM order. */
+.world-canvas__jump-highlight {
+  animation: world-canvas-jump-fade 2s ease-out forwards;
+}
+
+@keyframes world-canvas-jump-fade {
+  0% { opacity: 1; }
+  70% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
 .world-canvas__marquee {
   position: absolute;
   box-sizing: border-box;

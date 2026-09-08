@@ -171,7 +171,19 @@ function worldBoundsOf(placements: Map<string, Placement>, sizeByMap: Map<string
  * packages/ui/DESIGN.md for the palette/type/spacing tokens this consumes,
  * and this file's own comments for the LOD and culling mechanics.
  */
-export function WorldCanvas() {
+export interface WorldCanvasProps {
+  /** A map name to pan/zoom to, or null/undefined for none. Mirrors
+   *  App.tsx's shared `selected` state -- set by clicking a name in the
+   *  sidebar map list while in World mode. */
+  jumpToMap?: string | null;
+  /** Bumped by the caller on every click, even a re-click of the same
+   *  name -- jumpToMap alone can't distinguish "jump here again" from "no
+   *  change", since React state setters no-op on an identical primitive
+   *  value. */
+  jumpToken?: number;
+}
+
+export function WorldCanvas({ jumpToMap, jumpToken }: WorldCanvasProps = {}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageCacheRef = useRef<Map<string, ImageCacheEntry>>(new Map());
@@ -234,6 +246,11 @@ export function WorldCanvas() {
   // this file keys placements.
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [marqueeRect, setMarqueeRect] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+
+  // Map-list jump (Task 2): a transient outline on whichever map the
+  // sidebar's most recent click jumped to, faded via CSS after mount --
+  // see the jump effect below.
+  const [jumpHighlight, setJumpHighlight] = useState<string | null>(null);
 
   const dungeonsOn = dungeonsPending ?? world?.sidecarDungeonAutoLayout ?? true;
 
@@ -425,6 +442,50 @@ export function WorldCanvas() {
     setZoom(fit.zoom);
     setPan(fit.pan);
   }, [world, viewport, sizeByMap]);
+
+  // Which jumpToken has already been handled -- either an actual jump was
+  // performed for it, or it was determined there was nothing to jump to
+  // (no jumpToMap, or that map has no current placement). A ref, not
+  // state, because writing it must not itself trigger a re-render.
+  //
+  // Correctness fix, caught live by this feature's own test (Step 2's
+  // "verify it fails" turned green for the wrong reason at first): the
+  // plan's original effect depended on [jumpToken] alone, which fires
+  // once at mount and never again unless jumpToken itself changes. That
+  // is broken for the exact path a sidebar click most commonly takes --
+  // select a map in Map mode, THEN switch to World mode -- because
+  // WorldCanvas mounts FRESH at that point with jumpToMap/jumpToken
+  // already non-default (App.tsx's selected/selectVersion carry over
+  // across the mode switch), while `world` is still null (the /api/world
+  // fetch is async and has not resolved yet). The effect ran once,
+  // world was null, it returned early, and -- since jumpToken never
+  // changes again on its own -- it never got a second chance once the
+  // fetch landed. Depending on `world` too (not just jumpToken) lets the
+  // effect retry the SAME still-unhandled token once world transitions
+  // from null to loaded; the ref guard is what stops that same retry
+  // from re-centring the view on every later drag frame, which also
+  // produces a new `world` object (see sizeByMap's own comment on that)
+  // but must not re-trigger an already-handled jump.
+  const appliedJumpTokenRef = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    if (jumpToken === undefined || jumpToken === appliedJumpTokenRef.current) return;
+    if (!jumpToMap || !world) return; // retry once `world` itself changes (see comment above)
+    appliedJumpTokenRef.current = jumpToken;
+    const p = world.placements.get(jumpToMap);
+    if (!p) return;
+    const size = sizeOfPlacement(p, sizeByMap);
+    if (size.width <= 0 || size.height <= 0) return;
+    const fit = computeFit({ x: p.x, y: p.y, width: size.width, height: size.height }, viewport);
+    setZoom(fit.zoom);
+    setPan(fit.pan);
+    setJumpHighlight(jumpToMap);
+    const timer = setTimeout(() => setJumpHighlight(null), 2000);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- sizeByMap
+    // and viewport are read fresh each run but must not themselves
+    // re-trigger a jump that's already been handled for this token; the
+    // appliedJumpTokenRef guard above is what actually governs re-entry.
+  }, [jumpToken, jumpToMap, world]);
 
   // Culling: only placements whose tile-rect intersects the current
   // viewport (in world-tile space) are considered "visible". With 1,209
@@ -1222,6 +1283,19 @@ export function WorldCanvas() {
               ))}
             </div>
           )}
+          {jumpHighlight && world?.placements.get(jumpHighlight) && (() => {
+            const p = world.placements.get(jumpHighlight)!;
+            const size = sizeOfPlacement(p, sizeByMap);
+            const rect = { x: p.x * zoom + pan.x, y: p.y * zoom + pan.y, width: size.width * zoom, height: size.height * zoom };
+            return (
+              <div className="world-canvas__selection" aria-hidden="true">
+                <div
+                  className="world-canvas__selection-outline world-canvas__jump-highlight"
+                  style={{ left: rect.x, top: rect.y, width: rect.width, height: rect.height }}
+                />
+              </div>
+            );
+          })()}
           {marqueeRect && (
             <div
               className="world-canvas__marquee"

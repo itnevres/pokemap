@@ -10,8 +10,17 @@ type Mode = "map" | "world";
 export function App() {
   const [mode, setMode] = useState<Mode>("map");
   const [selected, setSelected] = useState<string | null>(null);
+  // Bumped on every sidebar click, even a re-click of the same map name --
+  // see WorldCanvas's own jumpToken doc comment for why jumpToMap alone
+  // can't carry that signal.
+  const [selectVersion, setSelectVersion] = useState(0);
   const { data, error } = useMapGroups();
   const layout = useMapLayout(selected);
+
+  const selectMap = (name: string) => {
+    setSelected(name);
+    setSelectVersion((v) => v + 1);
+  };
 
   return (
     <div className="app">
@@ -42,14 +51,14 @@ export function App() {
           {error ? (
             <p className="map-tree__empty">Could not load map groups: {error}</p>
           ) : data ? (
-            <MapTree data={data} selected={selected} onSelect={setSelected} />
+            <MapTree data={data} selected={selected} onSelect={selectMap} />
           ) : (
             <p className="map-tree__empty">Loading map groups…</p>
           )}
         </aside>
         <main className="app__canvas">
           {mode === "world" ? (
-            <WorldCanvas />
+            <WorldCanvas jumpToMap={selected} jumpToken={selectVersion} />
           ) : !selected ? (
             <p className="app__canvas-placeholder">Select a map</p>
           ) : layout.error ? (

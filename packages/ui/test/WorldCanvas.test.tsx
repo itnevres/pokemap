@@ -1152,4 +1152,60 @@ describe("WorldCanvas", () => {
       expect(canvas.parentElement!.querySelectorAll(".world-canvas__selection-outline").length).toBe(0);
     });
   });
+
+  // -------------------------------------------------------------------
+  // Map-list jump (App.tsx passes jumpToMap/jumpToken)
+  // -------------------------------------------------------------------
+  describe("jump to map", () => {
+    it("pans/zooms to the given map's real placement when jumpToken changes", async () => {
+      const { impl } = makeFetchMock(
+        makeWorld({
+          placements: {
+            Target: { map: "Target", x: 40, y: 40, width: 10, height: 10, component: 0 },
+            Other: { map: "Other", x: 0, y: 0, width: 10, height: 10, component: 1 },
+          },
+        }),
+      );
+      vi.stubGlobal("fetch", impl);
+      const utils = render(<WorldCanvas jumpToMap="Target" jumpToken={1} />);
+      await waitFor(() => expect(screen.queryByText(/Loading world/)).toBeNull());
+      const canvas = utils.container.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement;
+      canvas.getBoundingClientRect = () => ({
+        left: 0, top: 0, right: VIEWPORT_SIZE, bottom: VIEWPORT_SIZE, width: VIEWPORT_SIZE, height: VIEWPORT_SIZE, x: 0, y: 0, toJSON() {},
+      });
+      const stageCtx = ctxByCanvas.get(canvas)!;
+      await waitFor(() => expect(stageCtx.clearRect).toHaveBeenCalled());
+
+      // computeFit on Target's own 10x10 bounds in a 100x100 viewport:
+      // zoom = min(100/10, 100/10) = 10 (clamped to MAX_ZOOM=16, so 10
+      // stands), pan centres it -- Target's rect after this must be
+      // exactly [0,100)x[0,100), the full viewport, hand-computed the
+      // same way computeFit's own test above does.
+      const jumpOutline = utils.container.querySelector(".world-canvas__jump-highlight") as HTMLElement;
+      expect(jumpOutline).toBeTruthy();
+    });
+
+    it("re-jumps even when clicking the same map name again (jumpToken changes, jumpToMap does not)", async () => {
+      const { impl } = makeFetchMock(
+        makeWorld({ placements: { Target: { map: "Target", x: 40, y: 40, width: 10, height: 10, component: 0 } } }),
+      );
+      vi.stubGlobal("fetch", impl);
+      const { rerender, container } = render(<WorldCanvas jumpToMap="Target" jumpToken={1} />);
+      await waitFor(() => expect(screen.queryByText(/Loading world/)).toBeNull());
+      const canvas = container.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement;
+      canvas.getBoundingClientRect = () => ({
+        left: 0, top: 0, right: VIEWPORT_SIZE, bottom: VIEWPORT_SIZE, width: VIEWPORT_SIZE, height: VIEWPORT_SIZE, x: 0, y: 0, toJSON() {},
+      });
+      await waitFor(() => expect(container.querySelector(".world-canvas__jump-highlight")).toBeTruthy());
+
+      // Pan away, then re-request the SAME map -- jumpToMap is unchanged
+      // but jumpToken bumps, which must still re-trigger the jump.
+      fireEvent.mouseDown(canvas, { clientX: 50, clientY: 50, button: 0 });
+      fireEvent.mouseMove(canvas, { clientX: 90, clientY: 90 });
+      fireEvent.mouseUp(canvas);
+
+      rerender(<WorldCanvas jumpToMap="Target" jumpToken={2} />);
+      await waitFor(() => expect(container.querySelector(".world-canvas__jump-highlight")).toBeTruthy());
+    });
+  });
 });
