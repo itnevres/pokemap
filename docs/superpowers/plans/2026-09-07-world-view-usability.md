@@ -825,7 +825,9 @@ Add the jump effect after the `fitWorld` callback definition:
   }, [jumpToken]);
 ```
 
-Render the jump highlight, reusing the exact same visual as the selection outline (per the design spec's own explicit "one visual language" instruction) — add this in the JSX right after the `world-canvas__selection` block:
+Render the jump highlight, reusing the exact same visual as the selection outline (per the design spec's own explicit "one visual language" instruction) — add this in the JSX right after the `world-canvas__selection` block.
+
+**Audit note, caught before dispatch:** a bare sibling `<div>` here (outside any `z-index`-bearing wrapper) would reproduce the exact overlay-layering bug Task 1's own review round just fixed — `.world-canvas__selection-outline` itself carries no `z-index` of its own, only its `.world-canvas__selection` *wrapper* does (`z-index: 6`), and `.world-canvas__lens`/`.world-canvas__spotlight` (`z-index: 2`, but each establishing its own stacking context) would still paint over a bare `z-index: auto` sibling regardless of DOM order. Wrap the jump highlight in the same `.world-canvas__selection` container class, exactly like the real selection outlines, rather than introducing an unwrapped exception:
 
 ```tsx
           {jumpHighlight && world?.placements.get(jumpHighlight) && (() => {
@@ -833,10 +835,12 @@ Render the jump highlight, reusing the exact same visual as the selection outlin
             const size = sizeOfPlacement(p, sizeByMap);
             const rect = { x: p.x * zoom + pan.x, y: p.y * zoom + pan.y, width: size.width * zoom, height: size.height * zoom };
             return (
-              <div
-                className="world-canvas__selection-outline world-canvas__jump-highlight"
-                style={{ left: rect.x, top: rect.y, width: rect.width, height: rect.height }}
-              />
+              <div className="world-canvas__selection" aria-hidden="true">
+                <div
+                  className="world-canvas__selection-outline world-canvas__jump-highlight"
+                  style={{ left: rect.x, top: rect.y, width: rect.width, height: rect.height }}
+                />
+              </div>
             );
           })()}
 ```
@@ -963,7 +967,7 @@ Expected: both clean.
 npm run dev -w @pokemap/ui
 ```
 
-Switch to World mode. Use the sidebar's existing filter box to narrow the list, click a map name, confirm the canvas pans/zooms to it and briefly outlines it. Click the same name again, confirm it re-centers (not a no-op).
+Switch to World mode. Use the sidebar's existing filter box to narrow the list, click a map name, confirm the canvas pans/zooms to it and briefly outlines it. Click the same name again, confirm it re-centers (not a no-op). Turn on a lens (e.g. level-curve) or the species spotlight first, THEN click a map name — confirm the jump highlight is genuinely visible on top of the tint/dim, not hidden underneath it (this is exactly the layering bug the audit note in Step 3 exists to prevent; verify it actually worked, don't just trust the wrapper was added correctly).
 
 ### Step 9: Commit
 
