@@ -5,6 +5,7 @@ import { EncounterGutter, type EncounterGutterMapEntry, type EncounterGutterRow 
 import { SpeciesSpotlight } from "./SpeciesSpotlight.js";
 import { LensPanel, type LensId } from "./LensPanel.js";
 import { useCoverage } from "../hooks/useCoverage.js";
+import { isDrawnByDefault } from "../world/visibility.js";
 
 /** The pixel size a placement's PNG renders at natively (`renderLayout`,
  *  border 0): 16px per tile, same constant the CLI's `render-world --scale
@@ -28,8 +29,34 @@ const LOD_SCALE = 0.25;
 
 const BADGE_SIZE = 10;
 
+/** Placement.map plus the two Feature A fields Task 1 added to the wire
+ *  response (packages/server/src/index.ts's `/api/world` route). A
+ *  superset of Placement, so every existing helper that takes a `Placement`
+ *  (sizeOfPlacement, componentOfPlacement, intersects/contains callers)
+ *  keeps working unchanged via plain structural typing.
+ *
+ *  Both fields are OPTIONAL here, not required as the server's own
+ *  same-named WirePlacement has them (deliberate divergence, not a copy
+ *  error): a placement fabricated CLIENT-SIDE for a fresh sidebar/rail drop
+ *  (onDropOnCanvas below) has neither field set -- it is the optimistic
+ *  local echo of a drag, built before the server round trip that would
+ *  normally attach them, and requiring them here would make that literal
+ *  fail to type-check. Every reader treats a missing field as "not hidden"
+ *  via `?? ""` / `?? false` (see the `visible` memo and the jump effect
+ *  below), which is also exactly correct for this specific fabricated case:
+ *  a map the user just deliberately dropped must draw immediately, not wait
+ *  on a round trip. `r.json() as Promise<WorldPayload>` in the /api/world
+ *  effect is a type assertion, not a runtime check, so a real server
+ *  response (or a test fixture built before this task) that omits these
+ *  fields is equally handled by the same fallback, not just this one
+ *  fabricated-placement case. */
+interface WirePlacement extends Placement {
+  mapType?: string;
+  manual?: boolean;
+}
+
 interface WorldPayload {
-  placements: Record<string, Placement>;
+  placements: Record<string, WirePlacement>;
   components: WorldComponentInfo[];
   conflicts: Conflict[];
   verticalLinks: VerticalLink[];
@@ -37,7 +64,7 @@ interface WorldPayload {
 }
 
 interface WorldState {
-  placements: Map<string, Placement>;
+  placements: Map<string, WirePlacement>;
   components: WorldComponentInfo[];
   conflicts: Conflict[];
   verticalLinks: VerticalLink[];
@@ -247,6 +274,15 @@ export function WorldCanvas({ jumpToMap, jumpToken }: WorldCanvasProps = {}) {
   // this file keys placements.
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [marqueeRect, setMarqueeRect] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+
+  // Feature A: maps hidden by default (visibility.ts's isDrawnByDefault)
+  // that the user has temporarily revealed by clicking their name in the
+  // sidebar map list while it has a real placement (spec §3.3). Session-
+  // local and unpersisted by design -- WorldCanvas fully unmounts when
+  // leaving World mode (App.tsx's conditional render), which already
+  // clears this for free on "leaving World mode does not survive" per the
+  // spec; no explicit reset is needed.
+  const [revealedMaps, setRevealedMaps] = useState<Set<string>>(new Set());
 
   // Map-list jump (Task 2): a transient outline on whichever map the
   // sidebar's most recent click jumped to, faded via CSS after mount --
@@ -476,6 +512,16 @@ export function WorldCanvas({ jumpToMap, jumpToken }: WorldCanvasProps = {}) {
     if (!p) return;
     const size = sizeOfPlacement(p, sizeByMap);
     if (size.width <= 0 || size.height <= 0) return;
+    // Feature A (spec §3.3): clicking a sidebar entry that has a real
+    // placement but isn't drawn by default reveals it for this view -- a
+    // "look," not a commit (contrast with dragging it onto the canvas,
+    // which DOES persist, via the existing onDropOnCanvas/postPlacement
+    // path). A map with no placement at all already returns above (`if
+    // (!p) return`), matching spec §3.3's own "has nowhere to jump to;
+    // clicking it does nothing."
+    if (!isDrawnByDefault(p.mapType ?? "", p.manual ?? false)) {
+      setRevealedMaps((prev) => (prev.has(jumpToMap) ? prev : new Set(prev).add(jumpToMap)));
+    }
     const fit = computeFit({ x: p.x, y: p.y, width: size.width, height: size.height }, viewport);
     setZoom(fit.zoom);
     setPan(fit.pan);
@@ -525,10 +571,21 @@ export function WorldCanvas({ jumpToMap, jumpToken }: WorldCanvasProps = {}) {
     for (const p of world.placements.values()) {
       const size = sizeOfPlacement(p, sizeByMap);
       if (size.width <= 0 || size.height <= 0) continue; // unrenderable orphan, see sizeOfPlacement
+      // Feature A (spec §3.1): a placement not drawn by default (mapType in
+      // HIDDEN_MAP_TYPES and never manually placed) stays hidden unless the
+      // user has temporarily revealed it via a sidebar jump (see the jump
+      // effect below). `p.mapType`/`p.manual` are always present on a
+      // server-fetched placement (Task 1); a locally-fabricated
+      // component:-1 placement from a fresh sidebar/rail drop (onDropOnCanvas
+      // below) has neither field, but that object represents a map the user
+      // JUST deliberately placed -- isDrawnByDefault("" as mapType, false)
+      // reads as "not hidden" (HIDDEN_MAP_TYPES never contains ""), so it
+      // draws immediately without needing this filter's cooperation.
+      if (!isDrawnByDefault(p.mapType ?? "", p.manual ?? false) && !revealedMaps.has(p.map)) continue;
       if (intersects(p.x, p.y, size.width, size.height, x0, y0, x1, y1)) out.push(p);
     }
     return out;
-  }, [world, pan, zoom, viewport, sizeByMap]);
+  }, [world, pan, zoom, viewport, sizeByMap, revealedMaps]);
 
   // Load (and cache) the source image for every visible placement that
   // doesn't have one yet. A placement already in imageCacheRef is never

@@ -1288,4 +1288,77 @@ describe("WorldCanvas", () => {
       expect(container.querySelector(".world-canvas__jump-highlight")).toBeNull();
     });
   });
+
+  // -------------------------------------------------------------------
+  // Default population filter (Task 3 / Feature A)
+  // -------------------------------------------------------------------
+  describe("default population filter (Feature A)", () => {
+    function typedWorld() {
+      return {
+        placements: {
+          Town: { map: "Town", x: 0, y: 0, width: 10, height: 10, component: 0, mapType: "MAP_TYPE_TOWN", manual: false },
+          House: { map: "House", x: 20, y: 0, width: 10, height: 10, component: 1, mapType: "MAP_TYPE_INDOOR", manual: false },
+          ManualHouse: { map: "ManualHouse", x: 40, y: 0, width: 10, height: 10, component: 2, mapType: "MAP_TYPE_INDOOR", manual: true },
+        },
+        components: [
+          { index: 0, maps: ["Town"], bounds: { x: 0, y: 0, width: 10, height: 10 } },
+          { index: 1, maps: ["House"], bounds: { x: 20, y: 0, width: 10, height: 10 } },
+          { index: 2, maps: ["ManualHouse"], bounds: { x: 40, y: 0, width: 10, height: 10 } },
+        ],
+        conflicts: [],
+        verticalLinks: [],
+        sidecar: { version: 1, dungeonAutoLayout: true, manualPlacements: { ManualHouse: { x: 40, y: 0 } }, view: { x: 0, y: 0, zoom: 1 } },
+      };
+    }
+
+    it("does not fetch art for a MAP_TYPE_INDOOR map that was never manually placed", async () => {
+      const { impl } = makeFetchMock(typedWorld() as any);
+      await mountReady(impl);
+      const srcs = FakeImage.instances.map((i) => i.src);
+      expect(srcs.some((s) => s.includes("Town"))).toBe(true);
+      expect(srcs.some((s) => s.includes("ManualHouse"))).toBe(true);
+      // Plain "House" must not appear, but "ManualHouse" (which DOES
+      // contain the substring "House") must -- checked as a whole path
+      // segment, not a bare substring, so this assertion cannot pass by
+      // accident against the wrong map.
+      // Bug fix during implementation: the original form of this check used
+      // `.includes(encodeURIComponent("House") + ".png")` (no leading "/"),
+      // which is NOT actually anchored to a whole path segment despite the
+      // comment above claiming it is -- "/api/render/ManualHouse.png"
+      // contains "House.png" as a bare substring (positions 6-14), so that
+      // check produced a false positive against a CORRECT implementation
+      // that draws ManualHouse and correctly omits House. `endsWith` on the
+      // "/"-prefixed filename is what the comment actually intends: a whole
+      // trailing path segment, which "ManualHouse.png" cannot satisfy for
+      // the needle "/House.png" (there is no "/" immediately before "House"
+      // in "ManualHouse.png").
+      expect(srcs.some((s) => s.endsWith(`/${encodeURIComponent("House")}.png`))).toBe(false);
+    });
+
+    it("jumping to a hidden-by-type map reveals it for this view, without writing anything (no POST fired -- spec §6: a look, not a commit)", async () => {
+      const { impl } = makeFetchMock(typedWorld() as any);
+      vi.stubGlobal("fetch", impl);
+      render(<WorldCanvas jumpToMap="House" jumpToken={1} />);
+      await waitFor(() => expect(screen.queryByText(/Loading world/)).toBeNull());
+      // Bug fix during implementation: a bare `.includes(encodeURIComponent
+      // ("House"))` is also satisfied by "/api/render/ManualHouse.png" --
+      // ManualHouse is manual:true, so it draws unconditionally regardless
+      // of whether House itself was ever revealed. Confirmed live: this
+      // assertion still (wrongly) passed with the reveal-on-jump logic
+      // completely disabled, a genuine tautology, not just a theoretical
+      // one. Anchored to the whole trailing path segment instead, mirroring
+      // the fix in the sibling test above -- this can only be satisfied by
+      // House's OWN image actually having been fetched.
+      await waitFor(() => expect(FakeImage.instances.some((i) => i.src.endsWith(`/${encodeURIComponent("House")}.png`))).toBe(true));
+      // Deviation from the plan's literal snippet: `([url]: [string]) =>`
+      // fails to typecheck against `impl.mock.calls`' real inferred tuple
+      // type (`[url: string, init?: RequestInit]`, from makeFetchMock's own
+      // `vi.fn((url: string, init?: RequestInit) => ...)`) -- a 1-tuple
+      // annotation isn't assignable to a wider tuple that may carry a
+      // second element (TS2769). Dropping the explicit annotation lets it
+      // infer correctly from `impl`'s own type instead.
+      const posts = impl.mock.calls.filter(([url]) => url.startsWith("/api/world/placement"));
+      expect(posts.length).toBe(0);
+    });
+  });
 });
