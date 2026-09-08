@@ -164,13 +164,7 @@ function worldBoundsOf(placements: Map<string, Placement>, sizeByMap: Map<string
   return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
 }
 
-/**
- * The stitched world: 1,209 maps culled to the viewport, panned and zoomed,
- * with drag-to-place, a dungeon-layout toggle backed by a side rail for
- * unplaced maps, and conflict/vertical-link badges. See
- * packages/ui/DESIGN.md for the palette/type/spacing tokens this consumes,
- * and this file's own comments for the LOD and culling mechanics.
- */
+/** Props for {@link WorldCanvas}: the map-list jump target (Task 2). */
 export interface WorldCanvasProps {
   /** A map name to pan/zoom to, or null/undefined for none. Mirrors
    *  App.tsx's shared `selected` state -- set by clicking a name in the
@@ -183,6 +177,13 @@ export interface WorldCanvasProps {
   jumpToken?: number;
 }
 
+/**
+ * The stitched world: 1,209 maps culled to the viewport, panned and zoomed,
+ * with drag-to-place, a dungeon-layout toggle backed by a side rail for
+ * unplaced maps, and conflict/vertical-link badges. See
+ * packages/ui/DESIGN.md for the palette/type/spacing tokens this consumes,
+ * and this file's own comments for the LOD and culling mechanics.
+ */
 export function WorldCanvas({ jumpToMap, jumpToken }: WorldCanvasProps = {}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -479,13 +480,38 @@ export function WorldCanvas({ jumpToMap, jumpToken }: WorldCanvasProps = {}) {
     setZoom(fit.zoom);
     setPan(fit.pan);
     setJumpHighlight(jumpToMap);
-    const timer = setTimeout(() => setJumpHighlight(null), 2000);
-    return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- sizeByMap
     // and viewport are read fresh each run but must not themselves
     // re-trigger a jump that's already been handled for this token; the
     // appliedJumpTokenRef guard above is what actually governs re-entry.
   }, [jumpToken, jumpToMap, world]);
+
+  // Review fix: the 2s fade-out used to live INSIDE the jump-triggering
+  // effect above, as a setTimeout whose cleanup was `clearTimeout(timer)`.
+  // That effect also depends on `world` (see its own comment), which this
+  // file churns on every single mousemove frame during a map/group drag
+  // (onMouseMove's drag branches call setWorld per frame). So dragging ANY
+  // map within the 2s fade window re-ran that effect: React always runs the
+  // cleanup first (killing the pending fade timer), then the effect body
+  // hit the appliedJumpTokenRef guard (this token was already handled) and
+  // returned early -- WITHOUT scheduling a replacement timer. The outline
+  // was then stuck visible forever. This effect is deliberately separate
+  // and scoped only to `jumpHighlight` itself, which has a different
+  // lifecycle from "a jump was requested": it owns clearing the highlight
+  // after 2s no matter how many times `world` changes in between, and it
+  // re-arms whenever `jumpHighlight` actually changes value -- e.g. a jump
+  // to a DIFFERENT map gets a fresh 2s. (A re-jump to the SAME map name
+  // sets state to the identical string, which React bails on, so this
+  // effect's dep doesn't change and the original timer just keeps counting
+  // down from the first jump -- it still fires and clears the highlight,
+  // just not with a full fresh 2s from the second click. The `key`
+  // fix below is what makes that second click visually restart the fade
+  // animation regardless.)
+  useEffect(() => {
+    if (!jumpHighlight) return;
+    const timer = setTimeout(() => setJumpHighlight(null), 2000);
+    return () => clearTimeout(timer);
+  }, [jumpHighlight]);
 
   // Culling: only placements whose tile-rect intersects the current
   // viewport (in world-tile space) are considered "visible". With 1,209
@@ -1289,7 +1315,17 @@ export function WorldCanvas({ jumpToMap, jumpToken }: WorldCanvasProps = {}) {
             const rect = { x: p.x * zoom + pan.x, y: p.y * zoom + pan.y, width: size.width * zoom, height: size.height * zoom };
             return (
               <div className="world-canvas__selection" aria-hidden="true">
+                {/* Review fix: keyed on jumpToken (not jumpToMap), which
+                    bumps on every jump including a re-click of the same map
+                    name. Without this, jumping to the same map twice in a
+                    row reused the exact same DOM node -- and since the CSS
+                    fade animation is `forwards` and had already run to
+                    completion once, it did not restart on the second jump,
+                    so the highlight silently failed to appear at all. The
+                    key forces React to mount a fresh node per jump, so the
+                    animation genuinely restarts every time. */}
                 <div
+                  key={jumpToken}
                   className="world-canvas__selection-outline world-canvas__jump-highlight"
                   style={{ left: rect.x, top: rect.y, width: rect.width, height: rect.height }}
                 />

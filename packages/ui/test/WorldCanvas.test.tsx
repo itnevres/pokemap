@@ -1197,6 +1197,7 @@ describe("WorldCanvas", () => {
         left: 0, top: 0, right: VIEWPORT_SIZE, bottom: VIEWPORT_SIZE, width: VIEWPORT_SIZE, height: VIEWPORT_SIZE, x: 0, y: 0, toJSON() {},
       });
       await waitFor(() => expect(container.querySelector(".world-canvas__jump-highlight")).toBeTruthy());
+      const highlightBefore = container.querySelector(".world-canvas__jump-highlight");
 
       // Pan away, then re-request the SAME map -- jumpToMap is unchanged
       // but jumpToken bumps, which must still re-trigger the jump.
@@ -1206,6 +1207,62 @@ describe("WorldCanvas", () => {
 
       rerender(<WorldCanvas jumpToMap="Target" jumpToken={2} />);
       await waitFor(() => expect(container.querySelector(".world-canvas__jump-highlight")).toBeTruthy());
+      const highlightAfter = container.querySelector(".world-canvas__jump-highlight");
+
+      // Discriminating check (review fix): re-jumping to the SAME map name
+      // must mount a genuinely NEW DOM node, not reuse the old one -- the
+      // CSS fade animation is `forwards`, and once it has completed on a
+      // node it does not replay just because that node's class/style are
+      // unchanged. jumpHighlight itself also bails out silently here
+      // (state set to the same string "Target" twice), so without
+      // `key={jumpToken}` on the highlight <div>, React would keep this
+      // exact node across the rerender and the second jump's animation
+      // would never play at all -- the div would be truthy, as this test
+      // already checked above, while the fade visibly never restarted.
+      expect(highlightAfter).not.toBe(highlightBefore);
+    });
+
+    it("keeps the fade timer alive across a map drag within the fade window (review fix: a drag used to kill the pending fade timer without rescheduling it, leaving the outline stuck forever)", async () => {
+      const { impl } = makeFetchMock(
+        makeWorld({ placements: { Target: { map: "Target", x: 40, y: 40, width: 10, height: 10, component: 0 } } }),
+      );
+      vi.stubGlobal("fetch", impl);
+      const { container } = render(<WorldCanvas jumpToMap="Target" jumpToken={1} />);
+      await waitFor(() => expect(screen.queryByText(/Loading world/)).toBeNull());
+      const canvas = container.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement;
+      canvas.getBoundingClientRect = () => ({
+        left: 0, top: 0, right: VIEWPORT_SIZE, bottom: VIEWPORT_SIZE, width: VIEWPORT_SIZE, height: VIEWPORT_SIZE, x: 0, y: 0, toJSON() {},
+      });
+      await waitFor(() => expect(container.querySelector(".world-canvas__jump-highlight")).toBeTruthy());
+
+      // The jump effect fit Target's 10x10 bounds to fill the whole 100x100
+      // viewport (zoom=10, pan={-400,-400}), so Target's centre in world
+      // space (45,45) lands at screen (50,50). Shift+mousedown over a
+      // placement starts a real "map" drag (see onMouseDown), whose
+      // onMouseMove branch calls setWorld() every frame -- the same
+      // `world`-churning event a real drag produces on every mousemove,
+      // which is exactly the kind of re-render the jump effect's
+      // [jumpToken, jumpToMap, world] deps must survive without losing the
+      // fade timer.
+      fireEvent.mouseDown(canvas, { clientX: 50, clientY: 50, button: 0, shiftKey: true });
+      fireEvent.mouseMove(canvas, { clientX: 55, clientY: 55, shiftKey: true });
+      fireEvent.mouseUp(canvas);
+
+      // Still inside the 2s fade window: the drag itself must not have
+      // cleared the highlight early.
+      expect(container.querySelector(".world-canvas__jump-highlight")).toBeTruthy();
+
+      // Real wait past the 2s fade window (same convention as
+      // SpeciesSpotlight.test.tsx's debounce tests -- real timers, not
+      // fake, since fake timers don't intercept a setTimeout that was
+      // already scheduled by an effect that ran before they were enabled).
+      // A broken implementation that puts the fade timeout inside the
+      // jump-triggering effect leaves this stuck forever: the drag's
+      // `world` update re-ran that effect, its cleanup cleared the pending
+      // timer, and the appliedJumpTokenRef guard made the effect body
+      // return early -- before a replacement timer was ever scheduled.
+      await new Promise((r) => setTimeout(r, 2100));
+      expect(container.querySelector(".world-canvas__jump-highlight")).toBeNull();
     });
   });
 });
