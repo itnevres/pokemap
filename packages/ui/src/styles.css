@@ -1071,6 +1071,7 @@ input {
    the actual overlay WorldCanvas renders from the data these controls hand
    it back via onHits/onChange. */
 .species-spotlight {
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -1120,6 +1121,41 @@ input {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.species-spotlight__dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 6;
+  margin: var(--space-1) 0 0;
+  padding: var(--space-1) 0;
+  max-height: 240px;
+  overflow-y: auto;
+  list-style: none;
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  min-width: 200px;
+}
+
+.species-spotlight__option {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: var(--space-1) var(--space-3);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.species-spotlight__option:hover,
+.species-spotlight__option--active {
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 
 .lens-panel {

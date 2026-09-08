@@ -2,13 +2,24 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { SpeciesSpotlight } from "../src/components/SpeciesSpotlight.js";
 
+const ALL_SPECIES = ["SPECIES_MAGIKARP", "SPECIES_MAREEP", "SPECIES_MARILL", "SPECIES_PIKACHU", "SPECIES_ESPEON"];
+
+function fetchMockWithSpecies(whereImpl: (url: string) => Promise<Response>) {
+  return vi.fn((url: string) => {
+    if (url === "/api/species") return Promise.resolve({ ok: true, json: async () => ALL_SPECIES } as Response);
+    return whereImpl(url);
+  });
+}
+
 describe("SpeciesSpotlight", () => {
   it("dims every map except the hits", async () => {
     const onHits = vi.fn();
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ([{ mapName: "Route29", percent: 20, minLevel: 3, maxLevel: 5, method: "land_mons" }]),
-    }) as never;
+    global.fetch = fetchMockWithSpecies(() =>
+      Promise.resolve({
+        ok: true,
+        json: async () => ([{ mapName: "Route29", percent: 20, minLevel: 3, maxLevel: 5, method: "land_mons" }]),
+      } as Response),
+    ) as never;
 
     render(<SpeciesSpotlight onHits={onHits} />);
     fireEvent.change(screen.getByRole("searchbox"), { target: { value: "PIKACHU" } });
@@ -25,13 +36,15 @@ describe("SpeciesSpotlight", () => {
   // "614 maps" here while only 114 distinct maps actually lit up on the
   // canvas.
   it("counts DISTINCT maps, not hits -- a map with two variant tables is one map, not two", async () => {
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ([
-        { mapName: "Route29", percent: 80, minLevel: 3, maxLevel: 5, method: "land_mons", variant: "gRoute29" },
-        { mapName: "Route29", percent: 20, minLevel: 4, maxLevel: 6, method: "land_mons", variant: "gRoute29_Night" },
-      ]),
-    }) as never;
+    global.fetch = fetchMockWithSpecies(() =>
+      Promise.resolve({
+        ok: true,
+        json: async () => ([
+          { mapName: "Route29", percent: 80, minLevel: 3, maxLevel: 5, method: "land_mons", variant: "gRoute29" },
+          { mapName: "Route29", percent: 20, minLevel: 4, maxLevel: 6, method: "land_mons", variant: "gRoute29_Night" },
+        ]),
+      } as Response),
+    ) as never;
     render(<SpeciesSpotlight onHits={() => {}} />);
     fireEvent.change(screen.getByRole("searchbox"), { target: { value: "HOOTHOOT" } });
     await waitFor(() => expect(screen.getByText(/1 map\b/i)).toBeTruthy());
@@ -39,7 +52,7 @@ describe("SpeciesSpotlight", () => {
   });
 
   it("says so plainly when a species appears nowhere", async () => {
-    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => [] }) as never;
+    global.fetch = fetchMockWithSpecies(() => Promise.resolve({ ok: true, json: async () => [] } as Response)) as never;
     render(<SpeciesSpotlight onHits={() => {}} />);
     fireEvent.change(screen.getByRole("searchbox"), { target: { value: "MISSINGNO" } });
     await waitFor(() => expect(screen.getByText(/appears in no encounter table/i)).toBeTruthy());
@@ -59,8 +72,15 @@ describe("SpeciesSpotlight", () => {
 
   it("never calls onHits before the user has typed anything", async () => {
     const onHits = vi.fn();
+    // Tracks only the real /api/where/:species lookup -- the dropdown's own
+    // /api/species prefetch DOES legitimately fire on mount now, so this
+    // can no longer assert "fetch was never called at all", only that the
+    // search-triggering endpoint specifically was not.
     const fetchMock = vi.fn();
-    global.fetch = fetchMock as never;
+    global.fetch = fetchMockWithSpecies((url) => {
+      fetchMock(url);
+      return Promise.resolve({ ok: true, json: async () => [] } as Response);
+    }) as never;
     render(<SpeciesSpotlight onHits={onHits} />);
     // Long enough to clear DEBOUNCE_MS (250ms) even though nothing should
     // be scheduled -- if a regression fired a fetch on mount, this window
@@ -72,7 +92,7 @@ describe("SpeciesSpotlight", () => {
 
   it("calls onHits with an empty array (not null) when a search genuinely finds nowhere", async () => {
     const onHits = vi.fn();
-    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => [] }) as never;
+    global.fetch = fetchMockWithSpecies(() => Promise.resolve({ ok: true, json: async () => [] } as Response)) as never;
     render(<SpeciesSpotlight onHits={onHits} />);
     fireEvent.change(screen.getByRole("searchbox"), { target: { value: "MISSINGNO" } });
     await waitFor(() => expect(onHits).toHaveBeenCalled());
@@ -85,10 +105,12 @@ describe("SpeciesSpotlight", () => {
 
   it("calls onHits(null) when the box is cleared after a real search, not [] again", async () => {
     const onHits = vi.fn();
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ([{ mapName: "Route29", percent: 20, minLevel: 3, maxLevel: 5, method: "land_mons" }]),
-    }) as never;
+    global.fetch = fetchMockWithSpecies(() =>
+      Promise.resolve({
+        ok: true,
+        json: async () => ([{ mapName: "Route29", percent: 20, minLevel: 3, maxLevel: 5, method: "land_mons" }]),
+      } as Response),
+    ) as never;
     render(<SpeciesSpotlight onHits={onHits} />);
     const box = screen.getByRole("searchbox");
 
@@ -103,7 +125,10 @@ describe("SpeciesSpotlight", () => {
   it("debounces: several rapid keystrokes collapse into a single fetch", async () => {
     const onHits = vi.fn();
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => [] });
-    global.fetch = fetchMock as never;
+    // fetchMockWithSpecies wraps fetchMock so the mount-time /api/species
+    // prefetch is answered separately and does not itself count toward
+    // fetchMock's own call count below.
+    global.fetch = fetchMockWithSpecies((url) => fetchMock(url)) as never;
     render(<SpeciesSpotlight onHits={onHits} />);
     const box = screen.getByRole("searchbox");
 
@@ -127,14 +152,109 @@ describe("SpeciesSpotlight", () => {
   // round's review added.
   it("surfaces a non-ok response as an error instead of forwarding it to onHits as if it were hits", async () => {
     const onHits = vi.fn();
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 500,
-      json: async () => ({ error: "boom" }),
-    }) as never;
+    global.fetch = fetchMockWithSpecies(() =>
+      Promise.resolve({
+        ok: false,
+        status: 500,
+        json: async () => ({ error: "boom" }),
+      } as Response),
+    ) as never;
     render(<SpeciesSpotlight onHits={onHits} />);
     fireEvent.change(screen.getByRole("searchbox"), { target: { value: "PIKACHU" } });
     await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
     expect(onHits).not.toHaveBeenCalled();
+  });
+
+  describe("type-ahead", () => {
+    it("shows a dropdown of species starting with the typed prefix, case-insensitively", async () => {
+      global.fetch = fetchMockWithSpecies(() => Promise.resolve({ ok: true, json: async () => [] } as Response)) as never;
+      render(<SpeciesSpotlight onHits={() => {}} />);
+      const box = screen.getByRole("searchbox");
+      await waitFor(() => expect((global.fetch as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith("/api/species"));
+
+      fireEvent.change(box, { target: { value: "ma" } });
+
+      // Starts with "ma": MAGIKARP, MAREEP, MARILL. PIKACHU and ESPEON
+      // don't start with "ma" (a substring-match bug would also catch
+      // neither of those here, so this alone doesn't discriminate --
+      // that's why the next test targets a genuine near-miss).
+      await waitFor(() => {
+        expect(screen.getByText("Magikarp")).toBeTruthy();
+        expect(screen.getByText("Mareep")).toBeTruthy();
+        expect(screen.getByText("Marill")).toBeTruthy();
+      });
+      expect(screen.queryByText("Pikachu")).toBeNull();
+    });
+
+    it("does not show a species that merely CONTAINS the prefix, only ones that START with it", async () => {
+      global.fetch = fetchMockWithSpecies(() => Promise.resolve({ ok: true, json: async () => [] } as Response)) as never;
+      render(<SpeciesSpotlight onHits={() => {}} />);
+      const box = screen.getByRole("searchbox");
+      await waitFor(() => expect((global.fetch as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith("/api/species"));
+
+      // "rill" is a substring of MARILL but not a prefix -- a
+      // substring-match implementation would wrongly include it.
+      fireEvent.change(box, { target: { value: "rill" } });
+      await new Promise((r) => setTimeout(r, 50));
+      expect(screen.queryByText("Marill")).toBeNull();
+    });
+
+    it("clicking a dropdown entry fills the box and fires the search immediately, no debounce wait", async () => {
+      const onHits = vi.fn();
+      let resolveWhere: (v: Response) => void = () => {};
+      const wherePromise = new Promise<Response>((resolve) => { resolveWhere = resolve; });
+      global.fetch = fetchMockWithSpecies((url) => {
+        if (url.startsWith("/api/where/")) return wherePromise;
+        return Promise.resolve({ ok: true, json: async () => [] } as Response);
+      }) as never;
+      render(<SpeciesSpotlight onHits={onHits} />);
+      const box = screen.getByRole("searchbox") as HTMLInputElement;
+      await waitFor(() => expect((global.fetch as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith("/api/species"));
+
+      fireEvent.change(box, { target: { value: "ma" } });
+      await waitFor(() => expect(screen.getByText("Marill")).toBeTruthy());
+      fireEvent.click(screen.getByText("Marill"));
+
+      expect(box.value).toBe("MARILL");
+      resolveWhere({ ok: true, json: async () => [{ mapName: "Route1", percent: 10, minLevel: 1, maxLevel: 2, method: "land_mons" }] } as Response);
+      await waitFor(() => expect(onHits).toHaveBeenCalled());
+    });
+
+    it("ArrowDown/ArrowUp move a highlighted entry and Enter selects it", async () => {
+      global.fetch = fetchMockWithSpecies(() => Promise.resolve({ ok: true, json: async () => [] } as Response)) as never;
+      render(<SpeciesSpotlight onHits={() => {}} />);
+      const box = screen.getByRole("searchbox") as HTMLInputElement;
+      await waitFor(() => expect((global.fetch as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith("/api/species"));
+
+      fireEvent.change(box, { target: { value: "ma" } });
+      await waitFor(() => expect(screen.getByText("Magikarp")).toBeTruthy());
+
+      fireEvent.keyDown(box, { key: "ArrowDown" });
+      fireEvent.keyDown(box, { key: "ArrowDown" });
+      fireEvent.keyDown(box, { key: "Enter" });
+
+      // First option is Magikarp, second is Mareep (ALL_SPECIES order,
+      // filtered) -- two ArrowDowns highlights the second.
+      expect(box.value).toBe("MAREEP");
+    });
+
+    it("the dropdown never appears with an empty box", async () => {
+      global.fetch = fetchMockWithSpecies(() => Promise.resolve({ ok: true, json: async () => [] } as Response)) as never;
+      render(<SpeciesSpotlight onHits={() => {}} />);
+      await waitFor(() => expect((global.fetch as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith("/api/species"));
+      expect(screen.queryByRole("listbox")).toBeNull();
+    });
+
+    it("if /api/species fails, plain typed search still works with no dropdown", async () => {
+      const onHits = vi.fn();
+      global.fetch = vi.fn((url: string) => {
+        if (url === "/api/species") return Promise.resolve({ ok: false, status: 500, json: async () => ({ error: "boom" }) } as Response);
+        return Promise.resolve({ ok: true, json: async () => [{ mapName: "Route1", percent: 10, minLevel: 1, maxLevel: 2, method: "land_mons" }] } as Response);
+      }) as never;
+      render(<SpeciesSpotlight onHits={onHits} />);
+      fireEvent.change(screen.getByRole("searchbox"), { target: { value: "MARILL" } });
+      expect(screen.queryByRole("listbox")).toBeNull();
+      await waitFor(() => expect(onHits).toHaveBeenCalled());
+    });
   });
 });

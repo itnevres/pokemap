@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { SpeciesHit } from "@pokemap/core/src/analyse/coverage.js";
 
 export interface SpeciesSpotlightProps {
@@ -28,10 +28,7 @@ export interface SpeciesSpotlightProps {
 const DEBOUNCE_MS = 250;
 
 /** "PIKACHU" / "pikachu" / "SPECIES_PIKACHU" all read back as "Pikachu" for
- *  the empty-state sentence -- display only. Every actual lookup goes
- *  through the raw typed text; the server does its own case-insensitive
- *  SPECIES_ prefixing (see /api/where/:species), so this never needs to
- *  duplicate that logic to be correct, only to be readable. */
+ *  the empty-state sentence and the dropdown's own option labels. */
 function displaySpecies(query: string): string {
   const bare = query.trim().replace(/^SPECIES_/i, "");
   return bare
@@ -43,11 +40,21 @@ function displaySpecies(query: string): string {
 }
 
 /**
- * Species spotlight (spec §9): type a species, the stitched world dims
- * except the maps containing it, each lit with its rate and level band.
- * Purely a control -- like LensPanel, it draws nothing on the canvas
- * itself; WorldCanvas owns turning `onHits`' payload into the actual
- * dim/highlight overlay, the same split EncounterGutter established.
+ * Species spotlight (spec §9), now with a type-ahead dropdown: type a
+ * species, the stitched world dims except the maps containing it, each lit
+ * with its rate and level band. Purely a control -- like LensPanel, it
+ * draws nothing on the canvas itself; WorldCanvas owns turning `onHits`'
+ * payload into the actual dim/highlight overlay, the same split
+ * EncounterGutter established.
+ *
+ * The dropdown's data source (`GET /api/species`) is fetched once on mount
+ * and filtered CLIENT-SIDE as you type (prefix match, case insensitive) --
+ * the full roster is a few hundred to ~1,000 short strings, cheap enough
+ * that no per-keystroke network round trip is worth it, unlike the real
+ * search below which genuinely needs the server's own encounter data. A
+ * failed /api/species fetch just means no dropdown ever appears; the plain
+ * typed-and-submitted search is entirely independent of this list and is
+ * unaffected.
  *
  * Debounced (see DEBOUNCE_MS) and fully asynchronous: typing never blocks
  * the canvas, which stays pannable and interactive through every fetch --
@@ -59,9 +66,45 @@ export function SpeciesSpotlight({ onHits }: SpeciesSpotlightProps) {
   const [hits, setHits] = useState<SpeciesHit[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [allSpecies, setAllSpecies] = useState<string[]>([]);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
   // True once the user has typed a real (non-whitespace) query at least
   // once -- see onHits' own "never called at all on mount" doc above.
   const startedRef = useRef(false);
+  // Set by pick() right before it changes `query` -- lets the debounced
+  // effect below recognise "this exact lookup already ran eagerly" and
+  // skip redoing the identical network request 250ms later.
+  const skipQueryRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/species")
+      .then((r) => {
+        if (!r.ok) throw new Error(`GET /api/species -> ${r.status}`);
+        return r.json() as Promise<string[]>;
+      })
+      .then((list) => {
+        if (!cancelled) setAllSpecies(list);
+      })
+      .catch(() => {
+        // Best-effort: no dropdown, plain search still works.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const matches = useMemo(() => {
+    const q = query.trim().toUpperCase();
+    if (!q) return [];
+    const withPrefix = q.startsWith("SPECIES_") ? q : `SPECIES_${q}`;
+    return allSpecies.filter((s) => s.startsWith(withPrefix)).slice(0, 50);
+  }, [query, allSpecies]);
+
+  useEffect(() => {
+    setActiveIndex(-1);
+  }, [matches]);
 
   useEffect(() => {
     const trimmed = query.trim();
@@ -74,6 +117,14 @@ export function SpeciesSpotlight({ onHits }: SpeciesSpotlightProps) {
       // otherwise the very first render (query still "") would fire
       // onHits(null) before the user has done anything at all.
       if (startedRef.current) onHits(null);
+      return;
+    }
+
+    if (skipQueryRef.current === trimmed) {
+      // pick() (a dropdown click, or ArrowDown/Enter) just ran this exact
+      // lookup immediately -- without this guard, this effect would still
+      // fire DEBOUNCE_MS later and redo the identical request for nothing.
+      skipQueryRef.current = null;
       return;
     }
 
@@ -141,6 +192,52 @@ export function SpeciesSpotlight({ onHits }: SpeciesSpotlightProps) {
   // disagree with what the canvas actually shows next to it.
   const mapCount = hits ? new Set(hits.map((h) => h.mapName).filter((n): n is string => !!n)).size : 0;
 
+  // A dropdown pick (click, or ArrowDown+Enter) is a complete, deliberate
+  // choice -- skip the debounce rather than making the user wait 250ms
+  // after they've already finished deciding. `species` is a raw
+  // /api/species entry (e.g. "SPECIES_MARILL"); the box itself always
+  // shows the bare form so it reads the same as anything the user typed
+  // by hand and matches this component's own displaySpecies() convention.
+  function pick(species: string) {
+    const bare = species.replace(/^SPECIES_/i, "");
+    skipQueryRef.current = bare;
+    setQuery(bare);
+    setDropdownOpen(false);
+    startedRef.current = true;
+    setLoading(true);
+    setFetchError(null);
+    fetch(`/api/where/${encodeURIComponent(bare)}`)
+      .then((r) => {
+        if (!r.ok) throw new Error(`GET /api/where/${bare} -> ${r.status}`);
+        return r.json() as Promise<SpeciesHit[]>;
+      })
+      .then((data) => {
+        setHits(data);
+        setLoading(false);
+        onHits(data);
+      })
+      .catch((e: unknown) => {
+        setLoading(false);
+        setFetchError(e instanceof Error ? e.message : String(e));
+      });
+  }
+
+  function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (!dropdownOpen || matches.length === 0) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActiveIndex((i) => Math.min(matches.length - 1, i + 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActiveIndex((i) => Math.max(0, i - 1));
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      pick(matches[activeIndex >= 0 ? activeIndex : 0]!);
+    } else if (e.key === "Escape") {
+      setDropdownOpen(false);
+    }
+  }
+
   return (
     <div className="species-spotlight">
       <input
@@ -148,9 +245,42 @@ export function SpeciesSpotlight({ onHits }: SpeciesSpotlightProps) {
         className="species-spotlight__input"
         placeholder="Spotlight a species…"
         aria-label="Species spotlight"
+        role="searchbox"
         value={query}
-        onChange={(e) => setQuery(e.target.value)}
+        onChange={(e) => {
+          setQuery(e.target.value);
+          setDropdownOpen(e.target.value.trim().length > 0);
+        }}
+        // A small delay, not an instant close: onMouseDown below already
+        // preventDefault()s to stop an option click from blurring the
+        // input at all, but this is a fallback for e.g. a mousedown that
+        // lands on the dropdown's own padding rather than an option.
+        onBlur={() => setTimeout(() => setDropdownOpen(false), 100)}
+        onKeyDown={onKeyDown}
       />
+      {dropdownOpen && matches.length > 0 && (
+        <ul className="species-spotlight__dropdown" role="listbox">
+          {matches.map((s, i) => (
+            <li key={s}>
+              <button
+                type="button"
+                role="option"
+                aria-selected={i === activeIndex}
+                className={`species-spotlight__option${i === activeIndex ? " species-spotlight__option--active" : ""}`}
+                // preventDefault on mousedown, not the click itself: this
+                // stops the browser from shifting focus off the input (and
+                // so from ever firing onBlur) when the option is pressed,
+                // so the click handler below always gets to run against a
+                // dropdown that is still mounted.
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => pick(s)}
+              >
+                {displaySpecies(s)}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
       {loading && (
         <span className="species-spotlight__status" role="status">
           Searching…

@@ -101,6 +101,21 @@ function makeFetchMock(initial: WorldFixture) {
         }),
       } as Response);
     }
+    // SpeciesSpotlight (mounted inside the toolbar) now fetches this
+    // unconditionally on mount for its own type-ahead dropdown. Left
+    // unhandled, this would fall through to the catch-all reject below on
+    // every single test in this file -- harmless in practice (the
+    // component swallows a failed /api/species fetch, see its own
+    // `.catch(() => {})`), but it relies on that silent-catch behaviour
+    // rather than this fixture actually answering the route, and no test
+    // here exercises the dropdown itself so a tiny fixture is enough.
+    if (url === "/api/species") {
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(["SPECIES_MAGIKARP", "SPECIES_PIKACHU"]),
+      } as Response);
+    }
     return Promise.reject(new Error(`unexpected fetch ${url}`));
   });
   return { impl, calls, currentWorld: () => world };
@@ -747,6 +762,14 @@ describe("WorldCanvas", () => {
             levelByMap: [], unusedSpecies: [],
             byMethod: { land_mons: 0, water_mons: 0, rock_smash_mons: 0, fishing_mons: 0 },
           }),
+        } as Response);
+      }
+      // Same reason as makeFetchMock's own /api/species handler above.
+      if (url === "/api/species") {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve(["SPECIES_MAGIKARP", "SPECIES_PIKACHU"]),
         } as Response);
       }
       return Promise.reject(new Error(`unexpected fetch ${url}`));
