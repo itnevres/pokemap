@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { whereSpecies, coverage } from "../../src/analyse/coverage.js";
+import { whereSpecies, coverage, allSpecies } from "../../src/analyse/coverage.js";
 import { openProject } from "../../src/project.js";
 import { SUBJECT_ROOT, itWithCorpus } from "../helpers/corpus.js";
 
@@ -75,5 +75,12 @@ describe("coverage", () => {
     expect(c.unusedSpecies).not.toContain("SPECIES_ESPEON");
     expect(c.unusedSpecies).not.toContain("SPECIES_UMBREON");
     expect(c.unusedSpecies).toContain("SPECIES_ABOMASNOW");
+  });
+
+  itWithCorpus("allSpecies returns every SPECIES_X the project has art for, sorted", () => {
+    const species = allSpecies(proj);
+    expect(species.length).toBeGreaterThan(300);
+    expect(species).toContain("SPECIES_ESPEON");
+    expect(species).toEqual([...species].sort());
   });
 });
