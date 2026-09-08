@@ -7,6 +7,7 @@ import { parseBlocks } from "@pokemap/core/src/load/blocks.js";
 import { parseEncounters, speciesChances, FISHING_RODS, type Encounters, type Method, type Rod, type SpeciesChance } from "@pokemap/core/src/load/encounters.js";
 import { coverage, whereSpecies, allSpecies } from "@pokemap/core/src/analyse/coverage.js";
 import { buildWorld, resolveWorldPlacements } from "@pokemap/core/src/world/resolve.js";
+import type { Placement } from "@pokemap/core/src/world/connections.js";
 import { readSidecar, writeSidecar } from "@pokemap/core/src/world/sidecar.js";
 import { encodePng } from "@pokemap/cli/src/png.js";
 import { parseBorder } from "@pokemap/cli/src/args.js";
@@ -301,16 +302,23 @@ export async function createServer(opts: { projectPath: string; port?: number })
         // Placement itself (core/world/connections.ts), mirroring how
         // /api/coverage already enriches levelByMap with a display name
         // rather than growing coverage()'s own tested shape for a UI-only
-        // need (see that route's own comment just below in this file). A
+        // need (see that route's own comment just above in this file). A
         // name absent from knownMaps (a stale manualPlacements entry for a
         // since-renamed or removed map) has no real mapType to report --
         // MAP_TYPE_NONE is the project's own "nothing special" value and,
         // combined with `manual` being true for any such entry, is never
-        // actually consulted either way (see
-        // packages/ui/src/world/visibility.ts's isDrawnByDefault: `manual`
-        // alone already forces the map to show).
+        // actually consulted either way (any name missing from knownMaps
+        // can only have arrived via applySidecar's placeholder branch, so
+        // `manual` is necessarily true for it regardless of what mapType
+        // ends up as).
         const knownMaps = new Set(project.mapNames());
-        const placements: Record<string, unknown> = {};
+        // Local, wire-only shape: Placement plus the two enrichment fields
+        // above. Not part of core's own Placement (same "UI-only concern"
+        // reasoning as the comment above) -- kept here rather than as
+        // Record<string, unknown> so the object literal below is still
+        // checked against a real shape.
+        interface WirePlacement extends Placement { mapType: string; manual: boolean }
+        const placements: Record<string, WirePlacement> = {};
         for (const [name, p] of merged) {
           placements[name] = {
             ...p,

@@ -142,4 +142,27 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("world api", () => {
     expect(body.placements.Route101.mapType).toBe("MAP_TYPE_ROUTE");
     expect(body.placements.Route101.manual).toBe(false);
   }, 300_000);
+
+  // Review fix: the two hand-picked names above (Route101 is not manual)
+  // don't actually pin `manual`'s definition -- a mutant that computed it
+  // as `!knownMaps.has(name)` instead of `name in sidecar.manualPlacements`
+  // still passed every test in this file, because the only names outside
+  // project.mapNames() are placeholder entries from applySidecar's unknown-
+  // map branch (see index.ts's own comment on this route), where the two
+  // expressions happen to agree. The real divergence only shows up on a
+  // map that's BOTH a known project map AND manually placed -- which the
+  // live sidecar has today (e.g. Route119) but no earlier test in this
+  // file asserts on. Checking every placement, not just one or two, is
+  // what actually kills that mutant regardless of which real maps happen
+  // to be manually placed at test time.
+  it("manual is true iff the map name is a key in sidecar.manualPlacements, for every placement (Feature A)", async () => {
+    const body = await (await fetch(`http://127.0.0.1:${s.port}/api/world`)).json() as any;
+    for (const [name, p] of Object.entries<any>(body.placements)) {
+      expect(p.manual).toBe(name in body.sidecar.manualPlacements);
+    }
+    // Not a vacuous check -- confirm at least one entry is genuinely manual
+    // (the live sidecar has real manual placements today), so this test
+    // cannot pass merely because manualPlacements happened to be empty.
+    expect(Object.keys(body.sidecar.manualPlacements).length).toBeGreaterThan(0);
+  }, 300_000);
 });
