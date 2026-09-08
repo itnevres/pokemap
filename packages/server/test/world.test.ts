@@ -75,8 +75,22 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("world api", () => {
       // documented (packages/core/test/world/sidecar.test.ts) to carry
       // component: -1 and zero size -- pinning that here is what makes this
       // test double as proof the server passes the sidecar's manual entries
-      // through untouched rather than reshaping them.
-      expect(after.placements[name]).toEqual({ map: name, x: 12345, y: 67890, width: 0, height: 0, component: -1 });
+      // through untouched rather than reshaping them. mapType and manual
+      // (Feature A, added after this test was first written) are also
+      // pinned here: this synthetic name is absent from project.mapNames(),
+      // which is exactly the "stale/unknown map" case the /api/world route
+      // itself documents as falling back to MAP_TYPE_NONE, and it IS present
+      // in sidecar.manualPlacements, so manual must be true.
+      expect(after.placements[name]).toEqual({
+        map: name,
+        x: 12345,
+        y: 67890,
+        width: 0,
+        height: 0,
+        component: -1,
+        mapType: "MAP_TYPE_NONE",
+        manual: true,
+      });
     } finally {
       if (before === null) rmSync(sidecarPath, { force: true });
       else writeFileSync(sidecarPath, before);
@@ -117,5 +131,15 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("world api", () => {
       body: JSON.stringify({ enabled: "yes" }), // string, not boolean
     });
     expect(r.status).toBe(400);
+  }, 300_000);
+
+  it("tags each placement with its map kind and whether it was manually placed (Feature A)", async () => {
+    const body = await (await fetch(`http://127.0.0.1:${s.port}/api/world`)).json() as any;
+    // NewBarkTown_Lab is MAP_TYPE_NONE and Route101 is MAP_TYPE_ROUTE --
+    // measured directly against the subject decomp's own map.json files
+    // (the dungeon-mode design spec's own §2 table), not assumed.
+    expect(body.placements.NewBarkTown_Lab.mapType).toBe("MAP_TYPE_NONE");
+    expect(body.placements.Route101.mapType).toBe("MAP_TYPE_ROUTE");
+    expect(body.placements.Route101.manual).toBe(false);
   }, 300_000);
 });

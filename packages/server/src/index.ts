@@ -293,8 +293,34 @@ export async function createServer(opts: { projectPath: string; port?: number })
         const world = getWorld();
         const sidecar = readSidecar(project.paths.root);
         const merged = resolveWorldPlacements(project, world, sidecar, { dungeons });
+
+        // Feature A (dungeon-mode-and-warp-tools spec §3.2): the world
+        // view's default-population filter needs each placement's own map
+        // kind and whether the user ever manually placed it -- both are
+        // UI-only display concerns layered onto the wire response, not onto
+        // Placement itself (core/world/connections.ts), mirroring how
+        // /api/coverage already enriches levelByMap with a display name
+        // rather than growing coverage()'s own tested shape for a UI-only
+        // need (see that route's own comment just below in this file). A
+        // name absent from knownMaps (a stale manualPlacements entry for a
+        // since-renamed or removed map) has no real mapType to report --
+        // MAP_TYPE_NONE is the project's own "nothing special" value and,
+        // combined with `manual` being true for any such entry, is never
+        // actually consulted either way (see
+        // packages/ui/src/world/visibility.ts's isDrawnByDefault: `manual`
+        // alone already forces the map to show).
+        const knownMaps = new Set(project.mapNames());
+        const placements: Record<string, unknown> = {};
+        for (const [name, p] of merged) {
+          placements[name] = {
+            ...p,
+            mapType: knownMaps.has(name) ? project.map(name).mapType : "MAP_TYPE_NONE",
+            manual: name in sidecar.manualPlacements,
+          };
+        }
+
         return send(200, {
-          placements: Object.fromEntries(merged),
+          placements,
           components: world.components,
           conflicts: world.conflicts,
           verticalLinks: world.verticalLinks,
