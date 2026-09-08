@@ -978,7 +978,9 @@ describe("WorldCanvas", () => {
       fireEvent.mouseUp(canvas, { clientX: 5, clientY: 5 });
       fireEvent.click(canvas, { clientX: 5, clientY: 5 });
 
-      expect(canvas.parentElement!.querySelectorAll(".world-canvas__selection-outline").length).toBe(1);
+      const outlines = canvas.parentElement!.querySelectorAll(".world-canvas__selection-outline");
+      expect(outlines.length).toBe(1);
+      expect(outlines[0]!.getAttribute("data-map")).toBe("A");
     });
 
     it("plain click on empty canvas clears the selection", async () => {
@@ -1005,7 +1007,9 @@ describe("WorldCanvas", () => {
       expect(canvas.parentElement!.querySelectorAll(".world-canvas__selection-outline").length).toBe(2);
 
       fireEvent.mouseDown(canvas, { clientX: 5, clientY: 5, button: 0, ctrlKey: true }); // toggle A off
-      expect(canvas.parentElement!.querySelectorAll(".world-canvas__selection-outline").length).toBe(1);
+      const outlines = canvas.parentElement!.querySelectorAll(".world-canvas__selection-outline");
+      expect(outlines.length).toBe(1);
+      expect(outlines[0]!.getAttribute("data-map")).toBe("B");
     });
 
     it("a plain drag over a map still pans and does not change the selection", async () => {
@@ -1016,8 +1020,23 @@ describe("WorldCanvas", () => {
       fireEvent.mouseDown(canvas, { clientX: 25, clientY: 5, button: 0 }); // plain drag starting on B
       fireEvent.mouseMove(canvas, { clientX: 40, clientY: 20 });
       fireEvent.mouseUp(canvas, { clientX: 40, clientY: 20 });
+      // A real browser fires `click` after mouseup whenever mousedown and
+      // mouseup shared the same target element -- true here even though the
+      // pointer moved a real distance in between (no movement-distance
+      // suppression). Firing it here is what actually exercises the review
+      // fix: without it, this test could pass even if onCanvasClick still
+      // unconditionally rewrote the selection, because nothing would ever
+      // call it.
+      fireEvent.click(canvas, { clientX: 40, clientY: 20 });
 
-      expect(canvas.parentElement!.querySelectorAll(".world-canvas__selection-outline").length).toBe(1);
+      const outlines = canvas.parentElement!.querySelectorAll(".world-canvas__selection-outline");
+      // Asserts identity, not just count: a regression that let the
+      // trailing click through would still often leave exactly one outline
+      // (whatever the drag's end point landed on, if anything), so a bare
+      // length check could pass while the actual selection silently
+      // changed out from under it.
+      expect(outlines.length).toBe(1);
+      expect(outlines[0]!.getAttribute("data-map")).toBe("A");
     });
 
     it("Ctrl+drag right selects only maps fully enclosed by the marquee", async () => {
@@ -1045,6 +1064,7 @@ describe("WorldCanvas", () => {
 
       const outlines = canvas.parentElement!.querySelectorAll(".world-canvas__selection-outline");
       expect(outlines.length).toBe(1);
+      expect(outlines[0]!.getAttribute("data-map")).toBe("A");
     });
 
     it("Ctrl+drag left selects every map the marquee touches at all", async () => {
@@ -1064,6 +1084,7 @@ describe("WorldCanvas", () => {
 
       const outlines = canvas.parentElement!.querySelectorAll(".world-canvas__selection-outline");
       expect(outlines.length).toBe(2);
+      expect(new Set([...outlines].map((o) => o.getAttribute("data-map")))).toEqual(new Set(["A", "B"]));
     });
 
     it("a Ctrl+drag over empty space selects nothing and clears any prior selection", async () => {

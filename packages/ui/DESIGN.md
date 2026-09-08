@@ -89,6 +89,12 @@ whatever OS theme is active.
      caught it. */
   --overlay-spotlight-dim: rgba(4, 8, 16, 0.72);
 
+  /* Multi-select move: selection outlines and the live marquee rect share
+     one cyan hue, distinct from every other overlay token above (accent
+     green, warn amber, danger red, elevation blue/orange) so a selected
+     map's outline never reads as a lens tint or a conflict badge. */
+  --overlay-selection: #22d3ee;
+
   --focus-ring: #60a5fa;
 }
 
@@ -119,6 +125,7 @@ whatever OS theme is active.
      proportioned for a light background -- --text-primary's own dark value
      (#0f172a) at high opacity, not literal black. */
   --overlay-spotlight-dim: rgba(15, 23, 42, 0.65);
+  --overlay-selection: #0891b2;
   --focus-ring: #2563eb;
 }
 ```

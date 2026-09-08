@@ -178,6 +178,14 @@ export function WorldCanvas() {
   const encounterCacheRef = useRef<Map<string, EncounterCacheEntry>>(new Map());
   const dragRef = useRef<DragState>(null);
   const conflictBadgesRef = useRef<Array<{ x: number; y: number; text: string }>>([]);
+  // Review fix: whether real pointer movement happened during the
+  // mousedown-to-mouseup cycle that is about to produce a `click`. The
+  // browser does NOT suppress `click` after a same-element drag -- see
+  // onCanvasClick's own comment below -- so this ref is what actually
+  // distinguishes "the user dragged, then the button happened to come up
+  // over the same element" from a genuine click. Reset at the top of every
+  // mousedown, set whenever onMouseMove observes a live drag (any kind).
+  const dragMovedRef = useRef(false);
 
   const [world, setWorld] = useState<WorldState | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -851,6 +859,7 @@ export function WorldCanvas() {
   // below, not left undiscoverable.
   const onMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (e.button !== 0) return;
+    dragMovedRef.current = false;
     const rect = e.currentTarget.getBoundingClientRect();
     const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
     const w = screenToWorld(sx, sy);
@@ -889,15 +898,27 @@ export function WorldCanvas() {
     }
   };
 
-  // Native click, not a custom mousedown/mouseup movement-threshold check:
-  // the browser already suppresses `click` after a real drag (mousedown
-  // and mouseup at meaningfully different positions), so this only ever
-  // fires for a genuine click -- no new "was this a drag" logic needed.
+  // Review fix (CRITICAL): this used to rely on "the browser already
+  // suppresses `click` after a real drag" -- that is false. A browser fires
+  // `click` whenever mousedown and mouseup share the same target ELEMENT,
+  // with no movement-distance suppression of any kind; confirmed live
+  // against the real app, a 288x224px drag on the canvas still fired a
+  // `click` afterward. Since a plain drag ALWAYS pans (mousedown starts a
+  // "pan" drag whenever Shift is not held, regardless of what is under the
+  // cursor -- see onMouseDown above), that click landed here unguarded and
+  // silently rewrote the selection at the end of every ordinary pan: two
+  // Ctrl+click-selected maps could drop to zero, or collapse to whichever
+  // single map the pan happened to end over.
+  //
+  // dragMovedRef (reset to false at the top of onMouseDown, set to true by
+  // onMouseMove whenever a drag is actually live) is what actually tells a
+  // genuine click apart from the trailing click of a completed drag
+  // gesture -- not element identity, which a drag and a click share.
   // Ctrl/Cmd+click and Shift+click are both handled entirely in
   // onMouseDown (toggle, or a map/group drag) and must not ALSO trigger
-  // this plain-select behaviour, hence the guard.
+  // this plain-select behaviour, hence those parts of the guard.
   const onCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (e.ctrlKey || e.metaKey || e.shiftKey) return;
+    if (e.ctrlKey || e.metaKey || e.shiftKey || dragMovedRef.current) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const w = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
     const hit = hitTest(w.x, w.y);
@@ -906,6 +927,9 @@ export function WorldCanvas() {
 
   const onMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const drag = dragRef.current;
+    // Any live drag (pan/map/group/marquee) counts as real movement for
+    // dragMovedRef's purpose -- see onCanvasClick's own comment for why.
+    if (drag) dragMovedRef.current = true;
     if (drag?.kind === "pan") {
       setPan({ x: drag.startPan.x + (e.clientX - drag.startX), y: drag.startPan.y + (e.clientY - drag.startY) });
       return;
@@ -933,6 +957,14 @@ export function WorldCanvas() {
       const dx = Math.round(rawX) - anchorStart.x, dy = Math.round(rawY) - anchorStart.y;
       setWorld((prev) => {
         if (!prev) return prev;
+        // Review fix: mirrors the "map" branch's own no-op guard just above
+        // -- skip creating a new `world` object (and re-running every
+        // world-keyed useMemo, including the full placement cull) when the
+        // anchor's rounded position has not actually changed since the last
+        // update, the same sub-tile-mousemove waste sizeByMap/unplacedNames
+        // were already fixed for.
+        const anchorExisting = prev.placements.get(drag.anchorMap);
+        if (!anchorExisting || (anchorExisting.x === anchorStart.x + dx && anchorExisting.y === anchorStart.y + dy)) return prev;
         const next = new Map(prev.placements);
         for (const [name, start] of drag.starts) {
           const existing = next.get(name);
@@ -1184,6 +1216,7 @@ export function WorldCanvas() {
                 <div
                   key={e.map}
                   className="world-canvas__selection-outline"
+                  data-map={e.map}
                   style={{ left: e.rect.x, top: e.rect.y, width: e.rect.width, height: e.rect.height }}
                 />
               ))}

@@ -1289,10 +1289,20 @@ input {
   background: var(--overlay-spotlight-dim);
 }
 
+/* Review fix: neither rule declared a z-index (computed `auto`), so both
+   painted underneath .world-canvas__lens/.world-canvas__spotlight (z-index:
+   2, above) and .encounter-gutter (z-index: 5, above) -- confirmed live via
+   elementsFromPoint on the real app: a selected map's outline sat under a
+   spotlight's dim and under a lens tint, and the live marquee sat under
+   both AND under the whole encounter gutter. Selection outlines sit above
+   every existing overlay (6); the marquee -- a live in-progress gesture the
+   user is actively watching drag out -- sits a layer above even that (7),
+   so it is never hidden mid-drag by anything else on screen. */
 .world-canvas__selection {
   position: absolute;
   inset: 0;
   pointer-events: none;
+  z-index: 6;
 }
 
 .world-canvas__selection-outline {
@@ -1308,6 +1318,7 @@ input {
   border: 1px dashed var(--overlay-selection);
   background: rgba(34, 211, 238, 0.14);
   pointer-events: none;
+  z-index: 7;
 }
 
 .world-canvas__spotlight-hit {
