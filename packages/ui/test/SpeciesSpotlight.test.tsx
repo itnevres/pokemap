@@ -22,7 +22,7 @@ describe("SpeciesSpotlight", () => {
     ) as never;
 
     render(<SpeciesSpotlight onHits={onHits} />);
-    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "PIKACHU" } });
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "PIKACHU" } });
     await waitFor(() => expect(onHits).toHaveBeenCalled());
     expect(onHits.mock.calls.at(-1)![0]).toEqual([expect.objectContaining({ mapName: "Route29" })]);
   });
@@ -46,7 +46,7 @@ describe("SpeciesSpotlight", () => {
       } as Response),
     ) as never;
     render(<SpeciesSpotlight onHits={() => {}} />);
-    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "HOOTHOOT" } });
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "HOOTHOOT" } });
     await waitFor(() => expect(screen.getByText(/1 map\b/i)).toBeTruthy());
     expect(screen.queryByText(/2 maps/i)).toBeNull();
   });
@@ -54,7 +54,7 @@ describe("SpeciesSpotlight", () => {
   it("says so plainly when a species appears nowhere", async () => {
     global.fetch = fetchMockWithSpecies(() => Promise.resolve({ ok: true, json: async () => [] } as Response)) as never;
     render(<SpeciesSpotlight onHits={() => {}} />);
-    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "MISSINGNO" } });
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "MISSINGNO" } });
     await waitFor(() => expect(screen.getByText(/appears in no encounter table/i)).toBeTruthy());
   });
 
@@ -94,7 +94,7 @@ describe("SpeciesSpotlight", () => {
     const onHits = vi.fn();
     global.fetch = fetchMockWithSpecies(() => Promise.resolve({ ok: true, json: async () => [] } as Response)) as never;
     render(<SpeciesSpotlight onHits={onHits} />);
-    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "MISSINGNO" } });
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "MISSINGNO" } });
     await waitFor(() => expect(onHits).toHaveBeenCalled());
     // Distinct from "no active search" (null, see the next test) -- a
     // caller (WorldCanvas) needs to tell "cleared the box" from "searched
@@ -112,7 +112,7 @@ describe("SpeciesSpotlight", () => {
       } as Response),
     ) as never;
     render(<SpeciesSpotlight onHits={onHits} />);
-    const box = screen.getByRole("searchbox");
+    const box = screen.getByRole("combobox");
 
     fireEvent.change(box, { target: { value: "PIKACHU" } });
     await waitFor(() => expect(onHits).toHaveBeenCalled());
@@ -130,7 +130,7 @@ describe("SpeciesSpotlight", () => {
     // fetchMock's own call count below.
     global.fetch = fetchMockWithSpecies((url) => fetchMock(url)) as never;
     render(<SpeciesSpotlight onHits={onHits} />);
-    const box = screen.getByRole("searchbox");
+    const box = screen.getByRole("combobox");
 
     fireEvent.change(box, { target: { value: "P" } });
     fireEvent.change(box, { target: { value: "PI" } });
@@ -160,7 +160,7 @@ describe("SpeciesSpotlight", () => {
       } as Response),
     ) as never;
     render(<SpeciesSpotlight onHits={onHits} />);
-    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "PIKACHU" } });
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "PIKACHU" } });
     await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
     expect(onHits).not.toHaveBeenCalled();
   });
@@ -169,7 +169,7 @@ describe("SpeciesSpotlight", () => {
     it("shows a dropdown of species starting with the typed prefix, case-insensitively", async () => {
       global.fetch = fetchMockWithSpecies(() => Promise.resolve({ ok: true, json: async () => [] } as Response)) as never;
       render(<SpeciesSpotlight onHits={() => {}} />);
-      const box = screen.getByRole("searchbox");
+      const box = screen.getByRole("combobox");
       await waitFor(() => expect((global.fetch as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith("/api/species"));
 
       fireEvent.change(box, { target: { value: "ma" } });
@@ -189,7 +189,7 @@ describe("SpeciesSpotlight", () => {
     it("does not show a species that merely CONTAINS the prefix, only ones that START with it", async () => {
       global.fetch = fetchMockWithSpecies(() => Promise.resolve({ ok: true, json: async () => [] } as Response)) as never;
       render(<SpeciesSpotlight onHits={() => {}} />);
-      const box = screen.getByRole("searchbox");
+      const box = screen.getByRole("combobox");
       await waitFor(() => expect((global.fetch as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith("/api/species"));
 
       // "rill" is a substring of MARILL but not a prefix -- a
@@ -208,7 +208,7 @@ describe("SpeciesSpotlight", () => {
         return Promise.resolve({ ok: true, json: async () => [] } as Response);
       }) as never;
       render(<SpeciesSpotlight onHits={onHits} />);
-      const box = screen.getByRole("searchbox") as HTMLInputElement;
+      const box = screen.getByRole("combobox") as HTMLInputElement;
       await waitFor(() => expect((global.fetch as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith("/api/species"));
 
       fireEvent.change(box, { target: { value: "ma" } });
@@ -220,10 +220,58 @@ describe("SpeciesSpotlight", () => {
       await waitFor(() => expect(onHits).toHaveBeenCalled());
     });
 
+    // Finding 1 (race condition, code review): a pick() used to run its own
+    // fetch entirely independent of the debounced-search effect, with no
+    // `cancelled` guard on its own `.then`/`.catch` the way that effect's
+    // always had. So a pick whose response lands AFTER the user has already
+    // abandoned it (cleared the box before the fetch resolves) still called
+    // onHits with the now-stale hits -- reviving a search the box's own
+    // visible contents say isn't happening anymore. Uses getByLabelText
+    // rather than getByRole so this test exercises the same markup whether
+    // or not the accessibility fix (role="combobox") has landed yet -- this
+    // is purely a Finding-1 regression probe, independent of Finding 2.
+    it("an abandoned pick's late response does not revive onHits with stale hits", async () => {
+      const onHits = vi.fn();
+      let resolveWhere: (v: Response) => void = () => {};
+      const wherePromise = new Promise<Response>((resolve) => { resolveWhere = resolve; });
+      const whereMock = vi.fn(() => wherePromise);
+      global.fetch = fetchMockWithSpecies(whereMock) as never;
+      render(<SpeciesSpotlight onHits={onHits} />);
+      const box = screen.getByLabelText("Species spotlight") as HTMLInputElement;
+      await waitFor(() => expect((global.fetch as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith("/api/species"));
+
+      fireEvent.change(box, { target: { value: "ma" } });
+      await waitFor(() => expect(screen.getByText("Marill")).toBeTruthy());
+      fireEvent.click(screen.getByText("Marill"));
+      expect(box.value).toBe("MARILL");
+
+      // Let the pick's own /api/where/ fetch actually go out before
+      // abandoning it -- this is the in-flight moment Finding 1 describes.
+      await waitFor(() => expect(whereMock).toHaveBeenCalledTimes(1));
+
+      // Abandon the pick: clear the box before its response lands.
+      fireEvent.change(box, { target: { value: "" } });
+      await waitFor(() => expect(onHits).toHaveBeenCalledWith(null));
+      onHits.mockClear();
+
+      // The abandoned pick's response finally arrives.
+      resolveWhere({
+        ok: true,
+        json: async () => [{ mapName: "Route29", percent: 20, minLevel: 3, maxLevel: 5, method: "land_mons" }],
+      } as Response);
+      // Give the (possibly still-subscribed) promise chain a tick to run,
+      // if it's going to.
+      await new Promise((r) => setTimeout(r, 50));
+
+      // It must NOT revive onHits with the now-stale Marill hits -- the box
+      // is empty and no search is visibly active.
+      expect(onHits).not.toHaveBeenCalled();
+    });
+
     it("ArrowDown/ArrowUp move a highlighted entry and Enter selects it", async () => {
       global.fetch = fetchMockWithSpecies(() => Promise.resolve({ ok: true, json: async () => [] } as Response)) as never;
       render(<SpeciesSpotlight onHits={() => {}} />);
-      const box = screen.getByRole("searchbox") as HTMLInputElement;
+      const box = screen.getByRole("combobox") as HTMLInputElement;
       await waitFor(() => expect((global.fetch as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith("/api/species"));
 
       fireEvent.change(box, { target: { value: "ma" } });
@@ -238,6 +286,57 @@ describe("SpeciesSpotlight", () => {
       expect(box.value).toBe("MAREEP");
     });
 
+    // Finding 2 (accessibility, code review): the input carried no
+    // role="combobox"/aria-expanded/aria-controls/aria-activedescendant at
+    // all, the listbox's direct children were <li> wrappers around a
+    // role="option" <button> rather than the option itself (breaking ARIA
+    // ownership), and those <button>s sat in the natural tab order between
+    // the input and whatever toolbar control follows it. Also drops the
+    // redundant role="searchbox" -- input[type="search"] already implies
+    // it, and it would conflict with role="combobox" here anyway.
+    it("combobox/listbox ARIA wiring: input attributes, direct option children, no focusable options", async () => {
+      global.fetch = fetchMockWithSpecies(() => Promise.resolve({ ok: true, json: async () => [] } as Response)) as never;
+      const { container } = render(<SpeciesSpotlight onHits={() => {}} />);
+      const box = screen.getByRole("combobox") as HTMLInputElement;
+      await waitFor(() => expect((global.fetch as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith("/api/species"));
+
+      // Closed: no expanded/controls/activedescendant claims about a
+      // dropdown that isn't actually in the DOM.
+      expect(box.getAttribute("role")).toBe("combobox");
+      expect(box.getAttribute("aria-expanded")).toBe("false");
+      expect(box.hasAttribute("aria-controls")).toBe(false);
+      expect(box.hasAttribute("aria-activedescendant")).toBe(false);
+
+      fireEvent.change(box, { target: { value: "ma" } });
+      await waitFor(() => expect(screen.getByText("Magikarp")).toBeTruthy());
+
+      const listbox = screen.getByRole("listbox");
+      expect(box.getAttribute("aria-expanded")).toBe("true");
+      expect(listbox.id).toBeTruthy();
+      expect(box.getAttribute("aria-controls")).toBe(listbox.id);
+
+      // Every direct child of the listbox is itself role="option" -- no
+      // interposed wrapper breaking that ARIA ownership -- and none of them
+      // is a focusable control (no <button>, no explicit tabindex), which
+      // is what keeps Tab from landing inside the dropdown at all.
+      const directChildren = Array.from(listbox.children);
+      expect(directChildren.length).toBeGreaterThan(0);
+      for (const child of directChildren) {
+        expect(child.getAttribute("role")).toBe("option");
+        expect(child.tagName).not.toBe("BUTTON");
+        expect(child.hasAttribute("tabindex")).toBe(false);
+      }
+      expect(container.querySelectorAll(".species-spotlight__dropdown button").length).toBe(0);
+
+      // ArrowDown highlights the first option and wires
+      // aria-activedescendant to point at its actual rendered DOM id.
+      fireEvent.keyDown(box, { key: "ArrowDown" });
+      const firstOption = directChildren[0] as HTMLElement;
+      expect(firstOption.id).toBeTruthy();
+      expect(box.getAttribute("aria-activedescendant")).toBe(firstOption.id);
+      expect(firstOption.getAttribute("aria-selected")).toBe("true");
+    });
+
     it("the dropdown never appears with an empty box", async () => {
       global.fetch = fetchMockWithSpecies(() => Promise.resolve({ ok: true, json: async () => [] } as Response)) as never;
       render(<SpeciesSpotlight onHits={() => {}} />);
@@ -245,56 +344,53 @@ describe("SpeciesSpotlight", () => {
       expect(screen.queryByRole("listbox")).toBeNull();
     });
 
-    // Added after review: pick() sets skipQueryRef.current AND calls
-    // setQuery(bare) to guard against the debounced-search effect below
-    // redoing pick()'s own eager fetch 250ms later. When the box already
-    // holds the EXACT bare/uppercase form pick() is about to set (typed
-    // "MARILL", then click the Marill option -- bare is also "MARILL"),
-    // setQuery("MARILL") is a same-value no-op: React bails out of the
-    // re-render, so the debounced effect never re-runs, so its cleanup
-    // (which normally cancels the pending timer) never fires either -- the
-    // timer scheduled by the earlier typing is still alive and would fire
-    // its own redundant fetch ~250ms later. The fix re-checks the guard
-    // inside the timer callback itself (fire time), not just when the
-    // timer is scheduled, so this stale timer bails out instead of firing.
+    // Confirms the request-object redesign handles the case that used to
+    // need a dedicated skipQueryRef guard: when the box already holds the
+    // EXACT bare/uppercase form pick() is about to set (typed "MARILL",
+    // then click the Marill option -- bare is also "MARILL"), pick() still
+    // builds a brand-new PendingRequest object and hands it to setRequest,
+    // so the fetch effect always re-runs regardless of whether the visible
+    // *string* changed. There is only ever one fetch site now, so there is
+    // no separate "eager" fetch and "debounced" timer to duplicate in the
+    // first place.
     it("exact-match pick fires only one fetch, not two, even past the debounce window", async () => {
       const onHits = vi.fn();
       const whereMock = vi.fn(() => Promise.resolve({ ok: true, json: async () => [] } as Response));
       global.fetch = fetchMockWithSpecies(whereMock) as never;
       render(<SpeciesSpotlight onHits={onHits} />);
-      const box = screen.getByRole("searchbox") as HTMLInputElement;
+      const box = screen.getByRole("combobox") as HTMLInputElement;
       await waitFor(() => expect((global.fetch as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith("/api/species"));
 
       // Type the EXACT bare uppercase form -- pick()'s own normalization
       // produces the same string, so setQuery inside pick() will be a
-      // no-op.
+      // no-op (the fetch itself is still driven by the new request object,
+      // not by `query`, so this no-op doesn't suppress anything).
       fireEvent.change(box, { target: { value: "MARILL" } });
       await waitFor(() => expect(screen.getByText("Marill")).toBeTruthy());
       fireEvent.click(screen.getByText("Marill"));
 
       expect(box.value).toBe("MARILL");
-      // pick()'s own eager fetch has already fired synchronously.
-      expect(whereMock).toHaveBeenCalledTimes(1);
+      // pick()'s request is `immediate: true`, so it fires on the next
+      // tick (setTimeout(..., 0)) rather than synchronously -- await it.
+      await waitFor(() => expect(whereMock).toHaveBeenCalledTimes(1));
 
-      // Wait well past DEBOUNCE_MS (250ms) to give the *pending* timer from
-      // the earlier typing a chance to fire too, if it was never cancelled.
+      // Wait well past DEBOUNCE_MS (250ms) to confirm nothing redundant
+      // fires later -- there is no separate debounced timer left over from
+      // the earlier typing, since pick()'s setRequest() replaced it.
       await new Promise((r) => setTimeout(r, 400));
       expect(whereMock).toHaveBeenCalledTimes(1);
     });
 
-    // Added after review: the flip side of the same stale-ref bug. Left
-    // uncleared, skipQueryRef.current would survive a pick() indefinitely,
-    // so a LATER, wholly separate search for the exact same species string
-    // would be silently swallowed by the `skipQueryRef.current === trimmed`
-    // guard -- no fetch, no "Searching...", no error, the world just never
-    // updates. The fix clears the ref on the input's very next onChange, so
-    // it can never outlive the one render cycle it exists to protect.
+    // Added after review (now superseded by the request-object redesign,
+    // which has no ref-based guard left to go stale): a pick() followed by
+    // retyping the exact same species must still fire a real, new search --
+    // not get silently suppressed by leftover state from the earlier pick.
     it("retyping the same species after a pick fires a new, real search -- not silently suppressed", async () => {
       const onHits = vi.fn();
       const whereMock = vi.fn(() => Promise.resolve({ ok: true, json: async () => [] } as Response));
       global.fetch = fetchMockWithSpecies(whereMock) as never;
       render(<SpeciesSpotlight onHits={onHits} />);
-      const box = screen.getByRole("searchbox") as HTMLInputElement;
+      const box = screen.getByRole("combobox") as HTMLInputElement;
       await waitFor(() => expect((global.fetch as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith("/api/species"));
 
       fireEvent.change(box, { target: { value: "MARILL" } });
@@ -322,7 +418,7 @@ describe("SpeciesSpotlight", () => {
       const whereMock = vi.fn(() => Promise.resolve({ ok: true, json: async () => [] } as Response));
       global.fetch = fetchMockWithSpecies(whereMock) as never;
       render(<SpeciesSpotlight onHits={onHits} />);
-      const box = screen.getByRole("searchbox") as HTMLInputElement;
+      const box = screen.getByRole("combobox") as HTMLInputElement;
       await waitFor(() => expect((global.fetch as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith("/api/species"));
 
       fireEvent.change(box, { target: { value: "ma" } });
@@ -330,7 +426,9 @@ describe("SpeciesSpotlight", () => {
       fireEvent.click(screen.getByText("Marill"));
 
       expect(box.value).toBe("MARILL");
-      expect(whereMock).toHaveBeenCalledTimes(1);
+      // pick()'s request is `immediate: true`, so it fires on the next
+      // tick (setTimeout(..., 0)) rather than synchronously -- await it.
+      await waitFor(() => expect(whereMock).toHaveBeenCalledTimes(1));
 
       await new Promise((r) => setTimeout(r, 400));
       expect(whereMock).toHaveBeenCalledTimes(1);
@@ -343,7 +441,7 @@ describe("SpeciesSpotlight", () => {
         return Promise.resolve({ ok: true, json: async () => [{ mapName: "Route1", percent: 10, minLevel: 1, maxLevel: 2, method: "land_mons" }] } as Response);
       }) as never;
       render(<SpeciesSpotlight onHits={onHits} />);
-      fireEvent.change(screen.getByRole("searchbox"), { target: { value: "MARILL" } });
+      fireEvent.change(screen.getByRole("combobox"), { target: { value: "MARILL" } });
       expect(screen.queryByRole("listbox")).toBeNull();
       await waitFor(() => expect(onHits).toHaveBeenCalled());
     });
