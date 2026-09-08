@@ -245,6 +245,97 @@ describe("SpeciesSpotlight", () => {
       expect(screen.queryByRole("listbox")).toBeNull();
     });
 
+    // Added after review: pick() sets skipQueryRef.current AND calls
+    // setQuery(bare) to guard against the debounced-search effect below
+    // redoing pick()'s own eager fetch 250ms later. When the box already
+    // holds the EXACT bare/uppercase form pick() is about to set (typed
+    // "MARILL", then click the Marill option -- bare is also "MARILL"),
+    // setQuery("MARILL") is a same-value no-op: React bails out of the
+    // re-render, so the debounced effect never re-runs, so its cleanup
+    // (which normally cancels the pending timer) never fires either -- the
+    // timer scheduled by the earlier typing is still alive and would fire
+    // its own redundant fetch ~250ms later. The fix re-checks the guard
+    // inside the timer callback itself (fire time), not just when the
+    // timer is scheduled, so this stale timer bails out instead of firing.
+    it("exact-match pick fires only one fetch, not two, even past the debounce window", async () => {
+      const onHits = vi.fn();
+      const whereMock = vi.fn(() => Promise.resolve({ ok: true, json: async () => [] } as Response));
+      global.fetch = fetchMockWithSpecies(whereMock) as never;
+      render(<SpeciesSpotlight onHits={onHits} />);
+      const box = screen.getByRole("searchbox") as HTMLInputElement;
+      await waitFor(() => expect((global.fetch as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith("/api/species"));
+
+      // Type the EXACT bare uppercase form -- pick()'s own normalization
+      // produces the same string, so setQuery inside pick() will be a
+      // no-op.
+      fireEvent.change(box, { target: { value: "MARILL" } });
+      await waitFor(() => expect(screen.getByText("Marill")).toBeTruthy());
+      fireEvent.click(screen.getByText("Marill"));
+
+      expect(box.value).toBe("MARILL");
+      // pick()'s own eager fetch has already fired synchronously.
+      expect(whereMock).toHaveBeenCalledTimes(1);
+
+      // Wait well past DEBOUNCE_MS (250ms) to give the *pending* timer from
+      // the earlier typing a chance to fire too, if it was never cancelled.
+      await new Promise((r) => setTimeout(r, 400));
+      expect(whereMock).toHaveBeenCalledTimes(1);
+    });
+
+    // Added after review: the flip side of the same stale-ref bug. Left
+    // uncleared, skipQueryRef.current would survive a pick() indefinitely,
+    // so a LATER, wholly separate search for the exact same species string
+    // would be silently swallowed by the `skipQueryRef.current === trimmed`
+    // guard -- no fetch, no "Searching...", no error, the world just never
+    // updates. The fix clears the ref on the input's very next onChange, so
+    // it can never outlive the one render cycle it exists to protect.
+    it("retyping the same species after a pick fires a new, real search -- not silently suppressed", async () => {
+      const onHits = vi.fn();
+      const whereMock = vi.fn(() => Promise.resolve({ ok: true, json: async () => [] } as Response));
+      global.fetch = fetchMockWithSpecies(whereMock) as never;
+      render(<SpeciesSpotlight onHits={onHits} />);
+      const box = screen.getByRole("searchbox") as HTMLInputElement;
+      await waitFor(() => expect((global.fetch as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith("/api/species"));
+
+      fireEvent.change(box, { target: { value: "MARILL" } });
+      await waitFor(() => expect(screen.getByText("Marill")).toBeTruthy());
+      fireEvent.click(screen.getByText("Marill"));
+      await waitFor(() => expect(whereMock).toHaveBeenCalledTimes(1));
+      onHits.mockClear();
+      whereMock.mockClear();
+
+      // Clear the box, then retype the exact same species -- a brand new,
+      // legitimate search the user just asked for.
+      fireEvent.change(box, { target: { value: "" } });
+      fireEvent.change(box, { target: { value: "MARILL" } });
+
+      await waitFor(() => expect(whereMock).toHaveBeenCalledTimes(1), { timeout: 1000 });
+      await waitFor(() => expect(onHits).toHaveBeenCalled());
+    });
+
+    // Confirms the ORIGINAL, already-working case is untouched: a pick
+    // whose bare form DIFFERS from the just-typed prefix (the common case
+    // -- typing a partial prefix like "ma" then clicking a longer option)
+    // still collapses to exactly one fetch.
+    it("picking an option after typing a mere prefix still fires only one fetch, not two", async () => {
+      const onHits = vi.fn();
+      const whereMock = vi.fn(() => Promise.resolve({ ok: true, json: async () => [] } as Response));
+      global.fetch = fetchMockWithSpecies(whereMock) as never;
+      render(<SpeciesSpotlight onHits={onHits} />);
+      const box = screen.getByRole("searchbox") as HTMLInputElement;
+      await waitFor(() => expect((global.fetch as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith("/api/species"));
+
+      fireEvent.change(box, { target: { value: "ma" } });
+      await waitFor(() => expect(screen.getByText("Marill")).toBeTruthy());
+      fireEvent.click(screen.getByText("Marill"));
+
+      expect(box.value).toBe("MARILL");
+      expect(whereMock).toHaveBeenCalledTimes(1);
+
+      await new Promise((r) => setTimeout(r, 400));
+      expect(whereMock).toHaveBeenCalledTimes(1);
+    });
+
     it("if /api/species fails, plain typed search still works with no dropdown", async () => {
       const onHits = vi.fn();
       global.fetch = vi.fn((url: string) => {

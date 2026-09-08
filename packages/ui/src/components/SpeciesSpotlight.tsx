@@ -134,6 +134,21 @@ export function SpeciesSpotlight({ onHits }: SpeciesSpotlightProps) {
     setFetchError(null);
 
     const timer = setTimeout(() => {
+      // Review fix: a pick() for this exact query can land AFTER this timer
+      // was scheduled but BEFORE it fires -- if the box already held this
+      // same bare/uppercase string, pick()'s own setQuery() is a same-value
+      // no-op, so this effect never re-runs and its cleanup below (which
+      // would normally cancel this timer) never gets the chance to. Without
+      // this second check, that leaves this timer free to fire anyway and
+      // redo pick()'s own eager fetch a second time. skipQueryRef.current
+      // is still live at fire time in exactly that case (nothing has
+      // cleared it since pick() set it -- the input's onChange only clears
+      // it on the NEXT keystroke, and there hasn't been one), so re-testing
+      // the same guard here catches it.
+      if (skipQueryRef.current === trimmed) {
+        skipQueryRef.current = null;
+        return;
+      }
       // Review fix: this used to skip the `!r.ok` gate every other fetch
       // in this package uses (useCoverage, useMapGroups, useMapLayout) on
       // the theory that /api/where/:species always answers 200. That is
@@ -248,6 +263,12 @@ export function SpeciesSpotlight({ onHits }: SpeciesSpotlightProps) {
         role="searchbox"
         value={query}
         onChange={(e) => {
+          // The very next keystroke after a pick() must invalidate its
+          // skip-guard -- otherwise a stale skipQueryRef.current can
+          // survive into a later, unrelated search and get silently
+          // swallowed by the debounced-search effect's `skipQueryRef.current
+          // === trimmed` check below (see that effect's own comment).
+          skipQueryRef.current = null;
           setQuery(e.target.value);
           setDropdownOpen(e.target.value.trim().length > 0);
         }}
