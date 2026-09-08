@@ -235,4 +235,13 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("server", () => {
     expect(r.status).toBe(200);
     expect(await r.json()).toEqual([]);
   });
+
+  it("GET /api/species returns every species name, sorted", async () => {
+    const r = await get("/api/species");
+    expect(r.status).toBe(200);
+    const species = await r.json() as string[];
+    expect(species.length).toBeGreaterThan(300);
+    expect(species).toContain("SPECIES_ESPEON");
+    expect(species).toEqual([...species].sort());
+  });
 });

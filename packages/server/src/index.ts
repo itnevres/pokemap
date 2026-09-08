@@ -5,7 +5,7 @@ import { renderLayout } from "@pokemap/core/src/render/layout.js";
 import { renderSpeciesIcon } from "@pokemap/core/src/render/species.js";
 import { parseBlocks } from "@pokemap/core/src/load/blocks.js";
 import { parseEncounters, speciesChances, FISHING_RODS, type Encounters, type Method, type Rod, type SpeciesChance } from "@pokemap/core/src/load/encounters.js";
-import { coverage, whereSpecies } from "@pokemap/core/src/analyse/coverage.js";
+import { coverage, whereSpecies, allSpecies } from "@pokemap/core/src/analyse/coverage.js";
 import { buildWorld, resolveWorldPlacements } from "@pokemap/core/src/world/resolve.js";
 import { readSidecar, writeSidecar } from "@pokemap/core/src/world/sidecar.js";
 import { encodePng } from "@pokemap/cli/src/png.js";
@@ -68,6 +68,13 @@ export async function createServer(opts: { projectPath: string; port?: number })
   // coverage()'s single, argument-free result.
   let coverageCache: ReturnType<typeof coverage> | undefined;
   const getCoverage = () => (coverageCache ??= coverage(project));
+
+  // allSpecies(project) reads one directory listing -- cheap even
+  // uncached, but the result can't change for the lifetime of a
+  // read-only-decomp server process (I8), same reasoning as every other
+  // cache in this file. Computed on the first request that needs it.
+  let speciesCache: string[] | undefined;
+  const getSpecies = () => (speciesCache ??= allSpecies(project));
 
   const http: Server = createHttp((req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
@@ -254,6 +261,18 @@ export async function createServer(opts: { projectPath: string; port?: number })
         const c = getCoverage();
         const idToName = new Map(project.mapNames().map((n) => [project.map(n).id, n]));
         return send(200, { ...c, levelByMap: c.levelByMap.map((m) => ({ ...m, mapName: idToName.get(m.mapId) })) });
+      }
+
+      // The species spotlight's type-ahead dropdown: every SPECIES_X the
+      // project has art for, sorted -- fetched once by the client and
+      // filtered client-side as the user types (coverage.ts's own
+      // allSpecies doc comment explains why sorting happens there instead
+      // of here). This is an exact string match, not a regex like the
+      // species-icon route below -- "/api/species" alone, with nothing
+      // after it, so it can never accidentally swallow that route's own
+      // "/api/species/:name/icon.png" path.
+      if (url.pathname === "/api/species") {
+        return send(200, getSpecies());
       }
 
       // `[^/]+`, not `.+` -- same reasoning as the species-icon route
