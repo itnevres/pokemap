@@ -1625,5 +1625,61 @@ describe("WorldCanvas", () => {
         expect(readout).toBe("21%");
       });
     });
+
+    // Review fix regression test: the auto-fit effect above used to depend
+    // on [mapFilter, world] alone, which re-fires on EVERY drag frame (see
+    // that effect's own updated comment for why `world` churns per
+    // mousemove) -- reproduces the reviewer's empirical proof live: after
+    // auto-fit settles, shift-dragging a filtered map across several
+    // mousemove frames must not move the zoom readout at all, not even
+    // transiently between frames.
+    it("does not re-fire the dungeon auto-fit on a mid-drag mousemove frame, keeping the zoom readout unchanged throughout a Shift+drag", async () => {
+      const { impl } = makeFetchMock(fourMapsWorld());
+      vi.stubGlobal("fetch", impl);
+      // A stable Set instance across the whole test, matching how App.tsx
+      // hands WorldCanvas a stable per-dungeon Set (mapFilter's own doc
+      // comment) -- a literal `new Set([...])` re-created on every render
+      // would not exercise the identity-based guard this test is about.
+      const filter = new Set(["InDungeon1", "InDungeon2"]);
+      const { container } = render(<WorldCanvas mapFilter={filter} />);
+      await waitFor(() => expect(screen.queryByText(/Loading world/)).toBeNull());
+      const canvas = container.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement;
+      canvas.getBoundingClientRect = () => ({
+        left: 0, top: 0, right: VIEWPORT_SIZE, bottom: VIEWPORT_SIZE, width: VIEWPORT_SIZE, height: VIEWPORT_SIZE, x: 0, y: 0, toJSON() {},
+      });
+
+      // Same fit math as "auto-fits to the filtered maps on open" above:
+      // InDungeon1+InDungeon2 span 30x10, fit into the 100x100 viewport at
+      // zoom=100/30=3.33.. -> round(3.33/16*100)=21.
+      await waitFor(() => expect(screen.getByText(/%/).textContent).toBe("21%"));
+
+      // At that fit, zoom=10/3 and pan={x:0,y:100/3} (bounds {0,0,30,10}
+      // centred in the 100x100 viewport) -- InDungeon1 (world (0,0)-(10,10))
+      // draws on screen at roughly [0,33.3)x[33.3,66.7). Shift+mousedown at
+      // screen (10,40) lands on world (3,2), inside it.
+      fireEvent.mouseDown(canvas, { clientX: 10, clientY: 40, button: 0, shiftKey: true });
+      await waitFor(() => expect(screen.getByText(/%/).textContent).toBe("21%"));
+
+      // Frame 1: drag to screen (40,40) -- world (12,2), landing InDungeon1
+      // at tile (9,0). This actually changes InDungeon1's placement (a new
+      // `world` object, via onMouseMove's "map" branch setWorld call) AND
+      // grows the scoped bounding box (InDungeon1 now overlaps toward
+      // InDungeon2), which is exactly what made the old [mapFilter, world]
+      // effect re-fit to a different, larger zoom mid-drag. The readout
+      // must stay exactly "21%" here, not merely by the time the drag ends.
+      fireEvent.mouseMove(canvas, { clientX: 40, clientY: 40, shiftKey: true });
+      await waitFor(() => expect(screen.getByText(/%/).textContent).toBe("21%"));
+
+      // Frame 2: drag further, to screen (70,40) -- world (21,2), landing
+      // InDungeon1 at tile (18,0), overlapping InDungeon2 outright. Another
+      // fresh `world` object, another opportunity for the bug to re-fit
+      // (and, per the reviewer's report, a THIRD different escalating
+      // readout under the old code) -- still must read "21%".
+      fireEvent.mouseMove(canvas, { clientX: 70, clientY: 40, shiftKey: true });
+      await waitFor(() => expect(screen.getByText(/%/).textContent).toBe("21%"));
+
+      fireEvent.mouseUp(canvas);
+      await waitFor(() => expect(screen.getByText(/%/).textContent).toBe("21%"));
+    });
   });
 });

@@ -640,16 +640,40 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
   // is entirely about the cost of loading all 1,209 placements' images at
   // once), a curated dungeon is small and, at the default origin-anchored
   // view, may contain none of its own maps on screen at all -- effectively
-  // blank until the user finds "Fit world" themselves. Depends on
-  // `mapFilter`'s IDENTITY, not its contents -- App.tsx (a later task)
-  // hands this a stable Set per open dungeon, so this fires once per
-  // dungeon opened/switched/edited, not on every unrelated re-render.
+  // blank until the user finds "Fit world" themselves.
+  //
+  // Review fix (Task 12 review): this used to depend on [mapFilter, world]
+  // alone and rely on mapFilter's IDENTITY not changing to make it "fire
+  // once per dungeon opened/switched/edited, not on every unrelated
+  // re-render" -- but a dependency array can only skip a re-run when EVERY
+  // dependency is referentially unchanged, and `world` itself is a NEW
+  // object on every map/group drag's mousemove frame (onMouseMove's drag
+  // branches call setWorld per frame -- see sizeByMap's own comment on that
+  // exact churn), so this effect, and thus fitWorld(), actually re-ran on
+  // EVERY drag frame while a dungeon was open. Proven live: shift-dragging
+  // a filtered map across three mousemove frames produced three different,
+  // escalating zoom readouts mid-drag, stomping the user's own pan/zoom and
+  // contradicting this component's own "drag should behave exactly as in
+  // the full world view, just scoped" contract (WorldCanvasProps'
+  // `mapFilter` doc comment above). fittedFilterRef is what now actually
+  // delivers "once per dungeon": it stamps the specific mapFilter Set
+  // instance that was last fit and skips re-fitting for that same instance
+  // no matter how many times the effect body itself re-runs, mirroring
+  // appliedJumpTokenRef's own ref-guard (above) against this identical
+  // world-churns-every-drag-frame problem.
+  const fittedFilterRef = useRef<Set<string> | null>(null);
   useEffect(() => {
-    if (mapFilter && world) fitWorld();
+    if (!mapFilter || !world) return; // don't stamp before world arrives
+    if (fittedFilterRef.current === mapFilter) return;
+    fittedFilterRef.current = mapFilter;
+    fitWorld();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- fitWorld
     // itself is recreated each render (it closes over world/viewport/
     // sizeByMap) but must not retrigger this effect on its own; mapFilter's
-    // identity and world's arrival are the only two things that should.
+    // identity is the only thing that should, guarded by fittedFilterRef so
+    // world's own per-drag-frame churn (see appliedJumpTokenRef's own
+    // comment elsewhere in this file for the identical reasoning) can't
+    // re-fire it mid-drag.
   }, [mapFilter, world]);
 
   // Culling: only placements whose tile-rect intersects the current
