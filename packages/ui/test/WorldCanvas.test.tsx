@@ -1507,5 +1507,50 @@ describe("WorldCanvas", () => {
       expect(() => fireEvent.doubleClick(canvas, { clientX: 2, clientY: 3 })).not.toThrow();
       expect(canvas.parentElement!.querySelectorAll(".world-canvas__warp-marker").length).toBe(0);
     });
+
+    it("double-clicking a warp marker opens the destination popup; the × closes it without disturbing the canvas", async () => {
+      const { impl } = makeFetchMock(warpWorld());
+      const wrapped = withWarps(impl, { A: [{ x: 2, y: 3, elevation: 0, destMap: "MAP_B", destWarpId: "0", destMapName: "B" }] });
+      const fullMock = vi.fn((url: string, init?: RequestInit) => {
+        if (url === "/api/map/B") {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: () =>
+              Promise.resolve({
+                map: { id: "MAP_B", name: "B", layout: "LAYOUT_B" },
+                layout: { id: "LAYOUT_B", name: "B_Layout", width: 1, height: 1, borderWidth: 0, borderHeight: 0, primaryTileset: "t1", secondaryTileset: "t2" },
+                split: { version: "hns", metatiles: 512, tiles: 512, pals: 12 },
+                blocks: [{ metatileId: 0, collision: 0, elevation: 0, behavior: 0 }],
+              }),
+          } as Response);
+        }
+        return wrapped(url, init);
+      });
+      const { canvas } = await mountReady(fullMock);
+      fireEvent.click(screen.getByRole("switch", { name: /warps/i }));
+      // Zoom in past LOD_ZOOM_THRESHOLD (4) the same way the other tests in
+      // this describe block do: 8 wheel ticks anchored at screen (0,0),
+      // which also keeps pan exactly {0,0} throughout (screenToWorld(0,0)
+      // at pan={0,0} is always (0,0) regardless of zoom -- see the "draws a
+      // marker" test's own comment above for the full explanation).
+      for (let i = 0; i < 8; i++) fireEvent.wheel(canvas, { clientX: 0, clientY: 0, deltaY: -100 });
+      await waitFor(() => expect(canvas.parentElement!.querySelectorAll(".world-canvas__warp-marker").length).toBe(1));
+
+      // Marker A's warp is at world (0+2, 0+3). Read its actual rendered
+      // screen position back off the DOM rather than assuming zoom=1, so
+      // this test does not silently depend on the exact zoom the 8 ticks
+      // above land on.
+      const marker = canvas.parentElement!.querySelector(".world-canvas__warp-marker") as HTMLElement;
+      const mx = parseFloat(marker.style.left), my = parseFloat(marker.style.top);
+      fireEvent.doubleClick(canvas, { clientX: mx, clientY: my });
+      await waitFor(() => expect(screen.getByRole("dialog")).toBeTruthy());
+      expect(screen.getByRole("dialog").getAttribute("aria-label")).toBe("B preview");
+
+      const zoomBefore = screen.getByText(/%/).textContent;
+      fireEvent.click(screen.getByLabelText("Close"));
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(screen.getByText(/%/).textContent).toBe(zoomBefore); // pan/zoom untouched
+    });
   });
 });

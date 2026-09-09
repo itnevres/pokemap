@@ -5,6 +5,7 @@ import type { WarpEvent } from "@pokemap/core/src/load/maps.js";
 import { EncounterGutter, type EncounterGutterMapEntry, type EncounterGutterRow } from "./EncounterGutter.js";
 import { SpeciesSpotlight } from "./SpeciesSpotlight.js";
 import { LensPanel, type LensId } from "./LensPanel.js";
+import { WarpDestinationModal } from "./WarpDestinationModal.js";
 import { useCoverage } from "../hooks/useCoverage.js";
 import { isDrawnByDefault } from "../world/visibility.js";
 
@@ -307,10 +308,9 @@ export function WorldCanvas({ jumpToMap, jumpToken }: WorldCanvasProps = {}) {
   // Feature B: off by default (spec §4.1), same visual family as the
   // existing dungeon-auto-layout switch.
   const [warpsOn, setWarpsOn] = useState(false);
-  // Task 7 Step 5: which warp marker's destination popup is open, by
-  // destMapName -- wired (set) by this task's onCanvasDoubleClick, but not
-  // yet rendered anywhere. Harmless in the meantime: nothing reads it until
-  // a later task adds the destination-preview modal.
+  // Which warp marker's destination popup is open, by destMapName -- set by
+  // onCanvasDoubleClick below, rendered as a WarpDestinationModal (Task 8)
+  // just before this section's closing tag.
   const [warpPopup, setWarpPopup] = useState<string | null>(null);
   const [railFilter, setRailFilter] = useState("");
   const [hover, setHover] = useState<HoverInfo | null>(null);
@@ -1228,9 +1228,9 @@ export function WorldCanvas({ jumpToMap, jumpToken }: WorldCanvasProps = {}) {
   // click handler would fire this hit-test at the end of an ordinary pan or
   // drag gesture too. See onCanvasClick's own comment for the full
   // explanation of why dragMovedRef is what actually tells the two apart;
-  // not re-derived here. Currently invisible (nothing consumes warpPopup
-  // yet -- see its own comment above), but becomes a real bug the moment a
-  // later task renders a destination modal from it.
+  // not re-derived here. A false positive would open WarpDestinationModal
+  // (Task 8) over the wrong map at the end of an ordinary pan/drag gesture,
+  // so this guard is load-bearing, not defensive-only.
   const onCanvasDoubleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (e.ctrlKey || e.metaKey || e.shiftKey || dragMovedRef.current) return;
     if (!warpsOn) return;
@@ -1664,6 +1664,8 @@ export function WorldCanvas({ jumpToMap, jumpToken }: WorldCanvasProps = {}) {
           <span className="world-canvas__status-item world-canvas__hover world-canvas__hover--empty">Hover the world…</span>
         )}
       </div>
+
+      {warpPopup && <WarpDestinationModal mapName={warpPopup} onClose={() => setWarpPopup(null)} />}
     </section>
   );
 }
