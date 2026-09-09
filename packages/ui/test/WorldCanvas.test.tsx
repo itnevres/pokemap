@@ -27,7 +27,20 @@ function makeDropEvent(clientX: number, clientY: number, dataTransfer: unknown):
 // care about the unplaced-vs-placed distinction (dungeon toggle, side rail,
 // the component:-1 orphan cases).
 // ---------------------------------------------------------------------------
-interface RawPlacement { map: string; x: number; y: number; width: number; height: number; component: number; }
+interface RawPlacement {
+  map: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  component: number;
+  // Feature A's two wire fields (Task 1 / Task 3), optional here for the
+  // same reason WorldCanvas's own WirePlacement has them optional -- most
+  // fixtures in this file predate Feature A and never set them, and
+  // `makeWorld`/the fetch mock must keep accepting those unchanged.
+  mapType?: string;
+  manual?: boolean;
+}
 interface RawComponent { index: number; maps: string[]; bounds: { x: number; y: number; width: number; height: number } }
 
 function makeWorld(opts: {
@@ -1293,50 +1306,64 @@ describe("WorldCanvas", () => {
   // Default population filter (Task 3 / Feature A)
   // -------------------------------------------------------------------
   describe("default population filter (Feature A)", () => {
-    function typedWorld() {
-      return {
-        placements: {
-          Town: { map: "Town", x: 0, y: 0, width: 10, height: 10, component: 0, mapType: "MAP_TYPE_TOWN", manual: false },
-          House: { map: "House", x: 20, y: 0, width: 10, height: 10, component: 1, mapType: "MAP_TYPE_INDOOR", manual: false },
-          ManualHouse: { map: "ManualHouse", x: 40, y: 0, width: 10, height: 10, component: 2, mapType: "MAP_TYPE_INDOOR", manual: true },
-        },
-        components: [
-          { index: 0, maps: ["Town"], bounds: { x: 0, y: 0, width: 10, height: 10 } },
-          { index: 1, maps: ["House"], bounds: { x: 20, y: 0, width: 10, height: 10 } },
-          { index: 2, maps: ["ManualHouse"], bounds: { x: 40, y: 0, width: 10, height: 10 } },
-        ],
-        conflicts: [],
-        verticalLinks: [],
-        sidecar: { version: 1, dungeonAutoLayout: true, manualPlacements: { ManualHouse: { x: 40, y: 0 } }, view: { x: 0, y: 0, zoom: 1 } },
-      };
-    }
-
     it("does not fetch art for a MAP_TYPE_INDOOR map that was never manually placed", async () => {
-      const { impl } = makeFetchMock(typedWorld() as any);
+      const { impl } = makeFetchMock(
+        makeWorld({
+          placements: {
+            Town: { map: "Town", x: 0, y: 0, width: 10, height: 10, component: 0, mapType: "MAP_TYPE_TOWN", manual: false },
+            House: { map: "House", x: 20, y: 0, width: 10, height: 10, component: 1, mapType: "MAP_TYPE_INDOOR", manual: false },
+            ManualHouse: { map: "ManualHouse", x: 40, y: 0, width: 10, height: 10, component: 2, mapType: "MAP_TYPE_INDOOR", manual: true },
+          },
+        }),
+      );
       await mountReady(impl);
-      const srcs = FakeImage.instances.map((i) => i.src);
-      expect(srcs.some((s) => s.includes("Town"))).toBe(true);
-      expect(srcs.some((s) => s.includes("ManualHouse"))).toBe(true);
-      // Plain "House" must not appear, but "ManualHouse" (which DOES
-      // contain the substring "House") must -- checked as a whole path
-      // segment, not a bare substring, so this assertion cannot pass by
-      // accident against the wrong map.
-      // Bug fix during implementation: the original form of this check used
-      // `.includes(encodeURIComponent("House") + ".png")` (no leading "/"),
-      // which is NOT actually anchored to a whole path segment despite the
-      // comment above claiming it is -- "/api/render/ManualHouse.png"
-      // contains "House.png" as a bare substring (positions 6-14), so that
-      // check produced a false positive against a CORRECT implementation
-      // that draws ManualHouse and correctly omits House. `endsWith` on the
-      // "/"-prefixed filename is what the comment actually intends: a whole
-      // trailing path segment, which "ManualHouse.png" cannot satisfy for
-      // the needle "/House.png" (there is no "/" immediately before "House"
-      // in "ManualHouse.png").
-      expect(srcs.some((s) => s.endsWith(`/${encodeURIComponent("House")}.png`))).toBe(false);
+
+      // Exact-match idiom, mirroring the culling test's own assertion
+      // above: pins the WHOLE fetched set, not just "House is absent" --
+      // House is MAP_TYPE_INDOOR and never manually placed, so it must be
+      // excluded entirely, while Town (a shown-by-default type) and
+      // ManualHouse (INDOOR, but manually placed) both still draw. A loose
+      // substring check here is a trap: "ManualHouse" contains "House" as
+      // a bare substring, so `.includes("House")` cannot actually tell a
+      // correct implementation apart from one that wrongly draws House too.
+      await waitFor(() => expect(FakeImage.instances.length).toBe(2));
+      expect(FakeImage.instances.map((i) => i.src).sort()).toEqual(
+        ["/api/render/ManualHouse.png", "/api/render/Town.png"].sort(),
+      );
+    });
+
+    it("shows the count of placed-but-hidden maps in the status strip", async () => {
+      const { impl } = makeFetchMock(
+        makeWorld({
+          placements: {
+            Town: { map: "Town", x: 0, y: 0, width: 10, height: 10, component: 0, mapType: "MAP_TYPE_TOWN", manual: false },
+            House: { map: "House", x: 20, y: 0, width: 10, height: 10, component: 1, mapType: "MAP_TYPE_INDOOR", manual: false },
+            ManualHouse: { map: "ManualHouse", x: 40, y: 0, width: 10, height: 10, component: 2, mapType: "MAP_TYPE_INDOOR", manual: true },
+          },
+        }),
+      );
+      const { container } = await mountReady(impl);
+
+      // Town (shown-by-default type) and ManualHouse (INDOOR, but manually
+      // placed) both draw normally; only House (INDOOR, never manually
+      // placed) is placed yet hidden -- so the count is exactly 1, not 2
+      // (which counting every INDOOR/NONE placement regardless of `manual`
+      // would wrongly give) and not 0 (which ignoring the filter entirely
+      // would give).
+      const status = container.querySelector(".world-canvas__status")!;
+      expect(status.textContent).toMatch(/hidden 1/);
     });
 
     it("jumping to a hidden-by-type map reveals it for this view, without writing anything (no POST fired -- spec §6: a look, not a commit)", async () => {
-      const { impl } = makeFetchMock(typedWorld() as any);
+      const { impl } = makeFetchMock(
+        makeWorld({
+          placements: {
+            Town: { map: "Town", x: 0, y: 0, width: 10, height: 10, component: 0, mapType: "MAP_TYPE_TOWN", manual: false },
+            House: { map: "House", x: 20, y: 0, width: 10, height: 10, component: 1, mapType: "MAP_TYPE_INDOOR", manual: false },
+            ManualHouse: { map: "ManualHouse", x: 40, y: 0, width: 10, height: 10, component: 2, mapType: "MAP_TYPE_INDOOR", manual: true },
+          },
+        }),
+      );
       vi.stubGlobal("fetch", impl);
       render(<WorldCanvas jumpToMap="House" jumpToken={1} />);
       await waitFor(() => expect(screen.queryByText(/Loading world/)).toBeNull());
@@ -1346,9 +1373,9 @@ describe("WorldCanvas", () => {
       // of whether House itself was ever revealed. Confirmed live: this
       // assertion still (wrongly) passed with the reveal-on-jump logic
       // completely disabled, a genuine tautology, not just a theoretical
-      // one. Anchored to the whole trailing path segment instead, mirroring
-      // the fix in the sibling test above -- this can only be satisfied by
-      // House's OWN image actually having been fetched.
+      // one. Anchored to the whole trailing path segment instead -- this
+      // can only be satisfied by House's OWN image actually having been
+      // fetched.
       await waitFor(() => expect(FakeImage.instances.some((i) => i.src.endsWith(`/${encodeURIComponent("House")}.png`))).toBe(true));
       // Deviation from the plan's literal snippet: `([url]: [string]) =>`
       // fails to typecheck against `impl.mock.calls`' real inferred tuple

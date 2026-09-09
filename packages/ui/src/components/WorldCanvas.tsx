@@ -142,6 +142,21 @@ function componentOfPlacement(p: Placement, components: WorldComponentInfo[]): W
   return p.component >= 0 && p.component < components.length ? components[p.component]! : null;
 }
 
+/** Whether a placement should draw by default (Feature A, spec §3.1) --
+ *  thin wrapper around visibility.ts's isDrawnByDefault that centralises
+ *  the `?? ""` / `?? false` fallback needed at this component's two read
+ *  sites (the `visible` memo and the jump effect, below), rather than
+ *  repeating it at each. `p.mapType`/`p.manual` are always present on a
+ *  server-fetched placement (Task 1); a locally-fabricated component:-1
+ *  placement from a fresh sidebar/rail drop (onDropOnCanvas below) has
+ *  neither field, but that object represents a map the user JUST
+ *  deliberately placed -- `isDrawnByDefault("", false)` reads as "not
+ *  hidden" (HIDDEN_MAP_TYPES never contains ""), so it draws immediately
+ *  without needing either call site's cooperation. */
+function drawnByDefault(p: WirePlacement): boolean {
+  return isDrawnByDefault(p.mapType ?? "", p.manual ?? false);
+}
+
 /** AABB test in world-tile space. Mirrors the CLI's render-world culling
  *  exactly (`p.x + p.width <= bx || p.x >= bx + bw || ...`) so the two stay
  *  consistent. */
@@ -518,8 +533,9 @@ export function WorldCanvas({ jumpToMap, jumpToken }: WorldCanvasProps = {}) {
     // which DOES persist, via the existing onDropOnCanvas/postPlacement
     // path). A map with no placement at all already returns above (`if
     // (!p) return`), matching spec §3.3's own "has nowhere to jump to;
-    // clicking it does nothing."
-    if (!isDrawnByDefault(p.mapType ?? "", p.manual ?? false)) {
+    // clicking it does nothing." See drawnByDefault's own comment for why
+    // its `?? ""` / `?? false` fallback is safe here.
+    if (!drawnByDefault(p)) {
       setRevealedMaps((prev) => (prev.has(jumpToMap) ? prev : new Set(prev).add(jumpToMap)));
     }
     const fit = computeFit({ x: p.x, y: p.y, width: size.width, height: size.height }, viewport);
@@ -574,18 +590,45 @@ export function WorldCanvas({ jumpToMap, jumpToken }: WorldCanvasProps = {}) {
       // Feature A (spec §3.1): a placement not drawn by default (mapType in
       // HIDDEN_MAP_TYPES and never manually placed) stays hidden unless the
       // user has temporarily revealed it via a sidebar jump (see the jump
-      // effect below). `p.mapType`/`p.manual` are always present on a
-      // server-fetched placement (Task 1); a locally-fabricated
-      // component:-1 placement from a fresh sidebar/rail drop (onDropOnCanvas
-      // below) has neither field, but that object represents a map the user
-      // JUST deliberately placed -- isDrawnByDefault("" as mapType, false)
-      // reads as "not hidden" (HIDDEN_MAP_TYPES never contains ""), so it
-      // draws immediately without needing this filter's cooperation.
-      if (!isDrawnByDefault(p.mapType ?? "", p.manual ?? false) && !revealedMaps.has(p.map)) continue;
+      // effect below). See drawnByDefault's own comment for why its
+      // `?? ""` / `?? false` fallback is safe here too.
+      //
+      // Note for a later task touching badges: the draw effect's own
+      // conflict-diamond and dive/emerge-triangle loops (below) iterate
+      // world.conflicts/world.verticalLinks and look up world.placements
+      // directly, bypassing this filter entirely -- so a badge could in
+      // principle render for a map hidden by this same check. Currently
+      // unreachable in practice (indoor/none-type maps connect via warps,
+      // not planar `connections`, so they never appear in `conflicts` or
+      // `verticalLinks`), but worth knowing before relying on "visible ==
+      // everything a badge might touch".
+      if (!drawnByDefault(p) && !revealedMaps.has(p.map)) continue;
       if (intersects(p.x, p.y, size.width, size.height, x0, y0, x1, y1)) out.push(p);
     }
     return out;
   }, [world, pan, zoom, viewport, sizeByMap, revealedMaps]);
+
+  // Feature A: how many CURRENTLY-PLACED maps are hidden by the same
+  // mapType/manual filter `visible` just applied -- i.e. placed but not
+  // drawn because neither shown by default nor revealed. Surfaced in the
+  // status strip (below) so "placed" doesn't silently include invisible
+  // interiors (~701 of them: 695 MAP_TYPE_INDOOR + 6 MAP_TYPE_NONE, per
+  // visibility.ts's own count) with nothing explaining the gap. Mirrors
+  // `visible`'s own non-zero-size guard for an apples-to-apples count of
+  // what "hidden" actually means here (an unrenderable orphan is excluded
+  // from both), but is deliberately NOT restricted to the current
+  // viewport/intersects test -- a global count, matching how `placed` and
+  // `unplaced` are themselves computed.
+  const hiddenCount = useMemo(() => {
+    if (!world) return 0;
+    let n = 0;
+    for (const p of world.placements.values()) {
+      const size = sizeOfPlacement(p, sizeByMap);
+      if (size.width <= 0 || size.height <= 0) continue;
+      if (!drawnByDefault(p) && !revealedMaps.has(p.map)) n++;
+    }
+    return n;
+  }, [world, sizeByMap, revealedMaps]);
 
   // Load (and cache) the source image for every visible placement that
   // doesn't have one yet. A placement already in imageCacheRef is never
@@ -1459,8 +1502,8 @@ export function WorldCanvas({ jumpToMap, jumpToken }: WorldCanvasProps = {}) {
 
       <div className="world-canvas__status">
         <span className="world-canvas__status-item">
-          placed <strong>{world ? world.placements.size : 0}</strong> · unplaced <strong>{unplacedNames.length}</strong> · conflicts{" "}
-          <strong>{world ? world.conflicts.length : 0}</strong>
+          placed <strong>{world ? world.placements.size : 0}</strong> · hidden <strong>{hiddenCount}</strong> · unplaced{" "}
+          <strong>{unplacedNames.length}</strong> · conflicts <strong>{world ? world.conflicts.length : 0}</strong>
         </span>
         {hover ? (
           <span className="world-canvas__status-item world-canvas__hover">
