@@ -1681,5 +1681,42 @@ describe("WorldCanvas", () => {
       fireEvent.mouseUp(canvas);
       await waitFor(() => expect(screen.getByText(/%/).textContent).toBe("21%"));
     });
+
+    // Review fix regression test (Task 12 review, finding #2): fittedFilterRef
+    // used to only ever be SET, never reset -- so if mapFilter ever
+    // transitioned to null (dungeon closed) and then back to the exact SAME
+    // Set instance (a later re-open), `fittedFilterRef.current === mapFilter`
+    // would already be true from the very first open, and the guard would
+    // skip the re-fit entirely on reopen. Proven by: fit once, zoom away from
+    // the fitted view, rerender with mapFilter=null, then rerender with the
+    // SAME Set instance again -- the camera must re-fit, not silently stay
+    // wherever the intervening null view left it.
+    it("re-fits when mapFilter round-trips through null back to the same Set instance", async () => {
+      const { impl } = makeFetchMock(fourMapsWorld());
+      vi.stubGlobal("fetch", impl);
+      const filter = new Set(["InDungeon1", "InDungeon2"]);
+      const { container, rerender } = render(<WorldCanvas mapFilter={filter} />);
+      await waitFor(() => expect(screen.queryByText(/Loading world/)).toBeNull());
+      await waitFor(() => expect(screen.getByText(/%/).textContent).toBe("21%"));
+
+      // Move the view away from the fitted state via an ordinary wheel zoom
+      // (anchored at screen (0,0), same pattern used elsewhere in this
+      // file): zoom 10/3 * 1.2 = 4 -> round((4/16)*100) = 25%.
+      const canvas = container.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement;
+      fireEvent.wheel(canvas, { clientX: 0, clientY: 0, deltaY: -100 });
+      await waitFor(() => expect(screen.getByText(/%/).textContent).toBe("25%"));
+
+      // "Close" the dungeon (mapFilter -> null) -- must not itself re-fit.
+      rerender(<WorldCanvas mapFilter={null} />);
+      await waitFor(() => expect(screen.getByText(/%/).textContent).toBe("25%"));
+
+      // "Reopen" the SAME dungeon -- the identical Set instance, exactly as
+      // a caller that memoises its Set per dungeon id would hand back. Must
+      // re-fit to 21%, not stay at 25% (which is what the pre-fix ref guard
+      // would have done, since fittedFilterRef.current already equalled
+      // this exact instance from the very first render).
+      rerender(<WorldCanvas mapFilter={filter} />);
+      await waitFor(() => expect(screen.getByText(/%/).textContent).toBe("21%"));
+    });
   });
 });

@@ -657,13 +657,29 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
   // the full world view, just scoped" contract (WorldCanvasProps'
   // `mapFilter` doc comment above). fittedFilterRef is what now actually
   // delivers "once per dungeon": it stamps the specific mapFilter Set
-  // instance that was last fit and skips re-fitting for that same instance
-  // no matter how many times the effect body itself re-runs, mirroring
-  // appliedJumpTokenRef's own ref-guard (above) against this identical
-  // world-churns-every-drag-frame problem.
+  // instance that has been HANDLED -- mirroring appliedJumpTokenRef's own
+  // idiom exactly (that ref's own comment defines "handled" as "either a
+  // jump was performed OR it was determined there was nothing to do"):
+  // here, "handled" means either fitWorld() actually ran for that Set, OR
+  // fitWorld() bailed via its own `bounds.width <= 0` early return (a
+  // degenerate case -- none of the dungeon's members currently placed --
+  // where there is nothing to fit). Either way, re-running the effect body
+  // for that SAME Set instance again (e.g. world's own per-drag-frame
+  // churn re-running this effect) is correctly skipped.
+  //
+  // Reset to null whenever mapFilter itself goes null, so this stays
+  // correct by construction rather than depending on an external detail:
+  // App.tsx (a later task) is expected to always mint a fresh Set via
+  // useMemo when opening a dungeon, even round-tripping through null and
+  // back to the "same" dungeon, which would make the guard below happen to
+  // work even without this reset -- but only as a side effect of that
+  // caller's own implementation choice, not by anything WorldCanvas itself
+  // guarantees. Explicitly resetting on null means a later re-open re-fits
+  // regardless of whether some future caller ever reuses a Set instance.
   const fittedFilterRef = useRef<Set<string> | null>(null);
   useEffect(() => {
-    if (!mapFilter || !world) return; // don't stamp before world arrives
+    if (!mapFilter) { fittedFilterRef.current = null; return; } // re-open re-fits
+    if (!world) return; // don't stamp before world arrives
     if (fittedFilterRef.current === mapFilter) return;
     fittedFilterRef.current = mapFilter;
     fitWorld();
@@ -694,9 +710,20 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
     // whatever the current pan/zoom shows of the unscoped world, while
     // this component's actual job here is to show exactly (and only) the
     // filtered set, culled against ITS OWN viewport.
-    const source = mapFilter
+    // Review fix: the unfiltered branch used to spread world.placements
+    // into a brand-new 1,209-element array on every call -- and `visible`
+    // recomputes every pan/drag frame (it depends on `pan`/`zoom`, both
+    // updated per mousemove), so that was a needless full-corpus array
+    // copy on the hot pan-drag path, the same class of per-drag-frame
+    // rebuild sizeByMap's and unplacedNames' own Review fix comments above
+    // already flag and avoid. Typing `source` as Iterable<WirePlacement>
+    // (not an array) lets the unfiltered branch stay a bare
+    // `world.placements.values()` -- a MapIterator, already Iterable --
+    // with no copy; the `for...of` loop below needs no change since it
+    // works identically over any Iterable.
+    const source: Iterable<WirePlacement> = mapFilter
       ? [...mapFilter].map((name) => world.placements.get(name)).filter((p): p is WirePlacement => !!p)
-      : [...world.placements.values()];
+      : world.placements.values();
     for (const p of source) {
       const size = sizeOfPlacement(p, sizeByMap);
       if (size.width <= 0 || size.height <= 0) continue; // unrenderable orphan, see sizeOfPlacement
@@ -1083,6 +1110,17 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
   // singletons to avoid. Restricting to landmass members still leaves a
   // real, useful view: most towns/routes' own interior buildings (empty)
   // sit inside a multi-map component together with their route.
+  //
+  // Note for a later task: this is entirely unscoped by mapFilter -- it
+  // reads world.placements/world.components directly, the same way
+  // fitWorld's own ELSE branch does, with no dungeon-mode equivalent. That
+  // is silently wrong (not just imprecise) if clicked while viewing a
+  // dungeon: it pans/zooms the camera to the WORLD's own empty-maps
+  // bounding box, completely out of the dungeon currently open, rather
+  // than doing nothing or scoping to the dungeon's own empty members.
+  // Left unfixed here, matching this file's own "flag it, don't fix it
+  // silently" convention for a known imperfection out of scope for this
+  // task.
   const focusEmptyMaps = useCallback(() => {
     if (!world) return;
     const empty = new Map(
@@ -1731,6 +1769,15 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
         <UnplacedRail unplacedNames={unplacedNames} filter={railFilter} onFilterChange={setRailFilter} />
       </div>
 
+      {/* Note for a later task: the placed/hidden/unplaced/conflicts counts
+          just below, and the UnplacedRail above, are all silently WORLD-wide
+          even in dungeon mode -- unlike `visible` (and the draw/fetch
+          effects it feeds), none of these are scoped by mapFilter. They're
+          derived straight from world.placements/unplacedNames/world.conflicts,
+          and a drag-and-drop from the rail adds to the WORLD, not the open
+          dungeon. Left unfixed here, matching this file's own "flag it,
+          don't fix it silently" convention for a known imperfection out of
+          scope for this task. */}
       <div className="world-canvas__status">
         <span className="world-canvas__status-item">
           placed <strong>{world ? world.placements.size : 0}</strong> · hidden <strong>{hiddenCount}</strong> · unplaced{" "}
