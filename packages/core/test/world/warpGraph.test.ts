@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { autoLayoutUnplaced, unplacedMapNames } from "../../src/world/warpGraph.js";
+import { autoLayoutUnplaced, unplacedMapNames, warpConnectedMapsFrom } from "../../src/world/warpGraph.js";
 import { buildWorld, type World } from "../../src/world/connections.js";
 import { openProject, type Project } from "../../src/project.js";
 import type { MapData } from "../../src/load/maps.js";
@@ -132,5 +132,55 @@ describe("unplacedMapNames", () => {
     };
 
     expect(unplacedMapNames(world)).toEqual(new Set(["D", "E"]));
+  });
+});
+
+describe("warpConnectedMapsFrom", () => {
+  /** A tiny synthetic warp graph -- deliberately NOT the corpus, so the
+   *  exact reachable set can be hand-verified rather than merely
+   *  "non-empty". `warps` maps a map name to the list of names it warps
+   *  TO; ids are derived (`MAP_${name}`) so this stays self-contained. */
+  function graphProject(warps: Record<string, string[]>): Project {
+    const names = Object.keys(warps);
+    const mapsByName = new Map(
+      names.map((n) => [
+        n,
+        {
+          id: `MAP_${n}`,
+          warpEvents: warps[n]!.map((dest) => ({ x: 0, y: 0, elevation: 0, destMap: `MAP_${dest}`, destWarpId: "0" })),
+        } as unknown as MapData,
+      ]),
+    );
+    return stubProject({
+      mapNames: () => names,
+      map: (name: string) => mapsByName.get(name)!,
+    });
+  }
+
+  it("returns exactly the transitively-reachable set, forward-directional -- no more and no less", () => {
+    const proj = graphProject({
+      A: ["B"],
+      B: ["C", "D"],
+      C: [],
+      D: ["B"], // back-edge -- must not cause infinite recursion or a duplicate visit
+      E: [],    // disconnected island -- must not appear
+      F: ["A"], // one-way INTO A -- BFS from A must not reach back through it
+    });
+    const reached = warpConnectedMapsFrom(proj, "A");
+    expect(reached).toEqual(new Set(["A", "B", "C", "D"]));
+  });
+
+  it("returns just the seed when it has no warps at all", () => {
+    const proj = graphProject({ Solo: [] });
+    expect(warpConnectedMapsFrom(proj, "Solo")).toEqual(new Set(["Solo"]));
+  });
+
+  it("ignores a warp to a destination id that resolves to no known map", () => {
+    const proj = graphProject({ A: [] });
+    // Manually inject a warp to an id with no matching map (a real
+    // possibility if the corpus and this function ever disagree on which
+    // maps exist) -- must be skipped, not throw.
+    (proj.map("A").warpEvents as unknown[]).push({ x: 0, y: 0, elevation: 0, destMap: "MAP_GHOST", destWarpId: "0" });
+    expect(warpConnectedMapsFrom(proj, "A")).toEqual(new Set(["A"]));
   });
 });
