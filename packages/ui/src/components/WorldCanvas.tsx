@@ -112,6 +112,22 @@ interface WarpCacheEntry {
   warps?: WireWarpEvent[];
 }
 
+/** Screen px -- generous enough to reliably hit a small marker with a
+ *  mouse. Module scope, matching every other constant in this file
+ *  (TILE_PX, MIN_ZOOM/MAX_ZOOM, BADGE_SIZE, LOD_*). */
+const WARP_HIT_RADIUS = 6;
+
+/** A warp marker's precomputed screen-space position, alongside every other
+ *  interface in this file (WirePlacement, ImageCacheEntry,
+ *  EncounterCacheEntry) declared at module scope rather than inside the
+ *  component body. */
+interface WarpMarkerEntry {
+  key: string;
+  sx: number;
+  sy: number;
+  destMapName?: string;
+}
+
 type DragState =
   | { kind: "pan"; startX: number; startY: number; startPan: Pan }
   // startTileX/Y is the placement's OWN position at the moment the drag
@@ -291,6 +307,11 @@ export function WorldCanvas({ jumpToMap, jumpToken }: WorldCanvasProps = {}) {
   // Feature B: off by default (spec §4.1), same visual family as the
   // existing dungeon-auto-layout switch.
   const [warpsOn, setWarpsOn] = useState(false);
+  // Task 7 Step 5: which warp marker's destination popup is open, by
+  // destMapName -- wired (set) by this task's onCanvasDoubleClick, but not
+  // yet rendered anywhere. Harmless in the meantime: nothing reads it until
+  // a later task adds the destination-preview modal.
+  const [warpPopup, setWarpPopup] = useState<string | null>(null);
   const [railFilter, setRailFilter] = useState("");
   const [hover, setHover] = useState<HoverInfo | null>(null);
   const [tooltip, setTooltip] = useState<TooltipInfo | null>(null);
@@ -737,6 +758,11 @@ export function WorldCanvas({ jumpToMap, jumpToken }: WorldCanvasProps = {}) {
           setWarpVersion((v) => v + 1);
         })
         .catch(() => {
+          // Best-effort, its own separate instance of the same posture the
+          // encounter cache's own catch above documents (not inherited by
+          // proximity): a failed fetch just leaves this one map with no
+          // warp markers, not a banner over an otherwise-working canvas.
+          // Still marked loaded so this effect does not retry it forever.
           entry.loaded = true;
           setWarpVersion((v) => v + 1);
         });
@@ -916,12 +942,20 @@ export function WorldCanvas({ jumpToMap, jumpToken }: WorldCanvasProps = {}) {
     });
   }, [spotlightHits, visible, sizeByMap, pan, zoom, spotlightByMap]);
 
-  const WARP_HIT_RADIUS = 6; // screen px -- generous enough to reliably hit a small marker with a mouse
-
-  interface WarpMarkerEntry { key: string; sx: number; sy: number; destMapName?: string; }
-
+  // Task 7 Step 5 review fix: below LOD_ZOOM_THRESHOLD, per-map detail is
+  // already treated as too fine to render -- this file established that
+  // exact threshold (4) for exactly that meaning TWICE already: the draw
+  // effect's own LOD switch above (full-res image vs. the cached
+  // downscaled buffer) and EncounterGutter's own LOW_ZOOM_THRESHOLD
+  // (deliberately tethered to this same constant, per that component's own
+  // comment). Without this gate, the full corpus's ~1,662 warp markers
+  // render at full zoom-out with no size scaling of their own -- an
+  // unreadable smear on small maps, and real per-frame draw cost at the
+  // extreme. Reusing LOD_ZOOM_THRESHOLD itself (not a second literal 4)
+  // keeps this file's "too zoomed out for per-map detail" meaning anchored
+  // to one constant, matching EncounterGutter's own precedent.
   const warpMarkerEntries = useMemo<WarpMarkerEntry[]>(() => {
-    if (!warpsOn) return [];
+    if (!warpsOn || zoom < LOD_ZOOM_THRESHOLD) return [];
     const out: WarpMarkerEntry[] = [];
     for (const p of visible) {
       const cache = warpCacheRef.current.get(p.map);
@@ -936,6 +970,11 @@ export function WorldCanvas({ jumpToMap, jumpToken }: WorldCanvasProps = {}) {
       });
     }
     return out;
+    // warpVersion, not warpCacheRef itself (a ref, so it would never
+    // usefully appear in a dependency array) -- warpVersion is exactly the
+    // signal the warp-fetch effect above bumps whenever that ref's
+    // contents actually change, mirroring lensOverlayEntries' own
+    // encounterVersion/encounterCacheRef comment above.
   }, [warpsOn, visible, zoom, pan, warpVersion]);
 
   const selectionOverlayEntries = useMemo(() => {
@@ -1182,9 +1221,18 @@ export function WorldCanvas({ jumpToMap, jumpToken }: WorldCanvasProps = {}) {
     setSelected(hit ? new Set([hit.map]) : new Set());
   };
 
-  const [warpPopup, setWarpPopup] = useState<string | null>(null);
-
+  // Review fix: mirrors onCanvasClick's own CRITICAL postmortem comment
+  // above almost verbatim -- `dblclick` has the identical property click
+  // does: the browser fires it whenever mousedown/mouseup land on the same
+  // element, with NO movement-distance suppression, so an unguarded double-
+  // click handler would fire this hit-test at the end of an ordinary pan or
+  // drag gesture too. See onCanvasClick's own comment for the full
+  // explanation of why dragMovedRef is what actually tells the two apart;
+  // not re-derived here. Currently invisible (nothing consumes warpPopup
+  // yet -- see its own comment above), but becomes a real bug the moment a
+  // later task renders a destination modal from it.
   const onCanvasDoubleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (e.ctrlKey || e.metaKey || e.shiftKey || dragMovedRef.current) return;
     if (!warpsOn) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const sx = e.clientX - rect.left, sy = e.clientY - rect.top;

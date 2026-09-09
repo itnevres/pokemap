@@ -1408,7 +1408,19 @@ describe("WorldCanvas", () => {
       });
     }
 
-    function withWarps(base: ReturnType<typeof makeFetchMock>["impl"], warpsByMap: Record<string, unknown[]>) {
+    // Task 7 Step 5 review fix: mirrors RawPlacement/RawComponent above --
+    // exactly the shape /api/warps/:map's `warps` array carries (WarpEvent
+    // plus the server-resolved destMapName), typed instead of `unknown[]`.
+    interface RawWarpEvent {
+      x: number;
+      y: number;
+      elevation: number;
+      destMap: string;
+      destWarpId: string;
+      destMapName?: string;
+    }
+
+    function withWarps(base: ReturnType<typeof makeFetchMock>["impl"], warpsByMap: Record<string, RawWarpEvent[]>) {
       return vi.fn((url: string, init?: RequestInit) => {
         const m = /^\/api\/warps\/(.+)$/.exec(url);
         if (m) {
@@ -1423,23 +1435,77 @@ describe("WorldCanvas", () => {
       });
     }
 
-    it("draws a marker only for a warp on a currently-visible map, not the whole corpus", async () => {
+    it("draws a marker only for a warp on a currently-visible map, not the whole corpus, at the position the screen-space formula predicts", async () => {
       const { impl } = makeFetchMock(warpWorld());
       const wrapped = withWarps(impl, {
         A: [{ x: 2, y: 3, elevation: 0, destMap: "MAP_B", destWarpId: "0", destMapName: "B" }],
         Far: [{ x: 1, y: 1, elevation: 0, destMap: "MAP_A", destWarpId: "0", destMapName: "A" }],
       });
       const { canvas } = await mountReady(wrapped);
+
+      // Markers now gate on LOD_ZOOM_THRESHOLD (4, see WorldCanvas's own
+      // warpMarkerEntries comment) the same way the LOD tests above zoom in
+      // to clear it -- mountReady's default zoom=1 is below it, so markers
+      // would stay empty regardless of the toggle without this. 8 wheel
+      // ticks anchored at screen (0,0) clears it (1.2^8 ~= 4.30, same
+      // reasoning as the "at or above the LOD zoom threshold" test above)
+      // while keeping pan exactly {0,0} throughout: screenToWorld(0,0) at
+      // pan={0,0} is always (0,0) regardless of zoom, so the wheel handler's
+      // own `sx - before.x*next` collapses to `0 - 0*next = 0` on every one
+      // of the 8 ticks -- no floating-point drift in pan, unlike the LOD
+      // test's off-origin anchor (chosen there to keep Solo itself in view
+      // instead).
+      for (let i = 0; i < 8; i++) fireEvent.wheel(canvas, { clientX: 0, clientY: 0, deltaY: -100 });
+      let expectedZoom = 1;
+      for (let i = 0; i < 8; i++) expectedZoom *= 1.2; // same sequential multiplication the component's own state performs, so this is bit-identical, not just approximately equal
+
       const warpsToggle = screen.getByRole("switch", { name: /warps/i });
       fireEvent.click(warpsToggle);
       await waitFor(() => expect(canvas.parentElement!.querySelectorAll(".world-canvas__warp-marker").length).toBe(1));
+
+      // Position, not just count: screen-space formula is
+      // (placement.x + warp.x) * zoom + pan.x (and same for y). A is at
+      // (0,0), its warp at (2,3), pan is exactly {0,0} (see above).
+      const marker = canvas.parentElement!.querySelector(".world-canvas__warp-marker") as HTMLElement;
+      expect(marker.style.left).toBe(`${2 * expectedZoom}px`);
+      expect(marker.style.top).toBe(`${3 * expectedZoom}px`);
     });
 
-    it("markers are hidden until the toggle is switched on", async () => {
+    it("markers are hidden until the toggle is switched on, and hidden again once it's switched back off", async () => {
       const { impl } = makeFetchMock(warpWorld());
       const wrapped = withWarps(impl, { A: [{ x: 2, y: 3, elevation: 0, destMap: "MAP_B", destWarpId: "0", destMapName: "B" }] });
       const { canvas } = await mountReady(wrapped);
+      // Same LOD zoom-in as the position test above -- otherwise the LOD
+      // gate alone hides the marker regardless of the toggle, and neither
+      // half of this test would prove anything about the toggle itself.
+      for (let i = 0; i < 8; i++) fireEvent.wheel(canvas, { clientX: 0, clientY: 0, deltaY: -100 });
+
+      expect(canvas.parentElement!.querySelectorAll(".world-canvas__warp-marker").length).toBe(0);
+
+      const warpsToggle = screen.getByRole("switch", { name: /warps/i });
+      fireEvent.click(warpsToggle);
+      await waitFor(() => expect(canvas.parentElement!.querySelectorAll(".world-canvas__warp-marker").length).toBe(1));
+
+      // Toggling back off must hide it again -- proving genuine hide-on-
+      // toggle, not just "never appeared yet" (which the old, single-
+      // assertion version of this test could not distinguish from).
+      fireEvent.click(warpsToggle);
       await waitFor(() => expect(canvas.parentElement!.querySelectorAll(".world-canvas__warp-marker").length).toBe(0));
+    });
+
+    // Task 7 Step 5 review fix: full coverage of the drag-guard's actual
+    // effect is deferred to whichever later task renders warpPopup (nothing
+    // observable to assert on it from outside the component yet -- see its
+    // own comment in WorldCanvas.tsx) -- this just pins that a double-click
+    // with warps off (mountReady's default) is inert: no throw, no marker
+    // or popup DOM appears.
+    it("double-clicking does nothing observable while warps are off", async () => {
+      const { impl } = makeFetchMock(warpWorld());
+      const wrapped = withWarps(impl, { A: [{ x: 2, y: 3, elevation: 0, destMap: "MAP_B", destWarpId: "0", destMapName: "B" }] });
+      const { canvas } = await mountReady(wrapped);
+
+      expect(() => fireEvent.doubleClick(canvas, { clientX: 2, clientY: 3 })).not.toThrow();
+      expect(canvas.parentElement!.querySelectorAll(".world-canvas__warp-marker").length).toBe(0);
     });
   });
 });
