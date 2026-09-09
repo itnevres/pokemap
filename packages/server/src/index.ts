@@ -249,6 +249,27 @@ export async function createServer(opts: { projectPath: string; port?: number })
         return send(200, { mapName: name, mapId, methods });
       }
 
+      // Feature B (dungeon-mode-and-warp-tools spec §4.2): a map's warp
+      // events, already fully parsed by load/maps.ts but not exposed
+      // anywhere until now. Reused by BOTH the warp-marker toggle (fetched
+      // lazily per visible map, mirroring the encounter cache exactly --
+      // a later task) and Feature C's dungeon connection lines (also a
+      // later task) -- one route, two consumers. Not cached server-side:
+      // this is already-parsed, uncomputed data, the same "no cache
+      // needed" posture as /api/map and /api/encounters.
+      const warpsMatch = /^\/api\/warps\/(.+)$/.exec(url.pathname);
+      if (warpsMatch) {
+        const name = decodeURIComponent(warpsMatch[1]!);
+        if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
+        // Same idToName enrichment /api/coverage and /api/where already
+        // build for the identical reason: the client only ever works with
+        // map NAMES (world/connections.ts's own Placement.map), never the
+        // raw MAP_ID constants warpEvents.destMap carries.
+        const idToName = new Map(project.mapNames().map((n) => [project.map(n).id, n]));
+        const warps = project.map(name).warpEvents.map((w) => ({ ...w, destMapName: idToName.get(w.destMap) }));
+        return send(200, { mapName: name, warps });
+      }
+
       // Task 29's coverage lenses: level-curve, empty-maps, unused-species
       // and method, all driven off one coverage() call (cached above).
       // levelByMap comes back keyed by mapId only (coverage.ts's own

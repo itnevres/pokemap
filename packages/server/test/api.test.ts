@@ -198,6 +198,28 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("server", () => {
     expect((await get("/api/encounters/NoSuchMap")).status).toBe(404);
   });
 
+  it("returns a map's warp events, with each destination resolved to a map NAME too", async () => {
+    // NewBarkTown_Lab's real first warp -- read directly from the subject
+    // decomp's own data/maps/NewBarkTown_Lab/map.json before writing this
+    // test, not assumed.
+    const body = await (await get("/api/warps/NewBarkTown_Lab")).json() as any;
+    expect(body.mapName).toBe("NewBarkTown_Lab");
+    const toTown = body.warps.find((w: any) => w.destMap === "MAP_NEW_BARK_TOWN");
+    expect(toTown).toBeDefined();
+    expect(toTown.x).toBe(6);
+    expect(toTown.y).toBe(12);
+    expect(toTown.destWarpId).toBe("0");
+    // The one thing this route adds beyond the raw parsed data: destMap
+    // (a raw MAP_ID constant) resolved onto a real map NAME too, the same
+    // idToName enrichment /api/coverage and /api/where already use for the
+    // identical reason (the client only ever works with map names).
+    expect(toTown.destMapName).toBe("NewBarkTown");
+  });
+
+  it("404s an unknown map for /api/warps too", async () => {
+    expect((await get("/api/warps/NoSuchMap")).status).toBe(404);
+  });
+
   it("returns coverage summary counts, and resolves a map name onto each levelByMap entry", async () => {
     const body = await (await get("/api/coverage")).json() as any;
     // Same real numbers packages/core/test/analyse/coverage.test.ts pins
