@@ -291,18 +291,42 @@ input {
 }
 
 /* Feature A (dungeon-mode-and-warp-tools spec §3.3): the sidebar's third
-   visual state in World/Dungeon mode -- a map that isn't currently drawn,
-   either because it has no placement at all or because its type is hidden
-   by default. Dimmed via --text-muted + reduced opacity rather than a new
-   colour token: this is a muting of the existing row, not a new semantic
-   colour. */
+   visual state in World mode -- a map that isn't currently drawn, either
+   because it has no placement at all or because its type is hidden by
+   default. Review fix: this used to be --text-muted plus `opacity: 0.6`,
+   which (a) composited to roughly 2.1-2.2:1 against --bg-panel in both
+   themes, well under DESIGN.md's own 4.5:1 accessibility rule ("targets at
+   least 4.5:1... rather than relying on opacity tricks that quietly fail
+   it"), and (b) inverted on hover, since .map-tree__map:hover's own `color:
+   var(--text-primary)` (declared above, equal specificity) still applied
+   while only opacity changed here -- a hovered greyed row rendered BRIGHTER
+   than an ordinary row.
+   Checked plain (no-opacity) --text-muted (#64748b) against --bg-panel's
+   own hex in both themes before using it here: only ~3.45:1 in dark
+   (#64748b on #161f33) and ~4.34:1 in light (#64748b on #f1f5f9) -- both
+   still short of the 4.5:1 body-text bar. Per this fix's own fallback, uses
+   --text-secondary instead (~6.41:1 dark, ~6.92:1 light -- clears both
+   comfortably), the same token .map-canvas__legend/.world-canvas__legend
+   already use directly against --bg-panel for dimmed-but-legible text
+   elsewhere in this file. That is also an ordinary row's own resting
+   colour, though, so colour alone can no longer mark a row greyed here --
+   font-style: italic carries that instead (not colour, and not opacity: a
+   real font attribute a screenshot or a colour-blind user reads the same
+   as anyone else), together with the title/cursor below, matching
+   DESIGN.md's "colour is never the sole carrier of meaning" several ways
+   over. Italic over a lighter font-weight because only 400/500/600 are
+   loaded (see this file's own @import) -- a "300" would just silently
+   fall back to 400 and vanish. No separate :hover/[aria-current] override
+   is needed: this now shares the exact same colour ladder as an ordinary
+   row (secondary at rest, primary on hover per .map-tree__map:hover and
+   [aria-current="true"] above), so nothing here can invert or fight either
+   one -- only the italic and cursor mark it as greyed, and both persist
+   through hover and selection unchanged. Draggable, like WorldCanvas.tsx's
+   own .world-canvas__rail-item. */
 .map-tree__map--greyed {
-  color: var(--text-muted);
-  opacity: 0.6;
-}
-
-.map-tree__map--greyed:hover {
-  opacity: 0.85;
+  color: var(--text-secondary);
+  font-style: italic;
+  cursor: grab;
 }
 
 .map-tree__empty {

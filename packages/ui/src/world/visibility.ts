@@ -1,4 +1,16 @@
 /**
+ * Shared shape for "what does the world know about this map's placement" --
+ * declared once here (not separately in MapTree.tsx and useWorldVisibility.ts,
+ * which both already import from this module) so the two copies can't drift
+ * apart, the same reason isDrawnByDefault below is a single shared function
+ * rather than two.
+ */
+export interface MapVisibilityInfo {
+  mapType: string;
+  manual: boolean;
+}
+
+/**
  * Map types hidden from the world view by default (spec §3.1) -- mostly
  * small interiors that read as noise at world scale. Population counts
  * measured against the subject decomp (dungeon-mode-and-warp-tools spec

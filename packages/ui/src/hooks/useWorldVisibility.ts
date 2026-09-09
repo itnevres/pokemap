@@ -1,9 +1,5 @@
 import { useEffect, useState } from "react";
-
-export interface MapVisibilityInfo {
-  mapType: string;
-  manual: boolean;
-}
+import type { MapVisibilityInfo } from "../world/visibility.js";
 
 export interface UseWorldVisibilityResult {
   /** Every map with a real placement, keyed by name. A name absent here

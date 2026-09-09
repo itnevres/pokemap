@@ -91,7 +91,17 @@ describe("MapTree", () => {
   it("a shown entry is not specially draggable", () => {
     const visibility = new Map([["NewBarkTown", { mapType: "MAP_TYPE_TOWN", manual: false }]]);
     render(<MapTree data={GROUPS} selected={null} onSelect={() => {}} worldMode={true} visibility={visibility} />);
-    expect(screen.getByText("NewBarkTown").getAttribute("draggable")).not.toBe("true");
+    // React renders `draggable="false"` explicitly here (not merely "not
+    // true") -- `.not.toBe("true")` would also pass for `null` or a typo
+    // like "treu", so assert the actual value instead.
+    expect(screen.getByText("NewBarkTown").getAttribute("draggable")).toBe("false");
+  });
+
+  it("gives a greyed row an explanatory title, and leaves a shown row without one", () => {
+    const visibility = new Map([["NewBarkTown", { mapType: "MAP_TYPE_TOWN", manual: false }]]);
+    render(<MapTree data={GROUPS} selected={null} onSelect={() => {}} worldMode={true} visibility={visibility} />);
+    expect(screen.getByText("NewBarkTown").getAttribute("title")).toBeNull();
+    expect(screen.getByText("Route29").getAttribute("title")).toContain("Not currently drawn");
   });
 
   it("treats every entry as shown while visibility is still loading (null), avoiding a flash of all-grey", () => {

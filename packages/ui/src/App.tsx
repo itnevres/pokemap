@@ -21,7 +21,12 @@ export function App() {
   // own sidebar (a later task) is DungeonSidebar, not MapTree (this hook's
   // only consumer), so fetching this in Dungeon mode too would be wasted
   // work nothing reads.
-  const { placed: worldVisibility } = useWorldVisibility(mode === "world");
+  const worldMode = mode === "world";
+  // Known limitation, accepted for now: this is a snapshot taken once per
+  // World-mode entry, not a live subscription -- it can go stale within the
+  // session after a drag or a jump-reveal on WorldCanvas's own canvas. A
+  // full refresh currently requires leaving and re-entering World mode.
+  const { placed: worldVisibility, error: worldVisibilityError } = useWorldVisibility(worldMode);
 
   const selectMap = (name: string) => {
     setSelected(name);
@@ -57,13 +62,18 @@ export function App() {
           {error ? (
             <p className="map-tree__empty">Could not load map groups: {error}</p>
           ) : data ? (
-            <MapTree
-              data={data}
-              selected={selected}
-              onSelect={selectMap}
-              worldMode={mode === "world"}
-              visibility={worldVisibility}
-            />
+            <>
+              {worldMode && worldVisibilityError ? (
+                <p className="map-tree__empty">Could not load world visibility: {worldVisibilityError}</p>
+              ) : null}
+              <MapTree
+                data={data}
+                selected={selected}
+                onSelect={selectMap}
+                worldMode={worldMode}
+                visibility={worldVisibility}
+              />
+            </>
           ) : (
             <p className="map-tree__empty">Loading map groups…</p>
           )}

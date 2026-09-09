@@ -1,23 +1,18 @@
 import { useMemo, useState } from "react";
-import { isDrawnByDefault } from "../world/visibility.js";
+import { isDrawnByDefault, type MapVisibilityInfo } from "../world/visibility.js";
 
 export interface MapGroupsData {
   groupOrder: string[];
   groups: Record<string, string[]>;
 }
 
-export interface MapVisibilityInfo {
-  mapType: string;
-  manual: boolean;
-}
-
 export interface MapTreeProps {
   data: MapGroupsData;
   selected: string | null;
   onSelect(name: string): void;
-  /** World or Dungeon mode is active -- the third "greyed" visual state
-   *  (spec §3.3) only ever applies outside plain Map mode. Defaults to
-   *  false so every existing Map-mode call site is unaffected. */
+  /** World mode is active -- the third "greyed" visual state (spec §3.3)
+   *  only ever applies there, not in plain Map mode. Defaults to false so
+   *  every existing Map-mode call site is unaffected. */
   worldMode?: boolean;
   /** From useWorldVisibility. Null while loading/disabled -- treated as
    *  "nothing greyed yet" so the list doesn't flash entirely grey before
@@ -38,8 +33,8 @@ export function MapTree({ data, selected, onSelect, worldMode = false, visibilit
       .filter((g) => g.maps.length > 0);
   }, [data, filter]);
 
-  // A map is greyed when it is not currently drawn in World/Dungeon mode:
-  // either it has no real placement at all, or it does but isn't drawn by
+  // A map is greyed when it is not currently drawn in World mode: either
+  // it has no real placement at all, or it does but isn't drawn by
   // default and was never manually placed (visibility.ts's own rule,
   // shared with WorldCanvas -- see that module's doc comment for why this
   // is not a second copy of the same logic).
@@ -78,8 +73,16 @@ export function MapTree({ data, selected, onSelect, worldMode = false, visibilit
                       className={`map-tree__map${greyed ? " map-tree__map--greyed" : ""}`}
                       aria-current={selected === m ? "true" : undefined}
                       onClick={() => onSelect(m)}
+                      title={greyed ? "Not currently drawn in the world view — click to reveal, or drag onto the canvas to place it" : undefined}
+                      // Only a greyed entry is draggable: a shown map is already
+                      // visible on the canvas and can be dragged directly from
+                      // there via Shift+drag, so dragging it a second time from
+                      // here would be a redundant way to do the same thing.
+                      // draggable gates whether dragstart can ever fire at all,
+                      // so onDragStart is safe to attach unconditionally --
+                      // mirrors WorldCanvas.tsx's own UnplacedRail rail items.
                       draggable={greyed}
-                      onDragStart={greyed ? (e) => e.dataTransfer.setData("text/plain", m) : undefined}
+                      onDragStart={(e) => e.dataTransfer.setData("text/plain", m)}
                     >
                       {m}
                     </button>
