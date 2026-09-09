@@ -9,8 +9,11 @@ import { coverage, whereSpecies, allSpecies } from "@pokemap/core/src/analyse/co
 import { buildWorld, resolveWorldPlacements } from "@pokemap/core/src/world/resolve.js";
 import type { Placement } from "@pokemap/core/src/world/connections.js";
 import { readSidecar, writeSidecar } from "@pokemap/core/src/world/sidecar.js";
+import { readDungeons, writeDungeons } from "@pokemap/core/src/world/dungeons.js";
+import { warpConnectedMapsFrom } from "@pokemap/core/src/world/warpGraph.js";
 import { encodePng } from "@pokemap/cli/src/png.js";
 import { parseBorder } from "@pokemap/cli/src/args.js";
+import { randomUUID } from "node:crypto";
 
 export interface PokemapServer { port: number; project: Project; close(): Promise<void>; }
 
@@ -412,6 +415,96 @@ export async function createServer(opts: { projectPath: string; port?: number })
             console.error(e);
             send(500, { error: e instanceof Error ? e.message : String(e) });
           });
+      }
+
+      // Feature C (dungeon-mode-and-warp-tools spec §5.3): user-curated
+      // named groups of maps, persisted to their own sidecar file --
+      // .pokemap/dungeons.json, not world.json, for the same single-
+      // responsibility split sidecar.ts's own file already established.
+      if (url.pathname === "/api/dungeons" && req.method === "GET") {
+        return send(200, readDungeons(project.paths.root).dungeons);
+      }
+
+      if (url.pathname === "/api/dungeons" && req.method === "POST") {
+        return readBody(req)
+          .then((body) => {
+            let parsed: { name?: unknown; seedMap?: unknown; maps?: unknown };
+            try {
+              parsed = JSON.parse(body) as typeof parsed;
+            } catch (e) {
+              return send(400, { error: `invalid JSON body: ${(e as Error).message}` });
+            }
+            if (typeof parsed.name !== "string" || parsed.name.trim() === "") {
+              return send(400, { error: `expected a non-empty "name" string, got ${body}` });
+            }
+            if (parsed.seedMap !== undefined && typeof parsed.seedMap !== "string") {
+              return send(400, { error: `"seedMap" must be a string when present, got ${body}` });
+            }
+            if (parsed.maps !== undefined && (!Array.isArray(parsed.maps) || parsed.maps.some((m) => typeof m !== "string"))) {
+              return send(400, { error: `"maps" must be a string array when present, got ${body}` });
+            }
+
+            let maps: string[];
+            if (typeof parsed.seedMap === "string") {
+              if (!project.mapNames().includes(parsed.seedMap)) {
+                return send(400, { error: `seedMap ${parsed.seedMap} is not a known map` });
+              }
+              maps = [...warpConnectedMapsFrom(project, parsed.seedMap)].sort();
+            } else {
+              maps = (parsed.maps as string[] | undefined) ?? [];
+            }
+
+            const dungeons = readDungeons(project.paths.root);
+            const dungeon = { id: randomUUID(), name: parsed.name, maps };
+            dungeons.dungeons.push(dungeon);
+            writeDungeons(project.paths.root, dungeons);
+            return send(200, dungeon);
+          })
+          .catch((e: unknown) => {
+            console.error(e);
+            send(500, { error: e instanceof Error ? e.message : String(e) });
+          });
+      }
+
+      const dungeonIdMatch = /^\/api\/dungeons\/(.+)$/.exec(url.pathname);
+      if (dungeonIdMatch && req.method === "PATCH") {
+        const id = decodeURIComponent(dungeonIdMatch[1]!);
+        return readBody(req)
+          .then((body) => {
+            let parsed: { name?: unknown; maps?: unknown };
+            try {
+              parsed = JSON.parse(body) as typeof parsed;
+            } catch (e) {
+              return send(400, { error: `invalid JSON body: ${(e as Error).message}` });
+            }
+            if (parsed.name !== undefined && typeof parsed.name !== "string") {
+              return send(400, { error: `"name" must be a string when present, got ${body}` });
+            }
+            if (parsed.maps !== undefined && (!Array.isArray(parsed.maps) || parsed.maps.some((m) => typeof m !== "string"))) {
+              return send(400, { error: `"maps" must be a string array when present, got ${body}` });
+            }
+            const dungeons = readDungeons(project.paths.root);
+            const dungeon = dungeons.dungeons.find((d) => d.id === id);
+            if (!dungeon) return send(404, { error: `no dungeon ${id}` });
+            if (typeof parsed.name === "string") dungeon.name = parsed.name;
+            if (Array.isArray(parsed.maps)) dungeon.maps = parsed.maps as string[];
+            writeDungeons(project.paths.root, dungeons);
+            return send(200, dungeon);
+          })
+          .catch((e: unknown) => {
+            console.error(e);
+            send(500, { error: e instanceof Error ? e.message : String(e) });
+          });
+      }
+
+      if (dungeonIdMatch && req.method === "DELETE") {
+        const id = decodeURIComponent(dungeonIdMatch[1]!);
+        const dungeons = readDungeons(project.paths.root);
+        const before = dungeons.dungeons.length;
+        dungeons.dungeons = dungeons.dungeons.filter((d) => d.id !== id);
+        if (dungeons.dungeons.length === before) return send(404, { error: `no dungeon ${id}` });
+        writeDungeons(project.paths.root, dungeons);
+        return send(200, { ok: true });
       }
 
       return send(404, { error: "not found" });
