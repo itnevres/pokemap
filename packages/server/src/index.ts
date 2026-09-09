@@ -477,8 +477,8 @@ export async function createServer(opts: { projectPath: string; port?: number })
             } catch (e) {
               return send(400, { error: `invalid JSON body: ${(e as Error).message}` });
             }
-            if (parsed.name !== undefined && typeof parsed.name !== "string") {
-              return send(400, { error: `"name" must be a string when present, got ${body}` });
+            if (parsed.name !== undefined && (typeof parsed.name !== "string" || parsed.name.trim() === "")) {
+              return send(400, { error: `"name" must be a non-empty string when present, got ${body}` });
             }
             if (parsed.maps !== undefined && (!Array.isArray(parsed.maps) || parsed.maps.some((m) => typeof m !== "string"))) {
               return send(400, { error: `"maps" must be a string array when present, got ${body}` });

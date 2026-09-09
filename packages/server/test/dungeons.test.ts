@@ -63,6 +63,9 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("dungeons api", () => {
       const created = await create.json() as any;
       expect(created.maps).toContain("NewBarkTown_Lab");
       expect(created.maps).toContain("NewBarkTown");
+      // Proves the response really is sorted, not just non-empty/containing
+      // the right names.
+      expect(created.maps).toEqual([...created.maps].sort());
     });
   }, 300_000);
 
@@ -96,6 +99,50 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("dungeons api", () => {
     });
   }, 300_000);
 
+  it("400s a PATCH with an empty/whitespace-only name, without persisting it", async () => {
+    await withCleanDungeonsFile(async () => {
+      const created = await (
+        await fetch(`http://127.0.0.1:${s.port}/api/dungeons`, {
+          method: "POST",
+          body: JSON.stringify({ name: "Original", maps: ["NewBarkTown"] }),
+        })
+      ).json() as any;
+
+      // PATCH's own name guard only checked TYPE, not emptiness, unlike
+      // POST's `typeof parsed.name !== "string" || parsed.name.trim() === ""`
+      // check -- so `{name: "   "}` used to 200 and persist a whitespace-only
+      // name here even though POST correctly refuses the same value.
+      const patch = await fetch(`http://127.0.0.1:${s.port}/api/dungeons/${created.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ name: "   " }),
+      });
+      expect(patch.status).toBe(400);
+
+      const list = await (await fetch(`http://127.0.0.1:${s.port}/api/dungeons`)).json() as any[];
+      expect(list.find((d) => d.id === created.id)?.name).toBe("Original");
+    });
+  }, 300_000);
+
+  it("PATCHes only the keys present in the body, leaving the others untouched", async () => {
+    await withCleanDungeonsFile(async () => {
+      const c = await (await fetch(`http://127.0.0.1:${s.port}/api/dungeons`, {
+        method: "POST", body: JSON.stringify({ name: "Before", maps: ["NewBarkTown"] }),
+      })).json() as any;
+      // Task 12's useDungeons.rename sends { name } alone; setMaps sends
+      // { maps } alone. A mutant that overwrites both fields
+      // unconditionally passes every other test in this file, and would
+      // silently wipe the user's own curated map list.
+      const named = await (await fetch(`http://127.0.0.1:${s.port}/api/dungeons/${c.id}`, {
+        method: "PATCH", body: JSON.stringify({ name: "After" }),
+      })).json() as any;
+      expect(named).toEqual({ id: c.id, name: "After", maps: ["NewBarkTown"] });
+      const mapped = await (await fetch(`http://127.0.0.1:${s.port}/api/dungeons/${c.id}`, {
+        method: "PATCH", body: JSON.stringify({ maps: ["Route29"] }),
+      })).json() as any;
+      expect(mapped).toEqual({ id: c.id, name: "After", maps: ["Route29"] });
+    });
+  }, 300_000);
+
   it("404s a PATCH or DELETE for an unknown dungeon id", async () => {
     await withCleanDungeonsFile(async () => {
       expect((await fetch(`http://127.0.0.1:${s.port}/api/dungeons/no-such-id`, { method: "PATCH", body: "{}" })).status).toBe(404);
@@ -106,6 +153,40 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("dungeons api", () => {
   it("400s a create with no name", async () => {
     await withCleanDungeonsFile(async () => {
       const r = await fetch(`http://127.0.0.1:${s.port}/api/dungeons`, { method: "POST", body: JSON.stringify({ maps: [] }) });
+      expect(r.status).toBe(400);
+    });
+  }, 300_000);
+
+  it("400s a malformed dungeon-create body instead of hanging the request", async () => {
+    // readBody(req).then(...) runs after this route's try/catch has already
+    // returned, so a throw inside it (bad JSON here) becomes an unhandled
+    // promise rejection -- and an unanswered request -- unless the route's
+    // own .catch() turns it into a response. This proves the request
+    // actually completes, not just that it eventually would.
+    await withCleanDungeonsFile(async () => {
+      const r = await fetch(`http://127.0.0.1:${s.port}/api/dungeons`, {
+        method: "POST",
+        body: "not json",
+      });
+      expect(r.status).toBe(400);
+    });
+  }, 300_000);
+
+  it("400s a malformed dungeon-patch body instead of hanging the request", async () => {
+    // Same "runs after the try/catch has returned" reasoning as the create
+    // test just above, for the PATCH route's own readBody(req).then(...).
+    await withCleanDungeonsFile(async () => {
+      const created = await (
+        await fetch(`http://127.0.0.1:${s.port}/api/dungeons`, {
+          method: "POST",
+          body: JSON.stringify({ name: "Malformed Patch Target", maps: [] }),
+        })
+      ).json() as any;
+
+      const r = await fetch(`http://127.0.0.1:${s.port}/api/dungeons/${created.id}`, {
+        method: "PATCH",
+        body: "not json",
+      });
       expect(r.status).toBe(400);
     });
   }, 300_000);
