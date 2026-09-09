@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Placement, Component as WorldComponentInfo, Conflict, VerticalLink } from "@pokemap/core/src/world/connections.js";
 import type { SpeciesHit } from "@pokemap/core/src/analyse/coverage.js";
+import type { WarpEvent } from "@pokemap/core/src/load/maps.js";
 import { EncounterGutter, type EncounterGutterMapEntry, type EncounterGutterRow } from "./EncounterGutter.js";
 import { SpeciesSpotlight } from "./SpeciesSpotlight.js";
 import { LensPanel, type LensId } from "./LensPanel.js";
@@ -96,6 +97,19 @@ interface ImageCacheEntry {
 interface EncounterCacheEntry {
   loaded: boolean;
   methods?: EncounterGutterRow[];
+}
+
+/** WarpEvent plus the destMapName the server route resolves onto it. */
+interface WireWarpEvent extends WarpEvent {
+  destMapName?: string;
+}
+
+/** Mirrors EncounterCacheEntry's own shape and reasoning exactly -- a
+ *  placeholder written synchronously before the fetch starts, so a second
+ *  effect run for the same map never double-fetches. */
+interface WarpCacheEntry {
+  loaded: boolean;
+  warps?: WireWarpEvent[];
 }
 
 type DragState =
@@ -231,6 +245,7 @@ export function WorldCanvas({ jumpToMap, jumpToken }: WorldCanvasProps = {}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageCacheRef = useRef<Map<string, ImageCacheEntry>>(new Map());
   const encounterCacheRef = useRef<Map<string, EncounterCacheEntry>>(new Map());
+  const warpCacheRef = useRef<Map<string, WarpCacheEntry>>(new Map());
   const dragRef = useRef<DragState>(null);
   const conflictBadgesRef = useRef<Array<{ x: number; y: number; text: string }>>([]);
   // Review fix: whether real pointer movement happened during the
@@ -272,6 +287,10 @@ export function WorldCanvas({ jumpToMap, jumpToken }: WorldCanvasProps = {}) {
   const [zoom, setZoom] = useState(1);
   const [compositeVersion, setCompositeVersion] = useState(0);
   const [encounterVersion, setEncounterVersion] = useState(0);
+  const [warpVersion, setWarpVersion] = useState(0);
+  // Feature B: off by default (spec §4.1), same visual family as the
+  // existing dungeon-auto-layout switch.
+  const [warpsOn, setWarpsOn] = useState(false);
   const [railFilter, setRailFilter] = useState("");
   const [hover, setHover] = useState<HoverInfo | null>(null);
   const [tooltip, setTooltip] = useState<TooltipInfo | null>(null);
@@ -695,6 +714,35 @@ export function WorldCanvas({ jumpToMap, jumpToken }: WorldCanvasProps = {}) {
     }
   }, [visible]);
 
+  // Mirrors the encounter-fetch effect immediately above exactly (same
+  // cache-by-ref placeholder + version-bump-on-arrival shape, same
+  // "fetch what's visible regardless of the toggle" reasoning: turning the
+  // warp toggle on shows markers immediately rather than kicking off a
+  // fetch at that moment). Also feeds Feature C's connection lines (a
+  // later task), which need warp data for a dungeon's own member maps
+  // independent of this toggle's own on/off state.
+  useEffect(() => {
+    for (const p of visible) {
+      if (warpCacheRef.current.has(p.map)) continue;
+      const entry: WarpCacheEntry = { loaded: false };
+      warpCacheRef.current.set(p.map, entry);
+      fetch(`/api/warps/${encodeURIComponent(p.map)}`)
+        .then((r) => {
+          if (!r.ok) throw new Error(`GET /api/warps/${p.map} -> ${r.status}`);
+          return r.json() as Promise<{ warps: WireWarpEvent[] }>;
+        })
+        .then((d) => {
+          entry.loaded = true;
+          entry.warps = d.warps;
+          setWarpVersion((v) => v + 1);
+        })
+        .catch(() => {
+          entry.loaded = true;
+          setWarpVersion((v) => v + 1);
+        });
+    }
+  }, [visible]);
+
   // Screen-space rect per visible placement, in EncounterGutter's own prop
   // shape -- the exact same dx/dy/dw/dh formula the draw effect below uses
   // for each placement's own image blit, so the gutter always lines up with
@@ -867,6 +915,28 @@ export function WorldCanvas({ jumpToMap, jumpToken }: WorldCanvasProps = {}) {
       };
     });
   }, [spotlightHits, visible, sizeByMap, pan, zoom, spotlightByMap]);
+
+  const WARP_HIT_RADIUS = 6; // screen px -- generous enough to reliably hit a small marker with a mouse
+
+  interface WarpMarkerEntry { key: string; sx: number; sy: number; destMapName?: string; }
+
+  const warpMarkerEntries = useMemo<WarpMarkerEntry[]>(() => {
+    if (!warpsOn) return [];
+    const out: WarpMarkerEntry[] = [];
+    for (const p of visible) {
+      const cache = warpCacheRef.current.get(p.map);
+      if (!cache?.loaded || !cache.warps) continue;
+      cache.warps.forEach((w, i) => {
+        out.push({
+          key: `${p.map}:${i}`,
+          sx: (p.x + w.x) * zoom + pan.x,
+          sy: (p.y + w.y) * zoom + pan.y,
+          destMapName: w.destMapName,
+        });
+      });
+    }
+    return out;
+  }, [warpsOn, visible, zoom, pan, warpVersion]);
 
   const selectionOverlayEntries = useMemo(() => {
     if (selected.size === 0) return [] as Array<{ map: string; rect: EncounterGutterMapEntry["rect"] }>;
@@ -1112,6 +1182,16 @@ export function WorldCanvas({ jumpToMap, jumpToken }: WorldCanvasProps = {}) {
     setSelected(hit ? new Set([hit.map]) : new Set());
   };
 
+  const [warpPopup, setWarpPopup] = useState<string | null>(null);
+
+  const onCanvasDoubleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (!warpsOn) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
+    const hit = warpMarkerEntries.find((m) => Math.hypot(m.sx - sx, m.sy - sy) <= WARP_HIT_RADIUS);
+    if (hit?.destMapName) setWarpPopup(hit.destMapName);
+  };
+
   const onMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const drag = dragRef.current;
     // Any live drag (pan/map/group/marquee) counts as real movement for
@@ -1326,7 +1406,20 @@ export function WorldCanvas({ jumpToMap, jumpToken }: WorldCanvasProps = {}) {
           >
             <span className="world-canvas__switch-thumb" />
           </button>
-          <span className="world-canvas__dungeon-label">Dungeon auto-layout {dungeonsOn ? "on" : "off"}</span>
+          <span className="world-canvas__switch-label">Dungeon auto-layout {dungeonsOn ? "on" : "off"}</span>
+        </div>
+        <div className="world-canvas__toolbar-group">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={warpsOn}
+            aria-label="Warps"
+            className="world-canvas__switch"
+            onClick={() => setWarpsOn((w) => !w)}
+          >
+            <span className="world-canvas__switch-thumb" />
+          </button>
+          <span className="world-canvas__switch-label">Warps {warpsOn ? "on" : "off"}</span>
         </div>
         <div className="world-canvas__toolbar-group world-canvas__toolbar-group--grow">
           <SpeciesSpotlight onHits={setSpotlightHits} />
@@ -1390,6 +1483,7 @@ export function WorldCanvas({ jumpToMap, jumpToken }: WorldCanvasProps = {}) {
             onMouseMove={onMouseMove}
             onMouseUp={onMouseUp}
             onClick={onCanvasClick}
+            onDoubleClick={onCanvasDoubleClick}
             onKeyDown={onCanvasKeyDown}
             tabIndex={0}
             onMouseLeave={onMouseLeaveCanvas}
@@ -1432,6 +1526,13 @@ export function WorldCanvas({ jumpToMap, jumpToken }: WorldCanvasProps = {}) {
               </div>
             );
           })()}
+          {warpsOn && warpMarkerEntries.length > 0 && (
+            <div className="world-canvas__warps" aria-hidden="true">
+              {warpMarkerEntries.map((m) => (
+                <div key={m.key} className="world-canvas__warp-marker" style={{ left: m.sx, top: m.sy }} />
+              ))}
+            </div>
+          )}
           {marqueeRect && (
             <div
               className="world-canvas__marquee"

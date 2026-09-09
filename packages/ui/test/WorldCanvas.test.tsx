@@ -129,6 +129,14 @@ function makeFetchMock(initial: WorldFixture) {
         json: () => Promise.resolve(["SPECIES_MAGIKARP", "SPECIES_PIKACHU"]),
       } as Response);
     }
+    if (url.startsWith("/api/warps/")) {
+      const name = decodeURIComponent(url.slice("/api/warps/".length));
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ mapName: name, warps: [] }),
+      } as Response);
+    }
     return Promise.reject(new Error(`unexpected fetch ${url}`));
   });
   return { impl, calls, currentWorld: () => world };
@@ -681,9 +689,9 @@ describe("WorldCanvas", () => {
     const { impl, calls } = makeFetchMock(makeWorld({ placements: {}, dungeonAutoLayout: false }));
     const { unmount } = await mountReady(impl);
 
-    const toggle = await screen.findByRole("switch");
+    const toggle = await screen.findByRole("switch", { name: /dungeon auto-layout/i });
     await waitFor(() => expect(toggle.getAttribute("aria-checked")).toBe("false"));
-    expect(screen.getByText(/off/)).toBeTruthy();
+    expect(screen.getByText(/dungeon auto-layout off/i)).toBeTruthy();
 
     fireEvent.click(toggle);
     await waitFor(() => expect(toggle.getAttribute("aria-checked")).toBe("true"));
@@ -701,7 +709,7 @@ describe("WorldCanvas", () => {
     // sidecar, not from anything client-side left over from the click.
     unmount();
     await mountReady(impl);
-    const reloadedToggle = await screen.findByRole("switch");
+    const reloadedToggle = await screen.findByRole("switch", { name: /dungeon auto-layout/i });
     expect(reloadedToggle.getAttribute("aria-checked")).toBe("true");
     expect(screen.getByText(/dungeon auto-layout on/i)).toBeTruthy();
   });
@@ -717,7 +725,7 @@ describe("WorldCanvas", () => {
     );
     await mountReady(failing);
 
-    const toggle = await screen.findByRole("switch");
+    const toggle = await screen.findByRole("switch", { name: /dungeon auto-layout/i });
     await waitFor(() => expect(toggle.getAttribute("aria-checked")).toBe("false"));
 
     fireEvent.click(toggle);
@@ -789,7 +797,7 @@ describe("WorldCanvas", () => {
     });
     await mountReady(impl);
 
-    const toggle = await screen.findByRole("switch");
+    const toggle = await screen.findByRole("switch", { name: /dungeon auto-layout/i });
     await waitFor(() => expect(toggle.getAttribute("aria-checked")).toBe("false"));
 
     fireEvent.click(toggle);
@@ -1386,6 +1394,52 @@ describe("WorldCanvas", () => {
       // infer correctly from `impl`'s own type instead.
       const posts = impl.mock.calls.filter(([url]) => url.startsWith("/api/world/placement"));
       expect(posts.length).toBe(0);
+    });
+  });
+
+  describe("warp toggle and markers (Feature B)", () => {
+    function warpWorld() {
+      return makeWorld({
+        placements: {
+          A: { map: "A", x: 0, y: 0, width: 10, height: 10, component: 0 },
+          B: { map: "B", x: 20, y: 0, width: 10, height: 10, component: 1 },
+          Far: { map: "Far", x: 500, y: 500, width: 10, height: 10, component: 2 },
+        },
+      });
+    }
+
+    function withWarps(base: ReturnType<typeof makeFetchMock>["impl"], warpsByMap: Record<string, unknown[]>) {
+      return vi.fn((url: string, init?: RequestInit) => {
+        const m = /^\/api\/warps\/(.+)$/.exec(url);
+        if (m) {
+          const name = decodeURIComponent(m[1]!);
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: () => Promise.resolve({ mapName: name, warps: warpsByMap[name] ?? [] }),
+          } as Response);
+        }
+        return base(url, init);
+      });
+    }
+
+    it("draws a marker only for a warp on a currently-visible map, not the whole corpus", async () => {
+      const { impl } = makeFetchMock(warpWorld());
+      const wrapped = withWarps(impl, {
+        A: [{ x: 2, y: 3, elevation: 0, destMap: "MAP_B", destWarpId: "0", destMapName: "B" }],
+        Far: [{ x: 1, y: 1, elevation: 0, destMap: "MAP_A", destWarpId: "0", destMapName: "A" }],
+      });
+      const { canvas } = await mountReady(wrapped);
+      const warpsToggle = screen.getByRole("switch", { name: /warps/i });
+      fireEvent.click(warpsToggle);
+      await waitFor(() => expect(canvas.parentElement!.querySelectorAll(".world-canvas__warp-marker").length).toBe(1));
+    });
+
+    it("markers are hidden until the toggle is switched on", async () => {
+      const { impl } = makeFetchMock(warpWorld());
+      const wrapped = withWarps(impl, { A: [{ x: 2, y: 3, elevation: 0, destMap: "MAP_B", destWarpId: "0", destMapName: "B" }] });
+      const { canvas } = await mountReady(wrapped);
+      await waitFor(() => expect(canvas.parentElement!.querySelectorAll(".world-canvas__warp-marker").length).toBe(0));
     });
   });
 });

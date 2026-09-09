@@ -544,7 +544,7 @@ input {
   text-overflow: ellipsis;
 }
 
-.world-canvas__dungeon-label {
+.world-canvas__switch-label {
   font-size: var(--text-xs);
   color: var(--text-secondary);
   user-select: none;
@@ -1362,6 +1362,28 @@ input {
 .world-canvas__spotlight-dim {
   position: absolute;
   background: var(--overlay-spotlight-dim);
+}
+
+/* Feature B (spec §4.1): warp markers, a small dot per warp tile among
+   currently-visible placements. Reuses --event-warp -- the colour
+   MapCanvas's own event overlay already established for "this is a warp"
+   -- rather than inventing a second colour for the same meaning. */
+.world-canvas__warps {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 4;
+}
+
+.world-canvas__warp-marker {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  margin-left: -4px;
+  margin-top: -4px;
+  border-radius: 50%;
+  background: var(--event-warp);
+  border: 1px solid var(--bg-canvas);
 }
 
 /* Review fix: neither rule declared a z-index (computed `auto`), so both
