@@ -40,4 +40,24 @@ describe("WarpDestinationModal", () => {
     render(<WarpDestinationModal mapName="NoSuchMap" onClose={() => {}} />);
     await waitFor(() => expect(screen.getByText(/Could not load NoSuchMap/)).toBeTruthy());
   });
+
+  // Review fix (I2): no focus management previously meant the underlying
+  // world canvas kept keyboard focus while the modal was open, so Escape
+  // reached WorldCanvas's own onCanvasKeyDown (clearing the map selection)
+  // instead of this modal, and the close button was the LAST tab stop after
+  // ~1,030 other elements. Two things pinned here: the close button
+  // actually receives focus on mount (autoFocus), and Escape -- dispatched
+  // from inside the dialog, the same way a real keypress would bubble up
+  // from wherever focus landed -- calls onClose via the backdrop's own
+  // handler.
+  it("focuses the close button on mount and calls onClose on Escape", () => {
+    vi.stubGlobal("fetch", vi.fn(() => Promise.reject(new Error("network down"))));
+    const onClose = vi.fn();
+    render(<WarpDestinationModal mapName="B" onClose={onClose} />);
+
+    expect(document.activeElement).toBe(screen.getByLabelText("Close"));
+
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
 });

@@ -24,11 +24,33 @@ export function WarpDestinationModal({ mapName, onClose }: WarpDestinationModalP
   const { data, error } = useMapLayout(mapName);
 
   return (
-    <div className="warp-modal__backdrop" role="dialog" aria-modal="true" aria-label={`${mapName} preview`}>
-      <div className="warp-modal__panel">
+    // Review fix: Escape here is defense-in-depth alongside the close
+    // button's own autoFocus below -- once focus moves inside the modal on
+    // mount, Escape at this level intercepts the key before it can bubble
+    // to the underlying WorldCanvas's own onCanvasKeyDown (which clears the
+    // map selection, not what an Escape while THIS modal is open should
+    // do). Same plain `if (e.key === "Escape")` idiom SpeciesSpotlight.tsx
+    // already uses for its own dropdown.
+    <div
+      className="warp-modal__backdrop"
+      onKeyDown={(e) => {
+        if (e.key === "Escape") onClose();
+      }}
+    >
+      {/* Review fix: role="dialog"/aria-modal/aria-label moved here, onto
+          the actual dialog boundary -- the panel is what visually reads as
+          "the dialog"; the backdrop is a full-viewport scrim behind it, not
+          part of the dialog itself. */}
+      <div className="warp-modal__panel" role="dialog" aria-modal="true" aria-label={`${mapName} preview`}>
         <div className="warp-modal__header">
           <span className="warp-modal__title">{mapName}</span>
-          <button type="button" className="warp-modal__close" onClick={onClose} aria-label="Close">
+          {/* Review fix: autoFocus moves keyboard focus into the modal on
+              mount -- fixes both the tab-order problem (this button was
+              previously the LAST tab stop after ~1,030 other elements) and
+              the Escape misfire (with focus still on the underlying canvas,
+              Escape reached WorldCanvas's own onCanvasKeyDown instead of
+              this modal). */}
+          <button type="button" className="warp-modal__close" onClick={onClose} aria-label="Close" autoFocus>
             ×
           </button>
         </div>

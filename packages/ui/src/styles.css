@@ -67,6 +67,17 @@
      --overlay-grid/--overlay-collision above, not a hardcoded constant. */
   --overlay-spotlight-dim: rgba(4, 8, 16, 0.72);
 
+  /* Feature B's destination-popup scrim (Task 8). Review fix: this used to
+     be a bare rgba() literal inline on .warp-modal__backdrop below, with no
+     light-theme override -- the SAME base RGB as --overlay-spotlight-dim's
+     own dark value above, and the exact defect that token's own review-fix
+     comment already documents: in light mode it punched a near-black hole
+     over the app instead of the muted scrim every other overlay achieves via
+     its own light-mode override. A themed token, overridden in
+     [data-theme="light"] just like --overlay-spotlight-dim, not a hardcoded
+     constant. */
+  --overlay-modal-scrim: rgba(4, 8, 16, 0.6);
+
   /* Multi-select move: selection outlines and the live marquee rect share
      one cyan hue, distinct from every other overlay token above (accent
      green, warn amber, danger red, elevation blue/orange) so a selected
@@ -118,6 +129,12 @@
      value (#0f172a) at high opacity, not literal black, so a dimmed map
      still reads as "muted" rather than "a hole punched in the page." */
   --overlay-spotlight-dim: rgba(15, 23, 42, 0.65);
+  /* Same near-black-slate darkening approach as --overlay-spotlight-dim's
+     own light value just above, at the dark value's original 0.6 opacity --
+     --text-primary's own dark value (#0f172a), not literal black, so the
+     scrim behind the destination-popup panel still reads as "dimmed" rather
+     than "a hole punched in the page." */
+  --overlay-modal-scrim: rgba(15, 23, 42, 0.6);
   --overlay-selection: #0891b2;
   --focus-ring: #2563eb;
 }
@@ -1459,11 +1476,21 @@ input {
    high z-index -- a top-level sibling by construction (see
    WarpDestinationModal.tsx's own doc comment), so this only needs to
    outrank every OTHER top-level z-index in this file (the highest so far
-   is .world-canvas__tooltip/.world-canvas__toast at 10). */
+   is .world-canvas__tooltip/.world-canvas__toast at 10). The sibling
+   placement is also load-bearing for a second, independent reason: no
+   ancestor of the modal (.app, .world-canvas, .world-canvas__body,
+   .world-canvas__viewport, etc.) establishes its own stacking context (none
+   sets transform/filter/contain/isolation or a non-auto z-index), and
+   .world-canvas__viewport additionally has `overflow: hidden` -- so a
+   nested, absolutely-positioned modal would have been CLIPPED by that
+   viewport regardless of z-index. Rendering as a genuine sibling of
+   .world-canvas__body sidesteps both problems at once, not just the
+   z-index one. Scrim colour is themed (--overlay-modal-scrim, see its own
+   review-fix comment above) rather than a raw literal. */
 .warp-modal__backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(4, 8, 16, 0.6);
+  background: var(--overlay-modal-scrim);
   display: flex;
   align-items: center;
   justify-content: center;

@@ -1543,7 +1543,23 @@ describe("WorldCanvas", () => {
       // above land on.
       const marker = canvas.parentElement!.querySelector(".world-canvas__warp-marker") as HTMLElement;
       const mx = parseFloat(marker.style.left), my = parseFloat(marker.style.top);
-      fireEvent.doubleClick(canvas, { clientX: mx, clientY: my });
+
+      // Review fix (M1): a double-click only ever at the EXACT marker
+      // position (distance 0) cannot tell a real, bounded WARP_HIT_RADIUS
+      // apart from one that is 0, 100000, or altogether missing (e.g. the
+      // hit-test replaced with `warpMarkerEntries[0]` unconditionally) --
+      // every one of those would still pass a distance-0-only test. First
+      // prove a near-miss WELL outside the hit radius (WARP_HIT_RADIUS is
+      // 6px; +20px is comfortably past it) opens nothing -- the fixture has
+      // exactly one marker, so mx+20 cannot accidentally land on a
+      // different one.
+      fireEvent.doubleClick(canvas, { clientX: mx + 20, clientY: my });
+      expect(screen.queryByRole("dialog")).toBeNull();
+
+      // Then a hit within the radius but off-centre (+3px, not the exact
+      // marker position) confirms the radius check is a real, bounded
+      // circle, not merely re-testing distance 0.
+      fireEvent.doubleClick(canvas, { clientX: mx + 3, clientY: my });
       await waitFor(() => expect(screen.getByRole("dialog")).toBeTruthy());
       expect(screen.getByRole("dialog").getAttribute("aria-label")).toBe("B preview");
 
