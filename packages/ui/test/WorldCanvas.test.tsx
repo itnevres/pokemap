@@ -1569,4 +1569,61 @@ describe("WorldCanvas", () => {
       expect(screen.getByText(/%/).textContent).toBe(zoomBefore); // pan/zoom untouched
     });
   });
+
+  // -------------------------------------------------------------------
+  // mapFilter (Feature C, dungeon mode -- Task 12)
+  // -------------------------------------------------------------------
+  describe("mapFilter (Feature C, dungeon mode)", () => {
+    function fourMapsWorld() {
+      return makeWorld({
+        placements: {
+          InDungeon1: { map: "InDungeon1", x: 0, y: 0, width: 10, height: 10, component: 0 },
+          InDungeon2: { map: "InDungeon2", x: 20, y: 0, width: 10, height: 10, component: 1 },
+          OutsideDungeon: { map: "OutsideDungeon", x: 0, y: 20, width: 10, height: 10, component: 2 },
+          Far: { map: "Far", x: 500, y: 500, width: 10, height: 10, component: 3 },
+        },
+      });
+    }
+
+    it("draws and fetches art only for maps in mapFilter, ignoring viewport-only culling for the rest of the corpus", async () => {
+      const { impl } = makeFetchMock(fourMapsWorld());
+      vi.stubGlobal("fetch", impl);
+      render(<WorldCanvas mapFilter={new Set(["InDungeon1", "InDungeon2"])} />);
+      await waitFor(() => expect(screen.queryByText(/Loading world/)).toBeNull());
+      await waitFor(() => expect(FakeImage.instances.length).toBeGreaterThan(0));
+      const srcs = FakeImage.instances.map((i) => i.src);
+      expect(srcs.some((s) => s.includes("InDungeon1"))).toBe(true);
+      expect(srcs.some((s) => s.includes("InDungeon2"))).toBe(true);
+      // OutsideDungeon sits at (0,20)-(10,30), inside the DEFAULT unscoped
+      // viewport ([0,100)x[0,100) at zoom=1,pan={0,0}) -- proving this
+      // requires the mapFilter source restriction itself, not merely
+      // "outside the viewport, so culled anyway" (which would pass even
+      // with mapFilter unimplemented, since ordinary culling would drop it
+      // for an unrelated reason). Without mapFilter actually gating the
+      // source list, this map fetches just like the culling tests above
+      // prove any in-viewport placement does.
+      expect(srcs.some((s) => s.includes("OutsideDungeon"))).toBe(false);
+      expect(srcs.some((s) => s.includes("Far"))).toBe(false);
+    });
+
+    it("auto-fits to the filtered maps on open, without requiring a manual 'Fit world' click", async () => {
+      const { impl } = makeFetchMock(fourMapsWorld());
+      vi.stubGlobal("fetch", impl);
+      const utils = render(<WorldCanvas mapFilter={new Set(["InDungeon1", "InDungeon2"])} />);
+      await waitFor(() => expect(screen.queryByText(/Loading world/)).toBeNull());
+      // InDungeon1+InDungeon2 together span x:[0,30) y:[0,10) -- a 30x10
+      // bounds fit into the 100x100 viewport at zoom=min(100/30,100/10)=
+      // 3.33..., clamped nowhere (MIN_ZOOM/MAX_ZOOM are 1/64 and 16) --
+      // readout is Math.round((zoom/16)*100) = round((10/3)/16*100) = 21.
+      // Deviation from the plan's literal snippet: pinned to this exact
+      // "21%" value instead of merely `not.toBe("100%")" -- the un-fit
+      // default (zoom=1) already reads "6%", so a `not.toBe("100%")` check
+      // passes unconditionally regardless of whether any fit ever ran, a
+      // tautology caught during the Step 3's own tautology audit.
+      await waitFor(() => {
+        const readout = utils.getByText(/%/).textContent;
+        expect(readout).toBe("21%");
+      });
+    });
+  });
 });

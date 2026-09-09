@@ -248,6 +248,12 @@ export interface WorldCanvasProps {
    *  change", since React state setters no-op on an identical primitive
    *  value. */
   jumpToken?: number;
+  /** When set, only these maps are ever drawn, fetched, or hit-testable --
+   *  everything else in WorldCanvas (pan/zoom/drag/multi-select/warp
+   *  toggle) behaves exactly as in the full world view, just scoped. Used
+   *  by Dungeon mode (App.tsx, a later task) to reuse this exact component
+   *  rather than forking a second implementation. */
+  mapFilter?: Set<string> | null;
 }
 
 /**
@@ -257,7 +263,7 @@ export interface WorldCanvasProps {
  * packages/ui/DESIGN.md for the palette/type/spacing tokens this consumes,
  * and this file's own comments for the LOD and culling mechanics.
  */
-export function WorldCanvas({ jumpToMap, jumpToken }: WorldCanvasProps = {}) {
+export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProps = {}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageCacheRef = useRef<Map<string, ImageCacheEntry>>(new Map());
@@ -522,18 +528,31 @@ export function WorldCanvas({ jumpToMap, jumpToken }: WorldCanvasProps = {}) {
   // "every placement".
   const fitWorld = useCallback(() => {
     if (!world) return;
-    const landmasses = new Map(
-      [...world.placements].filter(([, p]) => {
-        const comp = componentOfPlacement(p, world.components);
-        return comp !== null && comp.maps.length > 1;
-      }),
-    );
-    const bounds = worldBoundsOf(landmasses.size > 0 ? landmasses : world.placements, sizeByMap);
+    let bounds: ReturnType<typeof worldBoundsOf>;
+    if (mapFilter) {
+      // Feature C (dungeon mode): fit the dungeon's own curated member
+      // maps, not the world's connected landmasses -- a dungeon is
+      // typically a handful of maps scattered across the corpus (not a
+      // single contiguous landmass), so the ELSE branch's own
+      // multi-map-component filter has no meaning here and would often
+      // exclude every one of the dungeon's own (usually singleton-
+      // component) members, fitting nothing.
+      const scoped = new Map([...world.placements].filter(([name]) => mapFilter.has(name)));
+      bounds = worldBoundsOf(scoped, sizeByMap);
+    } else {
+      const landmasses = new Map(
+        [...world.placements].filter(([, p]) => {
+          const comp = componentOfPlacement(p, world.components);
+          return comp !== null && comp.maps.length > 1;
+        }),
+      );
+      bounds = worldBoundsOf(landmasses.size > 0 ? landmasses : world.placements, sizeByMap);
+    }
     if (bounds.width <= 0 || bounds.height <= 0) return;
     const fit = computeFit(bounds, viewport);
     setZoom(fit.zoom);
     setPan(fit.pan);
-  }, [world, viewport, sizeByMap]);
+  }, [world, viewport, sizeByMap, mapFilter]);
 
   // Which jumpToken has already been handled -- either an actual jump was
   // performed for it, or it was determined there was nothing to jump to
@@ -615,6 +634,24 @@ export function WorldCanvas({ jumpToMap, jumpToken }: WorldCanvasProps = {}) {
     return () => clearTimeout(timer);
   }, [jumpHighlight]);
 
+  // Dungeon mode (Feature C): auto-fit to the dungeon's own maps as soon as
+  // both they and `world` are available -- unlike the full world view
+  // (whose own "don't auto-fit" reasoning above the `fitWorld` definition
+  // is entirely about the cost of loading all 1,209 placements' images at
+  // once), a curated dungeon is small and, at the default origin-anchored
+  // view, may contain none of its own maps on screen at all -- effectively
+  // blank until the user finds "Fit world" themselves. Depends on
+  // `mapFilter`'s IDENTITY, not its contents -- App.tsx (a later task)
+  // hands this a stable Set per open dungeon, so this fires once per
+  // dungeon opened/switched/edited, not on every unrelated re-render.
+  useEffect(() => {
+    if (mapFilter && world) fitWorld();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fitWorld
+    // itself is recreated each render (it closes over world/viewport/
+    // sizeByMap) but must not retrigger this effect on its own; mapFilter's
+    // identity and world's arrival are the only two things that should.
+  }, [mapFilter, world]);
+
   // Culling: only placements whose tile-rect intersects the current
   // viewport (in world-tile space) are considered "visible". With 1,209
   // maps this is what keeps both the draw loop and the image-loading effect
@@ -624,7 +661,19 @@ export function WorldCanvas({ jumpToMap, jumpToken }: WorldCanvasProps = {}) {
     const x0 = -pan.x / zoom, y0 = -pan.y / zoom;
     const x1 = (viewport.w - pan.x) / zoom, y1 = (viewport.h - pan.y) / zoom;
     const out: Placement[] = [];
-    for (const p of world.placements.values()) {
+    // Feature C (dungeon mode): when mapFilter is set, it is the entire
+    // candidate corpus, not just an extra filter over world.placements --
+    // a dungeon's member maps are usually scattered across the full 1,209-
+    // map world (that's the whole point of a dungeon grouping them), so
+    // still only considering the world's OWN culling would be wrong twice
+    // over: it would hide filtered-in maps that happen to sit outside
+    // whatever the current pan/zoom shows of the unscoped world, while
+    // this component's actual job here is to show exactly (and only) the
+    // filtered set, culled against ITS OWN viewport.
+    const source = mapFilter
+      ? [...mapFilter].map((name) => world.placements.get(name)).filter((p): p is WirePlacement => !!p)
+      : [...world.placements.values()];
+    for (const p of source) {
       const size = sizeOfPlacement(p, sizeByMap);
       if (size.width <= 0 || size.height <= 0) continue; // unrenderable orphan, see sizeOfPlacement
       // Feature A (spec §3.1): a placement not drawn by default (mapType in
@@ -633,20 +682,29 @@ export function WorldCanvas({ jumpToMap, jumpToken }: WorldCanvasProps = {}) {
       // effect below). See drawnByDefault's own comment for why its
       // `?? ""` / `?? false` fallback is safe here too.
       //
+      // This default-population filter is skipped entirely when mapFilter
+      // is set: a dungeon's own curated member list is already the
+      // definitive visible set the user built (or the CRUD routes built
+      // for them, Task 10/11) -- re-applying the type-based hide-by-default
+      // rule on top of it would silently drop, say, an indoor room the
+      // user deliberately added to a dungeon, with no way to see or
+      // override it from inside that scoped view (revealedMaps is a
+      // sidebar-jump mechanism that does not exist in dungeon mode).
+      //
       // Note for a later task touching badges: the draw effect's own
       // conflict-diamond and dive/emerge-triangle loops (below) iterate
       // world.conflicts/world.verticalLinks and look up world.placements
-      // directly, bypassing this filter entirely -- so a badge could in
-      // principle render for a map hidden by this same check. Currently
-      // unreachable in practice (indoor/none-type maps connect via warps,
-      // not planar `connections`, so they never appear in `conflicts` or
-      // `verticalLinks`), but worth knowing before relying on "visible ==
-      // everything a badge might touch".
-      if (!drawnByDefault(p) && !revealedMaps.has(p.map)) continue;
+      // directly, bypassing this filter (and mapFilter) entirely -- so a
+      // badge could in principle render for a map outside the current
+      // scope. Currently unreachable in practice (indoor/none-type maps
+      // connect via warps, not planar `connections`, so they never appear
+      // in `conflicts` or `verticalLinks`), but worth knowing before
+      // relying on "visible == everything a badge might touch".
+      if (!mapFilter && !drawnByDefault(p) && !revealedMaps.has(p.map)) continue;
       if (intersects(p.x, p.y, size.width, size.height, x0, y0, x1, y1)) out.push(p);
     }
     return out;
-  }, [world, pan, zoom, viewport, sizeByMap, revealedMaps]);
+  }, [world, pan, zoom, viewport, sizeByMap, revealedMaps, mapFilter]);
 
   // Feature A: how many CURRENTLY-PLACED maps are hidden by the same
   // mapType/manual filter `visible` just applied -- i.e. placed but not
