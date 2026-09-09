@@ -4,6 +4,7 @@ import { MapCanvas } from "./components/MapCanvas.js";
 import { WorldCanvas } from "./components/WorldCanvas.js";
 import { useMapGroups } from "./hooks/useMapGroups.js";
 import { useMapLayout } from "./hooks/useMapLayout.js";
+import { useWorldVisibility } from "./hooks/useWorldVisibility.js";
 
 type Mode = "map" | "world";
 
@@ -16,6 +17,11 @@ export function App() {
   const [selectVersion, setSelectVersion] = useState(0);
   const { data, error } = useMapGroups();
   const layout = useMapLayout(selected);
+  // Gated on World mode specifically, not "not Map mode" -- Dungeon mode's
+  // own sidebar (a later task) is DungeonSidebar, not MapTree (this hook's
+  // only consumer), so fetching this in Dungeon mode too would be wasted
+  // work nothing reads.
+  const { placed: worldVisibility } = useWorldVisibility(mode === "world");
 
   const selectMap = (name: string) => {
     setSelected(name);
@@ -51,7 +57,13 @@ export function App() {
           {error ? (
             <p className="map-tree__empty">Could not load map groups: {error}</p>
           ) : data ? (
-            <MapTree data={data} selected={selected} onSelect={selectMap} />
+            <MapTree
+              data={data}
+              selected={selected}
+              onSelect={selectMap}
+              worldMode={mode === "world"}
+              visibility={worldVisibility}
+            />
           ) : (
             <p className="map-tree__empty">Loading map groups…</p>
           )}

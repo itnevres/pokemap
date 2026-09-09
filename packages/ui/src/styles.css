@@ -290,6 +290,21 @@ input {
   font-weight: 600;
 }
 
+/* Feature A (dungeon-mode-and-warp-tools spec §3.3): the sidebar's third
+   visual state in World/Dungeon mode -- a map that isn't currently drawn,
+   either because it has no placement at all or because its type is hidden
+   by default. Dimmed via --text-muted + reduced opacity rather than a new
+   colour token: this is a muting of the existing row, not a new semantic
+   colour. */
+.map-tree__map--greyed {
+  color: var(--text-muted);
+  opacity: 0.6;
+}
+
+.map-tree__map--greyed:hover {
+  opacity: 0.85;
+}
+
 .map-tree__empty {
   color: var(--text-muted);
   font-size: var(--text-xs);
