@@ -1175,6 +1175,25 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
     }
     const style = typeof getComputedStyle === "function" ? getComputedStyle(document.documentElement) : null;
     const palette = CONNECTION_PALETTE_VARS.map((v, i) => style?.getPropertyValue(v).trim() || CONNECTION_PALETTE_FALLBACK[i]!);
+    // Known imperfection: `i` here is a connection's position in the
+    // RESOLVED subset (`raw`), not its position among the dungeon's full
+    // connection count -- a connection whose destination warp fetch
+    // hasn't landed yet (or whose destWarpId never resolves at all, see
+    // the strict lookup above) is simply absent from `raw` entirely, not
+    // holding a placeholder slot in it. So a connection's colour can
+    // shift as each map's own /api/warps fetch lands one at a time (this
+    // memo re-runs on every warpVersion bump), and only settles
+    // permanently once every relevant map has either loaded its warps or
+    // failed and been marked loaded-with-no-data (see the warp-fetch
+    // effect's own catch above). A connection that never resolves at all
+    // (a missing dest warp, or a fetch that keeps failing) permanently
+    // shifts every later-sorted connection's colour by one slot for the
+    // rest of the session. Accepted as a minor imperfection -- DESIGN.md's
+    // own contract is "the same connection reads the same colour across
+    // SESSIONS" (a stable sort order, not randomised or hashed), not
+    // "never visibly shifts while fetches are still in flight" -- rather
+    // than deferring every connection's colour until the whole dungeon's
+    // warp data has fully landed.
     return raw.map((r, i) => ({
       key: `${r.sourceMap}:${r.warpIndex}`,
       x1: r.x1, y1: r.y1, x2: r.x2, y2: r.y2,

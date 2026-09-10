@@ -142,6 +142,45 @@ function makeFetchMock(initial: WorldFixture) {
   return { impl, calls, currentWorld: () => world };
 }
 
+/** Task 7 Step 5 review fix: exactly the shape /api/warps/:map's `warps`
+ *  array carries (WarpEvent plus the server-resolved destMapName), typed
+ *  instead of `unknown[]`.
+ *
+ *  Review fix (Task 13 review, finding #5): hoisted to module scope,
+ *  alongside makeWorld/makeFetchMock above -- this interface and its
+ *  matching `withWarps` helper used to be defined twice, once inside
+ *  "warp toggle and markers (Feature B)" below and again inside "dungeon
+ *  connection lines (Feature C)", and the Feature C copy had regressed
+ *  back to an untyped `Record<string, unknown[]>` rather than reusing this
+ *  interface. A single shared, properly-typed version for both describe
+ *  blocks. */
+interface RawWarpEvent {
+  x: number;
+  y: number;
+  elevation: number;
+  destMap: string;
+  destWarpId: string;
+  destMapName?: string;
+}
+
+/** Routes GET /api/warps/:map to a per-test fixture, layered on top of an
+ *  existing mock (`base`, typically a makeFetchMock's own `impl`) for every
+ *  other route. */
+function withWarps(base: ReturnType<typeof makeFetchMock>["impl"], warpsByMap: Record<string, RawWarpEvent[]>) {
+  return vi.fn((url: string, init?: RequestInit) => {
+    const m = /^\/api\/warps\/(.+)$/.exec(url);
+    if (m) {
+      const name = decodeURIComponent(m[1]!);
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ mapName: name, warps: warpsByMap[name] ?? [] }),
+      } as Response);
+    }
+    return base(url, init);
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Canvas context + Image mocking. Same technique as MapCanvas.test.tsx: a
 // fake 2D context recording the calls WorldCanvas makes, keyed per-canvas so
@@ -1408,33 +1447,6 @@ describe("WorldCanvas", () => {
       });
     }
 
-    // Task 7 Step 5 review fix: mirrors RawPlacement/RawComponent above --
-    // exactly the shape /api/warps/:map's `warps` array carries (WarpEvent
-    // plus the server-resolved destMapName), typed instead of `unknown[]`.
-    interface RawWarpEvent {
-      x: number;
-      y: number;
-      elevation: number;
-      destMap: string;
-      destWarpId: string;
-      destMapName?: string;
-    }
-
-    function withWarps(base: ReturnType<typeof makeFetchMock>["impl"], warpsByMap: Record<string, RawWarpEvent[]>) {
-      return vi.fn((url: string, init?: RequestInit) => {
-        const m = /^\/api\/warps\/(.+)$/.exec(url);
-        if (m) {
-          const name = decodeURIComponent(m[1]!);
-          return Promise.resolve({
-            ok: true,
-            status: 200,
-            json: () => Promise.resolve({ mapName: name, warps: warpsByMap[name] ?? [] }),
-          } as Response);
-        }
-        return base(url, init);
-      });
-    }
-
     it("draws a marker only for a warp on a currently-visible map, not the whole corpus, at the position the screen-space formula predicts", async () => {
       const { impl } = makeFetchMock(warpWorld());
       const wrapped = withWarps(impl, {
@@ -1734,21 +1746,6 @@ describe("WorldCanvas", () => {
       });
     }
 
-    function withWarps(base: ReturnType<typeof makeFetchMock>["impl"], warpsByMap: Record<string, unknown[]>) {
-      return vi.fn((url: string, init?: RequestInit) => {
-        const m = /^\/api\/warps\/(.+)$/.exec(url);
-        if (m) {
-          const name = decodeURIComponent(m[1]!);
-          return Promise.resolve({
-            ok: true,
-            status: 200,
-            json: () => Promise.resolve({ mapName: name, warps: warpsByMap[name] ?? [] }),
-          } as Response);
-        }
-        return base(url, init);
-      });
-    }
-
     it("draws a line only between two maps that are BOTH members of the open dungeon", async () => {
       const { impl } = makeFetchMock(dungeonWorld());
       const wrapped = withWarps(impl, {
@@ -1774,34 +1771,126 @@ describe("WorldCanvas", () => {
         // exactly two lines total.
         expect(lines.length).toBe(2);
       });
+
+      // Coordinate assertion (review fix -- mutation-proven gap): proves
+      // the line runs to the destination warp's own EXACT tile, not
+      // merely that the right COUNT of lines drew (a reviewer proved a
+      // reverted corner-fallback, drawing every line at the destination
+      // PLACEMENT's corner regardless of destWarp, still passed every
+      // test in this describe block before this assertion existed).
+      // mapFilter={Room1,Room2} auto-fits Room1(0,0,10,10)+Room2(30,0,10,10)
+      // (bounds 40x10) into the 100x100 test viewport at zoom =
+      // min(100/40,100/10) = 2.5, pan = {x: 0, y: (100-10*2.5)/2} =
+      // {x: 0, y: 37.5} -- computeFit's own formula, hand-verified the
+      // same way its own unit test above does. Room1's warp (world 1,1)
+      // is the Room1->Room2 line's own source, at screen (1*2.5+0,
+      // 1*2.5+37.5) = (2.5, 40); Room2's warp (world 3,3) -- the ACTUAL
+      // destination tile destWarpId "0" resolves to -- is at screen
+      // ((30+3)*2.5+0, (0+3)*2.5+37.5) = (82.5, 45). Identified by x1/y1
+      // (Room1's own warp position) rather than DOM/array order, since
+      // the two resolved lines are not returned in a guaranteed order.
+      const lines = [...utils.container.querySelectorAll(".world-canvas__connections line")];
+      const room1ToRoom2 = lines.find((l) => l.getAttribute("x1") === "2.5" && l.getAttribute("y1") === "40");
+      expect(room1ToRoom2).toBeTruthy();
+      expect(room1ToRoom2!.getAttribute("x2")).toBe("82.5");
+      expect(room1ToRoom2!.getAttribute("y2")).toBe("45");
+    });
+
+    // Coverage gap fix (Task 13 review, finding #2): the test above only
+    // ever exercises the `mapFilter.has` / `destCache?.loaded` guards --
+    // it never proves the STRICT destWarp lookup itself (the exact
+    // behavior the previous review fix restored, reverting a corner-
+    // fallback that drew every line at the destination placement's corner
+    // regardless of whether destWarpId actually resolved). This test
+    // targets that lookup directly.
+    it("does not draw a line when the destination warp's own destWarpId does not match any real entry in the destination map's warp array", async () => {
+      const { impl } = makeFetchMock(dungeonWorld());
+      const wrapped = withWarps(impl, {
+        Room1: [
+          // Resolvable: Room2's own warp array below has a real entry at
+          // index 0 -- a sibling connection alongside the unresolvable
+          // one below, so this test is not just "zero lines total" (which
+          // could pass for the wrong reason, e.g. a totally broken fetch).
+          { x: 1, y: 1, elevation: 0, destMap: "MAP_ROOM2", destWarpId: "0", destMapName: "Room2" },
+          // Unresolvable: Room2's own warp array (below) has only ONE
+          // entry, at index 0 -- destWarpId "5" names an index that does
+          // not exist, the exact malformed/one-off-asymmetric case
+          // connectionLines' own comment documents skipping entirely
+          // rather than guessing at any other position.
+          { x: 2, y: 2, elevation: 0, destMap: "MAP_ROOM2", destWarpId: "5", destMapName: "Room2" },
+        ],
+        // A single real entry, at index 0 only -- deliberately pointing
+        // OUTSIDE the dungeon (mapFilter below only ever contains Room1
+        // and Room2), so Room2 contributes no connection line of its own
+        // as a SOURCE and the only line this test can observe is one of
+        // Room1's own two warps.
+        Room2: [{ x: 3, y: 3, elevation: 0, destMap: "MAP_OUTSIDE", destWarpId: "0", destMapName: "Outside" }],
+      });
+      vi.stubGlobal("fetch", wrapped);
+      const utils = render(<WorldCanvas mapFilter={new Set(["Room1", "Room2"])} />);
+      await waitFor(() => expect(utils.queryByText(/Loading world/)).toBeNull());
+      fireEvent.click(utils.getByRole("switch", { name: /connection lines/i }));
+
+      // Exactly 1 -- Room1's resolvable warp (destWarpId "0") draws; its
+      // unresolvable sibling (destWarpId "5") does not. Not "zero lines
+      // total" (a totally broken fetch/cache could also produce that for
+      // an unrelated reason) and not 2 (which reverting to a corner-
+      // fallback for a lookup MISS -- rather than skipping the connection
+      // entirely -- would wrongly draw a second line to Room2's own
+      // placement corner).
+      await waitFor(() => {
+        const lines = utils.container.querySelectorAll(".world-canvas__connections line");
+        expect(lines.length).toBe(1);
+      });
     });
 
     it("assigns the same colour to the same connection regardless of mapFilter's own construction order", async () => {
       const { impl } = makeFetchMock(dungeonWorld());
       const wrapped = withWarps(impl, {
         Room1: [{ x: 1, y: 1, elevation: 0, destMap: "MAP_ROOM2", destWarpId: "0", destMapName: "Room2" }],
-        // Review fix (Task 13 review): this used to be `Room2: []` -- Room2
-        // had NO warps at all, so `destCache.warps[0]` could never resolve
-        // for Room1's own warp (destWarpId "0") once the production code's
-        // fallback-to-corner behaviour was reverted to the strict lookup
-        // spec §5.5 actually requires. That fallback was added specifically
-        // to paper over this broken fixture rather than fixing it -- fixed
-        // here instead: Room2 gets a real warp entry at index 0, pointing
-        // OUTSIDE the dungeon (mapFilter below only ever contains Room1 and
-        // Room2) so it does not itself create a second visible connection
-        // line -- Room2's own warp to Outside is excluded by the
-        // `mapFilter.has` guard, same as any other non-member destination,
-        // leaving this test's own "exactly 1 line" expectation unchanged.
-        Room2: [{ x: 3, y: 3, elevation: 0, destMap: "MAP_OUTSIDE", destWarpId: "0", destMapName: "Outside" }],
+        // Review fix (Task 13 review, twice over now): this used to point
+        // OUTSIDE the dungeon (Room2 -> Outside), which resolves no
+        // second connection at all -- so exactly ONE connection line ever
+        // existed, its palette index was always 0 regardless of order,
+        // and this test's own final assertion passed even against a
+        // mutated, non-deterministic sort (confirmed by mutation testing:
+        // dropping the stable `.sort()` for raw, construction-order-
+        // dependent Set iteration still left every test in this file
+        // green). Room2 now warps back to Room1 too, a real second entry
+        // at Room1's own warp index 0 -- so there are genuinely TWO
+        // resolvable connections whose relative order in the sorted-by-
+        // source-map list determines which palette index each one gets,
+        // giving this test something for sort order to actually matter to.
+        Room2: [{ x: 3, y: 3, elevation: 0, destMap: "MAP_ROOM1", destWarpId: "0", destMapName: "Room1" }],
       });
       vi.stubGlobal("fetch", wrapped);
 
+      // Both connections auto-fit to the SAME bounds (Room1+Room2)
+      // regardless of mapFilter's own construction order (worldBoundsOf
+      // does not care about Set iteration order), so Room1's own warp
+      // (world 1,1) always lands at the same screen position across both
+      // runs below -- zoom 2.5, pan {0, 37.5}, hand-verified the same way
+      // the coordinate-assertion test above does. That makes x1/y1 a
+      // stable, run-independent way to pick out the Room1->Room2
+      // connection specifically, regardless of where the OTHER connection
+      // (or a scrambled sort) might place it in the DOM.
       const runOnce = async (filter: Set<string>) => {
         const utils = render(<WorldCanvas mapFilter={filter} />);
         await waitFor(() => expect(utils.queryByText(/Loading world/)).toBeNull());
         fireEvent.click(utils.getByRole("switch", { name: /connection lines/i }));
-        await waitFor(() => expect(utils.container.querySelectorAll(".world-canvas__connections line").length).toBe(1));
-        const stroke = utils.container.querySelector(".world-canvas__connections line")!.getAttribute("stroke");
+        await waitFor(() => expect(utils.container.querySelectorAll(".world-canvas__connections line").length).toBe(2));
+        const lines = [...utils.container.querySelectorAll(".world-canvas__connections line")];
+        // Identified by x1/y1 (Room1's own warp screen position), NOT
+        // "the first line in the DOM" -- this test's own review-fix
+        // comment above explains why that could not actually distinguish
+        // a genuinely stable sort from an order that is merely arbitrary-
+        // but-stable-within-one-run (e.g. raw, unsorted Set iteration:
+        // deterministic for any ONE Set instance, but not across two
+        // differently-constructed ones -- exactly what this test
+        // compares).
+        const room1ToRoom2 = lines.find((l) => l.getAttribute("x1") === "2.5" && l.getAttribute("y1") === "40");
+        expect(room1ToRoom2).toBeTruthy();
+        const stroke = room1ToRoom2!.getAttribute("stroke");
         utils.unmount();
         return stroke;
       };
