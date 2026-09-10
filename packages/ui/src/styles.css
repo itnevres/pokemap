@@ -524,8 +524,8 @@ input {
   color: var(--text-muted);
 }
 
-/* App-level mode switch (Map / World) -- Task 25 adds a second top-level
-   view, so App.tsx's toolbar needs a way to pick between them. */
+/* App-level mode switch (Map / World / Dungeon) -- three top-level views,
+   picked via App.tsx's toolbar buttons. */
 .app__mode {
   display: flex;
   gap: var(--space-1);

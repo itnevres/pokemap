@@ -40,7 +40,12 @@ export function App() {
   // `gen`-driven refetch) -- so `openDungeon`'s identity is stable across
   // unrelated App re-renders, which is what lets the mapFilter memo below
   // (and, inside WorldCanvas, its own mapFilter-keyed auto-fit effect) fire
-  // only when the open dungeon genuinely changes.
+  // once per dungeon opened, switched, OR mutated -- including a pure
+  // rename, which re-mints the array reference (and therefore `openDungeon`
+  // and `mapFilter` too) and so refits the canvas as well, resetting the
+  // user's pan/zoom mid-edit even though only the dungeon's name changed.
+  // Intentional (matches "opened/switched/edited"), just worth knowing
+  // before assuming a rename is a no-op here.
   const openDungeon = mode === "dungeon" ? (dungeons.data?.find((d) => d.id === openDungeonId) ?? null) : null;
   const mapFilter = useMemo(() => (openDungeon ? new Set(openDungeon.maps) : null), [openDungeon]);
 
@@ -63,7 +68,16 @@ export function App() {
   // wrongly clearing its error state as if the delete had gone through.
   const handleDeleteDungeon = async (id: string) => {
     await dungeons.remove(id);
-    if (openDungeonId === id) setOpenDungeonId(null);
+    // Functional form, not `if (openDungeonId === id) setOpenDungeonId(null)`:
+    // this runs after an `await`, so the plain closed-over `openDungeonId`
+    // could be stale by the time the DELETE resolves -- e.g. open dungeon A,
+    // click Delete, then (before the request resolves) switch to open
+    // dungeon B instead. The stale comparison would still see "A" === "A"
+    // from when this function was called and incorrectly clear
+    // openDungeonId, closing dungeon B even though B was never deleted.
+    // Comparing against the CURRENT state at the moment the setter actually
+    // runs closes that race.
+    setOpenDungeonId((cur) => (cur === id ? null : cur));
   };
 
   return (
@@ -100,6 +114,17 @@ export function App() {
       </header>
       <div className="app__body">
         <aside className="app__sidebar">
+          {/* Review fix: this used to live only inside the non-dungeon
+              branch below, so a failed /api/groups fetch was invisible in
+              Dungeon mode -- yet DungeonSidebar's add-map input hard-
+              requires allMapNames.includes(...), so allMapNames silently
+              degrading to [] on that same failure turned every add-map
+              attempt into a silent no-op with zero explanation. Hoisted
+              here so the error is surfaced regardless of which mode is
+              active; the ternary below still renders it (and only it, as
+              before) for Map/World mode via its own `error ? null` branch,
+              so that behaviour is unchanged. */}
+          {error && <p className="map-tree__empty">Could not load map groups: {error}</p>}
           {mode === "dungeon" ? (
             <DungeonSidebar
               dungeons={dungeons.data}
@@ -112,9 +137,7 @@ export function App() {
               onDelete={handleDeleteDungeon}
               allMapNames={allMapNames}
             />
-          ) : error ? (
-            <p className="map-tree__empty">Could not load map groups: {error}</p>
-          ) : data ? (
+          ) : error ? null : data ? (
             <>
               {mode === "world" && worldVisibilityError ? (
                 <p className="map-tree__empty">Could not load world visibility: {worldVisibilityError}</p>
@@ -133,10 +156,19 @@ export function App() {
         </aside>
         <main className="app__canvas">
           {mode === "world" ? (
-            <WorldCanvas jumpToMap={selected} jumpToken={selectVersion} />
+            // key="world"/"dungeon": without distinct keys, switching FROM
+            // Dungeon mode TO World mode reconciles as a prop update on the
+            // SAME WorldCanvas instance (both branches render the same
+            // element type in the same position, and openDungeon goes null
+            // in the same commit `mode` flips) -- leaking pan/zoom,
+            // selected, revealedMaps, linesOn, warpsOn, lens,
+            // spotlightHits, and warpPopup across the mode boundary instead
+            // of starting fresh. Distinct keys force React to always treat
+            // a mode switch as a brand-new mount.
+            <WorldCanvas key="world" jumpToMap={selected} jumpToken={selectVersion} />
           ) : mode === "dungeon" ? (
             openDungeon ? (
-              <WorldCanvas mapFilter={mapFilter} />
+              <WorldCanvas key="dungeon" mapFilter={mapFilter} />
             ) : (
               <p className="app__canvas-placeholder">Select or create a dungeon</p>
             )
