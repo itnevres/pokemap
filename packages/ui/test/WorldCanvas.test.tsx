@@ -1780,7 +1780,19 @@ describe("WorldCanvas", () => {
       const { impl } = makeFetchMock(dungeonWorld());
       const wrapped = withWarps(impl, {
         Room1: [{ x: 1, y: 1, elevation: 0, destMap: "MAP_ROOM2", destWarpId: "0", destMapName: "Room2" }],
-        Room2: [],
+        // Review fix (Task 13 review): this used to be `Room2: []` -- Room2
+        // had NO warps at all, so `destCache.warps[0]` could never resolve
+        // for Room1's own warp (destWarpId "0") once the production code's
+        // fallback-to-corner behaviour was reverted to the strict lookup
+        // spec §5.5 actually requires. That fallback was added specifically
+        // to paper over this broken fixture rather than fixing it -- fixed
+        // here instead: Room2 gets a real warp entry at index 0, pointing
+        // OUTSIDE the dungeon (mapFilter below only ever contains Room1 and
+        // Room2) so it does not itself create a second visible connection
+        // line -- Room2's own warp to Outside is excluded by the
+        // `mapFilter.has` guard, same as any other non-member destination,
+        // leaving this test's own "exactly 1 line" expectation unchanged.
+        Room2: [{ x: 3, y: 3, elevation: 0, destMap: "MAP_OUTSIDE", destWarpId: "0", destMapName: "Outside" }],
       });
       vi.stubGlobal("fetch", wrapped);
 
@@ -1797,6 +1809,72 @@ describe("WorldCanvas", () => {
       const colorA = await runOnce(new Set(["Room1", "Room2"]));
       const colorB = await runOnce(new Set(["Room2", "Room1"])); // same members, different construction order
       expect(colorA).toBe(colorB);
+    });
+
+    // Coverage gap fix (Task 13 review): the "draws a line only between two
+    // maps that are BOTH members" test above only ever proves the OTHER
+    // guard (`destCache?.loaded`) blocks a non-member destination -- a
+    // non-member map is never in `visible`, so its warp data is never
+    // fetched in the first place, meaning `mapFilter.has` is never the
+    // guard that actually fires there. This test genuinely exercises it:
+    // Annex starts IN mapFilter (so its warp data really gets fetched and
+    // cached), then a rerender narrows mapFilter to exclude it -- at that
+    // point Annex's cache entry is already sitting in warpCacheRef (a ref,
+    // never evicted), so `destCache?.loaded` is still true and the ONLY
+    // thing that can still block Base's connection to it is
+    // `mapFilter.has`.
+    it("mapFilter.has still blocks a connection to a member whose warp data is already cached, once that map is narrowed out", async () => {
+      const { impl } = makeFetchMock(
+        makeWorld({
+          placements: {
+            Core: { map: "Core", x: 0, y: 0, width: 10, height: 10, component: 0 },
+            Base: { map: "Base", x: 30, y: 0, width: 10, height: 10, component: 1 },
+            Annex: { map: "Annex", x: 60, y: 0, width: 10, height: 10, component: 2 },
+          },
+        }),
+      );
+      const wrapped = withWarps(impl, {
+        // Core<->Base: a connection that survives the narrowing below, so
+        // the assertion isn't just "all lines vanished" for some unrelated
+        // reason.
+        Core: [{ x: 1, y: 1, elevation: 0, destMap: "MAP_BASE", destWarpId: "0", destMapName: "Base" }],
+        Base: [
+          { x: 2, y: 2, elevation: 0, destMap: "MAP_CORE", destWarpId: "0", destMapName: "Core" },
+          // Base->Annex: the connection under test -- present while Annex
+          // is a member, must disappear once it is narrowed out.
+          { x: 3, y: 3, elevation: 0, destMap: "MAP_ANNEX", destWarpId: "0", destMapName: "Annex" },
+        ],
+        // Annex's own warp points OUTSIDE the dungeon (never a mapFilter
+        // member), so Annex itself contributes no connection line as a
+        // SOURCE -- this entry exists purely so Annex.warps[0] is a real
+        // array entry, satisfying the strict destWarp lookup Base's own
+        // warp above needs while Annex is still a member and its data has
+        // been fetched.
+        Annex: [{ x: 4, y: 4, elevation: 0, destMap: "MAP_ELSEWHERE", destWarpId: "0", destMapName: "Elsewhere" }],
+      });
+      vi.stubGlobal("fetch", wrapped);
+
+      const utils = render(<WorldCanvas mapFilter={new Set(["Core", "Base", "Annex"])} />);
+      await waitFor(() => expect(utils.queryByText(/Loading world/)).toBeNull());
+      fireEvent.click(utils.getByRole("switch", { name: /connection lines/i }));
+
+      // Three lines while Annex is a member: Core->Base, Base->Core,
+      // Base->Annex. Reaching 3 (not fewer) is what proves Annex's own warp
+      // data has actually arrived and been cached -- it is what supplies
+      // the strict destWarp[0] lookup Base->Annex needs to draw at all.
+      await waitFor(() => {
+        expect(utils.container.querySelectorAll(".world-canvas__connections line").length).toBe(3);
+      });
+
+      // Narrow mapFilter to exclude Annex. Its warp cache entry is
+      // untouched by this rerender (nothing in WorldCanvas ever evicts a
+      // warpCacheRef entry), so this proves the drop is `mapFilter.has`,
+      // not a reset cache.
+      utils.rerender(<WorldCanvas mapFilter={new Set(["Core", "Base"])} />);
+
+      await waitFor(() => {
+        expect(utils.container.querySelectorAll(".world-canvas__connections line").length).toBe(2);
+      });
     });
   });
 });

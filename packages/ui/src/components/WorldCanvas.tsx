@@ -1154,19 +1154,22 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
         // `undefined` data.
         if (!destPlacement || !destCache?.loaded || !destCache.warps) return;
         const destIndex = Number(w.destWarpId);
-        // The destination's own warp array SHOULD contain a matching entry
-        // at destWarpId (that is what makes the pair reciprocal in the
-        // source ROM data) -- but a same-index lookup miss (a malformed or
-        // one-off asymmetric connection) degrades to the destination
-        // placement's own corner rather than dropping the line entirely:
-        // the fetch already succeeded (checked above), so this is a
-        // precision fallback, not the "partial data" case.
-        const destWarp = Number.isInteger(destIndex) && destIndex >= 0 ? destCache.warps[destIndex] : undefined;
-        const destX = destWarp?.x ?? 0, destY = destWarp?.y ?? 0;
+        // The destination's own warp array must contain a matching entry at
+        // destWarpId (that is what makes the pair reciprocal in the source
+        // ROM data) -- spec §5.5 requires a line to run to the destination's
+        // EXACT tile position, "precise points on different floors' art, not
+        // map centers". A same-index lookup miss (a malformed or one-off
+        // asymmetric connection) has no exact tile to draw to, so this
+        // connection is skipped entirely rather than guessed at any other
+        // position (the destination placement's own corner is neither the
+        // exact tile nor even a map-center, and would silently assert a door
+        // exists where none does).
+        const destWarp = destCache.warps[destIndex];
+        if (!destWarp) return;
         raw.push({
           sourceMap, warpIndex,
           x1: (srcPlacement.x + w.x) * zoom + pan.x, y1: (srcPlacement.y + w.y) * zoom + pan.y,
-          x2: (destPlacement.x + destX) * zoom + pan.x, y2: (destPlacement.y + destY) * zoom + pan.y,
+          x2: (destPlacement.x + destWarp.x) * zoom + pan.x, y2: (destPlacement.y + destWarp.y) * zoom + pan.y,
         });
       });
     }
