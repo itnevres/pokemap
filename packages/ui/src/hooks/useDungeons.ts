@@ -32,6 +32,7 @@ export function useDungeons(enabled: boolean): UseDungeonsResult {
       return;
     }
     let cancelled = false;
+    setError(null);
     fetch("/api/dungeons")
       .then((r) => {
         if (!r.ok) throw new Error(`GET /api/dungeons -> ${r.status}`);

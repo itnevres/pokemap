@@ -1635,6 +1635,16 @@ input {
   font-size: var(--text-sm);
 }
 
+/* Review fix: "your last create/rename/etc failed" is a different concern
+   from .map-tree__empty ("the list itself is empty/unloaded"), which the
+   sidebar's `error` prop banner already uses just above -- a separate class
+   so the two never visually collide or get confused for one another. */
+.dungeon-sidebar__error {
+  margin: 0 var(--space-3) var(--space-2);
+  color: var(--danger);
+  font-size: var(--text-xs);
+}
+
 .dungeon-sidebar__create,
 .dungeon-sidebar__edit {
   padding: var(--space-2) var(--space-3);

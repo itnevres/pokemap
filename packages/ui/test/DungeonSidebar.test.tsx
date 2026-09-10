@@ -16,9 +16,9 @@ describe("DungeonSidebar", () => {
         openId={null}
         onOpen={() => {}}
         onCreate={vi.fn()}
-        onRename={vi.fn()}
-        onSetMaps={vi.fn()}
-        onDelete={vi.fn()}
+        onRename={vi.fn().mockResolvedValue(undefined)}
+        onSetMaps={vi.fn().mockResolvedValue(undefined)}
+        onDelete={vi.fn().mockResolvedValue(undefined)}
         allMapNames={["MtMoon_1F", "MtMoon_B1F", "Route1"]}
       />,
     );
@@ -36,9 +36,9 @@ describe("DungeonSidebar", () => {
         openId={null}
         onOpen={onOpen}
         onCreate={vi.fn()}
-        onRename={vi.fn()}
-        onSetMaps={vi.fn()}
-        onDelete={vi.fn()}
+        onRename={vi.fn().mockResolvedValue(undefined)}
+        onSetMaps={vi.fn().mockResolvedValue(undefined)}
+        onDelete={vi.fn().mockResolvedValue(undefined)}
         allMapNames={[]}
       />,
     );
@@ -54,9 +54,9 @@ describe("DungeonSidebar", () => {
         openId="2"
         onOpen={() => {}}
         onCreate={vi.fn()}
-        onRename={vi.fn()}
-        onSetMaps={vi.fn()}
-        onDelete={vi.fn()}
+        onRename={vi.fn().mockResolvedValue(undefined)}
+        onSetMaps={vi.fn().mockResolvedValue(undefined)}
+        onDelete={vi.fn().mockResolvedValue(undefined)}
         allMapNames={[]}
       />,
     );
@@ -74,9 +74,9 @@ describe("DungeonSidebar", () => {
         openId={null}
         onOpen={onOpen}
         onCreate={onCreate}
-        onRename={vi.fn()}
-        onSetMaps={vi.fn()}
-        onDelete={vi.fn()}
+        onRename={vi.fn().mockResolvedValue(undefined)}
+        onSetMaps={vi.fn().mockResolvedValue(undefined)}
+        onDelete={vi.fn().mockResolvedValue(undefined)}
         allMapNames={["Route1"]}
       />,
     );
@@ -91,6 +91,35 @@ describe("DungeonSidebar", () => {
     expect(onCreate).toHaveBeenCalledWith({ name: "New Cave", seedMap: "Route1" });
   });
 
+  it("a rejected onCreate keeps the form open with the entered values, shows actionError, and never opens anything", async () => {
+    const onCreate = vi.fn().mockRejectedValue(new Error("POST /api/dungeons -> 500"));
+    const onOpen = vi.fn();
+    render(
+      <DungeonSidebar
+        dungeons={DUNGEONS}
+        error={null}
+        openId={null}
+        onOpen={onOpen}
+        onCreate={onCreate}
+        onRename={vi.fn().mockResolvedValue(undefined)}
+        onSetMaps={vi.fn().mockResolvedValue(undefined)}
+        onDelete={vi.fn().mockResolvedValue(undefined)}
+        allMapNames={["Route1"]}
+      />,
+    );
+    fireEvent.click(screen.getByText("+ New Dungeon"));
+    fireEvent.change(screen.getByPlaceholderText(/name/i), { target: { value: "New Cave" } });
+    fireEvent.change(screen.getByPlaceholderText(/seed map/i), { target: { value: "Route1" } });
+    fireEvent.click(screen.getByText("Create"));
+
+    await waitFor(() => expect(screen.getByText(/POST \/api\/dungeons -> 500/)).toBeTruthy());
+    expect(onOpen).not.toHaveBeenCalled();
+    // Form stays open with the user's own values intact -- nothing was
+    // cleared out from under them by the failed submit.
+    expect((screen.getByPlaceholderText(/name/i) as HTMLInputElement).value).toBe("New Cave");
+    expect((screen.getByPlaceholderText(/seed map/i) as HTMLInputElement).value).toBe("Route1");
+  });
+
   it("editing the open dungeon's membership shows its maps as removable rows", () => {
     render(
       <DungeonSidebar
@@ -99,9 +128,9 @@ describe("DungeonSidebar", () => {
         openId="1"
         onOpen={() => {}}
         onCreate={vi.fn()}
-        onRename={vi.fn()}
-        onSetMaps={vi.fn()}
-        onDelete={vi.fn()}
+        onRename={vi.fn().mockResolvedValue(undefined)}
+        onSetMaps={vi.fn().mockResolvedValue(undefined)}
+        onDelete={vi.fn().mockResolvedValue(undefined)}
         allMapNames={[]}
       />,
     );
@@ -110,7 +139,7 @@ describe("DungeonSidebar", () => {
   });
 
   it("removing a map from the open dungeon calls onSetMaps with it excluded", () => {
-    const onSetMaps = vi.fn();
+    const onSetMaps = vi.fn().mockResolvedValue(undefined);
     render(
       <DungeonSidebar
         dungeons={DUNGEONS}
@@ -118,13 +147,81 @@ describe("DungeonSidebar", () => {
         openId="1"
         onOpen={() => {}}
         onCreate={vi.fn()}
-        onRename={vi.fn()}
+        onRename={vi.fn().mockResolvedValue(undefined)}
         onSetMaps={onSetMaps}
-        onDelete={vi.fn()}
+        onDelete={vi.fn().mockResolvedValue(undefined)}
         allMapNames={[]}
       />,
     );
     fireEvent.click(screen.getByLabelText("Remove MtMoon_1F"));
     expect(onSetMaps).toHaveBeenCalledWith("1", ["MtMoon_B1F"]);
+  });
+
+  it("typing in the rename input does not call onRename until blur, and commits the final value", () => {
+    const onRename = vi.fn().mockResolvedValue(DUNGEONS[0]);
+    render(
+      <DungeonSidebar
+        dungeons={DUNGEONS}
+        error={null}
+        openId="1"
+        onOpen={() => {}}
+        onCreate={vi.fn()}
+        onRename={onRename}
+        onSetMaps={vi.fn().mockResolvedValue(undefined)}
+        onDelete={vi.fn().mockResolvedValue(undefined)}
+        allMapNames={[]}
+      />,
+    );
+    const input = screen.getByLabelText("Dungeon name") as HTMLInputElement;
+
+    fireEvent.change(input, { target: { value: "Mt Moon " } });
+    expect(onRename).not.toHaveBeenCalled();
+    fireEvent.change(input, { target: { value: "Mt Moon Cave" } });
+    expect(onRename).not.toHaveBeenCalled();
+
+    fireEvent.blur(input);
+    expect(onRename).toHaveBeenCalledTimes(1);
+    expect(onRename).toHaveBeenCalledWith("1", "Mt Moon Cave");
+  });
+
+  it("an empty or whitespace-only rename commit never calls onRename", () => {
+    const onRename = vi.fn().mockResolvedValue(DUNGEONS[0]);
+    render(
+      <DungeonSidebar
+        dungeons={DUNGEONS}
+        error={null}
+        openId="1"
+        onOpen={() => {}}
+        onCreate={vi.fn()}
+        onRename={onRename}
+        onSetMaps={vi.fn().mockResolvedValue(undefined)}
+        onDelete={vi.fn().mockResolvedValue(undefined)}
+        allMapNames={[]}
+      />,
+    );
+    const input = screen.getByLabelText("Dungeon name") as HTMLInputElement;
+
+    fireEvent.change(input, { target: { value: "   " } });
+    fireEvent.blur(input);
+    expect(onRename).not.toHaveBeenCalled();
+  });
+
+  it("the delete button calls onDelete with the open dungeon's id", () => {
+    const onDelete = vi.fn().mockResolvedValue(undefined);
+    render(
+      <DungeonSidebar
+        dungeons={DUNGEONS}
+        error={null}
+        openId="1"
+        onOpen={() => {}}
+        onCreate={vi.fn()}
+        onRename={vi.fn().mockResolvedValue(undefined)}
+        onSetMaps={vi.fn().mockResolvedValue(undefined)}
+        onDelete={onDelete}
+        allMapNames={[]}
+      />,
+    );
+    fireEvent.click(screen.getByText("Delete dungeon"));
+    expect(onDelete).toHaveBeenCalledWith("1");
   });
 });
