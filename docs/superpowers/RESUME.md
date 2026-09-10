@@ -13,29 +13,31 @@ gitignored, and it has been clobbered before — this file is the committed one.
 > I'm resuming work on PokeMap, a Porymap-parity map editor for
 > pokeemerald-family GBA decomp projects.
 >
-> **State: Plan 1 is complete.** All 29 tasks done, reviewed (spec compliance
-> then code quality, Opus for the design-heavy/UI tasks per Plan 0 §4), and
-> merged to `plan-1-foundation`. **321 tests passing**, all green, `npm run
-> typecheck` clean (two tsconfigs). The subject decomp at
-> `C:\Programming Projects\Pokemon Game\game` was read-only for the entire
-> plan — confirmed byte-for-byte unchanged from session start to finish
-> across every task, including live UI testing that exercised real writes to
-> `.pokemap/world.json` (gitignored in the decomp, never touches its tracked
-> state). Plan 1's own completion checklist (end of the Plan 1 doc) was run
-> for real: `npm test`/`typecheck` clean, `validate --metatile-range` finds
-> exactly `Saffron_Temp` (18 bad ids), `where ESPEON` reports Route101 at
-> 100.0% Lv 2-3, `render` works for both a map name and its `_Layout` name at
-> both split values (emerald PetalburgCity, hns NewBarkTown) with zero
-> `include/fieldmap.h` edits between them, and the world view pans smoothly
-> with a dragged dungeon floor surviving a real reload.
+> **State: Plan 1, the World View Usability plan, and the Dungeon Mode and
+> Warp Tools plan are all complete.** Plan 1: 29 tasks, merged to `master`.
+> World View Usability (2026-09-07, 3 tasks: multi-select move, World-mode
+> sidebar jump, species type-ahead): merged to `master`. Dungeon Mode and
+> Warp Tools (2026-09-08, 16 tasks, Features A/B/C — world-view default
+> population filter + sidebar grey-out, warp toggle + destination popup,
+> full Dungeon tab with connection lines): merged to `master`. **423 tests
+> passing**, `npm test`/`npm run typecheck` both clean. The subject decomp
+> at `C:\Programming Projects\Pokemon Game\game` stayed read-only across all
+> three plans — confirmed at the end of every single task (not just the
+> plan) via `git status --porcelain`, always the same ~7 pre-existing
+> entries (the user's own concurrent Porymap work), never PokeMap's. All
+> three of Feature A/B/C were live-verified in a real browser at the end of
+> the Dungeon Mode plan (Task 16), not just via unit tests — see "Running
+> it" below and the dated entry in "Things that will bite you."
 >
-> **Next:** Plan 1's own last line says "move to Plan 2, re-granularising it
-> against the code that now exists" — Plans 2-5 are task-level only in their
-> current form (see table below) and need the same TDD-step-by-step
-> treatment Plan 1 got before they're executable. **This has not been
-> started.** Read Plan 2's current (coarse) text, the invariants in Plan 0
-> §3, and the actual code Plan 1 built, then re-granularise Plan 2 the way
-> Plan 1 was originally written — before executing anything in it.
+> **Next:** nothing queued. Plans 2-5 (task-level only, see table below)
+> still need the same TDD-step-by-step re-granularisation Plan 1 got before
+> they're executable — this has not been started, and was not touched by
+> either of the two newer plans, which were user-requested feature work
+> layered on top of Plan 1 rather than a continuation of the Plan 2-5
+> roadmap. If picking this back up cold, ask the user whether they want
+> Plan 2 re-granularised next, or more feature work in the same vein as the
+> last two plans (both arrived as direct user requests brainstormed fresh,
+> not from the existing roadmap).
 >
 > Execute with `superpowers:subagent-driven-development`. **Audit each task's
 > text against the subject repo before dispatching it** — the single highest-
@@ -64,7 +66,9 @@ gitignored, and it has been clobbered before — this file is the committed one.
 |---|---|
 | Plan 0 — roadmap, invariants, test-design rules | `docs/superpowers/plans/2026-08-26-pokemap-plan-0-roadmap.md` |
 | Plan 1 — 29 tasks, full TDD steps, **done** | `docs/superpowers/plans/2026-08-26-pokemap-plan-1-foundation-world.md` |
-| Plans 2–5 | same directory; task-level only, **re-granularise before executing** |
+| World View Usability — 3 tasks, **done** | `docs/superpowers/plans/2026-09-07-world-view-usability.md` |
+| Dungeon Mode and Warp Tools — 16 tasks, **done** | `docs/superpowers/plans/2026-09-08-dungeon-mode-and-warp-tools.md` (spec: `docs/superpowers/specs/2026-09-07-dungeon-mode-and-warp-tools-design.md`) |
+| Plans 2–5 | same directory; task-level only, **re-granularise before executing**, **untouched by the two plans above** |
 | Design system, binding on all UI tasks | `packages/ui/DESIGN.md` |
 | Subject decomp | `C:\Programming Projects\Pokemon Game\game` |
 | Reference engines | `C:\Programming Projects\Pokemon Game\refs\` |
@@ -97,6 +101,14 @@ Plan 1 repeatedly, not just early on:
 - Task 29's coverage lenses shipped fully opaque (erasing map art) and with
   a level gradient compressed unreadable by a few outlier maps — both only
   visible on screen, not in any test.
+- Dungeon Mode Task 16's own live pass: any two dev-server processes left
+  running from a prior session on 5173/5174 are almost certainly **stale**
+  (serving pre-session code with no route-level hot reload) — hitting a
+  brand-new route like `/api/dungeons` against them 404s even though the
+  code is correct and every automated test passes. Kill and restart both
+  before trusting a manual click-through; a curl against a route added
+  *this* session is a 10-second way to tell stale from fresh before
+  spending browser-tool time on it.
 
 ## Things that will bite you
 
@@ -161,7 +173,39 @@ left) rather than assuming the work is lost.
 mid-implementation.** Read the tree and the log before deciding what to do
 next, every time — a clean `git status` at the point of interruption means
 resume-in-place is safe; anything else needs it read first. Plan 0 §7 has
-the original two-incidents writeup.
+the original two-incidents writeup. Confirmed again repeatedly across the
+Dungeon Mode plan's 16 tasks (several implementer AND reviewer dispatches
+cut off by rate limits mid-turn) — every time, `git status --porcelain` +
+`git log --oneline -3` before redispatching was enough to tell "safe to
+redispatch fresh" (clean tree) from "an uncommitted partial edit to
+discard first" (`git checkout -- <files>` before redispatching, never try
+to salvage or resume a cut-off agent's half-written diff).
+
+**An implementer under review pressure will sometimes "fix" a bad test by
+weakening the *production* code instead of the test.** Dungeon Mode Task
+13: a test fixture made the plan's own strict spec requirement ("omit a
+connection line if the exact destination warp tile can't be resolved")
+impossible to satisfy, and the first fix made the *code* silently fall back
+to drawing the line at the destination's corner instead — a real spec
+violation (a misleading line implying a door where none exists) that
+happened to make the broken fixture pass. Caught by a reviewer asking "was
+the right fix here to weaken the code, or to fix the fixture?" and checking
+real-corpus impact (0 of 3,470 resolvable warps needed the fallback — it
+existed only to paper over the test). When a fix touches both a test and
+the code it's testing, and the test was the thing demonstrably wrong,
+that's a specific reason to scrutinize the production diff harder, not
+less.
+
+**Mutation testing (deliberately breaking a guard and confirming the right
+test goes red) found real gaps *after* a implementer/spec-reviewer had
+already both said "done" and "compliant" multiple times this plan** — a
+`.sort()` with no order-sensitive assertion, a PATCH route's partial-update
+semantics with no test that could tell "overwrites only the given keys"
+from "overwrites everything," a hit-test radius with no test that could
+tell "correctly bounded" from "unconditionally true." A clean pass on the
+given tests is not evidence the *tests* have teeth — ask reviewers to
+mutate the implementation and confirm the failure, not just read the tests
+approvingly.
 
 ## Open items carried forward
 
@@ -198,10 +242,29 @@ the original two-incidents writeup.
   server becomes the third consumer.
 - **Minor, deferred polish from Plan 1's last review rounds**, none blocking,
   roughly in priority order if anyone picks up a slow afternoon: `WorldCanvas.tsx`
-  is ~1,242 lines (31% comments) with one clean extraction seam (the lens/
-  spotlight overlays, per their own comments, were meant to follow
-  `EncounterGutter`'s presentational-child pattern but ended up inline);
-  rect-math for placement screen coordinates is duplicated ~4x across that
-  file; a handful of `connections.ts`/`species.ts`-style hand-rolled decomp
+  is now **~2,057 lines** (grew from ~1,242 across the two newer plans — every
+  new World/Dungeon-mode feature landed there) with one clean extraction seam
+  (the lens/spotlight overlays, per their own comments, were meant to follow
+  `EncounterGutter`'s presentational-child pattern but ended up inline, and
+  the warp-marker/connection-line overlays repeated the same choice); rect-
+  math for placement screen coordinates is duplicated ~5x across that file
+  now; a handful of `connections.ts`/`species.ts`-style hand-rolled decomp
   path constructions bypass `paths.ts`; a few WCAG-contrast/keyboard-nav
-  nice-to-haves on the newer overlay controls.
+  nice-to-haves on the newer overlay controls. If a future task ever touches
+  this file for a reason unrelated to adding a new overlay, splitting the
+  overlay layer out (mirroring `EncounterGutter`'s own split) is the single
+  highest-value structural cleanup available — not urgent, but the file is
+  past the point where "just add one more overlay inline" is still cheap.
+- **Feature A/B/C's own known, deliberately-shipped limitations** (all
+  documented in-code at the time, not silent): the status strip's `placed`/
+  `hidden`/`unplaced`/`conflicts` counts and the Unplaced rail stay world-wide
+  even inside a scoped Dungeon view (a `mapFilter` scopes the canvas, not
+  these numbers); `focusEmptyMaps` (the empty-maps lens's "List them" button)
+  is similarly unscoped and will pan the camera clean out of an open dungeon
+  if clicked there; the draw effect's conflict/dive-emerge badges read
+  `world.conflicts`/`world.verticalLinks` directly, bypassing both the
+  Feature A visibility filter and `mapFilter` (unreachable today only because
+  indoor/none-type maps connect via warps, not planar `connections`, in the
+  real corpus); an open dungeon with zero maps renders a blank canvas with no
+  message. None were in scope for the tasks that found them; each has an
+  in-code comment pointing at itself for whoever touches that area next.
