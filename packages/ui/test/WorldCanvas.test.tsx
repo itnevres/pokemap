@@ -1719,4 +1719,84 @@ describe("WorldCanvas", () => {
       await waitFor(() => expect(screen.getByText(/%/).textContent).toBe("21%"));
     });
   });
+
+  // -------------------------------------------------------------------
+  // Dungeon connection lines (Feature C -- Task 13)
+  // -------------------------------------------------------------------
+  describe("dungeon connection lines (Feature C)", () => {
+    function dungeonWorld() {
+      return makeWorld({
+        placements: {
+          Room1: { map: "Room1", x: 0, y: 0, width: 10, height: 10, component: 0 },
+          Room2: { map: "Room2", x: 30, y: 0, width: 10, height: 10, component: 1 },
+          Outside: { map: "Outside", x: 60, y: 0, width: 10, height: 10, component: 2 },
+        },
+      });
+    }
+
+    function withWarps(base: ReturnType<typeof makeFetchMock>["impl"], warpsByMap: Record<string, unknown[]>) {
+      return vi.fn((url: string, init?: RequestInit) => {
+        const m = /^\/api\/warps\/(.+)$/.exec(url);
+        if (m) {
+          const name = decodeURIComponent(m[1]!);
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: () => Promise.resolve({ mapName: name, warps: warpsByMap[name] ?? [] }),
+          } as Response);
+        }
+        return base(url, init);
+      });
+    }
+
+    it("draws a line only between two maps that are BOTH members of the open dungeon", async () => {
+      const { impl } = makeFetchMock(dungeonWorld());
+      const wrapped = withWarps(impl, {
+        Room1: [
+          { x: 1, y: 1, elevation: 0, destMap: "MAP_ROOM2", destWarpId: "0", destMapName: "Room2" },
+          { x: 2, y: 2, elevation: 0, destMap: "MAP_OUTSIDE", destWarpId: "0", destMapName: "Outside" },
+        ],
+        Room2: [{ x: 3, y: 3, elevation: 0, destMap: "MAP_ROOM1", destWarpId: "0", destMapName: "Room1" }],
+        Outside: [{ x: 4, y: 4, elevation: 0, destMap: "MAP_ROOM1", destWarpId: "1", destMapName: "Room1" }],
+      });
+      vi.stubGlobal("fetch", wrapped);
+      const utils = render(<WorldCanvas mapFilter={new Set(["Room1", "Room2"])} />);
+      await waitFor(() => expect(utils.queryByText(/Loading world/)).toBeNull());
+
+      const linesToggle = utils.getByRole("switch", { name: /connection lines/i });
+      fireEvent.click(linesToggle);
+
+      await waitFor(() => {
+        const lines = utils.container.querySelectorAll(".world-canvas__connections line");
+        // Room1 has two warps; only the one to Room2 (a dungeon member)
+        // draws. Room2's own warp back to Room1 is a SEPARATE warp entry
+        // (destWarpId "0" on Room2, distinct from Room1's own entries), so
+        // exactly two lines total.
+        expect(lines.length).toBe(2);
+      });
+    });
+
+    it("assigns the same colour to the same connection regardless of mapFilter's own construction order", async () => {
+      const { impl } = makeFetchMock(dungeonWorld());
+      const wrapped = withWarps(impl, {
+        Room1: [{ x: 1, y: 1, elevation: 0, destMap: "MAP_ROOM2", destWarpId: "0", destMapName: "Room2" }],
+        Room2: [],
+      });
+      vi.stubGlobal("fetch", wrapped);
+
+      const runOnce = async (filter: Set<string>) => {
+        const utils = render(<WorldCanvas mapFilter={filter} />);
+        await waitFor(() => expect(utils.queryByText(/Loading world/)).toBeNull());
+        fireEvent.click(utils.getByRole("switch", { name: /connection lines/i }));
+        await waitFor(() => expect(utils.container.querySelectorAll(".world-canvas__connections line").length).toBe(1));
+        const stroke = utils.container.querySelector(".world-canvas__connections line")!.getAttribute("stroke");
+        utils.unmount();
+        return stroke;
+      };
+
+      const colorA = await runOnce(new Set(["Room1", "Room2"]));
+      const colorB = await runOnce(new Set(["Room2", "Room1"])); // same members, different construction order
+      expect(colorA).toBe(colorB);
+    });
+  });
 });

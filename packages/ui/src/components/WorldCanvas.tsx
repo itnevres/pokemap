@@ -31,6 +31,20 @@ const LOD_SCALE = 0.25;
 
 const BADGE_SIZE = 10;
 
+/** Feature C: dungeon connection-line palette -- CSS custom property names
+ *  (read live via getComputedStyle, mirroring the conflict/dive/emerge
+ *  badge colours in the draw effect below) alongside a hard-coded fallback
+ *  for each, the same "live token, with a fallback for a stylesheet not yet
+ *  loaded (or jsdom in a test)" pattern parseHexColor's own callers already
+ *  use. See DESIGN.md's own --connection-1..8 tokens. */
+const CONNECTION_PALETTE_VARS = [
+  "--connection-1", "--connection-2", "--connection-3", "--connection-4",
+  "--connection-5", "--connection-6", "--connection-7", "--connection-8",
+];
+const CONNECTION_PALETTE_FALLBACK = [
+  "#e879f9", "#34d399", "#fb923c", "#60a5fa", "#facc15", "#f472b6", "#2dd4bf", "#a78bfa",
+];
+
 /** Placement.map plus the two Feature A fields Task 1 added to the wire
  *  response (packages/server/src/index.ts's `/api/world` route). A
  *  superset of Placement, so every existing helper that takes a `Placement`
@@ -127,6 +141,18 @@ interface WarpMarkerEntry {
   sx: number;
   sy: number;
   destMapName?: string;
+}
+
+/** Feature C: a dungeon connection line's precomputed screen-space
+ *  endpoints and assigned colour -- alongside WarpMarkerEntry above,
+ *  declared at module scope rather than inside the component body. */
+interface ConnectionLine {
+  key: string;
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  color: string;
 }
 
 type DragState =
@@ -314,6 +340,13 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
   // Feature B: off by default (spec §4.1), same visual family as the
   // existing dungeon-auto-layout switch.
   const [warpsOn, setWarpsOn] = useState(false);
+  // Feature C: own toggle, independent of Feature B's warpsOn -- both may
+  // be on at once (spec §5.4: "markers show every warp, lines show only
+  // the subset connecting two of the dungeon's own maps"). Only rendered
+  // in the toolbar when mapFilter is set (App.tsx only ever mounts this in
+  // Dungeon mode with mapFilter populated, but the guard is here too so
+  // this component never shows a dungeon-only control outside that mode).
+  const [linesOn, setLinesOn] = useState(false);
   // Which warp marker's destination popup is open, by destMapName -- set by
   // onCanvasDoubleClick below, rendered as a WarpDestinationModal (Task 8)
   // just before this section's closing tag.
@@ -1086,6 +1119,68 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
     // encounterVersion/encounterCacheRef comment above.
   }, [warpsOn, visible, zoom, pan, warpVersion]);
 
+  // Feature C: a line per warp connection where BOTH endpoints are members
+  // of the open dungeon (spec §5.5) -- reuses Task 7's own warpCacheRef for
+  // BOTH the source and destination endpoint, rather than a second fetch
+  // mechanism: mapFilter is already the entire candidate corpus for
+  // `visible` (see that memo's own comment), so every dungeon member's warp
+  // data is already being fetched regardless of this toggle's on/off state,
+  // exactly like warpMarkerEntries above already reuses it for markers.
+  //
+  // Requires BOTH ends' cache entries to be `loaded` before drawing a line:
+  // a source or destination whose fetch hasn't landed yet just means no
+  // line for that connection YET (this memo re-runs once warpVersion bumps
+  // again), not a crash on `undefined` data and not a line guessed at a
+  // wrong position from partial data.
+  const connectionLines = useMemo<ConnectionLine[]>(() => {
+    if (!mapFilter || !linesOn || !world) return [];
+    // Stable order: sort() on the source map name, warps within a map kept
+    // in their own array's index order -- not insertion/iteration order of
+    // `mapFilter` itself (a Set, whose iteration order is construction-
+    // order-dependent) -- see this task's own colour-stability test.
+    const raw: Array<{ sourceMap: string; warpIndex: number; x1: number; y1: number; x2: number; y2: number }> = [];
+    for (const sourceMap of [...mapFilter].sort()) {
+      const srcPlacement = world.placements.get(sourceMap);
+      const srcCache = warpCacheRef.current.get(sourceMap);
+      if (!srcPlacement || !srcCache?.loaded || !srcCache.warps) continue;
+      srcCache.warps.forEach((w, warpIndex) => {
+        if (!w.destMapName || !mapFilter.has(w.destMapName)) return; // outside the dungeon -- no line (spec §5.5)
+        const destPlacement = world.placements.get(w.destMapName);
+        const destCache = warpCacheRef.current.get(w.destMapName);
+        // Both endpoints' warp DATA must have arrived (both fetches landed)
+        // before anything draws -- a destination whose own /api/warps hasn't
+        // resolved yet just means no line for that connection YET (this
+        // memo re-runs once warpVersion bumps again), not a crash on
+        // `undefined` data.
+        if (!destPlacement || !destCache?.loaded || !destCache.warps) return;
+        const destIndex = Number(w.destWarpId);
+        // The destination's own warp array SHOULD contain a matching entry
+        // at destWarpId (that is what makes the pair reciprocal in the
+        // source ROM data) -- but a same-index lookup miss (a malformed or
+        // one-off asymmetric connection) degrades to the destination
+        // placement's own corner rather than dropping the line entirely:
+        // the fetch already succeeded (checked above), so this is a
+        // precision fallback, not the "partial data" case.
+        const destWarp = Number.isInteger(destIndex) && destIndex >= 0 ? destCache.warps[destIndex] : undefined;
+        const destX = destWarp?.x ?? 0, destY = destWarp?.y ?? 0;
+        raw.push({
+          sourceMap, warpIndex,
+          x1: (srcPlacement.x + w.x) * zoom + pan.x, y1: (srcPlacement.y + w.y) * zoom + pan.y,
+          x2: (destPlacement.x + destX) * zoom + pan.x, y2: (destPlacement.y + destY) * zoom + pan.y,
+        });
+      });
+    }
+    const style = typeof getComputedStyle === "function" ? getComputedStyle(document.documentElement) : null;
+    const palette = CONNECTION_PALETTE_VARS.map((v, i) => style?.getPropertyValue(v).trim() || CONNECTION_PALETTE_FALLBACK[i]!);
+    return raw.map((r, i) => ({
+      key: `${r.sourceMap}:${r.warpIndex}`,
+      x1: r.x1, y1: r.y1, x2: r.x2, y2: r.y2,
+      color: palette[i % palette.length]!,
+    }));
+    // warpVersion, not warpCacheRef itself -- same reasoning as
+    // warpMarkerEntries' own comment immediately above.
+  }, [mapFilter, linesOn, world, zoom, pan, warpVersion]);
+
   const selectionOverlayEntries = useMemo(() => {
     if (selected.size === 0) return [] as Array<{ map: string; rect: EncounterGutterMapEntry["rect"] }>;
     const out: Array<{ map: string; rect: EncounterGutterMapEntry["rect"] }> = [];
@@ -1589,6 +1684,21 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
           </button>
           <span className="world-canvas__switch-label">Warps {warpsOn ? "on" : "off"}</span>
         </div>
+        {mapFilter && (
+          <div className="world-canvas__toolbar-group">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={linesOn}
+              aria-label="Connection lines"
+              className="world-canvas__switch"
+              onClick={() => setLinesOn((l) => !l)}
+            >
+              <span className="world-canvas__switch-thumb" />
+            </button>
+            <span className="world-canvas__switch-label">Connection lines {linesOn ? "on" : "off"}</span>
+          </div>
+        )}
         <div className="world-canvas__toolbar-group world-canvas__toolbar-group--grow">
           <SpeciesSpotlight onHits={setSpotlightHits} />
           {/* Review fix: a failed /api/coverage fetch used to fall through
@@ -1700,6 +1810,13 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
                 <div key={m.key} className="world-canvas__warp-marker" style={{ left: m.sx, top: m.sy }} />
               ))}
             </div>
+          )}
+          {mapFilter && linesOn && connectionLines.length > 0 && (
+            <svg className="world-canvas__connections" aria-hidden="true">
+              {connectionLines.map((c) => (
+                <line key={c.key} x1={c.x1} y1={c.y1} x2={c.x2} y2={c.y2} stroke={c.color} strokeWidth={2} />
+              ))}
+            </svg>
           )}
           {marqueeRect && (
             <div
