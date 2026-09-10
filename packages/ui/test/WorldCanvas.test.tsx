@@ -1638,6 +1638,43 @@ describe("WorldCanvas", () => {
       });
     });
 
+    // Live-bug regression test (found after Task 16's own live verification
+    // had already passed -- reported by the user against a real 20-map
+    // Safari Zone dungeon mixing 5 outdoor members with 15 auto-shelved
+    // indoor floors). fitWorld's mapFilter branch originally fit ALL of a
+    // dungeon's members unconditionally, including any auto-shelved
+    // singleton whose `component` is a synthetic index autoLayoutUnplaced
+    // assigns beyond world.components' real length (see that function's own
+    // comment) -- a position tens of thousands of tiles from real world
+    // geography, not a meaningful one. `Shelved` below reproduces that
+    // shape directly: `component: 99` with no matching entry in
+    // `components` (deliberately overridden, unlike makeWorld's own
+    // one-singleton-component-per-placement default), positioned far away.
+    // Without the fix, bounds would span Real+Shelved (~1000 tiles),
+    // zooming out until Real -- the dungeon's only member with real
+    // geography -- reads as a handful of sub-pixel dots.
+    it("auto-fits to the dungeon's real-world-positioned members only, ignoring an auto-shelved singleton's own essentially arbitrary far-away position", async () => {
+      const world = makeWorld({
+        placements: {
+          Real: { map: "Real", x: 0, y: 0, width: 10, height: 10, component: 0 },
+          Shelved: { map: "Shelved", x: 1000, y: 1000, width: 10, height: 10, component: 99 },
+        },
+        components: [{ index: 0, maps: ["Real"], bounds: { x: 0, y: 0, width: 10, height: 10 } }],
+      });
+      const { impl } = makeFetchMock(world);
+      vi.stubGlobal("fetch", impl);
+      const utils = render(<WorldCanvas mapFilter={new Set(["Real", "Shelved"])} />);
+      await waitFor(() => expect(utils.queryByText(/Loading world/)).toBeNull());
+      // Real alone is 10x10 -- fit into the 100x100 viewport at
+      // zoom=min(100/10,100/10)=10 (clamped nowhere), readout
+      // round((10/16)*100) = 63. Fitting BOTH (the pre-fix bug) would span
+      // roughly 1000x1000, reading a two-digit-lower zoom entirely.
+      await waitFor(() => {
+        const readout = utils.getByText(/%/).textContent;
+        expect(readout).toBe("63%");
+      });
+    });
+
     // Review fix regression test: the auto-fit effect above used to depend
     // on [mapFilter, world] alone, which re-fires on EVERY drag frame (see
     // that effect's own updated comment for why `world` churns per

@@ -564,14 +564,40 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
     let bounds: ReturnType<typeof worldBoundsOf>;
     if (mapFilter) {
       // Feature C (dungeon mode): fit the dungeon's own curated member
-      // maps, not the world's connected landmasses -- a dungeon is
-      // typically a handful of maps scattered across the corpus (not a
-      // single contiguous landmass), so the ELSE branch's own
-      // multi-map-component filter has no meaning here and would often
-      // exclude every one of the dungeon's own (usually singleton-
-      // component) members, fitting nothing.
+      // maps -- but NOT unconditionally all of them. autoLayoutUnplaced
+      // shelf-packs every singleton (warp-only) map at an essentially
+      // arbitrary position tens of thousands of tiles from the rest of the
+      // world (its own doc comment: "~25,600 tiles wide" for the full
+      // corpus shelf) -- not real world geography. A dungeon that mixes
+      // even one real-landmass member (an outdoor town/route) with a
+      // handful of shelved indoor buildings used to compute bounds
+      // spanning the FULL shelf distance: confirmed live against a real
+      // 20-map Safari Zone dungeon (5 outdoor members, 15 shelved indoor
+      // floors) -- bounds blew out to ~20,000x3,800 tiles, so `computeFit`
+      // zoomed out until every member rendered at a fraction of a screen
+      // pixel, reading as a totally empty canvas.
+      //
+      // `componentOfPlacement` already returns null for every one of those
+      // shelved placements: autoLayoutUnplaced assigns them a synthetic
+      // `component` index starting at `world.components.length` (see its
+      // own comment), which never resolves to a real entry in
+      // `world.components` -- so filtering to `comp !== null` is a cheap,
+      // exact way to fit only the members that sit at a real, meaningful
+      // world position, mirroring the ELSE branch's own landmass filter
+      // just below. A component:-1 manual-placement orphan is excluded by
+      // the identical check, for the identical reason (its position is
+      // just as disconnected from real geography).
+      //
+      // Falls back to fitting every member (this branch's original,
+      // unconditional behaviour) only when NONE of them resolve to a real
+      // component -- a dungeon made entirely of shelved/orphaned floors
+      // with no outdoor member at all -- so that case still shows
+      // something rather than bailing on `bounds.width <= 0` below.
       const scoped = new Map([...world.placements].filter(([name]) => mapFilter.has(name)));
-      bounds = worldBoundsOf(scoped, sizeByMap);
+      const anchored = new Map(
+        [...scoped].filter(([, p]) => componentOfPlacement(p, world.components) !== null),
+      );
+      bounds = worldBoundsOf(anchored.size > 0 ? anchored : scoped, sizeByMap);
     } else {
       const landmasses = new Map(
         [...world.placements].filter(([, p]) => {
