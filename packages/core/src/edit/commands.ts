@@ -2,7 +2,11 @@ import type { EditSession } from "../write/save.js";
 
 export interface EditCommand {
   label: string;
+  /** MUST NOT throw. `undo`/`redo` pop the command from its source stack
+   *  before calling `revert`/`apply`; a throw here would lose the command
+   *  from both stacks with no defined recovery. */
   apply(session: EditSession): void;
+  /** MUST NOT throw -- see `apply`. */
   revert(session: EditSession): void;
 }
 
@@ -27,6 +31,15 @@ export class EditCommandStack {
   private cleanIndex = 0;
 
   push(session: EditSession, command: EditCommand): void {
+    // If the clean point lives deeper than where we currently are, it can
+    // only be reached by redoing through the branch we're about to discard
+    // below. Once discarded, that saved state is unreachable forever --
+    // mark clean as permanently gone (an impossible stack length) rather
+    // than let a stale numeric coincidence (undoStack.length happening to
+    // equal cleanIndex again later) silently report clean.
+    if (this.redoStack.length > 0 && this.cleanIndex > this.undoStack.length) {
+      this.cleanIndex = -1;
+    }
     command.apply(session);
     this.undoStack.push(command);
     this.redoStack = []; // pushing after an undo discards the redo branch

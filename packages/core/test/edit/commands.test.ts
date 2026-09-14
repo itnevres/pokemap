@@ -98,6 +98,16 @@ describe("EditCommandStack", () => {
     expect(stack.isDirty()).toBe(false);
   });
 
+  it("undoing past a saved point then branching makes the session permanently dirty -- the saved state is gone from the stack", () => {
+    const session = fakeSession([{ metatileId: 1, collision: 0, elevation: 0 }]);
+    const stack = new EditCommandStack();
+    stack.push(session, setBlocksCommand(session.blocks, [{ metatileId: 2, collision: 0, elevation: 0 }])); // A
+    stack.markSaved();
+    stack.undo(session); // back before A; A now lives only in the redo branch
+    stack.push(session, setBlocksCommand(session.blocks, [{ metatileId: 3, collision: 0, elevation: 0 }])); // D -- discards A
+    expect(stack.isDirty()).toBe(true);
+  });
+
   it("a stroke is one command -- undoing a multi-block paint reverts the WHOLE stroke in a single step", () => {
     // Simulates dragging a pencil across 40 tiles: the caller (Task 8's own
     // paint route) computes the FULL before/after block arrays for the
