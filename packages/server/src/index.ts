@@ -16,6 +16,9 @@ import { parseBorder } from "@pokemap/cli/src/args.js";
 import { randomUUID } from "node:crypto";
 import { createEditSessionStore, snapshotOf, snapshotCommand } from "./editSessions.js";
 import { paintCells, floodFill, shiftGrid, type Stamp } from "@pokemap/core/src/edit/paint.js";
+import { planSave, commitSave } from "@pokemap/core/src/write/save.js";
+import { formatDiffJson } from "@pokemap/core/src/write/diff.js";
+import { moveEvent, addEvent, deleteEvent, findWarpsTargetingByIndex, type EventKind } from "@pokemap/core/src/edit/events.js";
 
 export interface PokemapServer { port: number; project: Project; close(): Promise<void>; }
 
@@ -82,12 +85,27 @@ export async function createServer(opts: { projectPath: string; port?: number })
   let speciesCache: string[] | undefined;
   const getSpecies = () => (speciesCache ??= allSpecies(project));
 
+  // Cached for the SAME "read-only project, compute once" reason as
+  // worldCache/coverageCache -- findWarpsTargetingByIndex's own corpus scan
+  // is cheap per call (a plain array walk over already-parsed MapData) but
+  // building the (mapId, MapData) list itself means calling project.map()
+  // for all 1,209 names, which is worth doing once rather than per delete.
+  let allMapsCache: { mapId: string; map: ReturnType<Project["map"]> }[] | undefined;
+  const getAllMapsForWarpScan = () => (allMapsCache ??= project.mapNames().map((n) => ({ mapId: project.map(n).id, map: project.map(n) })));
+
+  const EVENT_KINDS = new Set<EventKind>(["object", "warp", "coord", "bg"]);
+
   const editSessions = createEditSessionStore(project);
 
   const editEntryFor = (name: string) => editSessions.open(name);
 
+  // `map` is included alongside blocks/border/isDirty (added for Task 9):
+  // undo/redo are shared by every edit kind, including event moves/adds/
+  // deletes, which mutate session.map rather than session.blocks -- without
+  // this, undoing an event op would report the reverted blocks/border but
+  // leave the client's own map view silently stale.
   const sendSession = (send: (code: number, body: unknown) => void, code: number, entry: ReturnType<typeof editEntryFor>) =>
-    send(code, { blocks: entry.session.blocks, border: entry.session.border, isDirty: entry.session.isDirty });
+    send(code, { blocks: entry.session.blocks, border: entry.session.border, map: entry.session.map, isDirty: entry.session.isDirty });
 
   const http: Server = createHttp((req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
@@ -620,7 +638,7 @@ export async function createServer(opts: { projectPath: string; port?: number })
       const undoMatch = /^\/api\/edit\/(.+)\/undo$/.exec(url.pathname);
       if (undoMatch && req.method === "POST") {
         const name = decodeURIComponent(undoMatch[1]!);
-        if (!editSessions.has(name)) return send(200, { blocks: [], border: [], isDirty: false }); // nothing open -- a no-op, not a 500
+        if (!editSessions.has(name)) return send(200, { blocks: [], border: [], map: null, isDirty: false }); // nothing open -- a no-op, not a 500
         const entry = editEntryFor(name);
         entry.stack.undo(entry.session);
         return sendSession(send, 200, entry);
@@ -629,10 +647,129 @@ export async function createServer(opts: { projectPath: string; port?: number })
       const redoMatch = /^\/api\/edit\/(.+)\/redo$/.exec(url.pathname);
       if (redoMatch && req.method === "POST") {
         const name = decodeURIComponent(redoMatch[1]!);
-        if (!editSessions.has(name)) return send(200, { blocks: [], border: [], isDirty: false });
+        if (!editSessions.has(name)) return send(200, { blocks: [], border: [], map: null, isDirty: false });
         const entry = editEntryFor(name);
         entry.stack.redo(entry.session);
         return sendSession(send, 200, entry);
+      }
+
+      // Task 9: save/commit. planSave/commitSave both live in core (I8's
+      // one writer); this route's own job is just wiring an open session to
+      // them and turning a refusal into a 400 rather than a 200 that lies
+      // about having saved.
+      const planMatch = /^\/api\/edit\/(.+)\/plan$/.exec(url.pathname);
+      if (planMatch && req.method === "GET") {
+        const name = decodeURIComponent(planMatch[1]!);
+        if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
+        const entry = editEntryFor(name);
+        const plan = planSave(project, entry.session);
+        return send(200, formatDiffJson(plan));
+      }
+
+      const commitMatch = /^\/api\/edit\/(.+)\/commit$/.exec(url.pathname);
+      if (commitMatch && req.method === "POST") {
+        const name = decodeURIComponent(commitMatch[1]!);
+        if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
+        const entry = editEntryFor(name);
+        const plan = planSave(project, entry.session);
+        if (plan.refusals.length > 0) return send(400, formatDiffJson(plan));
+        try {
+          commitSave(project, plan);
+        } catch (e) {
+          console.error(e);
+          return send(500, { error: e instanceof Error ? e.message : String(e) });
+        }
+        // Close, not markSaved()-and-keep-open: the session's own `map`/
+        // `blocks` reflect what was JUST written, but the world/coverage/
+        // encounters caches above this route do NOT (I8's read-only-
+        // project assumption is now stale for this one map) -- Task 15's
+        // corpus gate is what actually proves writes round-trip; this
+        // route's own job ends at "committed successfully," and the
+        // simplest correct thing is forcing the NEXT open() to re-read
+        // real disk state fresh rather than trusting an in-memory session
+        // that predates caches it can no longer invalidate.
+        editSessions.close(name);
+        return send(200, formatDiffJson(plan));
+      }
+
+      // Task 9: event move/add/delete. Each is its own undo step, the same
+      // snapshot-before/snapshot-after shape as the paint routes above --
+      // this file doesn't need to know HOW to reverse an event op, only
+      // that one whole op is one command (editSessions.ts's own
+      // snapshotCommand).
+      const eventMoveMatch = /^\/api\/edit\/(.+)\/event\/move$/.exec(url.pathname);
+      if (eventMoveMatch && req.method === "POST") {
+        const name = decodeURIComponent(eventMoveMatch[1]!);
+        if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
+        return readBody(req)
+          .then((body) => {
+            let parsed: { kind?: unknown; index?: unknown; x?: unknown; y?: unknown };
+            try { parsed = JSON.parse(body) as typeof parsed; }
+            catch (e) { return send(400, { error: `invalid JSON body: ${(e as Error).message}` }); }
+            if (!EVENT_KINDS.has(parsed.kind as EventKind)) return send(400, { error: `"kind" must be one of object/warp/coord/bg, got ${JSON.stringify(parsed.kind)}` });
+            if (typeof parsed.index !== "number" || typeof parsed.x !== "number" || typeof parsed.y !== "number") {
+              return send(400, { error: `expected { kind, index: number, x: number, y: number }, got ${body}` });
+            }
+            const entry = editEntryFor(name);
+            const prev = snapshotOf(entry.session);
+            const { map, jsonEdits } = moveEvent(entry.session.map, parsed.kind as EventKind, parsed.index, parsed.x, parsed.y);
+            entry.session.map = map;
+            entry.session.jsonEdits = [...entry.session.jsonEdits, ...jsonEdits];
+            entry.stack.push(entry.session, snapshotCommand("move event", prev, snapshotOf(entry.session)));
+            return send(200, { map: entry.session.map, isDirty: entry.session.isDirty });
+          })
+          .catch((e: unknown) => { console.error(e); send(500, { error: e instanceof Error ? e.message : String(e) }); });
+      }
+
+      const eventAddMatch = /^\/api\/edit\/(.+)\/event\/add$/.exec(url.pathname);
+      if (eventAddMatch && req.method === "POST") {
+        const name = decodeURIComponent(eventAddMatch[1]!);
+        if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
+        return readBody(req)
+          .then((body) => {
+            let parsed: { kind?: unknown; value?: unknown };
+            try { parsed = JSON.parse(body) as typeof parsed; }
+            catch (e) { return send(400, { error: `invalid JSON body: ${(e as Error).message}` }); }
+            if (!EVENT_KINDS.has(parsed.kind as EventKind)) return send(400, { error: `"kind" must be one of object/warp/coord/bg, got ${JSON.stringify(parsed.kind)}` });
+            if (typeof parsed.value !== "object" || parsed.value === null) return send(400, { error: `expected { kind, value: object }, got ${body}` });
+            const entry = editEntryFor(name);
+            const prev = snapshotOf(entry.session);
+            const { map, insertOp } = addEvent(entry.session.map, parsed.kind as EventKind, parsed.value as Record<string, unknown>);
+            entry.session.map = map;
+            entry.session.insertOps = [...entry.session.insertOps, insertOp];
+            entry.stack.push(entry.session, snapshotCommand("add event", prev, snapshotOf(entry.session)));
+            return send(200, { map: entry.session.map, isDirty: entry.session.isDirty });
+          })
+          .catch((e: unknown) => { console.error(e); send(500, { error: e instanceof Error ? e.message : String(e) }); });
+      }
+
+      const eventDeleteMatch = /^\/api\/edit\/(.+)\/event\/delete$/.exec(url.pathname);
+      if (eventDeleteMatch && req.method === "POST") {
+        const name = decodeURIComponent(eventDeleteMatch[1]!);
+        if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
+        return readBody(req)
+          .then((body) => {
+            let parsed: { kind?: unknown; index?: unknown };
+            try { parsed = JSON.parse(body) as typeof parsed; }
+            catch (e) { return send(400, { error: `invalid JSON body: ${(e as Error).message}` }); }
+            if (!EVENT_KINDS.has(parsed.kind as EventKind)) return send(400, { error: `"kind" must be one of object/warp/coord/bg, got ${JSON.stringify(parsed.kind)}` });
+            if (typeof parsed.index !== "number") return send(400, { error: `expected { kind, index: number }, got ${body}` });
+            const entry = editEntryFor(name);
+            const prev = snapshotOf(entry.session);
+            const { map, removeOp } = deleteEvent(entry.session.map, parsed.kind as EventKind, parsed.index);
+            entry.session.map = map;
+            entry.session.removeOps = [...entry.session.removeOps, removeOp];
+            entry.stack.push(entry.session, snapshotCommand("delete event", prev, snapshotOf(entry.session)));
+
+            const warpRenumberWarnings = parsed.kind === "warp"
+              ? findWarpsTargetingByIndex(
+                  getAllMapsForWarpScan().filter((m) => m.mapId !== entry.session.map.id),
+                  entry.session.map.id, parsed.index as number,
+                )
+              : [];
+            return send(200, { map: entry.session.map, isDirty: entry.session.isDirty, warpRenumberWarnings });
+          })
+          .catch((e: unknown) => { console.error(e); send(500, { error: e instanceof Error ? e.message : String(e) }); });
       }
 
       return send(404, { error: "not found" });
