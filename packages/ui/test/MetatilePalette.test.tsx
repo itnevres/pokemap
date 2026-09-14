@@ -62,4 +62,48 @@ describe("MetatilePalette", () => {
     expect(screen.queryByRole("button", { name: /metatile 0x0\b/i })).toBeNull();
     expect(screen.getByRole("button", { name: /metatile 0x1\b/i })).toBeTruthy();
   });
+
+  // Review fix: selectRect used to derive row/col straight from the raw
+  // metatileId, which only works for a gapless 0..N-1 id run. `ids` jumps
+  // from `primaryCount-1` straight to `split.metatiles` -- e.g. with
+  // primaryCount=4, secondaryCount=3, columns=4, primary fills exactly one
+  // row (ids 0-3) and secondary starts on the next visual row (640-642),
+  // adjacent on screen but 636 apart by raw id. Dragging between them used
+  // to produce a stamp spanning ids 504-647 (144 cells) -- none of which
+  // the user could see or intended to select. This pins the fix: the
+  // result must stay small and contain only ids actually on screen.
+  it("a drag from the last primary id to the first secondary id produces a small rect, not one spanning the unused split gap", () => {
+    const onSelect = vi.fn();
+    render(<MetatilePalette layoutName="Test_Layout" split={SPLIT} primaryCount={4} secondaryCount={3} onSelect={onSelect} columns={4} />);
+    fireEvent.mouseDown(screen.getByRole("button", { name: "metatile 0x3" })); // last primary id
+    fireEvent.mouseUp(screen.getByRole("button", { name: "metatile 0x280" })); // first secondary id (640 decimal)
+
+    expect(onSelect).toHaveBeenCalledTimes(1);
+    const stamp = onSelect.mock.calls[0]![0] as { width: number; height: number; cells: ({ metatileId: number } | undefined)[] };
+    expect(stamp.width).toBeLessThanOrEqual(4);
+    expect(stamp.height).toBeLessThanOrEqual(2);
+    const ids = stamp.cells.filter((c): c is { metatileId: number } => Boolean(c)).map((c) => c.metatileId).sort((a, b) => a - b);
+    expect(ids).toEqual([0, 1, 2, 3, 640, 641, 642]);
+    // The old bug's own failure signature: nothing from the unused gap
+    // (real ids 4-639, none of them ever rendered) leaks into the stamp.
+    expect(ids.every((id) => id < 4 || id >= 640)).toBe(true);
+  });
+
+  // Review fix, second angle: the same raw-id math also broke under an
+  // active search filter, since a filtered `visible` list is non-contiguous
+  // by value in general (not just at the primary/secondary boundary).
+  // primaryCount=18 with query "1" filters to ids 1 (0x1), 16 (0x10) and 17
+  // (0x11) -- a real 14-id gap (2..15) sits, unrendered, between the first
+  // two matches. Dragging between the first two cells actually on screen
+  // (adjacent visually, columns=1) must select only those two filtered
+  // ids, not the hidden gap between their raw values.
+  it("a drag while a search filter is active operates against the filtered visible list, not the full id space", () => {
+    const onSelect = vi.fn();
+    render(<MetatilePalette layoutName="Test_Layout" split={SPLIT} primaryCount={18} secondaryCount={0} onSelect={onSelect} columns={1} />);
+    fireEvent.change(screen.getByPlaceholderText(/search/i), { target: { value: "1" } });
+
+    fireEvent.mouseDown(screen.getByRole("button", { name: "metatile 0x1" }));
+    fireEvent.mouseUp(screen.getByRole("button", { name: "metatile 0x10" }));
+    expect(onSelect).toHaveBeenCalledWith({ width: 1, height: 2, cells: [{ metatileId: 1 }, { metatileId: 16 }] });
+  });
 });

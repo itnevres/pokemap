@@ -1,6 +1,6 @@
 import { Fragment, useMemo, useState } from "react";
 import type { Split } from "@pokemap/core/src/model/types.js";
-import type { Stamp } from "@pokemap/core/src/edit/paint.js";
+import type { Stamp, StampCell } from "@pokemap/core/src/edit/paint.js";
 
 export interface MetatilePaletteProps {
   layoutName: string;
@@ -58,8 +58,9 @@ export function MetatilePalette({
   const isOutOfRange = (id: number): boolean =>
     id < split.metatiles ? id >= primaryCount : id >= split.metatiles + secondaryCount;
 
-  const visible = query.trim()
-    ? ids.filter((id) => hex(id).toLowerCase().includes(query.trim().toLowerCase()))
+  const normalizedQuery = query.trim().toLowerCase();
+  const visible = normalizedQuery
+    ? ids.filter((id) => hex(id).toLowerCase().includes(normalizedQuery))
     : ids;
 
   const selectSingle = (id: number) => {
@@ -67,14 +68,47 @@ export function MetatilePalette({
     onSelect({ width: 1, height: 1, cells: [{ metatileId: id }] });
   };
 
+  /**
+   * Review fix: this used to derive row/col straight from the raw
+   * `metatileId` (`id % columns`, `Math.floor(id / columns)`), which is
+   * only valid when the id space is a gapless 0..N-1 run. It never is --
+   * `ids` jumps from `primaryCount-1` straight to `split.metatiles` (e.g.
+   * 511 -> 640), and the same problem hits whenever a search filter is
+   * active (the visible list becomes non-contiguous by value in general).
+   * Confirmed live: dragging from id 511 to id 640 -- adjacent cells on
+   * screen, one primary/secondary boundary apart -- produced a stamp
+   * spanning ids 504-647 (144 cells), none of which the user could see or
+   * intended to select.
+   *
+   * Fixed by deriving the drag rectangle from each cell's INDEX within the
+   * currently rendered `visible` array (its actual on-screen grid
+   * position), not from its raw id. Adjacent visual cells are adjacent
+   * INDICES even when their raw ids jump, so a boundary-crossing drag now
+   * naturally produces a small rect, and a drag under an active search
+   * filter operates against what's actually on screen instead of the full
+   * unfiltered id space. `visible[index]` can legitimately be missing (a
+   * short trailing row) or out-of-range (still possible when `visibleCount`
+   * forces the raw split-only gap into view) -- either is skipped rather
+   * than producing a garbage cell, mirroring how `paintCells` (core/edit/
+   * paint.ts) already tolerates a missing stamp cell by skipping it.
+   */
   const selectRect = (startId: number, endId: number) => {
-    const startCol = startId % columns, startRow = Math.floor(startId / columns);
-    const endCol = endId % columns, endRow = Math.floor(endId / columns);
+    const startIndex = visible.indexOf(startId);
+    const endIndex = visible.indexOf(endId);
+    if (startIndex === -1 || endIndex === -1) return; // stale endpoint (e.g. the filter changed mid-drag) -- nothing sane to select
+    const startCol = startIndex % columns, startRow = Math.floor(startIndex / columns);
+    const endCol = endIndex % columns, endRow = Math.floor(endIndex / columns);
     const x0 = Math.min(startCol, endCol), x1 = Math.max(startCol, endCol);
     const y0 = Math.min(startRow, endRow), y1 = Math.max(startRow, endRow);
     const width = x1 - x0 + 1, height = y1 - y0 + 1;
-    const cells = [];
-    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) cells.push({ metatileId: y * columns + x });
+    const cells: StampCell[] = [];
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0; x <= x1; x++) {
+        const id = visible[y * columns + x];
+        if (id === undefined || isOutOfRange(id)) continue;
+        cells[(y - y0) * width + (x - x0)] = { metatileId: id };
+      }
+    }
     onSelect({ width, height, cells });
   };
 
@@ -93,13 +127,12 @@ export function MetatilePalette({
           return (
             <Fragment key={id}>
               {atBoundary && (
-                <div className="metatile-palette__boundary" style={{ gridColumn: `1 / -1` }}>
+                <div className="metatile-palette__boundary">
                   primary {split.metatiles} · secondary starts here · {split.version}
                 </div>
               )}
               <button
                 type="button"
-                role="button"
                 aria-label={`metatile ${hex(id)}`}
                 className={`metatile-palette__cell${outOfRange ? " metatile-palette__cell--out-of-range" : ""}`}
                 disabled={outOfRange}
