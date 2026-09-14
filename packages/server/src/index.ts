@@ -14,6 +14,8 @@ import { warpConnectedMapsFrom } from "@pokemap/core/src/world/warpGraph.js";
 import { encodePng } from "@pokemap/cli/src/png.js";
 import { parseBorder } from "@pokemap/cli/src/args.js";
 import { randomUUID } from "node:crypto";
+import { createEditSessionStore, snapshotOf, snapshotCommand } from "./editSessions.js";
+import { paintCells, floodFill, shiftGrid, type Stamp } from "@pokemap/core/src/edit/paint.js";
 
 export interface PokemapServer { port: number; project: Project; close(): Promise<void>; }
 
@@ -79,6 +81,13 @@ export async function createServer(opts: { projectPath: string; port?: number })
   // cache in this file. Computed on the first request that needs it.
   let speciesCache: string[] | undefined;
   const getSpecies = () => (speciesCache ??= allSpecies(project));
+
+  const editSessions = createEditSessionStore(project);
+
+  const editEntryFor = (name: string) => editSessions.open(name);
+
+  const sendSession = (send: (code: number, body: unknown) => void, code: number, entry: ReturnType<typeof editEntryFor>) =>
+    send(code, { blocks: entry.session.blocks, border: entry.session.border, isDirty: entry.session.isDirty });
 
   const http: Server = createHttp((req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
@@ -505,6 +514,91 @@ export async function createServer(opts: { projectPath: string; port?: number })
         if (dungeons.dungeons.length === before) return send(404, { error: `no dungeon ${id}` });
         writeDungeons(project.paths.root, dungeons);
         return send(200, { ok: true });
+      }
+
+      // Task 8 (Plan 2): paint-stroke lifecycle. begin/apply/end are three
+      // separate requests on purpose -- see editSessions.ts's own doc
+      // comment on why a whole stroke is one undo step even though it is
+      // many HTTP requests.
+      const paintBeginMatch = /^\/api\/edit\/(.+)\/paint\/begin$/.exec(url.pathname);
+      if (paintBeginMatch && req.method === "POST") {
+        const name = decodeURIComponent(paintBeginMatch[1]!);
+        if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
+        const entry = editEntryFor(name);
+        entry.strokeStartBlocks = entry.session.blocks.map((b) => ({ ...b }));
+        return sendSession(send, 200, entry);
+      }
+
+      const paintApplyMatch = /^\/api\/edit\/(.+)\/paint\/apply$/.exec(url.pathname);
+      if (paintApplyMatch && req.method === "POST") {
+        const name = decodeURIComponent(paintApplyMatch[1]!);
+        if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
+        return readBody(req)
+          .then((body) => {
+            let parsed: {
+              tool?: unknown;
+              targets?: { x: number; y: number }[]; stamp?: Stamp; origin?: { x: number; y: number };
+              x?: number; y?: number; replacement?: { metatileId: number; collision?: number; elevation?: number };
+              dx?: number; dy?: number;
+            };
+            try { parsed = JSON.parse(body) as typeof parsed; }
+            catch (e) { return send(400, { error: `invalid JSON body: ${(e as Error).message}` }); }
+
+            const entry = editEntryFor(name);
+            const w = entry.session.layout.width, h = entry.session.layout.height;
+
+            if (parsed.tool === "pencil" || parsed.tool === "rect") {
+              const { targets, stamp, origin } = parsed as { targets: { x: number; y: number }[]; stamp: Stamp; origin: { x: number; y: number } };
+              entry.session.blocks = paintCells(entry.session.blocks, w, h, targets, stamp, origin.x, origin.y);
+            } else if (parsed.tool === "bucket") {
+              const { x, y, replacement } = parsed as { x: number; y: number; replacement: { metatileId: number; collision?: number; elevation?: number } };
+              entry.session.blocks = floodFill(entry.session.blocks, w, h, x, y, replacement);
+            } else if (parsed.tool === "shift") {
+              const { dx, dy } = parsed as { dx: number; dy: number };
+              entry.session.blocks = shiftGrid(entry.session.blocks, w, h, dx, dy);
+            } else {
+              return send(400, { error: `unknown tool ${JSON.stringify(parsed.tool)}` });
+            }
+            return sendSession(send, 200, entry);
+          })
+          .catch((e: unknown) => {
+            console.error(e);
+            send(500, { error: e instanceof Error ? e.message : String(e) });
+          });
+      }
+
+      const paintEndMatch = /^\/api\/edit\/(.+)\/paint\/end$/.exec(url.pathname);
+      if (paintEndMatch && req.method === "POST") {
+        const name = decodeURIComponent(paintEndMatch[1]!);
+        if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
+        const entry = editEntryFor(name);
+        if (entry.strokeStartBlocks) {
+          const prev = { ...snapshotOf(entry.session), blocks: entry.strokeStartBlocks };
+          const next = snapshotOf(entry.session);
+          if (JSON.stringify(prev.blocks) !== JSON.stringify(next.blocks)) {
+            entry.stack.push(entry.session, snapshotCommand("paint", prev, next));
+          }
+          entry.strokeStartBlocks = null;
+        }
+        return sendSession(send, 200, entry);
+      }
+
+      const undoMatch = /^\/api\/edit\/(.+)\/undo$/.exec(url.pathname);
+      if (undoMatch && req.method === "POST") {
+        const name = decodeURIComponent(undoMatch[1]!);
+        if (!editSessions.has(name)) return send(200, { blocks: [], border: [], isDirty: false }); // nothing open -- a no-op, not a 500
+        const entry = editEntryFor(name);
+        entry.stack.undo(entry.session);
+        return sendSession(send, 200, entry);
+      }
+
+      const redoMatch = /^\/api\/edit\/(.+)\/redo$/.exec(url.pathname);
+      if (redoMatch && req.method === "POST") {
+        const name = decodeURIComponent(redoMatch[1]!);
+        if (!editSessions.has(name)) return send(200, { blocks: [], border: [], isDirty: false });
+        const entry = editEntryFor(name);
+        entry.stack.redo(entry.session);
+        return sendSession(send, 200, entry);
       }
 
       return send(404, { error: "not found" });
