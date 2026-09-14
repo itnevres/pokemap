@@ -1749,7 +1749,7 @@ input {
   align-content: start;
 }
 
-/* Full-width row (see the component's own `gridColumn: "1 / -1"`) naming the
+/* Full-width row (grid-column below spans the whole grid) naming the
    REAL split.metatiles figure and layout_version -- DESIGN.md's own "getting
    that number right is this entire project's reason to exist" status-strip
    rule, restated here at the one other place a palette silently guesses
