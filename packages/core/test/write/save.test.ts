@@ -30,6 +30,28 @@ const MAP_JSON = `{
   "bg_events": []
 }`;
 
+// A local fixture, distinct from MAP_JSON above, seeding three
+// object_events -- exists only for the removeOps orchestration tests
+// below, which need real elements at known indices to remove.
+const SEEDED_MAP_JSON = `{
+  "id": "MAP_TEST",
+  "name": "Test",
+  "layout": "LAYOUT_TEST",
+  "music": "MUS_ROUTE101",
+  "region_map_section": "MAPSEC_TEST",
+  "map_type": "MAP_TYPE_ROUTE",
+  "weather": "WEATHER_NONE",
+  "connections": 0,
+  "object_events": [
+    { "graphics_id": "OBJ_A" },
+    { "graphics_id": "OBJ_B" },
+    { "graphics_id": "OBJ_C" }
+  ],
+  "warp_events": [],
+  "coord_events": [],
+  "bg_events": []
+}`;
+
 function stubProject(root: string): Project {
   const unused = (fn: string) => (): never => { throw new Error(`stub: ${fn} should not be called`); };
   return {
@@ -189,5 +211,59 @@ describe("planSave / commitSave", () => {
     expect(plan.changes[0]!.kind).toBe("text");
     commitSave(proj, plan);
     expect(readFileSync(scriptsPath, "utf8")).toBe("ExistingLabel::\n\tend\n\nNewLabel::\n\tend\n");
+  });
+
+  it("commitSave re-validates against the session's CURRENT state -- a plan clean at planSave time still gets refused if the session was mutated afterward", () => {
+    const { root, proj } = tempProject();
+    const session = baseSession(root);
+    const plan = planSave(proj, session);
+    expect(plan.refusals).toEqual([]); // clean at planSave time
+
+    // Mutate the SAME session object in place AFTER planning -- simulates a
+    // caller holding a SavePlan across an intervening edit on the live
+    // EditSession (e.g. the player keeps painting while a save dialog is
+    // open). `plan.session` is the identical reference, so this mutation is
+    // visible to commitSave without ever calling planSave again.
+    session.blocks = session.blocks.map((b) => ({ ...b, metatileId: 999 }));
+    session.isDirty = true;
+
+    const before = readFileSync(join(root, "map.bin"));
+    expect(() => commitSave(proj, plan)).toThrow(/refus/i);
+    expect(readFileSync(join(root, "map.bin"))).toEqual(before);
+  });
+
+  it("a session with a single removeOps entry actually removes that element from map.json", () => {
+    const { root, proj } = tempProject();
+    const session = baseSession(root);
+    session.originalMapJson = SEEDED_MAP_JSON;
+    session.map = parseMap(SEEDED_MAP_JSON);
+    session.removeOps = [{ path: ["object_events"], index: 1 }]; // OBJ_B
+    session.isDirty = true;
+    const plan = planSave(proj, session);
+    commitSave(proj, plan);
+    const written = JSON.parse(readFileSync(join(root, "Test.json"), "utf8"));
+    expect(written.object_events.map((o: { graphics_id: string }) => o.graphics_id)).toEqual(["OBJ_A", "OBJ_C"]);
+  });
+
+  it("two removeOps on the same array path apply highest-index-first regardless of the order given -- removing ORIGINAL indices [0,1] leaves the untouched third element, not whatever naive ascending application would leave", () => {
+    const { root, proj } = tempProject();
+    const session = baseSession(root);
+    session.originalMapJson = SEEDED_MAP_JSON;
+    session.map = parseMap(SEEDED_MAP_JSON);
+    // Given in ascending order deliberately. Applying them naively in THIS
+    // order (index 0 first, then index 1) would remove OBJ_A, then -- since
+    // OBJ_C has shifted down into index 1 -- OBJ_C, wrongly leaving [OBJ_B].
+    // The correct, index-stable result -- removing the two elements that
+    // were ORIGINALLY at indices 0 and 1 -- is [OBJ_C], which only a
+    // highest-index-first application (applyJsonOps's own sort) produces.
+    session.removeOps = [
+      { path: ["object_events"], index: 0 },
+      { path: ["object_events"], index: 1 },
+    ];
+    session.isDirty = true;
+    const plan = planSave(proj, session);
+    commitSave(proj, plan);
+    const written = JSON.parse(readFileSync(join(root, "Test.json"), "utf8"));
+    expect(written.object_events.map((o: { graphics_id: string }) => o.graphics_id)).toEqual(["OBJ_C"]);
   });
 });

@@ -44,13 +44,39 @@ export interface EditSession {
   map: MapData;
   /** The ORIGINAL blocks this session opened with -- guardMapSave's own
    *  warp-tile-moved check needs a prev/next pair, and `blocks` above is
-   *  already "next" by the time a save is being planned. */
+   *  already "next" by the time a save is being planned.
+   *
+   *  **MUST be a deep, independent copy -- never the same array/object
+   *  reference as `blocks`.** Aliasing them (e.g. `originalBlocks: blocks`
+   *  instead of `originalBlocks: blocks.map((b) => ({ ...b }))`) silently
+   *  defeats guardMapSave's warp-tile-moved check with no runtime error:
+   *  `before`/`after` would always be the identical object, so `before.
+   *  metatileId !== after.metatileId` can never be true no matter what the
+   *  player actually painted. Task 8's editSessions.ts (the real
+   *  server-side construction site) already deep-copies correctly; any
+   *  other constructor -- including the CLI's own equivalent in Task 18 --
+   *  must do the same. */
   originalBlocks: Block[];
   /** The ORIGINAL map data this session opened with, for the identical
-   *  prev/next reason. */
+   *  prev/next reason.
+   *
+   *  **MUST be a deep, independent copy -- never the same object reference
+   *  as `map`.** The same aliasing hazard as `originalBlocks` above applies
+   *  here: a shared reference makes `prevMap`/`nextMap` the same object in
+   *  guardMapSave, so a warp that silently unpaired from its tile could
+   *  never be detected. */
   originalMap: MapData;
-  /** Raw, unparsed map.json text -- the splice target for every jsonEdits/
-   *  insertOps/removeOps entry below. */
+  /** Raw, unparsed map.json text, captured at session-open time -- the
+   *  splice target for every jsonEdits/insertOps/removeOps entry below.
+   *
+   *  **MUST be the literal source text read from disk when the session was
+   *  opened -- never regenerated later (e.g. via `JSON.stringify(map)`,
+   *  which would violate I2) and never reassigned to track `map`'s
+   *  edits.** `applyJsonOps` always starts from this exact string; if it
+   *  drifted out of sync with `originalMap`/`originalBlocks` (the other two
+   *  "as opened" snapshots), the splice and the guard checks would be
+   *  reasoning about two different starting points with no error to catch
+   *  it. */
   originalMapJson: string;
   /** Scalar field replacements, applied via editJson. */
   jsonEdits: JsonEdit[];
@@ -79,7 +105,25 @@ export interface PendingChange {
 export interface SavePlan {
   session: EditSession;
   changes: PendingChange[];
+  /** Refusals as of `planSave`'s own snapshot of `session` -- **informational
+   *  / display-only** (diff.ts renders these for the player to read before
+   *  confirming). This is NOT the save gate: `session` is live/mutable, and
+   *  a `SavePlan` can be held across an intervening edit, so this field can
+   *  go stale. The actual gate is `commitSave`'s own fresh re-validation
+   *  against `plan.session`'s CURRENT state at commit time -- never rely on
+   *  this field alone to prevent a write. */
   refusals: Refusal[];
+}
+
+/** The exact guard calls both `planSave` and `commitSave` make -- shared so
+ *  `commitSave`'s own fresh re-check (closing the stale-refusal race
+ *  described on `SavePlan.refusals`) can never drift out of sync with what
+ *  `planSave` computed moments earlier. */
+function collectRefusals(proj: Project, session: EditSession): Refusal[] {
+  return [
+    ...guardLayoutSave(proj, session.layout, session.blocks, session.border),
+    ...guardMapSave(proj, session.layout, session.originalMap, session.map, session.originalBlocks, session.blocks),
+  ];
 }
 
 /**
@@ -89,10 +133,7 @@ export interface SavePlan {
  * explicit, separate call).
  */
 export function planSave(proj: Project, session: EditSession): SavePlan {
-  const refusals: Refusal[] = [
-    ...guardLayoutSave(proj, session.layout, session.blocks, session.border),
-    ...guardMapSave(proj, session.layout, session.originalMap, session.map, session.originalBlocks, session.blocks),
-  ];
+  const refusals = collectRefusals(proj, session);
 
   const changes: PendingChange[] = [];
 
@@ -100,7 +141,7 @@ export function planSave(proj: Project, session: EditSession): SavePlan {
   if (blockPlan) {
     changes.push({
       path: blockPlan.path, kind: "binary",
-      summary: `${session.layout.blockdataFilepath} -- ${blockPlan.changedBlocks.length} block${blockPlan.changedBlocks.length === 1 ? "" : "s"} changed`,
+      summary: `${session.layout.blockdataFilepath} -- ${pluralize(blockPlan.changedBlocks.length, "block")} changed`,
     });
   }
 
@@ -108,7 +149,7 @@ export function planSave(proj: Project, session: EditSession): SavePlan {
   if (borderPlan) {
     changes.push({
       path: borderPlan.path, kind: "binary",
-      summary: `${session.layout.borderFilepath} -- ${borderPlan.changedBlocks.length} block${borderPlan.changedBlocks.length === 1 ? "" : "s"} changed`,
+      summary: `${session.layout.borderFilepath} -- ${pluralize(borderPlan.changedBlocks.length, "block")} changed`,
     });
   }
 
@@ -117,7 +158,7 @@ export function planSave(proj: Project, session: EditSession): SavePlan {
     const opCount = session.jsonEdits.length + session.insertOps.length + session.removeOps.length;
     changes.push({
       path: proj.paths.mapJson(session.mapName), kind: "json",
-      summary: `${session.mapName}.json -- ${opCount} field edit${opCount === 1 ? "" : "s"}`,
+      summary: `${session.mapName}.json -- ${pluralize(opCount, "field edit")}`,
     });
   }
 
@@ -129,26 +170,58 @@ export function planSave(proj: Project, session: EditSession): SavePlan {
   for (const append of session.scriptAppends ?? []) {
     changes.push({
       path: append.path, kind: "text",
-      summary: `${append.path} -- append ${append.text.split("\n").length} line${append.text.split("\n").length === 1 ? "" : "s"}`,
+      summary: `${append.path} -- append ${pluralize(lineCount(append.text), "line")}`,
     });
   }
 
   return { session, changes, refusals };
 }
 
+/** `${n} ${word}` / `${n} ${word}s` -- the one pluralisation rule every
+ *  change summary above shares. */
+function pluralize(n: number, word: string): string {
+  return `${n} ${word}${n === 1 ? "" : "s"}`;
+}
+
+/** Number of lines in an appended text block, counting a trailing newline
+ *  (the normal case -- every real append ends with one) as ending the last
+ *  line rather than starting an extra empty one. `"a\n".split("\n")` is
+ *  `["a", ""]`, which would report a genuine 1-line append as 2 lines; this
+ *  strips exactly one trailing `\n` first so the count matches what a
+ *  player actually reads in the diff preview before an irreversible
+ *  write. */
+function lineCount(text: string): number {
+  const stripped = text.endsWith("\n") ? text.slice(0, -1) : text;
+  return stripped.length === 0 ? 0 : stripped.split("\n").length;
+}
+
 /**
  * The ONLY function in this codebase that writes to a decomp path (I8),
  * other than sidecar.ts/dungeons.ts's own separate `.pokemap/` writers,
  * which are I8-exempt by design (they never touch a decomp data file).
- * Throws rather than writing anything when refusals are non-empty -- a UI
- * that simply does not RENDER a refusal cannot bypass this guard by
- * omission, the check lives here, not in whatever calls it.
+ * Throws rather than writing anything when a FRESH refusal check against
+ * `plan.session`'s current state is non-empty -- a UI that simply does not
+ * RENDER a refusal cannot bypass this guard by omission, the check lives
+ * here, not in whatever calls it. Deliberately re-derives refusals rather
+ * than trusting `plan.refusals` (see that field's own doc comment): a
+ * `SavePlan` can be held across an intervening mutation of its `session`
+ * (edits keep landing on the same in-memory `EditSession` the player is
+ * still working in), and re-checking here closes that race regardless of
+ * caller discipline.
+ *
+ * Not atomic across its own several writes (blockdata, border, map.json,
+ * scriptAppends): if one throws partway through (disk full, a permission
+ * error), earlier writes in this same call have already landed on disk.
+ * Accepted as a real but out-of-scope risk for this plan -- transactional/
+ * rollback machinery across up to four independent decomp files is
+ * disproportionate to what this tool needs, not an oversight.
  */
 export function commitSave(proj: Project, plan: SavePlan): void {
-  if (plan.refusals.length > 0) {
-    throw new Error(`save refused: ${plan.refusals.map((r) => `${r.code} (${r.subject})`).join(", ")}`);
-  }
   const { session } = plan;
+  const refusals = collectRefusals(proj, session);
+  if (refusals.length > 0) {
+    throw new Error(`save refused: ${refusals.map((r) => `${r.code} (${r.subject})`).join(", ")}`);
+  }
 
   const blockPlan = planBlockdataWrite(proj.paths.root, session.layout, session.blocks, proj.profile);
   if (blockPlan) writeFileSync(blockPlan.path, blockPlan.bytes);
