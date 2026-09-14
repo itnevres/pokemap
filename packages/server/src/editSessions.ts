@@ -25,6 +25,10 @@ export interface SessionEntry {
  * which are the only durable truth.
  */
 export function createEditSessionStore(project: Project) {
+  // Unbounded for now, same honesty as index.ts's own pngCache/iconCache --
+  // nothing calls close() yet (Task 9's commit route is expected to, after
+  // a successful save), so a session opened and never explicitly closed or
+  // saved just sits here for the life of the process.
   const sessions = new Map<string, SessionEntry>();
 
   function open(mapName: string): SessionEntry {
@@ -39,7 +43,15 @@ export function createEditSessionStore(project: Project) {
 
     const session: EditSession = {
       mapName, layout, blocks, border, map,
-      originalBlocks: blocks.map((b) => ({ ...b })), originalMap: map,
+      // `map` is `project.map(mapName)`'s own cached MapData, shared across
+      // the whole server process -- aliasing it here (as `originalMap: map`)
+      // would violate EditSession.originalMap's own doc comment (MUST be an
+      // independent copy) exactly as originalBlocks's own copy below avoids
+      // for blocks: a later in-place mutation of session.map (Task 9's event
+      // moves, Task 17's sign writes) would otherwise silently corrupt BOTH
+      // guardMapSave's prev/next diff and the project-wide map cache that
+      // /api/map/:name still reads from.
+      originalBlocks: blocks.map((b) => ({ ...b })), originalMap: structuredClone(map),
       originalMapJson, jsonEdits: [], insertOps: [], removeOps: [], isDirty: false,
     };
     entry = { session, stack: new EditCommandStack(), strokeStartBlocks: null };

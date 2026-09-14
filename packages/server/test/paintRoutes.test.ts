@@ -108,4 +108,69 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("paint routes", () => {
     expect(undone.blocks[2].metatileId).not.toBe(5); // ONE undo fully reverted the one visible stroke
     expect(undone.isDirty).toBe(false); // ...and isDirty agrees: nothing left on the stack
   }, 300_000);
+
+  // Code-review fix: the mirror-image bug. A stray SECOND /paint/begin with
+  // no intervening /paint/end (a duplicate mousedown, or a UI retry) used
+  // to unconditionally overwrite strokeStartBlocks with the session's
+  // CURRENT (already-mutated) blocks -- silently dropping the FIRST paint
+  // from ever reaching the undo stack and leaving isDirty false after it.
+  // Reproduces the reviewer's own repro exactly: begin -> apply(id=11 at
+  // 3,3) -> begin again (no end) -> apply(id=12 at 4,4) -> end -> undo.
+  // Both cells must revert and isDirty must be false -- the FIRST paint
+  // must not be silently kept.
+  it("a stray double /paint/begin (no intervening /end) does not silently drop the first paint", async () => {
+    const map = "Route29";
+    const before = await (await fetch(`http://127.0.0.1:${s.port}/api/map/${map}`)).json() as any;
+    const w = before.layout.width;
+    const idx = (x: number, y: number) => y * w + x;
+
+    await post(`/api/edit/${map}/paint/begin`, {});
+    await post(`/api/edit/${map}/paint/apply`, {
+      tool: "pencil", targets: [{ x: 3, y: 3 }], stamp: { width: 1, height: 1, cells: [{ metatileId: 11 }] }, origin: { x: 3, y: 3 },
+    });
+    const secondBegin = await post(`/api/edit/${map}/paint/begin`, {}); // stray duplicate, no /end in between
+    expect(secondBegin.status).toBe(200);
+    const secondApply = await post(`/api/edit/${map}/paint/apply`, {
+      tool: "pencil", targets: [{ x: 4, y: 4 }], stamp: { width: 1, height: 1, cells: [{ metatileId: 12 }] }, origin: { x: 4, y: 4 },
+    });
+    const applied = await secondApply.json() as any;
+    // Both paints are visible before /end -- proves the FIRST paint (11)
+    // was never reverted by the stray re-begin, only its snapshot was at
+    // risk of being silently replaced.
+    expect(applied.blocks[idx(3, 3)].metatileId).toBe(11);
+    expect(applied.blocks[idx(4, 4)].metatileId).toBe(12);
+
+    await post(`/api/edit/${map}/paint/end`, {});
+
+    const undoRes = await post(`/api/edit/${map}/undo`, {});
+    const undone = await undoRes.json() as any;
+    // ONE undo reverts the WHOLE gesture -- both cells, not just the second.
+    expect(undone.blocks[idx(3, 3)].metatileId).toBe(before.blocks[idx(3, 3)].metatileId);
+    expect(undone.blocks[idx(4, 4)].metatileId).toBe(before.blocks[idx(4, 4)].metatileId);
+    expect(undone.isDirty).toBe(false);
+  }, 300_000);
+
+  it("400s a pencil apply missing origin, instead of throwing an opaque 500", async () => {
+    const map = "Route30";
+    await post(`/api/edit/${map}/paint/begin`, {});
+    const r = await post(`/api/edit/${map}/paint/apply`, {
+      tool: "pencil", targets: [{ x: 0, y: 0 }], stamp: { width: 1, height: 1, cells: [{ metatileId: 1 }] },
+      // origin omitted on purpose
+    });
+    expect(r.status).toBe(400);
+  }, 300_000);
+
+  it("400s a bucket apply missing x/y, instead of throwing an opaque 500", async () => {
+    const map = "Route31";
+    await post(`/api/edit/${map}/paint/begin`, {});
+    const r = await post(`/api/edit/${map}/paint/apply`, { tool: "bucket", replacement: { metatileId: 1 } });
+    expect(r.status).toBe(400);
+  }, 300_000);
+
+  it("400s a shift apply missing dx/dy, instead of throwing an opaque 500", async () => {
+    const map = "Route32";
+    await post(`/api/edit/${map}/paint/begin`, {});
+    const r = await post(`/api/edit/${map}/paint/apply`, { tool: "shift" });
+    expect(r.status).toBe(400);
+  }, 300_000);
 });

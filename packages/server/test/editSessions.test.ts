@@ -35,4 +35,19 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("createEditSessionStore", () => {
     store.open("NewBarkTown_Lab");
     expect(store.has("NewBarkTown_Lab")).toBe(true);
   });
+
+  // Code-review fix: originalMap used to alias project.map(mapName)'s own
+  // process-wide cache entry (the exact same object as session.map, not a
+  // copy) -- EditSession.originalMap's own doc comment requires an
+  // independent copy, the same guarantee originalBlocks already gets via
+  // its own .map((b) => ({...b})). Deep equality alone would not catch an
+  // aliasing bug (two references to the same object are trivially deep-
+  // equal to each other); reference identity is the only check that does.
+  it("originalMap is an independent copy, never aliasing session.map or the project's own cache", () => {
+    const store = createEditSessionStore(project);
+    const entry = store.open("NewBarkTown_Lab");
+    expect(entry.session.originalMap).not.toBe(entry.session.map);
+    expect(entry.session.originalMap).not.toBe(project.map("NewBarkTown_Lab"));
+    expect(entry.session.originalMap).toEqual(project.map("NewBarkTown_Lab"));
+  });
 });

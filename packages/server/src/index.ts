@@ -525,7 +525,16 @@ export async function createServer(opts: { projectPath: string; port?: number })
         const name = decodeURIComponent(paintBeginMatch[1]!);
         if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
         const entry = editEntryFor(name);
-        entry.strokeStartBlocks = entry.session.blocks.map((b) => ({ ...b }));
+        // A redundant begin() while a stroke is already in progress (no
+        // intervening end()) must NOT overwrite the real start-of-gesture
+        // snapshot with the CURRENT (already-mutated) blocks -- doing so
+        // would silently drop everything painted before the re-begin from
+        // the eventual undo step and desync isDirty, the mirror image of
+        // the double-/paint/end bug guarded by editSessions.ts's own
+        // strokeStartBlocks reset.
+        if (entry.strokeStartBlocks === null) {
+          entry.strokeStartBlocks = entry.session.blocks.map((b) => ({ ...b }));
+        }
         return sendSession(send, 200, entry);
       }
 
@@ -544,17 +553,42 @@ export async function createServer(opts: { projectPath: string; port?: number })
             try { parsed = JSON.parse(body) as typeof parsed; }
             catch (e) { return send(400, { error: `invalid JSON body: ${(e as Error).message}` }); }
 
+            // This request reads-then-writes entry.session.blocks across an
+            // await (readBody's own round trip already happened above) --
+            // in principle a same-map /undo or another /paint/apply could
+            // interleave here. Low-likelihood in practice: the intended
+            // client always awaits each round trip before sending the next
+            // (the whole begin/apply/end design assumes exactly that), so
+            // this is a known, accepted gap, not a guarantee against it.
             const entry = editEntryFor(name);
             const w = entry.session.layout.width, h = entry.session.layout.height;
 
             if (parsed.tool === "pencil" || parsed.tool === "rect") {
-              const { targets, stamp, origin } = parsed as { targets: { x: number; y: number }[]; stamp: Stamp; origin: { x: number; y: number } };
+              const { targets, stamp, origin } = parsed;
+              if (!Array.isArray(targets) || targets.some((t) => typeof t?.x !== "number" || typeof t?.y !== "number")) {
+                return send(400, { error: `"targets" must be an array of { x: number, y: number }, got ${JSON.stringify(targets)}` });
+              }
+              if (!stamp || typeof stamp.width !== "number" || typeof stamp.height !== "number" || !Array.isArray(stamp.cells)) {
+                return send(400, { error: `"stamp" must be { width: number, height: number, cells: [] }, got ${JSON.stringify(stamp)}` });
+              }
+              if (typeof origin?.x !== "number" || typeof origin?.y !== "number") {
+                return send(400, { error: `"origin" must be { x: number, y: number }, got ${JSON.stringify(origin)}` });
+              }
               entry.session.blocks = paintCells(entry.session.blocks, w, h, targets, stamp, origin.x, origin.y);
             } else if (parsed.tool === "bucket") {
-              const { x, y, replacement } = parsed as { x: number; y: number; replacement: { metatileId: number; collision?: number; elevation?: number } };
+              const { x, y, replacement } = parsed;
+              if (typeof x !== "number" || typeof y !== "number") {
+                return send(400, { error: `"x" and "y" must be numbers, got x=${JSON.stringify(x)} y=${JSON.stringify(y)}` });
+              }
+              if (typeof replacement?.metatileId !== "number") {
+                return send(400, { error: `"replacement" must be { metatileId: number, ... }, got ${JSON.stringify(replacement)}` });
+              }
               entry.session.blocks = floodFill(entry.session.blocks, w, h, x, y, replacement);
             } else if (parsed.tool === "shift") {
-              const { dx, dy } = parsed as { dx: number; dy: number };
+              const { dx, dy } = parsed;
+              if (typeof dx !== "number" || typeof dy !== "number") {
+                return send(400, { error: `"dx" and "dy" must be numbers, got dx=${JSON.stringify(dx)} dy=${JSON.stringify(dy)}` });
+              }
               entry.session.blocks = shiftGrid(entry.session.blocks, w, h, dx, dy);
             } else {
               return send(400, { error: `unknown tool ${JSON.stringify(parsed.tool)}` });
