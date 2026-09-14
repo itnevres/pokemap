@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { createServer as createHttp, type IncomingMessage, type Server } from "node:http";
 import { openProject, type Project } from "@pokemap/core/src/project.js";
 import { renderLayout } from "@pokemap/core/src/render/layout.js";
+import { renderMetatile } from "@pokemap/core/src/render/metatile.js";
 import { renderSpeciesIcon } from "@pokemap/core/src/render/species.js";
 import { parseBlocks } from "@pokemap/core/src/load/blocks.js";
 import { parseEncounters, speciesChances, FISHING_RODS, type Encounters, type Method, type Rod, type SpeciesChance } from "@pokemap/core/src/load/encounters.js";
@@ -214,6 +215,39 @@ export async function createServer(opts: { projectPath: string; port?: number })
               : undefined;
           if (!layoutName) return send(404, { error: `no layout or map ${name}` });
           png = encodePng(renderLayout(project, layoutName, { border }));
+          pngCache.set(key, png);
+        }
+        res.writeHead(200, { "content-type": "image/png", "cache-control": "no-cache" });
+        return res.end(png);
+      }
+
+      // Task 10 (Plan 2): the metatile palette's own thumbnail source -- one
+      // 16x16 PNG per metatile id, split-aware via renderMetatile's own
+      // id/split.metatiles rule (see that file's header comment). Layout
+      // name uses `(.+)`, not `[^/]+` -- matches this file's own
+      // established convention for every OTHER per-name route capturing a
+      // Project-resolved identifier (/api/render/, /api/map/). The id
+      // segment uses `[^/]+` (mirrors the species-icon route's own
+      // tight-non-slash-segment match just below), not `\d+`: `\d+` would
+      // refuse to match a non-digit id at all (falling through to this
+      // file's generic 404 "not found"), silently dead-coding the explicit
+      // `Number.isInteger` 400 guard below and failing this route's own
+      // "400s a non-integer metatile id" test -- caught by running that
+      // test against a first draft using `\d+` here.
+      const metatileMatch = /^\/api\/metatile\/(.+)\/([^/]+)\.png$/.exec(url.pathname);
+      if (metatileMatch) {
+        const layoutName = decodeURIComponent(metatileMatch[1]!);
+        const id = Number(metatileMatch[2]);
+        const layout = project.layoutByName(layoutName);
+        if (!layout) return send(404, { error: `no layout ${layoutName}` });
+        if (!Number.isInteger(id) || id < 0) return send(400, { error: `metatile id must be a non-negative integer, got ${metatileMatch[2]}` });
+
+        const key = `${layoutName}:${id}`;
+        let png = pngCache.get(key);
+        if (!png) {
+          const split = project.splitFor(layout);
+          const raster = renderMetatile(id, project.tileset(layout.primaryTileset), project.tileset(layout.secondaryTileset), split, project.profile);
+          png = encodePng(raster);
           pngCache.set(key, png);
         }
         res.writeHead(200, { "content-type": "image/png", "cache-control": "no-cache" });

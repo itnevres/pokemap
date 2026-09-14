@@ -1714,3 +1714,107 @@ input {
   font-size: var(--text-sm);
   align-self: flex-start;
 }
+
+/* Task 10 (Plan 2): the metatile palette panel -- search filter, then a
+   dense grid of 16x16 thumbnails, primary followed by secondary with a
+   labelled divider at the split boundary. Same panel shape as MapTree
+   (--bg-panel host, --space-2 padding) -- this is furniture around the
+   canvas, not the canvas itself (DESIGN.md's "what the canvas is owed"). */
+.metatile-palette {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-2);
+  background: var(--bg-panel);
+  overflow-y: auto;
+}
+
+.metatile-palette__search {
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-primary);
+  padding: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-2);
+  font-size: var(--text-sm);
+}
+
+.metatile-palette__search:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.metatile-palette__grid {
+  display: grid;
+  gap: var(--space-1);
+  align-content: start;
+}
+
+/* Full-width row (see the component's own `gridColumn: "1 / -1"`) naming the
+   REAL split.metatiles figure and layout_version -- DESIGN.md's own "getting
+   that number right is this entire project's reason to exist" status-strip
+   rule, restated here at the one other place a palette silently guesses
+   wrong without it. Data (the number, the version string), not chrome, so
+   --font-data even though it sits inside a label-toned divider. */
+.metatile-palette__boundary {
+  grid-column: 1 / -1;
+  padding: var(--space-1) var(--space-2);
+  margin: var(--space-1) 0;
+  border-top: 1px solid var(--border-strong);
+  color: var(--text-secondary);
+  font-family: var(--font-data);
+  font-size: var(--text-2xs);
+  white-space: nowrap;
+}
+
+.metatile-palette__cell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  cursor: pointer;
+  transition: background-color 150ms ease-out, border-color 150ms ease-out;
+}
+
+.metatile-palette__cell:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+}
+
+.metatile-palette__cell:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* Disabled AND struck through -- colour is never the only signal (DESIGN.md
+   accessibility baseline). The `::after` diagonal is a real line, not a CSS
+   `text-decoration` (which an <img> cannot carry), so it survives the thumb
+   underneath failing to load too. */
+.metatile-palette__cell--out-of-range {
+  cursor: not-allowed;
+  border-color: var(--border);
+  opacity: 0.55;
+}
+
+.metatile-palette__cell--out-of-range::after {
+  content: "";
+  position: absolute;
+  left: 1px;
+  right: 1px;
+  top: 50%;
+  height: 2px;
+  background: var(--danger);
+  transform: rotate(-20deg);
+  pointer-events: none;
+}
+
+.metatile-palette__thumb {
+  width: 16px;
+  height: 16px;
+  image-rendering: pixelated;
+}

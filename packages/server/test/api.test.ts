@@ -266,4 +266,21 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("server", () => {
     expect(species).toContain("SPECIES_ESPEON");
     expect(species).toEqual([...species].sort());
   });
+
+  it("renders one metatile as a 16x16 PNG, split-aware", async () => {
+    const r = await get("/api/metatile/PetalburgCity_Layout/0.png");
+    expect(r.status).toBe(200);
+    expect(r.headers.get("content-type")).toBe("image/png");
+    const buf = Buffer.from(await r.arrayBuffer());
+    expect(buf.readUInt32BE(16)).toBe(16);
+    expect(buf.readUInt32BE(20)).toBe(16);
+  });
+
+  it("404s an unknown layout name for the metatile route", async () => {
+    expect((await get("/api/metatile/NoSuchLayout/0.png")).status).toBe(404);
+  });
+
+  it("400s a non-integer metatile id", async () => {
+    expect((await get("/api/metatile/PetalburgCity_Layout/abc.png")).status).toBe(400);
+  });
 });
