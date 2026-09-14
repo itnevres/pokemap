@@ -16,7 +16,7 @@ import { parseBorder } from "@pokemap/cli/src/args.js";
 import { randomUUID } from "node:crypto";
 import { createEditSessionStore, snapshotOf, snapshotCommand } from "./editSessions.js";
 import { paintCells, floodFill, shiftGrid, type Stamp } from "@pokemap/core/src/edit/paint.js";
-import { planSave, commitSave } from "@pokemap/core/src/write/save.js";
+import { planSave, commitSave, type EditSession } from "@pokemap/core/src/write/save.js";
 import { formatDiffJson } from "@pokemap/core/src/write/diff.js";
 import { moveEvent, addEvent, deleteEvent, findWarpsTargetingByIndex, type EventKind } from "@pokemap/core/src/edit/events.js";
 
@@ -90,6 +90,15 @@ export async function createServer(opts: { projectPath: string; port?: number })
   // is cheap per call (a plain array walk over already-parsed MapData) but
   // building the (mapId, MapData) list itself means calling project.map()
   // for all 1,209 names, which is worth doing once rather than per delete.
+  // Same staleness caveat as the commit route's own comment below: a commit
+  // on map A changes A's warp events on disk but NOT this cache's copy of
+  // A (built from project.map(), which commitSave never invalidates) -- a
+  // later /event/delete on map B computes warpRenumberWarnings against
+  // A's PRE-commit warps until this whole process restarts. Accepted for
+  // the same reason worldCache/coverageCache/etc. are: I8 assumed a
+  // read-only project when every one of these caches was designed, and
+  // Task 9 is the first task to make that assumption stale for one map at
+  // a time; a real invalidation story is out of scope here.
   let allMapsCache: { mapId: string; map: ReturnType<Project["map"]> }[] | undefined;
   const getAllMapsForWarpScan = () => (allMapsCache ??= project.mapNames().map((n) => ({ mapId: project.map(n).id, map: project.map(n) })));
 
@@ -106,6 +115,25 @@ export async function createServer(opts: { projectPath: string; port?: number })
   // leave the client's own map view silently stale.
   const sendSession = (send: (code: number, body: unknown) => void, code: number, entry: ReturnType<typeof editEntryFor>) =>
     send(code, { blocks: entry.session.blocks, border: entry.session.border, map: entry.session.map, isDirty: entry.session.isDirty });
+
+  // Shared by all three event routes below: the prev-snapshot / mutate /
+  // push-undo-command sequence is identical across move/add/delete, only
+  // (a) which core function to call, (b) which of jsonEdits/insertOps/
+  // removeOps to append to, and (c) any extra per-route response data
+  // (delete's warpRenumberWarnings) differ -- those stay in each route's
+  // own `op` callback rather than becoming parameters here, since forcing
+  // them into a generic shape would just move the duplication into this
+  // function's own signature instead of removing it.
+  function handleEventOp<T = undefined>(
+    entry: ReturnType<typeof editEntryFor>, label: string,
+    op: (map: EditSession["map"]) => { map: EditSession["map"]; extra?: T },
+  ): { map: EditSession["map"]; isDirty: boolean; extra?: T } {
+    const prev = snapshotOf(entry.session);
+    const { map, extra } = op(entry.session.map);
+    entry.session.map = map;
+    entry.stack.push(entry.session, snapshotCommand(label, prev, snapshotOf(entry.session)));
+    return { map: entry.session.map, isDirty: entry.session.isDirty, extra };
+  }
 
   const http: Server = createHttp((req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
@@ -711,12 +739,12 @@ export async function createServer(opts: { projectPath: string; port?: number })
               return send(400, { error: `expected { kind, index: number, x: number, y: number }, got ${body}` });
             }
             const entry = editEntryFor(name);
-            const prev = snapshotOf(entry.session);
-            const { map, jsonEdits } = moveEvent(entry.session.map, parsed.kind as EventKind, parsed.index, parsed.x, parsed.y);
-            entry.session.map = map;
-            entry.session.jsonEdits = [...entry.session.jsonEdits, ...jsonEdits];
-            entry.stack.push(entry.session, snapshotCommand("move event", prev, snapshotOf(entry.session)));
-            return send(200, { map: entry.session.map, isDirty: entry.session.isDirty });
+            const result = handleEventOp(entry, "move event", (map) => {
+              const { map: nextMap, jsonEdits } = moveEvent(map, parsed.kind as EventKind, parsed.index as number, parsed.x as number, parsed.y as number);
+              entry.session.jsonEdits = [...entry.session.jsonEdits, ...jsonEdits];
+              return { map: nextMap };
+            });
+            return send(200, { map: result.map, isDirty: result.isDirty });
           })
           .catch((e: unknown) => { console.error(e); send(500, { error: e instanceof Error ? e.message : String(e) }); });
       }
@@ -733,12 +761,12 @@ export async function createServer(opts: { projectPath: string; port?: number })
             if (!EVENT_KINDS.has(parsed.kind as EventKind)) return send(400, { error: `"kind" must be one of object/warp/coord/bg, got ${JSON.stringify(parsed.kind)}` });
             if (typeof parsed.value !== "object" || parsed.value === null) return send(400, { error: `expected { kind, value: object }, got ${body}` });
             const entry = editEntryFor(name);
-            const prev = snapshotOf(entry.session);
-            const { map, insertOp } = addEvent(entry.session.map, parsed.kind as EventKind, parsed.value as Record<string, unknown>);
-            entry.session.map = map;
-            entry.session.insertOps = [...entry.session.insertOps, insertOp];
-            entry.stack.push(entry.session, snapshotCommand("add event", prev, snapshotOf(entry.session)));
-            return send(200, { map: entry.session.map, isDirty: entry.session.isDirty });
+            const result = handleEventOp(entry, "add event", (map) => {
+              const { map: nextMap, insertOp } = addEvent(map, parsed.kind as EventKind, parsed.value as Record<string, unknown>);
+              entry.session.insertOps = [...entry.session.insertOps, insertOp];
+              return { map: nextMap };
+            });
+            return send(200, { map: result.map, isDirty: result.isDirty });
           })
           .catch((e: unknown) => { console.error(e); send(500, { error: e instanceof Error ? e.message : String(e) }); });
       }
@@ -755,19 +783,15 @@ export async function createServer(opts: { projectPath: string; port?: number })
             if (!EVENT_KINDS.has(parsed.kind as EventKind)) return send(400, { error: `"kind" must be one of object/warp/coord/bg, got ${JSON.stringify(parsed.kind)}` });
             if (typeof parsed.index !== "number") return send(400, { error: `expected { kind, index: number }, got ${body}` });
             const entry = editEntryFor(name);
-            const prev = snapshotOf(entry.session);
-            const { map, removeOp } = deleteEvent(entry.session.map, parsed.kind as EventKind, parsed.index);
-            entry.session.map = map;
-            entry.session.removeOps = [...entry.session.removeOps, removeOp];
-            entry.stack.push(entry.session, snapshotCommand("delete event", prev, snapshotOf(entry.session)));
-
-            const warpRenumberWarnings = parsed.kind === "warp"
-              ? findWarpsTargetingByIndex(
-                  getAllMapsForWarpScan().filter((m) => m.mapId !== entry.session.map.id),
-                  entry.session.map.id, parsed.index as number,
-                )
-              : [];
-            return send(200, { map: entry.session.map, isDirty: entry.session.isDirty, warpRenumberWarnings });
+            const result = handleEventOp(entry, "delete event", (map) => {
+              const { map: nextMap, removeOp } = deleteEvent(map, parsed.kind as EventKind, parsed.index as number);
+              entry.session.removeOps = [...entry.session.removeOps, removeOp];
+              const warpRenumberWarnings = parsed.kind === "warp"
+                ? findWarpsTargetingByIndex(getAllMapsForWarpScan().filter((m) => m.mapId !== map.id), map.id, parsed.index as number)
+                : [];
+              return { map: nextMap, extra: warpRenumberWarnings };
+            });
+            return send(200, { map: result.map, isDirty: result.isDirty, warpRenumberWarnings: result.extra });
           })
           .catch((e: unknown) => { console.error(e); send(500, { error: e instanceof Error ? e.message : String(e) }); });
       }

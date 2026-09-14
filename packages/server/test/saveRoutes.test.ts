@@ -13,6 +13,13 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("save/commit routes", () => {
   beforeAll(async () => { s = await createServer({ projectPath: SUBJECT_ROOT, port: 0 }); });
   afterAll(async () => { await s?.close(); });
 
+  it("404s /plan and /commit for an unknown map", async () => {
+    const planRes = await get("/api/edit/__pokemap_no_such_map__/plan");
+    expect(planRes.status).toBe(404);
+    const commitRes = await post("/api/edit/__pokemap_no_such_map__/commit");
+    expect(commitRes.status).toBe(404);
+  }, 300_000);
+
   it("GET /plan on an untouched session returns zero changes and never writes", async () => {
     const r = await get("/api/edit/CherrygroveCity/plan");
     expect(r.status).toBe(200);

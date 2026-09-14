@@ -67,14 +67,7 @@ export function createEditSessionStore(project: Project) {
     return sessions.has(mapName);
   }
 
-  /** True once a session has diverged from disk -- reads it straight off
-   *  the underlying EditCommandStack, which is the one thing tracking it
-   *  (see commands.ts's own doc comment on cleanIndex). */
-  function isDirty(mapName: string): boolean {
-    return sessions.get(mapName)?.stack.isDirty() ?? false;
-  }
-
-  return { open, close, has, isDirty };
+  return { open, close, has };
 }
 
 /** A snapshot-diff command: `apply`/`revert` just assign the session's own

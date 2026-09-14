@@ -49,4 +49,13 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("event routes", () => {
     const r = await post("/api/edit/Route29/event/move", { kind: "not-a-kind", index: 0, x: 0, y: 0 });
     expect(r.status).toBe(400);
   }, 300_000);
+
+  it("404s event/move, event/add and event/delete for an unknown map", async () => {
+    const moveRes = await post("/api/edit/__pokemap_no_such_map__/event/move", { kind: "object", index: 0, x: 0, y: 0 });
+    expect(moveRes.status).toBe(404);
+    const addRes = await post("/api/edit/__pokemap_no_such_map__/event/add", { kind: "object", value: {} });
+    expect(addRes.status).toBe(404);
+    const delRes = await post("/api/edit/__pokemap_no_such_map__/event/delete", { kind: "object", index: 0 });
+    expect(delRes.status).toBe(404);
+  }, 300_000);
 });
