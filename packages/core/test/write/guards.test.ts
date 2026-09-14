@@ -1,32 +1,20 @@
 import { describe, it, expect } from "vitest";
 import { guardLayoutSave, guardMapSave } from "../../src/write/guards.js";
-import type { Project } from "../../src/project.js";
 import type { Layout } from "../../src/model/types.js";
 import type { MapData } from "../../src/load/maps.js";
+import type { FieldmapConstants } from "../../src/config/fieldmap.js";
 import { defaultProfile } from "../../src/config/engine.js";
+import { stubProject, stubTileset } from "../helpers/stubProject.js";
 
-/** A minimal stub, not the corpus -- mirrors packages/core/test/world/
- *  warpGraph.test.ts's own stubProject pattern exactly (unused fields throw
- *  on call, so a wrong code path fails loudly rather than by coincidence). */
-function stubProject(overrides: Partial<Project>): Project {
-  const unused = (fn: string) => (): never => { throw new Error(`stub: ${fn} should not be called`); };
-  return {
-    paths: unused("paths") as unknown as Project["paths"],
-    profile: defaultProfile("pokeemerald"),
-    constants: unused("constants") as unknown as Project["constants"],
-    layouts: [],
-    groups: unused("groups") as unknown as Project["groups"],
-    layoutByName: () => undefined,
-    layoutById: () => undefined,
-    layoutForMap: unused("layoutForMap"),
-    splitFor: unused("splitFor"),
-    tileset: unused("tileset"),
-    tilesetSymbols: unused("tilesetSymbols"),
-    map: unused("map"),
-    mapNames: () => [],
-    ...overrides,
-  };
-}
+// Only the two out-of-range tests below need this to resolve (they push
+// idOutOfRange's ceiling computation far enough that Math.min needs a real
+// number, not undefined -- see guards.ts's own metatilesTotal comment).
+const CONSTANTS: FieldmapConstants = {
+  tilesInPrimary: 512, tilesInPrimaryEmerald: 512,
+  metatilesInPrimary: 512, metatilesInPrimaryEmerald: 512,
+  palsInPrimary: 6, palsInPrimaryEmerald: 6,
+  metatilesTotal: 1024,
+};
 
 const LAYOUT: Layout = {
   id: "LAYOUT_TEST", name: "Test_Layout", width: 10, height: 10,
@@ -39,7 +27,7 @@ describe("guardLayoutSave", () => {
     const proj = stubProject({
       profile: { ...defaultProfile("pokeemerald-expansion"), supportsLayoutVersion: true },
       splitFor: () => ({ version: "emerald", tiles: 512, metatiles: 512, pals: 6 }),
-      tileset: (s) => ({ symbol: s, isSecondary: false, metatileCount: 512, tiles: {} as any, palettes: [], attributes: [], metatile: () => [], layerType: () => 0, behavior: () => 0 }),
+      tileset: (s) => stubTileset(s, 512),
     });
     const r = guardLayoutSave(proj, { ...LAYOUT, layoutVersion: undefined }, []);
     expect(r.map((x) => x.code)).toContain("missing-layout-version");
@@ -50,7 +38,7 @@ describe("guardLayoutSave", () => {
     const proj = stubProject({
       profile: { ...defaultProfile("pokeemerald-expansion"), supportsLayoutVersion: true },
       splitFor: () => ({ version: "hns", tiles: 640, metatiles: 640, pals: 7 }),
-      tileset: (s) => ({ symbol: s, isSecondary: false, metatileCount: 640, tiles: {} as any, palettes: [], attributes: [], metatile: () => [], layerType: () => 0, behavior: () => 0 }),
+      tileset: (s) => stubTileset(s, 640),
     });
     const r = guardLayoutSave(proj, { ...LAYOUT, layoutVersion: "hns" }, []);
     expect(r.map((x) => x.code)).not.toContain("missing-layout-version");
@@ -63,7 +51,7 @@ describe("guardLayoutSave", () => {
     const proj = stubProject({
       profile: defaultProfile("pokeemerald"),
       splitFor: () => ({ version: "emerald", tiles: 512, metatiles: 512, pals: 6 }),
-      tileset: (s) => ({ symbol: s, isSecondary: false, metatileCount: 512, tiles: {} as any, palettes: [], attributes: [], metatile: () => [], layerType: () => 0, behavior: () => 0 }),
+      tileset: (s) => stubTileset(s, 512),
     });
     expect(guardLayoutSave(proj, { ...LAYOUT, layoutVersion: undefined }, []).map((x) => x.code))
       .not.toContain("missing-layout-version");
@@ -72,6 +60,7 @@ describe("guardLayoutSave", () => {
   it("refuses a block whose id is out of range for THIS layout's split -- the whole thesis of the project as an assertion", () => {
     const proj = stubProject({
       profile: defaultProfile("pokeemerald"),
+      constants: CONSTANTS,
       splitFor: (l) => l.name === "Emerald_Layout"
         ? { version: "emerald", tiles: 512, metatiles: 512, pals: 6 }
         : { version: "hns", tiles: 640, metatiles: 640, pals: 7 },
@@ -84,11 +73,7 @@ describe("guardLayoutSave", () => {
       // besides: an hns split's primary really does reach into the 600s; a
       // secondary tileset like Route's is a few dozen to ~100 metatiles, not
       // another 512.
-      tileset: (s) => ({
-        symbol: s, isSecondary: s === LAYOUT.secondaryTileset,
-        metatileCount: s === LAYOUT.secondaryTileset ? 80 : 640,
-        tiles: {} as any, palettes: [], attributes: [], metatile: () => [], layerType: () => 0, behavior: () => 0,
-      }),
+      tileset: (s) => stubTileset(s, s === LAYOUT.secondaryTileset ? 80 : 640, s === LAYOUT.secondaryTileset),
     });
     // id 600 is legal on an hns (640-primary) layout and illegal on an
     // emerald (512-primary) one -- the exact pairing Plan 0's own §7 test-
@@ -104,15 +89,12 @@ describe("guardLayoutSave", () => {
   it("names the offending ids and both tileset counts in the fix text", () => {
     const proj = stubProject({
       profile: defaultProfile("pokeemerald"),
+      constants: CONSTANTS,
       splitFor: () => ({ version: "emerald", tiles: 512, metatiles: 512, pals: 6 }),
       // Secondary deliberately smaller than primary (100 vs 512, not another
       // uniform 512) so id 999 actually falls outside [512, 512+100) -- see
       // the "whole thesis" test above for why a flat count can't do this.
-      tileset: (s) => ({
-        symbol: s, isSecondary: s === LAYOUT.secondaryTileset,
-        metatileCount: s === LAYOUT.secondaryTileset ? 100 : 512,
-        tiles: {} as any, palettes: [], attributes: [], metatile: () => [], layerType: () => 0, behavior: () => 0,
-      }),
+      tileset: (s) => stubTileset(s, s === LAYOUT.secondaryTileset ? 100 : 512, s === LAYOUT.secondaryTileset),
     });
     const r = guardLayoutSave(proj, LAYOUT, [{ metatileId: 999, collision: 0, elevation: 0 }]);
     const found = r.find((x) => x.code === "metatile-out-of-range")!;
@@ -126,7 +108,7 @@ describe("guardLayoutSave", () => {
     const border = [{ metatileId: 1, collision: 0, elevation: 0 }, { metatileId: 1, collision: 0, elevation: 0 }];
     const r = guardLayoutSave(proj, LAYOUT, [], border);
     expect(r.map((x) => x.code)).toContain("border-size-mismatch");
-    expect(r.find((x) => x.code === "border-size-mismatch")!.fix).toMatch(/2.*2|4/);
+    expect(r.find((x) => x.code === "border-size-mismatch")!.fix).toMatch(/borderWidth 2 x borderHeight 2 = 4 blocks/);
   });
 
   it("does not refuse when border is omitted (a layout-only save that never touched border.bin)", () => {
@@ -171,7 +153,6 @@ describe("guardMapSave", () => {
     const movedMap: MapData = { ...BASE_MAP, warpEvents: [{ ...BASE_MAP.warpEvents[0]!, x: 6, y: 5 }] };
     // Warp moved off (5,5) in the SAME save, so the old tile changing under
     // it is expected, not a silent unpairing.
-    expect(guardLayoutSave === guardLayoutSave); // no-op keeps this test file's import used if reordered
     const r = guardMapSave(proj, LAYOUT, BASE_MAP, movedMap, prevBlocks, nextBlocks);
     expect(r.map((x) => x.code)).not.toContain("warp-tile-moved");
   });

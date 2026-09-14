@@ -15,7 +15,7 @@ function idOutOfRange(id: number, proj: Project, layout: Layout): boolean {
   const split = proj.splitFor(layout);
   const primaryCount = proj.tileset(layout.primaryTileset).metatileCount;
   const secondaryCount = proj.tileset(layout.secondaryTileset).metatileCount;
-  const ceiling = Math.min(split.metatiles + secondaryCount, proj.constants?.metatilesTotal ?? 1024);
+  const ceiling = Math.min(split.metatiles + secondaryCount, proj.constants.metatilesTotal);
   return id < split.metatiles ? id >= primaryCount : id >= ceiling;
 }
 
@@ -39,14 +39,14 @@ export function guardLayoutSave(
     });
   }
 
-  const badIds = new Map<number, number>();
+  const badIds = new Set<number>();
   for (const b of blocks) {
-    if (idOutOfRange(b.metatileId, proj, layout)) badIds.set(b.metatileId, (badIds.get(b.metatileId) ?? 0) + 1);
+    if (idOutOfRange(b.metatileId, proj, layout)) badIds.add(b.metatileId);
   }
   if (badIds.size > 0) {
     const primaryCount = proj.tileset(layout.primaryTileset).metatileCount;
     const secondaryCount = proj.tileset(layout.secondaryTileset).metatileCount;
-    const ids = [...badIds.keys()].sort((a, b) => a - b);
+    const ids = [...badIds].sort((a, b) => a - b);
     out.push({
       code: "metatile-out-of-range",
       message: `${layout.name}: metatile id(s) ${ids.join(", ")} are out of range for this layout's split.`,
