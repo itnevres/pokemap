@@ -7,9 +7,10 @@ export interface StampCell { metatileId: number; collision?: number; elevation?:
  *  output is a 1x1 stamp with both fields present). */
 export interface Stamp { width: number; height: number; cells: StampCell[]; }
 
-export function readBlock(blocks: Block[], gridWidth: number, x: number, y: number): Block | undefined {
-  if (x < 0 || y < 0 || x >= gridWidth) return undefined;
-  return blocks[y * gridWidth + x];
+export function readBlock(blocks: Block[], gridWidth: number, gridHeight: number, x: number, y: number): Block | undefined {
+  if (x < 0 || y < 0 || x >= gridWidth || y >= gridHeight) return undefined;
+  const block = blocks[y * gridWidth + x];
+  return block ? { ...block } : undefined;
 }
 
 /**
@@ -61,7 +62,7 @@ export function paintCells(
  * 60x80+, and a recursive fill would blow the call stack on one.
  */
 export function floodFill(blocks: Block[], gridWidth: number, gridHeight: number, x: number, y: number, replacement: StampCell): Block[] {
-  const start = readBlock(blocks, gridWidth, x, y);
+  const start = readBlock(blocks, gridWidth, gridHeight, x, y);
   if (!start) return blocks.map((b) => ({ ...b }));
   const targetId = start.metatileId;
 

@@ -10,12 +10,28 @@ describe("readBlock (dropper)", () => {
   it("reads id, collision and elevation together, at (x,y) in a gridWidth-wide grid", () => {
     const blocks = grid(4, 3, 1);
     blocks[2 * 4 + 1] = { metatileId: 42, collision: 2, elevation: 5 }; // (x=1,y=2)
-    expect(readBlock(blocks, 4, 1, 2)).toEqual({ metatileId: 42, collision: 2, elevation: 5 });
+    expect(readBlock(blocks, 4, 3, 1, 2)).toEqual({ metatileId: 42, collision: 2, elevation: 5 });
   });
 
   it("returns undefined outside the grid", () => {
-    expect(readBlock(grid(4, 3, 1), 4, 10, 10)).toBeUndefined();
-    expect(readBlock(grid(4, 3, 1), 4, -1, 0)).toBeUndefined();
+    expect(readBlock(grid(4, 3, 1), 4, 3, 10, 10)).toBeUndefined();
+    expect(readBlock(grid(4, 3, 1), 4, 3, -1, 0)).toBeUndefined();
+  });
+
+  it("returns undefined for a y within blocks.length but at/beyond gridHeight (a trailing block, the 19-layout shape) -- never exposes padding data as a real cell", () => {
+    const blocks = grid(4, 3, 1); // 12 blocks, a 4x3 grid
+    blocks.push({ metatileId: 999, collision: 1, elevation: 1 }); // index 12, the trailing block
+    // y=3 at x=0 lands on index 12 -- inside blocks.length, but beyond gridHeight=3.
+    expect(readBlock(blocks, 4, 3, 0, 3)).toBeUndefined();
+  });
+
+  it("returns a copy, not a live reference -- mutating the result never mutates the source blocks array", () => {
+    const blocks = grid(4, 3, 1);
+    blocks[0] = { metatileId: 42, collision: 2, elevation: 5 };
+    const result = readBlock(blocks, 4, 3, 0, 0);
+    expect(result).toBeDefined();
+    result!.metatileId = 1234;
+    expect(blocks[0]).toEqual({ metatileId: 42, collision: 2, elevation: 5 });
   });
 });
 
