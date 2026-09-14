@@ -5,15 +5,32 @@ import { encodeBlocks } from "../load/blocks.js";
 
 export interface BinaryWrite { path: string; bytes: Buffer; changedBlocks: number[]; }
 
-function diffChangedBlocks(prevBytes: Buffer, next: Buffer): number[] {
+function diffChangedBlocks(prevBytes: Buffer, nextBytes: Buffer): number[] {
   const changedBlocks: number[] = [];
-  const blockCount = Math.max(prevBytes.length, next.length) >> 1;
+  const blockCount = Math.max(prevBytes.length, nextBytes.length) >> 1;
   for (let i = 0; i < blockCount; i++) {
     const prevWord = i * 2 + 1 < prevBytes.length ? prevBytes.readUInt16LE(i * 2) : undefined;
-    const nextWord = i * 2 + 1 < next.length ? next.readUInt16LE(i * 2) : undefined;
+    const nextWord = i * 2 + 1 < nextBytes.length ? nextBytes.readUInt16LE(i * 2) : undefined;
     if (prevWord !== nextWord) changedBlocks.push(i);
   }
   return changedBlocks;
+}
+
+/**
+ * Shared scaffolding once a target's own `encodeBlocks` call has already
+ * produced `next`: read whatever is on disk at `path` (missing file reads as
+ * empty, not an error -- a layout whose blockdata doesn't exist yet is still
+ * a legal write target), short-circuit to null on an exact match (I6's own
+ * "no write when nothing changed" half), else diff and return a plan.
+ *
+ * Takes the already-encoded buffer rather than `(blocks, profile)` -- the
+ * encode step is each public function's own (different source array, same
+ * `encodeBlocks` call), only the read/compare/diff after it is identical.
+ */
+function buildPlan(path: string, next: Buffer): BinaryWrite | null {
+  const prevBytes = existsSync(path) ? readFileSync(path) : Buffer.alloc(0);
+  if (prevBytes.equals(next)) return null;
+  return { path, bytes: next, changedBlocks: diffChangedBlocks(prevBytes, next) };
 }
 
 /**
@@ -37,11 +54,7 @@ export function planBlockdataWrite(
 ): BinaryWrite | null {
   const path = `${root}/${layout.blockdataFilepath}`;
   const next = encodeBlocks(blocks, profile); // throws on an out-of-mask value -- I7, not this function's job to catch twice
-
-  const prevBytes = existsSync(path) ? readFileSync(path) : Buffer.alloc(0);
-  if (prevBytes.equals(next)) return null;
-
-  return { path, bytes: next, changedBlocks: diffChangedBlocks(prevBytes, next) };
+  return buildPlan(path, next);
 }
 
 /**
@@ -52,15 +65,13 @@ export function planBlockdataWrite(
  * 1,020 real border.bin files match borderWidth*borderHeight exactly, per
  * Plan 1 Task 11's own measurement) are different enough that merging them
  * behind one flag would be the "same defect in different disguises" this
- * project's own history warns about, not a real simplification.
+ * project's own history warns about, not a real simplification. The
+ * post-encode scaffolding they do share verbatim lives in `buildPlan`.
  */
 export function planBorderWrite(
   root: string, layout: Layout, border: Block[], profile: EngineProfile,
 ): BinaryWrite | null {
   const path = `${root}/${layout.borderFilepath}`;
   const next = encodeBlocks(border, profile);
-  const prevBytes = existsSync(path) ? readFileSync(path) : Buffer.alloc(0);
-  if (prevBytes.equals(next)) return null;
-
-  return { path, bytes: next, changedBlocks: diffChangedBlocks(prevBytes, next) };
+  return buildPlan(path, next);
 }

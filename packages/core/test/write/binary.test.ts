@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { planBlockdataWrite } from "../../src/write/binary.js";
+import { planBlockdataWrite, planBorderWrite } from "../../src/write/binary.js";
 import { encodeBlocks, parseBlocks } from "../../src/load/blocks.js";
 import { defaultProfile } from "../../src/config/engine.js";
 import { openProject } from "../../src/project.js";
@@ -94,4 +94,28 @@ describe("planBlockdataWrite", () => {
     // regressed; do not just update the pin to whatever a first run prints.
     expect(trailingBlockLayouts).toBe(19);
   }, 300_000);
+});
+
+describe("planBorderWrite", () => {
+  it("returns null when nothing changed", () => {
+    const root = tempRoot();
+    const border: Block[] = Array.from({ length: 4 }, (_, i) => ({ metatileId: i, collision: 0, elevation: 3 }));
+    writeFileSync(join(root, "border.bin"), encodeBlocks(border, profile));
+    const plan = planBorderWrite(root, makeLayout(root, "map.bin"), border, profile);
+    expect(plan).toBeNull();
+  });
+
+  it("one changed block produces a write whose changedBlocks is [index] and whose bytes differ by exactly 2 bytes", () => {
+    const root = tempRoot();
+    const original: Block[] = Array.from({ length: 4 }, (_, i) => ({ metatileId: i, collision: 0, elevation: 3 }));
+    writeFileSync(join(root, "border.bin"), encodeBlocks(original, profile));
+    const edited = original.map((b, i) => (i === 1 ? { ...b, metatileId: 999 & profile.blockMetatileIdMask } : b));
+    const plan = planBorderWrite(root, makeLayout(root, "map.bin"), edited, profile);
+    expect(plan).not.toBeNull();
+    expect(plan!.changedBlocks).toEqual([1]);
+    const onDisk = readFileSync(join(root, "border.bin"));
+    let diffBytes = 0;
+    for (let i = 0; i < onDisk.length; i++) if (onDisk[i] !== plan!.bytes[i]) diffBytes++;
+    expect(diffBytes).toBe(2);
+  });
 });
