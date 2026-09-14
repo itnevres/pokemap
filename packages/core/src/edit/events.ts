@@ -1,5 +1,5 @@
 import type { MapData, ObjectEvent, WarpEvent, CoordEvent, BgEvent } from "../load/maps.js";
-import type { JsonEdit, JsonPath } from "../write/jsonEdit.js";
+import type { JsonEdit } from "../write/jsonEdit.js";
 import type { InsertOp, RemoveOp } from "../write/save.js";
 
 export type EventKind = "object" | "warp" | "coord" | "bg";
@@ -112,5 +112,5 @@ function rawToCamel(kind: EventKind, raw: Record<string, unknown>): ObjectEvent 
   // small common base) -- passed through structurally rather than
   // enumerated field by field, the same posture maps.ts's own parser takes
   // for these two kinds.
-  return { x: Number(raw.x), y: Number(raw.y), elevation: Number(raw.elevation), ...raw } as CoordEvent | BgEvent;
+  return { ...raw, x: Number(raw.x), y: Number(raw.y), elevation: Number(raw.elevation) } as CoordEvent | BgEvent;
 }

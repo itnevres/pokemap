@@ -52,6 +52,18 @@ describe("addEvent", () => {
     const { insertOp } = addEvent(empty, "warp", newWarp);
     expect(insertOp.index).toBe(0);
   });
+
+  it("coerces coord x/y/elevation to real numbers even when raw carries them as strings, rather than the spread silently reinstating the strings", () => {
+    const newCoord = { type: "COORD_EVENT_WEATHER", x: "5", y: "7", elevation: "0" };
+    const { map } = addEvent(BASE_MAP, "coord", newCoord);
+    const added = map.coordEvents[0]!;
+    expect(added.x).toBe(5);
+    expect(added.y).toBe(7);
+    expect(added.elevation).toBe(0);
+    expect(typeof added.x).toBe("number");
+    expect(typeof added.y).toBe("number");
+    expect(typeof added.elevation).toBe("number");
+  });
 });
 
 describe("deleteEvent", () => {
