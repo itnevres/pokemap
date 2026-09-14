@@ -218,7 +218,10 @@ describe("insertArrayElement / removeArrayElement", () => {
       // so insertArrayElement correctly throws there; it is not part of
       // this identity property, which is about editing an array that
       // already exists (empty or not).
-      if (!("object_events" in parsed)) continue;
+      if (!("object_events" in parsed)) {
+        expect(() => insertArrayElement(src, ["object_events"], 0, SAMPLE_OBJECT_EVENT)).toThrow();
+        continue;
+      }
       const n = (parsed.object_events ?? []).length;
       const added = insertArrayElement(src, ["object_events"], n, SAMPLE_OBJECT_EVENT);
       expect(removeArrayElement(added, ["object_events"], n), name).toBe(src);

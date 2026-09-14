@@ -194,11 +194,12 @@ interface ArrayWalk { elements: Span[]; leadingGaps: string[]; }
  * (between `[` and the first element, never a comma), `leadingGaps[k]` for
  * k>=1 is the whitespace AFTER the comma that precedes element k (the comma
  * character itself is consumed separately, never included in a gap
- * string). One more entry than `elements.length` is NOT produced -- the
- * trailing gap before `]` is discarded (nothing needs to reuse it: removal
- * only ever excises up to an element's own `.end`, and insertion never
- * splices after the last element's trailing gap, only right after its
- * `.end` and before that gap).
+ * string). The loop's break branch always pushes one more `leadingGaps`
+ * entry than `elements.length` -- the trailing gap between the last element
+ * (or `[`, if empty) and `]` -- but nothing ever reads that extra slot:
+ * removal only ever excises up to an element's own `.end`, and insertion
+ * never splices after the last element's trailing gap, only right after its
+ * `.end` and before that gap.
  *
  * Assumes this project's own real formatting: a comma immediately follows
  * its value with no space before it (confirmed across every real map.json
