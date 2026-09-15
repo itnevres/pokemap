@@ -376,6 +376,86 @@ describe("MapCanvas", () => {
     await waitFor(() => expect(editSession.endStroke).toHaveBeenCalled());
   });
 
+  // Critical code-review fix: rect had its OWN, worse variant of the
+  // pencil race above -- rectStartRef.current is only set inside
+  // beginStroke().then(...), so a fast down-then-up could reach onMouseUp
+  // before that callback ran; the pre-fix code read rectStartRef.current
+  // synchronously, found it null, and fell into the generic "else: just
+  // endStroke()" branch -- applyPaint for the rect never fired AT ALL (not
+  // merely left out of undo, silently dropped with no error). A
+  // controlled, manually-resolved beginStroke promise reproduces the race
+  // deterministically, rather than hoping real timing cooperates.
+  it("a rect stroke released before begin() resolves still paints the rect, not silently dropped -- reproduces the review-caught race", async () => {
+    let resolveBegin!: () => void;
+    const beginPromise = new Promise<void>((resolve) => { resolveBegin = resolve; });
+    const editSession = {
+      blocks: [], border: [], isDirty: false,
+      beginStroke: vi.fn(() => beginPromise),
+      applyPaint: vi.fn().mockResolvedValue(undefined),
+      endStroke: vi.fn().mockResolvedValue(undefined),
+      undo: vi.fn(), redo: vi.fn(),
+    };
+    const { canvas } = renderMapCanvas({ editSession, activeTool: { kind: "rect", stamp: { width: 1, height: 1, cells: [{ metatileId: 7 }] } } });
+
+    // Fast down-then-up, deliberately BEFORE begin() ever resolves.
+    fireEvent.mouseDown(canvas, { clientX: 16, clientY: 16, button: 0 });
+    fireEvent.mouseUp(canvas, { clientX: 32, clientY: 32, button: 0 });
+    // Nothing can have fired yet -- both handlers are still waiting on
+    // pendingPaintRef, which is still the unresolved beginStroke() promise.
+    expect(editSession.applyPaint).not.toHaveBeenCalled();
+    expect(editSession.endStroke).not.toHaveBeenCalled();
+
+    resolveBegin();
+    await waitFor(() => expect(editSession.applyPaint).toHaveBeenCalledWith(expect.objectContaining({ tool: "rect" })));
+    await waitFor(() => expect(editSession.endStroke).toHaveBeenCalled());
+    // Order matters, not just "both got called eventually" -- apply must
+    // still land before end, exactly like the pencil race fix above.
+    const applyOrder = editSession.applyPaint.mock.invocationCallOrder[0]!;
+    const endOrder = editSession.endStroke.mock.invocationCallOrder[0]!;
+    expect(applyOrder).toBeLessThan(endOrder);
+  });
+
+  // Important code-review fix: without mirroring onMouseUp's cleanup here,
+  // a drag that leaves the canvas mid-gesture (so React's own onMouseUp
+  // never fires at all) left the server-side session's stroke open
+  // indefinitely -- the next stroke's begin() does not override an
+  // already-open one (paintRoutes.test.ts's own stray-double-begin test),
+  // so two unrelated edits would get squashed into one undo step.
+  it("mouse leaving the canvas mid-stroke ends it too, mirroring mouse-up -- a drag that exits the canvas must not leave the stroke open forever", async () => {
+    const editSession = {
+      blocks: [], border: [], isDirty: false,
+      beginStroke: vi.fn().mockResolvedValue(undefined),
+      applyPaint: vi.fn().mockResolvedValue(undefined),
+      endStroke: vi.fn().mockResolvedValue(undefined),
+      undo: vi.fn(), redo: vi.fn(),
+    };
+    const { canvas } = renderMapCanvas({ editSession, activeTool: { kind: "pencil", stamp: { width: 1, height: 1, cells: [{ metatileId: 5 }] } } });
+    await act(async () => {
+      fireEvent.mouseDown(canvas, { clientX: 16, clientY: 16, button: 0 });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(editSession.beginStroke).toHaveBeenCalled();
+
+    fireEvent.mouseLeave(canvas); // no mouseup -- the drag left the canvas instead
+    await waitFor(() => expect(editSession.endStroke).toHaveBeenCalled());
+  });
+
+  it("mouse leaving before a rect's begin() resolves abandons the rect unpainted, but still ends the stroke rather than leaving it open", async () => {
+    const editSession = {
+      blocks: [], border: [], isDirty: false,
+      beginStroke: vi.fn().mockResolvedValue(undefined),
+      applyPaint: vi.fn().mockResolvedValue(undefined),
+      endStroke: vi.fn().mockResolvedValue(undefined),
+      undo: vi.fn(), redo: vi.fn(),
+    };
+    const { canvas } = renderMapCanvas({ editSession, activeTool: { kind: "rect", stamp: { width: 1, height: 1, cells: [{ metatileId: 5 }] } } });
+    fireEvent.mouseDown(canvas, { clientX: 16, clientY: 16, button: 0 });
+    fireEvent.mouseLeave(canvas);
+    await waitFor(() => expect(editSession.endStroke).toHaveBeenCalled());
+    expect(editSession.applyPaint).not.toHaveBeenCalled(); // abandoned, not guessed at from the exit point
+  });
+
   it("panning still works even with an editSession present, as long as no tool is selected (activeTool null)", () => {
     const editSession = { blocks: [], border: [], isDirty: false, beginStroke: vi.fn(), applyPaint: vi.fn(), endStroke: vi.fn(), undo: vi.fn(), redo: vi.fn() };
     const { canvas } = renderMapCanvas({ editSession, activeTool: null });

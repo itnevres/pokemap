@@ -189,6 +189,33 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("paint routes", () => {
     await post(`/api/edit/${map}/paint/end`, {});
   }, 300_000);
 
+  // Code-review fix (MapCanvas's own rect race): the client-side fix
+  // routes a rect's apply through the same await-before-end ordering
+  // pencil/bucket already used, so on the wire begin/apply/end always
+  // arrive in that order for a real rect gesture -- this is the server
+  // half of that guarantee: given that correct order, a rect's own apply
+  // really does land ONE undo command, exactly like the pencil test above
+  // (`begin/apply/end applies a pencil dab and undo reverts it`).
+  it("a rect apply lands as one undo entry -- one undo() call fully reverts the whole rectangle", async () => {
+    const map = "Route34";
+    const before = await (await fetch(`http://127.0.0.1:${s.port}/api/map/${map}`)).json() as any;
+    await post(`/api/edit/${map}/paint/begin`, {});
+    await post(`/api/edit/${map}/paint/apply`, {
+      tool: "rect", x0: 0, y0: 0, x1: 1, y1: 0, stamp: { width: 1, height: 1, cells: [{ metatileId: 9 }] }, origin: { x: 0, y: 0 },
+    });
+    const endRes = await post(`/api/edit/${map}/paint/end`, {});
+    const ended = await endRes.json() as any;
+    expect(ended.blocks[0].metatileId).toBe(9);
+    expect(ended.blocks[1].metatileId).toBe(9);
+    expect(ended.isDirty).toBe(true);
+
+    const undoRes = await post(`/api/edit/${map}/undo`, {});
+    const undone = await undoRes.json() as any;
+    expect(undone.blocks[0].metatileId).toBe(before.blocks[0].metatileId);
+    expect(undone.blocks[1].metatileId).toBe(before.blocks[1].metatileId);
+    expect(undone.isDirty).toBe(false); // ONE undo() fully reverted the whole rect
+  }, 300_000);
+
   it("400s a rect apply missing x0/y0/x1/y1, instead of throwing an opaque 500", async () => {
     const map = "Route33";
     await post(`/api/edit/${map}/paint/begin`, {});

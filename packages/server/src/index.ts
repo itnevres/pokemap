@@ -37,6 +37,27 @@ function readBody(req: IncomingMessage): Promise<string> {
   });
 }
 
+/**
+ * Shared by `/paint/apply`'s pencil and rect branches -- both need a
+ * `stamp` shaped `{ width, height, cells: [] }` and an `{ x, y }` origin;
+ * only how the TARGET cells are produced (a client-built array vs. two
+ * corners expanded server-side) differs between them. Code-review fix:
+ * this validation used to be duplicated near-verbatim in both branches.
+ * Returns an error string for `send(400, { error })`, or undefined when
+ * both are valid.
+ */
+function validateStampAndOrigin(stamp: unknown, origin: unknown): string | undefined {
+  const s = stamp as { width?: unknown; height?: unknown; cells?: unknown } | undefined;
+  if (!s || typeof s.width !== "number" || typeof s.height !== "number" || !Array.isArray(s.cells)) {
+    return `"stamp" must be { width: number, height: number, cells: [] }, got ${JSON.stringify(stamp)}`;
+  }
+  const o = origin as { x?: unknown; y?: unknown } | undefined;
+  if (typeof o?.x !== "number" || typeof o?.y !== "number") {
+    return `"origin" must be { x: number, y: number }, got ${JSON.stringify(origin)}`;
+  }
+  return undefined;
+}
+
 export async function createServer(opts: { projectPath: string; port?: number }): Promise<PokemapServer> {
   const project = openProject(opts.projectPath);
 
@@ -649,13 +670,9 @@ export async function createServer(opts: { projectPath: string; port?: number })
               if (!Array.isArray(targets) || targets.some((t) => typeof t?.x !== "number" || typeof t?.y !== "number")) {
                 return send(400, { error: `"targets" must be an array of { x: number, y: number }, got ${JSON.stringify(targets)}` });
               }
-              if (!stamp || typeof stamp.width !== "number" || typeof stamp.height !== "number" || !Array.isArray(stamp.cells)) {
-                return send(400, { error: `"stamp" must be { width: number, height: number, cells: [] }, got ${JSON.stringify(stamp)}` });
-              }
-              if (typeof origin?.x !== "number" || typeof origin?.y !== "number") {
-                return send(400, { error: `"origin" must be { x: number, y: number }, got ${JSON.stringify(origin)}` });
-              }
-              entry.session.blocks = paintCells(entry.session.blocks, w, h, targets, stamp, origin.x, origin.y);
+              const stampErr = validateStampAndOrigin(stamp, origin);
+              if (stampErr) return send(400, { error: stampErr });
+              entry.session.blocks = paintCells(entry.session.blocks, w, h, targets, stamp!, origin!.x, origin!.y);
             } else if (parsed.tool === "rect") {
               // Task 11: takes the two corners and expands server-side,
               // rather than a client-built `targets` array like pencil --
@@ -665,17 +682,13 @@ export async function createServer(opts: { projectPath: string; port?: number })
               if (typeof x0 !== "number" || typeof y0 !== "number" || typeof x1 !== "number" || typeof y1 !== "number") {
                 return send(400, { error: `"x0", "y0", "x1" and "y1" must be numbers, got x0=${JSON.stringify(x0)} y0=${JSON.stringify(y0)} x1=${JSON.stringify(x1)} y1=${JSON.stringify(y1)}` });
               }
-              if (!stamp || typeof stamp.width !== "number" || typeof stamp.height !== "number" || !Array.isArray(stamp.cells)) {
-                return send(400, { error: `"stamp" must be { width: number, height: number, cells: [] }, got ${JSON.stringify(stamp)}` });
-              }
-              if (typeof origin?.x !== "number" || typeof origin?.y !== "number") {
-                return send(400, { error: `"origin" must be { x: number, y: number }, got ${JSON.stringify(origin)}` });
-              }
+              const stampErr = validateStampAndOrigin(stamp, origin);
+              if (stampErr) return send(400, { error: stampErr });
               const targets: { x: number; y: number }[] = [];
               for (let y = Math.min(y0, y1); y <= Math.max(y0, y1); y++) {
                 for (let x = Math.min(x0, x1); x <= Math.max(x0, x1); x++) targets.push({ x, y });
               }
-              entry.session.blocks = paintCells(entry.session.blocks, w, h, targets, stamp, origin.x, origin.y);
+              entry.session.blocks = paintCells(entry.session.blocks, w, h, targets, stamp!, origin!.x, origin!.y);
             } else if (parsed.tool === "bucket") {
               const { x, y, replacement } = parsed;
               if (typeof x !== "number" || typeof y !== "number") {
