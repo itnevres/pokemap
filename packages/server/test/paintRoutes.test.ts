@@ -173,4 +173,29 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("paint routes", () => {
     const r = await post(`/api/edit/${map}/paint/apply`, { tool: "shift" });
     expect(r.status).toBe(400);
   }, 300_000);
+
+  it("rect tool takes x0,y0,x1,y1 and expands server-side, filling the whole rectangle in one apply call", async () => {
+    const map = "GoldenrodCity";
+    await post(`/api/edit/${map}/paint/begin`, {});
+    const applyRes = await post(`/api/edit/${map}/paint/apply`, {
+      tool: "rect", x0: 0, y0: 0, x1: 1, y1: 1, stamp: { width: 1, height: 1, cells: [{ metatileId: 3 }] }, origin: { x: 0, y: 0 },
+    });
+    const applied = await applyRes.json() as any;
+    const layout = (await (await fetch(`http://127.0.0.1:${s.port}/api/map/${map}`)).json() as any).layout;
+    expect(applied.blocks[0].metatileId).toBe(3);
+    expect(applied.blocks[1].metatileId).toBe(3);
+    expect(applied.blocks[layout.width].metatileId).toBe(3); // (0,1)
+    expect(applied.blocks[layout.width + 1].metatileId).toBe(3); // (1,1)
+    await post(`/api/edit/${map}/paint/end`, {});
+  }, 300_000);
+
+  it("400s a rect apply missing x0/y0/x1/y1, instead of throwing an opaque 500", async () => {
+    const map = "Route33";
+    await post(`/api/edit/${map}/paint/begin`, {});
+    const r = await post(`/api/edit/${map}/paint/apply`, {
+      tool: "rect", x0: 0, y0: 0, stamp: { width: 1, height: 1, cells: [{ metatileId: 1 }] }, origin: { x: 0, y: 0 },
+      // x1/y1 omitted on purpose
+    });
+    expect(r.status).toBe(400);
+  }, 300_000);
 });

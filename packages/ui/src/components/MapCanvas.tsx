@@ -2,10 +2,18 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { drawGrid, drawCollision, drawElevation, drawEvents, type EventMark } from "@pokemap/core/src/render/overlays.js";
 import type { LayoutRaster } from "@pokemap/core/src/render/layout.js";
 import type { MapLayoutData } from "../hooks/useMapLayout.js";
+import type { UseEditSessionResult } from "../hooks/useEditSession.js";
+import type { Stamp } from "@pokemap/core/src/edit/paint.js";
 
 export interface MapCanvasProps {
   mapName: string;
   data: MapLayoutData;
+  /** Present only when editing is active for THIS map -- see
+   *  useEditSession.ts. Every existing read-only consumer (Map mode's
+   *  default view, WarpDestinationModal's preview) never passes this and
+   *  is completely unaffected by anything in this task. */
+  editSession?: UseEditSessionResult;
+  activeTool?: { kind: "pencil" | "rect" | "bucket"; stamp: Stamp } | null;
 }
 
 /** The server-baked border ring the canvas always requests -- see
@@ -54,15 +62,42 @@ interface Hover {
  * one scaled `drawImage`, so dragging or scrolling never re-touches overlay
  * pixels at all.
  */
-export function MapCanvas({ mapName, data }: MapCanvasProps) {
-  const { layout, split, map, blocks } = data;
+export function MapCanvas({ mapName, data, editSession, activeTool }: MapCanvasProps) {
+  const { layout, split, map, blocks: staticBlocks } = data;
+  // Live, server-tracked blocks while an edit session is open for this map;
+  // the static `data.blocks` prop otherwise. Every effect below already
+  // reads `blocks` by name and never needs to know which source it came
+  // from. One real wrinkle: `editSession.blocks` is core's own `Block`
+  // (metatileId/collision/elevation only) -- it carries no resolved tile
+  // `behavior`, unlike `data.blocks` (server-enriched per /api/map/:name).
+  // Recomputing behavior client-side would need the tileset's own behavior
+  // table, which this component doesn't have -- out of scope for wiring
+  // painting (Task 11). The one place that reads `.behavior` (hoverAt,
+  // below) falls back to 0 for a live-edited cell rather than crashing.
+  const blocks = editSession ? editSession.blocks : staticBlocks;
 
   const imgRef = useRef<HTMLImageElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const baseCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
+  const rectStartRef = useRef<{ x: number; y: number } | null>(null);
   const marksRef = useRef<EventMark[]>([]);
+  // Tracks the most recent in-flight paint request (begin's own chain, or a
+  // pencil/bucket applyPaint) -- onMouseUp's non-rect branch awaits this
+  // before calling endStroke(). Confirmed live (Task 11 Step 8) against the
+  // real dev server, not hypothetical: without it, a plain click's mouseup
+  // fires endStroke()'s own fetch immediately, and on localhost it can beat
+  // the still-in-flight begin-then-apply chain onto the wire (begin, end,
+  // apply, in that order) -- /paint/end then snapshots blocks BEFORE the
+  // apply has mutated them, sees no change, and clears strokeStartBlocks
+  // with no undo command pushed. The apply arrives moments later and DOES
+  // mutate entry.session.blocks, but nothing is tracking it anymore -- an
+  // edit silently invisible to undo/redo. This is exactly the class of bug
+  // Plan 0 Section 7 says only a real browser catches; no jsdom-driven test
+  // in this file reproduces it because the mocked editSession never races
+  // real requests against each other.
+  const pendingPaintRef = useRef<Promise<void>>(Promise.resolve());
 
   const [imgLoaded, setImgLoaded] = useState(false);
   const [toggles, setToggles] = useState<Toggles>(NO_TOGGLES);
@@ -260,15 +295,73 @@ export function MapCanvas({ mapName, data }: MapCanvasProps) {
       return;
     }
     const mark = marksRef.current.find((m) => m.x === bx && m.y === by);
-    setHover({ bx, by, metatileId: block.metatileId, collision: block.collision, elevation: block.elevation, behavior: block.behavior, mark });
+    // `block` may be a live-edited core Block (no `.behavior` -- see the
+    // `blocks` doc comment above); fall back to 0 rather than crashing on
+    // `undefined.toString(16)` inside `hex()`.
+    const behavior = (block as { behavior?: number }).behavior ?? 0;
+    setHover({ bx, by, metatileId: block.metatileId, collision: block.collision, elevation: block.elevation, behavior, mark });
+  };
+
+  /** Raw client-coords -> block-cell math, unclamped -- a rect's own second
+   *  corner is allowed to land past the layout edge (a drag that overshoots
+   *  the map boundary); paintCells on the server already silently skips any
+   *  out-of-range target, the same way it skips one mid-drag today. */
+  const rawBlockAt = (e: React.MouseEvent<HTMLCanvasElement>): { x: number; y: number } => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    return {
+      x: Math.floor(((e.clientX - rect.left - pan.x) / zoom - originX) / 16),
+      y: Math.floor(((e.clientY - rect.top - pan.y) / zoom - originY) / 16),
+    };
+  };
+
+  /** Same math, but null outside the layout -- used where painting a single
+   *  cell (pencil/bucket, or a rect's own start corner) must not fire on a
+   *  click that lands off the map entirely. */
+  const blockAt = (e: React.MouseEvent<HTMLCanvasElement>): { x: number; y: number } | null => {
+    const cell = rawBlockAt(e);
+    if (cell.x < 0 || cell.y < 0 || cell.x >= layout.width || cell.y >= layout.height) return null;
+    return cell;
+  };
+
+  const paintAt = (bx: number, by: number) => {
+    if (!editSession || !activeTool) return;
+    if (activeTool.kind === "pencil") {
+      pendingPaintRef.current = editSession.applyPaint({ tool: "pencil", targets: [{ x: bx, y: by }], stamp: activeTool.stamp, origin: { x: bx, y: by } });
+    } else if (activeTool.kind === "bucket") {
+      pendingPaintRef.current = editSession.applyPaint({ tool: "bucket", x: bx, y: by, replacement: activeTool.stamp.cells[0]! });
+    }
+    // "rect" is handled entirely by onMouseUp below (it needs a start AND
+    // end cell, unlike pencil/bucket which act on a single cell) -- see
+    // rectStartRef.
   };
 
   const onMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (e.button !== 0) return;
+    if (editSession && activeTool) {
+      const cell = blockAt(e);
+      if (!cell) return;
+      // Stored in pendingPaintRef too, not just fired-and-forgotten -- see
+      // that ref's own doc comment above for why onMouseUp needs it.
+      pendingPaintRef.current = editSession.beginStroke().then(() => {
+        if (activeTool.kind === "rect") rectStartRef.current = cell;
+        else paintAt(cell.x, cell.y);
+      });
+      return;
+    }
     dragRef.current = { x: e.clientX, y: e.clientY, panX: pan.x, panY: pan.y };
   };
 
   const onMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    // A pencil drag paints a trail as the mouse moves while the button is
+    // held -- jsdom's synthetic mouseMove never sets `e.buttons` the way a
+    // real held-button drag does (Step 9's teeth-proof), so this guard is
+    // exercised for real only in a live browser, not by this file's own
+    // tests.
+    if (editSession && activeTool?.kind === "pencil" && rectStartRef.current === null && e.buttons === 1) {
+      const cell = blockAt(e);
+      if (cell) paintAt(cell.x, cell.y);
+      return;
+    }
     if (dragRef.current) {
       const d = dragRef.current;
       setPan({ x: d.panX + (e.clientX - d.x), y: d.panY + (e.clientY - d.y) });
@@ -277,7 +370,26 @@ export function MapCanvas({ mapName, data }: MapCanvasProps) {
     }
   };
 
-  const onMouseUp = () => {
+  const onMouseUp = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (editSession && activeTool) {
+      if (activeTool.kind === "rect" && rectStartRef.current) {
+        const end = rawBlockAt(e); // unclamped -- see rawBlockAt's own doc comment
+        const start = rectStartRef.current;
+        void editSession
+          .applyPaint({ tool: "rect", x0: start.x, y0: start.y, x1: end.x, y1: end.y, stamp: activeTool.stamp, origin: start })
+          .then(() => editSession.endStroke());
+        rectStartRef.current = null;
+      } else {
+        // Wait for whatever paint pendingPaintRef is currently tracking
+        // (begin's own chain, or the latest pencil/bucket applyPaint)
+        // before ending the stroke -- see pendingPaintRef's own doc
+        // comment for the real, live-observed bug this avoids. Still ends
+        // the stroke even if that paint rejected (a network hiccup mid-
+        // stroke shouldn't leave the session stuck open).
+        void pendingPaintRef.current.catch(() => {}).then(() => editSession.endStroke());
+      }
+      return;
+    }
     dragRef.current = null;
   };
 

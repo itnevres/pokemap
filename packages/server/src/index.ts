@@ -627,6 +627,7 @@ export async function createServer(opts: { projectPath: string; port?: number })
             let parsed: {
               tool?: unknown;
               targets?: { x: number; y: number }[]; stamp?: Stamp; origin?: { x: number; y: number };
+              x0?: number; y0?: number; x1?: number; y1?: number;
               x?: number; y?: number; replacement?: { metatileId: number; collision?: number; elevation?: number };
               dx?: number; dy?: number;
             };
@@ -643,7 +644,7 @@ export async function createServer(opts: { projectPath: string; port?: number })
             const entry = editEntryFor(name);
             const w = entry.session.layout.width, h = entry.session.layout.height;
 
-            if (parsed.tool === "pencil" || parsed.tool === "rect") {
+            if (parsed.tool === "pencil") {
               const { targets, stamp, origin } = parsed;
               if (!Array.isArray(targets) || targets.some((t) => typeof t?.x !== "number" || typeof t?.y !== "number")) {
                 return send(400, { error: `"targets" must be an array of { x: number, y: number }, got ${JSON.stringify(targets)}` });
@@ -653,6 +654,26 @@ export async function createServer(opts: { projectPath: string; port?: number })
               }
               if (typeof origin?.x !== "number" || typeof origin?.y !== "number") {
                 return send(400, { error: `"origin" must be { x: number, y: number }, got ${JSON.stringify(origin)}` });
+              }
+              entry.session.blocks = paintCells(entry.session.blocks, w, h, targets, stamp, origin.x, origin.y);
+            } else if (parsed.tool === "rect") {
+              // Task 11: takes the two corners and expands server-side,
+              // rather than a client-built `targets` array like pencil --
+              // cheaper over the wire for a large rect (one object instead
+              // of width*height of them).
+              const { x0, y0, x1, y1, stamp, origin } = parsed;
+              if (typeof x0 !== "number" || typeof y0 !== "number" || typeof x1 !== "number" || typeof y1 !== "number") {
+                return send(400, { error: `"x0", "y0", "x1" and "y1" must be numbers, got x0=${JSON.stringify(x0)} y0=${JSON.stringify(y0)} x1=${JSON.stringify(x1)} y1=${JSON.stringify(y1)}` });
+              }
+              if (!stamp || typeof stamp.width !== "number" || typeof stamp.height !== "number" || !Array.isArray(stamp.cells)) {
+                return send(400, { error: `"stamp" must be { width: number, height: number, cells: [] }, got ${JSON.stringify(stamp)}` });
+              }
+              if (typeof origin?.x !== "number" || typeof origin?.y !== "number") {
+                return send(400, { error: `"origin" must be { x: number, y: number }, got ${JSON.stringify(origin)}` });
+              }
+              const targets: { x: number; y: number }[] = [];
+              for (let y = Math.min(y0, y1); y <= Math.max(y0, y1); y++) {
+                for (let x = Math.min(x0, x1); x <= Math.max(x0, x1); x++) targets.push({ x, y });
               }
               entry.session.blocks = paintCells(entry.session.blocks, w, h, targets, stamp, origin.x, origin.y);
             } else if (parsed.tool === "bucket") {

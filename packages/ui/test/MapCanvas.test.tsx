@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, fireEvent, screen, waitFor } from "@testing-library/react";
-import { MapCanvas } from "../src/components/MapCanvas.js";
+import { render, fireEvent, screen, waitFor, act } from "@testing-library/react";
+import { MapCanvas, type MapCanvasProps } from "../src/components/MapCanvas.js";
 import type { MapLayoutData } from "../src/hooks/useMapLayout.js";
 
 // ---------------------------------------------------------------------------
@@ -137,19 +137,30 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+/** Renders MapCanvas against the fixture DATA above, plus whatever extra
+ *  props (editSession/activeTool -- Task 11) a test wants layered on. Kept
+ *  synchronous and side-effect-free (no image load, no waiting for the
+ *  composite/blit effects) -- mountReady below builds on it for tests that
+ *  DO need a fully-rendered map; tests that only care about mouse-handler
+ *  wiring (pan vs. paint) use this directly. */
+function renderMapCanvas(extraProps: Partial<MapCanvasProps> = {}) {
+  const utils = render(<MapCanvas mapName="Foo" data={DATA} {...extraProps} />);
+  const canvas = utils.container.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
+  const img = utils.container.querySelector("img.map-canvas__source-image") as HTMLImageElement;
+  return { ...utils, canvas, img };
+}
+
 /** Mounts, loads the source image, and waits for the first composite+blit to
  *  land (proven by the stage canvas's `drawImage` having been called). */
-async function mountReady() {
-  const utils = render(<MapCanvas mapName="Foo" data={DATA} />);
-  const img = utils.container.querySelector("img.map-canvas__source-image") as HTMLImageElement;
-  fireEvent.load(img);
+async function mountReady(extraProps: Partial<MapCanvasProps> = {}) {
+  const utils = renderMapCanvas(extraProps);
+  fireEvent.load(utils.img);
 
-  const canvas = utils.container.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
-  await waitFor(() => expect(ctxByCanvas.get(canvas)?.drawImage).toHaveBeenCalled());
+  await waitFor(() => expect(ctxByCanvas.get(utils.canvas)?.drawImage).toHaveBeenCalled());
 
-  const stageCtx = ctxByCanvas.get(canvas)!;
+  const stageCtx = ctxByCanvas.get(utils.canvas)!;
   const lastDraw = () => stageCtx.drawImage.mock.calls.at(-1)!;
-  return { ...utils, img, canvas, stageCtx, lastDraw };
+  return { ...utils, stageCtx, lastDraw };
 }
 
 describe("MapCanvas", () => {
@@ -320,5 +331,57 @@ describe("MapCanvas", () => {
     expect(screen.getByText(/metatiles 512/)).toBeTruthy();
     expect(screen.getByText(/tiles 512/)).toBeTruthy();
     expect(screen.getByText(/pals 6/)).toBeTruthy();
+  });
+
+  // ---------------------------------------------------------------------
+  // Task 11: painting wired into the existing pan/hover handlers via an
+  // OPTIONAL editSession/activeTool prop pair.
+  // ---------------------------------------------------------------------
+
+  it("with no editSession prop, mouse-down still pans exactly as before -- zero behavior change for read-only consumers", () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    const { canvas } = renderMapCanvas();
+    fireEvent.mouseDown(canvas, { clientX: 10, clientY: 10, button: 0 });
+    fireEvent.mouseMove(canvas, { clientX: 20, clientY: 20 });
+    fireEvent.mouseUp(canvas);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("with an editSession and a pencil tool active, mouse-down begins a stroke and paints the hovered block instead of panning", async () => {
+    const editSession = {
+      blocks: [], border: [], isDirty: false,
+      beginStroke: vi.fn().mockResolvedValue(undefined),
+      applyPaint: vi.fn().mockResolvedValue(undefined),
+      endStroke: vi.fn().mockResolvedValue(undefined),
+      undo: vi.fn(), redo: vi.fn(),
+    };
+    const { canvas } = renderMapCanvas({ editSession, activeTool: { kind: "pencil", stamp: { width: 1, height: 1, cells: [{ metatileId: 5 }] } } });
+    await act(async () => {
+      fireEvent.mouseDown(canvas, { clientX: 16, clientY: 16, button: 0 }); // inside block (0,0) at 1x zoom, 16px/tile, before any pan/fit has run
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(editSession.beginStroke).toHaveBeenCalled();
+    expect(editSession.applyPaint).toHaveBeenCalledWith(expect.objectContaining({ tool: "pencil" }));
+    // endStroke is deliberately NOT synchronous with mouseup -- it awaits
+    // whatever paint is still in flight first (pendingPaintRef in the real
+    // component; a live-browser-only bug this project's own review caught:
+    // without the wait, a plain click's own /paint/end request can reach
+    // the server BEFORE its /paint/apply, silently dropping the paint from
+    // the undo stack). waitFor, not a fixed tick count, for the same
+    // "don't assume a magic number of microtasks" reasoning as mousedown's
+    // own flush above.
+    fireEvent.mouseUp(canvas);
+    await waitFor(() => expect(editSession.endStroke).toHaveBeenCalled());
+  });
+
+  it("panning still works even with an editSession present, as long as no tool is selected (activeTool null)", () => {
+    const editSession = { blocks: [], border: [], isDirty: false, beginStroke: vi.fn(), applyPaint: vi.fn(), endStroke: vi.fn(), undo: vi.fn(), redo: vi.fn() };
+    const { canvas } = renderMapCanvas({ editSession, activeTool: null });
+    fireEvent.mouseDown(canvas, { clientX: 10, clientY: 10, button: 0 });
+    fireEvent.mouseMove(canvas, { clientX: 30, clientY: 30 });
+    fireEvent.mouseUp(canvas);
+    expect(editSession.beginStroke).not.toHaveBeenCalled();
   });
 });
