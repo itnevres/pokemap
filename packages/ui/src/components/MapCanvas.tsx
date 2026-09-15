@@ -4,6 +4,7 @@ import type { LayoutRaster } from "@pokemap/core/src/render/layout.js";
 import type { MapLayoutData } from "../hooks/useMapLayout.js";
 import type { UseEditSessionResult } from "../hooks/useEditSession.js";
 import type { Stamp } from "@pokemap/core/src/edit/paint.js";
+import type { CollisionElevation } from "./CollisionPalette.js";
 
 export interface MapCanvasProps {
   mapName: string;
@@ -13,7 +14,14 @@ export interface MapCanvasProps {
    *  default view, WarpDestinationModal's preview) never passes this and
    *  is completely unaffected by anything in this task. */
   editSession?: UseEditSessionResult;
-  activeTool?: { kind: "pencil" | "rect" | "bucket"; stamp: Stamp } | null;
+  /** "collision" (Task 12) paints a stamp whose cell carries only
+   *  collision/elevation -- no metatileId -- leaving the id untouched
+   *  (paintCells's own field-by-field merge, see packages/core/src/edit/
+   *  paint.ts). It reuses the pencil tool server-side (a single-cell
+   *  targets array); it is its own `activeTool.kind` here only so the
+   *  canvas knows to force the collision overlay visible while it's
+   *  selected -- see `collisionForced` below. */
+  activeTool?: { kind: "pencil" | "rect" | "bucket"; stamp: Stamp } | { kind: "collision"; value: CollisionElevation } | null;
 }
 
 /** The server-baked border ring the canvas always requests -- see
@@ -181,8 +189,17 @@ export function MapCanvas({ mapName, data, editSession, activeTool }: MapCanvasP
 
   const onImgLoad = () => setImgLoaded(true);
 
+  // Task 12: the collision tool forces its own overlay visible regardless
+  // of the manual toggle -- a painter must always see what they're
+  // painting -- ORed into every place `toggles.collision` used to gate
+  // overlay visibility below. The manual toggle BUTTON's own aria-pressed
+  // still reflects `toggles.collision` alone (untouched), not this.
+  const collisionForced = activeTool?.kind === "collision";
+  const showCollision = toggles.collision || collisionForced;
+
   // Step 1: recomposite the pristine base + whichever overlays are on. Runs
-  // only when the map, its data, or the toggle set changes.
+  // only when the map, its data, or the toggle set (or collisionForced)
+  // changes.
   useEffect(() => {
     if (!imgLoaded || !imgRef.current) return;
     let base = baseCanvasRef.current;
@@ -198,7 +215,7 @@ export function MapCanvas({ mapName, data, editSession, activeTool }: MapCanvasP
     ctx.clearRect(0, 0, pixelWidth, pixelHeight);
     ctx.drawImage(imgRef.current, 0, 0);
 
-    const anyOverlay = toggles.grid || toggles.collision || toggles.elevation || toggles.events;
+    const anyOverlay = toggles.grid || showCollision || toggles.elevation || toggles.events;
     marksRef.current = [];
     if (anyOverlay) {
       const imageData = ctx.getImageData(0, 0, pixelWidth, pixelHeight);
@@ -215,14 +232,14 @@ export function MapCanvas({ mapName, data, editSession, activeTool }: MapCanvasP
         blocks,
       };
       if (toggles.grid) drawGrid(raster);
-      if (toggles.collision) drawCollision(raster);
+      if (showCollision) drawCollision(raster);
       if (toggles.elevation) drawElevation(raster);
       if (toggles.events) marksRef.current = drawEvents(raster, map);
       ctx.putImageData(imageData, 0, 0);
     }
 
     setCompositeVersion((v) => v + 1);
-  }, [imgLoaded, toggles, blocks, layout, map, pixelWidth, pixelHeight, originX, originY]);
+  }, [imgLoaded, toggles, showCollision, blocks, layout, map, pixelWidth, pixelHeight, originX, originY]);
 
   // Step 2: cheap re-blit of the already-composited buffer for pan/zoom.
   //
@@ -349,11 +366,29 @@ export function MapCanvas({ mapName, data, editSession, activeTool }: MapCanvasP
     if (activeTool.kind === "pencil") {
       pendingPaintRef.current = editSession.applyPaint({ tool: "pencil", targets: [{ x: bx, y: by }], stamp: activeTool.stamp, origin: { x: bx, y: by } });
     } else if (activeTool.kind === "bucket") {
-      pendingPaintRef.current = editSession.applyPaint({ tool: "bucket", x: bx, y: by, replacement: activeTool.stamp.cells[0]! });
+      const cell = activeTool.stamp.cells[0]!;
+      // `metatileId` is asserted non-null here, not merely non-undefined by
+      // luck: StampCell.metatileId is optional ONLY because Task 12's
+      // collision tool needs a stamp cell that omits it -- bucket's own
+      // stamp always comes from a real palette/dropper pick and always
+      // carries one, so this narrows a shape "collision" never produces,
+      // rather than casting away a real gap.
+      pendingPaintRef.current = editSession.applyPaint({ tool: "bucket", x: bx, y: by, replacement: { metatileId: cell.metatileId!, collision: cell.collision, elevation: cell.elevation } });
+    } else if (activeTool.kind === "collision") {
+      // Reuses the pencil tool server-side with a 1x1 stamp whose cell
+      // omits metatileId -- paintCells's own merge (Task 12's fix to
+      // packages/core/src/edit/paint.ts) leaves the target's existing id
+      // untouched, painting collision/elevation only.
+      pendingPaintRef.current = editSession.applyPaint({
+        tool: "pencil",
+        targets: [{ x: bx, y: by }],
+        stamp: { width: 1, height: 1, cells: [{ collision: activeTool.value.collision, elevation: activeTool.value.elevation }] },
+        origin: { x: bx, y: by },
+      });
     }
     // "rect" is handled entirely by onMouseUp below (it needs a start AND
-    // end cell, unlike pencil/bucket which act on a single cell) -- see
-    // rectStartRef.
+    // end cell, unlike pencil/bucket/collision which act on a single cell)
+    // -- see rectStartRef.
   };
 
   const onMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -375,12 +410,13 @@ export function MapCanvas({ mapName, data, editSession, activeTool }: MapCanvasP
   };
 
   const onMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    // A pencil drag paints a trail as the mouse moves while the button is
-    // held -- jsdom's synthetic mouseMove never sets `e.buttons` the way a
-    // real held-button drag does (Step 9's teeth-proof), so this guard is
-    // exercised for real only in a live browser, not by this file's own
-    // tests.
-    if (editSession && activeTool?.kind === "pencil" && rectStartRef.current === null && e.buttons === 1) {
+    // A pencil (or collision -- Task 12: painting collision by dragging
+    // mirrors pencil's own trail, the natural expectation) drag paints a
+    // trail as the mouse moves while the button is held -- jsdom's
+    // synthetic mouseMove never sets `e.buttons` the way a real held-button
+    // drag does (Step 9's teeth-proof), so this guard is exercised for real
+    // only in a live browser, not by this file's own tests.
+    if (editSession && (activeTool?.kind === "pencil" || activeTool?.kind === "collision") && rectStartRef.current === null && e.buttons === 1) {
       const cell = blockAt(e);
       if (cell) paintAt(cell.x, cell.y);
       return;
@@ -460,7 +496,7 @@ export function MapCanvas({ mapName, data, editSession, activeTool }: MapCanvasP
   };
 
   const imageUrl = `/api/render/${encodeURIComponent(mapName)}.png?border=${BORDER_RINGS}`;
-  const anyOverlay = toggles.grid || toggles.collision || toggles.elevation || toggles.events;
+  const anyOverlay = toggles.grid || showCollision || toggles.elevation || toggles.events;
 
   return (
     <section className="map-canvas" aria-label={`${mapName} canvas`}>
@@ -504,8 +540,8 @@ export function MapCanvas({ mapName, data, editSession, activeTool }: MapCanvasP
               <i className="map-canvas__swatch map-canvas__swatch--grid" /> Grid
             </span>
           )}
-          {toggles.collision && (
-            <span className="map-canvas__legend-item">
+          {showCollision && (
+            <span className="map-canvas__legend-item" data-testid="collision-overlay" data-visible={showCollision}>
               <i className="map-canvas__swatch map-canvas__swatch--collision" /> Collision
             </span>
           )}

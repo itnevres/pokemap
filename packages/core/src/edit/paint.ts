@@ -1,6 +1,6 @@
 import type { Block } from "../model/types.js";
 
-export interface StampCell { metatileId: number; collision?: number; elevation?: number; }
+export interface StampCell { metatileId?: number; collision?: number; elevation?: number; }
 /** Row-major, `cells[y * width + x]`. A 1x1 stamp is the common pencil case;
  *  a larger one is a copied rectangle from the palette or another part of
  *  the map (the dropper's own "reads id, collision and elevation together"
@@ -23,9 +23,10 @@ export function readBlock(blocks: Block[], gridWidth: number, gridHeight: number
  *
  * A stamp cell missing `collision`/`elevation` preserves whatever the
  * TARGET block already had there -- an ordinary metatile paint never
- * disturbs collision/elevation painted separately (Task 8's own
- * requirement: "painting collision must not disturb the id" holds by the
- * same symmetric rule here, the other direction).
+ * disturbs collision/elevation painted separately. The rule is fully
+ * symmetric: a stamp cell missing `metatileId` (Task 12's own collision/
+ * elevation tool -- painting collision must not disturb the id) preserves
+ * the target's existing id the same way.
  *
  * Never mutates its input -- returns a fresh array every call, copying
  * every untouched block too (not just the painted ones), so a caller
@@ -47,7 +48,7 @@ export function paintCells(
     const existing = out[index];
     if (!existing) continue;
     out[index] = {
-      metatileId: cell.metatileId,
+      metatileId: cell.metatileId ?? existing.metatileId,
       collision: cell.collision ?? existing.collision,
       elevation: cell.elevation ?? existing.elevation,
     };
@@ -78,7 +79,7 @@ export function floodFill(blocks: Block[], gridWidth: number, gridHeight: number
     const here = out[index];
     if (!here || here.metatileId !== targetId) continue;
     visited[index] = 1;
-    out[index] = { metatileId: replacement.metatileId, collision: replacement.collision ?? here.collision, elevation: replacement.elevation ?? here.elevation };
+    out[index] = { metatileId: replacement.metatileId ?? here.metatileId, collision: replacement.collision ?? here.collision, elevation: replacement.elevation ?? here.elevation };
     stack.push([cx + 1, cy], [cx - 1, cy], [cx, cy + 1], [cx, cy - 1]);
   }
 

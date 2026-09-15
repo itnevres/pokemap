@@ -77,6 +77,20 @@ describe("paintCells (pencil / rect)", () => {
     const stamp: Stamp = { width: 1, height: 1, cells: [{ metatileId: 9 }] };
     expect(() => paintCells(blocks, 2, 2, [{ x: 99, y: 99 }], stamp, 0, 0)).not.toThrow();
   });
+
+  // Task 12 (collision/elevation painting): a stamp cell that omits
+  // metatileId entirely (the collision tool paints collision/elevation
+  // only, never touching the id) must preserve the target's own existing
+  // metatileId, the same way an omitted collision/elevation already
+  // preserves THEIR existing values above -- symmetric merge, all three
+  // fields independently optional.
+  it("a stamp cell missing metatileId preserves the target's existing metatileId, painting only collision/elevation", () => {
+    const blocks = grid(3, 3, 1);
+    blocks[4] = { metatileId: 42, collision: 0, elevation: 0 }; // (1,1)
+    const stamp: Stamp = { width: 1, height: 1, cells: [{ collision: 1, elevation: 5 }] }; // no metatileId
+    const out = paintCells(blocks, 3, 3, [{ x: 1, y: 1 }], stamp, 1, 1);
+    expect(out[4]).toEqual({ metatileId: 42, collision: 1, elevation: 5 });
+  });
 });
 
 describe("floodFill (bucket)", () => {

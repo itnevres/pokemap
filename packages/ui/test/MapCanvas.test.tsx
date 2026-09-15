@@ -464,4 +464,47 @@ describe("MapCanvas", () => {
     fireEvent.mouseUp(canvas);
     expect(editSession.beginStroke).not.toHaveBeenCalled();
   });
+
+  // ---------------------------------------------------------------------
+  // Task 12: collision/elevation painting. The "collision" tool goes
+  // through the SAME beginStroke().then(() => paintAt(...)) chain pencil
+  // uses (Task 11's own race-safe pipeline -- pendingPaintRef, endActiveStroke)
+  // rather than a new parallel code path, so it needs the same async-flush
+  // treatment the pencil test above needed.
+  // ---------------------------------------------------------------------
+
+  it("with the collision tool active, mouse-down paints collision+elevation only, and forces the collision overlay visible", async () => {
+    const editSession = {
+      blocks: [], border: [], isDirty: false,
+      beginStroke: vi.fn().mockResolvedValue(undefined),
+      applyPaint: vi.fn().mockResolvedValue(undefined),
+      endStroke: vi.fn().mockResolvedValue(undefined),
+      undo: vi.fn(), redo: vi.fn(),
+    };
+    const { canvas, getByTestId } = renderMapCanvas({ editSession, activeTool: { kind: "collision", value: { collision: 1, elevation: 0 } } });
+    await act(async () => {
+      fireEvent.mouseDown(canvas, { clientX: 16, clientY: 16, button: 0 }); // inside block (0,0) at 1x zoom, before any pan/fit has run
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(editSession.beginStroke).toHaveBeenCalled();
+    expect(editSession.applyPaint).toHaveBeenCalledWith(expect.objectContaining({
+      tool: "pencil",
+      stamp: { width: 1, height: 1, cells: [{ collision: 1, elevation: 0 }] },
+    }));
+
+    // Forced on even though nothing toggled "Collision" -- the manual
+    // toggle button itself still reads its own state, unaffected.
+    expect(getByTestId("collision-overlay").getAttribute("data-visible")).toBe("true");
+    expect(screen.getByRole("button", { name: "Collision" }).getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("switching away from the collision tool lets the manual Collision toggle govern the overlay again", () => {
+    const editSession = { blocks: [], border: [], isDirty: false, beginStroke: vi.fn(), applyPaint: vi.fn(), endStroke: vi.fn(), undo: vi.fn(), redo: vi.fn() };
+    const { rerender, queryByTestId } = renderMapCanvas({ editSession, activeTool: { kind: "collision", value: { collision: 0, elevation: 0 } } });
+    expect(queryByTestId("collision-overlay")).toBeTruthy();
+
+    rerender(<MapCanvas mapName="Foo" data={DATA} editSession={editSession} activeTool={{ kind: "pencil", stamp: { width: 1, height: 1, cells: [{ metatileId: 5 }] } }} />);
+    expect(queryByTestId("collision-overlay")).toBeNull(); // no manual toggle on, no forcing tool active either
+  });
 });
