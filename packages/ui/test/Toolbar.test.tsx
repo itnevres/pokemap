@@ -1,6 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { Toolbar } from "../src/components/Toolbar.js";
+import { Toolbar, type ToolKind } from "../src/components/Toolbar.js";
+
+const ALL_TOOLS: ToolKind[] = ["pencil", "rect", "bucket", "dropper", "shift", "collision"];
 
 // No @testing-library/jest-dom in this repo (confirmed: no matcher
 // extension anywhere under packages/ui/test) -- toHaveAttribute/
@@ -19,6 +21,10 @@ describe("Toolbar", () => {
     canUndo: false,
     canRedo: false,
     onOpenSave: vi.fn(),
+    // Every tool available by default -- these tests exercise rendering/
+    // selection/undo-redo/dirty concerns, orthogonal to availability. The
+    // availability-specific behaviour has its own dedicated tests below.
+    availableTools: ALL_TOOLS,
   };
 
   it("renders one button per tool (pencil, rect, bucket, dropper, shift, collision) and marks the active one aria-pressed", () => {
@@ -61,5 +67,35 @@ describe("Toolbar", () => {
     render(<Toolbar {...baseProps} isDirty={true} onOpenSave={onOpenSave} />);
     fireEvent.click(screen.getByRole("button", { name: /Save/ }));
     expect(onOpenSave).toHaveBeenCalled();
+  });
+
+  // Code-review fix: pencil/rect/bucket/dropper/shift used to render fully
+  // active/clickable while resolving to a no-op MapCanvas activeTool --
+  // indistinguishable from a genuinely working tool. Only tools named in
+  // `availableTools` should look and behave clickable.
+  describe("tool availability", () => {
+    const onSelectTool = vi.fn();
+
+    it("disables every tool not in availableTools, and leaves available ones enabled", () => {
+      render(<Toolbar {...baseProps} activeToolKind={null} availableTools={["collision"]} />);
+      for (const name of ["pencil", "rect", "bucket", "dropper", "shift"]) {
+        expect((screen.getByRole("button", { name }) as HTMLButtonElement).disabled).toBe(true);
+      }
+      expect((screen.getByRole("button", { name: "collision" }) as HTMLButtonElement).disabled).toBe(false);
+    });
+
+    it("clicking a disabled (unavailable) tool never calls onSelectTool", () => {
+      onSelectTool.mockClear();
+      render(<Toolbar {...baseProps} activeToolKind={null} availableTools={["collision"]} onSelectTool={onSelectTool} />);
+      fireEvent.click(screen.getByRole("button", { name: "pencil" }));
+      expect(onSelectTool).not.toHaveBeenCalled();
+    });
+
+    it("clicking an available tool still calls onSelectTool", () => {
+      onSelectTool.mockClear();
+      render(<Toolbar {...baseProps} activeToolKind={null} availableTools={["collision"]} onSelectTool={onSelectTool} />);
+      fireEvent.click(screen.getByRole("button", { name: "collision" }));
+      expect(onSelectTool).toHaveBeenCalledWith("collision");
+    });
   });
 });

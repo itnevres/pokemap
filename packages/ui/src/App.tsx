@@ -263,6 +263,11 @@ export function App() {
                 canUndo={editSession.canUndo}
                 canRedo={editSession.canRedo}
                 onOpenSave={() => setSaveDialogOpen(true)}
+                // Code-review fix: only "collision" is actually wired to
+                // MapCanvas today (see `activeTool`'s own doc comment
+                // above) -- everything else must render visibly disabled,
+                // not clickable-but-silently-inert.
+                availableTools={["collision"]}
               />
               {activeToolKind === "collision" && (
                 <div className="app__collision-strip">
@@ -274,34 +279,27 @@ export function App() {
           ) : (
             <p className="app__canvas-placeholder">Loading {selected}…</p>
           )}
-          {/* Task 13: reuses WarpDestinationModal's own backdrop/scrim
-              pattern (Task 8 Feature B) rather than a second modal shape --
-              see SaveDialog.tsx's own root className for the matching
-              `.warp-modal__panel` reuse. Rendered as a sibling of the
-              branches above, at this level, for the same stacking-context
-              reason WarpDestinationModal documents on its own backdrop: a
-              modal nested inside a lower box could never paint above its
+          {/* Task 13: SaveDialog owns its own modal shell (backdrop, Escape-
+              to-cancel, autofocus -- mirrors WarpDestinationModal's own
+              established pattern exactly, see that component's own "Review
+              fix" comment). Rendered as a sibling of the branches above, at
+              this level, for the same stacking-context reason
+              WarpDestinationModal documents on its own backdrop: a modal
+              nested inside a lower box could never paint above its
               siblings regardless of z-index. */}
           {saveDialogOpen && selected && (
-            <div
-              className="warp-modal__backdrop"
-              onKeyDown={(e) => {
-                if (e.key === "Escape") setSaveDialogOpen(false);
+            <SaveDialog
+              mapName={selected}
+              // markClean() first: found live (see useEditSession.ts's own
+              // doc comment on markClean) -- SaveDialog's commit call
+              // bypasses this hook entirely, so without this the Toolbar's
+              // dirty dot would stay on after a real, successful save.
+              onCommitted={() => {
+                editSession.markClean();
+                setSaveDialogOpen(false);
               }}
-            >
-              <SaveDialog
-                mapName={selected}
-                // markClean() first: found live (see useEditSession.ts's own
-                // doc comment on markClean) -- SaveDialog's commit call
-                // bypasses this hook entirely, so without this the Toolbar's
-                // dirty dot would stay on after a real, successful save.
-                onCommitted={() => {
-                  editSession.markClean();
-                  setSaveDialogOpen(false);
-                }}
-                onCancel={() => setSaveDialogOpen(false)}
-              />
-            </div>
+              onCancel={() => setSaveDialogOpen(false)}
+            />
           )}
         </main>
       </div>

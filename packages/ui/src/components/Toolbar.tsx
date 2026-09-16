@@ -13,6 +13,16 @@ export interface ToolbarProps {
   canUndo: boolean;
   canRedo: boolean;
   onOpenSave: () => void;
+  /** Code-review fix: which tools actually have MapCanvas-side behaviour
+   *  wired today. Every tool in `TOOLS` renders as a button (matching
+   *  Porymap's own toolbox, and ready for the follow-up tasks that wire the
+   *  rest), but a tool NOT in this list is disabled with a "not yet
+   *  available" title rather than looking clickable-but-silently-inert --
+   *  App.tsx's own `activeTool` translation resolves an unavailable tool to
+   *  a null MapCanvas activeTool (same as "nothing selected"), so a player
+   *  could otherwise select "pencil," click the map, see nothing happen,
+   *  and reasonably conclude the app is broken. */
+  availableTools: ToolKind[];
 }
 
 /**
@@ -20,32 +30,28 @@ export interface ToolbarProps {
  * entry point into SaveDialog. Per invariant I6, no other control anywhere
  * in this app writes to disk; this button (disabled until `isDirty`) is the
  * only door into that flow.
- *
- * `dropper` and `shift` render here as selectable tools, matching Porymap's
- * own toolbox, but App.tsx currently has no MapCanvas-side behaviour wired
- * for either kind (only pencil/rect/bucket/collision are -- see MapCanvas
- * .tsx's own `paintAt`/`onMouseDown` dispatch) -- selecting them is a
- * deliberately inert no-op today (App.tsx maps them to a null `activeTool`,
- * the same "no tool selected" state MapCanvas already treats as plain
- * panning). Flagged as a follow-up, not built here -- see this task's own
- * report.
  */
-export function Toolbar({ activeToolKind, onSelectTool, isDirty, onUndo, onRedo, canUndo, canRedo, onOpenSave }: ToolbarProps) {
+export function Toolbar({ activeToolKind, onSelectTool, isDirty, onUndo, onRedo, canUndo, canRedo, onOpenSave, availableTools }: ToolbarProps) {
   return (
     <div className="toolbar">
       <div className="toolbar__tools" role="group" aria-label="Tools">
-        {TOOLS.map((kind) => (
-          <button
-            key={kind}
-            type="button"
-            aria-label={kind}
-            aria-pressed={activeToolKind === kind}
-            className="map-canvas__btn toolbar__tool-btn"
-            onClick={() => onSelectTool(kind)}
-          >
-            {kind}
-          </button>
-        ))}
+        {TOOLS.map((kind) => {
+          const available = availableTools.includes(kind);
+          return (
+            <button
+              key={kind}
+              type="button"
+              aria-label={kind}
+              aria-pressed={activeToolKind === kind}
+              disabled={!available}
+              title={available ? undefined : "Not yet available"}
+              className="map-canvas__btn toolbar__tool-btn"
+              onClick={() => onSelectTool(kind)}
+            >
+              {kind}
+            </button>
+          );
+        })}
       </div>
       <div className="toolbar__history" role="group" aria-label="History">
         <button type="button" aria-label="Undo" onClick={onUndo} disabled={!canUndo} className="map-canvas__btn">

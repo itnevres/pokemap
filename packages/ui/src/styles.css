@@ -2004,6 +2004,17 @@ input {
   font-size: var(--text-sm);
 }
 
+/* Code-review fix: a failed GET /plan (route-level 500) needs its own
+   visibly-distinct state, not the same neutral tone as "loading" / "no
+   changes" -- same danger colour save-dialog__refusal-message already
+   reads, kept as plain coloured text rather than a bordered panel since
+   nothing else is rendered alongside it at this point (no file list, no
+   actions to visually separate it from). */
+.save-dialog__load-error {
+  color: var(--danger);
+  font-size: var(--text-sm);
+}
+
 .save-dialog__files {
   list-style: none;
   margin: 0 0 var(--space-3);
