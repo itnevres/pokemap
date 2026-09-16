@@ -50,4 +50,23 @@ describe("generateSignScript", () => {
     expect(() => generateSignScript({ mapName: "Route101", species: "RATTATA", dialogue: "" }))
       .toThrow(/dialogue.*empty/i);
   });
+
+  it.each([
+    ['"', 'RATTATA: "Skreee!"'],
+    ["$", "RATTATA: five bucks? $5!"],
+    ["\n", "RATTATA: Skreee!\nMore."],
+  ])("refuses dialogue containing a literal %s rather than emitting corrupt asm", (_char, dialogue) => {
+    expect(() => generateSignScript({ mapName: "Route101", species: "RATTATA", dialogue }))
+      .toThrow(/dialogue.*must not contain/i);
+  });
+
+  it("normalizes a lowercase/mixed-case species into a correctly-uppercased SPECIES_ constant", () => {
+    const out = generateSignScript({
+      scriptLabel: "Route101_EventScript_WildSign_Rattata",
+      textLabel: "Route101_Text_WildSign_Rattata",
+      species: "Rattata",
+      dialogue: "RATTATA: Skreee!",
+    });
+    expect(out.script).toContain("playmoncry SPECIES_RATTATA, CRY_MODE_NORMAL");
+  });
 });

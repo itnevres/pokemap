@@ -6,8 +6,12 @@ export interface GenerateSignScriptOptions {
   textLabel?: string;
   /** Required when scriptLabel/textLabel are omitted. */
   mapName?: string;
-  /** Bare species name, with or without the SPECIES_ prefix -- e.g. "POLIWRATH" or "SPECIES_POLIWRATH". */
+  /** Bare species name, with or without the SPECIES_ prefix -- e.g. "POLIWRATH" or "SPECIES_POLIWRATH".
+   *  Case-insensitive: normalized to uppercase before building the SPECIES_ constant. */
   species: string;
+  /** Single line of message-box text. Must not contain '"' (would close the
+   *  .string literal early), '$' (the .string terminator in this charmap,
+   *  not a literal character), or a raw newline. */
   dialogue: string;
 }
 
@@ -40,8 +44,20 @@ export function generateSignScript(opts: GenerateSignScriptOptions): GeneratedSi
   if (!opts.dialogue.trim()) {
     throw new Error("generateSignScript: dialogue must not be empty -- a wild sign with no line is a silent NPC, pass real text");
   }
+  if (opts.dialogue.includes('"')) {
+    throw new Error('generateSignScript: dialogue must not contain a literal " -- it would close the .string literal early and produce invalid asm');
+  }
+  if (opts.dialogue.includes("$")) {
+    throw new Error("generateSignScript: dialogue must not contain a literal $ -- in this charmap $ is the .string terminator, not a literal character, and would embed a premature end-of-string");
+  }
+  if (opts.dialogue.includes("\n")) {
+    throw new Error("generateSignScript: dialogue must not contain a raw newline -- .string is single-line here, pass one line of text");
+  }
 
-  const speciesBare = opts.species.replace(/^SPECIES_/, "");
+  // Uppercase before stripping the prefix so a lowercase/mixed-case species
+  // (e.g. from a future UI composer where a user types it) still produces a
+  // correctly-cased SPECIES_ constant, never a non-compiling SPECIES_rattata.
+  const speciesBare = opts.species.toUpperCase().replace(/^SPECIES_/, "");
   const speciesConst = `SPECIES_${speciesBare}`;
 
   let scriptLabel = opts.scriptLabel;
