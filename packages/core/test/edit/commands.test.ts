@@ -108,6 +108,22 @@ describe("EditCommandStack", () => {
     expect(stack.isDirty()).toBe(true);
   });
 
+  it("canUndo()/canRedo() report the stack's own state exactly -- true only while there's something to act on", () => {
+    const session = fakeSession([{ metatileId: 1, collision: 0, elevation: 0 }]);
+    const stack = new EditCommandStack();
+    expect(stack.canUndo()).toBe(false);
+    expect(stack.canRedo()).toBe(false);
+    stack.push(session, setBlocksCommand(session.blocks, [{ metatileId: 2, collision: 0, elevation: 0 }]));
+    expect(stack.canUndo()).toBe(true);
+    expect(stack.canRedo()).toBe(false);
+    stack.undo(session);
+    expect(stack.canUndo()).toBe(false);
+    expect(stack.canRedo()).toBe(true);
+    stack.redo(session);
+    expect(stack.canUndo()).toBe(true);
+    expect(stack.canRedo()).toBe(false);
+  });
+
   it("a stroke is one command -- undoing a multi-block paint reverts the WHOLE stroke in a single step", () => {
     // Simulates dragging a pencil across 40 tiles: the caller (Task 8's own
     // paint route) computes the FULL before/after block arrays for the

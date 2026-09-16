@@ -350,7 +350,7 @@ describe("MapCanvas", () => {
 
   it("with an editSession and a pencil tool active, mouse-down begins a stroke and paints the hovered block instead of panning", async () => {
     const editSession = {
-      blocks: [], border: [], isDirty: false,
+      blocks: [], border: [], isDirty: false, canUndo: false, canRedo: false, markClean: vi.fn(),
       beginStroke: vi.fn().mockResolvedValue(undefined),
       applyPaint: vi.fn().mockResolvedValue(undefined),
       endStroke: vi.fn().mockResolvedValue(undefined),
@@ -389,7 +389,7 @@ describe("MapCanvas", () => {
     let resolveBegin!: () => void;
     const beginPromise = new Promise<void>((resolve) => { resolveBegin = resolve; });
     const editSession = {
-      blocks: [], border: [], isDirty: false,
+      blocks: [], border: [], isDirty: false, canUndo: false, canRedo: false, markClean: vi.fn(),
       beginStroke: vi.fn(() => beginPromise),
       applyPaint: vi.fn().mockResolvedValue(undefined),
       endStroke: vi.fn().mockResolvedValue(undefined),
@@ -423,7 +423,7 @@ describe("MapCanvas", () => {
   // so two unrelated edits would get squashed into one undo step.
   it("mouse leaving the canvas mid-stroke ends it too, mirroring mouse-up -- a drag that exits the canvas must not leave the stroke open forever", async () => {
     const editSession = {
-      blocks: [], border: [], isDirty: false,
+      blocks: [], border: [], isDirty: false, canUndo: false, canRedo: false, markClean: vi.fn(),
       beginStroke: vi.fn().mockResolvedValue(undefined),
       applyPaint: vi.fn().mockResolvedValue(undefined),
       endStroke: vi.fn().mockResolvedValue(undefined),
@@ -443,7 +443,7 @@ describe("MapCanvas", () => {
 
   it("mouse leaving before a rect's begin() resolves abandons the rect unpainted, but still ends the stroke rather than leaving it open", async () => {
     const editSession = {
-      blocks: [], border: [], isDirty: false,
+      blocks: [], border: [], isDirty: false, canUndo: false, canRedo: false, markClean: vi.fn(),
       beginStroke: vi.fn().mockResolvedValue(undefined),
       applyPaint: vi.fn().mockResolvedValue(undefined),
       endStroke: vi.fn().mockResolvedValue(undefined),
@@ -457,7 +457,7 @@ describe("MapCanvas", () => {
   });
 
   it("panning still works even with an editSession present, as long as no tool is selected (activeTool null)", () => {
-    const editSession = { blocks: [], border: [], isDirty: false, beginStroke: vi.fn(), applyPaint: vi.fn(), endStroke: vi.fn(), undo: vi.fn(), redo: vi.fn() };
+    const editSession = { blocks: [], border: [], isDirty: false, canUndo: false, canRedo: false, markClean: vi.fn(), beginStroke: vi.fn(), applyPaint: vi.fn(), endStroke: vi.fn(), undo: vi.fn(), redo: vi.fn() };
     const { canvas } = renderMapCanvas({ editSession, activeTool: null });
     fireEvent.mouseDown(canvas, { clientX: 10, clientY: 10, button: 0 });
     fireEvent.mouseMove(canvas, { clientX: 30, clientY: 30 });
@@ -475,7 +475,7 @@ describe("MapCanvas", () => {
 
   it("with the collision tool active, mouse-down paints collision+elevation only, and forces the collision overlay visible", async () => {
     const editSession = {
-      blocks: [], border: [], isDirty: false,
+      blocks: [], border: [], isDirty: false, canUndo: false, canRedo: false, markClean: vi.fn(),
       beginStroke: vi.fn().mockResolvedValue(undefined),
       applyPaint: vi.fn().mockResolvedValue(undefined),
       endStroke: vi.fn().mockResolvedValue(undefined),
@@ -500,7 +500,7 @@ describe("MapCanvas", () => {
   });
 
   it("switching away from the collision tool lets the manual Collision toggle govern the overlay again", () => {
-    const editSession = { blocks: [], border: [], isDirty: false, beginStroke: vi.fn(), applyPaint: vi.fn(), endStroke: vi.fn(), undo: vi.fn(), redo: vi.fn() };
+    const editSession = { blocks: [], border: [], isDirty: false, canUndo: false, canRedo: false, markClean: vi.fn(), beginStroke: vi.fn(), applyPaint: vi.fn(), endStroke: vi.fn(), undo: vi.fn(), redo: vi.fn() };
     const { rerender, queryByTestId } = renderMapCanvas({ editSession, activeTool: { kind: "collision", value: { collision: 0, elevation: 0 } } });
     expect(queryByTestId("collision-overlay")).toBeTruthy();
 
@@ -515,7 +515,7 @@ describe("MapCanvas", () => {
   // lie at runtime; this must be a real guard that no-ops instead.
   it("bucket tool with a stamp cell that has no metatileId (a shape only the collision tool should ever produce) safely no-ops rather than crashing or sending a bogus replacement", async () => {
     const editSession = {
-      blocks: [], border: [], isDirty: false,
+      blocks: [], border: [], isDirty: false, canUndo: false, canRedo: false, markClean: vi.fn(),
       beginStroke: vi.fn().mockResolvedValue(undefined),
       applyPaint: vi.fn().mockResolvedValue(undefined),
       endStroke: vi.fn().mockResolvedValue(undefined),

@@ -231,6 +231,25 @@ input {
   flex-direction: column;
 }
 
+/* Task 13: wraps Toolbar (+ the collision value strip, while that tool is
+   active) above MapCanvas in Map mode -- a transparent flex-column
+   pass-through, same shape as `.map-canvas` itself just below, so MapCanvas
+   still fills all remaining height exactly as it did as `.app__canvas`'s
+   sole direct child before this wrapper existed. */
+.app__map-editing {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.app__collision-strip {
+  flex: 0 0 auto;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+}
+
 .app__canvas-placeholder {
   flex: 1 1 auto;
   display: flex;
@@ -1887,4 +1906,167 @@ input {
 .collision-swatch--1 {
   background: var(--overlay-collision);
   border-color: var(--overlay-collision);
+}
+
+/* Task 13: Toolbar -- tool selection, undo/redo, save entry point. Docked
+   above MapCanvas in Map mode, same toolbar-row shape as .map-canvas
+   __toolbar just above (bg-panel-raised, border-bottom, space-2/3
+   padding) -- one more instrument-panel strip, not a new visual language. */
+.toolbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-panel-raised);
+  border-bottom: 1px solid var(--border);
+}
+
+.toolbar__tools,
+.toolbar__history {
+  display: flex;
+  gap: var(--space-1);
+}
+
+/* .map-canvas__btn already supplies the base look (border, hover, aria-
+   pressed selected state); this just fixes the tool label's own casing --
+   ToolKind values ("pencil", "rect", ...) are lowercase identifiers, not
+   prose, but should still read as a normal button label. */
+.toolbar__tool-btn {
+  text-transform: capitalize;
+}
+
+.toolbar__save {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.toolbar__dirty-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--warn);
+  display: inline-block;
+}
+
+/* The one button in this app that is ever a primary "commit" action --
+   accent green (the palette's own "primary action" hue per DESIGN.md's
+   colour-token comment), distinct from every other plain .map-canvas__btn
+   which stays neutral until pressed/hovered. */
+.toolbar__save-btn:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+
+.toolbar__save-btn:not(:disabled):hover {
+  background: var(--accent);
+  color: var(--text-on-accent);
+}
+
+.map-canvas__btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.map-canvas__btn:disabled:hover {
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+/* Task 13: SaveDialog -- the one place an edit session ever becomes a real
+   disk write (I6). Reuses WarpDestinationModal's own backdrop/panel pattern
+   (.warp-modal__backdrop/.warp-modal__panel, Task 8 Feature B) rather than
+   inventing a second modal shape -- same scrim token, same z-index, same
+   fixed/centred layout. */
+/* Layout (width/height/flex/overflow) comes from `.warp-modal__panel`
+   (shared with SaveDialog.tsx's own root className) -- this only adds the
+   dialog's internal padding and lets its own content scroll within that
+   fixed panel instead of growing it. */
+.save-dialog {
+  padding: var(--space-4);
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.save-dialog__title {
+  margin: 0 0 var(--space-3);
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.save-dialog__loading,
+.save-dialog__empty {
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+.save-dialog__files {
+  list-style: none;
+  margin: 0 0 var(--space-3);
+  padding: 0;
+  max-height: 320px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.save-dialog__file {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.save-dialog__file:last-child {
+  border-bottom: none;
+}
+
+.save-dialog__file-summary {
+  font-family: var(--font-data);
+  font-size: var(--text-xs);
+  color: var(--text-primary);
+}
+
+/* Plain danger-bordered panel, same technique as .world-canvas__toast's own
+   failed-save banner just above (border: 1px solid var(--danger) on the
+   ordinary panel background, no tint) -- this file has no danger-tinted-
+   background pattern anywhere else, so this doesn't invent one. */
+.save-dialog__refusal {
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--danger);
+  border-radius: 4px;
+  padding: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-2);
+}
+
+.save-dialog__refusal-message {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+
+.save-dialog__refusal-fix {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.save-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: auto;
+  padding-top: var(--space-2);
+}
+
+.save-dialog__btn--primary:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+
+.save-dialog__btn--primary:not(:disabled):hover {
+  background: var(--accent);
+  color: var(--text-on-accent);
 }

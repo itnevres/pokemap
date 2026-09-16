@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { App } from "../src/App.js";
 
 /**
@@ -266,5 +266,160 @@ describe("App", () => {
     // management (create/rename/delete) keeps working even though the map
     // list failed.
     await waitFor(() => expect(screen.getByText("Mt Moon")).toBeTruthy());
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task 13: Save flow UI -- I6's dirty-session guards (beforeunload, map
+// switch), now wired through App.tsx's OWN real useEditSession(selected,
+// layout.data?.blocks) call, real Toolbar, and real MapCanvas paint
+// dispatch (not a hardcode -- Tasks 11/12 only ever proved painting through
+// MapCanvas.test.tsx's own mocked editSession object; this is the first
+// suite to drive a paint through the fully-wired app).
+//
+// Fixture mirrors MapCanvas.test.tsx's own tiny 2x2/border-1 layout (so
+// pixel math is easy to predict by hand: originX/Y = 1*16 = 16, so a click
+// at (20, 20) lands inside block (0, 0)) -- deliberately NOT reusing that
+// file's own DATA constant (it's module-private there), just its shape.
+// ---------------------------------------------------------------------------
+const PALLET_TOWN_LAYOUT = {
+  map: {
+    id: "MAP_PALLET_TOWN", name: "PalletTown", layout: "LAYOUT_PALLET_TOWN",
+    music: "MUS_DUMMY", regionMapSection: "MAPSEC_NONE", mapType: "MAP_TYPE_TOWN", weather: "WEATHER_NONE",
+    connections: [], objectEvents: [], warpEvents: [], coordEvents: [], bgEvents: [],
+  },
+  layout: {
+    id: "LAYOUT_PALLET_TOWN", name: "PalletTown_Layout", width: 2, height: 2, borderWidth: 1, borderHeight: 1,
+    primaryTileset: "gTileset_General", secondaryTileset: "gTileset_Petalburg",
+    borderFilepath: "data/layouts/PalletTown/border.bin", blockdataFilepath: "data/layouts/PalletTown/map.bin",
+  },
+  split: { version: "emerald", tiles: 512, metatiles: 512, pals: 6 },
+  blocks: [
+    { metatileId: 0x10, collision: 0, elevation: 3, behavior: 0 },
+    { metatileId: 0x11, collision: 0, elevation: 3, behavior: 0 },
+    { metatileId: 0x12, collision: 0, elevation: 3, behavior: 0 },
+    { metatileId: 0x13, collision: 0, elevation: 3, behavior: 0 },
+  ],
+};
+
+/** Same shape, a different map -- the switch target for the map-switch
+ *  guard test below. Never actually loaded (the guard is expected to block
+ *  the switch), but /api/map/Route1 still needs a route in case the guard
+ *  fails open and the test would otherwise hang on an unmocked fetch. */
+const ROUTE1_LAYOUT = { ...PALLET_TOWN_LAYOUT, map: { ...PALLET_TOWN_LAYOUT.map, id: "MAP_ROUTE1", name: "Route1" } };
+
+const EDIT_GROUPS = { groupOrder: ["Kanto"], groups: { Kanto: ["PalletTown", "Route1"] } };
+
+function makeEditFetchMock() {
+  return vi.fn((url: string, init?: RequestInit) => {
+    const method = init?.method ?? "GET";
+    if (url === "/api/groups") {
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(EDIT_GROUPS) } as Response);
+    }
+    if (url === "/api/map/PalletTown") {
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(PALLET_TOWN_LAYOUT) } as Response);
+    }
+    if (url === "/api/map/Route1") {
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(ROUTE1_LAYOUT) } as Response);
+    }
+    if (url.startsWith("/api/edit/PalletTown/paint/") && method === "POST") {
+      // /paint/end is the one call that actually marks the session dirty
+      // (mirrors the real server: /paint/begin and /paint/apply don't flip
+      // isDirty on their own -- see editSessions.ts's own /paint/end
+      // handler, which only pushes an undo command, and therefore sets
+      // isDirty, once a stroke actually finishes).
+      const dirty = url.endsWith("/paint/end");
+      return Promise.resolve({
+        ok: true, status: 200,
+        json: () => Promise.resolve({ blocks: PALLET_TOWN_LAYOUT.blocks, border: [], isDirty: dirty, canUndo: dirty, canRedo: false }),
+      } as Response);
+    }
+    return Promise.reject(new Error(`unexpected fetch ${url}`));
+  });
+}
+
+/** Renders App, selects PalletTown, activates the Toolbar's collision tool
+ *  (the one paint tool that's live without a MetatilePalette -- see
+ *  App.tsx's own `activeTool` doc comment), and paints one cell via a real
+ *  mousedown/mouseup on the canvas -- driving editSession.isDirty to true
+ *  through the REAL begin/apply/end round trip, not a mocked editSession
+ *  object. */
+async function renderAppInEditModeWithDirtySession() {
+  const utils = render(<App />);
+  // `getByRole("button", ...)`, not `getByText` -- once PalletTown is
+  // selected, App.tsx's own `.app__status` header span ALSO renders the
+  // map name as plain text, so a text-only query would match two elements.
+  await waitFor(() => expect(screen.getByRole("button", { name: "PalletTown" })).toBeTruthy());
+  fireEvent.click(screen.getByRole("button", { name: "PalletTown" }));
+
+  await screen.findByRole("button", { name: "collision" });
+  fireEvent.click(screen.getByRole("button", { name: "collision" }));
+
+  const canvas = document.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
+  await act(async () => {
+    fireEvent.mouseDown(canvas, { clientX: 20, clientY: 20, button: 0 });
+  });
+  await act(async () => {
+    fireEvent.mouseUp(canvas, { clientX: 20, clientY: 20, button: 0 });
+  });
+  await waitFor(() => expect(screen.getByTestId("dirty-indicator")).toBeTruthy());
+
+  return utils;
+}
+
+describe("App -- Task 13 save flow", () => {
+  it("in Map mode with a dirty session, attempting to switch maps shows a confirm() guard instead of switching silently, and does not switch on cancel", async () => {
+    vi.stubGlobal("fetch", makeEditFetchMock());
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+
+    await renderAppInEditModeWithDirtySession();
+
+    fireEvent.click(screen.getByRole("button", { name: "Route1" }));
+
+    expect(confirmSpy).toHaveBeenCalled();
+    // Cancelled (confirm -> false): still on PalletTown, not silently
+    // switched to Route1.
+    expect(screen.getByRole("button", { name: "PalletTown" }).getAttribute("aria-current")).toBe("true");
+    expect(screen.getByRole("button", { name: "Route1" }).getAttribute("aria-current")).not.toBe("true");
+
+    confirmSpy.mockRestore();
+    vi.unstubAllGlobals();
+  });
+
+  it("registers a beforeunload handler while the edit session is dirty, and removes it on unmount", async () => {
+    vi.stubGlobal("fetch", makeEditFetchMock());
+    const addSpy = vi.spyOn(window, "addEventListener");
+    const removeSpy = vi.spyOn(window, "removeEventListener");
+
+    const { unmount } = await renderAppInEditModeWithDirtySession();
+    expect(addSpy).toHaveBeenCalledWith("beforeunload", expect.any(Function));
+
+    unmount();
+    expect(removeSpy).toHaveBeenCalledWith("beforeunload", expect.any(Function));
+
+    addSpy.mockRestore();
+    removeSpy.mockRestore();
+    vi.unstubAllGlobals();
+  });
+
+  // Step 13 teeth-proof: pins the *gate*, not just the dirty-session
+  // behaviour above -- a beforeunload effect that attaches unconditionally
+  // (dropping the `if (!editSession.isDirty) return;` guard in App.tsx)
+  // would still pass every test above, since they only ever check the
+  // dirty case. This is the companion assertion that actually fails if
+  // that guard is removed.
+  it("does NOT register a beforeunload handler while the session is clean", async () => {
+    vi.stubGlobal("fetch", makeEditFetchMock());
+    const addSpy = vi.spyOn(window, "addEventListener");
+
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("PalletTown")).toBeTruthy());
+    fireEvent.click(screen.getByText("PalletTown"));
+    await screen.findByRole("button", { name: "collision" }); // MapCanvas is mounted, nothing painted
+
+    expect(addSpy).not.toHaveBeenCalledWith("beforeunload", expect.any(Function));
+
+    addSpy.mockRestore();
+    vi.unstubAllGlobals();
   });
 });

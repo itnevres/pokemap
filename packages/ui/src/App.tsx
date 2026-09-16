@@ -1,12 +1,16 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { MapTree } from "./components/MapTree.js";
 import { MapCanvas } from "./components/MapCanvas.js";
 import { WorldCanvas } from "./components/WorldCanvas.js";
 import { DungeonSidebar } from "./components/DungeonSidebar.js";
+import { Toolbar, type ToolKind } from "./components/Toolbar.js";
+import { SaveDialog } from "./components/SaveDialog.js";
+import { CollisionPalette, type CollisionElevation } from "./components/CollisionPalette.js";
 import { useMapGroups } from "./hooks/useMapGroups.js";
 import { useMapLayout } from "./hooks/useMapLayout.js";
 import { useWorldVisibility } from "./hooks/useWorldVisibility.js";
 import { useDungeons } from "./hooks/useDungeons.js";
+import { useEditSession } from "./hooks/useEditSession.js";
 
 type Mode = "map" | "world" | "dungeon";
 
@@ -29,7 +33,79 @@ export function App() {
   const { placed: worldVisibility, error: worldVisibilityError } = useWorldVisibility(mode === "world");
   const dungeons = useDungeons(mode === "dungeon");
 
+  // Task 13: the edit session for whatever map is `selected`, tracked
+  // unconditionally on `selected` -- NOT gated on `mode === "map"`, deliberately
+  // mirroring `layout` just above. Gating this on mode would mean switching to
+  // World/Dungeon mode and back resets this hook's own `[mapName, ...]` effect
+  // (mapName briefly going to `null` and back), wiping the client's view of
+  // isDirty/blocks/undo-redo even though the REAL session sitting in server
+  // memory (Task 8/9's EditSession, keyed only by map name) is untouched --
+  // the client would silently desync from what the server still thinks is
+  // dirty. Tracking `selected` directly keeps the two in agreement regardless
+  // of which top-level view happens to be on screen, and per I6 it's also
+  // exactly the value we want available everywhere the "you have unsaved
+  // changes" guards below need it, not just while Map mode's own UI is
+  // rendered.
+  const editSession = useEditSession(selected, layout.data?.blocks);
+
+  // Which paint tool the Toolbar has selected, and the small piece of state
+  // each tool needs to actually paint something. Task 13 is the first task
+  // to wire real tool selection into App.tsx (Tasks 11/12 only ever
+  // exercised MapCanvas's editSession/activeTool props via a temporary,
+  // pre-commit-reverted hardcode) -- see this task's own report for why
+  // pencil/rect/bucket stay null-until-configured below rather than getting
+  // a MetatilePalette mounted in this same task.
+  const [activeToolKind, setActiveToolKind] = useState<ToolKind | null>(null);
+  const [collisionValue, setCollisionValue] = useState<CollisionElevation>({ collision: 0, elevation: 0 });
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+
+  // Translates the Toolbar's bare ToolKind into the shape MapCanvas's own
+  // `activeTool` prop actually expects (see MapCanvas.tsx's own
+  // MapCanvasProps doc comment -- its type union has no "dropper"/"shift"
+  // member at all).
+  //   - "collision" always has a value to paint with (collisionValue starts
+  //     at a sane default and CollisionPalette, mounted below while this
+  //     tool is active, is the only thing that ever changes it) -- fully
+  //     live today.
+  //   - "pencil"/"rect"/"bucket" need a Stamp (a metatile selection) that
+  //     nothing in this app supplies yet -- no MetatilePalette is mounted
+  //     anywhere in App.tsx (Task 10 built the component; mounting it needs
+  //     primaryCount/secondaryCount data /api/map/:name doesn't currently
+  //     return, a real gap flagged as a follow-up, not fixed here). Rather
+  //     than paint a hardcoded, non-user-chosen stamp -- a surprising,
+  //     unwanted write, the opposite of I6's spirit -- these stay
+  //     null-until-configured: selectable in the Toolbar for a complete,
+  //     future-ready UI, but inert (same as no tool selected) until a
+  //     palette exists to actually choose what to paint with.
+  //   - "dropper"/"shift" have no MapCanvas-side behaviour wired at all
+  //     (also flagged as a follow-up) -- also inert.
+  const activeTool = useMemo(() => {
+    if (activeToolKind === "collision") return { kind: "collision" as const, value: collisionValue };
+    return null;
+  }, [activeToolKind, collisionValue]);
+
+  // I6: "no autosave, ever" also means losing a dirty session silently must
+  // never happen -- closing the tab is the browser-level case (this effect),
+  // switching maps is the in-app case (selectMap's own guard just below).
+  // Gated on isDirty, not just "an edit session exists": an OPEN session
+  // that matches disk (nothing painted yet, or already saved) is not lossy
+  // to abandon, and a handler that's always attached would make Step 13's
+  // own teeth-proof test meaningful (attaching unconditionally is exactly
+  // the bug that test exists to catch).
+  useEffect(() => {
+    if (!editSession.isDirty) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [editSession.isDirty]);
+
   const selectMap = (name: string) => {
+    if (editSession.isDirty && !window.confirm("You have unsaved changes on this map. Discard them and switch maps?")) {
+      return;
+    }
     setSelected(name);
     setSelectVersion((v) => v + 1);
   };
@@ -177,9 +253,55 @@ export function App() {
           ) : layout.error ? (
             <p className="app__canvas-placeholder">Could not load {selected}: {layout.error}</p>
           ) : layout.data ? (
-            <MapCanvas mapName={selected} data={layout.data} />
+            <div className="app__map-editing">
+              <Toolbar
+                activeToolKind={activeToolKind}
+                onSelectTool={setActiveToolKind}
+                isDirty={editSession.isDirty}
+                onUndo={() => void editSession.undo()}
+                onRedo={() => void editSession.redo()}
+                canUndo={editSession.canUndo}
+                canRedo={editSession.canRedo}
+                onOpenSave={() => setSaveDialogOpen(true)}
+              />
+              {activeToolKind === "collision" && (
+                <div className="app__collision-strip">
+                  <CollisionPalette selected={collisionValue} onSelect={setCollisionValue} />
+                </div>
+              )}
+              <MapCanvas mapName={selected} data={layout.data} editSession={editSession} activeTool={activeTool} />
+            </div>
           ) : (
             <p className="app__canvas-placeholder">Loading {selected}…</p>
+          )}
+          {/* Task 13: reuses WarpDestinationModal's own backdrop/scrim
+              pattern (Task 8 Feature B) rather than a second modal shape --
+              see SaveDialog.tsx's own root className for the matching
+              `.warp-modal__panel` reuse. Rendered as a sibling of the
+              branches above, at this level, for the same stacking-context
+              reason WarpDestinationModal documents on its own backdrop: a
+              modal nested inside a lower box could never paint above its
+              siblings regardless of z-index. */}
+          {saveDialogOpen && selected && (
+            <div
+              className="warp-modal__backdrop"
+              onKeyDown={(e) => {
+                if (e.key === "Escape") setSaveDialogOpen(false);
+              }}
+            >
+              <SaveDialog
+                mapName={selected}
+                // markClean() first: found live (see useEditSession.ts's own
+                // doc comment on markClean) -- SaveDialog's commit call
+                // bypasses this hook entirely, so without this the Toolbar's
+                // dirty dot would stay on after a real, successful save.
+                onCommitted={() => {
+                  editSession.markClean();
+                  setSaveDialogOpen(false);
+                }}
+                onCancel={() => setSaveDialogOpen(false)}
+              />
+            </div>
           )}
         </main>
       </div>

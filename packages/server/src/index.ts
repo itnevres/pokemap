@@ -135,8 +135,18 @@ export async function createServer(opts: { projectPath: string; port?: number })
   // deletes, which mutate session.map rather than session.blocks -- without
   // this, undoing an event op would report the reverted blocks/border but
   // leave the client's own map view silently stale.
+  //
+  // canUndo/canRedo (Task 13): the Toolbar's own Undo/Redo buttons need to
+  // know whether there's anything to undo/redo without guessing client-side
+  // -- entry.stack already tracks this exactly (see EditCommandStack's own
+  // canUndo()/canRedo()), so every route that touches the stack (paint end,
+  // undo, redo, and the event-op routes below) reports it for free through
+  // this one shared response shape.
   const sendSession = (send: (code: number, body: unknown) => void, code: number, entry: ReturnType<typeof editEntryFor>) =>
-    send(code, { blocks: entry.session.blocks, border: entry.session.border, map: entry.session.map, isDirty: entry.session.isDirty });
+    send(code, {
+      blocks: entry.session.blocks, border: entry.session.border, map: entry.session.map, isDirty: entry.session.isDirty,
+      canUndo: entry.stack.canUndo(), canRedo: entry.stack.canRedo(),
+    });
 
   // Shared by all three event routes below: the prev-snapshot / mutate /
   // push-undo-command sequence is identical across move/add/delete, only
@@ -734,7 +744,7 @@ export async function createServer(opts: { projectPath: string; port?: number })
       const undoMatch = /^\/api\/edit\/(.+)\/undo$/.exec(url.pathname);
       if (undoMatch && req.method === "POST") {
         const name = decodeURIComponent(undoMatch[1]!);
-        if (!editSessions.has(name)) return send(200, { blocks: [], border: [], map: null, isDirty: false }); // nothing open -- a no-op, not a 500
+        if (!editSessions.has(name)) return send(200, { blocks: [], border: [], map: null, isDirty: false, canUndo: false, canRedo: false }); // nothing open -- a no-op, not a 500
         const entry = editEntryFor(name);
         entry.stack.undo(entry.session);
         return sendSession(send, 200, entry);
@@ -743,7 +753,7 @@ export async function createServer(opts: { projectPath: string; port?: number })
       const redoMatch = /^\/api\/edit\/(.+)\/redo$/.exec(url.pathname);
       if (redoMatch && req.method === "POST") {
         const name = decodeURIComponent(redoMatch[1]!);
-        if (!editSessions.has(name)) return send(200, { blocks: [], border: [], map: null, isDirty: false });
+        if (!editSessions.has(name)) return send(200, { blocks: [], border: [], map: null, isDirty: false, canUndo: false, canRedo: false });
         const entry = editEntryFor(name);
         entry.stack.redo(entry.session);
         return sendSession(send, 200, entry);

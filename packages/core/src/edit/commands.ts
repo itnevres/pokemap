@@ -70,4 +70,16 @@ export class EditCommandStack {
   isDirty(): boolean {
     return this.undoStack.length !== this.cleanIndex;
   }
+
+  /** Task 13: the Toolbar's Undo/Redo buttons need to know whether calling
+   *  undo()/redo() would do anything, without the server having to invent a
+   *  new route just to answer that -- the stack already knows. Exact, not a
+   *  heuristic: mirrors undo()/redo()'s own `.pop()` guard above. */
+  canUndo(): boolean {
+    return this.undoStack.length > 0;
+  }
+
+  canRedo(): boolean {
+    return this.redoStack.length > 0;
+  }
 }

@@ -32,6 +32,30 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("paint routes", () => {
     expect(undone.isDirty).toBe(false);
   }, 300_000);
 
+  it("canUndo/canRedo track the session's own undo stack through a full begin/apply/end/undo/redo cycle", async () => {
+    const map = "Route101"; // its own map, isolated from every other test's open session
+    const begin = await post(`/api/edit/${map}/paint/begin`, {});
+    expect((await begin.json() as any).canUndo).toBe(false); // nothing pushed yet
+
+    await post(`/api/edit/${map}/paint/apply`, {
+      tool: "pencil", targets: [{ x: 0, y: 0 }], stamp: { width: 1, height: 1, cells: [{ metatileId: 3 }] }, origin: { x: 0, y: 0 },
+    });
+    const end = await post(`/api/edit/${map}/paint/end`, {});
+    const ended = await end.json() as any;
+    expect(ended.canUndo).toBe(true);
+    expect(ended.canRedo).toBe(false);
+
+    const undo = await post(`/api/edit/${map}/undo`, {});
+    const undone = await undo.json() as any;
+    expect(undone.canUndo).toBe(false);
+    expect(undone.canRedo).toBe(true);
+
+    const redo = await post(`/api/edit/${map}/redo`, {});
+    const redone = await redo.json() as any;
+    expect(redone.canUndo).toBe(true);
+    expect(redone.canRedo).toBe(false);
+  }, 300_000);
+
   it("redo re-applies after an undo", async () => {
     const map = "NewBarkTown"; // a DIFFERENT map, to avoid the previous test's still-open session
     await post(`/api/edit/${map}/paint/begin`, {});
