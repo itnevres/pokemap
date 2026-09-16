@@ -366,14 +366,18 @@ export function MapCanvas({ mapName, data, editSession, activeTool }: MapCanvasP
     if (activeTool.kind === "pencil") {
       pendingPaintRef.current = editSession.applyPaint({ tool: "pencil", targets: [{ x: bx, y: by }], stamp: activeTool.stamp, origin: { x: bx, y: by } });
     } else if (activeTool.kind === "bucket") {
-      const cell = activeTool.stamp.cells[0]!;
-      // `metatileId` is asserted non-null here, not merely non-undefined by
-      // luck: StampCell.metatileId is optional ONLY because Task 12's
-      // collision tool needs a stamp cell that omits it -- bucket's own
-      // stamp always comes from a real palette/dropper pick and always
-      // carries one, so this narrows a shape "collision" never produces,
-      // rather than casting away a real gap.
-      pendingPaintRef.current = editSession.applyPaint({ tool: "bucket", x: bx, y: by, replacement: { metatileId: cell.metatileId!, collision: cell.collision, elevation: cell.elevation } });
+      const cell = activeTool.stamp.cells[0];
+      // Runtime guard, not a non-null assertion: StampCell.metatileId is
+      // optional ONLY because the collision tool needs a stamp cell that
+      // omits it (Task 12's own widening of the type). Bucket's own stamp
+      // is expected to always carry a real id (from a palette/dropper
+      // pick), but nothing at the type level stops a future caller from
+      // routing a collision-only stamp through "bucket" -- asserting here
+      // would make that a silent lie (either a crash or a bogus
+      // `replacement.metatileId: undefined` sent to the server). No-op
+      // instead: there is nothing sensible to flood-fill with.
+      if (cell?.metatileId === undefined) return;
+      pendingPaintRef.current = editSession.applyPaint({ tool: "bucket", x: bx, y: by, replacement: { metatileId: cell.metatileId, collision: cell.collision, elevation: cell.elevation } });
     } else if (activeTool.kind === "collision") {
       // Reuses the pencil tool server-side with a 1x1 stamp whose cell
       // omits metatileId -- paintCells's own merge (Task 12's fix to

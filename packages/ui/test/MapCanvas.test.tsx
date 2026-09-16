@@ -507,4 +507,27 @@ describe("MapCanvas", () => {
     rerender(<MapCanvas mapName="Foo" data={DATA} editSession={editSession} activeTool={{ kind: "pencil", stamp: { width: 1, height: 1, cells: [{ metatileId: 5 }] } }} />);
     expect(queryByTestId("collision-overlay")).toBeNull(); // no manual toggle on, no forcing tool active either
   });
+
+  // Code-review fix: StampCell.metatileId became optional for the collision
+  // tool's sake, which means nothing at the TYPE level stops a future
+  // caller from routing a collision-only stamp through "bucket" too. A bare
+  // non-null assertion on cell.metatileId there would make that a silent
+  // lie at runtime; this must be a real guard that no-ops instead.
+  it("bucket tool with a stamp cell that has no metatileId (a shape only the collision tool should ever produce) safely no-ops rather than crashing or sending a bogus replacement", async () => {
+    const editSession = {
+      blocks: [], border: [], isDirty: false,
+      beginStroke: vi.fn().mockResolvedValue(undefined),
+      applyPaint: vi.fn().mockResolvedValue(undefined),
+      endStroke: vi.fn().mockResolvedValue(undefined),
+      undo: vi.fn(), redo: vi.fn(),
+    };
+    const { canvas } = renderMapCanvas({ editSession, activeTool: { kind: "bucket", stamp: { width: 1, height: 1, cells: [{ collision: 1, elevation: 0 }] } } });
+    await act(async () => {
+      fireEvent.mouseDown(canvas, { clientX: 16, clientY: 16, button: 0 });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(editSession.beginStroke).toHaveBeenCalled(); // stroke still begins...
+    expect(editSession.applyPaint).not.toHaveBeenCalled(); // ...but nothing sensible to flood-fill with, so no-op
+  });
 });
