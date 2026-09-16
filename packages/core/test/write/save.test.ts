@@ -85,6 +85,7 @@ function stubProject(root: string): Project {
     tilesetSymbols: () => [],
     map: unused("map"),
     mapNames: () => ["Test"],
+    encounters: unused("encounters"),
   };
 }
 

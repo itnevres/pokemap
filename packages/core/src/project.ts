@@ -6,6 +6,7 @@ import { parseLayouts, resolveSplit } from "./load/layouts.js";
 import { parseMapGroups, parseMap, type MapData, type MapGroups } from "./load/maps.js";
 import { parseTilesetPaths, type TilesetPaths } from "./load/tilesets.js";
 import { loadTileset, type Tileset } from "./load/tilesetData.js";
+import { parseEncounters, type Encounters } from "./load/encounters.js";
 import type { Layout, Split } from "./model/types.js";
 
 export interface Project {
@@ -35,6 +36,9 @@ export interface Project {
   tilesetSymbols(): string[];
   map(name: string): MapData;
   mapNames(): string[];
+  /** src/data/wild_encounters.json, parsed once and cached -- there is only
+   *  one per project, unlike tilesets (one per symbol). */
+  encounters(): Encounters;
 }
 
 /**
@@ -120,6 +124,7 @@ export function openProject(root: string): Project {
 
   const tilesetCache = new Map<string, Tileset>();
   const mapCache = new Map<string, MapData>();
+  let encountersCache: Encounters | undefined;
 
   const getMap = (name: string): MapData => {
     let m = mapCache.get(name);
@@ -171,6 +176,12 @@ export function openProject(root: string): Project {
     tilesetSymbols: () => [...tsPaths.keys()],
     map: getMap,
     mapNames: () => groups.allMapNames(),
+    encounters: () => {
+      if (!encountersCache) {
+        encountersCache = parseEncounters(readFileSync(paths.wildEncountersJson, "utf8"));
+      }
+      return encountersCache;
+    },
   };
 }
 

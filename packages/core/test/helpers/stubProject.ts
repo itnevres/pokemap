@@ -27,6 +27,7 @@ export function stubProject(overrides: Partial<Project>): Project {
     tilesetSymbols: unused("tilesetSymbols"),
     map: unused("map"),
     mapNames: () => [],
+    encounters: unused("encounters"),
     ...overrides,
   };
 }
