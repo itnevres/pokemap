@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import type { Block } from "@pokemap/core/src/model/types.js";
 import type { Stamp } from "@pokemap/core/src/edit/paint.js";
+import type { MapData } from "@pokemap/core/src/load/maps.js";
+import type { EventKind } from "@pokemap/core/src/edit/events.js";
 
 export type PaintApplyBody =
   | { tool: "pencil"; targets: { x: number; y: number }[]; stamp: Stamp; origin: { x: number; y: number } }
@@ -11,6 +13,18 @@ export type PaintApplyBody =
 export interface UseEditSessionResult {
   blocks: Block[];
   border: Block[];
+  /** Task 14: live-edited map data (object/warp/coord/bg events) -- the
+   *  SAME live/static split `blocks` already has (Task 11), for the same
+   *  reason: moveEvent/addEvent/deleteEvent below mutate `session.map`
+   *  server-side (handleEventOp, packages/server/src/index.ts), not
+   *  `session.blocks`/`session.border` (the paint routes' own target), so
+   *  MapCanvas's event markers need this to see an edit without a full
+   *  map-switch round trip. `undefined` until the first server round trip
+   *  (paint or event) that returns one, or until seeded via `initialMap`
+   *  below -- MapCanvas falls back to its own `data.map` (useMapLayout)
+   *  whenever this is undefined, exactly like the blocks/staticBlocks
+   *  fallback it already has. */
+  map: MapData | undefined;
   isDirty: boolean;
   /** Task 13: whether the server's own undo/redo stack has anything to act
    *  on -- see EditCommandStack.canUndo()/canRedo() (core) and sendSession
@@ -38,14 +52,47 @@ export interface UseEditSessionResult {
    *  `blocks` deliberately isn't touched -- the just-committed blocks ARE
    *  now what's on disk, so they stay exactly as they are. */
   markClean(): void;
+  /** Task 14: thin client faces for the `/event/move|add|delete` routes
+   *  (Task 9) -- mirror undo/redo's own `Promise<void>` shape (the caller
+   *  reads updated state off this hook's own return value afterward, not
+   *  off a resolved value) rather than each inventing its own return type.
+   *  `value` for addEvent is a RAW object literal (snake_case field names)
+   *  -- see events.ts's own `addEvent` doc comment, it is spliced verbatim
+   *  into map.json server-side, so it must match the file's own field
+   *  names, never MapData's camelCase ones. */
+  moveEvent(kind: EventKind, index: number, x: number, y: number): Promise<void>;
+  addEvent(kind: EventKind, value: Record<string, unknown>): Promise<void>;
+  deleteEvent(kind: EventKind, index: number): Promise<void>;
 }
 
 interface SessionResponse {
   blocks: Block[];
   border: Block[];
+  /** Present on paint begin/apply/end and undo/redo (all route through the
+   *  server's own `sendSession` helper, packages/server/src/index.ts) --
+   *  `null` on undo/redo's own "nothing open" no-op response, absent from
+   *  nothing else that reaches `applyResponse`. */
+  map?: MapData | null;
   isDirty: boolean;
   canUndo?: boolean;
   canRedo?: boolean;
+}
+
+/** The `/event/move|add|delete` routes' own response shape -- deliberately
+ *  narrower than SessionResponse above: unlike every OTHER mutating route,
+ *  these three build `{ map, isDirty }` by hand instead of routing through
+ *  the server's own `sendSession` helper (which is what supplies
+ *  blocks/border/canUndo/canRedo everywhere else) -- unfortunate, since
+ *  that helper's own doc comment on the server claims otherwise ("every
+ *  route that touches the stack ... reports it for free through this one
+ *  shared response shape"), but a real, pre-existing gap in Task 9's own
+ *  routes, not something this task's file list (no server/src/index.ts
+ *  change listed) is in scope to fix. See `callEvent` below for how this
+ *  hook compensates for the missing canUndo/canRedo without a server round
+ *  trip that doesn't exist. */
+interface EventOpResponse {
+  map: MapData;
+  isDirty: boolean;
 }
 
 /**
@@ -74,10 +121,20 @@ interface SessionResponse {
  * comment) would render every overlay as empty until the player's first
  * edit. Passing the map's already-fetched static blocks (`useMapLayout`'s
  * own `data.blocks`) here seeds the first paint with real data instead.
+ *
+ * `initialMap` (Task 14): the exact same seeding problem as `initialBlocks`
+ * above, one level up -- no route returns a freshly-opened session's `map`
+ * on its own either, so without a seed MapCanvas's event markers would
+ * render from `undefined` (falling back to `data.map`, harmlessly, per that
+ * component's own doc comment) right up until the first paint or event op.
+ * Passing `useMapLayout`'s own already-fetched `data.map` here means the
+ * live/static switch in MapCanvas is invisible to the player from the very
+ * first render, not just after their first edit.
  */
-export function useEditSession(mapName: string | null, initialBlocks?: Block[]): UseEditSessionResult {
+export function useEditSession(mapName: string | null, initialBlocks?: Block[], initialMap?: MapData): UseEditSessionResult {
   const [blocks, setBlocks] = useState<Block[]>(initialBlocks ?? []);
   const [border, setBorder] = useState<Block[]>([]);
+  const [map, setMap] = useState<MapData | undefined>(initialMap);
   const [isDirty, setIsDirty] = useState(false);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
@@ -104,14 +161,16 @@ export function useEditSession(mapName: string | null, initialBlocks?: Block[]):
   useEffect(() => {
     setBlocks(initialBlocks ?? []);
     setBorder([]);
+    setMap(initialMap);
     setIsDirty(false);
     setCanUndo(false);
     setCanRedo(false);
-  }, [mapName, initialBlocks]);
+  }, [mapName, initialBlocks, initialMap]);
 
   const applyResponse = (d: SessionResponse) => {
     setBlocks(d.blocks);
     setBorder(d.border);
+    if (d.map !== undefined) setMap(d.map ?? undefined);
     setIsDirty(d.isDirty);
     setCanUndo(d.canUndo ?? false);
     setCanRedo(d.canRedo ?? false);
@@ -139,5 +198,42 @@ export function useEditSession(mapName: string | null, initialBlocks?: Block[]):
     setCanRedo(false);
   }, []);
 
-  return { blocks, border, isDirty, canUndo, canRedo, beginStroke, applyPaint, endStroke, undo, redo, markClean };
+  // Task 14: the three `/event/*` routes get their OWN call path, not
+  // `call` above -- their response is `{ map, isDirty }` only (see
+  // EventOpResponse's own doc comment), never blocks/border/canUndo/
+  // canRedo, so routing them through `applyResponse` (which expects the
+  // full SessionResponse shape) would stomp `blocks` to `undefined` the
+  // instant a player moved an event. `blocks`/`border` are left
+  // deliberately untouched here -- event ops never mutate them server-side
+  // either (handleEventOp only ever reassigns `entry.session.map`).
+  const callEvent = useCallback(
+    async (path: string, body: unknown): Promise<void> => {
+      if (!mapName) return; // nothing open -- see this hook's own doc comment
+      const r = await fetch(`/api/edit/${encodeURIComponent(mapName)}${path}`, { method: "POST", body: JSON.stringify(body) });
+      if (!r.ok) throw new Error(`POST /api/edit/${mapName}${path} -> ${r.status}`);
+      const d = (await r.json()) as EventOpResponse;
+      setMap(d.map);
+      setIsDirty(d.isDirty);
+      // canUndo/canRedo aren't in this route's response (EventOpResponse's
+      // own doc comment above explains why) -- but handleEventOp
+      // (packages/server/src/index.ts) unconditionally calls
+      // `entry.stack.push(...)` for every one of these three ops before
+      // responding, and EditCommandStack.push (packages/core/src/edit/
+      // commands.ts) is unconditional too: it always appends to undoStack
+      // and always resets redoStack to []. So canUndo=true/canRedo=false
+      // is exactly what the server-side stack now holds after ANY
+      // successful move/add/delete, deterministically -- setting it here
+      // keeps the Toolbar's Undo/Redo buttons honest without a round trip
+      // the route doesn't currently provide.
+      setCanUndo(true);
+      setCanRedo(false);
+    },
+    [mapName],
+  );
+
+  const moveEvent = useCallback((kind: EventKind, index: number, x: number, y: number) => callEvent("/event/move", { kind, index, x, y }), [callEvent]);
+  const addEvent = useCallback((kind: EventKind, value: Record<string, unknown>) => callEvent("/event/add", { kind, value }), [callEvent]);
+  const deleteEvent = useCallback((kind: EventKind, index: number) => callEvent("/event/delete", { kind, index }), [callEvent]);
+
+  return { blocks, border, map, isDirty, canUndo, canRedo, beginStroke, applyPaint, endStroke, undo, redo, markClean, moveEvent, addEvent, deleteEvent };
 }

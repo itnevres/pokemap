@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, fireEvent, screen, waitFor, act } from "@testing-library/react";
 import { MapCanvas, type MapCanvasProps } from "../src/components/MapCanvas.js";
 import type { MapLayoutData } from "../src/hooks/useMapLayout.js";
+import type { UseEditSessionResult } from "../src/hooks/useEditSession.js";
 
 // ---------------------------------------------------------------------------
 // Fixture: a tiny synthetic 2x2 layout with a 1-block border, so pixel math
@@ -48,6 +49,51 @@ const DATA: MapLayoutData = {
 
 const PIXEL_SIZE = 64; // (2 + 2*1) * 16
 const ORIGIN = 16; // 1 * 16
+
+// ---------------------------------------------------------------------------
+// Task 14: shared fixtures for every editSession mock and for the event-
+// selection/drag tests below. Introduced here rather than duplicated again --
+// this file already had 8 near-identical inline editSession object literals
+// across Tasks 11-12's own tests (one per test, copy-pasted) before this
+// task; consolidated into one factory so useEditSession.ts's own shape only
+// needs updating in one place per future task, not eight.
+// ---------------------------------------------------------------------------
+
+/** A fully-populated UseEditSessionResult mock, every method a plain
+ *  resolved-promise vi.fn() by default -- matches this file's own established
+ *  per-test override style (a test that cares about beginStroke's timing,
+ *  e.g. the rect-race repro, passes its own `beginStroke` override). */
+function makeEditSession(overrides: Partial<UseEditSessionResult> = {}): UseEditSessionResult {
+  return {
+    blocks: [], border: [], map: undefined, isDirty: false, canUndo: false, canRedo: false,
+    beginStroke: vi.fn().mockResolvedValue(undefined),
+    applyPaint: vi.fn().mockResolvedValue(undefined),
+    endStroke: vi.fn().mockResolvedValue(undefined),
+    undo: vi.fn().mockResolvedValue(undefined),
+    redo: vi.fn().mockResolvedValue(undefined),
+    markClean: vi.fn(),
+    moveEvent: vi.fn().mockResolvedValue(undefined),
+    addEvent: vi.fn().mockResolvedValue(undefined),
+    deleteEvent: vi.fn().mockResolvedValue(undefined),
+    ...overrides,
+  };
+}
+
+/** Extends DATA (above) with one object_event at block (1,1) -- inside the
+ *  fixture's own 2x2 layout, so PIXEL_SIZE/ORIGIN above still describe it
+ *  exactly. Only objectEvents is populated; warp/coord/bg stay empty, which
+ *  is enough to exercise findEventAt's own object-first scan. */
+function makeMapLayoutDataWithEvents(): MapLayoutData {
+  return {
+    ...DATA,
+    map: {
+      ...DATA.map,
+      objectEvents: [
+        { graphicsId: "OBJ_EVENT_GFX_BOY", x: 1, y: 1, elevation: 3, movementType: "MOVEMENT_TYPE_NONE", movementRangeX: 1, movementRangeY: 1, trainerType: "TRAINER_TYPE_NONE", trainerSightOrBerryTreeId: "0", script: "NULL", flag: "0" },
+      ],
+    },
+  };
+}
 
 // ---------------------------------------------------------------------------
 // jsdom has no real canvas backend. Rather than assert on baked pixels (which
@@ -349,13 +395,7 @@ describe("MapCanvas", () => {
   });
 
   it("with an editSession and a pencil tool active, mouse-down begins a stroke and paints the hovered block instead of panning", async () => {
-    const editSession = {
-      blocks: [], border: [], isDirty: false, canUndo: false, canRedo: false, markClean: vi.fn(),
-      beginStroke: vi.fn().mockResolvedValue(undefined),
-      applyPaint: vi.fn().mockResolvedValue(undefined),
-      endStroke: vi.fn().mockResolvedValue(undefined),
-      undo: vi.fn(), redo: vi.fn(),
-    };
+    const editSession = makeEditSession();
     const { canvas } = renderMapCanvas({ editSession, activeTool: { kind: "pencil", stamp: { width: 1, height: 1, cells: [{ metatileId: 5 }] } } });
     await act(async () => {
       fireEvent.mouseDown(canvas, { clientX: 16, clientY: 16, button: 0 }); // inside block (0,0) at 1x zoom, 16px/tile, before any pan/fit has run
@@ -388,13 +428,7 @@ describe("MapCanvas", () => {
   it("a rect stroke released before begin() resolves still paints the rect, not silently dropped -- reproduces the review-caught race", async () => {
     let resolveBegin!: () => void;
     const beginPromise = new Promise<void>((resolve) => { resolveBegin = resolve; });
-    const editSession = {
-      blocks: [], border: [], isDirty: false, canUndo: false, canRedo: false, markClean: vi.fn(),
-      beginStroke: vi.fn(() => beginPromise),
-      applyPaint: vi.fn().mockResolvedValue(undefined),
-      endStroke: vi.fn().mockResolvedValue(undefined),
-      undo: vi.fn(), redo: vi.fn(),
-    };
+    const editSession = makeEditSession({ beginStroke: vi.fn(() => beginPromise) });
     const { canvas } = renderMapCanvas({ editSession, activeTool: { kind: "rect", stamp: { width: 1, height: 1, cells: [{ metatileId: 7 }] } } });
 
     // Fast down-then-up, deliberately BEFORE begin() ever resolves.
@@ -410,8 +444,15 @@ describe("MapCanvas", () => {
     await waitFor(() => expect(editSession.endStroke).toHaveBeenCalled());
     // Order matters, not just "both got called eventually" -- apply must
     // still land before end, exactly like the pencil race fix above.
-    const applyOrder = editSession.applyPaint.mock.invocationCallOrder[0]!;
-    const endOrder = editSession.endStroke.mock.invocationCallOrder[0]!;
+    // vi.mocked(...): makeEditSession()'s own return type is the plain
+    // UseEditSessionResult interface (Task 14 -- so a mock built from it
+    // structurally satisfies MapCanvas's editSession prop without a second,
+    // looser type also needing upkeep), which erases each vi.fn()'s own
+    // concrete Mock type down to its interface signature. The underlying
+    // runtime object is still a real mock either way; this just re-asserts
+    // that to the type checker rather than reaching for `any`.
+    const applyOrder = vi.mocked(editSession.applyPaint).mock.invocationCallOrder[0]!;
+    const endOrder = vi.mocked(editSession.endStroke).mock.invocationCallOrder[0]!;
     expect(applyOrder).toBeLessThan(endOrder);
   });
 
@@ -422,13 +463,7 @@ describe("MapCanvas", () => {
   // already-open one (paintRoutes.test.ts's own stray-double-begin test),
   // so two unrelated edits would get squashed into one undo step.
   it("mouse leaving the canvas mid-stroke ends it too, mirroring mouse-up -- a drag that exits the canvas must not leave the stroke open forever", async () => {
-    const editSession = {
-      blocks: [], border: [], isDirty: false, canUndo: false, canRedo: false, markClean: vi.fn(),
-      beginStroke: vi.fn().mockResolvedValue(undefined),
-      applyPaint: vi.fn().mockResolvedValue(undefined),
-      endStroke: vi.fn().mockResolvedValue(undefined),
-      undo: vi.fn(), redo: vi.fn(),
-    };
+    const editSession = makeEditSession();
     const { canvas } = renderMapCanvas({ editSession, activeTool: { kind: "pencil", stamp: { width: 1, height: 1, cells: [{ metatileId: 5 }] } } });
     await act(async () => {
       fireEvent.mouseDown(canvas, { clientX: 16, clientY: 16, button: 0 });
@@ -442,13 +477,7 @@ describe("MapCanvas", () => {
   });
 
   it("mouse leaving before a rect's begin() resolves abandons the rect unpainted, but still ends the stroke rather than leaving it open", async () => {
-    const editSession = {
-      blocks: [], border: [], isDirty: false, canUndo: false, canRedo: false, markClean: vi.fn(),
-      beginStroke: vi.fn().mockResolvedValue(undefined),
-      applyPaint: vi.fn().mockResolvedValue(undefined),
-      endStroke: vi.fn().mockResolvedValue(undefined),
-      undo: vi.fn(), redo: vi.fn(),
-    };
+    const editSession = makeEditSession();
     const { canvas } = renderMapCanvas({ editSession, activeTool: { kind: "rect", stamp: { width: 1, height: 1, cells: [{ metatileId: 5 }] } } });
     fireEvent.mouseDown(canvas, { clientX: 16, clientY: 16, button: 0 });
     fireEvent.mouseLeave(canvas);
@@ -457,7 +486,7 @@ describe("MapCanvas", () => {
   });
 
   it("panning still works even with an editSession present, as long as no tool is selected (activeTool null)", () => {
-    const editSession = { blocks: [], border: [], isDirty: false, canUndo: false, canRedo: false, markClean: vi.fn(), beginStroke: vi.fn(), applyPaint: vi.fn(), endStroke: vi.fn(), undo: vi.fn(), redo: vi.fn() };
+    const editSession = makeEditSession();
     const { canvas } = renderMapCanvas({ editSession, activeTool: null });
     fireEvent.mouseDown(canvas, { clientX: 10, clientY: 10, button: 0 });
     fireEvent.mouseMove(canvas, { clientX: 30, clientY: 30 });
@@ -474,13 +503,7 @@ describe("MapCanvas", () => {
   // ---------------------------------------------------------------------
 
   it("with the collision tool active, mouse-down paints collision+elevation only, and forces the collision overlay visible", async () => {
-    const editSession = {
-      blocks: [], border: [], isDirty: false, canUndo: false, canRedo: false, markClean: vi.fn(),
-      beginStroke: vi.fn().mockResolvedValue(undefined),
-      applyPaint: vi.fn().mockResolvedValue(undefined),
-      endStroke: vi.fn().mockResolvedValue(undefined),
-      undo: vi.fn(), redo: vi.fn(),
-    };
+    const editSession = makeEditSession();
     const { canvas, getByTestId } = renderMapCanvas({ editSession, activeTool: { kind: "collision", value: { collision: 1, elevation: 0 } } });
     await act(async () => {
       fireEvent.mouseDown(canvas, { clientX: 16, clientY: 16, button: 0 }); // inside block (0,0) at 1x zoom, before any pan/fit has run
@@ -500,7 +523,7 @@ describe("MapCanvas", () => {
   });
 
   it("switching away from the collision tool lets the manual Collision toggle govern the overlay again", () => {
-    const editSession = { blocks: [], border: [], isDirty: false, canUndo: false, canRedo: false, markClean: vi.fn(), beginStroke: vi.fn(), applyPaint: vi.fn(), endStroke: vi.fn(), undo: vi.fn(), redo: vi.fn() };
+    const editSession = makeEditSession();
     const { rerender, queryByTestId } = renderMapCanvas({ editSession, activeTool: { kind: "collision", value: { collision: 0, elevation: 0 } } });
     expect(queryByTestId("collision-overlay")).toBeTruthy();
 
@@ -514,13 +537,7 @@ describe("MapCanvas", () => {
   // non-null assertion on cell.metatileId there would make that a silent
   // lie at runtime; this must be a real guard that no-ops instead.
   it("bucket tool with a stamp cell that has no metatileId (a shape only the collision tool should ever produce) safely no-ops rather than crashing or sending a bogus replacement", async () => {
-    const editSession = {
-      blocks: [], border: [], isDirty: false, canUndo: false, canRedo: false, markClean: vi.fn(),
-      beginStroke: vi.fn().mockResolvedValue(undefined),
-      applyPaint: vi.fn().mockResolvedValue(undefined),
-      endStroke: vi.fn().mockResolvedValue(undefined),
-      undo: vi.fn(), redo: vi.fn(),
-    };
+    const editSession = makeEditSession();
     const { canvas } = renderMapCanvas({ editSession, activeTool: { kind: "bucket", stamp: { width: 1, height: 1, cells: [{ collision: 1, elevation: 0 }] } } });
     await act(async () => {
       fireEvent.mouseDown(canvas, { clientX: 16, clientY: 16, button: 0 });
@@ -529,5 +546,63 @@ describe("MapCanvas", () => {
     });
     expect(editSession.beginStroke).toHaveBeenCalled(); // stroke still begins...
     expect(editSession.applyPaint).not.toHaveBeenCalled(); // ...but nothing sensible to flood-fill with, so no-op
+  });
+
+  // ---------------------------------------------------------------------
+  // Task 14: on-canvas event selection and drag-to-move. None of these
+  // three tests need img-load (mountReady) -- the hit-test/pan math runs
+  // straight off `data.map`/pan/zoom/origin, all available before the
+  // source image has ever loaded, so plain renderMapCanvas is enough (the
+  // same reason the Task 11 pan/paint tests just above never call
+  // mountReady either).
+  // ---------------------------------------------------------------------
+
+  it("in edit mode with events present, clicking on an event marker selects it and calls onSelectEvent", () => {
+    const data = makeMapLayoutDataWithEvents(); // one object_event at block (1,1)
+    const onSelectEvent = vi.fn();
+    const { canvas } = renderMapCanvas({ data, editSession: makeEditSession(), activeTool: null, onSelectEvent });
+    // Block (1,1)'s composite-space square is [ORIGIN+16, ORIGIN+32) x
+    // [ORIGIN+16, ORIGIN+32); ORIGIN+24 = 40 sits inside it on both axes.
+    fireEvent.mouseDown(canvas, { clientX: ORIGIN + 24, clientY: ORIGIN + 24, button: 0 });
+    fireEvent.mouseUp(canvas);
+    expect(onSelectEvent).toHaveBeenCalledWith({ kind: "object", index: 0 });
+  });
+
+  it("clicking empty canvas (no marker under the cursor) calls onSelectEvent with null, deselecting", () => {
+    const data = makeMapLayoutDataWithEvents();
+    const onSelectEvent = vi.fn();
+    const { canvas } = renderMapCanvas({ data, editSession: makeEditSession(), activeTool: null, onSelectEvent });
+    fireEvent.mouseDown(canvas, { clientX: 50 * 16, clientY: 50 * 16, button: 0 }); // far outside the fixture's only event
+    fireEvent.mouseUp(canvas);
+    expect(onSelectEvent).toHaveBeenCalledWith(null);
+  });
+
+  it("dragging a selected event marker to a new cell calls onMoveEvent with the new x/y once, on mouseup (not on every mousemove frame)", () => {
+    const data = makeMapLayoutDataWithEvents();
+    const onMoveEvent = vi.fn();
+    const { canvas } = renderMapCanvas({
+      data, editSession: makeEditSession(), activeTool: null,
+      // onSelectEvent must be present too -- it's what gates the whole
+      // select/drag branch in onMouseDown (see MapCanvas.tsx's own doc
+      // comment on that prop); App.tsx always wires both together in
+      // practice, this test mirrors that rather than exercising a
+      // combination the real app never produces.
+      onSelectEvent: vi.fn(),
+      selectedEventRef: { kind: "object", index: 0 }, onMoveEvent,
+    });
+    // Mousedown on the marker at block (1,1) starts the drag (the hit-test
+    // re-derives {kind,index} itself; selectedEventRef only drives the
+    // visual ring, see MapCanvas.tsx's own doc comment on that prop).
+    fireEvent.mouseDown(canvas, { clientX: ORIGIN + 24, clientY: ORIGIN + 24, button: 0 });
+    // Drag toward block (0,0) -- composite-space (24,24) is inside its
+    // square, [ORIGIN, ORIGIN+16) on both axes.
+    fireEvent.mouseMove(canvas, { clientX: 24, clientY: 24 });
+    expect(onMoveEvent).not.toHaveBeenCalled(); // preview only, never mid-drag
+    // A real mouseup carries the cursor's actual, current position -- same
+    // pattern the rect-tool race test above uses (fireEvent.mouseUp(canvas,
+    // { clientX, clientY, button: 0 })) rather than an event with no
+    // coordinates at all.
+    fireEvent.mouseUp(canvas, { clientX: 24, clientY: 24, button: 0 });
+    expect(onMoveEvent).toHaveBeenCalledWith({ kind: "object", index: 0, x: 0, y: 0 });
   });
 });

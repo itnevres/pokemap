@@ -1,10 +1,55 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { drawGrid, drawCollision, drawElevation, drawEvents, type EventMark } from "@pokemap/core/src/render/overlays.js";
 import type { LayoutRaster } from "@pokemap/core/src/render/layout.js";
+import type { MapData } from "@pokemap/core/src/load/maps.js";
+import type { EventKind } from "@pokemap/core/src/edit/events.js";
 import type { MapLayoutData } from "../hooks/useMapLayout.js";
 import type { UseEditSessionResult } from "../hooks/useEditSession.js";
 import type { Stamp } from "@pokemap/core/src/edit/paint.js";
 import type { CollisionElevation } from "./CollisionPalette.js";
+
+/** A bare {kind,index} pointer at one event, the unit MapCanvas's own
+ *  selection/drag interaction deals in -- resolving it into a full event
+ *  object (EventInspector's own richer `SelectedEvent`) is the caller's job
+ *  (App.tsx), same division of labour as CollisionPalette's own controlled
+ *  `selected` prop: this component only ever needs to know WHICH event, not
+ *  its full field set. */
+export interface EventRef {
+  kind: EventKind;
+  index: number;
+}
+
+/** Finds whichever event (of any kind) occupies block cell (bx,by), in the
+ *  same kind precedence drawEvents (core/render/overlays.ts) draws them in
+ *  -- object, then warp, then coord, then bg -- so a click on a cell with
+ *  more than one marker resolves to whichever one paints on top. Whole-cell
+ *  hit test, not a smaller radius: drawEvents's own `blendRect` tints the
+ *  entire 16x16 block a marker sits on, so "under the cursor" already means
+ *  "same block" for every existing read-only marker, not a bespoke shape
+ *  this task invents. Pure and standalone (no ref extraction needed from
+ *  drawEvents itself -- it returns EventMark[], which carries no per-kind
+ *  index -- so this reads straight from `map`'s own four event arrays,
+ *  which already have MapCanvas's `map` prop available). */
+function findEventAt(map: MapData, bx: number, by: number): EventRef | null {
+  const lists: [EventKind, { x: number; y: number }[]][] = [
+    ["object", map.objectEvents], ["warp", map.warpEvents], ["coord", map.coordEvents], ["bg", map.bgEvents],
+  ];
+  for (const [kind, list] of lists) {
+    const index = list.findIndex((e) => e.x === bx && e.y === by);
+    if (index !== -1) return { kind, index };
+  }
+  return null;
+}
+
+/** Looks up one event's current x/y by {kind,index} -- used to draw the
+ *  static selection ring (as opposed to `dragPreview`'s own in-flight
+ *  candidate position, see the blit effect below). */
+function eventPositionAt(map: MapData, ref: EventRef | null | undefined): { x: number; y: number } | null {
+  if (!ref) return null;
+  const list = ref.kind === "object" ? map.objectEvents : ref.kind === "warp" ? map.warpEvents : ref.kind === "coord" ? map.coordEvents : map.bgEvents;
+  const e = list[ref.index];
+  return e ? { x: e.x, y: e.y } : null;
+}
 
 export interface MapCanvasProps {
   mapName: string;
@@ -22,6 +67,31 @@ export interface MapCanvasProps {
    *  canvas knows to force the collision overlay visible while it's
    *  selected -- see `collisionForced` below. */
   activeTool?: { kind: "pencil" | "rect" | "bucket"; stamp: Stamp } | { kind: "collision"; value: CollisionElevation } | null;
+  /** Task 14: click-to-select/drag-to-move for event markers. Gated on
+   *  `!activeTool` (see onMouseDown below) rather than on `editSession` --
+   *  select/deselect is harmless read-only navigation even without an open
+   *  edit session (WarpDestinationModal's own read-only preview never
+   *  passes these, so it is unaffected either way), and the natural
+   *  App.tsx-level rule is simply "no paint tool is active." Every existing
+   *  caller that omits these three props is completely unaffected (same
+   *  "optional, additive" shape Task 11's editSession/activeTool pair
+   *  established). */
+  onSelectEvent?: (ref: EventRef | null) => void;
+  /** The CURRENTLY selected event, for drawing its selection ring -- purely
+   *  a visual echo of whatever the parent's own selection state holds
+   *  (App.tsx), same controlled-prop shape CollisionPalette's `selected`
+   *  already uses. Never read by the hit-test/drag logic itself, which
+   *  always re-derives from the click position and the live `map`. */
+  selectedEventRef?: EventRef | null;
+  /** Fired once, on mouseup, with the event's final dropped cell -- never
+   *  on every mousemove frame (see eventDragRef/dragPreview below, and this
+   *  task's own teeth-proof for why the ref must be read into local consts
+   *  BEFORE being cleared). Event move/add/delete are single-shot HTTP
+   *  calls with no begin/apply/end lifecycle (unlike paint's stroke), so
+   *  none of pendingPaintRef's race-guarding machinery applies here --
+   *  verified, not assumed: there is no multi-request sequencing for a drag
+   *  to race against. */
+  onMoveEvent?: (next: { kind: EventKind; index: number; x: number; y: number }) => void;
 }
 
 /** The server-baked border ring the canvas always requests -- see
@@ -70,8 +140,8 @@ interface Hover {
  * one scaled `drawImage`, so dragging or scrolling never re-touches overlay
  * pixels at all.
  */
-export function MapCanvas({ mapName, data, editSession, activeTool }: MapCanvasProps) {
-  const { layout, split, map, blocks: staticBlocks } = data;
+export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEvent, selectedEventRef, onMoveEvent }: MapCanvasProps) {
+  const { layout, split, map: staticMap, blocks: staticBlocks } = data;
   // Live, server-tracked blocks while an edit session is open for this map;
   // the static `data.blocks` prop otherwise. Every effect below already
   // reads `blocks` by name and never needs to know which source it came
@@ -91,6 +161,19 @@ export function MapCanvas({ mapName, data, editSession, activeTool }: MapCanvasP
   // as a soft, best-effort readout (the same panel already shows 0x0 for
   // a real MB_NORMAL tile with no way to tell the two apart today).
   const blocks = editSession ? editSession.blocks : staticBlocks;
+  // Task 14: same live/static split as `blocks` just above, and for the
+  // same reason -- event move/add/delete (useEditSession's own new
+  // moveEvent/addEvent/deleteEvent methods) mutate `session.map` server-
+  // side, not `session.blocks`/`session.border`, so the event MARKERS
+  // this component draws (drawEvents(raster, map) in the composite effect
+  // below, and this task's own findEventAt/eventPositionAt) must read the
+  // live map once an edit session is open, or a move/add/delete would
+  // never visibly update until the player switched maps and back. Falls
+  // back to `data.map` (useMapLayout's own static fetch) exactly like
+  // `blocks` falls back to `staticBlocks` -- every read-only caller
+  // (WarpDestinationModal's preview, Map mode before an edit session
+  // opens) is unaffected, since `editSession` is undefined there too.
+  const map = editSession?.map ?? staticMap;
 
   const imgRef = useRef<HTMLImageElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -127,6 +210,26 @@ export function MapCanvas({ mapName, data, editSession, activeTool }: MapCanvasP
   // apart from "editSession/activeTool are simply present" -- it must not
   // fire endStroke() on every ordinary mouse-out.
   const strokeOpenRef = useRef(false);
+  // Task 14: set from onMouseDown's own hit-test the instant a click lands
+  // on an event marker (with no paint tool active), holding the event's
+  // {kind,index} AND the block cell the drag STARTED at -- the start cell
+  // is what onMouseUp compares the final cell against to decide whether
+  // anything actually moved (see the corrected onMouseUp below: those
+  // fields are captured into local consts before this ref is nulled, not
+  // read after -- the exact stale-ref-after-null mistake class Task 11's
+  // endActiveStroke/pendingPaintRef pair was written to avoid; the teeth-
+  // proof in this task's own report reintroduces the bug once to confirm
+  // the test that would have caught it actually does).
+  const eventDragRef = useRef<{ kind: EventKind; index: number; x: number; y: number } | null>(null);
+  // Ephemeral, local-only preview of where a drag-in-progress WOULD drop --
+  // never sent to the server (onMoveEvent fires once, from onMouseUp, with
+  // the final cell only). Drawn by the blit effect below as a lightweight
+  // stroke rect on the STAGE canvas itself, the same "cheap redraw, never
+  // touches the persisted overlay composite" posture that effect already
+  // takes for pan/zoom -- a drag preview is exactly that kind of ephemeral,
+  // per-frame redraw, not a state change worth recompositing the whole
+  // base image for.
+  const [dragPreview, setDragPreview] = useState<{ kind: EventKind; index: number; x: number; y: number } | null>(null);
 
   const [imgLoaded, setImgLoaded] = useState(false);
   const [toggles, setToggles] = useState<Toggles>(NO_TOGGLES);
@@ -264,7 +367,40 @@ export function MapCanvas({ mapName, data, editSession, activeTool }: MapCanvasP
     ctx.imageSmoothingEnabled = false;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(base, 0, 0, pixelWidth, pixelHeight, pan.x, pan.y, pixelWidth * zoom, pixelHeight * zoom);
-  }, [compositeVersion, zoom, pan, pixelWidth, pixelHeight, viewport]);
+
+    // Task 14: event selection ring / drag preview -- an ephemeral stroke
+    // on the STAGE canvas itself, drawn fresh on every blit exactly like
+    // pan/zoom already are, never touching baseCanvasRef's own persisted
+    // overlay composite (Step 1 above). A drag preview (the candidate drop
+    // cell, tracked in `dragPreview` while eventDragRef is set) always wins
+    // over the static selection ring when both would apply -- it is
+    // showing where the event is ABOUT to land, not its real, still
+    // unmoved position, so the two must never be drawn on top of each
+    // other. `ctx.strokeRect` et al. are guarded behind `highlight` being
+    // non-null, so a caller that never passes selectedEventRef/dragPreview
+    // (every pre-Task-14 consumer) never calls a canvas API this file
+    // didn't already call before this task.
+    const highlight = dragPreview ?? eventPositionAt(map, selectedEventRef);
+    if (highlight) {
+      const sx = pan.x + (originX + highlight.x * 16) * zoom;
+      const sy = pan.y + (originY + highlight.y * 16) * zoom;
+      const size = 16 * zoom;
+      // Canvas 2D `strokeStyle` cannot take a raw `var(...)` string (unlike
+      // CSS properties) -- it must be a resolved colour, so this reads
+      // DESIGN.md's own --overlay-selection token off the live document at
+      // draw time instead of hardcoding one theme's hex. Falls back to the
+      // dark-mode value if the custom property isn't set (e.g. no
+      // stylesheet loaded, as in this file's own jsdom tests, none of
+      // which ever reach this branch -- imgLoaded is false there, so this
+      // whole effect returns above before this line).
+      const selectionColor = getComputedStyle(document.documentElement).getPropertyValue("--overlay-selection").trim() || "#22d3ee";
+      ctx.save();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = dragPreview ? "#ffffff" : selectionColor;
+      ctx.strokeRect(sx + 1, sy + 1, size - 2, size - 2);
+      ctx.restore();
+    }
+  }, [compositeVersion, zoom, pan, pixelWidth, pixelHeight, viewport, dragPreview, selectedEventRef, map, originX, originY]);
 
   const toggle = (key: keyof Toggles) => setToggles((t) => ({ ...t, [key]: !t[key] }));
 
@@ -397,6 +533,25 @@ export function MapCanvas({ mapName, data, editSession, activeTool }: MapCanvasP
 
   const onMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (e.button !== 0) return;
+    // Task 14: ahead of the Task 11 paint branch -- selection only engages
+    // when no paint tool is active (activeTool null), the natural signal
+    // that the player is in "select/move events" mode rather than
+    // "paint" mode; the two never compete for the same click. Uses
+    // rawBlockAt (unclamped), not blockAt: a click just past the layout
+    // edge should still be able to DESELECT (onSelectEvent(null)) even
+    // though no real event can ever live out there.
+    if (onSelectEvent && !activeTool) {
+      const cell = rawBlockAt(e);
+      const hit = findEventAt(map, cell.x, cell.y);
+      onSelectEvent(hit);
+      if (hit) {
+        eventDragRef.current = { kind: hit.kind, index: hit.index, x: cell.x, y: cell.y };
+        return;
+      }
+      // No marker under the click: fall through to the ordinary pan-drag
+      // start just below, exactly as if onSelectEvent had never been
+      // passed -- deselecting must not also disable panning.
+    }
     if (editSession && activeTool) {
       const cell = blockAt(e);
       if (!cell) return;
@@ -414,6 +569,19 @@ export function MapCanvas({ mapName, data, editSession, activeTool }: MapCanvasP
   };
 
   const onMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    // Task 14: an event marker drag in progress -- track the CANDIDATE
+    // drop cell locally only (dragPreview, redrawn by the blit effect
+    // below); onMoveEvent itself fires exactly once, from onMouseUp, never
+    // here. No e.buttons===1 guard needed (unlike the pencil/collision
+    // trail just below): eventDragRef is only ever non-null between this
+    // component's own mousedown-hit and mouseup/mouseleave, so there is no
+    // "hover vs. held-button" ambiguity to resolve the way a continuous
+    // paint trail has.
+    if (eventDragRef.current) {
+      const cell = rawBlockAt(e);
+      setDragPreview({ kind: eventDragRef.current.kind, index: eventDragRef.current.index, x: cell.x, y: cell.y });
+      return;
+    }
     // A pencil (or collision -- Task 12: painting collision by dragging
     // mirrors pencil's own trail, the natural expectation) drag paints a
     // trail as the mouse moves while the button is held -- jsdom's
@@ -486,6 +654,26 @@ export function MapCanvas({ mapName, data, editSession, activeTool }: MapCanvasP
   };
 
   const onMouseUp = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    // Task 14: ends an event-marker drag. Critical fix (this task's own
+    // teeth-proof, Step 8, confirms it): `kind`/`index`/start `x`/`y` are
+    // destructured into LOCAL consts BEFORE `eventDragRef.current` is set
+    // to null, not read from the ref afterward -- reading a ref after
+    // nulling it is exactly the stale-read mistake class Task 11's
+    // endActiveStroke/pendingPaintRef pair exists to avoid on the paint
+    // side (see that function's own doc comment above). Reads the mouseup
+    // EVENT's own coordinates (rawBlockAt(e)), the same pattern rect's own
+    // paint path already uses at mouseup (endActiveStroke(rawBlockAt(e))
+    // just below) -- a real mouseup always carries accurate clientX/clientY
+    // for wherever the cursor actually released, so there is no need for a
+    // second "last known position" source of truth alongside dragPreview.
+    if (eventDragRef.current) {
+      const cell = rawBlockAt(e);
+      const { kind, index, x: ox, y: oy } = eventDragRef.current;
+      eventDragRef.current = null;
+      setDragPreview(null);
+      if (cell.x !== ox || cell.y !== oy) onMoveEvent?.({ kind, index, x: cell.x, y: cell.y });
+      return;
+    }
     if (editSession && activeTool) {
       endActiveStroke(rawBlockAt(e)); // unclamped -- see rawBlockAt's own doc comment
       return;
@@ -496,6 +684,16 @@ export function MapCanvas({ mapName, data, editSession, activeTool }: MapCanvasP
   const onMouseLeave = () => {
     dragRef.current = null;
     setHover(null);
+    // Task 14: mirrors onMouseUp's own event-drag cleanup for the same
+    // reason the paint path mirrors it just below -- a drag that exits the
+    // canvas before releasing the button never fires React's own
+    // onMouseUp. Abandoned at wherever it was, not committed: there is no
+    // reliable "final" cell to move to from a mouse-LEAVE (same posture
+    // endActiveStroke(null) already takes for an abandoned rect).
+    if (eventDragRef.current) {
+      eventDragRef.current = null;
+      setDragPreview(null);
+    }
     if (editSession && activeTool && strokeOpenRef.current) endActiveStroke(null);
   };
 

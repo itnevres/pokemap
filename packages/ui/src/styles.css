@@ -250,6 +250,18 @@ input {
   border-bottom: 1px solid var(--border);
 }
 
+/* Task 14: wraps MapCanvas + EventInspector in a row -- MapCanvas keeps its
+   own `flex: 1 1 auto` (still the one element in this whole screen with no
+   max-width, per DESIGN.md's "what the canvas is owed"), EventInspector
+   takes a fixed width alongside it, same shape app__body/app__sidebar
+   already use one level up for the map tree, just on the canvas's other
+   edge. Transparent pass-through, not a second background layer. */
+.app__map-editing-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+}
+
 .app__canvas-placeholder {
   flex: 1 1 auto;
   display: flex;
@@ -2078,6 +2090,131 @@ input {
 }
 
 .save-dialog__btn--primary:not(:disabled):hover {
+  background: var(--accent);
+  color: var(--text-on-accent);
+}
+
+/* Task 14: EventInspector -- the canvas's own side panel (app__map-editing-
+   body above), same fixed-width-sidebar shape app__sidebar already uses on
+   the map tree's edge of the screen, just docked on the canvas's other
+   side. bg-panel + border-left, not border-radius/raised chrome: this is a
+   flush panel of the app shell, not a floating card. */
+.event-inspector {
+  width: 260px;
+  flex: 0 0 auto;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  background: var(--bg-panel);
+  border-left: 1px solid var(--border);
+}
+
+.event-inspector--empty {
+  align-items: flex-start;
+}
+
+.event-inspector__empty-text {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.event-inspector__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* One hue per event kind, reusing DESIGN.md's own --event-* overlay tokens
+   verbatim -- the same colours MapCanvas's Events-overlay legend already
+   uses for object/warp/coord/bg, so the inspector and the canvas markers
+   read as one system rather than inventing a second colour language. */
+.event-inspector__kind-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+
+.event-inspector__kind-dot--object { background: var(--event-object); }
+.event-inspector__kind-dot--warp { background: var(--event-warp); }
+.event-inspector__kind-dot--coord { background: var(--event-coord); }
+.event-inspector__kind-dot--bg { background: var(--event-bg); }
+
+.event-inspector__subtitle {
+  margin: calc(-1 * var(--space-2)) 0 0;
+  font-family: var(--font-data);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  word-break: break-word;
+}
+
+.event-inspector__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.event-inspector__field-label {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+/* Coordinates are DATA (DESIGN.md's own Developer Mono pairing), not UI
+   chrome -- monospaced like every hex id/count elsewhere in this app. */
+.event-inspector__input {
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: var(--space-1) var(--space-2);
+  font-family: var(--font-data);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+
+.event-inspector__input:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.event-inspector__input[readonly] {
+  color: var(--text-secondary);
+  cursor: default;
+}
+
+.event-inspector__actions {
+  margin-top: auto;
+  padding-top: var(--space-2);
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* Same technique as .toolbar__save-btn's own accent styling and
+   .save-dialog__refusal's own danger-bordered panel just above -- an
+   outlined control that only fills solid on hover, never a second,
+   independently-invented "danger button" look. */
+.event-inspector__delete-btn:not(:disabled) {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.event-inspector__delete-btn:not(:disabled):hover {
+  background: var(--danger);
+  color: var(--text-on-accent);
+}
+
+.event-inspector__add-btn:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+
+.event-inspector__add-btn:not(:disabled):hover {
   background: var(--accent);
   color: var(--text-on-accent);
 }

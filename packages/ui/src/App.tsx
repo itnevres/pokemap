@@ -1,16 +1,46 @@
 import { useEffect, useMemo, useState } from "react";
 import { MapTree } from "./components/MapTree.js";
-import { MapCanvas } from "./components/MapCanvas.js";
+import { MapCanvas, type EventRef } from "./components/MapCanvas.js";
 import { WorldCanvas } from "./components/WorldCanvas.js";
 import { DungeonSidebar } from "./components/DungeonSidebar.js";
 import { Toolbar, type ToolKind } from "./components/Toolbar.js";
 import { SaveDialog } from "./components/SaveDialog.js";
 import { CollisionPalette, type CollisionElevation } from "./components/CollisionPalette.js";
+import { EventInspector, type SelectedEvent } from "./components/EventInspector.js";
 import { useMapGroups } from "./hooks/useMapGroups.js";
 import { useMapLayout } from "./hooks/useMapLayout.js";
 import { useWorldVisibility } from "./hooks/useWorldVisibility.js";
 import { useDungeons } from "./hooks/useDungeons.js";
 import { useEditSession } from "./hooks/useEditSession.js";
+import type { MapData } from "@pokemap/core/src/load/maps.js";
+import type { EventKind } from "@pokemap/core/src/edit/events.js";
+
+/** Task 14: resolves a bare {kind,index} ref (MapCanvas's own selection
+ *  unit) into EventInspector's richer `SelectedEvent`, by looking the event
+ *  up in whichever `MapData` is currently live -- the caller always passes
+ *  `editSession.map ?? layout.data?.map`, the same live/static precedence
+ *  MapCanvas.tsx's own `map` local uses internally. Spreads the raw event
+ *  FIRST, kind/index override second: coord/bg events are open-ended
+ *  (`[k: string]: unknown`, see EventInspector.tsx's own SelectedEvent doc
+ *  comment) and there is no guarantee a raw field named `kind` or `index`
+ *  never collides with these two synthetic ones otherwise. */
+function resolveEventRef(ref: EventRef | null, map: MapData | undefined): SelectedEvent | null {
+  if (!ref || !map) return null;
+  if (ref.kind === "object") {
+    const e = map.objectEvents[ref.index];
+    return e ? { kind: "object", index: ref.index, x: e.x, y: e.y, elevation: e.elevation, graphicsId: e.graphicsId, movementType: e.movementType } : null;
+  }
+  if (ref.kind === "warp") {
+    const e = map.warpEvents[ref.index];
+    return e ? { kind: "warp", index: ref.index, x: e.x, y: e.y, elevation: e.elevation, destMap: e.destMap, destWarpId: e.destWarpId } : null;
+  }
+  if (ref.kind === "coord") {
+    const e = map.coordEvents[ref.index];
+    return e ? { ...e, kind: "coord", index: ref.index } : null;
+  }
+  const e = map.bgEvents[ref.index];
+  return e ? { ...e, kind: "bg", index: ref.index } : null;
+}
 
 type Mode = "map" | "world" | "dungeon";
 
@@ -46,7 +76,87 @@ export function App() {
   // exactly the value we want available everywhere the "you have unsaved
   // changes" guards below need it, not just while Map mode's own UI is
   // rendered.
-  const editSession = useEditSession(selected, layout.data?.blocks);
+  const editSession = useEditSession(selected, layout.data?.blocks, layout.data?.map);
+
+  // Task 14: whichever event (any kind) is currently selected on the
+  // canvas, in real component state -- NOT recomputed inline from
+  // editSession.map/layout.data on every render, which is what keeps
+  // EventInspector's own draft-resync effect from firing on unrelated App
+  // re-renders and clobbering an in-progress, not-yet-blurred edit (see
+  // that component's own doc comment). `null` means nothing selected --
+  // EventInspector's own empty state ("Add Event") then applies.
+  const [selectedEvent, setSelectedEvent] = useState<SelectedEvent | null>(null);
+  // Whichever `map` is actually live right now -- same live/static
+  // precedence MapCanvas.tsx's own internal `map` local uses (editSession's
+  // live copy once an edit session is open, layout.data's static fetch
+  // otherwise). Read by every event handler below that needs to resolve a
+  // ref or compute a default add-position.
+  const currentMap = editSession.map ?? layout.data?.map;
+
+  const onSelectEvent = (ref: EventRef | null) => setSelectedEvent(resolveEventRef(ref, currentMap));
+
+  // Drag-to-move on the canvas -- no elevation involved (MapCanvas's own
+  // onMoveEvent only ever reports x/y, see EventRef's own doc comment).
+  const onCanvasMoveEvent = (next: { kind: EventKind; index: number; x: number; y: number }) => {
+    void editSession.moveEvent(next.kind, next.index, next.x, next.y);
+    setSelectedEvent((prev) => (prev && prev.kind === next.kind && prev.index === next.index ? { ...prev, x: next.x, y: next.y } : prev));
+  };
+
+  // EventInspector's own X/Y/Elevation fields -- elevation rides along for
+  // symmetry with x/y (EventInspector.tsx's own doc comment), but core's
+  // moveEvent (Task 7, packages/core/src/edit/events.ts) only ever writes
+  // x/y to disk; there is no persisted way to move an event's elevation
+  // today, and extending that primitive is out of this task's scope (the
+  // file list above never lists core/src/edit/events.ts or the server
+  // routes as something Task 14 touches). x/y are sent to the real route;
+  // elevation is merged into LOCAL selection state only, so the field
+  // doesn't visibly snap back to its old value the instant you type -- an
+  // honest gap, not a silent no-op: flagged prominently in this task's own
+  // report, and a reload or map switch will NOT keep a changed elevation,
+  // only x/y will.
+  const onMoveEventFromInspector = (next: { kind: EventKind; index: number; x: number; y: number; elevation: number }) => {
+    void editSession.moveEvent(next.kind, next.index, next.x, next.y);
+    setSelectedEvent((prev) =>
+      prev && prev.kind === next.kind && prev.index === next.index
+        ? { ...prev, x: next.x, y: next.y, elevation: next.elevation }
+        : prev,
+    );
+  };
+
+  const onDeleteEvent = (ref: { kind: EventKind; index: number }) => {
+    void editSession.deleteEvent(ref.kind, ref.index).then(() => setSelectedEvent(null));
+  };
+
+  // onAdd's exact shape is deliberately underspecified by the plan this
+  // task implements -- a reasonable, minimal, well-documented choice made
+  // here (see this task's own report): a default OBJECT event (the most
+  // common kind, and the only one with sensible placeholder graphics/
+  // movement values -- warp/coord/bg all need a real destination/script/
+  // trigger a placeholder can't invent), dropped at the current map's own
+  // centre (floor(width/2), floor(height/2)) so it always lands somewhere
+  // visible and on-map rather than off-canvas at (0,0). `value` is the RAW
+  // snake_case object literal addEvent (Task 7) splices verbatim into
+  // map.json -- see that function's own doc comment. The new event's index
+  // is computed from the CURRENT objectEvents length BEFORE the call
+  // (addEvent always appends, per its own doc comment), so the freshly
+  // added event can be selected immediately without waiting on -- or
+  // re-deriving from -- the server's round trip.
+  const onAddEvent = () => {
+    if (!currentMap || !layout.data) return;
+    const newIndex = currentMap.objectEvents.length;
+    const x = Math.floor(layout.data.layout.width / 2);
+    const y = Math.floor(layout.data.layout.height / 2);
+    const graphicsId = "OBJ_EVENT_GFX_BOY_1";
+    const movementType = "MOVEMENT_TYPE_FACE_DOWN";
+    const value = {
+      graphics_id: graphicsId, x, y, elevation: 0,
+      movement_type: movementType, movement_range_x: 1, movement_range_y: 1,
+      trainer_type: "TRAINER_TYPE_NONE", trainer_sight_or_berry_tree_id: "0", script: "NULL", flag: "0",
+    };
+    void editSession.addEvent("object", value).then(() => {
+      setSelectedEvent({ kind: "object", index: newIndex, x, y, elevation: 0, graphicsId, movementType });
+    });
+  };
 
   // Which paint tool the Toolbar has selected, and the small piece of state
   // each tool needs to actually paint something. Task 13 is the first task
@@ -108,6 +218,13 @@ export function App() {
     }
     setSelected(name);
     setSelectVersion((v) => v + 1);
+    // Task 14: a selected event belongs to the map it was selected on --
+    // without this, switching from map A (something selected) to map B
+    // would carry A's {kind,index} ref into EventInspector, which would
+    // either show map B's UNRELATED event at that same index, or (once B's
+    // own events run out at that index) crash resolveEventRef's own array
+    // lookup path into rendering `null` silently at best.
+    setSelectedEvent(null);
   };
 
   // `.find()` over `dungeons.data` returns the SAME element reference every
@@ -274,7 +391,28 @@ export function App() {
                   <CollisionPalette selected={collisionValue} onSelect={setCollisionValue} />
                 </div>
               )}
-              <MapCanvas mapName={selected} data={layout.data} editSession={editSession} activeTool={activeTool} />
+              {/* Task 14: EventInspector docks as a real side panel next to
+                  the canvas (DESIGN.md's own layout section anticipates
+                  exactly this -- "whatever Task 21+ adds -- an inspector, a
+                  metatile palette"), not another horizontal strip like
+                  CollisionPalette above it -- its X/Y/Elevation/Delete form
+                  reads naturally as a vertical column, the same shape
+                  app__sidebar's own MapTree already uses on the opposite
+                  edge of the screen. Always mounted (not gated on a
+                  selection): EventInspector's own empty state carries the
+                  Add Event entry point. */}
+              <div className="app__map-editing-body">
+                <MapCanvas
+                  mapName={selected}
+                  data={layout.data}
+                  editSession={editSession}
+                  activeTool={activeTool}
+                  onSelectEvent={onSelectEvent}
+                  selectedEventRef={selectedEvent ? { kind: selectedEvent.kind, index: selectedEvent.index } : null}
+                  onMoveEvent={onCanvasMoveEvent}
+                />
+                <EventInspector selected={selectedEvent} onMove={onMoveEventFromInspector} onDelete={onDeleteEvent} onAdd={onAddEvent} />
+              </div>
             </div>
           ) : (
             <p className="app__canvas-placeholder">Loading {selected}…</p>
