@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { EventInspector, type SelectedEvent } from "../src/components/EventInspector.js";
 
 const objectEvent: SelectedEvent = {
@@ -24,13 +24,13 @@ const warpEvent: SelectedEvent = {
 // a string on an <input>, even type="number" -- compared as such below).
 describe("EventInspector", () => {
   it("with no selection, shows an 'Add Event' control and no field editors", () => {
-    render(<EventInspector selected={null} onMove={vi.fn()} onDelete={vi.fn()} onAdd={vi.fn()} />);
+    render(<EventInspector selected={null} onMove={vi.fn()} onDelete={vi.fn().mockResolvedValue(undefined)} onAdd={vi.fn().mockResolvedValue(undefined)} />);
     expect(screen.getByRole("button", { name: /add event/i })).toBeTruthy();
     expect(screen.queryByLabelText("X")).toBeNull();
   });
 
   it("with a selected object event, shows editable X/Y/elevation fields pre-filled with its current values", () => {
-    render(<EventInspector selected={objectEvent} onMove={vi.fn()} onDelete={vi.fn()} onAdd={vi.fn()} />);
+    render(<EventInspector selected={objectEvent} onMove={vi.fn()} onDelete={vi.fn().mockResolvedValue(undefined)} onAdd={vi.fn().mockResolvedValue(undefined)} />);
     expect((screen.getByLabelText("X") as HTMLInputElement).value).toBe("5");
     expect((screen.getByLabelText("Y") as HTMLInputElement).value).toBe("6");
     expect((screen.getByLabelText("Elevation") as HTMLInputElement).value).toBe("3");
@@ -38,21 +38,21 @@ describe("EventInspector", () => {
 
   it("editing X and blurring calls onMove with the event's kind/index and the new x", () => {
     const onMove = vi.fn();
-    render(<EventInspector selected={objectEvent} onMove={onMove} onDelete={vi.fn()} onAdd={vi.fn()} />);
+    render(<EventInspector selected={objectEvent} onMove={onMove} onDelete={vi.fn().mockResolvedValue(undefined)} onAdd={vi.fn().mockResolvedValue(undefined)} />);
     fireEvent.change(screen.getByLabelText("X"), { target: { value: "9" } });
     fireEvent.blur(screen.getByLabelText("X"));
     expect(onMove).toHaveBeenCalledWith({ kind: "object", index: 0, x: 9, y: 6, elevation: 3 });
   });
 
   it("clicking Delete calls onDelete with the selected event's kind/index", () => {
-    const onDelete = vi.fn();
-    render(<EventInspector selected={objectEvent} onMove={vi.fn()} onDelete={onDelete} onAdd={vi.fn()} />);
+    const onDelete = vi.fn().mockResolvedValue(undefined);
+    render(<EventInspector selected={objectEvent} onMove={vi.fn()} onDelete={onDelete} onAdd={vi.fn().mockResolvedValue(undefined)} />);
     fireEvent.click(screen.getByRole("button", { name: /delete/i }));
     expect(onDelete).toHaveBeenCalledWith({ kind: "object", index: 0 });
   });
 
   it("a warp event additionally shows Dest Map / Dest Warp fields (read-only, real destWarpId is a string), an object event does not", () => {
-    const { unmount } = render(<EventInspector selected={warpEvent} onMove={vi.fn()} onDelete={vi.fn()} onAdd={vi.fn()} />);
+    const { unmount } = render(<EventInspector selected={warpEvent} onMove={vi.fn()} onDelete={vi.fn().mockResolvedValue(undefined)} onAdd={vi.fn().mockResolvedValue(undefined)} />);
     const destMap = screen.getByLabelText("Dest Map") as HTMLInputElement;
     const destWarp = screen.getByLabelText("Dest Warp") as HTMLInputElement;
     expect(destMap.value).toBe("PalletTown");
@@ -61,16 +61,16 @@ describe("EventInspector", () => {
     expect(destWarp.readOnly).toBe(true);
     unmount();
 
-    render(<EventInspector selected={objectEvent} onMove={vi.fn()} onDelete={vi.fn()} onAdd={vi.fn()} />);
+    render(<EventInspector selected={objectEvent} onMove={vi.fn()} onDelete={vi.fn().mockResolvedValue(undefined)} onAdd={vi.fn().mockResolvedValue(undefined)} />);
     expect(screen.queryByLabelText("Dest Map")).toBeNull();
   });
 
   it("resyncs its draft when the selected event's own reference changes (e.g. a fresh selection or a server round trip)", () => {
-    const { rerender } = render(<EventInspector selected={objectEvent} onMove={vi.fn()} onDelete={vi.fn()} onAdd={vi.fn()} />);
+    const { rerender } = render(<EventInspector selected={objectEvent} onMove={vi.fn()} onDelete={vi.fn().mockResolvedValue(undefined)} onAdd={vi.fn().mockResolvedValue(undefined)} />);
     expect((screen.getByLabelText("X") as HTMLInputElement).value).toBe("5");
 
     const moved: SelectedEvent = { ...objectEvent, x: 42 };
-    rerender(<EventInspector selected={moved} onMove={vi.fn()} onDelete={vi.fn()} onAdd={vi.fn()} />);
+    rerender(<EventInspector selected={moved} onMove={vi.fn()} onDelete={vi.fn().mockResolvedValue(undefined)} onAdd={vi.fn().mockResolvedValue(undefined)} />);
     expect((screen.getByLabelText("X") as HTMLInputElement).value).toBe("42");
   });
 
@@ -78,8 +78,52 @@ describe("EventInspector", () => {
     const coordEvent: SelectedEvent = {
       kind: "coord", index: 2, x: 3, y: 4, elevation: 0, type: "TRIGGER", var: "VAR_TEMP_1", var_value: "1", script: "EventScript_Foo",
     };
-    render(<EventInspector selected={coordEvent} onMove={vi.fn()} onDelete={vi.fn()} onAdd={vi.fn()} />);
+    render(<EventInspector selected={coordEvent} onMove={vi.fn()} onDelete={vi.fn().mockResolvedValue(undefined)} onAdd={vi.fn().mockResolvedValue(undefined)} />);
     expect(screen.getByText("TRIGGER")).toBeTruthy();
     expect((screen.getByLabelText("X") as HTMLInputElement).value).toBe("3");
+  });
+
+  // ---------------------------------------------------------------------
+  // Review fix: a rapid double-click on Add Event (or Delete) used to fire
+  // the underlying handler twice before the first round trip resolved --
+  // App.tsx's own onAddEvent reads a stale `objectEvents.length` for both
+  // clicks, so the second one's optimistic selection pointed at the wrong
+  // event. Both buttons now disable themselves for the duration of their
+  // own in-flight call, mirroring SaveDialog's own `saving` guard.
+  // ---------------------------------------------------------------------
+
+  it("Add Event disables itself while onAdd is in flight, and re-enables once it resolves", async () => {
+    let resolveAdd!: () => void;
+    const onAdd = vi.fn(() => new Promise<void>((resolve) => { resolveAdd = resolve; }));
+    render(<EventInspector selected={null} onMove={vi.fn()} onDelete={vi.fn().mockResolvedValue(undefined)} onAdd={onAdd} />);
+
+    const button = screen.getByRole("button", { name: /add event/i }) as HTMLButtonElement;
+    fireEvent.click(button);
+    expect(onAdd).toHaveBeenCalledTimes(1);
+    expect(button.disabled).toBe(true);
+
+    // A second click while still pending must not fire onAdd again.
+    fireEvent.click(button);
+    expect(onAdd).toHaveBeenCalledTimes(1);
+
+    resolveAdd();
+    await waitFor(() => expect(button.disabled).toBe(false));
+  });
+
+  it("Delete disables itself while onDelete is in flight, and re-enables once it resolves", async () => {
+    let resolveDelete!: () => void;
+    const onDelete = vi.fn(() => new Promise<void>((resolve) => { resolveDelete = resolve; }));
+    render(<EventInspector selected={objectEvent} onMove={vi.fn()} onDelete={onDelete} onAdd={vi.fn().mockResolvedValue(undefined)} />);
+
+    const button = screen.getByRole("button", { name: /delete/i }) as HTMLButtonElement;
+    fireEvent.click(button);
+    expect(onDelete).toHaveBeenCalledTimes(1);
+    expect(button.disabled).toBe(true);
+
+    fireEvent.click(button);
+    expect(onDelete).toHaveBeenCalledTimes(1);
+
+    resolveDelete();
+    await waitFor(() => expect(button.disabled).toBe(false));
   });
 });

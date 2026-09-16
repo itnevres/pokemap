@@ -19,11 +19,17 @@ export interface EventRef {
   index: number;
 }
 
-/** Finds whichever event (of any kind) occupies block cell (bx,by), in the
- *  same kind precedence drawEvents (core/render/overlays.ts) draws them in
- *  -- object, then warp, then coord, then bg -- so a click on a cell with
- *  more than one marker resolves to whichever one paints on top. Whole-cell
- *  hit test, not a smaller radius: drawEvents's own `blendRect` tints the
+/** Finds whichever event (of any kind) occupies block cell (bx,by). Scans
+ *  object, then warp, then coord, then bg, and returns the FIRST match --
+ *  note this is NOT "whichever one paints on top": drawEvents
+ *  (core/render/overlays.ts) draws its marks in that same object/warp/
+ *  coord/bg order via sequential `blendRect` calls, so on a cell where more
+ *  than one overlaps, bg is what's drawn LAST and therefore visually
+ *  topmost, the opposite end of this scan. This picks object-first
+ *  instead -- object events (NPCs, the player's usual click target) are
+ *  the kind most worth prioritising for selection on an overlap, an
+ *  arbitrary-but-documented choice, not a derived one. Whole-cell hit
+ *  test, not a smaller radius: drawEvents's own `blendRect` tints the
  *  entire 16x16 block a marker sits on, so "under the cursor" already means
  *  "same block" for every existing read-only marker, not a bespoke shape
  *  this task invents. Pure and standalone (no ref extraction needed from

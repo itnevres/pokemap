@@ -42,6 +42,21 @@ function resolveEventRef(ref: EventRef | null, map: MapData | undefined): Select
   return e ? { ...e, kind: "bg", index: ref.index } : null;
 }
 
+/** Review fix: every one of the four editSession.{move,add,delete}Event
+ *  call sites below used to fire-and-forget (`void editSession.foo(...)`)
+ *  with no `.catch` at all -- unlike every paint call site in
+ *  MapCanvas.tsx (`.catch(() => {})` throughout, see that file's own
+ *  `endActiveStroke`) and unlike SaveDialog.tsx's own error handling. A
+ *  failed move/add/delete (stale index after a race, a 500, a network
+ *  blip) was an unhandled promise rejection: the UI kept whatever
+ *  optimistic local state it had already set, nothing was actually
+ *  persisted, and nothing told the player. Turns whatever `fetch` threw
+ *  (see useEditSession.ts's own `callEvent`) into one short, readable
+ *  line for the banner below. */
+function eventOpErrorMessage(e: unknown): string {
+  return e instanceof Error ? e.message : "Failed to update event.";
+}
+
 type Mode = "map" | "world" | "dungeon";
 
 export function App() {
@@ -86,6 +101,13 @@ export function App() {
   // that component's own doc comment). `null` means nothing selected --
   // EventInspector's own empty state ("Add Event") then applies.
   const [selectedEvent, setSelectedEvent] = useState<SelectedEvent | null>(null);
+  // Review fix: surfaces a failed move/add/delete (see eventOpErrorMessage's
+  // own doc comment above) -- cleared on the next successful op, or by the
+  // dismiss button on the banner itself (JSX below). Deliberately its own
+  // state, not reusing layout.error/dungeons.error/etc.: those are per-hook
+  // load errors that persist until the underlying fetch succeeds again,
+  // this is a one-shot "your last click didn't take" notice.
+  const [eventOpError, setEventOpError] = useState<string | null>(null);
   // Whichever `map` is actually live right now -- same live/static
   // precedence MapCanvas.tsx's own internal `map` local uses (editSession's
   // live copy once an edit session is open, layout.data's static fetch
@@ -97,9 +119,19 @@ export function App() {
 
   // Drag-to-move on the canvas -- no elevation involved (MapCanvas's own
   // onMoveEvent only ever reports x/y, see EventRef's own doc comment).
+  // Review fix: the local `selectedEvent` update used to run unconditionally
+  // regardless of whether the request actually succeeded -- moved inside
+  // `.then` so a failed move leaves the inspector showing the event's real,
+  // still-server-confirmed position rather than a lie, and `.catch` surfaces
+  // the failure instead of an unhandled rejection.
   const onCanvasMoveEvent = (next: { kind: EventKind; index: number; x: number; y: number }) => {
-    void editSession.moveEvent(next.kind, next.index, next.x, next.y);
-    setSelectedEvent((prev) => (prev && prev.kind === next.kind && prev.index === next.index ? { ...prev, x: next.x, y: next.y } : prev));
+    editSession
+      .moveEvent(next.kind, next.index, next.x, next.y)
+      .then(() => {
+        setEventOpError(null);
+        setSelectedEvent((prev) => (prev && prev.kind === next.kind && prev.index === next.index ? { ...prev, x: next.x, y: next.y } : prev));
+      })
+      .catch((e: unknown) => setEventOpError(eventOpErrorMessage(e)));
   };
 
   // EventInspector's own X/Y/Elevation fields -- elevation rides along for
@@ -115,16 +147,49 @@ export function App() {
   // report, and a reload or map switch will NOT keep a changed elevation,
   // only x/y will.
   const onMoveEventFromInspector = (next: { kind: EventKind; index: number; x: number; y: number; elevation: number }) => {
-    void editSession.moveEvent(next.kind, next.index, next.x, next.y);
-    setSelectedEvent((prev) =>
-      prev && prev.kind === next.kind && prev.index === next.index
-        ? { ...prev, x: next.x, y: next.y, elevation: next.elevation }
-        : prev,
-    );
+    editSession
+      .moveEvent(next.kind, next.index, next.x, next.y)
+      .then(() => {
+        setEventOpError(null);
+        setSelectedEvent((prev) =>
+          prev && prev.kind === next.kind && prev.index === next.index
+            ? { ...prev, x: next.x, y: next.y, elevation: next.elevation }
+            : prev,
+        );
+      })
+      .catch((e: unknown) => setEventOpError(eventOpErrorMessage(e)));
   };
 
-  const onDeleteEvent = (ref: { kind: EventKind; index: number }) => {
-    void editSession.deleteEvent(ref.kind, ref.index).then(() => setSelectedEvent(null));
+  // Returns a Promise (never rejects -- the .catch below turns a failure
+  // into `eventOpError` and resolves anyway) so EventInspector can track
+  // in-flight state locally and disable its Delete button for the
+  // duration -- see that component's own doc comment on this prop.
+  const onDeleteEvent = (ref: { kind: EventKind; index: number }): Promise<void> => {
+    return editSession
+      .deleteEvent(ref.kind, ref.index)
+      .then((warpRenumberWarnings) => {
+        setEventOpError(null);
+        setSelectedEvent(null);
+        // Task 7/9's own purpose-built cross-map footgun warning (see
+        // events.ts's findWarpsTargetingByIndex doc comment) -- deleting a
+        // warp silently renumbers every later warp on THIS map, and any
+        // OTHER map's warp that pointed at the deleted index now targets
+        // whatever shifted into its place. Only ever non-empty for a warp
+        // delete (deleteEvent's own doc comment), but the kind check is
+        // kept explicit rather than relying on that alone. A plain
+        // window.alert, not a custom dialog: this is a one-shot "go fix
+        // these" notice, not a recurring piece of UI worth its own
+        // component for what this task's own review scoped as a minimal
+        // fix.
+        if (ref.kind === "warp" && warpRenumberWarnings.length > 0) {
+          const lines = warpRenumberWarnings.map((w) => `  ${w.fromMapId}, warp #${w.warpIndex}`).join("\n");
+          window.alert(
+            `Deleting this warp renumbered the warps after it on this map.\n` +
+              `These warps on OTHER maps now point at the wrong one and need fixing:\n${lines}`,
+          );
+        }
+      })
+      .catch((e: unknown) => setEventOpError(eventOpErrorMessage(e)));
   };
 
   // onAdd's exact shape is deliberately underspecified by the plan this
@@ -141,8 +206,14 @@ export function App() {
   // (addEvent always appends, per its own doc comment), so the freshly
   // added event can be selected immediately without waiting on -- or
   // re-deriving from -- the server's round trip.
-  const onAddEvent = () => {
-    if (!currentMap || !layout.data) return;
+  // Returns a Promise (never rejects, same shape as onDeleteEvent above) so
+  // EventInspector can disable Add Event while it's in flight -- review fix:
+  // without this, a rapid double-click computed the same stale `newIndex`
+  // twice (both read `currentMap.objectEvents.length` before either
+  // response had landed), so the second click's own optimistic selection
+  // pointed at the wrong event once both round trips resolved.
+  const onAddEvent = (): Promise<void> => {
+    if (!currentMap || !layout.data) return Promise.resolve();
     const newIndex = currentMap.objectEvents.length;
     const x = Math.floor(layout.data.layout.width / 2);
     const y = Math.floor(layout.data.layout.height / 2);
@@ -153,9 +224,13 @@ export function App() {
       movement_type: movementType, movement_range_x: 1, movement_range_y: 1,
       trainer_type: "TRAINER_TYPE_NONE", trainer_sight_or_berry_tree_id: "0", script: "NULL", flag: "0",
     };
-    void editSession.addEvent("object", value).then(() => {
-      setSelectedEvent({ kind: "object", index: newIndex, x, y, elevation: 0, graphicsId, movementType });
-    });
+    return editSession
+      .addEvent("object", value)
+      .then(() => {
+        setEventOpError(null);
+        setSelectedEvent({ kind: "object", index: newIndex, x, y, elevation: 0, graphicsId, movementType });
+      })
+      .catch((e: unknown) => setEventOpError(eventOpErrorMessage(e)));
   };
 
   // Which paint tool the Toolbar has selected, and the small piece of state
@@ -389,6 +464,21 @@ export function App() {
               {activeToolKind === "collision" && (
                 <div className="app__collision-strip">
                   <CollisionPalette selected={collisionValue} onSelect={setCollisionValue} />
+                </div>
+              )}
+              {/* Review fix: a failed move/add/delete used to be an
+                  unhandled rejection with zero visible signal -- reuses
+                  SaveDialog's own `.save-dialog__refusal`-style danger
+                  banner (role="alert", border-danger) rather than inventing
+                  a second error-surface convention. Dismissible so it
+                  doesn't linger forever after the player has seen it; also
+                  cleared automatically on the next successful event op. */}
+              {eventOpError && (
+                <div className="app__event-op-error" role="alert">
+                  <span>{eventOpError}</span>
+                  <button type="button" className="app__event-op-error-dismiss" onClick={() => setEventOpError(null)} aria-label="Dismiss">
+                    ×
+                  </button>
                 </div>
               )}
               {/* Task 14: EventInspector docks as a real side panel next to

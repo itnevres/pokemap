@@ -160,6 +160,35 @@ describe("useEditSession", () => {
     expect(last!.map).toEqual(MAP_BEFORE);
   });
 
+  // Review fix: deleteEvent used to discard `/event/delete`'s own
+  // `warpRenumberWarnings` entirely -- Task 7/9's purpose-built cross-map
+  // footgun warning (deleting a warp renumbers every later warp on that
+  // map; this reports which OTHER maps' warps now point at the wrong one).
+  // Threaded through as deleteEvent's own resolved value so App.tsx can
+  // surface it -- see that file's own onDeleteEvent.
+  it("deleteEvent resolves with the response's warpRenumberWarnings", async () => {
+    const warpRenumberWarnings = [{ fromMapId: "MAP_BAR", warpIndex: 2 }];
+    const served = { map: MAP_BEFORE, isDirty: true, warpRenumberWarnings };
+    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(served) } as Response)));
+    let last: ReturnType<typeof useEditSession> | undefined;
+    render(<Host mapName="Test" initialMap={MAP_AFTER} onResult={(r) => { last = r; }} />);
+
+    let result: unknown;
+    await act(async () => { result = await last!.deleteEvent("warp", 0); });
+    expect(result).toEqual(warpRenumberWarnings);
+  });
+
+  it("deleteEvent resolves with an empty array when the response carries none (a non-warp delete, or the real happy path)", async () => {
+    const served = { map: MAP_BEFORE, isDirty: true };
+    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(served) } as Response)));
+    let last: ReturnType<typeof useEditSession> | undefined;
+    render(<Host mapName="Test" initialMap={MAP_AFTER} onResult={(r) => { last = r; }} />);
+
+    let result: unknown;
+    await act(async () => { result = await last!.deleteEvent("object", 0); });
+    expect(result).toEqual([]);
+  });
+
   it("seeds map from initialMap on first render, and resets to the new map's own seed when mapName changes", async () => {
     vi.stubGlobal("fetch", vi.fn());
     let last: ReturnType<typeof useEditSession> | undefined;

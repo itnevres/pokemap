@@ -39,8 +39,17 @@ export interface EventInspectorProps {
    *  its own handling of that gap at the call site; this component doesn't
    *  need to know or care, it just reports what the fields currently hold. */
   onMove: (next: { kind: SelectedEvent["kind"]; index: number; x: number; y: number; elevation: number }) => void;
-  onDelete: (ref: { kind: SelectedEvent["kind"]; index: number }) => void;
-  onAdd: () => void;
+  /** Both return a Promise (App.tsx's own handlers resolve it after their
+   *  own .then/.catch -- see that file's own doc comments -- so it never
+   *  rejects) purely so this component can track in-flight state locally
+   *  (see `pending` below) and disable the button for the duration,
+   *  mirroring SaveDialog's own `saving` guard. Review fix: without this, a
+   *  rapid double-click on Add Event computed the same stale `newIndex`
+   *  twice (App.tsx reads `currentMap.objectEvents.length` synchronously
+   *  before the first call's response has landed), silently selecting the
+   *  wrong event once the second round trip resolved. */
+  onDelete: (ref: { kind: SelectedEvent["kind"]; index: number }) => Promise<void>;
+  onAdd: () => Promise<void>;
 }
 
 const KIND_LABEL: Record<EventKind, string> = { object: "Object", warp: "Warp", coord: "Coord", bg: "Bg" };
@@ -75,17 +84,41 @@ function subtitleFor(e: SelectedEvent): string {
 export function EventInspector({ selected, onMove, onDelete, onAdd }: EventInspectorProps) {
   const [draft, setDraft] = useState(selected);
   useEffect(() => setDraft(selected), [selected]);
+  // In-flight guard for Add/Delete -- see onAdd/onDelete's own doc comment
+  // on EventInspectorProps. Not reset by the `selected`-resync effect
+  // above: a delete's own success already clears `selected` (App.tsx sets
+  // selectedEvent to null), which unmounts this branch entirely, and an
+  // add's own success mounts a NEW `selected` before this handler's
+  // `finally` has even run -- either way `pending` on the stale instance
+  // is moot, no explicit reset needed.
+  const [pending, setPending] = useState(false);
+
+  // Promise.resolve(...) wraps the call, not just `.finally` on its result
+  // directly: onAdd/onDelete are typed as returning Promise<void> (App.tsx's
+  // real handlers always do), but defends a test double or future caller
+  // that hands back a plain value instead of forgetting to wire one in --
+  // Promise.resolve(undefined) is itself thenable, so `.finally` never
+  // throws either way.
+  const handleAdd = () => {
+    setPending(true);
+    Promise.resolve(onAdd()).finally(() => setPending(false));
+  };
 
   if (!selected || !draft) {
     return (
       <div className="event-inspector event-inspector--empty">
         <p className="event-inspector__empty-text">No event selected.</p>
-        <button type="button" className="map-canvas__btn event-inspector__add-btn" onClick={onAdd}>
-          Add Event
+        <button type="button" className="map-canvas__btn event-inspector__add-btn" onClick={handleAdd} disabled={pending}>
+          {pending ? "Adding…" : "Add Event"}
         </button>
       </div>
     );
   }
+
+  const handleDelete = () => {
+    setPending(true);
+    Promise.resolve(onDelete({ kind: draft.kind, index: draft.index })).finally(() => setPending(false));
+  };
 
   const commit = (over: Partial<{ x: number; y: number; elevation: number }> = {}) => {
     onMove({
@@ -168,12 +201,8 @@ export function EventInspector({ selected, onMove, onDelete, onAdd }: EventInspe
       )}
 
       <div className="event-inspector__actions">
-        <button
-          type="button"
-          className="map-canvas__btn event-inspector__delete-btn"
-          onClick={() => onDelete({ kind: draft.kind, index: draft.index })}
-        >
-          Delete
+        <button type="button" className="map-canvas__btn event-inspector__delete-btn" onClick={handleDelete} disabled={pending}>
+          {pending ? "Deleting…" : "Delete"}
         </button>
       </div>
     </div>

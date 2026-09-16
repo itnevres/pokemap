@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { Block } from "@pokemap/core/src/model/types.js";
 import type { Stamp } from "@pokemap/core/src/edit/paint.js";
 import type { MapData } from "@pokemap/core/src/load/maps.js";
-import type { EventKind } from "@pokemap/core/src/edit/events.js";
+import type { EventKind, WarpRenumberWarning } from "@pokemap/core/src/edit/events.js";
 
 export type PaintApplyBody =
   | { tool: "pencil"; targets: { x: number; y: number }[]; stamp: Stamp; origin: { x: number; y: number } }
@@ -62,7 +62,15 @@ export interface UseEditSessionResult {
    *  names, never MapData's camelCase ones. */
   moveEvent(kind: EventKind, index: number, x: number, y: number): Promise<void>;
   addEvent(kind: EventKind, value: Record<string, unknown>): Promise<void>;
-  deleteEvent(kind: EventKind, index: number): Promise<void>;
+  /** Resolves to `/event/delete`'s own `warpRenumberWarnings` (empty for a
+   *  non-warp delete, or when nothing open) -- Task 7/9's purpose-built
+   *  cross-map footgun warning: deleting warp N on this map silently
+   *  renumbers every later warp on the SAME map, and any OTHER map's warp
+   *  whose destWarpId pointed at N now targets whatever shifted into its
+   *  place (see events.ts's own findWarpsTargetingByIndex doc comment).
+   *  The caller (App.tsx) is responsible for actually surfacing these --
+   *  this hook only threads them through, it doesn't decide how. */
+  deleteEvent(kind: EventKind, index: number): Promise<WarpRenumberWarning[]>;
 }
 
 interface SessionResponse {
@@ -93,6 +101,9 @@ interface SessionResponse {
 interface EventOpResponse {
   map: MapData;
   isDirty: boolean;
+  /** Only ever present on `/event/delete`'s own response, and only for a
+   *  warp delete -- see `deleteEvent`'s own doc comment above. */
+  warpRenumberWarnings?: WarpRenumberWarning[];
 }
 
 /**
@@ -207,8 +218,8 @@ export function useEditSession(mapName: string | null, initialBlocks?: Block[], 
   // deliberately untouched here -- event ops never mutate them server-side
   // either (handleEventOp only ever reassigns `entry.session.map`).
   const callEvent = useCallback(
-    async (path: string, body: unknown): Promise<void> => {
-      if (!mapName) return; // nothing open -- see this hook's own doc comment
+    async (path: string, body: unknown): Promise<WarpRenumberWarning[]> => {
+      if (!mapName) return []; // nothing open -- see this hook's own doc comment
       const r = await fetch(`/api/edit/${encodeURIComponent(mapName)}${path}`, { method: "POST", body: JSON.stringify(body) });
       if (!r.ok) throw new Error(`POST /api/edit/${mapName}${path} -> ${r.status}`);
       const d = (await r.json()) as EventOpResponse;
@@ -227,12 +238,18 @@ export function useEditSession(mapName: string | null, initialBlocks?: Block[], 
       // the route doesn't currently provide.
       setCanUndo(true);
       setCanRedo(false);
+      return d.warpRenumberWarnings ?? [];
     },
     [mapName],
   );
 
-  const moveEvent = useCallback((kind: EventKind, index: number, x: number, y: number) => callEvent("/event/move", { kind, index, x, y }), [callEvent]);
-  const addEvent = useCallback((kind: EventKind, value: Record<string, unknown>) => callEvent("/event/add", { kind, value }), [callEvent]);
+  // moveEvent/addEvent stay Promise<void> -- their own routes never carry
+  // warpRenumberWarnings (only /event/delete does), so callEvent's return
+  // value is meaningless to them; discarded via `.then(() => {})` rather
+  // than widening their own public signature to something callers would
+  // have to needlessly check.
+  const moveEvent = useCallback((kind: EventKind, index: number, x: number, y: number) => callEvent("/event/move", { kind, index, x, y }).then(() => {}), [callEvent]);
+  const addEvent = useCallback((kind: EventKind, value: Record<string, unknown>) => callEvent("/event/add", { kind, value }).then(() => {}), [callEvent]);
   const deleteEvent = useCallback((kind: EventKind, index: number) => callEvent("/event/delete", { kind, index }), [callEvent]);
 
   return { blocks, border, map, isDirty, canUndo, canRedo, beginStroke, applyPaint, endStroke, undo, redo, markClean, moveEvent, addEvent, deleteEvent };
