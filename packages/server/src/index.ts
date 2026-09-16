@@ -20,6 +20,8 @@ import { paintCells, floodFill, shiftGrid, type Stamp } from "@pokemap/core/src/
 import { planSave, commitSave, type EditSession } from "@pokemap/core/src/write/save.js";
 import { formatDiffJson } from "@pokemap/core/src/write/diff.js";
 import { moveEvent, addEvent, deleteEvent, findWarpsTargetingByIndex, type EventKind } from "@pokemap/core/src/edit/events.js";
+import { rankSpeciesForSign, suggestSignPlacement } from "@pokemap/core/src/signs/suggest.js";
+import { buildWildSign, guardSignWrite } from "@pokemap/core/src/signs/write.js";
 
 export interface PokemapServer { port: number; project: Project; close(): Promise<void>; }
 
@@ -870,6 +872,64 @@ export async function createServer(opts: { projectPath: string; port?: number })
               return { map: nextMap, extra: warpRenumberWarnings };
             });
             return send(200, { map: result.map, isDirty: result.isDirty, warpRenumberWarnings: result.extra });
+          })
+          .catch((e: unknown) => { console.error(e); send(500, { error: e instanceof Error ? e.message : String(e) }); });
+      }
+
+      // Task 17: wild sign write path. GET /suggestions is read-only (ranks
+      // catchable species and suggests a grass-adjacent placement, Task
+      // 15's own rankSpeciesForSign/suggestSignPlacement); POST /sign/add
+      // composes Task 16's generateSignScript (via core's buildWildSign)
+      // into ONE object-event insert plus ONE scripts.inc append, both
+      // staged on the session the same way the event routes above stage
+      // theirs -- reuses handleEventOp for the identical prev-snapshot/
+      // mutate/push-undo-command sequence, extended here to also push a
+      // scriptAppends entry alongside insertOps (editSessions.ts's own
+      // Snapshot/snapshotOf already carry scriptAppends, so undo reverts
+      // both halves as one step for free).
+      const signSuggestMatch = /^\/api\/sign\/(.+)\/suggestions$/.exec(url.pathname);
+      if (signSuggestMatch && req.method === "GET") {
+        const name = decodeURIComponent(signSuggestMatch[1]!);
+        if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
+        return send(200, {
+          species: rankSpeciesForSign(project, name),
+          placement: suggestSignPlacement(project, name),
+        });
+      }
+
+      const signAddMatch = /^\/api\/edit\/(.+)\/sign\/add$/.exec(url.pathname);
+      if (signAddMatch && req.method === "POST") {
+        const name = decodeURIComponent(signAddMatch[1]!);
+        if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
+        return readBody(req)
+          .then((body) => {
+            let parsed: { x?: unknown; y?: unknown; elevation?: unknown; species?: unknown; dialogue?: unknown };
+            try { parsed = JSON.parse(body) as typeof parsed; }
+            catch (e) { return send(400, { error: `invalid JSON body: ${(e as Error).message}` }); }
+            if (typeof parsed.x !== "number" || typeof parsed.y !== "number" || typeof parsed.elevation !== "number"
+              || typeof parsed.species !== "string" || typeof parsed.dialogue !== "string") {
+              return send(400, { error: `expected { x, y, elevation: number, species, dialogue: string }, got ${body}` });
+            }
+            let built: ReturnType<typeof buildWildSign>;
+            try {
+              built = buildWildSign(name, parsed as { x: number; y: number; elevation: number; species: string; dialogue: string });
+            } catch (e) {
+              return send(400, { error: e instanceof Error ? e.message : String(e) });
+            }
+            const refusals = guardSignWrite(project.paths.root, name, built.scriptLabel);
+            if (refusals.length > 0) return send(400, { refusals });
+
+            const entry = editEntryFor(name);
+            const result = handleEventOp(entry, "add wild sign", (map) => {
+              const { map: nextMap, insertOp } = addEvent(map, "object", built.objectEvent);
+              entry.session.insertOps = [...entry.session.insertOps, insertOp];
+              entry.session.scriptAppends = [
+                ...(entry.session.scriptAppends ?? []),
+                { path: project.paths.mapScriptsInc(name), text: built.scriptAppendText },
+              ];
+              return { map: nextMap };
+            });
+            return send(200, { map: result.map, isDirty: result.isDirty, scriptLabel: built.scriptLabel });
           })
           .catch((e: unknown) => { console.error(e); send(500, { error: e instanceof Error ? e.message : String(e) }); });
       }

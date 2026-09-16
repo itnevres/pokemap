@@ -303,6 +303,46 @@ input {
   outline-offset: 2px;
 }
 
+/* Task 17: one-shot "sign added" confirmation -- identical layout to
+   .app__event-op-error just above, accent-toned (border: 1px solid
+   var(--accent), the same "primary action succeeded" hue every commit
+   button in this app already uses) instead of danger-toned, since this
+   reports a success rather than a failure. */
+.app__sign-added {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin: var(--space-2) var(--space-3) 0;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+}
+
+.app__sign-added-dismiss {
+  flex: 0 0 auto;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: var(--text-base);
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 var(--space-1);
+}
+
+.app__sign-added-dismiss:hover {
+  color: var(--text-primary);
+}
+
+.app__sign-added-dismiss:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
 .app__canvas-placeholder {
   flex: 1 1 auto;
   display: flex;
@@ -1976,7 +2016,8 @@ input {
 }
 
 .toolbar__tools,
-.toolbar__history {
+.toolbar__history,
+.toolbar__sign {
   display: flex;
   gap: var(--space-1);
 }
@@ -2131,6 +2172,137 @@ input {
 }
 
 .save-dialog__btn--primary:not(:disabled):hover {
+  background: var(--accent);
+  color: var(--text-on-accent);
+}
+
+/* Task 17: SignComposer -- one-shot wild-sign authoring flow, opened from
+   Toolbar's own "Add Sign" button (separate from the six paint tools: this
+   is a modal composer, not a paint-and-drag tool). Reuses
+   .warp-modal__backdrop/.warp-modal__panel for its shell (same as
+   SaveDialog above) and .save-dialog__loading/__empty/__load-error for its
+   own loading/empty/error text -- no need to re-derive those three states a
+   third time in this file. */
+.sign-composer {
+  padding: var(--space-4);
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.sign-composer__title {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.sign-composer__species-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: var(--space-2);
+}
+
+/* Selected species marked the SAME way every other toggle in this app
+   marks "on" (.map-canvas__btn[aria-pressed="true"]'s own
+   --bg-selected/--border-strong pair, also reused verbatim by
+   .collision-swatch/.toolbar__tool-btn) -- not a new selection
+   convention. .map-canvas__btn already supplies the base look/hover/focus
+   and the aria-pressed state itself; this only left-aligns the label and
+   gives each row its own width, since map-canvas__btn's own buttons are
+   normally small fixed-label icons, not a full sentence like "SPECIES_X —
+   40%". */
+.sign-composer__species-btn {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font-family: var(--font-data);
+}
+
+.sign-composer__coords {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.sign-composer__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.sign-composer__field--dialogue {
+  flex: 1;
+}
+
+.sign-composer__input {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-family: var(--font-data);
+  font-size: var(--text-sm);
+  padding: var(--space-1) var(--space-2);
+}
+
+.sign-composer__input:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* Same danger-bordered-panel technique as .save-dialog__refusal (border: 1px
+   solid var(--danger) on the ordinary panel background, no tint) -- this
+   file has no danger-tinted-background pattern anywhere, so this doesn't
+   invent one either. */
+.sign-composer__refusal {
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--danger);
+  border-radius: 4px;
+  padding: var(--space-2) var(--space-3);
+}
+
+.sign-composer__refusal-message {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+
+.sign-composer__refusal-fix {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.sign-composer__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: auto;
+  padding-top: var(--space-2);
+}
+
+/* Same "primary commit action" green as .save-dialog__btn--primary/
+   .toolbar__save-btn -- the accent hue means "this button writes/stages
+   the thing you asked for" consistently across the whole app, not a
+   per-component invention. */
+.sign-composer__btn--primary:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+
+.sign-composer__btn--primary:not(:disabled):hover {
   background: var(--accent);
   color: var(--text-on-accent);
 }

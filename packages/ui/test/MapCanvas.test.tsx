@@ -75,6 +75,7 @@ function makeEditSession(overrides: Partial<UseEditSessionResult> = {}): UseEdit
     moveEvent: vi.fn().mockResolvedValue(undefined),
     addEvent: vi.fn().mockResolvedValue(undefined),
     deleteEvent: vi.fn().mockResolvedValue(undefined),
+    applyExternalMapUpdate: vi.fn(),
     ...overrides,
   };
 }

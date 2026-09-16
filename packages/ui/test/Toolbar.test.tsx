@@ -21,6 +21,7 @@ describe("Toolbar", () => {
     canUndo: false,
     canRedo: false,
     onOpenSave: vi.fn(),
+    onOpenSignComposer: vi.fn(),
     // Every tool available by default -- these tests exercise rendering/
     // selection/undo-redo/dirty concerns, orthogonal to availability. The
     // availability-specific behaviour has its own dedicated tests below.
@@ -67,6 +68,18 @@ describe("Toolbar", () => {
     render(<Toolbar {...baseProps} isDirty={true} onOpenSave={onOpenSave} />);
     fireEvent.click(screen.getByRole("button", { name: /Save/ }));
     expect(onOpenSave).toHaveBeenCalled();
+  });
+
+  // Task 17: Add Sign is a one-shot composer flow (opens SignComposer), not
+  // a paint tool -- separate from TOOLS and never gated by availableTools,
+  // so it should be enabled and clickable regardless of what's available.
+  it("clicking Add Sign calls onOpenSignComposer", () => {
+    const onOpenSignComposer = vi.fn();
+    render(<Toolbar {...baseProps} availableTools={[]} onOpenSignComposer={onOpenSignComposer} />);
+    const btn = screen.getByRole("button", { name: "Add Sign" }) as HTMLButtonElement;
+    expect(btn.disabled).toBe(false);
+    fireEvent.click(btn);
+    expect(onOpenSignComposer).toHaveBeenCalled();
   });
 
   // Code-review fix: pencil/rect/bucket/dropper/shift used to render fully

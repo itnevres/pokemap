@@ -5,6 +5,7 @@ import { WorldCanvas } from "./components/WorldCanvas.js";
 import { DungeonSidebar } from "./components/DungeonSidebar.js";
 import { Toolbar, type ToolKind } from "./components/Toolbar.js";
 import { SaveDialog } from "./components/SaveDialog.js";
+import { SignComposer } from "./components/SignComposer.js";
 import { CollisionPalette, type CollisionElevation } from "./components/CollisionPalette.js";
 import { EventInspector, type SelectedEvent } from "./components/EventInspector.js";
 import { useMapGroups } from "./hooks/useMapGroups.js";
@@ -243,6 +244,16 @@ export function App() {
   const [activeToolKind, setActiveToolKind] = useState<ToolKind | null>(null);
   const [collisionValue, setCollisionValue] = useState<CollisionElevation>({ collision: 0, elevation: 0 });
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  // Task 17: SignComposer's own open/close flag, same shape as
+  // saveDialogOpen above. signAddedMessage is a one-shot confirmation --
+  // this app had no existing "success" notice anywhere to reuse (only
+  // eventOpError's danger-bordered banner), so this is a small, deliberate
+  // new one: same dismissible-banner shape as eventOpError, accent-toned
+  // instead of danger-toned, cleared by its own dismiss button or replaced
+  // by the next sign add -- never auto-cleared on map switch, mirroring
+  // eventOpError's own (also never auto-cleared) precedent exactly.
+  const [signComposerOpen, setSignComposerOpen] = useState(false);
+  const [signAddedMessage, setSignAddedMessage] = useState<string | null>(null);
 
   // Translates the Toolbar's bare ToolKind into the shape MapCanvas's own
   // `activeTool` prop actually expects (see MapCanvas.tsx's own
@@ -455,6 +466,7 @@ export function App() {
                 canUndo={editSession.canUndo}
                 canRedo={editSession.canRedo}
                 onOpenSave={() => setSaveDialogOpen(true)}
+                onOpenSignComposer={() => setSignComposerOpen(true)}
                 // Code-review fix: only "collision" is actually wired to
                 // MapCanvas today (see `activeTool`'s own doc comment
                 // above) -- everything else must render visibly disabled,
@@ -477,6 +489,20 @@ export function App() {
                 <div className="app__event-op-error" role="alert">
                   <span>{eventOpError}</span>
                   <button type="button" className="app__event-op-error-dismiss" onClick={() => setEventOpError(null)} aria-label="Dismiss">
+                    ×
+                  </button>
+                </div>
+              )}
+              {/* Task 17: one-shot confirmation after a successful sign add
+                  -- same dismissible-banner shape as eventOpError just
+                  above, accent-toned (not danger) since this reports a
+                  success, not a failure. role="status" (not "alert"): this
+                  is informational, not urgent, matching the semantic
+                  distinction between the two ARIA live-region roles. */}
+              {signAddedMessage && (
+                <div className="app__sign-added" role="status">
+                  <span>{signAddedMessage}</span>
+                  <button type="button" className="app__sign-added-dismiss" onClick={() => setSignAddedMessage(null)} aria-label="Dismiss">
                     ×
                   </button>
                 </div>
@@ -527,6 +553,21 @@ export function App() {
                 setSaveDialogOpen(false);
               }}
               onCancel={() => setSaveDialogOpen(false)}
+            />
+          )}
+          {/* Task 17: SignComposer owns its own modal shell exactly like
+              SaveDialog above (Step 10's own design correction) -- App.tsx
+              just conditionally renders it as a sibling, same stacking-
+              context reasoning as SaveDialog's own comment just above. */}
+          {signComposerOpen && selected && (
+            <SignComposer
+              mapName={selected}
+              onSessionUpdated={(map, isDirty) => editSession.applyExternalMapUpdate(map, isDirty)}
+              onAdded={(scriptLabel) => {
+                setSignComposerOpen(false);
+                setSignAddedMessage(`Added wild sign: ${scriptLabel}`);
+              }}
+              onCancel={() => setSignComposerOpen(false)}
             />
           )}
         </main>
