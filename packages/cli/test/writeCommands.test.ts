@@ -60,12 +60,27 @@ describe("writeCommands", () => {
 
   itWithCorpus("runSignAdd refuses and writes nothing when the derived label already exists, even with --yes", () => {
     const proj = openProject(SUBJECT_ROOT);
-    const scriptsPath = proj.paths.mapScriptsInc("Route31"); // a third confirmed-real map
+    // Route40, not Route31 (the plan's own original choice): this test does two
+    // REAL writeFileSync calls against the target's real scripts.inc (seed the
+    // colliding label, then restore in `finally`), and signRoutes.test.ts's own
+    // Route31 test (Task 17, "undo after a sign add removes BOTH...") does a
+    // real POST /sign/add against that same real Route31 scripts.inc with the
+    // SAME derived label (species RATTATA) via guardSignWrite's real read of
+    // the file. Under vitest's parallel-file execution, a read from that test
+    // landing between this test's seed-write and its restore would see the
+    // seeded label and get refused -- signRoutes.test.ts's own assertion
+    // (`plan.changes` equals `[]`) happens to pass either way, but that's a
+    // coincidence of what it asserts today, not a guarantee -- exactly the
+    // same class of hazard as the Route33/Route34 fix below. Route40 is
+    // confirmed real (data/maps/Route40/{map.json,scripts.inc} both exist,
+    // distinct LAYOUT_ROUTE40) and is not referenced anywhere else in this
+    // repo's test suite.
+    const scriptsPath = proj.paths.mapScriptsInc("Route40");
     const before = readFileSync(scriptsPath, "utf8");
     try {
-      writeFileSync(scriptsPath, before + "\nRoute31_EventScript_WildSign_Rattata::\n\tend\n");
-      expect(() => runSignAdd(proj, { map: "Route31", x: 1, y: 1, elevation: 3, species: "RATTATA", dialogue: "...", yes: true })).toThrow(/SIGN_LABEL_EXISTS/);
-      expect(readFileSync(proj.paths.mapJson("Route31"), "utf8")).toEqual(readFileSync(proj.paths.mapJson("Route31"), "utf8")); // map.json untouched (trivially true; real assertion is the throw itself plus the finally-restore below)
+      writeFileSync(scriptsPath, before + "\nRoute40_EventScript_WildSign_Rattata::\n\tend\n");
+      expect(() => runSignAdd(proj, { map: "Route40", x: 1, y: 1, elevation: 3, species: "RATTATA", dialogue: "...", yes: true })).toThrow(/SIGN_LABEL_EXISTS/);
+      expect(readFileSync(proj.paths.mapJson("Route40"), "utf8")).toEqual(readFileSync(proj.paths.mapJson("Route40"), "utf8")); // map.json untouched (trivially true; real assertion is the throw itself plus the finally-restore below)
     } finally {
       writeFileSync(scriptsPath, before);
     }
@@ -96,11 +111,24 @@ describe("writeCommands", () => {
 
   itWithCorpus("runPaint with --yes actually paints one block and commits, then restores", () => {
     const proj = openProject(SUBJECT_ROOT);
-    const layout = proj.layoutForMap("Route33"); // a confirmed-real map, distinct from every other map used above and in Task 17's server tests
+    // Route37, not Route33 (spec-review fix, task 18 follow-up): Route33 is real
+    // and, on its own, distinct from every OTHER map in this file -- but
+    // packages/server/test/paintRoutes.test.ts:244 also opens a real session on
+    // Route33 (a real readFileSync of the same real blockdata via
+    // editSessions.ts's open()), and this test does a real writeFileSync
+    // (via commitSave) to that same file, restored only in `finally`. Under
+    // vitest's default parallel-file execution that's a real reader/writer
+    // race against the same file from two independent test files -- exactly
+    // the hazard this task's own instructions warn about, and exactly what
+    // the Route30->Route35 swap above already fixed for the sign-tool tests.
+    // Route37 is confirmed real (data/maps/Route37/{map.json,scripts.inc}
+    // exist, distinct LAYOUT_ROUTE37 -> data/layouts/Route37/map.bin) and is
+    // not referenced anywhere else in this repo's test suite.
+    const layout = proj.layoutForMap("Route37");
     const binPath = `${SUBJECT_ROOT}/${layout.blockdataFilepath}`;
     const before = readFileSync(binPath);
     try {
-      const out = runPaint(proj, { map: "Route33", tool: "pencil", x: 0, y: 0, metatileId: 1, yes: true });
+      const out = runPaint(proj, { map: "Route37", tool: "pencil", x: 0, y: 0, metatileId: 1, yes: true });
       expect(out).toMatch(/committed|saved|wrote/i);
       expect(readFileSync(binPath)).not.toEqual(before);
     } finally {
@@ -110,11 +138,19 @@ describe("writeCommands", () => {
 
   itWithCorpus("runPaint rect tool paints the whole rectangle", () => {
     const proj = openProject(SUBJECT_ROOT);
-    const layout = proj.layoutForMap("Route34");
+    // Route38, not Route34 (spec-review fix, same reasoning as Route37 above):
+    // packages/server/test/paintRoutes.test.ts:224 opens a real session on
+    // Route34 (real readFileSync of its blockdata) and asserts exact
+    // before/after metatile ids on the SAME (0,0)-(1,1) rectangle this test
+    // paints -- the most exposed version of this race in the suite. Route38
+    // is confirmed real (data/maps/Route38/{map.json,scripts.inc} exist,
+    // distinct LAYOUT_ROUTE38 -> data/layouts/Route38/map.bin) and is not
+    // referenced anywhere else in this repo's test suite.
+    const layout = proj.layoutForMap("Route38");
     const binPath = `${SUBJECT_ROOT}/${layout.blockdataFilepath}`;
     const before = readFileSync(binPath);
     try {
-      runPaint(proj, { map: "Route34", tool: "rect", x: 0, y: 0, x1: 1, y1: 1, metatileId: 2, yes: true });
+      runPaint(proj, { map: "Route38", tool: "rect", x: 0, y: 0, x1: 1, y1: 1, metatileId: 2, yes: true });
       expect(readFileSync(binPath)).not.toEqual(before);
     } finally {
       writeFileSync(binPath, before);
