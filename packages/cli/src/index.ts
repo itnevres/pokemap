@@ -12,6 +12,7 @@ import { encodePng } from "./png.js";
 import { resolveProject, layoutNameFor } from "./context.js";
 import { parseBorder, parseBbox, parseScale } from "./args.js";
 import { resolvePlacementRect } from "./renderWorld.js";
+import { runSignSuggest, runSignAdd, runSignList, runPaint, runDiff } from "./writeCommands.js";
 
 const program = new Command();
 program.name("pokemap").option("-p, --project <path>", "decomp root");
@@ -183,6 +184,78 @@ program
     process.stdout.write(`${c.mapsWithEncounters} maps with encounters, ${c.mapsWithoutEncounters.length} without\n`);
     if (opts.empty) for (const m of c.mapsWithoutEncounters) process.stdout.write(`  ${m}\n`);
     if (opts.unused) for (const s of c.unusedSpecies) process.stdout.write(`  ${s}\n`);
+  });
+
+// A `program.command("sign suggest <map>")` one-liner does NOT nest a
+// "suggest" subcommand under "sign" the way it reads -- commander 12's own
+// `.command(nameAndArgs)` splits nameAndArgs on the FIRST space only
+// (`nameAndArgs.match(/([^ ]+) *(.*)/)`), so that string registers a
+// TOP-LEVEL command literally named "sign" whose remaining text
+// ("suggest <map>") is handed to `.arguments()`, which splits it on
+// whitespace AGAIN and defines two positional arguments -- one literally
+// named "suggest", one named "map" -- not a nested "sign suggest"
+// subcommand at all. Real nesting needs an attached parent command
+// (`program.command("sign")`) with subcommands created off of THAT
+// object, exactly as below.
+const sign = program.command("sign").description("wild sign commands");
+
+sign
+  .command("suggest <map>")
+  .description("rank catchable species and suggest a placement for a wild sign on this map")
+  .action((map: string) => {
+    const proj = resolveProject(program.opts().project);
+    process.stdout.write(`${runSignSuggest(proj, map)}\n`);
+  });
+
+sign
+  .command("add <map>")
+  .description("add a wild sign -- prints the plan by default, writes only with --yes")
+  .requiredOption("--species <name>", "e.g. RATTATA or SPECIES_RATTATA")
+  .requiredOption("--dialogue <text>", "the one line shown on interact")
+  .requiredOption("--x <n>", "tile x", Number)
+  .requiredOption("--y <n>", "tile y", Number)
+  .option("--elevation <n>", "tile elevation", Number, 0)
+  .option("--yes", "actually write")
+  .action((map: string, opts: { species: string; dialogue: string; x: number; y: number; elevation: number; yes?: boolean }) => {
+    const proj = resolveProject(program.opts().project);
+    process.stdout.write(`${runSignAdd(proj, { map, x: opts.x, y: opts.y, elevation: opts.elevation, species: opts.species, dialogue: opts.dialogue, yes: !!opts.yes })}\n`);
+  });
+
+sign
+  .command("list <map>")
+  .description("list existing wild signs (overworld-species object events) on a map")
+  .action((map: string) => {
+    const proj = resolveProject(program.opts().project);
+    process.stdout.write(`${runSignList(proj, map)}\n`);
+  });
+
+program
+  .command("paint <map>")
+  .description("paint one metatile (pencil) or a rectangle (rect) -- prints the plan by default, writes only with --yes")
+  .requiredOption("--tool <tool>", "pencil or rect")
+  .requiredOption("--x <n>", "tile x (or rect's first corner)", Number)
+  .requiredOption("--y <n>", "tile y (or rect's first corner)", Number)
+  .option("--x1 <n>", "rect's second corner x", Number)
+  .option("--y1 <n>", "rect's second corner y", Number)
+  .requiredOption("--metatile <id>", "metatile id to stamp", Number)
+  .option("--yes", "actually write")
+  .action((map: string, opts: { tool: "pencil" | "rect"; x: number; y: number; x1?: number; y1?: number; metatile: number; yes?: boolean }) => {
+    const proj = resolveProject(program.opts().project);
+    process.stdout.write(`${runPaint(proj, { map, tool: opts.tool, x: opts.x, y: opts.y, x1: opts.x1, y1: opts.y1, metatileId: opts.metatile, yes: !!opts.yes })}\n`);
+  });
+
+program
+  .command("diff <map>")
+  .description("preview a paint edit's plan without writing (always a dry run)")
+  .requiredOption("--tool <tool>", "pencil or rect")
+  .requiredOption("--x <n>", "tile x (or rect's first corner)", Number)
+  .requiredOption("--y <n>", "tile y (or rect's first corner)", Number)
+  .option("--x1 <n>", "rect's second corner x", Number)
+  .option("--y1 <n>", "rect's second corner y", Number)
+  .requiredOption("--metatile <id>", "metatile id to stamp", Number)
+  .action((map: string, opts: { tool: "pencil" | "rect"; x: number; y: number; x1?: number; y1?: number; metatile: number }) => {
+    const proj = resolveProject(program.opts().project);
+    process.stdout.write(`${runDiff(proj, { map, tool: opts.tool, x: opts.x, y: opts.y, x1: opts.x1, y1: opts.y1, metatileId: opts.metatile })}\n`);
   });
 
 // parseAsync, not a sync parse()+try/catch: every action handler today is
