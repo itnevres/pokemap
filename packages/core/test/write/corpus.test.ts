@@ -84,6 +84,31 @@ function projFor(root: string): Project {
   });
 }
 
+// Real single-map collisions with OTHER test files -- in a different
+// package in every case here -- that either pin exact byte/field values
+// read off the SAME real file the funnel test's "first resolvable map"
+// selection would otherwise deterministically choose, or themselves commit
+// a real write to it. Same hazard the project already hit and fixed twice
+// in Task 18 (writeCommands.test.ts's Route33->Route37, Route34->Route38,
+// commit 5de00c0) -- vitest's default parallel-file execution makes two
+// independent test files touching the same real path a genuine reader/
+// writer race, not a theoretical one. Scoped to the subject root only:
+// these are Johto/GSC map names unique to this romhack's own tree, so the
+// set is a structural no-op against every reference root's own "first
+// resolvable" pick (e.g. PetalburgCity), which is confirmed collision-free
+// separately (no reference-root test reads or writes a reference-root
+// map.bin by name).
+//   - NewBarkTown: pinned byte-for-byte in packages/core/test/load/
+//     blocks.test.ts ("reads NewBarkTown's real map.bin").
+//   - CherrygroveCity, VioletCity, GoldenrodCity: real paint/commit writes
+//     in packages/server/test/paintRoutes.test.ts.
+//   - EcruteakCity, OlivineCity, BlackthornCity: real paint/commit writes
+//     in packages/server/test/saveRoutes.test.ts.
+const EXCLUDED_TARGET_NAMES = new Set([
+  "NewBarkTown", "CherrygroveCity", "VioletCity", "GoldenrodCity",
+  "EcruteakCity", "OlivineCity", "BlackthornCity",
+]);
+
 describe("identity corpus (invariant I5)", () => {
   it("has every reference engine available", () => {
     expect(roots.length).toBeGreaterThanOrEqual(5);
@@ -337,6 +362,7 @@ describe("identity corpus (invariant I5)", () => {
     // avoids it is a test-construction choice, not a weakened assertion.
     let target: { name: string; layout: ReturnType<typeof parseLayouts>["layouts"][number]; map: ReturnType<typeof parseMap> } | undefined;
     for (const name of names) {
+      if (EXCLUDED_TARGET_NAMES.has(name)) continue;
       const mapPath = paths.mapJson(name);
       if (!existsSync(mapPath)) continue;
       const mapJson = readFileSync(mapPath, "utf8");
@@ -387,6 +413,13 @@ describe("identity corpus (invariant I5)", () => {
       const afterBlockdata = readFileSync(blockdataPath);
       expect(afterBlockdata).not.toEqual(beforeBlockdata);
       const afterBlocks = parseBlocks(afterBlockdata, proj.profile);
+      // Pinned against the ORIGINAL block count, not `afterBlocks.length`
+      // itself -- the loop below is bounded by `afterBlocks.length`, so a
+      // commitSave that silently truncated the file would otherwise still
+      // pass every assertion here (a truncated buffer is still "not equal"
+      // to `beforeBlockdata`, and an empty-tailed loop trivially finds no
+      // mismatches).
+      expect(afterBlocks).toHaveLength(blocks.length);
       expect(afterBlocks[0]!.metatileId).toBe(paintedId);
       // Nothing else on the grid moved -- a save that touches the whole
       // buffer instead of exactly the one changed block is exactly the kind
