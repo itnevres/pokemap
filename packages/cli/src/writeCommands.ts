@@ -40,11 +40,11 @@ export function openCliEditSession(proj: Project, mapName: string): EditSession 
  *  label) before deciding whether to add `--yes`. */
 function dryRunOrCommit(proj: Project, session: EditSession, yes: boolean, label: string): string {
   const plan = planSave(proj, session);
+  const diffText = formatDiffText(plan);
+  if (!yes) return `${label}\n${diffText}\n(dry run -- not written; pass --yes to commit)`;
   if (plan.refusals.length > 0) {
     throw new Error(plan.refusals.map((r) => `${r.code} (${r.subject}): ${r.message} -- ${r.fix}`).join("\n"));
   }
-  const diffText = formatDiffText(plan);
-  if (!yes) return `${label}\n${diffText}\n(dry run -- not written; pass --yes to commit)`;
   commitSave(proj, plan);
   return `${label}\n${diffText}\ncommitted`;
 }

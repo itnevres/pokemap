@@ -136,6 +136,42 @@ describe("writeCommands", () => {
     }
   });
 
+  itWithCorpus("runPaint without --yes renders a real guard refusal inline (like runDiff), instead of throwing", () => {
+    const proj = openProject(SUBJECT_ROOT);
+    // Route32, already read-only elsewhere in this file (the runDiff test
+    // above) -- this test never writes either (dry run with no --yes, and
+    // the guard refusal blocks planSave's own change from ever reaching
+    // commitSave), so reusing it carries none of the reader/writer races the
+    // Route30->35/Route31->40/Route33->37/Route34->38 swaps above were fixing.
+    // 1000, not something like 99999: it must fit encodeBlocks's own block
+    // mask (0x3ff, i.e. 0-1023 -- an id that doesn't fit throws in
+    // planBlockdataWrite before guardLayoutSave's refusal is ever reached, a
+    // different failure entirely) while still tripping guardLayoutSave's
+    // idOutOfRange (packages/core/src/write/guards.ts:14-20). Confirmed
+    // against Route32's real split: primary tileset has 640 metatiles,
+    // secondary 340, so the ceiling this layout's split actually resolves to
+    // is min(640+340, 1024) = 980 -- 1000 is below the mask's 1023 ceiling
+    // but above this layout's own 980, so it always trips
+    // metatile-out-of-range without ever hitting the mask check.
+    const layout = proj.layoutForMap("Route32");
+    const binPath = `${SUBJECT_ROOT}/${layout.blockdataFilepath}`;
+    const before = readFileSync(binPath);
+    const out = runPaint(proj, { map: "Route32", tool: "pencil", x: 0, y: 0, metatileId: 1000, yes: false });
+    expect(out).toContain("REFUSED");
+    expect(out).toContain("metatile-out-of-range");
+    expect(out).toMatch(/dry.?run|not written|--yes/i);
+    expect(readFileSync(binPath)).toEqual(before);
+  });
+
+  itWithCorpus("runPaint with --yes still refuses and writes nothing when the identical guard refusal fires", () => {
+    const proj = openProject(SUBJECT_ROOT);
+    const layout = proj.layoutForMap("Route32");
+    const binPath = `${SUBJECT_ROOT}/${layout.blockdataFilepath}`;
+    const before = readFileSync(binPath);
+    expect(() => runPaint(proj, { map: "Route32", tool: "pencil", x: 0, y: 0, metatileId: 1000, yes: true })).toThrow(/metatile-out-of-range/);
+    expect(readFileSync(binPath)).toEqual(before);
+  });
+
   itWithCorpus("runPaint rect tool paints the whole rectangle", () => {
     const proj = openProject(SUBJECT_ROOT);
     // Route38, not Route34 (spec-review fix, same reasoning as Route37 above):
