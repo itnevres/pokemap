@@ -72,6 +72,16 @@ function profileOf(root: string): EngineProfile {
  * bounds the overall ceiling idOutOfRange computes. Every OTHER guard path
  * this funnel test can reach (missing-layout-version, border-size-mismatch,
  * warp-tile-moved) is exercised against fully real data.
+ *
+ * Every field left un-overridden falls back to stubProject.ts's own
+ * defaults, and those are NOT all `unused()` throwers the way `splitFor`/
+ * `tileset`/`constants` are here -- `layouts`, `layoutByName`/`layoutById`
+ * and `mapNames` fall back to silent, benign empty values ([], undefined,
+ * []). Harmless for every guard path this funnel test actually reaches
+ * today, but worth naming here: a future guards.ts check that reads
+ * `proj.layouts` or calls `proj.layoutByName(...)` would silently see empty
+ * data in THIS merge gate, rather than throwing loudly the way the
+ * currently-overridden fields do.
  */
 function projFor(root: string): Project {
   const paths = projectPaths(root);
@@ -97,13 +107,29 @@ function projFor(root: string): Project {
 // set is a structural no-op against every reference root's own "first
 // resolvable" pick (e.g. PetalburgCity), which is confirmed collision-free
 // separately (no reference-root test reads or writes a reference-root
-// map.bin by name).
+// map.bin BY NAME).
 //   - NewBarkTown: pinned byte-for-byte in packages/core/test/load/
 //     blocks.test.ts ("reads NewBarkTown's real map.bin").
 //   - CherrygroveCity, VioletCity, GoldenrodCity: real paint/commit writes
 //     in packages/server/test/paintRoutes.test.ts.
 //   - EcruteakCity, OlivineCity, BlackthornCity: real paint/commit writes
 //     in packages/server/test/saveRoutes.test.ts.
+//
+// This list is NOT a complete safety net, and a name absent from it is not
+// thereby proven safe: whole-corpus scanners (packages/core/test/load/
+// blocks.test.ts's border/map.bin histograms, write/binary.test.ts's
+// trailing-block scan, load/maps.test.ts's parse-every-map.json checks --
+// on the subject root AND, for maps.test.ts, on every reference root too)
+// read every real file by ITERATION, not by map name, so no name-keyed
+// exclusion set can ever cover them -- whichever map this loop picks, its
+// blockdata still races them for the length of the paint-to-restore window.
+// They survive today only because their assertions are metatileId-agnostic
+// and paintCells (edit/paint.ts) never touches a file's length or its
+// collision/elevation bytes -- not because this list makes the map safe.
+// The actual defence against this second hazard class is keeping the
+// funnel test's own real-write surface as small as possible (see the
+// `finally` block below, which restores border.bin/map.json only if
+// commitSave actually touched them).
 const EXCLUDED_TARGET_NAMES = new Set([
   "NewBarkTown", "CherrygroveCity", "VioletCity", "GoldenrodCity",
   "EcruteakCity", "OlivineCity", "BlackthornCity",
@@ -428,9 +454,23 @@ describe("identity corpus (invariant I5)", () => {
       expect(readFileSync(mapJsonPath, "utf8")).toBe(beforeMapJson); // untouched -- no json edit was staged
       expect(readFileSync(borderPath)).toEqual(beforeBorder); // untouched -- border was never painted
     } finally {
+      // blockdataPath is unconditional -- commitSave genuinely writes it
+      // every time (that's the whole point of the test). borderPath and
+      // mapJsonPath are read-guarded, not written unconditionally: commitSave
+      // never touches either for this test (proven above at :428-429, and
+      // structurally -- planBorderWrite/the json-edit path both short-
+      // circuit to a no-op when nothing changed), so writing them
+      // unconditionally would be a real writeFileSync on two files this test
+      // never actually modified, for zero benefit -- exactly the write
+      // surface a whole-corpus scanner in a concurrent test file (see
+      // EXCLUDED_TARGET_NAMES's own comment) can race, on every root, since
+      // those scanners read by iteration rather than by name. Matches Task
+      // 18's own precedent (writeCommands.test.ts: restore only what was
+      // actually written), while still acting as a safety net if a future
+      // change ever DOES make commitSave touch either file here.
       writeFileSync(blockdataPath, beforeBlockdata);
-      writeFileSync(borderPath, beforeBorder);
-      writeFileSync(mapJsonPath, beforeMapJson);
+      if (!readFileSync(borderPath).equals(beforeBorder)) writeFileSync(borderPath, beforeBorder);
+      if (readFileSync(mapJsonPath, "utf8") !== beforeMapJson) writeFileSync(mapJsonPath, beforeMapJson);
       expect(readFileSync(blockdataPath)).toEqual(beforeBlockdata);
     }
   }, 900_000);
