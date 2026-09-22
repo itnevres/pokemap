@@ -240,17 +240,37 @@ export async function createServer(opts: { projectPath: string; port?: number })
         try { border = parseBorder(url.searchParams.get("border") ?? "0"); }
         catch (e) { return send(400, { error: (e as Error).message }); }
 
-        const key = `${name}:${border}`;
-        let png = pngCache.get(key);
-        if (!png) {
-          // Resolve without throwing. `project.map(name)` refuses an unknown
-          // name, and that refusal must become a 404 here, not a 500 from the
-          // outer catch.
-          const layoutName = project.layoutByName(name)
+        // Resolve without throwing. `project.map(name)` refuses an unknown
+        // name, and that refusal must become a 404 here, not a 500 from the
+        // outer catch.
+        const resolveLayoutName = () =>
+          project.layoutByName(name)
             ? name
             : project.mapNames().includes(name)
               ? project.layoutById(project.map(name).layout)?.name
               : undefined;
+
+        // A live edit session for this exact map name means disk state is
+        // stale (an edit never touches disk until a real commit, per I6) --
+        // render straight from the session's own in-memory blocks and skip
+        // pngCache entirely. pngCache is keyed only on `name:border` with no
+        // expiry of its own; writing a live render into it would serve that
+        // one stale-forever afterward, including to a LATER read-only
+        // request for the same map once the session eventually closes. Only
+        // BROWSER caching is disabled by the response header below -- this
+        // server's own process-lifetime Map needed its own bypass.
+        if (editSessions.has(name)) {
+          const layoutName = resolveLayoutName();
+          if (!layoutName) return send(404, { error: `no layout or map ${name}` });
+          const png = encodePng(renderLayout(project, layoutName, { border, blocksOverride: editEntryFor(name).session.blocks }));
+          res.writeHead(200, { "content-type": "image/png", "cache-control": "no-cache" });
+          return res.end(png);
+        }
+
+        const key = `${name}:${border}`;
+        let png = pngCache.get(key);
+        if (!png) {
+          const layoutName = resolveLayoutName();
           if (!layoutName) return send(404, { error: `no layout or map ${name}` });
           png = encodePng(renderLayout(project, layoutName, { border }));
           pngCache.set(key, png);

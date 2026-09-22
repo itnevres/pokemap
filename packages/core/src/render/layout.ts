@@ -29,6 +29,20 @@ export interface LayoutRaster extends Raster {
 export interface RenderLayoutOptions {
   /** Rings of border to draw outside the map. 0 = none. */
   border?: number;
+  /** Render these blocks instead of reading the layout's own blockdata file
+   *  from disk -- lets a caller with an open, unsaved, in-memory edit
+   *  session (the server's editSessions.ts store) render CURRENT state
+   *  instead of what's actually on disk (which an edit never touches until
+   *  a real commit, per I6). Must be the same shape parseBlocks returns
+   *  (including any trailing block -- see binary.ts's own doc comment on
+   *  why a 19-layout shape needs one). The CLI never passes this; it only
+   *  ever renders real disk state, matching its own single-process,
+   *  no-server-session architecture (see writeCommands.ts). Border blocks
+   *  are NOT overridable here -- no tool in this app edits border.bin
+   *  today (every paint route only ever reassigns `entry.session.blocks`),
+   *  so adding that override now would be speculative, unused code; add it
+   *  later if a border-painting tool ever ships. */
+  blocksOverride?: Block[];
 }
 
 export function renderLayout(proj: Project, layoutName: string, opts: RenderLayoutOptions = {}): LayoutRaster {
@@ -45,16 +59,19 @@ export function renderLayout(proj: Project, layoutName: string, opts: RenderLayo
   const secondary = proj.tileset(layout.secondaryTileset);
 
   const blockdataPath = `${proj.paths.root}/${layout.blockdataFilepath}`;
-  const blocks = parseBlocks(readFileSync(blockdataPath), proj.profile);
+  const blocks = opts.blocksOverride ?? parseBlocks(readFileSync(blockdataPath), proj.profile);
   const wantBlocks = layout.width * layout.height;
-  // A short file is a guess wearing the shape of a render: `blocks[i]` would
-  // come back `undefined` mid-grid and `!b` would skip it silently, leaving a
-  // partly transparent map with no complaint. Measured across the subject
-  // repo: 1,001 blockdata files exact, 19 over by rounding, 0 short -- so this
-  // never fires on real data (I7) and is cheap insurance against a corrupt one.
+  // A short file (or a short override) is a guess wearing the shape of a
+  // render: `blocks[i]` would come back `undefined` mid-grid and `!b` would
+  // skip it silently, leaving a partly transparent map with no complaint.
+  // Measured across the subject repo: 1,001 blockdata files exact, 19 over
+  // by rounding, 0 short -- so this never fires on real disk data (I7) and
+  // is cheap insurance against a corrupt one; a caller-supplied override is
+  // exactly as capable of being wrong, so the same refusal applies to it.
   if (blocks.length < wantBlocks) {
+    const source = opts.blocksOverride ? "the supplied blocksOverride" : blockdataPath;
     throw new Error(
-      `${blockdataPath} holds ${blocks.length} blocks but ${layout.name} declares ` +
+      `${source} holds ${blocks.length} blocks but ${layout.name} declares ` +
       `${layout.width}x${layout.height} = ${wantBlocks}`,
     );
   }

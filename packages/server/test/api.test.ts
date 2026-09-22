@@ -4,6 +4,8 @@ import { SUBJECT_ROOT, hasProject } from "@pokemap/core/test/helpers/corpus.js";
 
 let s: PokemapServer;
 const get = async (path: string) => fetch(`http://127.0.0.1:${s.port}${path}`);
+const post = async (path: string, body: unknown) =>
+  fetch(`http://127.0.0.1:${s.port}${path}`, { method: "POST", body: JSON.stringify(body) });
 
 // The hooks live INSIDE the describe, not beside it. `createServer` opens the
 // real project, so an `it`-level guard is too late -- but so is a
@@ -92,6 +94,49 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("server", () => {
     expect(plain.readUInt32BE(16)).toBe(30 * 16);
     expect(bordered.readUInt32BE(16)).toBe((30 + 4) * 16);
     expect(plain.equals(bordered)).toBe(false);
+  });
+
+  it("renders live edited state once an edit session is open, bypassing the PNG cache entirely", async () => {
+    // Route30 is untouched by any other test in this file (or, since each
+    // test file gets its own server instance via its own beforeAll, by any
+    // other test file's paint either) -- no risk of a stray already-open
+    // session making this test pass by accident.
+    const map = "Route30";
+    const disk = Buffer.from(await (await get(`/api/render/${map}.png?border=0`)).arrayBuffer());
+
+    await post(`/api/edit/${map}/paint/begin`, {});
+    const applied = await (await post(`/api/edit/${map}/paint/apply`, {
+      tool: "pencil", targets: [{ x: 0, y: 0 }], stamp: { width: 1, height: 1, cells: [{ metatileId: 42 }] }, origin: { x: 0, y: 0 },
+    })).json() as any;
+    expect(applied.blocks[0].metatileId).toBe(42); // the session really did change block (0,0)
+
+    const live = Buffer.from(await (await get(`/api/render/${map}.png?border=0`)).arrayBuffer());
+    // A real, discriminating pixel-level assertion, not just status 200: the
+    // PNG served while the session is open must differ from the PNG served
+    // before any edit existed.
+    expect(live.equals(disk)).toBe(false);
+
+    // Undo reverts the session's blocks back to disk state; the render must
+    // follow -- proof this route is reading the session live, not caching
+    // the one live render it happened to produce. /paint/end first, same as
+    // this project's own established pattern (paintRoutes.test.ts): undo
+    // reverts the stack's last pushed command, and nothing is pushed until
+    // /end closes the stroke.
+    await post(`/api/edit/${map}/paint/end`, {});
+    await post(`/api/edit/${map}/undo`, {});
+    const afterUndo = Buffer.from(await (await get(`/api/render/${map}.png?border=0`)).arrayBuffer());
+    expect(afterUndo.equals(disk)).toBe(true);
+  }, 300_000);
+
+  it("still serves an untouched map's render from pngCache -- opening a session elsewhere doesn't disable it", async () => {
+    // GoldenrodCity has no open session anywhere in this file -- the live-
+    // session branch above is keyed on editSessions.has(name), so it must
+    // never engage for a different map name. Two fetches of the same
+    // never-edited target should come back byte-identical, same shape as
+    // this file's own "keys the PNG cache on the border" test above.
+    const a = Buffer.from(await (await get("/api/render/GoldenrodCity.png?border=0")).arrayBuffer());
+    const b = Buffer.from(await (await get("/api/render/GoldenrodCity.png?border=0")).arrayBuffer());
+    expect(a.equals(b)).toBe(true);
   });
 
   it("serves a species icon as a 32x32 PNG", async () => {

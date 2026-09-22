@@ -113,6 +113,46 @@ describe("renderLayout", () => {
       .toBe(bordered.width * bordered.height - plain.width * plain.height);
   });
 
+  itWithCorpus("blocksOverride renders live in-memory state instead of disk, and the changed block's own pixels reflect it", () => {
+    // PetalburgCity_Layout is already pinned above as fully in-range
+    // (outOfRangeCount 0), so every id its own blocks array already uses is
+    // guaranteed valid for this layout's split -- no need to hand-derive or
+    // guess a ceiling, just borrow a real, already-in-use id from elsewhere
+    // in the same layout.
+    const plain = renderLayout(proj, "PetalburgCity_Layout");
+    const original = plain.blocks[0]!;
+    const replacement = plain.blocks.find((b) => b.metatileId !== original.metatileId);
+    expect(replacement).toBeDefined(); // a real town has more than one metatile id
+    const override = plain.blocks.map((b, i) => (i === 0 ? { ...b, metatileId: replacement!.metatileId } : b));
+
+    const overridden = renderLayout(proj, "PetalburgCity_Layout", { blocksOverride: override });
+
+    // Same dimensions -- an override doesn't change the layout's own shape.
+    expect(overridden.width).toBe(plain.width);
+    expect(overridden.height).toBe(plain.height);
+
+    // The changed block's own 16x16 pixel region (block (0,0), no border so
+    // originX/Y are 0) must differ between the two renders.
+    const region = (r: typeof plain): number[] => {
+      const bytes: number[] = [];
+      for (let y = 0; y < 16; y++) {
+        for (let x = 0; x < 16; x++) {
+          const i = (y * r.width + x) * 4;
+          bytes.push(r.data[i]!, r.data[i + 1]!, r.data[i + 2]!, r.data[i + 3]!);
+        }
+      }
+      return bytes;
+    };
+    expect(region(overridden)).not.toEqual(region(plain));
+  });
+
+  itWithCorpus("refuses a blocksOverride shorter than width x height, naming the override as the source", () => {
+    const layout = proj.layoutByName("PetalburgCity_Layout")!;
+    const shortOverride = [{ metatileId: 1, collision: 0, elevation: 0 }];
+    expect(() => renderLayout(proj, layout.name, { blocksOverride: shortOverride }))
+      .toThrow(/the supplied blocksOverride holds 1 blocks but PetalburgCity_Layout declares 30x30 = 900/);
+  });
+
   itWithCorpus("renders every layout in the subject repo, and only one is out of range", () => {
     const failures: string[] = [];
     const outOfRange: string[] = [];

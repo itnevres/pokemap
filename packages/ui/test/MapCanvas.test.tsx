@@ -383,6 +383,56 @@ describe("MapCanvas", () => {
   });
 
   // ---------------------------------------------------------------------
+  // Follow-up: the base <img src> must cache-bust after a real paint, or
+  // the composite effect keeps drawing the pristine pre-edit PNG forever
+  // (see MapCanvas.tsx's own doc comments on `paintVersion`/`imageUrl`).
+  // jsdom cannot exercise the actual reload race (that needs a real
+  // browser -- see this task's own live-verify) -- these are scoped to
+  // what a unit test CAN prove: the URL string itself, and that the
+  // version bump/reset logic driving it behaves correctly in isolation.
+  // ---------------------------------------------------------------------
+
+  it("omits the v= cache-bust param for a read-only viewer with no editSession", () => {
+    const { img } = renderMapCanvas(); // no editSession
+    expect(img.src).toContain("/api/render/Foo.png?border=1");
+    expect(img.src).not.toMatch(/[?&]v=/);
+  });
+
+  it("includes a v= cache-bust param once editSession is present, and bumps it on each subsequent blocks change for the same map", () => {
+    const session = makeEditSession({ blocks: DATA.blocks });
+    const { img, rerender } = renderMapCanvas({ editSession: session });
+    const versionOf = () => new URL(img.src).searchParams.get("v");
+    expect(versionOf()).toBe("0"); // present from the first render, not just after a paint
+
+    // A real paint replaces useEditSession's own `blocks` state with a
+    // fresh array from the server response (see useEditSession.ts's
+    // `setBlocks(d.blocks)`) -- a NEW reference, same map. Simulated here
+    // by rerendering with a new editSession object carrying a new blocks
+    // array.
+    const session2 = { ...session, blocks: [...session.blocks] };
+    rerender(<MapCanvas mapName="Foo" data={DATA} editSession={session2} />);
+    const afterFirstPaint = versionOf();
+    expect(afterFirstPaint).toBe("1");
+
+    const session3 = { ...session2, blocks: [...session2.blocks] };
+    rerender(<MapCanvas mapName="Foo" data={DATA} editSession={session3} />);
+    const afterSecondPaint = versionOf();
+    expect(afterSecondPaint).toBe("2");
+    // Monotonically distinguishable, not just "some value" -- two
+    // DIFFERENT paints must produce two DIFFERENT versions.
+    expect(afterSecondPaint).not.toBe(afterFirstPaint);
+  });
+
+  it("switching to a different map updates imageUrl to the new map name", () => {
+    const { img, rerender } = renderMapCanvas();
+    expect(img.src).toContain("/api/render/Foo.png");
+
+    rerender(<MapCanvas mapName="Bar" data={DATA} />);
+    expect(img.src).toContain("/api/render/Bar.png");
+    expect(img.src).not.toContain("/api/render/Foo.png");
+  });
+
+  // ---------------------------------------------------------------------
   // Task 11: painting wired into the existing pan/hover handlers via an
   // OPTIONAL editSession/activeTool prop pair.
   // ---------------------------------------------------------------------

@@ -238,6 +238,29 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
   const [dragPreview, setDragPreview] = useState<{ kind: EventKind; index: number; x: number; y: number } | null>(null);
 
   const [imgLoaded, setImgLoaded] = useState(false);
+  // Bumped whenever `blocks` changes for the SAME map (a real edit) -- see
+  // the tracking effect below. Folded into `imageUrl`'s own query string so
+  // a paint forces a real refetch of /api/render/:name.png; the server
+  // (packages/server/src/index.ts's render route) renders live session
+  // state instead of stale disk pixels once a session is open for this map,
+  // but the base <img> here never picks up a NEW src unless the URL itself
+  // changes -- a same-URL paint would otherwise leave the browser showing
+  // whatever it already fetched.
+  const [paintVersion, setPaintVersion] = useState(0);
+  const prevBlocksRef = useRef(blocks);
+  const prevMapNameRef = useRef(mapName);
+  useEffect(() => {
+    // Comparing prevMapNameRef BEFORE updating it below is what excludes a
+    // map switch: `blocks` differs then too (a different map's array), but
+    // that case is already fully handled by the `[mapName]` reset effect --
+    // bumping paintVersion here as well would just be a harmless-but-
+    // pointless extra cache-bust on top of it.
+    if (prevMapNameRef.current === mapName && prevBlocksRef.current !== blocks) {
+      setPaintVersion((v) => v + 1);
+    }
+    prevBlocksRef.current = blocks;
+    prevMapNameRef.current = mapName;
+  }, [blocks, mapName]);
   const [toggles, setToggles] = useState<Toggles>(NO_TOGGLES);
   const [zoom, setZoom] = useState<Zoom>(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -269,14 +292,36 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
   const originX = BORDER_RINGS * layout.borderWidth * 16;
   const originY = BORDER_RINGS * layout.borderHeight * 16;
 
-  // Reset per-map view state (fresh image, fresh overlays) whenever the map
-  // itself changes -- otherwise NewBarkTown would inherit PetalburgCity's pan
-  // and toggle state on selection.
+  // `v=` only when editing is live -- a read-only viewer (no editSession)
+  // never paints, so it never needs a cache-bust, and always appending one
+  // would just make every read-only fetch (WarpDestinationModal's preview,
+  // Map mode before an edit session opens) needlessly unique.
+  const imageUrl = `/api/render/${encodeURIComponent(mapName)}.png?border=${BORDER_RINGS}${editSession ? `&v=${paintVersion}` : ""}`;
+
+  // Reset per-map view state (fresh overlays) whenever the map itself
+  // changes -- otherwise NewBarkTown would inherit PetalburgCity's toggle
+  // state on selection. imgLoaded is NOT reset here (see the imageUrl-keyed
+  // effect below) -- it used to be, but that effect now owns it exclusively,
+  // covering both a map switch AND a paint-triggered reload with one flag
+  // instead of two effects fighting over the same state.
   useEffect(() => {
-    setImgLoaded(false);
     setToggles(NO_TOGGLES);
     setHover(null);
   }, [mapName]);
+
+  // The <img> only ever shows fresh pixels once ITS OWN load fires again --
+  // resetting imgLoaded here (keyed on the URL, which changes on a map
+  // switch OR a paint-triggered `v=` bump) is what makes the composite
+  // effect below correctly wait for that real reload rather than
+  // recompositing whatever the <img> element still happens to display from
+  // the PREVIOUS url. Without this, a paint would bump `blocks` (re-firing
+  // the composite effect immediately, against the stale still-loading
+  // image) while imgLoaded stayed `true` the whole time -- so the genuine
+  // false->true transition on the NEW image's real load would never fire,
+  // and the canvas would show stale-then-frozen content.
+  useEffect(() => {
+    setImgLoaded(false);
+  }, [imageUrl]);
 
   const fit = useCallback(() => {
     const vw = viewport.w || pixelWidth;
@@ -289,10 +334,20 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
     setPan({ x: Math.round((vw - pixelWidth * z) / 2), y: Math.round((vh - pixelHeight * z) / 2) });
   }, [pixelWidth, pixelHeight, viewport]);
 
+  // Only the FIRST successful image load for a given mapName triggers fit()
+  // -- a same-map reload triggered by a paint (imgLoaded cycling false->true
+  // via the imageUrl-keyed effect above) must NOT also snap the player's
+  // pan/zoom back to "fit," or every single paint would destroy whatever
+  // view they'd zoomed/panned to mid-edit.
+  const fittedForMapRef = useRef<string | null>(null);
   useEffect(() => {
-    if (imgLoaded) fit();
-    // Only re-fit on image load / map change, not on every render -- the
-    // user's own zoom/pan must survive an overlay toggle.
+    if (imgLoaded && fittedForMapRef.current !== mapName) {
+      fit();
+      fittedForMapRef.current = mapName;
+    }
+    // Only re-fit once per real map open, not on every render -- the user's
+    // own zoom/pan must survive an overlay toggle OR a paint-triggered
+    // reload.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [imgLoaded, mapName]);
 
@@ -703,7 +758,6 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
     if (editSession && activeTool && strokeOpenRef.current) endActiveStroke(null);
   };
 
-  const imageUrl = `/api/render/${encodeURIComponent(mapName)}.png?border=${BORDER_RINGS}`;
   const anyOverlay = toggles.grid || showCollision || toggles.elevation || toggles.events;
 
   return (
