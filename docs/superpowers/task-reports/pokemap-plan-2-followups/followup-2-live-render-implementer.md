@@ -115,3 +115,43 @@ Renamed and re-commented the "still serves from pngCache" test to say what it ac
 - `packages/ui/test/MapCanvas.test.tsx`
 
 Commit: `e4dafd7` (on top of `2359ecb`).
+
+---
+
+## Addendum 2: code-quality fix round (commit `b3d2df8`, on top of `e4dafd7`)
+
+Code-quality review (`followup-2-live-render-code-quality-review.md`) of the debounce fix found 1 Important + 4 Minor. Fixed the Important and minors #2/#3/#4; left #5 (nit, explicitly not required).
+
+### Important -- `skipNextBumpRef` (this round's own new guard) had zero test teeth
+
+Reviewer proved empirically: deleting the whole `if (skipNextBumpRef.current) {...}` block, or deleting `setPaintVersion(0)`, left the suite 27/27 green. Root cause: `MapCanvas.test.tsx`'s v= test read `versionOf()` immediately after the rerender meant to prove the tick was swallowed -- but under debouncing, "0" reads identically whether the tick was genuinely swallowed or merely scheduled-but-not-fired. Same failure mode issue 4 existed to close, reopened one commit later by this round's own code.
+
+Fix: added a real 300ms wait before that assertion (past the debounce window), matching the reviewer's validated one-liner. **Teeth-proofed myself**: temporarily disabled the `if (skipNextBumpRef.current) {...}` block, ran the test, confirmed it now fails (`expected '1' to be '0'`, matching the reviewer's own reported failure exactly), restored the guard, confirmed green again.
+
+### Minor #3 -- deleted `setPaintVersion(0)` on map switch
+
+Reviewer's argument: the reset bought nothing (`mapName` already forces a URL change on a real switch) and made "same URL -> same content" only ACCIDENTALLY true (safe today only because both render branches use `cache-control: no-cache` with no ETag). Deleted the line, kept the rest of the `[mapName]` effect (arming `skipNextBumpRef`, clearing the pending timer) unchanged. `paintVersion` is now a monotonic, never-reset counter. Confirmed no existing test relied on post-switch `v=` resetting to `"0"` before deleting.
+
+### Minor #2 (optional, taken) -- corrected stale comment in `useEditSession.ts`
+
+The comment claiming the corrective post-switch reseed "always lands before the player could possibly have started editing" was false (traced by reviewer: `App.tsx` renders `MapCanvas` with no `key`, `useMapLayout` doesn't clear stale data on a name change, so MapCanvas stays mounted and paintable during the gap). Corrected the comment to describe the real, bounded window honestly; did not chase the underlying edge case itself (explicitly out of scope, would need an `App.tsx`/`useMapLayout` design change).
+
+### Minor #4 (optional, taken) -- corrected borrowed comment in the debounce test
+
+The comment justifying real timers over fake ones (borrowed from `WorldCanvas.test.tsx`'s fade-timer test) claimed "fake timers don't intercept a setTimeout scheduled before they're enabled" -- true there (timer scheduled by a mount effect before the test body runs), not true in this test (timer scheduled by a `rerender` inside the test body, so fake timers would actually work). Corrected the comment to say real timers here match the file's convention, not that they're required.
+
+### Minor #5 -- skipped, per explicit "not required" instruction.
+
+### Verification
+
+- `packages/ui/test/MapCanvas.test.tsx` run **4x consecutively**: 27/27 green every time, no flake (debounce tests were the specific flake risk called out).
+- `npx vitest run` (full monorepo): 73 files, **685/685 pass**.
+- `npm run typecheck`: clean.
+
+### Files touched (this fix round)
+
+- `packages/ui/src/components/MapCanvas.tsx`
+- `packages/ui/src/hooks/useEditSession.ts`
+- `packages/ui/test/MapCanvas.test.tsx`
+
+Commit: `b3d2df8` (on top of `e4dafd7`).
