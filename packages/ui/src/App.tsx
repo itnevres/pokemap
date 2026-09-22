@@ -137,21 +137,16 @@ export function App() {
       .catch((e: unknown) => setEventOpError(eventOpErrorMessage(e)));
   };
 
-  // EventInspector's own X/Y/Elevation fields -- elevation rides along for
-  // symmetry with x/y (EventInspector.tsx's own doc comment), but core's
-  // moveEvent (Task 7, packages/core/src/edit/events.ts) only ever writes
-  // x/y to disk; there is no persisted way to move an event's elevation
-  // today, and extending that primitive is out of this task's scope (the
-  // file list above never lists core/src/edit/events.ts or the server
-  // routes as something Task 14 touches). x/y are sent to the real route;
-  // elevation is merged into LOCAL selection state only, so the field
-  // doesn't visibly snap back to its old value the instant you type -- an
-  // honest gap, not a silent no-op: flagged prominently in this task's own
-  // report, and a reload or map switch will NOT keep a changed elevation,
-  // only x/y will.
+  // EventInspector's own X/Y/Elevation fields -- follow-up to Task 14: core's
+  // moveEvent (packages/core/src/edit/events.ts) now takes an optional
+  // elevation param and, when passed, actually writes it to disk (a real
+  // jsonEdit, not just local component state), so x/y and elevation are
+  // both genuinely persisted here, sent together whenever EventInspector's
+  // own commit() fires. onCanvasMoveEvent above stays x/y-only on purpose
+  // -- a canvas drag has no elevation concept.
   const onMoveEventFromInspector = (next: { kind: EventKind; index: number; x: number; y: number; elevation: number }) => {
     editSession
-      .moveEvent(next.kind, next.index, next.x, next.y)
+      .moveEvent(next.kind, next.index, next.x, next.y, next.elevation)
       .then(() => {
         setEventOpError(null);
         setSelectedEvent((prev) =>

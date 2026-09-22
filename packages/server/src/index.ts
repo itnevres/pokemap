@@ -836,16 +836,19 @@ export async function createServer(opts: { projectPath: string; port?: number })
         if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
         return readBody(req)
           .then((body) => {
-            let parsed: { kind?: unknown; index?: unknown; x?: unknown; y?: unknown };
+            let parsed: { kind?: unknown; index?: unknown; x?: unknown; y?: unknown; elevation?: unknown };
             try { parsed = JSON.parse(body) as typeof parsed; }
             catch (e) { return send(400, { error: `invalid JSON body: ${(e as Error).message}` }); }
             if (!EVENT_KINDS.has(parsed.kind as EventKind)) return send(400, { error: `"kind" must be one of object/warp/coord/bg, got ${JSON.stringify(parsed.kind)}` });
             if (typeof parsed.index !== "number" || typeof parsed.x !== "number" || typeof parsed.y !== "number") {
               return send(400, { error: `expected { kind, index: number, x: number, y: number }, got ${body}` });
             }
+            if (parsed.elevation !== undefined && typeof parsed.elevation !== "number") {
+              return send(400, { error: `"elevation" must be a number when present, got ${JSON.stringify(parsed.elevation)}` });
+            }
             const entry = editEntryFor(name);
             const result = handleEventOp(entry, "move event", (map) => {
-              const { map: nextMap, jsonEdits } = moveEvent(map, parsed.kind as EventKind, parsed.index as number, parsed.x as number, parsed.y as number);
+              const { map: nextMap, jsonEdits } = moveEvent(map, parsed.kind as EventKind, parsed.index as number, parsed.x as number, parsed.y as number, parsed.elevation as number | undefined);
               entry.session.jsonEdits = [...entry.session.jsonEdits, ...jsonEdits];
               return { map: nextMap };
             });

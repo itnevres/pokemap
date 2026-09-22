@@ -32,12 +32,12 @@ export type SelectedEvent =
 
 export interface EventInspectorProps {
   selected: SelectedEvent | null;
-  /** `elevation` rides along with every commit for symmetry with x/y (see
-   *  this component's own field list), but the caller should know: core's
-   *  `moveEvent` (Task 7) only ever writes x/y to disk -- there is no
-   *  persisted way to move an event's elevation today. App.tsx documents
-   *  its own handling of that gap at the call site; this component doesn't
-   *  need to know or care, it just reports what the fields currently hold. */
+  /** `elevation` rides along with every commit alongside x/y -- core's
+   *  `moveEvent` now persists all three as real jsonEdits (follow-up to
+   *  Task 7), so this is a genuine write, not just local state. This
+   *  component doesn't need to know or care, it just reports what the
+   *  fields currently hold; App.tsx's own call site is what wires it
+   *  through to the server. */
   onMove: (next: { kind: SelectedEvent["kind"]; index: number; x: number; y: number; elevation: number }) => void;
   /** Both return a Promise (App.tsx's own handlers resolve it after their
    *  own .then/.catch -- see that file's own doc comments -- so it never

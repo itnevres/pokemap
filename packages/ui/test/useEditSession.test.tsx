@@ -129,6 +129,26 @@ describe("useEditSession", () => {
     expect(last!.canRedo).toBe(false);
   });
 
+  it("moveEvent forwards a real elevation argument as an `elevation` key in the POST body", async () => {
+    const served = { map: MAP_AFTER, isDirty: true };
+    const fetchMock = vi.fn(() => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(served) } as Response));
+    vi.stubGlobal("fetch", fetchMock);
+    let last: ReturnType<typeof useEditSession> | undefined;
+    render(<Host mapName="Test" initialMap={MAP_BEFORE} onResult={(r) => { last = r; }} />);
+
+    await act(async () => { await last!.moveEvent("object", 0, 5, 5, 3); });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining("/event/move"),
+      expect.objectContaining({ method: "POST", body: JSON.stringify({ kind: "object", index: 0, x: 5, y: 5, elevation: 3 }) }),
+    );
+  });
+
+  // Negative case (elevation omitted -> no `elevation` key sent) is already
+  // pinned by "moveEvent posts { kind, index, x, y } to /event/move..."
+  // above -- that test's own body assertion has no `elevation` key, which
+  // fails just as loudly if this changed to always send one.
+
   it("addEvent posts { kind, value } to /event/add and updates map from the response", async () => {
     const served = { map: MAP_AFTER, isDirty: true };
     vi.stubGlobal("fetch", vi.fn(() => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(served) } as Response)));

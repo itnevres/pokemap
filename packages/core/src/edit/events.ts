@@ -14,17 +14,24 @@ const CAMEL_ARRAY_KEY: Record<EventKind, "objectEvents" | "warpEvents" | "coordE
   object: "objectEvents", warp: "warpEvents", coord: "coordEvents", bg: "bgEvents",
 };
 
-/** Writes only x/y via jsonEdits -- I2's own "surgical splice, never
- *  reserialise" applies at the field level too: a drag never touches any
- *  other key on the moved event. */
-export function moveEvent(map: MapData, kind: EventKind, index: number, x: number, y: number): { map: MapData; jsonEdits: JsonEdit[] } {
+/** Writes x/y (always) and elevation (only when passed) via jsonEdits --
+ *  I2's own "surgical splice, never reserialise" applies at the field level
+ *  too: a drag never touches any other key on the moved event. `elevation`
+ *  omitted (`undefined`, e.g. a canvas drag, which has no elevation concept)
+ *  behaves exactly as before this field existed: no elevation jsonEdit, no
+ *  elevation change on the returned map's own event. Every real event kind's
+ *  raw JSON already carries an `elevation` field under that exact name. */
+export function moveEvent(map: MapData, kind: EventKind, index: number, x: number, y: number, elevation?: number): { map: MapData; jsonEdits: JsonEdit[] } {
   const arrayKey = EVENT_ARRAY_KEY[kind];
   const jsonEdits: JsonEdit[] = [
     { path: [arrayKey, index, "x"], value: x },
     { path: [arrayKey, index, "y"], value: y },
   ];
+  if (elevation !== undefined) jsonEdits.push({ path: [arrayKey, index, "elevation"], value: elevation });
   const camelKey = CAMEL_ARRAY_KEY[kind];
-  const list = (map[camelKey] as Array<{ x: number; y: number }>).map((e, i) => (i === index ? { ...e, x, y } : e));
+  const list = (map[camelKey] as Array<{ x: number; y: number; elevation: number }>).map((e, i) =>
+    i === index ? { ...e, x, y, ...(elevation !== undefined ? { elevation } : {}) } : e,
+  );
   return { map: { ...map, [camelKey]: list }, jsonEdits };
 }
 

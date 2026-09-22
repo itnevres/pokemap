@@ -59,8 +59,16 @@ export interface UseEditSessionResult {
    *  `value` for addEvent is a RAW object literal (snake_case field names)
    *  -- see events.ts's own `addEvent` doc comment, it is spliced verbatim
    *  into map.json server-side, so it must match the file's own field
-   *  names, never MapData's camelCase ones. */
-  moveEvent(kind: EventKind, index: number, x: number, y: number): Promise<void>;
+   *  names, never MapData's camelCase ones.
+   *
+   *  Follow-up: `moveEvent`'s `elevation` is optional and, when passed, is
+   *  now genuinely persisted (core's `moveEvent`, Task 7, gained an
+   *  optional elevation param) -- a canvas drag omits it (no elevation
+   *  concept there), EventInspector's commit sends it. `JSON.stringify`
+   *  drops an `undefined` property, so an omitted elevation sends a body
+   *  with no `elevation` key at all, matching the server's own
+   *  optional-field handling. */
+  moveEvent(kind: EventKind, index: number, x: number, y: number, elevation?: number): Promise<void>;
   addEvent(kind: EventKind, value: Record<string, unknown>): Promise<void>;
   /** Resolves to `/event/delete`'s own `warpRenumberWarnings` (empty for a
    *  non-warp delete, or when nothing open) -- Task 7/9's purpose-built
@@ -269,7 +277,11 @@ export function useEditSession(mapName: string | null, initialBlocks?: Block[], 
   // value is meaningless to them; discarded via `.then(() => {})` rather
   // than widening their own public signature to something callers would
   // have to needlessly check.
-  const moveEvent = useCallback((kind: EventKind, index: number, x: number, y: number) => callEvent("/event/move", { kind, index, x, y }).then(() => {}), [callEvent]);
+  const moveEvent = useCallback(
+    (kind: EventKind, index: number, x: number, y: number, elevation?: number) =>
+      callEvent("/event/move", { kind, index, x, y, elevation }).then(() => {}),
+    [callEvent],
+  );
   const addEvent = useCallback((kind: EventKind, value: Record<string, unknown>) => callEvent("/event/add", { kind, value }).then(() => {}), [callEvent]);
   const deleteEvent = useCallback((kind: EventKind, index: number) => callEvent("/event/delete", { kind, index }), [callEvent]);
 

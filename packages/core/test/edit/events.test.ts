@@ -16,7 +16,7 @@ const BASE_MAP: MapData = {
 };
 
 describe("moveEvent", () => {
-  it("writes only x and y via jsonEdits, for the correct array/index/key pair", () => {
+  it("writes only x and y via jsonEdits when elevation is omitted (negative case: no spurious elevation edit)", () => {
     const { jsonEdits, map } = moveEvent(BASE_MAP, "object", 0, 9, 10);
     expect(jsonEdits).toEqual([
       { path: ["object_events", 0, "x"], value: 9 },
@@ -24,10 +24,21 @@ describe("moveEvent", () => {
     ]);
     expect(map.objectEvents[0]!.x).toBe(9);
     expect(map.objectEvents[0]!.y).toBe(10);
+    expect(map.objectEvents[0]!.elevation).toBe(BASE_MAP.objectEvents[0]!.elevation); // untouched
     // Every other field on the moved event, and the event's own identity
     // (not a new object replacing it), untouched.
     expect(map.objectEvents[0]!.script).toBe("X");
     expect(map.warpEvents).toEqual(BASE_MAP.warpEvents); // other arrays untouched
+  });
+
+  it("also writes elevation via jsonEdits when a real elevation value is passed (positive case)", () => {
+    const { jsonEdits, map } = moveEvent(BASE_MAP, "object", 0, 9, 10, 3);
+    expect(jsonEdits).toEqual([
+      { path: ["object_events", 0, "x"], value: 9 },
+      { path: ["object_events", 0, "y"], value: 10 },
+      { path: ["object_events", 0, "elevation"], value: 3 },
+    ]);
+    expect(map.objectEvents[0]!.elevation).toBe(3);
   });
 
   it("uses warp_events/coord_events/bg_events for the other three kinds", () => {
