@@ -858,4 +858,28 @@ describe("MapCanvas", () => {
     await waitFor(() => expect(editSession.applyPaint).toHaveBeenCalledWith({ tool: "shift", dx: -1, dy: -1 }));
     await waitFor(() => expect(editSession.endStroke).toHaveBeenCalled());
   });
+
+  // Code-quality review fix: a zero-length drag (mousedown+mouseup at the
+  // SAME cell -- a plain click) is a real, harmless no-op per this task's
+  // own spec (shiftGrid(0,0) maps every block to itself, and the server's
+  // own /paint/end diff-check means no undo entry gets pushed) -- but that
+  // is a claim about the SERVER's behaviour, not a reason to special-case
+  // it client-side. This pins that applyPaint IS still called with
+  // dx:0/dy:0 (not silently skipped in MapCanvas itself), matching the two
+  // tests above rather than asserting a new, different code path.
+  it("shift: a zero-length drag (plain click, no movement) still applies {tool:'shift', dx:0, dy:0} -- not skipped client-side", async () => {
+    const editSession = makeEditSession();
+    const { canvas } = renderMapCanvas({ editSession, activeTool: { kind: "shift" } });
+
+    await act(async () => {
+      fireEvent.mouseDown(canvas, { clientX: 20, clientY: 20, button: 0 }); // block (0,0)
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(editSession.beginStroke).toHaveBeenCalled();
+
+    fireEvent.mouseUp(canvas, { clientX: 20, clientY: 20, button: 0 }); // same block (0,0)
+    await waitFor(() => expect(editSession.applyPaint).toHaveBeenCalledWith({ tool: "shift", dx: 0, dy: 0 }));
+    await waitFor(() => expect(editSession.endStroke).toHaveBeenCalled());
+  });
 });
