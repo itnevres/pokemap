@@ -7,6 +7,7 @@ import { Toolbar, type ToolKind } from "./components/Toolbar.js";
 import { SaveDialog } from "./components/SaveDialog.js";
 import { SignComposer } from "./components/SignComposer.js";
 import { CollisionPalette, type CollisionElevation } from "./components/CollisionPalette.js";
+import { MetatilePalette } from "./components/MetatilePalette.js";
 import { EventInspector, type SelectedEvent } from "./components/EventInspector.js";
 import { useMapGroups } from "./hooks/useMapGroups.js";
 import { useMapLayout } from "./hooks/useMapLayout.js";
@@ -15,6 +16,7 @@ import { useDungeons } from "./hooks/useDungeons.js";
 import { useEditSession } from "./hooks/useEditSession.js";
 import type { MapData } from "@pokemap/core/src/load/maps.js";
 import type { EventKind } from "@pokemap/core/src/edit/events.js";
+import type { Stamp } from "@pokemap/core/src/edit/paint.js";
 
 /** Task 14: resolves a bare {kind,index} ref (MapCanvas's own selection
  *  unit) into EventInspector's richer `SelectedEvent`, by looking the event
@@ -235,14 +237,20 @@ export function App() {
   };
 
   // Which paint tool the Toolbar has selected, and the small piece of state
-  // each tool needs to actually paint something. Task 13 is the first task
-  // to wire real tool selection into App.tsx (Tasks 11/12 only ever
-  // exercised MapCanvas's editSession/activeTool props via a temporary,
-  // pre-commit-reverted hardcode) -- see this task's own report for why
-  // pencil/rect/bucket stay null-until-configured below rather than getting
-  // a MetatilePalette mounted in this same task.
+  // each tool needs to actually paint something. Task 13 first wired real
+  // tool selection into App.tsx (Tasks 11/12 only ever exercised MapCanvas's
+  // editSession/activeTool props via a temporary, pre-commit-reverted
+  // hardcode); this follow-up task mounts MetatilePalette and supplies
+  // currentStamp, so pencil/rect/bucket are now live too (see `activeTool`'s
+  // own doc comment below).
   const [activeToolKind, setActiveToolKind] = useState<ToolKind | null>(null);
   const [collisionValue, setCollisionValue] = useState<CollisionElevation>({ collision: 0, elevation: 0 });
+  // The metatile selection pencil/rect/bucket paint with -- chosen via
+  // MetatilePalette, mounted below while one of those three tools is active.
+  // `null` until the player picks a cell (or a rect drag), same
+  // null-until-configured posture `activeTool` already gives every tool
+  // below it a stamp for.
+  const [currentStamp, setCurrentStamp] = useState<Stamp | null>(null);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   // Task 17: SignComposer's own open/close flag, same shape as
   // saveDialogOpen above. signAddedMessage is a one-shot confirmation --
@@ -263,22 +271,23 @@ export function App() {
   //     at a sane default and CollisionPalette, mounted below while this
   //     tool is active, is the only thing that ever changes it) -- fully
   //     live today.
-  //   - "pencil"/"rect"/"bucket" need a Stamp (a metatile selection) that
-  //     nothing in this app supplies yet -- no MetatilePalette is mounted
-  //     anywhere in App.tsx (Task 10 built the component; mounting it needs
-  //     primaryCount/secondaryCount data /api/map/:name doesn't currently
-  //     return, a real gap flagged as a follow-up, not fixed here). Rather
-  //     than paint a hardcoded, non-user-chosen stamp -- a surprising,
-  //     unwanted write, the opposite of I6's spirit -- these stay
-  //     null-until-configured: selectable in the Toolbar for a complete,
-  //     future-ready UI, but inert (same as no tool selected) until a
-  //     palette exists to actually choose what to paint with.
+  //   - "pencil"/"rect"/"bucket" need a Stamp (a metatile selection) --
+  //     MetatilePalette is now mounted below (Plan 2 follow-up 1) while one
+  //     of these three is active, and `currentStamp` is what it writes to.
+  //     Until the player actually picks a cell (or drags a rect), these stay
+  //     null-until-configured, same as before: selectable in the Toolbar,
+  //     but inert (same as no tool selected) rather than painting a
+  //     hardcoded, non-user-chosen stamp -- a surprising, unwanted write,
+  //     the opposite of I6's spirit.
   //   - "dropper"/"shift" have no MapCanvas-side behaviour wired at all
-  //     (also flagged as a follow-up) -- also inert.
+  //     (still a follow-up, out of this task's scope) -- also inert.
   const activeTool = useMemo(() => {
     if (activeToolKind === "collision") return { kind: "collision" as const, value: collisionValue };
+    if ((activeToolKind === "pencil" || activeToolKind === "rect" || activeToolKind === "bucket") && currentStamp) {
+      return { kind: activeToolKind, stamp: currentStamp };
+    }
     return null;
-  }, [activeToolKind, collisionValue]);
+  }, [activeToolKind, collisionValue, currentStamp]);
 
   // I6: "no autosave, ever" also means losing a dirty session silently must
   // never happen -- closing the tab is the browser-level case (this effect),
@@ -311,6 +320,12 @@ export function App() {
     // own events run out at that index) crash resolveEventRef's own array
     // lookup path into rendering `null` silently at best.
     setSelectedEvent(null);
+    // Plan 2 follow-up 1: a stamp chosen against one layout's tileset (a
+    // specific metatile id) is meaningless -- and potentially out-of-range
+    // -- against a DIFFERENT layout's own tileset. A stale stamp must never
+    // survive a map switch; pencil/rect/bucket go back to inert until the
+    // player picks a fresh one from the newly mounted MetatilePalette.
+    setCurrentStamp(null);
   };
 
   // `.find()` over `dungeons.data` returns the SAME element reference every
@@ -467,15 +482,27 @@ export function App() {
                 canRedo={editSession.canRedo}
                 onOpenSave={() => setSaveDialogOpen(true)}
                 onOpenSignComposer={() => setSignComposerOpen(true)}
-                // Code-review fix: only "collision" is actually wired to
-                // MapCanvas today (see `activeTool`'s own doc comment
+                // Code-review fix: only tools actually wired to MapCanvas
+                // may render enabled (see `activeTool`'s own doc comment
                 // above) -- everything else must render visibly disabled,
-                // not clickable-but-silently-inert.
-                availableTools={["collision"]}
+                // not clickable-but-silently-inert. dropper/shift stay out
+                // of this list -- a separate, not-yet-done follow-up.
+                availableTools={["collision", "pencil", "rect", "bucket"]}
               />
               {activeToolKind === "collision" && (
                 <div className="app__collision-strip">
                   <CollisionPalette selected={collisionValue} onSelect={setCollisionValue} />
+                </div>
+              )}
+              {(activeToolKind === "pencil" || activeToolKind === "rect" || activeToolKind === "bucket") && (
+                <div className="app__metatile-strip">
+                  <MetatilePalette
+                    layoutName={layout.data.layout.name}
+                    split={layout.data.split}
+                    primaryCount={layout.data.primaryCount}
+                    secondaryCount={layout.data.secondaryCount}
+                    onSelect={setCurrentStamp}
+                  />
                 </div>
               )}
               {/* Review fix: a failed move/add/delete used to be an

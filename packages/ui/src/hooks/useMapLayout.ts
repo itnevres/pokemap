@@ -16,6 +16,8 @@ export interface MapLayoutData {
   layout: Layout;
   split: Split;
   blocks: MapBlock[];
+  primaryCount: number;
+  secondaryCount: number;
 }
 
 export interface UseMapLayoutResult {

@@ -300,6 +300,11 @@ const PALLET_TOWN_LAYOUT = {
     { metatileId: 0x12, collision: 0, elevation: 3, behavior: 0 },
     { metatileId: 0x13, collision: 0, elevation: 3, behavior: 0 },
   ],
+  // Small on purpose (real primary/secondary counts run into the hundreds --
+  // MetatilePalette.test.tsx's own fixtures use single digits too, so a test
+  // suite doesn't pay to render hundreds of thumbnail buttons per case).
+  primaryCount: 4,
+  secondaryCount: 2,
 };
 
 /** Same shape, a different map -- the switch target for the map-switch
@@ -310,7 +315,10 @@ const ROUTE1_LAYOUT = { ...PALLET_TOWN_LAYOUT, map: { ...PALLET_TOWN_LAYOUT.map,
 
 const EDIT_GROUPS = { groupOrder: ["Kanto"], groups: { Kanto: ["PalletTown", "Route1"] } };
 
-function makeEditFetchMock() {
+/** `paintApplyBodies`, when passed, gets every `/paint/apply` request body
+ *  pushed onto it (parsed from JSON) -- lets a test inspect what stamp
+ *  actually went over the wire without re-deriving it from DOM state. */
+function makeEditFetchMock(paintApplyBodies?: unknown[]) {
   return vi.fn((url: string, init?: RequestInit) => {
     const method = init?.method ?? "GET";
     if (url === "/api/groups") {
@@ -323,6 +331,9 @@ function makeEditFetchMock() {
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(ROUTE1_LAYOUT) } as Response);
     }
     if (url.startsWith("/api/edit/PalletTown/paint/") && method === "POST") {
+      if (url.endsWith("/paint/apply") && paintApplyBodies) {
+        paintApplyBodies.push(JSON.parse(init!.body as string));
+      }
       // /paint/end is the one call that actually marks the session dirty
       // (mirrors the real server: /paint/begin and /paint/apply don't flip
       // isDirty on their own -- see editSessions.ts's own /paint/end
@@ -420,6 +431,84 @@ describe("App -- Task 13 save flow", () => {
     expect(addSpy).not.toHaveBeenCalledWith("beforeunload", expect.any(Function));
 
     addSpy.mockRestore();
+    vi.unstubAllGlobals();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Plan 2 follow-up 1: mounting MetatilePalette and wiring real stamps into
+// pencil/rect/bucket. Before this, "pencil"/"rect"/"bucket" were selectable
+// in the Toolbar but always resolved to a null activeTool (see App.tsx's own
+// former comment on the `activeTool` useMemo) -- nothing supplied a Stamp.
+// ---------------------------------------------------------------------------
+describe("App -- metatile palette wiring", () => {
+  it("mounts MetatilePalette once pencil is selected, and a subsequent paint sends the chosen stamp", async () => {
+    const paintApplyBodies: unknown[] = [];
+    vi.stubGlobal("fetch", makeEditFetchMock(paintApplyBodies));
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "PalletTown" })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "PalletTown" }));
+
+    await screen.findByRole("button", { name: "pencil" });
+    fireEvent.click(screen.getByRole("button", { name: "pencil" }));
+
+    // MetatilePalette is now mounted -- its own search input is a
+    // distinguishing marker, same query MetatilePalette.test.tsx itself uses.
+    await waitFor(() => expect(screen.getByPlaceholderText(/search/i)).toBeTruthy());
+
+    // A real, non-zero, non-placeholder id -- distinguishes a genuine
+    // user-chosen stamp from a hardcoded one.
+    fireEvent.click(screen.getByRole("button", { name: /metatile 0x1\b/i }));
+
+    const canvas = document.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
+    await act(async () => {
+      fireEvent.mouseDown(canvas, { clientX: 20, clientY: 20, button: 0 });
+    });
+    await act(async () => {
+      fireEvent.mouseUp(canvas, { clientX: 20, clientY: 20, button: 0 });
+    });
+
+    await waitFor(() => expect(paintApplyBodies.length).toBeGreaterThan(0));
+    expect((paintApplyBodies[0] as any).stamp.cells[0].metatileId).toBe(1);
+
+    vi.unstubAllGlobals();
+  });
+
+  it("clears the chosen stamp when a different map is selected -- pencil goes inert until a fresh pick", async () => {
+    vi.stubGlobal("fetch", makeEditFetchMock());
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "PalletTown" })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "PalletTown" }));
+
+    await screen.findByRole("button", { name: "pencil" });
+    fireEvent.click(screen.getByRole("button", { name: "pencil" }));
+    await waitFor(() => expect(screen.getByPlaceholderText(/search/i)).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: /metatile 0x1\b/i }));
+
+    // Switch to Route1 -- nothing painted yet on PalletTown, so the session
+    // is clean and selectMap's confirm() guard never fires.
+    fireEvent.click(screen.getByRole("button", { name: "Route1" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Route1" }).getAttribute("aria-current")).toBe("true"));
+    await waitFor(() => expect(screen.getByPlaceholderText(/search/i)).toBeTruthy()); // MetatilePalette remounted for Route1
+
+    const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+    const callsBefore = fetchMock.mock.calls.length;
+
+    // Still on the pencil tool, but no fresh stamp chosen on Route1 -- a
+    // stroke now must be a no-op (activeTool resolves to null): no
+    // paint/begin|apply|end call fires at all.
+    const canvas = document.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
+    await act(async () => {
+      fireEvent.mouseDown(canvas, { clientX: 20, clientY: 20, button: 0 });
+    });
+    await act(async () => {
+      fireEvent.mouseUp(canvas, { clientX: 20, clientY: 20, button: 0 });
+    });
+
+    expect(fetchMock.mock.calls.length).toBe(callsBefore);
+
     vi.unstubAllGlobals();
   });
 });

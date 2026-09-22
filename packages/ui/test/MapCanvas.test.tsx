@@ -45,6 +45,8 @@ const DATA: MapLayoutData = {
     { metatileId: 0x12, collision: 0, elevation: 0, behavior: 0x05 },
     { metatileId: 0x13, collision: 0, elevation: 3, behavior: 0x09 },
   ],
+  primaryCount: 512,
+  secondaryCount: 144,
 };
 
 const PIXEL_SIZE = 64; // (2 + 2*1) * 16

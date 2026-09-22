@@ -219,7 +219,12 @@ export async function createServer(opts: { projectPath: string; port?: number })
           behavior: behaviorFor(b.metatileId),
         }));
 
-        return send(200, { map, layout, split, blocks });
+        // primary/secondary.metatileCount -- already resolved above for
+        // behaviorFor's own owner.metatileCount check -- are exactly what
+        // MetatilePalette's primaryCount/secondaryCount props need to size
+        // its grid; returning them here means the UI doesn't have to guess
+        // or fetch tileset data separately.
+        return send(200, { map, layout, split, blocks, primaryCount: primary.metatileCount, secondaryCount: secondary.metatileCount });
       }
 
       const renderMatch = /^\/api\/render\/(.+)\.png$/.exec(url.pathname);

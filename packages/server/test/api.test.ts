@@ -28,6 +28,12 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("server", () => {
     expect(body.layout.name).toBe("NewBarkTown_Layout");
     expect(body.split.metatiles).toBe(640);
     expect(body.split.version).toBe("hns");
+    // MetatilePalette needs these to size its grid -- values verified
+    // independently against project.tileset(layout.primaryTileset/
+    // secondaryTileset).metatileCount for NewBarkTown_Layout
+    // (gTileset_Johto_General / gTileset_NewBarkTown), not guessed.
+    expect(body.primaryCount).toBe(640);
+    expect(body.secondaryCount).toBe(144);
   });
 
   it("includes per-block collision/elevation/behaviour so the canvas can overlay and hover them", async () => {
