@@ -416,6 +416,15 @@ describe("MapCanvas", () => {
     // with no bump and no debounce timer scheduled at all.
     const session2 = { ...session, blocks: [...session.blocks] };
     rerender(<MapCanvas mapName="Foo" data={DATA} editSession={session2} />);
+    // Code-review fix: reading versionOf() immediately here is NOT
+    // discriminating on its own -- under debouncing, "0" is what you'd see
+    // whether skipNextBumpRef actually swallowed this tick OR merely
+    // scheduled a bump that hasn't fired yet (both look like "0" right
+    // after the rerender). Waiting out the full debounce window here is
+    // what actually proves the tick was swallowed, not just delayed --
+    // reviewer confirmed this line reads "1" instead of "0" with
+    // skipNextBumpRef's guard removed.
+    await new Promise((r) => setTimeout(r, 300));
     expect(versionOf()).toBe("0");
 
     // A REAL paint (the second blocks change) schedules a bump, but not
@@ -424,10 +433,15 @@ describe("MapCanvas", () => {
     rerender(<MapCanvas mapName="Foo" data={DATA} editSession={session3} />);
     expect(versionOf()).toBe("0");
 
-    // Real wait past PAINT_VERSION_DEBOUNCE_MS (same convention as
-    // WorldCanvas.test.tsx's fade-timer test and SpeciesSpotlight.test.tsx's
-    // own debounce tests -- real timers, not fake, since fake timers don't
-    // intercept a setTimeout already scheduled before they're enabled).
+    // Real wait past PAINT_VERSION_DEBOUNCE_MS -- matches this file's own
+    // established convention (WorldCanvas.test.tsx's fade-timer test,
+    // SpeciesSpotlight.test.tsx's debounce tests) of a real setTimeout wait
+    // rather than vi.useFakeTimers(). Code-review correction: unlike those,
+    // this timer IS scheduled inside the test body (by the rerender just
+    // above, not by a mount-time effect that ran before fake timers could
+    // be enabled), so fake timers would in fact work here -- real timers
+    // are used only to match the file's convention, not because they're
+    // required.
     await new Promise((r) => setTimeout(r, 300));
     const afterFirstPaint = versionOf();
     expect(afterFirstPaint).toBe("1");

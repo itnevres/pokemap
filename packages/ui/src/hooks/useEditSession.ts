@@ -180,10 +180,16 @@ export function useEditSession(mapName: string | null, initialBlocks?: Block[], 
   // `mapName`, the very first reset after a map switch would seed from the
   // OLD map's blocks. Re-running when `initialBlocks`'s reference changes
   // means a second, corrective reset lands once useMapLayout's fetch
-  // actually resolves for the NEW map -- and since App.tsx only mounts
-  // MapCanvas once `layout.data` is truthy for the current map (nothing can
-  // paint before then), that second reset always lands before the player
-  // could possibly have started editing, so it never clobbers real work.
+  // actually resolves for the NEW map. Code-review correction: this used to
+  // claim that second reset "always lands before the player could possibly
+  // have started editing" -- not accurate. App.tsx renders MapCanvas with
+  // no `key`, and `useMapLayout` keeps serving the OLD map's `data` (not
+  // undefined/loading) until its own fetch resolves, so MapCanvas stays
+  // mounted and genuinely paintable, already carrying the NEW `mapName`,
+  // for the whole gap between the switch and this corrective reset. A paint
+  // landing in that (typically brief) window gets clobbered by this reset
+  // -- a real, pre-existing gap, not a new one; not fixed here (would need
+  // a design change to App.tsx/useMapLayout, not just this hook).
   useEffect(() => {
     setBlocks(initialBlocks ?? []);
     setBorder([]);

@@ -271,7 +271,16 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
   const prevBlocksRef = useRef(blocks);
   useEffect(() => {
     skipNextBumpRef.current = true;
-    setPaintVersion(0);
+    // Code-review fix (minor #3): deliberately NOT `setPaintVersion(0)` here
+    // -- a reset would make a revisited, previously-painted map restart at
+    // the exact same `?v=0` URL the browser already fetched at FIRST open,
+    // back when that map was unpainted. That's safe only by accident today
+    // (both render branches set `cache-control: no-cache` with no ETag, so
+    // nothing can actually be reused) -- a validator added there later
+    // would silently start serving stale pixels for the reused URL. Never
+    // resetting keeps "same URL => same content for this map" structurally
+    // true instead of accidentally true, and costs nothing: `mapName` is
+    // already in the URL path, so a real switch changes the URL either way.
     if (paintVersionTimerRef.current) {
       clearTimeout(paintVersionTimerRef.current);
       paintVersionTimerRef.current = null;
