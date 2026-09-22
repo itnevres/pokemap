@@ -5,7 +5,7 @@ import type { MapData } from "@pokemap/core/src/load/maps.js";
 import type { EventKind } from "@pokemap/core/src/edit/events.js";
 import type { MapLayoutData } from "../hooks/useMapLayout.js";
 import type { UseEditSessionResult } from "../hooks/useEditSession.js";
-import type { Stamp } from "@pokemap/core/src/edit/paint.js";
+import { readBlock, type Stamp } from "@pokemap/core/src/edit/paint.js";
 import type { CollisionElevation } from "./CollisionPalette.js";
 
 /** A bare {kind,index} pointer at one event, the unit MapCanvas's own
@@ -72,7 +72,12 @@ export interface MapCanvasProps {
    *  targets array); it is its own `activeTool.kind` here only so the
    *  canvas knows to force the collision overlay visible while it's
    *  selected -- see `collisionForced` below. */
-  activeTool?: { kind: "pencil" | "rect" | "bucket"; stamp: Stamp } | { kind: "collision"; value: CollisionElevation } | null;
+  activeTool?:
+    | { kind: "pencil" | "rect" | "bucket"; stamp: Stamp }
+    | { kind: "collision"; value: CollisionElevation }
+    | { kind: "shift" }
+    | { kind: "dropper" }
+    | null;
   /** Task 14: click-to-select/drag-to-move for event markers. Gated on
    *  `!activeTool` (see onMouseDown below) rather than on `editSession` --
    *  select/deselect is harmless read-only navigation even without an open
@@ -98,6 +103,14 @@ export interface MapCanvasProps {
    *  verified, not assumed: there is no multi-request sequencing for a drag
    *  to race against. */
   onMoveEvent?: (next: { kind: EventKind; index: number; x: number; y: number }) => void;
+  /** Fired when the dropper tool reads a block -- the caller (App.tsx) feeds
+   *  this straight into the same `currentStamp` state MetatilePalette's own
+   *  `onSelect` already sets, so a dropped tile immediately becomes what
+   *  pencil/rect/bucket paint with next. Carries collision/elevation too
+   *  (not just metatileId) -- this mirrors readBlock's own return shape and
+   *  Porymap's real eyedropper, which copies the WHOLE block, not just the
+   *  tile art. */
+  onDropperPick?: (stamp: Stamp) => void;
 }
 
 /** The server-baked border ring the canvas always requests -- see
@@ -156,7 +169,7 @@ interface Hover {
  * one scaled `drawImage`, so dragging or scrolling never re-touches overlay
  * pixels at all.
  */
-export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEvent, selectedEventRef, onMoveEvent }: MapCanvasProps) {
+export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEvent, selectedEventRef, onMoveEvent, onDropperPick }: MapCanvasProps) {
   const { layout, split, map: staticMap, blocks: staticBlocks } = data;
   // Live, server-tracked blocks while an edit session is open for this map;
   // the static `data.blocks` prop otherwise. Every effect below already
@@ -196,10 +209,15 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
   const baseCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
-  const rectStartRef = useRef<{ x: number; y: number } | null>(null);
+  // Shared start-cell ref for BOTH drag-shaped tools: a rect's own corner,
+  // or a shift's reference point (the drag's dx/dy is computed from this
+  // start and the mouseup end cell -- see endActiveStroke below). Neither
+  // tool paints progressively like pencil, so both need only a single
+  // start->end gesture recorded here, not a per-cell trail.
+  const dragStartRef = useRef<{ x: number; y: number } | null>(null);
   const marksRef = useRef<EventMark[]>([]);
   // Tracks the most recent in-flight paint request -- begin's own chain
-  // (whose .then() callback sets rectStartRef for "rect", or paints
+  // (whose .then() callback sets dragStartRef for "rect", or paints
   // directly for pencil/bucket), or the latest pencil/bucket applyPaint.
   // `endActiveStroke` below (onMouseUp and onMouseLeave both route through
   // it) awaits this before deciding what to do. Confirmed live (Task 11
@@ -635,7 +653,7 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
     }
     // "rect" is handled entirely by onMouseUp below (it needs a start AND
     // end cell, unlike pencil/bucket/collision which act on a single cell)
-    // -- see rectStartRef.
+    // -- see dragStartRef.
   };
 
   const onMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -659,6 +677,17 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
       // start just below, exactly as if onSelectEvent had never been
       // passed -- deselecting must not also disable panning.
     }
+    // Dropper: a plain click, no stroke lifecycle at all -- it only ever
+    // READS a block (never touches editSession.blocks/session.map), so
+    // beginStroke/endStroke don't apply here the way they do for every
+    // other tool below.
+    if (editSession && activeTool?.kind === "dropper") {
+      const cell = blockAt(e);
+      if (!cell) return;
+      const block = readBlock(blocks, layout.width, layout.height, cell.x, cell.y);
+      if (block) onDropperPick?.({ width: 1, height: 1, cells: [{ metatileId: block.metatileId, collision: block.collision, elevation: block.elevation }] });
+      return;
+    }
     if (editSession && activeTool) {
       const cell = blockAt(e);
       if (!cell) return;
@@ -667,7 +696,10 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
       // that ref's own doc comment above for why onMouseUp/onMouseLeave
       // need it.
       pendingPaintRef.current = editSession.beginStroke().then(() => {
-        if (activeTool.kind === "rect") rectStartRef.current = cell;
+        // "shift" is a drag gesture shaped like "rect" (start cell now,
+        // apply once at mouseup using start+end) -- see endActiveStroke
+        // below -- not a per-cell trail like pencil.
+        if (activeTool.kind === "rect" || activeTool.kind === "shift") dragStartRef.current = cell;
         else paintAt(cell.x, cell.y);
       });
       return;
@@ -695,7 +727,7 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
     // synthetic mouseMove never sets `e.buttons` the way a real held-button
     // drag does (Step 9's teeth-proof), so this guard is exercised for real
     // only in a live browser, not by this file's own tests.
-    if (editSession && (activeTool?.kind === "pencil" || activeTool?.kind === "collision") && rectStartRef.current === null && e.buttons === 1) {
+    if (editSession && (activeTool?.kind === "pencil" || activeTool?.kind === "collision") && dragStartRef.current === null && e.buttons === 1) {
       const cell = blockAt(e);
       if (cell) paintAt(cell.x, cell.y);
       return;
@@ -727,14 +759,14 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
    *
    * Critical review fix: this waits for `pendingPaintRef` -- which is
    * ALSO what onMouseDown's own beginStroke().then() chain populates --
-   * before reading `rectStartRef.current` at all. The bug this closes,
+   * before reading `dragStartRef.current` at all. The bug this closes,
    * reproduced live by review: a fast rect mousedown-then-mouseup could
-   * reach here BEFORE that chain's callback had run, so `rectStartRef`
+   * reach here BEFORE that chain's callback had run, so `dragStartRef`
    * was still null, this fell into the "else" branch, and `applyPaint`
    * for the rect never fired at all -- not just left out of undo like the
    * pencil/bucket race, but silently dropped entirely, with no error.
    * Waiting on `pendingPaintRef` first guarantees the chain's callback
-   * (which sets `rectStartRef`, or paints via `paintAt` for pencil/
+   * (which sets `dragStartRef`, or paints via `paintAt` for pencil/
    * bucket) has already run by the time this checks it -- see
    * `MapCanvas.test.tsx`'s own race-repro test for the deterministic
    * version of this, using a controlled, delayed `beginStroke` promise.
@@ -743,9 +775,20 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
     if (!editSession) return;
     strokeOpenRef.current = false;
     void pendingPaintRef.current.catch(() => {}).then(() => {
-      if (activeTool?.kind === "rect" && rectStartRef.current && end) {
-        const start = rectStartRef.current;
-        rectStartRef.current = null;
+      if (activeTool?.kind === "shift" && dragStartRef.current && end) {
+        const start = dragStartRef.current;
+        dragStartRef.current = null;
+        // A zero-length drag (dx===0, dy===0 -- a plain click) is a real,
+        // harmless no-op: shiftGrid with (0,0) maps every block to itself,
+        // and /paint/end's own JSON.stringify(prev.blocks) !==
+        // JSON.stringify(next.blocks) check already means no undo entry
+        // gets pushed for it -- no client-side special-casing needed.
+        const applied = editSession.applyPaint({ tool: "shift", dx: end.x - start.x, dy: end.y - start.y }).catch(() => {});
+        pendingPaintRef.current = applied;
+        void applied.then(() => editSession.endStroke());
+      } else if (activeTool?.kind === "rect" && dragStartRef.current && end) {
+        const start = dragStartRef.current;
+        dragStartRef.current = null;
         const applied = editSession
           .applyPaint({ tool: "rect", x0: start.x, y0: start.y, x1: end.x, y1: end.y, stamp: activeTool.stamp, origin: start })
           // Matches the pencil/bucket path just below: a rejected apply
@@ -754,7 +797,7 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
         pendingPaintRef.current = applied;
         void applied.then(() => editSession.endStroke());
       } else {
-        rectStartRef.current = null;
+        dragStartRef.current = null;
         void editSession.endStroke();
       }
     });
@@ -781,7 +824,12 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
       if (cell.x !== ox || cell.y !== oy) onMoveEvent?.({ kind, index, x: cell.x, y: cell.y });
       return;
     }
-    if (editSession && activeTool) {
+    // "dropper" excluded here to mirror its own onMouseDown branch above --
+    // it returns early there without ever calling beginStroke(), so this
+    // generic branch must not call endActiveStroke() (which would fall into
+    // its own "else: endStroke()" case and fire a spurious server call for
+    // a stroke that was never opened).
+    if (editSession && activeTool && activeTool.kind !== "dropper") {
       endActiveStroke(rawBlockAt(e)); // unclamped -- see rawBlockAt's own doc comment
       return;
     }

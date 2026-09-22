@@ -548,3 +548,92 @@ describe("App -- metatile palette wiring", () => {
     vi.unstubAllGlobals();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Follow-up 3: dropper (click-to-pick, no currentStamp needed to activate)
+// and shift (drag-to-shift, no currentStamp needed either) wired end-to-end.
+// ---------------------------------------------------------------------------
+describe("App -- dropper/shift tool wiring", () => {
+  it("dropper and shift render enabled (not 'Not yet available')", async () => {
+    vi.stubGlobal("fetch", makeEditFetchMock());
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "PalletTown" })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "PalletTown" }));
+
+    const dropperBtn = await screen.findByRole("button", { name: "dropper" });
+    const shiftBtn = await screen.findByRole("button", { name: "shift" });
+    expect(dropperBtn.hasAttribute("disabled")).toBe(false);
+    expect(shiftBtn.hasAttribute("disabled")).toBe(false);
+    expect(dropperBtn.getAttribute("title")).not.toBe("Not yet available");
+    expect(shiftBtn.getAttribute("title")).not.toBe("Not yet available");
+
+    vi.unstubAllGlobals();
+  });
+
+  it("dropper activates with no currentStamp needed -- a picked block immediately becomes what pencil paints with next, no palette click required", async () => {
+    const paintApplyBodies: unknown[] = [];
+    vi.stubGlobal("fetch", makeEditFetchMock(paintApplyBodies));
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "PalletTown" })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "PalletTown" }));
+
+    await screen.findByRole("button", { name: "dropper" });
+    fireEvent.click(screen.getByRole("button", { name: "dropper" }));
+
+    const canvas = document.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
+    // Block (1,1) of PALLET_TOWN_LAYOUT (2x2, border 1, origin 16): composite
+    // (40,40) lands inside it -- metatileId 0x13, distinct from block (0,0)'s
+    // 0x10, so a later paint using 0x13 can only have come from THIS drop.
+    await act(async () => {
+      fireEvent.mouseDown(canvas, { clientX: 40, clientY: 40, button: 0 });
+    });
+    await act(async () => {
+      fireEvent.mouseUp(canvas, { clientX: 40, clientY: 40, button: 0 });
+    });
+    // Dropper never opens a paint stroke -- no request fired for the pick itself.
+    expect(paintApplyBodies.length).toBe(0);
+
+    // Switch straight to pencil -- no MetatilePalette click, activeTool must
+    // already resolve from the stamp the dropper just set.
+    fireEvent.click(screen.getByRole("button", { name: "pencil" }));
+
+    await act(async () => {
+      fireEvent.mouseDown(canvas, { clientX: 20, clientY: 20, button: 0 }); // block (0,0)
+    });
+    await act(async () => {
+      fireEvent.mouseUp(canvas, { clientX: 20, clientY: 20, button: 0 });
+    });
+
+    await waitFor(() => expect(paintApplyBodies.length).toBeGreaterThan(0));
+    expect((paintApplyBodies[0] as any).stamp.cells[0].metatileId).toBe(0x13);
+
+    vi.unstubAllGlobals();
+  });
+
+  it("shift activates with no currentStamp needed -- a drag sends {tool:'shift', dx, dy} to the server", async () => {
+    const paintApplyBodies: unknown[] = [];
+    vi.stubGlobal("fetch", makeEditFetchMock(paintApplyBodies));
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "PalletTown" })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "PalletTown" }));
+
+    await screen.findByRole("button", { name: "shift" });
+    fireEvent.click(screen.getByRole("button", { name: "shift" }));
+
+    const canvas = document.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
+    await act(async () => {
+      fireEvent.mouseDown(canvas, { clientX: 20, clientY: 20, button: 0 }); // block (0,0)
+    });
+    await act(async () => {
+      fireEvent.mouseUp(canvas, { clientX: 40, clientY: 40, button: 0 }); // block (1,1)
+    });
+
+    await waitFor(() => expect(paintApplyBodies.length).toBeGreaterThan(0));
+    expect(paintApplyBodies[0]).toEqual({ tool: "shift", dx: 1, dy: 1 });
+
+    vi.unstubAllGlobals();
+  });
+});

@@ -783,4 +783,79 @@ describe("MapCanvas", () => {
     fireEvent.mouseUp(canvas, { clientX: 24, clientY: 24, button: 0 });
     expect(onMoveEvent).toHaveBeenCalledWith({ kind: "object", index: 0, x: 0, y: 0 });
   });
+
+  // ---------------------------------------------------------------------
+  // Follow-up 3: dropper (click-to-pick, no stroke lifecycle) and shift
+  // (drag-to-shift, rect-shaped lifecycle).
+  // ---------------------------------------------------------------------
+
+  it("dropper: clicking a cell calls onDropperPick with that cell's real metatileId/collision/elevation, and never touches the paint-stroke lifecycle", () => {
+    const editSession = makeEditSession({ blocks: DATA.blocks });
+    const onDropperPick = vi.fn();
+    const { canvas } = renderMapCanvas({ editSession, activeTool: { kind: "dropper" }, onDropperPick });
+
+    // Block (1,0) -- fixture DATA's second cell, metatileId 0x11, collision
+    // 1, elevation 3 (see DATA.blocks above). Composite-space (40, 20) sits
+    // inside its square [ORIGIN+16, ORIGIN+32) x [ORIGIN, ORIGIN+16).
+    fireEvent.mouseDown(canvas, { clientX: ORIGIN + 24, clientY: ORIGIN + 4, button: 0 });
+    fireEvent.mouseUp(canvas, { clientX: ORIGIN + 24, clientY: ORIGIN + 4, button: 0 });
+
+    expect(onDropperPick).toHaveBeenCalledWith({
+      width: 1,
+      height: 1,
+      cells: [{ metatileId: 0x11, collision: 1, elevation: 3 }],
+    });
+    expect(editSession.beginStroke).not.toHaveBeenCalled();
+    expect(editSession.applyPaint).not.toHaveBeenCalled();
+    expect(editSession.endStroke).not.toHaveBeenCalled();
+  });
+
+  it("dropper: clicking off the map calls neither onDropperPick nor any paint method", () => {
+    const editSession = makeEditSession({ blocks: DATA.blocks });
+    const onDropperPick = vi.fn();
+    const { canvas } = renderMapCanvas({ editSession, activeTool: { kind: "dropper" }, onDropperPick });
+
+    fireEvent.mouseDown(canvas, { clientX: 1000, clientY: 1000, button: 0 });
+    fireEvent.mouseUp(canvas, { clientX: 1000, clientY: 1000, button: 0 });
+
+    expect(onDropperPick).not.toHaveBeenCalled();
+    expect(editSession.beginStroke).not.toHaveBeenCalled();
+  });
+
+  it("shift: a drag from one cell to another applies {tool:'shift', dx, dy} computed from the two cells, and beginStroke/endStroke fire around it (rect's own lifecycle)", async () => {
+    const editSession = makeEditSession();
+    const { canvas } = renderMapCanvas({ editSession, activeTool: { kind: "shift" } });
+
+    // Mousedown inside block (0,0) (composite (20,20)), mouseup inside
+    // block (1,1) (composite (ORIGIN+24, ORIGIN+24) = (40,40)) -- a
+    // positive-direction shift, dx=+1, dy=+1.
+    await act(async () => {
+      fireEvent.mouseDown(canvas, { clientX: 20, clientY: 20, button: 0 });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(editSession.beginStroke).toHaveBeenCalled();
+
+    fireEvent.mouseUp(canvas, { clientX: ORIGIN + 24, clientY: ORIGIN + 24, button: 0 });
+    await waitFor(() => expect(editSession.applyPaint).toHaveBeenCalledWith({ tool: "shift", dx: 1, dy: 1 }));
+    await waitFor(() => expect(editSession.endStroke).toHaveBeenCalled());
+  });
+
+  it("shift: a drag in the negative direction computes negative dx/dy", async () => {
+    const editSession = makeEditSession();
+    const { canvas } = renderMapCanvas({ editSession, activeTool: { kind: "shift" } });
+
+    // Mousedown inside block (1,1) (composite (40,40)), mouseup inside
+    // block (0,0) (composite (20,20)) -- dx=-1, dy=-1.
+    await act(async () => {
+      fireEvent.mouseDown(canvas, { clientX: ORIGIN + 24, clientY: ORIGIN + 24, button: 0 });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(editSession.beginStroke).toHaveBeenCalled();
+
+    fireEvent.mouseUp(canvas, { clientX: 20, clientY: 20, button: 0 });
+    await waitFor(() => expect(editSession.applyPaint).toHaveBeenCalledWith({ tool: "shift", dx: -1, dy: -1 }));
+    await waitFor(() => expect(editSession.endStroke).toHaveBeenCalled());
+  });
 });

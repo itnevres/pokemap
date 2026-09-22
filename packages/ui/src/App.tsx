@@ -287,10 +287,13 @@ export function App() {
   //     but inert (same as no tool selected) rather than painting a
   //     hardcoded, non-user-chosen stamp -- a surprising, unwanted write,
   //     the opposite of I6's spirit.
-  //   - "dropper"/"shift" have no MapCanvas-side behaviour wired at all
-  //     (still a follow-up, out of this task's scope) -- also inert.
+  //   - "shift" (whole-grid torus-wrap shift) and "dropper" (read-only
+  //     block pick) need no Stamp/value at all, so they resolve
+  //     unconditionally, same as "collision".
   const activeTool = useMemo(() => {
     if (activeToolKind === "collision") return { kind: "collision" as const, value: collisionValue };
+    if (activeToolKind === "shift") return { kind: "shift" as const };
+    if (activeToolKind === "dropper") return { kind: "dropper" as const };
     if ((activeToolKind === "pencil" || activeToolKind === "rect" || activeToolKind === "bucket") && currentStamp) {
       return { kind: activeToolKind, stamp: currentStamp };
     }
@@ -493,9 +496,9 @@ export function App() {
                 // Code-review fix: only tools actually wired to MapCanvas
                 // may render enabled (see `activeTool`'s own doc comment
                 // above) -- everything else must render visibly disabled,
-                // not clickable-but-silently-inert. dropper/shift stay out
-                // of this list -- a separate, not-yet-done follow-up.
-                availableTools={["collision", "pencil", "rect", "bucket"]}
+                // not clickable-but-silently-inert. All six tools are now
+                // wired.
+                availableTools={["collision", "pencil", "rect", "bucket", "dropper", "shift"]}
               />
               {activeToolKind === "collision" && (
                 <div className="app__collision-strip">
@@ -561,6 +564,7 @@ export function App() {
                   onSelectEvent={onSelectEvent}
                   selectedEventRef={selectedEvent ? { kind: selectedEvent.kind, index: selectedEvent.index } : null}
                   onMoveEvent={onCanvasMoveEvent}
+                  onDropperPick={setCurrentStamp}
                 />
                 <EventInspector selected={selectedEvent} onMove={onMoveEventFromInspector} onDelete={onDeleteEvent} onAdd={onAddEvent} />
               </div>
