@@ -108,6 +108,16 @@ const BORDER_RINGS = 1;
 const ZOOM_LEVELS = [1, 2, 4] as const;
 type Zoom = (typeof ZOOM_LEVELS)[number];
 
+/** Spec-review fix (issue 2): `beginStroke`/`applyPaint`/`endStroke` each
+ *  return a FRESH `blocks` array from a fresh JSON parse regardless of
+ *  whether the content actually changed (`/paint/begin` never touches
+ *  blocks server-side at all), so one click bumps paintVersion 2-3 times
+ *  and a drag bumps once per mousemove -- each bump is a full cache-
+ *  bypassed server render (tens of ms, hundreds of KB on a large map).
+ *  Debouncing coalesces a whole gesture into one trailing re-render this
+ *  long after the last `blocks` change. */
+const PAINT_VERSION_DEBOUNCE_MS = 200;
+
 const hex = (n: number) => `0x${n.toString(16)}`;
 
 interface Toggles {
@@ -238,29 +248,56 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
   const [dragPreview, setDragPreview] = useState<{ kind: EventKind; index: number; x: number; y: number } | null>(null);
 
   const [imgLoaded, setImgLoaded] = useState(false);
-  // Bumped whenever `blocks` changes for the SAME map (a real edit) -- see
-  // the tracking effect below. Folded into `imageUrl`'s own query string so
-  // a paint forces a real refetch of /api/render/:name.png; the server
+  // Bumped (debounced -- see PAINT_VERSION_DEBOUNCE_MS above) whenever
+  // `blocks` changes for the SAME map (a real edit) -- see the tracking
+  // effects below. Folded into `imageUrl`'s own query string so a paint
+  // forces a real refetch of /api/render/:name.png; the server
   // (packages/server/src/index.ts's render route) renders live session
   // state instead of stale disk pixels once a session is open for this map,
   // but the base <img> here never picks up a NEW src unless the URL itself
   // changes -- a same-URL paint would otherwise leave the browser showing
   // whatever it already fetched.
   const [paintVersion, setPaintVersion] = useState(0);
+  const paintVersionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Spec-review fix (issue 1): a plain "compare prevMapNameRef before
+  // updating it" check only excludes the FIRST post-switch `blocks` change
+  // -- useEditSession's own reset effect can re-seed `blocks` in up to two
+  // ticks after a map switch (once synchronously, once again once
+  // useMapLayout's fetch for the NEW map resolves), and by the second tick
+  // prevMapNameRef already equals the new mapName, so it bumped anyway.
+  // This explicit flag absorbs whichever tick reaches the effect below
+  // first, reset every time mapName itself changes.
+  const skipNextBumpRef = useRef(true);
   const prevBlocksRef = useRef(blocks);
-  const prevMapNameRef = useRef(mapName);
   useEffect(() => {
-    // Comparing prevMapNameRef BEFORE updating it below is what excludes a
-    // map switch: `blocks` differs then too (a different map's array), but
-    // that case is already fully handled by the `[mapName]` reset effect --
-    // bumping paintVersion here as well would just be a harmless-but-
-    // pointless extra cache-bust on top of it.
-    if (prevMapNameRef.current === mapName && prevBlocksRef.current !== blocks) {
-      setPaintVersion((v) => v + 1);
+    skipNextBumpRef.current = true;
+    setPaintVersion(0);
+    if (paintVersionTimerRef.current) {
+      clearTimeout(paintVersionTimerRef.current);
+      paintVersionTimerRef.current = null;
     }
+  }, [mapName]);
+  useEffect(() => {
+    if (prevBlocksRef.current === blocks) return;
     prevBlocksRef.current = blocks;
-    prevMapNameRef.current = mapName;
-  }, [blocks, mapName]);
+    if (skipNextBumpRef.current) {
+      skipNextBumpRef.current = false;
+      return;
+    }
+    // Debounced, not immediate: a single paint stroke fires 2-4 distinct
+    // `blocks` changes (begin/apply/end each produce a fresh array from a
+    // fresh JSON parse, even when the underlying content didn't move).
+    // Coalescing them into one trailing bump cuts a large map's paint cost
+    // from 3-4 full server-side re-renders down to ~1 -- the base tile art
+    // visibly lags a live drag by up to PAINT_VERSION_DEBOUNCE_MS, an
+    // accepted trade (hover/collision/grid overlays already track `blocks`
+    // with zero lag; only the underlying tile PIXELS get this debounce).
+    if (paintVersionTimerRef.current) clearTimeout(paintVersionTimerRef.current);
+    paintVersionTimerRef.current = setTimeout(() => setPaintVersion((v) => v + 1), PAINT_VERSION_DEBOUNCE_MS);
+  }, [blocks]);
+  useEffect(() => () => {
+    if (paintVersionTimerRef.current) clearTimeout(paintVersionTimerRef.current);
+  }, []);
   const [toggles, setToggles] = useState<Toggles>(NO_TOGGLES);
   const [zoom, setZoom] = useState<Zoom>(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });

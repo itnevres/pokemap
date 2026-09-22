@@ -398,28 +398,53 @@ describe("MapCanvas", () => {
     expect(img.src).not.toMatch(/[?&]v=/);
   });
 
-  it("includes a v= cache-bust param once editSession is present, and bumps it on each subsequent blocks change for the same map", () => {
+  // Spec-review fix (issues 1+2): the version bump is now debounced and the
+  // first post-mount `blocks` change is presumed to be useEditSession's own
+  // reseed tick (`initialBlocks` re-syncing once useMapLayout's fetch
+  // resolves for the current map -- see that hook's own doc comment) and is
+  // swallowed with no bump at all, not just "the first real paint". This
+  // test's shape mirrors that real timeline instead of bumping on every
+  // single blocks change immediately.
+  it("includes a v= cache-bust param once editSession is present; the presumed reseed tick is swallowed, and a real paint bumps exactly once after debouncing, even across rapid changes", async () => {
     const session = makeEditSession({ blocks: DATA.blocks });
     const { img, rerender } = renderMapCanvas({ editSession: session });
     const versionOf = () => new URL(img.src).searchParams.get("v");
     expect(versionOf()).toBe("0"); // present from the first render, not just after a paint
 
-    // A real paint replaces useEditSession's own `blocks` state with a
-    // fresh array from the server response (see useEditSession.ts's
-    // `setBlocks(d.blocks)`) -- a NEW reference, same map. Simulated here
-    // by rerendering with a new editSession object carrying a new blocks
-    // array.
+    // The FIRST blocks reference change after mount is presumed to be
+    // useEditSession's own reseed tick, not a real user edit -- absorbed
+    // with no bump and no debounce timer scheduled at all.
     const session2 = { ...session, blocks: [...session.blocks] };
     rerender(<MapCanvas mapName="Foo" data={DATA} editSession={session2} />);
+    expect(versionOf()).toBe("0");
+
+    // A REAL paint (the second blocks change) schedules a bump, but not
+    // immediately -- right after this rerender the version has not moved.
+    const session3 = { ...session2, blocks: [...session2.blocks] };
+    rerender(<MapCanvas mapName="Foo" data={DATA} editSession={session3} />);
+    expect(versionOf()).toBe("0");
+
+    // Real wait past PAINT_VERSION_DEBOUNCE_MS (same convention as
+    // WorldCanvas.test.tsx's fade-timer test and SpeciesSpotlight.test.tsx's
+    // own debounce tests -- real timers, not fake, since fake timers don't
+    // intercept a setTimeout already scheduled before they're enabled).
+    await new Promise((r) => setTimeout(r, 300));
     const afterFirstPaint = versionOf();
     expect(afterFirstPaint).toBe("1");
 
-    const session3 = { ...session2, blocks: [...session2.blocks] };
-    rerender(<MapCanvas mapName="Foo" data={DATA} editSession={session3} />);
+    // Two rapid further changes (a drag stroke's own begin/apply/end, each
+    // producing a fresh array) must coalesce into exactly ONE further bump,
+    // not two -- proves the debounce timer is genuinely reset per change,
+    // not just delaying each bump independently.
+    const session4 = { ...session3, blocks: [...session3.blocks] };
+    rerender(<MapCanvas mapName="Foo" data={DATA} editSession={session4} />);
+    const session5 = { ...session4, blocks: [...session4.blocks] };
+    rerender(<MapCanvas mapName="Foo" data={DATA} editSession={session5} />);
+    await new Promise((r) => setTimeout(r, 300));
     const afterSecondPaint = versionOf();
     expect(afterSecondPaint).toBe("2");
     // Monotonically distinguishable, not just "some value" -- two
-    // DIFFERENT paints must produce two DIFFERENT versions.
+    // DIFFERENT settled paints must produce two DIFFERENT versions.
     expect(afterSecondPaint).not.toBe(afterFirstPaint);
   });
 
@@ -430,6 +455,92 @@ describe("MapCanvas", () => {
     rerender(<MapCanvas mapName="Bar" data={DATA} />);
     expect(img.src).toContain("/api/render/Bar.png");
     expect(img.src).not.toContain("/api/render/Foo.png");
+  });
+
+  // ---------------------------------------------------------------------
+  // Spec-review fix (issue 4): both non-negotiable invariants this whole
+  // mechanism exists for had zero automated coverage -- only the
+  // implementer's own manual live-verify. jsdom cannot reproduce a real
+  // image-load TIMING RACE, but it CAN prove the effect WIRING that both
+  // invariants actually live in, using mountReady's own fireEvent.load
+  // simulation. These two tests are written to fail if the guard they name
+  // is ever accidentally removed -- confirmed by temporarily deleting each
+  // guard and re-running (see the implementer report's fix-round notes).
+  // ---------------------------------------------------------------------
+
+  it("issue 4a: pan/zoom survives a same-map paint reload -- fails if fittedForMapRef's once-per-map guard is ever removed", async () => {
+    const session = makeEditSession({ blocks: DATA.blocks });
+    const { canvas, img, rerender } = await mountReady({ editSession: session });
+
+    fireEvent.click(screen.getByRole("button", { name: "2×" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "2×" }).getAttribute("aria-pressed")).toBe("true"));
+
+    const urlBefore = img.src;
+
+    // First post-mount blocks change: presumed reseed tick, absorbed with
+    // no bump (see the v= cache-bust test above) -- included so the SECOND
+    // change below is the one that actually schedules a reload, matching
+    // the real app's own timeline (the natural reseed always lands before
+    // a user could possibly have painted yet).
+    const session2 = { ...session, blocks: [...session.blocks] };
+    rerender(<MapCanvas mapName="Foo" data={DATA} editSession={session2} />);
+
+    // The real paint.
+    const session3 = { ...session2, blocks: [...session2.blocks] };
+    rerender(<MapCanvas mapName="Foo" data={DATA} editSession={session3} />);
+
+    // Real wait past the debounce window (see PAINT_VERSION_DEBOUNCE_MS).
+    await new Promise((r) => setTimeout(r, 300));
+    expect(img.src).not.toBe(urlBefore); // confirms a real reload was actually scheduled, not a no-op
+
+    // The browser finishes loading the freshly-painted image.
+    fireEvent.load(img);
+    await waitFor(() => expect(ctxByCanvas.get(canvas)!.drawImage.mock.calls.length).toBeGreaterThan(0));
+
+    // The single most likely thing to silently regress (per this task's
+    // own brief): a naive "just bump imgLoaded on reload" implementation
+    // re-fires the fit() effect on every reload and snaps zoom back to 1x.
+    // It must not -- this assertion fails the instant fittedForMapRef's
+    // `fittedForMapRef.current !== mapName` guard is removed or weakened.
+    expect(screen.getByRole("button", { name: "2×" }).getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("issue 4b: the composite effect waits for the real reload before redrawing -- fails if the imageUrl-keyed imgLoaded reset is ever removed", async () => {
+    const session = makeEditSession({ blocks: DATA.blocks });
+    const { img, rerender, stageCtx } = await mountReady({ editSession: session });
+
+    const urlBefore = img.src;
+
+    // Presumed reseed tick, absorbed -- see the tests above.
+    const session2 = { ...session, blocks: [...session.blocks] };
+    rerender(<MapCanvas mapName="Foo" data={DATA} editSession={session2} />);
+
+    // The real paint -- schedules a debounced version bump.
+    const session3 = { ...session2, blocks: [...session2.blocks] };
+    rerender(<MapCanvas mapName="Foo" data={DATA} editSession={session3} />);
+
+    await new Promise((r) => setTimeout(r, 300));
+    expect(img.src).not.toBe(urlBefore); // the URL genuinely changed...
+
+    // ...but the <img> element has not fired its OWN load event yet (no
+    // `fireEvent.load` below this line yet) -- same as a real network
+    // round trip still in flight. Capture the draw count right here: this
+    // sanity-checks nothing unrelated snuck in a draw, though the REAL
+    // teeth are in the next assertion below.
+    const drawsBeforeLoad = stageCtx.drawImage.mock.calls.length;
+
+    // THIS is the discriminating step. A broken version of the
+    // imageUrl-keyed imgLoaded reset (removed, or merged back into the old
+    // [mapName]-only effect) leaves imgLoaded stuck `true` the whole time
+    // -- so this `load` event's own `setImgLoaded(true)` is a no-op
+    // (setting state to its current value), React never re-renders from
+    // it, the composite effect never re-fires, and drawImage's count would
+    // stay frozen at `drawsBeforeLoad` forever. With the fix, imgLoaded was
+    // reset to `false` when the URL changed, so this `load` event is a
+    // genuine false->true transition that reliably re-fires the composite
+    // (and therefore blit) effect.
+    fireEvent.load(img);
+    await waitFor(() => expect(stageCtx.drawImage.mock.calls.length).toBeGreaterThan(drawsBeforeLoad));
   });
 
   // ---------------------------------------------------------------------

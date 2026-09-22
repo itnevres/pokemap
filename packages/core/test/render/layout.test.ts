@@ -133,17 +133,24 @@ describe("renderLayout", () => {
 
     // The changed block's own 16x16 pixel region (block (0,0), no border so
     // originX/Y are 0) must differ between the two renders.
-    const region = (r: typeof plain): number[] => {
+    const region = (r: typeof plain, bx: number, by: number): number[] => {
       const bytes: number[] = [];
       for (let y = 0; y < 16; y++) {
         for (let x = 0; x < 16; x++) {
-          const i = (y * r.width + x) * 4;
+          const i = ((by * 16 + y) * r.width + (bx * 16 + x)) * 4;
           bytes.push(r.data[i]!, r.data[i + 1]!, r.data[i + 2]!, r.data[i + 3]!);
         }
       }
       return bytes;
     };
-    expect(region(overridden)).not.toEqual(region(plain));
+    expect(region(overridden, 0, 0)).not.toEqual(region(plain, 0, 0));
+    // Spec-review fix (issue 5): the inequality above alone can't rule out a
+    // bug that renders a totally different layout under an override -- it'd
+    // also make block (0,0) differ. Pin an UNCHANGED block (1,0), which the
+    // override array never touches, to genuinely-equal bytes between the two
+    // renders -- this is what actually proves "only the overridden block
+    // moved", not just "something differs somewhere".
+    expect(region(overridden, 1, 0)).toEqual(region(plain, 1, 0));
   });
 
   itWithCorpus("refuses a blocksOverride shorter than width x height, naming the override as the source", () => {

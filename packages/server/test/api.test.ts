@@ -128,12 +128,18 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("server", () => {
     expect(afterUndo.equals(disk)).toBe(true);
   }, 300_000);
 
-  it("still serves an untouched map's render from pngCache -- opening a session elsewhere doesn't disable it", async () => {
-    // GoldenrodCity has no open session anywhere in this file -- the live-
-    // session branch above is keyed on editSessions.has(name), so it must
-    // never engage for a different map name. Two fetches of the same
-    // never-edited target should come back byte-identical, same shape as
-    // this file's own "keys the PNG cache on the border" test above.
+  it("an untouched map keeps rendering identically -- opening a session elsewhere doesn't disable its render", async () => {
+    // Spec-review honesty fix (issue 3): this asserts GoldenrodCity's render
+    // is byte-identical across two fetches with no session ever opened for
+    // it. renderLayout is deterministic, so this does NOT by itself prove
+    // pngCache was actually hit the second time -- it would pass exactly
+    // the same way with pngCache deleted entirely. What it DOES prove: the
+    // live-session branch above (keyed on editSessions.has(name)) has no
+    // observable effect on a DIFFERENT map's render, i.e. no cross-map
+    // leakage from the new bypass logic. Proving an actual cache hit would
+    // need a real observability hook (a hit counter, or spying on the
+    // server's internal pngCache Map) that does not exist today; not
+    // worth adding for this one assertion.
     const a = Buffer.from(await (await get("/api/render/GoldenrodCity.png?border=0")).arrayBuffer());
     const b = Buffer.from(await (await get("/api/render/GoldenrodCity.png?border=0")).arrayBuffer());
     expect(a.equals(b)).toBe(true);
