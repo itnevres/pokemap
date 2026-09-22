@@ -68,3 +68,13 @@ Coordinate note: pixel-coordinate hover/click verification was unreliable across
 
 ## Status
 DONE. No open concerns.
+
+## Fix-round addendum: code-quality review
+
+Review flagged 1 Important, cheap issue: the two shift tests covered positive/negative drags but not a zero-length one (mousedown+mouseup at the same cell) — the exact "no client-side special case, server's own diff-check handles it" behavior the spec called out and was manually live-verified, but with zero automated coverage.
+
+Added `MapCanvas.test.tsx`: "shift: a zero-length drag (plain click, no movement) still applies {tool:'shift', dx:0, dy:0} -- not skipped client-side" (same shape as the existing two drag tests) — mousedown and mouseup at identical coordinates, asserts `applyPaint` is still called with `dx:0, dy:0` and `beginStroke`/`endStroke` still fire, pinning that MapCanvas never special-cases the zero-length case itself.
+
+`npx vitest run packages/ui/test/MapCanvas.test.tsx`: 32/32 pass (was 31, now 32).
+
+Committed as a fix commit, test file only.
