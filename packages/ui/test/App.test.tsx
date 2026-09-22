@@ -475,6 +475,42 @@ describe("App -- metatile palette wiring", () => {
     vi.unstubAllGlobals();
   });
 
+  it("keeps the chosen stamp when switching tools -- pencil/rect/bucket deliberately share one stamp (Porymap parity), no re-pick needed", async () => {
+    const paintApplyBodies: unknown[] = [];
+    vi.stubGlobal("fetch", makeEditFetchMock(paintApplyBodies));
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "PalletTown" })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "PalletTown" }));
+
+    await screen.findByRole("button", { name: "pencil" });
+    fireEvent.click(screen.getByRole("button", { name: "pencil" }));
+    await waitFor(() => expect(screen.getByPlaceholderText(/search/i)).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: /metatile 0x1\b/i }));
+
+    // Switch straight to bucket -- deliberately no fresh metatile pick here.
+    fireEvent.click(screen.getByRole("button", { name: "bucket" }));
+    await waitFor(() => expect(screen.getByPlaceholderText(/search/i)).toBeTruthy());
+
+    const canvas = document.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
+    await act(async () => {
+      fireEvent.mouseDown(canvas, { clientX: 20, clientY: 20, button: 0 });
+    });
+    await act(async () => {
+      fireEvent.mouseUp(canvas, { clientX: 20, clientY: 20, button: 0 });
+    });
+
+    // Bucket fired at all (not inert), and used the SAME id 1 chosen back
+    // on pencil -- the stamp carried over across the tool switch rather
+    // than resetting to null.
+    await waitFor(() => expect(paintApplyBodies.length).toBeGreaterThan(0));
+    const body = paintApplyBodies[0] as any;
+    expect(body.tool).toBe("bucket");
+    expect(body.replacement.metatileId).toBe(1);
+
+    vi.unstubAllGlobals();
+  });
+
   it("clears the chosen stamp when a different map is selected -- pencil goes inert until a fresh pick", async () => {
     vi.stubGlobal("fetch", makeEditFetchMock());
     render(<App />);

@@ -250,6 +250,14 @@ export function App() {
   // `null` until the player picks a cell (or a rect drag), same
   // null-until-configured posture `activeTool` already gives every tool
   // below it a stamp for.
+  //
+  // Deliberately SHARED across all three tools, and NOT cleared on a tool
+  // switch (only on a map switch -- see selectMap below): this is intended
+  // Porymap-parity behaviour, not an oversight. Pick a metatile once, then
+  // pencil/rect/bucket-fill with it freely -- e.g. pencil in a small detail,
+  // then bucket-fill the surrounding area with that SAME tile, with no
+  // re-pick in between. Clearing it on every tool switch would force an
+  // annoying re-pick for that normal workflow.
   const [currentStamp, setCurrentStamp] = useState<Stamp | null>(null);
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   // Task 17: SignComposer's own open/close flag, same shape as
