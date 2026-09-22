@@ -10,49 +10,57 @@ started in `C:\Programming Projects\PokeMap`.
 > I'm resuming work on PokeMap, a Porymap-parity map editor for
 > pokeemerald-family GBA decomp projects.
 >
-> **State: Plan 1, World View Usability, and Dungeon Mode/Warp Tools are all
-> complete and merged.** Plan 2 (Editing — painting, collision/elevation,
-> events, wild signs) is **17 of 19 tasks complete and merged to `master`**,
-> executed via `superpowers:subagent-driven-development` with the same
-> rigor as every prior plan (fresh implementer subagent per task, spec-
-> compliance review, code-quality review, fix loops, teeth-proofs,
-> live-verify on every UI task). **637 tests passing**, `npm run typecheck`
-> clean. The subject decomp at `C:\Programming Projects\Pokemon Game\game`
-> stayed read-only across all of Plan 2 — confirmed via `git status
-> --porcelain` after essentially every task, always the same ~6-7
-> pre-existing entries (the user's own concurrent Porymap work).
+> **State: Plan 1, World View Usability, Dungeon Mode/Warp Tools, and now
+> Plan 2 (Editing) are all complete and merged to `master`.** Plan 2's last
+> two tasks (18: CLI write commands — `sign suggest/add/list`, `paint`,
+> `diff`; 19: extending the I5 identity-corpus gate to real writes — the
+> plan's own merge gate) landed 2026-09-21, executed via
+> `superpowers:subagent-driven-development` with the same rigor as Tasks
+> 1-17 (fresh implementer subagent per task, spec-compliance review, code-
+> quality review, fix loops, teeth-proofs). Both tasks needed one extra fix
+> round beyond the usual single pass — see "Lessons from Task 18/19" below,
+> especially the cross-package test map-name collision pattern, which bit
+> twice more even after Task 18 had already fixed one instance of it.
+> **673 tests passing** (up from 637), `npm run typecheck` clean across all
+> packages. The subject decomp at `C:\Programming Projects\Pokemon Game\game`
+> and all 5 reference engine roots stayed read-only throughout — confirmed
+> via `git status --porcelain` in all 6 roots, both before and after every
+> dispatch, always the same pre-existing baseline (subject: 5 modified + 1
+> untracked, the user's own concurrent Porymap work on NavelRock*/
+> `fieldmap.h`/`docs/human-tasks-notes.md`; reference roots: clean).
 >
-> **Next: Task 18 (CLI write commands) and Task 19 (extend the I5 corpus
-> gate to real writes — the actual merge gate for this whole plan).** Read
-> `docs/superpowers/plans/2026-08-26-pokemap-plan-2-editing.md` starting at
-> `## Task 18`. Both tasks are already fully written (real code, real test
-> assertions, no placeholders) — dispatch them the same way Tasks 1-17 were
-> dispatched: implementer → spec-compliance review → code-quality review →
-> fix loop → next task. **Task 19 is the gate the whole plan's Success
-> Criteria depend on** — do not skip or lighten it.
+> **Next: re-granularise and execute Plan 3 (Data Editors — connections/
+> headers/encounters editors, tileset editor, region map editor).** Per
+> Plan 0 §1, Plan 3 is written to task level only, against APIs Plan 2 had
+> not built yet — re-read it against the real code Plan 1+2 actually
+> produced and expand it to full step granularity (the same TDD-step shape
+> Plan 2's own re-granularisation pass used) before dispatching Task 1.
+> Read `docs/superpowers/plans/2026-08-26-pokemap-plan-3-data-editors.md`
+> and the "Where everything is" table below for exact paths. Execute with
+> `superpowers:subagent-driven-development`, same rigor as Plans 1-2:
+> fresh implementer subagent per task, spec-compliance review, code-quality
+> review, fix loops, teeth-proofs, live-verify on every UI task.
 >
-> **Before dispatching Task 18, re-read the real current
-> `packages/cli/src/index.ts` and `packages/cli/src/context.ts` first** —
-> the plan's own Task 18 text was written against those files as they stood
-> before Plan 2's 17 UI/server tasks landed; nothing in `packages/cli`
-> itself was touched during Plan 2, so it should be close to unchanged, but
-> confirm rather than assume, per the pattern below.
->
-> Execute with `superpowers:subagent-driven-development`. **Read each real
-> file before dispatching a task that touches it** — Plan 2's biggest tasks
-> (`MapCanvas.tsx`, `App.tsx`, `packages/server/src/index.ts`) each grew
-> substantially across the plan's own earlier tasks, and every dispatch had
-> to explicitly warn the implementer which parts of the plan's own
-> illustrative code were now stale. See "Lessons from Plan 2" below before
-> writing any more dispatch prompts — several are directly actionable
-> (known-wrong CSS token names, the async-race pattern, the jest-dom
-> absence) and will save a review round-trip if given to the implementer
-> up front instead of discovered mid-task.
+> **Read each real file before dispatching a task that touches it** — every
+> prior plan's biggest files (`MapCanvas.tsx`, `App.tsx`,
+> `packages/server/src/index.ts`, `WorldCanvas.tsx`) grew substantially
+> across their own earlier tasks, and a dispatch written against stale
+> plan-text illustrative code is exactly the recurring defect class Plan 0
+> §7 and "Lessons from Plan 2" below describe. Before writing a dispatch
+> prompt that adds a new test touching the real subject decomp or reference
+> engines, also grep `packages/*/test/**` for the specific map/route names
+> you're about to use — see "Lessons from Task 18/19" below, this is now a
+> proven recurring hazard, not a one-off.
 >
 > Read `docs/superpowers/plans/2026-08-26-pokemap-plan-0-roadmap.md` §3
 > (invariants I1-I8) and §7 (test-design rules) first if you haven't
 > already — this is the accumulated scar tissue and it is what makes the
 > pre-dispatch audits work.
+>
+> **The 5 background follow-up tasks from Plan 2 (see below) had not landed
+> as of Plan 2's completion** — check their state before starting Plan 3,
+> and before touching `MapCanvas.tsx`/`useEditSession.ts`/`Toolbar.tsx`/
+> `packages/core/src/edit/events.ts`/`packages/server/src/index.ts`.
 
 ---
 
@@ -64,8 +72,9 @@ started in `C:\Programming Projects\PokeMap`.
 | Plan 1 — 29 tasks, **done** | `docs/superpowers/plans/2026-08-26-pokemap-plan-1-foundation-world.md` |
 | World View Usability — 3 tasks, **done** | `docs/superpowers/plans/2026-09-07-world-view-usability.md` |
 | Dungeon Mode and Warp Tools — 16 tasks, **done** | `docs/superpowers/plans/2026-09-08-dungeon-mode-and-warp-tools.md` |
-| **Plan 2 (Editing) — 19 tasks, full TDD steps, 17/19 done** | `docs/superpowers/plans/2026-08-26-pokemap-plan-2-editing.md` |
-| Plans 3-5 | same directory; task-level only, still need re-granularisation before executing, untouched by Plan 2 |
+| **Plan 2 (Editing) — 19/19 done, merged** | `docs/superpowers/plans/2026-08-26-pokemap-plan-2-editing.md` |
+| **Plan 3 (Data Editors) — next, task-level only, needs re-granularisation** | `docs/superpowers/plans/2026-08-26-pokemap-plan-3-data-editors.md` |
+| Plans 4-5 | same directory; task-level only, still need re-granularisation before executing, untouched by Plan 2 |
 | Design system, binding on all UI tasks | `packages/ui/DESIGN.md` |
 | Subject decomp (read-only, I8) | `C:\Programming Projects\Pokemon Game\game` |
 | Reference engines | `C:\Programming Projects\Pokemon Game\refs\` |
@@ -73,8 +82,21 @@ started in `C:\Programming Projects\PokeMap`.
 `git log --oneline` is the real story. Plan 2's own review-fix commits (`fix:`
 on top of each `feat:`) record exactly what was wrong and why — most tasks
 took 1-2 fix rounds, a few (Task 11's rect-race, Task 13's SaveDialog crash
-+ modal-focus regression, Task 14's silent-failure gaps) took real, substantive
-fixes worth reading if you touch those files again.
++ modal-focus regression, Task 14's silent-failure gaps, Task 18's dry-run/
+refusal asymmetry, Task 19's map-name races) took real, substantive fixes
+worth reading if you touch those files again.
+
+**`docs/superpowers/plans/2026-08-26-pokemap-plan-2-editing.md` itself is
+still uncommitted in the working tree** (`git status` shows it modified —
+this predates this session and was left alone deliberately, not an
+oversight: only the user commits repo state, this agent never has). The
+committed version on `master` is the OLD coarse, task-level-only text from
+`94d2a28`; the real re-granularised full-TDD-step text every Plan 2 task
+(1-19) was actually executed against lives only in this uncommitted working
+copy. If a future session needs Plan 2's exact executed text after this
+file is ever reverted/cleaned, the two are NOT the same document — check
+`git diff` on it before assuming either version is current. Whether to
+commit it is the user's call, not an agent default.
 
 ## Running it
 
@@ -202,14 +224,55 @@ new route rather than hand-rolling validation/undo-wiring again.** Task 17's
 snapshot/push sequence, proving it generalizes past single-field mutations
 to the two-array-field (`insertOps` + `scriptAppends`) case.
 
+## Lessons from Task 18/19 (Plan 2's close-out — new, add to everything above)
+
+**A test that writes+restores a real corpus file must check every OTHER
+test file that reads or writes that same real file, not just files in its
+own package.** This bit three separate times across Task 18/19 alone: Task
+18's own spec review caught `writeCommands.test.ts` (package `cli`) racing
+`signRoutes.test.ts` (package `server`) on Route30's `scripts.inc`; the
+implementer's own follow-up grep then found 5 MORE `cli`-vs-`server`
+collisions the reviewer hadn't scoped to; Task 19's spec review then caught
+the new `corpus.test.ts` (package `core`) funnel test racing
+`blocks.test.ts` (also `core`, but a different file) on NewBarkTown's real
+`map.bin` — and the implementer's own fix-round grep found 5 more
+`core`-vs-`server` collisions on top of that. **Before adding a real
+read/write test against the subject decomp or a reference engine, grep
+`packages/*/test/**` (every package, not just the one you're touching) for
+the specific map/route/file name you're about to use.** A second, narrower
+version of the same hazard: even a test that only *restores* unconditionally
+(writes back the pre-edit bytes in a `finally`, never changing anything) is
+still a real `writeFileSync` that can race a concurrent *whole-corpus
+scanner* in another file (one that reads every map by iteration, not by
+name) — prefer read-guarding a restore (`if (!current.equals(before))
+writeFileSync(...)`) over an unconditional one whenever the write is
+provably a no-op in the common case; see `corpus.test.ts`'s funnel test
+`finally` block for the pattern.
+
+**A plan's own illustrative code can be wrong about which fields of a
+dependency it actually needs — verify unchecked type-assertion casts (`as
+Parameters<typeof fn>[0]`, `as SomeType`) against the REAL function body,
+not the plan's own comment claiming the cast is safe.** Task 19's plan text
+asserted `planSave`/`commitSave` "only ever read `proj.paths` and
+`proj.profile`" and that a future drift would "fail type-checking, not
+silently pass with `undefined`" — both false: `guardLayoutSave`/
+`guardMapSave` already read `proj.splitFor`/`proj.tileset`/
+`proj.constants`/`map.warpEvents` unconditionally, and an unchecked type
+assertion compiles silently regardless. The fix was to reuse this repo's
+existing `packages/core/test/helpers/stubProject.ts` (predates Task 19,
+already used by `guards.test.ts`/`save.test.ts`) rather than inventing a
+new partial-`Project` pattern — check for an existing stub/fixture helper
+before building a new one when a test needs a partial version of a real
+interface.
+
 ## Things that will bite you (carried forward, still all true)
 
 **The decomp baseline moves.** Measure `git status --porcelain` in the
 subject decomp fresh at session start — it was 6 modified + 1 untracked
 (`docs/human-tasks-notes.md`, `NavelRock*`/`fieldmap.h`/`layouts.json`
-files, all mtimes from Aug 29-30) for the entirety of Plan 2's 17 tasks,
-unchanged throughout. Confirm this number fresh rather than trusting this
-file's own number if much time has passed.
+files, all mtimes from Aug 29-30) for the entirety of Plan 2, unchanged
+throughout all 19 tasks. Confirm this number fresh rather than trusting
+this file's own number if much time has passed.
 
 **Agents get killed mid-edit, including by rate limits mid-review, not just
 mid-implementation.** Read `git status --porcelain` + `git log --oneline -3`
@@ -218,11 +281,16 @@ interruption means resume-in-place (via `SendMessage` to the same agent,
 which works fine in this environment) is safe and usually the RIGHT call
 if the partial work looks coherent (read the actual diff, don't just trust
 the last visible status line) — Plan 2 successfully resumed several
-implementer agents mid-task this way (Task 4, Task 11, Task 15) rather than
-discarding and redispatching from scratch, which would have wasted
-substantial already-correct work. Discard-and-redispatch only when the
-partial diff itself looks garbled/incomplete in a way that can't be safely
-continued.
+implementer agents mid-task this way (Task 4, Task 11, Task 15, and twice
+more in Task 19's own fix rounds) rather than discarding and redispatching
+from scratch, which would have wasted substantial already-correct work.
+Discard-and-redispatch only when the partial diff itself looks
+garbled/incomplete in a way that can't be safely continued. One new
+wrinkle in Task 19: a rate-limited agent can finish its actual file edits
+and commit, then get cut off only on its final reply/report-append step —
+`git log`/`git status` after an interruption can show a fully clean,
+already-committed state even though the notification says "failed"; check
+before assuming there's partial work to resume at all.
 
 **Mutation testing (deliberately breaking a guard, confirming the right
 test goes red) keeps finding real gaps *after* both an implementer and a
