@@ -1,6 +1,6 @@
 # Follow-up 2: live render for open edit sessions -- implementer report
 
-Status: DONE
+Status: DONE (fix round applied on top of the original commit, see addendum below)
 
 ## What was built
 
@@ -66,3 +66,52 @@ One incidental finding, out of scope for this task and not touched: switching ma
 - `packages/server/test/api.test.ts`
 - `packages/ui/src/components/MapCanvas.tsx`
 - `packages/ui/test/MapCanvas.test.tsx`
+
+---
+
+## Addendum: fix round after spec review (commit `e4dafd7`, on top of `2359ecb`)
+
+Spec review (`followup-2-live-render-spec-review.md`) found 6 issues, none blocking -- both non-negotiable invariants confirmed holding in the reviewer's own independent live session. Fixed issues 1, 2, 4, 5; tightened issue 3; left issue 6 untouched (pre-existing, out of scope, coordinator flagging separately).
+
+### Issue 4 (highest priority) -- zero automated coverage of either invariant
+
+Added two `MapCanvas.test.tsx` tests, both against real effect wiring (not just URL strings):
+- `issue 4a`: mounts with an `editSession`, zooms to 2x, drives a same-map paint through to a settled reload (`fireEvent.load` again), asserts 2x stays `aria-pressed`. Regression-tests `fittedForMapRef`'s once-per-map guard.
+- `issue 4b`: asserts the stage canvas's `drawImage` count does not advance while the new image is "in flight" (URL changed, no `load` fired yet), then does advance after `fireEvent.load`. Regression-tests the `[imageUrl]`-keyed `imgLoaded` reset.
+
+**Teeth confirmed both ways**, twice (once before a rate-limit interruption, redone cleanly after): temporarily broke `fittedForMapRef`'s guard -> 4a failed (`expected 'false' to be 'true'`); temporarily commented out the real `[imageUrl]` effect -> 4b failed (timed out waiting for `drawImage` to advance, since the `load` event became a no-op). Both guards restored exactly to their original committed state afterward -- diff against `2359ecb` shows no drift in the surrounding code, only the new debounce mechanism (below) layered on top.
+
+One process note: mid-teeth-proof for issue 4b, the session hit a rate limit right after step 1 of the manual repro (adding a duplicate `setImgLoaded(false)` inside the `[mapName]` effect to later contrast against the disabled real effect) but before step 2 (disabling the real `[imageUrl]` effect and running the test). The coordinator caught this on resume, confirmed the file was left in a harmless-but-messy intermediate state (real fix still intact, just a stray duplicate + a stale comment), and asked for the proof to be finished properly rather than left half-done. Redone correctly: disabled the real effect, ran `issue 4b` and watched it fail for the right reason, restored the real effect, then removed the leftover duplicate from the `[mapName]` effect so it goes back to resetting only `toggles`/`hover` as its own comment says. Final file diffed clean against intent.
+
+### Issues 1+2 (combined) -- debounce + explicit map-switch skip flag
+
+Replaced the immediate-bump mechanism with the coordinator's worked-out design: `PAINT_VERSION_DEBOUNCE_MS = 200`, a `paintVersionTimerRef` that reschedules (not stacks) on every `blocks` change, and a `skipNextBumpRef` reset to `true` whenever `mapName` changes, absorbing exactly one presumed reseed tick before real bumps start counting.
+
+Updated the existing "`v=` cache-bust" jsdom test to match the new timeline (first blocks change swallowed, second schedules a debounced bump, real `setTimeout`-based waits past 300ms -- same convention as `WorldCanvas.test.tsx`'s fade-timer test and `SpeciesSpotlight.test.tsx`'s debounce tests, confirmed by reading both before writing this). Extended it to also prove two rapid changes coalesce into one bump, not two.
+
+### Issue 5 -- core pixel test one-sidedness
+
+`layout.test.ts`'s `blocksOverride` test now also asserts an UNCHANGED block (1,0) renders byte-identical between the override and plain disk renders, closing the gap where only the changed block's inequality was checked (a bug rendering an entirely different layout under an override would previously still pass).
+
+### Issue 3 -- cache test honesty (tightened, not deepened)
+
+Renamed and re-commented the "still serves from pngCache" test to say what it actually proves (no cross-map leakage from the new live-session branch) rather than implying a proven cache hit, which would need a real instrumentation hook this codebase doesn't have. Spent little time here per the coordinator's own explicit "your call" framing.
+
+### Verification
+
+- `npx vitest run` (full monorepo): 73 files, **685/685 pass** (was 683; +2 from issue 4).
+- `npm run typecheck`: clean.
+- Live re-verify (real `serve.ts` + real Vite dev server, real browser, NewBarkTown/CherrygroveCity):
+  - Single pencil click: exactly **3** `/api/edit/.../paint/{begin,apply,end}` POSTs but exactly **1** `/api/render/....png?v=1` GET (was 3-4 GETs pre-fix).
+  - Four separate single-click paints in sequence: 4 paint gestures -> 4 render fetches (`v=1..4`), one per gesture -- zoom stayed pinned at `2×` (`aria-pressed=true`) throughout.
+  - A drag stroke (7 `paint/apply` calls from one gesture): coalesced to 2 render fetches, not 7 -- the automation's own inter-step timing occasionally exceeded the 200ms window, which is expected debounce behavior, not a defect; zoom still pinned at `2×` afterward.
+  - Map switch NewBarkTown -> CherrygroveCity: landed on `v=1` for the new map, i.e. exactly **one** spurious bump (was two, pre-fix) -- confirms `skipNextBumpRef` closes issue 1 substantially as designed.
+
+### Files touched (fix round)
+
+- `packages/core/test/render/layout.test.ts`
+- `packages/server/test/api.test.ts`
+- `packages/ui/src/components/MapCanvas.tsx`
+- `packages/ui/test/MapCanvas.test.tsx`
+
+Commit: `e4dafd7` (on top of `2359ecb`).
