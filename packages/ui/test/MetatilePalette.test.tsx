@@ -121,6 +121,14 @@ describe("MetatilePalette", () => {
     const picked = screen.getByRole("button", { name: /metatile 0x1\b/i }) as HTMLButtonElement;
     expect(picked.getAttribute("aria-pressed")).toBe("true");
     expect(picked.className).toContain("metatile-palette__cell--selected");
+    // Regression guard: an <img> is natively draggable by default, which in
+    // a real browser fires dragstart/dragend instead of a same-cell
+    // mousedown -> different-cell mouseup pair, silently breaking
+    // selectRect's own drag-to-select entirely (confirmed live, invisible
+    // under jsdom's fireEvent.mouseDown/mouseUp, which has no native-drag
+    // concept) -- pins the fix so a future cleanup of this <img> tag can't
+    // silently drop the prop and reintroduce it.
+    expect(picked.querySelector("img")!.draggable).toBe(false);
 
     const notPicked = screen.getByRole("button", { name: /metatile 0x2\b/i }) as HTMLButtonElement;
     expect(notPicked.getAttribute("aria-pressed")).toBe("false");
