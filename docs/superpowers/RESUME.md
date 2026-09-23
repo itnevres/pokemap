@@ -7,59 +7,81 @@ started in `C:\Programming Projects\PokeMap`.
 
 ## The prompt
 
-> I'm resuming work on PokeMap, a Porymap-parity map editor for
-> pokeemerald-family GBA decomp projects.
+> I'm resuming work on PokeMap, a Porymap-parity map editor currently
+> supporting pokeemerald-family GBA decomp projects, about to add a second,
+> unrelated engine family (Pokémon Crystal, and later Yellow).
 >
-> **State: Plan 1, World View Usability, Dungeon Mode/Warp Tools, Plan 2
-> (Editing), and all 5 of Plan 2's own flagged follow-up tasks are complete
-> and merged to `master`.** Plan 2 itself (19 tasks) finished 2026-09-21.
-> The 5 follow-ups — mount `MetatilePalette` (real pencil/rect/bucket
-> painting), live-render edited blocks in `MapCanvas` (was blitting a stale
-> disk PNG), wire dropper/shift tools, persist event elevation via
-> `moveEvent`, and a real discard/close-session action — finished
-> 2026-09-22, same `superpowers:subagent-driven-development` rigor as every
-> plan task (fresh implementer, spec review, code-quality review, fix
-> loops, live-verify against the real dev server and the real subject
-> decomp). Every one of the 5 needed at least one fix round; the live-render
-> follow-up needed two (a real cross-package render-architecture gap the
-> plan-level task text hadn't anticipated — `/api/render/:name.png` read
-> disk, never an open in-memory edit session, so cache-busting alone would
-> have kept serving pre-edit pixels). **706 tests passing** (up from 673),
-> `npm run typecheck` clean. All 6 engine roots (subject + 5 reference)
-> confirmed at their known baseline before and after every dispatch.
+> **State: Plan 1 through Plan 2 (Editing) and all 6 of Plan 2's own
+> flagged follow-up tasks are complete and merged to `master`.** Plan 2
+> itself (19 tasks) finished 2026-09-21. Its 6 follow-ups — mount
+> `MetatilePalette`, live-render edited blocks in `MapCanvas`, wire
+> dropper/shift tools, persist event elevation via `moveEvent`, a real
+> discard/close-session action, and a MetatilePalette selected-cell
+> highlight (which itself caught and fixed a real, previously-invisible
+> browser bug: native `<img>` drag was silently breaking the palette's own
+> pre-existing drag-rect-select in any real browser) — finished
+> 2026-09-22/23. **710 tests passing**, `npm run typecheck` clean. All 6
+> GBA engine roots (subject + 5 reference) confirmed at their known
+> baseline throughout.
 >
-> **4 new background tasks were flagged during follow-up work, not fixed
-> inline (correctly out of scope for the task that found each)** — check
-> their state before starting Plan 3, they're independent of it:
-> - `task_ecd0285b` — `MetatilePalette` has no visual "selected cell"
->   highlight at all; a chosen stamp is invisible once picked.
-> - `task_448b7154` — `GET /api/edit/:name/plan` (SaveDialog opening)
->   permanently disables that map's PNG render cache for the rest of the
->   server process, even after Cancel/undo-to-clean — ~25x slower renders
->   on a large map, forever, with zero edits ever made. Made newly
->   consequential (not introduced) by the live-render follow-up.
-> - `task_931bc8bc` — `save.ts`'s `applyJsonOps` applies `jsonEdits` before
->   `insertOps`; moving (x/y or elevation) a same-session freshly-`addEvent`
->   ed event throws (`index N is not present`) since the jsonEdit targets an
->   array index the insertOp hasn't created yet. Pre-existing, surfaced by
->   the event-elevation follow-up's own live-verify.
-> - `task_a36547b0` — a narrow race between `discard()`/commit and an
->   in-flight paint stroke: a late-arriving `/paint/apply` after a
->   session-closing call silently reopens a fresh, orphaned server-side
->   session. Pre-existing (Save had the identical gap already), inherited
->   by the new Discard button.
+> **Two independent, unstarted bodies of work are fully planned and ready
+> to execute — pick based on what you're here to do, they don't conflict
+> (different files, different repos):**
 >
-> **Next: re-granularise and execute Plan 3 (Data Editors — connections/
-> headers/encounters editors, tileset editor, region map editor).** Per
-> Plan 0 §1, Plan 3 is written to task level only, against APIs Plan 2 had
-> not built yet — re-read it against the real code Plan 1+2 actually
-> produced and expand it to full step granularity (the same TDD-step shape
-> Plan 2's own re-granularisation pass used) before dispatching Task 1.
-> Read `docs/superpowers/plans/2026-08-26-pokemap-plan-3-data-editors.md`
-> and the "Where everything is" table below for exact paths. Execute with
-> `superpowers:subagent-driven-development`, same rigor as Plans 1-2:
-> fresh implementer subagent per task, spec-compliance review, code-quality
-> review, fix loops, teeth-proofs, live-verify on every UI task.
+> **1. Three small, already-designed GBA bug fixes** (a 4th, the palette
+> highlight, already shipped above). Plan:
+> `docs/superpowers/plans/2026-09-23-pokemap-followups-remaining.md` — each
+> task already has a worked fix (real code, real file:line references) from
+> direct investigation against current source, not just a problem
+> description. Independent of each other and of the GBC work below; safe
+> to do in any order. Recommended order A→B→C per the plan's own reasoning
+> (ascending risk); Task B (the core `applyJsonOps` ordering fix) needs
+> Opus review per its own note (core write-path correctness, same class as
+> Task 19). Execute with `superpowers:subagent-driven-development`, same
+> rigor as everything above (fresh implementer, spec review, code-quality
+> review, fix loops, live-verify).
+>
+> **2. A new engine family: Pokémon Crystal (`pokecrystal-PerfPlus`),
+> Yellow later.** This was scoped and planned 2026-09-23 after two
+> Explore-agent surveys read the real `pokeyellow`/`pokecrystal-PerfPlus`
+> repos directly against Plan 0's own invariants — it is a genuinely
+> different editing model (no JSON anywhere, no tileset split, binary
+> blockdata + assembly-macro-call events), not a byte-format variant of
+> what `core` already does, and a mature community tool (Polished Map)
+> already exists for basic single-map block/event editing. **The user's
+> own explicit goal is (a) a full standalone tool with world-
+> stitching/encounter-atlas parity to the GBA side, not (b) a narrower
+> Polished-Map-dependent scope** — (b) was the fallback only if (a) proved
+> infeasible; it's feasible, per the research. **Read the roadmap FIRST**
+> (`docs/superpowers/plans/2026-09-23-pokemap-plan-6-gbc-roadmap.md`) — it
+> has the real invariants (G1-G7, a from-scratch set for this family, NOT
+> a 1:1 mapping of I1-I8), the package-layout decision, and — most
+> important — **§3 "Open verification items": six real format questions
+> this planning pass could NOT resolve from the initial survey alone**
+> (the exact event-count/length mechanism, the real per-tileset metatile
+> cap, the collision table's real field layout, the day/night palette
+> swap logic, Crystal's own region-map format, whether `.blk` files are
+> always 1:1 with map names). **Plan 6's own Task 1 exists specifically to
+> resolve these against real source before any other task starts — do not
+> skip it or treat the plan's own current assumptions as settled fact.**
+> Then `docs/superpowers/plans/2026-09-23-pokemap-plan-6-gbc-foundation.md`
+> (read-only: loaders, renderer, CLI, world-view, encounter atlas — mirrors
+> Plan 1's own GBA scope) and
+> `docs/superpowers/plans/2026-09-23-pokemap-plan-7-gbc-editing.md` (the
+> write path — mirrors Plan 2's own scope, explicitly excludes
+> collision-painting and wild signs as GBA-specific concepts that don't
+> transfer, see that plan's own Goal section for why). **Both are written
+> to TASK level, not full TDD-step — re-granularise each against real
+> code immediately before executing it**, same discipline Plan 0 §1
+> established for the GBA family's own Plans 2-4, for the same reason:
+> writing literal step code against unverified format assumptions
+> produces fiction the executor has to discard. Execute with
+> `superpowers:subagent-driven-development`, same full rigor.
+>
+> **Plan 3 (GBA Data Editors) remains unstarted and available** — lower
+> priority per the user's own stated preference (Crystal matters more
+> right now), not abandoned. Pick it up if neither thread above is what
+> you're asked to do.
 >
 > **Read each real file before dispatching a task that touches it** — every
 > prior plan's biggest files (`MapCanvas.tsx`, `App.tsx`,
@@ -68,14 +90,18 @@ started in `C:\Programming Projects\PokeMap`.
 > plan-text illustrative code is exactly the recurring defect class Plan 0
 > §7 and "Lessons from Plan 2"/"Lessons from the Plan 2 follow-ups" below
 > describe. Before writing a dispatch prompt that adds a new test touching
-> the real subject decomp or reference engines, also grep `packages/*/test/**`
-> for the specific map/route names you're about to use — a proven recurring
-> hazard, not a one-off (see "Lessons from Task 18/19" below).
+> a real subject decomp or reference engine (GBA OR GBC), also grep
+> `packages/*/test/**` for the specific map/route names you're about to
+> use — a proven recurring hazard across FIVE separate incidents in Task
+> 18/19 alone (see "Lessons from Task 18/19" below), not a one-off, and
+> nothing about it is GBA-specific.
 >
 > Read `docs/superpowers/plans/2026-08-26-pokemap-plan-0-roadmap.md` §3
 > (invariants I1-I8) and §7 (test-design rules) first if you haven't
-> already — this is the accumulated scar tissue and it is what makes the
-> pre-dispatch audits work.
+> already, for the GBA work — this is the accumulated scar tissue and it
+> is what makes the pre-dispatch audits work. For the GBC work, the
+> equivalent is the new roadmap's own §2 (invariants G1-G7) and §3 (open
+> items) — read that instead/also, don't assume I1-I8 apply unmodified.
 
 ---
 
@@ -83,17 +109,23 @@ started in `C:\Programming Projects\PokeMap`.
 
 | Thing | Path |
 |---|---|
-| Plan 0 — roadmap, invariants, test-design rules | `docs/superpowers/plans/2026-08-26-pokemap-plan-0-roadmap.md` |
+| Plan 0 — GBA roadmap, invariants, test-design rules | `docs/superpowers/plans/2026-08-26-pokemap-plan-0-roadmap.md` |
 | Plan 1 — 29 tasks, **done** | `docs/superpowers/plans/2026-08-26-pokemap-plan-1-foundation-world.md` |
 | World View Usability — 3 tasks, **done** | `docs/superpowers/plans/2026-09-07-world-view-usability.md` |
 | Dungeon Mode and Warp Tools — 16 tasks, **done** | `docs/superpowers/plans/2026-09-08-dungeon-mode-and-warp-tools.md` |
-| **Plan 2 (Editing) — 19/19 done, merged, plus all 5 follow-ups done** | `docs/superpowers/plans/2026-08-26-pokemap-plan-2-editing.md` |
-| **Plan 3 (Data Editors) — next, task-level only, needs re-granularisation** | `docs/superpowers/plans/2026-08-26-pokemap-plan-3-data-editors.md` |
-| Plans 4-5 | same directory; task-level only, still need re-granularisation before executing, untouched by Plan 2 |
+| **Plan 2 (Editing) — 19/19 done, merged, plus all 6 follow-ups done** | `docs/superpowers/plans/2026-08-26-pokemap-plan-2-editing.md` |
+| **3 remaining GBA follow-up bug fixes — planned, unstarted** | `docs/superpowers/plans/2026-09-23-pokemap-followups-remaining.md` |
+| Plan 3 (GBA Data Editors) — available, lower priority, task-level only | `docs/superpowers/plans/2026-08-26-pokemap-plan-3-data-editors.md` |
+| Plans 4-5 (GBA) | same directory; task-level only, untouched |
+| **GBC roadmap (Crystal, then Yellow) — invariants G1-G7, open items §3** | `docs/superpowers/plans/2026-09-23-pokemap-plan-6-gbc-roadmap.md` |
+| **Plan 6 (GBC Foundation, read-only) — planned, unstarted** | `docs/superpowers/plans/2026-09-23-pokemap-plan-6-gbc-foundation.md` |
+| **Plan 7 (GBC Editing, write path) — planned, unstarted, depends on Plan 6** | `docs/superpowers/plans/2026-09-23-pokemap-plan-7-gbc-editing.md` |
 | Design system, binding on all UI tasks | `packages/ui/DESIGN.md` |
-| Subject decomp (read-only, I8) | `C:\Programming Projects\Pokemon Game\game` |
-| Reference engines | `C:\Programming Projects\Pokemon Game\refs\` |
-| Archived task reports (implementer/reviewer full detail, per task) | `docs/superpowers/task-reports/pokemap-plan-2-editing/_archive/` (Tasks 18-19), `docs/superpowers/task-reports/pokemap-plan-2-followups/_archive/` (the 5 follow-ups) |
+| Subject decomp, GBA (read-only, I8) | `C:\Programming Projects\Pokemon Game\game` |
+| Reference engines, GBA | `C:\Programming Projects\Pokemon Game\refs\` |
+| Subject decomp, GBC (read-only, G7) | `C:\Programming Projects\pokecrystal-PerfPlus` |
+| pokeyellow (Plan 8+, not yet planned) | `C:\Programming Projects\Pokemon Game\refs\pokeyellow` |
+| Archived task reports (implementer/reviewer full detail, per task) | `docs/superpowers/task-reports/pokemap-plan-2-editing/_archive/` (Tasks 18-19), `docs/superpowers/task-reports/pokemap-plan-2-followups/_archive/` (all 6 follow-ups) |
 
 `git log --oneline` is the real story. Plan 2's own review-fix commits (`fix:`
 on top of each `feat:`) record exactly what was wrong and why — most tasks
