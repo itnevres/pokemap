@@ -786,6 +786,26 @@ export async function createServer(opts: { projectPath: string; port?: number })
         return sendSession(send, 200, entry);
       }
 
+      // Plan 2 follow-up 5: explicit "give up on this whole session, revert
+      // to disk state" -- editSessions.ts's own close() already does exactly
+      // this (sessions.delete(mapName)); this route is just the first thing
+      // that ever calls it outside a successful commit. Deliberately its own
+      // route, not a repurposing of SaveDialog's Cancel button (see that
+      // component's own comment) -- Cancel stays a non-destructive
+      // dialog-close, this is the real discard action.
+      const discardMatch = /^\/api\/edit\/(.+)\/discard$/.exec(url.pathname);
+      if (discardMatch && req.method === "POST") {
+        const name = decodeURIComponent(discardMatch[1]!);
+        if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
+        editSessions.close(name);
+        // Same "nothing open" shape the undo/redo routes already return when
+        // editSessions.has(name) is false -- after a discard, that's exactly
+        // true. Idempotent: discarding an already-clean or never-opened
+        // session is a harmless no-op with the same response, matching
+        // close()'s own "always safe to drop" doc comment.
+        return send(200, { blocks: [], border: [], map: null, isDirty: false, canUndo: false, canRedo: false });
+      }
+
       // Task 9: save/commit. planSave/commitSave both live in core (I8's
       // one writer); this route's own job is just wiring an open session to
       // them and turning a refusal into a 400 rather than a 200 that lies

@@ -104,4 +104,58 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("save/commit routes", () => {
       writeFileSync(binPath, before);
     }
   }, 300_000);
+
+  // Plan 2 follow-up 5: POST /api/edit/:map/discard -- editSessions.ts's own
+  // close(), exposed as an explicit route for the first time outside a
+  // successful commit. AzaleaTown/AzaleaTown_Mart are used nowhere else in
+  // this file's describe block (a single server + one editSessionStore is
+  // shared across every test here, per beforeAll), so these tests don't
+  // collide with the commit tests' own sessions above.
+  it("404s /discard for an unknown map", async () => {
+    const discardRes = await post("/api/edit/__pokemap_no_such_map__/discard");
+    expect(discardRes.status).toBe(404);
+  }, 300_000);
+
+  it("POST /discard on a map with no open session at all is a harmless 200 no-op, same response shape as a closed session", async () => {
+    const discardRes = await post("/api/edit/AzaleaTown_Mart/discard");
+    expect(discardRes.status).toBe(200);
+    expect(await discardRes.json()).toEqual({ blocks: [], border: [], map: null, isDirty: false, canUndo: false, canRedo: false });
+  }, 300_000);
+
+  it("POST /discard closes a real, dirty session -- matches the undo/redo 'nothing open' shape, a later GET /plan shows a genuinely FRESH session re-read from disk (not a canned response over a still-open one), and disk is never touched", async () => {
+    const proj = openProject(SUBJECT_ROOT);
+    const layout = proj.layoutForMap("AzaleaTown");
+    const binPath = `${SUBJECT_ROOT}/${layout.blockdataFilepath}`;
+    const before = readFileSync(binPath);
+
+    await post("/api/edit/AzaleaTown/paint/begin");
+    // collision:3/elevation:15 alongside a real metatileId, not just a bare
+    // id -- makes this stroke's own diff from AzaleaTown's real (0,0) block
+    // vanishingly unlikely to coincidentally already match, so the isDirty
+    // check just below is a meaningful assertion, not a coin flip.
+    await post("/api/edit/AzaleaTown/paint/apply", {
+      tool: "pencil", targets: [{ x: 0, y: 0 }], stamp: { width: 1, height: 1, cells: [{ metatileId: 5, collision: 3, elevation: 15 }] }, origin: { x: 0, y: 0 },
+    });
+    const endRes = await post("/api/edit/AzaleaTown/paint/end");
+    expect((await endRes.json() as any).isDirty).toBe(true); // confirm dirty before discarding
+
+    const discardRes = await post("/api/edit/AzaleaTown/discard");
+    expect(discardRes.status).toBe(200);
+    expect(await discardRes.json()).toEqual({ blocks: [], border: [], map: null, isDirty: false, canUndo: false, canRedo: false });
+
+    // The real proof: a SUBSEQUENT /plan for the same map shows zero
+    // pending changes, i.e. the server genuinely re-opened from disk on the
+    // next open() rather than secretly keeping the old dirty session alive
+    // behind a canned discard response.
+    const planRes = await get("/api/edit/AzaleaTown/plan");
+    const plan = await planRes.json() as any;
+    expect(plan.changes).toEqual([]);
+    expect(plan.refusals).toEqual([]);
+
+    // discard() must never touch disk -- close() (editSessions.ts) only
+    // ever deletes a Map entry. Trivially true from reading that function's
+    // body, but verified explicitly here, matching this project's I8
+    // discipline.
+    expect(readFileSync(binPath)).toEqual(before);
+  }, 300_000);
 });

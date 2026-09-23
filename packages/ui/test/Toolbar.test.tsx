@@ -21,6 +21,7 @@ describe("Toolbar", () => {
     canUndo: false,
     canRedo: false,
     onOpenSave: vi.fn(),
+    onDiscard: vi.fn(),
     onOpenSignComposer: vi.fn(),
     // Every tool available by default -- these tests exercise rendering/
     // selection/undo-redo/dirty concerns, orthogonal to availability. The
@@ -68,6 +69,21 @@ describe("Toolbar", () => {
     render(<Toolbar {...baseProps} isDirty={true} onOpenSave={onOpenSave} />);
     fireEvent.click(screen.getByRole("button", { name: /Save/ }));
     expect(onOpenSave).toHaveBeenCalled();
+  });
+
+  // Plan 2 follow-up 5: Discard Changes -- gated on isDirty the same
+  // "nothing to act on" posture as Save above, but its own separate button.
+  it("Discard Changes is disabled when not dirty, enabled and calls onDiscard when dirty", () => {
+    const onDiscard = vi.fn();
+    const { rerender } = render(<Toolbar {...baseProps} isDirty={false} onDiscard={onDiscard} />);
+    expect((screen.getByRole("button", { name: "Discard Changes" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Discard Changes" }));
+    expect(onDiscard).not.toHaveBeenCalled();
+
+    rerender(<Toolbar {...baseProps} isDirty={true} onDiscard={onDiscard} />);
+    expect((screen.getByRole("button", { name: "Discard Changes" }) as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "Discard Changes" }));
+    expect(onDiscard).toHaveBeenCalled();
   });
 
   // Task 17: Add Sign is a one-shot composer flow (opens SignComposer), not

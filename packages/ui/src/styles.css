@@ -2076,6 +2076,29 @@ input {
   color: var(--text-on-accent);
 }
 
+/* Plan 2 follow-up 5: same shape as .toolbar__save just above, its own
+   group so the two never visually merge into one. */
+.toolbar__discard {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* Same outlined-danger technique as .event-inspector__delete-btn (an
+   outline that only fills solid on hover) -- not a second, independently-
+   invented "danger button" look. Opposite hue from .toolbar__save-btn's own
+   accent green just above: opposite action, opposite direction, so a
+   player can't mistake one for the other at a glance. */
+.toolbar__discard-btn:not(:disabled) {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.toolbar__discard-btn:not(:disabled):hover {
+  background: var(--danger);
+  color: var(--text-on-accent);
+}
+
 .map-canvas__btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;

@@ -313,6 +313,23 @@ export function App() {
     return () => window.removeEventListener("beforeunload", handler);
   }, [editSession.isDirty]);
 
+  // Plan 2 follow-up 5: "give up on this whole editing session, revert to
+  // disk state" -- a separate, explicit action from SaveDialog's Cancel
+  // (which deliberately stays non-destructive, see that component's own
+  // comment) and from selectMap's own dirty guard just below (that one
+  // blocks a map SWITCH; this one discards edits on the CURRENT map without
+  // switching anything). Same confirm() tone as selectMap's own guard, for
+  // one consistent voice across this app's two "you're about to lose
+  // unsaved changes" prompts. Reuses eventOpError's existing banner/
+  // eventOpErrorMessage helper to surface a failed discard, rather than
+  // inventing a second error-surface convention -- a discard that silently
+  // fails would leave the player thinking their edits are gone when the
+  // server-side session is actually still open and dirty.
+  const handleDiscard = () => {
+    if (!window.confirm("Discard all unsaved changes on this map? This cannot be undone.")) return;
+    editSession.discard().catch((e: unknown) => setEventOpError(eventOpErrorMessage(e)));
+  };
+
   const selectMap = (name: string) => {
     if (editSession.isDirty && !window.confirm("You have unsaved changes on this map. Discard them and switch maps?")) {
       return;
@@ -487,6 +504,7 @@ export function App() {
                 canUndo={editSession.canUndo}
                 canRedo={editSession.canRedo}
                 onOpenSave={() => setSaveDialogOpen(true)}
+                onDiscard={handleDiscard}
                 onOpenSignComposer={() => setSignComposerOpen(true)}
                 // Code-review fix: only tools actually wired to MapCanvas
                 // may render enabled (see `activeTool`'s own doc comment

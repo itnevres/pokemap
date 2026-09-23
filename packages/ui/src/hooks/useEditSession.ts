@@ -94,6 +94,39 @@ export interface UseEditSessionResult {
    *  there's no second round trip -- just applying data already in hand,
    *  the same tail `callEvent` runs internally for every `/event/*` call. */
   applyExternalMapUpdate(map: MapData, isDirty: boolean): void;
+  /** Plan 2 follow-up 5: `POST /api/edit/:map/discard` (editSessions.ts's
+   *  own `close()`) -- "give up on this whole session, revert to disk
+   *  state," a separate, explicit Toolbar action, not a repurposed
+   *  SaveDialog Cancel (that button deliberately stays non-destructive, see
+   *  its own comment).
+   *
+   *  Deliberately does NOT go through `call()`/`applyResponse` above, even
+   *  though every other mutating method here does. The discard route's own
+   *  response is the exact same "nothing open" shape undo/redo already
+   *  return on a closed session (`blocks: []`, `map: null`) -- and
+   *  MapCanvas.tsx's own `blocks` local is `editSession ? editSession.blocks
+   *  : staticBlocks`. App.tsx ALWAYS passes a real (non-undefined)
+   *  `editSession` object as a prop, so that ternary ALWAYS takes the
+   *  `editSession.blocks` branch, even for an empty array. Routing a
+   *  discard through `applyResponse` would therefore set `blocks` to `[]`
+   *  and the canvas would go instantly blank -- and STAY blank, since
+   *  nothing else re-triggers this hook's own `[mapName, initialBlocks,
+   *  initialMap]` reset effect on a discard (`mapName` doesn't change).
+   *
+   *  Instead, once the server confirms the session is closed, this resets
+   *  local state to the exact same pre-edit seed that reset effect already
+   *  uses (`initialBlocks`/`initialMap`) -- what the map looked like BEFORE
+   *  any edits, i.e. real disk state, not an empty grid. A future
+   *  "simplification" back to `call()` would silently reintroduce exactly
+   *  that blank-canvas regression.
+   *
+   *  Throws on a non-ok response rather than resetting local state anyway:
+   *  a discard that LOOKS like it worked but didn't actually close the
+   *  server-side session would desync client/server state (the player sees
+   *  a reverted canvas while the server still thinks the map is dirty), so
+   *  the failure must surface to the caller instead of being swallowed.
+   */
+  discard(): Promise<void>;
 }
 
 interface SessionResponse {
@@ -296,5 +329,19 @@ export function useEditSession(mapName: string | null, initialBlocks?: Block[], 
     setCanRedo(false);
   }, []);
 
-  return { blocks, border, map, isDirty, canUndo, canRedo, beginStroke, applyPaint, endStroke, undo, redo, markClean, moveEvent, addEvent, deleteEvent, applyExternalMapUpdate };
+  // See `discard`'s own doc comment on UseEditSessionResult for why this
+  // bypasses `call()` entirely instead of being `call("/discard")`.
+  const discard = useCallback(async () => {
+    if (!mapName) return; // nothing open -- see this hook's own doc comment
+    const r = await fetch(`/api/edit/${encodeURIComponent(mapName)}/discard`, { method: "POST" });
+    if (!r.ok) throw new Error(`POST /api/edit/${mapName}/discard -> ${r.status}`);
+    setBlocks(initialBlocks ?? []);
+    setBorder([]);
+    setMap(initialMap);
+    setIsDirty(false);
+    setCanUndo(false);
+    setCanRedo(false);
+  }, [mapName, initialBlocks, initialMap]);
+
+  return { blocks, border, map, isDirty, canUndo, canRedo, beginStroke, applyPaint, endStroke, undo, redo, markClean, moveEvent, addEvent, deleteEvent, applyExternalMapUpdate, discard };
 }

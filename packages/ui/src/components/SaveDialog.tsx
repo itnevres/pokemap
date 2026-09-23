@@ -153,11 +153,17 @@ export function SaveDialog({ mapName, onCommitted, onCancel }: SaveDialogProps) 
           {/* autoFocus: see this component's own doc comment -- required
               for Escape (and a click on the backdrop's own onKeyDown path)
               to ever reach onCancel at all. Labelled "Cancel", not
-              "Discard": this only closes the dialog client-side -- no
-              route in this app explicitly discards a dirty server-side
-              session, so "Discard" would overclaim what this button
-              actually does. (Flagged as a follow-up: a real discard/close-
-              session endpoint.) */}
+              "Discard": this only closes the dialog client-side, keeping
+              the edit session and any unsaved work fully intact -- ordinary,
+              safe "not right now" semantics, the same as any app's Cancel
+              button on a save prompt. A real discard/close-session mechanism
+              now exists (POST /api/edit/:map/discard, editSessions.ts's own
+              close()) -- but deliberately as its OWN, separately confirmed
+              Toolbar action ("Discard Changes", App.tsx's own handleDiscard),
+              not this button: repurposing Cancel to also discard would be a
+              surprising regression (closing this dialog would silently throw
+              away the player's work), not a fix. This button intentionally
+              stays non-destructive. */}
           <button type="button" className="map-canvas__btn" onClick={onCancel} autoFocus>
             Cancel
           </button>

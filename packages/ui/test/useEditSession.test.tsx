@@ -90,6 +90,10 @@ describe("useEditSession", () => {
       await last!.moveEvent("object", 0, 1, 1);
       await last!.addEvent("object", { graphics_id: "OBJ_EVENT_GFX_BOY_1", x: 0, y: 0, elevation: 0 });
       await last!.deleteEvent("object", 0);
+      // Plan 2 follow-up 5: discard() has its own `if (!mapName) return`
+      // guard (see its own doc comment) -- same "nothing open to talk to"
+      // posture as every other method above.
+      await last!.discard();
     });
     expect(fetchMock).not.toHaveBeenCalled();
     expect(last!.isDirty).toBe(false);
@@ -247,5 +251,66 @@ describe("useEditSession", () => {
 
     rerender(<Host mapName="B" initialBlocks={seedB} onResult={(r) => { last = r; }} />);
     await waitFor(() => expect(last!.blocks).toEqual(seedB));
+  });
+
+  // ---------------------------------------------------------------------
+  // Plan 2 follow-up 5: discard() -- deliberately bypasses call()/
+  // applyResponse (see this method's own doc comment on
+  // UseEditSessionResult for why). These tests exist specifically to pin
+  // that it restores the PRE-EDIT seed, not the server's own `blocks: []`
+  // "nothing open" response body -- the exact blank-canvas regression that
+  // doc comment warns a naive `call("/discard")` implementation would cause.
+  // ---------------------------------------------------------------------
+
+  it("discard() POSTs to /discard and resets blocks/map/isDirty/canUndo/canRedo to the pre-edit seed, not the server's own empty response", async () => {
+    // The server's real /discard response -- deliberately the "nothing
+    // open" shape (blocks: [], map: null) that must NOT end up as this
+    // hook's own post-discard state.
+    const served = { blocks: [], border: [], map: null, isDirty: false, canUndo: false, canRedo: false };
+    const fetchMock = vi.fn(() => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(served) } as Response));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const seedBlocks: Block[] = [{ metatileId: 7, collision: 0, elevation: 0 }];
+    let last: ReturnType<typeof useEditSession> | undefined;
+    render(<Host mapName="Test" initialBlocks={seedBlocks} initialMap={MAP_BEFORE} onResult={(r) => { last = r; }} />);
+
+    // Dirty the local state first via a real round trip (undo, reusing the
+    // generic `call` path), so this test proves discard() actually resets
+    // AWAY from a non-clean state, not just that it happens to already
+    // match the seed.
+    const dirtied = { blocks: [{ metatileId: 99, collision: 0, elevation: 0 }], border: [], isDirty: true, canUndo: true, canRedo: true };
+    fetchMock.mockImplementationOnce(() => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(dirtied) } as Response));
+    await act(async () => { await last!.undo(); });
+    expect(last!.isDirty).toBe(true);
+
+    await act(async () => { await last!.discard(); });
+
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/discard"), expect.objectContaining({ method: "POST" }));
+    expect(last!.blocks).toEqual(seedBlocks); // the PRE-EDIT seed, not []
+    expect(last!.map).toEqual(MAP_BEFORE); // not null
+    expect(last!.isDirty).toBe(false);
+    expect(last!.canUndo).toBe(false);
+    expect(last!.canRedo).toBe(false);
+  });
+
+  it("discard() throws on a failed response, without resetting local state as if it had succeeded", async () => {
+    const dirtied = { blocks: [{ metatileId: 99, collision: 0, elevation: 0 }], border: [], isDirty: true, canUndo: true, canRedo: false };
+    const fetchMock = vi.fn(() => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(dirtied) } as Response));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const seedBlocks: Block[] = [{ metatileId: 7, collision: 0, elevation: 0 }];
+    let last: ReturnType<typeof useEditSession> | undefined;
+    render(<Host mapName="Test" initialBlocks={seedBlocks} initialMap={MAP_BEFORE} onResult={(r) => { last = r; }} />);
+    await act(async () => { await last!.undo(); }); // dirty the local state
+    expect(last!.isDirty).toBe(true);
+
+    fetchMock.mockImplementationOnce(() => Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({}) } as Response));
+    await expect(act(async () => { await last!.discard(); })).rejects.toThrow();
+
+    // A discard that appears to work but didn't actually close the
+    // server-side session would desync client/server state -- local state
+    // must be left exactly as it was, not silently reset to the seed.
+    expect(last!.blocks).toEqual([{ metatileId: 99, collision: 0, elevation: 0 }]);
+    expect(last!.isDirty).toBe(true);
   });
 });

@@ -345,6 +345,14 @@ function makeEditFetchMock(paintApplyBodies?: unknown[]) {
         json: () => Promise.resolve({ blocks: PALLET_TOWN_LAYOUT.blocks, border: [], isDirty: dirty, canUndo: dirty, canRedo: false }),
       } as Response);
     }
+    // Plan 2 follow-up 5: mirrors the real server's own "nothing open"
+    // discard response shape (packages/server/src/index.ts).
+    if (url === "/api/edit/PalletTown/discard" && method === "POST") {
+      return Promise.resolve({
+        ok: true, status: 200,
+        json: () => Promise.resolve({ blocks: [], border: [], map: null, isDirty: false, canUndo: false, canRedo: false }),
+      } as Response);
+    }
     return Promise.reject(new Error(`unexpected fetch ${url}`));
   });
 }
@@ -634,6 +642,55 @@ describe("App -- dropper/shift tool wiring", () => {
     await waitFor(() => expect(paintApplyBodies.length).toBeGreaterThan(0));
     expect(paintApplyBodies[0]).toEqual({ tool: "shift", dx: 1, dy: 1 });
 
+    vi.unstubAllGlobals();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Plan 2 follow-up 5: Discard Changes -- App.tsx's own handleDiscard, a
+// confirm()-gated wrapper around editSession.discard(), wired into Toolbar
+// as its own separate action from Save/Cancel.
+// ---------------------------------------------------------------------------
+describe("App -- discard flow", () => {
+  it("clicking Discard Changes with window.confirm() -> true calls editSession.discard() (POSTs to /discard) and reverts the dirty session", async () => {
+    vi.stubGlobal("fetch", makeEditFetchMock());
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    await renderAppInEditModeWithDirtySession();
+    const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+    fetchMock.mockClear();
+
+    fireEvent.click(screen.getByRole("button", { name: "Discard Changes" }));
+
+    expect(confirmSpy).toHaveBeenCalled();
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith("/api/edit/PalletTown/discard", expect.objectContaining({ method: "POST" })),
+    );
+    // The session reverted -- dirty indicator clears, matching
+    // useEditSession's own discard() resetting isDirty to false.
+    await waitFor(() => expect(screen.queryByTestId("dirty-indicator")).toBeNull());
+
+    confirmSpy.mockRestore();
+    vi.unstubAllGlobals();
+  });
+
+  it("clicking Discard Changes with window.confirm() -> false does not call discard, leaving the dirty session (and edits) intact", async () => {
+    vi.stubGlobal("fetch", makeEditFetchMock());
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+
+    await renderAppInEditModeWithDirtySession();
+    const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+    fetchMock.mockClear();
+
+    fireEvent.click(screen.getByRole("button", { name: "Discard Changes" }));
+
+    expect(confirmSpy).toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalledWith("/api/edit/PalletTown/discard", expect.anything());
+    // Still dirty -- the cancelled discard changed nothing.
+    expect(screen.getByTestId("dirty-indicator")).toBeTruthy();
+    expect((screen.getByRole("button", { name: /Save/ }) as HTMLButtonElement).disabled).toBe(false);
+
+    confirmSpy.mockRestore();
     vi.unstubAllGlobals();
   });
 });

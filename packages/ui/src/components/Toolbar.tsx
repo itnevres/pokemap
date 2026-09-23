@@ -13,6 +13,13 @@ export interface ToolbarProps {
   canUndo: boolean;
   canRedo: boolean;
   onOpenSave: () => void;
+  /** Plan 2 follow-up 5: "give up on this whole session, revert to disk
+   *  state" -- deliberately a SEPARATE action from Save/Cancel, gated on
+   *  `isDirty` the same "nothing to act on otherwise" posture as the Save
+   *  button just below. App.tsx's own handler confirms with the player
+   *  first (this component never does -- see that file's own handleDiscard)
+   *  before actually calling editSession.discard(). */
+  onDiscard: () => void;
   /** Task 17: opens SignComposer -- a one-shot modal authoring flow, not a
    *  canvas paint tool, so it is its own button rather than a seventh entry
    *  in `TOOLS` (which drives MapCanvas's activeTool selection). Not gated
@@ -39,7 +46,7 @@ export interface ToolbarProps {
  * in this app writes to disk; this button (disabled until `isDirty`) is the
  * only door into that flow.
  */
-export function Toolbar({ activeToolKind, onSelectTool, isDirty, onUndo, onRedo, canUndo, canRedo, onOpenSave, onOpenSignComposer, availableTools }: ToolbarProps) {
+export function Toolbar({ activeToolKind, onSelectTool, isDirty, onUndo, onRedo, canUndo, canRedo, onOpenSave, onDiscard, onOpenSignComposer, availableTools }: ToolbarProps) {
   return (
     <div className="toolbar">
       <div className="toolbar__tools" role="group" aria-label="Tools">
@@ -84,6 +91,22 @@ export function Toolbar({ activeToolKind, onSelectTool, isDirty, onUndo, onRedo,
           className="map-canvas__btn toolbar__save-btn"
         >
           {isDirty ? "Save (unsaved changes)" : "Save"}
+        </button>
+      </div>
+      {/* Plan 2 follow-up 5: its own group, not folded into toolbar__save --
+          opposite action, opposite direction, deliberately visually distinct
+          (danger-toned, see toolbar__discard-btn in styles.css) so a player
+          can't easily misclick Save for Discard or back. Gated on isDirty
+          for the same "nothing to act on" reason Save is. */}
+      <div className="toolbar__discard">
+        <button
+          type="button"
+          aria-label="Discard Changes"
+          onClick={onDiscard}
+          disabled={!isDirty}
+          className="map-canvas__btn toolbar__discard-btn"
+        >
+          Discard Changes
         </button>
       </div>
     </div>
