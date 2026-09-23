@@ -327,7 +327,10 @@ export function App() {
   // server-side session is actually still open and dirty.
   const handleDiscard = () => {
     if (!window.confirm("Discard all unsaved changes on this map? This cannot be undone.")) return;
-    editSession.discard().catch((e: unknown) => setEventOpError(eventOpErrorMessage(e)));
+    editSession
+      .discard()
+      .then(() => setEventOpError(null))
+      .catch((e: unknown) => setEventOpError(eventOpErrorMessage(e)));
   };
 
   const selectMap = (name: string) => {

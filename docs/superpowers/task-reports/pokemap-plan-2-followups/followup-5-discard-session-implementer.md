@@ -1,5 +1,51 @@
 # Follow-up 5: explicit discard/close-session action -- implementer report
 
+## Fix-round addendum (code-quality review)
+
+Review (`followup-5-discard-session-code-quality-review.md`) found 1 cheap
+Important issue in scope for this task, 1 pre-existing systemic issue
+correctly flagged as out of scope (a discard-vs-in-flight-paint-stroke race,
+identical to Save's own pre-existing race, tracked separately), and 2
+non-blocking minors.
+
+**Fixed:** `handleDiscard` (`App.tsx`) only wired the failure half of the
+`eventOpError` banner convention -- every other handler using that banner
+(`onCanvasMoveEvent`, `onMoveEventFromInspector`, `onDeleteEvent`) also
+clears it via `setEventOpError(null)` on success, so a stale error from an
+earlier failed op doesn't linger after a later, unrelated op succeeds.
+Concrete scenario the review named: an event move fails (banner shows),
+player discards, discard succeeds -- the stale move-failure banner stayed on
+screen describing a problem that no longer applied to the just-reverted
+session. Fixed by chaining `.then(() => setEventOpError(null))` before the
+existing `.catch`, matching the other three handlers' own pattern exactly.
+
+Added one test (`packages/ui/test/App.test.tsx`, "App -- discard flow"
+describe block): fails a real event-add first (populates the banner via a
+mocked `/event/add` 500), then paints to dirty the session, then discards
+with `confirm()` stubbed true, and asserts the stale banner (`role="alert"`)
+is gone afterward. Extended `makeEditFetchMock` with an optional
+`{ failEventAdd }` flag and a `/api/edit/PalletTown/event/add` route to
+support it.
+
+**Not touched, per reviewer/coordinator instruction:** the pre-existing
+discard-vs-in-flight-paint-stroke race (a late `/paint/apply` after a
+discard silently reopens a fresh server-side session) -- correctly scoped
+out as a cross-cutting gap in the whole open/close contract, identical to
+Save's own pre-existing race, and tracked as its own separate background
+task.
+
+**Re-verification:** `npx vitest run packages/ui/test/App.test.tsx` -- 16/16
+passed (15 existing + 1 new). Full `npm run test` -- 73 files / 706 tests
+passed. `npm run typecheck` -- clean. Live browser re-verification was not
+re-run for this fix-round: the change is a pure error-banner-clearing
+addition with no new visual/network behavior beyond what the original
+live-verify already exercised (confirm-gated discard, real `/discard` POST,
+canvas revert), and is fully covered by the new unit test above.
+
+Fix commit: see repo history (`git log` on this file's own commit for the
+exact SHA) -- staged only `packages/ui/src/App.tsx` and
+`packages/ui/test/App.test.tsx`, plus this report.
+
 ## Summary
 
 Implemented exactly as specified: a new `POST /api/edit/:map/discard` route, a

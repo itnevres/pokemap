@@ -318,7 +318,7 @@ const EDIT_GROUPS = { groupOrder: ["Kanto"], groups: { Kanto: ["PalletTown", "Ro
 /** `paintApplyBodies`, when passed, gets every `/paint/apply` request body
  *  pushed onto it (parsed from JSON) -- lets a test inspect what stamp
  *  actually went over the wire without re-deriving it from DOM state. */
-function makeEditFetchMock(paintApplyBodies?: unknown[]) {
+function makeEditFetchMock(paintApplyBodies?: unknown[], opts: { failEventAdd?: boolean } = {}) {
   return vi.fn((url: string, init?: RequestInit) => {
     const method = init?.method ?? "GET";
     if (url === "/api/groups") {
@@ -329,6 +329,15 @@ function makeEditFetchMock(paintApplyBodies?: unknown[]) {
     }
     if (url === "/api/map/Route1") {
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(ROUTE1_LAYOUT) } as Response);
+    }
+    // Follow-up 5 fix-round: lets a test populate the eventOpError banner
+    // (a failed event op) before exercising discard, to prove discard()
+    // clears a STALE error left over from an earlier, unrelated failure.
+    if (url === "/api/edit/PalletTown/event/add" && method === "POST") {
+      if (opts.failEventAdd) {
+        return Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({ error: "boom" }) } as Response);
+      }
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ map: PALLET_TOWN_LAYOUT.map, isDirty: true }) } as Response);
     }
     if (url.startsWith("/api/edit/PalletTown/paint/") && method === "POST") {
       if (url.endsWith("/paint/apply") && paintApplyBodies) {
@@ -689,6 +698,49 @@ describe("App -- discard flow", () => {
     // Still dirty -- the cancelled discard changed nothing.
     expect(screen.getByTestId("dirty-indicator")).toBeTruthy();
     expect((screen.getByRole("button", { name: /Save/ }) as HTMLButtonElement).disabled).toBe(false);
+
+    confirmSpy.mockRestore();
+    vi.unstubAllGlobals();
+  });
+
+  // Fix-round: handleDiscard used to only wire the FAILURE half of the
+  // eventOpError banner convention (setEventOpError on .catch, never
+  // cleared on success) -- unlike onCanvasMoveEvent/onMoveEventFromInspector/
+  // onDeleteEvent, which all clear it on success too. A stale error from an
+  // earlier, unrelated failed op would otherwise linger on screen after a
+  // later successful discard, describing a problem that no longer applies
+  // to the just-reverted session.
+  it("a successful discard clears a stale eventOpError banner left over from an earlier failed event op", async () => {
+    vi.stubGlobal("fetch", makeEditFetchMock(undefined, { failEventAdd: true }));
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    render(<App />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "PalletTown" })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "PalletTown" }));
+
+    // Fail an event add first -- populates the eventOpError banner.
+    const addEventBtn = await screen.findByRole("button", { name: "Add Event" });
+    await act(async () => { fireEvent.click(addEventBtn); });
+    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+
+    // Dirty the session via a real paint so Discard Changes is enabled.
+    await screen.findByRole("button", { name: "collision" });
+    fireEvent.click(screen.getByRole("button", { name: "collision" }));
+    const canvas = document.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
+    await act(async () => {
+      fireEvent.mouseDown(canvas, { clientX: 20, clientY: 20, button: 0 });
+    });
+    await act(async () => {
+      fireEvent.mouseUp(canvas, { clientX: 20, clientY: 20, button: 0 });
+    });
+    await waitFor(() => expect(screen.getByTestId("dirty-indicator")).toBeTruthy());
+    expect(screen.getByRole("alert")).toBeTruthy(); // still stale from the earlier failure
+
+    fireEvent.click(screen.getByRole("button", { name: "Discard Changes" }));
+
+    // The successful discard clears the stale banner, not just the dirty
+    // state.
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
 
     confirmSpy.mockRestore();
     vi.unstubAllGlobals();
