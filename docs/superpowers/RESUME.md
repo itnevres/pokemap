@@ -10,24 +10,44 @@ started in `C:\Programming Projects\PokeMap`.
 > I'm resuming work on PokeMap, a Porymap-parity map editor for
 > pokeemerald-family GBA decomp projects.
 >
-> **State: Plan 1, World View Usability, Dungeon Mode/Warp Tools, and now
-> Plan 2 (Editing) are all complete and merged to `master`.** Plan 2's last
-> two tasks (18: CLI write commands — `sign suggest/add/list`, `paint`,
-> `diff`; 19: extending the I5 identity-corpus gate to real writes — the
-> plan's own merge gate) landed 2026-09-21, executed via
-> `superpowers:subagent-driven-development` with the same rigor as Tasks
-> 1-17 (fresh implementer subagent per task, spec-compliance review, code-
-> quality review, fix loops, teeth-proofs). Both tasks needed one extra fix
-> round beyond the usual single pass — see "Lessons from Task 18/19" below,
-> especially the cross-package test map-name collision pattern, which bit
-> twice more even after Task 18 had already fixed one instance of it.
-> **673 tests passing** (up from 637), `npm run typecheck` clean across all
-> packages. The subject decomp at `C:\Programming Projects\Pokemon Game\game`
-> and all 5 reference engine roots stayed read-only throughout — confirmed
-> via `git status --porcelain` in all 6 roots, both before and after every
-> dispatch, always the same pre-existing baseline (subject: 5 modified + 1
-> untracked, the user's own concurrent Porymap work on NavelRock*/
-> `fieldmap.h`/`docs/human-tasks-notes.md`; reference roots: clean).
+> **State: Plan 1, World View Usability, Dungeon Mode/Warp Tools, Plan 2
+> (Editing), and all 5 of Plan 2's own flagged follow-up tasks are complete
+> and merged to `master`.** Plan 2 itself (19 tasks) finished 2026-09-21.
+> The 5 follow-ups — mount `MetatilePalette` (real pencil/rect/bucket
+> painting), live-render edited blocks in `MapCanvas` (was blitting a stale
+> disk PNG), wire dropper/shift tools, persist event elevation via
+> `moveEvent`, and a real discard/close-session action — finished
+> 2026-09-22, same `superpowers:subagent-driven-development` rigor as every
+> plan task (fresh implementer, spec review, code-quality review, fix
+> loops, live-verify against the real dev server and the real subject
+> decomp). Every one of the 5 needed at least one fix round; the live-render
+> follow-up needed two (a real cross-package render-architecture gap the
+> plan-level task text hadn't anticipated — `/api/render/:name.png` read
+> disk, never an open in-memory edit session, so cache-busting alone would
+> have kept serving pre-edit pixels). **706 tests passing** (up from 673),
+> `npm run typecheck` clean. All 6 engine roots (subject + 5 reference)
+> confirmed at their known baseline before and after every dispatch.
+>
+> **4 new background tasks were flagged during follow-up work, not fixed
+> inline (correctly out of scope for the task that found each)** — check
+> their state before starting Plan 3, they're independent of it:
+> - `task_ecd0285b` — `MetatilePalette` has no visual "selected cell"
+>   highlight at all; a chosen stamp is invisible once picked.
+> - `task_448b7154` — `GET /api/edit/:name/plan` (SaveDialog opening)
+>   permanently disables that map's PNG render cache for the rest of the
+>   server process, even after Cancel/undo-to-clean — ~25x slower renders
+>   on a large map, forever, with zero edits ever made. Made newly
+>   consequential (not introduced) by the live-render follow-up.
+> - `task_931bc8bc` — `save.ts`'s `applyJsonOps` applies `jsonEdits` before
+>   `insertOps`; moving (x/y or elevation) a same-session freshly-`addEvent`
+>   ed event throws (`index N is not present`) since the jsonEdit targets an
+>   array index the insertOp hasn't created yet. Pre-existing, surfaced by
+>   the event-elevation follow-up's own live-verify.
+> - `task_a36547b0` — a narrow race between `discard()`/commit and an
+>   in-flight paint stroke: a late-arriving `/paint/apply` after a
+>   session-closing call silently reopens a fresh, orphaned server-side
+>   session. Pre-existing (Save had the identical gap already), inherited
+>   by the new Discard button.
 >
 > **Next: re-granularise and execute Plan 3 (Data Editors — connections/
 > headers/encounters editors, tileset editor, region map editor).** Per
@@ -46,21 +66,16 @@ started in `C:\Programming Projects\PokeMap`.
 > `packages/server/src/index.ts`, `WorldCanvas.tsx`) grew substantially
 > across their own earlier tasks, and a dispatch written against stale
 > plan-text illustrative code is exactly the recurring defect class Plan 0
-> §7 and "Lessons from Plan 2" below describe. Before writing a dispatch
-> prompt that adds a new test touching the real subject decomp or reference
-> engines, also grep `packages/*/test/**` for the specific map/route names
-> you're about to use — see "Lessons from Task 18/19" below, this is now a
-> proven recurring hazard, not a one-off.
+> §7 and "Lessons from Plan 2"/"Lessons from the Plan 2 follow-ups" below
+> describe. Before writing a dispatch prompt that adds a new test touching
+> the real subject decomp or reference engines, also grep `packages/*/test/**`
+> for the specific map/route names you're about to use — a proven recurring
+> hazard, not a one-off (see "Lessons from Task 18/19" below).
 >
 > Read `docs/superpowers/plans/2026-08-26-pokemap-plan-0-roadmap.md` §3
 > (invariants I1-I8) and §7 (test-design rules) first if you haven't
 > already — this is the accumulated scar tissue and it is what makes the
 > pre-dispatch audits work.
->
-> **The 5 background follow-up tasks from Plan 2 (see below) had not landed
-> as of Plan 2's completion** — check their state before starting Plan 3,
-> and before touching `MapCanvas.tsx`/`useEditSession.ts`/`Toolbar.tsx`/
-> `packages/core/src/edit/events.ts`/`packages/server/src/index.ts`.
 
 ---
 
@@ -72,31 +87,28 @@ started in `C:\Programming Projects\PokeMap`.
 | Plan 1 — 29 tasks, **done** | `docs/superpowers/plans/2026-08-26-pokemap-plan-1-foundation-world.md` |
 | World View Usability — 3 tasks, **done** | `docs/superpowers/plans/2026-09-07-world-view-usability.md` |
 | Dungeon Mode and Warp Tools — 16 tasks, **done** | `docs/superpowers/plans/2026-09-08-dungeon-mode-and-warp-tools.md` |
-| **Plan 2 (Editing) — 19/19 done, merged** | `docs/superpowers/plans/2026-08-26-pokemap-plan-2-editing.md` |
+| **Plan 2 (Editing) — 19/19 done, merged, plus all 5 follow-ups done** | `docs/superpowers/plans/2026-08-26-pokemap-plan-2-editing.md` |
 | **Plan 3 (Data Editors) — next, task-level only, needs re-granularisation** | `docs/superpowers/plans/2026-08-26-pokemap-plan-3-data-editors.md` |
 | Plans 4-5 | same directory; task-level only, still need re-granularisation before executing, untouched by Plan 2 |
 | Design system, binding on all UI tasks | `packages/ui/DESIGN.md` |
 | Subject decomp (read-only, I8) | `C:\Programming Projects\Pokemon Game\game` |
 | Reference engines | `C:\Programming Projects\Pokemon Game\refs\` |
+| Archived task reports (implementer/reviewer full detail, per task) | `docs/superpowers/task-reports/pokemap-plan-2-editing/_archive/` (Tasks 18-19), `docs/superpowers/task-reports/pokemap-plan-2-followups/_archive/` (the 5 follow-ups) |
 
 `git log --oneline` is the real story. Plan 2's own review-fix commits (`fix:`
 on top of each `feat:`) record exactly what was wrong and why — most tasks
 took 1-2 fix rounds, a few (Task 11's rect-race, Task 13's SaveDialog crash
 + modal-focus regression, Task 14's silent-failure gaps, Task 18's dry-run/
-refusal asymmetry, Task 19's map-name races) took real, substantive fixes
-worth reading if you touch those files again.
+refusal asymmetry, Task 19's map-name races, the live-render follow-up's
+debounce/invariant-coverage rounds) took real, substantive fixes worth
+reading if you touch those files again.
 
-**`docs/superpowers/plans/2026-08-26-pokemap-plan-2-editing.md` itself is
-still uncommitted in the working tree** (`git status` shows it modified —
-this predates this session and was left alone deliberately, not an
-oversight: only the user commits repo state, this agent never has). The
-committed version on `master` is the OLD coarse, task-level-only text from
-`94d2a28`; the real re-granularised full-TDD-step text every Plan 2 task
-(1-19) was actually executed against lives only in this uncommitted working
-copy. If a future session needs Plan 2's exact executed text after this
-file is ever reverted/cleaned, the two are NOT the same document — check
-`git diff` on it before assuming either version is current. Whether to
-commit it is the user's call, not an agent default.
+`docs/superpowers/plans/2026-08-26-pokemap-plan-2-editing.md` — the real,
+re-granularised full-TDD-step text every Plan 2 task was actually executed
+against (done 2026-09-13) — was committed to `master` this session
+(`f65e39b`), replacing the old coarse task-level-only text from `94d2a28`
+that used to be the only committed version. No more working-tree/committed
+split on this file.
 
 ## Running it
 
@@ -264,6 +276,65 @@ already used by `guards.test.ts`/`save.test.ts`) rather than inventing a
 new partial-`Project` pattern — check for an existing stub/fixture helper
 before building a new one when a test needs a partial version of a real
 interface.
+
+## Lessons from the Plan 2 follow-ups (2026-09-22 — new, add to everything above)
+
+**When a task isn't pre-written (unlike Plan 2's own tasks, these 5 were one-line
+gap descriptions from a prior session, not full TDD-step text), work out the
+concrete mechanism yourself before dispatching, especially anywhere state has to
+survive a re-render or a network round trip.** The live-render follow-up is the
+clearest case: the coordinator traced through `MapCanvas.tsx`'s actual effect
+ordering ahead of time and specified an exact `paintVersion`/`imgLoaded`/
+`fittedForMapRef` mechanism in the dispatch prompt, rather than just describing
+the goal ("make painted tiles show up") and letting the implementer improvise. It
+still took two real fix rounds (a spurious map-switch double-bump, 3-4x redundant
+renders per paint stroke, zero regression-test coverage of either invariant a
+naive implementation would have silently broken) — but every one of those was a
+refinement of a working design, not a rediscovery of the whole mechanism from
+scratch the way an under-specified dispatch would have produced.
+
+**A component that always receives a truthy prop object will always take that
+branch, even when the object's OWN fields are empty/default — "is the prop
+present" and "does the prop have real data" are different questions, and code
+written as if they're the same silently breaks.** `MapCanvas.tsx`'s `blocks =
+editSession ? editSession.blocks : staticBlocks` looks like a safe live/static
+fallback, but `App.tsx` always passes a real `editSession` object (the hook
+never returns `undefined`) — so it ALWAYS takes the live branch, even when
+`editSession.blocks` is `[]`. This bit twice: the live-render mechanism needs
+`imgLoaded` to genuinely cycle false→true on every reload, not just once ever,
+or the canvas freezes on stale pixels (naively "fixing" it only once, at mount,
+is the wrong fix); and the discard follow-up's `useEditSession.discard()` had
+to deliberately bypass its own file's otherwise-consistent `call()`/
+`applyResponse` helper and reset local state to `initialBlocks`/`initialMap`
+(the pre-edit seed) instead of the server's own empty "nothing open" response —
+routing it through the normal path would have blanked the canvas permanently
+after every discard. Both fixes needed a doc comment explicit enough that a
+future "simplification" back to the file's own normal pattern wouldn't silently
+reintroduce the bug — write that comment, don't rely on the fix being obviously
+load-bearing from the diff alone.
+
+**A UI convenience action (a button, a tool) can quietly change the meaning of
+an EXISTING button's label if you're not careful — check what a word like
+"Cancel"/"Discard" already promises before wiring new destructive capability
+near it.** `SaveDialog.tsx`'s "Cancel" button had a comment explicitly flagging
+"no real discard route exists" as the reason it wasn't already called
+"Discard." Once a real discard route existed, the tempting shortcut was wiring
+Cancel straight to it — but Cancel's established meaning ("not right now, keep
+my edits") and a real discard's meaning ("throw away all my edits") are
+opposite operations that happen to sound similar. The coordinator made this
+call explicitly before dispatch (new, separate, confirmation-gated button; leave
+Cancel alone) rather than leaving it for the implementer to guess — worth doing
+any time a new capability could plausibly get attached to an existing control
+whose name almost-but-not-quite already implies it.
+
+**Live-verify on a write-adjacent path (event elevation, discard) needs the
+same I8 before/after decomp-baseline discipline as a real save, even though the
+feature itself might never write** — the event-elevation follow-up's live-verify
+caught a real, unrelated, pre-existing bug (`applyJsonOps` ordering) specifically
+*because* it exercised a real "Add Event then move it" sequence against the real
+decomp, which a narrower "just check the elevation field persists" test would
+never have reached. Real, end-to-end live-verify keeps finding things scoped
+unit tests structurally cannot.
 
 ## Things that will bite you (carried forward, still all true)
 
