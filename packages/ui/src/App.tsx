@@ -529,6 +529,7 @@ export function App() {
                     primaryCount={layout.data.primaryCount}
                     secondaryCount={layout.data.secondaryCount}
                     onSelect={setCurrentStamp}
+                    selected={currentStamp}
                   />
                 </div>
               )}

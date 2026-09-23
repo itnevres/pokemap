@@ -106,4 +106,80 @@ describe("MetatilePalette", () => {
     fireEvent.mouseUp(screen.getByRole("button", { name: "metatile 0x10" }));
     expect(onSelect).toHaveBeenCalledWith({ width: 1, height: 2, cells: [{ metatileId: 1 }, { metatileId: 16 }] });
   });
+
+  // Follow-up 6: MetatilePalette had no notion of a currently-selected cell
+  // -- a pick worked (fed onSelect) but was invisible. `selected` is a
+  // purely visual echo of App.tsx's own currentStamp, same controlled-prop
+  // shape CollisionPalette's own `selected` already uses.
+  it("highlights the cell whose id is in selected.cells, and no other", () => {
+    render(
+      <MetatilePalette
+        layoutName="Test_Layout" split={SPLIT} primaryCount={4} secondaryCount={3}
+        onSelect={() => {}} selected={{ width: 1, height: 1, cells: [{ metatileId: 1 }] }}
+      />,
+    );
+    const picked = screen.getByRole("button", { name: /metatile 0x1\b/i }) as HTMLButtonElement;
+    expect(picked.getAttribute("aria-pressed")).toBe("true");
+    expect(picked.className).toContain("metatile-palette__cell--selected");
+
+    const notPicked = screen.getByRole("button", { name: /metatile 0x2\b/i }) as HTMLButtonElement;
+    expect(notPicked.getAttribute("aria-pressed")).toBe("false");
+    expect(notPicked.className).not.toContain("metatile-palette__cell--selected");
+  });
+
+  // Regression guard, not just "doesn't crash": omitting `selected` (or
+  // passing null, App.tsx's own initial currentStamp value) must not mark
+  // ANY cell as selected.
+  it("shows no cell as selected when selected is omitted or null", () => {
+    const { rerender } = render(
+      <MetatilePalette layoutName="Test_Layout" split={SPLIT} primaryCount={4} secondaryCount={3} onSelect={() => {}} />,
+    );
+    for (const btn of screen.getAllByRole("button", { name: /^metatile 0x/i })) {
+      expect((btn as HTMLButtonElement).getAttribute("aria-pressed")).toBe("false");
+    }
+
+    rerender(
+      <MetatilePalette layoutName="Test_Layout" split={SPLIT} primaryCount={4} secondaryCount={3} onSelect={() => {}} selected={null} />,
+    );
+    for (const btn of screen.getAllByRole("button", { name: /^metatile 0x/i })) {
+      expect((btn as HTMLButtonElement).getAttribute("aria-pressed")).toBe("false");
+    }
+  });
+
+  // MetatilePalette is a controlled/uncontrolled mix: it calls onSelect, but
+  // the actual highlight only moves once the PARENT re-renders with a new
+  // `selected` prop (App.tsx's own currentStamp, set from onSelect). This
+  // simulates that parent round trip and confirms the OLD highlight clears
+  // -- not two cells highlighted at once.
+  it("moves the highlight to a newly selected cell once the parent re-renders with the new selected prop, clearing the old one", () => {
+    const onSelect = vi.fn();
+    const { rerender } = render(
+      <MetatilePalette
+        layoutName="Test_Layout" split={SPLIT} primaryCount={4} secondaryCount={3}
+        onSelect={onSelect} selected={{ width: 1, height: 1, cells: [{ metatileId: 1 }] }}
+      />,
+    );
+    const first = screen.getByRole("button", { name: /metatile 0x1\b/i }) as HTMLButtonElement;
+    const second = screen.getByRole("button", { name: /metatile 0x2\b/i }) as HTMLButtonElement;
+    expect(first.getAttribute("aria-pressed")).toBe("true");
+    expect(second.getAttribute("aria-pressed")).toBe("false");
+
+    fireEvent.click(second);
+    expect(onSelect).toHaveBeenCalledWith({ width: 1, height: 1, cells: [{ metatileId: 2 }] });
+    // A real click alone doesn't move the highlight -- this component holds
+    // no selection state of its own -- so without a re-render the OLD
+    // selected prop is still in effect here.
+    expect(first.getAttribute("aria-pressed")).toBe("true");
+    expect(second.getAttribute("aria-pressed")).toBe("false");
+
+    // Simulate App.tsx's own re-render with the new currentStamp.
+    rerender(
+      <MetatilePalette
+        layoutName="Test_Layout" split={SPLIT} primaryCount={4} secondaryCount={3}
+        onSelect={onSelect} selected={{ width: 1, height: 1, cells: [{ metatileId: 2 }] }}
+      />,
+    );
+    expect(screen.getByRole("button", { name: /metatile 0x1\b/i }).getAttribute("aria-pressed")).toBe("false");
+    expect(screen.getByRole("button", { name: /metatile 0x2\b/i }).getAttribute("aria-pressed")).toBe("true");
+  });
 });

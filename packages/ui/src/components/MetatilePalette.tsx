@@ -8,6 +8,16 @@ export interface MetatilePaletteProps {
   primaryCount: number;
   secondaryCount: number;
   onSelect(stamp: Stamp): void;
+  /** Purely visual echo of whatever the parent's own `currentStamp` holds
+   *  (App.tsx) -- same controlled-prop shape CollisionPalette's own
+   *  `selected` already uses. A cell is highlighted when its id appears
+   *  among `selected.cells`' metatileIds; every real caller of `onSelect`
+   *  (a single click, a drag-rect, or MapCanvas's dropper pick) always
+   *  produces cells that carry a real metatileId, so this never needs to
+   *  handle a collision-only cell (StampCell.metatileId can be omitted in
+   *  general, per paint.ts's own doc comment, but never for a stamp that
+   *  reaches this component). */
+  selected?: Stamp | null;
   /** Overrides the rendered id set with a single contiguous `0..N-1` range
    *  -- ONLY meaningful for exercising the out-of-range gap between a
    *  tileset's REAL count and the split boundary (ids `primaryCount` up to
@@ -36,10 +46,15 @@ const hex = (n: number) => `0x${n.toString(16).toUpperCase()}`;
  * exist rather than just describing it.
  */
 export function MetatilePalette({
-  layoutName, split, primaryCount, secondaryCount, onSelect, visibleCount, columns = 8,
+  layoutName, split, primaryCount, secondaryCount, onSelect, selected, visibleCount, columns = 8,
 }: MetatilePaletteProps) {
   const [query, setQuery] = useState("");
   const [dragStart, setDragStart] = useState<number | null>(null);
+
+  const selectedIds = useMemo(
+    () => new Set((selected?.cells ?? []).map((c) => c.metatileId).filter((id): id is number => id !== undefined)),
+    [selected],
+  );
 
   /** Default: exactly the ids that REALLY exist -- primary 0..primaryCount-1,
    *  then secondary split.metatiles..split.metatiles+secondaryCount-1 -- so
@@ -124,6 +139,7 @@ export function MetatilePalette({
         {visible.map((id) => {
           const outOfRange = isOutOfRange(id);
           const atBoundary = id === split.metatiles;
+          const isSelected = selectedIds.has(id);
           return (
             <Fragment key={id}>
               {atBoundary && (
@@ -134,7 +150,8 @@ export function MetatilePalette({
               <button
                 type="button"
                 aria-label={`metatile ${hex(id)}`}
-                className={`metatile-palette__cell${outOfRange ? " metatile-palette__cell--out-of-range" : ""}`}
+                aria-pressed={isSelected}
+                className={`metatile-palette__cell${outOfRange ? " metatile-palette__cell--out-of-range" : ""}${isSelected ? " metatile-palette__cell--selected" : ""}`}
                 disabled={outOfRange}
                 // Split three ways, not two: `onMouseDown`/`onMouseUp` alone
                 // detect a drag-rect (down on one cell, up on another) but
@@ -157,7 +174,17 @@ export function MetatilePalette({
                 }}
                 onClick={() => selectSingle(id)}
               >
-                <img className="metatile-palette__thumb" src={`/api/metatile/${encodeURIComponent(layoutName)}/${id}.png`} alt="" width={16} height={16} />
+                {/* draggable={false}: confirmed live -- an <img> is natively
+                    draggable by default, so a real mouse-drag starting on
+                    this thumb fired the browser's own dragstart/dragend
+                    instead of a same-target mousedown -> different-target
+                    mouseup pair, and onMouseUp's own selectRect above never
+                    ran at all (jsdom's fireEvent.mouseDown/mouseUp in this
+                    component's own test suite has no native drag concept,
+                    so this was invisible there). This is the standard fix
+                    for "an image inside a click/drag target shouldn't start
+                    its own drag". */}
+                <img className="metatile-palette__thumb" src={`/api/metatile/${encodeURIComponent(layoutName)}/${id}.png`} alt="" width={16} height={16} draggable={false} />
               </button>
             </Fragment>
           );

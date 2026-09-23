@@ -492,6 +492,31 @@ describe("App -- metatile palette wiring", () => {
     vi.unstubAllGlobals();
   });
 
+  // Follow-up 6: proves currentStamp really flows DOWN into MetatilePalette's
+  // own `selected` prop after a real pick, not just that onSelect fires (the
+  // tests above already cover onSelect/paint wiring) -- the actual
+  // end-to-end round trip App.tsx's `selected={currentStamp}` line adds.
+  it("highlights the picked metatile in the palette itself after a real click, via currentStamp flowing back into selected", async () => {
+    vi.stubGlobal("fetch", makeEditFetchMock());
+    render(<App />);
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "PalletTown" })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "PalletTown" }));
+
+    await screen.findByRole("button", { name: "pencil" });
+    fireEvent.click(screen.getByRole("button", { name: "pencil" }));
+    await waitFor(() => expect(screen.getByPlaceholderText(/search/i)).toBeTruthy());
+
+    const picked = screen.getByRole("button", { name: /metatile 0x1\b/i }) as HTMLButtonElement;
+    expect(picked.getAttribute("aria-pressed")).toBe("false");
+
+    fireEvent.click(picked);
+
+    await waitFor(() => expect(picked.getAttribute("aria-pressed")).toBe("true"));
+
+    vi.unstubAllGlobals();
+  });
+
   it("keeps the chosen stamp when switching tools -- pencil/rect/bucket deliberately share one stamp (Porymap parity), no re-pick needed", async () => {
     const paintApplyBodies: unknown[] = [];
     vi.stubGlobal("fetch", makeEditFetchMock(paintApplyBodies));

@@ -1942,6 +1942,30 @@ input {
   pointer-events: none;
 }
 
+/* Follow-up 6: the currently-picked metatile (echoed back via App.tsx's own
+   `currentStamp` as this component's `selected` prop) had zero visual
+   confirmation -- a pick worked (fed pencil/rect/bucket) but looked
+   identical to every other cell. Same selected/active-state pairing this
+   app already uses everywhere else (.map-canvas__btn[aria-pressed="true"],
+   .toolbar__tool-btn--active, .lens-panel__toggle[aria-pressed="true"]):
+   --bg-selected + --border-strong. Can't co-occur with --out-of-range in
+   practice (out-of-range cells are never selectable -- selectSingle/
+   selectRect both already skip them), but the out-of-range strike-through
+   (::after, a real red line) still paints on top regardless of background,
+   so the two would read fine together even if it somehow happened.
+   Confirmed live: `.metatile-palette__cell.metatile-palette__cell--selected`
+   alone (2 classes) loses the cascade to the existing
+   `.metatile-palette__cell:hover:not(:disabled)` rule just above (3
+   classes/pseudo-classes) regardless of source order -- hovering a selected
+   cell silently reverted it to the plain hover look. The extra
+   `:not(:disabled)` here is a no-op for real usage (a selected cell is never
+   disabled) but brings this rule to the same specificity, so -- combined
+   with sitting after the hover rule in source -- it wins the tie. */
+.metatile-palette__cell.metatile-palette__cell--selected:not(:disabled) {
+  background: var(--bg-selected);
+  border-color: var(--border-strong);
+}
+
 .metatile-palette__thumb {
   width: 16px;
   height: 16px;
