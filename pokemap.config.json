@@ -6,5 +6,9 @@
     "C:/Programming Projects/Pokemon Game/refs/pokeemerald-expansion",
     "C:/Programming Projects/Pokemon Game/refs/modern-emerald",
     "C:/Programming Projects/Pokemon Game/refs/pokeclassic"
-  ]
+  ],
+  "gbc": {
+    "projectPath": "C:/Programming Projects/pokecrystal-PerfPlus",
+    "referenceProjects": []
+  }
 }
