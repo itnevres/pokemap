@@ -1,4 +1,7 @@
 import { describe, it, expect } from "vitest";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, dirname } from "node:path";
 import {
   evalPercent,
   parseGrassFile,
@@ -11,6 +14,7 @@ import {
   wildForMap,
 } from "../../../src/gbc/load/encounters.js";
 import { loadGbcMaps } from "../../../src/gbc/load/map.js";
+import type { GbcWildData } from "../../../src/gbc/model/types.js";
 import { GBC_SUBJECT_ROOT, itWithGbcCorpus } from "../helpers/corpus.js";
 
 describe("evalPercent", () => {
@@ -44,7 +48,7 @@ describe("parseGrassFile", () => {
     "JohtoGrassWildMons:",
     "",
     "\tdef_grass_wildmons SPROUT_TOWER_2F",
-    "\tdb 2 percent, 2 percent, 2 percent ; encounter rates: morn/day/nite",
+    "\tdb 3 percent, 4 percent, 5 percent ; encounter rates: morn/day/nite -- deliberately UNEQUAL (M10: a morn/nite rate swap must go red)",
     "\t; morn",
     "\tdb 3, RATTATA",
     "\tdb 4, RATTATA",
@@ -82,9 +86,9 @@ describe("parseGrassFile", () => {
     expect(e.mapConst).toBe("SPROUT_TOWER_2F");
     expect(e.file).toBe("data/wild/johto_grass.asm");
     expect(e.swarm).toBe(false);
-    expect(e.rates.morn).toEqual({ raw: "2 percent", resolved: 5 });
-    expect(e.rates.day).toEqual({ raw: "2 percent", resolved: 5 });
-    expect(e.rates.nite).toEqual({ raw: "2 percent", resolved: 5 });
+    expect(e.rates.morn).toEqual({ raw: "3 percent", resolved: 7 }); // floor(3*255/100)=7.65->7
+    expect(e.rates.day).toEqual({ raw: "4 percent", resolved: 10 }); // floor(4*255/100)=10.2->10
+    expect(e.rates.nite).toEqual({ raw: "5 percent", resolved: 12 }); // floor(5*255/100)=12.75->12
     expect(e.slots.morn).toEqual([
       { level: 3, species: "RATTATA" },
       { level: 4, species: "RATTATA" },
@@ -127,8 +131,24 @@ describe("parseGrassFile", () => {
   });
 
   it("refuses a rate line with the wrong argument count", () => {
-    const bad = oneEntry.replace("\tdb 2 percent, 2 percent, 2 percent ; encounter rates: morn/day/nite", "\tdb 2 percent, 2 percent ; oops");
-    expect(() => parseGrassFile(bad, "x.asm")).toThrow(/3/);
+    const bad = oneEntry.replace(
+      "\tdb 3 percent, 4 percent, 5 percent ; encounter rates: morn/day/nite -- deliberately UNEQUAL (M10: a morn/nite rate swap must go red)",
+      "\tdb 3 percent, 4 percent ; oops",
+    );
+    expect(() => parseGrassFile(bad, "x.asm")).toThrow(/x\.asm:4: SPROUT_TOWER_2F: rate line has 2 argument\(s\), expected 3/);
+  });
+
+  it("refuses a rate line whose percent expression evalPercent doesn't recognize, naming file+line (Issue 3)", () => {
+    const bad = oneEntry.replace(
+      "\tdb 3 percent, 4 percent, 5 percent ; encounter rates: morn/day/nite -- deliberately UNEQUAL (M10: a morn/nite rate swap must go red)",
+      "\tdb 3 percent, BOGUS, 5 percent ; encounter rates: morn/day/nite",
+    );
+    expect(() => parseGrassFile(bad, "x.asm")).toThrow(/^x\.asm:4: evalPercent: "BOGUS" is not a recognized/);
+  });
+
+  it("refuses a slot line with the wrong argument count (Issue 1: readSlots must require exactly 2 args)", () => {
+    const bad = oneEntry.replace("\tdb 3, GASTLY", "\tdb 3, GASTLY, 9");
+    expect(() => parseGrassFile(bad, "x.asm")).toThrow(/^x\.asm:22: SPROUT_TOWER_2F: slot line has 3 argument\(s\), expected 2$/);
   });
 });
 
@@ -171,6 +191,12 @@ describe("parseWaterFile", () => {
     expect(entries).toEqual([]);
     expect(defects).toEqual([]);
   });
+
+  it("tags a NON-empty swarm water table's entries swarm: true (M9: swarm_water.asm has 0 entries on the real corpus, so that alone can't prove the flag propagates)", () => {
+    const { entries } = parseWaterFile(text, "data/wild/swarm_water.asm", true);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]!.swarm).toBe(true);
+  });
 });
 
 describe("parseWildProbabilities", () => {
@@ -203,6 +229,13 @@ describe("parseWildProbabilities", () => {
     const probs = parseWildProbabilities(text);
     expect(probs.grass).toEqual([25, 25, 20, 10, 10, 5, 5]);
     expect(probs.water).toEqual([45, 30, 25]);
+  });
+
+  it("refuses a mon_prob call with the wrong argument count, naming file+line, instead of a bare TypeError (Minor 2)", () => {
+    const bad = text.replace("\tmon_prob 50,  1 ; 25% chance", "\tmon_prob 50 ; oops");
+    expect(() => parseWildProbabilities(bad, "probabilities.asm")).toThrow(
+      /^probabilities\.asm:9: "mon_prob" has 1 argument\(s\), expected 2$/,
+    );
   });
 });
 
@@ -264,6 +297,25 @@ describe("parseFishGroups", () => {
       { index: 1, day: { species: "SHELLDER", level: 20 }, nite: { species: "SHELLDER", level: 20 } },
     ]);
   });
+
+  it("refuses a rod record with the wrong argument count, naming file+line (Issue 3)", () => {
+    const bad = text.replace("\tdb  70 percent + 1, MAGIKARP,   10", "\tdb  70 percent + 1, MAGIKARP,   10, EXTRA");
+    expect(() => parseFishGroups(bad, ["FISHGROUP_SHORE"], "fish.asm")).toThrow(
+      /^fish\.asm:15: rod record: "70 percent \+ 1, MAGIKARP, 10, EXTRA" is neither/,
+    );
+  });
+
+  it("refuses a mon_prob-adjacent bite-chance percent it doesn't recognize, naming file+line (Issue 3, at() wrapper)", () => {
+    const bad = text.replace("\tfishgroup 50 percent + 1, .Shore_Old,            .Shore_Good,            .Shore_Super", "\tfishgroup BOGUS, .Shore_Old, .Shore_Good, .Shore_Super");
+    expect(() => parseFishGroups(bad, ["FISHGROUP_SHORE"], "fish.asm")).toThrow(/^fish\.asm:11: evalPercent: "BOGUS" is not a recognized/);
+  });
+
+  it("refuses a TimeFishGroups row with the wrong argument count, naming file+line", () => {
+    const bad = text.replace("\tdb CORSOLA,    20,  STARYU,     20 ; 0", "\tdb CORSOLA, 20, STARYU");
+    expect(() => parseFishGroups(bad, ["FISHGROUP_SHORE"], "fish.asm")).toThrow(
+      /^fish\.asm:30: TimeFishGroups row 0: 3 argument\(s\), expected 4$/,
+    );
+  });
 });
 
 describe("parseTreemonSets", () => {
@@ -315,6 +367,24 @@ describe("parseTreemonSets", () => {
       { percent: 15, species: "SPEAROW", level: 10 },
     ]);
     expect(sets[0]!.rare).toEqual([{ percent: 30, species: "SPEAROW", level: 10 }]);
+  });
+
+  it("refuses a treemon record with the wrong argument count, naming file+line (Issue 1/3)", () => {
+    const bad = text.replace("\tdb 50, SPEAROW,    10", "\tdb 50, SPEAROW");
+    expect(() => parseTreemonSets(bad, ["TREEMON_SET_CITY", "TREEMON_SET_ROCK"], "treemons.asm")).toThrow(
+      /^treemons\.asm:10: treemon record: "50, SPEAROW" has 2 argument\(s\), expected 3$/,
+    );
+  });
+
+  it("refuses a set body with data left over after the common+rare lists (Issue 1: a set body is exactly 1 or 2 db -1-terminated lists)", () => {
+    const extra = text.replace(
+      ["\tdb 30, SPEAROW,    10", "\tdb -1", "", "TreeMonSet_Rock:"].join("\n"),
+      ["\tdb 30, SPEAROW,    10", "\tdb -1", "\tdb 99, MAGIKARP,   5", "", "TreeMonSet_Rock:"].join("\n"),
+    );
+    expect(extra).not.toBe(text);
+    expect(() => parseTreemonSets(extra, ["TREEMON_SET_CITY", "TREEMON_SET_ROCK"], "treemons.asm")).toThrow(
+      /^treemons\.asm:16: TreeMonSet_City: unexpected data after the rare list \("99, MAGIKARP, 5"\)$/,
+    );
   });
 
   it("a set with only one db -1-terminated list (Rock) has rare: null", () => {
@@ -378,6 +448,179 @@ describe("parseTreemonMaps", () => {
   });
 });
 
+describe("wildForMap: unknown treemon/rock set const (Issue 2)", () => {
+  const emptyData: GbcWildData = {
+    grass: [],
+    water: [],
+    probabilities: { grass: [], water: [] },
+    fishGroups: [],
+    timeFishGroups: [],
+    treemonSets: [{ constName: "TREEMON_SET_CITY", index: 0, yieldsNothing: true, common: [], rare: null }],
+    treemonMaps: [],
+    rockMonMaps: [],
+    defects: [],
+  };
+
+  it("throws naming the map and the unknown const when a treemon row's set const doesn't resolve, instead of silently returning null", () => {
+    const data: GbcWildData = { ...emptyData, treemonMaps: [{ mapConst: "SOME_MAP", setConst: "TREEMON_SET_TYPO", lineIndex: 0 }] };
+    expect(() => wildForMap(data, { constName: "SOME_MAP", fishGroup: "FISHGROUP_NONE", name: "SomeMap" })).toThrow(
+      /^wildForMap: SomeMap: unknown treemon set "TREEMON_SET_TYPO"$/,
+    );
+  });
+
+  it("throws naming the map and the unknown const when a rock row's set const doesn't resolve", () => {
+    const data: GbcWildData = { ...emptyData, rockMonMaps: [{ mapConst: "SOME_MAP", setConst: "TREEMON_SET_TYPO", lineIndex: 0 }] };
+    expect(() => wildForMap(data, { constName: "SOME_MAP", fishGroup: "FISHGROUP_NONE", name: "SomeMap" })).toThrow(
+      /^wildForMap: SomeMap: unknown treemon set "TREEMON_SET_TYPO"$/,
+    );
+  });
+
+  it("a map with NO treemon/rock row still returns null / {set:null, yieldsNothing:false}, not a throw", () => {
+    const w = wildForMap(emptyData, { constName: "SOME_MAP", fishGroup: "FISHGROUP_NONE", name: "SomeMap" });
+    expect(w.headbutt).toEqual({ set: null, yieldsNothing: false });
+    expect(w.rock).toBeNull();
+  });
+
+  it("resolves a real set const without throwing", () => {
+    const data: GbcWildData = { ...emptyData, treemonMaps: [{ mapConst: "SOME_MAP", setConst: "TREEMON_SET_CITY", lineIndex: 0 }] };
+    const w = wildForMap(data, { constName: "SOME_MAP", fishGroup: "FISHGROUP_NONE", name: "SomeMap" });
+    expect(w.headbutt.set?.constName).toBe("TREEMON_SET_CITY");
+    expect(w.headbutt.yieldsNothing).toBe(true);
+  });
+});
+
+/** Minimal, hand-built `data/wild/*.asm` + `constants/*.asm` fixture set that `loadGbcWildData` will load cleanly (Issue 2's unknown-const refusals need a real root to load from, not a hand-built `GbcWildData`). `overrides` replaces individual files by their repo-relative path. */
+function makeWildDataRoot(overrides: Record<string, string> = {}): string {
+  const johtoGrass = (mapConst: string) =>
+    ["JohtoGrassWildMons:", "", `\tdef_grass_wildmons ${mapConst}`, "\tdb 2 percent, 2 percent, 2 percent", ...Array.from({ length: 21 }, () => "\tdb 3, RATTATA"), "\tend_grass_wildmons", "", "\tdb -1"].join(
+      "\n",
+    );
+  const emptyGrass = (label: string) => [`${label}:`, "", "\tdb -1 ; end"].join("\n");
+  const emptyWater = (label: string) => [`${label}:`, "", "\tdb -1 ; end"].join("\n");
+  const probabilities = [
+    "MACRO mon_prob",
+    "\tdb \\1, \\2 * 2",
+    "ENDM",
+    "",
+    "GrassMonProbTable:",
+    ...Array.from({ length: 7 }, (_, i) => `\tmon_prob ${(i + 1) * 10}, ${i}`),
+    "",
+    "WaterMonProbTable:",
+    ...Array.from({ length: 3 }, (_, i) => `\tmon_prob ${(i + 1) * 10}, ${i}`),
+  ].join("\n");
+  const fish = [
+    "MACRO fishgroup",
+    "\tdb \\1",
+    "\tdw \\2, \\3, \\4",
+    "ENDM",
+    "",
+    "FishGroups:",
+    "\tfishgroup 50 percent + 1, .Shore_Old, .Shore_Good, .Shore_Super",
+    "",
+    ".Shore_Old:",
+    "\tdb 100 percent, MAGIKARP, 10",
+    ".Shore_Good:",
+    "\tdb 100 percent, MAGIKARP, 10",
+    ".Shore_Super:",
+    "\tdb 100 percent, MAGIKARP, 10",
+    "",
+    "TimeFishGroups:",
+    "\tdb CORSOLA, 20, STARYU, 20",
+  ].join("\n");
+  const treemons = ["TreeMons:", "\tdw TreeMonSet_City", "\tassert_table_length NUM_TREEMON_SETS", "", "TreeMonSet_City:", "\tdb 50, SPEAROW, 10", "\tdb -1"].join("\n");
+  const treemonMaps = ["TreeMonMaps:", "\tdb -1", "", "RockMonMaps:", "\tdb -1"].join("\n");
+  const mapDataConsts = ["const_def", "\tconst FISHGROUP_NONE", "\tconst FISHGROUP_SHORE"].join("\n");
+  const pokemonDataConsts = ["const_def", "\tconst TREEMON_SET_CITY"].join("\n");
+  const mapConstants = ["\tnewgroup", "\tmap_const REAL_MAP, 10, 10", "\tendgroup"].join("\n");
+
+  const files: Record<string, string> = {
+    "data/wild/johto_grass.asm": johtoGrass("REAL_MAP"),
+    "data/wild/kanto_grass.asm": emptyGrass("KantoGrassWildMons"),
+    "data/wild/swarm_grass.asm": emptyGrass("SwarmGrassWildMons"),
+    "data/wild/johto_water.asm": emptyWater("JohtoWaterWildMons"),
+    "data/wild/kanto_water.asm": emptyWater("KantoWaterWildMons"),
+    "data/wild/swarm_water.asm": emptyWater("SwarmWaterWildMons"),
+    "data/wild/probabilities.asm": probabilities,
+    "data/wild/fish.asm": fish,
+    "data/wild/treemons.asm": treemons,
+    "data/wild/treemon_maps.asm": treemonMaps,
+    "constants/map_data_constants.asm": mapDataConsts,
+    "constants/pokemon_data_constants.asm": pokemonDataConsts,
+    "constants/map_constants.asm": mapConstants,
+    ...overrides,
+  };
+  const dir = mkdtempSync(join(tmpdir(), "gbc-wild-fixture-"));
+  for (const [rel, content] of Object.entries(files)) {
+    const full = join(dir, rel);
+    mkdirSync(dirname(full), { recursive: true });
+    writeFileSync(full, content);
+  }
+  return dir;
+}
+
+describe("loadGbcWildData: unknown-const refusals (Issue 2)", () => {
+  it("loads cleanly with an all-valid fixture (sanity check for the fixture itself)", () => {
+    const dir = makeWildDataRoot();
+    try {
+      expect(() => loadGbcWildData(dir)).not.toThrow();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses a grass entry naming a map const that isn't a real map_const, naming file+line", () => {
+    const johtoGrassBad = [
+      "JohtoGrassWildMons:",
+      "",
+      "\tdef_grass_wildmons BAD_MAP",
+      "\tdb 2 percent, 2 percent, 2 percent",
+      ...Array.from({ length: 21 }, () => "\tdb 3, RATTATA"),
+      "\tend_grass_wildmons",
+      "",
+      "\tdb -1",
+    ].join("\n");
+    const dir = makeWildDataRoot({ "data/wild/johto_grass.asm": johtoGrassBad });
+    try {
+      expect(() => loadGbcWildData(dir)).toThrow(/^data\/wild\/johto_grass\.asm:3: unknown map constant "BAD_MAP"/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses a treemon_map row naming a map const that isn't a real map_const, naming file+line", () => {
+    const dir = makeWildDataRoot({
+      "data/wild/treemon_maps.asm": ["TreeMonMaps:", "\ttreemon_map BAD_MAP, TREEMON_SET_CITY", "\tdb -1", "", "RockMonMaps:", "\tdb -1"].join("\n"),
+    });
+    try {
+      expect(() => loadGbcWildData(dir)).toThrow(/^data\/wild\/treemon_maps\.asm:2: unknown map constant "BAD_MAP"/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses a treemon_map row naming a set const that isn't one of the derived TREEMON_SET_* names, naming file+line", () => {
+    const dir = makeWildDataRoot({
+      "data/wild/treemon_maps.asm": ["TreeMonMaps:", "\ttreemon_map REAL_MAP, TREEMON_SET_TYPO", "\tdb -1", "", "RockMonMaps:", "\tdb -1"].join("\n"),
+    });
+    try {
+      expect(() => loadGbcWildData(dir)).toThrow(/^data\/wild\/treemon_maps\.asm:2: unknown treemon set constant "TREEMON_SET_TYPO"/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses a rock row naming a set const that isn't one of the derived TREEMON_SET_* names, naming file+line", () => {
+    const dir = makeWildDataRoot({
+      "data/wild/treemon_maps.asm": ["TreeMonMaps:", "\tdb -1", "", "RockMonMaps:", "\ttreemon_map REAL_MAP, TREEMON_SET_TYPO", "\tdb -1"].join("\n"),
+    });
+    try {
+      expect(() => loadGbcWildData(dir)).toThrow(/^data\/wild\/treemon_maps\.asm:5: unknown treemon set constant "TREEMON_SET_TYPO"/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("corpus", () => {
   itWithGbcCorpus("loadGbcWildData: exactly 1 defect (kanto_grass.asm, missing terminator)", () => {
     const data = loadGbcWildData(GBC_SUBJECT_ROOT);
@@ -415,12 +658,101 @@ describe("corpus", () => {
     expect(e.slots.nite[0]).toEqual({ level: 3, species: "GASTLY" });
   });
 
-  itWithGbcCorpus("13 fish groups + NONE handled by wildForMap; 22 TimeFishGroups rows, row 0 = CORSOLA 20 / STARYU 20", () => {
+  itWithGbcCorpus(
+    "13 fish groups + NONE handled by wildForMap (called on every FISHGROUP_NONE map -- M8); 22 TimeFishGroups rows, row 0 = CORSOLA 20 / STARYU 20",
+    () => {
+      const { maps } = loadGbcMaps(GBC_SUBJECT_ROOT);
+      const data = loadGbcWildData(GBC_SUBJECT_ROOT);
+      expect(data.fishGroups).toHaveLength(13);
+      expect(data.timeFishGroups).toHaveLength(22);
+      expect(data.timeFishGroups[0]).toEqual({ index: 0, day: { species: "CORSOLA", level: 20 }, nite: { species: "STARYU", level: 20 } });
+
+      const noneMaps = maps.filter((m) => m.fishGroup === "FISHGROUP_NONE");
+      expect(noneMaps.length).toBeGreaterThan(0); // vacuous-pass guard for the loop below
+      for (const m of noneMaps) {
+        const w = wildForMap(data, m);
+        expect(w.fishing.group).toBeNull();
+        expect(w.fishing.swarmVariant).toBeNull();
+      }
+    },
+  );
+
+  itWithGbcCorpus(
+    "the FISHGROUP_QWILFISH map's swarmVariant is FISHGROUP_QWILFISH_SWARM (measured: Route32); a FISHGROUP_SHORE map's swarmVariant is null (Issue 4 M2)",
+    () => {
+      const { maps } = loadGbcMaps(GBC_SUBJECT_ROOT);
+      const data = loadGbcWildData(GBC_SUBJECT_ROOT);
+      const qwilfishMap = maps.find((m) => m.fishGroup === "FISHGROUP_QWILFISH")!;
+      expect(qwilfishMap).toBeDefined();
+      expect(qwilfishMap.name).toBe("Route32"); // measured, not guessed
+      const w = wildForMap(data, qwilfishMap);
+      expect(w.fishing.group?.constName).toBe("FISHGROUP_QWILFISH");
+      expect(w.fishing.swarmVariant?.constName).toBe("FISHGROUP_QWILFISH_SWARM");
+
+      const shoreMap = maps.find((m) => m.fishGroup === "FISHGROUP_SHORE")!;
+      expect(shoreMap).toBeDefined();
+      const w2 = wildForMap(data, shoreMap);
+      expect(w2.fishing.group?.constName).toBe("FISHGROUP_SHORE");
+      expect(w2.fishing.swarmVariant).toBeNull();
+    },
+  );
+
+  itWithGbcCorpus(
+    "wildForMap(Route35): swarm grass is swarm_grass.asm's Yanma entry (swarm=true), base is the johto_grass entry (swarm=false), and their slots measurably differ (Issue 4 M1/M12)",
+    () => {
+      const { map } = loadGbcMaps(GBC_SUBJECT_ROOT);
+      const data = loadGbcWildData(GBC_SUBJECT_ROOT);
+      const w = wildForMap(data, map("Route35"));
+
+      expect(w.grass.swarm).not.toBeNull();
+      expect(w.grass.swarm!.swarm).toBe(true);
+      expect(w.grass.swarm!.file).toBe("data/wild/swarm_grass.asm");
+
+      expect(w.grass.base).not.toBeNull();
+      expect(w.grass.base!.swarm).toBe(false);
+      expect(w.grass.base!.file).toBe("data/wild/johto_grass.asm");
+
+      // Measured species difference: NIDORAN_M is in the swarm's morn slots
+      // but not the base entry's -- a concrete fact, not a guess.
+      const swarmMorn = new Set(w.grass.swarm!.slots.morn.map((s) => s.species));
+      const baseMorn = new Set(w.grass.base!.slots.morn.map((s) => s.species));
+      expect(swarmMorn.has("NIDORAN_M")).toBe(true);
+      expect(baseMorn.has("NIDORAN_M")).toBe(false);
+    },
+  );
+
+  itWithGbcCorpus("DIGLETTS_CAVE rates: morn 10 / day 5 / nite 20, from raw '4 percent'/'2 percent'/'8 percent' (the only unequal-rate entry)", () => {
     const data = loadGbcWildData(GBC_SUBJECT_ROOT);
-    expect(data.fishGroups).toHaveLength(13);
-    expect(data.timeFishGroups).toHaveLength(22);
-    expect(data.timeFishGroups[0]).toEqual({ index: 0, day: { species: "CORSOLA", level: 20 }, nite: { species: "STARYU", level: 20 } });
+    const e = data.grass.find((g) => g.mapConst === "DIGLETTS_CAVE" && !g.swarm)!;
+    expect(e).toBeDefined();
+    expect(e.rates.morn).toEqual({ raw: "4 percent", resolved: 10 });
+    expect(e.rates.day).toEqual({ raw: "2 percent", resolved: 5 });
+    expect(e.rates.nite).toEqual({ raw: "8 percent", resolved: 20 });
   });
+
+  itWithGbcCorpus("every grass/water entry's swarm flag equals file.startsWith('data/wild/swarm_') (M9's corpus equivalent, 0 swarm_water entries -- guarded further by the unit test)", () => {
+    const data = loadGbcWildData(GBC_SUBJECT_ROOT);
+    for (const g of data.grass) expect(g.swarm).toBe(g.file.startsWith("data/wild/swarm_"));
+    for (const w of data.water) expect(w.swarm).toBe(w.file.startsWith("data/wild/swarm_"));
+  });
+
+  itWithGbcCorpus(
+    "no map const appears in more than one non-swarm grass entry, or more than one non-swarm water entry -- guards wildForMap's concatenated Johto+Kanto search (review probe ⚠)",
+    () => {
+      const data = loadGbcWildData(GBC_SUBJECT_ROOT);
+      const countBy = <T extends { mapConst: string; swarm: boolean }>(entries: T[]): Map<string, number> => {
+        const counts = new Map<string, number>();
+        for (const e of entries) if (!e.swarm) counts.set(e.mapConst, (counts.get(e.mapConst) ?? 0) + 1);
+        return counts;
+      };
+      const grassCounts = countBy(data.grass);
+      const waterCounts = countBy(data.water);
+      expect(grassCounts.size).toBeGreaterThan(0);
+      expect(waterCounts.size).toBeGreaterThan(0);
+      expect([...grassCounts.values()].every((n) => n === 1)).toBe(true);
+      expect([...waterCounts.values()].every((n) => n === 1)).toBe(true);
+    },
+  );
 
   itWithGbcCorpus(".Shore_Good: 35%/MAGIKARP 20, 70%/KRABBY 20, 90%+1/KRABBY 20, 100%/time_group 0", () => {
     const data = loadGbcWildData(GBC_SUBJECT_ROOT);

@@ -8,6 +8,7 @@
  */
 import { readFileSync } from "node:fs";
 import { codeLines, stripComment, matchCall, scanCalls, splitArgs, parseNum, parseConstDefs } from "./asm.js";
+import { parseMapConstants } from "./map.js";
 import { norm } from "../../config/paths.js";
 import type {
   DataDefect,
@@ -40,11 +41,39 @@ const FISH_SWARM_OF = new Map<string, string>([
 ]);
 
 /**
+ * `<file>[:lineIndex+1]: <message>` -- every refusal in this file goes
+ * through this one function, so the file+line prefix never drifts between
+ * call sites (mirrors `./events.ts`'s `fail`). `lineIndex` is 0-based, as
+ * `codeLines`/`scanCalls` report it; `null` when no single line applies
+ * (e.g. a whole-table count mismatch, or a missing label).
+ */
+function fail(file: string, lineIndex: number | null, message: string): never {
+  const loc = lineIndex === null ? file : `${file}:${lineIndex + 1}`;
+  throw new Error(`${loc}: ${message}`);
+}
+
+/**
+ * Runs a shared, location-free primitive (`evalPercent`/`parseNum`) and
+ * rethrows any error it throws with this call site's `<file>:<line>` prefix
+ * -- those two functions know only the text they were given, never which
+ * file/line it came from, so every caller that has a location wraps its call
+ * through here instead of letting the bare message escape unlabeled.
+ */
+function at<T>(file: string, lineIndex: number, fn: () => T): T {
+  try {
+    return fn();
+  } catch (e) {
+    throw new Error(`${file}:${lineIndex + 1}: ${(e as Error).message}`);
+  }
+}
+
+/**
  * The real `percent` operator (`macros/data.asm`: `DEF percent EQUS "* $ff /
  * 100"`) -- `N percent` = floor(N*255/100), RGBDS integer division. Supports
  * only the shapes that occur in the corpus: `N percent`, `N percent + k`, `N
  * percent - k`. Refuses (throws, naming the text) anything else rather than
- * guessing.
+ * guessing. Location-free (no file/line): callers with a location wrap this
+ * through `at()`.
  */
 export function evalPercent(expr: string): GbcPercentValue {
   const raw = expr.trim();
@@ -75,27 +104,27 @@ function makeWildCursor(text: string, file: string) {
     skip: () => {
       i++;
     },
-    readDb(context: string, endMacroRe: RegExp): string[] {
+    readDb(context: string, endMacroRe: RegExp): { lineIndex: number; args: string[] } {
       while (i < cl.length) {
         const stripped = stripComment(cl[i]!.text).trim();
+        const lineIndex = cl[i]!.lineIndex;
         i++;
         if (stripped === "" || endMacroRe.test(stripped)) continue;
         const m = stripped.match(/^db\s+(.*)$/);
-        if (!m) throw new Error(`${file}: ${context}: expected a "db" line, found "${stripped}"`);
-        return splitArgs(m[1]!);
+        if (!m) fail(file, lineIndex, `${context}: expected a "db" line, found "${stripped}"`);
+        return { lineIndex, args: splitArgs(m[1]!) };
       }
-      throw new Error(`${file}: ${context}: unexpected end of file while reading wild data`);
+      fail(file, null, `${context}: unexpected end of file while reading wild data`);
     },
   };
 }
 
-function readSlots(cursor: ReturnType<typeof makeWildCursor>, count: number, context: string, endMacroRe: RegExp): GbcWildSlot[] {
+function readSlots(cursor: ReturnType<typeof makeWildCursor>, count: number, context: string, endMacroRe: RegExp, file: string): GbcWildSlot[] {
   return Array.from({ length: count }, () => {
-    const [level, species] = cursor.readDb(context, endMacroRe);
-    if (level === undefined || species === undefined) {
-      throw new Error(`${context}: slot line has fewer than 2 arguments`);
-    }
-    return { level: parseNum(level), species };
+    const { lineIndex, args } = cursor.readDb(context, endMacroRe);
+    if (args.length !== 2) fail(file, lineIndex, `${context}: slot line has ${args.length} argument(s), expected 2`);
+    const [level, species] = args;
+    return { level: at(file, lineIndex, () => parseNum(level!)), species: species! };
   });
 }
 
@@ -125,19 +154,23 @@ export function parseGrassFile(text: string, file: string, swarm = false): { ent
       break;
     }
     const call = matchCall(stripped, "def_grass_wildmons") ?? matchCall(stripped, "map_id");
-    if (!call) throw new Error(`${file}: unexpected line while scanning grass wild data: "${stripped}"`);
-    if (call.length !== 1) throw new Error(`${file}: grass block header has ${call.length} argument(s), expected 1: "${stripped}"`);
+    if (!call) fail(file, cursor.lineIndex(), `unexpected line while scanning grass wild data: "${stripped}"`);
+    if (call.length !== 1) fail(file, cursor.lineIndex(), `grass block header has ${call.length} argument(s), expected 1: "${stripped}"`);
     const mapConst = call[0]!;
     const lineIndex = cursor.lineIndex();
     cursor.skip();
 
-    const rateArgs = cursor.readDb(mapConst, endRe);
-    if (rateArgs.length !== 3) throw new Error(`${file}: ${mapConst}: rate line has ${rateArgs.length} argument(s), expected 3`);
-    const rates = { morn: evalPercent(rateArgs[0]!), day: evalPercent(rateArgs[1]!), nite: evalPercent(rateArgs[2]!) };
+    const rateLine = cursor.readDb(mapConst, endRe);
+    if (rateLine.args.length !== 3) fail(file, rateLine.lineIndex, `${mapConst}: rate line has ${rateLine.args.length} argument(s), expected 3`);
+    const rates = {
+      morn: at(file, rateLine.lineIndex, () => evalPercent(rateLine.args[0]!)),
+      day: at(file, rateLine.lineIndex, () => evalPercent(rateLine.args[1]!)),
+      nite: at(file, rateLine.lineIndex, () => evalPercent(rateLine.args[2]!)),
+    };
     const slots = {
-      morn: readSlots(cursor, NUM_GRASS_SLOTS, mapConst, endRe),
-      day: readSlots(cursor, NUM_GRASS_SLOTS, mapConst, endRe),
-      nite: readSlots(cursor, NUM_GRASS_SLOTS, mapConst, endRe),
+      morn: readSlots(cursor, NUM_GRASS_SLOTS, mapConst, endRe, file),
+      day: readSlots(cursor, NUM_GRASS_SLOTS, mapConst, endRe, file),
+      nite: readSlots(cursor, NUM_GRASS_SLOTS, mapConst, endRe, file),
     };
     entries.push({ mapConst, file, swarm, rates, slots, lineIndex });
   }
@@ -167,16 +200,16 @@ export function parseWaterFile(text: string, file: string, swarm = false): { ent
       break;
     }
     const call = matchCall(stripped, "def_water_wildmons") ?? matchCall(stripped, "map_id");
-    if (!call) throw new Error(`${file}: unexpected line while scanning water wild data: "${stripped}"`);
-    if (call.length !== 1) throw new Error(`${file}: water block header has ${call.length} argument(s), expected 1: "${stripped}"`);
+    if (!call) fail(file, cursor.lineIndex(), `unexpected line while scanning water wild data: "${stripped}"`);
+    if (call.length !== 1) fail(file, cursor.lineIndex(), `water block header has ${call.length} argument(s), expected 1: "${stripped}"`);
     const mapConst = call[0]!;
     const lineIndex = cursor.lineIndex();
     cursor.skip();
 
-    const rateArgs = cursor.readDb(mapConst, endRe);
-    if (rateArgs.length !== 1) throw new Error(`${file}: ${mapConst}: rate line has ${rateArgs.length} argument(s), expected 1`);
-    const rate = evalPercent(rateArgs[0]!);
-    const slots = readSlots(cursor, NUM_WATER_SLOTS, mapConst, endRe);
+    const rateLine = cursor.readDb(mapConst, endRe);
+    if (rateLine.args.length !== 1) fail(file, rateLine.lineIndex, `${mapConst}: rate line has ${rateLine.args.length} argument(s), expected 1`);
+    const rate = at(file, rateLine.lineIndex, () => evalPercent(rateLine.args[0]!));
+    const slots = readSlots(cursor, NUM_WATER_SLOTS, mapConst, endRe, file);
     entries.push({ mapConst, file, swarm, rate, slots, lineIndex });
   }
 
@@ -190,27 +223,43 @@ export function parseWaterFile(text: string, file: string, swarm = false): { ent
  * `data/wild/probabilities.asm`: `GrassMonProbTable`/`WaterMonProbTable`,
  * each a run of `mon_prob cumulativePercent, index` calls. Never hardcoded
  * -- PerfPlus changed both from vanilla (GBC format findings, top matter).
+ * `file` defaults to the real repo-relative path; callers other than
+ * `loadGbcWildData` (i.e. unit tests) may pass a fixture name instead.
  */
-export function parseWildProbabilities(text: string): GbcWildProbabilities {
+export function parseWildProbabilities(text: string, file = "data/wild/probabilities.asm"): GbcWildProbabilities {
   const grassTail = labelTailText(text, "GrassMonProbTable");
   const waterTail = labelTailText(text, "WaterMonProbTable");
-  return { grass: cumulativeToPerSlot(grassTail), water: cumulativeToPerSlot(waterTail) };
+  return { grass: cumulativeToPerSlot(grassTail, file), water: cumulativeToPerSlot(waterTail, file) };
 }
 
-/** Bounds `text` from right after `${label}:`'s own line to the next `Label:` line (or EOF) -- a plain global-label tail, no stacking needed for this file. */
-function labelTailText(text: string, label: string): string {
+/**
+ * Bounds `text` from right after `${label}:`'s own line to the next `Label:`
+ * line (or EOF) -- a plain global-label tail, no stacking needed for this
+ * file. Also reports the tail's own absolute starting line index, so callers
+ * can convert a tail-relative `scanCalls` `lineIndex` back to an absolute one.
+ */
+function labelTailText(text: string, label: string): { text: string; lineIndex: number } {
   const m = new RegExp(`^${label}:[^\\n]*$`, "m").exec(text);
   if (!m) throw new Error(`no "${label}:" label found`);
   const lineStart = m.index + m[0].length;
   const nl = text.indexOf("\n", lineStart);
   const bodyStart = nl === -1 ? text.length : nl + 1;
   const nextLabel = /^[A-Za-z_][A-Za-z0-9_]*:/m.exec(text.slice(bodyStart));
-  return nextLabel ? text.slice(bodyStart, bodyStart + nextLabel.index) : text.slice(bodyStart);
+  const body = nextLabel ? text.slice(bodyStart, bodyStart + nextLabel.index) : text.slice(bodyStart);
+  const lineIndex = text.slice(0, bodyStart).split("\n").length - 1;
+  return { text: body, lineIndex };
 }
 
-function cumulativeToPerSlot(text: string): number[] {
-  const entries = scanCalls(text, "mon_prob")
-    .map((c) => ({ index: parseNum(c.args[1]!.text), cumulative: parseNum(c.args[0]!.text) }))
+function cumulativeToPerSlot(tail: { text: string; lineIndex: number }, file: string): number[] {
+  const entries = scanCalls(tail.text, "mon_prob")
+    .map((c) => {
+      const lineIndex = tail.lineIndex + c.lineIndex;
+      if (c.args.length !== 2) fail(file, lineIndex, `"mon_prob" has ${c.args.length} argument(s), expected 2`);
+      return {
+        index: at(file, lineIndex, () => parseNum(c.args[1]!.text)),
+        cumulative: at(file, lineIndex, () => parseNum(c.args[0]!.text)),
+      };
+    })
     .sort((a, b) => a.index - b.index);
   let prev = 0;
   return entries.map((e) => {
@@ -230,9 +279,12 @@ function cumulativeToPerSlot(text: string): number[] {
  * Smash": City/Canyon are byte-identical). This is a data-body variant of
  * `./asm.ts`'s `labelTail` (built for one *global* label with a directive
  * tail); it also accepts local (`.dot`) labels for `fish.asm`'s rod tables,
- * which `labelTail`'s own next-label regex does not match.
+ * which `labelTail`'s own next-label regex does not match. `lineIndex` is
+ * the label's own absolute line; `bodyLineIndex` is the body's first line --
+ * for a stacked run these differ only for the earlier aliases, since the
+ * body always starts right after the LAST label's own line.
  */
-function labelSections(text: string): Map<string, { body: string; lineIndex: number }> {
+function labelSections(text: string): Map<string, { body: string; lineIndex: number; bodyLineIndex: number }> {
   const re = /^(\.?[A-Za-z_][A-Za-z0-9_]*)::?[ \t]*(?:;.*)?$/gm;
   const marks: { name: string; start: number; end: number; lineIndex: number }[] = [];
   let m: RegExpExecArray | null;
@@ -240,7 +292,7 @@ function labelSections(text: string): Map<string, { body: string; lineIndex: num
     const lineIndex = text.slice(0, m.index).split("\n").length - 1;
     marks.push({ name: m[1]!, start: m.index, end: m.index + m[0].length, lineIndex });
   }
-  const out = new Map<string, { body: string; lineIndex: number }>();
+  const out = new Map<string, { body: string; lineIndex: number; bodyLineIndex: number }>();
   let i = 0;
   while (i < marks.length) {
     let j = i;
@@ -249,32 +301,35 @@ function labelSections(text: string): Map<string, { body: string; lineIndex: num
     const bodyStart = nl === -1 ? text.length : nl + 1;
     const bodyEnd = j + 1 < marks.length ? marks[j + 1]!.start : text.length;
     const body = text.slice(bodyStart, bodyEnd);
-    for (let k = i; k <= j; k++) out.set(marks[k]!.name, { body, lineIndex: marks[k]!.lineIndex });
+    const bodyLineIndex = marks[j]!.lineIndex + 1;
+    for (let k = i; k <= j; k++) out.set(marks[k]!.name, { body, lineIndex: marks[k]!.lineIndex, bodyLineIndex });
     i = j + 1;
   }
   return out;
 }
 
 /** One `db pct, SPECIES, level` / `db pct, time_group n` rod record line, parsed from its already-split `db` args. */
-function toRodRecord(args: string[]): GbcFishRodRecord {
-  const chance = evalPercent(args[0]!);
+function toRodRecord(args: string[], file: string, lineIndex: number): GbcFishRodRecord {
+  const chance = at(file, lineIndex, () => evalPercent(args[0]!));
   if (args.length === 2) {
     const tg = args[1]!.match(/^time_group\s+(\d+)$/);
     if (tg) return { chance, kind: "timeGroup", timeGroupIndex: parseNum(tg[1]!) };
   }
-  if (args.length === 3) return { chance, kind: "species", species: args[1]!, level: parseNum(args[2]!) };
-  throw new Error(`rod record: "${args.join(", ")}" is neither a 3-arg species record nor a 2-arg time_group reference`);
+  if (args.length === 3) return { chance, kind: "species", species: args[1]!, level: at(file, lineIndex, () => parseNum(args[2]!)) };
+  fail(file, lineIndex, `rod record: "${args.join(", ")}" is neither a 3-arg species record nor a 2-arg time_group reference`);
 }
 
-/** Every non-blank `db ...` line in a label's body, comma-split into args (no terminator in rod tables -- GBC format findings §Extra, Fishing). */
-function dbLinesIn(body: string): string[][] {
-  const out: string[][] = [];
-  for (const rawLine of body.split(/\r\n|\n/)) {
-    const stripped = stripComment(rawLine).trim();
+/** Every non-blank `db ...` line in a label's body, comma-split into args (no terminator in rod tables -- GBC format findings §Extra, Fishing), each tagged with its absolute file line index. */
+function dbLinesIn(body: string, bodyLineIndex: number, file: string): { args: string[]; lineIndex: number }[] {
+  const out: { args: string[]; lineIndex: number }[] = [];
+  const rawLines = body.split(/\r\n|\n/);
+  for (let k = 0; k < rawLines.length; k++) {
+    const stripped = stripComment(rawLines[k]!).trim();
     if (stripped === "") continue;
+    const lineIndex = bodyLineIndex + k;
     const m = stripped.match(/^db\s+(.*)$/);
-    if (!m) throw new Error(`expected a "db" line, found "${stripped}"`);
-    out.push(splitArgs(m[1]!));
+    if (!m) fail(file, lineIndex, `expected a "db" line, found "${stripped}"`);
+    out.push({ args: splitArgs(m[1]!), lineIndex });
   }
   return out;
 }
@@ -284,33 +339,36 @@ function dbLinesIn(body: string): string[][] {
  * real `FISHGROUP_*` enum value with `FISHGROUP_NONE` excluded (index 0 =
  * `FISHGROUP_SHORE`, GBC format findings §Extra, Fishing) -- callers derive
  * this from `constants/map_data_constants.asm` (`loadGbcWildData` does; unit
- * tests pass a literal array).
+ * tests pass a literal array). `file` defaults to the real repo-relative
+ * path; unit tests may pass a fixture name instead.
  */
 export function parseFishGroups(
   text: string,
   groupNamesInOrder: string[],
+  file = "data/wild/fish.asm",
 ): { fishGroups: GbcFishGroup[]; timeFishGroups: GbcTimeFishEntry[] } {
   const sections = labelSections(text);
-  const fishGroupsBody = sections.get("FishGroups")?.body;
-  if (fishGroupsBody === undefined) throw new Error(`no "FishGroups:" label found`);
-  const calls = scanCalls(fishGroupsBody, "fishgroup");
+  const fishGroupsSection = sections.get("FishGroups");
+  if (!fishGroupsSection) fail(file, null, `no "FishGroups:" label found`);
+  const calls = scanCalls(fishGroupsSection.body, "fishgroup");
   if (calls.length !== groupNamesInOrder.length) {
-    throw new Error(`fish.asm: FishGroups has ${calls.length} "fishgroup" line(s), expected ${groupNamesInOrder.length}`);
+    fail(file, fishGroupsSection.lineIndex, `FishGroups has ${calls.length} "fishgroup" line(s), expected ${groupNamesInOrder.length}`);
   }
 
   const rodRecords = (label: string): GbcFishRodRecord[] => {
     const section = sections.get(label);
-    if (!section) throw new Error(`fish.asm: no "${label}:" label found (referenced from FishGroups)`);
-    return dbLinesIn(section.body).map(toRodRecord);
+    if (!section) fail(file, fishGroupsSection.lineIndex, `no "${label}:" label found (referenced from FishGroups)`);
+    return dbLinesIn(section.body, section.bodyLineIndex, file).map(({ args, lineIndex }) => toRodRecord(args, file, lineIndex));
   };
 
   const fishGroups: GbcFishGroup[] = calls.map((c, index) => {
-    if (c.args.length !== 4) throw new Error(`fish.asm: "fishgroup" has ${c.args.length} argument(s), expected 4`);
+    const lineIndex = fishGroupsSection.bodyLineIndex + c.lineIndex;
+    if (c.args.length !== 4) fail(file, lineIndex, `"fishgroup" has ${c.args.length} argument(s), expected 4`);
     const [chance, oldLabel, goodLabel, superLabel] = c.args.map((a) => a.text);
     return {
       constName: groupNamesInOrder[index]!,
       index,
-      biteChance: evalPercent(chance!),
+      biteChance: at(file, lineIndex, () => evalPercent(chance!)),
       oldRod: rodRecords(oldLabel!),
       goodRod: rodRecords(goodLabel!),
       superRod: rodRecords(superLabel!),
@@ -318,14 +376,14 @@ export function parseFishGroups(
   });
 
   const timeSection = sections.get("TimeFishGroups");
-  if (!timeSection) throw new Error(`no "TimeFishGroups:" label found`);
-  const timeFishGroups: GbcTimeFishEntry[] = dbLinesIn(timeSection.body).map((args, index) => {
-    if (args.length !== 4) throw new Error(`TimeFishGroups row ${index}: ${args.length} argument(s), expected 4`);
+  if (!timeSection) fail(file, null, `no "TimeFishGroups:" label found`);
+  const timeFishGroups: GbcTimeFishEntry[] = dbLinesIn(timeSection.body, timeSection.bodyLineIndex, file).map(({ args, lineIndex }, index) => {
+    if (args.length !== 4) fail(file, lineIndex, `TimeFishGroups row ${index}: ${args.length} argument(s), expected 4`);
     const [daySpecies, dayLevel, niteSpecies, niteLevel] = args;
     return {
       index,
-      day: { species: daySpecies!, level: parseNum(dayLevel!) },
-      nite: { species: niteSpecies!, level: parseNum(niteLevel!) },
+      day: { species: daySpecies!, level: at(file, lineIndex, () => parseNum(dayLevel!)) },
+      nite: { species: niteSpecies!, level: at(file, lineIndex, () => parseNum(niteLevel!)) },
     };
   });
 
@@ -333,16 +391,20 @@ export function parseFishGroups(
 }
 
 /** One `db pct, SPECIES, level` list, terminated by `db -1`. Returns the list and how many body lines it consumed. */
-function readTreemonList(bodyLines: string[][]): { records: GbcTreemonRecord[]; consumed: number } {
+function readTreemonList(bodyLines: { args: string[]; lineIndex: number }[], file: string): { records: GbcTreemonRecord[]; consumed: number } {
   const records: GbcTreemonRecord[] = [];
   let consumed = 0;
-  for (const args of bodyLines) {
+  for (const { args, lineIndex } of bodyLines) {
     consumed++;
     if (args.length === 1 && args[0] === "-1") return { records, consumed };
-    if (args.length !== 3) throw new Error(`treemon record: "${args.join(", ")}" has ${args.length} argument(s), expected 3`);
-    records.push({ percent: parseNum(args[0]!), species: args[1]!, level: parseNum(args[2]!) });
+    if (args.length !== 3) fail(file, lineIndex, `treemon record: "${args.join(", ")}" has ${args.length} argument(s), expected 3`);
+    records.push({
+      percent: at(file, lineIndex, () => parseNum(args[0]!)),
+      species: args[1]!,
+      level: at(file, lineIndex, () => parseNum(args[2]!)),
+    });
   }
-  throw new Error(`treemon list: ran out of lines before a "db -1" terminator`);
+  fail(file, bodyLines.length > 0 ? bodyLines[bodyLines.length - 1]!.lineIndex : null, `treemon list: ran out of lines before a "db -1" terminator`);
 }
 
 /**
@@ -354,12 +416,17 @@ function readTreemonList(bodyLines: string[][]): { records: GbcTreemonRecord[]; 
  * (KCity/KRoute/KTown in the file vs KCITY/KTOWN/KROUTE in the table).
  * `TREEMON_SET_CITY` (index 0) is flagged `yieldsNothing` even though its
  * data is real (shared with Canyon via stacked labels) -- `GetTreeMons`
- * quits before ever reading it.
+ * quits before ever reading it. Every set's body is a common list plus an
+ * optional rare list, each `db -1`-terminated (the corpus's real shape,
+ * `data/wild/treemons.asm`) -- any further non-blank line after the rare
+ * list refuses rather than being silently dropped. `file` defaults to the
+ * real repo-relative path; unit tests may pass a fixture name instead.
  */
-export function parseTreemonSets(text: string, setNamesInOrder: string[]): GbcTreemonSet[] {
+export function parseTreemonSets(text: string, setNamesInOrder: string[], file = "data/wild/treemons.asm"): GbcTreemonSet[] {
   const sections = labelSections(text);
-  const treeMonsBody = sections.get("TreeMons")?.body;
-  if (treeMonsBody === undefined) throw new Error(`no "TreeMons:" label found`);
+  const treeMonsSection = sections.get("TreeMons");
+  if (!treeMonsSection) fail(file, null, `no "TreeMons:" label found`);
+  const treeMonsBody = treeMonsSection.body;
 
   const pointerLabels: string[] = [];
   let started = false;
@@ -376,16 +443,24 @@ export function parseTreemonSets(text: string, setNamesInOrder: string[]): GbcTr
   }
 
   if (pointerLabels.length !== setNamesInOrder.length) {
-    throw new Error(`treemons.asm: TreeMons has ${pointerLabels.length} pointer(s), expected ${setNamesInOrder.length}`);
+    fail(file, treeMonsSection.lineIndex, `TreeMons has ${pointerLabels.length} pointer(s), expected ${setNamesInOrder.length}`);
   }
 
   return pointerLabels.map((label, index) => {
     const section = sections.get(label);
-    if (!section) throw new Error(`treemons.asm: no "${label}:" label found (referenced from TreeMons[${index}])`);
-    const bodyLines = dbLinesIn(section.body);
-    const first = readTreemonList(bodyLines);
+    if (!section) fail(file, treeMonsSection.lineIndex, `no "${label}:" label found (referenced from TreeMons[${index}])`);
+    const bodyLines = dbLinesIn(section.body, section.bodyLineIndex, file);
+    const first = readTreemonList(bodyLines, file);
     const rest = bodyLines.slice(first.consumed);
-    const rare = rest.length > 0 ? readTreemonList(rest).records : null;
+    let rare: GbcTreemonRecord[] | null = null;
+    if (rest.length > 0) {
+      const second = readTreemonList(rest, file);
+      rare = second.records;
+      const leftover = rest.slice(second.consumed);
+      if (leftover.length > 0) {
+        fail(file, leftover[0]!.lineIndex, `${label}: unexpected data after the rare list ("${leftover[0]!.args.join(", ")}")`);
+      }
+    }
     return { constName: setNamesInOrder[index]!, index, yieldsNothing: index === 0, common: first.records, rare };
   });
 }
@@ -396,15 +471,20 @@ export function parseTreemonSets(text: string, setNamesInOrder: string[]): GbcTr
  * TREEMON_SET_*` lines, `db -1`-terminated. Split by each call's own byte
  * offset against the `RockMonMaps:` label's position, not by the
  * terminator -- robust regardless of whether either terminator is present.
+ * `file` defaults to the real repo-relative path; unit tests may pass a
+ * fixture name instead.
  */
-export function parseTreemonMaps(text: string): { treemonMaps: GbcTreemonMapEntry[]; rockMonMaps: GbcTreemonMapEntry[] } {
+export function parseTreemonMaps(
+  text: string,
+  file = "data/wild/treemon_maps.asm",
+): { treemonMaps: GbcTreemonMapEntry[]; rockMonMaps: GbcTreemonMapEntry[] } {
   const rockLabel = /^RockMonMaps:/m.exec(text);
   const splitOffset = rockLabel ? rockLabel.index : text.length;
 
   const treemonMaps: GbcTreemonMapEntry[] = [];
   const rockMonMaps: GbcTreemonMapEntry[] = [];
   for (const c of scanCalls(text, "treemon_map")) {
-    if (c.args.length !== 2) throw new Error(`treemon_maps.asm:${c.lineIndex + 1}: "treemon_map" has ${c.args.length} argument(s), expected 2`);
+    if (c.args.length !== 2) fail(file, c.lineIndex, `"treemon_map" has ${c.args.length} argument(s), expected 2`);
     const entry: GbcTreemonMapEntry = { mapConst: c.args[0]!.text, setConst: c.args[1]!.text, lineIndex: c.lineIndex };
     (c.lineStart < splitOffset ? treemonMaps : rockMonMaps).push(entry);
   }
@@ -423,7 +503,14 @@ function orderedNames(consts: Map<string, number>, prefix: string, excludeZero: 
  * Reads and joins every `data/wild/*.asm` file into one `GbcWildData` (GBC
  * format findings §Extra, "Wild data" / "Fishing" / "Headbutt and Rock
  * Smash"; Decision 5). Never throws for a recoverable defect (the missing
- * `kanto_grass.asm` terminator) -- it's returned in `defects` instead.
+ * `kanto_grass.asm` terminator) -- it's returned in `defects` instead. Does
+ * throw, naming the file and 1-based line, when a grass/water entry or a
+ * treemon/rock map row names a map const that isn't a real `map_const` in
+ * `constants/map_constants.asm`, or when a treemon/rock row's set const
+ * isn't one of the `TREEMON_SET_*` names derived from
+ * `constants/pokemon_data_constants.asm` -- neither of these is a
+ * recoverable defect (an unknown const is malformed source, not a known
+ * corpus quirk).
  */
 export function loadGbcWildData(root: string): GbcWildData {
   const r = norm(root);
@@ -437,21 +524,43 @@ export function loadGbcWildData(root: string): GbcWildData {
   const kantoWater = parseWaterFile(read("data/wild/kanto_water.asm"), "data/wild/kanto_water.asm");
   const swarmWater = parseWaterFile(read("data/wild/swarm_water.asm"), "data/wild/swarm_water.asm", true);
 
-  const probabilities = parseWildProbabilities(read("data/wild/probabilities.asm"));
+  const probabilities = parseWildProbabilities(read("data/wild/probabilities.asm"), "data/wild/probabilities.asm");
 
   const mapDataConsts = parseConstDefs(read("constants/map_data_constants.asm"));
   const fishGroupNames = orderedNames(mapDataConsts, "FISHGROUP_", true);
-  const { fishGroups, timeFishGroups } = parseFishGroups(read("data/wild/fish.asm"), fishGroupNames);
+  const { fishGroups, timeFishGroups } = parseFishGroups(read("data/wild/fish.asm"), fishGroupNames, "data/wild/fish.asm");
 
   const pokemonDataConsts = parseConstDefs(read("constants/pokemon_data_constants.asm"));
   const treemonSetNames = orderedNames(pokemonDataConsts, "TREEMON_SET_", false);
-  const treemonSets = parseTreemonSets(read("data/wild/treemons.asm"), treemonSetNames);
+  const treemonSets = parseTreemonSets(read("data/wild/treemons.asm"), treemonSetNames, "data/wild/treemons.asm");
 
-  const { treemonMaps, rockMonMaps } = parseTreemonMaps(read("data/wild/treemon_maps.asm"));
+  const treemonMapsFile = "data/wild/treemon_maps.asm";
+  const { treemonMaps, rockMonMaps } = parseTreemonMaps(read(treemonMapsFile), treemonMapsFile);
+
+  const mapConstNames = new Set(parseMapConstants(read("constants/map_constants.asm")).map((c) => c.constName));
+  const treemonSetConstNames = new Set(treemonSetNames);
+
+  const grass = [...johtoGrass.entries, ...kantoGrass.entries, ...swarmGrass.entries];
+  const water = [...johtoWater.entries, ...kantoWater.entries, ...swarmWater.entries];
+
+  for (const g of grass) {
+    if (!mapConstNames.has(g.mapConst)) fail(g.file, g.lineIndex, `unknown map constant "${g.mapConst}" (not in constants/map_constants.asm)`);
+  }
+  for (const w of water) {
+    if (!mapConstNames.has(w.mapConst)) fail(w.file, w.lineIndex, `unknown map constant "${w.mapConst}" (not in constants/map_constants.asm)`);
+  }
+  for (const t of [...treemonMaps, ...rockMonMaps]) {
+    if (!mapConstNames.has(t.mapConst)) {
+      fail(treemonMapsFile, t.lineIndex, `unknown map constant "${t.mapConst}" (not in constants/map_constants.asm)`);
+    }
+    if (!treemonSetConstNames.has(t.setConst)) {
+      fail(treemonMapsFile, t.lineIndex, `unknown treemon set constant "${t.setConst}" (not one of the TREEMON_SET_* names derived from constants/pokemon_data_constants.asm)`);
+    }
+  }
 
   return {
-    grass: [...johtoGrass.entries, ...kantoGrass.entries, ...swarmGrass.entries],
-    water: [...johtoWater.entries, ...kantoWater.entries, ...swarmWater.entries],
+    grass,
+    water,
     probabilities,
     fishGroups,
     timeFishGroups,
@@ -463,6 +572,22 @@ export function loadGbcWildData(root: string): GbcWildData {
 }
 
 /**
+ * Resolves a `treemon_map`/`RockMonMaps` row's set const against
+ * `data.treemonSets`, or `null` when there is no row at all. Throws, naming
+ * the map and the unknown const, when a row exists but its set const does
+ * not resolve -- `loadGbcWildData` already refuses an unknown set const at
+ * load time, so this is defense in depth (and what a hand-built `GbcWildData`
+ * in a unit test exercises directly), kept consistent with the unknown-
+ * fish-group throw below rather than silently falling back to `null`.
+ */
+function resolveTreemonSet(data: GbcWildData, entry: GbcTreemonMapEntry | null, mapName: string): GbcTreemonSet | null {
+  if (!entry) return null;
+  const set = data.treemonSets.find((s) => s.constName === entry.setConst);
+  if (!set) throw new Error(`wildForMap: ${mapName}: unknown treemon set "${entry.setConst}"`);
+  return set;
+}
+
+/**
  * Every wild-encounter source for one map (GBC format findings §Extra, Wild
  * data / Fishing / Headbutt and Rock Smash; Decision 5). `FISHGROUP_NONE`
  * yields `fishing.group: null`; the Qwilfish/Remoraid swarm substitution is
@@ -470,6 +595,15 @@ export function loadGbcWildData(root: string): GbcWildData {
  * daily-flag state this loader has no access to). `TREEMON_SET_CITY` maps
  * still resolve a `headbutt.set` (so callers can see which set it nominally
  * is) but `yieldsNothing` is true for them.
+ *
+ * Grass/water lookups search `data.grass`/`data.water` as one concatenated
+ * Johto+Kanto(+swarm) list and take the first match for a given `swarm`
+ * flag, rather than picking one regional list the way the engine's
+ * `IsInJohto` does. That is equivalent on this corpus only because no map
+ * const appears in more than one non-swarm grass entry, and none in more
+ * than one non-swarm water entry (pinned by a corpus test) -- it is not
+ * engine-faithful by construction, and a corpus where a map const appeared
+ * in both regional lists would need this to pick a side.
  */
 export function wildForMap(data: GbcWildData, map: Pick<GbcMap, "constName" | "fishGroup" | "name">): GbcWildForMap {
   const findGrass = (swarm: boolean) => data.grass.find((e) => e.swarm === swarm && e.mapConst === map.constName) ?? null;
@@ -485,10 +619,10 @@ export function wildForMap(data: GbcWildData, map: Pick<GbcMap, "constName" | "f
   }
 
   const treemonEntry = data.treemonMaps.find((t) => t.mapConst === map.constName) ?? null;
-  const headbuttSet = treemonEntry ? data.treemonSets.find((s) => s.constName === treemonEntry.setConst) ?? null : null;
+  const headbuttSet = resolveTreemonSet(data, treemonEntry, map.name);
 
   const rockEntry = data.rockMonMaps.find((t) => t.mapConst === map.constName) ?? null;
-  const rockSet = rockEntry ? data.treemonSets.find((s) => s.constName === rockEntry.setConst) ?? null : null;
+  const rockSet = resolveTreemonSet(data, rockEntry, map.name);
 
   return {
     grass: { base: findGrass(false), swarm: findGrass(true) },

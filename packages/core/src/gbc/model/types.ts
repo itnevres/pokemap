@@ -324,8 +324,9 @@ export type GbcFishRodRecord =
  * One `fishgroup chance, oldRod, goodRod, superRod` entry from
  * `data/wild/fish.asm`'s `FishGroups` table (GBC format findings §Extra,
  * Fishing). `index` is this entry's 0-based position in that table, i.e.
- * `FISHGROUP_x - 1` (`GetFishGroupIndex`). `biteChance` is `\1`, the roll a
- * `Random` result must be `<=` to bite at all.
+ * `FISHGROUP_x - 1` (`GetFishGroupIndex`). `biteChance` is `\1`; the engine
+ * does `cp [hl]` / `jr nc, .no_bite`, so a `Random` roll bites only when it
+ * is strictly **less than** `biteChance`, not `<=`.
  */
 export interface GbcFishGroup {
   constName: string;
