@@ -248,7 +248,10 @@ Each of these files is 32 colors (8 palettes), one `RGB r, g, b` per line. `mans
 	db $20, $21, $22, $23, $24, $25, $26, $07 ; morn
 	db $20, $21, $22, $23, $24, $25, $26, $07 ; day
 	db $10, $11, $12, $13, $14, $15, $16, $07 ; nite
+	db $18, $19, $1a, $1b, $1c, $1d, $1e, $07 ; dark
 ```
+
+(Every environment block, including `.IndoorColors`, has all 4 rows. An earlier revision of this excerpt omitted the dark row, which was misread once as "Indoor has no dark row"; it does.)
 
 - TOWN and ROUTE use Outdoor. INDOOR and GATE use Indoor. CAVE and DUNGEON use Dungeon. ENVIRONMENT_5 uses Env5.
 - `bg_tiles.pal` sections: `; morn` (8), `; day` (8), `; nite` (8), `; dark` (8), `; indoor` (8), and `; overworld water` (2, at `$28` morn/day and `$29` nite). Real lines:
