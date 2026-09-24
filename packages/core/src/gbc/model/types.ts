@@ -247,3 +247,160 @@ export interface GbcMapEvents {
   callbacks: GbcCallback[];
   objectConsts: string[];
 }
+
+/**
+ * A raw RGBDS `percent`-operator expression alongside its resolved byte
+ * value. The real definition (`macros/data.asm`: `DEF percent EQUS "* $ff /
+ * 100"`) is `N * 255 / 100`, RGBDS integer (floor) division -- e.g. `2
+ * percent` = floor(2*255/100) = 5, `50 percent + 1` = floor(50*255/100)+1 =
+ * 128, `100 percent` = 255. `raw` is kept because it's the only place the
+ * source's intended percentage survives; `resolved` is the byte the game
+ * actually compares against (GBC format findings §Extra, Wild data/Fishing).
+ */
+export interface GbcPercentValue {
+  raw: string;
+  resolved: number;
+}
+
+/** One `db level, SPECIES` slot (grass 7 per time-of-day, water 3). */
+export interface GbcWildSlot {
+  level: number;
+  species: string;
+}
+
+/**
+ * One `def_grass_wildmons MAP` / bare `map_id MAP` record (GBC format
+ * findings §Extra, Wild data item 2): 3 time-of-day encounter rates plus 3x7
+ * (level, species) slots. `swarm` is true for `swarm_grass.asm` entries,
+ * which use a bare `map_id` line with no `def_grass_wildmons`/
+ * `end_grass_wildmons` wrapper -- conditional data, never merged into the
+ * base table (Decision 5). `file` is repo-relative, e.g.
+ * "data/wild/kanto_grass.asm".
+ */
+export interface GbcGrassEntry {
+  mapConst: string;
+  file: string;
+  swarm: boolean;
+  rates: { morn: GbcPercentValue; day: GbcPercentValue; nite: GbcPercentValue };
+  slots: { morn: GbcWildSlot[]; day: GbcWildSlot[]; nite: GbcWildSlot[] };
+  lineIndex: number;
+}
+
+/** One `def_water_wildmons MAP` record: 1 rate + 3 slots. Same `swarm`/`file` shape as `GbcGrassEntry`. */
+export interface GbcWaterEntry {
+  mapConst: string;
+  file: string;
+  swarm: boolean;
+  rate: GbcPercentValue;
+  slots: GbcWildSlot[];
+  lineIndex: number;
+}
+
+/**
+ * Per-slot encounter-odds percentages, derived from `data/wild/
+ * probabilities.asm`'s cumulative `mon_prob percent, index` tables (never
+ * hardcoded -- PerfPlus changed both from vanilla). `grass` has 7 entries
+ * (`GrassMonProbTable`), `water` has 3 (`WaterMonProbTable`); each sums to
+ * 100.
+ */
+export interface GbcWildProbabilities {
+  grass: number[];
+  water: number[];
+}
+
+/**
+ * One rod record: a cumulative `db chance, SPECIES, level` triple, or (when
+ * `SPECIES` is the `time_group n` pseudo-op) a reference into
+ * `TimeFishGroups[n]` (GBC format findings §Extra, Fishing). Cumulative
+ * means the engine picks the first record whose `chance` a `Random` roll is
+ * `<=`; there is no terminator -- the last real record is always `100
+ * percent`.
+ */
+export type GbcFishRodRecord =
+  | { chance: GbcPercentValue; kind: "species"; species: string; level: number }
+  | { chance: GbcPercentValue; kind: "timeGroup"; timeGroupIndex: number };
+
+/**
+ * One `fishgroup chance, oldRod, goodRod, superRod` entry from
+ * `data/wild/fish.asm`'s `FishGroups` table (GBC format findings §Extra,
+ * Fishing). `index` is this entry's 0-based position in that table, i.e.
+ * `FISHGROUP_x - 1` (`GetFishGroupIndex`). `biteChance` is `\1`, the roll a
+ * `Random` result must be `<=` to bite at all.
+ */
+export interface GbcFishGroup {
+  constName: string;
+  index: number;
+  biteChance: GbcPercentValue;
+  oldRod: GbcFishRodRecord[];
+  goodRod: GbcFishRodRecord[];
+  superRod: GbcFishRodRecord[];
+}
+
+/** One `TimeFishGroups` row: `db daySpecies, dayLevel, niteSpecies, niteLevel` (GBC format findings §Extra, Fishing). */
+export interface GbcTimeFishEntry {
+  index: number;
+  day: GbcWildSlot;
+  nite: GbcWildSlot;
+}
+
+/** One `db percent, SPECIES, level` record from a headbutt/rock-smash tree-mon list. Percentages are non-cumulative (GBC format findings §Extra, Headbutt and Rock Smash). */
+export interface GbcTreemonRecord {
+  percent: number;
+  species: string;
+  level: number;
+}
+
+/**
+ * One `TreeMons` pointer-table entry, resolved by table position, never by
+ * file label order (GBC format findings §Extra: "KCity, KRoute, KTown in the
+ * file vs KCITY, KTOWN, KROUTE in the table"). `rare` is `null` only for the
+ * single-list Rock Smash set. `yieldsNothing` is true only for
+ * `TREEMON_SET_CITY` (index 0): `GetTreeMons` quits before reading its table
+ * at all, even though its bytes are byte-identical to Canyon's (stacked
+ * labels) -- callers must report "no headbutt encounters" for it, never the
+ * City/Canyon table contents.
+ */
+export interface GbcTreemonSet {
+  constName: string;
+  index: number;
+  yieldsNothing: boolean;
+  common: GbcTreemonRecord[];
+  rare: GbcTreemonRecord[] | null;
+}
+
+/** One `treemon_map MAP_CONST, TREEMON_SET_*` line from `TreeMonMaps` (headbutt) or `RockMonMaps` (rock smash). */
+export interface GbcTreemonMapEntry {
+  mapConst: string;
+  setConst: string;
+  lineIndex: number;
+}
+
+/**
+ * The full wild-encounter corpus (GBC format findings §Extra, Wild data /
+ * Fishing / Headbutt and Rock Smash; Decision 5's grown Task 8 scope):
+ * grass/water tables (base + swarm, tagged not merged), slot-probability
+ * tables, fishing groups and their day/nite time-group rows, and headbutt/
+ * rock-smash tree-mon sets and their map assignments. `defects` carries every
+ * recoverable data defect found while loading (e.g. `kanto_grass.asm`'s
+ * missing terminator) -- never thrown, per the shared `DataDefect` contract.
+ */
+export interface GbcWildData {
+  grass: GbcGrassEntry[];
+  water: GbcWaterEntry[];
+  probabilities: GbcWildProbabilities;
+  fishGroups: GbcFishGroup[];
+  timeFishGroups: GbcTimeFishEntry[];
+  treemonSets: GbcTreemonSet[];
+  treemonMaps: GbcTreemonMapEntry[];
+  rockMonMaps: GbcTreemonMapEntry[];
+  defects: DataDefect[];
+}
+
+/** `wildForMap`'s per-method result for one map (grass/water base + swarm variant, fishing group + tagged swarm variant, headbutt set, rock set). */
+export interface GbcWildForMap {
+  grass: { base: GbcGrassEntry | null; swarm: GbcGrassEntry | null };
+  water: { base: GbcWaterEntry | null; swarm: GbcWaterEntry | null };
+  fishing: { group: GbcFishGroup | null; swarmVariant: GbcFishGroup | null };
+  headbutt: { set: GbcTreemonSet | null; yieldsNothing: boolean };
+  rock: GbcTreemonSet | null;
+}
