@@ -91,16 +91,48 @@ describe("renderGbcMetatile", () => {
     expect(posPixel(dst, 1)).toEqual([13, 13, 13, 255]); // tile1, pal1, shade2
   });
 
-  it("an unmapped tile id (no palMap entry) paints the placeholder and counts it, other tiles unaffected", () => {
-    const palMap: (PaletteMapEntry | null)[] = [{ bank: 0, pal: 0 }]; // id 1 has no entry -> undefined -> null via pngTileIndex
+  it("an unmapped tile id (an EXPLICIT null palMap entry, tile id 2, not merely a sparse/out-of-bounds one) paints the placeholder and counts it, other tiles unaffected", () => {
+    // Fix round 1, spec review Issue 2 / minor m1: the spec's "synthetic
+    // palMap ... including ... one null entry" means a real `null` sitting at
+    // a real index, not an index past the array's populated length (which
+    // reads as `undefined`, structurally different even though
+    // `pngTileIndex` treats both the same way today).
+    const palMap: (PaletteMapEntry | null)[] = [{ bank: 0, pal: 0 }, { bank: 0, pal: 0 }, null];
     const tiles: Uint8Array[] = [uniformTile(0)];
     const palettes: RGB[][] = [[{ r: 5, g: 5, b: 5 }]];
-    const m = metatile(0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+    const m = metatile(0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0); // position 1 = tile id 2, the null entry
     const dst = renderGbcMetatile(tiles, { metatiles: [m], palMap }, 0, palettes);
     expect(dst.outOfRange).toBe(false);
     expect(dst.unmappedTiles).toBe(1);
     expect(posPixel(dst, 1)).toEqual([255, 0, 255, 255]); // placeholder
     expect(posPixel(dst, 0)).toEqual([5, 5, 5, 255]); // unaffected
+  });
+
+  it("a bank-1 tile id resolves through its own PNG index ($0x60 + low7), not the raw tile id and not its bank-0 counterpart", () => {
+    // Fix round 1, spec review Issue 2: the spec's synthetic palMap must
+    // include a `bank: 1` entry. BANK1_ID's low 7 bits equal BANK0_ID's full
+    // value (0x85 & 0x7f === 0x05), so a bug that ignores `bank` (R8:
+    // `tiles[tileId & 0x7f]`) or uses the raw tile id directly (R8b:
+    // `tiles[tileId]`) is invisible unless the two banks' PNG tiles/palettes
+    // genuinely differ, which they do here.
+    const BANK0_ID = 0x05;
+    const BANK1_ID = 0x85; // 0x85 & 0x7f === 0x05 -- same low7 as BANK0_ID
+    const palMap: (PaletteMapEntry | null)[] = [];
+    palMap[BANK0_ID] = { bank: 0, pal: 0 };
+    palMap[BANK1_ID] = { bank: 1, pal: 1 };
+    const tiles: Uint8Array[] = [];
+    tiles[0x05] = uniformTile(1); // bank 0 PNG index: 0x05
+    tiles[0x65] = uniformTile(2); // bank 1 PNG index: 0x60 + 0x05 = 0x65
+    tiles[BANK1_ID] = uniformTile(3); // decoy at the RAW tile id -- R8b would read this instead of tiles[0x65]
+    const palettes: RGB[][] = [
+      [{ r: 0, g: 0, b: 0 }, { r: 10, g: 10, b: 10 }, { r: 20, g: 20, b: 20 }, { r: 30, g: 30, b: 30 }],
+      [{ r: 0, g: 0, b: 0 }, { r: 100, g: 100, b: 100 }, { r: 200, g: 200, b: 200 }, { r: 250, g: 250, b: 250 }],
+    ];
+    const m = metatile(BANK0_ID, BANK1_ID, ...new Array(14).fill(BANK0_ID)); // filler must be a MAPPED id, never 0 (tile id 0 has no palMap entry here)
+    const dst = renderGbcMetatile(tiles, { metatiles: [m], palMap }, 0, palettes);
+    expect(dst.unmappedTiles).toBe(0);
+    expect(posPixel(dst, 0)).toEqual([10, 10, 10, 255]); // bank0: PNG idx 0x05, shade1, pal0
+    expect(posPixel(dst, 1)).toEqual([200, 200, 200, 255]); // bank1: PNG idx 0x65, shade2, pal1
   });
 
   it("an out-of-range metatile id paints the whole 32x32 raster as the placeholder and flags outOfRange", () => {
@@ -350,12 +382,10 @@ describe("renderGbcMap: outOfRangeCount / unmappedTileCount", () => {
   });
 
   it("sums unmapped tiles across every map block, excluding the ring", () => {
-    const palMap: (PaletteMapEntry | null)[] = [];
-    palMap[1] = { bank: 0, pal: 1 }; // mapped
-    palMap[2] = null as unknown as PaletteMapEntry; // present but null -- unmapped
+    const palMap: (PaletteMapEntry | null)[] = [null, { bank: 0, pal: 1 }]; // id 0: explicit null (unmapped); id 1: mapped
     const tiles: Uint8Array[] = [];
     tiles[1] = uniformTile(0);
-    // metatile 0: 11 mapped (tile 1) + 5 unmapped (tile 2, no palMap entry at all -- index 2 left undefined)
+    // metatile 0: 11 mapped (tile 1) + 5 unmapped (tile 40, no palMap entry at all -- index 40 left undefined)
     const m0 = metatile(1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 40, 40, 40, 40, 40); // tile 40 has no palMap entry
     const ts: GbcTileset = {
       constName: "TILESET_TEST", name: "TilesetTest", gfxPath: "", metatilesPath: "", collisionPath: "", palMapPath: "",
@@ -366,6 +396,38 @@ describe("renderGbcMap: outOfRangeCount / unmappedTileCount", () => {
     const proj = stubProject({ map: () => map, tileset: () => ts, paletteTables: () => tables });
     const r = renderGbcMap(proj, "TestMap", { blocksOverride: [{ metatileId: 0 }, { metatileId: 0 }] });
     expect(r.unmappedTileCount).toBe(10); // 5 per block x 2 blocks
+  });
+
+  it("excludes the border ring from unmappedTileCount, even when the border metatile itself has unmapped tiles (R2)", () => {
+    // Metatile id 0 is reserved: a real block byte of 0 always substitutes to
+    // map.border (block-0 substitution), so neither the "fully mapped"
+    // metatile nor the "unmapped-heavy" one below can BE id 0, or placing it
+    // as an interior block would silently render the border instead.
+    const palMap: (PaletteMapEntry | null)[] = [];
+    palMap[1] = { bank: 0, pal: 1 }; // mapped
+    const tiles: Uint8Array[] = [];
+    tiles[1] = uniformTile(0);
+    const filler = metatile(...new Array(16).fill(1)); // id 0: unused filler, never referenced
+    const mappedMetatile = metatile(...new Array(16).fill(1)); // id 1: fully mapped
+    // id 2: 5 unmapped tile slots (tile 40 has no palMap entry at all)
+    const unmappedHeavyMetatile = metatile(1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 40, 40, 40, 40, 40);
+    const ts: GbcTileset = {
+      constName: "TILESET_TEST", name: "TilesetTest", gfxPath: "", metatilesPath: "", collisionPath: "", palMapPath: "",
+      metatiles: [filler, mappedMetatile, unmappedHeavyMetatile], collision: [], palMap, tiles,
+    };
+    const tables = makePaletteTables({});
+    // map.border = 2 -> every ring cell renders the unmapped-heavy metatile.
+    const map = makeMap({ width: 1, height: 1, border: 2 });
+    const proj = stubProject({ map: () => map, tileset: () => ts, paletteTables: () => tables });
+
+    const withRing = renderGbcMap(proj, "TestMap", { border: 1, blocksOverride: [{ metatileId: 1 }] });
+    expect(withRing.unmappedTileCount).toBe(0); // the interior block (id 1) is fully mapped; the ring's 8 unmapped-heavy cells must not count
+
+    // Sanity: the SAME metatile, placed as an interior block instead of the
+    // border, does count -- so the assertion above is a real exclusion, not
+    // an accident of the metatile never actually being unmapped.
+    const asInterior = renderGbcMap(proj, "TestMap", { border: 0, blocksOverride: [{ metatileId: 2 }] });
+    expect(asInterior.unmappedTileCount).toBe(5);
   });
 });
 
@@ -623,11 +685,9 @@ describe("corpus", () => {
     // Chain for the interior pixel:
     //   maps/ElmsLab.blk (5x6) byte[7] (block x=2,y=1) = 1. data/tilesets/
     //   lab_metatiles.bin bytes[16..31] (metatile 1) are all 0x10 -- position0
-    //   (row0,col0) = tile 0x10. gfx/tilesets/lab_palette_map.asm line3
-    //   (ids 16-23, "ROOF,ROOF,ROOF,...") -- WAIT: verified against the real
-    //   file, lab_palette_map.asm's OWN line3 is
-    //   "tilepal 0, GRAY, WATER, RED, BROWN, BROWN, BROWN, BROWN, BROWN" (ids
-    //   16-23), so id 0x10 (16) is index0 -> PAL_BG_GRAY (0). pngTileIndex
+    //   (row0,col0) = tile 0x10. gfx/tilesets/lab_palette_map.asm line3 (ids
+    //   16-23) is "tilepal 0, GRAY, WATER, RED, BROWN, BROWN, BROWN, BROWN,
+    //   BROWN", so id 0x10 (16) is index0 -> PAL_BG_GRAY (0). pngTileIndex
     //   (0x10) = 16. gfx/tilesets/lab.png tile16 row0 = [1,1,1,1,1,1,1,1] ->
     //   shade1 at (row0,col0).
     //   ElmsLab: INDOOR, PALETTE_DAY (forces DAY_F=1 regardless of clock) ->
@@ -649,26 +709,26 @@ describe("corpus", () => {
     expect([ring.width, ring.height, ring.originX, ring.originY]).toEqual([352, 384, 96, 96]);
     expect(pixelAt(ring, 0, 0)).toEqual([57, 57, 57, 255]);
 
-    // Gate check: ElmsLab's group is 24 (newgroup NEW_BARK), whose
-    // MapGroupRoofs entry IS a real roof (ROOF_NEW_BARK, index 0) -- but
-    // TILESET_LAB is not JOHTO/JOHTO_MODERN/BATTLE_TOWER_OUTSIDE, so the
-    // pinned interior pixel above must equal the plain, unswapped lab.png
-    // value. If the gate were dropped, tile 0x10 (used at this exact pixel)
-    // falls inside $0A-$12 and would be overwritten by new_bark's roof tile
-    // 6, whose (row0,col0) shade is 0 (not 1) -- a different color.
-    expect(pixelAt(day, 64, 32)).toEqual([156, 156, 156, 255]);
+    // Gate check (no new render needed -- the pin above already proves it):
+    // ElmsLab's group is 24 (newgroup NEW_BARK), whose MapGroupRoofs entry IS
+    // a real roof (ROOF_NEW_BARK, index 0), but TILESET_LAB is not
+    // JOHTO/JOHTO_MODERN/BATTLE_TOWER_OUTSIDE, so `day`'s (64,32) pixel above
+    // must equal the plain, unswapped lab.png value. Tile 0x10 (used at that
+    // exact pixel) falls inside $0A-$12, so if the gate were dropped it would
+    // be overwritten by new_bark's roof tile 6, whose (row0,col0) shade is 0
+    // (not 1) -- a different, and therefore test-failing, color.
   });
 
-  itWithGbcCorpus("all 391 maps render without throwing; outOfRangeCount and unmappedTileCount are both 0; exactly 2 maps carry a defect", () => {
+  itWithGbcCorpus("all 391 maps render without throwing; outOfRangeCount and unmappedTileCount are both 0; exactly 2 maps carry a defect naming their .blk files", () => {
     const proj = openGbcProject(GBC_SUBJECT_ROOT);
     let totalOutOfRange = 0;
     let totalUnmapped = 0;
-    const defectMaps: string[] = [];
+    const defectMaps: { name: string; files: string[] }[] = [];
     for (const map of proj.maps) {
       const r = renderGbcMap(proj, map.name, { time: "day" });
       totalOutOfRange += r.outOfRangeCount;
       totalUnmapped += r.unmappedTileCount;
-      if (r.defects.length > 0) defectMaps.push(map.name);
+      if (r.defects.length > 0) defectMaps.push({ name: map.name, files: r.defects.map((d) => d.file) });
     }
     expect(proj.maps).toHaveLength(391);
     // Measured against the real corpus (see the implementer report for the
@@ -676,6 +736,12 @@ describe("corpus", () => {
     // placed metatile id is within its tileset's range.
     expect(totalOutOfRange).toBe(0);
     expect(totalUnmapped).toBe(0);
-    expect(defectMaps.sort()).toEqual(["CeruleanCave2F", "CeruleanCaveB1"]);
+    // The spec asks that `defects` "names their files" -- pin the file
+    // fields, not just the map names (fix round 1, spec review minor m2).
+    defectMaps.sort((a, b) => a.name.localeCompare(b.name));
+    expect(defectMaps).toEqual([
+      { name: "CeruleanCave2F", files: ["maps/CeruleanCave2F.blk"] },
+      { name: "CeruleanCaveB1", files: ["maps/CeruleanCaveB1.blk"] },
+    ]);
   });
 });

@@ -268,13 +268,17 @@ export function sliceTiles(png: { width: number; height: number; shades: Uint8Ar
 /**
  * The GFX INCBIN path (`gfx/tilesets/<name>.2bpp.lz`, a gitignored build
  * artifact) always has a sibling source `.png` (I3) -- this never touches the
- * `.2bpp.lz` file itself. Also accepts a bare `.2bpp` (no `.lz`), the shape
- * `data/maps/roofs.asm`'s `Roofs:` INCBINs use (Task 9), so `roofs.ts` can
- * share this one resolver instead of duplicating it.
+ * `.2bpp.lz` file itself. Strict to `.2bpp.lz` only (Task 5's own invariant:
+ * every real tileset GFX INCBIN in the corpus has the `.lz` suffix, so a bare
+ * `.2bpp` here would be a real anomaly worth refusing, not tolerating).
+ * `data/maps/roofs.asm`'s `Roofs:` INCBINs use a bare `.2bpp` instead --
+ * `roofs.ts` has its own tiny resolver for that one file (fix round 1, spec
+ * review minor m7: an earlier revision loosened this function to accept both,
+ * which silently widened what a tileset GFX INCBIN could look like too).
  */
 export function pngPathFor(gfxIncbinPath: string): string {
-  const m = gfxIncbinPath.match(/^(.*)\.2bpp(?:\.lz)?$/);
-  if (!m) throw new Error(`loadGbcTileset: GFX path "${gfxIncbinPath}" doesn't end in ".2bpp" or ".2bpp.lz"`);
+  const m = gfxIncbinPath.match(/^(.*)\.2bpp\.lz$/);
+  if (!m) throw new Error(`loadGbcTileset: GFX path "${gfxIncbinPath}" doesn't end in ".2bpp.lz"`);
   return `${m[1]}.png`;
 }
 

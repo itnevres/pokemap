@@ -64,6 +64,23 @@ INCBIN "gfx/tilesets/roofs/goldenrod.2bpp"
 \tassert_table_length NUM_ROOFS
 `;
 
+/** A `MapGroupRoofs`/`Roofs:` shape with one extra, UNREFERENCED `ROOF_*`
+ *  constant -- exercises the "roof count must equal the number of ROOF_*
+ *  consts" refusal (fix round 1, spec review m5) without also tripping the
+ *  "unknown ROOF_* constant" refusal (every one of the real 5 is still
+ *  referenced by some `MapGroupRoofs` entry; the extra one just isn't). */
+const EXTRA_UNUSED_ROOF_CONST_FIXTURE = REAL_SHAPE_FIXTURE.replace(
+  "\tconst ROOF_GOLDENROD ; 4\nDEF NUM_ROOFS EQU const_value",
+  "\tconst ROOF_GOLDENROD ; 4\n\tconst ROOF_EXTRA     ; 5\nDEF NUM_ROOFS EQU const_value",
+);
+
+/** 26 `newgroup` lines -- matches the real `constants/map_constants.asm`'s
+ *  count (OLIVINE..CHERRYGROVE) and `REAL_SHAPE_FIXTURE`'s 27 `MapGroupRoofs`
+ *  entries (26 groups + 1 unused). `loadGbcRoofs`'s unit tests need this file
+ *  on disk now that it cross-checks the two counts (fix round 1, spec review
+ *  m5). */
+const MAP_CONSTANTS_FIXTURE = Array.from({ length: 26 }, (_, i) => `\tnewgroup GROUP_${i + 1}`).join("\n") + "\n";
+
 describe("parseRoofsAsm", () => {
   it("parses the real file's shape: 27 MapGroupRoofs entries (0 unused, 24 = ROOF_NEW_BARK), 5 Roofs PNG paths in ROOF_* order", () => {
     const { mapGroupRoofs, roofPngPaths } = parseRoofsAsm(REAL_SHAPE_FIXTURE, "data/maps/roofs.asm");
@@ -97,6 +114,7 @@ describe("parseRoofsAsm", () => {
 
   it("refuses an unrecognized table_width line before MapGroupRoofs' db lines", () => {
     const bad = REAL_SHAPE_FIXTURE.replace("\ttable_width 1, MapGroupRoofs", "\ttable_width 2, MapGroupRoofs");
+    expect(() => parseRoofsAsm(bad, "data/maps/roofs.asm")).toThrow(/data\/maps\/roofs\.asm:13:/);
     expect(() => parseRoofsAsm(bad, "data/maps/roofs.asm")).toThrow(/table_width 1, MapGroupRoofs/);
   });
 
@@ -105,6 +123,7 @@ describe("parseRoofsAsm", () => {
       "\ttable_width ROOF_LENGTH * LEN_2BPP_TILE, Roofs",
       "\ttable_width 1, Roofs",
     );
+    expect(() => parseRoofsAsm(bad, "data/maps/roofs.asm")).toThrow(/data\/maps\/roofs\.asm:45:/);
     expect(() => parseRoofsAsm(bad, "data/maps/roofs.asm")).toThrow(/ROOF_LENGTH \* LEN_2BPP_TILE/);
   });
 
@@ -113,7 +132,13 @@ describe("parseRoofsAsm", () => {
       'INCBIN "gfx/tilesets/roofs/violet.2bpp"',
       "garbage line here",
     );
+    expect(() => parseRoofsAsm(bad, "data/maps/roofs.asm")).toThrow(/data\/maps\/roofs\.asm:47:/);
     expect(() => parseRoofsAsm(bad, "data/maps/roofs.asm")).toThrow(/INCBIN/);
+  });
+
+  it("refuses when the Roofs table's entry count doesn't match the number of ROOF_* constants defined", () => {
+    expect(() => parseRoofsAsm(EXTRA_UNUSED_ROOF_CONST_FIXTURE, "data/maps/roofs.asm")).toThrow(/data\/maps\/roofs\.asm:/);
+    expect(() => parseRoofsAsm(EXTRA_UNUSED_ROOF_CONST_FIXTURE, "data/maps/roofs.asm")).toThrow(/Roofs: has 5 entries, but 6 ROOF_\* constant/);
   });
 
   it("refuses an incomplete file (missing the Roofs table entirely)", () => {
@@ -202,8 +227,10 @@ describe("loadGbcRoofs", () => {
   beforeAll(() => {
     dir = mkdtempSync(join(tmpdir(), "gbc-roofs-"));
     mkdirSync(join(dir, "data", "maps"), { recursive: true });
+    mkdirSync(join(dir, "constants"), { recursive: true });
     mkdirSync(join(dir, "gfx", "tilesets", "roofs"), { recursive: true });
     writeFileSync(join(dir, "data", "maps", "roofs.asm"), REAL_SHAPE_FIXTURE);
+    writeFileSync(join(dir, "constants", "map_constants.asm"), MAP_CONSTANTS_FIXTURE);
     for (const [name, shade] of [
       ["new_bark", 0],
       ["violet", 1],
@@ -237,8 +264,10 @@ describe("loadGbcRoofs", () => {
     const dir2 = mkdtempSync(join(tmpdir(), "gbc-roofs-bad-"));
     try {
       mkdirSync(join(dir2, "data", "maps"), { recursive: true });
+      mkdirSync(join(dir2, "constants"), { recursive: true });
       mkdirSync(join(dir2, "gfx", "tilesets", "roofs"), { recursive: true });
       writeFileSync(join(dir2, "data", "maps", "roofs.asm"), REAL_SHAPE_FIXTURE);
+      writeFileSync(join(dir2, "constants", "map_constants.asm"), MAP_CONSTANTS_FIXTURE);
       writeFileSync(join(dir2, "gfx", "tilesets", "roofs", "new_bark.png"), buildGrayscalePng(16, 16, 0));
       writeFileSync(join(dir2, "gfx", "tilesets", "roofs", "violet.png"), buildGrayscalePng(24, 24, 0));
       writeFileSync(join(dir2, "gfx", "tilesets", "roofs", "azalea.png"), buildGrayscalePng(24, 24, 0));
@@ -251,15 +280,40 @@ describe("loadGbcRoofs", () => {
     }
   });
 
-  describe("corpus", () => {
-    itWithGbcCorpus("real project: 5 roof tile sets, each 9 tiles of 64 shades", () => {
-      const roofs = loadGbcRoofs(GBC_SUBJECT_ROOT);
-      expect(roofs.roofTiles).toHaveLength(5);
-      for (const set of roofs.roofTiles) {
-        expect(set).toHaveLength(9);
-        for (const tile of set) expect(tile).toHaveLength(64);
+  it("refuses when MapGroupRoofs' length doesn't match constants/map_constants.asm's newgroup count + 1", () => {
+    const dir3 = mkdtempSync(join(tmpdir(), "gbc-roofs-mismatch-"));
+    try {
+      mkdirSync(join(dir3, "data", "maps"), { recursive: true });
+      mkdirSync(join(dir3, "constants"), { recursive: true });
+      mkdirSync(join(dir3, "gfx", "tilesets", "roofs"), { recursive: true });
+      writeFileSync(join(dir3, "data", "maps", "roofs.asm"), REAL_SHAPE_FIXTURE); // 27 entries = 26 + 1
+      // Only 20 newgroups here, not 26 -- MapGroupRoofs (27 entries) now disagrees.
+      const fewerGroups = Array.from({ length: 20 }, (_, i) => `\tnewgroup GROUP_${i + 1}`).join("\n") + "\n";
+      writeFileSync(join(dir3, "constants", "map_constants.asm"), fewerGroups);
+      for (const name of ["new_bark", "violet", "azalea", "olivine", "goldenrod"]) {
+        writeFileSync(join(dir3, "gfx", "tilesets", "roofs", `${name}.png`), buildGrayscalePng(24, 24, 0));
       }
-      expect(roofs.mapGroupRoofs[24]).toBe(0); // ROOF_NEW_BARK, New Bark's own group
-    });
+      expect(() => loadGbcRoofs(dir3)).toThrow(/MapGroupRoofs has 27 entries/);
+      expect(() => loadGbcRoofs(dir3)).toThrow(/defines 20 newgroup\(s\)/);
+      expect(() => loadGbcRoofs(dir3)).toThrow(/expected 21/);
+    } finally {
+      rmSync(dir3, { recursive: true, force: true });
+    }
+  });
+
+  describe("corpus", () => {
+    itWithGbcCorpus(
+      "real project: 5 roof tile sets (== the 5 ROOF_* consts), each 9 tiles of 64 shades; MapGroupRoofs has 27 entries (== 26 newgroups + 1)",
+      () => {
+        const roofs = loadGbcRoofs(GBC_SUBJECT_ROOT);
+        expect(roofs.roofTiles).toHaveLength(5);
+        for (const set of roofs.roofTiles) {
+          expect(set).toHaveLength(9);
+          for (const tile of set) expect(tile).toHaveLength(64);
+        }
+        expect(roofs.mapGroupRoofs).toHaveLength(27);
+        expect(roofs.mapGroupRoofs[24]).toBe(0); // ROOF_NEW_BARK, New Bark's own group
+      },
+    );
   });
 });

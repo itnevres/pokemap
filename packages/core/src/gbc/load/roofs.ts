@@ -1,8 +1,23 @@
 import { readFileSync } from "node:fs";
 import { norm } from "../../config/paths.js";
-import { codeLines, stripComment, parseConstDefs } from "./asm.js";
+import { codeLines, stripComment, stripMacroDefs, matchCall, parseConstDefs } from "./asm.js";
 import { readShadesPng } from "./png.js";
-import { pngPathFor, sliceTiles } from "./tileset.js";
+import { sliceTiles } from "./tileset.js";
+
+/**
+ * `Roofs:` INCBINs are a bare `.2bpp` (no `.lz`) -- `gfx/tilesets/roofs/
+ * new_bark.2bpp`, not `new_bark.2bpp.lz` -- unlike every other tileset GFX
+ * INCBIN in the corpus. `tileset.ts`'s `pngPathFor` stays strict to
+ * `.2bpp.lz` only (Task 5's own invariant: that path is always a gitignored
+ * build artifact), so this is its own tiny resolver for the one file that
+ * differs, rather than loosening the shared one (fix round 1, spec review
+ * minor m7).
+ */
+function roofPngPathFor(gfxIncbinPath: string): string {
+  const m = gfxIncbinPath.match(/^(.*)\.2bpp$/);
+  if (!m) throw new Error(`roofPngPathFor: GFX path "${gfxIncbinPath}" doesn't end in ".2bpp"`);
+  return `${m[1]}.png`;
+}
 
 /**
  * `data/maps/roofs.asm` (GBC format findings §3.4 step 5 / §Extra Border;
@@ -29,7 +44,8 @@ export interface ParsedRoofsAsm {
    *  unused/`null`). `null` is `db -1` -- no roof swap for that group. */
   mapGroupRoofs: (number | null)[];
   /** `ROOF_*` index -> the roof PNG's repo-relative path (resolved from the
-   *  `.2bpp` INCBIN via `pngPathFor`, never the `.2bpp` build artifact -- I3). */
+   *  `.2bpp` INCBIN via this module's own `roofPngPathFor`, never the `.2bpp`
+   *  build artifact itself -- I3). */
   roofPngPaths: string[];
 }
 
@@ -113,7 +129,7 @@ export function parseRoofsAsm(text: string, source: string = "<roofs>"): ParsedR
       if (!inc) {
         throw fail(lineIndex, `expected an "INCBIN" line (in the Roofs table) or its closing "assert_table_length", got "${stripped.trim()}"`);
       }
-      roofPngPaths.push(pngPathFor(inc[1]!));
+      roofPngPaths.push(roofPngPathFor(inc[1]!));
       continue;
     }
 
@@ -134,6 +150,18 @@ export function parseRoofsAsm(text: string, source: string = "<roofs>"): ParsedR
     }
   }
 
+  // Fix round 1 (spec review m5): the shape check above only guards indices
+  // MapGroupRoofs actually references, so a fork that drops a Roofs: entry
+  // nothing currently points at would parse silently. roofConsts.size is the
+  // number of "const ROOF_*" lines this same file's own leading const_def
+  // block defines (real corpus: 5, NEW_BARK..GOLDENROD) -- it must equal the
+  // number of Roofs: INCBINs, one per constant, in the same order.
+  if (roofPngPaths.length !== roofConsts.size) {
+    throw new Error(
+      `parseRoofsAsm: ${source}: Roofs: has ${roofPngPaths.length} entries, but ${roofConsts.size} ROOF_* constant(s) are defined`,
+    );
+  }
+
   return { mapGroupRoofs, roofPngPaths };
 }
 
@@ -150,10 +178,33 @@ export interface GbcRoofs {
   roofTiles: Uint8Array[][];
 }
 
+/** Counts `newgroup` lines in `constants/map_constants.asm` (GBC format
+ *  findings §3.6) -- the real corpus has 26, one per `newgroup` from
+ *  OLIVINE(1) to CHERRYGROVE(26). Used only to cross-check `MapGroupRoofs`'
+ *  own length against the group count a different file defines (fix round 1,
+ *  spec review m5) -- `map.ts`'s `parseMapConstants` computes the same count
+ *  as a side effect of building per-map records, but this needs only the
+ *  count, from a root `loadGbcRoofs` doesn't otherwise touch. */
+function countNewgroups(text: string): number {
+  let n = 0;
+  for (const line of stripMacroDefs(text)) {
+    if (matchCall(line, "newgroup")) n++;
+  }
+  return n;
+}
+
 export function loadGbcRoofs(root: string): GbcRoofs {
   const r = norm(root);
   const path = "data/maps/roofs.asm";
   const { mapGroupRoofs, roofPngPaths } = parseRoofsAsm(readFileSync(`${r}/${path}`, "utf8"), path);
+
+  const mapConstantsPath = "constants/map_constants.asm";
+  const newgroupCount = countNewgroups(readFileSync(`${r}/${mapConstantsPath}`, "utf8"));
+  if (mapGroupRoofs.length !== newgroupCount + 1) {
+    throw new Error(
+      `loadGbcRoofs: ${path}: MapGroupRoofs has ${mapGroupRoofs.length} entries, but ${mapConstantsPath} defines ${newgroupCount} newgroup(s) (expected ${newgroupCount + 1} = newgroups + 1 unused entry)`,
+    );
+  }
 
   const roofTiles = roofPngPaths.map((pngPath) => {
     const png = readShadesPng(readFileSync(`${r}/${pngPath}`));

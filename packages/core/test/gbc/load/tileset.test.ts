@@ -13,6 +13,7 @@ import {
   loadGbcTileset,
   loadGbcTilesetByName,
   pngTileIndex,
+  pngPathFor,
 } from "../../../src/gbc/load/tileset.js";
 import { parseConstDefs } from "../../../src/gbc/load/asm.js";
 import { parseIncbins } from "../../../src/gbc/load/incbin.js";
@@ -737,4 +738,14 @@ describe("GbcTileset corpus", () => {
       expect(failures.slice(0, 20)).toEqual([]);
     },
   );
+});
+
+describe("pngPathFor", () => {
+  it("resolves a real tileset GFX .2bpp.lz INCBIN to its sibling .png", () => {
+    expect(pngPathFor("gfx/tilesets/johto.2bpp.lz")).toBe("gfx/tilesets/johto.png");
+  });
+
+  it("refuses a bare .2bpp path (fix round 1, spec review m7: strict to .2bpp.lz again, matching Task 5) -- only data/maps/roofs.asm's own resolver accepts that shape", () => {
+    expect(() => pngPathFor("gfx/tilesets/roofs/new_bark.2bpp")).toThrow(/\.2bpp\.lz/);
+  });
 });

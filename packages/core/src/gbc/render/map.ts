@@ -150,7 +150,12 @@ export interface GbcMapRaster extends Raster {
   unmappedTileCount: number;
   /** From `proj.layout(map)` -- e.g. the 2 CeruleanCave oversize-`.blk`
    *  defects (Decision 3). Empty when `opts.blocksOverride` is supplied,
-   *  since no `.blk` is read in that case. */
+   *  since no `.blk` is read in that case (fix round 1, spec review minor m6:
+   *  this means an edit-session render of a non-writable layout, e.g.
+   *  CeruleanCave2F/B1, drops the "not writable" defect from THIS result --
+   *  Plan 7's edit sessions must get that fact from `proj.layout(map)`
+   *  directly, the same call this field mirrors when no override is given,
+   *  not from a render's `defects`). */
   defects: DataDefect[];
 }
 
@@ -165,7 +170,11 @@ export interface RenderGbcMapOptions {
   flash?: boolean;
   /** Render these blocks instead of `proj.layout(map)`'s own `.blk` read --
    *  mirrors GBA's `renderLayout`'s `blocksOverride` (kept for Plan 7's edit
-   *  sessions). Must have exactly `map.width * map.height` entries. */
+   *  sessions). Must have exactly `map.width * map.height` entries. Supplying
+   *  this skips `proj.layout(map)` entirely, so `GbcMapRaster.defects` comes
+   *  back empty regardless of whether the map's real `.blk` is writable --
+   *  writability itself is `proj.layout(map)`'s own fact to report (Decision
+   *  3), not this render's. */
   blocksOverride?: Block[];
 }
 
@@ -179,6 +188,12 @@ export interface RenderGbcMapOptions {
  * ld a,[wMapBorderBlock]` -- GBC format findings, "Extra findings" -> Border).
  * The ring itself is drawn as the border metatile directly (Task 9 never
  * stitches a real neighboring map's data into it -- that is Task 11's job).
+ *
+ * Tile animation (water/flower frames, `\1Anim` in `data/tilesets.asm`,
+ * `engine/tilesets/tileset_anims.asm`) is out of scope (task spec, "Out of
+ * scope"): every animated tile renders as its static PNG frame, exactly as
+ * `ts.tiles`/the roof-swapped copy already hold it -- there is no runtime
+ * frame-cycling logic here or anywhere else in this module.
  */
 export function renderGbcMap(proj: GbcProject, mapName: string, opts: RenderGbcMapOptions = {}): GbcMapRaster {
   const map = proj.map(mapName);
