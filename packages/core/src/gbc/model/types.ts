@@ -152,3 +152,98 @@ export interface Layout {
   blocks: Block[];
   writable: boolean;
 }
+
+/**
+ * One `warp_event` line from a map's `<Name>_MapEvents:` section (GBC format
+ * findings §3.1: `warp_event x, y, MAP_CONST, destWarp`). `destWarp` is
+ * 1-based; `-1` means "return to the previous map's warp" (6 events across 4
+ * maps in the corpus). `mapConst` is the raw `MAP_CONST` text -- resolving it
+ * against a `GbcMap.constName` is the caller's job, not this loader's.
+ */
+export interface GbcWarpEvent {
+  x: number;
+  y: number;
+  mapConst: string;
+  destWarp: number;
+  lineIndex: number;
+}
+
+/** `coord_event x, y, SCENE_*, scriptLabel` (GBC format findings §3.1). */
+export interface GbcCoordEvent {
+  x: number;
+  y: number;
+  sceneConst: string;
+  script: string;
+  lineIndex: number;
+}
+
+/** `bg_event x, y, BGEVENT_*, scriptLabel` (GBC format findings §3.1). */
+export interface GbcBgEvent {
+  x: number;
+  y: number;
+  bgEventType: string;
+  script: string;
+  lineIndex: number;
+}
+
+/**
+ * One `object_event` line, 13 args (GBC format findings §3.1). `hour1`/
+ * `hour2` are kept as raw expressions, never parsed as numbers: `hour1` is
+ * always `-1` in the corpus, but its pair `hour2` is sometimes a `DAY`/
+ * `MORN`/`NITE` flag rather than a number (11 of 1468 objects), so the pair
+ * is stored together as text rather than split into a numeric field and a
+ * string field. `palette` (`PAL_NPC_*` or `0`) and `eventFlag` (`EVENT_*` or
+ * `-1`) are likewise mixed numeric/identifier across the corpus and kept
+ * raw for the same reason.
+ */
+export interface GbcObjectEvent {
+  x: number;
+  y: number;
+  sprite: string;
+  moveData: string;
+  radiusX: number;
+  radiusY: number;
+  hour1: string;
+  hour2: string;
+  palette: string;
+  objectType: string;
+  sightRange: number;
+  script: string;
+  eventFlag: string;
+  lineIndex: number;
+}
+
+/** `scene_script scriptLabel[, SCENE_const]` -- the SCENE_const is optional (1 or 2 args in the corpus). */
+export interface GbcSceneScript {
+  script: string;
+  sceneConst: string | null;
+  lineIndex: number;
+}
+
+/** `callback MAPCALLBACK_*, scriptLabel` (GBC format findings §3.1). */
+export interface GbcCallback {
+  callbackConst: string;
+  script: string;
+  lineIndex: number;
+}
+
+/**
+ * One map's full event/script set (GBC format findings §3.1). `warps`/
+ * `coords`/`bgs`/`objects` come from the `<Name>_MapEvents:` section;
+ * `sceneScripts`/`callbacks` come from the `<Name>_MapScripts:` section.
+ * Each array's order is source order -- the same ordinal Plan 7's splicer
+ * (`../write/asmSplice.ts`'s `locateEventCall`) addresses events by, so
+ * callers must never resort these arrays. `objectConsts` are the
+ * `const NAME` lines immediately following `object_const_def` at the top of
+ * the file (absent -> `[]`); its length need not equal `objects.length` --
+ * see `loadGbcMapEvents`'s defect handling in `../load/events.ts`.
+ */
+export interface GbcMapEvents {
+  warps: GbcWarpEvent[];
+  coords: GbcCoordEvent[];
+  bgs: GbcBgEvent[];
+  objects: GbcObjectEvent[];
+  sceneScripts: GbcSceneScript[];
+  callbacks: GbcCallback[];
+  objectConsts: string[];
+}

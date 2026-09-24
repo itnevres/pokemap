@@ -236,3 +236,45 @@ export function scanCalls(text: string, macro: string): AsmCall[] {
 
   return out;
 }
+
+/** A `Label:` or `Label::` line (optionally comment-tailed) that bounds a section. */
+const LABEL_LINE_RE = /^[A-Za-z_][A-Za-z0-9_]*::?\s*(;.*)?$/m;
+
+/**
+ * The tail of `text` after a `Label:` line, bounded at the next label line
+ * (or end of text) -- shared by `../write/asmSplice.ts`'s `locateEventCall`
+ * (a `<mapName>_MapEvents:` section) and `../load/events.ts` (both
+ * `<mapName>_MapEvents:` and `<mapName>_MapScripts:` sections), since both
+ * rely on the same format fact: an RGBDS label's own section always runs to
+ * the next label (GBC format findings §3.1). The label may carry trailing
+ * whitespace (`CeruleanCave1F_MapEvents: `) -- matched up to the end of its
+ * own line, never past it.
+ */
+export interface LabelTail {
+  /** The bounded text after the label's own line. */
+  text: string;
+  /** Absolute offset of `text[0]` within the original `text` passed in. */
+  offset: number;
+  /** 0-based line index of `text`'s first line within the original text. */
+  lineIndex: number;
+}
+
+/** Refuses (throws, naming the label) when `label:` is not found. */
+export function labelTail(text: string, label: string): LabelTail {
+  const labelLineRe = new RegExp(`^${escapeRegExp(label)}:[^\\n]*$`, "m");
+  const labelMatch = labelLineRe.exec(text);
+  if (!labelMatch) {
+    throw new Error(`labelTail: no "${label}:" label found`);
+  }
+
+  const labelLineEnd = labelMatch.index + labelMatch[0].length;
+  const nextNewline = text.indexOf("\n", labelLineEnd);
+  const tailOffset = nextNewline === -1 ? text.length : nextNewline + 1;
+
+  const tailText = text.slice(tailOffset);
+  const nextLabelMatch = LABEL_LINE_RE.exec(tailText);
+  const boundedTail = nextLabelMatch ? tailText.slice(0, nextLabelMatch.index) : tailText;
+
+  const lineIndex = text.slice(0, tailOffset).match(/\n/g)?.length ?? 0;
+  return { text: boundedTail, offset: tailOffset, lineIndex };
+}
