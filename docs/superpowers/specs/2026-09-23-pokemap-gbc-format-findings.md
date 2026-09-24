@@ -424,7 +424,7 @@ Grass levels in the tables are **base** levels. `ChooseWildEncounter` adds +0 to
 **Fishing (`data/wild/fish.asm`, engine `engine/events/fish.asm`).**
 
 - **Map → group.** The map header's 8th argument (`FISHGROUP_*`, from `constants/map_data_constants.asm`) holds one of 13 groups plus `FISHGROUP_NONE`. `GetFishingGroup` (`home/map.asm`) reads it, and `FISHGROUP_NONE` = 0 means "can't fish here" (`engine/events/overworld.asm`: `and a / jr nz, .goodtofish`).
-- **Group → table.** The index into `FishGroups` is `FISHGROUP_x − 1` (`GetFishGroupIndex`: `dec d`). With the daily fish-swarm flag set, `FISHGROUP_QWILFISH` and `FISHGROUP_REMORAID` are swapped to their `_SWARM` variants.
+- **Group → table.** The index into `FishGroups` is `FISHGROUP_x − 1` (`GetFishGroupIndex`: `dec d`). A swap happens only when the daily flag `DAILYFLAGS1_FISH_SWARM_F` (in `wDailyFlags1`) is set **and** `wFishingSwarmFlag` names the matching species. Then `FISHGROUP_QWILFISH` → `FISHGROUP_QWILFISH_SWARM` when `wFishingSwarmFlag == FISHSWARM_QWILFISH`, and `FISHGROUP_REMORAID` → `FISHGROUP_REMORAID_SWARM` when `wFishingSwarmFlag == FISHSWARM_REMORAID`. Only the matching group swaps, and every other group is unaffected.
 - **Macro:**
 
 ```
@@ -544,7 +544,7 @@ Shape:
    - The corpus test pins exactly this one file as terminator-less.
    - Latent engine consequence: a Kanto map with no grass entry makes `LookUpWildmonsForMapDE` run into `KantoWaterWildMons` at grass stride (§Extra, Wild data). This is likely a PerfPlus fork bug; report it to the user.
 5. **Atlas scope (Tasks 8/12):** grass, water, fishing (header `FISHGROUP` → `fish.asm`) and headbutt/rock smash (`treemon_maps.asm` → `treemons.asm`). The data layouts are in §Extra, Wild data.
-6. **Roof graphics and roof palette go to Task 9** (per-map render). Task 5's tileset load stays per-tileset and map-agnostic. Task 6 still resolves the full per-map palette set including the roof colors, since it already takes `mapGroup`. Task 9 applies the roof **tile** swap.
+6. **Roof graphics (tile swap) go to Task 9** (per-map render). **Roof palette colors stay in Task 6.** Task 5's tileset load stays per-tileset and map-agnostic. Task 6 still resolves the full per-map palette set including the roof colors, since it already takes `mapGroup`. Task 9 applies the roof **tile** swap.
 
 ---
 
