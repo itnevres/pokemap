@@ -1,6 +1,7 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { parseBlk } from "./blocks.js";
 import { parseIncbins } from "./incbin.js";
+import { norm } from "../../config/paths.js";
 import type { Connection, DataDefect, GbcMap, Layout } from "../model/types.js";
 
 const DIRECTIONS = ["north", "south", "west", "east"] as const;
@@ -232,9 +233,21 @@ function assertNoDuplicates<T>(entries: T[], keyFn: (e: T) => string, sourceFile
   }
 }
 
+/**
+ * Refuses (throws, naming the count and the orphaned keys) when an entry's
+ * key is absent from `present` -- the other direction of the join-miss
+ * refusal from the attributes-driven loop in `loadGbcMaps`, so a map_const
+ * or header with no `map_attributes` counterpart isn't silently dropped.
+ */
+function assertNoOrphans<T>(entries: T[], keyFn: (e: T) => string, present: Set<string>, sourceFile: string, label: string): void {
+  const orphans = entries.filter((e) => !present.has(keyFn(e)));
+  if (orphans.length > 0) {
+    throw new Error(`${sourceFile}: ${orphans.length} ${label}(s) have no map_attributes entry: ${orphans.map(keyFn).join(", ")}`);
+  }
+}
+
 export interface LoadedGbcMaps {
   maps: GbcMap[];
-  byName: Map<string, GbcMap>;
   /** Refuses (throws, naming the map) on a miss -- matches `project.ts`'s GBA refusal style. */
   map(name: string): GbcMap;
 }
@@ -247,10 +260,22 @@ export interface LoadedGbcMaps {
  * than guessing (G4).
  */
 export function loadGbcMaps(root: string): LoadedGbcMaps {
-  const mapConsts = parseMapConstants(readFileSync(`${root}/constants/map_constants.asm`, "utf8"));
-  const attributes = parseMapAttributes(readFileSync(`${root}/data/maps/attributes.asm`, "utf8"));
-  const headers = parseMapHeaders(readFileSync(`${root}/data/maps/maps.asm`, "utf8"));
-  const incbins = parseIncbins(readFileSync(`${root}/data/maps/blocks.asm`, "utf8"));
+  const r = norm(root);
+  const attributesAsm = `${r}/data/maps/attributes.asm`;
+
+  // Task 10 passes --project straight through from user input, so this is
+  // the first error most users will ever see from this tool for a GBC root.
+  // Every other read below would otherwise fail as a bare ENOENT naming
+  // neither the root nor what was expected to be there (mirrors project.ts's
+  // openProject guard for the GBA loader).
+  if (!existsSync(attributesAsm)) {
+    throw new Error(`${root} does not look like a pokecrystal-family project root: missing ${attributesAsm}`);
+  }
+
+  const mapConsts = parseMapConstants(readFileSync(`${r}/constants/map_constants.asm`, "utf8"));
+  const attributes = parseMapAttributes(readFileSync(attributesAsm, "utf8"));
+  const headers = parseMapHeaders(readFileSync(`${r}/data/maps/maps.asm`, "utf8"));
+  const incbins = parseIncbins(readFileSync(`${r}/data/maps/blocks.asm`, "utf8"));
 
   // Refuse (G4) rather than let a duplicate key silently overwrite an
   // earlier entry when building the by-name/by-const lookup Maps below.
@@ -269,21 +294,9 @@ export function loadGbcMaps(root: string): LoadedGbcMaps {
   // direction -- a map_const or header with no map_attributes counterpart
   // must not be silently dropped.
   const attrConstNames = new Set(attributes.map((a) => a.constName));
-  const orphanConsts = mapConsts.filter((c) => !attrConstNames.has(c.constName));
-  if (orphanConsts.length > 0) {
-    throw new Error(
-      `constants/map_constants.asm: ${orphanConsts.length} constant(s) have no map_attributes entry: ` +
-        orphanConsts.map((c) => c.constName).join(", "),
-    );
-  }
+  assertNoOrphans(mapConsts, (c) => c.constName, attrConstNames, "constants/map_constants.asm", "constant");
   const attrNames = new Set(attributes.map((a) => a.name));
-  const orphanHeaders = headers.filter((h) => !attrNames.has(h.name));
-  if (orphanHeaders.length > 0) {
-    throw new Error(
-      `data/maps/maps.asm: ${orphanHeaders.length} header(s) have no map_attributes entry: ` +
-        orphanHeaders.map((h) => h.name).join(", "),
-    );
-  }
+  assertNoOrphans(headers, (h) => h.name, attrNames, "data/maps/maps.asm", "header");
 
   const maps: GbcMap[] = attributes.map((attr) => {
     const header = headerByName.get(attr.name);
@@ -330,10 +343,9 @@ export function loadGbcMaps(root: string): LoadedGbcMaps {
   const byName = new Map(maps.map((m) => [m.name, m]));
   return {
     maps,
-    byName,
     map(name: string): GbcMap {
       const m = byName.get(name);
-      if (!m) throw new Error(`unknown map ${name}; not listed in ${root}/data/maps/attributes.asm`);
+      if (!m) throw new Error(`unknown map ${name}; not listed in ${attributesAsm}`);
       return m;
     },
   };
@@ -351,7 +363,8 @@ export function loadLayout(root: string, map: Pick<GbcMap, "blkPath" | "width" |
   layout: Layout;
   defects: DataDefect[];
 } {
-  const buf = readFileSync(`${root}/${map.blkPath}`);
+  const r = norm(root);
+  const buf = readFileSync(`${r}/${map.blkPath}`);
   const expected = map.width * map.height;
 
   if (buf.length < expected) {

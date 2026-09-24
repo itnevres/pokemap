@@ -65,6 +65,11 @@ describe("parseMapConstants", () => {
     const text = "\tnewgroup FOO                                                  ;  1\n\tmap_const FOO_TOWN, 4, 4 ;  1";
     expect(parseMapConstants(text)).toEqual([{ constName: "FOO_TOWN", group: 1, number: 1, width: 4, height: 4 }]);
   });
+
+  it("tolerates CRLF line endings (M5)", () => {
+    const text = "\tnewgroup FOO                                                  ;  1\r\n\tmap_const FOO_TOWN, 4, 4 ;  1\r\n\tendgroup\r\n";
+    expect(parseMapConstants(text)).toEqual([{ constName: "FOO_TOWN", group: 1, number: 1, width: 4, height: 4 }]);
+  });
 });
 
 describe("parseNum", () => {
@@ -343,11 +348,28 @@ describe("loadGbcMaps / loadLayout join refusals (temp root)", () => {
     for (const r of roots) rmSync(r, { recursive: true, force: true });
   });
 
+  it("throws naming the root and the expected file when data/maps/attributes.asm is missing (I1 root guard)", () => {
+    root = mkdtempSync(join(tmpdir(), "pokemap-gbc-map-empty-"));
+    roots.push(root);
+    expect(() => loadGbcMaps(root)).toThrow(root);
+    expect(() => loadGbcMaps(root)).toThrow("attributes.asm");
+  });
+
+  it("normalizes a root with a trailing slash or backslash (M2)", () => {
+    root = writeCorpus(baseFiles());
+    writeFileSync(join(root, "maps/FooTown.blk"), Buffer.alloc(16, 7));
+    const withTrailingSlash = `${root}/`;
+    const withBackslashes = `${root.replace(/\//g, "\\")}\\`;
+    expect(loadGbcMaps(withTrailingSlash).map("FooTown").blkPath).toBe("maps/FooTown.blk");
+    expect(loadGbcMaps(withBackslashes).map("FooTown").blkPath).toBe("maps/FooTown.blk");
+    const { layout } = loadLayout(withBackslashes, loadGbcMaps(root).map("FooTown"));
+    expect(layout.writable).toBe(true);
+  });
+
   it("loads a single self-consistent map with all fields joined", () => {
     root = writeCorpus(baseFiles());
-    const { maps, byName, map } = loadGbcMaps(root);
+    const { maps, map } = loadGbcMaps(root);
     expect(maps).toHaveLength(1);
-    expect(byName.get("FooTown")).toEqual(maps[0]);
     expect(map("FooTown")).toEqual(maps[0]);
     expect(maps[0]).toEqual({
       name: "FooTown",
