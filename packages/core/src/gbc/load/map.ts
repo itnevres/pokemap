@@ -54,10 +54,19 @@ function matchCall(line: string, keyword: string): string[] | null {
   return m ? splitArgs(m[1]!) : null;
 }
 
-/** `$xx` hex, or plain (possibly negative) decimal. */
-function parseNum(s: string): number {
+/**
+ * `$xx` hex, or a signed decimal integer, and nothing else. Refuses (throws,
+ * naming the offending text) rather than truncating -- plain `parseInt`
+ * silently stops at the first non-digit (`parseInt("5 + 1")` is `5`,
+ * `parseInt("4 ;  1")` is `4`), which would mask a malformed or unstripped
+ * trailing token as a plausible number instead of surfacing it (G4).
+ * Exported for direct unit testing of this refusal.
+ */
+export function parseNum(s: string): number {
   const t = s.trim();
-  return t.startsWith("$") ? parseInt(t.slice(1), 16) : parseInt(t, 10);
+  if (/^\$[0-9A-Fa-f]+$/.test(t)) return parseInt(t.slice(1), 16);
+  if (/^-?\d+$/.test(t)) return parseInt(t, 10);
+  throw new Error(`parseNum: "${s}" is not a clean $hex or signed decimal number`);
 }
 
 export interface MapConstEntry {
@@ -211,6 +220,18 @@ export function parseMapHeaders(text: string): MapHeaderEntry[] {
   return out;
 }
 
+/** Refuses (throws, naming the duplicate key and its source) rather than letting a later entry silently overwrite an earlier one. */
+function assertNoDuplicates<T>(entries: T[], keyFn: (e: T) => string, sourceFile: string): void {
+  const seen = new Set<string>();
+  for (const e of entries) {
+    const key = keyFn(e);
+    if (seen.has(key)) {
+      throw new Error(`${sourceFile}: duplicate entry "${key}" -- refusing to silently overwrite`);
+    }
+    seen.add(key);
+  }
+}
+
 export interface LoadedGbcMaps {
   maps: GbcMap[];
   byName: Map<string, GbcMap>;
@@ -231,11 +252,37 @@ export function loadGbcMaps(root: string): LoadedGbcMaps {
   const headers = parseMapHeaders(readFileSync(`${root}/data/maps/maps.asm`, "utf8"));
   const incbins = parseIncbins(readFileSync(`${root}/data/maps/blocks.asm`, "utf8"));
 
+  // Refuse (G4) rather than let a duplicate key silently overwrite an
+  // earlier entry when building the by-name/by-const lookup Maps below.
+  assertNoDuplicates(mapConsts, (c) => c.constName, "constants/map_constants.asm");
+  assertNoDuplicates(headers, (h) => h.name, "data/maps/maps.asm");
+  assertNoDuplicates(attributes, (a) => a.name, "data/maps/attributes.asm");
+
   const mapConstByConst = new Map(mapConsts.map((c) => [c.constName, c]));
   const headerByName = new Map(headers.map((h) => [h.name, h]));
   const blkPathByLabel = new Map<string, string>();
   for (const entry of incbins) {
     for (const label of entry.labels) blkPathByLabel.set(label, entry.path);
+  }
+
+  // The join below is attributes-driven; also refuse (G4) the other
+  // direction -- a map_const or header with no map_attributes counterpart
+  // must not be silently dropped.
+  const attrConstNames = new Set(attributes.map((a) => a.constName));
+  const orphanConsts = mapConsts.filter((c) => !attrConstNames.has(c.constName));
+  if (orphanConsts.length > 0) {
+    throw new Error(
+      `constants/map_constants.asm: ${orphanConsts.length} constant(s) have no map_attributes entry: ` +
+        orphanConsts.map((c) => c.constName).join(", "),
+    );
+  }
+  const attrNames = new Set(attributes.map((a) => a.name));
+  const orphanHeaders = headers.filter((h) => !attrNames.has(h.name));
+  if (orphanHeaders.length > 0) {
+    throw new Error(
+      `data/maps/maps.asm: ${orphanHeaders.length} header(s) have no map_attributes entry: ` +
+        orphanHeaders.map((h) => h.name).join(", "),
+    );
   }
 
   const maps: GbcMap[] = attributes.map((attr) => {

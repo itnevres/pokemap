@@ -8,6 +8,7 @@ import {
   parseMapHeaders,
   loadGbcMaps,
   loadLayout,
+  parseNum,
 } from "../../../src/gbc/load/map.js";
 import { GBC_SUBJECT_ROOT, itWithGbcCorpus, hasGbcProject, gbcCorpusRoots } from "../helpers/corpus.js";
 
@@ -63,6 +64,35 @@ describe("parseMapConstants", () => {
   it("accepts a final line with no trailing newline", () => {
     const text = "\tnewgroup FOO                                                  ;  1\n\tmap_const FOO_TOWN, 4, 4 ;  1";
     expect(parseMapConstants(text)).toEqual([{ constName: "FOO_TOWN", group: 1, number: 1, width: 4, height: 4 }]);
+  });
+});
+
+describe("parseNum", () => {
+  it("parses $hex", () => {
+    expect(parseNum("$05")).toBe(5);
+    expect(parseNum("$2c")).toBe(44);
+  });
+
+  it("parses a plain and a negative decimal", () => {
+    expect(parseNum("18")).toBe(18);
+    expect(parseNum("-18")).toBe(-18);
+    expect(parseNum("0")).toBe(0);
+  });
+
+  it("trims surrounding whitespace", () => {
+    expect(parseNum("  5  ")).toBe(5);
+  });
+
+  it("refuses a non-clean expression, naming the text, rather than truncating (parseInt(\"5 + 1\") === 5)", () => {
+    expect(() => parseNum("5 + 1")).toThrow(/5 \+ 1/);
+  });
+
+  it("refuses text with an unstripped comment fragment, naming the text, rather than truncating", () => {
+    expect(() => parseNum("4 ;  1")).toThrow(/4 ;  1/);
+  });
+
+  it("refuses an empty string rather than returning NaN", () => {
+    expect(() => parseNum("")).toThrow();
   });
 });
 
@@ -135,6 +165,18 @@ describe("parseMapAttributes", () => {
       { name: "Foo", constName: "FOO", border: 0, connectionFlags: "0", connections: [] },
     ]);
   });
+
+  it("strips a trailing comment on a map_attributes line -- the flags arg is not corrupted", () => {
+    const text = "\tmap_attributes FooTown, FOO_TOWN, $00, WEST ; comment";
+    expect(parseMapAttributes(text)).toEqual([
+      { name: "FooTown", constName: "FOO_TOWN", border: 0, connectionFlags: "WEST", connections: [] },
+    ]);
+  });
+
+  it("refuses an unrecognized connection direction, naming it", () => {
+    const text = ["\tmap_attributes FooTown, FOO_TOWN, $00, 0", "\tconnection up, Bar, BAR, 0"].join("\n");
+    expect(() => parseMapAttributes(text)).toThrow(/up/);
+  });
 });
 
 describe("parseMapHeaders", () => {
@@ -192,6 +234,19 @@ describe("parseMapHeaders", () => {
         fishGroup: "FISHGROUP_OCEAN",
       },
     ]);
+  });
+
+  it("strips a trailing comment on a map header line -- the fishGroup arg is not corrupted", () => {
+    const text = [
+      "MapGroupPointers::",
+      "\tdw MapGroup_Foo         ;  1",
+      "\tassert_table_length NUM_MAP_GROUPS",
+      "",
+      "MapGroup_Foo:",
+      "\tmap FooTown, TILESET_JOHTO, TOWN, LANDMARK_FOO, MUSIC_FOO, FALSE, PALETTE_AUTO, FISHGROUP_OCEAN ; comment",
+    ].join("\n");
+    const [header] = parseMapHeaders(text);
+    expect(header?.fishGroup).toBe("FISHGROUP_OCEAN");
   });
 
   it("keeps a compound expression argument intact (never bare-word matches)", () => {
@@ -310,18 +365,26 @@ describe("loadGbcMaps / loadLayout join refusals (temp root)", () => {
   });
 
   it("refuses (throws, naming the map) when attributes references a name absent from maps.asm", () => {
+    // maps.asm has no headers at all here (rather than the baseFiles default,
+    // which would make FooTown's header an orphan and trip that refusal
+    // first) so this exercises the header-miss join specifically.
     root = writeCorpus(
       baseFiles({
         "data/maps/attributes.asm": "\tmap_attributes GhostTown, FOO_TOWN, $00, 0",
+        "data/maps/maps.asm": "",
       }),
     );
     expect(() => loadGbcMaps(root)).toThrow(/GhostTown/);
   });
 
   it("refuses (throws, naming the map) when attributes' constName is absent from map_constants.asm", () => {
+    // map_constants.asm is empty here (rather than the baseFiles default,
+    // which would make FOO_TOWN an orphan const and trip that refusal first)
+    // so this exercises the constName-miss join specifically.
     root = writeCorpus(
       baseFiles({
         "data/maps/attributes.asm": "\tmap_attributes FooTown, NO_SUCH_CONST, $00, 0",
+        "constants/map_constants.asm": "",
       }),
     );
     expect(() => loadGbcMaps(root)).toThrow(/FooTown/);
@@ -337,14 +400,111 @@ describe("loadGbcMaps / loadLayout join refusals (temp root)", () => {
     expect(() => loadGbcMaps(root)).toThrow(/FooTown/);
   });
 
-  it("refuses (throws, naming the map and both values) on a group/number mismatch between maps.asm and map_constants.asm", () => {
+  it("refuses (throws, naming it) a map_const with no map_attributes counterpart (orphan, G4 both directions)", () => {
     root = writeCorpus(
       baseFiles({
         "constants/map_constants.asm": [
           "\tnewgroup FOO                                                  ;  1",
-          "\tmap_const OTHER_TOWN,                                    4,  4 ;  1",
+          "\tmap_const FOO_TOWN,                                     4,  4 ;  1",
+          "\tmap_const ORPHAN_TOWN,                                  4,  4 ;  2",
+          "\tendgroup",
+        ].join("\n"),
+      }),
+    );
+    expect(() => loadGbcMaps(root)).toThrow(/ORPHAN_TOWN/);
+  });
+
+  it("refuses (throws, naming it) a maps.asm header with no map_attributes counterpart (orphan, G4 both directions)", () => {
+    root = writeCorpus(
+      baseFiles({
+        "data/maps/maps.asm": [
+          "MapGroupPointers::",
+          "\tdw MapGroup_Foo         ;  1",
+          "\tassert_table_length NUM_MAP_GROUPS",
+          "",
+          "MapGroup_Foo:",
+          "\tmap FooTown, TILESET_JOHTO, TOWN, LANDMARK_FOO, MUSIC_FOO, FALSE, PALETTE_AUTO, FISHGROUP_OCEAN",
+          "\tmap OrphanTown, TILESET_JOHTO, TOWN, LANDMARK_FOO, MUSIC_FOO, FALSE, PALETTE_AUTO, FISHGROUP_OCEAN",
+        ].join("\n"),
+      }),
+    );
+    expect(() => loadGbcMaps(root)).toThrow(/OrphanTown/);
+  });
+
+  it("refuses (throws, naming it) a duplicate constName in map_constants.asm instead of silently overwriting", () => {
+    root = writeCorpus(
+      baseFiles({
+        "constants/map_constants.asm": [
+          "\tnewgroup FOO                                                  ;  1",
+          "\tmap_const FOO_TOWN,                                     4,  4 ;  1",
+          "\tmap_const FOO_TOWN,                                     5,  5 ;  2",
+          "\tendgroup",
+        ].join("\n"),
+      }),
+    );
+    expect(() => loadGbcMaps(root)).toThrow(/FOO_TOWN/);
+  });
+
+  it("refuses (throws, naming it) a duplicate name in maps.asm instead of silently overwriting", () => {
+    // The surviving (last, per plain Map dedup) FooTown header is made
+    // fully consistent with map_const (number 2, via the Placeholder
+    // shift) and attributes/blocks, so this only throws via the explicit
+    // duplicate check -- not incidentally via a group/number mismatch or a
+    // Placeholder-related join miss.
+    root = writeCorpus(
+      baseFiles({
+        "constants/map_constants.asm": [
+          "\tnewgroup FOO                                                  ;  1",
+          "\tmap_const PLACEHOLDER_TOWN,                              4,  4 ;  1",
           "\tmap_const FOO_TOWN,                                      4,  4 ;  2",
           "\tendgroup",
+        ].join("\n"),
+        "data/maps/attributes.asm": [
+          "\tmap_attributes FooTown, FOO_TOWN, $00, 0",
+          "\tmap_attributes Placeholder, PLACEHOLDER_TOWN, $00, 0",
+        ].join("\n"),
+        "data/maps/maps.asm": [
+          "MapGroupPointers::",
+          "\tdw MapGroup_Foo         ;  1",
+          "\tassert_table_length NUM_MAP_GROUPS",
+          "",
+          "MapGroup_Foo:",
+          "\tmap FooTown, TILESET_JOHTO, TOWN, LANDMARK_FOO, MUSIC_FOO, FALSE, PALETTE_AUTO, FISHGROUP_OCEAN",
+          "\tmap FooTown, TILESET_JOHTO, TOWN, LANDMARK_FOO, MUSIC_FOO, FALSE, PALETTE_AUTO, FISHGROUP_OCEAN",
+        ].join("\n"),
+      }),
+    );
+    expect(() => loadGbcMaps(root)).toThrow(/FooTown/);
+  });
+
+  it("refuses (throws, naming it) a duplicate name in attributes.asm instead of silently overwriting", () => {
+    root = writeCorpus(
+      baseFiles({
+        "data/maps/attributes.asm": [
+          "\tmap_attributes FooTown, FOO_TOWN, $00, 0",
+          "\tmap_attributes FooTown, FOO_TOWN, $00, 0",
+        ].join("\n"),
+      }),
+    );
+    expect(() => loadGbcMaps(root)).toThrow(/FooTown/);
+  });
+
+  it("refuses (throws, naming the map and both values) on a group/number mismatch between maps.asm and map_constants.asm", () => {
+    // Placeholder is a fully consistent second map (own attributes entry,
+    // own map_const, not referenced by maps.asm) so it isn't an orphan and
+    // isn't reached before FooTown -- it exists purely to shift FOO_TOWN's
+    // number in map_constants.asm to 2 while its maps.asm header stays 1.
+    root = writeCorpus(
+      baseFiles({
+        "constants/map_constants.asm": [
+          "\tnewgroup FOO                                                  ;  1",
+          "\tmap_const PLACEHOLDER_TOWN,                              4,  4 ;  1",
+          "\tmap_const FOO_TOWN,                                      4,  4 ;  2",
+          "\tendgroup",
+        ].join("\n"),
+        "data/maps/attributes.asm": [
+          "\tmap_attributes FooTown, FOO_TOWN, $00, 0",
+          "\tmap_attributes Placeholder, PLACEHOLDER_TOWN, $00, 0",
         ].join("\n"),
       }),
     );
@@ -513,6 +673,10 @@ describe("corpus", () => {
     expect(writableCount).toBe(255);
     expect(allDefects.some((d) => d.name === "CeruleanCave2F")).toBe(true);
     expect(allDefects.some((d) => d.name === "CeruleanCaveB1")).toBe(true);
+    for (const d of allDefects) {
+      expect(d.message).toMatch(/400/);
+      expect(d.message).toMatch(/135/);
+    }
   });
 
   itWithGbcCorpus("NewBarkTown layout: first 20 metatile ids match the real .blk", () => {
