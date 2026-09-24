@@ -2,17 +2,25 @@ import { existsSync, readFileSync } from "node:fs";
 import { openProject, type Project } from "@pokemap/core/src/project.js";
 
 /**
- * Resolves the project either from `--project <path>` or from
- * `pokemap.config.json` in the current working directory.
+ * Resolves the decomp root either from `--project <path>` or from
+ * `pokemap.config.json` in the current working directory -- the shared
+ * first step every CLI command takes, GBA or GBC alike, before branching on
+ * `detectEngineFamily` (Task 10, `index.ts`).
  *
  * Deliberately does NOT search upward for `pokemap.config.json` -- that
  * would be better UX, but it is new resolution behaviour this task was not
  * asked to add. A clear refusal naming the cwd it looked in and the
  * `--project` alternative is the fix asked for; walking parent directories
  * is a separate decision for later.
+ *
+ * GBC users pass `--project` explicitly (GBC format findings §"Config and
+ * family decision"): `pokemap.config.json`'s `gbc.projectPath` is test-only
+ * config for the corpus helpers, never a CLI fallback here -- adding one
+ * would let a GBC command silently pick up a config file meant for the test
+ * suite alone.
  */
-export function resolveProject(explicit?: string): Project {
-  if (explicit) return openProject(explicit);
+export function resolveRoot(explicit?: string): string {
+  if (explicit) return explicit;
 
   const configPath = "pokemap.config.json";
   if (!existsSync(configPath)) {
@@ -38,7 +46,14 @@ export function resolveProject(explicit?: string): Project {
       `Expected e.g. { "projectPath": "/path/to/decomp" }.`,
     );
   }
-  return openProject(projectPath);
+  return projectPath;
+}
+
+/** `openProject(resolveRoot(explicit))` -- unchanged behaviour and messages
+ *  for every existing GBA caller (Task 10 only factored `resolveRoot` out of
+ *  this function; it did not change what either half does). */
+export function resolveProject(explicit?: string): Project {
+  return openProject(resolveRoot(explicit));
 }
 
 /**

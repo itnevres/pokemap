@@ -8,22 +8,58 @@ import { readSidecar } from "@pokemap/core/src/world/sidecar.js";
 import { createRaster, blitScaled } from "@pokemap/core/src/render/raster.js";
 import { parseEncounters, speciesChances, type SpeciesChance } from "@pokemap/core/src/load/encounters.js";
 import { whereSpecies, coverage } from "@pokemap/core/src/analyse/coverage.js";
+import { detectEngineFamily, type EngineFamily } from "@pokemap/core/src/family.js";
 import { encodePng } from "./png.js";
-import { resolveProject, layoutNameFor } from "./context.js";
-import { parseBorder, parseBbox, parseScale } from "./args.js";
+import { resolveProject, resolveRoot, layoutNameFor } from "./context.js";
+import { parseBorder, parseBbox, parseScale, parseTime } from "./args.js";
 import { resolvePlacementRect } from "./renderWorld.js";
 import { runSignSuggest, runSignAdd, runSignList, runPaint, runDiff } from "./writeCommands.js";
+import { runGbcRender, runGbcQuery } from "./gbcCommands.js";
 
 const program = new Command();
 program.name("pokemap").option("-p, --project <path>", "decomp root");
+
+/**
+ * The one root-resolution step every command shares (Task 10): resolve the
+ * decomp root once, then probe its engine family once, so the family branch
+ * below is never hand-copied per command.
+ */
+function resolveRootAndFamily(explicit?: string): { root: string; family: EngineFamily } {
+  const root = resolveRoot(explicit);
+  return { root, family: detectEngineFamily(root) };
+}
+
+/**
+ * Wraps a GBA-only command's action: refuses with one consistent message
+ * naming `command`, BEFORE `run` (and therefore any GBA loader) ever
+ * executes, when the resolved root is a GBC (pokecrystal-family) project.
+ * `render`/`query` are the only commands with a real GBC implementation
+ * (Task 10); render-world (Task 11), encounters/where/coverage (Task 12) and
+ * every write command (sign/paint/diff -- G7, no write path for GBC yet) all
+ * go through this instead.
+ */
+function runGbaOnly(root: string, family: EngineFamily, command: string, run: (root: string) => void): void {
+  if (family === "gbc") {
+    throw new Error(`${command} is not supported for gbc (pokecrystal-family) projects yet`);
+  }
+  run(root);
+}
 
 program
   .command("render <target>")
   .description("render a map or layout to a PNG")
   .option("-o, --out <file>", "output path", "out.png")
   .option("--border <rings>", "rings of border to draw", parseBorder, 0)
-  .action((target: string, opts: { out: string; border: number }) => {
-    const proj = resolveProject(program.opts().project);
+  .option("--time <time>", "time of day (gbc only): morn, day, or nite", parseTime, "day")
+  .action((target: string, opts: { out: string; border: number; time: "morn" | "day" | "nite" }) => {
+    const { root, family } = resolveRootAndFamily(program.opts().project);
+    if (family === "gbc") {
+      const { stdout, stderr } = runGbcRender(root, target, { out: opts.out, border: opts.border, time: opts.time });
+      if (stderr) process.stderr.write(stderr);
+      process.stdout.write(stdout);
+      return;
+    }
+    const proj = resolveProject(root);
     const r = renderLayout(proj, layoutNameFor(proj, target), { border: opts.border });
     writeFileSync(opts.out, encodePng(r));
     process.stdout.write(`${opts.out} ${r.width}x${r.height} outOfRange=${r.outOfRangeCount}\n`);
@@ -37,7 +73,9 @@ program
   .option("--scale <n>", "pixels per tile (16 = full size, 4 = overview)", parseScale, 4)
   .option("--no-dungeons", "exclude auto-placed dungeon maps")
   .action((opts: { bbox: ReturnType<typeof parseBbox>; out: string; scale: number; dungeons: boolean }) => {
-    const proj = resolveProject(program.opts().project);
+    const { root, family } = resolveRootAndFamily(program.opts().project);
+    runGbaOnly(root, family, "render-world", (root) => {
+    const proj = resolveProject(root);
     const { x: bx, y: by, w: bw, h: bh } = opts.bbox;
     const { scale } = opts;
 
@@ -69,6 +107,7 @@ program
 
     writeFileSync(opts.out, encodePng(dst));
     process.stdout.write(`${opts.out} ${dst.width}x${dst.height} maps=${drawn}\n`);
+    });
   });
 
 program
@@ -78,7 +117,14 @@ program
   .option("--connections", "connections only")
   .option("--events", "events only")
   .action((map: string, opts: { header?: boolean; connections?: boolean; events?: boolean }) => {
-    const proj = resolveProject(program.opts().project);
+    const { root, family } = resolveRootAndFamily(program.opts().project);
+    if (family === "gbc") {
+      const { stdout, stderr } = runGbcQuery(root, map, opts);
+      if (stderr) process.stderr.write(stderr);
+      process.stdout.write(stdout);
+      return;
+    }
+    const proj = resolveProject(root);
     const m = proj.map(map);
     // layoutForMap, not layoutById(m.layout): it throws naming both map.json
     // and layouts.json when the layout id is dangling, instead of a
@@ -111,7 +157,9 @@ program
   .option("--palette-range", "check every tile entry's palette index resolves")
   .option("--json", "machine-readable output")
   .action((opts: { metatileRange?: boolean; paletteRange?: boolean; json?: boolean }) => {
-    const proj = resolveProject(program.opts().project);
+    const { root, family } = resolveRootAndFamily(program.opts().project);
+    runGbaOnly(root, family, "validate", (root) => {
+    const proj = resolveProject(root);
 
     // Selecting no check runs every check. `opts.metatileRange === false` is
     // never true -- commander sets a bare flag to `true` or leaves it
@@ -133,6 +181,7 @@ program
       process.stdout.write(`${findings.length} finding(s)\n`);
     }
     process.exitCode = findings.length ? 1 : 0;
+    });
   });
 
 program
@@ -140,7 +189,9 @@ program
   .description("wild encounters for a map, with true percentages")
   .option("--json", "machine-readable output")
   .action((map: string, opts: { json?: boolean }) => {
-    const proj = resolveProject(program.opts().project);
+    const { root, family } = resolveRootAndFamily(program.opts().project);
+    runGbaOnly(root, family, "encounters", (root) => {
+    const proj = resolveProject(root);
     const enc = parseEncounters(readFileSync(proj.paths.wildEncountersJson, "utf8"));
     const mapId = proj.map(map).id;
     const result = Object.fromEntries(
@@ -155,6 +206,7 @@ program
         process.stdout.write(`  ${c.percent.toFixed(1).padStart(5)}%  Lv ${c.minLevel}-${c.maxLevel}  ${c.species}\n`);
       }
     }
+    });
   });
 
 program
@@ -162,13 +214,16 @@ program
   .description("every map a species can be caught on")
   .option("--json", "machine-readable output")
   .action((species: string, opts: { json?: boolean }) => {
-    const proj = resolveProject(program.opts().project);
+    const { root, family } = resolveRootAndFamily(program.opts().project);
+    runGbaOnly(root, family, "where", (root) => {
+    const proj = resolveProject(root);
     const hits = whereSpecies(proj, species.startsWith("SPECIES_") ? species : `SPECIES_${species.toUpperCase()}`);
     if (opts.json) return void process.stdout.write(JSON.stringify(hits, null, 2));
     if (hits.length === 0) return void process.stdout.write(`${species} appears in no encounter table\n`);
     for (const h of hits) {
       process.stdout.write(`${(h.mapName ?? h.mapId).padEnd(32)} ${h.percent.toFixed(1).padStart(5)}%  Lv ${h.minLevel}-${h.maxLevel}  ${h.method}\n`);
     }
+    });
   });
 
 program
@@ -178,12 +233,15 @@ program
   .option("--unused", "list species in no encounter table")
   .option("--json", "machine-readable output")
   .action((opts: { empty?: boolean; unused?: boolean; json?: boolean }) => {
-    const proj = resolveProject(program.opts().project);
+    const { root, family } = resolveRootAndFamily(program.opts().project);
+    runGbaOnly(root, family, "coverage", (root) => {
+    const proj = resolveProject(root);
     const c = coverage(proj);
     if (opts.json) return void process.stdout.write(JSON.stringify(c, null, 2));
     process.stdout.write(`${c.mapsWithEncounters} maps with encounters, ${c.mapsWithoutEncounters.length} without\n`);
     if (opts.empty) for (const m of c.mapsWithoutEncounters) process.stdout.write(`  ${m}\n`);
     if (opts.unused) for (const s of c.unusedSpecies) process.stdout.write(`  ${s}\n`);
+    });
   });
 
 // A `program.command("sign suggest <map>")` one-liner does NOT nest a
@@ -203,8 +261,11 @@ sign
   .command("suggest <map>")
   .description("rank catchable species and suggest a placement for a wild sign on this map")
   .action((map: string) => {
-    const proj = resolveProject(program.opts().project);
+    const { root, family } = resolveRootAndFamily(program.opts().project);
+    runGbaOnly(root, family, "sign suggest", (root) => {
+    const proj = resolveProject(root);
     process.stdout.write(`${runSignSuggest(proj, map)}\n`);
+    });
   });
 
 sign
@@ -217,16 +278,22 @@ sign
   .option("--elevation <n>", "tile elevation", Number, 0)
   .option("--yes", "actually write")
   .action((map: string, opts: { species: string; dialogue: string; x: number; y: number; elevation: number; yes?: boolean }) => {
-    const proj = resolveProject(program.opts().project);
+    const { root, family } = resolveRootAndFamily(program.opts().project);
+    runGbaOnly(root, family, "sign add", (root) => {
+    const proj = resolveProject(root);
     process.stdout.write(`${runSignAdd(proj, { map, x: opts.x, y: opts.y, elevation: opts.elevation, species: opts.species, dialogue: opts.dialogue, yes: !!opts.yes })}\n`);
+    });
   });
 
 sign
   .command("list <map>")
   .description("list existing wild signs (overworld-species object events) on a map")
   .action((map: string) => {
-    const proj = resolveProject(program.opts().project);
+    const { root, family } = resolveRootAndFamily(program.opts().project);
+    runGbaOnly(root, family, "sign list", (root) => {
+    const proj = resolveProject(root);
     process.stdout.write(`${runSignList(proj, map)}\n`);
+    });
   });
 
 program
@@ -240,8 +307,11 @@ program
   .requiredOption("--metatile <id>", "metatile id to stamp", Number)
   .option("--yes", "actually write")
   .action((map: string, opts: { tool: "pencil" | "rect"; x: number; y: number; x1?: number; y1?: number; metatile: number; yes?: boolean }) => {
-    const proj = resolveProject(program.opts().project);
+    const { root, family } = resolveRootAndFamily(program.opts().project);
+    runGbaOnly(root, family, "paint", (root) => {
+    const proj = resolveProject(root);
     process.stdout.write(`${runPaint(proj, { map, tool: opts.tool, x: opts.x, y: opts.y, x1: opts.x1, y1: opts.y1, metatileId: opts.metatile, yes: !!opts.yes })}\n`);
+    });
   });
 
 program
@@ -254,8 +324,11 @@ program
   .option("--y1 <n>", "rect's second corner y", Number)
   .requiredOption("--metatile <id>", "metatile id to stamp", Number)
   .action((map: string, opts: { tool: "pencil" | "rect"; x: number; y: number; x1?: number; y1?: number; metatile: number }) => {
-    const proj = resolveProject(program.opts().project);
+    const { root, family } = resolveRootAndFamily(program.opts().project);
+    runGbaOnly(root, family, "diff", (root) => {
+    const proj = resolveProject(root);
     process.stdout.write(`${runDiff(proj, { map, tool: opts.tool, x: opts.x, y: opts.y, x1: opts.x1, y1: opts.y1, metatileId: opts.metatile })}\n`);
+    });
   });
 
 // parseAsync, not a sync parse()+try/catch: every action handler today is
