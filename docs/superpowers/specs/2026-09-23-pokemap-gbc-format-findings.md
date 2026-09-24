@@ -6,7 +6,21 @@
 
 **Corpus at a glance:** 391 maps in 26 map groups. 391 `map_attributes`, 391 `map` headers and 391 `maps/<Name>.asm` files, one of each per map. 305 `.blk` files on disk. 257 of them are used by real maps and 48 are unreferenced betas. 142 connections. 36 tilesets plus alias `Tileset0`. 1,327 warps, 114 coord events, 792 bg events and 1,468 object events. No CRLF anywhere.
 
-**PerfPlus vs vanilla.** The fork's own git history contains vanilla. The last upstream (pret) commit merged in is `804fa846e` (Rangi42, 2024-01-01). `git diff 804fa846e HEAD` shows no format change except one engine fix, described in §2. The data changes are 3 new maps (`CeruleanCave1F/2F/B1`), an edited `Route4.blk`, edited `kanto_collision.asm` and `roofs.pal`, a re-saved `port.png` (now RGBA), and wild data edits.
+**PerfPlus vs vanilla.** The fork's own git history contains vanilla. The last upstream (pret) commit merged in is `804fa846e` (Rangi42, 2024-01-01). `git diff 804fa846e HEAD` shows no file-format change, but it does show two engine fixes in `home/map.asm`:
+
+- the `LoadMetatiles` 128-wrap fix (§3.2);
+- the `ReadObjectEvents` overflow fix (`ld a, NUM_OBJECTS` → `ld a, NUM_OBJECTS - 1`, plus `jr c, .skip`).
+
+Data changes:
+
+- 65 files under `maps/`: 61 `.asm` and 4 `.blk`. The `.asm` files are 3 new CeruleanCave maps plus 58 edited ones, e.g. VioletGym, ViridianGym, VermilionGym; 65 `*_event` lines are added or removed. The `.blk` files are the 3 new CeruleanCave ones and an edited `Route4.blk`.
+- The 3 new maps are registered in `map_constants.asm`, `attributes.asm`, `maps.asm`, `blocks.asm` and `scripts.asm`.
+- Edited `kanto_collision.asm` (headbutt-tree collisions) and `roofs.pal` (group 3).
+- `port.png` is **content-edited**, not just re-saved. It is now 8-bit RGBA, and decoding both versions to gray levels shows 30 pixels differ, in tiles `$0C` and `$1C`.
+- Wild data: `johto_grass.asm` and `kanto_grass.asm` edited. `probabilities.asm` changed: grass 30/30/20/10/5/4/1 → 25/25/20/10/10/5/5, water 60/30/10 → 45/30/25. `treemons.asm`/`treemon_maps.asm` add 3 Kanto sets `TREEMON_SET_KCITY/KTOWN/KROUTE`, with the matching constants. `kanto_grass.asm` lost its `db -1` terminator (§Extra, wild data).
+- `engine/overworld/wildmons.asm` edited: the level buff now also applies to surf encounters (skipped only for `BATTLETYPE_SUICUNE`).
+
+**Consequence:** encounter odds must be parsed from `probabilities.asm`, never hardcoded. A vanilla corpus member will differ there.
 
 ---
 
@@ -61,13 +75,14 @@ The same pattern covers `def_coord_events`, `def_bg_events`, `def_object_events`
 | `scene_script` | `scriptLabel[, SCENE_const]` (170 uses) | `dw`, `dw 0` |
 | `callback` | `MAPCALLBACK_*, scriptLabel` (105 uses) | `dbw` |
 
-Hour-limit semantics (`object_event` \7/\8), quoted from the macro comment: `if h1 == -1, h2 is treated as a time-of-day value: a combo of MORN, DAY, and/or NITE`. In the corpus, 1,457 objects use `-1, -1` and 11 use `-1, DAY|NITE|MORN`. No object uses real hours.
+Hour-limit semantics (`object_event` \7/\8), quoted from the macro comment: `if h1 == -1, h2 is treated as a time-of-day value: a combo of MORN, DAY, and/or NITE`. In the corpus, 1,457 objects use `-1, -1`. 11 use a single time flag: `-1, DAY` ×5, `-1, MORN` ×3 and `-1, NITE` ×3. No object uses a combination of flags, and none uses real hours.
 
 **Whole-corpus structure (all 391 map files):**
 - Each file has exactly one `<Name>_MapEvents:` label and one `<Name>_MapScripts:` label, where `<Name>` is the `map` header name. The file is always `maps/<Name>.asm`, and `data/maps/scripts.asm` INCLUDEs all 391.
 - The event block is always the **tail of the file**. After `_MapEvents:` and the filler line, every non-blank line is a `def_*`/`*_event` line or a comment. 0 stray lines.
 - Section order is always `def_warp_events`, `def_coord_events`, `def_bg_events`, `def_object_events` (0 violations). This order is mandatory: `ReadMapEvents` reads the sections sequentially.
 - Formatting is **not** uniform, so a splicer must preserve raw text exactly. Numbers are column-padded (`warp_event  6,  3, ELMS_LAB, 1`). Five files carry trailing comments on event lines, e.g. `warp_event  5,  5, BURNED_TOWER_B1F, 1 ; inaccessible, left over from G/S`. 22 files have trailing whitespace. `CeruleanCave1F.asm` has `CeruleanCave1F_MapEvents: ` (trailing space), `def_warp_events ` and a tab-only line. All indentation is tabs (0 space-indented event lines).
+- 2 map files have **no final newline**: `maps/CeruleanCave2F.asm` and `maps/CeruleanCaveB1.asm`. So do `data/wild/kanto_grass.asm` and 3 files outside Plan 6's read set (`data/types/category_names.asm`, `gfx/trainer_card/{johto,kanto}_badges.pal`). A line parser must accept a last line without `\n`, and the splicer must preserve its absence byte-exactly.
 - Per-map maxima: warps 33 (EcruteakGym), coord 30 (TeamRocketBaseB1F), bg 38 (CeladonGameCorner), objects 15 (GoldenrodCity). Objects are capped by `DEF NUM_OBJECTS EQU 16`, because slot 0 is the player.
 
 **The real positional hazard for Plan 7 is `object_const_def`, not the count byte.** Scripts address objects by position through a hand-maintained const list at the top of the file:
@@ -103,7 +118,8 @@ The `object_const_def` expansion is `const_def 2`. Scripts then use these consts
 | **64** (1024 B) | all other 31 |
 
 - **Collision entry counts do not always match.** `forest_collision.asm` has 64 `tilecoll` lines for 40 metatiles. Take the cap from `_metatiles.bin`'s size, never from collision.
-- **No real map exceeds its tileset's count.** The whole-corpus check found 0 block ids ≥ count. No real map uses block id 0, either inside the map area or as `border` via 0.
+- **No real map exceeds its tileset's count.** The whole-corpus check found 0 block ids ≥ count, including border blocks.
+- **Block id 0 is never placed inside a map.** However, **272 of 391 maps have `border = $00`**: every interior (all Pokecenters, Marts, houses, gates, towers, …). Their 3-block ring therefore renders **metatile 0** of their tileset (see §Extra, Border).
 - **Engine range.** PerfPlus fixed the vanilla "LoadMetatiles wraps past 128" bug. Diff vs `804fa846e`, `home/map.asm`:
 
 ```
@@ -131,6 +147,8 @@ Real bytes, `data/tilesets/johto_metatiles.bin` (first 48 bytes, metatiles 0-2):
 **Where tile attributes come from.** Palette and VRAM bank come from the per-tileset palette map (§3.4). There is no H/V flip anywhere in the BG attribute path: the palette-map nibble is `bank<<3 | pal`.
 
 **Tile id → PNG tile index.** Measured over every metatile actually placed in a real map, including border blocks: used tile ids fall only in `$00-$5F` and `$80-$DF`. `LoadTilesetGFX` (`home/map.asm`) copies decompressed tiles `$00-$5F` to `vTiles2` (bank 0) and tiles `$60-$BF` to `vTiles5` (bank 1). `_SwapTextboxPalettes` then clears bit 7 of each tile id (`res 7, [hl]`) after looking up its palette nibble, so tile `$80+k` on bank 1 means PNG tile `$60+k`. **The mapping is: PNG index = t for t < $60, and t − $20 for $80 ≤ t < $E0.** Tile ids `$60-$7F` and `$E0-$FF` appear only in never-placed garbage metatiles. Examples: house uses `$60` in unused metatiles, battle_tower_outside's unused metatiles use `$E0-$FF`, and lab and port do too. A tileset-picker render must refuse or placeholder those ids rather than guess.
+
+Strictly, the VRAM bank is chosen by **bit 3 of the tile's palette-map nibble**, not by the tile id. The `t − $20` rule is equivalent only because all 37 palette maps have exactly the same shape (verified: 12 `tilepal 0` lines, `rept 16 / db $ff / endr`, then 12 `tilepal 1` lines, with 0 deviations). Task 5 must either assert that uniformity per palette map or derive the bank from the nibble: PNG index = `(nibble & 8 ? $60 : 0) + (t & $7F)`, valid for `t & $7F < $60`.
 
 **Design consequence:**
 - **G1** wording ("verify the true per-tileset cap rather than assuming 128") is confirmed. The cap is `metatiles.bin.length / 16`, per tileset.
@@ -277,7 +295,7 @@ ENDM
 **Design consequence.**
 - Roadmap §3.4 and Plan 6 Task 6 ("resolve to one of the three real RGB blocks in `bg_tiles.pal`") are wrong. Resolution needs the **map's** environment, palette field and map group, plus the tileset. So **rendering is per-map, not per-layout.** This matters because layouts are shared (§3.6).
 - Task 6's input becomes `(tilesetConst, environment, mapPalette, mapGroup, {time, flash})`. Its output is 8 BG palettes × 4 RGB colors, plus the roof-tile source (or none).
-- Roof tile substitution (step 5) belongs in Task 5 or Task 9, because it changes pixels, not colors.
+- Roof tile substitution (step 5) changes pixels, not colors, and depends on the map group. Per Decision 6 it belongs in Task 9's per-map render, not Task 5's per-tileset load.
 
 ---
 
@@ -325,7 +343,11 @@ It mirrors GBA's split, and for the same reason: painting `House1.blk` edits 50 
 
 Tileset, border and palette live on the **map**. All sharers agree on the tileset, but not necessarily on border, environment or group. So **render is per-map**, reading pixels from the layout. The CLI's "map or layout name" resolution should accept a map name.
 
-**G4:** refuse a `.blk` whose size ≠ w×h. The corpus has 2 real hits, so Tasks 3, 9 and 10 must refuse on `CeruleanCave2F`/`CeruleanCaveB1` with a named message. Corpus tests assert exactly this 2-map refusal set. They must not skip those maps and must not truncate them silently. (The engine itself would read only the first 135 bytes. Whether to render that is a user decision, so flag it rather than guess.)
+**G4 / size mismatch.** A `.blk` whose size ≠ w×h is a data defect, and the corpus has 2 real hits. Per Decision 3 (user's choice):
+
+- Reads mimic the engine. `ChangeMap` copies exactly w×h bytes, so load the **first w×h bytes** and attach a flagged warning naming the file, the actual size and w×h.
+- These layouts are **never writable**. Plan 7 must refuse writes to them.
+- Corpus tests pin exactly this 2-layout warning set.
 
 ---
 
@@ -333,6 +355,7 @@ Tileset, border and palette live on the **map**. All sharers agree on the tilese
 
 **Border.**
 - `map_attributes <Name>, <CONST>, <borderBlock>, <connection flags>` (`data/maps/attributes.asm`). The border is **one metatile id**, not GBA's 2×2 `border.bin`. Values seen: `$00 $01 $05 $09 $0a $0f $13 $19 $1d $24 $2c $2d $2e $35 $43 $71`.
+- **272 of 391 maps use `$00`** as their border, i.e. every interior. Ring rendering of metatile 0 is therefore the common case, not an edge case.
 - `wOverworldMapBlocks` is the map plus a `MAP_CONNECTION_PADDING_WIDTH EQU 3` block ring (`constants/gfx_constants.asm`). `LoadBlockData` zero-fills it, then copies the map and connection strips. `LoadMetatiles` substitutes the border for any byte 0: `ld a, [de] / and a / jr nz, .ok / ld a, [wMapBorderBlock]`. So block 0 anywhere, **including inside the map**, renders as the border. The corpus never places block 0, but a renderer should replicate this.
 - Plan 6 Task 9's "no border-ring concept unless found" is answered: **it exists** (3-ring, single metatile).
 
@@ -347,6 +370,7 @@ Tileset, border and palette live on the **map**. All sharers agree on the tilese
   map NewBarkTown, TILESET_JOHTO, TOWN, LANDMARK_NEW_BARK_TOWN, MUSIC_NEW_BARK_TOWN, FALSE, PALETTE_AUTO, FISHGROUP_OCEAN
   ```
   The argument order is name, tileset, environment, landmark, music, phoneBlock, palette, fishGroup. Maps are grouped under `MapGroup_<X>:`, whose order matches `newgroup`.
+- **Header arguments are expressions, not bare words.** `RadioTower1F` through `RadioTower5F` use music `RADIO_TOWER_MUSIC | MUSIC_GOLDENROD_CITY`. Parse each header argument, like `map_attributes`' connection flags (`WEST | EAST`), by splitting on commas and keeping each trimmed expression. Do not match `\w+`.
 - Tileset constant → the `Tilesets::` table in `data/tilesets.asm` (`tileset TilesetJohto` → `dba \1GFX, \1Meta, \1Coll`, `dw \1Anim`, `dw NULL`, `dw \1PalMap`).
 - Labels resolve to paths through **stacked labels** in `gfx/tilesets.asm` (GFX/Meta/Coll) and `gfx/tileset_palette_maps.asm` (PalMap). The same stacking parser works for `blocks.asm`.
 - Aliases:
@@ -362,11 +386,16 @@ Tileset, border and palette live on the **map**. All sharers agree on the tilese
 - **Format: 35 of 36 are 2-bit grayscale** (depth 2, color type 0) with values 0-3.
 - **PerfPlus's `port.png` is 8-bit RGBA** (color type 6), using exactly 4 grays: `255.255.255.255`, `170…`, `85…`, `0…`. The GBC decoder must accept both.
 - The existing `packages/core/src/load/png.ts` accepts **only indexed (type 3) 4- or 8-bit PNGs**, so it cannot be reused as-is. **There is no pngjs dependency in this repo**, despite the Plan 6 tech-stack line. Decoding is hand-rolled on `node:zlib`.
-- Shade mapping: the Makefile builds these with plain `$(RGBGFX) $(rgbgfx) -o $@ $<`, with no `-c` flag on tileset rules. rgbgfx's grayscale default makes white index 0 and black index 3, i.e. **shade = 3 − grayLevel** (or `3 - (v >> 6)` for 8-bit). **Not verified on a compiled `.2bpp`**: no build artifacts exist locally and rgbgfx is not on PATH. Task 5's test must pin this against an independent check.
+- Shade mapping: the Makefile builds these with plain `$(RGBGFX) $(rgbgfx) -o $@ $<`, with no `-c` flag on tileset rules. rgbgfx's grayscale default makes white index 0 and black index 3, i.e. **shade = 3 − grayLevel** (or `3 - (v >> 6)` for 8-bit). **Not verified on a compiled `.2bpp`**: no build artifacts exist locally and rgbgfx is not on PATH. Three pieces of corroborating evidence make this high confidence:
+  - (a) In `bg_tiles.pal`, color 0 is the lightest in all 42 palettes under Rec.601 luma (measured). Color 3 is the darkest in 40. The 2 exceptions are the morn and day `water` lines (`01,04,31` luma 6.2 vs `07,07,07` luma 7.0), where saturated blue has lower luma than dark gray. This is still consistent with index 0 = light and index 3 = dark in intent.
+  - (b) The `.cgbfade` identity row is `dc 3,2,1,0`, the DMG convention where index 0 = white.
+  - (c) `INSTALL.md` pins rgbds 0.6.1.
+
+  Task 5's test must still pin the mapping. For `port.png` (RGBA), the same mapping holds only because rgbgfx's non-grayscale path sees exactly the 4 grays in one palette.
 - Tileset animation (`\1Anim`, `gfx/tilesets/{water,flower,…}` directories) is out of scope. A static render uses the PNG as-is.
 
 **Wild data. Plan 6 Task 8/12's model is wrong on 3 counts.**
-1. The path is `data/wild/*.asm`: `johto_grass.asm`, `kanto_grass.asm`, `johto_water.asm`, `kanto_water.asm`, `swarm_grass.asm`, `swarm_water.asm`, `fish.asm`, `treemons.asm`, `treemon_maps.asm`, `bug_contest_mons.asm`, `roammon_maps.asm`, `probabilities.asm`. **There is no `data/wild/maps/` directory.**
+1. The path is `data/wild/*.asm`, 15 files: `johto_grass.asm`, `kanto_grass.asm`, `johto_water.asm`, `kanto_water.asm`, `swarm_grass.asm`, `swarm_water.asm`, `fish.asm`, `treemons.asm`, `treemon_maps.asm`, `treemons_asleep.asm`, `bug_contest_mons.asm`, `roammon_maps.asm`, `flee_mons.asm`, `unlocked_unowns.asm`, `probabilities.asm`. **There is no `data/wild/maps/` directory.**
 2. **Grass does have morn/day/nite variation**, in both rates and species. From `data/wild/johto_grass.asm`:
 
 ```
@@ -381,19 +410,60 @@ Tileset, border and palette live on the **map**. All sharers agree on the tilese
 	end_grass_wildmons
 ```
 
-   The layout is `map_id` (2 bytes) + 3 rates + 3 × `NUM_GRASSMON EQU 7` × (level, species) (`GRASS_WILDDATA_LENGTH EQU 2 + 3 + NUM_GRASSMON * 2 * 3`, asserted by `end_grass_wildmons`). Water uses 1 rate and `NUM_WATERMON EQU 3` slots (`WATER_WILDDATA_LENGTH EQU 2 + 1 + NUM_WATERMON * 2`). Each file ends with `db -1 ; end`.
+   The layout is `map_id` (2 bytes) + 3 rates + 3 × `NUM_GRASSMON EQU 7` × (level, species) (`GRASS_WILDDATA_LENGTH EQU 2 + 3 + NUM_GRASSMON * 2 * 3`, asserted by `end_grass_wildmons`). Water uses 1 rate and `NUM_WATERMON EQU 3` slots (`WATER_WILDDATA_LENGTH EQU 2 + 1 + NUM_WATERMON * 2`).
+
+   Each list is meant to end with `db -1 ; end`. **`data/wild/kanto_grass.asm` in PerfPlus has no terminator and no final newline.** Its last bytes are `\tend_grass_wildmons` then EOF. Vanilla `804fa846e` ends with `end_grass_wildmons`, a blank line, then `db -1 ; end`. The other 5 grass/water lists all have it.
+
+   Latent engine consequence: `LookUpWildmonsForMapDE` walks at `GRASS_WILDDATA_LENGTH` stride until it reads `$ff`. For a Kanto map with no grass entry, it runs off the end of `KantoGrassWildMons` straight into `KantoWaterWildMons`. That table follows immediately because `engine/overworld/wildmons.asm` INCLUDEs `kanto_grass.asm` then `kanto_water.asm` back-to-back. The engine then reads water records as grass records at the 47-byte grass stride. The walk still stops on some later `$ff`, but it may also false-match a map id along the way. This is a likely PerfPlus fork bug. See Decision 4.
 3. **There is no `WildDataPointers` table.** `engine/overworld/wildmons.asm` finds a map by linear search on `map_id` through the swarm list first, then the Johto or Kanto list (chosen by `IsInJohto`).
 
 Slot odds live in `data/wild/probabilities.asm`. Grass: 25, 25, 20, 10, 10, 5, 5 (cumulative `mon_prob 25,0 … 100,6`). Water: 45, 30, 25.
 
-Fishing is keyed by the map header's `FISHGROUP_*` into `FishGroups` (`fish.asm`, with old/good/super rod tables and a `time_group` indirection). Headbutt trees are keyed by `TreeMonMaps` (`treemon_map MAP_CONST, TREEMON_SET_*`). These are per-map encounter sources that GBA's single JSON folds together.
+Grass levels in the tables are **base** levels. `ChooseWildEncounter` adds +0 to +4 at random (35% +0, 30% +1, 20% +2, 10% +3, 5% +4; skipped for `BATTLETYPE_SUICUNE`), and in PerfPlus this applies to surf too. The atlas should report the base level and note the buff.
+
+**Fishing (`data/wild/fish.asm`, engine `engine/events/fish.asm`).**
+
+- **Map → group.** The map header's 8th argument (`FISHGROUP_*`, from `constants/map_data_constants.asm`) holds one of 13 groups plus `FISHGROUP_NONE`. `GetFishingGroup` (`home/map.asm`) reads it, and `FISHGROUP_NONE` = 0 means "can't fish here" (`engine/events/overworld.asm`: `and a / jr nz, .goodtofish`).
+- **Group → table.** The index into `FishGroups` is `FISHGROUP_x − 1` (`GetFishGroupIndex`: `dec d`). With the daily fish-swarm flag set, `FISHGROUP_QWILFISH` and `FISHGROUP_REMORAID` are swapped to their `_SWARM` variants.
+- **Macro:**
+
+```
+MACRO fishgroup
+; chance, old rod, good rod, super rod
+	db \1
+	dw \2, \3, \4
+ENDM
+...
+	fishgroup 50 percent + 1, .Shore_Old,            .Shore_Good,            .Shore_Super
+```
+
+  `FISHGROUP_DATA_LENGTH EQU 1 + 2 * 3`. `\1` is the bite chance (`call Random / cp [hl] / jr nc, .no_bite`).
+- **Rod tables.** Each rod table is a run of `db cumulativeChance, SPECIES, level` 3-byte records. The engine picks the first record with `Random ≤ chance` (`cp [hl] / jr z/c, .ok`). There is no terminator; the last record is `100 percent`. Real excerpt:
+
+```
+.Shore_Good:
+	db  35 percent,     MAGIKARP,   20
+	db  70 percent,     KRABBY,     20
+	db  90 percent + 1, KRABBY,     20
+	db 100 percent,     time_group 0
+```
+
+- **Time-based entries.** `DEF time_group EQUS "0,"`, so `time_group n` emits species 0 and level n. Species 0 routes to `TimeFishGroups[n]`, whose rows are `db daySpecies, dayLevel, niteSpecies, niteLevel`. The nite pair is used when `wTimeOfDay ≥ NITE_F`, otherwise the day pair (morn counts as day). Real row: `db CORSOLA,    20,  STARYU,     20 ; 0`. There are 22 rows (0-21).
+
+**Headbutt and Rock Smash (`data/wild/treemon_maps.asm`, `data/wild/treemons.asm`, engine `engine/events/treemons.asm`).**
+
+- **Map → set.** `treemon_map MAP_CONST, TREEMON_SET_*` expands to `map_id \1` then `db \2`. Two lists: `TreeMonMaps:` (66 entries, headbutt) ends with `db -1`, then `RockMonMaps:` (4 entries: CIANWOOD_CITY, ROUTE_40, DARK_CAVE_VIOLET_ENTRANCE, SLOWPOKE_WELL_B1F, all `TREEMON_SET_ROCK`) ends with `db -1`. The lookup `GetTreeMonSet` is a linear search.
+- **Set → table.** `TreeMons:` is a `dw` pointer table indexed by `TREEMON_SET_*`. It has 11 sets; PerfPlus adds KCITY, KTOWN and KROUTE. Resolve through the pointer table's labels, since label order in the file differs from set order (KCity, KRoute, KTown in the file vs KCITY, KTOWN, KROUTE in the table).
+- **`TREEMON_SET_CITY` (index 0) never yields an encounter.** `GetTreeMons` does `and a / jr z, .quit`. 13 `treemon_map` lines use it (e.g. `ROUTE_28`). The atlas must report these as "no headbutt encounters", not list the City/Canyon table.
+- **Table shape.** Each headbutt set is two `db -1`-terminated lists, `; common` then `; rare`, of `db percent, SPECIES, level` records. The percents are **non-cumulative** (`SelectTreeMon`: `RandomRange 100`, then `sub [hl]` per record). Which list applies depends on a per-tree score derived from tree coordinates and the player's trainer ID (`GetTreeScore`). Encounter chance is 10% (bad score), 50% (good) or 80% (rare, uses the rare list). A static atlas should report both lists as "common"/"rare" without a per-tree resolution.
+- **Rock Smash.** `TreeMonSet_Rock` is a single list (`db 90, KRABBY, 15` / `db 10, SHUCKLE, 15` / `db -1`) with a flat 40% encounter chance (`RockMonEncounter`).
 
 **Line endings and whitespace.** No CRLF in any map `.asm`, table asm, collision or palette-map file. `attributes.asm`, `maps.asm`, `map_constants.asm`, `blocks.asm` and `gfx/tilesets.asm` have 0 trailing-whitespace lines. PerfPlus's additions are irregularly formatted (e.g. `map_const CERULEAN_CAVE_1F,                             9,  15 ; 18`). A splicer must not normalize.
 
 **G5 corpus.**
 - No separate vanilla checkout exists locally. However, **vanilla pret pokecrystal is already inside PerfPlus's own git history**: commit `804fa846e` is the last upstream commit merged in. A second corpus member can be materialized without any network clone and without touching PerfPlus's working tree or refs: `git -C <PerfPlus> archive 804fa846e | tar -x -C <somewhere outside PerfPlus>`. This read-only action was **not** performed here.
 - `pokeyellow` is not a Crystal corpus member.
-- **Recommendation:** a single-member corpus (PerfPlus) is acceptable for Plan 6's read-only gates (Tasks 2 and 4), because every byte and line of the real subject is covered. Add vanilla as the second member before Plan 7's write gate. Either the user clones `pret/pokecrystal` into `C:\Programming Projects\Pokemon Game\refs\pokecrystal`, or a test helper materializes `804fa846e` via `git archive` into a gitignored temp dir. **The user or coordinator decides; nothing was cloned.** One thing makes vanilla valuable despite being near-identical: it lacks the 2 bad-size `.blk` files and has normally-formatted CeruleanCave files, so it exercises the non-refusal path for a full corpus.
+- **Decided (Decision 2):** Plan 6 uses a single-member corpus (PerfPlus). The user will clone `pret/pokecrystal` into `C:\Programming Projects\Pokemon Game\refs\pokecrystal` before Plan 7. Vanilla is valuable despite being near-identical: it has none of the PerfPlus data defects (2 bad-size `.blk` files, the missing `kanto_grass.asm` terminator, 3 no-final-newline files), so it exercises the clean path for a full corpus. The `git archive 804fa846e` route remains an offline fallback. Nothing was cloned.
 
 ---
 
@@ -429,7 +499,17 @@ Fishing is keyed by the map header's `FISHGROUP_*` into `FishGroups` (`fish.asm`
 | Config field | Explicit for configured roots | Useless for ad-hoc `--project` paths, which would still need a flag. |
 | **Probe marker files (chosen)** | Zero user burden. Works for any root, CLI or server. The existing `openProject` already probes (`fieldmap.h`). | Misdetection risk, mitigated by unique markers plus refusal when neither or both family markers match (I7/G4). |
 
-Markers (verified against real trees):
+Markers, verified against all 12 local roots (the subject, all 10 dirs under `Pokemon Game/refs/`, and PerfPlus):
+
+| Root | `include/fieldmap.h` | `attributes.asm` + `map_constants.asm` | Yellow shape | Result |
+|---|---|---|---|---|
+| `Pokemon Game/game`, `refs/heart-and-soul`, `hns-v2`, `modern-emerald`, `pokeclassic`, `pokeemerald`, `pokeemerald-expansion`, `pokefirered`, `soulgold` (9) | yes | no | no | gba |
+| `pokecrystal-PerfPlus` | no | yes | no | gbc |
+| `refs/pokeyellow` | no | no | yes (`data/maps/headers/` + `map_constants.asm`, no `attributes.asm`) | refuse: Yellow, Plan 8 |
+| `refs/Pokemon-Hyper-Emerald-5.7-QoL` (a binary-patch repo, not a decomp) | no | no | no | refuse: not a decomp |
+
+No root matched both families, and 0 were misdetected.
+
 - **gba** = `include/fieldmap.h`, the same file `openProject` already requires. Present in `Pokemon Game/game`.
 - **gbc** (Crystal) = `data/maps/attributes.asm` **and** `constants/map_constants.asm`.
 - Future Yellow = `data/maps/headers/` plus `constants/map_constants.asm` without `attributes.asm`. The detector must refuse that shape as "pokeyellow-shaped, unsupported until Plan 8", not treat it as Crystal.
@@ -443,15 +523,46 @@ Shape:
 
 ---
 
+## Decisions (coordinator and user, after Task 1 review)
+
+1. **Config and family wiring land as Task 2's first step**, not as a separate task. The step covers three things:
+   - the top-level `gbc` block in `pokemap.config.json`;
+   - `packages/core/src/family.ts` (`detectEngineFamily`);
+   - the GBC corpus test helper `packages/core/test/gbc/helpers/corpus.ts`.
+2. **G5 corpus.**
+   - Plan 6 uses a single-member corpus: PerfPlus.
+   - The **user** will clone `pret/pokecrystal` into `C:\Programming Projects\Pokemon Game\refs\pokecrystal` before Plan 7.
+   - `gbc.referenceProjects` starts as `[]`, and the corpus helper must treat an empty (or absent) list as "no reference roots", not as an error.
+3. **CeruleanCave2F / CeruleanCaveB1 bad-size `.blk`** (400 B vs 9×15 = 135).
+   - Render the **first w×h bytes, flagged**. This mimics the engine's `ChangeMap` read.
+   - Surface a data-defect warning that names the file, its size and w×h.
+   - These layouts are never writable: Plan 7 must refuse writes on them.
+   - This is likely a PerfPlus fork bug. Report it to the user; this tool does not fix it.
+4. **`data/wild/kanto_grass.asm` has no `db -1` terminator.** Same posture as #3.
+   - Parse tolerantly: end of file ends the list.
+   - Emit a flagged data-defect warning.
+   - The corpus test pins exactly this one file as terminator-less.
+   - Latent engine consequence: a Kanto map with no grass entry makes `LookUpWildmonsForMapDE` run into `KantoWaterWildMons` at grass stride (§Extra, Wild data). This is likely a PerfPlus fork bug; report it to the user.
+5. **Atlas scope (Tasks 8/12):** grass, water, fishing (header `FISHGROUP` → `fish.asm`) and headbutt/rock smash (`treemon_maps.asm` → `treemons.asm`). The data layouts are in §Extra, Wild data.
+6. **Roof graphics and roof palette go to Task 9** (per-map render). Task 5's tileset load stays per-tileset and map-agnostic. Task 6 still resolves the full per-map palette set including the roof colors, since it already takes `mapGroup`. Task 9 applies the roof **tile** swap.
+
+---
+
 ## Consequences for Plan 6 Tasks 2-12
 
 - **Plan-wide.**
-  - The tech stack has no pngjs. PNG decoding is hand-rolled on `node:zlib` (`packages/core/src/load/png.ts` precedent).
-  - Add `packages/core/src/family.ts` and the `gbc` config block. The config edit plus a GBC corpus helper fits as a small first step of Task 2, or as Task 1b; the coordinator decides. Either way, `pokemap.config.json` is edited in exactly one place.
-- **Task 2 (`.blk` + metatile codec).** Scope unchanged. `Block = { metatileId }`: 1 byte, row-major, confirmed with no extra bits. The metatile table is 16-byte records of 4×4 tile ids, row-major, with no attribute bits.
-  - Round-trip corpus: 305 `.blk` (257 used plus 48 unused betas; include all) and 37 `_metatiles.bin` (36 tilesets plus `unused_johto`).
-  - The codec is length-agnostic, so the 2 oversize CeruleanCave files round-trip fine. The w×h check is Task 3's job, not the codec's.
-  - The corpus is found by enumerating INCBINs in `data/maps/blocks.asm` and `gfx/tilesets.asm`, not by globbing.
+  - The tech stack has no pngjs. PNG decoding is hand-rolled on `node:zlib` (`packages/core/src/load/png.ts` precedent), extended or paralleled for gray depth-2 and RGBA depth-8.
+  - Data-defect warnings (Decisions 3 and 4) are one shared shape. Loaders return them alongside data. They never throw and never silently drop them. The CLI prints them.
+  - Every line parser must accept a final line with no `\n`.
+- **Task 2 (config/family + `.blk` and metatile codec).**
+  - **New first step (Decision 1):**
+    - Add the `gbc` block to `pokemap.config.json`: `projectPath` = PerfPlus, `referenceProjects: []`.
+    - Add `packages/core/src/family.ts` `detectEngineFamily(root)`, with probes and refusals per §Config and a test over the probe table.
+    - Add `packages/core/test/gbc/helpers/corpus.ts`. It reads `cfg.gbc`, skips when the subject is absent, and tolerates an empty or absent `referenceProjects`.
+    - GBA readers stay untouched.
+  - Codec scope is unchanged. `Block = { metatileId }`: 1 byte, row-major, confirmed with no extra bits. The metatile table is 16-byte records of 4×4 tile ids, row-major, with no attribute bits.
+  - Round-trip corpus: 305 `.blk` (257 used plus 48 unused betas; include all) and 37 `_metatiles.bin` (36 tilesets plus `unused_johto`). Enumerate via the INCBINs in `data/maps/blocks.asm` and `gfx/tilesets.asm`, not by globbing.
+  - The codec is length-agnostic, so the 2 oversize CeruleanCave files round-trip whole. The w×h handling is Task 3's job.
 - **Task 3 (maps).**
   - Split `Map` and `Layout` (§3.6); change the File-structure row for `gbc/model/types.ts`.
   - Parse:
@@ -459,23 +570,25 @@ Shape:
     - `data/maps/attributes.asm`: `map_attributes Name, CONST, border, flags` + `connection dir, Name, CONST, offset`.
     - `data/maps/maps.asm`: `map Name, TILESET, ENV, LANDMARK, MUSIC, phone, PALETTE, FISHGROUP`.
     - `data/maps/blocks.asm`: stacked labels → INCBIN path.
+  - **All macro arguments are comma-split expressions** (`RADIO_TOWER_MUSIC | MUSIC_GOLDENROD_CITY`, `WEST | EAST`), never `\w+`.
   - Connection offset axis per §Extra (north/south = x, east/west = y).
-  - Border = 1 metatile.
-  - Assert corpus counts (391 / 257 / 23 shared / 2 size refusals).
+  - Border = 1 metatile. 272 maps use `$00`.
+  - Layout load for a bad-size `.blk`: first w×h bytes plus a warning (Decision 3), with a `writable: false` marker for Plan 7.
+  - Assert corpus counts: 391 maps / 257 layouts / 23 shared / exactly 2 size warnings.
 - **Task 4 (asm splice).**
   - **Scope shrinks.** No count bookkeeping (§3.1). It needs:
     - a line locator: macro name + ordinal within a `<Name>_MapEvents` section, or `map_attributes <Name>`, or `map <Name>`;
-    - an argument-span splicer that preserves padding, comments and trailing whitespace.
-  - The no-op round trip covers all 391 `maps/*.asm` event tails, plus `attributes.asm`, `maps.asm`, `map_constants.asm` and 37 `*_collision.asm`.
+    - an argument-span splicer that preserves padding, comments, trailing whitespace and **a missing final newline**.
+  - The no-op round trip covers all 391 `maps/*.asm` (including the 2 no-final-newline CeruleanCave files), plus `attributes.asm`, `maps.asm`, `map_constants.asm` and 37 `*_collision.asm`.
   - Record the `object_const_def` positional hazard as a Plan 7 G4 trigger. No Plan 6 action.
-- **Task 5 (tileset).**
+- **Task 5 (tileset, per-tileset only).**
   - **Fix path:** palette maps are `gfx/tilesets/<name>_palette_map.asm`, resolved via `gfx/tileset_palette_maps.asm` labels. They are not under `data/tilesets/`.
   - Collision: `data/tilesets/<name>_collision.asm`, TL/TR/BL/BR (§3.3). The token→`COLL_<token>` map comes from `constants/collision_constants.asm`.
   - Metatile count = bin size / 16. Do not take it from collision (forest: 40 vs 64).
-  - Tile id → PNG index: t < $60 → t; $80-$DF → t − $20. Otherwise refuse or placeholder.
+  - Tile id → PNG index: derive the bank from the palette-map nibble's bit 3, giving `(bank ? $60 : 0) + (t & $7F)` for `t & $7F < $60`. Alternatively, assert the palette map's uniform shape and use t / t − $20. Otherwise refuse or placeholder.
   - Palette nibble = byte[t >> 1], low nibble for even t.
   - PNG decoder: grayscale depth 2 and RGBA depth 8 (port). Shade = 3 − gray (pin by test).
-  - Roof tiles: for JOHTO, JOHTO_MODERN and BATTLE_TOWER_OUTSIDE, map-group roof PNG tiles replace ids $0A-$12. Take this either here, as a "tileset as seen from map group G" variant, or in Task 9.
+  - **No roof handling here** (Decision 6).
   - Real excerpts for tests are in §3.2-3.4 above.
 - **Task 6 (palette).**
   - **Rewrite the spec:** input `(tilesetConst, environment, mapPalette, mapGroup, {time='day', flash=true})`.
@@ -487,27 +600,48 @@ Shape:
   - Argument orders exactly as the §3.1 table.
   - Also capture `object_const_def` const names. The expansion is `const_def 2`, so the first listed const = 2 and positionally names the first `object_event`. Also capture `scene_script` and `callback`.
   - `warp_event` dest `-1` is legal.
+  - Hour limits: `-1, -1` or `-1, <single flag>`. Store as parsed expressions.
   - `bg_event`'s script pointer target type depends on `BGEVENT_*` (ITEM → `hiddenitem`, IFSET/IFNOTSET → `conditional_event`). Parse as a label only in Plan 6.
-- **Task 8 (wild).**
-  - **Fix path and model:** `data/wild/{johto,kanto,swarm}_{grass,water}.asm`.
-  - Grass = 3 rates (morn/day/nite) + 3×7 (level, species). Water = 1 rate + 3 slots. Lookup is by `def_*_wildmons MAP_CONST`, with no pointer table. Probabilities come from `probabilities.asm`.
-  - Swarm lists are conditional. Tag them, don't merge them.
-  - Optional scope growth (coordinator's call): `fish.asm` via the header `FISHGROUP` and `treemon_maps.asm`/`treemons.asm` (headbutt).
-- **Task 9 (render).**
+- **Task 8 (wild), with grown scope (Decision 5).**
+  - **Grass/water:** `data/wild/{johto,kanto,swarm}_{grass,water}.asm`.
+    - Grass = 3 rates (morn/day/nite) + 3×7 (level, species). Water = 1 rate + 3 slots.
+    - Lookup is by `def_*_wildmons MAP_CONST`, with no pointer table.
+    - Slot odds are parsed from `probabilities.asm`, never hardcoded (PerfPlus changed them).
+    - Swarm lists are conditional; tag them, don't merge them.
+    - `kanto_grass.asm`: EOF terminates, plus a warning (Decision 4).
+  - **Fishing:**
+    - Map header `FISHGROUP_*` → `FishGroups[FISHGROUP − 1]` (`fishgroup chance, old, good, super`). `FISHGROUP_NONE` means no fishing.
+    - Rod tables: cumulative `db pct, SPECIES, level` records.
+    - `time_group n` (species 0) → `TimeFishGroups[n]` day/nite pair.
+    - Qwilfish/Remoraid swarm substitution is conditional; tag it.
+  - **Headbutt/Rock Smash:**
+    - `TreeMonMaps`/`RockMonMaps` (`treemon_map MAP_CONST, SET`, `db -1` terminated) → `TreeMons` pointer table → common/rare `db pct, SPECIES, level` lists (non-cumulative, `db -1` terminated).
+    - `TREEMON_SET_CITY` (index 0) yields nothing: 13 maps.
+    - Rock = one list, 40%.
+  - Report base levels. The engine adds a +0 to +4 level buff to grass, and in PerfPlus to surf.
+- **Task 9 (render, per map).**
   - **Render per map, not per layout** (palette and roof depend on map fields).
-  - Border ring exists: 3 blocks, a single border metatile, with block 0 → border substitution.
-  - Refuse the 2 bad-size maps.
-  - Pin pixels on NewBarkTown: JOHTO, TOWN, PALETTE_AUTO, group NEW_BARK (24), roof NEW_BARK.
+  - Apply the roof **tile** swap here (Decision 6): for JOHTO, JOHTO_MODERN and BATTLE_TOWER_OUTSIDE, `roofs/<MapGroupRoofs[group]>.png` 9 tiles replace ids $0A-$12, with none for `-1`.
+  - Border ring exists: 3 blocks, a single border metatile, with block 0 → border substitution. **Metatile 0 as the ring is the common case** (272 maps).
+  - Render tests must cover a `border $00` interior (e.g. ElmsLab or PlayersHouse1F) as well as NewBarkTown (JOHTO, TOWN, PALETTE_AUTO, group NEW_BARK (24), roof NEW_BARK).
+  - Bad-size maps render the first w×h bytes with the warning surfaced (Decision 3).
 - **Task 10 (CLI).**
-  - Same `pokemap` binary with probe-based family branching (Config decision).
+  - Same `pokemap` binary with probe-based family branching (§Config).
   - `render <map>` takes a GBC map name (`NewBarkTown`). Accepting the `.blk` stem is optional.
   - Handlers live in `packages/cli/src/gbcCommands.ts`. GBA-only commands refuse on GBC.
+  - Data-defect warnings print to stderr.
   - Success-criterion command: `pokemap --project "C:/Programming Projects/pokecrystal-PerfPlus" render NewBarkTown -o out.png`.
 - **Task 11 (world).** Connection semantics confirmed; the direct port holds, with the offset axis noted above. There are 142 connections, and 77 maps are TOWN/ROUTE. Assess LOD needs from the real stitched extent, as the plan already says.
-- **Task 12 (atlas).** **The premise "no day/night variants at the data level" is false**: Crystal grass encounters differ by morn/day/nite. `where`/`coverage` must report per-time-slot chances (per-slot % from `probabilities.asm`, times the slot rate), with water single-slot. Scope grows modestly.
-- **Roadmap edits the coordinator should make.**
-  - §3 items 1-6 are resolved as above.
-  - G4: drop the count-desync item. Add bad-size `.blk` (2 real hits), the object-const positional hazard (Plan 7) and more than 15 objects.
+- **Task 12 (atlas).** **The premise "no day/night variants at the data level" is false.**
+  - Grass differs by morn/day/nite. Fishing differs day vs nite through `time_group`.
+  - `where`/`coverage` report per-source chances: grass per time slot (slot % × rate), water, fishing per rod, and headbutt common/rare/rock.
+  - Scope grows (Decision 5).
+- **Roadmap edits.** Applied in the same commit as this revision (`docs/superpowers/plans/2026-09-23-pokemap-plan-6-gbc-roadmap.md`):
   - §0 I7 bullet: the cap is per tileset (40/64/128).
-  - §1: `Block` is fine. `Map`/`Layout` must split.
-  - §4: the tech stack has no pngjs.
+  - §1: `Map`/`Layout` split.
+  - G1: cap wording.
+  - G4 list: count-desync item dropped; bad-size `.blk` and the missing terminator become flagged read-only data defects; object-const positional hazard and more than 15 objects added.
+  - G5: single-member corpus for Plan 6.
+  - §3: marked resolved, pointing here.
+  - §4: no pngjs.
+  - §5: the config shape decided.
