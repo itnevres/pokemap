@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import type { Collision, GbcTileset, Metatile, PaletteMapEntry } from "../model/types.js";
 import { norm } from "../../config/paths.js";
-import { stripMacroDefs, stripComment, matchCall } from "./asm.js";
+import { codeLines, stripMacroDefs, stripComment, matchCall } from "./asm.js";
 import { parseIncbins, parseIncludes } from "./incbin.js";
 import { parseNum } from "./map.js";
 import { readShadesPng } from "./png.js";
@@ -101,67 +101,112 @@ const TILEPAL_NAMES = 8;
 /** Tile ids 0x00-0x5F (96), then the 0x60-0x7F (32) filler, then 0x80-0xDF (96) -- 224 total (GBC format findings §3.4 step 6). */
 const PALETTE_MAP_TILE_COUNT = 224;
 
+type PalMapPhase = "low" | "reptStart" | "reptDb" | "reptEnd" | "high" | "done";
+
 /**
  * `gfx/tilesets/<name>_palette_map.asm`: 12 `tilepal 0, <8 names>` lines
  * (tiles $00-$5F), then `rept 16 / db $ff / endr` (tiles $60-$7F, no
  * palette entry), then 12 `tilepal 1, <8 names>` lines (tiles $80-$DF) --
- * every one of the 37 real files has exactly this shape. Each `tilepal`
- * line's 8 names map 1:1, in source order, to its 8 tile ids (verified
- * against the `dn`/`shift` macro expansion: pair (\2,\3) -> low/high nibble
- * of one byte -> tiles 2k/2k+1, so listing the names in order already gives
- * the right tile assignment without redoing the nibble packing). `bank`
- * comes from the `tilepal` call's own first argument, applied to all 8.
- * Refuses (throws, naming what) a `tilepal` line without exactly 8 names,
- * an unknown `PAL_BG_<name>`, a `db $ff` filler line outside a `rept`
- * block, any other unrecognized line, or a final tile count != 224 --
- * together these catch any deviation from the fixed shape.
+ * every one of the 37 real files has exactly this shape, and Task 5 spec
+ * review Issue 1 found that a merely-224-total check silently accepts real
+ * deviations (extra/missing tilepal lines, swapped blocks, filler in the
+ * wrong place, an out-of-range bank) and produces wrong `pngTileIndex`
+ * results. This is therefore a strict phase machine, not a bag of counts:
+ * exactly 12 bank-0 `tilepal` lines, then exactly `rept 16` / `db $ff` /
+ * `endr`, then exactly 12 bank-1 `tilepal` lines, then nothing else.
+ *
+ * Each `tilepal` line's 8 names map 1:1, in source order, to its 8 tile ids
+ * (verified against the `dn`/`shift` macro expansion: pair (\2,\3) ->
+ * low/high nibble of one byte -> tiles 2k/2k+1, so listing the names in
+ * order already gives the right tile assignment without redoing the nibble
+ * packing).
+ *
+ * Refuses (throws, naming `source` -- the palette-map file's repo-relative
+ * path, or "<palette map>" for a caller with no file -- and the 1-based
+ * line number) on any deviation: a `tilepal` line without exactly 8 names,
+ * a `tilepal` bank other than the one its block requires (0 in the first
+ * block, 1 in the second -- never merely "truthy"), an unknown
+ * `PAL_BG_<name>`, a mis-shaped/missing `rept 16`/`db $ff`/`endr`, any
+ * other unrecognized line, or a shape that doesn't end exactly on the 12th
+ * bank-1 `tilepal` line.
  */
-export function parsePaletteMap(text: string, palBg: Map<string, number>): (PaletteMapEntry | null)[] {
+export function parsePaletteMap(
+  text: string,
+  palBg: Map<string, number>,
+  source: string = "<palette map>",
+): (PaletteMapEntry | null)[] {
   const entries: (PaletteMapEntry | null)[] = [];
-  let pendingReptCount: number | null = null;
+  let phase: PalMapPhase = "low";
+  let lowCount = 0;
+  let highCount = 0;
 
-  for (const line of stripMacroDefs(text)) {
-    const stripped = stripComment(line);
+  const fail = (lineIndex: number, msg: string): never => {
+    throw new Error(`parsePaletteMap: ${source}:${lineIndex + 1}: ${msg}`);
+  };
+
+  for (const { lineIndex, text: rawLine } of codeLines(text)) {
+    const stripped = stripComment(rawLine);
     if (stripped.trim() === "") continue;
 
-    const tp = matchCall(line, "tilepal");
-    if (tp) {
+    if (phase === "low" || phase === "high") {
+      const tp = matchCall(rawLine, "tilepal");
+      if (!tp) {
+        throw fail(lineIndex, `expected a "tilepal" line (in the ${phase === "low" ? "first" : "second"} 12-line block), got "${stripped.trim()}"`);
+      }
       const [bankStr, ...names] = tp;
       if (names.length !== TILEPAL_NAMES) {
-        throw new Error(`parsePaletteMap: "tilepal" line has ${names.length} palette names, expected ${TILEPAL_NAMES}: "${stripped.trim()}"`);
+        throw fail(lineIndex, `"tilepal" line has ${names.length} palette names, expected ${TILEPAL_NAMES}: "${stripped.trim()}"`);
       }
       const bank = parseNum(bankStr!);
+      const expectedBank = phase === "low" ? 0 : 1;
+      if (bank !== expectedBank) {
+        throw fail(
+          lineIndex,
+          `"tilepal" bank is ${bank}, expected ${expectedBank} in the ${phase === "low" ? "first" : "second"} 12-line block: "${stripped.trim()}"`,
+        );
+      }
       for (const name of names) {
         const key = `PAL_BG_${name}`;
         const pal = palBg.get(key);
-        if (pal === undefined) throw new Error(`parsePaletteMap: unknown palette name "${key}"`);
+        if (pal === undefined) throw fail(lineIndex, `unknown palette name "${key}"`);
         entries.push({ bank, pal });
       }
+      if (phase === "low") {
+        lowCount++;
+        if (lowCount === 12) phase = "reptStart";
+      } else {
+        highCount++;
+        if (highCount === 12) phase = "done";
+      }
       continue;
     }
 
-    const rept = stripped.match(/^\s*rept\s+(\S+)/);
-    if (rept) {
-      pendingReptCount = parseNum(rept[1]!);
+    if (phase === "reptStart") {
+      const rept = stripped.match(/^\s*rept\s+(\S+)/);
+      if (!rept) throw fail(lineIndex, `expected "rept 16" (the $60-$7F filler), got "${stripped.trim()}"`);
+      const n = parseNum(rept[1]!);
+      if (n !== 16) throw fail(lineIndex, `"rept ${n}", expected "rept 16"`);
+      phase = "reptDb";
       continue;
     }
-    if (/^\s*endr\b/.test(stripped)) {
-      pendingReptCount = null;
+    if (phase === "reptEnd") {
+      if (!/^\s*endr\b/.test(stripped)) throw fail(lineIndex, `expected "endr", got "${stripped.trim()}"`);
+      phase = "high";
       continue;
     }
-    if (/^\s*db\s+\$ff\b/i.test(stripped)) {
-      if (pendingReptCount === null) {
-        throw new Error(`parsePaletteMap: "db $ff" filler line outside a "rept" block`);
-      }
-      for (let i = 0; i < pendingReptCount * 2; i++) entries.push(null);
+    if (phase === "reptDb") {
+      if (!/^\s*db\s+\$ff\s*$/i.test(stripped)) throw fail(lineIndex, `expected "db $ff", got "${stripped.trim()}"`);
+      for (let i = 0; i < 32; i++) entries.push(null);
+      phase = "reptEnd";
       continue;
     }
-    throw new Error(`parsePaletteMap: unrecognized line "${stripped.trim()}"`);
+    // phase === "done"
+    throw fail(lineIndex, `unexpected trailing content after the 12/rept-16/12 shape: "${stripped.trim()}"`);
   }
 
-  if (entries.length !== PALETTE_MAP_TILE_COUNT) {
+  if (phase !== "done") {
     throw new Error(
-      `parsePaletteMap: expected ${PALETTE_MAP_TILE_COUNT} tile entries (12 tilepal + rept-16 filler + 12 tilepal), got ${entries.length}`,
+      `parsePaletteMap: ${source}: incomplete -- ended after ${entries.length} of ${PALETTE_MAP_TILE_COUNT} tile entries (in phase "${phase}")`,
     );
   }
   return entries;
@@ -279,7 +324,7 @@ export function loadGbcTilesetByName(root: string, name: string, constName: stri
   const collisionConstants = parseCollisionConstants(readFileSync(`${r}/constants/collision_constants.asm`, "utf8"));
 
   const metatiles = parseMetatiles(readFileSync(`${r}/${metatilesPath}`));
-  const palMap = parsePaletteMap(readFileSync(`${r}/${palMapPath}`, "utf8"), tilesetConstants);
+  const palMap = parsePaletteMap(readFileSync(`${r}/${palMapPath}`, "utf8"), tilesetConstants, palMapPath);
   const collisionAll = parseCollision(readFileSync(`${r}/${collisionPath}`, "utf8"), collisionConstants);
 
   if (collisionAll.length < metatiles.length) {
@@ -292,7 +337,15 @@ export function loadGbcTilesetByName(root: string, name: string, constName: stri
   const collision = collisionAll.slice(0, metatiles.length);
 
   const gfxPath = pngPathFor(gfxIncbinPath);
-  const png = readShadesPng(readFileSync(`${r}/${gfxPath}`));
+  let png;
+  try {
+    png = readShadesPng(readFileSync(`${r}/${gfxPath}`));
+  } catch (e) {
+    // Spec review note: readShadesPng's own errors name the pixel but not
+    // the file, so a corpus-level failure among 36+ PNGs wouldn't say which
+    // one. Wrap with gfxPath here, the one place that knows it.
+    throw new Error(`loadGbcTilesetByName: ${gfxPath}: ${(e as Error).message}`);
+  }
   const tiles = sliceTiles(png);
 
   return { constName, name, gfxPath, metatilesPath, collisionPath, palMapPath, metatiles, collision, palMap, tiles };
@@ -307,6 +360,16 @@ export function loadGbcTilesetByName(root: string, name: string, constName: stri
  * constant) on an unknown constant or one beyond the table's length.
  */
 export function loadGbcTileset(root: string, tilesetConst: string): GbcTileset {
+  // Spec review Issue 2: constants/tileset_constants.asm also defines the
+  // unrelated PAL_BG_* enum, and parseConstDefs deliberately merges both
+  // (see its own doc comment) since a real caller only ever passes a
+  // TILESET_* value. A non-TILESET_* name can still collide with a real
+  // table index (e.g. PAL_BG_RED -- index 1 -- silently resolving to
+  // TilesetJohto), so refuse it here before ever doing the index lookup.
+  if (!tilesetConst.startsWith("TILESET_")) {
+    throw new Error(`loadGbcTileset: "${tilesetConst}" is not a TILESET_* constant`);
+  }
+
   const r = norm(root);
   const tilesetConstants = parseConstDefs(readFileSync(`${r}/constants/tileset_constants.asm`, "utf8"));
   const index = tilesetConstants.get(tilesetConst);
@@ -324,14 +387,21 @@ export function loadGbcTileset(root: string, tilesetConst: string): GbcTileset {
 /**
  * Tile id -> PNG tile index, deriving the VRAM bank from the palette map's
  * own bit rather than from the tile id's high bit (GBC format findings §3.2):
- * `(bank ? 0x60 : 0) + (t & 0x7F)`. Returns `null` (never guesses) for a
- * tile id with no palette-map entry (the $60-$7F/beyond-224 filler range,
- * which only ever appears in never-placed garbage metatiles) or one whose
- * resolved index is beyond this tileset's own PNG tile count.
+ * `(bank ? 0x60 : 0) + (t & 0x7F)`, valid only when `t & 0x7F < 0x60` (the
+ * findings' own caveat). Returns `null` (never guesses) for a tile id with
+ * no palette-map entry (the $60-$7F/beyond-224 filler range, which only
+ * ever appears in never-placed garbage metatiles), one whose `t & 0x7F` is
+ * already >= 0x60 (spec review Issue 1 -- defense in depth: with
+ * `parsePaletteMap` now enforcing the fixed shape this can't arise from a
+ * real palette map, but this function takes `palMap` as plain data, not
+ * necessarily one `parsePaletteMap` produced), or one whose resolved index
+ * is beyond this tileset's own PNG tile count.
  */
 export function pngTileIndex(ts: Pick<GbcTileset, "palMap" | "tiles">, tileId: number): number | null {
   const entry = tileId >= 0 && tileId < ts.palMap.length ? ts.palMap[tileId] : undefined;
   if (!entry) return null;
-  const idx = (entry.bank ? 0x60 : 0) + (tileId & 0x7f);
+  const low7 = tileId & 0x7f;
+  if (low7 >= 0x60) return null;
+  const idx = (entry.bank ? 0x60 : 0) + low7;
   return idx < ts.tiles.length ? idx : null;
 }

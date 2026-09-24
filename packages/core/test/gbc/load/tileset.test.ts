@@ -257,7 +257,59 @@ describe("parsePaletteMap", () => {
   });
 
   it("refuses an unrecognized line", () => {
-    expect(() => parsePaletteMap("\tsomething weird", palBg)).toThrow(/unrecognized/i);
+    expect(() => parsePaletteMap("\tsomething weird", palBg)).toThrow(/tilepal/i);
+  });
+
+  // Spec review cases (task-5-spec-review.md Issue 1): each was silently
+  // *accepted* by the old "total 224 + unrecognized line" check, producing
+  // wrong pngTileIndex results. The strict 12/rept-16/12 phase machine must
+  // refuse all of them, naming the file (`source`) and 1-based line number.
+  describe("spec-review Issue 1: exact structure enforcement", () => {
+    it("case A: tilepal bank=1 in the bank-0 (first 12-line) block is refused", () => {
+      const text = [
+        ...Array.from({ length: 12 }, () => tilepalLine(1, grayLine)), // should be bank 0
+        "rept 16",
+        "\tdb $ff",
+        "endr",
+        ...Array.from({ length: 12 }, () => tilepalLine(1, grayLine)),
+      ].join("\n");
+      expect(() => parsePaletteMap(text, palBg, "bad.asm")).toThrow(/bad\.asm:1:/);
+      expect(() => parsePaletteMap(text, palBg, "bad.asm")).toThrow(/bank/i);
+    });
+
+    it("case B: 13 bank-0 lines + rept 12 + 12 bank-1 lines is refused (extra tilepal before the filler)", () => {
+      const text = [
+        ...Array.from({ length: 13 }, () => tilepalLine(0, grayLine)),
+        "rept 12",
+        "\tdb $ff",
+        "endr",
+        ...Array.from({ length: 12 }, () => tilepalLine(1, grayLine)),
+      ].join("\n");
+      expect(() => parsePaletteMap(text, palBg, "bad.asm")).toThrow(/rept 16/);
+    });
+
+    it("case F: tilepal bank=2 (overflows the real nibble) is refused, not treated as truthy bank 1", () => {
+      const text = [
+        tilepalLine(2, grayLine),
+        ...Array.from({ length: 11 }, () => tilepalLine(0, grayLine)),
+        "rept 16",
+        "\tdb $ff",
+        "endr",
+        ...Array.from({ length: 12 }, () => tilepalLine(1, grayLine)),
+      ].join("\n");
+      expect(() => parsePaletteMap(text, palBg, "bad.asm")).toThrow(/bank/i);
+    });
+
+    it("case G: rept-16 filler first, then 24 tilepal lines, is refused", () => {
+      const text = [
+        "rept 16",
+        "\tdb $ff",
+        "endr",
+        ...Array.from({ length: 12 }, () => tilepalLine(0, grayLine)),
+        ...Array.from({ length: 12 }, () => tilepalLine(1, grayLine)),
+      ].join("\n");
+      expect(() => parsePaletteMap(text, palBg, "bad.asm")).toThrow(/tilepal/i);
+    });
   });
 
   describe("corpus", () => {
@@ -355,6 +407,13 @@ describe("pngTileIndex", () => {
     palMap[0x5f] = { bank: 0, pal: 0 };
     const ts = tilesetStub({ palMap, tileCount: 1 }); // only PNG tile 0 exists
     expect(pngTileIndex(ts, 0x5f)).toBeNull();
+  });
+
+  it("returns null when (tileId & 0x7F) >= 0x60, even if the palMap entry is non-null (spec review Issue 1: findings' rule is valid only below 0x60)", () => {
+    const palMap = new Array(224).fill(null);
+    palMap[0x65] = { bank: 0, pal: 0 }; // never happens with a well-formed palette map, but guard directly
+    const ts = tilesetStub({ palMap, tileCount: 256 });
+    expect(pngTileIndex(ts, 0x65)).toBeNull();
   });
 });
 
@@ -494,6 +553,14 @@ describe("loadGbcTileset / loadGbcTilesetByName (synthetic fixture)", () => {
     expect(() => loadGbcTileset(root, "TILESET_NOPE")).toThrow(/TILESET_NOPE/);
   });
 
+  it("refuses a constant that isn't TILESET_* (spec review Issue 2: PAL_BG_* shares the same enum-parser map, but must never be accepted here)", () => {
+    // The fixture's tileset_constants.asm defines PAL_BG_GRAY at index 0,
+    // which happens to equal TilesetPlaceholder0's table index -- exactly
+    // the silent-wrong-answer scenario the reviewer found (PAL_BG_RED ->
+    // TilesetJohto on the real corpus).
+    expect(() => loadGbcTileset(root, "PAL_BG_GRAY")).toThrow(/PAL_BG_GRAY/);
+  });
+
   it("refuses when the resolved name has no matching GFX/Meta/Coll label", () => {
     const noCollRoot = mkdtempSync(join(tmpdir(), "pokemap-gbc-tileset-nocoll-"));
     writeFixture(noCollRoot, { metatileCount: 1, collisionLines: 1, withColl: false });
@@ -514,6 +581,16 @@ describe("loadGbcTileset / loadGbcTilesetByName (synthetic fixture)", () => {
     const ts = loadGbcTileset(extraRoot, "TILESET_TINY");
     expect(ts.collision).toHaveLength(1);
     rmSync(extraRoot, { recursive: true, force: true });
+  });
+
+  it("wraps a PNG decode error with gfxPath (spec review note: a corpus-level failure must say which PNG)", () => {
+    const badPngRoot = mkdtempSync(join(tmpdir(), "pokemap-gbc-tileset-badpng-"));
+    writeFixture(badPngRoot, { metatileCount: 1, collisionLines: 1 });
+    // Corrupt the PNG signature so readShadesPng throws "not a PNG" --
+    // any readShadesPng refusal exercises the same wrapping path.
+    writeFileSync(join(badPngRoot, "gfx", "tilesets", "tiny.png"), Buffer.from([0, 1, 2, 3]));
+    expect(() => loadGbcTileset(badPngRoot, "TILESET_TINY")).toThrow(/gfx\/tilesets\/tiny\.png/);
+    rmSync(badPngRoot, { recursive: true, force: true });
   });
 });
 
