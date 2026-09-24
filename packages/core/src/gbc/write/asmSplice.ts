@@ -74,7 +74,12 @@ export function locateNthCall(text: string, macro: string, ordinal: number): Asm
  * is absent or the ordinal is out of range.
  */
 export function locateEventCall(text: string, mapName: string, macro: string, ordinal: number): AsmCall {
-  const tail = labelTail(text, `${mapName}_MapEvents`);
+  let tail;
+  try {
+    tail = labelTail(text, `${mapName}_MapEvents`);
+  } catch (e) {
+    throw new Error(`locateEventCall: ${(e as Error).message}`);
+  }
   const matches = scanCalls(tail.text, macro);
   if (ordinal < 0 || ordinal >= matches.length) {
     throw new Error(`locateEventCall: ordinal ${ordinal} is out of range for ${matches.length} "${macro}" call(s) after "${mapName}_MapEvents:"`);

@@ -23,7 +23,14 @@ import type {
 /** NUM_OBJECTS EQU 16; slot 0 is the player, so at most 15 object_events per map. */
 const MAX_OBJECT_EVENTS = 15;
 
-/** `<mapName>[:lineIndex+1]: <message>` -- matches `tileset.ts`'s `parsePaletteMap` refusal style. */
+/**
+ * `<mapName>[:lineIndex+1]: <message>` -- every refusal in this file goes
+ * through this one function, so the map+line prefix never drifts between
+ * call sites. Unlike `tileset.ts`'s `parsePaletteMap`, whose own `fail` also
+ * prefixes its own function name, this one does not -- deliberately: it is
+ * called from several `to*` mapping functions, not one, so no single
+ * function name would be accurate.
+ */
 function fail(mapName: string, lineIndex: number | null, message: string): never {
   const loc = lineIndex === null ? mapName : `${mapName}:${lineIndex + 1}`;
   throw new Error(`${loc}: ${message}`);
@@ -94,17 +101,31 @@ function toCallback(call: AsmCall, lineOffset: number, mapName: string): GbcCall
 /** `def_warp_events`, `def_coord_events`, `def_bg_events`, `def_object_events`, in that mandatory order (`ReadMapEvents` reads them sequentially). */
 const SECTION_MARKERS = ["def_warp_events", "def_coord_events", "def_bg_events", "def_object_events"] as const;
 
-/** Refuses (throws, naming the map and the missing/misordered section) unless all 4 section markers are present, in order. */
-function checkSectionOrder(tailText: string, mapName: string): void {
+/**
+ * Refuses (throws, naming the map and the missing/misordered section) unless
+ * all 4 section markers are present, in order. `lineOffset` is the tail's
+ * own absolute line index (`labelTail`'s `lineIndex`), so an out-of-order
+ * marker's refusal can name the line it was actually found on, the same way
+ * every other refusal in this file does -- a missing marker has no line to
+ * point to (it isn't in the text at all), so that refusal names only the map.
+ */
+function checkSectionOrder(tailText: string, mapName: string, lineOffset: number): void {
   let prevOffset = -1;
   let prevMarker = "";
   for (const marker of SECTION_MARKERS) {
-    const m = new RegExp(`^\\s*${marker}\\b`, "m").exec(tailText);
+    // [ \t]*, not \s* -- \s matches \n too, so \s* would let the match
+    // start creep backward across a preceding blank line onto that
+    // blank line's own position, making both the offset comparison and
+    // (especially) the line-number-from-offset math below point one
+    // line too early whenever a marker is preceded by a blank line,
+    // which is the normal case in real map files.
+    const m = new RegExp(`^[ \\t]*${marker}\\b`, "m").exec(tailText);
     if (!m) {
       fail(mapName, null, `missing "${marker}" section in its MapEvents block`);
     }
     if (m.index <= prevOffset) {
-      fail(mapName, null, `"${marker}" appears out of order (after "${prevMarker}") in its MapEvents block`);
+      const lineIndex = lineOffset + (tailText.slice(0, m.index).match(/\n/g)?.length ?? 0);
+      fail(mapName, lineIndex, `"${marker}" appears out of order (after "${prevMarker}") in its MapEvents block`);
     }
     prevOffset = m.index;
     prevMarker = marker;
@@ -144,7 +165,7 @@ function parseObjectConsts(text: string): string[] {
  */
 export function parseMapEvents(text: string, mapName: string): GbcMapEvents {
   const eventsTail = labelTail(text, `${mapName}_MapEvents`);
-  checkSectionOrder(eventsTail.text, mapName);
+  checkSectionOrder(eventsTail.text, mapName, eventsTail.lineIndex);
 
   const warps = scanCalls(eventsTail.text, "warp_event").map((c) => toWarp(c, eventsTail.lineIndex, mapName));
   const coords = scanCalls(eventsTail.text, "coord_event").map((c) => toCoord(c, eventsTail.lineIndex, mapName));

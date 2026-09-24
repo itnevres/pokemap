@@ -205,7 +205,8 @@ describe("locateEventCall", () => {
     expect(locateEventCall(withTrailingSpace, "NewBarkTown", "warp_event", 0).args[2]!.text).toBe("ELMS_LAB");
   });
 
-  it("refuses when the map's MapEvents label is missing, naming it", () => {
+  it("refuses when the map's MapEvents label is missing, naming it, prefixed with its own name (not labelTail's)", () => {
+    expect(() => locateEventCall("no label here", "NewBarkTown", "warp_event", 0)).toThrow(/^locateEventCall: /);
     expect(() => locateEventCall("no label here", "NewBarkTown", "warp_event", 0)).toThrow(/NewBarkTown_MapEvents/);
   });
 

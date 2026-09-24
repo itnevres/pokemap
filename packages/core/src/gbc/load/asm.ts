@@ -259,12 +259,18 @@ export interface LabelTail {
   lineIndex: number;
 }
 
-/** Refuses (throws, naming the label) when `label:` is not found. */
+/**
+ * Refuses (throws, naming the label) when `label:` is not found. The message
+ * carries no function-name prefix of its own -- each caller has its own
+ * identity a Plan-7 consumer actually calls (`locateEventCall`,
+ * `parseMapEvents`), so callers that want that identity in the message
+ * prefix it themselves rather than surfacing this internal primitive's name.
+ */
 export function labelTail(text: string, label: string): LabelTail {
   const labelLineRe = new RegExp(`^${escapeRegExp(label)}:[^\\n]*$`, "m");
   const labelMatch = labelLineRe.exec(text);
   if (!labelMatch) {
-    throw new Error(`labelTail: no "${label}:" label found`);
+    throw new Error(`no "${label}:" label found`);
   }
 
   const labelLineEnd = labelMatch.index + labelMatch[0].length;

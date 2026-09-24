@@ -278,7 +278,7 @@ describe("parseMapEvents: whole-file format irregularities", () => {
     expect(barEvents.callbacks).toHaveLength(2);
   });
 
-  it("refuses when a def_* section is out of order (coord before warp)", () => {
+  it("refuses when a def_* section is out of order (coord before warp), naming the map, the marker, and the line it was found on", () => {
     const text = [
       "Foo_MapScripts:",
       "\tdef_scene_scripts",
@@ -293,10 +293,13 @@ describe("parseMapEvents: whole-file format irregularities", () => {
       "\tdef_object_events",
       "\twarp_event 1, 2, BAR, 1",
     ].join("\n");
-    expect(() => parseMapEvents(text, "Foo")).toThrow(/Foo/);
+    // Line 8 (1-based) is "\tdef_coord_events" -- the marker's OWN line, not
+    // the blank line before it (a `\s*` regex would wrongly anchor there,
+    // since `\s` matches `\n` too; this pins that it does not).
+    expect(() => parseMapEvents(text, "Foo")).toThrow(/^Foo:8: "def_coord_events"/);
   });
 
-  it("refuses when def_object_events is out of order (before def_bg_events)", () => {
+  it("refuses when def_object_events is out of order (before def_bg_events), naming the line it was found on", () => {
     const text = [
       "Foo_MapScripts:",
       "\tdef_scene_scripts",
@@ -310,8 +313,7 @@ describe("parseMapEvents: whole-file format irregularities", () => {
       "\tdef_object_events",
       "\tdef_bg_events",
     ].join("\n");
-    expect(() => parseMapEvents(text, "Foo")).toThrow(/Foo/);
-    expect(() => parseMapEvents(text, "Foo")).toThrow(/def_object_events/);
+    expect(() => parseMapEvents(text, "Foo")).toThrow(/^Foo:10: "def_object_events"/);
   });
 
   it("refuses when def_object_events is missing entirely", () => {
