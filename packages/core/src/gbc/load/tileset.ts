@@ -16,9 +16,9 @@ import { readShadesPng } from "./png.js";
  *
  * Task 5 extends this file with palette-map and collision loading.
  */
-export function parseMetatiles(buf: Buffer): Metatile[] {
+export function parseMetatiles(buf: Buffer, source: string = "<metatiles>"): Metatile[] {
   if (buf.length % 16 !== 0) {
-    throw new Error(`metatiles buffer length ${buf.length} is not a multiple of 16`);
+    throw new Error(`parseMetatiles: ${source}: buffer length ${buf.length} is not a multiple of 16`);
   }
   const out: Metatile[] = new Array(buf.length / 16);
   for (let i = 0; i < out.length; i++) {
@@ -212,12 +212,20 @@ export function parsePaletteMap(
   return entries;
 }
 
-/** `constants/collision_constants.asm`: `DEF COLL_<NAME> EQU $xx [; comment]`. `<NAME>` may itself look numeric (`COLL_01`, `COLL_FF`) -- it's a name, not a value. */
+/**
+ * `constants/collision_constants.asm`: `DEF COLL_<NAME> EQU $xx [; comment]`.
+ * `<NAME>` may itself look numeric (`COLL_01`, `COLL_FF`) -- it's a name,
+ * not a value. Runs through `stripMacroDefs` like its sibling
+ * `parseConstDefs`, even though the real file has no `MACRO`/`ENDM` block
+ * (code-quality review Minor #4) -- one "iterate this file's code lines"
+ * implementation, not two, so a future macro block in this file wouldn't
+ * silently mis-parse.
+ */
 export function parseCollisionConstants(text: string): Map<string, number> {
   const out = new Map<string, number>();
-  for (const rawLine of text.split(/\r\n|\n/)) {
-    const line = stripComment(rawLine);
-    const m = line.match(/^\s*DEF\s+(COLL_[A-Za-z0-9_]+)\s+EQU\s+(\S+)/);
+  for (const line of stripMacroDefs(text)) {
+    const stripped = stripComment(line);
+    const m = stripped.match(/^\s*DEF\s+(COLL_[A-Za-z0-9_]+)\s+EQU\s+(\S+)/);
     if (m) out.set(m[1]!, parseNum(m[2]!));
   }
   return out;
@@ -228,21 +236,23 @@ export function parseCollisionConstants(text: string): Map<string, number> {
  * per metatile (GBC format findings §3.3 -- quadrant order confirmed against
  * `GetCoordTile`). Each token is looked up as `COLL_<token>`, exactly as
  * written (a token that looks numeric, e.g. "01", is still a name suffix,
- * never a literal value). Refuses (throws, naming the token) on an unknown
- * one, and (naming the count) on a `tilecoll` line without exactly 4 tokens.
+ * never a literal value). Refuses (throws, naming `source` -- the
+ * collision file's repo-relative path, or "<collision>" for a caller with
+ * no file -- and the token) on an unknown one, and (naming `source` and the
+ * count) on a `tilecoll` line without exactly 4 tokens.
  */
-export function parseCollision(text: string, collConsts: Map<string, number>): Collision[] {
+export function parseCollision(text: string, collConsts: Map<string, number>, source: string = "<collision>"): Collision[] {
   const out: Collision[] = [];
   for (const line of stripMacroDefs(text)) {
     const tc = matchCall(line, "tilecoll");
     if (!tc) continue;
     if (tc.length !== 4) {
-      throw new Error(`parseCollision: "tilecoll" line has ${tc.length} args, expected 4: "${stripComment(line).trim()}"`);
+      throw new Error(`parseCollision: ${source}: "tilecoll" line has ${tc.length} args, expected 4: "${stripComment(line).trim()}"`);
     }
     const vals = tc.map((tok) => {
       const key = `COLL_${tok.trim()}`;
       const v = collConsts.get(key);
-      if (v === undefined) throw new Error(`parseCollision: unknown collision token "${tok}" (looked up as "${key}")`);
+      if (v === undefined) throw new Error(`parseCollision: ${source}: unknown collision token "${tok}" (looked up as "${key}")`);
       return v;
     });
     out.push({ tl: vals[0]!, tr: vals[1]!, bl: vals[2]!, br: vals[3]! });
@@ -250,8 +260,19 @@ export function parseCollision(text: string, collConsts: Map<string, number>): C
   return out;
 }
 
-/** Chunks a decoded PNG's shade data into 8x8 tiles, row-major, 16 per PNG row (GBC format findings, "Tileset graphics"). */
-function sliceTiles(png: { width: number; height: number; shades: Uint8Array }): Uint8Array[] {
+/**
+ * Chunks a decoded PNG's shade data into 8x8 tiles, row-major, 16 per PNG
+ * row (GBC format findings, "Tileset graphics"). Refuses (throws, naming
+ * `source` and the actual width/height) a PNG whose dimensions aren't a
+ * multiple of 8 -- code-quality review Issue I1: an off dimension would
+ * otherwise make the `ty < rows`/`tx < cols` loop run a fractional extra
+ * iteration that reads past `shades`, and `Uint8Array` silently coerces
+ * that `undefined` read to `0` rather than throwing.
+ */
+function sliceTiles(png: { width: number; height: number; shades: Uint8Array }, source: string): Uint8Array[] {
+  if (png.width % 8 !== 0 || png.height % 8 !== 0) {
+    throw new Error(`sliceTiles: ${source}: ${png.width}x${png.height} isn't a multiple of 8x8`);
+  }
   const cols = png.width / 8;
   const rows = png.height / 8;
   const out: Uint8Array[] = [];
@@ -296,8 +317,11 @@ function labelMap(entries: { labels: string[]; path: string }[]): Map<string, st
 export function loadGbcTilesetByName(root: string, name: string, constName: string = name): GbcTileset {
   const r = norm(root);
 
-  const gfxIncbins = parseIncbins(readFileSync(`${r}/gfx/tilesets.asm`, "utf8"));
-  const collIncludes = parseIncludes(readFileSync(`${r}/gfx/tilesets.asm`, "utf8"));
+  // Code-quality review Issue I3: read+scan gfx/tilesets.asm once, not
+  // twice -- cheap to avoid, and this function is called per-map by Task 9/10.
+  const tilesetsAsmText = readFileSync(`${r}/gfx/tilesets.asm`, "utf8");
+  const gfxIncbins = parseIncbins(tilesetsAsmText);
+  const collIncludes = parseIncludes(tilesetsAsmText);
   const palMapIncludes = parseIncludes(readFileSync(`${r}/gfx/tileset_palette_maps.asm`, "utf8"));
 
   const gfxByLabel = labelMap(gfxIncbins);
@@ -323,9 +347,9 @@ export function loadGbcTilesetByName(root: string, name: string, constName: stri
   const tilesetConstants = parseConstDefs(readFileSync(`${r}/constants/tileset_constants.asm`, "utf8"));
   const collisionConstants = parseCollisionConstants(readFileSync(`${r}/constants/collision_constants.asm`, "utf8"));
 
-  const metatiles = parseMetatiles(readFileSync(`${r}/${metatilesPath}`));
+  const metatiles = parseMetatiles(readFileSync(`${r}/${metatilesPath}`), metatilesPath);
   const palMap = parsePaletteMap(readFileSync(`${r}/${palMapPath}`, "utf8"), tilesetConstants, palMapPath);
-  const collisionAll = parseCollision(readFileSync(`${r}/${collisionPath}`, "utf8"), collisionConstants);
+  const collisionAll = parseCollision(readFileSync(`${r}/${collisionPath}`, "utf8"), collisionConstants, collisionPath);
 
   if (collisionAll.length < metatiles.length) {
     throw new Error(
@@ -346,7 +370,7 @@ export function loadGbcTilesetByName(root: string, name: string, constName: stri
     // one. Wrap with gfxPath here, the one place that knows it.
     throw new Error(`loadGbcTilesetByName: ${gfxPath}: ${(e as Error).message}`);
   }
-  const tiles = sliceTiles(png);
+  const tiles = sliceTiles(png, gfxPath);
 
   return { constName, name, gfxPath, metatilesPath, collisionPath, palMapPath, metatiles, collision, palMap, tiles };
 }
@@ -358,6 +382,13 @@ export function loadGbcTilesetByName(root: string, name: string, constName: stri
  * table index to a table entry name via `data/tilesets.asm`, then defers to
  * `loadGbcTilesetByName` for the rest. Refuses (throws, naming the
  * constant) on an unknown constant or one beyond the table's length.
+ *
+ * This function stays a pure, side-effect-free read on every call, with no
+ * internal cache -- deliberately (code-quality review Minor #5). A caller
+ * loading many maps (391 maps share 37 tilesets) should cache by
+ * `tilesetConst` on its own side, e.g. a `Map<string, GbcTileset>`, the way
+ * this module's own placed-tile corpus test already does, rather than this
+ * module re-reading/re-parsing the shared table files per map.
  */
 export function loadGbcTileset(root: string, tilesetConst: string): GbcTileset {
   // Spec review Issue 2: constants/tileset_constants.asm also defines the

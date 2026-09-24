@@ -460,6 +460,14 @@ describe("loadGbcTileset / loadGbcTilesetByName (synthetic fixture)", () => {
     return buildMiniPng(8, 8, 0, 2, Buffer.from(rows));
   }
 
+  /** width x 8, grayscale depth 2, gray level 0 everywhere, filter None -- for a width that isn't a multiple of 8 (code-quality review Issue I1). */
+  function oddWidthGrayscalePng(width: number): Buffer {
+    const bytesPerRow = Math.ceil((width * 2) / 8);
+    const rows: number[] = [];
+    for (let y = 0; y < 8; y++) rows.push(0, ...new Array(bytesPerRow).fill(0));
+    return buildMiniPng(width, 8, 0, 2, Buffer.from(rows));
+  }
+
   const grayLine8 = ["GRAY", "GRAY", "GRAY", "GRAY", "GRAY", "GRAY", "GRAY", "GRAY"];
 
   function writeFixture(dir: string, opts: { metatileCount: number; collisionLines: number; withColl?: boolean }) {
@@ -591,6 +599,35 @@ describe("loadGbcTileset / loadGbcTilesetByName (synthetic fixture)", () => {
     writeFileSync(join(badPngRoot, "gfx", "tilesets", "tiny.png"), Buffer.from([0, 1, 2, 3]));
     expect(() => loadGbcTileset(badPngRoot, "TILESET_TINY")).toThrow(/gfx\/tilesets\/tiny\.png/);
     rmSync(badPngRoot, { recursive: true, force: true });
+  });
+
+  it("refuses a PNG whose dimensions aren't a multiple of 8, naming width/height and the path (code-quality review I1)", () => {
+    const oddRoot = mkdtempSync(join(tmpdir(), "pokemap-gbc-tileset-oddpng-"));
+    writeFixture(oddRoot, { metatileCount: 1, collisionLines: 1 });
+    // 10x8 decodes fine (readShadesPng doesn't care about tile alignment),
+    // but sliceTiles's cols=width/8 loop would otherwise silently read past
+    // the shades array (Uint8Array coerces undefined to 0) instead of
+    // refusing the malformed sheet.
+    writeFileSync(join(oddRoot, "gfx", "tilesets", "tiny.png"), oddWidthGrayscalePng(10));
+    expect(() => loadGbcTileset(oddRoot, "TILESET_TINY")).toThrow(/10/);
+    expect(() => loadGbcTileset(oddRoot, "TILESET_TINY")).toThrow(/gfx\/tilesets\/tiny\.png/);
+    rmSync(oddRoot, { recursive: true, force: true });
+  });
+
+  it("refuses a metatiles.bin with a bad length, naming the file (code-quality review I2)", () => {
+    const badMetaRoot = mkdtempSync(join(tmpdir(), "pokemap-gbc-tileset-badmeta-"));
+    writeFixture(badMetaRoot, { metatileCount: 1, collisionLines: 1 });
+    writeFileSync(join(badMetaRoot, "data", "tilesets", "tiny_metatiles.bin"), Buffer.alloc(17, 0));
+    expect(() => loadGbcTileset(badMetaRoot, "TILESET_TINY")).toThrow(/data\/tilesets\/tiny_metatiles\.bin/);
+    rmSync(badMetaRoot, { recursive: true, force: true });
+  });
+
+  it("refuses a collision file with an unknown token, naming the file (code-quality review I2)", () => {
+    const badCollRoot = mkdtempSync(join(tmpdir(), "pokemap-gbc-tileset-badcoll-"));
+    writeFixture(badCollRoot, { metatileCount: 1, collisionLines: 1 });
+    writeFileSync(join(badCollRoot, "data", "tilesets", "tiny_collision.asm"), "\ttilecoll FLOOR, FLOOR, FLOOR, NOPE");
+    expect(() => loadGbcTileset(badCollRoot, "TILESET_TINY")).toThrow(/data\/tilesets\/tiny_collision\.asm/);
+    rmSync(badCollRoot, { recursive: true, force: true });
   });
 });
 
