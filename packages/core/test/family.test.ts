@@ -34,6 +34,16 @@ describe("detectEngineFamily", () => {
     expect(detectEngineFamily(root)).toBe("gbc");
   });
 
+  it("throws (not gbc) when only attributes.asm exists, without map_constants.asm", () => {
+    // Kills the mutant "gbc = attributes.asm alone": both gbc markers are
+    // required (AND), and this is the case where relying on OR would
+    // misdetect gbc from a half-match.
+    const root = makeRoot();
+    touch(root, "data/maps/attributes.asm");
+    expect(() => detectEngineFamily(root)).toThrow(/map_constants\.asm/);
+    expect(() => detectEngineFamily(root)).toThrow(/attributes\.asm/);
+  });
+
   it("throws naming every probed path when both families match", () => {
     const root = makeRoot();
     touch(root, "include/fieldmap.h");

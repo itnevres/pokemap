@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { readFileSync } from "node:fs";
 import { parseBlk, encodeBlk } from "../../../src/gbc/load/blocks.js";
 import { parseIncbins } from "../../../src/gbc/load/incbin.js";
-import { GBC_SUBJECT_ROOT, itWithGbcCorpus, hasGbcProject } from "../helpers/corpus.js";
+import { GBC_SUBJECT_ROOT, itWithGbcCorpus, hasGbcProject, gbcCorpusRoots } from "../helpers/corpus.js";
 
 describe("parseBlk / encodeBlk", () => {
   it("parses each byte as a block's metatileId, row-major", () => {
@@ -62,14 +62,27 @@ describe("parseBlk / encodeBlk", () => {
       }
     });
 
-    itWithGbcCorpus("every .blk INCBIN path (all 305) round-trips byte-identically", () => {
-      expect(allBlkPaths).toHaveLength(305);
-      const failures: string[] = [];
-      for (const path of allBlkPaths) {
-        const buf = readFileSync(`${GBC_SUBJECT_ROOT}/${path}`);
-        if (!encodeBlk(parseBlk(buf)).equals(buf)) failures.push(path);
-      }
-      expect(failures).toEqual([]);
-    });
+    itWithGbcCorpus(
+      // Loops every configured gbc corpus root (subject plus available
+      // references, per gbcCorpusRoots), not just the subject -- so vanilla
+      // pokecrystal auto-joins this round-trip once the user adds it to
+      // gbc.referenceProjects. The 305-path count is subject-specific (a
+      // different tree has a different map/beta count) and stays pinned only
+      // for GBC_SUBJECT_ROOT.
+      "every .blk INCBIN path round-trips byte-identically, across every gbc corpus root",
+      () => {
+        const failures: string[] = [];
+        for (const root of gbcCorpusRoots()) {
+          const blocksAsm = readFileSync(`${root}/data/maps/blocks.asm`, "utf8");
+          const paths = [...new Set(parseIncbins(blocksAsm).map((e) => e.path))];
+          if (root === GBC_SUBJECT_ROOT) expect(paths).toHaveLength(305);
+          for (const path of paths) {
+            const buf = readFileSync(`${root}/${path}`);
+            if (!encodeBlk(parseBlk(buf)).equals(buf)) failures.push(`${root}/${path}`);
+          }
+        }
+        expect(failures).toEqual([]);
+      },
+    );
   });
 });

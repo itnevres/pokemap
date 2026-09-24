@@ -43,6 +43,11 @@ describe("parseIncbins", () => {
     expect(parseIncbins(text)).toEqual([{ labels: ["Foo_Blocks"], path: "maps/Foo.blk" }]);
   });
 
+  it("keeps a label across a blank line before its INCBIN (never occurs in the corpus, but a blank line must stay inert)", () => {
+    const text = ["Foo_Blocks:", "", '\tINCBIN "maps/Foo.blk"'].join("\n");
+    expect(parseIncbins(text)).toEqual([{ labels: ["Foo_Blocks"], path: "maps/Foo.blk" }]);
+  });
+
   it("resets the pending label list when a non-label, non-blank line intervenes", () => {
     const text = ["Foo_Blocks:", "; a stray comment", '\tINCBIN "maps/Foo.blk"'].join("\n");
     expect(parseIncbins(text)).toEqual([{ labels: [], path: "maps/Foo.blk" }]);

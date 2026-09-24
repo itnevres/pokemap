@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { readFileSync } from "node:fs";
 import { parseMetatiles, encodeMetatiles } from "../../../src/gbc/load/tileset.js";
 import { parseIncbins } from "../../../src/gbc/load/incbin.js";
-import { GBC_SUBJECT_ROOT, itWithGbcCorpus, hasGbcProject } from "../helpers/corpus.js";
+import { GBC_SUBJECT_ROOT, itWithGbcCorpus, hasGbcProject, gbcCorpusRoots } from "../helpers/corpus.js";
 
 function metatile(...tiles: number[]) {
   return { tiles };
@@ -67,13 +67,24 @@ describe("parseMetatiles / encodeMetatiles", () => {
       // TilesetDarkCaveMeta are stacked labels sharing Johto's/Cave's
       // metatiles.bin, not separate INCBINs -- 37 `tileset` table entries but
       // 36 distinct INCBIN paths). See implementer report for detail.
-      "exactly 36 distinct *_metatiles.bin paths; all round-trip identity",
+      //
+      // Loops every configured gbc corpus root, not just the subject, so
+      // vanilla pokecrystal auto-joins this round-trip once the user adds it
+      // to gbc.referenceProjects. The 36-path count is subject-specific and
+      // stays pinned only for GBC_SUBJECT_ROOT.
+      "distinct *_metatiles.bin paths round-trip identically, across every gbc corpus root (36 on the subject)",
       () => {
-        expect(metatilesBinPaths).toHaveLength(36);
         const failures: string[] = [];
-        for (const path of metatilesBinPaths) {
-          const buf = readFileSync(`${GBC_SUBJECT_ROOT}/${path}`);
-          if (!encodeMetatiles(parseMetatiles(buf)).equals(buf)) failures.push(path);
+        for (const root of gbcCorpusRoots()) {
+          const tilesetsAsm = readFileSync(`${root}/gfx/tilesets.asm`, "utf8");
+          const paths = [
+            ...new Set(parseIncbins(tilesetsAsm).map((e) => e.path).filter((p) => p.endsWith("_metatiles.bin"))),
+          ];
+          if (root === GBC_SUBJECT_ROOT) expect(paths).toHaveLength(36);
+          for (const path of paths) {
+            const buf = readFileSync(`${root}/${path}`);
+            if (!encodeMetatiles(parseMetatiles(buf)).equals(buf)) failures.push(`${root}/${path}`);
+          }
         }
         expect(failures).toEqual([]);
       },
