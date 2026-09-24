@@ -6,7 +6,6 @@ import { deflateSync } from "node:zlib";
 import {
   parseMetatiles,
   encodeMetatiles,
-  parseConstDefs,
   parseTilesetsTable,
   parsePaletteMap,
   parseCollisionConstants,
@@ -15,6 +14,7 @@ import {
   loadGbcTilesetByName,
   pngTileIndex,
 } from "../../../src/gbc/load/tileset.js";
+import { parseConstDefs } from "../../../src/gbc/load/asm.js";
 import { parseIncbins } from "../../../src/gbc/load/incbin.js";
 import { loadGbcMaps, loadLayout } from "../../../src/gbc/load/map.js";
 import { GBC_SUBJECT_ROOT, itWithGbcCorpus, hasGbcProject, gbcCorpusRoots } from "../helpers/corpus.js";

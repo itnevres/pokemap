@@ -14,6 +14,8 @@ import {
   parseBrightnessLevels,
   resolveTimeOfDayPal,
   resolveMapPalettes,
+  loadPaletteTables,
+  resolveFromTables,
   type BrightnessLevels,
 } from "../../../src/gbc/load/palette.js";
 import { loadGbcMaps } from "../../../src/gbc/load/map.js";
@@ -419,12 +421,25 @@ describe("resolveMapPalettes corpus", () => {
   });
 
   itWithGbcCorpus("every real map resolves at all 3 times x flash {true, false} without throwing (391 x 3 x 2 = 2346 cases)", () => {
+    // Code-quality review I1: loads the shared tables once (391 maps share
+    // one root), then calls the pure per-map resolver 2346 times, instead of
+    // calling resolveMapPalettes (which reloads/reparses every shared table
+    // file on every call) 2346 times. Isolated outside vitest (tsx, no
+    // per-assertion overhead) to measure the actual fix rather than this
+    // test's own expect()-call cost (~225k assertions below, unchanged by
+    // I1, and the dominant cost either way): the reload-per-call path
+    // (resolveMapPalettes x 2346) took 3747ms; loadPaletteTables once (11ms)
+    // + resolveFromTables x 2346 (4ms) took 15ms -- about 250x on the actual
+    // resolve work. This test's own vitest wall-clock barely moves (~5.5s
+    // either way) because the ~225k expect() calls below dominate it, not
+    // the resolve cost -- that overhead is orthogonal to I1 and predates it.
     const { maps } = loadGbcMaps(GBC_SUBJECT_ROOT);
     expect(maps.length).toBe(391);
+    const tables = loadPaletteTables(GBC_SUBJECT_ROOT);
     for (const map of maps) {
       for (const time of ["morn", "day", "nite"] as const) {
         for (const flash of [true, false]) {
-          const pals = resolveMapPalettes(GBC_SUBJECT_ROOT, map, { time, flash });
+          const pals = resolveFromTables(tables, map, { time, flash });
           expect(pals).toHaveLength(8);
           for (const pal of pals) {
             expect(pal).toHaveLength(4);

@@ -131,6 +131,67 @@ export function matchCall(line: string, keyword: string): string[] | null {
   return m ? splitArgs(m[1]!) : null;
 }
 
+/**
+ * `$xx` hex, or a signed decimal integer, and nothing else. Refuses (throws,
+ * naming the offending text) rather than truncating -- plain `parseInt`
+ * silently stops at the first non-digit (`parseInt("5 + 1")` is `5`,
+ * `parseInt("4 ;  1")` is `4`), which would mask a malformed or unstripped
+ * trailing token as a plausible number instead of surfacing it (G4).
+ * Exported for direct unit testing of this refusal.
+ *
+ * Lives here (not `map.ts`, its original home) because it's a generic
+ * RGBDS-numeric-literal primitive with no map-specific knowledge -- callers
+ * outside `map.ts` (`tileset.ts`, `palette.ts`, `parseConstDefs` below) need
+ * it too. `map.ts` re-exports it for its own existing importers.
+ */
+export function parseNum(s: string): number {
+  const t = s.trim();
+  if (/^\$[0-9A-Fa-f]+$/.test(t)) return parseInt(t.slice(1), 16);
+  if (/^-?\d+$/.test(t)) return parseInt(t, 10);
+  throw new Error(`parseNum: "${s}" is not a clean $hex or signed decimal number`);
+}
+
+const CONST_DEF_RE = /^\s*const_def\b\s*(.*)$/;
+const CONST_RE = /^\s*const\b\s+([A-Za-z_][A-Za-z0-9_]*)/;
+
+/**
+ * `const_def [N]` / `const NAME` sequences (RGBDS's enum idiom), as used for
+ * e.g. both `TILESET_*` (`const_def 1`) and `PAL_BG_*` (bare `const_def`, so 0)
+ * in `constants/tileset_constants.asm`, and the environment/palette/clock-time
+ * enums `palette.ts` parses out of `constants/map_data_constants.asm` and
+ * `constants/wram_constants.asm`. Each `const_def` resets the counter (to its
+ * argument, or 0 with none); each `const NAME` assigns the current counter to
+ * NAME and increments. One pass over the whole file handles any number of
+ * such blocks, since names never collide across enums (callers that need to
+ * isolate one specific block from a large multi-enum file, e.g. `palette.ts`'s
+ * `extractConstDefBlockEndingAt`, do that isolation before calling this).
+ *
+ * Lives here (not `tileset.ts`, its original home) because it moved from a
+ * single-domain enum parser (originally `TILESET_*`/`PAL_BG_*` only) to a
+ * generic RGBDS-enum primitive shared across the tileset, environment,
+ * palette, and clock-time domains -- `asm.ts` is where the other shared
+ * RGBDS-line primitives (`codeLines`/`matchCall`/etc.) already live.
+ */
+export function parseConstDefs(text: string): Map<string, number> {
+  const out = new Map<string, number>();
+  let counter = 0;
+  for (const line of stripMacroDefs(text)) {
+    const stripped = stripComment(line);
+    const cd = stripped.match(CONST_DEF_RE);
+    if (cd) {
+      const arg = cd[1]!.trim();
+      counter = arg === "" ? 0 : parseNum(arg);
+      continue;
+    }
+    const c = stripped.match(CONST_RE);
+    if (c) {
+      out.set(c[1]!, counter);
+      counter++;
+    }
+  }
+  return out;
+}
+
 /** One argument's exact byte span in the scanned text, trimmed of surrounding whitespace; comment text is never included. */
 export interface AsmArg {
   start: number;

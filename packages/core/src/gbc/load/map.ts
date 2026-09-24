@@ -1,26 +1,17 @@
 import { existsSync, readFileSync } from "node:fs";
 import { parseBlk } from "./blocks.js";
 import { parseIncbins } from "./incbin.js";
-import { stripComment, stripMacroDefs, matchCall } from "./asm.js";
+import { stripComment, stripMacroDefs, matchCall, parseNum } from "./asm.js";
 import { norm } from "../../config/paths.js";
 import type { Connection, DataDefect, GbcMap, Layout } from "../model/types.js";
 
 const DIRECTIONS = ["north", "south", "west", "east"] as const;
 
-/**
- * `$xx` hex, or a signed decimal integer, and nothing else. Refuses (throws,
- * naming the offending text) rather than truncating -- plain `parseInt`
- * silently stops at the first non-digit (`parseInt("5 + 1")` is `5`,
- * `parseInt("4 ;  1")` is `4`), which would mask a malformed or unstripped
- * trailing token as a plausible number instead of surfacing it (G4).
- * Exported for direct unit testing of this refusal.
- */
-export function parseNum(s: string): number {
-  const t = s.trim();
-  if (/^\$[0-9A-Fa-f]+$/.test(t)) return parseInt(t.slice(1), 16);
-  if (/^-?\d+$/.test(t)) return parseInt(t, 10);
-  throw new Error(`parseNum: "${s}" is not a clean $hex or signed decimal number`);
-}
+// `parseNum` moved to `asm.ts` (code-quality review, Task 6 fix round 2) --
+// it's a generic RGBDS-numeric-literal primitive, not map-specific.
+// Re-exported here so this module's existing importers (`tileset.ts`,
+// `palette.ts`, and this file's own test) don't need to change.
+export { parseNum };
 
 export interface MapConstEntry {
   constName: string;

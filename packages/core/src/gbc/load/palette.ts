@@ -34,13 +34,20 @@
  * dark) -- no real block is short. The refusal is kept anyway (G4: refuse
  * rather than guess) and is pinned by a synthetic unit test instead of a
  * corpus one, since no real file exercises it.
+ *
+ * Fix round 2 (code-quality review): split into `loadPaletteTables(root)`
+ * (every root-keyed file read/parse, once) and pure `resolveFromTables`
+ * (the per-map logic), with `resolveMapPalettes` kept as a thin wrapper of
+ * both, for I1 -- see `PaletteTables`'s doc comment. `parseConstDefs` moved
+ * to `asm.ts` (M1, alongside `parseNum`, to avoid a circular import) since
+ * it's no longer tileset-specific. `findClockConstIn` documents its
+ * first-match-wins behavior (M2).
  */
 import { readFileSync } from "node:fs";
 import { norm } from "../../config/paths.js";
-import { matchCall, splitArgs, stripComment, stripMacroDefs } from "./asm.js";
+import { matchCall, splitArgs, stripComment, stripMacroDefs, parseConstDefs } from "./asm.js";
 import { parseNum } from "./map.js";
 import { parseIncludes } from "./incbin.js";
-import { parseConstDefs } from "./tileset.js";
 import type { RGB } from "../../model/types.js";
 
 /** `TILESET_*` constant -> the label its palette is INCLUDEd under in
@@ -317,11 +324,25 @@ function extractLabelSection(text: string, labelRe: RegExp, source: string): str
   return rest.slice(0, end === -1 ? rest.length : end).join("\n");
 }
 
-/** Finds whichever of `clockConsts`' names appears (as a whole word) in
- *  `text`, and returns its numeric value. Used to resolve `.UsedFlash`'s
- *  inline `NITE_F` broadcast and `DARKNESS_PALSET`'s `DARKNESS_F` broadcast
- *  by reading the constant name each one actually uses, rather than
- *  assuming which one it is. */
+/**
+ * Finds whichever of `clockConsts`' names appears (as a whole word) in
+ * `text`, and returns its numeric value. Used to resolve `.UsedFlash`'s
+ * inline `NITE_F` broadcast and `DARKNESS_PALSET`'s `DARKNESS_F` broadcast
+ * by reading the constant name each one actually uses, rather than
+ * assuming which one it is.
+ *
+ * First-match-wins (code-quality review M2): it returns the first of
+ * `clockConsts`' names (Map iteration = source order) found in `text`, not
+ * the specific operand each call site means to read. Both current call
+ * sites bound `text` to a narrow, single-purpose section first (a 3-line
+ * `.UsedFlash` body; one `EQU` line), so in practice exactly one clock
+ * constant ever appears and this is unambiguous -- corpus- and
+ * unit-pinned. A future third call site with a *less* tightly bounded
+ * `text` (e.g. one that could legitimately mention two different clock
+ * constants in the same section, such as a comment naming another `_F`
+ * value) would silently pick whichever comes first in `clockConsts`'
+ * insertion order rather than refusing -- worth revisiting if that happens.
+ */
 function findClockConstIn(text: string, clockConsts: Map<string, number>, source: string): number {
   for (const [name, value] of clockConsts) {
     if (new RegExp(`\\b${name}\\b`).test(text)) return value;
@@ -460,27 +481,16 @@ function mansionPalette(root: string, includes: Map<string, string>, palBg: { wa
 }
 
 /**
- * `LoadSpecialMapPalette` (GBC format findings §3.4 step 2). Returns `null`
- * when no special tileset applies (falls through to the environment path),
+ * `LoadSpecialMapPalette` (GBC format findings §3.4 step 2), as a pure
+ * lookup against `tables.specialPalettesByTileset`/`tables.mansionPalette`
+ * (both preloaded once by `loadPaletteTables`). Returns `null` when no
+ * special tileset applies (falls through to the environment path),
  * including the ICE_PATH-in-INDOOR (Hall of Fame) exception.
  */
-function resolveSpecialPalette(
-  root: string,
-  includes: Map<string, string>,
-  tilesetConst: string,
-  environment: string,
-  palBg: { water: number; yellow: number; roof: number },
-): RGB[][] | null {
+function resolveSpecialFromTables(tables: PaletteTables, tilesetConst: string, environment: string): RGB[][] | null {
   if (tilesetConst === "TILESET_ICE_PATH" && environment === "INDOOR") return null;
-  if (tilesetConst === "TILESET_MANSION") return mansionPalette(root, includes, palBg);
-
-  const label = SPECIAL_TILESET_LABELS[tilesetConst];
-  if (!label) return null;
-  const path = includes.get(label);
-  if (!path) {
-    throw new Error(`resolveSpecialPalette: no INCLUDE label "${label}" found in engine/tilesets/tileset_palettes.asm`);
-  }
-  return chunk4(parsePalColors(readFileSync(`${root}/${path}`, "utf8"), path), path);
+  if (tilesetConst === "TILESET_MANSION") return tables.mansionPalette;
+  return tables.specialPalettesByTileset.get(tilesetConst) ?? null;
 }
 
 export interface ResolveMapPalettesInput {
@@ -510,25 +520,45 @@ const CLOCK_OPTION_CONST_NAME: Record<"morn" | "day" | "nite", string> = {
 };
 
 /**
- * Resolves the 8 BG palettes (4 colors each) a map would have in
- * `wBGPals1` at rest, replicating `LoadMapPals` exactly (see this module's
- * doc comment). `input` may be a `GbcMap` directly (structurally compatible
- * -- extra fields are ignored).
- *
- * Parses every shared table file (constants, `bg_tiles.pal`,
- * `environment_colors.asm`, `roofs.pal`, `timeofday_pals.asm`, and the two
- * `tileset_palettes.asm` INCLUDE tables) at most once per call. A caller
- * resolving many maps should cache anything keyed only by root on its own
- * side, the way `loadGbcTileset`'s own doc comment asks of its callers.
+ * Everything `resolveFromTables` needs, parsed from one project root exactly
+ * once (code-quality review I1). Every field here is root-keyed, never
+ * map-keyed -- the previous single `resolveMapPalettes` function reparsed
+ * all of it (constants, `bg_tiles.pal`, `environment_colors.asm`,
+ * `roofs.pal`, `timeofday_pals.asm`, the two `tileset_palettes.asm` INCLUDE
+ * tables, and every special-tileset `.pal` file) on *every call*, which its
+ * own doc comment asked callers to work around by "caching anything keyed
+ * only by root" -- advice a caller had no way to act on, since none of
+ * these intermediate structures were exposed. `loadPaletteTables` is that
+ * cache, made real and exported: a caller resolving many maps (Task 9's
+ * per-map render, ~391 maps) calls it once, then calls `resolveFromTables`
+ * per map.
  */
-export function resolveMapPalettes(root: string, input: ResolveMapPalettesInput, opts: ResolveMapPalettesOpts = {}): RGB[][] {
+export interface PaletteTables {
+  palBg: { water: number; yellow: number; roof: number };
+  paletteIndexByName: Map<string, number>;
+  darkPaletteIndex: number;
+  clockIndexByOption: Record<"morn" | "day" | "nite", number>;
+  brightness: BrightnessLevels;
+  bgTilesPal: RGB[][];
+  envBlockMap: Map<string, string>;
+  envBlocks: Map<string, number[][]>;
+  roofPals: { mornDay: [RGB, RGB]; nite: [RGB, RGB] }[];
+  /** `TILESET_*` -> its 8 resolved BG palettes, one entry per `SPECIAL_TILESET_LABELS` key. */
+  specialPalettesByTileset: Map<string, RGB[][]>;
+  mansionPalette: RGB[][];
+}
+
+/**
+ * Reads and parses every shared table file this module needs from `root`,
+ * exactly once (see `PaletteTables`'s doc comment). Pure I/O + parsing, no
+ * per-map logic -- that's `resolveFromTables`.
+ */
+export function loadPaletteTables(root: string): PaletteTables {
   const r = norm(root);
-  const time = opts.time ?? "day";
-  const flash = opts.flash ?? true;
 
   const mapDataConstantsText = readFileSync(`${r}/constants/map_data_constants.asm`, "utf8");
   const envConsts = parseEnvironmentConsts(mapDataConstantsText);
-  const paletteConsts = parseMapPaletteConsts(mapDataConstantsText);
+  const paletteIndexByName = parseMapPaletteConsts(mapDataConstantsText);
 
   const wramConstantsText = readFileSync(`${r}/constants/wram_constants.asm`, "utf8");
   const clockConsts = parseClockConsts(wramConstantsText);
@@ -540,55 +570,110 @@ export function resolveMapPalettes(root: string, input: ResolveMapPalettesInput,
     roof: requireConst(palBgConsts, "PAL_BG_ROOF", "constants/tileset_constants.asm"),
   };
 
-  const paletteIndex = requireConst(paletteConsts, input.palette, "constants/map_data_constants.asm (map palette)");
-  const darkPaletteIndex = requireConst(paletteConsts, "PALETTE_DARK", "constants/map_data_constants.asm");
-  const clockIndex = requireConst(clockConsts, CLOCK_OPTION_CONST_NAME[time], "constants/wram_constants.asm");
+  const darkPaletteIndex = requireConst(paletteIndexByName, "PALETTE_DARK", "constants/map_data_constants.asm");
+  const clockIndexByOption: Record<"morn" | "day" | "nite", number> = {
+    morn: requireConst(clockConsts, CLOCK_OPTION_CONST_NAME.morn, "constants/wram_constants.asm"),
+    day: requireConst(clockConsts, CLOCK_OPTION_CONST_NAME.day, "constants/wram_constants.asm"),
+    nite: requireConst(clockConsts, CLOCK_OPTION_CONST_NAME.nite, "constants/wram_constants.asm"),
+  };
 
   const timeofdayPalsText = readFileSync(`${r}/engine/tilesets/timeofday_pals.asm`, "utf8");
   const brightness = parseBrightnessLevels(timeofdayPalsText, wramConstantsText, clockConsts);
-  const timeOfDayPal = resolveTimeOfDayPal(brightness, paletteIndex, darkPaletteIndex, clockIndex, flash);
-  const niteF = requireConst(clockConsts, "NITE_F", "constants/wram_constants.asm");
 
   const colorAsmIncludes = includeLabelMap(readFileSync(`${r}/engine/gfx/color.asm`, "utf8"));
   const specialIncludes = includeLabelMap(readFileSync(`${r}/engine/tilesets/tileset_palettes.asm`, "utf8"));
 
-  let palettes = resolveSpecialPalette(r, specialIncludes, input.tileset, input.environment, palBg);
-  if (!palettes) {
-    const bgTilesPalPath = colorAsmIncludes.get("TilesetBGPalette");
-    if (!bgTilesPalPath) {
-      throw new Error(`resolveMapPalettes: no INCLUDE label "TilesetBGPalette" found in engine/gfx/color.asm`);
+  const bgTilesPalPath = colorAsmIncludes.get("TilesetBGPalette");
+  if (!bgTilesPalPath) {
+    throw new Error(`loadPaletteTables: no INCLUDE label "TilesetBGPalette" found in engine/gfx/color.asm`);
+  }
+  const bgTilesPal = chunk4(parsePalColors(readFileSync(`${r}/${bgTilesPalPath}`, "utf8"), bgTilesPalPath), bgTilesPalPath);
+
+  // Bare `INCLUDE "data/maps/environment_colors.asm"` in color.asm has no
+  // preceding label (unlike TilesetBGPalette/RoofPals), so there is no
+  // stacked-label alias to resolve -- this literal path is the only name
+  // for this file anywhere in the engine.
+  const environmentColorsText = readFileSync(`${r}/data/maps/environment_colors.asm`, "utf8");
+  const envBlockMap = buildEnvironmentBlockMap(parseEnvironmentColorPointers(environmentColorsText), envConsts);
+  const envBlocks = parseEnvironmentColorBlocks(environmentColorsText);
+
+  // `RoofPals:` in color.asm is followed by a `table_width` directive
+  // *before* its `INCLUDE` line (unlike TilesetBGPalette's immediate
+  // INCLUDE), which the stacked-label scanner (`parseIncludes`) doesn't
+  // tolerate -- it resets the pending label on any intervening line that
+  // isn't itself a label or the directive. No aliasing risk exists for this
+  // single global table (unlike per-tileset GFX/Coll/PalMap, I4's actual
+  // concern), so the path is hardcoded here instead.
+  const roofPalsPath = "gfx/tilesets/roofs.pal";
+  const roofPals = parseRoofPals(readFileSync(`${r}/${roofPalsPath}`, "utf8"), roofPalsPath);
+
+  const specialPalettesByTileset = new Map<string, RGB[][]>();
+  for (const [tilesetConst, label] of Object.entries(SPECIAL_TILESET_LABELS)) {
+    const path = specialIncludes.get(label);
+    if (!path) {
+      throw new Error(`loadPaletteTables: no INCLUDE label "${label}" found in engine/tilesets/tileset_palettes.asm`);
     }
-    const bgTilesPal = chunk4(parsePalColors(readFileSync(`${r}/${bgTilesPalPath}`, "utf8"), bgTilesPalPath), bgTilesPalPath);
-    // Bare `INCLUDE "data/maps/environment_colors.asm"` in color.asm has no
-    // preceding label (unlike TilesetBGPalette/RoofPals), so there is no
-    // stacked-label alias to resolve -- this literal path is the only name
-    // for this file anywhere in the engine.
-    const environmentColorsText = readFileSync(`${r}/data/maps/environment_colors.asm`, "utf8");
-    const envBlockMap = buildEnvironmentBlockMap(parseEnvironmentColorPointers(environmentColorsText), envConsts);
-    const envBlocks = parseEnvironmentColorBlocks(environmentColorsText);
-    palettes = resolveEnvironmentPalette(envBlockMap, envBlocks, bgTilesPal, input.environment, timeOfDayPal);
+    specialPalettesByTileset.set(tilesetConst, chunk4(parsePalColors(readFileSync(`${r}/${path}`, "utf8"), path), path));
+  }
+
+  return {
+    palBg,
+    paletteIndexByName,
+    darkPaletteIndex,
+    clockIndexByOption,
+    brightness,
+    bgTilesPal,
+    envBlockMap,
+    envBlocks,
+    roofPals,
+    specialPalettesByTileset,
+    mansionPalette: mansionPalette(r, specialIncludes, palBg),
+  };
+}
+
+/**
+ * Resolves one map's 8 BG palettes (4 colors each) from an already-loaded
+ * `PaletteTables`, replicating `LoadMapPals` exactly (see this module's top
+ * doc comment). Pure -- no file I/O, so a caller resolving many maps pays
+ * `loadPaletteTables`'s cost once, not per map (code-quality review I1).
+ * `input` may be a `GbcMap` directly (structurally compatible -- extra
+ * fields are ignored).
+ */
+export function resolveFromTables(tables: PaletteTables, input: ResolveMapPalettesInput, opts: ResolveMapPalettesOpts = {}): RGB[][] {
+  const time = opts.time ?? "day";
+  const flash = opts.flash ?? true;
+
+  const paletteIndex = requireConst(tables.paletteIndexByName, input.palette, "constants/map_data_constants.asm (map palette)");
+  const clockIndex = tables.clockIndexByOption[time];
+  const timeOfDayPal = resolveTimeOfDayPal(tables.brightness, paletteIndex, tables.darkPaletteIndex, clockIndex, flash);
+
+  let palettes = resolveSpecialFromTables(tables, input.tileset, input.environment);
+  if (!palettes) {
+    palettes = resolveEnvironmentPalette(tables.envBlockMap, tables.envBlocks, tables.bgTilesPal, input.environment, timeOfDayPal);
   }
 
   if (input.environment === "TOWN" || input.environment === "ROUTE") {
-    // `RoofPals:` in color.asm is followed by a `table_width` directive
-    // *before* its `INCLUDE` line (unlike TilesetBGPalette's immediate
-    // INCLUDE), which the stacked-label scanner (`parseIncludes`) doesn't
-    // tolerate -- it resets the pending label on any intervening line that
-    // isn't itself a label or the directive. No aliasing risk exists for
-    // this single global table (unlike per-tileset GFX/Coll/PalMap, I4's
-    // actual concern), so the path is hardcoded here instead.
-    const roofPalsPath = "gfx/tilesets/roofs.pal";
-    const roofPals = parseRoofPals(readFileSync(`${r}/${roofPalsPath}`, "utf8"), roofPalsPath);
-    const roofRow = roofPals[input.group];
+    const roofRow = tables.roofPals[input.group];
     if (!roofRow) {
-      throw new Error(`resolveMapPalettes: ${roofPalsPath} has no group ${input.group} (only ${roofPals.length} present)`);
+      throw new Error(`resolveFromTables: roofs.pal has no group ${input.group} (only ${tables.roofPals.length} present)`);
     }
-    const pair = timeOfDayPal < niteF ? roofRow.mornDay : roofRow.nite;
-    const roof = palettes[palBg.roof]!;
-    palettes = palettes.map((pal, i) => (i === palBg.roof ? [roof[0]!, pair[0], pair[1], roof[3]!] : pal));
+    const pair = timeOfDayPal < tables.clockIndexByOption.nite ? roofRow.mornDay : roofRow.nite;
+    const roof = palettes[tables.palBg.roof]!;
+    palettes = palettes.map((pal, i) => (i === tables.palBg.roof ? [roof[0]!, pair[0], pair[1], roof[3]!] : pal));
   }
 
   return palettes;
+}
+
+/**
+ * Thin `loadPaletteTables` + `resolveFromTables` wrapper for a single-map
+ * call (existing callers/tests). A caller resolving many maps should call
+ * `loadPaletteTables` once and `resolveFromTables` per map instead --
+ * calling this function per map re-reads and re-parses every shared table
+ * file every time (code-quality review I1).
+ */
+export function resolveMapPalettes(root: string, input: ResolveMapPalettesInput, opts: ResolveMapPalettesOpts = {}): RGB[][] {
+  return resolveFromTables(loadPaletteTables(root), input, opts);
 }
 
 /** Looks up `name` in a parsed const map, refusing (throwing, naming

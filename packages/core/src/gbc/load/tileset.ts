@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import type { Collision, GbcTileset, Metatile, PaletteMapEntry } from "../model/types.js";
 import { norm } from "../../config/paths.js";
-import { codeLines, stripMacroDefs, stripComment, matchCall } from "./asm.js";
+import { codeLines, stripMacroDefs, stripComment, matchCall, parseConstDefs } from "./asm.js";
 import { parseIncbins, parseIncludes } from "./incbin.js";
 import { parseNum } from "./map.js";
 import { readShadesPng } from "./png.js";
@@ -49,36 +49,11 @@ export function encodeMetatiles(ms: Metatile[]): Buffer {
   return buf;
 }
 
-const CONST_DEF_RE = /^\s*const_def\b\s*(.*)$/;
-const CONST_RE = /^\s*const\b\s+([A-Za-z_][A-Za-z0-9_]*)/;
-
-/**
- * `const_def [N]` / `const NAME` sequences (RGBDS's enum idiom), as used for
- * both `TILESET_*` (`const_def 1`) and `PAL_BG_*` (bare `const_def`, so 0)
- * in `constants/tileset_constants.asm`. Each `const_def` resets the counter
- * (to its argument, or 0 with none); each `const NAME` assigns the current
- * counter to NAME and increments. One pass over the whole file handles any
- * number of such blocks, since names never collide across enums.
- */
-export function parseConstDefs(text: string): Map<string, number> {
-  const out = new Map<string, number>();
-  let counter = 0;
-  for (const line of stripMacroDefs(text)) {
-    const stripped = stripComment(line);
-    const cd = stripped.match(CONST_DEF_RE);
-    if (cd) {
-      const arg = cd[1]!.trim();
-      counter = arg === "" ? 0 : parseNum(arg);
-      continue;
-    }
-    const c = stripped.match(CONST_RE);
-    if (c) {
-      out.set(c[1]!, counter);
-      counter++;
-    }
-  }
-  return out;
-}
+// `parseConstDefs` moved to `asm.ts` (code-quality review, Task 6 fix round
+// 2) -- it grew from a `TILESET_*`/`PAL_BG_*`-only parser into a generic
+// RGBDS-enum primitive `palette.ts` also uses for unrelated domains
+// (environment/palette/clock-time enums), so it now lives alongside the
+// other shared RGBDS-line primitives in `asm.ts`. Imported above.
 
 /**
  * `data/tilesets.asm`'s `Tilesets::` table: each `tileset <Name>` call, in
