@@ -115,7 +115,7 @@ The `object_const_def` expansion is `const_def 2`. Scripts then use these consts
 |---|---|
 | **128** (2048 B) | johto, johto_modern, kanto, battle_tower_outside, and `unused_johto` (`UnusedTilesetJohtoMeta:: ; unreferenced`, not in the `Tilesets` table) |
 | **40** (640 B) | forest |
-| **64** (1024 B) | all other 31 |
+| **64** (1024 B) | all other 30 (**corrected 2026-09-23 during Task 2 review**: 36 distinct `_metatiles.bin` INCBIN paths total, not 37 -- see the Task 2 consequences note below) |
 
 - **Collision entry counts do not always match.** `forest_collision.asm` has 64 `tilecoll` lines for 40 metatiles. Take the cap from `_metatiles.bin`'s size, never from collision.
 - **No real map exceeds its tileset's count.** The whole-corpus check found 0 block ids ≥ count, including border blocks.
@@ -377,7 +377,7 @@ Tileset, border and palette live on the **map**. All sharers agree on the tilese
   - `TilesetBattleTowerOutsideGFX` uses `johto_modern.2bpp.lz`;
   - the 5 word rooms use `ruins_of_alph.2bpp.lz` and its palette map;
   - `Tileset0*` aliases Johto;
-  - DarkCave shares cave's palette map.
+  - DarkCave shares cave's metatiles, collision and palette map (stacked `TilesetCaveMeta::`/`TilesetDarkCaveMeta::`, `TilesetCaveColl::`/`TilesetDarkCaveColl::`, `TilesetCavePalMap:`/`TilesetDarkCavePalMap:`) **but not GFX** -- `TilesetDarkCaveGFX::` INCBINs its own `dark_cave.2bpp.lz`, unstacked (**added 2026-09-23**). `dark_cave_metatiles.bin`, `dark_cave_collision.asm` and `dark_cave_palette_map.asm` all exist on disk, in the same shape as cave's, but none is ever INCBIN'd/INCLUDEd -- orphans, like the 4 word-room collision/palette-map files below.
 - **I4 holds.** Resolve through these literals, never by name-mangling.
 
 **Tileset graphics.**
@@ -561,7 +561,7 @@ Shape:
     - Add `packages/core/test/gbc/helpers/corpus.ts`. It reads `cfg.gbc`, skips when the subject is absent, and tolerates an empty or absent `referenceProjects`.
     - GBA readers stay untouched.
   - Codec scope is unchanged. `Block = { metatileId }`: 1 byte, row-major, confirmed with no extra bits. The metatile table is 16-byte records of 4×4 tile ids, row-major, with no attribute bits.
-  - Round-trip corpus: 305 `.blk` (257 used plus 48 unused betas; include all) and 37 `_metatiles.bin` (36 tilesets plus `unused_johto`). Enumerate via the INCBINs in `data/maps/blocks.asm` and `gfx/tilesets.asm`, not by globbing.
+  - Round-trip corpus: 305 `.blk` (257 used plus 48 unused betas; include all) and **36** `_metatiles.bin` INCBIN paths (**corrected 2026-09-23, spec review of Task 2**: not 37. `data/tilesets.asm`'s `Tilesets::` table has 37 `tileset` entries, but `Tileset0Meta::`/`TilesetJohtoMeta::` stack onto one INCBIN, and `TilesetCaveMeta::`/`TilesetDarkCaveMeta::` stack onto another -- 37 table entries minus those 2 aliases, plus the unreferenced `unused_johto_metatiles.bin` (not in the table), is 36 distinct files. `dark_cave_metatiles.bin` exists on disk, byte-identical to `cave_metatiles.bin`, but is never INCBIN'd and is excluded from the round-trip set). Enumerate via the INCBINs in `data/maps/blocks.asm` and `gfx/tilesets.asm`, not by globbing.
   - The codec is length-agnostic, so the 2 oversize CeruleanCave files round-trip whole. The w×h handling is Task 3's job.
 - **Task 3 (maps).**
   - Split `Map` and `Layout` (§3.6); change the File-structure row for `gbc/model/types.ts`.
@@ -579,7 +579,7 @@ Shape:
   - **Scope shrinks.** No count bookkeeping (§3.1). It needs:
     - a line locator: macro name + ordinal within a `<Name>_MapEvents` section, or `map_attributes <Name>`, or `map <Name>`;
     - an argument-span splicer that preserves padding, comments, trailing whitespace and **a missing final newline**.
-  - The no-op round trip covers all 391 `maps/*.asm` (including the 2 no-final-newline CeruleanCave files), plus `attributes.asm`, `maps.asm`, `map_constants.asm` and 37 `*_collision.asm`.
+  - The no-op round trip covers all 391 `maps/*.asm` (including the 2 no-final-newline CeruleanCave files), plus `attributes.asm`, `maps.asm`, `map_constants.asm` and the tileset collision files. **Clarified 2026-09-23 (spec review of Task 2):** 37 `*_collision.asm` exist on disk, but `gfx/tilesets.asm` only `INCLUDE`s 32 of them -- 5 on-disk files are orphans, never reached: `dark_cave_collision.asm` (stacks onto `cave_collision.asm` instead, see §Extra) and `ho_oh_word_room_collision.asm`/`kabuto_word_room_collision.asm`/`omanyte_word_room_collision.asm`/`aerodactyl_word_room_collision.asm` (all four stack onto `beta_word_room_collision.asm` instead). Per the same enumerate-don't-glob rule as `.blk`/`_metatiles.bin`, **Task 4/5 should splice/round-trip the 32 `INCLUDE`d files** -- the set the engine actually loads. The 5 on-disk orphans are syntactically valid `tilecoll` files and could be added to a round-trip test for extra confidence, but are not reachable from any tileset and are not required.
   - Record the `object_const_def` positional hazard as a Plan 7 G4 trigger. No Plan 6 action.
 - **Task 5 (tileset, per-tileset only).**
   - **Fix path:** palette maps are `gfx/tilesets/<name>_palette_map.asm`, resolved via `gfx/tileset_palette_maps.asm` labels. They are not under `data/tilesets/`.
