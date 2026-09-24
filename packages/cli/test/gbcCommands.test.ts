@@ -7,8 +7,10 @@ import { inflateSync } from "node:zlib";
 import { unfilterScanlines } from "@pokemap/core/src/load/png.js";
 import { openGbcProject } from "@pokemap/core/src/gbc/project.js";
 import { renderGbcMap } from "@pokemap/core/src/gbc/render/map.js";
+import { buildGbcWorld } from "@pokemap/core/src/gbc/world/connections.js";
+import { renderGbcWorld } from "@pokemap/core/src/gbc/render/world.js";
 import { GBC_SUBJECT_ROOT, itWithGbcCorpus } from "../../core/test/gbc/helpers/corpus.js";
-import { runGbcRender, runGbcQuery, runGbcEncounters, runGbcWhere, runGbcCoverage } from "../src/gbcCommands.js";
+import { runGbcRender, runGbcQuery, runGbcRenderWorld, runGbcEncounters, runGbcWhere, runGbcCoverage } from "../src/gbcCommands.js";
 import { gbcEncounterSources } from "@pokemap/core/src/gbc/analyse/atlas.js";
 
 /**
@@ -201,6 +203,38 @@ describe("runGbcQuery", () => {
   });
 });
 
+describe("runGbcRenderWorld", () => {
+  itWithGbcCorpus("writes a PNG that decodes to exactly renderGbcWorld's raster; exact stdout; empty stderr for a defect-free bbox", () => {
+    const proj = openGbcProject(GBC_SUBJECT_ROOT);
+    const world = buildGbcWorld(proj);
+    const nbt = world.placements.get("NewBarkTown")!;
+    const route29 = world.placements.get("Route29")!;
+    const bbox = { x: route29.x, y: nbt.y, w: (nbt.x + nbt.width) - route29.x, h: nbt.height };
+    const expected = renderGbcWorld(proj, world, { bbox, scale: 32, time: "day" });
+
+    const out = tmpFile("world.png");
+    const { stdout, stderr } = runGbcRenderWorld(GBC_SUBJECT_ROOT, { bbox, out, scale: 32, time: "day" });
+    expect(stdout).toBe(`${out} ${expected.width}x${expected.height} maps=${expected.drawn}\n`);
+    expect(stderr).toBe("");
+
+    const decoded = decodeRgbaPng(readFileSync(out));
+    expect(decoded.width).toBe(expected.width);
+    expect(decoded.height).toBe(expected.height);
+    expect(Buffer.from(decoded.data)).toEqual(Buffer.from(expected.data));
+  });
+
+  itWithGbcCorpus("a bbox including CeruleanCave2F surfaces its layout defect as a warning line", () => {
+    const proj = openGbcProject(GBC_SUBJECT_ROOT);
+    const world = buildGbcWorld(proj);
+    const p = world.placements.get("CeruleanCave2F")!;
+    const out = tmpFile("world-defect.png");
+    const { stderr } = runGbcRenderWorld(GBC_SUBJECT_ROOT, {
+      bbox: { x: p.x, y: p.y, w: p.width, h: p.height }, out, scale: 32,
+    });
+    expect(stderr).toBe("warning: maps/CeruleanCave2F.blk: actual size 400 bytes, declared 9x15=135 -- loaded first 135 bytes, not writable\n");
+  });
+});
+
 describe("CLI end-to-end (spawned, generous timeout)", () => {
   itWithGbcCorpus("render NewBarkTown against the real subject exits 0 and prints the stdout line", () => {
     const out = tmpFile("e2e.png");
@@ -238,6 +272,16 @@ describe("CLI end-to-end (spawned, generous timeout)", () => {
     expect(stderr).toMatch(/^pokemap: unknown map NoSuchMap; not listed in/);
   }, 30_000);
 
+  itWithGbcCorpus("render-world against the real subject exits 0 and prints the stdout line (Task 11)", () => {
+    const out = tmpFile("e2e-world.png");
+    const { status, stdout, stderr } = spawnCli([
+      "--project", GBC_SUBJECT_ROOT, "render-world", "--bbox", "145,251,40,9", "--scale", "32", "-o", out,
+    ]);
+    expect(stderr).toBe("");
+    expect(status).toBe(0);
+    expect(stdout).toMatch(/^.*e2e-world\.png 1280x288 maps=2\n$/);
+  }, 30_000);
+
   // Covers the deliverables list's required "sign list" case AND, in the
   // same test, every other GBA-only command (Task 10's mutation-check item
   // "remove one GBA-only refusal, e.g. paint, so it falls into the GBA
@@ -245,12 +289,13 @@ describe("CLI end-to-end (spawned, generous timeout)", () => {
   // this GBC root, not just the one the deliverables list happens to name.
   // Kept as one `it` (the task's "3 tests only" budget for spawned e2e
   // tests), looping several spawns rather than adding more test cases.
-  // Task 12 removed encounters/where/coverage from this list -- they are now
-  // real GBC commands (see this file's own "runGbcEncounters"/"runGbcWhere"/
-  // "runGbcCoverage" blocks below, plus packages/core/test/gbc/analyse/atlas.test.ts).
+  // render-world (Task 11) and encounters/where/coverage (Task 12) are
+  // absent from this list: they are real GBC commands now, covered by their
+  // own tests in this file plus packages/core/test/gbc/{world,render,analyse}/.
   itWithGbcCorpus("every GBA-only command refuses on the real gbc root with its own named message, never touching a GBA loader", () => {
     const cases: { name: string; args: string[] }[] = [
-      { name: "render-world", args: ["render-world", "--bbox", "0,0,1,1"] },
+      // render-world is NOT in this list: Task 11 gives it a real GBC
+      // implementation, tested separately below.
       { name: "validate", args: ["validate"] },
       { name: "sign suggest", args: ["sign", "suggest", "NewBarkTown"] },
       { name: "sign add", args: ["sign", "add", "NewBarkTown", "--species", "RATTATA", "--dialogue", "hi", "--x", "0", "--y", "0"] },

@@ -1,11 +1,13 @@
 import { writeFileSync } from "node:fs";
 import { openGbcProject } from "@pokemap/core/src/gbc/project.js";
 import { renderGbcMap } from "@pokemap/core/src/gbc/render/map.js";
+import { buildGbcWorld } from "@pokemap/core/src/gbc/world/connections.js";
+import { renderGbcWorld } from "@pokemap/core/src/gbc/render/world.js";
 import { loadGbcMapEvents } from "@pokemap/core/src/gbc/load/events.js";
 import { gbcEncounterSources, gbcWhereSpecies, gbcCoverage, type GbcEncounterSource, type GbcSpeciesHit } from "@pokemap/core/src/gbc/analyse/atlas.js";
 import type { DataDefect, GbcMap } from "@pokemap/core/src/gbc/model/types.js";
 import { encodePng } from "./png.js";
-import type { TimeOfDay } from "./args.js";
+import type { TimeOfDay, Bbox } from "./args.js";
 
 /** One `warning: <message>\n` line per defect -- the shared format both
  *  `runGbcRender` and `runGbcQuery` print, and the plan-wide rule that a
@@ -46,6 +48,47 @@ export function runGbcRender(root: string, mapName: string, opts: RunGbcRenderOp
   writeFileSync(opts.out, encodePng(raster));
   return {
     stdout: `${opts.out} ${raster.width}x${raster.height} outOfRange=${raster.outOfRangeCount} unmapped=${raster.unmappedTileCount}\n`,
+    stderr: warningLines(raster.defects),
+  };
+}
+
+export interface RunGbcRenderWorldOptions {
+  /** In blocks -- `GbcWorld.placements`' own coordinate space (Task 11), not
+   *  pixels and not GBA's tile units. */
+  bbox: Bbox;
+  out: string;
+  /** Pixels per block. The CLI's own default (`index.ts`) is 8, not GBA
+   *  `render-world`'s 4 -- see `index.ts`'s own comment on why the two
+   *  families need different defaults despite both being "a quarter". */
+  scale: number;
+  time?: TimeOfDay;
+}
+
+export interface RunGbcRenderWorldResult {
+  stdout: string;
+  stderr: string;
+}
+
+/**
+ * `render-world` on a GBC root (Task 11). Stitches every map with
+ * `buildGbcWorld`, renders the bbox-intersecting slice with `renderGbcWorld`,
+ * and writes the PNG to `opts.out`. Mirrors `runGbcRender`'s shape: returns
+ * the text `index.ts`'s action should print rather than writing to
+ * stdout/stderr itself.
+ *
+ * Unlike GBA's `render-world` (`index.ts`), there is no `--no-dungeons`
+ * equivalent here and no sidecar/resolve step -- `buildGbcWorld` places every
+ * map unconditionally (GBC has no warp-based dungeon auto-layout UI in Plan 6,
+ * task spec "Out of scope"), so `world.placements` IS the full set this
+ * renders from.
+ */
+export function runGbcRenderWorld(root: string, opts: RunGbcRenderWorldOptions): RunGbcRenderWorldResult {
+  const proj = openGbcProject(root);
+  const world = buildGbcWorld(proj);
+  const raster = renderGbcWorld(proj, world, { bbox: opts.bbox, scale: opts.scale, time: opts.time ?? "day" });
+  writeFileSync(opts.out, encodePng(raster));
+  return {
+    stdout: `${opts.out} ${raster.width}x${raster.height} maps=${raster.drawn}\n`,
     stderr: warningLines(raster.defects),
   };
 }

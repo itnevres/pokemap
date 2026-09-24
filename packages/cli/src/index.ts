@@ -14,7 +14,7 @@ import { resolveProject, resolveRoot, layoutNameFor } from "./context.js";
 import { parseBorder, parseBbox, parseScale, parseTime } from "./args.js";
 import { resolvePlacementRect } from "./renderWorld.js";
 import { runSignSuggest, runSignAdd, runSignList, runPaint, runDiff } from "./writeCommands.js";
-import { runGbcRender, runGbcQuery, runGbcEncounters, runGbcWhere, runGbcCoverage } from "./gbcCommands.js";
+import { runGbcRender, runGbcQuery, runGbcRenderWorld, runGbcEncounters, runGbcWhere, runGbcCoverage } from "./gbcCommands.js";
 
 const program = new Command();
 program.name("pokemap").option("-p, --project <path>", "decomp root");
@@ -44,21 +44,6 @@ function refuseIfGbc(family: EngineFamily, command: string): void {
   }
 }
 
-/**
- * `render-world`'s own wrapper (quality review fix round 1, Important #1/#3):
- * every OTHER GBA-only command now calls `refuseIfGbc` as a plain guard
- * clause instead. This callback shape is kept only because a parallel Task
- * 11 worktree is actively rewriting `render-world`'s handler into a real
- * GBC branch and touching it here would cause a cherry-pick conflict --
- * Task 11 removes this function's last caller and this function along with
- * it. Implemented via `refuseIfGbc` rather than re-checking `family` itself,
- * so the two never drift.
- */
-function runGbaOnly(root: string, family: EngineFamily, command: string, run: (root: string) => void): void {
-  refuseIfGbc(family, command);
-  run(root);
-}
-
 program
   .command("render <target>")
   .description("render a map or layout to a PNG")
@@ -82,16 +67,38 @@ program
 program
   .command("render-world")
   .description("render a region of the stitched world to a PNG")
-  .requiredOption("--bbox <x,y,w,h>", "region in tiles", parseBbox)
+  .requiredOption("--bbox <x,y,w,h>", "region in tiles (gba) or blocks (gbc)", parseBbox)
   .option("-o, --out <file>", "output path", "world.png")
-  .option("--scale <n>", "pixels per tile (16 = full size, 4 = overview)", parseScale, 4)
-  .option("--no-dungeons", "exclude auto-placed dungeon maps")
-  .action((opts: { bbox: ReturnType<typeof parseBbox>; out: string; scale: number; dungeons: boolean }) => {
+  // No commander-level default (Task 11): GBA's own quarter-scale default is
+  // 4 px/tile (16px tile / 4) and GBC's is 8 px/block (32px block / 4) -- the
+  // same "quarter overview" ratio, but a different raw number, so the default
+  // is resolved per family below rather than baked into this one option
+  // definition. `parseScale` itself stays family-agnostic (a positive
+  // integer, full stop): GBA's unit is a 16px tile and GBC's is a 32px
+  // block, so a single "must divide N" check here would be wrong for one
+  // family or the other. `renderGbcWorld` (core) does its own divisor-of-32
+  // refusal for the GBC path; GBA's `blitScaled(..., scale / 16)` below has
+  // always accepted any positive integer, unchanged here.
+  .option("--scale <n>", "pixels per tile/block (gba default 4, gbc default 8)", parseScale)
+  .option("--no-dungeons", "exclude auto-placed dungeon maps (gba only; ignored for gbc)")
+  .option("--time <time>", "time of day (gbc only): morn, day, or nite", parseTime, "day")
+  .action((opts: { bbox: ReturnType<typeof parseBbox>; out: string; scale?: number; dungeons: boolean; time: "morn" | "day" | "nite" }, cmd: Command) => {
     const { root, family } = resolveRootAndFamily(program.opts().project);
-    runGbaOnly(root, family, "render-world", (root) => {
+    if (family === "gbc") {
+      // --no-dungeons is a GBA-only concept (dungeon auto-layout has no GBC
+      // UI in Plan 6, task spec "Out of scope"); silently ignored here rather
+      // than refused, since a user who scripts both families' render-world
+      // calls the same way should not have to special-case GBC just to drop
+      // a flag that means nothing for it.
+      const scale = cmd.getOptionValueSource("scale") === "default" || opts.scale === undefined ? 8 : opts.scale;
+      const { stdout, stderr } = runGbcRenderWorld(root, { bbox: opts.bbox, out: opts.out, scale, time: opts.time });
+      if (stderr) process.stderr.write(stderr);
+      process.stdout.write(stdout);
+      return;
+    }
     const proj = resolveProject(root);
     const { x: bx, y: by, w: bw, h: bh } = opts.bbox;
-    const { scale } = opts;
+    const scale = opts.scale ?? 4;
 
     const world = buildWorld(proj);
     const sidecar = readSidecar(proj.paths.root);
@@ -121,7 +128,6 @@ program
 
     writeFileSync(opts.out, encodePng(dst));
     process.stdout.write(`${opts.out} ${dst.width}x${dst.height} maps=${drawn}\n`);
-    });
   });
 
 program
