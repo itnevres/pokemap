@@ -7,7 +7,7 @@
  * Decision 5's grown Task 8 scope.
  */
 import { readFileSync } from "node:fs";
-import { codeLines, stripComment, matchCall, splitArgs, parseNum, parseConstDefs, labelTail, type LabelTail } from "./asm.js";
+import { codeLines, stripComment, matchCall, splitArgs, parseNum, parseConstDefs, labelTail, escapeRegExp, type LabelTail } from "./asm.js";
 import { parseMapConstants } from "./map.js";
 import { norm } from "../../config/paths.js";
 import type {
@@ -274,6 +274,11 @@ export function parseWildProbabilities(text: string, file = "data/wild/probabili
   };
 }
 
+/** `labelTail`'s own `{ text, offset, lineIndex }` plus `labelLineIndex` -- the label's own absolute line, computed independently of `lineIndex` (see `getLabelTail`'s doc for why). */
+interface ProbTail extends LabelTail {
+  labelLineIndex: number;
+}
+
 /**
  * `asm.ts`'s `labelTail`, with its own bare `no "X:" label found` throw
  * routed through `fail(file, null, ...)` -- `labelTail` deliberately leaves
@@ -283,13 +288,27 @@ export function parseWildProbabilities(text: string, file = "data/wild/probabili
  * `labelTailText` here duplicating `labelTail`'s exact logic for this file's
  * plain-global-label case (no stacking, no local labels needed) -- confirmed
  * a drop-in replacement (code-quality review), so it's gone.
+ *
+ * Also computes `labelLineIndex`, the label's own line, independently of
+ * `labelTail`'s `lineIndex` (the tail's first line) -- `lineIndex` is NOT
+ * simply `labelLineIndex + 1`: when the label is the file's last line with
+ * no trailing newline, `labelTail` sets `tailOffset = text.length` (no
+ * following line exists at all), so its `lineIndex` already names the
+ * label's own line, not the (nonexistent) line after it. A caller that
+ * needs the label's line (the count-mismatch refusal below) must derive it
+ * directly, the same way `labelSections` does, rather than subtract 1 from
+ * `lineIndex` and get it wrong exactly in that one real RGBDS-legal shape.
  */
-function getLabelTail(text: string, label: string, file: string): LabelTail {
+function getLabelTail(text: string, label: string, file: string): ProbTail {
+  let tail: LabelTail;
   try {
-    return labelTail(text, label);
+    tail = labelTail(text, label);
   } catch (e) {
     return fail(file, null, (e as Error).message);
   }
+  const m = new RegExp(`^${escapeRegExp(label)}:[^\\n]*$`, "m").exec(text)!; // labelTail just found this same label, so it must match here too
+  const labelLineIndex = text.slice(0, m.index).split("\n").length - 1;
+  return { ...tail, labelLineIndex };
 }
 
 /**
@@ -307,13 +326,14 @@ function getLabelTail(text: string, label: string, file: string): LabelTail {
  * cumulative-to-per-slot diff, so an out-of-order table still yields the
  * correct per-slot values.
  */
-function cumulativeToPerSlot(tail: LabelTail, file: string, expectedCount: number): number[] {
+function cumulativeToPerSlot(tail: ProbTail, file: string, expectedCount: number): number[] {
   const calls = scanCallLines(tail.text, "mon_prob", file, tail.lineIndex);
   if (calls.length !== expectedCount) {
-    // Anchored at the label's own line (tail.lineIndex - 1), consistent with
+    // Anchored at the label's own line (computed directly by getLabelTail,
+    // not derived from tail.lineIndex - see its doc), consistent with
     // FishGroups'/TreeMons' own count-mismatch refusals, which use the
     // label's line rather than the tail's first body line.
-    fail(file, tail.lineIndex - 1, `expected ${expectedCount} "mon_prob" line(s), found ${calls.length}`);
+    fail(file, tail.labelLineIndex, `expected ${expectedCount} "mon_prob" line(s), found ${calls.length}`);
   }
 
   const parsed = calls.map((c) => {

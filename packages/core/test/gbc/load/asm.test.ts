@@ -110,6 +110,24 @@ describe("scanCalls", () => {
   it("refuses a trailing comma with nothing after it, rather than silently dropping the empty slot", () => {
     expect(() => scanCalls("\twarp_event 1,2,3,", "warp_event")).toThrow();
   });
+
+  it("matches a bare macro call with NO arguments and no trailing whitespace, with an empty args array (fix round 4: was silently skipped -- \\s+ required at least one whitespace char after the keyword)", () => {
+    const calls = scanCalls("\ttreemon_map\n\ttreemon_map ROUTE_29, TREEMON_SET_ROUTE", "treemon_map");
+    expect(calls).toHaveLength(2);
+    expect(calls[0]!.args).toEqual([]);
+    expect(calls[1]!.args).toHaveLength(2);
+  });
+
+  it("still matches a bare macro call followed only by trailing whitespace, with an empty args array (unaffected pre-existing case)", () => {
+    const calls = scanCalls("\ttreemon_map \n\ttreemon_map ROUTE_29, TREEMON_SET_ROUTE", "treemon_map");
+    expect(calls).toHaveLength(2);
+    expect(calls[0]!.args).toEqual([]);
+  });
+
+  it("still refuses to match the macro as a prefix of a longer word, bare or not (word-boundary safety preserved)", () => {
+    expect(scanCalls("\ttreemon_maps", "treemon_map")).toEqual([]);
+    expect(scanCalls("\ttreemon_maps FOO, BAR", "treemon_map")).toEqual([]);
+  });
 });
 
 describe("stripComment / stripMacroDefs / splitArgs / matchCall (re-exported, moved from map.ts)", () => {
@@ -129,6 +147,12 @@ describe("stripComment / stripMacroDefs / splitArgs / matchCall (re-exported, mo
   it("matchCall matches a whole-token keyword and returns comma-split args", () => {
     expect(matchCall("\tmap_const FOO, 4, 4", "map_const")).toEqual(["FOO", "4", "4"]);
     expect(matchCall("\tmap_const FOO, 4, 4", "map")).toBeNull();
+  });
+
+  it("matchCall matches a bare zero-arg call with no trailing whitespace, returning an empty array (fix round 4)", () => {
+    expect(matchCall("\ttreemon_map", "treemon_map")).toEqual([]);
+    expect(matchCall("\ttreemon_map ", "treemon_map")).toEqual([]); // pre-existing case, unaffected
+    expect(matchCall("\ttreemon_maps", "treemon_map")).toBeNull(); // word-boundary safety preserved
   });
 
   it("splitArgs refuses a blank argument between two commas rather than silently renumbering", () => {

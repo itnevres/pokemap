@@ -125,10 +125,18 @@ export function splitArgs(rest: string): string[] {
   return splitArgsWithOffsets(rest, 0).map((a) => a.text);
 }
 
-/** Matches a `<keyword> <args>` macro-invocation line and returns its comma-split args, or null. */
+/**
+ * Matches a `<keyword> <args>` macro-invocation line and returns its
+ * comma-split args, or null. `keyword` must be followed by whitespace or
+ * end-of-line, not just whitespace: a bare zero-arg call (`treemon_map`
+ * alone on its line, no trailing space) is a real, if rare, RGBDS shape --
+ * requiring `\s+` unconditionally silently excluded it (and any line where
+ * `keyword` is a strict prefix of a longer word, but there `$` at the end
+ * still rejects the match, exactly as the old regex did via `\s+`).
+ */
 export function matchCall(line: string, keyword: string): string[] | null {
-  const m = stripComment(line).match(new RegExp(`^\\s*${escapeRegExp(keyword)}\\s+(.*)$`));
-  return m ? splitArgs(m[1]!) : null;
+  const m = stripComment(line).match(new RegExp(`^\\s*${escapeRegExp(keyword)}(?:\\s+(.*))?$`));
+  return m ? splitArgs(m[1] ?? "") : null;
 }
 
 /**
@@ -216,18 +224,20 @@ export interface AsmCall {
  * `\r\n` and a missing final newline are both accepted, and `macro` must
  * match as a whole token (`map` never matches `map_const`/`map_attributes`/
  * `map_id` -- enforced the same way as `matchCall`, by requiring whitespace
- * immediately after the keyword).
+ * or end-of-line immediately after the keyword; a bare zero-arg call, e.g.
+ * `treemon_map` alone with no trailing space, is matched too, with an empty
+ * `args` array, rather than silently skipped).
  */
 export function scanCalls(text: string, macro: string): AsmCall[] {
   const out: AsmCall[] = [];
-  const callRe = new RegExp(`^\\s*${escapeRegExp(macro)}\\s+(.*)$`);
+  const callRe = new RegExp(`^\\s*${escapeRegExp(macro)}(?:\\s+(.*))?$`);
 
   for (const { lineIndex, start: lineStart, end: lineEnd, text: lineText } of codeLines(text)) {
     const working = stripComment(lineText);
     const m = working.match(callRe);
     if (!m) continue;
 
-    const restStart = working.length - m[1]!.length;
+    const restStart = working.length - (m[1]?.length ?? 0);
     const restOffset = lineStart + restStart;
     const rest = text.slice(restOffset, lineStart + working.length);
 

@@ -329,6 +329,22 @@ describe("parseWildProbabilities", () => {
     expect(() => parseWildProbabilities(bad, "probabilities.asm")).toThrow(/^probabilities\.asm:6: expected 7 "mon_prob" line\(s\), found 6$/);
   });
 
+  it("anchors the count-mismatch refusal at the label's own line when the label is the file's LAST line with NO trailing newline (fix round 4: tail.lineIndex - 1 was wrong in exactly this real RGBDS-legal shape)", () => {
+    const noFinalNewline = ["WaterMonProbTable:", "\tmon_prob 45, 0", "\tmon_prob 75, 1", "\tmon_prob 100, 2", "GrassMonProbTable:"].join("\n");
+    expect(noFinalNewline.endsWith("\n")).toBe(false);
+    expect(() => parseWildProbabilities(noFinalNewline, "probabilities.asm")).toThrow(
+      /^probabilities\.asm:5: expected 7 "mon_prob" line\(s\), found 0$/,
+    );
+  });
+
+  it("anchors the same refusal correctly when the label's last line DOES have a trailing newline (companion case -- must not regress)", () => {
+    const withFinalNewline = ["WaterMonProbTable:", "\tmon_prob 45, 0", "\tmon_prob 75, 1", "\tmon_prob 100, 2", "GrassMonProbTable:", ""].join("\n");
+    expect(withFinalNewline.endsWith("\n")).toBe(true);
+    expect(() => parseWildProbabilities(withFinalNewline, "probabilities.asm")).toThrow(
+      /^probabilities\.asm:5: expected 7 "mon_prob" line\(s\), found 0$/,
+    );
+  });
+
   it("refuses a duplicated mon_prob index (Issue C: indices must be 0..N-1, each exactly once)", () => {
     const bad = text.replace("\tmon_prob 95,  5 ;  5% chance", "\tmon_prob 95,  4 ; duplicate of index 4");
     expect(() => parseWildProbabilities(bad, "probabilities.asm")).toThrow(/^probabilities\.asm:13: "mon_prob" index 4 is a duplicate$/);
@@ -494,6 +510,14 @@ describe("parseFishGroups", () => {
       "\tfishgroup 50 percent + 1, .Shore_Old, .Shore_Good, .Shore_Super, EXTRA",
     );
     expect(() => parseFishGroups(bad, ["FISHGROUP_SHORE"], "fish.asm")).toThrow(/^fish\.asm:11: "fishgroup" has 5 argument\(s\), expected 4$/);
+  });
+
+  it("refuses a fishgroup call with a MISSING argument (fix round 4, N11m: only the extra-argument direction was pinned)", () => {
+    const bad = text.replace(
+      "\tfishgroup 50 percent + 1, .Shore_Old,            .Shore_Good,            .Shore_Super",
+      "\tfishgroup 50 percent + 1, .Shore_Old, .Shore_Good",
+    );
+    expect(() => parseFishGroups(bad, ["FISHGROUP_SHORE"], "fish.asm")).toThrow(/^fish\.asm:11: "fishgroup" has 3 argument\(s\), expected 4$/);
   });
 
   it("refuses a rod record with time_group plus a stray extra arg, naming file+line, instead of reading it as a species record (Issue B)", () => {
@@ -746,6 +770,11 @@ describe("parseTreemonMaps", () => {
   it("refuses a blank comma-separated arg on a treemon_map call that is NOT the first, naming its own exact line (not the first call's)", () => {
     const bad = text.replace("\ttreemon_map NEW_BARK_TOWN, TREEMON_SET_CITY", "\ttreemon_map NEW_BARK_TOWN, , TREEMON_SET_CITY");
     expect(() => parseTreemonMaps(bad, "m.asm")).toThrow(/^m\.asm:8: splitArgs: blank argument in "NEW_BARK_TOWN, , TREEMON_SET_CITY"/);
+  });
+
+  it("refuses a BARE treemon_map row (no args at all, no trailing whitespace), naming its own line, instead of silently dropping it (fix round 4, Minor 2: a 3-row RockMonMaps was silently loading as 2)", () => {
+    const bad = text.replace("\ttreemon_map CIANWOOD_CITY, TREEMON_SET_ROCK", "\ttreemon_map\n\ttreemon_map CIANWOOD_CITY, TREEMON_SET_ROCK");
+    expect(() => parseTreemonMaps(bad, "m.asm")).toThrow(/^m\.asm:13: "treemon_map" has 0 argument\(s\), expected 2$/);
   });
 });
 
