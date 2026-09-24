@@ -6,6 +6,10 @@
  * to locate exact byte spans to replace. One implementation of
  * comment-stripping and MACRO-skipping in the codebase -- `map.ts` imports
  * from here instead of keeping its own copies (Task 3 code-quality review).
+ * `codeLines` is the ONE MACRO...ENDM skipper (Task 4 spec review Issue 1):
+ * both `stripMacroDefs` (offset-discarding, for `map.ts`'s parsers) and
+ * `scanCalls` (offset-preserving, for the splicer) are built on it, so they
+ * can never independently drift on what counts as a macro body.
  */
 
 /** Escapes a string for literal use inside a `RegExp` (macro/label names are plain identifiers, but this is cheap insurance). */
@@ -16,30 +20,53 @@ export function escapeRegExp(s: string): string {
 /**
  * Strips a trailing `; comment` (RGBDS comments never occur inside a value
  * in the files this module parses -- no string literals here, unlike
- * `incbin.ts`'s INCBIN paths).
+ * `incbin.ts`'s INCBIN paths). Cuts at the FIRST `;`: a comment's own text
+ * may contain a second `;` (`; a ; b`), which must not be mistaken for
+ * more code after it.
  */
 export function stripComment(line: string): string {
   const i = line.indexOf(";");
   return i === -1 ? line : line.slice(0, i);
 }
 
+/** A line's own [start, end) content span, terminator excluded. Handles `\n`, `\r\n`, and a final line with no terminator at all -- including a lone trailing `\r` with no `\n` following it. */
+function splitLines(text: string): { start: number; end: number }[] {
+  const out: { start: number; end: number }[] = [];
+  let start = 0;
+  for (let i = 0; i <= text.length; i++) {
+    if (i === text.length || text[i] === "\n") {
+      let end = i;
+      if (end > start && text[end - 1] === "\r") end--;
+      out.push({ start, end });
+      start = i + 1;
+    }
+  }
+  return out;
+}
+
+/** One non-MACRO-body line, with its absolute span in the original text. */
+export interface CodeLine {
+  lineIndex: number;
+  start: number;
+  end: number;
+  text: string;
+}
+
 /**
  * Every file this module's callers parse opens with one or more
  * `MACRO ... ENDM` definitions, and at least one of those bodies
  * (attributes.asm's `connection` macro) contains a legacy recursive call
- * that looks exactly like a real invocation. Drop every line between
- * `MACRO` and `ENDM` so callers never see it.
- *
- * Line-dropping loses offsets, so this helper is only for callers that
- * don't need them (`map.ts`'s parsers, which build fresh records rather
- * than splicing bytes back into the original text). `scanCalls` below is
- * the offset-preserving equivalent for the splicer.
+ * that looks exactly like a real invocation. This is the ONE place that
+ * decides "is this line inside a macro body" -- every other MACRO/ENDM
+ * check in this module (there is none) or `map.ts` goes through here.
  */
-export function stripMacroDefs(text: string): string[] {
-  const lines = text.split(/\r\n|\n/);
-  const out: string[] = [];
+export function codeLines(text: string): CodeLine[] {
+  const out: CodeLine[] = [];
   let inMacro = false;
-  for (const line of lines) {
+  const lines = splitLines(text);
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+    const { start, end } = lines[lineIndex]!;
+    const line = text.slice(start, end);
     if (!inMacro && /^\s*MACRO\b/.test(line)) {
       inMacro = true;
       continue;
@@ -48,17 +75,54 @@ export function stripMacroDefs(text: string): string[] {
       if (/^\s*ENDM\b/.test(line)) inMacro = false;
       continue;
     }
-    out.push(line);
+    out.push({ lineIndex, start, end, text: line });
   }
   return out;
 }
 
-/** Comma-split, trimmed, comment-stripped -- args are expressions, never `\w+`. */
+/**
+ * Drops every line between `MACRO` and `ENDM`, discarding offsets --
+ * for callers that don't need them (`map.ts`'s parsers, which build fresh
+ * records rather than splicing bytes back into the original text).
+ * `scanCalls` below is the offset-preserving equivalent for the splicer.
+ * Both are thin wrappers over `codeLines`, the one shared MACRO skipper.
+ */
+export function stripMacroDefs(text: string): string[] {
+  return codeLines(text).map((l) => l.text);
+}
+
+/**
+ * Comma-splits `rest` into trimmed argument strings/spans, absolute in the
+ * original text (`rest` starts at `offset`). A `rest` that is entirely
+ * whitespace (or empty) is zero arguments -- valid. Otherwise, a blank slot
+ * between commas (`1,,3`) or after a trailing comma (`1,2,`) refuses rather
+ * than silently dropping it and shifting every later argument's index (G4)
+ * -- `splitArgs` and `scanCalls` share this one implementation.
+ */
+function splitArgsWithOffsets(rest: string, offset: number): AsmArg[] {
+  if (rest.trim() === "") return [];
+  const out: AsmArg[] = [];
+  let partStart = 0;
+  for (let i = 0; i <= rest.length; i++) {
+    if (i === rest.length || rest[i] === ",") {
+      const raw = rest.slice(partStart, i);
+      if (raw.trim() === "") {
+        throw new Error(`splitArgs: blank argument in "${rest.trim()}" -- a missing value between commas is not a valid argument list`);
+      }
+      const leadWs = raw.match(/^\s*/)![0]!.length;
+      const trailWs = raw.match(/\s*$/)![0]!.length;
+      const start = offset + partStart + leadWs;
+      const end = offset + i - trailWs;
+      out.push({ start, end, text: rest.slice(partStart + leadWs, i - trailWs) });
+      partStart = i + 1;
+    }
+  }
+  return out;
+}
+
+/** Comma-split, trimmed, comment-stripped -- args are expressions, never `\w+`. Refuses on a blank slot (see `splitArgsWithOffsets`). */
 export function splitArgs(rest: string): string[] {
-  return rest
-    .split(",")
-    .map((s) => s.trim())
-    .filter((s) => s !== "");
+  return splitArgsWithOffsets(rest, 0).map((a) => a.text);
 }
 
 /** Matches a `<keyword> <args>` macro-invocation line and returns its comma-split args, or null. */
@@ -84,77 +148,21 @@ export interface AsmCall {
   args: AsmArg[];
 }
 
-/** A line's own [start, end) content span, terminator excluded. Handles `\n`, `\r\n`, and a final line with no terminator at all. */
-function splitLines(text: string): { start: number; end: number }[] {
-  const out: { start: number; end: number }[] = [];
-  let start = 0;
-  for (let i = 0; i <= text.length; i++) {
-    if (i === text.length || text[i] === "\n") {
-      let end = i;
-      if (end > start && text[end - 1] === "\r") end--;
-      out.push({ start, end });
-      start = i + 1;
-    }
-  }
-  return out;
-}
-
-/**
- * Comma-splits `rest` (the text after `<macro>` and its separating
- * whitespace) into trimmed argument spans, absolute in the original text
- * (`rest` starts at `offset`). Mirrors `splitArgs`'s trim-and-drop-blanks
- * behavior, but keeps each argument's own [start, end) byte range instead
- * of discarding it -- what the splicer needs to replace exactly one
- * argument's bytes and nothing else (G3).
- */
-function splitArgsWithOffsets(rest: string, offset: number): AsmArg[] {
-  const out: AsmArg[] = [];
-  let partStart = 0;
-  for (let i = 0; i <= rest.length; i++) {
-    if (i === rest.length || rest[i] === ",") {
-      const raw = rest.slice(partStart, i);
-      if (raw.trim() !== "") {
-        const leadWs = raw.match(/^\s*/)![0]!.length;
-        const trailWs = raw.match(/\s*$/)![0]!.length;
-        const start = offset + partStart + leadWs;
-        const end = offset + i - trailWs;
-        out.push({ start, end, text: rest.slice(partStart + leadWs, i - trailWs) });
-      }
-      partStart = i + 1;
-    }
-  }
-  return out;
-}
-
 /**
  * Finds every `<macro> <args>` invocation line in `text`, with each
  * argument's exact absolute byte span. Comments are excluded, lines inside
- * `MACRO ... ENDM` are skipped, `\r\n` and a missing final newline are both
- * accepted, and `macro` must match as a whole token (`map` never matches
- * `map_const`/`map_attributes`/`map_id` -- enforced the same way as
- * `matchCall`, by requiring whitespace immediately after the keyword).
+ * `MACRO ... ENDM` are skipped (via `codeLines`, the one shared skipper),
+ * `\r\n` and a missing final newline are both accepted, and `macro` must
+ * match as a whole token (`map` never matches `map_const`/`map_attributes`/
+ * `map_id` -- enforced the same way as `matchCall`, by requiring whitespace
+ * immediately after the keyword).
  */
 export function scanCalls(text: string, macro: string): AsmCall[] {
   const out: AsmCall[] = [];
   const callRe = new RegExp(`^\\s*${escapeRegExp(macro)}\\s+(.*)$`);
-  let inMacro = false;
 
-  const lines = splitLines(text);
-  for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
-    const { start: lineStart, end: lineEnd } = lines[lineIndex]!;
-    const lineText = text.slice(lineStart, lineEnd);
-
-    if (!inMacro && /^\s*MACRO\b/.test(lineText)) {
-      inMacro = true;
-      continue;
-    }
-    if (inMacro) {
-      if (/^\s*ENDM\b/.test(lineText)) inMacro = false;
-      continue;
-    }
-
-    const commentIdx = lineText.indexOf(";");
-    const working = commentIdx === -1 ? lineText : lineText.slice(0, commentIdx);
+  for (const { lineIndex, start: lineStart, end: lineEnd, text: lineText } of codeLines(text)) {
+    const working = stripComment(lineText);
     const m = working.match(callRe);
     if (!m) continue;
 

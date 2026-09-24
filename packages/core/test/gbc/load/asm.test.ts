@@ -95,6 +95,21 @@ describe("scanCalls", () => {
   it("returns an empty array when the macro never occurs", () => {
     expect(scanCalls("\tsomething_else 1, 2", "warp_event")).toEqual([]);
   });
+
+  it("cuts a comment at the FIRST ';', not the last -- a comment containing its own ';' keeps the last arg intact", () => {
+    const text = "\twarp_event 1, 2, FOO, 3 ; a ; b";
+    const [call] = scanCalls(text, "warp_event");
+    expect(call!.args).toHaveLength(4);
+    expect(call!.args[3]!.text).toBe("3");
+  });
+
+  it("refuses a blank argument between two commas, naming the argument list, rather than silently renumbering", () => {
+    expect(() => scanCalls("\twarp_event 1,,3,4", "warp_event")).toThrow(/1,,3,4/);
+  });
+
+  it("refuses a trailing comma with nothing after it, rather than silently dropping the empty slot", () => {
+    expect(() => scanCalls("\twarp_event 1,2,3,", "warp_event")).toThrow();
+  });
 });
 
 describe("stripComment / stripMacroDefs / splitArgs / matchCall (re-exported, moved from map.ts)", () => {
@@ -114,5 +129,21 @@ describe("stripComment / stripMacroDefs / splitArgs / matchCall (re-exported, mo
   it("matchCall matches a whole-token keyword and returns comma-split args", () => {
     expect(matchCall("\tmap_const FOO, 4, 4", "map_const")).toEqual(["FOO", "4", "4"]);
     expect(matchCall("\tmap_const FOO, 4, 4", "map")).toBeNull();
+  });
+
+  it("splitArgs refuses a blank argument between two commas rather than silently renumbering", () => {
+    expect(() => splitArgs("1,,3")).toThrow(/1,,3/);
+  });
+
+  it("splitArgs refuses a trailing comma with nothing after it", () => {
+    expect(() => splitArgs("1,2,")).toThrow();
+  });
+
+  it("stripMacroDefs and scanCalls agree on a line with a lone trailing '\\r' and no following '\\n' (regression: this used to diverge)", () => {
+    const text = "\twarp_event 1, 2, FOO, 3\r";
+    const [line] = stripMacroDefs(text);
+    expect(matchCall(line!, "warp_event")).toEqual(["1", "2", "FOO", "3"]);
+    expect(scanCalls(text, "warp_event")).toHaveLength(1);
+    expect(scanCalls(text, "warp_event")[0]!.args[2]!.text).toBe("FOO");
   });
 });

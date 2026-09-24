@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
-import { scanCalls, type AsmCall } from "../../../src/gbc/load/asm.js";
+import { scanCalls, stripComment, escapeRegExp, type AsmCall } from "../../../src/gbc/load/asm.js";
 import { spliceArg, locateCall, locateEventCall, locateNthCall } from "../../../src/gbc/write/asmSplice.js";
-import { GBC_SUBJECT_ROOT, itWithGbcCorpus, hasGbcProject, gbcCorpusRoots } from "../helpers/corpus.js";
+import { itWithGbcCorpus, gbcCorpusRoots } from "../helpers/corpus.js";
 
 describe("spliceArg", () => {
   it("replaces exactly the argument's own span, leaving every other byte untouched", () => {
@@ -43,6 +43,12 @@ describe("spliceArg", () => {
     const [call] = scanCalls(text, "warp_event");
     expect(() => spliceArg(text, call!, 0, " 9")).toThrow(/whitespace/);
     expect(() => spliceArg(text, call!, 0, "9 ")).toThrow(/whitespace/);
+  });
+
+  it("refuses a replacement value with a leading tab (not just a literal space)", () => {
+    const text = "\twarp_event 6, 3, ELMS_LAB, 1";
+    const [call] = scanCalls(text, "warp_event");
+    expect(() => spliceArg(text, call!, 0, "\t9")).toThrow(/whitespace/);
   });
 
   it.each([",", ";", "\n", "\r"])("refuses a replacement value containing %j (would change the line's structure)", (bad) => {
@@ -131,6 +137,11 @@ describe("locateNthCall", () => {
     const text = "\ttilecoll CUT_TREE, CUT_TREE, CUT_TREE, CUT_TREE ; 00";
     expect(() => locateNthCall(text, "tilecoll", 1)).toThrow(/1/);
   });
+
+  it("refuses a negative ordinal, naming it", () => {
+    const text = "\ttilecoll CUT_TREE, CUT_TREE, CUT_TREE, CUT_TREE ; 00";
+    expect(() => locateNthCall(text, "tilecoll", -1)).toThrow(/-1/);
+  });
 });
 
 describe("locateEventCall", () => {
@@ -151,10 +162,42 @@ describe("locateEventCall", () => {
     expect(locateEventCall(text, "NewBarkTown", "coord_event", 0).args[3]!.text).toBe("FooScene");
   });
 
-  it("returns absolute offsets into the whole file, not the tail slice", () => {
+  it("returns absolute offsets and lineIndex into the whole file, not the tail slice", () => {
     const call = locateEventCall(text, "NewBarkTown", "warp_event", 0);
     expect(text.slice(call.lineStart, call.lineEnd)).toBe("\twarp_event  6,  3, ELMS_LAB, 1");
     expect(text.slice(call.args[2]!.start, call.args[2]!.end)).toBe("ELMS_LAB");
+    // Absolute line index in `text`: label=0, filler=1, blank=2, def_warp_events=3, this call=4.
+    expect(call.lineIndex).toBe(4);
+  });
+
+  it("finds ordinal 0 when the label is immediately followed by the first call, no filler/def line between", () => {
+    const tight = ["FooTown_MapEvents:", "\twarp_event 1, 2, BAR, 1"].join("\n");
+    const call = locateEventCall(tight, "FooTown", "warp_event", 0);
+    expect(call.args[2]!.text).toBe("BAR");
+    expect(call.lineIndex).toBe(1);
+  });
+
+  it("finds ordinal 0 when the label is immediately followed by the first call, CRLF", () => {
+    const tight = ["FooTown_MapEvents:", "\twarp_event 1, 2, BAR, 1"].join("\r\n");
+    const call = locateEventCall(tight, "FooTown", "warp_event", 0);
+    expect(call.args[2]!.text).toBe("BAR");
+    expect(call.lineIndex).toBe(1);
+  });
+
+  it("stops at the next map's label -- a call past it is not this map's, so it's out of range rather than borrowed", () => {
+    const twoMaps = [
+      "Foo_MapEvents:",
+      "\tdb 0, 0",
+      "\tdef_warp_events",
+      "\twarp_event 1, 2, A, 1",
+      "Bar_MapEvents:",
+      "\tdb 0, 0",
+      "\tdef_warp_events",
+      "\twarp_event 9, 9, B, 1",
+    ].join("\n");
+    expect(locateEventCall(twoMaps, "Foo", "warp_event", 0).args[2]!.text).toBe("A");
+    expect(() => locateEventCall(twoMaps, "Foo", "warp_event", 1)).toThrow(/1/);
+    expect(locateEventCall(twoMaps, "Bar", "warp_event", 0).args[2]!.text).toBe("B");
   });
 
   it("tolerates a label with trailing whitespace (CeruleanCave1F style)", () => {
@@ -168,6 +211,10 @@ describe("locateEventCall", () => {
 
   it("refuses an out-of-range ordinal, naming it", () => {
     expect(() => locateEventCall(text, "NewBarkTown", "warp_event", 5)).toThrow(/5/);
+  });
+
+  it("refuses a negative ordinal, naming it", () => {
+    expect(() => locateEventCall(text, "NewBarkTown", "warp_event", -1)).toThrow(/-1/);
   });
 });
 
@@ -212,11 +259,26 @@ describe("corpus no-op round trip (G5-for-G3): every call, every arg, over every
 
       function checkFile(path: string, text: string, macros: string[]) {
         for (const macro of macros) {
+          const keywordRe = new RegExp(`^\\s*${escapeRegExp(macro)}\\s+`);
           for (const call of scanCalls(text, macro)) {
             record(macro, call);
 
             if (reconstruct(text, call) !== text.slice(call.lineStart, call.lineEnd)) {
               failures.push(`${path} ${macro}#${call.lineIndex}: reconstructed span mismatch`);
+            }
+
+            // Non-circular check (W5): recompute the arg list straight from the raw
+            // line text (comment-stripped, keyword removed, comma-split, trimmed) --
+            // never touching call.args' own offsets -- and compare to what scanCalls
+            // found. A wrong-but-internally-consistent span set can't hide from this.
+            const line = text.slice(call.lineStart, call.lineEnd);
+            const afterKeyword = stripComment(line).replace(keywordRe, "");
+            const independentArgs = afterKeyword.split(",").map((s) => s.trim());
+            const scannedArgs = call.args.map((a) => a.text);
+            if (JSON.stringify(independentArgs) !== JSON.stringify(scannedArgs)) {
+              failures.push(
+                `${path} ${macro}#${call.lineIndex}: non-circular check mismatch: ${JSON.stringify(independentArgs)} vs ${JSON.stringify(scannedArgs)}`,
+              );
             }
 
             for (let i = 0; i < call.args.length; i++) {

@@ -64,13 +64,20 @@ export function locateNthCall(text: string, macro: string, ordinal: number): Asm
   return matches[ordinal]!;
 }
 
+/** A bare `Label:` or `Label::` line (optionally comment-tailed), the same shape `map.ts`'s own label lines use. Never matches an indented macro-invocation line, since those never end in `:`. */
+const LABEL_LINE_RE = /^[A-Za-z_][A-Za-z0-9_]*::?\s*(;.*)?$/m;
+
 /**
  * The `ordinal`-th (0-based) `<macro> ...` call after `<mapName>_MapEvents:`
  * in a `maps/<Name>.asm` file's text (the event block is always the file's
  * tail, per the format findings). The label may carry trailing whitespace
  * (`CeruleanCave1F_MapEvents: `) -- matched up to the end of its own line,
- * never past it. Refuses, naming what's missing, when the label is absent
- * or the ordinal is out of range.
+ * never past it. Bounded at the next label line, if any, so a call
+ * belonging to a different map's section is never mistaken for this one's
+ * (never observed in the real corpus -- every `_MapEvents:` is the file's
+ * own tail -- but this function must not assume its caller always passes
+ * one isolated map's text). Refuses, naming what's missing, when the label
+ * is absent or the ordinal is out of range.
  */
 export function locateEventCall(text: string, mapName: string, macro: string, ordinal: number): AsmCall {
   const label = `${mapName}_MapEvents`;
@@ -84,14 +91,19 @@ export function locateEventCall(text: string, mapName: string, macro: string, or
   const nextNewline = text.indexOf("\n", labelLineEnd);
   const tailOffset = nextNewline === -1 ? text.length : nextNewline + 1;
 
-  const matches = scanCalls(text.slice(tailOffset), macro);
+  const tailText = text.slice(tailOffset);
+  const nextLabelMatch = LABEL_LINE_RE.exec(tailText);
+  const boundedTail = nextLabelMatch ? tailText.slice(0, nextLabelMatch.index) : tailText;
+
+  const matches = scanCalls(boundedTail, macro);
   if (ordinal < 0 || ordinal >= matches.length) {
     throw new Error(`locateEventCall: ordinal ${ordinal} is out of range for ${matches.length} "${macro}" call(s) after "${label}:"`);
   }
 
+  const linesBeforeTail = text.slice(0, tailOffset).match(/\n/g)?.length ?? 0;
   const call = matches[ordinal]!;
   return {
-    lineIndex: call.lineIndex,
+    lineIndex: call.lineIndex + linesBeforeTail,
     lineStart: call.lineStart + tailOffset,
     lineEnd: call.lineEnd + tailOffset,
     args: call.args.map((a) => ({ start: a.start + tailOffset, end: a.end + tailOffset, text: a.text })),
