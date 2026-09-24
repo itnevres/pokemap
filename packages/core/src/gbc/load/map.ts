@@ -1,59 +1,11 @@
 import { existsSync, readFileSync } from "node:fs";
 import { parseBlk } from "./blocks.js";
 import { parseIncbins } from "./incbin.js";
+import { stripComment, stripMacroDefs, matchCall } from "./asm.js";
 import { norm } from "../../config/paths.js";
 import type { Connection, DataDefect, GbcMap, Layout } from "../model/types.js";
 
 const DIRECTIONS = ["north", "south", "west", "east"] as const;
-
-/**
- * Strips a trailing `; comment` (RGBDS comments never occur inside a value
- * in the files this module parses -- no string literals here, unlike
- * `incbin.ts`'s INCBIN paths).
- */
-function stripComment(line: string): string {
-  const i = line.indexOf(";");
-  return i === -1 ? line : line.slice(0, i);
-}
-
-/**
- * Every file this module parses (map_constants.asm, attributes.asm,
- * maps.asm) opens with one or more `MACRO ... ENDM` definitions, and at
- * least one of those bodies (attributes.asm's `connection` macro) contains a
- * legacy recursive call that looks exactly like a real invocation. Drop
- * every line between `MACRO` and `ENDM` so callers never see it.
- */
-function stripMacroDefs(text: string): string[] {
-  const lines = text.split(/\r\n|\n/);
-  const out: string[] = [];
-  let inMacro = false;
-  for (const line of lines) {
-    if (!inMacro && /^\s*MACRO\b/.test(line)) {
-      inMacro = true;
-      continue;
-    }
-    if (inMacro) {
-      if (/^\s*ENDM\b/.test(line)) inMacro = false;
-      continue;
-    }
-    out.push(line);
-  }
-  return out;
-}
-
-/** Comma-split, trimmed, comment-stripped -- args are expressions, never `\w+`. */
-function splitArgs(rest: string): string[] {
-  return rest
-    .split(",")
-    .map((s) => s.trim())
-    .filter((s) => s !== "");
-}
-
-/** Matches a `<keyword> <args>` macro-invocation line and returns its comma-split args, or null. */
-function matchCall(line: string, keyword: string): string[] | null {
-  const m = stripComment(line).match(new RegExp(`^\\s*${keyword}\\s+(.*)$`));
-  return m ? splitArgs(m[1]!) : null;
-}
 
 /**
  * `$xx` hex, or a signed decimal integer, and nothing else. Refuses (throws,
