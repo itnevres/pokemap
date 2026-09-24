@@ -14,6 +14,19 @@ function warningLines(defects: readonly DataDefect[]): string {
   return defects.map((d) => `warning: ${d.message}\n`).join("");
 }
 
+/** Shared return shape for every thin handler in this file: the text
+ *  `index.ts`'s action should print, rather than this file writing to
+ *  stdout/stderr (or calling `process.exit`) itself, so each handler stays
+ *  testable without spawning a process -- mirrors `writeCommands.ts`'s own
+ *  *principle* of returning instead of writing, though not its literal
+ *  shape (its handlers each return one `string`, not a `{ stdout, stderr }`
+ *  pair; kept as its own type here since Task 11/12 add more handlers that
+ *  need the same pair rather than duplicating this interface per handler). */
+export interface GbcCommandResult {
+  stdout: string;
+  stderr: string;
+}
+
 export interface RunGbcRenderOptions {
   out: string;
   border?: number;
@@ -23,19 +36,10 @@ export interface RunGbcRenderOptions {
   time?: TimeOfDay;
 }
 
-export interface RunGbcRenderResult {
-  stdout: string;
-  stderr: string;
-}
-
-/**
- * `render <gbcMap>` (Task 10). Renders via `openGbcProject` + `renderGbcMap`
- * and writes the PNG to `opts.out`. Returns the text `index.ts`'s action
- * should print, rather than writing to stdout/stderr itself, so it stays
- * testable without spawning a process (mirrors `writeCommands.ts`'s own
- * shape).
- */
-export function runGbcRender(root: string, mapName: string, opts: RunGbcRenderOptions): RunGbcRenderResult {
+/** `render <gbcMap>` (Task 10). Renders via `openGbcProject` + `renderGbcMap`
+ *  and writes the PNG to `opts.out`. See `GbcCommandResult`'s own doc
+ *  comment for what it returns and why. */
+export function runGbcRender(root: string, mapName: string, opts: RunGbcRenderOptions): GbcCommandResult {
   const proj = openGbcProject(root);
   const raster = renderGbcMap(proj, mapName, { border: opts.border, time: opts.time ?? "day" });
   writeFileSync(opts.out, encodePng(raster));
@@ -51,20 +55,16 @@ export interface RunGbcQueryOptions {
   events?: boolean;
 }
 
-export interface RunGbcQueryResult {
-  stdout: string;
-  stderr: string;
-}
-
 /**
  * `query <gbcMap>` (Task 10). Mirrors the GBA `query` command's own flag
  * semantics exactly: no flag selected means all three sections. `--header`
  * only ever loads `proj.layout(map)` (never `loadGbcMapEvents`), and
  * `--events`/no-flag only ever load events -- so a defect the OTHER loader
  * would have reported never appears unless that section was actually
- * requested.
+ * requested. See `GbcCommandResult`'s own doc comment for what this returns
+ * and why.
  */
-export function runGbcQuery(root: string, mapName: string, opts: RunGbcQueryOptions): RunGbcQueryResult {
+export function runGbcQuery(root: string, mapName: string, opts: RunGbcQueryOptions): GbcCommandResult {
   const proj = openGbcProject(root);
   const map: GbcMap = proj.map(mapName);
 

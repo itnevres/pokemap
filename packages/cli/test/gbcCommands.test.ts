@@ -1,8 +1,8 @@
-import { describe, it, expect } from "vitest";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { describe, it, expect, afterAll } from "vitest";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { execFileSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { inflateSync } from "node:zlib";
 import { unfilterScanlines } from "@pokemap/core/src/load/png.js";
 import { openGbcProject } from "@pokemap/core/src/gbc/project.js";
@@ -37,25 +37,39 @@ function decodeRgbaPng(buf: Buffer): { width: number; height: number; data: Uint
   return { width, height, data: new Uint8ClampedArray(unfiltered.buffer, unfiltered.byteOffset, unfiltered.length) };
 }
 
+// Quality review fix round 1, Important #2: every dir this file creates is
+// tracked here and removed in `afterAll`, mirroring
+// `packages/core/test/family.test.ts`/`packages/cli/test/context.test.ts`'s
+// own cleanup convention -- this file has no per-test isolation need (each
+// test uses its own fresh dir/filename), so one end-of-suite sweep is enough.
+const tmpDirs: string[] = [];
+afterAll(() => {
+  for (const d of tmpDirs.splice(0)) rmSync(d, { recursive: true, force: true });
+});
+
 function tmpFile(name: string): string {
-  return join(mkdtempSync(join(tmpdir(), "pokemap-gbc-cli-")), name);
+  const dir = mkdtempSync(join(tmpdir(), "pokemap-gbc-cli-"));
+  tmpDirs.push(dir);
+  return join(dir, name);
 }
 
 const CLI_ENTRY = "packages/cli/src/index.ts";
 const REPO_ROOT = process.cwd();
 
 /** Spawns the real CLI (`npx tsx packages/cli/src/index.ts ...`), from the
- *  repo root, exactly the invocation the task's own live-verify uses. Never
- *  throws on a non-zero exit -- callers assert `status`/`stdout`/`stderr`
- *  themselves, the same way a shell script would. */
+ *  repo root, exactly the invocation the task's own live-verify uses.
+ *  `spawnSync`, not `execFileSync`: `execFileSync` only returns the child's
+ *  `stdout` as its normal return value and discards `stderr` entirely on a
+ *  zero exit (it's only attached to the thrown error object on a NON-zero
+ *  exit) -- an earlier version of this helper returned a hardcoded `stderr:
+ *  ""` on the success path, which happened to be correct for every existing
+ *  exit-0 test (their real stderr genuinely was empty) but silently could
+ *  not have caught a real stderr/stdout swap on a SUCCESSFUL run, exactly
+ *  the gap the "render CeruleanCave2F" test below exists to close.
+ *  `spawnSync` reports both streams and the exit code unconditionally. */
 function spawnCli(args: string[]): { status: number; stdout: string; stderr: string } {
-  try {
-    const stdout = execFileSync("npx", ["tsx", CLI_ENTRY, ...args], { cwd: REPO_ROOT, encoding: "utf8" });
-    return { status: 0, stdout, stderr: "" };
-  } catch (e) {
-    const err = e as { status: number | null; stdout: string; stderr: string };
-    return { status: err.status ?? 1, stdout: err.stdout, stderr: err.stderr };
-  }
+  const result = spawnSync("npx", ["tsx", CLI_ENTRY, ...args], { cwd: REPO_ROOT, encoding: "utf8" });
+  return { status: result.status ?? 1, stdout: result.stdout, stderr: result.stderr };
 }
 
 describe("runGbcRender", () => {
@@ -195,6 +209,25 @@ describe("CLI end-to-end (spawned, generous timeout)", () => {
     const proj = openGbcProject(GBC_SUBJECT_ROOT);
     const expected = renderGbcMap(proj, "NewBarkTown", { time: "day" });
     expect(stdout).toBe(`${out} ${expected.width}x${expected.height} outOfRange=${expected.outOfRangeCount} unmapped=${expected.unmappedTileCount}\n`);
+  }, 30_000);
+
+  itWithGbcCorpus("render CeruleanCave2F against the real subject: the warning lands on stderr, never stdout", () => {
+    // Spec review fix round 1, Issue 2: `runGbcRender`'s own `{ stdout,
+    // stderr }` split is unit-tested above, but `index.ts`'s own
+    // `if (stderr) process.stderr.write(stderr); process.stdout.write(stdout);`
+    // wiring line was never exercised end-to-end against a map that actually
+    // produces a non-empty `stderr` -- this spawns the real CLI process and
+    // reads its two OS streams separately, so a mutation that swaps which
+    // stream the warning goes to (or that writes both to the same stream)
+    // shows up here even though it's invisible to the unit-level tests.
+    const out = tmpFile("cc2f-e2e.png");
+    const { status, stdout, stderr } = spawnCli(["--project", GBC_SUBJECT_ROOT, "render", "CeruleanCave2F", "-o", out]);
+    expect(status).toBe(0);
+    const stderrLines = stderr.split("\n").filter((l) => l.length > 0);
+    expect(stderrLines).toHaveLength(1);
+    expect(stderrLines[0]).toMatch(/^warning: maps\/CeruleanCave2F\.blk:/);
+    expect(stdout).not.toMatch(/warning:/);
+    expect(stdout).toMatch(new RegExp(`^${out.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")} \\d+x\\d+ outOfRange=\\d+ unmapped=\\d+\\n$`));
   }, 30_000);
 
   itWithGbcCorpus("query NoSuchMap against the real subject exits 1 with the loader's unknown-map message", () => {

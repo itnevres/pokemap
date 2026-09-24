@@ -30,18 +30,32 @@ function resolveRootAndFamily(explicit?: string): { root: string; family: Engine
 }
 
 /**
- * Wraps a GBA-only command's action: refuses with one consistent message
- * naming `command`, BEFORE `run` (and therefore any GBA loader) ever
- * executes, when the resolved root is a GBC (pokecrystal-family) project.
- * `render`/`query` are the only commands with a real GBC implementation
- * (Task 10); render-world (Task 11), encounters/where/coverage (Task 12) and
- * every write command (sign/paint/diff -- G7, no write path for GBC yet) all
- * go through this instead.
+ * Refuses with one consistent message naming `command` when the resolved
+ * root is a GBC (pokecrystal-family) project. Called as a plain guard-clause
+ * statement at the top of a GBA-only action, BEFORE that action's body (and
+ * therefore any GBA loader) ever runs -- `render`/`query` are the only
+ * commands with a real GBC implementation (Task 10); every other command
+ * (encounters/where/coverage until Task 12, sign/paint/diff -- G7, no write
+ * path for GBC yet) calls this instead.
  */
-function runGbaOnly(root: string, family: EngineFamily, command: string, run: (root: string) => void): void {
+function refuseIfGbc(family: EngineFamily, command: string): void {
   if (family === "gbc") {
     throw new Error(`${command} is not supported for gbc (pokecrystal-family) projects yet`);
   }
+}
+
+/**
+ * `render-world`'s own wrapper (quality review fix round 1, Important #1/#3):
+ * every OTHER GBA-only command now calls `refuseIfGbc` as a plain guard
+ * clause instead. This callback shape is kept only because a parallel Task
+ * 11 worktree is actively rewriting `render-world`'s handler into a real
+ * GBC branch and touching it here would cause a cherry-pick conflict --
+ * Task 11 removes this function's last caller and this function along with
+ * it. Implemented via `refuseIfGbc` rather than re-checking `family` itself,
+ * so the two never drift.
+ */
+function runGbaOnly(root: string, family: EngineFamily, command: string, run: (root: string) => void): void {
+  refuseIfGbc(family, command);
   run(root);
 }
 
@@ -158,7 +172,7 @@ program
   .option("--json", "machine-readable output")
   .action((opts: { metatileRange?: boolean; paletteRange?: boolean; json?: boolean }) => {
     const { root, family } = resolveRootAndFamily(program.opts().project);
-    runGbaOnly(root, family, "validate", (root) => {
+    refuseIfGbc(family, "validate");
     const proj = resolveProject(root);
 
     // Selecting no check runs every check. `opts.metatileRange === false` is
@@ -181,7 +195,6 @@ program
       process.stdout.write(`${findings.length} finding(s)\n`);
     }
     process.exitCode = findings.length ? 1 : 0;
-    });
   });
 
 program
@@ -190,7 +203,7 @@ program
   .option("--json", "machine-readable output")
   .action((map: string, opts: { json?: boolean }) => {
     const { root, family } = resolveRootAndFamily(program.opts().project);
-    runGbaOnly(root, family, "encounters", (root) => {
+    refuseIfGbc(family, "encounters");
     const proj = resolveProject(root);
     const enc = parseEncounters(readFileSync(proj.paths.wildEncountersJson, "utf8"));
     const mapId = proj.map(map).id;
@@ -206,7 +219,6 @@ program
         process.stdout.write(`  ${c.percent.toFixed(1).padStart(5)}%  Lv ${c.minLevel}-${c.maxLevel}  ${c.species}\n`);
       }
     }
-    });
   });
 
 program
@@ -215,7 +227,7 @@ program
   .option("--json", "machine-readable output")
   .action((species: string, opts: { json?: boolean }) => {
     const { root, family } = resolveRootAndFamily(program.opts().project);
-    runGbaOnly(root, family, "where", (root) => {
+    refuseIfGbc(family, "where");
     const proj = resolveProject(root);
     const hits = whereSpecies(proj, species.startsWith("SPECIES_") ? species : `SPECIES_${species.toUpperCase()}`);
     if (opts.json) return void process.stdout.write(JSON.stringify(hits, null, 2));
@@ -223,7 +235,6 @@ program
     for (const h of hits) {
       process.stdout.write(`${(h.mapName ?? h.mapId).padEnd(32)} ${h.percent.toFixed(1).padStart(5)}%  Lv ${h.minLevel}-${h.maxLevel}  ${h.method}\n`);
     }
-    });
   });
 
 program
@@ -234,14 +245,13 @@ program
   .option("--json", "machine-readable output")
   .action((opts: { empty?: boolean; unused?: boolean; json?: boolean }) => {
     const { root, family } = resolveRootAndFamily(program.opts().project);
-    runGbaOnly(root, family, "coverage", (root) => {
+    refuseIfGbc(family, "coverage");
     const proj = resolveProject(root);
     const c = coverage(proj);
     if (opts.json) return void process.stdout.write(JSON.stringify(c, null, 2));
     process.stdout.write(`${c.mapsWithEncounters} maps with encounters, ${c.mapsWithoutEncounters.length} without\n`);
     if (opts.empty) for (const m of c.mapsWithoutEncounters) process.stdout.write(`  ${m}\n`);
     if (opts.unused) for (const s of c.unusedSpecies) process.stdout.write(`  ${s}\n`);
-    });
   });
 
 // A `program.command("sign suggest <map>")` one-liner does NOT nest a
@@ -262,10 +272,9 @@ sign
   .description("rank catchable species and suggest a placement for a wild sign on this map")
   .action((map: string) => {
     const { root, family } = resolveRootAndFamily(program.opts().project);
-    runGbaOnly(root, family, "sign suggest", (root) => {
+    refuseIfGbc(family, "sign suggest");
     const proj = resolveProject(root);
     process.stdout.write(`${runSignSuggest(proj, map)}\n`);
-    });
   });
 
 sign
@@ -279,10 +288,9 @@ sign
   .option("--yes", "actually write")
   .action((map: string, opts: { species: string; dialogue: string; x: number; y: number; elevation: number; yes?: boolean }) => {
     const { root, family } = resolveRootAndFamily(program.opts().project);
-    runGbaOnly(root, family, "sign add", (root) => {
+    refuseIfGbc(family, "sign add");
     const proj = resolveProject(root);
     process.stdout.write(`${runSignAdd(proj, { map, x: opts.x, y: opts.y, elevation: opts.elevation, species: opts.species, dialogue: opts.dialogue, yes: !!opts.yes })}\n`);
-    });
   });
 
 sign
@@ -290,10 +298,9 @@ sign
   .description("list existing wild signs (overworld-species object events) on a map")
   .action((map: string) => {
     const { root, family } = resolveRootAndFamily(program.opts().project);
-    runGbaOnly(root, family, "sign list", (root) => {
+    refuseIfGbc(family, "sign list");
     const proj = resolveProject(root);
     process.stdout.write(`${runSignList(proj, map)}\n`);
-    });
   });
 
 program
@@ -308,10 +315,9 @@ program
   .option("--yes", "actually write")
   .action((map: string, opts: { tool: "pencil" | "rect"; x: number; y: number; x1?: number; y1?: number; metatile: number; yes?: boolean }) => {
     const { root, family } = resolveRootAndFamily(program.opts().project);
-    runGbaOnly(root, family, "paint", (root) => {
+    refuseIfGbc(family, "paint");
     const proj = resolveProject(root);
     process.stdout.write(`${runPaint(proj, { map, tool: opts.tool, x: opts.x, y: opts.y, x1: opts.x1, y1: opts.y1, metatileId: opts.metatile, yes: !!opts.yes })}\n`);
-    });
   });
 
 program
@@ -325,10 +331,9 @@ program
   .requiredOption("--metatile <id>", "metatile id to stamp", Number)
   .action((map: string, opts: { tool: "pencil" | "rect"; x: number; y: number; x1?: number; y1?: number; metatile: number }) => {
     const { root, family } = resolveRootAndFamily(program.opts().project);
-    runGbaOnly(root, family, "diff", (root) => {
+    refuseIfGbc(family, "diff");
     const proj = resolveProject(root);
     process.stdout.write(`${runDiff(proj, { map, tool: opts.tool, x: opts.x, y: opts.y, x1: opts.x1, y1: opts.y1, metatileId: opts.metatile })}\n`);
-    });
   });
 
 // parseAsync, not a sync parse()+try/catch: every action handler today is
