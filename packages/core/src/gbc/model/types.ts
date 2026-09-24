@@ -80,6 +80,65 @@ export interface GbcMap {
 }
 
 /**
+ * One tile's palette-map entry (GBC format findings §3.4 step 6 / §3.2):
+ * `bank` is the VRAM bank bit (0 or 1, from the palette-map nibble's bit 3),
+ * `pal` is a `PAL_BG_*` index (0-7). `null` means the tile id has no
+ * palette-map entry at all -- the `$60-$7F` `rept 16 / db $ff` filler range,
+ * which only ever appears in never-placed garbage metatiles.
+ */
+export interface PaletteMapEntry {
+  bank: number;
+  pal: number;
+}
+
+/**
+ * One metatile's 4 collision quadrants, top-left/top-right/bottom-left/
+ * bottom-right (GBC format findings §3.3), as the numeric `COLL_*` values
+ * from `constants/collision_constants.asm` -- never the source token text.
+ */
+export interface Collision {
+  tl: number;
+  tr: number;
+  bl: number;
+  br: number;
+}
+
+/**
+ * One tileset's data, map-agnostic (no roof handling -- that is Task 9's
+ * per-map render). Resolved entirely through the `Tilesets::` table and the
+ * stacked GFX/Meta/Coll/PalMap labels (I4 -- never by name-mangling), so
+ * aliases resolve correctly: `Tileset0`/`TilesetJohto` share `gfxPath`,
+ * `TilesetDarkCave` shares `TilesetCave`'s metatiles/collision/palette map
+ * but not its GFX, and the 5 "word room" tilesets share
+ * `TilesetRuinsOfAlph`'s palette map (GBC format findings, "Extra findings"
+ * -> Tileset graphics / Map header and tileset assignment).
+ */
+export interface GbcTileset {
+  /** The `TILESET_*` constant this was loaded by, e.g. "TILESET_JOHTO".
+   *  When loaded by table name directly (`loadGbcTilesetByName`) with no
+   *  matching constant -- Tileset0's real situation -- this is just `name`. */
+  constName: string;
+  /** The `Tilesets::` table entry name, e.g. "TilesetJohto". */
+  name: string;
+  /** Repo-relative path to the tileset's source PNG (never the gitignored
+   *  `.2bpp.lz` build artifact -- I3). */
+  gfxPath: string;
+  metatilesPath: string;
+  collisionPath: string;
+  palMapPath: string;
+  metatiles: Metatile[];
+  /** Numeric COLL_* values, one per metatile, length === metatiles.length
+   *  (extra source lines beyond the metatile count, e.g. forest's 64 lines
+   *  for 40 metatiles, are trimmed, never exposed or refused). */
+  collision: Collision[];
+  /** Per raw tile id (0-223), `null` for the $60-$7F filler range. */
+  palMap: (PaletteMapEntry | null)[];
+  /** One `Uint8Array(64)` per PNG tile (row-major, 16 per PNG row), each
+   *  entry a shade 0-3 (GBC format findings, "Tileset graphics"). */
+  tiles: Uint8Array[];
+}
+
+/**
  * A `.blk` file's decoded blockdata, keyed by its own repo-relative path
  * rather than by map -- `.blk` <-> map is NOT 1:1 (GBC format findings
  * §3.6). `writable` is false when, at load time, the file's byte length

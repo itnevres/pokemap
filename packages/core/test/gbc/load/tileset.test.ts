@@ -1,7 +1,22 @@
-import { describe, it, expect, beforeAll } from "vitest";
-import { readFileSync } from "node:fs";
-import { parseMetatiles, encodeMetatiles } from "../../../src/gbc/load/tileset.js";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { deflateSync } from "node:zlib";
+import {
+  parseMetatiles,
+  encodeMetatiles,
+  parseConstDefs,
+  parseTilesetsTable,
+  parsePaletteMap,
+  parseCollisionConstants,
+  parseCollision,
+  loadGbcTileset,
+  loadGbcTilesetByName,
+  pngTileIndex,
+} from "../../../src/gbc/load/tileset.js";
 import { parseIncbins } from "../../../src/gbc/load/incbin.js";
+import { loadGbcMaps, loadLayout } from "../../../src/gbc/load/map.js";
 import { GBC_SUBJECT_ROOT, itWithGbcCorpus, hasGbcProject, gbcCorpusRoots } from "../helpers/corpus.js";
 
 function metatile(...tiles: number[]) {
@@ -126,4 +141,486 @@ describe("parseMetatiles / encodeMetatiles", () => {
       expect(ms[2]!.tiles).toEqual(new Array(16).fill(0x05));
     });
   });
+});
+
+describe("parseConstDefs", () => {
+  it("assigns sequential values starting at const_def's argument", () => {
+    const text = ["\tconst_def 1", "\tconst FOO ; 01", "\tconst BAR ; 02"].join("\n");
+    expect(parseConstDefs(text)).toEqual(new Map([["FOO", 1], ["BAR", 2]]));
+  });
+
+  it("defaults to 0 when const_def has no argument", () => {
+    const text = ["\tconst_def", "\tconst FOO", "\tconst BAR"].join("\n");
+    expect(parseConstDefs(text)).toEqual(new Map([["FOO", 0], ["BAR", 1]]));
+  });
+
+  it("resets the counter at each const_def, across multiple enums in one file", () => {
+    const text = ["\tconst_def 1", "\tconst FOO", "\tconst_def", "\tconst BAR"].join("\n");
+    expect(parseConstDefs(text)).toEqual(new Map([["FOO", 1], ["BAR", 0]]));
+  });
+
+  describe("corpus", () => {
+    itWithGbcCorpus("constants/tileset_constants.asm: TILESET_JOHTO=1 .. TILESET_AERODACTYL_WORD_ROOM=36, PAL_BG_GRAY=0..PAL_BG_TEXT=7", () => {
+      const consts = parseConstDefs(readFileSync(`${GBC_SUBJECT_ROOT}/constants/tileset_constants.asm`, "utf8"));
+      expect(consts.get("TILESET_JOHTO")).toBe(1);
+      expect(consts.get("TILESET_AERODACTYL_WORD_ROOM")).toBe(36);
+      expect(consts.get("PAL_BG_GRAY")).toBe(0);
+      expect(consts.get("PAL_BG_TEXT")).toBe(7);
+    });
+  });
+});
+
+describe("parseTilesetsTable", () => {
+  it("returns tileset names in table order", () => {
+    const text = ["Tilesets::", "\ttileset Tileset0", "\ttileset TilesetJohto"].join("\n");
+    expect(parseTilesetsTable(text)).toEqual(["Tileset0", "TilesetJohto"]);
+  });
+
+  describe("corpus", () => {
+    itWithGbcCorpus("data/tilesets.asm: 37 tileset entries, index 0 is Tileset0, index 1 is TilesetJohto", () => {
+      const table = parseTilesetsTable(readFileSync(`${GBC_SUBJECT_ROOT}/data/tilesets.asm`, "utf8"));
+      expect(table).toHaveLength(37);
+      expect(table[0]).toBe("Tileset0");
+      expect(table[1]).toBe("TilesetJohto");
+    });
+  });
+});
+
+describe("parsePaletteMap", () => {
+  const palBg = new Map([
+    ["PAL_BG_GRAY", 0],
+    ["PAL_BG_RED", 1],
+    ["PAL_BG_GREEN", 2],
+    ["PAL_BG_BROWN", 5],
+  ]);
+  const grayLine = ["GRAY", "GRAY", "GRAY", "GRAY", "GRAY", "GRAY", "GRAY", "GRAY"];
+
+  function tilepalLine(bank: number, names: string[]): string {
+    return `\ttilepal ${bank}, ${names.join(", ")}`;
+  }
+
+  function fullShape(firstLowLine: string[]): string {
+    const low = [firstLowLine, ...Array.from({ length: 11 }, () => grayLine)];
+    const high = Array.from({ length: 12 }, () => grayLine);
+    return [
+      ...low.map((names) => tilepalLine(0, names)),
+      "rept 16",
+      "\tdb $ff",
+      "endr",
+      ...high.map((names) => tilepalLine(1, names)),
+    ].join("\n");
+  }
+
+  it("maps each tilepal name, in source order, to the matching tile id (johto tiles 0-7 shape)", () => {
+    const entries = parsePaletteMap(
+      fullShape(["GRAY", "BROWN", "BROWN", "RED", "GREEN", "GREEN", "GRAY", "RED"]),
+      palBg,
+    );
+    expect(entries).toHaveLength(224);
+    expect(entries.slice(0, 8)).toEqual([
+      { bank: 0, pal: 0 },
+      { bank: 0, pal: 5 },
+      { bank: 0, pal: 5 },
+      { bank: 0, pal: 1 },
+      { bank: 0, pal: 2 },
+      { bank: 0, pal: 2 },
+      { bank: 0, pal: 0 },
+      { bank: 0, pal: 1 },
+    ]);
+  });
+
+  it("marks tiles 0x60-0x7F (the rept-16 filler) as null, and leaves 0x5F/0x80 non-null", () => {
+    const entries = parsePaletteMap(fullShape(grayLine), palBg);
+    expect(entries.slice(0x60, 0x80)).toEqual(new Array(32).fill(null));
+    expect(entries[0x5f]).not.toBeNull();
+    expect(entries[0x80]).not.toBeNull();
+  });
+
+  it("gives bank 1 to every tile in the high tilepal block", () => {
+    const entries = parsePaletteMap(fullShape(grayLine), palBg);
+    expect(entries[0x80]).toEqual({ bank: 1, pal: 0 });
+  });
+
+  it("refuses a tilepal line with the wrong number of names", () => {
+    expect(() => parsePaletteMap("\ttilepal 0, GRAY, GRAY", palBg)).toThrow(/8/);
+  });
+
+  it("refuses an unknown PAL_BG name", () => {
+    expect(() =>
+      parsePaletteMap("\ttilepal 0, GRAY, GRAY, GRAY, GRAY, GRAY, GRAY, GRAY, PURPLE", palBg),
+    ).toThrow(/PURPLE/);
+  });
+
+  it("refuses a shape that doesn't total 224 tile entries", () => {
+    const text = Array.from({ length: 5 }, () => tilepalLine(0, grayLine)).join("\n");
+    expect(() => parsePaletteMap(text, palBg)).toThrow(/224/);
+  });
+
+  it("refuses an unrecognized line", () => {
+    expect(() => parsePaletteMap("\tsomething weird", palBg)).toThrow(/unrecognized/i);
+  });
+
+  describe("corpus", () => {
+    itWithGbcCorpus("johto_palette_map.asm parses to 224 entries with the real tile 0-7 line", () => {
+      const constants = parseConstDefs(readFileSync(`${GBC_SUBJECT_ROOT}/constants/tileset_constants.asm`, "utf8"));
+      const text = readFileSync(`${GBC_SUBJECT_ROOT}/gfx/tilesets/johto_palette_map.asm`, "utf8");
+      const entries = parsePaletteMap(text, constants);
+      expect(entries).toHaveLength(224);
+      const names = ["GRAY", "BROWN", "BROWN", "RED", "GREEN", "GREEN", "GRAY", "RED"];
+      expect(entries.slice(0, 8)).toEqual(names.map((n) => ({ bank: 0, pal: constants.get(`PAL_BG_${n}`) })));
+    });
+  });
+});
+
+describe("parseCollisionConstants", () => {
+  it("parses DEF COLL_<NAME> EQU $xx lines, including raw hex-suffix names", () => {
+    const text = ["DEF COLL_FLOOR EQU $00", "DEF COLL_01 EQU $01 ; garbage", "DEF COLL_WALL EQU $07"].join("\n");
+    expect(parseCollisionConstants(text)).toEqual(new Map([["COLL_FLOOR", 0], ["COLL_01", 1], ["COLL_WALL", 7]]));
+  });
+
+  describe("corpus", () => {
+    itWithGbcCorpus("constants/collision_constants.asm: COLL_FLOOR=0, COLL_WALL=7, COLL_WARP_CARPET_DOWN=0x70", () => {
+      const consts = parseCollisionConstants(readFileSync(`${GBC_SUBJECT_ROOT}/constants/collision_constants.asm`, "utf8"));
+      expect(consts.get("COLL_FLOOR")).toBe(0);
+      expect(consts.get("COLL_WALL")).toBe(7);
+      expect(consts.get("COLL_WARP_CARPET_DOWN")).toBe(0x70);
+    });
+  });
+});
+
+describe("parseCollision", () => {
+  const consts = new Map([["COLL_FLOOR", 0], ["COLL_WALL", 7], ["COLL_01", 1]]);
+
+  it("parses tilecoll TL,TR,BL,BR in that order", () => {
+    const text = "\ttilecoll FLOOR, FLOOR, WALL, 01 ; 00";
+    expect(parseCollision(text, consts)).toEqual([{ tl: 0, tr: 0, bl: 7, br: 1 }]);
+  });
+
+  it("refuses an unknown collision token", () => {
+    expect(() => parseCollision("\ttilecoll FLOOR, FLOOR, FLOOR, NOPE", consts)).toThrow(/NOPE/);
+  });
+
+  describe("corpus", () => {
+    itWithGbcCorpus("johto_collision.asm metatile 0x0c is FLOOR,FLOOR,WALL,WARP_CARPET_DOWN", () => {
+      const collConsts = parseCollisionConstants(readFileSync(`${GBC_SUBJECT_ROOT}/constants/collision_constants.asm`, "utf8"));
+      const text = readFileSync(`${GBC_SUBJECT_ROOT}/data/tilesets/johto_collision.asm`, "utf8");
+      const collision = parseCollision(text, collConsts);
+      expect(collision[0x0c]).toEqual({
+        tl: collConsts.get("COLL_FLOOR"),
+        tr: collConsts.get("COLL_FLOOR"),
+        bl: collConsts.get("COLL_WALL"),
+        br: collConsts.get("COLL_WARP_CARPET_DOWN"),
+      });
+    });
+  });
+});
+
+describe("pngTileIndex", () => {
+  function tilesetStub(overrides: { palMap: (null | { bank: number; pal: number })[]; tileCount: number }) {
+    return { palMap: overrides.palMap, tiles: new Array(overrides.tileCount).fill(new Uint8Array(64)) } as Parameters<
+      typeof pngTileIndex
+    >[0];
+  }
+
+  it("bank 0: pngTileIndex(t) === t", () => {
+    const palMap = new Array(224).fill(null);
+    palMap[0] = { bank: 0, pal: 0 };
+    palMap[0x5f] = { bank: 0, pal: 0 };
+    const ts = tilesetStub({ palMap, tileCount: 0x60 });
+    expect(pngTileIndex(ts, 0)).toBe(0);
+    expect(pngTileIndex(ts, 0x5f)).toBe(0x5f);
+  });
+
+  it("bank 1: pngTileIndex(t) === 0x60 + (t & 0x7F)", () => {
+    const palMap = new Array(224).fill(null);
+    palMap[0x80] = { bank: 1, pal: 0 };
+    const ts = tilesetStub({ palMap, tileCount: 0x61 });
+    expect(pngTileIndex(ts, 0x80)).toBe(0x60);
+  });
+
+  it("returns null for a tile id with no palette-map entry ($60-$7F filler)", () => {
+    const palMap = new Array(224).fill(null);
+    const ts = tilesetStub({ palMap, tileCount: 200 });
+    expect(pngTileIndex(ts, 0x60)).toBeNull();
+  });
+
+  it("returns null for a tile id beyond the 224-entry palette map", () => {
+    const palMap = new Array(224).fill(null);
+    const ts = tilesetStub({ palMap, tileCount: 200 });
+    expect(pngTileIndex(ts, 250)).toBeNull();
+  });
+
+  it("returns null when the resolved PNG index is beyond the tileset's own tile count", () => {
+    const palMap = new Array(224).fill(null);
+    palMap[0x5f] = { bank: 0, pal: 0 };
+    const ts = tilesetStub({ palMap, tileCount: 1 }); // only PNG tile 0 exists
+    expect(pngTileIndex(ts, 0x5f)).toBeNull();
+  });
+});
+
+describe("loadGbcTileset / loadGbcTilesetByName (synthetic fixture)", () => {
+  function buildMiniPng(width: number, height: number, colourType: number, depth: number, raw: Buffer): Buffer {
+    const table = Array.from({ length: 256 }, (_, n) => {
+      let c = n;
+      for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+      return c >>> 0;
+    });
+    const crc = (b: Buffer) => {
+      let c = 0xffffffff;
+      for (const byte of b) c = table[(c ^ byte) & 0xff]! ^ (c >>> 8);
+      return (c ^ 0xffffffff) >>> 0;
+    };
+    const chunk = (type: string, data: Buffer) => {
+      const len = Buffer.alloc(4);
+      len.writeUInt32BE(data.length);
+      const body = Buffer.concat([Buffer.from(type, "ascii"), data]);
+      const c = Buffer.alloc(4);
+      c.writeUInt32BE(crc(body));
+      return Buffer.concat([len, body, c]);
+    };
+    const ihdr = Buffer.alloc(13);
+    ihdr.writeUInt32BE(width, 0);
+    ihdr.writeUInt32BE(height, 4);
+    ihdr[8] = depth;
+    ihdr[9] = colourType;
+    ihdr[10] = 0;
+    ihdr[11] = 0;
+    ihdr[12] = 0;
+    return Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      chunk("IHDR", ihdr),
+      chunk("IDAT", deflateSync(raw)),
+      chunk("IEND", Buffer.alloc(0)),
+    ]);
+  }
+
+  /** 8x8, grayscale depth 2, every pixel gray level 0, filter None. */
+  function tinyGrayscalePng(): Buffer {
+    const rows: number[] = [];
+    for (let y = 0; y < 8; y++) rows.push(0, 0, 0); // filter None, 2 bytes/row (8*2/8=2)
+    return buildMiniPng(8, 8, 0, 2, Buffer.from(rows));
+  }
+
+  const grayLine8 = ["GRAY", "GRAY", "GRAY", "GRAY", "GRAY", "GRAY", "GRAY", "GRAY"];
+
+  function writeFixture(dir: string, opts: { metatileCount: number; collisionLines: number; withColl?: boolean }) {
+    mkdirSync(join(dir, "constants"), { recursive: true });
+    mkdirSync(join(dir, "data", "tilesets"), { recursive: true });
+    mkdirSync(join(dir, "gfx", "tilesets"), { recursive: true });
+
+    writeFileSync(
+      join(dir, "constants", "tileset_constants.asm"),
+      ["\tconst_def 1", "\tconst TILESET_TINY", "\tconst_def", "\tconst PAL_BG_GRAY"].join("\n"),
+    );
+
+    writeFileSync(
+      join(dir, "data", "tilesets.asm"),
+      ["Tilesets::", "\ttileset TilesetPlaceholder0", "\ttileset TilesetTiny"].join("\n"),
+    );
+
+    const gfxLines = [
+      "TilesetPlaceholder0GFX::",
+      "TilesetTinyGFX::",
+      'INCBIN "gfx/tilesets/tiny.2bpp.lz"',
+      "",
+      "TilesetPlaceholder0Meta::",
+      "TilesetTinyMeta::",
+      'INCBIN "data/tilesets/tiny_metatiles.bin"',
+      "",
+    ];
+    if (opts.withColl !== false) {
+      gfxLines.push("TilesetPlaceholder0Coll::", "TilesetTinyColl::", 'INCLUDE "data/tilesets/tiny_collision.asm"');
+    }
+    writeFileSync(join(dir, "gfx", "tilesets.asm"), gfxLines.join("\n"));
+
+    writeFileSync(
+      join(dir, "gfx", "tileset_palette_maps.asm"),
+      ["TilesetPlaceholder0PalMap:", "TilesetTinyPalMap:", 'INCLUDE "gfx/tilesets/tiny_palette_map.asm"'].join("\n"),
+    );
+
+    writeFileSync(
+      join(dir, "constants", "collision_constants.asm"),
+      ["DEF COLL_FLOOR EQU $00", "DEF COLL_WALL EQU $07"].join("\n"),
+    );
+
+    const collLines = Array.from({ length: opts.collisionLines }, () => "\ttilecoll FLOOR, FLOOR, FLOOR, WALL");
+    writeFileSync(join(dir, "data", "tilesets", "tiny_collision.asm"), collLines.join("\n"));
+
+    const palLines = [
+      ...Array.from({ length: 12 }, () => `\ttilepal 0, ${grayLine8.join(", ")}`),
+      "rept 16",
+      "\tdb $ff",
+      "endr",
+      ...Array.from({ length: 12 }, () => `\ttilepal 1, ${grayLine8.join(", ")}`),
+    ];
+    writeFileSync(join(dir, "gfx", "tilesets", "tiny_palette_map.asm"), palLines.join("\n"));
+
+    writeFileSync(join(dir, "data", "tilesets", "tiny_metatiles.bin"), Buffer.alloc(16 * opts.metatileCount, 0));
+    writeFileSync(join(dir, "gfx", "tilesets", "tiny.png"), tinyGrayscalePng());
+  }
+
+  let root: string;
+
+  beforeAll(() => {
+    root = mkdtempSync(join(tmpdir(), "pokemap-gbc-tileset-"));
+    writeFixture(root, { metatileCount: 1, collisionLines: 1 });
+  });
+
+  afterAll(() => {
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("loads by TILESET_ constant, resolving GFX/Meta/Coll/PalMap through stacked labels", () => {
+    const ts = loadGbcTileset(root, "TILESET_TINY");
+    expect(ts.name).toBe("TilesetTiny");
+    expect(ts.gfxPath).toBe("gfx/tilesets/tiny.png");
+    expect(ts.metatilesPath).toBe("data/tilesets/tiny_metatiles.bin");
+    expect(ts.collisionPath).toBe("data/tilesets/tiny_collision.asm");
+    expect(ts.palMapPath).toBe("gfx/tilesets/tiny_palette_map.asm");
+    expect(ts.metatiles).toHaveLength(1);
+    expect(ts.collision).toEqual([{ tl: 0, tr: 0, bl: 0, br: 7 }]);
+    expect(ts.palMap).toHaveLength(224);
+    expect(ts.tiles).toHaveLength(1);
+    expect(ts.tiles[0]).toHaveLength(64);
+  });
+
+  it("loads a table entry with no matching TILESET_ constant, by name directly (mirrors Tileset0/Johto aliasing)", () => {
+    const ts = loadGbcTilesetByName(root, "TilesetPlaceholder0");
+    expect(ts.name).toBe("TilesetPlaceholder0");
+    expect(ts.gfxPath).toBe("gfx/tilesets/tiny.png");
+  });
+
+  it("refuses an unknown TILESET_ constant", () => {
+    expect(() => loadGbcTileset(root, "TILESET_NOPE")).toThrow(/TILESET_NOPE/);
+  });
+
+  it("refuses when the resolved name has no matching GFX/Meta/Coll label", () => {
+    const noCollRoot = mkdtempSync(join(tmpdir(), "pokemap-gbc-tileset-nocoll-"));
+    writeFixture(noCollRoot, { metatileCount: 1, collisionLines: 1, withColl: false });
+    expect(() => loadGbcTileset(noCollRoot, "TILESET_TINY")).toThrow(/TilesetTinyColl/);
+    rmSync(noCollRoot, { recursive: true, force: true });
+  });
+
+  it("refuses when collision has fewer entries than metatiles", () => {
+    const shortRoot = mkdtempSync(join(tmpdir(), "pokemap-gbc-tileset-short-"));
+    writeFixture(shortRoot, { metatileCount: 2, collisionLines: 1 });
+    expect(() => loadGbcTileset(shortRoot, "TILESET_TINY")).toThrow(/collision/i);
+    rmSync(shortRoot, { recursive: true, force: true });
+  });
+
+  it("trims extra collision lines beyond the metatile count rather than exposing or refusing them (forest-style)", () => {
+    const extraRoot = mkdtempSync(join(tmpdir(), "pokemap-gbc-tileset-extra-"));
+    writeFixture(extraRoot, { metatileCount: 1, collisionLines: 3 });
+    const ts = loadGbcTileset(extraRoot, "TILESET_TINY");
+    expect(ts.collision).toHaveLength(1);
+    rmSync(extraRoot, { recursive: true, force: true });
+  });
+});
+
+describe("GbcTileset corpus", () => {
+  itWithGbcCorpus("all 37 Tilesets table entries load, with the documented aliases", () => {
+    const table = parseTilesetsTable(readFileSync(`${GBC_SUBJECT_ROOT}/data/tilesets.asm`, "utf8"));
+    expect(table).toHaveLength(37);
+
+    const failures: string[] = [];
+    for (const name of table) {
+      try {
+        loadGbcTilesetByName(GBC_SUBJECT_ROOT, name);
+      } catch (e) {
+        failures.push(`${name}: ${(e as Error).message}`);
+      }
+    }
+    expect(failures).toEqual([]);
+
+    const t0 = loadGbcTilesetByName(GBC_SUBJECT_ROOT, "Tileset0");
+    const johto = loadGbcTilesetByName(GBC_SUBJECT_ROOT, "TilesetJohto");
+    expect(t0.gfxPath).toBe(johto.gfxPath);
+
+    const battleTowerOutside = loadGbcTilesetByName(GBC_SUBJECT_ROOT, "TilesetBattleTowerOutside");
+    expect(battleTowerOutside.gfxPath).toBe("gfx/tilesets/johto_modern.png");
+
+    const darkCave = loadGbcTilesetByName(GBC_SUBJECT_ROOT, "TilesetDarkCave");
+    const cave = loadGbcTilesetByName(GBC_SUBJECT_ROOT, "TilesetCave");
+    expect(darkCave.metatilesPath).toBe(cave.metatilesPath);
+    expect(darkCave.collisionPath).toBe(cave.collisionPath);
+    expect(darkCave.palMapPath).toBe(cave.palMapPath);
+    expect(darkCave.gfxPath).toBe("gfx/tilesets/dark_cave.png");
+    expect(darkCave.gfxPath).not.toBe(cave.gfxPath);
+
+    const ruinsOfAlph = loadGbcTilesetByName(GBC_SUBJECT_ROOT, "TilesetRuinsOfAlph");
+    for (const wordRoom of [
+      "TilesetBetaWordRoom",
+      "TilesetHoOhWordRoom",
+      "TilesetKabutoWordRoom",
+      "TilesetOmanyteWordRoom",
+      "TilesetAerodactylWordRoom",
+    ]) {
+      expect(loadGbcTilesetByName(GBC_SUBJECT_ROOT, wordRoom).palMapPath).toBe(ruinsOfAlph.palMapPath);
+    }
+  });
+
+  itWithGbcCorpus("metatile counts 128/40/64 per tileset match findings, via the full loader", () => {
+    expect(loadGbcTileset(GBC_SUBJECT_ROOT, "TILESET_JOHTO").metatiles).toHaveLength(128);
+    expect(loadGbcTileset(GBC_SUBJECT_ROOT, "TILESET_FOREST").metatiles).toHaveLength(40);
+    expect(loadGbcTileset(GBC_SUBJECT_ROOT, "TILESET_MART").metatiles).toHaveLength(64);
+  });
+
+  itWithGbcCorpus("forest: collision is trimmed to 40 entries even though the source file has 64 tilecoll lines", () => {
+    const forest = loadGbcTileset(GBC_SUBJECT_ROOT, "TILESET_FOREST");
+    expect(forest.collision).toHaveLength(40);
+  });
+
+  itWithGbcCorpus(
+    "every placed tile id (in every metatile of every tileset actually used by a real map, incl. border) resolves to a non-null PNG tile index within that PNG's tile count",
+    () => {
+      const loaded = loadGbcMaps(GBC_SUBJECT_ROOT);
+      const constants = parseConstDefs(readFileSync(`${GBC_SUBJECT_ROOT}/constants/tileset_constants.asm`, "utf8"));
+      const tilesetCache = new Map<string, ReturnType<typeof loadGbcTileset>>();
+      const getTileset = (constName: string) => {
+        if (!tilesetCache.has(constName)) tilesetCache.set(constName, loadGbcTileset(GBC_SUBJECT_ROOT, constName));
+        return tilesetCache.get(constName)!;
+      };
+
+      let checkedTiles = 0;
+      const failures: string[] = [];
+      const unknownTilesetFields = new Set<string>();
+
+      for (const map of loaded.maps) {
+        const tilesetConst = map.tileset.trim();
+        if (!constants.has(tilesetConst)) {
+          unknownTilesetFields.add(tilesetConst);
+          continue;
+        }
+        const ts = getTileset(tilesetConst);
+
+        const metatileIds = new Set<number>();
+        const { layout } = loadLayout(GBC_SUBJECT_ROOT, map);
+        for (const block of layout.blocks) metatileIds.add(block.metatileId);
+        metatileIds.add(map.border);
+
+        for (const metatileId of metatileIds) {
+          const metatile = ts.metatiles[metatileId];
+          if (!metatile) {
+            failures.push(`${map.name} (tileset ${tilesetConst}): metatile id ${metatileId} >= tileset's ${ts.metatiles.length} metatiles`);
+            continue;
+          }
+          for (const tileId of metatile.tiles) {
+            checkedTiles++;
+            const idx = pngTileIndex(ts, tileId);
+            if (idx === null || idx >= ts.tiles.length) {
+              failures.push(
+                `${map.name} (tileset ${tilesetConst}) metatile ${metatileId}: tile id ${tileId} -> PNG index ${idx}`,
+              );
+            }
+          }
+        }
+      }
+
+      // Every real map's tileset header field is a bare TILESET_ constant
+      // (I3: parsed as an expression, but none observed uses `|` etc.).
+      expect([...unknownTilesetFields]).toEqual([]);
+      expect(checkedTiles).toBeGreaterThan(0); // vacuous-pass guard
+      expect(failures.slice(0, 20)).toEqual([]);
+    },
+  );
 });

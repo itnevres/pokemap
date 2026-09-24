@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { readFileSync } from "node:fs";
-import { parseIncbins } from "../../../src/gbc/load/incbin.js";
+import { parseIncbins, parseIncludes } from "../../../src/gbc/load/incbin.js";
 import { GBC_SUBJECT_ROOT, itWithGbcCorpus, hasGbcProject } from "../helpers/corpus.js";
 
 describe("parseIncbins", () => {
@@ -89,5 +89,44 @@ describe("parseIncbins", () => {
       expect(new Set(entries.map((e) => e.path)).size).toBe(36);
       expect(entries).toHaveLength(36);
     });
+
+    itWithGbcCorpus("gfx/tilesets.asm: TilesetJohtoColl stacks with Tileset0Coll onto johto_collision.asm", () => {
+      const entry = parseIncludes(tilesetsAsm).find((e) => e.path === "data/tilesets/johto_collision.asm");
+      expect(entry?.labels).toContain("TilesetJohtoColl");
+      expect(entry?.labels).toContain("Tileset0Coll");
+    });
+  });
+});
+
+describe("parseIncludes", () => {
+  it("returns the path and preceding label for a single label", () => {
+    const text = ["TilesetKantoColl::", '\tINCLUDE "data/tilesets/kanto_collision.asm"'].join("\n");
+    expect(parseIncludes(text)).toEqual([{ labels: ["TilesetKantoColl"], path: "data/tilesets/kanto_collision.asm" }]);
+  });
+
+  it("attaches every stacked label to the one INCLUDE that follows them", () => {
+    const text = [
+      "TilesetCavePalMap:",
+      "TilesetDarkCavePalMap:",
+      '\tINCLUDE "gfx/tilesets/cave_palette_map.asm"',
+    ].join("\n");
+    expect(parseIncludes(text)).toEqual([
+      { labels: ["TilesetCavePalMap", "TilesetDarkCavePalMap"], path: "gfx/tilesets/cave_palette_map.asm" },
+    ]);
+  });
+
+  it("does not match INCBIN lines", () => {
+    const text = ["TilesetKantoGFX::", '\tINCBIN "gfx/tilesets/kanto.2bpp.lz"'].join("\n");
+    expect(parseIncludes(text)).toEqual([]);
+  });
+
+  it("accepts a final line with no trailing newline", () => {
+    const text = 'Foo:\n\tINCLUDE "foo.asm"';
+    expect(parseIncludes(text)).toEqual([{ labels: ["Foo"], path: "foo.asm" }]);
+  });
+
+  it("tolerates CRLF line endings", () => {
+    const text = 'Foo:\r\n\tINCLUDE "foo.asm"\r\n';
+    expect(parseIncludes(text)).toEqual([{ labels: ["Foo"], path: "foo.asm" }]);
   });
 });
