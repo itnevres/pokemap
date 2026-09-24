@@ -1,8 +1,7 @@
 import { existsSync } from "node:fs";
+import { norm } from "./config/paths.js";
 
 export type EngineFamily = "gba" | "gbc";
-
-const norm = (s: string) => s.replace(/\\/g, "/").replace(/\/+$/, "");
 
 /**
  * Probes a project root for its engine family and refuses rather than guesses

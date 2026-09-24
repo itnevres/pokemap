@@ -35,7 +35,7 @@ export interface ProjectPaths {
   monOverworldPng(speciesLower: string): string;
 }
 
-const norm = (s: string) => s.replace(/\\/g, "/").replace(/\/+$/, "");
+export const norm = (s: string) => s.replace(/\\/g, "/").replace(/\/+$/, "");
 
 export function projectPaths(root: string): ProjectPaths {
   const r = norm(root);
