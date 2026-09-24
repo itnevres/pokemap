@@ -1,3 +1,15 @@
+# HANDOFF 2026-09-24 (read first)
+
+Branch `plan-6-gbc-foundation` (pushed). Plan 6 (GBC/Crystal foundation) Tasks 1-7 DONE + reviewed (reports archived under `docs/superpowers/task-reports/pokemap-plan-6-gbc-foundation/_archive/`). 1042 tests green at `16fad97`.
+
+**Next: Task 8 fix round.** Task 8 (wild encounters, `packages/core/src/gbc/load/encounters.ts`) is implemented (`16fad97`) but spec review found 4 issues + 2 minors: see `docs/superpowers/task-reports/pokemap-plan-6-gbc-foundation/task-8-spec-review.md` (Issues section = the exact fix list). Implementer report alongside. Then code-quality review, then Tasks 9-12 (render per-map incl. roof tiles + border ring, CLI, world, atlas).
+
+Format truth: `docs/superpowers/specs/2026-09-23-pokemap-gbc-format-findings.md` (Decisions section binding). Process: subagent-driven-development, Sonnet implementer, Opus spec review for parsing/fixtures, Sonnet quality review; re-granularise each task against real code before dispatch.
+
+Carry-forward for Plan 7: asmSplice refusals lack file/map context -- wrap at call site. User to clone pret/pokecrystal into `Pokemon Game/refs/pokecrystal` before Plan 7. Note: subject PerfPlus is a LOCAL repo (`C:/Programming Projects/pokecrystal-PerfPlus`); corpus tests skip without it.
+
+---
+
 # Resuming PokeMap in a new session
 
 Paste the block below as the first message of a fresh Claude Code session
