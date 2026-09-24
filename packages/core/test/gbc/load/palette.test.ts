@@ -4,12 +4,20 @@ import {
   rgb5to8,
   parsePalColors,
   parseEnvironmentColorBlocks,
+  parseEnvironmentColorPointers,
+  buildEnvironmentBlockMap,
   resolveEnvironmentPalette,
+  parseEnvironmentConsts,
+  parseMapPaletteConsts,
+  parseClockConsts,
+  parseBrightnessRows,
+  parseBrightnessLevels,
   resolveTimeOfDayPal,
   resolveMapPalettes,
+  type BrightnessLevels,
 } from "../../../src/gbc/load/palette.js";
 import { loadGbcMaps } from "../../../src/gbc/load/map.js";
-import { GBC_SUBJECT_ROOT, itWithGbcCorpus, hasGbcProject } from "../helpers/corpus.js";
+import { GBC_SUBJECT_ROOT, itWithGbcCorpus } from "../helpers/corpus.js";
 import type { RGB } from "../../../src/model/types.js";
 
 /** Local mirror of the 5-bit -> 8-bit formula, used only to build expected
@@ -46,6 +54,85 @@ describe("parsePalColors", () => {
   });
 });
 
+describe("parseEnvironmentConsts / parseMapPaletteConsts / parseClockConsts (isolated const_def blocks)", () => {
+  // Mirrors constants/map_data_constants.asm's real shape: environment enum
+  // immediately followed by the palette enum, each closed by its own
+  // "DEF NUM_<X> EQU" marker line.
+  const mapDataConstantsSample = [
+    "; map environments",
+    "\tconst_def 1",
+    "\tconst TOWN",
+    "\tconst ROUTE",
+    "DEF NUM_ENVIRONMENTS EQU const_value - 1",
+    "",
+    "; map palettes",
+    "\tconst_def",
+    "\tconst PALETTE_AUTO",
+    "\tconst PALETTE_DAY",
+    "DEF NUM_MAP_PALETTES EQU const_value",
+  ].join("\n");
+
+  it("isolates the environment enum from the neighboring palette enum", () => {
+    expect(parseEnvironmentConsts(mapDataConstantsSample)).toEqual(new Map([["TOWN", 1], ["ROUTE", 2]]));
+  });
+
+  it("isolates the palette enum from the preceding environment enum", () => {
+    expect(parseMapPaletteConsts(mapDataConstantsSample)).toEqual(new Map([["PALETTE_AUTO", 0], ["PALETTE_DAY", 1]]));
+  });
+
+  it("parseClockConsts isolates a const_def block the same way (wram_constants.asm shape)", () => {
+    const sample = ["; wTimeOfDay::", "\tconst_def", "\tconst MORN_F", "\tconst DAY_F", "\tconst NITE_F", "\tconst DARKNESS_F", "DEF NUM_DAYTIMES EQU const_value"].join(
+      "\n",
+    );
+    expect(parseClockConsts(sample)).toEqual(
+      new Map([
+        ["MORN_F", 0],
+        ["DAY_F", 1],
+        ["NITE_F", 2],
+        ["DARKNESS_F", 3],
+      ]),
+    );
+  });
+
+  it("refuses when the end marker is absent", () => {
+    expect(() => parseEnvironmentConsts("const_def 1\nconst TOWN\n")).toThrow(/end marker/);
+  });
+});
+
+describe("parseEnvironmentColorPointers / buildEnvironmentBlockMap", () => {
+  it("collects dw .Name lines in order, ignoring the table's other directives", () => {
+    const text = [
+      "EnvironmentColorsPointers:",
+      "\ttable_width 2, EnvironmentColorsPointers",
+      "\tdw .OutdoorColors ; unused",
+      "\tdw .OutdoorColors ; TOWN",
+      "\tdw .IndoorColors  ; INDOOR",
+      "\tassert_table_length NUM_ENVIRONMENTS + 1",
+    ].join("\n");
+    expect(parseEnvironmentColorPointers(text)).toEqual(["OutdoorColors", "OutdoorColors", "IndoorColors"]);
+  });
+
+  it("indexes the pointer list by each environment's own numeric value", () => {
+    const pointerList = ["Unused", "Outdoor", "Outdoor", "Indoor"];
+    const envConsts = new Map([
+      ["TOWN", 1],
+      ["ROUTE", 2],
+      ["INDOOR", 3],
+    ]);
+    expect(buildEnvironmentBlockMap(pointerList, envConsts)).toEqual(
+      new Map([
+        ["TOWN", "Outdoor"],
+        ["ROUTE", "Outdoor"],
+        ["INDOOR", "Indoor"],
+      ]),
+    );
+  });
+
+  it("refuses an environment whose value has no pointer-table entry", () => {
+    expect(() => buildEnvironmentBlockMap(["Unused"], new Map([["TOWN", 5]]))).toThrow(/no EnvironmentColorsPointers entry/);
+  });
+});
+
 describe("parseEnvironmentColorBlocks / resolveEnvironmentPalette", () => {
   const bgTilesPal: RGB[][] = Array.from({ length: 0x2a }, (_, i) => [
     { r: i, g: i, b: i },
@@ -53,6 +140,7 @@ describe("parseEnvironmentColorBlocks / resolveEnvironmentPalette", () => {
     { r: i, g: i, b: i },
     { r: i, g: i, b: i },
   ]);
+  const envBlockMap = new Map([["TOWN", "OutdoorColors"]]);
 
   it("parses db rows under a dotted label into a numbers-per-row array", () => {
     const text = [".OutdoorColors:", "\tdb $00, $01, $02, $28, $04, $05, $06, $07 ; morn", "\tdb $08, $09, $0a, $28, $0c, $0d, $0e, $0f ; day"].join(
@@ -67,54 +155,127 @@ describe("parseEnvironmentColorBlocks / resolveEnvironmentPalette", () => {
 
   it("resolves a row to 8 bg_tiles.pal palettes by index", () => {
     const blocks = new Map([["OutdoorColors", [[0, 1, 2, 3, 4, 5, 6, 7]]]]);
-    const result = resolveEnvironmentPalette(blocks, bgTilesPal, "TOWN", 0);
+    const result = resolveEnvironmentPalette(envBlockMap, blocks, bgTilesPal, "TOWN", 0);
     expect(result).toEqual([bgTilesPal[0], bgTilesPal[1], bgTilesPal[2], bgTilesPal[3], bgTilesPal[4], bgTilesPal[5], bgTilesPal[6], bgTilesPal[7]]);
   });
 
   it("refuses (missing-dark-row) when the requested time index has no row -- synthetic 3-row block, matching a shape the findings doc (wrongly) claimed IndoorColors has in the real file", () => {
     const blocks = new Map([["IndoorColors", [[0, 1, 2, 3, 4, 5, 6, 7], [0, 1, 2, 3, 4, 5, 6, 7], [0, 1, 2, 3, 4, 5, 6, 7]]]]);
-    expect(() => resolveEnvironmentPalette(blocks, bgTilesPal, "INDOOR", 3)).toThrow(/no row for time-of-day index 3/);
+    const indoorMap = new Map([["INDOOR", "IndoorColors"]]);
+    expect(() => resolveEnvironmentPalette(indoorMap, blocks, bgTilesPal, "INDOOR", 3)).toThrow(/no row for time-of-day index 3/);
   });
 
   it("refuses an unknown environment", () => {
-    expect(() => resolveEnvironmentPalette(new Map(), bgTilesPal, "NOT_A_REAL_ENV", 0)).toThrow(/unknown environment/);
+    expect(() => resolveEnvironmentPalette(new Map(), new Map(), bgTilesPal, "NOT_A_REAL_ENV", 0)).toThrow(/unknown environment/);
   });
 
   it("refuses a row index beyond bg_tiles.pal's own length", () => {
     const blocks = new Map([["OutdoorColors", [[0, 1, 2, 3, 4, 5, 6, 999]]]]);
-    expect(() => resolveEnvironmentPalette(blocks, bgTilesPal, "TOWN", 0)).toThrow(/999/);
+    expect(() => resolveEnvironmentPalette(envBlockMap, blocks, bgTilesPal, "TOWN", 0)).toThrow(/999/);
   });
 });
 
-describe("resolveTimeOfDayPal (engine/tilesets/timeofday_pals.asm .BrightnessLevels)", () => {
-  const MORN_F = 0,
-    DAY_F = 1,
-    NITE_F = 2,
-    DARKNESS_F = 3;
+describe("parseBrightnessRows / parseBrightnessLevels (engine/tilesets/timeofday_pals.asm)", () => {
+  const clockConsts = new Map([
+    ["MORN_F", 0],
+    ["DAY_F", 1],
+    ["NITE_F", 2],
+    ["DARKNESS_F", 3],
+  ]);
 
-  it("PALETTE_AUTO follows the clock (dc DARKNESS_F, NITE_F, DAY_F, MORN_F -- identity)", () => {
-    expect(resolveTimeOfDayPal("PALETTE_AUTO", MORN_F, true)).toBe(MORN_F);
-    expect(resolveTimeOfDayPal("PALETTE_AUTO", DAY_F, true)).toBe(DAY_F);
-    expect(resolveTimeOfDayPal("PALETTE_AUTO", NITE_F, true)).toBe(NITE_F);
+  it("resolves each dc row's constant names to numbers, in source column order", () => {
+    const text = "\tdc DARKNESS_F, NITE_F, DAY_F, MORN_F ; PALETTE_AUTO\n\tdc DAY_F, DAY_F, DAY_F, DAY_F ; PALETTE_DAY\n";
+    expect(parseBrightnessRows(text, clockConsts)).toEqual([
+      [3, 2, 1, 0],
+      [1, 1, 1, 1],
+    ]);
   });
 
-  it("PALETTE_DAY/NITE/MORN are fixed regardless of the clock (dc <const>,<const>,<const>,<const>)", () => {
-    expect(resolveTimeOfDayPal("PALETTE_DAY", NITE_F, true)).toBe(DAY_F);
-    expect(resolveTimeOfDayPal("PALETTE_NITE", MORN_F, true)).toBe(NITE_F);
-    expect(resolveTimeOfDayPal("PALETTE_MORN", NITE_F, true)).toBe(MORN_F);
+  it("refuses a dc row with the wrong arg count", () => {
+    expect(() => parseBrightnessRows("\tdc DAY_F, DAY_F, DAY_F\n", clockConsts)).toThrow(/expected 4/);
   });
 
-  it("PALETTE_DARK + flash -> NITE_F (.UsedFlash); PALETTE_DARK without flash -> DARKNESS_F", () => {
-    expect(resolveTimeOfDayPal("PALETTE_DARK", DAY_F, true)).toBe(NITE_F);
-    expect(resolveTimeOfDayPal("PALETTE_DARK", DAY_F, false)).toBe(DARKNESS_F);
+  it("refuses an unresolvable clock constant name", () => {
+    expect(() => parseBrightnessRows("\tdc BOGUS_F, DAY_F, DAY_F, DAY_F\n", clockConsts)).toThrow(/BOGUS_F/);
   });
 
-  it("refuses an unknown map palette", () => {
-    expect(() => resolveTimeOfDayPal("PALETTE_BOGUS", 0, true)).toThrow(/PALETTE_BOGUS/);
+  it("parses .UsedFlash's inline broadcast and DARKNESS_PALSET's EQU expression by name, not by hardcoded value", () => {
+    const timeofdayPalsText = [
+      ".BrightnessLevels:",
+      "\tdc DARKNESS_F, NITE_F, DAY_F, MORN_F ; PALETTE_AUTO",
+      "\tdc DAY_F, DAY_F, DAY_F, DAY_F ; PALETTE_DAY",
+      "\tdc NITE_F, NITE_F, NITE_F, NITE_F ; PALETTE_NITE",
+      "\tdc MORN_F, MORN_F, MORN_F, MORN_F ; PALETTE_MORN",
+      "\tdc DARKNESS_F, DARKNESS_F, DARKNESS_F, DARKNESS_F ; PALETTE_DARK",
+      "",
+      ".UsedFlash:",
+      "\tld a, (NITE_F << 6) | (NITE_F << 4) | (NITE_F << 2) | NITE_F",
+      "\tld [wTimeOfDayPalset], a",
+      "\tret",
+      "",
+      "GetTimePalette:",
+    ].join("\n");
+    const wramConstantsText = "DEF DARKNESS_PALSET EQU (DARKNESS_F << 6) | (DARKNESS_F << 4) | (DARKNESS_F << 2) | DARKNESS_F\n";
+
+    const levels = parseBrightnessLevels(timeofdayPalsText, wramConstantsText, clockConsts);
+    expect(levels.flashPalette).toBe(2); // NITE_F
+    expect(levels.noFlashPalette).toBe(3); // DARKNESS_F
+    expect(levels.rows[0]).toEqual([3, 2, 1, 0]); // PALETTE_AUTO row
+  });
+});
+
+describe("resolveTimeOfDayPal", () => {
+  const levels: BrightnessLevels = {
+    rows: [
+      [3, 2, 1, 0], // index 0: AUTO-shaped (identity)
+      [1, 1, 1, 1], // index 1: DAY-shaped (fixed)
+      [2, 2, 2, 2], // index 2: NITE-shaped (fixed)
+      [0, 0, 0, 0], // index 3: MORN-shaped (fixed)
+    ],
+    flashPalette: 2,
+    noFlashPalette: 3,
+  };
+  const darkPaletteIndex = 4; // deliberately outside `rows` -- never indexed, since DARK special-cases first
+
+  it("an AUTO-shaped row follows the clock (column = 3 - clockIndex)", () => {
+    expect(resolveTimeOfDayPal(levels, 0, darkPaletteIndex, 0, true)).toBe(0); // MORN
+    expect(resolveTimeOfDayPal(levels, 0, darkPaletteIndex, 1, true)).toBe(1); // DAY
+    expect(resolveTimeOfDayPal(levels, 0, darkPaletteIndex, 2, true)).toBe(2); // NITE
+  });
+
+  it("a fixed-shaped row ignores the clock", () => {
+    expect(resolveTimeOfDayPal(levels, 1, darkPaletteIndex, 2, true)).toBe(1);
+    expect(resolveTimeOfDayPal(levels, 2, darkPaletteIndex, 0, true)).toBe(2);
+    expect(resolveTimeOfDayPal(levels, 3, darkPaletteIndex, 2, true)).toBe(0);
+  });
+
+  it("the dark palette index special-cases to flash/no-flash, never touching rows", () => {
+    expect(resolveTimeOfDayPal(levels, darkPaletteIndex, darkPaletteIndex, 1, true)).toBe(2); // flashPalette
+    expect(resolveTimeOfDayPal(levels, darkPaletteIndex, darkPaletteIndex, 1, false)).toBe(3); // noFlashPalette
+  });
+
+  it("refuses a palette index with no row", () => {
+    expect(() => resolveTimeOfDayPal(levels, 99, darkPaletteIndex, 0, true)).toThrow(/no \.BrightnessLevels row/);
   });
 });
 
 describe("resolveMapPalettes corpus", () => {
+  itWithGbcCorpus("BrightnessLevels rows pack to e4,55,aa,00,ff,e4,e4,e4 (hand-verified from the real dc lines)", () => {
+    const wramConstantsText = readFileSync(`${GBC_SUBJECT_ROOT}/constants/wram_constants.asm`, "utf8");
+    const clockConsts = parseClockConsts(wramConstantsText);
+    const timeofdayPalsText = readFileSync(`${GBC_SUBJECT_ROOT}/engine/tilesets/timeofday_pals.asm`, "utf8");
+    const { rows } = parseBrightnessLevels(timeofdayPalsText, wramConstantsText, clockConsts);
+    const packed = rows.map(([a, b, c, d]) => ((a! << 6) | (b! << 4) | (c! << 2) | d!).toString(16).padStart(2, "0"));
+    // .BrightnessLevels, in source order:
+    //   dc DARKNESS_F, NITE_F,     DAY_F,      MORN_F     ; PALETTE_AUTO      -> e4
+    //   dc DAY_F,      DAY_F,      DAY_F,      DAY_F      ; PALETTE_DAY       -> 55
+    //   dc NITE_F,     NITE_F,     NITE_F,     NITE_F     ; PALETTE_NITE      -> aa
+    //   dc MORN_F,     MORN_F,     MORN_F,     MORN_F     ; PALETTE_MORN      -> 00
+    //   dc DARKNESS_F, DARKNESS_F, DARKNESS_F, DARKNESS_F ; PALETTE_DARK      -> ff
+    //   dc DARKNESS_F, NITE_F,     DAY_F,      MORN_F                        -> e4 (dead padding, x3)
+    expect(packed).toEqual(["e4", "55", "aa", "00", "ff", "e4", "e4", "e4"]);
+  });
+
   itWithGbcCorpus("NewBarkTown (JOHTO, TOWN, PALETTE_AUTO, group 24) at default day", () => {
     const map = loadGbcMaps(GBC_SUBJECT_ROOT).map("NewBarkTown");
     const pals = resolveMapPalettes(GBC_SUBJECT_ROOT, map);
@@ -141,6 +302,15 @@ describe("resolveMapPalettes corpus", () => {
     expect(pals[6]![2]).toEqual(rgb(6, 9, 4));
   });
 
+  itWithGbcCorpus("Route29 (JOHTO, ROUTE, PALETTE_AUTO, group 24) roof at default day matches NewBarkTown's (same group, Outdoor table)", () => {
+    const map = loadGbcMaps(GBC_SUBJECT_ROOT).map("Route29");
+    expect(map.environment).toBe("ROUTE");
+    expect(map.group).toBe(24);
+    const pals = resolveMapPalettes(GBC_SUBJECT_ROOT, map);
+    // Same roofs.pal group 24 morn/day overlay as NewBarkTown's: "RGB 20,31,14, 11,23,05 ; morn/day"
+    expect(pals[6]).toEqual([rgb(27, 31, 27), rgb(20, 31, 14), rgb(11, 23, 5), rgb(7, 7, 7)]);
+  });
+
   itWithGbcCorpus("PlayersNeighborsHouse (TILESET_HOUSE, INDOOR, PALETTE_DAY) uses house.pal verbatim, no roof", () => {
     const map = loadGbcMaps(GBC_SUBJECT_ROOT).map("PlayersNeighborsHouse");
     expect(map.tileset).toBe("TILESET_HOUSE");
@@ -150,6 +320,39 @@ describe("resolveMapPalettes corpus", () => {
     expect(pals[0]).toEqual([rgb(30, 28, 26), rgb(19, 19, 19), rgb(13, 13, 13), rgb(7, 7, 7)]);
     // block 6 (roof/glass): "RGB 30, 28, 26" / "RGB 31, 19, 24" / "RGB 16, 13, 03" / "RGB 07, 07, 07"
     expect(pals[6]).toEqual([rgb(30, 28, 26), rgb(31, 19, 24), rgb(16, 13, 3), rgb(7, 7, 7)]);
+  });
+
+  itWithGbcCorpus("RadioTower1F (TILESET_RADIO_TOWER, INDOOR) uses radio_tower.pal", () => {
+    const map = loadGbcMaps(GBC_SUBJECT_ROOT).map("RadioTower1F");
+    expect(map.tileset).toBe("TILESET_RADIO_TOWER");
+    const pals = resolveMapPalettes(GBC_SUBJECT_ROOT, map);
+    // gfx/tilesets/radio_tower.pal, gray block (no section-comment header in this file):
+    // "RGB 27, 31, 27" / "RGB 21, 21, 21" / "RGB 13, 13, 13" / "RGB 07, 07, 07"
+    // -- differs entirely from pokecom_center.pal's gray, so this kills a
+    // RADIO_TOWER -> PokeComPalette label mix-up (reviewer's mutant M4).
+    expect(pals[0]).toEqual([rgb(27, 31, 27), rgb(21, 21, 21), rgb(13, 13, 13), rgb(7, 7, 7)]);
+  });
+
+  itWithGbcCorpus("BattleTower1F (TILESET_BATTLE_TOWER_INSIDE, INDOOR) uses battle_tower_inside.pal", () => {
+    const map = loadGbcMaps(GBC_SUBJECT_ROOT).map("BattleTower1F");
+    expect(map.tileset).toBe("TILESET_BATTLE_TOWER_INSIDE");
+    const pals = resolveMapPalettes(GBC_SUBJECT_ROOT, map);
+    // gfx/tilesets/battle_tower_inside.pal, gray block: "RGB 30, 28, 26" / "RGB 19, 19, 19" / "RGB 13, 13, 13" / "RGB 07, 07, 07"
+    expect(pals[0]).toEqual([rgb(30, 28, 26), rgb(19, 19, 19), rgb(13, 13, 13), rgb(7, 7, 7)]);
+  });
+
+  itWithGbcCorpus("PokecomCenterAdminOfficeMobile (TILESET_POKECOM_CENTER, INDOOR) uses pokecom_center.pal", () => {
+    const map = loadGbcMaps(GBC_SUBJECT_ROOT).map("PokecomCenterAdminOfficeMobile");
+    expect(map.tileset).toBe("TILESET_POKECOM_CENTER");
+    const pals = resolveMapPalettes(GBC_SUBJECT_ROOT, map);
+    // gfx/tilesets/pokecom_center.pal, gray block: "RGB 30, 28, 26" / "RGB 19, 19, 19" / "RGB 13, 13, 13" / "RGB 07, 07, 07"
+    // (identical to battle_tower_inside.pal's gray -- not a distinguishing
+    // check on its own, kept for corpus coverage).
+    expect(pals[0]).toEqual([rgb(30, 28, 26), rgb(19, 19, 19), rgb(13, 13, 13), rgb(7, 7, 7)]);
+    // water block DOES differ from battle_tower_inside.pal's ("RGB 30,28,26, 15,16,31, 09,09,31, 07,07,07"):
+    // pokecom_center.pal: "RGB 30, 28, 26" / "RGB 17, 19, 31" / "RGB 14, 16, 31" / "RGB 07, 07, 07"
+    // -- this kills a POKECOM_CENTER -> BattleTowerInsidePalette label mix-up (reviewer's mutant M5).
+    expect(pals[3]).toEqual([rgb(30, 28, 26), rgb(17, 19, 31), rgb(14, 16, 31), rgb(7, 7, 7)]);
   });
 
   itWithGbcCorpus("synthetic HOUSE tileset placed in TOWN pins the roof-over-special case (no real map combines them)", () => {
@@ -215,20 +418,22 @@ describe("resolveMapPalettes corpus", () => {
     expect(pals[0]).toEqual([rgb(30, 28, 26), rgb(19, 19, 19), rgb(13, 13, 13), rgb(7, 7, 7)]);
   });
 
-  itWithGbcCorpus("every real map resolves at all 3 times x flash true without throwing (391 maps)", () => {
+  itWithGbcCorpus("every real map resolves at all 3 times x flash {true, false} without throwing (391 x 3 x 2 = 2346 cases)", () => {
     const { maps } = loadGbcMaps(GBC_SUBJECT_ROOT);
     expect(maps.length).toBe(391);
     for (const map of maps) {
       for (const time of ["morn", "day", "nite"] as const) {
-        const pals = resolveMapPalettes(GBC_SUBJECT_ROOT, map, { time, flash: true });
-        expect(pals).toHaveLength(8);
-        for (const pal of pals) {
-          expect(pal).toHaveLength(4);
-          for (const color of pal) {
-            for (const c of [color.r, color.g, color.b]) {
-              expect(Number.isInteger(c)).toBe(true);
-              expect(c).toBeGreaterThanOrEqual(0);
-              expect(c).toBeLessThanOrEqual(255);
+        for (const flash of [true, false]) {
+          const pals = resolveMapPalettes(GBC_SUBJECT_ROOT, map, { time, flash });
+          expect(pals).toHaveLength(8);
+          for (const pal of pals) {
+            expect(pal).toHaveLength(4);
+            for (const color of pal) {
+              for (const c of [color.r, color.g, color.b]) {
+                expect(Number.isInteger(c)).toBe(true);
+                expect(c).toBeGreaterThanOrEqual(0);
+                expect(c).toBeLessThanOrEqual(255);
+              }
             }
           }
         }
@@ -236,9 +441,3 @@ describe("resolveMapPalettes corpus", () => {
     }
   });
 });
-
-// Sanity: readFileSync/GBC_SUBJECT_ROOT are otherwise unused when the corpus
-// is absent -- keep the import used so lint/typecheck don't flag it even in
-// that environment.
-void readFileSync;
-void hasGbcProject;

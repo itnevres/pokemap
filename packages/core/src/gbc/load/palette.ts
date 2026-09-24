@@ -9,8 +9,21 @@
  *      time-of-day gives 8 indices into `TilesetBGPalette` (`bg_tiles.pal`,
  *      42 palettes of 4 colors).
  *   3. For TOWN/ROUTE environments only, `RoofPals[mapGroup]`
- *      (`roofs.pal`) overwrites colors 1-2 of palette 6 (ROOF) --
+ *      (`roofs.pal`) overwrites colors 1-2 of palette PAL_BG_ROOF --
  *      this happens on top of step 1 or step 2, unconditionally.
+ *
+ * Fix round 1 (spec review): every enum/table this module used to hardcode
+ * (environment values, `PALETTE_*`/clock values, the `EnvironmentColorsPointers`
+ * `dw` order, `.BrightnessLevels`, the `PAL_BG_*` slot indices) is now parsed
+ * from the real constant/asm files instead -- the subject is a fork, and a
+ * fork can and does edit these tables (see the PerfPlus vs vanilla diff in
+ * the format-findings doc). What is still referenced by literal name (the
+ * `SPECIAL_TILESET_LABELS`/`TilesetBGPalette`/`RoofPals`/`MansionPalette1`
+ * INCLUDE label strings, and the "TOWN"/"ROUTE"/"INDOOR" environment-name
+ * comparisons) is a symbol/identifier lookup, not a hardcoded numeric value
+ * or table order -- the same class of by-name lookup the rest of the gbc
+ * loader already uses throughout (e.g. `loadGbcTilesetByName`'s `${name}GFX`
+ * labels), and was confirmed acceptable by the spec review (I4).
  *
  * Deliberate deviation from the findings doc: it claims IndoorColors (and
  * "maybe others") have only 3 rows (no dark row), and cites this as the
@@ -24,38 +37,18 @@
  */
 import { readFileSync } from "node:fs";
 import { norm } from "../../config/paths.js";
-import { matchCall, splitArgs, stripComment } from "./asm.js";
+import { matchCall, splitArgs, stripComment, stripMacroDefs } from "./asm.js";
 import { parseNum } from "./map.js";
 import { parseIncludes } from "./incbin.js";
+import { parseConstDefs } from "./tileset.js";
 import type { RGB } from "../../model/types.js";
-
-const MORN_F = 0;
-const DAY_F = 1;
-const NITE_F = 2;
-const DARKNESS_F = 3;
-
-const CLOCK_INDEX: Record<"morn" | "day" | "nite", number> = { morn: MORN_F, day: DAY_F, nite: NITE_F };
-
-/** `data/maps/environment_colors.asm`'s `EnvironmentColorsPointers` table, but
- *  resolved by environment name instead of the numeric `wEnvironment & 7`
- *  index -- `GbcMap.environment` is already the source constant name
- *  (e.g. "TOWN"), and every mapping below is a direct transcription of that
- *  table's `dw` lines, so there is nothing left to compute by re-deriving
- *  the numeric environment constants. */
-const ENV_BLOCK: Record<string, string> = {
-  TOWN: "OutdoorColors",
-  ROUTE: "OutdoorColors",
-  INDOOR: "IndoorColors",
-  GATE: "IndoorColors",
-  CAVE: "DungeonColors",
-  DUNGEON: "DungeonColors",
-  ENVIRONMENT_5: "Env5Colors",
-};
 
 /** `TILESET_*` constant -> the label its palette is INCLUDEd under in
  *  `engine/tilesets/tileset_palettes.asm` (resolved via `parseIncludes`,
  *  never a hardcoded path -- I4). MANSION is handled separately
- *  (`mansionPalette`) since it patches from two files, not one. */
+ *  (`mansionPalette`) since it patches from two files, not one. This is a
+ *  by-name symbol lookup, not a hardcoded value -- confirmed acceptable by
+ *  spec review. */
 const SPECIAL_TILESET_LABELS: Record<string, string> = {
   TILESET_POKECOM_CENTER: "PokeComPalette",
   TILESET_BATTLE_TOWER_INSIDE: "BattleTowerInsidePalette",
@@ -107,6 +100,95 @@ function chunk4(colors: RGB[], source: string): RGB[][] {
   return out;
 }
 
+/**
+ * Walks backward from the first line matching `endMarker` to the nearest
+ * preceding `const_def` line, and returns that slice (inclusive of both
+ * ends) as its own text. Isolates one `const_def`/`const NAME`... enum block
+ * out of a large constants file (which may hold many unrelated enums) so it
+ * can be handed to `parseConstDefs` without cross-contaminating names from
+ * neighboring blocks -- e.g. `constants/map_data_constants.asm` defines the
+ * `TOWN..DUNGEON` environment enum immediately followed by the
+ * `PALETTE_AUTO..PALETTE_DARK` enum immediately followed by `FISHGROUP_*`;
+ * isolating by an enum's own trailing `DEF NUM_<X> EQU const_value` marker
+ * keeps each parse scoped to exactly the block it names.
+ */
+function extractConstDefBlockEndingAt(text: string, endMarker: RegExp, source: string): string {
+  const lines = text.split(/\r\n|\n/);
+  const endIdx = lines.findIndex((l) => endMarker.test(stripComment(l)));
+  if (endIdx === -1) {
+    throw new Error(`extractConstDefBlockEndingAt: ${source}: end marker ${endMarker} not found`);
+  }
+  let startIdx = -1;
+  for (let i = endIdx; i >= 0; i--) {
+    if (/^\s*const_def\b/.test(stripComment(lines[i]!))) {
+      startIdx = i;
+      break;
+    }
+  }
+  if (startIdx === -1) {
+    throw new Error(`extractConstDefBlockEndingAt: ${source}: no preceding "const_def" line found before the end marker`);
+  }
+  return lines.slice(startIdx, endIdx + 1).join("\n");
+}
+
+/** `constants/map_data_constants.asm`'s `TOWN..DUNGEON` environment enum
+ *  (`const_def 1` ... `DEF NUM_ENVIRONMENTS EQU const_value - 1`), parsed by
+ *  name -> numeric value, isolated from the neighboring `PALETTE_*`/
+ *  `FISHGROUP_*` enums in the same file. */
+export function parseEnvironmentConsts(mapDataConstantsText: string): Map<string, number> {
+  return parseConstDefs(extractConstDefBlockEndingAt(mapDataConstantsText, /^DEF NUM_ENVIRONMENTS EQU/, "constants/map_data_constants.asm"));
+}
+
+/** `constants/map_data_constants.asm`'s `PALETTE_AUTO..PALETTE_DARK` enum
+ *  (bare `const_def` ... `DEF NUM_MAP_PALETTES EQU const_value`), isolated
+ *  the same way. */
+export function parseMapPaletteConsts(mapDataConstantsText: string): Map<string, number> {
+  return parseConstDefs(extractConstDefBlockEndingAt(mapDataConstantsText, /^DEF NUM_MAP_PALETTES EQU/, "constants/map_data_constants.asm"));
+}
+
+/** `constants/wram_constants.asm`'s `MORN_F..DARKNESS_F` clock-time enum
+ *  (bare `const_def` ... `DEF NUM_DAYTIMES EQU const_value`), isolated the
+ *  same way from the rest of that (very large) file. */
+export function parseClockConsts(wramConstantsText: string): Map<string, number> {
+  return parseConstDefs(extractConstDefBlockEndingAt(wramConstantsText, /^DEF NUM_DAYTIMES EQU/, "constants/wram_constants.asm"));
+}
+
+/**
+ * `data/maps/environment_colors.asm`'s `EnvironmentColorsPointers` table:
+ * every `dw .Name` line, in source (= numeric index) order. Index 0 is the
+ * table's own "unused" padding entry; real environment values start at 1
+ * (`const_def 1`), so it is never queried by `buildEnvironmentBlockMap`.
+ * Nothing else in this file uses a bare `dw .Name` line, so no label/bound
+ * is needed to isolate the table.
+ */
+export function parseEnvironmentColorPointers(text: string): string[] {
+  const out: string[] = [];
+  for (const line of stripMacroDefs(text)) {
+    const stripped = stripComment(line);
+    const m = stripped.match(/^\s*dw\s+\.([A-Za-z0-9_]+)\s*$/);
+    if (m) out.push(m[1]!);
+  }
+  return out;
+}
+
+/**
+ * Combines `parseEnvironmentColorPointers`'s table with the parsed
+ * environment enum into environment-name -> block-name (e.g.
+ * "TOWN" -> "OutdoorColors"), so `resolveEnvironmentPalette` never has to
+ * hardcode which environments share a block.
+ */
+export function buildEnvironmentBlockMap(pointerList: string[], envConsts: Map<string, number>): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const [name, value] of envConsts) {
+    const label = pointerList[value];
+    if (!label) {
+      throw new Error(`buildEnvironmentBlockMap: environment "${name}" (value ${value}) has no EnvironmentColorsPointers entry (table has ${pointerList.length})`);
+    }
+    out.set(name, label);
+  }
+  return out;
+}
+
 const ENV_LABEL_RE = /^\s*\.([A-Za-z0-9_]+):\s*$/;
 const DB_RE = /^\s*db\s+(.*)$/;
 
@@ -146,7 +228,8 @@ export function parseEnvironmentColorBlocks(text: string): Map<string, number[][
  * by looking each of its 8 raw indices up in `bgTilesPal`
  * (`gfx/tilesets/bg_tiles.pal`, 42 entries). Pure and file-I/O-free, so it's
  * unit-testable directly on inline data (used by `resolveMapPalettes`, which
- * supplies the real parsed tables).
+ * supplies the real parsed tables). `envBlockMap` is `buildEnvironmentBlockMap`'s
+ * output -- environment name -> block name -- never a hardcoded table.
  *
  * Refuses (throws, naming the environment/block/row or the out-of-range
  * index) rather than guessing (G4) on: an unknown environment name, a block
@@ -155,12 +238,13 @@ export function parseEnvironmentColorBlocks(text: string): Map<string, number[][
  * or an index beyond `bgTilesPal`'s own length.
  */
 export function resolveEnvironmentPalette(
+  envBlockMap: Map<string, string>,
   envBlocks: Map<string, number[][]>,
   bgTilesPal: RGB[][],
   environment: string,
   timeOfDayPal: number,
 ): RGB[][] {
-  const blockName = ENV_BLOCK[environment];
+  const blockName = envBlockMap.get(environment);
   if (!blockName) {
     throw new Error(`resolveEnvironmentPalette: unknown environment "${environment}"`);
   }
@@ -184,32 +268,142 @@ export function resolveEnvironmentPalette(
 }
 
 /**
- * `engine/tilesets/timeofday_pals.asm` `.BrightnessLevels` / `ReplaceTimeOfDayPals`
- * (GBC format findings §3.4 step 1), collapsed to its observable behavior
- * rather than the packed-nibble table (each row's `dc` args are read out by a
- * `jumptable` keyed on the *matching* clock time, so every row reduces to
- * either "follow the clock" or a constant -- verified against the macro
- * expansion in `macros/data.asm`'s `dc`, see the corpus BrightnessLevels test
- * for the byte-level pin):
- *   - PALETTE_AUTO: `clockIndex` unchanged (identity).
- *   - PALETTE_DAY/NITE/MORN: fixed, regardless of the clock.
- *   - PALETTE_DARK: `DARKNESS_F`, or `NITE_F` if `flash` (`.UsedFlash`).
+ * `engine/tilesets/timeofday_pals.asm`'s `.BrightnessLevels` table: 8 `dc`
+ * rows (one per `PALETTE_*` value, plus 3 dead padding rows -- see
+ * `parseBrightnessLevels`'s doc comment), each 4 clock-constant names in
+ * source column order. Nothing else in this file uses `dc`, so no label
+ * bound is needed.
  */
-export function resolveTimeOfDayPal(mapPalette: string, clockIndex: number, flash: boolean): number {
-  switch (mapPalette) {
-    case "PALETTE_AUTO":
-      return clockIndex;
-    case "PALETTE_DAY":
-      return DAY_F;
-    case "PALETTE_NITE":
-      return NITE_F;
-    case "PALETTE_MORN":
-      return MORN_F;
-    case "PALETTE_DARK":
-      return flash ? NITE_F : DARKNESS_F;
-    default:
-      throw new Error(`resolveTimeOfDayPal: unknown map palette "${mapPalette}"`);
+function parseDcRows(text: string): string[][] {
+  const out: string[][] = [];
+  for (const line of stripMacroDefs(text)) {
+    const args = matchCall(line, "dc");
+    if (args) out.push(args);
   }
+  return out;
+}
+
+function resolveDcRow(row: string[], clockConsts: Map<string, number>, source: string): number[] {
+  if (row.length !== 4) {
+    throw new Error(`resolveDcRow: ${source}: "dc" row has ${row.length} args, expected 4: "${row.join(", ")}"`);
+  }
+  return row.map((name) => {
+    const v = clockConsts.get(name.trim());
+    if (v === undefined) throw new Error(`resolveDcRow: ${source}: unknown clock constant "${name}"`);
+    return v;
+  });
+}
+
+/**
+ * `.BrightnessLevels`'s `dc` rows, with each arg resolved from its clock
+ * constant name to a number via `clockConsts` (`parseClockConsts`'s output),
+ * rather than assuming `MORN_F..DARKNESS_F` are 0-3 -- a fork could renumber
+ * them. Exported for the corpus test that pins the parsed+packed bytes
+ * against the hand-verified `e4,55,aa,00,ff,e4,e4,e4`.
+ */
+export function parseBrightnessRows(text: string, clockConsts: Map<string, number>, source: string = "<timeofday_pals.asm>"): number[][] {
+  return parseDcRows(text).map((row) => resolveDcRow(row, clockConsts, source));
+}
+
+/** Returns the lines strictly between the first line matching `labelRe` and
+ *  the next label line (or EOF) -- used to isolate `.UsedFlash`'s own 3-line
+ *  body from the rest of `timeofday_pals.asm`. */
+function extractLabelSection(text: string, labelRe: RegExp, source: string): string {
+  const lines = text.split(/\r\n|\n/);
+  const start = lines.findIndex((l) => labelRe.test(stripComment(l).trim()));
+  if (start === -1) throw new Error(`extractLabelSection: ${source}: label ${labelRe} not found`);
+  const rest = lines.slice(start + 1);
+  const end = rest.findIndex((l) => /^[A-Za-z_.][\w.]*:/.test(stripComment(l)));
+  return rest.slice(0, end === -1 ? rest.length : end).join("\n");
+}
+
+/** Finds whichever of `clockConsts`' names appears (as a whole word) in
+ *  `text`, and returns its numeric value. Used to resolve `.UsedFlash`'s
+ *  inline `NITE_F` broadcast and `DARKNESS_PALSET`'s `DARKNESS_F` broadcast
+ *  by reading the constant name each one actually uses, rather than
+ *  assuming which one it is. */
+function findClockConstIn(text: string, clockConsts: Map<string, number>, source: string): number {
+  for (const [name, value] of clockConsts) {
+    if (new RegExp(`\\b${name}\\b`).test(text)) return value;
+  }
+  throw new Error(`findClockConstIn: ${source}: none of the known clock constants (${[...clockConsts.keys()].join("/")}) appear in "${text.trim()}"`);
+}
+
+/** One `PALETTE_*` value's resolved `.BrightnessLevels` behavior, plus the
+ *  `PALETTE_DARK`-only flash/no-flash branch (`ReplaceTimeOfDayPals`
+ *  special-cases `PALETTE_DARK` *before* indexing the table, per
+ *  `cp PALETTE_DARK / jr z, .NeedsFlash` -- the table's own row 4, all
+ *  `DARKNESS_F`, is dead for that value and is never read). */
+export interface BrightnessLevels {
+  /** Indexed by `PALETTE_*` numeric value; each row is 4 numeric clock
+   *  values in source column order (see `resolveTimeOfDayPal`'s doc
+   *  comment for the position <-> clock-index relationship). */
+  rows: number[][];
+  /** Resolved from `.UsedFlash`'s inline broadcast. */
+  flashPalette: number;
+  /** Resolved from `DARKNESS_PALSET`'s `EQU` expression. */
+  noFlashPalette: number;
+}
+
+/**
+ * Parses `.BrightnessLevels` (`timeofdayPalsText`) plus the
+ * `PALETTE_DARK`/flash special case (`.UsedFlash` in the same file,
+ * `DARKNESS_PALSET`'s `EQU` in `wramConstantsText`) into a `BrightnessLevels`
+ * that `resolveTimeOfDayPal` can use without any hardcoded clock/palette
+ * values. Corpus-pinned (`palette.test.ts`) against the packed bytes
+ * `e4,55,aa,00,ff,e4,e4,e4`, hand-verified from the real `dc` lines.
+ */
+export function parseBrightnessLevels(timeofdayPalsText: string, wramConstantsText: string, clockConsts: Map<string, number>): BrightnessLevels {
+  // Bounded to the `.BrightnessLevels:` section alone: the same file's fade
+  // tables (`.morn`/`.day`/`.nite`/`.darkness`/`.cgbfade`) also use `dc`,
+  // with 12 args per line (`rept _NARG/4` packs any multiple of 4) -- an
+  // unbounded scan would misparse those as extra BrightnessLevels rows.
+  const brightnessSection = extractLabelSection(timeofdayPalsText, /^\.BrightnessLevels:?$/, "engine/tilesets/timeofday_pals.asm");
+  const rows = parseBrightnessRows(brightnessSection, clockConsts, "engine/tilesets/timeofday_pals.asm .BrightnessLevels");
+
+  const usedFlashSection = extractLabelSection(timeofdayPalsText, /^\.UsedFlash:?$/, "engine/tilesets/timeofday_pals.asm");
+  const flashPalette = findClockConstIn(usedFlashSection, clockConsts, "engine/tilesets/timeofday_pals.asm .UsedFlash");
+
+  const darknessPalsetLine = wramConstantsText.split(/\r\n|\n/).find((l) => /^\s*DEF\s+DARKNESS_PALSET\s+EQU\b/.test(stripComment(l)));
+  if (!darknessPalsetLine) {
+    throw new Error(`parseBrightnessLevels: "DEF DARKNESS_PALSET EQU" not found in constants/wram_constants.asm`);
+  }
+  const noFlashPalette = findClockConstIn(darknessPalsetLine, clockConsts, "constants/wram_constants.asm DARKNESS_PALSET");
+
+  return { rows, flashPalette, noFlashPalette };
+}
+
+/**
+ * `ReplaceTimeOfDayPals`/`GetTimePalette` (GBC format findings §3.4 step 1),
+ * collapsed to its observable behavior: `PALETTE_DARK` (`darkPaletteIndex`)
+ * special-cases to `flashPalette`/`noFlashPalette` before ever touching the
+ * table (`cp PALETTE_DARK / jr z, .NeedsFlash`); every other palette indexes
+ * `levels.rows[paletteIndex]` and reads column `3 - clockIndex`.
+ *
+ * That `3 - clockIndex` position is the one piece of this module encoded as
+ * fixed logic rather than parsed data: it comes from two immutable engine
+ * mechanisms, not a data table -- the `dc` macro's own bit-packing
+ * (`macros/data.asm`: `(\1<<6)|(\2<<4)|(\3<<2)|\4`, so the first-listed arg
+ * occupies the highest 2 bits) composed with `GetTimePalette`'s fixed
+ * `jumptable`/AND-mask dispatch (`.MorningPalette` reads bits 0-1 when
+ * `wTimeOfDay` is `MORN_F`=0, `.DarknessPalette` reads bits 6-7 when it's
+ * `DARKNESS_F`=3, and so on) -- reproducing it at runtime would mean
+ * interpreting the dispatch routine's Z80 opcodes, not parsing a table a
+ * fork edits by changing data.
+ */
+export function resolveTimeOfDayPal(levels: BrightnessLevels, paletteIndex: number, darkPaletteIndex: number, clockIndex: number, flash: boolean): number {
+  if (paletteIndex === darkPaletteIndex) {
+    return flash ? levels.flashPalette : levels.noFlashPalette;
+  }
+  const row = levels.rows[paletteIndex];
+  if (!row) {
+    throw new Error(`resolveTimeOfDayPal: no .BrightnessLevels row for palette index ${paletteIndex}`);
+  }
+  const col = row[3 - clockIndex];
+  if (col === undefined) {
+    throw new Error(`resolveTimeOfDayPal: .BrightnessLevels row for palette index ${paletteIndex} has no column for clock index ${clockIndex}`);
+  }
+  return col;
 }
 
 /** `text`'s stacked `INCLUDE`d labels (`gfx/tilesets.asm`-style), as a plain label -> path map. */
@@ -239,12 +433,12 @@ function parseRoofPals(text: string, source: string): { mornDay: [RGB, RGB]; nit
 /**
  * `LoadMansionPalette` (`engine/tilesets/tileset_palettes.asm`): copies
  * `mansion_1.pal`'s first 8 palettes (0-indexed 0-7) verbatim, then patches
- * YELLOW(4) <- `mansion_2.pal` (its only palette), WATER(3) <- `mansion_1`
- * palette 6, ROOF(6) <- `mansion_1` palette 8 (`mansion_1.pal` has 9
- * palettes total, 0-indexed 0-8 -- read directly from the real asm, not the
- * findings doc's summary, per the task's own instruction).
+ * `palBg.YELLOW` <- `mansion_2.pal` (its only palette), `palBg.WATER` <-
+ * `mansion_1` palette 6, `palBg.ROOF` <- `mansion_1` palette 8 (`mansion_1.pal`
+ * has 9 palettes total, 0-indexed 0-8 -- read directly from the real asm, not
+ * the findings doc's summary, per the task's own instruction).
  */
-function mansionPalette(root: string, includes: Map<string, string>): RGB[][] {
+function mansionPalette(root: string, includes: Map<string, string>, palBg: { water: number; yellow: number; roof: number }): RGB[][] {
   const p1 = includes.get("MansionPalette1");
   const p2 = includes.get("MansionPalette2");
   if (!p1 || !p2) {
@@ -259,9 +453,9 @@ function mansionPalette(root: string, includes: Map<string, string>): RGB[][] {
     throw new Error(`mansionPalette: ${p2}: ${m2.length} color(s), the mansion YELLOW patch needs exactly 4`);
   }
   const pals = m1.slice(0, 8).map((p) => p.slice());
-  pals[3] = m1[6]!; // WATER <- MansionPalette1 palette 6
-  pals[4] = m2; // YELLOW <- MansionPalette2
-  pals[6] = m1[8]!; // ROOF <- MansionPalette1 palette 8
+  pals[palBg.water] = m1[6]!; // WATER <- MansionPalette1 palette 6
+  pals[palBg.yellow] = m2; // YELLOW <- MansionPalette2
+  pals[palBg.roof] = m1[8]!; // ROOF <- MansionPalette1 palette 8
   return pals;
 }
 
@@ -270,9 +464,15 @@ function mansionPalette(root: string, includes: Map<string, string>): RGB[][] {
  * when no special tileset applies (falls through to the environment path),
  * including the ICE_PATH-in-INDOOR (Hall of Fame) exception.
  */
-function resolveSpecialPalette(root: string, includes: Map<string, string>, tilesetConst: string, environment: string): RGB[][] | null {
+function resolveSpecialPalette(
+  root: string,
+  includes: Map<string, string>,
+  tilesetConst: string,
+  environment: string,
+  palBg: { water: number; yellow: number; roof: number },
+): RGB[][] | null {
   if (tilesetConst === "TILESET_ICE_PATH" && environment === "INDOOR") return null;
-  if (tilesetConst === "TILESET_MANSION") return mansionPalette(root, includes);
+  if (tilesetConst === "TILESET_MANSION") return mansionPalette(root, includes, palBg);
 
   const label = SPECIAL_TILESET_LABELS[tilesetConst];
   if (!label) return null;
@@ -301,28 +501,58 @@ export interface ResolveMapPalettesOpts {
   flash?: boolean;
 }
 
+/** Maps this module's own `{time}` option name to the real clock constant's
+ *  name -- relates our API surface to a constant *name*, never a value. */
+const CLOCK_OPTION_CONST_NAME: Record<"morn" | "day" | "nite", string> = {
+  morn: "MORN_F",
+  day: "DAY_F",
+  nite: "NITE_F",
+};
+
 /**
  * Resolves the 8 BG palettes (4 colors each) a map would have in
  * `wBGPals1` at rest, replicating `LoadMapPals` exactly (see this module's
  * doc comment). `input` may be a `GbcMap` directly (structurally compatible
  * -- extra fields are ignored).
  *
- * Parses every shared table file (bg_tiles.pal, environment_colors.asm,
- * roofs.pal, and the two tileset_palettes.asm INCLUDE tables) at most once
- * per call. A caller resolving many maps should cache anything keyed only
- * by root on its own side, the way `loadGbcTileset`'s own doc comment asks
- * of its callers.
+ * Parses every shared table file (constants, `bg_tiles.pal`,
+ * `environment_colors.asm`, `roofs.pal`, `timeofday_pals.asm`, and the two
+ * `tileset_palettes.asm` INCLUDE tables) at most once per call. A caller
+ * resolving many maps should cache anything keyed only by root on its own
+ * side, the way `loadGbcTileset`'s own doc comment asks of its callers.
  */
 export function resolveMapPalettes(root: string, input: ResolveMapPalettesInput, opts: ResolveMapPalettesOpts = {}): RGB[][] {
   const r = norm(root);
   const time = opts.time ?? "day";
   const flash = opts.flash ?? true;
-  const timeOfDayPal = resolveTimeOfDayPal(input.palette, CLOCK_INDEX[time], flash);
+
+  const mapDataConstantsText = readFileSync(`${r}/constants/map_data_constants.asm`, "utf8");
+  const envConsts = parseEnvironmentConsts(mapDataConstantsText);
+  const paletteConsts = parseMapPaletteConsts(mapDataConstantsText);
+
+  const wramConstantsText = readFileSync(`${r}/constants/wram_constants.asm`, "utf8");
+  const clockConsts = parseClockConsts(wramConstantsText);
+
+  const palBgConsts = parseConstDefs(readFileSync(`${r}/constants/tileset_constants.asm`, "utf8"));
+  const palBg = {
+    water: requireConst(palBgConsts, "PAL_BG_WATER", "constants/tileset_constants.asm"),
+    yellow: requireConst(palBgConsts, "PAL_BG_YELLOW", "constants/tileset_constants.asm"),
+    roof: requireConst(palBgConsts, "PAL_BG_ROOF", "constants/tileset_constants.asm"),
+  };
+
+  const paletteIndex = requireConst(paletteConsts, input.palette, "constants/map_data_constants.asm (map palette)");
+  const darkPaletteIndex = requireConst(paletteConsts, "PALETTE_DARK", "constants/map_data_constants.asm");
+  const clockIndex = requireConst(clockConsts, CLOCK_OPTION_CONST_NAME[time], "constants/wram_constants.asm");
+
+  const timeofdayPalsText = readFileSync(`${r}/engine/tilesets/timeofday_pals.asm`, "utf8");
+  const brightness = parseBrightnessLevels(timeofdayPalsText, wramConstantsText, clockConsts);
+  const timeOfDayPal = resolveTimeOfDayPal(brightness, paletteIndex, darkPaletteIndex, clockIndex, flash);
+  const niteF = requireConst(clockConsts, "NITE_F", "constants/wram_constants.asm");
 
   const colorAsmIncludes = includeLabelMap(readFileSync(`${r}/engine/gfx/color.asm`, "utf8"));
   const specialIncludes = includeLabelMap(readFileSync(`${r}/engine/tilesets/tileset_palettes.asm`, "utf8"));
 
-  let palettes = resolveSpecialPalette(r, specialIncludes, input.tileset, input.environment);
+  let palettes = resolveSpecialPalette(r, specialIncludes, input.tileset, input.environment, palBg);
   if (!palettes) {
     const bgTilesPalPath = colorAsmIncludes.get("TilesetBGPalette");
     if (!bgTilesPalPath) {
@@ -333,8 +563,10 @@ export function resolveMapPalettes(root: string, input: ResolveMapPalettesInput,
     // preceding label (unlike TilesetBGPalette/RoofPals), so there is no
     // stacked-label alias to resolve -- this literal path is the only name
     // for this file anywhere in the engine.
-    const envBlocks = parseEnvironmentColorBlocks(readFileSync(`${r}/data/maps/environment_colors.asm`, "utf8"));
-    palettes = resolveEnvironmentPalette(envBlocks, bgTilesPal, input.environment, timeOfDayPal);
+    const environmentColorsText = readFileSync(`${r}/data/maps/environment_colors.asm`, "utf8");
+    const envBlockMap = buildEnvironmentBlockMap(parseEnvironmentColorPointers(environmentColorsText), envConsts);
+    const envBlocks = parseEnvironmentColorBlocks(environmentColorsText);
+    palettes = resolveEnvironmentPalette(envBlockMap, envBlocks, bgTilesPal, input.environment, timeOfDayPal);
   }
 
   if (input.environment === "TOWN" || input.environment === "ROUTE") {
@@ -351,10 +583,18 @@ export function resolveMapPalettes(root: string, input: ResolveMapPalettesInput,
     if (!roofRow) {
       throw new Error(`resolveMapPalettes: ${roofPalsPath} has no group ${input.group} (only ${roofPals.length} present)`);
     }
-    const pair = timeOfDayPal < NITE_F ? roofRow.mornDay : roofRow.nite;
-    const roof = palettes[6]!;
-    palettes = palettes.map((pal, i) => (i === 6 ? [roof[0]!, pair[0], pair[1], roof[3]!] : pal));
+    const pair = timeOfDayPal < niteF ? roofRow.mornDay : roofRow.nite;
+    const roof = palettes[palBg.roof]!;
+    palettes = palettes.map((pal, i) => (i === palBg.roof ? [roof[0]!, pair[0], pair[1], roof[3]!] : pal));
   }
 
   return palettes;
+}
+
+/** Looks up `name` in a parsed const map, refusing (throwing, naming
+ *  `source`) rather than silently resolving to `undefined`. */
+function requireConst(consts: Map<string, number>, name: string, source: string): number {
+  const v = consts.get(name);
+  if (v === undefined) throw new Error(`requireConst: "${name}" not found in ${source}`);
+  return v;
 }
