@@ -94,6 +94,18 @@ describe("parseNum", () => {
   it("refuses an empty string rather than returning NaN", () => {
     expect(() => parseNum("")).toThrow();
   });
+
+  it("refuses a hex token with trailing junk, naming the text, rather than truncating at the first non-hex-digit", () => {
+    expect(() => parseNum("$05 + 1")).toThrow(/\$05 \+ 1/);
+  });
+
+  it("refuses a $ prefix with non-hex digits, naming the text", () => {
+    expect(() => parseNum("$zz")).toThrow(/\$zz/);
+  });
+
+  it("refuses a bare $ with no digits, naming the text", () => {
+    expect(() => parseNum("$")).toThrow(/\$/);
+  });
 });
 
 describe("parseMapAttributes", () => {
