@@ -129,7 +129,16 @@ export function parseRoofsAsm(text: string, source: string = "<roofs>"): ParsedR
       if (!inc) {
         throw fail(lineIndex, `expected an "INCBIN" line (in the Roofs table) or its closing "assert_table_length", got "${stripped.trim()}"`);
       }
-      roofPngPaths.push(roofPngPathFor(inc[1]!));
+      // Fix round 2 (spec re-check Issue 1): `roofPngPathFor` throws its own
+      // unnamed error on a path shape it doesn't understand (e.g. the real
+      // tileset GFX shape ".2bpp.lz", or no ".2bpp" at all) -- route it
+      // through `fail` so that, like every other refusal in this table, it
+      // names `source:line` too.
+      try {
+        roofPngPaths.push(roofPngPathFor(inc[1]!));
+      } catch (e) {
+        throw fail(lineIndex, (e as Error).message);
+      }
       continue;
     }
 

@@ -4,7 +4,7 @@ import { loadGbcMaps, loadLayout, type LoadedGbcMaps } from "./load/map.js";
 import { loadGbcTileset } from "./load/tileset.js";
 import { loadPaletteTables, type PaletteTables } from "./load/palette.js";
 import { loadGbcRoofs, type GbcRoofs } from "./load/roofs.js";
-import { stripComment, parseNum } from "./load/asm.js";
+import { findDefEqu } from "./load/asm.js";
 import type { GbcMap, GbcTileset, Layout, DataDefect } from "./model/types.js";
 
 /**
@@ -13,12 +13,14 @@ import type { GbcMap, GbcTileset, Layout, DataDefect } from "./model/types.js";
  * connection-padding ring the engine draws around every map. Task 9's border
  * render reads this rather than hardcoding `3`, so a fork that changes the
  * constant changes the render's own cap instead of silently mismatching it.
+ * Exported for direct unit testing (fix round 2, quality review minor #3) --
+ * `findDefEqu` (`asm.ts`, fix round 2 minor #1) does the actual line-finding
+ * and value-parsing, refusing (naming `source`) both "not found" and a
+ * malformed/valueless `EQU` line (minor #2 -- the earlier inline version
+ * force-unwrapped that match and crashed unnamed on the latter).
  */
-function parsePaddingWidth(text: string, source: string): number {
-  const line = text.split(/\r\n|\n/).find((l) => /^\s*DEF\s+MAP_CONNECTION_PADDING_WIDTH\s+EQU\b/.test(stripComment(l)));
-  if (!line) throw new Error(`parsePaddingWidth: ${source}: "DEF MAP_CONNECTION_PADDING_WIDTH EQU" not found`);
-  const m = stripComment(line).match(/^\s*DEF\s+MAP_CONNECTION_PADDING_WIDTH\s+EQU\s+(\S+)/);
-  return parseNum(m![1]!);
+export function parsePaddingWidth(text: string, source: string): number {
+  return findDefEqu(text, "MAP_CONNECTION_PADDING_WIDTH", source);
 }
 
 /**

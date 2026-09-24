@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { scanCalls, stripComment, stripMacroDefs, splitArgs, matchCall } from "../../../src/gbc/load/asm.js";
+import { scanCalls, stripComment, stripMacroDefs, splitArgs, matchCall, findDefEquLine, findDefEqu } from "../../../src/gbc/load/asm.js";
 
 describe("scanCalls", () => {
   it("arg spans exclude padding -- arg0 span is exactly the trimmed text", () => {
@@ -169,5 +169,46 @@ describe("stripComment / stripMacroDefs / splitArgs / matchCall (re-exported, mo
     expect(matchCall(line!, "warp_event")).toEqual(["1", "2", "FOO", "3"]);
     expect(scanCalls(text, "warp_event")).toHaveLength(1);
     expect(scanCalls(text, "warp_event")[0]!.args[2]!.text).toBe("FOO");
+  });
+});
+
+// Fix round 2 (quality review minors #1-#3): findDefEquLine/findDefEqu are
+// the shared "one `DEF NAME EQU ...` line" idiom `project.ts`'s
+// `parsePaddingWidth` and `palette.ts`'s `parseBrightnessLevels` both use,
+// tested directly rather than only through those two callers.
+describe("findDefEquLine / findDefEqu", () => {
+  it("findDefEquLine returns the matching line's own text, comment and all", () => {
+    const text = "; header\nDEF MAP_CONNECTION_PADDING_WIDTH EQU 3 ; metatiles\nDEF OTHER EQU 9\n";
+    expect(findDefEquLine(text, "MAP_CONNECTION_PADDING_WIDTH", "some.asm")).toBe("DEF MAP_CONNECTION_PADDING_WIDTH EQU 3 ; metatiles");
+  });
+
+  it("findDefEquLine matches a compound (non-numeric) EQU expression too, since it never parses the value", () => {
+    const text = "DEF DARKNESS_PALSET EQU (DARKNESS_F << 6) | (DARKNESS_F << 4) | (DARKNESS_F << 2) | DARKNESS_F\n";
+    expect(findDefEquLine(text, "DARKNESS_PALSET", "some.asm")).toBe(
+      "DEF DARKNESS_PALSET EQU (DARKNESS_F << 6) | (DARKNESS_F << 4) | (DARKNESS_F << 2) | DARKNESS_F",
+    );
+  });
+
+  it("findDefEquLine refuses (naming source) when no matching DEF...EQU line exists", () => {
+    expect(findDefEquLine("DEF OTHER EQU 9\n", "OTHER", "some.asm")).toBe("DEF OTHER EQU 9"); // sanity: OTHER really is found
+    expect(() => findDefEquLine("DEF OTHER EQU 9\n", "MISSING", "some.asm")).toThrow(/some\.asm/);
+    expect(() => findDefEquLine("DEF OTHER EQU 9\n", "MISSING", "some.asm")).toThrow(/"DEF MISSING EQU" not found/);
+  });
+
+  it("findDefEqu parses a plain $hex or decimal EQU value", () => {
+    expect(findDefEqu("DEF WIDTH EQU 3 ; metatiles\n", "WIDTH", "some.asm")).toBe(3);
+    expect(findDefEqu("DEF WIDTH EQU $0a\n", "WIDTH", "some.asm")).toBe(10);
+  });
+
+  it("findDefEqu refuses (naming source), not force-unwraps, when the line is found but has no value token after EQU", () => {
+    // The comment strips everything after "EQU", so findDefEquLine's own
+    // regex (`EQU\b`, no value required) still matches the line, but there is
+    // nothing left for findDefEqu's stricter value-capturing regex to find.
+    expect(() => findDefEqu("DEF WIDTH EQU ; note, no value\n", "WIDTH", "some.asm")).toThrow(/some\.asm/);
+    expect(() => findDefEqu("DEF WIDTH EQU ; note, no value\n", "WIDTH", "some.asm")).toThrow(/no value after EQU/);
+  });
+
+  it("findDefEqu refuses (naming source) when the DEF...EQU line itself is missing", () => {
+    expect(() => findDefEqu("DEF OTHER EQU 9\n", "WIDTH", "some.asm")).toThrow(/some\.asm/);
   });
 });

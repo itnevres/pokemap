@@ -45,7 +45,7 @@
  */
 import { readFileSync } from "node:fs";
 import { norm } from "../../config/paths.js";
-import { matchCall, splitArgs, stripComment, stripMacroDefs, parseConstDefs } from "./asm.js";
+import { matchCall, splitArgs, stripComment, stripMacroDefs, parseConstDefs, findDefEquLine } from "./asm.js";
 import { parseNum } from "./map.js";
 import { parseIncludes } from "./incbin.js";
 import type { RGB } from "../../model/types.js";
@@ -385,10 +385,12 @@ export function parseBrightnessLevels(timeofdayPalsText: string, wramConstantsTe
   const usedFlashSection = extractLabelSection(timeofdayPalsText, /^\.UsedFlash:?$/, "engine/tilesets/timeofday_pals.asm");
   const flashPalette = findClockConstIn(usedFlashSection, clockConsts, "engine/tilesets/timeofday_pals.asm .UsedFlash");
 
-  const darknessPalsetLine = wramConstantsText.split(/\r\n|\n/).find((l) => /^\s*DEF\s+DARKNESS_PALSET\s+EQU\b/.test(stripComment(l)));
-  if (!darknessPalsetLine) {
-    throw new Error(`parseBrightnessLevels: "DEF DARKNESS_PALSET EQU" not found in constants/wram_constants.asm`);
-  }
+  // `findDefEquLine` (`asm.ts`, fix round 2 quality review minor #1), not the
+  // numeric-parsing `findDefEqu`: DARKNESS_PALSET's value is a compound
+  // RGBDS expression naming other constants (`(DARKNESS_F << 6) | ...`), not
+  // a plain literal `parseNum` could parse -- `findClockConstIn` below reads
+  // the line's own text by name, not by value.
+  const darknessPalsetLine = findDefEquLine(wramConstantsText, "DARKNESS_PALSET", "constants/wram_constants.asm");
   const noFlashPalette = findClockConstIn(darknessPalsetLine, clockConsts, "constants/wram_constants.asm DARKNESS_PALSET");
 
   return { rows, flashPalette, noFlashPalette };

@@ -136,6 +136,24 @@ describe("parseRoofsAsm", () => {
     expect(() => parseRoofsAsm(bad, "data/maps/roofs.asm")).toThrow(/INCBIN/);
   });
 
+  it("refuses an INCBIN path with the real tileset-GFX shape (.2bpp.lz, not roofs' own bare .2bpp), naming file:line (fix round 2, spec re-check Issue 1)", () => {
+    const bad = REAL_SHAPE_FIXTURE.replace(
+      'INCBIN "gfx/tilesets/roofs/violet.2bpp"',
+      'INCBIN "gfx/tilesets/roofs/violet.2bpp.lz"',
+    );
+    expect(() => parseRoofsAsm(bad, "data/maps/roofs.asm")).toThrow(/data\/maps\/roofs\.asm:47:/);
+    expect(() => parseRoofsAsm(bad, "data/maps/roofs.asm")).toThrow(/\.2bpp/);
+  });
+
+  it("refuses an INCBIN path with no .2bpp extension at all, naming file:line", () => {
+    const bad = REAL_SHAPE_FIXTURE.replace(
+      'INCBIN "gfx/tilesets/roofs/violet.2bpp"',
+      'INCBIN "gfx/tilesets/roofs/violet.bin"',
+    );
+    expect(() => parseRoofsAsm(bad, "data/maps/roofs.asm")).toThrow(/data\/maps\/roofs\.asm:47:/);
+    expect(() => parseRoofsAsm(bad, "data/maps/roofs.asm")).toThrow(/violet\.bin/);
+  });
+
   it("refuses when the Roofs table's entry count doesn't match the number of ROOF_* constants defined", () => {
     expect(() => parseRoofsAsm(EXTRA_UNUSED_ROOF_CONST_FIXTURE, "data/maps/roofs.asm")).toThrow(/data\/maps\/roofs\.asm:/);
     expect(() => parseRoofsAsm(EXTRA_UNUSED_ROOF_CONST_FIXTURE, "data/maps/roofs.asm")).toThrow(/Roofs: has 5 entries, but 6 ROOF_\* constant/);

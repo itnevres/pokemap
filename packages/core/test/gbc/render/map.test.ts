@@ -629,6 +629,47 @@ describe("corpus", () => {
     expect(() => renderGbcMap(proj, "NewBarkTown", { border: 4 })).toThrow(/border 4/);
   });
 
+  itWithGbcCorpus(
+    "WhirlIslandNW (TILESET_DARK_CAVE, CAVE, PALETTE_DARK): flash forwarding -- flash: false differs from the default at a pinned pixel",
+    () => {
+      // Chain: constants/map_constants.asm "map_const WHIRL_ISLAND_NW, 5, 9"
+      // and maps/WhirlIslandNW.blk byte[0] (od) = 0x10 = 16. data/tilesets/
+      // cave_metatiles.bin bytes[16*16..16*16+15] (od) position0 = 0x16
+      // (DarkCave shares Cave's metatiles.bin, GBC format findings "Extra
+      // findings" -> Map header and tileset assignment). gfx/tilesets/
+      // cave_palette_map.asm line3 (ids 16-23, "BROWN, BROWN, GRAY, GRAY,
+      // WATER, BROWN, BROWN, BROWN") -> id 0x16 (22) is index6 -> PAL_BG_BROWN
+      // (5, DarkCave stacks TilesetCavePalMap -- same GBC format findings
+      // note). pngTileIndex(0x16)=22 (bank0). gfx/tilesets/dark_cave.png
+      // (DarkCave has its OWN gfx, unlike its shared metatiles/palette map)
+      // tile22 row0 = [2,1,2,1,2,1,1,1] -> (row0,col0) shade2.
+      //
+      // PALETTE_DARK's paletteIndex equals BrightnessLevels' own
+      // darkPaletteIndex, so resolveTimeOfDayPal special-cases it BEFORE
+      // reading the time-of-day table at all: flash:true -> flashPalette
+      // (NITE_F, value 2); flash:false -> noFlashPalette (DARKNESS_F, value
+      // 3) -- entirely independent of the `time` option. CAVE uses the
+      // Dungeon table (data/maps/environment_colors.asm): nite row slot5
+      // (BROWN) = $15 = 21; dark row slot5 = $1d = 29.
+      // bg_tiles.pal[21] ("nite brown") = RGB 15,14,24, 12,09,15, 08,04,05,
+      // 00,00,00 -- shade2 -> (8,4,5) 5-bit -> 8-bit (66,33,41).
+      // bg_tiles.pal[29] ("dark brown") = RGB 01,01,02, 00,00,00, 00,00,00,
+      // 00,00,00 -- shade2 -> (0,0,0) 5-bit -> 8-bit (0,0,0).
+      // Absolute pixel: block(0,0), border:0 -> (0,0).
+      const proj = openGbcProject(GBC_SUBJECT_ROOT);
+      const flashOn = renderGbcMap(proj, "WhirlIslandNW", { flash: true });
+      const flashOff = renderGbcMap(proj, "WhirlIslandNW", { flash: false });
+      expect(pixelAt(flashOn, 0, 0)).toEqual([66, 33, 41, 255]);
+      expect(pixelAt(flashOff, 0, 0)).toEqual([0, 0, 0, 255]);
+      expect(pixelAt(flashOn, 0, 0)).not.toEqual(pixelAt(flashOff, 0, 0));
+
+      // The default (no `flash` option) matches flash:true (findings'
+      // recommended default, `resolveFromTables`'s own `opts.flash ?? true`).
+      const defaultRender = renderGbcMap(proj, "WhirlIslandNW", {});
+      expect(pixelAt(defaultRender, 0, 0)).toEqual(pixelAt(flashOn, 0, 0));
+    },
+  );
+
   itWithGbcCorpus("NewBarkTown renders byte-identical data across two calls (determinism)", () => {
     const proj = openGbcProject(GBC_SUBJECT_ROOT);
     const r1 = renderGbcMap(proj, "NewBarkTown", { time: "day" });

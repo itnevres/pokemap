@@ -200,6 +200,45 @@ export function parseConstDefs(text: string): Map<string, number> {
   return out;
 }
 
+/**
+ * Finds the one line in `text` matching `DEF <name> EQU ...` (an RGBDS scalar
+ * `DEF`, e.g. `DEF MAP_CONNECTION_PADDING_WIDTH EQU 3`). Refuses (throws,
+ * naming `source`) when no such line exists. Returns the line's own raw text
+ * (up to and including its `EQU` value expression), not just the value --
+ * some callers (a plain numeric constant, `findDefEqu` below) parse that
+ * value directly; others (a compound RGBDS expression naming other
+ * constants, e.g. `wram_constants.asm`'s `DARKNESS_PALSET`) only need the
+ * line's own text for a different kind of lookup (`palette.ts`'s
+ * `findClockConstIn`). Fix round 2 (quality review minor #1): this is the one
+ * "find a `DEF NAME EQU ...` line" implementation, shared by
+ * `project.ts`'s `parsePaddingWidth` and `palette.ts`'s
+ * `parseBrightnessLevels`, instead of each re-implementing the same `.find()`
+ * over split lines.
+ */
+export function findDefEquLine(text: string, name: string, source: string): string {
+  const re = new RegExp(`^\\s*DEF\\s+${escapeRegExp(name)}\\s+EQU\\b`);
+  const line = text.split(/\r\n|\n/).find((l) => re.test(stripComment(l)));
+  if (!line) throw new Error(`findDefEquLine: ${source}: "DEF ${name} EQU" not found`);
+  return line;
+}
+
+/**
+ * `findDefEquLine` plus parsing the `EQU` value as a plain `$hex`/decimal
+ * literal (`parseNum`) -- for a `DEF NAME EQU <number>` constant, not a
+ * compound expression (that shape stays on `findDefEquLine`, not here).
+ * Refuses (throws, naming `source`) when the line has no value token at all
+ * after `EQU` (e.g. a trailing comment strips it, `DEF NAME EQU ; note`) --
+ * fix round 2 (quality review minor #2): the earlier `parsePaddingWidth`
+ * force-unwrapped this match (`m![1]!`), which crashed with an unnamed
+ * `TypeError` on that input instead of a real refusal.
+ */
+export function findDefEqu(text: string, name: string, source: string): number {
+  const line = findDefEquLine(text, name, source);
+  const m = stripComment(line).match(new RegExp(`^\\s*DEF\\s+${escapeRegExp(name)}\\s+EQU\\s+(\\S+)`));
+  if (!m) throw new Error(`findDefEqu: ${source}: "DEF ${name} EQU" line has no value after EQU: "${stripComment(line).trim()}"`);
+  return parseNum(m[1]!);
+}
+
 /** One argument's exact byte span in the scanned text, trimmed of surrounding whitespace; comment text is never included. */
 export interface AsmArg {
   start: number;

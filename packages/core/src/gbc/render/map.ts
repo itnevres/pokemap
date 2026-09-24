@@ -164,7 +164,16 @@ export interface RenderGbcMapOptions {
    *  Capped at the real `MAP_CONNECTION_PADDING_WIDTH` (`constants/gfx_constants.asm`,
    *  read via `proj.paddingWidth()` -- 3 in the real corpus, but never
    *  hardcoded here); any other value (negative, non-integer, or above the
-   *  cap) is refused. */
+   *  cap) is refused.
+   *
+   *  Note (fix round 2, quality review minor #5): unlike GBA's `renderLayout`'s
+   *  same-named `border` option, this is NOT multiplied by a per-tileset
+   *  border-block width -- GBC has no such dimension (the border is always
+   *  exactly one metatile, GBC format findings §Extra Border). `border: n`
+   *  here means literally `n` blocks of padding on every side; GBA's `border:
+   *  n` means `n * layout.borderWidth` blocks (`render/layout.ts`), since a
+   *  GBA border tile is typically a 2x2+ block. Don't assume the same
+   *  multiplier semantics just because the option shares a name. */
   border?: number;
   time?: "morn" | "day" | "nite";
   flash?: boolean;
