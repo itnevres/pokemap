@@ -304,15 +304,16 @@ describe("parseWildProbabilities", () => {
     );
   });
 
-  it("refuses a missing GrassMonProbTable/WaterMonProbTable label, naming the file (Issue A: was a bare, file-free Error even though `file` was passed in)", () => {
-    expect(() => parseWildProbabilities("WaterMonProbTable:\n\tmon_prob 100, 0\n", "probabilities.asm")).toThrow(
-      /^probabilities\.asm: no "GrassMonProbTable:" label found$/,
-    );
+  it.each([
+    ["GrassMonProbTable", "WaterMonProbTable:\n\tmon_prob 100, 0\n", /^probabilities\.asm: no "GrassMonProbTable:" label found$/],
+    ["WaterMonProbTable", "GrassMonProbTable:\n\tmon_prob 100, 0\n", /^probabilities\.asm: no "WaterMonProbTable:" label found$/],
+  ])("refuses a missing %s label, naming the file (Issue A: was a bare, file-free Error even though `file` was passed in)", (_name, fixture, expected) => {
+    expect(() => parseWildProbabilities(fixture, "probabilities.asm")).toThrow(expected);
   });
 
   it("refuses a blank comma-separated arg in a mon_prob call, naming file+line (Issue A: scanCalls has no per-call line yet, so it's anchored at the table's own start line, not the bad line itself)", () => {
     const bad = text.replace("\tmon_prob 95,  5 ;  5% chance", "\tmon_prob 95, , 5 ;  5% chance");
-    expect(() => parseWildProbabilities(bad, "probabilities.asm")).toThrow(/^probabilities\.asm:7: splitArgs: blank argument in/);
+    expect(() => parseWildProbabilities(bad, "probabilities.asm")).toThrow(/^probabilities\.asm:13: splitArgs: blank argument in "95, , 5"/);
   });
 
   it.each([
@@ -325,17 +326,17 @@ describe("parseWildProbabilities", () => {
 
   it("refuses a GrassMonProbTable with the wrong number of mon_prob lines (Issue C: a missing/extra line would otherwise silently produce a wrong-length array)", () => {
     const bad = text.replace("\tmon_prob 95,  5 ;  5% chance\n", "");
-    expect(() => parseWildProbabilities(bad, "probabilities.asm")).toThrow(/^probabilities\.asm:7: expected 7 "mon_prob" line\(s\), found 6$/);
+    expect(() => parseWildProbabilities(bad, "probabilities.asm")).toThrow(/^probabilities\.asm:6: expected 7 "mon_prob" line\(s\), found 6$/);
   });
 
   it("refuses a duplicated mon_prob index (Issue C: indices must be 0..N-1, each exactly once)", () => {
     const bad = text.replace("\tmon_prob 95,  5 ;  5% chance", "\tmon_prob 95,  4 ; duplicate of index 4");
-    expect(() => parseWildProbabilities(bad, "probabilities.asm")).toThrow(/^probabilities\.asm:13: "mon_prob" index 4 is not a unique value in 0\.\.6$/);
+    expect(() => parseWildProbabilities(bad, "probabilities.asm")).toThrow(/^probabilities\.asm:13: "mon_prob" index 4 is a duplicate$/);
   });
 
   it("refuses an out-of-range mon_prob index (Issue C)", () => {
     const bad = text.replace("\tmon_prob 95,  5 ;  5% chance", "\tmon_prob 95,  9 ; out of range");
-    expect(() => parseWildProbabilities(bad, "probabilities.asm")).toThrow(/^probabilities\.asm:13: "mon_prob" index 9 is not a unique value in 0\.\.6$/);
+    expect(() => parseWildProbabilities(bad, "probabilities.asm")).toThrow(/^probabilities\.asm:13: "mon_prob" index 9 is out of range 0\.\.6$/);
   });
 
   it("refuses a non-decreasing cumulative value (Issue C)", () => {
@@ -348,6 +349,50 @@ describe("parseWildProbabilities", () => {
   it("refuses a table that doesn't end at cumulative 100 (Issue C: the real probabilities.asm always ends at 100 for both tables)", () => {
     const bad = text.replace("\tmon_prob 100, 6 ;  5% chance", "\tmon_prob 99, 6 ; oops, not 100");
     expect(() => parseWildProbabilities(bad, "probabilities.asm")).toThrow(/^probabilities\.asm:14: "mon_prob" table ends at cumulative 99, expected 100$/);
+  });
+
+  it("refuses a table ending ABOVE cumulative 100 (fix round 3: only < 100 was pinned, so prev !== 100 could regress to prev < 100 unnoticed)", () => {
+    const bad = text.replace("\tmon_prob 100, 6 ;  5% chance", "\tmon_prob 101, 6 ; oops, over 100");
+    expect(() => parseWildProbabilities(bad, "probabilities.asm")).toThrow(/^probabilities\.asm:14: "mon_prob" table ends at cumulative 101, expected 100$/);
+  });
+
+  it("refuses a negative mon_prob index (fix round 3: the lower bound of the 0..N-1 range check)", () => {
+    const bad = text.replace("\tmon_prob 25,  0 ; 25% chance", "\tmon_prob 25,  -1 ; oops, negative");
+    expect(() => parseWildProbabilities(bad, "probabilities.asm")).toThrow(/^probabilities\.asm:8: "mon_prob" index -1 is out of range 0\.\.6$/);
+  });
+
+  it("refuses a mon_prob index exactly equal to the slot count (fix round 3: the >= boundary, not just an index far out of range)", () => {
+    const bad = text.replace("\tmon_prob 95,  5 ;  5% chance", "\tmon_prob 95,  7 ; oops, == expectedCount");
+    expect(() => parseWildProbabilities(bad, "probabilities.asm")).toThrow(/^probabilities\.asm:13: "mon_prob" index 7 is out of range 0\.\.6$/);
+  });
+
+  it("ACCEPTS equal consecutive cumulative values (a legal 0%-chance slot), with the per-slot value 0 (fix round 3: monotonic must allow ==, not just >)", () => {
+    const bad = text.replace("\tmon_prob 80,  3 ; 10% chance", "\tmon_prob 70,  3 ; a 0%-chance slot, same cumulative as index 2");
+    const probs = parseWildProbabilities(bad, "probabilities.asm");
+    // Cumulatives become 25,50,70,70,90,95,100 -> diffs 25,25,20,0,20,5,5:
+    // index 3 (the mutated slot) is now a legal 0%-chance slot.
+    expect(probs.grass).toEqual([25, 25, 20, 0, 20, 5, 5]);
+  });
+
+  it("sorts out-of-order mon_prob lines by index before diffing, producing the correct per-slot values (fix round 3: the sort is load-bearing now that indices are validated)", () => {
+    const outOfOrder = [
+      "GrassMonProbTable:",
+      "\tmon_prob 25,  0",
+      "\tmon_prob 70,  2", // 2 and 1 swapped from index order
+      "\tmon_prob 50,  1",
+      "\tmon_prob 80,  3",
+      "\tmon_prob 90,  4",
+      "\tmon_prob 95,  5",
+      "\tmon_prob 100, 6",
+      "",
+      "WaterMonProbTable:",
+      "\tmon_prob 45,  0",
+      "\tmon_prob 75,  1",
+      "\tmon_prob 100, 2",
+    ].join("\n");
+    const probs = parseWildProbabilities(outOfOrder, "probabilities.asm");
+    expect(probs.grass).toEqual([25, 25, 20, 10, 10, 5, 5]);
+    expect(probs.water).toEqual([45, 30, 25]);
   });
 });
 
@@ -410,6 +455,13 @@ describe("parseFishGroups", () => {
     ]);
   });
 
+  it("refuses a rod record's time_group reference past the end of TimeFishGroups, naming the rod record's own line (Minor 1: TimeFishGroups has 2 rows here, so index 2 is dangling)", () => {
+    const bad = text.replace("\tdb  70 percent,     time_group 1", "\tdb  70 percent,     time_group 2");
+    expect(() => parseFishGroups(bad, ["FISHGROUP_SHORE"], "fish.asm")).toThrow(
+      /^fish\.asm:25: rod record: time_group 2 is out of range -- TimeFishGroups has 2 row\(s\)$/,
+    );
+  });
+
   it("refuses a rod record with the wrong argument count, naming file+line (Issue 3)", () => {
     const bad = text.replace("\tdb  70 percent + 1, MAGIKARP,   10", "\tdb  70 percent + 1, MAGIKARP,   10, EXTRA");
     expect(() => parseFishGroups(bad, ["FISHGROUP_SHORE"], "fish.asm")).toThrow(
@@ -456,12 +508,30 @@ describe("parseFishGroups", () => {
     expect(() => parseFishGroups(bad, ["FISHGROUP_SHORE"], "fish.asm")).toThrow(/^fish\.asm:16: splitArgs: blank argument in "85 percent \+ 1, , 10"/);
   });
 
-  it("refuses a blank comma-separated arg in a fishgroup call, naming file+line (Issue A: scanCalls wrapped via at(), anchored at the table body's own start line since scanCalls has no per-call line until it returns)", () => {
+  it("refuses a blank comma-separated arg in a fishgroup call, naming its own exact line (fix round 3: was anchored at the table's start line, wrong for anything but the first call)", () => {
     const bad = text.replace(
       "\tfishgroup 50 percent + 1, .Shore_Old,            .Shore_Good,            .Shore_Super",
       "\tfishgroup 50 percent + 1, .Shore_Old, , .Shore_Super",
     );
-    expect(() => parseFishGroups(bad, ["FISHGROUP_SHORE"], "fish.asm")).toThrow(/^fish\.asm:10: splitArgs: blank argument in/);
+    expect(() => parseFishGroups(bad, ["FISHGROUP_SHORE"], "fish.asm")).toThrow(/^fish\.asm:11: splitArgs: blank argument in/);
+  });
+
+  it("refuses a blank comma-separated arg on a fishgroup call that is NOT the first, naming its own exact line (not the first call's -- the real regression case for per-line, not per-scan, anchoring)", () => {
+    const twoGroups = [
+      "MACRO fishgroup",
+      "\tdb \\1",
+      "\tdw \\2, \\3, \\4",
+      "ENDM",
+      "",
+      "FishGroups:",
+      "\tfishgroup 50 percent, .A_Old, .A_Good, .A_Super",
+      "\tfishgroup 50 percent, .B_Old, , .B_Super",
+      "",
+      "TimeFishGroups:",
+    ].join("\n");
+    expect(() => parseFishGroups(twoGroups, ["FISHGROUP_A", "FISHGROUP_B"], "fish2.asm")).toThrow(
+      /^fish2\.asm:8: splitArgs: blank argument in "50 percent, \.B_Old, , \.B_Super"/,
+    );
   });
 
   it.each([
@@ -668,9 +738,14 @@ describe("parseTreemonMaps", () => {
     expect(() => parseTreemonMaps(bad, "m.asm")).toThrow(new RegExp(`^m\\.asm:7: "treemon_map" has ${argCount} argument\\(s\\), expected 2$`));
   });
 
-  it("refuses a blank comma-separated arg in a treemon_map call, naming the file (Issue A: scanCalls wrapped via at(), no per-call line exists yet so it's file-only, matching fail's null-line convention)", () => {
+  it("refuses a blank comma-separated arg in a treemon_map call, naming its own exact line (Issue 1 fix round 3: was file-only, no line at all)", () => {
     const bad = text.replace("\ttreemon_map ROUTE_29, TREEMON_SET_ROUTE", "\ttreemon_map ROUTE_29, , TREEMON_SET_ROUTE");
-    expect(() => parseTreemonMaps(bad, "m.asm")).toThrow(/^m\.asm: splitArgs: blank argument in/);
+    expect(() => parseTreemonMaps(bad, "m.asm")).toThrow(/^m\.asm:7: splitArgs: blank argument in "ROUTE_29, , TREEMON_SET_ROUTE"/);
+  });
+
+  it("refuses a blank comma-separated arg on a treemon_map call that is NOT the first, naming its own exact line (not the first call's)", () => {
+    const bad = text.replace("\ttreemon_map NEW_BARK_TOWN, TREEMON_SET_CITY", "\ttreemon_map NEW_BARK_TOWN, , TREEMON_SET_CITY");
+    expect(() => parseTreemonMaps(bad, "m.asm")).toThrow(/^m\.asm:8: splitArgs: blank argument in "NEW_BARK_TOWN, , TREEMON_SET_CITY"/);
   });
 });
 

@@ -7,7 +7,7 @@
  * Decision 5's grown Task 8 scope.
  */
 import { readFileSync } from "node:fs";
-import { codeLines, stripComment, matchCall, scanCalls, splitArgs, parseNum, parseConstDefs, labelTail, type LabelTail } from "./asm.js";
+import { codeLines, stripComment, matchCall, splitArgs, parseNum, parseConstDefs, labelTail, type LabelTail } from "./asm.js";
 import { parseMapConstants } from "./map.js";
 import { norm } from "../../config/paths.js";
 import type {
@@ -75,6 +75,33 @@ function at<T>(file: string, lineIndex: number | null, fn: () => T): T {
   } catch (e) {
     throw new Error(`${locate(file, lineIndex)}: ${(e as Error).message}`);
   }
+}
+
+/**
+ * Like `asm.ts`'s `scanCalls(text, macro)`, but locates a blank-arg refusal
+ * at the exact line it occurred on, not at an anchor for the whole scan.
+ * `scanCalls` builds one `AsmArg[]` list per line via `splitArgsWithOffsets`,
+ * which can throw (a blank comma-separated arg) partway through scanning the
+ * whole `text` -- at that point no single call's line is known yet, so a
+ * caller can only wrap the *entire* `scanCalls` call through `at()`, naming
+ * either the scan's start line (wrong, if the bad line isn't the first) or
+ * no line at all (`treemon_map`, which scans a whole file with no natural
+ * anchor). This walks `codeLines(text)` one line at a time instead, so each
+ * line's own `matchCall` (and the `splitArgs` inside it) is wrapped through
+ * `at()` with that line's own absolute index (`base + line.lineIndex`).
+ * Loses `scanCalls`'s byte-accurate per-argument `AsmArg` spans -- nothing in
+ * this file reads more than `.text` from one -- but keeps `lineStart` (the
+ * line's own byte offset), which `parseTreemonMaps` still needs to split
+ * `TreeMonMaps` from `RockMonMaps` by position.
+ */
+function scanCallLines(text: string, macro: string, file: string, base: number): { lineIndex: number; lineStart: number; args: string[] }[] {
+  const out: { lineIndex: number; lineStart: number; args: string[] }[] = [];
+  for (const line of codeLines(text)) {
+    const lineIndex = base + line.lineIndex;
+    const args = at(file, lineIndex, () => matchCall(line.text, macro));
+    if (args) out.push({ lineIndex, lineStart: line.start, args });
+  }
+  return out;
 }
 
 /**
@@ -269,32 +296,42 @@ function getLabelTail(text: string, label: string, file: string): LabelTail {
  * Converts a `mon_prob cumulativePercent, index` run into per-slot
  * percentages, refusing (naming file+line) unless the table has exactly
  * `expectedCount` entries, every index in `0..expectedCount-1` appears
- * exactly once, the cumulative values are non-decreasing in index order, and
+ * exactly once, the cumulative values are non-decreasing in index order
+ * (equal consecutive values are a legal 0%-chance slot, not an error), and
  * the last one is exactly 100 -- the real corpus's own shape (both
  * `GrassMonProbTable` and `WaterMonProbTable` end at `mon_prob 100, ...`), so
  * this never fires on real data, only on a malformed/mutated table that
  * would otherwise silently produce a wrong-length or wrong-valued array.
+ * `mon_prob` lines need not appear in index order in the source (none in the
+ * corpus don't, but nothing requires it) -- sorted by index before the
+ * cumulative-to-per-slot diff, so an out-of-order table still yields the
+ * correct per-slot values.
  */
 function cumulativeToPerSlot(tail: LabelTail, file: string, expectedCount: number): number[] {
-  const calls = at(file, tail.lineIndex, () => scanCalls(tail.text, "mon_prob"));
+  const calls = scanCallLines(tail.text, "mon_prob", file, tail.lineIndex);
   if (calls.length !== expectedCount) {
-    fail(file, tail.lineIndex, `expected ${expectedCount} "mon_prob" line(s), found ${calls.length}`);
+    // Anchored at the label's own line (tail.lineIndex - 1), consistent with
+    // FishGroups'/TreeMons' own count-mismatch refusals, which use the
+    // label's line rather than the tail's first body line.
+    fail(file, tail.lineIndex - 1, `expected ${expectedCount} "mon_prob" line(s), found ${calls.length}`);
   }
 
   const parsed = calls.map((c) => {
-    const lineIndex = tail.lineIndex + c.lineIndex;
-    if (c.args.length !== 2) fail(file, lineIndex, `"mon_prob" has ${c.args.length} argument(s), expected 2`);
+    if (c.args.length !== 2) fail(file, c.lineIndex, `"mon_prob" has ${c.args.length} argument(s), expected 2`);
     return {
-      lineIndex,
-      index: at(file, lineIndex, () => parseNum(c.args[1]!.text)),
-      cumulative: at(file, lineIndex, () => parseNum(c.args[0]!.text)),
+      lineIndex: c.lineIndex,
+      index: at(file, c.lineIndex, () => parseNum(c.args[1]!)),
+      cumulative: at(file, c.lineIndex, () => parseNum(c.args[0]!)),
     };
   });
 
   const seenIndices = new Set<number>();
   for (const e of parsed) {
-    if (e.index < 0 || e.index >= expectedCount || seenIndices.has(e.index)) {
-      fail(file, e.lineIndex, `"mon_prob" index ${e.index} is not a unique value in 0..${expectedCount - 1}`);
+    if (e.index < 0 || e.index >= expectedCount) {
+      fail(file, e.lineIndex, `"mon_prob" index ${e.index} is out of range 0..${expectedCount - 1}`);
+    }
+    if (seenIndices.has(e.index)) {
+      fail(file, e.lineIndex, `"mon_prob" index ${e.index} is a duplicate`);
     }
     seenIndices.add(e.index);
   }
@@ -363,13 +400,24 @@ function labelSections(text: string): Map<string, { body: string; lineIndex: num
  * `db 100 percent, time_group 0, 5`, which is `time_group`'s own 2-arg shape
  * plus a stray extra byte) refuses rather than being silently read as a
  * species record whose "species" is the literal text `"time_group 0"`.
+ * `timeFishGroupsCount` (`parseFishGroups` parses `TimeFishGroups` first so
+ * this is known here) bounds `n`: a dangling reference past the end of
+ * `TimeFishGroups` refuses at this record's own line, the same treatment an
+ * unknown set/fish-group const already gets elsewhere in this file, rather
+ * than loading a `timeGroupIndex` a consumer can only resolve to `undefined`.
  */
-function toRodRecord(args: string[], file: string, lineIndex: number): GbcFishRodRecord {
+function toRodRecord(args: string[], file: string, lineIndex: number, timeFishGroupsCount: number): GbcFishRodRecord {
   const chance = at(file, lineIndex, () => evalPercent(args[0]!));
   const secondArgIsTimeGroup = args.length >= 2 && /^time_group\b/.test(args[1]!);
   if (args.length === 2) {
     const tg = args[1]!.match(/^time_group\s+(\d+)$/);
-    if (tg) return { chance, kind: "timeGroup", timeGroupIndex: parseNum(tg[1]!) };
+    if (tg) {
+      const timeGroupIndex = parseNum(tg[1]!);
+      if (timeGroupIndex >= timeFishGroupsCount) {
+        fail(file, lineIndex, `rod record: time_group ${timeGroupIndex} is out of range -- TimeFishGroups has ${timeFishGroupsCount} row(s)`);
+      }
+      return { chance, kind: "timeGroup", timeGroupIndex };
+    }
   }
   if (args.length === 3 && !secondArgIsTimeGroup) {
     return { chance, kind: "species", species: args[1]!, level: at(file, lineIndex, () => parseNum(args[2]!)) };
@@ -414,31 +462,11 @@ export function parseFishGroups(
   const sections = labelSections(text);
   const fishGroupsSection = sections.get("FishGroups");
   if (!fishGroupsSection) fail(file, null, `no "FishGroups:" label found`);
-  const calls = at(file, fishGroupsSection.bodyLineIndex, () => scanCalls(fishGroupsSection.body, "fishgroup"));
-  if (calls.length !== groupNamesInOrder.length) {
-    fail(file, fishGroupsSection.lineIndex, `FishGroups has ${calls.length} "fishgroup" line(s), expected ${groupNamesInOrder.length}`);
-  }
 
-  const rodRecords = (label: string): GbcFishRodRecord[] => {
-    const section = sections.get(label);
-    if (!section) fail(file, fishGroupsSection.lineIndex, `no "${label}:" label found (referenced from FishGroups)`);
-    return dbLinesIn(section.body, section.bodyLineIndex, file).map(({ args, lineIndex }) => toRodRecord(args, file, lineIndex));
-  };
-
-  const fishGroups: GbcFishGroup[] = calls.map((c, index) => {
-    const lineIndex = fishGroupsSection.bodyLineIndex + c.lineIndex;
-    if (c.args.length !== 4) fail(file, lineIndex, `"fishgroup" has ${c.args.length} argument(s), expected 4`);
-    const [chance, oldLabel, goodLabel, superLabel] = c.args.map((a) => a.text);
-    return {
-      constName: groupNamesInOrder[index]!,
-      index,
-      biteChance: at(file, lineIndex, () => evalPercent(chance!)),
-      oldRod: rodRecords(oldLabel!),
-      goodRod: rodRecords(goodLabel!),
-      superRod: rodRecords(superLabel!),
-    };
-  });
-
+  // Parsed before the rod tables below, so a rod record's time_group
+  // reference can be bounds-checked against the real row count right where
+  // it's read (toRodRecord), rather than after the fact with no line to
+  // blame.
   const timeSection = sections.get("TimeFishGroups");
   if (!timeSection) fail(file, null, `no "TimeFishGroups:" label found`);
   const timeFishGroups: GbcTimeFishEntry[] = dbLinesIn(timeSection.body, timeSection.bodyLineIndex, file).map(({ args, lineIndex }, index) => {
@@ -448,6 +476,30 @@ export function parseFishGroups(
       index,
       day: { species: daySpecies!, level: at(file, lineIndex, () => parseNum(dayLevel!)) },
       nite: { species: niteSpecies!, level: at(file, lineIndex, () => parseNum(niteLevel!)) },
+    };
+  });
+
+  const calls = scanCallLines(fishGroupsSection.body, "fishgroup", file, fishGroupsSection.bodyLineIndex);
+  if (calls.length !== groupNamesInOrder.length) {
+    fail(file, fishGroupsSection.lineIndex, `FishGroups has ${calls.length} "fishgroup" line(s), expected ${groupNamesInOrder.length}`);
+  }
+
+  const rodRecords = (label: string): GbcFishRodRecord[] => {
+    const section = sections.get(label);
+    if (!section) fail(file, fishGroupsSection.lineIndex, `no "${label}:" label found (referenced from FishGroups)`);
+    return dbLinesIn(section.body, section.bodyLineIndex, file).map(({ args, lineIndex }) => toRodRecord(args, file, lineIndex, timeFishGroups.length));
+  };
+
+  const fishGroups: GbcFishGroup[] = calls.map((c, index) => {
+    if (c.args.length !== 4) fail(file, c.lineIndex, `"fishgroup" has ${c.args.length} argument(s), expected 4`);
+    const [chance, oldLabel, goodLabel, superLabel] = c.args;
+    return {
+      constName: groupNamesInOrder[index]!,
+      index,
+      biteChance: at(file, c.lineIndex, () => evalPercent(chance!)),
+      oldRod: rodRecords(oldLabel!),
+      goodRod: rodRecords(goodLabel!),
+      superRod: rodRecords(superLabel!),
     };
   });
 
@@ -547,9 +599,9 @@ export function parseTreemonMaps(
 
   const treemonMaps: GbcTreemonMapEntry[] = [];
   const rockMonMaps: GbcTreemonMapEntry[] = [];
-  for (const c of at(file, null, () => scanCalls(text, "treemon_map"))) {
+  for (const c of scanCallLines(text, "treemon_map", file, 0)) {
     if (c.args.length !== 2) fail(file, c.lineIndex, `"treemon_map" has ${c.args.length} argument(s), expected 2`);
-    const entry: GbcTreemonMapEntry = { mapConst: c.args[0]!.text, setConst: c.args[1]!.text, lineIndex: c.lineIndex };
+    const entry: GbcTreemonMapEntry = { mapConst: c.args[0]!, setConst: c.args[1]!, lineIndex: c.lineIndex };
     (c.lineStart < splitOffset ? treemonMaps : rockMonMaps).push(entry);
   }
   return { treemonMaps, rockMonMaps };
