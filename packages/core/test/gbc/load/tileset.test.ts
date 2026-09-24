@@ -74,6 +74,10 @@ describe("parseMetatiles / encodeMetatiles", () => {
       // stays pinned only for GBC_SUBJECT_ROOT.
       "distinct *_metatiles.bin paths round-trip identically, across every gbc corpus root (36 on the subject)",
       () => {
+        // A zero-length gbcCorpusRoots() would make this loop -- and its
+        // in-loop 36 pin -- pass vacuously. Guard against that rather than
+        // trust the loop ran.
+        expect(gbcCorpusRoots()).toContain(GBC_SUBJECT_ROOT);
         const failures: string[] = [];
         for (const root of gbcCorpusRoots()) {
           const tilesetsAsm = readFileSync(`${root}/gfx/tilesets.asm`, "utf8");

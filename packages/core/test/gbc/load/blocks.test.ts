@@ -71,6 +71,10 @@ describe("parseBlk / encodeBlk", () => {
       // for GBC_SUBJECT_ROOT.
       "every .blk INCBIN path round-trips byte-identically, across every gbc corpus root",
       () => {
+        // A zero-length gbcCorpusRoots() would make this loop -- and its
+        // in-loop 305 pin -- pass vacuously. Guard against that rather than
+        // trust the loop ran.
+        expect(gbcCorpusRoots()).toContain(GBC_SUBJECT_ROOT);
         const failures: string[] = [];
         for (const root of gbcCorpusRoots()) {
           const blocksAsm = readFileSync(`${root}/data/maps/blocks.asm`, "utf8");
