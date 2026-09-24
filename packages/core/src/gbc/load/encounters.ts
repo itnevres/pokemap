@@ -7,7 +7,7 @@
  * Decision 5's grown Task 8 scope.
  */
 import { readFileSync } from "node:fs";
-import { codeLines, stripComment, matchCall, scanCalls, splitArgs, parseNum, parseConstDefs } from "./asm.js";
+import { codeLines, stripComment, matchCall, scanCalls, splitArgs, parseNum, parseConstDefs, labelTail, type LabelTail } from "./asm.js";
 import { parseMapConstants } from "./map.js";
 import { norm } from "../../config/paths.js";
 import type {
@@ -40,30 +40,40 @@ const FISH_SWARM_OF = new Map<string, string>([
   ["FISHGROUP_REMORAID", "FISHGROUP_REMORAID_SWARM"],
 ]);
 
-/**
- * `<file>[:lineIndex+1]: <message>` -- every refusal in this file goes
- * through this one function, so the file+line prefix never drifts between
- * call sites (mirrors `./events.ts`'s `fail`). `lineIndex` is 0-based, as
- * `codeLines`/`scanCalls` report it; `null` when no single line applies
- * (e.g. a whole-table count mismatch, or a missing label).
- */
-function fail(file: string, lineIndex: number | null, message: string): never {
-  const loc = lineIndex === null ? file : `${file}:${lineIndex + 1}`;
-  throw new Error(`${loc}: ${message}`);
+/** `<file>` or `<file>:<lineIndex+1>` -- the one place that formats a location, shared by `fail` and `at` so they can never drift on it. `lineIndex` is 0-based, as `codeLines`/`scanCalls` report it; `null` when no single line applies (e.g. a whole-table count mismatch, or a missing label). */
+function locate(file: string, lineIndex: number | null): string {
+  return lineIndex === null ? file : `${file}:${lineIndex + 1}`;
 }
 
 /**
- * Runs a shared, location-free primitive (`evalPercent`/`parseNum`) and
- * rethrows any error it throws with this call site's `<file>:<line>` prefix
- * -- those two functions know only the text they were given, never which
- * file/line it came from, so every caller that has a location wraps its call
- * through here instead of letting the bare message escape unlabeled.
+ * `<file>[:lineIndex+1]: <message>` -- every *located* refusal in this file
+ * goes through this one function or through `at` below (which reuses this
+ * same `locate`), so the file+line prefix never drifts between call sites
+ * (mirrors `./events.ts`'s `fail`). The only refusal in this file that does
+ * NOT go through either is `evalPercent`'s own bare throw, which is
+ * deliberately location-free (documented on `evalPercent` itself) until a
+ * caller wraps it through `at`.
  */
-function at<T>(file: string, lineIndex: number, fn: () => T): T {
+function fail(file: string, lineIndex: number | null, message: string): never {
+  throw new Error(`${locate(file, lineIndex)}: ${message}`);
+}
+
+/**
+ * Runs a shared, location-free primitive or parsing step (`evalPercent`,
+ * `parseNum`, `splitArgs`, `matchCall`, `scanCalls`) and rethrows any error
+ * it throws with this call site's location prefix -- those functions know
+ * only the text they were given, never which file/line it came from, so
+ * every caller that has a location (or the best available anchor -- see
+ * `scanCalls`'s call sites, which can throw before any per-call line is
+ * known) wraps its call through here instead of letting the bare message
+ * escape unlabeled. `lineIndex: null` is valid, exactly as in `fail`, for a
+ * whole-scan call with no single closer line to blame.
+ */
+function at<T>(file: string, lineIndex: number | null, fn: () => T): T {
   try {
     return fn();
   } catch (e) {
-    throw new Error(`${file}:${lineIndex + 1}: ${(e as Error).message}`);
+    throw new Error(`${locate(file, lineIndex)}: ${(e as Error).message}`);
   }
 }
 
@@ -112,7 +122,7 @@ function makeWildCursor(text: string, file: string) {
         if (stripped === "" || endMacroRe.test(stripped)) continue;
         const m = stripped.match(/^db\s+(.*)$/);
         if (!m) fail(file, lineIndex, `${context}: expected a "db" line, found "${stripped}"`);
-        return { lineIndex, args: splitArgs(m[1]!) };
+        return { lineIndex, args: at(file, lineIndex, () => splitArgs(m[1]!)) };
       }
       fail(file, null, `${context}: unexpected end of file while reading wild data`);
     },
@@ -136,7 +146,8 @@ function readSlots(cursor: ReturnType<typeof makeWildCursor>, count: number, con
  * terminator (kanto_grass.asm's real defect, Decision 4): EOF ends the
  * list, and a `DataDefect` naming `file` is returned instead of thrown.
  */
-export function parseGrassFile(text: string, file: string, swarm = false): { entries: GbcGrassEntry[]; defects: DataDefect[] } {
+export function parseGrassFile(text: string, file: string, options: { swarm?: boolean } = {}): { entries: GbcGrassEntry[]; defects: DataDefect[] } {
+  const { swarm = false } = options;
   const cursor = makeWildCursor(text, file);
   const endRe = /^end_grass_wildmons\b/;
   const entries: GbcGrassEntry[] = [];
@@ -153,7 +164,7 @@ export function parseGrassFile(text: string, file: string, swarm = false): { ent
       terminated = true;
       break;
     }
-    const call = matchCall(stripped, "def_grass_wildmons") ?? matchCall(stripped, "map_id");
+    const call = at(file, cursor.lineIndex(), () => matchCall(stripped, "def_grass_wildmons") ?? matchCall(stripped, "map_id"));
     if (!call) fail(file, cursor.lineIndex(), `unexpected line while scanning grass wild data: "${stripped}"`);
     if (call.length !== 1) fail(file, cursor.lineIndex(), `grass block header has ${call.length} argument(s), expected 1: "${stripped}"`);
     const mapConst = call[0]!;
@@ -182,7 +193,8 @@ export function parseGrassFile(text: string, file: string, swarm = false): { ent
 }
 
 /** `data/wild/{johto,kanto,swarm}_water.asm`. Same shape as `parseGrassFile`, 1 rate + 3 slots. */
-export function parseWaterFile(text: string, file: string, swarm = false): { entries: GbcWaterEntry[]; defects: DataDefect[] } {
+export function parseWaterFile(text: string, file: string, options: { swarm?: boolean } = {}): { entries: GbcWaterEntry[]; defects: DataDefect[] } {
+  const { swarm = false } = options;
   const cursor = makeWildCursor(text, file);
   const endRe = /^end_water_wildmons\b/;
   const entries: GbcWaterEntry[] = [];
@@ -199,7 +211,7 @@ export function parseWaterFile(text: string, file: string, swarm = false): { ent
       terminated = true;
       break;
     }
-    const call = matchCall(stripped, "def_water_wildmons") ?? matchCall(stripped, "map_id");
+    const call = at(file, cursor.lineIndex(), () => matchCall(stripped, "def_water_wildmons") ?? matchCall(stripped, "map_id"));
     if (!call) fail(file, cursor.lineIndex(), `unexpected line while scanning water wild data: "${stripped}"`);
     if (call.length !== 1) fail(file, cursor.lineIndex(), `water block header has ${call.length} argument(s), expected 1: "${stripped}"`);
     const mapConst = call[0]!;
@@ -227,46 +239,80 @@ export function parseWaterFile(text: string, file: string, swarm = false): { ent
  * `loadGbcWildData` (i.e. unit tests) may pass a fixture name instead.
  */
 export function parseWildProbabilities(text: string, file = "data/wild/probabilities.asm"): GbcWildProbabilities {
-  const grassTail = labelTailText(text, "GrassMonProbTable");
-  const waterTail = labelTailText(text, "WaterMonProbTable");
-  return { grass: cumulativeToPerSlot(grassTail, file), water: cumulativeToPerSlot(waterTail, file) };
+  const grassTail = getLabelTail(text, "GrassMonProbTable", file);
+  const waterTail = getLabelTail(text, "WaterMonProbTable", file);
+  return {
+    grass: cumulativeToPerSlot(grassTail, file, NUM_GRASS_SLOTS),
+    water: cumulativeToPerSlot(waterTail, file, NUM_WATER_SLOTS),
+  };
 }
 
 /**
- * Bounds `text` from right after `${label}:`'s own line to the next `Label:`
- * line (or EOF) -- a plain global-label tail, no stacking needed for this
- * file. Also reports the tail's own absolute starting line index, so callers
- * can convert a tail-relative `scanCalls` `lineIndex` back to an absolute one.
+ * `asm.ts`'s `labelTail`, with its own bare `no "X:" label found` throw
+ * routed through `fail(file, null, ...)` -- `labelTail` deliberately leaves
+ * that prefix to its callers (its own doc says so), and every sibling
+ * missing-label refusal in this file (`FishGroups`, `TimeFishGroups`,
+ * `TreeMons`) already does this via `fail`. There used to be a private
+ * `labelTailText` here duplicating `labelTail`'s exact logic for this file's
+ * plain-global-label case (no stacking, no local labels needed) -- confirmed
+ * a drop-in replacement (code-quality review), so it's gone.
  */
-function labelTailText(text: string, label: string): { text: string; lineIndex: number } {
-  const m = new RegExp(`^${label}:[^\\n]*$`, "m").exec(text);
-  if (!m) throw new Error(`no "${label}:" label found`);
-  const lineStart = m.index + m[0].length;
-  const nl = text.indexOf("\n", lineStart);
-  const bodyStart = nl === -1 ? text.length : nl + 1;
-  const nextLabel = /^[A-Za-z_][A-Za-z0-9_]*:/m.exec(text.slice(bodyStart));
-  const body = nextLabel ? text.slice(bodyStart, bodyStart + nextLabel.index) : text.slice(bodyStart);
-  const lineIndex = text.slice(0, bodyStart).split("\n").length - 1;
-  return { text: body, lineIndex };
+function getLabelTail(text: string, label: string, file: string): LabelTail {
+  try {
+    return labelTail(text, label);
+  } catch (e) {
+    return fail(file, null, (e as Error).message);
+  }
 }
 
-function cumulativeToPerSlot(tail: { text: string; lineIndex: number }, file: string): number[] {
-  const entries = scanCalls(tail.text, "mon_prob")
-    .map((c) => {
-      const lineIndex = tail.lineIndex + c.lineIndex;
-      if (c.args.length !== 2) fail(file, lineIndex, `"mon_prob" has ${c.args.length} argument(s), expected 2`);
-      return {
-        index: at(file, lineIndex, () => parseNum(c.args[1]!.text)),
-        cumulative: at(file, lineIndex, () => parseNum(c.args[0]!.text)),
-      };
-    })
-    .sort((a, b) => a.index - b.index);
+/**
+ * Converts a `mon_prob cumulativePercent, index` run into per-slot
+ * percentages, refusing (naming file+line) unless the table has exactly
+ * `expectedCount` entries, every index in `0..expectedCount-1` appears
+ * exactly once, the cumulative values are non-decreasing in index order, and
+ * the last one is exactly 100 -- the real corpus's own shape (both
+ * `GrassMonProbTable` and `WaterMonProbTable` end at `mon_prob 100, ...`), so
+ * this never fires on real data, only on a malformed/mutated table that
+ * would otherwise silently produce a wrong-length or wrong-valued array.
+ */
+function cumulativeToPerSlot(tail: LabelTail, file: string, expectedCount: number): number[] {
+  const calls = at(file, tail.lineIndex, () => scanCalls(tail.text, "mon_prob"));
+  if (calls.length !== expectedCount) {
+    fail(file, tail.lineIndex, `expected ${expectedCount} "mon_prob" line(s), found ${calls.length}`);
+  }
+
+  const parsed = calls.map((c) => {
+    const lineIndex = tail.lineIndex + c.lineIndex;
+    if (c.args.length !== 2) fail(file, lineIndex, `"mon_prob" has ${c.args.length} argument(s), expected 2`);
+    return {
+      lineIndex,
+      index: at(file, lineIndex, () => parseNum(c.args[1]!.text)),
+      cumulative: at(file, lineIndex, () => parseNum(c.args[0]!.text)),
+    };
+  });
+
+  const seenIndices = new Set<number>();
+  for (const e of parsed) {
+    if (e.index < 0 || e.index >= expectedCount || seenIndices.has(e.index)) {
+      fail(file, e.lineIndex, `"mon_prob" index ${e.index} is not a unique value in 0..${expectedCount - 1}`);
+    }
+    seenIndices.add(e.index);
+  }
+
+  const sorted = [...parsed].sort((a, b) => a.index - b.index);
   let prev = 0;
-  return entries.map((e) => {
+  const perSlot = sorted.map((e) => {
+    if (e.cumulative < prev) {
+      fail(file, e.lineIndex, `"mon_prob" cumulative value ${e.cumulative} is less than the previous entry's ${prev} -- the table must be non-decreasing`);
+    }
     const v = e.cumulative - prev;
     prev = e.cumulative;
     return v;
   });
+  if (prev !== 100) {
+    fail(file, sorted[sorted.length - 1]!.lineIndex, `"mon_prob" table ends at cumulative ${prev}, expected 100`);
+  }
+  return perSlot;
 }
 
 /**
@@ -308,28 +354,46 @@ function labelSections(text: string): Map<string, { body: string; lineIndex: num
   return out;
 }
 
-/** One `db pct, SPECIES, level` / `db pct, time_group n` rod record line, parsed from its already-split `db` args. */
+/**
+ * One `db pct, SPECIES, level` / `db pct, time_group n` rod record line,
+ * parsed from its already-split `db` args. `time_group` (`DEF time_group
+ * EQUS "0,"`, fish.asm:1) is a pseudo-op only valid as the entire 2nd arg of
+ * an exact 2-arg record (`db 100 percent, time_group 0`) -- any arg starting
+ * with `time_group` that shows up somewhere else (e.g. a 3-arg record like
+ * `db 100 percent, time_group 0, 5`, which is `time_group`'s own 2-arg shape
+ * plus a stray extra byte) refuses rather than being silently read as a
+ * species record whose "species" is the literal text `"time_group 0"`.
+ */
 function toRodRecord(args: string[], file: string, lineIndex: number): GbcFishRodRecord {
   const chance = at(file, lineIndex, () => evalPercent(args[0]!));
+  const secondArgIsTimeGroup = args.length >= 2 && /^time_group\b/.test(args[1]!);
   if (args.length === 2) {
     const tg = args[1]!.match(/^time_group\s+(\d+)$/);
     if (tg) return { chance, kind: "timeGroup", timeGroupIndex: parseNum(tg[1]!) };
   }
-  if (args.length === 3) return { chance, kind: "species", species: args[1]!, level: at(file, lineIndex, () => parseNum(args[2]!)) };
+  if (args.length === 3 && !secondArgIsTimeGroup) {
+    return { chance, kind: "species", species: args[1]!, level: at(file, lineIndex, () => parseNum(args[2]!)) };
+  }
   fail(file, lineIndex, `rod record: "${args.join(", ")}" is neither a 3-arg species record nor a 2-arg time_group reference`);
 }
 
-/** Every non-blank `db ...` line in a label's body, comma-split into args (no terminator in rod tables -- GBC format findings §Extra, Fishing), each tagged with its absolute file line index. */
+/**
+ * Every non-blank `db ...` line in a label's body, comma-split into args (no
+ * terminator in rod tables -- GBC format findings §Extra, Fishing), each
+ * tagged with its absolute file line index. Built on `asm.ts`'s `codeLines`
+ * for the line split (it handles `\r\n` and a lone trailing `\r`), the same
+ * primitive every other line-scanner in this file uses, rather than a second
+ * hand `.split`.
+ */
 function dbLinesIn(body: string, bodyLineIndex: number, file: string): { args: string[]; lineIndex: number }[] {
   const out: { args: string[]; lineIndex: number }[] = [];
-  const rawLines = body.split(/\r\n|\n/);
-  for (let k = 0; k < rawLines.length; k++) {
-    const stripped = stripComment(rawLines[k]!).trim();
+  for (const { lineIndex: relIndex, text: rawLine } of codeLines(body)) {
+    const stripped = stripComment(rawLine).trim();
     if (stripped === "") continue;
-    const lineIndex = bodyLineIndex + k;
+    const lineIndex = bodyLineIndex + relIndex;
     const m = stripped.match(/^db\s+(.*)$/);
     if (!m) fail(file, lineIndex, `expected a "db" line, found "${stripped}"`);
-    out.push({ args: splitArgs(m[1]!), lineIndex });
+    out.push({ args: at(file, lineIndex, () => splitArgs(m[1]!)), lineIndex });
   }
   return out;
 }
@@ -350,7 +414,7 @@ export function parseFishGroups(
   const sections = labelSections(text);
   const fishGroupsSection = sections.get("FishGroups");
   if (!fishGroupsSection) fail(file, null, `no "FishGroups:" label found`);
-  const calls = scanCalls(fishGroupsSection.body, "fishgroup");
+  const calls = at(file, fishGroupsSection.bodyLineIndex, () => scanCalls(fishGroupsSection.body, "fishgroup"));
   if (calls.length !== groupNamesInOrder.length) {
     fail(file, fishGroupsSection.lineIndex, `FishGroups has ${calls.length} "fishgroup" line(s), expected ${groupNamesInOrder.length}`);
   }
@@ -483,7 +547,7 @@ export function parseTreemonMaps(
 
   const treemonMaps: GbcTreemonMapEntry[] = [];
   const rockMonMaps: GbcTreemonMapEntry[] = [];
-  for (const c of scanCalls(text, "treemon_map")) {
+  for (const c of at(file, null, () => scanCalls(text, "treemon_map"))) {
     if (c.args.length !== 2) fail(file, c.lineIndex, `"treemon_map" has ${c.args.length} argument(s), expected 2`);
     const entry: GbcTreemonMapEntry = { mapConst: c.args[0]!.text, setConst: c.args[1]!.text, lineIndex: c.lineIndex };
     (c.lineStart < splitOffset ? treemonMaps : rockMonMaps).push(entry);
@@ -492,7 +556,8 @@ export function parseTreemonMaps(
 }
 
 /** `Map<name, value>` filtered to keys starting with `prefix`, sorted by value ascending, names only -- turns a raw `parseConstDefs` map into the ordered array `parseFishGroups`/`parseTreemonSets` need. */
-function orderedNames(consts: Map<string, number>, prefix: string, excludeZero: boolean): string[] {
+function orderedNames(consts: Map<string, number>, prefix: string, options: { excludeZero?: boolean } = {}): string[] {
+  const { excludeZero = false } = options;
   return [...consts]
     .filter(([k, v]) => k.startsWith(prefix) && !(excludeZero && v === 0))
     .sort((a, b) => a[1] - b[1])
@@ -518,20 +583,20 @@ export function loadGbcWildData(root: string): GbcWildData {
 
   const johtoGrass = parseGrassFile(read("data/wild/johto_grass.asm"), "data/wild/johto_grass.asm");
   const kantoGrass = parseGrassFile(read("data/wild/kanto_grass.asm"), "data/wild/kanto_grass.asm");
-  const swarmGrass = parseGrassFile(read("data/wild/swarm_grass.asm"), "data/wild/swarm_grass.asm", true);
+  const swarmGrass = parseGrassFile(read("data/wild/swarm_grass.asm"), "data/wild/swarm_grass.asm", { swarm: true });
 
   const johtoWater = parseWaterFile(read("data/wild/johto_water.asm"), "data/wild/johto_water.asm");
   const kantoWater = parseWaterFile(read("data/wild/kanto_water.asm"), "data/wild/kanto_water.asm");
-  const swarmWater = parseWaterFile(read("data/wild/swarm_water.asm"), "data/wild/swarm_water.asm", true);
+  const swarmWater = parseWaterFile(read("data/wild/swarm_water.asm"), "data/wild/swarm_water.asm", { swarm: true });
 
   const probabilities = parseWildProbabilities(read("data/wild/probabilities.asm"), "data/wild/probabilities.asm");
 
   const mapDataConsts = parseConstDefs(read("constants/map_data_constants.asm"));
-  const fishGroupNames = orderedNames(mapDataConsts, "FISHGROUP_", true);
+  const fishGroupNames = orderedNames(mapDataConsts, "FISHGROUP_", { excludeZero: true });
   const { fishGroups, timeFishGroups } = parseFishGroups(read("data/wild/fish.asm"), fishGroupNames, "data/wild/fish.asm");
 
   const pokemonDataConsts = parseConstDefs(read("constants/pokemon_data_constants.asm"));
-  const treemonSetNames = orderedNames(pokemonDataConsts, "TREEMON_SET_", false);
+  const treemonSetNames = orderedNames(pokemonDataConsts, "TREEMON_SET_");
   const treemonSets = parseTreemonSets(read("data/wild/treemons.asm"), treemonSetNames, "data/wild/treemons.asm");
 
   const treemonMapsFile = "data/wild/treemon_maps.asm";
@@ -595,6 +660,14 @@ function resolveTreemonSet(data: GbcWildData, entry: GbcTreemonMapEntry | null, 
  * daily-flag state this loader has no access to). `TREEMON_SET_CITY` maps
  * still resolve a `headbutt.set` (so callers can see which set it nominally
  * is) but `yieldsNothing` is true for them.
+ *
+ * `rock` returns the full resolved `GbcTreemonSet`, `rare` list included,
+ * even though the engine's rock path never reads it: `RockMonEncounter`
+ * (engine/events/treemons.asm) calls `GetTreeMons` then `SelectTreeMon` over
+ * `common` only, with no rare-list branch. A set is shared data (the same
+ * `TREEMON_SET_*` row can be pointed at by both a `TreeMonMaps` and a
+ * `RockMonMaps` row), so this loader does not refuse a `rare` list on a set
+ * referenced only by rock rows -- see `GbcWildForMap.rock`'s own doc.
  *
  * Grass/water lookups search `data.grass`/`data.water` as one concatenated
  * Johto+Kanto(+swarm) list and take the first match for a given `swarm`

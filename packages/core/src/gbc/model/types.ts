@@ -403,5 +403,11 @@ export interface GbcWildForMap {
   water: { base: GbcWaterEntry | null; swarm: GbcWaterEntry | null };
   fishing: { group: GbcFishGroup | null; swarmVariant: GbcFishGroup | null };
   headbutt: { set: GbcTreemonSet | null; yieldsNothing: boolean };
+  /** The full resolved set, `rare` included, even though the engine's rock
+   *  path (`RockMonEncounter`, engine/events/treemons.asm) never reads a
+   *  rare list -- it calls `GetTreeMons` then `SelectTreeMon` over `common`
+   *  only. Callers that render a rock-smash encounter must use only
+   *  `.common`; `.rare` here reflects the set's stored data (shared with any
+   *  headbutt row pointing at the same set), not what rock smash can roll. */
   rock: GbcTreemonSet | null;
 }

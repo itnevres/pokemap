@@ -112,7 +112,7 @@ describe("parseGrassFile", () => {
       "",
       "\tdb -1 ; end",
     ].join("\n");
-    const { entries, defects } = parseGrassFile(text, "data/wild/swarm_grass.asm", true);
+    const { entries, defects } = parseGrassFile(text, "data/wild/swarm_grass.asm", { swarm: true });
     expect(defects).toEqual([]);
     expect(entries).toHaveLength(1);
     expect(entries[0]!.mapConst).toBe("ROUTE_35");
@@ -149,6 +149,45 @@ describe("parseGrassFile", () => {
   it("refuses a slot line with the wrong argument count (Issue 1: readSlots must require exactly 2 args)", () => {
     const bad = oneEntry.replace("\tdb 3, GASTLY", "\tdb 3, GASTLY, 9");
     expect(() => parseGrassFile(bad, "x.asm")).toThrow(/^x\.asm:22: SPROUT_TOWER_2F: slot line has 3 argument\(s\), expected 2$/);
+  });
+
+  it("refuses a slot line with too FEW args (N6b: was silently accepted, species: undefined)", () => {
+    const bad = oneEntry.replace("\tdb 3, GASTLY", "\tdb 3");
+    expect(() => parseGrassFile(bad, "x.asm")).toThrow(/^x\.asm:22: SPROUT_TOWER_2F: slot line has 1 argument\(s\), expected 2$/);
+  });
+
+  it("refuses a grass block header with an extra arg (N13)", () => {
+    const bad = oneEntry.replace("\tdef_grass_wildmons SPROUT_TOWER_2F", "\tdef_grass_wildmons SPROUT_TOWER_2F, EXTRA");
+    expect(() => parseGrassFile(bad, "x.asm")).toThrow(/^x\.asm:3: grass block header has 2 argument\(s\), expected 1: /);
+  });
+
+  it("refuses a blank comma-separated arg in a slot line, naming file+line (Issue A: readDb's splitArgs wrapped via at())", () => {
+    const bad = oneEntry.replace("\tdb 3, GASTLY", "\tdb 3, , GASTLY");
+    expect(() => parseGrassFile(bad, "x.asm")).toThrow(/^x\.asm:22: splitArgs: blank argument in "3, , GASTLY"/);
+  });
+
+  it("refuses a blank comma-separated arg in a grass block header, naming file+line (Issue A: matchCall wrapped via at())", () => {
+    const bad = oneEntry.replace("\tdef_grass_wildmons SPROUT_TOWER_2F", "\tdef_grass_wildmons SPROUT_TOWER_2F,");
+    expect(() => parseGrassFile(bad, "x.asm")).toThrow(/^x\.asm:3: splitArgs: blank argument in "SPROUT_TOWER_2F,"/);
+  });
+
+  it.each([
+    [
+      "N1a: readSlots level (parseNum, not a count issue)",
+      () => oneEntry.replace("\tdb 3, GASTLY", "\tdb BOGUS, GASTLY"),
+      /^x\.asm:22: parseNum: "BOGUS" is not a clean \$hex or signed decimal number$/,
+    ],
+    [
+      "N1b: grass morn rate (evalPercent, not a count issue)",
+      () =>
+        oneEntry.replace(
+          "\tdb 3 percent, 4 percent, 5 percent ; encounter rates: morn/day/nite -- deliberately UNEQUAL (M10: a morn/nite rate swap must go red)",
+          "\tdb BOGUS, 4 percent, 5 percent ; encounter rates: morn/day/nite",
+        ),
+      /^x\.asm:4: evalPercent: "BOGUS" is not a recognized/,
+    ],
+  ])("%s", (_name, makeBad, expected) => {
+    expect(() => parseGrassFile(makeBad(), "x.asm")).toThrow(expected);
   });
 });
 
@@ -187,15 +226,35 @@ describe("parseWaterFile", () => {
 
   it("parses an empty table (swarm_water.asm's real shape: no entries, just the terminator)", () => {
     const empty = ["SwarmWaterWildMons:", "", "\tdb -1 ; end"].join("\n");
-    const { entries, defects } = parseWaterFile(empty, "data/wild/swarm_water.asm", true);
+    const { entries, defects } = parseWaterFile(empty, "data/wild/swarm_water.asm", { swarm: true });
     expect(entries).toEqual([]);
     expect(defects).toEqual([]);
   });
 
   it("tags a NON-empty swarm water table's entries swarm: true (M9: swarm_water.asm has 0 entries on the real corpus, so that alone can't prove the flag propagates)", () => {
-    const { entries } = parseWaterFile(text, "data/wild/swarm_water.asm", true);
+    const { entries } = parseWaterFile(text, "data/wild/swarm_water.asm", { swarm: true });
     expect(entries).toHaveLength(1);
     expect(entries[0]!.swarm).toBe(true);
+  });
+
+  it("refuses a water rate line with an extra arg (N14)", () => {
+    const bad = text.replace("\tdb 2 percent ; encounter rate", "\tdb 2 percent, EXTRA ; encounter rate");
+    expect(() => parseWaterFile(bad, "w.asm")).toThrow(/^w\.asm:4: RUINS_OF_ALPH_OUTSIDE: rate line has 2 argument\(s\), expected 1$/);
+  });
+
+  it("refuses a water block header with an extra arg (N15)", () => {
+    const bad = text.replace("\tdef_water_wildmons RUINS_OF_ALPH_OUTSIDE", "\tdef_water_wildmons RUINS_OF_ALPH_OUTSIDE, EXTRA");
+    expect(() => parseWaterFile(bad, "w.asm")).toThrow(/^w\.asm:3: water block header has 2 argument\(s\), expected 1: /);
+  });
+
+  it("refuses a bad water rate value (N1d: evalPercent wrapped via at(), not a count issue)", () => {
+    const bad = text.replace("\tdb 2 percent ; encounter rate", "\tdb BOGUS ; encounter rate");
+    expect(() => parseWaterFile(bad, "w.asm")).toThrow(/^w\.asm:4: evalPercent: "BOGUS" is not a recognized/);
+  });
+
+  it("refuses a blank comma-separated arg in a water block header, naming file+line (Issue A: matchCall wrapped via at())", () => {
+    const bad = text.replace("\tdef_water_wildmons RUINS_OF_ALPH_OUTSIDE", "\tdef_water_wildmons RUINS_OF_ALPH_OUTSIDE,");
+    expect(() => parseWaterFile(bad, "w.asm")).toThrow(/^w\.asm:3: splitArgs: blank argument in "RUINS_OF_ALPH_OUTSIDE,"/);
   });
 });
 
@@ -236,6 +295,59 @@ describe("parseWildProbabilities", () => {
     expect(() => parseWildProbabilities(bad, "probabilities.asm")).toThrow(
       /^probabilities\.asm:9: "mon_prob" has 1 argument\(s\), expected 2$/,
     );
+  });
+
+  it("refuses a mon_prob call with an EXTRA argument (N7a)", () => {
+    const bad = text.replace("\tmon_prob 50,  1 ; 25% chance", "\tmon_prob 50, 1, 99 ; extra");
+    expect(() => parseWildProbabilities(bad, "probabilities.asm")).toThrow(
+      /^probabilities\.asm:9: "mon_prob" has 3 argument\(s\), expected 2$/,
+    );
+  });
+
+  it("refuses a missing GrassMonProbTable/WaterMonProbTable label, naming the file (Issue A: was a bare, file-free Error even though `file` was passed in)", () => {
+    expect(() => parseWildProbabilities("WaterMonProbTable:\n\tmon_prob 100, 0\n", "probabilities.asm")).toThrow(
+      /^probabilities\.asm: no "GrassMonProbTable:" label found$/,
+    );
+  });
+
+  it("refuses a blank comma-separated arg in a mon_prob call, naming file+line (Issue A: scanCalls has no per-call line yet, so it's anchored at the table's own start line, not the bad line itself)", () => {
+    const bad = text.replace("\tmon_prob 95,  5 ;  5% chance", "\tmon_prob 95, , 5 ;  5% chance");
+    expect(() => parseWildProbabilities(bad, "probabilities.asm")).toThrow(/^probabilities\.asm:7: splitArgs: blank argument in/);
+  });
+
+  it.each([
+    ["N1e: mon_prob cumulative (parseNum, not a count issue)", "\tmon_prob 50,  1 ; 25% chance", "\tmon_prob BOGUS,  1 ; oops"],
+    ["N1e: mon_prob index (parseNum, not a count issue)", "\tmon_prob 50,  1 ; 25% chance", "\tmon_prob 50,  BOGUS ; oops"],
+  ])("%s", (_name, oldStr, newStr) => {
+    const bad = text.replace(oldStr, newStr);
+    expect(() => parseWildProbabilities(bad, "probabilities.asm")).toThrow(/^probabilities\.asm:9: parseNum: "BOGUS" is not a clean \$hex or signed decimal number$/);
+  });
+
+  it("refuses a GrassMonProbTable with the wrong number of mon_prob lines (Issue C: a missing/extra line would otherwise silently produce a wrong-length array)", () => {
+    const bad = text.replace("\tmon_prob 95,  5 ;  5% chance\n", "");
+    expect(() => parseWildProbabilities(bad, "probabilities.asm")).toThrow(/^probabilities\.asm:7: expected 7 "mon_prob" line\(s\), found 6$/);
+  });
+
+  it("refuses a duplicated mon_prob index (Issue C: indices must be 0..N-1, each exactly once)", () => {
+    const bad = text.replace("\tmon_prob 95,  5 ;  5% chance", "\tmon_prob 95,  4 ; duplicate of index 4");
+    expect(() => parseWildProbabilities(bad, "probabilities.asm")).toThrow(/^probabilities\.asm:13: "mon_prob" index 4 is not a unique value in 0\.\.6$/);
+  });
+
+  it("refuses an out-of-range mon_prob index (Issue C)", () => {
+    const bad = text.replace("\tmon_prob 95,  5 ;  5% chance", "\tmon_prob 95,  9 ; out of range");
+    expect(() => parseWildProbabilities(bad, "probabilities.asm")).toThrow(/^probabilities\.asm:13: "mon_prob" index 9 is not a unique value in 0\.\.6$/);
+  });
+
+  it("refuses a non-decreasing cumulative value (Issue C)", () => {
+    const bad = text.replace("\tmon_prob 90,  4 ; 10% chance", "\tmon_prob 60,  4 ; oops, less than the previous 80");
+    expect(() => parseWildProbabilities(bad, "probabilities.asm")).toThrow(
+      /^probabilities\.asm:12: "mon_prob" cumulative value 60 is less than the previous entry's 80 --/,
+    );
+  });
+
+  it("refuses a table that doesn't end at cumulative 100 (Issue C: the real probabilities.asm always ends at 100 for both tables)", () => {
+    const bad = text.replace("\tmon_prob 100, 6 ;  5% chance", "\tmon_prob 99, 6 ; oops, not 100");
+    expect(() => parseWildProbabilities(bad, "probabilities.asm")).toThrow(/^probabilities\.asm:14: "mon_prob" table ends at cumulative 99, expected 100$/);
   });
 });
 
@@ -315,6 +427,65 @@ describe("parseFishGroups", () => {
     expect(() => parseFishGroups(bad, ["FISHGROUP_SHORE"], "fish.asm")).toThrow(
       /^fish\.asm:30: TimeFishGroups row 0: 3 argument\(s\), expected 4$/,
     );
+  });
+
+  it("refuses a TimeFishGroups row with an EXTRA argument (N10)", () => {
+    const bad = text.replace("\tdb CORSOLA,    20,  STARYU,     20 ; 0", "\tdb CORSOLA, 20, STARYU, 20, 99 ; 0");
+    expect(() => parseFishGroups(bad, ["FISHGROUP_SHORE"], "fish.asm")).toThrow(
+      /^fish\.asm:30: TimeFishGroups row 0: 5 argument\(s\), expected 4$/,
+    );
+  });
+
+  it("refuses a fishgroup call with an EXTRA argument (N11)", () => {
+    const bad = text.replace(
+      "\tfishgroup 50 percent + 1, .Shore_Old,            .Shore_Good,            .Shore_Super",
+      "\tfishgroup 50 percent + 1, .Shore_Old, .Shore_Good, .Shore_Super, EXTRA",
+    );
+    expect(() => parseFishGroups(bad, ["FISHGROUP_SHORE"], "fish.asm")).toThrow(/^fish\.asm:11: "fishgroup" has 5 argument\(s\), expected 4$/);
+  });
+
+  it("refuses a rod record with time_group plus a stray extra arg, naming file+line, instead of reading it as a species record (Issue B)", () => {
+    const bad = text.replace("\tdb 100 percent,     time_group 0", "\tdb 100 percent,     time_group 0, 5");
+    expect(() => parseFishGroups(bad, ["FISHGROUP_SHORE"], "fish.asm")).toThrow(
+      /^fish\.asm:22: rod record: "100 percent, time_group 0, 5" is neither a 3-arg species record nor a 2-arg time_group reference$/,
+    );
+  });
+
+  it("refuses a blank comma-separated arg in a rod record, naming its own exact line (Issue A: dbLinesIn's splitArgs is wrapped per-line, unlike scanCalls' whole-body anchor)", () => {
+    const bad = text.replace("\tdb  85 percent + 1, MAGIKARP,   10", "\tdb  85 percent + 1, , 10");
+    expect(() => parseFishGroups(bad, ["FISHGROUP_SHORE"], "fish.asm")).toThrow(/^fish\.asm:16: splitArgs: blank argument in "85 percent \+ 1, , 10"/);
+  });
+
+  it("refuses a blank comma-separated arg in a fishgroup call, naming file+line (Issue A: scanCalls wrapped via at(), anchored at the table body's own start line since scanCalls has no per-call line until it returns)", () => {
+    const bad = text.replace(
+      "\tfishgroup 50 percent + 1, .Shore_Old,            .Shore_Good,            .Shore_Super",
+      "\tfishgroup 50 percent + 1, .Shore_Old, , .Shore_Super",
+    );
+    expect(() => parseFishGroups(bad, ["FISHGROUP_SHORE"], "fish.asm")).toThrow(/^fish\.asm:10: splitArgs: blank argument in/);
+  });
+
+  it.each([
+    [
+      "N1f: rod chance (evalPercent, not a count issue)",
+      "\tdb  70 percent + 1, MAGIKARP,   10",
+      "\tdb  BOGUS, MAGIKARP,   10",
+      /^fish\.asm:15: evalPercent: "BOGUS" is not a recognized/,
+    ],
+    [
+      "N1g: rod species level (parseNum, not a count issue)",
+      "\tdb  70 percent + 1, MAGIKARP,   10",
+      "\tdb  70 percent + 1, MAGIKARP,   BOGUS",
+      /^fish\.asm:15: parseNum: "BOGUS" is not a clean \$hex or signed decimal number$/,
+    ],
+    [
+      "N1i: TimeFishGroups day level (parseNum, not a count issue)",
+      "\tdb CORSOLA,    20,  STARYU,     20 ; 0",
+      "\tdb CORSOLA,    BOGUS,  STARYU,     20 ; 0",
+      /^fish\.asm:30: parseNum: "BOGUS" is not a clean \$hex or signed decimal number$/,
+    ],
+  ])("%s", (_name, oldStr, newStr, expected) => {
+    const bad = text.replace(oldStr, newStr);
+    expect(() => parseFishGroups(bad, ["FISHGROUP_SHORE"], "fish.asm")).toThrow(expected);
   });
 });
 
@@ -418,6 +589,48 @@ describe("parseTreemonSets", () => {
     expect(sets[0]!.yieldsNothing).toBe(true);
     expect(sets[1]!.yieldsNothing).toBe(false); // Canyon is index 1, not the special-cased index 0
   });
+
+  it("refuses a treemon record with an EXTRA argument (N8)", () => {
+    const bad = text.replace("\tdb 50, SPEAROW,    10", "\tdb 50, SPEAROW,    10, 99");
+    expect(() => parseTreemonSets(bad, ["TREEMON_SET_CITY", "TREEMON_SET_ROCK"], "treemons.asm")).toThrow(
+      /^treemons\.asm:10: treemon record: "50, SPEAROW, 10, 99" has 4 argument\(s\), expected 3$/,
+    );
+  });
+
+  it.each([
+    ["N1j: treemon percent (parseNum, not a count issue)", "\tdb 50, SPEAROW,    10", "\tdb BOGUS, SPEAROW,    10"],
+    ["N1j: treemon level (parseNum, not a count issue)", "\tdb 50, SPEAROW,    10", "\tdb 50, SPEAROW,    BOGUS"],
+  ])("%s", (_name, oldStr, newStr) => {
+    const bad = text.replace(oldStr, newStr);
+    expect(() => parseTreemonSets(bad, ["TREEMON_SET_CITY", "TREEMON_SET_ROCK"], "treemons.asm")).toThrow(
+      /^treemons\.asm:10: parseNum: "BOGUS" is not a clean \$hex or signed decimal number$/,
+    );
+  });
+
+  it("reports the exact line of an error INSIDE a stacked label's body, computed from the LAST stacked label (N20: bodyLineIndex must not be taken from the first)", () => {
+    // City/Canyon stacked with NO blank line between them (the real corpus
+    // shape) -- if bodyLineIndex were computed from the FIRST label
+    // (TreeMonSet_City's own line) instead of the LAST (TreeMonSet_Canyon's),
+    // every line number inside the body would be off by exactly 1.
+    const stackedBad = [
+      "TreeMons:",
+      "\tdw TreeMonSet_City",
+      "\tdw TreeMonSet_Canyon",
+      "\tassert_table_length NUM_TREEMON_SETS",
+      "",
+      "TreeMonSet_City:",
+      "TreeMonSet_Canyon:",
+      "\tdb 50, SPEAROW",
+      "\tdb -1",
+    ].join("\n");
+    // Lines (0-based): 0 TreeMons:, 1 dw City, 2 dw Canyon, 3 assert, 4 "",
+    // 5 TreeMonSet_City:, 6 TreeMonSet_Canyon:, 7 the bad db line (2 args).
+    // The body starts right after line 6 (the LAST stacked label), so the
+    // bad line's absolute index is 7 -> 1-based 8.
+    expect(() => parseTreemonSets(stackedBad, ["TREEMON_SET_CITY", "TREEMON_SET_CANYON"], "t.asm")).toThrow(
+      /^t\.asm:8: treemon record: "50, SPEAROW" has 2 argument\(s\), expected 3$/,
+    );
+  });
 });
 
 describe("parseTreemonMaps", () => {
@@ -445,6 +658,19 @@ describe("parseTreemonMaps", () => {
       { mapConst: "NEW_BARK_TOWN", setConst: "TREEMON_SET_CITY", lineIndex: 7 },
     ]);
     expect(rockMonMaps).toEqual([{ mapConst: "CIANWOOD_CITY", setConst: "TREEMON_SET_ROCK", lineIndex: 12 }]);
+  });
+
+  it.each([
+    ["N9: extra argument", "\ttreemon_map ROUTE_29, TREEMON_SET_ROUTE", "\ttreemon_map ROUTE_29, TREEMON_SET_ROUTE, 99", 3],
+    ["N9: missing argument", "\ttreemon_map ROUTE_29, TREEMON_SET_ROUTE", "\ttreemon_map ROUTE_29", 1],
+  ])("%s", (_name, oldStr, newStr, argCount) => {
+    const bad = text.replace(oldStr, newStr);
+    expect(() => parseTreemonMaps(bad, "m.asm")).toThrow(new RegExp(`^m\\.asm:7: "treemon_map" has ${argCount} argument\\(s\\), expected 2$`));
+  });
+
+  it("refuses a blank comma-separated arg in a treemon_map call, naming the file (Issue A: scanCalls wrapped via at(), no per-call line exists yet so it's file-only, matching fail's null-line convention)", () => {
+    const bad = text.replace("\ttreemon_map ROUTE_29, TREEMON_SET_ROUTE", "\ttreemon_map ROUTE_29, , TREEMON_SET_ROUTE");
+    expect(() => parseTreemonMaps(bad, "m.asm")).toThrow(/^m\.asm: splitArgs: blank argument in/);
   });
 });
 
@@ -503,10 +729,10 @@ function makeWildDataRoot(overrides: Record<string, string> = {}): string {
     "ENDM",
     "",
     "GrassMonProbTable:",
-    ...Array.from({ length: 7 }, (_, i) => `\tmon_prob ${(i + 1) * 10}, ${i}`),
+    ...[10, 20, 30, 40, 50, 60, 100].map((cum, i) => `\tmon_prob ${cum}, ${i}`),
     "",
     "WaterMonProbTable:",
-    ...Array.from({ length: 3 }, (_, i) => `\tmon_prob ${(i + 1) * 10}, ${i}`),
+    ...[30, 60, 100].map((cum, i) => `\tmon_prob ${cum}, ${i}`),
   ].join("\n");
   const fish = [
     "MACRO fishgroup",
@@ -556,6 +782,21 @@ function makeWildDataRoot(overrides: Record<string, string> = {}): string {
     writeFileSync(full, content);
   }
   return dir;
+}
+
+/** A `def_grass_wildmons`-wrapped grass file with one entry, for a given label and map const (N3a/c: swarm/kanto grass map-const validation). */
+function grassFixture(label: string, mapConst: string): string {
+  return [`${label}:`, "", `\tdef_grass_wildmons ${mapConst}`, "\tdb 2 percent, 2 percent, 2 percent", ...Array.from({ length: 21 }, () => "\tdb 3, RATTATA"), "\tend_grass_wildmons", "", "\tdb -1"].join(
+    "\n",
+  );
+}
+/** A bare `map_id`-headed grass file (swarm_grass.asm's real shape) with one entry (N3a). */
+function swarmGrassFixture(mapConst: string): string {
+  return ["SwarmGrassWildMons:", "", `\tmap_id ${mapConst}`, "\tdb 2 percent, 2 percent, 2 percent", ...Array.from({ length: 21 }, () => "\tdb 3, RATTATA"), "", "\tdb -1"].join("\n");
+}
+/** A `def_water_wildmons`-wrapped water file with one entry, for a given label and map const (N3b: water map-const validation). */
+function waterFixture(label: string, mapConst: string): string {
+  return [`${label}:`, "", `\tdef_water_wildmons ${mapConst}`, "\tdb 2 percent", "\tdb 15, WOOPER", "\tdb 15, WOOPER", "\tdb 15, WOOPER", "\tend_water_wildmons", "", "\tdb -1"].join("\n");
 }
 
 describe("loadGbcWildData: unknown-const refusals (Issue 2)", () => {
@@ -615,6 +856,33 @@ describe("loadGbcWildData: unknown-const refusals (Issue 2)", () => {
     });
     try {
       expect(() => loadGbcWildData(dir)).toThrow(/^data\/wild\/treemon_maps\.asm:5: unknown treemon set constant "TREEMON_SET_TYPO"/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // Issue D (N3a-d): map-const validation pinned for every source it covers,
+  // not just johto grass and headbutt rows -- each of these four sources had
+  // its own mutation survive in the spec re-review (skip the grass loop for
+  // swarm entries only / skip the whole water loop / skip the loop for kanto
+  // entries only / bypass validation for rock rows only) because no test
+  // exercised that specific source.
+  it.each([
+    ["N3a: swarm grass (map_id header)", "data/wild/swarm_grass.asm", swarmGrassFixture("BAD_MAP"), /^data\/wild\/swarm_grass\.asm:3: unknown map constant "BAD_MAP"/],
+    ["N3c: kanto grass", "data/wild/kanto_grass.asm", grassFixture("KantoGrassWildMons", "BAD_MAP"), /^data\/wild\/kanto_grass\.asm:3: unknown map constant "BAD_MAP"/],
+    ["N3b: johto water", "data/wild/johto_water.asm", waterFixture("JohtoWaterWildMons", "BAD_MAP"), /^data\/wild\/johto_water\.asm:3: unknown map constant "BAD_MAP"/],
+    ["N3b: kanto water", "data/wild/kanto_water.asm", waterFixture("KantoWaterWildMons", "BAD_MAP"), /^data\/wild\/kanto_water\.asm:3: unknown map constant "BAD_MAP"/],
+    ["N3b: swarm water", "data/wild/swarm_water.asm", waterFixture("SwarmWaterWildMons", "BAD_MAP"), /^data\/wild\/swarm_water\.asm:3: unknown map constant "BAD_MAP"/],
+    [
+      "N3d: rock row (RockMonMaps, not headbutt)",
+      "data/wild/treemon_maps.asm",
+      ["TreeMonMaps:", "\tdb -1", "", "RockMonMaps:", "\ttreemon_map BAD_MAP, TREEMON_SET_CITY", "\tdb -1"].join("\n"),
+      /^data\/wild\/treemon_maps\.asm:5: unknown map constant "BAD_MAP"/,
+    ],
+  ])("%s", (_name, overridePath, badContent, expected) => {
+    const dir = makeWildDataRoot({ [overridePath]: badContent });
+    try {
+      expect(() => loadGbcWildData(dir)).toThrow(expected);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
