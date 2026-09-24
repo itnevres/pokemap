@@ -258,7 +258,27 @@ describe("parseMapEvents: whole-file format irregularities", () => {
     expect(parseMapEvents(text, "Bar").warps).toHaveLength(2);
   });
 
-  it("refuses when a def_* section is out of order", () => {
+  it("stops at the next map's label -- a second map's scene_scripts/callbacks are never borrowed into the first's (MapScripts bounding)", () => {
+    const foo = skeleton("Foo", {
+      sceneScripts: ["scene_script FooScene1"],
+      callbacks: ["callback MAPCALLBACK_NEWMAP, FooCallback"],
+    });
+    const bar = skeleton("Bar", {
+      sceneScripts: ["scene_script BarScene1", "scene_script BarScene2"],
+      callbacks: ["callback MAPCALLBACK_NEWMAP, BarCallback1", "callback MAPCALLBACK_NEWMAP, BarCallback2"],
+    });
+    const text = `${foo.text}\n${bar.text}`;
+    const fooEvents = parseMapEvents(text, "Foo");
+    const barEvents = parseMapEvents(text, "Bar");
+    expect(fooEvents.sceneScripts).toHaveLength(1);
+    expect(fooEvents.callbacks).toHaveLength(1);
+    expect(fooEvents.sceneScripts[0]!.script).toBe("FooScene1");
+    expect(fooEvents.callbacks[0]!.script).toBe("FooCallback");
+    expect(barEvents.sceneScripts).toHaveLength(2);
+    expect(barEvents.callbacks).toHaveLength(2);
+  });
+
+  it("refuses when a def_* section is out of order (coord before warp)", () => {
     const text = [
       "Foo_MapScripts:",
       "\tdef_scene_scripts",
@@ -274,6 +294,41 @@ describe("parseMapEvents: whole-file format irregularities", () => {
       "\twarp_event 1, 2, BAR, 1",
     ].join("\n");
     expect(() => parseMapEvents(text, "Foo")).toThrow(/Foo/);
+  });
+
+  it("refuses when def_object_events is out of order (before def_bg_events)", () => {
+    const text = [
+      "Foo_MapScripts:",
+      "\tdef_scene_scripts",
+      "\tdef_callbacks",
+      "",
+      "Foo_MapEvents:",
+      "\tdb 0, 0 ; filler",
+      "",
+      "\tdef_warp_events",
+      "\tdef_coord_events",
+      "\tdef_object_events",
+      "\tdef_bg_events",
+    ].join("\n");
+    expect(() => parseMapEvents(text, "Foo")).toThrow(/Foo/);
+    expect(() => parseMapEvents(text, "Foo")).toThrow(/def_object_events/);
+  });
+
+  it("refuses when def_object_events is missing entirely", () => {
+    const text = [
+      "Foo_MapScripts:",
+      "\tdef_scene_scripts",
+      "\tdef_callbacks",
+      "",
+      "Foo_MapEvents:",
+      "\tdb 0, 0 ; filler",
+      "",
+      "\tdef_warp_events",
+      "\tdef_coord_events",
+      "\tdef_bg_events",
+    ].join("\n");
+    expect(() => parseMapEvents(text, "Foo")).toThrow(/Foo/);
+    expect(() => parseMapEvents(text, "Foo")).toThrow(/def_object_events/);
   });
 
   it("refuses when a def_* section is missing entirely", () => {
