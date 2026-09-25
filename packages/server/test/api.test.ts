@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createServer, type PokemapServer } from "../src/index.js";
 import { SUBJECT_ROOT, hasProject } from "@pokemap/core/test/helpers/corpus.js";
+import { norm } from "@pokemap/core/src/config/paths.js";
 
 let s: PokemapServer;
 const get = async (path: string) => fetch(`http://127.0.0.1:${s.port}${path}`);
@@ -15,6 +16,13 @@ const post = async (path: string, body: unknown) =>
 describe.skipIf(!hasProject(SUBJECT_ROOT))("server", () => {
   beforeAll(async () => { s = await createServer({ projectPath: SUBJECT_ROOT, port: 0 }); });
   afterAll(async () => { await s?.close(); });
+
+  it("GET /api/project reports the gba family and the project's normalised root (Plan 6b family isolation)", async () => {
+    const r = await get("/api/project");
+    expect(r.status).toBe(200);
+    const body = await r.json() as { family: string; root: string };
+    expect(body).toEqual({ family: "gba", root: norm(SUBJECT_ROOT) });
+  });
 
   it("lists map groups", async () => {
     const r = await get("/api/groups");

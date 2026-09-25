@@ -18,6 +18,13 @@ import { openProject, type Project } from "@pokemap/core/src/project.js";
  * config for the corpus helpers, never a CLI fallback here -- adding one
  * would let a GBC command silently pick up a config file meant for the test
  * suite alone.
+ *
+ * `packages/server/src/serve.ts --gbc` is the one place outside the test
+ * suite that DOES read `gbc.projectPath` (Plan 6b Task 1a) -- a deliberate
+ * dev-server convenience, not a CLI fallback: `serve.ts` has no `--project`
+ * flag of its own, and `gbc.projectPath` is exactly the already-configured
+ * Crystal project every GBC dev session against this repo launches the UI
+ * against. See that file's own comment for why the two differ.
  */
 export function resolveRoot(explicit?: string): string {
   if (explicit) return explicit;

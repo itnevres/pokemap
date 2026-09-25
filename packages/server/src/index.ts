@@ -1,6 +1,10 @@
 import { readFileSync } from "node:fs";
 import { createServer as createHttp, type IncomingMessage, type Server } from "node:http";
 import { openProject, type Project } from "@pokemap/core/src/project.js";
+import { detectEngineFamily } from "@pokemap/core/src/family.js";
+import type { ProjectInfo } from "@pokemap/core/src/family.js";
+import type { GbcProject } from "@pokemap/core/src/gbc/project.js";
+import { createGbcServer } from "./gbcRoutes.js";
 import { renderLayout } from "@pokemap/core/src/render/layout.js";
 import { renderMetatile } from "@pokemap/core/src/render/metatile.js";
 import { renderSpeciesIcon } from "@pokemap/core/src/render/species.js";
@@ -23,7 +27,16 @@ import { moveEvent, addEvent, deleteEvent, findWarpsTargetingByIndex, type Event
 import { rankSpeciesForSign, suggestSignPlacement } from "@pokemap/core/src/signs/suggest.js";
 import { buildWildSign, guardSignWrite } from "@pokemap/core/src/signs/write.js";
 
-export interface PokemapServer { port: number; project: Project; close(): Promise<void>; }
+/**
+ * A discriminated union on `family` (Plan 6b task spec) -- the gbc branch's
+ * `project` is a `GbcProject`, not the GBA `Project` every route below this
+ * type still assumes. No test reads `.project` directly (checked by grep,
+ * plan review "Verified correct"), so this widening never touches any
+ * existing GBA-side call site.
+ */
+export type PokemapServer =
+  | { port: number; close(): Promise<void>; family: "gba"; project: Project }
+  | { port: number; close(): Promise<void>; family: "gbc"; project: GbcProject };
 
 /**
  * Buffers a request body to a string. `/api/world/placement` is the first
@@ -61,6 +74,8 @@ function validateStampAndOrigin(stamp: unknown, origin: unknown): string | undef
 }
 
 export async function createServer(opts: { projectPath: string; port?: number }): Promise<PokemapServer> {
+  if (detectEngineFamily(opts.projectPath) === "gbc") return createGbcServer(opts);
+
   const project = openProject(opts.projectPath);
 
   // Unbounded on purpose for now, and worth knowing why: the whole corpus is
@@ -177,6 +192,10 @@ export async function createServer(opts: { projectPath: string; port?: number })
     };
 
     try {
+      if (url.pathname === "/api/project") {
+        return send(200, { family: "gba", root: project.paths.root } satisfies ProjectInfo);
+      }
+
       if (url.pathname === "/api/groups") {
         return send(200, { groupOrder: project.groups.groupOrder, groups: project.groups.groups });
       }
@@ -993,5 +1012,5 @@ export async function createServer(opts: { projectPath: string; port?: number })
   const addr = http.address();
   const port = typeof addr === "object" && addr ? addr.port : (opts.port ?? 5174);
 
-  return { port, project, close: () => new Promise<void>((r) => http.close(() => r())) };
+  return { port, family: "gba", project, close: () => new Promise<void>((r) => http.close(() => r())) };
 }
