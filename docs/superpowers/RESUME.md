@@ -11,12 +11,12 @@ This file holds the state and the accumulated lessons. The prompt for the next s
 - **Unmerged work.** GitHub `master` is at `bcdfd63` (end of Plan 1). **Everything since exists only on `plan-6-gbc-foundation`**: 166 commits covering the world-view and dungeon-mode plans, Plan 2 with its 6 follow-ups, and Plan 6. `plan-1-foundation` is identical to `master`. There are no PRs, open or closed.
 - **Merge readiness of `plan-6-gbc-foundation`.**
   - The GBC side is verified: 559 GBC core + CLI tests pass in a cloud session, and all Plan 6 tasks are reviewed.
-  - The GBA side cannot be tested in a cloud session, because the GBA decomp isn't there. Plan 6 touched these shared GBA-family files:
-    - `packages/cli/src/{index,context,args}.ts` (family branch plus the `refuseIfGbc` guard);
-    - `packages/core/src/load/png.ts` (helper export);
-    - `packages/core/src/world/connections.ts` (exports plus an optional param with unchanged defaults);
-    - `packages/core/src/config/paths.ts`.
-    Reviewers judged these behaviour-neutral by reading, but they have not been run against the GBA corpus. **Before merging, run a full `npm test` on the Windows machine. Everything should pass there.** A merge from `master` is a fast-forward.
+  - **The GBA side was verified 2026-09-25 in a cloud session against GitHub clones** of the subject and all 5 reference engines (see Environments). **1,271 tests pass, 0 are skipped, and 6 fail.** All 6 failures trace to local-only state on the Windows machine that git doesn't carry. None is a code defect:
+    - (a) `porymap.project.cfg` (Porymap-generated, gitignored) in the subject and in pokefirered. 3 tests.
+    - (b) The subject's uncommitted 2026-08-30 resize of `LAYOUT_NAVEL_ROCK_ZYGARDE_CHAMBER` (+561 blocks, exactly the delta `blocks.test.ts` documents). The GitHub repo's last commit is 08-26. 2 tests.
+    - (c) The subject's local `.pokemap/world.json` manual placements. 1 test.
+  - Plan 6 touched these shared GBA-family files: `packages/cli/src/{index,context,args}.ts`, `packages/core/src/load/png.ts`, `packages/core/src/world/connections.ts` and `packages/core/src/config/paths.ts`. The GBA tests covering them are among the 1,271 that pass.
+  - **Verdict: merge-ready.** A merge from `master` is a fast-forward. A full-green run on the Windows machine remains a nice-to-have, not a blocker.
 - **Branching.** New GBC work branches from `plan-6-gbc-foundation`, stacked, until it is merged. New GBA work waits for the merge, or also stacks.
 
 ## Where each line of work stands
@@ -25,20 +25,27 @@ This file holds the state and the accumulated lessons. The prompt for the next s
 |---|---|---|
 | Plan 6: GBC foundation, read-only | **Done 2026-09-25.** See the plan's STATUS banner for the real file map | Merge (see above) |
 | Plan 7: GBC editing | **Next suggested.** Its "Grounding from Plan 6" section is required reading. Tasks 1, 2, 3, 6, 7 (core + CLI) can run in a cloud session; Tasks 4-5 are blocked on 6b | PerfPlus clone (+ pret/pokecrystal for the G5 gate) |
-| 6b: GBC app layer (server + UI, read-only) | **Scoped, not planned.** GBC roadmap §6b is the sketch: one server with a family branch, routes, and the UI's hard-coded GBA assumptions. Without it, a Crystal project can't be opened in the browser | A plan written from §6b; a GBA regression pass on the Windows machine |
-| 3 remaining GBA follow-up fixes (A/B/C) | Planned, not started | Windows machine: GBA decomp + live browser verify |
+| 6b: GBC app layer (server + UI, read-only) | **Scoped, not planned.** GBC roadmap §6b is the sketch: one server with a family branch, routes, and the UI's hard-coded GBA assumptions. Without it, a Crystal project can't be opened in the browser | A plan written from §6b. The GBA regression pass now runs in the cloud (see Environments) |
+| 3 remaining GBA follow-up fixes (A/B/C) | Planned, not started | GBA corpus (now available in the cloud) + live browser verify (Chromium is available in the cloud) |
 | Plan 3: GBA data editors | Not started, lower priority | Windows machine |
 | Plans 4-5 | Not started / backlog | — |
 
 ## Environments
 
 - **Windows machine** (`C:\Programming Projects\PokeMap`): has the GBA subject decomp, the reference engines and the PerfPlus checkout, so the full suite runs.
-- **Cloud session** (claude.ai/code): only this repo is present.
-  - For GBC work, run `git clone --branch master-AS092190 https://github.com/itnevres/pokecrystal-PerfPlus ../pokecrystal-PerfPlus` and confirm HEAD is `81ededbe3`.
-  - Then set `gbc.projectPath` in `pokemap.config.json` to the clone as a LOCAL-ONLY edit that is **never committed**; the committed values are the Windows paths.
-  - GBA test files fail at collection there (17 files plus 1 test in `write/corpus.test.ts`) instead of skipping. That is expected. Compare against that baseline, not "all green".
-  - Check with `npx vitest run packages/core/test/gbc packages/cli/test/gbcCommands.test.ts packages/cli/test/context.test.ts`, which must show the GBC files RUNNING, not skipped.
-  - `npm install` rewrites `package-lock.json` with `"peer": true` churn; revert it.
+- **Cloud session** (claude.ai/code): **the SessionStart hook `.claude/hooks/session-start.sh` sets everything up** (registered in `.claude/settings.json`; it only runs when `CLAUDE_CODE_REMOTE=true`, so the Windows machine is unaffected). It:
+  - runs `npm install` and reverts the lockfile churn;
+  - fetches the 5 GBA reference engines and PerfPlus into `$HOME/pokemap-corpus/` at the pinned commits verified on 2026-09-25;
+  - finds the GBA subject;
+  - writes `pokemap.config.json` with cloud paths and marks it `git update-index --skip-worktree`, so it never shows as modified and can't be committed.
+  It takes ~20 s on a fresh container and ~1 s on a re-run.
+  - **The GBA subject `itnevres/pokemon-three-region` is PRIVATE.** Select it alongside `itnevres/pokemap` when starting the session, or attach it mid-session and re-run the hook with `CLAUDE_CODE_REMOTE=true .claude/hooks/session-start.sh`. If it is missing, the hook warns, and the GBA corpus test files fail at collection. The GBC suite is unaffected.
+  - **The hook only runs automatically on a branch that contains it.** Until `plan-6-gbc-foundation` is merged to `master`, a session that starts on `master` must `git checkout <branch>` and run the hook by hand.
+  - **Expected cloud baseline: `npm test` gives 1,271 pass / 6 fail / 0 skip, plus a clean typecheck.** The 6 failures are the local-state deltas (a)-(c) listed under Git state. To make the cloud fully green, do these on the Windows machine:
+    - commit and push the NavelRock Zygarde resize;
+    - `git add -f porymap.project.cfg` in the subject, or accept those 3 as cloud-only skips;
+    - commit `.pokemap/world.json`.
+  - Pinned reference SHAs live in the hook. Bump them deliberately, and re-measure any pinned counts when you do.
 
 ## GBC facts from Plan 6 (short list; the full truth is in the findings doc)
 
