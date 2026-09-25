@@ -7,12 +7,12 @@
  * ever runs.
  *
  * Task 1a's own routes are `/api/project` and the GBA-only-route 501
- * refusals. Task 1b (this file's current state) adds `/api/groups`,
- * `/api/map/:name`, `/api/render/:name.png` and
- * `/api/metatile/:map/:id.png` -- everything else still answers a plain 404.
- * Task 2 adds `/api/world`, `/api/encounters/:map`, `/api/where/:species`,
- * `/api/coverage` and `/api/species`. Plan 7 adds `/api/edit/*` once GBC
- * gets a write path.
+ * refusals. Task 1b adds `/api/groups`, `/api/map/:name`,
+ * `/api/render/:name.png` and `/api/metatile/:map/:id.png`. Task 2 (this
+ * file's current state) adds `/api/world`, `/api/encounters/:map`,
+ * `/api/where/:species`, `/api/coverage` and `/api/species` -- everything
+ * else still answers a plain 404. Plan 7 adds `/api/edit/*` once GBC gets a
+ * write path.
  *
  * The payload-assembly logic for `/api/groups` and `/api/map/:name` is
  * factored into `buildGbcGroupsPayload`/`buildGbcMapPayload` below, exported
@@ -26,9 +26,23 @@ import { createServer as createHttp, type Server } from "node:http";
 import { openGbcProject, type GbcProject } from "@pokemap/core/src/gbc/project.js";
 import { loadGbcMapEvents, outOfBoundsEventDefects } from "@pokemap/core/src/gbc/load/events.js";
 import { renderGbcMap, renderGbcMapMetatile } from "@pokemap/core/src/gbc/render/map.js";
+import { buildGbcWorld, type GbcWorld } from "@pokemap/core/src/gbc/world/connections.js";
+import {
+  gbcEncounterSources,
+  gbcWhereSpecies,
+  gbcCoverage,
+  loadGbcSpeciesConstants,
+  normalizeGbcSpecies,
+  type GbcCoverage,
+} from "@pokemap/core/src/gbc/analyse/atlas.js";
 import type { ProjectInfo } from "@pokemap/core/src/family.js";
 import type { GbcMap } from "@pokemap/core/src/gbc/model/types.js";
-import type { GbcCollisionInfoEntry, GbcMapPayload } from "@pokemap/core/src/gbc/wire.js";
+import type {
+  GbcCollisionInfoEntry,
+  GbcMapPayload,
+  GbcWorldPayload,
+  GbcEncountersPayload,
+} from "@pokemap/core/src/gbc/wire.js";
 import { encodePng } from "@pokemap/cli/src/png.js";
 import { parseBorder, parseTime, type TimeOfDay } from "@pokemap/cli/src/args.js";
 import type { PokemapServer } from "./index.js";
@@ -167,6 +181,50 @@ export function buildGbcMapPayload(proj: GbcProject, map: GbcMap): GbcMapPayload
   } satisfies GbcMapPayload;
 }
 
+/**
+ * `GET /api/world`'s payload (Task 2), wire-shaping `buildGbcWorld`'s own
+ * `GbcWorld` -- `world.placements` (a `Map`, keyed by map name) becomes a
+ * plain `Object.fromEntries` object (`GbcWorldPayload.placements`'s own doc
+ * comment: JSON has no `Map`, and serialising one directly gives `{}`, not a
+ * refusal -- a mutation this file's tests specifically check for).
+ * `components`/`conflicts` pass through unchanged. Takes the already-built
+ * `world` rather than `proj`, since nothing here needs anything from `proj`
+ * that isn't already in `world` -- `createGbcServer`'s own `getWorld()`
+ * (below) is what caches the expensive `buildGbcWorld` call itself; this
+ * function is cheap and safe to call fresh on every request, including the
+ * "second request returns deep-equal data" test, since `Object.fromEntries`
+ * never mutates the `Map` it reads from.
+ */
+export function buildGbcWorldPayload(world: GbcWorld): GbcWorldPayload {
+  return {
+    family: "gbc",
+    blockPx: 32,
+    placements: Object.fromEntries(world.placements),
+    components: world.components,
+    conflicts: world.conflicts,
+  } satisfies GbcWorldPayload;
+}
+
+/**
+ * `GET /api/encounters/:map`'s payload (Task 2). `map` is already resolved
+ * by the caller (the route below checks `mapNames` first, same discipline as
+ * `buildGbcMapPayload`) -- `name` here is trusted to be a real map name.
+ * `sources` is `gbcEncounterSources`'s own output verbatim: an empty array
+ * for a map with no wild encounters (e.g. `PlayersHouse1F`, `ElmsLab`) is
+ * real data, not an error, so this never special-cases a length-0 result.
+ * `defects` is `proj.wild().defects` -- the corpus-wide wild-data defect
+ * list (the `kanto_grass.asm` missing-terminator warning), the same value
+ * for every map, not a per-map defect list (`GbcEncountersPayload`'s own doc
+ * comment).
+ */
+export function buildGbcEncountersPayload(proj: GbcProject, name: string): GbcEncountersPayload {
+  return {
+    mapName: name,
+    sources: gbcEncounterSources(proj, name),
+    defects: proj.wild().defects,
+  } satisfies GbcEncountersPayload;
+}
+
 export async function createGbcServer(opts: { projectPath: string; port?: number }): Promise<PokemapServer> {
   const proj = openGbcProject(opts.projectPath);
 
@@ -186,6 +244,30 @@ export async function createGbcServer(opts: { projectPath: string; port?: number
   // a render key and a metatile key to ever collide.
   const renderCache = new Map<string, Buffer>();
   const metatileCache = new Map<string, Buffer>();
+
+  // buildGbcWorld walks all 391 maps' connections -- measured ~2ms against
+  // the real corpus (cheap, unlike GBA's ~4s buildWorld over 1,209 maps), but
+  // proj is read-only for the life of this process (I8) either way, so the
+  // answer can't change and there is no reason to recompute it per request.
+  // Same "compute at most once, on the first request that needs it" posture
+  // as GBA's own worldCache (index.ts).
+  let worldCache: GbcWorld | undefined;
+  const getWorld = () => (worldCache ??= buildGbcWorld(proj));
+
+  // gbcCoverage walks every one of the 391 maps' wild-data tables (measured
+  // ~100-150ms against the real corpus in this environment -- slower than
+  // the plan review's own ~11ms estimate, re-measured rather than trusted;
+  // see the implementer report) -- same "read-only project, compute once"
+  // reasoning as worldCache above and GBA's own coverageCache.
+  let coverageCache: GbcCoverage | undefined;
+  const getCoverage = () => (coverageCache ??= gbcCoverage(proj));
+
+  // loadGbcSpeciesConstants reads one small .asm file and returns it already
+  // sorted -- cheap even uncached, but the answer can't change for the life
+  // of this read-only-decomp process (I8), same reasoning as every other
+  // cache in this file.
+  let speciesCache: string[] | undefined;
+  const getSpecies = () => (speciesCache ??= loadGbcSpeciesConstants(proj.root));
 
   const http: Server = createHttp((req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
@@ -296,6 +378,58 @@ export async function createGbcServer(opts: { projectPath: string; port?: number
         }
         res.writeHead(200, { "content-type": "image/png", "cache-control": "no-cache" });
         return res.end(png);
+      }
+
+      // Query params are ignored here on purpose: GBA's own `/api/world`
+      // reads `?dungeons=`, but GBC's `buildGbcWorld` places every map
+      // unconditionally -- there is no dungeons-on/off toggle to read a
+      // query param for (`gbc/world/connections.ts`'s own doc comment).
+      if (url.pathname === "/api/world") {
+        return send(200, buildGbcWorldPayload(getWorld()));
+      }
+
+      // `(.+)`, not `[^/]+` -- same reasoning as `/api/map/:name` above: a
+      // map name never contains a slash in this corpus, but matching the
+      // rest of the path rather than one segment keeps this route's own
+      // malformed-escape handling (`decodeMapName`) the single place that
+      // rejects a bad name, instead of a slash in it silently 404ing through
+      // the generic fallthrough.
+      const encountersMatch = /^\/api\/encounters\/(.+)$/.exec(url.pathname);
+      if (encountersMatch) {
+        const rawName = encountersMatch[1]!;
+        const name = decodeMapName(rawName);
+        if (name === undefined) return send(400, { error: `malformed map name ${rawName}` });
+        if (!mapNames.has(name)) return send(404, { error: `no map ${name}` });
+        return send(200, buildGbcEncountersPayload(proj, name));
+      }
+
+      // `[^/]+`, the GBA `/api/where/:species` convention (`index.ts`) --
+      // a species constant never contains a slash. Unlike GBA's own route,
+      // this one runs the raw segment through `decodeMapName` first (this
+      // file's own established convention for every `:name`-style capture,
+      // even though this one isn't a map name), so a malformed percent-escape
+      // answers 400 rather than an unnamed 500. An unknown species is a 200
+      // with `[]`, exactly like GBA -- `gbcWhereSpecies` never throws on a
+      // species with no hits, it just returns nothing to iterate.
+      const whereMatch = /^\/api\/where\/([^/]+)$/.exec(url.pathname);
+      if (whereMatch) {
+        const raw = whereMatch[1]!;
+        const species = decodeMapName(raw);
+        if (species === undefined) return send(400, { error: `malformed species ${raw}` });
+        return send(200, gbcWhereSpecies(proj, normalizeGbcSpecies(species)));
+      }
+
+      if (url.pathname === "/api/coverage") {
+        return send(200, getCoverage());
+      }
+
+      // Exact match, not a prefix -- same discipline as GBA's own
+      // `/api/species` (`index.ts`): "/api/species" alone, nothing after it,
+      // so it can never shadow the GBA-only-route refusal below for
+      // "/api/species/:name/icon.png" (GBA_ONLY_ROUTE_RE's own
+      // `species/[^/]+/icon\.png$` alternative).
+      if (url.pathname === "/api/species") {
+        return send(200, getSpecies());
       }
 
       if (GBA_ONLY_ROUTE_RE.test(url.pathname)) {

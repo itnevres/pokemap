@@ -19,6 +19,8 @@
  * a new `GbcGroupsPayload` type here -- it's already family-agnostic.
  */
 import type { Block, Collision, DataDefect, GbcMap, GbcMapEvents } from "./model/types.js";
+import type { Placement, Component, Conflict } from "./world/connections.js";
+import type { GbcEncounterSource } from "./analyse/atlas.js";
 
 /** One of `Collision`'s three coarse buckets (`TileCollisionTable`'s low nybble, `load/tileset.ts`'s `loadGbcCollisionInfo`). */
 export type GbcCollisionCategory = "land" | "water" | "wall";
@@ -60,4 +62,36 @@ export interface GbcMapPayload {
   /** Layout defects, then event defects, then out-of-bounds-event defects, in that order. */
   defects: DataDefect[];
   paddingWidth: number;
+}
+
+/**
+ * `GET /api/world`'s response (Task 2) -- `buildGbcWorld`'s own `GbcWorld`
+ * (`gbc/world/connections.ts`), wire-shaped: `placements` is a plain object
+ * keyed by map name (JSON has no `Map`; `Object.fromEntries` on the server
+ * side, never a raw `Map` serialised, which would silently give `{}`).
+ * `blockPx` is always `32` -- GBC's fixed block size (`GbcMap.width`/
+ * `height`'s own unit) -- carried on the wire rather than left implicit, so
+ * the UI never hardcodes it a second time.
+ */
+export interface GbcWorldPayload {
+  family: "gbc";
+  blockPx: 32;
+  /** Keyed by map name; units are BLOCKS (1 block = 32 px), same as `GbcWorld.placements`. */
+  placements: Record<string, Placement>;
+  components: Component[];
+  conflicts: Conflict[];
+}
+
+/**
+ * `GET /api/encounters/:map`'s response (Task 2). `sources` is
+ * `gbcEncounterSources`'s own output verbatim -- an empty array is real data
+ * (a map with no wild encounters at all), not an error. `defects` is
+ * `proj.wild().defects`, the corpus-wide wild-data defect list (currently
+ * just the `kanto_grass.asm` missing-terminator warning), not per-map --
+ * every map's `/api/encounters` response carries the same `defects` array.
+ */
+export interface GbcEncountersPayload {
+  mapName: string;
+  sources: GbcEncounterSource[];
+  defects: DataDefect[];
 }

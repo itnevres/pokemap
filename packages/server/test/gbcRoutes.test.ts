@@ -1,10 +1,12 @@
 import { readFileSync } from "node:fs";
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createServer, type PokemapServer } from "../src/index.js";
-import { buildGbcMapPayload, decodeMapName, parseTimeParam } from "../src/gbcRoutes.js";
+import { buildGbcMapPayload, buildGbcWorldPayload, buildGbcEncountersPayload, decodeMapName, parseTimeParam } from "../src/gbcRoutes.js";
 import { openGbcProject } from "@pokemap/core/src/gbc/project.js";
 import { renderGbcMap, renderGbcMapMetatile } from "@pokemap/core/src/gbc/render/map.js";
 import { loadGbcMapEvents } from "@pokemap/core/src/gbc/load/events.js";
+import { buildGbcWorld } from "@pokemap/core/src/gbc/world/connections.js";
+import { gbcEncounterSources, gbcWhereSpecies, gbcCoverage, loadGbcSpeciesConstants } from "@pokemap/core/src/gbc/analyse/atlas.js";
 import { encodePng } from "@pokemap/cli/src/png.js";
 import { GBC_SUBJECT_ROOT, hasGbcProject, itWithGbcCorpus } from "@pokemap/core/test/gbc/helpers/corpus.js";
 import { stubGbcProject } from "@pokemap/core/test/gbc/helpers/stubGbcProject.js";
@@ -108,11 +110,17 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
       expect(r.status).toBe(404);
     });
 
-    // Task 2 adds a real /api/species route; pinned as 404 here so that
-    // task's own test can update this one rather than silently drifting.
-    it("/api/species (bare, no name) is a 404 in this task -- Task 2 adds it", async () => {
+    // Task 1a/1b pinned this as 404 ("Task 2 adds it"). Task 2 adds the real
+    // route: /api/species is now 200, proving the exact-match route was
+    // added without ever letting GBA_ONLY_ROUTE_RE's own
+    // "species/[^/]+/icon.png$" alternative (which requires a name AND
+    // icon.png) accidentally swallow the bare path first.
+    it("/api/species (bare, no name) is now a 200 -- Task 2's own route", async () => {
       const r = await get("/api/species");
-      expect(r.status).toBe(404);
+      expect(r.status).toBe(200);
+      const body = await r.json() as string[];
+      expect(Array.isArray(body)).toBe(true);
+      expect(body).toContain("CHIKORITA");
     });
 
     // Spec review finding 2: /api/worldx and /api/world/placementx above
@@ -553,6 +561,218 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
       const r = await get("/api/metatile/%E0%A4%A/0.png");
       expect(r.status).toBe(400);
       expect(await r.json()).toEqual({ error: "malformed map name %E0%A4%A" });
+    });
+  });
+
+  // ---------------------------------------------------------------------
+  // Task 2: world + atlas routes. Kept in its own describe block, separate
+  // from Task 1b's tests above (spec instruction), inside the same
+  // corpus-guarded suite/beforeAll -- no new describe.skipIf needed.
+  // ---------------------------------------------------------------------
+
+  describe("GET /api/world", () => {
+    it("deep-equals Object.fromEntries(buildGbcWorld(...).placements); 326 components, exactly 3 with more than one map; blockPx 32", async () => {
+      const proj = openGbcProject(GBC_SUBJECT_ROOT);
+      const world = buildGbcWorld(proj);
+      const expectedPlacements = Object.fromEntries(world.placements);
+
+      const r = await get("/api/world");
+      expect(r.status).toBe(200);
+      const body = await r.json() as { family: string; blockPx: number; placements: Record<string, unknown>; components: { maps: string[] }[]; conflicts: unknown[] };
+
+      expect(body.family).toBe("gbc");
+      expect(body.blockPx).toBe(32);
+      expect(body.placements).toEqual(expectedPlacements);
+
+      // Measured directly against buildGbcWorld's own output (not guessed):
+      // 391 maps split into 326 components, of which exactly 3 (sizes
+      // 35/31/2 -- Kanto, Johto, and one 2-map pair) have more than one map;
+      // the other 323 are single-map interiors.
+      expect(body.components).toHaveLength(326);
+      const multiMap = body.components.filter((c) => c.maps.length > 1);
+      expect(multiMap).toHaveLength(3);
+      expect(multiMap.map((c) => c.maps.length).sort((a, b) => a - b)).toEqual([2, 31, 35]);
+
+      expect(body.placements.NewBarkTown).toMatchObject({ width: 10, height: 9 });
+    });
+
+    it("exactly 2 conflicts, on Route17 and Route18", async () => {
+      const r = await get("/api/world");
+      const body = await r.json() as { conflicts: { map: string }[] };
+      expect(body.conflicts).toHaveLength(2);
+      expect(body.conflicts.map((c) => c.map).sort()).toEqual(["Route17", "Route18"]);
+    });
+
+    it("a second request returns deep-equal data -- the world cache is never mutated by serving it", async () => {
+      const first = await (await get("/api/world")).json();
+      const second = await (await get("/api/world")).json();
+      expect(second).toEqual(first);
+    });
+
+    it("buildGbcWorldPayload wire-shapes a real GbcWorld directly (unit, no HTTP)", () => {
+      const proj = openGbcProject(GBC_SUBJECT_ROOT);
+      const world = buildGbcWorld(proj);
+      const payload = buildGbcWorldPayload(world);
+      expect(payload).toEqual({
+        family: "gbc",
+        blockPx: 32,
+        placements: Object.fromEntries(world.placements),
+        components: world.components,
+        conflicts: world.conflicts,
+      });
+    });
+  });
+
+  describe("GET /api/encounters/:map", () => {
+    // Route29 (data/wild/johto_grass.asm's ROUTE_29 entry): 3 grass sources
+    // (morn/day/nite) + 2 headbutt sources (common/rare), no water/fish/rock
+    // -- measured directly from gbcEncounterSources, not guessed.
+    it("Route29: the exact source list gbcEncounterSources returns, pinned against the real johto_grass.asm text", async () => {
+      const proj = openGbcProject(GBC_SUBJECT_ROOT);
+      const expectedSources = gbcEncounterSources(proj, "Route29");
+      expect(expectedSources).toHaveLength(5);
+
+      const r = await get("/api/encounters/Route29");
+      expect(r.status).toBe(200);
+      const body = await r.json() as { mapName: string; sources: { method: string; time?: string; list?: string; chances: { species: string; percent: number }[] }[]; defects: unknown[] };
+      expect(body.mapName).toBe("Route29");
+      expect(body.sources).toEqual(expectedSources);
+
+      // Pin one source's tags and its first chance literally, cross-checked
+      // against the real .asm text (not just against the core function's
+      // own output) -- ROUTE_29's morn block's first slot line is
+      // `db 2, PIDGEY`, weight 2 of the section's 7-slot total, which
+      // (per probabilities.asm's grass weights) resolves to 45%.
+      const text = readFileSync(`${GBC_SUBJECT_ROOT}/data/wild/johto_grass.asm`, "utf8");
+      const routeText = text.slice(text.indexOf("def_grass_wildmons ROUTE_29"));
+      const mornBlock = routeText.slice(routeText.indexOf("; morn"), routeText.indexOf("; day"));
+      const firstSlot = /db\s+(\d+),\s*(\w+)/.exec(mornBlock);
+      expect(firstSlot?.[2]).toBe("PIDGEY");
+
+      const morn = body.sources.find((s) => s.method === "grass" && s.time === "morn")!;
+      expect(morn).toBeDefined();
+      expect(morn.chances[0]).toEqual({ species: "PIDGEY", percent: 45, minLevel: 2, maxLevel: 7 });
+
+      // Every grass/water source's chances sum to 100% (within float slop) --
+      // this map has grass but no water; still checked generically over
+      // every source of either method, not just the one pinned above.
+      for (const s of body.sources) {
+        if (s.method === "grass" || s.method === "water") {
+          const sum = s.chances.reduce((a, c) => a + c.percent, 0);
+          expect(Math.abs(sum - 100)).toBeLessThanOrEqual(0.05);
+        }
+      }
+    });
+
+    it("a map with no encounters at all (NewBarkTown's PlayersHouse1F) returns sources: [] -- real data, not an error", async () => {
+      const r = await get("/api/encounters/PlayersHouse1F");
+      expect(r.status).toBe(200);
+      const body = await r.json() as { mapName: string; sources: unknown[] };
+      expect(body.mapName).toBe("PlayersHouse1F");
+      expect(body.sources).toEqual([]);
+    });
+
+    it("ElmsLab also returns sources: []", async () => {
+      const r = await get("/api/encounters/ElmsLab");
+      expect(r.status).toBe(200);
+      const body = await r.json() as { sources: unknown[] };
+      expect(body.sources).toEqual([]);
+    });
+
+    it("404s an unknown map", async () => {
+      const r = await get("/api/encounters/NoSuchMap");
+      expect(r.status).toBe(404);
+      expect(await r.json()).toEqual({ error: "no map NoSuchMap" });
+    });
+
+    it("defects names kanto_grass.asm -- the one documented terminator defect", async () => {
+      const r = await get("/api/encounters/Route29");
+      const body = await r.json() as { defects: { message: string }[] };
+      expect(body.defects.length).toBeGreaterThan(0);
+      expect(body.defects.some((d) => d.message.includes("kanto_grass.asm"))).toBe(true);
+    });
+
+    it("400s a malformed percent-escape in the map name, naming the raw segment", async () => {
+      const r = await get("/api/encounters/%E0%A4%A");
+      expect(r.status).toBe(400);
+      expect(await r.json()).toEqual({ error: "malformed map name %E0%A4%A" });
+    });
+
+    it("buildGbcEncountersPayload directly (unit, no HTTP)", () => {
+      const proj = openGbcProject(GBC_SUBJECT_ROOT);
+      const payload = buildGbcEncountersPayload(proj, "Route29");
+      expect(payload.mapName).toBe("Route29");
+      expect(payload.sources).toEqual(gbcEncounterSources(proj, "Route29"));
+      expect(payload.defects).toEqual(proj.wild().defects);
+    });
+  });
+
+  describe("GET /api/where/:species", () => {
+    it("DUNSPARCE, dunsparce and SPECIES_DUNSPARCE all return the same array -- exactly 6 hits, all on DarkCaveVioletEntrance", async () => {
+      const upper = await (await get("/api/where/DUNSPARCE")).json() as { mapName: string }[];
+      const lower = await (await get("/api/where/dunsparce")).json() as { mapName: string }[];
+      const prefixed = await (await get("/api/where/SPECIES_DUNSPARCE")).json() as { mapName: string }[];
+
+      expect(upper).toHaveLength(6);
+      expect(lower).toEqual(upper);
+      expect(prefixed).toEqual(upper);
+      for (const hit of upper) expect(hit.mapName).toBe("DarkCaveVioletEntrance");
+    });
+
+    it("an unknown species returns [], a 200, like GBA", async () => {
+      const r = await get("/api/where/NOTAMON");
+      expect(r.status).toBe(200);
+      expect(await r.json()).toEqual([]);
+    });
+
+    it("matches gbcWhereSpecies(proj, 'CHIKORITA') directly", async () => {
+      const proj = openGbcProject(GBC_SUBJECT_ROOT);
+      const expected = gbcWhereSpecies(proj, "CHIKORITA");
+      const r = await get("/api/where/CHIKORITA");
+      expect(await r.json()).toEqual(expected);
+    });
+
+    it("400s a malformed percent-escape in the species segment", async () => {
+      const r = await get("/api/where/%E0%A4%A");
+      expect(r.status).toBe(400);
+      expect(await r.json()).toEqual({ error: "malformed species %E0%A4%A" });
+    });
+  });
+
+  describe("GET /api/coverage", () => {
+    it("deep-equals gbcCoverage(openGbcProject(root)); mapsWithEncounters=125, unusedSpecies.length=70 (measured, cross-checked against the CLI's --json output)", async () => {
+      const proj = openGbcProject(GBC_SUBJECT_ROOT);
+      const expected = gbcCoverage(proj);
+      expect(expected.mapsWithEncounters).toBe(125);
+      expect(expected.unusedSpecies).toHaveLength(70);
+
+      const r = await get("/api/coverage");
+      expect(r.status).toBe(200);
+      const body = await r.json();
+      expect(body).toEqual(expected);
+    });
+
+    it("a second request returns deep-equal data -- the coverage cache is never mutated by serving it", async () => {
+      const first = await (await get("/api/coverage")).json();
+      const second = await (await get("/api/coverage")).json();
+      expect(second).toEqual(first);
+    });
+  });
+
+  describe("GET /api/species", () => {
+    it("sorted, contains CHIKORITA, nothing starts with SPECIES_, excludes NO_MON and EGG, length matches loadGbcSpeciesConstants (251)", async () => {
+      const expectedLength = loadGbcSpeciesConstants(GBC_SUBJECT_ROOT).length;
+      expect(expectedLength).toBe(251);
+
+      const r = await get("/api/species");
+      expect(r.status).toBe(200);
+      const body = await r.json() as string[];
+      expect(body).toEqual([...body].sort());
+      expect(body).toHaveLength(expectedLength);
+      expect(body).toContain("CHIKORITA");
+      expect(body.some((s) => s.startsWith("SPECIES_"))).toBe(false);
+      expect(body).not.toContain("NO_MON");
+      expect(body).not.toContain("EGG");
     });
   });
 });
