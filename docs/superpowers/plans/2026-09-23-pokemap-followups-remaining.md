@@ -1,8 +1,8 @@
 # PokeMap — Remaining Plan 2 Follow-ups (GBA family)
 
 > **Status (2026-09-25): none of Tasks A-C has started.** Plan 6 (GBC) ran first. Before re-confirming the file:line references below, note:
-> - **Needs the Windows machine.** These tasks need the GBA subject decomp and a live browser verify. Neither exists in a cloud session: there, `pokemap.config.json`'s GBA `projectPath` doesn't resolve and every GBA corpus/server/UI test fails at collection.
-> - **Base branch.** GitHub `master` is still at `bcdfd63` (Plan 1). All of Plan 2 and its follow-ups exist only on `plan-6-gbc-foundation` until that branch is merged. Work from `master` only after the merge; otherwise branch from `plan-6-gbc-foundation`.
+> - **Cloud sessions can do these now.** The SessionStart hook provisions the GBA corpus (attach the private `itnevres/pokemon-three-region` to the session), and Chromium is available for the live browser verify. The regression gate is RESUME's cloud baseline: 1,271 pass / 6 known local-state deltas.
+> - **Base branch.** `master`: Plan 2 and its follow-ups were merged via [itnevres/pokemap#1](https://github.com/itnevres/pokemap/pull/1) on 2026-09-25.
 > - **Files touched since.** Plan 6 touched `packages/cli/src/{index,context,args}.ts`, `packages/core/src/load/png.ts` and `packages/core/src/world/connections.ts`, but none of the files these three tasks name.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: `superpowers:subagent-driven-development`, same rigor as every prior Plan 2 task and its own 6 follow-ups (fresh implementer per task, spec-compliance review, code-quality review, fix loops, live-verify). Read `docs/superpowers/RESUME.md` in full first — it has the real current state and the accumulated lessons this document assumes. These 3 tasks are independent of each other and of Plans 6/7 (the new GBC-family work) — safe to execute in any order, on `master`, no worktree, matching this whole project's established convention.
