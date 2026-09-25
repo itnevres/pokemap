@@ -825,6 +825,15 @@ describe("loadGbcCollisionInfo", () => {
     expect(info.get(0x24)).toEqual({ name: "COLL_WHIRLPOOL", category: "water", talk: true });
   });
 
+  // Spec review finding 3: the only talk:true pin above (COLL_WHIRLPOOL) is
+  // also a water value, so a mutation that scopes `talk` to
+  // `category === "water" && ...` would still pass it. COLL_CUT_TREE ($12,
+  // WALL_TILE | TALK) pins talk:true on a WALL value instead, closing that gap.
+  itWithGbcCorpus("COLL_CUT_TREE ($12, WALL_TILE | TALK) resolves to wall with talk: true", () => {
+    const info = loadGbcCollisionInfo(GBC_SUBJECT_ROOT);
+    expect(info.get(0x12)).toEqual({ name: "COLL_CUT_TREE", category: "wall", talk: true });
+  });
+
   itWithGbcCorpus("a raw value with no COLL_* name gives name: null (109 names for 109 distinct values, out of 256 possible)", () => {
     const info = loadGbcCollisionInfo(GBC_SUBJECT_ROOT);
     // $02 is LAND_TILE ($00) with no COLL_* name pointing at it -- measured
@@ -857,6 +866,35 @@ describe("loadGbcCollisionInfo", () => {
 
       expect(() => loadGbcCollisionInfo(root)).toThrow(/COLL_FLOOR/);
       expect(() => loadGbcCollisionInfo(root)).toThrow(/COLL_GROUND/);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("throws, naming the value and its low nybble, when a category row's low nybble matches none of land/water/wall", () => {
+    const root = mkdtempSync(join(tmpdir(), "pokemap-gbc-collinfo-cat-"));
+    try {
+      mkdirSync(join(root, "constants"), { recursive: true });
+      mkdirSync(join(root, "data", "collision"), { recursive: true });
+      writeFileSync(
+        join(root, "constants", "collision_constants.asm"),
+        [
+          "DEF LAND_TILE  EQU $00",
+          "DEF WATER_TILE EQU $01",
+          "DEF WALL_TILE  EQU $0e", // deliberately not $0f: WATER_TILE | WALL_TILE ($0f) then matches none of the three bits
+          "DEF TALK       EQU $10",
+          "DEF COLL_FLOOR EQU $00",
+        ].join("\n"),
+      );
+      // Row 0's category ($0f) is a real, parseable "|"-joined token pair --
+      // parseTileCollisionCategoryTable itself doesn't refuse it -- but its
+      // low nybble ($0f) equals none of land ($00), water ($01) or wall
+      // ($0e) as defined here, so loadGbcCollisionInfo itself must refuse.
+      const rows = ["db WATER_TILE | WALL_TILE", ...Array.from({ length: 255 }, () => "db LAND_TILE")].join("\n") + "\n";
+      writeFileSync(join(root, "data", "collision", "collision_permissions.asm"), rows);
+
+      expect(() => loadGbcCollisionInfo(root)).toThrow(/value 0\b/);
+      expect(() => loadGbcCollisionInfo(root)).toThrow(/\$f/);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

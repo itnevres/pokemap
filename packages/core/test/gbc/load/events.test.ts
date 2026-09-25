@@ -651,11 +651,28 @@ describe("outOfBoundsEventDefects", () => {
     }]);
   });
 
-  it("flags a negative x or y on a bg event", () => {
+  it("flags a negative x on a bg event", () => {
     const events = emptyEvents({ bgs: [{ x: -1, y: 0, bgEventType: "B", script: "Sc", lineIndex: 0 }] });
     expect(outOfBoundsEventDefects(map, events)).toEqual([{
       file: "maps/TestMap.asm",
       message: "maps/TestMap.asm: bg[0] at (-1,0) is outside the 10x8 step grid",
+    }]);
+  });
+
+  // Spec review finding 4: the negative-x case above can't tell `e.x < 0`
+  // from `e.y < 0` -- a mutation dropping the `y < 0` check entirely would
+  // still pass it. A negative-y-only case (x otherwise in-bounds) closes
+  // that gap.
+  it("flags a negative y on an object event, independently of the x check", () => {
+    const events = emptyEvents({
+      objects: [{
+        x: 0, y: -1, sprite: "S", moveData: "M", radiusX: 0, radiusY: 0, hour1: "-1", hour2: "-1",
+        palette: "0", objectType: "OBJECTTYPE_SCRIPT", sightRange: 0, script: "Sc", eventFlag: "-1", lineIndex: 0,
+      }],
+    });
+    expect(outOfBoundsEventDefects(map, events)).toEqual([{
+      file: "maps/TestMap.asm",
+      message: "maps/TestMap.asm: object[0] at (0,-1) is outside the 10x8 step grid",
     }]);
   });
 

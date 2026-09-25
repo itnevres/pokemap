@@ -803,6 +803,10 @@ describe("renderGbcMapMetatile (map-keyed metatile thumbnail, review finding 6)"
       expect(map.tileset).toBe("TILESET_JOHTO");
       const ts = proj.tileset(map.tileset);
       expect(ts.metatiles[24]!.tiles).toContain(0x10);
+      // Spec review finding 7: pin the block choice itself, not just the
+      // tile-containment fact -- block (4,7)'s raw id really is 24 (non-zero,
+      // so it's never the block-0 border substitution either).
+      expect(proj.layout(map).layout.blocks[7 * map.width + 4]!.metatileId).toBe(24);
 
       const mapRaster = renderGbcMap(proj, "VioletCity"); // border 0 (default) -- block(4,7) origin is (128,224), no ring offset
       const metaRaster = renderGbcMapMetatile(proj, "VioletCity", 24);
