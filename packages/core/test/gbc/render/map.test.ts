@@ -814,20 +814,59 @@ describe("renderGbcMapMetatile (map-keyed metatile thumbnail, review finding 6)"
     },
   );
 
+  // Spec review finding 1: the ORIGINAL task spec's premise for the AzaleaTown
+  // test below ("same tileset [as VioletCity], different roof") is false --
+  // AzaleaTown is TILESET_JOHTO_MODERN, not TILESET_JOHTO (`data/maps/
+  // maps.asm`), and the earlier test asserted metatile-DATA equality, not
+  // tileset equality, which happens to hold too but proves something weaker.
+  // Because the two maps differ in tileset AND roof, that test's "differs"
+  // assertion is over-determined: it can't tell a correctly-keyed roof swap
+  // from one keyed to the wrong group (mutation E12, `roofSwappedTiles(...,
+  // 10)` for every map, survived against it). MahoganyTown is the TRUE
+  // same-tileset/different-roof pair (both TILESET_JOHTO; VioletCity roof 1,
+  // MahoganyTown roof 2), so a byte-equality test against it -- the same
+  // shape as VioletCity's own test above -- is what actually isolates the
+  // per-MAP roof key. Block (5,2), raw metatile id 24 (same table as
+  // VioletCity's, since it's the same tileset).
   itWithGbcCorpus(
-    "the same id (24) on AzaleaTown -- same underlying metatile data, a genuinely different real roof -- renders different pixels than VioletCity",
+    "MahoganyTown, block (5,2), metatile 24: renderGbcMapMetatile byte-equals renderGbcMap's region (same tileset as VioletCity, TILESET_JOHTO, but a different real roof)",
+    () => {
+      const proj = openGbcProject(GBC_SUBJECT_ROOT);
+      const violet = proj.map("VioletCity");
+      const mahogany = proj.map("MahoganyTown");
+      expect(mahogany.tileset).toBe("TILESET_JOHTO");
+      expect(mahogany.tileset).toBe(violet.tileset);
+      const { mapGroupRoofs } = proj.roofs();
+      expect(mapGroupRoofs[mahogany.group]).not.toBe(mapGroupRoofs[violet.group]); // 2, vs VioletCity's 1
+      expect(proj.layout(mahogany).layout.blocks[2 * mahogany.width + 5]!.metatileId).toBe(24);
+
+      const mapRaster = renderGbcMap(proj, "MahoganyTown");
+      const metaRaster = renderGbcMapMetatile(proj, "MahoganyTown", 24);
+      expect(extractBlock(metaRaster, 0, 0)).toEqual(extractBlock(mapRaster, 5 * 32, 2 * 32));
+    },
+  );
+
+  itWithGbcCorpus(
+    "the same id (24) on AzaleaTown renders different pixels than VioletCity -- a different tileset (TILESET_JOHTO_MODERN, not JOHTO) AND a different roof, asserted explicitly rather than assumed",
     () => {
       const proj = openGbcProject(GBC_SUBJECT_ROOT);
       const violet = proj.map("VioletCity");
       const azalea = proj.map("AzaleaTown");
       const { mapGroupRoofs } = proj.roofs();
 
-      // Both facts this test's discrimination depends on: metatile 24 is the
-      // SAME raw tile data on both maps' tilesets (so any pixel difference
-      // below can only come from the per-group roof swap, not a different
-      // metatile shape), and the two maps' groups really do resolve to
-      // different roof indices (review finding 6: VioletCity roof 1,
-      // AzaleaTown roof 2).
+      // The real facts, stated plainly (spec review finding 1): the two maps
+      // do NOT share a tileset constant -- that was the original task spec's
+      // wrong premise for this pair. What IS true, and still worth pinning,
+      // is that metatile 24's raw tile DATA happens to be byte-identical
+      // across both tileset tables (both ultimately alias the same Johto
+      // metatile source), and the two maps' groups resolve to different roof
+      // indices (review finding 6: VioletCity roof 1, AzaleaTown roof 2). The
+      // "differs" assertion below can therefore come from either the
+      // tileset difference or the roof difference (or both) -- it does NOT,
+      // by itself, isolate the roof key the way the MahoganyTown test above
+      // does; that isolation is what the MahoganyTown test is for.
+      expect(azalea.tileset).toBe("TILESET_JOHTO_MODERN");
+      expect(azalea.tileset).not.toBe(violet.tileset);
       expect(proj.tileset(violet.tileset).metatiles[24]).toEqual(proj.tileset(azalea.tileset).metatiles[24]);
       expect(mapGroupRoofs[violet.group]).not.toBe(mapGroupRoofs[azalea.group]);
 
