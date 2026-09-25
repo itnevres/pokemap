@@ -246,7 +246,8 @@ describe("CLI end-to-end (spawned, generous timeout)", () => {
   // Kept as one `it` (the task's "3 tests only" budget for spawned e2e
   // tests), looping several spawns rather than adding more test cases.
   // Task 12 removed encounters/where/coverage from this list -- they are now
-  // real GBC commands (see gbcAtlas.test.ts's own end-to-end coverage).
+  // real GBC commands (see this file's own "runGbcEncounters"/"runGbcWhere"/
+  // "runGbcCoverage" blocks below, plus packages/core/test/gbc/analyse/atlas.test.ts).
   itWithGbcCorpus("every GBA-only command refuses on the real gbc root with its own named message, never touching a GBA loader", () => {
     const cases: { name: string; args: string[] }[] = [
       { name: "render-world", args: ["render-world", "--bbox", "0,0,1,1"] },
@@ -293,11 +294,9 @@ describe("runGbcEncounters", () => {
   });
 
   itWithGbcCorpus("a map with no encounter sources at all prints empty stdout, not an error", () => {
-    // CianwoodCity has water/fish/rock but Route26 (a Kanto route with no
-    // wild data assigned at all in this corpus -- see coverage's own
-    // mapsWithoutEncounters) is a cleaner "truly empty" example; fall back to
-    // asserting on whatever gbcCoverage names as unassigned if Route26 turns
-    // out to carry data on this corpus (defensive, not hand-guessed).
+    // Finds a real "no encounter source" map at test time (266 exist per
+    // gbcCoverage's mapsWithoutEncounters) rather than hand-naming one, so
+    // this stays correct if the corpus's wild-data assignments ever change.
     const proj = openGbcProject(GBC_SUBJECT_ROOT);
     const empty = proj.maps.find((m) => gbcEncounterSources(proj, m.name).length === 0);
     expect(empty).toBeDefined();
@@ -322,6 +321,32 @@ describe("runGbcWhere", () => {
     expect(stdout).toBe("MISSINGNO_DOES_NOT_EXIST appears in no encounter table\n");
   });
 
+  // Fix round 1, spec review Minor #2/mutation M7: lower-case input must
+  // resolve identically to upper-case -- an earlier version had no test
+  // exercising this at all, so a dropped `.toUpperCase()` (or, after this
+  // fix round, a dropped `normalizeSpecies`) would have shipped silently.
+  itWithGbcCorpus("accepts lower-case input, resolving identically to upper-case (M7)", () => {
+    const lower = runGbcWhere(GBC_SUBJECT_ROOT, "dunsparce", {});
+    const upper = runGbcWhere(GBC_SUBJECT_ROOT, "DUNSPARCE", {});
+    expect(lower.stdout).toBe(upper.stdout);
+    expect(lower.stdout.length).toBeGreaterThan(0);
+  });
+
+  // Fix round 1, spec review Minor #2: a "SPECIES_"-prefixed name (GBA's own
+  // convention) also resolves, even though GBC wild data never carries that
+  // prefix itself -- normalizeSpecies strips it before the lookup.
+  itWithGbcCorpus("accepts a SPECIES_-prefixed name, resolving identically to the bare name", () => {
+    const prefixed = runGbcWhere(GBC_SUBJECT_ROOT, "SPECIES_DUNSPARCE", {});
+    const bare = runGbcWhere(GBC_SUBJECT_ROOT, "DUNSPARCE", {});
+    expect(prefixed.stdout).toBe(bare.stdout);
+    expect(prefixed.stdout.length).toBeGreaterThan(0);
+  });
+
+  itWithGbcCorpus("the empty-result message echoes the raw input as typed, not the normalized lookup key", () => {
+    const { stdout } = runGbcWhere(GBC_SUBJECT_ROOT, "species_missingno", {});
+    expect(stdout).toBe("species_missingno appears in no encounter table\n");
+  });
+
   itWithGbcCorpus("--json prints exactly gbcWhereSpecies's own output", async () => {
     const { gbcWhereSpecies } = await import("@pokemap/core/src/gbc/analyse/atlas.js");
     const proj = openGbcProject(GBC_SUBJECT_ROOT);
@@ -340,7 +365,9 @@ describe("runGbcCoverage", () => {
     expect(withEmpty.stdout.split("\n").filter((l) => l.length > 0)).toHaveLength(1 + 266);
 
     const withUnused = runGbcCoverage(GBC_SUBJECT_ROOT, { unused: true });
-    expect(withUnused.stdout.split("\n").filter((l) => l.length > 0)).toHaveLength(1 + 69);
+    // Fix round 1, spec review Issue 1: 69 -> 70 (unusedSpecies is now built
+    // from generated sources, not raw table presence -- see atlas.test.ts).
+    expect(withUnused.stdout.split("\n").filter((l) => l.length > 0)).toHaveLength(1 + 70);
   });
 
   itWithGbcCorpus("--json includes fishGroupWithoutWater and defects, which text mode never prints", () => {

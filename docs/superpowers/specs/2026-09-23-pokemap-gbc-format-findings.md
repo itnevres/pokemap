@@ -637,7 +637,7 @@ Shape:
 - **Task 11 (world).** Connection semantics confirmed; the direct port holds, with the offset axis noted above. There are 142 connections, and 77 maps are TOWN/ROUTE. Assess LOD needs from the real stitched extent, as the plan already says.
 - **Task 12 (atlas).** **The premise "no day/night variants at the data level" is false.**
   - Grass differs by morn/day/nite. Fishing differs day vs nite through `time_group`.
-  - `where`/`coverage` report per-source chances: grass per time slot (slot % × rate), water, fishing per rod, and headbutt common/rare/rock.
+  - `where`/`coverage` report per-source chances: grass per time slot (slot % × rate), water, fishing per rod, and headbutt common/rare/rock. (The binding Task 12 spec, `docs/superpowers/task-reports/pokemap-plan-6-gbc-foundation/task-12-spec.md`, reports the encounter rate alongside the slot %, NOT multiplied into it -- the implementation follows the spec, not the "×" shorthand here.)
   - Scope grows (Decision 5).
 - **Roadmap edits.** Applied in the same commit as this revision (`docs/superpowers/plans/2026-09-23-pokemap-plan-6-gbc-roadmap.md`):
   - §0 I7 bullet: the cap is per tileset (40/64/128).

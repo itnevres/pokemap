@@ -155,14 +155,32 @@ function hitTag(h: GbcSpeciesHit): string {
   return tag;
 }
 
-/** `where <species>` (Task 12). `species` is expected already-uppercased and
- *  prefix-stripped by the caller (`index.ts`, mirroring the GBA `where`
- *  command's own input handling) -- GBC wild data has no "SPECIES_" prefix.
- *  Empty result prints the same wording the GBA `where` command uses.
+/**
+ * Uppercases the user's input and strips a leading "SPECIES_" prefix
+ * (case-insensitively) -- fix round 1, spec review Minor #2/M7: `where` must
+ * accept lower-case input (`where dunsparce`) and, since GBC wild data
+ * NEVER carries a "SPECIES_" prefix (unlike the GBA JSON's "SPECIES_x"
+ * convention this file's own doc comment used to wrongly claim `index.ts`
+ * already stripped), a `SPECIES_`-prefixed name too (`where
+ * SPECIES_DUNSPARCE`) -- both now resolve to the bare "DUNSPARCE" constant
+ * `gbcWhereSpecies` matches on. Lives in this handler (not `index.ts`) so a
+ * direct handler-test call exercises the exact normalization the CLI uses,
+ * with no need to spawn a process for it.
+ */
+function normalizeSpecies(species: string): string {
+  const upper = species.toUpperCase();
+  return upper.startsWith("SPECIES_") ? upper.slice("SPECIES_".length) : upper;
+}
+
+/** `where <species>` (Task 12). `species` is the user's raw, unmodified
+ *  input (`index.ts` no longer pre-normalizes it) -- see `normalizeSpecies`.
+ *  The "no encounter table" message echoes the RAW input, exactly as typed,
+ *  mirroring the GBA `where` command's own empty-result message (which also
+ *  prints its raw `species` argument, not its own normalized lookup key).
  *  `--json` prints the raw `GbcSpeciesHit[]`. */
 export function runGbcWhere(root: string, species: string, opts: RunGbcWhereOptions): GbcCommandResult {
   const proj = openGbcProject(root);
-  const hits = gbcWhereSpecies(proj, species);
+  const hits = gbcWhereSpecies(proj, normalizeSpecies(species));
   const stderr = warningLines(proj.wild().defects);
 
   if (opts.json) return { stdout: `${JSON.stringify(hits, null, 2)}\n`, stderr };

@@ -233,7 +233,9 @@ program
   .action((species: string, opts: { json?: boolean }) => {
     const { root, family } = resolveRootAndFamily(program.opts().project);
     if (family === "gbc") {
-      const { stdout, stderr } = runGbcWhere(root, species.toUpperCase(), opts);
+      // Raw, unmodified input -- runGbcWhere's own normalizeSpecies does the
+      // uppercasing and "SPECIES_" stripping (fix round 1, spec review M7).
+      const { stdout, stderr } = runGbcWhere(root, species, opts);
       if (stderr) process.stderr.write(stderr);
       process.stdout.write(stdout);
       return;

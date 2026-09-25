@@ -89,10 +89,15 @@ const HEADBUTT_MAP = makeMap({ name: "HeadbuttMap", constName: "HEADBUTT_MAP", b
 const CITY_MAP = makeMap({ name: "CityMap", constName: "CITY_MAP", blkPath: "noWater.blk", fishGroup: "FISHGROUP_NONE" });
 const ROCK_MAP = makeMap({ name: "RockMap", constName: "ROCK_MAP", blkPath: "noWater.blk", fishGroup: "FISHGROUP_NONE" });
 const EMPTY_MAP = makeMap({ name: "EmptyMap", constName: "EMPTY_MAP", blkPath: "noWater.blk", fishGroup: "FISHGROUP_NONE" });
+// Fix round 1, spec review M8: a map with ONLY a swarm source (no base grass/
+// water/fish/headbutt/rock entry at all) -- pins that `gbcCoverage` counts it
+// as "with encounters" purely on `sources.length > 0`, never special-casing
+// `conditional === "swarm"` out of that count.
+const SWARM_ONLY_MAP = makeMap({ name: "SwarmOnlyMap", constName: "SWARM_ONLY_MAP", blkPath: "noWater.blk", fishGroup: "FISHGROUP_NONE" });
 
 const ALL_MAPS: GbcMap[] = [
   GRASS_MAP, WATER_MAP, SWARM_GRASS_MAP, FISH_NO_WATER_MAP, FISH_WATER_MAP,
-  FISH_TIME_MAP, FISH_SWARM_BASE_MAP, HEADBUTT_MAP, CITY_MAP, ROCK_MAP, EMPTY_MAP,
+  FISH_TIME_MAP, FISH_SWARM_BASE_MAP, HEADBUTT_MAP, CITY_MAP, ROCK_MAP, EMPTY_MAP, SWARM_ONLY_MAP,
 ];
 
 // -- grass: all 7 slots level 5, duplicate species per time bucket, so the
@@ -140,6 +145,21 @@ const swarmGrassSwarm: GbcGrassEntry = {
     nite: [{ level: 20, species: "DRATINI" }, ...GRASS_SLOTS.slice(1)],
   },
   lineIndex: 2,
+};
+
+// SWARM_ONLY_MAP's only wild data at all: one swarm-tagged grass entry, no
+// base grass entry for the same mapConst.
+const swarmOnlyGrass: GbcGrassEntry = {
+  mapConst: "SWARM_ONLY_MAP",
+  file: "data/wild/swarm_grass.asm",
+  swarm: true,
+  rates: { morn: pct(51), day: pct(51), nite: pct(51) },
+  slots: {
+    morn: [{ level: 10, species: "MAGIKARP" }, ...GRASS_SLOTS.slice(1)],
+    day: [{ level: 10, species: "MAGIKARP" }, ...GRASS_SLOTS.slice(1)],
+    nite: [{ level: 10, species: "MAGIKARP" }, ...GRASS_SLOTS.slice(1)],
+  },
+  lineIndex: 3,
 };
 
 const WATER_SLOTS = [
@@ -231,7 +251,7 @@ const treemonMaps: GbcTreemonMapEntry[] = [{ mapConst: "HEADBUTT_MAP", setConst:
 const rockMonMaps: GbcTreemonMapEntry[] = [{ mapConst: "ROCK_MAP", setConst: "TREEMON_SET_ROCK", lineIndex: 0 }];
 
 const wildData: GbcWildData = {
-  grass: [grassEntry, swarmGrassBase, swarmGrassSwarm],
+  grass: [grassEntry, swarmGrassBase, swarmGrassSwarm, swarmOnlyGrass],
   water: [waterEntry],
   probabilities: { grass: GRASS_PROBS, water: WATER_PROBS },
   fishGroups: [fishGroupBase, fishGroupTime, fishGroupQwilfish, fishGroupQwilfishSwarm],
@@ -468,12 +488,17 @@ describe("gbcCoverage", () => {
     const root = makeSpeciesConstantsRoot();
     const c = gbcCoverage(stubProject(root));
 
-    expect(c.mapsWithEncounters).toBe(8);
+    expect(c.mapsWithEncounters).toBe(9); // includes SwarmOnlyMap -- see the dedicated M8 test below
     expect(c.mapsWithoutEncounters.sort()).toEqual(["CityMap", "EmptyMap", "FishNoWaterMap"].sort());
-    expect(c.sourcesByMethod).toEqual({ grass: 9, water: 1, fish: 13, headbutt: 2, rock: 1 });
+    expect(c.sourcesByMethod).toEqual({ grass: 12, water: 1, fish: 13, headbutt: 2, rock: 1 });
     expect(c.fishGroupWithoutWater).toEqual(["FishNoWaterMap"]);
     expect(c.defects).toEqual([]);
-    expect(c.unusedSpecies).toEqual(["UNUSEDMON"]);
+    // Fix round 1, spec review Issue 1: unusedSpecies is now built from
+    // generated sources, not raw table presence -- SHOULD_NEVER_APPEAR lives
+    // only in the rock set's `rare` list, which `buildRockSources` never
+    // reads, so it is correctly unused (it would have been wrongly counted
+    // "used" under the old raw-table scan).
+    expect(c.unusedSpecies).toEqual(["SHOULD_NEVER_APPEAR", "UNUSEDMON"]);
 
     const rockAvg = c.levelByMap.find((m) => m.mapName === "RockMap")!;
     expect(rockAvg.averageLevel).toBeCloseTo(15, 10); // one source, weighted (90*15+10*15)/100 = 15
@@ -481,6 +506,17 @@ describe("gbcCoverage", () => {
     expect(grassAvg.averageLevel).toBeCloseTo(7, 10); // every chance's own mid-level is 5+(5+4)/2... see fixture comment: (5+9)/2=7 for every species/source
     const waterAvg = c.levelByMap.find((m) => m.mapName === "WaterMap")!;
     expect(waterAvg.averageLevel).toBeCloseTo(15, 10); // (12*70+22*30)/100 = 15
+  });
+
+  it("M8: a map with only a swarm source counts as 'with encounters', never excluded for being conditional", () => {
+    const root = makeSpeciesConstantsRoot();
+    const c = gbcCoverage(stubProject(root));
+    expect(c.mapsWithoutEncounters).not.toContain("SwarmOnlyMap");
+    // Direct positive check, independent of the coverage loop: the map's
+    // own sources are non-empty and every one is swarm-tagged.
+    const sources = gbcEncounterSources(stubProject(root), "SwarmOnlyMap");
+    expect(sources.length).toBeGreaterThan(0);
+    expect(sources.every((s) => s.conditional === "swarm")).toBe(true);
   });
 });
 
@@ -493,6 +529,18 @@ describe("loadGbcSpeciesConstants", () => {
     expect(species).not.toContain("UNOWN_A");
     expect(species).not.toContain("UNOWN_B");
     expect(species).toEqual([...species].sort());
+  });
+});
+
+describe("mergeSlots length-mismatch refusal (quality review Minor #3)", () => {
+  it("throws, naming both counts, when a grass entry's slot count disagrees with probabilities.grass's length", () => {
+    const badWildData: GbcWildData = { ...wildData, probabilities: { grass: GRASS_PROBS.slice(0, 6), water: WATER_PROBS } };
+    const badProj: GbcProject = { ...stubProject(), wild: () => badWildData };
+    expect(() => gbcEncounterSources(badProj, "GrassMap")).toThrow(/mergeSlots: 7 slot\(s\) but 6 probability entr\(y\/ies\)/);
+  });
+
+  it("does not throw on the real 7-slot/7-probability grass shape", () => {
+    expect(() => gbcEncounterSources(stubProject(), "GrassMap")).not.toThrow();
   });
 });
 
@@ -586,13 +634,21 @@ describe("corpus", () => {
     expect(hits.every((h) => h.mapName === "Route31")).toBe(true);
   });
 
-  itWithGbcCorpus("gbcCoverage over the whole corpus: pinned mapsWithEncounters/fishGroupWithoutWater/unusedSpecies/defects", () => {
+  itWithGbcCorpus("gbcCoverage over the whole corpus: pinned mapsWithEncounters/sourcesByMethod/fishGroupWithoutWater/unusedSpecies/defects", () => {
     const proj = openGbcProject(GBC_SUBJECT_ROOT);
     const c = gbcCoverage(proj);
     expect(c.mapsWithEncounters).toBe(125);
     expect(c.mapsWithoutEncounters).toHaveLength(391 - 125);
+    expect(c.sourcesByMethod).toEqual({ grass: 288, water: 62, fish: 340, headbutt: 106, rock: 4 });
     expect(c.fishGroupWithoutWater).toHaveLength(319);
-    expect(c.unusedSpecies).toHaveLength(69);
+    // Fix round 1, spec review Issue 1/2: 69 -> 70 -- REMORAID is unused
+    // because no map header in this corpus assigns FISHGROUP_REMORAID (or
+    // its _SWARM substitution) at all, even though the raw fish.asm text
+    // mentions it; CELEBI/CHARIZARD are ordinary fully-evolved/legendary
+    // species with no wild encounter in any of the 5 in-scope methods.
+    expect(c.unusedSpecies).toHaveLength(70);
+    expect(c.unusedSpecies).toEqual(expect.arrayContaining(["REMORAID", "CELEBI", "CHARIZARD"]));
+    expect(c.unusedSpecies).not.toContain("EGG");
     expect(c.defects).toHaveLength(1);
     expect(c.defects[0]!.file).toBe("data/wild/kanto_grass.asm");
   });

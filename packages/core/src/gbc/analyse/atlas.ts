@@ -35,6 +35,21 @@ export type GbcEncounterTime = "morn" | "day" | "nite";
 export type GbcFishRod = "old" | "good" | "super";
 export type GbcTreemonList = "common" | "rare";
 
+/**
+ * The 5 tag fields every `GbcEncounterSource` and `GbcSpeciesHit` carry,
+ * factored out once (quality review Minor #5) so the two shapes can never
+ * independently drift as a future method adds a 6th tag -- `GbcEncounterSource`
+ * and `GbcSpeciesHit` each `extends` this instead of re-declaring the 5
+ * fields by hand.
+ */
+export interface GbcSourceTags {
+  method: GbcEncounterMethod;
+  time?: GbcEncounterTime;
+  rod?: GbcFishRod;
+  list?: GbcTreemonList;
+  conditional?: "swarm";
+}
+
 export interface GbcEncounterChance {
   species: string;
   percent: number;
@@ -42,12 +57,7 @@ export interface GbcEncounterChance {
   maxLevel: number;
 }
 
-export interface GbcEncounterSource {
-  method: GbcEncounterMethod;
-  time?: GbcEncounterTime;
-  rod?: GbcFishRod;
-  list?: GbcTreemonList;
-  conditional?: "swarm";
+export interface GbcEncounterSource extends GbcSourceTags {
   /** % chance of the encounter roll succeeding at all (grass/water/rock).
    *  NOT multiplied into `chances[].percent`, which is already conditional
    *  on the roll succeeding -- see this file's own "Encounter rate" doc. */
@@ -88,14 +98,34 @@ export interface GbcEncounterSource {
 //                   / cp 65 percent / jr c, .ok / inc b
 //                   / cp 85 percent / jr c, .ok / inc b
 //                   / cp 95 percent / jr c, .ok / inc b
-//    b (the base level) is bumped +1 per threshold cleared: P(+0)=35%,
-//    P(+1)=30%, P(+2)=20%, P(+3)=10%, P(+4)=5%. Max buff = +4. This buff is
+//    b (the base level) is bumped +1 per threshold cleared. "35/65/85/95
+//    percent" are BYTE thresholds (the "percent" macro's N*255/100 scale,
+//    floored): 89/165/216/242 of 256, not literal 35/65/85/95% cut points --
+//    fix round 1, spec review Minor #1 caught an earlier version of this
+//    comment quoting the approximate "35/30/20/10/5%" as if it were exact,
+//    contradicting this very file's own item 1 ("a fraction of 256, NOT a
+//    percent"). The EXACT distribution, `Random()` uniform on 0-255:
+//      P(+0) = 89/256        = 34.765625%
+//      P(+1) = (165-89)/256  = 29.6875%
+//      P(+2) = (216-165)/256 = 19.921875%
+//      P(+3) = (242-216)/256 = 10.15625%
+//      P(+4) = (256-242)/256 = 5.46875%
+//    (sums to 256/256). Max buff = +4 -- the only part of this distribution
+//    the atlas actually reports (`GRASS_WATER_LEVEL_BUFF_MAX`); a static
+//    atlas has no way to say which buff a given real-time roll will land on,
+//    so `GRASS_WATER_LEVEL_BUFF_DISTRIBUTION` below is exposed purely for
+//    documentation/citation, not consumed by any builder. This buff is
 //    reached ONLY from ChooseWildEncounter -- fish.asm's `.Fish`/
 //    `.TimeEncounter` and treemons.asm's `SelectTreeMon` each set
 //    wCurPartyLevel directly from their own record's level byte, with no
 //    Random call in between, so fishing/headbutt/rock never get it.
 export const RANDOM_RANGE = 256;
 export const GRASS_WATER_LEVEL_BUFF_MAX = 4;
+/** Exact `Random()`-uniform probability (%) of +0/+1/+2/+3/+4, in order,
+ *  derived above from `engine/overworld/wildmons.asm:301-315`'s real byte
+ *  thresholds (89/165/216/242 of 256) -- documentation only (see this file's
+ *  item 3 comment); no builder in this file consumes it. */
+export const GRASS_WATER_LEVEL_BUFF_DISTRIBUTION = [34.765625, 29.6875, 19.921875, 10.15625, 5.46875] as const;
 
 function rateOf256Percent(resolved: number): number {
   return (resolved / RANDOM_RANGE) * 100;
@@ -210,9 +240,20 @@ function buildFishSources(group: GbcFishGroup, data: GbcWildData, conditional?: 
 //    here (mirrors the GBA model, `packages/core/src/load/encounters.ts`'s
 //    own `speciesChances` doc).
 function mergeSlots(slots: readonly GbcWildSlot[], slotPercents: readonly number[], levelBuffMax: number): GbcEncounterChance[] {
+  // Quality review Minor #3: refuse loudly on a length mismatch rather than
+  // defaulting a missing weight to 0% (silently dropping probability mass)
+  // -- every other GBC loader in this codebase (parseCollision,
+  // parsePaletteMap, parseTileCollisionCategoryTable, parseConstDefs, ...)
+  // already refuses on an unexpected shape instead of guessing; this dormant
+  // case (grass is always 7 slots, water always 3, matching
+  // GbcWildProbabilities.grass/.water) should too, for a future format
+  // change or corpus edit.
+  if (slots.length !== slotPercents.length) {
+    throw new Error(`mergeSlots: ${slots.length} slot(s) but ${slotPercents.length} probability entr(y/ies) -- refusing to treat a missing weight as 0%`);
+  }
   const by = new Map<string, GbcEncounterChance>();
   slots.forEach((slot, i) => {
-    const percent = slotPercents[i] ?? 0;
+    const percent = slotPercents[i]!;
     const found = by.get(slot.species);
     if (found) {
       found.percent += percent;
@@ -254,6 +295,18 @@ function buildWaterSource(entry: GbcWaterEntry, waterProbs: readonly number[], c
 //    runtime-unknowable statically, so both lists are reported as separate
 //    sources (`list: "common" | "rare"`), never resolved to one (Decision 5,
 //    findings §Extra Headbutt/Rock Smash).
+//    `GetTreeScore`'s tree score ALSO gates a separate, distinct attempt roll
+//    before `SelectTreeMon` is ever reached at all (`GetTreeMon`,
+//    engine/events/treemons.asm:125-165): a bad score gets `RandomRange 10 /
+//    and a` (10% attempt chance, common list only if it hits), a good score
+//    gets `cp 5` (50%, common), a rare score gets `cp 8` (80%, then skips
+//    past the common list's `$ff` terminator to read the rare list). This is
+//    a real third axis (whether an encounter is attempted at all) this file
+//    does not model -- like the common/rare list choice itself, it depends
+//    on the same runtime-unknowable tree score, so it is out of scope
+//    (task-12-spec.md's "Out of scope"), and unlike rock (which has one flat
+//    `encounterRate`), headbutt sources never carry an `encounterRate` field
+//    at all, since there is no single number to report.
 // 10. TREEMON_SET_CITY yields nothing (`GetTreeMons`, engine/events/
 //    treemons.asm:96-99: `cp NUM_TREEMON_SETS / jr nc, .quit / and a / jr z,
 //    .quit` -- index 0 is TREEMON_SET_CITY, `and a` on 0 sets Z, so it quits
@@ -309,6 +362,24 @@ function buildRockSources(set: GbcTreemonSet | null): GbcEncounterSource[] {
 //    still reads as water. `loadGbcWaterCollisionValues`
 //    (`../load/tileset.ts`) derives the exact set of `COLL_*` values this
 //    resolves to, straight from that table -- never hand-listed.
+//
+// KNOWN OVER-APPROXIMATION (spec-compliant, not a bug -- fix round 1, spec
+// review Minor #6). The real engine's `TryFish` also requires the player to
+// NOT be surfing (`ld a,[wPlayerState] / cp PLAYER_SURF / jr z,.fail`, right
+// before the `GetTileCollision` check above) and to be FACING a water tile
+// from an adjacent land tile, not standing IN the water itself. This
+// function only checks "does the map's layout contain any water-category
+// quadrant at all" -- the spec's own rule (task-12-spec.md item 5), a
+// coarser and much cheaper approximation than tracing reachable
+// stand-and-face positions. Measured on the real corpus: this over-reports
+// fishing as reachable on Route16 and Route18, whose water is fully walled
+// in-map (WALL/HEADBUTT_TREE quadrants on every side) with no
+// orthogonally-adjacent LAND quadrant to stand on and face it from -- though
+// Route18's water might still be genuinely reachable by facing it across the
+// Route17 map connection, which this function (a single map's own layout)
+// cannot see. No pathfinding or adjacency/connection tracing is implemented
+// to close this gap; `gbcCoverage`'s `fishGroupWithoutWater` inherits the
+// same coarse rule.
 export function gbcMapHasWaterTile(proj: GbcProject, map: Pick<GbcMap, "blkPath" | "width" | "height" | "tileset">): boolean {
   const water = proj.waterCollisionValues();
   const { layout } = proj.layout(map);
@@ -333,8 +404,18 @@ export function gbcMapHasWaterTile(proj: GbcProject, map: Pick<GbcMap, "blkPath"
  * alone is not enough (see this file's item 12 and `gbcCoverage`'s own
  * `fishGroupWithoutWater`). Headbutt is entirely absent for a
  * `yieldsNothing` set. Rock never reads a set's `rare` list.
+ *
+ * `hasWaterOverride` is an internal perf hook, not part of this function's
+ * spec-named 2-argument contract (task-12-spec.md deliverable 2): every
+ * ordinary caller omits it and this function computes `gbcMapHasWaterTile`
+ * itself, exactly as before. `gbcCoverage` is the one caller that passes it
+ * -- quality review Important #1 found `gbcCoverage` computing
+ * `gbcMapHasWaterTile` twice per map (once via this function, once again for
+ * its own `fishGroupWithoutWater`), each a fresh `.blk` read plus a
+ * collision-quadrant scan (`GbcProject.layout` is deliberately uncached).
+ * `gbcCoverage` now computes it once per map and threads it through here.
  */
-export function gbcEncounterSources(proj: GbcProject, mapName: string): GbcEncounterSource[] {
+export function gbcEncounterSources(proj: GbcProject, mapName: string, hasWaterOverride?: boolean): GbcEncounterSource[] {
   const map = proj.map(mapName);
   const data = proj.wild();
   const w = wildForMap(data, map);
@@ -345,7 +426,8 @@ export function gbcEncounterSources(proj: GbcProject, mapName: string): GbcEncou
   if (w.water.base) out.push(buildWaterSource(w.water.base, data.probabilities.water));
   if (w.water.swarm) out.push(buildWaterSource(w.water.swarm, data.probabilities.water, "swarm"));
 
-  if (gbcMapHasWaterTile(proj, map)) {
+  const hasWater = hasWaterOverride ?? gbcMapHasWaterTile(proj, map);
+  if (hasWater) {
     if (w.fishing.group) out.push(...buildFishSources(w.fishing.group, data));
     if (w.fishing.swarmVariant) out.push(...buildFishSources(w.fishing.swarmVariant, data, "swarm"));
   }
@@ -356,14 +438,9 @@ export function gbcEncounterSources(proj: GbcProject, mapName: string): GbcEncou
   return out;
 }
 
-export interface GbcSpeciesHit {
+export interface GbcSpeciesHit extends GbcSourceTags {
   mapName: string;
   mapConst: string;
-  method: GbcEncounterMethod;
-  time?: GbcEncounterTime;
-  rod?: GbcFishRod;
-  list?: GbcTreemonList;
-  conditional?: "swarm";
   percent: number;
   minLevel: number;
   maxLevel: number;
@@ -413,6 +490,17 @@ export function gbcWhereSpecies(proj: GbcProject, species: string): GbcSpeciesHi
  * the text there before handing it to the shared `parseConstDefs`, so those
  * 26 names are never even seen, let alone mistaken for species with tiny
  * (1-26) "unused" pokedex numbers.
+ *
+ * Every OTHER non-species line in the first block is excluded automatically
+ * by `parseConstDefs`'s own shape, never by a special case here (spec
+ * review Minor #4 asked this be spelled out): `DEF NUM_POKEMON EQU
+ * const_value - 1` (line ~274) and, from the file's very top, `DEF
+ * JOHTO_POKEMON EQU ...` are `DEF ... EQU` lines, not `const NAME` lines, so
+ * `parseConstDefs`'s `CONST_RE` never matches them at all. `const_skip`
+ * (line ~275, the unnamed slot at value 0xfc between CELEBI and EGG) is a
+ * bare `const_skip` token with no name to capture -- `parseConstDefs` only
+ * ever records a name from a `const NAME` line, so a skip silently advances
+ * the counter and emits nothing, exactly as intended.
  */
 export function loadGbcSpeciesConstants(root: string): string[] {
   const r = norm(root);
@@ -427,37 +515,6 @@ export function loadGbcSpeciesConstants(root: string): string[] {
 
   const NON_SPECIES = new Set(["NO_MON", "EGG"]);
   return [...parseConstDefs(speciesText).keys()].filter((k) => !NON_SPECIES.has(k)).sort();
-}
-
-/** Every species token referenced anywhere in the raw wild-data tables --
- *  the "used" side of `gbcCoverage`'s `unusedSpecies`, computed directly
- *  from `GbcWildData` (not per-map, and not filtered by fishing
- *  reachability: a species is "used" if it is in the data at all, matching
- *  this deliverable's own wording "appearing in no source"). */
-function collectUsedSpecies(data: GbcWildData): Set<string> {
-  const used = new Set<string>();
-  for (const g of data.grass) {
-    for (const time of ["morn", "day", "nite"] as const) {
-      for (const slot of g.slots[time]) used.add(slot.species);
-    }
-  }
-  for (const w of data.water) {
-    for (const slot of w.slots) used.add(slot.species);
-  }
-  for (const fg of data.fishGroups) {
-    for (const rod of [fg.oldRod, fg.goodRod, fg.superRod]) {
-      for (const r of rod) if (r.kind === "species") used.add(r.species);
-    }
-  }
-  for (const t of data.timeFishGroups) {
-    used.add(t.day.species);
-    used.add(t.nite.species);
-  }
-  for (const set of data.treemonSets) {
-    for (const r of set.common) used.add(r.species);
-    if (set.rare) for (const r of set.rare) used.add(r.species);
-  }
-  return used;
 }
 
 export interface GbcCoverage {
@@ -478,13 +535,30 @@ export interface GbcCoverage {
    *  toward the map's average regardless of its own encounterRate/biteChance
    *  or how many species it lists -- e.g. a map with one grass-morn source
    *  (however many species) and one rock source (2 species) averages those
-   *  two source-level-curves 50/50, not weighted by species count. This
-   *  mirrors the GBA analyser's "average per table, not per species" choice
-   *  (`packages/core/src/analyse/coverage.ts`) one level up: per SOURCE, not
-   *  per per-time-of-day/rod variant collapsed together. */
+   *  two source-level-curves 50/50, not weighted by species count. This is
+   *  a DIFFERENT statistic from GBA's own `coverage()`
+   *  (`packages/core/src/analyse/coverage.ts:79-118`), not merely "the same
+   *  idea one level up" (fix round 1, spec review Minor #6 flagged an
+   *  earlier version of this doc overstating that): GBA pools every chance
+   *  from every method/rod/table for a map into ONE flat percent-weighted
+   *  average, with no per-table averaging step at all. GBC instead
+   *  percent-weight-averages WITHIN each source first, then takes an
+   *  UNWEIGHTED arithmetic mean ACROSS those per-source averages -- the
+   *  spec's own explicit choice ("weighted equally per source",
+   *  task-12-spec.md deliverable 2). */
   levelByMap: { mapName: string; averageLevel: number }[];
   /** `constants/pokemon_constants.asm` species (`loadGbcSpeciesConstants`)
-   *  that appear in no `data/wild/*.asm` table anywhere in the corpus. */
+   *  with no chance in ANY generated `GbcEncounterSource`, anywhere in the
+   *  corpus (fix round 1, spec review Issue 1) -- built from the same
+   *  per-map `gbcEncounterSources` output `gbcWhereSpecies` walks, NOT from
+   *  raw presence in `GbcWildData`'s tables. Those two views can disagree: a
+   *  species that appears only inside a fish group no map header ever
+   *  references at all (e.g. REMORAID -- neither `FISHGROUP_REMORAID` nor
+   *  its `FISHGROUP_REMORAID_SWARM` substitution is used by any
+   *  `data/maps/maps.asm` entry in this corpus) is present in the raw
+   *  `data/wild/fish.asm` text but yields no source on any map, so it is
+   *  correctly "unused" here even though a naive raw-table scan would call
+   *  it used. */
   unusedSpecies: string[];
   /** Maps whose header names a `FISHGROUP_*` other than `FISHGROUP_NONE`,
    *  but whose layout has no metatile with a WATER_TILE-category collision
@@ -498,17 +572,24 @@ export interface GbcCoverage {
  * Whole-corpus wild-encounter coverage (GBA's `coverage()`,
  * `packages/core/src/analyse/coverage.ts`, is the sibling this mirrors in
  * spirit -- shape differs because the GBC source format does). Iterates
- * `proj.maps` once, calling `gbcEncounterSources`/`gbcMapHasWaterTile` per
- * map -- `wildForMap`'s own linear finds over grass/water/fishGroups/
+ * `proj.maps` once, calling `gbcMapHasWaterTile` and `gbcEncounterSources`
+ * per map -- `wildForMap`'s own linear finds over grass/water/fishGroups/
  * treemonMaps/rockMonMaps (a few hundred entries each) run 391 times, ~10^5
  * comparisons total, which the Task 8 quality review already accepted as
- * fine; this file does not do worse.
+ * fine; this file does not do worse. `gbcMapHasWaterTile` itself is computed
+ * exactly ONCE per map (fix round 1, quality review Important #1: an earlier
+ * version called it a second time to compute `fishGroupWithoutWater`, each
+ * call re-reading the map's `.blk` -- `GbcProject.layout` is deliberately
+ * uncached) and threaded into `gbcEncounterSources`'s `hasWaterOverride`.
+ *
+ * `unusedSpecies` is built from the species that actually show up in the
+ * generated sources below (`usedSpecies`), never from raw presence in
+ * `GbcWildData` -- see `GbcCoverage.unusedSpecies`'s own doc for why that
+ * distinction matters (REMORAID).
  */
 export function gbcCoverage(proj: GbcProject): GbcCoverage {
-  const data = proj.wild();
-  const usedSpecies = collectUsedSpecies(data);
   const allSpecies = loadGbcSpeciesConstants(proj.root);
-  const unusedSpecies = allSpecies.filter((s) => !usedSpecies.has(s));
+  const usedSpecies = new Set<string>();
 
   const mapsWithoutEncounters: string[] = [];
   const sourcesByMethod: Record<GbcEncounterMethod, number> = { grass: 0, water: 0, fish: 0, headbutt: 0, rock: 0 };
@@ -517,10 +598,16 @@ export function gbcCoverage(proj: GbcProject): GbcCoverage {
   let mapsWithEncounters = 0;
 
   for (const map of proj.maps) {
-    const sources = gbcEncounterSources(proj, map.name);
+    const hasWater = gbcMapHasWaterTile(proj, map);
+    const sources = gbcEncounterSources(proj, map.name, hasWater);
     if (sources.length === 0) {
       mapsWithoutEncounters.push(map.name);
     } else {
+      // A map with only a swarm source (e.g. no base grass/water entry at
+      // all, only a `data/wild/swarm_grass.asm` one) still counts as "with
+      // encounters" -- `sources.length > 0` is the only test, with no
+      // special-casing of `conditional === "swarm"` (fix round 1, spec
+      // review M8: pinned by a dedicated fixture map + test in atlas.test.ts).
       mapsWithEncounters++;
       const sourceAverages: number[] = [];
       for (const s of sources) {
@@ -528,6 +615,7 @@ export function gbcCoverage(proj: GbcProject): GbcCoverage {
         let weighted = 0;
         let total = 0;
         for (const c of s.chances) {
+          usedSpecies.add(c.species);
           weighted += ((c.minLevel + c.maxLevel) / 2) * c.percent;
           total += c.percent;
         }
@@ -538,10 +626,11 @@ export function gbcCoverage(proj: GbcProject): GbcCoverage {
       }
     }
 
-    if (map.fishGroup !== "FISHGROUP_NONE" && !gbcMapHasWaterTile(proj, map)) {
+    if (map.fishGroup !== "FISHGROUP_NONE" && !hasWater) {
       fishGroupWithoutWater.push(map.name);
     }
   }
 
-  return { mapsWithEncounters, mapsWithoutEncounters, sourcesByMethod, levelByMap, unusedSpecies, fishGroupWithoutWater, defects: data.defects };
+  const unusedSpecies = allSpecies.filter((s) => !usedSpecies.has(s));
+  return { mapsWithEncounters, mapsWithoutEncounters, sourcesByMethod, levelByMap, unusedSpecies, fishGroupWithoutWater, defects: proj.wild().defects };
 }

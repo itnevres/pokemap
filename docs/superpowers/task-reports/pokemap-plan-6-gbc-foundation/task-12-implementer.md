@@ -277,3 +277,166 @@ pre-saved original, found the mutation still applied on disk, restored it
 byte-for-byte, re-ran the full GBC+CLI suite to confirm green (524/524), and
 then re-ran mutation 4 through 9 from scratch to complete the table above
 cleanly.
+
+## Fix round 1
+
+Both reviews (`task-12-spec-review.md`, `task-12-quality-review.md`) are in.
+Spec review verdict: ISSUES (2), both in `unusedSpecies`; every one of the 391
+maps / 800 generated sources matched an independent re-implementation
+exactly, and all 9 mutations were reproduced as caught. Quality review
+verdict: APPROVED, 1 Important (the doubled `gbcMapHasWaterTile` call), 7
+Minor. This round addresses every REQUIRED item, both MINORS explicitly
+listed as "do these", and skips the one MINOR explicitly marked "Skip" (GBA/
+GBC CLI row-format duplication).
+
+### REQUIRED fixes
+
+1. **[spec Issue 1] `unusedSpecies` now built from generated sources, not raw
+   tables.** `gbcCoverage` no longer calls a separate `collectUsedSpecies(data)`
+   pass over `GbcWildData`; it now accumulates `usedSpecies` from
+   `c.species` inside the same per-map `gbcEncounterSources` loop it already
+   runs (the identical data `gbcWhereSpecies` walks). This is mutation M14's
+   fix, verified by re-applying M14 (seeding `usedSpecies` with a false
+   "REMORAID is used" entry) and confirming the corpus test goes red.
+   Re-pinned **69 → 70** in both `atlas.test.ts` and `gbcCommands.test.ts`
+   (`1 + 69` → `1 + 70`). REMORAID is the new member: neither
+   `FISHGROUP_REMORAID` nor its `FISHGROUP_REMORAID_SWARM` substitution is
+   assigned to any map in `data/maps/maps.asm` (`grep -c` confirms 0 for
+   both), so the fish data exists in `data/wild/fish.asm` but yields no
+   source anywhere in the corpus.
+2. **[spec Issue 2] Named `unusedSpecies` members pinned in the corpus test.**
+   `atlas.test.ts`'s `gbcCoverage` corpus test now asserts
+   `toEqual(expect.arrayContaining(["REMORAID", "CELEBI", "CHARIZARD"]))` and
+   `not.toContain("EGG")`, on top of the length pin. All three were verified
+   present in the real `unusedSpecies` output before pinning (ran the CLI's
+   `coverage --json` and checked the list directly).
+3. **[spec Minor #2 / mutation M7] `where` now accepts lower-case and
+   `SPECIES_`-prefixed input.** Moved normalization from `index.ts`'s
+   `species.toUpperCase()` into a new `normalizeSpecies` function inside
+   `runGbcWhere` itself (`gbcCommands.ts`): uppercases, then strips a leading
+   `SPECIES_` (case-insensitive). `index.ts` now passes the user's raw,
+   unmodified string through. This makes the handler's own doc comment (which
+   previously falsely claimed the caller already stripped the prefix) true,
+   and makes the normalization unit-testable without spawning a process.
+   Added 3 new `runGbcWhere` tests: lower-case input resolves identically to
+   upper-case, a `SPECIES_`-prefixed name resolves identically to the bare
+   name, and the empty-result message echoes the RAW input as typed (matching
+   the GBA `where` command's own convention of printing the original
+   argument, not the normalized lookup key). Re-ran mutation M7 (drop the
+   uppercasing) and confirmed the new lower-case test goes red.
+4. **[spec Minor #5 / mutation M8] A swarm-only map now has a dedicated
+   fixture and test.** Added `SwarmOnlyMap` to `atlas.test.ts`'s stub fixture
+   -- a map with ONLY a `swarm_grass.asm`-shaped grass entry, no base grass/
+   water/fish/headbutt/rock data at all for the same map. **Decision: a
+   swarm-only map counts as "with encounters"** (the recommended choice) --
+   `gbcCoverage`'s test is purely `sources.length > 0`, with no special case
+   for `conditional === "swarm"`, documented on both `gbcCoverage`'s own
+   comment and a dedicated test (`"M8: a map with only a swarm source counts
+   as 'with encounters'..."`) that directly asserts
+   `mapsWithoutEncounters` excludes it AND that `gbcEncounterSources` returns
+   only swarm-tagged sources for it. Re-ran mutation M8 (exclude
+   swarm-only maps from the count) and confirmed both the dedicated test and
+   the stub `gbcCoverage` test go red.
+5. **[quality Important #1] The water-tile check now runs once per map.**
+   `gbcEncounterSources` grew an optional third parameter, `hasWaterOverride?:
+   boolean` -- omitted by every ordinary caller (the spec's own 2-argument
+   contract is unaffected), and passed by `gbcCoverage`, which now computes
+   `gbcMapHasWaterTile(proj, map)` exactly once per map and threads the
+   result both into `gbcEncounterSources` and into its own
+   `fishGroupWithoutWater` check, eliminating the second `.blk` read +
+   collision-quadrant scan per map that the reviewer flagged.
+
+### MINORS addressed
+
+- **Level-buff doc made exact.** Replaced the approximate "35/30/20/10/5%"
+  comment with the real byte-threshold derivation (89/165/216/242 of 256) and
+  the exact distribution 34.765625 / 29.6875 / 19.921875 / 10.15625 /
+  5.46875%. Exposed as a new documented (not consumed) constant
+  `GRASS_WATER_LEVEL_BUFF_DISTRIBUTION`.
+- **Stale test comment fixed.** `gbcCommands.test.ts`'s "see gbcAtlas.test.ts"
+  reference (that file never existed) now points at the real files. The
+  rambling Route26-specific comment on the "empty map" test was replaced with
+  one sentence describing what the code actually does (finds a real empty map
+  at test time, never hand-names one).
+- **`unusedSpecies` exclusions fully documented.** `loadGbcSpeciesConstants`'s
+  doc now explicitly names `NUM_POKEMON` and `JOHTO_POKEMON` (`DEF ... EQU`
+  lines, never matched by `parseConstDefs`'s `const NAME` regex) and
+  `const_skip` (a nameless slot-advance) alongside the existing EGG/NO_MON/
+  UNOWN-block exclusions.
+- **Headbutt's attempt-rate gate documented.** Extended the item 9 engine
+  comment with `GetTreeMon`'s own bad/good/rare 10%/50%/80% attempt roll
+  (`treemons.asm:125-165`), citing it as a real third axis this file
+  correctly omits (tied to the same runtime-unknowable tree score as the
+  common/rare list choice), which is why headbutt sources never carry an
+  `encounterRate`.
+- **`mergeSlots` now refuses on a length mismatch** instead of defaulting a
+  missing weight to 0%, matching every other GBC loader's "refuse loudly on
+  an unexpected shape" convention. Covered by 2 new dedicated tests (throws
+  on a 7-vs-6 mismatch; does not throw on the real 7-vs-7 shape) plus
+  re-running the mutation (reverting to `?? 0`) and confirming it goes red.
+- **`levelByMap` doc reworded.** No longer claims to "mirror" GBA's
+  `coverage()` "one level up" -- now explicitly contrasts the two as
+  different statistics (GBA pools everything into one flat average; GBC
+  averages per-source first, then averages those averages equally), citing
+  the spec's own explicit choice.
+- **`sourcesByMethod` now pinned against the real corpus**, not just the stub
+  fixture: `atlas.test.ts`'s `gbcCoverage` corpus test asserts
+  `{ grass: 288, water: 62, fish: 340, headbutt: 106, rock: 4 }` exactly.
+- **Shared tag type extracted.** New `GbcSourceTags` interface
+  (`method`/`time?`/`rod?`/`list?`/`conditional?`); `GbcEncounterSource` and
+  `GbcSpeciesHit` both `extends` it instead of independently declaring the
+  same 5 fields.
+- **Findings-doc parenthetical added.** `docs/superpowers/specs/2026-09-23-
+  pokemap-gbc-format-findings.md`'s Task 12 consequence line ("slot % × rate")
+  now has a parenthetical noting the binding Task 12 spec reports the rate
+  separately, not multiplied, with a citation to `task-12-spec.md`.
+- **Fishing-reachability over-approximation documented.** `gbcMapHasWaterTile`'s
+  doc now has a "KNOWN OVER-APPROXIMATION" section naming the real engine's
+  extra requirements (not surfing, facing from an adjacent land tile) and the
+  2 real maps (Route16, Route18) where this shows up, per the spec review's
+  measurement. No pathfinding was implemented -- explicitly out of scope.
+- **Skipped, as instructed:** the GBA/GBC CLI row-format string duplication
+  (quality Minor #4).
+
+### Mutation-check, fix round 1
+
+All 9 original spec mutations (S1-S9) were re-applied to the CURRENT code,
+confirmed caught, and reverted (byte-diffed against a saved original after
+each). Plus the reviewer's M7, M8 and M14, and the new `mergeSlots` guard:
+
+| # | Mutation | Result | Caught by |
+|---|---|---|---|
+| S1 | Rod boundary `prev=-1`→`0` | caught (4) | fish/time_group units + corpus |
+| S2 | Bite `/256`→`/255` | caught (2) | fish unit, Route32 corpus |
+| S3 | time_group day/nite swapped | caught (2) | time_group units |
+| S4 | Grass swarm tag dropped | caught (3) | swarm unit, DUNSPARCE corpus |
+| S5 | Headbutt `rare` dropped | caught (4) | headbutt/coverage units, Route29 corpus |
+| S6 | Rock includes `rare` | caught (2) | rock unit, coverage unit |
+| S7 | Water-collision filter dropped | caught (3) | suppression unit, coverage corpus |
+| S8 | Level buff dropped | caught (3) | Route29/DUNSPARCE corpus, coverage unit |
+| S9 | Duplicate species not merged | caught (4) | grass unit, DUNSPARCE corpus |
+| M7 | CLI `where` uppercasing dropped | caught (1) | new lower-case-input test |
+| M8 | Swarm-only maps excluded from `mapsWithEncounters` | caught (2) | new dedicated M8 test + stub coverage test |
+| M14 | `unusedSpecies` seeded from a raw-table false positive | caught (1) | corpus coverage test (70-count pin) |
+| new | `mergeSlots` length-mismatch refusal reverted to `?? 0` | caught (1) | new dedicated guard test |
+
+Every mutation was applied by hand, run, then restored via `cp` from a saved
+original with a `diff` confirming byte-identity before moving to the next.
+`packages/cli/src/index.ts` was diffed and confirmed unchanged by this
+round's mutation testing (only `gbcCommands.ts`/`atlas.ts` were mutated).
+
+### Gates (fix round 1)
+
+- `npx vitest run packages/core/test/gbc packages/cli/test/gbcCommands.test.ts packages/cli/test/context.test.ts`:
+  **16 files, 530 tests, 0 failed, 0 skipped** (up from 524; +6 net: 3 new
+  `atlas.test.ts` tests (M8 fixture/test, mergeSlots refusal ×2) and 3 new
+  `gbcCommands.test.ts` tests (lower-case, prefix, raw-echo)).
+- `npm run typecheck`: clean.
+- Full repo `npx vitest run`: **17 files / 1 test failed**, unchanged from
+  the documented pre-existing baseline (976 passed vs. the prior round's 970,
+  +6 matching the new tests; no new failures).
+- Subject porcelain: empty, before and after.
+
+### Interruption note (fix round 1)
+
+None -- this round completed in one pass with no interruption.
