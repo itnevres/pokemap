@@ -14,6 +14,9 @@ import {
   loadGbcTilesetByName,
   pngTileIndex,
   pngPathFor,
+  parseCollisionCategoryBits,
+  parseTileCollisionCategoryTable,
+  loadGbcWaterCollisionValues,
 } from "../../../src/gbc/load/tileset.js";
 import { parseConstDefs } from "../../../src/gbc/load/asm.js";
 import { parseIncbins } from "../../../src/gbc/load/incbin.js";
@@ -747,5 +750,61 @@ describe("pngPathFor", () => {
 
   it("refuses a bare .2bpp path (fix round 1, spec review m7: strict to .2bpp.lz again, matching Task 5) -- only data/maps/roofs.asm's own resolver accepts that shape", () => {
     expect(() => pngPathFor("gfx/tilesets/roofs/new_bark.2bpp")).toThrow(/\.2bpp\.lz/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task 12: the global collision CATEGORY table (data/collision/
+// collision_permissions.asm), for the atlas's fishing-reachability check.
+// Separate domain from parseCollision/parseCollisionConstants above (those
+// resolve one TILESET's own COLL_* tokens; this resolves every raw COLL_*
+// BYTE, 0-255, to LAND_TILE/WATER_TILE/WALL_TILE[|TALK]).
+// ---------------------------------------------------------------------------
+
+describe("parseCollisionCategoryBits", () => {
+  it("parses the 4 bare category DEFs, ignoring COLL_* names", () => {
+    const text = "DEF LAND_TILE  EQU $00\nDEF WATER_TILE EQU $01\nDEF WALL_TILE  EQU $0f\nDEF TALK       EQU $10\nDEF COLL_FLOOR EQU $00\n";
+    expect(parseCollisionCategoryBits(text, "x.asm")).toEqual({ land: 0, water: 1, wall: 0x0f, talk: 0x10 });
+  });
+
+  it("refuses, naming the source and the constant, when one of the 4 is missing", () => {
+    expect(() => parseCollisionCategoryBits("DEF LAND_TILE EQU $00\n", "x.asm")).toThrow(/x\.asm/);
+    expect(() => parseCollisionCategoryBits("DEF LAND_TILE EQU $00\n", "x.asm")).toThrow(/WATER_TILE/);
+  });
+});
+
+describe("parseTileCollisionCategoryTable", () => {
+  const bits = { land: 0, water: 1, wall: 0x0f, talk: 0x10 };
+
+  it("evaluates a bare token and a '|'-joined token, in row order", () => {
+    const text = ["db LAND_TILE", "db WATER_TILE", "db WALL_TILE | TALK"].join("\n") + "\n" + Array.from({ length: 253 }, () => "db LAND_TILE").join("\n") + "\n";
+    const out = parseTileCollisionCategoryTable(text, bits, "x.asm");
+    expect(out).toHaveLength(256);
+    expect(out.slice(0, 3)).toEqual([0, 1, 0x1f]);
+  });
+
+  it("refuses an unknown category token, naming it", () => {
+    const text = "db BOGUS\n" + Array.from({ length: 255 }, () => "db LAND_TILE").join("\n") + "\n";
+    expect(() => parseTileCollisionCategoryTable(text, bits, "x.asm")).toThrow(/BOGUS/);
+  });
+
+  it("refuses unless the table has exactly 256 rows", () => {
+    expect(() => parseTileCollisionCategoryTable("db LAND_TILE\n", bits, "x.asm")).toThrow(/found 1 row\(s\), expected 256/);
+  });
+});
+
+describe("loadGbcWaterCollisionValues", () => {
+  itWithGbcCorpus("derives the exact real water-category COLL_* set from the corpus's own tables (masking off TALK), never hand-listed", () => {
+    const water = loadGbcWaterCollisionValues(GBC_SUBJECT_ROOT);
+    // Hand-derived from constants/collision_constants.asm + data/collision/
+    // collision_permissions.asm: COLL_WATER ($29, plain WATER_TILE) and
+    // COLL_WHIRLPOOL ($24, WATER_TILE | TALK -- must still count after the
+    // `& 0xf` mask) are both real, named water tiles; COLL_FLOOR ($00,
+    // LAND_TILE) and COLL_WALL ($07, WALL_TILE) are not.
+    expect(water.has(0x29)).toBe(true); // COLL_WATER
+    expect(water.has(0x24)).toBe(true); // COLL_WHIRLPOOL (WATER_TILE | TALK)
+    expect(water.has(0x00)).toBe(false); // COLL_FLOOR
+    expect(water.has(0x07)).toBe(false); // COLL_WALL
+    expect(water.size).toBe(44); // measured against the real table (see implementer report)
   });
 });

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import type { Collision, GbcTileset, Metatile, PaletteMapEntry } from "../model/types.js";
 import { norm } from "../../config/paths.js";
-import { codeLines, stripMacroDefs, stripComment, matchCall, parseConstDefs } from "./asm.js";
+import { codeLines, stripMacroDefs, stripComment, matchCall, parseConstDefs, findDefEqu } from "./asm.js";
 import { parseIncbins, parseIncludes } from "./incbin.js";
 import { parseNum } from "./map.js";
 import { readShadesPng } from "./png.js";
@@ -232,6 +232,99 @@ export function parseCollision(text: string, collConsts: Map<string, number>, so
     });
     out.push({ tl: vals[0]!, tr: vals[1]!, bl: vals[2]!, br: vals[3]! });
   }
+  return out;
+}
+
+// --- Task 12: collision CATEGORY (not COLL_* value) lookup, for the atlas's
+// fishing-reachability check (a map has fishing only if its layout contains a
+// WATER_TILE-category metatile quadrant, engine/events/overworld.asm:1663-64,
+// FishFunction.TryFish: `call GetTileCollision / cp WATER_TILE`). This is a
+// SEPARATE table from `parseCollisionConstants` above (which resolves the
+// 37-tileset-specific `data/tilesets/<name>_collision.asm` COLL_* tokens to
+// their raw numeric value): the category table below is the ONE global
+// `TileCollisionTable` (`data/collision/collision_permissions.asm`) that maps
+// every possible raw COLL_* byte (0-255) to a coarse category
+// (LAND_TILE/WATER_TILE/WALL_TILE, optionally OR'd with TALK).
+
+/**
+ * `constants/collision_constants.asm`'s bare (non-`COLL_`) category bits --
+ * `LAND_TILE EQU $00` / `WATER_TILE EQU $01` / `WALL_TILE EQU $0f` /
+ * `TALK EQU $10` (constants/collision_constants.asm:1-4).
+ * `parseCollisionConstants` above only captures `COLL_*` names (its own doc),
+ * so these 4 need their own lookup -- read via `findDefEqu` rather than
+ * hand-copying $00/$01/$0f/$10 so a fork that renumbers them is never
+ * silently stale here.
+ */
+export interface CollisionCategoryBits {
+  land: number;
+  water: number;
+  wall: number;
+  talk: number;
+}
+export function parseCollisionCategoryBits(text: string, source: string): CollisionCategoryBits {
+  return {
+    land: findDefEqu(text, "LAND_TILE", source),
+    water: findDefEqu(text, "WATER_TILE", source),
+    wall: findDefEqu(text, "WALL_TILE", source),
+    talk: findDefEqu(text, "TALK", source),
+  };
+}
+
+/**
+ * `data/collision/collision_permissions.asm`'s `TileCollisionTable::`: 256
+ * `db TOKEN` / `db TOKEN | TOKEN2` rows, in COLL_* value order -- row index i
+ * IS the raw COLL_* byte i, the same index `GetTileCollision`
+ * (home/map_objects.asm:88-112) uses directly (`ld hl, TileCollisionTable /
+ * ld e, a {the raw COLL_* byte} / add hl, de / ld e, [hl]`). Each `|`-joined
+ * token is looked up against `bits`; refuses (throws, naming `source` and the
+ * token) on an unknown one, or (naming `source` and the count) unless the
+ * table has exactly 256 rows (`assert_table_length $100`,
+ * data/collision/collision_permissions.asm's last line).
+ */
+export function parseTileCollisionCategoryTable(text: string, bits: CollisionCategoryBits, source: string): number[] {
+  const named: Record<string, number> = { LAND_TILE: bits.land, WATER_TILE: bits.water, WALL_TILE: bits.wall, TALK: bits.talk };
+  const out: number[] = [];
+  for (const line of stripMacroDefs(text)) {
+    const stripped = stripComment(line).trim();
+    const m = stripped.match(/^db\s+(.+)$/);
+    if (!m) continue;
+    let value = 0;
+    for (const tokRaw of m[1]!.split("|")) {
+      const tok = tokRaw.trim();
+      const v = named[tok];
+      if (v === undefined) throw new Error(`parseTileCollisionCategoryTable: ${source}: unknown category token "${tok}"`);
+      value |= v;
+    }
+    out.push(value);
+  }
+  if (out.length !== 256) {
+    throw new Error(`parseTileCollisionCategoryTable: ${source}: found ${out.length} row(s), expected 256`);
+  }
+  return out;
+}
+
+/**
+ * The set of raw COLL_* byte values (0-255) that resolve to the WATER_TILE
+ * category -- i.e. every index in `parseTileCollisionCategoryTable`'s output
+ * whose value, masked to its low nybble, equals `WATER_TILE`. The `& 0xf`
+ * mirrors `GetTileCollision`'s own mask (home/map_objects.asm:107-108:
+ * `ld a, e / and $f ; lo nybble only`), which strips the `TALK` bit before
+ * the caller ever compares against `WATER_TILE` -- so a category like
+ * `WATER_TILE | TALK` (e.g. `COLL_WHIRLPOOL`, $24) still reads as water. This
+ * is the ONE loader Task 12's fishing-reachability check
+ * (`gbc/analyse/atlas.ts`) uses; never hand-list the COLL_* water values.
+ */
+export function loadGbcWaterCollisionValues(root: string): Set<number> {
+  const r = norm(root);
+  const collisionConstantsFile = "constants/collision_constants.asm";
+  const bits = parseCollisionCategoryBits(readFileSync(`${r}/${collisionConstantsFile}`, "utf8"), collisionConstantsFile);
+  const tableFile = "data/collision/collision_permissions.asm";
+  const categories = parseTileCollisionCategoryTable(readFileSync(`${r}/${tableFile}`, "utf8"), bits, tableFile);
+
+  const out = new Set<number>();
+  categories.forEach((v, collValue) => {
+    if ((v & 0xf) === bits.water) out.add(collValue);
+  });
   return out;
 }
 

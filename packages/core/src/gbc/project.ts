@@ -1,11 +1,12 @@
 import { readFileSync } from "node:fs";
 import { norm } from "../config/paths.js";
 import { loadGbcMaps, loadLayout, type LoadedGbcMaps } from "./load/map.js";
-import { loadGbcTileset } from "./load/tileset.js";
+import { loadGbcTileset, loadGbcWaterCollisionValues } from "./load/tileset.js";
 import { loadPaletteTables, type PaletteTables } from "./load/palette.js";
 import { loadGbcRoofs, type GbcRoofs } from "./load/roofs.js";
+import { loadGbcWildData } from "./load/encounters.js";
 import { findDefEqu } from "./load/asm.js";
-import type { GbcMap, GbcTileset, Layout, DataDefect } from "./model/types.js";
+import type { GbcMap, GbcTileset, Layout, DataDefect, GbcWildData } from "./model/types.js";
 
 /**
  * `constants/gfx_constants.asm`'s `DEF MAP_CONNECTION_PADDING_WIDTH EQU 3`
@@ -51,6 +52,16 @@ export interface GbcProject {
    *  (`constants/gfx_constants.asm`, GBC format findings §Extra Border) --
    *  the real cap on `renderGbcMap`'s `border` option. */
   paddingWidth(): number;
+  /** Lazy, cached once per root: `loadGbcWildData(root)` (Task 12's atlas).
+   *  Grass/water/fish/headbutt/rock all live in a handful of small `data/wild/*.asm`
+   *  files read once and reused for every one of the atlas's 391-map scans,
+   *  the same "load once, reuse everywhere" shape as `tileset()`/`roofs()`. */
+  wild(): GbcWildData;
+  /** Lazy, cached once per root: the set of raw `COLL_*` byte values that
+   *  resolve to the `WATER_TILE` category (`load/tileset.ts`'s
+   *  `loadGbcWaterCollisionValues`) -- Task 12's fishing-reachability check
+   *  reads two small global files once per root, not once per map. */
+  waterCollisionValues(): Set<number>;
 }
 
 export function openGbcProject(root: string): GbcProject {
@@ -61,6 +72,8 @@ export function openGbcProject(root: string): GbcProject {
   let paletteTablesCache: PaletteTables | undefined;
   let roofsCache: GbcRoofs | undefined;
   let paddingWidthCache: number | undefined;
+  let wildCache: GbcWildData | undefined;
+  let waterCollisionValuesCache: Set<number> | undefined;
 
   return {
     root: r,
@@ -88,6 +101,14 @@ export function openGbcProject(root: string): GbcProject {
         paddingWidthCache = parsePaddingWidth(readFileSync(`${r}/constants/gfx_constants.asm`, "utf8"), "constants/gfx_constants.asm");
       }
       return paddingWidthCache;
+    },
+    wild: (): GbcWildData => {
+      if (!wildCache) wildCache = loadGbcWildData(r);
+      return wildCache;
+    },
+    waterCollisionValues: (): Set<number> => {
+      if (!waterCollisionValuesCache) waterCollisionValuesCache = loadGbcWaterCollisionValues(r);
+      return waterCollisionValuesCache;
     },
   };
 }

@@ -2,6 +2,7 @@ import { writeFileSync } from "node:fs";
 import { openGbcProject } from "@pokemap/core/src/gbc/project.js";
 import { renderGbcMap } from "@pokemap/core/src/gbc/render/map.js";
 import { loadGbcMapEvents } from "@pokemap/core/src/gbc/load/events.js";
+import { gbcEncounterSources, gbcWhereSpecies, gbcCoverage, type GbcEncounterSource, type GbcSpeciesHit } from "@pokemap/core/src/gbc/analyse/atlas.js";
 import type { DataDefect, GbcMap } from "@pokemap/core/src/gbc/model/types.js";
 import { encodePng } from "./png.js";
 import type { TimeOfDay } from "./args.js";
@@ -89,4 +90,111 @@ export function runGbcQuery(root: string, mapName: string, opts: RunGbcQueryOpti
   }
 
   return { stdout: `${JSON.stringify(out, null, 2)}\n`, stderr: warningLines(defects) };
+}
+
+// ---------------------------------------------------------------------------
+// Plan 6 Task 12: the GBC encounter atlas -- `encounters`/`where`/`coverage`.
+// Kept in its own block (below every Task 10 handler) so a merge with the
+// parallel Task 11 worktree's own appends to this file stays mechanical.
+// ---------------------------------------------------------------------------
+
+/** `grass (morn, rate 9.8%)` / `fish (rod good, bite 50.0%)` / `headbutt
+ *  (common)` / `rock (rate 40.0%)` -- one tag per optional field that source
+ *  carries, in a fixed order, comma-joined; no tags at all just prints the
+ *  bare method name (never an empty "()"). */
+function sourceHeader(s: GbcEncounterSource): string {
+  const tags: string[] = [];
+  if (s.time) tags.push(s.time);
+  if (s.rod) tags.push(`rod ${s.rod}`);
+  if (s.list) tags.push(s.list);
+  if (s.conditional) tags.push(s.conditional);
+  if (s.encounterRate !== undefined) tags.push(`rate ${s.encounterRate.toFixed(1)}%`);
+  if (s.biteChance !== undefined) tags.push(`bite ${s.biteChance.toFixed(1)}%`);
+  return tags.length > 0 ? `${s.method} (${tags.join(", ")})` : s.method;
+}
+
+export interface RunGbcEncountersOptions {
+  json?: boolean;
+}
+
+/** `encounters <map>` (Task 12). Human output: grouped by source, a header
+ *  line per `sourceHeader`, then one `  pct%  Lv min-max  SPECIES` row per
+ *  merged chance (mirrors the GBA `encounters` command's own row format,
+ *  `packages/cli/src/index.ts`). `--json` prints the raw `GbcEncounterSource[]`.
+ *  Data-defect warnings (the kanto_grass.asm terminator) go to stderr, never
+ *  stdout, exactly like every other GBC command in this file. */
+export function runGbcEncounters(root: string, mapName: string, opts: RunGbcEncountersOptions): GbcCommandResult {
+  const proj = openGbcProject(root);
+  const sources = gbcEncounterSources(proj, mapName);
+  const stderr = warningLines(proj.wild().defects);
+
+  if (opts.json) return { stdout: `${JSON.stringify(sources, null, 2)}\n`, stderr };
+
+  let stdout = "";
+  for (const s of sources) {
+    stdout += `${sourceHeader(s)}\n`;
+    for (const c of s.chances) {
+      stdout += `  ${c.percent.toFixed(1).padStart(5)}%  Lv ${c.minLevel}-${c.maxLevel}  ${c.species}\n`;
+    }
+  }
+  return { stdout, stderr };
+}
+
+export interface RunGbcWhereOptions {
+  json?: boolean;
+}
+
+/** `method[/time][/rod][/list][ swarm]`, e.g. `grass/morn`, `fish/old/day`,
+ *  `headbutt/rare`, `rock`, `grass/nite swarm`. */
+function hitTag(h: GbcSpeciesHit): string {
+  let tag: string = h.method;
+  if (h.time) tag += `/${h.time}`;
+  if (h.rod) tag += `/${h.rod}`;
+  if (h.list) tag += `/${h.list}`;
+  if (h.conditional) tag += " swarm";
+  return tag;
+}
+
+/** `where <species>` (Task 12). `species` is expected already-uppercased and
+ *  prefix-stripped by the caller (`index.ts`, mirroring the GBA `where`
+ *  command's own input handling) -- GBC wild data has no "SPECIES_" prefix.
+ *  Empty result prints the same wording the GBA `where` command uses.
+ *  `--json` prints the raw `GbcSpeciesHit[]`. */
+export function runGbcWhere(root: string, species: string, opts: RunGbcWhereOptions): GbcCommandResult {
+  const proj = openGbcProject(root);
+  const hits = gbcWhereSpecies(proj, species);
+  const stderr = warningLines(proj.wild().defects);
+
+  if (opts.json) return { stdout: `${JSON.stringify(hits, null, 2)}\n`, stderr };
+  if (hits.length === 0) return { stdout: `${species} appears in no encounter table\n`, stderr };
+
+  let stdout = "";
+  for (const h of hits) {
+    stdout += `${h.mapName.padEnd(32)} ${h.percent.toFixed(1).padStart(5)}%  Lv ${h.minLevel}-${h.maxLevel}  ${hitTag(h)}\n`;
+  }
+  return { stdout, stderr };
+}
+
+export interface RunGbcCoverageOptions {
+  empty?: boolean;
+  unused?: boolean;
+  json?: boolean;
+}
+
+/** `coverage` (Task 12). Text output mirrors the GBA `coverage` command's own
+ *  flag semantics: a summary line always, `--empty`/`--unused` each add one
+ *  indented line per entry. `--json` prints the full `GbcCoverage` (including
+ *  `fishGroupWithoutWater`/`sourcesByMethod`/`levelByMap`/`defects`, which the
+ *  text mode does not surface, again mirroring the GBA command). */
+export function runGbcCoverage(root: string, opts: RunGbcCoverageOptions): GbcCommandResult {
+  const proj = openGbcProject(root);
+  const c = gbcCoverage(proj);
+  const stderr = warningLines(proj.wild().defects);
+
+  if (opts.json) return { stdout: `${JSON.stringify(c, null, 2)}\n`, stderr };
+
+  let stdout = `${c.mapsWithEncounters} maps with encounters, ${c.mapsWithoutEncounters.length} without\n`;
+  if (opts.empty) for (const m of c.mapsWithoutEncounters) stdout += `  ${m}\n`;
+  if (opts.unused) for (const s of c.unusedSpecies) stdout += `  ${s}\n`;
+  return { stdout, stderr };
 }

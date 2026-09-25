@@ -33,6 +33,16 @@ describe("GbcProject caching", () => {
     expect(proj.paletteTables()).toBe(proj.paletteTables());
     expect(proj.roofs()).toBe(proj.roofs());
   });
+
+  // Task 12: wild()/waterCollisionValues() join the same lazy-cache family.
+  itWithGbcCorpus("wild() and waterCollisionValues() are each cached (same object/Set across calls)", () => {
+    const proj = openGbcProject(GBC_SUBJECT_ROOT);
+    expect(proj.wild()).toBe(proj.wild());
+    expect(proj.waterCollisionValues()).toBe(proj.waterCollisionValues());
+    // Sanity: real data, not an empty/placeholder cache.
+    expect(proj.wild().grass.length).toBeGreaterThan(0);
+    expect(proj.waterCollisionValues().size).toBeGreaterThan(0);
+  });
 });
 
 /**

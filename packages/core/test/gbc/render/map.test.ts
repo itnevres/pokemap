@@ -233,6 +233,8 @@ function stubProject(overrides: Partial<GbcProject>): GbcProject {
     roofs: unused("roofs"),
     layout: unused("layout"),
     paddingWidth: () => 3,
+    wild: unused("wild"),
+    waterCollisionValues: unused("waterCollisionValues"),
     ...overrides,
   };
 }

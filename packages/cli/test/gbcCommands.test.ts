@@ -8,7 +8,8 @@ import { unfilterScanlines } from "@pokemap/core/src/load/png.js";
 import { openGbcProject } from "@pokemap/core/src/gbc/project.js";
 import { renderGbcMap } from "@pokemap/core/src/gbc/render/map.js";
 import { GBC_SUBJECT_ROOT, itWithGbcCorpus } from "../../core/test/gbc/helpers/corpus.js";
-import { runGbcRender, runGbcQuery } from "../src/gbcCommands.js";
+import { runGbcRender, runGbcQuery, runGbcEncounters, runGbcWhere, runGbcCoverage } from "../src/gbcCommands.js";
+import { gbcEncounterSources } from "@pokemap/core/src/gbc/analyse/atlas.js";
 
 /**
  * Decodes exactly the shape `encodePng` (`../src/png.ts`) writes -- 8-bit
@@ -244,13 +245,12 @@ describe("CLI end-to-end (spawned, generous timeout)", () => {
   // this GBC root, not just the one the deliverables list happens to name.
   // Kept as one `it` (the task's "3 tests only" budget for spawned e2e
   // tests), looping several spawns rather than adding more test cases.
+  // Task 12 removed encounters/where/coverage from this list -- they are now
+  // real GBC commands (see gbcAtlas.test.ts's own end-to-end coverage).
   itWithGbcCorpus("every GBA-only command refuses on the real gbc root with its own named message, never touching a GBA loader", () => {
     const cases: { name: string; args: string[] }[] = [
       { name: "render-world", args: ["render-world", "--bbox", "0,0,1,1"] },
       { name: "validate", args: ["validate"] },
-      { name: "encounters", args: ["encounters", "NewBarkTown"] },
-      { name: "where", args: ["where", "RATTATA"] },
-      { name: "coverage", args: ["coverage"] },
       { name: "sign suggest", args: ["sign", "suggest", "NewBarkTown"] },
       { name: "sign add", args: ["sign", "add", "NewBarkTown", "--species", "RATTATA", "--dialogue", "hi", "--x", "0", "--y", "0"] },
       { name: "sign list", args: ["sign", "list", "NewBarkTown"] },
@@ -266,4 +266,97 @@ describe("CLI end-to-end (spawned, generous timeout)", () => {
       );
     }
   }, 120_000);
+});
+
+// ---------------------------------------------------------------------------
+// Plan 6 Task 12: the GBC encounter atlas CLI -- `encounters`/`where`/
+// `coverage`. Kept in its own block (below every Task 10 test) so a merge
+// with the parallel Task 11 worktree's own appends to this file stays
+// mechanical.
+// ---------------------------------------------------------------------------
+
+describe("runGbcEncounters", () => {
+  itWithGbcCorpus("Route29: human output groups by source header, rows sorted by percent, stderr carries the one real defect warning", () => {
+    const { stdout, stderr } = runGbcEncounters(GBC_SUBJECT_ROOT, "Route29", {});
+    expect(stderr).toMatch(/^warning: data\/wild\/kanto_grass\.asm:/);
+    expect(stdout).toMatch(/^grass \(morn, rate 9\.8%\)\n/);
+    expect(stdout).toMatch(/ {3}45\.0%  Lv 2-7  PIDGEY\n/);
+    // headbutt section present, with its own header (no rate/bite tag).
+    expect(stdout).toMatch(/^headbutt \(common\)$/m);
+  });
+
+  itWithGbcCorpus("--json prints exactly gbcEncounterSources's own output", () => {
+    const proj = openGbcProject(GBC_SUBJECT_ROOT);
+    const expected = gbcEncounterSources(proj, "Route32");
+    const { stdout } = runGbcEncounters(GBC_SUBJECT_ROOT, "Route32", { json: true });
+    expect(JSON.parse(stdout)).toEqual(expected);
+  });
+
+  itWithGbcCorpus("a map with no encounter sources at all prints empty stdout, not an error", () => {
+    // CianwoodCity has water/fish/rock but Route26 (a Kanto route with no
+    // wild data assigned at all in this corpus -- see coverage's own
+    // mapsWithoutEncounters) is a cleaner "truly empty" example; fall back to
+    // asserting on whatever gbcCoverage names as unassigned if Route26 turns
+    // out to carry data on this corpus (defensive, not hand-guessed).
+    const proj = openGbcProject(GBC_SUBJECT_ROOT);
+    const empty = proj.maps.find((m) => gbcEncounterSources(proj, m.name).length === 0);
+    expect(empty).toBeDefined();
+    const { stdout, stderr } = runGbcEncounters(GBC_SUBJECT_ROOT, empty!.name, {});
+    expect(stdout).toBe("");
+    expect(stderr).toMatch(/^warning: data\/wild\/kanto_grass\.asm:/);
+  });
+});
+
+describe("runGbcWhere", () => {
+  itWithGbcCorpus("DUNSPARCE: one row per hit, mapName padded, sorted by percent descending", () => {
+    const { stdout } = runGbcWhere(GBC_SUBJECT_ROOT, "DUNSPARCE", {});
+    const lines = stdout.split("\n").filter((l) => l.length > 0);
+    expect(lines.length).toBeGreaterThan(0);
+    expect(lines[0]).toMatch(/^DarkCaveVioletEntrance\s+45\.0%  Lv 2-8  grass\/(morn|day|nite) swarm$/);
+    const percents = lines.map((l) => Number(l.match(/(\d+\.\d)%/)![1]));
+    expect(percents).toEqual([...percents].sort((a, b) => b - a));
+  });
+
+  itWithGbcCorpus("a species in no source prints the GBA-matching empty message", () => {
+    const { stdout } = runGbcWhere(GBC_SUBJECT_ROOT, "MISSINGNO_DOES_NOT_EXIST", {});
+    expect(stdout).toBe("MISSINGNO_DOES_NOT_EXIST appears in no encounter table\n");
+  });
+
+  itWithGbcCorpus("--json prints exactly gbcWhereSpecies's own output", async () => {
+    const { gbcWhereSpecies } = await import("@pokemap/core/src/gbc/analyse/atlas.js");
+    const proj = openGbcProject(GBC_SUBJECT_ROOT);
+    const expected = gbcWhereSpecies(proj, "CHIKORITA");
+    const { stdout } = runGbcWhere(GBC_SUBJECT_ROOT, "CHIKORITA", { json: true });
+    expect(JSON.parse(stdout)).toEqual(expected);
+  });
+});
+
+describe("runGbcCoverage", () => {
+  itWithGbcCorpus("summary line, --empty and --unused each add one line per entry", () => {
+    const bare = runGbcCoverage(GBC_SUBJECT_ROOT, {});
+    expect(bare.stdout).toBe("125 maps with encounters, 266 without\n");
+
+    const withEmpty = runGbcCoverage(GBC_SUBJECT_ROOT, { empty: true });
+    expect(withEmpty.stdout.split("\n").filter((l) => l.length > 0)).toHaveLength(1 + 266);
+
+    const withUnused = runGbcCoverage(GBC_SUBJECT_ROOT, { unused: true });
+    expect(withUnused.stdout.split("\n").filter((l) => l.length > 0)).toHaveLength(1 + 69);
+  });
+
+  itWithGbcCorpus("--json includes fishGroupWithoutWater and defects, which text mode never prints", () => {
+    const { stdout } = runGbcCoverage(GBC_SUBJECT_ROOT, { json: true });
+    const parsed = JSON.parse(stdout) as { fishGroupWithoutWater: string[]; defects: unknown[]; sourcesByMethod: Record<string, number> };
+    expect(parsed.fishGroupWithoutWater).toHaveLength(319);
+    expect(parsed.defects).toHaveLength(1);
+    expect(parsed.sourcesByMethod.grass).toBeGreaterThan(0);
+  });
+});
+
+describe("CLI end-to-end (spawned, generous timeout): Task 12", () => {
+  itWithGbcCorpus("where DUNSPARCE against the real subject exits 0 and matches runGbcWhere's own output", () => {
+    const { status, stdout, stderr } = spawnCli(["--project", GBC_SUBJECT_ROOT, "where", "DUNSPARCE"]);
+    expect(status).toBe(0);
+    expect(stderr).toMatch(/^warning: data\/wild\/kanto_grass\.asm:/);
+    expect(stdout).toBe(runGbcWhere(GBC_SUBJECT_ROOT, "DUNSPARCE", {}).stdout);
+  }, 30_000);
 });

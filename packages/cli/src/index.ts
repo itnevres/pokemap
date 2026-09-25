@@ -14,7 +14,7 @@ import { resolveProject, resolveRoot, layoutNameFor } from "./context.js";
 import { parseBorder, parseBbox, parseScale, parseTime } from "./args.js";
 import { resolvePlacementRect } from "./renderWorld.js";
 import { runSignSuggest, runSignAdd, runSignList, runPaint, runDiff } from "./writeCommands.js";
-import { runGbcRender, runGbcQuery } from "./gbcCommands.js";
+import { runGbcRender, runGbcQuery, runGbcEncounters, runGbcWhere, runGbcCoverage } from "./gbcCommands.js";
 
 const program = new Command();
 program.name("pokemap").option("-p, --project <path>", "decomp root");
@@ -33,10 +33,10 @@ function resolveRootAndFamily(explicit?: string): { root: string; family: Engine
  * Refuses with one consistent message naming `command` when the resolved
  * root is a GBC (pokecrystal-family) project. Called as a plain guard-clause
  * statement at the top of a GBA-only action, BEFORE that action's body (and
- * therefore any GBA loader) ever runs -- `render`/`query` are the only
- * commands with a real GBC implementation (Task 10); every other command
- * (encounters/where/coverage until Task 12, sign/paint/diff -- G7, no write
- * path for GBC yet) calls this instead.
+ * therefore any GBA loader) ever runs -- `render`/`query` (Task 10) and
+ * `encounters`/`where`/`coverage` (Task 12) are the commands with a real GBC
+ * implementation; every other command (sign/paint/diff -- G7, no write path
+ * for GBC yet) calls this instead.
  */
 function refuseIfGbc(family: EngineFamily, command: string): void {
   if (family === "gbc") {
@@ -203,7 +203,12 @@ program
   .option("--json", "machine-readable output")
   .action((map: string, opts: { json?: boolean }) => {
     const { root, family } = resolveRootAndFamily(program.opts().project);
-    refuseIfGbc(family, "encounters");
+    if (family === "gbc") {
+      const { stdout, stderr } = runGbcEncounters(root, map, opts);
+      if (stderr) process.stderr.write(stderr);
+      process.stdout.write(stdout);
+      return;
+    }
     const proj = resolveProject(root);
     const enc = parseEncounters(readFileSync(proj.paths.wildEncountersJson, "utf8"));
     const mapId = proj.map(map).id;
@@ -227,7 +232,12 @@ program
   .option("--json", "machine-readable output")
   .action((species: string, opts: { json?: boolean }) => {
     const { root, family } = resolveRootAndFamily(program.opts().project);
-    refuseIfGbc(family, "where");
+    if (family === "gbc") {
+      const { stdout, stderr } = runGbcWhere(root, species.toUpperCase(), opts);
+      if (stderr) process.stderr.write(stderr);
+      process.stdout.write(stdout);
+      return;
+    }
     const proj = resolveProject(root);
     const hits = whereSpecies(proj, species.startsWith("SPECIES_") ? species : `SPECIES_${species.toUpperCase()}`);
     if (opts.json) return void process.stdout.write(JSON.stringify(hits, null, 2));
@@ -245,7 +255,12 @@ program
   .option("--json", "machine-readable output")
   .action((opts: { empty?: boolean; unused?: boolean; json?: boolean }) => {
     const { root, family } = resolveRootAndFamily(program.opts().project);
-    refuseIfGbc(family, "coverage");
+    if (family === "gbc") {
+      const { stdout, stderr } = runGbcCoverage(root, opts);
+      if (stderr) process.stderr.write(stderr);
+      process.stdout.write(stdout);
+      return;
+    }
     const proj = resolveProject(root);
     const c = coverage(proj);
     if (opts.json) return void process.stdout.write(JSON.stringify(c, null, 2));
