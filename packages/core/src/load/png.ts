@@ -15,6 +15,40 @@ function paeth(a: number, b: number, c: number): number {
   return pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
 }
 
+/**
+ * Reverses PNG's per-scanline filtering (None/Sub/Up/Average/Paeth), shared
+ * by this module's `readIndexedPng` (bpp 1, sub-byte samples always filter
+ * byte-wise) and `../gbc/load/png.ts`'s grayscale/RGBA decoder (bpp 1 for
+ * depth-2 grayscale, bpp 4 for RGBA depth 8) -- one unfilter implementation
+ * rather than two copies that could independently drift. `raw` is
+ * `(bytesPerRow + 1) * height` bytes: one filter-type byte then
+ * `bytesPerRow` data bytes per scanline. Throws, naming the row, on an
+ * unrecognized filter byte.
+ */
+export function unfilterScanlines(raw: Buffer, bytesPerRow: number, height: number, bpp: number): Buffer {
+  const unfiltered = Buffer.alloc(bytesPerRow * height);
+  for (let y = 0; y < height; y++) {
+    const filter = raw[y * (bytesPerRow + 1)]!;
+    const src = raw.subarray(y * (bytesPerRow + 1) + 1, (y + 1) * (bytesPerRow + 1));
+    const dst = unfiltered.subarray(y * bytesPerRow, (y + 1) * bytesPerRow);
+    const prev = y === 0 ? null : unfiltered.subarray((y - 1) * bytesPerRow, y * bytesPerRow);
+    for (let x = 0; x < bytesPerRow; x++) {
+      const a = x >= bpp ? dst[x - bpp]! : 0;
+      const b = prev ? prev[x]! : 0;
+      const c = prev && x >= bpp ? prev[x - bpp]! : 0;
+      const v = src[x]!;
+      dst[x] =
+        filter === 0 ? v :
+        filter === 1 ? (v + a) & 0xff :
+        filter === 2 ? (v + b) & 0xff :
+        filter === 3 ? (v + ((a + b) >> 1)) & 0xff :
+        filter === 4 ? (v + paeth(a, b, c)) & 0xff :
+        (() => { throw new Error(`unknown PNG filter ${filter} on row ${y}`); })();
+    }
+  }
+  return unfiltered;
+}
+
 export function readIndexedPng(buf: Buffer): IndexedImage {
   if (buf.readUInt32BE(0) !== 0x89504e47) throw new Error("not a PNG");
 
@@ -53,29 +87,8 @@ export function readIndexedPng(buf: Buffer): IndexedImage {
     );
   }
 
-  const unfiltered = Buffer.alloc(bytesPerRow * height);
-
   // bpp is 1 for both supported depths (sub-byte samples filter as 1 byte).
-  const bpp = 1;
-  for (let y = 0; y < height; y++) {
-    const filter = raw[y * (bytesPerRow + 1)]!;
-    const src = raw.subarray(y * (bytesPerRow + 1) + 1, (y + 1) * (bytesPerRow + 1));
-    const dst = unfiltered.subarray(y * bytesPerRow, (y + 1) * bytesPerRow);
-    const prev = y === 0 ? null : unfiltered.subarray((y - 1) * bytesPerRow, y * bytesPerRow);
-    for (let x = 0; x < bytesPerRow; x++) {
-      const a = x >= bpp ? dst[x - bpp]! : 0;
-      const b = prev ? prev[x]! : 0;
-      const c = prev && x >= bpp ? prev[x - bpp]! : 0;
-      const v = src[x]!;
-      dst[x] =
-        filter === 0 ? v :
-        filter === 1 ? (v + a) & 0xff :
-        filter === 2 ? (v + b) & 0xff :
-        filter === 3 ? (v + ((a + b) >> 1)) & 0xff :
-        filter === 4 ? (v + paeth(a, b, c)) & 0xff :
-        (() => { throw new Error(`unknown PNG filter ${filter} on row ${y}`); })();
-    }
-  }
+  const unfiltered = unfilterScanlines(raw, bytesPerRow, height, 1);
 
   const indices = new Uint8Array(width * height);
   for (let y = 0; y < height; y++) {

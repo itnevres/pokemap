@@ -113,3 +113,34 @@ export function autoLayoutUnplaced(proj: Project, world: World, opts: AutoLayout
 
   return out;
 }
+
+/**
+ * Plain BFS over `warpEvents`, forward-directional (a map's own warps to
+ * their destination -- not the reverse), starting from `seedMap`.
+ * Deliberately NOT the same traversal as `autoLayoutUnplaced`'s union-find
+ * above: that one restricts to unplaced maps and treats a warp link as
+ * symmetric (either endpoint can pull the other into its cluster), because
+ * its whole job is grouping mutually-isolated maps together. This one has
+ * no such restriction -- it walks the WHOLE corpus's warp graph from one
+ * named seed, which is what "create a dungeon from this seed map" (spec
+ * §5.2) actually needs: everything reachable by warp, full stop, for the
+ * user to prune afterward. Always includes the seed itself, even with no
+ * warps at all -- a one-map "dungeon" is still a valid, meaningful result,
+ * not an empty set a caller has to special-case.
+ */
+export function warpConnectedMapsFrom(proj: Project, seedMap: string): Set<string> {
+  const idToName = new Map(proj.mapNames().map((n) => [proj.map(n).id, n]));
+  const seen = new Set<string>([seedMap]);
+  const queue = [seedMap];
+  while (queue.length) {
+    const name = queue.shift()!;
+    for (const w of proj.map(name).warpEvents) {
+      const dest = idToName.get(w.destMap);
+      if (dest && !seen.has(dest)) {
+        seen.add(dest);
+        queue.push(dest);
+      }
+    }
+  }
+  return seen;
+}

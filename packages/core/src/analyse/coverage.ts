@@ -127,11 +127,16 @@ export function coverage(proj: Project): Coverage {
   };
 }
 
-/** Species the project actually has art for -- the honest denominator. */
-function allSpecies(proj: Project): string[] {
+/** Species the project actually has art for -- the honest denominator.
+ *  Exported (not just used internally by `coverage()`'s own
+ *  `unusedSpecies`) for the species type-ahead's `/api/species` route --
+ *  sorted so that route can serve it straight to the client with no
+ *  further work. */
+export function allSpecies(proj: Project): string[] {
   const dir = `${proj.paths.root}/graphics/pokemon`;
   if (!existsSync(dir)) return [];
   return readdirSync(dir, { withFileTypes: true })
     .filter((d) => d.isDirectory())
-    .map((d) => `SPECIES_${d.name.toUpperCase()}`);
+    .map((d) => `SPECIES_${d.name.toUpperCase()}`)
+    .sort();
 }

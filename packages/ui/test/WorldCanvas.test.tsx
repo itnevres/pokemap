@@ -27,7 +27,20 @@ function makeDropEvent(clientX: number, clientY: number, dataTransfer: unknown):
 // care about the unplaced-vs-placed distinction (dungeon toggle, side rail,
 // the component:-1 orphan cases).
 // ---------------------------------------------------------------------------
-interface RawPlacement { map: string; x: number; y: number; width: number; height: number; component: number; }
+interface RawPlacement {
+  map: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  component: number;
+  // Feature A's two wire fields (Task 1 / Task 3), optional here for the
+  // same reason WorldCanvas's own WirePlacement has them optional -- most
+  // fixtures in this file predate Feature A and never set them, and
+  // `makeWorld`/the fetch mock must keep accepting those unchanged.
+  mapType?: string;
+  manual?: boolean;
+}
 interface RawComponent { index: number; maps: string[]; bounds: { x: number; y: number; width: number; height: number } }
 
 function makeWorld(opts: {
@@ -101,9 +114,71 @@ function makeFetchMock(initial: WorldFixture) {
         }),
       } as Response);
     }
+    // SpeciesSpotlight (mounted inside the toolbar) now fetches this
+    // unconditionally on mount for its own type-ahead dropdown. Left
+    // unhandled, this would fall through to the catch-all reject below on
+    // every single test in this file -- harmless in practice (the
+    // component swallows a failed /api/species fetch, see its own
+    // `.catch(() => {})`), but it relies on that silent-catch behaviour
+    // rather than this fixture actually answering the route, and no test
+    // here exercises the dropdown itself so a tiny fixture is enough.
+    if (url === "/api/species") {
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(["SPECIES_MAGIKARP", "SPECIES_PIKACHU"]),
+      } as Response);
+    }
+    if (url.startsWith("/api/warps/")) {
+      const name = decodeURIComponent(url.slice("/api/warps/".length));
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ mapName: name, warps: [] }),
+      } as Response);
+    }
     return Promise.reject(new Error(`unexpected fetch ${url}`));
   });
   return { impl, calls, currentWorld: () => world };
+}
+
+/** Task 7 Step 5 review fix: exactly the shape /api/warps/:map's `warps`
+ *  array carries (WarpEvent plus the server-resolved destMapName), typed
+ *  instead of `unknown[]`.
+ *
+ *  Review fix (Task 13 review, finding #5): hoisted to module scope,
+ *  alongside makeWorld/makeFetchMock above -- this interface and its
+ *  matching `withWarps` helper used to be defined twice, once inside
+ *  "warp toggle and markers (Feature B)" below and again inside "dungeon
+ *  connection lines (Feature C)", and the Feature C copy had regressed
+ *  back to an untyped `Record<string, unknown[]>` rather than reusing this
+ *  interface. A single shared, properly-typed version for both describe
+ *  blocks. */
+interface RawWarpEvent {
+  x: number;
+  y: number;
+  elevation: number;
+  destMap: string;
+  destWarpId: string;
+  destMapName?: string;
+}
+
+/** Routes GET /api/warps/:map to a per-test fixture, layered on top of an
+ *  existing mock (`base`, typically a makeFetchMock's own `impl`) for every
+ *  other route. */
+function withWarps(base: ReturnType<typeof makeFetchMock>["impl"], warpsByMap: Record<string, RawWarpEvent[]>) {
+  return vi.fn((url: string, init?: RequestInit) => {
+    const m = /^\/api\/warps\/(.+)$/.exec(url);
+    if (m) {
+      const name = decodeURIComponent(m[1]!);
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ mapName: name, warps: warpsByMap[name] ?? [] }),
+      } as Response);
+    }
+    return base(url, init);
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -653,9 +728,9 @@ describe("WorldCanvas", () => {
     const { impl, calls } = makeFetchMock(makeWorld({ placements: {}, dungeonAutoLayout: false }));
     const { unmount } = await mountReady(impl);
 
-    const toggle = await screen.findByRole("switch");
+    const toggle = await screen.findByRole("switch", { name: /dungeon auto-layout/i });
     await waitFor(() => expect(toggle.getAttribute("aria-checked")).toBe("false"));
-    expect(screen.getByText(/off/)).toBeTruthy();
+    expect(screen.getByText(/dungeon auto-layout off/i)).toBeTruthy();
 
     fireEvent.click(toggle);
     await waitFor(() => expect(toggle.getAttribute("aria-checked")).toBe("true"));
@@ -673,7 +748,7 @@ describe("WorldCanvas", () => {
     // sidecar, not from anything client-side left over from the click.
     unmount();
     await mountReady(impl);
-    const reloadedToggle = await screen.findByRole("switch");
+    const reloadedToggle = await screen.findByRole("switch", { name: /dungeon auto-layout/i });
     expect(reloadedToggle.getAttribute("aria-checked")).toBe("true");
     expect(screen.getByText(/dungeon auto-layout on/i)).toBeTruthy();
   });
@@ -689,7 +764,7 @@ describe("WorldCanvas", () => {
     );
     await mountReady(failing);
 
-    const toggle = await screen.findByRole("switch");
+    const toggle = await screen.findByRole("switch", { name: /dungeon auto-layout/i });
     await waitFor(() => expect(toggle.getAttribute("aria-checked")).toBe("false"));
 
     fireEvent.click(toggle);
@@ -749,11 +824,19 @@ describe("WorldCanvas", () => {
           }),
         } as Response);
       }
+      // Same reason as makeFetchMock's own /api/species handler above.
+      if (url === "/api/species") {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve(["SPECIES_MAGIKARP", "SPECIES_PIKACHU"]),
+        } as Response);
+      }
       return Promise.reject(new Error(`unexpected fetch ${url}`));
     });
     await mountReady(impl);
 
-    const toggle = await screen.findByRole("switch");
+    const toggle = await screen.findByRole("switch", { name: /dungeon auto-layout/i });
     await waitFor(() => expect(toggle.getAttribute("aria-checked")).toBe("false"));
 
     fireEvent.click(toggle);
@@ -954,5 +1037,970 @@ describe("WorldCanvas", () => {
     // And Solo -- an unrelated, well-formed placement -- still renders
     // normally alongside it.
     await waitFor(() => expect(FakeImage.instances.some((i) => i.src.includes("Solo"))).toBe(true));
+  });
+
+  // -------------------------------------------------------------------
+  // Multi-select move
+  // -------------------------------------------------------------------
+  describe("multi-select", () => {
+    function threeMapsWorld() {
+      return makeWorld({
+        placements: {
+          A: { map: "A", x: 0, y: 0, width: 10, height: 10, component: 0 },
+          B: { map: "B", x: 20, y: 0, width: 10, height: 10, component: 1 },
+          C: { map: "C", x: 0, y: 20, width: 10, height: 10, component: 2 },
+        },
+      });
+    }
+
+    it("plain click on a map selects only that map", async () => {
+      const { impl } = makeFetchMock(threeMapsWorld());
+      const { canvas } = await mountReady(impl);
+
+      fireEvent.mouseDown(canvas, { clientX: 5, clientY: 5, button: 0 }); // inside A
+      fireEvent.mouseUp(canvas, { clientX: 5, clientY: 5 });
+      fireEvent.click(canvas, { clientX: 5, clientY: 5 });
+
+      const outlines = canvas.parentElement!.querySelectorAll(".world-canvas__selection-outline");
+      expect(outlines.length).toBe(1);
+      expect(outlines[0]!.getAttribute("data-map")).toBe("A");
+    });
+
+    it("plain click on empty canvas clears the selection", async () => {
+      const { impl } = makeFetchMock(threeMapsWorld());
+      const { canvas } = await mountReady(impl);
+
+      fireEvent.mouseDown(canvas, { clientX: 5, clientY: 5, button: 0 });
+      fireEvent.mouseUp(canvas, { clientX: 5, clientY: 5 });
+      fireEvent.click(canvas, { clientX: 5, clientY: 5 });
+      expect(canvas.parentElement!.querySelectorAll(".world-canvas__selection-outline").length).toBe(1);
+
+      fireEvent.mouseDown(canvas, { clientX: 90, clientY: 90, button: 0 }); // empty space
+      fireEvent.mouseUp(canvas, { clientX: 90, clientY: 90 });
+      fireEvent.click(canvas, { clientX: 90, clientY: 90 });
+      expect(canvas.parentElement!.querySelectorAll(".world-canvas__selection-outline").length).toBe(0);
+    });
+
+    it("Ctrl+click toggles a map in and out of the selection without starting a drag", async () => {
+      const { impl } = makeFetchMock(threeMapsWorld());
+      const { canvas } = await mountReady(impl);
+
+      fireEvent.mouseDown(canvas, { clientX: 5, clientY: 5, button: 0, ctrlKey: true }); // A
+      fireEvent.mouseDown(canvas, { clientX: 25, clientY: 5, button: 0, ctrlKey: true }); // B
+      expect(canvas.parentElement!.querySelectorAll(".world-canvas__selection-outline").length).toBe(2);
+
+      fireEvent.mouseDown(canvas, { clientX: 5, clientY: 5, button: 0, ctrlKey: true }); // toggle A off
+      const outlines = canvas.parentElement!.querySelectorAll(".world-canvas__selection-outline");
+      expect(outlines.length).toBe(1);
+      expect(outlines[0]!.getAttribute("data-map")).toBe("B");
+    });
+
+    it("a plain drag over a map still pans and does not change the selection", async () => {
+      const { impl } = makeFetchMock(threeMapsWorld());
+      const { canvas } = await mountReady(impl);
+
+      fireEvent.mouseDown(canvas, { clientX: 5, clientY: 5, button: 0, ctrlKey: true }); // select A
+      fireEvent.mouseDown(canvas, { clientX: 25, clientY: 5, button: 0 }); // plain drag starting on B
+      fireEvent.mouseMove(canvas, { clientX: 40, clientY: 20 });
+      fireEvent.mouseUp(canvas, { clientX: 40, clientY: 20 });
+      // A real browser fires `click` after mouseup whenever mousedown and
+      // mouseup shared the same target element -- true here even though the
+      // pointer moved a real distance in between (no movement-distance
+      // suppression). Firing it here is what actually exercises the review
+      // fix: without it, this test could pass even if onCanvasClick still
+      // unconditionally rewrote the selection, because nothing would ever
+      // call it.
+      fireEvent.click(canvas, { clientX: 40, clientY: 20 });
+
+      const outlines = canvas.parentElement!.querySelectorAll(".world-canvas__selection-outline");
+      // Asserts identity, not just count: a regression that let the
+      // trailing click through would still often leave exactly one outline
+      // (whatever the drag's end point landed on, if anything), so a bare
+      // length check could pass while the actual selection silently
+      // changed out from under it.
+      expect(outlines.length).toBe(1);
+      expect(outlines[0]!.getAttribute("data-map")).toBe("A");
+    });
+
+    it("Ctrl+drag right selects only maps fully enclosed by the marquee", async () => {
+      const { impl } = makeFetchMock(threeMapsWorld());
+      const { canvas } = await mountReady(impl);
+
+      // A is [0,10)x[0,10), B is [20,30)x[0,10), C is [0,10)x[20,30).
+      // Starting the drag AT (0,0) would land directly inside A's own
+      // hit-box and take the plain Ctrl+click toggle path instead of ever
+      // starting a marquee -- (-5,-5) is genuinely empty space, so this
+      // actually exercises the marquee's containment test. A marquee from
+      // (-5,-5) to (25,15) fully encloses A (C's top edge is at 20, out of
+      // the y-span) but only PARTIALLY overlaps B (B's rect is
+      // [20,30)x[0,10) -- the marquee's x-span [-5,25] covers B's left
+      // portion, 20 to 25, but not its right portion, 25 to 30). B
+      // therefore intersects the marquee without being contained by it --
+      // this is deliberate, not incidental: if a right-drag ever used the
+      // crossing test (`intersects`) instead of the enclosure test
+      // (`contains`), B would wrongly join the selection here too, and
+      // this test would catch it (confirmed live: a deliberate swap of
+      // contains/intersects in the implementation turns this test red).
+      fireEvent.mouseDown(canvas, { clientX: -5, clientY: -5, button: 0, ctrlKey: true });
+      fireEvent.mouseMove(canvas, { clientX: 25, clientY: 15, ctrlKey: true });
+      fireEvent.mouseUp(canvas, { clientX: 25, clientY: 15 });
+
+      const outlines = canvas.parentElement!.querySelectorAll(".world-canvas__selection-outline");
+      expect(outlines.length).toBe(1);
+      expect(outlines[0]!.getAttribute("data-map")).toBe("A");
+    });
+
+    it("Ctrl+drag left selects every map the marquee touches at all", async () => {
+      const { impl } = makeFetchMock(threeMapsWorld());
+      const { canvas } = await mountReady(impl);
+
+      // A marquee from (25,-5) back to (5,15) (end.x < start.x: a
+      // left-drag). Its world x-span is [5,25] (y-span [-5,15], covering
+      // both A and B's own y-band). A's rect [0,10)x[0,10) sticks out
+      // past the marquee's left edge (0 < 5); B's rect [20,30)x[0,10)
+      // sticks out past its right edge (30 > 25) -- both merely crossed,
+      // neither fully enclosed, and C ([0,10)x[20,30)) sits entirely
+      // below the marquee's y-span and is untouched.
+      fireEvent.mouseDown(canvas, { clientX: 25, clientY: -5, button: 0, ctrlKey: true });
+      fireEvent.mouseMove(canvas, { clientX: 5, clientY: 15, ctrlKey: true });
+      fireEvent.mouseUp(canvas, { clientX: 5, clientY: 15 });
+
+      const outlines = canvas.parentElement!.querySelectorAll(".world-canvas__selection-outline");
+      expect(outlines.length).toBe(2);
+      expect(new Set([...outlines].map((o) => o.getAttribute("data-map")))).toEqual(new Set(["A", "B"]));
+    });
+
+    it("a Ctrl+drag over empty space selects nothing and clears any prior selection", async () => {
+      const { impl } = makeFetchMock(threeMapsWorld());
+      const { canvas } = await mountReady(impl);
+
+      fireEvent.mouseDown(canvas, { clientX: 5, clientY: 5, button: 0, ctrlKey: true }); // select A
+      expect(canvas.parentElement!.querySelectorAll(".world-canvas__selection-outline").length).toBe(1);
+
+      fireEvent.mouseDown(canvas, { clientX: 60, clientY: 60, button: 0, ctrlKey: true });
+      fireEvent.mouseMove(canvas, { clientX: 70, clientY: 70, ctrlKey: true });
+      fireEvent.mouseUp(canvas, { clientX: 70, clientY: 70 });
+
+      expect(canvas.parentElement!.querySelectorAll(".world-canvas__selection-outline").length).toBe(0);
+    });
+
+    it("Shift+drag on a selected map moves every selected map together, preserving offsets", async () => {
+      const { impl, calls } = makeFetchMock(threeMapsWorld());
+      const { canvas } = await mountReady(impl);
+
+      fireEvent.mouseDown(canvas, { clientX: 5, clientY: 5, button: 0, ctrlKey: true }); // select A
+      fireEvent.mouseDown(canvas, { clientX: 25, clientY: 5, button: 0, ctrlKey: true }); // select B
+
+      // Shift+drag starting on A (grabbed at its own origin), moved by
+      // world-delta (5,5).
+      fireEvent.mouseDown(canvas, { clientX: 0, clientY: 0, button: 0, shiftKey: true });
+      fireEvent.mouseMove(canvas, { clientX: 5, clientY: 5, shiftKey: true });
+      fireEvent.mouseUp(canvas);
+
+      const placementCalls = calls.filter((c) => c.url.startsWith("/api/world/placement"));
+      const bodies = placementCalls.map((c) => JSON.parse(String(c.init?.body)) as { map: string; x: number; y: number });
+      expect(bodies).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ map: "A", x: 5, y: 5 }),
+          expect.objectContaining({ map: "B", x: 25, y: 5 }),
+        ]),
+      );
+      // C was never selected and must not have moved or been posted.
+      expect(bodies.some((b) => b.map === "C")).toBe(false);
+    });
+
+    it("Shift+drag on an unselected map moves only that one map, even with a selection active", async () => {
+      const { impl, calls } = makeFetchMock(threeMapsWorld());
+      const { canvas } = await mountReady(impl);
+
+      fireEvent.mouseDown(canvas, { clientX: 5, clientY: 5, button: 0, ctrlKey: true }); // select A only
+
+      fireEvent.mouseDown(canvas, { clientX: 25, clientY: 5, button: 0, shiftKey: true }); // Shift+drag B, not selected
+      fireEvent.mouseMove(canvas, { clientX: 30, clientY: 10, shiftKey: true });
+      fireEvent.mouseUp(canvas);
+
+      const placementCalls = calls.filter((c) => c.url.startsWith("/api/world/placement"));
+      const bodies = placementCalls.map((c) => JSON.parse(String(c.init?.body)) as { map: string });
+      expect(bodies).toEqual([expect.objectContaining({ map: "B" })]);
+    });
+
+    it("Escape clears the selection", async () => {
+      const { impl } = makeFetchMock(threeMapsWorld());
+      const { canvas } = await mountReady(impl);
+
+      fireEvent.mouseDown(canvas, { clientX: 5, clientY: 5, button: 0, ctrlKey: true }); // select A
+      expect(canvas.parentElement!.querySelectorAll(".world-canvas__selection-outline").length).toBe(1);
+
+      fireEvent.keyDown(canvas, { key: "Escape" });
+      expect(canvas.parentElement!.querySelectorAll(".world-canvas__selection-outline").length).toBe(0);
+    });
+  });
+
+  // -------------------------------------------------------------------
+  // Map-list jump (App.tsx passes jumpToMap/jumpToken)
+  // -------------------------------------------------------------------
+  describe("jump to map", () => {
+    it("pans/zooms to the given map's real placement when jumpToken changes", async () => {
+      const { impl } = makeFetchMock(
+        makeWorld({
+          placements: {
+            Target: { map: "Target", x: 40, y: 40, width: 10, height: 10, component: 0 },
+            Other: { map: "Other", x: 0, y: 0, width: 10, height: 10, component: 1 },
+          },
+        }),
+      );
+      vi.stubGlobal("fetch", impl);
+      const utils = render(<WorldCanvas jumpToMap="Target" jumpToken={1} />);
+      await waitFor(() => expect(screen.queryByText(/Loading world/)).toBeNull());
+      const canvas = utils.container.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement;
+      canvas.getBoundingClientRect = () => ({
+        left: 0, top: 0, right: VIEWPORT_SIZE, bottom: VIEWPORT_SIZE, width: VIEWPORT_SIZE, height: VIEWPORT_SIZE, x: 0, y: 0, toJSON() {},
+      });
+      const stageCtx = ctxByCanvas.get(canvas)!;
+      await waitFor(() => expect(stageCtx.clearRect).toHaveBeenCalled());
+
+      // computeFit on Target's own 10x10 bounds in a 100x100 viewport:
+      // zoom = min(100/10, 100/10) = 10 (clamped to MAX_ZOOM=16, so 10
+      // stands), pan centres it -- Target's rect after this must be
+      // exactly [0,100)x[0,100), the full viewport, hand-computed the
+      // same way computeFit's own test above does.
+      const jumpOutline = utils.container.querySelector(".world-canvas__jump-highlight") as HTMLElement;
+      expect(jumpOutline).toBeTruthy();
+    });
+
+    it("re-jumps even when clicking the same map name again (jumpToken changes, jumpToMap does not)", async () => {
+      const { impl } = makeFetchMock(
+        makeWorld({ placements: { Target: { map: "Target", x: 40, y: 40, width: 10, height: 10, component: 0 } } }),
+      );
+      vi.stubGlobal("fetch", impl);
+      const { rerender, container } = render(<WorldCanvas jumpToMap="Target" jumpToken={1} />);
+      await waitFor(() => expect(screen.queryByText(/Loading world/)).toBeNull());
+      const canvas = container.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement;
+      canvas.getBoundingClientRect = () => ({
+        left: 0, top: 0, right: VIEWPORT_SIZE, bottom: VIEWPORT_SIZE, width: VIEWPORT_SIZE, height: VIEWPORT_SIZE, x: 0, y: 0, toJSON() {},
+      });
+      await waitFor(() => expect(container.querySelector(".world-canvas__jump-highlight")).toBeTruthy());
+      const highlightBefore = container.querySelector(".world-canvas__jump-highlight");
+
+      // Pan away, then re-request the SAME map -- jumpToMap is unchanged
+      // but jumpToken bumps, which must still re-trigger the jump.
+      fireEvent.mouseDown(canvas, { clientX: 50, clientY: 50, button: 0 });
+      fireEvent.mouseMove(canvas, { clientX: 90, clientY: 90 });
+      fireEvent.mouseUp(canvas);
+
+      rerender(<WorldCanvas jumpToMap="Target" jumpToken={2} />);
+      await waitFor(() => expect(container.querySelector(".world-canvas__jump-highlight")).toBeTruthy());
+      const highlightAfter = container.querySelector(".world-canvas__jump-highlight");
+
+      // Discriminating check (review fix): re-jumping to the SAME map name
+      // must mount a genuinely NEW DOM node, not reuse the old one -- the
+      // CSS fade animation is `forwards`, and once it has completed on a
+      // node it does not replay just because that node's class/style are
+      // unchanged. jumpHighlight itself also bails out silently here
+      // (state set to the same string "Target" twice), so without
+      // `key={jumpToken}` on the highlight <div>, React would keep this
+      // exact node across the rerender and the second jump's animation
+      // would never play at all -- the div would be truthy, as this test
+      // already checked above, while the fade visibly never restarted.
+      expect(highlightAfter).not.toBe(highlightBefore);
+    });
+
+    it("keeps the fade timer alive across a map drag within the fade window (review fix: a drag used to kill the pending fade timer without rescheduling it, leaving the outline stuck forever)", async () => {
+      const { impl } = makeFetchMock(
+        makeWorld({ placements: { Target: { map: "Target", x: 40, y: 40, width: 10, height: 10, component: 0 } } }),
+      );
+      vi.stubGlobal("fetch", impl);
+      const { container } = render(<WorldCanvas jumpToMap="Target" jumpToken={1} />);
+      await waitFor(() => expect(screen.queryByText(/Loading world/)).toBeNull());
+      const canvas = container.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement;
+      canvas.getBoundingClientRect = () => ({
+        left: 0, top: 0, right: VIEWPORT_SIZE, bottom: VIEWPORT_SIZE, width: VIEWPORT_SIZE, height: VIEWPORT_SIZE, x: 0, y: 0, toJSON() {},
+      });
+      await waitFor(() => expect(container.querySelector(".world-canvas__jump-highlight")).toBeTruthy());
+
+      // The jump effect fit Target's 10x10 bounds to fill the whole 100x100
+      // viewport (zoom=10, pan={-400,-400}), so Target's centre in world
+      // space (45,45) lands at screen (50,50). Shift+mousedown over a
+      // placement starts a real "map" drag (see onMouseDown), whose
+      // onMouseMove branch calls setWorld() every frame -- the same
+      // `world`-churning event a real drag produces on every mousemove,
+      // which is exactly the kind of re-render the jump effect's
+      // [jumpToken, jumpToMap, world] deps must survive without losing the
+      // fade timer.
+      fireEvent.mouseDown(canvas, { clientX: 50, clientY: 50, button: 0, shiftKey: true });
+      fireEvent.mouseMove(canvas, { clientX: 55, clientY: 55, shiftKey: true });
+      fireEvent.mouseUp(canvas);
+
+      // Still inside the 2s fade window: the drag itself must not have
+      // cleared the highlight early.
+      expect(container.querySelector(".world-canvas__jump-highlight")).toBeTruthy();
+
+      // Real wait past the 2s fade window (same convention as
+      // SpeciesSpotlight.test.tsx's debounce tests -- real timers, not
+      // fake, since fake timers don't intercept a setTimeout that was
+      // already scheduled by an effect that ran before they were enabled).
+      // A broken implementation that puts the fade timeout inside the
+      // jump-triggering effect leaves this stuck forever: the drag's
+      // `world` update re-ran that effect, its cleanup cleared the pending
+      // timer, and the appliedJumpTokenRef guard made the effect body
+      // return early -- before a replacement timer was ever scheduled.
+      await new Promise((r) => setTimeout(r, 2100));
+      expect(container.querySelector(".world-canvas__jump-highlight")).toBeNull();
+    });
+  });
+
+  // -------------------------------------------------------------------
+  // Default population filter (Task 3 / Feature A)
+  // -------------------------------------------------------------------
+  describe("default population filter (Feature A)", () => {
+    it("does not fetch art for a MAP_TYPE_INDOOR map that was never manually placed", async () => {
+      const { impl } = makeFetchMock(
+        makeWorld({
+          placements: {
+            Town: { map: "Town", x: 0, y: 0, width: 10, height: 10, component: 0, mapType: "MAP_TYPE_TOWN", manual: false },
+            House: { map: "House", x: 20, y: 0, width: 10, height: 10, component: 1, mapType: "MAP_TYPE_INDOOR", manual: false },
+            ManualHouse: { map: "ManualHouse", x: 40, y: 0, width: 10, height: 10, component: 2, mapType: "MAP_TYPE_INDOOR", manual: true },
+          },
+        }),
+      );
+      await mountReady(impl);
+
+      // Exact-match idiom, mirroring the culling test's own assertion
+      // above: pins the WHOLE fetched set, not just "House is absent" --
+      // House is MAP_TYPE_INDOOR and never manually placed, so it must be
+      // excluded entirely, while Town (a shown-by-default type) and
+      // ManualHouse (INDOOR, but manually placed) both still draw. A loose
+      // substring check here is a trap: "ManualHouse" contains "House" as
+      // a bare substring, so `.includes("House")` cannot actually tell a
+      // correct implementation apart from one that wrongly draws House too.
+      await waitFor(() => expect(FakeImage.instances.length).toBe(2));
+      expect(FakeImage.instances.map((i) => i.src).sort()).toEqual(
+        ["/api/render/ManualHouse.png", "/api/render/Town.png"].sort(),
+      );
+    });
+
+    it("shows the count of placed-but-hidden maps in the status strip", async () => {
+      const { impl } = makeFetchMock(
+        makeWorld({
+          placements: {
+            Town: { map: "Town", x: 0, y: 0, width: 10, height: 10, component: 0, mapType: "MAP_TYPE_TOWN", manual: false },
+            House: { map: "House", x: 20, y: 0, width: 10, height: 10, component: 1, mapType: "MAP_TYPE_INDOOR", manual: false },
+            ManualHouse: { map: "ManualHouse", x: 40, y: 0, width: 10, height: 10, component: 2, mapType: "MAP_TYPE_INDOOR", manual: true },
+          },
+        }),
+      );
+      const { container } = await mountReady(impl);
+
+      // Town (shown-by-default type) and ManualHouse (INDOOR, but manually
+      // placed) both draw normally; only House (INDOOR, never manually
+      // placed) is placed yet hidden -- so the count is exactly 1, not 2
+      // (which counting every INDOOR/NONE placement regardless of `manual`
+      // would wrongly give) and not 0 (which ignoring the filter entirely
+      // would give).
+      const status = container.querySelector(".world-canvas__status")!;
+      expect(status.textContent).toMatch(/hidden 1/);
+    });
+
+    it("jumping to a hidden-by-type map reveals it for this view, without writing anything (no POST fired -- spec §6: a look, not a commit)", async () => {
+      const { impl } = makeFetchMock(
+        makeWorld({
+          placements: {
+            Town: { map: "Town", x: 0, y: 0, width: 10, height: 10, component: 0, mapType: "MAP_TYPE_TOWN", manual: false },
+            House: { map: "House", x: 20, y: 0, width: 10, height: 10, component: 1, mapType: "MAP_TYPE_INDOOR", manual: false },
+            ManualHouse: { map: "ManualHouse", x: 40, y: 0, width: 10, height: 10, component: 2, mapType: "MAP_TYPE_INDOOR", manual: true },
+          },
+        }),
+      );
+      vi.stubGlobal("fetch", impl);
+      render(<WorldCanvas jumpToMap="House" jumpToken={1} />);
+      await waitFor(() => expect(screen.queryByText(/Loading world/)).toBeNull());
+      // Bug fix during implementation: a bare `.includes(encodeURIComponent
+      // ("House"))` is also satisfied by "/api/render/ManualHouse.png" --
+      // ManualHouse is manual:true, so it draws unconditionally regardless
+      // of whether House itself was ever revealed. Confirmed live: this
+      // assertion still (wrongly) passed with the reveal-on-jump logic
+      // completely disabled, a genuine tautology, not just a theoretical
+      // one. Anchored to the whole trailing path segment instead -- this
+      // can only be satisfied by House's OWN image actually having been
+      // fetched.
+      await waitFor(() => expect(FakeImage.instances.some((i) => i.src.endsWith(`/${encodeURIComponent("House")}.png`))).toBe(true));
+      // Deviation from the plan's literal snippet: `([url]: [string]) =>`
+      // fails to typecheck against `impl.mock.calls`' real inferred tuple
+      // type (`[url: string, init?: RequestInit]`, from makeFetchMock's own
+      // `vi.fn((url: string, init?: RequestInit) => ...)`) -- a 1-tuple
+      // annotation isn't assignable to a wider tuple that may carry a
+      // second element (TS2769). Dropping the explicit annotation lets it
+      // infer correctly from `impl`'s own type instead.
+      const posts = impl.mock.calls.filter(([url]) => url.startsWith("/api/world/placement"));
+      expect(posts.length).toBe(0);
+    });
+  });
+
+  describe("warp toggle and markers (Feature B)", () => {
+    function warpWorld() {
+      return makeWorld({
+        placements: {
+          A: { map: "A", x: 0, y: 0, width: 10, height: 10, component: 0 },
+          B: { map: "B", x: 20, y: 0, width: 10, height: 10, component: 1 },
+          Far: { map: "Far", x: 500, y: 500, width: 10, height: 10, component: 2 },
+        },
+      });
+    }
+
+    it("draws a marker only for a warp on a currently-visible map, not the whole corpus, at the position the screen-space formula predicts", async () => {
+      const { impl } = makeFetchMock(warpWorld());
+      const wrapped = withWarps(impl, {
+        A: [{ x: 2, y: 3, elevation: 0, destMap: "MAP_B", destWarpId: "0", destMapName: "B" }],
+        Far: [{ x: 1, y: 1, elevation: 0, destMap: "MAP_A", destWarpId: "0", destMapName: "A" }],
+      });
+      const { canvas } = await mountReady(wrapped);
+
+      // Markers now gate on LOD_ZOOM_THRESHOLD (4, see WorldCanvas's own
+      // warpMarkerEntries comment) the same way the LOD tests above zoom in
+      // to clear it -- mountReady's default zoom=1 is below it, so markers
+      // would stay empty regardless of the toggle without this. 8 wheel
+      // ticks anchored at screen (0,0) clears it (1.2^8 ~= 4.30, same
+      // reasoning as the "at or above the LOD zoom threshold" test above)
+      // while keeping pan exactly {0,0} throughout: screenToWorld(0,0) at
+      // pan={0,0} is always (0,0) regardless of zoom, so the wheel handler's
+      // own `sx - before.x*next` collapses to `0 - 0*next = 0` on every one
+      // of the 8 ticks -- no floating-point drift in pan, unlike the LOD
+      // test's off-origin anchor (chosen there to keep Solo itself in view
+      // instead).
+      for (let i = 0; i < 8; i++) fireEvent.wheel(canvas, { clientX: 0, clientY: 0, deltaY: -100 });
+      let expectedZoom = 1;
+      for (let i = 0; i < 8; i++) expectedZoom *= 1.2; // same sequential multiplication the component's own state performs, so this is bit-identical, not just approximately equal
+
+      const warpsToggle = screen.getByRole("switch", { name: /warps/i });
+      fireEvent.click(warpsToggle);
+      await waitFor(() => expect(canvas.parentElement!.querySelectorAll(".world-canvas__warp-marker").length).toBe(1));
+
+      // Position, not just count: screen-space formula is
+      // (placement.x + warp.x) * zoom + pan.x (and same for y). A is at
+      // (0,0), its warp at (2,3), pan is exactly {0,0} (see above).
+      const marker = canvas.parentElement!.querySelector(".world-canvas__warp-marker") as HTMLElement;
+      expect(marker.style.left).toBe(`${2 * expectedZoom}px`);
+      expect(marker.style.top).toBe(`${3 * expectedZoom}px`);
+    });
+
+    it("markers are hidden until the toggle is switched on, and hidden again once it's switched back off", async () => {
+      const { impl } = makeFetchMock(warpWorld());
+      const wrapped = withWarps(impl, { A: [{ x: 2, y: 3, elevation: 0, destMap: "MAP_B", destWarpId: "0", destMapName: "B" }] });
+      const { canvas } = await mountReady(wrapped);
+      // Same LOD zoom-in as the position test above -- otherwise the LOD
+      // gate alone hides the marker regardless of the toggle, and neither
+      // half of this test would prove anything about the toggle itself.
+      for (let i = 0; i < 8; i++) fireEvent.wheel(canvas, { clientX: 0, clientY: 0, deltaY: -100 });
+
+      expect(canvas.parentElement!.querySelectorAll(".world-canvas__warp-marker").length).toBe(0);
+
+      const warpsToggle = screen.getByRole("switch", { name: /warps/i });
+      fireEvent.click(warpsToggle);
+      await waitFor(() => expect(canvas.parentElement!.querySelectorAll(".world-canvas__warp-marker").length).toBe(1));
+
+      // Toggling back off must hide it again -- proving genuine hide-on-
+      // toggle, not just "never appeared yet" (which the old, single-
+      // assertion version of this test could not distinguish from).
+      fireEvent.click(warpsToggle);
+      await waitFor(() => expect(canvas.parentElement!.querySelectorAll(".world-canvas__warp-marker").length).toBe(0));
+    });
+
+    // Task 7 Step 5 review fix: full coverage of the drag-guard's actual
+    // effect is deferred to whichever later task renders warpPopup (nothing
+    // observable to assert on it from outside the component yet -- see its
+    // own comment in WorldCanvas.tsx) -- this just pins that a double-click
+    // with warps off (mountReady's default) is inert: no throw, no marker
+    // or popup DOM appears.
+    it("double-clicking does nothing observable while warps are off", async () => {
+      const { impl } = makeFetchMock(warpWorld());
+      const wrapped = withWarps(impl, { A: [{ x: 2, y: 3, elevation: 0, destMap: "MAP_B", destWarpId: "0", destMapName: "B" }] });
+      const { canvas } = await mountReady(wrapped);
+
+      expect(() => fireEvent.doubleClick(canvas, { clientX: 2, clientY: 3 })).not.toThrow();
+      expect(canvas.parentElement!.querySelectorAll(".world-canvas__warp-marker").length).toBe(0);
+    });
+
+    it("double-clicking a warp marker opens the destination popup; the × closes it without disturbing the canvas", async () => {
+      const { impl } = makeFetchMock(warpWorld());
+      const wrapped = withWarps(impl, { A: [{ x: 2, y: 3, elevation: 0, destMap: "MAP_B", destWarpId: "0", destMapName: "B" }] });
+      const fullMock = vi.fn((url: string, init?: RequestInit) => {
+        if (url === "/api/map/B") {
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            json: () =>
+              Promise.resolve({
+                map: { id: "MAP_B", name: "B", layout: "LAYOUT_B" },
+                layout: { id: "LAYOUT_B", name: "B_Layout", width: 1, height: 1, borderWidth: 0, borderHeight: 0, primaryTileset: "t1", secondaryTileset: "t2" },
+                split: { version: "hns", metatiles: 512, tiles: 512, pals: 12 },
+                blocks: [{ metatileId: 0, collision: 0, elevation: 0, behavior: 0 }],
+              }),
+          } as Response);
+        }
+        return wrapped(url, init);
+      });
+      const { canvas } = await mountReady(fullMock);
+      fireEvent.click(screen.getByRole("switch", { name: /warps/i }));
+      // Zoom in past LOD_ZOOM_THRESHOLD (4) the same way the other tests in
+      // this describe block do: 8 wheel ticks anchored at screen (0,0),
+      // which also keeps pan exactly {0,0} throughout (screenToWorld(0,0)
+      // at pan={0,0} is always (0,0) regardless of zoom -- see the "draws a
+      // marker" test's own comment above for the full explanation).
+      for (let i = 0; i < 8; i++) fireEvent.wheel(canvas, { clientX: 0, clientY: 0, deltaY: -100 });
+      await waitFor(() => expect(canvas.parentElement!.querySelectorAll(".world-canvas__warp-marker").length).toBe(1));
+
+      // Marker A's warp is at world (0+2, 0+3). Read its actual rendered
+      // screen position back off the DOM rather than assuming zoom=1, so
+      // this test does not silently depend on the exact zoom the 8 ticks
+      // above land on.
+      const marker = canvas.parentElement!.querySelector(".world-canvas__warp-marker") as HTMLElement;
+      const mx = parseFloat(marker.style.left), my = parseFloat(marker.style.top);
+
+      // Review fix (M1): a double-click only ever at the EXACT marker
+      // position (distance 0) cannot tell a real, bounded WARP_HIT_RADIUS
+      // apart from one that is 0, 100000, or altogether missing (e.g. the
+      // hit-test replaced with `warpMarkerEntries[0]` unconditionally) --
+      // every one of those would still pass a distance-0-only test. First
+      // prove a near-miss WELL outside the hit radius (WARP_HIT_RADIUS is
+      // 6px; +20px is comfortably past it) opens nothing -- the fixture has
+      // exactly one marker, so mx+20 cannot accidentally land on a
+      // different one.
+      fireEvent.doubleClick(canvas, { clientX: mx + 20, clientY: my });
+      expect(screen.queryByRole("dialog")).toBeNull();
+
+      // Then a hit within the radius but off-centre (+3px, not the exact
+      // marker position) confirms the radius check is a real, bounded
+      // circle, not merely re-testing distance 0.
+      fireEvent.doubleClick(canvas, { clientX: mx + 3, clientY: my });
+      await waitFor(() => expect(screen.getByRole("dialog")).toBeTruthy());
+      expect(screen.getByRole("dialog").getAttribute("aria-label")).toBe("B preview");
+
+      const zoomBefore = screen.getByText(/%/).textContent;
+      fireEvent.click(screen.getByLabelText("Close"));
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(screen.getByText(/%/).textContent).toBe(zoomBefore); // pan/zoom untouched
+    });
+  });
+
+  // -------------------------------------------------------------------
+  // mapFilter (Feature C, dungeon mode -- Task 12)
+  // -------------------------------------------------------------------
+  describe("mapFilter (Feature C, dungeon mode)", () => {
+    function fourMapsWorld() {
+      return makeWorld({
+        placements: {
+          InDungeon1: { map: "InDungeon1", x: 0, y: 0, width: 10, height: 10, component: 0 },
+          InDungeon2: { map: "InDungeon2", x: 20, y: 0, width: 10, height: 10, component: 1 },
+          OutsideDungeon: { map: "OutsideDungeon", x: 0, y: 20, width: 10, height: 10, component: 2 },
+          Far: { map: "Far", x: 500, y: 500, width: 10, height: 10, component: 3 },
+        },
+      });
+    }
+
+    it("draws and fetches art only for maps in mapFilter, ignoring viewport-only culling for the rest of the corpus", async () => {
+      const { impl } = makeFetchMock(fourMapsWorld());
+      vi.stubGlobal("fetch", impl);
+      render(<WorldCanvas mapFilter={new Set(["InDungeon1", "InDungeon2"])} />);
+      await waitFor(() => expect(screen.queryByText(/Loading world/)).toBeNull());
+      await waitFor(() => expect(FakeImage.instances.length).toBeGreaterThan(0));
+      const srcs = FakeImage.instances.map((i) => i.src);
+      expect(srcs.some((s) => s.includes("InDungeon1"))).toBe(true);
+      expect(srcs.some((s) => s.includes("InDungeon2"))).toBe(true);
+      // OutsideDungeon sits at (0,20)-(10,30), inside the DEFAULT unscoped
+      // viewport ([0,100)x[0,100) at zoom=1,pan={0,0}) -- proving this
+      // requires the mapFilter source restriction itself, not merely
+      // "outside the viewport, so culled anyway" (which would pass even
+      // with mapFilter unimplemented, since ordinary culling would drop it
+      // for an unrelated reason). Without mapFilter actually gating the
+      // source list, this map fetches just like the culling tests above
+      // prove any in-viewport placement does.
+      expect(srcs.some((s) => s.includes("OutsideDungeon"))).toBe(false);
+      expect(srcs.some((s) => s.includes("Far"))).toBe(false);
+    });
+
+    it("auto-fits to the filtered maps on open, without requiring a manual 'Fit world' click", async () => {
+      const { impl } = makeFetchMock(fourMapsWorld());
+      vi.stubGlobal("fetch", impl);
+      const utils = render(<WorldCanvas mapFilter={new Set(["InDungeon1", "InDungeon2"])} />);
+      await waitFor(() => expect(screen.queryByText(/Loading world/)).toBeNull());
+      // InDungeon1+InDungeon2 together span x:[0,30) y:[0,10) -- a 30x10
+      // bounds fit into the 100x100 viewport at zoom=min(100/30,100/10)=
+      // 3.33..., clamped nowhere (MIN_ZOOM/MAX_ZOOM are 1/64 and 16) --
+      // readout is Math.round((zoom/16)*100) = round((10/3)/16*100) = 21.
+      // Deviation from the plan's literal snippet: pinned to this exact
+      // "21%" value instead of merely `not.toBe("100%")" -- the un-fit
+      // default (zoom=1) already reads "6%", so a `not.toBe("100%")` check
+      // passes unconditionally regardless of whether any fit ever ran, a
+      // tautology caught during the Step 3's own tautology audit.
+      await waitFor(() => {
+        const readout = utils.getByText(/%/).textContent;
+        expect(readout).toBe("21%");
+      });
+    });
+
+    // Live-bug regression test (found after Task 16's own live verification
+    // had already passed -- reported by the user against a real 20-map
+    // Safari Zone dungeon mixing 5 outdoor members with 15 auto-shelved
+    // indoor floors). fitWorld's mapFilter branch originally fit ALL of a
+    // dungeon's members unconditionally, including any auto-shelved
+    // singleton whose `component` is a synthetic index autoLayoutUnplaced
+    // assigns beyond world.components' real length (see that function's own
+    // comment) -- a position tens of thousands of tiles from real world
+    // geography, not a meaningful one. `Shelved` below reproduces that
+    // shape directly: `component: 99` with no matching entry in
+    // `components` (deliberately overridden, unlike makeWorld's own
+    // one-singleton-component-per-placement default), positioned far away.
+    // Without the fix, bounds would span Real+Shelved (~1000 tiles),
+    // zooming out until Real -- the dungeon's only member with real
+    // geography -- reads as a handful of sub-pixel dots.
+    it("auto-fits to the dungeon's real-world-positioned members only, ignoring an auto-shelved singleton's own essentially arbitrary far-away position", async () => {
+      const world = makeWorld({
+        placements: {
+          Real: { map: "Real", x: 0, y: 0, width: 10, height: 10, component: 0 },
+          Shelved: { map: "Shelved", x: 1000, y: 1000, width: 10, height: 10, component: 99 },
+        },
+        components: [{ index: 0, maps: ["Real"], bounds: { x: 0, y: 0, width: 10, height: 10 } }],
+      });
+      const { impl } = makeFetchMock(world);
+      vi.stubGlobal("fetch", impl);
+      const utils = render(<WorldCanvas mapFilter={new Set(["Real", "Shelved"])} />);
+      await waitFor(() => expect(utils.queryByText(/Loading world/)).toBeNull());
+      // Real alone is 10x10 -- fit into the 100x100 viewport at
+      // zoom=min(100/10,100/10)=10 (clamped nowhere), readout
+      // round((10/16)*100) = 63. Fitting BOTH (the pre-fix bug) would span
+      // roughly 1000x1000, reading a two-digit-lower zoom entirely.
+      await waitFor(() => {
+        const readout = utils.getByText(/%/).textContent;
+        expect(readout).toBe("63%");
+      });
+    });
+
+    // Review fix regression test: the auto-fit effect above used to depend
+    // on [mapFilter, world] alone, which re-fires on EVERY drag frame (see
+    // that effect's own updated comment for why `world` churns per
+    // mousemove) -- reproduces the reviewer's empirical proof live: after
+    // auto-fit settles, shift-dragging a filtered map across several
+    // mousemove frames must not move the zoom readout at all, not even
+    // transiently between frames.
+    it("does not re-fire the dungeon auto-fit on a mid-drag mousemove frame, keeping the zoom readout unchanged throughout a Shift+drag", async () => {
+      const { impl } = makeFetchMock(fourMapsWorld());
+      vi.stubGlobal("fetch", impl);
+      // A stable Set instance across the whole test, matching how App.tsx
+      // hands WorldCanvas a stable per-dungeon Set (mapFilter's own doc
+      // comment) -- a literal `new Set([...])` re-created on every render
+      // would not exercise the identity-based guard this test is about.
+      const filter = new Set(["InDungeon1", "InDungeon2"]);
+      const { container } = render(<WorldCanvas mapFilter={filter} />);
+      await waitFor(() => expect(screen.queryByText(/Loading world/)).toBeNull());
+      const canvas = container.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement;
+      canvas.getBoundingClientRect = () => ({
+        left: 0, top: 0, right: VIEWPORT_SIZE, bottom: VIEWPORT_SIZE, width: VIEWPORT_SIZE, height: VIEWPORT_SIZE, x: 0, y: 0, toJSON() {},
+      });
+
+      // Same fit math as "auto-fits to the filtered maps on open" above:
+      // InDungeon1+InDungeon2 span 30x10, fit into the 100x100 viewport at
+      // zoom=100/30=3.33.. -> round(3.33/16*100)=21.
+      await waitFor(() => expect(screen.getByText(/%/).textContent).toBe("21%"));
+
+      // At that fit, zoom=10/3 and pan={x:0,y:100/3} (bounds {0,0,30,10}
+      // centred in the 100x100 viewport) -- InDungeon1 (world (0,0)-(10,10))
+      // draws on screen at roughly [0,33.3)x[33.3,66.7). Shift+mousedown at
+      // screen (10,40) lands on world (3,2), inside it.
+      fireEvent.mouseDown(canvas, { clientX: 10, clientY: 40, button: 0, shiftKey: true });
+      await waitFor(() => expect(screen.getByText(/%/).textContent).toBe("21%"));
+
+      // Frame 1: drag to screen (40,40) -- world (12,2), landing InDungeon1
+      // at tile (9,0). This actually changes InDungeon1's placement (a new
+      // `world` object, via onMouseMove's "map" branch setWorld call) AND
+      // grows the scoped bounding box (InDungeon1 now overlaps toward
+      // InDungeon2), which is exactly what made the old [mapFilter, world]
+      // effect re-fit to a different, larger zoom mid-drag. The readout
+      // must stay exactly "21%" here, not merely by the time the drag ends.
+      fireEvent.mouseMove(canvas, { clientX: 40, clientY: 40, shiftKey: true });
+      await waitFor(() => expect(screen.getByText(/%/).textContent).toBe("21%"));
+
+      // Frame 2: drag further, to screen (70,40) -- world (21,2), landing
+      // InDungeon1 at tile (18,0), overlapping InDungeon2 outright. Another
+      // fresh `world` object, another opportunity for the bug to re-fit
+      // (and, per the reviewer's report, a THIRD different escalating
+      // readout under the old code) -- still must read "21%".
+      fireEvent.mouseMove(canvas, { clientX: 70, clientY: 40, shiftKey: true });
+      await waitFor(() => expect(screen.getByText(/%/).textContent).toBe("21%"));
+
+      fireEvent.mouseUp(canvas);
+      await waitFor(() => expect(screen.getByText(/%/).textContent).toBe("21%"));
+    });
+
+    // Review fix regression test (Task 12 review, finding #2): fittedFilterRef
+    // used to only ever be SET, never reset -- so if mapFilter ever
+    // transitioned to null (dungeon closed) and then back to the exact SAME
+    // Set instance (a later re-open), `fittedFilterRef.current === mapFilter`
+    // would already be true from the very first open, and the guard would
+    // skip the re-fit entirely on reopen. Proven by: fit once, zoom away from
+    // the fitted view, rerender with mapFilter=null, then rerender with the
+    // SAME Set instance again -- the camera must re-fit, not silently stay
+    // wherever the intervening null view left it.
+    it("re-fits when mapFilter round-trips through null back to the same Set instance", async () => {
+      const { impl } = makeFetchMock(fourMapsWorld());
+      vi.stubGlobal("fetch", impl);
+      const filter = new Set(["InDungeon1", "InDungeon2"]);
+      const { container, rerender } = render(<WorldCanvas mapFilter={filter} />);
+      await waitFor(() => expect(screen.queryByText(/Loading world/)).toBeNull());
+      await waitFor(() => expect(screen.getByText(/%/).textContent).toBe("21%"));
+
+      // Move the view away from the fitted state via an ordinary wheel zoom
+      // (anchored at screen (0,0), same pattern used elsewhere in this
+      // file): zoom 10/3 * 1.2 = 4 -> round((4/16)*100) = 25%.
+      const canvas = container.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement;
+      fireEvent.wheel(canvas, { clientX: 0, clientY: 0, deltaY: -100 });
+      await waitFor(() => expect(screen.getByText(/%/).textContent).toBe("25%"));
+
+      // "Close" the dungeon (mapFilter -> null) -- must not itself re-fit.
+      rerender(<WorldCanvas mapFilter={null} />);
+      await waitFor(() => expect(screen.getByText(/%/).textContent).toBe("25%"));
+
+      // "Reopen" the SAME dungeon -- the identical Set instance, exactly as
+      // a caller that memoises its Set per dungeon id would hand back. Must
+      // re-fit to 21%, not stay at 25% (which is what the pre-fix ref guard
+      // would have done, since fittedFilterRef.current already equalled
+      // this exact instance from the very first render).
+      rerender(<WorldCanvas mapFilter={filter} />);
+      await waitFor(() => expect(screen.getByText(/%/).textContent).toBe("21%"));
+    });
+  });
+
+  // -------------------------------------------------------------------
+  // Dungeon connection lines (Feature C -- Task 13)
+  // -------------------------------------------------------------------
+  describe("dungeon connection lines (Feature C)", () => {
+    function dungeonWorld() {
+      return makeWorld({
+        placements: {
+          Room1: { map: "Room1", x: 0, y: 0, width: 10, height: 10, component: 0 },
+          Room2: { map: "Room2", x: 30, y: 0, width: 10, height: 10, component: 1 },
+          Outside: { map: "Outside", x: 60, y: 0, width: 10, height: 10, component: 2 },
+        },
+      });
+    }
+
+    it("draws a line only between two maps that are BOTH members of the open dungeon", async () => {
+      const { impl } = makeFetchMock(dungeonWorld());
+      const wrapped = withWarps(impl, {
+        Room1: [
+          { x: 1, y: 1, elevation: 0, destMap: "MAP_ROOM2", destWarpId: "0", destMapName: "Room2" },
+          { x: 2, y: 2, elevation: 0, destMap: "MAP_OUTSIDE", destWarpId: "0", destMapName: "Outside" },
+        ],
+        Room2: [{ x: 3, y: 3, elevation: 0, destMap: "MAP_ROOM1", destWarpId: "0", destMapName: "Room1" }],
+        Outside: [{ x: 4, y: 4, elevation: 0, destMap: "MAP_ROOM1", destWarpId: "1", destMapName: "Room1" }],
+      });
+      vi.stubGlobal("fetch", wrapped);
+      const utils = render(<WorldCanvas mapFilter={new Set(["Room1", "Room2"])} />);
+      await waitFor(() => expect(utils.queryByText(/Loading world/)).toBeNull());
+
+      const linesToggle = utils.getByRole("switch", { name: /connection lines/i });
+      fireEvent.click(linesToggle);
+
+      await waitFor(() => {
+        const lines = utils.container.querySelectorAll(".world-canvas__connections line");
+        // Room1 has two warps; only the one to Room2 (a dungeon member)
+        // draws. Room2's own warp back to Room1 is a SEPARATE warp entry
+        // (destWarpId "0" on Room2, distinct from Room1's own entries), so
+        // exactly two lines total.
+        expect(lines.length).toBe(2);
+      });
+
+      // Coordinate assertion (review fix -- mutation-proven gap): proves
+      // the line runs to the destination warp's own EXACT tile, not
+      // merely that the right COUNT of lines drew (a reviewer proved a
+      // reverted corner-fallback, drawing every line at the destination
+      // PLACEMENT's corner regardless of destWarp, still passed every
+      // test in this describe block before this assertion existed).
+      // mapFilter={Room1,Room2} auto-fits Room1(0,0,10,10)+Room2(30,0,10,10)
+      // (bounds 40x10) into the 100x100 test viewport at zoom =
+      // min(100/40,100/10) = 2.5, pan = {x: 0, y: (100-10*2.5)/2} =
+      // {x: 0, y: 37.5} -- computeFit's own formula, hand-verified the
+      // same way its own unit test above does. Room1's warp (world 1,1)
+      // is the Room1->Room2 line's own source, at screen (1*2.5+0,
+      // 1*2.5+37.5) = (2.5, 40); Room2's warp (world 3,3) -- the ACTUAL
+      // destination tile destWarpId "0" resolves to -- is at screen
+      // ((30+3)*2.5+0, (0+3)*2.5+37.5) = (82.5, 45). Identified by x1/y1
+      // (Room1's own warp position) rather than DOM/array order, since
+      // the two resolved lines are not returned in a guaranteed order.
+      const lines = [...utils.container.querySelectorAll(".world-canvas__connections line")];
+      const room1ToRoom2 = lines.find((l) => l.getAttribute("x1") === "2.5" && l.getAttribute("y1") === "40");
+      expect(room1ToRoom2).toBeTruthy();
+      expect(room1ToRoom2!.getAttribute("x2")).toBe("82.5");
+      expect(room1ToRoom2!.getAttribute("y2")).toBe("45");
+    });
+
+    // Coverage gap fix (Task 13 review, finding #2): the test above only
+    // ever exercises the `mapFilter.has` / `destCache?.loaded` guards --
+    // it never proves the STRICT destWarp lookup itself (the exact
+    // behavior the previous review fix restored, reverting a corner-
+    // fallback that drew every line at the destination placement's corner
+    // regardless of whether destWarpId actually resolved). This test
+    // targets that lookup directly.
+    it("does not draw a line when the destination warp's own destWarpId does not match any real entry in the destination map's warp array", async () => {
+      const { impl } = makeFetchMock(dungeonWorld());
+      const wrapped = withWarps(impl, {
+        Room1: [
+          // Resolvable: Room2's own warp array below has a real entry at
+          // index 0 -- a sibling connection alongside the unresolvable
+          // one below, so this test is not just "zero lines total" (which
+          // could pass for the wrong reason, e.g. a totally broken fetch).
+          { x: 1, y: 1, elevation: 0, destMap: "MAP_ROOM2", destWarpId: "0", destMapName: "Room2" },
+          // Unresolvable: Room2's own warp array (below) has only ONE
+          // entry, at index 0 -- destWarpId "5" names an index that does
+          // not exist, the exact malformed/one-off-asymmetric case
+          // connectionLines' own comment documents skipping entirely
+          // rather than guessing at any other position.
+          { x: 2, y: 2, elevation: 0, destMap: "MAP_ROOM2", destWarpId: "5", destMapName: "Room2" },
+        ],
+        // A single real entry, at index 0 only -- deliberately pointing
+        // OUTSIDE the dungeon (mapFilter below only ever contains Room1
+        // and Room2), so Room2 contributes no connection line of its own
+        // as a SOURCE and the only line this test can observe is one of
+        // Room1's own two warps.
+        Room2: [{ x: 3, y: 3, elevation: 0, destMap: "MAP_OUTSIDE", destWarpId: "0", destMapName: "Outside" }],
+      });
+      vi.stubGlobal("fetch", wrapped);
+      const utils = render(<WorldCanvas mapFilter={new Set(["Room1", "Room2"])} />);
+      await waitFor(() => expect(utils.queryByText(/Loading world/)).toBeNull());
+      fireEvent.click(utils.getByRole("switch", { name: /connection lines/i }));
+
+      // Exactly 1 -- Room1's resolvable warp (destWarpId "0") draws; its
+      // unresolvable sibling (destWarpId "5") does not. Not "zero lines
+      // total" (a totally broken fetch/cache could also produce that for
+      // an unrelated reason) and not 2 (which reverting to a corner-
+      // fallback for a lookup MISS -- rather than skipping the connection
+      // entirely -- would wrongly draw a second line to Room2's own
+      // placement corner).
+      await waitFor(() => {
+        const lines = utils.container.querySelectorAll(".world-canvas__connections line");
+        expect(lines.length).toBe(1);
+      });
+    });
+
+    it("assigns the same colour to the same connection regardless of mapFilter's own construction order", async () => {
+      const { impl } = makeFetchMock(dungeonWorld());
+      const wrapped = withWarps(impl, {
+        Room1: [{ x: 1, y: 1, elevation: 0, destMap: "MAP_ROOM2", destWarpId: "0", destMapName: "Room2" }],
+        // Review fix (Task 13 review, twice over now): this used to point
+        // OUTSIDE the dungeon (Room2 -> Outside), which resolves no
+        // second connection at all -- so exactly ONE connection line ever
+        // existed, its palette index was always 0 regardless of order,
+        // and this test's own final assertion passed even against a
+        // mutated, non-deterministic sort (confirmed by mutation testing:
+        // dropping the stable `.sort()` for raw, construction-order-
+        // dependent Set iteration still left every test in this file
+        // green). Room2 now warps back to Room1 too, a real second entry
+        // at Room1's own warp index 0 -- so there are genuinely TWO
+        // resolvable connections whose relative order in the sorted-by-
+        // source-map list determines which palette index each one gets,
+        // giving this test something for sort order to actually matter to.
+        Room2: [{ x: 3, y: 3, elevation: 0, destMap: "MAP_ROOM1", destWarpId: "0", destMapName: "Room1" }],
+      });
+      vi.stubGlobal("fetch", wrapped);
+
+      // Both connections auto-fit to the SAME bounds (Room1+Room2)
+      // regardless of mapFilter's own construction order (worldBoundsOf
+      // does not care about Set iteration order), so Room1's own warp
+      // (world 1,1) always lands at the same screen position across both
+      // runs below -- zoom 2.5, pan {0, 37.5}, hand-verified the same way
+      // the coordinate-assertion test above does. That makes x1/y1 a
+      // stable, run-independent way to pick out the Room1->Room2
+      // connection specifically, regardless of where the OTHER connection
+      // (or a scrambled sort) might place it in the DOM.
+      const runOnce = async (filter: Set<string>) => {
+        const utils = render(<WorldCanvas mapFilter={filter} />);
+        await waitFor(() => expect(utils.queryByText(/Loading world/)).toBeNull());
+        fireEvent.click(utils.getByRole("switch", { name: /connection lines/i }));
+        await waitFor(() => expect(utils.container.querySelectorAll(".world-canvas__connections line").length).toBe(2));
+        const lines = [...utils.container.querySelectorAll(".world-canvas__connections line")];
+        // Identified by x1/y1 (Room1's own warp screen position), NOT
+        // "the first line in the DOM" -- this test's own review-fix
+        // comment above explains why that could not actually distinguish
+        // a genuinely stable sort from an order that is merely arbitrary-
+        // but-stable-within-one-run (e.g. raw, unsorted Set iteration:
+        // deterministic for any ONE Set instance, but not across two
+        // differently-constructed ones -- exactly what this test
+        // compares).
+        const room1ToRoom2 = lines.find((l) => l.getAttribute("x1") === "2.5" && l.getAttribute("y1") === "40");
+        expect(room1ToRoom2).toBeTruthy();
+        const stroke = room1ToRoom2!.getAttribute("stroke");
+        utils.unmount();
+        return stroke;
+      };
+
+      const colorA = await runOnce(new Set(["Room1", "Room2"]));
+      const colorB = await runOnce(new Set(["Room2", "Room1"])); // same members, different construction order
+      expect(colorA).toBe(colorB);
+    });
+
+    // Coverage gap fix (Task 13 review): the "draws a line only between two
+    // maps that are BOTH members" test above only ever proves the OTHER
+    // guard (`destCache?.loaded`) blocks a non-member destination -- a
+    // non-member map is never in `visible`, so its warp data is never
+    // fetched in the first place, meaning `mapFilter.has` is never the
+    // guard that actually fires there. This test genuinely exercises it:
+    // Annex starts IN mapFilter (so its warp data really gets fetched and
+    // cached), then a rerender narrows mapFilter to exclude it -- at that
+    // point Annex's cache entry is already sitting in warpCacheRef (a ref,
+    // never evicted), so `destCache?.loaded` is still true and the ONLY
+    // thing that can still block Base's connection to it is
+    // `mapFilter.has`.
+    it("mapFilter.has still blocks a connection to a member whose warp data is already cached, once that map is narrowed out", async () => {
+      const { impl } = makeFetchMock(
+        makeWorld({
+          placements: {
+            Core: { map: "Core", x: 0, y: 0, width: 10, height: 10, component: 0 },
+            Base: { map: "Base", x: 30, y: 0, width: 10, height: 10, component: 1 },
+            Annex: { map: "Annex", x: 60, y: 0, width: 10, height: 10, component: 2 },
+          },
+        }),
+      );
+      const wrapped = withWarps(impl, {
+        // Core<->Base: a connection that survives the narrowing below, so
+        // the assertion isn't just "all lines vanished" for some unrelated
+        // reason.
+        Core: [{ x: 1, y: 1, elevation: 0, destMap: "MAP_BASE", destWarpId: "0", destMapName: "Base" }],
+        Base: [
+          { x: 2, y: 2, elevation: 0, destMap: "MAP_CORE", destWarpId: "0", destMapName: "Core" },
+          // Base->Annex: the connection under test -- present while Annex
+          // is a member, must disappear once it is narrowed out.
+          { x: 3, y: 3, elevation: 0, destMap: "MAP_ANNEX", destWarpId: "0", destMapName: "Annex" },
+        ],
+        // Annex's own warp points OUTSIDE the dungeon (never a mapFilter
+        // member), so Annex itself contributes no connection line as a
+        // SOURCE -- this entry exists purely so Annex.warps[0] is a real
+        // array entry, satisfying the strict destWarp lookup Base's own
+        // warp above needs while Annex is still a member and its data has
+        // been fetched.
+        Annex: [{ x: 4, y: 4, elevation: 0, destMap: "MAP_ELSEWHERE", destWarpId: "0", destMapName: "Elsewhere" }],
+      });
+      vi.stubGlobal("fetch", wrapped);
+
+      const utils = render(<WorldCanvas mapFilter={new Set(["Core", "Base", "Annex"])} />);
+      await waitFor(() => expect(utils.queryByText(/Loading world/)).toBeNull());
+      fireEvent.click(utils.getByRole("switch", { name: /connection lines/i }));
+
+      // Three lines while Annex is a member: Core->Base, Base->Core,
+      // Base->Annex. Reaching 3 (not fewer) is what proves Annex's own warp
+      // data has actually arrived and been cached -- it is what supplies
+      // the strict destWarp[0] lookup Base->Annex needs to draw at all.
+      await waitFor(() => {
+        expect(utils.container.querySelectorAll(".world-canvas__connections line").length).toBe(3);
+      });
+
+      // Narrow mapFilter to exclude Annex. Its warp cache entry is
+      // untouched by this rerender (nothing in WorldCanvas ever evicts a
+      // warpCacheRef entry), so this proves the drop is `mapFilter.has`,
+      // not a reset cache.
+      utils.rerender(<WorldCanvas mapFilter={new Set(["Core", "Base"])} />);
+
+      await waitFor(() => {
+        expect(utils.container.querySelectorAll(".world-canvas__connections line").length).toBe(2);
+      });
+    });
   });
 });

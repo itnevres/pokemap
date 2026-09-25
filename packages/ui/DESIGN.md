@@ -89,6 +89,29 @@ whatever OS theme is active.
      caught it. */
   --overlay-spotlight-dim: rgba(4, 8, 16, 0.72);
 
+  /* Multi-select move: selection outlines and the live marquee rect share
+     one cyan hue, distinct from every other overlay token above (accent
+     green, warn amber, danger red, elevation blue/orange) so a selected
+     map's outline never reads as a lens tint or a conflict badge. */
+  --overlay-selection: #22d3ee;
+
+  /* Dungeon connection lines (Feature C): deterministic per-connection
+     colour, assigned by a stable sort order (source map name, then the
+     warp's own index within it), not randomised or hashed -- so the same
+     connection reads the same colour across sessions without persisting
+     anything (spec §5.5). Eight visually distinct hues, none reused from
+     any other overlay token above (selection cyan, conflict/danger red,
+     dive/emerge blue/orange, warn amber) so a connection line never
+     misreads as one of those existing meanings. */
+  --connection-1: #e879f9;
+  --connection-2: #34d399;
+  --connection-3: #fb923c;
+  --connection-4: #60a5fa;
+  --connection-5: #facc15;
+  --connection-6: #f472b6;
+  --connection-7: #2dd4bf;
+  --connection-8: #a78bfa;
+
   --focus-ring: #60a5fa;
 }
 
@@ -119,9 +142,15 @@ whatever OS theme is active.
      proportioned for a light background -- --text-primary's own dark value
      (#0f172a) at high opacity, not literal black. */
   --overlay-spotlight-dim: rgba(15, 23, 42, 0.65);
+  --overlay-selection: #0891b2;
   --focus-ring: #2563eb;
 }
 ```
+
+`--connection-1` through `--connection-8` (Feature C): the dungeon
+connection-line palette, cycled by index (`PALETTE[i % 8]`) over a stable,
+deterministically-sorted connection order -- see WorldCanvas.tsx's own
+`connectionLines` memo.
 
 Colour is never the only signal: every overlay kind above pairs with a
 distinct shape or label in its legend (Task 21), not colour alone, for

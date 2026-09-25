@@ -1,7 +1,10 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach } from "vitest";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { Project } from "@pokemap/core/src/project.js";
 import type { MapData } from "@pokemap/core/src/load/maps.js";
-import { layoutNameFor } from "../src/context.js";
+import { layoutNameFor, resolveRoot } from "../src/context.js";
 
 /**
  * A minimal stub, not the corpus: the case this test exists for -- a map
@@ -27,9 +30,57 @@ function stubProject(overrides: Partial<Project>): Project {
     tilesetSymbols: unused("tilesetSymbols"),
     map: unused("map"),
     mapNames: () => [],
+    encounters: unused("encounters"),
     ...overrides,
   };
 }
+
+describe("resolveRoot", () => {
+  const cwds: string[] = [];
+  const originalCwd = process.cwd();
+
+  afterEach(() => {
+    process.chdir(originalCwd);
+    for (const d of cwds.splice(0)) rmSync(d, { recursive: true, force: true });
+  });
+
+  function chdirToFreshDir(): string {
+    const dir = mkdtempSync(join(tmpdir(), "pokemap-resolveRoot-"));
+    cwds.push(dir);
+    process.chdir(dir);
+    return dir;
+  }
+
+  it("returns the explicit path verbatim, never reading pokemap.config.json even when the cwd has none", () => {
+    chdirToFreshDir(); // no pokemap.config.json here at all
+    expect(resolveRoot("/some/explicit/root")).toBe("/some/explicit/root");
+  });
+
+  it("falls back to pokemap.config.json's projectPath in the cwd when no explicit path is given", () => {
+    const dir = chdirToFreshDir();
+    writeFileSync(join(dir, "pokemap.config.json"), JSON.stringify({ projectPath: "/from/config" }));
+    expect(resolveRoot(undefined)).toBe("/from/config");
+  });
+
+  it("an explicit path wins over an existing, different pokemap.config.json -- never reads the file at all", () => {
+    // Spec review fix round 1, Issue 1: every other test above that passes an
+    // explicit path first chdirs into a dir with NO config file at all, so
+    // the actual precedence (`if (explicit) return explicit;`, before the
+    // config file is ever touched) was never exercised against a case where
+    // the config file exists and disagrees. Kills the "check config first,
+    // fall back to explicit only when the file is absent" mutation, which
+    // every other `resolveRoot` test here passes right through.
+    const dir = chdirToFreshDir();
+    writeFileSync(join(dir, "pokemap.config.json"), JSON.stringify({ projectPath: "/from/config" }));
+    expect(resolveRoot("/explicit/wins")).toBe("/explicit/wins");
+  });
+
+  it("refuses, naming the cwd and the --project alternative, when neither an explicit path nor a config file is given", () => {
+    const dir = chdirToFreshDir();
+    expect(() => resolveRoot(undefined)).toThrow(new RegExp(`no pokemap\\.config\\.json in .*${dir.split("/").pop()}`));
+    expect(() => resolveRoot(undefined)).toThrow(/--project/);
+  });
+});
 
 describe("layoutNameFor", () => {
   it("delegates the map-name case to Project.layoutForMap, not a hand-rolled lookup", () => {

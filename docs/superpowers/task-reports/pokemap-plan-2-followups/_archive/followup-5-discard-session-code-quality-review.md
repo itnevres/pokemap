@@ -1,0 +1,50 @@
+# Follow-up 5: discard/close-session — code-quality review
+
+Range: `ef6e6c5..2656c49` (one commit). Spec compliance independently passed already (0 issues) — this pass is code quality / architecture / production-readiness only.
+
+Verification performed independently (not just re-reading the implementer's claims):
+- `npm run typecheck` — clean.
+- `npx vitest run` on `Toolbar.test.tsx`, `useEditSession.test.tsx`, `App.test.tsx`, `MapCanvas.test.tsx`, `SaveDialog.test.tsx` — 81/81 pass.
+- `npx vitest run packages/server/test/saveRoutes.test.ts` — 8/8 pass, including the 3 new discard tests (404 unknown map, no-op on no session, real dirty-session round trip with a post-discard `GET /plan` and byte-identical binfile check).
+
+## Strengths
+
+- `useEditSession.ts:97-129` doc comment on `discard()` is genuinely strong: names the exact regression (`MapCanvas.tsx`'s `editSession ? editSession.blocks : staticBlocks` ternary always taking the live branch), traces *why* the reset effect doesn't self-correct a blank canvas (`mapName` doesn't change on discard), and states the future-maintainer trap explicitly ("A future 'simplification' back to `call()` would silently reintroduce exactly that blank-canvas regression"). A maintainer reading only the code, not this task's history, would be told exactly what not to do and why. This holds up under the "read it critically" instruction.
+- Server route (`index.ts:789-807`) matches the established pattern exactly: 404 via `project.mapNames().includes(name)` (like `/plan`/`/commit`, not `/undo`/`/redo`'s `editSessions.has` check) — the right choice, since `/undo`/`/redo` intentionally treat "nothing open" as a no-op on a *known* map, while discard must still 404 an unrecognized map name. Doesn't call `editEntryFor`/`open()` (would pointlessly open a session just to close it). `editSessions.close()` is confirmed idempotent (`sessions.delete` on a missing key, `editSessions.ts:62-64`) — matches the route's own "no-op on a never-opened session" doc claim, verified by test (`saveRoutes.test.ts`'s `AzaleaTown_Mart` case).
+- Hook test methodology (dirty via a real `undo()` round trip, then `discard()`) is a real, non-coincidental proof, not over-engineered: without dirtying via a genuine round trip first, `expect(last!.blocks).toEqual(seedBlocks)` could trivially pass on a hook that never touched state at all. The failure-path test (discard rejects → state left exactly as the dirty pre-discard values, not silently reset) is the correct complement and isn't redundant with the first.
+- Toolbar button: separate `.toolbar__discard` group, `--danger` outline-fill-on-hover (reusing `.event-inspector__delete-btn`'s established technique, not a new pattern), opposite hue from Save's accent green. `isDirty` gating is not the only safety net — `App.tsx:328-331`'s `window.confirm()` is genuine defense in depth: even a misclick on the (adjacently-placed, but distinctly colored) Discard button requires an explicit second confirmation before `editSession.discard()` ever fires.
+- `SaveDialog.tsx` Cancel-button comment change is verified zero-behavior: `SaveDialog.test.tsx`'s 9 tests are untouched and pass. `MapCanvas.test.tsx`'s one-line mock-factory addition is pure typecheck-compatibility filler — confirmed by grep that no test in that file, and no code path in `MapCanvas.tsx` itself, ever calls `editSession.discard()` at all, so the blanket `vi.fn().mockResolvedValue(undefined)` default can't mask a real bug in that file; it's simply never exercised there.
+- Modal-vs-Toolbar interaction: confirmed real, not assumed. `.warp-modal__backdrop` (`styles.css:1648-1656`) is `position: fixed; inset: 0; z-index: 1000` — a full-viewport click-blocking layer shared by both `SaveDialog` and `SignComposer`. The Toolbar (including the new Discard button) is genuinely unreachable while either modal is open; this is pre-existing infrastructure the new button correctly rides on, not something this task needed to (or did) touch.
+
+## Issues
+
+### Critical (Must Fix)
+None.
+
+### Important (Should Fix)
+
+1. **`handleDiscard` doesn't clear `eventOpError` on success, unlike every other handler that reuses that convention.** `App.tsx:328-331`:
+   ```
+   editSession.discard().catch((e: unknown) => setEventOpError(eventOpErrorMessage(e)));
+   ```
+   Every other mutating handler in this file that reuses `eventOpError` (`onCanvasMoveEvent` line 130-138, `onMoveEventFromInspector` line 147-159, `onDeleteEvent` line 165-189) calls `setEventOpError(null)` in its `.then()` on success, precisely so a stale failure banner from an earlier op doesn't linger after a later op succeeds. `handleDiscard` only wires the failure half of that convention, not the clearing half. Concrete failure scenario: an event move fails (banner shows "POST .../event/move -> 500"), the player then clicks Discard Changes and confirms, discard succeeds — the stale event-move error banner is still on screen, now describing a problem that no longer applies to the (just-reverted) session. Low blast radius (the banner has its own dismiss button, `App.tsx:542-544`), but it's a real, verifiable inconsistency with the exact convention this diff's own comment (`App.tsx:323-324`, "Reuses eventOpError's existing banner... rather than inventing a second error-surface convention") claims to be faithfully reusing. Fix: `editSession.discard().then(() => setEventOpError(null)).catch(...)`.
+
+2. **No coordination between `discard()` and an in-flight paint stroke (`MapCanvas.tsx`'s `pendingPaintRef`).** Architecture question from the task brief, traced end-to-end: `useEditSession.discard()` has no knowledge of `MapCanvas.tsx`'s `pendingPaintRef`/`strokeOpenRef` and doesn't wait for or cancel them. The Toolbar (unlike Save/Sign, which route through the backdrop-blocked modals) is fully clickable during ordinary painting — there is no UI-state guard preventing a click on Discard while a stroke is technically still settling.
+   In practice this is *mostly* self-mitigated: reaching the physically separate Toolbar DOM node requires the cursor to first leave the `<canvas>` bounds, which fires `onMouseLeave` (`MapCanvas.tsx:839-853`) → `endActiveStroke(null)` → eventually `editSession.endStroke()`. But that chain is fire-and-forget (`void pendingPaintRef.current.catch(() => {}).then(...)`, `MapCanvas.tsx:774-804`) — it is *not* awaited before the mouseleave handler returns, so there's a real (if narrow) window where the player can click Discard, confirm, and have `POST /discard` reach the server before a still-in-flight `/paint/apply` or `/paint/end` does. Traced through `editSessions.ts`: `close()` is `sessions.delete(mapName)` with no generation/version tag, and `open()` (`editSessions.ts:34-60`) silently creates a brand-new session from disk if none exists. So a late-arriving paint request after a discard doesn't error or get dropped — it quietly reopens a *fresh* session and applies the stroke to it, leaving a new dirty server-side session the just-reset (clean) client UI has no idea exists. The player would only discover it if they reopened `SaveDialog` later and saw unexpected pending changes they believed they'd discarded.
+   This is a narrow timing window (network-latency-dependent), self-recoverable (discard again), and — importantly — not a new architectural pattern introduced by this diff: it's the same "fire-and-forget mutation + reopen-on-missing-session" characteristic the whole edit-session system already has (the identical race exists for Save today, mitigated only by the same accidental mouseleave-before-click sequencing, never actually fixed). Flagging as worth a follow-up (e.g., have `discard()` await `pendingPaintRef` the same way `endActiveStroke` does, or add a session generation counter checked on write), not as a blocker for this task — closing it properly is a cross-cutting fix, not a one-file patch, and out of this task's own scope.
+
+### Minor (Nice to Have)
+
+- `eventOpError`/`eventOpErrorMessage` naming now covers a fourth, non-event use (discard) without renaming. Purely a naming nit — the reuse itself is the right call (no second error-surface convention needed), just slightly stale as a name for what it now holds.
+- The failed-discard banner text is whatever `Error.message` from `useEditSession.ts:337` produces verbatim (e.g. `POST /api/edit/PalletTown/discard -> 500`) — technical/leaky (exposes the route path), but this matches the exact same pre-existing convention every other `eventOpErrorMessage` call site already uses (`callEvent`'s thrown errors are equally raw), so it's consistent rather than a new regression.
+
+## Recommendations
+
+- Add `.then(() => setEventOpError(null))` to `handleDiscard` (Important #1) — a one-line fix, in scope for this task since it's the exact handler this task added.
+- File the in-flight-paint-vs-discard race (Important #2) as a tracked follow-up rather than fixing inline here; it's a pre-existing systemic gap this task's new button merely inherits, and a proper fix (session generation tagging, or awaiting all pending client-side operations before any session-closing call) belongs to whichever task next touches `editSessions.ts`'s open/close contract.
+
+## Assessment
+
+**Ready to merge?** With fixes
+
+**Reasoning:** Spec-faithful, well-tested (independently reran and verified all touched suites, including the server-side round-trip test with a real dirty session and disk-untouched assertion), and the doc-comment discipline on the one deliberately-unusual method (`discard()` bypassing `call()`) is exactly as strong as the task demanded. One concrete, easy, in-scope fix (the stale-error-banner gap, Important #1) should land before merge — it's a one-line change reusing a pattern already established three times in the same file. The in-flight-paint race (Important #2) is real but pre-existing in character and disproportionate to fix as part of this task; log it and move on. Nothing here rises to Critical, and the batch's last task holds the same rigor as the prior four.

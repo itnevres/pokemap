@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, fireEvent, screen, waitFor } from "@testing-library/react";
-import { MapCanvas } from "../src/components/MapCanvas.js";
+import { render, fireEvent, screen, waitFor, act } from "@testing-library/react";
+import { MapCanvas, type MapCanvasProps } from "../src/components/MapCanvas.js";
 import type { MapLayoutData } from "../src/hooks/useMapLayout.js";
+import type { UseEditSessionResult } from "../src/hooks/useEditSession.js";
 
 // ---------------------------------------------------------------------------
 // Fixture: a tiny synthetic 2x2 layout with a 1-block border, so pixel math
@@ -44,10 +45,59 @@ const DATA: MapLayoutData = {
     { metatileId: 0x12, collision: 0, elevation: 0, behavior: 0x05 },
     { metatileId: 0x13, collision: 0, elevation: 3, behavior: 0x09 },
   ],
+  primaryCount: 512,
+  secondaryCount: 144,
 };
 
 const PIXEL_SIZE = 64; // (2 + 2*1) * 16
 const ORIGIN = 16; // 1 * 16
+
+// ---------------------------------------------------------------------------
+// Task 14: shared fixtures for every editSession mock and for the event-
+// selection/drag tests below. Introduced here rather than duplicated again --
+// this file already had 8 near-identical inline editSession object literals
+// across Tasks 11-12's own tests (one per test, copy-pasted) before this
+// task; consolidated into one factory so useEditSession.ts's own shape only
+// needs updating in one place per future task, not eight.
+// ---------------------------------------------------------------------------
+
+/** A fully-populated UseEditSessionResult mock, every method a plain
+ *  resolved-promise vi.fn() by default -- matches this file's own established
+ *  per-test override style (a test that cares about beginStroke's timing,
+ *  e.g. the rect-race repro, passes its own `beginStroke` override). */
+function makeEditSession(overrides: Partial<UseEditSessionResult> = {}): UseEditSessionResult {
+  return {
+    blocks: [], border: [], map: undefined, isDirty: false, canUndo: false, canRedo: false,
+    beginStroke: vi.fn().mockResolvedValue(undefined),
+    applyPaint: vi.fn().mockResolvedValue(undefined),
+    endStroke: vi.fn().mockResolvedValue(undefined),
+    undo: vi.fn().mockResolvedValue(undefined),
+    redo: vi.fn().mockResolvedValue(undefined),
+    markClean: vi.fn(),
+    moveEvent: vi.fn().mockResolvedValue(undefined),
+    addEvent: vi.fn().mockResolvedValue(undefined),
+    deleteEvent: vi.fn().mockResolvedValue(undefined),
+    applyExternalMapUpdate: vi.fn(),
+    discard: vi.fn().mockResolvedValue(undefined),
+    ...overrides,
+  };
+}
+
+/** Extends DATA (above) with one object_event at block (1,1) -- inside the
+ *  fixture's own 2x2 layout, so PIXEL_SIZE/ORIGIN above still describe it
+ *  exactly. Only objectEvents is populated; warp/coord/bg stay empty, which
+ *  is enough to exercise findEventAt's own object-first scan. */
+function makeMapLayoutDataWithEvents(): MapLayoutData {
+  return {
+    ...DATA,
+    map: {
+      ...DATA.map,
+      objectEvents: [
+        { graphicsId: "OBJ_EVENT_GFX_BOY", x: 1, y: 1, elevation: 3, movementType: "MOVEMENT_TYPE_NONE", movementRangeX: 1, movementRangeY: 1, trainerType: "TRAINER_TYPE_NONE", trainerSightOrBerryTreeId: "0", script: "NULL", flag: "0" },
+      ],
+    },
+  };
+}
 
 // ---------------------------------------------------------------------------
 // jsdom has no real canvas backend. Rather than assert on baked pixels (which
@@ -137,19 +187,30 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+/** Renders MapCanvas against the fixture DATA above, plus whatever extra
+ *  props (editSession/activeTool -- Task 11) a test wants layered on. Kept
+ *  synchronous and side-effect-free (no image load, no waiting for the
+ *  composite/blit effects) -- mountReady below builds on it for tests that
+ *  DO need a fully-rendered map; tests that only care about mouse-handler
+ *  wiring (pan vs. paint) use this directly. */
+function renderMapCanvas(extraProps: Partial<MapCanvasProps> = {}) {
+  const utils = render(<MapCanvas mapName="Foo" data={DATA} {...extraProps} />);
+  const canvas = utils.container.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
+  const img = utils.container.querySelector("img.map-canvas__source-image") as HTMLImageElement;
+  return { ...utils, canvas, img };
+}
+
 /** Mounts, loads the source image, and waits for the first composite+blit to
  *  land (proven by the stage canvas's `drawImage` having been called). */
-async function mountReady() {
-  const utils = render(<MapCanvas mapName="Foo" data={DATA} />);
-  const img = utils.container.querySelector("img.map-canvas__source-image") as HTMLImageElement;
-  fireEvent.load(img);
+async function mountReady(extraProps: Partial<MapCanvasProps> = {}) {
+  const utils = renderMapCanvas(extraProps);
+  fireEvent.load(utils.img);
 
-  const canvas = utils.container.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
-  await waitFor(() => expect(ctxByCanvas.get(canvas)?.drawImage).toHaveBeenCalled());
+  await waitFor(() => expect(ctxByCanvas.get(utils.canvas)?.drawImage).toHaveBeenCalled());
 
-  const stageCtx = ctxByCanvas.get(canvas)!;
+  const stageCtx = ctxByCanvas.get(utils.canvas)!;
   const lastDraw = () => stageCtx.drawImage.mock.calls.at(-1)!;
-  return { ...utils, img, canvas, stageCtx, lastDraw };
+  return { ...utils, stageCtx, lastDraw };
 }
 
 describe("MapCanvas", () => {
@@ -320,5 +381,506 @@ describe("MapCanvas", () => {
     expect(screen.getByText(/metatiles 512/)).toBeTruthy();
     expect(screen.getByText(/tiles 512/)).toBeTruthy();
     expect(screen.getByText(/pals 6/)).toBeTruthy();
+  });
+
+  // ---------------------------------------------------------------------
+  // Follow-up: the base <img src> must cache-bust after a real paint, or
+  // the composite effect keeps drawing the pristine pre-edit PNG forever
+  // (see MapCanvas.tsx's own doc comments on `paintVersion`/`imageUrl`).
+  // jsdom cannot exercise the actual reload race (that needs a real
+  // browser -- see this task's own live-verify) -- these are scoped to
+  // what a unit test CAN prove: the URL string itself, and that the
+  // version bump/reset logic driving it behaves correctly in isolation.
+  // ---------------------------------------------------------------------
+
+  it("omits the v= cache-bust param for a read-only viewer with no editSession", () => {
+    const { img } = renderMapCanvas(); // no editSession
+    expect(img.src).toContain("/api/render/Foo.png?border=1");
+    expect(img.src).not.toMatch(/[?&]v=/);
+  });
+
+  // Spec-review fix (issues 1+2): the version bump is now debounced and the
+  // first post-mount `blocks` change is presumed to be useEditSession's own
+  // reseed tick (`initialBlocks` re-syncing once useMapLayout's fetch
+  // resolves for the current map -- see that hook's own doc comment) and is
+  // swallowed with no bump at all, not just "the first real paint". This
+  // test's shape mirrors that real timeline instead of bumping on every
+  // single blocks change immediately.
+  it("includes a v= cache-bust param once editSession is present; the presumed reseed tick is swallowed, and a real paint bumps exactly once after debouncing, even across rapid changes", async () => {
+    const session = makeEditSession({ blocks: DATA.blocks });
+    const { img, rerender } = renderMapCanvas({ editSession: session });
+    const versionOf = () => new URL(img.src).searchParams.get("v");
+    expect(versionOf()).toBe("0"); // present from the first render, not just after a paint
+
+    // The FIRST blocks reference change after mount is presumed to be
+    // useEditSession's own reseed tick, not a real user edit -- absorbed
+    // with no bump and no debounce timer scheduled at all.
+    const session2 = { ...session, blocks: [...session.blocks] };
+    rerender(<MapCanvas mapName="Foo" data={DATA} editSession={session2} />);
+    // Code-review fix: reading versionOf() immediately here is NOT
+    // discriminating on its own -- under debouncing, "0" is what you'd see
+    // whether skipNextBumpRef actually swallowed this tick OR merely
+    // scheduled a bump that hasn't fired yet (both look like "0" right
+    // after the rerender). Waiting out the full debounce window here is
+    // what actually proves the tick was swallowed, not just delayed --
+    // reviewer confirmed this line reads "1" instead of "0" with
+    // skipNextBumpRef's guard removed.
+    await new Promise((r) => setTimeout(r, 300));
+    expect(versionOf()).toBe("0");
+
+    // A REAL paint (the second blocks change) schedules a bump, but not
+    // immediately -- right after this rerender the version has not moved.
+    const session3 = { ...session2, blocks: [...session2.blocks] };
+    rerender(<MapCanvas mapName="Foo" data={DATA} editSession={session3} />);
+    expect(versionOf()).toBe("0");
+
+    // Real wait past PAINT_VERSION_DEBOUNCE_MS -- matches this file's own
+    // established convention (WorldCanvas.test.tsx's fade-timer test,
+    // SpeciesSpotlight.test.tsx's debounce tests) of a real setTimeout wait
+    // rather than vi.useFakeTimers(). Code-review correction: unlike those,
+    // this timer IS scheduled inside the test body (by the rerender just
+    // above, not by a mount-time effect that ran before fake timers could
+    // be enabled), so fake timers would in fact work here -- real timers
+    // are used only to match the file's convention, not because they're
+    // required.
+    await new Promise((r) => setTimeout(r, 300));
+    const afterFirstPaint = versionOf();
+    expect(afterFirstPaint).toBe("1");
+
+    // Two rapid further changes (a drag stroke's own begin/apply/end, each
+    // producing a fresh array) must coalesce into exactly ONE further bump,
+    // not two -- proves the debounce timer is genuinely reset per change,
+    // not just delaying each bump independently.
+    const session4 = { ...session3, blocks: [...session3.blocks] };
+    rerender(<MapCanvas mapName="Foo" data={DATA} editSession={session4} />);
+    const session5 = { ...session4, blocks: [...session4.blocks] };
+    rerender(<MapCanvas mapName="Foo" data={DATA} editSession={session5} />);
+    await new Promise((r) => setTimeout(r, 300));
+    const afterSecondPaint = versionOf();
+    expect(afterSecondPaint).toBe("2");
+    // Monotonically distinguishable, not just "some value" -- two
+    // DIFFERENT settled paints must produce two DIFFERENT versions.
+    expect(afterSecondPaint).not.toBe(afterFirstPaint);
+  });
+
+  it("switching to a different map updates imageUrl to the new map name", () => {
+    const { img, rerender } = renderMapCanvas();
+    expect(img.src).toContain("/api/render/Foo.png");
+
+    rerender(<MapCanvas mapName="Bar" data={DATA} />);
+    expect(img.src).toContain("/api/render/Bar.png");
+    expect(img.src).not.toContain("/api/render/Foo.png");
+  });
+
+  // ---------------------------------------------------------------------
+  // Spec-review fix (issue 4): both non-negotiable invariants this whole
+  // mechanism exists for had zero automated coverage -- only the
+  // implementer's own manual live-verify. jsdom cannot reproduce a real
+  // image-load TIMING RACE, but it CAN prove the effect WIRING that both
+  // invariants actually live in, using mountReady's own fireEvent.load
+  // simulation. These two tests are written to fail if the guard they name
+  // is ever accidentally removed -- confirmed by temporarily deleting each
+  // guard and re-running (see the implementer report's fix-round notes).
+  // ---------------------------------------------------------------------
+
+  it("issue 4a: pan/zoom survives a same-map paint reload -- fails if fittedForMapRef's once-per-map guard is ever removed", async () => {
+    const session = makeEditSession({ blocks: DATA.blocks });
+    const { canvas, img, rerender } = await mountReady({ editSession: session });
+
+    fireEvent.click(screen.getByRole("button", { name: "2×" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "2×" }).getAttribute("aria-pressed")).toBe("true"));
+
+    const urlBefore = img.src;
+
+    // First post-mount blocks change: presumed reseed tick, absorbed with
+    // no bump (see the v= cache-bust test above) -- included so the SECOND
+    // change below is the one that actually schedules a reload, matching
+    // the real app's own timeline (the natural reseed always lands before
+    // a user could possibly have painted yet).
+    const session2 = { ...session, blocks: [...session.blocks] };
+    rerender(<MapCanvas mapName="Foo" data={DATA} editSession={session2} />);
+
+    // The real paint.
+    const session3 = { ...session2, blocks: [...session2.blocks] };
+    rerender(<MapCanvas mapName="Foo" data={DATA} editSession={session3} />);
+
+    // Real wait past the debounce window (see PAINT_VERSION_DEBOUNCE_MS).
+    await new Promise((r) => setTimeout(r, 300));
+    expect(img.src).not.toBe(urlBefore); // confirms a real reload was actually scheduled, not a no-op
+
+    // The browser finishes loading the freshly-painted image.
+    fireEvent.load(img);
+    await waitFor(() => expect(ctxByCanvas.get(canvas)!.drawImage.mock.calls.length).toBeGreaterThan(0));
+
+    // The single most likely thing to silently regress (per this task's
+    // own brief): a naive "just bump imgLoaded on reload" implementation
+    // re-fires the fit() effect on every reload and snaps zoom back to 1x.
+    // It must not -- this assertion fails the instant fittedForMapRef's
+    // `fittedForMapRef.current !== mapName` guard is removed or weakened.
+    expect(screen.getByRole("button", { name: "2×" }).getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("issue 4b: the composite effect waits for the real reload before redrawing -- fails if the imageUrl-keyed imgLoaded reset is ever removed", async () => {
+    const session = makeEditSession({ blocks: DATA.blocks });
+    const { img, rerender, stageCtx } = await mountReady({ editSession: session });
+
+    const urlBefore = img.src;
+
+    // Presumed reseed tick, absorbed -- see the tests above.
+    const session2 = { ...session, blocks: [...session.blocks] };
+    rerender(<MapCanvas mapName="Foo" data={DATA} editSession={session2} />);
+
+    // The real paint -- schedules a debounced version bump.
+    const session3 = { ...session2, blocks: [...session2.blocks] };
+    rerender(<MapCanvas mapName="Foo" data={DATA} editSession={session3} />);
+
+    await new Promise((r) => setTimeout(r, 300));
+    expect(img.src).not.toBe(urlBefore); // the URL genuinely changed...
+
+    // ...but the <img> element has not fired its OWN load event yet (no
+    // `fireEvent.load` below this line yet) -- same as a real network
+    // round trip still in flight. Capture the draw count right here: this
+    // sanity-checks nothing unrelated snuck in a draw, though the REAL
+    // teeth are in the next assertion below.
+    const drawsBeforeLoad = stageCtx.drawImage.mock.calls.length;
+
+    // THIS is the discriminating step. A broken version of the
+    // imageUrl-keyed imgLoaded reset (removed, or merged back into the old
+    // [mapName]-only effect) leaves imgLoaded stuck `true` the whole time
+    // -- so this `load` event's own `setImgLoaded(true)` is a no-op
+    // (setting state to its current value), React never re-renders from
+    // it, the composite effect never re-fires, and drawImage's count would
+    // stay frozen at `drawsBeforeLoad` forever. With the fix, imgLoaded was
+    // reset to `false` when the URL changed, so this `load` event is a
+    // genuine false->true transition that reliably re-fires the composite
+    // (and therefore blit) effect.
+    fireEvent.load(img);
+    await waitFor(() => expect(stageCtx.drawImage.mock.calls.length).toBeGreaterThan(drawsBeforeLoad));
+  });
+
+  // ---------------------------------------------------------------------
+  // Task 11: painting wired into the existing pan/hover handlers via an
+  // OPTIONAL editSession/activeTool prop pair.
+  // ---------------------------------------------------------------------
+
+  it("with no editSession prop, mouse-down still pans exactly as before -- zero behavior change for read-only consumers", () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    const { canvas } = renderMapCanvas();
+    fireEvent.mouseDown(canvas, { clientX: 10, clientY: 10, button: 0 });
+    fireEvent.mouseMove(canvas, { clientX: 20, clientY: 20 });
+    fireEvent.mouseUp(canvas);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("with an editSession and a pencil tool active, mouse-down begins a stroke and paints the hovered block instead of panning", async () => {
+    const editSession = makeEditSession();
+    const { canvas } = renderMapCanvas({ editSession, activeTool: { kind: "pencil", stamp: { width: 1, height: 1, cells: [{ metatileId: 5 }] } } });
+    await act(async () => {
+      fireEvent.mouseDown(canvas, { clientX: 16, clientY: 16, button: 0 }); // inside block (0,0) at 1x zoom, 16px/tile, before any pan/fit has run
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(editSession.beginStroke).toHaveBeenCalled();
+    expect(editSession.applyPaint).toHaveBeenCalledWith(expect.objectContaining({ tool: "pencil" }));
+    // endStroke is deliberately NOT synchronous with mouseup -- it awaits
+    // whatever paint is still in flight first (pendingPaintRef in the real
+    // component; a live-browser-only bug this project's own review caught:
+    // without the wait, a plain click's own /paint/end request can reach
+    // the server BEFORE its /paint/apply, silently dropping the paint from
+    // the undo stack). waitFor, not a fixed tick count, for the same
+    // "don't assume a magic number of microtasks" reasoning as mousedown's
+    // own flush above.
+    fireEvent.mouseUp(canvas);
+    await waitFor(() => expect(editSession.endStroke).toHaveBeenCalled());
+  });
+
+  // Critical code-review fix: rect had its OWN, worse variant of the
+  // pencil race above -- rectStartRef.current is only set inside
+  // beginStroke().then(...), so a fast down-then-up could reach onMouseUp
+  // before that callback ran; the pre-fix code read rectStartRef.current
+  // synchronously, found it null, and fell into the generic "else: just
+  // endStroke()" branch -- applyPaint for the rect never fired AT ALL (not
+  // merely left out of undo, silently dropped with no error). A
+  // controlled, manually-resolved beginStroke promise reproduces the race
+  // deterministically, rather than hoping real timing cooperates.
+  it("a rect stroke released before begin() resolves still paints the rect, not silently dropped -- reproduces the review-caught race", async () => {
+    let resolveBegin!: () => void;
+    const beginPromise = new Promise<void>((resolve) => { resolveBegin = resolve; });
+    const editSession = makeEditSession({ beginStroke: vi.fn(() => beginPromise) });
+    const { canvas } = renderMapCanvas({ editSession, activeTool: { kind: "rect", stamp: { width: 1, height: 1, cells: [{ metatileId: 7 }] } } });
+
+    // Fast down-then-up, deliberately BEFORE begin() ever resolves.
+    fireEvent.mouseDown(canvas, { clientX: 16, clientY: 16, button: 0 });
+    fireEvent.mouseUp(canvas, { clientX: 32, clientY: 32, button: 0 });
+    // Nothing can have fired yet -- both handlers are still waiting on
+    // pendingPaintRef, which is still the unresolved beginStroke() promise.
+    expect(editSession.applyPaint).not.toHaveBeenCalled();
+    expect(editSession.endStroke).not.toHaveBeenCalled();
+
+    resolveBegin();
+    await waitFor(() => expect(editSession.applyPaint).toHaveBeenCalledWith(expect.objectContaining({ tool: "rect" })));
+    await waitFor(() => expect(editSession.endStroke).toHaveBeenCalled());
+    // Order matters, not just "both got called eventually" -- apply must
+    // still land before end, exactly like the pencil race fix above.
+    // vi.mocked(...): makeEditSession()'s own return type is the plain
+    // UseEditSessionResult interface (Task 14 -- so a mock built from it
+    // structurally satisfies MapCanvas's editSession prop without a second,
+    // looser type also needing upkeep), which erases each vi.fn()'s own
+    // concrete Mock type down to its interface signature. The underlying
+    // runtime object is still a real mock either way; this just re-asserts
+    // that to the type checker rather than reaching for `any`.
+    const applyOrder = vi.mocked(editSession.applyPaint).mock.invocationCallOrder[0]!;
+    const endOrder = vi.mocked(editSession.endStroke).mock.invocationCallOrder[0]!;
+    expect(applyOrder).toBeLessThan(endOrder);
+  });
+
+  // Important code-review fix: without mirroring onMouseUp's cleanup here,
+  // a drag that leaves the canvas mid-gesture (so React's own onMouseUp
+  // never fires at all) left the server-side session's stroke open
+  // indefinitely -- the next stroke's begin() does not override an
+  // already-open one (paintRoutes.test.ts's own stray-double-begin test),
+  // so two unrelated edits would get squashed into one undo step.
+  it("mouse leaving the canvas mid-stroke ends it too, mirroring mouse-up -- a drag that exits the canvas must not leave the stroke open forever", async () => {
+    const editSession = makeEditSession();
+    const { canvas } = renderMapCanvas({ editSession, activeTool: { kind: "pencil", stamp: { width: 1, height: 1, cells: [{ metatileId: 5 }] } } });
+    await act(async () => {
+      fireEvent.mouseDown(canvas, { clientX: 16, clientY: 16, button: 0 });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(editSession.beginStroke).toHaveBeenCalled();
+
+    fireEvent.mouseLeave(canvas); // no mouseup -- the drag left the canvas instead
+    await waitFor(() => expect(editSession.endStroke).toHaveBeenCalled());
+  });
+
+  it("mouse leaving before a rect's begin() resolves abandons the rect unpainted, but still ends the stroke rather than leaving it open", async () => {
+    const editSession = makeEditSession();
+    const { canvas } = renderMapCanvas({ editSession, activeTool: { kind: "rect", stamp: { width: 1, height: 1, cells: [{ metatileId: 5 }] } } });
+    fireEvent.mouseDown(canvas, { clientX: 16, clientY: 16, button: 0 });
+    fireEvent.mouseLeave(canvas);
+    await waitFor(() => expect(editSession.endStroke).toHaveBeenCalled());
+    expect(editSession.applyPaint).not.toHaveBeenCalled(); // abandoned, not guessed at from the exit point
+  });
+
+  it("panning still works even with an editSession present, as long as no tool is selected (activeTool null)", () => {
+    const editSession = makeEditSession();
+    const { canvas } = renderMapCanvas({ editSession, activeTool: null });
+    fireEvent.mouseDown(canvas, { clientX: 10, clientY: 10, button: 0 });
+    fireEvent.mouseMove(canvas, { clientX: 30, clientY: 30 });
+    fireEvent.mouseUp(canvas);
+    expect(editSession.beginStroke).not.toHaveBeenCalled();
+  });
+
+  // ---------------------------------------------------------------------
+  // Task 12: collision/elevation painting. The "collision" tool goes
+  // through the SAME beginStroke().then(() => paintAt(...)) chain pencil
+  // uses (Task 11's own race-safe pipeline -- pendingPaintRef, endActiveStroke)
+  // rather than a new parallel code path, so it needs the same async-flush
+  // treatment the pencil test above needed.
+  // ---------------------------------------------------------------------
+
+  it("with the collision tool active, mouse-down paints collision+elevation only, and forces the collision overlay visible", async () => {
+    const editSession = makeEditSession();
+    const { canvas, getByTestId } = renderMapCanvas({ editSession, activeTool: { kind: "collision", value: { collision: 1, elevation: 0 } } });
+    await act(async () => {
+      fireEvent.mouseDown(canvas, { clientX: 16, clientY: 16, button: 0 }); // inside block (0,0) at 1x zoom, before any pan/fit has run
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(editSession.beginStroke).toHaveBeenCalled();
+    expect(editSession.applyPaint).toHaveBeenCalledWith(expect.objectContaining({
+      tool: "pencil",
+      stamp: { width: 1, height: 1, cells: [{ collision: 1, elevation: 0 }] },
+    }));
+
+    // Forced on even though nothing toggled "Collision" -- the manual
+    // toggle button itself still reads its own state, unaffected.
+    expect(getByTestId("collision-overlay").getAttribute("data-visible")).toBe("true");
+    expect(screen.getByRole("button", { name: "Collision" }).getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("switching away from the collision tool lets the manual Collision toggle govern the overlay again", () => {
+    const editSession = makeEditSession();
+    const { rerender, queryByTestId } = renderMapCanvas({ editSession, activeTool: { kind: "collision", value: { collision: 0, elevation: 0 } } });
+    expect(queryByTestId("collision-overlay")).toBeTruthy();
+
+    rerender(<MapCanvas mapName="Foo" data={DATA} editSession={editSession} activeTool={{ kind: "pencil", stamp: { width: 1, height: 1, cells: [{ metatileId: 5 }] } }} />);
+    expect(queryByTestId("collision-overlay")).toBeNull(); // no manual toggle on, no forcing tool active either
+  });
+
+  // Code-review fix: StampCell.metatileId became optional for the collision
+  // tool's sake, which means nothing at the TYPE level stops a future
+  // caller from routing a collision-only stamp through "bucket" too. A bare
+  // non-null assertion on cell.metatileId there would make that a silent
+  // lie at runtime; this must be a real guard that no-ops instead.
+  it("bucket tool with a stamp cell that has no metatileId (a shape only the collision tool should ever produce) safely no-ops rather than crashing or sending a bogus replacement", async () => {
+    const editSession = makeEditSession();
+    const { canvas } = renderMapCanvas({ editSession, activeTool: { kind: "bucket", stamp: { width: 1, height: 1, cells: [{ collision: 1, elevation: 0 }] } } });
+    await act(async () => {
+      fireEvent.mouseDown(canvas, { clientX: 16, clientY: 16, button: 0 });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(editSession.beginStroke).toHaveBeenCalled(); // stroke still begins...
+    expect(editSession.applyPaint).not.toHaveBeenCalled(); // ...but nothing sensible to flood-fill with, so no-op
+  });
+
+  // ---------------------------------------------------------------------
+  // Task 14: on-canvas event selection and drag-to-move. None of these
+  // three tests need img-load (mountReady) -- the hit-test/pan math runs
+  // straight off `data.map`/pan/zoom/origin, all available before the
+  // source image has ever loaded, so plain renderMapCanvas is enough (the
+  // same reason the Task 11 pan/paint tests just above never call
+  // mountReady either).
+  // ---------------------------------------------------------------------
+
+  it("in edit mode with events present, clicking on an event marker selects it and calls onSelectEvent", () => {
+    const data = makeMapLayoutDataWithEvents(); // one object_event at block (1,1)
+    const onSelectEvent = vi.fn();
+    const { canvas } = renderMapCanvas({ data, editSession: makeEditSession(), activeTool: null, onSelectEvent });
+    // Block (1,1)'s composite-space square is [ORIGIN+16, ORIGIN+32) x
+    // [ORIGIN+16, ORIGIN+32); ORIGIN+24 = 40 sits inside it on both axes.
+    fireEvent.mouseDown(canvas, { clientX: ORIGIN + 24, clientY: ORIGIN + 24, button: 0 });
+    fireEvent.mouseUp(canvas);
+    expect(onSelectEvent).toHaveBeenCalledWith({ kind: "object", index: 0 });
+  });
+
+  it("clicking empty canvas (no marker under the cursor) calls onSelectEvent with null, deselecting", () => {
+    const data = makeMapLayoutDataWithEvents();
+    const onSelectEvent = vi.fn();
+    const { canvas } = renderMapCanvas({ data, editSession: makeEditSession(), activeTool: null, onSelectEvent });
+    fireEvent.mouseDown(canvas, { clientX: 50 * 16, clientY: 50 * 16, button: 0 }); // far outside the fixture's only event
+    fireEvent.mouseUp(canvas);
+    expect(onSelectEvent).toHaveBeenCalledWith(null);
+  });
+
+  it("dragging a selected event marker to a new cell calls onMoveEvent with the new x/y once, on mouseup (not on every mousemove frame)", () => {
+    const data = makeMapLayoutDataWithEvents();
+    const onMoveEvent = vi.fn();
+    const { canvas } = renderMapCanvas({
+      data, editSession: makeEditSession(), activeTool: null,
+      // onSelectEvent must be present too -- it's what gates the whole
+      // select/drag branch in onMouseDown (see MapCanvas.tsx's own doc
+      // comment on that prop); App.tsx always wires both together in
+      // practice, this test mirrors that rather than exercising a
+      // combination the real app never produces.
+      onSelectEvent: vi.fn(),
+      selectedEventRef: { kind: "object", index: 0 }, onMoveEvent,
+    });
+    // Mousedown on the marker at block (1,1) starts the drag (the hit-test
+    // re-derives {kind,index} itself; selectedEventRef only drives the
+    // visual ring, see MapCanvas.tsx's own doc comment on that prop).
+    fireEvent.mouseDown(canvas, { clientX: ORIGIN + 24, clientY: ORIGIN + 24, button: 0 });
+    // Drag toward block (0,0) -- composite-space (24,24) is inside its
+    // square, [ORIGIN, ORIGIN+16) on both axes.
+    fireEvent.mouseMove(canvas, { clientX: 24, clientY: 24 });
+    expect(onMoveEvent).not.toHaveBeenCalled(); // preview only, never mid-drag
+    // A real mouseup carries the cursor's actual, current position -- same
+    // pattern the rect-tool race test above uses (fireEvent.mouseUp(canvas,
+    // { clientX, clientY, button: 0 })) rather than an event with no
+    // coordinates at all.
+    fireEvent.mouseUp(canvas, { clientX: 24, clientY: 24, button: 0 });
+    expect(onMoveEvent).toHaveBeenCalledWith({ kind: "object", index: 0, x: 0, y: 0 });
+  });
+
+  // ---------------------------------------------------------------------
+  // Follow-up 3: dropper (click-to-pick, no stroke lifecycle) and shift
+  // (drag-to-shift, rect-shaped lifecycle).
+  // ---------------------------------------------------------------------
+
+  it("dropper: clicking a cell calls onDropperPick with that cell's real metatileId/collision/elevation, and never touches the paint-stroke lifecycle", () => {
+    const editSession = makeEditSession({ blocks: DATA.blocks });
+    const onDropperPick = vi.fn();
+    const { canvas } = renderMapCanvas({ editSession, activeTool: { kind: "dropper" }, onDropperPick });
+
+    // Block (1,0) -- fixture DATA's second cell, metatileId 0x11, collision
+    // 1, elevation 3 (see DATA.blocks above). Composite-space (40, 20) sits
+    // inside its square [ORIGIN+16, ORIGIN+32) x [ORIGIN, ORIGIN+16).
+    fireEvent.mouseDown(canvas, { clientX: ORIGIN + 24, clientY: ORIGIN + 4, button: 0 });
+    fireEvent.mouseUp(canvas, { clientX: ORIGIN + 24, clientY: ORIGIN + 4, button: 0 });
+
+    expect(onDropperPick).toHaveBeenCalledWith({
+      width: 1,
+      height: 1,
+      cells: [{ metatileId: 0x11, collision: 1, elevation: 3 }],
+    });
+    expect(editSession.beginStroke).not.toHaveBeenCalled();
+    expect(editSession.applyPaint).not.toHaveBeenCalled();
+    expect(editSession.endStroke).not.toHaveBeenCalled();
+  });
+
+  it("dropper: clicking off the map calls neither onDropperPick nor any paint method", () => {
+    const editSession = makeEditSession({ blocks: DATA.blocks });
+    const onDropperPick = vi.fn();
+    const { canvas } = renderMapCanvas({ editSession, activeTool: { kind: "dropper" }, onDropperPick });
+
+    fireEvent.mouseDown(canvas, { clientX: 1000, clientY: 1000, button: 0 });
+    fireEvent.mouseUp(canvas, { clientX: 1000, clientY: 1000, button: 0 });
+
+    expect(onDropperPick).not.toHaveBeenCalled();
+    expect(editSession.beginStroke).not.toHaveBeenCalled();
+  });
+
+  it("shift: a drag from one cell to another applies {tool:'shift', dx, dy} computed from the two cells, and beginStroke/endStroke fire around it (rect's own lifecycle)", async () => {
+    const editSession = makeEditSession();
+    const { canvas } = renderMapCanvas({ editSession, activeTool: { kind: "shift" } });
+
+    // Mousedown inside block (0,0) (composite (20,20)), mouseup inside
+    // block (1,1) (composite (ORIGIN+24, ORIGIN+24) = (40,40)) -- a
+    // positive-direction shift, dx=+1, dy=+1.
+    await act(async () => {
+      fireEvent.mouseDown(canvas, { clientX: 20, clientY: 20, button: 0 });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(editSession.beginStroke).toHaveBeenCalled();
+
+    fireEvent.mouseUp(canvas, { clientX: ORIGIN + 24, clientY: ORIGIN + 24, button: 0 });
+    await waitFor(() => expect(editSession.applyPaint).toHaveBeenCalledWith({ tool: "shift", dx: 1, dy: 1 }));
+    await waitFor(() => expect(editSession.endStroke).toHaveBeenCalled());
+  });
+
+  it("shift: a drag in the negative direction computes negative dx/dy", async () => {
+    const editSession = makeEditSession();
+    const { canvas } = renderMapCanvas({ editSession, activeTool: { kind: "shift" } });
+
+    // Mousedown inside block (1,1) (composite (40,40)), mouseup inside
+    // block (0,0) (composite (20,20)) -- dx=-1, dy=-1.
+    await act(async () => {
+      fireEvent.mouseDown(canvas, { clientX: ORIGIN + 24, clientY: ORIGIN + 24, button: 0 });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(editSession.beginStroke).toHaveBeenCalled();
+
+    fireEvent.mouseUp(canvas, { clientX: 20, clientY: 20, button: 0 });
+    await waitFor(() => expect(editSession.applyPaint).toHaveBeenCalledWith({ tool: "shift", dx: -1, dy: -1 }));
+    await waitFor(() => expect(editSession.endStroke).toHaveBeenCalled());
+  });
+
+  // Code-quality review fix: a zero-length drag (mousedown+mouseup at the
+  // SAME cell -- a plain click) is a real, harmless no-op per this task's
+  // own spec (shiftGrid(0,0) maps every block to itself, and the server's
+  // own /paint/end diff-check means no undo entry gets pushed) -- but that
+  // is a claim about the SERVER's behaviour, not a reason to special-case
+  // it client-side. This pins that applyPaint IS still called with
+  // dx:0/dy:0 (not silently skipped in MapCanvas itself), matching the two
+  // tests above rather than asserting a new, different code path.
+  it("shift: a zero-length drag (plain click, no movement) still applies {tool:'shift', dx:0, dy:0} -- not skipped client-side", async () => {
+    const editSession = makeEditSession();
+    const { canvas } = renderMapCanvas({ editSession, activeTool: { kind: "shift" } });
+
+    await act(async () => {
+      fireEvent.mouseDown(canvas, { clientX: 20, clientY: 20, button: 0 }); // block (0,0)
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(editSession.beginStroke).toHaveBeenCalled();
+
+    fireEvent.mouseUp(canvas, { clientX: 20, clientY: 20, button: 0 }); // same block (0,0)
+    await waitFor(() => expect(editSession.applyPaint).toHaveBeenCalledWith({ tool: "shift", dx: 0, dy: 0 }));
+    await waitFor(() => expect(editSession.endStroke).toHaveBeenCalled());
   });
 });

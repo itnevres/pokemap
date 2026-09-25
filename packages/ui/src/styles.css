@@ -67,6 +67,40 @@
      --overlay-grid/--overlay-collision above, not a hardcoded constant. */
   --overlay-spotlight-dim: rgba(4, 8, 16, 0.72);
 
+  /* Feature B's destination-popup scrim (Task 8). Review fix: this used to
+     be a bare rgba() literal inline on .warp-modal__backdrop below, with no
+     light-theme override -- the SAME base RGB as --overlay-spotlight-dim's
+     own dark value above, and the exact defect that token's own review-fix
+     comment already documents: in light mode it punched a near-black hole
+     over the app instead of the muted scrim every other overlay achieves via
+     its own light-mode override. A themed token, overridden in
+     [data-theme="light"] just like --overlay-spotlight-dim, not a hardcoded
+     constant. */
+  --overlay-modal-scrim: rgba(4, 8, 16, 0.6);
+
+  /* Multi-select move: selection outlines and the live marquee rect share
+     one cyan hue, distinct from every other overlay token above (accent
+     green, warn amber, danger red, elevation blue/orange) so a selected
+     map's outline never reads as a lens tint or a conflict badge. */
+  --overlay-selection: #22d3ee;
+
+  /* Dungeon connection lines (Feature C): deterministic per-connection
+     colour, assigned by a stable sort order (source map name, then the
+     warp's own index within it), not randomised or hashed -- so the same
+     connection reads the same colour across sessions without persisting
+     anything (spec §5.5). Eight visually distinct hues, none reused from
+     any other overlay token above (selection cyan, conflict/danger red,
+     dive/emerge blue/orange, warn amber) so a connection line never
+     misreads as one of those existing meanings. */
+  --connection-1: #e879f9;
+  --connection-2: #34d399;
+  --connection-3: #fb923c;
+  --connection-4: #60a5fa;
+  --connection-5: #facc15;
+  --connection-6: #f472b6;
+  --connection-7: #2dd4bf;
+  --connection-8: #a78bfa;
+
   --font-ui: "IBM Plex Sans", system-ui, sans-serif;
   --font-data: "JetBrains Mono", ui-monospace, "Cascadia Code", monospace;
 
@@ -112,6 +146,13 @@
      value (#0f172a) at high opacity, not literal black, so a dimmed map
      still reads as "muted" rather than "a hole punched in the page." */
   --overlay-spotlight-dim: rgba(15, 23, 42, 0.65);
+  /* Same near-black-slate darkening approach as --overlay-spotlight-dim's
+     own light value just above, at the dark value's original 0.6 opacity --
+     --text-primary's own dark value (#0f172a), not literal black, so the
+     scrim behind the destination-popup panel still reads as "dimmed" rather
+     than "a hole punched in the page." */
+  --overlay-modal-scrim: rgba(15, 23, 42, 0.6);
+  --overlay-selection: #0891b2;
   --focus-ring: #2563eb;
 }
 
@@ -188,6 +229,135 @@ input {
   background: var(--bg-canvas);
   display: flex;
   flex-direction: column;
+}
+
+/* Task 13: wraps Toolbar (+ the collision value strip, while that tool is
+   active) above MapCanvas in Map mode -- a transparent flex-column
+   pass-through, same shape as `.map-canvas` itself just below, so MapCanvas
+   still fills all remaining height exactly as it did as `.app__canvas`'s
+   sole direct child before this wrapper existed. */
+.app__map-editing {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.app__collision-strip {
+  flex: 0 0 auto;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+}
+
+/* Plan 2 follow-up 1: hosts MetatilePalette above the canvas, same slot
+   .app__collision-strip occupies for the collision tool. Unlike that one
+   fixed-height row, a real layout's grid can run 60+ rows (500+ metatiles at
+   8 columns) -- unconstrained, mounting this would push the canvas off
+   screen. Capped well under .app__body's typical available height (a few
+   hundred px on a normal window) and scrollable on its own;
+   .metatile-palette itself already carries `overflow-y: auto`, this just
+   gives it a bounded box to actually scroll within. */
+.app__metatile-strip {
+  flex: 0 0 auto;
+  max-height: 240px;
+  overflow-y: auto;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
+}
+
+/* Task 14: wraps MapCanvas + EventInspector in a row -- MapCanvas keeps its
+   own `flex: 1 1 auto` (still the one element in this whole screen with no
+   max-width, per DESIGN.md's "what the canvas is owed"), EventInspector
+   takes a fixed width alongside it, same shape app__body/app__sidebar
+   already use one level up for the map tree, just on the canvas's other
+   edge. Transparent pass-through, not a second background layer. */
+.app__map-editing-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+}
+
+/* Review fix: same danger-bordered-panel technique as .save-dialog__refusal
+   (border: 1px solid var(--danger) on the ordinary panel background, no
+   tint) -- a failed move/add/delete reuses that convention rather than
+   inventing a second one. Sits below the toolbar/collision strip, above
+   the canvas+inspector row, so it's visible regardless of which side
+   triggered the failure. */
+.app__event-op-error {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin: var(--space-2) var(--space-3) 0;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--danger);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+}
+
+.app__event-op-error-dismiss {
+  flex: 0 0 auto;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: var(--text-base);
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 var(--space-1);
+}
+
+.app__event-op-error-dismiss:hover {
+  color: var(--text-primary);
+}
+
+.app__event-op-error-dismiss:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* Task 17: one-shot "sign added" confirmation -- identical layout to
+   .app__event-op-error just above, accent-toned (border: 1px solid
+   var(--accent), the same "primary action succeeded" hue every commit
+   button in this app already uses) instead of danger-toned, since this
+   reports a success rather than a failure. */
+.app__sign-added {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin: var(--space-2) var(--space-3) 0;
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+}
+
+.app__sign-added-dismiss {
+  flex: 0 0 auto;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: var(--text-base);
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 var(--space-1);
+}
+
+.app__sign-added-dismiss:hover {
+  color: var(--text-primary);
+}
+
+.app__sign-added-dismiss:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
 }
 
 .app__canvas-placeholder {
@@ -281,6 +451,45 @@ input {
   background: var(--bg-selected);
   color: var(--text-primary);
   font-weight: 600;
+}
+
+/* Feature A (dungeon-mode-and-warp-tools spec §3.3): the sidebar's third
+   visual state in World mode -- a map that isn't currently drawn, either
+   because it has no placement at all or because its type is hidden by
+   default. Review fix: this used to be --text-muted plus `opacity: 0.6`,
+   which (a) composited to roughly 2.1-2.2:1 against --bg-panel in both
+   themes, well under DESIGN.md's own 4.5:1 accessibility rule ("targets at
+   least 4.5:1... rather than relying on opacity tricks that quietly fail
+   it"), and (b) inverted on hover, since .map-tree__map:hover's own `color:
+   var(--text-primary)` (declared above, equal specificity) still applied
+   while only opacity changed here -- a hovered greyed row rendered BRIGHTER
+   than an ordinary row.
+   Checked plain (no-opacity) --text-muted (#64748b) against --bg-panel's
+   own hex in both themes before using it here: only ~3.45:1 in dark
+   (#64748b on #161f33) and ~4.34:1 in light (#64748b on #f1f5f9) -- both
+   still short of the 4.5:1 body-text bar. Per this fix's own fallback, uses
+   --text-secondary instead (~6.41:1 dark, ~6.92:1 light -- clears both
+   comfortably), the same token .map-canvas__legend/.world-canvas__legend
+   already use directly against --bg-panel for dimmed-but-legible text
+   elsewhere in this file. That is also an ordinary row's own resting
+   colour, though, so colour alone can no longer mark a row greyed here --
+   font-style: italic carries that instead (not colour, and not opacity: a
+   real font attribute a screenshot or a colour-blind user reads the same
+   as anyone else), together with the title/cursor below, matching
+   DESIGN.md's "colour is never the sole carrier of meaning" several ways
+   over. Italic over a lighter font-weight because only 400/500/600 are
+   loaded (see this file's own @import) -- a "300" would just silently
+   fall back to 400 and vanish. No separate :hover/[aria-current] override
+   is needed: this now shares the exact same colour ladder as an ordinary
+   row (secondary at rest, primary on hover per .map-tree__map:hover and
+   [aria-current="true"] above), so nothing here can invert or fight either
+   one -- only the italic and cursor mark it as greyed, and both persist
+   through hover and selection unchanged. Draggable, like WorldCanvas.tsx's
+   own .world-canvas__rail-item. */
+.map-tree__map--greyed {
+  color: var(--text-secondary);
+  font-style: italic;
+  cursor: grab;
 }
 
 .map-tree__empty {
@@ -444,8 +653,8 @@ input {
   color: var(--text-muted);
 }
 
-/* App-level mode switch (Map / World) -- Task 25 adds a second top-level
-   view, so App.tsx's toolbar needs a way to pick between them. */
+/* App-level mode switch (Map / World / Dungeon) -- three top-level views,
+   picked via App.tsx's toolbar buttons. */
 .app__mode {
   display: flex;
   gap: var(--space-1);
@@ -498,7 +707,7 @@ input {
   text-overflow: ellipsis;
 }
 
-.world-canvas__dungeon-label {
+.world-canvas__switch-label {
   font-size: var(--text-xs);
   color: var(--text-secondary);
   user-select: none;
@@ -1064,6 +1273,7 @@ input {
    the actual overlay WorldCanvas renders from the data these controls hand
    it back via onHits/onChange. */
 .species-spotlight {
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--space-2);
@@ -1113,6 +1323,41 @@ input {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.species-spotlight__dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 6;
+  margin: var(--space-1) 0 0;
+  padding: var(--space-1) 0;
+  max-height: 240px;
+  overflow-y: auto;
+  list-style: none;
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  min-width: 200px;
+}
+
+.species-spotlight__option {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: var(--space-1) var(--space-3);
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.species-spotlight__option:hover,
+.species-spotlight__option--active {
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 
 .lens-panel {
@@ -1282,6 +1527,89 @@ input {
   background: var(--overlay-spotlight-dim);
 }
 
+/* Feature B (spec §4.1): warp markers, a small dot per warp tile among
+   currently-visible placements. Reuses --event-warp -- the colour
+   MapCanvas's own event overlay already established for "this is a warp"
+   -- rather than inventing a second colour for the same meaning. */
+.world-canvas__warps {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 4;
+}
+
+.world-canvas__warp-marker {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  margin-left: -4px;
+  margin-top: -4px;
+  border-radius: 50%;
+  background: var(--event-warp);
+  border: 1px solid var(--bg-canvas);
+}
+
+/* Feature C: dungeon connection lines, one <line> per in-dungeon warp
+   connection -- see WorldCanvas.tsx's own connectionLines memo for the
+   deterministic per-connection colour assignment. */
+.world-canvas__connections {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 4;
+}
+
+/* Review fix: neither rule declared a z-index (computed `auto`), so both
+   painted underneath .world-canvas__lens/.world-canvas__spotlight (z-index:
+   2, above) and .encounter-gutter (z-index: 5, above) -- confirmed live via
+   elementsFromPoint on the real app: a selected map's outline sat under a
+   spotlight's dim and under a lens tint, and the live marquee sat under
+   both AND under the whole encounter gutter. Selection outlines sit above
+   every existing overlay (6); the marquee -- a live in-progress gesture the
+   user is actively watching drag out -- sits a layer above even that (7),
+   so it is never hidden mid-drag by anything else on screen. */
+.world-canvas__selection {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 6;
+}
+
+.world-canvas__selection-outline {
+  position: absolute;
+  box-sizing: border-box;
+  border: 2px solid var(--overlay-selection);
+  border-radius: 2px;
+}
+
+/* Map-list jump (Task 2): wrapped in the SAME .world-canvas__selection
+   z-index:6 container as the real selection outlines above (see that
+   rule's own review-fix comment) -- a bare sibling div here would
+   reproduce the exact layering bug that fix already covers, since
+   .world-canvas__lens/.world-canvas__spotlight each establish their own
+   stacking context and would still paint over an unwrapped z-index:auto
+   element regardless of DOM order. */
+.world-canvas__jump-highlight {
+  animation: world-canvas-jump-fade 2s ease-out forwards;
+}
+
+@keyframes world-canvas-jump-fade {
+  0% { opacity: 1; }
+  70% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.world-canvas__marquee {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px dashed var(--overlay-selection);
+  background: rgba(34, 211, 238, 0.14);
+  pointer-events: none;
+  z-index: 7;
+}
+
 .world-canvas__spotlight-hit {
   position: absolute;
   outline: 2px solid var(--accent-strong);
@@ -1300,4 +1628,870 @@ input {
   font-weight: 600;
   border-radius: 3px;
   white-space: nowrap;
+}
+
+/* Feature B's destination popup. Fixed, full-viewport backdrop with a very
+   high z-index -- a top-level sibling by construction (see
+   WarpDestinationModal.tsx's own doc comment), so this only needs to
+   outrank every OTHER top-level z-index in this file (the highest so far
+   is .world-canvas__tooltip/.world-canvas__toast at 10). The sibling
+   placement is also load-bearing for a second, independent reason: no
+   ancestor of the modal (.app, .world-canvas, .world-canvas__body,
+   .world-canvas__viewport, etc.) establishes its own stacking context (none
+   sets transform/filter/contain/isolation or a non-auto z-index), and
+   .world-canvas__viewport additionally has `overflow: hidden` -- so a
+   nested, absolutely-positioned modal would have been CLIPPED by that
+   viewport regardless of z-index. Rendering as a genuine sibling of
+   .world-canvas__body sidesteps both problems at once, not just the
+   z-index one. Scrim colour is themed (--overlay-modal-scrim, see its own
+   review-fix comment above) rather than a raw literal. */
+.warp-modal__backdrop {
+  position: fixed;
+  inset: 0;
+  background: var(--overlay-modal-scrim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.warp-modal__panel {
+  width: min(720px, 90vw);
+  height: min(560px, 85vh);
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.warp-modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-panel);
+}
+
+.warp-modal__title {
+  font-family: var(--font-data);
+  font-size: var(--text-base);
+  color: var(--text-primary);
+}
+
+.warp-modal__close {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: var(--text-lg);
+  line-height: 1;
+  cursor: pointer;
+  padding: var(--space-1) var(--space-2);
+  border-radius: 4px;
+}
+
+.warp-modal__close:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.warp-modal__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.warp-modal__body .map-canvas {
+  flex: 1;
+}
+
+/* --- Dungeon sidebar (Feature C, spec §5.4) --- */
+
+.dungeon-sidebar {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.dungeon-sidebar__list {
+  list-style: none;
+  margin: 0;
+  padding: var(--space-2) 0;
+}
+
+.dungeon-sidebar__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-family: var(--font-data);
+  font-size: var(--text-sm);
+  padding: var(--space-1) var(--space-3);
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.dungeon-sidebar__item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.dungeon-sidebar__item[aria-current="true"] {
+  background: var(--bg-selected);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.dungeon-sidebar__item-count {
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+}
+
+.dungeon-sidebar__new {
+  margin: var(--space-2) var(--space-3);
+  background: var(--accent);
+  color: var(--text-on-accent);
+  border: none;
+  border-radius: 4px;
+  padding: var(--space-1) var(--space-2);
+  cursor: pointer;
+  font-size: var(--text-sm);
+}
+
+/* Review fix: "your last create/rename/etc failed" is a different concern
+   from .map-tree__empty ("the list itself is empty/unloaded"), which the
+   sidebar's `error` prop banner already uses just above -- a separate class
+   so the two never visually collide or get confused for one another. */
+.dungeon-sidebar__error {
+  margin: 0 var(--space-3) var(--space-2);
+  color: var(--danger);
+  font-size: var(--text-xs);
+}
+
+.dungeon-sidebar__create,
+.dungeon-sidebar__edit {
+  padding: var(--space-2) var(--space-3);
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.dungeon-sidebar__input {
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  padding: var(--space-1) var(--space-2);
+}
+
+.dungeon-sidebar__create-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.dungeon-sidebar__maps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.dungeon-sidebar__map-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: var(--font-data);
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  padding: var(--space-1) 0;
+}
+
+.dungeon-sidebar__map-row button {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: var(--text-base);
+  line-height: 1;
+}
+
+.dungeon-sidebar__map-row button:hover {
+  color: var(--danger);
+}
+
+.dungeon-sidebar__add-map {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.dungeon-sidebar__delete {
+  background: transparent;
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  border-radius: 4px;
+  padding: var(--space-1) var(--space-2);
+  cursor: pointer;
+  font-size: var(--text-sm);
+  align-self: flex-start;
+}
+
+/* Task 10 (Plan 2): the metatile palette panel -- search filter, then a
+   dense grid of 16x16 thumbnails, primary followed by secondary with a
+   labelled divider at the split boundary. Same panel shape as MapTree
+   (--bg-panel host, --space-2 padding) -- this is furniture around the
+   canvas, not the canvas itself (DESIGN.md's "what the canvas is owed"). */
+.metatile-palette {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-2);
+  background: var(--bg-panel);
+  overflow-y: auto;
+}
+
+.metatile-palette__search {
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-primary);
+  padding: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-2);
+  font-size: var(--text-sm);
+}
+
+.metatile-palette__search:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.metatile-palette__grid {
+  display: grid;
+  gap: var(--space-1);
+  align-content: start;
+}
+
+/* Full-width row (grid-column below spans the whole grid) naming the
+   REAL split.metatiles figure and layout_version -- DESIGN.md's own "getting
+   that number right is this entire project's reason to exist" status-strip
+   rule, restated here at the one other place a palette silently guesses
+   wrong without it. Data (the number, the version string), not chrome, so
+   --font-data even though it sits inside a label-toned divider. */
+.metatile-palette__boundary {
+  grid-column: 1 / -1;
+  padding: var(--space-1) var(--space-2);
+  margin: var(--space-1) 0;
+  border-top: 1px solid var(--border-strong);
+  color: var(--text-secondary);
+  font-family: var(--font-data);
+  font-size: var(--text-2xs);
+  white-space: nowrap;
+}
+
+.metatile-palette__cell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  cursor: pointer;
+  transition: background-color 150ms ease-out, border-color 150ms ease-out;
+}
+
+.metatile-palette__cell:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+}
+
+.metatile-palette__cell:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* Disabled AND struck through -- colour is never the only signal (DESIGN.md
+   accessibility baseline). The `::after` diagonal is a real line, not a CSS
+   `text-decoration` (which an <img> cannot carry), so it survives the thumb
+   underneath failing to load too. */
+.metatile-palette__cell--out-of-range {
+  cursor: not-allowed;
+  border-color: var(--border);
+  opacity: 0.55;
+}
+
+.metatile-palette__cell--out-of-range::after {
+  content: "";
+  position: absolute;
+  left: 1px;
+  right: 1px;
+  top: 50%;
+  height: 2px;
+  background: var(--danger);
+  transform: rotate(-20deg);
+  pointer-events: none;
+}
+
+/* Follow-up 6: the currently-picked metatile (echoed back via App.tsx's own
+   `currentStamp` as this component's `selected` prop) had zero visual
+   confirmation -- a pick worked (fed pencil/rect/bucket) but looked
+   identical to every other cell. Same selected/active-state pairing this
+   app already uses everywhere else (.map-canvas__btn[aria-pressed="true"],
+   .toolbar__tool-btn--active, .lens-panel__toggle[aria-pressed="true"]):
+   --bg-selected + --border-strong. Can't co-occur with --out-of-range in
+   practice (out-of-range cells are never selectable -- selectSingle/
+   selectRect both already skip them), but the out-of-range strike-through
+   (::after, a real red line) still paints on top regardless of background,
+   so the two would read fine together even if it somehow happened.
+   Confirmed live: `.metatile-palette__cell.metatile-palette__cell--selected`
+   alone (2 classes) loses the cascade to the existing
+   `.metatile-palette__cell:hover:not(:disabled)` rule just above (3
+   classes/pseudo-classes) regardless of source order -- hovering a selected
+   cell silently reverted it to the plain hover look. The extra
+   `:not(:disabled)` here is a no-op for real usage (a selected cell is never
+   disabled) but brings this rule to the same specificity, so -- combined
+   with sitting after the hover rule in source -- it wins the tie. */
+.metatile-palette__cell.metatile-palette__cell--selected:not(:disabled) {
+  background: var(--bg-selected);
+  border-color: var(--border-strong);
+}
+
+.metatile-palette__thumb {
+  width: 16px;
+  height: 16px;
+  image-rendering: pixelated;
+}
+
+/* Task 12: collision/elevation painter. Two swatch strips (collision 0-3,
+   elevation 0-15) sharing one look -- see the shared .collision-swatch/
+   .elevation-swatch rule below -- with the active swatch in each strip
+   marked the SAME way every other toggle in this app marks "on"
+   (.map-canvas__btn[aria-pressed="true"]'s own --bg-selected/--border-strong
+   pair), not a new selection convention. */
+.collision-palette {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  background: var(--bg-panel);
+}
+
+.collision-palette__label {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  margin-bottom: var(--space-1);
+}
+
+.collision-palette__strip {
+  display: flex;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+}
+
+.collision-swatch,
+.elevation-swatch {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-panel-raised);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  cursor: pointer;
+  transition: background-color 150ms ease-out, border-color 150ms ease-out, color 150ms ease-out;
+}
+
+.collision-swatch:hover,
+.elevation-swatch:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+}
+
+.collision-swatch:focus-visible,
+.elevation-swatch:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.collision-swatch[aria-pressed="true"],
+.elevation-swatch[aria-pressed="true"] {
+  background: var(--bg-selected);
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+/* Collision 1 is conventionally impassable -- its un-selected chrome
+   reuses the SAME red the live collision overlay tints impassable tiles
+   with (--overlay-collision, already an rgba token), rather than a
+   second, independently-invented "danger" colour, so the palette and the
+   painted map read as one system. aria-pressed above still wins when this
+   swatch is the active one (two selectors beat one, no !important needed). */
+.collision-swatch--1 {
+  background: var(--overlay-collision);
+  border-color: var(--overlay-collision);
+}
+
+/* Task 13: Toolbar -- tool selection, undo/redo, save entry point. Docked
+   above MapCanvas in Map mode, same toolbar-row shape as .map-canvas
+   __toolbar just above (bg-panel-raised, border-bottom, space-2/3
+   padding) -- one more instrument-panel strip, not a new visual language. */
+.toolbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: var(--space-2) var(--space-3);
+  background: var(--bg-panel-raised);
+  border-bottom: 1px solid var(--border);
+}
+
+.toolbar__tools,
+.toolbar__history,
+.toolbar__sign {
+  display: flex;
+  gap: var(--space-1);
+}
+
+/* .map-canvas__btn already supplies the base look (border, hover, aria-
+   pressed selected state); this just fixes the tool label's own casing --
+   ToolKind values ("pencil", "rect", ...) are lowercase identifiers, not
+   prose, but should still read as a normal button label. */
+.toolbar__tool-btn {
+  text-transform: capitalize;
+}
+
+.toolbar__save {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.toolbar__dirty-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--warn);
+  display: inline-block;
+}
+
+/* The one button in this app that is ever a primary "commit" action --
+   accent green (the palette's own "primary action" hue per DESIGN.md's
+   colour-token comment), distinct from every other plain .map-canvas__btn
+   which stays neutral until pressed/hovered. */
+.toolbar__save-btn:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+
+.toolbar__save-btn:not(:disabled):hover {
+  background: var(--accent);
+  color: var(--text-on-accent);
+}
+
+/* Plan 2 follow-up 5: same shape as .toolbar__save just above, its own
+   group so the two never visually merge into one. */
+.toolbar__discard {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* Same outlined-danger technique as .event-inspector__delete-btn (an
+   outline that only fills solid on hover) -- not a second, independently-
+   invented "danger button" look. Opposite hue from .toolbar__save-btn's own
+   accent green just above: opposite action, opposite direction, so a
+   player can't mistake one for the other at a glance. */
+.toolbar__discard-btn:not(:disabled) {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.toolbar__discard-btn:not(:disabled):hover {
+  background: var(--danger);
+  color: var(--text-on-accent);
+}
+
+.map-canvas__btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.map-canvas__btn:disabled:hover {
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+/* Task 13: SaveDialog -- the one place an edit session ever becomes a real
+   disk write (I6). Reuses WarpDestinationModal's own backdrop/panel pattern
+   (.warp-modal__backdrop/.warp-modal__panel, Task 8 Feature B) rather than
+   inventing a second modal shape -- same scrim token, same z-index, same
+   fixed/centred layout. */
+/* Layout (width/height/flex/overflow) comes from `.warp-modal__panel`
+   (shared with SaveDialog.tsx's own root className) -- this only adds the
+   dialog's internal padding and lets its own content scroll within that
+   fixed panel instead of growing it. */
+.save-dialog {
+  padding: var(--space-4);
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.save-dialog__title {
+  margin: 0 0 var(--space-3);
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.save-dialog__loading,
+.save-dialog__empty {
+  color: var(--text-secondary);
+  font-size: var(--text-sm);
+}
+
+/* Code-review fix: a failed GET /plan (route-level 500) needs its own
+   visibly-distinct state, not the same neutral tone as "loading" / "no
+   changes" -- same danger colour save-dialog__refusal-message already
+   reads, kept as plain coloured text rather than a bordered panel since
+   nothing else is rendered alongside it at this point (no file list, no
+   actions to visually separate it from). */
+.save-dialog__load-error {
+  color: var(--danger);
+  font-size: var(--text-sm);
+}
+
+.save-dialog__files {
+  list-style: none;
+  margin: 0 0 var(--space-3);
+  padding: 0;
+  max-height: 320px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.save-dialog__file {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.save-dialog__file:last-child {
+  border-bottom: none;
+}
+
+.save-dialog__file-summary {
+  font-family: var(--font-data);
+  font-size: var(--text-xs);
+  color: var(--text-primary);
+}
+
+/* Plain danger-bordered panel, same technique as .world-canvas__toast's own
+   failed-save banner just above (border: 1px solid var(--danger) on the
+   ordinary panel background, no tint) -- this file has no danger-tinted-
+   background pattern anywhere else, so this doesn't invent one. */
+.save-dialog__refusal {
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--danger);
+  border-radius: 4px;
+  padding: var(--space-2) var(--space-3);
+  margin-bottom: var(--space-2);
+}
+
+.save-dialog__refusal-message {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+
+.save-dialog__refusal-fix {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.save-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: auto;
+  padding-top: var(--space-2);
+}
+
+.save-dialog__btn--primary:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+
+.save-dialog__btn--primary:not(:disabled):hover {
+  background: var(--accent);
+  color: var(--text-on-accent);
+}
+
+/* Task 17: SignComposer -- one-shot wild-sign authoring flow, opened from
+   Toolbar's own "Add Sign" button (separate from the six paint tools: this
+   is a modal composer, not a paint-and-drag tool). Reuses
+   .warp-modal__backdrop/.warp-modal__panel for its shell (same as
+   SaveDialog above) and .save-dialog__loading/__empty/__load-error for its
+   own loading/empty/error text -- no need to re-derive those three states a
+   third time in this file. */
+.sign-composer {
+  padding: var(--space-4);
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.sign-composer__title {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.sign-composer__species-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: var(--space-2);
+}
+
+/* Selected species marked the SAME way every other toggle in this app
+   marks "on" (.map-canvas__btn[aria-pressed="true"]'s own
+   --bg-selected/--border-strong pair, also reused verbatim by
+   .collision-swatch/.toolbar__tool-btn) -- not a new selection
+   convention. .map-canvas__btn already supplies the base look/hover/focus
+   and the aria-pressed state itself; this only left-aligns the label and
+   gives each row its own width, since map-canvas__btn's own buttons are
+   normally small fixed-label icons, not a full sentence like "SPECIES_X —
+   40%". */
+.sign-composer__species-btn {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font-family: var(--font-data);
+}
+
+.sign-composer__coords {
+  display: flex;
+  gap: var(--space-3);
+}
+
+.sign-composer__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.sign-composer__field--dialogue {
+  flex: 1;
+}
+
+.sign-composer__input {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-family: var(--font-data);
+  font-size: var(--text-sm);
+  padding: var(--space-1) var(--space-2);
+}
+
+.sign-composer__input:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* Same danger-bordered-panel technique as .save-dialog__refusal (border: 1px
+   solid var(--danger) on the ordinary panel background, no tint) -- this
+   file has no danger-tinted-background pattern anywhere, so this doesn't
+   invent one either. */
+.sign-composer__refusal {
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--danger);
+  border-radius: 4px;
+  padding: var(--space-2) var(--space-3);
+}
+
+.sign-composer__refusal-message {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+
+.sign-composer__refusal-fix {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.sign-composer__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: auto;
+  padding-top: var(--space-2);
+}
+
+/* Same "primary commit action" green as .save-dialog__btn--primary/
+   .toolbar__save-btn -- the accent hue means "this button writes/stages
+   the thing you asked for" consistently across the whole app, not a
+   per-component invention. */
+.sign-composer__btn--primary:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+
+.sign-composer__btn--primary:not(:disabled):hover {
+  background: var(--accent);
+  color: var(--text-on-accent);
+}
+
+/* Task 14: EventInspector -- the canvas's own side panel (app__map-editing-
+   body above), same fixed-width-sidebar shape app__sidebar already uses on
+   the map tree's edge of the screen, just docked on the canvas's other
+   side. bg-panel + border-left, not border-radius/raised chrome: this is a
+   flush panel of the app shell, not a floating card. */
+.event-inspector {
+  width: 260px;
+  flex: 0 0 auto;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  background: var(--bg-panel);
+  border-left: 1px solid var(--border);
+}
+
+.event-inspector--empty {
+  align-items: flex-start;
+}
+
+.event-inspector__empty-text {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+}
+
+.event-inspector__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* One hue per event kind, reusing DESIGN.md's own --event-* overlay tokens
+   verbatim -- the same colours MapCanvas's Events-overlay legend already
+   uses for object/warp/coord/bg, so the inspector and the canvas markers
+   read as one system rather than inventing a second colour language. */
+.event-inspector__kind-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+
+.event-inspector__kind-dot--object { background: var(--event-object); }
+.event-inspector__kind-dot--warp { background: var(--event-warp); }
+.event-inspector__kind-dot--coord { background: var(--event-coord); }
+.event-inspector__kind-dot--bg { background: var(--event-bg); }
+
+.event-inspector__subtitle {
+  margin: calc(-1 * var(--space-2)) 0 0;
+  font-family: var(--font-data);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+  word-break: break-word;
+}
+
+.event-inspector__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.event-inspector__field-label {
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+/* Coordinates are DATA (DESIGN.md's own Developer Mono pairing), not UI
+   chrome -- monospaced like every hex id/count elsewhere in this app. */
+.event-inspector__input {
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: var(--space-1) var(--space-2);
+  font-family: var(--font-data);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+
+.event-inspector__input:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.event-inspector__input[readonly] {
+  color: var(--text-secondary);
+  cursor: default;
+}
+
+.event-inspector__actions {
+  margin-top: auto;
+  padding-top: var(--space-2);
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* Same technique as .toolbar__save-btn's own accent styling and
+   .save-dialog__refusal's own danger-bordered panel just above -- an
+   outlined control that only fills solid on hover, never a second,
+   independently-invented "danger button" look. */
+.event-inspector__delete-btn:not(:disabled) {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.event-inspector__delete-btn:not(:disabled):hover {
+  background: var(--danger);
+  color: var(--text-on-accent);
+}
+
+.event-inspector__add-btn:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+
+.event-inspector__add-btn:not(:disabled):hover {
+  background: var(--accent);
+  color: var(--text-on-accent);
 }

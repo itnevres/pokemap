@@ -122,7 +122,7 @@ export function buildWorld(proj: Project): World {
   return { placements, components, verticalLinks, conflicts };
 }
 
-function boundsOf(maps: string[], placements: Map<string, Placement>): Bounds {
+export function boundsOf(maps: string[], placements: Map<string, Placement>): Bounds {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const m of maps) {
     const p = placements.get(m)!;
@@ -145,10 +145,22 @@ function boundsOf(maps: string[], placements: Map<string, Placement>): Bounds {
  * rather than being scattered between interiors. Row width is a target, not a
  * cap -- a component wider than the target still gets its own row rather than
  * being clipped.
+ *
+ * `opts` (Task 11): exported and given an optional `{ gap, rowTarget }` so
+ * `packages/core/src/gbc/world/connections.ts` can reuse this exact
+ * shelf-pack in block units instead of duplicating it, while its defaults
+ * (8, 512) are kept identical to what this function always used, so GBA's own
+ * behaviour is byte-identical when called with no `opts` -- the only two
+ * permitted edits to this GBA file (Task 11 spec) are this export plus this
+ * optional, default-preserving parameter.
  */
-function layOutComponents(components: Component[], placements: Map<string, Placement>): void {
-  const GAP = 8;
-  const ROW_TARGET = 512; // tiles; ~8k px at 16px/tile
+export function layOutComponents(
+  components: Component[],
+  placements: Map<string, Placement>,
+  opts: { gap?: number; rowTarget?: number } = {},
+): void {
+  const GAP = opts.gap ?? 8;
+  const ROW_TARGET = opts.rowTarget ?? 512; // tiles; ~8k px at 16px/tile
 
   const order = [...components].sort((a, b) => b.maps.length - a.maps.length);
 

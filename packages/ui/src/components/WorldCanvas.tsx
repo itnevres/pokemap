@@ -1,10 +1,13 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Placement, Component as WorldComponentInfo, Conflict, VerticalLink } from "@pokemap/core/src/world/connections.js";
 import type { SpeciesHit } from "@pokemap/core/src/analyse/coverage.js";
+import type { WarpEvent } from "@pokemap/core/src/load/maps.js";
 import { EncounterGutter, type EncounterGutterMapEntry, type EncounterGutterRow } from "./EncounterGutter.js";
 import { SpeciesSpotlight } from "./SpeciesSpotlight.js";
 import { LensPanel, type LensId } from "./LensPanel.js";
+import { WarpDestinationModal } from "./WarpDestinationModal.js";
 import { useCoverage } from "../hooks/useCoverage.js";
+import { isDrawnByDefault } from "../world/visibility.js";
 
 /** The pixel size a placement's PNG renders at natively (`renderLayout`,
  *  border 0): 16px per tile, same constant the CLI's `render-world --scale
@@ -28,8 +31,48 @@ const LOD_SCALE = 0.25;
 
 const BADGE_SIZE = 10;
 
+/** Feature C: dungeon connection-line palette -- CSS custom property names
+ *  (read live via getComputedStyle, mirroring the conflict/dive/emerge
+ *  badge colours in the draw effect below) alongside a hard-coded fallback
+ *  for each, the same "live token, with a fallback for a stylesheet not yet
+ *  loaded (or jsdom in a test)" pattern parseHexColor's own callers already
+ *  use. See DESIGN.md's own --connection-1..8 tokens. */
+const CONNECTION_PALETTE_VARS = [
+  "--connection-1", "--connection-2", "--connection-3", "--connection-4",
+  "--connection-5", "--connection-6", "--connection-7", "--connection-8",
+];
+const CONNECTION_PALETTE_FALLBACK = [
+  "#e879f9", "#34d399", "#fb923c", "#60a5fa", "#facc15", "#f472b6", "#2dd4bf", "#a78bfa",
+];
+
+/** Placement.map plus the two Feature A fields Task 1 added to the wire
+ *  response (packages/server/src/index.ts's `/api/world` route). A
+ *  superset of Placement, so every existing helper that takes a `Placement`
+ *  (sizeOfPlacement, componentOfPlacement, intersects/contains callers)
+ *  keeps working unchanged via plain structural typing.
+ *
+ *  Both fields are OPTIONAL here, not required as the server's own
+ *  same-named WirePlacement has them (deliberate divergence, not a copy
+ *  error): a placement fabricated CLIENT-SIDE for a fresh sidebar/rail drop
+ *  (onDropOnCanvas below) has neither field set -- it is the optimistic
+ *  local echo of a drag, built before the server round trip that would
+ *  normally attach them, and requiring them here would make that literal
+ *  fail to type-check. Every reader treats a missing field as "not hidden"
+ *  via `?? ""` / `?? false` (see the `visible` memo and the jump effect
+ *  below), which is also exactly correct for this specific fabricated case:
+ *  a map the user just deliberately dropped must draw immediately, not wait
+ *  on a round trip. `r.json() as Promise<WorldPayload>` in the /api/world
+ *  effect is a type assertion, not a runtime check, so a real server
+ *  response (or a test fixture built before this task) that omits these
+ *  fields is equally handled by the same fallback, not just this one
+ *  fabricated-placement case. */
+interface WirePlacement extends Placement {
+  mapType?: string;
+  manual?: boolean;
+}
+
 interface WorldPayload {
-  placements: Record<string, Placement>;
+  placements: Record<string, WirePlacement>;
   components: WorldComponentInfo[];
   conflicts: Conflict[];
   verticalLinks: VerticalLink[];
@@ -37,7 +80,7 @@ interface WorldPayload {
 }
 
 interface WorldState {
-  placements: Map<string, Placement>;
+  placements: Map<string, WirePlacement>;
   components: WorldComponentInfo[];
   conflicts: Conflict[];
   verticalLinks: VerticalLink[];
@@ -71,6 +114,47 @@ interface EncounterCacheEntry {
   methods?: EncounterGutterRow[];
 }
 
+/** WarpEvent plus the destMapName the server route resolves onto it. */
+interface WireWarpEvent extends WarpEvent {
+  destMapName?: string;
+}
+
+/** Mirrors EncounterCacheEntry's own shape and reasoning exactly -- a
+ *  placeholder written synchronously before the fetch starts, so a second
+ *  effect run for the same map never double-fetches. */
+interface WarpCacheEntry {
+  loaded: boolean;
+  warps?: WireWarpEvent[];
+}
+
+/** Screen px -- generous enough to reliably hit a small marker with a
+ *  mouse. Module scope, matching every other constant in this file
+ *  (TILE_PX, MIN_ZOOM/MAX_ZOOM, BADGE_SIZE, LOD_*). */
+const WARP_HIT_RADIUS = 6;
+
+/** A warp marker's precomputed screen-space position, alongside every other
+ *  interface in this file (WirePlacement, ImageCacheEntry,
+ *  EncounterCacheEntry) declared at module scope rather than inside the
+ *  component body. */
+interface WarpMarkerEntry {
+  key: string;
+  sx: number;
+  sy: number;
+  destMapName?: string;
+}
+
+/** Feature C: a dungeon connection line's precomputed screen-space
+ *  endpoints and assigned colour -- alongside WarpMarkerEntry above,
+ *  declared at module scope rather than inside the component body. */
+interface ConnectionLine {
+  key: string;
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  color: string;
+}
+
 type DragState =
   | { kind: "pan"; startX: number; startY: number; startPan: Pan }
   // startTileX/Y is the placement's OWN position at the moment the drag
@@ -78,6 +162,8 @@ type DragState =
   // different tile" from "the user grabbed it and let go again" -- see
   // its own review-fix comment.
   | { kind: "map"; map: string; grabDX: number; grabDY: number; startTileX: number; startTileY: number }
+  | { kind: "group"; anchorMap: string; grabDX: number; grabDY: number; starts: Map<string, { x: number; y: number }> }
+  | { kind: "marquee"; startX: number; startY: number }
   | null;
 
 interface HoverInfo {
@@ -113,11 +199,34 @@ function componentOfPlacement(p: Placement, components: WorldComponentInfo[]): W
   return p.component >= 0 && p.component < components.length ? components[p.component]! : null;
 }
 
+/** Whether a placement should draw by default (Feature A, spec §3.1) --
+ *  thin wrapper around visibility.ts's isDrawnByDefault that centralises
+ *  the `?? ""` / `?? false` fallback needed at this component's two read
+ *  sites (the `visible` memo and the jump effect, below), rather than
+ *  repeating it at each. `p.mapType`/`p.manual` are always present on a
+ *  server-fetched placement (Task 1); a locally-fabricated component:-1
+ *  placement from a fresh sidebar/rail drop (onDropOnCanvas below) has
+ *  neither field, but that object represents a map the user JUST
+ *  deliberately placed -- `isDrawnByDefault("", false)` reads as "not
+ *  hidden" (HIDDEN_MAP_TYPES never contains ""), so it draws immediately
+ *  without needing either call site's cooperation. */
+function drawnByDefault(p: WirePlacement): boolean {
+  return isDrawnByDefault(p.mapType ?? "", p.manual ?? false);
+}
+
 /** AABB test in world-tile space. Mirrors the CLI's render-world culling
  *  exactly (`p.x + p.width <= bx || p.x >= bx + bw || ...`) so the two stay
  *  consistent. */
 function intersects(px: number, py: number, pw: number, ph: number, x0: number, y0: number, x1: number, y1: number): boolean {
   return !(px + pw <= x0 || px >= x1 || py + ph <= y0 || py >= y1);
+}
+
+/** Full-containment AABB test, in world-tile space -- the "dragged right"
+ *  half of the marquee's direction-sensitive selection (Step 9 below).
+ *  `intersects` (already in this file) is the "dragged left" / crossing
+ *  half. */
+function contains(px: number, py: number, pw: number, ph: number, x0: number, y0: number, x1: number, y1: number): boolean {
+  return px >= x0 && py >= y0 && px + pw <= x1 && py + ph <= y1;
 }
 
 interface FitResult {
@@ -154,6 +263,25 @@ function worldBoundsOf(placements: Map<string, Placement>, sizeByMap: Map<string
   return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
 }
 
+/** Props for {@link WorldCanvas}: the map-list jump target (Task 2). */
+export interface WorldCanvasProps {
+  /** A map name to pan/zoom to, or null/undefined for none. Mirrors
+   *  App.tsx's shared `selected` state -- set by clicking a name in the
+   *  sidebar map list while in World mode. */
+  jumpToMap?: string | null;
+  /** Bumped by the caller on every click, even a re-click of the same
+   *  name -- jumpToMap alone can't distinguish "jump here again" from "no
+   *  change", since React state setters no-op on an identical primitive
+   *  value. */
+  jumpToken?: number;
+  /** When set, only these maps are ever drawn, fetched, or hit-testable --
+   *  everything else in WorldCanvas (pan/zoom/drag/multi-select/warp
+   *  toggle) behaves exactly as in the full world view, just scoped. Used
+   *  by Dungeon mode (App.tsx, a later task) to reuse this exact component
+   *  rather than forking a second implementation. */
+  mapFilter?: Set<string> | null;
+}
+
 /**
  * The stitched world: 1,209 maps culled to the viewport, panned and zoomed,
  * with drag-to-place, a dungeon-layout toggle backed by a side rail for
@@ -161,13 +289,22 @@ function worldBoundsOf(placements: Map<string, Placement>, sizeByMap: Map<string
  * packages/ui/DESIGN.md for the palette/type/spacing tokens this consumes,
  * and this file's own comments for the LOD and culling mechanics.
  */
-export function WorldCanvas() {
+export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProps = {}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageCacheRef = useRef<Map<string, ImageCacheEntry>>(new Map());
   const encounterCacheRef = useRef<Map<string, EncounterCacheEntry>>(new Map());
+  const warpCacheRef = useRef<Map<string, WarpCacheEntry>>(new Map());
   const dragRef = useRef<DragState>(null);
   const conflictBadgesRef = useRef<Array<{ x: number; y: number; text: string }>>([]);
+  // Review fix: whether real pointer movement happened during the
+  // mousedown-to-mouseup cycle that is about to produce a `click`. The
+  // browser does NOT suppress `click` after a same-element drag -- see
+  // onCanvasClick's own comment below -- so this ref is what actually
+  // distinguishes "the user dragged, then the button happened to come up
+  // over the same element" from a genuine click. Reset at the top of every
+  // mousedown, set whenever onMouseMove observes a live drag (any kind).
+  const dragMovedRef = useRef(false);
 
   const [world, setWorld] = useState<WorldState | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -199,6 +336,21 @@ export function WorldCanvas() {
   const [zoom, setZoom] = useState(1);
   const [compositeVersion, setCompositeVersion] = useState(0);
   const [encounterVersion, setEncounterVersion] = useState(0);
+  const [warpVersion, setWarpVersion] = useState(0);
+  // Feature B: off by default (spec §4.1), same visual family as the
+  // existing dungeon-auto-layout switch.
+  const [warpsOn, setWarpsOn] = useState(false);
+  // Feature C: own toggle, independent of Feature B's warpsOn -- both may
+  // be on at once (spec §5.4: "markers show every warp, lines show only
+  // the subset connecting two of the dungeon's own maps"). Only rendered
+  // in the toolbar when mapFilter is set (App.tsx only ever mounts this in
+  // Dungeon mode with mapFilter populated, but the guard is here too so
+  // this component never shows a dungeon-only control outside that mode).
+  const [linesOn, setLinesOn] = useState(false);
+  // Which warp marker's destination popup is open, by destMapName -- set by
+  // onCanvasDoubleClick below, rendered as a WarpDestinationModal (Task 8)
+  // just before this section's closing tag.
+  const [warpPopup, setWarpPopup] = useState<string | null>(null);
   const [railFilter, setRailFilter] = useState("");
   const [hover, setHover] = useState<HoverInfo | null>(null);
   const [tooltip, setTooltip] = useState<TooltipInfo | null>(null);
@@ -209,6 +361,27 @@ export function WorldCanvas() {
   // see that component's doc comment for why the three states matter.
   const [spotlightHits, setSpotlightHits] = useState<SpeciesHit[] | null>(null);
   const [lens, setLens] = useState<LensId | null>(null);
+
+  // Feature: multi-select move. Plain click selects one map (clearing the
+  // rest); Ctrl/Cmd+click toggles; a marquee (Step 5) replaces the
+  // selection outright. Set of map NAMES, matching how everything else in
+  // this file keys placements.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [marqueeRect, setMarqueeRect] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+
+  // Feature A: maps hidden by default (visibility.ts's isDrawnByDefault)
+  // that the user has temporarily revealed by clicking their name in the
+  // sidebar map list while it has a real placement (spec §3.3). Session-
+  // local and unpersisted by design -- WorldCanvas fully unmounts when
+  // leaving World mode (App.tsx's conditional render), which already
+  // clears this for free on "leaving World mode does not survive" per the
+  // spec; no explicit reset is needed.
+  const [revealedMaps, setRevealedMaps] = useState<Set<string>>(new Set());
+
+  // Map-list jump (Task 2): a transient outline on whichever map the
+  // sidebar's most recent click jumped to, faded via CSS after mount --
+  // see the jump effect below.
+  const [jumpHighlight, setJumpHighlight] = useState<string | null>(null);
 
   const dungeonsOn = dungeonsPending ?? world?.sidecarDungeonAutoLayout ?? true;
 
@@ -388,18 +561,195 @@ export function WorldCanvas() {
   // "every placement".
   const fitWorld = useCallback(() => {
     if (!world) return;
-    const landmasses = new Map(
-      [...world.placements].filter(([, p]) => {
-        const comp = componentOfPlacement(p, world.components);
-        return comp !== null && comp.maps.length > 1;
-      }),
-    );
-    const bounds = worldBoundsOf(landmasses.size > 0 ? landmasses : world.placements, sizeByMap);
+    let bounds: ReturnType<typeof worldBoundsOf>;
+    if (mapFilter) {
+      // Feature C (dungeon mode): fit the dungeon's own curated member
+      // maps -- but NOT unconditionally all of them. autoLayoutUnplaced
+      // shelf-packs every singleton (warp-only) map at an essentially
+      // arbitrary position tens of thousands of tiles from the rest of the
+      // world (its own doc comment: "~25,600 tiles wide" for the full
+      // corpus shelf) -- not real world geography. A dungeon that mixes
+      // even one real-landmass member (an outdoor town/route) with a
+      // handful of shelved indoor buildings used to compute bounds
+      // spanning the FULL shelf distance: confirmed live against a real
+      // 20-map Safari Zone dungeon (5 outdoor members, 15 shelved indoor
+      // floors) -- bounds blew out to ~20,000x3,800 tiles, so `computeFit`
+      // zoomed out until every member rendered at a fraction of a screen
+      // pixel, reading as a totally empty canvas.
+      //
+      // `componentOfPlacement` already returns null for every one of those
+      // shelved placements: autoLayoutUnplaced assigns them a synthetic
+      // `component` index starting at `world.components.length` (see its
+      // own comment), which never resolves to a real entry in
+      // `world.components` -- so filtering to `comp !== null` is a cheap,
+      // exact way to fit only the members that sit at a real, meaningful
+      // world position, mirroring the ELSE branch's own landmass filter
+      // just below. A component:-1 manual-placement orphan is excluded by
+      // the identical check, for the identical reason (its position is
+      // just as disconnected from real geography).
+      //
+      // Falls back to fitting every member (this branch's original,
+      // unconditional behaviour) only when NONE of them resolve to a real
+      // component -- a dungeon made entirely of shelved/orphaned floors
+      // with no outdoor member at all -- so that case still shows
+      // something rather than bailing on `bounds.width <= 0` below.
+      const scoped = new Map([...world.placements].filter(([name]) => mapFilter.has(name)));
+      const anchored = new Map(
+        [...scoped].filter(([, p]) => componentOfPlacement(p, world.components) !== null),
+      );
+      bounds = worldBoundsOf(anchored.size > 0 ? anchored : scoped, sizeByMap);
+    } else {
+      const landmasses = new Map(
+        [...world.placements].filter(([, p]) => {
+          const comp = componentOfPlacement(p, world.components);
+          return comp !== null && comp.maps.length > 1;
+        }),
+      );
+      bounds = worldBoundsOf(landmasses.size > 0 ? landmasses : world.placements, sizeByMap);
+    }
     if (bounds.width <= 0 || bounds.height <= 0) return;
     const fit = computeFit(bounds, viewport);
     setZoom(fit.zoom);
     setPan(fit.pan);
-  }, [world, viewport, sizeByMap]);
+  }, [world, viewport, sizeByMap, mapFilter]);
+
+  // Which jumpToken has already been handled -- either an actual jump was
+  // performed for it, or it was determined there was nothing to jump to
+  // (no jumpToMap, or that map has no current placement). A ref, not
+  // state, because writing it must not itself trigger a re-render.
+  //
+  // Correctness fix, caught live by this feature's own test (Step 2's
+  // "verify it fails" turned green for the wrong reason at first): the
+  // plan's original effect depended on [jumpToken] alone, which fires
+  // once at mount and never again unless jumpToken itself changes. That
+  // is broken for the exact path a sidebar click most commonly takes --
+  // select a map in Map mode, THEN switch to World mode -- because
+  // WorldCanvas mounts FRESH at that point with jumpToMap/jumpToken
+  // already non-default (App.tsx's selected/selectVersion carry over
+  // across the mode switch), while `world` is still null (the /api/world
+  // fetch is async and has not resolved yet). The effect ran once,
+  // world was null, it returned early, and -- since jumpToken never
+  // changes again on its own -- it never got a second chance once the
+  // fetch landed. Depending on `world` too (not just jumpToken) lets the
+  // effect retry the SAME still-unhandled token once world transitions
+  // from null to loaded; the ref guard is what stops that same retry
+  // from re-centring the view on every later drag frame, which also
+  // produces a new `world` object (see sizeByMap's own comment on that)
+  // but must not re-trigger an already-handled jump.
+  const appliedJumpTokenRef = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    if (jumpToken === undefined || jumpToken === appliedJumpTokenRef.current) return;
+    if (!jumpToMap || !world) return; // retry once `world` itself changes (see comment above)
+    appliedJumpTokenRef.current = jumpToken;
+    const p = world.placements.get(jumpToMap);
+    if (!p) return;
+    const size = sizeOfPlacement(p, sizeByMap);
+    if (size.width <= 0 || size.height <= 0) return;
+    // Feature A (spec §3.3): clicking a sidebar entry that has a real
+    // placement but isn't drawn by default reveals it for this view -- a
+    // "look," not a commit (contrast with dragging it onto the canvas,
+    // which DOES persist, via the existing onDropOnCanvas/postPlacement
+    // path). A map with no placement at all already returns above (`if
+    // (!p) return`), matching spec §3.3's own "has nowhere to jump to;
+    // clicking it does nothing." See drawnByDefault's own comment for why
+    // its `?? ""` / `?? false` fallback is safe here.
+    if (!drawnByDefault(p)) {
+      setRevealedMaps((prev) => (prev.has(jumpToMap) ? prev : new Set(prev).add(jumpToMap)));
+    }
+    const fit = computeFit({ x: p.x, y: p.y, width: size.width, height: size.height }, viewport);
+    setZoom(fit.zoom);
+    setPan(fit.pan);
+    setJumpHighlight(jumpToMap);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- sizeByMap
+    // and viewport are read fresh each run but must not themselves
+    // re-trigger a jump that's already been handled for this token; the
+    // appliedJumpTokenRef guard above is what actually governs re-entry.
+  }, [jumpToken, jumpToMap, world]);
+
+  // Review fix: the 2s fade-out used to live INSIDE the jump-triggering
+  // effect above, as a setTimeout whose cleanup was `clearTimeout(timer)`.
+  // That effect also depends on `world` (see its own comment), which this
+  // file churns on every single mousemove frame during a map/group drag
+  // (onMouseMove's drag branches call setWorld per frame). So dragging ANY
+  // map within the 2s fade window re-ran that effect: React always runs the
+  // cleanup first (killing the pending fade timer), then the effect body
+  // hit the appliedJumpTokenRef guard (this token was already handled) and
+  // returned early -- WITHOUT scheduling a replacement timer. The outline
+  // was then stuck visible forever. This effect is deliberately separate
+  // and scoped only to `jumpHighlight` itself, which has a different
+  // lifecycle from "a jump was requested": it owns clearing the highlight
+  // after 2s no matter how many times `world` changes in between, and it
+  // re-arms whenever `jumpHighlight` actually changes value -- e.g. a jump
+  // to a DIFFERENT map gets a fresh 2s. (A re-jump to the SAME map name
+  // sets state to the identical string, which React bails on, so this
+  // effect's dep doesn't change and the original timer just keeps counting
+  // down from the first jump -- it still fires and clears the highlight,
+  // just not with a full fresh 2s from the second click. The `key`
+  // fix below is what makes that second click visually restart the fade
+  // animation regardless.)
+  useEffect(() => {
+    if (!jumpHighlight) return;
+    const timer = setTimeout(() => setJumpHighlight(null), 2000);
+    return () => clearTimeout(timer);
+  }, [jumpHighlight]);
+
+  // Dungeon mode (Feature C): auto-fit to the dungeon's own maps as soon as
+  // both they and `world` are available -- unlike the full world view
+  // (whose own "don't auto-fit" reasoning above the `fitWorld` definition
+  // is entirely about the cost of loading all 1,209 placements' images at
+  // once), a curated dungeon is small and, at the default origin-anchored
+  // view, may contain none of its own maps on screen at all -- effectively
+  // blank until the user finds "Fit world" themselves.
+  //
+  // Review fix (Task 12 review): this used to depend on [mapFilter, world]
+  // alone and rely on mapFilter's IDENTITY not changing to make it "fire
+  // once per dungeon opened/switched/edited, not on every unrelated
+  // re-render" -- but a dependency array can only skip a re-run when EVERY
+  // dependency is referentially unchanged, and `world` itself is a NEW
+  // object on every map/group drag's mousemove frame (onMouseMove's drag
+  // branches call setWorld per frame -- see sizeByMap's own comment on that
+  // exact churn), so this effect, and thus fitWorld(), actually re-ran on
+  // EVERY drag frame while a dungeon was open. Proven live: shift-dragging
+  // a filtered map across three mousemove frames produced three different,
+  // escalating zoom readouts mid-drag, stomping the user's own pan/zoom and
+  // contradicting this component's own "drag should behave exactly as in
+  // the full world view, just scoped" contract (WorldCanvasProps'
+  // `mapFilter` doc comment above). fittedFilterRef is what now actually
+  // delivers "once per dungeon": it stamps the specific mapFilter Set
+  // instance that has been HANDLED -- mirroring appliedJumpTokenRef's own
+  // idiom exactly (that ref's own comment defines "handled" as "either a
+  // jump was performed OR it was determined there was nothing to do"):
+  // here, "handled" means either fitWorld() actually ran for that Set, OR
+  // fitWorld() bailed via its own `bounds.width <= 0` early return (a
+  // degenerate case -- none of the dungeon's members currently placed --
+  // where there is nothing to fit). Either way, re-running the effect body
+  // for that SAME Set instance again (e.g. world's own per-drag-frame
+  // churn re-running this effect) is correctly skipped.
+  //
+  // Reset to null whenever mapFilter itself goes null, so this stays
+  // correct by construction rather than depending on an external detail:
+  // App.tsx (a later task) is expected to always mint a fresh Set via
+  // useMemo when opening a dungeon, even round-tripping through null and
+  // back to the "same" dungeon, which would make the guard below happen to
+  // work even without this reset -- but only as a side effect of that
+  // caller's own implementation choice, not by anything WorldCanvas itself
+  // guarantees. Explicitly resetting on null means a later re-open re-fits
+  // regardless of whether some future caller ever reuses a Set instance.
+  const fittedFilterRef = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    if (!mapFilter) { fittedFilterRef.current = null; return; } // re-open re-fits
+    if (!world) return; // don't stamp before world arrives
+    if (fittedFilterRef.current === mapFilter) return;
+    fittedFilterRef.current = mapFilter;
+    fitWorld();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fitWorld
+    // itself is recreated each render (it closes over world/viewport/
+    // sizeByMap) but must not retrigger this effect on its own; mapFilter's
+    // identity is the only thing that should, guarded by fittedFilterRef so
+    // world's own per-drag-frame churn (see appliedJumpTokenRef's own
+    // comment elsewhere in this file for the identical reasoning) can't
+    // re-fire it mid-drag.
+  }, [mapFilter, world]);
 
   // Culling: only placements whose tile-rect intersects the current
   // viewport (in world-tile space) are considered "visible". With 1,209
@@ -410,13 +760,83 @@ export function WorldCanvas() {
     const x0 = -pan.x / zoom, y0 = -pan.y / zoom;
     const x1 = (viewport.w - pan.x) / zoom, y1 = (viewport.h - pan.y) / zoom;
     const out: Placement[] = [];
-    for (const p of world.placements.values()) {
+    // Feature C (dungeon mode): when mapFilter is set, it is the entire
+    // candidate corpus, not just an extra filter over world.placements --
+    // a dungeon's member maps are usually scattered across the full 1,209-
+    // map world (that's the whole point of a dungeon grouping them), so
+    // still only considering the world's OWN culling would be wrong twice
+    // over: it would hide filtered-in maps that happen to sit outside
+    // whatever the current pan/zoom shows of the unscoped world, while
+    // this component's actual job here is to show exactly (and only) the
+    // filtered set, culled against ITS OWN viewport.
+    // Review fix: the unfiltered branch used to spread world.placements
+    // into a brand-new 1,209-element array on every call -- and `visible`
+    // recomputes every pan/drag frame (it depends on `pan`/`zoom`, both
+    // updated per mousemove), so that was a needless full-corpus array
+    // copy on the hot pan-drag path, the same class of per-drag-frame
+    // rebuild sizeByMap's and unplacedNames' own Review fix comments above
+    // already flag and avoid. Typing `source` as Iterable<WirePlacement>
+    // (not an array) lets the unfiltered branch stay a bare
+    // `world.placements.values()` -- a MapIterator, already Iterable --
+    // with no copy; the `for...of` loop below needs no change since it
+    // works identically over any Iterable.
+    const source: Iterable<WirePlacement> = mapFilter
+      ? [...mapFilter].map((name) => world.placements.get(name)).filter((p): p is WirePlacement => !!p)
+      : world.placements.values();
+    for (const p of source) {
       const size = sizeOfPlacement(p, sizeByMap);
       if (size.width <= 0 || size.height <= 0) continue; // unrenderable orphan, see sizeOfPlacement
+      // Feature A (spec §3.1): a placement not drawn by default (mapType in
+      // HIDDEN_MAP_TYPES and never manually placed) stays hidden unless the
+      // user has temporarily revealed it via a sidebar jump (see the jump
+      // effect below). See drawnByDefault's own comment for why its
+      // `?? ""` / `?? false` fallback is safe here too.
+      //
+      // This default-population filter is skipped entirely when mapFilter
+      // is set: a dungeon's own curated member list is already the
+      // definitive visible set the user built (or the CRUD routes built
+      // for them, Task 10/11) -- re-applying the type-based hide-by-default
+      // rule on top of it would silently drop, say, an indoor room the
+      // user deliberately added to a dungeon, with no way to see or
+      // override it from inside that scoped view (revealedMaps is a
+      // sidebar-jump mechanism that does not exist in dungeon mode).
+      //
+      // Note for a later task touching badges: the draw effect's own
+      // conflict-diamond and dive/emerge-triangle loops (below) iterate
+      // world.conflicts/world.verticalLinks and look up world.placements
+      // directly, bypassing this filter (and mapFilter) entirely -- so a
+      // badge could in principle render for a map outside the current
+      // scope. Currently unreachable in practice (indoor/none-type maps
+      // connect via warps, not planar `connections`, so they never appear
+      // in `conflicts` or `verticalLinks`), but worth knowing before
+      // relying on "visible == everything a badge might touch".
+      if (!mapFilter && !drawnByDefault(p) && !revealedMaps.has(p.map)) continue;
       if (intersects(p.x, p.y, size.width, size.height, x0, y0, x1, y1)) out.push(p);
     }
     return out;
-  }, [world, pan, zoom, viewport, sizeByMap]);
+  }, [world, pan, zoom, viewport, sizeByMap, revealedMaps, mapFilter]);
+
+  // Feature A: how many CURRENTLY-PLACED maps are hidden by the same
+  // mapType/manual filter `visible` just applied -- i.e. placed but not
+  // drawn because neither shown by default nor revealed. Surfaced in the
+  // status strip (below) so "placed" doesn't silently include invisible
+  // interiors (~701 of them: 695 MAP_TYPE_INDOOR + 6 MAP_TYPE_NONE, per
+  // visibility.ts's own count) with nothing explaining the gap. Mirrors
+  // `visible`'s own non-zero-size guard for an apples-to-apples count of
+  // what "hidden" actually means here (an unrenderable orphan is excluded
+  // from both), but is deliberately NOT restricted to the current
+  // viewport/intersects test -- a global count, matching how `placed` and
+  // `unplaced` are themselves computed.
+  const hiddenCount = useMemo(() => {
+    if (!world) return 0;
+    let n = 0;
+    for (const p of world.placements.values()) {
+      const size = sizeOfPlacement(p, sizeByMap);
+      if (size.width <= 0 || size.height <= 0) continue;
+      if (!drawnByDefault(p) && !revealedMaps.has(p.map)) n++;
+    }
+    return n;
+  }, [world, sizeByMap, revealedMaps]);
 
   // Load (and cache) the source image for every visible placement that
   // doesn't have one yet. A placement already in imageCacheRef is never
@@ -479,6 +899,40 @@ export function WorldCanvas() {
           // this effect does not retry it forever.
           entry.loaded = true;
           setEncounterVersion((v) => v + 1);
+        });
+    }
+  }, [visible]);
+
+  // Mirrors the encounter-fetch effect immediately above exactly (same
+  // cache-by-ref placeholder + version-bump-on-arrival shape, same
+  // "fetch what's visible regardless of the toggle" reasoning: turning the
+  // warp toggle on shows markers immediately rather than kicking off a
+  // fetch at that moment). Also feeds Feature C's connection lines (a
+  // later task), which need warp data for a dungeon's own member maps
+  // independent of this toggle's own on/off state.
+  useEffect(() => {
+    for (const p of visible) {
+      if (warpCacheRef.current.has(p.map)) continue;
+      const entry: WarpCacheEntry = { loaded: false };
+      warpCacheRef.current.set(p.map, entry);
+      fetch(`/api/warps/${encodeURIComponent(p.map)}`)
+        .then((r) => {
+          if (!r.ok) throw new Error(`GET /api/warps/${p.map} -> ${r.status}`);
+          return r.json() as Promise<{ warps: WireWarpEvent[] }>;
+        })
+        .then((d) => {
+          entry.loaded = true;
+          entry.warps = d.warps;
+          setWarpVersion((v) => v + 1);
+        })
+        .catch(() => {
+          // Best-effort, its own separate instance of the same posture the
+          // encounter cache's own catch above documents (not inherited by
+          // proximity): a failed fetch just leaves this one map with no
+          // warp markers, not a banner over an otherwise-working canvas.
+          // Still marked loaded so this effect does not retry it forever.
+          entry.loaded = true;
+          setWarpVersion((v) => v + 1);
         });
     }
   }, [visible]);
@@ -656,6 +1110,136 @@ export function WorldCanvas() {
     });
   }, [spotlightHits, visible, sizeByMap, pan, zoom, spotlightByMap]);
 
+  // Task 7 Step 5 review fix: below LOD_ZOOM_THRESHOLD, per-map detail is
+  // already treated as too fine to render -- this file established that
+  // exact threshold (4) for exactly that meaning TWICE already: the draw
+  // effect's own LOD switch above (full-res image vs. the cached
+  // downscaled buffer) and EncounterGutter's own LOW_ZOOM_THRESHOLD
+  // (deliberately tethered to this same constant, per that component's own
+  // comment). Without this gate, the full corpus's ~1,662 warp markers
+  // render at full zoom-out with no size scaling of their own -- an
+  // unreadable smear on small maps, and real per-frame draw cost at the
+  // extreme. Reusing LOD_ZOOM_THRESHOLD itself (not a second literal 4)
+  // keeps this file's "too zoomed out for per-map detail" meaning anchored
+  // to one constant, matching EncounterGutter's own precedent.
+  const warpMarkerEntries = useMemo<WarpMarkerEntry[]>(() => {
+    if (!warpsOn || zoom < LOD_ZOOM_THRESHOLD) return [];
+    const out: WarpMarkerEntry[] = [];
+    for (const p of visible) {
+      const cache = warpCacheRef.current.get(p.map);
+      if (!cache?.loaded || !cache.warps) continue;
+      cache.warps.forEach((w, i) => {
+        out.push({
+          key: `${p.map}:${i}`,
+          sx: (p.x + w.x) * zoom + pan.x,
+          sy: (p.y + w.y) * zoom + pan.y,
+          destMapName: w.destMapName,
+        });
+      });
+    }
+    return out;
+    // warpVersion, not warpCacheRef itself (a ref, so it would never
+    // usefully appear in a dependency array) -- warpVersion is exactly the
+    // signal the warp-fetch effect above bumps whenever that ref's
+    // contents actually change, mirroring lensOverlayEntries' own
+    // encounterVersion/encounterCacheRef comment above.
+  }, [warpsOn, visible, zoom, pan, warpVersion]);
+
+  // Feature C: a line per warp connection where BOTH endpoints are members
+  // of the open dungeon (spec §5.5) -- reuses Task 7's own warpCacheRef for
+  // BOTH the source and destination endpoint, rather than a second fetch
+  // mechanism: mapFilter is already the entire candidate corpus for
+  // `visible` (see that memo's own comment), so every dungeon member's warp
+  // data is already being fetched regardless of this toggle's on/off state,
+  // exactly like warpMarkerEntries above already reuses it for markers.
+  //
+  // Requires BOTH ends' cache entries to be `loaded` before drawing a line:
+  // a source or destination whose fetch hasn't landed yet just means no
+  // line for that connection YET (this memo re-runs once warpVersion bumps
+  // again), not a crash on `undefined` data and not a line guessed at a
+  // wrong position from partial data.
+  const connectionLines = useMemo<ConnectionLine[]>(() => {
+    if (!mapFilter || !linesOn || !world) return [];
+    // Stable order: sort() on the source map name, warps within a map kept
+    // in their own array's index order -- not insertion/iteration order of
+    // `mapFilter` itself (a Set, whose iteration order is construction-
+    // order-dependent) -- see this task's own colour-stability test.
+    const raw: Array<{ sourceMap: string; warpIndex: number; x1: number; y1: number; x2: number; y2: number }> = [];
+    for (const sourceMap of [...mapFilter].sort()) {
+      const srcPlacement = world.placements.get(sourceMap);
+      const srcCache = warpCacheRef.current.get(sourceMap);
+      if (!srcPlacement || !srcCache?.loaded || !srcCache.warps) continue;
+      srcCache.warps.forEach((w, warpIndex) => {
+        if (!w.destMapName || !mapFilter.has(w.destMapName)) return; // outside the dungeon -- no line (spec §5.5)
+        const destPlacement = world.placements.get(w.destMapName);
+        const destCache = warpCacheRef.current.get(w.destMapName);
+        // Both endpoints' warp DATA must have arrived (both fetches landed)
+        // before anything draws -- a destination whose own /api/warps hasn't
+        // resolved yet just means no line for that connection YET (this
+        // memo re-runs once warpVersion bumps again), not a crash on
+        // `undefined` data.
+        if (!destPlacement || !destCache?.loaded || !destCache.warps) return;
+        const destIndex = Number(w.destWarpId);
+        // The destination's own warp array must contain a matching entry at
+        // destWarpId (that is what makes the pair reciprocal in the source
+        // ROM data) -- spec §5.5 requires a line to run to the destination's
+        // EXACT tile position, "precise points on different floors' art, not
+        // map centers". A same-index lookup miss (a malformed or one-off
+        // asymmetric connection) has no exact tile to draw to, so this
+        // connection is skipped entirely rather than guessed at any other
+        // position (the destination placement's own corner is neither the
+        // exact tile nor even a map-center, and would silently assert a door
+        // exists where none does).
+        const destWarp = destCache.warps[destIndex];
+        if (!destWarp) return;
+        raw.push({
+          sourceMap, warpIndex,
+          x1: (srcPlacement.x + w.x) * zoom + pan.x, y1: (srcPlacement.y + w.y) * zoom + pan.y,
+          x2: (destPlacement.x + destWarp.x) * zoom + pan.x, y2: (destPlacement.y + destWarp.y) * zoom + pan.y,
+        });
+      });
+    }
+    const style = typeof getComputedStyle === "function" ? getComputedStyle(document.documentElement) : null;
+    const palette = CONNECTION_PALETTE_VARS.map((v, i) => style?.getPropertyValue(v).trim() || CONNECTION_PALETTE_FALLBACK[i]!);
+    // Known imperfection: `i` here is a connection's position in the
+    // RESOLVED subset (`raw`), not its position among the dungeon's full
+    // connection count -- a connection whose destination warp fetch
+    // hasn't landed yet (or whose destWarpId never resolves at all, see
+    // the strict lookup above) is simply absent from `raw` entirely, not
+    // holding a placeholder slot in it. So a connection's colour can
+    // shift as each map's own /api/warps fetch lands one at a time (this
+    // memo re-runs on every warpVersion bump), and only settles
+    // permanently once every relevant map has either loaded its warps or
+    // failed and been marked loaded-with-no-data (see the warp-fetch
+    // effect's own catch above). A connection that never resolves at all
+    // (a missing dest warp, or a fetch that keeps failing) permanently
+    // shifts every later-sorted connection's colour by one slot for the
+    // rest of the session. Accepted as a minor imperfection -- DESIGN.md's
+    // own contract is "the same connection reads the same colour across
+    // SESSIONS" (a stable sort order, not randomised or hashed), not
+    // "never visibly shifts while fetches are still in flight" -- rather
+    // than deferring every connection's colour until the whole dungeon's
+    // warp data has fully landed.
+    return raw.map((r, i) => ({
+      key: `${r.sourceMap}:${r.warpIndex}`,
+      x1: r.x1, y1: r.y1, x2: r.x2, y2: r.y2,
+      color: palette[i % palette.length]!,
+    }));
+    // warpVersion, not warpCacheRef itself -- same reasoning as
+    // warpMarkerEntries' own comment immediately above.
+  }, [mapFilter, linesOn, world, zoom, pan, warpVersion]);
+
+  const selectionOverlayEntries = useMemo(() => {
+    if (selected.size === 0) return [] as Array<{ map: string; rect: EncounterGutterMapEntry["rect"] }>;
+    const out: Array<{ map: string; rect: EncounterGutterMapEntry["rect"] }> = [];
+    for (const p of visible) {
+      if (!selected.has(p.map)) continue;
+      const size = sizeOfPlacement(p, sizeByMap);
+      out.push({ map: p.map, rect: { x: p.x * zoom + pan.x, y: p.y * zoom + pan.y, width: size.width * zoom, height: size.height * zoom } });
+    }
+    return out;
+  }, [selected, visible, sizeByMap, pan, zoom]);
+
   // LensPanel's empty-maps legend "next action" (spec §9: a legend states
   // what to do next, not just what colours mean). Reuses fitWorld's own
   // worldBoundsOf/computeFit pair AND its exact "connected landmasses only"
@@ -669,6 +1253,17 @@ export function WorldCanvas() {
   // singletons to avoid. Restricting to landmass members still leaves a
   // real, useful view: most towns/routes' own interior buildings (empty)
   // sit inside a multi-map component together with their route.
+  //
+  // Note for a later task: this is entirely unscoped by mapFilter -- it
+  // reads world.placements/world.components directly, the same way
+  // fitWorld's own ELSE branch does, with no dungeon-mode equivalent. That
+  // is silently wrong (not just imprecise) if clicked while viewing a
+  // dungeon: it pans/zooms the camera to the WORLD's own empty-maps
+  // bounding box, completely out of the dungeon currently open, rather
+  // than doing nothing or scoping to the dungeon's own empty members.
+  // Left unfixed here, matching this file's own "flag it, don't fix it
+  // silently" convention for a known imperfection out of scope for this
+  // task.
   const focusEmptyMaps = useCallback(() => {
     if (!world) return;
     const empty = new Map(
@@ -823,20 +1418,96 @@ export function WorldCanvas() {
   // below, not left undiscoverable.
   const onMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (e.button !== 0) return;
+    dragMovedRef.current = false;
     const rect = e.currentTarget.getBoundingClientRect();
     const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
     const w = screenToWorld(sx, sy);
+
+    if (e.ctrlKey || e.metaKey) {
+      const hit = hitTest(w.x, w.y);
+      if (hit) {
+        setSelected((prev) => {
+          const next = new Set(prev);
+          if (next.has(hit.map)) next.delete(hit.map);
+          else next.add(hit.map);
+          return next;
+        });
+      } else {
+        dragRef.current = { kind: "marquee", startX: sx, startY: sy };
+        setMarqueeRect({ x0: sx, y0: sy, x1: sx, y1: sy });
+      }
+      return;
+    }
+
     const hit = e.shiftKey ? hitTest(w.x, w.y) : null;
     if (hit) {
-      dragRef.current = { kind: "map", map: hit.map, grabDX: w.x - hit.x, grabDY: w.y - hit.y, startTileX: hit.x, startTileY: hit.y };
+      if (selected.has(hit.map) && selected.size > 1) {
+        const starts = new Map<string, { x: number; y: number }>();
+        for (const name of selected) {
+          const p = world?.placements.get(name);
+          if (p) starts.set(name, { x: p.x, y: p.y });
+        }
+        dragRef.current = { kind: "group", anchorMap: hit.map, grabDX: w.x - hit.x, grabDY: w.y - hit.y, starts };
+      } else {
+        dragRef.current = { kind: "map", map: hit.map, grabDX: w.x - hit.x, grabDY: w.y - hit.y, startTileX: hit.x, startTileY: hit.y };
+      }
       setIsDraggingMap(true);
     } else {
       dragRef.current = { kind: "pan", startX: e.clientX, startY: e.clientY, startPan: pan };
     }
   };
 
+  // Review fix (CRITICAL): this used to rely on "the browser already
+  // suppresses `click` after a real drag" -- that is false. A browser fires
+  // `click` whenever mousedown and mouseup share the same target ELEMENT,
+  // with no movement-distance suppression of any kind; confirmed live
+  // against the real app, a 288x224px drag on the canvas still fired a
+  // `click` afterward. Since a plain drag ALWAYS pans (mousedown starts a
+  // "pan" drag whenever Shift is not held, regardless of what is under the
+  // cursor -- see onMouseDown above), that click landed here unguarded and
+  // silently rewrote the selection at the end of every ordinary pan: two
+  // Ctrl+click-selected maps could drop to zero, or collapse to whichever
+  // single map the pan happened to end over.
+  //
+  // dragMovedRef (reset to false at the top of onMouseDown, set to true by
+  // onMouseMove whenever a drag is actually live) is what actually tells a
+  // genuine click apart from the trailing click of a completed drag
+  // gesture -- not element identity, which a drag and a click share.
+  // Ctrl/Cmd+click and Shift+click are both handled entirely in
+  // onMouseDown (toggle, or a map/group drag) and must not ALSO trigger
+  // this plain-select behaviour, hence those parts of the guard.
+  const onCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (e.ctrlKey || e.metaKey || e.shiftKey || dragMovedRef.current) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const w = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
+    const hit = hitTest(w.x, w.y);
+    setSelected(hit ? new Set([hit.map]) : new Set());
+  };
+
+  // Review fix: mirrors onCanvasClick's own CRITICAL postmortem comment
+  // above almost verbatim -- `dblclick` has the identical property click
+  // does: the browser fires it whenever mousedown/mouseup land on the same
+  // element, with NO movement-distance suppression, so an unguarded double-
+  // click handler would fire this hit-test at the end of an ordinary pan or
+  // drag gesture too. See onCanvasClick's own comment for the full
+  // explanation of why dragMovedRef is what actually tells the two apart;
+  // not re-derived here. A false positive would open WarpDestinationModal
+  // (Task 8) over the wrong map at the end of an ordinary pan/drag gesture,
+  // so this guard is load-bearing, not defensive-only.
+  const onCanvasDoubleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (e.ctrlKey || e.metaKey || e.shiftKey || dragMovedRef.current) return;
+    if (!warpsOn) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
+    const hit = warpMarkerEntries.find((m) => Math.hypot(m.sx - sx, m.sy - sy) <= WARP_HIT_RADIUS);
+    if (hit?.destMapName) setWarpPopup(hit.destMapName);
+  };
+
   const onMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const drag = dragRef.current;
+    // Any live drag (pan/map/group/marquee) counts as real movement for
+    // dragMovedRef's purpose -- see onCanvasClick's own comment for why.
+    if (drag) dragMovedRef.current = true;
     if (drag?.kind === "pan") {
       setPan({ x: drag.startPan.x + (e.clientX - drag.startX), y: drag.startPan.y + (e.clientY - drag.startY) });
       return;
@@ -854,6 +1525,37 @@ export function WorldCanvas() {
         return { ...prev, placements: next };
       });
       setCompositeVersion((v) => v + 1);
+      return;
+    }
+    if (drag?.kind === "group") {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const w = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
+      const anchorStart = drag.starts.get(drag.anchorMap)!;
+      const rawX = w.x - drag.grabDX, rawY = w.y - drag.grabDY;
+      const dx = Math.round(rawX) - anchorStart.x, dy = Math.round(rawY) - anchorStart.y;
+      setWorld((prev) => {
+        if (!prev) return prev;
+        // Review fix: mirrors the "map" branch's own no-op guard just above
+        // -- skip creating a new `world` object (and re-running every
+        // world-keyed useMemo, including the full placement cull) when the
+        // anchor's rounded position has not actually changed since the last
+        // update, the same sub-tile-mousemove waste sizeByMap/unplacedNames
+        // were already fixed for.
+        const anchorExisting = prev.placements.get(drag.anchorMap);
+        if (!anchorExisting || (anchorExisting.x === anchorStart.x + dx && anchorExisting.y === anchorStart.y + dy)) return prev;
+        const next = new Map(prev.placements);
+        for (const [name, start] of drag.starts) {
+          const existing = next.get(name);
+          if (existing) next.set(name, { ...existing, x: start.x + dx, y: start.y + dy });
+        }
+        return { ...prev, placements: next };
+      });
+      setCompositeVersion((v) => v + 1);
+      return;
+    }
+    if (drag?.kind === "marquee") {
+      const rect = e.currentTarget.getBoundingClientRect();
+      setMarqueeRect({ x0: drag.startX, y0: drag.startY, x1: e.clientX - rect.left, y1: e.clientY - rect.top });
       return;
     }
 
@@ -887,10 +1589,39 @@ export function WorldCanvas() {
     }
   };
 
+  const commitGroupDrag = () => {
+    const drag = dragRef.current;
+    if (drag?.kind !== "group") return;
+    for (const [name, start] of drag.starts) {
+      const p = world?.placements.get(name);
+      if (p && (p.x !== start.x || p.y !== start.y)) postPlacement(name, p.x, p.y);
+    }
+  };
+
+  const commitMarquee = () => {
+    const drag = dragRef.current;
+    if (drag?.kind !== "marquee" || !marqueeRect) return;
+    const draggedRight = marqueeRect.x1 > marqueeRect.x0;
+    const wA = screenToWorld(marqueeRect.x0, marqueeRect.y0);
+    const wB = screenToWorld(marqueeRect.x1, marqueeRect.y1);
+    const x0 = Math.min(wA.x, wB.x), x1 = Math.max(wA.x, wB.x);
+    const y0 = Math.min(wA.y, wB.y), y1 = Math.max(wA.y, wB.y);
+    const hits = new Set<string>();
+    for (const p of visible) {
+      const size = sizeOfPlacement(p, sizeByMap);
+      const test = draggedRight ? contains : intersects;
+      if (test(p.x, p.y, size.width, size.height, x0, y0, x1, y1)) hits.add(p.map);
+    }
+    setSelected(hits);
+  };
+
   const onMouseUp = () => {
     commitMapDrag();
+    commitGroupDrag();
+    commitMarquee();
     dragRef.current = null;
     setIsDraggingMap(false);
+    setMarqueeRect(null);
   };
 
   // Review fix: releasing a Shift+drag outside the canvas (toward the side
@@ -918,10 +1649,13 @@ export function WorldCanvas() {
   // false again after the matching pointerup).
   const onMouseLeaveCanvas = () => {
     commitMapDrag();
+    commitGroupDrag();
+    commitMarquee();
     dragRef.current = null;
     setIsDraggingMap(false);
     setHover(null);
     setTooltip(null);
+    setMarqueeRect(null);
   };
 
   // Review fix: captures the pointer so this gesture's mousemove/mouseup
@@ -938,6 +1672,10 @@ export function WorldCanvas() {
       // Some environments (older browsers, non-mouse pointer types) may
       // not support or allow capture here -- see the comment above.
     }
+  };
+
+  const onCanvasKeyDown = (e: React.KeyboardEvent<HTMLCanvasElement>) => {
+    if (e.key === "Escape") setSelected(new Set());
   };
 
   const onDragOverCanvas = (e: React.DragEvent<HTMLCanvasElement>) => {
@@ -979,8 +1717,36 @@ export function WorldCanvas() {
           >
             <span className="world-canvas__switch-thumb" />
           </button>
-          <span className="world-canvas__dungeon-label">Dungeon auto-layout {dungeonsOn ? "on" : "off"}</span>
+          <span className="world-canvas__switch-label">Dungeon auto-layout {dungeonsOn ? "on" : "off"}</span>
         </div>
+        <div className="world-canvas__toolbar-group">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={warpsOn}
+            aria-label="Warps"
+            className="world-canvas__switch"
+            onClick={() => setWarpsOn((w) => !w)}
+          >
+            <span className="world-canvas__switch-thumb" />
+          </button>
+          <span className="world-canvas__switch-label">Warps {warpsOn ? "on" : "off"}</span>
+        </div>
+        {mapFilter && (
+          <div className="world-canvas__toolbar-group">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={linesOn}
+              aria-label="Connection lines"
+              className="world-canvas__switch"
+              onClick={() => setLinesOn((l) => !l)}
+            >
+              <span className="world-canvas__switch-thumb" />
+            </button>
+            <span className="world-canvas__switch-label">Connection lines {linesOn ? "on" : "off"}</span>
+          </div>
+        )}
         <div className="world-canvas__toolbar-group world-canvas__toolbar-group--grow">
           <SpeciesSpotlight onHits={setSpotlightHits} />
           {/* Review fix: a failed /api/coverage fetch used to fall through
@@ -1042,11 +1808,75 @@ export function WorldCanvas() {
             onMouseDown={onMouseDown}
             onMouseMove={onMouseMove}
             onMouseUp={onMouseUp}
+            onClick={onCanvasClick}
+            onDoubleClick={onCanvasDoubleClick}
+            onKeyDown={onCanvasKeyDown}
+            tabIndex={0}
             onMouseLeave={onMouseLeaveCanvas}
             onDragOver={onDragOverCanvas}
             onDrop={onDropOnCanvas}
           />
           <EncounterGutter maps={encounterEntries} zoom={zoom} />
+          {selectionOverlayEntries.length > 0 && (
+            <div className="world-canvas__selection" aria-hidden="true">
+              {selectionOverlayEntries.map((e) => (
+                <div
+                  key={e.map}
+                  className="world-canvas__selection-outline"
+                  data-map={e.map}
+                  style={{ left: e.rect.x, top: e.rect.y, width: e.rect.width, height: e.rect.height }}
+                />
+              ))}
+            </div>
+          )}
+          {jumpHighlight && world?.placements.get(jumpHighlight) && (() => {
+            const p = world.placements.get(jumpHighlight)!;
+            const size = sizeOfPlacement(p, sizeByMap);
+            const rect = { x: p.x * zoom + pan.x, y: p.y * zoom + pan.y, width: size.width * zoom, height: size.height * zoom };
+            return (
+              <div className="world-canvas__selection" aria-hidden="true">
+                {/* Review fix: keyed on jumpToken (not jumpToMap), which
+                    bumps on every jump including a re-click of the same map
+                    name. Without this, jumping to the same map twice in a
+                    row reused the exact same DOM node -- and since the CSS
+                    fade animation is `forwards` and had already run to
+                    completion once, it did not restart on the second jump,
+                    so the highlight silently failed to appear at all. The
+                    key forces React to mount a fresh node per jump, so the
+                    animation genuinely restarts every time. */}
+                <div
+                  key={jumpToken}
+                  className="world-canvas__selection-outline world-canvas__jump-highlight"
+                  style={{ left: rect.x, top: rect.y, width: rect.width, height: rect.height }}
+                />
+              </div>
+            );
+          })()}
+          {warpsOn && warpMarkerEntries.length > 0 && (
+            <div className="world-canvas__warps" aria-hidden="true">
+              {warpMarkerEntries.map((m) => (
+                <div key={m.key} className="world-canvas__warp-marker" style={{ left: m.sx, top: m.sy }} />
+              ))}
+            </div>
+          )}
+          {mapFilter && linesOn && connectionLines.length > 0 && (
+            <svg className="world-canvas__connections" aria-hidden="true">
+              {connectionLines.map((c) => (
+                <line key={c.key} x1={c.x1} y1={c.y1} x2={c.x2} y2={c.y2} stroke={c.color} strokeWidth={2} />
+              ))}
+            </svg>
+          )}
+          {marqueeRect && (
+            <div
+              className="world-canvas__marquee"
+              style={{
+                left: Math.min(marqueeRect.x0, marqueeRect.x1),
+                top: Math.min(marqueeRect.y0, marqueeRect.y1),
+                width: Math.abs(marqueeRect.x1 - marqueeRect.x0),
+                height: Math.abs(marqueeRect.y1 - marqueeRect.y0),
+              }}
+            />
+          )}
           {lens && lensOverlayEntries.length > 0 && (
             <div className="world-canvas__lens" aria-hidden="true">
               {lensOverlayEntries.map((e) => (
@@ -1104,10 +1934,19 @@ export function WorldCanvas() {
         <UnplacedRail unplacedNames={unplacedNames} filter={railFilter} onFilterChange={setRailFilter} />
       </div>
 
+      {/* Note for a later task: the placed/hidden/unplaced/conflicts counts
+          just below, and the UnplacedRail above, are all silently WORLD-wide
+          even in dungeon mode -- unlike `visible` (and the draw/fetch
+          effects it feeds), none of these are scoped by mapFilter. They're
+          derived straight from world.placements/unplacedNames/world.conflicts,
+          and a drag-and-drop from the rail adds to the WORLD, not the open
+          dungeon. Left unfixed here, matching this file's own "flag it,
+          don't fix it silently" convention for a known imperfection out of
+          scope for this task. */}
       <div className="world-canvas__status">
         <span className="world-canvas__status-item">
-          placed <strong>{world ? world.placements.size : 0}</strong> · unplaced <strong>{unplacedNames.length}</strong> · conflicts{" "}
-          <strong>{world ? world.conflicts.length : 0}</strong>
+          placed <strong>{world ? world.placements.size : 0}</strong> · hidden <strong>{hiddenCount}</strong> · unplaced{" "}
+          <strong>{unplacedNames.length}</strong> · conflicts <strong>{world ? world.conflicts.length : 0}</strong>
         </span>
         {hover ? (
           <span className="world-canvas__status-item world-canvas__hover">
@@ -1119,6 +1958,8 @@ export function WorldCanvas() {
           <span className="world-canvas__status-item world-canvas__hover world-canvas__hover--empty">Hover the world…</span>
         )}
       </div>
+
+      {warpPopup && <WarpDestinationModal mapName={warpPopup} onClose={() => setWarpPopup(null)} />}
     </section>
   );
 }

@@ -2,14 +2,26 @@ import { readFileSync } from "node:fs";
 import { createServer as createHttp, type IncomingMessage, type Server } from "node:http";
 import { openProject, type Project } from "@pokemap/core/src/project.js";
 import { renderLayout } from "@pokemap/core/src/render/layout.js";
+import { renderMetatile } from "@pokemap/core/src/render/metatile.js";
 import { renderSpeciesIcon } from "@pokemap/core/src/render/species.js";
 import { parseBlocks } from "@pokemap/core/src/load/blocks.js";
 import { parseEncounters, speciesChances, FISHING_RODS, type Encounters, type Method, type Rod, type SpeciesChance } from "@pokemap/core/src/load/encounters.js";
-import { coverage, whereSpecies } from "@pokemap/core/src/analyse/coverage.js";
+import { coverage, whereSpecies, allSpecies } from "@pokemap/core/src/analyse/coverage.js";
 import { buildWorld, resolveWorldPlacements } from "@pokemap/core/src/world/resolve.js";
+import type { Placement } from "@pokemap/core/src/world/connections.js";
 import { readSidecar, writeSidecar } from "@pokemap/core/src/world/sidecar.js";
+import { readDungeons, writeDungeons } from "@pokemap/core/src/world/dungeons.js";
+import { warpConnectedMapsFrom } from "@pokemap/core/src/world/warpGraph.js";
 import { encodePng } from "@pokemap/cli/src/png.js";
 import { parseBorder } from "@pokemap/cli/src/args.js";
+import { randomUUID } from "node:crypto";
+import { createEditSessionStore, snapshotOf, snapshotCommand } from "./editSessions.js";
+import { paintCells, floodFill, shiftGrid, type Stamp } from "@pokemap/core/src/edit/paint.js";
+import { planSave, commitSave, type EditSession } from "@pokemap/core/src/write/save.js";
+import { formatDiffJson } from "@pokemap/core/src/write/diff.js";
+import { moveEvent, addEvent, deleteEvent, findWarpsTargetingByIndex, type EventKind } from "@pokemap/core/src/edit/events.js";
+import { rankSpeciesForSign, suggestSignPlacement } from "@pokemap/core/src/signs/suggest.js";
+import { buildWildSign, guardSignWrite } from "@pokemap/core/src/signs/write.js";
 
 export interface PokemapServer { port: number; project: Project; close(): Promise<void>; }
 
@@ -25,6 +37,27 @@ function readBody(req: IncomingMessage): Promise<string> {
     req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
     req.on("error", reject);
   });
+}
+
+/**
+ * Shared by `/paint/apply`'s pencil and rect branches -- both need a
+ * `stamp` shaped `{ width, height, cells: [] }` and an `{ x, y }` origin;
+ * only how the TARGET cells are produced (a client-built array vs. two
+ * corners expanded server-side) differs between them. Code-review fix:
+ * this validation used to be duplicated near-verbatim in both branches.
+ * Returns an error string for `send(400, { error })`, or undefined when
+ * both are valid.
+ */
+function validateStampAndOrigin(stamp: unknown, origin: unknown): string | undefined {
+  const s = stamp as { width?: unknown; height?: unknown; cells?: unknown } | undefined;
+  if (!s || typeof s.width !== "number" || typeof s.height !== "number" || !Array.isArray(s.cells)) {
+    return `"stamp" must be { width: number, height: number, cells: [] }, got ${JSON.stringify(stamp)}`;
+  }
+  const o = origin as { x?: unknown; y?: unknown } | undefined;
+  if (typeof o?.x !== "number" || typeof o?.y !== "number") {
+    return `"origin" must be { x: number, y: number }, got ${JSON.stringify(origin)}`;
+  }
+  return undefined;
 }
 
 export async function createServer(opts: { projectPath: string; port?: number }): Promise<PokemapServer> {
@@ -68,6 +101,73 @@ export async function createServer(opts: { projectPath: string; port?: number })
   // coverage()'s single, argument-free result.
   let coverageCache: ReturnType<typeof coverage> | undefined;
   const getCoverage = () => (coverageCache ??= coverage(project));
+
+  // allSpecies(project) reads one directory listing -- cheap even
+  // uncached, but the result can't change for the lifetime of a
+  // read-only-decomp server process (I8), same reasoning as every other
+  // cache in this file. Computed on the first request that needs it.
+  let speciesCache: string[] | undefined;
+  const getSpecies = () => (speciesCache ??= allSpecies(project));
+
+  // Cached for the SAME "read-only project, compute once" reason as
+  // worldCache/coverageCache -- findWarpsTargetingByIndex's own corpus scan
+  // is cheap per call (a plain array walk over already-parsed MapData) but
+  // building the (mapId, MapData) list itself means calling project.map()
+  // for all 1,209 names, which is worth doing once rather than per delete.
+  // Same staleness caveat as the commit route's own comment below: a commit
+  // on map A changes A's warp events on disk but NOT this cache's copy of
+  // A (built from project.map(), which commitSave never invalidates) -- a
+  // later /event/delete on map B computes warpRenumberWarnings against
+  // A's PRE-commit warps until this whole process restarts. Accepted for
+  // the same reason worldCache/coverageCache/etc. are: I8 assumed a
+  // read-only project when every one of these caches was designed, and
+  // Task 9 is the first task to make that assumption stale for one map at
+  // a time; a real invalidation story is out of scope here.
+  let allMapsCache: { mapId: string; map: ReturnType<Project["map"]> }[] | undefined;
+  const getAllMapsForWarpScan = () => (allMapsCache ??= project.mapNames().map((n) => ({ mapId: project.map(n).id, map: project.map(n) })));
+
+  const EVENT_KINDS = new Set<EventKind>(["object", "warp", "coord", "bg"]);
+
+  const editSessions = createEditSessionStore(project);
+
+  const editEntryFor = (name: string) => editSessions.open(name);
+
+  // `map` is included alongside blocks/border/isDirty (added for Task 9):
+  // undo/redo are shared by every edit kind, including event moves/adds/
+  // deletes, which mutate session.map rather than session.blocks -- without
+  // this, undoing an event op would report the reverted blocks/border but
+  // leave the client's own map view silently stale.
+  //
+  // canUndo/canRedo (Task 13): the Toolbar's own Undo/Redo buttons need to
+  // know whether there's anything to undo/redo without guessing client-side
+  // -- entry.stack already tracks this exactly (see EditCommandStack's own
+  // canUndo()/canRedo()), so every route that touches the stack (paint end,
+  // undo, redo, and the event-op routes below) reports it for free through
+  // this one shared response shape.
+  const sendSession = (send: (code: number, body: unknown) => void, code: number, entry: ReturnType<typeof editEntryFor>) =>
+    send(code, {
+      blocks: entry.session.blocks, border: entry.session.border, map: entry.session.map, isDirty: entry.session.isDirty,
+      canUndo: entry.stack.canUndo(), canRedo: entry.stack.canRedo(),
+    });
+
+  // Shared by all three event routes below: the prev-snapshot / mutate /
+  // push-undo-command sequence is identical across move/add/delete, only
+  // (a) which core function to call, (b) which of jsonEdits/insertOps/
+  // removeOps to append to, and (c) any extra per-route response data
+  // (delete's warpRenumberWarnings) differ -- those stay in each route's
+  // own `op` callback rather than becoming parameters here, since forcing
+  // them into a generic shape would just move the duplication into this
+  // function's own signature instead of removing it.
+  function handleEventOp<T = undefined>(
+    entry: ReturnType<typeof editEntryFor>, label: string,
+    op: (map: EditSession["map"]) => { map: EditSession["map"]; extra?: T },
+  ): { map: EditSession["map"]; isDirty: boolean; extra?: T } {
+    const prev = snapshotOf(entry.session);
+    const { map, extra } = op(entry.session.map);
+    entry.session.map = map;
+    entry.stack.push(entry.session, snapshotCommand(label, prev, snapshotOf(entry.session)));
+    return { map: entry.session.map, isDirty: entry.session.isDirty, extra };
+  }
 
   const http: Server = createHttp((req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
@@ -119,7 +219,12 @@ export async function createServer(opts: { projectPath: string; port?: number })
           behavior: behaviorFor(b.metatileId),
         }));
 
-        return send(200, { map, layout, split, blocks });
+        // primary/secondary.metatileCount -- already resolved above for
+        // behaviorFor's own owner.metatileCount check -- are exactly what
+        // MetatilePalette's primaryCount/secondaryCount props need to size
+        // its grid; returning them here means the UI doesn't have to guess
+        // or fetch tileset data separately.
+        return send(200, { map, layout, split, blocks, primaryCount: primary.metatileCount, secondaryCount: secondary.metatileCount });
       }
 
       const renderMatch = /^\/api\/render\/(.+)\.png$/.exec(url.pathname);
@@ -135,19 +240,72 @@ export async function createServer(opts: { projectPath: string; port?: number })
         try { border = parseBorder(url.searchParams.get("border") ?? "0"); }
         catch (e) { return send(400, { error: (e as Error).message }); }
 
-        const key = `${name}:${border}`;
-        let png = pngCache.get(key);
-        if (!png) {
-          // Resolve without throwing. `project.map(name)` refuses an unknown
-          // name, and that refusal must become a 404 here, not a 500 from the
-          // outer catch.
-          const layoutName = project.layoutByName(name)
+        // Resolve without throwing. `project.map(name)` refuses an unknown
+        // name, and that refusal must become a 404 here, not a 500 from the
+        // outer catch.
+        const resolveLayoutName = () =>
+          project.layoutByName(name)
             ? name
             : project.mapNames().includes(name)
               ? project.layoutById(project.map(name).layout)?.name
               : undefined;
+
+        // A live edit session for this exact map name means disk state is
+        // stale (an edit never touches disk until a real commit, per I6) --
+        // render straight from the session's own in-memory blocks and skip
+        // pngCache entirely. pngCache is keyed only on `name:border` with no
+        // expiry of its own; writing a live render into it would serve that
+        // one stale-forever afterward, including to a LATER read-only
+        // request for the same map once the session eventually closes. Only
+        // BROWSER caching is disabled by the response header below -- this
+        // server's own process-lifetime Map needed its own bypass.
+        if (editSessions.has(name)) {
+          const layoutName = resolveLayoutName();
+          if (!layoutName) return send(404, { error: `no layout or map ${name}` });
+          const png = encodePng(renderLayout(project, layoutName, { border, blocksOverride: editEntryFor(name).session.blocks }));
+          res.writeHead(200, { "content-type": "image/png", "cache-control": "no-cache" });
+          return res.end(png);
+        }
+
+        const key = `${name}:${border}`;
+        let png = pngCache.get(key);
+        if (!png) {
+          const layoutName = resolveLayoutName();
           if (!layoutName) return send(404, { error: `no layout or map ${name}` });
           png = encodePng(renderLayout(project, layoutName, { border }));
+          pngCache.set(key, png);
+        }
+        res.writeHead(200, { "content-type": "image/png", "cache-control": "no-cache" });
+        return res.end(png);
+      }
+
+      // Task 10 (Plan 2): the metatile palette's own thumbnail source -- one
+      // 16x16 PNG per metatile id, split-aware via renderMetatile's own
+      // id/split.metatiles rule (see that file's header comment). Layout
+      // name uses `(.+)`, not `[^/]+` -- matches this file's own
+      // established convention for every OTHER per-name route capturing a
+      // Project-resolved identifier (/api/render/, /api/map/). The id
+      // segment uses `[^/]+` (mirrors the species-icon route's own
+      // tight-non-slash-segment match just below), not `\d+`: `\d+` would
+      // refuse to match a non-digit id at all (falling through to this
+      // file's generic 404 "not found"), silently dead-coding the explicit
+      // `Number.isInteger` 400 guard below and failing this route's own
+      // "400s a non-integer metatile id" test -- caught by running that
+      // test against a first draft using `\d+` here.
+      const metatileMatch = /^\/api\/metatile\/(.+)\/([^/]+)\.png$/.exec(url.pathname);
+      if (metatileMatch) {
+        const layoutName = decodeURIComponent(metatileMatch[1]!);
+        const id = Number(metatileMatch[2]);
+        const layout = project.layoutByName(layoutName);
+        if (!layout) return send(404, { error: `no layout ${layoutName}` });
+        if (!Number.isInteger(id) || id < 0) return send(400, { error: `metatile id must be a non-negative integer, got ${metatileMatch[2]}` });
+
+        const key = `${layoutName}:${id}`;
+        let png = pngCache.get(key);
+        if (!png) {
+          const split = project.splitFor(layout);
+          const raster = renderMetatile(id, project.tileset(layout.primaryTileset), project.tileset(layout.secondaryTileset), split, project.profile);
+          png = encodePng(raster);
           pngCache.set(key, png);
         }
         res.writeHead(200, { "content-type": "image/png", "cache-control": "no-cache" });
@@ -241,6 +399,27 @@ export async function createServer(opts: { projectPath: string; port?: number })
         return send(200, { mapName: name, mapId, methods });
       }
 
+      // Feature B (dungeon-mode-and-warp-tools spec §4.2): a map's warp
+      // events, already fully parsed by load/maps.ts but not exposed
+      // anywhere until now. Reused by BOTH the warp-marker toggle (fetched
+      // lazily per visible map, mirroring the encounter cache exactly --
+      // a later task) and Feature C's dungeon connection lines (also a
+      // later task) -- one route, two consumers. Not cached server-side:
+      // this is already-parsed, uncomputed data, the same "no cache
+      // needed" posture as /api/map and /api/encounters.
+      const warpsMatch = /^\/api\/warps\/(.+)$/.exec(url.pathname);
+      if (warpsMatch) {
+        const name = decodeURIComponent(warpsMatch[1]!);
+        if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
+        // Same idToName enrichment /api/coverage and /api/where already
+        // build for the identical reason: the client only ever works with
+        // map NAMES (world/connections.ts's own Placement.map), never the
+        // raw MAP_ID constants warpEvents.destMap carries.
+        const idToName = new Map(project.mapNames().map((n) => [project.map(n).id, n]));
+        const warps = project.map(name).warpEvents.map((w) => ({ ...w, destMapName: idToName.get(w.destMap) }));
+        return send(200, { mapName: name, warps });
+      }
+
       // Task 29's coverage lenses: level-curve, empty-maps, unused-species
       // and method, all driven off one coverage() call (cached above).
       // levelByMap comes back keyed by mapId only (coverage.ts's own
@@ -254,6 +433,18 @@ export async function createServer(opts: { projectPath: string; port?: number })
         const c = getCoverage();
         const idToName = new Map(project.mapNames().map((n) => [project.map(n).id, n]));
         return send(200, { ...c, levelByMap: c.levelByMap.map((m) => ({ ...m, mapName: idToName.get(m.mapId) })) });
+      }
+
+      // The species spotlight's type-ahead dropdown: every SPECIES_X the
+      // project has art for, sorted -- fetched once by the client and
+      // filtered client-side as the user types (coverage.ts's own
+      // allSpecies doc comment explains why sorting happens there instead
+      // of here). This is an exact string match, not a regex like the
+      // species-icon route below -- "/api/species" alone, with nothing
+      // after it, so it can never accidentally swallow that route's own
+      // "/api/species/:name/icon.png" path.
+      if (url.pathname === "/api/species") {
+        return send(200, getSpecies());
       }
 
       // `[^/]+`, not `.+` -- same reasoning as the species-icon route
@@ -274,8 +465,41 @@ export async function createServer(opts: { projectPath: string; port?: number })
         const world = getWorld();
         const sidecar = readSidecar(project.paths.root);
         const merged = resolveWorldPlacements(project, world, sidecar, { dungeons });
+
+        // Feature A (dungeon-mode-and-warp-tools spec §3.2): the world
+        // view's default-population filter needs each placement's own map
+        // kind and whether the user ever manually placed it -- both are
+        // UI-only display concerns layered onto the wire response, not onto
+        // Placement itself (core/world/connections.ts), mirroring how
+        // /api/coverage already enriches levelByMap with a display name
+        // rather than growing coverage()'s own tested shape for a UI-only
+        // need (see that route's own comment just above in this file). A
+        // name absent from knownMaps (a stale manualPlacements entry for a
+        // since-renamed or removed map) has no real mapType to report --
+        // MAP_TYPE_NONE is the project's own "nothing special" value and,
+        // combined with `manual` being true for any such entry, is never
+        // actually consulted either way (any name missing from knownMaps
+        // can only have arrived via applySidecar's placeholder branch, so
+        // `manual` is necessarily true for it regardless of what mapType
+        // ends up as).
+        const knownMaps = new Set(project.mapNames());
+        // Local, wire-only shape: Placement plus the two enrichment fields
+        // above. Not part of core's own Placement (same "UI-only concern"
+        // reasoning as the comment above) -- kept here rather than as
+        // Record<string, unknown> so the object literal below is still
+        // checked against a real shape.
+        interface WirePlacement extends Placement { mapType: string; manual: boolean }
+        const placements: Record<string, WirePlacement> = {};
+        for (const [name, p] of merged) {
+          placements[name] = {
+            ...p,
+            mapType: knownMaps.has(name) ? project.map(name).mapType : "MAP_TYPE_NONE",
+            manual: name in sidecar.manualPlacements,
+          };
+        }
+
         return send(200, {
-          placements: Object.fromEntries(merged),
+          placements,
           components: world.components,
           conflicts: world.conflicts,
           verticalLinks: world.verticalLinks,
@@ -338,6 +562,424 @@ export async function createServer(opts: { projectPath: string; port?: number })
             console.error(e);
             send(500, { error: e instanceof Error ? e.message : String(e) });
           });
+      }
+
+      // Feature C (dungeon-mode-and-warp-tools spec §5.3): user-curated
+      // named groups of maps, persisted to their own sidecar file --
+      // .pokemap/dungeons.json, not world.json, for the same single-
+      // responsibility split sidecar.ts's own file already established.
+      if (url.pathname === "/api/dungeons" && req.method === "GET") {
+        return send(200, readDungeons(project.paths.root).dungeons);
+      }
+
+      if (url.pathname === "/api/dungeons" && req.method === "POST") {
+        return readBody(req)
+          .then((body) => {
+            let parsed: { name?: unknown; seedMap?: unknown; maps?: unknown };
+            try {
+              parsed = JSON.parse(body) as typeof parsed;
+            } catch (e) {
+              return send(400, { error: `invalid JSON body: ${(e as Error).message}` });
+            }
+            if (typeof parsed.name !== "string" || parsed.name.trim() === "") {
+              return send(400, { error: `expected a non-empty "name" string, got ${body}` });
+            }
+            if (parsed.seedMap !== undefined && typeof parsed.seedMap !== "string") {
+              return send(400, { error: `"seedMap" must be a string when present, got ${body}` });
+            }
+            if (parsed.maps !== undefined && (!Array.isArray(parsed.maps) || parsed.maps.some((m) => typeof m !== "string"))) {
+              return send(400, { error: `"maps" must be a string array when present, got ${body}` });
+            }
+
+            let maps: string[];
+            if (typeof parsed.seedMap === "string") {
+              if (!project.mapNames().includes(parsed.seedMap)) {
+                return send(400, { error: `seedMap ${parsed.seedMap} is not a known map` });
+              }
+              maps = [...warpConnectedMapsFrom(project, parsed.seedMap)].sort();
+            } else {
+              maps = (parsed.maps as string[] | undefined) ?? [];
+            }
+
+            const dungeons = readDungeons(project.paths.root);
+            const dungeon = { id: randomUUID(), name: parsed.name, maps };
+            dungeons.dungeons.push(dungeon);
+            writeDungeons(project.paths.root, dungeons);
+            return send(200, dungeon);
+          })
+          .catch((e: unknown) => {
+            console.error(e);
+            send(500, { error: e instanceof Error ? e.message : String(e) });
+          });
+      }
+
+      const dungeonIdMatch = /^\/api\/dungeons\/(.+)$/.exec(url.pathname);
+      if (dungeonIdMatch && req.method === "PATCH") {
+        const id = decodeURIComponent(dungeonIdMatch[1]!);
+        return readBody(req)
+          .then((body) => {
+            let parsed: { name?: unknown; maps?: unknown };
+            try {
+              parsed = JSON.parse(body) as typeof parsed;
+            } catch (e) {
+              return send(400, { error: `invalid JSON body: ${(e as Error).message}` });
+            }
+            if (parsed.name !== undefined && (typeof parsed.name !== "string" || parsed.name.trim() === "")) {
+              return send(400, { error: `"name" must be a non-empty string when present, got ${body}` });
+            }
+            if (parsed.maps !== undefined && (!Array.isArray(parsed.maps) || parsed.maps.some((m) => typeof m !== "string"))) {
+              return send(400, { error: `"maps" must be a string array when present, got ${body}` });
+            }
+            const dungeons = readDungeons(project.paths.root);
+            const dungeon = dungeons.dungeons.find((d) => d.id === id);
+            if (!dungeon) return send(404, { error: `no dungeon ${id}` });
+            if (typeof parsed.name === "string") dungeon.name = parsed.name;
+            if (Array.isArray(parsed.maps)) dungeon.maps = parsed.maps as string[];
+            writeDungeons(project.paths.root, dungeons);
+            return send(200, dungeon);
+          })
+          .catch((e: unknown) => {
+            console.error(e);
+            send(500, { error: e instanceof Error ? e.message : String(e) });
+          });
+      }
+
+      if (dungeonIdMatch && req.method === "DELETE") {
+        const id = decodeURIComponent(dungeonIdMatch[1]!);
+        const dungeons = readDungeons(project.paths.root);
+        const before = dungeons.dungeons.length;
+        dungeons.dungeons = dungeons.dungeons.filter((d) => d.id !== id);
+        if (dungeons.dungeons.length === before) return send(404, { error: `no dungeon ${id}` });
+        writeDungeons(project.paths.root, dungeons);
+        return send(200, { ok: true });
+      }
+
+      // Task 8 (Plan 2): paint-stroke lifecycle. begin/apply/end are three
+      // separate requests on purpose -- see editSessions.ts's own doc
+      // comment on why a whole stroke is one undo step even though it is
+      // many HTTP requests.
+      const paintBeginMatch = /^\/api\/edit\/(.+)\/paint\/begin$/.exec(url.pathname);
+      if (paintBeginMatch && req.method === "POST") {
+        const name = decodeURIComponent(paintBeginMatch[1]!);
+        if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
+        const entry = editEntryFor(name);
+        // A redundant begin() while a stroke is already in progress (no
+        // intervening end()) must NOT overwrite the real start-of-gesture
+        // snapshot with the CURRENT (already-mutated) blocks -- doing so
+        // would silently drop everything painted before the re-begin from
+        // the eventual undo step and desync isDirty, the mirror image of
+        // the double-/paint/end bug guarded by editSessions.ts's own
+        // strokeStartBlocks reset.
+        if (entry.strokeStartBlocks === null) {
+          entry.strokeStartBlocks = entry.session.blocks.map((b) => ({ ...b }));
+        }
+        return sendSession(send, 200, entry);
+      }
+
+      const paintApplyMatch = /^\/api\/edit\/(.+)\/paint\/apply$/.exec(url.pathname);
+      if (paintApplyMatch && req.method === "POST") {
+        const name = decodeURIComponent(paintApplyMatch[1]!);
+        if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
+        return readBody(req)
+          .then((body) => {
+            let parsed: {
+              tool?: unknown;
+              targets?: { x: number; y: number }[]; stamp?: Stamp; origin?: { x: number; y: number };
+              x0?: number; y0?: number; x1?: number; y1?: number;
+              x?: number; y?: number; replacement?: { metatileId: number; collision?: number; elevation?: number };
+              dx?: number; dy?: number;
+            };
+            try { parsed = JSON.parse(body) as typeof parsed; }
+            catch (e) { return send(400, { error: `invalid JSON body: ${(e as Error).message}` }); }
+
+            // This request reads-then-writes entry.session.blocks across an
+            // await (readBody's own round trip already happened above) --
+            // in principle a same-map /undo or another /paint/apply could
+            // interleave here. Low-likelihood in practice: the intended
+            // client always awaits each round trip before sending the next
+            // (the whole begin/apply/end design assumes exactly that), so
+            // this is a known, accepted gap, not a guarantee against it.
+            const entry = editEntryFor(name);
+            const w = entry.session.layout.width, h = entry.session.layout.height;
+
+            if (parsed.tool === "pencil") {
+              const { targets, stamp, origin } = parsed;
+              if (!Array.isArray(targets) || targets.some((t) => typeof t?.x !== "number" || typeof t?.y !== "number")) {
+                return send(400, { error: `"targets" must be an array of { x: number, y: number }, got ${JSON.stringify(targets)}` });
+              }
+              const stampErr = validateStampAndOrigin(stamp, origin);
+              if (stampErr) return send(400, { error: stampErr });
+              entry.session.blocks = paintCells(entry.session.blocks, w, h, targets, stamp!, origin!.x, origin!.y);
+            } else if (parsed.tool === "rect") {
+              // Task 11: takes the two corners and expands server-side,
+              // rather than a client-built `targets` array like pencil --
+              // cheaper over the wire for a large rect (one object instead
+              // of width*height of them).
+              const { x0, y0, x1, y1, stamp, origin } = parsed;
+              if (typeof x0 !== "number" || typeof y0 !== "number" || typeof x1 !== "number" || typeof y1 !== "number") {
+                return send(400, { error: `"x0", "y0", "x1" and "y1" must be numbers, got x0=${JSON.stringify(x0)} y0=${JSON.stringify(y0)} x1=${JSON.stringify(x1)} y1=${JSON.stringify(y1)}` });
+              }
+              const stampErr = validateStampAndOrigin(stamp, origin);
+              if (stampErr) return send(400, { error: stampErr });
+              const targets: { x: number; y: number }[] = [];
+              for (let y = Math.min(y0, y1); y <= Math.max(y0, y1); y++) {
+                for (let x = Math.min(x0, x1); x <= Math.max(x0, x1); x++) targets.push({ x, y });
+              }
+              entry.session.blocks = paintCells(entry.session.blocks, w, h, targets, stamp!, origin!.x, origin!.y);
+            } else if (parsed.tool === "bucket") {
+              const { x, y, replacement } = parsed;
+              if (typeof x !== "number" || typeof y !== "number") {
+                return send(400, { error: `"x" and "y" must be numbers, got x=${JSON.stringify(x)} y=${JSON.stringify(y)}` });
+              }
+              if (typeof replacement?.metatileId !== "number") {
+                return send(400, { error: `"replacement" must be { metatileId: number, ... }, got ${JSON.stringify(replacement)}` });
+              }
+              entry.session.blocks = floodFill(entry.session.blocks, w, h, x, y, replacement);
+            } else if (parsed.tool === "shift") {
+              const { dx, dy } = parsed;
+              if (typeof dx !== "number" || typeof dy !== "number") {
+                return send(400, { error: `"dx" and "dy" must be numbers, got dx=${JSON.stringify(dx)} dy=${JSON.stringify(dy)}` });
+              }
+              entry.session.blocks = shiftGrid(entry.session.blocks, w, h, dx, dy);
+            } else {
+              return send(400, { error: `unknown tool ${JSON.stringify(parsed.tool)}` });
+            }
+            return sendSession(send, 200, entry);
+          })
+          .catch((e: unknown) => {
+            console.error(e);
+            send(500, { error: e instanceof Error ? e.message : String(e) });
+          });
+      }
+
+      const paintEndMatch = /^\/api\/edit\/(.+)\/paint\/end$/.exec(url.pathname);
+      if (paintEndMatch && req.method === "POST") {
+        const name = decodeURIComponent(paintEndMatch[1]!);
+        if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
+        const entry = editEntryFor(name);
+        if (entry.strokeStartBlocks) {
+          const prev = { ...snapshotOf(entry.session), blocks: entry.strokeStartBlocks };
+          const next = snapshotOf(entry.session);
+          if (JSON.stringify(prev.blocks) !== JSON.stringify(next.blocks)) {
+            entry.stack.push(entry.session, snapshotCommand("paint", prev, next));
+          }
+          entry.strokeStartBlocks = null;
+        }
+        return sendSession(send, 200, entry);
+      }
+
+      const undoMatch = /^\/api\/edit\/(.+)\/undo$/.exec(url.pathname);
+      if (undoMatch && req.method === "POST") {
+        const name = decodeURIComponent(undoMatch[1]!);
+        if (!editSessions.has(name)) return send(200, { blocks: [], border: [], map: null, isDirty: false, canUndo: false, canRedo: false }); // nothing open -- a no-op, not a 500
+        const entry = editEntryFor(name);
+        entry.stack.undo(entry.session);
+        return sendSession(send, 200, entry);
+      }
+
+      const redoMatch = /^\/api\/edit\/(.+)\/redo$/.exec(url.pathname);
+      if (redoMatch && req.method === "POST") {
+        const name = decodeURIComponent(redoMatch[1]!);
+        if (!editSessions.has(name)) return send(200, { blocks: [], border: [], map: null, isDirty: false, canUndo: false, canRedo: false });
+        const entry = editEntryFor(name);
+        entry.stack.redo(entry.session);
+        return sendSession(send, 200, entry);
+      }
+
+      // Plan 2 follow-up 5: explicit "give up on this whole session, revert
+      // to disk state" -- editSessions.ts's own close() already does exactly
+      // this (sessions.delete(mapName)); this route is just the first thing
+      // that ever calls it outside a successful commit. Deliberately its own
+      // route, not a repurposing of SaveDialog's Cancel button (see that
+      // component's own comment) -- Cancel stays a non-destructive
+      // dialog-close, this is the real discard action.
+      const discardMatch = /^\/api\/edit\/(.+)\/discard$/.exec(url.pathname);
+      if (discardMatch && req.method === "POST") {
+        const name = decodeURIComponent(discardMatch[1]!);
+        if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
+        editSessions.close(name);
+        // Same "nothing open" shape the undo/redo routes already return when
+        // editSessions.has(name) is false -- after a discard, that's exactly
+        // true. Idempotent: discarding an already-clean or never-opened
+        // session is a harmless no-op with the same response, matching
+        // close()'s own "always safe to drop" doc comment.
+        return send(200, { blocks: [], border: [], map: null, isDirty: false, canUndo: false, canRedo: false });
+      }
+
+      // Task 9: save/commit. planSave/commitSave both live in core (I8's
+      // one writer); this route's own job is just wiring an open session to
+      // them and turning a refusal into a 400 rather than a 200 that lies
+      // about having saved.
+      const planMatch = /^\/api\/edit\/(.+)\/plan$/.exec(url.pathname);
+      if (planMatch && req.method === "GET") {
+        const name = decodeURIComponent(planMatch[1]!);
+        if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
+        const entry = editEntryFor(name);
+        const plan = planSave(project, entry.session);
+        return send(200, formatDiffJson(plan));
+      }
+
+      const commitMatch = /^\/api\/edit\/(.+)\/commit$/.exec(url.pathname);
+      if (commitMatch && req.method === "POST") {
+        const name = decodeURIComponent(commitMatch[1]!);
+        if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
+        const entry = editEntryFor(name);
+        const plan = planSave(project, entry.session);
+        if (plan.refusals.length > 0) return send(400, formatDiffJson(plan));
+        try {
+          commitSave(project, plan);
+        } catch (e) {
+          console.error(e);
+          return send(500, { error: e instanceof Error ? e.message : String(e) });
+        }
+        // Close, not markSaved()-and-keep-open: the session's own `map`/
+        // `blocks` reflect what was JUST written, but the world/coverage/
+        // encounters caches above this route do NOT (I8's read-only-
+        // project assumption is now stale for this one map) -- Task 15's
+        // corpus gate is what actually proves writes round-trip; this
+        // route's own job ends at "committed successfully," and the
+        // simplest correct thing is forcing the NEXT open() to re-read
+        // real disk state fresh rather than trusting an in-memory session
+        // that predates caches it can no longer invalidate.
+        editSessions.close(name);
+        return send(200, formatDiffJson(plan));
+      }
+
+      // Task 9: event move/add/delete. Each is its own undo step, the same
+      // snapshot-before/snapshot-after shape as the paint routes above --
+      // this file doesn't need to know HOW to reverse an event op, only
+      // that one whole op is one command (editSessions.ts's own
+      // snapshotCommand).
+      const eventMoveMatch = /^\/api\/edit\/(.+)\/event\/move$/.exec(url.pathname);
+      if (eventMoveMatch && req.method === "POST") {
+        const name = decodeURIComponent(eventMoveMatch[1]!);
+        if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
+        return readBody(req)
+          .then((body) => {
+            let parsed: { kind?: unknown; index?: unknown; x?: unknown; y?: unknown; elevation?: unknown };
+            try { parsed = JSON.parse(body) as typeof parsed; }
+            catch (e) { return send(400, { error: `invalid JSON body: ${(e as Error).message}` }); }
+            if (!EVENT_KINDS.has(parsed.kind as EventKind)) return send(400, { error: `"kind" must be one of object/warp/coord/bg, got ${JSON.stringify(parsed.kind)}` });
+            if (typeof parsed.index !== "number" || typeof parsed.x !== "number" || typeof parsed.y !== "number") {
+              return send(400, { error: `expected { kind, index: number, x: number, y: number }, got ${body}` });
+            }
+            if (parsed.elevation !== undefined && typeof parsed.elevation !== "number") {
+              return send(400, { error: `"elevation" must be a number when present, got ${JSON.stringify(parsed.elevation)}` });
+            }
+            const entry = editEntryFor(name);
+            const result = handleEventOp(entry, "move event", (map) => {
+              const { map: nextMap, jsonEdits } = moveEvent(map, parsed.kind as EventKind, parsed.index as number, parsed.x as number, parsed.y as number, parsed.elevation as number | undefined);
+              entry.session.jsonEdits = [...entry.session.jsonEdits, ...jsonEdits];
+              return { map: nextMap };
+            });
+            return send(200, { map: result.map, isDirty: result.isDirty });
+          })
+          .catch((e: unknown) => { console.error(e); send(500, { error: e instanceof Error ? e.message : String(e) }); });
+      }
+
+      const eventAddMatch = /^\/api\/edit\/(.+)\/event\/add$/.exec(url.pathname);
+      if (eventAddMatch && req.method === "POST") {
+        const name = decodeURIComponent(eventAddMatch[1]!);
+        if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
+        return readBody(req)
+          .then((body) => {
+            let parsed: { kind?: unknown; value?: unknown };
+            try { parsed = JSON.parse(body) as typeof parsed; }
+            catch (e) { return send(400, { error: `invalid JSON body: ${(e as Error).message}` }); }
+            if (!EVENT_KINDS.has(parsed.kind as EventKind)) return send(400, { error: `"kind" must be one of object/warp/coord/bg, got ${JSON.stringify(parsed.kind)}` });
+            if (typeof parsed.value !== "object" || parsed.value === null) return send(400, { error: `expected { kind, value: object }, got ${body}` });
+            const entry = editEntryFor(name);
+            const result = handleEventOp(entry, "add event", (map) => {
+              const { map: nextMap, insertOp } = addEvent(map, parsed.kind as EventKind, parsed.value as Record<string, unknown>);
+              entry.session.insertOps = [...entry.session.insertOps, insertOp];
+              return { map: nextMap };
+            });
+            return send(200, { map: result.map, isDirty: result.isDirty });
+          })
+          .catch((e: unknown) => { console.error(e); send(500, { error: e instanceof Error ? e.message : String(e) }); });
+      }
+
+      const eventDeleteMatch = /^\/api\/edit\/(.+)\/event\/delete$/.exec(url.pathname);
+      if (eventDeleteMatch && req.method === "POST") {
+        const name = decodeURIComponent(eventDeleteMatch[1]!);
+        if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
+        return readBody(req)
+          .then((body) => {
+            let parsed: { kind?: unknown; index?: unknown };
+            try { parsed = JSON.parse(body) as typeof parsed; }
+            catch (e) { return send(400, { error: `invalid JSON body: ${(e as Error).message}` }); }
+            if (!EVENT_KINDS.has(parsed.kind as EventKind)) return send(400, { error: `"kind" must be one of object/warp/coord/bg, got ${JSON.stringify(parsed.kind)}` });
+            if (typeof parsed.index !== "number") return send(400, { error: `expected { kind, index: number }, got ${body}` });
+            const entry = editEntryFor(name);
+            const result = handleEventOp(entry, "delete event", (map) => {
+              const { map: nextMap, removeOp } = deleteEvent(map, parsed.kind as EventKind, parsed.index as number);
+              entry.session.removeOps = [...entry.session.removeOps, removeOp];
+              const warpRenumberWarnings = parsed.kind === "warp"
+                ? findWarpsTargetingByIndex(getAllMapsForWarpScan().filter((m) => m.mapId !== map.id), map.id, parsed.index as number)
+                : [];
+              return { map: nextMap, extra: warpRenumberWarnings };
+            });
+            return send(200, { map: result.map, isDirty: result.isDirty, warpRenumberWarnings: result.extra });
+          })
+          .catch((e: unknown) => { console.error(e); send(500, { error: e instanceof Error ? e.message : String(e) }); });
+      }
+
+      // Task 17: wild sign write path. GET /suggestions is read-only (ranks
+      // catchable species and suggests a grass-adjacent placement, Task
+      // 15's own rankSpeciesForSign/suggestSignPlacement); POST /sign/add
+      // composes Task 16's generateSignScript (via core's buildWildSign)
+      // into ONE object-event insert plus ONE scripts.inc append, both
+      // staged on the session the same way the event routes above stage
+      // theirs -- reuses handleEventOp for the identical prev-snapshot/
+      // mutate/push-undo-command sequence, extended here to also push a
+      // scriptAppends entry alongside insertOps (editSessions.ts's own
+      // Snapshot/snapshotOf already carry scriptAppends, so undo reverts
+      // both halves as one step for free).
+      const signSuggestMatch = /^\/api\/sign\/(.+)\/suggestions$/.exec(url.pathname);
+      if (signSuggestMatch && req.method === "GET") {
+        const name = decodeURIComponent(signSuggestMatch[1]!);
+        if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
+        return send(200, {
+          species: rankSpeciesForSign(project, name),
+          placement: suggestSignPlacement(project, name),
+        });
+      }
+
+      const signAddMatch = /^\/api\/edit\/(.+)\/sign\/add$/.exec(url.pathname);
+      if (signAddMatch && req.method === "POST") {
+        const name = decodeURIComponent(signAddMatch[1]!);
+        if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
+        return readBody(req)
+          .then((body) => {
+            let parsed: { x?: unknown; y?: unknown; elevation?: unknown; species?: unknown; dialogue?: unknown };
+            try { parsed = JSON.parse(body) as typeof parsed; }
+            catch (e) { return send(400, { error: `invalid JSON body: ${(e as Error).message}` }); }
+            if (typeof parsed.x !== "number" || typeof parsed.y !== "number" || typeof parsed.elevation !== "number"
+              || typeof parsed.species !== "string" || typeof parsed.dialogue !== "string") {
+              return send(400, { error: `expected { x, y, elevation: number, species, dialogue: string }, got ${body}` });
+            }
+            let built: ReturnType<typeof buildWildSign>;
+            try {
+              built = buildWildSign(name, parsed as { x: number; y: number; elevation: number; species: string; dialogue: string });
+            } catch (e) {
+              return send(400, { error: e instanceof Error ? e.message : String(e) });
+            }
+            const refusals = guardSignWrite(project.paths.root, name, built.scriptLabel);
+            if (refusals.length > 0) return send(400, { refusals });
+
+            const entry = editEntryFor(name);
+            const result = handleEventOp(entry, "add wild sign", (map) => {
+              const { map: nextMap, insertOp } = addEvent(map, "object", built.objectEvent);
+              entry.session.insertOps = [...entry.session.insertOps, insertOp];
+              entry.session.scriptAppends = [
+                ...(entry.session.scriptAppends ?? []),
+                { path: project.paths.mapScriptsInc(name), text: built.scriptAppendText },
+              ];
+              return { map: nextMap };
+            });
+            return send(200, { map: result.map, isDirty: result.isDirty, scriptLabel: built.scriptLabel });
+          })
+          .catch((e: unknown) => { console.error(e); send(500, { error: e instanceof Error ? e.message : String(e) }); });
       }
 
       return send(404, { error: "not found" });

@@ -1,8 +1,16 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync, existsSync } from "node:fs";
-import { editJson } from "../../src/write/jsonEdit.js";
+import { readFileSync, existsSync, writeFileSync } from "node:fs";
+import { editJson, insertArrayElement, removeArrayElement } from "../../src/write/jsonEdit.js";
 import { projectPaths } from "../../src/config/paths.js";
-import { parseMapGroups } from "../../src/load/maps.js";
+import { parseMapGroups, parseMap } from "../../src/load/maps.js";
+import { parseBlocks, encodeBlocks } from "../../src/load/blocks.js";
+import { parseLayouts, resolveSplit } from "../../src/load/layouts.js";
+import { engineProfile, defaultProfile, parseCfg, type EngineProfile } from "../../src/config/engine.js";
+import { parseFieldmapConstants } from "../../src/config/fieldmap.js";
+import { paintCells } from "../../src/edit/paint.js";
+import { planSave, commitSave, type EditSession } from "../../src/write/save.js";
+import type { Project } from "../../src/project.js";
+import { stubProject, stubTileset } from "../helpers/stubProject.js";
 
 const cfg = JSON.parse(readFileSync("pokemap.config.json", "utf8")) as {
   projectPath: string; referenceProjects: string[];
@@ -26,6 +34,106 @@ function mapNamesOf(root: string): string[] {
   const paths = projectPaths(root);
   return parseMapGroups(readFileSync(paths.mapGroupsJson, "utf8")).allMapNames();
 }
+
+// Mirrors project.ts's own profile resolution (existsSync(porymapCfg) ?
+// engineProfile(...) : defaultProfile(...)) closely enough for this gate's
+// purpose -- it needs the block/metatile-attribute bit layout only, not
+// project.ts's further fieldmap-constant merge, which this file's own
+// header comment already explains this gate deliberately avoids depending
+// on (the same reason it does not call openProject).
+function profileOf(root: string): EngineProfile {
+  const paths = projectPaths(root);
+  return existsSync(paths.porymapCfg)
+    ? engineProfile(parseCfg(readFileSync(paths.porymapCfg, "utf8")))
+    : defaultProfile("pokeemerald");
+}
+
+/**
+ * A Project stub built from real, on-disk data wherever that data is
+ * reachable without the tileset-path resolution openProject depends on
+ * (this file's own header comment explains why pokeclassic rules that out).
+ * `profile`/`paths`/`constants`/`splitFor` are all real -- constants comes
+ * straight off the real fieldmap.h every one of the six engines actually
+ * has (confirmed directly: unlike src/data/tilesets/, pokeclassic does ship
+ * include/fieldmap.h), so guardLayoutSave's missing-layout-version and
+ * idOutOfRange's own `proj.constants.metatilesTotal` ceiling term are both
+ * real per-engine values, not invented ones.
+ *
+ * `tileset()` is the one deliberately permissive member: idOutOfRange's
+ * per-tileset primary/secondary metatileCount terms would need the exact
+ * headers.h-driven path resolution this gate exists to avoid (pokeclassic
+ * has no src/data/tilesets/headers.h at all -- an older, asm-based fork).
+ * That sub-check already has its own dedicated, hand-derived-fixture
+ * coverage in guards.test.ts ("the whole thesis of the project... expressed
+ * as an assertion"), so this stub bounds both counts at the block format's
+ * own id ceiling (blockMetatileIdMask + 1) -- always large enough that a
+ * real committed id, or that id +/-1, never trips the primary-vs-secondary
+ * split by construction -- while `constants.metatilesTotal` (real) still
+ * bounds the overall ceiling idOutOfRange computes. Every OTHER guard path
+ * this funnel test can reach (missing-layout-version, border-size-mismatch,
+ * warp-tile-moved) is exercised against fully real data.
+ *
+ * Every field left un-overridden falls back to stubProject.ts's own
+ * defaults, and those are NOT all `unused()` throwers the way `splitFor`/
+ * `tileset`/`constants` are here -- `layouts`, `layoutByName`/`layoutById`
+ * and `mapNames` fall back to silent, benign empty values ([], undefined,
+ * []). Harmless for every guard path this funnel test actually reaches
+ * today, but worth naming here: a future guards.ts check that reads
+ * `proj.layouts` or calls `proj.layoutByName(...)` would silently see empty
+ * data in THIS merge gate, rather than throwing loudly the way the
+ * currently-overridden fields do.
+ */
+function projFor(root: string): Project {
+  const paths = projectPaths(root);
+  const profile = profileOf(root);
+  const constants = parseFieldmapConstants(readFileSync(paths.fieldmapH, "utf8"));
+  return stubProject({
+    paths, profile, constants,
+    splitFor: (l) => resolveSplit(l, constants),
+    tileset: () => stubTileset("stub", profile.blockMetatileIdMask + 1),
+  });
+}
+
+// Real single-map collisions with OTHER test files -- in a different
+// package in every case here -- that either pin exact byte/field values
+// read off the SAME real file the funnel test's "first resolvable map"
+// selection would otherwise deterministically choose, or themselves commit
+// a real write to it. Same hazard the project already hit and fixed twice
+// in Task 18 (writeCommands.test.ts's Route33->Route37, Route34->Route38,
+// commit 5de00c0) -- vitest's default parallel-file execution makes two
+// independent test files touching the same real path a genuine reader/
+// writer race, not a theoretical one. Scoped to the subject root only:
+// these are Johto/GSC map names unique to this romhack's own tree, so the
+// set is a structural no-op against every reference root's own "first
+// resolvable" pick (e.g. PetalburgCity), which is confirmed collision-free
+// separately (no reference-root test reads or writes a reference-root
+// map.bin BY NAME).
+//   - NewBarkTown: pinned byte-for-byte in packages/core/test/load/
+//     blocks.test.ts ("reads NewBarkTown's real map.bin").
+//   - CherrygroveCity, VioletCity, GoldenrodCity: real paint/commit writes
+//     in packages/server/test/paintRoutes.test.ts.
+//   - EcruteakCity, OlivineCity, BlackthornCity: real paint/commit writes
+//     in packages/server/test/saveRoutes.test.ts.
+//
+// This list is NOT a complete safety net, and a name absent from it is not
+// thereby proven safe: whole-corpus scanners (packages/core/test/load/
+// blocks.test.ts's border/map.bin histograms, write/binary.test.ts's
+// trailing-block scan, load/maps.test.ts's parse-every-map.json checks --
+// on the subject root AND, for maps.test.ts, on every reference root too)
+// read every real file by ITERATION, not by map name, so no name-keyed
+// exclusion set can ever cover them -- whichever map this loop picks, its
+// blockdata still races them for the length of the paint-to-restore window.
+// They survive today only because their assertions are metatileId-agnostic
+// and paintCells (edit/paint.ts) never touches a file's length or its
+// collision/elevation bytes -- not because this list makes the map safe.
+// The actual defence against this second hazard class is keeping the
+// funnel test's own real-write surface as small as possible (see the
+// `finally` block below, which restores border.bin/map.json only if
+// commitSave actually touched them).
+const EXCLUDED_TARGET_NAMES = new Set([
+  "NewBarkTown", "CherrygroveCity", "VioletCity", "GoldenrodCity",
+  "EcruteakCity", "OlivineCity", "BlackthornCity",
+]);
 
 describe("identity corpus (invariant I5)", () => {
   it("has every reference engine available", () => {
@@ -145,5 +253,225 @@ describe("identity corpus (invariant I5)", () => {
     const deep = editJson(src, [{ path: ["layouts", targetIndex, "width"], value: width + 1 }]);
     expect(deep).not.toBe(src);
     expect(editJson(deep, [{ path: ["layouts", targetIndex, "width"], value: width }])).toBe(src);
+  }, 900_000);
+
+  // Task 3's insertArrayElement/removeArrayElement were unit-tested against
+  // synthetic fixtures only (packages/core/test/write/jsonEdit.test.ts) --
+  // exactly the gap this file's own header comment warns about for
+  // editJson's container-skip fix: a synthetic test proves the algorithm
+  // correct against the shapes its author thought of, not against every
+  // real formatting quirk six actual decomp forks contain (trailing
+  // commas' absence, one-element arrays, arrays split across lines
+  // differently per engine's own JSON formatter). This closes that gap for
+  // the array-splice functions the same way the tests above already closed
+  // it for scalar editJson.
+  it.each(roots)("insertArrayElement then removeArrayElement round-trips every map.json's object_events array byte-identical, across %s", (root) => {
+    const paths = projectPaths(root);
+    const names = mapNamesOf(root);
+    const notRestored: string[] = [];
+    const neverDiffered: string[] = [];
+    let checked = 0;
+
+    for (const name of names) {
+      const path = paths.mapJson(name);
+      if (!existsSync(path)) continue;
+      const src = readFileSync(path, "utf8");
+      const parsed = JSON.parse(src) as { object_events?: unknown[] };
+      if (!parsed.object_events || parsed.object_events.length === 0) continue;
+      checked++;
+
+      const probe = { graphics_id: "OBJ_EVENT_GFX_PLACEHOLDER_XYZZY", x: 0, y: 0, elevation: 0 };
+      const inserted = insertArrayElement(src, ["object_events"], parsed.object_events.length, probe);
+      if (inserted === src) neverDiffered.push(name);
+      const removed = removeArrayElement(inserted, ["object_events"], parsed.object_events.length);
+      if (removed !== src) notRestored.push(name);
+    }
+
+    // Every one of these six engines has at least a few hundred maps
+    // carrying object events (measured floor across all six: well over
+    // 200) -- if this drops to 0 the loop stopped finding real data, not
+    // that this corpus genuinely has none.
+    expect(checked).toBeGreaterThan(100);
+    expect(neverDiffered).toEqual([]);
+    expect(notRestored).toEqual([]);
+  }, 900_000);
+
+  // The insert-at-END case above never exercises walkArray's "skip past N
+  // preceding elements to find the insertion point" path for anything
+  // other than N = the whole array. Insert-at-0 (prepend) is the other
+  // extreme, and it is where an off-by-one in leadingGap bookkeeping would
+  // actually surface -- see Task 3's own derivation notes on this exact
+  // failure mode.
+  it.each(roots)("insertArrayElement at index 0 then removeArrayElement at index 0 round-trips byte-identical, across %s", (root) => {
+    const paths = projectPaths(root);
+    const names = mapNamesOf(root);
+    const notRestored: string[] = [];
+    let checked = 0;
+
+    for (const name of names) {
+      const path = paths.mapJson(name);
+      if (!existsSync(path)) continue;
+      const src = readFileSync(path, "utf8");
+      const parsed = JSON.parse(src) as { object_events?: unknown[] };
+      if (!parsed.object_events || parsed.object_events.length === 0) continue;
+      checked++;
+
+      const probe = { graphics_id: "OBJ_EVENT_GFX_PLACEHOLDER_XYZZY", x: 0, y: 0, elevation: 0 };
+      const inserted = insertArrayElement(src, ["object_events"], 0, probe);
+      const removed = removeArrayElement(inserted, ["object_events"], 0);
+      if (removed !== src) notRestored.push(name);
+    }
+
+    expect(checked).toBeGreaterThan(100);
+    expect(notRestored).toEqual([]);
+  }, 900_000);
+
+  // The JSON gate above proves the SPLICE is exact; this is the binary
+  // write path's own equivalent property -- encodeBlocks re-serialises the
+  // WHOLE buffer (there is no surgical splice for binary, by design: a
+  // fixed-width block record has no "the rest of the file" to preserve
+  // around it the way JSON text does), so its correctness rests entirely
+  // on parse+encode being exact inverses. A single off-by-one in a mask or
+  // shift would corrupt every map.bin this project ever saves.
+  it.each(roots)("encodeBlocks(parseBlocks(bytes)) round-trips every layout's map.bin and border.bin byte-identical, across %s", (root) => {
+    const paths = projectPaths(root);
+    const profile = profileOf(root);
+    const { layouts } = parseLayouts(readFileSync(paths.layoutsJson, "utf8"));
+    const notRestored: string[] = [];
+    let checked = 0;
+
+    for (const layout of layouts) {
+      for (const rel of [layout.blockdataFilepath, layout.borderFilepath]) {
+        const path = `${root}/${rel}`;
+        if (!existsSync(path)) continue;
+        checked++;
+        const before = readFileSync(path);
+        const blocks = parseBlocks(before, profile);
+        const after = encodeBlocks(blocks, profile);
+        if (!after.equals(before)) notRestored.push(`${layout.name}: ${rel}`);
+      }
+    }
+
+    // Every configured engine has several hundred layouts, each with both
+    // a blockdata and a border file -- a floor of 500 combined files is
+    // well under any of the six engines' real counts (smallest measured
+    // still exceeds 900), so a drop below it means the walk broke.
+    expect(checked).toBeGreaterThan(500);
+    expect(notRestored).toEqual([]);
+  }, 900_000);
+
+  // The plan's own Success Criteria #1 (this document's header): "Paint a
+  // tile in NewBarkTown (hns/640) and in PetalburgCity (emerald/512), save
+  // both, and confirm git diff in the decomp shows ONLY the two map.bin
+  // files, changed by exactly the bytes painted." This is that criterion,
+  // generalised to every configured engine and run as an automated gate
+  // rather than a one-off manual check -- guards, binary encoding and the
+  // save funnel, acting together on a real file, restored byte-identical
+  // afterward no matter what assertion above it failed.
+  it.each(roots)("paints one real block on one real map, commits through the full save funnel, and restores byte-identical, in %s", (root) => {
+    const paths = projectPaths(root);
+    const names = mapNamesOf(root);
+    const proj = projFor(root);
+    const { layouts } = parseLayouts(readFileSync(paths.layoutsJson, "utf8"));
+    const byId = new Map(layouts.map((l) => [l.id, l]));
+
+    // First map whose layout and blockdata both actually resolve on disk,
+    // AND whose block (0,0) has no warp sitting on it -- not map index 0
+    // specifically, since a handful of maps across these six engines
+    // reference a layout id absent from their own layouts.json (see this
+    // file's own existing comment on the 5 map.json files missing from
+    // map_groups.json entirely -- data gaps like that are real and this
+    // loop must skip past them, not fail the whole gate on one). Skipping a
+    // warp-at-(0,0) map is a real, legitimate guard (warp-tile-moved) this
+    // gate must not paint through -- painting under a stationary warp is
+    // exactly the case that guard exists to refuse, so choosing a map that
+    // avoids it is a test-construction choice, not a weakened assertion.
+    let target: { name: string; layout: ReturnType<typeof parseLayouts>["layouts"][number]; map: ReturnType<typeof parseMap> } | undefined;
+    for (const name of names) {
+      if (EXCLUDED_TARGET_NAMES.has(name)) continue;
+      const mapPath = paths.mapJson(name);
+      if (!existsSync(mapPath)) continue;
+      const mapJson = readFileSync(mapPath, "utf8");
+      const layoutId = (JSON.parse(mapJson) as { layout: string }).layout;
+      const layout = byId.get(layoutId);
+      if (!layout) continue;
+      if (!existsSync(`${root}/${layout.blockdataFilepath}`)) continue;
+      const map = parseMap(mapJson);
+      if (map.warpEvents.some((w) => w.x === 0 && w.y === 0)) continue;
+      target = { name, layout, map };
+      break;
+    }
+    expect(target).toBeDefined();
+    const { name: mapName, layout, map } = target!;
+
+    const blockdataPath = `${root}/${layout.blockdataFilepath}`;
+    const borderPath = `${root}/${layout.borderFilepath}`;
+    const mapJsonPath = paths.mapJson(mapName);
+    const beforeBlockdata = readFileSync(blockdataPath);
+    const beforeBorder = readFileSync(borderPath);
+    const beforeMapJson = readFileSync(mapJsonPath, "utf8");
+
+    try {
+      const blocks = parseBlocks(beforeBlockdata, proj.profile);
+      const border = parseBlocks(beforeBorder, proj.profile);
+      const originalMetatileId = blocks[0]!.metatileId;
+      // Bumped by 1 and, if that would land at or past this engine's own
+      // real metatilesTotal ceiling (idOutOfRange's ultimate bound even
+      // under projFor's permissive per-tileset stub -- see projFor's own
+      // doc comment), bumped down instead. Always different from the
+      // original id, and always a real, in-range id for this engine.
+      const ceiling = proj.constants.metatilesTotal;
+      const paintedId = originalMetatileId + 1 < ceiling ? originalMetatileId + 1 : originalMetatileId - 1;
+      const paintedBlocks = paintCells(blocks, layout.width, layout.height, [{ x: 0, y: 0 }], { width: 1, height: 1, cells: [{ metatileId: paintedId }] }, 0, 0);
+
+      const session: EditSession = {
+        mapName, layout, blocks: paintedBlocks, border, map,
+        originalBlocks: blocks, originalMap: parseMap(beforeMapJson),
+        originalMapJson: beforeMapJson, jsonEdits: [], insertOps: [], removeOps: [], scriptAppends: [], isDirty: true,
+      };
+      const plan = planSave(proj, session);
+      expect(plan.refusals).toEqual([]);
+      expect(plan.changes).toHaveLength(1);
+      expect(plan.changes[0]!.kind).toBe("binary");
+
+      commitSave(proj, plan);
+
+      const afterBlockdata = readFileSync(blockdataPath);
+      expect(afterBlockdata).not.toEqual(beforeBlockdata);
+      const afterBlocks = parseBlocks(afterBlockdata, proj.profile);
+      // Pinned against the ORIGINAL block count, not `afterBlocks.length`
+      // itself -- the loop below is bounded by `afterBlocks.length`, so a
+      // commitSave that silently truncated the file would otherwise still
+      // pass every assertion here (a truncated buffer is still "not equal"
+      // to `beforeBlockdata`, and an empty-tailed loop trivially finds no
+      // mismatches).
+      expect(afterBlocks).toHaveLength(blocks.length);
+      expect(afterBlocks[0]!.metatileId).toBe(paintedId);
+      // Nothing else on the grid moved -- a save that touches the whole
+      // buffer instead of exactly the one changed block is exactly the kind
+      // of silent corruption this gate exists to catch.
+      for (let i = 1; i < afterBlocks.length; i++) expect(afterBlocks[i]).toEqual(blocks[i]);
+      expect(readFileSync(mapJsonPath, "utf8")).toBe(beforeMapJson); // untouched -- no json edit was staged
+      expect(readFileSync(borderPath)).toEqual(beforeBorder); // untouched -- border was never painted
+    } finally {
+      // blockdataPath is unconditional -- commitSave genuinely writes it
+      // every time (that's the whole point of the test). borderPath and
+      // mapJsonPath are read-guarded, not written unconditionally: commitSave
+      // never touches either for this test (proven above at :428-429, and
+      // structurally -- planBorderWrite/the json-edit path both short-
+      // circuit to a no-op when nothing changed), so writing them
+      // unconditionally would be a real writeFileSync on two files this test
+      // never actually modified, for zero benefit -- exactly the write
+      // surface a whole-corpus scanner in a concurrent test file (see
+      // EXCLUDED_TARGET_NAMES's own comment) can race, on every root, since
+      // those scanners read by iteration rather than by name. Matches Task
+      // 18's own precedent (writeCommands.test.ts: restore only what was
+      // actually written), while still acting as a safety net if a future
+      // change ever DOES make commitSave touch either file here.
+      writeFileSync(blockdataPath, beforeBlockdata);
+      if (!readFileSync(borderPath).equals(beforeBorder)) writeFileSync(borderPath, beforeBorder);
+      if (readFileSync(mapJsonPath, "utf8") !== beforeMapJson) writeFileSync(mapJsonPath, beforeMapJson);
+      expect(readFileSync(blockdataPath)).toEqual(beforeBlockdata);
+    }
   }, 900_000);
 });

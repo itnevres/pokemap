@@ -20,6 +20,11 @@ export interface ProjectPaths {
   tilesetGraphicsC: string;
   eventObjectsH: string;
   sidecar: string;
+  /** .pokemap/dungeons.json -- Feature C's own sidecar file, deliberately
+   *  separate from `sidecar` (layout/placement state) for the same
+   *  single-responsibility reason sidecar.ts and resolve.ts are already
+   *  split apart. */
+  dungeons: string;
   mapDir(name: string): string;
   mapJson(name: string): string;
   mapScriptsInc(name: string): string;
@@ -30,7 +35,7 @@ export interface ProjectPaths {
   monOverworldPng(speciesLower: string): string;
 }
 
-const norm = (s: string) => s.replace(/\\/g, "/").replace(/\/+$/, "");
+export const norm = (s: string) => s.replace(/\\/g, "/").replace(/\/+$/, "");
 
 export function projectPaths(root: string): ProjectPaths {
   const r = norm(root);
@@ -49,6 +54,7 @@ export function projectPaths(root: string): ProjectPaths {
     tilesetGraphicsC: `${r}/src/graphics.c`,
     eventObjectsH: `${r}/include/constants/event_objects.h`,
     sidecar: `${r}/.pokemap/world.json`,
+    dungeons: `${r}/.pokemap/dungeons.json`,
     mapDir: (n) => `${r}/data/maps/${n}`,
     mapJson: (n) => `${r}/data/maps/${n}/map.json`,
     mapScriptsInc: (n) => `${r}/data/maps/${n}/scripts.inc`,

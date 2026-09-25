@@ -26,6 +26,23 @@ export function parseBorder(value: string): number {
   return n;
 }
 
+export type TimeOfDay = "morn" | "day" | "nite";
+
+/**
+ * commander's `argParser` for `render --time` (GBC only -- Task 10). Rejects
+ * anything but the three real clock values at the option boundary, the same
+ * "name the flag, refuse rather than guess" shape as `parseBorder`/
+ * `parseScale` above, instead of letting a typo travel into
+ * `resolveFromTables`'s `clockIndexByOption` lookup as `undefined` and
+ * silently fall back to whatever that lookup's own default happens to be.
+ */
+export function parseTime(value: string): TimeOfDay {
+  if (value !== "morn" && value !== "day" && value !== "nite") {
+    throw new InvalidArgumentError(`--time must be one of morn, day, nite, got ${JSON.stringify(value)}`);
+  }
+  return value;
+}
+
 export interface Bbox { x: number; y: number; w: number; h: number; }
 
 /**

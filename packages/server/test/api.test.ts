@@ -4,6 +4,8 @@ import { SUBJECT_ROOT, hasProject } from "@pokemap/core/test/helpers/corpus.js";
 
 let s: PokemapServer;
 const get = async (path: string) => fetch(`http://127.0.0.1:${s.port}${path}`);
+const post = async (path: string, body: unknown) =>
+  fetch(`http://127.0.0.1:${s.port}${path}`, { method: "POST", body: JSON.stringify(body) });
 
 // The hooks live INSIDE the describe, not beside it. `createServer` opens the
 // real project, so an `it`-level guard is too late -- but so is a
@@ -28,6 +30,12 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("server", () => {
     expect(body.layout.name).toBe("NewBarkTown_Layout");
     expect(body.split.metatiles).toBe(640);
     expect(body.split.version).toBe("hns");
+    // MetatilePalette needs these to size its grid -- values verified
+    // independently against project.tileset(layout.primaryTileset/
+    // secondaryTileset).metatileCount for NewBarkTown_Layout
+    // (gTileset_Johto_General / gTileset_NewBarkTown), not guessed.
+    expect(body.primaryCount).toBe(640);
+    expect(body.secondaryCount).toBe(144);
   });
 
   it("includes per-block collision/elevation/behaviour so the canvas can overlay and hover them", async () => {
@@ -86,6 +94,55 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("server", () => {
     expect(plain.readUInt32BE(16)).toBe(30 * 16);
     expect(bordered.readUInt32BE(16)).toBe((30 + 4) * 16);
     expect(plain.equals(bordered)).toBe(false);
+  });
+
+  it("renders live edited state once an edit session is open, bypassing the PNG cache entirely", async () => {
+    // Route30 is untouched by any other test in this file (or, since each
+    // test file gets its own server instance via its own beforeAll, by any
+    // other test file's paint either) -- no risk of a stray already-open
+    // session making this test pass by accident.
+    const map = "Route30";
+    const disk = Buffer.from(await (await get(`/api/render/${map}.png?border=0`)).arrayBuffer());
+
+    await post(`/api/edit/${map}/paint/begin`, {});
+    const applied = await (await post(`/api/edit/${map}/paint/apply`, {
+      tool: "pencil", targets: [{ x: 0, y: 0 }], stamp: { width: 1, height: 1, cells: [{ metatileId: 42 }] }, origin: { x: 0, y: 0 },
+    })).json() as any;
+    expect(applied.blocks[0].metatileId).toBe(42); // the session really did change block (0,0)
+
+    const live = Buffer.from(await (await get(`/api/render/${map}.png?border=0`)).arrayBuffer());
+    // A real, discriminating pixel-level assertion, not just status 200: the
+    // PNG served while the session is open must differ from the PNG served
+    // before any edit existed.
+    expect(live.equals(disk)).toBe(false);
+
+    // Undo reverts the session's blocks back to disk state; the render must
+    // follow -- proof this route is reading the session live, not caching
+    // the one live render it happened to produce. /paint/end first, same as
+    // this project's own established pattern (paintRoutes.test.ts): undo
+    // reverts the stack's last pushed command, and nothing is pushed until
+    // /end closes the stroke.
+    await post(`/api/edit/${map}/paint/end`, {});
+    await post(`/api/edit/${map}/undo`, {});
+    const afterUndo = Buffer.from(await (await get(`/api/render/${map}.png?border=0`)).arrayBuffer());
+    expect(afterUndo.equals(disk)).toBe(true);
+  }, 300_000);
+
+  it("an untouched map keeps rendering identically -- opening a session elsewhere doesn't disable its render", async () => {
+    // Spec-review honesty fix (issue 3): this asserts GoldenrodCity's render
+    // is byte-identical across two fetches with no session ever opened for
+    // it. renderLayout is deterministic, so this does NOT by itself prove
+    // pngCache was actually hit the second time -- it would pass exactly
+    // the same way with pngCache deleted entirely. What it DOES prove: the
+    // live-session branch above (keyed on editSessions.has(name)) has no
+    // observable effect on a DIFFERENT map's render, i.e. no cross-map
+    // leakage from the new bypass logic. Proving an actual cache hit would
+    // need a real observability hook (a hit counter, or spying on the
+    // server's internal pngCache Map) that does not exist today; not
+    // worth adding for this one assertion.
+    const a = Buffer.from(await (await get("/api/render/GoldenrodCity.png?border=0")).arrayBuffer());
+    const b = Buffer.from(await (await get("/api/render/GoldenrodCity.png?border=0")).arrayBuffer());
+    expect(a.equals(b)).toBe(true);
   });
 
   it("serves a species icon as a 32x32 PNG", async () => {
@@ -198,6 +255,28 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("server", () => {
     expect((await get("/api/encounters/NoSuchMap")).status).toBe(404);
   });
 
+  it("returns a map's warp events, with each destination resolved to a map NAME too", async () => {
+    // NewBarkTown_Lab's real first warp -- read directly from the subject
+    // decomp's own data/maps/NewBarkTown_Lab/map.json before writing this
+    // test, not assumed.
+    const body = await (await get("/api/warps/NewBarkTown_Lab")).json() as any;
+    expect(body.mapName).toBe("NewBarkTown_Lab");
+    const toTown = body.warps.find((w: any) => w.destMap === "MAP_NEW_BARK_TOWN");
+    expect(toTown).toBeDefined();
+    expect(toTown.x).toBe(6);
+    expect(toTown.y).toBe(12);
+    expect(toTown.destWarpId).toBe("0");
+    // The one thing this route adds beyond the raw parsed data: destMap
+    // (a raw MAP_ID constant) resolved onto a real map NAME too, the same
+    // idToName enrichment /api/coverage and /api/where already use for the
+    // identical reason (the client only ever works with map names).
+    expect(toTown.destMapName).toBe("NewBarkTown");
+  });
+
+  it("404s an unknown map for /api/warps too", async () => {
+    expect((await get("/api/warps/NoSuchMap")).status).toBe(404);
+  });
+
   it("returns coverage summary counts, and resolves a map name onto each levelByMap entry", async () => {
     const body = await (await get("/api/coverage")).json() as any;
     // Same real numbers packages/core/test/analyse/coverage.test.ts pins
@@ -234,5 +313,31 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("server", () => {
     const r = await get("/api/where/NOT_A_REAL_MON");
     expect(r.status).toBe(200);
     expect(await r.json()).toEqual([]);
+  });
+
+  it("GET /api/species returns every species name, sorted", async () => {
+    const r = await get("/api/species");
+    expect(r.status).toBe(200);
+    const species = await r.json() as string[];
+    expect(species.length).toBeGreaterThan(300);
+    expect(species).toContain("SPECIES_ESPEON");
+    expect(species).toEqual([...species].sort());
+  });
+
+  it("renders one metatile as a 16x16 PNG, split-aware", async () => {
+    const r = await get("/api/metatile/PetalburgCity_Layout/0.png");
+    expect(r.status).toBe(200);
+    expect(r.headers.get("content-type")).toBe("image/png");
+    const buf = Buffer.from(await r.arrayBuffer());
+    expect(buf.readUInt32BE(16)).toBe(16);
+    expect(buf.readUInt32BE(20)).toBe(16);
+  });
+
+  it("404s an unknown layout name for the metatile route", async () => {
+    expect((await get("/api/metatile/NoSuchLayout/0.png")).status).toBe(404);
+  });
+
+  it("400s a non-integer metatile id", async () => {
+    expect((await get("/api/metatile/PetalburgCity_Layout/abc.png")).status).toBe(400);
   });
 });
