@@ -1,8 +1,14 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
-import { parseMapEvents, loadGbcMapEvents } from "../../../src/gbc/load/events.js";
+import { parseMapEvents, loadGbcMapEvents, outOfBoundsEventDefects } from "../../../src/gbc/load/events.js";
 import { loadGbcMaps } from "../../../src/gbc/load/map.js";
 import { GBC_SUBJECT_ROOT, itWithGbcCorpus } from "../helpers/corpus.js";
+import type { GbcMapEvents } from "../../../src/gbc/model/types.js";
+
+/** An otherwise-empty `GbcMapEvents` -- `outOfBoundsEventDefects` tests fill in only the kind(s) each case cares about. */
+function emptyEvents(overrides: Partial<GbcMapEvents> = {}): GbcMapEvents {
+  return { warps: [], coords: [], bgs: [], objects: [], sceneScripts: [], callbacks: [], objectConsts: [], ...overrides };
+}
 
 /**
  * Builds a real-shaped `<name>_MapScripts:` + `<name>_MapEvents:` pair (both
@@ -609,5 +615,87 @@ describe("corpus", () => {
       if (new RegExp(`^${m.name}_MapEvents:`, "m").test(text)) count++;
     }
     expect(count).toBe(391);
+  });
+});
+
+describe("outOfBoundsEventDefects", () => {
+  const map = { name: "TestMap", width: 5, height: 4 }; // step grid 10x8
+
+  it("is pure and returns [] when every positioned event is within the step grid", () => {
+    const events = emptyEvents({
+      warps: [{ x: 9, y: 7, mapConst: "X", destWarp: 1, lineIndex: 0 }], // (9,7) is the last valid step cell (2*5-1, 2*4-1)
+      objects: [{
+        x: 0, y: 0, sprite: "S", moveData: "M", radiusX: 0, radiusY: 0, hour1: "-1", hour2: "-1",
+        palette: "0", objectType: "OBJECTTYPE_SCRIPT", sightRange: 0, script: "Sc", eventFlag: "-1", lineIndex: 1,
+      }],
+    });
+    expect(outOfBoundsEventDefects(map, events)).toEqual([]);
+  });
+
+  it("flags a warp at x >= 2*width, naming the kind, index, position and grid size", () => {
+    const events = emptyEvents({ warps: [{ x: 10, y: 0, mapConst: "X", destWarp: 1, lineIndex: 0 }] });
+    const defects = outOfBoundsEventDefects(map, events);
+    expect(defects).toEqual([{
+      file: "maps/TestMap.asm",
+      message: "maps/TestMap.asm: warp[0] at (10,0) is outside the 10x8 step grid",
+    }]);
+  });
+
+  it("flags a coord event at y >= 2*height (boundary: y === 2*height is out, y === 2*height - 1 is in)", () => {
+    const inBounds = emptyEvents({ coords: [{ x: 0, y: 7, sceneConst: "S", script: "Sc", lineIndex: 0 }] });
+    expect(outOfBoundsEventDefects(map, inBounds)).toEqual([]);
+    const outOfBounds = emptyEvents({ coords: [{ x: 0, y: 8, sceneConst: "S", script: "Sc", lineIndex: 0 }] });
+    expect(outOfBoundsEventDefects(map, outOfBounds)).toEqual([{
+      file: "maps/TestMap.asm",
+      message: "maps/TestMap.asm: coord[0] at (0,8) is outside the 10x8 step grid",
+    }]);
+  });
+
+  it("flags a negative x or y on a bg event", () => {
+    const events = emptyEvents({ bgs: [{ x: -1, y: 0, bgEventType: "B", script: "Sc", lineIndex: 0 }] });
+    expect(outOfBoundsEventDefects(map, events)).toEqual([{
+      file: "maps/TestMap.asm",
+      message: "maps/TestMap.asm: bg[0] at (-1,0) is outside the 10x8 step grid",
+    }]);
+  });
+
+  it("indexes within each kind independently, in source order -- a leading in-bounds warp doesn't shift a later out-of-bounds one's index", () => {
+    const events = emptyEvents({
+      warps: [
+        { x: 0, y: 0, mapConst: "X", destWarp: 1, lineIndex: 0 },
+        { x: 99, y: 0, mapConst: "X", destWarp: 2, lineIndex: 1 },
+      ],
+    });
+    const defects = outOfBoundsEventDefects(map, events);
+    expect(defects).toEqual([{
+      file: "maps/TestMap.asm",
+      message: "maps/TestMap.asm: warp[1] at (99,0) is outside the 10x8 step grid",
+    }]);
+  });
+
+  itWithGbcCorpus("exactly 7 out-of-bounds events across all 391 maps: 3+3 warps (CeruleanCave1F/2F) + 1 object (GoldenrodPokecenter1F)", () => {
+    const { maps } = loadGbcMaps(GBC_SUBJECT_ROOT);
+    expect(maps).toHaveLength(391);
+    const found: { map: string; message: string }[] = [];
+    for (const m of maps) {
+      const { events } = loadGbcMapEvents(GBC_SUBJECT_ROOT, m);
+      for (const d of outOfBoundsEventDefects(m, events)) found.push({ map: m.name, message: d.message });
+    }
+    expect(found).toHaveLength(7);
+    expect(found.filter((f) => f.map === "CeruleanCave1F")).toHaveLength(3);
+    expect(found.filter((f) => f.map === "CeruleanCave2F")).toHaveLength(3);
+    expect(found.filter((f) => f.map === "GoldenrodPokecenter1F")).toHaveLength(1);
+
+    // Pinned by map, kind and index -- re-measured directly against the
+    // corpus (see the implementer report), not copied from the plan.
+    expect(found.map((f) => f.message)).toEqual([
+      "maps/CeruleanCave1F.asm: warp[0] at (25,15) is outside the 18x30 step grid",
+      "maps/CeruleanCave1F.asm: warp[1] at (23,9) is outside the 18x30 step grid",
+      "maps/CeruleanCave1F.asm: warp[2] at (27,1) is outside the 18x30 step grid",
+      "maps/CeruleanCave2F.asm: warp[0] at (23,7) is outside the 18x30 step grid",
+      "maps/CeruleanCave2F.asm: warp[1] at (29,1) is outside the 18x30 step grid",
+      "maps/CeruleanCave2F.asm: warp[3] at (19,7) is outside the 18x30 step grid",
+      "maps/GoldenrodPokecenter1F.asm: object[1] at (16,8) is outside the 10x8 step grid",
+    ]);
   });
 });

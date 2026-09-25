@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { renderGbcMetatile, renderGbcMap, type GbcMetatileRaster, type GbcMapRaster } from "../../../src/gbc/render/map.js";
+import { renderGbcMetatile, renderGbcMap, renderGbcMapMetatile, type GbcMetatileRaster, type GbcMapRaster } from "../../../src/gbc/render/map.js";
 import { openGbcProject, type GbcProject } from "../../../src/gbc/project.js";
 import { resolveFromTables } from "../../../src/gbc/load/palette.js";
 import type { GbcTileset, GbcMap, PaletteMapEntry, Metatile } from "../../../src/gbc/model/types.js";
@@ -235,6 +235,8 @@ function stubProject(overrides: Partial<GbcProject>): GbcProject {
     paddingWidth: () => 3,
     wild: unused("wild"),
     waterCollisionValues: unused("waterCollisionValues"),
+    groupNames: unused("groupNames"),
+    collisionInfo: unused("collisionInfo"),
     ...overrides,
   };
 }
@@ -786,5 +788,97 @@ describe("corpus", () => {
       { name: "CeruleanCave2F", files: ["maps/CeruleanCave2F.blk"] },
       { name: "CeruleanCaveB1", files: ["maps/CeruleanCaveB1.blk"] },
     ]);
+  });
+});
+
+/** All 32*32*4 = 4096 RGBA bytes at `(originX, originY)` in `r` -- for a byte-equality comparison against `renderGbcMapMetatile`'s own 32x32 raster (a plain `toEqual` on `r.data` itself would compare the WHOLE map raster, not just this one block). */
+function extractBlock(r: { width: number; data: Uint8ClampedArray }, originX: number, originY: number): number[] {
+  const out: number[] = [];
+  for (let y = 0; y < 32; y++) {
+    for (let x = 0; x < 32; x++) {
+      const i = ((originY + y) * r.width + (originX + x)) * 4;
+      out.push(r.data[i]!, r.data[i + 1]!, r.data[i + 2]!, r.data[i + 3]!);
+    }
+  }
+  return out;
+}
+
+describe("renderGbcMapMetatile (map-keyed metatile thumbnail, review finding 6)", () => {
+  // VioletCity, not NewBarkTown: NewBarkTown's roof swap is a measured
+  // byte-identical no-op (task-9-implementer.md; the "VioletCity: the roof
+  // tile swap really changes pixels" test just above proves it's real for
+  // VioletCity), so only VioletCity can actually catch a dropped roof swap
+  // here (mutation 8). Block (4,7), raw metatile id 24, contains tile 0x10
+  // (within the $0A-$12 roof-swapped range) -- same block/id the roof test
+  // above already uses, re-derived independently for this test.
+  itWithGbcCorpus(
+    "VioletCity, block (4,7), metatile 24 (tile 0x10, in $0A-$12): renderGbcMapMetatile byte-equals the matching 32x32 region of renderGbcMap",
+    () => {
+      const proj = openGbcProject(GBC_SUBJECT_ROOT);
+      const map = proj.map("VioletCity");
+      expect(map.tileset).toBe("TILESET_JOHTO");
+      const ts = proj.tileset(map.tileset);
+      expect(ts.metatiles[24]!.tiles).toContain(0x10);
+
+      const mapRaster = renderGbcMap(proj, "VioletCity"); // border 0 (default) -- block(4,7) origin is (128,224), no ring offset
+      const metaRaster = renderGbcMapMetatile(proj, "VioletCity", 24);
+      expect(extractBlock(metaRaster, 0, 0)).toEqual(extractBlock(mapRaster, 4 * 32, 7 * 32));
+    },
+  );
+
+  itWithGbcCorpus(
+    "the same id (24) on AzaleaTown -- same underlying metatile data, a genuinely different real roof -- renders different pixels than VioletCity",
+    () => {
+      const proj = openGbcProject(GBC_SUBJECT_ROOT);
+      const violet = proj.map("VioletCity");
+      const azalea = proj.map("AzaleaTown");
+      const { mapGroupRoofs } = proj.roofs();
+
+      // Both facts this test's discrimination depends on: metatile 24 is the
+      // SAME raw tile data on both maps' tilesets (so any pixel difference
+      // below can only come from the per-group roof swap, not a different
+      // metatile shape), and the two maps' groups really do resolve to
+      // different roof indices (review finding 6: VioletCity roof 1,
+      // AzaleaTown roof 2).
+      expect(proj.tileset(violet.tileset).metatiles[24]).toEqual(proj.tileset(azalea.tileset).metatiles[24]);
+      expect(mapGroupRoofs[violet.group]).not.toBe(mapGroupRoofs[azalea.group]);
+
+      const violetMeta = renderGbcMapMetatile(proj, "VioletCity", 24);
+      const azaleaMeta = renderGbcMapMetatile(proj, "AzaleaTown", 24);
+      expect(extractBlock(azaleaMeta, 0, 0)).not.toEqual(extractBlock(violetMeta, 0, 0));
+    },
+  );
+
+  itWithGbcCorpus('time: "nite" byte-equals the matching region of renderGbcMap(..., { time: "nite" }), and really differs from "day"', () => {
+    const proj = openGbcProject(GBC_SUBJECT_ROOT);
+    const mapRasterNite = renderGbcMap(proj, "VioletCity", { time: "nite" });
+    const metaRasterNite = renderGbcMapMetatile(proj, "VioletCity", 24, { time: "nite" });
+    expect(extractBlock(metaRasterNite, 0, 0)).toEqual(extractBlock(mapRasterNite, 4 * 32, 7 * 32));
+
+    const metaRasterDay = renderGbcMapMetatile(proj, "VioletCity", 24, { time: "day" });
+    expect(extractBlock(metaRasterNite, 0, 0)).not.toEqual(extractBlock(metaRasterDay, 0, 0));
+  });
+
+  itWithGbcCorpus("does NOT substitute block id 0 for the map's border metatile -- a raw metatile thumbnail, unlike renderGbcMap's own block rendering", () => {
+    const proj = openGbcProject(GBC_SUBJECT_ROOT);
+    const map = proj.map("VioletCity");
+    expect(map.border).toBe(5); // != 0, and metatile 0/5 are pixel-distinct (checked below), so a silent 0->border swap is visible
+    expect(proj.tileset(map.tileset).metatiles[0]).not.toEqual(proj.tileset(map.tileset).metatiles[map.border]);
+
+    const idZero = renderGbcMapMetatile(proj, "VioletCity", 0);
+    const borderMetatile = renderGbcMapMetatile(proj, "VioletCity", map.border);
+    expect(idZero.outOfRange).toBe(false);
+    expect(extractBlock(idZero, 0, 0)).not.toEqual(extractBlock(borderMetatile, 0, 0));
+  });
+
+  itWithGbcCorpus("an out-of-range id returns the existing placeholder raster with outOfRange: true", () => {
+    const proj = openGbcProject(GBC_SUBJECT_ROOT);
+    const ts = proj.tileset("TILESET_JOHTO");
+    const raster = renderGbcMapMetatile(proj, "VioletCity", ts.metatiles.length); // one past the end
+    expect(raster.outOfRange).toBe(true);
+    expect(raster.unmappedTiles).toBe(0);
+    // Same placeholder magenta renderGbcMetatile itself uses for an
+    // out-of-range id -- pinned directly rather than re-deriving PLACEHOLDER.
+    expect(pixelAt(raster, 0, 0)).toEqual([255, 0, 255, 255]);
   });
 });

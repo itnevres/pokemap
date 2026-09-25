@@ -323,6 +323,8 @@ function stubProject(root = "<stub-root-never-read-except-by-loadGbcSpeciesConst
     paddingWidth: unused("paddingWidth"),
     wild: () => wildData,
     waterCollisionValues: () => new Set([WATER_COLL]),
+    groupNames: unused("groupNames"),
+    collisionInfo: unused("collisionInfo"),
   };
 }
 

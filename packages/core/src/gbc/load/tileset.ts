@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import type { Collision, GbcTileset, Metatile, PaletteMapEntry } from "../model/types.js";
+import type { GbcCollisionInfoEntry } from "../wire.js";
 import { norm } from "../../config/paths.js";
 import { codeLines, stripMacroDefs, stripComment, matchCall, parseConstDefs, findDefEqu } from "./asm.js";
 import { parseIncbins, parseIncludes } from "./incbin.js";
@@ -304,6 +305,28 @@ export function parseTileCollisionCategoryTable(text: string, bits: CollisionCat
 }
 
 /**
+ * The two global collision files (`constants/collision_constants.asm` for
+ * both the 4 bare category bits AND the 109 `COLL_*` names, and
+ * `data/collision/collision_permissions.asm`'s 256-row category table),
+ * read and parsed exactly once each -- shared by `loadGbcWaterCollisionValues`
+ * and `loadGbcCollisionInfo` (Plan 6b task spec: "Factor the constants-file
+ * and table-file reads ... into one internal helper, so each file is read in
+ * one place"). Not exported: both files' text is read here, not by either
+ * caller, so this is the one place a caller-added third reader of these
+ * files would have to hook into instead of adding its own `readFileSync`.
+ */
+function loadCollisionTables(root: string): { collConsts: Map<string, number>; bits: CollisionCategoryBits; categories: number[] } {
+  const r = norm(root);
+  const collisionConstantsFile = "constants/collision_constants.asm";
+  const collisionConstantsText = readFileSync(`${r}/${collisionConstantsFile}`, "utf8");
+  const collConsts = parseCollisionConstants(collisionConstantsText);
+  const bits = parseCollisionCategoryBits(collisionConstantsText, collisionConstantsFile);
+  const tableFile = "data/collision/collision_permissions.asm";
+  const categories = parseTileCollisionCategoryTable(readFileSync(`${r}/${tableFile}`, "utf8"), bits, tableFile);
+  return { collConsts, bits, categories };
+}
+
+/**
  * The set of raw COLL_* byte values (0-255) that resolve to the WATER_TILE
  * category -- i.e. every index in `parseTileCollisionCategoryTable`'s output
  * whose value, masked to its low nybble, equals `WATER_TILE`. The `& 0xf`
@@ -315,15 +338,60 @@ export function parseTileCollisionCategoryTable(text: string, bits: CollisionCat
  * (`gbc/analyse/atlas.ts`) uses; never hand-list the COLL_* water values.
  */
 export function loadGbcWaterCollisionValues(root: string): Set<number> {
-  const r = norm(root);
-  const collisionConstantsFile = "constants/collision_constants.asm";
-  const bits = parseCollisionCategoryBits(readFileSync(`${r}/${collisionConstantsFile}`, "utf8"), collisionConstantsFile);
-  const tableFile = "data/collision/collision_permissions.asm";
-  const categories = parseTileCollisionCategoryTable(readFileSync(`${r}/${tableFile}`, "utf8"), bits, tableFile);
-
+  const { bits, categories } = loadCollisionTables(root);
   const out = new Set<number>();
   categories.forEach((v, collValue) => {
     if ((v & 0xf) === bits.water) out.add(collValue);
+  });
+  return out;
+}
+
+/**
+ * Every raw COLL_* byte value (0-255) resolved to its display info (Plan 6b
+ * "Collision display"): `name` is the `COLL_*` constant with that value
+ * (`null` when none names it -- most of the 256 possible byte values have no
+ * `COLL_*` name at all, only the 109 the corpus actually defines do),
+ * `category` is the same low-nybble-masked land/water/wall bucket
+ * `loadGbcWaterCollisionValues` derives (here for all three buckets, not
+ * just water), and `talk` is the `TALK` bit, unmasked.
+ *
+ * Refuses (throws, naming both names and the shared value) if two `COLL_*`
+ * names ever resolved to the same value -- the corpus's real 109 names map
+ * one-to-one onto 109 distinct values (review finding 7), so this can only
+ * fire on a fork that breaks that invariant; picking one name silently would
+ * be a guess (G4). Refuses (throws, naming the value and its low nybble) if
+ * a category-table row's low nybble is none of land/water/wall -- every real
+ * row is exactly one of the three (`LAND_TILE`/`WATER_TILE`/`WALL_TILE` are
+ * disjoint low-nybble values by construction), so this too can only fire on
+ * a fork that adds a fourth category this loader doesn't know about yet.
+ */
+export function loadGbcCollisionInfo(root: string): Map<number, GbcCollisionInfoEntry> {
+  const { collConsts, bits, categories } = loadCollisionTables(root);
+
+  const nameByValue = new Map<number, string>();
+  for (const [name, value] of collConsts) {
+    const existing = nameByValue.get(value);
+    if (existing !== undefined) {
+      throw new Error(
+        `loadGbcCollisionInfo: constants/collision_constants.asm: "${existing}" and "${name}" both resolve to value ${value} -- refusing to pick one name`,
+      );
+    }
+    nameByValue.set(value, name);
+  }
+
+  const out = new Map<number, GbcCollisionInfoEntry>();
+  categories.forEach((v, value) => {
+    const low = v & 0xf;
+    let category: GbcCollisionInfoEntry["category"];
+    if (low === bits.land) category = "land";
+    else if (low === bits.water) category = "water";
+    else if (low === bits.wall) category = "wall";
+    else {
+      throw new Error(
+        `loadGbcCollisionInfo: data/collision/collision_permissions.asm: value ${value}: low nybble $${low.toString(16)} matches none of land ($${bits.land.toString(16)}) / water ($${bits.water.toString(16)}) / wall ($${bits.wall.toString(16)})`,
+      );
+    }
+    out.set(value, { name: nameByValue.get(value) ?? null, category, talk: (v & bits.talk) !== 0 });
   });
   return out;
 }

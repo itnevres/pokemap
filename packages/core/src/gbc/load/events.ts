@@ -191,6 +191,47 @@ export function parseMapEvents(text: string, mapName: string): GbcMapEvents {
  * objects). `objectConsts.length === 0` is not a defect -- 40 maps in the
  * corpus have no `object_const_def` at all, and that's normal.
  */
+/**
+ * One `(kind, index)` pair alongside its event, for `outOfBoundsEventDefects`
+ * below to walk all four positioned kinds identically.
+ */
+const POSITIONED_KINDS = ["warps", "coords", "bgs", "objects"] as const;
+
+/**
+ * Flags every warp/coord/bg/object event whose `(x,y)` falls outside the
+ * map's own step grid -- 2*width x 2*height, since event coordinates are
+ * 16-px half-block steps, not 32-px blocks (Plan 6b "Resolved design
+ * questions", "Event coordinates are in 16-px steps"). Pure: no filesystem
+ * access, so `loadGbcMapEvents`'s existing corpus-reading wrapper stays the
+ * only I/O in this file.
+ *
+ * G4: 7 real events in the corpus (3 warps each on CeruleanCave1F/2F, 1
+ * object on GoldenrodPokecenter1F) lie outside even the step grid -- Task 4's
+ * `GbcMapCanvas` must surface these in its defect banner and draw nothing
+ * for them, rather than silently dropping them or crashing on an
+ * off-canvas coordinate. One `DataDefect` per out-of-bounds event, in source
+ * order within its own kind (never resorted, matching `GbcMapEvents`'s own
+ * doc comment).
+ */
+export function outOfBoundsEventDefects(map: Pick<GbcMap, "name" | "width" | "height">, events: GbcMapEvents): DataDefect[] {
+  const file = `maps/${map.name}.asm`;
+  const stepWidth = 2 * map.width;
+  const stepHeight = 2 * map.height;
+
+  const defects: DataDefect[] = [];
+  for (const kind of POSITIONED_KINDS) {
+    events[kind].forEach((e, index) => {
+      if (e.x < 0 || e.y < 0 || e.x >= stepWidth || e.y >= stepHeight) {
+        defects.push({
+          file,
+          message: `${file}: ${kind.slice(0, -1)}[${index}] at (${e.x},${e.y}) is outside the ${stepWidth}x${stepHeight} step grid`,
+        });
+      }
+    });
+  }
+  return defects;
+}
+
 export function loadGbcMapEvents(root: string, map: Pick<GbcMap, "name">): { events: GbcMapEvents; defects: DataDefect[] } {
   const r = norm(root);
   const file = `maps/${map.name}.asm`;

@@ -56,6 +56,8 @@ function stubGbcProject(maps: GbcMap[]): GbcProject {
     paddingWidth: unused("paddingWidth"),
     wild: unused("wild"),
     waterCollisionValues: unused("waterCollisionValues"),
+    groupNames: unused("groupNames"),
+    collisionInfo: unused("collisionInfo"),
   };
 }
 

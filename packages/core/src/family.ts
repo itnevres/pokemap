@@ -4,6 +4,19 @@ import { norm } from "./config/paths.js";
 export type EngineFamily = "gba" | "gbc";
 
 /**
+ * `GET /api/project`'s response shape -- the one wire type both families'
+ * servers produce (`packages/server/src/index.ts`'s gba branch and
+ * `packages/server/src/gbcRoutes.ts`'s gbc branch), so it lives here next to
+ * `EngineFamily` rather than in `gbc/wire.ts` with the rest of the GBC-only
+ * payload types (Plan 6b Q1/finding 10). The UI's `Root.tsx` fetches this
+ * once to decide which app shell to render.
+ */
+export interface ProjectInfo {
+  family: EngineFamily;
+  root: string;
+}
+
+/**
  * Probes a project root for its engine family and refuses rather than guesses
  * (I7/G4): every probed path is named in any thrown message.
  *

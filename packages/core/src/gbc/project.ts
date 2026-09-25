@@ -1,12 +1,13 @@
 import { readFileSync } from "node:fs";
 import { norm } from "../config/paths.js";
-import { loadGbcMaps, loadLayout, type LoadedGbcMaps } from "./load/map.js";
-import { loadGbcTileset, loadGbcWaterCollisionValues } from "./load/tileset.js";
+import { loadGbcMaps, loadLayout, loadGbcGroupNames, type LoadedGbcMaps } from "./load/map.js";
+import { loadGbcTileset, loadGbcWaterCollisionValues, loadGbcCollisionInfo } from "./load/tileset.js";
 import { loadPaletteTables, type PaletteTables } from "./load/palette.js";
 import { loadGbcRoofs, type GbcRoofs } from "./load/roofs.js";
 import { loadGbcWildData } from "./load/encounters.js";
 import { findDefEqu } from "./load/asm.js";
 import type { GbcMap, GbcTileset, Layout, DataDefect, GbcWildData } from "./model/types.js";
+import type { GbcCollisionInfoEntry } from "./wire.js";
 
 /**
  * `constants/gfx_constants.asm`'s `DEF MAP_CONNECTION_PADDING_WIDTH EQU 3`
@@ -62,6 +63,14 @@ export interface GbcProject {
    *  `loadGbcWaterCollisionValues`) -- Task 12's fishing-reachability check
    *  reads two small global files once per root, not once per map. */
   waterCollisionValues(): Set<number>;
+  /** Lazy, cached once per root: `loadGbcGroupNames(root)` -- index i holds
+   *  the name of group i+1 (`constants/map_constants.asm`'s `newgroup`
+   *  order), for `/api/groups`' `groupOrder` (Plan 6b "Group names"). */
+  groupNames(): string[];
+  /** Lazy, cached once per root: `loadGbcCollisionInfo(root)` -- every raw
+   *  COLL_* byte value's display name/category/talk bit, for the map
+   *  payload's `collisionInfo` (Plan 6b "Collision display"). */
+  collisionInfo(): Map<number, GbcCollisionInfoEntry>;
 }
 
 export function openGbcProject(root: string): GbcProject {
@@ -74,6 +83,8 @@ export function openGbcProject(root: string): GbcProject {
   let paddingWidthCache: number | undefined;
   let wildCache: GbcWildData | undefined;
   let waterCollisionValuesCache: Set<number> | undefined;
+  let groupNamesCache: string[] | undefined;
+  let collisionInfoCache: Map<number, GbcCollisionInfoEntry> | undefined;
 
   return {
     root: r,
@@ -109,6 +120,14 @@ export function openGbcProject(root: string): GbcProject {
     waterCollisionValues: (): Set<number> => {
       if (!waterCollisionValuesCache) waterCollisionValuesCache = loadGbcWaterCollisionValues(r);
       return waterCollisionValuesCache;
+    },
+    groupNames: (): string[] => {
+      if (!groupNamesCache) groupNamesCache = loadGbcGroupNames(r);
+      return groupNamesCache;
+    },
+    collisionInfo: (): Map<number, GbcCollisionInfoEntry> => {
+      if (!collisionInfoCache) collisionInfoCache = loadGbcCollisionInfo(r);
+      return collisionInfoCache;
     },
   };
 }

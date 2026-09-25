@@ -46,6 +46,40 @@ export function parseMapConstants(text: string): MapConstEntry[] {
   return out;
 }
 
+/**
+ * `constants/map_constants.asm`'s `newgroup <NAME>` lines, in source order --
+ * index `i` holds the name of group `i+1` (`parseMapConstants`'s own
+ * `group` numbering, 1-based from the same file). `newgroup`'s `MACRO`
+ * definition at the top of the file is skipped the same way every other
+ * call here is (`stripMacroDefs`), so it never counts as group 1's name.
+ * Refuses (throws, naming `source`) a `newgroup` with no argument -- G4,
+ * matching `parseMapAttributes`'s own "never guess a group's name" posture.
+ */
+export function parseMapGroupNames(text: string, source: string): string[] {
+  const out: string[] = [];
+  for (const line of stripMacroDefs(text)) {
+    const ng = matchCall(line, "newgroup");
+    if (!ng) continue;
+    const name = ng[0];
+    if (!name) throw new Error(`${source}: "newgroup" with no argument`);
+    out.push(name);
+  }
+  return out;
+}
+
+/**
+ * `loadGbcGroupNames(root)`: reads and parses `constants/map_constants.asm`
+ * for `parseMapGroupNames` (GBC format findings; Plan 6b "Group names" --
+ * `loadGbcMaps` keeps only each map's numeric `group`, dropping the
+ * `newgroup` name entirely, so this is a small additive loader alongside it
+ * rather than a change to `GbcMap`).
+ */
+export function loadGbcGroupNames(root: string): string[] {
+  const r = norm(root);
+  const source = "constants/map_constants.asm";
+  return parseMapGroupNames(readFileSync(`${r}/${source}`, "utf8"), source);
+}
+
 export interface MapAttributesEntry {
   name: string;
   constName: string;

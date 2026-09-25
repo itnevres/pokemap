@@ -43,6 +43,16 @@ describe("GbcProject caching", () => {
     expect(proj.wild().grass.length).toBeGreaterThan(0);
     expect(proj.waterCollisionValues().size).toBeGreaterThan(0);
   });
+
+  // Task 1a: groupNames()/collisionInfo() join the same lazy-cache family.
+  itWithGbcCorpus("groupNames() and collisionInfo() are each cached (same array/Map across calls)", () => {
+    const proj = openGbcProject(GBC_SUBJECT_ROOT);
+    expect(proj.groupNames()).toBe(proj.groupNames());
+    expect(proj.collisionInfo()).toBe(proj.collisionInfo());
+    // Sanity: real data, not an empty/placeholder cache.
+    expect(proj.groupNames().length).toBeGreaterThan(0);
+    expect(proj.collisionInfo().size).toBeGreaterThan(0);
+  });
 });
 
 /**
