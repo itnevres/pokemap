@@ -1,12 +1,44 @@
-# HANDOFF 2026-09-24 (read first)
+# HANDOFF 2026-09-25 (read first)
 
-Branch `plan-6-gbc-foundation` (pushed). Plan 6 (GBC/Crystal foundation) Tasks 1-7 DONE + reviewed (reports archived under `docs/superpowers/task-reports/pokemap-plan-6-gbc-foundation/_archive/`). 1042 tests green at `16fad97`.
+Branch `plan-6-gbc-foundation` (pushed, `3273bcc`). **Plan 6 (GBC/Crystal foundation, read-only) is COMPLETE: Tasks 1-12 done and reviewed.** Every task's reports are archived under `docs/superpowers/task-reports/pokemap-plan-6-gbc-foundation/_archive/`, including the re-granularised specs for Tasks 9-12. Next steps are the user's call: merge `plan-6-gbc-foundation` to `master` (no PR opened yet), then Plan 7 (GBC editing).
 
-**Next: Task 8 fix round.** Task 8 (wild encounters, `packages/core/src/gbc/load/encounters.ts`) is implemented (`16fad97`) but spec review found 4 issues + 2 minors: see `docs/superpowers/task-reports/pokemap-plan-6-gbc-foundation/task-8-spec-review.md` (Issues section = the exact fix list). Implementer report alongside. Then code-quality review, then Tasks 9-12 (render per-map incl. roof tiles + border ring, CLI, world, atlas).
+**All 5 Plan 6 success criteria were demonstrated against the real subject through the real CLI** (`npx tsx packages/cli/src/index.ts --project <PerfPlus> ...`):
+1. `render NewBarkTown` is byte-reproducible.
+2-3. Codec and asm round-trip identity (Tasks 2 and 4).
+4. `render-world` stitches Johto and Kanto.
+5. `where <species>` and `encounters <map>` report real Crystal locations.
 
-Format truth: `docs/superpowers/specs/2026-09-23-pokemap-gbc-format-findings.md` (Decisions section binding). Process: subagent-driven-development, Sonnet implementer, Opus spec review for parsing/fixtures, Sonnet quality review; re-granularise each task against real code before dispatch.
+**Tests.** 559 GBC core + CLI tests are green. Measured in a cloud session without the GBA decomp: there, 17 GBA test files fail at collection (they error rather than skip when `projectPath` is missing) and 1 GBA test fails, so the full suite can't reach the old "all green" number off the Windows machine. On the Windows machine, expect the full suite green.
 
-Carry-forward for Plan 7: asmSplice refusals lack file/map context -- wrap at call site. User to clone pret/pokecrystal into `Pokemon Game/refs/pokecrystal` before Plan 7. Note: subject PerfPlus is a LOCAL repo (`C:/Programming Projects/pokecrystal-PerfPlus`); corpus tests skip without it.
+**What Tasks 8-12 added (key facts):**
+- **Task 8, wild loader.** `load/encounters.ts` went through 4 spec-review fix rounds.
+  - Every refusal names file:line.
+  - Zero-arg macro calls are now refused. This is a shared `asm.ts` `matchCall`/`scanCalls` change.
+- **Task 9, per-map render.** `gbc/project.ts` has `openGbcProject`, the shared per-root cache. `render/map.ts` renders per map, with:
+  - roof tile swap (NewBarkTown's roof is byte-identical to its base tiles; VioletCity proves the swap);
+  - 3-block border ring and block-0 → border substitution;
+  - time and flash options.
+- **Task 10, CLI.** A single `pokemap` binary, with probe-based family branching via a `refuseIfGbc` guard. GBC `render`/`query` are in `packages/cli/src/gbcCommands.ts`.
+- **Task 11, world.** `gbc/world/connections.ts` and `gbc/render/world.ts`, plus GBC `render-world`.
+  - **2 connection conflicts are GENUINE retail data**: a 1-block misclosure in the Route16/17/18/Fuchsia loop, identical in vanilla pret/pokecrystal. The CLI prints them as `note:` lines.
+  - Kanto and Johto are separate components (the ferry is a warp).
+  - No LOD needed: a full-world render takes ~2s.
+- **Task 12, atlas.** `gbc/analyse/atlas.ts`, plus GBC `encounters`/`where`/`coverage`.
+  - Every probability rule is derived from engine asm with file:line citations, and an Opus reviewer's independent re-implementation matched with 0 diffs.
+  - Fishing is only reported on maps with a WATER_TILE-category collision; 319 maps have a FISHGROUP but no water.
+  - Known over-approximation: water that is walled in (Route16/18) still counts as fishable.
+
+**Carry-forward for Plan 7:**
+- asmSplice refusals lack file/map context; wrap at the call site.
+- The user will clone pret/pokecrystal into `Pokemon Game/refs/pokecrystal` (G5 corpus).
+- The CeruleanCave2F/B1 oversize `.blk` layouts are `writable: false`, and Plan 7 must refuse writes to them.
+- The subject PerfPlus is a LOCAL repo (`C:/Programming Projects/pokecrystal-PerfPlus`, pinned at 81ededbe3). In a cloud session, clone `itnevres/pokecrystal-PerfPlus` branch `master-AS092190` and point `gbc.projectPath` at the clone, as a local-only edit that is never committed.
+
+**Lessons from this session (new):**
+- **Rate limits kill agents mid-mutation.** Twice an agent was cut off with a mutation still applied on disk. On resume, the first instruction must be "diff your files against your intended code and revert any leftover mutation, then re-run the suite".
+- **Reviewer mutation scripts that restore from a hardcoded snapshot silently discard later uncommitted work.** Restore from the in-memory read or from `git show <commit>:path`, never from a stale file copy.
+- **Parallel implementers in isolated worktrees work well**, but the worktree may start on a stale base. Tell the agent to `git merge --ff-only plan-6-gbc-foundation` first. Keep each task's additions to shared files (`gbcCommands.ts`, its test) in separate blocks; cherry-pick integration then only conflicts on import lines and comments.
+- **The coordinator re-running the reviewer's surviving mutations on the final fix commit** is cheap and replaced a whole extra review round several times.
 
 ---
 
