@@ -43,7 +43,7 @@ unusedSpecies.length 70
 **Timings** (three warm runs each, real corpus):
 - `buildGbcWorld`: **~1-7ms** (matches the plan review's "~2ms" estimate).
 - `gbcWhereSpecies` (single species): **~11-19ms** (within the plan review's "9-36ms" range).
-- `gbcCoverage`: **~100-157ms** -- notably higher than the plan review's own "~11ms" estimate. Re-measured multiple times to rule out a one-off JIT-warmup fluke; the number stayed in that range across three fresh `openGbcProject` calls. This doesn't change the design (still cached once per process, same as `getWorld()`/`getSpecies()`), but I'm flagging the discrepancy rather than silently repeating the spec's number as if I'd confirmed it. `gbcWhereSpecies` is comfortably fast enough that "don't cache it per species" (the spec's own instruction, matching GBA's documented reasoning) was never in question either way.
+- `gbcCoverage`: **~100-157ms** on a *fresh* `openGbcProject`, but **~13-19ms warm** (re-measured in this fix round, close to the plan review's own ~11ms estimate). **Correction (fix round 1, spec review Minor #1, quality review Minor #2): the original version of this report misattributed the ~100-157ms figure to `gbcCoverage` itself.** It is actually a one-time cold *project-load* cost (lazy-loaded wild data, tilesets, per-map water-tile scans on `openGbcProject`'s first use) -- whichever of `gbcCoverage`/`gbcWhereSpecies`/`gbcEncounterSources` a fresh project's first request happens to hit pays that cost once; the function called second on the same project is fast regardless of which one it is. This doesn't change the design (`getCoverage()` is still cached once per server process, same as `getWorld()`/`getSpecies()`), and `gbcWhereSpecies` was always fast enough warm (~10-19ms) that "don't cache it per species" (the spec's own instruction, matching GBA's documented reasoning) was never in question -- but the earlier wording wrongly implied `gbcCoverage`'s own per-call cost was ~100ms, which it is not.
 
 ## Commits
 
@@ -53,7 +53,7 @@ unusedSpecies.length 70
 ## Test counts
 
 - Before this task: 1347 passing, 6 known baseline failures (Task 1b fix round 1's final state).
-- After: **1369 passing**, same 6 baseline failures. Net **+22**: `gbcRoutes.test.ts` went from 49 to 67 `it`s (+18, including the one 1a/1b near-miss test rewritten from 404 to 200 rather than removed), `atlas.test.ts` gained 4 (`normalizeGbcSpecies`).
+- After: **1369 passing**, same 6 baseline failures. Net **+22**: `gbcRoutes.test.ts` went from **41 to 59** `it`s (+18, including the one 1a/1b near-miss test rewritten from 404 to 200 rather than removed), `atlas.test.ts` gained 4 (`normalizeGbcSpecies`). (Fix round 1, quality review Minor #3: the original report said "49 to 67" here -- a typo; counted directly with `grep -c "it("` against `git show 0227b76:...` and the current file, the real numbers are 41 and 59. The aggregate "1347 -> 1369 (+22)" was always correct and doesn't depend on this per-file breakdown.)
 - `--reporter=verbose` on both targeted files confirms every test, including every corpus-backed one, actually **ran** (no `skipped`) -- PerfPlus is present at `/root/pokemap-corpus/pokecrystal-PerfPlus`.
 
 ## Gate result
@@ -139,6 +139,69 @@ $ node -e "require('net').createServer().listen(5174,'127.0.0.1',...)"   # "port
 
 1. **`buildGbcWorldPayload` takes only `world: GbcWorld`, not `(proj, world)`.** The spec's own prose lists the signature as `buildGbcWorldPayload(proj, world)`, matching the general "builder takes proj first" shape of `buildGbcGroupsPayload(proj)`/`buildGbcMapPayload(proj, map)`. But nothing in the world payload's construction (`Object.fromEntries` plus a spread of `components`/`conflicts`) reads anything from `proj` -- every field comes from the already-built `world`. Since there's no proj-dependent logic here (unlike `buildGbcMapPayload`, which calls `proj.tileset(...)`/`proj.collisionInfo()`), I dropped the unused parameter rather than carry a dead argument just to match the letter of the spec's signature list. Not a behavior change -- the test suite calls it the same way either way (`buildGbcWorldPayload(world)`), and I noted this explicitly so it can be reviewed.
 2. **`/api/where/:species` also runs its capture through `decodeMapName`, which the spec doesn't explicitly ask for.** The spec's own "Use `decodeMapName` for `/api/encounters/:map`" line names only that route, and GBA's own `/api/where` (`index.ts:478`) calls `decodeURIComponent` directly with no guard. But `gbcRoutes.ts`'s own file-header doc comment states the established GBC-side convention plainly: "Every `:name`-style route below calls this instead of `decodeURIComponent` directly." I extended that existing convention to the species segment too (added one test for a malformed escape -> 400 `{ error: "malformed species %E0%A4%A" }`), on the reasoning that leaving this one capture as the sole exception to GBC's own documented rule would be a more surprising inconsistency than following it. This is additive (no route's existing passing behavior changed) and I'm flagging it as a deliberate, spec-unrequested extension rather than silently doing it.
-3. **`gbcCoverage`'s measured timing (~100-150ms) is well above the plan review's ~11ms estimate**, re-measured multiple times rather than trusted -- see the "Measured numbers" section above. Doesn't change the design (still cached once), but I'm not pretending the number matches what was estimated.
+3. **~~`gbcCoverage`'s measured timing (~100-150ms) is well above the plan review's ~11ms estimate~~ -- superseded, see the "Measured numbers" section's fix-round-1 correction above.** The ~100-150ms was a cold project-load cost, never `gbcCoverage`'s own per-call cost; warm, it's ~13-19ms, in line with the estimate. This was a genuine measurement error in the original report (not just an unexplained gap), caught by the spec review, and is corrected rather than left as a "deviation" now that its cause is understood.
 
 No part of the spec's routing table, payload shape, or test-pinning instructions was found to conflict with the real code once measured directly; every pinned value in this task's tests (326 components/3 multi-map/2 conflicts, NewBarkTown's 10x9, DUNSPARCE's 6 hits on DarkCaveVioletEntrance, 251 species, Route29's 5 sources and its PIDGEY-45%-morn chance, coverage's 125/70) was measured against the real corpus in this session, not copied from the spec's prose.
+
+---
+
+## Fix round 1
+
+Addressing `task-2-spec-review.md` (Opus, verdict **PASS**, 6 Minor findings, all optional) and `task-2-quality-review.md` (Sonnet, verdict **approve-with-fixes**, 1 Important + 5 Minor/Nit findings), per the coordinator's explicit instructions.
+
+### What changed
+
+**Quality review Important #1.** `GbcEncountersPayload` (`packages/core/src/gbc/wire.ts`) and `buildGbcEncountersPayload`'s return object (`packages/server/src/gbcRoutes.ts`) both gain `family: "gbc"`. `/api/encounters/:map` is not a GBC-only path -- GBA's own `index.ts` serves the identical URL pattern with a structurally different `{ mapName, mapId, methods }` response -- so it needed the same "same URL, two shapes" discriminant `/api/map/:name` and `/api/world` already carry. Two tests added: a direct check on the `buildGbcEncountersPayload` unit test, and a new HTTP-level `"the HTTP response carries family: \"gbc\""` test.
+
+**Spec review Minor #1 + quality review Minor #2 (timing).** The `coverageCache`/`worldCache` comments in `gbcRoutes.ts`, and this report's own "Measured numbers"/Deviations sections, previously implied `gbcCoverage` itself costs ~100-150ms. Corrected: that figure is a one-time cold `openGbcProject` load cost (lazy wild-data/tileset/water-tile loading), paid once by whichever of `gbcCoverage`/`gbcWhereSpecies`/`gbcEncounterSources` a fresh project's first request happens to hit -- not `gbcCoverage`'s own per-call cost, which (warm) is ~13-19ms, close to the plan review's original ~11ms estimate. `buildGbcWorld`'s own comment was also corrected from an unconfirmed "~2ms" (the plan review's estimate, quietly restated as if re-measured) to the actually-measured "~1-7ms" range.
+
+**Spec review Minor #2 (world components/conflicts).** The first `/api/world` HTTP test now does `expect(body.components).toEqual(world.components)` and `expect(body.conflicts).toEqual(world.conflicts)` against `buildGbcWorld`'s own output, not just count/size/`.map` checks -- closing the gap the reviewer's own mutation 22 (tampering `components[].bounds` and `conflicts[].viaA` after the builder) exploited. The conflicts test also now pins the Route17 conflict literally: `{ map: "Route17", viaA: { from: "Route18", x: 30, y: 50 }, viaB: { from: "Route16", x: 30, y: 49 } }`, re-derived from `attributes.asm`'s real connection offsets.
+
+**Spec review Minor #3 (`?dungeons=`).** New test: `/api/world?dungeons=0` returns a body identical to `/api/world` with no query string -- closing the gap the reviewer's mutation 18 (matching on `req.url` instead of `url.pathname`) exploited.
+
+**Spec review Minor #4 (`/api/where` capture width).** New test: `/api/where/DUNSPARCE/x` is a 404, proving the one-segment `([^/]+)` capture doesn't silently swallow an extra path segment -- closes the gap the reviewer's mutation 9 (widening to `(.+)`) exploited.
+
+**Spec review Minor #5 (percent-sum coverage).** Route29 (the only map exercised by the original percent-sum check) has no water source, leaving the `s.method === "water"` branch of that check permanently vacuous. Two additions: a new `/api/encounters/Route32` test (grass, water, fish, headbutt -- its water source's chances are checked to sum to 100%, over the real HTTP route), and a corpus-wide test that walks every one of the 391 maps directly through `gbcEncounterSources` (no HTTP round-trip, so it stays fast) and checks every grass/water source. **Measured runtime: 119.2ms, covering 350 grass/water sources** (matches `gbcCoverage`'s own pinned `sourcesByMethod.grass=288 + .water=62 = 350`) -- logged via `console.log` in the test itself so the number is reproducible, not just asserted here.
+
+**Spec review Minor #6 + quality review Minor #6 (stale comments).** Fixed: `packages/cli/src/index.ts`'s comment above the GBC `where` branch, which still said "`runGbcWhere`'s own `normalizeSpecies`" (now names `normalizeGbcSpecies` in core); two comments in `packages/cli/test/gbcCommands.test.ts` with the same stale name; and the `gbcRoutes.test.ts` Route29 test's comment, which called the `2` in `db 2, PIDGEY` a "weight" (it's the species' **level** -- the 45% instead comes from combining slots 0 and 2, both PIDGEY, at 25%+20% from `probabilities.asm`'s `GrassMonProbTable`).
+
+**Quality review Minor #3 (report test-count typo).** "Test counts" corrected from "49 to 67" to the real, directly-counted **41 to 59** for `gbcRoutes.test.ts`'s `it(` count across the original Task 2 commits. The aggregate "1347 -> 1369 (+22)" figure was always correct and never depended on this per-file breakdown.
+
+**Left as-is (coordinator instruction):** quality review Nit #4 (the marginally-redundant CHIKORITA `/api/where` test) and Nit #5 (the `BLOCK_PX = 32` constant existing in three places) -- both explicitly optional, no code or test risk either way.
+
+### Commits
+
+- `3f46c39` -- `fix(server): GBC encounters family tag, timing comments, missing route/query tests`
+- (this report) -- `docs: Plan 6b Task 2 fix round 1 report`
+
+### Test counts
+
+- Before this fix round: 1369 passing (Task 2's original commit `e7142f4`), same 6 baseline failures.
+- After: **1374 passing**, same 6 baseline failures. **+5 net**: `gbcRoutes.test.ts` went from 59 to 64 `it`s (the Route32 water-sum test, the corpus-wide percent-sum test, the `?dungeons=0` test, the `/api/where/DUNSPARCE/x` 404 test, and the encounters-response `family` test).
+- `--reporter=verbose` on `gbcRoutes.test.ts`, `atlas.test.ts` and `gbcCommands.test.ts` together confirms all 136 tests ran (0 skipped) -- PerfPlus is present.
+
+### Gate result
+
+```
+npm test 2>&1 | tee t2-fix1-final.log
+grep -E "^ FAIL " t2-fix1-final.log | sort -u
+```
+`diff` against `baseline-fails.txt` is empty (same 6 pre-existing, unrelated failures). `Tests 6 failed | 1374 passed (1380)` -- 1369 + 5 = 1374. `npm run typecheck` clean. `git status --short` clean throughout (checked after every mutation restore and again at the end).
+
+### Mutation re-run (reviewer's harness, surviving mutations 9/18/22)
+
+Re-ran `python3 /tmp/claude-0/-home-user/4cae0c11-1686-58ef-8391-8711e19c1398/scratchpad/t2rev/mutate.py 9 18 22` against the fixed code. All three anchors (the `/api/where` regex, the `/api/world` exact-match line, and the `buildGbcWorldPayload(getWorld())` call) still existed unchanged and unique -- no retargeting was needed, since none of this fix round's edits touched those specific lines.
+
+| # | Mutation | Previous verdict | This round |
+|---|---|---|---|
+| 9 | `/api/where` regex `([^/]+)` -> `(.+)` | SURVIVED | **KILLED** -- by the new `/api/where/DUNSPARCE/x` 404 test |
+| 18 | `/api/world` matched on `req.url` instead of `url.pathname` (breaks on a query string) | SURVIVED | **KILLED** -- by the new `?dungeons=0` test |
+| 22 | Route tampers `components[].bounds`/`conflicts[].viaA` after the builder | SURVIVED | **KILLED** -- by the new `components`/`conflicts` deep-equal assertions (2 tests failed) |
+
+### My own added mutation: drop the new `family` tag
+
+Removed `family: "gbc",` from `buildGbcEncountersPayload`'s return object, ran `gbcRoutes.test.ts` targeted at `family`/`buildGbcEncountersPayload`, confirmed **red** (2 tests failed: the new HTTP-level `family` test and the `buildGbcEncountersPayload directly` unit test, both `expected undefined to be 'gbc'`), then restored from `git show HEAD:packages/server/src/gbcRoutes.ts` and confirmed `git status --short` clean.
+
+### Deviations in this fix round
+
+None. Every coordinator instruction was implemented exactly as specified; no anchor needed retargeting, so no judgment calls were required on that front.
