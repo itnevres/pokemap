@@ -2,7 +2,7 @@
 
 **Scope:** the GBC `/api/groups`, `/api/map/:name`, `/api/render/:name.png` and `/api/metatile/:map/:id.png` routes, in `packages/server/src/gbcRoutes.ts`.
 
-**Builds on Task 1a:** `createGbcServer`, `ProjectInfo`, `groupNames()`, `collisionInfo()`, `outOfBoundsEventDefects`, `renderGbcMapMetatile` and `wire.ts`. Read `task-1a-implementer.md` and the 1a code first; where the code and this spec disagree, the code wins.
+**Builds on Task 1a** (reports in `_archive/task-1a-*.md`; a shared `stubGbcProject` test helper now exists in `packages/core/test/gbc/helpers/`): `createGbcServer`, `ProjectInfo`, `groupNames()`, `collisionInfo()`, `outOfBoundsEventDefects`, `renderGbcMapMetatile` and `wire.ts`. Read `task-1a-implementer.md` and the 1a code first; where the code and this spec disagree, the code wins.
 
 **Ground rules:** exactly as in `task-1a-spec.md`. That covers read-only decomps, commit hygiene and trailers, the GBA gate against `baseline-fails.txt`, Plan 0 §7 test rules, hooks inside `describe.skipIf`, and confirming with `--reporter=verbose` that corpus tests ran. `index.ts` is not touched in this task.
 
@@ -92,7 +92,7 @@ For `/api/map/ElmsLab`, a `border $00` interior:
 
 - `/api/metatile/VioletCity/<the roof id 1a's test uses>.png?time=nite` equals `encodePng(renderGbcMapMetatile(...))`, and its IHDR is 32×32.
 - The same id with `time=day` gives different bytes.
-- The same id on `AzaleaTown` gives different bytes.
+- The same id on `MahoganyTown` (same `TILESET_JOHTO`, different roof -- the discriminating pair Task 1a's fix round established; AzaleaTown is `TILESET_JOHTO_MODERN`) gives different bytes.
 - 400s: `/1.5.png`, `/-1.png`, `/abc.png`, and `?time=noon`.
 - 404s: `/<metatileCount>.png`, which must name the count, and `/api/metatile/NoSuchMap/0.png`.
 
