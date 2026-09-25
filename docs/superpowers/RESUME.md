@@ -1,151 +1,70 @@
-# HANDOFF 2026-09-25 (read first)
+# PokeMap: current state (2026-09-25, read first)
 
-Branch `plan-6-gbc-foundation` (pushed, `3273bcc`). **Plan 6 (GBC/Crystal foundation, read-only) is COMPLETE: Tasks 1-12 done and reviewed.** Every task's reports are archived under `docs/superpowers/task-reports/pokemap-plan-6-gbc-foundation/_archive/`, including the re-granularised specs for Tasks 9-12. Next steps are the user's call: merge `plan-6-gbc-foundation` to `master` (no PR opened yet), then Plan 7 (GBC editing).
+PokeMap is a Porymap-parity map editor with two engine families:
+- **GBA:** pokeemerald-family decomps. Plans 0-5.
+- **GBC:** Pokémon Crystal now, Yellow later. Plans 6+, with its own roadmap and invariants G1-G7.
 
-**All 5 Plan 6 success criteria were demonstrated against the real subject through the real CLI** (`npx tsx packages/cli/src/index.ts --project <PerfPlus> ...`):
-1. `render NewBarkTown` is byte-reproducible.
-2-3. Codec and asm round-trip identity (Tasks 2 and 4).
-4. `render-world` stitches Johto and Kanto.
-5. `where <species>` and `encounters <map>` report real Crystal locations.
+This file holds the state and the accumulated lessons. The prompt for the next session is written fresh at each handoff, so none is kept here.
 
-**Tests.** 559 GBC core + CLI tests are green. Measured in a cloud session without the GBA decomp: there, 17 GBA test files fail at collection (they error rather than skip when `projectPath` is missing) and 1 GBA test fails, so the full suite can't reach the old "all green" number off the Windows machine. On the Windows machine, expect the full suite green.
+## Git state: read before branching
 
-**What Tasks 8-12 added (key facts):**
-- **Task 8, wild loader.** `load/encounters.ts` went through 4 spec-review fix rounds.
-  - Every refusal names file:line.
-  - Zero-arg macro calls are now refused. This is a shared `asm.ts` `matchCall`/`scanCalls` change.
-- **Task 9, per-map render.** `gbc/project.ts` has `openGbcProject`, the shared per-root cache. `render/map.ts` renders per map, with:
-  - roof tile swap (NewBarkTown's roof is byte-identical to its base tiles; VioletCity proves the swap);
-  - 3-block border ring and block-0 → border substitution;
-  - time and flash options.
-- **Task 10, CLI.** A single `pokemap` binary, with probe-based family branching via a `refuseIfGbc` guard. GBC `render`/`query` are in `packages/cli/src/gbcCommands.ts`.
-- **Task 11, world.** `gbc/world/connections.ts` and `gbc/render/world.ts`, plus GBC `render-world`.
-  - **2 connection conflicts are GENUINE retail data**: a 1-block misclosure in the Route16/17/18/Fuchsia loop, identical in vanilla pret/pokecrystal. The CLI prints them as `note:` lines.
-  - Kanto and Johto are separate components (the ferry is a warp).
-  - No LOD needed: a full-world render takes ~2s.
-- **Task 12, atlas.** `gbc/analyse/atlas.ts`, plus GBC `encounters`/`where`/`coverage`.
-  - Every probability rule is derived from engine asm with file:line citations, and an Opus reviewer's independent re-implementation matched with 0 diffs.
-  - Fishing is only reported on maps with a WATER_TILE-category collision; 319 maps have a FISHGROUP but no water.
-  - Known over-approximation: water that is walled in (Route16/18) still counts as fishable.
+- **Unmerged work.** GitHub `master` is at `bcdfd63` (end of Plan 1). **Everything since exists only on `plan-6-gbc-foundation`**: 166 commits covering the world-view and dungeon-mode plans, Plan 2 with its 6 follow-ups, and Plan 6. `plan-1-foundation` is identical to `master`. There are no PRs, open or closed.
+- **Merge readiness of `plan-6-gbc-foundation`.**
+  - The GBC side is verified: 559 GBC core + CLI tests pass in a cloud session, and all Plan 6 tasks are reviewed.
+  - The GBA side cannot be tested in a cloud session, because the GBA decomp isn't there. Plan 6 touched these shared GBA-family files:
+    - `packages/cli/src/{index,context,args}.ts` (family branch plus the `refuseIfGbc` guard);
+    - `packages/core/src/load/png.ts` (helper export);
+    - `packages/core/src/world/connections.ts` (exports plus an optional param with unchanged defaults);
+    - `packages/core/src/config/paths.ts`.
+    Reviewers judged these behaviour-neutral by reading, but they have not been run against the GBA corpus. **Before merging, run a full `npm test` on the Windows machine. Everything should pass there.** A merge from `master` is a fast-forward.
+- **Branching.** New GBC work branches from `plan-6-gbc-foundation`, stacked, until it is merged. New GBA work waits for the merge, or also stacks.
 
-**Carry-forward for Plan 7:**
-- asmSplice refusals lack file/map context; wrap at the call site.
-- The user will clone pret/pokecrystal into `Pokemon Game/refs/pokecrystal` (G5 corpus).
-- The CeruleanCave2F/B1 oversize `.blk` layouts are `writable: false`, and Plan 7 must refuse writes to them.
-- The subject PerfPlus is a LOCAL repo (`C:/Programming Projects/pokecrystal-PerfPlus`, pinned at 81ededbe3). In a cloud session, clone `itnevres/pokecrystal-PerfPlus` branch `master-AS092190` and point `gbc.projectPath` at the clone, as a local-only edit that is never committed.
+## Where each line of work stands
 
-**Lessons from this session (new):**
-- **Rate limits kill agents mid-mutation.** Twice an agent was cut off with a mutation still applied on disk. On resume, the first instruction must be "diff your files against your intended code and revert any leftover mutation, then re-run the suite".
+| Line of work | State | Needs |
+|---|---|---|
+| Plan 6: GBC foundation, read-only | **Done 2026-09-25.** See the plan's STATUS banner for the real file map | Merge (see above) |
+| Plan 7: GBC editing | **Next suggested.** Its "Grounding from Plan 6" section is required reading. Tasks 1, 2, 3, 6, 7 (core + CLI) can run in a cloud session; Tasks 4-5 are blocked on 6b | PerfPlus clone (+ pret/pokecrystal for the G5 gate) |
+| 6b: GBC app layer (server + UI, read-only) | **Not planned.** Named in the roadmap §6 table. Without it, a Crystal project can't be opened in the browser | A plan written against Plan 6's real API |
+| 3 remaining GBA follow-up fixes (A/B/C) | Planned, not started | Windows machine: GBA decomp + live browser verify |
+| Plan 3: GBA data editors | Not started, lower priority | Windows machine |
+| Plans 4-5 | Not started / backlog | — |
+
+## Environments
+
+- **Windows machine** (`C:\Programming Projects\PokeMap`): has the GBA subject decomp, the reference engines and the PerfPlus checkout, so the full suite runs.
+- **Cloud session** (claude.ai/code): only this repo is present.
+  - For GBC work, run `git clone --branch master-AS092190 https://github.com/itnevres/pokecrystal-PerfPlus ../pokecrystal-PerfPlus` and confirm HEAD is `81ededbe3`.
+  - Then set `gbc.projectPath` in `pokemap.config.json` to the clone as a LOCAL-ONLY edit that is **never committed**; the committed values are the Windows paths.
+  - GBA test files fail at collection there (17 files plus 1 test in `write/corpus.test.ts`) instead of skipping. That is expected. Compare against that baseline, not "all green".
+  - Check with `npx vitest run packages/core/test/gbc packages/cli/test/gbcCommands.test.ts packages/cli/test/context.test.ts`, which must show the GBC files RUNNING, not skipped.
+  - `npm install` rewrites `package-lock.json` with `"peer": true` churn; revert it.
+
+## GBC facts from Plan 6 (short list; the full truth is in the findings doc)
+
+- **Format truth:** `docs/superpowers/specs/2026-09-23-pokemap-gbc-format-findings.md`. Its Decisions section is binding.
+- **Data defects** (they never throw, and the CLI prints them to stderr):
+  - the CeruleanCave2F and CeruleanCaveB1 oversize `.blk` are loaded as the first w×h bytes and marked `writable: false`, so Plan 7 must refuse writes to them;
+  - `data/wild/kanto_grass.asm` has no `db -1` terminator.
+- **World:** the 2 connection conflicts (a 1-block misclosure in the Route16/17/18/Fuchsia loop) are **genuine retail data**. Vanilla pret has identical lines. `render-world` prints them as `note:` lines. Kanto and Johto are separate components, because the ferry is a warp.
+- **Atlas:** every probability is derived from engine asm, with file:line citations in `atlas.ts`.
+  - Fishing is only reported on maps that have a WATER_TILE-category collision; 319 maps have a FISHGROUP but no water.
+  - Known over-approximation: walled-in water (Route16/18) still counts as fishable.
+- **Carry-forward for Plan 7:**
+  - `asmSplice` refusals lack file/map context; wrap them at the call site.
+  - `asmSplice` can only replace an argument, so event add/delete needs a new line insert/remove primitive.
+  - Warp `destWarp` is a 1-based positional index, so the renumbering footgun is real.
+
+## Lessons from Plan 6 (2026-09-24/25; new, add to everything below)
+
+- **Rate limits kill agents mid-mutation.** Twice an agent was cut off with a mutation still applied on disk. When resuming one, the first instruction must be: "diff your files against your intended code, revert any leftover mutation, re-run the suite".
 - **Reviewer mutation scripts that restore from a hardcoded snapshot silently discard later uncommitted work.** Restore from the in-memory read or from `git show <commit>:path`, never from a stale file copy.
-- **Parallel implementers in isolated worktrees work well**, but the worktree may start on a stale base. Tell the agent to `git merge --ff-only plan-6-gbc-foundation` first. Keep each task's additions to shared files (`gbcCommands.ts`, its test) in separate blocks; cherry-pick integration then only conflicts on import lines and comments.
-- **The coordinator re-running the reviewer's surviving mutations on the final fix commit** is cheap and replaced a whole extra review round several times.
-
----
-
-# Resuming PokeMap in a new session
-
-Paste the block below as the first message of a fresh Claude Code session
-started in `C:\Programming Projects\PokeMap`.
-
----
-
-## The prompt
-
-> I'm resuming work on PokeMap, a Porymap-parity map editor currently
-> supporting pokeemerald-family GBA decomp projects, about to add a second,
-> unrelated engine family (Pokémon Crystal, and later Yellow).
->
-> **State: Plan 1 through Plan 2 (Editing) and all 6 of Plan 2's own
-> flagged follow-up tasks are complete and merged to `master`.** Plan 2
-> itself (19 tasks) finished 2026-09-21. Its 6 follow-ups — mount
-> `MetatilePalette`, live-render edited blocks in `MapCanvas`, wire
-> dropper/shift tools, persist event elevation via `moveEvent`, a real
-> discard/close-session action, and a MetatilePalette selected-cell
-> highlight (which itself caught and fixed a real, previously-invisible
-> browser bug: native `<img>` drag was silently breaking the palette's own
-> pre-existing drag-rect-select in any real browser) — finished
-> 2026-09-22/23. **710 tests passing**, `npm run typecheck` clean. All 6
-> GBA engine roots (subject + 5 reference) confirmed at their known
-> baseline throughout.
->
-> **Two independent, unstarted bodies of work are fully planned and ready
-> to execute — pick based on what you're here to do, they don't conflict
-> (different files, different repos):**
->
-> **1. Three small, already-designed GBA bug fixes** (a 4th, the palette
-> highlight, already shipped above). Plan:
-> `docs/superpowers/plans/2026-09-23-pokemap-followups-remaining.md` — each
-> task already has a worked fix (real code, real file:line references) from
-> direct investigation against current source, not just a problem
-> description. Independent of each other and of the GBC work below; safe
-> to do in any order. Recommended order A→B→C per the plan's own reasoning
-> (ascending risk); Task B (the core `applyJsonOps` ordering fix) needs
-> Opus review per its own note (core write-path correctness, same class as
-> Task 19). Execute with `superpowers:subagent-driven-development`, same
-> rigor as everything above (fresh implementer, spec review, code-quality
-> review, fix loops, live-verify).
->
-> **2. A new engine family: Pokémon Crystal (`pokecrystal-PerfPlus`),
-> Yellow later.** This was scoped and planned 2026-09-23 after two
-> Explore-agent surveys read the real `pokeyellow`/`pokecrystal-PerfPlus`
-> repos directly against Plan 0's own invariants — it is a genuinely
-> different editing model (no JSON anywhere, no tileset split, binary
-> blockdata + assembly-macro-call events), not a byte-format variant of
-> what `core` already does, and a mature community tool (Polished Map)
-> already exists for basic single-map block/event editing. **The user's
-> own explicit goal is (a) a full standalone tool with world-
-> stitching/encounter-atlas parity to the GBA side, not (b) a narrower
-> Polished-Map-dependent scope** — (b) was the fallback only if (a) proved
-> infeasible; it's feasible, per the research. **Read the roadmap FIRST**
-> (`docs/superpowers/plans/2026-09-23-pokemap-plan-6-gbc-roadmap.md`) — it
-> has the real invariants (G1-G7, a from-scratch set for this family, NOT
-> a 1:1 mapping of I1-I8), the package-layout decision, and — most
-> important — **§3 "Open verification items": six real format questions
-> this planning pass could NOT resolve from the initial survey alone**
-> (the exact event-count/length mechanism, the real per-tileset metatile
-> cap, the collision table's real field layout, the day/night palette
-> swap logic, Crystal's own region-map format, whether `.blk` files are
-> always 1:1 with map names). **Plan 6's own Task 1 exists specifically to
-> resolve these against real source before any other task starts — do not
-> skip it or treat the plan's own current assumptions as settled fact.**
-> Then `docs/superpowers/plans/2026-09-23-pokemap-plan-6-gbc-foundation.md`
-> (read-only: loaders, renderer, CLI, world-view, encounter atlas — mirrors
-> Plan 1's own GBA scope) and
-> `docs/superpowers/plans/2026-09-23-pokemap-plan-7-gbc-editing.md` (the
-> write path — mirrors Plan 2's own scope, explicitly excludes
-> collision-painting and wild signs as GBA-specific concepts that don't
-> transfer, see that plan's own Goal section for why). **Both are written
-> to TASK level, not full TDD-step — re-granularise each against real
-> code immediately before executing it**, same discipline Plan 0 §1
-> established for the GBA family's own Plans 2-4, for the same reason:
-> writing literal step code against unverified format assumptions
-> produces fiction the executor has to discard. Execute with
-> `superpowers:subagent-driven-development`, same full rigor.
->
-> **Plan 3 (GBA Data Editors) remains unstarted and available** — lower
-> priority per the user's own stated preference (Crystal matters more
-> right now), not abandoned. Pick it up if neither thread above is what
-> you're asked to do.
->
-> **Read each real file before dispatching a task that touches it** — every
-> prior plan's biggest files (`MapCanvas.tsx`, `App.tsx`,
-> `packages/server/src/index.ts`, `WorldCanvas.tsx`) grew substantially
-> across their own earlier tasks, and a dispatch written against stale
-> plan-text illustrative code is exactly the recurring defect class Plan 0
-> §7 and "Lessons from Plan 2"/"Lessons from the Plan 2 follow-ups" below
-> describe. Before writing a dispatch prompt that adds a new test touching
-> a real subject decomp or reference engine (GBA OR GBC), also grep
-> `packages/*/test/**` for the specific map/route names you're about to
-> use — a proven recurring hazard across FIVE separate incidents in Task
-> 18/19 alone (see "Lessons from Task 18/19" below), not a one-off, and
-> nothing about it is GBA-specific.
->
-> Read `docs/superpowers/plans/2026-08-26-pokemap-plan-0-roadmap.md` §3
-> (invariants I1-I8) and §7 (test-design rules) first if you haven't
-> already, for the GBA work — this is the accumulated scar tissue and it
-> is what makes the pre-dispatch audits work. For the GBC work, the
-> equivalent is the new roadmap's own §2 (invariants G1-G7) and §3 (open
-> items) — read that instead/also, don't assume I1-I8 apply unmodified.
+- **Parallel implementers in isolated worktrees work well.**
+  - The worktree may start on a stale base, so tell the agent to `git merge --ff-only <branch>` first.
+  - Keep each task's additions to shared files (`gbcCommands.ts` and its test) in separate blocks. Cherry-pick integration then only conflicts on import lines and comments.
+  - Don't run two agents that commit in the same checkout at once.
+- **The coordinator re-running a reviewer's surviving mutations on the final fix commit is cheap.** Several times it replaced a whole extra review round.
+- **Measured "surprises" need an Opus reviewer to decide real-data vs wrong-rule.** Examples: NewBarkTown's no-op roof swap, and Task 11's 2 connection conflicts. Both turned out real, but only independent derivation could establish it.
 
 ---
 
@@ -153,79 +72,41 @@ started in `C:\Programming Projects\PokeMap`.
 
 | Thing | Path |
 |---|---|
-| Plan 0 — GBA roadmap, invariants, test-design rules | `docs/superpowers/plans/2026-08-26-pokemap-plan-0-roadmap.md` |
-| Plan 1 — 29 tasks, **done** | `docs/superpowers/plans/2026-08-26-pokemap-plan-1-foundation-world.md` |
-| World View Usability — 3 tasks, **done** | `docs/superpowers/plans/2026-09-07-world-view-usability.md` |
-| Dungeon Mode and Warp Tools — 16 tasks, **done** | `docs/superpowers/plans/2026-09-08-dungeon-mode-and-warp-tools.md` |
-| **Plan 2 (Editing) — 19/19 done, merged, plus all 6 follow-ups done** | `docs/superpowers/plans/2026-08-26-pokemap-plan-2-editing.md` |
-| **3 remaining GBA follow-up bug fixes — planned, unstarted** | `docs/superpowers/plans/2026-09-23-pokemap-followups-remaining.md` |
-| Plan 3 (GBA Data Editors) — available, lower priority, task-level only | `docs/superpowers/plans/2026-08-26-pokemap-plan-3-data-editors.md` |
-| Plans 4-5 (GBA) | same directory; task-level only, untouched |
-| **GBC roadmap (Crystal, then Yellow) — invariants G1-G7, open items §3** | `docs/superpowers/plans/2026-09-23-pokemap-plan-6-gbc-roadmap.md` |
-| **Plan 6 (GBC Foundation, read-only) — planned, unstarted** | `docs/superpowers/plans/2026-09-23-pokemap-plan-6-gbc-foundation.md` |
-| **Plan 7 (GBC Editing, write path) — planned, unstarted, depends on Plan 6** | `docs/superpowers/plans/2026-09-23-pokemap-plan-7-gbc-editing.md` |
+| Plan 0: GBA roadmap, invariants I1-I8, test-design rules §7, plan status table | `docs/superpowers/plans/2026-08-26-pokemap-plan-0-roadmap.md` |
+| Plan 1 (29 tasks, done) | `docs/superpowers/plans/2026-08-26-pokemap-plan-1-foundation-world.md` |
+| World View Usability (done) / Dungeon Mode and Warp Tools (done) | `docs/superpowers/plans/2026-09-07-world-view-usability.md`, `2026-09-08-dungeon-mode-and-warp-tools.md` |
+| Plan 2: Editing (19/19 done, plus 6 follow-ups; full TDD-step text as executed) | `docs/superpowers/plans/2026-08-26-pokemap-plan-2-editing.md` |
+| 3 remaining GBA follow-up fixes (not started) | `docs/superpowers/plans/2026-09-23-pokemap-followups-remaining.md` |
+| Plans 3-5 (GBA; task-level only, not started) | same directory |
+| GBC roadmap: invariants G1-G7, phase/status table §6 | `docs/superpowers/plans/2026-09-23-pokemap-plan-6-gbc-roadmap.md` |
+| Plan 6: GBC foundation (done; STATUS banner holds the real file map) | `docs/superpowers/plans/2026-09-23-pokemap-plan-6-gbc-foundation.md` |
+| Plan 7: GBC editing (next; read "Grounding from Plan 6" first) | `docs/superpowers/plans/2026-09-23-pokemap-plan-7-gbc-editing.md` |
+| GBC format truth (binding Decisions) | `docs/superpowers/specs/2026-09-23-pokemap-gbc-format-findings.md` |
+| GBA design spec and feature specs | `docs/superpowers/specs/2026-08-26-pokemap-design.md`, `2026-09-07-*.md` |
 | Design system, binding on all UI tasks | `packages/ui/DESIGN.md` |
 | Subject decomp, GBA (read-only, I8) | `C:\Programming Projects\Pokemon Game\game` |
 | Reference engines, GBA | `C:\Programming Projects\Pokemon Game\refs\` |
-| Subject decomp, GBC (read-only, G7) | `C:\Programming Projects\pokecrystal-PerfPlus` |
+| Subject decomp, GBC (read-only until Plan 7, G7) | `C:\Programming Projects\pokecrystal-PerfPlus` (cloud: clone, see Environments) |
+| GBC reference corpus for Plan 7's G5 gate | `pret/pokecrystal`. The user will clone it to `C:\Programming Projects\Pokemon Game\refs\pokecrystal`; in a cloud session, clone it from GitHub |
 | pokeyellow (Plan 8+, not yet planned) | `C:\Programming Projects\Pokemon Game\refs\pokeyellow` |
-| Archived task reports (implementer/reviewer full detail, per task) | `docs/superpowers/task-reports/pokemap-plan-2-editing/_archive/` (Tasks 18-19), `docs/superpowers/task-reports/pokemap-plan-2-followups/_archive/` (all 6 follow-ups) |
+| Archived task reports (full implementer/reviewer detail) | `docs/superpowers/task-reports/{pokemap-plan-2-editing,pokemap-plan-2-followups,pokemap-plan-6-gbc-foundation}/_archive/` |
 
-`git log --oneline` is the real story. Plan 2's own review-fix commits (`fix:`
-on top of each `feat:`) record exactly what was wrong and why — most tasks
-took 1-2 fix rounds, a few (Task 11's rect-race, Task 13's SaveDialog crash
-+ modal-focus regression, Task 14's silent-failure gaps, Task 18's dry-run/
-refusal asymmetry, Task 19's map-name races, the live-render follow-up's
-debounce/invariant-coverage rounds) took real, substantive fixes worth
-reading if you touch those files again.
-
-`docs/superpowers/plans/2026-08-26-pokemap-plan-2-editing.md` — the real,
-re-granularised full-TDD-step text every Plan 2 task was actually executed
-against (done 2026-09-13) — was committed to `master` this session
-(`f65e39b`), replacing the old coarse task-level-only text from `94d2a28`
-that used to be the only committed version. No more working-tree/committed
-split on this file.
+`git log --oneline` is the real story. Each `fix:` commit on top of a `feat:` records exactly what a review found and why. Plan 2's substantive ones: Task 11's rect-race, Task 13's SaveDialog crash and modal-focus regression, Task 14's silent-failure gaps, Task 18's dry-run/refusal asymmetry, Task 19's map-name races, and the live-render follow-up. Plan 6's: Task 8's four located-refusal rounds, and Task 9/11's mutation-pin rounds.
 
 ## Running it
 
 ```bash
-npx tsx packages/server/src/serve.ts        # API on 127.0.0.1:5174
+npx tsx packages/server/src/serve.ts        # API on 127.0.0.1:5174 (GBA projects only; no GBC server yet)
 npm run dev --workspace=@pokemap/ui         # Vite on 5173, proxies /api
+# GBC, CLI only:
+npx tsx packages/cli/src/index.ts --project <PerfPlus> render NewBarkTown -o out.png [--border 3] [--time nite]
+npx tsx packages/cli/src/index.ts --project <PerfPlus> query|encounters <Map> ; where <species> ; coverage [--unused]
+npx tsx packages/cli/src/index.ts --project <PerfPlus> render-world --bbox x,y,w,h [--scale 8] -o world.png
 ```
 
 `.claude/launch.json` lets the browser tooling start the UI by name. **Open
-the app and click things — every time, not just once**; Plan 2 caught a real,
+the app and click things, every time, not just once.** Plan 2 caught a real,
 otherwise-invisible bug this way on Task 11 (see below).
-
-## Background follow-up tasks the user has already started (separately, in
-## other local sessions) — do not duplicate this work, check their state first
-
-Plan 2's own tasks flagged 5 real, deliberately-out-of-scope gaps and spawned
-each as its own background task via `spawn_task`, matching this project's
-established "flag, don't silently expand scope" discipline. The user has
-started all 5 running in separate sessions:
-
-- `task_1ef90973` — mount `MetatilePalette` so pencil/rect/bucket tools can
-  actually paint (today `activeTool` resolves to `null` for all three; only
-  `collision` is live).
-- `task_9e0ac0a0` — wire dropper/shift tools into `MapCanvas`'s paint
-  dispatch (currently safely inert, not crashing, just no-ops).
-- `task_25cb95b6` — live-render edited map blocks in `MapCanvas` (painting
-  updates `blocks` state and hover/undo/redo correctly, but the canvas
-  keeps blitting the original static PNG — a real, known, disclosed gap
-  since Task 11).
-- `task_35b8333a` — persist event elevation via `moveEvent` (Task 7's core
-  primitive only ever writes x/y; `EventInspector`'s elevation field edits
-  are accepted in the UI but silently don't save — needs an optional
-  elevation param added to `moveEvent` + matching server/hook wiring).
-- `task_b7e4b5c2` — add a real server-side discard/close-session endpoint
-  (SaveDialog's "Cancel" button today only closes the dialog client-side;
-  no route ever discards a dirty in-memory session short of a commit).
-
-**Check whether any of these have finished or are still running before
-touching the files they'd touch** (`MapCanvas.tsx`, `useEditSession.ts`,
-`Toolbar.tsx`, `events.ts`, `index.ts` — several overlap with what Task
-18/19 might read, though neither should need to *write* to them).
 
 ## Lessons from Plan 2 (in addition to everything already below from
 ## earlier plans — still all true)
@@ -459,8 +340,8 @@ discipline that's caught essentially every real bug this plan found. If
 something similar arrives again, same answer: no silent edits to global
 config, especially ones that would degrade review rigor.
 
-**Heredocs are unreliable in this environment**, `python`/`python3` are not
-on PATH. Use Write/Edit and `git commit -F <file>`. Backticks in a commit
+**On the Windows machine, heredocs are unreliable** and `python`/`python3` are not
+on PATH (a cloud session has both). Use Write/Edit and `git commit -F <file>`. Backticks in a commit
 message passed through Bash can trigger shell substitution — read the
 commit back after writing it.
 
@@ -476,10 +357,10 @@ which would also discard real edits.
 - 14 real maps have more `mons` slots than declared weights in
   `wild_encounters.json` — documented in `encounters.ts`, background task
   `task_b2fa2dff`.
-- `pokeemerald-expansion` names its second constant set `_FRLG` where 3
-  places assume `_EMERALD` — harmless today, wrong the moment Plan 0 §6's
-  corpus gate (Task 19 of Plan 2!) opens that engine. **Check this
-  specifically when writing/running Task 19** — Task 19 is exactly the
-  place this could first bite.
+- `pokeemerald-expansion` names its second constant set `_FRLG` where
+  split detection assumes `_EMERALD`. This is still open after Plan 2's
+  Task 19. It is documented as a known, out-of-scope gap in
+  `packages/core/src/project.ts`'s `hasSplitConstants` doc comment. Fix it
+  before relying on split detection for that engine.
 - `WorldCanvas.tsx` is ~2,057 lines with one known clean extraction seam
   (lens/spotlight overlays). Not urgent.

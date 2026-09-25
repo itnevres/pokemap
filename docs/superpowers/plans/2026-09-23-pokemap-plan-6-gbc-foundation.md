@@ -1,5 +1,42 @@
 # PokeMap Plan 6 — GBC Foundation (Pokémon Crystal, read-only)
 
+> **STATUS: COMPLETE (2026-09-25), on branch `plan-6-gbc-foundation`, not yet merged to `master`.** All 12 tasks are done and reviewed, and the 5 success criteria below were demonstrated through the real CLI. **The task text below is the ORIGINAL pre-research plan and is kept for the record.** Where it disagrees with what was built, these sources win, in this order:
+> 1. `docs/superpowers/specs/2026-09-23-pokemap-gbc-format-findings.md` (Decisions + "Consequences for Plan 6 Tasks 2-12");
+> 2. the re-granularised per-task specs actually executed, `task-reports/pokemap-plan-6-gbc-foundation/_archive/task-{9,10,11,12}-spec.md`;
+> 3. the code.
+>
+> Known-wrong statements below include:
+> - the File-structure table (see the real file map next);
+> - Task 8's `data/wild/maps/*.asm` + `WildDataPointers` (the real files are `data/wild/*.asm`, with no pointer table);
+> - Task 9's "no border ring unless found" (a 3-block ring exists) and its per-layout render (it renders per map);
+> - Task 10's `where`/`coverage` (moved to Task 12);
+> - Task 12's "no day/night variants at the data level" premise (false).
+>
+> **Real file map, as built:**
+> | File | What it holds |
+> |---|---|
+> | `packages/core/src/family.ts` | `detectEngineFamily(root)`: probes for marker files and refuses neither/both/Yellow-shaped roots |
+> | `packages/core/src/gbc/model/types.ts` | Every GBC type: `Map`/`Layout` split, `DataDefect`, tileset, events, wild data |
+> | `packages/core/src/gbc/load/asm.ts` | Shared RGBDS line primitives: `codeLines`, `matchCall`/`scanCalls` (zero-arg calls matched), `labelTail`, `parseConstDefs`, `findDefEqu` |
+> | `packages/core/src/gbc/load/blocks.ts` | `.blk` codec: `parseBlk`/`encodeBlk`, round-trip proven |
+> | `packages/core/src/gbc/load/incbin.ts` | INCBIN/INCLUDE label resolution (I4) |
+> | `packages/core/src/gbc/load/map.ts` | `loadGbcMaps`, and `loadLayout` (oversize `.blk` → first w×h bytes + defect, `writable: false`) |
+> | `packages/core/src/gbc/load/tileset.ts` | Metatiles, collision, palette map, PNG tiles, `pngTileIndex`, collision-category table |
+> | `packages/core/src/gbc/load/png.ts` | Gray depth-2 / RGBA depth-8 → shades |
+> | `packages/core/src/gbc/load/palette.ts` | `loadPaletteTables` + `resolveFromTables`: env × time × group × tileset, flash |
+> | `packages/core/src/gbc/load/roofs.ts` | `MapGroupRoofs` + roof tiles |
+> | `packages/core/src/gbc/load/events.ts` | Event parser (four sections, fixed order) |
+> | `packages/core/src/gbc/load/encounters.ts` | Grass/water/swarm, probabilities, fish groups, treemons; `wildForMap` |
+> | `packages/core/src/gbc/write/asmSplice.ts` | Line locator + argument-span splicer; no-op round trip proven. This is Plan 7's G3 writer |
+> | `packages/core/src/gbc/project.ts` | `openGbcProject`: per-root caches (tilesets, palette tables, roofs, wild, padding width) |
+> | `packages/core/src/gbc/render/map.ts` | Per-map render: roof swap, border ring, block-0 → border substitution |
+> | `packages/core/src/gbc/render/world.ts` | `renderGbcWorld` |
+> | `packages/core/src/gbc/world/connections.ts` | `buildGbcWorld`. Its 2 conflicts are genuine retail data |
+> | `packages/core/src/gbc/analyse/atlas.ts` | `gbcEncounterSources` / `gbcWhereSpecies` / `gbcCoverage`, with engine-derived probabilities |
+> | `packages/cli/src/gbcCommands.ts` (+ family branch in `index.ts`) | GBC `render`, `query`, `render-world`, `encounters`, `where`, `coverage`. Every other command refuses via `refuseIfGbc` |
+>
+> **Not built in Plan 6, by decision: any server or UI support for GBC.** That is the unplanned "6b" row in the roadmap's §6 phase table.
+
 > **For agentic workers:** REQUIRED READING FIRST: `docs/superpowers/plans/2026-09-23-pokemap-plan-6-gbc-roadmap.md` in full — invariants G1-G7 bind every task below, and §3 ("Open verification items") lists unresolved format questions that MUST be resolved (Task 1) before any other task in this plan starts. This plan is written to TASK level, not full TDD-step — re-read each task against the real `pokecrystal-PerfPlus` source and expand to step granularity immediately before executing it, exactly the discipline Plan 0 §1 established for the GBA family's own Plans 2-4.
 
 **Goal:** Load, render, and browse (world-view + encounter atlas) real Pokémon Crystal map data, read-only — the GBC-family equivalent of Plan 1's own scope for GBA. No write path in this plan (that's Plan 7).

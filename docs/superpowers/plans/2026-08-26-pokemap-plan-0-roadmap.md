@@ -10,13 +10,15 @@
 
 ## 1. Plan sequence
 
-| Plan | File | Scope | Depends on |
-|---|---|---|---|
-| 1 | `...-plan-1-foundation-world.md` | `core` loaders, per-layout renderer, `cli`, map list, single-map view, stitched world, encounter atlas | — |
-| 2 | `...-plan-2-editing.md` | Painting, collision/elevation, event editing, wild sign authoring | 1 |
-| 3 | `...-plan-3-data-editors.md` | Connections/headers/encounters editors, tileset editor, region map editor | 2 |
-| 4 | `...-plan-4-packaging.md` | Electron, MCP server, opt-in git integration | 3 |
-| 5 | `...-plan-5-future-work.md` | Backlog only — no code | — |
+| Plan | File | Scope | Depends on | Status (2026-09-25) |
+|---|---|---|---|---|
+| 1 | `...-plan-1-foundation-world.md` | `core` loaders, per-layout renderer, `cli`, map list, single-map view, stitched world, encounter atlas | — | Done (plus the world-view-usability and dungeon-mode plans) |
+| 2 | `...-plan-2-editing.md` | Painting, collision/elevation, event editing, wild sign authoring | 1 | Done, plus 6 follow-ups; 3 further follow-ups planned but not started (`2026-09-23-pokemap-followups-remaining.md`) |
+| 3 | `...-plan-3-data-editors.md` | Connections/headers/encounters editors, tileset editor, region map editor | 2 | Not started, lower priority (user preference: Crystal first) |
+| 4 | `...-plan-4-packaging.md` | Electron, MCP server, opt-in git integration | 3 | Not started |
+| 5 | `...-plan-5-future-work.md` | Backlog only — no code | — | Backlog |
+
+The second engine family (Game Boy / GBC: Crystal, later Yellow) has its own roadmap, `2026-09-23-pokemap-plan-6-gbc-roadmap.md`, with invariants G1-G7. Its plans are numbered 6+ and are independent of this table.
 
 **Plans 2–4 get a re-granularisation pass before execution.** Plan 1 is written to full step-level granularity because it is executed next against code that exists today. Plans 2–4 are written to task level with exact file paths, interfaces, test names, and representative code — but their step-by-step code is calibrated against APIs Plan 1 has not built yet. Writing literal code against an imaginary API produces fiction that the executor must discard. **Before executing Plan N, re-read it against the code Plan N−1 actually produced and expand its tasks to step granularity.** This is stated plainly rather than pretended away.
 

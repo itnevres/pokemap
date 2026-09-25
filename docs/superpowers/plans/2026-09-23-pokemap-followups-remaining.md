@@ -1,5 +1,10 @@
 # PokeMap — Remaining Plan 2 Follow-ups (GBA family)
 
+> **Status (2026-09-25): none of Tasks A-C has started.** Plan 6 (GBC) ran first. Before re-confirming the file:line references below, note:
+> - **Needs the Windows machine.** These tasks need the GBA subject decomp and a live browser verify. Neither exists in a cloud session: there, `pokemap.config.json`'s GBA `projectPath` doesn't resolve and every GBA corpus/server/UI test fails at collection.
+> - **Base branch.** GitHub `master` is still at `bcdfd63` (Plan 1). All of Plan 2 and its follow-ups exist only on `plan-6-gbc-foundation` until that branch is merged. Work from `master` only after the merge; otherwise branch from `plan-6-gbc-foundation`.
+> - **Files touched since.** Plan 6 touched `packages/cli/src/{index,context,args}.ts`, `packages/core/src/load/png.ts` and `packages/core/src/world/connections.ts`, but none of the files these three tasks name.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: `superpowers:subagent-driven-development`, same rigor as every prior Plan 2 task and its own 6 follow-ups (fresh implementer per task, spec-compliance review, code-quality review, fix loops, live-verify). Read `docs/superpowers/RESUME.md` in full first — it has the real current state and the accumulated lessons this document assumes. These 3 tasks are independent of each other and of Plans 6/7 (the new GBC-family work) — safe to execute in any order, on `master`, no worktree, matching this whole project's established convention.
 
 **Origin:** 3 of the 4 background tasks flagged during Plan 2's own 5 follow-ups (a 4th, "add selected-cell highlight to MetatilePalette," already shipped 2026-09-22/23 as follow-up 6). Each was found live, during a DIFFERENT follow-up's own live-verify, and correctly deferred rather than fixed inline at the time. All three have already been read against real current source once (2026-09-22/23) — **re-confirm nothing has drifted before writing literal step code**, per this project's own standing rule, but each task below already carries real file:line references and a worked design, not just a problem description.

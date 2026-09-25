@@ -3,6 +3,12 @@
 **Subject:** `C:\Programming Projects\pokecrystal-PerfPlus` at HEAD `81ededbe3` (read-only; `git status --porcelain` empty before and after this research).
 **Method:** direct reads of the real macro definitions and engine routines, plus throwaway Node scripts that measured the **whole corpus** (every `map_const`, every `map_attributes`, every `.blk`, every tileset, every `maps/*.asm`). Every excerpt below is pasted from the real repo. Nothing is invented.
 **Answers:** roadmap `2026-09-23-pokemap-plan-6-gbc-roadmap.md` §3, items 1-6. Also covers the config and family-selection decision (roadmap §5, Plan 6 Task 1).
+**Status (2026-09-25):** Plan 6 is complete. This document is still the binding format truth for Plan 7. The corrections found during Plan 6's reviews are inline and dated:
+- the metatile-bin count is 36 distinct files, not 37;
+- 32 of the 37 collision files are INCLUDEd;
+- the connection rule's engine source is the `connection` macro + `EnterMapConnection`;
+- the Task 12 encounter rate is reported separately, not multiplied in.
+The "Consequences for Plan 6 Tasks 2-12" section is historical. What was actually built is recorded in the Plan 6 plan's STATUS banner and in the archived `task-{9..12}-spec.md`.
 
 **Corpus at a glance:** 391 maps in 26 map groups. 391 `map_attributes`, 391 `map` headers and 391 `maps/<Name>.asm` files, one of each per map. 305 `.blk` files on disk. 257 of them are used by real maps and 48 are unreferenced betas. 142 connections. 36 tilesets plus alias `Tileset0`. 1,327 warps, 114 coord events, 792 bg events and 1,468 object events. No CRLF anywhere.
 
