@@ -13,16 +13,24 @@
  * Task 2 adds `/api/world`, `/api/encounters/:map`, `/api/where/:species`,
  * `/api/coverage` and `/api/species`. Plan 7 adds `/api/edit/*` once GBC
  * gets a write path.
+ *
+ * The payload-assembly logic for `/api/groups` and `/api/map/:name` is
+ * factored into `buildGbcGroupsPayload`/`buildGbcMapPayload` below, exported
+ * and unit-testable against a `stubGbcProject` (Task 1b fix round 1, quality
+ * review findings 2/5) -- `createGbcServer`'s own body stays a thin dispatch
+ * list of `if (match) return send(200, buildX(...))` lines, the same shape
+ * Task 2's five new routes should follow rather than growing this function
+ * into one 400-line handler the way `index.ts` did.
  */
 import { createServer as createHttp, type Server } from "node:http";
-import { openGbcProject } from "@pokemap/core/src/gbc/project.js";
+import { openGbcProject, type GbcProject } from "@pokemap/core/src/gbc/project.js";
 import { loadGbcMapEvents, outOfBoundsEventDefects } from "@pokemap/core/src/gbc/load/events.js";
 import { renderGbcMap, renderGbcMapMetatile } from "@pokemap/core/src/gbc/render/map.js";
 import type { ProjectInfo } from "@pokemap/core/src/family.js";
 import type { GbcMap } from "@pokemap/core/src/gbc/model/types.js";
 import type { GbcCollisionInfoEntry, GbcMapPayload } from "@pokemap/core/src/gbc/wire.js";
 import { encodePng } from "@pokemap/cli/src/png.js";
-import { parseBorder, parseTime } from "@pokemap/cli/src/args.js";
+import { parseBorder, parseTime, type TimeOfDay } from "@pokemap/cli/src/args.js";
 import type { PokemapServer } from "./index.js";
 
 /**
@@ -36,6 +44,128 @@ import type { PokemapServer } from "./index.js";
  * `(/|$)` the way `dungeons` and `world/...`'s bare-vs-nested routes do.
  */
 const GBA_ONLY_ROUTE_RE = /^\/api\/(warps\/|dungeons(\/|$)|world\/placement$|world\/dungeons$|sign\/|edit\/|species\/[^/]+\/icon\.png$)/;
+
+/**
+ * `decodeURIComponent` throws a `URIError` on a malformed percent-escape
+ * (e.g. a lone `%` or a truncated multi-byte UTF-8 sequence like
+ * `%E0%A4%A`) -- letting that throw reach a route's own try/catch-free body
+ * would surface as a 500 naming only "URI malformed", not the offending
+ * segment (Task 1b fix round 1, spec review finding 7). Every `:name`-style
+ * route below calls this instead of `decodeURIComponent` directly, and
+ * answers 400 naming the raw (still-encoded) segment on `undefined` --
+ * `index.ts`'s GBA routes keep their own pre-existing 500-on-malformed-
+ * escape behaviour unchanged, since this fix is GBC-only (spec ground rule:
+ * "index.ts is not touched in this task").
+ */
+export function decodeMapName(raw: string): string | undefined {
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Shared `?time=` parser for the render and metatile routes (Task 1b fix
+ * round 1, quality review finding 3: this exact 8-line block used to be
+ * duplicated verbatim in both). Absent -> `"day"` (the CLI's own default,
+ * `cli/src/index.ts:52`); present but invalid -> `{ error }` for the caller
+ * to turn into a 400, mirroring `parseBorder`'s own throw-vs-guard split
+ * rather than throwing itself, so a caller never needs its own try/catch
+ * around this. Typed with the already-exported `TimeOfDay`
+ * (`cli/src/args.ts`) rather than repeating the `"morn" | "day" | "nite"`
+ * literal union a second time in this file (quality review finding 6).
+ */
+export function parseTimeParam(url: URL): { time: TimeOfDay } | { error: string } {
+  const timeParam = url.searchParams.get("time");
+  if (timeParam === null) return { time: "day" };
+  try {
+    return { time: parseTime(timeParam) };
+  } catch (e) {
+    return { error: (e as Error).message };
+  }
+}
+
+/**
+ * `GET /api/groups`'s payload -- `MapTree`'s own `MapGroupsData` shape
+ * (Plan 6b Q1: reused as-is, so there's no new GBC-only groups type).
+ * `groupOrder` is `proj.groupNames()` verbatim (`newgroup` order);
+ * `groups[name]` is built by walking every map once and bucketing it by its
+ * 1-based `group` field, then sorting each bucket by `number` -- NOT by
+ * sorting the names alphabetically, which would silently reorder e.g.
+ * CABLE_CLUB's Colosseum/MobileBattleRoom/... away from their real in-group
+ * order. Exported (Task 1b fix round 1, quality review finding 5) so the
+ * route handler below stays a one-line dispatch.
+ */
+export function buildGbcGroupsPayload(proj: GbcProject): { groupOrder: string[]; groups: Record<string, string[]> } {
+  const groupOrder = proj.groupNames();
+  const buckets: GbcMap[][] = groupOrder.map(() => []);
+  for (const m of proj.maps) buckets[m.group - 1]!.push(m);
+  const groups: Record<string, string[]> = {};
+  groupOrder.forEach((name, i) => {
+    groups[name] = buckets[i]!.slice().sort((a, b) => a.number - b.number).map((m) => m.name);
+  });
+  return { groupOrder, groups };
+}
+
+/**
+ * `GET /api/map/:name`'s payload, exactly `GbcMapPayload` (`gbc/wire.ts`).
+ * `map` is already resolved by the caller (the route below looks it up
+ * through `mapNames`/`proj.map()` so an unknown name never reaches here) --
+ * this function itself never throws on a bad name, only on the underlying
+ * loaders' own real failures.
+ *
+ * `collisionInfo` is filtered to only the values this tileset's `collision`
+ * array actually uses (all 4 quadrants of every metatile, not just the ones
+ * this one map's blocks reference) -- NOT the full 256-entry table
+ * `proj.collisionInfo()` holds (Plan 6b "Collision display"). `blocks` is
+ * `layout.blocks` verbatim: raw ids, `0` NOT substituted for the border
+ * metatile the way `renderGbcMap`'s own render loop does -- that
+ * substitution is a per-pixel rendering concern, not this payload's (the
+ * corpus itself has no id-0 block to prove this against over HTTP; see
+ * `gbcRoutes.test.ts`'s own `buildGbcMapPayload` unit test, which overrides
+ * `layout()` through `stubGbcProject` to supply one, Task 1b fix round 1,
+ * quality review finding 2).
+ *
+ * Exported (fix round 1, quality review findings 2/5) precisely so it can
+ * be unit-tested directly against a stub `GbcProject`, without needing
+ * `createGbcServer` restructured for dependency injection.
+ */
+export function buildGbcMapPayload(proj: GbcProject, map: GbcMap): GbcMapPayload {
+  const { layout, defects: layoutDefects } = proj.layout(map);
+  const ts = proj.tileset(map.tileset);
+
+  const usedValues = new Set<number>();
+  for (const c of ts.collision) {
+    usedValues.add(c.tl);
+    usedValues.add(c.tr);
+    usedValues.add(c.bl);
+    usedValues.add(c.br);
+  }
+  const allCollisionInfo = proj.collisionInfo();
+  const collisionInfo: Record<string, GbcCollisionInfoEntry> = {};
+  for (const v of usedValues) {
+    const entry = allCollisionInfo.get(v);
+    if (entry) collisionInfo[String(v)] = entry;
+  }
+
+  const { events, defects: eventDefects } = loadGbcMapEvents(proj.root, map);
+  const defects = [...layoutDefects, ...eventDefects, ...outOfBoundsEventDefects(map, events)];
+
+  return {
+    family: "gbc",
+    map,
+    layout: { blkPath: layout.blkPath, width: layout.width, height: layout.height, writable: layout.writable },
+    blocks: layout.blocks,
+    metatileCount: ts.metatiles.length,
+    tileset: { constName: ts.constName, name: ts.name },
+    collision: ts.collision,
+    collisionInfo,
+    events,
+    defects,
+    paddingWidth: proj.paddingWidth(),
+  } satisfies GbcMapPayload;
+}
 
 export async function createGbcServer(opts: { projectPath: string; port?: number }): Promise<PokemapServer> {
   const proj = openGbcProject(opts.projectPath);
@@ -69,87 +199,38 @@ export async function createGbcServer(opts: { projectPath: string; port?: number
         return send(200, { family: "gbc", root: proj.root } satisfies ProjectInfo);
       }
 
-      // `MapTree`'s own MapGroupsData shape (Plan 6b Q1: `/api/groups`
-      // reuses it, so there's no new GBC-only groups type). `groupOrder` is
-      // `proj.groupNames()` verbatim (newgroup order); `groups[name]` is
-      // built by walking every map once and bucketing by its 1-based
-      // `group` field, then sorting each bucket by `number` -- NOT by
-      // sorting the names alphabetically, which would silently reorder
-      // e.g. CABLE_CLUB's Colosseum/MobileBattleRoom/... away from their
-      // real in-group order.
       if (url.pathname === "/api/groups") {
-        const groupOrder = proj.groupNames();
-        const buckets: GbcMap[][] = groupOrder.map(() => []);
-        for (const m of proj.maps) buckets[m.group - 1]!.push(m);
-        const groups: Record<string, string[]> = {};
-        groupOrder.forEach((name, i) => {
-          groups[name] = buckets[i]!.slice().sort((a, b) => a.number - b.number).map((m) => m.name);
-        });
-        return send(200, { groupOrder, groups });
+        return send(200, buildGbcGroupsPayload(proj));
       }
 
       const mapMatch = /^\/api\/map\/(.+)$/.exec(url.pathname);
       if (mapMatch) {
-        const name = decodeURIComponent(mapMatch[1]!);
+        const rawName = mapMatch[1]!;
+        const name = decodeMapName(rawName);
+        if (name === undefined) return send(400, { error: `malformed map name ${rawName}` });
         if (!mapNames.has(name)) return send(404, { error: `no map ${name}` });
-        const map = proj.map(name);
-
-        const { layout, defects: layoutDefects } = proj.layout(map);
-        const ts = proj.tileset(map.tileset);
-
-        // Only the values this tileset's `collision` array actually uses --
-        // NOT the full 256-entry table `proj.collisionInfo()` holds (Plan
-        // 6b "Collision display"). Walking all 4 quadrants of every
-        // metatile, not just the ones a given map's blocks reference,
-        // matches the spec's own "the values that occur in collision"
-        // wording -- `collision` here is `ts.collision` (per metatile,
-        // tileset-wide), not filtered further down to this one map's
-        // blocks.
-        const usedValues = new Set<number>();
-        for (const c of ts.collision) {
-          usedValues.add(c.tl);
-          usedValues.add(c.tr);
-          usedValues.add(c.bl);
-          usedValues.add(c.br);
-        }
-        const allCollisionInfo = proj.collisionInfo();
-        const collisionInfo: Record<string, GbcCollisionInfoEntry> = {};
-        for (const v of usedValues) {
-          const entry = allCollisionInfo.get(v);
-          if (entry) collisionInfo[String(v)] = entry;
-        }
-
-        const { events, defects: eventDefects } = loadGbcMapEvents(proj.root, map);
-        const defects = [...layoutDefects, ...eventDefects, ...outOfBoundsEventDefects(map, events)];
-
-        return send(200, {
-          family: "gbc",
-          map,
-          layout: { blkPath: layout.blkPath, width: layout.width, height: layout.height, writable: layout.writable },
-          blocks: layout.blocks,
-          metatileCount: ts.metatiles.length,
-          tileset: { constName: ts.constName, name: ts.name },
-          collision: ts.collision,
-          collisionInfo,
-          events,
-          defects,
-          paddingWidth: proj.paddingWidth(),
-        } satisfies GbcMapPayload);
+        return send(200, buildGbcMapPayload(proj, proj.map(name)));
       }
 
-      // `?border`/`?time` are validated BEFORE the map name is resolved --
-      // both checks are independent of which map is named (paddingWidth()
-      // is a project-wide constant, and parseBorder/parseTime only look at
-      // the raw string), mirroring the GBA render route's own order
-      // (`index.ts`'s `/api/render/:name.png`: parseBorder runs before
-      // `resolveLayoutName()`'s 404). The metatile route below deliberately
-      // checks the map name FIRST instead, matching the GBA metatile
-      // route's own order (`index.ts`: `layoutByName` before
-      // `Number.isInteger(id)`) -- the two GBC routes don't share one order
-      // because their GBA counterparts don't either; each mirrors its own.
+      // Both PNG routes below resolve the map name FIRST (404), then
+      // validate `?border`/`?id`/`?time` (400) -- a deliberate choice made
+      // for GBC specifically (Task 1b fix round 1, spec review finding 4),
+      // not a copy of GBA's own two routes, which disagree with EACH OTHER
+      // on this and shouldn't both be mirrored: GBA's render route
+      // (`index.ts`) only happens to validate `?border` before its 404
+      // because that 404 lives inside its cache-miss branch
+      // (`index.ts:281-293`), an artefact of how that route's caching was
+      // written, not a deliberate order; GBA's metatile route
+      // (`index.ts:318-320`) checks `layoutByName`'s 404 before
+      // `Number.isInteger(id)`'s 400 for its own, unrelated reason. GBC's
+      // two routes agree with each other on purpose instead of reproducing
+      // that incidental GBA split.
       const renderMatch = /^\/api\/render\/(.+)\.png$/.exec(url.pathname);
       if (renderMatch) {
-        const name = decodeURIComponent(renderMatch[1]!);
+        const rawName = renderMatch[1]!;
+        const name = decodeMapName(rawName);
+        if (name === undefined) return send(400, { error: `malformed map name ${rawName}` });
+        if (!mapNames.has(name)) return send(404, { error: `no map ${name}` });
 
         const borderParam = url.searchParams.get("border");
         let border: number;
@@ -164,16 +245,9 @@ export async function createGbcServer(opts: { projectPath: string; port?: number
           return send(400, { error: `border ${border} out of range -- must be an integer 0-${maxBorder}` });
         }
 
-        const timeParam = url.searchParams.get("time");
-        let time: "morn" | "day" | "nite";
-        if (timeParam === null) {
-          time = "day";
-        } else {
-          try { time = parseTime(timeParam); }
-          catch (e) { return send(400, { error: (e as Error).message }); }
-        }
-
-        if (!mapNames.has(name)) return send(404, { error: `no map ${name}` });
+        const timeResult = parseTimeParam(url);
+        if ("error" in timeResult) return send(400, { error: timeResult.error });
+        const { time } = timeResult;
 
         const key = `${name}:${border}:${time}`;
         let png = renderCache.get(key);
@@ -192,8 +266,10 @@ export async function createGbcServer(opts: { projectPath: string; port?: number
       // to the generic 404 instead of the named 400 the spec asks for.
       const metatileMatch = /^\/api\/metatile\/(.+)\/([^/]+)\.png$/.exec(url.pathname);
       if (metatileMatch) {
-        const name = decodeURIComponent(metatileMatch[1]!);
+        const rawName = metatileMatch[1]!;
         const rawId = metatileMatch[2]!;
+        const name = decodeMapName(rawName);
+        if (name === undefined) return send(400, { error: `malformed map name ${rawName}` });
         if (!mapNames.has(name)) return send(404, { error: `no map ${name}` });
 
         const id = Number(rawId);
@@ -201,14 +277,9 @@ export async function createGbcServer(opts: { projectPath: string; port?: number
           return send(400, { error: `metatile id must be a non-negative integer, got ${rawId}` });
         }
 
-        const timeParam = url.searchParams.get("time");
-        let time: "morn" | "day" | "nite";
-        if (timeParam === null) {
-          time = "day";
-        } else {
-          try { time = parseTime(timeParam); }
-          catch (e) { return send(400, { error: (e as Error).message }); }
-        }
+        const timeResult = parseTimeParam(url);
+        if ("error" in timeResult) return send(400, { error: timeResult.error });
+        const { time } = timeResult;
 
         const map = proj.map(name);
         const ts = proj.tileset(map.tileset);

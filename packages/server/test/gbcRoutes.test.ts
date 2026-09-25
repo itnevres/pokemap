@@ -1,10 +1,31 @@
 import { readFileSync } from "node:fs";
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createServer, type PokemapServer } from "../src/index.js";
+import { buildGbcMapPayload, decodeMapName, parseTimeParam } from "../src/gbcRoutes.js";
 import { openGbcProject } from "@pokemap/core/src/gbc/project.js";
 import { renderGbcMap, renderGbcMapMetatile } from "@pokemap/core/src/gbc/render/map.js";
+import { loadGbcMapEvents } from "@pokemap/core/src/gbc/load/events.js";
 import { encodePng } from "@pokemap/cli/src/png.js";
-import { GBC_SUBJECT_ROOT, hasGbcProject } from "@pokemap/core/test/gbc/helpers/corpus.js";
+import { GBC_SUBJECT_ROOT, hasGbcProject, itWithGbcCorpus } from "@pokemap/core/test/gbc/helpers/corpus.js";
+import { stubGbcProject } from "@pokemap/core/test/gbc/helpers/stubGbcProject.js";
+
+// Pure functions -- no server, no corpus needed, so these run unconditionally
+// (not gated by describe.skipIf) rather than only when PerfPlus happens to be
+// checked out.
+describe("parseTimeParam / decodeMapName (pure helpers, fix round 1)", () => {
+  it("parseTimeParam: absent -> day; morn/day/nite -> themselves; anything else -> an error, never a throw", () => {
+    expect(parseTimeParam(new URL("http://x/"))).toEqual({ time: "day" });
+    expect(parseTimeParam(new URL("http://x/?time=morn"))).toEqual({ time: "morn" });
+    expect(parseTimeParam(new URL("http://x/?time=nite"))).toEqual({ time: "nite" });
+    const bad = parseTimeParam(new URL("http://x/?time=noon"));
+    expect("error" in bad).toBe(true);
+  });
+
+  it("decodeMapName: a well-formed escape decodes; a malformed one returns undefined instead of throwing", () => {
+    expect(decodeMapName("New%42arkTown")).toBe("NewBarkTown");
+    expect(decodeMapName("%E0%A4%A")).toBeUndefined();
+  });
+});
 
 let s: PokemapServer;
 const get = async (path: string) => fetch(`http://127.0.0.1:${s.port}${path}`);
@@ -128,22 +149,23 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
   });
 
   describe("GET /api/groups", () => {
-    it("groupOrder matches openGbcProject(root).groupNames(), 26 entries, starting with OLIVINE", () => {
-      const expected = openGbcProject(GBC_SUBJECT_ROOT).groupNames();
-      expect(expected).toHaveLength(26);
-      expect(expected[0]).toBe("OLIVINE");
-    });
+    // Spec review finding 1: the old version of this test only re-checked
+    // `openGbcProject(...).groupNames()` directly, with no call to the
+    // route at all -- a Plan 0 §7 can't-fail test. `body.groupOrder` is now
+    // compared with `toEqual` directly against the independently-computed
+    // `groupNames()`, which also kills R5 (swapping `groupOrder[1]`/`[2]`)
+    // without needing a dedicated test for that swap.
+    it("groupOrder equals openGbcProject(root).groupNames() through the route (26 entries, OLIVINE first); groups covers all 391 maps with no duplicate names", async () => {
+      const expectedGroupNames = openGbcProject(GBC_SUBJECT_ROOT).groupNames();
+      expect(expectedGroupNames).toHaveLength(26);
+      expect(expectedGroupNames[0]).toBe("OLIVINE");
 
-    it("groupOrder[0] === \"OLIVINE\" and groups covers all 391 maps with no duplicate names", async () => {
       const r = await get("/api/groups");
       expect(r.status).toBe(200);
       const body = await r.json() as { groupOrder: string[]; groups: Record<string, string[]> };
-      expect(body.groupOrder[0]).toBe("OLIVINE");
-      expect(body.groupOrder).toHaveLength(26);
-      // Every groupOrder name must be a key, even a group whose bucket
-      // happens to be non-empty for every real group in the corpus (there
-      // is no empty group here, but the spec requires the key to exist
-      // regardless).
+      expect(body.groupOrder).toEqual(expectedGroupNames);
+
+      // Every groupOrder name must be a key.
       for (const name of body.groupOrder) expect(Object.hasOwn(body.groups, name)).toBe(true);
 
       const all = Object.values(body.groups).flat();
@@ -190,28 +212,38 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
   });
 
   describe("GET /api/map/:name", () => {
-    it("NewBarkTown: dimensions, raw blocks from the real .blk, tileset, warps, defects, collisionInfo", async () => {
+    it("NewBarkTown: every payload field deep-equals its own core object, via a JSON round-trip", async () => {
       const r = await get("/api/map/NewBarkTown");
       expect(r.status).toBe(200);
       const body = await r.json() as {
-        map: { width: number; height: number; border: number };
-        layout: { width: number; height: number; writable: boolean };
+        map: unknown;
+        layout: { blkPath: string; width: number; height: number; writable: boolean };
         blocks: { metatileId: number }[];
         metatileCount: number;
         tileset: { constName: string; name: string };
         collision: { tl: number; tr: number; bl: number; br: number }[];
         collisionInfo: Record<string, { name: string | null; category: string; talk: boolean }>;
-        events: { warps: { x: number; y: number; mapConst: string; destWarp: number }[] };
+        events: unknown;
         defects: unknown[];
         paddingWidth: number;
       };
 
-      expect(body.map.width).toBe(10);
-      expect(body.map.height).toBe(9);
-      expect(body.layout.width).toBe(10);
-      expect(body.layout.height).toBe(9);
-      expect(body.layout.writable).toBe(true);
-      expect(body.blocks).toHaveLength(90);
+      // A JSON round-trip of the real core objects, so `toEqual` compares
+      // against exactly what travelled over the wire (no `Map`/`Set`/etc.
+      // surviving on one side but not the other) -- spec review finding 5.
+      const rt = <T,>(x: T): T => JSON.parse(JSON.stringify(x)) as T;
+      const proj = openGbcProject(GBC_SUBJECT_ROOT);
+      const map = proj.map("NewBarkTown");
+      const ts = proj.tileset(map.tileset);
+      const { layout } = proj.layout(map);
+      const { events } = loadGbcMapEvents(proj.root, map);
+
+      expect(body.map).toEqual(rt(map));
+      // attributes.asm:100 -- `map_attributes NewBarkTown, NEW_BARK_TOWN, $05, WEST | EAST`.
+      expect((body.map as { connections: unknown[] }).connections).toHaveLength(2);
+
+      expect(body.layout).toEqual({ blkPath: "maps/NewBarkTown.blk", width: 10, height: 9, writable: true });
+      expect(body.layout.blkPath).toBe(layout.blkPath);
 
       // Read the real .blk bytes independently of the route/core renderer --
       // proves `blocks` is raw, unsubstituted data (Plan 0 §7: pin against
@@ -219,31 +251,31 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
       const blkBytes = readFileSync(`${GBC_SUBJECT_ROOT}/maps/NewBarkTown.blk`);
       expect(body.blocks.map((b) => b.metatileId)).toEqual([...blkBytes]);
 
+      expect(body.tileset).toEqual({ constName: ts.constName, name: ts.name });
       expect(body.tileset.constName).toBe("TILESET_JOHTO");
+      expect(body.metatileCount).toBe(ts.metatiles.length);
       expect(body.metatileCount).toBe(128);
+      expect(body.collision).toEqual(rt(ts.collision));
       expect(body.collision).toHaveLength(128);
 
-      expect(body.events.warps).toHaveLength(4);
-      expect(body.events.warps[0]).toMatchObject({ x: 6, y: 3, mapConst: "ELMS_LAB", destWarp: 1 });
+      expect(body.events).toEqual(rt(events));
+      expect((body.events as { warps: unknown[] }).warps).toHaveLength(4);
+      expect((body.events as { warps: { x: number; y: number; mapConst: string; destWarp: number }[] }).warps[0])
+        .toMatchObject({ x: 6, y: 3, mapConst: "ELMS_LAB", destWarp: 1 });
 
       expect(body.defects).toEqual([]);
 
-      // collisionInfo keys equal the set of values actually used in
-      // `collision`, both ways: no missing key, and no extra one either.
+      // collisionInfo: every entry the route sends, compared field-for-field
+      // against proj.collisionInfo() (not just the first pinned value, and
+      // not just the key set) -- kills a mutation that corrupts every
+      // non-pinned entry's category (R14).
       const usedValues = new Set<number>();
       for (const c of body.collision) { usedValues.add(c.tl); usedValues.add(c.tr); usedValues.add(c.bl); usedValues.add(c.br); }
-      expect(new Set(Object.keys(body.collisionInfo).map(Number))).toEqual(usedValues);
-      expect(Object.keys(body.collisionInfo)).toHaveLength(usedValues.size);
-
-      // One pinned entry matches the real project's own collisionInfo(),
-      // computed independently of the route.
-      const proj = openGbcProject(GBC_SUBJECT_ROOT);
       const info = proj.collisionInfo();
-      const oneValue = [...usedValues][0]!;
-      const expectedEntry = info.get(oneValue)!;
-      expect(body.collisionInfo[String(oneValue)]).toEqual({ name: expectedEntry.name, category: expectedEntry.category, talk: expectedEntry.talk });
+      const expectedCollisionInfo = Object.fromEntries([...usedValues].map((v) => [String(v), rt(info.get(v)!)]));
+      expect(body.collisionInfo).toEqual(expectedCollisionInfo);
 
-      expect(body.paddingWidth).toBe(openGbcProject(GBC_SUBJECT_ROOT).paddingWidth());
+      expect(body.paddingWidth).toBe(proj.paddingWidth());
     });
 
     it("CeruleanCave2F: not writable, .blk defect first, then exactly 3 out-of-bounds warp defects", async () => {
@@ -273,6 +305,49 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
       expect(r.status).toBe(404);
       expect(await r.json()).toEqual({ error: "no map NoSuchMap" });
     });
+
+    it("400s a malformed percent-escape in the name, naming the raw segment (GBC only -- index.ts is untouched)", async () => {
+      const r = await get("/api/map/%E0%A4%A");
+      expect(r.status).toBe(400);
+      expect(await r.json()).toEqual({ error: "malformed map name %E0%A4%A" });
+    });
+  });
+
+  describe("buildGbcMapPayload (unit, stubGbcProject) -- mutation 7: block-0 substitution", () => {
+    // The real corpus has no map with an id-0 block anywhere (independently
+    // re-measured; see task-1b-implementer.md), so no HTTP-level test can
+    // discriminate the block-0 -> border substitution mutation. This test
+    // closes that gap directly at the payload-builder level (quality review
+    // finding 2), by wrapping the REAL project's own data and overriding
+    // only `layout()` to inject the one input the corpus lacks -- preferred
+    // over a `vi.mock` of the whole module (spec review finding 6's own
+    // proof file) because every other field (`map`, `tileset`,
+    // `collisionInfo`, `paddingWidth`, `root`) stays the real, measured
+    // data, and `stubGbcProject` is the helper this codebase already uses
+    // for exactly this shape of fixture.
+    itWithGbcCorpus("keeps a raw id-0 block instead of substituting the border metatile", () => {
+      const real = openGbcProject(GBC_SUBJECT_ROOT);
+      const map = real.map("NewBarkTown");
+      expect(map.border).not.toBe(0); // NewBarkTown's border is $05 -- a real, non-zero substitution value
+
+      const proj = stubGbcProject({
+        root: real.root,
+        maps: real.maps,
+        map: real.map,
+        tileset: real.tileset,
+        paddingWidth: real.paddingWidth,
+        collisionInfo: real.collisionInfo,
+        layout: (m) => {
+          const r = real.layout(m);
+          const blocks = r.layout.blocks.map((b, i) => (i === 0 ? { metatileId: 0 } : b));
+          return { layout: { ...r.layout, blocks }, defects: r.defects };
+        },
+      });
+
+      const payload = buildGbcMapPayload(proj, map);
+      expect(payload.blocks[0]).toEqual({ metatileId: 0 });
+      expect(payload.blocks[0]!.metatileId).not.toBe(map.border);
+    });
   });
 
   describe("GET /api/render/:name.png", () => {
@@ -289,6 +364,7 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
           const r = await get(`/api/render/NewBarkTown.png?border=${border}&time=${time}`);
           expect(r.status).toBe(200);
           expect(r.headers.get("content-type")).toBe("image/png");
+          expect(r.headers.get("cache-control")).toBe("no-cache");
           const got = Buffer.from(await r.arrayBuffer());
           const want = encodePng(renderGbcMap(proj, "NewBarkTown", { border, time }));
           expect(got.equals(want)).toBe(true);
@@ -333,6 +409,20 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
       expect(b0b.equals(b1)).toBe(false);
     });
 
+    // Spec review finding 2: every test above uses only NewBarkTown, so a
+    // cache key that drops the map name entirely (`${border}:${time}`, R1)
+    // was never discriminated. Two DIFFERENT maps at the SAME border/time
+    // close that gap: each must equal its own core render, and the two
+    // must differ from each other.
+    it("cache-key proof: two different maps at the same border/time each byte-equal their own core render, and differ from each other (name is part of the key)", async () => {
+      const proj = openGbcProject(GBC_SUBJECT_ROOT);
+      const a = Buffer.from(await (await get("/api/render/NewBarkTown.png?border=0&time=day")).arrayBuffer());
+      const b = Buffer.from(await (await get("/api/render/ElmsLab.png?border=0&time=day")).arrayBuffer());
+      expect(a.equals(encodePng(renderGbcMap(proj, "NewBarkTown", { border: 0, time: "day" })))).toBe(true);
+      expect(b.equals(encodePng(renderGbcMap(proj, "ElmsLab", { border: 0, time: "day" })))).toBe(true);
+      expect(a.equals(b)).toBe(false);
+    });
+
     it("400s: border out of range names 0-3, plus abc/-1/1.5, plus a bad time", async () => {
       const outOfRange = await get("/api/render/NewBarkTown.png?border=4");
       expect(outOfRange.status).toBe(400);
@@ -347,9 +437,26 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
       expect(badTime.status).toBe(400);
     });
 
-    it("404s an unknown map", async () => {
+    it("404s an unknown map, naming it in the body", async () => {
       const r = await get("/api/render/NoSuchMap.png");
       expect(r.status).toBe(404);
+      expect(await r.json()).toEqual({ error: "no map NoSuchMap" });
+    });
+
+    // Coordinator decision (Task 1b fix round 1, spec review finding 4):
+    // both PNG routes now resolve the map name FIRST, so a request with
+    // BOTH a bad name and a bad param answers 404, not 400 -- kills R11
+    // (render reverted to checking params before the name).
+    it("an unknown map AND a bad param together: 404 wins (the name is resolved before any param)", async () => {
+      const r = await get("/api/render/NoSuchMap.png?border=9");
+      expect(r.status).toBe(404);
+      expect(await r.json()).toEqual({ error: "no map NoSuchMap" });
+    });
+
+    it("400s a malformed percent-escape in the name, naming the raw segment", async () => {
+      const r = await get("/api/render/%E0%A4%A.png");
+      expect(r.status).toBe(400);
+      expect(await r.json()).toEqual({ error: "malformed map name %E0%A4%A" });
     });
   });
 
@@ -360,11 +467,12 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
     // roofs; measured facts recorded in that file's own header comment).
     const ROOF_METATILE_ID = 24;
 
-    it("VioletCity roof metatile, time=nite: byte-equal to encodePng(renderGbcMapMetatile(...)), IHDR 32x32", async () => {
+    it("VioletCity roof metatile, time=nite: byte-equal to encodePng(renderGbcMapMetatile(...)), IHDR 32x32, cache-control no-cache", async () => {
       const proj = openGbcProject(GBC_SUBJECT_ROOT);
       const r = await get(`/api/metatile/VioletCity/${ROOF_METATILE_ID}.png?time=nite`);
       expect(r.status).toBe(200);
       expect(r.headers.get("content-type")).toBe("image/png");
+      expect(r.headers.get("cache-control")).toBe("no-cache");
       const got = Buffer.from(await r.arrayBuffer());
       const want = encodePng(renderGbcMapMetatile(proj, "VioletCity", ROOF_METATILE_ID, { time: "nite" }));
       expect(got.equals(want)).toBe(true);
@@ -378,10 +486,33 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
       expect(day.equals(nite)).toBe(false);
     });
 
+    it("no ?time= defaults to day, not nite (R4: metatile's own time default was untested)", async () => {
+      const proj = openGbcProject(GBC_SUBJECT_ROOT);
+      const r = await get(`/api/metatile/VioletCity/${ROOF_METATILE_ID}.png`);
+      const got = Buffer.from(await r.arrayBuffer());
+      const wantDay = encodePng(renderGbcMapMetatile(proj, "VioletCity", ROOF_METATILE_ID, { time: "day" }));
+      const wantNite = encodePng(renderGbcMapMetatile(proj, "VioletCity", ROOF_METATILE_ID, { time: "nite" }));
+      expect(got.equals(wantDay)).toBe(true);
+      expect(got.equals(wantNite)).toBe(false);
+    });
+
     it("the same id on MahoganyTown (same TILESET_JOHTO, a different real roof) differs from VioletCity", async () => {
       const violet = Buffer.from(await (await get(`/api/metatile/VioletCity/${ROOF_METATILE_ID}.png?time=day`)).arrayBuffer());
       const mahogany = Buffer.from(await (await get(`/api/metatile/MahoganyTown/${ROOF_METATILE_ID}.png?time=day`)).arrayBuffer());
       expect(mahogany.equals(violet)).toBe(false);
+    });
+
+    // Spec review finding 2: every test above uses only id 24, so a cache
+    // key that drops the id entirely (`${name}:${time}`, R2) was never
+    // discriminated. Two DIFFERENT ids on the SAME map close that gap.
+    it("cache-key proof: two different ids on the same map each byte-equal their own core render, and differ from each other (id is part of the key)", async () => {
+      const proj = openGbcProject(GBC_SUBJECT_ROOT);
+      const otherId = 0; // VioletCity's own block-0-vs-roof(24) pixel difference is already established (Task 1a's render/map.test.ts)
+      const a = Buffer.from(await (await get(`/api/metatile/VioletCity/${ROOF_METATILE_ID}.png?time=day`)).arrayBuffer());
+      const b = Buffer.from(await (await get(`/api/metatile/VioletCity/${otherId}.png?time=day`)).arrayBuffer());
+      expect(a.equals(encodePng(renderGbcMapMetatile(proj, "VioletCity", ROOF_METATILE_ID, { time: "day" })))).toBe(true);
+      expect(b.equals(encodePng(renderGbcMapMetatile(proj, "VioletCity", otherId, { time: "day" })))).toBe(true);
+      expect(a.equals(b)).toBe(false);
     });
 
     it("400s: a non-non-negative-integer id (1.5, -1, abc) and a bad time", async () => {
@@ -405,6 +536,23 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
 
       const r2 = await get("/api/metatile/NoSuchMap/0.png");
       expect(r2.status).toBe(404);
+      expect(await r2.json()).toEqual({ error: "no map NoSuchMap" });
+    });
+
+    // Coordinator decision (Task 1b fix round 1, spec review finding 4):
+    // both PNG routes now resolve the map name FIRST, so a request with
+    // BOTH an unknown map and a bad id answers 404, not 400 -- kills R12
+    // (metatile reverted to checking the id before the name).
+    it("an unknown map AND a bad id together: 404 wins (the name is resolved before the id)", async () => {
+      const r = await get("/api/metatile/NoSuchMap/abc.png");
+      expect(r.status).toBe(404);
+      expect(await r.json()).toEqual({ error: "no map NoSuchMap" });
+    });
+
+    it("400s a malformed percent-escape in the map name, naming the raw segment", async () => {
+      const r = await get("/api/metatile/%E0%A4%A/0.png");
+      expect(r.status).toBe(400);
+      expect(await r.json()).toEqual({ error: "malformed map name %E0%A4%A" });
     });
   });
 });
