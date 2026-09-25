@@ -219,6 +219,7 @@ export function buildGbcWorldPayload(world: GbcWorld): GbcWorldPayload {
  */
 export function buildGbcEncountersPayload(proj: GbcProject, name: string): GbcEncountersPayload {
   return {
+    family: "gbc",
     mapName: name,
     sources: gbcEncounterSources(proj, name),
     defects: proj.wild().defects,
@@ -245,20 +246,26 @@ export async function createGbcServer(opts: { projectPath: string; port?: number
   const renderCache = new Map<string, Buffer>();
   const metatileCache = new Map<string, Buffer>();
 
-  // buildGbcWorld walks all 391 maps' connections -- measured ~2ms against
-  // the real corpus (cheap, unlike GBA's ~4s buildWorld over 1,209 maps), but
-  // proj is read-only for the life of this process (I8) either way, so the
-  // answer can't change and there is no reason to recompute it per request.
-  // Same "compute at most once, on the first request that needs it" posture
-  // as GBA's own worldCache (index.ts).
+  // buildGbcWorld walks all 391 maps' connections -- measured ~1-7ms across
+  // warm runs against the real corpus (cheap, unlike GBA's ~4s buildWorld
+  // over 1,209 maps), but proj is read-only for the life of this process
+  // (I8) either way, so the answer can't change and there is no reason to
+  // recompute it per request. Same "compute at most once, on the first
+  // request that needs it" posture as GBA's own worldCache (index.ts).
   let worldCache: GbcWorld | undefined;
   const getWorld = () => (worldCache ??= buildGbcWorld(proj));
 
-  // gbcCoverage walks every one of the 391 maps' wild-data tables (measured
-  // ~100-150ms against the real corpus in this environment -- slower than
-  // the plan review's own ~11ms estimate, re-measured rather than trusted;
-  // see the implementer report) -- same "read-only project, compute once"
-  // reasoning as worldCache above and GBA's own coverageCache.
+  // gbcCoverage walks every one of the 391 maps' wild-data tables -- warm,
+  // measured ~13-19ms against the real corpus, close to the plan review's
+  // own ~11ms estimate. The first of gbcCoverage/gbcWhereSpecies/
+  // gbcEncounterSources called on a FRESH project also pays ~100-150ms of
+  // one-time lazy project loading (wild data, tilesets, per-map water-tile
+  // scans) -- whichever route a client happens to hit first pays that cost
+  // once, not this function's own cost repeated (fix round 1, spec review
+  // Minor #1: an earlier version of this comment, and of the implementer
+  // report, misattributed that one-time cold-load cost to gbcCoverage
+  // itself). Same "read-only project, compute once" reasoning as
+  // worldCache above and GBA's own coverageCache.
   let coverageCache: GbcCoverage | undefined;
   const getCoverage = () => (coverageCache ??= gbcCoverage(proj));
 

@@ -584,6 +584,16 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
       expect(body.blockPx).toBe(32);
       expect(body.placements).toEqual(expectedPlacements);
 
+      // Fix round 1, spec review Minor #2: components/conflicts were
+      // previously pinned only by count/size (components) or by `.map`
+      // (conflicts), never deep-equalled against the core output over the
+      // real HTTP/JSON round-trip -- so a route-level bug that corrupted
+      // `components[].bounds` or `conflicts[].viaA/viaB` (both of which
+      // Task 5's world canvas consumes -- the fit and the conflict-badge
+      // tooltip) would have shipped undetected.
+      expect(body.components).toEqual(world.components);
+      expect(body.conflicts).toEqual(world.conflicts);
+
       // Measured directly against buildGbcWorld's own output (not guessed):
       // 391 maps split into 326 components, of which exactly 3 (sizes
       // 35/31/2 -- Kanto, Johto, and one 2-map pair) have more than one map;
@@ -596,17 +606,35 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
       expect(body.placements.NewBarkTown).toMatchObject({ width: 10, height: 9 });
     });
 
-    it("exactly 2 conflicts, on Route17 and Route18", async () => {
+    it("exactly 2 conflicts, on Route17 and Route18, one pinned literally", async () => {
       const r = await get("/api/world");
-      const body = await r.json() as { conflicts: { map: string }[] };
+      const body = await r.json() as { conflicts: { map: string; viaA: { from: string; x: number; y: number }; viaB: { from: string; x: number; y: number } }[] };
       expect(body.conflicts).toHaveLength(2);
       expect(body.conflicts.map((c) => c.map).sort()).toEqual(["Route17", "Route18"]);
+
+      // Fix round 1, spec review Minor #2: pinned literally, re-derived from
+      // `attributes.asm`'s real Route17<->Route18 connection offsets (`west,
+      // Route17, -38` vs `east, Route18, 38`, which disagree by 1 block in y
+      // once seen from each end), not just from the core function's own
+      // output.
+      const route17 = body.conflicts.find((c) => c.map === "Route17");
+      expect(route17).toEqual({ map: "Route17", viaA: { from: "Route18", x: 30, y: 50 }, viaB: { from: "Route16", x: 30, y: 49 } });
     });
 
     it("a second request returns deep-equal data -- the world cache is never mutated by serving it", async () => {
       const first = await (await get("/api/world")).json();
       const second = await (await get("/api/world")).json();
       expect(second).toEqual(first);
+    });
+
+    // Fix round 1, spec review Minor #3: GBC has no dungeons-on/off toggle
+    // (unlike GBA's own /api/world, which reads ?dungeons=), so a query
+    // string on this route must be silently ignored, never change the
+    // response and never turn the exact-match route into a 404.
+    it("?dungeons=0 is ignored -- returns the identical body, unlike GBA's own /api/world", async () => {
+      const plain = await (await get("/api/world")).json();
+      const withQuery = await (await get("/api/world?dungeons=0")).json();
+      expect(withQuery).toEqual(plain);
     });
 
     it("buildGbcWorldPayload wire-shapes a real GbcWorld directly (unit, no HTTP)", () => {
@@ -641,8 +669,12 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
       // Pin one source's tags and its first chance literally, cross-checked
       // against the real .asm text (not just against the core function's
       // own output) -- ROUTE_29's morn block's first slot line is
-      // `db 2, PIDGEY`, weight 2 of the section's 7-slot total, which
-      // (per probabilities.asm's grass weights) resolves to 45%.
+      // `db 2, PIDGEY`; the `2` there is PIDGEY's LEVEL, not a weight (fix
+      // round 1, spec review Minor #6b: an earlier version of this comment
+      // called it "weight 2 of the section's 7-slot total"). The 45% comes
+      // from slots 0 and 2 both being PIDGEY (`probabilities.asm`'s
+      // GrassMonProbTable gives those two slots 25% + 20%), and the max
+      // level 7 is slot 2's own level 3 plus the +4 grass/water buff.
       const text = readFileSync(`${GBC_SUBJECT_ROOT}/data/wild/johto_grass.asm`, "utf8");
       const routeText = text.slice(text.indexOf("def_grass_wildmons ROUTE_29"));
       const mornBlock = routeText.slice(routeText.indexOf("; morn"), routeText.indexOf("; day"));
@@ -654,14 +686,57 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
       expect(morn.chances[0]).toEqual({ species: "PIDGEY", percent: 45, minLevel: 2, maxLevel: 7 });
 
       // Every grass/water source's chances sum to 100% (within float slop) --
-      // this map has grass but no water; still checked generically over
-      // every source of either method, not just the one pinned above.
+      // checked generically over every source of either method, not just the
+      // one pinned above. Route29 itself has no water source, so this alone
+      // leaves the water branch vacuous (fix round 1, spec review Minor #5).
       for (const s of body.sources) {
         if (s.method === "grass" || s.method === "water") {
           const sum = s.chances.reduce((a, c) => a + c.percent, 0);
           expect(Math.abs(sum - 100)).toBeLessThanOrEqual(0.05);
         }
       }
+    });
+
+    // Fix round 1, spec review Minor #5: Route32 (grass, water, fish,
+    // headbutt -- unlike Route29) exercises the water branch over the real
+    // HTTP route, not just the core function directly.
+    it("Route32: the water source's chances also sum to 100% -- the water branch runs, unlike the Route29 test above", async () => {
+      const r = await get("/api/encounters/Route32");
+      expect(r.status).toBe(200);
+      const body = await r.json() as { sources: { method: string; chances: { percent: number }[] }[] };
+      const water = body.sources.filter((s) => s.method === "water");
+      expect(water.length).toBeGreaterThan(0);
+      for (const s of water) {
+        const sum = s.chances.reduce((a, c) => a + c.percent, 0);
+        expect(Math.abs(sum - 100)).toBeLessThanOrEqual(0.05);
+      }
+    });
+
+    // Fix round 1, spec review Minor #5: the two tests above only cover one
+    // map each. This walks every one of the 391 maps directly through the
+    // core function (no HTTP round-trip, so it stays fast -- see the
+    // implementer report for the measured runtime), proving the same fact
+    // corpus-wide: all ~800 real grass/water sources sum to 100% within
+    // float slop, across every method/time/swarm variant.
+    it("every grass/water source across the whole corpus sums to 100% (measured runtime in the implementer report)", () => {
+      const proj = openGbcProject(GBC_SUBJECT_ROOT);
+      let checked = 0;
+      const t0 = performance.now();
+      for (const map of proj.maps) {
+        for (const s of gbcEncounterSources(proj, map.name)) {
+          if (s.method === "grass" || s.method === "water") {
+            const sum = s.chances.reduce((a, c) => a + c.percent, 0);
+            expect(Math.abs(sum - 100)).toBeLessThanOrEqual(0.05);
+            checked++;
+          }
+        }
+      }
+      const elapsedMs = performance.now() - t0;
+      // Deliberate console.log, not a lint violation this repo checks for:
+      // the fix round asks the report to state this loop's measured
+      // runtime, and this is the one place that runtime is actually timed.
+      console.log(`[corpus percent-sum check] ${checked} grass/water sources, ${elapsedMs.toFixed(1)}ms`);
+      expect(checked).toBeGreaterThan(0); // vacuous-pass guard
     });
 
     it("a map with no encounters at all (NewBarkTown's PlayersHouse1F) returns sources: [] -- real data, not an error", async () => {
@@ -701,9 +776,21 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
     it("buildGbcEncountersPayload directly (unit, no HTTP)", () => {
       const proj = openGbcProject(GBC_SUBJECT_ROOT);
       const payload = buildGbcEncountersPayload(proj, "Route29");
+      expect(payload.family).toBe("gbc");
       expect(payload.mapName).toBe("Route29");
       expect(payload.sources).toEqual(gbcEncounterSources(proj, "Route29"));
       expect(payload.defects).toEqual(proj.wild().defects);
+    });
+
+    // Fix round 1, quality review Important #1: /api/encounters/:map is not
+    // a GBC-only path (GBA's own index.ts serves the identical URL pattern
+    // with a structurally different { mapName, mapId, methods } shape), the
+    // same "same URL, two shapes" situation /api/map/:name and /api/world
+    // are already tagged for -- so this response needs family: "gbc" too.
+    it("the HTTP response carries family: \"gbc\"", async () => {
+      const r = await get("/api/encounters/Route29");
+      const body = await r.json() as { family: string };
+      expect(body.family).toBe("gbc");
     });
   });
 
@@ -736,6 +823,15 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
       const r = await get("/api/where/%E0%A4%A");
       expect(r.status).toBe(400);
       expect(await r.json()).toEqual({ error: "malformed species %E0%A4%A" });
+    });
+
+    // Fix round 1, spec review Minor #4: the capture is `([^/]+)`, ONE
+    // segment (the GBA `/api/where/:species` convention) -- an extra path
+    // segment must 404 through the generic fallthrough, not get silently
+    // swallowed into the capture the way `.+` would.
+    it("/api/where/DUNSPARCE/x is a 404 -- the one-segment capture must not swallow an extra path segment", async () => {
+      const r = await get("/api/where/DUNSPARCE/x");
+      expect(r.status).toBe(404);
     });
   });
 

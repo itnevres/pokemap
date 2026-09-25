@@ -89,8 +89,15 @@ export interface GbcWorldPayload {
  * `proj.wild().defects`, the corpus-wide wild-data defect list (currently
  * just the `kanto_grass.asm` missing-terminator warning), not per-map --
  * every map's `/api/encounters` response carries the same `defects` array.
+ *
+ * `family: "gbc"` (fix round 1, quality review Important #1): `/api/encounters/:map`
+ * is not a GBC-only path -- GBA's own `index.ts` serves the identical URL
+ * pattern with a structurally different response (`{ mapName, mapId, methods }`),
+ * the same "same URL, two shapes" situation `GbcMapPayload` and `GbcWorldPayload`
+ * are already tagged for.
  */
 export interface GbcEncountersPayload {
+  family: "gbc";
   mapName: string;
   sources: GbcEncounterSource[];
   defects: DataDefect[];

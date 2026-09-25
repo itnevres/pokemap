@@ -248,8 +248,10 @@ program
   .action((species: string, opts: { json?: boolean }) => {
     const { root, family } = resolveRootAndFamily(program.opts().project);
     if (family === "gbc") {
-      // Raw, unmodified input -- runGbcWhere's own normalizeSpecies does the
-      // uppercasing and "SPECIES_" stripping (fix round 1, spec review M7).
+      // Raw, unmodified input -- runGbcWhere calls normalizeGbcSpecies
+      // (core/gbc/analyse/atlas.ts) to do the uppercasing and "SPECIES_"
+      // stripping (fix round 1, spec review M7; moved to core in Plan 6b
+      // Task 2, fix round 1 finding 6a).
       const { stdout, stderr } = runGbcWhere(root, species, opts);
       if (stderr) process.stderr.write(stderr);
       process.stdout.write(stdout);
