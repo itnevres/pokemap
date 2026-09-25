@@ -24,6 +24,23 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("server", () => {
     expect(body).toEqual({ family: "gba", root: norm(SUBJECT_ROOT) });
   });
 
+  // Spec review finding 5: SUBJECT_ROOT itself has no trailing slash, so the
+  // test above can't tell the normalised `project.paths.root` from the raw
+  // `opts.projectPath` -- a route answering with the raw input would still
+  // pass it. A second server, opened with a trailing slash appended, is the
+  // one input that can tell the two apart.
+  it("GET /api/project reports the normalised root, not the raw projectPath, when given a trailing slash", async () => {
+    const slashServer = await createServer({ projectPath: `${SUBJECT_ROOT}/`, port: 0 });
+    try {
+      const expectedRoot = norm(SUBJECT_ROOT);
+      const r = await fetch(`http://127.0.0.1:${slashServer.port}/api/project`);
+      expect(await r.json()).toEqual({ family: "gba", root: expectedRoot });
+      expect(expectedRoot.endsWith("/")).toBe(false);
+    } finally {
+      await slashServer.close();
+    }
+  });
+
   it("lists map groups", async () => {
     const r = await get("/api/groups");
     expect(r.status).toBe(200);

@@ -12,6 +12,12 @@ async function main(): Promise<void> {
 
   let root: string;
   if (process.argv.includes("--gbc")) {
+    // Wins unconditionally over any positional root also given (e.g.
+    // `serve.ts --gbc /some/path`): the positional path is never read in
+    // that case, not even to warn about it. Not a footgun this file guards
+    // against, just worth knowing if you're used to typing a positional
+    // path and prepend `--gbc` without removing it.
+    //
     // `--gbc` selects the config's GBC block explicitly, mirroring the CLI's
     // own `--project`-or-config resolution but for the one GBC root this dev
     // server is pointed at. `cli/src/context.ts`'s own `resolveRoot`

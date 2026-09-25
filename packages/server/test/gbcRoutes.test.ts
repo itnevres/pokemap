@@ -29,6 +29,23 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
     expect(s.family).toBe("gbc");
   });
 
+  // Spec review finding 5: GBC_SUBJECT_ROOT itself has no trailing slash, so
+  // every other test above can't tell `proj.root` (normalised) from
+  // `opts.projectPath` (raw) -- a route that answered with the raw input
+  // would still pass them. A second server, opened with a trailing slash
+  // appended, is the one input that can tell the two apart.
+  it("GET /api/project reports the normalised root, not the raw projectPath, when given a trailing slash", async () => {
+    const slashServer = await createServer({ projectPath: `${GBC_SUBJECT_ROOT}/`, port: 0 });
+    try {
+      const expectedRoot = openGbcProject(GBC_SUBJECT_ROOT).root; // no trailing slash
+      const r = await fetch(`http://127.0.0.1:${slashServer.port}/api/project`);
+      expect(await r.json()).toEqual({ family: "gbc", root: expectedRoot });
+      expect(expectedRoot.endsWith("/")).toBe(false);
+    } finally {
+      await slashServer.close();
+    }
+  });
+
   describe("GBA-only routes are refused with 501, naming the path, for every method", () => {
     const cases: { label: string; call: () => Promise<Response>; path: string }[] = [
       { label: "/api/warps/:name", path: "/api/warps/NewBarkTown", call: () => get("/api/warps/NewBarkTown") },
@@ -71,6 +88,38 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
     // task's own test can update this one rather than silently drifting.
     it("/api/species (bare, no name) is a 404 in this task -- Task 2 adds it", async () => {
       const r = await get("/api/species");
+      expect(r.status).toBe(404);
+    });
+
+    // Spec review finding 2: /api/worldx and /api/world/placementx above
+    // only prove the regex is anchored at ALL (leading ^ and one $). Each
+    // case below proves one specific anchor/character-class the spec's own
+    // near-misses never touched, so a regression in any single alternative
+    // (e.g. `dungeons(\/|$)` losing its `$`, or `species/[^/]+` widening to
+    // `species/.+`) still turns red here even though the spec's own 3
+    // near-misses would stay green.
+    it("/api/dungeonsx is a 404 -- dungeons(/|$) must not match a bare prefix", async () => {
+      const r = await get("/api/dungeonsx");
+      expect(r.status).toBe(404);
+    });
+
+    it("/api/world/dungeonsx is a 404 -- the $ anchor on world/dungeons$ must not match a longer path", async () => {
+      const r = await get("/api/world/dungeonsx");
+      expect(r.status).toBe(404);
+    });
+
+    it("/api/species/CHIKORITA/icon.pngx is a 404 -- the $ anchor on icon\\.png$ must not match a longer path", async () => {
+      const r = await get("/api/species/CHIKORITA/icon.pngx");
+      expect(r.status).toBe(404);
+    });
+
+    it("/api/species/A/B/icon.png is a 404 -- species/[^/]+ must not match a name containing a slash", async () => {
+      const r = await get("/api/species/A/B/icon.png");
+      expect(r.status).toBe(404);
+    });
+
+    it("/x/api/warps/y is a 404 -- the leading ^ must not let the pattern match mid-path", async () => {
+      const r = await get("/x/api/warps/y");
       expect(r.status).toBe(404);
     });
   });
