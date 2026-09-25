@@ -366,6 +366,7 @@ Tileset, border and palette live on the **map**. All sharers agree on the tilese
 - `connection <dir>, <TargetName>, <TARGET_CONST>, <offset>`: 142 in total, all 4-argument. The macro still accepts a legacy 6-argument form (`offset = \4 - \5`), but it is unused.
 - Direction lines always come in the order north, south, west, east (0 violations). Each map's flag list (`WEST | EAST`) matches its `connection` lines exactly (0 mismatches).
 - **The offset axis is the reverse of the macro's own comment.** For north/south the offset is an **x** shift (`_x = (\4) * -2`, `_len = CURRENT_MAP_WIDTH + 3 - (\4)`). For east/west it is a **y** shift. Units are blocks. The target's origin = the current map's origin + offset on that axis, the same convention as GBA's `offset`. Real example: `connection west, Route34, ROUTE_34, -18` (AzaleaTown).
+- **Corrected 2026-09-25 (Task 11 fix round 1):** engine-verified against `EnterMapConnection` (`engine/overworld/warp_connection.asm`) and `FillMapConnections`/`GetMapConnection` (`home/map.asm`). An earlier draft of this doc's own source comments cited a `LoadMapConnections` routine; no such routine exists in this decomp.
 
 **Map header and tileset assignment.**
 - The map header lives in `data/maps/maps.asm`:

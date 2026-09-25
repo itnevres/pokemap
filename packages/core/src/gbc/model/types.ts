@@ -35,7 +35,11 @@ export interface DataDefect {
 /**
  * One `connection` line from `data/maps/attributes.asm`. The axis is the
  * reverse of the macro's own source comment (GBC format findings, "Extra
- * findings" -> Connections, engine-verified against `LoadMapConnections`):
+ * findings" -> Connections, engine-verified against `EnterMapConnection`
+ * (`engine/overworld/warp_connection.asm`) and `FillMapConnections`
+ * (`home/map.asm`) -- there is no `LoadMapConnections` routine in this
+ * decomp; that name was an earlier, incorrect guess, corrected during
+ * Task 11's fix round):
  * a north/south connection's offset shifts the target along **x**; a
  * west/east connection's offset shifts it along **y**. Units are blocks.
  * `offset` is stored raw, exactly as written in source -- axis conversion to

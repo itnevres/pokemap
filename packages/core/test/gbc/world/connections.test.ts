@@ -54,6 +54,8 @@ function stubGbcProject(maps: GbcMap[]): GbcProject {
     roofs: unused("roofs"),
     layout: unused("layout"),
     paddingWidth: unused("paddingWidth"),
+    wild: unused("wild"),
+    waterCollisionValues: unused("waterCollisionValues"),
   };
 }
 
@@ -142,20 +144,20 @@ describe("buildGbcWorld: hand-derived fixture", () => {
     // Conflict coordinates are recorded during the BFS, BEFORE
     // `layOutComponents`' end-of-build shelf-pack shift runs -- these are the
     // pre-pack numbers computed above, not `w.placements`' final (shifted)
-    // ones. Bridge keeps whichever placement reached it first (BFS from
-    // Home's queue visits North before East, since Home's own connections
-    // list is [north, south, west, east] and each is pushed to the queue as
-    // it's placed -- an implementation detail this test does not otherwise
-    // depend on); what must hold is that BOTH candidate positions are named.
-    expect(w.conflicts).toHaveLength(1);
-    const c = w.conflicts[0]!;
-    expect(c.map).toBe("Bridge");
-    const positions = [ [c.viaA.from, c.viaA.x, c.viaA.y], [c.viaB.from, c.viaB.x, c.viaB.y] ];
-    expect(positions).toContainEqual(["East", 14, 6]);
-    expect(positions).toContainEqual(["North", 8, 10]);
-    // A conflict means two paths disagree; asserting the two coordinate
-    // pairs differ, not merely that both entries exist.
-    expect([c.viaA.x, c.viaA.y]).not.toEqual([c.viaB.x, c.viaB.y]);
+    // ones.
+    //
+    // Fix round 1 (spec review Issue 1): pin the exact `Conflict`, not just
+    // "both positions appear in either order" -- `viaB.from` is documented as
+    // the map that ACTUALLY placed the target (`placedBy`), and a viaA/viaB
+    // swap is a real, distinct bug (it would flip which map a UI should
+    // trust) that the previous `toContainEqual`-in-either-order shape could
+    // not catch. Home's own connections list is [north, south, west, east],
+    // and each is pushed onto the BFS queue as it's placed, so North is
+    // dequeued (and reaches Bridge) BEFORE East -- North places Bridge first
+    // (`viaB`), and East's later, disagreeing edge becomes `viaA`.
+    expect(w.conflicts).toEqual([
+      { map: "Bridge", viaA: { from: "East", x: 14, y: 6 }, viaB: { from: "North", x: 8, y: 10 } },
+    ]);
 
     // Bridge itself is still placed exactly once (whichever path won), not
     // dropped, and not duplicated across components.
@@ -187,15 +189,34 @@ describe("buildGbcWorld: hand-derived fixture", () => {
     const proj = stubGbcProject(maps);
     const w = buildGbcWorld(proj);
 
-    // Solo becomes its own component (nothing points TO it), but its own
-    // connection resolves correctly through the const and creates no
-    // "NotHome" placement or conflict -- Home is already placed by its own
-    // component's BFS seed, so Solo's edge to it is a same-map graph loop the
-    // BFS never even has to consider a placement for (Solo is discovered by
-    // scanning `remaining`, unreached by anyone).
+    // Solo becomes its own component (nothing points TO it: this is a
+    // one-way edge, Home has no connection back to Solo), but its own
+    // connection resolves correctly through the const to the REAL "Home"
+    // (never a phantom "NotHome" placement).
     expect(w.placements.has("NotHome")).toBe(false);
     expect(w.placements.has("Solo")).toBe(true);
     expect(w.components).toHaveLength(2);
+
+    // Fix round 1 (spec review Minor m4): this one-way edge into an
+    // ALREADY-PLACED map of an EARLIER component is not "never considered" --
+    // an earlier version of this comment claimed the BFS skips it, which is
+    // wrong. Solo's queue-processing loop still runs `existing =
+    // placements.get("Home")`, finds it (Home was placed while building the
+    // FIRST component), and records a conflict when Solo's own computed
+    // position for "Home" (east: `(Solo.x + Solo.width, Solo.y + 0)` =
+    // `(4, 0)`, since Solo seeds its own component at `(0,0)`) disagrees with
+    // Home's real position `(0, 0)` in ITS OWN component's pre-pack frame --
+    // two coordinate frames that were never meant to be compared, since they
+    // belong to different components entirely. This is inherited verbatim
+    // from GBA's `buildWorld` (which has the identical cross-component
+    // comparison for the same reason) and is moot on the real corpus (0
+    // one-way edges, measured in "every connection reciprocates" below) --
+    // documented here, and in `buildGbcWorld`'s own doc comment, rather than
+    // fixed, since fixing it is out of this task's scope and GBA has never
+    // needed to.
+    expect(w.conflicts).toEqual([
+      { map: "Home", viaA: { from: "Solo", x: 4, y: 0 }, viaB: { from: "Solo", x: 0, y: 0 } },
+    ]);
   });
 
   it("places a map with no connections as its own 1-map component", () => {
@@ -334,28 +355,44 @@ describe("buildGbcWorld: corpus", () => {
   });
 
   /**
-   * Measured, not guessed: **2**. `Route17`<->`Route18`<->`FuchsiaCity` and
-   * `Route16`<->`Route17` each disagree by exactly 1 block on one axis when
-   * reached via two different paths through Kanto's Route16/17/18/
-   * FuchsiaCity/Route19/Route15 loop -- the same class of finding as GBA's
-   * own Safari Zone/RuinsOfAlph/EcruteakCity conflicts (`world/connections.test.ts`):
-   * a genuine, real inconsistency in the decomp's connection data, not an
-   * artefact of this algorithm. Reporting it instead of silently picking one
-   * side is the feature (Porymap never builds a global coordinate space, so
-   * it can't surface this at all).
+   * Measured, not guessed: **2**. `Route18` and `Route17` are each placed
+   * differently depending which of two paths reaches them first. Both edges
+   * involved (Route17<->Route18, Route16<->Route17) are themselves
+   * INDIVIDUALLY reciprocal (measured, "every connection reciprocates" below)
+   * -- the disagreement is not a bad `connection` line, but a longer cycle
+   * that fails to close in the plane. Spec review (task-11-spec-review.md
+   * §1.2, hand-derived and cross-checked against an independent stitcher)
+   * traced the actual non-closing cycle: a 13-map loop Route16 -> Route17 ->
+   * Route18 -> FuchsiaCity -> Route15 -> Route14 -> Route13 -> Route12 ->
+   * LavenderTown -> Route8 -> SaffronCity -> Route7 -> CeladonCity -> back to
+   * Route16, which disagrees with the direct Route17<->Route18 edge by
+   * exactly 1 block in y. (Fix round 1, spec review Minor m6: an earlier
+   * version of this comment named a "Route16/17/18/FuchsiaCity/Route19/
+   * Route15 loop" -- there is no 4-6 map loop here at all, Route19 is not on
+   * the real cycle, and "loop" undersold that it takes 13 maps to fail to
+   * close.) Confirmed by mutation: PerfPlus's `attributes.asm` connection
+   * lines are byte-identical to vanilla pret/pokecrystal's, so this is a real
+   * retail-game data fact, not a PerfPlus-specific or implementation bug --
+   * the same class of finding as GBA's own Safari Zone/RuinsOfAlph/
+   * EcruteakCity conflicts (`packages/core/test/world/connections.test.ts`).
+   * Reporting it instead of silently picking one side is the feature
+   * (Porymap never builds a global coordinate space, so it can't surface
+   * this at all).
    */
-  const CONFLICT_BASELINE = 2;
-
-  itWithGbcCorpus("reports exactly the measured number of contradictions, never silently picking one", () => {
+  itWithGbcCorpus("reports exactly the 2 measured contradictions, by full identity, never silently picking one", () => {
     const proj = openGbcProject(GBC_SUBJECT_ROOT);
     const w = buildGbcWorld(proj);
     for (const c of w.conflicts) {
-      expect(c.map).toBeTypeOf("string");
-      expect(c.viaA.from).toBeTypeOf("string");
-      expect(c.viaB.from).toBeTypeOf("string");
       expect([c.viaA.x, c.viaA.y]).not.toEqual([c.viaB.x, c.viaB.y]);
     }
-    expect(w.conflicts.length).toBe(CONFLICT_BASELINE);
+    // Fix round 1 (spec review Issue 1): pin every conflict's full identity
+    // (map, both `from` names, both coordinate pairs, pre-pack), not just
+    // the count -- a viaA/viaB swap or a wrong `from` name would previously
+    // have passed this test.
+    expect(w.conflicts).toEqual([
+      { map: "Route18", viaA: { from: "Route17", x: 40, y: 87 }, viaB: { from: "FuchsiaCity", x: 40, y: 88 } },
+      { map: "Route17", viaA: { from: "Route18", x: 30, y: 50 }, viaB: { from: "Route16", x: 30, y: 49 } },
+    ]);
   });
 
   /**
@@ -390,5 +427,40 @@ describe("buildGbcWorld: corpus", () => {
     expect(reciprocated / 2).toBe(71);
     expect(unpaired).toBe(0);
     expect(mismatches).toBe(0);
+  });
+
+  /**
+   * Fix round 1 (quality review Important #1): `GBC_ROW_TARGET`/`GBC_GAP`'s
+   * specific values (256/8) were previously asserted only by doc comment --
+   * mutating them to 50/1 left every existing test green, since
+   * "shelf-packs multiple components without overlap" holds for ANY
+   * positive rowTarget/gap. Pinning the full packed extent (measured: 255
+   * blocks wide, 746 tall) is sensitive to both: a smaller `rowTarget` would
+   * wrap Johto (235 blocks wide) into a second, narrower row, shrinking the
+   * width and growing the height; a different `gap` shifts every row
+   * boundary. `boundsOf` (re-exported from the GBA module) computes this
+   * directly over every placed map's key, not a hand-summed loop.
+   */
+  itWithGbcCorpus("packs the whole world into a 255x746-block bounding box", () => {
+    const proj = openGbcProject(GBC_SUBJECT_ROOT);
+    const w = buildGbcWorld(proj);
+    const allMaps = [...w.placements.keys()];
+    expect(allMaps).toHaveLength(391);
+    expect(boundsOf(allMaps, w.placements)).toEqual({ x: 0, y: 0, width: 255, height: 746 });
+  });
+
+  itWithGbcCorpus("Johto and Kanto land in separate, non-overlapping rows", () => {
+    const proj = openGbcProject(GBC_SUBJECT_ROOT);
+    const w = buildGbcWorld(proj);
+    const johto = w.components[w.placements.get("NewBarkTown")!.component]!;
+    const kanto = w.components[w.placements.get("PalletTown")!.component]!;
+    // Both are wider than a too-small rowTarget (e.g. 50) could fit
+    // side-by-side without wrapping into each other's row -- if a mutated
+    // rowTarget wrapped Johto (235 blocks wide) mid-landmass or merged it
+    // into Kanto's row, their y-ranges would overlap.
+    const yRangesOverlap =
+      johto.bounds.y < kanto.bounds.y + kanto.bounds.height &&
+      kanto.bounds.y < johto.bounds.y + johto.bounds.height;
+    expect(yRangesOverlap).toBe(false);
   });
 });

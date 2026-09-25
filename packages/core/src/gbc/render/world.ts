@@ -1,5 +1,5 @@
 import type { GbcProject } from "../project.js";
-import type { GbcWorld } from "../world/connections.js";
+import type { GbcWorld, Conflict } from "../world/connections.js";
 import type { DataDefect } from "../model/types.js";
 import { renderGbcMap } from "./map.js";
 import { createRaster, blitScaled, type Raster } from "../../render/raster.js";
@@ -37,6 +37,40 @@ export interface RenderGbcWorldResult extends Raster {
    *  practice (each map has its own `.blk` path) but not assumed -- is
    *  reported once, not once per placement. */
   defects: DataDefect[];
+  /** The subset of `world.conflicts` whose `.map` was actually drawn (i.e.
+   *  its placement intersects `bbox`), in `world.conflicts`' own order.
+   *  Fix round 1 (spec review Minor m1): a `Conflict` is real data -- two
+   *  connection paths that disagree on where a map belongs -- and when the
+   *  disagreeing map lands in the rendered bbox, the visible seam (e.g. a
+   *  gatehouse split across two placements a block apart) has no other
+   *  explanation without this. `world.conflicts` is filtered here, once,
+   *  rather than in the CLI, since "was it drawn" depends on the same bbox
+   *  intersection this function already computes -- duplicating that check
+   *  at the call site would risk drifting from it. */
+  conflicts: Conflict[];
+}
+
+/**
+ * Merges the per-placement `DataDefect` lists collected while rendering,
+ * collapsing entries whose `file` AND `message` both match. Extracted as its
+ * own pure function (fix round 1, spec review Issue 2) so the de-dupe rule
+ * itself -- not just "two different maps' distinct defects both flow
+ * through untouched", which is all the previous single test proved -- can be
+ * unit-tested directly with two lists sharing one identical entry, without
+ * needing a full render pipeline.
+ */
+export function dedupeDefects(lists: readonly (readonly DataDefect[])[]): DataDefect[] {
+  const seen = new Set<string>();
+  const out: DataDefect[] = [];
+  for (const list of lists) {
+    for (const d of list) {
+      const key = `${d.file}\u0000${d.message}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(d);
+    }
+  }
+  return out;
 }
 
 /**
@@ -50,6 +84,16 @@ export interface RenderGbcWorldResult extends Raster {
  * `opts.scale / BLOCK_PX` converts "pixels per block" into that fraction
  * (`opts.scale === BLOCK_PX` gives `blitScaled` a scale of `1`, byte-identical
  * to a plain `blit`, exactly as that function's own doc comment requires).
+ *
+ * Fix round 1 (quality review Minor #5): at ANY scale, including the
+ * overview default (8), each intersecting placement is still rendered by
+ * `renderGbcMap` at its full native 32 px/block resolution and only THEN
+ * downsampled by `blitScaled`. Scale 8 is cheaper than scale 32 end to end
+ * (measured: ~0.63s vs ~1.49s for the full 391-map corpus, task-11-implementer.md's
+ * LOD section) purely because `blitScaled`'s own inner loop is O(destination
+ * pixels), which shrinks with scale -- NOT because the per-map render cost
+ * shrinks; that stays constant regardless of `scale`. A hypothetical
+ * "render at reduced detail" path does not exist here.
  */
 export function renderGbcWorld(proj: GbcProject, world: GbcWorld, opts: RenderGbcWorldOptions): RenderGbcWorldResult {
   const { bbox, scale, time } = opts;
@@ -60,8 +104,8 @@ export function renderGbcWorld(proj: GbcProject, world: GbcWorld, opts: RenderGb
 
   const dst = createRaster(bbox.w * scale, bbox.h * scale);
   let drawn = 0;
-  const seenDefects = new Set<string>();
-  const defects: DataDefect[] = [];
+  const drawnMaps = new Set<string>();
+  const defectLists: DataDefect[][] = [];
 
   for (const p of world.placements.values()) {
     // Same exclusion shape as GBA's own render-world (`packages/cli/src/index.ts`):
@@ -73,14 +117,10 @@ export function renderGbcWorld(proj: GbcProject, world: GbcWorld, opts: RenderGb
     const raster = renderGbcMap(proj, p.map, { time });
     blitScaled(dst, raster, (p.x - bbox.x) * scale, (p.y - bbox.y) * scale, scale / BLOCK_PX);
     drawn++;
-
-    for (const d of raster.defects) {
-      const key = `${d.file}\u0000${d.message}`;
-      if (seenDefects.has(key)) continue;
-      seenDefects.add(key);
-      defects.push(d);
-    }
+    drawnMaps.add(p.map);
+    defectLists.push(raster.defects);
   }
 
-  return { ...dst, drawn, defects };
+  const conflicts = world.conflicts.filter((c) => drawnMaps.has(c.map));
+  return { ...dst, drawn, defects: dedupeDefects(defectLists), conflicts };
 }

@@ -88,7 +88,11 @@ describe("runGbcRender", () => {
     const decoded1 = decodeRgbaPng(readFileSync(out));
     expect(decoded1.width).toBe(expected.width);
     expect(decoded1.height).toBe(expected.height);
-    expect(Buffer.from(decoded1.data)).toEqual(Buffer.from(expected.data));
+    // Fix round 1 (spec review Minor m7): `.equals()`, not `toEqual` on two
+    // `Buffer`s -- see `render/world.test.ts`'s own comment on this same fix
+    // for why a FAILING raster-buffer `toEqual` can hang vitest's diff
+    // renderer for minutes instead of failing fast.
+    expect(Buffer.from(decoded1.data).equals(Buffer.from(expected.data))).toBe(true);
 
     // Two runs, same output path: byte-identical PNG bytes (success
     // criterion 1 -- also kills the "render writes a non-deterministic
@@ -220,7 +224,8 @@ describe("runGbcRenderWorld", () => {
     const decoded = decodeRgbaPng(readFileSync(out));
     expect(decoded.width).toBe(expected.width);
     expect(decoded.height).toBe(expected.height);
-    expect(Buffer.from(decoded.data)).toEqual(Buffer.from(expected.data));
+    // Fix round 1 (spec review Minor m7): see the identical fix above.
+    expect(Buffer.from(decoded.data).equals(Buffer.from(expected.data))).toBe(true);
   });
 
   itWithGbcCorpus("a bbox including CeruleanCave2F surfaces its layout defect as a warning line", () => {
@@ -233,6 +238,35 @@ describe("runGbcRenderWorld", () => {
     });
     expect(stderr).toBe("warning: maps/CeruleanCave2F.blk: actual size 400 bytes, declared 9x15=135 -- loaded first 135 bytes, not writable\n");
   });
+
+  /**
+   * Fix round 1 (spec review Minor m1): a bbox covering exactly Route17 and
+   * Route18 draws exactly the two maps each named as the `.map` of one of
+   * the corpus's 2 real `Conflict`s (`world/connections.test.ts`), so both
+   * notes must appear, in `world.conflicts`' own order, worded exactly as
+   * `noteLines` builds them. Exit code is unaffected -- this is purely
+   * informational stderr alongside (here, on top of) any `warning:` lines.
+   */
+  itWithGbcCorpus("a bbox covering Route17/Route18 prints one note: line per drawn conflict", () => {
+    const proj = openGbcProject(GBC_SUBJECT_ROOT);
+    const world = buildGbcWorld(proj);
+    const route17 = world.placements.get("Route17")!;
+    const route18 = world.placements.get("Route18")!;
+    const bbox = {
+      x: Math.min(route17.x, route18.x),
+      y: Math.min(route17.y, route18.y),
+      w: Math.max(route17.x + route17.width, route18.x + route18.width) - Math.min(route17.x, route18.x),
+      h: Math.max(route17.y + route17.height, route18.y + route18.height) - Math.min(route17.y, route18.y),
+    };
+    const out = tmpFile("route17-18.png");
+    const { stdout, stderr } = runGbcRenderWorld(GBC_SUBJECT_ROOT, { bbox, out, scale: 32 });
+    expect(stdout).toMatch(/maps=2\n$/);
+    expect(stderr).toBe(
+      "note: Route18 placed via FuchsiaCity; Route17 disagrees by (0,-1)\n" +
+      "note: Route17 placed via Route16; Route18 disagrees by (0,1)\n",
+    );
+  });
+
 });
 
 describe("CLI end-to-end (spawned, generous timeout)", () => {
@@ -272,14 +306,20 @@ describe("CLI end-to-end (spawned, generous timeout)", () => {
     expect(stderr).toMatch(/^pokemap: unknown map NoSuchMap; not listed in/);
   }, 30_000);
 
-  itWithGbcCorpus("render-world against the real subject exits 0 and prints the stdout line (Task 11)", () => {
+  // Fix round 1 (quality review Important #4 / spec Minor m2): `--scale` is
+  // deliberately OMITTED here (an earlier version passed `--scale 32`
+  // explicitly), so this is the one test that actually exercises `index.ts`'s
+  // own GBC default-scale-8 resolution end to end through the real CLI --
+  // `320x72`, not `1280x288`, is `40*8 x 9*8`; mutating the default to 4
+  // would produce `160x36` instead and fail this.
+  itWithGbcCorpus("render-world against the real subject, with no --scale, exits 0 using the GBC default of 8", () => {
     const out = tmpFile("e2e-world.png");
     const { status, stdout, stderr } = spawnCli([
-      "--project", GBC_SUBJECT_ROOT, "render-world", "--bbox", "145,251,40,9", "--scale", "32", "-o", out,
+      "--project", GBC_SUBJECT_ROOT, "render-world", "--bbox", "145,251,40,9", "-o", out,
     ]);
     expect(stderr).toBe("");
     expect(status).toBe(0);
-    expect(stdout).toMatch(/^.*e2e-world\.png 1280x288 maps=2\n$/);
+    expect(stdout).toMatch(/^.*e2e-world\.png 320x72 maps=2\n$/);
   }, 30_000);
 
   // Covers the deliverables list's required "sign list" case AND, in the

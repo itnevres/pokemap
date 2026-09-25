@@ -108,6 +108,23 @@ const GBC_GAP = 8;
  * Conflicts are recorded, never thrown, with `viaB.from` the map that
  * actually placed the target -- the same `Conflict` shape and reasoning as
  * GBA's `buildWorld` (see that function's own doc comment).
+ *
+ * Known edge case, inherited verbatim from GBA and not fixed here (fix round
+ * 1, spec review Minor m4): a ONE-WAY edge from a map in a LATER component
+ * into a map an EARLIER component already placed records a `Conflict` whose
+ * two coordinates come from two different components' pre-pack frames --
+ * frames that were never meant to be compared, since each component's BFS
+ * seed starts fresh at `(0,0)`. That conflict's `viaB.from` is also wrong in
+ * this specific case: `placedBy` has no entry for a component's own SEED map
+ * (nothing placed it; it seeded itself), so `placedBy.get(target) ?? seed`
+ * falls back to the CURRENT component's seed, not the target's real placer.
+ * See `connections.test.ts`'s "resolves by targetConst" test for a worked
+ * example. This corpus has 0 one-way edges (measured, "every connection
+ * reciprocates" in that same test file) and every real connection stays
+ * within its own component's frame, so the case is moot here -- flagged for
+ * a future corpus (or a future GBA fix) rather than fixed, since a real fix
+ * needs a way to compare frames across components that GBA has never needed
+ * either.
  */
 export function buildGbcWorld(proj: GbcProject): GbcWorld {
   const placements = new Map<string, Placement>();

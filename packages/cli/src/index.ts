@@ -82,7 +82,7 @@ program
   .option("--scale <n>", "pixels per tile/block (gba default 4, gbc default 8)", parseScale)
   .option("--no-dungeons", "exclude auto-placed dungeon maps (gba only; ignored for gbc)")
   .option("--time <time>", "time of day (gbc only): morn, day, or nite", parseTime, "day")
-  .action((opts: { bbox: ReturnType<typeof parseBbox>; out: string; scale?: number; dungeons: boolean; time: "morn" | "day" | "nite" }, cmd: Command) => {
+  .action((opts: { bbox: ReturnType<typeof parseBbox>; out: string; scale?: number; dungeons: boolean; time: "morn" | "day" | "nite" }) => {
     const { root, family } = resolveRootAndFamily(program.opts().project);
     if (family === "gbc") {
       // --no-dungeons is a GBA-only concept (dungeon auto-layout has no GBC
@@ -90,7 +90,16 @@ program
       // than refused, since a user who scripts both families' render-world
       // calls the same way should not have to special-case GBC just to drop
       // a flag that means nothing for it.
-      const scale = cmd.getOptionValueSource("scale") === "default" || opts.scale === undefined ? 8 : opts.scale;
+      //
+      // Fix round 1 (quality review Important #2): plain `opts.scale ?? 8`,
+      // not `cmd.getOptionValueSource("scale") === "default" || ...` -- this
+      // option has no commander-level default any more (see the comment
+      // above), so `getOptionValueSource` can only ever return `undefined`
+      // here, never the string `"default"`; that half of the old condition
+      // was dead code, confirmed against the installed commander directly.
+      // The simpler form is exactly the same shape GBA already uses two
+      // lines down (`opts.scale ?? 4`), and needs no `Command` parameter.
+      const scale = opts.scale ?? 8;
       const { stdout, stderr } = runGbcRenderWorld(root, { bbox: opts.bbox, out: opts.out, scale, time: opts.time });
       if (stderr) process.stderr.write(stderr);
       process.stdout.write(stdout);

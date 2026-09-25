@@ -4,6 +4,7 @@ import { renderGbcMap } from "@pokemap/core/src/gbc/render/map.js";
 import { buildGbcWorld } from "@pokemap/core/src/gbc/world/connections.js";
 import { renderGbcWorld } from "@pokemap/core/src/gbc/render/world.js";
 import { loadGbcMapEvents } from "@pokemap/core/src/gbc/load/events.js";
+import type { Conflict } from "@pokemap/core/src/gbc/world/connections.js";
 import { gbcEncounterSources, gbcWhereSpecies, gbcCoverage, type GbcEncounterSource, type GbcSpeciesHit } from "@pokemap/core/src/gbc/analyse/atlas.js";
 import type { DataDefect, GbcMap } from "@pokemap/core/src/gbc/model/types.js";
 import { encodePng } from "./png.js";
@@ -15,6 +16,26 @@ import type { TimeOfDay, Bbox } from "./args.js";
  *  throw for one) is surfaced to the user by the CLI, never swallowed. */
 function warningLines(defects: readonly DataDefect[]): string {
   return defects.map((d) => `warning: ${d.message}\n`).join("");
+}
+
+/**
+ * One `note: <map> placed via <viaB.from>; <viaA.from> disagrees by (dx,dy)\n`
+ * line per drawn `Conflict` (Task 11 fix round 1, spec review Minor m1).
+ * Purely informational, unlike `warningLines`' `DataDefect`s: a `Conflict` is
+ * real, in-game connection data that fails to embed in a plane (task-11-spec-review.md
+ * §1 -- confirmed identical in vanilla pret/pokecrystal), not a malformed or
+ * worked-around file the way a `DataDefect` is (`DataDefect`'s own doc
+ * comment). It never affects `process.exitCode` (`index.ts`'s action sets
+ * that from a thrown error alone). `dx`/`dy` = `viaA - viaB`: `viaB` is
+ * `world.conflicts`' documented "map that actually placed it" (what
+ * `world.placements` really holds, up to the shared per-component pack
+ * shift), so a positive `dx`/`dy` means the disagreeing path (`viaA`) would
+ * have put the map that much further along +x/+y.
+ */
+function noteLines(conflicts: readonly Conflict[]): string {
+  return conflicts
+    .map((c) => `note: ${c.map} placed via ${c.viaB.from}; ${c.viaA.from} disagrees by (${c.viaA.x - c.viaB.x},${c.viaA.y - c.viaB.y})\n`)
+    .join("");
 }
 
 /** Shared return shape for every thin handler in this file: the text
@@ -64,32 +85,32 @@ export interface RunGbcRenderWorldOptions {
   time?: TimeOfDay;
 }
 
-export interface RunGbcRenderWorldResult {
-  stdout: string;
-  stderr: string;
-}
-
 /**
  * `render-world` on a GBC root (Task 11). Stitches every map with
  * `buildGbcWorld`, renders the bbox-intersecting slice with `renderGbcWorld`,
  * and writes the PNG to `opts.out`. Mirrors `runGbcRender`'s shape: returns
  * the text `index.ts`'s action should print rather than writing to
- * stdout/stderr itself.
+ * stdout/stderr itself. Fix round 1: returns the shared `GbcCommandResult`
+ * (it previously declared its own byte-identical `RunGbcRenderWorldResult`).
  *
  * Unlike GBA's `render-world` (`index.ts`), there is no `--no-dungeons`
  * equivalent here and no sidecar/resolve step -- `buildGbcWorld` places every
  * map unconditionally (GBC has no warp-based dungeon auto-layout UI in Plan 6,
  * task spec "Out of scope"), so `world.placements` IS the full set this
  * renders from.
+ *
+ * stderr carries `warningLines` (real data defects) THEN `noteLines`
+ * (informational conflict notes, fix round 1 Minor m1) -- defects are the
+ * more serious of the two categories, so they lead.
  */
-export function runGbcRenderWorld(root: string, opts: RunGbcRenderWorldOptions): RunGbcRenderWorldResult {
+export function runGbcRenderWorld(root: string, opts: RunGbcRenderWorldOptions): GbcCommandResult {
   const proj = openGbcProject(root);
   const world = buildGbcWorld(proj);
   const raster = renderGbcWorld(proj, world, { bbox: opts.bbox, scale: opts.scale, time: opts.time ?? "day" });
   writeFileSync(opts.out, encodePng(raster));
   return {
     stdout: `${opts.out} ${raster.width}x${raster.height} maps=${raster.drawn}\n`,
-    stderr: warningLines(raster.defects),
+    stderr: warningLines(raster.defects) + noteLines(raster.conflicts),
   };
 }
 
