@@ -6,6 +6,7 @@ import type { GbcTileset, GbcMap, PaletteMapEntry, Metatile } from "../../../src
 import type { PaletteTables } from "../../../src/gbc/load/palette.js";
 import type { RGB } from "../../../src/model/types.js";
 import { GBC_SUBJECT_ROOT, itWithGbcCorpus } from "../helpers/corpus.js";
+import { stubGbcProject as stubGbcProjectBase } from "../helpers/stubGbcProject.js";
 
 // ---------------------------------------------------------------------------
 // Shared synthetic fixtures. Every value below is invented for the test, not
@@ -219,26 +220,9 @@ function makePaletteTables(roofPals: Record<number, { mornDay: [RGB, RGB]; nite:
   };
 }
 
-/** Minimal, explicit GbcProject stub (no unchecked `as` casts) -- unused methods throw loudly if a test path reaches them by mistake. */
+/** This file's own default: `paddingWidth` returns 3 unless a call site overrides it (most tests here never touch border rendering). Everything else is `stubGbcProject`'s own "throw if touched" default -- see that file's own doc comment for why it's shared. */
 function stubProject(overrides: Partial<GbcProject>): GbcProject {
-  const unused = (fn: string) => (): never => {
-    throw new Error(`stub: ${fn} should not be called`);
-  };
-  return {
-    root: "<stub>",
-    maps: [],
-    map: unused("map"),
-    tileset: unused("tileset"),
-    paletteTables: unused("paletteTables"),
-    roofs: unused("roofs"),
-    layout: unused("layout"),
-    paddingWidth: () => 3,
-    wild: unused("wild"),
-    waterCollisionValues: unused("waterCollisionValues"),
-    groupNames: unused("groupNames"),
-    collisionInfo: unused("collisionInfo"),
-    ...overrides,
-  };
+  return stubGbcProjectBase({ paddingWidth: () => 3, ...overrides });
 }
 
 // Tile ids for the "border/block-0 substitution" fixture.

@@ -28,6 +28,7 @@ import type {
   Layout,
 } from "../../../src/gbc/model/types.js";
 import { GBC_SUBJECT_ROOT, itWithGbcCorpus } from "../helpers/corpus.js";
+import { stubGbcProject } from "../helpers/stubGbcProject.js";
 
 // ---------------------------------------------------------------------------
 // Fixture: one small, hand-derived GbcWildData + map set exercising every
@@ -302,10 +303,7 @@ function makeSpeciesConstantsRoot(): string {
 function stubProject(root = "<stub-root-never-read-except-by-loadGbcSpeciesConstants>"): GbcProject {
   const byName = new Map(ALL_MAPS.map((m) => [m.name, m]));
   const tileset = makeTileset();
-  const unused = (fn: string) => (): never => {
-    throw new Error(`stub: ${fn} should not be called`);
-  };
-  return {
+  return stubGbcProject({
     root,
     maps: ALL_MAPS,
     map: (name: string) => {
@@ -314,18 +312,13 @@ function stubProject(root = "<stub-root-never-read-except-by-loadGbcSpeciesConst
       return m;
     },
     tileset: () => tileset,
-    paletteTables: unused("paletteTables"),
-    roofs: unused("roofs"),
     layout: (map): { layout: Layout; defects: [] } => ({
       layout: { blkPath: map.blkPath, width: 1, height: 1, writable: true, blocks: [{ metatileId: map.blkPath === "waterful.blk" ? 1 : 0 }] },
       defects: [],
     }),
-    paddingWidth: unused("paddingWidth"),
     wild: () => wildData,
     waterCollisionValues: () => new Set([WATER_COLL]),
-    groupNames: unused("groupNames"),
-    collisionInfo: unused("collisionInfo"),
-  };
+  });
 }
 
 describe("gbcMapHasWaterTile", () => {

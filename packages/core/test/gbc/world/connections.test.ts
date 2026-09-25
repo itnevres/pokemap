@@ -3,6 +3,7 @@ import { buildGbcWorld, boundsOf, layOutComponents } from "../../../src/gbc/worl
 import { openGbcProject, type GbcProject } from "../../../src/gbc/project.js";
 import type { GbcMap, Connection } from "../../../src/gbc/model/types.js";
 import { GBC_SUBJECT_ROOT, itWithGbcCorpus } from "../helpers/corpus.js";
+import { stubGbcProject as stubGbcProjectBase } from "../helpers/stubGbcProject.js";
 
 // ---------------------------------------------------------------------------
 // Hand-derived fixture, built from the real GbcProject/GbcMap interfaces --
@@ -39,26 +40,15 @@ function conn(direction: Connection["direction"], targetName: string, targetCons
 }
 
 function stubGbcProject(maps: GbcMap[]): GbcProject {
-  const unused = (fn: string) => (): never => { throw new Error(`stub: ${fn} should not be called`); };
   const byName = new Map(maps.map((m) => [m.name, m]));
-  return {
-    root: "<stub>",
+  return stubGbcProjectBase({
     maps,
     map: (name: string) => {
       const m = byName.get(name);
       if (!m) throw new Error(`stub: unknown map ${name}`);
       return m;
     },
-    tileset: unused("tileset"),
-    paletteTables: unused("paletteTables"),
-    roofs: unused("roofs"),
-    layout: unused("layout"),
-    paddingWidth: unused("paddingWidth"),
-    wild: unused("wild"),
-    waterCollisionValues: unused("waterCollisionValues"),
-    groupNames: unused("groupNames"),
-    collisionInfo: unused("collisionInfo"),
-  };
+  });
 }
 
 /**
