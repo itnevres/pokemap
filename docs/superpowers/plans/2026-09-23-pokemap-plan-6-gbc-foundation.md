@@ -1,6 +1,6 @@
 # PokeMap Plan 6 — GBC Foundation (Pokémon Crystal, read-only)
 
-> **STATUS: COMPLETE (2026-09-25), on branch `plan-6-gbc-foundation`, not yet merged to `master`.** All 12 tasks are done and reviewed, and the 5 success criteria below were demonstrated through the real CLI. **The task text below is the ORIGINAL pre-research plan and is kept for the record.** Where it disagrees with what was built, these sources win, in this order:
+> **STATUS: COMPLETE (2026-09-25), merged to `master` via [itnevres/pokemap#1](https://github.com/itnevres/pokemap/pull/1).** All 12 tasks are done and reviewed, and the 5 success criteria below were demonstrated through the real CLI. **The task text below is the ORIGINAL pre-research plan and is kept for the record.** Where it disagrees with what was built, these sources win, in this order:
 > 1. `docs/superpowers/specs/2026-09-23-pokemap-gbc-format-findings.md` (Decisions + "Consequences for Plan 6 Tasks 2-12");
 > 2. the re-granularised per-task specs actually executed, `task-reports/pokemap-plan-6-gbc-foundation/_archive/task-{9,10,11,12}-spec.md`;
 > 3. the code.
