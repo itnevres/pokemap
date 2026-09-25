@@ -53,7 +53,8 @@ export function parseMapConstants(text: string): MapConstEntry[] {
  * definition at the top of the file is skipped the same way every other
  * call here is (`stripMacroDefs`), so it never counts as group 1's name.
  * Refuses (throws, naming `source`) a `newgroup` with no argument -- G4,
- * matching `parseMapAttributes`'s own "never guess a group's name" posture.
+ * the same refuse-rather-than-guess posture `loadGbcMaps`'s join-miss
+ * checks use below.
  */
 export function parseMapGroupNames(text: string, source: string): string[] {
   const out: string[] = [];

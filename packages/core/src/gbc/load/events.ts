@@ -183,18 +183,7 @@ export function parseMapEvents(text: string, mapName: string): GbcMapEvents {
   return { warps, coords, bgs, objects, sceneScripts, callbacks, objectConsts: parseObjectConsts(text) };
 }
 
-/**
- * Reads and parses a map's `maps/<map.name>.asm` (GBC format findings §3.1:
- * every map's file is at that fixed path). Flags a `DataDefect` -- never a
- * refusal -- when `object_const_def` has consts present but fewer than
- * `objects.length` (the real `MoveDeletersHouse` hazard: 1 const for 2
- * objects). `objectConsts.length === 0` is not a defect -- 40 maps in the
- * corpus have no `object_const_def` at all, and that's normal.
- */
-/**
- * One `(kind, index)` pair alongside its event, for `outOfBoundsEventDefects`
- * below to walk all four positioned kinds identically.
- */
+/** The four positioned `GbcMapEvents` kinds, walked in this order by `outOfBoundsEventDefects` below. */
 const POSITIONED_KINDS = ["warps", "coords", "bgs", "objects"] as const;
 
 /**
@@ -232,6 +221,14 @@ export function outOfBoundsEventDefects(map: Pick<GbcMap, "name" | "width" | "he
   return defects;
 }
 
+/**
+ * Reads and parses a map's `maps/<map.name>.asm` (GBC format findings §3.1:
+ * every map's file is at that fixed path). Flags a `DataDefect` -- never a
+ * refusal -- when `object_const_def` has consts present but fewer than
+ * `objects.length` (the real `MoveDeletersHouse` hazard: 1 const for 2
+ * objects). `objectConsts.length === 0` is not a defect -- 40 maps in the
+ * corpus have no `object_const_def` at all, and that's normal.
+ */
 export function loadGbcMapEvents(root: string, map: Pick<GbcMap, "name">): { events: GbcMapEvents; defects: DataDefect[] } {
   const r = norm(root);
   const file = `maps/${map.name}.asm`;

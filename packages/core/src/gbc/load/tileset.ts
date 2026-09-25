@@ -308,12 +308,15 @@ export function parseTileCollisionCategoryTable(text: string, bits: CollisionCat
  * The two global collision files (`constants/collision_constants.asm` for
  * both the 4 bare category bits AND the 109 `COLL_*` names, and
  * `data/collision/collision_permissions.asm`'s 256-row category table),
- * read and parsed exactly once each -- shared by `loadGbcWaterCollisionValues`
- * and `loadGbcCollisionInfo` (Plan 6b task spec: "Factor the constants-file
- * and table-file reads ... into one internal helper, so each file is read in
- * one place"). Not exported: both files' text is read here, not by either
- * caller, so this is the one place a caller-added third reader of these
- * files would have to hook into instead of adding its own `readFileSync`.
+ * read and parsed exactly once each per call -- shared by
+ * `loadGbcWaterCollisionValues` and `loadGbcCollisionInfo` (Plan 6b task
+ * spec: "Factor the constants-file and table-file reads ... into one
+ * internal helper, so each file is read in one place"), which no longer
+ * duplicate this pair of reads between themselves. Not exported. Quality
+ * review note: `loadGbcTileset` (below) still reads
+ * `constants/collision_constants.asm` separately for its own
+ * `parseCollisionConstants` call -- the spec asked only to de-duplicate the
+ * water/info pair, not every reader of this file.
  */
 function loadCollisionTables(root: string): { collConsts: Map<string, number>; bits: CollisionCategoryBits; categories: number[] } {
   const r = norm(root);
