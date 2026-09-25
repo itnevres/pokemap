@@ -115,3 +115,84 @@ No stack trace in any of the three runs.
 4. **`GbcProject` test-stub churn.** Adding `groupNames()`/`collisionInfo()` to the `GbcProject` interface (additive, as the spec asks) required adding two `unused(...)`-throwing entries to three existing synthetic `GbcProject` stubs in `atlas.test.ts`, `render/map.test.ts`, and `world/connections.test.ts` so the structural-typing check still passes -- these are one-line additions each, not test-behaviour changes, and every affected file's full suite was re-run green.
 
 No part of the spec was found to be wrong against the real code; the plan review's own pre-measured facts (26 groups, group 24 = NEW_BARK, 109/109 distinct `COLL_*` values, the 7 out-of-bounds events' maps/kinds, VioletCity roof 1 vs AzaleaTown roof 2, `border: 5` for both) all held up on direct re-measurement.
+
+**Correction (Fix round 1, spec review finding 1):** the closing sentence above is wrong. The task spec's own premise for the AzaleaTown roof-test pair -- "same tileset [as VioletCity], different roof" -- is false: AzaleaTown is `TILESET_JOHTO_MODERN`, not `TILESET_JOHTO` (`data/maps/maps.asm`). See Fix round 1 below.
+
+---
+
+## Fix round 1
+
+Addressing `task-1a-spec-review.md` (Opus, verdict **compliant-with-fixes**) and `task-1a-quality-review.md` (Sonnet, verdict **approve-with-fixes**).
+
+### Commit SHAs
+
+- `77407e1` -- `fix(core-test): factor a shared stubGbcProject helper (quality review finding 2)`
+- `3b4cd75` -- `fix(core): correct doc comments (quality review 1, spec review 6/8)`
+- `1b4dad4` -- `fix(server): add near-miss and root-normalisation tests (spec review 2, 5), --gbc comment (quality 3)`
+- `a2a7f44` -- `fix(core-test): close talk/nybble/negative-y/block-id test gaps (spec review 3, 4, 7)`
+- `2dfe386` -- `fix(core-test): add a true same-tileset/different-roof roof-key test (spec review 1)`
+- (this commit) -- `docs: Plan 6b Task 1a fix round 1 report`
+
+### What was fixed, by finding
+
+**Spec review:**
+1. **(Important) AzaleaTown roof test rests on a false spec premise; mutation E12 survived.** Added a byte-equality test (`renderGbcMapMetatile` vs the matching `renderGbcMap` region) on **MahoganyTown** -- `TILESET_JOHTO`, the same tileset as VioletCity, roof index 2 vs VioletCity's roof 1, block (5,2), metatile id 24. This is the true same-tileset/different-roof pair, and it isolates the per-map roof key directly: manually confirmed red under a hand-applied `roofSwappedTiles(proj, ts, map.tileset, 10)` mutation (VioletCity's group hardcoded), then confirmed the fix restores it green with `git status` clean before moving on. The AzaleaTown test itself was reworded to assert the real facts (`azalea.tileset === "TILESET_JOHTO_MODERN"`, `!== violet.tileset`) instead of assuming "same tileset", and its comment now says plainly that its own "differs" assertion doesn't by itself isolate the roof key -- that's what the new MahoganyTown test is for.
+2. **(Minor) Only one 501-regex anchor was proven by a near-miss.** Added 5 more near-miss 404s to `gbcRoutes.test.ts`, each isolating one specific alternative/anchor the spec's own 3 near-misses never touched: `/api/dungeonsx` (the `dungeons(\/|$)` group), `/api/world/dungeonsx` (the `world\/dungeons$` anchor), `/api/species/CHIKORITA/icon.pngx` (the `icon\.png$` anchor), `/api/species/A/B/icon.png` (the `species/[^/]+` character class), `/x/api/warps/y` (the leading `^`).
+3. **(Minor) talk-on-wall and the unknown-nybble refusal were untested.** Pinned `info.get(0x12)` (`COLL_CUT_TREE`, `WALL_TILE | TALK`) as `{ name: "COLL_CUT_TREE", category: "wall", talk: true }` -- closes the gap where the only prior `talk: true` pin (`COLL_WHIRLPOOL`) was also a water value. Added a tmp-dir fixture (bits `LAND $00 / WATER $01 / WALL $0e / TALK $10`, one row `db WATER_TILE | WALL_TILE` whose low nybble is `$0f`, plus 255 `db LAND_TILE` rows) asserting `loadGbcCollisionInfo` throws, matching `/value 0\b/` and `/\$f/`.
+4. **(Minor) The negative-y branch was untested; mutation-7 attribution was wrong.** Added a negative-y-only case (an object at `(0,-1)`, x otherwise in-bounds). **Correction:** mutation 7 (`>=`→`>`) is caught by the two **unit** tests (`flags a warp at x >= 2*width...` and `flags a coord event at y >= 2*height...`), not by the 7-event corpus test -- no corpus event sits exactly on `x == 2w` or `y == 2h`, so the corpus test stays green under this mutation. The original mutation table's row 7 was wrong to credit the corpus test; the mutation table below is corrected.
+5. **(Minor) Root-normalisation was untested.** Added a test to both `gbcRoutes.test.ts` and `api.test.ts`: a second server opened with a trailing slash appended to the root (`GBC_SUBJECT_ROOT + "/"` / `SUBJECT_ROOT + "/"`) still answers `/api/project` with the normalised root (no trailing slash), proving the route uses `proj.root`/`project.paths.root`, not the raw `opts.projectPath`.
+6. **(Minor) `loadGbcMapEvents`'s doc comment had come unmoored.** Moved `POSITIONED_KINDS` and `outOfBoundsEventDefects` above `loadGbcMapEvents`'s own doc block (which had been left dangling above `POSITIONED_KINDS` instead), and reworded `POSITIONED_KINDS`'s own comment to describe what it actually is ("the four positioned `GbcMapEvents` kinds, walked in this order").
+7. **(Minor) VioletCity block (4,7)'s raw id wasn't asserted directly.** Added `expect(proj.layout(map).layout.blocks[7 * map.width + 4]!.metatileId).toBe(24)` to the VioletCity byte-equality test.
+8. **(Minor) `loadCollisionTables`'s doc comment overclaimed.** Reworded: it no longer claims to be "the one place a caller-added third reader" would hook into -- `loadGbcTileset` still reads `constants/collision_constants.asm` separately, and the spec only asked to de-duplicate the water/info pair.
+9. **(Minor) Report omissions.** This section corrects them: `.claude/launch.json`'s `server`/`server-gbc` entries are alternatives, not simultaneous (both bind port 5174; running one and then the other requires stopping the first) -- the original report's deliverables list mentioned "both port 5174" but not the mutual-exclusivity consequence. The AzaleaTown deviation (finding 1) and the mutation-7 misattribution (finding 4) are recorded above and in the corrected mutation table below.
+
+**Quality review:**
+1. **(Important) Inaccurate `parseMapAttributes` citation.** `parseMapGroupNames`'s doc comment no longer claims to match "`parseMapAttributes`'s own 'never guess a group's name' posture" -- that posture doesn't exist anywhere in the file. It now cites `loadGbcMaps`'s own join-miss refusals, an accurate parallel.
+2. **(Important) Three duplicated `GbcProject` test stubs.** Factored `packages/core/test/gbc/helpers/stubGbcProject.ts` (mirrors `packages/core/test/helpers/stubProject.ts`'s own GBA-side shape and stated reason for existing). `atlas.test.ts`'s `stubProject(root)`, `render/map.test.ts`'s `stubProject(overrides)` and `world/connections.test.ts`'s `stubGbcProject(maps)` each now call the shared helper (the last one imports it aliased as `stubGbcProjectBase` to avoid shadowing its own same-named local wrapper) and keep only their own per-test overrides.
+3. **(Minor) `--gbc` silently wins over a positional path.** Added a one-line comment above the `if (process.argv.includes("--gbc"))` branch noting this, matching the `else` branch's own comment style. Behaviour unchanged, as the finding itself recommended.
+4. **(Nit) `listen`/`address`/`close` boilerplate duplication between `index.ts` and `gbcRoutes.ts`.** Left as-is, per the review's own "not worth changing" recommendation.
+
+### Test counts
+
+- Before this fix round: 1309 passing (task 1a's original commit).
+- After: **1320 passing**, same 6 known baseline failures. **+11 new tests**: 2 root-normalisation (`gbcRoutes.test.ts` + `api.test.ts`), 5 near-miss 404s (`gbcRoutes.test.ts`), 1 `COLL_CUT_TREE` pin + 1 unknown-nybble fixture (`tileset.test.ts`), 1 negative-y case (`events.test.ts`), 1 MahoganyTown byte-equality (`render/map.test.ts`).
+
+### Gate result
+
+```
+npm test 2>&1 | tee t1a-fix1-test.log
+diff <(grep -E "^ FAIL " t1a-fix1-test.log | sort -u) baseline-fails.txt
+```
+Clean diff (matches exactly): the same 6 known failures as before. `Tests 6 failed | 1320 passed (1326)`. `npm run typecheck` clean.
+
+### Mutation results (this fix round)
+
+Re-ran the reviewer's harness (`/tmp/.../scratchpad/mut.py`, which mutates `git show HEAD:<path>`, runs the targeted test file(s), and restores from `HEAD`) for the original 10 spec mutations plus every mutation the spec review reported surviving:
+
+| # | Mutation | Verdict | Killed by |
+|---|---|---|---|
+| 1 | drop the GBC branch | KILLED | `gbcRoutes.test` `beforeAll` throws |
+| 2 | 501→404 | KILLED | all 8 refusal cases |
+| 3 | drop `$` on `world/placement` | KILLED | `/api/world/placementx is a 404` |
+| 4 | macro-skip removed | KILLED | `skips a MACRO newgroup...ENDM definition...` |
+| 5 | swap water/wall | KILLED | land/water/wall pin + WHIRLPOOL + CUT_TREE |
+| 6 | talk always false | KILLED | WHIRLPOOL + CUT_TREE |
+| 7 | `>=`→`>` | KILLED | warp `x >= 2*width` unit + coord boundary unit (corrected attribution: **not** the corpus test) |
+| 8 | drop the roof swap | KILLED | VioletCity + MahoganyTown byte-equality + nite byte-equality |
+| 9 | block-0→border substitution | KILLED | `does NOT substitute block id 0...` |
+| 10 | GBC `/api/project` says gba | KILLED | `GET /api/project reports the gbc family...` |
+| E1 | unanchor `dungeons(\/\|$)` | KILLED | `/api/dungeonsx is a 404` |
+| E2 | drop `$` on `world/dungeons` | KILLED | `/api/world/dungeonsx is a 404` |
+| E3 | drop `$` on `icon.png` | KILLED | `/api/species/CHIKORITA/icon.pngx is a 404` |
+| E4 | `species/[^/]+` → `species/.+` | KILLED | `/api/species/A/B/icon.png is a 404` |
+| E5 | drop the leading `^` | KILLED | `/x/api/warps/y is a 404` |
+| E6 | talk only on water | KILLED | `COLL_CUT_TREE ... wall with talk: true` |
+| E7 | unknown nybble → wall, no throw | KILLED | the new unknown-nybble fixture test |
+| E8 | drop `e.y < 0` | KILLED | `flags a negative y on an object event...` |
+| E9 | GBC root = `opts.projectPath` | KILLED | the trailing-slash root test (`gbcRoutes.test.ts`) |
+| E10 | GBA root = `opts.projectPath` | KILLED | the trailing-slash root test (`api.test.ts`) |
+| E12 | roof uses fixed group 10 | KILLED | the new MahoganyTown byte-equality test |
+
+`git status --short` was empty after every mutation in both runs (the harness's own `STATUS:` print, plus a manual `git status --short` after).
+
+No new deviations from the spec were introduced in this fix round; all changes are additive tests, doc-comment corrections, and one test-only refactor (the shared stub).
