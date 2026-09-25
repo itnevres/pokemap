@@ -120,11 +120,70 @@ Reference project(s) for the G5 round-trip corpus gate: at minimum, vanilla `pok
 | Plan | File | Scope | Depends on | Status (2026-09-25) |
 |---|---|---|---|---|
 | 6 | `2026-09-23-pokemap-plan-6-gbc-foundation.md` | GBC `core` loaders (map/tileset/event/palette/wild), per-MAP renderer (roof tiles, border ring), `cli` read commands, world stitching, encounter atlas — all READ-ONLY. **No server/UI work** (findings §Config: server untouched in Plan 6) | This roadmap | **Done 2026-09-25** on `plan-6-gbc-foundation`; not yet merged to `master` |
-| 6b (future, not yet written) | — | GBC app layer, read-only: server family branch (`serve.ts`/`createServer`), map/world/atlas routes, UI map view, world view and encounter lenses for a GBC project. It is the GBC counterpart of Plan 1's UI tasks, and Plan 7 Tasks 4-5 (server edit routes, UI editing) cannot start without it | Plan 6 | Not planned |
+| 6b (future, not yet written; scope sketch in §6b below) | — | GBC app layer, read-only: server family branch (`serve.ts`/`createServer`), map/world/atlas routes, UI map view, world view and encounter lenses for a GBC project. It is the GBC counterpart of Plan 1's UI tasks, and Plan 7 Tasks 4-5 (server edit routes, UI editing) cannot start without it | Plan 6 | Not planned |
 | 7 | `2026-09-23-pokemap-plan-7-gbc-editing.md` | Painting, event editing — the write path (G2/G3's own real implementation + G5's gate). Its core+CLI tasks (1, 2, 3, 6, 7) need only Plan 6; its server/UI tasks (4, 5) need 6b | Plan 6 (+ 6b for Tasks 4-5) | Next |
 | 8 (future, not yet written) | — | Pokémon Yellow support, reusing Plan 6/7's own primitives wherever the shared skeleton (§0) actually holds; Yellow-specific deltas only (no day/night palette system to build, no coord_event/scene layer, different/simpler wild-encounter model, different region-map model, `Dojo`/`Gym`-style tileset aliasing to handle in the loader) | Plan 6 + 7 | Not planned |
 
 **Plan 6 is written to task-level granularity, not full TDD-step** — deliberately, matching Plan 0 §1's own stated reason for Plans 2-4 originally being task-level ("their own step-by-step code is calibrated against APIs [not yet built]... writing literal code against an imaginary API produces fiction the executor must discard"). Here the imagined-API risk is different in kind but just as real: §3's open verification items mean literal parsing code written now would encode unverified assumptions as if they were confirmed facts. **Before executing Plan 6 Task 1, re-read this roadmap's §3 and resolve every item against the real repo, then re-granularise Plan 6 to full step-level the same way Plan 2 was re-granularised against Plan 1's real output** — this is not optional scaffolding, it is exactly the discipline that made every GBA-family plan's execution low-drift.
+
+---
+
+## 6b. GBC app layer (server + UI, read-only): scope sketch
+
+Written 2026-09-25 from a read of the real `packages/server` and `packages/ui` code. **This is a sketch to plan from, not a plan.** Write `2026-XX-XX-pokemap-plan-6b-gbc-app-layer.md` from it, re-granularised against the code at that time.
+
+**Question answered: can Plan 1/2's server serve a Crystal project? No, not as-is. And it doesn't need a separate GBC server either.**
+
+**Why the existing server can't serve Crystal:**
+- `createServer` (`packages/server/src/index.ts`, ~1,000 lines, one route-dispatch function) calls the GBA `openProject()` at startup. That refuses any root without `include/fieldmap.h`, so a PerfPlus root never reaches a route.
+- Its ~30 routes make 54 calls into the GBA `Project`, and every payload is GBA-shaped:
+  - `/api/map` returns the tileset split, primary/secondary counts, and per-block collision/elevation/behaviour;
+  - `/api/render` calls `renderLayout`;
+  - `/api/encounters` reads `wild_encounters.json`;
+  - `/api/world` combines `buildWorld` with the dungeon auto-layout and the `.pokemap` sidecar;
+  - the edit routes use GBA stamps (which carry collision), the JSON-splice save funnel, and GBA events.
+- `packages/server/src/editSessions.ts` and `core/edit/commands.ts`'s `EditCommandStack` are both typed to the GBA `Project` and `EditSession`.
+- `serve.ts` reads only the top-level GBA `projectPath`.
+
+**Decision: one server, with a family branch**, mirroring what Plan 6 Task 10 did for the CLI (findings §"Config and family decision").
+- `createServer` calls `detectEngineFamily(root)` once. GBA keeps today's code path byte-for-byte. GBC uses `openGbcProject`, with handlers in a sibling module, e.g. `packages/server/src/gbcRoutes.ts`, the counterpart of `packages/cli/src/gbcCommands.ts`.
+- `serve.ts` takes a root argument, or a `--gbc` switch that selects `cfg.gbc.projectPath`. There is still one server process per project.
+
+**Reusable as-is:** `readBody`, the `send`/400-vs-500 error discipline, `encodePng`, and the URL conventions the UI already speaks. The session-store pattern (open/snapshot/undo/redo/discard, single save funnel) is reusable too, but only after making `EditCommandStack` and the store generic over the session type, or giving GBC its own copy of about 100 lines. Decide which when planning Plan 7 Task 4, not in 6b.
+
+**Server routes for 6b (read-only; Plan 7 Task 4 adds the `/api/edit/*` routes later):**
+
+| Route | GBC backing (already built in Plan 6) | Notes |
+|---|---|---|
+| `GET /api/project` (new, both families) | `detectEngineFamily` | `{ family, root }`. The UI branches on this once at startup |
+| `GET /api/groups` | `GbcMap.group` / `newgroup` order | Crystal has real map groups. Same response shape if it fits, otherwise a family-specific one |
+| `GET /api/map/:name` | `openGbcProject`: `map`, `layout`, `tileset(...).collision` | GBC payload: blocks are `{metatileId}`; collision is per tileset (4 quadrants per metatile), not per block; plus `metatileCount`, `border`, `writable` and defects |
+| `GET /api/render/:name.png` | `renderGbcMap` | `?border=0..3`, `?time=morn\|day\|nite` |
+| `GET /api/metatile/:tileset/:id.png` | `renderGbcMetatile` | For a read-only metatile palette view |
+| `GET /api/world` | `buildGbcWorld` | Placements in BLOCKS (32 px). Include `conflicts` so the UI can show the Route17/18 misclosure |
+| `GET /api/encounters/:map`, `/api/where/:species`, `/api/coverage`, `/api/species` | `gbcEncounterSources` / `gbcWhereSpecies` / `gbcCoverage` | GBC source shape: method grass/water/fish/headbutt/rock plus time/rod/list/swarm tags |
+| `/api/warps/*`, `/api/dungeons*`, `/api/world/placement`, `/api/world/dungeons`, `/api/sign/*` | none | Refuse on GBC with a named message, as the CLI's `refuseIfGbc` does. Warps could come later from Plan 6 events |
+
+**UI: the bigger unknown.** The components were built for GBA payloads (about 6,600 lines across `components/`, `hooks/` and `App.tsx`). Known hard-coded GBA assumptions to resolve:
+- **Pixel sizes.** `MapCanvas.tsx` hard-codes 16-px tiles and GBA's `borderWidth`/`borderHeight` rings (lines ~354-357 and ~510). `WorldCanvas.tsx` has `TILE_PX = 16`. GBC blocks are 32 px and the ring is a single metatile, `n` blocks deep.
+- **Tileset split.** `useMapLayout.ts` and `MetatilePalette.tsx` expect a split and primary/secondary counts.
+- **Encounter methods.** `EncounterGutter.tsx` and `WorldCanvas.tsx` hard-code GBA method names (`land_mons`, `water_mons`, `fishing_mons`, `rock_smash_mons`). GBC has time-of-day and rod/list/swarm tags and headbutt as an extra method.
+- **Collision.** `CollisionPalette.tsx` and MapCanvas's collision overlay assume per-block collision/elevation. For GBC, a read-only per-quadrant overlay from the tileset table is possible, but there is no painting (Plan 7 Goal).
+- **GBA-only features.** Dungeon mode, the sidecar and warp tools (`DungeonSidebar.tsx`, `WarpDestinationModal.tsx`, parts of `WorldCanvas.tsx`) and `SignComposer.tsx` are GBA-only: hide them for GBC.
+
+**Recommended 6b task order:**
+1. The server family branch, `/api/project`, and the GBC map/render/metatile routes, with route tests against the real PerfPlus via `itWithGbcCorpus`.
+2. The GBC world and atlas routes.
+3. UI: fetch the family once, and parameterise tile size (16/32) instead of hard-coding it. Hide GBA-only panels for GBC.
+4. A read-only GBC map view: map tree by group, MapCanvas render with border ring and time-of-day toggle, block hover (metatile id plus collision quadrants).
+5. The GBC world view and encounter lenses, remapped to GBC method tags.
+6. Live-verify in a real browser (RESUME: "open the app and click things"), plus a GBA regression pass on the Windows machine. Every GBA UI/server test must stay green, and the cloud can't run them.
+Every UI task invokes `frontend-design`/`ui-ux-pro-max` first (§4) and follows `packages/ui/DESIGN.md`.
+
+**Open questions for the 6b plan:**
+- Can the GBC `/api/map` payload share the GBA TypeScript response type (a union with a `family` tag), or are the two separate types handled in separate hooks?
+- How much of `MapCanvas.tsx` and `WorldCanvas.tsx` (~2,000 lines, already flagged for extraction) can be parameterised, and how much needs a GBC-specific wrapper?
+- Where does the time-of-day toggle live: a global app setting, or per view?
 
 ---
 

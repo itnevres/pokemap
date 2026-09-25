@@ -25,7 +25,7 @@ This file holds the state and the accumulated lessons. The prompt for the next s
 |---|---|---|
 | Plan 6: GBC foundation, read-only | **Done 2026-09-25.** See the plan's STATUS banner for the real file map | Merge (see above) |
 | Plan 7: GBC editing | **Next suggested.** Its "Grounding from Plan 6" section is required reading. Tasks 1, 2, 3, 6, 7 (core + CLI) can run in a cloud session; Tasks 4-5 are blocked on 6b | PerfPlus clone (+ pret/pokecrystal for the G5 gate) |
-| 6b: GBC app layer (server + UI, read-only) | **Not planned.** Named in the roadmap §6 table. Without it, a Crystal project can't be opened in the browser | A plan written against Plan 6's real API |
+| 6b: GBC app layer (server + UI, read-only) | **Scoped, not planned.** GBC roadmap §6b is the sketch: one server with a family branch, routes, and the UI's hard-coded GBA assumptions. Without it, a Crystal project can't be opened in the browser | A plan written from §6b; a GBA regression pass on the Windows machine |
 | 3 remaining GBA follow-up fixes (A/B/C) | Planned, not started | Windows machine: GBA decomp + live browser verify |
 | Plan 3: GBA data editors | Not started, lower priority | Windows machine |
 | Plans 4-5 | Not started / backlog | — |
