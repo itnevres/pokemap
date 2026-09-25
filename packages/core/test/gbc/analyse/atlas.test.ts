@@ -8,6 +8,7 @@ import {
   gbcCoverage,
   gbcMapHasWaterTile,
   loadGbcSpeciesConstants,
+  normalizeGbcSpecies,
   RANDOM_RANGE,
   GRASS_WATER_LEVEL_BUFF_MAX,
   ROCK_ENCOUNTER_RATE_PERCENT,
@@ -524,6 +525,27 @@ describe("loadGbcSpeciesConstants", () => {
     expect(species).not.toContain("UNOWN_A");
     expect(species).not.toContain("UNOWN_B");
     expect(species).toEqual([...species].sort());
+  });
+});
+
+// Plan 6b Task 2, deliverable 1: moved here from `cli/src/gbcCommands.ts`'s
+// own (now-removed) `normalizeSpecies`, so `/api/where/:species` and the CLI's
+// `where` command share one implementation.
+describe("normalizeGbcSpecies", () => {
+  it("uppercases a bare lower-case name", () => {
+    expect(normalizeGbcSpecies("dunsparce")).toBe("DUNSPARCE");
+  });
+
+  it("passes an already-uppercase bare name through unchanged", () => {
+    expect(normalizeGbcSpecies("DUNSPARCE")).toBe("DUNSPARCE");
+  });
+
+  it("strips an upper-case SPECIES_ prefix", () => {
+    expect(normalizeGbcSpecies("SPECIES_DUNSPARCE")).toBe("DUNSPARCE");
+  });
+
+  it("uppercases first, so a lower-case species_ prefix is stripped too", () => {
+    expect(normalizeGbcSpecies("species_dunsparce")).toBe("DUNSPARCE");
   });
 });
 
