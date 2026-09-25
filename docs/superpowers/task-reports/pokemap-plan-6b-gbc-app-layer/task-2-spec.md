@@ -2,9 +2,11 @@
 
 **Task:** the GBC world and atlas routes, `/api/world`, `/api/encounters/:map`, `/api/where/:species`, `/api/coverage` and `/api/species`, in `packages/server/src/gbcRoutes.ts`.
 
+**Structure (from Task 1b's fix round):** `gbcRoutes.ts` keeps the HTTP handler as thin dispatch, and payloads are built by exported named builders (`buildGbcGroupsPayload`, `buildGbcMapPayload`), plus shared `parseTimeParam`/`decodeMapName` helpers. Follow that pattern here: `buildGbcWorldPayload(proj, world)`, `buildGbcEncountersPayload(proj, name)`, and so on. Use `decodeMapName` for `/api/encounters/:map`. A malformed escape is a 400, as in 1b. Where a builder is easier to unit-test against `stubGbcProject` than over HTTP, do that.
+
 **Builds on:**
 - Task 1a, whose reports are in `_archive/task-1a-*.md`.
-- Task 1b. Read `task-1b-implementer.md` and its reviews, which are archived once 1b passes. The existing `gbcRoutes.ts` structure is your convention reference.
+- Task 1b. Read `_archive/task-1b-implementer.md` (including its Fix round 1) and its two reviews. The existing `gbcRoutes.ts` structure is your convention reference.
 
 **Ground rules:** exactly as in `_archive/task-1a-spec.md`:
 - the decomps are read-only;
