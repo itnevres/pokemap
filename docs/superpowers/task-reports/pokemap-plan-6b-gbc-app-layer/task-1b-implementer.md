@@ -105,3 +105,116 @@ $ ss -ltn | grep 5174        # no output -- port free
 3. **Test count arithmetic looks unusual at first glance** (1320 -> 1337 is +17, not the file's own net +17 of `it`s, which happens to be the same number here) -- spelled out above only because the file's test count went from 22 to 39 (+17) by removing 2 stale placeholders and adding 19 new ones, and I wanted the arithmetic to be checkable rather than just asserted.
 
 No part of the spec's routing table, payload shape, or test-pinning instructions was found to conflict with the real code once measured directly; every pinned value in this task's tests (NewBarkTown's 10x9/90-byte `.blk`/`TILESET_JOHTO`/4 warps, CeruleanCave2F's not-writable + 4 defects, ElmsLab's border 0, CABLE_CLUB's 6-map non-alphabetical order, VioletCity/MahoganyTown's roof metatile 24) was measured against the real corpus files in this session, not copied from the spec's prose.
+
+---
+
+## Fix round 1
+
+Addressing `task-1b-spec-review.md` (Opus, verdict **compliant-with-fixes**, findings 1-8 plus 16 surviving mutations) and `task-1b-quality-review.md` (Sonnet, verdict **approve-with-fixes**, findings 1-6), per the coordinator's explicit decisions A-E.
+
+### Commit SHA
+
+- `085390f` -- `fix(server): GBC routes -- name-first order, extracted payload builders, malformed-escape 400s`
+
+### What changed, by coordinator decision
+
+**A. Ordering (spec review finding 4, R11/R12).** Both `/api/render/:name.png` and `/api/metatile/:map/:id.png` now check the map name (404) **before** any `?border`/`?id`/`?time` validation (400), so the two GBC routes agree with each other. The old spec-deviation #1 above (each route mirroring its own GBA counterpart) is superseded by this decision -- the code comment above the render route was rewritten to say GBC deliberately does **not** copy GBA's own two-routes-disagree-with-each-other split, and names why that split is incidental on GBA's side (its render 404 lives inside its cache-miss branch, `index.ts:281-293`; its metatile route's name-first order is unrelated). Two new combined tests (`"an unknown map AND a bad param together: 404 wins"` on render, `"...bad id together: 404 wins"` on metatile) pin this and kill R11/R12 (both retargeted -- see the Mutation harness section).
+
+**B. Structure (quality findings 2/5, spec finding 6).** `/api/groups` and `/api/map/:name`'s payload assembly is factored into two exported, pure functions: `buildGbcGroupsPayload(proj: GbcProject)` and `buildGbcMapPayload(proj: GbcProject, map: GbcMap): GbcMapPayload`. `createGbcServer`'s dispatch for these two routes is now a one-line `return send(200, buildX(...))`. `buildGbcMapPayload` is unit-tested directly: the test wraps the **real** `openGbcProject(GBC_SUBJECT_ROOT)`'s own `map`/`tileset`/`paddingWidth`/`collisionInfo` through `stubGbcProject` (`packages/core/test/gbc/helpers/stubGbcProject.ts`) and overrides only `layout()` to inject a block with `metatileId: 0` at index 0 -- the one input the real corpus lacks. This finally kills mutation 7 (block-0 -> border substitution), which the original report correctly identified as untestable over HTTP but incorrectly concluded wasn't worth closing at all; the quality review's point stands: the payload-assembly logic itself needed no `createGbcServer` restructuring, only extraction into a plain function taking `proj`/`map` as arguments. This was preferred over the spec review's own `vi.mock`-based proof file (`block0-vimock.test.ts.txt`) per the coordinator's instruction, since every other field on the stub (`root`, `maps`, `map`, `tileset`, `collisionInfo`, `paddingWidth`) is still the real, measured corpus data -- only `layout()` is overridden.
+
+A shared `parseTimeParam(url: URL): { time: TimeOfDay } | { error: string }` replaces the 8-line `?time` parsing block that was duplicated verbatim in both PNG routes (quality finding 3), typed with the already-exported `TimeOfDay` (`cli/src/args.ts`) instead of repeating the `"morn" | "day" | "nite"` literal union a second time (quality finding 6). The render/metatile PNG caches were left exactly as they were (quality finding 4 -- "no action needed, consistent with `index.ts`'s own convention").
+
+**C. Tests (spec findings 1, 2, 3, 5, 8; quality finding 1).**
+- The old server-free "groups" test (never called `/api/groups`, so no code change could turn it red -- quality finding 1, spec finding 1) is gone; its two facts are folded into the real route test, which now asserts `body.groupOrder` `toEqual` `openGbcProject(root).groupNames()` directly. This alone kills R5 (swapping `groupOrder[1]`/`[2]`), so no separate swap test was needed.
+- A second map (`ElmsLab`, alongside `NewBarkTown`) closes the render cache-key gap (R1, "name dropped from the key" -- spec finding 2); a second metatile id (`0`, alongside VioletCity's roof id `24`) closes the metatile one (R2, "id dropped" -- same finding).
+- `/api/metatile/VioletCity/24.png` with no `?time=` now has its own dedicated test proving it equals the day render and differs from nite (spec finding 3 -- R4 was previously untested on the metatile side).
+- The NewBarkTown map test now `toEqual`s every payload field against a JSON round-trip (`rt = (x) => JSON.parse(JSON.stringify(x))`) of the real core objects: `map` (with an explicit `connections.length === 2` check, `attributes.asm:100`'s `WEST | EAST`), `events` (from `loadGbcMapEvents` directly), `collision` (`ts.collision`), `layout` (pinned literal plus `blkPath` cross-check), `tileset` (`{ constName, name }` against the real loader's own output), and **every** `collisionInfo` entry (not just one pinned value) against `Object.fromEntries([...used].map(v => [String(v), info.get(v)]))` -- this closes spec finding 5 (R6-R10, R14 all now killed).
+- `cache-control: no-cache` is now asserted on one render test and one metatile test; the render 404 body and the metatile unknown-map 404 body are both now asserted as `{ error: "no map NoSuchMap" }` (spec finding 8 -- R13, R16 killed).
+
+**D. Malformed percent-escape (spec finding 7).** A new `decodeMapName(raw: string): string | undefined` (returns `undefined` on `decodeURIComponent`'s `URIError` instead of letting it throw) is used by all three `:name`-capturing GBC routes (`/api/map`, `/api/render`, `/api/metatile`). A malformed escape (e.g. `%E0%A4%A`, a truncated multi-byte UTF-8 sequence) now answers `400 { error: "malformed map name %E0%A4%A" }` on all three, instead of the 500 `"URI malformed"` the spec review found live. `index.ts` (GBA) is untouched, per both the coordinator's explicit instruction and the original ground rule -- GBA's own routes keep their pre-existing 500-on-malformed-escape behaviour. Verified live (see below).
+
+**E. R15 (`maxBorder = proj.paddingWidth()` hardcoded to `3`).** Accepted as corpus-limited, no action: the single real corpus (PerfPlus) has `paddingWidth() === 3`, so no HTTP-level test can tell `proj.paddingWidth()` apart from a literal `3` without a project whose padding constant differs. This is the one mutation the spec review itself flagged as "informational, no action required," and it is the only mutation still surviving after this fix round (confirmed below).
+
+### Test counts
+
+- Before this fix round: 1337 passing (Task 1b's original commit `602e77d`), same 6 baseline failures.
+- After: **1347 passing**, same 6 baseline failures. **+10 net** (`gbcRoutes.test.ts` went from 39 to 49 `it`s): 11 added -- 2 pure-function tests (`parseTimeParam`/`decodeMapName`), 1 `buildGbcMapPayload` stub unit test, 2 cache-key-gap tests (render second-map, metatile second-id), 1 metatile time-default test, 2 combined-bad-name-and-param tests (render, metatile), 3 malformed-percent-escape tests (map, render, metatile) -- minus 1 removed (the old server-free "groups" test, folded into the real route test).
+
+### Gate result
+
+```
+npm test 2>&1 | tee t1b-fix1-test-final.log
+grep -E "^ FAIL " t1b-fix1-test-final.log | sort -u
+```
+`diff` against `baseline-fails.txt` is empty (same 6 known failures). `Tests 6 failed | 1347 passed (1353)` -- 1337 + 10 = 1347. ✓ `npm run typecheck` clean. `git status --short` clean throughout.
+
+### Mutation harness re-run
+
+Re-ran `mut-harness.sh all` (the spec reviewer's harness) against `mutations.mjs`, updated for the new file structure. Every anchor from the original file still exists as an id -- none were dropped -- but several needed retargeting because the refactor moved or merged their surrounding code:
+
+| id | Why retargeted |
+|---|---|
+| `10-render-default-nite` / `R4-metatile-default-nite` | Both collapse onto the same single anchor now: `parseTimeParam`'s own `if (timeParam === null) return { time: "day" };` line, since both routes call the same shared function. Each id is kept (each still has its own dedicated killing test on its own route), but a single source-line mutation now kills both at once instead of two independent ones. |
+| `R6`-`R8` (`map`/`events`/`collision` field drops) | Moved from 10-space indent (inline in the route handler) to 4-space indent (`buildGbcMapPayload`'s own return object) -- anchors updated to match, content unchanged. |
+| `R11-render-name-check-first` | The old mutation *added* a name-first check to code that lacked one -- the base code now already does this (decision A), so the old mutation is a no-op. Repurposed to test the *opposite* regression: reverting render to its pre-fix-round order (params validated before the name), which the new combined test must catch. |
+| `R12-metatile-params-before-name` | Same idea: reverts metatile's already-name-first order back to id/time-first, now caught by the new combined test. |
+| `R16-render-404-body` | The old anchor assumed the 404 line sat immediately above `const key` (render's old order); it now sits immediately above `const borderParam` instead -- retargeted on that adjacency, which is unique to the render route (the identical 404 line appears in all three name-routes now, but only render's is followed by `const borderParam`). |
+
+All other ids (`1`-`9`, `R1`-`R3`, `R5`, `R9`, `R10`, `R13`-`R15`, `R17`, `R18`) matched their original anchor text unchanged -- the underlying code moved into a new function or kept its position, but the literal text didn't change.
+
+| id | Mutation | Verdict |
+|---|---|---|
+| 1-render-key-no-time | drop `time` from render key | KILLED |
+| 2-render-key-no-border | drop `border` from render key | KILLED |
+| 3-metatile-key-no-time | drop `time` from metatile key | KILLED |
+| 4-no-padding-cap | disable the border cap | KILLED |
+| 5-groups-alpha | sort groups alphabetically | KILLED |
+| 6-collisionInfo-unfiltered | send all 256 collisionInfo values | KILLED |
+| 7-block0-substitution | substitute border for id-0 blocks | **KILLED** (was SURVIVES before this fix round -- closed by the new `buildGbcMapPayload` stub test) |
+| 8-range-gt | `>=` -> `>` in metatile range check | KILLED |
+| 9-no-oob-defects | omit out-of-bounds event defects | KILLED |
+| 10-render-default-nite | default time to nite (render) | KILLED |
+| R1-render-key-no-name | drop map name from render key | KILLED |
+| R2-metatile-key-no-id | drop id from metatile key | KILLED |
+| R3-metatile-key-no-name | drop map name from metatile key | KILLED |
+| R4-metatile-default-nite | default time to nite (metatile) | KILLED |
+| R5-groupOrder-swap-1-2 | swap `groupOrder[1]`/`[2]` | KILLED |
+| R6-map-connections-dropped | `map.connections = []` | KILLED |
+| R7-events-objects-dropped | `events.objects = []` | KILLED |
+| R8-collision-reversed | reverse `collision` | KILLED |
+| R9-blkPath-wrong | wrong `layout.blkPath` | KILLED |
+| R10-tileset-name-wrong | `tileset.name = constName` | KILLED |
+| R11-render-name-check-first | revert render to param-first order | **KILLED** (was SURVIVES) |
+| R12-metatile-params-before-name | revert metatile to param-first order | **KILLED** (was SURVIVES) |
+| R13-no-cache-control | drop `cache-control` on render | KILLED |
+| R14-collisionInfo-category-wrong | wrong category on non-pinned entries | KILLED |
+| R15-paddingWidth-hardcoded | hardcode `maxBorder = 3` | **SURVIVES** (accepted, decision E) |
+| R16-render-404-body | wrong render 404 body | **KILLED** (was SURVIVES) |
+| R17-cap-message-no-max | drop the max from the cap message | KILLED |
+| R18-metatile-range-msg-no-const | drop the tileset const from the range message | KILLED |
+
+28 of 28 mutations run; 27 KILLED, 1 SURVIVES (R15, accepted). `git status --short` was empty after the harness's own restore, and independently verified again afterward.
+
+### Live check (fix round 1)
+
+Ran `serve.ts --gbc` again in the background and curled the new behaviours specifically:
+
+```
+$ curl -s -o /dev/null -w "status=%{http_code}\n" "http://127.0.0.1:5174/api/render/NoSuchMap.png?border=9"
+status=404
+$ curl -s -o /dev/null -w "status=%{http_code}\n" "http://127.0.0.1:5174/api/metatile/NoSuchMap/abc.png"
+status=404
+$ curl -s "http://127.0.0.1:5174/api/map/%E0%A4%A"
+{"error":"malformed map name %E0%A4%A"}
+$ curl -s "http://127.0.0.1:5174/api/render/%E0%A4%A.png"
+{"error":"malformed map name %E0%A4%A"}
+$ curl -s "http://127.0.0.1:5174/api/metatile/%E0%A4%A/0.png"
+{"error":"malformed map name %E0%A4%A"}
+$ curl -s -o /dev/null -w "status=%{http_code}\n" "http://127.0.0.1:5174/api/map/NewBarkTown"
+status=200
+```
+Server stopped afterward; `pgrep -af serve.ts` showed no match and `ss -ltn | grep 5174` showed nothing (port free).
+
+### Deviations in this fix round
+
+None. Every coordinator decision (A-E) was implemented exactly as specified; the two anchor-retargeting judgment calls in the Mutation harness table above (collapsing `10`/`R4` onto one shared anchor, and reinterpreting `R11`/`R12`'s meaning now that their old premise no longer applies) were explicitly invited by the coordinator's own instruction ("update mutations.mjs's patterns to target the equivalent code in the new structure rather than skipping them, and report which you re-targeted").
