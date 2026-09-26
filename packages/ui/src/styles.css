@@ -661,6 +661,22 @@ input {
   margin-left: var(--space-2);
 }
 
+/* GBC shell (Plan 6b Task 3) -- reuses .app/.app__toolbar/.app__mode/etc.
+   directly so the two shells look identical; these two rules are the only
+   ones the GBC header needs on top of that. */
+.gbc-app__family {
+  font-family: var(--font-data);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+
+/* The Time-of-day group sits beside the View group in the same header --
+   .app__mode's own margin-left already separates it from whatever comes
+   before, this adds the extra gap between the two groups themselves. */
+.gbc-app__time {
+  margin-left: var(--space-3);
+}
+
 .world-canvas {
   flex: 1 1 auto;
   min-height: 0;
