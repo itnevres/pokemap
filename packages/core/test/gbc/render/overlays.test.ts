@@ -164,6 +164,114 @@ describe("drawGbcEvents", () => {
   });
 });
 
+/**
+ * A 2x2-block map (spec review finding 4: every prior fixture here used a
+ * 1x1-block map at origin 0, so a dropped origin, a transposed block index,
+ * or 16-px-instead-of-32-px block spacing all happened to still land on the
+ * "right" pixel and passed anyway). Origin 32 (a real 1-block border ring).
+ * Every block carries a DISTINCT metatile id AND a distinct collision
+ * configuration, chosen so `X1`-`X6` (`mutate.mjs`) are each individually
+ * discriminated:
+ * - block (0,0), id 0: all land -- a control area that must stay untouched.
+ * - block (1,0), id 1: BL = wall. Its BL quadrant is at absolute pixels
+ *   (64..79, 48..63) -- if the origin is dropped (X1) or blocks are spaced
+ *   16px apart (X2), that exact region goes untouched instead.
+ * - block (0,1), id 2: TR = water, a DIFFERENT collision shape from block
+ *   (1,0)'s -- transposing the block index (X4, `blocks[bx*height+by]`)
+ *   would swap which of these two configs each of (1,0)/(0,1) reads, so
+ *   block (1,0)'s expected wall tint would silently read block (0,1)'s
+ *   all-land-except-TR shape instead and vanish.
+ * - block (1,1), id 3: all land -- a second control area, and also the
+ *   block one in-bounds warp event's step (3,3) falls in.
+ */
+function fixturePayload2x2(): GbcMapPayload {
+  const collision: Collision[] = [
+    { tl: 0, tr: 0, bl: 0, br: 0 }, // id 0: all land
+    { tl: 0, tr: 0, bl: 7, br: 0 }, // id 1: BL wall
+    { tl: 0, tr: 41, bl: 0, br: 0 }, // id 2: TR water
+    { tl: 0, tr: 0, bl: 0, br: 0 }, // id 3: all land
+  ];
+  const blocks: Block[] = [{ metatileId: 0 }, { metatileId: 1 }, { metatileId: 2 }, { metatileId: 3 }];
+  const base = fixturePayload();
+  return {
+    ...base,
+    map: { ...base.map, width: 2, height: 2 },
+    layout: { ...base.layout, width: 2, height: 2 },
+    blocks,
+    metatileCount: 4,
+    collision,
+    collisionInfo: {
+      "0": { name: "COLL_FLOOR", category: "land", talk: false },
+      "7": { name: "COLL_WALL", category: "wall", talk: false },
+      "41": { name: "COLL_WATER", category: "water", talk: false },
+    },
+    events: {
+      warps: [{ x: 3, y: 3, mapConst: "X", destWarp: 1, lineIndex: 0 }],
+      coords: [],
+      bgs: [],
+      objects: [],
+      sceneScripts: [],
+      callbacks: [],
+      objectConsts: [],
+    },
+  };
+}
+
+const ORIGIN = 32;
+const RASTER_SIZE = 128; // origin (32) + 2 blocks*32 (64) + margin
+
+describe("geometry at origin 32 (2x2-block map, spec review finding 4)", () => {
+  it("drawGbcGrid: a line at the block boundary (origin+32), none at origin+16 (kills X6)", () => {
+    const r = createRaster(RASTER_SIZE, RASTER_SIZE);
+    drawGbcGrid(r, ORIGIN, ORIGIN, 2, 2);
+    const alphaAt = (x: number, y: number) => r.data[(y * RASTER_SIZE + x) * 4 + 3];
+    // The real block boundary between block 0 and block 1, partway down the first row.
+    expect(alphaAt(ORIGIN + 32, ORIGIN + 5)).toBeGreaterThan(0);
+    // A 16-px STEP boundary that is NOT a 32-px BLOCK boundary -- a grid
+    // drawn every 16px (X6) would wrongly paint a line here too.
+    expect(alphaAt(ORIGIN + 16, ORIGIN + 5)).toBe(0);
+  });
+
+  it("drawGbcCollision: exact tinted pixel positions, distinct wall/water RGB, and untouched controls (kills X1-X4)", () => {
+    const payload = fixturePayload2x2();
+    const r = createRaster(RASTER_SIZE, RASTER_SIZE);
+    drawGbcCollision(r, ORIGIN, ORIGIN, payload, { wall: WALL, water: WATER });
+    const pixelAt = (x: number, y: number) => {
+      const i = (y * RASTER_SIZE + x) * 4;
+      return { r: r.data[i], g: r.data[i + 1], b: r.data[i + 2], a: r.data[i + 3] };
+    };
+
+    // Block (1,0)'s BL quadrant: absolute (64..79, 48..63). Exact wall RGB
+    // (blendRect onto a fully-transparent base reproduces the source colour
+    // exactly, see this file's own real-corpus test for the same fact).
+    expect(pixelAt(70, 55)).toEqual({ r: WALL.r, g: WALL.g, b: WALL.b, a: WALL.a });
+    // Block (0,1)'s TR quadrant: absolute (48..63, 64..79). Water RGB, and
+    // NOT the wall colour (X3).
+    const waterPixel = pixelAt(55, 70);
+    expect(waterPixel).toEqual({ r: WATER.r, g: WATER.g, b: WATER.b, a: WATER.a });
+    expect([waterPixel.r, waterPixel.g, waterPixel.b]).not.toEqual([WALL.r, WALL.g, WALL.b]);
+
+    // Control: block (0,0) (all land) and block (1,1) (all land) both
+    // stay fully transparent.
+    expect(pixelAt(40, 40).a).toBe(0);
+    expect(pixelAt(90, 90).a).toBe(0);
+  });
+
+  it("drawGbcEvents: exact tinted pixel position for the in-bounds warp at step (3,3) (kills X5)", () => {
+    const payload = fixturePayload2x2();
+    const r = createRaster(RASTER_SIZE, RASTER_SIZE);
+    const colors = { object: WALL, warp: { r: 240, g: 190, b: 40, a: 150 }, coord: WALL, bg: WALL };
+    drawGbcEvents(r, ORIGIN, ORIGIN, payload.events, 4, 4, colors);
+    // step (3,3) -> absolute (32+3*16, 32+3*16) = (80, 80), a 16x16 region.
+    const i = (85 * RASTER_SIZE + 85) * 4;
+    expect([r.data[i], r.data[i + 1], r.data[i + 2], r.data[i + 3]]).toEqual([240, 190, 40, 150]);
+    // Dropping the origin (X5) would paint at (48,48) instead -- confirm
+    // that position is untouched.
+    const jDroppedOrigin = (53 * RASTER_SIZE + 53) * 4;
+    expect(r.data[jDroppedOrigin + 3]).toBe(0);
+  });
+});
+
 describe("gbcStepInfo", () => {
   const payload = fixturePayload();
 

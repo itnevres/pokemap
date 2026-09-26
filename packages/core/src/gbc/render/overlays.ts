@@ -79,6 +79,18 @@ export type GbcQuadrantKey = (typeof QUADRANT_KEYS)[number];
  * actually uses), so a lookup miss (defensive only; the real payload always
  * has an entry for every value `collision` can produce) falls back to
  * `"land"`, the only category that draws nothing.
+ *
+ * **Known gap, deliberately left as-is (spec review finding 8, a Plan 7
+ * concern):** the real engine's `GetCoordTile` (`home/map.asm:1717-1719`
+ * `and a / jr z, .nope`, `:1744-1746` `.nope: ld a, -1 / ret`) returns `-1`
+ * ($FF, a wall) for block id **0** without ever indexing its tileset's
+ * collision table at all. This function instead looks up
+ * `payload.collision[0]` like any other id -- for Johto that resolves to
+ * `COLL_01` (land), not a wall. The corpus has zero id-0 map blocks today
+ * (independently re-verified, see Task 1b/4's own reports), so nothing
+ * renders wrong in practice; `gbcStepInfo` below has the identical gap for
+ * the same reason. Plan 7's painting must special-case id 0 to $FF rather
+ * than copying this function's own lookup for it.
  */
 export function drawGbcCollision(
   r: Raster,
@@ -219,6 +231,13 @@ export interface GbcStepInfo {
  * `2*(sx&1) + (sy&1)` -- the two are easy to transpose and only disagree on
  * the two "one coordinate odd" cases (tr vs. bl swap), which is exactly why
  * this task's own mutation-check list names swapping them explicitly.
+ *
+ * Shares `drawGbcCollision`'s own known id-0 gap (see that function's doc
+ * comment): a hovered step on metatile id 0 reports `payload.collision[0]`'s
+ * real quadrant values, not the engine's actual $FF-for-every-quadrant
+ * behaviour. `rendersAsBorder` at least tells the caller id 0 is special;
+ * the quadrant VALUES it reports for that case are not what the engine
+ * would return.
  */
 export function gbcStepInfo(payload: GbcMapPayload, sx: number, sy: number): GbcStepInfo | null {
   const stepW = 2 * payload.layout.width;
