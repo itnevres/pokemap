@@ -91,3 +91,62 @@ Killed both server and Vite processes afterward (`vite`'s own child process need
 3. **One extra guard test added beyond the spec's two named mutations**, found while mutation-testing clause 3 (`isStringArray(o.groupOrder)`) in isolation -- see the mutation table's note above. This is a strengthening of the test suite, not a scope change; both the original 39 tests and this one extra test are committed.
 
 No other part of the spec's routing table, state shape, class-reuse list, or test-pinning instructions was found to conflict with the real code once checked directly against `App.tsx`, `MapTree.tsx`, `useMapGroups.ts`, `useMapLayout.ts`, and `styles.css`.
+
+---
+
+## Fix round 1
+
+Addressing `task-3-spec-review.md` (Opus, verdict **compliant**, 1 Important test-quality gap) and `task-3-quality-review.md` (Sonnet, verdict **approve-with-fixes**, 2 Important + 3 Minor/Nit findings), per the coordinator's explicit decisions.
+
+### What changed
+
+- **`packages/ui/src/hooks/useGuardedFetch.ts`** (new) -- extracts the shared "fetch once, validate the shape with a real guard, surface every failure visibly" hook shape both `useProjectInfo` and `useGbcGroups` need (quality finding 2), plus `describeReceived`'s 200-char truncation (also exported). Lives under the family-agnostic `src/hooks/`, **not** `src/gbc/`: `useProjectInfo` is itself family-agnostic (`Root` calls it before the family is even known), so putting this shared helper under `src/gbc/` would force a GBA-agnostic hook to import from GBC's own tree -- exactly the "specific depends on generic, never the reverse" direction problem the coordinator flagged. Both `useProjectInfo.ts` and `packages/ui/src/gbc/hooks/useGbcGroups.ts` now call `useGuardedFetch(url, guard)` and are ~10 lines each instead of ~55.
+- **`packages/ui/src/gbc/useGbcGroups.ts` moved to `packages/ui/src/gbc/hooks/useGbcGroups.ts`** (coordinator decision on quality finding 1): family-agnostic hooks stay in `src/hooks/` (`useProjectInfo` unchanged there), GBC-specific hooks live in `src/gbc/hooks/`. Tasks 4-6 follow this for `useGbcMap`/`useGbcWorld`/`useGbcCoverage`. Its test file's path is unchanged, `packages/ui/test/gbc/useGbcGroups.test.ts` (only its import path updated) -- the existing GBC test layout is flat under `test/gbc/` regardless of `src` subdirectory depth, so a `test/gbc/hooks/` mirror would be new, not "matching the existing layout."
+- **`isRecord(x): x is Record<string, unknown>`** added to `guards.ts` (quality finding 3), replacing the `typeof x !== "object" || x === null` / `const o = x as Record<string, unknown>` pair that appeared three times (`isProjectInfo`'s own top-level check, `isMapGroupsData`'s own top-level check, and its nested `groups` check -- the last of which also needed a separate `Array.isArray` exclusion, now folded into `isRecord` itself since none of this file's shapes is ever legitimately an array).
+- **`Root.test.tsx`'s mount-once test** (spec review finding 1, Important) now also asserts `expect(screen.queryByText("Dungeon")).toBeNull()`. The reviewer verified that mounting a hidden `<App/>` alongside `<GbcApp/>` in `Root`'s `gbc` branch left all 6 `Root.test.tsx` tests green, because `App`'s own GBA-only fetches (`useWorldVisibility`, `useDungeons`) are gated on `mode` and never fire at mount regardless of whether `App` is even present -- so the fetch-list assertions alone don't prove the mount-once guarantee they claim to. The DOM assertion closes that gap: `App`'s header renders its `Dungeon` button unconditionally, independent of any fetch ever resolving. Re-verified below that this mutation now dies.
+- **`Root.test.tsx`'s dead `/api/dungeons` mock branch dropped** (quality finding 4): no scenario in the file ever reaches `mode === "dungeon"` (App's default mode is `"map"`), so the branch was unreachable; a comment now says why it's absent rather than a future reader wondering if dungeon mode is reachable from `Root`'s own tests.
+- **Unmount-before-resolve tests added** to `useProjectInfo.test.ts` and `useGbcGroups.test.ts` (spec review finding 2, Minor -- explicitly not required for compliance, applied anyway per the coordinator's instruction): a deferred fetch promise is resolved *after* `unmount()`, and the test asserts the hook's last rendered value stays at its pre-unmount `{ data: null, error: null }` and that no `console.error` fires. `useMapGroups.test.ts` itself is untouched, per the coordinator's explicit instruction to leave it alone.
+- **A new `packages/ui/test/useGuardedFetch.test.ts`** (8 tests) unit-tests the shared helper directly: the bad-shape message names the truncated received value (both under and over 200 characters), a non-OK status names the URL and status, a thrown fetch surfaces its message, and an optional `label` param is used in messages instead of the raw (e.g. percent-encoded) `url`.
+- **`GbcApp`'s `{ root: _root }` renamed to plain `root`** (quality finding 5, Nit).
+
+### Commit SHA
+
+- `ec393b4` -- `refactor(ui): extract useGuardedFetch, move useGbcGroups under gbc/hooks, add isRecord`
+
+### Test counts
+
+- Before this fix round: 1414 passed, same 6 baseline failures.
+- After: **1424 passed**, same 6 baseline failures. Net **+10**: `useGuardedFetch.test.ts` (8 new), plus one unmount test each in `useProjectInfo.test.ts` and `useGbcGroups.test.ts`.
+- `packages/ui` alone: 27 files (was 26; `useGuardedFetch.test.ts` is new), **305 tests**, all green.
+
+### Gate result
+
+```
+npm test 2>&1 | tee t3-fix1-test-final.log
+grep -E "^ FAIL " t3-fix1-test-final.log | sort -u | diff - baseline-fails.txt
+```
+`diff` is empty -- the same 6 known failures. `Tests 6 failed | 1424 passed (1430)` -- 1414 + 10 = 1424. ✓ `npm run typecheck` clean, no output. `git status --porcelain` clean before and after; the staged diff touched exactly the 10 files listed above (confirmed via `git diff --cached --stat`), and `git diff --stat -- packages/ui/src/App.tsx packages/ui/src/components packages/ui/test/App.test.tsx` stayed empty throughout.
+
+### Mutation re-run
+
+Re-ran all 6 of the original `guards.ts` mutations against the refactored file (mutated the real source, confirmed red against `guards.test.ts`, restored via a saved golden copy of the post-refactor file, `git diff` empty after every restore), plus the spec reviewer's `Root.tsx` hidden-`<App/>` mutation:
+
+| # | Mutation | Verdict |
+|---|---|---|
+| 1 | `isProjectInfo`: widen `family` literal check to `typeof === "string"` | KILLED |
+| 2 | `isProjectInfo`: drop the `root` string check | KILLED |
+| 3 | `isMapGroupsData`: weaken `groupOrder` to plain `Array.isArray` | KILLED (by the isolating test added during the original mutation pass) |
+| 4 | `isRecord`: drop the `!Array.isArray(x)` exclusion (now the shared home of the old `groups`-specific array check) | KILLED |
+| 5 | `isMapGroupsData`: weaken each `groups[key]` check to plain `Array.isArray` | KILLED |
+| 6 | `isMapGroupsData`: drop the "every `groupOrder` entry is a key of `groups`" loop (the spec's named mutation) | KILLED |
+| 7 | `Root.tsx`: mount a hidden `<App/>` alongside `<GbcApp/>` in the `gbc` branch (spec review finding 1) | **Now KILLED** by the new `screen.queryByText("Dungeon")` assertion -- confirmed failing with the mutation in place (`expected <button>Dungeon</button> to be null`), then restored and re-confirmed green |
+
+All 7 killed, 0 survive.
+
+### Live re-check
+
+Confirmed ports free (Node `net.createServer()` probe), started the GBC server + Vite, drove Playwright: the shell renders (`Time of day` group present, `Crystal` family tag present), clicking a map produces the exact placeholder `OlivinePokecenter1F · day`. Killed the GBC server, started the plain GBA server (served `pokemon-three-region`), reloaded: `App`'s own `Dungeon` button is present, opening `NewBarkTown` renders the full editing chrome. A screenshot taken during this GBA check (not committed -- nothing changed visibly from Task 3's own committed screenshots, so per the coordinator's instruction none was required) confirms `Pencil`/`Rect`/`Bucket`/`Dropper`/`Shift`/`Collision`/zoom controls/`Add Sign`/`Save` all rendering normally; a same-page `getByText("Pencil", { exact: true })` locator returning a count of 0 in one probe script was a Playwright text-matching quirk against that specific button's rendering, not a real absence -- the screenshot shows it plainly. Killed both server and Vite processes afterward (Vite's `sh -c vite` wrapper again needed its child PID killed directly) and reconfirmed via the same Node probe that 5173 and 5174 are both free.
+
+### Deviations in this fix round
+
+None. Every requested item (Spec #1, Spec #2, Quality #1 through #5) was implemented exactly as the coordinator specified, including the explicit override of the quality review's own suggested `describeReceived` location (`gbc/guards.ts`) in favor of the family-agnostic `src/hooks/useGuardedFetch.ts`, per the coordinator's own direction-of-dependency instruction.
