@@ -143,3 +143,86 @@ Confirmed above: `npm test`'s 6 failures are exactly `baseline-fails.txt`, `npm 
 6. **A genuine, reproducible finding (not a Task 4 defect) is documented above**: 4x zoom on a very tall map renders a blank canvas in a headless/software-rendered browser, identically on the pre-existing, unmodified GBA `MapCanvas.tsx`. No code change was made; flagged plainly per this project's own "an agent... found and fixed while mutation-testing... honestly reported" precedent (Task 3's own guard-test-gap disclosure) applied here to a live-verify finding instead.
 
 No other part of the spec's payload shape, geometry, control list, status-strip wording, or test-pinning instructions was found to conflict with the real code once measured directly against `MapCanvas.tsx`, the corpus, and the existing GBC route/hook/guard code.
+
+## Fix round 1
+
+Both the spec review (`task-4-spec-review.md`, verdict "Not approved yet, fix round needed") and the quality review (`task-4-quality-review.md`, verdict "approve-with-fixes") were addressed together, per the coordinator's 11-item brief. GBA's `App.tsx`, `MapCanvas.tsx` and the shared `.map-canvas` rule were left untouched throughout, as instructed (the GBA A/B StrictMode analog is a separate follow-up task).
+
+Commits (all `fix:`/`test:`, GBC code only):
+
+| SHA | Item(s) | Summary |
+|---|---|---|
+| `5f0a7df` | 4 | `overlays.ts`: doc-comment on the known id-0 collision gap (`home/map.asm:1717-1719,1744-1746`); `overlays.test.ts`: origin-32, 2x2-block fixture with 3 distinct real collision configs, killing X1-X6 |
+| `792dfea` | 8 | `guards.ts`: `isGbcMapPayload` now rejects a non-record `collisionInfo` and a missing/non-string `tileset.constName` |
+| `bebb1b7` | 3 | `useGuardedFetch.ts`: resets `data`/`error` unconditionally at the top of the effect (not only on the `url === null` branch), so a URL change alone clears stale data/error before the new fetch resolves |
+| `aacc70c` | 1, 2, 5, 8 | `GbcMapCanvas.tsx`: single `GbcView { zoom, pan }` state + pure `zoomAboutPivot` (StrictMode fix); `formatQuadrant` extracted and exported; `parseColorToken` handles `#rgb`/`#rrggbbaa` and a documented magenta fallback; `styles.css`: `.gbc-map-canvas` overflow fix (fixed-height wrapping status strip, `min-width: 0`, ellipsis); `GbcMetatilePalette.tsx`: `role="list"`/`role="listitem"`; large test additions in `GbcMapCanvas.test.tsx` (StrictMode regression, `formatQuadrant` table, viewport-blit-deps, wheel `passive:false`, pristine-recomposite-on-toggle, discriminating `clientToStep` pan test) |
+| `11a56db` | 3, 6, 7, 9, 11 | `GbcApp.tsx`: readiness gate (`ready = data.map.name === selected ? data : null`) so a stale/failed payload for a previous selection is never rendered; `src/gbc/time.ts` new shared `GbcTimeOfDay` type, now imported by `GbcApp`/`GbcMapCanvas`/`GbcMetatilePalette` instead of three local copies; new hover-to-palette wiring tests and highlight-reset test in `GbcApp.test.tsx`; two new `useGuardedFetch.test.ts` tests for the reset behaviour |
+| `4d6b505` | 7 | Rewrote the highlight-reset test to combine both assertions in one `waitFor`, and added a comment documenting the genuine redundancy behind the X17 mutation (below) |
+
+Item 10 (id-0 collision comment) landed inside `5f0a7df`. Every `eslint-disable-next-line react-hooks/exhaustive-deps` in `GbcMapCanvas.tsx` now has an explanatory comment (item 11); `hex()` duplication between `GbcMapCanvas.tsx` and `GbcMetatilePalette.tsx` was deliberately left as-is per the brief.
+
+### Test counts and gate
+
+- Test count: 1488 -> 1516 (+28: 3 in `overlays.test.ts`, 2 in `guards.test.ts`, 2 in `useGuardedFetch.test.ts`, 3 in `GbcMetatilePalette.test.tsx`/`GbcApp.test.tsx` combined for wiring+ARIA, remainder in the rewritten `GbcMapCanvas.test.tsx`, which grew from 21 to 38 tests).
+- `npm test`: full suite green; failures match `baseline-fails.txt` exactly (pre-existing, unrelated failures only).
+- Typecheck: clean on both `tsconfig.base.json` and `packages/ui/tsconfig.json`.
+
+### Mutation re-run
+
+Ran the reviewer's `mutate.mjs` with the exact requested ID list plus the original S-set: `S1 S2 S3 S4 S5 S6a S6b S7 S8 X1 X2 X3 X4 X5 X6 X8 X9 X10 X11 X12 X13 X14 X15 X17 X20 X23`. `git status --short` was clean after the run (harness mutates `git show HEAD:<file>`, then restores from that golden copy).
+
+| ID | Mutation | Result | Killing test(s) |
+|---|---|---|---|
+| S1 | swap quadrant parity | KILLED | `overlays.test.ts` quadrant-parity pin + `GbcMapCanvas.test.tsx` 4-quadrant hover test |
+| S2 | draw out-of-bounds events | KILLED | `overlays.test.ts` mutation check + CeruleanCave2F corpus case |
+| S3 | tint land quadrants | KILLED | `overlays.test.ts` land-untouched + wall-only-blend tests |
+| S4 | drop time from image URL | KILLED | `GbcMapCanvas.test.tsx` image-URL test + `GbcApp.test.tsx` |
+| S5 | re-fit on time change | KILLED | `GbcMapCanvas.test.tsx` "does not re-fit when only time changes" |
+| S6a/S6b | drop rendersAsBorder (UI/core) | KILLED | `GbcMapCanvas.test.tsx` + `overlays.test.ts` border-note tests |
+| S7 | palette scrolls every render | KILLED | `GbcMetatilePalette.test.tsx` scroll-once tests |
+| S8 | drop blocks.length guard | KILLED | `guards.test.ts` |
+| X1 | collision ignores origin | KILLED | new origin-32 2x2-block collision test |
+| X2 | collision uses 16px blocks | KILLED | same |
+| X3 | water tinted with wall colour | KILLED | same |
+| X4 | collision block index transposed | KILLED | same |
+| X5 | events ignore origin | KILLED | new origin-32 events test |
+| X6 | grid every 16px, not per block | KILLED | new origin-32 grid test |
+| X8 | hovered-quadrant mark never on BR | KILLED | 4-quadrant hover test |
+| X9 | TR label shows BL's data | KILLED | same |
+| X10 | drop +talk (anchor retargeted) | KILLED | `formatQuadrant` table tests + 4-quadrant hover test |
+| X11 | land category suffix shown (anchor retargeted) | KILLED | `formatQuadrant` table tests |
+| X12 | null name -> empty, not hex | KILLED | `formatQuadrant` table test + 4-quadrant hover test |
+| X13 | palette highlight not wired in GbcApp | KILLED | `GbcApp.test.tsx` hover-to-palette wiring test |
+| X14 | viewport dropped from blit deps | KILLED | ported viewport-blit-deps regression test |
+| X15 | wheel listener passive:true | KILLED | wheel `passive:false` spy test |
+| X17 | hover highlight not reset on map switch | **SURVIVED** (142/142 passed) | see below |
+| X20 | composite not pristine on toggle | KILLED | rewritten toggle-Grid-then-Collision test |
+| X23 | clientToStep ignores pan | KILLED | rewritten discriminating pan/zoom test |
+
+X10 and X11's anchors in `mutate.mjs` were retargeted (with a comment left in the harness file explaining why) because `formatQuadrant` was extracted out of `GbcMapCanvas`'s inline `quadrantLabel` in this fix round, moving the `+talk`/category lines the original anchors pointed at; the mutation's *intent* is unchanged, only its exact source location. No other anchor needed retargeting.
+
+**X17 (survived, investigated and reported rather than papered over):** `GbcApp`'s own `selectMap` handler calls `setHoveredMetatileId(null)` on every map switch, which is what this mutation removes. Direct instrumentation during the investigation showed that `GbcMapCanvas` has its own, pre-existing "fresh overlays/hover on a real map switch" effect (present since Task 4's original implementation, unrelated to this fix round) that *also* calls the hover-reset callback whenever its own `mapName` prop changes -- and it does so even with `GbcApp`'s line removed. The two resets are therefore genuinely redundant for any switch where the new map's canvas mounts successfully, which is the only case a black-box DOM test can observe; whether the test's `waitFor` resolves before or after `GbcMapCanvas`'s own effect fires is a scheduling race, not a function of which line is present, so the test cannot reliably attribute a pass to `GbcApp`'s own reset. `GbcApp`'s line is not dead code: it is the only thing that protects the one case `GbcMapCanvas`'s effect cannot cover (the new map's canvas never mounts at all, e.g. a failed fetch) -- but that case has no DOM-visible symptom to assert on either, because the whole map view is replaced by the error placeholder regardless of the stale highlight value underneath it. This is recorded in `GbcApp.test.tsx`'s own test as a code comment rather than silently claimed as a clean kill.
+
+### Live re-verify
+
+Server: `npm run dev` in `packages/ui`, Chromium via Playwright, screenshots actually viewed (Read tool) before being trusted. All processes killed and ports 5173/5174 confirmed free afterward (`net.createServer()` probe).
+
+**Item 1 (StrictMode zoom fix):** Vite's `main.tsx` wraps the app in `<StrictMode>`, so the dev server exercises the fixed code path directly.
+- `task-4-fix1-newbarktown-strictmode-2x.png` / `-4x.png`: NewBarkTown canvas at 2x and 4x, both rendered correctly centred, no blank canvas, no visible double-pan offset.
+- `task-4-route32-1x.png`, `task-4-route32-2x.png` (new), `task-4-route32-4x.png`, `task-4-route32-4x-fullpage.png` (new), `task-4-route32-fit.png`: Route32 across the same zoom sequence; 1x/2x/Fit all correct. 4x reproduces the same pre-existing, GBA-shared "blank canvas in headless/software rendering on a very tall map" finding already disclosed in the Deviations section above (confirmed unrelated to the StrictMode fix: the canvas itself is sized and positioned correctly, it is a rendering-backend limit, and the identical symptom is reproducible on the unmodified GBA `MapCanvas.tsx`).
+
+**Item 2 (hover overflow fix):** hovered the warp step at NewBarkTown (the longest realistic status line: id + 4 quadrant labels + a warp suffix) at both viewports and read `document.documentElement.scrollWidth`/`clientWidth` directly.
+- 1280x800: `scrollWidth === clientWidth` (no horizontal overflow). Screenshot `task-4-fix1-hover-overflow-1280x800.png` shows the status strip wrapped to two lines, fully inside the viewport.
+- 1024x768: same result, `scrollWidth === clientWidth`. Screenshot `task-4-fix1-hover-overflow-1024x768.png` shows the same two-line wrap at the narrower width, still no page scrollbar.
+
+**General NewBarkTown day/nite/overlays/hover pass, and CeruleanCave2F banner (all screenshots replaced with freshly-verified captures):**
+- `task-4-newbarktown-day.png` / `-nite.png`: day and night tints render correctly, only the tint differs.
+- `task-4-newbarktown-overlays.png`: Collision + Events overlays both on simultaneously, tinted quadrants and event marks visible over the base image.
+- `task-4-newbarktown-hover-building.png`: hovering a building block shows the per-quadrant collision text under the canvas with no page overflow.
+- `task-4-newbarktown-hover-warp.png`: hovering the warp step shows the warp suffix appended to the status text, confirmed via the same `scrollWidth === clientWidth` check logged during the run, no page overflow.
+- `task-4-ceruleancave2f-banner.png`: switching to CeruleanCave2F shows the defect banner (`role="alert"`) with its real defect text, replacing the previous, less clearly captured version of this screenshot.
+
+### Deviations / concerns carried into this fix round
+
+- The X17 finding above: accepted as a genuine, investigated case of two independent components performing a redundant reset, not a gap papered over with a flaky-but-passing test.
+- No other deviations from the coordinator's 11-item brief; all 11 items were addressed as specified.
