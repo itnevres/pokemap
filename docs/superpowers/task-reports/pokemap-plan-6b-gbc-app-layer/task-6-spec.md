@@ -12,6 +12,12 @@ Encounter lenses, gutter and species spotlight for GBC, inside `GbcWorldCanvas`.
 
 **Conventions established in Task 3's fix round:** GBC-specific hooks live in `packages/ui/src/gbc/hooks/`, and family-agnostic ones in `src/hooks/`. Every fetch goes through Task 3's shared guarded-fetch helper (read `_archive/task-3-implementer.md` for its name and location). `guards.ts` has `isRecord` for building new guards. Don't hand-roll another fetch, then guard, then error block.
 
+**Notes from the Task 5 quality review (binding):**
+- **The encounter cache is time-independent: one fetch per map, ever.** Don't copy the image cache's clear-on-`time` effect in `GbcWorldCanvas`; filtering by time happens client-side at render.
+- **Build a memo of screen-space rects,** separate from the imperative draw effect, the way `WorldCanvas` does for its gutter and lens entries. Feed the gutter and lens overlays from it.
+- **Mount `SpeciesSpotlight` and `LensPanel` in a toolbar group using the existing themed class** (`world-canvas__toolbar-group--grow`, as in `WorldCanvas`). Don't invent a bespoke width.
+- **When you cite `WorldCanvas.tsx`, cite a grep-able anchor, not a line number.** Its line numbers have already drifted.
+
 ## Facts (measured)
 
 **Source shape.** `GbcEncounterSource = { method: "grass"|"water"|"fish"|"headbutt"|"rock", time?, rod?, list?, conditional?: "swarm", encounterRate?, biteChance?, chances: [{ species, percent, minLevel, maxLevel }] }`.
