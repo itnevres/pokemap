@@ -226,3 +226,15 @@ Server: `npm run dev` in `packages/ui`, Chromium via Playwright, screenshots act
 
 - The X17 finding above: accepted as a genuine, investigated case of two independent components performing a redundant reset, not a gap papered over with a flaky-but-passing test.
 - No other deviations from the coordinator's 11-item brief; all 11 items were addressed as specified.
+
+## Coordinator correction (after fix round 1)
+
+The "4x zoom renders a blank canvas on a very tall map in headless Chromium (canvas size limit)" finding above is **wrong** and is withdrawn.
+
+The coordinator reproduced Route32 at 4× on the fix-round-1 code in the Vite dev server, with StrictMode on:
+- The instrumented stage `drawImage` call was `(0,0,384,1504 → -398,-2667,1536,6016)` on a 740×675 stage. The pan is correct and the map covers the viewport.
+- The screenshot, now `screens/task-4-route32-4x.png`, shows Route32's pier and water rendered correctly.
+
+The spec review had already shown that the original blank came from the StrictMode double-applied pan (finding B), and that a 10,496 px-tall destination renders fine, so no size limit is involved. The earlier blank 4× screenshot must have been captured either before the fix or before the image had loaded.
+
+`task-4-route32-4x-fullpage.png` has been removed. GBA `MapCanvas.tsx` has the same StrictMode bug, and it is queued as a separate follow-up task.
