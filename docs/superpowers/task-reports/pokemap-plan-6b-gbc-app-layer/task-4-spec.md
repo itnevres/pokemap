@@ -18,6 +18,8 @@
 - the GBA gate;
 - live-verify with screenshots you actually look at.
 
+**Conventions established in Task 3's fix round:** GBC-specific hooks live in `packages/ui/src/gbc/hooks/`, and family-agnostic ones in `src/hooks/`. Every fetch goes through Task 3's shared guarded-fetch helper (read `_archive/task-3-implementer.md` for its name and location). `guards.ts` has `isRecord` for building new guards. Don't hand-roll another fetch, then guard, then error block.
+
 ## Facts the implementation relies on (measured; re-check any you depend on)
 
 - **Blocks are 32 px.** Block `(bx, by)` is at pixel `(originX + bx*32, originY + by*32)`.
@@ -60,7 +62,7 @@ This mirrors `core/render/overlays.ts`, which the GBA canvas composites through.
   - `defects` is an array.
 
   Mutation-test each clause.
-- **`useGbcMap(name)`**, in `packages/ui/src/gbc/useGbcMap.ts`. It follows `useMapLayout`'s shape (cancelled guard, null name → idle), plus the guard.
+- **`useGbcMap(name)`**, in `packages/ui/src/gbc/hooks/useGbcMap.ts`. It follows `useMapLayout`'s shape (cancelled guard, null name → idle), plus the guard.
 
 ### 3. `packages/ui/src/gbc/GbcMapCanvas.tsx`
 

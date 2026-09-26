@@ -11,6 +11,8 @@ The read-only GBC world view: `useGbcWorld` and `GbcWorldCanvas`, wired into `Gb
 
 **Ground rules:** the same as Task 3's spec, §"Ground rules". In particular, `WorldCanvas.tsx` is **not modified**, except for the one additive change in §1.
 
+**Conventions established in Task 3's fix round:** GBC-specific hooks live in `packages/ui/src/gbc/hooks/`, and family-agnostic ones in `src/hooks/`. Every fetch goes through Task 3's shared guarded-fetch helper (read `_archive/task-3-implementer.md` for its name and location). `guards.ts` has `isRecord` for building new guards. Don't hand-roll another fetch, then guard, then error block.
+
 ## Facts (measured; re-check any you depend on)
 
 `GET /api/world` returns `{ family: "gbc", blockPx: 32, placements: Record<name, Placement>, components, conflicts }`.

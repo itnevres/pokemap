@@ -10,6 +10,8 @@ Encounter lenses, gutter and species spotlight for GBC, inside `GbcWorldCanvas`.
 
 **Ground rules:** as in Task 3. GBA components change **only** where this spec lists an additive change. Every existing GBA test must stay green **unchanged**. That is the proof the defaults preserve GBA behaviour.
 
+**Conventions established in Task 3's fix round:** GBC-specific hooks live in `packages/ui/src/gbc/hooks/`, and family-agnostic ones in `src/hooks/`. Every fetch goes through Task 3's shared guarded-fetch helper (read `_archive/task-3-implementer.md` for its name and location). `guards.ts` has `isRecord` for building new guards. Don't hand-roll another fetch, then guard, then error block.
+
 ## Facts (measured)
 
 **Source shape.** `GbcEncounterSource = { method: "grass"|"water"|"fish"|"headbutt"|"rock", time?, rod?, list?, conditional?: "swarm", encounterRate?, biteChance?, chances: [{ species, percent, minLevel, maxLevel }] }`.
