@@ -26,6 +26,14 @@ describe("GbcMetatilePalette", () => {
     expect(img?.getAttribute("loading")).toBe("lazy");
   });
 
+  it("gives the grid role=list and every cell role=listitem (quality review finding 5)", () => {
+    const { container } = render(<GbcMetatilePalette mapName="Foo" time="day" tilesetName="T" metatileCount={3} />);
+    expect(container.querySelector(".gbc-metatile-palette__grid")?.getAttribute("role")).toBe("list");
+    const cells = container.querySelectorAll(".gbc-metatile-palette__cell");
+    expect(cells.length).toBe(3);
+    for (const cell of cells) expect(cell.getAttribute("role")).toBe("listitem");
+  });
+
   it("encodes the map name in the thumbnail src", () => {
     const { container } = render(
       <GbcMetatilePalette mapName="New Bark Town" time="nite" tilesetName="TilesetJohto" metatileCount={1} />,

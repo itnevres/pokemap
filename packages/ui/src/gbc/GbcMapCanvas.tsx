@@ -2,12 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { RGBA } from "@pokemap/core/src/render/raster.js";
 import { drawGbcGrid, drawGbcCollision, drawGbcEvents, gbcStepInfo, type GbcQuadrantInfo, type GbcQuadrantKey, type GbcStepInfo } from "@pokemap/core/src/gbc/render/overlays.js";
 import type { GbcMapPayload } from "@pokemap/core/src/gbc/wire.js";
-
-/** Matches `GbcApp.tsx`'s own `TimeOfDay` -- not imported from there
- *  directly (a leaf canvas component importing a type from the app shell
- *  that mounts it is the wrong dependency direction; `MapCanvas.tsx` never
- *  imports from `App.tsx` either), so this is redeclared, not reused. */
-export type GbcTimeOfDay = "morn" | "day" | "nite";
+import type { GbcTimeOfDay } from "./time.js";
 
 /**
  * The read-only GBC map view (Plan 6b Task 4). Plan Q2 accepts this as a
@@ -39,6 +34,20 @@ export type GbcTimeOfDay = "morn" | "day" | "nite";
  *   destructive), and a separate stage canvas re-blits that composite for
  *   pan/zoom only, never re-touching overlay pixels.
  *
+ * **One divergence from `MapCanvas.tsx`, deliberate (fix round, spec review
+ * finding 1):** `MapCanvas.tsx:532-542`'s own `applyZoom` nests a `setPan`
+ * call inside a `setZoom` updater function. React's `<StrictMode>` (which
+ * `main.tsx` wraps the whole app in) double-invokes updater functions in
+ * development to surface exactly this kind of impurity -- the nested
+ * `setPan` fires twice, so the pan transform is applied twice, landing 2x
+ * off-centre and going fully off-canvas (blank) at 4x on every map, not just
+ * a large one. This file keeps ONE `view: { zoom, pan }` state updated by a
+ * single, pure `zoomAboutPivot` (exported and unit-tested below), so
+ * StrictMode's double-invoke is harmless -- it is the standard fix for this
+ * exact class of bug, not a fork from GBA's own mechanic. A GBA follow-up
+ * for `MapCanvas.tsx:532-542` is filed separately; that file is out of
+ * scope here.
+ *
  * Unlike GBA, hover does NOT depend on which overlays are toggled on:
  * `gbcStepInfo` is a pure function of the payload and the hovered step,
  * independent of `toggles` -- the status strip always shows the real
@@ -49,6 +58,32 @@ export type GbcTimeOfDay = "morn" | "day" | "nite";
 const BORDER_RINGS = 1;
 const ZOOM_LEVELS = [1, 2, 4] as const;
 type Zoom = (typeof ZOOM_LEVELS)[number];
+
+/** The canvas's whole pan/zoom state, updated as ONE value (fix round, spec
+ *  review finding 1) -- see the header comment for why this replaced two
+ *  separate `zoom`/`pan` state variables. */
+export interface GbcView {
+  zoom: Zoom;
+  pan: { x: number; y: number };
+}
+
+/**
+ * Pure: given the current view, the next zoom level, and a pivot point in
+ * STAGE-canvas pixels, returns the view that keeps the composite-space point
+ * under the pivot fixed on screen -- or the SAME `view` object (not a new
+ * one with equal fields) when `next === view.zoom`, so a caller can use
+ * reference equality to skip work. Exported and unit-tested with exact
+ * numbers (fix round, spec review finding 1); called from exactly one
+ * `setView(v => zoomAboutPivot(v, ...))` site, so React's `<StrictMode>`
+ * double-invoking it twice with the same input `v` is harmless -- both
+ * invocations compute the identical result, and only one is ever committed.
+ */
+export function zoomAboutPivot(view: GbcView, next: Zoom, pivotX: number, pivotY: number): GbcView {
+  if (view.zoom === next) return view;
+  const cx = (pivotX - view.pan.x) / view.zoom;
+  const cy = (pivotY - view.pan.y) / view.zoom;
+  return { zoom: next, pan: { x: Math.round(pivotX - cx * next), y: Math.round(pivotY - cy * next) } };
+}
 
 interface Toggles {
   grid: boolean;
@@ -74,6 +109,34 @@ const hex = (n: number) => `0x${n.toString(16)}`;
  *  slice, not a general-purpose strip. */
 function shortCollisionName(name: string): string {
   return name.startsWith("COLL_") ? name.slice(5) : name;
+}
+
+/**
+ * Pure status-strip text for one quadrant: `<label> <name>` plus an optional
+ * `(category[, talk])` suffix. Exported and table-tested directly (fix
+ * round, spec review findings 5/7 -- previously this logic lived inline in
+ * JSX and was only exercised through 3 full mount+mouseMove tests).
+ *
+ * Wording fix (spec review finding 7): the ORIGINAL rule ("append the
+ * category whenever it isn't land") reads redundant for the common case --
+ * a metatile literally named `COLL_WALL` categorised `wall` printed
+ * `WALL wall`. The category is now dropped when the display NAME already
+ * says it, case-insensitively (`WALL` + `wall` -> just `WALL`), and kept
+ * otherwise, where it is genuinely informative (`BUOY` + `wall` ->
+ * `BUOY (wall)`, since nothing about "BUOY" says "wall"). `land` never
+ * shows a category at all, matching every prior version of this rule --
+ * `FLOOR`/`land` would otherwise print on nearly every ordinary hover.
+ * `talk` is never redundant with the name (it is independent information,
+ * "this tile also fires a script"), so it is always appended when true,
+ * even alongside a dropped category, e.g. a hypothetical talking land tile
+ * would read `NAME (talk)`.
+ */
+export function formatQuadrant(label: string, info: GbcQuadrantInfo): string {
+  const name = info.name ? shortCollisionName(info.name) : hex(info.value);
+  const parts: string[] = [];
+  if (info.category !== "land" && name.toLowerCase() !== info.category) parts.push(info.category);
+  if (info.talk) parts.push("talk");
+  return parts.length > 0 ? `${label} ${name} (${parts.join(", ")})` : `${label} ${name}`;
 }
 
 /**
@@ -117,12 +180,22 @@ function resolveOverlayColor(varName: string, darkModeFallback: string): RGBA {
  *  alpha; `--encounter-water` and the `--event-*` tokens are plain opaque
  *  hex swatches (used elsewhere as solid legend chips, never as a
  *  translucent wash) -- for THIS overlay's purpose they need one, so a
- *  hex-only token gets this fixed alpha instead, roughly matching
- *  `--overlay-collision`'s own ~0.55 (140/255 = 0.549). An unparsable value
- *  (this file's own jsdom tests never load a real stylesheet) returns fully
- *  transparent rather than throwing, so a broken token can never crash the
- *  composite effect -- it would just silently fail to tint. */
+ *  hex-only token (6 or 3 digit) gets this fixed alpha instead, roughly
+ *  matching `--overlay-collision`'s own ~0.55 (140/255 = 0.549). An 8-digit
+ *  hex token's own trailing alpha byte is used as-is instead. */
 const HEX_TOKEN_ALPHA = 140;
+
+/** Fix round (spec review finding 12): an unparsable token used to return
+ *  fully transparent, which is a SILENT no-tint -- a broken/renamed CSS
+ *  variable would make an overlay quietly paint nothing, with no visible
+ *  signal anything was wrong. Opaque magenta at the same fixed alpha as
+ *  every other hex fallback is impossible to miss instead, the same
+ *  "unmistakable, not invisible" convention `render/map.ts`'s own
+ *  out-of-range `PLACEHOLDER` color already uses for a different broken
+ *  case. This file's own jsdom tests never load a real stylesheet, so this
+ *  path IS exercised there (and asserted on) -- it isn't only a live-app
+ *  concern. */
+const FALLBACK_COLOR: RGBA = { r: 255, g: 0, b: 255, a: HEX_TOKEN_ALPHA };
 
 export function parseColorToken(value: string): RGBA {
   const v = value.trim();
@@ -131,12 +204,22 @@ export function parseColorToken(value: string): RGBA {
     const [, r, g, b, a] = rgba;
     return { r: Number(r), g: Number(g), b: Number(b), a: a !== undefined ? Math.round(Number(a) * 255) : HEX_TOKEN_ALPHA };
   }
-  const hexColor = /^#([0-9a-fA-F]{6})$/.exec(v);
-  if (hexColor) {
-    const h = hexColor[1]!;
+  const hex8 = /^#([0-9a-fA-F]{8})$/.exec(v);
+  if (hex8) {
+    const h = hex8[1]!;
+    return { r: parseInt(h.slice(0, 2), 16), g: parseInt(h.slice(2, 4), 16), b: parseInt(h.slice(4, 6), 16), a: parseInt(h.slice(6, 8), 16) };
+  }
+  const hex6 = /^#([0-9a-fA-F]{6})$/.exec(v);
+  if (hex6) {
+    const h = hex6[1]!;
     return { r: parseInt(h.slice(0, 2), 16), g: parseInt(h.slice(2, 4), 16), b: parseInt(h.slice(4, 6), 16), a: HEX_TOKEN_ALPHA };
   }
-  return { r: 0, g: 0, b: 0, a: 0 };
+  const hex3 = /^#([0-9a-fA-F])([0-9a-fA-F])([0-9a-fA-F])$/.exec(v);
+  if (hex3) {
+    const double = (c: string) => parseInt(c + c, 16);
+    return { r: double(hex3[1]!), g: double(hex3[2]!), b: double(hex3[3]!), a: HEX_TOKEN_ALPHA };
+  }
+  return FALLBACK_COLOR;
 }
 
 export function GbcMapCanvas({ mapName, data, time, hoveredMetatile }: GbcMapCanvasProps) {
@@ -150,8 +233,8 @@ export function GbcMapCanvas({ mapName, data, time, hoveredMetatile }: GbcMapCan
 
   const [imgLoaded, setImgLoaded] = useState(false);
   const [toggles, setToggles] = useState<Toggles>(NO_TOGGLES);
-  const [zoom, setZoom] = useState<Zoom>(1);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [view, setView] = useState<GbcView>({ zoom: 1, pan: { x: 0, y: 0 } });
+  const { zoom, pan } = view;
   const [hover, setHover] = useState<GbcStepInfo | null>(null);
   const [compositeVersion, setCompositeVersion] = useState(0);
   const [viewport, setViewport] = useState({ w: 0, h: 0 });
@@ -182,6 +265,11 @@ export function GbcMapCanvas({ mapName, data, time, hoveredMetatile }: GbcMapCan
     setToggles(NO_TOGGLES);
     setHover(null);
     hoveredMetatile?.(null);
+    // hoveredMetatile is intentionally excluded: it is a plain prop
+    // callback, not state this effect reads, and including it would re-run
+    // (and re-clear the hover the player is mid-hovering) on every parent
+    // re-render that passes a fresh inline function, not only on a real
+    // map switch.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapName]);
 
@@ -199,8 +287,7 @@ export function GbcMapCanvas({ mapName, data, time, hoveredMetatile }: GbcMapCan
     for (const level of ZOOM_LEVELS) {
       if (pixelWidth * level <= vw && pixelHeight * level <= vh) z = level;
     }
-    setZoom(z);
-    setPan({ x: Math.round((vw - pixelWidth * z) / 2), y: Math.round((vh - pixelHeight * z) / 2) });
+    setView({ zoom: z, pan: { x: Math.round((vw - pixelWidth * z) / 2), y: Math.round((vh - pixelHeight * z) / 2) } });
   }, [pixelWidth, pixelHeight, viewport]);
 
   // Once per real map open -- NOT on a time switch, which reuses the same
@@ -212,6 +299,12 @@ export function GbcMapCanvas({ mapName, data, time, hoveredMetatile }: GbcMapCan
       fit();
       fittedForMapRef.current = mapName;
     }
+    // `fit` is intentionally excluded: it is a NEW function identity on
+    // every render (a `useCallback` over `viewport`/`pixelWidth`/
+    // `pixelHeight`), and this effect must run only when `imgLoaded` or
+    // `mapName` actually change -- including `fit` would defeat the whole
+    // "once per real map open" guard this effect exists for (a later
+    // viewport resize would otherwise re-fit and reset the player's zoom).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [imgLoaded, mapName]);
 
@@ -257,6 +350,11 @@ export function GbcMapCanvas({ mapName, data, time, hoveredMetatile }: GbcMapCan
     }
 
     setCompositeVersion((v) => v + 1);
+    // `anyOverlay` is intentionally excluded: it is a plain local
+    // (`toggles.grid || toggles.collision || toggles.events`), deterministically
+    // derived from `toggles`, which IS already listed below -- it is not a
+    // separately-changing dependency this effect could miss, just a
+    // convenience name for a value already covered.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [imgLoaded, toggles, data, pixelWidth, pixelHeight, originX, originY]);
 
@@ -275,17 +373,7 @@ export function GbcMapCanvas({ mapName, data, time, hoveredMetatile }: GbcMapCan
 
   const toggle = (key: keyof Toggles) => setToggles((t) => ({ ...t, [key]: !t[key] }));
 
-  const applyZoom = (next: Zoom, pivotX: number, pivotY: number) => {
-    setZoom((prevZoom) => {
-      if (next === prevZoom) return prevZoom;
-      setPan((prevPan) => {
-        const cx = (pivotX - prevPan.x) / prevZoom;
-        const cy = (pivotY - prevPan.y) / prevZoom;
-        return { x: Math.round(pivotX - cx * next), y: Math.round(pivotY - cy * next) };
-      });
-      return next;
-    });
-  };
+  const applyZoom = (next: Zoom, pivotX: number, pivotY: number) => setView((v) => zoomAboutPivot(v, next, pivotX, pivotY));
 
   const centerPivot = (): [number, number] => {
     const c = canvasRef.current;
@@ -307,6 +395,12 @@ export function GbcMapCanvas({ mapName, data, time, hoveredMetatile }: GbcMapCan
     };
     canvas.addEventListener("wheel", handler, { passive: false });
     return () => canvas.removeEventListener("wheel", handler);
+    // `applyZoom` is intentionally excluded: it is a new function identity
+    // on every render (not memoised), but it always calls the latest
+    // `setView` updater regardless of when it was created, so re-running
+    // this effect only on a real `zoom` change (to keep `idx` current) is
+    // correct and avoids tearing down/re-attaching the native listener on
+    // every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [zoom]);
 
@@ -328,7 +422,7 @@ export function GbcMapCanvas({ mapName, data, time, hoveredMetatile }: GbcMapCan
   const onMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (dragRef.current) {
       const d = dragRef.current;
-      setPan({ x: d.panX + (e.clientX - d.x), y: d.panY + (e.clientY - d.y) });
+      setView((v) => ({ ...v, pan: { x: d.panX + (e.clientX - d.x), y: d.panY + (e.clientY - d.y) } }));
     } else {
       hoverAt(e.clientX, e.clientY);
     }
@@ -345,15 +439,12 @@ export function GbcMapCanvas({ mapName, data, time, hoveredMetatile }: GbcMapCan
   };
 
   const quadrantLabel = (key: GbcQuadrantKey, label: string, info: GbcQuadrantInfo, hovered: boolean) => {
-    const name = info.name ? shortCollisionName(info.name) : hex(info.value);
-    const category = info.category !== "land" ? ` ${info.category}` : "";
-    const talk = info.talk ? " +talk" : "";
-    const text = `${label} ${name}${category}${talk}`;
+    const text = formatQuadrant(label, info);
     return hovered ? <strong key={key}>{text}</strong> : <span key={key}>{text}</span>;
   };
 
   return (
-    <section className="map-canvas" aria-label={`${mapName} canvas`}>
+    <section className="map-canvas gbc-map-canvas" aria-label={`${mapName} canvas`}>
       <div className="map-canvas__toolbar">
         <div className="map-canvas__zoom" role="group" aria-label="Zoom">
           {ZOOM_LEVELS.map((z) => (

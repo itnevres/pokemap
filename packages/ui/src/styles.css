@@ -661,6 +661,50 @@ input {
   color: var(--text-muted);
 }
 
+/* Plan 6b Task 4 fix round (spec review findings 1/2, quality review finding
+   1): the GBC hover status text can run to 150-250+ characters (id + 4
+   quadrants, each with an optional bracketed category/talk, plus every
+   event at that step), far longer than any GBA hover string ever produced.
+   Without an explicit `min-width: 0`, `.map-canvas` (a flex item in
+   `.app__map-editing-body`) resolves its own min-width to its min-content
+   width, which includes this `white-space: nowrap` text -- so the canvas
+   column grows to fit it and pushes the metatile palette past the right
+   edge of the viewport, scrolling the whole page horizontally. Verified
+   live at 1280x800 and 1024x768 (fix round report): `scrollWidth ===
+   clientWidth` while hovering the longest realistic status line, both
+   before and after this fix (the CSS is what makes it true). GBA's own
+   `.map-canvas` has the identical latent bug (its own hover text is short
+   enough today to never trigger it) -- filed as a separate GBA follow-up,
+   not fixed here (out of this task's scope). */
+.gbc-map-canvas {
+  min-width: 0;
+}
+
+/* A FIXED-height, two-line strip -- wrapping the two status items onto
+   their own line each (not scrolling or clipping to one line) is the
+   primary fix. The height must stay fixed, not grow with content: growing
+   it would resize `.map-canvas__viewport` under the cursor, firing the
+   ResizeObserver and a re-blit, which can oscillate near the bottom edge --
+   the same class of bug as Task 21's own blanking postmortem, from the
+   opposite direction. */
+.gbc-map-canvas .map-canvas__status {
+  height: 44px;
+  flex-wrap: wrap;
+  align-content: center;
+  row-gap: 2px;
+}
+
+/* The hover span still shrinks to fit its own line and ellipsises as the
+   last resort, in case a future map/tileset combination produces an even
+   longer line than any measured today. */
+.gbc-map-canvas .map-canvas__hover {
+  margin-left: 0;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* App-level mode switch (Map / World / Dungeon) -- three top-level views,
    picked via App.tsx's toolbar buttons. */
 .app__mode {

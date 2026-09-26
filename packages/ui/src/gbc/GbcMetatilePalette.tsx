@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import type { GbcTimeOfDay } from "./GbcMapCanvas.js";
+import type { GbcTimeOfDay } from "./time.js";
 
 export interface GbcMetatilePaletteProps {
   mapName: string;
@@ -28,6 +28,12 @@ const hex = (n: number) => `0x${n.toString(16)}`;
  * actually changes, so `scrollIntoView` fires once per real highlight
  * change, never on an unrelated re-render (e.g. the app's time-of-day
  * toggle) that leaves `highlightId` the same primitive value.
+ *
+ * `role="list"`/`role="listitem"` (fix round, quality review finding 5): an
+ * `aria-label` on a plain, role-less `<div>` is not reliably announced by a
+ * screen reader as part of a collection -- with these roles, a reader can
+ * announce "list, N items" and treat each cell's `aria-label` as a real list
+ * item's accessible name, not N unrelated labelled images in sequence.
  */
 export function GbcMetatilePalette({ mapName, time, tilesetName, metatileCount, highlightId = null }: GbcMetatilePaletteProps) {
   const cellRefs = useRef(new Map<number, HTMLDivElement>());
@@ -44,7 +50,7 @@ export function GbcMetatilePalette({ mapName, time, tilesetName, metatileCount, 
       <div className="gbc-metatile-palette__header">
         {tilesetName} · {metatileCount} metatiles
       </div>
-      <div className="gbc-metatile-palette__grid">
+      <div className="gbc-metatile-palette__grid" role="list">
         {ids.map((id) => {
           const selected = id === highlightId;
           return (
@@ -54,6 +60,7 @@ export function GbcMetatilePalette({ mapName, time, tilesetName, metatileCount, 
                 if (el) cellRefs.current.set(id, el);
                 else cellRefs.current.delete(id);
               }}
+              role="listitem"
               className={`gbc-metatile-palette__cell${selected ? " gbc-metatile-palette__cell--selected" : ""}`}
               aria-label={`metatile ${hex(id)}`}
               aria-current={selected ? "true" : undefined}
