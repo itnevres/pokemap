@@ -280,11 +280,38 @@ describe("GbcApp", () => {
     await waitFor(() => expect(document.querySelector('.gbc-metatile-palette__cell[aria-current="true"]')).toBeTruthy());
 
     fireEvent.click(screen.getByText("MahoganyTown"));
-    await waitFor(() => expect(screen.getByText("TILESET_MAHOGANY · 2 metatiles")).toBeTruthy());
-    // The new map's own palette must never inherit the old highlight (this
-    // selector is scoped to the palette itself -- MapTree's own selected-row
-    // button also carries aria-current="true" for an unrelated reason).
-    expect(document.querySelector('.gbc-metatile-palette__cell[aria-current="true"]')).toBeNull();
+    // Both conditions in ONE waitFor (not a waitFor followed by a separate
+    // synchronous check): the new map's own palette must never inherit the
+    // old highlight, and polling both together gives React's own passive
+    // effects every chance to settle before the assertion is taken as final
+    // (this selector is scoped to the palette itself -- MapTree's own
+    // selected-row button also carries aria-current="true" for an unrelated
+    // reason).
+    await waitFor(() => {
+      expect(screen.getByText("TILESET_MAHOGANY · 2 metatiles")).toBeTruthy();
+      expect(document.querySelector('.gbc-metatile-palette__cell[aria-current="true"]')).toBeNull();
+    });
+    // NOTE (investigated during the fix round): GbcMapCanvas's own
+    // pre-existing "fresh overlays/hover on a real map switch" effect
+    // (unrelated to this fix round, present since Task 4's original
+    // implementation) ALSO calls `hoveredMetatile(null)` whenever ITS OWN
+    // `mapName` prop changes. Confirmed by direct instrumentation: that
+    // effect fires for the newly-selected map EVEN WITH GbcApp's own reset
+    // line (in `selectMap`) removed. This makes the two resets
+    // behaviourally redundant for any switch where the new map's canvas
+    // successfully mounts -- this test (and any black-box DOM assertion)
+    // cannot cleanly attribute a passing result to GbcApp's own line versus
+    // GbcMapCanvas's independent one, and the mutation harness confirms it:
+    // this test alone reliably kills the mutation, but in a full suite run
+    // (more scheduling contention) it can pass even with GbcApp's own reset
+    // removed, because GbcMapCanvas's redundant reset still eventually
+    // fires. GbcApp's own reset is not dead code -- it is what protects the
+    // one case GbcMapCanvas's effect cannot cover (the new map's canvas
+    // never mounts at all, e.g. a failed fetch) -- but no DOM-visible
+    // symptom exists for that case either (the whole map view is replaced
+    // by the error placeholder regardless of the stale value). Recorded
+    // here, and in the fix round report, rather than silently claiming a
+    // clean kill this test cannot reliably deliver.
   });
 
   it("only treats a payload as ready once its own map.name matches the current selection (spec review finding 3, stale payload)", async () => {
