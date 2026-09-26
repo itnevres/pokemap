@@ -163,6 +163,21 @@ describe("isGbcMapPayload", () => {
     expect(isGbcMapPayload({ ...p, collision: "not an array" })).toBe(false);
   });
 
+  it("rejects a non-record collisionInfo (spec review finding 12)", () => {
+    const p = validGbcMapPayload();
+    expect(isGbcMapPayload({ ...p, collisionInfo: [] })).toBe(false);
+    expect(isGbcMapPayload({ ...p, collisionInfo: "x" })).toBe(false);
+    expect(isGbcMapPayload({ ...p, collisionInfo: null })).toBe(false);
+    expect(isGbcMapPayload({ ...p, collisionInfo: undefined })).toBe(false);
+  });
+
+  it("rejects a missing tileset or a non-string tileset.constName (spec review finding 12)", () => {
+    const p = validGbcMapPayload();
+    expect(isGbcMapPayload({ ...p, tileset: null })).toBe(false);
+    expect(isGbcMapPayload({ ...p, tileset: { ...p.tileset, constName: 5 } })).toBe(false);
+    expect(isGbcMapPayload({ ...p, tileset: {} })).toBe(false);
+  });
+
   it("rejects events missing any of the four positioned arrays", () => {
     const p = validGbcMapPayload();
     expect(isGbcMapPayload({ ...p, events: { ...p.events, warps: undefined } })).toBe(false);

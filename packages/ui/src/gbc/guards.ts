@@ -88,6 +88,15 @@ export function isGbcMapPayload(x: unknown): x is GbcMapPayload {
   if (typeof x.metatileCount !== "number") return false;
   if (!Array.isArray(x.collision) || x.collision.length !== x.metatileCount) return false;
 
+  // Fix round (spec review finding 12): `GbcMapCanvas`/`GbcMetatilePalette`
+  // dereference `payload.collisionInfo[...]` and `payload.tileset.constName`
+  // unconditionally (the status strip, the collision overlay, the palette
+  // header, the metatile thumbnail URL) -- neither was previously checked,
+  // so a malformed response for either would crash the canvas instead of
+  // surfacing as a visible guard error.
+  if (!isRecord(x.collisionInfo)) return false;
+  if (!isRecord(x.tileset) || typeof x.tileset.constName !== "string") return false;
+
   if (!isRecord(x.events)) return false;
   const ev = x.events;
   if (!Array.isArray(ev.warps) || !Array.isArray(ev.coords) || !Array.isArray(ev.bgs) || !Array.isArray(ev.objects)) return false;
