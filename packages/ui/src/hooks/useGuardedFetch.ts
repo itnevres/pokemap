@@ -52,6 +52,20 @@ export function describeReceived(x: unknown): string {
  * unhandled rejection. The `cancelled` guard mirrors `useMapGroups.ts`
  * exactly: a response that resolves after the caller has unmounted (or
  * `url` has changed) never calls a stale setter.
+ *
+ * **Every URL change resets BOTH `data` and `error` to `null` before the new
+ * fetch even starts** (fix round, spec review finding 3) -- this hook was
+ * originally written for Task 3's fixed-URL hooks (`useProjectInfo`/
+ * `useGbcGroups`), which never change `url` after mount, so the gap was
+ * invisible there. Task 4's `useGbcMap` DOES change `url` (one call per
+ * selected map), and without this reset: an `error` from a failed map stuck
+ * around forever after selecting a good one afterward (`error` is checked
+ * first, and nothing ever cleared it), and a slow map's fetch left the
+ * PREVIOUS map's `data` on screen under the new map's name while the new
+ * fetch was still in flight (wrong `Fit`, wrong defects banner, wrong
+ * metatile-palette request count) until it resolved. For Task 3's own
+ * fixed-URL hooks this reset is a harmless no-op (there is only ever the one
+ * URL, and both start `null` on mount already).
  */
 export function useGuardedFetch<T>(url: string | null, guard: (x: unknown) => x is T, label?: string): UseGuardedFetchResult<T> {
   const [data, setData] = useState<T | null>(null);
@@ -59,11 +73,9 @@ export function useGuardedFetch<T>(url: string | null, guard: (x: unknown) => x 
   const effectiveLabel = label ?? url ?? "";
 
   useEffect(() => {
-    if (url === null) {
-      setData(null);
-      setError(null);
-      return;
-    }
+    setData(null);
+    setError(null);
+    if (url === null) return;
     let cancelled = false;
     fetch(url)
       .then((r) => {

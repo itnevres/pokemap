@@ -118,4 +118,51 @@ describe("useGuardedFetch", () => {
     expect(result.current.data).toBeNull();
     expect(result.current.error).toBeNull();
   });
+
+  it("a failed url's error does not survive switching to a good url (spec review finding 3, sticky error)", async () => {
+    const fetchMock = vi.fn((url: string) => {
+      if (url === "/api/bad") return Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({}) });
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ name: "Good" }) });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result, rerender } = renderHook(({ url }: { url: string | null }) => useGuardedFetch(url, isThing), {
+      initialProps: { url: "/api/bad" as string | null },
+    });
+    await waitFor(() => expect(result.current.error).toBe("GET /api/bad -> 500"));
+
+    rerender({ url: "/api/good" });
+    // The reset happens synchronously in the effect, before the new fetch
+    // even resolves -- so the stale error is gone immediately, not just
+    // eventually.
+    expect(result.current.error).toBeNull();
+    await waitFor(() => expect(result.current.data).toEqual({ name: "Good" }));
+    expect(result.current.error).toBeNull();
+  });
+
+  it("the previous url's data is not shown while the next url's fetch is still pending (spec review finding 3, stale payload)", async () => {
+    const bodyA = { name: "A" };
+    const box: { release: (() => void) | null } = { release: null };
+    const fetchMock = vi.fn((url: string) => {
+      if (url === "/api/a") return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(bodyA) });
+      return new Promise((resolve) => {
+        box.release = () => resolve({ ok: true, status: 200, json: () => Promise.resolve({ name: "B" }) });
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result, rerender } = renderHook(({ url }: { url: string | null }) => useGuardedFetch(url, isThing), {
+      initialProps: { url: "/api/a" as string | null },
+    });
+    await waitFor(() => expect(result.current.data).toEqual(bodyA));
+
+    rerender({ url: "/api/b" });
+    // While B's fetch is still pending, A's data must NOT still be returned
+    // under B's name -- it resets to null immediately, not once B resolves.
+    expect(result.current.data).toBeNull();
+    expect(result.current.error).toBeNull();
+
+    box.release?.();
+    await waitFor(() => expect(result.current.data).toEqual({ name: "B" }));
+  });
 });
