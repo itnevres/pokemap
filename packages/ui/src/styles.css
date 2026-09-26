@@ -601,6 +601,14 @@ input {
   background: var(--event-bg);
 }
 
+/* GBC map view only (Task 4): the collision overlay's second colour --
+   GBA's own collision is a single wall hue, but GBC's collision-quadrant
+   overlay distinguishes wall (reuses --overlay-collision, same red as GBA)
+   from water (this new swatch), never tinting land at all. */
+.map-canvas__swatch--water {
+  background: var(--encounter-water);
+}
+
 .map-canvas__viewport {
   flex: 1 1 auto;
   min-height: 0;
@@ -2510,4 +2518,69 @@ input {
 .event-inspector__add-btn:not(:disabled):hover {
   background: var(--accent);
   color: var(--text-on-accent);
+}
+
+/* Plan 6b Task 4: GbcMetatilePalette -- a read-only right-side panel next to
+   GbcMapCanvas, the same fixed-width-sidebar shape .event-inspector already
+   uses on MapCanvas's own other edge (DESIGN.md's own layout section: "an
+   inspector, a metatile palette"). Unlike GBA's .metatile-palette (a
+   horizontal strip above the canvas, built for drag-select painting), this
+   is read-only and vertical -- there is nothing here to paint with. */
+.gbc-metatile-palette {
+  width: 260px;
+  flex: 0 0 auto;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--bg-panel);
+  border-left: 1px solid var(--border);
+}
+
+.gbc-metatile-palette__header {
+  flex: 0 0 auto;
+  font-family: var(--font-data);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.gbc-metatile-palette__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, 32px);
+  gap: var(--space-1);
+}
+
+.gbc-metatile-palette__cell {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 2px;
+}
+
+/* Same selected-state pairing as everywhere else in this app
+   (.map-canvas__btn[aria-pressed="true"], .metatile-palette__cell--selected):
+   --bg-selected + --border-strong, never a bespoke highlight colour. */
+.gbc-metatile-palette__cell--selected {
+  background: var(--bg-selected);
+  border-color: var(--border-strong);
+}
+
+.gbc-metatile-palette__thumb {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+/* Plan 6b Task 4: the GBC defect banner -- reuses .app__event-op-error's own
+   danger-bordered-panel look (border: 1px solid var(--danger), ordinary
+   panel background), but is never dismissible (no close button rendered):
+   these are data-truth defects (an oversize .blk, an out-of-bounds event),
+   not a one-shot notice about something the player just did. */
+.gbc-app__defects-list {
+  margin: 0;
+  padding-left: var(--space-4);
+  list-style: disc;
 }
