@@ -5,13 +5,19 @@ The read-only GBC world view: `useGbcWorld` and `GbcWorldCanvas`, wired into `Gb
 **Read first:**
 - the plan: Q2, Q3, and Task 5;
 - `_archive/task-2-*.md`, for the `/api/world` contract;
-- Task 3's and Task 4's reports, for the shell and the conventions established in the map view;
+- `_archive/task-3-*.md` and `_archive/task-4-*.md`, for the shell and the conventions established in the map view;
 - `packages/ui/DESIGN.md`;
 - RESUME's UI lessons.
 
 **Ground rules:** the same as Task 3's spec, §"Ground rules". In particular, `WorldCanvas.tsx` is **not modified**, except for the one additive change in §1.
 
 **Conventions established in Task 3's fix round:** GBC-specific hooks live in `packages/ui/src/gbc/hooks/`, and family-agnostic ones in `src/hooks/`. Every fetch goes through Task 3's shared guarded-fetch helper (read `_archive/task-3-implementer.md` for its name and location). `guards.ts` has `isRecord` for building new guards. Don't hand-roll another fetch, then guard, then error block.
+
+**Lessons from Task 4. These are binding; read `_archive/task-4-spec-review.md` findings A and B.**
+- **Never call one state setter inside another's updater.** `main.tsx` renders under `<StrictMode>`, which runs updaters twice in dev. GBA's `applyZoom` has this bug, and `GbcMapCanvas` fixed its own copy with a single `view = { zoom, pan }` state plus the pure `zoomAboutPivot`. Keep zoom and pan in one state here too; reuse or mirror that pure function (the world zoom is continuous, not stepped). Add a test that renders under `<StrictMode>` and pins the exact pan after a wheel zoom and after Fit.
+- **Flex children that can hold long text need `min-width: 0`.** Task 4's hover strip widened the page. Before you finish, verify at 1280×800 and 1024×768 that `document.documentElement.scrollWidth === clientWidth` while hovering a map, with the tooltip showing.
+- **`useGuardedFetch` resets `data` and `error` whenever the URL changes.** The shared time type lives in `src/gbc/time.ts`.
+- **Take screenshots only after the images have loaded.** Task 4's "blank 4×" screenshot was stale, and the explanation offered for it was wrong. If something looks blank, instrument `drawImage` before you explain it away.
 
 ## Facts (measured; re-check any you depend on)
 
