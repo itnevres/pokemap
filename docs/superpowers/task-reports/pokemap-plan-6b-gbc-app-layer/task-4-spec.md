@@ -5,7 +5,7 @@
 **Read first:**
 - the plan: Q2's reuse/sibling decision, the "two grids" and out-of-map event decisions, the collision display decision, and Task 4;
 - `_archive/task-1b-*.md`, for the `/api/map`, `/api/render` and `/api/metatile` contracts;
-- `task-3-*.md` (archived by the time you start), for the shell;
+- `_archive/task-3-*.md`, for the shell;
 - `packages/ui/DESIGN.md`;
 - RESUME's UI lessons.
 
