@@ -65,4 +65,30 @@ describe("useProjectInfo", () => {
     expect(result.current.error).toContain(expectedFragment);
     expect(result.current.error).not.toContain(JSON.stringify(body).slice(0, 201));
   });
+
+  it("does not update state after unmount, even if the fetch resolves later (the cancelled guard)", async () => {
+    let resolveFetch!: (r: Response) => void;
+    const pending = new Promise<Response>((resolve) => {
+      resolveFetch = resolve;
+    });
+    const fetchMock = vi.fn().mockReturnValue(pending);
+    vi.stubGlobal("fetch", fetchMock);
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const { result, unmount } = renderHook(() => useProjectInfo());
+    expect(result.current).toEqual({ data: null, error: null });
+
+    unmount();
+    resolveFetch({ ok: true, status: 200, json: () => Promise.resolve({ family: "gba", root: "/x" }) } as Response);
+
+    // Let the now-resolved promise's .then chain run to completion.
+    await pending;
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(result.current).toEqual({ data: null, error: null });
+    expect(consoleError).not.toHaveBeenCalled();
+
+    consoleError.mockRestore();
+  });
 });

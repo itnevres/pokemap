@@ -8,14 +8,23 @@ import type { MapGroupsData } from "../components/MapTree.js";
  * (Task 4+) add `isGbcMapPayload` and friends to this same file.
  */
 
+/** A plain, non-null, non-array object -- the "is this even a record we can
+ *  read named fields off of" check every guard in this file starts with.
+ *  Excludes arrays deliberately: none of this file's shapes (`ProjectInfo`,
+ *  `MapGroupsData`, or its nested `groups` map) is ever legitimately an
+ *  array, and later guards (`isGbcMapPayload` etc., Task 4+) get the same
+ *  exclusion for free rather than each re-deriving it. */
+export function isRecord(x: unknown): x is Record<string, unknown> {
+  return typeof x === "object" && x !== null && !Array.isArray(x);
+}
+
 /** `GET /api/project`'s shape, shared by both engine families. `family` must
  *  be exactly `"gba"` or `"gbc"` -- never a wider `typeof x === "string"`
  *  check, since any other value (`"n64"`, `""`, `"GBA"`) is not a family this
  *  UI knows how to route. */
 export function isProjectInfo(x: unknown): x is ProjectInfo {
-  if (typeof x !== "object" || x === null) return false;
-  const o = x as Record<string, unknown>;
-  return (o.family === "gba" || o.family === "gbc") && typeof o.root === "string";
+  if (!isRecord(x)) return false;
+  return (x.family === "gba" || x.family === "gbc") && typeof x.root === "string";
 }
 
 function isStringArray(x: unknown): x is string[] {
@@ -31,19 +40,17 @@ function isStringArray(x: unknown): x is string[] {
  *  `MapTree`'s own `data.groups[g] ?? []` fallback silently rather than
  *  surfacing as a visible error here. */
 export function isMapGroupsData(x: unknown): x is MapGroupsData {
-  if (typeof x !== "object" || x === null) return false;
-  const o = x as Record<string, unknown>;
+  if (!isRecord(x)) return false;
 
-  if (!isStringArray(o.groupOrder)) return false;
+  if (!isStringArray(x.groupOrder)) return false;
 
-  const groups = o.groups;
-  if (typeof groups !== "object" || groups === null || Array.isArray(groups)) return false;
-  const g = groups as Record<string, unknown>;
+  if (!isRecord(x.groups)) return false;
+  const g = x.groups;
   for (const key of Object.keys(g)) {
     if (!isStringArray(g[key])) return false;
   }
 
-  for (const key of o.groupOrder) {
+  for (const key of x.groupOrder) {
     if (!Object.prototype.hasOwnProperty.call(g, key)) return false;
   }
 

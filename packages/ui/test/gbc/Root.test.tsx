@@ -30,9 +30,11 @@ function makeFetchMock(project: { family: "gba" | "gbc"; root: string } | "fail"
       const groups = typeof project === "object" && "family" in project && project.family === "gbc" ? GBC_GROUPS : GBA_GROUPS;
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(groups) } as Response);
     }
-    if (url === "/api/dungeons") {
-      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([]) } as Response);
-    }
+    // No /api/dungeons (or /api/world/etc.) branch here on purpose: every
+    // one of App's own GBA-only fetches is gated on `mode` (App's default
+    // is "map"), so none of them are ever actually requested by any
+    // scenario in this file. An unexpected call to one is exactly what the
+    // rejection below is for.
     return Promise.reject(new Error(`unexpected fetch in test: ${url}`));
   });
   return { mock, calls };
@@ -82,12 +84,20 @@ describe("Root", () => {
     expect(alert.textContent).toMatch(/n64/);
   });
 
-  it("a gbc project's fetch is never called with a GBA-only path", async () => {
+  it("a gbc project never mounts App (its Dungeon button is absent) and its fetch is never called with a GBA-only path", async () => {
     const { mock, calls } = makeFetchMock({ family: "gbc", root: "/root/pokemap-corpus/pokecrystal-PerfPlus" });
     vi.stubGlobal("fetch", mock);
     render(<Root />);
 
     await waitFor(() => expect(screen.getByRole("group", { name: "Time of day" })).toBeTruthy());
+
+    // Spec review finding 1: the fetch-list assertions below stay green even
+    // if Root mounted a hidden <App/> ALONGSIDE <GbcApp/>, since App's own
+    // GBA-only fetches are all gated on `mode` (default "map") and never
+    // fire at mount regardless. This DOM assertion is what actually proves
+    // App isn't mounted at all -- App's header renders its Dungeon button
+    // unconditionally, independent of any fetch ever resolving.
+    expect(screen.queryByText("Dungeon")).toBeNull();
 
     expect(calls).not.toContain("/api/world");
     expect(calls).not.toContain("/api/dungeons");

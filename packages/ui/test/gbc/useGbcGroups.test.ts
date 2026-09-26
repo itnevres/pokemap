@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
-import { useGbcGroups } from "../../src/gbc/useGbcGroups.js";
+import { useGbcGroups } from "../../src/gbc/hooks/useGbcGroups.js";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -50,5 +50,31 @@ describe("useGbcGroups", () => {
     await waitFor(() => expect(result.current.error).not.toBeNull());
 
     expect(result.current.data).toBeNull();
+  });
+
+  it("does not update state after unmount, even if the fetch resolves later (the cancelled guard)", async () => {
+    let resolveFetch!: (r: Response) => void;
+    const pending = new Promise<Response>((resolve) => {
+      resolveFetch = resolve;
+    });
+    const fetchMock = vi.fn().mockReturnValue(pending);
+    vi.stubGlobal("fetch", fetchMock);
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const { result, unmount } = renderHook(() => useGbcGroups());
+    expect(result.current).toEqual({ data: null, error: null });
+
+    unmount();
+    resolveFetch({ ok: true, status: 200, json: () => Promise.resolve({ groupOrder: ["OLIVINE"], groups: { OLIVINE: ["OlivineCity"] } }) } as Response);
+
+    // Let the now-resolved promise's .then chain run to completion.
+    await pending;
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(result.current).toEqual({ data: null, error: null });
+    expect(consoleError).not.toHaveBeenCalled();
+
+    consoleError.mockRestore();
   });
 });

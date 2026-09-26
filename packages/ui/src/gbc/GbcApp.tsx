@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { MapTree } from "../components/MapTree.js";
-import { useGbcGroups } from "./useGbcGroups.js";
+import { useGbcGroups } from "./hooks/useGbcGroups.js";
 
 type Mode = "map" | "world";
 export type TimeOfDay = "morn" | "day" | "nite";
@@ -9,9 +9,9 @@ const TIME_ORDER: readonly TimeOfDay[] = ["morn", "day", "nite"];
 const TIME_LABEL: Record<TimeOfDay, string> = { morn: "Morn", day: "Day", nite: "Nite" };
 
 export interface GbcAppProps {
-  /** The project root `Root.tsx` read off `/api/project`. Not yet used to
-   *  render anything in this task -- kept on the props so Root's routing
-   *  stays stable while Tasks 4/5 wire it into GbcMapCanvas/GbcWorldCanvas. */
+  /** The project root `Root.tsx` read off `/api/project`. Not yet read by
+   *  this task's own rendering -- kept on the props so Root's routing stays
+   *  stable while Tasks 4/5 wire it into GbcMapCanvas/GbcWorldCanvas. */
   root: string;
 }
 
@@ -27,7 +27,7 @@ export interface GbcAppProps {
  * look identical apart from the family tag and the extra Time-of-day group
  * (Q3: one app-level setting, not per-view).
  */
-export function GbcApp({ root: _root }: GbcAppProps) {
+export function GbcApp({ root }: GbcAppProps) {
   const [mode, setMode] = useState<Mode>("map");
   const [time, setTime] = useState<TimeOfDay>("day");
   const [selected, setSelected] = useState<string | null>(null);
