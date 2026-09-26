@@ -1,6 +1,9 @@
 import { useState } from "react";
 import { MapTree } from "../components/MapTree.js";
 import { useGbcGroups } from "./hooks/useGbcGroups.js";
+import { useGbcMap } from "./hooks/useGbcMap.js";
+import { GbcMapCanvas } from "./GbcMapCanvas.js";
+import { GbcMetatilePalette } from "./GbcMetatilePalette.js";
 
 type Mode = "map" | "world";
 export type TimeOfDay = "morn" | "day" | "nite";
@@ -16,32 +19,41 @@ export interface GbcAppProps {
 }
 
 /**
- * The GBC shell (Plan 6b Task 3). Deliberately much smaller than `App.tsx`:
- * GBC is read-only in 6b, so this never mounts `Toolbar`, `SaveDialog`,
- * `EventInspector`, `DungeonSidebar`, `SignComposer`, `CollisionPalette` or
- * `MetatilePalette`, and wires no `beforeunload` handler.
+ * The GBC shell (Plan 6b Tasks 3-4). Deliberately much smaller than
+ * `App.tsx`: GBC is read-only in 6b, so this never mounts `Toolbar`,
+ * `SaveDialog`, `EventInspector`, `DungeonSidebar`, `SignComposer` or
+ * `CollisionPalette`, and wires no `beforeunload` handler.
  *
  * Reuses the GBA shell's own layout classes (`app`, `app__toolbar`,
  * `app__title`, `app__body`, `app__sidebar`, `app__canvas`,
- * `app__canvas-placeholder`, `app__status`, `app__mode`) so the two shells
- * look identical apart from the family tag and the extra Time-of-day group
- * (Q3: one app-level setting, not per-view).
+ * `app__canvas-placeholder`, `app__status`, `app__mode`, `app__map-editing`,
+ * `app__map-editing-body`, `app__event-op-error`) so the two shells look
+ * identical apart from the family tag, the extra Time-of-day group (Q3: one
+ * app-level setting, not per-view), and the non-dismissible defect banner.
+ * Loading/error states for the map view mirror `App.tsx:495-499` exactly.
  */
 export function GbcApp({ root }: GbcAppProps) {
   const [mode, setMode] = useState<Mode>("map");
   const [time, setTime] = useState<TimeOfDay>("day");
   const [selected, setSelected] = useState<string | null>(null);
   // Bumped on every tree click, mirroring App.tsx's own selectVersion --
-  // unused by this task's placeholders, but Task 5's GbcWorldCanvas needs a
+  // unused by this task's own rendering, but Task 5's GbcWorldCanvas needs a
   // jumpToken distinct from jumpToMap for a re-click of the same map name
   // (see App.tsx's own selectVersion doc comment).
   const [, setSelectVersion] = useState(0);
+  // The hovered block's metatile id (GbcMapCanvas's own hoveredMetatile
+  // callback), driving GbcMetatilePalette's highlight -- reset on a real map
+  // switch so a stale highlight from the PREVIOUS map's tileset never
+  // survives onto a freshly selected one.
+  const [hoveredMetatileId, setHoveredMetatileId] = useState<number | null>(null);
 
   const { data, error } = useGbcGroups();
+  const map = useGbcMap(selected);
 
   const selectMap = (name: string) => {
     setSelected(name);
     setSelectVersion((v) => v + 1);
+    setHoveredMetatileId(null);
   };
 
   return (
@@ -83,12 +95,37 @@ export function GbcApp({ root }: GbcAppProps) {
             </p>
           ) : !selected ? (
             <p className="app__canvas-placeholder">Select a map</p>
+          ) : map.error ? (
+            <p className="app__canvas-placeholder">Could not load {selected}: {map.error}</p>
+          ) : map.data ? (
+            <div className="app__map-editing">
+              {/* Non-dismissible: G4's "never a silent drop" data truth (an
+                  oversize .blk, an out-of-bounds event), not a one-shot
+                  notice about something the player just did -- so unlike
+                  App.tsx's own eventOpError/signAddedMessage banners, this
+                  one carries no dismiss button and never clears itself. */}
+              {map.data.defects.length > 0 && (
+                <div className="app__event-op-error" role="alert">
+                  <ul className="gbc-app__defects-list">
+                    {map.data.defects.map((d, i) => (
+                      <li key={i}>{d.message}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              <div className="app__map-editing-body">
+                <GbcMapCanvas mapName={selected} data={map.data} time={time} hoveredMetatile={setHoveredMetatileId} />
+                <GbcMetatilePalette
+                  mapName={selected}
+                  time={time}
+                  tilesetName={map.data.tileset.constName}
+                  metatileCount={map.data.metatileCount}
+                  highlightId={hoveredMetatileId}
+                />
+              </div>
+            </div>
           ) : (
-            // Task 4 replaces this with GbcMapCanvas. Pins that `time` and
-            // `selected` both reach the view.
-            <p className="app__canvas-placeholder" data-testid="gbc-map-placeholder">
-              {selected} · {time}
-            </p>
+            <p className="app__canvas-placeholder">Loading {selected}…</p>
           )}
         </main>
       </div>
