@@ -92,4 +92,30 @@ describe("useGuardedFetch", () => {
     expect(result.current.error).toBe("GET /api/thing/enc/name -> 404");
     expect(fetchMock).toHaveBeenCalledWith("/api/thing/enc%2Fname");
   });
+
+  it("a null url fetches nothing and idles at { data: null, error: null } (Task 4's useGbcMap: null name)", () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderHook(() => useGuardedFetch(null, isThing));
+
+    expect(result.current.data).toBeNull();
+    expect(result.current.error).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("switching from a real url back to null resets to idle, not the previous data/error", async () => {
+    const body = { name: "OlivineCity" };
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve(body) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result, rerender } = renderHook(({ url }: { url: string | null }) => useGuardedFetch(url, isThing), {
+      initialProps: { url: "/api/thing" as string | null },
+    });
+    await waitFor(() => expect(result.current.data).toEqual(body));
+
+    rerender({ url: null });
+    expect(result.current.data).toBeNull();
+    expect(result.current.error).toBeNull();
+  });
 });

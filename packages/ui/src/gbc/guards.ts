@@ -1,4 +1,5 @@
 import type { ProjectInfo } from "@pokemap/core/src/family.js";
+import type { GbcMapPayload } from "@pokemap/core/src/gbc/wire.js";
 import type { MapGroupsData } from "../components/MapTree.js";
 
 /**
@@ -53,6 +54,45 @@ export function isMapGroupsData(x: unknown): x is MapGroupsData {
   for (const key of x.groupOrder) {
     if (!Object.prototype.hasOwnProperty.call(g, key)) return false;
   }
+
+  return true;
+}
+
+function isPositiveInteger(x: unknown): x is number {
+  return typeof x === "number" && Number.isInteger(x) && x > 0;
+}
+
+/**
+ * `GET /api/map/:name`'s shape (Task 4). Deliberately NOT a full structural
+ * check of every field `GbcMapPayload` carries (`map`'s own dozen fields,
+ * every `collisionInfo` entry's shape, `events`' scene_scripts/callbacks) --
+ * this checks exactly the invariants `GbcMapCanvas`/`gbcStepInfo` actually
+ * rely on to index safely (`blocks.length === width*height`,
+ * `collision.length === metatileCount`), the same "trust the rest, guard
+ * what you index by" posture `isMapGroupsData` above already takes with
+ * `groupOrder`'s membership in `groups`. Every clause below is independently
+ * mutation-tested (`packages/ui/test/gbc/guards.test.ts`).
+ */
+export function isGbcMapPayload(x: unknown): x is GbcMapPayload {
+  if (!isRecord(x)) return false;
+  if (x.family !== "gbc") return false;
+
+  if (!isRecord(x.map) || typeof x.map.name !== "string") return false;
+
+  if (!isRecord(x.layout)) return false;
+  const { width, height } = x.layout;
+  if (!isPositiveInteger(width) || !isPositiveInteger(height)) return false;
+
+  if (!Array.isArray(x.blocks) || x.blocks.length !== width * height) return false;
+
+  if (typeof x.metatileCount !== "number") return false;
+  if (!Array.isArray(x.collision) || x.collision.length !== x.metatileCount) return false;
+
+  if (!isRecord(x.events)) return false;
+  const ev = x.events;
+  if (!Array.isArray(ev.warps) || !Array.isArray(ev.coords) || !Array.isArray(ev.bgs) || !Array.isArray(ev.objects)) return false;
+
+  if (!Array.isArray(x.defects)) return false;
 
   return true;
 }

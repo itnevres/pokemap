@@ -40,27 +40,40 @@ export function describeReceived(x: unknown): string {
  * none of Task 3's hooks need that yet, but the parameter costs nothing to
  * have ready for Task 4+.
  *
+ * `url === null` (Task 4's `useGbcMap`: "nothing selected yet") fetches
+ * nothing at all and resets to the idle `{ data: null, error: null }` state
+ * -- the same "null name -> idle, no request" shape `useMapLayout.ts`
+ * already established, extended into this shared helper rather than
+ * `useGbcMap` hand-rolling its own fetch+guard+error block around it (the
+ * Task 3 fix-round convention this file itself exists to enforce).
+ *
  * A non-OK status, a thrown fetch, or a response that fails `guard` all set
  * `error` to a real, visible message -- never a silent `.catch`, never an
  * unhandled rejection. The `cancelled` guard mirrors `useMapGroups.ts`
  * exactly: a response that resolves after the caller has unmounted (or
  * `url` has changed) never calls a stale setter.
  */
-export function useGuardedFetch<T>(url: string, guard: (x: unknown) => x is T, label: string = url): UseGuardedFetchResult<T> {
+export function useGuardedFetch<T>(url: string | null, guard: (x: unknown) => x is T, label?: string): UseGuardedFetchResult<T> {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const effectiveLabel = label ?? url ?? "";
 
   useEffect(() => {
+    if (url === null) {
+      setData(null);
+      setError(null);
+      return;
+    }
     let cancelled = false;
     fetch(url)
       .then((r) => {
-        if (!r.ok) throw new Error(`GET ${label} -> ${r.status}`);
+        if (!r.ok) throw new Error(`GET ${effectiveLabel} -> ${r.status}`);
         return r.json() as Promise<unknown>;
       })
       .then((d) => {
         if (cancelled) return;
         if (!guard(d)) {
-          throw new Error(`GET ${label} returned an unexpected shape: ${describeReceived(d)}`);
+          throw new Error(`GET ${effectiveLabel} returned an unexpected shape: ${describeReceived(d)}`);
         }
         setData(d);
       })
