@@ -64,6 +64,10 @@ describe("isMapGroupsData", () => {
     expect(isMapGroupsData({ groupOrder: ["OLIVINE", 5], groups: { OLIVINE: [] } })).toBe(false);
   });
 
+  it("rejects a non-string groupOrder entry even when it numerically coerces to a real key (isolates the string-array check from the key-exists check, since object keys are always strings)", () => {
+    expect(isMapGroupsData({ groupOrder: [5], groups: { "5": ["x"] } })).toBe(false);
+  });
+
   it("rejects a non-plain-object groups", () => {
     expect(isMapGroupsData({ groupOrder: [], groups: null })).toBe(false);
     expect(isMapGroupsData({ groupOrder: [], groups: [] })).toBe(false);
