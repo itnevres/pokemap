@@ -4,9 +4,13 @@ import { useGbcGroups } from "./hooks/useGbcGroups.js";
 import { useGbcMap } from "./hooks/useGbcMap.js";
 import { GbcMapCanvas } from "./GbcMapCanvas.js";
 import { GbcMetatilePalette } from "./GbcMetatilePalette.js";
+import type { GbcTimeOfDay } from "./time.js";
 
 type Mode = "map" | "world";
-export type TimeOfDay = "morn" | "day" | "nite";
+/** Fix round (quality review finding 3): re-exported from the shared
+ *  `gbc/time.ts` (was independently declared here) so a future Task 5/6
+ *  consumer of `GbcApp`'s own time type doesn't need to know it moved. */
+export type TimeOfDay = GbcTimeOfDay;
 
 const TIME_ORDER: readonly TimeOfDay[] = ["morn", "day", "nite"];
 const TIME_LABEL: Record<TimeOfDay, string> = { morn: "Morn", day: "Day", nite: "Nite" };
@@ -49,6 +53,15 @@ export function GbcApp({ root }: GbcAppProps) {
 
   const { data, error } = useGbcGroups();
   const map = useGbcMap(selected);
+  // Fix round (spec review finding 3): `useGuardedFetch` now resets
+  // `data`/`error` on every URL change, but there is still one render tick
+  // between `selected` changing and that reset effect actually running
+  // where `map.data` can still be the PREVIOUS map's payload. Requiring
+  // `map.data.map.name === selected` (not just `map.data` truthy) means the
+  // canvas/palette/banner only ever render a payload that actually belongs
+  // to the currently selected map -- never the previous one's data rendered
+  // under the new one's name, and never the previous one's Fit/pan/defects.
+  const ready = map.data && map.data.map.name === selected ? map.data : null;
 
   const selectMap = (name: string) => {
     setSelected(name);
@@ -97,29 +110,29 @@ export function GbcApp({ root }: GbcAppProps) {
             <p className="app__canvas-placeholder">Select a map</p>
           ) : map.error ? (
             <p className="app__canvas-placeholder">Could not load {selected}: {map.error}</p>
-          ) : map.data ? (
+          ) : ready ? (
             <div className="app__map-editing">
               {/* Non-dismissible: G4's "never a silent drop" data truth (an
                   oversize .blk, an out-of-bounds event), not a one-shot
                   notice about something the player just did -- so unlike
                   App.tsx's own eventOpError/signAddedMessage banners, this
                   one carries no dismiss button and never clears itself. */}
-              {map.data.defects.length > 0 && (
+              {ready.defects.length > 0 && (
                 <div className="app__event-op-error" role="alert">
                   <ul className="gbc-app__defects-list">
-                    {map.data.defects.map((d, i) => (
+                    {ready.defects.map((d, i) => (
                       <li key={i}>{d.message}</li>
                     ))}
                   </ul>
                 </div>
               )}
               <div className="app__map-editing-body">
-                <GbcMapCanvas mapName={selected} data={map.data} time={time} hoveredMetatile={setHoveredMetatileId} />
+                <GbcMapCanvas mapName={selected} data={ready} time={time} hoveredMetatile={setHoveredMetatileId} />
                 <GbcMetatilePalette
                   mapName={selected}
                   time={time}
-                  tilesetName={map.data.tileset.constName}
-                  metatileCount={map.data.metatileCount}
+                  tilesetName={ready.tileset.constName}
+                  metatileCount={ready.metatileCount}
                   highlightId={hoveredMetatileId}
                 />
               </div>

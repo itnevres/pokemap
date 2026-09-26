@@ -1,9 +1,18 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { GbcApp } from "../../src/gbc/GbcApp.js";
 import type { GbcMapPayload } from "@pokemap/core/src/gbc/wire.js";
 
+// jsdom does not implement scrollIntoView (GbcMetatilePalette calls it when
+// the hover-driven highlight changes).
+let originalScrollIntoView: typeof Element.prototype.scrollIntoView;
+beforeEach(() => {
+  originalScrollIntoView = Element.prototype.scrollIntoView;
+  Element.prototype.scrollIntoView = vi.fn();
+});
+
 afterEach(() => {
+  Element.prototype.scrollIntoView = originalScrollIntoView;
   vi.unstubAllGlobals();
 });
 
@@ -233,5 +242,79 @@ describe("GbcApp", () => {
 
     await waitFor(() => expect(screen.getByText("TILESET_OLIVINE · 2 metatiles")).toBeTruthy());
     expect(document.querySelectorAll(".gbc-metatile-palette__cell").length).toBe(2);
+  });
+
+  it("hovering the canvas highlights the matching palette cell (spec review finding 9, mutation check X13)", async () => {
+    vi.stubGlobal("fetch", makeFetchMock({ maps: { OlivineCity: mapPayload("OlivineCity") } }));
+    render(<GbcApp root="/x" />);
+    await waitFor(() => expect(screen.getByText("OlivineCity")).toBeTruthy());
+    fireEvent.click(screen.getByText("OlivineCity"));
+    await waitFor(() => expect(screen.getByText("TILESET_OLIVINE · 2 metatiles")).toBeTruthy());
+
+    const canvas = document.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: 128, bottom: 96, width: 128, height: 96, x: 0, y: 0, toJSON() {} });
+    // Block 1 (metatile id 1) spans composite x [64,96) y [32,64); (80,48) is inside it.
+    fireEvent.mouseMove(canvas, { clientX: 80, clientY: 48 });
+
+    await waitFor(() => {
+      const current = document.querySelector('.gbc-metatile-palette__cell[aria-current="true"]');
+      expect(current?.getAttribute("aria-label")).toBe("metatile 0x1");
+    });
+  });
+
+  it("the palette highlight resets when switching to a different map (spec review finding 9, mutation check X17)", async () => {
+    vi.stubGlobal("fetch", makeFetchMock({
+      maps: {
+        OlivineCity: mapPayload("OlivineCity"),
+        MahoganyTown: mapPayload("MahoganyTown", { tileset: { constName: "TILESET_MAHOGANY", name: "TilesetMahogany" } }),
+      },
+    }));
+    render(<GbcApp root="/x" />);
+    await waitFor(() => expect(screen.getByText("OlivineCity")).toBeTruthy());
+    fireEvent.click(screen.getByText("OlivineCity"));
+    await waitFor(() => expect(screen.getByText("TILESET_OLIVINE · 2 metatiles")).toBeTruthy());
+
+    const canvas = document.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: 128, bottom: 96, width: 128, height: 96, x: 0, y: 0, toJSON() {} });
+    fireEvent.mouseMove(canvas, { clientX: 80, clientY: 48 });
+    await waitFor(() => expect(document.querySelector('.gbc-metatile-palette__cell[aria-current="true"]')).toBeTruthy());
+
+    fireEvent.click(screen.getByText("MahoganyTown"));
+    await waitFor(() => expect(screen.getByText("TILESET_MAHOGANY · 2 metatiles")).toBeTruthy());
+    // The new map's own palette must never inherit the old highlight (this
+    // selector is scoped to the palette itself -- MapTree's own selected-row
+    // button also carries aria-current="true" for an unrelated reason).
+    expect(document.querySelector('.gbc-metatile-palette__cell[aria-current="true"]')).toBeNull();
+  });
+
+  it("only treats a payload as ready once its own map.name matches the current selection (spec review finding 3, stale payload)", async () => {
+    const box: { release: (() => void) | null } = { release: null };
+    const fetchMock = vi.fn((url: string) => {
+      if (url === "/api/groups") return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(GROUPS) } as Response);
+      if (url === "/api/map/OlivineCity") return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(mapPayload("OlivineCity")) } as Response);
+      if (url === "/api/map/OlivinePort") {
+        return new Promise<Response>((resolve) => {
+          box.release = () => resolve({ ok: true, status: 200, json: () => Promise.resolve(mapPayload("OlivinePort")) } as Response);
+        });
+      }
+      return Promise.reject(new Error(`unexpected fetch: ${url}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<GbcApp root="/x" />);
+    await waitFor(() => expect(screen.getByText("OlivineCity")).toBeTruthy());
+    fireEvent.click(screen.getByText("OlivineCity"));
+    await waitFor(() => expect(screen.getByText("TILESET_OLIVINE · 2 metatiles")).toBeTruthy());
+
+    fireEvent.click(screen.getByText("OlivinePort"));
+    // While OlivinePort's fetch is still pending, OlivineCity's own canvas/
+    // palette must NOT still render under OlivinePort's name -- the status
+    // span already says OlivinePort, but the map view falls back to Loading.
+    expect(document.querySelector(".app__status")?.textContent).toBe("OlivinePort");
+    expect(screen.getByText(/Loading OlivinePort/)).toBeTruthy();
+    expect(document.querySelector("canvas.map-canvas__stage")).toBeNull();
+
+    box.release?.();
+    await waitFor(() => expect(document.querySelector("canvas.map-canvas__stage")).toBeTruthy());
   });
 });
