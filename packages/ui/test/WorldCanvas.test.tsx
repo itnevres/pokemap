@@ -411,6 +411,31 @@ describe("WorldCanvas", () => {
     expect(fit.pan).toEqual({ x: 0, y: 30 });
   });
 
+  // Plan 6b Task 5: computeFit's own zoomBounds parameter, additive. This
+  // file's existing computeFit test just above is UNCHANGED (still calls
+  // computeFit with no third argument) -- that is itself part of what this
+  // test proves: the default stays exactly MIN_ZOOM/MAX_ZOOM.
+  it("computeFit's zoomBounds parameter overrides the default MIN_ZOOM/MAX_ZOOM clamp, and is left out by every existing call", () => {
+    // Bounds so small the unclamped zoom would be huge (100/1 = 100): the
+    // default MAX_ZOOM (16) caps it...
+    expect(computeFit({ x: 0, y: 0, width: 1, height: 1 }, { w: 100, h: 100 }).zoom).toBe(16);
+    // ...but GBC's own { min: 1/64, max: 32 } caps it at 32 instead, since
+    // 32 is GBC's native px/block (this file's own MAX_ZOOM=16 is a
+    // px/TILE cap, the wrong unit for a block-space fit).
+    expect(computeFit({ x: 0, y: 0, width: 1, height: 1 }, { w: 100, h: 100 }, { min: 1 / 64, max: 32 }).zoom).toBe(32);
+
+    // Bounds so large the unclamped zoom would be tiny (10/10000 = 0.001):
+    // the default MIN_ZOOM (1/64 = 0.015625) floors it up...
+    expect(computeFit({ x: 0, y: 0, width: 10000, height: 10000 }, { w: 10, h: 10 }).zoom).toBeCloseTo(1 / 64, 10);
+    // ...but a lower custom min lets the true unclamped zoom (0.001) through
+    // instead of flooring it up to 1/64.
+    expect(computeFit({ x: 0, y: 0, width: 10000, height: 10000 }, { w: 10, h: 10 }, { min: 1 / 2000, max: 32 }).zoom).toBeCloseTo(0.001, 10);
+
+    // Pan still centres correctly at the overridden zoom.
+    const fit = computeFit({ x: 0, y: 0, width: 1, height: 1 }, { w: 100, h: 100 }, { min: 1 / 64, max: 32 });
+    expect(fit.pan).toEqual({ x: (100 - 32) / 2, y: (100 - 32) / 2 });
+  });
+
   it("drag pans the world by the mouse delta", async () => {
     const { impl } = makeFetchMock(
       makeWorld({ placements: { Solo: { map: "Solo", x: 0, y: 0, width: 10, height: 10, component: 0 } } }),

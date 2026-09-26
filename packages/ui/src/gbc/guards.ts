@@ -1,5 +1,5 @@
 import type { ProjectInfo } from "@pokemap/core/src/family.js";
-import type { GbcMapPayload } from "@pokemap/core/src/gbc/wire.js";
+import type { GbcMapPayload, GbcWorldPayload } from "@pokemap/core/src/gbc/wire.js";
 import type { MapGroupsData } from "../components/MapTree.js";
 
 /**
@@ -102,6 +102,41 @@ export function isGbcMapPayload(x: unknown): x is GbcMapPayload {
   if (!Array.isArray(ev.warps) || !Array.isArray(ev.coords) || !Array.isArray(ev.bgs) || !Array.isArray(ev.objects)) return false;
 
   if (!Array.isArray(x.defects)) return false;
+
+  return true;
+}
+
+/**
+ * `GET /api/world`'s shape (Task 5). `blockPx` must be exactly `32` -- GBC's
+ * fixed block size, carried on the wire so `GbcWorldCanvas` never hardcodes
+ * it a second time (`wire.ts`'s own doc comment) -- not just "a number", the
+ * same "exact literal, not a widened typeof" posture `isProjectInfo`'s own
+ * `family` check already takes. `placements` is checked structurally (every
+ * value has the 5 numeric fields plus a string `map` a `Placement` needs);
+ * `components`/`conflicts` are checked only as arrays, matching
+ * `isGbcMapPayload`'s own "trust the rest, guard what you index by" posture
+ * -- `GbcWorldCanvas` reads `component.bounds`/`.maps` and `conflict.map`/
+ * `.viaA`/`.viaB` directly off whatever the array holds, same as
+ * `isMapGroupsData` trusts `groups[key]`'s own string entries once the array
+ * shape itself is confirmed.
+ */
+export function isGbcWorldPayload(x: unknown): x is GbcWorldPayload {
+  if (!isRecord(x)) return false;
+  if (x.family !== "gbc") return false;
+  if (x.blockPx !== 32) return false;
+
+  if (!isRecord(x.placements)) return false;
+  for (const key of Object.keys(x.placements)) {
+    const p = x.placements[key];
+    if (!isRecord(p)) return false;
+    if (typeof p.map !== "string") return false;
+    if (typeof p.x !== "number" || typeof p.y !== "number") return false;
+    if (typeof p.width !== "number" || typeof p.height !== "number") return false;
+    if (typeof p.component !== "number") return false;
+  }
+
+  if (!Array.isArray(x.components)) return false;
+  if (!Array.isArray(x.conflicts)) return false;
 
   return true;
 }

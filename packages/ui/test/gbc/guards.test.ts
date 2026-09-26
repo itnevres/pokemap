@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { isProjectInfo, isMapGroupsData, isGbcMapPayload } from "../../src/gbc/guards.js";
-import type { GbcMapPayload } from "@pokemap/core/src/gbc/wire.js";
+import { isProjectInfo, isMapGroupsData, isGbcMapPayload, isGbcWorldPayload } from "../../src/gbc/guards.js";
+import type { GbcMapPayload, GbcWorldPayload } from "@pokemap/core/src/gbc/wire.js";
 
 describe("isProjectInfo", () => {
   it("accepts a real gba ProjectInfo", () => {
@@ -191,5 +191,82 @@ describe("isGbcMapPayload", () => {
     const p = validGbcMapPayload();
     expect(isGbcMapPayload({ ...p, defects: "none" })).toBe(false);
     expect(isGbcMapPayload({ ...p, defects: undefined })).toBe(false);
+  });
+});
+
+/** A real-shaped `GbcWorldPayload` -- one placement, one component, one
+ *  conflict, every clause `isGbcWorldPayload` checks satisfied. */
+function validGbcWorldPayload(): GbcWorldPayload {
+  return {
+    family: "gbc",
+    blockPx: 32,
+    placements: { Route17: { map: "Route17", x: 10, y: 20, width: 30, height: 40, component: 0 } },
+    components: [{ index: 0, maps: ["Route17"], bounds: { x: 10, y: 20, width: 30, height: 40 } }],
+    conflicts: [{ map: "Route17", viaA: { from: "Route18", x: 30, y: 50 }, viaB: { from: "Route16", x: 30, y: 49 } }],
+  };
+}
+
+describe("isGbcWorldPayload", () => {
+  it("accepts a real-shaped payload", () => {
+    expect(isGbcWorldPayload(validGbcWorldPayload())).toBe(true);
+  });
+
+  it("accepts an empty world (no placements/components/conflicts)", () => {
+    expect(isGbcWorldPayload({ family: "gbc", blockPx: 32, placements: {}, components: [], conflicts: [] })).toBe(true);
+  });
+
+  it("rejects a non-object", () => {
+    expect(isGbcWorldPayload(null)).toBe(false);
+    expect(isGbcWorldPayload(undefined)).toBe(false);
+    expect(isGbcWorldPayload([])).toBe(false);
+    expect(isGbcWorldPayload("x")).toBe(false);
+  });
+
+  it("rejects family !== gbc", () => {
+    expect(isGbcWorldPayload({ ...validGbcWorldPayload(), family: "gba" })).toBe(false);
+    expect(isGbcWorldPayload({ ...validGbcWorldPayload(), family: undefined })).toBe(false);
+  });
+
+  it("rejects blockPx !== 32 (mutation check #6: dropping this clause)", () => {
+    expect(isGbcWorldPayload({ ...validGbcWorldPayload(), blockPx: 16 })).toBe(false);
+    expect(isGbcWorldPayload({ ...validGbcWorldPayload(), blockPx: "32" })).toBe(false);
+    expect(isGbcWorldPayload({ ...validGbcWorldPayload(), blockPx: undefined })).toBe(false);
+  });
+
+  it("rejects a non-record placements", () => {
+    expect(isGbcWorldPayload({ ...validGbcWorldPayload(), placements: [] })).toBe(false);
+    expect(isGbcWorldPayload({ ...validGbcWorldPayload(), placements: "x" })).toBe(false);
+    expect(isGbcWorldPayload({ ...validGbcWorldPayload(), placements: null })).toBe(false);
+  });
+
+  it("rejects a placement entry missing a numeric field", () => {
+    const p = validGbcWorldPayload();
+    for (const field of ["x", "y", "width", "height", "component"] as const) {
+      const bad = { ...p.placements.Route17!, [field]: "not a number" };
+      expect(isGbcWorldPayload({ ...p, placements: { Route17: bad } })).toBe(false);
+    }
+  });
+
+  it("rejects a placement entry with a non-string map", () => {
+    const p = validGbcWorldPayload();
+    expect(isGbcWorldPayload({ ...p, placements: { Route17: { ...p.placements.Route17!, map: 5 } } })).toBe(false);
+  });
+
+  it("rejects a non-record placement entry", () => {
+    const p = validGbcWorldPayload();
+    expect(isGbcWorldPayload({ ...p, placements: { Route17: null } })).toBe(false);
+    expect(isGbcWorldPayload({ ...p, placements: { Route17: "x" } })).toBe(false);
+  });
+
+  it("rejects a non-array components", () => {
+    expect(isGbcWorldPayload({ ...validGbcWorldPayload(), components: {} })).toBe(false);
+    expect(isGbcWorldPayload({ ...validGbcWorldPayload(), components: "x" })).toBe(false);
+    expect(isGbcWorldPayload({ ...validGbcWorldPayload(), components: undefined })).toBe(false);
+  });
+
+  it("rejects a non-array conflicts", () => {
+    expect(isGbcWorldPayload({ ...validGbcWorldPayload(), conflicts: {} })).toBe(false);
+    expect(isGbcWorldPayload({ ...validGbcWorldPayload(), conflicts: "x" })).toBe(false);
+    expect(isGbcWorldPayload({ ...validGbcWorldPayload(), conflicts: undefined })).toBe(false);
   });
 });

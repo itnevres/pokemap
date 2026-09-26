@@ -236,12 +236,28 @@ interface FitResult {
 
 /** Pure so a test can predict the result by hand, the same way MapCanvas's
  *  tests reason about `fit()`. Centres `bounds` in `viewport` at the
- *  largest zoom (clamped) that shows all of it. */
-export function computeFit(bounds: { x: number; y: number; width: number; height: number }, viewport: Viewport): FitResult {
+ *  largest zoom (clamped) that shows all of it.
+ *
+ *  `zoomBounds` (Plan 6b Task 5, additive): overrides the clamp range this
+ *  file's own `MIN_ZOOM`/`MAX_ZOOM` otherwise apply. Left out, the default
+ *  is exactly today's `MIN_ZOOM`/`MAX_ZOOM` -- every existing call site
+ *  (`fitWorld`, the jump effect, the empty-maps lens) and this file's own
+ *  `computeFit` tests are unaffected. GBC's world canvas passes
+ *  `{ min: 1/64, max: 32 }`: its zoom is screen px per BLOCK (32 px native),
+ *  not per tile (16 px native) -- this file's own `MAX_ZOOM` of 16 would cap
+ *  a GBC fit at half native resolution, which is simply the wrong unit, not
+ *  a deliberate limit. */
+export function computeFit(
+  bounds: { x: number; y: number; width: number; height: number },
+  viewport: Viewport,
+  zoomBounds?: { min: number; max: number },
+): FitResult {
   if (bounds.width <= 0 || bounds.height <= 0 || viewport.w <= 0 || viewport.h <= 0) {
     return { zoom: 1, pan: { x: 0, y: 0 } };
   }
-  const zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.min(viewport.w / bounds.width, viewport.h / bounds.height)));
+  const min = zoomBounds?.min ?? MIN_ZOOM;
+  const max = zoomBounds?.max ?? MAX_ZOOM;
+  const zoom = Math.min(max, Math.max(min, Math.min(viewport.w / bounds.width, viewport.h / bounds.height)));
   return {
     zoom,
     pan: {
@@ -2048,7 +2064,11 @@ function drawTriangle(ctx: CanvasRenderingContext2D, cx: number, cy: number, siz
   ctx.fill();
 }
 
-function drawDiamond(ctx: CanvasRenderingContext2D, cx: number, cy: number, size: number, color: string): void {
+/** Exported (Plan 6b Task 5, additive): `GbcWorldCanvas` draws its own
+ *  conflict badges with this exact helper rather than a copy -- GBC has no
+ *  vertical links, so unlike `drawDiamond`, `drawTriangle` (dive/emerge)
+ *  has no GBC use and is deliberately NOT exported alongside it. */
+export function drawDiamond(ctx: CanvasRenderingContext2D, cx: number, cy: number, size: number, color: string): void {
   ctx.fillStyle = color;
   ctx.beginPath();
   ctx.moveTo(cx, cy - size);

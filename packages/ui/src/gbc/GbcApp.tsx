@@ -4,6 +4,7 @@ import { useGbcGroups } from "./hooks/useGbcGroups.js";
 import { useGbcMap } from "./hooks/useGbcMap.js";
 import { GbcMapCanvas } from "./GbcMapCanvas.js";
 import { GbcMetatilePalette } from "./GbcMetatilePalette.js";
+import { GbcWorldCanvas } from "./GbcWorldCanvas.js";
 import type { GbcTimeOfDay } from "./time.js";
 
 type Mode = "map" | "world";
@@ -41,10 +42,10 @@ export function GbcApp({ root }: GbcAppProps) {
   const [time, setTime] = useState<TimeOfDay>("day");
   const [selected, setSelected] = useState<string | null>(null);
   // Bumped on every tree click, mirroring App.tsx's own selectVersion --
-  // unused by this task's own rendering, but Task 5's GbcWorldCanvas needs a
-  // jumpToken distinct from jumpToMap for a re-click of the same map name
-  // (see App.tsx's own selectVersion doc comment).
-  const [, setSelectVersion] = useState(0);
+  // GbcWorldCanvas's own jumpToken, distinct from jumpToMap so a re-click of
+  // the same map name still jumps (see App.tsx's own selectVersion doc
+  // comment).
+  const [selectVersion, setSelectVersion] = useState(0);
   // The hovered block's metatile id (GbcMapCanvas's own hoveredMetatile
   // callback), driving GbcMetatilePalette's highlight -- reset on a real map
   // switch so a stale highlight from the PREVIOUS map's tileset never
@@ -67,6 +68,21 @@ export function GbcApp({ root }: GbcAppProps) {
     setSelected(name);
     setSelectVersion((v) => v + 1);
     setHoveredMetatileId(null);
+  };
+
+  // GbcWorldCanvas's own single-click selection (Task 5): keeps the sidebar
+  // tree's highlight in sync with whatever was last clicked on the canvas,
+  // the same way clicking a tree row does -- but does NOT bump
+  // selectVersion (a canvas click is not a "jump" request; only a TREE
+  // click is, per the spec's own "tree clicks in World mode jump" rule) and
+  // does NOT switch mode.
+  const selectMapFromWorld = (name: string) => setSelected(name);
+
+  // GbcWorldCanvas's own double-click (Task 5): opens the map in Map view.
+  const openMapFromWorld = (name: string) => {
+    setSelected(name);
+    setHoveredMetatileId(null);
+    setMode("map");
   };
 
   return (
@@ -102,10 +118,13 @@ export function GbcApp({ root }: GbcAppProps) {
         </aside>
         <main className="app__canvas">
           {mode === "world" ? (
-            // Task 5 replaces this with GbcWorldCanvas.
-            <p className="app__canvas-placeholder" data-testid="gbc-world-placeholder">
-              World view (Task 5)
-            </p>
+            <GbcWorldCanvas
+              time={time}
+              jumpToMap={selected}
+              jumpToken={selectVersion}
+              onSelectMap={selectMapFromWorld}
+              onOpenMap={openMapFromWorld}
+            />
           ) : !selected ? (
             <p className="app__canvas-placeholder">Select a map</p>
           ) : map.error ? (

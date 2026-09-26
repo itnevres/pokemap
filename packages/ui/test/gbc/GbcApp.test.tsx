@@ -55,13 +55,18 @@ function imgWithSrc(src: string): HTMLImageElement | undefined {
   return Array.from(document.querySelectorAll("img")).find((i) => i.getAttribute("src") === src);
 }
 
-function makeFetchMock(opts: { groupsFail?: boolean; maps?: Record<string, GbcMapPayload | "fail"> } = {}) {
+const EMPTY_WORLD = { family: "gbc" as const, blockPx: 32 as const, placements: {}, components: [], conflicts: [] };
+
+function makeFetchMock(opts: { groupsFail?: boolean; maps?: Record<string, GbcMapPayload | "fail">; world?: unknown } = {}) {
   return vi.fn((url: string) => {
     if (url === "/api/groups") {
       if (opts.groupsFail) {
         return Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({}) } as Response);
       }
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(GROUPS) } as Response);
+    }
+    if (url === "/api/world") {
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(opts.world ?? EMPTY_WORLD) } as Response);
     }
     const mapMatch = /^\/api\/map\/(.+)$/.exec(url);
     if (mapMatch) {
@@ -168,7 +173,7 @@ describe("GbcApp", () => {
     expect(niteBtn?.getAttribute("aria-pressed")).toBe("true");
   });
 
-  it("the World toggle swaps to the world placeholder", async () => {
+  it("the World toggle swaps to the real GbcWorldCanvas", async () => {
     vi.stubGlobal("fetch", makeFetchMock());
     render(<GbcApp root="/x" />);
     await waitFor(() => expect(screen.getByText("OlivineCity")).toBeTruthy());
@@ -178,8 +183,8 @@ describe("GbcApp", () => {
     expect(worldBtn).toBeTruthy();
     fireEvent.click(worldBtn as HTMLElement);
 
-    const placeholder = screen.getByTestId("gbc-world-placeholder");
-    expect(placeholder.textContent).toBe("World view (Task 5)");
+    expect(document.querySelector(".world-canvas")).toBeTruthy();
+    await waitFor(() => expect(screen.getByText(/0 components · 0 maps · zoom/)).toBeTruthy());
   });
 
   it("switching to World view hides the selected-map status", async () => {
@@ -194,6 +199,69 @@ describe("GbcApp", () => {
     fireEvent.click(worldBtn as HTMLElement);
 
     expect(document.querySelector(".app__status")).toBeNull();
+  });
+
+  // Plan 6b Task 5.
+  const WORLD_ONE = {
+    family: "gbc" as const,
+    blockPx: 32 as const,
+    placements: { OlivineCity: { map: "OlivineCity", x: 0, y: 0, width: 10, height: 10, component: 0 } },
+    components: [{ index: 0, maps: ["OlivineCity"], bounds: { x: 0, y: 0, width: 10, height: 10 } }],
+    conflicts: [],
+  };
+
+  it("a tree click in World mode jumps GbcWorldCanvas there (jumpToMap/jumpToken wiring)", async () => {
+    vi.stubGlobal("fetch", makeFetchMock({ world: WORLD_ONE }));
+    render(<GbcApp root="/x" />);
+    await waitFor(() => expect(screen.getByText("OlivineCity")).toBeTruthy());
+
+    const view = screen.getByRole("group", { name: "View" });
+    fireEvent.click(Array.from(view.querySelectorAll("button")).find((b) => b.textContent === "World") as HTMLElement);
+    await waitFor(() => expect(screen.getByText(/1 components · 1 maps · zoom/)).toBeTruthy());
+
+    fireEvent.click(screen.getByText("OlivineCity"));
+
+    // GbcWorldCanvas's own jump-highlight outline renders once jumpToMap
+    // resolves to a real placement -- proof the jumpToMap/jumpToken props
+    // actually reached it (not just that `selected` changed).
+    await waitFor(() => expect(document.querySelector(".world-canvas__jump-highlight")).toBeTruthy());
+  });
+
+  it("double-clicking a map in World mode opens it in Map view (onOpenMap wiring)", async () => {
+    // jsdom elements are 0x0 by default -- a real (non-zero) viewport is
+    // needed so GbcWorldCanvas's own initial fit runs and OlivineCity's
+    // placement is actually "visible" (culled in otherwise).
+    const originalClientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth");
+    const originalClientHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight");
+    Object.defineProperty(HTMLElement.prototype, "clientWidth", { value: 100, configurable: true });
+    Object.defineProperty(HTMLElement.prototype, "clientHeight", { value: 100, configurable: true });
+    try {
+      vi.stubGlobal("fetch", makeFetchMock({ world: WORLD_ONE, maps: { OlivineCity: mapPayload("OlivineCity") } }));
+      render(<GbcApp root="/x" />);
+      await waitFor(() => expect(screen.getByText("OlivineCity")).toBeTruthy());
+
+      const view = screen.getByRole("group", { name: "View" });
+      fireEvent.click(Array.from(view.querySelectorAll("button")).find((b) => b.textContent === "World") as HTMLElement);
+      // computeFit(10x10 bounds, 100x100 viewport, GBC_ZOOM_BOUNDS): zoom =
+      // min(32, max(1/64, min(10,10))) = 10, pan = {0,0} -- OlivineCity fills
+      // the whole 100x100 viewport, so (50,50) is inside it. Waiting for the
+      // EXACT "31%" (round(10/32*100)) matters: a looser regex matching just
+      // "zoom" is satisfied on the very first paint (zoom still the default
+      // 1, "3%"), before the initial-fit effect (which runs one render
+      // later, once both `world` and a real `viewport` are in) has actually
+      // committed.
+      await waitFor(() => expect(screen.getByText(/1 components · 1 maps · zoom 31%/)).toBeTruthy());
+
+      const canvas = document.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement;
+      canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: 100, bottom: 100, width: 100, height: 100, x: 0, y: 0, toJSON() {} });
+      fireEvent.doubleClick(canvas, { clientX: 50, clientY: 50 });
+
+      await waitFor(() => expect(document.querySelector(".app__status")?.textContent).toBe("OlivineCity"));
+      await waitFor(() => expect(screen.getByText(/tileset TILESET_OLIVINE/)).toBeTruthy());
+    } finally {
+      if (originalClientWidth) Object.defineProperty(HTMLElement.prototype, "clientWidth", originalClientWidth);
+      if (originalClientHeight) Object.defineProperty(HTMLElement.prototype, "clientHeight", originalClientHeight);
+    }
   });
 
   it("shows the family tag", async () => {
