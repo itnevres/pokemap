@@ -21,6 +21,34 @@ export function describeReceived(x: unknown): string {
 }
 
 /**
+ * The non-hook core of `useGuardedFetch` below (fix round, spec review F4):
+ * fetches `url`, throws a real `Error` (never a silent value) on a non-OK
+ * status or a body that fails `guard`, otherwise resolves the guarded
+ * value. Exported so a caller that needs the exact same "fetch, ok-check,
+ * guard, real Error" logic OUTSIDE a hook -- a per-item cache-by-ref fetch
+ * loop, e.g. `GbcWorldCanvas`'s own per-map encounter fetch, which runs
+ * inside a `useEffect`'s `for` loop and can't itself be a second hook call
+ * per iteration -- reuses this instead of hand-rolling the same
+ * fetch->ok->guard->error block a second time (the spec's own "don't
+ * hand-roll another fetch, then guard, then error block" convention).
+ * `useGuardedFetch` itself now just wraps this in `useState`/`useEffect`.
+ */
+export function fetchGuarded<T>(url: string, guard: (x: unknown) => x is T, label?: string): Promise<T> {
+  const effectiveLabel = label ?? url;
+  return fetch(url)
+    .then((r) => {
+      if (!r.ok) throw new Error(`GET ${effectiveLabel} -> ${r.status}`);
+      return r.json() as Promise<unknown>;
+    })
+    .then((d) => {
+      if (!guard(d)) {
+        throw new Error(`GET ${effectiveLabel} returned an unexpected shape: ${describeReceived(d)}`);
+      }
+      return d;
+    });
+}
+
+/**
  * The shared "fetch once, validate the shape, surface every failure
  * visibly" hook shape `useMapGroups.ts` established and `useProjectInfo`/
  * `useGbcGroups` (Task 3) both need identically. Lives here, under the
@@ -70,24 +98,15 @@ export function describeReceived(x: unknown): string {
 export function useGuardedFetch<T>(url: string | null, guard: (x: unknown) => x is T, label?: string): UseGuardedFetchResult<T> {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const effectiveLabel = label ?? url ?? "";
 
   useEffect(() => {
     setData(null);
     setError(null);
     if (url === null) return;
     let cancelled = false;
-    fetch(url)
-      .then((r) => {
-        if (!r.ok) throw new Error(`GET ${effectiveLabel} -> ${r.status}`);
-        return r.json() as Promise<unknown>;
-      })
+    fetchGuarded(url, guard, label)
       .then((d) => {
-        if (cancelled) return;
-        if (!guard(d)) {
-          throw new Error(`GET ${effectiveLabel} returned an unexpected shape: ${describeReceived(d)}`);
-        }
-        setData(d);
+        if (!cancelled) setData(d);
       })
       .catch((e: unknown) => {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e));

@@ -1041,21 +1041,28 @@ async function mountReadyAll(opts: AllFetchOpts, props: Partial<GbcWorldCanvasPr
 }
 
 describe("GbcWorldCanvas: encounters/lenses/spotlight (Plan 6b Task 6)", () => {
-  it("fetches /api/encounters/:map once for each visible map, and does NOT refetch when time changes", async () => {
-    const encMock = vi.fn((_name: string) => [] as unknown[]);
+  it("fetches /api/encounters/:map once for each visible map, does NOT refetch when time changes, and RETAINED data still renders after the switch (F3)", async () => {
+    const encMock = vi.fn((_name: string) => {});
     const fetchMock = vi.fn((url: string) => {
       if (url === "/api/world") return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(WORLD) } as Response);
       const m = /^\/api\/encounters\/(.+)$/.exec(url);
       if (m) {
-        encMock(decodeURIComponent(m[1]!));
-        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ family: "gbc", mapName: m[1], sources: [], defects: [] }) } as Response);
+        const name = decodeURIComponent(m[1]!);
+        encMock(name);
+        // MapA gets a real water source -- if a mutation clears the
+        // encounter cache on a time change (F3's own target: R11), this is
+        // the tint that would silently disappear after the rerender below,
+        // since the fetch effect is keyed on [visible] only and would never
+        // re-populate a cleared cache.
+        const sources = name === "MapA" ? [{ method: "water", chances: [] }] : [];
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ family: "gbc", mapName: name, sources, defects: [] }) } as Response);
       }
       if (url === "/api/coverage") return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(EMPTY_COVERAGE) } as Response);
       return Promise.reject(new Error(`unexpected fetch ${url}`));
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const { rerender } = render(<GbcWorldCanvas time="day" />);
+    const { rerender, container } = render(<GbcWorldCanvas time="day" />);
     await waitFor(() => expect(screen.getByText(/2 components/)).toBeTruthy());
     // Only MapA and MapB are inside the initial fit (Interior is culled) --
     // mirrors the image cache's own "initial fit covers the multi-map
@@ -1063,12 +1070,27 @@ describe("GbcWorldCanvas: encounters/lenses/spotlight (Plan 6b Task 6)", () => {
     await waitFor(() => expect(encMock).toHaveBeenCalledTimes(2));
     expect(encMock.mock.calls.map((c) => c[0]).sort()).toEqual(["MapA", "MapB"]);
 
+    fireEvent.click(screen.getByLabelText(/method lens/i));
+    await waitFor(() => expect(document.querySelectorAll(".world-canvas__lens-tint").length).toBe(1));
+
     rerender(<GbcWorldCanvas time="nite" />);
     await new Promise((r) => setTimeout(r, 20));
     // A time switch must NOT clear/refetch the encounter cache -- it is
     // time-independent (one fetch per map, ever); only the image cache does
     // that.
     expect(encMock).toHaveBeenCalledTimes(2);
+    // F3: the retained data must still RENDER after the switch. A count-only
+    // assertion right after the rerender can't tell a working cache from a
+    // silently-cleared one -- neither `gutterEntries` nor `lensOverlayEntries`
+    // recompute on a time-only rerender (their own deps, `visible`/`pan`/
+    // `zoom`/`encounterVersion`, are all unchanged by `time` alone), so a
+    // stale pre-clear render would look identical either way. A wheel zoom
+    // (changing `zoom`, a real dependency of both memos) forces them to
+    // re-read the cache -- exactly the "blank... until a pan" mechanism the
+    // spec review's own evidence describes.
+    const canvas = container.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement;
+    fireEvent.wheel(canvas, { clientX: 100, clientY: 100, deltaY: -100 });
+    expect(document.querySelectorAll(".world-canvas__lens-tint").length).toBe(1);
   });
 
   it("the Encounters toggle shows a species chip built from the real fetched sources", async () => {

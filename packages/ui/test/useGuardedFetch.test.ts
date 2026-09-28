@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
-import { useGuardedFetch, describeReceived } from "../src/hooks/useGuardedFetch.js";
+import { useGuardedFetch, describeReceived, fetchGuarded } from "../src/hooks/useGuardedFetch.js";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -164,5 +164,31 @@ describe("useGuardedFetch", () => {
 
     box.release?.();
     await waitFor(() => expect(result.current.data).toEqual({ name: "B" }));
+  });
+});
+
+// Fix round (spec review F4): fetchGuarded is the non-hook core useGuardedFetch
+// itself now wraps -- unit-tested directly so a per-item fetch loop (e.g.
+// GbcWorldCanvas's own encounter cache) has its own coverage of the shared
+// fetch->ok->guard->error logic, not just via the hook.
+describe("fetchGuarded", () => {
+  it("resolves the guarded value on a 200 that passes the guard", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve({ name: "A" }) }));
+    await expect(fetchGuarded("/api/a", isThing)).resolves.toEqual({ name: "A" });
+  });
+
+  it("rejects with a real Error naming the URL and status on a non-OK response", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 500, json: () => Promise.resolve({}) }));
+    await expect(fetchGuarded("/api/a", isThing)).rejects.toThrow("GET /api/a -> 500");
+  });
+
+  it("rejects with a real Error naming the received shape when the guard fails", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve({ nope: true }) }));
+    await expect(fetchGuarded("/api/a", isThing)).rejects.toThrow(/unexpected shape/);
+  });
+
+  it("uses label instead of the raw url in its error message when given one", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 404, json: () => Promise.resolve({}) }));
+    await expect(fetchGuarded("/api/a%20b", isThing, "/api/a b")).rejects.toThrow("GET /api/a b -> 404");
   });
 });
