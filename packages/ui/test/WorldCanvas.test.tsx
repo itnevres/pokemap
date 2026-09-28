@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, fireEvent, screen, waitFor, act } from "@testing-library/react";
 import { WorldCanvas } from "../src/components/WorldCanvas.js";
-import { computeFit, UnplacedRail } from "../src/components/WorldCanvas.js";
+import { computeFit, UnplacedRail, levelColorMap } from "../src/components/WorldCanvas.js";
 
 /**
  * jsdom/testing-library's `fireEvent.drop(el, {clientX, clientY, ...})` does
@@ -301,6 +301,34 @@ async function mountReady(fetchMock: ReturnType<typeof vi.fn>) {
   await waitFor(() => expect(stageCtx.clearRect).toHaveBeenCalled());
   return { ...utils, canvas, stageCtx };
 }
+
+// Fix round (spec review F5): levelColorMap had no unit test at all --
+// the only assertion anywhere was that GBC's 2 tints differ from each
+// other, which the divisor mutation (R18: n-1 -> n) and a low/high swap
+// (R7) both survived. Pinned here with exact rgb() strings and named
+// low/high endpoints.
+describe("levelColorMap (pure)", () => {
+  it("colours by percentile rank: the lowest entry gets the low endpoint exactly, the highest gets the high endpoint exactly, the middle is the exact midpoint", () => {
+    const entries = [
+      { mapName: "A", averageLevel: 1 },
+      { mapName: "B", averageLevel: 5 },
+      { mapName: "C", averageLevel: 10 },
+    ];
+    const result = levelColorMap(entries, "#0000ff", "#ff0000");
+    expect(result.get("A")).toBe("rgb(0, 0, 255)"); // the low map -- exact low endpoint
+    expect(result.get("B")).toBe("rgb(128, 0, 128)");
+    expect(result.get("C")).toBe("rgb(255, 0, 0)"); // exact high endpoint
+  });
+
+  it("a single entry gets the midpoint (n<=1 fallback, t=0.5)", () => {
+    const result = levelColorMap([{ mapName: "Solo", averageLevel: 42 }], "#0000ff", "#ff0000");
+    expect(result.get("Solo")).toBe("rgb(128, 0, 128)");
+  });
+
+  it("an empty entries array returns an empty map", () => {
+    expect(levelColorMap([], "#0000ff", "#ff0000").size).toBe(0);
+  });
+});
 
 describe("WorldCanvas", () => {
   // -------------------------------------------------------------------
