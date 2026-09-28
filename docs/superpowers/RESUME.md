@@ -24,7 +24,7 @@ This file holds the state and the accumulated lessons. The prompt for the next s
 | Plan 6: GBC foundation, read-only | **Done and merged 2026-09-25.** See the plan's STATUS banner for the real file map | — |
 | Plan 7: GBC editing | **Next suggested.** Its "Grounding from Plan 6" section is required reading. Tasks 1, 2, 3, 6, 7 (core + CLI) can run in a cloud session; Tasks 4-5 are blocked on 6b | PerfPlus clone (+ pret/pokecrystal for the G5 gate) |
 | 6b: GBC app layer (server + UI, read-only) | **Scoped, not planned.** GBC roadmap §6b is the sketch: one server with a family branch, routes, and the UI's hard-coded GBA assumptions. Without it, a Crystal project can't be opened in the browser | A plan written from §6b. The GBA regression pass now runs in the cloud (see Environments) |
-| 3 remaining GBA follow-up fixes (A/B/C) | Planned, not started | GBA corpus (now available in the cloud) + live browser verify (Chromium is available in the cloud) |
+| 4 remaining GBA follow-up fixes (A/B/C/D) | Planned, not started | GBA corpus (now available in the cloud) + live browser verify (Chromium is available in the cloud) |
 | Plan 3: GBA data editors | Not started, lower priority | Windows machine |
 | Plans 4-5 | Not started / backlog | — |
 
@@ -80,7 +80,7 @@ This file holds the state and the accumulated lessons. The prompt for the next s
 | Plan 1 (29 tasks, done) | `docs/superpowers/plans/2026-08-26-pokemap-plan-1-foundation-world.md` |
 | World View Usability (done) / Dungeon Mode and Warp Tools (done) | `docs/superpowers/plans/2026-09-07-world-view-usability.md`, `2026-09-08-dungeon-mode-and-warp-tools.md` |
 | Plan 2: Editing (19/19 done, plus 6 follow-ups; full TDD-step text as executed) | `docs/superpowers/plans/2026-08-26-pokemap-plan-2-editing.md` |
-| 3 remaining GBA follow-up fixes (not started) | `docs/superpowers/plans/2026-09-23-pokemap-followups-remaining.md` |
+| 4 remaining GBA follow-up fixes (not started) | `docs/superpowers/plans/2026-09-23-pokemap-followups-remaining.md` |
 | Plans 3-5 (GBA; task-level only, not started) | same directory |
 | GBC roadmap: invariants G1-G7, phase/status table §6 | `docs/superpowers/plans/2026-09-23-pokemap-plan-6-gbc-roadmap.md` |
 | Plan 6: GBC foundation (done; STATUS banner holds the real file map) | `docs/superpowers/plans/2026-09-23-pokemap-plan-6-gbc-foundation.md` |

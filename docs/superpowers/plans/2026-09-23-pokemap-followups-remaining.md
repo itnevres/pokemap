@@ -1,11 +1,11 @@
 # PokeMap — Remaining Plan 2 Follow-ups (GBA family)
 
-> **Status (2026-09-25): none of Tasks A-C has started.** Plan 6 (GBC) ran first. Before re-confirming the file:line references below, note:
+> **Status (2026-09-28): none of Tasks A-D has started.** Task D was added 2026-09-28 from Plan 6b Task 4's spec review. Plan 6 (GBC) ran first. Before re-confirming the file:line references below, note:
 > - **Cloud sessions can do these now.** The SessionStart hook provisions the GBA corpus (attach the private `itnevres/pokemon-three-region` to the session), and Chromium is available for the live browser verify. The regression gate is RESUME's cloud baseline: 1,271 pass / 6 known local-state deltas.
 > - **Base branch.** `master`: Plan 2 and its follow-ups were merged via [itnevres/pokemap#1](https://github.com/itnevres/pokemap/pull/1) on 2026-09-25.
 > - **Files touched since.** Plan 6 touched `packages/cli/src/{index,context,args}.ts`, `packages/core/src/load/png.ts` and `packages/core/src/world/connections.ts`, but none of the files these three tasks name.
 
-> **For agentic workers:** REQUIRED SUB-SKILL: `superpowers:subagent-driven-development`, same rigor as every prior Plan 2 task and its own 6 follow-ups (fresh implementer per task, spec-compliance review, code-quality review, fix loops, live-verify). Read `docs/superpowers/RESUME.md` in full first — it has the real current state and the accumulated lessons this document assumes. These 3 tasks are independent of each other and of Plans 6/7 (the new GBC-family work) — safe to execute in any order, on `master`, no worktree, matching this whole project's established convention.
+> **For agentic workers:** REQUIRED SUB-SKILL: `superpowers:subagent-driven-development`, same rigor as every prior Plan 2 task and its own 6 follow-ups (fresh implementer per task, spec-compliance review, code-quality review, fix loops, live-verify). Read `docs/superpowers/RESUME.md` in full first — it has the real current state and the accumulated lessons this document assumes. These 4 tasks are independent of each other and of Plans 6/7 (the new GBC-family work) — safe to execute in any order, on `master`, no worktree, matching this whole project's established convention.
 
 **Origin:** 3 of the 4 background tasks flagged during Plan 2's own 5 follow-ups (a 4th, "add selected-cell highlight to MetatilePalette," already shipped 2026-09-22/23 as follow-up 6). Each was found live, during a DIFFERENT follow-up's own live-verify, and correctly deferred rather than fixed inline at the time. All three have already been read against real current source once (2026-09-22/23) — **re-confirm nothing has drifted before writing literal step code**, per this project's own standing rule, but each task below already carries real file:line references and a worked design, not just a problem description.
 
@@ -124,6 +124,27 @@ const discard = useCallback(async () => {
 
 ---
 
+## Task D: GBA `MapCanvas` StrictMode zoom, hover overflow, and `vite build` CSS comment
+
+**Origin:** Plan 6b Task 4's spec review (`docs/superpowers/task-reports/pokemap-plan-6b-gbc-app-layer/_archive/task-4-spec-review.md`, sections A and B plus its "Side note"; branch `plan-6b-gbc-app-layer` until it merges). The review found the first two bugs in `GbcMapCanvas.tsx`, which was copied from GBA `MapCanvas.tsx`, and reproduced both on GBA live. Task 4 fixed only the GBC copy and deliberately left GBA's `MapCanvas.tsx`, `App.tsx` and the shared `.map-canvas` rule untouched, deferring GBA to this follow-up. The fixed `packages/ui/src/gbc/GbcMapCanvas.tsx` is the reference implementation for D1 and D2.
+
+**D1. StrictMode zoom bug.** `packages/ui/src/components/MapCanvas.tsx`, `applyZoom` (lines 532-542 on `master`), calls `setPan(...)` inside the `setZoom` updater. `packages/ui/src/main.tsx` renders under `<StrictMode>`, which runs updaters twice in development, so the pan is applied twice. In `npm run dev --workspace=@pokemap/ui`, clicking 2× or 4× moves the map off-canvas, and 4× looks blank. A production build is correct (measured: prod pan (−78, −59) vs. a double-applied pan in dev on PalletTown / KantoRoute23).
+- **Fix:** a single `{ zoom, pan }` view state with a pure updater. Extract the zoom-about-pivot math into an exported, unit-tested pure function (mirror `GbcMapCanvas`'s `GbcView` + `zoomAboutPivot`).
+- **Test:** render `<StrictMode><MapCanvas …/></StrictMode>`, click 2× from Fit, then 4×, and pin the exact pan `pivot − (pivot − pan0)·k` from the last draw call. It must fail on the old code (show the red run in the report). jsdom tests do not use StrictMode by default, which is why nothing caught this.
+- **Also:** confirm `WorldCanvas.tsx` has no nested-updater pattern (the review's `grep "setZoom(("` matched only `MapCanvas`; re-run it).
+
+**D2. Hover overflow.** `.map-canvas` (`packages/ui/src/styles.css`, about line 501) is a flex item of `.app__map-editing-body` with the default `min-width: auto`, which resolves to its min-content width. The `white-space: nowrap` hover text in `.map-canvas__status` therefore widens the row, pushes `EventInspector` past the viewport, and the page scrolls horizontally on hover. Measured: PalletTown at a 1280-px window, `document.documentElement.scrollWidth` 1280 → 1384. `overflow: hidden` on the status bar does not help, because the status bar is not the row flex item whose minimum is being resolved.
+- **Fix:** `min-width: 0` on the shared `.map-canvas` rule. That alone clips the end of the hover text, so also keep it legible: truncate with an ellipsis or wrap into a fixed-height strip (mirror the `.gbc-map-canvas` status-strip rules Task 4 added).
+- **Check:** with Playwright, hover the longest realistic status line and assert `document.documentElement.scrollWidth === clientWidth` at 1280×800 and 1024×768. Read the numbers from a script, not from a screenshot.
+
+**D3. `vite build` fails.** lightningcss (default minify) rejects the `*/` inside a CSS comment in `packages/ui/src/styles.css` (line 1272 on `master`, about 1296 on `plan-6b-gbc-app-layer`: `world-canvas__spotlight-*/world-canvas__lens-tint`), which ends the comment early. Reword it (for example `world-canvas__spotlight-* and world-canvas__lens-tint`) so `npm run build --workspace=@pokemap/ui` succeeds.
+
+**Constraints:** GBA behaviour must otherwise stay identical. `npm test` must keep RESUME's "Git state" baseline, with only new tests added. `npm run typecheck` must be clean. Live-verify in the Vite dev server (StrictMode on) against a GBA project (`npx tsx packages/server/src/serve.ts`, with `pokemap.config.json` pointing at a GBA decomp), and take screenshots of Fit/2×/4× and of the hover. Never commit `pokemap.config.json`. If `plan-6b-gbc-app-layer` has merged by then, branch from `master` and reuse the merged `GbcMapCanvas.tsx`. Otherwise read it from that branch.
+
+**Risk:** low. Three small, independent diffs in two files (`MapCanvas.tsx`, `styles.css`), each with a fix already proven on the GBC sibling.
+
+---
+
 ## Suggested order
 
-A → B → C (ascending complexity/risk), independent otherwise — safe to reorder or parallelize across separate sessions if convenient, since none of the three touch overlapping files (A: `server/index.ts` only; B: `core/write/save.ts` only; C: `ui/hooks/useEditSession.ts` + `ui/components/SaveDialog.tsx`).
+A → B → C (ascending complexity/risk), independent otherwise — safe to reorder or parallelize across separate sessions if convenient, since none of the three touch overlapping files (A: `server/index.ts` only; B: `core/write/save.ts` only; C: `ui/hooks/useEditSession.ts` + `ui/components/SaveDialog.tsx`). D (added 2026-09-28) can run any time: it touches `ui/components/MapCanvas.tsx` + `ui/styles.css`. C's design also reads `MapCanvas.tsx`, so if C and D run in parallel, re-confirm C's references after D lands.
