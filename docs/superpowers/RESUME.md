@@ -1,4 +1,4 @@
-# PokeMap: current state (2026-09-25, read first)
+# PokeMap: current state (2026-09-28, read first)
 
 PokeMap is a Porymap-parity map editor with two engine families:
 - **GBA:** pokeemerald-family decomps. Plans 0-5.
@@ -9,7 +9,9 @@ This file holds the state and the accumulated lessons. The prompt for the next s
 ## Git state: read before branching
 
 - **Merged 2026-09-25.** [itnevres/pokemap#1](https://github.com/itnevres/pokemap/pull/1) merged `plan-6-gbc-foundation` into `master` (merge commit `075cefb`, 169 commits): the world-view and dungeon-mode plans, Plan 2 with its 6 follow-ups, Plan 6, the doc refresh, and the cloud SessionStart hook. A merge commit was used rather than a rebase, so every SHA cited in the docs and task reports is still valid. **Branch new work from `master`.**
-- **Verified baseline** (cloud session, 2026-09-25), against GitHub clones of the subject and all 5 reference engines at the SHAs pinned in `.claude/hooks/session-start.sh`:
+- **In progress: `plan-6b-gbc-app-layer`** (Plan 6b, the GBC app layer). It is pushed, with a draft PR. Tasks 1a-5 are done; Task 6 and Task 7 remain. It branches from `master` at `3f76262`. Continue it on that branch; do not branch fresh from `master`.
+- **Branch baseline, re-measured 2026-09-28 in the cloud on `plan-6b-gbc-app-layer` HEAD:** `npm test` gives **1,594 pass / 6 fail / 0 skip**. The 6 failures are the same local-state deltas as on `master` (see below; the list is in `task-reports/pokemap-plan-6b-gbc-app-layer/baseline-fails.txt`), and `npm run typecheck` is clean. On the Windows machine those 6 should pass, because they come from state that only exists there. Measure afresh and treat any other failure as a regression.
+- **Verified `master` baseline** (cloud session, 2026-09-25), against GitHub clones of the subject and all 5 reference engines at the SHAs pinned in `.claude/hooks/session-start.sh`:
   - `npm test` gives **1,271 pass, 0 skip, 6 fail**; `npm run typecheck` is clean; the 559 GBC tests are green.
   - All 6 failures come from local-only state on the Windows machine that git doesn't carry. None is a code defect:
     - (a) `porymap.project.cfg` (Porymap-generated, gitignored) in the subject and in pokefirered. 3 tests.
@@ -22,8 +24,9 @@ This file holds the state and the accumulated lessons. The prompt for the next s
 | Line of work | State | Needs |
 |---|---|---|
 | Plan 6: GBC foundation, read-only | **Done and merged 2026-09-25.** See the plan's STATUS banner for the real file map | — |
-| Plan 7: GBC editing | **Next suggested.** Its "Grounding from Plan 6" section is required reading. Tasks 1, 2, 3, 6, 7 (core + CLI) can run in a cloud session; Tasks 4-5 are blocked on 6b | PerfPlus clone (+ pret/pokecrystal for the G5 gate) |
-| 6b: GBC app layer (server + UI, read-only) | **Scoped, not planned.** GBC roadmap §6b is the sketch: one server with a family branch, routes, and the UI's hard-coded GBA assumptions. Without it, a Crystal project can't be opened in the browser | A plan written from §6b. The GBA regression pass now runs in the cloud (see Environments) |
+| Plan 7: GBC editing | **After 6b.** Its "Grounding from Plan 6" section is required reading. Tasks 1, 2, 3, 6 and 7 (core + CLI) can run at any time; Tasks 4-5 need 6b finished | PerfPlus clone (+ pret/pokecrystal for the G5 gate) |
+| 6b: GBC app layer (server + UI, read-only) | **In progress, 2026-09-28.** Plan: `plans/2026-09-25-pokemap-plan-6b-gbc-app-layer.md`; read its STATUS banner first. The server (all GBC routes), the UI shell, the map view and the world view are done. **Next is Task 6** (encounter lenses, gutter and species spotlight); its executed spec is ready at `task-reports/pokemap-plan-6b-gbc-app-layer/task-6-spec.md`. After it comes Task 7 (close-out) | PerfPlus + the GBA subject; a browser for live-verify |
+| GBA canvas follow-ups, found in 6b Task 4's review | **Not started. Deliberately left out of 6b**, because 6b must not change GBA behaviour. There are three:<br>(1) `MapCanvas.tsx` `applyZoom` calls `setPan` inside a `setZoom` updater, so under `<StrictMode>` (the Vite dev server) every zoom step double-applies the pan, and 4× looks blank;<br>(2) `.map-canvas` lacks `min-width: 0`, so a long hover status widens the page;<br>(3) `vite build` fails on a `*/` inside a CSS comment near `styles.css:1296`.<br>Evidence and root causes: `task-reports/pokemap-plan-6b-gbc-app-layer/_archive/task-4-spec-review.md` A/B. The GBC canvases already carry the fixes to copy (`GbcMapCanvas.tsx` `zoomAboutPivot`, the `gbc-map-canvas` class) | A GBA project + a browser |
 | 3 remaining GBA follow-up fixes (A/B/C) | Planned, not started | GBA corpus (now available in the cloud) + live browser verify (Chromium is available in the cloud) |
 | Plan 3: GBA data editors | Not started, lower priority | Windows machine |
 | Plans 4-5 | Not started / backlog | — |
@@ -38,7 +41,7 @@ This file holds the state and the accumulated lessons. The prompt for the next s
   - writes `pokemap.config.json` with cloud paths and marks it `git update-index --skip-worktree`, so it never shows as modified and can't be committed.
   It takes ~20 s on a fresh container and ~1 s on a re-run.
   - **The GBA subject `itnevres/pokemon-three-region` is PRIVATE.** Select it alongside `itnevres/pokemap` when starting the session, or attach it mid-session and re-run the hook with `CLAUDE_CODE_REMOTE=true .claude/hooks/session-start.sh`. If it is missing, the hook warns, and the GBA corpus test files fail at collection. The GBC suite is unaffected.
-  - **Expected cloud baseline: `npm test` gives 1,271 pass / 6 fail / 0 skip, plus a clean typecheck.** The 6 failures are the local-state deltas (a)-(c) listed under Git state. To make the cloud fully green, do these on the Windows machine:
+  - **Expected cloud baseline on `master`: `npm test` gives 1,271 pass / 6 fail / 0 skip, plus a clean typecheck.** On `plan-6b-gbc-app-layer` it is 1,594 pass / 6 fail (see Git state). The 6 failures are the local-state deltas (a)-(c) listed under Git state. To make the cloud fully green, do these on the Windows machine:
     - commit and push the NavelRock Zygarde resize;
     - `git add -f porymap.project.cfg` in the subject, or accept those 3 as cloud-only skips;
     - commit `.pokemap/world.json`.
@@ -70,6 +73,35 @@ This file holds the state and the accumulated lessons. The prompt for the next s
 - **The coordinator re-running a reviewer's surviving mutations on the final fix commit is cheap.** Several times it replaced a whole extra review round.
 - **Measured "surprises" need an Opus reviewer to decide real-data vs wrong-rule.** Examples: NewBarkTown's no-op roof swap, and Task 11's 2 connection conflicts. Both turned out real, but only independent derivation could establish it.
 
+## Lessons from Plan 6b (2026-09-25/28; new, add to everything above)
+
+- **Never call one React state setter inside another's updater.**
+  - `main.tsx` renders under `<StrictMode>`, which runs updaters twice in dev. So `setZoom(z => { setPan(...) })` applies the pan twice.
+  - **Tell:** zoom/pan is wrong or the canvas is blank only in the Vite dev server, and correct in a production build. Instrument `drawImage`'s destination rect before explaining it.
+  - **Fix:** a single `view = { zoom, pan }` state, plus a StrictMode test that pins the exact pan.
+  - The GBA `MapCanvas` still has this bug (see the follow-ups row above).
+- **Flex children that hold long text need `min-width: 0`.**
+  - **Tell:** a screenshot taken while hovering shows the sidebar cut off on the left.
+  - **Check:** `document.documentElement.scrollWidth === clientWidth` while hovering, at 1280 and 1024 px wide.
+- **An agent's explanation of a visual anomaly can be confidently wrong.**
+  - Task 4's "4× is blank because of a headless canvas size limit" was false. The real cause was the StrictMode double pan. Its screenshot was stale, captured before the fix or before the image loaded.
+  - **Tell:** the explanation contradicted a reviewer's measurement that a 10,496 px destination renders fine.
+  - The coordinator reproduces any such claim with instrumentation before accepting it.
+- **Mutation harnesses restore from `git show HEAD:<file>`.**
+  - Running one over *uncommitted* edits silently discards those edits (this happened in Task 5). Commit before you mutate.
+  - **Anchor drift:** after a refactor, a harness whose anchor no longer matches can *silently skip* a mutation. Task 5's X2 and X12 never ran, and the harness printed nothing for them. Always cross-check the requested IDs against the printed results.
+- **Spec "facts" can be wrong, even from the coordinator.** Task 1a's spec claimed AzaleaTown shares VioletCity's tileset; it is `TILESET_JOHTO_MODERN`. The roof test only discriminated after switching to MahoganyTown. Re-measure corpus facts before pinning them.
+- **Review rhythm that worked:**
+  - The Opus spec review mutates code and runs servers; the Sonnet quality review is strictly read-only. They can run concurrently in one checkout.
+  - The coordinator commits review reports with a pathspec commit (`git commit -- <path>`). A reviewer's in-flight mutation can therefore sit safely in the tree, and the stop hook's "uncommitted changes" prompt must never be answered by committing it.
+- **Sessions die mid-task:** rate limits (5-hour and weekly) and a container restart, several times.
+  - Every agent commits each green step.
+  - On resume: `git status`, `git log`, `git diff --stat`, and check for stray `tsx`/`vite` processes.
+  - Resume the same agent via SendMessage when its context survives. After a container restart it doesn't, so brief a fresh agent from the report and the commits.
+- **Don't use `pkill -f vite`.** It matches your own shell's command line (exit 144). Kill by PID from `ps aux | grep -E "tsx packages/server|node.*vite" | grep -v grep`.
+- **No worktrees in the cloud.** `pokemap.config.json` is skip-worktree, so a fresh worktree gets the committed Windows paths and the corpus tests silently skip. Run tasks sequentially in the one checkout.
+- **Cloud browser:** `import { chromium } from "/opt/node22/lib/node_modules/playwright/index.mjs"` works without `playwright install`.
+
 ---
 
 ## Where everything is
@@ -84,7 +116,9 @@ This file holds the state and the accumulated lessons. The prompt for the next s
 | Plans 3-5 (GBA; task-level only, not started) | same directory |
 | GBC roadmap: invariants G1-G7, phase/status table §6 | `docs/superpowers/plans/2026-09-23-pokemap-plan-6-gbc-roadmap.md` |
 | Plan 6: GBC foundation (done; STATUS banner holds the real file map) | `docs/superpowers/plans/2026-09-23-pokemap-plan-6-gbc-foundation.md` |
-| Plan 7: GBC editing (next; read "Grounding from Plan 6" first) | `docs/superpowers/plans/2026-09-23-pokemap-plan-7-gbc-editing.md` |
+| Plan 6b: GBC app layer (in progress; STATUS banner holds the real file map) | `docs/superpowers/plans/2026-09-25-pokemap-plan-6b-gbc-app-layer.md` |
+| 6b task reports: specs, implementer reports, reviews, screenshots, baseline fails, Task 6's ready spec | `docs/superpowers/task-reports/pokemap-plan-6b-gbc-app-layer/` (done tasks in `_archive/`) |
+| Plan 7: GBC editing (after 6b; read "Grounding from Plan 6" first) | `docs/superpowers/plans/2026-09-23-pokemap-plan-7-gbc-editing.md` |
 | GBC format truth (binding Decisions) | `docs/superpowers/specs/2026-09-23-pokemap-gbc-format-findings.md` |
 | GBA design spec and feature specs | `docs/superpowers/specs/2026-08-26-pokemap-design.md`, `2026-09-07-*.md` |
 | Design system, binding on all UI tasks | `packages/ui/DESIGN.md` |
@@ -93,14 +127,15 @@ This file holds the state and the accumulated lessons. The prompt for the next s
 | Subject decomp, GBC (read-only until Plan 7, G7) | `C:\Programming Projects\pokecrystal-PerfPlus` (cloud: clone, see Environments) |
 | GBC reference corpus for Plan 7's G5 gate | `pret/pokecrystal`. The user will clone it to `C:\Programming Projects\Pokemon Game\refs\pokecrystal`; in a cloud session, clone it from GitHub |
 | pokeyellow (Plan 8+, not yet planned) | `C:\Programming Projects\Pokemon Game\refs\pokeyellow` |
-| Archived task reports (full implementer/reviewer detail) | `docs/superpowers/task-reports/{pokemap-plan-2-editing,pokemap-plan-2-followups,pokemap-plan-6-gbc-foundation}/_archive/` |
+| Archived task reports (full implementer/reviewer detail) | `docs/superpowers/task-reports/{pokemap-plan-2-editing,pokemap-plan-2-followups,pokemap-plan-6-gbc-foundation,pokemap-plan-6b-gbc-app-layer}/_archive/` |
 
 `git log --oneline` is the real story. Each `fix:` commit on top of a `feat:` records exactly what a review found and why. Plan 2's substantive ones: Task 11's rect-race, Task 13's SaveDialog crash and modal-focus regression, Task 14's silent-failure gaps, Task 18's dry-run/refusal asymmetry, Task 19's map-name races, and the live-render follow-up. Plan 6's: Task 8's four located-refusal rounds, and Task 9/11's mutation-pin rounds.
 
 ## Running it
 
 ```bash
-npx tsx packages/server/src/serve.ts        # API on 127.0.0.1:5174 (GBA projects only; no GBC server yet)
+npx tsx packages/server/src/serve.ts        # API on 127.0.0.1:5174 for pokemap.config.json's projectPath (GBA)
+npx tsx packages/server/src/serve.ts --gbc  # the same, for gbc.projectPath (Crystal); a positional root also works, and the family is auto-detected
 npm run dev --workspace=@pokemap/ui         # Vite on 5173, proxies /api
 # GBC, CLI only:
 npx tsx packages/cli/src/index.ts --project <PerfPlus> render NewBarkTown -o out.png [--border 3] [--time nite]
@@ -108,7 +143,7 @@ npx tsx packages/cli/src/index.ts --project <PerfPlus> query|encounters <Map> ; 
 npx tsx packages/cli/src/index.ts --project <PerfPlus> render-world --bbox x,y,w,h [--scale 8] -o world.png
 ```
 
-`.claude/launch.json` lets the browser tooling start the UI by name. **Open
+`.claude/launch.json` lets the browser tooling start `ui`, `server` or `server-gbc` by name. The two servers share port 5174, so only one runs at a time. **Open
 the app and click things, every time, not just once.** Plan 2 caught a real,
 otherwise-invisible bug this way on Task 11 (see below).
 

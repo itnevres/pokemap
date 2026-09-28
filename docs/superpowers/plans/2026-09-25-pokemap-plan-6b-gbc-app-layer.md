@@ -1,5 +1,35 @@
 # PokeMap Plan 6b: GBC App Layer (server + UI, read-only)
 
+> **STATUS (2026-09-28): Tasks 1a, 1b, 2, 3, 4 and 5 are done and reviewed. Task 6 is next; its executed spec is written and ready. Task 7 has not started.**
+>
+> - **Branch:** `plan-6b-gbc-app-layer`. Its PR is draft and not merged.
+> - **Gate at HEAD, cloud:** `npm test` 1,594 pass / 6 fail (exactly `task-reports/.../baseline-fails.txt`), and `npm run typecheck` is clean.
+> - **Every task passed** an Opus spec review, a Sonnet quality review, and a coordinator re-run of its surviving mutations. The reports are in `task-reports/pokemap-plan-6b-gbc-app-layer/_archive/`.
+> - **Task 6 spec:** `task-reports/pokemap-plan-6b-gbc-app-layer/task-6-spec.md`. It has been amended with the lessons from Tasks 3-5; execute it as written.
+> - **Task 7** is the close-out: success criteria 1-4 end to end, the GBA smoke test, docs, and the PR.
+>
+> **Where the task text below disagrees with what was built,** the archived executed specs and the code win. The known differences:
+> - `useProjectInfo`/`useGuardedFetch` live in `packages/ui/src/hooks/`, because they are family-agnostic. GBC hooks live in `packages/ui/src/gbc/hooks/`.
+> - Both GBC PNG routes resolve the map name first (404), then check params (400).
+> - `readBody` is not exported. `normalizeGbcSpecies` moved from the CLI to `core/gbc/analyse/atlas.ts`.
+> - The encounters payload carries `family: "gbc"`.
+>
+> **Real file map, as built:**
+>
+> | File | What it holds |
+> |---|---|
+> | `packages/core/src/family.ts` | adds `ProjectInfo` |
+> | `packages/core/src/gbc/wire.ts` | types only: `GbcMapPayload`, `GbcCollisionInfoEntry`, `GbcWorldPayload`, `GbcEncountersPayload` |
+> | `packages/core/src/gbc/load/{map,tileset,events}.ts`, `project.ts` | `loadGbcGroupNames`, `loadGbcCollisionInfo`, `outOfBoundsEventDefects`, and cached `groupNames()`/`collisionInfo()` |
+> | `packages/core/src/gbc/render/map.ts` | `renderGbcMapMetatile`: a raw metatile thumbnail with the map's own roof and palette |
+> | `packages/core/src/gbc/render/overlays.ts` | grid, collision-quadrant and event overlays, plus `gbcStepInfo` |
+> | `packages/server/src/gbcRoutes.ts` | `createGbcServer`, with thin dispatch and exported payload builders. It serves `/api/{project,groups,map,render,metatile,world,encounters,where,coverage,species}`, and returns 501 for GBA-only routes |
+> | `packages/server/src/index.ts`, `serve.ts` | the family branch, `/api/project` for GBA, and the `--gbc` flag |
+> | `packages/ui/src/Root.tsx`, `main.tsx` | `/api/project` → `<App/>` (GBA, untouched) or `<GbcApp/>` |
+> | `packages/ui/src/hooks/{useGuardedFetch,useProjectInfo}.ts` | the shared guarded fetch, which resets data and error on each URL change |
+> | `packages/ui/src/gbc/{GbcApp,GbcMapCanvas,GbcMetatilePalette,GbcWorldCanvas,guards,time}.tsx/ts` + `gbc/hooks/*` | the GBC shell, map view, palette, world view, and shape guards |
+> | `packages/ui/src/components/WorldCanvas.tsx` | additive only: an optional `computeFit(…, zoomBounds)` argument and an exported `drawDiamond` |
+
 > **For agentic workers:** REQUIRED READING FIRST:
 > - the GBC roadmap (`2026-09-23-pokemap-plan-6-gbc-roadmap.md`): invariants G1-G7, then §6b, the sketch this plan was written from;
 > - the Plan 6 STATUS banner (`2026-09-23-pokemap-plan-6-gbc-foundation.md`), which holds the real GBC file map;

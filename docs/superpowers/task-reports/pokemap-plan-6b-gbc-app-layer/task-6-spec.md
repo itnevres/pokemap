@@ -5,8 +5,8 @@ Encounter lenses, gutter and species spotlight for GBC, inside `GbcWorldCanvas`.
 **Read first:**
 - the plan: Q2 (reuse `LensPanel`/`SpeciesSpotlight` with additive props), Q3 (the time matching rule), Task 6 and criterion 3;
 - `_archive/task-2-*.md`, for the `/api/encounters`, `/api/where`, `/api/coverage` and `/api/species` contracts;
-- Task 5's report;
-- `EncounterGutter.tsx`, `LensPanel.tsx`, `SpeciesSpotlight.tsx`, and `WorldCanvas.tsx` l. 880-1110 (encounter cache, lens tints, spotlight dim).
+- `_archive/task-5-implementer.md`, including its "Fix round 1", plus `_archive/task-5-spec-review.md`. `GbcWorldCanvas` now keeps a single `view = { zoom, pan, fitted }` state and gates culling and loading on `fitted`. Tree jumps come from GbcApp's separate `jumpTarget`; canvas clicks only select. Integrate with that structure; don't reintroduce a second view state.
+- `EncounterGutter.tsx`, `LensPanel.tsx`, `SpeciesSpotlight.tsx`, and `WorldCanvas.tsx`'s `encounterCacheRef` fetch effect, `methodTintFor`, `levelColorByMap`, `lensOverlayEntries` and `spotlightByMap` (search for these names; line numbers drift).
 
 **Ground rules:** as in Task 3. GBA components change **only** where this spec lists an additive change. Every existing GBA test must stay green **unchanged**. That is the proof the defaults preserve GBA behaviour.
 
@@ -37,7 +37,7 @@ Encounter lenses, gutter and species spotlight for GBC, inside `GbcWorldCanvas`.
 
 **`/api/where`** returns bare `GbcSpeciesHit[]`, each with a `mapName`. `/api/species` returns bare names such as `CHIKORITA`.
 
-**`SpeciesSpotlight.tsx:118-123`** only matches `SPECIES_`-prefixed names, so its dropdown never opens against the bare GBC list.
+**`SpeciesSpotlight.tsx`'s `const matches = useMemo(...)`** only matches `SPECIES_`-prefixed names, so its dropdown never opens against the bare GBC list.
 
 **`/api/coverage`:**
 - `levelByMap: [{ mapName, averageLevel }]`, the **unweighted** mean across sources;

@@ -35,7 +35,7 @@
 > | `packages/core/src/gbc/analyse/atlas.ts` | `gbcEncounterSources` / `gbcWhereSpecies` / `gbcCoverage`, with engine-derived probabilities |
 > | `packages/cli/src/gbcCommands.ts` (+ family branch in `index.ts`) | GBC `render`, `query`, `render-world`, `encounters`, `where`, `coverage`. Every other command refuses via `refuseIfGbc` |
 >
-> **Not built in Plan 6, by decision: any server or UI support for GBC.** That is the unplanned "6b" row in the roadmap's §6 phase table.
+> **Not built in Plan 6, by decision: any server or UI support for GBC.** That is Plan 6b (`2026-09-25-pokemap-plan-6b-gbc-app-layer.md`), in progress as of 2026-09-28.
 
 > **For agentic workers:** REQUIRED READING FIRST: `docs/superpowers/plans/2026-09-23-pokemap-plan-6-gbc-roadmap.md` in full — invariants G1-G7 bind every task below, and §3 ("Open verification items") lists unresolved format questions that MUST be resolved (Task 1) before any other task in this plan starts. This plan is written to TASK level, not full TDD-step — re-read each task against the real `pokecrystal-PerfPlus` source and expand to step granularity immediately before executing it, exactly the discipline Plan 0 §1 established for the GBA family's own Plans 2-4.
 
