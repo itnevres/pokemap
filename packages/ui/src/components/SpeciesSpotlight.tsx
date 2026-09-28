@@ -128,12 +128,18 @@ export function SpeciesSpotlight<H extends { mapName?: string } = SpeciesHit>({ 
   // "SPECIES_" from BOTH sides before comparing, rather than only adding one
   // to the query -- GBA's own /api/species list is SPECIES_-prefixed, GBC's
   // is bare ("CHIKORITA"), and this one matcher now serves both without a
-  // family branch. For a GBA (prefixed) list the result is identical to the
-  // old "add SPECIES_ to the query, compare startsWith" logic: stripping the
-  // same fixed prefix from every candidate before a startsWith check can
-  // never change which candidates pass. For a GBC (bare) list, stripping a
-  // prefix that was never there is a no-op, so "chiko" matches "CHIKORITA"
-  // directly.
+  // family branch. For a GBA (prefixed) list this is result-identical to the
+  // old "add SPECIES_ to the query, compare startsWith" logic for every REAL
+  // query (stripping the same fixed prefix from every candidate before a
+  // startsWith check can never change which candidates pass) -- with one
+  // accepted edge case (fix round, spec review F7): typing the literal
+  // "SPECIES_" alone now strips to an empty query and shows no dropdown,
+  // where the old logic would have listed the first 50 species (any species
+  // starts with "SPECIES_"). Typing a bare prefix with nothing after it is
+  // not a real search either way, and the new behaviour (no dropdown) is at
+  // least as reasonable as the old one (every species). For a GBC (bare)
+  // list, stripping a prefix that was never there is a no-op, so "chiko"
+  // matches "CHIKORITA" directly.
   const matches = useMemo(() => {
     const q = query.trim().toUpperCase().replace(/^SPECIES_/, "");
     if (!q) return [];

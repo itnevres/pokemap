@@ -200,6 +200,19 @@ describe("SpeciesSpotlight", () => {
       await waitFor(() => expect(screen.getByText("Pikachu")).toBeTruthy());
     });
 
+    // Fix round (spec review F7): a query that already carries its own
+    // "species_" prefix must still match, now that the matcher strips a
+    // leading SPECIES_ from BOTH the query and each candidate.
+    it("'species_pika' still matches SPECIES_PIKACHU (GBA, prefixed list, prefixed query)", async () => {
+      global.fetch = fetchMockWithSpecies(() => Promise.resolve({ ok: true, json: async () => [] } as Response)) as never;
+      render(<SpeciesSpotlight onHits={() => {}} />);
+      const box = screen.getByRole("combobox");
+      await waitFor(() => expect((global.fetch as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith("/api/species"));
+
+      fireEvent.change(box, { target: { value: "species_pika" } });
+      await waitFor(() => expect(screen.getByText("Pikachu")).toBeTruthy());
+    });
+
     // Plan 6b Task 6 (deliverable 1a): against a BARE (unprefixed) GBC-style
     // species list, "chiko" must match CHIKORITA -- before this task's
     // matcher rewrite, `matches` only ever compared against a
