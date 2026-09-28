@@ -18,7 +18,14 @@ describe("LensPanel", () => {
   });
 
   it("states the finding in plain words with a next action", () => {
-    render(<LensPanel active="empty-maps" onChange={() => {}} summary={{ emptyMaps: 982, unusedSpecies: 12 }} />);
+    // Fix round (spec review F11): onListEmptyMaps is now required for the
+    // "List them" button to render at all -- added here to keep testing
+    // what this test always tested, matching the real GBA call site
+    // (WorldCanvas.tsx always passes onListEmptyMaps={focusEmptyMaps}), the
+    // one necessary edit to a pre-existing test this fix requires.
+    render(
+      <LensPanel active="empty-maps" onChange={() => {}} summary={{ emptyMaps: 982, unusedSpecies: 12 }} onListEmptyMaps={() => {}} />,
+    );
     expect(screen.getByText(/982 maps have no encounters/i)).toBeTruthy();
     expect(screen.getByRole("button", { name: /list them/i })).toBeTruthy();
   });
@@ -124,6 +131,20 @@ describe("LensPanel", () => {
       // empty-maps has no override in legendCopy above -- falls back to the
       // GBA default LEGEND_COPY, interpolating the same summary.
       expect(empty.getByText(/5 maps have no encounters/i)).toBeTruthy();
+    });
+
+    // Fix round (spec review F11): GBC mounts LensPanel with no
+    // onListEmptyMaps handler -- the "List them" button must not render at
+    // all (a visible dead button is worse than none), while every GBA call
+    // site (which always passes the prop) is unaffected.
+    it("hides the 'List them' button when onListEmptyMaps is unset", () => {
+      render(<LensPanel active="empty-maps" onChange={() => {}} summary={{ emptyMaps: 5, unusedSpecies: 3 }} />);
+      expect(screen.queryByRole("button", { name: /list them/i })).toBeNull();
+    });
+
+    it("still shows 'List them' when onListEmptyMaps IS given (GBA default)", () => {
+      render(<LensPanel active="empty-maps" onChange={() => {}} summary={{ emptyMaps: 5, unusedSpecies: 3 }} onListEmptyMaps={() => {}} />);
+      expect(screen.getByRole("button", { name: /list them/i })).toBeTruthy();
     });
   });
 });

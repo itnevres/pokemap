@@ -130,7 +130,12 @@ export function LensPanel({ active, onChange, summary, onListEmptyMaps, methodKe
               ))}
             </ul>
           )}
-          {active === "empty-maps" && (
+          {/* Fix round (spec review F11): hidden entirely when the caller
+              hasn't wired a handler (GBC leaves it unset) -- a visible
+              button that does nothing on click is worse than no button.
+              Additive for GBA: every GBA call site always passes
+              onListEmptyMaps, so this condition is unchanged there. */}
+          {active === "empty-maps" && onListEmptyMaps && (
             <button type="button" className="lens-panel__legend-action" onClick={onListEmptyMaps}>
               List them
             </button>
