@@ -45,6 +45,19 @@ Encounter lenses, gutter and species spotlight for GBC, inside `GbcWorldCanvas`.
 - `unusedSpecies: string[]` (70 of them);
 - `mapsWithEncounters` = 125.
 
+## Coordinator amendments (2026-09-28, Windows session; binding)
+
+**Facts above re-measured on PerfPlus before dispatch; all hold:**
+- `engine/events/fish.asm` `.TimeEncounter`: `cp NITE_F / jr c, .time_species`, with `MORN_F=0, DAY_F=1, NITE_F=2` (`constants/wram_constants.asm`). So morn and day take the day entry.
+- Route30: old-rod source untagged; good/super rod split `day`/`nite`; grass morn ≠ day (morn has LEDYBA, day doesn't); it also has water and headbutt (common/rare).
+- `where dunsparce`: only DarkCaveVioletEntrance. Coverage: `mapsWithEncounters` 125, `unusedSpecies` 70, `mapsWithoutEncounters` 266.
+
+**Swatch slugs.** The GBA key already has swatch CSS for `water`, `fishing` and `rock-smash` (and tokens `--encounter-water/-fishing/-rock-smash`). The GBC `methodKey` reuses those slugs: `water`, `fishing`, `headbutt`, `rock-smash`. Only the `headbutt` swatch and the `--encounter-headbutt` token are new. Don't add a `--fish` swatch. The method tint maps GBC method → token the same way: water → `--encounter-water`, fish → `--encounter-fishing`, headbutt → `--encounter-headbutt`, rock → `--encounter-rock-smash`.
+
+**Live-verify is the coordinator's**, with the in-app browser, after the fix round. The implementer runs tests, typecheck and mutations only, and says so in the report.
+
+**Windows baseline** at `123d89f`: `npm test` 1,600 pass / 0 fail; typecheck clean. (Two CLI tests were Windows-broken since Plan 6 and are fixed in that commit.) One unidentified test failed once in 5 full runs; if you see a failure, rerun it in isolation and name it in the report.
+
 ## Deliverables
 
 ### 1. Additive GBA-component changes (defaults unchanged)
