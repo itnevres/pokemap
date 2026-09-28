@@ -424,6 +424,37 @@ describe("GbcWorldCanvas", () => {
     expect(niteUrls).toEqual(["/api/render/MapA.png?time=nite", "/api/render/MapB.png?time=nite"]);
   });
 
+  it("F4: a day image that finishes loading AFTER a switch to nite is never drawn nor re-cached, and nothing re-requests the old time (fix round, adapted from spec review probe P2; kills mutation X4)", async () => {
+    const { rerender, canvas } = await mountReady();
+    await waitFor(() => expect(FakeImage.instances.length).toBe(2));
+    const dayImages = [...FakeImage.instances];
+
+    FakeImage.instances = [];
+    rerender(<GbcWorldCanvas time="nite" />);
+    await waitFor(() => expect(FakeImage.instances.length).toBe(2));
+    const niteImages = [...FakeImage.instances];
+
+    const stageCtx = ctxByCanvas.get(canvas)!;
+    stageCtx.drawImage.mockClear();
+
+    // Late day onload(s), AFTER the switch to nite -- each one still calls
+    // setCompositeVersion (bumping it, harmlessly, on an orphaned cache
+    // entry no longer reachable via imageCacheRef), which triggers a real
+    // redraw. Nothing is drawn from it yet (the NITE entries aren't loaded
+    // either), so wait a real tick rather than for any drawImage call.
+    for (const img of dayImages) img.onload?.();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(stageCtx.drawImage.mock.calls.some((c) => dayImages.includes(c[0] as never))).toBe(false);
+
+    for (const img of niteImages) img.onload?.();
+    await waitFor(() => expect(stageCtx.drawImage.mock.calls.some((c) => niteImages.includes(c[0] as never))).toBe(true));
+
+    // The day images were NEVER drawn, at any point in this test.
+    expect(stageCtx.drawImage.mock.calls.some((c) => dayImages.includes(c[0] as never))).toBe(false);
+    // And no re-request happened for the old (day) time.
+    expect(FakeImage.instances.length).toBe(2);
+  });
+
   it("culling: only placements intersecting the viewport get Image objects (Interior, far outside, gets none until Fit all)", async () => {
     await mountReady();
     expect(FakeImage.instances.length).toBe(2);
