@@ -186,6 +186,40 @@ describe("SpeciesSpotlight", () => {
       expect(screen.queryByText("Pikachu")).toBeNull();
     });
 
+    // Plan 6b Task 6 (deliverable 1a): pins the GBA (SPECIES_-prefixed list)
+    // behaviour survives the prefix-agnostic matcher rewrite unchanged --
+    // "pika" still matches SPECIES_PIKACHU, the same result the old
+    // "add SPECIES_ to the query" logic gave.
+    it("'pika' still matches SPECIES_PIKACHU (GBA, prefixed list)", async () => {
+      global.fetch = fetchMockWithSpecies(() => Promise.resolve({ ok: true, json: async () => [] } as Response)) as never;
+      render(<SpeciesSpotlight onHits={() => {}} />);
+      const box = screen.getByRole("combobox");
+      await waitFor(() => expect((global.fetch as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith("/api/species"));
+
+      fireEvent.change(box, { target: { value: "pika" } });
+      await waitFor(() => expect(screen.getByText("Pikachu")).toBeTruthy());
+    });
+
+    // Plan 6b Task 6 (deliverable 1a): against a BARE (unprefixed) GBC-style
+    // species list, "chiko" must match CHIKORITA -- before this task's
+    // matcher rewrite, `matches` only ever compared against a
+    // SPECIES_-prefixed candidate, so it could never open against a bare
+    // list at all (the spec's own measured fact).
+    it("matches a bare (unprefixed) GBC-style species list -- 'chiko' shows CHIKORITA", async () => {
+      const bareList = ["CHIKORITA", "CYNDAQUIL", "TOTODILE"];
+      global.fetch = vi.fn((url: string) => {
+        if (url === "/api/species") return Promise.resolve({ ok: true, json: async () => bareList } as Response);
+        return Promise.resolve({ ok: true, json: async () => [] } as Response);
+      }) as never;
+      render(<SpeciesSpotlight onHits={() => {}} />);
+      const box = screen.getByRole("combobox");
+      await waitFor(() => expect((global.fetch as ReturnType<typeof vi.fn>)).toHaveBeenCalledWith("/api/species"));
+
+      fireEvent.change(box, { target: { value: "chiko" } });
+      await waitFor(() => expect(screen.getByText("Chikorita")).toBeTruthy());
+      expect(screen.queryByText("Cyndaquil")).toBeNull();
+    });
+
     it("does not show a species that merely CONTAINS the prefix, only ones that START with it", async () => {
       global.fetch = fetchMockWithSpecies(() => Promise.resolve({ ok: true, json: async () => [] } as Response)) as never;
       render(<SpeciesSpotlight onHits={() => {}} />);

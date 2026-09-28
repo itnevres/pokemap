@@ -1,7 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { SpeciesHit } from "@pokemap/core/src/analyse/coverage.js";
 
-export interface SpeciesSpotlightProps {
+export interface SpeciesSpotlightProps<H extends { mapName?: string } = SpeciesHit> {
   /**
    * Called whenever a real, debounced lookup resolves -- never on mount
    * with the box still empty, so a caller (WorldCanvas) doesn't have to
@@ -16,8 +16,16 @@ export interface SpeciesSpotlightProps {
    *    rather than leaving it looking like no search happened at all.
    *  - otherwise the hit array itself, straight from `/api/where/:species`
    *    (whereSpecies' own contract: sorted by percent, descending).
+   *
+   * `H` (Plan 6b Task 6, additive): generic over the hit shape instead of
+   * hardcoded to GBA's own `SpeciesHit`, so `GbcWorldCanvas` can mount this
+   * unchanged against `GbcSpeciesHit` (which has a required, not optional,
+   * `mapName`, so it satisfies this bound for free) with no cast at the
+   * call site. Defaults to `SpeciesHit`, so every existing GBA call site
+   * (`<SpeciesSpotlight onHits={...} />`, no type argument) is byte-
+   * identical in behaviour to before this change.
    */
-  onHits: (hits: SpeciesHit[] | null) => void;
+  onHits: (hits: H[] | null) => void;
 }
 
 /** Long enough that ordinary typing ("PIKA...CHU") collapses to one
@@ -81,9 +89,9 @@ function displaySpecies(query: string): string {
  * there is simply nothing here that could block it, since a React state
  * update and a `fetch()` are both non-blocking by construction.
  */
-export function SpeciesSpotlight({ onHits }: SpeciesSpotlightProps) {
+export function SpeciesSpotlight<H extends { mapName?: string } = SpeciesHit>({ onHits }: SpeciesSpotlightProps<H>) {
   const [query, setQuery] = useState("");
-  const [hits, setHits] = useState<SpeciesHit[] | null>(null);
+  const [hits, setHits] = useState<H[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [allSpecies, setAllSpecies] = useState<string[]>([]);
@@ -116,11 +124,20 @@ export function SpeciesSpotlight({ onHits }: SpeciesSpotlightProps) {
     };
   }, []);
 
+  // Prefix-agnostic (Plan 6b Task 6, deliverable 1a): strips a leading
+  // "SPECIES_" from BOTH sides before comparing, rather than only adding one
+  // to the query -- GBA's own /api/species list is SPECIES_-prefixed, GBC's
+  // is bare ("CHIKORITA"), and this one matcher now serves both without a
+  // family branch. For a GBA (prefixed) list the result is identical to the
+  // old "add SPECIES_ to the query, compare startsWith" logic: stripping the
+  // same fixed prefix from every candidate before a startsWith check can
+  // never change which candidates pass. For a GBC (bare) list, stripping a
+  // prefix that was never there is a no-op, so "chiko" matches "CHIKORITA"
+  // directly.
   const matches = useMemo(() => {
-    const q = query.trim().toUpperCase();
+    const q = query.trim().toUpperCase().replace(/^SPECIES_/, "");
     if (!q) return [];
-    const withPrefix = q.startsWith("SPECIES_") ? q : `SPECIES_${q}`;
-    return allSpecies.filter((s) => s.startsWith(withPrefix)).slice(0, 50);
+    return allSpecies.filter((s) => s.replace(/^SPECIES_/, "").startsWith(q)).slice(0, 50);
   }, [query, allSpecies]);
 
   useEffect(() => {
@@ -185,7 +202,7 @@ export function SpeciesSpotlight({ onHits }: SpeciesSpotlightProps) {
       fetch(`/api/where/${encodeURIComponent(request.species)}`)
         .then((r) => {
           if (!r.ok) throw new Error(`GET /api/where/${request.species} -> ${r.status}`);
-          return r.json() as Promise<SpeciesHit[]>;
+          return r.json() as Promise<H[]>;
         })
         .then((data) => {
           // Review fix: without this guard, a response for a request the
