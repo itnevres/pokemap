@@ -1,5 +1,6 @@
 import type { ProjectInfo } from "@pokemap/core/src/family.js";
-import type { GbcMapPayload, GbcWorldPayload } from "@pokemap/core/src/gbc/wire.js";
+import type { GbcMapPayload, GbcWorldPayload, GbcEncountersPayload } from "@pokemap/core/src/gbc/wire.js";
+import type { GbcCoverage } from "@pokemap/core/src/gbc/analyse/atlas.js";
 import type { MapGroupsData } from "../components/MapTree.js";
 
 /**
@@ -137,6 +138,58 @@ export function isGbcWorldPayload(x: unknown): x is GbcWorldPayload {
 
   if (!Array.isArray(x.components)) return false;
   if (!Array.isArray(x.conflicts)) return false;
+
+  return true;
+}
+
+/**
+ * `GET /api/encounters/:map`'s shape (Task 2's own `GbcEncountersPayload`,
+ * Plan 6b Task 6). `family` must be the exact literal `"gbc"` -- GBA's own
+ * `/api/encounters/:map` serves the identical URL pattern with a
+ * structurally different `{ mapName, mapId, methods }` shape and no
+ * `family` tag at all (`wire.ts`'s own doc comment on `GbcEncountersPayload`
+ * for the "same URL, two shapes" history), so this is also what rejects a
+ * GBA-shaped payload reaching a GBC canvas by mistake (mutation check #8).
+ * `sources` is checked only as an array -- "trust the rest, guard what you
+ * index by" (this file's own established posture, `isGbcWorldPayload`'s own
+ * doc comment): every reader of `sources` (`GbcEncounterGutter`,
+ * `methodTint`) only ever reads `.method`/`.chances` off entries it already
+ * knows came from the real `gbcEncounterSources` builder, never off
+ * arbitrary user input.
+ */
+export function isGbcEncountersPayload(x: unknown): x is GbcEncountersPayload {
+  if (!isRecord(x)) return false;
+  if (x.family !== "gbc") return false;
+  if (!Array.isArray(x.sources)) return false;
+  return true;
+}
+
+/**
+ * `GET /api/coverage`'s shape (`gbcCoverage`'s own `GbcCoverage`, Plan 6b
+ * Task 6). Unlike `GbcWorldPayload`/`GbcEncountersPayload`, this route's
+ * response carries no `family` tag -- GBA's own `/api/coverage` (a
+ * structurally different `Coverage` shape) is never reachable from the same
+ * server process a GBC one is (`gbcRoutes.ts`'s dispatch is mutually
+ * exclusive with GBA's `index.ts`), so there is no "same URL, two shapes"
+ * ambiguity here to disambiguate with a tag the way the other two routes
+ * need to. Checks only the 3 fields `GbcWorldCanvas`'s own lenses actually
+ * read (`levelByMap` for the level-curve tint, `mapsWithoutEncounters`/
+ * `unusedSpecies` for `LensPanel`'s own summary counts) -- the same "guard
+ * what you index by" posture every other guard in this file already takes;
+ * `mapsWithEncounters`/`sourcesByMethod`/`fishGroupWithoutWater`/`defects`
+ * are never read by anything this task adds.
+ */
+export function isGbcCoveragePayload(x: unknown): x is GbcCoverage {
+  if (!isRecord(x)) return false;
+
+  if (!Array.isArray(x.mapsWithoutEncounters) || !x.mapsWithoutEncounters.every((v) => typeof v === "string")) return false;
+  if (!Array.isArray(x.unusedSpecies) || !x.unusedSpecies.every((v) => typeof v === "string")) return false;
+
+  if (!Array.isArray(x.levelByMap)) return false;
+  for (const e of x.levelByMap) {
+    if (!isRecord(e)) return false;
+    if (typeof e.mapName !== "string" || typeof e.averageLevel !== "number") return false;
+  }
 
   return true;
 }

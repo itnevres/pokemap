@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { isProjectInfo, isMapGroupsData, isGbcMapPayload, isGbcWorldPayload } from "../../src/gbc/guards.js";
+import {
+  isProjectInfo,
+  isMapGroupsData,
+  isGbcMapPayload,
+  isGbcWorldPayload,
+  isGbcEncountersPayload,
+  isGbcCoveragePayload,
+} from "../../src/gbc/guards.js";
 import type { GbcMapPayload, GbcWorldPayload } from "@pokemap/core/src/gbc/wire.js";
 
 describe("isProjectInfo", () => {
@@ -268,5 +275,87 @@ describe("isGbcWorldPayload", () => {
     expect(isGbcWorldPayload({ ...validGbcWorldPayload(), conflicts: {} })).toBe(false);
     expect(isGbcWorldPayload({ ...validGbcWorldPayload(), conflicts: "x" })).toBe(false);
     expect(isGbcWorldPayload({ ...validGbcWorldPayload(), conflicts: undefined })).toBe(false);
+  });
+});
+
+describe("isGbcEncountersPayload", () => {
+  const VALID = { family: "gbc", mapName: "Route29", sources: [{ method: "grass", time: "morn", chances: [] }], defects: [] };
+
+  it("accepts a real-shaped payload", () => {
+    expect(isGbcEncountersPayload(VALID)).toBe(true);
+  });
+
+  it("accepts an empty sources array (a map with no encounters)", () => {
+    expect(isGbcEncountersPayload({ ...VALID, sources: [] })).toBe(true);
+  });
+
+  it("rejects a non-object", () => {
+    expect(isGbcEncountersPayload(null)).toBe(false);
+    expect(isGbcEncountersPayload(undefined)).toBe(false);
+    expect(isGbcEncountersPayload([])).toBe(false);
+    expect(isGbcEncountersPayload("x")).toBe(false);
+  });
+
+  it("rejects family !== gbc", () => {
+    expect(isGbcEncountersPayload({ ...VALID, family: "gba" })).toBe(false);
+    expect(isGbcEncountersPayload({ ...VALID, family: undefined })).toBe(false);
+  });
+
+  it("rejects a non-array sources", () => {
+    expect(isGbcEncountersPayload({ ...VALID, sources: {} })).toBe(false);
+    expect(isGbcEncountersPayload({ ...VALID, sources: "x" })).toBe(false);
+    expect(isGbcEncountersPayload({ ...VALID, sources: undefined })).toBe(false);
+  });
+
+  // Mutation check #8: a GBA-shaped /api/encounters/:map response
+  // ({ mapName, mapId, methods }, no family tag, no sources array) must be
+  // rejected outright, not accepted as if it were the GBC shape.
+  it("rejects a GBA-shaped { mapName, mapId, methods } payload (mutation check #8)", () => {
+    expect(isGbcEncountersPayload({ mapName: "Route29", mapId: 29, methods: [] })).toBe(false);
+  });
+});
+
+describe("isGbcCoveragePayload", () => {
+  const VALID = {
+    mapsWithEncounters: 125,
+    mapsWithoutEncounters: ["PlayersHouse1F"],
+    sourcesByMethod: { grass: 288, water: 62, fish: 40, headbutt: 10, rock: 5 },
+    levelByMap: [{ mapName: "Route29", averageLevel: 3.5 }],
+    unusedSpecies: ["CELEBI"],
+    fishGroupWithoutWater: [],
+    defects: [],
+  };
+
+  it("accepts a real-shaped payload", () => {
+    expect(isGbcCoveragePayload(VALID)).toBe(true);
+  });
+
+  it("rejects a non-object", () => {
+    expect(isGbcCoveragePayload(null)).toBe(false);
+    expect(isGbcCoveragePayload(undefined)).toBe(false);
+    expect(isGbcCoveragePayload([])).toBe(false);
+    expect(isGbcCoveragePayload("x")).toBe(false);
+  });
+
+  it("rejects a non-string-array mapsWithoutEncounters", () => {
+    expect(isGbcCoveragePayload({ ...VALID, mapsWithoutEncounters: [1, 2] })).toBe(false);
+    expect(isGbcCoveragePayload({ ...VALID, mapsWithoutEncounters: "x" })).toBe(false);
+    expect(isGbcCoveragePayload({ ...VALID, mapsWithoutEncounters: undefined })).toBe(false);
+  });
+
+  it("rejects a non-string-array unusedSpecies", () => {
+    expect(isGbcCoveragePayload({ ...VALID, unusedSpecies: [1, 2] })).toBe(false);
+    expect(isGbcCoveragePayload({ ...VALID, unusedSpecies: undefined })).toBe(false);
+  });
+
+  it("rejects a non-array levelByMap", () => {
+    expect(isGbcCoveragePayload({ ...VALID, levelByMap: {} })).toBe(false);
+    expect(isGbcCoveragePayload({ ...VALID, levelByMap: undefined })).toBe(false);
+  });
+
+  it("rejects a levelByMap entry missing mapName or averageLevel", () => {
+    expect(isGbcCoveragePayload({ ...VALID, levelByMap: [{ averageLevel: 3.5 }] })).toBe(false);
+    expect(isGbcCoveragePayload({ ...VALID, levelByMap: [{ mapName: "Route29", averageLevel: "3.5" }] })).toBe(false);
+    expect(isGbcCoveragePayload({ ...VALID, levelByMap: [{ mapName: 5, averageLevel: 3.5 }] })).toBe(false);
   });
 });
