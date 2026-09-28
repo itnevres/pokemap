@@ -165,3 +165,41 @@ The coordinator caught that `e1d39d7`'s F11 fix edited a pre-existing GBA `LensP
 - `git status --short`: clean.
 
 **Live-verify: still the coordinator's**, unchanged from the original report's note.
+
+
+## Coordinator verification (2026-09-28, Windows)
+
+**Baseline before the task.** `npm test` first gave 1,593 pass / 7 fail. The 6 cloud-only failures passed here, as expected. The 7 new failures were Windows-only test bugs in `packages/cli/test` that had been on `master` since Plan 6: `spawnSync("npx")` can't spawn a `.cmd` shim without a shell, and a regex was built from a backslash path. Fixed in `123d89f` (test-only). Baseline after the fix: **1,600 / 0**. One unidentified test failed once in 5 full runs and never recurred.
+
+**Mutations re-run on the final fix commit `f5c9015`** (harness `scratchpad/coord-mut.cjs`: exactly one anchor match required, restore from `git show HEAD:`, tree checked clean after each):
+- 28 of 28 ran and **all 28 were KILLED**: I1-I8, R1-R18, plus F1 (`conditional` dropped from `rowKey`) and F11 (`onListEmptyMaps` prop dropped).
+- I7, R4 and R13 were re-anchored to the fix round's `isBuffedMethod` and `fetchGuarded`.
+
+**F11 correction.** The implementer's first F11 edited a pre-existing GBA test in `LensPanel.test.tsx`, which breaks the "existing GBA tests pass unchanged" rule. It was reverted (`0be8111`), and the GBC "List them" button got a real `focusEmptyMaps` instead (`f5dd849`). `LensPanel.tsx` and its test are byte-identical to the pre-task state, apart from the additive props.
+
+**GBA follow-up #3 pulled into 6b (user decision, `5629602`).** Live-verify found that the `*/` inside the styles.css comment above `.species-spotlight` does more than break `vite build`. It silently drops the `.species-spotlight { position: relative }` rule, so the dropdown anchored to the page at (0, 804): off-screen, and adding page scroll. This was true in GBA since `b9eeda5` and in GBC now.
+- Fix: a one-comment edit.
+- New `packages/ui/test/styles.test.ts` parses the sheet strictly with lightningcss and pins the rule. It was red before the fix and is green after.
+- `vite build` now passes.
+- GBA follow-ups #1 and #2 remain out of scope.
+
+**Live verify:** in-app browser + Playwright MCP, 1280×800, `--gbc` server + Vite, screenshots in `screens/`, each one looked at.
+
+| Check | Evidence | Result |
+|---|---|---|
+| Method lens tints water/fish/headbutt/rock, never grass | `task-6-method-lens.png`. DOM count at Fit all: water 62, fishing 8, headbutt 22. The expected counts, independently computed in-page from `/api/encounters` for all 125 maps with the water>fish>headbutt>rock precedence, are identical. None of the 33 grass-only maps is tinted | ✅ |
+| Gutter grass rows change Day → Morn | `task-6-gutter-route30-day.png` / `-morn.png`. Every `Grass · day` row becomes `Grass · morn`, and the species chips differ (Morn adds Ledyba; `+1 more` overflow) | ✅ |
+| Fish rows tagged `day` also show at Morn | The Morn label list still contains `Fish · Good Rod · day` / `Fish · Super Rod · day`; `Fish · Old Rod` is untagged and always shows | ✅ |
+| Spotlight: "dunsparce" → dropdown → exactly DarkCaveVioletEntrance | `task-6-spotlight-dropdown.png` (the option "Dunsparce" sits directly under the box). `task-6-spotlight-dunsparce.png`: 390 dimmed + 1 hit = 391 maps, and hovering the hit reads `DarkCaveVioletEntrance · component #84` | ✅ |
+| Level-curve lens | `task-6-level-curve.png`: 125 tints (= `mapsWithEncounters`), 101 distinct colours, GBC legend copy exact | ✅ |
+| Headbutt hue (quality Q2) | In the gutter and legend, the violet `--encounter-headbutt` reads clearly apart from the indigo fish | ✅ closed |
+| No horizontal page scroll | `scrollWidth === clientWidth` (1280) while the gutter is on; `scrollHeight === clientHeight` (800) with the dropdown open, after the CSS fix | ✅ |
+| GBA smoke | `task-6-gba-map-smoke.png` (Route29 opens, map toolbar intact). `task-6-gba-world-smoke.png` (gutter icons, method lens with the GBA key "Water (surfing) / Fishing / Rock Smash", unchanged). `task-6-gba-spotlight-dropdown-fixed.png`: "pika" → Pikachu, dropdown at (529, 84) | ✅ |
+
+**Observed, not changed (the same in GBA, so outside 6b):**
+- In GBA, the open lens legend popover covers the Encounters toggle. It has to be closed first.
+- At mid zoom, gutter strips of adjacent maps overlap each other, in both families.
+
+**Harness artifact, investigated:** twice the spotlight dropdown closed and the value became `DUNSPARCE` between Playwright MCP calls. An event logger caught a pointerdown/mousedown/click on the option within 1 ms, which is synthetic CDP input and not app code. `pick()` is reachable only by click or Enter. It didn't reproduce inside a single call (3 of 3 clean), so the final captures were each done in one call.
+
+**Final gate at `5629602`:** `npm test` **1,679 pass / 0 fail** (1,600 + 77 Task 6 + 2 styles). Typecheck clean. Ports 5173 and 5174 free.
