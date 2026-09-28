@@ -55,6 +55,18 @@
   --encounter-water: #06b6d4;
   --encounter-rock-smash: #a8763c;
   --encounter-fishing: #6366f1;
+  /* GBC-only method, Plan 6b Task 6 (coordinator amendment: only this token
+     and its swatch are new -- the other 3 GBC method-key slugs, water/
+     fishing/rock-smash, reuse the tokens directly above). Checked against
+     every existing hue in this file's palette (land ~84°, water/selection
+     ~189°, rock-smash ~30°, fishing ~239°, warn ~38°, danger ~0°, elevation
+     blue/orange ~217°/24°, event object/warp/coord/bg ~130°/45°/292°/206°,
+     connection-1..8 ~292°/156°/24°/217°/48°/329°/174°/258°) -- violet ~271°
+     sits in the one clear gap between the blue/indigo cluster (~217-258°)
+     and the purple/pink cluster (~292-329°), and is never simultaneously
+     on screen with either connection-line group (GBA-only, dungeon mode) or
+     event-coord (Map view only, never the World view this token paints in). */
+  --encounter-headbutt: #a855f7;
 
   /* Species spotlight (Task 29): darkens every non-matching map so the
      hits (their own outline + badge, not a colour of their own) read as
@@ -1178,6 +1190,15 @@ input {
   background: var(--encounter-fishing);
 }
 
+/* GBC-only (Plan 6b Task 6): GbcEncounterGutter's own headbutt row/legend
+   swatch -- the other 4 GBC method slugs it uses (land for grass, water,
+   fishing for fish, rock-smash for rock) reuse the 4 rules already above,
+   since those methods are the same real-world concept GBA's own encounter
+   data already has a colour for. */
+.encounter-gutter__legend-swatch--headbutt {
+  background: var(--encounter-headbutt);
+}
+
 .encounter-gutter__legend-hint {
   margin: 0;
   padding-top: var(--space-2);
@@ -1250,6 +1271,48 @@ input {
 
 .encounter-gutter__method-tag--fishing {
   background: var(--encounter-fishing);
+}
+
+/* GBC-only (Plan 6b Task 6): see the legend-swatch--headbutt rule above. */
+.encounter-gutter__method-tag--headbutt {
+  background: var(--encounter-headbutt);
+}
+
+/* GBC-only (Plan 6b Task 6): GbcEncounterGutter's own species chip -- text,
+   not an icon (GBC has no per-species icon art, unlike GBA's own
+   .encounter-gutter__icon), so this is a new leaf class under the same
+   .encounter-gutter__* family rather than a reuse of .encounter-gutter__icon
+   itself, which is a fixed 20x20 image button that a text label wouldn't
+   fit. Same hover/focus treatment as .encounter-gutter__icon, sized by its
+   own text instead of a fixed square. */
+.encounter-gutter__chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px var(--space-1);
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  cursor: pointer;
+  pointer-events: auto;
+  font-family: var(--font-data);
+  font-size: var(--text-2xs);
+  color: var(--text-primary);
+  white-space: nowrap;
+  transition: border-color 150ms ease-out;
+}
+
+.encounter-gutter__chip:hover,
+.encounter-gutter__chip:focus-visible {
+  border-color: var(--focus-ring);
+}
+
+/* GBC-only (Plan 6b Task 6): a row's own encounterRate/biteChance, in muted
+   data type -- "12.5%" per the spec's own example. */
+.encounter-gutter__rate {
+  font-family: var(--font-data);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  white-space: nowrap;
 }
 
 .encounter-gutter__icons {
@@ -1540,6 +1603,13 @@ input {
 
 .lens-panel__legend-swatch--rock-smash {
   background: var(--encounter-rock-smash);
+}
+
+/* GBC-only (Plan 6b Task 6): the method lens's headbutt swatch, passed via
+   LensPanel's own additive `methodKey` prop -- see --encounter-headbutt's
+   own doc comment above for the colour-distinctness check. */
+.lens-panel__legend-swatch--headbutt {
+  background: var(--encounter-headbutt);
 }
 
 .lens-panel__legend-action {
