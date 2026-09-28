@@ -28,7 +28,7 @@ GBC gets its own encounter gutter, coverage lenses (level-curve/empty-maps/metho
 - `packages/ui/src/gbc/guards.ts` — `isGbcEncountersPayload`, `isGbcCoveragePayload`.
 - `packages/ui/src/gbc/hooks/useGbcCoverage.ts` (new).
 - `packages/ui/src/gbc/GbcWorldCanvas.tsx` — encounter cache/fetch effect, `gutterEntries`/`lensOverlayEntries`/`spotlightOverlayEntries` memos, exported `methodTint`, toolbar wiring, overlay JSX.
-- Tests: `SpeciesSpotlight.test.tsx` (+2), `LensPanel.test.tsx` (+3), `guards.test.ts` (+13), `useGbcCoverage.test.ts` (new, 4), `GbcEncounterGutter.test.tsx` (new, 19), `GbcWorldCanvas.test.tsx` (+19: 11 pure `methodTint`, 8 integration).
+- Tests: `SpeciesSpotlight.test.tsx` (+2), `LensPanel.test.tsx` (+3), `guards.test.ts` (+12, fixed from the original's inconsistent "+13" -- see Fix round 1, F12), `useGbcCoverage.test.ts` (new, 4), `GbcEncounterGutter.test.tsx` (new, 19), `GbcWorldCanvas.test.tsx` (+19: 11 pure `methodTint`, 8 integration).
 
 ## Design decisions / deviations
 
