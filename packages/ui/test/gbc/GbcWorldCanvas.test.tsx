@@ -482,6 +482,45 @@ describe("GbcWorldCanvas", () => {
     expect(srcs).toEqual(["/api/render/MapA.png?time=day", "/api/render/MapB.png?time=day"]);
   });
 
+  it("LOD: the downscaled small buffer is drawn once zoom drops below 8 px/block (fix round F6, kills mutation X5)", async () => {
+    const { canvas } = await mountReady(); // fit zoom = 10
+    for (const img of FakeImage.instances) img.onload?.(); // load both, creating .small buffers
+    const stageCtx = ctxByCanvas.get(canvas)!;
+    stageCtx.drawImage.mockClear();
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: 200, bottom: 200, width: 200, height: 200, x: 0, y: 0, toJSON() {} });
+
+    // Zoom out below the threshold: 10 -> 8.33 (still >=8) -> 6.94 (<8).
+    fireEvent.wheel(canvas, { clientX: 100, clientY: 100, deltaY: 100 });
+    fireEvent.wheel(canvas, { clientX: 100, clientY: 100, deltaY: 100 });
+    await waitFor(() => expect(screen.getByText(/zoom 22%/)).toBeTruthy()); // round(6.94/32*100)
+
+    // A `small` LOD buffer is a plain HTMLCanvasElement, unlike the `img`
+    // path's FakeImage instances -- this is what actually distinguishes the
+    // two draw paths at the call-site level.
+    await waitFor(() => expect(stageCtx.drawImage.mock.calls.some((c) => c[0] instanceof HTMLCanvasElement)).toBe(true));
+  });
+
+  it("LOD buffer is sized at 8 px/block (32 native * 0.25), not GBA's 16 (fix round F6, kills mutation X6)", async () => {
+    const originalCreateElement = document.createElement.bind(document);
+    const created: HTMLCanvasElement[] = [];
+    const spy = vi.spyOn(document, "createElement").mockImplementation(((tag: string) => {
+      const el = originalCreateElement(tag);
+      if (tag === "canvas") created.push(el as HTMLCanvasElement);
+      return el;
+    }) as typeof document.createElement);
+    try {
+      await mountReady(); // MapA/MapB are 10x10 blocks each
+      for (const img of FakeImage.instances) img.onload?.();
+      // 10 blocks * 32 native px/block * 0.25 LOD_SCALE = 80. GBA's own 16
+      // px/tile would instead give 10*16*0.25=40 -- a mutation to that
+      // value produces canvases of the WRONG size, never 80.
+      const smalls = created.filter((c) => c.width === 80 && c.height === 80);
+      expect(smalls.length).toBeGreaterThan(0);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   // -------------------------------------------------------------------
   // Conflict badges + tooltip.
   // -------------------------------------------------------------------
@@ -506,6 +545,23 @@ describe("GbcWorldCanvas", () => {
       fireEvent.mouseMove(canvas, { clientX: 165, clientY: 100 }); // far from the badge
       await waitFor(() => expect(screen.queryByRole("tooltip")).toBeNull());
     });
+
+    it("the badge colour is read from --danger specifically, not --accent (fix round F6, kills mutation X7)", async () => {
+      const originalGetComputedStyle = window.getComputedStyle;
+      window.getComputedStyle = ((_el: Element) => ({
+        getPropertyValue: (prop: string) => (prop === "--danger" ? "rgb(9,9,9)" : ""),
+      })) as typeof window.getComputedStyle;
+      try {
+        const { stageCtx } = await mountReady({}, CONFLICT_WORLD);
+        // jsdom itself has no real custom-property resolution (both --danger
+        // and --accent would read as "" there), so this stubs
+        // getComputedStyle directly to discriminate exactly which property
+        // NAME the draw effect asks for, via what colour ends up drawn.
+        await waitFor(() => expect(stageCtx.fillStyle).toBe("rgb(9,9,9)"));
+      } finally {
+        window.getComputedStyle = originalGetComputedStyle;
+      }
+    });
   });
 
   // -------------------------------------------------------------------
@@ -522,6 +578,18 @@ describe("GbcWorldCanvas", () => {
 
     fireEvent.mouseLeave(canvas);
     expect(await screen.findByText(/Hover the world/i)).toBeTruthy();
+  });
+
+  it("hover shows width×HEIGHT, not width×width, for a non-square placement (fix round F6; kills mutation X17)", async () => {
+    // Every placement in the default WORLD fixture is square (10x10), which
+    // can't discriminate a width/width mixup -- Route17 (30x40) can.
+    const { canvas } = await mountReady({}, CONFLICT_WORLD);
+    // Fit: zoom 5, pan {25,0}. Route17 (0,0,30,40) -> screen rect [25,175]x[0,200].
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: 200, bottom: 200, width: 200, height: 200, x: 0, y: 0, toJSON() {} });
+    fireEvent.mouseMove(canvas, { clientX: 100, clientY: 100 });
+
+    const status = await screen.findByText(/Route17/);
+    expect(status.textContent).toBe("Route17 · component #0 (3 maps) · 30×40 blocks");
   });
 
   it("click selects (onSelectMap) and draws a --overlay-selection outline; a plain click on empty space clears it", async () => {
@@ -548,6 +616,42 @@ describe("GbcWorldCanvas", () => {
     fireEvent.click(canvas, { clientX: 40, clientY: 40 }); // the browser's own trailing click
 
     expect(onSelectMap).not.toHaveBeenCalled();
+  });
+
+  it("dragging the mouse right/down pans the view right/down, not inverted (fix round F6; kills mutation X21)", async () => {
+    const { canvas } = await mountReady();
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: 200, bottom: 200, width: 200, height: 200, x: 0, y: 0, toJSON() {} });
+    fireEvent.click(canvas, { clientX: 50, clientY: 100 }); // selects MapA, to read pan off its outline
+    const outline = () => document.querySelector(".world-canvas__selection-outline") as HTMLElement;
+    await waitFor(() => expect(outline()).toBeTruthy());
+    const leftBefore = parseFloat(outline().style.left), topBefore = parseFloat(outline().style.top);
+
+    fireEvent.mouseDown(canvas, { clientX: 0, clientY: 0, button: 0 });
+    fireEvent.mouseMove(canvas, { clientX: 30, clientY: 20 }); // drag right+down
+    fireEvent.mouseUp(canvas);
+
+    await waitFor(() => {
+      expect(parseFloat(outline().style.left) - leftBefore).toBe(30);
+      expect(parseFloat(outline().style.top) - topBefore).toBe(20);
+    });
+  });
+
+  it("a double-click that ends a real drag does not open the map (fix round F6; kills mutation X15)", async () => {
+    const onOpenMap = vi.fn();
+    const { canvas } = await mountReady({ onOpenMap });
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: 200, bottom: 200, width: 200, height: 200, x: 0, y: 0, toJSON() {} });
+
+    // The drag/double-click END POINT (50,100) maps to world (5,5) --
+    // squarely inside MapA (0,0,10,10) -- so a double-click landing there
+    // WOULD call onOpenMap if the drag guard didn't block it; a point that
+    // hits no placement at all can't discriminate the guard's own mutation
+    // (X15) from ordinary "nothing was under the cursor" behaviour.
+    fireEvent.mouseDown(canvas, { clientX: 10, clientY: 60, button: 0 });
+    fireEvent.mouseMove(canvas, { clientX: 50, clientY: 100 }); // real movement while dragging
+    fireEvent.mouseUp(canvas);
+    fireEvent.doubleClick(canvas, { clientX: 50, clientY: 100 }); // the browser's own trailing dblclick
+
+    expect(onOpenMap).not.toHaveBeenCalled();
   });
 
   it("double-click calls onOpenMap for the hit placement", async () => {
@@ -599,6 +703,56 @@ describe("GbcWorldCanvas", () => {
       expect(outline?.style.left).toBe("40px"); // MapA: -0*12+(200-120)/2 = 40
     });
   });
+
+  it("a viewport resize after a jump does not re-trigger it (the applied-token guard; fix round F6, kills mutation X13)", async () => {
+    const { rerender } = await mountReady();
+    rerender(<GbcWorldCanvas time="day" jumpToMap="MapB" jumpToken={1} />);
+    await waitFor(() => expect(document.querySelector(".world-canvas__jump-highlight")).toBeTruthy());
+    // Let the highlight fade so a SPURIOUS re-jump is visible as a
+    // reappearing highlight, not just the same one still fading.
+    await waitFor(() => expect(document.querySelector(".world-canvas__jump-highlight")).toBeNull(), { timeout: 3000 });
+
+    // Trigger a viewport resize (same jumpToken, same jumpToMap) -- the jump
+    // effect's own deps include `viewport`, so this re-runs it.
+    const viewportEl = document.querySelector(".world-canvas__viewport") as HTMLElement;
+    Object.defineProperty(viewportEl, "clientWidth", { value: VIEWPORT_SIZE - 20, configurable: true });
+    Object.defineProperty(viewportEl, "clientHeight", { value: VIEWPORT_SIZE - 20, configurable: true });
+    FakeResizeObserver.instances[0]!.fire();
+
+    await new Promise((r) => setTimeout(r, 100));
+    expect(document.querySelector(".world-canvas__jump-highlight")).toBeNull(); // must NOT re-jump
+  }, 10000);
+
+  it("the jump outline is keyed on jumpToken -- re-jumping to the SAME map mounts a fresh DOM node (fix round F6, kills mutation X14)", async () => {
+    const { rerender } = await mountReady();
+    rerender(<GbcWorldCanvas time="day" jumpToMap="MapB" jumpToken={1} />);
+    await waitFor(() => expect(document.querySelector(".world-canvas__jump-highlight")).toBeTruthy());
+    const first = document.querySelector(".world-canvas__jump-highlight");
+
+    rerender(<GbcWorldCanvas time="day" jumpToMap="MapB" jumpToken={2} />); // re-click the SAME map
+    await waitFor(() => {
+      const second = document.querySelector(".world-canvas__jump-highlight");
+      expect(second).toBeTruthy();
+      expect(second).not.toBe(first); // a fresh node -- proves key={jumpToken} forced a remount
+    });
+  });
+
+  it("re-jumping to the SAME map restarts the fade timer, rather than expiring on the first click's own original schedule (F7)", async () => {
+    const { rerender } = await mountReady();
+    rerender(<GbcWorldCanvas time="day" jumpToMap="MapB" jumpToken={1} />);
+    await waitFor(() => expect(document.querySelector(".world-canvas__jump-highlight")).toBeTruthy());
+
+    await new Promise((r) => setTimeout(r, 1500)); // most of the way through token 1's own 2s timer
+    rerender(<GbcWorldCanvas time="day" jumpToMap="MapB" jumpToken={2} />); // re-click the SAME map
+    await waitFor(() => expect(document.querySelector(".world-canvas__jump-highlight")).toBeTruthy());
+
+    await new Promise((r) => setTimeout(r, 1000)); // ~2500ms since token 1's own click -- its
+    // ORIGINAL timer (had it not restarted) would already have cleared the
+    // highlight by now.
+    expect(document.querySelector(".world-canvas__jump-highlight")).toBeTruthy();
+
+    await waitFor(() => expect(document.querySelector(".world-canvas__jump-highlight")).toBeNull(), { timeout: 2000 });
+  }, 10000);
 
   // -------------------------------------------------------------------
   // Postmortem mechanics: StrictMode, wheel passive:false, viewport-in-blit-deps.
