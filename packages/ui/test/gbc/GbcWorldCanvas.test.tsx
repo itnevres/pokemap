@@ -1130,13 +1130,37 @@ describe("GbcWorldCanvas: encounters/lenses/spotlight (Plan 6b Task 6)", () => {
     expect(document.querySelector<HTMLElement>(".world-canvas__lens-tint")!.style.background).toBe("var(--warn)");
   });
 
-  it("level-curve lens colours MapA/MapB distinctly by their own coverage rank", async () => {
-    const coverage = { ...EMPTY_COVERAGE, levelByMap: [{ mapName: "MapA", averageLevel: 3 }, { mapName: "MapB", averageLevel: 40 }] };
-    await mountReadyAll({ coverage });
-    fireEvent.click(screen.getByLabelText(/level curve lens/i));
-    await waitFor(() => expect(document.querySelectorAll(".world-canvas__lens-tint").length).toBe(2));
-    const tints = [...document.querySelectorAll<HTMLElement>(".world-canvas__lens-tint")].map((el) => el.style.background);
-    expect(tints[0]).not.toBe(tints[1]);
+  // Fix round (spec review F5/R7): the original version of this test only
+  // asserted the 2 tints differ from each other, which survives BOTH a
+  // divisor bug (R18, now covered directly by WorldCanvas.test.tsx's own
+  // levelColorMap unit tests) AND a low/high swap at THIS call site (R7) --
+  // two different colours are still "distinct" even swapped. Stubs
+  // getComputedStyle (mirroring the badge-colour test's own pattern just
+  // above) so the low/high endpoints are known exactly, then asserts the
+  // LOWER-level map (MapA) gets the LOW endpoint and the higher (MapB) gets
+  // the HIGH one.
+  it("level-curve lens colours the LOW map with the low endpoint and the HIGH map with the high endpoint (mutation check R7)", async () => {
+    const originalGetComputedStyle = window.getComputedStyle;
+    window.getComputedStyle = ((_el: Element) => ({
+      getPropertyValue: (prop: string) => {
+        if (prop === "--overlay-elevation-low") return "#0000ff";
+        if (prop === "--danger") return "#ff0000";
+        return "";
+      },
+    })) as typeof window.getComputedStyle;
+    try {
+      const coverage = { ...EMPTY_COVERAGE, levelByMap: [{ mapName: "MapA", averageLevel: 3 }, { mapName: "MapB", averageLevel: 40 }] };
+      await mountReadyAll({ coverage });
+      fireEvent.click(screen.getByLabelText(/level curve lens/i));
+      await waitFor(() => expect(document.querySelectorAll(".world-canvas__lens-tint").length).toBe(2));
+      const byMap = new Map(
+        [...document.querySelectorAll<HTMLElement>(".world-canvas__lens-tint")].map((el, i) => [["MapA", "MapB"][i], el.style.background]),
+      );
+      expect(byMap.get("MapA")).toBe("rgb(0, 0, 255)"); // the low map -- exact low endpoint
+      expect(byMap.get("MapB")).toBe("rgb(255, 0, 0)"); // the high map -- exact high endpoint
+    } finally {
+      window.getComputedStyle = originalGetComputedStyle;
+    }
   });
 
   it("a coverage fetch failure shows a visible error instead of silently rendering '0' lens counts", async () => {
