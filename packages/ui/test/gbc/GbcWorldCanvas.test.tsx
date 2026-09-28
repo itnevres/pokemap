@@ -22,27 +22,27 @@ import type { GbcWorldPayload } from "@pokemap/core/src/gbc/wire.js";
 
 describe("zoomWorldAboutPivot (pure)", () => {
   it("keeps the world-space point under the pivot fixed when zooming in", () => {
-    const view: GbcWorldView = { zoom: 10, pan: { x: 0, y: 0 } };
+    const view: GbcWorldView = { zoom: 10, pan: { x: 0, y: 0 }, fitted: true };
     // pivot (100,100) at zoom 10, pan 0 is world point (10,10). Zooming by
     // 1.2x to 12: dest = pivot - world*12 = 100 - 10*12 = -20.
-    expect(zoomWorldAboutPivot(view, 1.2, 100, 100)).toEqual({ zoom: 12, pan: { x: -20, y: -20 } });
+    expect(zoomWorldAboutPivot(view, 1.2, 100, 100)).toEqual({ zoom: 12, pan: { x: -20, y: -20 }, fitted: true });
   });
 
   it("zooms out (factor < 1) the same way", () => {
-    const view: GbcWorldView = { zoom: 10, pan: { x: 0, y: 0 } };
+    const view: GbcWorldView = { zoom: 10, pan: { x: 0, y: 0 }, fitted: true };
     const next = zoomWorldAboutPivot(view, 1 / 1.2, 100, 100);
     expect(next.zoom).toBeCloseTo(10 / 1.2, 10);
   });
 
   it("clamps to the given bounds (default GBC_ZOOM_BOUNDS: 1/64..32)", () => {
-    const view: GbcWorldView = { zoom: 30, pan: { x: 0, y: 0 } };
+    const view: GbcWorldView = { zoom: 30, pan: { x: 0, y: 0 }, fitted: true };
     expect(zoomWorldAboutPivot(view, 2, 0, 0).zoom).toBe(32);
-    const tiny: GbcWorldView = { zoom: 1 / 64, pan: { x: 0, y: 0 } };
+    const tiny: GbcWorldView = { zoom: 1 / 64, pan: { x: 0, y: 0 }, fitted: true };
     expect(zoomWorldAboutPivot(tiny, 0.5, 0, 0).zoom).toBe(1 / 64);
   });
 
   it("returns the SAME view object (reference equality) when the clamped zoom doesn't change", () => {
-    const view: GbcWorldView = { zoom: 32, pan: { x: 5, y: 5 } };
+    const view: GbcWorldView = { zoom: 32, pan: { x: 5, y: 5 }, fitted: true };
     expect(zoomWorldAboutPivot(view, 2, 999, 999)).toBe(view); // already at max
   });
 
@@ -50,12 +50,19 @@ describe("zoomWorldAboutPivot (pure)", () => {
     // Mirrors GbcMapCanvas.test.tsx's own zoomAboutPivot regression case:
     // a nested setState-inside-a-setState-updater bug would apply this
     // transform twice, landing far from the single-application answer.
-    const view: GbcWorldView = { zoom: 5, pan: { x: -14, y: -6 } };
+    const view: GbcWorldView = { zoom: 5, pan: { x: -14, y: -6 }, fitted: true };
     const next = zoomWorldAboutPivot(view, 2, 370, 345.5);
     expect(next.zoom).toBe(10);
     const cx = (370 - -14) / 5;
     const cy = (345.5 - -6) / 5;
     expect(next.pan).toEqual({ x: 370 - cx * 10, y: 345.5 - cy * 10 });
+  });
+
+  it("carries `fitted` over unchanged (fix round, F5) -- a zoom never itself flips it, either way", () => {
+    const notYetFitted: GbcWorldView = { zoom: 10, pan: { x: 0, y: 0 }, fitted: false };
+    expect(zoomWorldAboutPivot(notYetFitted, 1.2, 0, 0).fitted).toBe(false);
+    const fitted: GbcWorldView = { zoom: 10, pan: { x: 0, y: 0 }, fitted: true };
+    expect(zoomWorldAboutPivot(fitted, 1.2, 0, 0).fitted).toBe(true);
   });
 });
 
@@ -163,6 +170,32 @@ describe("jumpFit (pure)", () => {
     const viewport = { w: 100, h: 100 };
     const jump = jumpFit(bounds, viewport, { min: 1 / 64, max: 32 }, 0.5);
     expect(jump.zoom).toBeCloseTo(5, 10);
+  });
+
+  it("scales BEFORE clamping to zoomBounds.max, not after (fix round, F2): a real, non-square map still fills ~60% even when its full fit exceeds the cap", () => {
+    // OlivineCity-sized (20x18 blocks) in the live app's own real viewport
+    // (1000x668). Unclamped fit = min(1000/20, 668/18) = min(50, 37.111) =
+    // 37.111, which exceeds GBC_ZOOM_BOUNDS.max (32) -- exactly the spec
+    // review's own F2 case, re-measured here as a pinned unit test rather
+    // than only a live check.
+    const j = jumpFit({ x: 0, y: 0, width: 20, height: 18 }, { w: 1000, h: 668 });
+    expect(j.zoom).toBeCloseTo(37.111111 * 0.6, 3); // 22.267, well under the 32 cap
+    const fill = Math.max((20 * j.zoom) / 1000, (18 * j.zoom) / 668);
+    expect(fill).toBeCloseTo(0.6, 6);
+  });
+
+  it("clamping before scaling (the F2 bug) would instead land at a 0.52 fill for the same map (regression pin)", () => {
+    // The exact buggy formula this fix replaces: computeFit's own zoom
+    // (clamped to 32 first), THEN scaled by 0.6. Kept as an explicit,
+    // separate assertion of what the WRONG answer looks like, so a revert
+    // back to that formula is caught even if the "fills ~0.6" test above
+    // were loosened later.
+    const bounds = { x: 0, y: 0, width: 20, height: 18 };
+    const viewport = { w: 1000, h: 668 };
+    const buggyZoom = Math.min(32, Math.max(1 / 64, computeFit(bounds, viewport, { min: 1 / 64, max: 32 }).zoom)) * 0.6;
+    expect(buggyZoom).toBeCloseTo(19.2, 5);
+    const j = jumpFit(bounds, viewport);
+    expect(j.zoom).not.toBeCloseTo(buggyZoom, 1);
   });
 });
 
@@ -311,6 +344,15 @@ function renderWorld(props: Partial<GbcWorldCanvasProps> = {}, world: unknown = 
 async function mountReady(props: Partial<GbcWorldCanvasProps> = {}, world: GbcWorldPayload = WORLD) {
   const utils = renderWorld(props, world);
   await waitFor(() => expect(screen.getByText(new RegExp(`${world.components.length} components`))).toBeTruthy());
+  // Fix round (F5): wait for the INITIAL FIT to have actually committed, not
+  // just for `world` to have resolved. Before the fit, `zoom` is still the
+  // pre-fit default (1), which always renders as "zoom 3%"
+  // (round(1/32*100)) -- distinct from every real fixture's own post-fit
+  // zoom% used in this file. `visible` (and the image-load effect it drives)
+  // are now gated on `fitted`, so a caller that reads `FakeImage.instances`
+  // right after `mountReady()` resolves needs this fit to have already
+  // happened, exactly the ordering the pre-fix bug got wrong.
+  await waitFor(() => expect(screen.queryByText(/zoom 3%/)).toBeNull());
   const stageCtx = ctxByCanvas.get(utils.canvas)!;
   await waitFor(() => expect(stageCtx.drawImage.mock.calls.length + stageCtx.clearRect.mock.calls.length).toBeGreaterThan(0));
   return { ...utils, stageCtx };
@@ -386,6 +428,27 @@ describe("GbcWorldCanvas", () => {
     await mountReady();
     expect(FakeImage.instances.length).toBe(2);
     expect(FakeImage.instances.some((i) => i.src.includes("Interior"))).toBe(false);
+  });
+
+  it("F5 regression: nothing loads from the pre-fit zoom-1 view -- a placement inside that window but outside the FITTED one is never requested", async () => {
+    // NearInterior (100,150,5,5) is INSIDE the pre-fit mount default's own
+    // window (zoom 1, pan {0,0}, 200x200 viewport covers world blocks
+    // 0..200 on both axes) but OUTSIDE the real fit's window (zoom 10, pan
+    // {0,50}, which covers x 0..20, y -5..15) -- exactly the shape of the
+    // spec review's own F5 finding (probe P5): before the fix, `visible`
+    // was computed against the stale pre-fit view in the same commit
+    // `world` resolved, so this placement got an `Image` it should never
+    // have gotten, even though it is correctly excluded from the FITTED
+    // view. The far-away `Interior` (x=1000) fixture used elsewhere in this
+    // file can't detect this bug at all -- it sits outside BOTH windows.
+    const world: GbcWorldPayload = {
+      ...WORLD,
+      placements: { ...WORLD.placements, NearInterior: { map: "NearInterior", x: 100, y: 150, width: 5, height: 5, component: 2 } },
+      components: [...WORLD.components, { index: 2, maps: ["NearInterior"], bounds: { x: 100, y: 150, width: 5, height: 5 } }],
+    };
+    await mountReady({}, world);
+    const srcs = FakeImage.instances.map((i) => i.src).sort();
+    expect(srcs).toEqual(["/api/render/MapA.png?time=day", "/api/render/MapB.png?time=day"]);
   });
 
   // -------------------------------------------------------------------
@@ -509,7 +572,7 @@ describe("GbcWorldCanvas", () => {
   // -------------------------------------------------------------------
   // Postmortem mechanics: StrictMode, wheel passive:false, viewport-in-blit-deps.
   // -------------------------------------------------------------------
-  it("under <StrictMode>, a wheel zoom lands on the single-application pan (not a StrictMode-doubled one)", async () => {
+  it("under <StrictMode>, a wheel zoom lands on the EXACT single-application pan, pinned via the selection outline (fix round F3, adapted from spec review probe P1; kills mutation X1)", async () => {
     vi.stubGlobal("fetch", mockFetchWorld(WORLD));
     const utils = render(
       <StrictMode>
@@ -518,17 +581,65 @@ describe("GbcWorldCanvas", () => {
     );
     await waitFor(() => expect(utils.getByText(/2 components/)).toBeTruthy());
     const canvas = utils.container.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement;
-    await waitFor(() => expect(screen.getByText(/zoom 31%/)).toBeTruthy()); // fit: zoom 10
+    await waitFor(() => expect(screen.getByText(/zoom 31%/)).toBeTruthy()); // fit: zoom 10, pan {0,50}
 
     canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: 200, bottom: 200, width: 200, height: 200, x: 0, y: 0, toJSON() {} });
+    fireEvent.click(canvas, { clientX: 50, clientY: 100 }); // selects MapA (0,0,10,10)
+    const outline = () => document.querySelector(".world-canvas__selection-outline:not(.world-canvas__jump-highlight)") as HTMLElement;
+    await waitFor(() => expect(outline()).toBeTruthy());
+    // Pre-wheel: MapA at zoom 10, pan {0,50} -> left 0, top 50, width 100.
+    expect([outline().style.left, outline().style.top, outline().style.width]).toEqual(["0px", "50px", "100px"]);
+
     fireEvent.wheel(canvas, { clientX: 100, clientY: 100, deltaY: -100 }); // zoom in: 10 * 1.2 = 12
-    // round(12/32*100) = 38 -- if StrictMode had double-applied the update
-    // (the class of bug GbcMapCanvas's own fix round found), the result
-    // would either double the pan at the SAME 12 zoom (still 38%, but off
-    // screen) or, if the whole updater ran twice compounding the factor,
-    // land at 10*1.2*1.2=14.4 -> 45%. Either way this pins the single,
-    // correct 38%.
+    // round(12/32*100) = 38 -- a spec-review-confirmed regression gap: the
+    // OLD version of this test asserted only this zoom%, which a nested-
+    // updater StrictMode bug (mutation X1) does NOT change (the Task 4 bug
+    // class doubles the PAN, not the zoom -- a pure zoom updater run twice
+    // still returns the same zoom). X1 survived the old test 225/225 green.
     await waitFor(() => expect(screen.getByText(/zoom 38%/)).toBeTruthy());
+    // Pin the EXACT pan via the outline, not just the zoom%: cx=(100-0)/10=
+    // 10, cy=(100-50)/10=5; new pan = {100-10*12, 100-5*12} = {-20,40}.
+    // MapA on screen: left=0*12-20=-20, top=0*12+40=40, width=10*12=120.
+    expect([outline().style.left, outline().style.top, outline().style.width]).toEqual(["-20px", "40px", "120px"]);
+  });
+
+  it("Fit all under <StrictMode> lands on the EXACT single-application pan (fix round F3; kills mutation X2)", async () => {
+    vi.stubGlobal("fetch", mockFetchWorld(WORLD));
+    const utils = render(
+      <StrictMode>
+        <GbcWorldCanvas time="day" />
+      </StrictMode>,
+    );
+    await waitFor(() => expect(utils.getByText(/2 components/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/zoom 31%/)).toBeTruthy());
+    const canvas = utils.container.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement;
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: 200, bottom: 200, width: 200, height: 200, x: 0, y: 0, toJSON() {} });
+
+    // Pan/zoom away from the fit first, so Fit all's own view change is a
+    // REAL change a nested-updater bug could double, not a no-op.
+    fireEvent.wheel(canvas, { clientX: 100, clientY: 100, deltaY: -100 });
+    await waitFor(() => expect(screen.getByText(/zoom 38%/)).toBeTruthy());
+
+    fireEvent.click(screen.getByRole("button", { name: "Fit all" }));
+    const expected = computeFit({ x: 0, y: 0, width: 1005, height: 1005 }, { w: VIEWPORT_SIZE, h: VIEWPORT_SIZE }, { min: 1 / 64, max: 32 });
+    const expectedPercent = Math.round((expected.zoom / 32) * 100);
+    await waitFor(() => expect(screen.getByText(new RegExp(`zoom ${expectedPercent}%`))).toBeTruthy());
+
+    // Pin the EXACT pan by selecting the far-away Interior (now visible
+    // after Fit all) and reading its own selection outline's screen rect --
+    // a StrictMode-doubled pan would still show the right zoom% (a pure
+    // zoom is unaffected) but Interior's own screen rect would be wrong.
+    // Interior is (1000,1000,5,5); click its own world-space CENTRE
+    // (1002.5,1002.5), not its corner, since at this zoom (~0.2) its whole
+    // screen footprint is under 1px wide and a corner click risks missing
+    // it to floating-point rounding.
+    const ix = 1000 * expected.zoom + expected.pan.x, iy = 1000 * expected.zoom + expected.pan.y;
+    const cx = 1002.5 * expected.zoom + expected.pan.x, cy = 1002.5 * expected.zoom + expected.pan.y;
+    fireEvent.click(canvas, { clientX: cx, clientY: cy });
+    const outline = () => document.querySelector(".world-canvas__selection-outline:not(.world-canvas__jump-highlight)") as HTMLElement;
+    await waitFor(() => expect(outline()).toBeTruthy());
+    expect(parseFloat(outline().style.left)).toBeCloseTo(ix, 6);
+    expect(parseFloat(outline().style.top)).toBeCloseTo(iy, 6);
   });
 
   it("the wheel listener is registered with { passive: false }", async () => {

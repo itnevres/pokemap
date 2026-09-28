@@ -41,6 +41,19 @@ export function GbcApp({ root }: GbcAppProps) {
   const [mode, setMode] = useState<Mode>("map");
   const [time, setTime] = useState<TimeOfDay>("day");
   const [selected, setSelected] = useState<string | null>(null);
+  // The map a TREE click last asked GbcWorldCanvas to jump to -- separate
+  // from `selected` (fix round, spec review F1). `selected` also changes on
+  // a plain CANVAS click (selectMapFromWorld below), and passing `selected`
+  // itself as `jumpToMap` meant the canvas's own click silently changed
+  // GbcWorldCanvas's jump TARGET too: the jump effect's "retry once world
+  // itself changes" guard only records a token as applied once it has a
+  // real `jumpToMap` to act on, so the very FIRST canvas click (with
+  // `selected` still null beforehand) turned `jumpToMap` non-null for the
+  // first time and triggered a full jump -- confirmed live (spec review
+  // probe P3: a single canvas click on a fresh load re-zoomed and flashed
+  // the jump outline). Keeping this as its own state, set ONLY by tree
+  // clicks (selectMap below), means a canvas click can never touch it.
+  const [jumpTarget, setJumpTarget] = useState<string | null>(null);
   // Bumped on every tree click, mirroring App.tsx's own selectVersion --
   // GbcWorldCanvas's own jumpToken, distinct from jumpToMap so a re-click of
   // the same map name still jumps (see App.tsx's own selectVersion doc
@@ -66,6 +79,7 @@ export function GbcApp({ root }: GbcAppProps) {
 
   const selectMap = (name: string) => {
     setSelected(name);
+    setJumpTarget(name);
     setSelectVersion((v) => v + 1);
     setHoveredMetatileId(null);
   };
@@ -120,7 +134,7 @@ export function GbcApp({ root }: GbcAppProps) {
           {mode === "world" ? (
             <GbcWorldCanvas
               time={time}
-              jumpToMap={selected}
+              jumpToMap={jumpTarget}
               jumpToken={selectVersion}
               onSelectMap={selectMapFromWorld}
               onOpenMap={openMapFromWorld}

@@ -264,6 +264,84 @@ describe("GbcApp", () => {
     }
   });
 
+  it("a canvas click (no tree click yet) does not jump the view -- pinned exact view (spec review F1)", async () => {
+    // jsdom elements are 0x0 by default -- a real viewport is needed so the
+    // initial fit actually runs and OlivineCity is "visible".
+    const originalClientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth");
+    const originalClientHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight");
+    Object.defineProperty(HTMLElement.prototype, "clientWidth", { value: 100, configurable: true });
+    Object.defineProperty(HTMLElement.prototype, "clientHeight", { value: 100, configurable: true });
+    try {
+      vi.stubGlobal("fetch", makeFetchMock({ world: WORLD_ONE }));
+      render(<GbcApp root="/x" />);
+      await waitFor(() => expect(screen.getByText("OlivineCity")).toBeTruthy());
+
+      const view = screen.getByRole("group", { name: "View" });
+      fireEvent.click(Array.from(view.querySelectorAll("button")).find((b) => b.textContent === "World") as HTMLElement);
+      await waitFor(() => expect(screen.getByText(/1 components · 1 maps · zoom 31%/)).toBeTruthy());
+      const statusBefore = document.querySelector(".world-canvas__status")!.textContent;
+
+      // Before the fix, `GbcApp` passed `jumpToMap={selected}`, so this
+      // very first canvas click (the first time `selected` goes from null
+      // to a real name) made GbcWorldCanvas's own jump effect see a fresh,
+      // never-applied token and perform a full 60%-fill jump -- confirmed
+      // live (spec review probe P3: zoom 31% -> 38%, jump-highlight shown)
+      // even though nothing here is a tree click.
+      const canvas = document.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement;
+      canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: 100, bottom: 100, width: 100, height: 100, x: 0, y: 0, toJSON() {} });
+      fireEvent.click(canvas, { clientX: 50, clientY: 50 }); // selects OlivineCity, which fills the whole fit
+
+      await new Promise((r) => setTimeout(r, 50));
+      expect(document.querySelector(".world-canvas__status")!.textContent).toBe(statusBefore); // zoom%/counts unchanged
+      expect(document.querySelector(".world-canvas__jump-highlight")).toBeNull(); // no jump ever fired
+
+      // Pin the EXACT view, not just "no highlight": the plain selection
+      // outline that DOES appear must sit at the ORIGINAL fit's own rect
+      // (zoom 10, pan {0,0} for OlivineCity's 10x10 blocks in a 100x100
+      // viewport), proving the pan/zoom used for it were never touched.
+      const outline = document.querySelector(".world-canvas__selection-outline:not(.world-canvas__jump-highlight)") as HTMLElement;
+      expect([outline.style.left, outline.style.top, outline.style.width, outline.style.height]).toEqual(["0px", "0px", "100px", "100px"]);
+    } finally {
+      if (originalClientWidth) Object.defineProperty(HTMLElement.prototype, "clientWidth", originalClientWidth);
+      if (originalClientHeight) Object.defineProperty(HTMLElement.prototype, "clientHeight", originalClientHeight);
+    }
+  });
+
+  it("a second tree click (a different map) still jumps -- selectVersion must bump on every tree click, not just the first (mutation check X12)", async () => {
+    const WORLD_TWO = {
+      family: "gbc" as const,
+      blockPx: 32 as const,
+      placements: {
+        OlivineCity: { map: "OlivineCity", x: 0, y: 0, width: 10, height: 10, component: 0 },
+        OlivinePort: { map: "OlivinePort", x: 100, y: 100, width: 10, height: 10, component: 1 },
+      },
+      components: [
+        { index: 0, maps: ["OlivineCity"], bounds: { x: 0, y: 0, width: 10, height: 10 } },
+        { index: 1, maps: ["OlivinePort"], bounds: { x: 100, y: 100, width: 10, height: 10 } },
+      ],
+      conflicts: [],
+    };
+    vi.stubGlobal("fetch", makeFetchMock({ world: WORLD_TWO }));
+    render(<GbcApp root="/x" />);
+    await waitFor(() => expect(screen.getByText("OlivineCity")).toBeTruthy());
+
+    const view = screen.getByRole("group", { name: "View" });
+    fireEvent.click(Array.from(view.querySelectorAll("button")).find((b) => b.textContent === "World") as HTMLElement);
+    await waitFor(() => expect(screen.getByText(/2 components · 2 maps · zoom/)).toBeTruthy());
+
+    fireEvent.click(screen.getByText("OlivineCity"));
+    await waitFor(() => expect(document.querySelector(".world-canvas__jump-highlight")).toBeTruthy());
+    // Let the first jump's own highlight fully fade before the second click,
+    // so a spurious "it's still just the first one" false pass is impossible.
+    await waitFor(() => expect(document.querySelector(".world-canvas__jump-highlight")).toBeNull(), { timeout: 3000 });
+
+    fireEvent.click(screen.getByText("OlivinePort"));
+    // If `selectVersion` never bumped, `jumpToken` would still be the value
+    // already applied for OlivineCity's own jump, and this second click
+    // would silently do nothing at all.
+    await waitFor(() => expect(document.querySelector(".world-canvas__jump-highlight")).toBeTruthy());
+  }, 10000);
+
   it("shows the family tag", async () => {
     vi.stubGlobal("fetch", makeFetchMock());
     render(<GbcApp root="/x" />);

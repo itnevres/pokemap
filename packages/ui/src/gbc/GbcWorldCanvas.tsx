@@ -7,27 +7,52 @@ import type { GbcTimeOfDay } from "./time.js";
 
 /**
  * The read-only GBC world view (Plan 6b Task 5). Mirrors `WorldCanvas.tsx`'s
- * own pan/zoom/viewport/culling/LOD mechanics, cited by line, for the same
- * reason `GbcMapCanvas.tsx`'s own header comment does it for `MapCanvas.tsx`
- * -- these are this project's postmortems, not style preferences:
+ * own pan/zoom/viewport/culling/LOD mechanics, for the same reason
+ * `GbcMapCanvas.tsx`'s own header comment does it for `MapCanvas.tsx` --
+ * these are this project's postmortems, not style preferences. Cited by a
+ * grep-able anchor phrase rather than a line number (fix round, quality
+ * review Important #1: every hand-counted line range here was wrong from
+ * the day it was written, and `WorldCanvas.tsx` is exactly the file Task 6
+ * edits next, so a stale number sends a future reader to the wrong feature
+ * entirely):
  * - `viewport` MUST stay in the draw effect's own dependency list
- *   (`WorldCanvas.tsx:410-422`, the Task 21 canvas-blanking postmortem).
- * - A native `wheel` listener, `{ passive: false }` (`WorldCanvas.tsx:
- *   1361-1375`) -- React's own `onWheel` is passive, so `preventDefault()`
- *   inside it is a silent no-op and the page scrolls under the canvas.
- * - Culling via the `intersects` AABB test (`WorldCanvas.tsx:220-222`):
- *   only a placement whose tile-rect intersects the viewport is drawn,
- *   fetched, or hit-testable.
+ *   (`WorldCanvas.tsx`'s own `// Measure the viewport` comment, the Task 21
+ *   canvas-blanking postmortem).
+ * - A native `wheel` listener, `{ passive: false }` (`WorldCanvas.tsx`'s own
+ *   "React attaches wheel listeners as passive by default" comment) --
+ *   React's own `onWheel` is passive, so `preventDefault()` inside it is a
+ *   silent no-op and the page scrolls under the canvas.
+ * - Culling via the `intersects` AABB test (`WorldCanvas.tsx`'s own
+ *   top-level `intersects` function): only a placement whose tile-rect
+ *   intersects the viewport is drawn, fetched, or hit-testable.
  * - Images load per visible placement only, cached by ref (never refetched
  *   once cached), with a `compositeVersion` bump when each arrives
- *   (`WorldCanvas.tsx:845-868`), plus a downscaled `small` canvas at
+ *   (`WorldCanvas.tsx`'s own "Load (and cache) the source image for every
+ *   visible placement" comment), plus a downscaled `small` canvas at
  *   `LOD_SCALE` for the LOD path.
  * - Conflict badges: `drawDiamond` (exported additively from
  *   `WorldCanvas.tsx`, Plan 6b Task 5) at the offending map's top-right
  *   corner, plus a hit-rect recorded for a floating hover tooltip
- *   (`WorldCanvas.tsx:1328-1346`).
- * - The map-list jump (`jumpToMap`/`jumpToken`) and its 2s fading outline
- *   (`WorldCanvas.tsx:616-694`, the "jumpHighlight" pattern).
+ *   (`WorldCanvas.tsx`'s own "Conflicts: a diamond at the offending map's
+ *   top-right corner" comment).
+ * - The map-list jump (`jumpToMap`/`jumpToken`) and its fading outline
+ *   (`WorldCanvas.tsx`'s own jump effect + its separately-scoped fade
+ *   effect just below it, and the "keyed on jumpToken (not jumpToMap)"
+ *   comment on the highlight's own `key` prop -- the "jumpHighlight"
+ *   pattern).
+ *
+ * **Fix round (spec review F5): nothing loads or culls before the initial
+ * fit has actually been applied.** `view.fitted` is part of the single view
+ * state (set together with `zoom`/`pan` in the very same `setView` call that
+ * performs the fit), and `visible` returns `[]` while it is false. Before
+ * this fix, `visible`/the image-load effect ran once against the MOUNT
+ * default (`zoom: 1, pan: {0,0}`) in the same commit `/api/world` resolved,
+ * before the fit effect's `setView` had run -- at zoom 1 that "viewport"
+ * covers nearly the whole world, so the very first World-mode mount fetched
+ * and decoded ~308 of 391 map renders (measured live), not the ~80 the fit
+ * actually shows. (An earlier draft of this comment claimed the opposite --
+ * "the very first render never loads more than what culling already shows"
+ * -- which was false; this paragraph replaces that claim.)
  *
  * **Lessons from Task 4, applied here too (binding, `task-4-spec-review.md`
  * findings A/B):**
@@ -39,7 +64,8 @@ import type { GbcTimeOfDay } from "./time.js";
  *   there, applying the nested update twice (2x zoom lands off-centre, 4x
  *   goes fully off-canvas). Unlike `GbcMapCanvas`'s own STEPPED
  *   `zoomAboutPivot` (1x/2x/4x), the world's zoom is CONTINUOUS
- *   (`WHEEL_FACTOR`-multiplied, `WorldCanvas.tsx:1368`'s own mechanic), so
+ *   (`WHEEL_FACTOR`-multiplied, `WorldCanvas.tsx`'s own "React attaches
+ *   wheel listeners as passive by default" comment area), so
  *   `zoomWorldAboutPivot` below mirrors that continuous math instead of
  *   copying `GbcMapCanvas.tsx`'s stepped version verbatim -- both are pure,
  *   single-state-returning functions for the identical StrictMode reason.
@@ -75,7 +101,8 @@ const GBC_ZOOM_BOUNDS = { min: GBC_MIN_ZOOM, max: GBC_MAX_ZOOM };
 
 /** Continuous zoom step per wheel notch, same constant and same
  *  multiplicative mechanic as `WorldCanvas.tsx`'s own `WHEEL_FACTOR`
- *  (`WorldCanvas.tsx:23`) -- GBC's world zoom is continuous, unlike
+ *  (`WorldCanvas.tsx`'s own `const WHEEL_FACTOR = 1.2;` declaration) --
+ *  GBC's world zoom is continuous, unlike
  *  `GbcMapCanvas`'s own stepped 1x/2x/4x. */
 const WHEEL_FACTOR = 1.2;
 
@@ -107,10 +134,15 @@ const JUMP_FILL_FRACTION = 0.6;
 const JUMP_HIGHLIGHT_MS = 2000;
 
 /** The canvas's whole pan/zoom state, updated as ONE value -- see the
- *  header comment's StrictMode citation. */
+ *  header comment's StrictMode citation. `fitted` (fix round, F5) is part
+ *  of this same state, not a separate one, precisely so the initial fit's
+ *  `setView` can set the real zoom/pan AND flip `fitted` to true in one
+ *  atomic update -- never a render where `fitted` is already true but
+ *  `zoom`/`pan` are still the stale mount default, or vice versa. */
 export interface GbcWorldView {
   zoom: number;
   pan: { x: number; y: number };
+  fitted: boolean;
 }
 
 /**
@@ -119,10 +151,11 @@ export interface GbcWorldView {
  * that keeps the world-space point under the pivot fixed on screen --
  * clamped to `bounds` (default `GBC_ZOOM_BOUNDS`) -- or the SAME `view`
  * object when the clamped result doesn't actually change the zoom, so a
- * caller can use reference equality to skip work. Exported and
- * unit-tested with exact numbers, called from exactly one
- * `setView(v => zoomWorldAboutPivot(v, ...))` site (see the header
- * comment's StrictMode reasoning).
+ * caller can use reference equality to skip work. `fitted` is carried over
+ * unchanged (spread from `view`): a wheel zoom or a keyboard zoom never
+ * itself flips it. Exported and unit-tested with exact numbers, called from
+ * exactly one `setView(v => zoomWorldAboutPivot(v, ...))` site per caller
+ * (see the header comment's StrictMode reasoning).
  */
 export function zoomWorldAboutPivot(
   view: GbcWorldView,
@@ -135,7 +168,7 @@ export function zoomWorldAboutPivot(
   if (next === view.zoom) return view;
   const cx = (pivotX - view.pan.x) / view.zoom;
   const cy = (pivotY - view.pan.y) / view.zoom;
-  return { zoom: next, pan: { x: pivotX - cx * next, y: pivotY - cy * next } };
+  return { ...view, zoom: next, pan: { x: pivotX - cx * next, y: pivotY - cy * next } };
 }
 
 /** AABB test in world-block space -- copied from `WorldCanvas.tsx`'s own
@@ -216,12 +249,20 @@ interface FitResult {
 }
 
 /**
- * The map-list jump's own fit: like `computeFit(bounds, viewport,
- * zoomBounds)`, but the resulting zoom is scaled down by `fraction` (default
- * `JUMP_FILL_FRACTION`) after computing the "fits entirely" zoom, then
- * re-centred at that smaller zoom -- "fills about 60% of the viewport", not
- * "fits exactly". Exported and unit-tested directly against `computeFit`'s
- * own pinned numbers.
+ * The map-list jump's own fit: the UNCLAMPED "fits entirely" zoom
+ * (`min(viewport.w/bounds.width, viewport.h/bounds.height)`) is scaled down
+ * by `fraction` (default `JUMP_FILL_FRACTION`) FIRST, and only THEN clamped
+ * to `zoomBounds` -- "fills about 60% of the viewport", not "fits exactly".
+ * Exported and unit-tested directly.
+ *
+ * Fix round (spec review F2): this used to clamp before scaling (`computeFit
+ * (...).zoom * fraction`), which is wrong whenever the unclamped fit exceeds
+ * `zoomBounds.max` -- most real GBC maps at a real viewport size. A 20x18
+ * map (e.g. OlivineCity) in a 1000x668 viewport has an unclamped fit of
+ * ~37.1 px/block; clamping that to 32 FIRST and then taking 60% lands at
+ * 19.2 (a 0.52 fill, confirmed live), not the intended 0.6. Scaling first
+ * (37.1 * 0.6 = 22.27, well under the 32 cap so the clamp is a no-op here)
+ * gives the correct 0.6 fill.
  */
 export function jumpFit(
   bounds: Bounds,
@@ -229,8 +270,11 @@ export function jumpFit(
   zoomBounds: { min: number; max: number } = GBC_ZOOM_BOUNDS,
   fraction: number = JUMP_FILL_FRACTION,
 ): FitResult {
-  const fit = computeFit(bounds, viewport, zoomBounds);
-  const zoom = Math.min(zoomBounds.max, Math.max(zoomBounds.min, fit.zoom * fraction));
+  if (bounds.width <= 0 || bounds.height <= 0 || viewport.w <= 0 || viewport.h <= 0) {
+    return { zoom: 1, pan: { x: 0, y: 0 } };
+  }
+  const rawZoom = Math.min(viewport.w / bounds.width, viewport.h / bounds.height);
+  const zoom = Math.min(zoomBounds.max, Math.max(zoomBounds.min, rawZoom * fraction));
   return {
     zoom,
     pan: {
@@ -296,15 +340,19 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
   const dragMovedRef = useRef(false);
 
   const [viewport, setViewport] = useState({ w: 0, h: 0 });
-  const [view, setView] = useState<GbcWorldView>({ zoom: 1, pan: { x: 0, y: 0 } });
-  const { zoom, pan } = view;
+  const [view, setView] = useState<GbcWorldView>({ zoom: 1, pan: { x: 0, y: 0 }, fitted: false });
+  const { zoom, pan, fitted } = view;
   const [compositeVersion, setCompositeVersion] = useState(0);
   const [selectedMap, setSelectedMap] = useState<string | null>(null);
   const [hover, setHover] = useState<HoverInfo | null>(null);
   const [tooltip, setTooltip] = useState<TooltipInfo | null>(null);
-  const [jumpHighlight, setJumpHighlight] = useState<string | null>(null);
+  // { map, token } rather than a bare map name (fix round, F7) -- see the
+  // fade effect's own comment below for why the token has to be part of
+  // this state's own identity.
+  const [jumpHighlight, setJumpHighlight] = useState<{ map: string; token: number } | null>(null);
 
-  // Measure the viewport -- WorldCanvas.tsx:410-422's own pattern.
+  // Measure the viewport -- WorldCanvas.tsx's own "Measure the viewport"
+  // effect (same pattern, verbatim).
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -321,31 +369,37 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
 
   // Initial fit: once, as soon as the world AND a real viewport are both
   // available -- the multi-map-components-only bounds (Task 5 spec), not
-  // GBA's own "no auto-fit at all" posture. Safe to do eagerly here (unlike
-  // GBA's 1,209-map world): the fit bounds only cover the 3 real landmasses
-  // to begin with, so the very first render never loads more than what
-  // that bounding box's own culling already shows.
+  // GBA's own "no auto-fit at all" posture. `fitted: true` is set in this
+  // SAME `setView` call (fix round, F5): before this fix, `visible`/the
+  // load effect below could run once against the mount default (zoom 1,
+  // pan {0,0}) in the very commit `world` first resolved -- at zoom 1 a
+  // real viewport covers nearly the whole 255x746-block world, so that one
+  // stale render fetched and decoded ~308 of 391 map renders (measured
+  // live), not the ~80 the fit actually shows. Gating `visible` on `fitted`
+  // means nothing is culled or loaded from ANY pre-fit view, not just the
+  // default one.
   const initialFitDoneRef = useRef(false);
   useEffect(() => {
     if (!world || initialFitDoneRef.current) return;
     if (viewport.w <= 0 || viewport.h <= 0) return;
     initialFitDoneRef.current = true;
     const bounds = initialFitBounds(world) ?? fitAllBounds(world.placements);
-    if (bounds) setView(computeFit(bounds, viewport, GBC_ZOOM_BOUNDS));
+    if (bounds) setView({ ...computeFit(bounds, viewport, GBC_ZOOM_BOUNDS), fitted: true });
   }, [world, viewport]);
 
   const fitAll = useCallback(() => {
     if (!world) return;
     const bounds = fitAllBounds(world.placements);
-    if (bounds) setView(computeFit(bounds, viewport, GBC_ZOOM_BOUNDS));
+    if (bounds) setView({ ...computeFit(bounds, viewport, GBC_ZOOM_BOUNDS), fitted: true });
   }, [world, viewport]);
 
   // Culling: only placements whose block-rect intersects the current
-  // viewport are "visible" -- WorldCanvas.tsx:758-817's own pattern, minus
+  // viewport are "visible" -- WorldCanvas.tsx's own `visible` memo, minus
   // every GBA-only concern (mapType visibility, mapFilter, sizeByMap) that
-  // has no GBC equivalent.
+  // has no GBC equivalent. Gated on `fitted` (fix round, F5): see the
+  // initial-fit effect's own comment above.
   const visible = useMemo(() => {
-    if (!world) return [] as Placement[];
+    if (!world || !fitted) return [] as Placement[];
     const x0 = -pan.x / zoom, y0 = -pan.y / zoom;
     const x1 = (viewport.w - pan.x) / zoom, y1 = (viewport.h - pan.y) / zoom;
     const out: Placement[] = [];
@@ -354,7 +408,7 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
       if (intersects(p.x, p.y, p.width, p.height, x0, y0, x1, y1)) out.push(p);
     }
     return out;
-  }, [world, pan, zoom, viewport]);
+  }, [world, pan, zoom, viewport, fitted]);
 
   // GBC-specific: a time switch drops the WHOLE image cache (every
   // reference), so a stale day/nite image is never drawn under the new
@@ -367,8 +421,9 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
   }, [time]);
 
   // Load (and cache) the source image for every visible placement that
-  // doesn't have one yet, keyed by map name only -- WorldCanvas.tsx:
-  // 845-868's own pattern. Depends on `time` too (not just `visible`) so a
+  // doesn't have one yet, keyed by map name only -- WorldCanvas.tsx's own
+  // "Load (and cache) the source image for every visible placement"
+  // comment/effect. Depends on `time` too (not just `visible`) so a
   // time switch re-populates the now-empty cache above with the new time's
   // URLs for whatever is still visible.
   useEffect(() => {
@@ -420,8 +475,9 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
     const conflictColor = style?.getPropertyValue("--danger").trim() || "#ef4444";
 
     // Conflicts: a diamond at Conflict.map's top-right corner, plus a
-    // hit-rect for the hover tooltip below -- WorldCanvas.tsx:1328-1346's
-    // own pattern, never hidden behind a toggle.
+    // hit-rect for the hover tooltip below -- WorldCanvas.tsx's own
+    // "Conflicts: a diamond at the offending map's top-right corner"
+    // comment/loop, never hidden behind a toggle.
     const badges: Array<{ x: number; y: number; text: string }> = [];
     for (const conflict of world.conflicts) {
       const p = world.placements[conflict.map];
@@ -518,9 +574,36 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
     if (hit) onOpenMap?.(hit.map);
   };
 
+  // Keyboard path (fix round, quality review Minor #3): the canvas's own
+  // click-to-select/double-click-to-open interactions had no keyboard
+  // equivalent -- WorldCanvas.tsx's own canvas is in the same position for
+  // ITS click-to-select path (its own tabIndex/onKeyDown pair only
+  // implements Escape-clears-multi-select, which has no GBC analogue), but
+  // this is the second canvas in the app to ship that gap, so a minimal
+  // path is added here: Enter opens whatever is currently selected (the
+  // same target a double-click would open), and +/- zoom about the
+  // viewport's own centre through the SAME `zoomWorldAboutPivot` a wheel
+  // notch uses (the identical single-state-updater reasoning applies:
+  // one `setView` per key, never a nested one).
+  const onKeyDown = (e: React.KeyboardEvent<HTMLCanvasElement>) => {
+    if (e.key === "Enter") {
+      if (selectedMap) onOpenMap?.(selectedMap);
+      return;
+    }
+    if (e.key === "+" || e.key === "=") {
+      e.preventDefault();
+      setView((v) => zoomWorldAboutPivot(v, WHEEL_FACTOR, viewport.w / 2, viewport.h / 2));
+      return;
+    }
+    if (e.key === "-" || e.key === "_") {
+      e.preventDefault();
+      setView((v) => zoomWorldAboutPivot(v, 1 / WHEEL_FACTOR, viewport.w / 2, viewport.h / 2));
+    }
+  };
+
   // Map-list jump: centre jumpToMap at ~60% of the viewport, then flash an
-  // outline -- WorldCanvas.tsx:639-667's own "retry once world itself
-  // changes" reasoning (a tree click can arrive before /api/world has
+  // outline -- WorldCanvas.tsx's own jump effect and its "retry once world
+  // itself changes" reasoning (a tree click can arrive before /api/world has
   // resolved, e.g. switching to World mode right after selecting a map in
   // Map mode), guarded so an already-handled token is never re-applied.
   const appliedJumpTokenRef = useRef<number | undefined>(undefined);
@@ -530,15 +613,26 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
     appliedJumpTokenRef.current = jumpToken;
     const p = world.placements[jumpToMap];
     if (!p || p.width <= 0 || p.height <= 0) return;
-    setView(jumpFit({ x: p.x, y: p.y, width: p.width, height: p.height }, viewport));
-    setJumpHighlight(jumpToMap);
+    setView({ ...jumpFit({ x: p.x, y: p.y, width: p.width, height: p.height }, viewport), fitted: true });
+    setJumpHighlight({ map: jumpToMap, token: jumpToken });
   }, [jumpToken, jumpToMap, world, viewport]);
 
-  // The 2s fade-out, kept in its own effect scoped to `jumpHighlight` alone
-  // -- WorldCanvas.tsx:669-694's own review-fix reasoning: coupling this to
-  // the jump-triggering effect above (which also depends on `viewport`,
-  // which can change independently, e.g. a window resize) would kill and
-  // never reschedule the pending timer.
+  // The fade-out, kept in its own effect scoped to `jumpHighlight` alone --
+  // WorldCanvas.tsx's own separately-scoped fade effect gives the same
+  // reasoning: coupling this to the jump-triggering effect above (which
+  // also depends on `viewport`, which can change independently, e.g. a
+  // window resize) would kill and never reschedule the pending timer.
+  //
+  // Fix round (F7): unlike WorldCanvas.tsx's own accepted quirk (documented
+  // on its own jump-highlight `key` comment) where a same-map re-click sets
+  // `jumpHighlight` to an identical string, React bails the state update,
+  // and this effect's dependency never changes -- so the FIRST click's timer
+  // just keeps counting down and can clear the outline well short of a full
+  // fresh window -- `jumpHighlight` here is `{ map, token }`, a fresh object
+  // every jump (the token always changes), so this effect always re-runs
+  // and the fade genuinely restarts on every jump, including a re-click of
+  // the same map. A deliberate, minimal divergence from GBA for this one
+  // rough edge, not a copy of it.
   useEffect(() => {
     if (!jumpHighlight) return;
     const timer = setTimeout(() => setJumpHighlight(null), JUMP_HIGHLIGHT_MS);
@@ -547,10 +641,10 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
 
   const zoomPercent = Math.round((zoom / BLOCK_PX) * 100);
   const selectedRect = selectedMap && world?.placements[selectedMap] ? world.placements[selectedMap]! : null;
-  const jumpRect = jumpHighlight && world?.placements[jumpHighlight] ? world.placements[jumpHighlight]! : null;
+  const jumpRect = jumpHighlight && world?.placements[jumpHighlight.map] ? world.placements[jumpHighlight.map]! : null;
 
   return (
-    <section className="world-canvas gbc-world-canvas" aria-label="World canvas">
+    <section className="world-canvas" aria-label="World canvas">
       <div className="world-canvas__toolbar">
         <div className="world-canvas__toolbar-group">
           <button type="button" className="map-canvas__btn" onClick={fitAll}>
@@ -594,7 +688,8 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
           )}
           {jumpRect && (
             <div className="world-canvas__selection" aria-hidden="true">
-              {/* Keyed on jumpToken (WorldCanvas.tsx:1838-1851's own review
+              {/* Keyed on jumpToken (WorldCanvas.tsx's own "keyed on jumpToken
+                  (not jumpToMap)" comment makes the same review
                   fix): without it, re-jumping to the same map name reuses
                   the same DOM node, whose `forwards`-filling fade animation
                   has already finished, so it would not visibly restart. */}
