@@ -1,12 +1,16 @@
 # PokeMap Plan 6b: GBC App Layer (server + UI, read-only)
 
-> **STATUS (2026-09-28): Tasks 1a, 1b, 2, 3, 4 and 5 are done and reviewed. Task 6 is next; its executed spec is written and ready. Task 7 has not started.**
+> **STATUS (2026-09-28): DONE. All tasks (1a, 1b, 2-7) are done and reviewed, and success criteria 1-4 were demonstrated end to end in one browser session (`_archive/task-7-closeout.md`).**
 >
-> - **Branch:** `plan-6b-gbc-app-layer`. Its PR is draft and not merged.
-> - **Gate at HEAD, cloud:** `npm test` 1,594 pass / 6 fail (exactly `task-reports/.../baseline-fails.txt`), and `npm run typecheck` is clean.
-> - **Every task passed** an Opus spec review, a Sonnet quality review, and a coordinator re-run of its surviving mutations. The reports are in `task-reports/pokemap-plan-6b-gbc-app-layer/_archive/`.
-> - **Task 6 spec:** `task-reports/pokemap-plan-6b-gbc-app-layer/task-6-spec.md`. It has been amended with the lessons from Tasks 3-5; execute it as written.
-> - **Task 7** is the close-out: success criteria 1-4 end to end, the GBA smoke test, docs, and the PR.
+> - **Branch:** `plan-6b-gbc-app-layer`. Its PR ([itnevres/pokemap#3](https://github.com/itnevres/pokemap/pull/3)) is ready for review, not merged.
+> - **Gate at HEAD:**
+>   - Windows: `npm test` 1,679 pass / 0 fail, `npm run typecheck` clean, and `vite build` passes.
+>   - Cloud: expected 1,673 / 6. This is derived, not measured: the 6 are `baseline-fails.txt`.
+> - **Every task passed** an Opus spec review, a Sonnet quality review, and a coordinator re-run of its surviving mutations. Task 6's re-run was 28 of 28 killed. The reports are in `task-reports/pokemap-plan-6b-gbc-app-layer/_archive/`.
+> - **Outside the plan, landed on this branch:**
+>   - `123d89f`: two CLI test files had been Windows-broken since Plan 6 (`spawnSync("npx")`, and a regex built from a backslash path). Test-only fix.
+>   - `5629602`: GBA follow-up #3, pulled in with the user's go-ahead because it blocked criterion 3. A `*/` in a styles.css comment swallowed the `.species-spotlight` rule, which put the spotlight dropdown off-screen in both families and broke `vite build`.
+>   - Follow-ups #1 and #2 remain open.
 >
 > **Where the task text below disagrees with what was built,** the archived executed specs and the code win. The known differences:
 > - `useProjectInfo`/`useGuardedFetch` live in `packages/ui/src/hooks/`, because they are family-agnostic. GBC hooks live in `packages/ui/src/gbc/hooks/`.
@@ -26,9 +30,11 @@
 > | `packages/server/src/gbcRoutes.ts` | `createGbcServer`, with thin dispatch and exported payload builders. It serves `/api/{project,groups,map,render,metatile,world,encounters,where,coverage,species}`, and returns 501 for GBA-only routes |
 > | `packages/server/src/index.ts`, `serve.ts` | the family branch, `/api/project` for GBA, and the `--gbc` flag |
 > | `packages/ui/src/Root.tsx`, `main.tsx` | `/api/project` → `<App/>` (GBA, untouched) or `<GbcApp/>` |
-> | `packages/ui/src/hooks/{useGuardedFetch,useProjectInfo}.ts` | the shared guarded fetch, which resets data and error on each URL change |
-> | `packages/ui/src/gbc/{GbcApp,GbcMapCanvas,GbcMetatilePalette,GbcWorldCanvas,guards,time}.tsx/ts` + `gbc/hooks/*` | the GBC shell, map view, palette, world view, and shape guards |
-> | `packages/ui/src/components/WorldCanvas.tsx` | additive only: an optional `computeFit(…, zoomBounds)` argument and an exported `drawDiamond` |
+> | `packages/ui/src/hooks/{useGuardedFetch,useProjectInfo}.ts` | the shared guarded fetch, which resets data and error on each URL change, plus the non-hook `fetchGuarded` it wraps (used per map by the encounter cache) |
+> | `packages/ui/src/gbc/{GbcApp,GbcMapCanvas,GbcMetatilePalette,GbcWorldCanvas,GbcEncounterGutter,guards,time}.tsx/ts` + `gbc/hooks/*` (incl. `useGbcCoverage`) | the GBC shell, map view, palette, world view with lenses, spotlight and encounter cache, the text-chip gutter (`matchesTime`/`rowLabel`/`chipText`), and shape guards |
+> | `packages/ui/src/components/WorldCanvas.tsx` | additive only: an optional `computeFit(…, zoomBounds)` argument, and exported `drawDiamond` and `levelColorMap` |
+> | `packages/ui/src/components/{LensPanel,SpeciesSpotlight}.tsx` | additive only: LensPanel's optional `methodKey`/`legendCopy`; SpeciesSpotlight's prefix-agnostic matcher and a generic hit type |
+> | `packages/ui/src/styles.css`, `DESIGN.md`, `test/styles.test.ts` | the `--encounter-headbutt` token and swatch, the comment fix, and a strict lightningcss parse test |
 
 > **For agentic workers:** REQUIRED READING FIRST:
 > - the GBC roadmap (`2026-09-23-pokemap-plan-6-gbc-roadmap.md`): invariants G1-G7, then §6b, the sketch this plan was written from;
