@@ -101,7 +101,7 @@ Addresses `task-6-spec-review.md` (Opus, ISSUES: 1 blocking/3 important/8 minor,
 | **F7 (minor)**: matcher comment overclaimed a fully GBA-identical result set; `"SPECIES_"`-alone edge (R14) untested | Comment corrected to name the one accepted exception (typing bare `"SPECIES_"` now shows no dropdown, was "list all 50"); added `"species_pika"` GBA test | `fc9ad86` | `SpeciesSpotlight.test.tsx` +1 |
 | **F8 (minor)**: spotlight best-hit-per-map rule untested — R6 survived | 2-hits-same-map fixture (10%, 45%) asserts badge starts `45%` | `29371e7` | `GbcWorldCanvas.test.tsx` +1 |
 | **F10 (minor) + Q1**: no single screen-rect memo; `gutterEntries` looked up the cache twice | One `rectByMap` memo (`[visible, pan, zoom]`) feeding gutter/lens/spotlight entries; single cache lookup | `9e573dd` | covered by existing integration tests (no behaviour change) |
-| **F11 (minor)**: GBC's empty-maps lens showed a dead "List them" button | Hidden when `onListEmptyMaps` is unset; additive for GBA (`WorldCanvas.tsx` always passes it) — one pre-existing standalone `LensPanel` test that omitted the prop was updated to pass a no-op, the one necessary edit to an existing test this fix requires | `e1d39d7` | `LensPanel.test.tsx` +2, 1 existing test updated |
+| **F11 (minor)**: GBC's empty-maps lens showed a dead "List them" button | **Correction (coordinator):** the first attempt (`e1d39d7`, hide the button when `onListEmptyMaps` is unset) edited a pre-existing GBA `LensPanel` test — against the absolute "existing GBA tests pass unchanged" rule — and was reverted (`0be8111`; `LensPanel.tsx`/`LensPanel.test.tsx` verified byte-identical to `8190970`/`bef0f5f`). Replaced with a real `focusEmptyMaps` in `GbcWorldCanvas`, mirroring `WorldCanvas.tsx`'s own: fits empty maps in a multi-map component, falls back to every empty map, no-op if none. Wired as `onListEmptyMaps`; no `LensPanel`/GBA file touched at all this time | `0be8111` (revert), `f5dd849` | `GbcWorldCanvas.test.tsx` +1: exact zoom (63% vs the initial fit's 31%) and exact rendered lens-tint transform (`left/top/width/height`) pinned for a hand-computed fixture; spot-verified red when `onListEmptyMaps` is dropped |
 | **F12 (minor)**: report's own guards.test.ts count said +13 in one place, +12 in another | Corrected to +12 (6 encounters + 6 coverage clauses) | `d1d0fb0` | — |
 | **Q2**: `--encounter-headbutt` hue closeness — informational | No code change (coordinator checks live) | — | — |
 
@@ -144,9 +144,23 @@ Every mutation applied to the real (then-current) source, confirmed red on the f
 
 **26/26 killed, 0 survivors** (11 previously-surviving R-mutations now killed; the other 7 R-mutations and all 8 I-mutations re-confirmed killed).
 
-### Gate (final commit `b55b69f`)
+### Gate (commit `b55b69f`, before the F11 correction below)
 
-- `npm test`: **1678 passed, 0 failed**, 106 files (baseline at `123d89f`: 1600/0; net +78 across the whole task incl. this fix round). Single pass, no flake.
+- `npm test`: **1678 passed, 0 failed**, 106 files. Single pass, no flake.
+- `npm run typecheck`: clean (`tsconfig.base.json` and `packages/ui/tsconfig.json`).
+- `git status --short`: clean.
+
+### F11 correction (post-round follow-up)
+
+The coordinator caught that `e1d39d7`'s F11 fix edited a pre-existing GBA `LensPanel` test — violating the absolute "existing GBA tests pass unchanged" rule (the general fix-round rule, distinct from the spec's own narrower "GBA components change only additively as the spec lists"). Corrected:
+
+1. **Revert.** `git revert --no-edit e1d39d7` → `0be8111`. Verified `git diff bef0f5f -- packages/ui/test/LensPanel.test.tsx` and `git diff 8190970 -- packages/ui/src/components/LensPanel.tsx` both empty — `LensPanel.tsx`/`LensPanel.test.tsx` are byte-identical to their pre-F11 content; `LensPanel.test.tsx` back to 9 tests.
+2. **Real fix.** `GbcWorldCanvas` gains `focusEmptyMaps` (`f5dd849`), mirroring `WorldCanvas.tsx`'s own of the same name: fits the empty maps (`coverage.mapsWithoutEncounters`) that sit in a multi-map component (reusing the existing `fitAllBounds` pure helper, no new geometry), falling back to every empty map when none resolve to a real component, no-op when there are no empty maps at all. One `setView({ ...computeFit(...), fitted: true })` call, no nested updater — the same shape `fitAll`/the initial-fit effect already use. Wired as `LensPanel`'s `onListEmptyMaps`. No `LensPanel`/GBA file touched.
+3. **Test.** `GbcWorldCanvas.test.tsx` +1: using `WORLD`'s own fixture (MapA+MapB share one 2-map component), with only MapA marked empty, clicking "List them" is asserted against an exactly hand-computed result — zoom 20 (status strip "zoom 63%", vs the initial fit's zoom 10 = "zoom 31%") and pan `{0,0}`, pinned a second way via the rendered `.world-canvas__lens-tint` transform (`left/top/width/height`). Mutation: dropped `onListEmptyMaps={focusEmptyMaps}` at the JSX call site → the new test went red (`expected... "zoom 63%"` never appeared); restored, re-confirmed green.
+
+### Gate (final commit, after the F11 correction)
+
+- `npm test`: **1677 passed, 0 failed**, 106 files (baseline at `123d89f`: 1600/0; net +77 for the whole task including both fix-round passes — LensPanel net back to its pre-fix-round +3, GbcWorldCanvas net +1 higher than the `b55b69f` gate above). Single pass, no flake.
 - `npm run typecheck`: clean (`tsconfig.base.json` and `packages/ui/tsconfig.json`).
 - `git status --short`: clean.
 
