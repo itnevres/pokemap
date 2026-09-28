@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import type { Project } from "@pokemap/core/src/project.js";
 import type { MapData } from "@pokemap/core/src/load/maps.js";
 import { layoutNameFor, resolveRoot } from "../src/context.js";
@@ -77,7 +77,7 @@ describe("resolveRoot", () => {
 
   it("refuses, naming the cwd and the --project alternative, when neither an explicit path nor a config file is given", () => {
     const dir = chdirToFreshDir();
-    expect(() => resolveRoot(undefined)).toThrow(new RegExp(`no pokemap\\.config\\.json in .*${dir.split("/").pop()}`));
+    expect(() => resolveRoot(undefined)).toThrow(new RegExp(`no pokemap\\.config\\.json in .*${basename(dir)}`));
     expect(() => resolveRoot(undefined)).toThrow(/--project/);
   });
 });

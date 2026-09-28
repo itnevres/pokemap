@@ -71,7 +71,8 @@ const REPO_ROOT = process.cwd();
  *  the gap the "render CeruleanCave2F" test below exists to close.
  *  `spawnSync` reports both streams and the exit code unconditionally. */
 function spawnCli(args: string[]): { status: number; stdout: string; stderr: string } {
-  const result = spawnSync("npx", ["tsx", CLI_ENTRY, ...args], { cwd: REPO_ROOT, encoding: "utf8" });
+  // `node --import tsx`, not `npx tsx`: Windows can't spawn `npx` (a .cmd shim) without a shell.
+  const result = spawnSync(process.execPath, ["--import", "tsx", CLI_ENTRY, ...args], { cwd: REPO_ROOT, encoding: "utf8" });
   return { status: result.status ?? 1, stdout: result.stdout, stderr: result.stderr };
 }
 
