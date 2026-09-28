@@ -358,4 +358,12 @@ describe("isGbcCoveragePayload", () => {
     expect(isGbcCoveragePayload({ ...VALID, levelByMap: [{ mapName: "Route29", averageLevel: "3.5" }] })).toBe(false);
     expect(isGbcCoveragePayload({ ...VALID, levelByMap: [{ mapName: 5, averageLevel: 3.5 }] })).toBe(false);
   });
+
+  // Fix round (spec review F6): the `isRecord(e)` clause in the levelByMap
+  // loop was untested -- removing it would throw a TypeError on a non-record
+  // entry (`e.mapName` off `null`) instead of returning false.
+  it("rejects a non-record levelByMap entry (mutation check F6: dropping isRecord(e))", () => {
+    expect(isGbcCoveragePayload({ ...VALID, levelByMap: [null] })).toBe(false);
+    expect(isGbcCoveragePayload({ ...VALID, levelByMap: ["x"] })).toBe(false);
+  });
 });
