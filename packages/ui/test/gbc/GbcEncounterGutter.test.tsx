@@ -105,6 +105,27 @@ function entry(map: string, sources: GbcEncounterSource[] | undefined, rect = { 
   return { map, rect, sources };
 }
 
+// Fix round (spec review F2): one fixture covering every method and every
+// time/rod combination the plan/spec's own test lines call for, including a
+// fish `day` row (F2b's "a morning fish row shown via its day tag").
+const RICH_SOURCES: GbcEncounterSource[] = [
+  { method: "grass", time: "morn", chances: [chance("LEDYBA", 45, 3, 5)] },
+  { method: "grass", time: "day", chances: [chance("PIDGEY", 45, 3, 5)] },
+  { method: "grass", time: "nite", chances: [chance("HOOTHOOT", 45, 3, 5)] },
+  { method: "water", chances: [chance("POLIWAG", 60, 10, 15)] },
+  { method: "fish", rod: "old", chances: [chance("MAGIKARP", 100, 5, 10)] },
+  { method: "fish", rod: "good", time: "day", chances: [chance("GOLDEEN", 40, 10, 15)] },
+  { method: "fish", rod: "good", time: "nite", chances: [chance("QWILFISH", 40, 15, 20)] },
+  { method: "headbutt", list: "common", chances: [chance("AIPOM", 80, 5, 10)] },
+  { method: "headbutt", list: "rare", chances: [chance("HERACROSS", 20, 10, 15)] },
+  { method: "rock", chances: [chance("GEODUDE", 50, 5, 8)] },
+];
+
+/** The gutter's own row order (spec's "grass, water, fish, headbutt, rock"). */
+function methodTags(): string[] {
+  return [...document.querySelectorAll(".encounter-gutter__method-tag")].map((e) => e.textContent);
+}
+
 describe("GbcEncounterGutter", () => {
   it("is off by default -- no legend, no rows, until the toggle is clicked", () => {
     render(<GbcEncounterGutter maps={[entry("Route29", ROUTE29_SOURCES)]} zoom={32} time="morn" />);
@@ -174,6 +195,65 @@ describe("GbcEncounterGutter", () => {
     const dupKeyWarnings = consoleError.mock.calls.filter((c) => String(c[0]).includes("same key"));
     expect(dupKeyWarnings).toHaveLength(0);
     consoleError.mockRestore();
+  });
+
+  // Fix round (spec review F2a): pins the exact ORDERED label list (not just
+  // per-label presence/absence) at each of the 3 times, against one rich
+  // fixture covering every method and rod/time combination -- kills R1
+  // (reversing the method-group sort).
+  it("pins the exact ordered label list at Morn (incl. 'Fish · Good Rod · day')", () => {
+    render(<GbcEncounterGutter maps={[entry("Route29", RICH_SOURCES)]} zoom={32} time="morn" />);
+    fireEvent.click(screen.getByRole("button", { name: "Encounters" }));
+    expect(methodTags()).toEqual([
+      "Grass · morn",
+      "Surf",
+      "Fish · Old Rod",
+      "Fish · Good Rod · day",
+      "Headbutt · common",
+      "Headbutt · rare",
+      "Rock Smash",
+    ]);
+  });
+
+  it("pins the exact ordered label list at Day", () => {
+    render(<GbcEncounterGutter maps={[entry("Route29", RICH_SOURCES)]} zoom={32} time="day" />);
+    fireEvent.click(screen.getByRole("button", { name: "Encounters" }));
+    expect(methodTags()).toEqual([
+      "Grass · day",
+      "Surf",
+      "Fish · Old Rod",
+      "Fish · Good Rod · day",
+      "Headbutt · common",
+      "Headbutt · rare",
+      "Rock Smash",
+    ]);
+  });
+
+  it("pins the exact ordered label list at Nite", () => {
+    render(<GbcEncounterGutter maps={[entry("Route29", RICH_SOURCES)]} zoom={32} time="nite" />);
+    fireEvent.click(screen.getByRole("button", { name: "Encounters" }));
+    expect(methodTags()).toEqual([
+      "Grass · nite",
+      "Surf",
+      "Fish · Old Rod",
+      "Fish · Good Rod · nite",
+      "Headbutt · common",
+      "Headbutt · rare",
+      "Rock Smash",
+    ]);
+  });
+
+  // Fix round (spec review F2c): pins the LOD collapse boundary exactly --
+  // kills R2 (threshold 8->5) and R3 ("<" changed to "<=").
+  it("collapses to a badge at zoom 7 (just below the LOD threshold) and expands to a full strip at zoom 8 (exactly at it)", () => {
+    const { rerender } = render(<GbcEncounterGutter maps={[entry("Route29", RICH_SOURCES)]} zoom={7} time="day" />);
+    fireEvent.click(screen.getByRole("button", { name: "Encounters" }));
+    expect(document.querySelector(".encounter-gutter__badge")).toBeTruthy();
+    expect(document.querySelector(".encounter-gutter__strip")).toBeNull();
+
+    rerender(<GbcEncounterGutter maps={[entry("Route29", RICH_SOURCES)]} zoom={8} time="day" />);
+    expect(document.querySelector(".encounter-gutter__strip")).toBeTruthy();
+    expect(document.querySelector(".encounter-gutter__badge")).toBeNull();
   });
 
   it("shows species chips with their level and percent, capped at 6, with a '+N more' overflow", () => {
