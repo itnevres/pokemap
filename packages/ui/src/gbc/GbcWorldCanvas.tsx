@@ -1,8 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Placement, Component, Conflict, Bounds } from "@pokemap/core/src/gbc/world/connections.js";
 import type { GbcWorldPayload } from "@pokemap/core/src/gbc/wire.js";
-import { computeFit, drawDiamond } from "../components/WorldCanvas.js";
+import type { GbcEncounterSource, GbcSpeciesHit } from "@pokemap/core/src/gbc/analyse/atlas.js";
+import { computeFit, drawDiamond, levelColorMap } from "../components/WorldCanvas.js";
+import { LensPanel, type LensId } from "../components/LensPanel.js";
+import { SpeciesSpotlight } from "../components/SpeciesSpotlight.js";
+import { GbcEncounterGutter, type GbcEncounterGutterMapEntry, type GbcEncounterGutterRect } from "./GbcEncounterGutter.js";
 import { useGbcWorld } from "./hooks/useGbcWorld.js";
+import { useGbcCoverage } from "./hooks/useGbcCoverage.js";
+import { isGbcEncountersPayload } from "./guards.js";
 import type { GbcTimeOfDay } from "./time.js";
 
 /**
@@ -243,6 +249,61 @@ export function shouldUseLod(zoom: number): boolean {
   return zoom < GBC_LOD_ZOOM_THRESHOLD;
 }
 
+/**
+ * The method lens's own per-map tint colour (Plan 6b Task 6) -- a fixed
+ * display PRECEDENCE (spec's own "water > fish > headbutt > rock") for a map
+ * whose sources include more than one non-grass method, not a ranking of
+ * importance; mirrors `WorldCanvas.tsx`'s own `methodTintFor` exactly (same
+ * "first match wins" shape, one CSS var per method). Grass is never tinted
+ * (spec's own "Grass is never a tint" -- it's a lens about which maps reward
+ * a specific ACTION beyond walking through grass, which every encounter-
+ * carrying map already does). `sources` is `undefined` while the map's own
+ * `/api/encounters` fetch hasn't resolved yet (nothing to tint YET, not "no
+ * tint ever" -- this memo re-runs once it lands) and `[]` for a map with no
+ * encounters at all (also nothing to tint, correctly).
+ *
+ * A fish source counts only if it's present in the ALREADY-FETCHED sources
+ * for this map -- the server already drops fishing on a waterless map (the
+ * Task 12 atlas rule, cited in the spec's own "no extra client logic"
+ * note), so there is nothing further to check here.
+ *
+ * Exported and unit-tested for every precedence combination, including
+ * mutation check #3 (swapping fish and water in the precedence order).
+ */
+export function methodTint(sources: GbcEncounterSource[] | undefined): string | null {
+  if (!sources) return null;
+  if (sources.some((s) => s.method === "water")) return "var(--encounter-water)";
+  if (sources.some((s) => s.method === "fish")) return "var(--encounter-fishing)";
+  if (sources.some((s) => s.method === "headbutt")) return "var(--encounter-headbutt)";
+  if (sources.some((s) => s.method === "rock")) return "var(--encounter-rock-smash)";
+  return null;
+}
+
+/** `LensPanel`'s own `methodKey` for the GBC method lens (spec's own list,
+ *  and the coordinator's swatch-slug amendment: only "water", "fishing",
+ *  "headbutt" and "rock-smash" -- grass is never in this key, since it's
+ *  never tinted; see `methodTint`'s own doc comment). Module scope, not
+ *  recreated per render -- `LensPanel`'s own `methodKey` prop is read by
+ *  reference identity nowhere that matters (a plain render-time read), but
+ *  there is no reason to allocate a fresh array every render either. */
+const GBC_METHOD_LENS_KEY: Array<{ slug: string; label: string }> = [
+  { slug: "water", label: "Water (surfing)" },
+  { slug: "fishing", label: "Fish" },
+  { slug: "headbutt", label: "Headbutt" },
+  { slug: "rock-smash", label: "Rock Smash" },
+];
+
+/** `LensPanel`'s own `legendCopy` override for the GBC lens panel (spec's
+ *  own exact copy for level-curve and method; empty-maps/unused-species are
+ *  left at `LensPanel`'s own GBA defaults, which already read generically
+ *  off `summary` and need no GBC-specific wording). Module scope, for the
+ *  same reason as `GBC_METHOD_LENS_KEY` above. */
+const GBC_LEGEND_COPY: Partial<Record<LensId, (s: { emptyMaps: number; unusedSpecies: number }) => string>> = {
+  "level-curve": () =>
+    "Colour is the average encounter level: an unweighted mean of each source's average. Blue is low, red is high.",
+  method: () => "Which maps reward surfing, fishing, headbutting trees or rock smash.",
+};
+
 interface FitResult {
   zoom: number;
   pan: { x: number; y: number };
@@ -290,6 +351,21 @@ interface ImageCacheEntry {
   small?: HTMLCanvasElement;
 }
 
+/** Mirrors `ImageCacheEntry`'s own shape and reasoning: a placeholder
+ *  written synchronously before the fetch starts, so a second effect run for
+ *  the same map never double-fetches. Unlike the image cache, this one is
+ *  TIME-INDEPENDENT (spec's own "one fetch per map, ever" -- see the fetch
+ *  effect's own comment below): `sources` holds every method/time/rod/list
+ *  variant a map has, and time filtering happens client-side, at render,
+ *  inside `GbcEncounterGutter`/`methodTint` -- never by refetching on a time
+ *  switch. `sources` stays unset on a failed fetch (mirrors the image
+ *  cache's own best-effort posture: one map's gutter/tint entry just stays
+ *  empty, not a banner over an otherwise-working canvas). */
+interface EncounterCacheEntry {
+  loaded: boolean;
+  sources?: GbcEncounterSource[];
+}
+
 interface HoverInfo {
   map: string;
   component: Component | null;
@@ -327,10 +403,12 @@ export interface GbcWorldCanvasProps {
  */
 export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpenMap }: GbcWorldCanvasProps) {
   const { data: world, error } = useGbcWorld();
+  const { data: coverageData, error: coverageError } = useGbcCoverage();
 
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageCacheRef = useRef<Map<string, ImageCacheEntry>>(new Map());
+  const encounterCacheRef = useRef<Map<string, EncounterCacheEntry>>(new Map());
   const conflictBadgesRef = useRef<Array<{ x: number; y: number; text: string }>>([]);
   const dragRef = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
   // Same "did a real drag happen" guard `WorldCanvas.tsx`'s own
@@ -343,9 +421,21 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
   const [view, setView] = useState<GbcWorldView>({ zoom: 1, pan: { x: 0, y: 0 }, fitted: false });
   const { zoom, pan, fitted } = view;
   const [compositeVersion, setCompositeVersion] = useState(0);
+  // Bumped whenever encounterCacheRef's own contents change (a per-map
+  // fetch landing) -- the same "a ref never usefully appears in a
+  // dependency array, so a version counter stands in for it" shape
+  // WorldCanvas.tsx's own encounterVersion/encounterCacheRef pair uses.
+  const [encounterVersion, setEncounterVersion] = useState(0);
   const [selectedMap, setSelectedMap] = useState<string | null>(null);
   const [hover, setHover] = useState<HoverInfo | null>(null);
   const [tooltip, setTooltip] = useState<TooltipInfo | null>(null);
+  // Coverage lenses + species spotlight (Plan 6b Task 6) -- mirrors
+  // WorldCanvas.tsx's own `lens`/`spotlightHits` state exactly, including
+  // the three-state `spotlightHits` contract (`null` = no active search,
+  // `[]` = searched and found nowhere, otherwise the hit array) documented
+  // on SpeciesSpotlight's own `onHits` prop.
+  const [lens, setLens] = useState<LensId | null>(null);
+  const [spotlightHits, setSpotlightHits] = useState<GbcSpeciesHit[] | null>(null);
   // { map, token } rather than a bare map name (fix round, F7) -- see the
   // fade effect's own comment below for why the token has to be part of
   // this state's own identity.
@@ -449,6 +539,131 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
       img.src = `/api/render/${encodeURIComponent(p.map)}.png?time=${time}`;
     }
   }, [visible, time]);
+
+  // Fetches every visible placement's encounter sources at most ONCE PER
+  // MAP EVER (Task 5 quality review, binding note: "the encounter cache is
+  // time-independent"). Deliberately NOT keyed on `time` and deliberately
+  // NOT cleared by the image cache's own time-change effect above -- unlike
+  // a rendered PNG (one per time of day), `gbcEncounterSources` returns
+  // every method/time/rod/list variant a map has in one response; a time
+  // switch only changes which of those rows `GbcEncounterGutter`/
+  // `methodTint` show, at render, not what was fetched. Mirrors
+  // WorldCanvas.tsx's own encounter-fetch effect's cache-by-ref shape
+  // (placeholder written synchronously, `loaded` set on arrival, a version
+  // bump so its own reader memos re-run).
+  useEffect(() => {
+    for (const p of visible) {
+      if (encounterCacheRef.current.has(p.map)) continue;
+      const entry: EncounterCacheEntry = { loaded: false };
+      encounterCacheRef.current.set(p.map, entry);
+      fetch(`/api/encounters/${encodeURIComponent(p.map)}`)
+        .then((r) => {
+          if (!r.ok) throw new Error(`GET /api/encounters/${p.map} -> ${r.status}`);
+          return r.json() as Promise<unknown>;
+        })
+        .then((d) => {
+          if (!isGbcEncountersPayload(d)) throw new Error(`GET /api/encounters/${p.map} returned an unexpected shape`);
+          entry.loaded = true;
+          entry.sources = d.sources;
+          setEncounterVersion((v) => v + 1);
+        })
+        .catch(() => {
+          // Best-effort, mirroring the image cache's own posture (and
+          // WorldCanvas.tsx's own identical encounter-fetch catch): a failed
+          // fetch just leaves this one map's gutter/tint entry empty, not a
+          // banner over an otherwise-working canvas. Still marked loaded so
+          // this effect does not retry it forever.
+          entry.loaded = true;
+          setEncounterVersion((v) => v + 1);
+        });
+    }
+  }, [visible]);
+
+  // Screen-space rect per visible placement, in GbcEncounterGutter's own
+  // prop shape -- the exact same dx/dy/dw/dh formula the draw effect above
+  // uses for each placement's own image blit, so the gutter always lines up
+  // with the map it describes. A memo separate from the imperative draw
+  // effect (Task 5 quality review, binding note), mirroring WorldCanvas.tsx's
+  // own encounterEntries/lensOverlayEntries/spotlightOverlayEntries split.
+  const gutterEntries = useMemo<GbcEncounterGutterMapEntry[]>(() => {
+    return visible.map((p) => ({
+      map: p.map,
+      rect: { x: p.x * zoom + pan.x, y: p.y * zoom + pan.y, width: p.width * zoom, height: p.height * zoom },
+      sources: encounterCacheRef.current.get(p.map)?.loaded ? encounterCacheRef.current.get(p.map)!.sources : undefined,
+    }));
+    // encounterVersion, not encounterCacheRef itself (a ref never usefully
+    // appears in a dependency array) -- mirrors WorldCanvas.tsx's own
+    // identical comment on its own encounterEntries memo.
+  }, [visible, pan, zoom, encounterVersion]);
+
+  // mapName -> its already-fetched sources (or undefined if not yet loaded)
+  // -- the one place both the method lens and (were it needed) any future
+  // per-map encounter reader would look this up, mirroring
+  // WorldCanvas.tsx's own methodTintFor closure over encounterCacheRef.
+  const methodTintFor = useCallback((map: string): string | null => {
+    return methodTint(encounterCacheRef.current.get(map)?.sources);
+  }, []);
+
+  // mapName -> a blue(low)/red(high) colour string, reusing the exact ramp
+  // WorldCanvas.tsx's own level-curve lens uses (levelColorMap, exported
+  // additively from that file -- see its own doc comment). Deliberately its
+  // OWN memo, keyed only on coverageData -- fetched once and never again
+  // (GBC is read-only), so this runs once, not on every pan/zoom frame the
+  // way lensOverlayEntries below necessarily does.
+  const levelColorByMap = useMemo(() => {
+    const entries = (coverageData?.levelByMap ?? []).filter((e) => !!e.mapName);
+    const style = typeof getComputedStyle === "function" ? getComputedStyle(document.documentElement) : null;
+    const low = style?.getPropertyValue("--overlay-elevation-low").trim() || "#3b82f6";
+    const high = style?.getPropertyValue("--danger").trim() || "#ef4444";
+    return levelColorMap(entries, low, high);
+  }, [coverageData]);
+
+  // Map NAMES with no encounter table at all -- coverage()'s own
+  // mapsWithoutEncounters is already keyed by name.
+  const emptyMapNames = useMemo(() => new Set(coverageData?.mapsWithoutEncounters ?? []), [coverageData]);
+
+  // Per-map lens tint overlay -- mirrors WorldCanvas.tsx's own
+  // lensOverlayEntries memo exactly (level-curve/empty-maps/method; GBC has
+  // no "unused-species" per-map visual either, for the identical reason
+  // that lens documents on itself: it's a fact about species, not a place).
+  const lensOverlayEntries = useMemo(() => {
+    if (!lens) return [] as Array<{ map: string; rect: GbcEncounterGutterRect; color: string }>;
+    const out: Array<{ map: string; rect: GbcEncounterGutterRect; color: string }> = [];
+    for (const p of visible) {
+      let color: string | null = null;
+      if (lens === "level-curve") color = levelColorByMap.get(p.map) ?? null;
+      else if (lens === "empty-maps") color = emptyMapNames.has(p.map) ? "var(--warn)" : null;
+      else if (lens === "method") color = methodTintFor(p.map);
+      if (!color) continue;
+      out.push({ map: p.map, rect: { x: p.x * zoom + pan.x, y: p.y * zoom + pan.y, width: p.width * zoom, height: p.height * zoom }, color });
+    }
+    return out;
+    // encounterVersion, not encounterCacheRef itself -- the method lens
+    // reads that ref via methodTintFor; mirrors WorldCanvas.tsx's own
+    // identical comment on its own lensOverlayEntries memo.
+  }, [lens, visible, pan, zoom, levelColorByMap, emptyMapNames, methodTintFor, encounterVersion]);
+
+  // mapName -> its best (highest-percent) hit -- gbcWhereSpecies already
+  // sorts by percent descending, mirrors WorldCanvas.tsx's own
+  // spotlightByMap exactly.
+  const spotlightByMap = useMemo(() => {
+    const out = new Map<string, GbcSpeciesHit>();
+    if (!spotlightHits) return out;
+    for (const h of spotlightHits) {
+      const existing = out.get(h.mapName);
+      if (!existing || h.percent > existing.percent) out.set(h.mapName, h);
+    }
+    return out;
+  }, [spotlightHits]);
+
+  const spotlightOverlayEntries = useMemo(() => {
+    if (!spotlightHits) return [] as Array<{ map: string; rect: GbcEncounterGutterRect; hit: GbcSpeciesHit | null }>;
+    return visible.map((p) => ({
+      map: p.map,
+      rect: { x: p.x * zoom + pan.x, y: p.y * zoom + pan.y, width: p.width * zoom, height: p.height * zoom },
+      hit: spotlightByMap.get(p.map) ?? null,
+    }));
+  }, [spotlightHits, visible, pan, zoom, spotlightByMap]);
 
   // The actual draw. `viewport` MUST stay in this dependency list (see the
   // header comment's Task 21 citation).
@@ -651,6 +866,28 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
             Fit all
           </button>
         </div>
+        {/* Species spotlight + coverage lenses (Plan 6b Task 6) -- reuses
+            WorldCanvas.tsx's own themed grow group so this control cluster
+            gets the same extra middle space there, not a bespoke width. */}
+        <div className="world-canvas__toolbar-group world-canvas__toolbar-group--grow">
+          <SpeciesSpotlight<GbcSpeciesHit> onHits={setSpotlightHits} />
+          {coverageError ? (
+            <span className="world-canvas__toolbar-error" role="alert">
+              Coverage lenses unavailable: {coverageError}
+            </span>
+          ) : (
+            <LensPanel
+              active={lens}
+              onChange={setLens}
+              summary={{
+                emptyMaps: coverageData?.mapsWithoutEncounters.length ?? 0,
+                unusedSpecies: coverageData?.unusedSpecies.length ?? 0,
+              }}
+              methodKey={GBC_METHOD_LENS_KEY}
+              legendCopy={GBC_LEGEND_COPY}
+            />
+          )}
+        </div>
       </div>
 
       <div className="world-canvas__legend">
@@ -681,6 +918,41 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
             onDoubleClick={onDoubleClick}
             onKeyDown={onKeyDown}
           />
+          <GbcEncounterGutter maps={gutterEntries} zoom={zoom} time={time} />
+          {lens && lensOverlayEntries.length > 0 && (
+            <div className="world-canvas__lens" aria-hidden="true">
+              {lensOverlayEntries.map((e) => (
+                <div
+                  key={e.map}
+                  className="world-canvas__lens-tint"
+                  style={{ left: e.rect.x, top: e.rect.y, width: e.rect.width, height: e.rect.height, background: e.color }}
+                />
+              ))}
+            </div>
+          )}
+          {spotlightHits !== null && (
+            <div className="world-canvas__spotlight" aria-hidden="true">
+              {spotlightOverlayEntries.map((e) =>
+                e.hit ? (
+                  <div
+                    key={e.map}
+                    className="world-canvas__spotlight-hit"
+                    style={{ left: e.rect.x, top: e.rect.y, width: e.rect.width, height: e.rect.height }}
+                  >
+                    <span className="world-canvas__spotlight-badge">
+                      {`${e.hit.percent.toFixed(0)}% Lv ${e.hit.minLevel}-${e.hit.maxLevel}`}
+                    </span>
+                  </div>
+                ) : (
+                  <div
+                    key={e.map}
+                    className="world-canvas__spotlight-dim"
+                    style={{ left: e.rect.x, top: e.rect.y, width: e.rect.width, height: e.rect.height }}
+                  />
+                ),
+              )}
+            </div>
+          )}
           {selectedRect && (
             <div className="world-canvas__selection" aria-hidden="true">
               <div

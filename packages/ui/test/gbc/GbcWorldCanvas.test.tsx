@@ -9,6 +9,7 @@ import {
   conflictTooltipText,
   shouldUseLod,
   jumpFit,
+  methodTint,
   GBC_LOD_ZOOM_THRESHOLD,
   type GbcWorldView,
   type GbcWorldCanvasProps,
@@ -196,6 +197,70 @@ describe("jumpFit (pure)", () => {
     expect(buggyZoom).toBeCloseTo(19.2, 5);
     const j = jumpFit(bounds, viewport);
     expect(j.zoom).not.toBeCloseTo(buggyZoom, 1);
+  });
+});
+
+describe("methodTint (pure)", () => {
+  it("undefined sources (not yet fetched) -> null", () => {
+    expect(methodTint(undefined)).toBeNull();
+  });
+
+  it("empty sources (no encounters at all) -> null", () => {
+    expect(methodTint([])).toBeNull();
+  });
+
+  it("grass alone is never tinted", () => {
+    expect(methodTint([{ method: "grass", time: "day", chances: [] }])).toBeNull();
+  });
+
+  it("water alone", () => {
+    expect(methodTint([{ method: "water", chances: [] }])).toBe("var(--encounter-water)");
+  });
+
+  it("fish alone", () => {
+    expect(methodTint([{ method: "fish", chances: [] }])).toBe("var(--encounter-fishing)");
+  });
+
+  it("headbutt alone", () => {
+    expect(methodTint([{ method: "headbutt", chances: [] }])).toBe("var(--encounter-headbutt)");
+  });
+
+  it("rock alone", () => {
+    expect(methodTint([{ method: "rock", chances: [] }])).toBe("var(--encounter-rock-smash)");
+  });
+
+  // Mutation check #3: swapping fish and water in the precedence order must
+  // be caught -- with all four non-grass methods present, water must win.
+  it("water beats fish/headbutt/rock (mutation check #3)", () => {
+    const sources = [
+      { method: "rock" as const, chances: [] },
+      { method: "headbutt" as const, chances: [] },
+      { method: "fish" as const, chances: [] },
+      { method: "water" as const, chances: [] },
+    ];
+    expect(methodTint(sources)).toBe("var(--encounter-water)");
+  });
+
+  it("fish beats headbutt/rock when water is absent", () => {
+    const sources = [
+      { method: "rock" as const, chances: [] },
+      { method: "headbutt" as const, chances: [] },
+      { method: "fish" as const, chances: [] },
+    ];
+    expect(methodTint(sources)).toBe("var(--encounter-fishing)");
+  });
+
+  it("headbutt beats rock when water/fish are absent", () => {
+    const sources = [
+      { method: "rock" as const, chances: [] },
+      { method: "headbutt" as const, chances: [] },
+    ];
+    expect(methodTint(sources)).toBe("var(--encounter-headbutt)");
+  });
+
+  it("grass alongside a real method never suppresses that method's own tint", () => {
+    const sources = [{ method: "grass" as const, time: "day" as const, chances: [] }, { method: "rock" as const, chances: [] }];
+    expect(methodTint(sources)).toBe("var(--encounter-rock-smash)");
   });
 });
 
@@ -911,5 +976,169 @@ describe("GbcWorldCanvas", () => {
       fireEvent.keyDown(canvas, { key: "Enter" });
       expect(onOpenMap).not.toHaveBeenCalled();
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Plan 6b Task 6: encounter gutter, coverage lenses, species spotlight.
+// ---------------------------------------------------------------------------
+
+const EMPTY_COVERAGE = {
+  mapsWithEncounters: 0,
+  mapsWithoutEncounters: [] as string[],
+  sourcesByMethod: {},
+  levelByMap: [] as { mapName: string; averageLevel: number }[],
+  unusedSpecies: [] as string[],
+  fishGroupWithoutWater: [],
+  defects: [],
+};
+
+interface AllFetchOpts {
+  world?: GbcWorldPayload;
+  encounters?: Record<string, unknown[]>;
+  coverage?: typeof EMPTY_COVERAGE;
+  species?: string[];
+  where?: Record<string, unknown[]>;
+}
+
+function mockFetchAll(opts: AllFetchOpts) {
+  const world = opts.world ?? WORLD;
+  return vi.fn((url: string) => {
+    if (url === "/api/world") return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(world) } as Response);
+    const encMatch = /^\/api\/encounters\/(.+)$/.exec(url);
+    if (encMatch) {
+      const name = decodeURIComponent(encMatch[1]!);
+      const sources = opts.encounters?.[name] ?? [];
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ family: "gbc", mapName: name, sources, defects: [] }),
+      } as Response);
+    }
+    if (url === "/api/coverage") {
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(opts.coverage ?? EMPTY_COVERAGE) } as Response);
+    }
+    if (url === "/api/species") {
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(opts.species ?? []) } as Response);
+    }
+    const whereMatch = /^\/api\/where\/(.+)$/.exec(url);
+    if (whereMatch) {
+      const species = decodeURIComponent(whereMatch[1]!);
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(opts.where?.[species] ?? []) } as Response);
+    }
+    return Promise.reject(new Error(`unexpected fetch ${url}`));
+  });
+}
+
+async function mountReadyAll(opts: AllFetchOpts, props: Partial<GbcWorldCanvasProps> = {}) {
+  vi.stubGlobal("fetch", mockFetchAll(opts));
+  const world = opts.world ?? WORLD;
+  const utils = render(<GbcWorldCanvas time="day" {...props} />);
+  const canvas = utils.container.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement;
+  await waitFor(() => expect(screen.getByText(new RegExp(`${world.components.length} components`))).toBeTruthy());
+  await waitFor(() => expect(screen.queryByText(/zoom 3%/)).toBeNull());
+  return { ...utils, canvas };
+}
+
+describe("GbcWorldCanvas: encounters/lenses/spotlight (Plan 6b Task 6)", () => {
+  it("fetches /api/encounters/:map once for each visible map, and does NOT refetch when time changes", async () => {
+    const encMock = vi.fn((_name: string) => [] as unknown[]);
+    const fetchMock = vi.fn((url: string) => {
+      if (url === "/api/world") return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(WORLD) } as Response);
+      const m = /^\/api\/encounters\/(.+)$/.exec(url);
+      if (m) {
+        encMock(decodeURIComponent(m[1]!));
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ family: "gbc", mapName: m[1], sources: [], defects: [] }) } as Response);
+      }
+      if (url === "/api/coverage") return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(EMPTY_COVERAGE) } as Response);
+      return Promise.reject(new Error(`unexpected fetch ${url}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { rerender } = render(<GbcWorldCanvas time="day" />);
+    await waitFor(() => expect(screen.getByText(/2 components/)).toBeTruthy());
+    // Only MapA and MapB are inside the initial fit (Interior is culled) --
+    // mirrors the image cache's own "initial fit covers the multi-map
+    // components only" test above.
+    await waitFor(() => expect(encMock).toHaveBeenCalledTimes(2));
+    expect(encMock.mock.calls.map((c) => c[0]).sort()).toEqual(["MapA", "MapB"]);
+
+    rerender(<GbcWorldCanvas time="nite" />);
+    await new Promise((r) => setTimeout(r, 20));
+    // A time switch must NOT clear/refetch the encounter cache -- it is
+    // time-independent (one fetch per map, ever); only the image cache does
+    // that.
+    expect(encMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("the Encounters toggle shows a species chip built from the real fetched sources", async () => {
+    const sources = [{ method: "rock", chances: [{ species: "GEODUDE", percent: 45, minLevel: 5, maxLevel: 8 }] }];
+    await mountReadyAll({ encounters: { MapA: sources, MapB: [] } });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Encounters" })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "Encounters" }));
+    await waitFor(() => expect(screen.getByText("Geodude 45% Lv 5-8")).toBeTruthy());
+  });
+
+  it("method lens tints MapA/MapB by their own fetched method precedence", async () => {
+    const encounters = {
+      MapA: [{ method: "water", chances: [] }],
+      MapB: [{ method: "rock", chances: [] }],
+    };
+    await mountReadyAll({ encounters });
+    fireEvent.click(screen.getByLabelText(/method lens/i));
+
+    await waitFor(() => expect(document.querySelectorAll(".world-canvas__lens-tint").length).toBe(2));
+    const tints = [...document.querySelectorAll<HTMLElement>(".world-canvas__lens-tint")].map((el) => el.style.background);
+    expect(tints).toContain("var(--encounter-water)");
+    expect(tints).toContain("var(--encounter-rock-smash)");
+  });
+
+  it("the method lens's own legend key uses the GBC methodKey (water/fish/headbutt/rock-smash, no grass)", async () => {
+    await mountReadyAll({});
+    fireEvent.click(screen.getByLabelText(/method lens/i));
+    expect(screen.getByText("Headbutt")).toBeTruthy();
+    expect(screen.getByText("Rock Smash")).toBeTruthy();
+    expect(screen.queryByText("Grass")).toBeNull();
+  });
+
+  it("empty-maps lens tints a map named in coverage's own mapsWithoutEncounters with --warn", async () => {
+    await mountReadyAll({ coverage: { ...EMPTY_COVERAGE, mapsWithoutEncounters: ["MapA"] } });
+    fireEvent.click(screen.getByLabelText(/empty maps lens/i));
+    await waitFor(() => expect(document.querySelectorAll(".world-canvas__lens-tint").length).toBe(1));
+    expect(document.querySelector<HTMLElement>(".world-canvas__lens-tint")!.style.background).toBe("var(--warn)");
+  });
+
+  it("level-curve lens colours MapA/MapB distinctly by their own coverage rank", async () => {
+    const coverage = { ...EMPTY_COVERAGE, levelByMap: [{ mapName: "MapA", averageLevel: 3 }, { mapName: "MapB", averageLevel: 40 }] };
+    await mountReadyAll({ coverage });
+    fireEvent.click(screen.getByLabelText(/level curve lens/i));
+    await waitFor(() => expect(document.querySelectorAll(".world-canvas__lens-tint").length).toBe(2));
+    const tints = [...document.querySelectorAll<HTMLElement>(".world-canvas__lens-tint")].map((el) => el.style.background);
+    expect(tints[0]).not.toBe(tints[1]);
+  });
+
+  it("a coverage fetch failure shows a visible error instead of silently rendering '0' lens counts", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) => {
+        if (url === "/api/world") return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(WORLD) } as Response);
+        if (url === "/api/coverage") return Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({}) } as Response);
+        if (/^\/api\/encounters\//.test(url)) return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ family: "gbc", sources: [], defects: [] }) } as Response);
+        return Promise.reject(new Error(`unexpected fetch ${url}`));
+      }),
+    );
+    render(<GbcWorldCanvas time="day" />);
+    await waitFor(() => expect(screen.getByText(/Coverage lenses unavailable/)).toBeTruthy());
+  });
+
+  it("species spotlight dims non-matching maps and lights a hit with its percent/level badge", async () => {
+    await mountReadyAll({
+      species: ["CHIKORITA"],
+      where: { CHIKORITA: [{ mapName: "MapA", mapConst: "MAP_A", method: "grass", percent: 45, minLevel: 3, maxLevel: 5 }] },
+    });
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "CHIKORITA" } });
+    await waitFor(() => expect(document.querySelector(".world-canvas__spotlight-hit")).toBeTruthy());
+    expect(document.querySelector(".world-canvas__spotlight-badge")!.textContent).toBe("45% Lv 3-5");
+    expect(document.querySelector(".world-canvas__spotlight-dim")).toBeTruthy(); // MapB, not a hit
   });
 });
