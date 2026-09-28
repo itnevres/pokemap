@@ -61,6 +61,18 @@ describe("LensPanel", () => {
     expect(screen.getByText(/3 species appear in no encounter table/i)).toBeTruthy();
   });
 
+  // Plan 6b Task 6 (mutation check #5): pins the GBA DEFAULT method key's
+  // full content -- no prior test in this file ever activated the method
+  // lens at all, so a change to LensPanel's own default METHOD_LENS_KEY
+  // (e.g. dropping Rock Smash) would previously have gone undetected by any
+  // GBA test.
+  it("the method lens's default key (no methodKey prop) lists Water, Fishing and Rock Smash", () => {
+    render(<LensPanel active="method" onChange={() => {}} summary={{ emptyMaps: 982, unusedSpecies: 12 }} />);
+    expect(screen.getByText("Water (surfing)")).toBeTruthy();
+    expect(screen.getByText("Fishing")).toBeTruthy();
+    expect(screen.getByText("Rock Smash")).toBeTruthy();
+  });
+
   // Plan 6b Task 6 (deliverable 1b): GBC's own methodKey/legendCopy props,
   // additive and optional -- every test above (no methodKey/legendCopy prop
   // passed) already pins that the GBA default rendering is unaffected by
