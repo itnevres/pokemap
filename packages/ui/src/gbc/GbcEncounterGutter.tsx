@@ -139,6 +139,11 @@ function displaySpeciesName(species: string): string {
     .join(" ");
 }
 
+/** Grass and water get the runtime `GRASS_WATER_LEVEL_BUFF_MAX` level buff;
+ *  no other method does. Shared by `chipText` and `chipTooltip` (fix round,
+ *  quality review Q3) so the two can't independently drift. */
+const isBuffedMethod = (method: GbcEncounterMethod): boolean => method === "grass" || method === "water";
+
 /**
  * A chip's own short label -- "Name 30% Lv 3-5" (spec's own example),
  * appending a trailing `+` to the level range for grass/water only (the
@@ -150,7 +155,7 @@ function displaySpeciesName(species: string): string {
  * `+`).
  */
 export function chipText(chance: GbcEncounterChance, method: GbcEncounterMethod): string {
-  const buff = method === "grass" || method === "water" ? "+" : "";
+  const buff = isBuffedMethod(method) ? "+" : "";
   return `${displaySpeciesName(chance.species)} ${Math.round(chance.percent)}% Lv ${chance.minLevel}-${chance.maxLevel}${buff}`;
 }
 
@@ -162,7 +167,7 @@ export function chipText(chance: GbcEncounterChance, method: GbcEncounterMethod)
  *  helpers exported and unit-tested") names only `matchesTime`/`rowLabel`/
  *  `chipText`. */
 function chipTooltip(chance: GbcEncounterChance, method: GbcEncounterMethod): string {
-  const buff = method === "grass" || method === "water" ? "+" : "";
+  const buff = isBuffedMethod(method) ? "+" : "";
   return `${displaySpeciesName(chance.species)} · Lv ${chance.minLevel}-${chance.maxLevel}${buff} · ${chance.percent.toFixed(1)}%`;
 }
 
@@ -175,9 +180,16 @@ function rateText(source: GbcEncounterSource): string | null {
 }
 
 /** Stable identity for a row -- method alone is not unique (fishing can
- *  contribute up to 6 rows for the same map: 3 rods x up to 2 times). */
+ *  contribute up to 6 rows for the same map: 3 rods x up to 2 times), and
+ *  `conditional` (fix round, spec review F1, blocking) is REQUIRED too: a
+ *  swarm and non-swarm source can otherwise share every other tag (e.g. a
+ *  plain grass-nite source alongside a swarm grass-nite one -- real on the
+ *  live corpus, `DarkCaveVioletEntrance`/`Route35`/`Route32`), which without
+ *  this produced duplicate React keys and, on a time switch, a stale row
+ *  from the PREVIOUS time still rendered because React reused the wrong
+ *  keyed DOM node instead of unmounting it. */
 function rowKey(source: GbcEncounterSource): string {
-  return [source.method, source.time ?? "", source.rod ?? "", source.list ?? ""].join(":");
+  return [source.method, source.time ?? "", source.rod ?? "", source.list ?? "", source.conditional ?? ""].join(":");
 }
 
 /** Every source that matches the app's current time, grouped in the spec's
@@ -332,7 +344,7 @@ export function GbcEncounterGutter({ maps, zoom, time }: GbcEncounterGutterProps
                         );
                       })}
                       {source.chances.length > CHIP_CAP && (
-                        <span className="encounter-gutter__more">+{source.chances.length - CHIP_CAP}</span>
+                        <span className="encounter-gutter__more">+{source.chances.length - CHIP_CAP} more</span>
                       )}
                     </div>
                   </div>

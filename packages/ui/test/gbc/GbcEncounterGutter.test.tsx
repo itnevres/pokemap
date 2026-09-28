@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { GbcEncounterGutter, matchesTime, rowLabel, chipText, type GbcEncounterGutterMapEntry } from "../../src/gbc/GbcEncounterGutter.js";
 import type { GbcEncounterChance, GbcEncounterSource } from "@pokemap/core/src/gbc/analyse/atlas.js";
@@ -145,6 +145,37 @@ describe("GbcEncounterGutter", () => {
     expect(screen.getByText("Headbutt · common")).toBeTruthy();
   });
 
+  // Fix round (spec review F1, blocking): a swarm and non-swarm source that
+  // share every other tag (real on the live corpus -- DarkCaveVioletEntrance,
+  // Route32, Route35) used to collide on `rowKey`, which omitted
+  // `conditional`. That produced duplicate React keys AND, on a time switch,
+  // a stale row from the PREVIOUS time stuck around because React reused the
+  // wrong keyed DOM node instead of unmounting it.
+  it("a swarm row next to a non-swarm row with identical other tags gets a distinct key -- no stale row after a time switch, no duplicate-key warning", () => {
+    const sources: GbcEncounterSource[] = [
+      { method: "grass", time: "day", chances: [chance("A", 50, 3, 5)] },
+      { method: "grass", time: "day", conditional: "swarm", chances: [chance("B", 50, 3, 5)] },
+      { method: "grass", time: "nite", chances: [chance("C", 50, 3, 5)] },
+      { method: "grass", time: "nite", conditional: "swarm", chances: [chance("D", 50, 3, 5)] },
+    ];
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const { rerender } = render(<GbcEncounterGutter maps={[entry("DarkCaveVioletEntrance", sources)]} zoom={32} time="day" />);
+    fireEvent.click(screen.getByRole("button", { name: "Encounters" }));
+    expect(screen.getByText("Grass · day")).toBeTruthy();
+    expect(screen.getByText("Grass · day · swarm")).toBeTruthy();
+
+    rerender(<GbcEncounterGutter maps={[entry("DarkCaveVioletEntrance", sources)]} zoom={32} time="nite" />);
+    expect(screen.queryByText("Grass · day")).toBeNull();
+    expect(screen.queryByText("Grass · day · swarm")).toBeNull();
+    expect(screen.getByText("Grass · nite")).toBeTruthy();
+    expect(screen.getByText("Grass · nite · swarm")).toBeTruthy();
+
+    const dupKeyWarnings = consoleError.mock.calls.filter((c) => String(c[0]).includes("same key"));
+    expect(dupKeyWarnings).toHaveLength(0);
+    consoleError.mockRestore();
+  });
+
   it("shows species chips with their level and percent, capped at 6, with a '+N more' overflow", () => {
     const many: GbcEncounterSource[] = [
       { method: "rock", chances: Array.from({ length: 8 }, (_, i) => chance(`SPECIES_${i}`, 10, 5, 8)) },
@@ -152,7 +183,21 @@ describe("GbcEncounterGutter", () => {
     render(<GbcEncounterGutter maps={[entry("Route29", many)]} zoom={32} time="day" />);
     fireEvent.click(screen.getByRole("button", { name: "Encounters" }));
     expect(screen.getAllByRole("button", { name: /Species 0|Species 1/ })).toBeTruthy();
-    expect(screen.getByText("+2")).toBeTruthy();
+    // Fix round (spec review F9): the spec's own overflow text is "+N more",
+    // not GBA's bare "+N" -- pinned here, not just "+2".
+    expect(screen.getByText("+2 more")).toBeTruthy();
+  });
+
+  // Fix round (spec review F9): exactly CHIP_CAP (6) chances must show no
+  // overflow element at all -- R5's own target (">" changed to ">=").
+  it("a row with exactly 6 chances has no overflow element", () => {
+    const exact: GbcEncounterSource[] = [
+      { method: "rock", chances: Array.from({ length: 6 }, (_, i) => chance(`SPECIES_${i}`, 10, 5, 8)) },
+    ];
+    render(<GbcEncounterGutter maps={[entry("Route29", exact)]} zoom={32} time="day" />);
+    fireEvent.click(screen.getByRole("button", { name: "Encounters" }));
+    expect(screen.queryByText(/more/)).toBeNull();
+    expect(document.querySelector(".encounter-gutter__more")).toBeNull();
   });
 
   // Morn's matching rows are grass-morn (LEDYBA, PIDGEY) + headbutt-common
