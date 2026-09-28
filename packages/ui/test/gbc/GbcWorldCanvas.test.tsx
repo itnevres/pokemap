@@ -863,4 +863,53 @@ describe("GbcWorldCanvas", () => {
     await waitFor(() => expect(stageCtx.clearRect.mock.calls.length).toBeGreaterThan(0));
     expect(stageCtx.drawImage.mock.calls.length + stageCtx.clearRect.mock.calls.length).toBeGreaterThan(drawCallsBefore);
   });
+
+  // -------------------------------------------------------------------
+  // Keyboard path (fix round, quality review Minor #3).
+  // -------------------------------------------------------------------
+  describe("keyboard", () => {
+    it("the canvas is focusable with an accessible name", async () => {
+      const { canvas } = await mountReady();
+      expect(canvas.tabIndex).toBe(0);
+      expect(canvas.getAttribute("aria-label")).toMatch(/World map/i);
+    });
+
+    it("+ zooms in about the viewport's own centre, through the same single-state updater a wheel notch uses", async () => {
+      const { canvas } = await mountReady(); // fit: zoom 10, pan {0,50}
+      canvas.focus();
+      fireEvent.keyDown(canvas, { key: "+" });
+      // Centre pivot (100,100): cx=(100-0)/10=10, cy=(100-50)/10=5; next
+      // zoom 12; pan={100-10*12,100-5*12}={-20,40} -- the EXACT same math a
+      // wheel-in notch at the viewport centre would produce.
+      await waitFor(() => expect(screen.getByText(/zoom 38%/)).toBeTruthy());
+    });
+
+    it("- zooms out about the viewport's own centre", async () => {
+      const { canvas } = await mountReady(); // fit: zoom 10, pan {0,50}
+      canvas.focus();
+      fireEvent.keyDown(canvas, { key: "-" });
+      // next zoom = 10 / 1.2 = 8.333 -> round(8.333/32*100) = 26.
+      await waitFor(() => expect(screen.getByText(/zoom 26%/)).toBeTruthy());
+    });
+
+    it("Enter opens the currently selected map (the same target a double-click would open)", async () => {
+      const onOpenMap = vi.fn();
+      const { canvas } = await mountReady({ onOpenMap });
+      canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: 200, bottom: 200, width: 200, height: 200, x: 0, y: 0, toJSON() {} });
+      fireEvent.click(canvas, { clientX: 50, clientY: 100 }); // selects MapA
+      await waitFor(() => expect(document.querySelector(".world-canvas__selection-outline")).toBeTruthy());
+
+      canvas.focus();
+      fireEvent.keyDown(canvas, { key: "Enter" });
+      expect(onOpenMap).toHaveBeenCalledWith("MapA");
+    });
+
+    it("Enter does nothing when nothing is selected", async () => {
+      const onOpenMap = vi.fn();
+      const { canvas } = await mountReady({ onOpenMap });
+      canvas.focus();
+      fireEvent.keyDown(canvas, { key: "Enter" });
+      expect(onOpenMap).not.toHaveBeenCalled();
+    });
+  });
 });

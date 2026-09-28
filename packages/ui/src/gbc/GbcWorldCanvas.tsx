@@ -671,12 +671,15 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
             className="world-canvas__stage"
             width={viewport.w}
             height={viewport.h}
+            tabIndex={0}
+            aria-label="World map. Plus or minus zooms; Enter opens the selected map."
             onMouseDown={onMouseDown}
             onMouseMove={onMouseMove}
             onMouseUp={onMouseUp}
             onMouseLeave={onMouseLeave}
             onClick={onClick}
             onDoubleClick={onDoubleClick}
+            onKeyDown={onKeyDown}
           />
           {selectedRect && (
             <div className="world-canvas__selection" aria-hidden="true">
