@@ -646,6 +646,38 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
   // mapsWithoutEncounters is already keyed by name.
   const emptyMapNames = useMemo(() => new Set(coverageData?.mapsWithoutEncounters ?? []), [coverageData]);
 
+  // `LensPanel`'s empty-maps legend "next action" (fix round, spec review
+  // F11 -- coordinator decision: wire it, don't just hide it). Mirrors
+  // `WorldCanvas.tsx`'s own `focusEmptyMaps` (grep that name) exactly: fit
+  // the empty maps that sit in a MULTI-map component first (the same
+  // "connected landmasses only" filter `initialFitBounds`/`fitAll` already
+  // use, for the identical reason -- an unfiltered bbox of every empty
+  // placement would be dominated by any far-flung singleton interiors),
+  // falling back to every empty map when none of them resolve to a real
+  // multi-map component, and a no-op when there are no empty maps at all
+  // (degenerate/zero-size bounds). One `setView` call, `fitted: true` in
+  // the same object (never a nested updater -- the same StrictMode
+  // reasoning as `fitAll`/the initial fit above).
+  const focusEmptyMaps = useCallback(() => {
+    if (!world || emptyMapNames.size === 0) return;
+    const inLandmass: Record<string, Placement> = {};
+    for (const [name, p] of Object.entries(world.placements)) {
+      if (!emptyMapNames.has(name)) continue;
+      const comp = p.component >= 0 && p.component < world.components.length ? world.components[p.component]! : null;
+      if (comp && comp.maps.length > 1) inLandmass[name] = p;
+    }
+    let bounds = fitAllBounds(inLandmass);
+    if (!bounds) {
+      const allEmpty: Record<string, Placement> = {};
+      for (const [name, p] of Object.entries(world.placements)) {
+        if (emptyMapNames.has(name)) allEmpty[name] = p;
+      }
+      bounds = fitAllBounds(allEmpty);
+    }
+    if (!bounds) return;
+    setView({ ...computeFit(bounds, viewport, GBC_ZOOM_BOUNDS), fitted: true });
+  }, [world, emptyMapNames, viewport]);
+
   // Per-map lens tint overlay -- mirrors WorldCanvas.tsx's own
   // lensOverlayEntries memo exactly (level-curve/empty-maps/method; GBC has
   // no "unused-species" per-map visual either, for the identical reason
@@ -917,6 +949,7 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
               }}
               methodKey={GBC_METHOD_LENS_KEY}
               legendCopy={GBC_LEGEND_COPY}
+              onListEmptyMaps={focusEmptyMaps}
             />
           )}
         </div>
