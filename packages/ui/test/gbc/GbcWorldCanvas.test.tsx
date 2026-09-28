@@ -1197,4 +1197,22 @@ describe("GbcWorldCanvas: encounters/lenses/spotlight (Plan 6b Task 6)", () => {
     expect(document.querySelector(".world-canvas__spotlight-badge")!.textContent).toBe("45% Lv 3-5");
     expect(document.querySelector(".world-canvas__spotlight-dim")).toBeTruthy(); // MapB, not a hit
   });
+
+  // Fix round (spec review F8): gbcWhereSpecies can return several hits for
+  // the SAME map (one per time/rod/variant) -- spotlightByMap must keep the
+  // HIGHEST-percent one, not merely the first or the last seen.
+  it("with two hits on the same map, the spotlight badge shows the HIGHER percent (mutation check F8)", async () => {
+    await mountReadyAll({
+      species: ["CHIKORITA"],
+      where: {
+        CHIKORITA: [
+          { mapName: "MapA", mapConst: "MAP_A", method: "grass", time: "morn", percent: 10, minLevel: 3, maxLevel: 5 },
+          { mapName: "MapA", mapConst: "MAP_A", method: "grass", time: "day", percent: 45, minLevel: 4, maxLevel: 6 },
+        ],
+      },
+    });
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "CHIKORITA" } });
+    await waitFor(() => expect(document.querySelector(".world-canvas__spotlight-badge")).toBeTruthy());
+    expect(document.querySelector(".world-canvas__spotlight-badge")!.textContent).toBe("45% Lv 4-6");
+  });
 });
