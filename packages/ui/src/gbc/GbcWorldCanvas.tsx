@@ -9,6 +9,7 @@ import { GbcEncounterGutter, type GbcEncounterGutterMapEntry, type GbcEncounterG
 import { useGbcWorld } from "./hooks/useGbcWorld.js";
 import { useGbcCoverage } from "./hooks/useGbcCoverage.js";
 import { isGbcEncountersPayload } from "./guards.js";
+import { fetchGuarded } from "../hooks/useGuardedFetch.js";
 import type { GbcTimeOfDay } from "./time.js";
 
 /**
@@ -426,6 +427,12 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
   // dependency array, so a version counter stands in for it" shape
   // WorldCanvas.tsx's own encounterVersion/encounterCacheRef pair uses.
   const [encounterVersion, setEncounterVersion] = useState(0);
+  // Fix round (spec review F4): how many visible maps' /api/encounters fetch
+  // has failed (a non-OK status, or a shape that fails isGbcEncountersPayload
+  // -- e.g. a GBA-shaped { mapName, mapId, methods } response reaching a GBC
+  // canvas) -- surfaced as a visible note rather than looking indistinguishable
+  // from "this map genuinely has no encounters" (a real, normal state).
+  const [encounterFailedCount, setEncounterFailedCount] = useState(0);
   const [selectedMap, setSelectedMap] = useState<string | null>(null);
   const [hover, setHover] = useState<HoverInfo | null>(null);
   const [tooltip, setTooltip] = useState<TooltipInfo | null>(null);
@@ -551,18 +558,20 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
   // WorldCanvas.tsx's own encounter-fetch effect's cache-by-ref shape
   // (placeholder written synchronously, `loaded` set on arrival, a version
   // bump so its own reader memos re-run).
+  // Fix round (spec review F4): uses the shared `fetchGuarded` (the same
+  // non-hook fetch->ok->guard->error core `useGuardedFetch` itself now
+  // wraps) instead of a hand-rolled fetch/ok/guard/catch block -- the
+  // spec's own "every fetch goes through the shared guarded-fetch helper"
+  // convention, which this effect (a per-item cache-by-ref loop, not a
+  // single-URL hook call) had been the one place still bypassing.
   useEffect(() => {
     for (const p of visible) {
       if (encounterCacheRef.current.has(p.map)) continue;
       const entry: EncounterCacheEntry = { loaded: false };
       encounterCacheRef.current.set(p.map, entry);
-      fetch(`/api/encounters/${encodeURIComponent(p.map)}`)
-        .then((r) => {
-          if (!r.ok) throw new Error(`GET /api/encounters/${p.map} -> ${r.status}`);
-          return r.json() as Promise<unknown>;
-        })
+      const url = `/api/encounters/${encodeURIComponent(p.map)}`;
+      fetchGuarded(url, isGbcEncountersPayload, url)
         .then((d) => {
-          if (!isGbcEncountersPayload(d)) throw new Error(`GET /api/encounters/${p.map} returned an unexpected shape`);
           entry.loaded = true;
           entry.sources = d.sources;
           setEncounterVersion((v) => v + 1);
@@ -571,30 +580,45 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
           // Best-effort, mirroring the image cache's own posture (and
           // WorldCanvas.tsx's own identical encounter-fetch catch): a failed
           // fetch just leaves this one map's gutter/tint entry empty, not a
-          // banner over an otherwise-working canvas. Still marked loaded so
-          // this effect does not retry it forever.
+          // banner over an otherwise-working canvas -- but, unlike before
+          // (F4), it's now COUNTED, so "empty" is disclosed rather than
+          // silently indistinguishable from "no encounters here" (a normal
+          // state). Still marked loaded so this effect never retries a
+          // failed map in a loop.
           entry.loaded = true;
+          setEncounterFailedCount((c) => c + 1);
           setEncounterVersion((v) => v + 1);
         });
     }
   }, [visible]);
 
-  // Screen-space rect per visible placement, in GbcEncounterGutter's own
-  // prop shape -- the exact same dx/dy/dw/dh formula the draw effect above
-  // uses for each placement's own image blit, so the gutter always lines up
-  // with the map it describes. A memo separate from the imperative draw
-  // effect (Task 5 quality review, binding note), mirroring WorldCanvas.tsx's
-  // own encounterEntries/lensOverlayEntries/spotlightOverlayEntries split.
+  // One screen-rect-per-visible-placement memo (fix round, spec review F10:
+  // the binding Task 5 note's own "build ONE memo of screen-space rects...
+  // feed the gutter and lens overlays from it", which gutterEntries/
+  // lensOverlayEntries/spotlightOverlayEntries below each recomputing the
+  // same dx/dy/dw/dh formula independently didn't actually satisfy) --
+  // consumed by all three.
+  const rectByMap = useMemo(() => {
+    const m = new Map<string, GbcEncounterGutterRect>();
+    for (const p of visible) m.set(p.map, { x: p.x * zoom + pan.x, y: p.y * zoom + pan.y, width: p.width * zoom, height: p.height * zoom });
+    return m;
+  }, [visible, pan, zoom]);
+
+  // GbcEncounterGutter's own prop shape -- a memo separate from the
+  // imperative draw effect (Task 5 quality review, binding note), mirroring
+  // WorldCanvas.tsx's own encounterEntries/lensOverlayEntries/
+  // spotlightOverlayEntries split. Hoists the `encounterCacheRef.current.get`
+  // lookup once per placement (fix round, quality review Q1 -- this used to
+  // call `.get(p.map)` twice per entry).
   const gutterEntries = useMemo<GbcEncounterGutterMapEntry[]>(() => {
-    return visible.map((p) => ({
-      map: p.map,
-      rect: { x: p.x * zoom + pan.x, y: p.y * zoom + pan.y, width: p.width * zoom, height: p.height * zoom },
-      sources: encounterCacheRef.current.get(p.map)?.loaded ? encounterCacheRef.current.get(p.map)!.sources : undefined,
-    }));
+    return visible.map((p) => {
+      const cache = encounterCacheRef.current.get(p.map);
+      return { map: p.map, rect: rectByMap.get(p.map)!, sources: cache?.loaded ? cache.sources : undefined };
+    });
     // encounterVersion, not encounterCacheRef itself (a ref never usefully
     // appears in a dependency array) -- mirrors WorldCanvas.tsx's own
     // identical comment on its own encounterEntries memo.
-  }, [visible, pan, zoom, encounterVersion]);
+  }, [visible, rectByMap, encounterVersion]);
 
   // mapName -> its already-fetched sources (or undefined if not yet loaded)
   // -- the one place both the method lens and (were it needed) any future
@@ -635,13 +659,13 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
       else if (lens === "empty-maps") color = emptyMapNames.has(p.map) ? "var(--warn)" : null;
       else if (lens === "method") color = methodTintFor(p.map);
       if (!color) continue;
-      out.push({ map: p.map, rect: { x: p.x * zoom + pan.x, y: p.y * zoom + pan.y, width: p.width * zoom, height: p.height * zoom }, color });
+      out.push({ map: p.map, rect: rectByMap.get(p.map)!, color });
     }
     return out;
     // encounterVersion, not encounterCacheRef itself -- the method lens
     // reads that ref via methodTintFor; mirrors WorldCanvas.tsx's own
     // identical comment on its own lensOverlayEntries memo.
-  }, [lens, visible, pan, zoom, levelColorByMap, emptyMapNames, methodTintFor, encounterVersion]);
+  }, [lens, visible, rectByMap, levelColorByMap, emptyMapNames, methodTintFor, encounterVersion]);
 
   // mapName -> its best (highest-percent) hit -- gbcWhereSpecies already
   // sorts by percent descending, mirrors WorldCanvas.tsx's own
@@ -658,12 +682,8 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
 
   const spotlightOverlayEntries = useMemo(() => {
     if (!spotlightHits) return [] as Array<{ map: string; rect: GbcEncounterGutterRect; hit: GbcSpeciesHit | null }>;
-    return visible.map((p) => ({
-      map: p.map,
-      rect: { x: p.x * zoom + pan.x, y: p.y * zoom + pan.y, width: p.width * zoom, height: p.height * zoom },
-      hit: spotlightByMap.get(p.map) ?? null,
-    }));
-  }, [spotlightHits, visible, pan, zoom, spotlightByMap]);
+    return visible.map((p) => ({ map: p.map, rect: rectByMap.get(p.map)!, hit: spotlightByMap.get(p.map) ?? null }));
+  }, [spotlightHits, visible, rectByMap, spotlightByMap]);
 
   // The actual draw. `viewport` MUST stay in this dependency list (see the
   // header comment's Task 21 citation).
@@ -866,6 +886,18 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
             Fit all
           </button>
         </div>
+        {/* Fix round (spec review F4): a visible note, not a silent gap,
+            for however many visible maps' own /api/encounters fetch failed
+            (a 500, or a shape that fails isGbcEncountersPayload) -- reuses
+            the same world-canvas__toolbar-error class/role="alert" the
+            coverage-error slot below already uses. */}
+        {encounterFailedCount > 0 && (
+          <div className="world-canvas__toolbar-group">
+            <span className="world-canvas__toolbar-error" role="alert">
+              Encounter data unavailable for {encounterFailedCount} map{encounterFailedCount === 1 ? "" : "s"}
+            </span>
+          </div>
+        )}
         {/* Species spotlight + coverage lenses (Plan 6b Task 6) -- reuses
             WorldCanvas.tsx's own themed grow group so this control cluster
             gets the same extra middle space there, not a bespoke width. */}

@@ -1153,6 +1153,40 @@ describe("GbcWorldCanvas: encounters/lenses/spotlight (Plan 6b Task 6)", () => {
     await waitFor(() => expect(screen.getByText(/Coverage lenses unavailable/)).toBeTruthy());
   });
 
+  // Fix round (spec review F4): a GBA-shaped /api/encounters/:map response
+  // ({ mapName, mapId, methods }, no family tag, no sources array) fails
+  // isGbcEncountersPayload -- must surface as a visible note, and must not
+  // be retried in a loop.
+  it("a GBA-shaped encounters payload shows a visible 'unavailable' note, and is not retried in a loop", async () => {
+    const encFetchCount = { MapA: 0, MapB: 0 };
+    const fetchMock = vi.fn((url: string) => {
+      if (url === "/api/world") return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(WORLD) } as Response);
+      const m = /^\/api\/encounters\/(.+)$/.exec(url);
+      if (m) {
+        const name = decodeURIComponent(m[1]!) as "MapA" | "MapB";
+        encFetchCount[name]++;
+        // GBA's own shape for the identical URL pattern -- no `family`, no
+        // `sources`, a `methods` array instead.
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ mapName: name, mapId: 1, methods: [] }) } as Response);
+      }
+      if (url === "/api/coverage") return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(EMPTY_COVERAGE) } as Response);
+      return Promise.reject(new Error(`unexpected fetch ${url}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { container } = render(<GbcWorldCanvas time="day" />);
+    await waitFor(() => expect(screen.getByText(/2 components/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("Encounter data unavailable for 2 maps")).toBeTruthy());
+
+    // Not retried in a loop: a subsequent recompute (a wheel zoom, which
+    // touches the same [visible] the fetch effect is keyed on) must not
+    // trigger a second fetch for either already-failed map.
+    const canvas = container.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement;
+    fireEvent.wheel(canvas, { clientX: 100, clientY: 100, deltaY: -100 });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(encFetchCount).toEqual({ MapA: 1, MapB: 1 });
+  });
+
   it("species spotlight dims non-matching maps and lights a hit with its percent/level badge", async () => {
     await mountReadyAll({
       species: ["CHIKORITA"],
