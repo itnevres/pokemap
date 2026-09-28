@@ -1400,7 +1400,7 @@ input {
 /* Species spotlight + coverage lenses (Task 29). Both toolbar controls are
    purely presentational (search box; toggle strip + legend) -- mirrors
    EncounterGutter's own "presentational child, caller draws" split; the
-   world-canvas__spotlight-*/world-canvas__lens-tint rules further below are
+   world-canvas__spotlight-* and world-canvas__lens-tint rules further below are
    the actual overlay WorldCanvas renders from the data these controls hand
    it back via onHits/onChange. */
 .species-spotlight {
