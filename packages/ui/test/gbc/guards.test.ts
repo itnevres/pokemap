@@ -1,0 +1,369 @@
+import { describe, it, expect } from "vitest";
+import {
+  isProjectInfo,
+  isMapGroupsData,
+  isGbcMapPayload,
+  isGbcWorldPayload,
+  isGbcEncountersPayload,
+  isGbcCoveragePayload,
+} from "../../src/gbc/guards.js";
+import type { GbcMapPayload, GbcWorldPayload } from "@pokemap/core/src/gbc/wire.js";
+
+describe("isProjectInfo", () => {
+  it("accepts a real gba ProjectInfo", () => {
+    expect(isProjectInfo({ family: "gba", root: "/tmp/pokeemerald" })).toBe(true);
+  });
+
+  it("accepts a real gbc ProjectInfo", () => {
+    expect(isProjectInfo({ family: "gbc", root: "/tmp/pokecrystal" })).toBe(true);
+  });
+
+  it("rejects a non-object", () => {
+    expect(isProjectInfo(null)).toBe(false);
+    expect(isProjectInfo(undefined)).toBe(false);
+    expect(isProjectInfo("gba")).toBe(false);
+    expect(isProjectInfo(42)).toBe(false);
+    expect(isProjectInfo([])).toBe(false);
+  });
+
+  it("rejects a family that isn't exactly gba or gbc", () => {
+    expect(isProjectInfo({ family: "n64", root: "/tmp/x" })).toBe(false);
+    expect(isProjectInfo({ family: "GBA", root: "/tmp/x" })).toBe(false);
+    expect(isProjectInfo({ family: "", root: "/tmp/x" })).toBe(false);
+    expect(isProjectInfo({ root: "/tmp/x" })).toBe(false);
+  });
+
+  it("rejects a non-string root", () => {
+    expect(isProjectInfo({ family: "gba", root: 42 })).toBe(false);
+    expect(isProjectInfo({ family: "gba", root: null })).toBe(false);
+    expect(isProjectInfo({ family: "gba" })).toBe(false);
+  });
+});
+
+describe("isMapGroupsData", () => {
+  const VALID = { groupOrder: ["OLIVINE", "MAHOGANY"], groups: { OLIVINE: ["OlivineCity"], MAHOGANY: ["MahoganyTown"] } };
+
+  it("accepts a real-shaped payload", () => {
+    expect(isMapGroupsData(VALID)).toBe(true);
+  });
+
+  it("accepts an empty groupOrder/groups pair", () => {
+    expect(isMapGroupsData({ groupOrder: [], groups: {} })).toBe(true);
+  });
+
+  it("accepts a group with an empty map list", () => {
+    expect(isMapGroupsData({ groupOrder: ["OLIVINE"], groups: { OLIVINE: [] } })).toBe(true);
+  });
+
+  it("rejects a non-object", () => {
+    expect(isMapGroupsData(null)).toBe(false);
+    expect(isMapGroupsData(undefined)).toBe(false);
+    expect(isMapGroupsData("x")).toBe(false);
+    expect(isMapGroupsData([])).toBe(false);
+  });
+
+  it("rejects a non-array groupOrder", () => {
+    expect(isMapGroupsData({ groupOrder: "OLIVINE", groups: { OLIVINE: [] } })).toBe(false);
+    expect(isMapGroupsData({ groupOrder: { 0: "OLIVINE" }, groups: { OLIVINE: [] } })).toBe(false);
+    expect(isMapGroupsData({ groups: { OLIVINE: [] } })).toBe(false);
+  });
+
+  it("rejects a groupOrder whose entries aren't all strings", () => {
+    expect(isMapGroupsData({ groupOrder: ["OLIVINE", 5], groups: { OLIVINE: [] } })).toBe(false);
+  });
+
+  it("rejects a non-string groupOrder entry even when it numerically coerces to a real key (isolates the string-array check from the key-exists check, since object keys are always strings)", () => {
+    expect(isMapGroupsData({ groupOrder: [5], groups: { "5": ["x"] } })).toBe(false);
+  });
+
+  it("rejects a non-plain-object groups", () => {
+    expect(isMapGroupsData({ groupOrder: [], groups: null })).toBe(false);
+    expect(isMapGroupsData({ groupOrder: [], groups: [] })).toBe(false);
+    expect(isMapGroupsData({ groupOrder: [] })).toBe(false);
+  });
+
+  it("rejects a groups value that isn't string[]", () => {
+    expect(isMapGroupsData({ groupOrder: ["OLIVINE"], groups: { OLIVINE: "OlivineCity" } })).toBe(false);
+    expect(isMapGroupsData({ groupOrder: ["OLIVINE"], groups: { OLIVINE: [1, 2] } })).toBe(false);
+    expect(isMapGroupsData({ groupOrder: ["OLIVINE"], groups: { OLIVINE: ["OlivineCity", 5] } })).toBe(false);
+  });
+
+  it("rejects a groupOrder entry that is not a key of groups", () => {
+    expect(isMapGroupsData({ groupOrder: ["OLIVINE", "MAHOGANY"], groups: { OLIVINE: ["OlivineCity"] } })).toBe(false);
+  });
+});
+
+/** A real-shaped `GbcMapPayload`, every clause `isGbcMapPayload` checks
+ *  satisfied -- 2x2 blocks (width*height=4), 3 metatiles (collision.length=3),
+ *  all 4 event arrays present. Each test below mutates exactly ONE field
+ *  away from this valid shape. */
+function validGbcMapPayload(): GbcMapPayload {
+  return {
+    family: "gbc",
+    map: {
+      name: "Fixture", constName: "FIXTURE", group: 1, number: 1, width: 2, height: 2,
+      blkPath: "maps/Fixture.blk", tileset: "TILESET_FIXTURE", environment: "ENVIRONMENT_TOWN",
+      landmark: "LANDMARK_NONE", music: "MUSIC_NONE", phoneFlag: "0", palette: "PAL_MAP_TOWN",
+      fishGroup: "0", border: 3, connectionFlags: "0", connections: [],
+    },
+    layout: { blkPath: "maps/Fixture.blk", width: 2, height: 2, writable: true },
+    blocks: [{ metatileId: 0 }, { metatileId: 1 }, { metatileId: 2 }, { metatileId: 0 }],
+    metatileCount: 3,
+    tileset: { constName: "TILESET_FIXTURE", name: "TilesetFixture" },
+    collision: [{ tl: 0, tr: 0, bl: 0, br: 0 }, { tl: 7, tr: 7, bl: 7, br: 7 }, { tl: 0, tr: 0, bl: 0, br: 0 }],
+    collisionInfo: { "0": { name: "COLL_FLOOR", category: "land", talk: false }, "7": { name: "COLL_WALL", category: "wall", talk: false } },
+    events: { warps: [], coords: [], bgs: [], objects: [], sceneScripts: [], callbacks: [], objectConsts: [] },
+    defects: [],
+    paddingWidth: 3,
+  };
+}
+
+describe("isGbcMapPayload", () => {
+  it("accepts a real-shaped payload", () => {
+    expect(isGbcMapPayload(validGbcMapPayload())).toBe(true);
+  });
+
+  it("rejects a non-object, and family !== gbc", () => {
+    expect(isGbcMapPayload(null)).toBe(false);
+    expect(isGbcMapPayload([])).toBe(false);
+    expect(isGbcMapPayload({ ...validGbcMapPayload(), family: "gba" })).toBe(false);
+  });
+
+  it("rejects a non-string map.name", () => {
+    const p = validGbcMapPayload();
+    expect(isGbcMapPayload({ ...p, map: { ...p.map, name: 5 } })).toBe(false);
+    expect(isGbcMapPayload({ ...p, map: null })).toBe(false);
+  });
+
+  it("rejects a non-positive-integer layout.width or layout.height", () => {
+    const p = validGbcMapPayload();
+    expect(isGbcMapPayload({ ...p, layout: { ...p.layout, width: 0 } })).toBe(false);
+    expect(isGbcMapPayload({ ...p, layout: { ...p.layout, width: -1 } })).toBe(false);
+    expect(isGbcMapPayload({ ...p, layout: { ...p.layout, width: 1.5 } })).toBe(false);
+    expect(isGbcMapPayload({ ...p, layout: { ...p.layout, height: 0 } })).toBe(false);
+    expect(isGbcMapPayload({ ...p, layout: null })).toBe(false);
+  });
+
+  it("isolates the positive/integer checks from the downstream blocks.length check (Plan 0 §7: a naive case can slip through by coincidence)", () => {
+    const p = validGbcMapPayload();
+    // width*height still equals blocks.length (4) in both cases below, so a
+    // widened check that dropped positivity/integer-ness specifically (but
+    // kept typeof === "number") would NOT be caught by the blocks.length
+    // comparison alone -- these two cases are chosen precisely so the
+    // product coincidentally matches, isolating what this test claims to
+    // check.
+    expect(isGbcMapPayload({ ...p, layout: { ...p.layout, width: -4, height: -1 } })).toBe(false); // negative, product 4
+    expect(isGbcMapPayload({ ...p, layout: { ...p.layout, width: 8, height: 0.5 } })).toBe(false); // non-integer, product 4
+  });
+
+  it("rejects blocks.length !== width*height (mutation check #8)", () => {
+    const p = validGbcMapPayload();
+    expect(isGbcMapPayload({ ...p, blocks: p.blocks.slice(0, 3) })).toBe(false);
+    expect(isGbcMapPayload({ ...p, blocks: [...p.blocks, { metatileId: 0 }] })).toBe(false);
+    expect(isGbcMapPayload({ ...p, blocks: "not an array" })).toBe(false);
+  });
+
+  it("rejects collision.length !== metatileCount", () => {
+    const p = validGbcMapPayload();
+    expect(isGbcMapPayload({ ...p, collision: p.collision.slice(0, 2) })).toBe(false);
+    expect(isGbcMapPayload({ ...p, metatileCount: "3" })).toBe(false);
+    expect(isGbcMapPayload({ ...p, collision: "not an array" })).toBe(false);
+  });
+
+  it("rejects a non-record collisionInfo (spec review finding 12)", () => {
+    const p = validGbcMapPayload();
+    expect(isGbcMapPayload({ ...p, collisionInfo: [] })).toBe(false);
+    expect(isGbcMapPayload({ ...p, collisionInfo: "x" })).toBe(false);
+    expect(isGbcMapPayload({ ...p, collisionInfo: null })).toBe(false);
+    expect(isGbcMapPayload({ ...p, collisionInfo: undefined })).toBe(false);
+  });
+
+  it("rejects a missing tileset or a non-string tileset.constName (spec review finding 12)", () => {
+    const p = validGbcMapPayload();
+    expect(isGbcMapPayload({ ...p, tileset: null })).toBe(false);
+    expect(isGbcMapPayload({ ...p, tileset: { ...p.tileset, constName: 5 } })).toBe(false);
+    expect(isGbcMapPayload({ ...p, tileset: {} })).toBe(false);
+  });
+
+  it("rejects events missing any of the four positioned arrays", () => {
+    const p = validGbcMapPayload();
+    expect(isGbcMapPayload({ ...p, events: { ...p.events, warps: undefined } })).toBe(false);
+    expect(isGbcMapPayload({ ...p, events: { ...p.events, coords: "x" } })).toBe(false);
+    expect(isGbcMapPayload({ ...p, events: { ...p.events, bgs: {} } })).toBe(false);
+    expect(isGbcMapPayload({ ...p, events: { ...p.events, objects: null } })).toBe(false);
+    expect(isGbcMapPayload({ ...p, events: null })).toBe(false);
+  });
+
+  it("rejects a non-array defects", () => {
+    const p = validGbcMapPayload();
+    expect(isGbcMapPayload({ ...p, defects: "none" })).toBe(false);
+    expect(isGbcMapPayload({ ...p, defects: undefined })).toBe(false);
+  });
+});
+
+/** A real-shaped `GbcWorldPayload` -- one placement, one component, one
+ *  conflict, every clause `isGbcWorldPayload` checks satisfied. */
+function validGbcWorldPayload(): GbcWorldPayload {
+  return {
+    family: "gbc",
+    blockPx: 32,
+    placements: { Route17: { map: "Route17", x: 10, y: 20, width: 30, height: 40, component: 0 } },
+    components: [{ index: 0, maps: ["Route17"], bounds: { x: 10, y: 20, width: 30, height: 40 } }],
+    conflicts: [{ map: "Route17", viaA: { from: "Route18", x: 30, y: 50 }, viaB: { from: "Route16", x: 30, y: 49 } }],
+  };
+}
+
+describe("isGbcWorldPayload", () => {
+  it("accepts a real-shaped payload", () => {
+    expect(isGbcWorldPayload(validGbcWorldPayload())).toBe(true);
+  });
+
+  it("accepts an empty world (no placements/components/conflicts)", () => {
+    expect(isGbcWorldPayload({ family: "gbc", blockPx: 32, placements: {}, components: [], conflicts: [] })).toBe(true);
+  });
+
+  it("rejects a non-object", () => {
+    expect(isGbcWorldPayload(null)).toBe(false);
+    expect(isGbcWorldPayload(undefined)).toBe(false);
+    expect(isGbcWorldPayload([])).toBe(false);
+    expect(isGbcWorldPayload("x")).toBe(false);
+  });
+
+  it("rejects family !== gbc", () => {
+    expect(isGbcWorldPayload({ ...validGbcWorldPayload(), family: "gba" })).toBe(false);
+    expect(isGbcWorldPayload({ ...validGbcWorldPayload(), family: undefined })).toBe(false);
+  });
+
+  it("rejects blockPx !== 32 (mutation check #6: dropping this clause)", () => {
+    expect(isGbcWorldPayload({ ...validGbcWorldPayload(), blockPx: 16 })).toBe(false);
+    expect(isGbcWorldPayload({ ...validGbcWorldPayload(), blockPx: "32" })).toBe(false);
+    expect(isGbcWorldPayload({ ...validGbcWorldPayload(), blockPx: undefined })).toBe(false);
+  });
+
+  it("rejects a non-record placements", () => {
+    expect(isGbcWorldPayload({ ...validGbcWorldPayload(), placements: [] })).toBe(false);
+    expect(isGbcWorldPayload({ ...validGbcWorldPayload(), placements: "x" })).toBe(false);
+    expect(isGbcWorldPayload({ ...validGbcWorldPayload(), placements: null })).toBe(false);
+  });
+
+  it("rejects a placement entry missing a numeric field", () => {
+    const p = validGbcWorldPayload();
+    for (const field of ["x", "y", "width", "height", "component"] as const) {
+      const bad = { ...p.placements.Route17!, [field]: "not a number" };
+      expect(isGbcWorldPayload({ ...p, placements: { Route17: bad } })).toBe(false);
+    }
+  });
+
+  it("rejects a placement entry with a non-string map", () => {
+    const p = validGbcWorldPayload();
+    expect(isGbcWorldPayload({ ...p, placements: { Route17: { ...p.placements.Route17!, map: 5 } } })).toBe(false);
+  });
+
+  it("rejects a non-record placement entry", () => {
+    const p = validGbcWorldPayload();
+    expect(isGbcWorldPayload({ ...p, placements: { Route17: null } })).toBe(false);
+    expect(isGbcWorldPayload({ ...p, placements: { Route17: "x" } })).toBe(false);
+  });
+
+  it("rejects a non-array components", () => {
+    expect(isGbcWorldPayload({ ...validGbcWorldPayload(), components: {} })).toBe(false);
+    expect(isGbcWorldPayload({ ...validGbcWorldPayload(), components: "x" })).toBe(false);
+    expect(isGbcWorldPayload({ ...validGbcWorldPayload(), components: undefined })).toBe(false);
+  });
+
+  it("rejects a non-array conflicts", () => {
+    expect(isGbcWorldPayload({ ...validGbcWorldPayload(), conflicts: {} })).toBe(false);
+    expect(isGbcWorldPayload({ ...validGbcWorldPayload(), conflicts: "x" })).toBe(false);
+    expect(isGbcWorldPayload({ ...validGbcWorldPayload(), conflicts: undefined })).toBe(false);
+  });
+});
+
+describe("isGbcEncountersPayload", () => {
+  const VALID = { family: "gbc", mapName: "Route29", sources: [{ method: "grass", time: "morn", chances: [] }], defects: [] };
+
+  it("accepts a real-shaped payload", () => {
+    expect(isGbcEncountersPayload(VALID)).toBe(true);
+  });
+
+  it("accepts an empty sources array (a map with no encounters)", () => {
+    expect(isGbcEncountersPayload({ ...VALID, sources: [] })).toBe(true);
+  });
+
+  it("rejects a non-object", () => {
+    expect(isGbcEncountersPayload(null)).toBe(false);
+    expect(isGbcEncountersPayload(undefined)).toBe(false);
+    expect(isGbcEncountersPayload([])).toBe(false);
+    expect(isGbcEncountersPayload("x")).toBe(false);
+  });
+
+  it("rejects family !== gbc", () => {
+    expect(isGbcEncountersPayload({ ...VALID, family: "gba" })).toBe(false);
+    expect(isGbcEncountersPayload({ ...VALID, family: undefined })).toBe(false);
+  });
+
+  it("rejects a non-array sources", () => {
+    expect(isGbcEncountersPayload({ ...VALID, sources: {} })).toBe(false);
+    expect(isGbcEncountersPayload({ ...VALID, sources: "x" })).toBe(false);
+    expect(isGbcEncountersPayload({ ...VALID, sources: undefined })).toBe(false);
+  });
+
+  // Mutation check #8: a GBA-shaped /api/encounters/:map response
+  // ({ mapName, mapId, methods }, no family tag, no sources array) must be
+  // rejected outright, not accepted as if it were the GBC shape.
+  it("rejects a GBA-shaped { mapName, mapId, methods } payload (mutation check #8)", () => {
+    expect(isGbcEncountersPayload({ mapName: "Route29", mapId: 29, methods: [] })).toBe(false);
+  });
+});
+
+describe("isGbcCoveragePayload", () => {
+  const VALID = {
+    mapsWithEncounters: 125,
+    mapsWithoutEncounters: ["PlayersHouse1F"],
+    sourcesByMethod: { grass: 288, water: 62, fish: 40, headbutt: 10, rock: 5 },
+    levelByMap: [{ mapName: "Route29", averageLevel: 3.5 }],
+    unusedSpecies: ["CELEBI"],
+    fishGroupWithoutWater: [],
+    defects: [],
+  };
+
+  it("accepts a real-shaped payload", () => {
+    expect(isGbcCoveragePayload(VALID)).toBe(true);
+  });
+
+  it("rejects a non-object", () => {
+    expect(isGbcCoveragePayload(null)).toBe(false);
+    expect(isGbcCoveragePayload(undefined)).toBe(false);
+    expect(isGbcCoveragePayload([])).toBe(false);
+    expect(isGbcCoveragePayload("x")).toBe(false);
+  });
+
+  it("rejects a non-string-array mapsWithoutEncounters", () => {
+    expect(isGbcCoveragePayload({ ...VALID, mapsWithoutEncounters: [1, 2] })).toBe(false);
+    expect(isGbcCoveragePayload({ ...VALID, mapsWithoutEncounters: "x" })).toBe(false);
+    expect(isGbcCoveragePayload({ ...VALID, mapsWithoutEncounters: undefined })).toBe(false);
+  });
+
+  it("rejects a non-string-array unusedSpecies", () => {
+    expect(isGbcCoveragePayload({ ...VALID, unusedSpecies: [1, 2] })).toBe(false);
+    expect(isGbcCoveragePayload({ ...VALID, unusedSpecies: undefined })).toBe(false);
+  });
+
+  it("rejects a non-array levelByMap", () => {
+    expect(isGbcCoveragePayload({ ...VALID, levelByMap: {} })).toBe(false);
+    expect(isGbcCoveragePayload({ ...VALID, levelByMap: undefined })).toBe(false);
+  });
+
+  it("rejects a levelByMap entry missing mapName or averageLevel", () => {
+    expect(isGbcCoveragePayload({ ...VALID, levelByMap: [{ averageLevel: 3.5 }] })).toBe(false);
+    expect(isGbcCoveragePayload({ ...VALID, levelByMap: [{ mapName: "Route29", averageLevel: "3.5" }] })).toBe(false);
+    expect(isGbcCoveragePayload({ ...VALID, levelByMap: [{ mapName: 5, averageLevel: 3.5 }] })).toBe(false);
+  });
+
+  // Fix round (spec review F6): the `isRecord(e)` clause in the levelByMap
+  // loop was untested -- removing it would throw a TypeError on a non-record
+  // entry (`e.mapName` off `null`) instead of returning false.
+  it("rejects a non-record levelByMap entry (mutation check F6: dropping isRecord(e))", () => {
+    expect(isGbcCoveragePayload({ ...VALID, levelByMap: [null] })).toBe(false);
+    expect(isGbcCoveragePayload({ ...VALID, levelByMap: ["x"] })).toBe(false);
+  });
+});

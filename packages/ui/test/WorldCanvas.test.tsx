@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, fireEvent, screen, waitFor, act } from "@testing-library/react";
 import { WorldCanvas } from "../src/components/WorldCanvas.js";
-import { computeFit, UnplacedRail } from "../src/components/WorldCanvas.js";
+import { computeFit, UnplacedRail, levelColorMap } from "../src/components/WorldCanvas.js";
 
 /**
  * jsdom/testing-library's `fireEvent.drop(el, {clientX, clientY, ...})` does
@@ -302,6 +302,34 @@ async function mountReady(fetchMock: ReturnType<typeof vi.fn>) {
   return { ...utils, canvas, stageCtx };
 }
 
+// Fix round (spec review F5): levelColorMap had no unit test at all --
+// the only assertion anywhere was that GBC's 2 tints differ from each
+// other, which the divisor mutation (R18: n-1 -> n) and a low/high swap
+// (R7) both survived. Pinned here with exact rgb() strings and named
+// low/high endpoints.
+describe("levelColorMap (pure)", () => {
+  it("colours by percentile rank: the lowest entry gets the low endpoint exactly, the highest gets the high endpoint exactly, the middle is the exact midpoint", () => {
+    const entries = [
+      { mapName: "A", averageLevel: 1 },
+      { mapName: "B", averageLevel: 5 },
+      { mapName: "C", averageLevel: 10 },
+    ];
+    const result = levelColorMap(entries, "#0000ff", "#ff0000");
+    expect(result.get("A")).toBe("rgb(0, 0, 255)"); // the low map -- exact low endpoint
+    expect(result.get("B")).toBe("rgb(128, 0, 128)");
+    expect(result.get("C")).toBe("rgb(255, 0, 0)"); // exact high endpoint
+  });
+
+  it("a single entry gets the midpoint (n<=1 fallback, t=0.5)", () => {
+    const result = levelColorMap([{ mapName: "Solo", averageLevel: 42 }], "#0000ff", "#ff0000");
+    expect(result.get("Solo")).toBe("rgb(128, 0, 128)");
+  });
+
+  it("an empty entries array returns an empty map", () => {
+    expect(levelColorMap([], "#0000ff", "#ff0000").size).toBe(0);
+  });
+});
+
 describe("WorldCanvas", () => {
   // -------------------------------------------------------------------
   // Culling
@@ -409,6 +437,31 @@ describe("WorldCanvas", () => {
     const fit = computeFit({ x: 0, y: 0, width: 50, height: 20 }, { w: 100, h: 100 });
     expect(fit.zoom).toBe(2);
     expect(fit.pan).toEqual({ x: 0, y: 30 });
+  });
+
+  // Plan 6b Task 5: computeFit's own zoomBounds parameter, additive. This
+  // file's existing computeFit test just above is UNCHANGED (still calls
+  // computeFit with no third argument) -- that is itself part of what this
+  // test proves: the default stays exactly MIN_ZOOM/MAX_ZOOM.
+  it("computeFit's zoomBounds parameter overrides the default MIN_ZOOM/MAX_ZOOM clamp, and is left out by every existing call", () => {
+    // Bounds so small the unclamped zoom would be huge (100/1 = 100): the
+    // default MAX_ZOOM (16) caps it...
+    expect(computeFit({ x: 0, y: 0, width: 1, height: 1 }, { w: 100, h: 100 }).zoom).toBe(16);
+    // ...but GBC's own { min: 1/64, max: 32 } caps it at 32 instead, since
+    // 32 is GBC's native px/block (this file's own MAX_ZOOM=16 is a
+    // px/TILE cap, the wrong unit for a block-space fit).
+    expect(computeFit({ x: 0, y: 0, width: 1, height: 1 }, { w: 100, h: 100 }, { min: 1 / 64, max: 32 }).zoom).toBe(32);
+
+    // Bounds so large the unclamped zoom would be tiny (10/10000 = 0.001):
+    // the default MIN_ZOOM (1/64 = 0.015625) floors it up...
+    expect(computeFit({ x: 0, y: 0, width: 10000, height: 10000 }, { w: 10, h: 10 }).zoom).toBeCloseTo(1 / 64, 10);
+    // ...but a lower custom min lets the true unclamped zoom (0.001) through
+    // instead of flooring it up to 1/64.
+    expect(computeFit({ x: 0, y: 0, width: 10000, height: 10000 }, { w: 10, h: 10 }, { min: 1 / 2000, max: 32 }).zoom).toBeCloseTo(0.001, 10);
+
+    // Pan still centres correctly at the overridden zoom.
+    const fit = computeFit({ x: 0, y: 0, width: 1, height: 1 }, { w: 100, h: 100 }, { min: 1 / 64, max: 32 });
+    expect(fit.pan).toEqual({ x: (100 - 32) / 2, y: (100 - 32) / 2 });
   });
 
   it("drag pans the world by the mouse delta", async () => {

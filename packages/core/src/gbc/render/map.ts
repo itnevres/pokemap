@@ -284,3 +284,35 @@ export function renderGbcMap(proj: GbcProject, mapName: string, opts: RenderGbcM
 
   return dst;
 }
+
+/**
+ * A single metatile's raw 32x32 raster, map-keyed rather than
+ * tileset-keyed -- pixels depend on the map's own palette resolution
+ * (environment x time x group x tileset, `resolveFromTables`) and roof tiles
+ * (`roofSwappedTiles`, per group), so the same tileset renders differently on
+ * two maps (Plan 6b "The metatile thumbnail route is keyed by MAP, not
+ * tileset"). This is the core helper behind Task 1b's
+ * `/api/metatile/:map/:id.png` route, mirroring GBA's own layout-keyed
+ * metatile route.
+ *
+ * Unlike `renderGbcMap`, there is deliberately NO block-0 -> border
+ * substitution here: `metatileId` is used exactly as given, since this is a
+ * raw metatile thumbnail (e.g. the metatile palette's own id-0 swatch),
+ * never a rendered map block. An out-of-range id returns the same
+ * placeholder raster `renderGbcMetatile` itself already produces
+ * (`outOfRange: true`) -- deciding the HTTP status for that is the route's
+ * job, not this function's.
+ */
+export function renderGbcMapMetatile(
+  proj: GbcProject,
+  mapName: string,
+  metatileId: number,
+  opts: { time?: "morn" | "day" | "nite" } = {},
+): GbcMetatileRaster {
+  const map = proj.map(mapName);
+  const ts = proj.tileset(map.tileset);
+  const palettes = resolveFromTables(proj.paletteTables(), map, { time: opts.time });
+  const tiles = roofSwappedTiles(proj, ts, map.tileset, map.group);
+
+  return renderGbcMetatile(tiles, ts, metatileId, palettes);
+}

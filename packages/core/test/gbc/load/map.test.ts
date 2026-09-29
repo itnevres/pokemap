@@ -9,6 +9,8 @@ import {
   loadGbcMaps,
   loadLayout,
   parseNum,
+  parseMapGroupNames,
+  loadGbcGroupNames,
 } from "../../../src/gbc/load/map.js";
 import { GBC_SUBJECT_ROOT, itWithGbcCorpus, hasGbcProject, gbcCorpusRoots } from "../helpers/corpus.js";
 
@@ -728,5 +730,71 @@ describe("corpus", () => {
     expect(mapConstantsAsm.match(/^\s*map_const\s/gm)).toHaveLength(391);
     expect(attributesAsm.match(/^\s*map_attributes\s/gm)).toHaveLength(391);
     expect(mapsAsm.match(/^\s*map\s+[A-Za-z]/gm)).toHaveLength(391);
+  });
+});
+
+describe("parseMapGroupNames", () => {
+  it("collects each newgroup's name, in source order, index i = group i+1's name", () => {
+    const text = [
+      "\tnewgroup OLIVINE                                              ;  1",
+      "\tmap_const OLIVINE_POKECENTER_1F,                        5,  4 ;  1",
+      "\tendgroup",
+      "",
+      "\tnewgroup MAHOGANY                                             ;  2",
+      "\tmap_const MAHOGANY_TOWN,                               10,  9 ;  1",
+      "\tendgroup",
+      "",
+      "\tnewgroup DUNGEONS                                             ;  3",
+      "\tmap_const CERULEAN_CAVE_1F,                              9,  9 ; 17",
+      "\tendgroup",
+    ].join("\n");
+    expect(parseMapGroupNames(text, "constants/map_constants.asm")).toEqual(["OLIVINE", "MAHOGANY", "DUNGEONS"]);
+  });
+
+  // Skips the MACRO...ENDM definition itself, the same way parseMapConstants
+  // does (Task 1a spec) -- unlike that test's fake body (a DEF line, never
+  // matched by "newgroup" anyway), this fixture's macro body contains a real
+  // "newgroup" call, so a broken macro-skip would actually corrupt the count
+  // here rather than passing by coincidence.
+  it("skips a MACRO newgroup...ENDM definition, even one whose body itself contains a newgroup-shaped line", () => {
+    const text = [
+      "MACRO newgroup",
+      "\tnewgroup BOGUS",
+      "ENDM",
+      "",
+      "\tnewgroup FOO                                                  ;  1",
+      "\tmap_const FOO_TOWN, 4, 4 ;  1",
+      "\tendgroup",
+      "",
+      "\tnewgroup BAR                                                  ;  2",
+      "\tmap_const BAR_TOWN, 4, 4 ;  1",
+      "\tendgroup",
+    ].join("\n");
+    expect(parseMapGroupNames(text, "constants/map_constants.asm")).toEqual(["FOO", "BAR"]);
+  });
+
+  it("throws, naming the source, on a newgroup with no argument", () => {
+    const text = "\tnewgroup\n\tmap_const FOO_TOWN, 4, 4 ;  1\n\tendgroup";
+    expect(() => parseMapGroupNames(text, "constants/map_constants.asm")).toThrow(/constants\/map_constants\.asm/);
+    expect(() => parseMapGroupNames(text, "constants/map_constants.asm")).toThrow(/newgroup/);
+  });
+});
+
+describe("loadGbcGroupNames", () => {
+  itWithGbcCorpus("26 groups, index 0 is OLIVINE, matching max(GbcMap.group) over every real map", () => {
+    const names = loadGbcGroupNames(GBC_SUBJECT_ROOT);
+    const { maps } = loadGbcMaps(GBC_SUBJECT_ROOT);
+    const maxGroup = Math.max(...maps.map((m) => m.group));
+    expect(names).toHaveLength(26);
+    expect(maxGroup).toBe(26);
+    expect(names[0]).toBe("OLIVINE");
+  });
+
+  itWithGbcCorpus("NewBarkTown's group name is names[map.group - 1] -- group 24, NEW_BARK", () => {
+    const names = loadGbcGroupNames(GBC_SUBJECT_ROOT);
+    const { map } = loadGbcMaps(GBC_SUBJECT_ROOT);
+    const newBarkTown = map("NewBarkTown");
+    expect(newBarkTown.group).toBe(24);
+    expect(names[newBarkTown.group - 1]).toBe("NEW_BARK");
   });
 });

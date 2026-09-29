@@ -71,7 +71,8 @@ const REPO_ROOT = process.cwd();
  *  the gap the "render CeruleanCave2F" test below exists to close.
  *  `spawnSync` reports both streams and the exit code unconditionally. */
 function spawnCli(args: string[]): { status: number; stdout: string; stderr: string } {
-  const result = spawnSync("npx", ["tsx", CLI_ENTRY, ...args], { cwd: REPO_ROOT, encoding: "utf8" });
+  // `node --import tsx`, not `npx tsx`: Windows can't spawn `npx` (a .cmd shim) without a shell.
+  const result = spawnSync(process.execPath, ["--import", "tsx", CLI_ENTRY, ...args], { cwd: REPO_ROOT, encoding: "utf8" });
   return { status: result.status ?? 1, stdout: result.stdout, stderr: result.stderr };
 }
 
@@ -409,7 +410,8 @@ describe("runGbcWhere", () => {
   // Fix round 1, spec review Minor #2/mutation M7: lower-case input must
   // resolve identically to upper-case -- an earlier version had no test
   // exercising this at all, so a dropped `.toUpperCase()` (or, after this
-  // fix round, a dropped `normalizeSpecies`) would have shipped silently.
+  // fix round, a dropped `normalizeGbcSpecies` call -- moved to
+  // core/gbc/analyse/atlas.ts in Plan 6b Task 2) would have shipped silently.
   itWithGbcCorpus("accepts lower-case input, resolving identically to upper-case (M7)", () => {
     const lower = runGbcWhere(GBC_SUBJECT_ROOT, "dunsparce", {});
     const upper = runGbcWhere(GBC_SUBJECT_ROOT, "DUNSPARCE", {});
@@ -419,7 +421,8 @@ describe("runGbcWhere", () => {
 
   // Fix round 1, spec review Minor #2: a "SPECIES_"-prefixed name (GBA's own
   // convention) also resolves, even though GBC wild data never carries that
-  // prefix itself -- normalizeSpecies strips it before the lookup.
+  // prefix itself -- normalizeGbcSpecies (core/gbc/analyse/atlas.ts) strips
+  // it before the lookup.
   itWithGbcCorpus("accepts a SPECIES_-prefixed name, resolving identically to the bare name", () => {
     const prefixed = runGbcWhere(GBC_SUBJECT_ROOT, "SPECIES_DUNSPARCE", {});
     const bare = runGbcWhere(GBC_SUBJECT_ROOT, "DUNSPARCE", {});

@@ -60,4 +60,70 @@ describe("LensPanel", () => {
     render(<LensPanel active="unused-species" onChange={() => {}} summary={{ emptyMaps: 5, unusedSpecies: 3 }} />);
     expect(screen.getByText(/3 species appear in no encounter table/i)).toBeTruthy();
   });
+
+  // Plan 6b Task 6 (mutation check #5): pins the GBA DEFAULT method key's
+  // full content -- no prior test in this file ever activated the method
+  // lens at all, so a change to LensPanel's own default METHOD_LENS_KEY
+  // (e.g. dropping Rock Smash) would previously have gone undetected by any
+  // GBA test.
+  it("the method lens's default key (no methodKey prop) lists Water, Fishing and Rock Smash", () => {
+    render(<LensPanel active="method" onChange={() => {}} summary={{ emptyMaps: 982, unusedSpecies: 12 }} />);
+    expect(screen.getByText("Water (surfing)")).toBeTruthy();
+    expect(screen.getByText("Fishing")).toBeTruthy();
+    expect(screen.getByText("Rock Smash")).toBeTruthy();
+  });
+
+  // Plan 6b Task 6 (deliverable 1b): GBC's own methodKey/legendCopy props,
+  // additive and optional -- every test above (no methodKey/legendCopy prop
+  // passed) already pins that the GBA default rendering is unaffected by
+  // this component gaining them.
+  describe("GBC props (Plan 6b Task 6)", () => {
+    const GBC_METHOD_KEY = [
+      { slug: "water", label: "Water (surfing)" },
+      { slug: "fishing", label: "Fish" },
+      { slug: "headbutt", label: "Headbutt" },
+      { slug: "rock-smash", label: "Rock Smash" },
+    ];
+
+    it("renders the given methodKey instead of the GBA default", () => {
+      render(
+        <LensPanel
+          active="method"
+          onChange={() => {}}
+          summary={{ emptyMaps: 5, unusedSpecies: 3 }}
+          methodKey={GBC_METHOD_KEY}
+        />,
+      );
+      expect(screen.getByText("Headbutt")).toBeTruthy();
+      expect(screen.queryByText("Rock Smash")).toBeTruthy();
+      // The GBA default key's own "Fishing" label is not among GBC's (which
+      // renamed it to "Fish") -- proves this isn't just GBA's key rendering
+      // alongside the new one.
+      expect(screen.queryByText("Fishing")).toBeNull();
+    });
+
+    it("renders the given legendCopy override for a lens, leaving an un-overridden lens at its GBA default", () => {
+      render(
+        <LensPanel
+          active="method"
+          onChange={() => {}}
+          summary={{ emptyMaps: 5, unusedSpecies: 3 }}
+          legendCopy={{ method: () => "Which maps reward surfing, fishing, headbutting trees or rock smash." }}
+        />,
+      );
+      expect(screen.getByText(/headbutting trees or rock smash/i)).toBeTruthy();
+
+      const empty = render(
+        <LensPanel
+          active="empty-maps"
+          onChange={() => {}}
+          summary={{ emptyMaps: 5, unusedSpecies: 3 }}
+          legendCopy={{ method: () => "GBC method copy" }}
+        />,
+      );
+      // empty-maps has no override in legendCopy above -- falls back to the
+      // GBA default LEGEND_COPY, interpolating the same summary.
+      expect(empty.getByText(/5 maps have no encounters/i)).toBeTruthy();
+    });
+  });
 });

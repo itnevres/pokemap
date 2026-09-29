@@ -80,6 +80,17 @@ whatever OS theme is active.
   --encounter-water: #06b6d4;
   --encounter-rock-smash: #a8763c;
   --encounter-fishing: #6366f1;
+  /* GBC-only method (Plan 6b Task 6): the other 3 GBC method-lens slugs
+     (water, fishing, rock-smash) reuse the tokens directly above -- only
+     headbutt is new. Not overridden in light mode, same reasoning as its
+     3 siblings just above. Violet, checked against every other hue in this
+     file (land/water/rock-smash/fishing above; warn/danger; the elevation
+     blue/orange; the event object/warp/coord/bg colours below; and
+     --connection-1..8) -- it sits in the one clear gap between the blue/
+     indigo cluster and the purple/pink cluster, and never co-occurs on
+     screen with the two closest of those (the connection-line palette is
+     GBA-only dungeon mode; event-coord is Map view, not World view). */
+  --encounter-headbutt: #a855f7;
 
   /* Species spotlight (Task 29): darkens every non-matching map so the
      hits read as lit by contrast, not by a colour of their own. Overridden

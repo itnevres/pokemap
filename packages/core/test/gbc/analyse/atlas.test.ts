@@ -8,6 +8,7 @@ import {
   gbcCoverage,
   gbcMapHasWaterTile,
   loadGbcSpeciesConstants,
+  normalizeGbcSpecies,
   RANDOM_RANGE,
   GRASS_WATER_LEVEL_BUFF_MAX,
   ROCK_ENCOUNTER_RATE_PERCENT,
@@ -28,6 +29,7 @@ import type {
   Layout,
 } from "../../../src/gbc/model/types.js";
 import { GBC_SUBJECT_ROOT, itWithGbcCorpus } from "../helpers/corpus.js";
+import { stubGbcProject } from "../helpers/stubGbcProject.js";
 
 // ---------------------------------------------------------------------------
 // Fixture: one small, hand-derived GbcWildData + map set exercising every
@@ -302,10 +304,7 @@ function makeSpeciesConstantsRoot(): string {
 function stubProject(root = "<stub-root-never-read-except-by-loadGbcSpeciesConstants>"): GbcProject {
   const byName = new Map(ALL_MAPS.map((m) => [m.name, m]));
   const tileset = makeTileset();
-  const unused = (fn: string) => (): never => {
-    throw new Error(`stub: ${fn} should not be called`);
-  };
-  return {
+  return stubGbcProject({
     root,
     maps: ALL_MAPS,
     map: (name: string) => {
@@ -314,16 +313,13 @@ function stubProject(root = "<stub-root-never-read-except-by-loadGbcSpeciesConst
       return m;
     },
     tileset: () => tileset,
-    paletteTables: unused("paletteTables"),
-    roofs: unused("roofs"),
     layout: (map): { layout: Layout; defects: [] } => ({
       layout: { blkPath: map.blkPath, width: 1, height: 1, writable: true, blocks: [{ metatileId: map.blkPath === "waterful.blk" ? 1 : 0 }] },
       defects: [],
     }),
-    paddingWidth: unused("paddingWidth"),
     wild: () => wildData,
     waterCollisionValues: () => new Set([WATER_COLL]),
-  };
+  });
 }
 
 describe("gbcMapHasWaterTile", () => {
@@ -529,6 +525,27 @@ describe("loadGbcSpeciesConstants", () => {
     expect(species).not.toContain("UNOWN_A");
     expect(species).not.toContain("UNOWN_B");
     expect(species).toEqual([...species].sort());
+  });
+});
+
+// Plan 6b Task 2, deliverable 1: moved here from `cli/src/gbcCommands.ts`'s
+// own (now-removed) `normalizeSpecies`, so `/api/where/:species` and the CLI's
+// `where` command share one implementation.
+describe("normalizeGbcSpecies", () => {
+  it("uppercases a bare lower-case name", () => {
+    expect(normalizeGbcSpecies("dunsparce")).toBe("DUNSPARCE");
+  });
+
+  it("passes an already-uppercase bare name through unchanged", () => {
+    expect(normalizeGbcSpecies("DUNSPARCE")).toBe("DUNSPARCE");
+  });
+
+  it("strips an upper-case SPECIES_ prefix", () => {
+    expect(normalizeGbcSpecies("SPECIES_DUNSPARCE")).toBe("DUNSPARCE");
+  });
+
+  it("uppercases first, so a lower-case species_ prefix is stripped too", () => {
+    expect(normalizeGbcSpecies("species_dunsparce")).toBe("DUNSPARCE");
   });
 });
 

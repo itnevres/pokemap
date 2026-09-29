@@ -438,6 +438,25 @@ export function gbcEncounterSources(proj: GbcProject, mapName: string, hasWaterO
   return out;
 }
 
+/**
+ * Uppercases the user's input and strips a leading "SPECIES_" prefix
+ * (case-insensitively -- the input is uppercased FIRST, so any casing of the
+ * prefix itself, e.g. "species_dunsparce", is stripped too). GBC wild data
+ * NEVER carries a "SPECIES_" prefix (unlike the GBA JSON's "SPECIES_x"
+ * convention), so both a plain species name and a GBA-style prefixed one
+ * resolve to the same bare constant `gbcWhereSpecies` matches on.
+ *
+ * Moved here from `cli/src/gbcCommands.ts` (Plan 6b Task 2, spec deliverable
+ * 1) so the server's `/api/where/:species` route and the CLI's `where`
+ * command share one implementation instead of each normalising the same way
+ * independently -- `gbcCommands.ts` now imports this rather than declaring
+ * its own copy, with its own behaviour and tests unchanged.
+ */
+export function normalizeGbcSpecies(input: string): string {
+  const upper = input.toUpperCase();
+  return upper.startsWith("SPECIES_") ? upper.slice("SPECIES_".length) : upper;
+}
+
 export interface GbcSpeciesHit extends GbcSourceTags {
   mapName: string;
   mapConst: string;

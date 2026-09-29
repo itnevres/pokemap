@@ -236,12 +236,28 @@ interface FitResult {
 
 /** Pure so a test can predict the result by hand, the same way MapCanvas's
  *  tests reason about `fit()`. Centres `bounds` in `viewport` at the
- *  largest zoom (clamped) that shows all of it. */
-export function computeFit(bounds: { x: number; y: number; width: number; height: number }, viewport: Viewport): FitResult {
+ *  largest zoom (clamped) that shows all of it.
+ *
+ *  `zoomBounds` (Plan 6b Task 5, additive): overrides the clamp range this
+ *  file's own `MIN_ZOOM`/`MAX_ZOOM` otherwise apply. Left out, the default
+ *  is exactly today's `MIN_ZOOM`/`MAX_ZOOM` -- every existing call site
+ *  (`fitWorld`, the jump effect, the empty-maps lens) and this file's own
+ *  `computeFit` tests are unaffected. GBC's world canvas passes
+ *  `{ min: 1/64, max: 32 }`: its zoom is screen px per BLOCK (32 px native),
+ *  not per tile (16 px native) -- this file's own `MAX_ZOOM` of 16 would cap
+ *  a GBC fit at half native resolution, which is simply the wrong unit, not
+ *  a deliberate limit. */
+export function computeFit(
+  bounds: { x: number; y: number; width: number; height: number },
+  viewport: Viewport,
+  zoomBounds?: { min: number; max: number },
+): FitResult {
   if (bounds.width <= 0 || bounds.height <= 0 || viewport.w <= 0 || viewport.h <= 0) {
     return { zoom: 1, pan: { x: 0, y: 0 } };
   }
-  const zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, Math.min(viewport.w / bounds.width, viewport.h / bounds.height)));
+  const min = zoomBounds?.min ?? MIN_ZOOM;
+  const max = zoomBounds?.max ?? MAX_ZOOM;
+  const zoom = Math.min(max, Math.max(min, Math.min(viewport.w / bounds.width, viewport.h / bounds.height)));
   return {
     zoom,
     pan: {
@@ -1010,33 +1026,13 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
   // re-deriving 227 interpolated colours on every mouse-move frame for a
   // toggle nothing else in this file reacts to live either.
   const levelColorByMap = useMemo(() => {
-    const out = new Map<string, string>();
     const entries = (coverageData?.levelByMap ?? []).filter(
       (e): e is typeof e & { mapName: string } => !!e.mapName,
     );
-    if (entries.length === 0) return out;
-    const sortedLevels = entries.map((e) => e.averageLevel).sort((a, b) => a - b);
-    const n = sortedLevels.length;
-    // Lowest index whose level is >= `level` -- a plain binary search
-    // (sortedLevels is sorted ascending), not a linear scan, since this
-    // runs once per entry (227 times) against a 227-length array.
-    const rankOf = (level: number): number => {
-      let lo = 0, hi = n;
-      while (lo < hi) {
-        const mid = (lo + hi) >>> 1;
-        if (sortedLevels[mid]! < level) lo = mid + 1;
-        else hi = mid;
-      }
-      return lo;
-    };
     const style = typeof getComputedStyle === "function" ? getComputedStyle(document.documentElement) : null;
-    const low = parseHexColor(style?.getPropertyValue("--overlay-elevation-low").trim() || "#3b82f6");
-    const high = parseHexColor(style?.getPropertyValue("--danger").trim() || "#ef4444");
-    for (const e of entries) {
-      const t = n > 1 ? rankOf(e.averageLevel) / (n - 1) : 0.5;
-      out.set(e.mapName, lerpColor(low, high, t));
-    }
-    return out;
+    const low = style?.getPropertyValue("--overlay-elevation-low").trim() || "#3b82f6";
+    const high = style?.getPropertyValue("--danger").trim() || "#ef4444";
+    return levelColorMap(entries, low, high);
   }, [coverageData]);
 
   // Which non-land method (if any) a visible map's already-fetched
@@ -2048,7 +2044,11 @@ function drawTriangle(ctx: CanvasRenderingContext2D, cx: number, cy: number, siz
   ctx.fill();
 }
 
-function drawDiamond(ctx: CanvasRenderingContext2D, cx: number, cy: number, size: number, color: string): void {
+/** Exported (Plan 6b Task 5, additive): `GbcWorldCanvas` draws its own
+ *  conflict badges with this exact helper rather than a copy -- GBC has no
+ *  vertical links, so unlike `drawDiamond`, `drawTriangle` (dive/emerge)
+ *  has no GBC use and is deliberately NOT exported alongside it. */
+export function drawDiamond(ctx: CanvasRenderingContext2D, cx: number, cy: number, size: number, color: string): void {
   ctx.fillStyle = color;
   ctx.beginPath();
   ctx.moveTo(cx, cy - size);
@@ -2080,4 +2080,46 @@ function lerpColor(a: [number, number, number], b: [number, number, number], t: 
   const g = Math.round(a[1] + (b[1] - a[1]) * c);
   const bl = Math.round(a[2] + (b[2] - a[2]) * c);
   return `rgb(${r}, ${g}, ${bl})`;
+}
+
+/**
+ * Pure: colours `entries` by each one's PERCENTILE RANK of `averageLevel`
+ * among the whole set (not the raw value) -- see `levelColorByMap`'s own
+ * (now much shorter) review-fix comment above for why percentile rank beats
+ * a linear min-max scale. `low`/`high` are `#rrggbb` strings (already
+ * resolved from a CSS custom property by the caller); returns a Map from
+ * `mapName` to an interpolated `rgb()` string.
+ *
+ * Exported additively (Plan 6b Task 6): `GbcWorldCanvas`'s own level-curve
+ * lens reuses this exact ramp/algorithm against `/api/coverage`'s own
+ * `levelByMap` (a structurally identical `{ mapName, averageLevel }[]`)
+ * rather than re-deriving the same binary-search percentile logic a second
+ * time -- the spec's own "reuse the helper if it's exported, or export it
+ * additively" instruction. No existing GBA behaviour changes: this is the
+ * SAME computation `levelColorByMap` always ran, just factored out of the
+ * `useMemo` so it can be called from outside a React component too.
+ */
+export function levelColorMap(entries: { mapName: string; averageLevel: number }[], low: string, high: string): Map<string, string> {
+  const out = new Map<string, string>();
+  if (entries.length === 0) return out;
+  const sortedLevels = entries.map((e) => e.averageLevel).sort((a, b) => a - b);
+  const n = sortedLevels.length;
+  // Lowest index whose level is >= `level` -- a plain binary search
+  // (sortedLevels is sorted ascending), not a linear scan.
+  const rankOf = (level: number): number => {
+    let lo = 0, hi = n;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      if (sortedLevels[mid]! < level) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo;
+  };
+  const lowRgb = parseHexColor(low);
+  const highRgb = parseHexColor(high);
+  for (const e of entries) {
+    const t = n > 1 ? rankOf(e.averageLevel) / (n - 1) : 0.5;
+    out.set(e.mapName, lerpColor(lowRgb, highRgb, t));
+  }
+  return out;
 }

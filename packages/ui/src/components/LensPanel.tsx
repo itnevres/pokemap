@@ -31,6 +31,20 @@ export interface LensPanelProps {
    *  mean). Optional so this component stays fully renderable -- and
    *  testable -- standalone; the button simply does nothing if unset. */
   onListEmptyMaps?: () => void;
+  /** Plan 6b Task 6 (additive): overrides the method lens's own legend key
+   *  -- GBC's method tint precedence (water > fish > headbutt > rock; grass
+   *  is never tinted) doesn't match GBA's own (water/fishing/rock-smash).
+   *  Defaults to today's `METHOD_LENS_KEY`, so every existing GBA call site
+   *  (no `methodKey` prop) renders byte-identically to before this change. */
+  methodKey?: Array<{ slug: string; label: string }>;
+  /** Plan 6b Task 6 (additive): per-lens legend copy overrides, merged OVER
+   *  `LEGEND_COPY` (a caller supplying only `method`/`level-curve` leaves
+   *  `empty-maps`/`unused-species` at their GBA defaults -- both already
+   *  read generically off `summary`, and GBC's own `/api/coverage` carries
+   *  the same `mapsWithoutEncounters`/`unusedSpecies` counts GBA's does, so
+   *  neither needs a GBC-specific override). Left unset, every existing GBA
+   *  call site renders byte-identically to before this change. */
+  legendCopy?: Partial<Record<LensId, (s: LensPanelSummary) => string>>;
 }
 
 const LEGEND_COPY: Record<LensId, (s: LensPanelSummary) => string> = {
@@ -82,7 +96,9 @@ const METHOD_LENS_KEY: Array<{ slug: "water" | "fishing" | "rock-smash"; label: 
  * into the actual per-map tint overlay, the same "presentational child,
  * caller owns the canvas" split EncounterGutter established in Task 28.
  */
-export function LensPanel({ active, onChange, summary, onListEmptyMaps }: LensPanelProps) {
+export function LensPanel({ active, onChange, summary, onListEmptyMaps, methodKey, legendCopy }: LensPanelProps) {
+  const key = methodKey ?? METHOD_LENS_KEY;
+  const copyOf = (lens: LensId): string => (legendCopy?.[lens] ?? LEGEND_COPY[lens])(summary);
   return (
     <div className="lens-panel">
       <div className="lens-panel__toggles" role="group" aria-label="Coverage lenses">
@@ -103,10 +119,10 @@ export function LensPanel({ active, onChange, summary, onListEmptyMaps }: LensPa
       {active && (
         <div className="lens-panel__legend" role="note">
           <p className="lens-panel__legend-title">{LENS_LABEL[active]}</p>
-          <p className="lens-panel__legend-body">{LEGEND_COPY[active](summary)}</p>
+          <p className="lens-panel__legend-body">{copyOf(active)}</p>
           {active === "method" && (
             <ul className="lens-panel__legend-key">
-              {METHOD_LENS_KEY.map((m) => (
+              {key.map((m) => (
                 <li key={m.slug} className="lens-panel__legend-item">
                   <i className={`lens-panel__legend-swatch lens-panel__legend-swatch--${m.slug}`} />
                   <span>{m.label}</span>

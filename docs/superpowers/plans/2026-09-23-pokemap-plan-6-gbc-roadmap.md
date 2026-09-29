@@ -120,7 +120,7 @@ Reference project(s) for the G5 round-trip corpus gate: at minimum, vanilla `pok
 | Plan | File | Scope | Depends on | Status (2026-09-25) |
 |---|---|---|---|---|
 | 6 | `2026-09-23-pokemap-plan-6-gbc-foundation.md` | GBC `core` loaders (map/tileset/event/palette/wild), per-MAP renderer (roof tiles, border ring), `cli` read commands, world stitching, encounter atlas — all READ-ONLY. **No server/UI work** (findings §Config: server untouched in Plan 6) | This roadmap | **Done 2026-09-25**, merged to `master` (PR #1) |
-| 6b (future, not yet written; scope sketch in §6b below) | — | GBC app layer, read-only: server family branch (`serve.ts`/`createServer`), map/world/atlas routes, UI map view, world view and encounter lenses for a GBC project. It is the GBC counterpart of Plan 1's UI tasks, and Plan 7 Tasks 4-5 (server edit routes, UI editing) cannot start without it | Plan 6 | Not planned |
+| 6b | `2026-09-25-pokemap-plan-6b-gbc-app-layer.md` | GBC app layer, read-only: server family branch (`serve.ts`/`createServer`), map/world/atlas routes, UI map view, world view and encounter lenses for a GBC project. It is the GBC counterpart of Plan 1's UI tasks, and Plan 7 Tasks 4-5 (server edit routes, UI editing) cannot start without it | Plan 6 | **Done** (2026-09-28). All tasks reviewed; success criteria 1-4 demonstrated end to end. Branch `plan-6b-gbc-app-layer`, PR itnevres/pokemap#3 ready for review, not merged |
 | 7 | `2026-09-23-pokemap-plan-7-gbc-editing.md` | Painting, event editing — the write path (G2/G3's own real implementation + G5's gate). Its core+CLI tasks (1, 2, 3, 6, 7) need only Plan 6; its server/UI tasks (4, 5) need 6b | Plan 6 (+ 6b for Tasks 4-5) | Next |
 | 8 (future, not yet written) | — | Pokémon Yellow support, reusing Plan 6/7's own primitives wherever the shared skeleton (§0) actually holds; Yellow-specific deltas only (no day/night palette system to build, no coord_event/scene layer, different/simpler wild-encounter model, different region-map model, `Dojo`/`Gym`-style tileset aliasing to handle in the loader) | Plan 6 + 7 | Not planned |
 
@@ -130,7 +130,7 @@ Reference project(s) for the G5 round-trip corpus gate: at minimum, vanilla `pok
 
 ## 6b. GBC app layer (server + UI, read-only): scope sketch
 
-Written 2026-09-25 from a read of the real `packages/server` and `packages/ui` code. **This is a sketch to plan from, not a plan.** Write `2026-XX-XX-pokemap-plan-6b-gbc-app-layer.md` from it, re-granularised against the code at that time.
+Written 2026-09-25 from a read of the real `packages/server` and `packages/ui` code. **Superseded as a plan by `2026-09-25-pokemap-plan-6b-gbc-app-layer.md`** (see its STATUS banner). The plan resolved the three open questions below, and corrected two of this sketch's assumptions: metatile thumbnails are keyed by **map**, not tileset, because palette and roof are per-map; and event and collision coordinates are 16-px steps inside 32-px blocks. The sketch is kept for the record.
 
 **Question answered: can Plan 1/2's server serve a Crystal project? No, not as-is. And it doesn't need a separate GBC server either.**
 

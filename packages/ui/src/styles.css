@@ -55,6 +55,18 @@
   --encounter-water: #06b6d4;
   --encounter-rock-smash: #a8763c;
   --encounter-fishing: #6366f1;
+  /* GBC-only method, Plan 6b Task 6 (coordinator amendment: only this token
+     and its swatch are new -- the other 3 GBC method-key slugs, water/
+     fishing/rock-smash, reuse the tokens directly above). Checked against
+     every existing hue in this file's palette (land ~84°, water/selection
+     ~189°, rock-smash ~30°, fishing ~239°, warn ~38°, danger ~0°, elevation
+     blue/orange ~217°/24°, event object/warp/coord/bg ~130°/45°/292°/206°,
+     connection-1..8 ~292°/156°/24°/217°/48°/329°/174°/258°) -- violet ~271°
+     sits in the one clear gap between the blue/indigo cluster (~217-258°)
+     and the purple/pink cluster (~292-329°), and is never simultaneously
+     on screen with either connection-line group (GBA-only, dungeon mode) or
+     event-coord (Map view only, never the World view this token paints in). */
+  --encounter-headbutt: #a855f7;
 
   /* Species spotlight (Task 29): darkens every non-matching map so the
      hits (their own outline + badge, not a colour of their own) read as
@@ -601,6 +613,14 @@ input {
   background: var(--event-bg);
 }
 
+/* GBC map view only (Task 4): the collision overlay's second colour --
+   GBA's own collision is a single wall hue, but GBC's collision-quadrant
+   overlay distinguishes wall (reuses --overlay-collision, same red as GBA)
+   from water (this new swatch), never tinting land at all. */
+.map-canvas__swatch--water {
+  background: var(--encounter-water);
+}
+
 .map-canvas__viewport {
   flex: 1 1 auto;
   min-height: 0;
@@ -653,12 +673,72 @@ input {
   color: var(--text-muted);
 }
 
+/* Plan 6b Task 4 fix round (spec review findings 1/2, quality review finding
+   1): the GBC hover status text can run to 150-250+ characters (id + 4
+   quadrants, each with an optional bracketed category/talk, plus every
+   event at that step), far longer than any GBA hover string ever produced.
+   Without an explicit `min-width: 0`, `.map-canvas` (a flex item in
+   `.app__map-editing-body`) resolves its own min-width to its min-content
+   width, which includes this `white-space: nowrap` text -- so the canvas
+   column grows to fit it and pushes the metatile palette past the right
+   edge of the viewport, scrolling the whole page horizontally. Verified
+   live at 1280x800 and 1024x768 (fix round report): `scrollWidth ===
+   clientWidth` while hovering the longest realistic status line, both
+   before and after this fix (the CSS is what makes it true). GBA's own
+   `.map-canvas` has the identical latent bug (its own hover text is short
+   enough today to never trigger it) -- filed as a separate GBA follow-up,
+   not fixed here (out of this task's scope). */
+.gbc-map-canvas {
+  min-width: 0;
+}
+
+/* A FIXED-height, two-line strip -- wrapping the two status items onto
+   their own line each (not scrolling or clipping to one line) is the
+   primary fix. The height must stay fixed, not grow with content: growing
+   it would resize `.map-canvas__viewport` under the cursor, firing the
+   ResizeObserver and a re-blit, which can oscillate near the bottom edge --
+   the same class of bug as Task 21's own blanking postmortem, from the
+   opposite direction. */
+.gbc-map-canvas .map-canvas__status {
+  height: 44px;
+  flex-wrap: wrap;
+  align-content: center;
+  row-gap: 2px;
+}
+
+/* The hover span still shrinks to fit its own line and ellipsises as the
+   last resort, in case a future map/tileset combination produces an even
+   longer line than any measured today. */
+.gbc-map-canvas .map-canvas__hover {
+  margin-left: 0;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* App-level mode switch (Map / World / Dungeon) -- three top-level views,
    picked via App.tsx's toolbar buttons. */
 .app__mode {
   display: flex;
   gap: var(--space-1);
   margin-left: var(--space-2);
+}
+
+/* GBC shell (Plan 6b Task 3) -- reuses .app/.app__toolbar/.app__mode/etc.
+   directly so the two shells look identical; these two rules are the only
+   ones the GBC header needs on top of that. */
+.gbc-app__family {
+  font-family: var(--font-data);
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+
+/* The Time-of-day group sits beside the View group in the same header --
+   .app__mode's own margin-left already separates it from whatever comes
+   before, this adds the extra gap between the two groups themselves. */
+.gbc-app__time {
+  margin-left: var(--space-3);
 }
 
 .world-canvas {
@@ -1110,6 +1190,15 @@ input {
   background: var(--encounter-fishing);
 }
 
+/* GBC-only (Plan 6b Task 6): GbcEncounterGutter's own headbutt row/legend
+   swatch -- the other 4 GBC method slugs it uses (land for grass, water,
+   fishing for fish, rock-smash for rock) reuse the 4 rules already above,
+   since those methods are the same real-world concept GBA's own encounter
+   data already has a colour for. */
+.encounter-gutter__legend-swatch--headbutt {
+  background: var(--encounter-headbutt);
+}
+
 .encounter-gutter__legend-hint {
   margin: 0;
   padding-top: var(--space-2);
@@ -1182,6 +1271,48 @@ input {
 
 .encounter-gutter__method-tag--fishing {
   background: var(--encounter-fishing);
+}
+
+/* GBC-only (Plan 6b Task 6): see the legend-swatch--headbutt rule above. */
+.encounter-gutter__method-tag--headbutt {
+  background: var(--encounter-headbutt);
+}
+
+/* GBC-only (Plan 6b Task 6): GbcEncounterGutter's own species chip -- text,
+   not an icon (GBC has no per-species icon art, unlike GBA's own
+   .encounter-gutter__icon), so this is a new leaf class under the same
+   .encounter-gutter__* family rather than a reuse of .encounter-gutter__icon
+   itself, which is a fixed 20x20 image button that a text label wouldn't
+   fit. Same hover/focus treatment as .encounter-gutter__icon, sized by its
+   own text instead of a fixed square. */
+.encounter-gutter__chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px var(--space-1);
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  cursor: pointer;
+  pointer-events: auto;
+  font-family: var(--font-data);
+  font-size: var(--text-2xs);
+  color: var(--text-primary);
+  white-space: nowrap;
+  transition: border-color 150ms ease-out;
+}
+
+.encounter-gutter__chip:hover,
+.encounter-gutter__chip:focus-visible {
+  border-color: var(--focus-ring);
+}
+
+/* GBC-only (Plan 6b Task 6): a row's own encounterRate/biteChance, in muted
+   data type -- "12.5%" per the spec's own example. */
+.encounter-gutter__rate {
+  font-family: var(--font-data);
+  font-size: var(--text-2xs);
+  color: var(--text-muted);
+  white-space: nowrap;
 }
 
 .encounter-gutter__icons {
@@ -1269,7 +1400,7 @@ input {
 /* Species spotlight + coverage lenses (Task 29). Both toolbar controls are
    purely presentational (search box; toggle strip + legend) -- mirrors
    EncounterGutter's own "presentational child, caller draws" split; the
-   world-canvas__spotlight-*/world-canvas__lens-tint rules further below are
+   world-canvas__spotlight-* and world-canvas__lens-tint rules further below are
    the actual overlay WorldCanvas renders from the data these controls hand
    it back via onHits/onChange. */
 .species-spotlight {
@@ -1472,6 +1603,13 @@ input {
 
 .lens-panel__legend-swatch--rock-smash {
   background: var(--encounter-rock-smash);
+}
+
+/* GBC-only (Plan 6b Task 6): the method lens's headbutt swatch, passed via
+   LensPanel's own additive `methodKey` prop -- see --encounter-headbutt's
+   own doc comment above for the colour-distinctness check. */
+.lens-panel__legend-swatch--headbutt {
+  background: var(--encounter-headbutt);
 }
 
 .lens-panel__legend-action {
@@ -2494,4 +2632,69 @@ input {
 .event-inspector__add-btn:not(:disabled):hover {
   background: var(--accent);
   color: var(--text-on-accent);
+}
+
+/* Plan 6b Task 4: GbcMetatilePalette -- a read-only right-side panel next to
+   GbcMapCanvas, the same fixed-width-sidebar shape .event-inspector already
+   uses on MapCanvas's own other edge (DESIGN.md's own layout section: "an
+   inspector, a metatile palette"). Unlike GBA's .metatile-palette (a
+   horizontal strip above the canvas, built for drag-select painting), this
+   is read-only and vertical -- there is nothing here to paint with. */
+.gbc-metatile-palette {
+  width: 260px;
+  flex: 0 0 auto;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--bg-panel);
+  border-left: 1px solid var(--border);
+}
+
+.gbc-metatile-palette__header {
+  flex: 0 0 auto;
+  font-family: var(--font-data);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.gbc-metatile-palette__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, 32px);
+  gap: var(--space-1);
+}
+
+.gbc-metatile-palette__cell {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 2px;
+}
+
+/* Same selected-state pairing as everywhere else in this app
+   (.map-canvas__btn[aria-pressed="true"], .metatile-palette__cell--selected):
+   --bg-selected + --border-strong, never a bespoke highlight colour. */
+.gbc-metatile-palette__cell--selected {
+  background: var(--bg-selected);
+  border-color: var(--border-strong);
+}
+
+.gbc-metatile-palette__thumb {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+/* Plan 6b Task 4: the GBC defect banner -- reuses .app__event-op-error's own
+   danger-bordered-panel look (border: 1px solid var(--danger), ordinary
+   panel background), but is never dismissible (no close button rendered):
+   these are data-truth defects (an oversize .blk, an out-of-bounds event),
+   not a one-shot notice about something the player just did. */
+.gbc-app__defects-list {
+  margin: 0;
+  padding-left: var(--space-4);
+  list-style: disc;
 }

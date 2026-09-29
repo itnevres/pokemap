@@ -1,6 +1,6 @@
 # PokeMap — Remaining Plan 2 Follow-ups (GBA family)
 
-> **Status (2026-09-28): none of Tasks A-D has started.** Task D was added 2026-09-28 from Plan 6b Task 4's spec review. Plan 6 (GBC) ran first. Before re-confirming the file:line references below, note:
+> **Status (2026-09-28): none of Tasks A-D has started, except D3 (done in Plan 6b).** Task D was added 2026-09-28 from Plan 6b Task 4's spec review. Plan 6 (GBC) ran first. Before re-confirming the file:line references below, note:
 > - **Cloud sessions can do these now.** The SessionStart hook provisions the GBA corpus (attach the private `itnevres/pokemon-three-region` to the session), and Chromium is available for the live browser verify. The regression gate is RESUME's cloud baseline: 1,271 pass / 6 known local-state deltas.
 > - **Base branch.** `master`: Plan 2 and its follow-ups were merged via [itnevres/pokemap#1](https://github.com/itnevres/pokemap/pull/1) on 2026-09-25.
 > - **Files touched since.** Plan 6 touched `packages/cli/src/{index,context,args}.ts`, `packages/core/src/load/png.ts` and `packages/core/src/world/connections.ts`, but none of the files these three tasks name.
@@ -136,6 +136,8 @@ const discard = useCallback(async () => {
 **D2. Hover overflow.** `.map-canvas` (`packages/ui/src/styles.css`, about line 501) is a flex item of `.app__map-editing-body` with the default `min-width: auto`, which resolves to its min-content width. The `white-space: nowrap` hover text in `.map-canvas__status` therefore widens the row, pushes `EventInspector` past the viewport, and the page scrolls horizontally on hover. Measured: PalletTown at a 1280-px window, `document.documentElement.scrollWidth` 1280 → 1384. `overflow: hidden` on the status bar does not help, because the status bar is not the row flex item whose minimum is being resolved.
 - **Fix:** `min-width: 0` on the shared `.map-canvas` rule. That alone clips the end of the hover text, so also keep it legible: truncate with an ellipsis or wrap into a fixed-height strip (mirror the `.gbc-map-canvas` status-strip rules Task 4 added).
 - **Check:** with Playwright, hover the longest realistic status line and assert `document.documentElement.scrollWidth === clientWidth` at 1280×800 and 1024×768. Read the numbers from a script, not from a screenshot.
+
+**D3: DONE in Plan 6b (`5629602`, 2026-09-28).** It was worse than described below. Browsers silently dropped the next rule, `.species-spotlight { position: relative }`, so the spotlight dropdown rendered off-screen in both families. The fix rewords the comment. `packages/ui/test/styles.test.ts` parses the sheet strictly with lightningcss and pins the rule, and `vite build` passes. The original text follows for the record.
 
 **D3. `vite build` fails.** lightningcss (default minify) rejects the `*/` inside a CSS comment in `packages/ui/src/styles.css` (line 1272 on `master`, about 1296 on `plan-6b-gbc-app-layer`: `world-canvas__spotlight-*/world-canvas__lens-tint`), which ends the comment early. Reword it (for example `world-canvas__spotlight-* and world-canvas__lens-tint`) so `npm run build --workspace=@pokemap/ui` succeeds.
 
