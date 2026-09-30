@@ -193,7 +193,15 @@ export async function createHub(opts: { port?: number; home?: string; open?: str
             const old = current;
             current = next;
             old?.dispose();
-            pushRecent(home, { path: next.info.root, family: next.family });
+            // SR-F5: the swap above already committed -- a client must not
+            // be told it failed (500) just because the follow-up
+            // recent.json write couldn't happen (e.g. an unwritable home).
+            // Log and move on; the swap itself is the thing that matters.
+            try {
+              pushRecent(home, { path: next.info.root, family: next.family });
+            } catch (e) {
+              console.error("pokemap hub: failed to record recent project:", e);
+            }
             return send(200, next.info);
           })
           .catch((e: unknown) => {

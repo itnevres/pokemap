@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { createServer as createHttp } from "node:http";
 import { tmpdir } from "node:os";
@@ -344,6 +344,29 @@ describe.skipIf(!hasProject(SUBJECT_ROOT) || !hasGbcProject(GBC_SUBJECT_ROOT))("
       expect(await res.json()).toEqual({ error: "project closed" });
     } finally {
       await new Promise<void>((r) => oldHttp.close(() => r()));
+    }
+  }, 60_000);
+
+  // SR-F5: a swap that succeeded must not be reported as a failure to the
+  // client just because the follow-up recent.json write couldn't happen --
+  // `home` here is a FILE, so `pushRecent`'s own `mkdirSync(home, {
+  // recursive: true })` throws EEXIST. Needs a real successful open (same
+  // reason as the M7-coverage test above), so its own fresh hub/home rather
+  // than the shared corpus one.
+  it("SR-F5: a pushRecent failure after a committed swap logs to stderr but still 200s", async () => {
+    const homeFile = join(makeRoot(), "not-a-directory");
+    writeFileSync(homeFile, "");
+    const hub2 = await createHub({ port: 0, home: homeFile });
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const r = await postJson(hub2.port, "/api/hub/open", { path: SUBJECT_ROOT });
+      expect(r.status).toBe(200);
+      expect(await r.json()).toEqual({ family: "gba", root: norm(SUBJECT_ROOT) });
+      expect(hub2.current()?.family).toBe("gba"); // the swap really did commit
+      expect(errorSpy).toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+      await hub2.close();
     }
   }, 60_000);
 
