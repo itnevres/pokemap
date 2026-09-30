@@ -205,6 +205,13 @@ describe("hub (non-corpus)", () => {
       const yellowRes = await postJson(hub.port, "/api/hub/open", { path: join(tmp, "yellow") });
       expect(yellowRes.status).toBe(422);
       expect((await yellowRes.json() as { error: string }).error).toMatch(/pokeyellow/i);
+
+      // SR-F8d (M25): a FILE must 404 like any other non-directory path --
+      // dropping the isDirectory() check would let it fall through to
+      // detectEngineFamily and answer 422 instead.
+      writeFileSync(join(tmp, "afile.txt"), "hi");
+      const fileRes = await postJson(hub.port, "/api/hub/open", { path: join(tmp, "afile.txt") });
+      expect(fileRes.status).toBe(404);
     } finally {
       await hub.close();
     }
