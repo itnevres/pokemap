@@ -2698,3 +2698,246 @@ input {
   padding-left: var(--space-4);
   list-style: disc;
 }
+
+/* Plan 6c A2: the project hub UI (ProjectPicker/ProjectSwitcher/
+   SwitchConfirmDialog) -- see DESIGN.md's own "Project hub" section for the
+   class list and badge colour choices. Used two ways: directly under
+   Root's own `.app` (no project open yet -- flex:1 fills the remaining
+   column height same as `.app__body` would) and as the sole child of
+   `.warp-modal__panel.hub-picker--modal` (ProjectSwitcher's own modal) --
+   `flex: 1; min-height: 0; overflow-y: auto` works in both parent shapes
+   (`.app`'s own flex column, `.warp-modal__panel`'s own flex column), so
+   this one class satisfies the "the modal's picker list scrolls inside the
+   fixed panel" requirement without a second, modal-only variant. */
+.hub-picker {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  max-width: 640px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.hub-picker__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.hub-picker__title {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.hub-picker__section-title {
+  margin: var(--space-2) 0 var(--space-1);
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.hub-picker__error {
+  color: var(--danger);
+  font-size: var(--text-sm);
+  margin: 0;
+}
+
+.hub-picker__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.hub-picker__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.hub-picker__row:last-child {
+  border-bottom: none;
+}
+
+/* The one place in this row a long absolute path has to live -- `flex: 1`
+   without `min-width: 0` would refuse to shrink below its own content
+   width and blow out the row instead of wrapping/ellipsizing (this file's
+   own established flex-with-long-text fix, see `.encounter-gutter__row`'s
+   own precedent). `overflow-wrap: anywhere` wraps mid-path rather than
+   overflowing, since a path has no natural word-break points a browser's
+   default wrapping would find on its own. */
+.hub-picker__path {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-family: var(--font-data);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+/* Family badge, `.encounter-gutter__badge`'s own pill shape. Colours reuse
+   the two elevation tokens (DESIGN.md's own "dive"/"emerge" hues) purely as
+   two visually distinct, already-themed hues to tell GBA/GBC apart at a
+   glance -- not because either carries any elevation meaning here. */
+.hub-picker__badge {
+  flex: 0 0 auto;
+  padding: 2px var(--space-2);
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  font-family: var(--font-data);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.hub-picker__badge--gba {
+  border-color: var(--overlay-elevation-high);
+  color: var(--overlay-elevation-high);
+}
+
+.hub-picker__badge--gbc {
+  border-color: var(--overlay-elevation-low);
+  color: var(--overlay-elevation-low);
+}
+
+.hub-picker__badge--unsupported {
+  color: var(--text-muted);
+}
+
+.hub-picker__breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.hub-picker__entry-name {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hub-picker__form {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.hub-picker__form-label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.hub-picker__form-input {
+  font-family: var(--font-data);
+  font-size: var(--text-sm);
+  padding: var(--space-1) var(--space-2);
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-primary);
+}
+
+.hub-picker__form-input:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* ProjectSwitcher's own header button -- pushed to the toolbar's far right
+   (the natural place for a "current context" control), long root names
+   ellipsized rather than stretching the toolbar. */
+.hub-switcher__btn {
+  margin-left: auto;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A little roomier than SaveDialog's own `.warp-modal__panel` default
+   (a picker with a browser + form needs more than a single save summary
+   does), still capped well under the viewport on small windows. */
+.hub-picker--modal {
+  width: min(640px, 92vw);
+  height: min(600px, 88vh);
+}
+
+/* SwitchConfirmDialog -- mirrors `.save-dialog`'s own padding/scroll
+   treatment inside the shared `.warp-modal__panel` shell. */
+.hub-confirm {
+  padding: var(--space-4);
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.hub-confirm__title {
+  margin: 0 0 var(--space-3);
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.hub-confirm__message {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+
+.hub-confirm__list {
+  margin: 0 0 var(--space-3);
+  padding-left: var(--space-4);
+  list-style: disc;
+  max-height: 200px;
+  overflow-y: auto;
+  font-family: var(--font-data);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.hub-confirm__error {
+  margin: 0 0 var(--space-2);
+  color: var(--danger);
+  font-size: var(--text-sm);
+}
+
+.hub-confirm__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: auto;
+  padding-top: var(--space-2);
+}
+
+/* Same outlined-danger technique as `.toolbar__discard-btn` -- an outline
+   that only fills solid on hover, opposite hue from any primary/accent
+   action in this app. */
+.hub-confirm__btn--danger:not(:disabled) {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.hub-confirm__btn--danger:not(:disabled):hover {
+  background: var(--danger);
+  color: var(--text-on-accent);
+}

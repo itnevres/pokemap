@@ -294,3 +294,27 @@ scope here), and a "no maps match" empty state per spec §9 rather than a
 silently blank panel. Colours/spacing/type above are wired via CSS custom
 properties in `src/App.tsx`'s stylesheet import; components consume the
 tokens, never hard-coded hex.
+
+## Project hub (Plan 6c A2)
+
+`ProjectPicker` (`hub-picker*`), `ProjectSwitcher` (`hub-switcher__btn`, plus
+`hub-picker--modal` on the `.warp-modal__panel` it opens) and
+`SwitchConfirmDialog` (`hub-confirm*`) — the recent-projects/browse/typed-path
+open UI and its header switcher button. `ProjectPicker` reuses
+`.map-canvas__btn` for every button in it (folder rows, Up, breadcrumb, Open,
+form submit) rather than inventing a second button look, and
+`SwitchConfirmDialog` mirrors `SaveDialog`'s own `.warp-modal__backdrop`/
+`.warp-modal__panel` shell exactly.
+
+Family badges (`.hub-picker__badge--gba`/`--gbc`) reuse the two elevation
+tokens, `--overlay-elevation-high` (orange) and `--overlay-elevation-low`
+(blue) — already-themed, already-distinct hues (also used for warp dive/
+emerge) borrowed purely to tell the two engine families apart at a glance,
+not because either carries any elevation meaning here. `--unsupported`
+entries get no colour, just `--text-muted`.
+
+Every row holding a full filesystem path (`.hub-picker__path`,
+`.hub-picker__entry-name`) gets `min-width: 0` on the flex item plus
+`overflow-wrap: anywhere` or ellipsis — this app's established fix for a
+long string inside a flex row (`.encounter-gutter__row`'s own precedent) —
+so a deep path never blows out the row or the fixed modal width.
