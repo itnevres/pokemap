@@ -90,3 +90,19 @@ else. No `packages/server/` or `packages/core/` files touched.
   intentionally naive (string-split heuristics, not the server's canonical
   `parentOf`) per the spec's own "client-side guess only" framing — flagged
   in both components' doc comments.
+
+## Fix round
+
+Base f6250e8. Gate after: `npm test` 112 files / 1780 pass, typecheck clean, `vite build packages/ui` clean. `git diff 48b50e8 -- packages/ui/test/`: only hub/*, gbc/Root.test.tsx, deleted useProjectInfo.test; `App.test.tsx`/`GbcApp.test.tsx` byte-identical. Mutations run via apply -> vitest -> restore-original-bytes script; tree clean after.
+
+| # | item | status | sha | test / red evidence |
+|---|---|---|---|---|
+| 1 | SR-F1+SR-F2+QR-F1+QR-F3: confirm owns no backdrop/panel; `role=alertdialog`, Cancel autoFocus, root Escape = stopPropagation + onCancel; picker wraps it in `.hub-picker`; comments state the invariant | done | f22c83e | ProjectSwitcher.test "a 409 inside the switcher leaves exactly one backdrop / one aria-modal; Escape on the focused Cancel only backs out" (red before impl: old code had 2 backdrops; red without `stopPropagation`); SwitchConfirmDialog.test "owns no backdrop..." (red before impl), "Escape is stopped here..." (red without stopPropagation). Existing Escape/autoFocus/list tests kept, role -> alertdialog |
+| 2 | SR-F3 in-flight guard (ref + `opening` state, all 4 open paths; Open buttons/submit disabled) | done | 7dfb274 | ProjectPicker.test "two rapid typed-path submits post once..." (red with ref check removed; uses `fireEvent.submit` to bypass disabled button), "every Open button and the submit are disabled while pending..." (red with `disabled={opening}` removed) |
+| 3 | SR-F4 browse error clears listing; nonce so re-click of same folder refetches (fetchGuarded message untouched) | done | cf72424 | "a failed browse clears the stale listing and a re-click of the same folder (its breadcrumb) refetches". Red: keep-listing mutation, no-nonce mutation. Note: after the error the folder row is gone, so "clicking the folder again" = its breadcrumb crumb (same `dir`) |
+| 4 | SR-F5 `guessParent("C:/pokeemerald")` -> `C:/` | done | cf72424 | "a project at a drive top level seeds the drive ROOT" pins `?dir=C%3A%2F`; red without the drive fix (2 fail incl. M17) |
+| 5 | SR-F6 partial: `/api/hub` fail still starts null-dir browse | done (partial, as directed) | cf72424 | "when /api/hub fails the alert shows AND a null-dir browse still starts"; red with branch removed. Declined: POSIX-`/` Up, UNC breadcrumb. Extra: Up now `disabled` for `dir == null` (also while undecided); after a failed browse Up guesses parent |
+| 6 | QR-F2 unmount cleanup | done | cf72424 | Unmount-only `unmountedRef` (not a per-effect `cancelled`, which would make the counter redundant and un-mutation-testable M6). No observable red: React 19 no-ops setState after unmount; test "a browse resolving after unmount does not throw or log" only pins no throw/no console.error |
+| 7 | Survivors | done | f22c83e (M20), cf72424 (M10,M16,M17,M18,M27), c244988 (M8,M19,M22) | M20 "opening focuses the picker's Close button" red without Close autoFocus. M10 (current vs recent[0] parents differ; sole browse URL asserted), M16 (Up disabled at root list), M17 (drive root parent null, Up -> bare `/api/hub/browse`), M18 (win32 `C:/a/b/proj`: crumbs `C:`,`a`,`b`; clicks -> `C%3A%2Fa`, `C%3A%2F`; first URL exact), M27 (GBA/GBC/Unsupported text, none for null), M8, M19 (`dir: 5`, `parent: 5`), M22 (two consecutive same-root re-opens). All 12 fix-round mutations RED |
+
+Notes: Test-file helper `makeHubFetch` extended (`hubStatus`, async `onOpen`, `{__status:N}` browse failure). Line endings: `git checkout` restores CRLF; edits normalised to LF (git normalises on commit).
