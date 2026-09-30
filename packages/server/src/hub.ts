@@ -90,6 +90,26 @@ function listDir(dir: string): BrowseEntry[] {
   return entries;
 }
 
+/**
+ * `listDir(dir)`'s own `readdirSync` can throw for a directory this process
+ * has no permission to list at all (SR-F10) -- distinct from the per-entry
+ * `probeEngineFamily` guard already inside `listDir`, which only covers a
+ * CHILD entry's own probe. `EACCES`/`EPERM` become a named 403 rather than
+ * an opaque 500 from the outer catch; anything else (a genuinely unexpected
+ * error) still propagates there.
+ */
+function respondWithListing(send: (code: number, body: unknown) => void, dir: string): void {
+  let entries: BrowseEntry[];
+  try {
+    entries = listDir(dir);
+  } catch (e) {
+    const code = (e as NodeJS.ErrnoException).code;
+    if (code === "EACCES" || code === "EPERM") return send(403, { error: (e as Error).message });
+    throw e;
+  }
+  send(200, { dir, parent: parentOf(dir), entries });
+}
+
 /** The win32 "no `dir` given" case: every drive letter that actually exists,
  *  named `"C:"` (matching a real drive picker's own convention) with a path
  *  that keeps the trailing slash `safeNorm` exists to protect. */
@@ -173,8 +193,7 @@ export async function createHub(opts: { port?: number; home?: string; open?: str
         const rawDir = url.searchParams.get("dir");
         if (!rawDir) {
           if (process.platform === "win32") return send(200, { dir: null, parent: null, entries: driveRootEntries() });
-          const dir = "/";
-          return send(200, { dir, parent: parentOf(dir), entries: listDir(dir) });
+          return respondWithListing(send, "/");
         }
         // `resolve()` first (SR-F4): a relative `dir` (e.g. `.`, or a `..`
         // that would otherwise walk above whatever `safeNorm` alone could
@@ -184,7 +203,7 @@ export async function createHub(opts: { port?: number; home?: string; open?: str
         const dir = safeNorm(resolve(rawDir));
         if (!existsSync(dir)) return send(404, { error: `no such directory ${dir}` });
         if (!statSync(dir).isDirectory()) return send(400, { error: `not a directory: ${dir}` });
-        return send(200, { dir, parent: parentOf(dir), entries: listDir(dir) });
+        return respondWithListing(send, dir);
       }
 
       if (url.pathname === "/api/hub/open" && req.method === "POST") {

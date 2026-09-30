@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from "node:fs";
 import { createServer as createHttp, request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
@@ -287,6 +287,25 @@ describe("hub (non-corpus)", () => {
       await hub.close();
     }
   });
+
+  // SR-F10: an unlistable directory (EPERM/EACCES) must be a named 403, not
+  // an opaque 500 -- verified on this machine (see fix-round report) that
+  // "C:/System Volume Information" really does raise EPERM; the skip guards
+  // any machine where that isn't true (or isn't win32 at all) rather than
+  // failing there.
+  it.skipIf(process.platform !== "win32" || !existsSync("C:/System Volume Information"))(
+    "SR-F10: an EPERM/EACCES directory listing failure is reported as 403, not 500",
+    async () => {
+      const hub = await createHub({ port: 0, home: makeHome() });
+      try {
+        const res = await fetch(`http://127.0.0.1:${hub.port}/api/hub/browse?dir=${encodeURIComponent("C:/System Volume Information")}`);
+        expect(res.status).toBe(403);
+        expect((await res.json() as { error: string }).error).toMatch(/operation not permitted|EPERM|EACCES/i);
+      } finally {
+        await hub.close();
+      }
+    },
+  );
 });
 
 // Hooks live INSIDE the describe (api.test.ts's own established pattern for
