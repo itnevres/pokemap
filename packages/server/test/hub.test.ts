@@ -243,6 +243,24 @@ describe.skipIf(!hasProject(SUBJECT_ROOT) || !hasGbcProject(GBC_SUBJECT_ROOT))("
     expect(await getJson(hub.port, "/api/project")).toEqual({ family: "gba", root: norm(SUBJECT_ROOT) });
   }, 60_000);
 
+  // SR-F1 (spec review): `dirty()` must filter by `session.isDirty`, not just
+  // list every OPEN session -- a mutant that lists every open session passed
+  // every other test here, because every other test's "open but not dirty"
+  // state never gets probed by an open-elsewhere attempt. Route124: isolated
+  // from Route123 (test 10, below) and from every other test file (same
+  // grep-proof reasoning as Route123's own comment).
+  it("SR-F1: an open-but-clean session (begin+end, no apply) does not block a swap", async () => {
+    await postJson(hub.port, "/api/hub/open", { path: SUBJECT_ROOT });
+
+    const map = "Route124";
+    await postJson(hub.port, `/api/edit/${map}/paint/begin`, {});
+    const ended = await (await postJson(hub.port, `/api/edit/${map}/paint/end`, {})).json() as { isDirty: boolean };
+    expect(ended.isDirty).toBe(false); // nothing was ever painted
+
+    const r = await postJson(hub.port, "/api/hub/open", { path: GBC_SUBJECT_ROOT });
+    expect(r.status).toBe(200); // no unsaved edits -- no force needed
+  }, 60_000);
+
   // Map choice: "Route123" appears nowhere else under packages/*/test (grep
   // proof in the implementer report) -- not that it would matter anyway,
   // since editSessions.ts's own store (`createEditSessionStore`) is a plain
