@@ -226,6 +226,16 @@ export function createProjectHandler(root: string): ProjectHandler {
       res.end(JSON.stringify({ error: "project closed" }));
       return;
     }
+    // ponytail: this guard only catches a request whose HEADERS arrive
+    // before a swap. A POST route below awaits `readBody(req)` before doing
+    // any real work -- if the swap (and this handler's own `dispose()`)
+    // lands during that await, the body-handling code still runs against
+    // this now-disposed handler's `project`/`editSessions` and can answer
+    // 200 from a store that's already been torn down (spec review F3,
+    // deferred as a later task -- fixing it touches every async route body,
+    // not just this guard). Upgrade path: re-check `disposed` after
+    // `readBody` resolves, e.g. by having `readBody` itself reject with a
+    // 503 when the handler that awaited it is no longer current.
     const url = new URL(req.url ?? "/", "http://localhost");
     const send = (code: number, body: unknown) => {
       res.writeHead(code, { "content-type": "application/json" });
