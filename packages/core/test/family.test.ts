@@ -2,7 +2,7 @@ import { describe, it, expect, afterAll } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { detectEngineFamily } from "../src/family.js";
+import { detectEngineFamily, probeEngineFamily } from "../src/family.js";
 
 const roots: string[] = [];
 function makeRoot(): string {
@@ -91,5 +91,50 @@ describe("detectEngineFamily", () => {
     const yellowRoot = "C:/Programming Projects/Pokemon Game/refs/pokeyellow";
     if (!existsSync(`${yellowRoot}/data/maps/headers`)) return;
     expect(() => detectEngineFamily(yellowRoot)).toThrow(/pokeyellow/i);
+  });
+});
+
+describe("probeEngineFamily", () => {
+  it("gba -> \"gba\"", () => {
+    const root = makeRoot();
+    touch(root, "include/fieldmap.h");
+    expect(probeEngineFamily(root)).toBe("gba");
+  });
+
+  it("gbc -> \"gbc\"", () => {
+    const root = makeRoot();
+    touch(root, "data/maps/attributes.asm");
+    touch(root, "constants/map_constants.asm");
+    expect(probeEngineFamily(root)).toBe("gbc");
+  });
+
+  it("both families' markers -> \"unsupported\", never throws", () => {
+    const root = makeRoot();
+    touch(root, "include/fieldmap.h");
+    touch(root, "data/maps/attributes.asm");
+    touch(root, "constants/map_constants.asm");
+    expect(probeEngineFamily(root)).toBe("unsupported");
+  });
+
+  it("pokeyellow shape -> \"unsupported\", never throws", () => {
+    const root = makeRoot();
+    mkdirSync(join(root, "data/maps/headers"), { recursive: true });
+    touch(root, "constants/map_constants.asm");
+    expect(probeEngineFamily(root)).toBe("unsupported");
+  });
+
+  it("only attributes.asm (half a gbc match, no map_constants.asm) -> \"unsupported\", not null", () => {
+    const root = makeRoot();
+    touch(root, "data/maps/attributes.asm");
+    expect(probeEngineFamily(root)).toBe("unsupported");
+  });
+
+  it("empty tree -> null", () => {
+    const root = makeRoot();
+    expect(probeEngineFamily(root)).toBeNull();
+  });
+
+  it("nonexistent path -> null, never throws", () => {
+    expect(probeEngineFamily("Z:/does/not/exist/pokemap-nope")).toBeNull();
   });
 });

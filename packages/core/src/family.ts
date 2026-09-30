@@ -62,3 +62,23 @@ export function detectEngineFamily(root: string): EngineFamily {
     `${gbaMarker} (gba); ${attributesAsm} and ${mapConstantsAsm} (gbc).`,
   );
 }
+
+/**
+ * Non-throwing counterpart of `detectEngineFamily`, for the hub's browse
+ * listing (Plan 6c A1): a directory picker walks arbitrary, mostly-irrelevant
+ * folders and can't let one ambiguous or unsupported entry blow up the whole
+ * listing. `"unsupported"` = some family marker exists but detectEngineFamily
+ * refuses (both families, or the pokeyellow shape); `null` = no marker at
+ * all, an ordinary non-project directory.
+ */
+export function probeEngineFamily(root: string): EngineFamily | "unsupported" | null {
+  try {
+    return detectEngineFamily(root);
+  } catch {
+    const r = norm(root);
+    const anyMarker = existsSync(`${r}/include/fieldmap.h`)
+      || existsSync(`${r}/data/maps/attributes.asm`)
+      || existsSync(`${r}/constants/map_constants.asm`);
+    return anyMarker ? "unsupported" : null;
+  }
+}
