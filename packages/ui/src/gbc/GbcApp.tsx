@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { MapTree } from "../components/MapTree.js";
 import { useGbcGroups } from "./hooks/useGbcGroups.js";
 import { useGbcMap } from "./hooks/useGbcMap.js";
@@ -17,10 +17,14 @@ const TIME_ORDER: readonly TimeOfDay[] = ["morn", "day", "nite"];
 const TIME_LABEL: Record<TimeOfDay, string> = { morn: "Morn", day: "Day", nite: "Nite" };
 
 export interface GbcAppProps {
-  /** The project root `Root.tsx` read off `/api/project`. Not yet read by
+  /** The project root `Root.tsx` read off `/api/hub`. Not yet read by
    *  this task's own rendering -- kept on the props so Root's routing stays
    *  stable while Tasks 4/5 wire it into GbcMapCanvas/GbcWorldCanvas. */
   root: string;
+  /** Plan 6c A2: the header's project-switcher button (`ProjectSwitcher`),
+   *  supplied by `Root` -- additive and optional so `GbcApp.test.tsx`'s own
+   *  calls (no `switcher`) stay byte-identical in behaviour. */
+  switcher?: ReactNode;
 }
 
 /**
@@ -37,7 +41,7 @@ export interface GbcAppProps {
  * app-level setting, not per-view), and the non-dismissible defect banner.
  * Loading/error states for the map view mirror `App.tsx:495-499` exactly.
  */
-export function GbcApp({ root }: GbcAppProps) {
+export function GbcApp({ root, switcher }: GbcAppProps) {
   const [mode, setMode] = useState<Mode>("map");
   const [time, setTime] = useState<TimeOfDay>("day");
   const [selected, setSelected] = useState<string | null>(null);
@@ -120,6 +124,7 @@ export function GbcApp({ root }: GbcAppProps) {
           ))}
         </div>
         {mode === "map" && selected && <span className="app__status">{selected}</span>}
+        {switcher}
       </header>
       <div className="app__body">
         <aside className="app__sidebar">

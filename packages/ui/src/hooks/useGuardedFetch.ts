@@ -50,11 +50,11 @@ export function fetchGuarded<T>(url: string, guard: (x: unknown) => x is T, labe
 
 /**
  * The shared "fetch once, validate the shape, surface every failure
- * visibly" hook shape `useMapGroups.ts` established and `useProjectInfo`/
- * `useGbcGroups` (Task 3) both need identically. Lives here, under the
- * family-agnostic `src/hooks/`, rather than under `src/gbc/` -- it has
- * nothing GBC-specific in it (no GBC types, no GBC routes), and
- * `useProjectInfo` (also family-agnostic: `Root` calls it *before* the
+ * visibly" hook shape `useMapGroups.ts` established and `Root.tsx`'s own
+ * `/api/hub` fetch / `useGbcGroups` (Task 3) both need identically. Lives
+ * here, under the family-agnostic `src/hooks/`, rather than under
+ * `src/gbc/` -- it has nothing GBC-specific in it (no GBC types, no GBC
+ * routes), and `Root` (also family-agnostic: it calls this *before* the
  * family is even known) needs to import it too. Putting a shared,
  * family-agnostic primitive under a family-specific directory would force
  * a GBA-agnostic hook to import from GBC's own tree, which is exactly
@@ -83,8 +83,8 @@ export function fetchGuarded<T>(url: string, guard: (x: unknown) => x is T, labe
  *
  * **Every URL change resets BOTH `data` and `error` to `null` before the new
  * fetch even starts** (fix round, spec review finding 3) -- this hook was
- * originally written for Task 3's fixed-URL hooks (`useProjectInfo`/
- * `useGbcGroups`), which never change `url` after mount, so the gap was
+ * originally written for Task 3's fixed-URL hooks (`Root`'s own `/api/hub`
+ * fetch / `useGbcGroups`), which never change `url` after mount, so the gap was
  * invisible there. Task 4's `useGbcMap` DOES change `url` (one call per
  * selected map), and without this reset: an `error` from a failed map stuck
  * around forever after selecting a good one afterward (`error` is checked

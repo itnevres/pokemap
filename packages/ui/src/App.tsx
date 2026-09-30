@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { MapTree } from "./components/MapTree.js";
 import { MapCanvas, type EventRef } from "./components/MapCanvas.js";
 import { WorldCanvas } from "./components/WorldCanvas.js";
@@ -62,7 +62,15 @@ function eventOpErrorMessage(e: unknown): string {
 
 type Mode = "map" | "world" | "dungeon";
 
-export function App() {
+export interface AppProps {
+  /** Plan 6c A2: the header's project-switcher button (`ProjectSwitcher`),
+   *  supplied by `Root` -- additive and optional so `App.test.tsx`'s own
+   *  `<App />` (no props) stays byte-identical in behaviour. `null`/
+   *  `undefined` renders nothing extra in the toolbar. */
+  switcher?: ReactNode;
+}
+
+export function App({ switcher }: AppProps) {
   const [mode, setMode] = useState<Mode>("map");
   const [selected, setSelected] = useState<string | null>(null);
   // Bumped on every sidebar click, even a re-click of the same map name --
@@ -431,6 +439,7 @@ export function App() {
           </button>
         </div>
         {mode === "map" && selected && <span className="app__status">{selected}</span>}
+        {switcher}
       </header>
       <div className="app__body">
         <aside className="app__sidebar">
