@@ -69,9 +69,10 @@ export type ProjectHandler =
 /**
  * Buffers a request body to a string. `/api/world/placement` is the first
  * POST route this server has ever needed -- every route before it only ever
- * reads.
+ * reads. Exported (Plan 6c A1) so `hub.ts`'s own `POST /api/hub/open` reuses
+ * this instead of a second copy.
  */
-function readBody(req: IncomingMessage): Promise<string> {
+export function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     req.on("data", (c: Buffer) => chunks.push(c));
