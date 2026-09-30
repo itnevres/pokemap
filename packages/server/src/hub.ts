@@ -103,6 +103,52 @@ function driveRootEntries(): BrowseEntry[] {
   return entries;
 }
 
+const LOCAL_HOSTNAMES = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+/**
+ * `new URL(...).hostname`, parsed from a header value that may or may not
+ * already carry a scheme (`Origin` always does; `Host` never does) --
+ * returns `undefined` on anything unparseable rather than throwing, so
+ * every call site can treat "malformed" the same as "not local."
+ */
+function hostnameOf(headerValue: string, alreadyHasScheme: boolean): string | undefined {
+  try {
+    return new URL(alreadyHasScheme ? headerValue : `http://${headerValue}`).hostname;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * SR-F9 (security): reject any request whose `Origin` or `Host` header
+ * names a non-local hostname, before it is routed anywhere -- for EVERY
+ * path, not just `POST /api/hub/open`. Two distinct browser-reachable
+ * attacks this blocks, both already possible against this dev server before
+ * the hub existed but widened by it (spec review F9): (1) a same-origin-
+ * policy-exempt drive-by request from any web page a person happens to have
+ * open -- `POST /api/hub/open` with `{ force: true }` would discard unsaved
+ * edits or open an arbitrary directory with no user interaction, and
+ * `GET /api/hub/browse` would let a remote page enumerate the local
+ * filesystem; (2) DNS rebinding, where an attacker's domain later resolves
+ * to `127.0.0.1` -- at that point the attacker's own page can be considered
+ * "same-origin" by the browser, so `Origin` alone isn't enough; checking
+ * `Host` too (what the request line itself claims to be addressed to) is
+ * what actually stops it, since the hub only ever means to answer for
+ * itself. The Vite dev proxy forwards a same-site `Origin` and a
+ * `Host: localhost:<port>` (any port -- this is a dev server on a port that
+ * can change), so it passes; Node's own `fetch` sends `Host: 127.0.0.1:
+ * <port>` and no `Origin` at all, so every existing test passes too.
+ */
+function isCrossOriginRequest(headers: { origin?: string; host?: string }): boolean {
+  if (headers.origin) {
+    const originHost = hostnameOf(headers.origin, true);
+    if (!originHost || !LOCAL_HOSTNAMES.has(originHost)) return true;
+  }
+  const hostHost = headers.host ? hostnameOf(headers.host, false) : undefined;
+  if (!hostHost || !LOCAL_HOSTNAMES.has(hostHost)) return true;
+  return false;
+}
+
 export async function createHub(opts: { port?: number; home?: string; open?: string }): Promise<Hub> {
   const home = recentHome(opts.home);
   let current: ProjectHandler | null = null;
@@ -115,6 +161,10 @@ export async function createHub(opts: { port?: number; home?: string; open?: str
     };
 
     try {
+      if (isCrossOriginRequest({ origin: req.headers.origin, host: req.headers.host })) {
+        return send(403, { error: "cross-origin request refused" });
+      }
+
       if (url.pathname === "/api/hub") {
         return send(200, { current: current?.info ?? null, recent: readRecent(home) } satisfies { current: ProjectInfo | null; recent: RecentEntry[] });
       }

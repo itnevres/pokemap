@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
-import { createServer as createHttp } from "node:http";
+import { createServer as createHttp, request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { createHub, parentOf, safeNorm, type Hub } from "../src/hub.js";
@@ -34,6 +34,24 @@ afterAll(() => {
 const getJson = async (port: number, path: string) => (await fetch(`http://127.0.0.1:${port}${path}`)).json();
 const postJson = async (port: number, path: string, body: unknown) =>
   fetch(`http://127.0.0.1:${port}${path}`, { method: "POST", body: JSON.stringify(body) });
+
+// `fetch` refuses to let a caller set its own `Host` header (a forbidden
+// header per the Fetch spec) -- SR-F9's tests need exactly that, so they go
+// through `node:http`'s own `request` instead, which does not forbid it.
+function rawRequest(
+  port: number, path: string, opts: { method?: string; headers?: Record<string, string>; body?: string },
+): Promise<{ status: number; body: string }> {
+  return new Promise((resolvePromise, reject) => {
+    const req = httpRequest({ host: "127.0.0.1", port, path, method: opts.method ?? "GET", headers: opts.headers }, (res) => {
+      let data = "";
+      res.on("data", (c: Buffer) => (data += c));
+      res.on("end", () => resolvePromise({ status: res.statusCode ?? 0, body: data }));
+    });
+    req.on("error", reject);
+    if (opts.body) req.write(opts.body);
+    req.end();
+  });
+}
 
 describe("hub (non-corpus)", () => {
   it("test 1: GET /api/hub before any open reports current: null, recent: []", async () => {
@@ -227,6 +245,44 @@ describe("hub (non-corpus)", () => {
       await postJson(hub.port, "/api/hub/open", { path: join(tmp, "both") });
       expect(hub.current()).toBeNull();
       expect(await getJson(hub.port, "/api/hub")).toMatchObject({ current: null });
+    } finally {
+      await hub.close();
+    }
+  });
+
+  it("SR-F9: a forged Origin on POST /api/hub/open is refused with 403 and no swap", async () => {
+    const hub = await createHub({ port: 0, home: makeHome() });
+    try {
+      const r = await rawRequest(hub.port, "/api/hub/open", {
+        method: "POST",
+        headers: { Origin: "http://evil.example", Host: `127.0.0.1:${hub.port}`, "content-type": "application/json" },
+        body: JSON.stringify({ path: "C:/" }),
+      });
+      expect(r.status).toBe(403);
+      expect(JSON.parse(r.body)).toEqual({ error: "cross-origin request refused" });
+      expect(hub.current()).toBeNull();
+    } finally {
+      await hub.close();
+    }
+  });
+
+  it("SR-F9: a forged Host on GET /api/hub/browse is refused with 403", async () => {
+    const hub = await createHub({ port: 0, home: makeHome() });
+    try {
+      const r = await rawRequest(hub.port, "/api/hub/browse", { headers: { Host: "evil.example" } });
+      expect(r.status).toBe(403);
+      expect(JSON.parse(r.body)).toEqual({ error: "cross-origin request refused" });
+    } finally {
+      await hub.close();
+    }
+  });
+
+  it("SR-F9: an allowed Origin (matching the vite dev proxy) is not refused", async () => {
+    const hub = await createHub({ port: 0, home: makeHome() });
+    try {
+      const r = await rawRequest(hub.port, "/api/hub", { headers: { Origin: "http://localhost:5173", Host: `localhost:${hub.port}` } });
+      expect(r.status).toBe(200);
+      expect(JSON.parse(r.body)).toEqual({ current: null, recent: [] });
     } finally {
       await hub.close();
     }
