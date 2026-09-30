@@ -37,6 +37,18 @@ describe("recent.ts", () => {
     expect(entries[0]!.path).toBe("C:/x/y");
   });
 
+  // SR-F8b: a single push, not paired with a second push whose raw input
+  // already happens to look normalised (like the dedupe test just above,
+  // where the SECOND push's own raw path is already "C:/x/y") -- that
+  // pairing let a mutant that stores the raw path pass by coincidence,
+  // since the last-pushed entry happened to already be clean. This pins the
+  // STORED value of one single backslash-form push.
+  it("SR-F8b: a single push of a backslash-form path stores it normalised", () => {
+    const home = makeHome();
+    const entries = pushRecent(home, { path: "C:\\x\\y\\", family: "gba" });
+    expect(entries[0]!.path).toBe("C:/x/y");
+  });
+
   it.skipIf(process.platform !== "win32")("dedupe is case-insensitive on win32: c:/X/y dedupes against C:/x/y", () => {
     const home = makeHome();
     pushRecent(home, { path: "C:/x/y", family: "gba" });
