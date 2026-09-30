@@ -1,4 +1,4 @@
-# PokeMap: current state (2026-09-28, read first)
+# PokeMap: current state (2026-09-30, read first)
 
 PokeMap is a Porymap-parity map editor with two engine families:
 - **GBA:** pokeemerald-family decomps. Plans 0-5.
@@ -9,8 +9,10 @@ This file holds the state and the accumulated lessons. The prompt for the next s
 ## Git state: read before branching
 
 - **Merged 2026-09-25.** [itnevres/pokemap#1](https://github.com/itnevres/pokemap/pull/1) merged `plan-6-gbc-foundation` into `master` (merge commit `075cefb`, 169 commits): the world-view and dungeon-mode plans, Plan 2 with its 6 follow-ups, Plan 6, the doc refresh, and the cloud SessionStart hook. A merge commit was used rather than a rebase, so every SHA cited in the docs and task reports is still valid. **Branch new work from `master`.**
-- **Done, awaiting merge: `plan-6b-gbc-app-layer`** (Plan 6b, the GBC app layer). [itnevres/pokemap#3](https://github.com/itnevres/pokemap/pull/3) is ready for review. All tasks are done, and criteria 1-4 were demonstrated end to end on 2026-09-28. It branches from `master` at `3f76262`. Once it merges, branch new work from `master`.
-- **Branch baseline, measured 2026-09-28 on the Windows machine at 6b HEAD:** `npm test` gives **1,679 pass / 0 fail**. `npm run typecheck` is clean, and `vite build` passes.
+- **Merged: Plan 6b.** [itnevres/pokemap#3](https://github.com/itnevres/pokemap/pull/3) merged as `ce020d9`. Its tree is byte-identical to 6b HEAD `243cbef`.
+- **In progress, local only (not pushed): `plan-6c-hub-encounters-world`.** It was rebased onto `ce020d9` on 2026-09-29, and Phase A (A1 + A2) is done. HEAD is the RESUME commit after `94638dc`. **Next: Phase B, C or D** (they are independent), one phase per coordinator session. Push the branch when convenient; the PR comes at F1.
+- **Phase A gate, measured 2026-09-30 on Windows at `a49375f`:** `npm test` gives **1,780 pass / 0 fail** (112 files); typecheck is clean; `vite build` passes. The 6c branch start was 1,679 / 0 (`task-reports/pokemap-plan-6c-hub-encounters-world/baseline.md`).
+- **Previous branch baseline, measured 2026-09-28 on the Windows machine at 6b HEAD:** `npm test` gives **1,679 pass / 0 fail**. `npm run typecheck` is clean, and `vite build` passes.
   - Before `123d89f`, Windows also had 7 failures in `packages/cli/test`. They came from cloud-written tests that had never run on Windows (`spawnSync("npx")`, and a regex built from a backslash path), and that commit fixes them.
   - **The cloud should see 1,673 / 6** (derived, not measured). The 6 are the local-state deltas below, listed in `task-reports/pokemap-plan-6b-gbc-app-layer/baseline-fails.txt`.
   - One unidentified test failed once in about 8 Windows full runs and never recurred. If a single failure appears, rerun it in isolation before calling it a regression.
@@ -27,8 +29,8 @@ This file holds the state and the accumulated lessons. The prompt for the next s
 | Line of work | State | Needs |
 |---|---|---|
 | Plan 6: GBC foundation, read-only | **Done and merged 2026-09-25.** See the plan's STATUS banner for the real file map | — |
-| Plan 7: GBC editing | **Next, after #3 merges.** Its "Grounding from Plan 6" section is required reading. Tasks 1, 2, 3, 6 and 7 (core + CLI) can run at any time; Tasks 4-5 build on 6b's server and UI | PerfPlus clone (+ pret/pokecrystal for the G5 gate) |
-| 6c: hub, encounter border, world UX (both families) | **Planned 2026-09-28, not started.** `plans/2026-09-28-pokemap-plan-6c-hub-encounters-world.md`: 17 tasks in phases A-F. Run one phase per coordinator session. The user decisions U1-U4 are binding. It branches from `master` after #3 merges; the plan doc itself sits on local branch `plan-6c-hub-encounters-world`, stacked on 6b | GBA subject + PerfPlus + a browser |
+| Plan 7: GBC editing | **Unblocked** (#3 merged). Its "Grounding from Plan 6" section is required reading. Tasks 1, 2, 3, 6 and 7 (core + CLI) can run at any time; Tasks 4-5 build on 6b's server and UI | PerfPlus clone (+ pret/pokecrystal for the G5 gate) |
+| 6c: hub, encounter border, world UX (both families) | **Phase A done 2026-09-30** (A1 server hub, A2 picker/switcher; criterion 1 live-verified). `plans/2026-09-28-pokemap-plan-6c-hub-encounters-world.md`: 17 tasks in phases A-F. Run one phase per coordinator session. The user decisions U1-U4 are binding. Next: B, C or D. Evidence: `task-reports/pokemap-plan-6c-hub-encounters-world/_archive/task-A{1,2}-coordinator.md`. Deferred from A: a POST body read after a hub swap still runs on the disposed handler (A1 SR-F3); browse doesn't list symlinked dirs; a browse 403 shows only the status code | GBA subject + PerfPlus + a browser |
 | 6b: GBC app layer (server + UI, read-only) | **Done 2026-09-28, PR #3 ready for review.** Plan: `plans/2026-09-25-pokemap-plan-6b-gbc-app-layer.md`; its STATUS banner holds the real file map. The close-out evidence is in `task-reports/pokemap-plan-6b-gbc-app-layer/_archive/task-7-closeout.md` | — |
 | 4 remaining GBA follow-up fixes (A/B/C/D) | Planned, not started. **D3** (the styles.css `*/` comment) was already fixed in 6b at `5629602`, with the user's go-ahead. It was worse than recorded: it also swallowed the `.species-spotlight` rule and put the spotlight dropdown off-screen. D1 (StrictMode zoom) and D2 (hover overflow) remain.<br>Also seen in 6b's close-out, and not yet in the plan:<br>- in GBA's world toolbar, the open lens legend popover covers the Encounters toggle;<br>- at mid zoom, gutter strips of adjacent maps overlap (both families).<br>Evidence: `task-reports/pokemap-plan-6b-gbc-app-layer/_archive/task-4-spec-review.md` A/B and `_archive/task-7-closeout.md` | GBA corpus (now available in the cloud) + live browser verify (Chromium is available in the cloud) |
 | Plan 3: GBA data editors | Not started, lower priority | Windows machine |
@@ -110,6 +112,36 @@ This file holds the state and the accumulated lessons. The prompt for the next s
 - **"Existing GBA tests unchanged" needs checking in every fix round.** Task 6's fix round edited a GBA test to make a LensPanel change pass. The coordinator caught it with `git diff <base> -- packages/ui/test/<gba files>` (additions only), then reverted it and made the GBC side real instead.
 - **Canvas-drawn UI (badges, tints) can be verified without DOM hooks.** Scan `getImageData` for the token's exact RGB, cluster the hits, and hover each cluster. For lenses, count the tint elements by `style.background` and compare the counts with an independent in-page recomputation from the API.
 
+## Lessons from Plan 6c Phase A (2026-09-29/30; new, add to everything above)
+
+- **The hub refuses cross-site requests.** Every request (`hub.ts` `isCrossOriginRequest`) is checked:
+  an `Origin` must be a local hostname, and so must the `Host`. That covers every existing project route
+  too (a drive-by POST to `/commit` was possible before). The Vite proxy and node `fetch` in tests both
+  pass. A new client that sets a non-local `Host` gets a 403.
+- **Stale dev servers from an earlier session can hold 5173/5174.** In A2, the 6b session's
+  `serve.ts --gbc` (pre-hub code) and its Vite were still running. Don't kill what this session didn't
+  start. Live-verify on other ports instead:
+  - an `--import` preload that remaps `http.Server.prototype.listen(5174)` to 5184, so the *real*
+    `serve.ts` runs unmodified;
+  - Vite started programmatically (`createServer({ root: packages/ui, configFile: false, plugins: [react()], server: { port: 5183, proxy: { "/api": "http://127.0.0.1:5184" } } })`);
+  - a scratch `POKEMAP_HOME`, so the real `~/.pokemap` stays untouched.
+
+  Each script is about 5 lines. The steps it verified are in `_archive/task-A2-coordinator.md`.
+- **Specs can contradict themselves.** A2's spec said both "mirror SaveDialog's backdrop" and "never two
+  stacked backdrops". The implementer followed both literally, which produced nested backdrops, and Escape
+  closed the whole switcher. Both reviewers caught it. The coordinator's call: a confirm *inside* a modal
+  has no backdrop of its own and stops Escape's propagation. Check new specs for this pattern: a nested
+  dialog plus "mirror the modal shell".
+- **Rate limits hit both implementers mid-fix-round.** The RESUME recipe worked each time (`git status` /
+  `log` / `diff`, then SendMessage the same agent with "revert leftovers first"). One agent died before
+  its first commit, and the tree was clean.
+- **The coordinator's mutation re-run as a node script is cheap and reliable.** Keep a literal anchor
+  asserted to match exactly once, run the narrowest vitest file via `node node_modules/vitest/vitest.mjs run <file>`,
+  restore the in-memory on-disk bytes, and byte-compare the file afterwards. It ran A1's 12 and A2's 13
+  survivors and fix guards, all red, in minutes.
+- **The unidentified Windows flake recurred:** 1 failure in the first of 5 full runs, then 4 clean runs.
+  Still unidentified; next time, capture the first run's output to a file.
+
 ---
 
 ## Where everything is
@@ -126,6 +158,8 @@ This file holds the state and the accumulated lessons. The prompt for the next s
 | Plan 6: GBC foundation (done; STATUS banner holds the real file map) | `docs/superpowers/plans/2026-09-23-pokemap-plan-6-gbc-foundation.md` |
 | Plan 6b: GBC app layer (done; STATUS banner holds the real file map) | `docs/superpowers/plans/2026-09-25-pokemap-plan-6b-gbc-app-layer.md` |
 | 6b task reports: specs, implementer reports, reviews, screenshots, baseline fails, the close-out | `docs/superpowers/task-reports/pokemap-plan-6b-gbc-app-layer/` (all reports in `_archive/`) |
+| Plan 6c: hub, encounter border, world UX (Phase A done) | `docs/superpowers/plans/2026-09-28-pokemap-plan-6c-hub-encounters-world.md` |
+| 6c task reports: baseline, executed specs, reviews, coordinator records | `docs/superpowers/task-reports/pokemap-plan-6c-hub-encounters-world/` (A1/A2 in `_archive/`) |
 | Plan 7: GBC editing (after 6b; read "Grounding from Plan 6" first) | `docs/superpowers/plans/2026-09-23-pokemap-plan-7-gbc-editing.md` |
 | GBC format truth (binding Decisions) | `docs/superpowers/specs/2026-09-23-pokemap-gbc-format-findings.md` |
 | GBA design spec and feature specs | `docs/superpowers/specs/2026-08-26-pokemap-design.md`, `2026-09-07-*.md` |
@@ -142,8 +176,8 @@ This file holds the state and the accumulated lessons. The prompt for the next s
 ## Running it
 
 ```bash
-npx tsx packages/server/src/serve.ts        # API on 127.0.0.1:5174 for pokemap.config.json's projectPath (GBA)
-npx tsx packages/server/src/serve.ts --gbc  # the same, for gbc.projectPath (Crystal); a positional root also works, and the family is auto-detected
+npx tsx packages/server/src/serve.ts        # the hub on 127.0.0.1:5174: reopens ~/.pokemap/recent.json's newest project, else the UI shows the project picker (POKEMAP_HOME overrides ~/.pokemap)
+npx tsx packages/server/src/serve.ts --gbc  # the hub with pokemap.config.json's gbc.projectPath opened (Crystal); a positional root also works, and the family is auto-detected
 npm run dev --workspace=@pokemap/ui         # Vite on 5173, proxies /api
 # GBC, CLI only:
 npx tsx packages/cli/src/index.ts --project <PerfPlus> render NewBarkTown -o out.png [--border 3] [--time nite]
