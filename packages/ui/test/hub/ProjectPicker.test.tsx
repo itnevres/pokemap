@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within, act } from "@testing-library/react";
 import { ProjectPicker } from "../../src/hub/ProjectPicker.js";
 
 afterEach(() => {
@@ -167,15 +167,26 @@ describe("ProjectPicker", () => {
     fireEvent.click(screen.getByRole("button", { name: "misc" }));
     fireEvent.click(screen.getByRole("button", { name: "Up" }));
 
-    resolveRoot(BROWSE_ROOT);
-    await waitFor(() => expect(screen.getByText("tmp")).toBeTruthy());
+    // Scoped to the entries list specifically, NOT `screen` at large --
+    // after navigating into "/tmp/misc", the breadcrumb legitimately shows
+    // "tmp" too (as a path segment), so an unscoped `getByText("tmp")` would
+    // stay truthy in BOTH the correct and the buggy (guard-removed) outcome
+    // and never actually catch a regression here.
+    const entries = () => document.querySelector(".hub-picker__entries") as HTMLElement;
 
-    resolveMisc(BROWSE_MISC);
-    // Give the (should-be-ignored) misc resolution a turn to (wrongly) take
-    // effect before asserting it didn't.
-    await new Promise((r) => setTimeout(r, 0));
-    expect(screen.getByText("tmp")).toBeTruthy();
-    expect(screen.queryByText("pokeemerald")).toBeNull();
+    await act(async () => {
+      resolveRoot(BROWSE_ROOT);
+    });
+    await waitFor(() => expect(within(entries()).getByText("tmp")).toBeTruthy());
+
+    await act(async () => {
+      resolveMisc(BROWSE_MISC);
+    });
+    // The stale (misc) response must not have overwritten root's -- the
+    // entries list still shows root's own single "tmp" entry, not misc's
+    // empty listing.
+    expect(within(entries()).getByText("tmp")).toBeTruthy();
+    expect(within(entries()).queryByText("pokeemerald")).toBeNull();
   });
 
   it("typed path: a 422 shows the server's message in an alert and does not call onOpened", async () => {
