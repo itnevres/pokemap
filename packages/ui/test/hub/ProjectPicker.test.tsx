@@ -335,4 +335,154 @@ it("in-flight guard: two rapid typed-path submits post once and call onOpened on
     // The enabled ones are back (unsupported/null entries stay disabled by family).
     expect(opens().filter((b) => !b.disabled).length).toBeGreaterThan(0);
   });
+
+  // ---- fix round: SR-F4 / SR-F5 / SR-F6 / QR-F2 + survivor tests ----
+
+  const hubWith = (root: string | null, recentPaths: string[] = []) => ({
+    current: root ? { family: "gba", root } : null,
+    recent: recentPaths.map((path) => ({ path, family: "gba", openedAt: "2026-09-29T00:00:00.000Z" })),
+  });
+  const entriesList = () => document.querySelector(".hub-picker__entries") as HTMLElement;
+
+  it("a failed browse clears the stale listing and a re-click of the same folder (its breadcrumb) refetches", async () => {
+    let tries = 0;
+    const { mock, calls } = makeHubFetch({
+      hub: HUB_STATE,
+      browse: {
+        "/api/hub/browse?dir=%2Ftmp": BROWSE_TMP,
+        "/api/hub/browse?dir=%2Ftmp%2Fmisc": () => Promise.resolve(tries++ === 0 ? { __status: 403 } : BROWSE_MISC),
+      },
+    });
+    vi.stubGlobal("fetch", mock);
+    render(<ProjectPicker onOpened={vi.fn()} />);
+    await waitFor(() => expect(within(entriesList()).getByText("pokeemerald")).toBeTruthy());
+
+    fireEvent.click(screen.getByRole("button", { name: "misc" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toMatch(/403/);
+    expect(within(entriesList()).queryByText("pokeemerald")).toBeNull();
+
+    // The folder's own breadcrumb is what is left to re-click (same `dir`).
+    fireEvent.click(screen.getByRole("button", { name: "misc" }));
+    await waitFor(() => expect(calls.filter((u) => u === "/api/hub/browse?dir=%2Ftmp%2Fmisc").length).toBe(2));
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  });
+
+  it("a project at a drive top level seeds the drive ROOT (C:/), not the drive-relative C:", async () => {
+    const { mock, calls } = makeHubFetch({
+      hub: hubWith("C:/pokeemerald"),
+      browse: { "/api/hub/browse?dir=C%3A%2F": { dir: "C:/", parent: null, entries: [] } },
+    });
+    vi.stubGlobal("fetch", mock);
+    render(<ProjectPicker onOpened={vi.fn()} />);
+    await waitFor(() => expect(calls).toContain("/api/hub/browse?dir=C%3A%2F"));
+    expect(calls).not.toContain("/api/hub/browse?dir=C%3A");
+  });
+
+  it("when /api/hub fails the alert shows AND a null-dir browse still starts so the folder browser works", async () => {
+    const { mock, calls } = makeHubFetch({
+      hubStatus: 500,
+      browse: { "/api/hub/browse": { dir: null, parent: null, entries: [{ name: "Drive", path: "C:/", family: null }] } },
+    });
+    vi.stubGlobal("fetch", mock);
+    render(<ProjectPicker onOpened={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText("Could not load projects:", { exact: false })).toBeTruthy());
+    await waitFor(() => expect(within(entriesList()).getByText("Drive")).toBeTruthy());
+    expect(calls).toContain("/api/hub/browse");
+  });
+
+  it("a browse resolving after unmount does not throw or log", async () => {
+    let resolveTmp: (v: unknown) => void = () => {};
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { mock } = makeHubFetch({
+      hub: HUB_STATE,
+      browse: { "/api/hub/browse?dir=%2Ftmp": () => new Promise((r) => { resolveTmp = r; }) },
+    });
+    vi.stubGlobal("fetch", mock);
+    const view = render(<ProjectPicker onOpened={vi.fn()} />);
+    await waitFor(() => expect(mock).toHaveBeenCalledWith("/api/hub/browse?dir=%2Ftmp"));
+    view.unmount();
+    await act(async () => {
+      resolveTmp(BROWSE_TMP);
+    });
+    expect(errSpy).not.toHaveBeenCalled();
+    errSpy.mockRestore();
+  });
+
+  it("M10: the initial browse dir comes from current.root, not recent[0], when their parents differ", async () => {
+    const { mock, calls } = makeHubFetch({
+      hub: hubWith("/a/x/proj", ["/b/y/other"]),
+      browse: { "/api/hub/browse?dir=%2Fa%2Fx": { dir: "/a/x", parent: "/a", entries: [] } },
+    });
+    vi.stubGlobal("fetch", mock);
+    render(<ProjectPicker onOpened={vi.fn()} />);
+    await waitFor(() => expect(calls).toContain("/api/hub/browse?dir=%2Fa%2Fx"));
+    expect(calls.filter((u) => u.startsWith("/api/hub/browse"))).toEqual(["/api/hub/browse?dir=%2Fa%2Fx"]);
+  });
+
+  it("with no current and no recent, the browse starts at the root list and Up is disabled there (M16)", async () => {
+    const { mock } = makeHubFetch({
+      hub: hubWith(null),
+      browse: { "/api/hub/browse": { dir: null, parent: null, entries: [{ name: "D", path: "C:/", family: null }] } },
+    });
+    vi.stubGlobal("fetch", mock);
+    render(<ProjectPicker onOpened={vi.fn()} />);
+    await waitFor(() => expect(within(entriesList()).getByText("D")).toBeTruthy());
+    expect((screen.getByRole("button", { name: "Up" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("Up from a dir whose parent is null (a drive root) fetches the root list, exact URL (M17)", async () => {
+    const { mock, calls } = makeHubFetch({
+      hub: hubWith("C:/x"),
+      browse: {
+        "/api/hub/browse?dir=C%3A%2F": { dir: "C:/", parent: null, entries: [] },
+        "/api/hub/browse": { dir: null, parent: null, entries: [] },
+      },
+    });
+    vi.stubGlobal("fetch", mock);
+    render(<ProjectPicker onOpened={vi.fn()} />);
+    await waitFor(() => expect(calls).toContain("/api/hub/browse?dir=C%3A%2F"));
+    const up = screen.getByRole("button", { name: "Up" }) as HTMLButtonElement;
+    expect(up.disabled).toBe(false);
+    fireEvent.click(up);
+    await waitFor(() => expect(calls).toContain("/api/hub/browse"));
+  });
+
+  it("a win32-shaped dir's breadcrumb is C: / a / b and its crumbs browse to C:/, C:/a, C:/a/b exactly (M18)", async () => {
+    const { mock, calls } = makeHubFetch({
+      hub: hubWith("C:/a/b/proj"),
+      browse: {
+        "/api/hub/browse?dir=C%3A%2Fa%2Fb": { dir: "C:/a/b", parent: "C:/a", entries: [] },
+        "/api/hub/browse?dir=C%3A%2Fa": { dir: "C:/a", parent: "C:/", entries: [] },
+        "/api/hub/browse?dir=C%3A%2F": { dir: "C:/", parent: null, entries: [] },
+      },
+    });
+    vi.stubGlobal("fetch", mock);
+    render(<ProjectPicker onOpened={vi.fn()} />);
+    const crumbs = () => Array.from(document.querySelectorAll(".hub-picker__breadcrumb button")).map((b) => b.textContent);
+    await waitFor(() => expect(crumbs()).toEqual(["C:", "a", "b"]));
+
+    fireEvent.click(screen.getByRole("button", { name: "a" }));
+    await waitFor(() => expect(calls).toContain("/api/hub/browse?dir=C%3A%2Fa"));
+    await waitFor(() => expect(crumbs()).toEqual(["C:", "a"]));
+
+    fireEvent.click(screen.getByRole("button", { name: "C:" }));
+    await waitFor(() => expect(calls).toContain("/api/hub/browse?dir=C%3A%2F"));
+
+    // The seeded dir itself (C:/a/b) is the first request, exact.
+    expect(calls.filter((u) => u.startsWith("/api/hub/browse"))[0]).toBe("/api/hub/browse?dir=C%3A%2Fa%2Fb");
+  });
+
+  it("each browse entry shows its family badge text; a null-family entry shows none (M27)", async () => {
+    const { mock } = makeHubFetch({ hub: HUB_STATE, browse: { "/api/hub/browse?dir=%2Ftmp": BROWSE_TMP } });
+    vi.stubGlobal("fetch", mock);
+    render(<ProjectPicker onOpened={vi.fn()} />);
+    await waitFor(() => expect(within(entriesList()).getByText("notes")).toBeTruthy());
+    const badge = (name: string) =>
+      within(entriesList()).getByText(name).closest("li")!.querySelector(".hub-picker__badge")?.textContent ?? null;
+    expect(badge("pokeemerald")).toBe("GBA");
+    expect(badge("pokecrystal")).toBe("GBC");
+    expect(badge("notes")).toBe("Unsupported");
+    expect(badge("misc")).toBeNull();
+  });
 });

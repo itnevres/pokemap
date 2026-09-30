@@ -27,7 +27,10 @@ function guessParent(path: string): string | null {
   const idx = trimmed.lastIndexOf("/");
   if (idx < 0) return null;
   if (idx === 0) return "/";
-  return trimmed.slice(0, idx);
+  const parent = trimmed.slice(0, idx);
+  // A bare drive letter ("C:") is drive-RELATIVE on win32 (the server's
+  // resolve("C:") lands in its own cwd), so a drive-top project seeds "C:/".
+  return /^[A-Za-z]:$/.test(parent) ? parent + "/" : parent;
 }
 
 interface Crumb {
@@ -85,8 +88,12 @@ export function ProjectPicker({ onOpened, onClose }: ProjectPickerProps) {
   useEffect(() => {
     if (hub && dir === undefined) {
       setDir(hub.current ? guessParent(hub.current.root) : hub.recent[0] ? guessParent(hub.recent[0].path) : null);
+    } else if (hubError && dir === undefined) {
+      // /api/hub failed: nothing to seed from, but the folder browser needs
+      // nothing from it -- start at the root list so it still works.
+      setDir(null);
     }
-  }, [hub, dir]);
+  }, [hub, hubError, dir]);
 
   const [browseResult, setBrowseResult] = useState<BrowseResult | null>(null);
   const [browseError, setBrowseError] = useState<string | null>(null);
@@ -96,6 +103,23 @@ export function ProjectPicker({ onOpened, onClose }: ProjectPickerProps) {
   // read at resolution time needs no extra render to take effect the way a
   // state-based id would.
   const browseReqRef = useRef(0);
+  // Unmount-only flag, separate from the counter on purpose: the counter is
+  // what drops a superseded response (and stays independently testable);
+  // this stops any setter firing once the component is gone.
+  const unmountedRef = useRef(false);
+  useEffect(() => {
+    unmountedRef.current = false;
+    return () => {
+      unmountedRef.current = true;
+    };
+  }, []);
+  // Bumped by every navigation so re-clicking the SAME folder (unchanged
+  // `dir`) still re-runs the fetch effect -- the retry path after a failure.
+  const [browseNonce, setBrowseNonce] = useState(0);
+  const browseTo = (next: string | null) => {
+    setDir(next);
+    setBrowseNonce((n) => n + 1);
+  };
 
   useEffect(() => {
     if (dir === undefined) return;
@@ -104,14 +128,17 @@ export function ProjectPicker({ onOpened, onClose }: ProjectPickerProps) {
     setBrowseError(null);
     fetchGuarded(url, isBrowseResult)
       .then((result) => {
-        if (browseReqRef.current !== reqId) return;
+        if (unmountedRef.current || browseReqRef.current !== reqId) return;
         setBrowseResult(result);
       })
       .catch((e: unknown) => {
-        if (browseReqRef.current !== reqId) return;
+        if (unmountedRef.current || browseReqRef.current !== reqId) return;
+        // Drop the previous listing: old entries under a fresh error alert
+        // would look like the failed folder's contents.
+        setBrowseResult(null);
         setBrowseError(e instanceof Error ? e.message : String(e));
       });
-  }, [dir]);
+  }, [dir, browseNonce]);
 
   const [typedPath, setTypedPath] = useState("");
   const [openError, setOpenError] = useState<string | null>(null);
@@ -177,7 +204,11 @@ export function ProjectPicker({ onOpened, onClose }: ProjectPickerProps) {
     );
   }
 
-  const crumbs = browseResult?.dir ? breadcrumbOf(browseResult.dir) : [];
+  const crumbDir = browseResult ? browseResult.dir : dir;
+  const crumbs = crumbDir ? breadcrumbOf(crumbDir) : [];
+  // Up: the server's own `parent` when we have a listing (null at a root ->
+  // the root list); after a failed browse there is no listing, so guess.
+  const upTarget = browseResult ? browseResult.parent : dir ? guessParent(dir) : null;
 
   return (
     <div className="hub-picker">
@@ -222,7 +253,7 @@ export function ProjectPicker({ onOpened, onClose }: ProjectPickerProps) {
         )}
         <div className="hub-picker__breadcrumb">
           {crumbs.map((c) => (
-            <button key={c.path} type="button" className="map-canvas__btn" onClick={() => setDir(c.path)}>
+            <button key={c.path} type="button" className="map-canvas__btn" onClick={() => browseTo(c.path)}>
               {c.label}
             </button>
           ))}
@@ -230,15 +261,15 @@ export function ProjectPicker({ onOpened, onClose }: ProjectPickerProps) {
         <button
           type="button"
           className="map-canvas__btn hub-picker__up"
-          onClick={() => setDir(browseResult?.parent ?? null)}
-          disabled={dir === null}
+          onClick={() => browseTo(upTarget)}
+          disabled={dir == null}
         >
           Up
         </button>
         <ul className="hub-picker__list hub-picker__entries">
           {browseResult?.entries.map((e) => (
             <li key={e.path} className="hub-picker__row">
-              <button type="button" className="map-canvas__btn hub-picker__entry-name" onClick={() => setDir(e.path)}>
+              <button type="button" className="map-canvas__btn hub-picker__entry-name" onClick={() => browseTo(e.path)}>
                 {e.name}
               </button>
               {e.family && <FamilyBadge family={e.family} />}
