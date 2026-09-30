@@ -31,6 +31,19 @@ async function main(): Promise<void> {
     // that case, not even to warn about it. Not a footgun this file guards
     // against, just worth knowing if you're used to typing a positional
     // path and prepend `--gbc` without removing it.
+    //
+    // `--gbc` selects the config's GBC block explicitly, mirroring the CLI's
+    // own `--project`-or-config resolution but for the one GBC root this dev
+    // server is pointed at. `cli/src/context.ts`'s own `resolveRoot`
+    // documents `gbc.projectPath` as test-only config, "never a CLI
+    // fallback" -- that's about the CLI's command-line UX (a real CLI
+    // invocation always takes `--project` explicitly for GBC). This file is
+    // different: it has no `--project`-equivalent flag of its own beyond the
+    // plain positional root below, and `pokemap.config.json`'s
+    // `gbc.projectPath` is exactly the already-configured Crystal project
+    // every GBC dev session against this repo uses. Reading it here is a
+    // deliberate dev-server convenience, not a CLI fallback, and this file is
+    // the one sanctioned non-test reader of it.
     const cfg = JSON.parse(readFileSync("pokemap.config.json", "utf8")) as { gbc?: { projectPath: string } };
     if (!cfg.gbc?.projectPath) {
       // A named refusal, not a thrown stack trace -- this is a config
