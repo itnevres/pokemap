@@ -69,15 +69,25 @@ describe("hub (non-corpus)", () => {
 
   it("test 4: browse a temp tree -- directories only, family-probed, sorted case-insensitively", async () => {
     const tmp = makeRoot();
-    touch(tmp, "gbaProj/include/fieldmap.h");
-    touch(tmp, "gbcProj/data/maps/attributes.asm");
-    touch(tmp, "gbcProj/constants/map_constants.asm");
+    // SR-F8: created in a deliberately scrambled order, and including names
+    // ("_under", "Zed", "alpha", "Beta") whose correct order (localeCompare,
+    // sensitivity: "base") disagrees with BOTH a plain default `.sort()`
+    // (ASCII: uppercase before "_" before lowercase) AND raw NTFS readdir
+    // order (~creation order for a small directory) -- so a sort dropped
+    // entirely, or swapped for a naive comparator, can't pass by accident.
+    mkdirSync(join(tmp, "yellow/data/maps/headers"), { recursive: true });
+    touch(tmp, "yellow/constants/map_constants.asm");
     touch(tmp, "both/include/fieldmap.h");
     touch(tmp, "both/data/maps/attributes.asm");
     touch(tmp, "both/constants/map_constants.asm");
-    mkdirSync(join(tmp, "yellow/data/maps/headers"), { recursive: true });
-    touch(tmp, "yellow/constants/map_constants.asm");
+    mkdirSync(join(tmp, "Beta"), { recursive: true });
+    touch(tmp, "gbcProj/data/maps/attributes.asm");
+    touch(tmp, "gbcProj/constants/map_constants.asm");
+    mkdirSync(join(tmp, "alpha"), { recursive: true });
     mkdirSync(join(tmp, "plain"), { recursive: true });
+    mkdirSync(join(tmp, "Zed"), { recursive: true });
+    touch(tmp, "gbaProj/include/fieldmap.h");
+    mkdirSync(join(tmp, "_under"), { recursive: true });
     mkdirSync(join(tmp, ".hidden"), { recursive: true });
     mkdirSync(join(tmp, "$sys"), { recursive: true });
     writeFileSync(join(tmp, "notes.txt"), "hi");
@@ -91,11 +101,15 @@ describe("hub (non-corpus)", () => {
       expect(body.dir).toBe(expectedDir);
       expect(body.parent).toBe(norm(dirname(tmp)));
       expect(body.entries).toEqual([
+        { name: "_under", path: `${expectedDir}/_under`, family: null },
+        { name: "alpha", path: `${expectedDir}/alpha`, family: null },
+        { name: "Beta", path: `${expectedDir}/Beta`, family: null },
         { name: "both", path: `${expectedDir}/both`, family: "unsupported" },
         { name: "gbaProj", path: `${expectedDir}/gbaProj`, family: "gba" },
         { name: "gbcProj", path: `${expectedDir}/gbcProj`, family: "gbc" },
         { name: "plain", path: `${expectedDir}/plain`, family: null },
         { name: "yellow", path: `${expectedDir}/yellow`, family: "unsupported" },
+        { name: "Zed", path: `${expectedDir}/Zed`, family: null },
       ]);
     } finally {
       await hub.close();
