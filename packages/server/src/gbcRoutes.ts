@@ -21,8 +21,8 @@
  * The payload-assembly logic for `/api/groups` and `/api/map/:name` is
  * factored into `buildGbcGroupsPayload`/`buildGbcMapPayload` below, exported
  * and unit-testable against a `stubGbcProject` (Task 1b fix round 1, quality
- * review findings 2/5) -- `createGbcServer`'s own body stays a thin dispatch
- * list of `if (match) return send(200, buildX(...))` lines, the same shape
+ * review findings 2/5) -- `createGbcProjectHandler`'s own body stays a thin
+ * dispatch list of `if (match) return send(200, buildX(...))` lines, the same shape
  * Task 2's five new routes should follow rather than growing this function
  * into one 400-line handler the way `index.ts` did.
  */
@@ -147,7 +147,7 @@ export function buildGbcGroupsPayload(proj: GbcProject): { groupOrder: string[];
  *
  * Exported (fix round 1, quality review findings 2/5) precisely so it can
  * be unit-tested directly against a stub `GbcProject`, without needing
- * `createGbcServer` restructured for dependency injection.
+ * `createGbcProjectHandler` restructured for dependency injection.
  */
 export function buildGbcMapPayload(proj: GbcProject, map: GbcMap): GbcMapPayload {
   const { layout, defects: layoutDefects } = proj.layout(map);
@@ -193,7 +193,7 @@ export function buildGbcMapPayload(proj: GbcProject, map: GbcMap): GbcMapPayload
  * refusal -- a mutation this file's tests specifically check for).
  * `components`/`conflicts` pass through unchanged. Takes the already-built
  * `world` rather than `proj`, since nothing here needs anything from `proj`
- * that isn't already in `world` -- `createGbcServer`'s own `getWorld()`
+ * that isn't already in `world` -- `createGbcProjectHandler`'s own `getWorld()`
  * (below) is what caches the expensive `buildGbcWorld` call itself; this
  * function is cheap and safe to call fresh on every request, including the
  * "second request returns deep-equal data" test, since `Object.fromEntries`
