@@ -100,4 +100,14 @@ async function main(): Promise<void> {
   process.stdout.write(`pokemap hub on http://127.0.0.1:${hub.port} (${status})\n`);
 }
 
-await main();
+// QR-F3: an uncaught rejection from main() (e.g. createHub({ open }) throwing
+// for a bad positional root) would otherwise be an unhandled top-level-await
+// rejection -- Node prints a raw stack trace and exits non-zero, unlike the
+// named, single-line refusal this file already gives the --gbc-missing-
+// config case above. Same shape here, for every other startup failure.
+try {
+  await main();
+} catch (e) {
+  process.stderr.write(`pokemap hub: ${e instanceof Error ? e.message : String(e)}\n`);
+  process.exitCode = 1;
+}
