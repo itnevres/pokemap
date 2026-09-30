@@ -219,4 +219,31 @@ describe("Root", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Day" }).getAttribute("aria-pressed")).toBe("true"));
     expect(screen.getByRole("button", { name: "Nite" }).getAttribute("aria-pressed")).toBe("false");
   });
+
+  // Fix round (M22): the gen suffix must keep bumping -- a SECOND same-root
+  // re-open (key would otherwise repeat) must remount too.
+  it("re-key remount: two consecutive same-root re-opens each remount (gen keeps bumping)", async () => {
+    const ROOT_A = "/root/pokemap-corpus/pokecrystal-A";
+    const { mock } = makeFetchMock(
+      { family: "gbc", root: ROOT_A },
+      { openResponses: { [ROOT_A]: { family: "gbc", root: ROOT_A } } },
+    );
+    vi.stubGlobal("fetch", mock);
+    render(<Root />);
+    await waitFor(() => expect(screen.getByRole("group", { name: "Time of day" })).toBeTruthy());
+
+    for (let round = 0; round < 2; round++) {
+      fireEvent.click(screen.getByRole("button", { name: "Nite" }));
+      expect(screen.getByRole("button", { name: "Nite" }).getAttribute("aria-pressed")).toBe("true");
+
+      fireEvent.click(screen.getByRole("button", { name: /switch project/i }));
+      const dialog = await screen.findByRole("dialog", { name: "Switch project" });
+      fireEvent.change(within(dialog).getByLabelText("Folder path"), { target: { value: ROOT_A } });
+      fireEvent.click(within(dialog).getByRole("button", { name: "Open" }));
+
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      await waitFor(() => expect(screen.getByRole("button", { name: "Day" }).getAttribute("aria-pressed")).toBe("true"));
+      expect(screen.getByRole("button", { name: "Nite" }).getAttribute("aria-pressed")).toBe("false");
+    }
+  });
 });

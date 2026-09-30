@@ -58,6 +58,12 @@ describe("isHubState", () => {
     ).toBe(false);
   });
 
+  it("rejects a recent entry whose family is \"unsupported\" (only gba/gbc are ever recorded)", () => {
+    expect(
+      isHubState({ current: null, recent: [{ path: "/x", family: "unsupported", openedAt: "2026-01-01" }] }),
+    ).toBe(false);
+  });
+
   it("rejects a recent entry missing openedAt", () => {
     expect(isHubState({ current: null, recent: [{ path: "/x", family: "gba" }] })).toBe(false);
   });
@@ -81,6 +87,11 @@ describe("isBrowseResult", () => {
   it("rejects a non-object", () => {
     expect(isBrowseResult(null)).toBe(false);
     expect(isBrowseResult([])).toBe(false);
+  });
+
+  it("rejects a non-string, non-null dir or parent", () => {
+    expect(isBrowseResult({ dir: 5, parent: null, entries: [] })).toBe(false);
+    expect(isBrowseResult({ dir: null, parent: 5, entries: [] })).toBe(false);
   });
 
   it("rejects missing parent", () => {
