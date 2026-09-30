@@ -1,10 +1,14 @@
 /**
- * The GBC (pokecrystal-family) server -- the server-side counterpart of
- * `cli/src/gbcCommands.ts`, the same way `index.ts`'s GBA body is the server
- * counterpart of the CLI's own GBA render/query commands. `createServer`
- * (`index.ts`) branches to `createGbcServer` here the moment
- * `detectEngineFamily` says `"gbc"`, before `openProject` (the GBA loader)
- * ever runs.
+ * The GBC (pokecrystal-family) route handler -- the server-side counterpart
+ * of `cli/src/gbcCommands.ts`, the same way `index.ts`'s GBA body is the
+ * server counterpart of the CLI's own GBA render/query commands.
+ * `createProjectHandler` (`index.ts`) branches to `createGbcProjectHandler`
+ * here the moment `detectEngineFamily` says `"gbc"`, before `openProject`
+ * (the GBA loader) ever runs. Plan 6c A1 split this out of a standalone
+ * `createGbcServer` (which owned its own `node:http` listener) into a plain
+ * `ProjectHandler` -- the `node:http.Server` now lives only in `createServer`
+ * (`index.ts`) and `hub.ts`, either of which can point at this handler's
+ * `handle` without this file knowing anything about a hub or a swap.
  *
  * Task 1a's own routes are `/api/project` and the GBA-only-route 501
  * refusals. Task 1b adds `/api/groups`, `/api/map/:name`,
@@ -22,7 +26,6 @@
  * Task 2's five new routes should follow rather than growing this function
  * into one 400-line handler the way `index.ts` did.
  */
-import { createServer as createHttp, type Server } from "node:http";
 import { openGbcProject, type GbcProject } from "@pokemap/core/src/gbc/project.js";
 import { loadGbcMapEvents, outOfBoundsEventDefects } from "@pokemap/core/src/gbc/load/events.js";
 import { renderGbcMap, renderGbcMapMetatile } from "@pokemap/core/src/gbc/render/map.js";
@@ -45,7 +48,8 @@ import type {
 } from "@pokemap/core/src/gbc/wire.js";
 import { encodePng } from "@pokemap/cli/src/png.js";
 import { parseBorder, parseTime, type TimeOfDay } from "@pokemap/cli/src/args.js";
-import type { PokemapServer } from "./index.js";
+import type { IncomingMessage, ServerResponse } from "node:http";
+import type { ProjectHandler } from "./index.js";
 
 /**
  * GBA-only routes this server refuses with a 501, the HTTP counterpart of
@@ -226,8 +230,8 @@ export function buildGbcEncountersPayload(proj: GbcProject, name: string): GbcEn
   } satisfies GbcEncountersPayload;
 }
 
-export async function createGbcServer(opts: { projectPath: string; port?: number }): Promise<PokemapServer> {
-  const proj = openGbcProject(opts.projectPath);
+export function createGbcProjectHandler(root: string): ProjectHandler {
+  const proj = openGbcProject(root);
 
   // Built once, not per-request: proj.maps is already fully loaded and
   // read-only for the life of this process (I8, same reasoning as every
@@ -276,7 +280,17 @@ export async function createGbcServer(opts: { projectPath: string; port?: number
   let speciesCache: string[] | undefined;
   const getSpecies = () => (speciesCache ??= loadGbcSpeciesConstants(proj.root));
 
-  const http: Server = createHttp((req, res) => {
+  // Same disposed-503 guard as index.ts's GBA handler (Plan 6c A1) -- an
+  // in-flight request holding this exact handler past a `/api/hub/open`
+  // swap must not read through it any further.
+  let disposed = false;
+
+  const handle = (req: IncomingMessage, res: ServerResponse) => {
+    if (disposed) {
+      res.writeHead(503, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "project closed" }));
+      return;
+    }
     const url = new URL(req.url ?? "/", "http://localhost");
     const send = (code: number, body: unknown) => {
       res.writeHead(code, { "content-type": "application/json" });
@@ -448,11 +462,20 @@ export async function createGbcServer(opts: { projectPath: string; port?: number
       console.error(e);
       return send(500, { error: (e as Error).message });
     }
-  });
+  };
 
-  await new Promise<void>((r) => http.listen(opts.port ?? 5174, "127.0.0.1", r));
-  const addr = http.address();
-  const port = typeof addr === "object" && addr ? addr.port : (opts.port ?? 5174);
-
-  return { port, family: "gbc", project: proj, close: () => new Promise<void>((r) => http.close(() => r())) };
+  return {
+    family: "gbc",
+    project: proj,
+    info: { family: "gbc", root: proj.root },
+    handle,
+    // GBC has no edit-session store yet (this file's own header comment:
+    // "Plan 7 adds /api/edit/* once GBC gets a write path") -- nothing can
+    // ever be dirty, so the hub's unsaved-edits guard never blocks swapping
+    // a GBC handler out.
+    dirtyMaps: () => [],
+    dispose: () => {
+      disposed = true;
+    },
+  };
 }
