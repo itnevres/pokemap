@@ -3,15 +3,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { norm } from "@pokemap/core/src/config/paths.js";
 import type { EngineFamily } from "@pokemap/core/src/family.js";
-
-/** One project the hub has opened before, newest first once read back through
- *  `readRecent`/`pushRecent` -- the hub's own "recent projects" picker list,
- *  and (Plan 6c A1 spec, serve.ts) what a bare `pokemap` invocation reopens. */
-export interface RecentEntry {
-  path: string;
-  family: EngineFamily;
-  openedAt: string; // ISO
-}
+import type { RecentEntry } from "@pokemap/core/src/hub/wire.js";
 
 interface RecentFile {
   version: 1;

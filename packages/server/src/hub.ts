@@ -1,10 +1,11 @@
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { createServer as createHttp, type Server } from "node:http";
-import { detectEngineFamily, probeEngineFamily, type EngineFamily, type ProjectInfo } from "@pokemap/core/src/family.js";
+import { detectEngineFamily, probeEngineFamily } from "@pokemap/core/src/family.js";
 import { norm } from "@pokemap/core/src/config/paths.js";
+import type { BrowseEntry, BrowseResult, HubState, OpenConflict } from "@pokemap/core/src/hub/wire.js";
 import { createProjectHandler, readBody, type ProjectHandler } from "./index.js";
-import { readRecent, pushRecent, recentHome, type RecentEntry } from "./recent.js";
+import { readRecent, pushRecent, recentHome } from "./recent.js";
 
 /**
  * One long-lived `node:http` listener that can point at a different
@@ -63,8 +64,6 @@ export function parentOf(dir: string): string | null {
   return safeNorm(parent);
 }
 
-interface BrowseEntry { name: string; path: string; family: EngineFamily | "unsupported" | null }
-
 /** Directories only (never a file), excluding dotfiles/`$`-prefixed names,
  *  sorted case-insensitively. An entry whose probe throws is skipped rather
  *  than failing the whole listing -- `probeEngineFamily` itself never
@@ -107,7 +106,7 @@ function respondWithListing(send: (code: number, body: unknown) => void, dir: st
     if (code === "EACCES" || code === "EPERM") return send(403, { error: (e as Error).message });
     throw e;
   }
-  send(200, { dir, parent: parentOf(dir), entries });
+  send(200, { dir, parent: parentOf(dir), entries } satisfies BrowseResult);
 }
 
 /** The win32 "no `dir` given" case: every drive letter that actually exists,
@@ -186,13 +185,13 @@ export async function createHub(opts: { port?: number; home?: string; open?: str
       }
 
       if (url.pathname === "/api/hub") {
-        return send(200, { current: current?.info ?? null, recent: readRecent(home) } satisfies { current: ProjectInfo | null; recent: RecentEntry[] });
+        return send(200, { current: current?.info ?? null, recent: readRecent(home) } satisfies HubState);
       }
 
       if (url.pathname === "/api/hub/browse") {
         const rawDir = url.searchParams.get("dir");
         if (!rawDir) {
-          if (process.platform === "win32") return send(200, { dir: null, parent: null, entries: driveRootEntries() });
+          if (process.platform === "win32") return send(200, { dir: null, parent: null, entries: driveRootEntries() } satisfies BrowseResult);
           return respondWithListing(send, "/");
         }
         // `resolve()` first (SR-F4): a relative `dir` (e.g. `.`, or a `..`
@@ -244,7 +243,7 @@ export async function createHub(opts: { port?: number; home?: string; open?: str
 
             const dirtyMaps = current?.dirtyMaps() ?? [];
             if (dirtyMaps.length > 0 && !force) {
-              return send(409, { error: `unsaved edits in ${dirtyMaps.length} map(s)`, dirtyMaps });
+              return send(409, { error: `unsaved edits in ${dirtyMaps.length} map(s)`, dirtyMaps } satisfies OpenConflict);
             }
 
             let next: ProjectHandler;
