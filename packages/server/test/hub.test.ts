@@ -361,6 +361,33 @@ describe.skipIf(!hasProject(SUBJECT_ROOT) || !hasGbcProject(GBC_SUBJECT_ROOT))("
     }
   }, 60_000);
 
+  // SR-F8c: test 10 only proves the disposed-503 guard for a GBA old
+  // handler (gbcRoutes.ts's own copy of that guard was untested -- M19/M34
+  // survived). Current is GBC after test 10; swap back to GBA and dispose
+  // the GBC handler instead.
+  it("SR-F8c: GBC as the disposed old handler also 503s \"project closed\" after a swap away from it", async () => {
+    const toGbc = await postJson(hub.port, "/api/hub/open", { path: GBC_SUBJECT_ROOT, force: true });
+    expect(toGbc.status).toBe(200);
+    expect((await toGbc.json() as { family: string }).family).toBe("gbc");
+
+    const oldGbc = hub.current();
+    const forced = await postJson(hub.port, "/api/hub/open", { path: SUBJECT_ROOT, force: true });
+    expect(forced.status).toBe(200);
+    expect((await forced.json() as { family: string }).family).toBe("gba");
+
+    const oldHttp = createHttp((req, res) => oldGbc!.handle(req, res));
+    await new Promise<void>((r) => oldHttp.listen(0, "127.0.0.1", r));
+    const addr = oldHttp.address();
+    const oldPort = typeof addr === "object" && addr ? addr.port : 0;
+    try {
+      const res = await fetch(`http://127.0.0.1:${oldPort}/api/project`);
+      expect(res.status).toBe(503);
+      expect(await res.json()).toEqual({ error: "project closed" });
+    } finally {
+      await new Promise<void>((r) => oldHttp.close(() => r()));
+    }
+  }, 60_000);
+
   // SR-F5: a swap that succeeded must not be reported as a failure to the
   // client just because the follow-up recent.json write couldn't happen --
   // `home` here is a FILE, so `pushRecent`'s own `mkdirSync(home, {
