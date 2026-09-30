@@ -241,11 +241,11 @@ describe("ProjectPicker", () => {
     const row = screen.getByText("/tmp/pokeemerald").closest("li")!;
     fireEvent.click(within(row).getByRole("button", { name: "Open" }));
 
-    const dialog = await screen.findByRole("dialog", { name: "Unsaved edits" });
+    const dialog = await screen.findByRole("alertdialog", { name: "Unsaved edits" });
     expect(within(dialog).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["Route1", "Route2"]);
 
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
     expect(screen.getByText("Open a project")).toBeTruthy();
     expect(postBodies).toEqual([{ path: "/tmp/pokeemerald" }]);
     expect(onOpened).not.toHaveBeenCalled();
@@ -268,7 +268,7 @@ describe("ProjectPicker", () => {
     const row = screen.getByText("/tmp/pokeemerald").closest("li")!;
     fireEvent.click(within(row).getByRole("button", { name: "Open" }));
 
-    const dialog = await screen.findByRole("dialog", { name: "Unsaved edits" });
+    const dialog = await screen.findByRole("alertdialog", { name: "Unsaved edits" });
     fireEvent.click(within(dialog).getByRole("button", { name: /discard and switch/i }));
 
     await waitFor(() => expect(onOpened).toHaveBeenCalledWith({ family: "gba", root: "/tmp/pokeemerald" }));

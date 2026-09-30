@@ -68,9 +68,9 @@ function FamilyBadge({ family }: { family: EngineFamily | "unsupported" }) {
  * `ProjectSwitcher`'s own modal shell once one is (`onClose` present).
  *
  * A 409 (unsaved edits) swaps this component's own body for
- * `SwitchConfirmDialog` rather than layering it on top -- see that
- * component's own doc comment for why it owns a full modal shell of its
- * own; nothing here renders both at once.
+ * `SwitchConfirmDialog`. That component owns no backdrop/panel, so the
+ * invariant is: at most one `.warp-modal__backdrop` / `aria-modal` in the
+ * document -- `ProjectSwitcher`'s, or none when standalone.
  */
 export function ProjectPicker({ onOpened, onClose }: ProjectPickerProps) {
   const { data: hub, error: hubError } = useGuardedFetch("/api/hub", isHubState);
@@ -143,9 +143,16 @@ export function ProjectPicker({ onOpened, onClose }: ProjectPickerProps) {
     return result.error;
   };
 
+  // The confirm REPLACES this component's body (never rendered beside it),
+  // and owns no backdrop of its own -- inside `ProjectSwitcher` the switcher's
+  // backdrop/panel is the only shell in the document; standalone (`Root`) there
+  // is none, and no 409 can occur there anyway (nothing open means nothing
+  // dirty). Still wrapped in `.hub-picker` so padding/scroll match the body.
   if (conflict) {
     return (
-      <SwitchConfirmDialog dirtyMaps={conflict.dirtyMaps} onCancel={() => setConflict(null)} onConfirm={confirmForceOpen} />
+      <div className="hub-picker">
+        <SwitchConfirmDialog dirtyMaps={conflict.dirtyMaps} onCancel={() => setConflict(null)} onConfirm={confirmForceOpen} />
+      </div>
     );
   }
 

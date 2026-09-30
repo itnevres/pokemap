@@ -18,13 +18,31 @@ describe("SwitchConfirmDialog", () => {
 
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "Cancel" }));
 
-    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    fireEvent.keyDown(screen.getByRole("alertdialog"), { key: "Escape" });
     expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  it("owns no backdrop or modal shell -- it always sits inside its caller's own panel", () => {
+    const { container } = render(<SwitchConfirmDialog dirtyMaps={["Route1"]} onCancel={vi.fn()} onConfirm={vi.fn()} />);
+    expect(container.querySelector(".warp-modal__backdrop")).toBeNull();
+    expect(container.querySelector(".warp-modal__panel")).toBeNull();
+    expect(container.querySelector('[aria-modal="true"]')).toBeNull();
+  });
+
+  it("Escape is stopped here -- it never bubbles to an enclosing modal's own Escape handler", () => {
+    const outer = vi.fn();
+    render(
+      <div onKeyDown={outer}>
+        <SwitchConfirmDialog dirtyMaps={["Route1"]} onCancel={vi.fn()} onConfirm={vi.fn()} />
+      </div>,
+    );
+    fireEvent.keyDown(screen.getByRole("button", { name: "Cancel" }), { key: "Escape" });
+    expect(outer).not.toHaveBeenCalled();
   });
 
   it("is labelled 'Unsaved edits'", () => {
     render(<SwitchConfirmDialog dirtyMaps={["Route1"]} onCancel={vi.fn()} onConfirm={vi.fn()} />);
-    expect(screen.getByRole("dialog").getAttribute("aria-label")).toBe("Unsaved edits");
+    expect(screen.getByRole("alertdialog").getAttribute("aria-label")).toBe("Unsaved edits");
   });
 
   it("clicking Cancel calls onCancel without ever calling onConfirm", () => {

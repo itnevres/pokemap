@@ -2880,12 +2880,13 @@ input {
   height: min(600px, 88vh);
 }
 
-/* SwitchConfirmDialog -- mirrors `.save-dialog`'s own padding/scroll
-   treatment inside the shared `.warp-modal__panel` shell. */
+/* SwitchConfirmDialog -- a danger-bordered section inside the picker's own
+   body (it owns no backdrop or modal panel; see its own doc comment). */
 .hub-confirm {
   padding: var(--space-4);
-  min-height: 0;
-  overflow-y: auto;
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--danger);
+  border-radius: 6px;
   display: flex;
   flex-direction: column;
 }
