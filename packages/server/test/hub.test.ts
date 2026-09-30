@@ -189,9 +189,12 @@ describe("hub (non-corpus)", () => {
 // machine -- putting the hooks inside is what actually makes the skip work.
 describe.skipIf(!hasProject(SUBJECT_ROOT) || !hasGbcProject(GBC_SUBJECT_ROOT))("hub against the real corpus", () => {
   let hub: Hub;
+  let gbaLookingButIncompleteRoot: string;
 
   beforeAll(async () => {
     hub = await createHub({ port: 0, home: makeHome() });
+    gbaLookingButIncompleteRoot = makeRoot();
+    touch(gbaLookingButIncompleteRoot, "include/fieldmap.h"); // passes detectEngineFamily, fails openProject
   });
   afterAll(async () => {
     await hub?.close();
@@ -215,6 +218,29 @@ describe.skipIf(!hasProject(SUBJECT_ROOT) || !hasGbcProject(GBC_SUBJECT_ROOT))("
     expect(hubState.recent).toHaveLength(2);
     expect(hubState.recent[0]).toMatchObject({ family: "gba", path: norm(SUBJECT_ROOT) });
     expect(hubState.recent[1]).toMatchObject({ family: "gbc", path: norm(GBC_SUBJECT_ROOT) });
+  }, 60_000);
+
+  // Corpus variant of "no half-swap" (test 8 only proves it starting from
+  // current: null, which can't distinguish a correct implementation from one
+  // that disposes the OLD handler before even trying to create the new one
+  // -- there's nothing to dispose yet in that case). This needs a REAL prior
+  // successful open (a synthetic temp tree's bare marker file isn't a real
+  // enough project for openProject to succeed on), so it lives here rather
+  // than in the non-corpus block. The second path must pass BOTH the
+  // exists/isDirectory check and detectEngineFamily (so the request reaches
+  // the create-new-handler step at all) and only THEN fail, inside
+  // createProjectHandler's own openProject -- a directory with only the gba
+  // marker file, missing every other real project file, does exactly that.
+  it("a failed second open (past family detection) after a successful one leaves the existing project running, not disposed", async () => {
+    const opened = await postJson(hub.port, "/api/hub/open", { path: SUBJECT_ROOT });
+    expect(opened.status).toBe(200);
+
+    const bad = await postJson(hub.port, "/api/hub/open", { path: gbaLookingButIncompleteRoot });
+    expect(bad.status).toBe(500);
+
+    // The pre-existing GBA project must still answer normally -- a swap-
+    // before-open bug would have disposed it already, making this 503.
+    expect(await getJson(hub.port, "/api/project")).toEqual({ family: "gba", root: norm(SUBJECT_ROOT) });
   }, 60_000);
 
   // Map choice: "Route123" appears nowhere else under packages/*/test (grep
