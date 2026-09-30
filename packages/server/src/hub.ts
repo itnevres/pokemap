@@ -1,5 +1,5 @@
 import { existsSync, readdirSync, statSync } from "node:fs";
-import { dirname } from "node:path";
+import { resolve } from "node:path";
 import { createServer as createHttp, type Server } from "node:http";
 import { detectEngineFamily, probeEngineFamily, type EngineFamily, type ProjectInfo } from "@pokemap/core/src/family.js";
 import { norm } from "@pokemap/core/src/config/paths.js";
@@ -20,23 +20,47 @@ export interface Hub {
 }
 
 /**
- * `norm()` (core/config/paths.ts) turns a bare drive root `"C:/"` into
- * `"C:"` -- fine for every OTHER caller, which only ever joins more path
- * onto the result, but fatal here: `readdirSync("C:")` on Windows lists the
- * *current directory on drive C*, not the drive's real root. Every path this
- * file hands to `readdirSync`/`existsSync` goes through this instead, which
- * restores the trailing slash on a bare drive letter.
+ * `norm()` (core/config/paths.ts) collapses ANY all-slashes string to `""`
+ * (its trailing-slash-strip regex has nothing left to stop at) and, as a
+ * special case of that, turns a bare drive root `"C:/"` into `"C:"` -- fine
+ * for every OTHER caller, which only ever joins more path onto the result,
+ * but fatal here: `readdirSync("C:")` on Windows lists the *current
+ * directory on drive C*, not the drive's real root, and an empty string is
+ * not a valid path to `readdirSync`/`existsSync` at all. Every path this
+ * file hands to those calls goes through this instead, which restores
+ * both roots `norm` would otherwise destroy (spec/quality review SR-F4,
+ * QR-F1 -- an earlier version only restored the drive-letter case).
  */
-function safeNorm(s: string): string {
+export function safeNorm(s: string): string {
   const n = norm(s);
+  if (n === "") return "/";
   return /^[A-Za-z]:$/.test(n) ? `${n}/` : n;
 }
 
-/** `null` at a drive root (win32) or `/` (posix) -- both mean "there is no
- *  parent, show drives / show root" to the browse UI. */
-function parentOf(dir: string): string | null {
-  if (dir === "/" || /^[A-Za-z]:\/$/.test(dir)) return null;
-  return safeNorm(dirname(dir));
+/**
+ * `true` for any path that IS a root and so has no parent: POSIX `/`, a
+ * win32 drive root `C:/`, or a UNC share root `//server/share` (with or
+ * without a trailing slash). Deliberately plain string matching, not
+ * `node:path`'s platform-default `dirname` -- `dirname` would need the
+ * win32 module to understand a drive letter and the posix module to treat
+ * `/` alone as a root the way this hub always wants regardless of which OS
+ * runs it (or its tests); a regex pins the exact same three cases
+ * everywhere (SR-F4/QR-F1).
+ */
+function isRoot(dir: string): boolean {
+  return dir === "/" || /^[A-Za-z]:\/$/.test(dir) || /^\/\/[^/]+\/[^/]+\/?$/.test(dir);
+}
+
+/** `null` at any root (see `isRoot`) -- the browse UI reads that as "there
+ *  is no parent, show drives / show root." Otherwise the everything-before-
+ *  the-last-slash prefix, `safeNorm`-ed the same way `dir` itself always is
+ *  (so a parent that itself collapses to a bare drive letter, e.g. the
+ *  parent of `C:/x`, comes back `C:/` rather than the un-listable `C:`). */
+export function parentOf(dir: string): string | null {
+  if (isRoot(dir)) return null;
+  const idx = dir.lastIndexOf("/");
+  const parent = idx <= 0 ? "/" : dir.slice(0, idx);
+  return safeNorm(parent);
 }
 
 interface BrowseEntry { name: string; path: string; family: EngineFamily | "unsupported" | null }
@@ -102,7 +126,12 @@ export async function createHub(opts: { port?: number; home?: string; open?: str
           const dir = "/";
           return send(200, { dir, parent: parentOf(dir), entries: listDir(dir) });
         }
-        const dir = safeNorm(rawDir);
+        // `resolve()` first (SR-F4): a relative `dir` (e.g. `.`, or a `..`
+        // that would otherwise walk above whatever `safeNorm` alone could
+        // catch) must become absolute before `existsSync`/`readdirSync` ever
+        // see it, or the response's own `dir`/`parent` fields silently stay
+        // relative and a client-side "up" click can loop.
+        const dir = safeNorm(resolve(rawDir));
         if (!existsSync(dir)) return send(404, { error: `no such directory ${dir}` });
         if (!statSync(dir).isDirectory()) return send(400, { error: `not a directory: ${dir}` });
         return send(200, { dir, parent: parentOf(dir), entries: listDir(dir) });

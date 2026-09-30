@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { createServer as createHttp } from "node:http";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
-import { createHub, type Hub } from "../src/hub.js";
+import { createHub, parentOf, safeNorm, type Hub } from "../src/hub.js";
 import { norm } from "@pokemap/core/src/config/paths.js";
 import { SUBJECT_ROOT, hasProject } from "@pokemap/core/test/helpers/corpus.js";
 import { GBC_SUBJECT_ROOT, hasGbcProject } from "@pokemap/core/test/gbc/helpers/corpus.js";
@@ -97,6 +97,31 @@ describe("hub (non-corpus)", () => {
         { name: "plain", path: `${expectedDir}/plain`, family: null },
         { name: "yellow", path: `${expectedDir}/yellow`, family: "unsupported" },
       ]);
+    } finally {
+      await hub.close();
+    }
+  });
+
+  // SR-F4/QR-F1: pure-function pinning, independent of which OS runs the
+  // test -- parentOf/safeNorm are plain string functions (no node:path
+  // platform-default parsing inside them), so these values must hold
+  // identically everywhere. "/home" -> "/" is the bug QR-F1 found: norm("/")
+  // strips the WHOLE string to "", and the old parentOf only special-cased a
+  // win32 drive root, never the POSIX root itself.
+  it("SR-F4/QR-F1: parentOf/safeNorm pin the POSIX-root and drive-root edge cases on every platform", () => {
+    expect(parentOf("/home")).toBe("/");
+    expect(parentOf("/")).toBeNull();
+    expect(parentOf("C:/")).toBeNull();
+    expect(parentOf("C:/x")).toBe("C:/");
+    expect(safeNorm("/")).toBe("/");
+    expect(safeNorm("C:/")).toBe("C:/");
+  });
+
+  it("SR-F4: browse resolves a relative dir (e.g. \".\") to an absolute path", async () => {
+    const hub = await createHub({ port: 0, home: makeHome() });
+    try {
+      const body = await getJson(hub.port, "/api/hub/browse?dir=.") as { dir: string };
+      expect(body.dir).toBe(norm(process.cwd()));
     } finally {
       await hub.close();
     }
