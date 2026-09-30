@@ -34,31 +34,41 @@ const BROWSE_ROOT = { dir: "/", parent: null, entries: [{ name: "tmp", path: "/t
  *  deferred Promise<body> for the stale-response test), and
  *  `POST /api/hub/open` (via `onOpen`, given the parsed body, returning
  *  `{status, body}`). An unmapped URL rejects loudly rather than hanging. */
+type OpenReply = { status: number; body: unknown };
+
 function makeHubFetch(opts: {
   hub?: unknown;
   browse?: Record<string, unknown | (() => Promise<unknown>)>;
-  onOpen?: (body: { path: string; force?: boolean }) => { status: number; body: unknown };
+  /** Set to make `GET /api/hub` fail with this status. */
+  hubStatus?: number;
+  onOpen?: (body: { path: string; force?: boolean }) => OpenReply | Promise<OpenReply>;
 }) {
   const calls: string[] = [];
   const postBodies: Array<{ path: string; force?: boolean }> = [];
   const mock = vi.fn((url: string, init?: RequestInit) => {
     calls.push(url);
     if (url === "/api/hub") {
+      if (opts.hubStatus) return Promise.resolve({ ok: false, status: opts.hubStatus, json: () => Promise.resolve({}) });
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(opts.hub) });
     }
     if (url.startsWith("/api/hub/browse")) {
       const entry = opts.browse?.[url];
       if (entry === undefined) return Promise.reject(new Error(`unexpected browse url in test: ${url}`));
       const bodyPromise = typeof entry === "function" ? (entry as () => Promise<unknown>)() : Promise.resolve(entry);
-      return bodyPromise.then((body) => ({ ok: true, status: 200, json: () => Promise.resolve(body) }));
+      // `{ __status: N }` = a failing browse (e.g. a 403), body irrelevant.
+      return bodyPromise.then((body) => {
+        const failed = (body as { __status?: number } | null)?.__status;
+        return failed
+          ? { ok: false, status: failed, json: () => Promise.resolve({ error: "refused" }) }
+          : { ok: true, status: 200, json: () => Promise.resolve(body) };
+      });
     }
     if (url === "/api/hub/open" && init?.method === "POST") {
       const body = JSON.parse(String(init.body)) as { path: string; force?: boolean };
       postBodies.push(body);
-      const { status, body: respBody } = opts.onOpen
-        ? opts.onOpen(body)
-        : { status: 500, body: { error: "no onOpen handler configured" } };
-      return Promise.resolve({ ok: status >= 200 && status < 300, status, json: () => Promise.resolve(respBody) });
+      return Promise.resolve(opts.onOpen ? opts.onOpen(body) : { status: 500, body: { error: "no onOpen handler configured" } }).then(
+        ({ status, body: respBody }) => ({ ok: status >= 200 && status < 300, status, json: () => Promise.resolve(respBody) }),
+      );
     }
     return Promise.reject(new Error(`unexpected fetch in test: ${url}`));
   });
@@ -273,5 +283,56 @@ describe("ProjectPicker", () => {
 
     await waitFor(() => expect(onOpened).toHaveBeenCalledWith({ family: "gba", root: "/tmp/pokeemerald" }));
     expect(postBodies).toEqual([{ path: "/tmp/pokeemerald" }, { path: "/tmp/pokeemerald", force: true }]);
+  });
+
+it("in-flight guard: two rapid typed-path submits post once and call onOpened once", async () => {
+    let finish: (r: OpenReply) => void = () => {};
+    const onOpened = vi.fn();
+    const { mock, postBodies } = makeHubFetch({
+      hub: HUB_STATE,
+      browse: { "/api/hub/browse?dir=%2Ftmp": BROWSE_TMP },
+      onOpen: () => new Promise<OpenReply>((r) => { finish = r; }),
+    });
+    vi.stubGlobal("fetch", mock);
+    render(<ProjectPicker onOpened={onOpened} />);
+    await waitFor(() => expect(screen.getByText("misc")).toBeTruthy());
+
+    const input = screen.getByLabelText("Folder path");
+    fireEvent.change(input, { target: { value: "/tmp/pokeemerald" } });
+    // fireEvent.submit bypasses the (disabled) submit button, so this is the
+    // ref guard on its own, not the disabled attribute.
+    fireEvent.submit(input.closest("form")!);
+    fireEvent.submit(input.closest("form")!);
+    await act(async () => {
+      finish({ status: 200, body: { family: "gba", root: "/tmp/pokeemerald" } });
+    });
+
+    await waitFor(() => expect(onOpened).toHaveBeenCalledTimes(1));
+    expect(postBodies).toEqual([{ path: "/tmp/pokeemerald" }]);
+  });
+
+  it("in-flight guard: every Open button and the submit are disabled while an open is pending, re-enabled after a failure", async () => {
+    let finish: (r: OpenReply) => void = () => {};
+    const { mock } = makeHubFetch({
+      hub: HUB_STATE,
+      browse: { "/api/hub/browse?dir=%2Ftmp": BROWSE_TMP },
+      onOpen: () => new Promise<OpenReply>((r) => { finish = r; }),
+    });
+    vi.stubGlobal("fetch", mock);
+    render(<ProjectPicker onOpened={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText("notes")).toBeTruthy());
+
+    const row = screen.getByText("/tmp/pokeemerald").closest("li")!;
+    fireEvent.click(within(row).getByRole("button", { name: "Open" }));
+
+    const opens = () => screen.getAllByRole("button", { name: "Open" }) as HTMLButtonElement[];
+    expect(opens().every((b) => b.disabled)).toBe(true);
+
+    await act(async () => {
+      finish({ status: 422, body: { error: "not a project" } });
+    });
+    await screen.findByRole("alert");
+    // The enabled ones are back (unsupported/null entries stay disabled by family).
+    expect(opens().filter((b) => !b.disabled).length).toBeGreaterThan(0);
   });
 });

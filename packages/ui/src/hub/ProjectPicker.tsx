@@ -117,31 +117,52 @@ export function ProjectPicker({ onOpened, onClose }: ProjectPickerProps) {
   const [openError, setOpenError] = useState<string | null>(null);
   const [conflict, setConflict] = useState<{ path: string; dirtyMaps: string[] } | null>(null);
 
-  const attemptOpen = async (path: string) => {
-    setOpenError(null);
-    const result = await openProject(path);
-    if (result.kind === "opened") {
-      onOpened(result.info);
-    } else if (result.kind === "conflict") {
-      setConflict({ path, dirtyMaps: result.dirtyMaps });
-    } else {
-      setOpenError(result.error);
+  // In-flight guard shared by every open path (recent/entry Open, typed-path
+  // submit, the confirm's forced open). The ref is what actually stops a second
+  // attempt (a rapid double-click, or a form submit that bypasses a disabled
+  // button, reads it synchronously before any re-render); `opening` state only
+  // drives the disabled buttons.
+  const openingRef = useRef(false);
+  const [opening, setOpening] = useState(false);
+  const guarded = async <T,>(fn: () => Promise<T>, whenBusy: T): Promise<T> => {
+    if (openingRef.current) return whenBusy;
+    openingRef.current = true;
+    setOpening(true);
+    try {
+      return await fn();
+    } finally {
+      openingRef.current = false;
+      setOpening(false);
     }
   };
+
+  const attemptOpen = (path: string) =>
+    guarded(async () => {
+      setOpenError(null);
+      const result = await openProject(path);
+      if (result.kind === "opened") {
+        onOpened(result.info);
+      } else if (result.kind === "conflict") {
+        setConflict({ path, dirtyMaps: result.dirtyMaps });
+      } else {
+        setOpenError(result.error);
+      }
+    }, undefined);
 
   // Passed to SwitchConfirmDialog as `onConfirm` -- resolves to an error
   // message on failure (the dialog shows it inline and stays open), or
   // `null` on success, after which THIS component calls `onOpened` (the
   // dialog itself never sees that callback).
-  const confirmForceOpen = async (): Promise<string | null> => {
-    if (!conflict) return null;
-    const result = await openProject(conflict.path, true);
-    if (result.kind === "opened") {
-      onOpened(result.info);
-      return null;
-    }
-    return result.error;
-  };
+  const confirmForceOpen = (): Promise<string | null> =>
+    guarded(async () => {
+      if (!conflict) return null;
+      const result = await openProject(conflict.path, true);
+      if (result.kind === "opened") {
+        onOpened(result.info);
+        return null;
+      }
+      return result.error;
+    }, null);
 
   // The confirm REPLACES this component's body (never rendered beside it),
   // and owns no backdrop of its own -- inside `ProjectSwitcher` the switcher's
@@ -183,7 +204,7 @@ export function ProjectPicker({ onOpened, onClose }: ProjectPickerProps) {
               <li key={r.path} className="hub-picker__row">
                 <FamilyBadge family={r.family} />
                 <span className="hub-picker__path">{r.path}</span>
-                <button type="button" className="map-canvas__btn" onClick={() => void attemptOpen(r.path)}>
+                <button type="button" className="map-canvas__btn" disabled={opening} onClick={() => void attemptOpen(r.path)}>
                   Open
                 </button>
               </li>
@@ -224,7 +245,7 @@ export function ProjectPicker({ onOpened, onClose }: ProjectPickerProps) {
               <button
                 type="button"
                 className="map-canvas__btn"
-                disabled={e.family !== "gba" && e.family !== "gbc"}
+                disabled={opening || (e.family !== "gba" && e.family !== "gbc")}
                 onClick={() => void attemptOpen(e.path)}
               >
                 Open
@@ -250,7 +271,7 @@ export function ProjectPicker({ onOpened, onClose }: ProjectPickerProps) {
             onChange={(e) => setTypedPath(e.target.value)}
           />
         </label>
-        <button type="submit" className="map-canvas__btn">
+        <button type="submit" className="map-canvas__btn" disabled={opening}>
           Open
         </button>
       </form>
