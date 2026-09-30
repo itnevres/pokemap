@@ -111,9 +111,19 @@ export async function createHub(opts: { port?: number; home?: string; open?: str
       if (url.pathname === "/api/hub/open" && req.method === "POST") {
         return readBody(req)
           .then((body) => {
-            let parsed: { path?: unknown; force?: unknown };
-            try { parsed = JSON.parse(body) as typeof parsed; }
+            let raw: unknown;
+            try { raw = JSON.parse(body); }
             catch (e) { return send(400, { error: `invalid JSON body: ${(e as Error).message}` }); }
+
+            // SR-F2: valid JSON that parses to anything other than a plain
+            // object (null, an array, a bare number/string) must 400 like
+            // any other shape mismatch -- without this, `parsed.path` below
+            // throws a TypeError on `null`, which the outer `.catch` turns
+            // into an unnamed 500.
+            if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+              return send(400, { error: `expected a JSON object body, got ${body}` });
+            }
+            const parsed = raw as { path?: unknown; force?: unknown };
 
             if (typeof parsed.path !== "string" || parsed.path.trim() === "") {
               return send(400, { error: `expected a non-empty "path" string, got ${body}` });

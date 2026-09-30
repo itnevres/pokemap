@@ -150,6 +150,11 @@ describe("hub (non-corpus)", () => {
     const postRaw = (body: string) => fetch(`http://127.0.0.1:${hub.port}/api/hub/open`, { method: "POST", body });
     try {
       expect((await postRaw("{not json")).status).toBe(400);
+      // SR-F2: valid JSON that isn't an object at all (null, or a bare
+      // array/number/string) must 400 like any other shape mismatch, not
+      // 500 from a TypeError reading `.path` off it.
+      expect((await postRaw("null")).status).toBe(400);
+      expect((await postRaw("[1,2,3]")).status).toBe(400);
       expect((await postJson(hub.port, "/api/hub/open", {})).status).toBe(400);
       expect((await postJson(hub.port, "/api/hub/open", { path: "x", force: "yes" })).status).toBe(400);
       expect((await postJson(hub.port, "/api/hub/open", { path: join(tmp, "nope") })).status).toBe(404);
