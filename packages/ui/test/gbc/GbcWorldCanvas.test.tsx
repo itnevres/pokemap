@@ -1093,12 +1093,44 @@ describe("GbcWorldCanvas: encounters/lenses/spotlight (Plan 6b Task 6)", () => {
     expect(document.querySelectorAll(".world-canvas__lens-tint").length).toBe(1);
   });
 
-  it("the Encounters toggle shows a species chip built from the real fetched sources", async () => {
+  it("the Encounters toggle shows a species sprite built from the real fetched sources", async () => {
     const sources = [{ method: "rock", chances: [{ species: "GEODUDE", percent: 45, minLevel: 5, maxLevel: 8 }] }];
     await mountReadyAll({ encounters: { MapA: sources, MapB: [] } });
     await waitFor(() => expect(screen.getByRole("button", { name: "Encounters" })).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: "Encounters" }));
-    await waitFor(() => expect(screen.getByText("Geodude 45% Lv 5-8")).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole("button", { name: "Geodude" })).toBeTruthy());
+    expect(screen.getByRole("button", { name: "Geodude" }).querySelector("img")!.getAttribute("src")).toBe("/api/species/GEODUDE/icon.png");
+  });
+
+  // Plan 6c B3: sides are chosen over every placement (memo on `world` only).
+  // MapB sits flush against MapA's right edge, so MapB's left is blocked -> top;
+  // MapA's left is free.
+  it("puts each map's border on the side pickBorderSide gives: MapB (left blocked by MapA) -> top, MapA -> left", async () => {
+    const sources = [{ method: "rock", chances: [{ species: "GEODUDE", percent: 45, minLevel: 5, maxLevel: 8 }] }];
+    const { container } = await mountReadyAll({ encounters: { MapA: sources, MapB: sources } });
+    fireEvent.click(screen.getByRole("button", { name: "Encounters" }));
+    await waitFor(() => expect(container.querySelectorAll(".encounter-border__strip").length).toBe(2));
+    const sides = [...container.querySelectorAll(".encounter-border__strip")].map((s) => /--(left|top|right|bottom)\b/.exec(s.className)![1]);
+    // visible order follows world.placements: MapA, MapB
+    expect(sides).toEqual(["left", "top"]);
+  });
+
+  // Plan 6c B3: time dims, it no longer filters. Fixture mirrors Route30: a
+  // morn/day grass species and a nite-only one.
+  it("at time=morn a nite-only species renders dimmed (not hidden) and a morn species does not; the time-independent cache means a time switch flips it without a refetch", async () => {
+    const sources = [
+      { method: "grass", time: "morn", encounterRate: 9.765625, chances: [{ species: "CATERPIE", percent: 45, minLevel: 3, maxLevel: 8 }] },
+      { method: "grass", time: "nite", encounterRate: 9.765625, chances: [{ species: "ZUBAT", percent: 10, minLevel: 3, maxLevel: 7 }] },
+    ];
+    const { rerender } = await mountReadyAll({ encounters: { MapA: sources, MapB: [] } }, { time: "morn" });
+    fireEvent.click(screen.getByRole("button", { name: "Encounters" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Zubat" })).toBeTruthy());
+    const dimmed = (n: string) => screen.getByRole("button", { name: n }).classList.contains("encounter-border__sprite--dimmed");
+    expect(dimmed("Zubat")).toBe(true);
+    expect(dimmed("Caterpie")).toBe(false);
+    rerender(<GbcWorldCanvas time="nite" />);
+    expect(dimmed("Zubat")).toBe(false);
+    expect(dimmed("Caterpie")).toBe(true);
   });
 
   it("method lens tints MapA/MapB by their own fetched method precedence", async () => {

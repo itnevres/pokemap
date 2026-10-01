@@ -5,7 +5,9 @@ import type { GbcEncounterSource, GbcSpeciesHit } from "@pokemap/core/src/gbc/an
 import { computeFit, drawDiamond, levelColorMap } from "../components/WorldCanvas.js";
 import { LensPanel, type LensId } from "../components/LensPanel.js";
 import { SpeciesSpotlight } from "../components/SpeciesSpotlight.js";
-import { GbcEncounterGutter, type GbcEncounterGutterMapEntry, type GbcEncounterGutterRect } from "./GbcEncounterGutter.js";
+import { EncounterBorder, type EncounterBorderEntry } from "../components/EncounterBorder.js";
+import { BORDER_BAND, pickBorderSide, type BorderSide, type Rect } from "../encounters/borderSide.js";
+import { summariseGbc, type SpeciesSummary } from "../encounters/summary.js";
 import { useGbcWorld } from "./hooks/useGbcWorld.js";
 import { useGbcCoverage } from "./hooks/useGbcCoverage.js";
 import { isGbcEncountersPayload } from "./guards.js";
@@ -358,13 +360,16 @@ interface ImageCacheEntry {
  *  TIME-INDEPENDENT (spec's own "one fetch per map, ever" -- see the fetch
  *  effect's own comment below): `sources` holds every method/time/rod/list
  *  variant a map has, and time filtering happens client-side, at render,
- *  inside `GbcEncounterGutter`/`methodTint` -- never by refetching on a time
+ *  inside `EncounterBorder` (dimming)/`methodTint` -- never by refetching on a time
  *  switch. `sources` stays unset on a failed fetch (mirrors the image
- *  cache's own best-effort posture: one map's gutter/tint entry just stays
+ *  cache's own best-effort posture: one map's border/tint entry just stays
  *  empty, not a banner over an otherwise-working canvas). */
 interface EncounterCacheEntry {
   loaded: boolean;
   sources?: GbcEncounterSource[];
+  /** `summariseGbc(sources)`, built once on arrival (time-independent: the
+   *  component dims by time, it never filters). */
+  summaries?: SpeciesSummary[];
 }
 
 interface HoverInfo {
@@ -553,8 +558,8 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
   // NOT cleared by the image cache's own time-change effect above -- unlike
   // a rendered PNG (one per time of day), `gbcEncounterSources` returns
   // every method/time/rod/list variant a map has in one response; a time
-  // switch only changes which of those rows `GbcEncounterGutter`/
-  // `methodTint` show, at render, not what was fetched. Mirrors
+  // switch only changes which species `EncounterBorder` dims / which rows
+  // `methodTint` reads, at render, not what was fetched. Mirrors
   // WorldCanvas.tsx's own encounter-fetch effect's cache-by-ref shape
   // (placeholder written synchronously, `loaded` set on arrival, a version
   // bump so its own reader memos re-run).
@@ -574,12 +579,13 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
         .then((d) => {
           entry.loaded = true;
           entry.sources = d.sources;
+          entry.summaries = summariseGbc(d.sources);
           setEncounterVersion((v) => v + 1);
         })
         .catch(() => {
           // Best-effort, mirroring the image cache's own posture (and
           // WorldCanvas.tsx's own identical encounter-fetch catch): a failed
-          // fetch just leaves this one map's gutter/tint entry empty, not a
+          // fetch just leaves this one map's border/tint entry empty, not a
           // banner over an otherwise-working canvas -- but, unlike before
           // (F4), it's now COUNTED, so "empty" is disclosed rather than
           // silently indistinguishable from "no encounters here" (a normal
@@ -594,31 +600,54 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
 
   // One screen-rect-per-visible-placement memo (fix round, spec review F10:
   // the binding Task 5 note's own "build ONE memo of screen-space rects...
-  // feed the gutter and lens overlays from it", which gutterEntries/
+  // feed the border and lens overlays from it", which borderEntries/
   // lensOverlayEntries/spotlightOverlayEntries below each recomputing the
   // same dx/dy/dw/dh formula independently didn't actually satisfy) --
   // consumed by all three.
   const rectByMap = useMemo(() => {
-    const m = new Map<string, GbcEncounterGutterRect>();
+    const m = new Map<string, Rect>();
     for (const p of visible) m.set(p.map, { x: p.x * zoom + pan.x, y: p.y * zoom + pan.y, width: p.width * zoom, height: p.height * zoom });
     return m;
   }, [visible, pan, zoom]);
 
-  // GbcEncounterGutter's own prop shape -- a memo separate from the
+  // Which side of each map the encounter border sits on (B2's pickBorderSide, in
+  // world blocks). Over EVERY placement, not just the viewport-culled `visible`: a
+  // map just off-screen still blocks a side, and every GBC placement is drawn.
+  // Depends on `world` only, never pan/zoom (it would re-run every drag
+  // frame). Every rect is passed as the neighbour list, including the map's
+  // own: that blocks nothing, since the bands lie strictly outside it
+  // (pickBorderSide's own doc comment).
+  // ponytail: O(n^2) over ~391 maps, once per world load; a spatial index if
+  // n grows.
+  const sideByMap = useMemo(() => {
+    const m = new Map<string, BorderSide>();
+    if (!world) return m;
+    const placed = Object.values(world.placements).filter((p) => p.width > 0 && p.height > 0);
+    const rects: Rect[] = placed.map((p) => ({ x: p.x, y: p.y, width: p.width, height: p.height }));
+    placed.forEach((p, i) => m.set(p.map, pickBorderSide(rects[i]!, rects, BORDER_BAND.gbc)));
+    return m;
+  }, [world]);
+
+  // EncounterBorder's own prop shape -- a memo separate from the
   // imperative draw effect (Task 5 quality review, binding note), mirroring
-  // WorldCanvas.tsx's own encounterEntries/lensOverlayEntries/
+  // WorldCanvas.tsx's own borderEntries/lensOverlayEntries/
   // spotlightOverlayEntries split. Hoists the `encounterCacheRef.current.get`
   // lookup once per placement (fix round, quality review Q1 -- this used to
   // call `.get(p.map)` twice per entry).
-  const gutterEntries = useMemo<GbcEncounterGutterMapEntry[]>(() => {
+  const borderEntries = useMemo<EncounterBorderEntry[]>(() => {
     return visible.map((p) => {
       const cache = encounterCacheRef.current.get(p.map);
-      return { map: p.map, rect: rectByMap.get(p.map)!, sources: cache?.loaded ? cache.sources : undefined };
+      return {
+        map: p.map,
+        rect: rectByMap.get(p.map)!,
+        side: sideByMap.get(p.map) ?? "left",
+        summaries: cache?.loaded ? (cache.summaries ?? []) : undefined,
+      };
     });
     // encounterVersion, not encounterCacheRef itself (a ref never usefully
     // appears in a dependency array) -- mirrors WorldCanvas.tsx's own
     // identical comment on its own encounterEntries memo.
-  }, [visible, rectByMap, encounterVersion]);
+  }, [visible, rectByMap, sideByMap, encounterVersion]);
 
   // mapName -> its already-fetched sources (or undefined if not yet loaded)
   // -- the one place both the method lens and (were it needed) any future
@@ -683,8 +712,8 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
   // no "unused-species" per-map visual either, for the identical reason
   // that lens documents on itself: it's a fact about species, not a place).
   const lensOverlayEntries = useMemo(() => {
-    if (!lens) return [] as Array<{ map: string; rect: GbcEncounterGutterRect; color: string }>;
-    const out: Array<{ map: string; rect: GbcEncounterGutterRect; color: string }> = [];
+    if (!lens) return [] as Array<{ map: string; rect: Rect; color: string }>;
+    const out: Array<{ map: string; rect: Rect; color: string }> = [];
     for (const p of visible) {
       let color: string | null = null;
       if (lens === "level-curve") color = levelColorByMap.get(p.map) ?? null;
@@ -713,7 +742,7 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
   }, [spotlightHits]);
 
   const spotlightOverlayEntries = useMemo(() => {
-    if (!spotlightHits) return [] as Array<{ map: string; rect: GbcEncounterGutterRect; hit: GbcSpeciesHit | null }>;
+    if (!spotlightHits) return [] as Array<{ map: string; rect: Rect; hit: GbcSpeciesHit | null }>;
     return visible.map((p) => ({ map: p.map, rect: rectByMap.get(p.map)!, hit: spotlightByMap.get(p.map) ?? null }));
   }, [spotlightHits, visible, rectByMap, spotlightByMap]);
 
@@ -983,7 +1012,7 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
             onDoubleClick={onDoubleClick}
             onKeyDown={onKeyDown}
           />
-          <GbcEncounterGutter maps={gutterEntries} zoom={zoom} time={time} />
+          <EncounterBorder entries={borderEntries} zoom={zoom} lodZoom={GBC_LOD_ZOOM_THRESHOLD} band={BORDER_BAND.gbc} time={time} />
           {lens && lensOverlayEntries.length > 0 && (
             <div className="world-canvas__lens" aria-hidden="true">
               {lensOverlayEntries.map((e) => (
