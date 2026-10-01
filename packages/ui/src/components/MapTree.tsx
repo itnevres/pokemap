@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { isDrawnByDefault, type MapVisibilityInfo } from "../world/visibility.js";
 
 export interface MapGroupsData {
@@ -22,6 +22,21 @@ export interface MapTreeProps {
 
 export function MapTree({ data, selected, onSelect, worldMode = false, visibility = null }: MapTreeProps) {
   const [filter, setFilter] = useState("");
+  const navRef = useRef<HTMLElement>(null);
+  const filterRef = useRef<HTMLInputElement>(null);
+
+  // Reveal the selected row (expand its group if collapsed, scroll it in).
+  // Deps are `[selected]` only: typing in the filter, new `data`, worldMode
+  // or visibility must not yank the list around; and while the filter has
+  // focus the user is typing, so a selection change leaves the list alone.
+  useEffect(() => {
+    if (!selected || document.activeElement === filterRef.current) return;
+    const row = navRef.current?.querySelector<HTMLElement>('.map-tree__map[aria-current="true"]');
+    if (!row) return; // filtered out: nothing to show
+    const group = row.closest("details");
+    if (group && !group.open) group.open = true;
+    row.scrollIntoView({ block: "nearest" });
+  }, [selected]);
 
   const visible = useMemo(() => {
     const q = filter.trim().toLowerCase();
@@ -45,8 +60,9 @@ export function MapTree({ data, selected, onSelect, worldMode = false, visibilit
   };
 
   return (
-    <nav className="map-tree" aria-label="Maps">
+    <nav className="map-tree" aria-label="Maps" ref={navRef}>
       <input
+        ref={filterRef}
         className="map-tree__filter"
         placeholder="Filter maps…"
         value={filter}
