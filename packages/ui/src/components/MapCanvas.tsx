@@ -491,7 +491,7 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
     }
 
     setCompositeVersion((v) => v + 1);
-  }, [imgLoaded, toggles, showCollision, blocks, layout, map, pixelWidth, pixelHeight, originX, originY]);
+  }, [imgLoaded, toggles.grid, toggles.elevation, toggles.events, showCollision, blocks, layout, map, pixelWidth, pixelHeight, originX, originY]);
 
   // Step 2: cheap re-blit of the already-composited buffer for pan/zoom.
   //

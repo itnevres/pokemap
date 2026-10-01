@@ -375,11 +375,12 @@ export function GbcMapCanvas({ mapName, data, time, hoveredMetatile }: GbcMapCan
     setCompositeVersion((v) => v + 1);
     // `anyOverlay` is intentionally excluded: it is a plain local
     // (`toggles.grid || toggles.collision || toggles.events`), deterministically
-    // derived from `toggles`, which IS already listed below -- it is not a
+    // derived from the individual canvas-overlay flags listed below (not the whole
+    // `toggles` object, so the DOM-only Encounters toggle never recomposites) -- it is not a
     // separately-changing dependency this effect could miss, just a
     // convenience name for a value already covered.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [imgLoaded, toggles, data, pixelWidth, pixelHeight, originX, originY]);
+  }, [imgLoaded, toggles.grid, toggles.collision, toggles.events, data, pixelWidth, pixelHeight, originX, originY]);
 
   // Step 2: cheap re-blit for pan/zoom -- `viewport` MUST stay in this list
   // (see the header comment's Task 21 citation).

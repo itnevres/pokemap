@@ -1052,4 +1052,16 @@ describe("MapCanvas: Encounters overlay (Plan 6c B4)", () => {
     await screen.findByRole("button", { name: "Espeon" });
     expect(baseCtx.putImageData).not.toHaveBeenCalled();
   });
+
+  it("with Grid already on, toggling Encounters does not recomposite either (no new putImageData)", async () => {
+    stubEncounters();
+    const { stageCtx } = await mountReady();
+    const baseCtx = [...ctxByCanvas.values()].find((c) => c !== stageCtx)!;
+    fireEvent.click(screen.getByRole("button", { name: "Grid" }));
+    await waitFor(() => expect(baseCtx.putImageData).toHaveBeenCalledTimes(1));
+    baseCtx.putImageData.mockClear();
+    fireEvent.click(encBtn());
+    await screen.findByRole("button", { name: "Espeon" });
+    expect(baseCtx.putImageData).not.toHaveBeenCalled();
+  });
 });
