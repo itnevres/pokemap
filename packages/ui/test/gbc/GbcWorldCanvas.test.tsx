@@ -1159,8 +1159,8 @@ describe("GbcWorldCanvas: encounters/lenses/spotlight (Plan 6b Task 6)", () => {
     ];
     const { rerender } = await mountReadyAll({ encounters: { MapA: sources, MapB: [] } }, { time: "morn" });
     fireEvent.click(screen.getByRole("button", { name: "Encounters" }));
-    await waitFor(() => expect(screen.getByRole("button", { name: "Zubat" })).toBeTruthy());
-    const dimmed = (n: string) => screen.getByRole("button", { name: n }).classList.contains("encounter-border__sprite--dimmed");
+    await waitFor(() => expect(screen.getByRole("button", { name: /^Zubat/ })).toBeTruthy());
+    const dimmed = (n: string) => screen.getByRole("button", { name: new RegExp(`^${n}(,|$)`) }).classList.contains("encounter-border__sprite--dimmed");
     expect(dimmed("Zubat")).toBe(true);
     expect(dimmed("Caterpie")).toBe(false);
     const encounterCalls = () => vi.mocked(fetch).mock.calls.filter((c) => String(c[0]).startsWith("/api/encounters/")).length;

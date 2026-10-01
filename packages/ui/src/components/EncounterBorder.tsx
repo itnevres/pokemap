@@ -1,8 +1,7 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { bandRect, type BorderSide, type Rect } from "../encounters/borderSide.js";
 import type { SpeciesRow, SpeciesSummary } from "../encounters/summary.js";
-
-type TimeOfDay = "morn" | "day" | "nite";
+import type { GbcTimeOfDay } from "../gbc/time.js";
 
 export interface EncounterBorderEntry {
   map: string;
@@ -23,7 +22,7 @@ export interface EncounterBorderProps {
   /** Band thickness in world units (`BORDER_BAND.gba` / `.gbc`). */
   band: number;
   /** GBC app time; absent for GBA, where nothing is ever dimmed. */
-  time?: TimeOfDay;
+  time?: GbcTimeOfDay;
 }
 
 /** Sprites never grow past the 32 px source frame; below that they fill the band. */
@@ -41,7 +40,7 @@ function rowLine(r: SpeciesRow): string {
 }
 
 /** GBC only: the species is live at some time of day, but not the current one. */
-const isDimmed = (s: SpeciesSummary, time: TimeOfDay | undefined): boolean =>
+const isDimmed = (s: SpeciesSummary, time: GbcTimeOfDay | undefined): boolean =>
   time !== undefined && s.availableAt !== undefined && !s.availableAt.includes(time);
 
 /**
@@ -49,10 +48,10 @@ const isDimmed = (s: SpeciesSummary, time: TimeOfDay | undefined): boolean =>
  * when any row carries the level buff, and -- only when `time` is given and
  * the species is dimmed at it -- "Not encountered at <time>".
  */
-export function tooltipLines(s: SpeciesSummary, time?: TimeOfDay): string[] {
+export function tooltipLines(s: SpeciesSummary, time?: GbcTimeOfDay): string[] {
   const lines = [s.displayName, ...s.rows.map(rowLine)];
   if (s.rows.some((r) => r.levelBuff)) lines.push("+ = level can roll up to 4 higher");
-  if (time !== undefined && isDimmed(s, time)) lines.push(`Not encountered at ${time}`);
+  if (isDimmed(s, time)) lines.push(`Not encountered at ${time}`);
   return lines;
 }
 
@@ -93,7 +92,11 @@ export function EncounterBorder({ entries, zoom, lodZoom, band, time }: Encounte
   // could never paint above the legend. Anchored from the sprite's
   // getBoundingClientRect() read at event time, like WorldCanvas's own
   // tooltip (grep `getBoundingClientRect` in WorldCanvas.tsx).
-  const showTooltip = (e: { currentTarget: HTMLElement }, key: string, lines: string[]) => {
+  // `what` is one species (its full tooltip) or the hidden species behind a
+  // "+N" chip (their names); the lines are built here, once per event, not per
+  // sprite per render.
+  const showTooltip = (e: { currentTarget: HTMLElement }, key: string, what: SpeciesSummary | SpeciesSummary[]) => {
+    const lines = Array.isArray(what) ? what.map((h) => h.displayName) : tooltipLines(what, time);
     const spriteRect = e.currentTarget.getBoundingClientRect();
     const containerRect = containerRef.current?.getBoundingClientRect();
     setTooltip({
@@ -181,17 +184,18 @@ export function EncounterBorder({ entries, zoom, lodZoom, band, time }: Encounte
             <div key={entry.map} className={`encounter-border__strip encounter-border__strip--${entry.side}`} style={rectStyle(area)}>
               {shown.map((s) => {
                 const key = `${entry.map}:${s.species}`;
-                const lines = tooltipLines(s, time);
+                const dimmed = isDimmed(s, time);
                 return (
                   <button
                     type="button"
                     key={s.species}
-                    className={`encounter-border__sprite${isDimmed(s, time) ? " encounter-border__sprite--dimmed" : ""}`}
+                    className={`encounter-border__sprite${dimmed ? " encounter-border__sprite--dimmed" : ""}`}
                     style={{ width: px(spritePx), height: px(spritePx) }}
-                    aria-label={s.displayName}
-                    onMouseEnter={(e) => showTooltip(e, key, lines)}
+                    // Dimming is also in the accessible name, not just the tooltip.
+                    aria-label={dimmed ? `${s.displayName}, not encountered at ${time}` : s.displayName}
+                    onMouseEnter={(e) => showTooltip(e, key, s)}
                     onMouseLeave={() => hideTooltip(key)}
-                    onFocus={(e) => showTooltip(e, key, lines)}
+                    onFocus={(e) => showTooltip(e, key, s)}
                     onBlur={() => hideTooltip(key)}
                   >
                     <img
@@ -212,9 +216,20 @@ export function EncounterBorder({ entries, zoom, lodZoom, band, time }: Encounte
                 );
               })}
               {hidden > 0 && (
-                <span className="encounter-border__more" style={{ width: px(spritePx), height: px(spritePx) }}>
+                // A real button: the hidden species are otherwise unreachable by
+                // hover, focus or assistive tech. Its tooltip lists their names.
+                <button
+                  type="button"
+                  className="encounter-border__more"
+                  style={{ width: px(spritePx), height: px(spritePx) }}
+                  aria-label={`${hidden} more species`}
+                  onMouseEnter={(e) => showTooltip(e, `${entry.map}:+`, list.slice(shown.length))}
+                  onMouseLeave={() => hideTooltip(`${entry.map}:+`)}
+                  onFocus={(e) => showTooltip(e, `${entry.map}:+`, list.slice(shown.length))}
+                  onBlur={() => hideTooltip(`${entry.map}:+`)}
+                >
                   +{hidden}
-                </span>
+                </button>
               )}
             </div>
           );

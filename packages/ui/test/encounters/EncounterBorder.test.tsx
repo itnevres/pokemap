@@ -1,4 +1,6 @@
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { render, screen, fireEvent } from "@testing-library/react";
 import type { GbcEncounterSource } from "@pokemap/core/src/gbc/analyse/atlas.js";
 import {
@@ -109,7 +111,8 @@ function mount(entries: EncounterBorderEntry[], props: Partial<EncounterBorderPr
 
 const toggleBtn = () => screen.getByRole("button", { name: "Encounters" });
 const on = () => fireEvent.click(toggleBtn());
-const sprite = (name: string) => screen.getByRole("button", { name }) as HTMLButtonElement;
+// A dimmed sprite's accessible name is "<name>, not encountered at <time>", so match the name as a prefix.
+const sprite = (name: string) => screen.getByRole("button", { name: new RegExp(`^${name}(,|$)`) }) as HTMLButtonElement;
 const strips = (c: HTMLElement) => [...c.querySelectorAll<HTMLElement>(".encounter-border__strip")];
 const px = (el: HTMLElement) => ({ x: el.style.left, y: el.style.top, w: el.style.width, h: el.style.height });
 
@@ -211,6 +214,31 @@ describe("EncounterBorder: capacity", () => {
     expect(screen.queryByRole("button", { name: "C" })).toBeNull();
   });
 
+  it("the '+N' chip is a focusable button named 'N more species'; hover or focus lists the hidden species' names", () => {
+    const { container } = mount([entry("L", five, "left")]);
+    on();
+    const more = screen.getByRole("button", { name: "3 more species" }) as HTMLButtonElement;
+    expect(more.tagName).toBe("BUTTON");
+    expect(more.className).toContain("encounter-border__more");
+    expect(more.textContent).toBe("+3");
+    fireEvent.mouseEnter(more);
+    expect([...screen.getByRole("tooltip").children].map((c) => c.textContent)).toEqual(["C", "D", "E"]);
+    expect(screen.getByRole("tooltip").parentElement).toBe(container.querySelector(".encounter-border"));
+    fireEvent.mouseLeave(more);
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    fireEvent.focus(more);
+    expect([...screen.getByRole("tooltip").children].map((c) => c.textContent)).toEqual(["C", "D", "E"]);
+    fireEvent.blur(more);
+    expect(screen.queryByRole("tooltip")).toBeNull();
+  });
+
+  it("the chip carrying the full count (k = 1) lists every species", () => {
+    mount([entry("L", five, "left", { ...RECT, height: 10 })]);
+    on();
+    fireEvent.focus(screen.getByRole("button", { name: "5 more species" }));
+    expect([...screen.getByRole("tooltip").children].map((c) => c.textContent)).toEqual(["A", "B", "C", "D", "E"]);
+  });
+
   it("exactly k species show all k sprites and no chip; k+1 shows k-1 and '+2'", () => {
     const three = five.slice(0, 3);
     const { container, rerender } = mount([entry("L", three, "left")]);
@@ -300,6 +328,13 @@ describe("EncounterBorder: dimming by time of day", () => {
     expect(dimmed("Zubat")).toBe(false);
   });
 
+  it("a dimmed sprite's accessible name says so; a live one is just the species name", () => {
+    mount([entry("Route30", route30, "left", wide)], { time: "morn" });
+    on();
+    expect(screen.getByRole("button", { name: "Zubat, not encountered at morn" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Poliwag" })).toBeTruthy();
+  });
+
   it("a dimmed species still renders (dimming replaced the old time filter)", () => {
     mount([entry("Route30", route30, "left", wide)], { time: "morn" });
     on();
@@ -340,6 +375,21 @@ describe("EncounterBorder: tooltip", () => {
     expect(screen.getByRole("tooltip").textContent).toMatch(/37\.5%/);
     fireEvent.blur(sprite("Espeon"));
     expect(screen.queryByRole("tooltip")).toBeNull();
+  });
+
+  // jsdom lays nothing out (every rect is 0), so stub both rects: the anchor is the sprite's top-centre
+  // RELATIVE to the root, i.e. minus the root's own offset.
+  it("anchors at the sprite's top-centre relative to the root: left = sprite.left - root.left + width/2, top = sprite.top - root.top", () => {
+    const { container } = mount([entry("Route101", gba)]);
+    on();
+    const rect = (left: number, top: number, width: number, height: number) => () =>
+      ({ left, top, width, height, right: left + width, bottom: top + height, x: left, y: top, toJSON() {} }) as DOMRect;
+    container.querySelector<HTMLElement>(".encounter-border")!.getBoundingClientRect = rect(30, 20, 400, 300);
+    sprite("Espeon").getBoundingClientRect = rect(130, 70, 16, 16);
+    fireEvent.mouseEnter(sprite("Espeon"));
+    const tip = screen.getByRole("tooltip");
+    expect(tip.style.left).toBe("108px"); // 130 - 30 + 16/2
+    expect(tip.style.top).toBe("50px"); // 70 - 20
   });
 
   it("leaving a different sprite does not clear this sprite's tooltip (hide only clears its own key)", () => {
@@ -414,6 +464,25 @@ describe("EncounterBorder: tooltip", () => {
     fireEvent.focus(sprite("Espeon"));
     rerender({ entries: [entry("Route101", gba, "left", { ...RECT, x: 120 })] });
     expect(screen.queryByRole("tooltip")).toBeNull();
+  });
+});
+
+describe("EncounterBorder: dimming CSS", () => {
+  // jsdom does not load styles.css; read the rules directly. The opacity sits on the img so the button's own
+  // focus ring (outline) stays full strength; the dashed outline stays on the button.
+  const css = readFileSync(resolve(process.cwd(), "packages/ui/src/styles.css"), "utf8");
+  /** The declaration block of the rule whose selector is exactly `selector` (first match). */
+  const rule = (selector: string): string => {
+    const start = css.indexOf(`\n${selector} {`);
+    expect(start).toBeGreaterThan(-1);
+    return css.slice(css.indexOf("{", start), css.indexOf("}", start));
+  };
+
+  it("a dimmed sprite fades its img, and keeps a dashed outline on the button (no opacity on the button)", () => {
+    expect(rule(".encounter-border__sprite--dimmed img")).toContain("opacity: 0.4");
+    const button = rule(".encounter-border__sprite--dimmed");
+    expect(button).toContain("outline: 1px dashed var(--text-muted)");
+    expect(button).not.toContain("opacity");
   });
 });
 

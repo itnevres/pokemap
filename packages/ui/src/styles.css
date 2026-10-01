@@ -1226,10 +1226,14 @@ input {
 }
 
 /* Not encountered at the current time of day (GBC): dimmed AND dashed, so the
-   state is not carried by opacity alone. */
+   state is not carried by opacity alone. The fade is on the img, not the
+   button: opacity on the button would also fade its focus ring. */
 .encounter-border__sprite--dimmed {
-  opacity: 0.4;
   outline: 1px dashed var(--text-muted);
+}
+
+.encounter-border__sprite--dimmed img {
+  opacity: 0.4;
 }
 
 .encounter-border__more {
@@ -1241,7 +1245,20 @@ input {
   font-family: var(--font-data);
   font-size: var(--text-2xs);
   color: var(--text-secondary);
+  padding: 0;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
   pointer-events: auto;
+}
+
+.encounter-border__more:hover {
+  color: var(--text-primary);
+}
+
+.encounter-border__more:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
 }
 
 /* Low-zoom collapse: a count pill in the band rect instead of unreadable
