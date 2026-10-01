@@ -1,4 +1,4 @@
-# PokeMap: current state (2026-09-30, read first)
+# PokeMap: current state (2026-10-01, read first)
 
 PokeMap is a Porymap-parity map editor with two engine families:
 - **GBA:** pokeemerald-family decomps. Plans 0-5.
@@ -10,12 +10,12 @@ This file holds the state and the accumulated lessons. The prompt for the next s
 
 - **Merged 2026-09-25.** [itnevres/pokemap#1](https://github.com/itnevres/pokemap/pull/1) merged `plan-6-gbc-foundation` into `master` (merge commit `075cefb`, 169 commits): the world-view and dungeon-mode plans, Plan 2 with its 6 follow-ups, Plan 6, the doc refresh, and the cloud SessionStart hook. A merge commit was used rather than a rebase, so every SHA cited in the docs and task reports is still valid. **Branch new work from `master`.**
 - **Merged: Plan 6b.** [itnevres/pokemap#3](https://github.com/itnevres/pokemap/pull/3) merged as `ce020d9`. Its tree is byte-identical to 6b HEAD `243cbef`.
-- **In progress, local only (not pushed): `plan-6c-hub-encounters-world`.** It was rebased onto `ce020d9` on 2026-09-29, and Phase A (A1 + A2) is done. HEAD is the RESUME commit after `94638dc`. **Next: Phase B, C or D** (they are independent), one phase per coordinator session. Push the branch when convenient; the PR comes at F1.
-- **Phase A gate, measured 2026-09-30 on Windows at `a49375f`:** `npm test` gives **1,780 pass / 0 fail** (112 files); typecheck is clean; `vite build` passes. The 6c branch start was 1,679 / 0 (`task-reports/pokemap-plan-6c-hub-encounters-world/baseline.md`).
+- **In progress, local only (not pushed): `plan-6c-hub-encounters-world`.** It was rebased onto `ce020d9` on 2026-09-29. Phase A (A1 + A2) and **Phase B (B1-B4) are done**. HEAD is the RESUME commit after `25d19a4`. **Next: Phase C or D** (independent), one phase per coordinator session. Push the branch when convenient; the PR comes at F1.
+- **Phase B gate, measured 2026-10-01 on Windows at `25d19a4`:** `npm test` gives **1,935 pass / 0 fail** (118 files), on a quiet machine; typecheck is clean; `vite build` passes. Phase A closed at 1,780 / 0 (112 files); the 6c branch start was 1,679 / 0 (`task-reports/pokemap-plan-6c-hub-encounters-world/baseline.md`).
 - **Previous branch baseline, measured 2026-09-28 on the Windows machine at 6b HEAD:** `npm test` gives **1,679 pass / 0 fail**. `npm run typecheck` is clean, and `vite build` passes.
   - Before `123d89f`, Windows also had 7 failures in `packages/cli/test`. They came from cloud-written tests that had never run on Windows (`spawnSync("npx")`, and a regex built from a backslash path), and that commit fixes them.
   - **The cloud should see 1,673 / 6** (derived, not measured). The 6 are the local-state deltas below, listed in `task-reports/pokemap-plan-6b-gbc-app-layer/baseline-fails.txt`.
-  - One unidentified test failed once in about 8 Windows full runs and never recurred. If a single failure appears, rerun it in isolation before calling it a regression.
+  - The long-unidentified Windows flake was `WorldCanvas.test.tsx` "pans/zooms to the given map's real placement…" (a real 2 s fade timer racing full-suite load). **Fixed 2026-09-30** (`46bfed0`, test-only). Other load-only flakes seen since are listed under "Lessons from Plan 6c Phase B". If a single failure appears, rerun it in isolation before calling it a regression.
 - **Verified `master` baseline** (cloud session, 2026-09-25), against GitHub clones of the subject and all 5 reference engines at the SHAs pinned in `.claude/hooks/session-start.sh`:
   - `npm test` gives **1,271 pass, 0 skip, 6 fail**; `npm run typecheck` is clean; the 559 GBC tests are green.
   - All 6 failures come from local-only state on the Windows machine that git doesn't carry. None is a code defect:
@@ -30,7 +30,7 @@ This file holds the state and the accumulated lessons. The prompt for the next s
 |---|---|---|
 | Plan 6: GBC foundation, read-only | **Done and merged 2026-09-25.** See the plan's STATUS banner for the real file map | — |
 | Plan 7: GBC editing | **Unblocked** (#3 merged). Its "Grounding from Plan 6" section is required reading. Tasks 1, 2, 3, 6 and 7 (core + CLI) can run at any time; Tasks 4-5 build on 6b's server and UI | PerfPlus clone (+ pret/pokecrystal for the G5 gate) |
-| 6c: hub, encounter border, world UX (both families) | **Phase A done 2026-09-30** (A1 server hub, A2 picker/switcher; criterion 1 live-verified). `plans/2026-09-28-pokemap-plan-6c-hub-encounters-world.md`: 17 tasks in phases A-F. Run one phase per coordinator session. The user decisions U1-U4 are binding. Next: B, C or D. Evidence: `task-reports/pokemap-plan-6c-hub-encounters-world/_archive/task-A{1,2}-coordinator.md`. Deferred from A: a POST body read after a hub swap still runs on the disposed handler (A1 SR-F3); browse doesn't list symlinked dirs; a browse 403 shows only the status code | GBA subject + PerfPlus + a browser |
+| 6c: hub, encounter border, world UX (both families) | **Phases A and B done** (A 2026-09-30: hub, picker/switcher, criterion 1. B 2026-10-01: GBC front sprites + real GBC icon route, species-summary adapters, `pickBorderSide`, shared `EncounterBorder` replacing both gutters in both world views, the border in both map views; criterion 2 live-verified, `_archive/phase-B-live-verify.md`). `plans/2026-09-28-pokemap-plan-6c-hub-encounters-world.md`: 17 tasks in phases A-F. Run one phase per coordinator session. The user decisions U1-U4 are binding. **Next: C or D.** Evidence: `task-reports/pokemap-plan-6c-hub-encounters-world/_archive/task-{A1,A2,B1,B2,B3,B4}-coordinator.md`. Deferred from A: a POST body read after a hub swap still runs on the disposed handler (A1 SR-F3); browse doesn't list symlinked dirs; a browse 403 shows only the status code. Deferred from B: in the GBA map editor with Encounters on, a stroke dragged onto a sprite ends early (`mouseleave`; revisit in E1/E4); count badges overlap at Fit all; a map taller than the viewport at 1× shows its side strip starting off-screen | GBA subject + PerfPlus + a browser |
 | 6b: GBC app layer (server + UI, read-only) | **Done 2026-09-28, PR #3 ready for review.** Plan: `plans/2026-09-25-pokemap-plan-6b-gbc-app-layer.md`; its STATUS banner holds the real file map. The close-out evidence is in `task-reports/pokemap-plan-6b-gbc-app-layer/_archive/task-7-closeout.md` | — |
 | 4 remaining GBA follow-up fixes (A/B/C/D) | Planned, not started. **D3** (the styles.css `*/` comment) was already fixed in 6b at `5629602`, with the user's go-ahead. It was worse than recorded: it also swallowed the `.species-spotlight` rule and put the spotlight dropdown off-screen. D1 (StrictMode zoom) and D2 (hover overflow) remain.<br>Also seen in 6b's close-out, and not yet in the plan:<br>- in GBA's world toolbar, the open lens legend popover covers the Encounters toggle;<br>- at mid zoom, gutter strips of adjacent maps overlap (both families).<br>Evidence: `task-reports/pokemap-plan-6b-gbc-app-layer/_archive/task-4-spec-review.md` A/B and `_archive/task-7-closeout.md` | GBA corpus (now available in the cloud) + live browser verify (Chromium is available in the cloud) |
 | Plan 3: GBA data editors | Not started, lower priority | Windows machine |
@@ -140,7 +140,48 @@ This file holds the state and the accumulated lessons. The prompt for the next s
   restore the in-memory on-disk bytes, and byte-compare the file afterwards. It ran A1's 12 and A2's 13
   survivors and fix guards, all red, in minutes.
 - **The unidentified Windows flake recurred:** 1 failure in the first of 5 full runs, then 4 clean runs.
-  Still unidentified; next time, capture the first run's output to a file.
+  (Identified and fixed in Phase B, below.)
+
+## Lessons from Plan 6c Phase B (2026-09-30/10-01; new, add to everything above)
+
+- **Capture the first full run to a file, always.** That's how the flake was finally named: the
+  WorldCanvas jump highlight clears on a real 2 s `setTimeout`, and full-suite load stretched
+  mount-to-assert past it. The fix holds that one timer per test and fires it with an explicit `flush()`
+  (a `clearTimeout` of a held id drops it, so "cancelled and never rescheduled" is still caught).
+  Pattern for any real-timer test: hold the timer, don't sleep past it.
+- **Load-only flakes still seen** (each passed alone): `gbcRoutes.test.ts` `/api/where/:species`
+  DUNSPARCE 5 s timeout; `GbcApp.test.tsx` "palette highlight resets…" (1 s `waitFor`). **Never run two
+  full suites at once:** `dungeons.test.ts` reads and writes the subject's shared
+  `.pokemap/dungeons.json`, so concurrent suites race across processes (seen once). Measure the phase
+  gate on a quiet machine.
+- **Corpus facts the plan had wrong:** only `UNOWN` breaks lowercasing in PerfPlus (`→ unown_a`);
+  `NIDORAN_F`/`MR__MIME`/`HO_OH` lowercase to their real folders. The 295 `gfx/pokemon` entries are 278
+  folders + 17 `.asm` files. Every PerfPlus front sprite is opaque with a white index 0 (they render as
+  cards). The species→folder mapping needs both `data/pokemon/pic_pointers.asm` (species-indexed
+  labels) and `gfx/pics.asm` (label→file, label and INCBIN on one line, so `parseIncbins` doesn't apply).
+- **The coordinator's own spec mutations were wrong twice in B2.** "`>=` instead of `>`" was an
+  equivalent mutant (an area product `max(0,w)·max(0,h)` never compares), and "a closed rule flips
+  NewBarkTown" was false (the least-overlap fallback still picks `top`). The Opus reviewer caught both by
+  re-deriving. Before pinning a mutation in a spec, ask whether it can change any output at all.
+- **"Touching" needed a precise rule.** The plan said both "touching blocks" and "a gap ≥ band doesn't".
+  Positive-area overlap with the band satisfies both and makes corners free. Watch for plan sentences
+  that only agree under one reading.
+- **Deleting a component's tests loses pins silently.** B3's old→new table looked complete, but the GBC
+  LOD 7/8 threshold was pinned only by the deleted gutter test; the new component test pinned a generic
+  threshold, not the canvas wiring (mutant `lodZoom={4}` survived). For each deleted test, mutate the
+  *wiring*, not just the component.
+- **`git checkout` as a mutant restore wiped uncommitted work again** (B3 fix round). Putting "never use
+  `git checkout`/`git restore` to undo an experiment; commit first" in the implementer prompt stopped it in B4.
+- **An implementer deleted the coordinator's untracked helper** (`packages/ui/.scratch-vite5183.mjs`)
+  despite "leave it". Keep coordinator scratch outside the repo where possible; recreate if needed.
+- **Live-verify Vite on Windows:** use `fileURLToPath(new URL(".", import.meta.url))` for `root`;
+  `URL.pathname` keeps `%20` for the space in "Programming Projects", and Vite then serves 404s.
+- **Per-map UI state:** a "reset on map change" `useEffect` runs after child hooks' effects, so a hook
+  keyed on the old toggle fires for the new map in the first render (B4 fetched the wrong map). Hold the
+  state as `forMap: string | null` (`on = forMap === mapName`) instead of resetting it.
+- **Rate limits cut off two agents mid-task.** The recipe held: `git status`/`log`/`diff`, then
+  SendMessage the same agent with "verify and revert leftovers first". One resumed with red-first tests
+  still uncommitted and carried on correctly.
 
 ---
 
@@ -158,8 +199,8 @@ This file holds the state and the accumulated lessons. The prompt for the next s
 | Plan 6: GBC foundation (done; STATUS banner holds the real file map) | `docs/superpowers/plans/2026-09-23-pokemap-plan-6-gbc-foundation.md` |
 | Plan 6b: GBC app layer (done; STATUS banner holds the real file map) | `docs/superpowers/plans/2026-09-25-pokemap-plan-6b-gbc-app-layer.md` |
 | 6b task reports: specs, implementer reports, reviews, screenshots, baseline fails, the close-out | `docs/superpowers/task-reports/pokemap-plan-6b-gbc-app-layer/` (all reports in `_archive/`) |
-| Plan 6c: hub, encounter border, world UX (Phase A done) | `docs/superpowers/plans/2026-09-28-pokemap-plan-6c-hub-encounters-world.md` |
-| 6c task reports: baseline, executed specs, reviews, coordinator records | `docs/superpowers/task-reports/pokemap-plan-6c-hub-encounters-world/` (A1/A2 in `_archive/`) |
+| Plan 6c: hub, encounter border, world UX (Phases A and B done) | `docs/superpowers/plans/2026-09-28-pokemap-plan-6c-hub-encounters-world.md` |
+| 6c task reports: baseline, executed specs, reviews, coordinator records | `docs/superpowers/task-reports/pokemap-plan-6c-hub-encounters-world/` (A1-A2, B1-B4 and the Phase B live verify in `_archive/`) |
 | Plan 7: GBC editing (after 6b; read "Grounding from Plan 6" first) | `docs/superpowers/plans/2026-09-23-pokemap-plan-7-gbc-editing.md` |
 | GBC format truth (binding Decisions) | `docs/superpowers/specs/2026-09-23-pokemap-gbc-format-findings.md` |
 | GBA design spec and feature specs | `docs/superpowers/specs/2026-08-26-pokemap-design.md`, `2026-09-07-*.md` |
