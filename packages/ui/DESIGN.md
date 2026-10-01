@@ -365,3 +365,19 @@ reserves one band on that side.
   `--focus-ring`, `--text-muted`, `--bg-selected`. The per-method
   `--encounter-*` hues stay for the coverage lenses; the border no longer
   colours by method.
+
+## Coverage lens legend (Plan 6c C1)
+
+- The active lens's legend is a **row below the world toolbar**
+  (`world-canvas__legend-row`, styled like `map-canvas__legend`, in flow with no
+  `position`), never a popover, so it covers nothing: an earlier popover sat on
+  the viewport's own `Encounters` toggle. `LensPanel` is the four toggles only;
+  both canvases render `LensLegend` with the same `lens` state, so no lens is
+  ever active without its legend.
+- **Lists.** Empty maps gets a "List them" / "Hide list" action opening
+  `lens-panel__list` (`lens-panel__list-btn` per map, payload order); Unused
+  species gets "Show list" / "Hide list" opening `lens-panel__list--species`
+  (`lens-panel__species`: icon + display name, not clickable). A list starts
+  closed on every lens change.
+- A map entry jumps like a tree click (`onJumpToMap` -> the app's `selectMap`).
+  Entries render disabled where no jump target exists (a dungeon view).

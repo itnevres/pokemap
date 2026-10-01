@@ -19,4 +19,14 @@ describe("styles.css", () => {
     const out = transform({ filename: "styles.css", code: css, errorRecovery: true }).code.toString();
     expect(out).toMatch(/\.species-spotlight\s*\{[^}]*position:\s*relative/);
   });
+
+  // Plan 6c C1: the lens legend is an in-flow row below the toolbar, never the
+  // old absolutely-positioned popover that covered the Encounters toggle.
+  it("keeps the lens legend an in-flow row: no position on it, and no .lens-panel__legend popover rule", () => {
+    const out = transform({ filename: "styles.css", code: css, errorRecovery: true }).code.toString();
+    const row = /\.world-canvas__legend-row\s*\{([^}]*)\}/.exec(out);
+    expect(row).not.toBeNull();
+    expect(row![1]).not.toMatch(/position\s*:/);
+    expect(out).not.toMatch(/\.lens-panel__legend\s*\{/);
+  });
 });

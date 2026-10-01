@@ -1456,37 +1456,34 @@ input {
   color: var(--text-primary);
 }
 
-/* Floats below the toggle strip rather than pushing layout -- the same
-   "dropdown panel anchored to its own trigger" shape as
-   .encounter-border__legend, just anchored to a toolbar control instead of
-   a viewport-corner one, so it needs its own z-index high enough to clear
-   both the static conflict/dive/emerge legend row and the canvas viewport
-   beneath it. */
-.lens-panel__legend {
-  position: absolute;
-  z-index: 6;
-  top: calc(100% + var(--space-2));
-  right: 0;
-  width: 280px;
-  padding: var(--space-3);
-  background: var(--bg-panel-raised);
-  border: 1px solid var(--border-strong);
-  border-radius: 6px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+/* The active coverage lens's legend: a row below the world toolbar, in flow
+   (no position), styled like .map-canvas__legend -- never a popover, so it
+   cannot cover the viewport's own Encounters toggle. Prose, so one text step
+   up from the swatch row. */
+.world-canvas__legend-row {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-1) var(--space-3);
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
   font-size: var(--text-xs);
   color: var(--text-secondary);
   text-align: left;
 }
 
 .lens-panel__legend-title {
-  margin: 0 0 var(--space-1);
+  margin: 0;
   font-size: var(--text-sm);
   font-weight: 600;
   color: var(--text-primary);
 }
 
 .lens-panel__legend-body {
-  margin: 0 0 var(--space-2);
+  margin: 0;
+  min-width: 0;
   line-height: 1.4;
 }
 
@@ -1500,11 +1497,11 @@ input {
    the other). */
 .lens-panel__legend-key {
   list-style: none;
-  margin: 0 0 var(--space-2);
+  margin: 0;
   padding: 0;
   display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
 }
 
 .lens-panel__legend-item {
@@ -1555,6 +1552,62 @@ input {
 
 .lens-panel__legend-action:hover {
   background: var(--accent-strong);
+}
+
+/* Empty-maps / unused-species lists, opened from the legend row's action
+   button. Full row width, scrolls past 40vh. */
+.lens-panel__list {
+  flex: 1 0 100%;
+  max-height: 40vh;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--space-1);
+}
+
+.lens-panel__list-btn {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  text-align: left;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  border-radius: 4px;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lens-panel__list-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.lens-panel__list-btn:disabled {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.lens-panel__species {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.lens-panel__species > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* World-canvas overlays the two controls above drive. Both are absolutely
