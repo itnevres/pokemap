@@ -127,7 +127,7 @@ export function displaySpeciesName(species: string): string {
     .join(" ");
 }
 
-const iconUrl = (species: string) => `/api/species/${encodeURIComponent(species)}/icon.png`;
+export const speciesIconUrl = (species: string) => `/api/species/${encodeURIComponent(species)}/icon.png`;
 
 /**
  * Groups (species, row) pairs, given in flattened input order, into
@@ -152,7 +152,7 @@ function summarise(pairs: Array<[string, SpeciesRow]>): SpeciesSummary[] {
       return { species, rows: sorted, first: rank(first), top, appearance };
     })
     .sort((a, b) => a.first - b.first || b.top - a.top || a.appearance - b.appearance)
-    .map(({ species, rows }) => ({ species, displayName: displaySpeciesName(species), iconUrl: iconUrl(species), rows }));
+    .map(({ species, rows }) => ({ species, displayName: displaySpeciesName(species), iconUrl: speciesIconUrl(species), rows }));
 }
 
 const GBA_METHOD: Record<Method, { method: SpeciesMethod; label: string }> = {

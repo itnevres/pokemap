@@ -1,3 +1,6 @@
+import { useState } from "react";
+import { displaySpeciesName, speciesIconUrl } from "../encounters/summary.js";
+
 export type LensId = "level-curve" | "empty-maps" | "unused-species" | "method";
 
 const LENS_ORDER: LensId[] = ["level-curve", "empty-maps", "unused-species", "method"];
@@ -10,40 +13,40 @@ const LENS_LABEL: Record<LensId, string> = {
 };
 
 export interface LensPanelSummary {
-  /** `coverage().mapsWithoutEncounters.length` -- see the doc comment on
+  /** `coverage().mapsWithoutEncounters` -- see the doc comment on
    *  `Coverage.mapsWithoutEncounters` in packages/core/src/analyse/
-   *  coverage.ts. Interpolated into the empty-maps legend at render time,
-   *  never hardcoded here, so the copy stays honest if the corpus ever
-   *  changes -- the 982 in this file's own tests is a fixture value, not a
-   *  number this component is allowed to assume. */
-  emptyMaps: number;
-  /** `coverage().unusedSpecies.length`, same "interpolated, never
-   *  hardcoded" rule as emptyMaps above. */
-  unusedSpecies: number;
+   *  coverage.ts. The count in the empty-maps legend is its `.length`,
+   *  interpolated at render time, never hardcoded here, so the copy stays
+   *  honest if the corpus ever changes -- the 982 in this file's own tests is
+   *  a fixture value, not a number this component is allowed to assume. */
+  emptyMapNames: string[];
+  /** `coverage().unusedSpecies`, same "interpolated, never hardcoded" rule
+   *  as emptyMapNames above. */
+  unusedSpeciesNames: string[];
 }
 
 export interface LensPanelProps {
   active: LensId | null;
   onChange: (lens: LensId | null) => void;
+}
+
+export interface LensLegendProps {
+  active: LensId | null;
   summary: LensPanelSummary;
-  /** Wired by WorldCanvas to the empty-maps legend's own "next action"
-   *  (spec §9: a legend states what to do next, not just what colours
-   *  mean). Optional so this component stays fully renderable -- and
-   *  testable -- standalone; the button simply does nothing if unset. */
-  onListEmptyMaps?: () => void;
+  /** A map-list entry was clicked; the app selects the map and jumps there
+   *  (the tree-click path). Unset (e.g. a dungeon view) renders every entry
+   *  disabled. */
+  onJumpToMap?: (name: string) => void;
   /** Plan 6b Task 6 (additive): overrides the method lens's own legend key
    *  -- GBC's method tint precedence (water > fish > headbutt > rock; grass
    *  is never tinted) doesn't match GBA's own (water/fishing/rock-smash).
-   *  Defaults to today's `METHOD_LENS_KEY`, so every existing GBA call site
-   *  (no `methodKey` prop) renders byte-identically to before this change. */
+   *  Defaults to today's `METHOD_LENS_KEY`. */
   methodKey?: Array<{ slug: string; label: string }>;
   /** Plan 6b Task 6 (additive): per-lens legend copy overrides, merged OVER
    *  `LEGEND_COPY` (a caller supplying only `method`/`level-curve` leaves
    *  `empty-maps`/`unused-species` at their GBA defaults -- both already
    *  read generically off `summary`, and GBC's own `/api/coverage` carries
-   *  the same `mapsWithoutEncounters`/`unusedSpecies` counts GBA's does, so
-   *  neither needs a GBC-specific override). Left unset, every existing GBA
-   *  call site renders byte-identically to before this change. */
+   *  the same `mapsWithoutEncounters`/`unusedSpecies` arrays GBA's does). */
   legendCopy?: Partial<Record<LensId, (s: LensPanelSummary) => string>>;
 }
 
@@ -51,9 +54,9 @@ const LEGEND_COPY: Record<LensId, (s: LensPanelSummary) => string> = {
   "level-curve": () =>
     "Colour is the average encounter level, weighted by encounter rate. Blue is low, red is high. Look for maps that jump several levels above their neighbours.",
   "empty-maps": (s) =>
-    `${s.emptyMaps} maps have no encounters. Many should not — buildings, corridors, single rooms. Click to list them.`,
+    `${s.emptyMapNames.length} maps have no encounters. Many should not — buildings, corridors, single rooms. Click to list them.`,
   "unused-species": (s) =>
-    `${s.unusedSpecies} species appear in no encounter table. They may still be gifts, statics or trades.`,
+    `${s.unusedSpeciesNames.length} species appear in no encounter table. They may still be gifts, statics or trades.`,
   method: () => "Which maps reward surfing, fishing or rock smash.",
 };
 
@@ -79,26 +82,23 @@ const METHOD_LENS_KEY: Array<{ slug: "water" | "fishing" | "rock-smash"; label: 
 
 /**
  * Coverage lenses (spec §9): level-curve, empty-maps, unused-species and
- * method. One active at a time, all off by default, and -- per spec's own
- * "no lens is ever active without its legend visible" -- the legend is not
- * a separate toggle a caller could get out of sync with `active`; it is
- * this component's own render, gated on the same prop.
+ * method. One active at a time, all off by default.
  *
  * `active`/`onChange` are fully controlled by the caller (WorldCanvas):
  * clicking the already-active lens's own button calls `onChange(null)`
  * (turns it off); clicking any other calls `onChange(thatLens)`. Because
  * there is only ever one `active` value to begin with, "one lens active at
- * a time" falls out of that shape for free -- this component never needs
- * its own bookkeeping to enforce it.
+ * a time" falls out of that shape for free.
+ *
+ * This is only the toggles. The legend is a row the canvas renders below the
+ * toolbar (`LensLegend`, never a popover over the map); spec's "no lens is
+ * ever active without its legend" is now the caller's rule: both canvases
+ * render `LensLegend` with the same `lens` state they give `LensPanel`.
  *
  * Purely a control, like SpeciesSpotlight: it draws no part of the world
- * itself. WorldCanvas turns `active` + the coverage data it already fetches
- * into the actual per-map tint overlay, the same "presentational child,
- * caller owns the canvas" split the encounter overlay (now EncounterBorder) established in Task 28.
+ * itself.
  */
-export function LensPanel({ active, onChange, summary, onListEmptyMaps, methodKey, legendCopy }: LensPanelProps) {
-  const key = methodKey ?? METHOD_LENS_KEY;
-  const copyOf = (lens: LensId): string => (legendCopy?.[lens] ?? LEGEND_COPY[lens])(summary);
+export function LensPanel({ active, onChange }: LensPanelProps) {
   return (
     <div className="lens-panel">
       <div className="lens-panel__toggles" role="group" aria-label="Coverage lenses">
@@ -115,27 +115,78 @@ export function LensPanel({ active, onChange, summary, onListEmptyMaps, methodKe
           </button>
         ))}
       </div>
+    </div>
+  );
+}
 
-      {active && (
-        <div className="lens-panel__legend" role="note">
-          <p className="lens-panel__legend-title">{LENS_LABEL[active]}</p>
-          <p className="lens-panel__legend-body">{copyOf(active)}</p>
-          {active === "method" && (
-            <ul className="lens-panel__legend-key">
-              {key.map((m) => (
-                <li key={m.slug} className="lens-panel__legend-item">
-                  <i className={`lens-panel__legend-swatch lens-panel__legend-swatch--${m.slug}`} />
-                  <span>{m.label}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-          {active === "empty-maps" && (
-            <button type="button" className="lens-panel__legend-action" onClick={onListEmptyMaps}>
-              List them
-            </button>
-          )}
-        </div>
+/** The active lens's legend, as an in-flow row (CSS `.world-canvas__legend-row`).
+ *  The `key` remounts the row on every lens change, so a list always starts
+ *  closed (no reset effect: it would run a render late). */
+export function LensLegend({ active, ...rest }: LensLegendProps) {
+  return active === null ? null : <LensLegendRow key={active} active={active} {...rest} />;
+}
+
+function LensLegendRow({
+  active,
+  summary,
+  onJumpToMap,
+  methodKey,
+  legendCopy,
+}: LensLegendProps & { active: LensId }) {
+  const [listOpen, setListOpen] = useState(false);
+  const key = methodKey ?? METHOD_LENS_KEY;
+  const copy = (legendCopy?.[active] ?? LEGEND_COPY[active])(summary);
+  const listAction = (label: string) => (
+    <button
+      type="button"
+      className="lens-panel__legend-action"
+      aria-expanded={listOpen}
+      onClick={() => setListOpen((o) => !o)}
+    >
+      {listOpen ? "Hide list" : label}
+    </button>
+  );
+  return (
+    <div className="world-canvas__legend-row" role="note">
+      <p className="lens-panel__legend-title">{LENS_LABEL[active]}</p>
+      <p className="lens-panel__legend-body">{copy}</p>
+      {active === "method" && (
+        <ul className="lens-panel__legend-key">
+          {key.map((m) => (
+            <li key={m.slug} className="lens-panel__legend-item">
+              <i className={`lens-panel__legend-swatch lens-panel__legend-swatch--${m.slug}`} />
+              <span>{m.label}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {active === "empty-maps" && summary.emptyMapNames.length > 0 && listAction("List them")}
+      {active === "unused-species" && summary.unusedSpeciesNames.length > 0 && listAction("Show list")}
+      {listOpen && active === "empty-maps" && (
+        <ul className="lens-panel__list" aria-label="Maps with no encounters">
+          {summary.emptyMapNames.map((name) => (
+            <li key={name}>
+              <button
+                type="button"
+                className="lens-panel__list-btn"
+                disabled={!onJumpToMap}
+                onClick={() => onJumpToMap?.(name)}
+              >
+                {name}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {listOpen && active === "unused-species" && (
+        <ul className="lens-panel__list lens-panel__list--species" aria-label="Unused species">
+          {summary.unusedSpeciesNames.map((s) => (
+            <li key={s} className="lens-panel__species">
+              <img src={speciesIconUrl(s)} alt="" width={24} height={24} loading="lazy" />
+              <span>{displaySpeciesName(s)}</span>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );
