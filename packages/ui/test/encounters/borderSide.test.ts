@@ -3,6 +3,7 @@ import {
   BORDER_BAND,
   SIDE_ORDER,
   bandRect,
+  gbaDirToCompass,
   borderSideFromConnections,
   overlapArea,
   pickBorderSide,
@@ -105,6 +106,10 @@ describe("pickBorderSide: touching vs gap (left side, band 2)", () => {
   it("corner-only contact blocks nothing", () => {
     expect(pickBorderSide(MAP, [R(-5, -5, 5, 5)], BAND)).toBe("left");
   });
+  it("band <= 0 can overlap nothing -> left", () => {
+    expect(pickBorderSide(MAP, [L, T, Rt, B], 0)).toBe("left");
+    expect(pickBorderSide(MAP, [L, T, Rt, B], -1)).toBe("left");
+  });
   it("a rect equal to the map blocks nothing", () => {
     expect(pickBorderSide(MAP, [MAP], BAND)).toBe("left");
   });
@@ -124,5 +129,18 @@ describe("borderSideFromConnections", () => {
   });
   it("south alone leaves left free", () => {
     expect(borderSideFromConnections(new Set<CompassDir>(["south"]))).toBe("left");
+  });
+});
+
+describe("gbaDirToCompass", () => {
+  it.each([
+    ["up", "north"],
+    ["down", "south"],
+    ["left", "west"],
+    ["right", "east"],
+    ["dive", undefined],
+    ["emerge", undefined],
+  ] as const)("%s -> %s", (d, want) => {
+    expect(gbaDirToCompass(d)).toBe(want);
   });
 });

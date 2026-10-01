@@ -8,6 +8,8 @@
  * side with the least overlap (ties by SIDE_ORDER). With no layout (map view)
  * a side is blocked when the map has a connection on it.
  */
+import type { ConnectionDirection } from "@pokemap/core/src/load/maps.js";
+
 export type BorderSide = "left" | "top" | "right" | "bottom";
 export interface Rect { x: number; y: number; width: number; height: number }
 export type CompassDir = "north" | "south" | "east" | "west";
@@ -37,9 +39,11 @@ export function overlapArea(a: Rect, b: Rect): number {
 /**
  * First free side in SIDE_ORDER, else the least-overlapped. The caller excludes
  * the map itself from `neighbours` (a rect equal to `rect` blocks nothing anyway:
- * it doesn't overlap the outside bands).
+ * it doesn't overlap the outside bands). World units are integers (blocks /
+ * metatiles), which is why a gap of exactly `band` is exactly zero area. `band <= 0`
+ * returns `left`: no band can overlap anything.
  */
-export function pickBorderSide(rect: Rect, neighbours: Rect[], band: number): BorderSide {
+export function pickBorderSide(rect: Rect, neighbours: readonly Rect[], band: number): BorderSide {
   let best: BorderSide = SIDE_ORDER[0]!;
   let bestTotal = Infinity;
   for (const side of SIDE_ORDER) {
@@ -57,4 +61,15 @@ const SIDE_DIR: Record<BorderSide, CompassDir> = { left: "west", top: "north", r
 /** Map view (no layout): first side in SIDE_ORDER with no connection; all four -> left. */
 export function borderSideFromConnections(dirs: ReadonlySet<CompassDir>): BorderSide {
   return SIDE_ORDER.find((s) => !dirs.has(SIDE_DIR[s])) ?? "left";
+}
+
+/** GBA connection direction -> compass name; dive/emerge are not planar sides. */
+export function gbaDirToCompass(d: ConnectionDirection): CompassDir | undefined {
+  switch (d) {
+    case "up": return "north";
+    case "down": return "south";
+    case "left": return "west";
+    case "right": return "east";
+    default: return undefined;
+  }
 }
