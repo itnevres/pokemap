@@ -2310,3 +2310,66 @@ describe("WorldCanvas: lens legend row (Plan 6c C1)", () => {
     expect(legendRow()).toBeNull();
   });
 });
+
+describe("WorldCanvas: onSelectMap (Plan 6c C2)", () => {
+  // A is [0,10)x[0,10), B is [20,30)x[0,10) at the default zoom 1 / pan 0.
+  const TWO = makeWorld({
+    placements: {
+      A: { map: "A", x: 0, y: 0, width: 10, height: 10, component: 0 },
+      B: { map: "B", x: 20, y: 0, width: 10, height: 10, component: 1 },
+    },
+  });
+  async function mountSelect(onSelectMap: (n: string) => void) {
+    vi.stubGlobal("fetch", makeFetchMock(TWO).impl);
+    const utils = render(<WorldCanvas onSelectMap={onSelectMap} />);
+    await waitFor(() => expect(screen.queryByText(/Loading world/)).toBeNull());
+    const canvas = utils.container.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement;
+    canvas.getBoundingClientRect = () => ({
+      left: 0, top: 0, right: VIEWPORT_SIZE, bottom: VIEWPORT_SIZE, width: VIEWPORT_SIZE, height: VIEWPORT_SIZE, x: 0, y: 0, toJSON() {},
+    });
+    await waitFor(() => expect(ctxByCanvas.get(canvas)!.clearRect).toHaveBeenCalled());
+    return canvas;
+  }
+  /** A real browser click: mousedown, mouseup, then click at the same point. */
+  function click(canvas: HTMLCanvasElement, x: number, y: number, mods: { shiftKey?: boolean; ctrlKey?: boolean } = {}) {
+    fireEvent.mouseDown(canvas, { clientX: x, clientY: y, button: 0, ...mods });
+    fireEvent.mouseUp(canvas, { clientX: x, clientY: y, ...mods });
+    fireEvent.click(canvas, { clientX: x, clientY: y, ...mods });
+  }
+
+  it("a plain click on a map calls onSelectMap once with its name", async () => {
+    const onSelectMap = vi.fn();
+    const canvas = await mountSelect(onSelectMap);
+    click(canvas, 5, 5);
+    expect(onSelectMap).toHaveBeenCalledTimes(1);
+    expect(onSelectMap).toHaveBeenCalledWith("A");
+    click(canvas, 25, 5);
+    expect(onSelectMap).toHaveBeenCalledTimes(2);
+    expect(onSelectMap).toHaveBeenLastCalledWith("B");
+  });
+
+  it("shift-click and ctrl-click do not call it", async () => {
+    const onSelectMap = vi.fn();
+    const canvas = await mountSelect(onSelectMap);
+    click(canvas, 5, 5, { shiftKey: true });
+    click(canvas, 5, 5, { ctrlKey: true });
+    expect(onSelectMap).not.toHaveBeenCalled();
+  });
+
+  it("a click on empty space does not call it", async () => {
+    const onSelectMap = vi.fn();
+    const canvas = await mountSelect(onSelectMap);
+    click(canvas, 90, 90);
+    expect(onSelectMap).not.toHaveBeenCalled();
+  });
+
+  it("the trailing click of a drag does not call it, even when the drag ends over a map", async () => {
+    const onSelectMap = vi.fn();
+    const canvas = await mountSelect(onSelectMap);
+    fireEvent.mouseDown(canvas, { clientX: 5, clientY: 5, button: 0 });
+    fireEvent.mouseMove(canvas, { clientX: 8, clientY: 8 }); // pans by (3,3): A is now [3,13)^2, so (8,8) is over A
+    fireEvent.mouseUp(canvas, { clientX: 8, clientY: 8 });
+    fireEvent.click(canvas, { clientX: 8, clientY: 8 });
+    expect(onSelectMap).not.toHaveBeenCalled();
+  });
+});

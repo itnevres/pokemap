@@ -306,6 +306,10 @@ export interface WorldCanvasProps {
    *  jumps there (the tree-click path). Unset (a dungeon view) renders the
    *  entries disabled. */
   onJumpToMap?: (name: string) => void;
+  /** A plain single click landed on a map (never a modifier click, the end of a
+   *  drag, or a click on empty space). The app mirrors it into its own selection
+   *  (sidebar highlight) but must not treat it as a jump request. */
+  onSelectMap?: (name: string) => void;
 }
 
 /**
@@ -315,7 +319,7 @@ export interface WorldCanvasProps {
  * packages/ui/DESIGN.md for the palette/type/spacing tokens this consumes,
  * and this file's own comments for the LOD and culling mechanics.
  */
-export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap }: WorldCanvasProps = {}) {
+export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSelectMap }: WorldCanvasProps = {}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageCacheRef = useRef<Map<string, ImageCacheEntry>>(new Map());
@@ -1487,6 +1491,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap }: Wo
     const w = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
     const hit = hitTest(w.x, w.y);
     setSelected(hit ? new Set([hit.map]) : new Set());
+    if (hit) onSelectMap?.(hit.map);
   };
 
   // Review fix: mirrors onCanvasClick's own CRITICAL postmortem comment
