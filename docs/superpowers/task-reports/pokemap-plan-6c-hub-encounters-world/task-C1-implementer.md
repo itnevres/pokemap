@@ -61,3 +61,34 @@ No other existing test edited. Shared default mocks untouched; new tests use per
 - Pre-existing jsdom "HTMLCanvasElement getContext not implemented" stderr noise now also appears in the new App/GbcApp tests (those apps mount the canvas); harmless.
 - Untracked `task-C2-spec.md` is not mine; left alone.
 - Live verify (elementFromPoint at 1280/1024, jump-to-far-entry) not done by me; coordinator step.
+
+# Fix round (coordinator items 1-11, base `8ac538c`)
+
+Commits: 4c62196 (component + LensPanel tests), 84cc393 (canvases + canvas tests), 787d1bb + b6e6e50 (app tests), 49afdc2 (CSS/comments/DESIGN.md). Red-proofs: new tests run against old behaviour (in-memory mutation by byte-swap script, original bytes restored, tree clean after each) or, where old code already failed them, the pre-fix run.
+
+| # | item | commit | tests | red-proof |
+|---|---|---|---|---|
+| 1 | `summary: LensPanelSummary \| null`; null -> title + "Loading coverage…", no counts/buttons/key; canvases pass `coverageData ? {…} : null` | 4c62196, 84cc393 | LensPanel "a null summary (coverage not loaded)…"; WorldCanvas + GbcWorldCanvas "while coverage is still loading, a lens shows 'Loading coverage…'…" | LensPanel: red pre-fix (TypeError on null). Canvases: `: null` -> `: {[],[]}` => both canvas tests red |
+| 2 | `!coverageError` gate pinned | 84cc393 | both canvases "a coverage failure after a lens was clicked removes the legend row and shows the error" | gate -> `true &&`: red in both |
+| 3 | no row without a lens | 84cc393 | both canvases "no legend row until a lens is on, and none again once it is turned off" | `active={lens ?? "level-curve"}`: red in both |
+| 4 | Hide list closes | 4c62196 | LensPanel "List them toggles…" and "unused species list shows…" extended (Hide list -> no `ul`, `aria-expanded="false"`, label back to List them / Show list) | `setListOpen(true)` (X3): both red |
+| 5 | list jump asserts the canvas jump | 787d1bb, b6e6e50 | App + GbcApp list-entry tests: `.world-canvas__jump-highlight` present; App also first tree-clicks Route1 so the second jump must remount the token-keyed highlight (a first jump alone fires on token 0 even without a bump, so the first version missed X14) | X14 (App `setSelected(n)`): first version GREEN, fixed, then red; X14b (GbcApp `selectMapFromWorld`): red |
+| 6 | no `onJumpToMap` -> no List them button; `disabled` attr + `:disabled` CSS dropped | 4c62196, 787d1bb, 49afdc2 | LensPanel "without onJumpToMap there is no List them button (nothing to jump to)" (replaces my "…every entry is disabled"); App "in Dungeon mode (no jump target) the Empty maps lens offers no List them button" | pre-fix red (button existed); X4 (dungeon canvas gets `onJumpToMap`): red |
+| 7 | species lens never shows maps list | 4c62196 | LensPanel "the species lens never shows the maps list, even with empty maps present" | X16 (drop `active === "empty-maps"` on maps list): red |
+| 8 | plurals | 4c62196 | LensPanel "singular counts read 'map has' / 'species appears'; other counts keep the plural copy" (1/1/0); canvas row tests now match `/1 map has/` | pre-fix red (`1 maps have`) |
+| 9 | `title` on map button + species span; `img {flex: 0 0 auto}`; `aria-label="Coverage lens legend"`; `text-align: left` dropped; `.lens-panel{position:relative}` dropped (grep: nothing anchors to it, only toggles inside) | 4c62196, 49afdc2 | LensPanel "map entries carry the full name as a title", species test title assertion, "the legend row is a named note" | pre-fix red (all three); CSS items untested (no behaviour test) |
+| 10 | stale comments -> LensLegend: GbcWorldCanvas (4 refs), `gbc/guards.ts`, `gbc/hooks/useGbcCoverage.ts`, WorldCanvas unused-species tint note, styles.css key comment, LensPanel.test comment | 4c62196, 49afdc2 | n/a | n/a |
+| 11 | GBC level-curve row shows GBC copy | 84cc393 | GbcWorldCanvas "the level-curve lens row carries GBC's own legend copy…" | `legendCopy` dropped at canvas: red |
+
+Also: DESIGN.md updated (hide-not-disable, loading, title, plurals). Species singular copy: "1 species appears in no encounter table. It may still be a gift, static or trade." (n≠1 byte-identical to before.)
+
+Full suite: **118 files, 1963 pass / 0 fail** (1950 + 13: LensPanel +5, WorldCanvas +3, GbcWorldCanvas +4, App +1; disabled->hidden swap is net 0). `npm run typecheck` clean; `npx vite build` OK (311.07 kB js / 41.29 kB css).
+
+## Existing-test edits this round (pre-existing = not added in C1)
+| file | test | change | reason |
+|---|---|---|---|
+| LensPanel.test.tsx | "states the finding in plain words with a next action" | **added `onJumpToMap={() => {}}`**; assertions unchanged | beyond the expected comment-only: it asserts the "List them" button with no handler, which decision 6 now hides. Unavoidable consequence; flagging as a deviation |
+| LensPanel.test.tsx | comment above "renders whatever counts…" | `({ emptyMaps: 982, unusedSpecies: 12 })` -> `` (`sum(982, 12)`) `` | item 10 (comment only) |
+Everything else touched this round is a C1-added test (title/null/plural assertions, my "disabled" test replaced, `/1 maps have/` -> `/1 map has/`, `onJumpToMap` added to my own list tests).
+
+Concerns: copy "Click to list them." in the empty-maps legend still shows in the dungeon view where there is no list action (n≠1 copy must stay exact per item 8); say so if you want it conditional.
