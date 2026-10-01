@@ -654,6 +654,18 @@ describe("GbcMapCanvas: Encounters overlay (Plan 6c B4)", () => {
     await waitFor(() => expect(encBtn().getAttribute("aria-pressed")).toBe("false"));
   });
 
+  it("a map switch is off in the very first render: no fetch for the new map and its toggle reads off", async () => {
+    const f = stubEncounters();
+    const { rerender } = await mountReady();
+    fireEvent.click(encBtn());
+    await screen.findByRole("button", { name: /^Caterpie/ });
+    expect(f).toHaveBeenCalledTimes(1);
+    rerender(<GbcMapCanvas mapName="Route29" data={DATA} time="day" />);
+    expect(encBtn().getAttribute("aria-pressed")).toBe("false"); // synchronously, no reset effect needed
+    await Promise.resolve();
+    expect(f).toHaveBeenCalledTimes(1);
+  });
+
   it("north + south connections leave the left side (west) free: the strip is on the left", async () => {
     stubEncounters();
     const { container } = await mountReady({ data: withConnections(["north", "south"]) });

@@ -143,11 +143,9 @@ interface Toggles {
   collision: boolean;
   elevation: boolean;
   events: boolean;
-  /** The encounter border (B4): DOM over the viewport, so it never joins the canvas overlay recomposite. */
-  encounters: boolean;
 }
 
-const NO_TOGGLES: Toggles = { grid: false, collision: false, elevation: false, events: false, encounters: false };
+const NO_TOGGLES: Toggles = { grid: false, collision: false, elevation: false, events: false };
 
 interface Hover {
   bx: number;
@@ -333,6 +331,11 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
     if (paintVersionTimerRef.current) clearTimeout(paintVersionTimerRef.current);
   }, []);
   const [toggles, setToggles] = useState<Toggles>(NO_TOGGLES);
+  // The encounter border toggle (B4) is DOM over the viewport, not a canvas overlay, so it is not in
+  // `Toggles`. It remembers WHICH map it was turned on for: a map switch reads as off in the very first
+  // render (no fetch for the new map, no stale border), with no reset effect needed.
+  const [encountersFor, setEncountersFor] = useState<string | null>(null);
+  const encountersOn = encountersFor === mapName;
   const [zoom, setZoom] = useState<Zoom>(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [hover, setHover] = useState<Hover | null>(null);
@@ -371,7 +374,7 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
     () => borderSideFromConnections(new Set((connections ?? []).map((c) => gbaDirToCompass(c.direction)).filter((d): d is CompassDir => d !== undefined))),
     [connections],
   );
-  const { summaries: encounterSummaries, error: encounterError } = useMapEncounterSummaries(mapName, "gba", toggles.encounters);
+  const { summaries: encounterSummaries, error: encounterError } = useMapEncounterSummaries(mapName, "gba", encountersOn);
 
   // `v=` only when editing is live -- a read-only viewer (no editSession)
   // never paints, so it never needs a cache-bust, and always appending one
@@ -387,6 +390,7 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
   // instead of two effects fighting over the same state.
   useEffect(() => {
     setToggles(NO_TOGGLES);
+    setEncountersFor(null); // only so A -> B -> A does not bring A's border back; B is already off without it
     setHover(null);
   }, [mapName]);
 
@@ -408,7 +412,7 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
     const vw = viewport.w || pixelWidth;
     const vh = viewport.h || pixelHeight;
     // Encounters on: the content is the image plus one band on the border's side, so the sprites fit too.
-    const bandNative = toggles.encounters ? BORDER_BAND.gba * METATILE_PX : 0;
+    const bandNative = encountersOn ? BORDER_BAND.gba * METATILE_PX : 0;
     const extraW = side === "left" || side === "right" ? bandNative : 0;
     const extraH = side === "top" || side === "bottom" ? bandNative : 0;
     let z: Zoom = 1;
@@ -420,7 +424,7 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
       x: Math.round((vw - (pixelWidth + extraW) * z) / 2) + (side === "left" ? bandNative * z : 0),
       y: Math.round((vh - (pixelHeight + extraH) * z) / 2) + (side === "top" ? bandNative * z : 0),
     });
-  }, [pixelWidth, pixelHeight, viewport, toggles.encounters, side]);
+  }, [pixelWidth, pixelHeight, viewport, encountersOn, side]);
 
   // Only the FIRST successful image load for a given mapName triggers fit()
   // -- a same-map reload triggered by a paint (imgLoaded cycling false->true
@@ -917,13 +921,13 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
           <button type="button" className="map-canvas__btn" aria-pressed={toggles.events} onClick={() => toggle("events")}>
             Events
           </button>
-          <button type="button" className="map-canvas__btn" aria-pressed={toggles.encounters} onClick={() => toggle("encounters")}>
+          <button type="button" className="map-canvas__btn" aria-pressed={encountersOn} onClick={() => setEncountersFor(encountersOn ? null : mapName)}>
             Encounters
           </button>
         </div>
       </div>
 
-      {(anyOverlay || toggles.encounters) && (
+      {(anyOverlay || encountersOn) && (
         <div className="map-canvas__legend">
           {toggles.grid && (
             <span className="map-canvas__legend-item">
@@ -956,7 +960,7 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
               </span>
             </>
           )}
-          {toggles.encounters &&
+          {encountersOn &&
             (encounterError ? (
               <span className="map-canvas__legend-item" role="alert">
                 {encounterError}
@@ -980,7 +984,7 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
           onMouseLeave={onMouseLeave}
         />
         <EncounterBorder
-          enabled={toggles.encounters}
+          enabled={encountersOn}
           entries={borderEntries}
           zoom={zoom * METATILE_PX}
           lodZoom={0}

@@ -94,10 +94,8 @@ interface Toggles {
   grid: boolean;
   collision: boolean;
   events: boolean;
-  /** The encounter border (B4): DOM over the viewport, so it never joins the canvas overlay recomposite. */
-  encounters: boolean;
 }
-const NO_TOGGLES: Toggles = { grid: false, collision: false, events: false, encounters: false };
+const NO_TOGGLES: Toggles = { grid: false, collision: false, events: false };
 
 export interface GbcMapCanvasProps {
   mapName: string;
@@ -240,6 +238,11 @@ export function GbcMapCanvas({ mapName, data, time, hoveredMetatile }: GbcMapCan
 
   const [imgLoaded, setImgLoaded] = useState(false);
   const [toggles, setToggles] = useState<Toggles>(NO_TOGGLES);
+  // The encounter border toggle (B4) is DOM over the viewport, not a canvas overlay, so it is not in
+  // `Toggles`. It remembers WHICH map it was turned on for: a map switch reads as off in the very first
+  // render (no fetch for the new map, no stale border), with no reset effect needed.
+  const [encountersFor, setEncountersFor] = useState<string | null>(null);
+  const encountersOn = encountersFor === mapName;
   const [view, setView] = useState<GbcView>({ zoom: 1, pan: { x: 0, y: 0 } });
   const { zoom, pan } = view;
   const [hover, setHover] = useState<GbcStepInfo | null>(null);
@@ -269,13 +272,14 @@ export function GbcMapCanvas({ mapName, data, time, hoveredMetatile }: GbcMapCan
   // directions are already compass names).
   const connections = data.map.connections;
   const side = useMemo(() => borderSideFromConnections(new Set(connections.map((c) => c.direction))), [connections]);
-  const { summaries: encounterSummaries, error: encounterError } = useMapEncounterSummaries(mapName, "gbc", toggles.encounters);
+  const { summaries: encounterSummaries, error: encounterError } = useMapEncounterSummaries(mapName, "gbc", encountersOn);
 
   const imageUrl = `/api/render/${encodeURIComponent(mapName)}.png?border=${BORDER_RINGS}&time=${time}`;
 
   // Fresh overlays/hover on a real map switch -- mirrors MapCanvas.tsx:371-374.
   useEffect(() => {
     setToggles(NO_TOGGLES);
+    setEncountersFor(null); // only so A -> B -> A does not bring A's border back; B is already off without it
     setHover(null);
     hoveredMetatile?.(null);
     // hoveredMetatile is intentionally excluded: it is a plain prop
@@ -297,7 +301,7 @@ export function GbcMapCanvas({ mapName, data, time, hoveredMetatile }: GbcMapCan
     const vw = viewport.w || pixelWidth;
     const vh = viewport.h || pixelHeight;
     // Encounters on: the content is the image plus one band on the border's side, so the sprites fit too.
-    const bandNative = toggles.encounters ? BORDER_BAND.gbc * BLOCK_PX : 0;
+    const bandNative = encountersOn ? BORDER_BAND.gbc * BLOCK_PX : 0;
     const extraW = side === "left" || side === "right" ? bandNative : 0;
     const extraH = side === "top" || side === "bottom" ? bandNative : 0;
     let z: Zoom = 1;
@@ -311,7 +315,7 @@ export function GbcMapCanvas({ mapName, data, time, hoveredMetatile }: GbcMapCan
         y: Math.round((vh - (pixelHeight + extraH) * z) / 2) + (side === "top" ? bandNative * z : 0),
       },
     });
-  }, [pixelWidth, pixelHeight, viewport, toggles.encounters, side]);
+  }, [pixelWidth, pixelHeight, viewport, encountersOn, side]);
 
   // Once per real map open -- NOT on a time switch, which reuses the same
   // imgLoaded false->true cycle (MapCanvas.tsx:401-416's own fittedForMapRef
@@ -497,13 +501,13 @@ export function GbcMapCanvas({ mapName, data, time, hoveredMetatile }: GbcMapCan
           <button type="button" className="map-canvas__btn" aria-pressed={toggles.events} onClick={() => toggle("events")}>
             Events
           </button>
-          <button type="button" className="map-canvas__btn" aria-pressed={toggles.encounters} onClick={() => toggle("encounters")}>
+          <button type="button" className="map-canvas__btn" aria-pressed={encountersOn} onClick={() => setEncountersFor(encountersOn ? null : mapName)}>
             Encounters
           </button>
         </div>
       </div>
 
-      {(anyOverlay || toggles.encounters) && (
+      {(anyOverlay || encountersOn) && (
         <div className="map-canvas__legend">
           {toggles.grid && (
             <span className="map-canvas__legend-item">
@@ -536,7 +540,7 @@ export function GbcMapCanvas({ mapName, data, time, hoveredMetatile }: GbcMapCan
               </span>
             </>
           )}
-          {toggles.encounters &&
+          {encountersOn &&
             (encounterError ? (
               <span className="map-canvas__legend-item" role="alert">
                 {encounterError}
@@ -562,7 +566,7 @@ export function GbcMapCanvas({ mapName, data, time, hoveredMetatile }: GbcMapCan
           onMouseLeave={onMouseLeave}
         />
         <EncounterBorder
-          enabled={toggles.encounters}
+          enabled={encountersOn}
           entries={borderEntries}
           zoom={zoom * BLOCK_PX}
           lodZoom={0}
