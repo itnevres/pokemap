@@ -1293,6 +1293,47 @@ describe("WorldCanvas", () => {
   // Map-list jump (App.tsx passes jumpToMap/jumpToken)
   // -------------------------------------------------------------------
   describe("jump to map", () => {
+    // The highlight's 2 s fade is a real setTimeout (WorldCanvas.tsx, grep
+    // `setJumpHighlight(null), 2000`). Under full-suite load, mount-to-assert
+    // can take longer than 2 s, so the fade fired before these tests looked
+    // and they flaked (the long-unidentified Windows flake, 2026-09-30).
+    // Every 2000 ms timer is held here instead and fires only on
+    // `fade.flush()`; clearTimeout on a held id drops it, so a cancelled fade
+    // stays cancelled exactly as a real one would.
+    const FADE_MS = 2000;
+    let fade: { pending: Map<number, () => void>; flush: () => void };
+    let timerSpies: Array<{ mockRestore: () => void }> = [];
+    beforeEach(() => {
+      const realSet = globalThis.setTimeout;
+      const realClear = globalThis.clearTimeout;
+      const pending = new Map<number, () => void>();
+      let nextId = 1_000_000;
+      timerSpies = [
+        vi.spyOn(globalThis, "setTimeout").mockImplementation(((cb: () => void, ms?: number, ...args: unknown[]) => {
+          if (ms !== FADE_MS) return realSet(cb, ms, ...args);
+          const id = nextId++;
+          pending.set(id, cb);
+          return id;
+        }) as typeof setTimeout),
+        vi.spyOn(globalThis, "clearTimeout").mockImplementation(((id?: Parameters<typeof clearTimeout>[0]) => {
+          if (typeof id === "number" && pending.delete(id)) return;
+          realClear(id);
+        }) as typeof clearTimeout),
+      ];
+      fade = {
+        pending,
+        flush: () =>
+          act(() => {
+            const cbs = [...pending.values()];
+            pending.clear();
+            for (const cb of cbs) cb();
+          }),
+      };
+    });
+    afterEach(() => {
+      for (const s of timerSpies) s.mockRestore();
+    });
+
     it("pans/zooms to the given map's real placement when jumpToken changes", async () => {
       const { impl } = makeFetchMock(
         makeWorld({
@@ -1388,16 +1429,13 @@ describe("WorldCanvas", () => {
       // cleared the highlight early.
       expect(container.querySelector(".world-canvas__jump-highlight")).toBeTruthy();
 
-      // Real wait past the 2s fade window (same convention as
-      // SpeciesSpotlight.test.tsx's debounce tests -- real timers, not
-      // fake, since fake timers don't intercept a setTimeout that was
-      // already scheduled by an effect that ran before they were enabled).
-      // A broken implementation that puts the fade timeout inside the
-      // jump-triggering effect leaves this stuck forever: the drag's
-      // `world` update re-ran that effect, its cleanup cleared the pending
-      // timer, and the appliedJumpTokenRef guard made the effect body
-      // return early -- before a replacement timer was ever scheduled.
-      await new Promise((r) => setTimeout(r, 2100));
+      // Fire the held fade (see `fade` above). A broken implementation that
+      // puts the fade timeout inside the jump-triggering effect leaves this
+      // stuck forever: the drag's `world` update re-ran that effect, its
+      // cleanup cleared the pending timer, and the appliedJumpTokenRef guard
+      // made the effect body return early -- before a replacement timer was
+      // ever scheduled. Nothing is left pending, so the flush clears nothing.
+      fade.flush();
       expect(container.querySelector(".world-canvas__jump-highlight")).toBeNull();
     });
   });
