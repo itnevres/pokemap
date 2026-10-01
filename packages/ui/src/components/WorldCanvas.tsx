@@ -2,7 +2,11 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Placement, Component as WorldComponentInfo, Conflict, VerticalLink } from "@pokemap/core/src/world/connections.js";
 import type { SpeciesHit } from "@pokemap/core/src/analyse/coverage.js";
 import type { WarpEvent } from "@pokemap/core/src/load/maps.js";
-import { EncounterGutter, type EncounterGutterMapEntry, type EncounterGutterRow } from "./EncounterGutter.js";
+import { EncounterBorder, type EncounterBorderEntry } from "./EncounterBorder.js";
+import { BORDER_BAND, pickBorderSide, type BorderSide, type Rect } from "../encounters/borderSide.js";
+import { isGbaEncountersPayload } from "../encounters/guards.js";
+import { summariseGba, type GbaEncounterRow, type SpeciesSummary } from "../encounters/summary.js";
+import { fetchGuarded } from "../hooks/useGuardedFetch.js";
 import { SpeciesSpotlight } from "./SpeciesSpotlight.js";
 import { LensPanel, type LensId } from "./LensPanel.js";
 import { WarpDestinationModal } from "./WarpDestinationModal.js";
@@ -107,11 +111,13 @@ interface ImageCacheEntry {
  *  placeholder is written synchronously before the fetch starts, so a second
  *  effect run for the same map (another placement scrolling into view, or a
  *  pan that doesn't drop this one) sees `.has(map)` and never double-fetches.
- *  `methods` stays unset on a failed fetch -- EncounterGutter already treats
- *  an unset map as "nothing to show", not an error banner. */
+ *  `methods` stays unset on a failed fetch: that map just shows nothing (the
+ *  failure is counted and disclosed in the toolbar, see `encounterFailedCount`). */
 interface EncounterCacheEntry {
   loaded: boolean;
-  methods?: EncounterGutterRow[];
+  methods?: GbaEncounterRow[];
+  /** `summariseGba(methods)`, built once on arrival. */
+  summaries?: SpeciesSummary[];
 }
 
 /** WarpEvent plus the destMapName the server route resolves onto it. */
@@ -352,6 +358,10 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
   const [zoom, setZoom] = useState(1);
   const [compositeVersion, setCompositeVersion] = useState(0);
   const [encounterVersion, setEncounterVersion] = useState(0);
+  // How many maps' /api/encounters fetch failed (non-OK, or a shape that fails
+  // isGbaEncountersPayload, e.g. a GBC-shaped reply): shown as a toolbar note
+  // so a failed map is not indistinguishable from "no encounters here".
+  const [encounterFailedCount, setEncounterFailedCount] = useState(0);
   const [warpVersion, setWarpVersion] = useState(0);
   // Feature B: off by default (spec §4.1), same visual family as the
   // existing dungeon-auto-layout switch.
@@ -771,11 +781,14 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
   // viewport (in world-tile space) are considered "visible". With 1,209
   // maps this is what keeps both the draw loop and the image-loading effect
   // below cheap regardless of how far out the user has zoomed.
-  const visible = useMemo(() => {
-    if (!world) return [] as Placement[];
-    const x0 = -pan.x / zoom, y0 = -pan.y / zoom;
-    const x1 = (viewport.w - pan.x) / zoom, y1 = (viewport.h - pan.y) / zoom;
-    const out: Placement[] = [];
+  //
+  // Plan 6c B3: split in two. `drawnPlacements` is everything drawn (no
+  // viewport cull) and does not depend on pan/zoom, so the encounter border's
+  // side choice can be memoised on it: a map just off-screen still blocks a
+  // side. `visible` below culls it to the viewport.
+  const drawnPlacements = useMemo(() => {
+    if (!world) return [] as WirePlacement[];
+    const out: WirePlacement[] = [];
     // Feature C (dungeon mode): when mapFilter is set, it is the entire
     // candidate corpus, not just an extra filter over world.placements --
     // a dungeon's member maps are usually scattered across the full 1,209-
@@ -786,8 +799,8 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
     // this component's actual job here is to show exactly (and only) the
     // filtered set, culled against ITS OWN viewport.
     // Review fix: the unfiltered branch used to spread world.placements
-    // into a brand-new 1,209-element array on every call -- and `visible`
-    // recomputes every pan/drag frame (it depends on `pan`/`zoom`, both
+    // into a brand-new 1,209-element array on every call -- and this memo
+    // recomputed every pan/drag frame (it depended on `pan`/`zoom`, both
     // updated per mousemove), so that was a needless full-corpus array
     // copy on the hot pan-drag path, the same class of per-drag-frame
     // rebuild sizeByMap's and unplacedNames' own Review fix comments above
@@ -827,10 +840,21 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
       // in `conflicts` or `verticalLinks`), but worth knowing before
       // relying on "visible == everything a badge might touch".
       if (!mapFilter && !drawnByDefault(p) && !revealedMaps.has(p.map)) continue;
+      out.push(p);
+    }
+    return out;
+  }, [world, sizeByMap, revealedMaps, mapFilter]);
+
+  const visible = useMemo(() => {
+    const x0 = -pan.x / zoom, y0 = -pan.y / zoom;
+    const x1 = (viewport.w - pan.x) / zoom, y1 = (viewport.h - pan.y) / zoom;
+    const out: Placement[] = [];
+    for (const p of drawnPlacements) {
+      const size = sizeOfPlacement(p, sizeByMap);
       if (intersects(p.x, p.y, size.width, size.height, x0, y0, x1, y1)) out.push(p);
     }
     return out;
-  }, [world, pan, zoom, viewport, sizeByMap, revealedMaps, mapFilter]);
+  }, [drawnPlacements, pan, zoom, viewport, sizeByMap]);
 
   // Feature A: how many CURRENTLY-PLACED maps are hidden by the same
   // mapType/manual filter `visible` just applied -- i.e. placed but not
@@ -886,34 +910,38 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
   // Fetches each visible placement's encounter data at most once per map,
   // mirroring the image-loading effect just above exactly (same
   // cache-by-ref placeholder + version-bump-on-arrival shape). Unconditional
-  // on the encounter gutter's own enabled state -- that toggle is
-  // EncounterGutter's own local state, not lifted here, so it stays a
+  // on the encounter border's own enabled state -- that toggle is
+  // EncounterBorder's own local state, not lifted here, so it stays a
   // self-contained component; fetching for every visible map regardless
   // means turning the toggle on shows data immediately rather than kicking
   // off a fetch at that moment, the same "fetch what's visible, let a
   // toggle only control display" choice the image cache above already
-  // makes.
+  // makes. Goes through the shared fetchGuarded (fetch, ok-check, shape
+  // guard, real Error), like GbcWorldCanvas's own encounter fetch. The
+  // per-map summary is built once, on arrival, so a version bump never
+  // re-summarises every cached map.
   useEffect(() => {
     for (const p of visible) {
       if (encounterCacheRef.current.has(p.map)) continue;
       const entry: EncounterCacheEntry = { loaded: false };
       encounterCacheRef.current.set(p.map, entry);
-      fetch(`/api/encounters/${encodeURIComponent(p.map)}`)
-        .then((r) => {
-          if (!r.ok) throw new Error(`GET /api/encounters/${p.map} -> ${r.status}`);
-          return r.json() as Promise<{ methods: EncounterGutterRow[] }>;
-        })
+      const url = `/api/encounters/${encodeURIComponent(p.map)}`;
+      fetchGuarded(url, isGbaEncountersPayload, url)
         .then((d) => {
           entry.loaded = true;
           entry.methods = d.methods;
+          entry.summaries = summariseGba(d.methods);
           setEncounterVersion((v) => v + 1);
         })
         .catch(() => {
-          // Best-effort, matching the image cache's own posture: a failed
-          // fetch just leaves this one map's gutter entry empty, not a
-          // banner over an otherwise-working canvas. Still marked loaded so
-          // this effect does not retry it forever.
+          // Best-effort, matching the image cache's own posture (one map's
+          // border/tint entry stays empty, not a banner over an otherwise-
+          // working canvas) -- but COUNTED, so "empty" is disclosed rather
+          // than indistinguishable from "no encounters here" (a normal
+          // state). Still marked loaded so this effect never retries a
+          // failed map.
           entry.loaded = true;
+          setEncounterFailedCount((c) => c + 1);
           setEncounterVersion((v) => v + 1);
         });
     }
@@ -953,26 +981,46 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
     }
   }, [visible]);
 
-  // Screen-space rect per visible placement, in EncounterGutter's own prop
+  // Which side of each drawn map the encounter border sits on (B2's
+  // pickBorderSide, world tiles). Over the DRAWN set, not the viewport-culled
+  // `visible`: a map just off-screen still blocks a side. Deps are
+  // drawnPlacements/sizeByMap only -- never pan/zoom, or this would re-run on
+  // every drag frame. Every drawn rect is passed as the neighbour list,
+  // including the map's own: that blocks nothing, since the bands lie strictly
+  // outside it (pickBorderSide's own doc comment).
+  // ponytail: O(n^2) over the drawn maps (~500 on the GBA corpus), fine once
+  // per layout change; a spatial index if n grows.
+  const sideByMap = useMemo(() => {
+    const rects = drawnPlacements.map((p) => {
+      const size = sizeOfPlacement(p, sizeByMap);
+      return { x: p.x, y: p.y, width: size.width, height: size.height };
+    });
+    const m = new Map<string, BorderSide>();
+    drawnPlacements.forEach((p, i) => m.set(p.map, pickBorderSide(rects[i]!, rects, BORDER_BAND.gba)));
+    return m;
+  }, [drawnPlacements, sizeByMap]);
+
+  // Screen-space rect per visible placement, in EncounterBorder's own prop
   // shape -- the exact same dx/dy/dw/dh formula the draw effect below uses
-  // for each placement's own image blit, so the gutter always lines up with
+  // for each placement's own image blit, so the border always lines up with
   // the map it describes.
-  const encounterEntries = useMemo<EncounterGutterMapEntry[]>(() => {
+  const borderEntries = useMemo<EncounterBorderEntry[]>(() => {
     return visible.map((p) => {
       const size = sizeOfPlacement(p, sizeByMap);
       const cache = encounterCacheRef.current.get(p.map);
       return {
         map: p.map,
         rect: { x: p.x * zoom + pan.x, y: p.y * zoom + pan.y, width: size.width * zoom, height: size.height * zoom },
-        methods: cache?.loaded ? (cache.methods ?? []) : undefined,
+        side: sideByMap.get(p.map) ?? "left",
+        summaries: cache?.loaded ? (cache.summaries ?? []) : undefined,
       };
     });
-  }, [visible, sizeByMap, pan, zoom, encounterVersion]);
+  }, [visible, sizeByMap, sideByMap, pan, zoom, encounterVersion]);
 
   // Task 29: species spotlight + coverage lenses. Both are DOM overlays,
   // not canvas draw calls -- the same "presentational rects positioned by
-  // the exact dx/dy/dw/dh formula the encounter gutter's own `rect` prop
-  // uses" split as encounterEntries just above, kept out of the imperative
+  // the exact dx/dy/dw/dh formula the encounter border's own `rect` prop
+  // uses" split as borderEntries just above, kept out of the imperative
   // draw effect below (already dense, and already the subject of several
   // review-fix postmortems in this file) rather than adding a second kind
   // of per-pixel drawing to it.
@@ -1037,7 +1085,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
 
   // Which non-land method (if any) a visible map's already-fetched
   // encounter rows include, reusing encounterCacheRef -- populated by the
-  // effect above FOR the encounter gutter, but the data it holds (which
+  // effect above FOR the encounter border, but the data it holds (which
   // methods a map has) is exactly what the method lens also needs, so this
   // is a second reader of that same cache, not a second fetch. Water >
   // fishing > rock smash is a fixed display priority for a map with more
@@ -1052,8 +1100,8 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
   }, []);
 
   const lensOverlayEntries = useMemo(() => {
-    if (!lens) return [] as Array<{ map: string; rect: EncounterGutterMapEntry["rect"]; color: string }>;
-    const out: Array<{ map: string; rect: EncounterGutterMapEntry["rect"]; color: string }> = [];
+    if (!lens) return [] as Array<{ map: string; rect: Rect; color: string }>;
+    const out: Array<{ map: string; rect: Rect; color: string }> = [];
     for (const p of visible) {
       let color: string | null = null;
       if (lens === "level-curve") color = levelColorByMap.get(p.map) ?? null;
@@ -1095,7 +1143,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
   }, [spotlightHits]);
 
   const spotlightOverlayEntries = useMemo(() => {
-    if (!spotlightHits) return [] as Array<{ map: string; rect: EncounterGutterMapEntry["rect"]; hit: SpeciesHit | null }>;
+    if (!spotlightHits) return [] as Array<{ map: string; rect: Rect; hit: SpeciesHit | null }>;
     return visible.map((p) => {
       const size = sizeOfPlacement(p, sizeByMap);
       return {
@@ -1110,14 +1158,13 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
   // already treated as too fine to render -- this file established that
   // exact threshold (4) for exactly that meaning TWICE already: the draw
   // effect's own LOD switch above (full-res image vs. the cached
-  // downscaled buffer) and EncounterGutter's own LOW_ZOOM_THRESHOLD
-  // (deliberately tethered to this same constant, per that component's own
-  // comment). Without this gate, the full corpus's ~1,662 warp markers
+  // downscaled buffer) and EncounterBorder's own `lodZoom` prop
+  // (this same constant is passed to it). Without this gate, the full corpus's ~1,662 warp markers
   // render at full zoom-out with no size scaling of their own -- an
   // unreadable smear on small maps, and real per-frame draw cost at the
   // extreme. Reusing LOD_ZOOM_THRESHOLD itself (not a second literal 4)
   // keeps this file's "too zoomed out for per-map detail" meaning anchored
-  // to one constant, matching EncounterGutter's own precedent.
+  // to one constant, as the EncounterBorder mount below does too.
   const warpMarkerEntries = useMemo<WarpMarkerEntry[]>(() => {
     if (!warpsOn || zoom < LOD_ZOOM_THRESHOLD) return [];
     const out: WarpMarkerEntry[] = [];
@@ -1226,8 +1273,8 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
   }, [mapFilter, linesOn, world, zoom, pan, warpVersion]);
 
   const selectionOverlayEntries = useMemo(() => {
-    if (selected.size === 0) return [] as Array<{ map: string; rect: EncounterGutterMapEntry["rect"] }>;
-    const out: Array<{ map: string; rect: EncounterGutterMapEntry["rect"] }> = [];
+    if (selected.size === 0) return [] as Array<{ map: string; rect: Rect }>;
+    const out: Array<{ map: string; rect: Rect }> = [];
     for (const p of visible) {
       if (!selected.has(p.map)) continue;
       const size = sizeOfPlacement(p, sizeByMap);
@@ -1743,6 +1790,16 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
             <span className="world-canvas__switch-label">Connection lines {linesOn ? "on" : "off"}</span>
           </div>
         )}
+        {/* A visible note, not a silent gap, for however many maps' own
+            /api/encounters fetch failed (a non-OK status, or a shape that fails
+            isGbaEncountersPayload) -- same markup as GbcWorldCanvas's. */}
+        {encounterFailedCount > 0 && (
+          <div className="world-canvas__toolbar-group">
+            <span className="world-canvas__toolbar-error" role="alert">
+              Encounter data unavailable for {encounterFailedCount} map{encounterFailedCount === 1 ? "" : "s"}
+            </span>
+          </div>
+        )}
         <div className="world-canvas__toolbar-group world-canvas__toolbar-group--grow">
           <SpeciesSpotlight onHits={setSpotlightHits} />
           {/* Review fix: a failed /api/coverage fetch used to fall through
@@ -1812,7 +1869,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
             onDragOver={onDragOverCanvas}
             onDrop={onDropOnCanvas}
           />
-          <EncounterGutter maps={encounterEntries} zoom={zoom} />
+          <EncounterBorder entries={borderEntries} zoom={zoom} lodZoom={LOD_ZOOM_THRESHOLD} band={BORDER_BAND.gba} />
           {selectionOverlayEntries.length > 0 && (
             <div className="world-canvas__selection" aria-hidden="true">
               {selectionOverlayEntries.map((e) => (

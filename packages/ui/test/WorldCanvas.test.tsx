@@ -129,6 +129,16 @@ function makeFetchMock(initial: WorldFixture) {
         json: () => Promise.resolve(["SPECIES_MAGIKARP", "SPECIES_PIKACHU"]),
       } as Response);
     }
+    // Plan 6c B3: the encounter fetch is now guarded and COUNTED -- an
+    // unanswered route would render an "Encounter data unavailable" alert
+    // (role="alert") in every test here, colliding with the saveError/coverage
+    // alerts the tests below look up by role. Same precedent as the
+    // /api/coverage route above; no test in this file reads its content
+    // except the "encounter border" describe, which layers its own.
+    if (url.startsWith("/api/encounters/")) {
+      const name = decodeURIComponent(url.slice("/api/encounters/".length));
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ mapName: name, mapId: 1, methods: [] }) } as Response);
+    }
     if (url.startsWith("/api/warps/")) {
       const name = decodeURIComponent(url.slice("/api/warps/".length));
       return Promise.resolve({
@@ -2093,5 +2103,84 @@ describe("WorldCanvas", () => {
         expect(utils.container.querySelectorAll(".world-canvas__connections line").length).toBe(2);
       });
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Plan 6c B3: the encounter border replaces the per-family gutter.
+// ---------------------------------------------------------------------------
+describe("WorldCanvas: encounter border (Plan 6c B3)", () => {
+  /** Layers per-map /api/encounters responses (and a call log) over makeFetchMock. */
+  function withEncounters(base: ReturnType<typeof makeFetchMock>["impl"], respond: (name: string) => unknown) {
+    const calls: string[] = [];
+    const impl = vi.fn((url: string, init?: RequestInit) => {
+      const m = /^\/api\/encounters\/(.+)$/.exec(url);
+      if (!m) return base(url, init);
+      const name = decodeURIComponent(m[1]!);
+      calls.push(name);
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(respond(name)) } as Response);
+    });
+    return { impl, calls };
+  }
+
+  const espeon = { species: "SPECIES_ESPEON", percent: 37.5, minLevel: 2, maxLevel: 4, slots: [0, 1] };
+  const rattata = { species: "SPECIES_RATTATA", percent: 12.5, minLevel: 3, maxLevel: 3, slots: [2] };
+
+  // Viewport is [0,100)^2 at zoom 1. Target sits at x=0, so its left band is
+  // [-4,0) -- and Blocker (flush at x -10..0) is entirely OFF-screen, culled
+  // from `visible`. It must still block the left side: the side is chosen
+  // over the drawn set, not the viewport-culled one.
+  const SIDE_WORLD = makeWorld({
+    placements: {
+      Target: { map: "Target", x: 0, y: 20, width: 10, height: 10, component: 0 },
+      Blocker: { map: "Blocker", x: -10, y: 20, width: 10, height: 10, component: 1 },
+      Free: { map: "Free", x: 60, y: 60, width: 10, height: 10, component: 2 },
+    },
+  });
+
+  it("puts the border on the side pickBorderSide gives: Target's left is blocked by an off-screen neighbour -> top; Free stays left", async () => {
+    const { impl } = withEncounters(makeFetchMock(SIDE_WORLD).impl, () => ({ mapName: "x", mapId: 1, methods: [{ method: "land_mons", chances: [espeon, rattata] }] }));
+    const { container } = await mountReady(impl);
+    fireEvent.click(await screen.findByRole("button", { name: "Encounters" }));
+    // zoom 1 < the LOD threshold, so each map shows its count badge, in its band rect.
+    await waitFor(() => expect(container.querySelectorAll(".encounter-border__badge").length).toBe(2));
+    const badgeFor = (map: string) => [...container.querySelectorAll<HTMLElement>(".encounter-border__badge")].find((b) => b.textContent!.startsWith(map))!;
+    const target = badgeFor("Target");
+    expect(target.className).toContain("encounter-border__badge--top");
+    expect(target.textContent).toBe("Target · 2 species");
+    // top band of {0,20,10,10} at zoom 1, band 4: {0,16,10,4}
+    expect([target.style.left, target.style.top, target.style.width, target.style.height]).toEqual(["0px", "16px", "10px", "4px"]);
+    expect(badgeFor("Free").className).toContain("encounter-border__badge--left");
+  });
+
+  it("fetches /api/encounters/:map once per visible map and does not refetch on zoom", async () => {
+    const { impl, calls } = withEncounters(makeFetchMock(SIDE_WORLD).impl, () => ({ mapName: "x", mapId: 1, methods: [] }));
+    const { canvas } = await mountReady(impl);
+    await waitFor(() => expect(calls.length).toBe(2));
+    expect([...calls].sort()).toEqual(["Free", "Target"]); // Blocker is off-screen
+    fireEvent.wheel(canvas, { clientX: 50, clientY: 50, deltaY: -100 });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(calls.length).toBe(2);
+  });
+
+  it("a GBC-shaped payload shows 'Encounter data unavailable for 1 map' and is not retried", async () => {
+    const world = makeWorld({ placements: { Solo: { map: "Solo", x: 0, y: 0, width: 10, height: 10, component: 0 } } });
+    const { impl, calls } = withEncounters(makeFetchMock(world).impl, (name) => ({ family: "gbc", mapName: name, sources: [], defects: [] }));
+    const { canvas } = await mountReady(impl);
+    await waitFor(() => expect(screen.getByText("Encounter data unavailable for 1 map")).toBeTruthy());
+    fireEvent.wheel(canvas, { clientX: 50, clientY: 50, deltaY: -100 });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(calls).toEqual(["Solo"]);
+    expect(screen.getByText("Encounter data unavailable for 1 map")).toBeTruthy(); // still 1: no second failure counted
+  });
+
+  it("a non-OK encounters response is counted too", async () => {
+    const world = makeWorld({ placements: { Solo: { map: "Solo", x: 0, y: 0, width: 10, height: 10, component: 0 } } });
+    const base = makeFetchMock(world).impl;
+    const impl = vi.fn((url: string, init?: RequestInit) =>
+      url.startsWith("/api/encounters/") ? Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({}) } as Response) : base(url, init),
+    );
+    await mountReady(impl);
+    await waitFor(() => expect(screen.getByText("Encounter data unavailable for 1 map")).toBeTruthy());
   });
 });
