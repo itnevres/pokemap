@@ -1397,6 +1397,237 @@ input {
   pointer-events: none;
 }
 
+/* Encounter border (Plan 6c B3): one sprite per species on a free side of each
+   map, mounted once inside .world-canvas__viewport (position: relative) so the
+   inline left/top/width/height per strip are viewport-relative screen px. The
+   root is pointer-events: none so it never steals the canvas's own pan/drag;
+   only the toggle, legend, sprites and +N chips opt back in. */
+.encounter-border {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.encounter-border__control {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  /* Explicit paint order: with no z-index here, later siblings (badges,
+     strips) paint over this control, so a badge could sit on the legend's own
+     text -- backwards, since the legend exists to be read before the data it
+     explains. */
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-2);
+  pointer-events: auto;
+}
+
+.encounter-border__toggle {
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  font-weight: 500;
+  padding: var(--space-1) var(--space-2);
+  border-radius: 4px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  transition: background-color 150ms ease-out, border-color 150ms ease-out, color 150ms ease-out;
+}
+
+.encounter-border__toggle:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.encounter-border__toggle[aria-pressed="true"] {
+  background: var(--bg-selected);
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+.encounter-border__legend {
+  width: 240px;
+  padding: var(--space-3);
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.encounter-border__legend-title {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.encounter-border__legend-body {
+  margin: 0 0 var(--space-2);
+  line-height: 1.4;
+}
+
+/* A tiny dimmed, dashed square: the legend's own picture of a dimmed sprite. */
+.encounter-border__legend-sample {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-right: var(--space-1);
+  vertical-align: middle;
+  opacity: 0.4;
+  outline: 1px dashed var(--text-muted);
+}
+
+.encounter-border__legend-hint {
+  margin: 0;
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: var(--text-2xs);
+  line-height: 1.4;
+}
+
+/* The strip fills exactly the band beside its map (inline left/top/width/
+   height from bandRect), sprites flowing along the side from the map's top/left
+   corner and centred across the band. */
+.encounter-border__strip {
+  position: absolute;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  pointer-events: none;
+}
+
+.encounter-border__strip--left,
+.encounter-border__strip--right {
+  flex-direction: column;
+}
+
+.encounter-border__strip--top,
+.encounter-border__strip--bottom {
+  flex-direction: row;
+}
+
+/* Sized inline (spritePx square). The tile gives GBC's opaque white front
+   sprites a card to sit on rather than reading as a hole, and is harmless
+   behind GBA's transparent icons. */
+.encounter-border__sprite {
+  position: relative;
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  display: block;
+  padding: 0;
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: border-color 150ms ease-out;
+}
+
+.encounter-border__sprite:hover,
+.encounter-border__sprite:focus-visible {
+  border-color: var(--focus-ring);
+  z-index: 1;
+}
+
+.encounter-border__sprite:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.encounter-border__sprite img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 3px;
+  image-rendering: pixelated;
+}
+
+/* Not encountered at the current time of day (GBC): dimmed AND dashed, so the
+   state is not carried by opacity alone. */
+.encounter-border__sprite--dimmed {
+  opacity: 0.4;
+  outline: 1px dashed var(--text-muted);
+}
+
+.encounter-border__more {
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-data);
+  font-size: var(--text-2xs);
+  color: var(--text-secondary);
+  pointer-events: auto;
+}
+
+/* Low-zoom collapse: a count pill in the band rect instead of unreadable
+   sprites. The band is often thinner than the text, so the text overflows it
+   (away from the map on the left side). */
+.encounter-border__badge {
+  position: absolute;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  pointer-events: none;
+}
+
+.encounter-border__badge--left {
+  justify-content: flex-end;
+}
+
+.encounter-border__badge-text {
+  flex: 0 0 auto;
+  padding: 2px var(--space-2);
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  font-family: var(--font-data);
+  font-size: var(--text-2xs);
+  font-weight: 500;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+/* A top-level sibling of the control and strips, never nested in a strip: a
+   strip is its own stacking context and would trap this under the legend.
+   left/top are the sprite's top-centre anchor (computed at hover time);
+   transform centres it on that point and lifts it clear above the sprite. */
+.encounter-border__tooltip {
+  position: absolute;
+  z-index: 4;
+  transform: translate(-50%, calc(-100% - 6px));
+  padding: var(--space-1) var(--space-2);
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  font-family: var(--font-data);
+  font-size: var(--text-2xs);
+  color: var(--text-primary);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.encounter-border__tooltip-line {
+  display: block;
+}
+
+.encounter-border__tooltip-line:first-child {
+  font-weight: 600;
+}
+
 /* Species spotlight + coverage lenses (Task 29). Both toolbar controls are
    purely presentational (search box; toggle strip + legend) -- mirrors
    EncounterGutter's own "presentational child, caller draws" split; the
