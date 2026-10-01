@@ -576,6 +576,13 @@ input {
   gap: var(--space-1);
 }
 
+/* A failed encounter fetch shows its message here; the guarded-fetch text can
+   hold a long unspaced token, which must wrap instead of overflowing the row. */
+.map-canvas__legend-item[role="alert"] {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .map-canvas__swatch {
   display: inline-block;
   width: 10px;

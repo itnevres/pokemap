@@ -532,3 +532,16 @@ describe("EncounterBorder: controlled mode (enabled prop)", () => {
     expect(screen.queryByRole("tooltip")).toBeNull();
   });
 });
+
+describe("map-view legend: error text wraps (B4 QR-5)", () => {
+  // The guarded-fetch message embeds up to 200 chars of unspaced JSON, so the alert item needs min-width: 0
+  // and overflow-wrap in the flex-wrap legend row.
+  const css = readFileSync(resolve(process.cwd(), "packages/ui/src/styles.css"), "utf8");
+  it('`.map-canvas__legend-item[role="alert"]` has min-width: 0 and overflow-wrap: anywhere', () => {
+    const start = css.indexOf('\n.map-canvas__legend-item[role="alert"] {');
+    expect(start).toBeGreaterThan(-1);
+    const block = css.slice(css.indexOf("{", start), css.indexOf("}", start));
+    expect(block).toContain("min-width: 0");
+    expect(block).toContain("overflow-wrap: anywhere");
+  });
+});
