@@ -884,3 +884,172 @@ describe("MapCanvas", () => {
     await waitFor(() => expect(editSession.endStroke).toHaveBeenCalled());
   });
 });
+
+// ---------------------------------------------------------------------------
+// Plan 6c B4: the encounter border in the map view (GBA)
+// ---------------------------------------------------------------------------
+describe("MapCanvas: Encounters overlay (Plan 6c B4)", () => {
+  // Espeon's 37.5 is not derivable from its slot count; the GBA wire shape of /api/encounters/:map.
+  const ENC_BODY = {
+    mapName: "Foo",
+    mapId: "MAP_FOO",
+    methods: [
+      { method: "land_mons", chances: [{ species: "SPECIES_ESPEON", percent: 37.5, minLevel: 2, maxLevel: 4, slots: [0, 1] }, { species: "SPECIES_RATTATA", percent: 12.5, minLevel: 3, maxLevel: 3, slots: [2] }] },
+    ],
+  };
+  const GBC_BODY = { family: "gbc", sources: [] };
+
+  function stubEncounters(body: unknown = ENC_BODY) {
+    const f = vi.fn((_url: string) => Promise.resolve(new Response(JSON.stringify(body), { status: 200 })));
+    vi.stubGlobal("fetch", f);
+    return f;
+  }
+
+  const withConnections = (dirs: Array<"up" | "down" | "left" | "right" | "dive" | "emerge">): MapLayoutData => ({
+    ...DATA,
+    map: { ...DATA.map, connections: dirs.map((direction) => ({ map: "Bar", offset: 0, direction })) },
+  });
+
+  const setViewport = (px: number) => {
+    Object.defineProperty(HTMLElement.prototype, "clientWidth", { value: px, configurable: true });
+    Object.defineProperty(HTMLElement.prototype, "clientHeight", { value: px, configurable: true });
+  };
+
+  const encBtn = () => screen.getByRole("button", { name: "Encounters" });
+  const stripOf = (c: HTMLElement) => c.querySelector<HTMLElement>(".encounter-border__strip");
+  const box = (el: HTMLElement) => ({ left: el.style.left, top: el.style.top, width: el.style.width, height: el.style.height });
+
+  it("the Encounters toggle is the last button of the Overlays group and starts off", async () => {
+    stubEncounters();
+    await mountReady();
+    const group = screen.getByRole("group", { name: "Overlays" });
+    expect([...group.querySelectorAll("button")].map((b) => b.textContent)).toEqual(["Grid", "Collision", "Elevation", "Events", "Encounters"]);
+    expect(encBtn().getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(encBtn());
+    expect(encBtn().getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("fetches /api/encounters/:map only after the click (none before, one after), and not again on re-toggle", async () => {
+    const f = stubEncounters();
+    const { container } = await mountReady();
+    expect(f).not.toHaveBeenCalled();
+    expect(stripOf(container)).toBeNull();
+
+    fireEvent.click(encBtn());
+    await screen.findByRole("button", { name: "Espeon" });
+    expect(f).toHaveBeenCalledTimes(1);
+    expect(f.mock.calls[0]![0]).toBe("/api/encounters/Foo");
+
+    fireEvent.click(encBtn());
+    expect(stripOf(container)).toBeNull();
+    fireEvent.click(encBtn());
+    await screen.findByRole("button", { name: "Espeon" });
+    expect(f).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders the border inside the viewport with no second toggle of its own, and the legend row says how to use it", async () => {
+    stubEncounters();
+    const { container } = await mountReady();
+    fireEvent.click(encBtn());
+    await screen.findByRole("button", { name: "Espeon" });
+    expect(container.querySelector(".map-canvas__viewport .encounter-border")).not.toBeNull();
+    expect(screen.getAllByRole("button", { name: "Encounters" })).toHaveLength(1);
+    expect(container.querySelector(".encounter-border__toggle")).toBeNull();
+    expect(screen.queryByRole("note")).toBeNull();
+    expect(screen.getByText("Encounters: hover a sprite", { selector: ".map-canvas__legend-item" })).toBeTruthy();
+  });
+
+  it("a failed fetch shows the error as an alert in the legend row, not a silent empty border", async () => {
+    stubEncounters(GBC_BODY); // a GBC-shaped payload reaching a GBA canvas
+    const { container } = await mountReady();
+    fireEvent.click(encBtn());
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toMatch(/\/api\/encounters\/Foo returned an unexpected shape/);
+    expect(alert.className).toContain("map-canvas__legend-item");
+    expect(stripOf(container)).toBeNull();
+  });
+
+  it("resets to off when the map changes", async () => {
+    stubEncounters();
+    const { rerender } = await mountReady();
+    fireEvent.click(encBtn());
+    expect(encBtn().getAttribute("aria-pressed")).toBe("true");
+    rerender(<MapCanvas mapName="Bar" data={DATA} />);
+    await waitFor(() => expect(encBtn().getAttribute("aria-pressed")).toBe("false"));
+  });
+
+  // GBA direction -> compass: up=north, down=south, left=west, right=east. Left blocked = west, top = north.
+  it("up + down connections (north, south) leave the left side free: the strip is on the left", async () => {
+    stubEncounters();
+    const { container } = await mountReady({ data: withConnections(["up", "down"]) });
+    fireEvent.click(encBtn());
+    await screen.findByRole("button", { name: "Espeon" });
+    expect(container.querySelector(".encounter-border__strip--left")).not.toBeNull();
+  });
+
+  it("left + up connections (west, north) block left and top: the strip is on the right", async () => {
+    stubEncounters();
+    const { container } = await mountReady({ data: withConnections(["left", "up"]) });
+    fireEvent.click(encBtn());
+    await screen.findByRole("button", { name: "Espeon" });
+    expect(container.querySelector(".encounter-border__strip--right")).not.toBeNull();
+    expect(container.querySelector(".encounter-border__strip--left")).toBeNull();
+  });
+
+  it("dive/emerge connections are not planar: they block nothing", async () => {
+    stubEncounters();
+    const { container } = await mountReady({ data: withConnections(["dive", "emerge"]) });
+    fireEvent.click(encBtn());
+    await screen.findByRole("button", { name: "Espeon" });
+    expect(container.querySelector(".encounter-border__strip--left")).not.toBeNull();
+  });
+
+  // The fixture image is 64x64 native px (layout 2x2 + a 1-block border ring, 16 px blocks) and the GBA band
+  // is 4 metatiles = 64 native px. After Fit with the toggle on, the content is image + one band on the side:
+  //  - viewport 400, left side (up+down connections): extraW = 64.
+  //      zoom 2: (64+64)*2 = 256 <= 400; zoom 4: 128*4 = 512 > 400  -> z = 2.
+  //      content 256 x 128; centred: x0 = round((400-256)/2) = 72, y0 = round((400-128)/2) = 136.
+  //      left side: the image is pushed right by band*z = 64*2 = 128 -> pan = (72+128, 136) = (200, 136).
+  //      The image is drawn at (200,136) 128x128. EncounterBorder gets zoom 2*16 = 32 px/metatile, so
+  //      bandPx = 4*32 = 128 and the left strip = (200-128, 136, 128, 128) = (72, 136, 128, 128).
+  //      (A fit that ignores the band gives pan (136,136) and a strip at left 8.)
+  //  - viewport 200, top side (left+right connections: west, east blocked): extraH = 64.
+  //      zoom 1: 64 x (64+64) fits; zoom 2: 256 > 200 -> z = 1. Content 64 x 128;
+  //      x0 = round((200-64)/2) = 68, y0 = round((200-128)/2) = 36; top: pan.y = 36 + 64 = 100 -> pan (68, 100).
+  //      bandPx = 4*16 = 64; the top strip = (68, 100-64, 64, 64) = (68, 36, 64, 64).
+  it.each([
+    { name: "left, viewport 400", dirs: ["up", "down"] as const, vp: 400, side: "left", draw: [200, 136, 128, 128], strip: { left: "72px", top: "136px", width: "128px", height: "128px" } },
+    { name: "top, viewport 200", dirs: ["left", "right"] as const, vp: 200, side: "top", draw: [68, 100, 64, 64], strip: { left: "68px", top: "36px", width: "64px", height: "64px" } },
+  ])("Fit with Encounters on leaves room for the band: $name", async ({ dirs, vp, side, draw, strip }) => {
+    stubEncounters();
+    setViewport(vp);
+    const { container, lastDraw } = await mountReady({ data: withConnections([...dirs]) });
+    fireEvent.click(encBtn());
+    await screen.findByRole("button", { name: "Espeon" });
+    fireEvent.click(screen.getByRole("button", { name: "Fit" }));
+    await waitFor(() => expect(lastDraw().slice(5, 9)).toEqual(draw));
+    const el = container.querySelector<HTMLElement>(`.encounter-border__strip--${side}`)!;
+    expect(box(el)).toEqual(strip);
+  });
+
+  it("toggling Encounters on does not re-fit: the user's view is kept until Fit", async () => {
+    stubEncounters();
+    setViewport(400);
+    const { lastDraw } = await mountReady({ data: withConnections(["up", "down"]) });
+    const before = lastDraw().slice(5, 9); // zoom 4 (256 <= 400), centred (72,72)
+    expect(before).toEqual([72, 72, 256, 256]);
+    fireEvent.click(encBtn());
+    await screen.findByRole("button", { name: "Espeon" });
+    expect(lastDraw().slice(5, 9)).toEqual(before);
+  });
+
+  it("toggling Encounters on does not recomposite the overlay pixels (the border is DOM, not canvas)", async () => {
+    stubEncounters();
+    const { stageCtx } = await mountReady();
+    const baseCtx = [...ctxByCanvas.values()].find((c) => c !== stageCtx)!;
+    expect(baseCtx.putImageData).not.toHaveBeenCalled();
+    fireEvent.click(encBtn());
+    await screen.findByRole("button", { name: "Espeon" });
+    expect(baseCtx.putImageData).not.toHaveBeenCalled();
+  });
+});

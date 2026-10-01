@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { drawGrid, drawCollision, drawElevation, drawEvents, type EventMark } from "@pokemap/core/src/render/overlays.js";
 import type { LayoutRaster } from "@pokemap/core/src/render/layout.js";
 import type { MapData } from "@pokemap/core/src/load/maps.js";
@@ -7,6 +7,9 @@ import type { MapLayoutData } from "../hooks/useMapLayout.js";
 import type { UseEditSessionResult } from "../hooks/useEditSession.js";
 import { readBlock, type Stamp } from "@pokemap/core/src/edit/paint.js";
 import type { CollisionElevation } from "./CollisionPalette.js";
+import { EncounterBorder, type EncounterBorderEntry } from "./EncounterBorder.js";
+import { BORDER_BAND, borderSideFromConnections, gbaDirToCompass, type CompassDir } from "../encounters/borderSide.js";
+import { useMapEncounterSummaries } from "../encounters/useMapEncounterSummaries.js";
 
 /** A bare {kind,index} pointer at one event, the unit MapCanvas's own
  *  selection/drag interaction deals in -- resolving it into a full event
@@ -118,6 +121,8 @@ export interface MapCanvasProps {
  *  with the query string below and with how `originX`/`originY` are derived
  *  from `layout.borderWidth`/`borderHeight`. */
 const BORDER_RINGS = 1;
+/** Native px per world unit (one metatile) -- the encounter border's own scale, and what its band is measured in. */
+const METATILE_PX = 16;
 const ZOOM_LEVELS = [1, 2, 4] as const;
 type Zoom = (typeof ZOOM_LEVELS)[number];
 
@@ -138,9 +143,11 @@ interface Toggles {
   collision: boolean;
   elevation: boolean;
   events: boolean;
+  /** The encounter border (B4): DOM over the viewport, so it never joins the canvas overlay recomposite. */
+  encounters: boolean;
 }
 
-const NO_TOGGLES: Toggles = { grid: false, collision: false, elevation: false, events: false };
+const NO_TOGGLES: Toggles = { grid: false, collision: false, elevation: false, events: false, encounters: false };
 
 interface Hover {
   bx: number;
@@ -356,6 +363,15 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
   const originX = BORDER_RINGS * layout.borderWidth * 16;
   const originY = BORDER_RINGS * layout.borderHeight * 16;
 
+  // Encounter border side (B4): the first of left, top, right, bottom with no connection. dive/emerge
+  // are not planar, so gbaDirToCompass drops them.
+  const connections = map.connections;
+  const side = useMemo(
+    () => borderSideFromConnections(new Set(connections.map((c) => gbaDirToCompass(c.direction)).filter((d): d is CompassDir => d !== undefined))),
+    [connections],
+  );
+  const { summaries: encounterSummaries, error: encounterError } = useMapEncounterSummaries(mapName, "gba", toggles.encounters);
+
   // `v=` only when editing is live -- a read-only viewer (no editSession)
   // never paints, so it never needs a cache-bust, and always appending one
   // would just make every read-only fetch (WarpDestinationModal's preview,
@@ -390,13 +406,20 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
   const fit = useCallback(() => {
     const vw = viewport.w || pixelWidth;
     const vh = viewport.h || pixelHeight;
+    // Encounters on: the content is the image plus one band on the border's side, so the sprites fit too.
+    const bandNative = toggles.encounters ? BORDER_BAND.gba * METATILE_PX : 0;
+    const extraW = side === "left" || side === "right" ? bandNative : 0;
+    const extraH = side === "top" || side === "bottom" ? bandNative : 0;
     let z: Zoom = 1;
     for (const level of ZOOM_LEVELS) {
-      if (pixelWidth * level <= vw && pixelHeight * level <= vh) z = level;
+      if ((pixelWidth + extraW) * level <= vw && (pixelHeight + extraH) * level <= vh) z = level;
     }
     setZoom(z);
-    setPan({ x: Math.round((vw - pixelWidth * z) / 2), y: Math.round((vh - pixelHeight * z) / 2) });
-  }, [pixelWidth, pixelHeight, viewport]);
+    setPan({
+      x: Math.round((vw - (pixelWidth + extraW) * z) / 2) + (side === "left" ? bandNative * z : 0),
+      y: Math.round((vh - (pixelHeight + extraH) * z) / 2) + (side === "top" ? bandNative * z : 0),
+    });
+  }, [pixelWidth, pixelHeight, viewport, toggles.encounters, side]);
 
   // Only the FIRST successful image load for a given mapName triggers fit()
   // -- a same-map reload triggered by a paint (imgLoaded cycling false->true
@@ -854,6 +877,13 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
 
   const anyOverlay = toggles.grid || showCollision || toggles.elevation || toggles.events;
 
+  // The drawn image, border ring included, in viewport px: sprites never cover map or border-block pixels.
+  // Memoised so EncounterBorder's tooltip-clearing effect (keyed on `entries`) only fires when something moved.
+  const borderEntries = useMemo<EncounterBorderEntry[]>(
+    () => [{ map: mapName, rect: { x: pan.x, y: pan.y, width: pixelWidth * zoom, height: pixelHeight * zoom }, side, summaries: encounterSummaries }],
+    [mapName, pan.x, pan.y, pixelWidth, pixelHeight, zoom, side, encounterSummaries],
+  );
+
   return (
     <section className="map-canvas" aria-label={`${mapName} canvas`}>
       <div className="map-canvas__toolbar">
@@ -886,10 +916,13 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
           <button type="button" className="map-canvas__btn" aria-pressed={toggles.events} onClick={() => toggle("events")}>
             Events
           </button>
+          <button type="button" className="map-canvas__btn" aria-pressed={toggles.encounters} onClick={() => toggle("encounters")}>
+            Encounters
+          </button>
         </div>
       </div>
 
-      {anyOverlay && (
+      {(anyOverlay || toggles.encounters) && (
         <div className="map-canvas__legend">
           {toggles.grid && (
             <span className="map-canvas__legend-item">
@@ -922,6 +955,14 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
               </span>
             </>
           )}
+          {toggles.encounters &&
+            (encounterError ? (
+              <span className="map-canvas__legend-item" role="alert">
+                {encounterError}
+              </span>
+            ) : (
+              <span className="map-canvas__legend-item">Encounters: hover a sprite</span>
+            ))}
         </div>
       )}
 
@@ -936,6 +977,13 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
           onMouseMove={onMouseMove}
           onMouseUp={onMouseUp}
           onMouseLeave={onMouseLeave}
+        />
+        <EncounterBorder
+          enabled={toggles.encounters}
+          entries={borderEntries}
+          zoom={zoom * METATILE_PX}
+          lodZoom={0}
+          band={BORDER_BAND.gba}
         />
       </div>
 
