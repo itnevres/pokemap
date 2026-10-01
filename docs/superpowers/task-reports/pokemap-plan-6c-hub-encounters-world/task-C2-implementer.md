@@ -65,3 +65,23 @@ Fixture notes: WorldCanvas never auto-fits on load (fresh view zoom 1 = `6%`); e
 - A world click while the tree filter has focus does not scroll (spec focus guard); the row is still highlighted.
 - Live verify (criterion 5, both families) left to coordinator per spec.
 - Untracked files none created; working tree clean after commit.
+
+## Fix round (base 21314ff)
+Tree was clean at 21314ff. All reds by in-memory mutation restored by edit; no git undo.
+
+| # | item | commit | tests | red-proof |
+|---|---|---|---|---|
+| 1 | stale jump target: World button -> `enterWorld` (`setJumpTarget(selected)`, bump, `setMode`, side by side; no-op if already World), App + GbcApp; canvases and `selectMapFromWorld` untouched | 886c2a7 (App), f3011f0 (GbcApp) | App: "entering World after tree-click A, world-click B, Map view centres on B, not on the stale tree target A"; "...only a world click on B (no tree click ever) jumps to B"; "pressing World while already in World does not re-jump". GbcApp (3, same names under `entering World centres on the selection`) | `onClick={() => setMode("world")}`: tests 1+2 red in both apps. Test 3 cannot go red against that (old code never re-jumped either); red when the `if (mode === "world") return;` guard is removed instead (both apps). Mutations G3/G4a/G4c/G7 still red |
+| 2 | flake: `jump to map > pans/zooms...` waits for the highlight; rect asserted `0px/0px/100px/100px` (derived: zoom 10, pan -400, Target x/y 40 -> screen 0, 100x100; holds) | 89267b8 | same test | pan+7 mutation and no-`setJumpHighlight` mutation red; the load race itself not reproducible, spec reviewer proved the old gate vacuous |
+| 3 | SR-F2: "in Dungeon mode a canvas click on a map does not change the app's selection" (control: canvas's own `selection-outline[data-map="Route1"]` appears; dungeon sidebar has no tree, so after returning to Map mode asserts no `aria-current` row and no `.app__status`) | 886c2a7 | App | X5 (`onSelectMap` passed to dungeon canvas) red |
+| 4 | QR-2 comment at `onSelectMap?.(hit.map)` | 1c1b78d | - | - |
+| 5 | QR-3 comment in MapTree effect | 1c1b78d | - | - |
+| 6 | QR-4 positive control (ROUTE1 click then `confirm` called once) | 886c2a7 | re-click test | re-click test red under G5b as before; control goes red if the click misses |
+| 7 | QR-5: both 50 ms sleeps -> `await act(async () => {})` | 886c2a7 | first two world-click tests | G3 and G4a still red |
+| 8 | QR-6 DESIGN.md paragraph after the MapTree section | 1c1b78d | - | - |
+
+Also: `stubTwoMapWorld()` helper extracted in the App describe (my own C2 test refactored to use it); `clickMode` helpers.
+- Full suite alone: 118 files, **1,987 pass / 0 fail** (1,980 + 4 App + 3 GbcApp). typecheck clean; vite build OK.
+- Existing-test edits: item 2 (named: the `waitFor(clearRect)` gate + synchronous highlight read replaced, style assertion added; all other assertions kept) and one more non-body line: `GbcApp.test.tsx` testing-library import gains `act` (for the new GbcApp tests). No other existing line removed. Removed lines vs 3f1668a in `packages/ui/test`: 5 = MapTree vitest import (round 1), GbcApp RTL import (`act`), and 3 in item 2 (stageCtx 2 lines + old `expect(jumpOutline).toBeTruthy()`).
+- `git diff 3f1668a --stat -- packages/ui/test`: App.test.tsx +294, MapTree.test.tsx +67/-1, WorldCanvas.test.tsx +71/-.., gbc/GbcApp.test.tsx +143/-.., setup.ts +2 (573 ins, 5 del).
+- Behaviour note: entering World from Map/Dungeon now always jumps to the selection (as GBA did before C2); with `selected` null it sets a null target (no jump). Dungeon->World also jumps. Notation: GBA `63%` and GBC `19%` readouts are the jump views.
