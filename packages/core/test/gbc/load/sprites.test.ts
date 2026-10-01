@@ -1,8 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { inflateSync } from "node:zlib";
+import { dirname, join } from "node:path";
+import { crc32, deflateSync, inflateSync } from "node:zlib";
 import { loadGbcFrontSprite, loadGbcPicFolders } from "../../../src/gbc/load/sprites.js";
 import { GBC_SUBJECT_ROOT, itWithGbcCorpus } from "../helpers/corpus.js";
 
@@ -35,6 +35,66 @@ function rawIndexed(file: string) {
   return { width, height, px };
 }
 
+/** Hand-built depth-8 indexed PNG (colour type 3, filter 0 on every row). */
+function indexedPng(width: number, height: number, palette: number[][], indices: number[]): Buffer {
+  const chunk = (type: string, data: Buffer) => {
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(data.length);
+    const body = Buffer.concat([Buffer.from(type, "ascii"), data]);
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(crc32(body));
+    return Buffer.concat([len, body, crc]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8; // depth
+  ihdr[9] = 3; // indexed
+  const raw = Buffer.alloc((width + 1) * height);
+  for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) raw[y * (width + 1) + 1 + x] = indices[y * width + x]!;
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk("IHDR", ihdr),
+    chunk("PLTE", Buffer.from(palette.flat())),
+    chunk("IDAT", deflateSync(raw)),
+    chunk("IEND", Buffer.alloc(0)),
+  ]);
+}
+
+/** Writes `files` (relative path -> content) into a fresh temp root, runs `fn`, always removes it. */
+function withRoot<T>(files: Record<string, string | Buffer>, fn: (root: string) => T): T {
+  const root = mkdtempSync(join(tmpdir(), "pokemap-sprites-"));
+  try {
+    for (const [rel, content] of Object.entries(files)) {
+      mkdirSync(dirname(join(root, rel)), { recursive: true });
+      writeFileSync(join(root, rel), content);
+    }
+    return fn(root);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+const consts = (first: number, ...names: string[]) =>
+  `\tconst_def ${first}\n${names.map((n) => `\tconst ${n}\n`).join("")}DEF NUM_POKEMON EQU const_value - 1\n\tconst_skip\n\tconst EGG\n`;
+const table = (...slots: string[]) => `PokemonPicPointers::\n${slots.map((s) => `\t${s}\n`).join("")}\tassert_table_length NUM_POKEMON\n`;
+const NULL = "dbw -1, -1";
+const PICS = [
+  'AaaFrontpic: INCBIN "gfx/pokemon/aaa/front.animated.2bpp.lz"',
+  'BbbFrontpic: INCBIN "gfx/pokemon/bbb/front.animated.2bpp.lz"',
+  'UnownAFrontpic: INCBIN "gfx/pokemon/unown_a/front.animated.2bpp.lz"',
+].join("\n");
+const CONSTS = "constants/pokemon_constants.asm";
+const TABLE = "data/pokemon/pic_pointers.asm";
+const PICS_ASM = "gfx/pics.asm";
+const UNOWN = "data/pokemon/unown_pic_pointers.asm";
+/** Two species AAA (1), BBB (2) with fully valid tables; tests break one thing at a time. */
+const base = (): Record<string, string> => ({
+  [CONSTS]: consts(1, "AAA", "BBB"),
+  [TABLE]: table("dba_pic AaaFrontpic", "dba_pic AaaBackpic", "dba_pic BbbFrontpic", "dba_pic BbbBackpic"),
+  [PICS_ASM]: PICS,
+});
+
 describe("loadGbcPicFolders", () => {
   itWithGbcCorpus("resolves all 251 species through pic_pointers.asm + pics.asm", () => {
     const f = loadGbcPicFolders(G);
@@ -53,18 +113,74 @@ describe("loadGbcPicFolders", () => {
     expect(differing).toEqual(["UNOWN"]);
   });
 
-  it("throws, naming pic_pointers.asm, when a slot is missing", () => {
-    const root = mkdtempSync(join(tmpdir(), "pokemap-sprites-"));
-    mkdirSync(join(root, "constants"));
-    mkdirSync(join(root, "data/pokemon"), { recursive: true });
-    mkdirSync(join(root, "gfx"));
-    writeFileSync(join(root, "constants/pokemon_constants.asm"),
-      "\tconst_def 1\n\tconst AAA\n\tconst BBB\nDEF NUM_POKEMON EQU const_value - 1\n\tconst_skip\n\tconst EGG\n");
-    writeFileSync(join(root, "data/pokemon/pic_pointers.asm"),
-      "PokemonPicPointers::\n\tdba_pic AaaFrontpic\n\tdba_pic AaaBackpic\n\tdba_pic BbbFrontpic\n\tassert_table_length NUM_POKEMON\n");
-    writeFileSync(join(root, "gfx/pics.asm"),
-      'AaaFrontpic: INCBIN "gfx/pokemon/aaa/front.animated.2bpp.lz"\nBbbFrontpic: INCBIN "gfx/pokemon/bbb/front.animated.2bpp.lz"\n');
-    expect(() => loadGbcPicFolders(root)).toThrow(/pic_pointers\.asm/);
+  it("temp fixture sanity: the unbroken base resolves", () => {
+    withRoot(base(), (root) => expect([...loadGbcPicFolders(root)]).toEqual([["AAA", "aaa"], ["BBB", "bbb"]]));
+  });
+
+  it("a missing slot throws, naming pic_pointers.asm and both counts", () => {
+    const files = { ...base(), [TABLE]: table("dba_pic AaaFrontpic", "dba_pic AaaBackpic", "dba_pic BbbFrontpic") };
+    withRoot(files, (root) =>
+      expect(() => loadGbcPicFolders(root)).toThrow(`loadGbcPicFolders: ${TABLE}: 3 PokemonPicPointers slots, expected 2 x 2 species`));
+  });
+
+  it("a missing PokemonPicPointers:: label throws", () => {
+    const files = { ...base(), [TABLE]: "\tdba_pic AaaFrontpic\n\tassert_table_length NUM_POKEMON\n" };
+    withRoot(files, (root) => expect(() => loadGbcPicFolders(root)).toThrow(`${TABLE}: no "PokemonPicPointers::" found`));
+  });
+
+  it("a missing assert_table_length NUM_POKEMON throws", () => {
+    const files = { ...base(), [TABLE]: "PokemonPicPointers::\n\tdba_pic AaaFrontpic\n\tdba_pic AaaBackpic\n" };
+    withRoot(files, (root) =>
+      expect(() => loadGbcPicFolders(root)).toThrow(`${TABLE}: no "assert_table_length NUM_POKEMON" after PokemonPicPointers`));
+  });
+
+  it("a front label with no pics.asm INCBIN line throws, naming label and species", () => {
+    const files = { ...base(), [PICS_ASM]: 'AaaFrontpic: INCBIN "gfx/pokemon/aaa/front.animated.2bpp.lz"' };
+    withRoot(files, (root) =>
+      expect(() => loadGbcPicFolders(root)).toThrow(`${PICS_ASM}: no INCBIN line for BbbFrontpic (BBB)`));
+  });
+
+  it("UNOWN takes the first dba_pic of unown_pic_pointers.asm", () => {
+    const files = {
+      ...base(),
+      [CONSTS]: consts(1, "AAA", "UNOWN"),
+      [TABLE]: table("dba_pic AaaFrontpic", "dba_pic AaaBackpic", NULL, NULL),
+      [UNOWN]: "UnownPicPointers::\n\tdba_pic UnownAFrontpic\n\tdba_pic UnownABackpic\n",
+    };
+    withRoot(files, (root) => expect(loadGbcPicFolders(root).get("UNOWN")).toBe("unown_a"));
+  });
+
+  it("UNOWN with no dba_pic in unown_pic_pointers.asm throws", () => {
+    const files = {
+      ...base(),
+      [CONSTS]: consts(1, "AAA", "UNOWN"),
+      [TABLE]: table("dba_pic AaaFrontpic", "dba_pic AaaBackpic", NULL, NULL),
+      [UNOWN]: "UnownPicPointers::\n",
+    };
+    withRoot(files, (root) =>
+      expect(() => loadGbcPicFolders(root)).toThrow(`${UNOWN}: no dba_pic entry (needed for UNOWN)`));
+  });
+
+  it("a non-UNOWN species with a 'dbw -1, -1' slot throws instead of borrowing Unown's sprite", () => {
+    const files = {
+      ...base(),
+      [TABLE]: table("dba_pic AaaFrontpic", "dba_pic AaaBackpic", NULL, NULL),
+      [UNOWN]: "UnownPicPointers::\n\tdba_pic UnownAFrontpic\n",
+    };
+    withRoot(files, (root) =>
+      expect(() => loadGbcPicFolders(root)).toThrow(`${TABLE}: BBB has a "dbw -1, -1" slot (only UNOWN may)`));
+  });
+
+  it("an id whose slot is beyond the table throws, naming the slot index", () => {
+    // ids 2,3 (const_def 2): slot count 4 = 2 x 2 passes, but BBB (id 3) wants slot 4.
+    const files = { ...base(), [CONSTS]: consts(2, "AAA", "BBB") };
+    withRoot(files, (root) =>
+      expect(() => loadGbcPicFolders(root)).toThrow(`${TABLE}: BBB (id 3) has no slot 4 (table has 4)`));
+  });
+
+  it("a constants file with no const_def throws (shared species-id helper)", () => {
+    const files = { ...base(), [CONSTS]: "; nothing here\n" };
+    withRoot(files, (root) => expect(() => loadGbcPicFolders(root)).toThrow(`${CONSTS}: no "const_def" line found`));
   });
 });
 
@@ -91,5 +207,34 @@ describe("loadGbcFrontSprite", () => {
 
   itWithGbcCorpus("an unknown species is null", () => {
     expect(loadGbcFrontSprite(G, "NOT_A_MON")).toBeNull();
+  });
+
+  const FRONT = "gfx/pokemon/aaa/front.png";
+  const folders = new Map([["AAA", "aaa"]]);
+  const WHERE = `loadGbcFrontSprite: ${FRONT}`;
+  const PAL = [[255, 255, 255], [0, 0, 0]];
+
+  it("temp fixture sanity: a 2x4 stacked sheet crops to its top 2x2 frame", () => {
+    const png = indexedPng(2, 4, PAL, [0, 1, 1, 0, 1, 1, 1, 1]);
+    withRoot({ [FRONT]: png }, (root) => {
+      const r = loadGbcFrontSprite(root, "AAA", folders)!;
+      expect([r.width, r.height]).toEqual([2, 2]);
+      expect([...r.data]).toEqual([255, 255, 255, 255, 0, 0, 0, 255, 0, 0, 0, 255, 255, 255, 255, 255]);
+    });
+  });
+
+  it("a sheet shorter than wide (2x1) throws, naming the file and size", () => {
+    withRoot({ [FRONT]: indexedPng(2, 1, PAL, [0, 1]) }, (root) =>
+      expect(() => loadGbcFrontSprite(root, "AAA", folders)).toThrow(`${WHERE}: 2x1 is shorter than wide, expected stacked square frames`));
+  });
+
+  it("a pixel index outside PLTE throws a named error, not a destructuring TypeError", () => {
+    withRoot({ [FRONT]: indexedPng(1, 1, [[255, 255, 255]], [5]) }, (root) =>
+      expect(() => loadGbcFrontSprite(root, "AAA", folders)).toThrow(`${WHERE}: pixel 0 uses palette index 5, outside PLTE (1 entries)`));
+  });
+
+  it("a decode failure is rethrown with the file named", () => {
+    withRoot({ [FRONT]: Buffer.from("not a png at all, just bytes") }, (root) =>
+      expect(() => loadGbcFrontSprite(root, "AAA", folders)).toThrow(`${WHERE}: not a PNG`));
   });
 });

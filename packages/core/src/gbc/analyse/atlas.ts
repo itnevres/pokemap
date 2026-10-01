@@ -11,9 +11,7 @@
  * clock tick) is out of scope -- every conditional source is tagged, never
  * resolved, exactly as `wildForMap` (Task 8) already does.
  */
-import { readFileSync } from "node:fs";
-import { norm } from "../../config/paths.js";
-import { parseConstDefs } from "../load/asm.js";
+import { loadGbcSpeciesIds } from "../load/species.js";
 import { wildForMap } from "../load/encounters.js";
 import type { GbcProject } from "../project.js";
 import type {
@@ -506,7 +504,7 @@ export function gbcWhereSpecies(proj: GbcProject, species: string): GbcSpeciesHi
  * enum (its own doc comment: "indexes for UnownWords/UnownPicPointers/...",
  * never a wild-encounter species) -- found by locating the SECOND
  * `const_def` line by regex (never a hand-copied line number) and slicing
- * the text there before handing it to the shared `parseConstDefs`, so those
+ * the text there (now in `loadGbcSpeciesIds`, `../load/species.ts`) before handing it to the shared `parseConstDefs`, so those
  * 26 names are never even seen, let alone mistaken for species with tiny
  * (1-26) "unused" pokedex numbers.
  *
@@ -522,18 +520,7 @@ export function gbcWhereSpecies(proj: GbcProject, species: string): GbcSpeciesHi
  * the counter and emits nothing, exactly as intended.
  */
 export function loadGbcSpeciesConstants(root: string): string[] {
-  const r = norm(root);
-  const file = "constants/pokemon_constants.asm";
-  const text = readFileSync(`${r}/${file}`, "utf8");
-
-  const constDefRe = /^\s*const_def\b.*$/gm;
-  const first = constDefRe.exec(text);
-  if (!first) throw new Error(`loadGbcSpeciesConstants: ${file}: no "const_def" line found`);
-  const second = constDefRe.exec(text);
-  const speciesText = second ? text.slice(0, second.index) : text;
-
-  const NON_SPECIES = new Set(["NO_MON", "EGG"]);
-  return [...parseConstDefs(speciesText).keys()].filter((k) => !NON_SPECIES.has(k)).sort();
+  return [...loadGbcSpeciesIds(root).keys()].sort();
 }
 
 export interface GbcCoverage {
