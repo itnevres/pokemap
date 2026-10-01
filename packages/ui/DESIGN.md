@@ -380,4 +380,10 @@ reserves one band on that side.
   (`lens-panel__species`: icon + display name, not clickable). A list starts
   closed on every lens change.
 - A map entry jumps like a tree click (`onJumpToMap` -> the app's `selectMap`).
-  Entries render disabled where no jump target exists (a dungeon view).
+  Where no jump target exists (a dungeon view) the Empty maps "List them"
+  action is not rendered at all (never a list of disabled entries); the
+  informational Unused species list still works.
+- Before `/api/coverage` lands the row reads "Loading coverage…" (no counts,
+  lists or method key); the row has `aria-label="Coverage lens legend"`. Map
+  entries and species names carry `title` (the cells ellipsise); singular
+  counts read "1 map has" / "1 species appears".

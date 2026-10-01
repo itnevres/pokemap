@@ -1420,7 +1420,6 @@ input {
 }
 
 .lens-panel {
-  position: relative;
   display: flex;
   align-items: center;
   flex: 0 0 auto;
@@ -1471,7 +1470,6 @@ input {
   border-bottom: 1px solid var(--border);
   font-size: var(--text-xs);
   color: var(--text-secondary);
-  text-align: left;
 }
 
 .lens-panel__legend-title {
@@ -1490,7 +1488,7 @@ input {
 /* Review fix: the method lens's swatch+label key, added because colour
    alone conveyed which tint meant which method -- mirrors
    the former encounter-gutter legend key's own shape exactly (same list-reset,
-   flex-column, 10px swatch), including the identical swatch colours (the
+   10px swatch; a wrapping row now that the legend is a row, not a popover), including the identical swatch colours (the
    two files intentionally do not share a class name -- lens-panel and
    encounter-border are independent overlays that can be visible at once,
    and coupling their CSS would make one's markup change silently affect
@@ -1586,14 +1584,9 @@ input {
   white-space: nowrap;
 }
 
-.lens-panel__list-btn:hover:not(:disabled) {
+.lens-panel__list-btn:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
-}
-
-.lens-panel__list-btn:disabled {
-  color: var(--text-muted);
-  cursor: default;
 }
 
 .lens-panel__species {
@@ -1601,6 +1594,10 @@ input {
   align-items: center;
   gap: var(--space-1);
   min-width: 0;
+}
+
+.lens-panel__species > img {
+  flex: 0 0 auto;
 }
 
 .lens-panel__species > span {

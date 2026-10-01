@@ -1109,8 +1109,8 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap }: Wo
       if (lens === "level-curve") color = levelColorByMap.get(p.map) ?? null;
       else if (lens === "empty-maps") color = emptyMapNames.has(p.map) ? "var(--warn)" : null;
       else if (lens === "method") color = methodTintFor(p.map);
-      // "unused-species" has no per-map visual -- see LensPanel's own
-      // legend copy for that lens: it is a fact about species, not about a
+      // "unused-species" has no per-map visual -- see LensLegend's own
+      // legend copy and species list for that lens: it is a fact about species, not about a
       // place on the map, so there is nothing here to tint.
       if (!color) continue;
       const size = sizeOfPlacement(p, sizeByMap);

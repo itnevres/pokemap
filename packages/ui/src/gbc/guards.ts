@@ -174,7 +174,7 @@ export function isGbcEncountersPayload(x: unknown): x is GbcEncountersPayload {
  * ambiguity here to disambiguate with a tag the way the other two routes
  * need to. Checks only the 3 fields `GbcWorldCanvas`'s own lenses actually
  * read (`levelByMap` for the level-curve tint, `mapsWithoutEncounters`/
- * `unusedSpecies` for `LensPanel`'s own summary counts) -- the same "guard
+ * `unusedSpecies` for `LensLegend`'s own summary counts and lists) -- the same "guard
  * what you index by" posture every other guard in this file already takes;
  * `mapsWithEncounters`/`sourcesByMethod`/`fishGroupWithoutWater`/`defects`
  * are never read by anything this task adds.

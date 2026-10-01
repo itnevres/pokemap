@@ -282,11 +282,11 @@ export function methodTint(sources: GbcEncounterSource[] | undefined): string | 
   return null;
 }
 
-/** `LensPanel`'s own `methodKey` for the GBC method lens (spec's own list,
+/** `LensLegend`'s own `methodKey` for the GBC method lens (spec's own list,
  *  and the coordinator's swatch-slug amendment: only "water", "fishing",
  *  "headbutt" and "rock-smash" -- grass is never in this key, since it's
  *  never tinted; see `methodTint`'s own doc comment). Module scope, not
- *  recreated per render -- `LensPanel`'s own `methodKey` prop is read by
+ *  recreated per render -- `LensLegend`'s own `methodKey` prop is read by
  *  reference identity nowhere that matters (a plain render-time read), but
  *  there is no reason to allocate a fresh array every render either. */
 const GBC_METHOD_LENS_KEY: Array<{ slug: string; label: string }> = [
@@ -296,9 +296,9 @@ const GBC_METHOD_LENS_KEY: Array<{ slug: string; label: string }> = [
   { slug: "rock-smash", label: "Rock Smash" },
 ];
 
-/** `LensPanel`'s own `legendCopy` override for the GBC lens panel (spec's
+/** `LensLegend`'s own `legendCopy` override for the GBC lens legend (spec's
  *  own exact copy for level-curve and method; empty-maps/unused-species are
- *  left at `LensPanel`'s own GBA defaults, which already read generically
+ *  left at `LensLegend`'s own GBA defaults, which already read generically
  *  off `summary` and need no GBC-specific wording). Module scope, for the
  *  same reason as `GBC_METHOD_LENS_KEY` above. */
 const GBC_LEGEND_COPY: Partial<Record<LensId, (s: LensPanelSummary) => string>> = {
