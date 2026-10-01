@@ -7,6 +7,7 @@ import { renderGbcMap, renderGbcMapMetatile } from "@pokemap/core/src/gbc/render
 import { loadGbcMapEvents } from "@pokemap/core/src/gbc/load/events.js";
 import { buildGbcWorld } from "@pokemap/core/src/gbc/world/connections.js";
 import { gbcEncounterSources, gbcWhereSpecies, gbcCoverage, loadGbcSpeciesConstants } from "@pokemap/core/src/gbc/analyse/atlas.js";
+import { loadGbcFrontSprite } from "@pokemap/core/src/gbc/load/sprites.js";
 import { encodePng } from "@pokemap/cli/src/png.js";
 import { GBC_SUBJECT_ROOT, hasGbcProject, itWithGbcCorpus } from "@pokemap/core/test/gbc/helpers/corpus.js";
 import { stubGbcProject } from "@pokemap/core/test/gbc/helpers/stubGbcProject.js";
@@ -81,7 +82,6 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
       { label: "/api/world/dungeons (POST)", path: "/api/world/dungeons", call: () => post("/api/world/dungeons") },
       { label: "/api/sign/:name/suggestions", path: "/api/sign/NewBarkTown/suggestions", call: () => get("/api/sign/NewBarkTown/suggestions") },
       { label: "/api/edit/:name/undo (POST)", path: "/api/edit/NewBarkTown/undo", call: () => post("/api/edit/NewBarkTown/undo") },
-      { label: "/api/species/:name/icon.png", path: "/api/species/CHIKORITA/icon.png", call: () => get("/api/species/CHIKORITA/icon.png") },
     ];
 
     for (const { label, call, path } of cases) {
@@ -140,12 +140,15 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
       expect(r.status).toBe(404);
     });
 
-    it("/api/species/CHIKORITA/icon.pngx is a 404 -- the $ anchor on icon\\.png$ must not match a longer path", async () => {
+    // Plan 6c B1: /api/species/:name/icon.png is a real GBC route now (no longer
+    // in GBA_ONLY_ROUTE_RE), so these two near-misses prove the NEW route's own
+    // `$` and `[^/]+` anchors instead.
+    it("/api/species/CHIKORITA/icon.pngx is a 404 -- the icon route's icon\\.png$ anchor must not match a longer path", async () => {
       const r = await get("/api/species/CHIKORITA/icon.pngx");
       expect(r.status).toBe(404);
     });
 
-    it("/api/species/A/B/icon.png is a 404 -- species/[^/]+ must not match a name containing a slash", async () => {
+    it("/api/species/A/B/icon.png is a 404 -- the icon route's species/([^/]+) must not match a name containing a slash", async () => {
       const r = await get("/api/species/A/B/icon.png");
       expect(r.status).toBe(404);
     });
@@ -153,6 +156,38 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
     it("/x/api/warps/y is a 404 -- the leading ^ must not let the pattern match mid-path", async () => {
       const r = await get("/x/api/warps/y");
       expect(r.status).toBe(404);
+    });
+  });
+
+  describe("GET /api/species/:name/icon.png (Plan 6c B1)", () => {
+    const expected = () => encodePng(loadGbcFrontSprite(GBC_SUBJECT_ROOT, "CHIKORITA")!);
+
+    it("serves frame 0 of the GBC front sprite as a PNG, byte-equal to the core loader's encoding", async () => {
+      const r = await get("/api/species/CHIKORITA/icon.png");
+      expect(r.status).toBe(200);
+      expect(r.headers.get("content-type")).toBe("image/png");
+      expect(Buffer.from(await r.arrayBuffer()).equals(expected())).toBe(true);
+    });
+
+    it("normalises the species: lowercase and SPECIES_-prefixed names give the same bytes", async () => {
+      const want = expected();
+      for (const name of ["chikorita", "SPECIES_CHIKORITA"]) {
+        const r = await get(`/api/species/${name}/icon.png`);
+        expect(r.status).toBe(200);
+        expect(Buffer.from(await r.arrayBuffer()).equals(want)).toBe(true);
+      }
+    });
+
+    it("an unknown species is a 404 with a named error", async () => {
+      const r = await get("/api/species/NOT_A_MON/icon.png");
+      expect(r.status).toBe(404);
+      expect(await r.json()).toEqual({ error: "no sprite for NOT_A_MON" });
+    });
+
+    it("a malformed percent-escape is a 400 naming the raw segment", async () => {
+      const r = await get("/api/species/%E0%A4%A/icon.png");
+      expect(r.status).toBe(400);
+      expect(await r.json()).toEqual({ error: "malformed species %E0%A4%A" });
     });
   });
 

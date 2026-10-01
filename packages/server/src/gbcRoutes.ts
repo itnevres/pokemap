@@ -49,6 +49,7 @@ import type {
 import { encodePng } from "@pokemap/cli/src/png.js";
 import { parseBorder, parseTime, type TimeOfDay } from "@pokemap/cli/src/args.js";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { loadGbcFrontSprite, loadGbcPicFolders } from "@pokemap/core/src/gbc/load/sprites.js";
 import type { ProjectHandler } from "./index.js";
 
 /**
@@ -56,12 +57,13 @@ import type { ProjectHandler } from "./index.js";
  * the CLI's `refuseIfGbc` (`cli/src/index.ts`) -- the route exists, but this
  * family doesn't support it (yet, in Plan 7's case for `/api/edit/*`). An
  * unmatched path stays a plain 404, handled by the fallthrough below, not by
- * this list. `sign/`, `edit/` and the species-icon path end in a required
- * next segment (`sign/NAME/suggestions`, `edit/NAME/undo`,
- * `species/NAME/icon.png`), so their own alternatives don't need a trailing
- * `(/|$)` the way `dungeons` and `world/...`'s bare-vs-nested routes do.
+ * this list. `sign/` and `edit/` end in a required next segment
+ * (`sign/NAME/suggestions`, `edit/NAME/undo`), so their own alternatives
+ * don't need a trailing `(/|$)` the way `dungeons` and `world/...`'s
+ * bare-vs-nested routes do. (`species/NAME/icon.png` left this list in Plan
+ * 6c B1: it is a real GBC route now.)
  */
-const GBA_ONLY_ROUTE_RE = /^\/api\/(warps\/|dungeons(\/|$)|world\/placement$|world\/dungeons$|sign\/|edit\/|species\/[^/]+\/icon\.png$)/;
+const GBA_ONLY_ROUTE_RE = /^\/api\/(warps\/|dungeons(\/|$)|world\/placement$|world\/dungeons$|sign\/|edit\/)/;
 
 /**
  * `decodeURIComponent` throws a `URIError` on a malformed percent-escape
@@ -280,6 +282,12 @@ export function createGbcProjectHandler(root: string): ProjectHandler {
   let speciesCache: string[] | undefined;
   const getSpecies = () => (speciesCache ??= loadGbcSpeciesConstants(proj.root));
 
+  // Plan 6c B1: species -> gfx/pokemon folder, computed lazily once (the decomp
+  // is read-only for the life of this process, I8), plus one encoded PNG per
+  // normalised species (frame 0 only -- no query params).
+  let picFolders: Map<string, string> | undefined;
+  const speciesIconCache = new Map<string, Buffer>();
+
   // Same disposed-503 guard as index.ts's GBA handler (Plan 6c A1) -- an
   // in-flight request holding this exact handler past a `/api/hub/open`
   // swap must not read through it any further.
@@ -444,11 +452,30 @@ export function createGbcProjectHandler(root: string): ProjectHandler {
         return send(200, getCoverage());
       }
 
+      // `[^/]+`, same as GBA's `/api/species/:s/icon.png` (`index.ts`); the
+      // raw segment goes through `decodeMapName` and `normalizeGbcSpecies`
+      // like `/api/where/:species` above, so `chikorita` and
+      // `SPECIES_CHIKORITA` both resolve. GBC serves the real GBC front sprite
+      // (frame 0), not GBA's icon/overworld art, so no `?source=`/`?frame=`.
+      const speciesIconMatch = /^\/api\/species\/([^/]+)\/icon\.png$/.exec(url.pathname);
+      if (speciesIconMatch) {
+        const raw = speciesIconMatch[1]!;
+        const decoded = decodeMapName(raw);
+        if (decoded === undefined) return send(400, { error: `malformed species ${raw}` });
+        const species = normalizeGbcSpecies(decoded);
+        let png = speciesIconCache.get(species);
+        if (!png) {
+          const raster = loadGbcFrontSprite(proj.root, species, (picFolders ??= loadGbcPicFolders(proj.root)));
+          if (!raster) return send(404, { error: `no sprite for ${species}` });
+          png = encodePng(raster);
+          speciesIconCache.set(species, png);
+        }
+        res.writeHead(200, { "content-type": "image/png", "cache-control": "no-cache" });
+        return res.end(png);
+      }
+
       // Exact match, not a prefix -- same discipline as GBA's own
-      // `/api/species` (`index.ts`): "/api/species" alone, nothing after it,
-      // so it can never shadow the GBA-only-route refusal below for
-      // "/api/species/:name/icon.png" (GBA_ONLY_ROUTE_RE's own
-      // `species/[^/]+/icon\.png$` alternative).
+      // `/api/species` (`index.ts`): "/api/species" alone, nothing after it.
       if (url.pathname === "/api/species") {
         return send(200, getSpecies());
       }
