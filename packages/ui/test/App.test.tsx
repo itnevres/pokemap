@@ -795,23 +795,31 @@ describe("App -- coverage lens list jump (Plan 6c C1)", () => {
     );
   }
 
-  it("clicking an Empty maps list entry in World mode selects that map and jumps the canvas there", async () => {
+  it("clicking an Empty maps list entry in World mode selects that map and jumps the canvas there, like a tree click", async () => {
     stubEmptyCoverage();
     render(<App />);
     await waitFor(() => expect(screen.getByRole("button", { name: "Route2" })).toBeTruthy());
     const currentTreeRow = () => screen.getAllByRole("button", { name: "Route2" }).find((b) => b.getAttribute("aria-current") === "true");
     expect(currentTreeRow()).toBeUndefined();
-    expect(document.querySelector(".world-canvas__jump-highlight")).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "World" }));
+    // A first jump (tree click on Route1) so the next one has to bump the token: the highlight is keyed on
+    // jumpToken, so a second jump remounts it, while a selection that does not bump leaves the same node.
+    fireEvent.click(screen.getByRole("button", { name: "Route1" }));
+    await waitFor(() => expect(document.querySelector(".world-canvas__jump-highlight")).toBeTruthy());
+    const firstJump = document.querySelector(".world-canvas__jump-highlight");
+
     fireEvent.click(await screen.findByLabelText(/empty maps lens/i));
     fireEvent.click(screen.getByRole("button", { name: "List them" }));
     const ul = screen.getByRole("list", { name: "Maps with no encounters" });
     fireEvent.click(ul.querySelector("button")!); // "Route2": the first entry in payload order
 
     await waitFor(() => expect(currentTreeRow()).toBeTruthy());
-    // The same jump a tree click makes: WorldCanvas flashes the target's outline.
-    await waitFor(() => expect(document.querySelector(".world-canvas__jump-highlight")).toBeTruthy());
+    await waitFor(() => {
+      const now = document.querySelector(".world-canvas__jump-highlight");
+      expect(now).toBeTruthy();
+      expect(now).not.toBe(firstJump);
+    });
   });
 
   it("in Dungeon mode (no jump target) the Empty maps lens offers no List them button", async () => {
