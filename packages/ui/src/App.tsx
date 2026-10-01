@@ -494,7 +494,7 @@ export function App({ switcher }: AppProps) {
             // spotlightHits, and warpPopup across the mode boundary instead
             // of starting fresh. Distinct keys force React to always treat
             // a mode switch as a brand-new mount.
-            <WorldCanvas key="world" jumpToMap={selected} jumpToken={selectVersion} />
+            <WorldCanvas key="world" jumpToMap={selected} jumpToken={selectVersion} onJumpToMap={selectMap} />
           ) : mode === "dungeon" ? (
             openDungeon ? (
               <WorldCanvas key="dungeon" mapFilter={mapFilter} />

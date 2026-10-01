@@ -771,3 +771,39 @@ describe("App -- discard flow", () => {
     vi.unstubAllGlobals();
   });
 });
+
+describe("App -- coverage lens list jump (Plan 6c C1)", () => {
+  it("clicking an Empty maps list entry in World mode selects that map (tree row becomes current)", async () => {
+    // Per-test override of makeFetchMock's empty /api/coverage: Route2 is an empty map.
+    const base = makeFetchMock();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init?: RequestInit) =>
+        url === "/api/coverage"
+          ? Promise.resolve({
+              ok: true,
+              status: 200,
+              json: () =>
+                Promise.resolve({
+                  mapsWithEncounters: 0, encounterTables: 0, mapsWithoutEncounters: ["Route2"],
+                  levelByMap: [], unusedSpecies: [],
+                  byMethod: { land_mons: 0, water_mons: 0, rock_smash_mons: 0, fishing_mons: 0 },
+                }),
+            } as Response)
+          : base(url, init),
+      ),
+    );
+    render(<App />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Route2" })).toBeTruthy());
+    const currentTreeRow = () => screen.getAllByRole("button", { name: "Route2" }).find((b) => b.getAttribute("aria-current") === "true");
+    expect(currentTreeRow()).toBeUndefined();
+
+    fireEvent.click(screen.getByRole("button", { name: "World" }));
+    fireEvent.click(await screen.findByLabelText(/empty maps lens/i));
+    fireEvent.click(screen.getByRole("button", { name: "List them" }));
+    const ul = screen.getByRole("list", { name: "Maps with no encounters" });
+    fireEvent.click(ul.querySelector("button")!);
+
+    await waitFor(() => expect(currentTreeRow()).toBeTruthy());
+  });
+});

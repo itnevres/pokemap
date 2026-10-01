@@ -2214,3 +2214,64 @@ describe("WorldCanvas: encounter border (Plan 6c B3)", () => {
     await waitFor(() => expect(screen.getByText("Encounter data unavailable for 1 map")).toBeTruthy());
   });
 });
+
+describe("WorldCanvas: lens legend row (Plan 6c C1)", () => {
+  const WORLD2 = makeWorld({
+    placements: {
+      Alpha: { map: "Alpha", x: 0, y: 0, width: 10, height: 10, component: 0 },
+      Beta: { map: "Beta", x: 20, y: 0, width: 10, height: 10, component: 1 },
+    },
+  });
+  /** makeFetchMock's /api/coverage answers an empty fixture; this per-test override answers real names. */
+  function withCoverage(mapsWithoutEncounters: string[], unusedSpecies: string[]) {
+    const base = makeFetchMock(WORLD2).impl;
+    return vi.fn((url: string, init?: RequestInit) =>
+      url.startsWith("/api/coverage")
+        ? Promise.resolve({
+            ok: true,
+            status: 200,
+            json: () => Promise.resolve({
+              mapsWithEncounters: 0, encounterTables: 0, mapsWithoutEncounters,
+              levelByMap: [], unusedSpecies,
+              byMethod: { land_mons: 0, water_mons: 0, rock_smash_mons: 0, fishing_mons: 0 },
+            }),
+          } as Response)
+        : base(url, init),
+    );
+  }
+  async function mountLens(impl: ReturnType<typeof vi.fn>, props: { onJumpToMap?: (n: string) => void } = {}) {
+    vi.stubGlobal("fetch", impl);
+    render(<WorldCanvas {...props} />);
+    await waitFor(() => expect(screen.queryByText(/Loading world/)).toBeNull());
+  }
+
+  it("Empty maps: 'List them' lists coverage's own names in order and a click calls onJumpToMap", async () => {
+    const onJumpToMap = vi.fn();
+    await mountLens(withCoverage(["Beta", "Alpha"], ["SPECIES_MR_MIME"]), { onJumpToMap });
+    fireEvent.click(await screen.findByLabelText(/empty maps lens/i));
+    fireEvent.click(screen.getByRole("button", { name: "List them" }));
+    const ul = screen.getByRole("list", { name: "Maps with no encounters" });
+    expect(Array.from(ul.querySelectorAll("button")).map((b) => b.textContent)).toEqual(["Beta", "Alpha"]);
+    fireEvent.click(screen.getByRole("button", { name: "Alpha" }));
+    expect(onJumpToMap).toHaveBeenCalledTimes(1);
+    expect(onJumpToMap).toHaveBeenCalledWith("Alpha");
+  });
+
+  it("Unused species: 'Show list' lists display names from coverage's own unusedSpecies", async () => {
+    await mountLens(withCoverage(["Alpha"], ["SPECIES_MR_MIME"]));
+    fireEvent.click(await screen.findByLabelText(/unused species lens/i));
+    fireEvent.click(screen.getByRole("button", { name: "Show list" }));
+    const ul = screen.getByRole("list", { name: "Unused species" });
+    expect(Array.from(ul.querySelectorAll("li")).map((li) => li.textContent)).toEqual(["Mr. Mime"]);
+  });
+
+  it("the legend is a row directly after the toolbar, outside the toolbar and the viewport", async () => {
+    await mountLens(withCoverage(["Alpha"], []));
+    fireEvent.click(await screen.findByLabelText(/empty maps lens/i));
+    const row = document.querySelector(".world-canvas__toolbar")!.nextElementSibling as HTMLElement;
+    expect(row.classList.contains("world-canvas__legend-row")).toBe(true);
+    expect(row.textContent).toMatch(/1 maps have no encounters/);
+    expect(row.closest(".world-canvas__toolbar")).toBeNull();
+    expect(row.closest(".world-canvas__viewport")).toBeNull();
+  });
+});

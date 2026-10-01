@@ -1200,34 +1200,37 @@ describe("GbcWorldCanvas: encounters/lenses/spotlight (Plan 6b Task 6)", () => {
     expect(document.querySelector<HTMLElement>(".world-canvas__lens-tint")!.style.background).toBe("var(--warn)");
   });
 
-  // Fix round (spec review F11, coordinator correction): the empty-maps
-  // legend's "List them" button is now wired to a real focusEmptyMaps
-  // (mirroring WorldCanvas.tsx's own), not just hidden. WORLD's own fixture:
-  // MapA/MapB share a 2-map component (bounds {x:0,y:0,w:20,h:10}), Interior
-  // is a far singleton. With only MapA empty (and in that multi-map
-  // component), the fit bounds become MapA's own rect {x:0,y:0,w:10,h:10} --
-  // computeFit against the 200x200 viewport gives zoom=min(32,20)=20,
-  // pan={0,0}, distinct from the INITIAL fit's zoom 10 (the whole 2-map
-  // component). Pinned two ways: the status strip's own zoom% text, and the
-  // exact rendered transform of MapA's own lens-tint rect (which folds in
-  // pan too, not just zoom).
-  it("'List them' fits the empty maps inside their own multi-map component, with an exact zoom/pan (F11)", async () => {
-    await mountReadyAll({ coverage: { ...EMPTY_COVERAGE, mapsWithoutEncounters: ["MapA"] } });
-    // Sanity: the INITIAL fit (the whole MapA+MapB component) is zoom 10 ->
-    // round(10/32*100) = 31%, distinct from the post-click 63% below.
-    expect(screen.getByText(/zoom 31%/)).toBeTruthy();
-
+  // Plan 6c C1: the legend is a row below the toolbar (never a popover) and
+  // its lists are real: Empty maps lists coverage's own names and a click
+  // hands the name to the app's onJumpToMap (replaces the old focusEmptyMaps fit, F11).
+  it("Empty maps lens: 'List them' lists the coverage's own empty maps and a click calls onJumpToMap", async () => {
+    const onJumpToMap = vi.fn();
+    await mountReadyAll({ coverage: { ...EMPTY_COVERAGE, mapsWithoutEncounters: ["MapA", "Interior"] } }, { onJumpToMap });
     fireEvent.click(screen.getByLabelText(/empty maps lens/i));
-    await waitFor(() => expect(document.querySelectorAll(".world-canvas__lens-tint").length).toBe(1));
-    fireEvent.click(screen.getByRole("button", { name: /list them/i }));
+    fireEvent.click(screen.getByRole("button", { name: "List them" }));
+    const ul = screen.getByRole("list", { name: "Maps with no encounters" });
+    expect(Array.from(ul.querySelectorAll("button")).map((b) => b.textContent)).toEqual(["MapA", "Interior"]);
+    fireEvent.click(screen.getByRole("button", { name: "Interior" }));
+    expect(onJumpToMap).toHaveBeenCalledTimes(1);
+    expect(onJumpToMap).toHaveBeenCalledWith("Interior");
+  });
 
-    // zoom 20 -> round(20/32*100) = 63%.
-    await waitFor(() => expect(screen.getByText(/zoom 63%/)).toBeTruthy());
-    const tint = document.querySelector<HTMLElement>(".world-canvas__lens-tint")!;
-    expect(tint.style.left).toBe("0px");
-    expect(tint.style.top).toBe("0px");
-    expect(tint.style.width).toBe("200px");
-    expect(tint.style.height).toBe("200px");
+  it("Unused species lens: 'Show list' lists display names from coverage's own unusedSpecies", async () => {
+    await mountReadyAll({ coverage: { ...EMPTY_COVERAGE, unusedSpecies: ["CELEBI"] } });
+    fireEvent.click(screen.getByLabelText(/unused species lens/i));
+    fireEvent.click(screen.getByRole("button", { name: "Show list" }));
+    const ul = screen.getByRole("list", { name: "Unused species" });
+    expect(Array.from(ul.querySelectorAll("li")).map((li) => li.textContent)).toEqual(["Celebi"]);
+  });
+
+  it("the legend is a row directly after the toolbar, outside the toolbar and the viewport", async () => {
+    await mountReadyAll({ coverage: { ...EMPTY_COVERAGE, mapsWithoutEncounters: ["MapA"] } });
+    fireEvent.click(screen.getByLabelText(/empty maps lens/i));
+    const row = document.querySelector(".world-canvas__toolbar")!.nextElementSibling as HTMLElement;
+    expect(row.classList.contains("world-canvas__legend-row")).toBe(true);
+    expect(row.textContent).toMatch(/1 maps have no encounters/);
+    expect(row.closest(".world-canvas__toolbar")).toBeNull();
+    expect(row.closest(".world-canvas__viewport")).toBeNull();
   });
 
   // Fix round (spec review F5/R7): the original version of this test only

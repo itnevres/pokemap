@@ -143,6 +143,7 @@ export function GbcApp({ root, switcher }: GbcAppProps) {
               jumpToken={selectVersion}
               onSelectMap={selectMapFromWorld}
               onOpenMap={openMapFromWorld}
+              onJumpToMap={selectMap}
             />
           ) : !selected ? (
             <p className="app__canvas-placeholder">Select a map</p>

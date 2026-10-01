@@ -491,3 +491,45 @@ describe("GbcApp", () => {
     await waitFor(() => expect(document.querySelector("canvas.map-canvas__stage")).toBeTruthy());
   });
 });
+
+describe("GbcApp -- coverage lens list jump (Plan 6c C1)", () => {
+  it("clicking an Empty maps list entry in World mode selects that map (tree row becomes current)", async () => {
+    // Per-test override: makeFetchMock has no /api/coverage route (it would reject and hide the lenses).
+    const world = {
+      family: "gbc" as const,
+      blockPx: 32 as const,
+      placements: { OlivineCity: { map: "OlivineCity", x: 0, y: 0, width: 10, height: 10, component: 0 } },
+      components: [{ index: 0, maps: ["OlivineCity"], bounds: { x: 0, y: 0, width: 10, height: 10 } }],
+      conflicts: [],
+    };
+    const base = makeFetchMock({ world });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) => {
+        const ok = (body: unknown) => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) } as Response);
+        if (url === "/api/coverage") {
+          return ok({
+            mapsWithEncounters: 0, mapsWithoutEncounters: ["OlivineCity"], sourcesByMethod: {},
+            levelByMap: [], unusedSpecies: [], fishGroupWithoutWater: [], defects: [],
+          });
+        }
+        if (url === "/api/species") return ok([]);
+        if (url.startsWith("/api/encounters/")) return ok({ family: "gbc", mapName: "OlivineCity", sources: [], defects: [] });
+        return base(url);
+      }),
+    );
+    render(<GbcApp root="/x" />);
+    await waitFor(() => expect(screen.getByText("OlivineCity")).toBeTruthy());
+    const currentTreeRow = () => screen.getAllByRole("button", { name: "OlivineCity" }).find((b) => b.getAttribute("aria-current") === "true");
+    expect(currentTreeRow()).toBeUndefined();
+
+    const view = screen.getByRole("group", { name: "View" });
+    fireEvent.click(Array.from(view.querySelectorAll("button")).find((b) => b.textContent === "World") as HTMLElement);
+    fireEvent.click(await screen.findByLabelText(/empty maps lens/i));
+    fireEvent.click(screen.getByRole("button", { name: "List them" }));
+    const ul = screen.getByRole("list", { name: "Maps with no encounters" });
+    fireEvent.click(ul.querySelector("button")!);
+
+    await waitFor(() => expect(currentTreeRow()).toBeTruthy());
+  });
+});

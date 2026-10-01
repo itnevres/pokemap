@@ -3,7 +3,7 @@ import type { Placement, Component, Conflict, Bounds } from "@pokemap/core/src/g
 import type { GbcWorldPayload } from "@pokemap/core/src/gbc/wire.js";
 import type { GbcEncounterSource, GbcSpeciesHit } from "@pokemap/core/src/gbc/analyse/atlas.js";
 import { computeFit, drawDiamond, levelColorMap } from "../components/WorldCanvas.js";
-import { LensPanel, type LensId } from "../components/LensPanel.js";
+import { LensPanel, LensLegend, type LensId, type LensPanelSummary } from "../components/LensPanel.js";
 import { SpeciesSpotlight } from "../components/SpeciesSpotlight.js";
 import { EncounterBorder, type EncounterBorderEntry } from "../components/EncounterBorder.js";
 import { BORDER_BAND, pickBorderSide, type BorderSide, type Rect } from "../encounters/borderSide.js";
@@ -301,7 +301,7 @@ const GBC_METHOD_LENS_KEY: Array<{ slug: string; label: string }> = [
  *  left at `LensPanel`'s own GBA defaults, which already read generically
  *  off `summary` and need no GBC-specific wording). Module scope, for the
  *  same reason as `GBC_METHOD_LENS_KEY` above. */
-const GBC_LEGEND_COPY: Partial<Record<LensId, (s: { emptyMaps: number; unusedSpecies: number }) => string>> = {
+const GBC_LEGEND_COPY: Partial<Record<LensId, (s: LensPanelSummary) => string>> = {
   "level-curve": () =>
     "Colour is the average encounter level: an unweighted mean of each source's average. Blue is low, red is high.",
   method: () => "Which maps reward surfing, fishing, headbutting trees or rock smash.",
@@ -399,6 +399,9 @@ export interface GbcWorldCanvasProps {
   /** Fired when a double-click hits a placement -- `GbcApp` switches to Map
    *  view with that map selected. */
   onOpenMap?: (name: string) => void;
+  /** A lens list entry (Empty maps) was clicked; the app selects the map and
+   *  jumps there (the tree-click path). */
+  onJumpToMap?: (name: string) => void;
 }
 
 /**
@@ -407,7 +410,7 @@ export interface GbcWorldCanvasProps {
  * reproduced from `WorldCanvas.tsx`, and `packages/ui/DESIGN.md` for the
  * `world-canvas__*` classes reused verbatim below.
  */
-export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpenMap }: GbcWorldCanvasProps) {
+export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpenMap, onJumpToMap }: GbcWorldCanvasProps) {
   const { data: world, error } = useGbcWorld();
   const { data: coverageData, error: coverageError } = useGbcCoverage();
 
@@ -675,38 +678,6 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
   // mapsWithoutEncounters is already keyed by name.
   const emptyMapNames = useMemo(() => new Set(coverageData?.mapsWithoutEncounters ?? []), [coverageData]);
 
-  // `LensPanel`'s empty-maps legend "next action" (fix round, spec review
-  // F11 -- coordinator decision: wire it, don't just hide it). Mirrors
-  // `WorldCanvas.tsx`'s own `focusEmptyMaps` (grep that name) exactly: fit
-  // the empty maps that sit in a MULTI-map component first (the same
-  // "connected landmasses only" filter `initialFitBounds`/`fitAll` already
-  // use, for the identical reason -- an unfiltered bbox of every empty
-  // placement would be dominated by any far-flung singleton interiors),
-  // falling back to every empty map when none of them resolve to a real
-  // multi-map component, and a no-op when there are no empty maps at all
-  // (degenerate/zero-size bounds). One `setView` call, `fitted: true` in
-  // the same object (never a nested updater -- the same StrictMode
-  // reasoning as `fitAll`/the initial fit above).
-  const focusEmptyMaps = useCallback(() => {
-    if (!world || emptyMapNames.size === 0) return;
-    const inLandmass: Record<string, Placement> = {};
-    for (const [name, p] of Object.entries(world.placements)) {
-      if (!emptyMapNames.has(name)) continue;
-      const comp = p.component >= 0 && p.component < world.components.length ? world.components[p.component]! : null;
-      if (comp && comp.maps.length > 1) inLandmass[name] = p;
-    }
-    let bounds = fitAllBounds(inLandmass);
-    if (!bounds) {
-      const allEmpty: Record<string, Placement> = {};
-      for (const [name, p] of Object.entries(world.placements)) {
-        if (emptyMapNames.has(name)) allEmpty[name] = p;
-      }
-      bounds = fitAllBounds(allEmpty);
-    }
-    if (!bounds) return;
-    setView({ ...computeFit(bounds, viewport, GBC_ZOOM_BOUNDS), fitted: true });
-  }, [world, emptyMapNames, viewport]);
-
   // Per-map lens tint overlay -- mirrors WorldCanvas.tsx's own
   // lensOverlayEntries memo exactly (level-curve/empty-maps/method; GBC has
   // no "unused-species" per-map visual either, for the identical reason
@@ -969,20 +940,23 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
               Coverage lenses unavailable: {coverageError}
             </span>
           ) : (
-            <LensPanel
-              active={lens}
-              onChange={setLens}
-              summary={{
-                emptyMaps: coverageData?.mapsWithoutEncounters.length ?? 0,
-                unusedSpecies: coverageData?.unusedSpecies.length ?? 0,
-              }}
-              methodKey={GBC_METHOD_LENS_KEY}
-              legendCopy={GBC_LEGEND_COPY}
-              onListEmptyMaps={focusEmptyMaps}
-            />
+            <LensPanel active={lens} onChange={setLens} />
           )}
         </div>
       </div>
+
+      {!coverageError && (
+        <LensLegend
+          active={lens}
+          summary={{
+            emptyMapNames: coverageData?.mapsWithoutEncounters ?? [],
+            unusedSpeciesNames: coverageData?.unusedSpecies ?? [],
+          }}
+          onJumpToMap={onJumpToMap}
+          methodKey={GBC_METHOD_LENS_KEY}
+          legendCopy={GBC_LEGEND_COPY}
+        />
+      )}
 
       <div className="world-canvas__legend">
         <span className="world-canvas__legend-item">

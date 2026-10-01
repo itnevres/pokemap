@@ -8,7 +8,7 @@ import { isGbaEncountersPayload } from "../encounters/guards.js";
 import { summariseGba, type GbaEncounterRow, type SpeciesSummary } from "../encounters/summary.js";
 import { fetchGuarded } from "../hooks/useGuardedFetch.js";
 import { SpeciesSpotlight } from "./SpeciesSpotlight.js";
-import { LensPanel, type LensId } from "./LensPanel.js";
+import { LensPanel, LensLegend, type LensId } from "./LensPanel.js";
 import { WarpDestinationModal } from "./WarpDestinationModal.js";
 import { useCoverage } from "../hooks/useCoverage.js";
 import { isDrawnByDefault } from "../world/visibility.js";
@@ -302,6 +302,10 @@ export interface WorldCanvasProps {
    *  by Dungeon mode (App.tsx, a later task) to reuse this exact component
    *  rather than forking a second implementation. */
   mapFilter?: Set<string> | null;
+  /** A lens list entry (Empty maps) was clicked; the app selects the map and
+   *  jumps there (the tree-click path). Unset (a dungeon view) renders the
+   *  entries disabled. */
+  onJumpToMap?: (name: string) => void;
 }
 
 /**
@@ -311,7 +315,7 @@ export interface WorldCanvasProps {
  * packages/ui/DESIGN.md for the palette/type/spacing tokens this consumes,
  * and this file's own comments for the LOD and culling mechanics.
  */
-export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProps = {}) {
+export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap }: WorldCanvasProps = {}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageCacheRef = useRef<Map<string, ImageCacheEntry>>(new Map());
@@ -1281,46 +1285,6 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
     return out;
   }, [selected, visible, sizeByMap, pan, zoom]);
 
-  // LensPanel's empty-maps legend "next action" (spec §9: a legend states
-  // what to do next, not just what colours mean). Reuses fitWorld's own
-  // worldBoundsOf/computeFit pair AND its exact "connected landmasses only"
-  // filter (componentOfPlacement(...).maps.length > 1) -- confirmed live
-  // this filter is not optional here either: most of the 982 empty maps
-  // are singleton interiors scattered across autoLayoutUnplaced's own
-  // singleton shelf (fitWorld's own comment: ~25,600 tiles wide), so an
-  // unfiltered bbox of every empty placement is dominated by that shelf and
-  // zooms out to a single-digit percent showing nothing usable -- the same
-  // failure mode fitWorld's own comment already documents and excludes
-  // singletons to avoid. Restricting to landmass members still leaves a
-  // real, useful view: most towns/routes' own interior buildings (empty)
-  // sit inside a multi-map component together with their route.
-  //
-  // Note for a later task: this is entirely unscoped by mapFilter -- it
-  // reads world.placements/world.components directly, the same way
-  // fitWorld's own ELSE branch does, with no dungeon-mode equivalent. That
-  // is silently wrong (not just imprecise) if clicked while viewing a
-  // dungeon: it pans/zooms the camera to the WORLD's own empty-maps
-  // bounding box, completely out of the dungeon currently open, rather
-  // than doing nothing or scoping to the dungeon's own empty members.
-  // Left unfixed here, matching this file's own "flag it, don't fix it
-  // silently" convention for a known imperfection out of scope for this
-  // task.
-  const focusEmptyMaps = useCallback(() => {
-    if (!world) return;
-    const empty = new Map(
-      [...world.placements].filter(([name, p]) => {
-        if (!emptyMapNames.has(name)) return false;
-        const comp = componentOfPlacement(p, world.components);
-        return comp !== null && comp.maps.length > 1;
-      }),
-    );
-    const bounds = worldBoundsOf(empty.size > 0 ? empty : world.placements, sizeByMap);
-    if (bounds.width <= 0 || bounds.height <= 0) return;
-    const fit = computeFit(bounds, viewport);
-    setZoom(fit.zoom);
-    setPan(fit.pan);
-  }, [world, emptyMapNames, sizeByMap, viewport]);
-
   // The actual draw. Reads only from state already current in this render's
   // closure (never a stale ref captured by an earlier effect), so an image
   // that finishes loading after the user has since panned still lands in
@@ -1801,7 +1765,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
         <div className="world-canvas__toolbar-group world-canvas__toolbar-group--grow">
           <SpeciesSpotlight onHits={setSpotlightHits} />
           {/* Review fix: a failed /api/coverage fetch used to fall through
-              to LensPanel anyway via `?? 0`, rendering "0 maps have no
+              to the lenses anyway via `?? 0`, rendering "0 maps have no
               encounters" as if that were a real, checked answer. A failed
               fetch replaces the lens controls with a visible error instead
               -- SpeciesSpotlight above is unaffected (it hits
@@ -1812,15 +1776,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
               Coverage lenses unavailable: {coverageError}
             </span>
           ) : (
-            <LensPanel
-              active={lens}
-              onChange={setLens}
-              summary={{
-                emptyMaps: coverageData?.mapsWithoutEncounters.length ?? 0,
-                unusedSpecies: coverageData?.unusedSpecies.length ?? 0,
-              }}
-              onListEmptyMaps={focusEmptyMaps}
-            />
+            <LensPanel active={lens} onChange={setLens} />
           )}
         </div>
         <div className="world-canvas__toolbar-group">
@@ -1830,6 +1786,17 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
           </button>
         </div>
       </div>
+
+      {!coverageError && (
+        <LensLegend
+          active={lens}
+          summary={{
+            emptyMapNames: coverageData?.mapsWithoutEncounters ?? [],
+            unusedSpeciesNames: coverageData?.unusedSpecies ?? [],
+          }}
+          onJumpToMap={onJumpToMap}
+        />
+      )}
 
       <div className="world-canvas__legend">
         <span className="world-canvas__legend-item">
