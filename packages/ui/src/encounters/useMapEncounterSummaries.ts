@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { fetchGuarded } from "../hooks/useGuardedFetch.js";
 import { isGbcEncountersPayload } from "../gbc/guards.js";
 import { isGbaEncountersPayload } from "./guards.js";
@@ -23,25 +23,27 @@ export function useMapEncounterSummaries(
   family: "gba" | "gbc",
   enabled: boolean,
 ): { summaries: SpeciesSummary[] | undefined; error: string | null } {
-  const cacheRef = useRef(new Map<string, Cached>());
+  // Lazy init: one Map per instance, not one allocated (and dropped) per render. Keyed by family too, so
+  // a changed `family` never serves the other family's entry.
+  const [cache] = useState(() => new Map<string, Cached>());
   const [, setVersion] = useState(0);
+  const key = `${family}:${mapName}`;
 
   useEffect(() => {
-    const cache = cacheRef.current;
-    if (!enabled || cache.has(mapName)) return;
-    cache.set(mapName, undefined);
+    if (!enabled || cache.has(key)) return;
+    cache.set(key, undefined);
     const url = `/api/encounters/${encodeURIComponent(mapName)}`;
     const request =
       family === "gba"
         ? fetchGuarded(url, isGbaEncountersPayload, url).then((d) => summariseGba(d.methods))
         : fetchGuarded(url, isGbcEncountersPayload, url).then((d) => summariseGbc(d.sources));
     request
-      .then((s) => cache.set(mapName, s))
-      .catch((e: unknown) => cache.set(mapName, { error: e instanceof Error ? e.message : String(e) }))
+      .then((s) => cache.set(key, s))
+      .catch((e: unknown) => cache.set(key, { error: e instanceof Error ? e.message : String(e) }))
       .then(() => setVersion((v) => v + 1));
-  }, [mapName, family, enabled]);
+  }, [mapName, family, enabled, cache, key]);
 
-  const cached = cacheRef.current.get(mapName);
+  const cached = cache.get(key);
   if (cached === undefined) return { summaries: undefined, error: null };
   return Array.isArray(cached) ? { summaries: cached, error: null } : { summaries: undefined, error: cached.error };
 }

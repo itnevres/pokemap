@@ -609,7 +609,7 @@ describe("GbcMapCanvas: Encounters overlay (Plan 6c B4)", () => {
     expect(f).toHaveBeenCalledTimes(1);
   });
 
-  it("a time switch neither refetches nor re-fits", async () => {
+  it("a time switch re-dims the sprites without refetching", async () => {
     const f = stubEncounters();
     const { rerender } = await mountReady({ time: "morn" });
     fireEvent.click(encBtn());

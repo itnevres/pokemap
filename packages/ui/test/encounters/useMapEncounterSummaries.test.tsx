@@ -70,12 +70,20 @@ describe("useMapEncounterSummaries", () => {
   it("a late response for a map no longer current is cached but does not change what is shown", async () => {
     let releaseFoo!: (r: Response) => void;
     fetchMock.mockImplementationOnce(() => new Promise<Response>((res) => (releaseFoo = res)));
-    const { result, rerender } = renderHook(({ m }) => useMapEncounterSummaries(m, "gba", true), { initialProps: { m: "Foo" } });
+    let renders = 0;
+    const { result, rerender } = renderHook(
+      ({ m }) => {
+        renders++;
+        return useMapEncounterSummaries(m, "gba", true);
+      },
+      { initialProps: { m: "Foo" } },
+    );
     rerender({ m: "Bar" });
     await waitFor(() => expect(result.current.summaries).toBeDefined()); // Bar's own data
+    const before = renders;
     releaseFoo(new Response(JSON.stringify({ methods: [] }), { status: 200 })); // Foo arrives late, empty
-    await new Promise((r) => setTimeout(r, 10));
-    expect(result.current.summaries).toEqual(summariseGba(GBA_METHODS)); // still Bar's
+    await waitFor(() => expect(renders).toBeGreaterThan(before)); // positive evidence: Foo's answer landed (version bump)
+    expect(result.current.summaries).toEqual(summariseGba(GBA_METHODS)); // ...yet Bar is still what is shown
     rerender({ m: "Foo" });
     expect(result.current.summaries).toEqual([]); // Foo's cached late answer
     expect(fetchMock).toHaveBeenCalledTimes(2);
@@ -114,6 +122,15 @@ describe("useMapEncounterSummaries", () => {
     fetchMock.mockImplementation(() => ok(GBA_BODY));
     const wrong = renderHook(() => useMapEncounterSummaries("Foo", "gbc", true));
     await waitFor(() => expect(wrong.result.current.error).not.toBeNull());
+  });
+
+  it("the cache is keyed by family too: the same map name under another family is fetched, not served from the first", async () => {
+    const { result, rerender } = renderHook(({ fam }) => useMapEncounterSummaries("Gbc", fam, true), { initialProps: { fam: "gbc" as "gba" | "gbc" } });
+    await waitFor(() => expect(result.current.summaries).toEqual(summariseGbc(GBC_SOURCES)));
+    rerender({ fam: "gba" });
+    expect(result.current.summaries).toBeUndefined(); // not the GBC entry
+    await waitFor(() => expect(result.current.error).not.toBeNull()); // GBC body fails the GBA guard
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("encodes the map name in the URL", async () => {
