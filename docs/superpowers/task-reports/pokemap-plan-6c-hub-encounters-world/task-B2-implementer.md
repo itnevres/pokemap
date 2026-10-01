@@ -31,3 +31,14 @@
 ## Deviations
 - Spec mutation "`>=` instead of `>`" is area-equivalent in my overlapArea (returns 0 either way); reviewers should use a closed-semantics variant (touching counts nonzero) like M2b. Code is per spec.
 - Imports in corpus test use `@pokemap/core/src/...` alias (as other UI tests do) plus relative path for the GBC corpus helper per spec.
+
+## Fix round
+| item | SHA | proof |
+|---|---|---|
+| SR-F1 bandRect all 4 sides, rect {3,4,5,6} band 2 | 7557cc5 | `bandRect` non-square test; M6d (left `height: w`) 1 red, M6e (top `width: h`) 1 red; both reverted |
+| QR-3 `gbaDirToCompass` (up/down/left/right -> compass, dive/emerge -> undefined) | 41f7f1d | 6 `it.each` cases (red first: not a function); mutant up->south 1 red |
+| QR-2 `neighbours: readonly Rect[]` | 41f7f1d | typecheck clean |
+| QR-1/QR-7 doc lines (integer world units; band<=0 -> left) | 41f7f1d | extra test `band <= 0 ... -> left` (0 and -1) |
+
+Gate: 1,849 -> 1,857 tests (+1 bandRect, +6 gbaDirToCompass, +1 band<=0); 116 files all pass, no flakes; typecheck clean; vite build OK.
+Deviation: items 2-4 share one commit.
