@@ -867,6 +867,34 @@ describe("App -- world click selects the map in the tree (Plan 6c C2)", () => {
   }
   const currentRow = () => document.querySelector<HTMLElement>('.map-tree__map[aria-current="true"]');
 
+  /** Route1 at world x 0, Route2 at x 11. In a 200x100 viewport a jump to either fills its own 100px (zoom 10,
+   *  "63%"): Route1 at screen x [50,150) with Route2 showing at [160,200); at the default zoom 1 / pan 0 they sit
+   *  at [0,10) and [11,21). */
+  function stubTwoMapWorld() {
+    const base = makeFetchMock();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init?: RequestInit) =>
+        url === "/api/world"
+          ? Promise.resolve({
+              ok: true, status: 200,
+              json: () => Promise.resolve({
+                placements: {
+                  Route1: { map: "Route1", x: 0, y: 0, width: 10, height: 10, component: 0 },
+                  Route2: { map: "Route2", x: 11, y: 0, width: 10, height: 10, component: 1 },
+                },
+                components: [
+                  { index: 0, maps: ["Route1"], bounds: { x: 0, y: 0, width: 10, height: 10 } },
+                  { index: 1, maps: ["Route2"], bounds: { x: 11, y: 0, width: 10, height: 10 } },
+                ],
+                conflicts: [], verticalLinks: [], sidecar: { dungeonAutoLayout: true },
+              }),
+            } as Response)
+          : base(url, init),
+      ),
+    );
+  }
+
   // "A tree click in World mode still jumps" is already pinned by the C1 test above: "clicking an Empty maps
   // list entry ..." starts with a tree click on Route1 and waits for .world-canvas__jump-highlight.
 
@@ -887,7 +915,7 @@ describe("App -- world click selects the map in the tree (Plan 6c C2)", () => {
         await waitFor(() => expect(currentRow()?.textContent).toBe("Route1"));
         expect(spy.mock.contexts).toContain(currentRow());
         expect(spy).toHaveBeenCalledWith({ block: "nearest" });
-        await new Promise((r) => setTimeout(r, 50));
+        await act(async () => {});
         expect(document.querySelector(".world-canvas__jump-highlight")).toBeNull(); // no jump fired
         expect(zoomReadout()).toBe("6%"); // view untouched
       });
@@ -898,30 +926,7 @@ describe("App -- world click selects the map in the tree (Plan 6c C2)", () => {
 
   it("a canvas click after a tree jump selects the new map but does not re-jump (no new jump highlight, view kept)", async () => {
     await withViewport(async () => {
-      // Route1 at x 0, Route2 at x 11: after the tree jump to Route1 (zoom 10, 200x100 viewport, pan {50,0})
-      // Route1 fills screen x [50,150) and Route2 shows at [160,200).
-      const base = makeFetchMock();
-      vi.stubGlobal(
-        "fetch",
-        vi.fn((url: string, init?: RequestInit) =>
-          url === "/api/world"
-            ? Promise.resolve({
-                ok: true, status: 200,
-                json: () => Promise.resolve({
-                  placements: {
-                    Route1: { map: "Route1", x: 0, y: 0, width: 10, height: 10, component: 0 },
-                    Route2: { map: "Route2", x: 11, y: 0, width: 10, height: 10, component: 1 },
-                  },
-                  components: [
-                    { index: 0, maps: ["Route1"], bounds: { x: 0, y: 0, width: 10, height: 10 } },
-                    { index: 1, maps: ["Route2"], bounds: { x: 11, y: 0, width: 10, height: 10 } },
-                  ],
-                  conflicts: [], verticalLinks: [], sidecar: { dungeonAutoLayout: true },
-                }),
-              } as Response)
-            : base(url, init),
-        ),
-      );
+      stubTwoMapWorld();
       render(<App />);
       await waitFor(() => expect(screen.getByRole("button", { name: "Route1" })).toBeTruthy());
       const canvas = await worldCanvasReady("6%", 200);
@@ -934,12 +939,103 @@ describe("App -- world click selects the map in the tree (Plan 6c C2)", () => {
       clickAt(canvas, [180, 50]); // Route2
 
       await waitFor(() => expect(currentRow()?.textContent).toBe("Route2"));
-      await new Promise((r) => setTimeout(r, 50));
+      await act(async () => {});
       // A re-jump would mount a fresh highlight (it is keyed on jumpToken); the original may have faded, never been replaced.
       const now = document.querySelector(".world-canvas__jump-highlight");
       expect(now === null || now === firstJump).toBe(true);
       expect(zoomReadout()).toBe("63%");
     }, 200);
+  });
+
+  const clickMode = (name: "Map" | "World" | "Dungeon") => fireEvent.click(screen.getByRole("button", { name }));
+  const jumpHighlight = () => document.querySelector(".world-canvas__jump-highlight");
+
+  it("entering World after tree-click A, world-click B, Map view centres on B, not on the stale tree target A", async () => {
+    await withViewport(async () => {
+      stubTwoMapWorld();
+      render(<App />);
+      await waitFor(() => expect(screen.getByRole("button", { name: "Route1" })).toBeTruthy());
+      const canvas = await worldCanvasReady("6%", 200);
+      await waitFor(() => expect(screen.queryByText(/Loading world/)).toBeNull());
+      fireEvent.click(screen.getByRole("button", { name: "Route1" })); // A: a tree click, jumpTarget = Route1
+      await waitFor(() => expect(zoomReadout()).toBe("63%"));
+      clickAt(canvas, [180, 50]); // B = Route2: a world click, selects only
+      await waitFor(() => expect(currentRow()?.textContent).toBe("Route2"));
+
+      clickMode("Map");
+      clickMode("World");
+
+      await waitFor(() => expect(jumpHighlight()).toBeTruthy());
+      await waitFor(() => expect(zoomReadout()).toBe("63%"));
+      const fresh = document.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement;
+      fresh.getBoundingClientRect = () => ({ left: 0, top: 0, right: 200, bottom: 100, width: 200, height: 100, x: 0, y: 0, toJSON() {} });
+      clickAt(fresh, [100, 50]); // the centre: Route2 if the view centred on B, Route1 if it jumped to the stale A
+      await act(async () => {});
+      expect(currentRow()?.textContent).toBe("Route2");
+    }, 200);
+  });
+
+  it("entering World after only a world click on B (no tree click ever) jumps to B", async () => {
+    await withViewport(async () => {
+      stubTwoMapWorld();
+      render(<App />);
+      await waitFor(() => expect(screen.getByRole("button", { name: "Route1" })).toBeTruthy());
+      const canvas = await worldCanvasReady("6%", 200);
+      await waitFor(() => expect(screen.queryByText(/Loading world/)).toBeNull());
+      clickAt(canvas, [15, 5]); // Route2 at the default zoom-1 view is [11,21)x[0,10)
+      await waitFor(() => expect(currentRow()?.textContent).toBe("Route2"));
+      expect(zoomReadout()).toBe("6%");
+
+      clickMode("Map");
+      clickMode("World");
+
+      await waitFor(() => expect(zoomReadout()).toBe("63%")); // jumped; before, jumpTarget was null and the view stayed at 6%
+      await waitFor(() => expect(jumpHighlight()).toBeTruthy());
+    }, 200);
+  });
+
+  it("pressing World while already in World does not re-jump (no new highlight, view kept)", async () => {
+    await withViewport(async () => {
+      stubTwoMapWorld();
+      render(<App />);
+      await waitFor(() => expect(screen.getByRole("button", { name: "Route1" })).toBeTruthy());
+      await worldCanvasReady("6%", 200);
+      await waitFor(() => expect(screen.queryByText(/Loading world/)).toBeNull());
+      fireEvent.click(screen.getByRole("button", { name: "Route1" }));
+      await waitFor(() => expect(zoomReadout()).toBe("63%"));
+      const first = jumpHighlight();
+      expect(first).toBeTruthy();
+
+      clickMode("World");
+      await act(async () => {});
+
+      const now = jumpHighlight(); // a re-jump would mount a fresh node (keyed on jumpToken); the first may have faded
+      expect(now === null || now === first).toBe(true);
+      expect(zoomReadout()).toBe("63%");
+    }, 200);
+  });
+
+  it("in Dungeon mode a canvas click on a map does not change the app's selection (the dungeon canvas gets no onSelectMap)", async () => {
+    await withViewport(async () => {
+      vi.stubGlobal("fetch", makeFetchMock()); // dungeon "Mt Moon" holds Route1
+      render(<App />);
+      clickMode("Dungeon");
+      await waitFor(() => expect(screen.getByText("Mt Moon")).toBeTruthy());
+      fireEvent.click(screen.getByText("Mt Moon"));
+      // The dungeon view fits its member map: Route1 fills the 100x100 viewport (zoom 10, "63%").
+      await waitFor(() => expect(zoomReadout()).toBe("63%"));
+      const canvas = document.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement;
+      canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: 100, bottom: 100, width: 100, height: 100, x: 0, y: 0, toJSON() {} });
+
+      clickAt(canvas, [50, 50]);
+
+      // Control: the canvas did take the click (its own selection outline), so the click landed on Route1.
+      expect(document.querySelector('.world-canvas__selection-outline[data-map="Route1"]')).toBeTruthy();
+      // The dungeon sidebar has no tree, so check the selection-driven UI after returning to Map mode.
+      clickMode("Map");
+      expect(currentRow()).toBeNull();
+      expect(document.querySelector(".app__status")).toBeNull();
+    });
   });
 
   describe("with a dirty edit session on PalletTown", () => {
@@ -1020,6 +1116,10 @@ describe("App -- world click selects the map in the tree (Plan 6c C2)", () => {
           clickAt(canvas, PALLET); // already selected and dirty
           expect(confirmSpy).not.toHaveBeenCalled();
           expect(currentRow()?.textContent).toBe("PalletTown");
+
+          // Positive control: the canvas is live, so a click on another map does ask.
+          clickAt(canvas, ROUTE1);
+          expect(confirmSpy).toHaveBeenCalledTimes(1);
         }, 200);
       } finally {
         confirmSpy.mockRestore();

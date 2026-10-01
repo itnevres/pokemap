@@ -382,6 +382,15 @@ export function App({ switcher }: AppProps) {
     if (name !== selected) changeSelection(name);
   };
 
+  // Entering World centres on the selected map, wherever the selection came from (tree, world click,
+  // Map view). A world click itself never jumps (F1); this is a mode entry, not a click.
+  const enterWorld = () => {
+    if (mode === "world") return;
+    setJumpTarget(selected);
+    setSelectVersion((v) => v + 1);
+    setMode("world");
+  };
+
   // `.find()` over `dungeons.data` returns the SAME element reference every
   // render as long as the array itself hasn't been replaced (only true
   // after a real create/rename/setMaps/remove -- see useDungeons's own
@@ -445,7 +454,7 @@ export function App({ switcher }: AppProps) {
             type="button"
             className="map-canvas__btn"
             aria-pressed={mode === "world"}
-            onClick={() => setMode("world")}
+            onClick={enterWorld}
           >
             World
           </button>
