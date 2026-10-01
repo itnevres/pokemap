@@ -75,8 +75,10 @@ const rectStyle = (r: Rect) => ({ left: px(r.x), top: px(r.y), width: px(r.width
 
 /**
  * Encounter border (Plan 6c B3): one sprite per species on a free side of each
- * map, replacing the old per-family gutters. Off by default behind one toggle;
- * the legend only exists while it is on. Purely presentational and
+ * map, replacing the old per-family gutters. Uncontrolled (the world views, no
+ * `enabled` prop) it is off by default behind its own toggle, and the legend only
+ * exists while that is on. Controlled (the map views, `enabled` given) it renders
+ * neither: the caller owns toggle and legend. Purely presentational and
  * family-blind: the caller supplies screen rects, the side per map and the
  * `SpeciesSummary[]` (B1). Mounted once over a `position: relative` viewport;
  * the root is `pointer-events: none` so it never steals canvas pans, and only
