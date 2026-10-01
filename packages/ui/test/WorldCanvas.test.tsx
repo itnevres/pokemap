@@ -2123,6 +2123,16 @@ describe("WorldCanvas: encounter border (Plan 6c B3)", () => {
     return { impl, calls };
   }
 
+  const readout = () => document.querySelector(".world-canvas__zoom-readout")!.textContent;
+  /** One wheel-in about (cx, cy), then positive evidence it landed (the readout moved, so the
+   *  [visible] effects have had every chance to refetch) and a flush, before the caller counts calls. */
+  async function zoomIn(canvas: HTMLElement, cx = 50, cy = 50) {
+    const before = readout();
+    fireEvent.wheel(canvas, { clientX: cx, clientY: cy, deltaY: -100 });
+    await waitFor(() => expect(readout()).not.toBe(before));
+    await act(async () => {});
+  }
+
   const espeon = { species: "SPECIES_ESPEON", percent: 37.5, minLevel: 2, maxLevel: 4, slots: [0, 1] };
   const rattata = { species: "SPECIES_RATTATA", percent: 12.5, minLevel: 3, maxLevel: 3, slots: [2] };
 
@@ -2153,13 +2163,34 @@ describe("WorldCanvas: encounter border (Plan 6c B3)", () => {
     expect(badgeFor("Free").className).toContain("encounter-border__badge--left");
   });
 
+  // LOD is below 4 screen px per tile: 7 wheel-ins (1.2^7 = 3.58) is still a badge, the 8th (1.2^8 = 4.30) is
+  // sprites. 4.30 is also below the GBC threshold (8): wiring GBC's value in here would keep the badge.
+  // Pivot (0, 25) keeps Target (world 0..10 x 20..30) on screen while zooming.
+  it("wheeling in from zoom 1: a badge below the LOD threshold (4), sprites from 4 (not only from 8)", async () => {
+    const { impl } = withEncounters(makeFetchMock(SIDE_WORLD).impl, () => ({ mapName: "x", mapId: 1, methods: [{ method: "land_mons", chances: [espeon, rattata] }] }));
+    const { container, canvas } = await mountReady(impl);
+    fireEvent.click(await screen.findByRole("button", { name: "Encounters" }));
+    await waitFor(() => expect(container.querySelectorAll(".encounter-border__badge").length).toBe(2));
+    for (let i = 0; i < 7; i++) await zoomIn(canvas, 0, 25);
+    expect(readout()).toBe("22%"); // round(3.58 / 16 * 100)
+    expect(container.querySelectorAll(".encounter-border__badge").length).toBeGreaterThan(0);
+    expect(container.querySelector(".encounter-border__strip")).toBeNull();
+    await zoomIn(canvas, 0, 25);
+    expect(readout()).toBe("27%"); // round(4.30 / 16 * 100)
+    expect(container.querySelector(".encounter-border__badge")).toBeNull();
+    const strip = container.querySelector<HTMLElement>(".encounter-border__strip--top")!; // Target: left blocked by the off-screen Blocker
+    expect(strip).toBeTruthy();
+    expect(strip.querySelectorAll(".encounter-border__sprite").length).toBe(2);
+    // band = BORDER_BAND.gba (4) tiles at 4.30 px/tile
+    expect(parseFloat(strip.style.height)).toBeCloseTo(4 * Math.pow(1.2, 8), 3);
+  });
+
   it("fetches /api/encounters/:map once per visible map and does not refetch on zoom", async () => {
     const { impl, calls } = withEncounters(makeFetchMock(SIDE_WORLD).impl, () => ({ mapName: "x", mapId: 1, methods: [] }));
     const { canvas } = await mountReady(impl);
     await waitFor(() => expect(calls.length).toBe(2));
     expect([...calls].sort()).toEqual(["Free", "Target"]); // Blocker is off-screen
-    fireEvent.wheel(canvas, { clientX: 50, clientY: 50, deltaY: -100 });
-    await new Promise((r) => setTimeout(r, 20));
+    await zoomIn(canvas); // the wheel really changed the view (readout 6% -> 8%), re-running every [visible] effect
     expect(calls.length).toBe(2);
   });
 
@@ -2168,8 +2199,7 @@ describe("WorldCanvas: encounter border (Plan 6c B3)", () => {
     const { impl, calls } = withEncounters(makeFetchMock(world).impl, (name) => ({ family: "gbc", mapName: name, sources: [], defects: [] }));
     const { canvas } = await mountReady(impl);
     await waitFor(() => expect(screen.getByText("Encounter data unavailable for 1 map")).toBeTruthy());
-    fireEvent.wheel(canvas, { clientX: 50, clientY: 50, deltaY: -100 });
-    await new Promise((r) => setTimeout(r, 20));
+    await zoomIn(canvas);
     expect(calls).toEqual(["Solo"]);
     expect(screen.getByText("Encounter data unavailable for 1 map")).toBeTruthy(); // still 1: no second failure counted
   });

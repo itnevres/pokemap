@@ -16,6 +16,7 @@ import {
 } from "../../src/gbc/GbcWorldCanvas.js";
 import { computeFit } from "../../src/components/WorldCanvas.js";
 import type { GbcWorldPayload } from "@pokemap/core/src/gbc/wire.js";
+import { BORDER_BAND } from "../../src/encounters/borderSide.js";
 
 // ---------------------------------------------------------------------------
 // Pure helpers -- no rendering involved.
@@ -1117,6 +1118,40 @@ describe("GbcWorldCanvas: encounters/lenses/spotlight (Plan 6b Task 6)", () => {
 
   // Plan 6c B3: time dims, it no longer filters. Fixture mirrors Route30: a
   // morn/day grass species and a nite-only one.
+  // Fit zoom is 10 (31%). Wheel-out is x1/1.2: 8.33 (26%, still >= 8) -> 6.94 (22%, < 8 = badge); one wheel-in
+  // returns to 8.33 (sprites). Pins the wiring of GBC_LOD_ZOOM_THRESHOLD (8) and BORDER_BAND.gbc (2) into the
+  // border: lodZoom={4} would keep sprites at 6.94, band={BORDER_BAND.gba} would make every band 4 blocks thick.
+  it("wheeling out from the fit zoom: sprites at >= 8, a badge below 8, sprites again after wheeling back; band thickness = BORDER_BAND.gbc * zoom", async () => {
+    const sources = [{ method: "rock", chances: [{ species: "GEODUDE", percent: 45, minLevel: 5, maxLevel: 8 }] }];
+    const { container, canvas } = await mountReadyAll({ encounters: { MapA: sources, MapB: sources } });
+    fireEvent.click(screen.getByRole("button", { name: "Encounters" }));
+    const strips = () => [...container.querySelectorAll<HTMLElement>(".encounter-border__strip")];
+    const badges = () => container.querySelectorAll(".encounter-border__badge");
+    const wheel = async (deltaY: number, pct: RegExp) => {
+      fireEvent.wheel(canvas, { clientX: 100, clientY: 100, deltaY });
+      await waitFor(() => expect(screen.getByText(pct)).toBeTruthy());
+    };
+
+    await waitFor(() => expect(strips().length).toBe(2)); // fit zoom 10
+    expect(badges().length).toBe(0);
+    const left = () => container.querySelector<HTMLElement>(".encounter-border__strip--left")!; // MapA
+    expect(parseFloat(left().style.width)).toBeCloseTo(BORDER_BAND.gbc * 10, 3);
+
+    await wheel(100, /zoom 26%/); // zoom 8.33: still >= 8
+    expect(strips().length).toBe(2);
+    expect(badges().length).toBe(0);
+    expect(parseFloat(left().style.width)).toBeCloseTo(BORDER_BAND.gbc * (10 / 1.2), 3);
+
+    await wheel(100, /zoom 22%/); // zoom 6.94: below 8
+    expect(strips().length).toBe(0);
+    expect(badges().length).toBe(2);
+
+    await wheel(-100, /zoom 26%/); // back to 8.33
+    expect(badges().length).toBe(0);
+    expect(strips().length).toBe(2);
+    expect(parseFloat(left().style.width)).toBeCloseTo(BORDER_BAND.gbc * (10 / 1.2), 3);
+  });
+
   it("at time=morn a nite-only species renders dimmed (not hidden) and a morn species does not; the time-independent cache means a time switch flips it without a refetch", async () => {
     const sources = [
       { method: "grass", time: "morn", encounterRate: 9.765625, chances: [{ species: "CATERPIE", percent: 45, minLevel: 3, maxLevel: 8 }] },
@@ -1128,9 +1163,12 @@ describe("GbcWorldCanvas: encounters/lenses/spotlight (Plan 6b Task 6)", () => {
     const dimmed = (n: string) => screen.getByRole("button", { name: n }).classList.contains("encounter-border__sprite--dimmed");
     expect(dimmed("Zubat")).toBe(true);
     expect(dimmed("Caterpie")).toBe(false);
+    const encounterCalls = () => vi.mocked(fetch).mock.calls.filter((c) => String(c[0]).startsWith("/api/encounters/")).length;
+    expect(encounterCalls()).toBe(2); // MapA, MapB: one fetch each
     rerender(<GbcWorldCanvas time="nite" />);
     expect(dimmed("Zubat")).toBe(false);
     expect(dimmed("Caterpie")).toBe(true);
+    expect(encounterCalls()).toBe(2); // the time switch refetched nothing
   });
 
   it("method lens tints MapA/MapB by their own fetched method precedence", async () => {
