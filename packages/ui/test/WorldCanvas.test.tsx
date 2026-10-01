@@ -1360,8 +1360,10 @@ describe("WorldCanvas", () => {
       canvas.getBoundingClientRect = () => ({
         left: 0, top: 0, right: VIEWPORT_SIZE, bottom: VIEWPORT_SIZE, width: VIEWPORT_SIZE, height: VIEWPORT_SIZE, x: 0, y: 0, toJSON() {},
       });
-      const stageCtx = ctxByCanvas.get(canvas)!;
-      await waitFor(() => expect(stageCtx.clearRect).toHaveBeenCalled());
+      // The highlight needs the jump effect AND the re-render it triggers, so wait for it itself: the earlier
+      // `waitFor(clearRect)` gate was already satisfied at mount (the draw effect runs with `world` still null)
+      // and raced that second commit under full-suite load.
+      await waitFor(() => expect(utils.container.querySelector(".world-canvas__jump-highlight")).toBeTruthy());
 
       // computeFit on Target's own 10x10 bounds in a 100x100 viewport:
       // zoom = min(100/10, 100/10) = 10 (clamped to MAX_ZOOM=16, so 10
@@ -1369,7 +1371,7 @@ describe("WorldCanvas", () => {
       // exactly [0,100)x[0,100), the full viewport, hand-computed the
       // same way computeFit's own test above does.
       const jumpOutline = utils.container.querySelector(".world-canvas__jump-highlight") as HTMLElement;
-      expect(jumpOutline).toBeTruthy();
+      expect([jumpOutline.style.left, jumpOutline.style.top, jumpOutline.style.width, jumpOutline.style.height]).toEqual(["0px", "0px", "100px", "100px"]);
     });
 
     it("re-jumps even when clicking the same map name again (jumpToken changes, jumpToMap does not)", async () => {
