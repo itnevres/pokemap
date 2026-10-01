@@ -57,3 +57,19 @@ GBC (img 128x96, band 64 native): vp 400 left -> z2, draw (136,104,256,192), str
 3. Toggling the legend row on shrinks the viewport (existing behaviour for every overlay); Fit afterwards uses the new viewport.
 4. Tests were written after the controlled-mode and hook code (steps 1-2) rather than red-first; steps 3-4 were red-first (12 failing before implementation each). All mutations above confirm the tests bite.
 5. Stray `packages/ui/.scratch-vite5183.mjs` (a vitest/vite artifact) appeared untracked during the run; deleted, never committed.
+
+## Fix round (coordinator items 1-8)
+Counts 1,918 -> **1,935** (+17: 2 QR-1, 2 SR-F1, 9 fit, 2 empty-legend, 1 css, 1 hook-family). Gate: `npm test` 1935/1935 (118 files, no flakes), `npm run typecheck` clean, `npx vite build packages/ui` ok. `git diff 8805d12 --stat -- packages/ui/test`: 5 files, 654 insertions, 0 deletions (the edits to my own B4 tests, legend wording / renamed GBC test / hook late-response test, are inside additions vs the base).
+
+| item | SHA | proving test | red before |
+|---|---|---|---|
+| 1 QR-1: composite effect deps = individual flags (GBA `grid/elevation/events/showCollision`, GBC `grid/collision/events`); GBC comment updated | 8ac3bfb | both canvases: "with Grid already on, toggling Encounters does not recomposite either (no new putImageData)" | both red (new `putImageData` call after Encounters click) before the dep change |
+| 2 SR-F1/QR-3: `encountersFor: string \| null` state; `encountersOn = encountersFor === mapName`; no longer in `Toggles` | 24c3260 | both: "a map switch is off in the very first render: no fetch for the new map and its toggle reads off" (1 fetch total); existing "resets to off" tests unchanged and green | both red (2nd fetch for Bar) before |
+| 3 QR-6: `encounters/fit.ts` `fitWithBand`; both `fit()` = it + plain `setZoom`+`setPan` / `setView`; component exact-rect tests unchanged | 54ba041 | `test/encounters/fit.test.ts` 9 tests, hand-derived: band 0 (all 4 sides) -> z4 (72,72); left z2 (200,136); right (72,136); top (136,200); bottom (136,72); band shrinks zoom; left/top use only their own axis; nothing fits -> z1 (5,-27); rounding 72.5 -> 73 | module absent (import fail) before; mutants (top offset w/o `* zoom`; extraW dropping `right`) each red |
+| 5 QR-7: GBA "Encounters: hover or focus a sprite"; GBC "Encounters: hover or focus a sprite; dimmed = not at <time>, + = level can roll up to 4 higher"; hook `[]` -> "Encounters: none on this map" | e05c03d | both: "a map with no wild encounters says so in the legend row..."; legend-text assertions updated | 4 red before the src change |
+| 4 QR-5: `.map-canvas__legend-item[role="alert"] { min-width: 0; overflow-wrap: anywhere }` | b1f01d0 | `EncounterBorder.test.tsx` "map-view legend: error text wraps" reads the rule | red before the CSS |
+| 7 QR-9: hook cache key `${family}:${mapName}`, lazy `useState(() => new Map())` (no per-render Map) | d3821ae | hook: "the cache is keyed by family too..." | red before; mutants (key = mapName; placeholder removed) red |
+| 8 QR-10/SR-F2: late-response test: render-counter `waitFor` (positive evidence the late answer landed) replaces the 10 ms sleep; GBC "a time switch neither refetches nor re-fits" renamed "a time switch re-dims the sprites without refetching" (asserts dimming label + 1 fetch) | d3821ae | same tests | n/a (test quality) |
+| 6 QR-8: `EncounterBorder` JSDoc covers controlled mode; DESIGN.md: "off by default" qualified as world-view only, line break fixed, map-view paragraph updated | 04c89cd | docs only | n/a |
+
+Notes: the per-map reset effect still also calls `setEncountersFor(null)` (plain setter, not in an updater) only so A -> B -> A does not bring A's border back; B is off in its first render without it. Not done per coordinator: QR-2 (known limitation: sprite band takes `mouseleave` mid-stroke), QR-4 (`connections ?? []` kept).
