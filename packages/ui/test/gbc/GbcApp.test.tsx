@@ -536,3 +536,45 @@ describe("GbcApp -- coverage lens list jump (Plan 6c C1)", () => {
     await waitFor(() => expect(document.querySelector(".world-canvas__jump-highlight")).toBeTruthy());
   });
 });
+
+describe("GbcApp -- world click selects the map in the tree (Plan 6c C2)", () => {
+  it("a canvas click on a map makes its tree row current and scrolls it into view", async () => {
+    // jsdom elements are 0x0 by default -- a real viewport so the initial fit runs and OlivineCity is visible
+    // (same recipe as the F1 test above).
+    const originalClientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth");
+    const originalClientHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight");
+    Object.defineProperty(HTMLElement.prototype, "clientWidth", { value: 100, configurable: true });
+    Object.defineProperty(HTMLElement.prototype, "clientHeight", { value: 100, configurable: true });
+    try {
+      const world = {
+        family: "gbc" as const,
+        blockPx: 32 as const,
+        placements: { OlivineCity: { map: "OlivineCity", x: 0, y: 0, width: 10, height: 10, component: 0 } },
+        components: [{ index: 0, maps: ["OlivineCity"], bounds: { x: 0, y: 0, width: 10, height: 10 } }],
+        conflicts: [],
+      };
+      vi.stubGlobal("fetch", makeFetchMock({ world }));
+      render(<GbcApp root="/x" />);
+      await waitFor(() => expect(screen.getByText("OlivineCity")).toBeTruthy());
+      const currentRow = () => document.querySelector<HTMLElement>('.map-tree__map[aria-current="true"]');
+      expect(currentRow()).toBeNull();
+
+      const view = screen.getByRole("group", { name: "View" });
+      fireEvent.click(Array.from(view.querySelectorAll("button")).find((b) => b.textContent === "World") as HTMLElement);
+      await waitFor(() => expect(screen.getByText(/1 components · 1 maps · zoom 31%/)).toBeTruthy());
+      const scrollSpy = vi.mocked(Element.prototype.scrollIntoView); // the per-file vi.fn installed in beforeEach
+      scrollSpy.mockClear();
+
+      const canvas = document.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement;
+      canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: 100, bottom: 100, width: 100, height: 100, x: 0, y: 0, toJSON() {} });
+      fireEvent.click(canvas, { clientX: 50, clientY: 50 });
+
+      await waitFor(() => expect(currentRow()?.textContent).toBe("OlivineCity"));
+      expect(scrollSpy.mock.contexts).toContain(currentRow());
+      expect(scrollSpy).toHaveBeenCalledWith({ block: "nearest" });
+    } finally {
+      if (originalClientWidth) Object.defineProperty(HTMLElement.prototype, "clientWidth", originalClientWidth);
+      if (originalClientHeight) Object.defineProperty(HTMLElement.prototype, "clientHeight", originalClientHeight);
+    }
+  });
+});
