@@ -522,6 +522,7 @@ describe("GbcApp -- coverage lens list jump (Plan 6c C1)", () => {
     await waitFor(() => expect(screen.getByText("OlivineCity")).toBeTruthy());
     const currentTreeRow = () => screen.getAllByRole("button", { name: "OlivineCity" }).find((b) => b.getAttribute("aria-current") === "true");
     expect(currentTreeRow()).toBeUndefined();
+    expect(document.querySelector(".world-canvas__jump-highlight")).toBeNull();
 
     const view = screen.getByRole("group", { name: "View" });
     fireEvent.click(Array.from(view.querySelectorAll("button")).find((b) => b.textContent === "World") as HTMLElement);
@@ -531,5 +532,7 @@ describe("GbcApp -- coverage lens list jump (Plan 6c C1)", () => {
     fireEvent.click(ul.querySelector("button")!);
 
     await waitFor(() => expect(currentTreeRow()).toBeTruthy());
+    // The same jump a tree click makes (see the jumpToMap/jumpToken wiring test above).
+    await waitFor(() => expect(document.querySelector(".world-canvas__jump-highlight")).toBeTruthy());
   });
 });

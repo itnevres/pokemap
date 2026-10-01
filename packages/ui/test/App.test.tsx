@@ -773,8 +773,8 @@ describe("App -- discard flow", () => {
 });
 
 describe("App -- coverage lens list jump (Plan 6c C1)", () => {
-  it("clicking an Empty maps list entry in World mode selects that map (tree row becomes current)", async () => {
-    // Per-test override of makeFetchMock's empty /api/coverage: Route2 is an empty map.
+  /** Per-test override of makeFetchMock's empty /api/coverage: Route1 and Route2 are empty maps. */
+  function stubEmptyCoverage() {
     const base = makeFetchMock();
     vi.stubGlobal(
       "fetch",
@@ -785,7 +785,7 @@ describe("App -- coverage lens list jump (Plan 6c C1)", () => {
               status: 200,
               json: () =>
                 Promise.resolve({
-                  mapsWithEncounters: 0, encounterTables: 0, mapsWithoutEncounters: ["Route2"],
+                  mapsWithEncounters: 0, encounterTables: 0, mapsWithoutEncounters: ["Route2", "Route1"],
                   levelByMap: [], unusedSpecies: [],
                   byMethod: { land_mons: 0, water_mons: 0, rock_smash_mons: 0, fishing_mons: 0 },
                 }),
@@ -793,17 +793,35 @@ describe("App -- coverage lens list jump (Plan 6c C1)", () => {
           : base(url, init),
       ),
     );
+  }
+
+  it("clicking an Empty maps list entry in World mode selects that map and jumps the canvas there", async () => {
+    stubEmptyCoverage();
     render(<App />);
     await waitFor(() => expect(screen.getByRole("button", { name: "Route2" })).toBeTruthy());
     const currentTreeRow = () => screen.getAllByRole("button", { name: "Route2" }).find((b) => b.getAttribute("aria-current") === "true");
     expect(currentTreeRow()).toBeUndefined();
+    expect(document.querySelector(".world-canvas__jump-highlight")).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "World" }));
     fireEvent.click(await screen.findByLabelText(/empty maps lens/i));
     fireEvent.click(screen.getByRole("button", { name: "List them" }));
     const ul = screen.getByRole("list", { name: "Maps with no encounters" });
-    fireEvent.click(ul.querySelector("button")!);
+    fireEvent.click(ul.querySelector("button")!); // "Route2": the first entry in payload order
 
     await waitFor(() => expect(currentTreeRow()).toBeTruthy());
+    // The same jump a tree click makes: WorldCanvas flashes the target's outline.
+    await waitFor(() => expect(document.querySelector(".world-canvas__jump-highlight")).toBeTruthy());
+  });
+
+  it("in Dungeon mode (no jump target) the Empty maps lens offers no List them button", async () => {
+    stubEmptyCoverage();
+    render(<App />);
+    fireEvent.click(screen.getByRole("button", { name: "Dungeon" }));
+    await waitFor(() => expect(screen.getByText("Mt Moon")).toBeTruthy());
+    fireEvent.click(screen.getByText("Mt Moon"));
+    fireEvent.click(await screen.findByLabelText(/empty maps lens/i));
+    expect(document.querySelector(".world-canvas__legend-row")!.textContent).toMatch(/2 maps have no encounters/);
+    expect(screen.queryByRole("button", { name: "List them" })).toBeNull();
   });
 });
