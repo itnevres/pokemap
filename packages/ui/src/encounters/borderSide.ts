@@ -37,9 +37,10 @@ export function overlapArea(a: Rect, b: Rect): number {
 }
 
 /**
- * First free side in SIDE_ORDER, else the least-overlapped. The caller excludes
- * the map itself from `neighbours` (a rect equal to `rect` blocks nothing anyway:
- * it doesn't overlap the outside bands). World units are integers (blocks /
+ * First free side in SIDE_ORDER, else the least-overlapped. `neighbours` may
+ * include `rect` itself (or an equal rect): a band lies strictly outside its
+ * rect, so it never overlaps it and blocks nothing; callers may pass one shared
+ * list of every placed rect rather than a per-map copy. World units are integers (blocks /
  * metatiles), which is why a gap of exactly `band` is exactly zero area. `band <= 0`
  * returns `left`: no band can overlap anything.
  */

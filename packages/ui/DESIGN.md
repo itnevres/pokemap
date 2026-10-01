@@ -323,24 +323,26 @@ so a deep path never blows out the row or the fixed modal width.
 
 `EncounterBorder` (`encounter-border*`) replaces the two per-family
 "gutters" (GBA `EncounterGutter`, GBC `GbcEncounterGutter`) in both world
-views, and is the one component the single-map views mount too. Off by
-default behind one `Encounters` toggle (`aria-pressed`); its legend
+views. Off by default behind one `Encounters` toggle (`aria-pressed`); its legend
 (`role="note"`) exists only while the toggle is on.
 
 - **One sprite per species** on a free side of each map: `.encounter-border__strip`
   (`--left`/`--top`/`--right`/`--bottom`) fills exactly the band beside the map
   (`bandRect`, B2's `pickBorderSide` picks the side, left, top, right, bottom,
   first free wins). Sprites are `min(32, band px)` square; a side that cannot
-  fit them all shows `k-1` sprites and a `+N` chip (`.encounter-border__more`).
+  fit them all shows `k-1` sprites and a `+N` chip (`.encounter-border__more`,
+  a focusable button named "N more species" whose tooltip lists the hidden names).
 - **Sprite tile:** each `.encounter-border__sprite` sits on a rounded
   `--bg-panel-raised` tile with a 1px `--border` edge, so GBC's opaque white
   front sprites read as a card rather than a hole (harmless behind GBA's
   transparent icons). `image-rendering: pixelated`; hover/focus swaps the edge
   to `--focus-ring`.
 - **Dimming (GBC):** a species not encountered at the current time of day gets
-  `.encounter-border__sprite--dimmed`: `opacity: 0.4` AND a dashed
-  `--text-muted` outline, so the state is never colour or opacity alone. It is
-  dimmed, never hidden. GBA has no `time`, so nothing is dimmed.
+  `.encounter-border__sprite--dimmed`: its `img` fades to `opacity: 0.4` (not
+  the button, so the focus ring stays full strength) AND the button gets a
+  dashed `--text-muted` outline, so the state is never colour or opacity alone;
+  the accessible name says "<name>, not encountered at <time>". It is dimmed,
+  never hidden. GBA has no `time`, so nothing is dimmed.
 - **Zoomed out** (below the family's LOD zoom: GBA 4, GBC 8) a strip becomes one
   `.encounter-border__badge` count pill in the same band rect, `"{map} · {n}
   species"` in its own visible text (it is `pointer-events: none`, so a `title`

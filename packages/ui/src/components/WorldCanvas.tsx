@@ -777,15 +777,13 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
     // re-fire it mid-drag.
   }, [mapFilter, world]);
 
-  // Culling: only placements whose tile-rect intersects the current
-  // viewport (in world-tile space) are considered "visible". With 1,209
-  // maps this is what keeps both the draw loop and the image-loading effect
-  // below cheap regardless of how far out the user has zoomed.
-  //
-  // Plan 6c B3: split in two. `drawnPlacements` is everything drawn (no
-  // viewport cull) and does not depend on pan/zoom, so the encounter border's
-  // side choice can be memoised on it: a map just off-screen still blocks a
-  // side. `visible` below culls it to the viewport.
+  // Two memos. `drawnPlacements` is everything drawn (no viewport cull) and
+  // does not depend on pan/zoom, so the encounter border's side choice can be
+  // memoised on it: a map just off-screen still blocks a side. `visible`
+  // below is the culling step: only drawn placements whose tile-rect
+  // intersects the current viewport (in world-tile space). With 1,209 maps
+  // that is what keeps both the draw loop and the image-loading effect
+  // cheap regardless of how far out the user has zoomed.
   const drawnPlacements = useMemo(() => {
     if (!world) return [] as WirePlacement[];
     const out: WirePlacement[] = [];
@@ -797,7 +795,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
     // over: it would hide filtered-in maps that happen to sit outside
     // whatever the current pan/zoom shows of the unscoped world, while
     // this component's actual job here is to show exactly (and only) the
-    // filtered set, culled against ITS OWN viewport.
+    // filtered set (`visible` then culls it against ITS OWN viewport).
     // Review fix: the unfiltered branch used to spread world.placements
     // into a brand-new 1,209-element array on every call -- and this memo
     // recomputed every pan/drag frame (it depended on `pan`/`zoom`, both

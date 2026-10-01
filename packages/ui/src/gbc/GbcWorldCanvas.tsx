@@ -646,7 +646,7 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
     });
     // encounterVersion, not encounterCacheRef itself (a ref never usefully
     // appears in a dependency array) -- mirrors WorldCanvas.tsx's own
-    // identical comment on its own encounterEntries memo.
+    // identical comment on its own borderEntries memo.
   }, [visible, rectByMap, sideByMap, encounterVersion]);
 
   // mapName -> its already-fetched sources (or undefined if not yet loaded)
