@@ -29,6 +29,8 @@ export function MapTree({ data, selected, onSelect, worldMode = false, visibilit
   // Deps are `[selected]` only: typing in the filter, new `data`, worldMode
   // or visibility must not yank the list around; and while the filter has
   // focus the user is typing, so a selection change leaves the list alone.
+  // A selected row hidden by the filter is not revealed (nor retried) when
+  // the filter later clears: the user is browsing at that point.
   useEffect(() => {
     if (!selected || document.activeElement === filterRef.current) return;
     const row = navRef.current?.querySelector<HTMLElement>('.map-tree__map[aria-current="true"]');

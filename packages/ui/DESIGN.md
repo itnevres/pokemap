@@ -295,6 +295,12 @@ silently blank panel. Colours/spacing/type above are wired via CSS custom
 properties in `src/App.tsx`'s stylesheet import; components consume the
 tokens, never hard-coded hex.
 
+Selection reveal (Plan 6c C2): on every change of the selected map the tree
+reveals its row (expands the group if collapsed, `scrollIntoView({ block:
+"nearest" })`), but not while the filter input has focus. A world-view single
+click selects the map this way without jumping the view; a tree click, a lens
+list entry, or entering World mode jumps to the selection.
+
 ## Project hub (Plan 6c A2)
 
 `ProjectPicker` (`hub-picker*`), `ProjectSwitcher` (`hub-switcher__btn`, plus

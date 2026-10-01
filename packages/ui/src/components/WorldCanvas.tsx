@@ -1491,6 +1491,8 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
     const w = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
     const hit = hitTest(w.x, w.y);
     setSelected(hit ? new Set([hit.map]) : new Set());
+    // The line above is this canvas's own outline; the app may veto the change (a cancelled dirty-session
+    // confirm), so the outline can differ from the app's selection until the next click.
     if (hit) onSelectMap?.(hit.map);
   };
 
