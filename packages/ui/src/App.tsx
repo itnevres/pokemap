@@ -77,6 +77,11 @@ export function App({ switcher }: AppProps) {
   // see WorldCanvas's own jumpToken doc comment for why jumpToMap alone
   // can't carry that signal.
   const [selectVersion, setSelectVersion] = useState(0);
+  // The map a tree click (or lens list jump) last asked WorldCanvas to jump
+  // to -- separate from `selected`, which a plain world click also changes
+  // (see GbcApp's own jumpTarget comment for the spec-review F1 postmortem:
+  // passing `selected` as jumpToMap made the first canvas click jump).
+  const [jumpTarget, setJumpTarget] = useState<string | null>(null);
   const [openDungeonId, setOpenDungeonId] = useState<string | null>(null);
 
   const { data, error } = useMapGroups();
@@ -341,12 +346,13 @@ export function App({ switcher }: AppProps) {
       .catch((e: unknown) => setEventOpError(eventOpErrorMessage(e)));
   };
 
-  const selectMap = (name: string) => {
+  // The dirty guard and the per-map resets shared by a tree click and a
+  // world click. Returns false when the user cancelled the guard.
+  const changeSelection = (name: string): boolean => {
     if (editSession.isDirty && !window.confirm("You have unsaved changes on this map. Discard them and switch maps?")) {
-      return;
+      return false;
     }
     setSelected(name);
-    setSelectVersion((v) => v + 1);
     // Task 14: a selected event belongs to the map it was selected on --
     // without this, switching from map A (something selected) to map B
     // would carry A's {kind,index} ref into EventInspector, which would
@@ -360,6 +366,20 @@ export function App({ switcher }: AppProps) {
     // survive a map switch; pencil/rect/bucket go back to inert until the
     // player picks a fresh one from the newly mounted MetatilePalette.
     setCurrentStamp(null);
+    return true;
+  };
+
+  const selectMap = (name: string) => {
+    if (!changeSelection(name)) return;
+    setJumpTarget(name);
+    setSelectVersion((v) => v + 1);
+  };
+
+  // A world-view click selects (tree highlight + scroll) but is not a jump
+  // request. Re-clicking the already-selected map must not raise the
+  // "discard and switch" confirm.
+  const selectMapFromWorld = (name: string) => {
+    if (name !== selected) changeSelection(name);
   };
 
   // `.find()` over `dungeons.data` returns the SAME element reference every
@@ -494,7 +514,13 @@ export function App({ switcher }: AppProps) {
             // spotlightHits, and warpPopup across the mode boundary instead
             // of starting fresh. Distinct keys force React to always treat
             // a mode switch as a brand-new mount.
-            <WorldCanvas key="world" jumpToMap={selected} jumpToken={selectVersion} onJumpToMap={selectMap} />
+            <WorldCanvas
+              key="world"
+              jumpToMap={jumpTarget}
+              jumpToken={selectVersion}
+              onJumpToMap={selectMap}
+              onSelectMap={selectMapFromWorld}
+            />
           ) : mode === "dungeon" ? (
             openDungeon ? (
               <WorldCanvas key="dungeon" mapFilter={mapFilter} />

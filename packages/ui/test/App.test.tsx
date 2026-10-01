@@ -833,3 +833,151 @@ describe("App -- coverage lens list jump (Plan 6c C1)", () => {
     expect(screen.queryByRole("button", { name: "List them" })).toBeNull();
   });
 });
+
+describe("App -- world click selects the map in the tree (Plan 6c C2)", () => {
+  /** jsdom elements are 0x0; WorldCanvas measures its viewport once on mount, so this must be in force
+   *  before the World button is clicked. */
+  async function withViewport(fn: () => Promise<void>, width = 100) {
+    const w = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth");
+    const h = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight");
+    Object.defineProperty(HTMLElement.prototype, "clientWidth", { value: width, configurable: true });
+    Object.defineProperty(HTMLElement.prototype, "clientHeight", { value: 100, configurable: true });
+    try {
+      await fn();
+    } finally {
+      if (w) Object.defineProperty(HTMLElement.prototype, "clientWidth", w);
+      if (h) Object.defineProperty(HTMLElement.prototype, "clientHeight", h);
+    }
+  }
+  const zoomReadout = () => document.querySelector(".world-canvas__zoom-readout")!.textContent;
+  /** Enters World mode and waits for `readout` (the world has loaded and any jump on entry has applied).
+   *  WorldCanvas never auto-fits on load: a fresh view is zoom 1, pan 0 ("6%"); entering World mode with a map
+   *  already selected jumps to it (zoom 10, "63%"). */
+  async function worldCanvasReady(readout: string, width = 100) {
+    fireEvent.click(screen.getByRole("button", { name: "World" }));
+    await waitFor(() => expect(zoomReadout()).toBe(readout));
+    const canvas = document.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement;
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: width, bottom: 100, width, height: 100, x: 0, y: 0, toJSON() {} });
+    return canvas;
+  }
+  function clickAt(canvas: HTMLCanvasElement, [x, y]: readonly [number, number]) {
+    fireEvent.mouseDown(canvas, { clientX: x, clientY: y, button: 0 });
+    fireEvent.mouseUp(canvas, { clientX: x, clientY: y });
+    fireEvent.click(canvas, { clientX: x, clientY: y });
+  }
+  const currentRow = () => document.querySelector<HTMLElement>('.map-tree__map[aria-current="true"]');
+
+  // "A tree click in World mode still jumps" is already pinned by the C1 test above: "clicking an Empty maps
+  // list entry ..." starts with a tree click on Route1 and waits for .world-canvas__jump-highlight.
+
+  it("a canvas click on a map highlights its tree row and scrolls it into view, without jumping the view (GBA mirror of GbcApp's F1 test)", async () => {
+    const spy = vi.spyOn(Element.prototype, "scrollIntoView");
+    try {
+      await withViewport(async () => {
+        vi.stubGlobal("fetch", makeFetchMock());
+        render(<App />);
+        await waitFor(() => expect(screen.getByRole("button", { name: "Route1" })).toBeTruthy());
+        const canvas = await worldCanvasReady("6%");
+        await waitFor(() => expect(screen.queryByText(/Loading world/)).toBeNull());
+        expect(currentRow()).toBeNull();
+        spy.mockClear();
+
+        clickAt(canvas, [5, 5]); // Route1 is [0,10)x[0,10): the very first selection, jumpToMap still null beforehand
+
+        await waitFor(() => expect(currentRow()?.textContent).toBe("Route1"));
+        expect(spy.mock.contexts).toContain(currentRow());
+        expect(spy).toHaveBeenCalledWith({ block: "nearest" });
+        await new Promise((r) => setTimeout(r, 50));
+        expect(document.querySelector(".world-canvas__jump-highlight")).toBeNull(); // no jump fired
+        expect(zoomReadout()).toBe("6%"); // view untouched
+      });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  describe("with a dirty edit session on PalletTown", () => {
+    // Entering World mode jumps to the selected PalletTown: zoom 10 in a 200x100 viewport, pan {50, 0}, so
+    // PalletTown fills screen x [50,150) and Route1 (placed at x 11) shows at [160,200).
+    const PALLET = [100, 50] as const;
+    const ROUTE1 = [180, 50] as const;
+    /** Edit routes for PalletTown/Route1, and a world placing both, everything else from the default mock. */
+    function stubDirtyWorld() {
+      const edit = makeEditFetchMock();
+      const rest = makeFetchMock();
+      vi.stubGlobal(
+        "fetch",
+        vi.fn((url: string, init?: RequestInit) => {
+          if (url === "/api/world") {
+            return Promise.resolve({
+              ok: true, status: 200,
+              json: () => Promise.resolve({
+                placements: {
+                  PalletTown: { map: "PalletTown", x: 0, y: 0, width: 10, height: 10, component: 0 },
+                  Route1: { map: "Route1", x: 11, y: 0, width: 10, height: 10, component: 1 },
+                },
+                components: [
+                  { index: 0, maps: ["PalletTown"], bounds: { x: 0, y: 0, width: 10, height: 10 } },
+                  { index: 1, maps: ["Route1"], bounds: { x: 11, y: 0, width: 10, height: 10 } },
+                ],
+                conflicts: [], verticalLinks: [], sidecar: { dungeonAutoLayout: true },
+              }),
+            } as Response);
+          }
+          return url === "/api/groups" || url.startsWith("/api/map/") || url.startsWith("/api/edit/") ? edit(url, init) : rest(url, init);
+        }),
+      );
+    }
+
+    it("a world click on another map asks to discard first; cancelling leaves the tree on the original map", async () => {
+      stubDirtyWorld();
+      const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+      try {
+        await renderAppInEditModeWithDirtySession();
+        await withViewport(async () => {
+          const canvas = await worldCanvasReady("63%", 200);
+          expect(currentRow()?.textContent).toBe("PalletTown");
+
+          clickAt(canvas, ROUTE1);
+
+          expect(confirmSpy).toHaveBeenCalledTimes(1);
+          expect(currentRow()?.textContent).toBe("PalletTown");
+        }, 200);
+      } finally {
+        confirmSpy.mockRestore();
+      }
+    });
+
+    it("confirming the discard switches the tree to the clicked map", async () => {
+      stubDirtyWorld();
+      const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+      try {
+        await renderAppInEditModeWithDirtySession();
+        await withViewport(async () => {
+          const canvas = await worldCanvasReady("63%", 200);
+          clickAt(canvas, ROUTE1);
+          expect(confirmSpy).toHaveBeenCalledTimes(1);
+          await waitFor(() => expect(currentRow()?.textContent).toBe("Route1"));
+        }, 200);
+      } finally {
+        confirmSpy.mockRestore();
+      }
+    });
+
+    it("re-clicking the already-selected map in the world does not raise the confirm", async () => {
+      stubDirtyWorld();
+      const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+      try {
+        await renderAppInEditModeWithDirtySession();
+        await withViewport(async () => {
+          const canvas = await worldCanvasReady("63%", 200);
+          clickAt(canvas, PALLET); // already selected and dirty
+          expect(confirmSpy).not.toHaveBeenCalled();
+          expect(currentRow()?.textContent).toBe("PalletTown");
+        }, 200);
+      } finally {
+        confirmSpy.mockRestore();
+      }
+    });
+  });
+});
