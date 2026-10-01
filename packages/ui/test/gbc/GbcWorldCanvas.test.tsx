@@ -1,6 +1,6 @@
 import { StrictMode } from "react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, fireEvent, screen, waitFor } from "@testing-library/react";
+import { render, fireEvent, screen, waitFor, act } from "@testing-library/react";
 import {
   GbcWorldCanvas,
   zoomWorldAboutPivot,
@@ -1228,9 +1228,51 @@ describe("GbcWorldCanvas: encounters/lenses/spotlight (Plan 6b Task 6)", () => {
     fireEvent.click(screen.getByLabelText(/empty maps lens/i));
     const row = document.querySelector(".world-canvas__toolbar")!.nextElementSibling as HTMLElement;
     expect(row.classList.contains("world-canvas__legend-row")).toBe(true);
-    expect(row.textContent).toMatch(/1 maps have no encounters/);
+    expect(row.textContent).toMatch(/1 map has no encounters/);
     expect(row.closest(".world-canvas__toolbar")).toBeNull();
     expect(row.closest(".world-canvas__viewport")).toBeNull();
+  });
+
+  async function mountWithCoverageAnswer(answer: () => Promise<Response>) {
+    const base = mockFetchAll({});
+    vi.stubGlobal("fetch", vi.fn((url: string) => (url === "/api/coverage" ? answer() : base(url))));
+    render(<GbcWorldCanvas time="day" />);
+    await waitFor(() => expect(screen.getByText(new RegExp(`${WORLD.components.length} components`))).toBeTruthy());
+  }
+  const legendRow = () => document.querySelector(".world-canvas__legend-row");
+
+  it("while coverage is still loading, a lens shows 'Loading coverage…' and never a count or list button", async () => {
+    await mountWithCoverageAnswer(() => new Promise<Response>(() => {}));
+    fireEvent.click(screen.getByLabelText(/empty maps lens/i));
+    expect(legendRow()!.textContent).toContain("Loading coverage…");
+    expect(legendRow()!.textContent).not.toMatch(/0 maps|have no encounters/);
+    expect(screen.queryByRole("button", { name: "List them" })).toBeNull();
+  });
+
+  it("a coverage failure after a lens was clicked removes the legend row and shows the error", async () => {
+    let fail!: () => void;
+    await mountWithCoverageAnswer(() => new Promise<Response>((res) => { fail = () => res({ ok: false, status: 500, json: () => Promise.resolve({}) } as Response); }));
+    fireEvent.click(screen.getByLabelText(/empty maps lens/i));
+    expect(legendRow()).not.toBeNull();
+    await act(async () => { fail(); });
+    await waitFor(() => expect(screen.getByText(/Coverage lenses unavailable/)).toBeTruthy());
+    expect(legendRow()).toBeNull();
+  });
+
+  it("no legend row until a lens is on, and none again once it is turned off", async () => {
+    await mountReadyAll({ coverage: { ...EMPTY_COVERAGE, mapsWithoutEncounters: ["MapA"] } });
+    const toggle = screen.getByLabelText(/empty maps lens/i);
+    expect(legendRow()).toBeNull();
+    fireEvent.click(toggle);
+    expect(legendRow()).not.toBeNull();
+    fireEvent.click(toggle);
+    expect(legendRow()).toBeNull();
+  });
+
+  it("the level-curve lens row carries GBC's own legend copy (legendCopy reaches the legend)", async () => {
+    await mountReadyAll({});
+    fireEvent.click(screen.getByLabelText(/level curve lens/i));
+    expect(legendRow()!.textContent).toContain("an unweighted mean");
   });
 
   // Fix round (spec review F5/R7): the original version of this test only

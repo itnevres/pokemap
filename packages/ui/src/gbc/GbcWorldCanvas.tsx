@@ -948,10 +948,11 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
       {!coverageError && (
         <LensLegend
           active={lens}
-          summary={{
-            emptyMapNames: coverageData?.mapsWithoutEncounters ?? [],
-            unusedSpeciesNames: coverageData?.unusedSpecies ?? [],
-          }}
+          summary={
+            coverageData
+              ? { emptyMapNames: coverageData.mapsWithoutEncounters, unusedSpeciesNames: coverageData.unusedSpecies }
+              : null
+          }
           onJumpToMap={onJumpToMap}
           methodKey={GBC_METHOD_LENS_KEY}
           legendCopy={GBC_LEGEND_COPY}

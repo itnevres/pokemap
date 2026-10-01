@@ -1790,10 +1790,11 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap }: Wo
       {!coverageError && (
         <LensLegend
           active={lens}
-          summary={{
-            emptyMapNames: coverageData?.mapsWithoutEncounters ?? [],
-            unusedSpeciesNames: coverageData?.unusedSpecies ?? [],
-          }}
+          summary={
+            coverageData
+              ? { emptyMapNames: coverageData.mapsWithoutEncounters, unusedSpeciesNames: coverageData.unusedSpecies }
+              : null
+          }
           onJumpToMap={onJumpToMap}
         />
       )}

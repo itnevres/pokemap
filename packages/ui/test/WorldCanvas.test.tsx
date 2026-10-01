@@ -2270,8 +2270,43 @@ describe("WorldCanvas: lens legend row (Plan 6c C1)", () => {
     fireEvent.click(await screen.findByLabelText(/empty maps lens/i));
     const row = document.querySelector(".world-canvas__toolbar")!.nextElementSibling as HTMLElement;
     expect(row.classList.contains("world-canvas__legend-row")).toBe(true);
-    expect(row.textContent).toMatch(/1 maps have no encounters/);
+    expect(row.textContent).toMatch(/1 map has no encounters/);
     expect(row.closest(".world-canvas__toolbar")).toBeNull();
     expect(row.closest(".world-canvas__viewport")).toBeNull();
+  });
+
+  /** Coverage answered by `answer()` (called on the /api/coverage request), everything else by makeFetchMock. */
+  async function mountWithCoverageAnswer(answer: () => Promise<Response>) {
+    const base = makeFetchMock(WORLD2).impl;
+    await mountLens(vi.fn((url: string, init?: RequestInit) => (url.startsWith("/api/coverage") ? answer() : base(url, init))));
+  }
+  const legendRow = () => document.querySelector(".world-canvas__legend-row");
+
+  it("while coverage is still loading, a lens shows 'Loading coverage…' and never a count or list button", async () => {
+    await mountWithCoverageAnswer(() => new Promise<Response>(() => {}));
+    fireEvent.click(await screen.findByLabelText(/empty maps lens/i));
+    expect(legendRow()!.textContent).toContain("Loading coverage…");
+    expect(legendRow()!.textContent).not.toMatch(/0 maps|have no encounters/);
+    expect(screen.queryByRole("button", { name: "List them" })).toBeNull();
+  });
+
+  it("a coverage failure after a lens was clicked removes the legend row and shows the error", async () => {
+    let fail!: () => void;
+    await mountWithCoverageAnswer(() => new Promise<Response>((res) => { fail = () => res({ ok: false, status: 500, json: () => Promise.resolve({}) } as Response); }));
+    fireEvent.click(await screen.findByLabelText(/empty maps lens/i));
+    expect(legendRow()).not.toBeNull();
+    await act(async () => { fail(); });
+    await waitFor(() => expect(screen.getByText(/Coverage lenses unavailable/)).toBeTruthy());
+    expect(legendRow()).toBeNull();
+  });
+
+  it("no legend row until a lens is on, and none again once it is turned off", async () => {
+    await mountLens(withCoverage(["Alpha"], []));
+    const toggle = await screen.findByLabelText(/empty maps lens/i);
+    expect(legendRow()).toBeNull();
+    fireEvent.click(toggle);
+    expect(legendRow()).not.toBeNull();
+    fireEvent.click(toggle);
+    expect(legendRow()).toBeNull();
   });
 });
