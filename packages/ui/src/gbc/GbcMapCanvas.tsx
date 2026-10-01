@@ -5,6 +5,7 @@ import type { GbcMapPayload } from "@pokemap/core/src/gbc/wire.js";
 import type { GbcTimeOfDay } from "./time.js";
 import { EncounterBorder, type EncounterBorderEntry } from "../components/EncounterBorder.js";
 import { BORDER_BAND, borderSideFromConnections } from "../encounters/borderSide.js";
+import { fitWithBand } from "../encounters/fit.js";
 import { useMapEncounterSummaries } from "../encounters/useMapEncounterSummaries.js";
 
 /**
@@ -301,20 +302,17 @@ export function GbcMapCanvas({ mapName, data, time, hoveredMetatile }: GbcMapCan
     const vw = viewport.w || pixelWidth;
     const vh = viewport.h || pixelHeight;
     // Encounters on: the content is the image plus one band on the border's side, so the sprites fit too.
-    const bandNative = encountersOn ? BORDER_BAND.gbc * BLOCK_PX : 0;
-    const extraW = side === "left" || side === "right" ? bandNative : 0;
-    const extraH = side === "top" || side === "bottom" ? bandNative : 0;
-    let z: Zoom = 1;
-    for (const level of ZOOM_LEVELS) {
-      if ((pixelWidth + extraW) * level <= vw && (pixelHeight + extraH) * level <= vh) z = level;
-    }
-    setView({
-      zoom: z,
-      pan: {
-        x: Math.round((vw - (pixelWidth + extraW) * z) / 2) + (side === "left" ? bandNative * z : 0),
-        y: Math.round((vh - (pixelHeight + extraH) * z) / 2) + (side === "top" ? bandNative * z : 0),
-      },
-    });
+    setView(
+      fitWithBand({
+        pw: pixelWidth,
+        ph: pixelHeight,
+        vw,
+        vh,
+        levels: ZOOM_LEVELS,
+        bandNative: encountersOn ? BORDER_BAND.gbc * BLOCK_PX : 0,
+        side,
+      }),
+    );
   }, [pixelWidth, pixelHeight, viewport, encountersOn, side]);
 
   // Once per real map open -- NOT on a time switch, which reuses the same

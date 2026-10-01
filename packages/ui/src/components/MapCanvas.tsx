@@ -9,6 +9,7 @@ import { readBlock, type Stamp } from "@pokemap/core/src/edit/paint.js";
 import type { CollisionElevation } from "./CollisionPalette.js";
 import { EncounterBorder, type EncounterBorderEntry } from "./EncounterBorder.js";
 import { BORDER_BAND, borderSideFromConnections, gbaDirToCompass, type CompassDir } from "../encounters/borderSide.js";
+import { fitWithBand } from "../encounters/fit.js";
 import { useMapEncounterSummaries } from "../encounters/useMapEncounterSummaries.js";
 
 /** A bare {kind,index} pointer at one event, the unit MapCanvas's own
@@ -412,18 +413,17 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
     const vw = viewport.w || pixelWidth;
     const vh = viewport.h || pixelHeight;
     // Encounters on: the content is the image plus one band on the border's side, so the sprites fit too.
-    const bandNative = encountersOn ? BORDER_BAND.gba * METATILE_PX : 0;
-    const extraW = side === "left" || side === "right" ? bandNative : 0;
-    const extraH = side === "top" || side === "bottom" ? bandNative : 0;
-    let z: Zoom = 1;
-    for (const level of ZOOM_LEVELS) {
-      if ((pixelWidth + extraW) * level <= vw && (pixelHeight + extraH) * level <= vh) z = level;
-    }
-    setZoom(z);
-    setPan({
-      x: Math.round((vw - (pixelWidth + extraW) * z) / 2) + (side === "left" ? bandNative * z : 0),
-      y: Math.round((vh - (pixelHeight + extraH) * z) / 2) + (side === "top" ? bandNative * z : 0),
+    const { zoom: z, pan: p } = fitWithBand({
+      pw: pixelWidth,
+      ph: pixelHeight,
+      vw,
+      vh,
+      levels: ZOOM_LEVELS,
+      bandNative: encountersOn ? BORDER_BAND.gba * METATILE_PX : 0,
+      side,
     });
+    setZoom(z);
+    setPan(p);
   }, [pixelWidth, pixelHeight, viewport, encountersOn, side]);
 
   // Only the FIRST successful image load for a given mapName triggers fit()
