@@ -23,6 +23,12 @@ export interface EncounterBorderProps {
   band: number;
   /** GBC app time; absent for GBA, where nothing is ever dimmed. */
   time?: GbcTimeOfDay;
+  /**
+   * Controlled mode (B4, the single-map views). `undefined` = this component owns its `Encounters`
+   * toggle and legend (the world views). Defined = it renders neither: the caller owns both, and this
+   * alone decides whether strips, badges and tooltips render.
+   */
+  enabled?: boolean;
 }
 
 /** Sprites never grow past the 32 px source frame; below that they fill the band. */
@@ -76,8 +82,9 @@ const rectStyle = (r: Rect) => ({ left: px(r.x), top: px(r.y), width: px(r.width
  * the root is `pointer-events: none` so it never steals canvas pans, and only
  * the toggle, legend, sprites and `+N` chips opt back in.
  */
-export function EncounterBorder({ entries, zoom, lodZoom, band, time }: EncounterBorderProps) {
-  const [enabled, setEnabled] = useState(false);
+export function EncounterBorder({ entries, zoom, lodZoom, band, time, enabled: controlled }: EncounterBorderProps) {
+  const [ownEnabled, setEnabled] = useState(false);
+  const enabled = controlled ?? ownEnabled;
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
   // Only for reading the root's live screen rect in showTooltip.
   const containerRef = useRef<HTMLDivElement>(null);
@@ -126,35 +133,37 @@ export function EncounterBorder({ entries, zoom, lodZoom, band, time }: Encounte
 
   return (
     <div className="encounter-border" ref={containerRef}>
-      <div className="encounter-border__control">
-        <button type="button" className="encounter-border__toggle" aria-pressed={enabled} onClick={() => setEnabled((e) => !e)}>
-          Encounters
-        </button>
+      {controlled === undefined && (
+        <div className="encounter-border__control">
+          <button type="button" className="encounter-border__toggle" aria-pressed={enabled} onClick={() => setEnabled((e) => !e)}>
+            Encounters
+          </button>
 
-        {enabled && (
-          <div className="encounter-border__legend" role="note">
-            <p className="encounter-border__legend-title">Encounter border</p>
-            <p className="encounter-border__legend-body">
-              One sprite per species, on a free side of each map. Hover or focus a sprite for its levels and true catch
-              chances.
-            </p>
-            {time !== undefined && (
-              <>
-                <p className="encounter-border__legend-body">
-                  <span className="encounter-border__legend-sample" /> Dimmed with a dashed outline: not encountered at
-                  the current time of day.
-                </p>
-                <p className="encounter-border__legend-body">
-                  A + after a level: the runtime +0-4 level buff on grass and surf.
-                </p>
-              </>
-            )}
-            <p className="encounter-border__legend-hint">
-              Zoomed out, a map shows just its species count &ndash; zoom in to see and hover individual sprites.
-            </p>
-          </div>
-        )}
-      </div>
+          {enabled && (
+            <div className="encounter-border__legend" role="note">
+              <p className="encounter-border__legend-title">Encounter border</p>
+              <p className="encounter-border__legend-body">
+                One sprite per species, on a free side of each map. Hover or focus a sprite for its levels and true catch
+                chances.
+              </p>
+              {time !== undefined && (
+                <>
+                  <p className="encounter-border__legend-body">
+                    <span className="encounter-border__legend-sample" /> Dimmed with a dashed outline: not encountered at
+                    the current time of day.
+                  </p>
+                  <p className="encounter-border__legend-body">
+                    A + after a level: the runtime +0-4 level buff on grass and surf.
+                  </p>
+                </>
+              )}
+              <p className="encounter-border__legend-hint">
+                Zoomed out, a map shows just its species count &ndash; zoom in to see and hover individual sprites.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
 
       {enabled &&
         entries.map((entry) => {

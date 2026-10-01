@@ -495,3 +495,40 @@ describe("EncounterBorder: broken image", () => {
     expect(img.style.visibility).toBe("hidden");
   });
 });
+
+describe("EncounterBorder: controlled mode (enabled prop)", () => {
+  const wide = { x: 100, y: 100, width: 200, height: 200 };
+
+  it("enabled={true} renders the strip with no click, and neither the toggle nor the legend exists", () => {
+    const { container } = mount([entry("Route101", gba, "left", wide)], { enabled: true });
+    expect(container.querySelector(".encounter-border__strip")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Espeon" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Encounters" })).toBeNull();
+    expect(container.querySelector(".encounter-border__toggle")).toBeNull();
+    expect(screen.queryByRole("note")).toBeNull();
+  });
+
+  it("enabled={false} renders nothing: no toggle, no legend, no strip, no badge", () => {
+    const { container } = mount([entry("Route101", gba, "left", wide)], { enabled: false });
+    expect(screen.queryByRole("button")).toBeNull();
+    expect(screen.queryByRole("note")).toBeNull();
+    expect(container.querySelector(".encounter-border__strip")).toBeNull();
+    expect(container.querySelector(".encounter-border__badge")).toBeNull();
+  });
+
+  it("flipping enabled true -> false clears an open tooltip", () => {
+    const { rerender } = mount([entry("Route101", gba, "left", wide)], { enabled: true });
+    fireEvent.focus(sprite("Espeon"));
+    expect(screen.getByRole("tooltip")).toBeTruthy();
+    rerender({ enabled: false });
+    expect(screen.queryByRole("tooltip")).toBeNull();
+  });
+
+  it("the tooltip is not resurrected when enabled flips back on", () => {
+    const { rerender } = mount([entry("Route101", gba, "left", wide)], { enabled: true });
+    fireEvent.focus(sprite("Espeon"));
+    rerender({ enabled: false });
+    rerender({ enabled: true });
+    expect(screen.queryByRole("tooltip")).toBeNull();
+  });
+});
