@@ -545,7 +545,9 @@ export function GbcMapCanvas({ mapName, data, time, hoveredMetatile }: GbcMapCan
               </span>
             ) : (
               <span className="map-canvas__legend-item">
-                Encounters: dimmed = not at {time}, + = level can roll up to 4 higher
+                {encounterSummaries?.length === 0
+                  ? "Encounters: none on this map"
+                  : `Encounters: hover or focus a sprite; dimmed = not at ${time}, + = level can roll up to 4 higher`}
               </span>
             ))}
         </div>

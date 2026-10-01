@@ -966,7 +966,9 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
                 {encounterError}
               </span>
             ) : (
-              <span className="map-canvas__legend-item">Encounters: hover a sprite</span>
+              <span className="map-canvas__legend-item">
+                {encounterSummaries?.length === 0 ? "Encounters: none on this map" : "Encounters: hover or focus a sprite"}
+              </span>
             ))}
         </div>
       )}

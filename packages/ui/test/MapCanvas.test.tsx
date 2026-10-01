@@ -956,7 +956,7 @@ describe("MapCanvas: Encounters overlay (Plan 6c B4)", () => {
     expect(screen.getAllByRole("button", { name: "Encounters" })).toHaveLength(1);
     expect(container.querySelector(".encounter-border__toggle")).toBeNull();
     expect(screen.queryByRole("note")).toBeNull();
-    expect(screen.getByText("Encounters: hover a sprite", { selector: ".map-canvas__legend-item" })).toBeTruthy();
+    expect(screen.getByText("Encounters: hover or focus a sprite", { selector: ".map-canvas__legend-item" })).toBeTruthy();
   });
 
   it("a failed fetch shows the error as an alert in the legend row, not a silent empty border", async () => {
@@ -966,6 +966,15 @@ describe("MapCanvas: Encounters overlay (Plan 6c B4)", () => {
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toMatch(/\/api\/encounters\/Foo returned an unexpected shape/);
     expect(alert.className).toContain("map-canvas__legend-item");
+    expect(stripOf(container)).toBeNull();
+  });
+
+  it("a map with no wild encounters says so in the legend row instead of promising sprites", async () => {
+    stubEncounters({ mapName: "Foo", mapId: "MAP_FOO", methods: [] });
+    const { container } = await mountReady();
+    fireEvent.click(encBtn());
+    await screen.findByText("Encounters: none on this map", { selector: ".map-canvas__legend-item" });
+    expect(screen.queryByText("Encounters: hover or focus a sprite")).toBeNull();
     expect(stripOf(container)).toBeNull();
   });
 

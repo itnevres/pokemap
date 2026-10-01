@@ -631,7 +631,7 @@ describe("GbcMapCanvas: Encounters overlay (Plan 6c B4)", () => {
     expect(container.querySelector(".encounter-border__toggle")).toBeNull();
     expect(screen.queryByRole("note")).toBeNull();
     expect(
-      screen.getByText("Encounters: dimmed = not at morn, + = level can roll up to 4 higher", { selector: ".map-canvas__legend-item" }),
+      screen.getByText("Encounters: hover or focus a sprite; dimmed = not at morn, + = level can roll up to 4 higher", { selector: ".map-canvas__legend-item" }),
     ).toBeTruthy();
   });
 
@@ -642,6 +642,15 @@ describe("GbcMapCanvas: Encounters overlay (Plan 6c B4)", () => {
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toMatch(/\/api\/encounters\/NewBarkTown returned an unexpected shape/);
     expect(alert.className).toContain("map-canvas__legend-item");
+    expect(stripOf(container)).toBeNull();
+  });
+
+  it("a map with no wild encounters says so in the legend row instead of promising sprites", async () => {
+    stubEncounters({ family: "gbc", sources: [] });
+    const { container } = await mountReady();
+    fireEvent.click(encBtn());
+    await screen.findByText("Encounters: none on this map", { selector: ".map-canvas__legend-item" });
+    expect(screen.queryByText(/hover or focus a sprite/)).toBeNull();
     expect(stripOf(container)).toBeNull();
   });
 
