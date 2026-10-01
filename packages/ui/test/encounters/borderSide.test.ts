@@ -34,6 +34,13 @@ describe("bandRect", () => {
     expect(bandRect(MAP, "bottom", 2)).toEqual(R(0, 10, 10, 2));
     expect(bandRect(R(3, 4, 5, 6), "right", 4)).toEqual(R(8, 4, 4, 6));
   });
+  it("all four sides on a non-square rect (width 5, height 6, band 2)", () => {
+    const r = R(3, 4, 5, 6);
+    expect(bandRect(r, "left", 2)).toEqual(R(1, 4, 2, 6));
+    expect(bandRect(r, "top", 2)).toEqual(R(3, 2, 5, 2));
+    expect(bandRect(r, "right", 2)).toEqual(R(8, 4, 2, 6));
+    expect(bandRect(r, "bottom", 2)).toEqual(R(3, 10, 5, 2));
+  });
 });
 
 describe("overlapArea", () => {
