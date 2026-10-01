@@ -1,68 +1,11 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { GbcEncounterGutter, matchesTime, rowLabel, chipText, type GbcEncounterGutterMapEntry } from "../../src/gbc/GbcEncounterGutter.js";
+import { GbcEncounterGutter, chipText, type GbcEncounterGutterMapEntry } from "../../src/gbc/GbcEncounterGutter.js";
 import type { GbcEncounterChance, GbcEncounterSource } from "@pokemap/core/src/gbc/analyse/atlas.js";
 
 // ---------------------------------------------------------------------------
 // Pure helpers
 // ---------------------------------------------------------------------------
-
-describe("matchesTime (pure)", () => {
-  it("grass matches only its own exact time tag", () => {
-    expect(matchesTime({ method: "grass", time: "morn" }, "morn")).toBe(true);
-    expect(matchesTime({ method: "grass", time: "morn" }, "day")).toBe(false);
-    expect(matchesTime({ method: "grass", time: "morn" }, "nite")).toBe(false);
-    expect(matchesTime({ method: "grass", time: "day" }, "day")).toBe(true);
-    expect(matchesTime({ method: "grass", time: "nite" }, "nite")).toBe(true);
-  });
-
-  // Mutation check #1: matchesTime must not treat morn as never matching
-  // fish -- a fish source tagged "day" matches at BOTH morn and day
-  // (fish.asm's own .TimeEncounter: anything short of NITE takes the day
-  // entry).
-  it("fish tagged 'day' matches at BOTH morn and day (mutation check #1)", () => {
-    expect(matchesTime({ method: "fish", time: "day" }, "morn")).toBe(true);
-    expect(matchesTime({ method: "fish", time: "day" }, "day")).toBe(true);
-    expect(matchesTime({ method: "fish", time: "day" }, "nite")).toBe(false);
-  });
-
-  it("fish tagged 'nite' matches only nite", () => {
-    expect(matchesTime({ method: "fish", time: "nite" }, "morn")).toBe(false);
-    expect(matchesTime({ method: "fish", time: "nite" }, "day")).toBe(false);
-    expect(matchesTime({ method: "fish", time: "nite" }, "nite")).toBe(true);
-  });
-
-  // Mutation check #2: an untagged (old-rod) fish source always matches,
-  // regardless of the app's current time.
-  it("an untagged (old-rod) fish source always matches, at every time (mutation check #2)", () => {
-    expect(matchesTime({ method: "fish" }, "morn")).toBe(true);
-    expect(matchesTime({ method: "fish" }, "day")).toBe(true);
-    expect(matchesTime({ method: "fish" }, "nite")).toBe(true);
-  });
-
-  it("water/headbutt/rock (always untagged) always match, at every time", () => {
-    for (const method of ["water", "headbutt", "rock"] as const) {
-      for (const t of ["morn", "day", "nite"] as const) {
-        expect(matchesTime({ method }, t)).toBe(true);
-      }
-    }
-  });
-});
-
-describe("rowLabel (pure)", () => {
-  it("matches the spec's own exact examples", () => {
-    expect(rowLabel({ method: "grass", time: "morn", chances: [] })).toBe("Grass · morn");
-    expect(rowLabel({ method: "water", chances: [] })).toBe("Surf");
-    expect(rowLabel({ method: "fish", rod: "good", time: "day", chances: [] })).toBe("Fish · Good Rod · day");
-    expect(rowLabel({ method: "fish", rod: "old", chances: [] })).toBe("Fish · Old Rod");
-    expect(rowLabel({ method: "headbutt", list: "rare", chances: [] })).toBe("Headbutt · rare");
-    expect(rowLabel({ method: "rock", chances: [] })).toBe("Rock Smash");
-  });
-
-  it("appends ' · swarm' for a conditional swarm source", () => {
-    expect(rowLabel({ method: "grass", time: "morn", conditional: "swarm", chances: [] })).toBe("Grass · morn · swarm");
-  });
-});
 
 describe("chipText (pure)", () => {
   const CHANCE: GbcEncounterChance = { species: "CHIKORITA", percent: 30, minLevel: 3, maxLevel: 5 };

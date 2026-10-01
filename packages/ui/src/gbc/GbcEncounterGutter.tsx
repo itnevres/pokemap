@@ -1,6 +1,7 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import type { GbcEncounterChance, GbcEncounterMethod, GbcEncounterSource } from "@pokemap/core/src/gbc/analyse/atlas.js";
 import type { GbcTimeOfDay } from "./time.js";
+import { matchesTime, rowLabel } from "../encounters/summary.js";
 
 /**
  * The GBC encounter gutter (Plan 6b Task 6) -- mirrors `EncounterGutter.tsx`
@@ -78,54 +79,6 @@ const METHOD_SLUG: Record<GbcEncounterMethod, string> = {
   headbutt: "headbutt",
   rock: "rock-smash",
 };
-
-const ROD_LABEL: Record<string, string> = { old: "Old Rod", good: "Good Rod", super: "Super Rod" };
-
-/**
- * Time-matching rule (spec's own "Facts (measured)", re-verified against
- * `engine/events/fish.asm`'s `.TimeEncounter` -- `cp NITE_F / jr c,
- * .time_species` with `MORN_F=0, DAY_F=1, NITE_F=2`, so anything strictly
- * less than NITE (morn OR day) takes the "day" entry):
- *  - an untagged source (no `time` field at all -- water/headbutt/rock, and
- *    old-rod fish) always matches, regardless of the app's current time;
- *  - grass matches only when its own tag equals the app's current time
- *    exactly (morn/day/nite are three genuinely distinct grass tables);
- *  - a `fish` source tagged "day" matches at BOTH morn and day (the engine
- *    has no separate morn table for fishing -- "day" is really "not nite");
- *  - a `fish` source tagged "nite" matches only at nite.
- *
- * Exported and unit-tested with the full truth table, including the two
- * mutation-sensitive edges the spec names explicitly: old-rod (untagged)
- * fish is never filtered OUT regardless of time (mutation check #2), and
- * grass never matches every time (mutation check #6).
- */
-export function matchesTime(source: { method: GbcEncounterMethod; time?: string }, time: GbcTimeOfDay): boolean {
-  if (source.time === undefined) return true;
-  if (source.method === "grass") return source.time === time;
-  if (source.method === "fish") {
-    if (source.time === "day") return time === "morn" || time === "day";
-    if (source.time === "nite") return time === "nite";
-  }
-  return true;
-}
-
-/**
- * A row's own label, disclosing every scoping tag it carries -- mirrors
- * `EncounterGutter.tsx`'s own `rowLabel` reasoning (a row must say what it's
- * scoped to, never stay quiet about it): method, then rod (fish only), then
- * list (headbutt only), then time (grass/fish only), then " · swarm" for a
- * conditional source. Exact strings pinned against the spec's own examples:
- * "Grass · morn", "Surf", "Fish · Good Rod · day", "Fish · Old Rod",
- * "Headbutt · rare", "Rock Smash".
- */
-export function rowLabel(source: GbcEncounterSource): string {
-  const parts = [METHOD_LABEL[source.method]];
-  if (source.rod) parts.push(ROD_LABEL[source.rod] ?? source.rod);
-  if (source.list) parts.push(source.list);
-  if (source.time) parts.push(source.time);
-  if (source.conditional === "swarm") parts.push("swarm");
-  return parts.join(" · ");
-}
 
 /** "SPECIES_PIKACHU"-style prefixes never occur in GBC wild data (Task 2's
  *  own `normalizeGbcSpecies` doc comment), so this is just Title Case, no
