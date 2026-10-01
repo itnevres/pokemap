@@ -326,6 +326,13 @@ so a deep path never blows out the row or the fixed modal width.
 views. Off by default behind one `Encounters` toggle (`aria-pressed`); its legend
 (`role="note"`) exists only while the toggle is on.
 
+The single-map views (`MapCanvas`, `GbcMapCanvas`) mount the same border inside
+`.map-canvas__viewport` in its controlled mode (`enabled`): no toggle or legend of
+its own; the toggle is the last button of the Overlays group
+and its legend line is a `.map-canvas__legend-item` (an error shows there as
+`role="alert"`). The side is the first free of left, top, right, bottom by the
+map's connections, and `Fit` reserves one band on that side.
+
 - **One sprite per species** on a free side of each map: `.encounter-border__strip`
   (`--left`/`--top`/`--right`/`--bottom`) fills exactly the band beside the map
   (`bandRect`, B2's `pickBorderSide` picks the side, left, top, right, bottom,
