@@ -365,9 +365,10 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
 
   // Encounter border side (B4): the first of left, top, right, bottom with no connection. dive/emerge
   // are not planar, so gbaDirToCompass drops them.
+  // `?? []`: read-only consumers (WarpDestinationModal's own test fixtures) may hand over a map without the field.
   const connections = map.connections;
   const side = useMemo(
-    () => borderSideFromConnections(new Set(connections.map((c) => gbaDirToCompass(c.direction)).filter((d): d is CompassDir => d !== undefined))),
+    () => borderSideFromConnections(new Set((connections ?? []).map((c) => gbaDirToCompass(c.direction)).filter((d): d is CompassDir => d !== undefined))),
     [connections],
   );
   const { summaries: encounterSummaries, error: encounterError } = useMapEncounterSummaries(mapName, "gba", toggles.encounters);
