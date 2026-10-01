@@ -36,7 +36,7 @@ export interface SpeciesSummary {
 }
 
 /** The GBA wire row (`/api/encounters/:map`); declared here so this file never
- *  depends on `EncounterGutter.tsx`, which B3 deletes. */
+ *  depended on the since-deleted `EncounterGutter.tsx`. */
 export interface GbaEncounterRow {
   method: Method;
   rod?: Rod;
@@ -86,7 +86,7 @@ export function matchesTime(source: { method: GbcEncounterMethod; time?: string 
 
 /**
  * A row's own label, disclosing every scoping tag it carries -- mirrors
- * `EncounterGutter.tsx`'s own `rowLabel` reasoning (a row must say what it's
+ * the old `EncounterGutter.tsx`'s own `rowLabel` reasoning (a row must say what it's
  * scoped to, never stay quiet about it): method, then rod (fish only), then
  * list (headbutt only), then time (grass/fish only), then " · swarm" for a
  * conditional source. Exact strings pinned against the spec's own examples:

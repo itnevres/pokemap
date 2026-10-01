@@ -68,7 +68,7 @@ const LEGEND_COPY: Record<LensId, (s: LensPanelSummary) => string> = {
  * endpoints in its own copy; empty-maps/unused-species are single-state,
  * so there is nothing to disambiguate). `slug` matches WorldCanvas's own
  * CSS var names exactly (`--encounter-water` etc.) and this file's own
- * swatch classes below, the same slug EncounterGutter's legend key
+ * swatch classes below, the same slug the old encounter gutter's legend key
  * already established for the identical three colours.
  */
 const METHOD_LENS_KEY: Array<{ slug: "water" | "fishing" | "rock-smash"; label: string }> = [
@@ -94,7 +94,7 @@ const METHOD_LENS_KEY: Array<{ slug: "water" | "fishing" | "rock-smash"; label: 
  * Purely a control, like SpeciesSpotlight: it draws no part of the world
  * itself. WorldCanvas turns `active` + the coverage data it already fetches
  * into the actual per-map tint overlay, the same "presentational child,
- * caller owns the canvas" split EncounterGutter established in Task 28.
+ * caller owns the canvas" split the encounter overlay (now EncounterBorder) established in Task 28.
  */
 export function LensPanel({ active, onChange, summary, onListEmptyMaps, methodKey, legendCopy }: LensPanelProps) {
   const key = methodKey ?? METHOD_LENS_KEY;

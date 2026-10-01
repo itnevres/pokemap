@@ -152,7 +152,7 @@ export function isGbcWorldPayload(x: unknown): x is GbcWorldPayload {
  * GBA-shaped payload reaching a GBC canvas by mistake (mutation check #8).
  * `sources` is checked only as an array -- "trust the rest, guard what you
  * index by" (this file's own established posture, `isGbcWorldPayload`'s own
- * doc comment): every reader of `sources` (`GbcEncounterGutter`,
+ * doc comment): every reader of `sources` (`summariseGbc`,
  * `methodTint`) only ever reads `.method`/`.chances` off entries it already
  * knows came from the real `gbcEncounterSources` builder, never off
  * arbitrary user input.

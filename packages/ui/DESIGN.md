@@ -316,5 +316,42 @@ entries get no colour, just `--text-muted`.
 Every row holding a full filesystem path (`.hub-picker__path`,
 `.hub-picker__entry-name`) gets `min-width: 0` on the flex item plus
 `overflow-wrap: anywhere` or ellipsis — this app's established fix for a
-long string inside a flex row (`.encounter-gutter__row`'s own precedent) —
+long string inside a flex row (the former `.encounter-gutter__row`'s own precedent) —
 so a deep path never blows out the row or the fixed modal width.
+
+## Encounter border (Plan 6c B3)
+
+`EncounterBorder` (`encounter-border*`) replaces the two per-family
+"gutters" (GBA `EncounterGutter`, GBC `GbcEncounterGutter`) in both world
+views, and is the one component the single-map views mount too. Off by
+default behind one `Encounters` toggle (`aria-pressed`); its legend
+(`role="note"`) exists only while the toggle is on.
+
+- **One sprite per species** on a free side of each map: `.encounter-border__strip`
+  (`--left`/`--top`/`--right`/`--bottom`) fills exactly the band beside the map
+  (`bandRect`, B2's `pickBorderSide` picks the side, left, top, right, bottom,
+  first free wins). Sprites are `min(32, band px)` square; a side that cannot
+  fit them all shows `k-1` sprites and a `+N` chip (`.encounter-border__more`).
+- **Sprite tile:** each `.encounter-border__sprite` sits on a rounded
+  `--bg-panel-raised` tile with a 1px `--border` edge, so GBC's opaque white
+  front sprites read as a card rather than a hole (harmless behind GBA's
+  transparent icons). `image-rendering: pixelated`; hover/focus swaps the edge
+  to `--focus-ring`.
+- **Dimming (GBC):** a species not encountered at the current time of day gets
+  `.encounter-border__sprite--dimmed`: `opacity: 0.4` AND a dashed
+  `--text-muted` outline, so the state is never colour or opacity alone. It is
+  dimmed, never hidden. GBA has no `time`, so nothing is dimmed.
+- **Zoomed out** (below the family's LOD zoom: GBA 4, GBC 8) a strip becomes one
+  `.encounter-border__badge` count pill in the same band rect, `"{map} · {n}
+  species"` in its own visible text (it is `pointer-events: none`, so a `title`
+  could never show).
+- **Tooltip:** a top-level sibling of the control and strips (never inside a
+  strip: a strip is its own stacking context and would trap it under the
+  legend), one `<span>` per line: name, one line per encounter row (label,
+  percent, level, rate or bite), the `+` level-buff note, and "Not encountered
+  at <time>" when dimmed. Cleared whenever its sprite could have moved (toggle,
+  zoom, entries, time).
+- **Tokens:** `--bg-panel-raised`, `--border`, `--border-strong`,
+  `--focus-ring`, `--text-muted`, `--bg-selected`. The per-method
+  `--encounter-*` hues stay for the coverage lenses; the border no longer
+  colours by method.

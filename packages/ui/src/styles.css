@@ -1070,333 +1070,6 @@ input {
   color: var(--text-muted);
 }
 
-/* Encounter gutter (Task 28): a floating overlay layer meant to be mounted
-   once inside .world-canvas__viewport (position: relative, set above), so
-   its own left/top inline styles per map are relative to that same
-   viewport WorldCanvas already positions the canvas, tooltip and toast
-   against. The root is pointer-events: none so it never steals the
-   canvas's own pan/drag handling -- only the toggle and each icon button
-   opt back in. */
-.encounter-gutter {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  z-index: 5;
-}
-
-.encounter-gutter__control {
-  position: absolute;
-  top: var(--space-3);
-  right: var(--space-3);
-  /* Confirmed live: with no explicit z-index here, plain DOM order put this
-     BELOW the per-map badges/strips that follow it in EncounterGutter.tsx's
-     JSX (later siblings paint over earlier ones at the same stacking level),
-     so a badge could sit on top of the legend's own explanatory text --
-     exactly backwards, since the legend exists to be read before the data
-     it explains. z-index makes the paint order explicit rather than an
-     accident of source order. */
-  z-index: 3;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: var(--space-2);
-  pointer-events: auto;
-}
-
-.encounter-gutter__toggle {
-  background: var(--bg-panel-raised);
-  border: 1px solid var(--border);
-  color: var(--text-secondary);
-  font-family: var(--font-ui);
-  font-size: var(--text-xs);
-  font-weight: 500;
-  padding: var(--space-1) var(--space-2);
-  border-radius: 4px;
-  cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-  transition: background-color 150ms ease-out, border-color 150ms ease-out, color 150ms ease-out;
-}
-
-.encounter-gutter__toggle:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-
-.encounter-gutter__toggle[aria-pressed="true"] {
-  background: var(--bg-selected);
-  border-color: var(--border-strong);
-  color: var(--text-primary);
-}
-
-.encounter-gutter__legend {
-  width: 240px;
-  padding: var(--space-3);
-  background: var(--bg-panel-raised);
-  border: 1px solid var(--border-strong);
-  border-radius: 6px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
-  font-size: var(--text-xs);
-  color: var(--text-secondary);
-}
-
-.encounter-gutter__legend-title {
-  margin: 0 0 var(--space-1);
-  font-size: var(--text-sm);
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.encounter-gutter__legend-body {
-  margin: 0 0 var(--space-2);
-  line-height: 1.4;
-}
-
-.encounter-gutter__legend-key {
-  list-style: none;
-  margin: 0 0 var(--space-2);
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-
-.encounter-gutter__legend-item {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.encounter-gutter__legend-swatch {
-  display: inline-block;
-  width: 10px;
-  height: 10px;
-  border-radius: 2px;
-  flex: 0 0 auto;
-}
-
-.encounter-gutter__legend-swatch--land {
-  background: var(--encounter-land);
-}
-
-.encounter-gutter__legend-swatch--water {
-  background: var(--encounter-water);
-}
-
-.encounter-gutter__legend-swatch--rock-smash {
-  background: var(--encounter-rock-smash);
-}
-
-.encounter-gutter__legend-swatch--fishing {
-  background: var(--encounter-fishing);
-}
-
-/* GBC-only (Plan 6b Task 6): GbcEncounterGutter's own headbutt row/legend
-   swatch -- the other 4 GBC method slugs it uses (land for grass, water,
-   fishing for fish, rock-smash for rock) reuse the 4 rules already above,
-   since those methods are the same real-world concept GBA's own encounter
-   data already has a colour for. */
-.encounter-gutter__legend-swatch--headbutt {
-  background: var(--encounter-headbutt);
-}
-
-.encounter-gutter__legend-hint {
-  margin: 0;
-  padding-top: var(--space-2);
-  border-top: 1px solid var(--border);
-  color: var(--text-muted);
-  font-size: var(--text-2xs);
-  line-height: 1.4;
-}
-
-/* Low-zoom collapse target -- see LOW_ZOOM_THRESHOLD's own comment in
-   EncounterGutter.tsx for why a plain count replaces icons here rather than
-   shrinking them further. */
-.encounter-gutter__badge {
-  position: absolute;
-  z-index: 1;
-  padding: 2px var(--space-2);
-  background: var(--bg-panel-raised);
-  border: 1px solid var(--border-strong);
-  border-radius: 999px;
-  font-family: var(--font-data);
-  font-size: var(--text-2xs);
-  font-weight: 500;
-  color: var(--text-secondary);
-  white-space: nowrap;
-  pointer-events: none;
-}
-
-.encounter-gutter__strip {
-  position: absolute;
-  z-index: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  max-width: 280px;
-}
-
-.encounter-gutter__row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-  padding: 2px var(--space-1);
-  background: var(--bg-panel-raised);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
-}
-
-.encounter-gutter__method-tag {
-  flex: 0 0 auto;
-  padding: 1px var(--space-1);
-  border-radius: 3px;
-  font-family: var(--font-ui);
-  font-size: var(--text-2xs);
-  font-weight: 600;
-  color: var(--text-on-accent);
-  white-space: nowrap;
-}
-
-.encounter-gutter__method-tag--land {
-  background: var(--encounter-land);
-}
-
-.encounter-gutter__method-tag--water {
-  background: var(--encounter-water);
-}
-
-.encounter-gutter__method-tag--rock-smash {
-  background: var(--encounter-rock-smash);
-}
-
-.encounter-gutter__method-tag--fishing {
-  background: var(--encounter-fishing);
-}
-
-/* GBC-only (Plan 6b Task 6): see the legend-swatch--headbutt rule above. */
-.encounter-gutter__method-tag--headbutt {
-  background: var(--encounter-headbutt);
-}
-
-/* GBC-only (Plan 6b Task 6): GbcEncounterGutter's own species chip -- text,
-   not an icon (GBC has no per-species icon art, unlike GBA's own
-   .encounter-gutter__icon), so this is a new leaf class under the same
-   .encounter-gutter__* family rather than a reuse of .encounter-gutter__icon
-   itself, which is a fixed 20x20 image button that a text label wouldn't
-   fit. Same hover/focus treatment as .encounter-gutter__icon, sized by its
-   own text instead of a fixed square. */
-.encounter-gutter__chip {
-  display: inline-flex;
-  align-items: center;
-  padding: 1px var(--space-1);
-  background: var(--bg-hover);
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  cursor: pointer;
-  pointer-events: auto;
-  font-family: var(--font-data);
-  font-size: var(--text-2xs);
-  color: var(--text-primary);
-  white-space: nowrap;
-  transition: border-color 150ms ease-out;
-}
-
-.encounter-gutter__chip:hover,
-.encounter-gutter__chip:focus-visible {
-  border-color: var(--focus-ring);
-}
-
-/* GBC-only (Plan 6b Task 6): a row's own encounterRate/biteChance, in muted
-   data type -- "12.5%" per the spec's own example. */
-.encounter-gutter__rate {
-  font-family: var(--font-data);
-  font-size: var(--text-2xs);
-  color: var(--text-muted);
-  white-space: nowrap;
-}
-
-.encounter-gutter__icons {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  flex-wrap: wrap;
-}
-
-.encounter-gutter__icon {
-  position: relative;
-  display: block;
-  width: 20px;
-  height: 20px;
-  padding: 0;
-  background: var(--bg-hover);
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  cursor: pointer;
-  pointer-events: auto;
-  transition: border-color 150ms ease-out, transform 150ms ease-out;
-}
-
-.encounter-gutter__icon:hover,
-.encounter-gutter__icon:focus-visible {
-  border-color: var(--focus-ring);
-  transform: scale(1.15);
-  z-index: 1;
-}
-
-.encounter-gutter__icon-img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  image-rendering: pixelated;
-  image-rendering: crisp-edges;
-}
-
-.encounter-gutter__more {
-  font-family: var(--font-data);
-  font-size: var(--text-2xs);
-  color: var(--text-muted);
-  padding: 0 2px;
-}
-
-/*
- * Review fix: this used to be nested inside .encounter-gutter__icon inside
- * .encounter-gutter__strip, positioned via `bottom: 100%` relative to its
- * own parent. That put it inside TWO nested stacking contexts (the strip's
- * own `position: absolute` + `z-index: 1`, and the icon's `position:
- * relative` + `z-index: 1` from its own :hover/:focus-visible rule below)
- * neither of which it could ever escape -- a CSS stacking context traps
- * every descendant's z-index inside it, however high, so no number here
- * could ever have painted this above .encounter-gutter__control's legend.
- * (This file previously also declared z-index twice in this same rule --
- * 4, then 2 further down winning by cascade order -- compounding the same
- * underlying bug rather than causing it.)
- *
- * Fixed on the JSX side (EncounterGutter.tsx): the tooltip is now a
- * top-level sibling of .encounter-gutter__control, .encounter-gutter__strip
- * and .encounter-gutter__badge, not nested inside any of them, positioned
- * via `left`/`top` computed from the hovered icon's own
- * getBoundingClientRect() at hover time -- the same pattern
- * .world-canvas__tooltip already uses. `left`/`top` here are therefore the
- * anchor point (the icon's own top-center), not this element's own
- * top-left; `transform` both centers it on that point and lifts it clear
- * above the icon.
- */
-.encounter-gutter__tooltip {
-  position: absolute;
-  z-index: 4;
-  transform: translate(-50%, calc(-100% - 6px));
-  padding: var(--space-1) var(--space-2);
-  background: var(--bg-panel-raised);
-  border: 1px solid var(--border-strong);
-  border-radius: 4px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
-  font-family: var(--font-data);
-  font-size: var(--text-2xs);
-  color: var(--text-primary);
-  white-space: nowrap;
-  pointer-events: none;
-}
-
 /* Encounter border (Plan 6c B3): one sprite per species on a free side of each
    map, mounted once inside .world-canvas__viewport (position: relative) so the
    inline left/top/width/height per strip are viewport-relative screen px. The
@@ -1630,7 +1303,7 @@ input {
 
 /* Species spotlight + coverage lenses (Task 29). Both toolbar controls are
    purely presentational (search box; toggle strip + legend) -- mirrors
-   EncounterGutter's own "presentational child, caller draws" split; the
+   EncounterBorder's own "presentational child, caller draws" split; the
    world-canvas__spotlight-* and world-canvas__lens-tint rules further below are
    the actual overlay WorldCanvas renders from the data these controls hand
    it back via onHits/onChange. */
@@ -1761,7 +1434,7 @@ input {
 
 /* Floats below the toggle strip rather than pushing layout -- the same
    "dropdown panel anchored to its own trigger" shape as
-   .encounter-gutter__legend, just anchored to a toolbar control instead of
+   .encounter-border__legend, just anchored to a toolbar control instead of
    a viewport-corner one, so it needs its own z-index high enough to clear
    both the static conflict/dive/emerge legend row and the canvas viewport
    beneath it. */
@@ -1795,10 +1468,10 @@ input {
 
 /* Review fix: the method lens's swatch+label key, added because colour
    alone conveyed which tint meant which method -- mirrors
-   .encounter-gutter__legend-key's own shape exactly (same list-reset,
+   the former encounter-gutter legend key's own shape exactly (same list-reset,
    flex-column, 10px swatch), including the identical swatch colours (the
    two files intentionally do not share a class name -- lens-panel and
-   encounter-gutter are independent overlays that can be visible at once,
+   encounter-border are independent overlays that can be visible at once,
    and coupling their CSS would make one's markup change silently affect
    the other). */
 .lens-panel__legend-key {
@@ -1865,7 +1538,7 @@ input {
    encounter gutter's own `rect` prop already uses (see WorldCanvas.tsx's
    lensOverlayEntries/spotlightOverlayEntries), so they always line up with
    the map they describe regardless of pan/zoom -- and, like
-   .encounter-gutter itself, `pointer-events: none` throughout so neither
+   .encounter-border itself, `pointer-events: none` throughout so neither
    ever intercepts the canvas's own panning/dragging. */
 .world-canvas__lens,
 .world-canvas__spotlight {
@@ -1932,7 +1605,7 @@ input {
 
 /* Review fix: neither rule declared a z-index (computed `auto`), so both
    painted underneath .world-canvas__lens/.world-canvas__spotlight (z-index:
-   2, above) and .encounter-gutter (z-index: 5, above) -- confirmed live via
+   2, above) and .encounter-border (z-index: 5, above) -- confirmed live via
    elementsFromPoint on the real app: a selected map's outline sat under a
    spotlight's dim and under a lens tint, and the live marquee sat under
    both AND under the whole encounter gutter. Selection outlines sit above
@@ -3002,7 +2675,7 @@ input {
 /* The one place in this row a long absolute path has to live -- `flex: 1`
    without `min-width: 0` would refuse to shrink below its own content
    width and blow out the row instead of wrapping/ellipsizing (this file's
-   own established flex-with-long-text fix, see `.encounter-gutter__row`'s
+   own established flex-with-long-text fix, see the former `.encounter-gutter__row`'s
    own precedent). `overflow-wrap: anywhere` wraps mid-path rather than
    overflowing, since a path has no natural word-break points a browser's
    default wrapping would find on its own. */
@@ -3015,7 +2688,7 @@ input {
   color: var(--text-secondary);
 }
 
-/* Family badge, `.encounter-gutter__badge`'s own pill shape. Colours reuse
+/* Family badge, `.encounter-border__badge-text`'s own pill shape. Colours reuse
    the two elevation tokens (DESIGN.md's own "dive"/"emerge" hues) purely as
    two visually distinct, already-themed hues to tell GBA/GBC apart at a
    glance -- not because either carries any elevation meaning here. */
