@@ -160,21 +160,42 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
   });
 
   describe("GET /api/species/:name/icon.png (Plan 6c B1)", () => {
-    const expected = () => encodePng(loadGbcFrontSprite(GBC_SUBJECT_ROOT, "CHIKORITA")!);
+    const expected = (species: string) => encodePng(loadGbcFrontSprite(GBC_SUBJECT_ROOT, species)!);
+    const bodyOf = async (r: Response) => Buffer.from(await r.arrayBuffer());
+    /** Length first (a readable diff on a size mismatch), then byte-compare. */
+    const expectSameBytes = (got: Buffer, want: Buffer) => {
+      expect(got.length).toBe(want.length);
+      expect(Buffer.compare(got, want)).toBe(0);
+    };
 
     it("serves frame 0 of the GBC front sprite as a PNG, byte-equal to the core loader's encoding", async () => {
       const r = await get("/api/species/CHIKORITA/icon.png");
       expect(r.status).toBe(200);
       expect(r.headers.get("content-type")).toBe("image/png");
-      expect(Buffer.from(await r.arrayBuffer()).equals(expected())).toBe(true);
+      expect(r.headers.get("cache-control")).toBe("no-cache");
+      expectSameBytes(await bodyOf(r), expected("CHIKORITA"));
+    });
+
+    it("serves each species its own sprite: DUNSPARCE matches its loader bytes and differs from CHIKORITA's", async () => {
+      const dun = await bodyOf(await get("/api/species/DUNSPARCE/icon.png"));
+      expectSameBytes(dun, expected("DUNSPARCE"));
+      const chik = await bodyOf(await get("/api/species/CHIKORITA/icon.png"));
+      expect(Buffer.compare(dun, chik)).not.toBe(0);
+    });
+
+    it("UNOWN (the one species resolved through UnownPicPointers) is a 200 with its loader bytes", async () => {
+      const r = await get("/api/species/UNOWN/icon.png");
+      expect(r.status).toBe(200);
+      expect(r.headers.get("content-type")).toBe("image/png");
+      expectSameBytes(await bodyOf(r), expected("UNOWN"));
     });
 
     it("normalises the species: lowercase and SPECIES_-prefixed names give the same bytes", async () => {
-      const want = expected();
+      const want = expected("CHIKORITA");
       for (const name of ["chikorita", "SPECIES_CHIKORITA"]) {
         const r = await get(`/api/species/${name}/icon.png`);
         expect(r.status).toBe(200);
-        expect(Buffer.from(await r.arrayBuffer()).equals(want)).toBe(true);
+        expectSameBytes(await bodyOf(r), want);
       }
     });
 
