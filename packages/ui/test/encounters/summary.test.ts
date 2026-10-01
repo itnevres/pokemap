@@ -209,6 +209,14 @@ describe("summariseGbc: edge cases", () => {
     expect(out.map((s) => s.species)).toEqual(["G", "F"]);
   });
 
+  it("rows within a species come out in method order even when the input lists fish before grass", () => {
+    const [s] = summariseGbc([
+      { method: "fish", rod: "old", biteChance: 50, chances: [chance("AAA", 100)] },
+      { method: "grass", time: "day", encounterRate: 10, chances: [chance("AAA", 50)] },
+    ]);
+    expect(s!.rows.map((r) => r.method)).toEqual(["grass", "fish"]);
+  });
+
   it("an empty source list summarises to nothing", () => {
     expect(summariseGbc([])).toEqual([]);
   });
