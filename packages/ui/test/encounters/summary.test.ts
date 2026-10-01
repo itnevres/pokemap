@@ -76,10 +76,33 @@ describe("rowLabel (pure)", () => {
 describe("displaySpeciesName (pure)", () => {
   it("Title Cases per underscore word and strips an optional SPECIES_ prefix", () => {
     expect(displaySpeciesName("CHIKORITA")).toBe("Chikorita");
-    expect(displaySpeciesName("NIDORAN_F")).toBe("Nidoran F");
-    expect(displaySpeciesName("MR__MIME")).toBe("Mr Mime");
-    expect(displaySpeciesName("HO_OH")).toBe("Ho Oh");
-    expect(displaySpeciesName("SPECIES_NIDORAN_F")).toBe("Nidoran F");
+    expect(displaySpeciesName("SPECIES_CHIKORITA")).toBe("Chikorita");
+    expect(displaySpeciesName("SPECIES_SANDSHREW")).toBe("Sandshrew");
+    expect(displaySpeciesName("UNOWN")).toBe("Unown");
+  });
+
+  // The official punctuated names, keyed on the constant after the SPECIES_ strip.
+  it("Nidoran: the gender symbols", () => {
+    expect(displaySpeciesName("NIDORAN_F")).toBe("Nidoran♀");
+    expect(displaySpeciesName("NIDORAN_M")).toBe("Nidoran♂");
+    expect(displaySpeciesName("SPECIES_NIDORAN_F")).toBe("Nidoran♀");
+  });
+
+  it("Mr. Mime: both constant spellings", () => {
+    expect(displaySpeciesName("MR__MIME")).toBe("Mr. Mime");
+    expect(displaySpeciesName("MR_MIME")).toBe("Mr. Mime");
+    expect(displaySpeciesName("SPECIES_MR_MIME")).toBe("Mr. Mime");
+  });
+
+  it("Farfetch'd: both constant spellings", () => {
+    expect(displaySpeciesName("FARFETCH_D")).toBe("Farfetch'd");
+    expect(displaySpeciesName("FARFETCHD")).toBe("Farfetch'd");
+    expect(displaySpeciesName("SPECIES_FARFETCHD")).toBe("Farfetch'd");
+  });
+
+  it("Ho-Oh", () => {
+    expect(displaySpeciesName("HO_OH")).toBe("Ho-Oh");
+    expect(displaySpeciesName("SPECIES_HO_OH")).toBe("Ho-Oh");
   });
 });
 
@@ -245,7 +268,7 @@ describe("summariseGba", () => {
   it("maps wire methods to species rows: labels, rods, order, no levelBuff/rate/availableAt", () => {
     expect(summariseGba(rows)).toStrictEqual([
       sp("SPECIES_ODDISH", "Oddish", [row("grass", "Land", 45, 5, 6)]),
-      sp("SPECIES_NIDORAN_F", "Nidoran F", [row("grass", "Land", 45, 5, 6)]),
+      sp("SPECIES_NIDORAN_F", "Nidoran♀", [row("grass", "Land", 45, 5, 6)]),
       sp("SPECIES_ZIGZAGOON", "Zigzagoon", [row("grass", "Land", 10, 3, 4)]),
       sp("SPECIES_TENTACOOL", "Tentacool", [
         row("water", "Water", 60, 5, 35),

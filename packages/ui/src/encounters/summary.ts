@@ -102,11 +102,24 @@ export function rowLabel(source: GbcEncounterSource): string {
   return parts.join(" · ");
 }
 
-/** Strips an optional "SPECIES_" prefix (GBA), then Title Case per "_" word:
- *  "NIDORAN_F" -> "Nidoran F", "MR__MIME" -> "Mr Mime". */
+/** The official punctuated names, keyed on the constant after the "SPECIES_"
+ *  strip (both families' spellings); Title Case would mangle each of these. */
+const OFFICIAL_NAME: Record<string, string> = {
+  NIDORAN_F: "Nidoran♀",
+  NIDORAN_M: "Nidoran♂",
+  MR__MIME: "Mr. Mime",
+  MR_MIME: "Mr. Mime",
+  FARFETCH_D: "Farfetch'd",
+  FARFETCHD: "Farfetch'd",
+  HO_OH: "Ho-Oh",
+};
+
+/** Strips an optional "SPECIES_" prefix (GBA), then the override table above,
+ *  else Title Case per "_" word: "CHIKORITA" -> "Chikorita". */
 export function displaySpeciesName(species: string): string {
-  return species
-    .replace(/^SPECIES_/, "")
+  const bare = species.replace(/^SPECIES_/, "");
+  if (Object.hasOwn(OFFICIAL_NAME, bare)) return OFFICIAL_NAME[bare]!;
+  return bare
     .toLowerCase()
     .split("_")
     .filter(Boolean)

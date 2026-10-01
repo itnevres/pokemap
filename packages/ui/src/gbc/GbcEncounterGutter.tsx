@@ -117,8 +117,8 @@ export function chipText(chance: GbcEncounterChance, method: GbcEncounterMethod)
  *  precision `EncounterGutter.tsx`'s own `describeChance` documents. Not
  *  exported: `EncounterGutter.tsx`'s own `describeChance` isn't either, and
  *  this file's own exported-pure-helper list (spec's own "Keep the pure
- *  helpers exported and unit-tested") names only `matchesTime`/`rowLabel`/
- *  `chipText`. */
+ *  helpers exported and unit-tested") is now just `chipText`; `matchesTime`/
+ *  `rowLabel` moved to `../encounters/summary.ts` (Plan 6c B1). */
 function chipTooltip(chance: GbcEncounterChance, method: GbcEncounterMethod): string {
   const buff = isBuffedMethod(method) ? "+" : "";
   return `${displaySpeciesName(chance.species)} · Lv ${chance.minLevel}-${chance.maxLevel}${buff} · ${chance.percent.toFixed(1)}%`;
