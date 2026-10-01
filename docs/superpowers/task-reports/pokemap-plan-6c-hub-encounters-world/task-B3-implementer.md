@@ -106,3 +106,25 @@ Removed lines in the two canvas files: exactly the named test's two lines.
 9. Stale-comment retargets (LensPanel, SpeciesSpotlight, summary.ts, gbc/guards.ts, gbc/time.ts, styles.css, DESIGN.md) comment-only. Test-file comments mentioning EncounterGutter left (U1).
 10. Untracked `task-B4-spec.md` in the report dir is the coordinator's; not touched.
 11. Not visually checked in a browser (no dev server run); layout is CSS-only reasoning + jsdom geometry tests.
+
+## Fix round (SR-F1..F5, QR-1..10)
+Commits: `316ca1f` (item 1+2, tests only), `3c6b2ef` (items 3-8), `c934eeb` (items 9-10, comments/docs). Counts 1,873 -> **1,880** (+7). Gate: `npm test` 116 files / 1880 pass (no flake this run), typecheck clean, `npx vite build packages/ui` ok.
+
+| item | commit | change / proving test |
+|---|---|---|
+| 1 SR-F1/F5 | 316ca1f | GbcWorldCanvas "wheeling out from the fit zoom: sprites at >= 8, a badge below 8, sprites again after wheeling back; band thickness = BORDER_BAND.gbc * zoom" (zoom 10 -> 8.33 -> 6.94 -> 8.33, waits on the zoom readout each step; strip width = 2*zoom). GBA "wheeling in from zoom 1: a badge below the LOD threshold (4), sprites from 4 (not only from 8)" (7 wheels = 3.58 badge, 8th = 4.30 sprites, band 4 tiles). |
+| 2 SR-F4/QR-5 | 316ca1f | New GBA tests: `zoomIn` helper waits for the zoom readout to change then `await act(async () => {})`, then counts calls (no timers). GBC time-switch test now asserts 2 encounter fetches before and after the switch. Edited only my own B3 tests. |
+| 3 QR-1 | 3c6b2ef | `+N` is `<button class="encounter-border__more" aria-label="N more species">`; hover/focus tooltip lists hidden names. Tests: "the '+N' chip is a focusable button…", "the chip carrying the full count (k = 1) lists every species". |
+| 4 QR-2 | 3c6b2ef | `showTooltip(e, key, summary \| hiddenSummaries)` builds lines at event time; no per-sprite `tooltipLines` per render. Covered by all tooltip tests. |
+| 5 QR-6 | 3c6b2ef | "anchors at the sprite's top-centre relative to the root…" with stubbed sprite/root rects (`108px`/`50px`). Dropping the left subtraction and the top subtraction each: 1 red. |
+| 6 QR-7 | 3c6b2ef | CSS: opacity moved to `.encounter-border__sprite--dimmed img`; dashed outline stays on the button. Test "dimming CSS" reads the rules from styles.css (jsdom loads no CSS); renaming the img rule: red. |
+| 7 QR-8 | 3c6b2ef | dimmed `aria-label` = `"<name>, not encountered at <time>"`; test "a dimmed sprite's accessible name says so…". Reverting to plain name: red (EncounterBorder + GBC canvas). Test helper `sprite()` and the GBC dimming test match the name by prefix (my own tests). |
+| 8 QR-9 | 3c6b2ef | `GbcTimeOfDay` from `gbc/time.ts`; redundant `time !== undefined &&` dropped. |
+| 9 SR-F3/QR-3/4/10 | c934eeb | DESIGN.md: single-map claim dropped (+ `+N` button / img dimming text); GbcWorldCanvas `borderEntries` comment; WorldCanvas "Culling:" + dungeon paragraphs now describe `drawnPlacements`/`visible`. Src comments only, no test-file comments touched. |
+| 10 SR-F2 | c934eeb | `pickBorderSide` doc: `neighbours` may include `rect` itself. |
+
+Mutants re-run (all red now): M10 `lodZoom={4}` (GBC) 1 red; M15 `band={BORDER_BAND.gba}` (GBC) 1 red; M20 `lodZoom={8}` (GBA) 1 red; M5a (GBA placeholder removed) 2 red (fetch-once + unavailable-no-retry, now with real evidence before the count). Also: anchor left/top drop, aria-label revert, img-rule rename each 1 red.
+
+Canvas-test diff vs `e9457e0` (`WorldCanvas.test.tsx`, `gbc/GbcWorldCanvas.test.tsx`): removed lines = only the 2 lines of the named GBC chip test; additions otherwise. `makeFetchMock` route unchanged since the first round.
+Note: a mutant-restore `git checkout` wiped my uncommitted EncounterBorder.tsx edits once mid-round; re-applied from the script and re-verified before committing.
+Not done (per brief): SR-F6, SR-F7.
