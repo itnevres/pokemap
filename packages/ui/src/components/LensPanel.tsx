@@ -32,10 +32,14 @@ export interface LensPanelProps {
 
 export interface LensLegendProps {
   active: LensId | null;
-  summary: LensPanelSummary;
+  /** `null` = coverage has not loaded yet: the row shows only its title and
+   *  "Loading coverage…" (no counts, list buttons or method key), so a lens
+   *  clicked early never states a false "0 maps". */
+  summary: LensPanelSummary | null;
   /** A map-list entry was clicked; the app selects the map and jumps there
-   *  (the tree-click path). Unset (e.g. a dungeon view) renders every entry
-   *  disabled. */
+   *  (the tree-click path). Unset (a dungeon view: a world jump means nothing
+   *  there) means the Empty maps list action is not rendered at all, so no
+   *  entry is ever shown disabled. */
   onJumpToMap?: (name: string) => void;
   /** Plan 6b Task 6 (additive): overrides the method lens's own legend key
    *  -- GBC's method tint precedence (water > fish > headbutt > rock; grass
@@ -54,9 +58,11 @@ const LEGEND_COPY: Record<LensId, (s: LensPanelSummary) => string> = {
   "level-curve": () =>
     "Colour is the average encounter level, weighted by encounter rate. Blue is low, red is high. Look for maps that jump several levels above their neighbours.",
   "empty-maps": (s) =>
-    `${s.emptyMapNames.length} maps have no encounters. Many should not — buildings, corridors, single rooms. Click to list them.`,
+    `${s.emptyMapNames.length} ${s.emptyMapNames.length === 1 ? "map has" : "maps have"} no encounters. Many should not — buildings, corridors, single rooms. Click to list them.`,
   "unused-species": (s) =>
-    `${s.unusedSpeciesNames.length} species appear in no encounter table. They may still be gifts, statics or trades.`,
+    s.unusedSpeciesNames.length === 1
+      ? "1 species appears in no encounter table. It may still be a gift, static or trade."
+      : `${s.unusedSpeciesNames.length} species appear in no encounter table. They may still be gifts, statics or trades.`,
   method: () => "Which maps reward surfing, fishing or rock smash.",
 };
 
@@ -135,7 +141,7 @@ function LensLegendRow({
 }: LensLegendProps & { active: LensId }) {
   const [listOpen, setListOpen] = useState(false);
   const key = methodKey ?? METHOD_LENS_KEY;
-  const copy = (legendCopy?.[active] ?? LEGEND_COPY[active])(summary);
+  const copy = summary ? (legendCopy?.[active] ?? LEGEND_COPY[active])(summary) : "Loading coverage…";
   const listAction = (label: string) => (
     <button
       type="button"
@@ -147,10 +153,10 @@ function LensLegendRow({
     </button>
   );
   return (
-    <div className="world-canvas__legend-row" role="note">
+    <div className="world-canvas__legend-row" role="note" aria-label="Coverage lens legend">
       <p className="lens-panel__legend-title">{LENS_LABEL[active]}</p>
       <p className="lens-panel__legend-body">{copy}</p>
-      {active === "method" && (
+      {summary && active === "method" && (
         <ul className="lens-panel__legend-key">
           {key.map((m) => (
             <li key={m.slug} className="lens-panel__legend-item">
@@ -160,17 +166,17 @@ function LensLegendRow({
           ))}
         </ul>
       )}
-      {active === "empty-maps" && summary.emptyMapNames.length > 0 && listAction("List them")}
-      {active === "unused-species" && summary.unusedSpeciesNames.length > 0 && listAction("Show list")}
-      {listOpen && active === "empty-maps" && (
+      {summary && active === "empty-maps" && onJumpToMap && summary.emptyMapNames.length > 0 && listAction("List them")}
+      {summary && active === "unused-species" && summary.unusedSpeciesNames.length > 0 && listAction("Show list")}
+      {listOpen && summary && onJumpToMap && active === "empty-maps" && (
         <ul className="lens-panel__list" aria-label="Maps with no encounters">
           {summary.emptyMapNames.map((name) => (
             <li key={name}>
               <button
                 type="button"
                 className="lens-panel__list-btn"
-                disabled={!onJumpToMap}
-                onClick={() => onJumpToMap?.(name)}
+                title={name}
+                onClick={() => onJumpToMap(name)}
               >
                 {name}
               </button>
@@ -178,12 +184,12 @@ function LensLegendRow({
           ))}
         </ul>
       )}
-      {listOpen && active === "unused-species" && (
+      {listOpen && summary && active === "unused-species" && (
         <ul className="lens-panel__list lens-panel__list--species" aria-label="Unused species">
           {summary.unusedSpeciesNames.map((s) => (
             <li key={s} className="lens-panel__species">
               <img src={speciesIconUrl(s)} alt="" width={24} height={24} loading="lazy" />
-              <span>{displaySpeciesName(s)}</span>
+              <span title={displaySpeciesName(s)}>{displaySpeciesName(s)}</span>
             </li>
           ))}
         </ul>

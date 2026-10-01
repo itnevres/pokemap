@@ -20,7 +20,7 @@ describe("LensPanel", () => {
   });
 
   it("states the finding in plain words with a next action", () => {
-    render(<LensLegend active="empty-maps" summary={sum(982, 12)} />);
+    render(<LensLegend active="empty-maps" summary={sum(982, 12)} onJumpToMap={() => {}} />);
     expect(screen.getByText(/982 maps have no encounters/i)).toBeTruthy();
     expect(screen.getByRole("button", { name: /list them/i })).toBeTruthy();
   });
@@ -46,7 +46,7 @@ describe("LensPanel", () => {
   });
 
   // Added during this task's own teeth-proof pass: the given tests' fixture
-  // ({ emptyMaps: 982, unusedSpecies: 12 }) happens to equal the spec's own
+  // (`sum(982, 12)`) happens to equal the spec's own
   // example numbers, so a component that hardcoded the literal strings
   // "982"/"12" instead of interpolating `summary` would still pass every
   // test above -- confirmed by deliberately hardcoding them and re-running
@@ -136,7 +136,7 @@ describe("LensPanel", () => {
     });
 
     it("List them toggles a list of exactly the given maps, in order", () => {
-      render(<LensLegend active="empty-maps" summary={lists(MAPS, [])} />);
+      render(<LensLegend active="empty-maps" summary={lists(MAPS, [])} onJumpToMap={() => {}} />);
       const btn = screen.getByRole("button", { name: "List them" });
       expect(btn.getAttribute("aria-expanded")).toBe("false");
       expect(screen.queryByRole("list", { name: "Maps with no encounters" })).toBeNull();
@@ -145,6 +145,17 @@ describe("LensPanel", () => {
       expect(Array.from(ul.querySelectorAll("button")).map((b) => b.textContent)).toEqual(MAPS);
       const hide = screen.getByRole("button", { name: "Hide list" });
       expect(hide.getAttribute("aria-expanded")).toBe("true");
+      fireEvent.click(hide);
+      expect(screen.queryByRole("list", { name: "Maps with no encounters" })).toBeNull();
+      const again = screen.getByRole("button", { name: "List them" });
+      expect(again.getAttribute("aria-expanded")).toBe("false");
+    });
+
+    it("map entries carry the full name as a title", () => {
+      render(<LensLegend active="empty-maps" summary={lists(MAPS, [])} onJumpToMap={() => {}} />);
+      fireEvent.click(screen.getByRole("button", { name: "List them" }));
+      const ul = screen.getByRole("list", { name: "Maps with no encounters" });
+      expect(Array.from(ul.querySelectorAll("button")).map((b) => b.getAttribute("title"))).toEqual(MAPS);
     });
 
     it("clicking an entry calls onJumpToMap with that map name", () => {
@@ -156,12 +167,11 @@ describe("LensPanel", () => {
       expect(onJumpToMap).toHaveBeenCalledWith("PetalburgCity_Gym");
     });
 
-    it("without onJumpToMap every entry is disabled", () => {
+    it("without onJumpToMap there is no List them button (nothing to jump to)", () => {
       render(<LensLegend active="empty-maps" summary={lists(MAPS, [])} />);
-      fireEvent.click(screen.getByRole("button", { name: "List them" }));
-      const entries = Array.from(screen.getByRole("list", { name: "Maps with no encounters" }).querySelectorAll("button"));
-      expect(entries.length).toBe(3);
-      expect(entries.every((b) => b.disabled)).toBe(true);
+      expect(screen.getByText(/3 maps have no encounters/)).toBeTruthy();
+      expect(screen.queryByRole("button", { name: "List them" })).toBeNull();
+      expect(screen.queryByRole("list")).toBeNull();
     });
 
     it("unused species list shows display names and icon urls, in order", () => {
@@ -176,27 +186,66 @@ describe("LensPanel", () => {
         "/api/species/CELEBI/icon.png",
       ]);
       expect(screen.getByRole("button", { name: "Hide list" }).getAttribute("aria-expanded")).toBe("true");
+      expect(Array.from(ul.querySelectorAll("span")).map((sp) => sp.getAttribute("title"))).toEqual(["Mr. Mime", "Celebi"]);
+      fireEvent.click(screen.getByRole("button", { name: "Hide list" }));
+      expect(screen.queryByRole("list", { name: "Unused species" })).toBeNull();
+      const again = screen.getByRole("button", { name: "Show list" });
+      expect(again.getAttribute("aria-expanded")).toBe("false");
+    });
+
+    it("the species lens never shows the maps list, even with empty maps present", () => {
+      render(<LensLegend active="unused-species" summary={lists(MAPS, ["CELEBI"])} onJumpToMap={() => {}} />);
+      fireEvent.click(screen.getByRole("button", { name: "Show list" }));
+      expect(screen.getByRole("list", { name: "Unused species" })).toBeTruthy();
+      expect(screen.queryByRole("list", { name: "Maps with no encounters" })).toBeNull();
     });
 
     it("a list starts closed after every lens change", () => {
       const summary = lists(MAPS, ["CELEBI"]);
-      const { rerender } = render(<LensLegend active="empty-maps" summary={summary} />);
+      const { rerender } = render(<LensLegend active="empty-maps" summary={summary} onJumpToMap={() => {}} />);
       fireEvent.click(screen.getByRole("button", { name: "List them" }));
       expect(screen.getByRole("list", { name: "Maps with no encounters" })).toBeTruthy();
       rerender(<LensLegend active="unused-species" summary={summary} />);
       expect(screen.getByRole("button", { name: "Show list" })).toBeTruthy();
       expect(screen.queryByRole("list")).toBeNull();
-      rerender(<LensLegend active="empty-maps" summary={summary} />);
+      rerender(<LensLegend active="empty-maps" summary={summary} onJumpToMap={() => {}} />);
       expect(screen.getByRole("button", { name: "List them" })).toBeTruthy();
       expect(screen.queryByRole("list")).toBeNull();
     });
 
     it("has no list button when the array is empty", () => {
-      const first = render(<LensLegend active="empty-maps" summary={lists([], ["CELEBI"])} />);
+      const first = render(<LensLegend active="empty-maps" summary={lists([], ["CELEBI"])} onJumpToMap={() => {}} />);
       expect(screen.queryByRole("button", { name: "List them" })).toBeNull();
       first.unmount();
       render(<LensLegend active="unused-species" summary={lists(MAPS, [])} />);
       expect(screen.queryByRole("button", { name: "Show list" })).toBeNull();
+    });
+
+    it("a null summary (coverage not loaded) shows 'Loading coverage…' with no counts, buttons or method key", () => {
+      for (const lens of ["empty-maps", "unused-species", "method"] as const) {
+        const { unmount } = render(<LensLegend active={lens} summary={null} onJumpToMap={() => {}} />);
+        expect(screen.getByText("Loading coverage…")).toBeTruthy();
+        expect(screen.getByRole("note").textContent).not.toMatch(/\d|have no|appears? in no/);
+        expect(screen.queryByRole("button")).toBeNull();
+        expect(screen.queryByText("Fishing")).toBeNull();
+        unmount();
+      }
+    });
+
+    it("the legend row is a named note", () => {
+      render(<LensLegend active="level-curve" summary={sum(5, 3)} />);
+      expect(screen.getByRole("note", { name: "Coverage lens legend" })).toBeTruthy();
+    });
+
+    it("singular counts read 'map has' / 'species appears'; other counts keep the plural copy", () => {
+      const one = render(<LensLegend active="empty-maps" summary={sum(1, 1)} />);
+      expect(one.container.textContent).toMatch(/^Empty maps1 map has no encounters\./);
+      one.unmount();
+      const sp = render(<LensLegend active="unused-species" summary={sum(1, 1)} />);
+      expect(sp.container.textContent).toMatch(/1 species appears in no encounter table\./);
+      sp.unmount();
+      const zero = render(<LensLegend active="empty-maps" summary={sum(0, 0)} />);
+      expect(zero.container.textContent).toMatch(/0 maps have no encounters\./);
     });
   });
 });
