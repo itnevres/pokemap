@@ -96,6 +96,15 @@ export function GbcApp({ root, switcher }: GbcAppProps) {
   // does NOT switch mode.
   const selectMapFromWorld = (name: string) => setSelected(name);
 
+  // Entering World centres on the selected map, wherever the selection came from (tree, world click,
+  // Map view). A world click itself never jumps (F1); this is a mode entry, not a click.
+  const enterWorld = () => {
+    if (mode === "world") return;
+    setJumpTarget(selected);
+    setSelectVersion((v) => v + 1);
+    setMode("world");
+  };
+
   // GbcWorldCanvas's own double-click (Task 5): opens the map in Map view.
   const openMapFromWorld = (name: string) => {
     setSelected(name);
@@ -112,7 +121,7 @@ export function GbcApp({ root, switcher }: GbcAppProps) {
           <button type="button" className="map-canvas__btn" aria-pressed={mode === "map"} onClick={() => setMode("map")}>
             Map
           </button>
-          <button type="button" className="map-canvas__btn" aria-pressed={mode === "world"} onClick={() => setMode("world")}>
+          <button type="button" className="map-canvas__btn" aria-pressed={mode === "world"} onClick={enterWorld}>
             World
           </button>
         </div>

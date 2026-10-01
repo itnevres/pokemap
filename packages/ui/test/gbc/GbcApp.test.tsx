@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { GbcApp } from "../../src/gbc/GbcApp.js";
 import type { GbcMapPayload } from "@pokemap/core/src/gbc/wire.js";
 
@@ -576,5 +576,104 @@ describe("GbcApp -- world click selects the map in the tree (Plan 6c C2)", () =>
       if (originalClientWidth) Object.defineProperty(HTMLElement.prototype, "clientWidth", originalClientWidth);
       if (originalClientHeight) Object.defineProperty(HTMLElement.prototype, "clientHeight", originalClientHeight);
     }
+  });
+});
+
+describe("GbcApp -- entering World centres on the selection (Plan 6c C2 fix round)", () => {
+  // OlivineCity at world x 0, OlivinePort at x 11 (10x10 blocks each). In a 100x100 viewport the initial fit is
+  // zoom 100/21 ("15%"); a jump fills 60% (zoom 6, "19%"), centring the target at screen [20,80).
+  const TWO = {
+    family: "gbc" as const,
+    blockPx: 32 as const,
+    placements: {
+      OlivineCity: { map: "OlivineCity", x: 0, y: 0, width: 10, height: 10, component: 0 },
+      OlivinePort: { map: "OlivinePort", x: 11, y: 0, width: 10, height: 10, component: 1 },
+    },
+    components: [
+      { index: 0, maps: ["OlivineCity"], bounds: { x: 0, y: 0, width: 10, height: 10 } },
+      { index: 1, maps: ["OlivinePort"], bounds: { x: 11, y: 0, width: 10, height: 10 } },
+    ],
+    conflicts: [],
+  };
+  async function withViewport(fn: () => Promise<void>) {
+    const w = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth");
+    const h = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight");
+    Object.defineProperty(HTMLElement.prototype, "clientWidth", { value: 100, configurable: true });
+    Object.defineProperty(HTMLElement.prototype, "clientHeight", { value: 100, configurable: true });
+    try {
+      await fn();
+    } finally {
+      if (w) Object.defineProperty(HTMLElement.prototype, "clientWidth", w);
+      if (h) Object.defineProperty(HTMLElement.prototype, "clientHeight", h);
+    }
+  }
+  const clickMode = (name: "Map" | "World") =>
+    fireEvent.click(Array.from(screen.getByRole("group", { name: "View" }).querySelectorAll("button")).find((b) => b.textContent === name) as HTMLElement);
+  const zoomText = () => document.querySelector(".world-canvas__status")?.textContent ?? "";
+  const jumpHighlight = () => document.querySelector(".world-canvas__jump-highlight");
+  const currentRow = () => document.querySelector<HTMLElement>('.map-tree__map[aria-current="true"]');
+  function stageCanvas() {
+    const canvas = document.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement;
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: 100, bottom: 100, width: 100, height: 100, x: 0, y: 0, toJSON() {} });
+    return canvas;
+  }
+  async function mountInWorld() {
+    vi.stubGlobal("fetch", makeFetchMock({ world: TWO }));
+    render(<GbcApp root="/x" />);
+    await waitFor(() => expect(screen.getByText("OlivineCity")).toBeTruthy());
+    clickMode("World");
+    await waitFor(() => expect(zoomText()).toContain("2 components · 2 maps · zoom 15%"));
+    return stageCanvas();
+  }
+
+  it("tree-click A, world-click B, Map, World: the view centres on B, not on the stale tree target A", async () => {
+    await withViewport(async () => {
+      const canvas = await mountInWorld();
+      fireEvent.click(screen.getByText("OlivineCity")); // A: a tree click
+      await waitFor(() => expect(zoomText()).toContain("zoom 19%"));
+      fireEvent.click(canvas, { clientX: 95, clientY: 50 }); // B = OlivinePort, at screen [86,146) after the jump
+      await waitFor(() => expect(currentRow()?.textContent).toBe("OlivinePort"));
+
+      clickMode("Map");
+      clickMode("World");
+
+      await waitFor(() => expect(jumpHighlight()).toBeTruthy());
+      await waitFor(() => expect(zoomText()).toContain("zoom 19%"));
+      fireEvent.click(stageCanvas(), { clientX: 50, clientY: 50 }); // the centre: B if centred on B, A if jumped to the stale A
+      await act(async () => {});
+      expect(currentRow()?.textContent).toBe("OlivinePort");
+    });
+  });
+
+  it("world-click B only (no tree click ever), Map, World: jumps to B", async () => {
+    await withViewport(async () => {
+      const canvas = await mountInWorld();
+      fireEvent.click(canvas, { clientX: 80, clientY: 50 }); // OlivinePort at the initial fit: screen x [52,100)
+      await waitFor(() => expect(currentRow()?.textContent).toBe("OlivinePort"));
+      expect(zoomText()).toContain("zoom 15%");
+
+      clickMode("Map");
+      clickMode("World");
+
+      await waitFor(() => expect(zoomText()).toContain("zoom 19%")); // jumped; before, jumpTarget was null and the view stayed at the fit
+      await waitFor(() => expect(jumpHighlight()).toBeTruthy());
+    });
+  });
+
+  it("pressing World while already in World does not re-jump (no new highlight, view kept)", async () => {
+    await withViewport(async () => {
+      await mountInWorld();
+      fireEvent.click(screen.getByText("OlivineCity"));
+      await waitFor(() => expect(zoomText()).toContain("zoom 19%"));
+      const first = jumpHighlight();
+      expect(first).toBeTruthy();
+
+      clickMode("World");
+      await act(async () => {});
+
+      const now = jumpHighlight(); // a re-jump mounts a fresh node (keyed on jumpToken); the first may have faded
+      expect(now === null || now === first).toBe(true);
+      expect(zoomText()).toContain("zoom 19%");
+    });
   });
 });
