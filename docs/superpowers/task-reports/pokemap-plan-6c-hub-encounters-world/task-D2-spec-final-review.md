@@ -1,6 +1,6 @@
 # D2 independent final spec review
 
-**Latest verdict: pass for the scoped corrections at `1d31cc2`; no open findings from this review.** The earlier findings and evidence are retained below as history.
+**Latest verdict: pass for the scoped corrections through `ba7a863`; no open findings from this review.** Its final diff only names the helper API/source/test paths and leaves the verified tie, chain, and signed-zero contracts intact. The earlier findings and evidence are retained below as history.
 
 ## Scoped correction verification — `1d31cc2`
 
