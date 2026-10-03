@@ -6,6 +6,7 @@ import { openGbcProject } from "@pokemap/core/src/gbc/project.js";
 import { renderGbcMap, renderGbcMapMetatile } from "@pokemap/core/src/gbc/render/map.js";
 import { loadGbcMapEvents } from "@pokemap/core/src/gbc/load/events.js";
 import { buildGbcWorld } from "@pokemap/core/src/gbc/world/connections.js";
+import type { Sidecar } from "@pokemap/core/src/world/sidecar.js";
 import { gbcEncounterSources, gbcWhereSpecies, gbcCoverage, loadGbcSpeciesConstants } from "@pokemap/core/src/gbc/analyse/atlas.js";
 import { loadGbcFrontSprite } from "@pokemap/core/src/gbc/load/sprites.js";
 import { encodePng } from "@pokemap/cli/src/png.js";
@@ -34,6 +35,8 @@ let s: PokemapServer;
 const get = async (path: string) => fetch(`http://127.0.0.1:${s.port}${path}`);
 const post = async (path: string, body: unknown = {}) =>
   fetch(`http://127.0.0.1:${s.port}${path}`, { method: "POST", body: JSON.stringify(body) });
+const postRaw = async (path: string, body: string) =>
+  fetch(`http://127.0.0.1:${s.port}${path}`, { method: "POST", body });
 const patch = async (path: string, body: unknown = {}) =>
   fetch(`http://127.0.0.1:${s.port}${path}`, { method: "PATCH", body: JSON.stringify(body) });
 
@@ -631,10 +634,17 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
       const world = buildGbcWorld(proj);
       const r = await get("/api/world");
       expect(r.status).toBe(200);
-      const body = await r.json() as { family: string; blockPx: number; placements: Record<string, unknown>; components: { maps: string[] }[]; conflicts: unknown[] };
+      const body = await r.json() as { family: string; blockPx: number; placements: Record<string, any>; components: { maps: string[] }[]; conflicts: unknown[] };
+      const mapTypeByName = new Map(proj.maps.map((map) => [map.name, map.environment]));
+      const expectedPlacements = Object.fromEntries([...world.placements].map(([name, placement]) => [name, {
+        ...placement,
+        mapType: mapTypeByName.get(name) ?? "",
+        manual: false,
+      }]));
 
       expect(body.family).toBe("gbc");
       expect(body.blockPx).toBe(32);
+      expect(body.placements).toEqual(expectedPlacements);
       expect(Object.values(body.placements).filter((p: any) => p.manual || !["INDOOR", "GATE"].includes(p.mapType))).toHaveLength(158);
       expect(Object.values(body.placements).filter((p: any) => !p.manual && ["INDOOR", "GATE"].includes(p.mapType))).toHaveLength(233);
 
@@ -691,34 +701,57 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
       expect(withQuery).toEqual(plain);
     });
 
-    it("buildGbcWorldPayload wire-shapes a real GbcWorld directly (unit, no HTTP)", async () => {
+    it("buildGbcWorldPayload wire-shapes a real GbcWorld directly (unit, no HTTP)", () => {
       const proj = openGbcProject(GBC_SUBJECT_ROOT);
       const world = buildGbcWorld(proj);
-      const r = await get("/api/world");
-      expect(await r.json()).toMatchObject({ family: "gbc", blockPx: 32, components: world.components, conflicts: world.conflicts });
+      const sidecar: Sidecar = {
+        version: 1,
+        dungeonAutoLayout: true,
+        manualPlacements: { NewBarkTown: { x: 321, y: -45 }, AddedMap: { x: 7, y: 8 } },
+        view: { x: 0, y: 0, zoom: 1 },
+      };
+      const mapTypeByName = new Map(proj.maps.map((map) => [map.name, map.environment]));
+      const expectedPlacements = Object.fromEntries([...world.placements].map(([name, placement]) => [name, {
+        ...placement,
+        ...(sidecar.manualPlacements[name] ?? {}),
+        mapType: mapTypeByName.get(name) ?? "",
+        manual: Object.prototype.hasOwnProperty.call(sidecar.manualPlacements, name),
+      }]));
+      expectedPlacements.AddedMap = { map: "AddedMap", x: 7, y: 8, width: 0, height: 0, component: -1, mapType: "", manual: true };
+      expect(buildGbcWorldPayload(proj, world, sidecar)).toEqual({
+        family: "gbc",
+        blockPx: 32,
+        placements: expectedPlacements,
+        components: world.components,
+        conflicts: world.conflicts,
+      });
     });
   });
 
   describe("POST /api/world/placement", () => {
     it("writes a GBC manual placement, surfaces it on GET, and restores PerfPlus's absent sidecar", async () => {
       const sidecarPath = `${GBC_SUBJECT_ROOT}/.pokemap/world.json`;
+      const sidecarDir = `${GBC_SUBJECT_ROOT}/.pokemap`;
+      const sidecarDirExisted = existsSync(sidecarDir);
       const before = existsSync(sidecarPath) ? readFileSync(sidecarPath) : null;
       let written: Buffer | null = null;
       try {
         const r = await post("/api/world/placement", { map: "PlayersHouse1F", x: 321, y: -45 });
+        written = existsSync(sidecarPath) ? readFileSync(sidecarPath) : null;
         expect(r.status).toBe(200);
         expect(await r.json()).toEqual({ ok: true });
-        written = readFileSync(sidecarPath);
+        expect(written).not.toBeNull();
+        if (!written) throw new Error("placement response succeeded without writing its sidecar");
         expect(JSON.parse(written.toString("utf8")).manualPlacements.PlayersHouse1F).toEqual({ x: 321, y: -45 });
 
         const world = await (await get("/api/world")).json() as { placements: Record<string, { x: number; y: number; mapType: string; manual: boolean }> };
         expect(world.placements.PlayersHouse1F).toMatchObject({ x: 321, y: -45, mapType: "INDOOR", manual: true });
       } finally {
         if (before && written) {
-          if (existsSync(sidecarPath) && readFileSync(sidecarPath).equals(written)) writeFileSync(sidecarPath, before);
+          if (existsSync(sidecarPath) && readFileSync(sidecarPath).equals(written) && !written.equals(before)) writeFileSync(sidecarPath, before);
         } else if (!before && written && existsSync(sidecarPath) && readFileSync(sidecarPath).equals(written)) {
           unlinkSync(sidecarPath);
-          try { rmdirSync(`${GBC_SUBJECT_ROOT}/.pokemap`); } catch {}
+          if (!sidecarDirExisted) try { rmdirSync(sidecarDir); } catch {}
         }
       }
     });
@@ -727,6 +760,31 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
       const r = await post("/api/world/placement", { map: "PlayersHouse1F", x: "321", y: -45 });
       expect(r.status).toBe(400);
       expect(await r.json()).toMatchObject({ error: expect.stringContaining("expected { map: string, x: number, y: number }") });
+    });
+
+    it("rejects null and non-finite coordinates without writing a sidecar", async () => {
+      const sidecarPath = `${GBC_SUBJECT_ROOT}/.pokemap/world.json`;
+      const sidecarDir = `${GBC_SUBJECT_ROOT}/.pokemap`;
+      const sidecarDirExisted = existsSync(sidecarDir);
+      const before = existsSync(sidecarPath) ? readFileSync(sidecarPath) : null;
+      let written: Buffer | null = null;
+      try {
+        for (const body of ["null", '{"map":"PlayersHouse1F","x":1e400,"y":0}']) {
+          const r = await postRaw("/api/world/placement", body);
+          written = existsSync(sidecarPath) ? readFileSync(sidecarPath) : null;
+          expect(r.status).toBe(400);
+          expect(await r.json()).toMatchObject({ error: expect.stringContaining("expected { map: string, x: number, y: number }") });
+        }
+        expect(existsSync(sidecarPath)).toBe(before !== null);
+        if (before) expect(readFileSync(sidecarPath)).toEqual(before);
+      } finally {
+        if (before && written && existsSync(sidecarPath) && readFileSync(sidecarPath).equals(written) && !written.equals(before)) {
+          writeFileSync(sidecarPath, before);
+        } else if (!before && written && existsSync(sidecarPath) && readFileSync(sidecarPath).equals(written)) {
+          unlinkSync(sidecarPath);
+          if (!sidecarDirExisted) try { rmdirSync(sidecarDir); } catch {}
+        }
+      }
     });
   });
 

@@ -70,12 +70,13 @@ export function GbcApp({ root, switcher }: GbcAppProps) {
   // switch so a stale highlight from the PREVIOUS map's tileset never
   // survives onto a freshly selected one.
   const [hoveredMetatileId, setHoveredMetatileId] = useState<number | null>(null);
+  const [manualPlacementMaps, setManualPlacementMaps] = useState<ReadonlySet<string>>(new Set());
 
   const { data, error } = useGbcGroups();
   const { data: world, error: worldError } = useGbcWorld(mode === "world");
   const worldVisibility = useMemo(
-    () => world && new Map(Object.entries(world.placements).map(([name, placement]) => [name, { mapType: placement.mapType, manual: placement.manual }])),
-    [world],
+    () => world && new Map(Object.entries(world.placements).map(([name, placement]) => [name, { mapType: placement.mapType, manual: placement.manual || manualPlacementMaps.has(name) }])),
+    [world, manualPlacementMaps],
   );
   const map = useGbcMap(selected);
   // Fix round (spec review finding 3): `useGuardedFetch` now resets
@@ -102,6 +103,7 @@ export function GbcApp({ root, switcher }: GbcAppProps) {
   // click is, per the spec's own "tree clicks in World mode jump" rule) and
   // does NOT switch mode.
   const selectMapFromWorld = (name: string) => setSelected(name);
+  const markManualPlacement = (name: string) => setManualPlacementMaps((previous) => previous.has(name) ? previous : new Set(previous).add(name));
 
   // Entering World centres on the selected map, wherever the selection came from (tree, world click,
   // Map view). A world click itself never jumps (F1); this is a mode entry, not a click.
@@ -161,6 +163,7 @@ export function GbcApp({ root, switcher }: GbcAppProps) {
               onSelectMap={selectMapFromWorld}
               onOpenMap={openMapFromWorld}
               onJumpToMap={selectMap}
+              onPlacementSaved={markManualPlacement}
             />
           ) : !selected ? (
             <p className="app__canvas-placeholder">Select a map</p>

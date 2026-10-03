@@ -10,12 +10,12 @@ import { BORDER_BAND, pickBorderSide, type BorderSide, type Rect } from "../enco
 import { summariseGbc, type SpeciesSummary } from "../encounters/summary.js";
 import { useGbcWorld } from "./hooks/useGbcWorld.js";
 import { useGbcCoverage } from "./hooks/useGbcCoverage.js";
-import { isGbcEncountersPayload } from "./guards.js";
+import { isGbcEncountersPayload, isRecord } from "./guards.js";
 import { fetchGuarded } from "../hooks/useGuardedFetch.js";
 import type { GbcTimeOfDay } from "./time.js";
 
 /**
- * The read-only GBC world view (Plan 6b Task 5). Mirrors `WorldCanvas.tsx`'s
+ * The GBC world view (Plan 6b Task 5, D1 manual placement). Mirrors `WorldCanvas.tsx`'s
  * own pan/zoom/viewport/culling/LOD mechanics, for the same reason
  * `GbcMapCanvas.tsx`'s own header comment does it for `MapCanvas.tsx` --
  * these are this project's postmortems, not style preferences. Cited by a
@@ -88,9 +88,9 @@ import type { GbcTimeOfDay } from "./time.js";
  *   `drawImage` before explaining one away.
  *
  * GBC-specific, and out of scope entirely (plan Q2, "GBA-only features"):
- * no drag-to-place, no multi-select move, no dungeon auto-layout toggle, no
- * warp markers/connection lines, no sidecar POSTs. Selection is a plain
- * single click (`onSelectMap`); double-click opens the map in Map view
+ * no multi-select move, no dungeon auto-layout toggle, no warp
+ * markers/connection lines. Shift-drag and tree drops persist individual
+ * placements to the sidecar. Selection is a plain single click (`onSelectMap`); double-click opens the map in Map view
  * (`onOpenMap`) rather than a warp destination modal.
  */
 
@@ -407,15 +407,20 @@ export interface GbcWorldCanvasProps {
   /** A lens list entry (Empty maps) was clicked; the app selects the map and
    *  jumps there (the tree-click path). */
   onJumpToMap?: (name: string) => void;
+  onPlacementSaved?: (name: string) => void;
+}
+
+function isPlacementSaved(x: unknown): x is { ok: true } {
+  return isRecord(x) && x.ok === true;
 }
 
 /**
  * The stitched GBC world: all 391 maps culled to the viewport, panned and
- * zoomed, read-only. See this file's own header comment for the mechanics
+ * zoomed, with manual placements persisted through the world sidecar. See this file's own header comment for the mechanics
  * reproduced from `WorldCanvas.tsx`, and `packages/ui/DESIGN.md` for the
  * `world-canvas__*` classes reused verbatim below.
  */
-export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpenMap, onJumpToMap }: GbcWorldCanvasProps) {
+export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpenMap, onJumpToMap, onPlacementSaved }: GbcWorldCanvasProps) {
   const { data: world, error } = useGbcWorld();
   const { data: coverageData, error: coverageError } = useGbcCoverage();
 
@@ -801,9 +806,10 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
 
   const [saveError, setSaveError] = useState<string | null>(null);
   const postPlacement = (map: string, x: number, y: number) => {
-    fetch("/api/world/placement", { method: "POST", body: JSON.stringify({ map, x, y }) })
-      .then((r) => {
-        if (!r.ok) throw new Error(`POST /api/world/placement -> ${r.status}`);
+    fetchGuarded("/api/world/placement", isPlacementSaved, undefined, { method: "POST", body: JSON.stringify({ map, x, y }) })
+      .then(() => {
+        setSaveError(null);
+        onPlacementSaved?.(map);
       })
       .catch((e: unknown) => setSaveError(e instanceof Error ? e.message : String(e)));
   };
@@ -976,7 +982,7 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
           </div>
         )}
         {saveError && (
-          <div className="world-canvas__toolbar-group">
+          <div className="world-canvas__toolbar-group world-canvas__toolbar-group--save-error">
             <span className="world-canvas__toolbar-error" role="alert">Could not save placement: {saveError}</span>
           </div>
         )}

@@ -429,17 +429,22 @@ export function createGbcProjectHandler(root: string): ProjectHandler {
       if (url.pathname === "/api/world/placement" && req.method === "POST") {
         return readBody(req)
           .then((body) => {
-            let parsed: { map?: unknown; x?: unknown; y?: unknown };
+            let parsed: unknown;
             try {
-              parsed = JSON.parse(body) as typeof parsed;
+              parsed = JSON.parse(body);
             } catch (e) {
               return send(400, { error: `invalid JSON body: ${(e as Error).message}` });
             }
-            if (typeof parsed.map !== "string" || typeof parsed.x !== "number" || typeof parsed.y !== "number") {
+            const placement = parsed as { map?: unknown; x?: unknown; y?: unknown };
+            if (
+              parsed === null || typeof parsed !== "object" || Array.isArray(parsed)
+              || typeof placement.map !== "string" || typeof placement.x !== "number" || typeof placement.y !== "number"
+              || !Number.isFinite(placement.x) || !Number.isFinite(placement.y)
+            ) {
               return send(400, { error: `expected { map: string, x: number, y: number }, got ${body}` });
             }
             const sidecar = readSidecar(proj.root);
-            sidecar.manualPlacements[parsed.map] = { x: parsed.x, y: parsed.y };
+            sidecar.manualPlacements[placement.map] = { x: placement.x, y: placement.y };
             writeSidecar(proj.root, sidecar);
             return send(200, { ok: true });
           })

@@ -782,6 +782,16 @@ input {
   justify-content: center;
 }
 
+.world-canvas__toolbar-group--save-error {
+  min-width: 0;
+}
+
+.world-canvas__toolbar-group--save-error .world-canvas__toolbar-error {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* Review fix: a failed /api/coverage fetch replaces LensPanel with this,
    rather than silently rendering the lens controls with a `?? 0` fallback
    that would lie about "0 maps have no encounters". */

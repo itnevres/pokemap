@@ -540,7 +540,7 @@ describe("GbcWorldCanvas", () => {
     // file can't detect this bug at all -- it sits outside BOTH windows.
     const world: GbcWorldPayload = {
       ...WORLD,
-      placements: { ...WORLD.placements, NearInterior: { map: "NearInterior", x: 100, y: 150, width: 5, height: 5, component: 2, mapType: "INDOOR", manual: false } },
+      placements: { ...WORLD.placements, NearInterior: { map: "NearInterior", x: 100, y: 150, width: 5, height: 5, component: 2, mapType: "TOWN", manual: false } },
       components: [...WORLD.components, { index: 2, maps: ["NearInterior"], bounds: { x: 100, y: 150, width: 5, height: 5 } }],
     };
     await mountReady({}, world);
@@ -718,10 +718,106 @@ describe("GbcWorldCanvas", () => {
     await waitFor(() => expect(screen.getByText(/2 components/)).toBeTruthy());
     await waitFor(() => expect(screen.queryByText(/zoom 3%/)).toBeNull());
     canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: 200, bottom: 200, width: 200, height: 200, x: 0, y: 0, toJSON() {} });
-    fireEvent.drop(canvas, { clientX: 100, clientY: 100, dataTransfer: { getData: () => "Interior" } });
+    const drop = new Event("drop", { bubbles: true }) as DragEvent;
+    Object.defineProperties(drop, {
+      clientX: { value: 100 }, clientY: { value: 100 },
+      dataTransfer: { value: { getData: () => "Interior" } },
+    });
+    fireEvent(canvas, drop);
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/world/placement", expect.objectContaining({ method: "POST", body: expect.stringContaining('"map":"Interior"') })));
-    await waitFor(() => expect(FakeImage.instances.some((image) => image.src.includes("Interior"))).toBe(true));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/world/placement", { method: "POST", body: JSON.stringify({ map: "Interior", x: 8, y: 3 }) }));
+    const interior = await waitFor(() => {
+      const image = FakeImage.instances.find((candidate) => candidate.src.includes("Interior"));
+      expect(image).toBeTruthy();
+      return image!;
+    });
+    const stageCtx = ctxByCanvas.get(canvas)!;
+    stageCtx.drawImage.mockClear();
+    interior.onload?.();
+    await waitFor(() => expect(stageCtx.drawImage).toHaveBeenCalledWith(interior, 80, 80, 50, 50));
+  });
+
+  it("Shift-dragging preserves the grab offset, persists once, and skips a no-op", async () => {
+    const { canvas } = await mountReady();
+    const fetchMock = vi.fn((url: string) => url === "/api/world/placement"
+      ? Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ ok: true }) } as Response)
+      : Promise.reject(new Error(`unexpected fetch ${url}`)));
+    vi.stubGlobal("fetch", fetchMock);
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: 200, bottom: 200, width: 200, height: 200, x: 0, y: 0, toJSON() {} });
+
+    fireEvent.mouseDown(canvas, { clientX: 20, clientY: 70, button: 0, shiftKey: true }); // world (2,2) in MapA
+    fireEvent.mouseMove(canvas, { clientX: 100, clientY: 120, shiftKey: true }); // world (10,7), keeps grab (2,2) -> (8,5)
+    fireEvent.mouseUp(canvas);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/world/placement", { method: "POST", body: JSON.stringify({ map: "MapA", x: 8, y: 5 }) }));
+    expect(fetchMock.mock.calls.filter(([url]) => url === "/api/world/placement")).toHaveLength(1);
+
+    fireEvent.mouseDown(canvas, { clientX: 100, clientY: 120, button: 0, shiftKey: true });
+    fireEvent.mouseUp(canvas);
+    expect(fetchMock.mock.calls.filter(([url]) => url === "/api/world/placement")).toHaveLength(1);
+  });
+
+  it("commits a changed Shift-drag once when the pointer leaves the canvas", async () => {
+    const { canvas } = await mountReady();
+    const fetchMock = vi.fn((url: string) => url === "/api/world/placement"
+      ? Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ ok: true }) } as Response)
+      : Promise.reject(new Error(`unexpected fetch ${url}`)));
+    vi.stubGlobal("fetch", fetchMock);
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: 200, bottom: 200, width: 200, height: 200, x: 0, y: 0, toJSON() {} });
+
+    fireEvent.mouseDown(canvas, { clientX: 20, clientY: 70, button: 0, shiftKey: true });
+    fireEvent.mouseMove(canvas, { clientX: 90, clientY: 110, shiftKey: true });
+    fireEvent.mouseLeave(canvas);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/world/placement", { method: "POST", body: JSON.stringify({ map: "MapA", x: 7, y: 4 }) }));
+    expect(fetchMock.mock.calls.filter(([url]) => url === "/api/world/placement")).toHaveLength(1);
+  });
+
+  it("clears a placement save alert after a later successful retry", async () => {
+    let attempt = 0;
+    const fetchMock = vi.fn((url: string) => {
+      if (url === "/api/world") return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(WORLD) } as Response);
+      if (url === "/api/world/placement") {
+        attempt += 1;
+        return Promise.resolve(attempt === 1
+          ? { ok: false, status: 500, json: () => Promise.resolve({}) } as Response
+          : { ok: true, status: 200, json: () => Promise.resolve({ ok: true }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected fetch ${url}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const utils = render(<GbcWorldCanvas time="day" />);
+    const canvas = utils.container.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement;
+    await waitFor(() => expect(screen.getByText(/2 components/)).toBeTruthy());
+    await waitFor(() => expect(screen.queryByText(/zoom 3%/)).toBeNull());
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: 200, bottom: 200, width: 200, height: 200, x: 0, y: 0, toJSON() {} });
+    fireEvent.drop(canvas, { clientX: 100, clientY: 100, dataTransfer: { getData: () => "MapA" } });
+    await waitFor(() => expect(screen.getByText(/Could not save placement: POST \/api\/world\/placement -> 500/)).toBeTruthy());
+    fireEvent.drop(canvas, { clientX: 100, clientY: 100, dataTransfer: { getData: () => "MapA" } });
+    await waitFor(() => expect(screen.queryByText(/Could not save placement:/)).toBeNull());
+  });
+
+  it("surfaces status, network, JSON, and shape failures from guarded placement saves", async () => {
+    const failures = [
+      () => Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({}) } as Response),
+      () => Promise.reject(new Error("network down")),
+      () => Promise.resolve({ ok: true, status: 200, json: () => Promise.reject(new Error("bad JSON")) } as Response),
+      () => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ ok: false }) } as Response),
+    ];
+    let attempt = 0;
+    const fetchMock = vi.fn((url: string) => {
+      if (url === "/api/world") return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(WORLD) } as Response);
+      if (url === "/api/world/placement") return failures[attempt++]!();
+      return Promise.reject(new Error(`unexpected fetch ${url}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const utils = render(<GbcWorldCanvas time="day" />);
+    const canvas = utils.container.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement;
+    await waitFor(() => expect(screen.getByText(/2 components/)).toBeTruthy());
+    await waitFor(() => expect(screen.queryByText(/zoom 3%/)).toBeNull());
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: 200, bottom: 200, width: 200, height: 200, x: 0, y: 0, toJSON() {} });
+    for (const message of ["POST /api/world/placement -> 500", "network down", "bad JSON", "POST /api/world/placement returned an unexpected shape"]) {
+      fireEvent.drop(canvas, { dataTransfer: { getData: () => "MapA" } });
+      await waitFor(() => expect(Array.from(document.querySelectorAll(".world-canvas__toolbar-error")).some((node) => node.textContent?.includes(`Could not save placement: ${message}`))).toBe(true));
+    }
   });
 
   it("a double-click that ends a real drag does not open the map (fix round F6; kills mutation X15)", async () => {

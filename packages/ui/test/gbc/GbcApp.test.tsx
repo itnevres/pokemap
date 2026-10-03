@@ -602,6 +602,37 @@ describe("GbcApp -- GBC world visibility (Plan 6c D1)", () => {
     await waitFor(() => expect(screen.getByText("OlivinePort").className).toContain("greyed"));
     expect(screen.getByText("OlivineCity").className).not.toContain("greyed");
   });
+
+  it("a successful hidden-map drop immediately ungreys its tree row", async () => {
+    const world = {
+      family: "gbc" as const,
+      blockPx: 32 as const,
+      placements: {
+        OlivineCity: { map: "OlivineCity", x: 0, y: 0, width: 10, height: 10, component: 0, mapType: "TOWN", manual: false },
+        OlivinePort: { map: "OlivinePort", x: 11, y: 0, width: 10, height: 10, component: 1, mapType: "INDOOR", manual: false },
+      },
+      components: [
+        { index: 0, maps: ["OlivineCity"], bounds: { x: 0, y: 0, width: 10, height: 10 } },
+        { index: 1, maps: ["OlivinePort"], bounds: { x: 11, y: 0, width: 10, height: 10 } },
+      ],
+      conflicts: [],
+    };
+    const base = makeFetchMock({ world });
+    const fetchMock = vi.fn((url: string) => url === "/api/world/placement"
+      ? Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ ok: true }) } as Response)
+      : base(url));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<GbcApp root="/x" />);
+    await waitFor(() => expect(screen.getByText("OlivineCity")).toBeTruthy());
+    fireEvent.click(Array.from(screen.getByRole("group", { name: "View" }).querySelectorAll("button")).find((b) => b.textContent === "World") as HTMLElement);
+    await waitFor(() => expect(screen.getByText("OlivinePort").className).toContain("greyed"));
+    const canvas = document.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement;
+    const drop = new Event("drop", { bubbles: true }) as DragEvent;
+    Object.defineProperties(drop, { clientX: { value: 100 }, clientY: { value: 100 }, dataTransfer: { value: { getData: () => "OlivinePort" } } });
+    fireEvent(canvas, drop);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/world/placement", expect.objectContaining({ method: "POST" })));
+    await waitFor(() => expect(screen.getByText("OlivinePort").className).not.toContain("greyed"));
+  });
 });
 
 describe("GbcApp -- entering World centres on the selection (Plan 6c C2 fix round)", () => {

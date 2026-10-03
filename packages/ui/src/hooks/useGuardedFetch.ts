@@ -33,16 +33,17 @@ export function describeReceived(x: unknown): string {
  * hand-roll another fetch, then guard, then error block" convention).
  * `useGuardedFetch` itself now just wraps this in `useState`/`useEffect`.
  */
-export function fetchGuarded<T>(url: string, guard: (x: unknown) => x is T, label?: string): Promise<T> {
+export function fetchGuarded<T>(url: string, guard: (x: unknown) => x is T, label?: string, init?: RequestInit): Promise<T> {
   const effectiveLabel = label ?? url;
-  return fetch(url)
+  const method = init?.method ?? "GET";
+  return (init ? fetch(url, init) : fetch(url))
     .then((r) => {
-      if (!r.ok) throw new Error(`GET ${effectiveLabel} -> ${r.status}`);
+      if (!r.ok) throw new Error(`${method} ${effectiveLabel} -> ${r.status}`);
       return r.json() as Promise<unknown>;
     })
     .then((d) => {
       if (!guard(d)) {
-        throw new Error(`GET ${effectiveLabel} returned an unexpected shape: ${describeReceived(d)}`);
+        throw new Error(`${method} ${effectiveLabel} returned an unexpected shape: ${describeReceived(d)}`);
       }
       return d;
     });
