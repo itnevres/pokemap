@@ -22,7 +22,7 @@ Before each new real write test scan every packages/*/test tree. Oct 3 scan foun
 
 Tests: exact conflict key tuple, equal delta but different origins produce different keys, delimiter-containing from names unambiguous, repeated stable run; default optional list compatibility and malformed shape rejection; both routes accept/reload/unaccept/idempotence/404/400 and placements byte-identical; GBC real write restore; GBA scratch-root sidecar isolation; both canvas drawDiamond color spies plus check/tooltip/status; right-click hit action and body no-op, successful accept/unaccept, guarded malformed/rejected response visible error without false acknowledgement. Red-prove each new test with non-equivalent in-memory mutation before commit.
 
-Existing test edits expected: GBC route full-conflict comparisons need new key/accepted fields; GBA WorldCanvas tests pinning old conflict status text change for D4 count display. All changed existing tests must be named verbatim in report with reason; no expectation update for layout/placement coordinates allowed. Existing GBA world API count tests unchanged. Re-measure exact titles before editing, don't assume this inventory exhaustive.
+Existing test edits: core/test/world/sidecar.test.ts `round-trips` exact readback gains default acceptedConflicts:[]; GBC route full-conflict comparisons/strict wire fixtures gain key/accepted fields. WorldCanvas.test.tsx has no old conflict-status text assertion; count display coverage is new. All changed existing tests must be named verbatim in report with reason; no expectation update for layout/placement coordinates allowed. Existing GBA world API count tests unchanged. Re-measure exact titles before editing, don't assume this inventory exhaustive.
 
 ## Reviews and mutations
 
