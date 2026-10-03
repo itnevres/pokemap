@@ -1,8 +1,20 @@
 # D2 independent final spec review
 
-**Verdict: changes requested — two corpus acceptance anchors still disagree with the now-explicit algorithm.** Reviewed spec at `ecbd4be` against the previous `bbe2a86` findings. Read-only Node/tsx probes rebuilt both corpus graphs and executed the specified iterative reachability ordering, without writing corpora, implementation, or the spec. No test suites ran.
+**Latest verdict: pass for the scoped corrections at `1d31cc2`; no open findings from this review.** The earlier findings and evidence are retained below as history.
 
-## Remaining findings
+## Scoped correction verification — `1d31cc2`
+
+- **Anchor tie resolved.** The comparator now first minimizes path length for a candidate, then selects the lexicographically smallest terminal anchor map name, then the full edge-key sequence. IlexForest's two-edge AzaleaTown and Route34 paths therefore choose AzaleaTown despite Route34's lower source ordinal. Among equal-length Azalea paths, IlexForest source ordinal 1 wins over 2, and IlexForestAzaleaGate source ordinal 2 (event #3) wins over 3; the final event is AzaleaTown #7, raw `(2,10)` → `(1,5)`. The named acceptance now matches this comparator. Candidate-to-candidate ordering remains path length then candidate name and does not accidentally prefer anchor name across different candidates.
+- **Seafloor chaining resolved.** Acceptance explicitly asserts `SeafloorCavern_Entrance/Underwater_Route128`, then `SeafloorCavern_Room1/Entrance`. This matches the rule that an unplaced shown singleton cannot be traversed: Entrance first reaches Underwater_Route128 warp 0 `(38,26)`, then Room1 reaches the newly placed Entrance warp 1 `(10,1)`. The coordinate route-test requirement describes the same chain. Its prose shorthand “Route128” refers to the fully qualified `Underwater_Route128` in the acceptance; tests must use that exact measured map name.
+- **Signed zero resolved.** The behavior now explicitly normalizes `-0` to `+0`; the exact `(0,-3)` fixture is consequently consistent with `Math.round(-0.5)`.
+
+Read-only `git show` verification only; no suites or mutations ran for this scoped pass. The independent fixture arithmetic and corpus readings below remain applicable. Implementation review must still confirm the comparator actually considers every shortest terminal path rather than accepting the first BFS arrival.
+
+## Historical review — `ecbd4be`
+
+The initial verdict was changes requested because two corpus acceptance anchors disagreed with the then-explicit algorithm. Read-only Node/tsx probes rebuilt both corpus graphs and executed the specified iterative reachability ordering, without writing corpora, implementation, or the spec. No test suites ran.
+
+## Findings resolved by `1d31cc2`
 
 1. **P1 — IlexForest's canonical path selects Route34, not AzaleaTown.** IlexForest source event 0 targets Route34IlexForestGate event #3; that gate's source event 0 targets Route34 event #1. IlexForest source event 1 starts the equal-length Azalea path. Under the specified full edge-key ordering, source ordinal 0 wins: the final anchor is **Route34**, arrival raw `(13,37)` / block `(6.5,18.5)`. The acceptance still requires “IlexForest near AzaleaTown's warp side.” These are different geometry inputs: Route34's nearest edge at that arrival is east (distance 3.5), while AzaleaTown #7's nearest edge is west (distance 1). The user accepts the Azalea/Route34 area, so retain the deterministic rule and pin the measured Route34 path; independently measure a final proximity bound after collision resolution. Keep Azalea #7/#8 as adapter conversion pins, without claiming they are IlexForest's chosen final anchor. If the Azalea side itself is mandatory, change the tie rule explicitly and review its effects before dispatch.
 
