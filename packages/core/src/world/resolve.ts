@@ -2,6 +2,8 @@ import type { Project } from "../project.js";
 import { buildWorld, type Placement, type World } from "./connections.js";
 import { autoLayoutUnplaced, unplacedMapNames } from "./warpGraph.js";
 import { applySidecar, type Sidecar } from "./sidecar.js";
+import { placeNearWarps } from "./nearWarp.js";
+import { gbaWarpLinks } from "./nearWarpAdapters.js";
 
 export interface ResolveWorldOptions {
   /** Master on/off for dungeon auto-layout, ANDed with sidecar.dungeonAutoLayout
@@ -47,6 +49,14 @@ export function resolveWorldPlacements(
   const base = new Map(world.placements);
   if (dungeonsOn) {
     for (const [name, p] of auto) base.set(name, p);
+    const shown = new Set([...base.keys()].filter((name) => {
+      const type = proj.map(name).mapType;
+      return (type !== "MAP_TYPE_INDOOR" && type !== "MAP_TYPE_NONE") || Object.hasOwn(sidecar.manualPlacements, name);
+    }));
+    const hidden = new Set([...base.keys()].filter((name) => !shown.has(name)));
+    const sizes = new Map([...base].map(([name, p]) => [name, { width: p.width, height: p.height }]));
+    const placed = placeNearWarps({ placements: base, shown, hidden, warps: gbaWarpLinks(proj), sizes, gap: 4, singletons: unplacedMapNames(world) });
+    return applySidecar(placed, sidecar);
   } else {
     for (const name of unplacedMapNames(world)) base.delete(name);
   }

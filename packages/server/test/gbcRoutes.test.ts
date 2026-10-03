@@ -6,6 +6,8 @@ import { openGbcProject } from "@pokemap/core/src/gbc/project.js";
 import { renderGbcMap, renderGbcMapMetatile } from "@pokemap/core/src/gbc/render/map.js";
 import { loadGbcMapEvents } from "@pokemap/core/src/gbc/load/events.js";
 import { buildGbcWorld } from "@pokemap/core/src/gbc/world/connections.js";
+import { placeNearWarps } from "@pokemap/core/src/world/nearWarp.js";
+import { gbcWarpLinks } from "@pokemap/core/src/world/nearWarpAdapters.js";
 import type { Sidecar } from "@pokemap/core/src/world/sidecar.js";
 import { gbcEncounterSources, gbcWhereSpecies, gbcCoverage, loadGbcSpeciesConstants } from "@pokemap/core/src/gbc/analyse/atlas.js";
 import { loadGbcFrontSprite } from "@pokemap/core/src/gbc/load/sprites.js";
@@ -629,14 +631,19 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
   // ---------------------------------------------------------------------
 
   describe("GET /api/world", () => {
-    it("deep-equals Object.fromEntries(buildGbcWorld(...).placements); 326 components, exactly 3 with more than one map; blockPx 32", async () => {
+    it("deep-equals independently resolved near-warp placements; 326 components, exactly 3 with more than one map; blockPx 32", async () => {
       const proj = openGbcProject(GBC_SUBJECT_ROOT);
       const world = buildGbcWorld(proj);
       const r = await get("/api/world");
       expect(r.status).toBe(200);
       const body = await r.json() as { family: string; blockPx: number; placements: Record<string, any>; components: { maps: string[] }[]; conflicts: unknown[] };
       const mapTypeByName = new Map(proj.maps.map((map) => [map.name, map.environment]));
-      const expectedPlacements = Object.fromEntries([...world.placements].map(([name, placement]) => [name, {
+      const shown = new Set(proj.maps.filter((map) => !["INDOOR", "GATE"].includes(map.environment)).map((map) => map.name));
+      const hidden = new Set(proj.maps.filter((map) => !shown.has(map.name)).map((map) => map.name));
+      const resolved = placeNearWarps({ placements: world.placements, shown, hidden, warps: gbcWarpLinks(proj),
+        sizes: new Map([...world.placements].map(([name, p]) => [name, { width: p.width, height: p.height }])), gap: 4,
+        singletons: new Set(world.components.filter((c) => c.maps.length === 1).map((c) => c.maps[0]!)) });
+      const expectedPlacements = Object.fromEntries([...resolved].map(([name, placement]) => [name, {
         ...placement,
         mapType: mapTypeByName.get(name) ?? "",
         manual: false,
@@ -686,9 +693,15 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
     });
 
     it("a second request returns deep-equal data -- the world cache is never mutated by serving it", async () => {
+      const proj = openGbcProject(GBC_SUBJECT_ROOT);
+      const base = buildGbcWorld(proj);
+      const original = structuredClone([...base.placements]);
+      buildGbcWorldPayload(proj, base, { version: 1, dungeonAutoLayout: true, manualPlacements: {}, view: { x: 0, y: 0, zoom: 1 } });
+      expect([...base.placements]).toEqual(original);
       const first = await (await get("/api/world")).json();
       const second = await (await get("/api/world")).json();
       expect(second).toEqual(first);
+      expect([...base.placements]).toEqual(original);
     });
 
     // Fix round 1, spec review Minor #3: GBC has no dungeons-on/off toggle
@@ -711,7 +724,12 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
         view: { x: 0, y: 0, zoom: 1 },
       };
       const mapTypeByName = new Map(proj.maps.map((map) => [map.name, map.environment]));
-      const expectedPlacements = Object.fromEntries([...world.placements].map(([name, placement]) => [name, {
+      const shown = new Set(proj.maps.filter((map) => !["INDOOR", "GATE"].includes(map.environment) || Object.hasOwn(sidecar.manualPlacements, map.name)).map((map) => map.name));
+      const hidden = new Set(proj.maps.filter((map) => !shown.has(map.name)).map((map) => map.name));
+      const resolved = placeNearWarps({ placements: world.placements, shown, hidden, warps: gbcWarpLinks(proj),
+        sizes: new Map([...world.placements].map(([name, p]) => [name, { width: p.width, height: p.height }])), gap: 4,
+        singletons: new Set(world.components.filter((c) => c.maps.length === 1).map((c) => c.maps[0]!)) });
+      const expectedPlacements = Object.fromEntries([...resolved].map(([name, placement]) => [name, {
         ...placement,
         ...(sidecar.manualPlacements[name] ?? {}),
         mapType: mapTypeByName.get(name) ?? "",

@@ -30,6 +30,8 @@ import { openGbcProject, type GbcProject } from "@pokemap/core/src/gbc/project.j
 import { loadGbcMapEvents, outOfBoundsEventDefects } from "@pokemap/core/src/gbc/load/events.js";
 import { renderGbcMap, renderGbcMapMetatile } from "@pokemap/core/src/gbc/render/map.js";
 import { buildGbcWorld, type GbcWorld } from "@pokemap/core/src/gbc/world/connections.js";
+import { placeNearWarps, type WarpLink } from "@pokemap/core/src/world/nearWarp.js";
+import { gbcWarpLinks } from "@pokemap/core/src/world/nearWarpAdapters.js";
 import {
   gbcEncounterSources,
   gbcWhereSpecies,
@@ -202,10 +204,18 @@ export function buildGbcMapPayload(proj: GbcProject, map: GbcMap): GbcMapPayload
  * "second request returns deep-equal data" test, since `Object.fromEntries`
  * never mutates the `Map` it reads from.
  */
-export function buildGbcWorldPayload(proj: GbcProject, world: GbcWorld, sidecar: Sidecar): GbcWorldPayload {
+export function buildGbcWorldPayload(proj: GbcProject, world: GbcWorld, sidecar: Sidecar, warps: readonly WarpLink[] = gbcWarpLinks(proj)): GbcWorldPayload {
   const mapTypeByName = new Map(proj.maps.map((map) => [map.name, map.environment]));
+  const shown = new Set([...world.placements.keys()].filter((name) => {
+    const type = mapTypeByName.get(name);
+    return (type !== "INDOOR" && type !== "GATE") || Object.hasOwn(sidecar.manualPlacements, name);
+  }));
+  const hidden = new Set([...world.placements.keys()].filter((name) => !shown.has(name)));
+  const sizes = new Map([...world.placements].map(([name, p]) => [name, { width: p.width, height: p.height }]));
+  const automatic = placeNearWarps({ placements: world.placements, shown, hidden, warps, sizes, gap: 4,
+    singletons: new Set(world.components.filter((c) => c.maps.length === 1).map((c) => c.maps[0]!)) });
   const placements = Object.fromEntries(
-    [...applySidecar(world.placements, sidecar)].map(([name, placement]) => [name, {
+    [...applySidecar(automatic, sidecar)].map(([name, placement]) => [name, {
       ...placement,
       mapType: mapTypeByName.get(name) ?? "",
       manual: name in sidecar.manualPlacements,
@@ -269,6 +279,10 @@ export function createGbcProjectHandler(root: string): ProjectHandler {
   // request that needs it" posture as GBA's own worldCache (index.ts).
   let worldCache: GbcWorld | undefined;
   const getWorld = () => (worldCache ??= buildGbcWorld(proj));
+  let warpCache: readonly WarpLink[] | undefined;
+  const getWarps = () => (warpCache ??= Object.freeze(gbcWarpLinks(proj).map((link) => Object.freeze({
+    ...link, source: Object.freeze(link.source), arrival: link.arrival && Object.freeze(link.arrival),
+  }))));
 
   // gbcCoverage walks every one of the 391 maps' wild-data tables -- warm,
   // measured ~13-19ms against the real corpus, close to the plan review's
@@ -423,7 +437,7 @@ export function createGbcProjectHandler(root: string): ProjectHandler {
       // unconditionally -- there is no dungeons-on/off toggle to read a
       // query param for (`gbc/world/connections.ts`'s own doc comment).
       if (url.pathname === "/api/world") {
-        return send(200, buildGbcWorldPayload(proj, getWorld(), readSidecar(proj.root)));
+        return send(200, buildGbcWorldPayload(proj, getWorld(), readSidecar(proj.root), getWarps()));
       }
 
       if (url.pathname === "/api/world/placement" && req.method === "POST") {
