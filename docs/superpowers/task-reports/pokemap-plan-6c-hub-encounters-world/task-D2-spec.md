@@ -10,7 +10,7 @@ Plan 6c §D2 is binding. The output replaces GBA's shelf placement only when dun
 - `resolveWorldPlacements` starts from every `buildWorld` placement, replaces singleton positions with auto-layout output when enabled, deletes singleton placements when disabled, then applies sidecar manual placements last.
 - `buildGbcWorld` returns placements for all 391 maps. It has exactly three multi-map planar components; singleton component placements start at their component seed positions. GBC warp coords and world placements use blocks.
 - GBA `Conflict`: `{map, viaA:{from,x,y}, viaB:{from,x,y}}`; GBC re-exports the same shape. Recheck types before review.
-- Subject corpus examples (re-read `map.json`, `layouts.json`, and map ids): `GraniteCave_1F` is 42×15, has warps to Route106, GraniteCave_B1F, GraniteCave_StevensRoom; `MeteorFalls_1F_1R` is 30×42, warps to Route114/115, MeteorFalls_1F_2R, MeteorFalls_B1F_1R and MeteorFalls_StevensCave; `SeafloorCavern_Room1` is 20×21, warps to SeafloorCavern_Entrance, Room5 and Room2. Re-measure these exact facts immediately before pinning corpus assertions.
+- Subject corpus examples (re-read `map.json`, `layouts.json`, and map ids): `GraniteCave_1F` is 42×15 and has a warp to Route106 plus internal warps; `MeteorFalls_1F_1R` is 30×42 and warps to Route114/115 plus internal floors; `SeafloorCavern_Room1` is 20×21 and warps to SeafloorCavern_Entrance, Room5 and Room2. Use Route106, Route114, and SeafloorCavern_Entrance as the three external entrance anchors. Re-measure these exact facts immediately before pinning corpus assertions.
 - GBC gate chain measured in the corpus: `IlexForest` warps via hidden `ILEX_FOREST_AZALEA_GATE` to AzaleaTown; hidden gate warp #3 targets AzaleaTown warp #7 at tile (2,10). Reconfirm when D3 pins the endpoint.
 
 ## Behavior
@@ -25,7 +25,7 @@ If no reachable shown anchor exists, retain the existing shelf position. Existin
 
 ## Hand-computed geometry fixture (Opus-class reviewer must re-derive)
 
-Gap 1. Fixed shown anchor `Anchor`: origin (0,0), size 12×4. Warp from Anchor at (3,0). Target singleton `Target`: size 3×2. No other obstacle. Distance to the top edge is 0; west is 3, east is 8, south is 3, so north wins. Center-align x to the warp: `3 - floor(3/2) = 2`; place above the anchor: `0 - 1 gap - 2 height = -3`. Expected placement `(2,-3)`. A center-quadrant mutant compares offset from anchor center (6,2): horizontal delta 3 exceeds vertical delta 2, so it chooses west and produces different coordinates. Use half-open map rectangles and integer tile/block coordinates consistently in production and test.
+Gap 1. Fixed shown anchor `Anchor`: origin (0,0), size 12×4. Warp from Anchor at (3,0). Target singleton `Target`: size 3×2. No other obstacle. Distance to the top edge is 0; west is 3, east is 8, south is 3, so north wins. Center-align x to the warp: `3 - floor(3/2) = 2`; place above the anchor: `0 - 1 gap - 2 height = -3`. Expected placement `(2,-3)`. Define the center-based mutant as selecting the side from the source warp's vector relative to the anchor center: center (6,2), deltas (-3,-2), so it chooses west and produces different coordinates. Use half-open map rectangles and integer tile/block coordinates consistently in production and test.
 
 ## Acceptance tests
 
