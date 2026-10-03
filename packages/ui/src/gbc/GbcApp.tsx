@@ -1,10 +1,12 @@
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { MapTree } from "../components/MapTree.js";
 import { useGbcGroups } from "./hooks/useGbcGroups.js";
 import { useGbcMap } from "./hooks/useGbcMap.js";
 import { GbcMapCanvas } from "./GbcMapCanvas.js";
 import { GbcMetatilePalette } from "./GbcMetatilePalette.js";
 import { GbcWorldCanvas } from "./GbcWorldCanvas.js";
+import { useGbcWorld } from "./hooks/useGbcWorld.js";
+import { GBC_HIDDEN_MAP_TYPES } from "../world/visibility.js";
 import type { GbcTimeOfDay } from "./time.js";
 
 type Mode = "map" | "world";
@@ -70,6 +72,11 @@ export function GbcApp({ root, switcher }: GbcAppProps) {
   const [hoveredMetatileId, setHoveredMetatileId] = useState<number | null>(null);
 
   const { data, error } = useGbcGroups();
+  const { data: world, error: worldError } = useGbcWorld(mode === "world");
+  const worldVisibility = useMemo(
+    () => world && new Map(Object.entries(world.placements).map(([name, placement]) => [name, { mapType: placement.mapType, manual: placement.manual }])),
+    [world],
+  );
   const map = useGbcMap(selected);
   // Fix round (spec review finding 3): `useGuardedFetch` now resets
   // `data`/`error` on every URL change, but there is still one render tick
@@ -138,8 +145,9 @@ export function GbcApp({ root, switcher }: GbcAppProps) {
       <div className="app__body">
         <aside className="app__sidebar">
           {error && <p className="map-tree__empty">Could not load map groups: {error}</p>}
+          {mode === "world" && worldError && <p className="map-tree__empty">Could not load world visibility: {worldError}</p>}
           {error ? null : data ? (
-            <MapTree data={data} selected={selected} onSelect={selectMap} />
+            <MapTree data={data} selected={selected} onSelect={selectMap} worldMode={mode === "world"} visibility={worldVisibility} hiddenMapTypes={GBC_HIDDEN_MAP_TYPES} />
           ) : (
             <p className="map-tree__empty">Loading map groups…</p>
           )}

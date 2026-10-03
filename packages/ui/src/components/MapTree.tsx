@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { isDrawnByDefault, type MapVisibilityInfo } from "../world/visibility.js";
+import { HIDDEN_MAP_TYPES, isDrawnByDefault, type MapVisibilityInfo } from "../world/visibility.js";
 
 export interface MapGroupsData {
   groupOrder: string[];
@@ -18,9 +18,10 @@ export interface MapTreeProps {
    *  "nothing greyed yet" so the list doesn't flash entirely grey before
    *  the fetch resolves. */
   visibility?: Map<string, MapVisibilityInfo> | null;
+  hiddenMapTypes?: ReadonlySet<string>;
 }
 
-export function MapTree({ data, selected, onSelect, worldMode = false, visibility = null }: MapTreeProps) {
+export function MapTree({ data, selected, onSelect, worldMode = false, visibility = null, hiddenMapTypes = HIDDEN_MAP_TYPES }: MapTreeProps) {
   const [filter, setFilter] = useState("");
   const navRef = useRef<HTMLElement>(null);
   const filterRef = useRef<HTMLInputElement>(null);
@@ -58,7 +59,7 @@ export function MapTree({ data, selected, onSelect, worldMode = false, visibilit
   const isGreyed = (name: string): boolean => {
     if (!worldMode || !visibility) return false;
     const info = visibility.get(name);
-    return !info || !isDrawnByDefault(info.mapType, info.manual);
+    return !info || !isDrawnByDefault(info.mapType, info.manual, hiddenMapTypes);
   };
 
   return (

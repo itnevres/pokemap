@@ -134,6 +134,7 @@ export function isGbcWorldPayload(x: unknown): x is GbcWorldPayload {
     if (typeof p.x !== "number" || typeof p.y !== "number") return false;
     if (typeof p.width !== "number" || typeof p.height !== "number") return false;
     if (typeof p.component !== "number") return false;
+    if (typeof p.mapType !== "string" || typeof p.manual !== "boolean") return false;
   }
 
   if (!Array.isArray(x.components)) return false;

@@ -9,7 +9,7 @@ afterEach(() => {
 const VALID_BODY = {
   family: "gbc",
   blockPx: 32,
-  placements: { NewBarkTown: { map: "NewBarkTown", x: 175, y: 251, width: 10, height: 9, component: 0 } },
+  placements: { NewBarkTown: { map: "NewBarkTown", x: 175, y: 251, width: 10, height: 9, component: 0, mapType: "TOWN", manual: false } },
   components: [{ index: 0, maps: ["NewBarkTown"], bounds: { x: 175, y: 251, width: 10, height: 9 } }],
   conflicts: [],
 };

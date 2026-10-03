@@ -46,11 +46,12 @@ import type {
   GbcWorldPayload,
   GbcEncountersPayload,
 } from "@pokemap/core/src/gbc/wire.js";
+import { applySidecar, readSidecar, writeSidecar, type Sidecar } from "@pokemap/core/src/world/sidecar.js";
 import { encodePng } from "@pokemap/cli/src/png.js";
 import { parseBorder, parseTime, type TimeOfDay } from "@pokemap/cli/src/args.js";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { loadGbcFrontSprite, loadGbcPicFolders } from "@pokemap/core/src/gbc/load/sprites.js";
-import type { ProjectHandler } from "./index.js";
+import { readBody, type ProjectHandler } from "./index.js";
 
 /**
  * GBA-only routes this server refuses with a 501, the HTTP counterpart of
@@ -63,7 +64,7 @@ import type { ProjectHandler } from "./index.js";
  * bare-vs-nested routes do. (`species/NAME/icon.png` left this list in Plan
  * 6c B1: it is a real GBC route now.)
  */
-const GBA_ONLY_ROUTE_RE = /^\/api\/(warps\/|dungeons(\/|$)|world\/placement$|world\/dungeons$|sign\/|edit\/)/;
+const GBA_ONLY_ROUTE_RE = /^\/api\/(warps\/|dungeons(\/|$)|world\/dungeons$|sign\/|edit\/)/;
 
 /**
  * `decodeURIComponent` throws a `URIError` on a malformed percent-escape
@@ -201,11 +202,19 @@ export function buildGbcMapPayload(proj: GbcProject, map: GbcMap): GbcMapPayload
  * "second request returns deep-equal data" test, since `Object.fromEntries`
  * never mutates the `Map` it reads from.
  */
-export function buildGbcWorldPayload(world: GbcWorld): GbcWorldPayload {
+export function buildGbcWorldPayload(proj: GbcProject, world: GbcWorld, sidecar: Sidecar): GbcWorldPayload {
+  const mapTypeByName = new Map(proj.maps.map((map) => [map.name, map.environment]));
+  const placements = Object.fromEntries(
+    [...applySidecar(world.placements, sidecar)].map(([name, placement]) => [name, {
+      ...placement,
+      mapType: mapTypeByName.get(name) ?? "",
+      manual: name in sidecar.manualPlacements,
+    }]),
+  );
   return {
     family: "gbc",
     blockPx: 32,
-    placements: Object.fromEntries(world.placements),
+    placements,
     components: world.components,
     conflicts: world.conflicts,
   } satisfies GbcWorldPayload;
@@ -414,7 +423,30 @@ export function createGbcProjectHandler(root: string): ProjectHandler {
       // unconditionally -- there is no dungeons-on/off toggle to read a
       // query param for (`gbc/world/connections.ts`'s own doc comment).
       if (url.pathname === "/api/world") {
-        return send(200, buildGbcWorldPayload(getWorld()));
+        return send(200, buildGbcWorldPayload(proj, getWorld(), readSidecar(proj.root)));
+      }
+
+      if (url.pathname === "/api/world/placement" && req.method === "POST") {
+        return readBody(req)
+          .then((body) => {
+            let parsed: { map?: unknown; x?: unknown; y?: unknown };
+            try {
+              parsed = JSON.parse(body) as typeof parsed;
+            } catch (e) {
+              return send(400, { error: `invalid JSON body: ${(e as Error).message}` });
+            }
+            if (typeof parsed.map !== "string" || typeof parsed.x !== "number" || typeof parsed.y !== "number") {
+              return send(400, { error: `expected { map: string, x: number, y: number }, got ${body}` });
+            }
+            const sidecar = readSidecar(proj.root);
+            sidecar.manualPlacements[parsed.map] = { x: parsed.x, y: parsed.y };
+            writeSidecar(proj.root, sidecar);
+            return send(200, { ok: true });
+          })
+          .catch((e: unknown) => {
+            console.error(e);
+            send(500, { error: e instanceof Error ? e.message : String(e) });
+          });
       }
 
       // `(.+)`, not `[^/]+` -- same reasoning as `/api/map/:name` above: a

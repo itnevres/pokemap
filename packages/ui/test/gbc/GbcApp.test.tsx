@@ -205,7 +205,7 @@ describe("GbcApp", () => {
   const WORLD_ONE = {
     family: "gbc" as const,
     blockPx: 32 as const,
-    placements: { OlivineCity: { map: "OlivineCity", x: 0, y: 0, width: 10, height: 10, component: 0 } },
+    placements: { OlivineCity: { map: "OlivineCity", x: 0, y: 0, width: 10, height: 10, component: 0, mapType: "TOWN", manual: false } },
     components: [{ index: 0, maps: ["OlivineCity"], bounds: { x: 0, y: 0, width: 10, height: 10 } }],
     conflicts: [],
   };
@@ -312,8 +312,8 @@ describe("GbcApp", () => {
       family: "gbc" as const,
       blockPx: 32 as const,
       placements: {
-        OlivineCity: { map: "OlivineCity", x: 0, y: 0, width: 10, height: 10, component: 0 },
-        OlivinePort: { map: "OlivinePort", x: 100, y: 100, width: 10, height: 10, component: 1 },
+        OlivineCity: { map: "OlivineCity", x: 0, y: 0, width: 10, height: 10, component: 0, mapType: "TOWN", manual: false },
+        OlivinePort: { map: "OlivinePort", x: 100, y: 100, width: 10, height: 10, component: 1, mapType: "TOWN", manual: false },
       },
       components: [
         { index: 0, maps: ["OlivineCity"], bounds: { x: 0, y: 0, width: 10, height: 10 } },
@@ -498,7 +498,7 @@ describe("GbcApp -- coverage lens list jump (Plan 6c C1)", () => {
     const world = {
       family: "gbc" as const,
       blockPx: 32 as const,
-      placements: { OlivineCity: { map: "OlivineCity", x: 0, y: 0, width: 10, height: 10, component: 0 } },
+      placements: { OlivineCity: { map: "OlivineCity", x: 0, y: 0, width: 10, height: 10, component: 0, mapType: "TOWN", manual: false } },
       components: [{ index: 0, maps: ["OlivineCity"], bounds: { x: 0, y: 0, width: 10, height: 10 } }],
       conflicts: [],
     };
@@ -549,7 +549,7 @@ describe("GbcApp -- world click selects the map in the tree (Plan 6c C2)", () =>
       const world = {
         family: "gbc" as const,
         blockPx: 32 as const,
-        placements: { OlivineCity: { map: "OlivineCity", x: 0, y: 0, width: 10, height: 10, component: 0 } },
+        placements: { OlivineCity: { map: "OlivineCity", x: 0, y: 0, width: 10, height: 10, component: 0, mapType: "TOWN", manual: false } },
         components: [{ index: 0, maps: ["OlivineCity"], bounds: { x: 0, y: 0, width: 10, height: 10 } }],
         conflicts: [],
       };
@@ -579,6 +579,31 @@ describe("GbcApp -- world click selects the map in the tree (Plan 6c C2)", () =>
   });
 });
 
+describe("GbcApp -- GBC world visibility (Plan 6c D1)", () => {
+  it("greys an automatic indoor map in World mode while leaving a town visible", async () => {
+    const world = {
+      family: "gbc" as const,
+      blockPx: 32 as const,
+      placements: {
+        OlivineCity: { map: "OlivineCity", x: 0, y: 0, width: 10, height: 10, component: 0, mapType: "TOWN", manual: false },
+        OlivinePort: { map: "OlivinePort", x: 11, y: 0, width: 10, height: 10, component: 1, mapType: "INDOOR", manual: false },
+      },
+      components: [
+        { index: 0, maps: ["OlivineCity"], bounds: { x: 0, y: 0, width: 10, height: 10 } },
+        { index: 1, maps: ["OlivinePort"], bounds: { x: 11, y: 0, width: 10, height: 10 } },
+      ],
+      conflicts: [],
+    };
+    vi.stubGlobal("fetch", makeFetchMock({ world }));
+    render(<GbcApp root="/x" />);
+    await waitFor(() => expect(screen.getByText("OlivineCity")).toBeTruthy());
+    const view = screen.getByRole("group", { name: "View" });
+    fireEvent.click(Array.from(view.querySelectorAll("button")).find((b) => b.textContent === "World") as HTMLElement);
+    await waitFor(() => expect(screen.getByText("OlivinePort").className).toContain("greyed"));
+    expect(screen.getByText("OlivineCity").className).not.toContain("greyed");
+  });
+});
+
 describe("GbcApp -- entering World centres on the selection (Plan 6c C2 fix round)", () => {
   // OlivineCity at world x 0, OlivinePort at x 11 (10x10 blocks each). In a 100x100 viewport the initial fit is
   // zoom 100/21 ("15%"); a jump fills 60% (zoom 6, "19%"), centring the target at screen [20,80).
@@ -586,8 +611,8 @@ describe("GbcApp -- entering World centres on the selection (Plan 6c C2 fix roun
     family: "gbc" as const,
     blockPx: 32 as const,
     placements: {
-      OlivineCity: { map: "OlivineCity", x: 0, y: 0, width: 10, height: 10, component: 0 },
-      OlivinePort: { map: "OlivinePort", x: 11, y: 0, width: 10, height: 10, component: 1 },
+      OlivineCity: { map: "OlivineCity", x: 0, y: 0, width: 10, height: 10, component: 0, mapType: "TOWN", manual: false },
+      OlivinePort: { map: "OlivinePort", x: 11, y: 0, width: 10, height: 10, component: 1, mapType: "TOWN", manual: false },
     },
     components: [
       { index: 0, maps: ["OlivineCity"], bounds: { x: 0, y: 0, width: 10, height: 10 } },

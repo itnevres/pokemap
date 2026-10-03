@@ -17,6 +17,7 @@ export interface MapVisibilityInfo {
  * §2): MAP_TYPE_INDOOR 695, MAP_TYPE_NONE 6, out of 1,209 total.
  */
 export const HIDDEN_MAP_TYPES: ReadonlySet<string> = new Set(["MAP_TYPE_INDOOR", "MAP_TYPE_NONE"]);
+export const GBC_HIDDEN_MAP_TYPES: ReadonlySet<string> = new Set(["INDOOR", "GATE"]);
 
 /**
  * A map draws by default if its type isn't hidden, OR the user has ever
@@ -27,6 +28,6 @@ export const HIDDEN_MAP_TYPES: ReadonlySet<string> = new Set(["MAP_TYPE_INDOOR",
  * LOOKS drawable) can share one definition instead of two copies drifting
  * apart.
  */
-export function isDrawnByDefault(mapType: string, manual: boolean): boolean {
-  return manual || !HIDDEN_MAP_TYPES.has(mapType);
+export function isDrawnByDefault(mapType: string, manual: boolean, hiddenMapTypes: ReadonlySet<string> = HIDDEN_MAP_TYPES): boolean {
+  return manual || !hiddenMapTypes.has(mapType);
 }

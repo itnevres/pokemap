@@ -77,9 +77,14 @@ export interface GbcWorldPayload {
   family: "gbc";
   blockPx: 32;
   /** Keyed by map name; units are BLOCKS (1 block = 32 px), same as `GbcWorld.placements`. */
-  placements: Record<string, Placement>;
+  placements: Record<string, GbcWorldPlacement>;
   components: Component[];
   conflicts: Conflict[];
+}
+
+export interface GbcWorldPlacement extends Placement {
+  mapType: string;
+  manual: boolean;
 }
 
 /**

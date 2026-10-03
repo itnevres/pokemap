@@ -103,16 +103,16 @@ describe("initialFitBounds (pure)", () => {
 describe("fitAllBounds (pure)", () => {
   it("unions every placement, including 1-map interiors", () => {
     const placements = {
-      MapA: { map: "MapA", x: 0, y: 0, width: 10, height: 10, component: 0 },
-      Interior: { map: "Interior", x: 1000, y: 1000, width: 5, height: 5, component: 1 },
+      MapA: { map: "MapA", x: 0, y: 0, width: 10, height: 10, component: 0, mapType: "TOWN", manual: false },
+      Interior: { map: "Interior", x: 1000, y: 1000, width: 5, height: 5, component: 1, mapType: "TOWN", manual: false },
     };
     expect(fitAllBounds(placements)).toEqual({ x: 0, y: 0, width: 1005, height: 1005 });
   });
 
   it("skips a zero-size (orphan) placement", () => {
     const placements = {
-      MapA: { map: "MapA", x: 0, y: 0, width: 10, height: 10, component: 0 },
-      Orphan: { map: "Orphan", x: 500, y: 500, width: 0, height: 0, component: -1 },
+      MapA: { map: "MapA", x: 0, y: 0, width: 10, height: 10, component: 0, mapType: "TOWN", manual: false },
+      Orphan: { map: "Orphan", x: 500, y: 500, width: 0, height: 0, component: -1, mapType: "INDOOR", manual: false },
     };
     expect(fitAllBounds(placements)).toEqual({ x: 0, y: 0, width: 10, height: 10 });
   });
@@ -337,9 +337,9 @@ const WORLD: GbcWorldPayload = {
   family: "gbc",
   blockPx: 32,
   placements: {
-    MapA: { map: "MapA", x: 0, y: 0, width: 10, height: 10, component: 0 },
-    MapB: { map: "MapB", x: 10, y: 0, width: 10, height: 10, component: 0 },
-    Interior: { map: "Interior", x: 1000, y: 1000, width: 5, height: 5, component: 1 },
+    MapA: { map: "MapA", x: 0, y: 0, width: 10, height: 10, component: 0, mapType: "TOWN", manual: false },
+    MapB: { map: "MapB", x: 10, y: 0, width: 10, height: 10, component: 0, mapType: "ROUTE", manual: false },
+    Interior: { map: "Interior", x: 1000, y: 1000, width: 5, height: 5, component: 1, mapType: "TOWN", manual: false },
   },
   components: [
     { index: 0, maps: ["MapA", "MapB"], bounds: { x: 0, y: 0, width: 20, height: 10 } },
@@ -352,7 +352,7 @@ const CONFLICT_WORLD: GbcWorldPayload = {
   family: "gbc",
   blockPx: 32,
   placements: {
-    Route17: { map: "Route17", x: 0, y: 0, width: 30, height: 40, component: 0 },
+    Route17: { map: "Route17", x: 0, y: 0, width: 30, height: 40, component: 0, mapType: "ROUTE", manual: false },
   },
   components: [{ index: 0, maps: ["Route17", "Route16", "Route18"], bounds: { x: 0, y: 0, width: 30, height: 40 } }],
   conflicts: [{ map: "Route17", viaA: { from: "Route18", x: 30, y: 50 }, viaB: { from: "Route16", x: 30, y: 49 } }],
@@ -540,7 +540,7 @@ describe("GbcWorldCanvas", () => {
     // file can't detect this bug at all -- it sits outside BOTH windows.
     const world: GbcWorldPayload = {
       ...WORLD,
-      placements: { ...WORLD.placements, NearInterior: { map: "NearInterior", x: 100, y: 150, width: 5, height: 5, component: 2 } },
+      placements: { ...WORLD.placements, NearInterior: { map: "NearInterior", x: 100, y: 150, width: 5, height: 5, component: 2, mapType: "INDOOR", manual: false } },
       components: [...WORLD.components, { index: 2, maps: ["NearInterior"], bounds: { x: 100, y: 150, width: 5, height: 5 } }],
     };
     await mountReady({}, world);
@@ -700,6 +700,28 @@ describe("GbcWorldCanvas", () => {
       expect(parseFloat(outline().style.left) - leftBefore).toBe(30);
       expect(parseFloat(outline().style.top) - topBefore).toBe(20);
     });
+  });
+
+  it("dropping a hidden map reveals it locally and persists its manual position", async () => {
+    const hiddenWorld: GbcWorldPayload = {
+      ...WORLD,
+      placements: { ...WORLD.placements, Interior: { ...WORLD.placements.Interior!, mapType: "INDOOR", manual: false } },
+    };
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (url === "/api/world") return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(hiddenWorld) } as Response);
+      if (url === "/api/world/placement") return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ ok: true }) } as Response);
+      return Promise.reject(new Error(`unexpected fetch ${url}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const utils = render(<GbcWorldCanvas time="day" />);
+    const canvas = utils.container.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement;
+    await waitFor(() => expect(screen.getByText(/2 components/)).toBeTruthy());
+    await waitFor(() => expect(screen.queryByText(/zoom 3%/)).toBeNull());
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: 200, bottom: 200, width: 200, height: 200, x: 0, y: 0, toJSON() {} });
+    fireEvent.drop(canvas, { clientX: 100, clientY: 100, dataTransfer: { getData: () => "Interior" } });
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/world/placement", expect.objectContaining({ method: "POST", body: expect.stringContaining('"map":"Interior"') })));
+    await waitFor(() => expect(FakeImage.instances.some((image) => image.src.includes("Interior"))).toBe(true));
   });
 
   it("a double-click that ends a real drag does not open the map (fix round F6; kills mutation X15)", async () => {

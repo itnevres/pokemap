@@ -13,6 +13,6 @@ export type UseGbcWorldResult = UseGuardedFetchResult<GbcWorldPayload>;
  * a network failure, or a shape that fails `isGbcWorldPayload` -- never a
  * silently-empty world.
  */
-export function useGbcWorld(): UseGbcWorldResult {
-  return useGuardedFetch("/api/world", isGbcWorldPayload);
+export function useGbcWorld(enabled: boolean = true): UseGbcWorldResult {
+  return useGuardedFetch(enabled ? "/api/world" : null, isGbcWorldPayload);
 }

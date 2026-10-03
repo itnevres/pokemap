@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Placement, Component, Conflict, Bounds } from "@pokemap/core/src/gbc/world/connections.js";
-import type { GbcWorldPayload } from "@pokemap/core/src/gbc/wire.js";
+import type { GbcWorldPayload, GbcWorldPlacement } from "@pokemap/core/src/gbc/wire.js";
 import type { GbcEncounterSource, GbcSpeciesHit } from "@pokemap/core/src/gbc/analyse/atlas.js";
 import { computeFit, drawDiamond, levelColorMap } from "../components/WorldCanvas.js";
 import { LensPanel, LensLegend, type LensId, type LensPanelSummary } from "../components/LensPanel.js";
@@ -385,6 +385,11 @@ interface TooltipInfo {
   text: string;
 }
 
+type DragState =
+  | { kind: "pan"; x: number; y: number; panX: number; panY: number }
+  | { kind: "map"; map: string; grabX: number; grabY: number; startX: number; startY: number; x: number; y: number }
+  | null;
+
 export interface GbcWorldCanvasProps {
   time: GbcTimeOfDay;
   /** A map name to jump to, or null/undefined for none -- mirrors
@@ -419,7 +424,7 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
   const imageCacheRef = useRef<Map<string, ImageCacheEntry>>(new Map());
   const encounterCacheRef = useRef<Map<string, EncounterCacheEntry>>(new Map());
   const conflictBadgesRef = useRef<Array<{ x: number; y: number; text: string }>>([]);
-  const dragRef = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
+  const dragRef = useRef<DragState>(null);
   // Same "did a real drag happen" guard `WorldCanvas.tsx`'s own
   // `dragMovedRef` is for -- a plain click/dblclick fires even after a
   // same-element drag (browsers do not suppress it), so this is what
@@ -428,7 +433,15 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
 
   const [viewport, setViewport] = useState({ w: 0, h: 0 });
   const [view, setView] = useState<GbcWorldView>({ zoom: 1, pan: { x: 0, y: 0 }, fitted: false });
+  const [placementOverrides, setPlacementOverrides] = useState<Record<string, { x: number; y: number }>>({});
   const { zoom, pan, fitted } = view;
+  const placements = useMemo<Record<string, GbcWorldPlacement>>(
+    () => !world ? {} : Object.fromEntries(Object.entries(world.placements).map(([name, placement]) => {
+      const override = placementOverrides[name];
+      return [name, override ? { ...placement, ...override, manual: true } : placement];
+    })),
+    [world, placementOverrides],
+  );
   const [compositeVersion, setCompositeVersion] = useState(0);
   // Bumped whenever encounterCacheRef's own contents change (a per-map
   // fetch landing) -- the same "a ref never usefully appears in a
@@ -488,15 +501,15 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
     if (!world || initialFitDoneRef.current) return;
     if (viewport.w <= 0 || viewport.h <= 0) return;
     initialFitDoneRef.current = true;
-    const bounds = initialFitBounds(world) ?? fitAllBounds(world.placements);
+    const bounds = initialFitBounds(world) ?? fitAllBounds(placements);
     if (bounds) setView({ ...computeFit(bounds, viewport, GBC_ZOOM_BOUNDS), fitted: true });
-  }, [world, viewport]);
+  }, [world, viewport, placements]);
 
   const fitAll = useCallback(() => {
     if (!world) return;
-    const bounds = fitAllBounds(world.placements);
+    const bounds = fitAllBounds(placements);
     if (bounds) setView({ ...computeFit(bounds, viewport, GBC_ZOOM_BOUNDS), fitted: true });
-  }, [world, viewport]);
+  }, [world, viewport, placements]);
 
   // Culling: only placements whose block-rect intersects the current
   // viewport are "visible" -- WorldCanvas.tsx's own `visible` memo, minus
@@ -504,16 +517,17 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
   // has no GBC equivalent. Gated on `fitted` (fix round, F5): see the
   // initial-fit effect's own comment above.
   const visible = useMemo(() => {
-    if (!world || !fitted) return [] as Placement[];
+    if (!world || !fitted) return [] as GbcWorldPlacement[];
     const x0 = -pan.x / zoom, y0 = -pan.y / zoom;
     const x1 = (viewport.w - pan.x) / zoom, y1 = (viewport.h - pan.y) / zoom;
-    const out: Placement[] = [];
-    for (const p of Object.values(world.placements)) {
+    const out: GbcWorldPlacement[] = [];
+    for (const p of Object.values(placements)) {
       if (p.width <= 0 || p.height <= 0) continue;
+      if (!p.manual && (p.mapType === "INDOOR" || p.mapType === "GATE")) continue;
       if (intersects(p.x, p.y, p.width, p.height, x0, y0, x1, y1)) out.push(p);
     }
     return out;
-  }, [world, pan, zoom, viewport, fitted]);
+  }, [world, placements, pan, zoom, viewport, fitted]);
 
   // GBC-specific: a time switch drops the WHOLE image cache (every
   // reference), so a stale day/nite image is never drawn under the new
@@ -625,11 +639,11 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
   const sideByMap = useMemo(() => {
     const m = new Map<string, BorderSide>();
     if (!world) return m;
-    const placed = Object.values(world.placements).filter((p) => p.width > 0 && p.height > 0);
+    const placed = Object.values(placements).filter((p) => p.width > 0 && p.height > 0);
     const rects: Rect[] = placed.map((p) => ({ x: p.x, y: p.y, width: p.width, height: p.height }));
     placed.forEach((p, i) => m.set(p.map, pickBorderSide(rects[i]!, rects, BORDER_BAND.gbc)));
     return m;
-  }, [world]);
+  }, [world, placements]);
 
   // EncounterBorder's own prop shape -- a memo separate from the
   // imperative draw effect (Task 5 quality review, binding note), mirroring
@@ -747,7 +761,7 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
     // comment/loop, never hidden behind a toggle.
     const badges: Array<{ x: number; y: number; text: string }> = [];
     for (const conflict of world.conflicts) {
-      const p = world.placements[conflict.map];
+      const p = placements[conflict.map];
       if (!p || p.width <= 0 || p.height <= 0) continue;
       const cx = p.x * zoom + pan.x + p.width * zoom - BADGE_SIZE;
       const cy = p.y * zoom + pan.y + BADGE_SIZE;
@@ -755,7 +769,7 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
       badges.push({ x: cx, y: cy, text: conflictTooltipText(conflict) });
     }
     conflictBadgesRef.current = badges;
-  }, [compositeVersion, pan, zoom, viewport, visible, world]);
+  }, [compositeVersion, pan, zoom, viewport, visible, world, placements]);
 
   const screenToWorld = useCallback((sx: number, sy: number) => ({ x: (sx - pan.x) / zoom, y: (sy - pan.y) / zoom }), [pan, zoom]);
 
@@ -775,7 +789,7 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
   }, []);
 
   const hitTest = useCallback(
-    (wx: number, wy: number): Placement | null => {
+    (wx: number, wy: number): GbcWorldPlacement | null => {
       for (let i = visible.length - 1; i >= 0; i--) {
         const p = visible[i]!;
         if (wx >= p.x && wx < p.x + p.width && wy >= p.y && wy < p.y + p.height) return p;
@@ -785,17 +799,41 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
     [visible],
   );
 
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const postPlacement = (map: string, x: number, y: number) => {
+    fetch("/api/world/placement", { method: "POST", body: JSON.stringify({ map, x, y }) })
+      .then((r) => {
+        if (!r.ok) throw new Error(`POST /api/world/placement -> ${r.status}`);
+      })
+      .catch((e: unknown) => setSaveError(e instanceof Error ? e.message : String(e)));
+  };
+
   const onMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (e.button !== 0) return;
     dragMovedRef.current = false;
-    dragRef.current = { x: e.clientX, y: e.clientY, panX: pan.x, panY: pan.y };
+    const rect = e.currentTarget.getBoundingClientRect();
+    const point = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
+    const hit = e.shiftKey ? hitTest(point.x, point.y) : null;
+    dragRef.current = hit
+      ? { kind: "map", map: hit.map, grabX: point.x - hit.x, grabY: point.y - hit.y, startX: hit.x, startY: hit.y, x: hit.x, y: hit.y }
+      : { kind: "pan", x: e.clientX, y: e.clientY, panX: pan.x, panY: pan.y };
   };
 
   const onMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const drag = dragRef.current;
-    if (drag) {
+    if (drag?.kind === "pan") {
       dragMovedRef.current = true;
       setView((v) => ({ ...v, pan: { x: drag.panX + (e.clientX - drag.x), y: drag.panY + (e.clientY - drag.y) } }));
+      return;
+    }
+    if (drag?.kind === "map") {
+      dragMovedRef.current = true;
+      const rect = e.currentTarget.getBoundingClientRect();
+      const point = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
+      const x = Math.round(point.x - drag.grabX), y = Math.round(point.y - drag.grabY);
+      drag.x = x;
+      drag.y = y;
+      setPlacementOverrides((overrides) => ({ ...overrides, [drag.map]: { x, y } }));
       return;
     }
 
@@ -814,11 +852,18 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
     setHover({ map: hit.map, component, width: hit.width, height: hit.height });
   };
 
+  const commitMapDrag = () => {
+    const drag = dragRef.current;
+    if (drag?.kind === "map" && (drag.x !== drag.startX || drag.y !== drag.startY)) postPlacement(drag.map, drag.x, drag.y);
+  };
+
   const onMouseUp = () => {
+    commitMapDrag();
     dragRef.current = null;
   };
 
   const onMouseLeave = () => {
+    commitMapDrag();
     dragRef.current = null;
     setHover(null);
     setTooltip(null);
@@ -878,11 +923,11 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
     if (jumpToken === undefined || jumpToken === appliedJumpTokenRef.current) return;
     if (!jumpToMap || !world) return; // retry once `world` itself changes
     appliedJumpTokenRef.current = jumpToken;
-    const p = world.placements[jumpToMap];
+    const p = placements[jumpToMap];
     if (!p || p.width <= 0 || p.height <= 0) return;
     setView({ ...jumpFit({ x: p.x, y: p.y, width: p.width, height: p.height }, viewport), fitted: true });
     setJumpHighlight({ map: jumpToMap, token: jumpToken });
-  }, [jumpToken, jumpToMap, world, viewport]);
+  }, [jumpToken, jumpToMap, world, viewport, placements]);
 
   // The fade-out, kept in its own effect scoped to `jumpHighlight` alone --
   // WorldCanvas.tsx's own separately-scoped fade effect gives the same
@@ -907,8 +952,8 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
   }, [jumpHighlight]);
 
   const zoomPercent = Math.round((zoom / BLOCK_PX) * 100);
-  const selectedRect = selectedMap && world?.placements[selectedMap] ? world.placements[selectedMap]! : null;
-  const jumpRect = jumpHighlight && world?.placements[jumpHighlight.map] ? world.placements[jumpHighlight.map]! : null;
+  const selectedRect = selectedMap ? placements[selectedMap] ?? null : null;
+  const jumpRect = jumpHighlight ? placements[jumpHighlight.map] ?? null : null;
 
   return (
     <section className="world-canvas" aria-label="World canvas">
@@ -928,6 +973,11 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
             <span className="world-canvas__toolbar-error" role="alert">
               Encounter data unavailable for {encounterFailedCount} map{encounterFailedCount === 1 ? "" : "s"}
             </span>
+          </div>
+        )}
+        {saveError && (
+          <div className="world-canvas__toolbar-group">
+            <span className="world-canvas__toolbar-error" role="alert">Could not save placement: {saveError}</span>
           </div>
         )}
         {/* Species spotlight + coverage lenses (Plan 6b Task 6) -- reuses
@@ -983,6 +1033,18 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
             onMouseMove={onMouseMove}
             onMouseUp={onMouseUp}
             onMouseLeave={onMouseLeave}
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault();
+              const map = e.dataTransfer.getData("text/plain");
+              const placement = placements[map];
+              if (!placement) return;
+              const rect = e.currentTarget.getBoundingClientRect();
+              const point = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
+              const x = Math.round(point.x - placement.width / 2), y = Math.round(point.y - placement.height / 2);
+              setPlacementOverrides((overrides) => ({ ...overrides, [map]: { x, y } }));
+              postPlacement(map, x, y);
+            }}
             onClick={onClick}
             onDoubleClick={onDoubleClick}
             onKeyDown={onKeyDown}
@@ -1054,7 +1116,7 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
 
       <div className="world-canvas__status">
         <span className="world-canvas__status-item">
-          {world ? world.components.length : 0} components · {world ? Object.keys(world.placements).length : 0} maps · zoom {zoomPercent}%
+          {world ? world.components.length : 0} components · {Object.keys(placements).length} maps · zoom {zoomPercent}%
         </span>
         {hover ? (
           <span className="world-canvas__status-item world-canvas__hover">
