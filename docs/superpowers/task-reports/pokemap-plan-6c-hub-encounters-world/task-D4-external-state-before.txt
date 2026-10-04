@@ -1,0 +1,14 @@
+GBA HEAD 718b89f739666056655be65fad703a28a4abeb9d
+GBA STATUS
+ M data/layouts/NavelRockZygardeChamber/map.bin
+ M data/layouts/NavelRock_Fork/map.bin
+ M data/layouts/layouts.json
+ M data/maps/NavelRock_Fork/map.json
+ M data/maps/NavelRock_ZygardeChamber/map.json
+ M include/fieldmap.h
+?? docs/human-tasks-notes.md
+GBA WORLD b285bbf74a86b9d2fbfbeb7df6aed9624300ac3f
+GBA DUNGEONS f73f9b76922330a60da53d4913790df956a86846
+PERFPLUS HEAD 81ededbe311267c774b5540d8c8b381a314dc6d6
+PERFPLUS STATUS
+PERFPLUS POKEMAP False
