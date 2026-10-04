@@ -1039,6 +1039,7 @@ describe("WorldCanvas", () => {
     fireEvent.mouseDown(canvas, { button: 2, clientX: 40, clientY: 10 });
     fireEvent.mouseMove(canvas, { clientX: 55, clientY: 25, button: 2 });
     fireEvent.mouseUp(canvas, { button: 2, clientX: 55, clientY: 25 });
+    expect(canvas.parentElement!.querySelectorAll(".world-canvas__selection-outline")).toHaveLength(0);
     fireEvent.contextMenu(canvas, { clientX: 40, clientY: 10 });
     fireEvent.click(screen.getByRole("button", { name: "Accept conflict" }));
     await waitFor(() => expect(mounted.container.querySelector(".world-canvas__status")?.textContent).toContain("2 conflicts · 1 accepted"));
@@ -1058,7 +1059,6 @@ describe("WorldCanvas", () => {
     expect(reloaded.container.querySelector(".world-canvas__status")?.textContent).toContain("2 conflicts · 1 accepted");
     expect(currentWorld().placements.Route111).toMatchObject({ x: 0, y: 0 });
     expect(calls.filter((call) => call.url === "/api/world/placement")).toHaveLength(0);
-    expect(reloaded.canvas.parentElement!.querySelectorAll(".world-canvas__selection-outline")).toHaveLength(0);
   });
 
   it("shows a malformed accept response without acknowledging the GBA badge", async () => {
@@ -1111,10 +1111,19 @@ describe("WorldCanvas", () => {
       conflicts: [{ map: "Edge", viaA: { from: "A", x: 1, y: 2 }, viaB: { from: "B", x: 3, y: 4 } }],
     }));
     const mounted = await mountReady(impl);
-    fireEvent.contextMenu(mounted.canvas, { clientX: 85, clientY: 80 });
-    const action = mounted.container.querySelector(".world-canvas__conflict-action") as HTMLElement;
-    expect(action.style.right).toBe("15px");
-    expect(action.style.bottom).toBe("20px");
+    const originalRect = HTMLElement.prototype.getBoundingClientRect;
+    const spy = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      if (this.classList.contains("world-canvas__conflict-action")) return { width: 80, height: 30 } as DOMRect;
+      return originalRect.call(this);
+    });
+    try {
+      fireEvent.contextMenu(mounted.canvas, { clientX: 85, clientY: 80 });
+      const action = mounted.container.querySelector(".world-canvas__conflict-action") as HTMLElement;
+      expect(action.style.left).toBe("12px");
+      expect(action.style.top).toBe("62px");
+      expect(Number.parseFloat(action.style.left) + 80).toBeLessThanOrEqual(100 - 8);
+      expect(Number.parseFloat(action.style.top) + 30).toBeLessThanOrEqual(100 - 8);
+    } finally { spy.mockRestore(); }
   });
 
   // -------------------------------------------------------------------

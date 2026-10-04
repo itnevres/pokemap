@@ -796,7 +796,6 @@ describe("GbcWorldCanvas", () => {
       fireEvent.mouseUp(first.canvas, { button: 2, clientX: 180, clientY: 25 });
       fireEvent.contextMenu(first.canvas, { clientX: 165, clientY: 10 });
       expect(screen.getByRole("button", { name: "Accept conflict" })).toBeTruthy();
-      expect((first.container.querySelector(".world-canvas__conflict-action") as HTMLElement).style.right).toBe("35px");
       fireEvent.keyDown(window, { key: "Escape" });
       expect(screen.queryByRole("button", { name: "Accept conflict" })).toBeNull();
       fireEvent.contextMenu(first.canvas, { clientX: 165, clientY: 10 });
@@ -816,6 +815,22 @@ describe("GbcWorldCanvas", () => {
       fireEvent.contextMenu(second.canvas, { clientX: 165, clientY: 10 });
       fireEvent.click(screen.getByRole("button", { name: "Un-accept conflict" }));
       await waitFor(() => expect(second.container.querySelector(".world-canvas__status")?.textContent).toContain("1 conflicts · 0 accepted"));
+    });
+
+    it("clamps the measured Route17 action at the right edge of the viewport", async () => {
+      const mounted = await mountReady({}, CONFLICT_WORLD);
+      mounted.canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: 200, bottom: 200, width: 200, height: 200, x: 0, y: 0, toJSON() {} });
+      const originalRect = HTMLElement.prototype.getBoundingClientRect;
+      const spy = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+        if (this.classList.contains("world-canvas__conflict-action")) return { width: 80, height: 30 } as DOMRect;
+        return originalRect.call(this);
+      });
+      try {
+        fireEvent.contextMenu(mounted.canvas, { clientX: 165, clientY: 10 });
+        const action = mounted.container.querySelector(".world-canvas__conflict-action") as HTMLElement;
+        expect(action.style.left).toBe("112px");
+        expect(Number.parseFloat(action.style.left) + 80).toBeLessThanOrEqual(200 - 8);
+      } finally { spy.mockRestore(); }
     });
 
     it("shows a rejected POST response and retains the unaccepted badge", async () => {
