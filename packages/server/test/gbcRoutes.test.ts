@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createServer, type PokemapServer } from "../src/index.js";
 import { buildGbcMapPayload, buildGbcWorldPayload, buildGbcEncountersPayload, buildGbcWarpsPayload, decodeMapName, parseTimeParam } from "../src/gbcRoutes.js";
@@ -881,17 +881,37 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
   });
 
   describe("GBC dungeon CRUD", () => {
-    it("roundtrips explicit and seeded dungeons in the root sidecar, then restores exact prior bytes", async () => {
+    const snapshotSidecar = () => {
       const dir = `${GBC_SUBJECT_ROOT}/.pokemap`;
       const path = `${dir}/dungeons.json`;
       const dirExisted = existsSync(dir);
-      const before = existsSync(path) ? readFileSync(path) : null;
-      let written: Buffer | null = null;
-      const capture = () => { written = existsSync(path) ? readFileSync(path) : null; };
+      const read = () => existsSync(path) ? readFileSync(path) : null;
+      const before = read();
+      let lastObserved = before;
+      const request = async (call: () => Promise<Response>) => {
+        try { return await call(); }
+        finally { lastObserved = read(); }
+      };
+      const restore = () => {
+        const current = read();
+        const same = (a: Buffer | null, b: Buffer | null) => a === null ? b === null : b !== null && a.equals(b);
+        // Preserve a later write that appeared after the last request completed.
+        if (same(current, lastObserved) && !same(current, before)) {
+          if (before) {
+            mkdirSync(dir, { recursive: true });
+            writeFileSync(path, before);
+          } else if (current) unlinkSync(path);
+        }
+        if (!dirExisted && existsSync(dir)) try { rmdirSync(dir); } catch {}
+      };
+      return { path, dir, dirExisted, before, request, restore };
+    };
+
+    it("roundtrips explicit and seeded dungeons in the root sidecar, then restores exact prior bytes", async () => {
+      const { path, dir, dirExisted, before, request, restore } = snapshotSidecar();
       try {
-        const explicit = await post("/api/dungeons", { name: "D3 explicit", maps: ["BurnedTower1F"] });
+        const explicit = await request(() => post("/api/dungeons", { name: "D3 explicit", maps: ["BurnedTower1F"] }));
         const afterCreate = existsSync(path) ? readFileSync(path) : null;
-        written = afterCreate;
         expect(explicit.status).toBe(200);
         const created = await explicit.json() as { id: string; name: string; maps: string[] };
         expect(afterCreate).not.toBeNull();
@@ -901,31 +921,22 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
         expect(JSON.parse(afterCreate.toString("utf8")).dungeons).toContainEqual(created);
         const list = await (await get("/api/dungeons")).json() as { id: string }[];
         expect(list.some((d) => d.id === created.id)).toBe(true);
-        const changed = await patch(`/api/dungeons/${created.id}`, { name: "D3 changed", maps: ["BurnedTowerB1F"] });
-        capture();
+        const changed = await request(() => patch(`/api/dungeons/${created.id}`, { name: "D3 changed", maps: ["BurnedTowerB1F"] }));
         expect(changed.status).toBe(200);
         expect(await changed.json()).toMatchObject({ id: created.id, name: "D3 changed", maps: ["BurnedTowerB1F"] });
-        const seeded = await post("/api/dungeons", { name: "D3 seeded", seedMap: "BurnedTower1F" });
-        capture();
+        const seeded = await request(() => post("/api/dungeons", { name: "D3 seeded", seedMap: "BurnedTower1F" }));
         expect(seeded.status).toBe(200);
         const seedBody = await seeded.json() as { id: string; maps: string[] };
         expect(seedBody.maps).toContain("BurnedTower1F");
         expect(seedBody.maps).toContain("BurnedTowerB1F");
         expect(seedBody.maps).toEqual([...seedBody.maps].sort());
-        const deletedExplicit = await fetch(`http://127.0.0.1:${s.port}/api/dungeons/${created.id}`, { method: "DELETE" });
-        capture();
+        const deletedExplicit = await request(() => fetch(`http://127.0.0.1:${s.port}/api/dungeons/${created.id}`, { method: "DELETE" }));
         expect(deletedExplicit.status).toBe(200);
-        const deletedSeed = await fetch(`http://127.0.0.1:${s.port}/api/dungeons/${seedBody.id}`, { method: "DELETE" });
-        capture();
+        const deletedSeed = await request(() => fetch(`http://127.0.0.1:${s.port}/api/dungeons/${seedBody.id}`, { method: "DELETE" }));
         expect(deletedSeed.status).toBe(200);
-        expect((await fetch(`http://127.0.0.1:${s.port}/api/dungeons/missing`, { method: "DELETE" })).status).toBe(404);
+        expect((await request(() => fetch(`http://127.0.0.1:${s.port}/api/dungeons/missing`, { method: "DELETE" }))).status).toBe(404);
       } finally {
-        const current = existsSync(path) ? readFileSync(path) : null;
-        if (written && current && current.equals(written)) {
-          if (before && !current.equals(before)) writeFileSync(path, before);
-          else if (!before) unlinkSync(path);
-        }
-        if (!dirExisted && existsSync(dir)) try { rmdirSync(dir); } catch {}
+        restore();
       }
       expect(existsSync(path)).toBe(before !== null);
       if (before) expect(readFileSync(path)).toEqual(before);
@@ -933,20 +944,24 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
     });
 
     it("rejects invalid create and patch bodies without writing", async () => {
-      const path = `${GBC_SUBJECT_ROOT}/.pokemap/dungeons.json`;
-      const before = existsSync(path) ? readFileSync(path) : null;
-      for (const body of ["null", "[]", "{", '{}', '{"name":" "}', '{"name":5}', '{"name":"x","maps":[1]}', '{"name":"x","seedMap":2}']) {
-        const r = await postRaw("/api/dungeons", body);
-        expect(r.status).toBe(400);
-        expect(await r.json()).toMatchObject({ error: expect.any(String) });
-      }
-      for (const body of ["null", "[]", "{", '{"name":" "}', '{"name":5}', '{"maps":[1]}']) {
-        const r = await fetch(`http://127.0.0.1:${s.port}/api/dungeons/missing`, { method: "PATCH", body });
-        expect(r.status).toBe(400);
-        expect(await r.json()).toMatchObject({ error: expect.any(String) });
+      const { path, dir, dirExisted, before, request, restore } = snapshotSidecar();
+      try {
+        for (const body of ["null", "[]", "{", '{}', '{"name":" "}', '{"name":5}', '{"name":"x","maps":[1]}', '{"name":"x","seedMap":2}']) {
+          const r = await request(() => postRaw("/api/dungeons", body));
+          expect(r.status).toBe(400);
+          expect(await r.json()).toMatchObject({ error: expect.any(String) });
+        }
+        for (const body of ["null", "[]", "{", '{"name":" "}', '{"name":5}', '{"maps":[1]}']) {
+          const r = await request(() => fetch(`http://127.0.0.1:${s.port}/api/dungeons/missing`, { method: "PATCH", body }));
+          expect(r.status).toBe(400);
+          expect(await r.json()).toMatchObject({ error: expect.any(String) });
+        }
+      } finally {
+        restore();
       }
       expect(existsSync(path)).toBe(before !== null);
       if (before) expect(readFileSync(path)).toEqual(before);
+      expect(existsSync(dir)).toBe(dirExisted);
     });
   });
 
