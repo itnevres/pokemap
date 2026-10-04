@@ -942,6 +942,20 @@ input {
   color: var(--danger);
 }
 
+.world-canvas__conflict-action {
+  position: absolute;
+  z-index: 12;
+  min-width: 0;
+  max-width: calc(100% - var(--space-3));
+  padding: var(--space-1);
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+.world-canvas__conflict-action > button { min-width: 0; }
+
 /* Review fix: a failed save (a placement drag or the dungeon toggle) used
    to share loadError's own in-flow placeholder -- shoving/clipping the
    canvas and never clearing until the next successful load. This is

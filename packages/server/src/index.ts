@@ -14,6 +14,7 @@ import { coverage, whereSpecies, allSpecies } from "@pokemap/core/src/analyse/co
 import { buildWorld, resolveWorldPlacements } from "@pokemap/core/src/world/resolve.js";
 import type { Placement } from "@pokemap/core/src/world/connections.js";
 import { readSidecar, writeSidecar } from "@pokemap/core/src/world/sidecar.js";
+import { conflictKey, isAcceptConflictBody, updatedAcceptedConflicts, wireConflicts } from "@pokemap/core/src/world/conflictAcceptance.js";
 import { readDungeons, writeDungeons } from "@pokemap/core/src/world/dungeons.js";
 import { warpConnectedMapsFrom } from "@pokemap/core/src/world/warpGraph.js";
 import { encodePng } from "@pokemap/cli/src/png.js";
@@ -571,9 +572,28 @@ export function createProjectHandler(root: string): ProjectHandler {
         return send(200, {
           placements,
           components: world.components,
-          conflicts: world.conflicts,
+          conflicts: wireConflicts(world.conflicts, sidecar.acceptedConflicts ?? []),
           verticalLinks: world.verticalLinks,
           sidecar,
+        });
+      }
+
+      if (url.pathname === "/api/world/conflicts/accept" && req.method === "POST") {
+        return readBody(req).then((body) => {
+          let parsed: unknown;
+          try { parsed = JSON.parse(body); }
+          catch (e) { return send(400, { error: `invalid JSON body: ${(e as Error).message}` }); }
+          if (!isAcceptConflictBody(parsed)) return send(400, { error: `expected { key: string, accepted: boolean }, got ${body}` });
+          if (!getWorld().conflicts.some((conflict) => conflictKey(conflict) === parsed.key)) {
+            return send(404, { error: `unknown conflict key ${parsed.key}` });
+          }
+          const sidecar = readSidecar(project.paths.root);
+          sidecar.acceptedConflicts = updatedAcceptedConflicts(sidecar.acceptedConflicts ?? [], parsed.key, parsed.accepted);
+          writeSidecar(project.paths.root, sidecar);
+          return send(200, { acceptedConflicts: sidecar.acceptedConflicts });
+        }).catch((e: unknown) => {
+          console.error(e);
+          send(500, { error: e instanceof Error ? e.message : String(e) });
         });
       }
 

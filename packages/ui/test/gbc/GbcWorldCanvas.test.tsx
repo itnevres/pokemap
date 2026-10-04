@@ -483,25 +483,31 @@ interface FakeCtx {
   drawImage: ReturnType<typeof vi.fn>;
   clearRect: ReturnType<typeof vi.fn>;
   fillStyle: string;
+  fillLog: string[];
   beginPath: ReturnType<typeof vi.fn>;
   moveTo: ReturnType<typeof vi.fn>;
   lineTo: ReturnType<typeof vi.fn>;
   closePath: ReturnType<typeof vi.fn>;
   fill: ReturnType<typeof vi.fn>;
+  fillText: ReturnType<typeof vi.fn>;
 }
 const ctxByCanvas = new Map<HTMLCanvasElement, FakeCtx>();
 function makeFakeCtx(): FakeCtx {
-  return {
+  const ctx = {
     imageSmoothingEnabled: true,
     drawImage: vi.fn(),
     clearRect: vi.fn(),
     fillStyle: "",
+    fillLog: [] as string[],
     beginPath: vi.fn(),
     moveTo: vi.fn(),
     lineTo: vi.fn(),
     closePath: vi.fn(),
     fill: vi.fn(),
+    fillText: vi.fn(),
   };
+  ctx.fill = vi.fn(() => ctx.fillLog.push(ctx.fillStyle));
+  return ctx;
 }
 
 const VIEWPORT_SIZE = 200;
@@ -533,12 +539,20 @@ const CONFLICT_WORLD: GbcWorldPayload = {
     Route17: { map: "Route17", x: 0, y: 0, width: 30, height: 40, component: 0, mapType: "ROUTE", manual: false },
   },
   components: [{ index: 0, maps: ["Route17", "Route16", "Route18"], bounds: { x: 0, y: 0, width: 30, height: 40 } }],
-  conflicts: [{ map: "Route17", viaA: { from: "Route18", x: 30, y: 50 }, viaB: { from: "Route16", x: 30, y: 49 } }],
+  conflicts: [{ map: "Route17", viaA: { from: "Route18", x: 30, y: 50 }, viaB: { from: "Route16", x: 30, y: 49 }, key: '["Route17","Route18",30,50,"Route16",30,49]', accepted: false }],
 };
 
 function mockFetchWorld(world: unknown) {
-  return vi.fn((url: string) => {
-    if (url === "/api/world") return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(world) } as Response);
+  let current = world;
+  return vi.fn((url: string, init?: RequestInit) => {
+    if (url === "/api/world/conflicts/accept") {
+      const body = JSON.parse(String(init?.body)) as { key: string; accepted: boolean };
+      const typed = current as GbcWorldPayload;
+      current = { ...typed, conflicts: typed.conflicts.map((conflict) =>
+        conflict.key === body.key ? { ...conflict, accepted: body.accepted } : conflict) };
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ acceptedConflicts: (current as GbcWorldPayload).conflicts.filter((conflict) => conflict.accepted).map((conflict) => conflict.key) }) } as Response);
+    }
+    if (url === "/api/world") return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(current) } as Response);
     return Promise.reject(new Error(`unexpected fetch ${url}`));
   });
 }
@@ -769,6 +783,38 @@ describe("GbcWorldCanvas", () => {
   // Conflict badges + tooltip.
   // -------------------------------------------------------------------
   describe("conflict badge", () => {
+    it("accepts a Route17 badge, persists on remount, and closes the action with Escape", async () => {
+      const first = await mountReady({}, CONFLICT_WORLD);
+      first.canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: 200, bottom: 200, width: 200, height: 200, x: 0, y: 0, toJSON() {} });
+      fireEvent.contextMenu(first.canvas, { clientX: 100, clientY: 100 });
+      expect(screen.queryByRole("button", { name: "Accept conflict" })).toBeNull();
+      fireEvent.contextMenu(first.canvas, { clientX: 165, clientY: 10 });
+      expect(screen.getByRole("button", { name: "Accept conflict" })).toBeTruthy();
+      fireEvent.keyDown(window, { key: "Escape" });
+      expect(screen.queryByRole("button", { name: "Accept conflict" })).toBeNull();
+      fireEvent.contextMenu(first.canvas, { clientX: 165, clientY: 10 });
+      fireEvent.click(screen.getByRole("button", { name: "Accept conflict" }));
+      await waitFor(() => expect(first.container.querySelector(".world-canvas__status")?.textContent).toContain("1 conflicts · 1 accepted"));
+      expect(first.stageCtx.fillText).toHaveBeenCalledWith("✓", 165, 10);
+      expect(first.stageCtx.fillLog).toContain("#6b7280");
+      first.unmount();
+      const second = await mountReady({}, { ...CONFLICT_WORLD, conflicts: CONFLICT_WORLD.conflicts.map((c) => ({ ...c, accepted: true })) });
+      expect(second.container.querySelector(".world-canvas__status")?.textContent).toContain("1 conflicts · 1 accepted");
+    });
+
+    it("shows a rejected POST response and retains the unaccepted badge", async () => {
+      const mounted = await mountReady({}, CONFLICT_WORLD);
+      const originalFetch = globalThis.fetch;
+      vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => url === "/api/world/conflicts/accept"
+        ? Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ acceptedConflicts: [3] }) } as Response)
+        : originalFetch(url, init)));
+      mounted.canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: 200, bottom: 200, width: 200, height: 200, x: 0, y: 0, toJSON() {} });
+      fireEvent.contextMenu(mounted.canvas, { clientX: 165, clientY: 10 });
+      fireEvent.click(screen.getByRole("button", { name: "Accept conflict" }));
+      await waitFor(() => expect(screen.getByText(/Could not update conflict:/).textContent).toContain("unexpected shape"));
+      expect(mounted.container.querySelector(".world-canvas__status")?.textContent).toContain("1 conflicts · 0 accepted");
+      expect(screen.getByRole("button", { name: "Accept conflict" })).toBeTruthy();
+    });
     it("draws a diamond at Conflict.map's top-right corner in --danger, and shows the exact CLI-wording tooltip on hover", async () => {
       const { canvas, stageCtx } = await mountReady({}, CONFLICT_WORLD);
       // computeFit({0,0,30,40}, {200,200}, {1/64,32}): zoom = min(32, min(200/30,200/40)) = 5.

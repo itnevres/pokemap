@@ -7,6 +7,7 @@ export interface Sidecar {
   dungeonAutoLayout: boolean;
   manualPlacements: Record<string, { x: number; y: number }>;
   view: { x: number; y: number; zoom: number };
+  acceptedConflicts?: string[];
 }
 
 const DEFAULTS: Sidecar = {
@@ -14,6 +15,7 @@ const DEFAULTS: Sidecar = {
   dungeonAutoLayout: true,
   manualPlacements: {},
   view: { x: 0, y: 0, zoom: 1 },
+  acceptedConflicts: [],
 };
 
 /**
@@ -33,6 +35,11 @@ function assertShape(path: string, parsed: unknown): asserts parsed is Partial<S
     throw new Error(`${path} must contain a JSON object, found ${JSON.stringify(parsed)}.`);
   }
   const p = parsed as Record<string, unknown>;
+
+  if ("acceptedConflicts" in p && (!Array.isArray(p.acceptedConflicts)
+    || !p.acceptedConflicts.every((value: unknown) => typeof value === "string"))) {
+    throw new Error(`${path} has an "acceptedConflicts" that is not a string array.`);
+  }
 
   if ("manualPlacements" in p) {
     const mp = p.manualPlacements;

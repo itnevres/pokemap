@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, fireEvent, screen, waitFor, act } from "@testing-library/react";
 import { WorldCanvas } from "../src/components/WorldCanvas.js";
 import { computeFit, UnplacedRail, levelColorMap } from "../src/components/WorldCanvas.js";
+import { conflictKey } from "@pokemap/core/src/world/conflictAcceptance.js";
 
 /**
  * jsdom/testing-library's `fireEvent.drop(el, {clientX, clientY, ...})` does
@@ -59,7 +60,7 @@ function makeWorld(opts: {
         maps: [p.map],
         bounds: { x: p.x, y: p.y, width: p.width, height: p.height },
       })),
-    conflicts: opts.conflicts ?? [],
+    conflicts: (opts.conflicts ?? []).map((conflict) => ({ ...conflict, key: conflictKey(conflict), accepted: false })),
     verticalLinks: opts.verticalLinks ?? [],
     sidecar: { version: 1, dungeonAutoLayout: opts.dungeonAutoLayout ?? true, manualPlacements: {}, view: { x: 0, y: 0, zoom: 1 } },
   };
@@ -85,6 +86,12 @@ function makeFetchMock(initial: WorldFixture) {
         width: existing?.width ?? 0, height: existing?.height ?? 0, component: existing?.component ?? -1,
       } } };
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ ok: true }) } as Response);
+    }
+    if (url === "/api/world/conflicts/accept") {
+      const body = JSON.parse(String(init?.body)) as { key: string; accepted: boolean };
+      world = { ...world, conflicts: world.conflicts.map((conflict) =>
+        conflict.key === body.key ? { ...conflict, accepted: body.accepted } : conflict) };
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ acceptedConflicts: world.conflicts.filter((conflict) => conflict.accepted).map((conflict) => conflict.key) }) } as Response);
     }
     if (url.startsWith("/api/world/dungeons")) {
       const body = JSON.parse(String(init?.body)) as { enabled: boolean };
@@ -212,6 +219,7 @@ interface FakeCtx {
   lineTo: ReturnType<typeof vi.fn>;
   closePath: ReturnType<typeof vi.fn>;
   fill: ReturnType<typeof vi.fn>;
+  fillText: ReturnType<typeof vi.fn>;
 }
 
 const ctxByCanvas = new Map<HTMLCanvasElement, FakeCtx>();
@@ -228,6 +236,7 @@ function makeFakeCtx(): FakeCtx {
     lineTo: vi.fn(),
     closePath: vi.fn(),
     fill: vi.fn(),
+    fillText: vi.fn(),
   };
   ctx.fill = vi.fn(() => ctx.fillLog.push(ctx.fillStyle));
   return ctx;
@@ -1014,6 +1023,51 @@ describe("WorldCanvas", () => {
 
     fireEvent.mouseMove(canvas, { clientX: 90, clientY: 90 });
     await waitFor(() => expect(screen.queryByRole("tooltip")).toBeNull());
+  });
+
+  it("independently acknowledges two same-map badges by right-click, keeps placement, and survives remount", async () => {
+    const initial = makeWorld({
+      placements: { Route111: { map: "Route111", x: 0, y: 0, width: 50, height: 30, component: 0 } },
+      conflicts: ["Route112", "Route113"].map((from) => ({ map: "Route111", viaA: { from, x: 160, y: -230 }, viaB: { from: "MauvilleCity", x: 160, y: -232 } })),
+    });
+    const { impl } = makeFetchMock(initial);
+    const mounted = await mountReady(impl);
+    const { canvas, stageCtx } = mounted;
+    fireEvent.contextMenu(canvas, { clientX: 5, clientY: 70 });
+    expect(screen.queryByRole("button", { name: "Accept conflict" })).toBeNull();
+    // 50-wide fixture at zoom=1: existing badge at 40,10; next key at 18,10.
+    fireEvent.contextMenu(canvas, { clientX: 40, clientY: 10 });
+    fireEvent.click(screen.getByRole("button", { name: "Accept conflict" }));
+    await waitFor(() => expect(mounted.container.querySelector(".world-canvas__status")?.textContent).toContain("2 conflicts · 1 accepted"));
+    expect(stageCtx.fillLog).toContain("#6b7280");
+    expect(stageCtx.fillText).toHaveBeenCalledWith("✓", 40, 10);
+    fireEvent.contextMenu(canvas, { clientX: 18, clientY: 10 });
+    expect(screen.getByRole("button", { name: "Accept conflict" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Accept conflict" }));
+    await waitFor(() => expect(mounted.container.querySelector(".world-canvas__status")?.textContent).toContain("2 conflicts · 2 accepted"));
+    fireEvent.contextMenu(canvas, { clientX: 40, clientY: 10 });
+    fireEvent.click(screen.getByRole("button", { name: "Un-accept conflict" }));
+    await waitFor(() => expect(mounted.container.querySelector(".world-canvas__status")?.textContent).toContain("2 conflicts · 1 accepted"));
+    mounted.unmount();
+    const reloaded = await mountReady(impl);
+    expect(reloaded.container.querySelector(".world-canvas__status")?.textContent).toContain("2 conflicts · 1 accepted");
+    expect(initial.placements.Route111).toMatchObject({ x: 0, y: 0 });
+  });
+
+  it("shows a malformed accept response without acknowledging the GBA badge", async () => {
+    const world = makeWorld({
+      placements: { Solo: { map: "Solo", x: 0, y: 0, width: 50, height: 30, component: 0 } },
+      conflicts: [{ map: "Solo", viaA: { from: "A", x: 1, y: 2 }, viaB: { from: "B", x: 3, y: 4 } }],
+    });
+    const { impl } = makeFetchMock(world);
+    const broken = vi.fn((url: string, init?: RequestInit) => url === "/api/world/conflicts/accept"
+      ? Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ acceptedConflicts: [7] }) } as Response)
+      : impl(url, init));
+    const mounted = await mountReady(broken);
+    fireEvent.contextMenu(mounted.canvas, { clientX: 40, clientY: 10 });
+    fireEvent.click(screen.getByRole("button", { name: "Accept conflict" }));
+    await waitFor(() => expect(screen.getByText(/Could not update conflict:/).textContent).toContain("unexpected shape"));
+    expect(mounted.container.querySelector(".world-canvas__status")?.textContent).toContain("1 conflicts · 0 accepted");
   });
 
   // -------------------------------------------------------------------

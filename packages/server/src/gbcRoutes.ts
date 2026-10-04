@@ -51,6 +51,7 @@ import type {
   GbcEncountersPayload,
 } from "@pokemap/core/src/gbc/wire.js";
 import { applySidecar, readSidecar, writeSidecar, type Sidecar } from "@pokemap/core/src/world/sidecar.js";
+import { conflictKey, isAcceptConflictBody, updatedAcceptedConflicts, wireConflicts } from "@pokemap/core/src/world/conflictAcceptance.js";
 import { encodePng } from "@pokemap/cli/src/png.js";
 import { parseBorder, parseTime, type TimeOfDay } from "@pokemap/cli/src/args.js";
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -225,7 +226,7 @@ export function buildGbcWorldPayload(proj: GbcProject, world: GbcWorld, sidecar:
     blockPx: 32,
     placements,
     components: world.components,
-    conflicts: world.conflicts,
+    conflicts: wireConflicts(world.conflicts, sidecar.acceptedConflicts ?? []),
   } satisfies GbcWorldPayload;
 }
 
@@ -451,6 +452,25 @@ export function createGbcProjectHandler(root: string): ProjectHandler {
       // query param for (`gbc/world/connections.ts`'s own doc comment).
       if (url.pathname === "/api/world") {
         return send(200, buildGbcWorldPayload(proj, getWorld(), readSidecar(proj.root), getWarps()));
+      }
+
+      if (url.pathname === "/api/world/conflicts/accept" && req.method === "POST") {
+        return readBody(req).then((body) => {
+          let parsed: unknown;
+          try { parsed = JSON.parse(body); }
+          catch (e) { return send(400, { error: `invalid JSON body: ${(e as Error).message}` }); }
+          if (!isAcceptConflictBody(parsed)) return send(400, { error: `expected { key: string, accepted: boolean }, got ${body}` });
+          if (!getWorld().conflicts.some((conflict) => conflictKey(conflict) === parsed.key)) {
+            return send(404, { error: `unknown conflict key ${parsed.key}` });
+          }
+          const sidecar = readSidecar(proj.root);
+          sidecar.acceptedConflicts = updatedAcceptedConflicts(sidecar.acceptedConflicts ?? [], parsed.key, parsed.accepted);
+          writeSidecar(proj.root, sidecar);
+          return send(200, { acceptedConflicts: sidecar.acceptedConflicts });
+        }).catch((e: unknown) => {
+          console.error(e);
+          send(500, { error: e instanceof Error ? e.message : String(e) });
+        });
       }
 
       if (url.pathname === "/api/world/placement" && req.method === "POST") {

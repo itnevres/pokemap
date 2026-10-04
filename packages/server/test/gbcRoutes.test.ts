@@ -6,6 +6,7 @@ import { openGbcProject } from "@pokemap/core/src/gbc/project.js";
 import { renderGbcMap, renderGbcMapMetatile } from "@pokemap/core/src/gbc/render/map.js";
 import { loadGbcMapEvents } from "@pokemap/core/src/gbc/load/events.js";
 import { buildGbcWorld } from "@pokemap/core/src/gbc/world/connections.js";
+import { wireConflicts } from "@pokemap/core/src/world/conflictAcceptance.js";
 import { placeNearWarps } from "@pokemap/core/src/world/nearWarp.js";
 import { gbcWarpLinks, gbcWarpConnectedMapsFrom } from "@pokemap/core/src/world/nearWarpAdapters.js";
 import type { WarpLink } from "@pokemap/core/src/world/nearWarp.js";
@@ -671,7 +672,7 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
       // Task 5's world canvas consumes -- the fit and the conflict-badge
       // tooltip) would have shipped undetected.
       expect(body.components).toEqual(world.components);
-      expect(body.conflicts).toEqual(world.conflicts);
+      expect(body.conflicts).toEqual(wireConflicts(world.conflicts, []));
 
       // Measured directly against buildGbcWorld's own output (not guessed):
       // 391 maps split into 326 components, of which exactly 3 (sizes
@@ -697,7 +698,8 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
       // once seen from each end), not just from the core function's own
       // output.
       const route17 = body.conflicts.find((c) => c.map === "Route17");
-      expect(route17).toEqual({ map: "Route17", viaA: { from: "Route18", x: 30, y: 50 }, viaB: { from: "Route16", x: 30, y: 49 } });
+      expect(route17).toEqual({ map: "Route17", viaA: { from: "Route18", x: 30, y: 50 }, viaB: { from: "Route16", x: 30, y: 49 },
+        key: '["Route17","Route18",30,50,"Route16",30,49]', accepted: false });
     });
 
     it("pure payload resolution preserves the same base world after automatic and manual calls", () => {
@@ -784,9 +786,55 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
         blockPx: 32,
         placements: expectedPlacements,
         components: world.components,
-        conflicts: world.conflicts,
+        conflicts: wireConflicts(world.conflicts, []),
       });
     });
+  });
+
+  it("accepts and un-accepts Route17 without moving maps, with exact PerfPlus sidecar restoration", async () => {
+    const path = `${GBC_SUBJECT_ROOT}/.pokemap/world.json`;
+    const dir = `${GBC_SUBJECT_ROOT}/.pokemap`;
+    const dirExisted = existsSync(dir);
+    const before = existsSync(path) ? readFileSync(path) : null;
+    let lastWritten: Buffer | null = null;
+    try {
+      const start = await (await get("/api/world")).json() as { conflicts: { key: string; accepted: boolean; map: string }[]; placements: unknown };
+      const key = start.conflicts.find((conflict) => conflict.map === "Route17")!.key;
+      expect(start.conflicts.find((conflict) => conflict.key === key)?.accepted).toBe(false);
+      expect((await postRaw("/api/world/conflicts/accept", "{" )).status).toBe(400);
+      for (const body of [null, [], { key, accepted: "yes" }, { key: 3, accepted: true }]) {
+        expect((await post("/api/world/conflicts/accept", body)).status).toBe(400);
+      }
+      expect((await post("/api/world/conflicts/accept", { key: "unknown", accepted: true })).status).toBe(404);
+      expect(existsSync(path)).toBe(before !== null);
+      if (before) expect(readFileSync(path)).toEqual(before);
+
+      const accepted = await post("/api/world/conflicts/accept", { key, accepted: true });
+      lastWritten = existsSync(path) ? readFileSync(path) : null;
+      expect(accepted.status).toBe(200);
+      expect((await accepted.json() as { acceptedConflicts: string[] }).acceptedConflicts).toContain(key);
+      const duplicate = await post("/api/world/conflicts/accept", { key, accepted: true });
+      lastWritten = existsSync(path) ? readFileSync(path) : null;
+      expect((await duplicate.json() as { acceptedConflicts: string[] }).acceptedConflicts.filter((value) => value === key)).toHaveLength(1);
+      const afterAccept = await (await get("/api/world")).json() as typeof start;
+      expect(afterAccept.placements).toEqual(start.placements);
+      expect(afterAccept.conflicts.find((conflict) => conflict.key === key)?.accepted).toBe(true);
+
+      const unaccepted = await post("/api/world/conflicts/accept", { key, accepted: false });
+      lastWritten = existsSync(path) ? readFileSync(path) : null;
+      expect((await unaccepted.json() as { acceptedConflicts: string[] }).acceptedConflicts).not.toContain(key);
+      const afterUnaccept = await (await get("/api/world")).json() as typeof start;
+      expect(afterUnaccept.placements).toEqual(start.placements);
+      expect(afterUnaccept.conflicts.find((conflict) => conflict.key === key)?.accepted).toBe(false);
+    } finally {
+      if (lastWritten && existsSync(path) && readFileSync(path).equals(lastWritten)) {
+        if (before) writeFileSync(path, before);
+        else {
+          unlinkSync(path);
+          if (!dirExisted) try { rmdirSync(dir); } catch {}
+        }
+      } else if (lastWritten) throw new Error("PerfPlus sidecar changed outside this test; refusing to overwrite it");
+    }
   });
 
   describe("POST /api/world/placement", () => {

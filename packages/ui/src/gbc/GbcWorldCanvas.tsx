@@ -15,6 +15,9 @@ import { isGbcWarpsPayload } from "./guards.js";
 import type { GbcWarpsPayload } from "./warps.js";
 import { GbcWarpDestinationModal } from "./GbcWarpDestinationModal.js";
 import { fetchGuarded } from "../hooks/useGuardedFetch.js";
+import { conflictBadgeOffsets } from "../world/conflictAcceptance.js";
+import { useConflictAcceptance } from "../world/useConflictAcceptance.js";
+import { ConflictAction } from "../world/ConflictAction.js";
 import type { GbcTimeOfDay } from "./time.js";
 
 /**
@@ -440,7 +443,7 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
   const imageCacheRef = useRef<Map<string, ImageCacheEntry>>(new Map());
   const encounterCacheRef = useRef<Map<string, EncounterCacheEntry>>(new Map());
   const warpCacheRef = useRef<Map<string, GbcWarpsPayload | null>>(new Map());
-  const conflictBadgesRef = useRef<Array<{ x: number; y: number; text: string }>>([]);
+  const conflictBadgesRef = useRef<Array<{ x: number; y: number; text: string; key: string; accepted: boolean }>>([]);
   const dragRef = useRef<DragState>(null);
   // Same "did a real drag happen" guard `WorldCanvas.tsx`'s own
   // `dragMovedRef` is for -- a plain click/dblclick fires even after a
@@ -476,6 +479,7 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
   const [warpVersion, setWarpVersion] = useState(0);
   const [warpError, setWarpError] = useState<string | null>(null);
   const [warpPopup, setWarpPopup] = useState<string | null>(null);
+  const conflictAcceptance = useConflictAcceptance(world?.conflicts);
   const [selectedMap, setSelectedMap] = useState<string | null>(null);
   const [hover, setHover] = useState<HoverInfo | null>(null);
   const [tooltip, setTooltip] = useState<TooltipInfo | null>(null);
@@ -844,23 +848,33 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
     if (!world) return;
     const style = typeof getComputedStyle === "function" ? getComputedStyle(document.documentElement) : null;
     const conflictColor = style?.getPropertyValue("--danger").trim() || "#ef4444";
+    const acceptedColor = style?.getPropertyValue("--text-muted").trim() || "#6b7280";
 
     // Conflicts: a diamond at Conflict.map's top-right corner, plus a
     // hit-rect for the hover tooltip below -- WorldCanvas.tsx's own
     // "Conflicts: a diamond at the offending map's top-right corner"
     // comment/loop, never hidden behind a toggle.
-    const badges: Array<{ x: number; y: number; text: string }> = [];
+    const badges: Array<{ x: number; y: number; text: string; key: string; accepted: boolean }> = [];
+    const badgeOffsets = conflictBadgeOffsets(world.conflicts, BADGE_SIZE * 2 + 2);
     for (const conflict of world.conflicts) {
       if (mapFilter && !mapFilter.has(conflict.map)) continue;
       const p = placements[conflict.map];
       if (!p || p.width <= 0 || p.height <= 0) continue;
-      const cx = p.x * zoom + pan.x + p.width * zoom - BADGE_SIZE;
+      const cx = p.x * zoom + pan.x + p.width * zoom - BADGE_SIZE - (badgeOffsets.get(conflict.key) ?? 0);
       const cy = p.y * zoom + pan.y + BADGE_SIZE;
-      drawDiamond(ctx, cx, cy, BADGE_SIZE, conflictColor);
-      badges.push({ x: cx, y: cy, text: conflictTooltipText(conflict) });
+      const accepted = conflictAcceptance.isAccepted(conflict);
+      drawDiamond(ctx, cx, cy, BADGE_SIZE, accepted ? acceptedColor : conflictColor);
+      if (accepted) {
+        ctx.fillStyle = style?.getPropertyValue("--text-primary").trim() || "#fff";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("✓", cx, cy);
+      }
+      badges.push({ x: cx, y: cy, key: conflict.key, accepted,
+        text: `${accepted ? "Accepted (right-click to un-accept). " : ""}${conflictTooltipText(conflict)}` });
     }
     conflictBadgesRef.current = badges;
-  }, [compositeVersion, pan, zoom, viewport, visible, world, placements, mapFilter]);
+  }, [compositeVersion, pan, zoom, viewport, visible, world, placements, mapFilter, conflictAcceptance.acceptedCount]);
 
   const screenToWorld = useCallback((sx: number, sy: number) => ({ x: (sx - pan.x) / zoom, y: (sy - pan.y) / zoom }), [pan, zoom]);
 
@@ -1148,6 +1162,13 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
             onMouseDown={onMouseDown}
             onMouseMove={onMouseMove}
             onMouseUp={onMouseUp}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              const rect = e.currentTarget.getBoundingClientRect();
+              const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
+              const badge = conflictBadgesRef.current.find((item) => Math.hypot(item.x - sx, item.y - sy) <= BADGE_SIZE);
+              conflictAcceptance.setAction(badge ? { key: badge.key, accepted: badge.accepted, x: sx, y: sy } : null);
+            }}
             onMouseLeave={onMouseLeave}
             onDragOver={(e) => e.preventDefault()}
             onDrop={(e) => {
@@ -1234,12 +1255,14 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
               {tooltip.text}
             </div>
           )}
+          <ConflictAction action={conflictAcceptance.action} onSave={conflictAcceptance.save} />
+          {conflictAcceptance.error && <div className="world-canvas__toast" role="alert">Could not update conflict: {conflictAcceptance.error}</div>}
         </div>
       </div>
 
       <div className="world-canvas__status">
         <span className="world-canvas__status-item">
-          {world ? world.components.length : 0} components · {mapFilter ? [...mapFilter].filter((name) => !!placements[name]).length : Object.keys(placements).length} maps · zoom {zoomPercent}%
+          {world ? world.components.length : 0} components · {mapFilter ? [...mapFilter].filter((name) => !!placements[name]).length : Object.keys(placements).length} maps · zoom {zoomPercent}% · {world ? world.conflicts.length : 0} conflicts · {conflictAcceptance.acceptedCount} accepted
         </span>
         {hover ? (
           <span className="world-canvas__status-item world-canvas__hover">

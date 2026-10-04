@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { existsSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, rmSync, mkdtempSync, mkdirSync, symlinkSync, copyFileSync, unlinkSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { createServer, type PokemapServer } from "../src/index.js";
 import { SUBJECT_ROOT, hasProject } from "@pokemap/core/test/helpers/corpus.js";
 import { projectPaths } from "@pokemap/core/src/config/paths.js";
@@ -22,6 +24,44 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("world api", () => {
     expect(Object.keys(w.placements).length).toBe(1209);
     expect(w.verticalLinks.length).toBe(14);
     expect(Array.isArray(w.conflicts)).toBe(true);
+  }, 300_000);
+
+  it("acknowledges a GBA conflict through a scratch-root sidecar without moving maps", async () => {
+    const scratch = mkdtempSync(join(tmpdir(), "pokemap-d4-gba-"));
+    let mirror: PokemapServer | undefined;
+    try {
+      for (const dir of ["data", "src", "include", "graphics"]) symlinkSync(join(SUBJECT_ROOT, dir), join(scratch, dir), "junction");
+      copyFileSync(join(SUBJECT_ROOT, "porymap.project.cfg"), join(scratch, "porymap.project.cfg"));
+      const originalSidecar = projectPaths(SUBJECT_ROOT).sidecar;
+      if (existsSync(originalSidecar)) {
+        mkdirSync(join(scratch, ".pokemap"));
+        copyFileSync(originalSidecar, projectPaths(scratch).sidecar);
+      }
+      mirror = await createServer({ projectPath: scratch, port: 0 });
+      const base = `http://127.0.0.1:${mirror.port}`;
+      const getWorld = async () => (await (await fetch(`${base}/api/world`)).json()) as { conflicts: { key: string; accepted: boolean; map: string }[]; placements: unknown };
+      const start = await getWorld();
+      const key = start.conflicts.find((c) => c.map === "Route111")!.key;
+      const postAccept = (accepted: boolean) => fetch(`${base}/api/world/conflicts/accept`, {
+        method: "POST", body: JSON.stringify({ key, accepted }),
+      });
+      expect((await fetch(`${base}/api/world/conflicts/accept`, { method: "POST", body: "null" })).status).toBe(400);
+      expect((await fetch(`${base}/api/world/conflicts/accept`, { method: "POST", body: JSON.stringify({ key: "unknown", accepted: true }) })).status).toBe(404);
+      expect((await postAccept(true)).status).toBe(200);
+      expect((await getWorld()).conflicts.find((c) => c.key === key)?.accepted).toBe(true);
+      expect((await getWorld()).placements).toEqual(start.placements);
+      expect((await postAccept(false)).status).toBe(200);
+      expect((await getWorld()).conflicts.find((c) => c.key === key)?.accepted).toBe(false);
+      expect((await getWorld()).placements).toEqual(start.placements);
+    } finally {
+      await mirror?.close();
+      for (const dir of ["data", "src", "include", "graphics"]) {
+        const link = join(scratch, dir);
+        if (existsSync(link)) unlinkSync(link);
+      }
+      if (!resolve(scratch).startsWith(`${resolve(tmpdir())}\\pokemap-d4-gba-`)) throw new Error("scratch cleanup escaped temp root");
+      rmSync(scratch, { recursive: true, force: true });
+    }
   }, 300_000);
 
   // Confirmed against the live decomp before writing this fix: buildWorld

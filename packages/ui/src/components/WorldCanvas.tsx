@@ -1,5 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { Placement, Component as WorldComponentInfo, Conflict, VerticalLink } from "@pokemap/core/src/world/connections.js";
+import type { Placement, Component as WorldComponentInfo, VerticalLink } from "@pokemap/core/src/world/connections.js";
+import type { WireConflict } from "@pokemap/core/src/world/conflictAcceptance.js";
 import type { SpeciesHit } from "@pokemap/core/src/analyse/coverage.js";
 import type { WarpEvent } from "@pokemap/core/src/load/maps.js";
 import { EncounterBorder, type EncounterBorderEntry } from "./EncounterBorder.js";
@@ -12,6 +13,9 @@ import { LensPanel, LensLegend, type LensId } from "./LensPanel.js";
 import { WarpDestinationModal } from "./WarpDestinationModal.js";
 import { useCoverage } from "../hooks/useCoverage.js";
 import { isDrawnByDefault } from "../world/visibility.js";
+import { conflictBadgeOffsets, isRecord, isWireConflict } from "../world/conflictAcceptance.js";
+import { useConflictAcceptance } from "../world/useConflictAcceptance.js";
+import { ConflictAction } from "../world/ConflictAction.js";
 
 /** The pixel size a placement's PNG renders at natively (`renderLayout`,
  *  border 0): 16px per tile, same constant the CLI's `render-world --scale
@@ -78,15 +82,22 @@ interface WirePlacement extends Placement {
 interface WorldPayload {
   placements: Record<string, WirePlacement>;
   components: WorldComponentInfo[];
-  conflicts: Conflict[];
+  conflicts: WireConflict[];
   verticalLinks: VerticalLink[];
   sidecar: { dungeonAutoLayout: boolean };
+}
+
+function isWorldPayload(value: unknown): value is WorldPayload {
+  return isRecord(value) && isRecord(value.placements) && Array.isArray(value.components)
+    && Array.isArray(value.conflicts) && value.conflicts.every(isWireConflict)
+    && Array.isArray(value.verticalLinks) && isRecord(value.sidecar)
+    && typeof value.sidecar.dungeonAutoLayout === "boolean";
 }
 
 interface WorldState {
   placements: Map<string, WirePlacement>;
   components: WorldComponentInfo[];
-  conflicts: Conflict[];
+  conflicts: WireConflict[];
   verticalLinks: VerticalLink[];
   sidecarDungeonAutoLayout: boolean;
 }
@@ -326,7 +337,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
   const encounterCacheRef = useRef<Map<string, EncounterCacheEntry>>(new Map());
   const warpCacheRef = useRef<Map<string, WarpCacheEntry>>(new Map());
   const dragRef = useRef<DragState>(null);
-  const conflictBadgesRef = useRef<Array<{ x: number; y: number; text: string }>>([]);
+  const conflictBadgesRef = useRef<Array<{ x: number; y: number; text: string; key: string; accepted: boolean }>>([]);
   // Review fix: whether real pointer movement happened during the
   // mousedown-to-mouseup cycle that is about to produce a `click`. The
   // browser does NOT suppress `click` after a same-element drag -- see
@@ -337,6 +348,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
   const dragMovedRef = useRef(false);
 
   const [world, setWorld] = useState<WorldState | null>(null);
+  const conflictAcceptance = useConflictAcceptance(world?.conflicts);
   const [loadError, setLoadError] = useState<string | null>(null);
   // Review fix: postPlacement's and toggleDungeons' own failures used to
   // either be silently discarded or written into loadError -- the same
@@ -468,11 +480,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
   useEffect(() => {
     let cancelled = false;
     setLoadError(null);
-    fetch("/api/world")
-      .then((r) => {
-        if (!r.ok) throw new Error(`GET /api/world -> ${r.status}`);
-        return r.json() as Promise<WorldPayload>;
-      })
+    fetchGuarded("/api/world", isWorldPayload)
       .then((d) => {
         if (cancelled) return;
         setWorld({
@@ -1317,6 +1325,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
     if (!world) return;
     const style = typeof getComputedStyle === "function" ? getComputedStyle(document.documentElement) : null;
     const conflictColor = style?.getPropertyValue("--danger").trim() || "#ef4444";
+    const acceptedColor = style?.getPropertyValue("--text-muted").trim() || "#6b7280";
     const diveColor = style?.getPropertyValue("--link-dive").trim() || "#3b82f6";
     const emergeColor = style?.getPropertyValue("--link-emerge").trim() || "#f97316";
 
@@ -1337,23 +1346,33 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
     // Conflicts: a diamond at the offending map's top-right corner, plus a
     // hit-rect recorded for the hover tooltip below. Connection bugs become
     // visible as geometry -- these are never hidden behind a toggle.
-    const badges: Array<{ x: number; y: number; text: string }> = [];
+    const badges: Array<{ x: number; y: number; text: string; key: string; accepted: boolean }> = [];
+    const badgeOffsets = conflictBadgeOffsets(world.conflicts, BADGE_SIZE * 2 + 2);
     for (const conflict of world.conflicts) {
       const p = world.placements.get(conflict.map);
       if (!p) continue;
       const size = sizeOfPlacement(p, sizeByMap);
       if (size.width <= 0 || size.height <= 0) continue;
-      const cx = p.x * zoom + pan.x + size.width * zoom - BADGE_SIZE;
+      const cx = p.x * zoom + pan.x + size.width * zoom - BADGE_SIZE - (badgeOffsets.get(conflict.key) ?? 0);
       const cy = p.y * zoom + pan.y + BADGE_SIZE;
-      drawDiamond(ctx, cx, cy, BADGE_SIZE, conflictColor);
+      const accepted = conflictAcceptance.isAccepted(conflict);
+      drawDiamond(ctx, cx, cy, BADGE_SIZE, accepted ? acceptedColor : conflictColor);
+      if (accepted) {
+        ctx.fillStyle = style?.getPropertyValue("--text-primary").trim() || "#fff";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("✓", cx, cy);
+      }
       badges.push({
         x: cx,
         y: cy,
-        text: `${conflict.map}: via ${conflict.viaA.from} (${conflict.viaA.x},${conflict.viaA.y}) disagrees with via ${conflict.viaB.from} (${conflict.viaB.x},${conflict.viaB.y})`,
+        key: conflict.key,
+        accepted,
+        text: `${accepted ? "Accepted (right-click to un-accept). " : ""}${conflict.map}: via ${conflict.viaA.from} (${conflict.viaA.x},${conflict.viaA.y}) disagrees with via ${conflict.viaB.from} (${conflict.viaB.x},${conflict.viaB.y})`,
       });
     }
     conflictBadgesRef.current = badges;
-  }, [compositeVersion, pan, zoom, viewport, visible, world, sizeByMap]);
+  }, [compositeVersion, pan, zoom, viewport, visible, world, sizeByMap, conflictAcceptance.acceptedCount]);
 
   const screenToWorld = useCallback((sx: number, sy: number) => ({ x: (sx - pan.x) / zoom, y: (sy - pan.y) / zoom }), [pan, zoom]);
 
@@ -1834,6 +1853,13 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
             onMouseDown={onMouseDown}
             onMouseMove={onMouseMove}
             onMouseUp={onMouseUp}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              const rect = e.currentTarget.getBoundingClientRect();
+              const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
+              const badge = conflictBadgesRef.current.find((item) => Math.hypot(item.x - sx, item.y - sy) <= BADGE_SIZE);
+              conflictAcceptance.setAction(badge ? { key: badge.key, accepted: badge.accepted, x: sx, y: sy } : null);
+            }}
             onClick={onCanvasClick}
             onDoubleClick={onCanvasDoubleClick}
             onKeyDown={onCanvasKeyDown}
@@ -1942,6 +1968,8 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
               {tooltip.text}
             </div>
           )}
+          <ConflictAction action={conflictAcceptance.action} onSave={conflictAcceptance.save} />
+          {conflictAcceptance.error && <div className="world-canvas__toast" role="alert">Could not update conflict: {conflictAcceptance.error}</div>}
           {saveError && (
             <div className="world-canvas__toast" role="alert">
               <span className="world-canvas__toast-text">{saveError}</span>
@@ -1972,7 +2000,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
       <div className="world-canvas__status">
         <span className="world-canvas__status-item">
           placed <strong>{world ? world.placements.size : 0}</strong> · hidden <strong>{hiddenCount}</strong> · unplaced{" "}
-          <strong>{unplacedNames.length}</strong> · conflicts <strong>{world ? world.conflicts.length : 0}</strong>
+          <strong>{unplacedNames.length}</strong> · <strong>{world ? world.conflicts.length : 0}</strong> conflicts · <strong>{conflictAcceptance.acceptedCount}</strong> accepted
         </span>
         {hover ? (
           <span className="world-canvas__status-item world-canvas__hover">

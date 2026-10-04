@@ -3,6 +3,7 @@ import type { GbcMapPayload, GbcWorldPayload, GbcEncountersPayload } from "@poke
 import type { GbcCoverage } from "@pokemap/core/src/gbc/analyse/atlas.js";
 import type { GbcWarpsPayload } from "./warps.js";
 import type { MapGroupsData } from "../components/MapTree.js";
+import { isWireConflict } from "../world/conflictAcceptance.js";
 
 /**
  * Pure runtime type guards for the GBC UI's fetch responses (RESUME:
@@ -153,7 +154,7 @@ export function isGbcWorldPayload(x: unknown): x is GbcWorldPayload {
   }
 
   if (!Array.isArray(x.components)) return false;
-  if (!Array.isArray(x.conflicts)) return false;
+  if (!Array.isArray(x.conflicts) || !x.conflicts.every(isWireConflict)) return false;
 
   return true;
 }
