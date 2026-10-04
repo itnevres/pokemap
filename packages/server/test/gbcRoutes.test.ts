@@ -856,6 +856,7 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
       const body = await r.json() as ReturnType<typeof buildGbcWarpsPayload>;
       const expected = buildGbcWarpsPayload(openGbcProject(GBC_SUBJECT_ROOT), "BurnedTower1F");
       expect(body).toEqual(expected);
+      expect(body.family).toBe("gbc");
       expect(body.warps[2]).toMatchObject({ x: 10, y: 9, mapConst: "BURNED_TOWER_B1F", destWarp: 1,
         destMapName: "BurnedTowerB1F", destEvent: { x: 10, y: 9 } });
       expect(body.warps[2]!.destEvent).toEqual(loadGbcMapEvents(GBC_SUBJECT_ROOT,
@@ -886,31 +887,41 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
       const dirExisted = existsSync(dir);
       const before = existsSync(path) ? readFileSync(path) : null;
       let written: Buffer | null = null;
+      const capture = () => { written = existsSync(path) ? readFileSync(path) : null; };
       try {
         const explicit = await post("/api/dungeons", { name: "D3 explicit", maps: ["BurnedTower1F"] });
+        const afterCreate = existsSync(path) ? readFileSync(path) : null;
+        written = afterCreate;
         expect(explicit.status).toBe(200);
         const created = await explicit.json() as { id: string; name: string; maps: string[] };
-        written = readFileSync(path);
+        expect(afterCreate).not.toBeNull();
+        if (!afterCreate) throw new Error("dungeon POST did not write its sidecar");
         expect(created).toMatchObject({ name: "D3 explicit", maps: ["BurnedTower1F"] });
         expect(created.id).toEqual(expect.any(String));
-        expect(JSON.parse(written.toString("utf8")).dungeons).toContainEqual(created);
+        expect(JSON.parse(afterCreate.toString("utf8")).dungeons).toContainEqual(created);
         const list = await (await get("/api/dungeons")).json() as { id: string }[];
         expect(list.some((d) => d.id === created.id)).toBe(true);
         const changed = await patch(`/api/dungeons/${created.id}`, { name: "D3 changed", maps: ["BurnedTowerB1F"] });
+        capture();
         expect(changed.status).toBe(200);
         expect(await changed.json()).toMatchObject({ id: created.id, name: "D3 changed", maps: ["BurnedTowerB1F"] });
         const seeded = await post("/api/dungeons", { name: "D3 seeded", seedMap: "BurnedTower1F" });
+        capture();
         expect(seeded.status).toBe(200);
         const seedBody = await seeded.json() as { id: string; maps: string[] };
         expect(seedBody.maps).toContain("BurnedTower1F");
         expect(seedBody.maps).toContain("BurnedTowerB1F");
         expect(seedBody.maps).toEqual([...seedBody.maps].sort());
-        expect((await fetch(`http://127.0.0.1:${s.port}/api/dungeons/${created.id}`, { method: "DELETE" })).status).toBe(200);
-        expect((await fetch(`http://127.0.0.1:${s.port}/api/dungeons/${seedBody.id}`, { method: "DELETE" })).status).toBe(200);
+        const deletedExplicit = await fetch(`http://127.0.0.1:${s.port}/api/dungeons/${created.id}`, { method: "DELETE" });
+        capture();
+        expect(deletedExplicit.status).toBe(200);
+        const deletedSeed = await fetch(`http://127.0.0.1:${s.port}/api/dungeons/${seedBody.id}`, { method: "DELETE" });
+        capture();
+        expect(deletedSeed.status).toBe(200);
         expect((await fetch(`http://127.0.0.1:${s.port}/api/dungeons/missing`, { method: "DELETE" })).status).toBe(404);
       } finally {
-        if (written && existsSync(path)) {
-          const current = readFileSync(path);
+        const current = existsSync(path) ? readFileSync(path) : null;
+        if (written && current && current.equals(written)) {
           if (before && !current.equals(before)) writeFileSync(path, before);
           else if (!before) unlinkSync(path);
         }

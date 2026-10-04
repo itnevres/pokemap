@@ -14,9 +14,9 @@
  * refusals. Task 1b adds `/api/groups`, `/api/map/:name`,
  * `/api/render/:name.png` and `/api/metatile/:map/:id.png`. Task 2 (this
  * file's current state) adds `/api/world`, `/api/encounters/:map`,
- * `/api/where/:species`, `/api/coverage` and `/api/species` -- everything
- * else still answers a plain 404. Plan 7 adds `/api/edit/*` once GBC gets a
- * write path.
+ * `/api/where/:species`, `/api/coverage` and `/api/species`. D3 adds
+ * `/api/warps/:map` and dungeon CRUD. Plan 7 adds `/api/edit/*` once GBC
+ * gets a write path.
  *
  * The payload-assembly logic for `/api/groups` and `/api/map/:name` is
  * factored into `buildGbcGroupsPayload`/`buildGbcMapPayload` below, exported
@@ -64,9 +64,8 @@ import { readBody, type ProjectHandler } from "./index.js";
  * unmatched path stays a plain 404, handled by the fallthrough below, not by
  * this list. `sign/` and `edit/` end in a required next segment
  * (`sign/NAME/suggestions`, `edit/NAME/undo`), so their own alternatives
- * don't need a trailing `(/|$)` the way `dungeons` and `world/...`'s
- * bare-vs-nested routes do. (`species/NAME/icon.png` left this list in Plan
- * 6c B1: it is a real GBC route now.)
+ * don't need a trailing `(/|$)`. `warps/` and `dungeons` left this list in
+ * D3; `species/NAME/icon.png` left in Plan 6c B1.
  */
 const GBA_ONLY_ROUTE_RE = /^\/api\/(world\/dungeons$|sign\/|edit\/)/;
 
@@ -262,7 +261,7 @@ export function buildGbcWarpsPayload(proj: GbcProject, name: string) {
       : undefined;
     return { ...event, destMapName, destEvent };
   });
-  return { mapName: name, warps };
+  return { family: "gbc" as const, mapName: name, warps };
 }
 
 export function createGbcProjectHandler(root: string): ProjectHandler {
