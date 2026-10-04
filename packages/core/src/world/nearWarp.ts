@@ -132,5 +132,5 @@ export function placeNearWarps({ placements, shown, hidden, warps, sizes, gap, s
     anchors.add(name);
     pending.delete(name);
   }
-  return new Map([...out].sort(([a], [b]) => compare(a, b)));
+  return out;
 }

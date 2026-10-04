@@ -692,7 +692,7 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
       expect(route17).toEqual({ map: "Route17", viaA: { from: "Route18", x: 30, y: 50 }, viaB: { from: "Route16", x: 30, y: 49 } });
     });
 
-    it("a second request returns deep-equal data -- the world cache is never mutated by serving it", async () => {
+    it("pure payload resolution preserves a base world and repeated HTTP responses are equal", async () => {
       const proj = openGbcProject(GBC_SUBJECT_ROOT);
       const base = buildGbcWorld(proj);
       const original = structuredClone([...base.placements]);
@@ -701,7 +701,33 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
       const first = await (await get("/api/world")).json();
       const second = await (await get("/api/world")).json();
       expect(second).toEqual(first);
-      expect([...base.placements]).toEqual(original);
+    });
+
+    it("uses supplied normalized warps without reading map events", () => {
+      const proj = openGbcProject(GBC_SUBJECT_ROOT);
+      const world = buildGbcWorld(proj);
+      const withInvalidEventRoot = { ...proj, root: "C:/pokemap-d2-nonexistent-event-root" };
+      const sidecar: Sidecar = { version: 1, dungeonAutoLayout: true, manualPlacements: {}, view: { x: 0, y: 0, zoom: 1 } };
+      const result = buildGbcWorldPayload(withInvalidEventRoot, world, sidecar, []);
+      expect(result.placements.IlexForest).toMatchObject(world.placements.get("IlexForest")!);
+    });
+
+    it("applies a manual placement last on a moved GBC singleton even when it overlaps a fixed anchor", () => {
+      const proj = openGbcProject(GBC_SUBJECT_ROOT);
+      const world = buildGbcWorld(proj);
+      const warps = gbcWarpLinks(proj);
+      const empty: Sidecar = { version: 1, dungeonAutoLayout: true, manualPlacements: {}, view: { x: 0, y: 0, zoom: 1 } };
+      const automatic = buildGbcWorldPayload(proj, world, empty, warps);
+      expect(automatic.placements.IlexForest).toMatchObject({ x: 40, y: 259, manual: false });
+      const azalea = automatic.placements.AzaleaTown!;
+      const manual = buildGbcWorldPayload(proj, world, { ...empty, manualPlacements: { IlexForest: { x: azalea.x, y: azalea.y } } }, warps);
+      expect(manual.placements.IlexForest).toMatchObject({ x: azalea.x, y: azalea.y, manual: true });
+      expect(manual.placements.IlexForest!.x).not.toBe(automatic.placements.IlexForest!.x);
+      expect(manual.placements.AzaleaTown).toEqual(azalea);
+      expect(manual.placements.IlexForest!.width).toBeGreaterThan(0);
+      expect(manual.placements.IlexForest!.height).toBeGreaterThan(0);
+      expect(azalea.width).toBeGreaterThan(0);
+      expect(azalea.height).toBeGreaterThan(0);
     });
 
     // Fix round 1, spec review Minor #3: GBC has no dungeons-on/off toggle

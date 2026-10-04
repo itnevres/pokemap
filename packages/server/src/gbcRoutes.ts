@@ -196,13 +196,11 @@ export function buildGbcMapPayload(proj: GbcProject, map: GbcMap): GbcMapPayload
  * plain `Object.fromEntries` object (`GbcWorldPayload.placements`'s own doc
  * comment: JSON has no `Map`, and serialising one directly gives `{}`, not a
  * refusal -- a mutation this file's tests specifically check for).
- * `components`/`conflicts` pass through unchanged. Takes the already-built
- * `world` rather than `proj`, since nothing here needs anything from `proj`
- * that isn't already in `world` -- `createGbcProjectHandler`'s own `getWorld()`
- * (below) is what caches the expensive `buildGbcWorld` call itself; this
- * function is cheap and safe to call fresh on every request, including the
- * "second request returns deep-equal data" test, since `Object.fromEntries`
- * never mutates the `Map` it reads from.
+ * `components`/`conflicts` pass through unchanged. `proj` supplies map types
+ * and, when `warps` is omitted, map events for the near-warp resolver. The
+ * handler passes its cached normalized warp list so requests do not reload
+ * events. Resolution copies placement values and leaves the cached base
+ * world untouched; manual sidecar positions are applied afterward.
  */
 export function buildGbcWorldPayload(proj: GbcProject, world: GbcWorld, sidecar: Sidecar, warps: readonly WarpLink[] = gbcWarpLinks(proj)): GbcWorldPayload {
   const mapTypeByName = new Map(proj.maps.map((map) => [map.name, map.environment]));

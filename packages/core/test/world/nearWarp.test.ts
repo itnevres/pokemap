@@ -64,7 +64,15 @@ describe("placeNearWarps", () => {
     const reversed = run([...placements].reverse(), [...placements.map((v) => v.map)].reverse(), [], [...warps].reverse());
     expect(first.get("A")).toMatchObject({ x: 30, y: -3 });
     expect(first.get("B")).toMatchObject({ x: 30, y: -5 });
-    expect(JSON.stringify([...first])).toBe(JSON.stringify([...reversed]));
+    expect(JSON.stringify([...first].sort(([a], [b]) => a.localeCompare(b)))).toBe(JSON.stringify([...reversed].sort(([a], [b]) => a.localeCompare(b))));
+  });
+
+  it("preserves fixed anchor and fallback iteration order while moving a singleton", () => {
+    const placements = [p("ZAnchor", 0, 0, 12, 4, 0), p("Fallback", 100, 100, 2, 2, 1), p("AAnchor", 30, 0, 12, 4, 2), p("Target", 200, 200, 3, 2, 3)];
+    const result = run(placements, ["ZAnchor", "Fallback", "AAnchor", "Target"], [], [link("Target", "AAnchor", { x: 1, y: 0 })]);
+    expect([...result.keys()]).toEqual(placements.map((placement) => placement.map));
+    expect(result.get("Target")).toMatchObject({ x: 30, y: -3 });
+    expect(result.get("Fallback")).toMatchObject({ x: 100, y: 100 });
   });
 });
 
