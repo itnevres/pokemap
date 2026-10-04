@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { MapTree } from "../components/MapTree.js";
 import { useGbcGroups } from "./hooks/useGbcGroups.js";
 import { useGbcMap } from "./hooks/useGbcMap.js";
@@ -93,7 +93,17 @@ export function GbcApp({ root, switcher }: GbcAppProps) {
   // under the new one's name, and never the previous one's Fit/pan/defects.
   const ready = map.data && map.data.map.name === selected ? map.data : null;
   const openDungeon = mode === "dungeon" ? dungeons.data?.find((d) => d.id === openDungeonId) ?? null : null;
-  const mapFilter = useMemo(() => openDungeon ? new Set(openDungeon.maps) : null, [openDungeon]);
+  const filterCache = useRef<{ id: string; members: string[]; filter: Set<string> } | null>(null);
+  const mapFilter = useMemo(() => {
+    if (!openDungeon) { filterCache.current = null; return null; }
+    const members = [...openDungeon.maps].sort();
+    const cached = filterCache.current;
+    if (cached?.id === openDungeon.id && cached.members.length === members.length
+      && members.every((name, index) => name === cached.members[index])) return cached.filter;
+    const filter = new Set(openDungeon.maps);
+    filterCache.current = { id: openDungeon.id, members, filter };
+    return filter;
+  }, [openDungeon]);
   const allMapNames = useMemo(() => data ? data.groupOrder.flatMap((group) => data.groups[group] ?? []) : [], [data]);
   const deleteDungeon = async (id: string) => {
     await dungeons.remove(id);

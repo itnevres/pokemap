@@ -479,6 +479,11 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
   const [selectedMap, setSelectedMap] = useState<string | null>(null);
   const [hover, setHover] = useState<HoverInfo | null>(null);
   const [tooltip, setTooltip] = useState<TooltipInfo | null>(null);
+  useEffect(() => {
+    setHover(null);
+    setTooltip(null);
+    if (mapFilter) setSelectedMap((current) => current && !mapFilter.has(current) ? null : current);
+  }, [mapFilter]);
   // Coverage lenses + species spotlight (Plan 6b Task 6) -- mirrors
   // WorldCanvas.tsx's own `lens`/`spotlightHits` state exactly, including
   // the three-state `spotlightHits` contract (`null` = no active search,
@@ -959,7 +964,9 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
   const onClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (dragMovedRef.current) return;
     const rect = e.currentTarget.getBoundingClientRect();
-    const w = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
+    const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
+    if (warpsOn && warpMarkerEntries.some((entry) => Math.hypot(entry.sx - sx, entry.sy - sy) <= WARP_HIT_RADIUS)) return;
+    const w = screenToWorld(sx, sy);
     const hit = hitTest(w.x, w.y);
     setSelectedMap(hit ? hit.map : null);
     if (hit) onSelectMap?.(hit.map);
@@ -995,7 +1002,7 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
   // one `setView` per key, never a nested one).
   const onKeyDown = (e: React.KeyboardEvent<HTMLCanvasElement>) => {
     if (e.key === "Enter") {
-      if (selectedMap) onOpenMap?.(selectedMap);
+      if (selectedMap && (!mapFilter || mapFilter.has(selectedMap))) onOpenMap?.(selectedMap);
       return;
     }
     if (e.key === "+" || e.key === "=") {
@@ -1071,7 +1078,7 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
           </button>
           <span className="world-canvas__switch-label">Connection lines {linesOn ? "on" : "off"}</span>
         </div>}
-        {warpError && <div className="world-canvas__toolbar-group"><span className="world-canvas__toolbar-error" role="alert">Warp data unavailable: {warpError}</span></div>}
+        {warpError && <div className="world-canvas__toolbar-group world-canvas__toolbar-group--save-error"><span className="world-canvas__toolbar-error" role="alert">Warp data unavailable: {warpError}</span></div>}
         {/* Fix round (spec review F4): a visible note, not a silent gap,
             for however many visible maps' own /api/encounters fetch failed
             (a 500, or a shape that fails isGbcEncountersPayload) -- reuses

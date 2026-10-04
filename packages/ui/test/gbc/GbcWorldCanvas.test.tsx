@@ -30,8 +30,8 @@ describe("GBC dungeon warps (Plan 6c D3)", () => {
     },
     components: [], conflicts: [],
   };
-  function scopedFetch(warps: Record<string, unknown>) {
-    const base = mockFetchAll({ world: scopedWorld });
+  function scopedFetch(warps: Record<string, unknown>, world: GbcWorldPayload = scopedWorld) {
+    const base = mockFetchAll({ world });
     return vi.fn((url: string) => {
       const name = url.startsWith("/api/warps/") ? decodeURIComponent(url.slice("/api/warps/".length)) : null;
       if (name !== null) return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(warps[name] ?? { family: "gbc", mapName: name, warps: [] }) } as Response);
@@ -75,12 +75,15 @@ describe("GBC dungeon warps (Plan 6c D3)", () => {
     const base = mockFetchAll({ world: scopedWorld });
     let attempt = 0;
     const fetcher = vi.fn((url: string) => url === "/api/warps/Source"
-      ? Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(++attempt === 1 ? { family: "gba", warps: [] } : { family: "gbc", mapName: "Source", warps: [] }) } as Response)
+      ? Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(++attempt === 1 ? { family: "gba", warps: [], detail: "x".repeat(300) } : { family: "gbc", mapName: "Source", warps: [] }) } as Response)
       : base(url));
     vi.stubGlobal("fetch", fetcher);
     render(<GbcWorldCanvas time="day" mapFilter={new Set(["Source"])} />);
     fireEvent.click(screen.getByRole("switch", { name: "Connection lines" }));
     await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("unexpected shape"));
+    const alert = screen.getByRole("alert");
+    expect(alert.textContent!.length).toBeGreaterThan(150);
+    expect(alert.parentElement?.classList.contains("world-canvas__toolbar-group--save-error")).toBe(true);
     fireEvent.click(screen.getByRole("switch", { name: "Connection lines" }));
     fireEvent.click(screen.getByRole("switch", { name: "Connection lines" }));
     await waitFor(() => expect(attempt).toBe(2));
@@ -107,6 +110,86 @@ describe("GBC dungeon warps (Plan 6c D3)", () => {
     fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(container.querySelector(".world-canvas__status")?.textContent).toBe(before);
+  });
+
+  it("does not keyboard-open a selected map removed from the current scope, and clears stale hover", async () => {
+    vi.stubGlobal("fetch", scopedFetch({}));
+    const onOpenMap = vi.fn();
+    const onSelectMap = vi.fn();
+    const { container, rerender } = render(<GbcWorldCanvas time="day" mapFilter={new Set(["Source"])} onOpenMap={onOpenMap} onSelectMap={onSelectMap} />);
+    const stage = container.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement;
+    await waitFor(() => expect(container.querySelector(".world-canvas__status")?.textContent).toContain("zoom 63%"));
+    fireEvent.click(stage, { clientX: 50, clientY: 50 });
+    fireEvent.mouseMove(stage, { clientX: 50, clientY: 50 });
+    expect(onSelectMap).toHaveBeenCalledWith("Source");
+    expect(container.querySelector(".world-canvas__hover")?.textContent).toContain("Source");
+    rerender(<GbcWorldCanvas time="day" mapFilter={new Set(["Hidden"])} onOpenMap={onOpenMap} onSelectMap={onSelectMap} />);
+    fireEvent.keyDown(stage, { key: "Enter" });
+    expect(onOpenMap).not.toHaveBeenCalled();
+    expect(container.querySelector(".world-canvas__selection-outline:not(.world-canvas__jump-highlight)")).toBeNull();
+    expect(container.querySelector(".world-canvas__hover")?.textContent).toContain("Hover the world");
+  });
+
+  it("real click, click, dblclick on a warp marker opens preview without changing selection or view", async () => {
+    const warps = {
+      Source: { family: "gbc", mapName: "Source", warps: [event(10, 9, "Hidden", { x: 10, y: 9 })] },
+      Hidden: { family: "gbc", mapName: "Hidden", warps: [event(10, 9, "Source", { x: 10, y: 9 })] },
+    };
+    const base = scopedFetch(warps);
+    vi.stubGlobal("fetch", vi.fn((url: string) => url.startsWith("/api/map/")
+      ? Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve({}) } as Response)
+      : base(url)));
+    const onSelectMap = vi.fn(), onOpenMap = vi.fn();
+    const { container } = render(<GbcWorldCanvas time="day" mapFilter={new Set(["Source", "Hidden"])} onSelectMap={onSelectMap} onOpenMap={onOpenMap} />);
+    const stage = container.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement;
+    await waitFor(() => expect(container.querySelector(".world-canvas__status")?.textContent).toContain("zoom 21%"));
+    fireEvent.click(stage, { clientX: 20, clientY: 20 });
+    expect(onSelectMap).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(stage, { key: "+" });
+    fireEvent.keyDown(stage, { key: "+" });
+    fireEvent.click(screen.getByRole("switch", { name: "Warps" }));
+    await waitFor(() => expect(container.querySelectorAll(".world-canvas__warp-marker").length).toBe(2));
+    const outline = container.querySelector(".world-canvas__selection-outline:not(.world-canvas__jump-highlight)") as HTMLElement;
+    const geometry = { left: outline.style.left, top: outline.style.top, width: outline.style.width };
+    const marker = [...container.querySelectorAll<HTMLElement>(".world-canvas__warp-marker")].find((node) => parseFloat(node.style.left) > 100)!;
+    const point = { clientX: parseFloat(marker.style.left), clientY: parseFloat(marker.style.top) };
+    fireEvent.click(stage, point);
+    fireEvent.click(stage, point);
+    fireEvent.doubleClick(stage, point);
+    expect(screen.getByRole("dialog", { name: "Source preview" })).toBeTruthy();
+    expect(onSelectMap).toHaveBeenCalledTimes(1);
+    expect(onOpenMap).not.toHaveBeenCalled();
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    const after = container.querySelector(".world-canvas__selection-outline:not(.world-canvas__jump-highlight)") as HTMLElement;
+    expect({ left: after.style.left, top: after.style.top, width: after.style.width }).toEqual(geometry);
+  });
+
+  it("renders the exact raw-half marker and both SVG endpoints at zoom 8, pan (3,7)", async () => {
+    const world: GbcWorldPayload = {
+      family: "gbc", blockPx: 32,
+      placements: {
+        BurnedTower1F: { map: "BurnedTower1F", x: 10, y: 20, width: 10, height: 10, component: 0, mapType: "INDOOR", manual: false },
+        BurnedTowerB1F: { map: "BurnedTowerB1F", x: 30, y: 40, width: 5, height: 5, component: 1, mapType: "INDOOR", manual: false },
+      }, components: [], conflicts: [],
+    };
+    vi.stubGlobal("fetch", scopedFetch({
+      BurnedTower1F: { family: "gbc", mapName: "BurnedTower1F", warps: [event(0, 0), event(1, 1), event(10, 9, "BurnedTowerB1F", { x: 10, y: 9 })] },
+      BurnedTowerB1F: { family: "gbc", mapName: "BurnedTowerB1F", warps: [] },
+    }, world));
+    const { container } = render(<GbcWorldCanvas time="day" mapFilter={new Set(["BurnedTowerB1F", "BurnedTower1F"])} />);
+    const stage = container.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement;
+    await waitFor(() => expect(container.querySelector(".world-canvas__status")?.textContent).toContain("zoom 25%"));
+    fireEvent.click(screen.getByRole("switch", { name: "Connection lines" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Warps" }));
+    await waitFor(() => expect(container.querySelector(".world-canvas__connections line")).toBeTruthy());
+    fireEvent.mouseDown(stage, { button: 0, clientX: 0, clientY: 0 });
+    fireEvent.mouseMove(stage, { clientX: 83, clientY: 167 });
+    fireEvent.mouseUp(stage);
+    const marker = [...container.querySelectorAll<HTMLElement>(".world-canvas__warp-marker")][2]!;
+    expect([marker.style.left, marker.style.top]).toEqual(["123px", "203px"]);
+    const line = container.querySelector(".world-canvas__connections line")!;
+    expect([line.getAttribute("x1"), line.getAttribute("y1"), line.getAttribute("x2"), line.getAttribute("y2")]).toEqual(["123", "203", "283", "363"]);
   });
 });
 import { computeFit } from "../../src/components/WorldCanvas.js";

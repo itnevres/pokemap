@@ -157,6 +157,51 @@ describe("GbcApp", () => {
     await waitFor(() => expect(screen.getByText("Select or create a dungeon")).toBeTruthy());
     expect(entries).toEqual([]);
   });
+
+  it("preserves dungeon pan on rename and refits after membership changes", async () => {
+    const width = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth");
+    const height = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight");
+    Object.defineProperty(HTMLElement.prototype, "clientWidth", { value: 100, configurable: true });
+    Object.defineProperty(HTMLElement.prototype, "clientHeight", { value: 100, configurable: true });
+    try {
+      const world = { family: "gbc" as const, blockPx: 32 as const, placements: {
+        OlivineCity: { map: "OlivineCity", x: 0, y: 0, width: 10, height: 10, component: 0, mapType: "TOWN", manual: false },
+        OlivinePort: { map: "OlivinePort", x: 30, y: 0, width: 10, height: 10, component: 1, mapType: "TOWN", manual: false },
+      }, components: [], conflicts: [] };
+      const base = makeFetchMock({ world });
+      let dungeon = { id: "d1", name: "Tower", maps: ["OlivineCity"] };
+      vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => {
+        if (url === "/api/dungeons" && !init) return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([{ ...dungeon, maps: [...dungeon.maps] }]) } as Response);
+        if (url === "/api/dungeons/d1" && init?.method === "PATCH") {
+          dungeon = { ...dungeon, ...JSON.parse(String(init.body)) };
+          return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(dungeon) } as Response);
+        }
+        return base(url);
+      }));
+      const { container } = render(<GbcApp root="/x" />);
+      fireEvent.click(screen.getByRole("button", { name: "Dungeon" }));
+      await waitFor(() => expect(screen.getByRole("button", { name: /Tower/ })).toBeTruthy());
+      fireEvent.click(screen.getByRole("button", { name: /Tower/ }));
+      const stage = container.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement;
+      await waitFor(() => expect(container.querySelector(".world-canvas__status")?.textContent).toContain("zoom 31%"));
+      fireEvent.click(stage, { clientX: 20, clientY: 20 });
+      fireEvent.mouseDown(stage, { button: 0, clientX: 0, clientY: 0 });
+      fireEvent.mouseMove(stage, { clientX: 20, clientY: 10 });
+      fireEvent.mouseUp(stage);
+      const outline = () => container.querySelector(".world-canvas__selection-outline:not(.world-canvas__jump-highlight)") as HTMLElement;
+      expect([outline().style.left, outline().style.top]).toEqual(["20px", "10px"]);
+      fireEvent.change(screen.getByRole("textbox", { name: "Dungeon name" }), { target: { value: "New Tower" } });
+      fireEvent.blur(screen.getByRole("textbox", { name: "Dungeon name" }));
+      await waitFor(() => expect(screen.getByRole("button", { name: /New Tower/ })).toBeTruthy());
+      expect([outline().style.left, outline().style.top]).toEqual(["20px", "10px"]);
+      fireEvent.change(screen.getByPlaceholderText("Add map…"), { target: { value: "OlivinePort" } });
+      fireEvent.click(screen.getByRole("button", { name: "Add" }));
+      await waitFor(() => expect([outline().style.left, outline().style.top]).toEqual(["0px", "37.5px"]));
+    } finally {
+      if (width) Object.defineProperty(HTMLElement.prototype, "clientWidth", width);
+      if (height) Object.defineProperty(HTMLElement.prototype, "clientHeight", height);
+    }
+  });
   it("shows the real-shaped fixture groups in the tree", async () => {
     vi.stubGlobal("fetch", makeFetchMock());
     render(<GbcApp root="/root/pokemap-corpus/pokecrystal-PerfPlus" />);
