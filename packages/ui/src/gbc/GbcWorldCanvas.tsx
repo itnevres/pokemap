@@ -874,7 +874,7 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
         text: `${accepted ? "Accepted (right-click to un-accept). " : ""}${conflictTooltipText(conflict)}` });
     }
     conflictBadgesRef.current = badges;
-  }, [compositeVersion, pan, zoom, viewport, visible, world, placements, mapFilter, conflictAcceptance.acceptedCount]);
+  }, [compositeVersion, pan, zoom, viewport, visible, world, placements, mapFilter, conflictAcceptance.acceptedKeys]);
 
   const screenToWorld = useCallback((sx: number, sy: number) => ({ x: (sx - pan.x) / zoom, y: (sy - pan.y) / zoom }), [pan, zoom]);
 
@@ -1255,7 +1255,7 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
               {tooltip.text}
             </div>
           )}
-          <ConflictAction action={conflictAcceptance.action} onSave={conflictAcceptance.save} />
+          <ConflictAction action={conflictAcceptance.action} viewport={viewport} onSave={conflictAcceptance.save} />
           {conflictAcceptance.error && <div className="world-canvas__toast" role="alert">Could not update conflict: {conflictAcceptance.error}</div>}
         </div>
       </div>

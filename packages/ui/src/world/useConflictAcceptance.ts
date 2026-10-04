@@ -29,5 +29,5 @@ export function useConflictAcceptance(conflicts: readonly WireConflict[] | undef
       setError(cause instanceof Error ? cause.message : String(cause));
     });
   };
-  return { action, setAction, error, setError, isAccepted, acceptedCount, save };
+  return { action, setAction, error, setError, isAccepted, acceptedCount, acceptedKeys, save };
 }

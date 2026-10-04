@@ -796,44 +796,50 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
     const dir = `${GBC_SUBJECT_ROOT}/.pokemap`;
     const dirExisted = existsSync(dir);
     const before = existsSync(path) ? readFileSync(path) : null;
-    let lastWritten: Buffer | null = null;
+    const observed = { lastWritten: null as Buffer | null };
     try {
+      const observedPost = async (body: unknown) => {
+        try { return await post("/api/world/conflicts/accept", body); }
+        finally { observed.lastWritten = existsSync(path) ? readFileSync(path) : null; }
+      };
+      const observedRawPost = async (body: string) => {
+        try { return await postRaw("/api/world/conflicts/accept", body); }
+        finally { observed.lastWritten = existsSync(path) ? readFileSync(path) : null; }
+      };
       const start = await (await get("/api/world")).json() as { conflicts: { key: string; accepted: boolean; map: string }[]; placements: unknown };
       const key = start.conflicts.find((conflict) => conflict.map === "Route17")!.key;
       expect(start.conflicts.find((conflict) => conflict.key === key)?.accepted).toBe(false);
-      expect((await postRaw("/api/world/conflicts/accept", "{" )).status).toBe(400);
+      expect((await observedRawPost("{")).status).toBe(400);
       for (const body of [null, [], { key, accepted: "yes" }, { key: 3, accepted: true }]) {
-        expect((await post("/api/world/conflicts/accept", body)).status).toBe(400);
+        expect((await observedPost(body)).status).toBe(400);
       }
-      expect((await post("/api/world/conflicts/accept", { key: "unknown", accepted: true })).status).toBe(404);
+      expect((await observedPost({ key: "unknown", accepted: true })).status).toBe(404);
       expect(existsSync(path)).toBe(before !== null);
       if (before) expect(readFileSync(path)).toEqual(before);
 
-      const accepted = await post("/api/world/conflicts/accept", { key, accepted: true });
-      lastWritten = existsSync(path) ? readFileSync(path) : null;
+      const accepted = await observedPost({ key, accepted: true });
       expect(accepted.status).toBe(200);
       expect((await accepted.json() as { acceptedConflicts: string[] }).acceptedConflicts).toContain(key);
-      const duplicate = await post("/api/world/conflicts/accept", { key, accepted: true });
-      lastWritten = existsSync(path) ? readFileSync(path) : null;
+      const duplicate = await observedPost({ key, accepted: true });
       expect((await duplicate.json() as { acceptedConflicts: string[] }).acceptedConflicts.filter((value) => value === key)).toHaveLength(1);
       const afterAccept = await (await get("/api/world")).json() as typeof start;
       expect(afterAccept.placements).toEqual(start.placements);
       expect(afterAccept.conflicts.find((conflict) => conflict.key === key)?.accepted).toBe(true);
 
-      const unaccepted = await post("/api/world/conflicts/accept", { key, accepted: false });
-      lastWritten = existsSync(path) ? readFileSync(path) : null;
+      const unaccepted = await observedPost({ key, accepted: false });
       expect((await unaccepted.json() as { acceptedConflicts: string[] }).acceptedConflicts).not.toContain(key);
       const afterUnaccept = await (await get("/api/world")).json() as typeof start;
       expect(afterUnaccept.placements).toEqual(start.placements);
       expect(afterUnaccept.conflicts.find((conflict) => conflict.key === key)?.accepted).toBe(false);
     } finally {
-      if (lastWritten && existsSync(path) && readFileSync(path).equals(lastWritten)) {
-        if (before) writeFileSync(path, before);
-        else {
+      if (observed.lastWritten && existsSync(path) && readFileSync(path).equals(observed.lastWritten)) {
+        if (before) {
+          if (!observed.lastWritten.equals(before)) writeFileSync(path, before);
+        } else {
           unlinkSync(path);
           if (!dirExisted) try { rmdirSync(dir); } catch {}
         }
-      } else if (lastWritten) throw new Error("PerfPlus sidecar changed outside this test; refusing to overwrite it");
+      } else if (observed.lastWritten) throw new Error("PerfPlus sidecar changed outside this test; refusing to overwrite it");
     }
   });
 

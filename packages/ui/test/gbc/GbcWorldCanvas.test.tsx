@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, fireEvent, screen, waitFor, act } from "@testing-library/react";
+import { conflictKey } from "@pokemap/core/src/world/conflictAcceptance.js";
 import {
   GbcWorldCanvas,
   zoomWorldAboutPivot,
@@ -586,8 +587,8 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-function renderWorld(props: Partial<GbcWorldCanvasProps> = {}, world: unknown = WORLD) {
-  vi.stubGlobal("fetch", mockFetchWorld(world));
+function renderWorld(props: Partial<GbcWorldCanvasProps> = {}, world: unknown = WORLD, fetchMock = mockFetchWorld(world)) {
+  vi.stubGlobal("fetch", fetchMock);
   const utils = render(<GbcWorldCanvas time="day" {...props} />);
   const canvas = utils.container.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement;
   return { ...utils, canvas };
@@ -599,8 +600,8 @@ function renderWorld(props: Partial<GbcWorldCanvasProps> = {}, world: unknown = 
  *  at the pre-fit default and would make a naive "wait for any zoom%"
  *  check resolve too early -- see GbcApp.test.tsx's own comment on this
  *  exact trap). */
-async function mountReady(props: Partial<GbcWorldCanvasProps> = {}, world: GbcWorldPayload = WORLD) {
-  const utils = renderWorld(props, world);
+async function mountReady(props: Partial<GbcWorldCanvasProps> = {}, world: GbcWorldPayload = WORLD, fetchMock = mockFetchWorld(world)) {
+  const utils = renderWorld(props, world, fetchMock);
   await waitFor(() => expect(screen.getByText(new RegExp(`${world.components.length} components`))).toBeTruthy());
   // Fix round (F5): wait for the INITIAL FIT to have actually committed, not
   // just for `world` to have resolved. Before the fit, `zoom` is still the
@@ -784,12 +785,18 @@ describe("GbcWorldCanvas", () => {
   // -------------------------------------------------------------------
   describe("conflict badge", () => {
     it("accepts a Route17 badge, persists on remount, and closes the action with Escape", async () => {
-      const first = await mountReady({}, CONFLICT_WORLD);
+      const fetchMock = mockFetchWorld(CONFLICT_WORLD);
+      const onSelectMap = vi.fn();
+      const first = await mountReady({ onSelectMap }, CONFLICT_WORLD, fetchMock);
       first.canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: 200, bottom: 200, width: 200, height: 200, x: 0, y: 0, toJSON() {} });
       fireEvent.contextMenu(first.canvas, { clientX: 100, clientY: 100 });
       expect(screen.queryByRole("button", { name: "Accept conflict" })).toBeNull();
+      fireEvent.mouseDown(first.canvas, { button: 2, clientX: 165, clientY: 10 });
+      fireEvent.mouseMove(first.canvas, { button: 2, clientX: 180, clientY: 25 });
+      fireEvent.mouseUp(first.canvas, { button: 2, clientX: 180, clientY: 25 });
       fireEvent.contextMenu(first.canvas, { clientX: 165, clientY: 10 });
       expect(screen.getByRole("button", { name: "Accept conflict" })).toBeTruthy();
+      expect((first.container.querySelector(".world-canvas__conflict-action") as HTMLElement).style.right).toBe("35px");
       fireEvent.keyDown(window, { key: "Escape" });
       expect(screen.queryByRole("button", { name: "Accept conflict" })).toBeNull();
       fireEvent.contextMenu(first.canvas, { clientX: 165, clientY: 10 });
@@ -797,9 +804,18 @@ describe("GbcWorldCanvas", () => {
       await waitFor(() => expect(first.container.querySelector(".world-canvas__status")?.textContent).toContain("1 conflicts · 1 accepted"));
       expect(first.stageCtx.fillText).toHaveBeenCalledWith("✓", 165, 10);
       expect(first.stageCtx.fillLog).toContain("#6b7280");
+      fireEvent.mouseMove(first.canvas, { clientX: 165, clientY: 10 });
+      expect(screen.getByRole("tooltip").textContent).toContain("Accepted (right-click to un-accept)");
+      expect(onSelectMap).not.toHaveBeenCalled();
+      expect(fetchMock.mock.calls.some((call) => call[0] === "/api/world/placement")).toBe(false);
+      expect(first.container.querySelectorAll(".world-canvas__selection-outline")).toHaveLength(0);
       first.unmount();
-      const second = await mountReady({}, { ...CONFLICT_WORLD, conflicts: CONFLICT_WORLD.conflicts.map((c) => ({ ...c, accepted: true })) });
+      const second = await mountReady({}, CONFLICT_WORLD, fetchMock);
       expect(second.container.querySelector(".world-canvas__status")?.textContent).toContain("1 conflicts · 1 accepted");
+      second.canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: 200, bottom: 200, width: 200, height: 200, x: 0, y: 0, toJSON() {} });
+      fireEvent.contextMenu(second.canvas, { clientX: 165, clientY: 10 });
+      fireEvent.click(screen.getByRole("button", { name: "Un-accept conflict" }));
+      await waitFor(() => expect(second.container.querySelector(".world-canvas__status")?.textContent).toContain("1 conflicts · 0 accepted"));
     });
 
     it("shows a rejected POST response and retains the unaccepted badge", async () => {
@@ -814,6 +830,34 @@ describe("GbcWorldCanvas", () => {
       await waitFor(() => expect(screen.getByText(/Could not update conflict:/).textContent).toContain("unexpected shape"));
       expect(mounted.container.querySelector(".world-canvas__status")?.textContent).toContain("1 conflicts · 0 accepted");
       expect(screen.getByRole("button", { name: "Accept conflict" })).toBeTruthy();
+      vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => url === "/api/world/conflicts/accept"
+        ? Promise.reject(new Error("offline")) : originalFetch(url, init)));
+      fireEvent.click(screen.getByRole("button", { name: "Accept conflict" }));
+      await waitFor(() => expect(screen.getByText(/Could not update conflict:/).textContent).toContain("offline"));
+      expect(mounted.container.querySelector(".world-canvas__status")?.textContent).toContain("1 conflicts · 0 accepted");
+    });
+
+    it("redraws the GBC badges when the accepted key swaps with the same count", async () => {
+      const a = CONFLICT_WORLD.conflicts[0]!;
+      const bCore = { map: a.map, viaA: { ...a.viaA, from: "Route19" }, viaB: a.viaB };
+      const b = { ...bCore, key: conflictKey(bCore), accepted: true };
+      const world: GbcWorldPayload = { ...CONFLICT_WORLD, conflicts: [a, b] };
+      const baseFetch = mockFetchWorld(world);
+      const switched = vi.fn((url: string, init?: RequestInit) => url === "/api/world/conflicts/accept"
+        ? Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ acceptedConflicts: [a.key] }) } as Response)
+        : baseFetch(url, init));
+      const mounted = await mountReady({}, world, switched);
+      mounted.canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: 200, bottom: 200, width: 200, height: 200, x: 0, y: 0, toJSON() {} });
+      // Lexical key order keeps Route18 at x=165 and Route19 at x=143.
+      mounted.stageCtx.fillText.mockClear();
+      fireEvent.contextMenu(mounted.canvas, { clientX: 143, clientY: 10 });
+      fireEvent.click(screen.getByRole("button", { name: "Un-accept conflict" }));
+      await waitFor(() => expect(mounted.stageCtx.fillText).toHaveBeenCalledWith("✓", 165, 10));
+      expect(mounted.container.querySelector(".world-canvas__status")?.textContent).toContain("2 conflicts · 1 accepted");
+      fireEvent.contextMenu(mounted.canvas, { clientX: 143, clientY: 10 });
+      expect(screen.getByRole("button", { name: "Accept conflict" })).toBeTruthy();
+      fireEvent.contextMenu(mounted.canvas, { clientX: 165, clientY: 10 });
+      expect(screen.getByRole("button", { name: "Un-accept conflict" })).toBeTruthy();
     });
     it("draws a diamond at Conflict.map's top-right corner in --danger, and shows the exact CLI-wording tooltip on hover", async () => {
       const { canvas, stageCtx } = await mountReady({}, CONFLICT_WORLD);

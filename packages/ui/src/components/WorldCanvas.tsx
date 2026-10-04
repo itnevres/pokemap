@@ -1372,7 +1372,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
       });
     }
     conflictBadgesRef.current = badges;
-  }, [compositeVersion, pan, zoom, viewport, visible, world, sizeByMap, conflictAcceptance.acceptedCount]);
+  }, [compositeVersion, pan, zoom, viewport, visible, world, sizeByMap, conflictAcceptance.acceptedKeys]);
 
   const screenToWorld = useCallback((sx: number, sy: number) => ({ x: (sx - pan.x) / zoom, y: (sy - pan.y) / zoom }), [pan, zoom]);
 
@@ -1968,7 +1968,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
               {tooltip.text}
             </div>
           )}
-          <ConflictAction action={conflictAcceptance.action} onSave={conflictAcceptance.save} />
+          <ConflictAction action={conflictAcceptance.action} viewport={viewport} onSave={conflictAcceptance.save} />
           {conflictAcceptance.error && <div className="world-canvas__toast" role="alert">Could not update conflict: {conflictAcceptance.error}</div>}
           {saveError && (
             <div className="world-canvas__toast" role="alert">

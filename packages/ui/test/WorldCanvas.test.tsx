@@ -1030,17 +1030,22 @@ describe("WorldCanvas", () => {
       placements: { Route111: { map: "Route111", x: 0, y: 0, width: 50, height: 30, component: 0 } },
       conflicts: ["Route112", "Route113"].map((from) => ({ map: "Route111", viaA: { from, x: 160, y: -230 }, viaB: { from: "MauvilleCity", x: 160, y: -232 } })),
     });
-    const { impl } = makeFetchMock(initial);
+    const { impl, calls, currentWorld } = makeFetchMock(initial);
     const mounted = await mountReady(impl);
     const { canvas, stageCtx } = mounted;
     fireEvent.contextMenu(canvas, { clientX: 5, clientY: 70 });
     expect(screen.queryByRole("button", { name: "Accept conflict" })).toBeNull();
     // 50-wide fixture at zoom=1: existing badge at 40,10; next key at 18,10.
+    fireEvent.mouseDown(canvas, { button: 2, clientX: 40, clientY: 10 });
+    fireEvent.mouseMove(canvas, { clientX: 55, clientY: 25, button: 2 });
+    fireEvent.mouseUp(canvas, { button: 2, clientX: 55, clientY: 25 });
     fireEvent.contextMenu(canvas, { clientX: 40, clientY: 10 });
     fireEvent.click(screen.getByRole("button", { name: "Accept conflict" }));
     await waitFor(() => expect(mounted.container.querySelector(".world-canvas__status")?.textContent).toContain("2 conflicts · 1 accepted"));
     expect(stageCtx.fillLog).toContain("#6b7280");
     expect(stageCtx.fillText).toHaveBeenCalledWith("✓", 40, 10);
+    fireEvent.mouseMove(canvas, { clientX: 40, clientY: 10 });
+    expect(screen.getByRole("tooltip").textContent).toContain("Accepted (right-click to un-accept)");
     fireEvent.contextMenu(canvas, { clientX: 18, clientY: 10 });
     expect(screen.getByRole("button", { name: "Accept conflict" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Accept conflict" }));
@@ -1051,7 +1056,9 @@ describe("WorldCanvas", () => {
     mounted.unmount();
     const reloaded = await mountReady(impl);
     expect(reloaded.container.querySelector(".world-canvas__status")?.textContent).toContain("2 conflicts · 1 accepted");
-    expect(initial.placements.Route111).toMatchObject({ x: 0, y: 0 });
+    expect(currentWorld().placements.Route111).toMatchObject({ x: 0, y: 0 });
+    expect(calls.filter((call) => call.url === "/api/world/placement")).toHaveLength(0);
+    expect(reloaded.canvas.parentElement!.querySelectorAll(".world-canvas__selection-outline")).toHaveLength(0);
   });
 
   it("shows a malformed accept response without acknowledging the GBA badge", async () => {
@@ -1068,6 +1075,46 @@ describe("WorldCanvas", () => {
     fireEvent.click(screen.getByRole("button", { name: "Accept conflict" }));
     await waitFor(() => expect(screen.getByText(/Could not update conflict:/).textContent).toContain("unexpected shape"));
     expect(mounted.container.querySelector(".world-canvas__status")?.textContent).toContain("1 conflicts · 0 accepted");
+    vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => url === "/api/world/conflicts/accept"
+      ? Promise.resolve({ ok: false, status: 503, json: () => Promise.resolve({ error: "unavailable" }) } as Response)
+      : impl(url, init)));
+    fireEvent.click(screen.getByRole("button", { name: "Accept conflict" }));
+    await waitFor(() => expect(screen.getByText(/Could not update conflict:/).textContent).toContain("503"));
+    expect(mounted.container.querySelector(".world-canvas__status")?.textContent).toContain("1 conflicts · 0 accepted");
+  });
+
+  it("redraws and updates hit actions when the accepted key changes but the count stays one", async () => {
+    const fixture = makeWorld({
+      placements: { Route111: { map: "Route111", x: 0, y: 0, width: 50, height: 30, component: 0 } },
+      conflicts: ["Route112", "Route113"].map((from) => ({ map: "Route111", viaA: { from, x: 160, y: -230 }, viaB: { from: "MauvilleCity", x: 160, y: -232 } })),
+    });
+    fixture.conflicts[1]!.accepted = true;
+    const { impl } = makeFetchMock(fixture);
+    const fetchWithConcurrentAccept = vi.fn((url: string, init?: RequestInit) => url === "/api/world/conflicts/accept"
+      ? Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ acceptedConflicts: [fixture.conflicts[0]!.key] }) } as Response)
+      : impl(url, init));
+    const mounted = await mountReady(fetchWithConcurrentAccept);
+    mounted.stageCtx.fillText.mockClear();
+    fireEvent.contextMenu(mounted.canvas, { clientX: 18, clientY: 10 });
+    fireEvent.click(screen.getByRole("button", { name: "Un-accept conflict" }));
+    await waitFor(() => expect(mounted.stageCtx.fillText).toHaveBeenCalledWith("✓", 40, 10));
+    expect(mounted.container.querySelector(".world-canvas__status")?.textContent).toContain("2 conflicts · 1 accepted");
+    fireEvent.contextMenu(mounted.canvas, { clientX: 18, clientY: 10 });
+    expect(screen.getByRole("button", { name: "Accept conflict" })).toBeTruthy();
+    fireEvent.contextMenu(mounted.canvas, { clientX: 40, clientY: 10 });
+    expect(screen.getByRole("button", { name: "Un-accept conflict" })).toBeTruthy();
+  });
+
+  it("keeps a near-edge badge action inside the viewport", async () => {
+    const { impl } = makeFetchMock(makeWorld({
+      placements: { Edge: { map: "Edge", x: 0, y: 70, width: 95, height: 20, component: 0 } },
+      conflicts: [{ map: "Edge", viaA: { from: "A", x: 1, y: 2 }, viaB: { from: "B", x: 3, y: 4 } }],
+    }));
+    const mounted = await mountReady(impl);
+    fireEvent.contextMenu(mounted.canvas, { clientX: 85, clientY: 80 });
+    const action = mounted.container.querySelector(".world-canvas__conflict-action") as HTMLElement;
+    expect(action.style.right).toBe("15px");
+    expect(action.style.bottom).toBe("20px");
   });
 
   // -------------------------------------------------------------------
