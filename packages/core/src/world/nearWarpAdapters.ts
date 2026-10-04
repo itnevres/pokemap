@@ -44,3 +44,23 @@ export function gbcWarpLinks(proj: GbcProject): WarpLink[] {
   }
   return links;
 }
+
+/** Follow outgoing GBC warp-map edges, including hidden maps and cycles. */
+export function gbcWarpConnectedMapsFrom(seedMap: string, links: readonly WarpLink[]): Set<string> {
+  const outgoing = new Map<string, string[]>();
+  for (const { from, to } of links) {
+    const targets = outgoing.get(from) ?? [];
+    targets.push(to);
+    outgoing.set(from, targets);
+  }
+  const seen = new Set<string>([seedMap]);
+  const queue = [seedMap];
+  for (let i = 0; i < queue.length; i++) {
+    for (const to of outgoing.get(queue[i]!) ?? []) {
+      if (seen.has(to)) continue;
+      seen.add(to);
+      queue.push(to);
+    }
+  }
+  return seen;
+}

@@ -31,7 +31,9 @@ import { loadGbcMapEvents, outOfBoundsEventDefects } from "@pokemap/core/src/gbc
 import { renderGbcMap, renderGbcMapMetatile } from "@pokemap/core/src/gbc/render/map.js";
 import { buildGbcWorld, type GbcWorld } from "@pokemap/core/src/gbc/world/connections.js";
 import { placeNearWarps, type WarpLink } from "@pokemap/core/src/world/nearWarp.js";
-import { gbcWarpLinks } from "@pokemap/core/src/world/nearWarpAdapters.js";
+import { gbcWarpLinks, gbcWarpConnectedMapsFrom } from "@pokemap/core/src/world/nearWarpAdapters.js";
+import { readDungeons, writeDungeons } from "@pokemap/core/src/world/dungeons.js";
+import { randomUUID } from "node:crypto";
 import {
   gbcEncounterSources,
   gbcWhereSpecies,
@@ -66,7 +68,7 @@ import { readBody, type ProjectHandler } from "./index.js";
  * bare-vs-nested routes do. (`species/NAME/icon.png` left this list in Plan
  * 6c B1: it is a real GBC route now.)
  */
-const GBA_ONLY_ROUTE_RE = /^\/api\/(warps\/|dungeons(\/|$)|world\/dungeons$|sign\/|edit\/)/;
+const GBA_ONLY_ROUTE_RE = /^\/api\/(world\/dungeons$|sign\/|edit\/)/;
 
 /**
  * `decodeURIComponent` throws a `URIError` on a malformed percent-escape
@@ -247,6 +249,20 @@ export function buildGbcEncountersPayload(proj: GbcProject, name: string): GbcEn
     sources: gbcEncounterSources(proj, name),
     defects: proj.wild().defects,
   } satisfies GbcEncountersPayload;
+}
+
+/** Keep raw event coordinates and source order; only the destination lookup is enriched. */
+export function buildGbcWarpsPayload(proj: GbcProject, name: string) {
+  const byConst = new Map(proj.maps.map((map) => [map.constName, map]));
+  const warps = loadGbcMapEvents(proj.root, proj.map(name)).events.warps.map((event) => {
+    const target = byConst.get(event.mapConst);
+    const destMapName = target?.name;
+    const destEvent = target && event.destWarp > 0
+      ? loadGbcMapEvents(proj.root, target).events.warps[event.destWarp - 1]
+      : undefined;
+    return { ...event, destMapName, destEvent };
+  });
+  return { mapName: name, warps };
 }
 
 export function createGbcProjectHandler(root: string): ProjectHandler {
@@ -472,6 +488,93 @@ export function createGbcProjectHandler(root: string): ProjectHandler {
       // malformed-escape handling (`decodeMapName`) the single place that
       // rejects a bad name, instead of a slash in it silently 404ing through
       // the generic fallthrough.
+      const warpsMatch = /^\/api\/warps\/(.+)$/.exec(url.pathname);
+      if (warpsMatch && req.method === "GET") {
+        const rawName = warpsMatch[1]!;
+        const name = decodeMapName(rawName);
+        if (name === undefined) return send(400, { error: `malformed map name ${rawName}` });
+        if (!mapNames.has(name)) return send(404, { error: `no map ${name}` });
+        return send(200, buildGbcWarpsPayload(proj, name));
+      }
+
+      if (url.pathname === "/api/dungeons" && req.method === "GET") {
+        return send(200, readDungeons(proj.root).dungeons);
+      }
+      if (url.pathname === "/api/dungeons" && req.method === "POST") {
+        return readBody(req).then((body) => {
+          let parsed: unknown;
+          try { parsed = JSON.parse(body); }
+          catch (e) { return send(400, { error: `invalid JSON body: ${(e as Error).message}` }); }
+          if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+            return send(400, { error: `expected a dungeon object, got ${body}` });
+          }
+          const input = parsed as { name?: unknown; seedMap?: unknown; maps?: unknown };
+          if (typeof input.name !== "string" || input.name.trim() === "") {
+            return send(400, { error: `expected a non-empty "name" string, got ${body}` });
+          }
+          if (input.seedMap !== undefined && typeof input.seedMap !== "string") {
+            return send(400, { error: `"seedMap" must be a string when present, got ${body}` });
+          }
+          if (input.maps !== undefined && (!Array.isArray(input.maps) || input.maps.some((m) => typeof m !== "string"))) {
+            return send(400, { error: `"maps" must be a string array when present, got ${body}` });
+          }
+          let maps: string[];
+          if (typeof input.seedMap === "string") {
+            if (!mapNames.has(input.seedMap)) return send(400, { error: `seedMap ${input.seedMap} is not a known map` });
+            maps = [...gbcWarpConnectedMapsFrom(input.seedMap, getWarps())].sort();
+          } else {
+            maps = (input.maps as string[] | undefined) ?? [];
+          }
+          const dungeons = readDungeons(proj.root);
+          const dungeon = { id: randomUUID(), name: input.name, maps };
+          dungeons.dungeons.push(dungeon);
+          writeDungeons(proj.root, dungeons);
+          return send(200, dungeon);
+        }).catch((e: unknown) => {
+          console.error(e);
+          send(500, { error: e instanceof Error ? e.message : String(e) });
+        });
+      }
+      const dungeonIdMatch = /^\/api\/dungeons\/(.+)$/.exec(url.pathname);
+      if (dungeonIdMatch && (req.method === "PATCH" || req.method === "DELETE")) {
+        const rawId = dungeonIdMatch[1]!;
+        const id = decodeMapName(rawId);
+        if (id === undefined) return send(400, { error: `malformed dungeon id ${rawId}` });
+        if (req.method === "DELETE") {
+          const dungeons = readDungeons(proj.root);
+          const before = dungeons.dungeons.length;
+          dungeons.dungeons = dungeons.dungeons.filter((d) => d.id !== id);
+          if (dungeons.dungeons.length === before) return send(404, { error: `no dungeon ${id}` });
+          writeDungeons(proj.root, dungeons);
+          return send(200, { ok: true });
+        }
+        return readBody(req).then((body) => {
+          let parsed: unknown;
+          try { parsed = JSON.parse(body); }
+          catch (e) { return send(400, { error: `invalid JSON body: ${(e as Error).message}` }); }
+          if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+            return send(400, { error: `expected a dungeon object, got ${body}` });
+          }
+          const input = parsed as { name?: unknown; maps?: unknown };
+          if (input.name !== undefined && (typeof input.name !== "string" || input.name.trim() === "")) {
+            return send(400, { error: `"name" must be a non-empty string when present, got ${body}` });
+          }
+          if (input.maps !== undefined && (!Array.isArray(input.maps) || input.maps.some((m) => typeof m !== "string"))) {
+            return send(400, { error: `"maps" must be a string array when present, got ${body}` });
+          }
+          const dungeons = readDungeons(proj.root);
+          const dungeon = dungeons.dungeons.find((d) => d.id === id);
+          if (!dungeon) return send(404, { error: `no dungeon ${id}` });
+          if (typeof input.name === "string") dungeon.name = input.name;
+          if (Array.isArray(input.maps)) dungeon.maps = input.maps as string[];
+          writeDungeons(proj.root, dungeons);
+          return send(200, dungeon);
+        }).catch((e: unknown) => {
+          console.error(e);
+          send(500, { error: e instanceof Error ? e.message : String(e) });
+        });
+      }
+
       const encountersMatch = /^\/api\/encounters\/(.+)$/.exec(url.pathname);
       if (encountersMatch) {
         const rawName = encountersMatch[1]!;
