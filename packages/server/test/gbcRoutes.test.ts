@@ -692,12 +692,21 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
       expect(route17).toEqual({ map: "Route17", viaA: { from: "Route18", x: 30, y: 50 }, viaB: { from: "Route16", x: 30, y: 49 } });
     });
 
-    it("pure payload resolution preserves a base world and repeated HTTP responses are equal", async () => {
+    it("pure payload resolution preserves the same base world after automatic and manual calls", () => {
       const proj = openGbcProject(GBC_SUBJECT_ROOT);
       const base = buildGbcWorld(proj);
       const original = structuredClone([...base.placements]);
-      buildGbcWorldPayload(proj, base, { version: 1, dungeonAutoLayout: true, manualPlacements: {}, view: { x: 0, y: 0, zoom: 1 } });
+      const warps = gbcWarpLinks(proj);
+      const sidecar: Sidecar = { version: 1, dungeonAutoLayout: true, manualPlacements: {}, view: { x: 0, y: 0, zoom: 1 } };
+      const automatic = buildGbcWorldPayload(proj, base, sidecar, warps);
+      expect(automatic.placements.IlexForest).toMatchObject({ x: 40, y: 259, manual: false });
       expect([...base.placements]).toEqual(original);
+      const manual = buildGbcWorldPayload(proj, base, { ...sidecar, manualPlacements: { IlexForest: { x: 80, y: 269 } } }, warps);
+      expect(manual.placements.IlexForest).toMatchObject({ x: 80, y: 269, manual: true });
+      expect([...base.placements]).toEqual(original);
+    });
+
+    it("repeated HTTP world responses are equal", async () => {
       const first = await (await get("/api/world")).json();
       const second = await (await get("/api/world")).json();
       expect(second).toEqual(first);
