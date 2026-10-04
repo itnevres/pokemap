@@ -7,9 +7,11 @@ import { GbcMetatilePalette } from "./GbcMetatilePalette.js";
 import { GbcWorldCanvas } from "./GbcWorldCanvas.js";
 import { useGbcWorld } from "./hooks/useGbcWorld.js";
 import { GBC_HIDDEN_MAP_TYPES } from "../world/visibility.js";
+import { DungeonSidebar } from "../components/DungeonSidebar.js";
+import { useGbcDungeons } from "./hooks/useGbcDungeons.js";
 import type { GbcTimeOfDay } from "./time.js";
 
-type Mode = "map" | "world";
+type Mode = "map" | "world" | "dungeon";
 /** Fix round (quality review finding 3): re-exported from the shared
  *  `gbc/time.ts` (was independently declared here) so a future Task 5/6
  *  consumer of `GbcApp`'s own time type doesn't need to know it moved. */
@@ -32,7 +34,7 @@ export interface GbcAppProps {
 /**
  * The GBC shell (Plan 6b Tasks 3-4). Deliberately much smaller than
  * `App.tsx`: GBC is read-only in 6b, so this never mounts `Toolbar`,
- * `SaveDialog`, `EventInspector`, `DungeonSidebar`, `SignComposer` or
+ * `SaveDialog`, `EventInspector`, `SignComposer` or
  * `CollisionPalette`, and wires no `beforeunload` handler.
  *
  * Reuses the GBA shell's own layout classes (`app`, `app__toolbar`,
@@ -71,6 +73,8 @@ export function GbcApp({ root, switcher }: GbcAppProps) {
   // survives onto a freshly selected one.
   const [hoveredMetatileId, setHoveredMetatileId] = useState<number | null>(null);
   const [manualPlacementMaps, setManualPlacementMaps] = useState<ReadonlySet<string>>(new Set());
+  const [openDungeonId, setOpenDungeonId] = useState<string | null>(null);
+  const dungeons = useGbcDungeons(mode === "dungeon");
 
   const { data, error } = useGbcGroups();
   const { data: world, error: worldError } = useGbcWorld(mode === "world");
@@ -88,6 +92,13 @@ export function GbcApp({ root, switcher }: GbcAppProps) {
   // to the currently selected map -- never the previous one's data rendered
   // under the new one's name, and never the previous one's Fit/pan/defects.
   const ready = map.data && map.data.map.name === selected ? map.data : null;
+  const openDungeon = mode === "dungeon" ? dungeons.data?.find((d) => d.id === openDungeonId) ?? null : null;
+  const mapFilter = useMemo(() => openDungeon ? new Set(openDungeon.maps) : null, [openDungeon]);
+  const allMapNames = useMemo(() => data ? data.groupOrder.flatMap((group) => data.groups[group] ?? []) : [], [data]);
+  const deleteDungeon = async (id: string) => {
+    await dungeons.remove(id);
+    setOpenDungeonId((current) => current === id ? null : current);
+  };
 
   const selectMap = (name: string) => {
     setSelected(name);
@@ -133,6 +144,9 @@ export function GbcApp({ root, switcher }: GbcAppProps) {
           <button type="button" className="map-canvas__btn" aria-pressed={mode === "world"} onClick={enterWorld}>
             World
           </button>
+          <button type="button" className="map-canvas__btn" aria-pressed={mode === "dungeon"} onClick={() => setMode("dungeon")}>
+            Dungeon
+          </button>
         </div>
         <div className="app__mode gbc-app__time" role="group" aria-label="Time of day">
           {TIME_ORDER.map((t) => (
@@ -148,7 +162,10 @@ export function GbcApp({ root, switcher }: GbcAppProps) {
         <aside className="app__sidebar">
           {error && <p className="map-tree__empty">Could not load map groups: {error}</p>}
           {mode === "world" && worldError && <p className="map-tree__empty">Could not load world visibility: {worldError}</p>}
-          {error ? null : data ? (
+          {mode === "dungeon" ? <DungeonSidebar
+            dungeons={dungeons.data} error={dungeons.error} openId={openDungeonId} onOpen={setOpenDungeonId}
+            onCreate={dungeons.create} onRename={dungeons.rename} onSetMaps={dungeons.setMaps} onDelete={deleteDungeon} allMapNames={allMapNames}
+          /> : error ? null : data ? (
             <MapTree data={data} selected={selected} onSelect={selectMap} worldMode={mode === "world"} visibility={worldVisibility} hiddenMapTypes={GBC_HIDDEN_MAP_TYPES} />
           ) : (
             <p className="map-tree__empty">Loading map groups…</p>
@@ -157,6 +174,7 @@ export function GbcApp({ root, switcher }: GbcAppProps) {
         <main className="app__canvas">
           {mode === "world" ? (
             <GbcWorldCanvas
+              key="world"
               time={time}
               jumpToMap={jumpTarget}
               jumpToken={selectVersion}
@@ -165,6 +183,9 @@ export function GbcApp({ root, switcher }: GbcAppProps) {
               onJumpToMap={selectMap}
               onPlacementSaved={markManualPlacement}
             />
+          ) : mode === "dungeon" ? (
+            openDungeon ? <GbcWorldCanvas key="dungeon" time={time} mapFilter={mapFilter} onOpenMap={openMapFromWorld} onPlacementSaved={markManualPlacement} />
+              : <p className="app__canvas-placeholder">Select or create a dungeon</p>
           ) : !selected ? (
             <p className="app__canvas-placeholder">Select a map</p>
           ) : map.error ? (

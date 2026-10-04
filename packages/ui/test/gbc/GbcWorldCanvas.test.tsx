@@ -11,9 +11,104 @@ import {
   jumpFit,
   methodTint,
   GBC_LOD_ZOOM_THRESHOLD,
+  projectGbcWarpPoint,
   type GbcWorldView,
   type GbcWorldCanvasProps,
 } from "../../src/gbc/GbcWorldCanvas.js";
+
+describe("GBC dungeon warps (Plan 6c D3)", () => {
+  const event = (x: number, y: number, destMapName?: string, destEvent?: { x: number; y: number }) => ({
+    x, y, mapConst: "TARGET", destWarp: 1, lineIndex: 1, destMapName,
+    destEvent: destEvent && { ...destEvent, mapConst: "SOURCE", destWarp: 1, lineIndex: 1 },
+  });
+  const scopedWorld: GbcWorldPayload = {
+    family: "gbc", blockPx: 32,
+    placements: {
+      Source: { map: "Source", x: 10, y: 20, width: 10, height: 10, component: 0, mapType: "TOWN", manual: false },
+      Hidden: { map: "Hidden", x: 30, y: 40, width: 10, height: 10, component: 1, mapType: "INDOOR", manual: false },
+      Outside: { map: "Outside", x: 50, y: 60, width: 10, height: 10, component: 2, mapType: "TOWN", manual: false },
+    },
+    components: [], conflicts: [],
+  };
+  function scopedFetch(warps: Record<string, unknown>) {
+    const base = mockFetchAll({ world: scopedWorld });
+    return vi.fn((url: string) => {
+      const name = url.startsWith("/api/warps/") ? decodeURIComponent(url.slice("/api/warps/".length)) : null;
+      if (name !== null) return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(warps[name] ?? { family: "gbc", mapName: name, warps: [] }) } as Response);
+      return base(url);
+    });
+  }
+
+  it("projects raw half-step BurnedTower endpoints exactly, without a centre offset", () => {
+    expect(projectGbcWarpPoint({ x: 10, y: 20 }, { x: 10, y: 9 }, 8, { x: 3, y: 7 })).toEqual({ x: 123, y: 203 });
+    expect(projectGbcWarpPoint({ x: 30, y: 40 }, { x: 10, y: 9 }, 8, { x: 3, y: 7 })).toEqual({ x: 283, y: 363 });
+  });
+
+  it("scopes hidden members, excludes outsiders from images, warps, drop and lines, with independent toggles", async () => {
+    const fetcher = scopedFetch({
+      Source: { family: "gbc", mapName: "Source", warps: [event(10, 9, "Hidden", { x: 10, y: 9 }), event(1, 1, "Outside", { x: 1, y: 1 }), event(2, 2, "Hidden")] },
+      Hidden: { family: "gbc", mapName: "Hidden", warps: [event(10, 9, "Source", { x: 10, y: 9 })] },
+    });
+    vi.stubGlobal("fetch", fetcher);
+    const { container, rerender } = render(<GbcWorldCanvas time="day" mapFilter={new Set(["Hidden", "Source"])} />);
+    await waitFor(() => expect(container.querySelector('.world-canvas__status')?.textContent).toContain("zoom"));
+    await waitFor(() => expect(FakeImage.instances.some((image) => image.src.includes("Hidden.png"))).toBe(true));
+    expect(FakeImage.instances.some((image) => image.src.includes("Outside.png"))).toBe(false);
+    const stage = container.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement;
+    fireEvent.drop(stage, { clientX: 40, clientY: 40, dataTransfer: { getData: () => "Outside" } });
+    expect(fetcher.mock.calls.some(([url]) => url === "/api/world/placement")).toBe(false);
+    fireEvent.click(screen.getByRole("switch", { name: "Connection lines" }));
+    await waitFor(() => expect(container.querySelectorAll(".world-canvas__connections line").length).toBe(2));
+    const colors = [...container.querySelectorAll(".world-canvas__connections line")].map((line) => line.getAttribute("stroke"));
+    rerender(<GbcWorldCanvas time="day" mapFilter={new Set(["Source", "Hidden"])} />);
+    expect([...container.querySelectorAll(".world-canvas__connections line")].map((line) => line.getAttribute("stroke"))).toEqual(colors);
+    expect(fetcher.mock.calls.some(([url]) => url === "/api/warps/Outside")).toBe(false);
+    expect(screen.getByRole("switch", { name: "Warps" }).getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(screen.getByRole("switch", { name: "Warps" }));
+    fireEvent.keyDown(stage, { key: "+" });
+    fireEvent.keyDown(stage, { key: "+" });
+    await waitFor(() => expect(container.querySelectorAll(".world-canvas__warp-marker").length).toBe(4));
+    expect(screen.getByRole("switch", { name: "Connection lines" }).getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("shows malformed warp payload errors and permits retry after a later toggle", async () => {
+    const base = mockFetchAll({ world: scopedWorld });
+    let attempt = 0;
+    const fetcher = vi.fn((url: string) => url === "/api/warps/Source"
+      ? Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(++attempt === 1 ? { family: "gba", warps: [] } : { family: "gbc", mapName: "Source", warps: [] }) } as Response)
+      : base(url));
+    vi.stubGlobal("fetch", fetcher);
+    render(<GbcWorldCanvas time="day" mapFilter={new Set(["Source"])} />);
+    fireEvent.click(screen.getByRole("switch", { name: "Connection lines" }));
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("unexpected shape"));
+    fireEvent.click(screen.getByRole("switch", { name: "Connection lines" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Connection lines" }));
+    await waitFor(() => expect(attempt).toBe(2));
+  });
+
+  it("opens a destination preview before body open and Escape keeps the world view", async () => {
+    const base = mockFetchAll({ world: scopedWorld });
+    const fetcher = vi.fn((url: string) => {
+      if (url === "/api/warps/Source") return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ family: "gbc", mapName: "Source", warps: [event(10, 9, "Hidden", { x: 10, y: 9 })] }) } as Response);
+      if (url.startsWith("/api/map/")) return Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve({}) } as Response);
+      return base(url);
+    });
+    vi.stubGlobal("fetch", fetcher);
+    const { container } = render(<GbcWorldCanvas time="day" mapFilter={new Set(["Source"])} />);
+    const stage = container.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement;
+    await waitFor(() => expect(container.querySelector(".world-canvas__status")?.textContent).toContain("zoom"));
+    fireEvent.click(screen.getByRole("switch", { name: "Warps" }));
+    await waitFor(() => expect(container.querySelector(".world-canvas__warp-marker")).toBeTruthy());
+    const marker = container.querySelector(".world-canvas__warp-marker") as HTMLElement;
+    const before = container.querySelector(".world-canvas__status")?.textContent;
+    fireEvent.doubleClick(stage, { clientX: parseFloat(marker.style.left), clientY: parseFloat(marker.style.top) });
+    expect(screen.getByRole("dialog", { name: "Hidden preview" })).toBeTruthy();
+    await waitFor(() => expect(screen.getByText(/Could not load Hidden/)).toBeTruthy());
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(container.querySelector(".world-canvas__status")?.textContent).toBe(before);
+  });
+});
 import { computeFit } from "../../src/components/WorldCanvas.js";
 import type { GbcWorldPayload } from "@pokemap/core/src/gbc/wire.js";
 import { BORDER_BAND } from "../../src/encounters/borderSide.js";

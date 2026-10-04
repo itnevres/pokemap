@@ -82,6 +82,81 @@ function makeFetchMock(opts: { groupsFail?: boolean; maps?: Record<string, GbcMa
 }
 
 describe("GbcApp", () => {
+  it("offers Map, World, and Dungeon modes with a scoped empty-selection placeholder", async () => {
+    const base = makeFetchMock();
+    vi.stubGlobal("fetch", vi.fn((url: string) => url === "/api/dungeons"
+      ? Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([]) } as Response)
+      : base(url)));
+    render(<GbcApp root="/x" />);
+    const view = screen.getByRole("group", { name: "View" });
+    expect(view.querySelectorAll("button").length).toBe(3);
+    fireEvent.click(screen.getByRole("button", { name: "Dungeon" }));
+    await waitFor(() => expect(screen.getByText("Select or create a dungeon")).toBeTruthy());
+    expect(screen.getByRole("navigation", { name: "Dungeons" })).toBeTruthy();
+  });
+
+  it("shows malformed dungeon list responses and rejected create actions", async () => {
+    const base = makeFetchMock();
+    let malformed = true;
+    const fetcher = vi.fn((url: string, init?: RequestInit) => {
+      if (url === "/api/dungeons" && !init) return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(malformed ? [{ id: 1 }] : []) } as Response);
+      if (url === "/api/dungeons" && init?.method === "POST") return Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({}) } as Response);
+      return base(url);
+    });
+    vi.stubGlobal("fetch", fetcher);
+    render(<GbcApp root="/x" />);
+    fireEvent.click(screen.getByRole("button", { name: "Dungeon" }));
+    await waitFor(() => expect(screen.getByText(/Could not load dungeons:.*unexpected shape/)).toBeTruthy());
+    malformed = false;
+    fireEvent.click(screen.getByRole("button", { name: "+ New Dungeon" }));
+    fireEvent.change(screen.getByPlaceholderText("Dungeon name"), { target: { value: "Tower" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+    await waitFor(() => expect(screen.getByText(/POST \/api\/dungeons -> 500/)).toBeTruthy());
+  });
+
+  it("creates, opens, edits membership, renames, and deletes a GBC dungeon", async () => {
+    const base = makeFetchMock();
+    let entries: Array<{ id: string; name: string; maps: string[] }> = [];
+    const fetcher = vi.fn((url: string, init?: RequestInit) => {
+      if (url === "/api/dungeons" && !init) return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(entries.map((entry) => ({ ...entry, maps: [...entry.maps] }))) } as Response);
+      if (url === "/api/dungeons" && init?.method === "POST") {
+        const body = JSON.parse(String(init.body)) as { name: string; seedMap?: string };
+        const created = { id: "d1", name: body.name, maps: body.seedMap ? [body.seedMap] : [] };
+        entries = [created];
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(created) } as Response);
+      }
+      if (url === "/api/dungeons/d1" && init?.method === "PATCH") {
+        const body = JSON.parse(String(init.body)) as { name?: string; maps?: string[] };
+        entries = [{ ...entries[0]!, ...body }];
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(entries[0]) } as Response);
+      }
+      if (url === "/api/dungeons/d1" && init?.method === "DELETE") {
+        entries = [];
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ ok: true }) } as Response);
+      }
+      return base(url);
+    });
+    vi.stubGlobal("fetch", fetcher);
+    render(<GbcApp root="/x" />);
+    fireEvent.click(screen.getByRole("button", { name: "Dungeon" }));
+    fireEvent.click(screen.getByRole("button", { name: "+ New Dungeon" }));
+    fireEvent.change(screen.getByPlaceholderText("Dungeon name"), { target: { value: "Tower" } });
+    fireEvent.change(screen.getByPlaceholderText("Seed map (optional)"), { target: { value: "OlivineCity" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create" }));
+    await waitFor(() => expect(screen.getByRole("switch", { name: "Connection lines" })).toBeTruthy());
+    expect(screen.getByText("OlivineCity")).toBeTruthy();
+    fireEvent.change(screen.getByPlaceholderText("Add map…"), { target: { value: "OlivinePort" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    await waitFor(() => expect(screen.getByText("OlivinePort")).toBeTruthy());
+    fireEvent.change(screen.getByRole("textbox", { name: "Dungeon name" }), { target: { value: "New Tower" } });
+    fireEvent.blur(screen.getByRole("textbox", { name: "Dungeon name" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: /New Tower/ })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "Remove OlivinePort" }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Remove OlivinePort" })).toBeNull());
+    fireEvent.click(screen.getByRole("button", { name: "Delete dungeon" }));
+    await waitFor(() => expect(screen.getByText("Select or create a dungeon")).toBeTruthy());
+    expect(entries).toEqual([]);
+  });
   it("shows the real-shaped fixture groups in the tree", async () => {
     vi.stubGlobal("fetch", makeFetchMock());
     render(<GbcApp root="/root/pokemap-corpus/pokecrystal-PerfPlus" />);

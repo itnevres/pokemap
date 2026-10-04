@@ -11,6 +11,9 @@ import { summariseGbc, type SpeciesSummary } from "../encounters/summary.js";
 import { useGbcWorld } from "./hooks/useGbcWorld.js";
 import { useGbcCoverage } from "./hooks/useGbcCoverage.js";
 import { isGbcEncountersPayload, isRecord } from "./guards.js";
+import { isGbcWarpsPayload } from "./guards.js";
+import type { GbcWarpsPayload } from "./warps.js";
+import { GbcWarpDestinationModal } from "./GbcWarpDestinationModal.js";
 import { fetchGuarded } from "../hooks/useGuardedFetch.js";
 import type { GbcTimeOfDay } from "./time.js";
 
@@ -87,9 +90,8 @@ import type { GbcTimeOfDay } from "./time.js";
  *   fit from the wrong map, or a not-yet-resolved fetch) -- instrument
  *   `drawImage` before explaining one away.
  *
- * GBC-specific, and out of scope entirely (plan Q2, "GBA-only features"):
- * no multi-select move, no dungeon auto-layout toggle, no warp
- * markers/connection lines. Shift-drag and tree drops persist individual
+ * GBC-specific: no multi-select move or dungeon auto-layout toggle.
+ * Shift-drag and tree drops persist individual
  * placements to the sidecar. Selection is a plain single click (`onSelectMap`); double-click opens the map in Map view
  * (`onOpenMap`) rather than a warp destination modal.
  */
@@ -128,6 +130,14 @@ const LOD_SCALE = 0.25;
 export const GBC_LOD_ZOOM_THRESHOLD = BLOCK_PX * LOD_SCALE; // 8
 
 const BADGE_SIZE = 10;
+const WARP_HIT_RADIUS = 8;
+const CONNECTION_COLORS = ["--connection-1", "--connection-2", "--connection-3", "--connection-4", "--connection-5", "--connection-6", "--connection-7", "--connection-8"];
+const CONNECTION_FALLBACK = ["#e879f9", "#34d399", "#fb923c", "#60a5fa", "#facc15", "#f472b6", "#2dd4bf", "#a78bfa"];
+
+/** GBC warp events use 16px steps; world placements use 32px blocks. */
+export function projectGbcWarpPoint(placement: { x: number; y: number }, event: { x: number; y: number }, zoom: number, pan: { x: number; y: number }) {
+  return { x: (placement.x + event.x / 2) * zoom + pan.x, y: (placement.y + event.y / 2) * zoom + pan.y };
+}
 
 /** "Fills about 60% of the viewport" (Task 5 spec's own jump wording) --
  *  distinct from `WorldCanvas.tsx`'s own map-list jump, which fits the
@@ -392,6 +402,7 @@ type DragState =
 
 export interface GbcWorldCanvasProps {
   time: GbcTimeOfDay;
+  mapFilter?: Set<string> | null;
   /** A map name to jump to, or null/undefined for none -- mirrors
    *  `WorldCanvas.tsx`'s own `jumpToMap` (`GbcApp`'s tree clicks). */
   jumpToMap?: string | null;
@@ -420,7 +431,7 @@ function isPlacementSaved(x: unknown): x is { ok: true } {
  * reproduced from `WorldCanvas.tsx`, and `packages/ui/DESIGN.md` for the
  * `world-canvas__*` classes reused verbatim below.
  */
-export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpenMap, onJumpToMap, onPlacementSaved }: GbcWorldCanvasProps) {
+export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelectMap, onOpenMap, onJumpToMap, onPlacementSaved }: GbcWorldCanvasProps) {
   const { data: world, error } = useGbcWorld();
   const { data: coverageData, error: coverageError } = useGbcCoverage();
 
@@ -428,6 +439,7 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageCacheRef = useRef<Map<string, ImageCacheEntry>>(new Map());
   const encounterCacheRef = useRef<Map<string, EncounterCacheEntry>>(new Map());
+  const warpCacheRef = useRef<Map<string, GbcWarpsPayload | null>>(new Map());
   const conflictBadgesRef = useRef<Array<{ x: number; y: number; text: string }>>([]);
   const dragRef = useRef<DragState>(null);
   // Same "did a real drag happen" guard `WorldCanvas.tsx`'s own
@@ -459,6 +471,11 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
   // canvas) -- surfaced as a visible note rather than looking indistinguishable
   // from "this map genuinely has no encounters" (a real, normal state).
   const [encounterFailedCount, setEncounterFailedCount] = useState(0);
+  const [warpsOn, setWarpsOn] = useState(false);
+  const [linesOn, setLinesOn] = useState(false);
+  const [warpVersion, setWarpVersion] = useState(0);
+  const [warpError, setWarpError] = useState<string | null>(null);
+  const [warpPopup, setWarpPopup] = useState<string | null>(null);
   const [selectedMap, setSelectedMap] = useState<string | null>(null);
   const [hover, setHover] = useState<HoverInfo | null>(null);
   const [tooltip, setTooltip] = useState<TooltipInfo | null>(null);
@@ -506,15 +523,27 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
     if (!world || initialFitDoneRef.current) return;
     if (viewport.w <= 0 || viewport.h <= 0) return;
     initialFitDoneRef.current = true;
-    const bounds = initialFitBounds(world) ?? fitAllBounds(placements);
+    const scoped = mapFilter ? Object.fromEntries(Object.entries(placements).filter(([name]) => mapFilter.has(name))) : placements;
+    const bounds = mapFilter ? fitAllBounds(scoped) : initialFitBounds(world) ?? fitAllBounds(placements);
     if (bounds) setView({ ...computeFit(bounds, viewport, GBC_ZOOM_BOUNDS), fitted: true });
-  }, [world, viewport, placements]);
+  }, [world, viewport, placements, mapFilter]);
+
+  const fittedFilterRef = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    if (!mapFilter) { fittedFilterRef.current = null; return; }
+    if (!world || viewport.w <= 0 || viewport.h <= 0 || fittedFilterRef.current === mapFilter) return;
+    fittedFilterRef.current = mapFilter;
+    const scoped = Object.fromEntries(Object.entries(placements).filter(([name]) => mapFilter.has(name)));
+    const bounds = fitAllBounds(scoped);
+    if (bounds) setView({ ...computeFit(bounds, viewport, GBC_ZOOM_BOUNDS), fitted: true });
+  }, [mapFilter, world, viewport, placements]);
 
   const fitAll = useCallback(() => {
     if (!world) return;
-    const bounds = fitAllBounds(placements);
+    const scoped = mapFilter ? Object.fromEntries(Object.entries(placements).filter(([name]) => mapFilter.has(name))) : placements;
+    const bounds = fitAllBounds(scoped);
     if (bounds) setView({ ...computeFit(bounds, viewport, GBC_ZOOM_BOUNDS), fitted: true });
-  }, [world, viewport, placements]);
+  }, [world, viewport, placements, mapFilter]);
 
   // Culling: only placements whose block-rect intersects the current
   // viewport are "visible" -- WorldCanvas.tsx's own `visible` memo, minus
@@ -527,12 +556,63 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
     const x1 = (viewport.w - pan.x) / zoom, y1 = (viewport.h - pan.y) / zoom;
     const out: GbcWorldPlacement[] = [];
     for (const p of Object.values(placements)) {
+      if (mapFilter && !mapFilter.has(p.map)) continue;
       if (p.width <= 0 || p.height <= 0) continue;
-      if (!p.manual && (p.mapType === "INDOOR" || p.mapType === "GATE")) continue;
+      if (!mapFilter && !p.manual && (p.mapType === "INDOOR" || p.mapType === "GATE")) continue;
       if (intersects(p.x, p.y, p.width, p.height, x0, y0, x1, y1)) out.push(p);
     }
     return out;
-  }, [world, placements, pan, zoom, viewport, fitted]);
+  }, [world, placements, pan, zoom, viewport, fitted, mapFilter]);
+
+  useEffect(() => {
+    if (!warpsOn && !(mapFilter && linesOn)) return;
+    const names = new Set<string>();
+    if (warpsOn && zoom >= GBC_LOD_ZOOM_THRESHOLD) visible.forEach((p) => names.add(p.map));
+    if (mapFilter && linesOn) mapFilter.forEach((name) => { if (placements[name]) names.add(name); });
+    for (const name of names) {
+      if (warpCacheRef.current.has(name)) continue;
+      warpCacheRef.current.set(name, null);
+      const url = `/api/warps/${encodeURIComponent(name)}`;
+      fetchGuarded(url, isGbcWarpsPayload).then((payload) => {
+        if (payload.mapName !== name) throw new Error(`GET ${url} returned the wrong map`);
+        warpCacheRef.current.set(name, payload);
+        setWarpVersion((v) => v + 1);
+      }).catch((reason: unknown) => {
+        warpCacheRef.current.delete(name);
+        setWarpError(reason instanceof Error ? reason.message : String(reason));
+      });
+    }
+  }, [warpsOn, linesOn, mapFilter, visible, zoom, placements]);
+
+  const warpMarkerEntries = useMemo(() => {
+    if (!warpsOn || zoom < GBC_LOD_ZOOM_THRESHOLD) return [] as Array<{ key: string; sx: number; sy: number; destMapName?: string }>;
+    return visible.flatMap((p) => (warpCacheRef.current.get(p.map)?.warps ?? []).map((w, index) => ({
+      key: `${p.map}:${index}`, sx: projectGbcWarpPoint(p, w, zoom, pan).x, sy: projectGbcWarpPoint(p, w, zoom, pan).y, destMapName: w.destEvent ? w.destMapName : undefined,
+    })));
+  }, [warpsOn, visible, zoom, pan, warpVersion]);
+
+  const connectionLines = useMemo(() => {
+    if (!mapFilter || !linesOn) return [] as Array<{ key: string; x1: number; y1: number; x2: number; y2: number; color: string }>;
+    const style = typeof getComputedStyle === "function" ? getComputedStyle(document.documentElement) : null;
+    const palette = CONNECTION_COLORS.map((token, i) => style?.getPropertyValue(token).trim() || CONNECTION_FALLBACK[i]!);
+    const lines: Array<{ key: string; x1: number; y1: number; x2: number; y2: number; color: string }> = [];
+    for (const source of [...mapFilter].sort()) {
+      const p = placements[source];
+      if (!p) continue;
+      warpCacheRef.current.get(source)?.warps.forEach((w, index) => {
+        if (!w.destMapName || !mapFilter.has(w.destMapName) || !w.destEvent) return;
+        const dest = placements[w.destMapName];
+        if (!dest) return;
+        lines.push({
+          key: `${source}:${index}`,
+          x1: projectGbcWarpPoint(p, w, zoom, pan).x, y1: projectGbcWarpPoint(p, w, zoom, pan).y,
+          x2: projectGbcWarpPoint(dest, w.destEvent, zoom, pan).x, y2: projectGbcWarpPoint(dest, w.destEvent, zoom, pan).y,
+          color: palette[lines.length % palette.length]!,
+        });
+      });
+    }
+    return lines;
+  }, [mapFilter, linesOn, placements, zoom, pan, warpVersion]);
 
   // GBC-specific: a time switch drops the WHOLE image cache (every
   // reference), so a stale day/nite image is never drawn under the new
@@ -644,11 +724,11 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
   const sideByMap = useMemo(() => {
     const m = new Map<string, BorderSide>();
     if (!world) return m;
-    const placed = Object.values(placements).filter((p) => p.width > 0 && p.height > 0);
+    const placed = Object.values(placements).filter((p) => (!mapFilter || mapFilter.has(p.map)) && p.width > 0 && p.height > 0);
     const rects: Rect[] = placed.map((p) => ({ x: p.x, y: p.y, width: p.width, height: p.height }));
     placed.forEach((p, i) => m.set(p.map, pickBorderSide(rects[i]!, rects, BORDER_BAND.gbc)));
     return m;
-  }, [world, placements]);
+  }, [world, placements, mapFilter]);
 
   // EncounterBorder's own prop shape -- a memo separate from the
   // imperative draw effect (Task 5 quality review, binding note), mirroring
@@ -766,6 +846,7 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
     // comment/loop, never hidden behind a toggle.
     const badges: Array<{ x: number; y: number; text: string }> = [];
     for (const conflict of world.conflicts) {
+      if (mapFilter && !mapFilter.has(conflict.map)) continue;
       const p = placements[conflict.map];
       if (!p || p.width <= 0 || p.height <= 0) continue;
       const cx = p.x * zoom + pan.x + p.width * zoom - BADGE_SIZE;
@@ -774,7 +855,7 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
       badges.push({ x: cx, y: cy, text: conflictTooltipText(conflict) });
     }
     conflictBadgesRef.current = badges;
-  }, [compositeVersion, pan, zoom, viewport, visible, world, placements]);
+  }, [compositeVersion, pan, zoom, viewport, visible, world, placements, mapFilter]);
 
   const screenToWorld = useCallback((sx: number, sy: number) => ({ x: (sx - pan.x) / zoom, y: (sy - pan.y) / zoom }), [pan, zoom]);
 
@@ -887,7 +968,16 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
   const onDoubleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (dragMovedRef.current) return;
     const rect = e.currentTarget.getBoundingClientRect();
-    const w = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
+    const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
+    if (warpsOn) {
+      const marker = warpMarkerEntries.find((entry) => Math.hypot(entry.sx - sx, entry.sy - sy) <= WARP_HIT_RADIUS);
+      if (marker) {
+        if (marker.destMapName) { setWarpError(null); setWarpPopup(marker.destMapName); }
+        else setWarpError("This warp destination could not be resolved");
+        return;
+      }
+    }
+    const w = screenToWorld(sx, sy);
     const hit = hitTest(w.x, w.y);
     if (hit) onOpenMap?.(hit.map);
   };
@@ -927,13 +1017,13 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
   const appliedJumpTokenRef = useRef<number | undefined>(undefined);
   useEffect(() => {
     if (jumpToken === undefined || jumpToken === appliedJumpTokenRef.current) return;
-    if (!jumpToMap || !world) return; // retry once `world` itself changes
+    if (!jumpToMap || !world || (mapFilter && !mapFilter.has(jumpToMap))) return; // retry once `world` itself changes
     appliedJumpTokenRef.current = jumpToken;
     const p = placements[jumpToMap];
     if (!p || p.width <= 0 || p.height <= 0) return;
     setView({ ...jumpFit({ x: p.x, y: p.y, width: p.width, height: p.height }, viewport), fitted: true });
     setJumpHighlight({ map: jumpToMap, token: jumpToken });
-  }, [jumpToken, jumpToMap, world, viewport, placements]);
+  }, [jumpToken, jumpToMap, world, viewport, placements, mapFilter]);
 
   // The fade-out, kept in its own effect scoped to `jumpHighlight` alone --
   // WorldCanvas.tsx's own separately-scoped fade effect gives the same
@@ -958,8 +1048,8 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
   }, [jumpHighlight]);
 
   const zoomPercent = Math.round((zoom / BLOCK_PX) * 100);
-  const selectedRect = selectedMap ? placements[selectedMap] ?? null : null;
-  const jumpRect = jumpHighlight ? placements[jumpHighlight.map] ?? null : null;
+  const selectedRect = selectedMap && (!mapFilter || mapFilter.has(selectedMap)) ? placements[selectedMap] ?? null : null;
+  const jumpRect = jumpHighlight && (!mapFilter || mapFilter.has(jumpHighlight.map)) ? placements[jumpHighlight.map] ?? null : null;
 
   return (
     <section className="world-canvas" aria-label="World canvas">
@@ -969,6 +1059,19 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
             Fit all
           </button>
         </div>
+        <div className="world-canvas__toolbar-group">
+          <button type="button" role="switch" aria-checked={warpsOn} aria-label="Warps" className="world-canvas__switch" onClick={() => { if (!warpsOn) setWarpError(null); setWarpsOn((on) => !on); }}>
+            <span className="world-canvas__switch-thumb" />
+          </button>
+          <span className="world-canvas__switch-label">Warps {warpsOn ? "on" : "off"}</span>
+        </div>
+        {mapFilter && <div className="world-canvas__toolbar-group">
+          <button type="button" role="switch" aria-checked={linesOn} aria-label="Connection lines" className="world-canvas__switch" onClick={() => { if (!linesOn) setWarpError(null); setLinesOn((on) => !on); }}>
+            <span className="world-canvas__switch-thumb" />
+          </button>
+          <span className="world-canvas__switch-label">Connection lines {linesOn ? "on" : "off"}</span>
+        </div>}
+        {warpError && <div className="world-canvas__toolbar-group"><span className="world-canvas__toolbar-error" role="alert">Warp data unavailable: {warpError}</span></div>}
         {/* Fix round (spec review F4): a visible note, not a silent gap,
             for however many visible maps' own /api/encounters fetch failed
             (a 500, or a shape that fails isGbcEncountersPayload) -- reuses
@@ -1043,6 +1146,7 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
             onDrop={(e) => {
               e.preventDefault();
               const map = e.dataTransfer.getData("text/plain");
+              if (mapFilter && !mapFilter.has(map)) return;
               const placement = placements[map];
               if (!placement) return;
               const rect = e.currentTarget.getBoundingClientRect();
@@ -1056,6 +1160,12 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
             onKeyDown={onKeyDown}
           />
           <EncounterBorder entries={borderEntries} zoom={zoom} lodZoom={GBC_LOD_ZOOM_THRESHOLD} band={BORDER_BAND.gbc} time={time} />
+          {warpsOn && warpMarkerEntries.length > 0 && <div className="world-canvas__warps" aria-hidden="true">
+            {warpMarkerEntries.map((entry) => <div key={entry.key} className="world-canvas__warp-marker" style={{ left: entry.sx, top: entry.sy }} />)}
+          </div>}
+          {mapFilter && linesOn && connectionLines.length > 0 && <svg className="world-canvas__connections" aria-hidden="true">
+            {connectionLines.map((line) => <line key={line.key} x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2} stroke={line.color} strokeWidth={2} />)}
+          </svg>}
           {lens && lensOverlayEntries.length > 0 && (
             <div className="world-canvas__lens" aria-hidden="true">
               {lensOverlayEntries.map((e) => (
@@ -1122,7 +1232,7 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
 
       <div className="world-canvas__status">
         <span className="world-canvas__status-item">
-          {world ? world.components.length : 0} components · {Object.keys(placements).length} maps · zoom {zoomPercent}%
+          {world ? world.components.length : 0} components · {mapFilter ? [...mapFilter].filter((name) => !!placements[name]).length : Object.keys(placements).length} maps · zoom {zoomPercent}%
         </span>
         {hover ? (
           <span className="world-canvas__status-item world-canvas__hover">
@@ -1133,6 +1243,7 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
           <span className="world-canvas__status-item world-canvas__hover world-canvas__hover--empty">Hover the world…</span>
         )}
       </div>
+      {warpPopup && <GbcWarpDestinationModal mapName={warpPopup} time={time} onClose={() => setWarpPopup(null)} />}
     </section>
   );
 }

@@ -1,6 +1,7 @@
 import type { ProjectInfo } from "@pokemap/core/src/family.js";
 import type { GbcMapPayload, GbcWorldPayload, GbcEncountersPayload } from "@pokemap/core/src/gbc/wire.js";
 import type { GbcCoverage } from "@pokemap/core/src/gbc/analyse/atlas.js";
+import type { GbcWarpsPayload } from "./warps.js";
 import type { MapGroupsData } from "../components/MapTree.js";
 
 /**
@@ -18,6 +19,20 @@ import type { MapGroupsData } from "../components/MapTree.js";
  *  exclusion for free rather than each re-deriving it. */
 export function isRecord(x: unknown): x is Record<string, unknown> {
   return typeof x === "object" && x !== null && !Array.isArray(x);
+}
+
+function isWarpEvent(x: unknown): boolean {
+  return isRecord(x) && Number.isFinite(x.x) && Number.isFinite(x.y)
+    && typeof x.mapConst === "string" && Number.isInteger(x.destWarp)
+    && Number.isInteger(x.lineIndex);
+}
+
+export function isGbcWarpsPayload(x: unknown): x is GbcWarpsPayload {
+  return isRecord(x) && x.family === "gbc" && typeof x.mapName === "string"
+    && Array.isArray(x.warps) && x.warps.every((w: unknown) =>
+      isWarpEvent(w) && isRecord(w)
+      && (w.destMapName === undefined || typeof w.destMapName === "string")
+      && (w.destEvent === undefined || isWarpEvent(w.destEvent)));
 }
 
 /** `GET /api/project`'s shape, shared by both engine families. `family` must
