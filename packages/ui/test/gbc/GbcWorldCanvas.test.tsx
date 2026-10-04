@@ -75,7 +75,7 @@ describe("GBC dungeon warps (Plan 6c D3)", () => {
     const base = mockFetchAll({ world: scopedWorld });
     let attempt = 0;
     const fetcher = vi.fn((url: string) => url === "/api/warps/Source"
-      ? Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(++attempt === 1 ? { family: "gba", warps: [], detail: "x".repeat(300) } : { family: "gbc", mapName: "Source", warps: [] }) } as Response)
+      ? Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(++attempt === 1 ? { family: "gba", mapName: "Source", warps: [], detail: "x".repeat(300) } : { family: "gbc", mapName: "Source", warps: [] }) } as Response)
       : base(url));
     vi.stubGlobal("fetch", fetcher);
     render(<GbcWorldCanvas time="day" mapFilter={new Set(["Source"])} />);
