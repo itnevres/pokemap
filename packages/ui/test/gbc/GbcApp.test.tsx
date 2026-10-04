@@ -199,8 +199,12 @@ describe("GbcApp", () => {
       await waitFor(() => expect([outline().style.left, outline().style.top]).toEqual(["0px", "37.5px"]));
     } finally {
       if (width) Object.defineProperty(HTMLElement.prototype, "clientWidth", width);
+      else Reflect.deleteProperty(HTMLElement.prototype, "clientWidth");
       if (height) Object.defineProperty(HTMLElement.prototype, "clientHeight", height);
+      else Reflect.deleteProperty(HTMLElement.prototype, "clientHeight");
     }
+    expect(Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth")).toEqual(width);
+    expect(Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight")).toEqual(height);
   });
   it("shows the real-shaped fixture groups in the tree", async () => {
     vi.stubGlobal("fetch", makeFetchMock());

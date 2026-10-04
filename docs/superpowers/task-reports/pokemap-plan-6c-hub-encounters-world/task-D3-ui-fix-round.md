@@ -23,3 +23,7 @@ Each mutation was written temporarily from an in-memory byte snapshot and restor
 ## Green verification
 
 `npx vitest run packages/ui/test/gbc/GbcWorldCanvas.test.tsx packages/ui/test/gbc/GbcApp.test.tsx`: 134/134 passed. `npm run typecheck`: passed both base and UI projects. `npm run build -w @pokemap/ui`: passed. No full suite or external sidecar write was run. The jsdom canvas `getContext` warnings in the GbcApp test file remain non-failing environment messages.
+
+## Final test isolation follow-up
+
+The new `preserves dungeon pan on rename and refits after membership changes` test now deletes its temporary own `HTMLElement.prototype.clientWidth` and `clientHeight` properties when those descriptors were absent before the test. It still restores the exact original descriptor when one existed, and checks both descriptors after `finally`. This closes the quality re-review's test-isolation finding without changing production code. In-memory red proof removed the `clientWidth` delete branch, then `npx vitest run packages/ui/test/gbc/GbcApp.test.tsx -t 'preserves dungeon pan'` exited 1: the leaked `{ value: 100, ... }` descriptor differed from the expected `undefined`. Source bytes were restored in `finally` and compared. The complete `GbcApp.test.tsx` file then passed 33/33 tests on a focused rerun. One preceding run had an intermittent failure in the existing hover/highlight test; that test passed alone and the complete file passed on rerun.
