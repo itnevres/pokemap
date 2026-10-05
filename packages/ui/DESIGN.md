@@ -400,3 +400,23 @@ reserves one band on that side.
   lists or method key); the row has `aria-label="Coverage lens legend"`. Map
   entries and species names carry `title` (the cells ellipsise); singular
   counts read "1 map has" / "1 species appears".
+
+## World context menu (Plan 6c E3)
+
+- One menu for both world canvases (`WorldContextMenu`, `.world-context-menu`), replacing
+  the badge-only conflict popup. Right-click a map body or a conflict badge, or press the
+  ContextMenu key / Shift+F10 on the focused canvas (opens at the centre of the one
+  selected map, map items only). Absolutely positioned inside `.world-canvas__viewport`
+  and clamped to it by its measured size (8px inset).
+- **Items.** GBA: "Open in Map view" (when `onOpenMap` is wired; App always wires it),
+  "Edit here" (only when `onEditHere` is supplied), then "Accept conflict" /
+  "Un-accept conflict" on a badge. GBC: "Open in Map view", a permanently disabled
+  "Edit here" with the visible hint "GBC editing arrives with Plan 7", then the conflict
+  item. Accepting only acknowledges the conflict; a failed save keeps the menu open and
+  shows the dismissible `Could not update conflict:` toast.
+- **Keyboard.** Opening focuses the first enabled item; ArrowDown/ArrowUp cycle the
+  enabled items; Enter/Space activate; Escape closes and refocuses the canvas. A pointerdown
+  outside the menu (a pan start included) or a wheel closes it.
+- Shift+double-click on a map opens it in Map view in both families (in GBC it
+  bypasses the warp-marker preview).
+- **Tokens:** `--bg-panel-raised`, `--border-strong`, `--bg-hover`, `--text-muted` (hint).
