@@ -124,8 +124,11 @@ describe("Root", () => {
     // GBA-only fetches are all gated on `mode` (default "map") and never
     // fire at mount regardless. This DOM assertion is what actually proves
     // App isn't mounted at all -- App's header renders its Dungeon button
-    // unconditionally, independent of any fetch ever resolving.
-    expect(screen.queryByText("Dungeon")).toBeNull();
+    // unconditionally, independent of any fetch ever resolving. Since D3,
+    // GbcApp has its own Dungeon button too, so a mounted App shows as a
+    // second "View" group with a second Dungeon button.
+    expect(screen.getAllByRole("group", { name: "View" })).toHaveLength(1);
+    expect(screen.getAllByText("Dungeon")).toHaveLength(1);
 
     expect(calls).not.toContain("/api/world");
     expect(calls).not.toContain("/api/dungeons");
