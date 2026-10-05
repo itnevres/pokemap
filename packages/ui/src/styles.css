@@ -885,6 +885,10 @@ input {
   transform: rotate(45deg);
 }
 
+.world-canvas__swatch--accepted {
+  background: var(--text-muted);
+}
+
 .world-canvas__swatch--dive {
   background: var(--link-dive);
   clip-path: polygon(0 0, 100% 0, 50% 100%);

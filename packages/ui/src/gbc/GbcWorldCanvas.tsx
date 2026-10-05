@@ -1143,6 +1143,9 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
         <span className="world-canvas__legend-item">
           <i className="world-canvas__swatch world-canvas__swatch--conflict" /> Conflict
         </span>
+        <span className="world-canvas__legend-item">
+          <i className="world-canvas__swatch world-canvas__swatch--conflict world-canvas__swatch--accepted" /> Accepted
+        </span>
       </div>
 
       <div className="world-canvas__body">

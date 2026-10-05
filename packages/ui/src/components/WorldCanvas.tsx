@@ -1830,6 +1830,9 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
           <i className="world-canvas__swatch world-canvas__swatch--conflict" /> Conflict
         </span>
         <span className="world-canvas__legend-item">
+          <i className="world-canvas__swatch world-canvas__swatch--conflict world-canvas__swatch--accepted" /> Accepted
+        </span>
+        <span className="world-canvas__legend-item">
           <i className="world-canvas__swatch world-canvas__swatch--dive" /> Dive
         </span>
         <span className="world-canvas__legend-item">
