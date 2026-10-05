@@ -54,3 +54,26 @@ One first attempt at the fallback mutation was a syntax error (discarded, redone
 - App.test count is 28, not 29 (spec grounding off by one; no effect).
 - The hook test lives in its own file `useMapEditing.test.tsx` (spec left location open).
 - `.codex/` untouched.
+
+## Fix round (review `7eb0ea6`)
+Status: DONE. Commits: tests `dffde08`, comments `ea472ab`, this section (next commit). Base HEAD `7eb0ea6`; tree clean except `.codex/` and the untracked `task-E3-spec.md` (not mine, left alone).
+
+**Files:** new `packages/ui/test/AppEditingWiring.test.tsx` (4 tests, App-level, own fetch mock; Add Event used to make the session dirty and select an event); `MapEditingWorkspace.test.tsx` +4 tests (my own E2 file, coordinator-permitted; stub `editing`, dirty `editSession` for Save, fixture `mapName="Map1"` vs `layout.name="Foo_Layout"`); `useMapEditing.ts` comment-only.
+**U1:** `git diff 2f0f9d7 --name-status -- packages/ui/test` = `A MapEditingWorkspace.test.tsx`, `A useMapEditing.test.tsx`, plus new `AppEditingWiring.test.tsx` (A). No M. App.test.tsx untouched.
+
+**F2:** 7 pointers reworded (L49 banner, L78 JSX, L213/243/247 "mounted below" -> "mounted in MapEditingWorkspace.tsx", L270 and L272 "selectMap" -> "App.tsx changeSelection"/"changeSelection"); `git diff` = 14 changed lines, comments only.
+
+**Red proofs** (in-memory mutate, restore bytes, byte-compare; all "restored identical: true"; target = Workspace + AppEditingWiring tests):
+| mutant | mutation | killed by |
+|---|---|---|
+| X8 | sign banner removed (`{false && signAddedMessage && ...`) | WS "renders signAddedMessage as a status banner..." |
+| X9 | Toolbar sign btn -> `setSaveDialogOpen(true)` | WS "Save and Add Sign call their own setters" + App "Add Sign opens SignComposer and not SaveDialog" |
+| X9b (extra) | Toolbar save btn -> `setSignComposerOpen(true)` | WS Save/Sign test + App "Save opens SaveDialog" |
+| X10 | `layoutName={mapName}` | WS "metatile strip is keyed on data.layout.name" |
+| X12 | collision strip hidden | WS "collision strip only while collision tool active" |
+| X13 | App SaveDialog gated on `signComposerOpen` | both App dialog tests |
+| X3b | `changeSelection` resets before the dirty guard | App "a cancelled map switch keeps the selected event and the chosen stamp" (asserts Delete button present, no "No event selected.", metatile 0x1 still aria-pressed) |
+| X15 | delete no longer `setSelectedEvent(null)` | App "deleting the selected event clears the selection" |
+
+**Verify:** App + MapEditingWorkspace + useMapEditing + AppEditingWiring = 4 files, 39 tests pass; `npm run typecheck` clean. Full suite not run.
+**Notes:** Save is disabled when clean (Toolbar gates on `isDirty`), so the App-level Save test dirties via Add Event (mock `/event/add` returns `isDirty:true`, like the real server). Dialog mount fetches (`/plan`, `/suggestions`) are unmocked; their load-failure paths don't affect the assertions (dialogs render regardless).
