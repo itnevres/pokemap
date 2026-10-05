@@ -964,6 +964,58 @@ input {
 
 .world-canvas__conflict-action > button { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
 
+/* World context menu (Plan 6c E3): the right-click / ContextMenu-key menu both
+   world canvases share. Positioned inside .world-canvas__viewport (position:
+   relative); inline left/top are the measured, clamped viewport-relative px. */
+.world-context-menu {
+  position: absolute;
+  z-index: 12;
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: calc(100% - 2 * var(--space-2));
+  max-height: calc(100% - 2 * var(--space-2));
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-1);
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+.world-context-menu__item {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  text-align: left;
+  padding: var(--space-1) var(--space-2);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-primary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.world-context-menu__item:hover:not(:disabled),
+.world-context-menu__item:focus-visible {
+  background: var(--bg-hover);
+}
+
+.world-context-menu__item:disabled {
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+.world-context-menu__hint {
+  display: block;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+}
+
 /* Review fix: a failed save (a placement drag or the dungeon toggle) used
    to share loadError's own in-flow placeholder -- shoving/clipping the
    canvas and never clearing until the next successful load. This is
