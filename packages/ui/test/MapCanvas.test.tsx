@@ -1121,8 +1121,10 @@ describe("MapCanvas under <StrictMode> (Plan 6c E1, follow-up D1)", () => {
     fireEvent.click(utils.getByRole("button", { name: "4×" }));
     await waitFor(() => expect(lastDraw().slice(-2)).toEqual([PIXEL_SIZE * 4, PIXEL_SIZE * 4]));
     expect(lastDraw().slice(5, 7)).toEqual([-96, -96]);
-    // Doubled: second pass cx = (32 - -96)/2 = 64, pan = 32 - 256 = -224.
+    // The old nested code reached -480 here (its 2x was already the doubled -96, and 4x doubled again); doubling
+    // from the correct -32 base would give -224. Neither may appear.
     expect(lastDraw().slice(5, 7)).not.toEqual([-224, -224]);
+    expect(lastDraw().slice(5, 7)).not.toEqual([-480, -480]);
   });
 });
 
@@ -1168,11 +1170,84 @@ describe("MapCanvas: controlled view (Plan 6c E1)", () => {
     expect(lastDraw().slice(5, 9)).toEqual([7, -3, PIXEL_SIZE * 2, PIXEL_SIZE * 2]);
   });
 
+  it("a gesture after the parent applied a new view derives from THAT view, not the mount-time one", async () => {
+    const onViewChange = vi.fn();
+    const { canvas, lastDraw, rerender } = await mountReady({ view: VIEW, onViewChange });
+    fireEvent.click(screen.getByRole("button", { name: "4×" }));
+    const at4 = onViewChange.mock.calls[0]![0] as MapView;
+    rerender(<MapCanvas mapName="Foo" data={DATA} view={at4} onViewChange={onViewChange} />);
+    await waitFor(() => expect(lastDraw().slice(5, 9)).toEqual([-18, -38, PIXEL_SIZE * 4, PIXEL_SIZE * 4]));
+
+    // 4x (-18,-38) -> 2x about (32,32): cx=(32+18)/4=12.5 -> 7, cy=(32+38)/4=17.5 -> -3, i.e. back to VIEW.
+    fireEvent.click(screen.getByRole("button", { name: "2×" }));
+    expect(onViewChange).toHaveBeenCalledTimes(2);
+    expect(onViewChange).toHaveBeenLastCalledWith({ zoom: 2, pan: { x: 7, y: -3 } });
+    expect(canvas.width / 2).toBe(32);
+
+    // Zooming back through the same pivot lands on the same point, so also have the parent jump to an unrelated
+    // view (same zoom as VIEW, different pan) and zoom again: from (-5,9)@2, 4x about (32,32) is
+    // cx=(32+5)/2=18.5 -> 32-74=-42, cy=(32-9)/2=11.5 -> 32-46=-14. A base frozen at VIEW would give (-18,-38).
+    const jumped: MapView = { zoom: 2, pan: { x: -5, y: 9 } };
+    rerender(<MapCanvas mapName="Foo" data={DATA} view={jumped} onViewChange={onViewChange} />);
+    fireEvent.click(screen.getByRole("button", { name: "4×" }));
+    expect(onViewChange).toHaveBeenCalledTimes(3);
+    expect(onViewChange).toHaveBeenLastCalledWith({ zoom: 4, pan: { x: -42, y: -14 } });
+  });
+
+  it("wheel reports through onViewChange, and after a rerender with a new view and a new callback only the new callback fires", async () => {
+    const first = vi.fn();
+    const second = vi.fn();
+    const { canvas, rerender } = await mountReady({ view: VIEW, onViewChange: first });
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: PIXEL_SIZE, bottom: PIXEL_SIZE, width: PIXEL_SIZE, height: PIXEL_SIZE, x: 0, y: 0, toJSON() {} });
+
+    // zoom 2 -> 4 about (48,16): cx=(48-7)/2=20.5 -> 48-82=-34, cy=(16+3)/2=9.5 -> 16-38=-22.
+    fireEvent.wheel(canvas, { clientX: 48, clientY: 16, deltaY: -100 });
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(first).toHaveBeenCalledWith({ zoom: 4, pan: { x: -34, y: -22 } });
+    expect(first).toHaveBeenCalledWith(zoomAboutPivot(VIEW, 4, 48, 16));
+
+    // Same zoom, new pan and a NEW callback: the native listener must pick up the fresh callback and view.
+    const next: MapView = { zoom: 2, pan: { x: 10, y: 10 } };
+    rerender(<MapCanvas mapName="Foo" data={DATA} view={next} onViewChange={second} />);
+    fireEvent.wheel(canvas, { clientX: 48, clientY: 16, deltaY: -100 });
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(second).toHaveBeenCalledTimes(1);
+    expect(second).toHaveBeenCalledWith(zoomAboutPivot(next, 4, 48, 16)); // cx=19, cy=3 -> (-28, 4)
+    expect(zoomAboutPivot(next, 4, 48, 16).pan).toEqual({ x: -28, y: 4 });
+  });
+
   it("the Fit button reports the fitted view", async () => {
     const onViewChange = vi.fn();
     await mountReady({ view: VIEW, onViewChange });
     fireEvent.click(screen.getByRole("button", { name: "Fit" }));
     expect(onViewChange).toHaveBeenCalledTimes(1);
     expect(onViewChange).toHaveBeenCalledWith({ zoom: 1, pan: { x: 0, y: 0 } });
+  });
+});
+
+describe("MapCanvas: multi-step gestures, uncontrolled (Plan 6c E1)", () => {
+  it("two mousemoves in one drag land on the start pan plus the TOTAL delta (the base is the drag start, not the live pan)", async () => {
+    const { canvas, lastDraw } = await mountReady();
+    fireEvent.mouseDown(canvas, { clientX: 10, clientY: 10, button: 0 });
+    fireEvent.mouseMove(canvas, { clientX: 25, clientY: 4, button: 0 });
+    await waitFor(() => expect(lastDraw().slice(5, 7)).toEqual([15, -6]));
+    fireEvent.mouseMove(canvas, { clientX: 30, clientY: 0, button: 0 });
+    // start (0,0) + (30-10, 0-10) = (20,-10); an accumulating base would give (35,-16).
+    await waitFor(() => expect(lastDraw().slice(5, 7)).toEqual([20, -10]));
+    fireEvent.mouseUp(canvas);
+  });
+
+  it("two wheel ticks go 1x -> 2x -> 4x with exact pans (the listener sees the new zoom)", async () => {
+    const { canvas, lastDraw } = await mountReady();
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: PIXEL_SIZE, bottom: PIXEL_SIZE, width: PIXEL_SIZE, height: PIXEL_SIZE, x: 0, y: 0, toJSON() {} });
+
+    fireEvent.wheel(canvas, { clientX: 48, clientY: 16, deltaY: -100 });
+    await waitFor(() => expect(lastDraw().slice(-2)).toEqual([PIXEL_SIZE * 2, PIXEL_SIZE * 2]));
+    expect(lastDraw().slice(5, 7)).toEqual([-48, -16]); // 48-48*2, 16-16*2
+
+    fireEvent.wheel(canvas, { clientX: 48, clientY: 16, deltaY: -100 });
+    await waitFor(() => expect(lastDraw().slice(-2)).toEqual([PIXEL_SIZE * 4, PIXEL_SIZE * 4]));
+    // cx=(48+48)/2=48 -> 48-192=-144; cy=(16+16)/2=16 -> 16-64=-48.
+    expect(lastDraw().slice(5, 7)).toEqual([-144, -48]);
   });
 });
