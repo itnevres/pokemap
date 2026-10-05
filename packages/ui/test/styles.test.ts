@@ -31,11 +31,29 @@ describe("styles.css", () => {
   });
 
   // Plan 6c E1 (follow-up D2): a long hover string must not widen the canvas column and scroll the page, so the
-  // shared `.map-canvas` (GBA and GBC) declares `min-width: 0`.
-  it("declares min-width: 0 on .map-canvas", () => {
+  // shared `.map-canvas` (GBA and GBC) declares `min-width: 0` and its hover ellipsises (staying right-aligned).
+  // The 44px two-row strip is GBC-only; GBA keeps the 28px single row.
+  const ruleBody = (selector: string) => {
     const out = transform({ filename: "styles.css", code: css, errorRecovery: true }).code.toString();
-    const rule = /\.map-canvas\s*\{([^}]*)\}/.exec(out);
-    expect(rule).not.toBeNull();
-    expect(rule![1]).toMatch(/min-width\s*:\s*0(px)?\s*(;|$)/);
+    const esc = selector.replace(/\./g, String.raw`\.`);
+    const m = new RegExp(String.raw`(^|\})\s*${esc}\s*\{([^}]*)\}`).exec(out);
+    expect(m, selector).not.toBeNull();
+    return m![2]!;
+  };
+
+  it("declares min-width: 0 on .map-canvas", () => {
+    expect(ruleBody(".map-canvas")).toMatch(/min-width\s*:\s*0(px)?\s*(;|$)/);
+  });
+
+  it("keeps the shared hover right-aligned and ellipsising, with no margin-left: 0 or max-width on it", () => {
+    const body = ruleBody(".map-canvas__hover");
+    expect(body).toMatch(/text-overflow\s*:\s*ellipsis/);
+    expect(body).toMatch(/margin-left\s*:\s*auto/);
+    expect(body).not.toMatch(/max-width/);
+  });
+
+  it("makes only the GBC status strip a fixed 44px two-row strip", () => {
+    expect(ruleBody(".gbc-map-canvas .map-canvas__status")).toMatch(/height\s*:\s*44px/);
+    expect(ruleBody(".map-canvas__status")).toMatch(/height\s*:\s*28px/);
   });
 });

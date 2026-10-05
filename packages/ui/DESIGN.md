@@ -236,7 +236,8 @@ tighter (the row, not just the text, is the hit target).
 │  resizable    │     min-width: 480px                     │
 │  240–420px    │                                         │
 │               ├─────────────────────────────────────────┤
-│               │ status strip (--bg-panel-raised, 28px)   │
+│               │ status strip (--bg-panel-raised, 28px;   │
+│               │ GBC: 44px, two rows)                     │
 └───────────────┴─────────────────────────────────────────┘
 ```
 
@@ -260,6 +261,12 @@ every other panel is furniture around it. Concretely that means:
   (Task 21 §9) because getting that number right is this entire project's
   reason to exist, and it must never be more than a glance away from the art
   it describes.
+- The strip is a fixed height, so a long readout can never resize the
+  viewport under the cursor (that would feed the ResizeObserver and re-blit).
+  GBA: 28px, one row, the hover readout right-aligned and ellipsising when it
+  runs out of room. GBC: 44px, two rows (its hover line is far longer), the
+  readout flowing left after the status items. Both canvases carry
+  `min-width: 0` on `.map-canvas` so a long readout never widens the column.
 
 ## Motion
 
