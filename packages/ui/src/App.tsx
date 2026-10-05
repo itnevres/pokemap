@@ -110,6 +110,12 @@ export function App({ switcher }: AppProps) {
     if (name !== selected) changeSelection(name);
   };
 
+  // The world context menu's "Open in Map view" (and Shift+double-click): select the map through the same
+  // dirty guard as a tree click, and switch to Map view only if the user did not cancel it.
+  const openMapFromWorld = (name: string) => {
+    if (name === selected || changeSelection(name)) setMode("map");
+  };
+
   // Entering World centres on the selected map, wherever the selection came from (tree, world click,
   // Map view). A world click itself never jumps (F1); this is a mode entry, not a click.
   const enterWorld = () => {
@@ -257,10 +263,11 @@ export function App({ switcher }: AppProps) {
               jumpToken={selectVersion}
               onJumpToMap={selectMap}
               onSelectMap={selectMapFromWorld}
+              onOpenMap={openMapFromWorld}
             />
           ) : mode === "dungeon" ? (
             openDungeon ? (
-              <WorldCanvas key="dungeon" mapFilter={mapFilter} />
+              <WorldCanvas key="dungeon" mapFilter={mapFilter} onOpenMap={openMapFromWorld} />
             ) : (
               <p className="app__canvas-placeholder">Select or create a dungeon</p>
             )
