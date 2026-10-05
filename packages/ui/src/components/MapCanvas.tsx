@@ -116,6 +116,13 @@ export interface MapCanvasProps {
    *  Porymap's real eyedropper, which copies the WHOLE block, not just the
    *  tile art. */
   onDropperPick?: (stamp: Stamp) => void;
+  /** Controlled pan/zoom (Plan 6c E1). When present the canvas renders exactly this view and owns no view
+   *  state of its own: every zoom button, wheel tick, pan drag and Fit click is reported through
+   *  `onViewChange` instead of applied, and there is NO automatic fit on image load (the parent owns
+   *  placement; only the explicit Fit button reports a fitted view). Omit for the uncontrolled default. */
+  view?: MapView;
+  /** Receives the view a user gesture would produce, computed from the current `view` prop (controlled mode). */
+  onViewChange?: (next: MapView) => void;
 }
 
 /** The server-baked border ring the canvas always requests -- see
@@ -174,7 +181,7 @@ interface Hover {
  * one scaled `drawImage`, so dragging or scrolling never re-touches overlay
  * pixels at all.
  */
-export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEvent, selectedEventRef, onMoveEvent, onDropperPick }: MapCanvasProps) {
+export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEvent, selectedEventRef, onMoveEvent, onDropperPick, view: controlledView, onViewChange }: MapCanvasProps) {
   const { layout, split, map: staticMap, blocks: staticBlocks } = data;
   // Live, server-tracked blocks while an edit session is open for this map;
   // the static `data.blocks` prop otherwise. Every effect below already
@@ -338,8 +345,22 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
   const encountersOn = encountersFor === mapName;
   // ONE view value, so no setter is ever called inside another setter's updater (StrictMode double-invokes
   // updaters; the old nested setPan applied the zoom pivot twice -- Plan 6c E1, follow-up D1).
-  const [view, setView] = useState<MapView>({ zoom: 1, pan: { x: 0, y: 0 } });
+  const [ownView, setOwnView] = useState<MapView>({ zoom: 1, pan: { x: 0, y: 0 } });
+  const controlled = controlledView !== undefined;
+  const view = controlledView ?? ownView;
   const { zoom, pan } = view;
+  // The single write path. Controlled: compute `next` from the latest props.view OUTSIDE any React updater and
+  // report it (a no-op result, e.g. zoomAboutPivot at the same zoom, is not reported). Uncontrolled: set state.
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  const updateView = useCallback(
+    (next: MapView | ((v: MapView) => MapView)) => {
+      if (!controlled) return setOwnView(next);
+      const n = typeof next === "function" ? next(viewRef.current) : next;
+      if (n !== viewRef.current) onViewChange?.(n);
+    },
+    [controlled, onViewChange],
+  );
   const [hover, setHover] = useState<Hover | null>(null);
   const [compositeVersion, setCompositeVersion] = useState(0);
   // Measured, not read from the ref during render: a ref read at render time
@@ -423,8 +444,8 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
       bandNative: encountersOn ? BORDER_BAND.gba * METATILE_PX : 0,
       side,
     });
-    setView({ zoom: z, pan: p });
-  }, [pixelWidth, pixelHeight, viewport, encountersOn, side]);
+    updateView({ zoom: z, pan: p });
+  }, [pixelWidth, pixelHeight, viewport, encountersOn, side, updateView]);
 
   // Only the FIRST successful image load for a given mapName triggers fit()
   // -- a same-map reload triggered by a paint (imgLoaded cycling false->true
@@ -434,7 +455,7 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
   const fittedForMapRef = useRef<string | null>(null);
   useEffect(() => {
     if (imgLoaded && fittedForMapRef.current !== mapName) {
-      fit();
+      if (!controlled) fit(); // controlled: the parent owns placement, no auto-fit
       fittedForMapRef.current = mapName;
     }
     // Only re-fit once per real map open, not on every render -- the user's
@@ -557,7 +578,7 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
 
   const toggle = (key: keyof Toggles) => setToggles((t) => ({ ...t, [key]: !t[key] }));
 
-  const applyZoom = (next: Zoom, pivotX: number, pivotY: number) => setView((v) => zoomAboutPivot(v, next, pivotX, pivotY));
+  const applyZoom = (next: Zoom, pivotX: number, pivotY: number) => updateView((v) => zoomAboutPivot(v, next, pivotX, pivotY));
 
   const centerPivot = (): [number, number] => {
     const c = canvasRef.current;
@@ -590,7 +611,7 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
     };
     canvas.addEventListener("wheel", handler, { passive: false });
     return () => canvas.removeEventListener("wheel", handler);
-  }, [zoom]);
+  }, [zoom, updateView]);
 
   const hoverAt = (clientX: number, clientY: number) => {
     const canvas = canvasRef.current;
@@ -752,7 +773,7 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
     }
     if (dragRef.current) {
       const d = dragRef.current;
-      setView((v) => ({ zoom: v.zoom, pan: { x: d.panX + (e.clientX - d.x), y: d.panY + (e.clientY - d.y) } }));
+      updateView((v) => ({ zoom: v.zoom, pan: { x: d.panX + (e.clientX - d.x), y: d.panY + (e.clientY - d.y) } }));
     } else {
       hoverAt(e.clientX, e.clientY);
     }

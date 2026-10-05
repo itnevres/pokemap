@@ -2,6 +2,7 @@ import { StrictMode } from "react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, fireEvent, screen, waitFor, act } from "@testing-library/react";
 import { MapCanvas, type MapCanvasProps } from "../src/components/MapCanvas.js";
+import { zoomAboutPivot, type MapView } from "../src/components/mapView.js";
 import type { MapLayoutData } from "../src/hooks/useMapLayout.js";
 import type { UseEditSessionResult } from "../src/hooks/useEditSession.js";
 
@@ -1122,5 +1123,56 @@ describe("MapCanvas under <StrictMode> (Plan 6c E1, follow-up D1)", () => {
     expect(lastDraw().slice(5, 7)).toEqual([-96, -96]);
     // Doubled: second pass cx = (32 - -96)/2 = 64, pan = 32 - 256 = -224.
     expect(lastDraw().slice(5, 7)).not.toEqual([-224, -224]);
+  });
+});
+
+describe("MapCanvas: controlled view (Plan 6c E1)", () => {
+  const VIEW: MapView = { zoom: 2, pan: { x: 7, y: -3 } };
+
+  it("renders props.view: the first draw is at its pan, size x2", async () => {
+    const { lastDraw } = await mountReady({ view: VIEW, onViewChange: vi.fn() });
+    expect(lastDraw().slice(5, 9)).toEqual([7, -3, PIXEL_SIZE * 2, PIXEL_SIZE * 2]);
+  });
+
+  it("a zoom button reports zoomAboutPivot(view, 4, centre) once and does not redraw until the parent passes the new view", async () => {
+    const onViewChange = vi.fn();
+    const { canvas, lastDraw, rerender } = await mountReady({ view: VIEW, onViewChange });
+    const expected = zoomAboutPivot(VIEW, 4, canvas.width / 2, canvas.height / 2);
+    expect(expected).toEqual({ zoom: 4, pan: { x: -18, y: -38 } }); // cx=(32-7)/2, cy=(32+3)/2
+    const drawsBefore = ctxByCanvas.get(canvas)!.drawImage.mock.calls.length;
+
+    fireEvent.click(screen.getByRole("button", { name: "4×" }));
+    expect(onViewChange).toHaveBeenCalledTimes(1);
+    expect(onViewChange).toHaveBeenCalledWith(expected);
+    expect(ctxByCanvas.get(canvas)!.drawImage.mock.calls.length).toBe(drawsBefore);
+    expect(lastDraw().slice(5, 9)).toEqual([7, -3, PIXEL_SIZE * 2, PIXEL_SIZE * 2]);
+    expect(screen.getByRole("button", { name: "2×" }).getAttribute("aria-pressed")).toBe("true");
+
+    rerender(<MapCanvas mapName="Foo" data={DATA} view={expected} onViewChange={onViewChange} />);
+    await waitFor(() => expect(lastDraw().slice(5, 9)).toEqual([-18, -38, PIXEL_SIZE * 4, PIXEL_SIZE * 4]));
+  });
+
+  it("a pan drag reports the dragged pan", async () => {
+    const onViewChange = vi.fn();
+    const { canvas } = await mountReady({ view: VIEW, onViewChange });
+    fireEvent.mouseDown(canvas, { clientX: 10, clientY: 10, button: 0 });
+    fireEvent.mouseMove(canvas, { clientX: 25, clientY: 4, button: 0 });
+    expect(onViewChange).toHaveBeenCalledTimes(1);
+    expect(onViewChange).toHaveBeenLastCalledWith({ zoom: 2, pan: { x: 22, y: -9 } }); // 7+15, -3-6
+  });
+
+  it("an image load never reports a view (no auto-fit): the parent owns placement", async () => {
+    const onViewChange = vi.fn();
+    const { lastDraw } = await mountReady({ view: VIEW, onViewChange });
+    expect(onViewChange).not.toHaveBeenCalled();
+    expect(lastDraw().slice(5, 9)).toEqual([7, -3, PIXEL_SIZE * 2, PIXEL_SIZE * 2]);
+  });
+
+  it("the Fit button reports the fitted view", async () => {
+    const onViewChange = vi.fn();
+    await mountReady({ view: VIEW, onViewChange });
+    fireEvent.click(screen.getByRole("button", { name: "Fit" }));
+    expect(onViewChange).toHaveBeenCalledTimes(1);
+    expect(onViewChange).toHaveBeenCalledWith({ zoom: 1, pan: { x: 0, y: 0 } });
   });
 });
