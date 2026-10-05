@@ -202,7 +202,8 @@ export function buildGbcMapPayload(proj: GbcProject, map: GbcMap): GbcMapPayload
  * and, when `warps` is omitted, map events for the near-warp resolver. The
  * handler passes its cached normalized warp list so requests do not reload
  * events. Resolution copies placement values and leaves the cached base
- * world untouched; manual sidecar positions are applied afterward.
+ * world untouched. Manual sidecar positions are fixed obstacles during
+ * resolution (phase-D-review R1) and are applied again afterward.
  */
 export function buildGbcWorldPayload(proj: GbcProject, world: GbcWorld, sidecar: Sidecar, warps: readonly WarpLink[] = gbcWarpLinks(proj)): GbcWorldPayload {
   const mapTypeByName = new Map(proj.maps.map((map) => [map.name, map.environment]));
@@ -213,7 +214,8 @@ export function buildGbcWorldPayload(proj: GbcProject, world: GbcWorld, sidecar:
   const hidden = new Set([...world.placements.keys()].filter((name) => !shown.has(name)));
   const sizes = new Map([...world.placements].map(([name, p]) => [name, { width: p.width, height: p.height }]));
   const automatic = placeNearWarps({ placements: world.placements, shown, hidden, warps, sizes, gap: 4,
-    singletons: new Set(world.components.filter((c) => c.maps.length === 1).map((c) => c.maps[0]!)) });
+    singletons: new Set(world.components.filter((c) => c.maps.length === 1).map((c) => c.maps[0]!)),
+    manualPlacements: sidecar.manualPlacements });
   const placements = Object.fromEntries(
     [...applySidecar(automatic, sidecar)].map(([name, placement]) => [name, {
       ...placement,

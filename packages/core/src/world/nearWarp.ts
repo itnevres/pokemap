@@ -17,6 +17,8 @@ export interface NearWarpInput {
   sizes: ReadonlyMap<string, { width: number; height: number }>;
   gap: number;
   singletons?: ReadonlySet<string>;
+  /** Sidecar manual positions. These maps are fixed anchors and obstacles where they are drawn, never moved. */
+  manualPlacements?: Readonly<Record<string, { x: number; y: number }>>;
 }
 
 type Path = { anchor: string; arrival: { x: number; y: number }; keys: string[]; distance: number };
@@ -69,13 +71,14 @@ function preferred(anchor: Placement, arrival: { x: number; y: number }, size: {
 }
 
 /** Move shown singleton maps beside their nearest reachable warp entrance. Inputs stay untouched. */
-export function placeNearWarps({ placements, shown, hidden, warps, sizes, gap, singletons: explicitSingletons }: NearWarpInput): Map<string, Placement> {
-  const out = new Map([...placements].map(([name, p]) => [name, { ...p }]));
+export function placeNearWarps({ placements, shown, hidden, warps, sizes, gap, singletons: explicitSingletons, manualPlacements = {} }: NearWarpInput): Map<string, Placement> {
+  const isManual = (name: string) => Object.hasOwn(manualPlacements, name);
+  const out = new Map([...placements].map(([name, p]) => [name, isManual(name) ? { ...p, x: manualPlacements[name]!.x, y: manualPlacements[name]!.y } : { ...p }]));
   const componentSizes = new Map<number, number>();
   for (const p of out.values()) componentSizes.set(p.component, (componentSizes.get(p.component) ?? 0) + 1);
   const singletons = new Set([...shown].filter((name) => {
     const p = out.get(name);
-    return p !== undefined && (explicitSingletons ? explicitSingletons.has(name) : componentSizes.get(p.component) === 1);
+    return p !== undefined && !isManual(name) && (explicitSingletons ? explicitSingletons.has(name) : componentSizes.get(p.component) === 1);
   }));
   const fixed = new Set([...shown].filter((name) => out.has(name) && !singletons.has(name)));
   const edges = new Map<string, WarpLink[]>();

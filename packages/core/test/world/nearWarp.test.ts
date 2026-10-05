@@ -67,6 +67,28 @@ describe("placeNearWarps", () => {
     expect(JSON.stringify([...first].sort(([a], [b]) => a.localeCompare(b)))).toBe(JSON.stringify([...reversed].sort(([a], [b]) => a.localeCompare(b))));
   });
 
+  it("treats manual placements as fixed obstacles at their manual positions, never as movable singletons", () => {
+    const placements = [p("Anchor", 0, 0, 12, 4, 0), p("Target", 100, 100, 3, 2, 1), p("Manual", 200, 200, 3, 2, 2), p("Z", 300, 300, 3, 2, 3)];
+    const input = (manualPlacements: Record<string, { x: number; y: number }>) => ({
+      placements: new Map(placements.map((placement) => [placement.map, placement])), shown: new Set(placements.map((v) => v.map)), hidden: new Set<string>(),
+      warps: [link("Target", "Anchor", { x: 1, y: 0 }), link("Z", "Anchor", { x: 1, y: 0 })],
+      sizes: new Map(placements.map((placement) => [placement.map, { width: placement.width, height: placement.height }])), gap: 1,
+      singletons: new Set(["Target", "Z"]), manualPlacements,
+    });
+    // Without manual input Target takes the preferred spot north of Anchor.
+    expect(placeNearWarps(input({})).get("Target")).toMatchObject({ x: 0, y: -3 });
+    // Manual sits exactly there: Target must avoid it, and Manual keeps its manual position.
+    const blocked = placeNearWarps(input({ Manual: { x: 0, y: -3 } }));
+    expect(blocked.get("Manual")).toMatchObject({ x: 0, y: -3 });
+    expect(blocked.get("Target")).not.toMatchObject({ x: 0, y: -3 });
+    const t = blocked.get("Target")!, m = blocked.get("Manual")!;
+    expect(t.x < m.x + m.width && t.x + t.width > m.x && t.y < m.y + m.height && t.y + t.height > m.y).toBe(false);
+    // A manually placed singleton never moves, and leaves no ghost obstacle at its auto spot.
+    const pinned = placeNearWarps(input({ Target: { x: 50, y: 50 } }));
+    expect(pinned.get("Target")).toMatchObject({ x: 50, y: 50 });
+    expect(pinned.get("Z")).toMatchObject({ x: 0, y: -3 });
+  });
+
   it("preserves fixed anchor and fallback iteration order while moving a singleton", () => {
     const placements = [p("ZAnchor", 0, 0, 12, 4, 0), p("Fallback", 100, 100, 2, 2, 1), p("AAnchor", 30, 0, 12, 4, 2), p("Target", 200, 200, 3, 2, 3)];
     const result = run(placements, ["ZAnchor", "Fallback", "AAnchor", "Target"], [], [link("Target", "AAnchor", { x: 1, y: 0 })]);
@@ -115,6 +137,15 @@ itWithCorpus("GBA near-warp uses resolved zero-based arrivals for Granite Cave, 
   const manual = resolveWorldPlacements(proj, world, sidecar({ GraniteCave_1F: { x: 0, y: 342 } }));
   expect(manual.get("GraniteCave_1F")).toMatchObject({ x: 0, y: 342 });
   expect(overlapPairs(manual, new Set(["GraniteCave_1F", "Route106"]))).toEqual(["GraniteCave_1F/Route106"]);
+});
+
+itWithCorpus("GBA near-warp avoids a map manually placed on its preferred spot (phase-D-review R1)", () => {
+  const proj = openProject(SUBJECT_ROOT);
+  const world = buildWorld(proj);
+  // GraniteCave_1F auto-lands at (18,366) (pinned above); put Route101 there by hand.
+  const result = resolveWorldPlacements(proj, world, sidecar({ Route101: { x: 18, y: 366 } }));
+  expect(result.get("Route101")).toMatchObject({ x: 18, y: 366 });
+  expect(overlapPairs(result, new Set(["GraniteCave_1F", "Route101"]))).toEqual([]);
 });
 
 itWithGbcCorpus("GBC adapter preserves half-block endpoints and null out-of-range arrival", () => {

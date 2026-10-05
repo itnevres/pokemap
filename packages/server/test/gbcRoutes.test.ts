@@ -749,6 +749,18 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
       expect(azalea.height).toBeGreaterThan(0);
     });
 
+    it("never auto-places a near-warp map onto a manually placed map (phase-D-review R1)", () => {
+      const proj = openGbcProject(GBC_SUBJECT_ROOT);
+      const world = buildGbcWorld(proj);
+      const warps = gbcWarpLinks(proj);
+      const empty: Sidecar = { version: 1, dungeonAutoLayout: true, manualPlacements: {}, view: { x: 0, y: 0, zoom: 1 } };
+      const ilex = buildGbcWorldPayload(proj, world, empty, warps).placements.IlexForest!;
+      const manual = buildGbcWorldPayload(proj, world, { ...empty, manualPlacements: { AzaleaTown: { x: ilex.x, y: ilex.y } } }, warps).placements;
+      const a = manual.AzaleaTown!, i = manual.IlexForest!;
+      expect(a).toMatchObject({ x: ilex.x, y: ilex.y, manual: true });
+      expect(i.x < a.x + a.width && i.x + i.width > a.x && i.y < a.y + a.height && i.y + i.height > a.y).toBe(false);
+    });
+
     // Fix round 1, spec review Minor #3: GBC has no dungeons-on/off toggle
     // (unlike GBA's own /api/world, which reads ?dungeons=), so a query
     // string on this route must be silently ignored, never change the
@@ -773,7 +785,8 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
       const hidden = new Set(proj.maps.filter((map) => !shown.has(map.name)).map((map) => map.name));
       const resolved = placeNearWarps({ placements: world.placements, shown, hidden, warps: gbcWarpLinks(proj),
         sizes: new Map([...world.placements].map(([name, p]) => [name, { width: p.width, height: p.height }])), gap: 4,
-        singletons: new Set(world.components.filter((c) => c.maps.length === 1).map((c) => c.maps[0]!)) });
+        singletons: new Set(world.components.filter((c) => c.maps.length === 1).map((c) => c.maps[0]!)),
+        manualPlacements: sidecar.manualPlacements });
       const expectedPlacements = Object.fromEntries([...resolved].map(([name, placement]) => [name, {
         ...placement,
         ...(sidecar.manualPlacements[name] ?? {}),

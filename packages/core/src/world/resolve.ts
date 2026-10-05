@@ -55,7 +55,7 @@ export function resolveWorldPlacements(
     }));
     const hidden = new Set([...base.keys()].filter((name) => !shown.has(name)));
     const sizes = new Map([...base].map(([name, p]) => [name, { width: p.width, height: p.height }]));
-    const placed = placeNearWarps({ placements: base, shown, hidden, warps: gbaWarpLinks(proj), sizes, gap: 4, singletons: unplacedMapNames(world) });
+    const placed = placeNearWarps({ placements: base, shown, hidden, warps: gbaWarpLinks(proj), sizes, gap: 4, singletons: unplacedMapNames(world), manualPlacements: sidecar.manualPlacements });
     return applySidecar(placed, sidecar);
   } else {
     for (const name of unplacedMapNames(world)) base.delete(name);
