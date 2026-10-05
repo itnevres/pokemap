@@ -72,6 +72,16 @@ describe("GBC dungeon warps (Plan 6c D3)", () => {
     expect(screen.getByRole("switch", { name: "Connection lines" }).getAttribute("aria-checked")).toBe("true");
   });
 
+  // Phase D close (coordinator D3-M3 rerun): Outside above lies beyond the scoped fit, so culling
+  // alone hid it. Here an outsider sits inside the scoped view and only mapFilter can exclude it.
+  it("never draws an outsider that lies inside the scoped view", async () => {
+    const world = { ...scopedWorld, placements: { ...scopedWorld.placements, Outside: { ...scopedWorld.placements.Outside!, x: 22, y: 32 } } };
+    vi.stubGlobal("fetch", scopedFetch({}, world));
+    render(<GbcWorldCanvas time="day" mapFilter={new Set(["Hidden", "Source"])} />);
+    await waitFor(() => expect(FakeImage.instances.some((image) => image.src.includes("Hidden.png"))).toBe(true));
+    expect(FakeImage.instances.some((image) => image.src.includes("Outside.png"))).toBe(false);
+  });
+
   it("shows malformed warp payload errors and permits retry after a later toggle", async () => {
     const base = mockFetchAll({ world: scopedWorld });
     let attempt = 0;
