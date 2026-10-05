@@ -4,7 +4,14 @@ Scope: the Phase D code diff `e34629a..1c49c53` (35 files under `packages/`, +2,
 
 ## Verdict
 
-Phase D meets criteria 6 and 7 live in both families. The final gate is green apart from the known environment pair, after one stale-test fix (`1b558b0`). The per-task review loop held: specs were grounded, U3 (acknowledge only) is respected, and the 13 D4 mutation cases all went red on the final commit. Two real gaps remain, both low severity, plus a few UX nits. None blocks Phase E.
+Phase D meets criteria 6 and 7 live in both families. The final gate is green apart from the known environment pair, after one stale-test fix (`1b558b0`). The per-task review loop mostly held: specs were grounded, U3 (acknowledge only) is respected, and the 13 D4 mutation cases all went red on the final commit.
+
+This session found three gaps:
+- **R2:** a stale test that broke the gate. Fixed in `1b558b0`.
+- **R3:** the missing D3 coordinator mutation run, which revealed one surviving mutant. Fixed in `9400241`.
+- **R1:** a low-severity D2 overlap between near-warp placement and manual placement. **Still open; it needs a decision.**
+
+There are also a few UX nits. None blocks Phase E.
 
 ## Findings
 
@@ -25,6 +32,10 @@ D2's "zero overlaps" corpus tests run without manual placements, so they miss th
 ### R2. A stale D3 discriminator broke `Root.test.tsx` (D3, fixed here)
 
 See `task-D4-coordinator.md` § Phase D gate. D3 gave GBC a Dungeon button, and the existing test relied on there being none. It failed only in the full gate: no D3 dispatch ran that file. Lesson: when a task adds UI to a shell, grep the tests for assertions that the element is *absent* (`queryBy…).toBeNull()`) on that text.
+
+### R3. The D3 coordinator mutation run was missing, and one mutant survived (D3, fixed here)
+
+The D3 spec requires the coordinator to rerun D3-M1–M6, but no committed record of that run existed. The rerun is in `task-D3-coordinator.md`. D3-M3 at the `visible`-memo site survived, because the scoped fixture's outsider lay beyond the fit and culling hid it. The new test `9400241` kills it. All 7 cases are RED on `9400241`.
 
 ### Nits (no action required now; E3 may absorb the UI ones)
 

@@ -124,6 +124,7 @@ This ran through `final-gates.mjs`: one suite at a time, output captured to the 
 - **0 new failures, +53 tests.**
 - Typecheck is clean (`tsconfig.base.json` and `packages/ui`), and `vite build` passes.
 - Machine-readable results: `phase-d-final-gates.json`.
+- **After the gate:** `9400241` adds one GBC test (see `task-D3-coordinator.md`), bringing the expected total to 2,039 / 2. `GbcWorldCanvas.test.tsx` passed 106/106 alone, and the UI typecheck was clean. The full suite was not rerun after this test-only addition.
 
 ## External state at close
 
