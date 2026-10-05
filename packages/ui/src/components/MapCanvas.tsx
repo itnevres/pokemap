@@ -119,7 +119,9 @@ export interface MapCanvasProps {
   /** Controlled pan/zoom (Plan 6c E1). When present the canvas renders exactly this view and owns no view
    *  state of its own: every zoom button, wheel tick, pan drag and Fit click is reported through
    *  `onViewChange` instead of applied, and there is NO automatic fit on image load (the parent owns
-   *  placement; only the explicit Fit button reports a fitted view). Omit for the uncontrolled default. */
+   *  placement; only the explicit Fit button reports a fitted view). Omit for the uncontrolled default.
+   *  Do not switch between controlled and uncontrolled during one mount. In controlled mode two gestures
+   *  fired before the parent re-renders both derive from the last rendered view (the second wins). */
   view?: MapView;
   /** Receives the view a user gesture would produce, computed from the current `view` prop (controlled mode). */
   onViewChange?: (next: MapView) => void;
@@ -353,13 +355,17 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
   // report it (a no-op result, e.g. zoomAboutPivot at the same zoom, is not reported). Uncontrolled: set state.
   const viewRef = useRef(view);
   viewRef.current = view;
+  // `onViewChange` goes through a ref so an inline callback never changes `updateView`'s identity (which would
+  // re-create `fit` and re-bind the wheel listener on every parent render).
+  const onViewChangeRef = useRef(onViewChange);
+  onViewChangeRef.current = onViewChange;
   const updateView = useCallback(
     (next: MapView | ((v: MapView) => MapView)) => {
       if (!controlled) return setOwnView(next);
       const n = typeof next === "function" ? next(viewRef.current) : next;
-      if (n !== viewRef.current) onViewChange?.(n);
+      if (n !== viewRef.current) onViewChangeRef.current?.(n);
     },
-    [controlled, onViewChange],
+    [controlled],
   );
   const [hover, setHover] = useState<Hover | null>(null);
   const [compositeVersion, setCompositeVersion] = useState(0);

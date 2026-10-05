@@ -39,19 +39,19 @@ import { ZOOM_LEVELS, zoomAboutPivot, type MapView, type Zoom } from "../compone
  *   destructive), and a separate stage canvas re-blits that composite for
  *   pan/zoom only, never re-touching overlay pixels.
  *
- * **One divergence from `MapCanvas.tsx`, deliberate (fix round, spec review
- * finding 1):** `MapCanvas.tsx:532-542`'s own `applyZoom` nests a `setPan`
- * call inside a `setZoom` updater function. React's `<StrictMode>` (which
+ * **One divergence from `MapCanvas.tsx` (as of Plan 6b; since closed), deliberate
+ * (fix round, spec review finding 1):** `MapCanvas.tsx`'s own `applyZoom` then
+ * nested a `setPan` call inside a `setZoom` updater function. React's `<StrictMode>` (which
  * `main.tsx` wraps the whole app in) double-invokes updater functions in
  * development to surface exactly this kind of impurity -- the nested
  * `setPan` fires twice, so the pan transform is applied twice, landing 2x
  * off-centre and going fully off-canvas (blank) at 4x on every map, not just
  * a large one. This file keeps ONE `view: { zoom, pan }` state updated by a
- * single, pure `zoomAboutPivot` (exported and unit-tested below), so
- * StrictMode's double-invoke is harmless -- it is the standard fix for this
- * exact class of bug, not a fork from GBA's own mechanic. A GBA follow-up
- * for `MapCanvas.tsx:532-542` is filed separately; that file is out of
- * scope here.
+ * single, pure `zoomAboutPivot`, so StrictMode's double-invoke is harmless --
+ * it is the standard fix for this exact class of bug. GBA had the same bug
+ * and was fixed the same way in Plan 6c E1; both canvases now share
+ * `components/mapView.ts` (`zoomAboutPivot` is re-exported below and
+ * unit-tested in this canvas's own test file).
  *
  * Unlike GBA, hover does NOT depend on which overlays are toggled on:
  * `gbcStepInfo` is a pure function of the payload and the hovered step,
@@ -63,6 +63,7 @@ import { ZOOM_LEVELS, zoomAboutPivot, type MapView, type Zoom } from "../compone
 const BORDER_RINGS = 1;
 /** Native px per world unit (one block) -- the encounter border's own scale, and what its band is measured in. */
 const BLOCK_PX = 32;
+
 /** The canvas's whole pan/zoom state, updated as ONE value (fix round, spec
  *  review finding 1) -- see the header comment for why this replaced two
  *  separate `zoom`/`pan` state variables. Shared with `MapCanvas` (Plan 6c E1). */
