@@ -9,13 +9,22 @@ Phase D meets criteria 6 and 7 live in both families. The final gate is green ap
 This session found three gaps:
 - **R2:** a stale test that broke the gate. Fixed in `1b558b0`.
 - **R3:** the missing D3 coordinator mutation run, which revealed one surviving mutant. Fixed in `9400241`.
-- **R1:** a low-severity D2 overlap between near-warp placement and manual placement. **Still open; it needs a decision.**
+- **R1:** a low-severity D2 overlap between near-warp placement and manual placement. **Fixed in `6aa47ae` at the user's request.**
 
 There are also a few UX nits. None blocks Phase E.
 
 ## Findings
 
-### R1. A near-warp map can overlap a manually placed map (D2, low, confirmed)
+### R1. A near-warp map can overlap a manually placed map (D2, low, confirmed; fixed in `6aa47ae`)
+
+**Fixed, 2026-10-04.** `placeNearWarps` now takes `manualPlacements`. Those maps are fixed anchors and obstacles at their manual positions, and they are never moved as singletons. Both callers pass the sidecar's list, and `applySidecar` still runs last. New witnesses:
+- a core unit fixture;
+- GBA: Route101 placed by hand on GraniteCave_1F's auto spot (18,366);
+- GBC: AzaleaTown placed by hand on IlexForest's auto spot.
+
+The mutation harness `r1-mutations.mjs` covers both core sites (the singleton exclusion and the manual position) and both caller wirings. All 4 cases go RED. The first singleton mutant survived because it was equivalent in the first fixture: the pin equalled the preferred spot. Moving the pin killed it. Full gate on `6aa47ae`: **2,042 pass / 2 known fail**; typecheck and build clean.
+
+Original finding:
 
 `resolve.ts` (GBA) and `buildGbcWorldPayload` (GBC) both call `placeNearWarps` with the *automatic* positions and apply `applySidecar` afterwards. `placeNearWarps` builds its obstacle set from those pre-manual positions, so it avoids where a manually placed map *would have been*, not where it is drawn.
 

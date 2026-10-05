@@ -15,3 +15,5 @@ Live setup prepared outside repo: same scratch directory preload.mjs remaps real
 Remaining: D2 implementation/reviews/fix/coordinator mutations; D3; D4; criteria6/7 Playwright; final captured suite/typecheck/build; external-state checks; report archive; RESUME handoff and Grok continuation prompt. No push.
 
 Oct 4 close (Claude Code coordinator): D3 complete; coordinator D3-M1-M6 rerun (task-D3-coordinator.md) found D3-M3 visible-memo survivor, killed by test 9400241; all 7 RED. D4 complete: final narrow reviews PASS, coordinator D4-M1-M8 (13 cases) RED on 1c49c53, criteria 6/7 live-verified both families, gate 2,038/2 known on 1b558b0 after stale Root.test fix (task-D4-coordinator.md). Phase D review: phase-D-review.md (R1 near-warp vs manual overlap open). External state identical to D4 before-state. Next: Phase E in a fresh session.
+
+Oct 4, after the user's go-ahead: fixed R1 (near-warp vs manual overlap) in 6aa47ae. The R1-M1-M4 mutation cases all went RED. Gate on 6aa47ae: 2,042 pass / 2 known fail; typecheck and build clean.
