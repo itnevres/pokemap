@@ -46,7 +46,7 @@ function resolveEventRef(ref: EventRef | null, map: MapData | undefined): Select
  *  optimistic local state it had already set, nothing was actually
  *  persisted, and nothing told the player. Turns whatever `fetch` threw
  *  (see useEditSession.ts's own `callEvent`) into one short, readable
- *  line for the banner below. */
+ *  line for the banner in MapEditingWorkspace.tsx. */
 function eventOpErrorMessage(e: unknown): string {
   return e instanceof Error ? e.message : "Failed to update event.";
 }
@@ -75,7 +75,7 @@ export function useMapEditing({ editSession, layoutData }: UseMapEditingArgs) {
   const [selectedEvent, setSelectedEvent] = useState<SelectedEvent | null>(null);
   // Review fix: surfaces a failed move/add/delete (see eventOpErrorMessage's
   // own doc comment above) -- cleared on the next successful op, or by the
-  // dismiss button on the banner itself (JSX below). Deliberately its own
+  // dismiss button on the banner itself (MapEditingWorkspace.tsx). Deliberately its own
   // state, not reusing layout.error/dungeons.error/etc.: those are per-hook
   // load errors that persist until the underlying fetch succeeds again,
   // this is a one-shot "your last click didn't take" notice.
@@ -210,7 +210,7 @@ export function useMapEditing({ editSession, layoutData }: UseMapEditingArgs) {
   const [activeToolKind, setActiveToolKind] = useState<ToolKind | null>(null);
   const [collisionValue, setCollisionValue] = useState<CollisionElevation>({ collision: 0, elevation: 0 });
   // The metatile selection pencil/rect/bucket paint with -- chosen via
-  // MetatilePalette, mounted below while one of those three tools is active.
+  // MetatilePalette, mounted in MapEditingWorkspace.tsx while one of those three tools is active.
   // `null` until the player picks a cell (or a rect drag), same
   // null-until-configured posture `activeTool` already gives every tool
   // below it a stamp for.
@@ -240,11 +240,11 @@ export function useMapEditing({ editSession, layoutData }: UseMapEditingArgs) {
   // MapCanvasProps doc comment -- its type union has no "dropper"/"shift"
   // member at all).
   //   - "collision" always has a value to paint with (collisionValue starts
-  //     at a sane default and CollisionPalette, mounted below while this
+  //     at a sane default and CollisionPalette, mounted in MapEditingWorkspace.tsx while this
   //     tool is active, is the only thing that ever changes it) -- fully
   //     live today.
   //   - "pencil"/"rect"/"bucket" need a Stamp (a metatile selection) --
-  //     MetatilePalette is now mounted below (Plan 2 follow-up 1) while one
+  //     MetatilePalette is now mounted in MapEditingWorkspace.tsx (Plan 2 follow-up 1) while one
   //     of these three is active, and `currentStamp` is what it writes to.
   //     Until the player actually picks a cell (or drags a rect), these stay
   //     null-until-configured, same as before: selectable in the Toolbar,
@@ -267,9 +267,9 @@ export function useMapEditing({ editSession, layoutData }: UseMapEditingArgs) {
   // Plan 2 follow-up 5: "give up on this whole editing session, revert to
   // disk state" -- a separate, explicit action from SaveDialog's Cancel
   // (which deliberately stays non-destructive, see that component's own
-  // comment) and from selectMap's own dirty guard just below (that one
+  // comment) and from App.tsx changeSelection's own dirty guard (that one
   // blocks a map SWITCH; this one discards edits on the CURRENT map without
-  // switching anything). Same confirm() tone as selectMap's own guard, for
+  // switching anything). Same confirm() tone as changeSelection's own guard, for
   // one consistent voice across this app's two "you're about to lose
   // unsaved changes" prompts. Reuses eventOpError's existing banner/
   // eventOpErrorMessage helper to surface a failed discard, rather than
