@@ -29,4 +29,13 @@ describe("styles.css", () => {
     expect(row![1]).not.toMatch(/position\s*:/);
     expect(out).not.toMatch(/\.lens-panel__legend\s*\{/);
   });
+
+  // Plan 6c E1 (follow-up D2): a long hover string must not widen the canvas column and scroll the page, so the
+  // shared `.map-canvas` (GBA and GBC) declares `min-width: 0`.
+  it("declares min-width: 0 on .map-canvas", () => {
+    const out = transform({ filename: "styles.css", code: css, errorRecovery: true }).code.toString();
+    const rule = /\.map-canvas\s*\{([^}]*)\}/.exec(out);
+    expect(rule).not.toBeNull();
+    expect(rule![1]).toMatch(/min-width\s*:\s*0(px)?\s*(;|$)/);
+  });
 });

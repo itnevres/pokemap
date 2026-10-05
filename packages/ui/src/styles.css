@@ -513,6 +513,7 @@ input {
 .map-canvas {
   flex: 1 1 auto;
   min-height: 0;
+  min-width: 0;
   display: flex;
   flex-direction: column;
 }
@@ -694,10 +695,10 @@ input {
    before and after this fix (the CSS is what makes it true). GBA's own
    `.map-canvas` has the identical latent bug (its own hover text is short
    enough today to never trigger it) -- filed as a separate GBA follow-up,
-   not fixed here (out of this task's scope). */
-.gbc-map-canvas {
-  min-width: 0;
-}
+   not fixed here (out of this task's scope).
+   Plan 6c E1 (follow-up D2): that GBA follow-up is done -- `min-width: 0` now
+   lives on `.map-canvas` itself (GBC's root also carries it), and so do the
+   two strip rules below. */
 
 /* A FIXED-height, two-line strip -- wrapping the two status items onto
    their own line each (not scrolling or clipping to one line) is the
@@ -706,7 +707,7 @@ input {
    ResizeObserver and a re-blit, which can oscillate near the bottom edge --
    the same class of bug as Task 21's own blanking postmortem, from the
    opposite direction. */
-.gbc-map-canvas .map-canvas__status {
+.map-canvas .map-canvas__status {
   height: 44px;
   flex-wrap: wrap;
   align-content: center;
@@ -716,7 +717,7 @@ input {
 /* The hover span still shrinks to fit its own line and ellipsises as the
    last resort, in case a future map/tileset combination produces an even
    longer line than any measured today. */
-.gbc-map-canvas .map-canvas__hover {
+.map-canvas .map-canvas__hover {
   margin-left: 0;
   min-width: 0;
   max-width: 100%;
