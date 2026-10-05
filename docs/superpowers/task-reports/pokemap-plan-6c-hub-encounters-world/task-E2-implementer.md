@@ -9,7 +9,7 @@
 | (tests) | `test(ui): pin MapEditingWorkspace renderCanvas seam and useMapEditing.resetForMapChange (E2)`: 2 new test files |
 | (report) | this file |
 
-Shas: `git log 2f0f9d7..HEAD --oneline`.
+Shas: refactor `cf5a1ed`, tests `a4cd1b7`, report `959a67b`.
 
 ## Files
 | file | lines |
