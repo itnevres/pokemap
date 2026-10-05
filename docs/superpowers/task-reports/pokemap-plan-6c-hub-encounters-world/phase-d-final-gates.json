@@ -1,0 +1,18 @@
+[
+  {
+    "name": "phase-d-final-test",
+    "code": 1
+  },
+  {
+    "name": "phase-d-final-typecheck-core",
+    "code": 0
+  },
+  {
+    "name": "phase-d-final-typecheck-ui",
+    "code": 0
+  },
+  {
+    "name": "phase-d-final-build",
+    "code": 0
+  }
+]
