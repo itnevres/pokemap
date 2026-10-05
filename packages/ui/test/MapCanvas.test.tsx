@@ -1,3 +1,4 @@
+import { StrictMode } from "react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, fireEvent, screen, waitFor, act } from "@testing-library/react";
 import { MapCanvas, type MapCanvasProps } from "../src/components/MapCanvas.js";
@@ -1084,5 +1085,42 @@ describe("MapCanvas: Encounters overlay (Plan 6c B4)", () => {
     fireEvent.click(encBtn());
     await screen.findByRole("button", { name: "Espeon" });
     expect(baseCtx.putImageData).not.toHaveBeenCalled();
+  });
+});
+
+describe("MapCanvas under <StrictMode> (Plan 6c E1, follow-up D1)", () => {
+  it("fit -> 2x -> 4x lands on the exact single-application pan, not the doubled pan a nested setState produces", async () => {
+    const utils = render(
+      <StrictMode>
+        <MapCanvas mapName="Foo" data={DATA} />
+      </StrictMode>,
+    );
+    const canvas = utils.container.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
+    const img = utils.container.querySelector("img.map-canvas__source-image") as HTMLImageElement;
+    fireEvent.load(img);
+    await waitFor(() => expect(ctxByCanvas.get(canvas)?.drawImage).toHaveBeenCalled());
+    const stageCtx = ctxByCanvas.get(canvas)!;
+    const lastDraw = () => stageCtx.drawImage.mock.calls.at(-1)!;
+
+    // Fit: viewport === pixel size exactly, so 1x, pan (0,0).
+    expect(lastDraw().slice(5, 9)).toEqual([0, 0, PIXEL_SIZE, PIXEL_SIZE]);
+
+    // pivot = canvas centre = (32, 32).
+    const pivot = [canvas.width / 2, canvas.height / 2] as const;
+    expect(pivot).toEqual([32, 32]);
+
+    // 2x from pan0 (0,0): cx = (32-0)/1 = 32; pan = round(32 - 32*2) = -32 -- applied ONCE.
+    fireEvent.click(utils.getByRole("button", { name: "2×" }));
+    await waitFor(() => expect(lastDraw().slice(-2)).toEqual([PIXEL_SIZE * 2, PIXEL_SIZE * 2]));
+    expect(lastDraw().slice(5, 7)).toEqual([-32, -32]);
+    // Applied twice (the StrictMode-doubled nested setPan): cx = (32 - -32)/1 = 64, pan = 32 - 128 = -96.
+    expect(lastDraw().slice(5, 7)).not.toEqual([-96, -96]);
+
+    // 4x from (zoom 2, pan -32): cx = (32 - -32)/2 = 32; pan = round(32 - 32*4) = -96 -- applied ONCE.
+    fireEvent.click(utils.getByRole("button", { name: "4×" }));
+    await waitFor(() => expect(lastDraw().slice(-2)).toEqual([PIXEL_SIZE * 4, PIXEL_SIZE * 4]));
+    expect(lastDraw().slice(5, 7)).toEqual([-96, -96]);
+    // Doubled: second pass cx = (32 - -96)/2 = 64, pan = 32 - 256 = -224.
+    expect(lastDraw().slice(5, 7)).not.toEqual([-224, -224]);
   });
 });

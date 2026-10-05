@@ -7,6 +7,7 @@ import { EncounterBorder, type EncounterBorderEntry } from "../components/Encoun
 import { BORDER_BAND, borderSideFromConnections } from "../encounters/borderSide.js";
 import { fitWithBand } from "../encounters/fit.js";
 import { useMapEncounterSummaries } from "../encounters/useMapEncounterSummaries.js";
+import { ZOOM_LEVELS, zoomAboutPivot, type MapView, type Zoom } from "../components/mapView.js";
 
 /**
  * The read-only GBC map view (Plan 6b Task 4). Plan Q2 accepts this as a
@@ -62,34 +63,11 @@ import { useMapEncounterSummaries } from "../encounters/useMapEncounterSummaries
 const BORDER_RINGS = 1;
 /** Native px per world unit (one block) -- the encounter border's own scale, and what its band is measured in. */
 const BLOCK_PX = 32;
-const ZOOM_LEVELS = [1, 2, 4] as const;
-type Zoom = (typeof ZOOM_LEVELS)[number];
-
 /** The canvas's whole pan/zoom state, updated as ONE value (fix round, spec
  *  review finding 1) -- see the header comment for why this replaced two
- *  separate `zoom`/`pan` state variables. */
-export interface GbcView {
-  zoom: Zoom;
-  pan: { x: number; y: number };
-}
-
-/**
- * Pure: given the current view, the next zoom level, and a pivot point in
- * STAGE-canvas pixels, returns the view that keeps the composite-space point
- * under the pivot fixed on screen -- or the SAME `view` object (not a new
- * one with equal fields) when `next === view.zoom`, so a caller can use
- * reference equality to skip work. Exported and unit-tested with exact
- * numbers (fix round, spec review finding 1); called from exactly one
- * `setView(v => zoomAboutPivot(v, ...))` site, so React's `<StrictMode>`
- * double-invoking it twice with the same input `v` is harmless -- both
- * invocations compute the identical result, and only one is ever committed.
- */
-export function zoomAboutPivot(view: GbcView, next: Zoom, pivotX: number, pivotY: number): GbcView {
-  if (view.zoom === next) return view;
-  const cx = (pivotX - view.pan.x) / view.zoom;
-  const cy = (pivotY - view.pan.y) / view.zoom;
-  return { zoom: next, pan: { x: Math.round(pivotX - cx * next), y: Math.round(pivotY - cy * next) } };
-}
+ *  separate `zoom`/`pan` state variables. Shared with `MapCanvas` (Plan 6c E1). */
+export type GbcView = MapView;
+export { zoomAboutPivot };
 
 interface Toggles {
   grid: boolean;

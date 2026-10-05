@@ -11,6 +11,7 @@ import { EncounterBorder, type EncounterBorderEntry } from "./EncounterBorder.js
 import { BORDER_BAND, borderSideFromConnections, gbaDirToCompass, type CompassDir } from "../encounters/borderSide.js";
 import { fitWithBand } from "../encounters/fit.js";
 import { useMapEncounterSummaries } from "../encounters/useMapEncounterSummaries.js";
+import { ZOOM_LEVELS, zoomAboutPivot, type MapView, type Zoom } from "./mapView.js";
 
 /** A bare {kind,index} pointer at one event, the unit MapCanvas's own
  *  selection/drag interaction deals in -- resolving it into a full event
@@ -124,8 +125,6 @@ export interface MapCanvasProps {
 const BORDER_RINGS = 1;
 /** Native px per world unit (one metatile) -- the encounter border's own scale, and what its band is measured in. */
 const METATILE_PX = 16;
-const ZOOM_LEVELS = [1, 2, 4] as const;
-type Zoom = (typeof ZOOM_LEVELS)[number];
 
 /** Spec-review fix (issue 2): `beginStroke`/`applyPaint`/`endStroke` each
  *  return a FRESH `blocks` array from a fresh JSON parse regardless of
@@ -337,8 +336,10 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
   // render (no fetch for the new map, no stale border), with no reset effect needed.
   const [encountersFor, setEncountersFor] = useState<string | null>(null);
   const encountersOn = encountersFor === mapName;
-  const [zoom, setZoom] = useState<Zoom>(1);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
+  // ONE view value, so no setter is ever called inside another setter's updater (StrictMode double-invokes
+  // updaters; the old nested setPan applied the zoom pivot twice -- Plan 6c E1, follow-up D1).
+  const [view, setView] = useState<MapView>({ zoom: 1, pan: { x: 0, y: 0 } });
+  const { zoom, pan } = view;
   const [hover, setHover] = useState<Hover | null>(null);
   const [compositeVersion, setCompositeVersion] = useState(0);
   // Measured, not read from the ref during render: a ref read at render time
@@ -422,8 +423,7 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
       bandNative: encountersOn ? BORDER_BAND.gba * METATILE_PX : 0,
       side,
     });
-    setZoom(z);
-    setPan(p);
+    setView({ zoom: z, pan: p });
   }, [pixelWidth, pixelHeight, viewport, encountersOn, side]);
 
   // Only the FIRST successful image load for a given mapName triggers fit()
@@ -557,17 +557,7 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
 
   const toggle = (key: keyof Toggles) => setToggles((t) => ({ ...t, [key]: !t[key] }));
 
-  const applyZoom = (next: Zoom, pivotX: number, pivotY: number) => {
-    setZoom((prevZoom) => {
-      if (next === prevZoom) return prevZoom;
-      setPan((prevPan) => {
-        const cx = (pivotX - prevPan.x) / prevZoom;
-        const cy = (pivotY - prevPan.y) / prevZoom;
-        return { x: Math.round(pivotX - cx * next), y: Math.round(pivotY - cy * next) };
-      });
-      return next;
-    });
-  };
+  const applyZoom = (next: Zoom, pivotX: number, pivotY: number) => setView((v) => zoomAboutPivot(v, next, pivotX, pivotY));
 
   const centerPivot = (): [number, number] => {
     const c = canvasRef.current;
@@ -762,7 +752,7 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
     }
     if (dragRef.current) {
       const d = dragRef.current;
-      setPan({ x: d.panX + (e.clientX - d.x), y: d.panY + (e.clientY - d.y) });
+      setView((v) => ({ zoom: v.zoom, pan: { x: d.panX + (e.clientX - d.x), y: d.panY + (e.clientY - d.y) } }));
     } else {
       hoverAt(e.clientX, e.clientY);
     }
