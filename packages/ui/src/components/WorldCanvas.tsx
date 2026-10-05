@@ -15,7 +15,7 @@ import { useCoverage } from "../hooks/useCoverage.js";
 import { isDrawnByDefault } from "../world/visibility.js";
 import { conflictBadgeOffsets, isRecord, isWireConflict } from "../world/conflictAcceptance.js";
 import { useConflictAcceptance } from "../world/useConflictAcceptance.js";
-import { ConflictAction } from "../world/ConflictAction.js";
+import { WorldContextMenu, type WorldMenuItem, type WorldMenuState } from "./WorldContextMenu.js";
 
 /** The pixel size a placement's PNG renders at natively (`renderLayout`,
  *  border 0): 16px per tile, same constant the CLI's `render-world --scale
@@ -321,6 +321,10 @@ export interface WorldCanvasProps {
    *  drag, or a click on empty space). The app mirrors it into its own selection
    *  (sidebar highlight) but must not treat it as a jump request. */
   onSelectMap?: (name: string) => void;
+  /** The context menu's "Open in Map view" (and Shift+double-click) on a map. Unset: the item is not offered. */
+  onOpenMap?: (name: string) => void;
+  /** The context menu's "Edit here" on a map. Unset: the item is not offered. */
+  onEditHere?: (name: string) => void;
 }
 
 /**
@@ -330,14 +334,14 @@ export interface WorldCanvasProps {
  * packages/ui/DESIGN.md for the palette/type/spacing tokens this consumes,
  * and this file's own comments for the LOD and culling mechanics.
  */
-export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSelectMap }: WorldCanvasProps = {}) {
+export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSelectMap, onOpenMap, onEditHere }: WorldCanvasProps = {}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageCacheRef = useRef<Map<string, ImageCacheEntry>>(new Map());
   const encounterCacheRef = useRef<Map<string, EncounterCacheEntry>>(new Map());
   const warpCacheRef = useRef<Map<string, WarpCacheEntry>>(new Map());
   const dragRef = useRef<DragState>(null);
-  const conflictBadgesRef = useRef<Array<{ x: number; y: number; text: string; key: string; accepted: boolean }>>([]);
+  const conflictBadgesRef = useRef<Array<{ x: number; y: number; text: string; key: string; map: string; accepted: boolean }>>([]);
   // Review fix: whether real pointer movement happened during the
   // mousedown-to-mouseup cycle that is about to produce a `click`. The
   // browser does NOT suppress `click` after a same-element drag -- see
@@ -349,6 +353,14 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
 
   const [world, setWorld] = useState<WorldState | null>(null);
   const conflictAcceptance = useConflictAcceptance(world?.conflicts);
+  // The context menu (right-click or the ContextMenu key). The menu items call the latest
+  // onOpenMap/onEditHere through refs: the menu stays open across App renders, and an
+  // App-level handler closes over state (selection, dirty flag) that can change meanwhile.
+  const [menu, setMenu] = useState<WorldMenuState | null>(null);
+  const onOpenMapRef = useRef(onOpenMap);
+  onOpenMapRef.current = onOpenMap;
+  const onEditHereRef = useRef(onEditHere);
+  onEditHereRef.current = onEditHere;
   const [loadError, setLoadError] = useState<string | null>(null);
   // Review fix: postPlacement's and toggleDungeons' own failures used to
   // either be silently discarded or written into loadError -- the same
@@ -1346,7 +1358,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
     // Conflicts: a diamond at the offending map's top-right corner, plus a
     // hit-rect recorded for the hover tooltip below. Connection bugs become
     // visible as geometry -- these are never hidden behind a toggle.
-    const badges: Array<{ x: number; y: number; text: string; key: string; accepted: boolean }> = [];
+    const badges: Array<{ x: number; y: number; text: string; key: string; map: string; accepted: boolean }> = [];
     const badgeOffsets = conflictBadgeOffsets(world.conflicts, BADGE_SIZE * 2 + 2);
     for (const conflict of world.conflicts) {
       const p = world.placements.get(conflict.map);
@@ -1367,6 +1379,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
         x: cx,
         y: cy,
         key: conflict.key,
+        map: conflict.map,
         accepted,
         text: `${accepted ? "Accepted (right-click to un-accept). " : ""}${conflict.map}: via ${conflict.viaA.from} (${conflict.viaA.x},${conflict.viaA.y}) disagrees with via ${conflict.viaB.from} (${conflict.viaB.x},${conflict.viaB.y})`,
       });
@@ -1526,6 +1539,15 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
   // (Task 8) over the wrong map at the end of an ordinary pan/drag gesture,
   // so this guard is load-bearing, not defensive-only.
   const onCanvasDoubleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    // Shift+double-click opens the map under the pointer (the Shift+mousedown before it only
+    // armed a map drag that, unmoved, commits nothing). Shift bypasses the warp preview.
+    if (e.shiftKey && !e.ctrlKey && !e.metaKey && !dragMovedRef.current) {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const w = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
+      const hit = hitTest(w.x, w.y);
+      if (hit) onOpenMap?.(hit.map);
+      return;
+    }
     if (e.ctrlKey || e.metaKey || e.shiftKey || dragMovedRef.current) return;
     if (!warpsOn) return;
     const rect = e.currentTarget.getBoundingClientRect();
@@ -1705,8 +1727,46 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
     }
   };
 
+  const closeMenu = () => {
+    setMenu(null);
+    canvasRef.current?.focus();
+  };
+
+  // Items in order: Open in Map view, Edit here, then the conflict toggle (badge hits only).
+  // Accept/Un-accept keeps the menu open until the POST succeeds, so a failure leaves the
+  // action to retry beside the error toast.
+  const openMenuAt = (x: number, y: number, map: string | null, badge: { key: string; accepted: boolean } | null) => {
+    const items: WorldMenuItem[] = [];
+    if (map && onOpenMap) items.push({ label: "Open in Map view", onSelect: () => onOpenMapRef.current?.(map) });
+    if (map && onEditHere) items.push({ label: "Edit here", onSelect: () => onEditHereRef.current?.(map) });
+    if (badge) {
+      items.push({
+        label: badge.accepted ? "Un-accept conflict" : "Accept conflict",
+        keepOpen: true,
+        onSelect: () => { void conflictAcceptance.toggle(badge.key, !badge.accepted).then((ok) => { if (ok) closeMenu(); }); },
+      });
+    }
+    setMenu(items.length > 0 ? { x, y, items } : null);
+  };
+
+  const onCanvasContextMenu = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+    const rect = e.currentTarget.getBoundingClientRect();
+    const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
+    const badge = conflictBadgesRef.current.find((item) => Math.hypot(item.x - sx, item.y - sy) <= BADGE_SIZE) ?? null;
+    const w = screenToWorld(sx, sy);
+    openMenuAt(sx, sy, badge?.map ?? hitTest(w.x, w.y)?.map ?? null, badge);
+  };
+
   const onCanvasKeyDown = (e: React.KeyboardEvent<HTMLCanvasElement>) => {
     if (e.key === "Escape") setSelected(new Set());
+    if (e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey)) {
+      const p = selected.size === 1 ? world?.placements.get([...selected][0]!) : undefined;
+      if (!p) return;
+      e.preventDefault();
+      const size = sizeOfPlacement(p, sizeByMap);
+      openMenuAt((p.x + size.width / 2) * zoom + pan.x, (p.y + size.height / 2) * zoom + pan.y, p.map, null);
+    }
   };
 
   const onDragOverCanvas = (e: React.DragEvent<HTMLCanvasElement>) => {
@@ -1856,13 +1916,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
             onMouseDown={onMouseDown}
             onMouseMove={onMouseMove}
             onMouseUp={onMouseUp}
-            onContextMenu={(e) => {
-              e.preventDefault();
-              const rect = e.currentTarget.getBoundingClientRect();
-              const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
-              const badge = conflictBadgesRef.current.find((item) => Math.hypot(item.x - sx, item.y - sy) <= BADGE_SIZE);
-              conflictAcceptance.setAction(badge ? { key: badge.key, accepted: badge.accepted, x: sx, y: sy } : null);
-            }}
+            onContextMenu={onCanvasContextMenu}
             onClick={onCanvasClick}
             onDoubleClick={onCanvasDoubleClick}
             onKeyDown={onCanvasKeyDown}
@@ -1971,8 +2025,13 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
               {tooltip.text}
             </div>
           )}
-          <ConflictAction action={conflictAcceptance.action} viewport={viewport} onSave={conflictAcceptance.save} />
-          {conflictAcceptance.error && <div className="world-canvas__toast" role="alert">Could not update conflict: {conflictAcceptance.error}</div>}
+          <WorldContextMenu menu={menu} viewport={viewport} onClose={closeMenu} />
+          {conflictAcceptance.error && (
+            <div className="world-canvas__toast" role="alert">
+              <span className="world-canvas__toast-text">Could not update conflict: {conflictAcceptance.error}</span>
+              <button type="button" className="world-canvas__toast-dismiss" onClick={() => conflictAcceptance.setError(null)} aria-label="Dismiss">×</button>
+            </div>
+          )}
           {saveError && (
             <div className="world-canvas__toast" role="alert">
               <span className="world-canvas__toast-text">{saveError}</span>

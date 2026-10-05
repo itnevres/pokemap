@@ -17,7 +17,7 @@ import { GbcWarpDestinationModal } from "./GbcWarpDestinationModal.js";
 import { fetchGuarded } from "../hooks/useGuardedFetch.js";
 import { conflictBadgeOffsets } from "../world/conflictAcceptance.js";
 import { useConflictAcceptance } from "../world/useConflictAcceptance.js";
-import { ConflictAction } from "../world/ConflictAction.js";
+import { WorldContextMenu, type WorldMenuItem, type WorldMenuState } from "../components/WorldContextMenu.js";
 import type { GbcTimeOfDay } from "./time.js";
 
 /**
@@ -443,7 +443,7 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
   const imageCacheRef = useRef<Map<string, ImageCacheEntry>>(new Map());
   const encounterCacheRef = useRef<Map<string, EncounterCacheEntry>>(new Map());
   const warpCacheRef = useRef<Map<string, GbcWarpsPayload | null>>(new Map());
-  const conflictBadgesRef = useRef<Array<{ x: number; y: number; text: string; key: string; accepted: boolean }>>([]);
+  const conflictBadgesRef = useRef<Array<{ x: number; y: number; text: string; key: string; map: string; accepted: boolean }>>([]);
   const dragRef = useRef<DragState>(null);
   // Same "did a real drag happen" guard `WorldCanvas.tsx`'s own
   // `dragMovedRef` is for -- a plain click/dblclick fires even after a
@@ -480,6 +480,11 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
   const [warpError, setWarpError] = useState<string | null>(null);
   const [warpPopup, setWarpPopup] = useState<string | null>(null);
   const conflictAcceptance = useConflictAcceptance(world?.conflicts);
+  // The context menu (right-click or the ContextMenu key). Its open-map item calls the latest
+  // onOpenMap through a ref: the menu stays open across GbcApp renders.
+  const [menu, setMenu] = useState<WorldMenuState | null>(null);
+  const onOpenMapRef = useRef(onOpenMap);
+  onOpenMapRef.current = onOpenMap;
   const [selectedMap, setSelectedMap] = useState<string | null>(null);
   const [hover, setHover] = useState<HoverInfo | null>(null);
   const [tooltip, setTooltip] = useState<TooltipInfo | null>(null);
@@ -854,7 +859,7 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
     // hit-rect for the hover tooltip below -- WorldCanvas.tsx's own
     // "Conflicts: a diamond at the offending map's top-right corner"
     // comment/loop, never hidden behind a toggle.
-    const badges: Array<{ x: number; y: number; text: string; key: string; accepted: boolean }> = [];
+    const badges: Array<{ x: number; y: number; text: string; key: string; map: string; accepted: boolean }> = [];
     const badgeOffsets = conflictBadgeOffsets(world.conflicts, BADGE_SIZE * 2 + 2);
     for (const conflict of world.conflicts) {
       if (mapFilter && !mapFilter.has(conflict.map)) continue;
@@ -870,7 +875,7 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
         ctx.textBaseline = "middle";
         ctx.fillText("✓", cx, cy);
       }
-      badges.push({ x: cx, y: cy, key: conflict.key, accepted,
+      badges.push({ x: cx, y: cy, key: conflict.key, map: conflict.map, accepted,
         text: `${accepted ? "Accepted (right-click to un-accept). " : ""}${conflictTooltipText(conflict)}` });
     }
     conflictBadgesRef.current = badges;
@@ -990,6 +995,13 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
     if (dragMovedRef.current) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
+    // Shift+double-click always opens the map under the pointer: it bypasses the warp-marker preview.
+    if (e.shiftKey) {
+      const w = screenToWorld(sx, sy);
+      const hit = hitTest(w.x, w.y);
+      if (hit) onOpenMap?.(hit.map);
+      return;
+    }
     if (warpsOn) {
       const marker = warpMarkerEntries.find((entry) => Math.hypot(entry.sx - sx, entry.sy - sy) <= WARP_HIT_RADIUS);
       if (marker) {
@@ -1014,7 +1026,45 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
   // viewport's own centre through the SAME `zoomWorldAboutPivot` a wheel
   // notch uses (the identical single-state-updater reasoning applies:
   // one `setView` per key, never a nested one).
+  const closeMenu = () => {
+    setMenu(null);
+    canvasRef.current?.focus();
+  };
+
+  // Items in order: Open in Map view, Edit here (always disabled until Plan 7), then the conflict
+  // toggle (badge hits only). Accept/Un-accept keeps the menu open until the POST succeeds, so a
+  // failure leaves the action to retry beside the error toast.
+  const openMenuAt = (x: number, y: number, map: string | null, badge: { key: string; accepted: boolean } | null) => {
+    const items: WorldMenuItem[] = [];
+    if (map && onOpenMap) items.push({ label: "Open in Map view", onSelect: () => onOpenMapRef.current?.(map) });
+    if (map) items.push({ label: "Edit here", disabled: true, hint: "GBC editing arrives with Plan 7" });
+    if (badge) {
+      items.push({
+        label: badge.accepted ? "Un-accept conflict" : "Accept conflict",
+        keepOpen: true,
+        onSelect: () => { void conflictAcceptance.toggle(badge.key, !badge.accepted).then((ok) => { if (ok) closeMenu(); }); },
+      });
+    }
+    setMenu(items.length > 0 ? { x, y, items } : null);
+  };
+
+  const onContextMenu = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+    const rect = e.currentTarget.getBoundingClientRect();
+    const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
+    const badge = conflictBadgesRef.current.find((item) => Math.hypot(item.x - sx, item.y - sy) <= BADGE_SIZE) ?? null;
+    const w = screenToWorld(sx, sy);
+    openMenuAt(sx, sy, badge?.map ?? hitTest(w.x, w.y)?.map ?? null, badge);
+  };
+
   const onKeyDown = (e: React.KeyboardEvent<HTMLCanvasElement>) => {
+    if (e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey)) {
+      const p = selectedMap && (!mapFilter || mapFilter.has(selectedMap)) ? placements[selectedMap] : undefined;
+      if (!p) return;
+      e.preventDefault();
+      openMenuAt((p.x + p.width / 2) * zoom + pan.x, (p.y + p.height / 2) * zoom + pan.y, p.map, null);
+      return;
+    }
     if (e.key === "Enter") {
       if (selectedMap && (!mapFilter || mapFilter.has(selectedMap))) onOpenMap?.(selectedMap);
       return;
@@ -1165,13 +1215,7 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
             onMouseDown={onMouseDown}
             onMouseMove={onMouseMove}
             onMouseUp={onMouseUp}
-            onContextMenu={(e) => {
-              e.preventDefault();
-              const rect = e.currentTarget.getBoundingClientRect();
-              const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
-              const badge = conflictBadgesRef.current.find((item) => Math.hypot(item.x - sx, item.y - sy) <= BADGE_SIZE);
-              conflictAcceptance.setAction(badge ? { key: badge.key, accepted: badge.accepted, x: sx, y: sy } : null);
-            }}
+            onContextMenu={onContextMenu}
             onMouseLeave={onMouseLeave}
             onDragOver={(e) => e.preventDefault()}
             onDrop={(e) => {
@@ -1258,8 +1302,13 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
               {tooltip.text}
             </div>
           )}
-          <ConflictAction action={conflictAcceptance.action} viewport={viewport} onSave={conflictAcceptance.save} />
-          {conflictAcceptance.error && <div className="world-canvas__toast" role="alert">Could not update conflict: {conflictAcceptance.error}</div>}
+          <WorldContextMenu menu={menu} viewport={viewport} onClose={closeMenu} />
+          {conflictAcceptance.error && (
+            <div className="world-canvas__toast" role="alert">
+              <span className="world-canvas__toast-text">Could not update conflict: {conflictAcceptance.error}</span>
+              <button type="button" className="world-canvas__toast-dismiss" onClick={() => conflictAcceptance.setError(null)} aria-label="Dismiss">×</button>
+            </div>
+          )}
         </div>
       </div>
 

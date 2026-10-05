@@ -176,6 +176,29 @@ describe("GBC dungeon warps (Plan 6c D3)", () => {
     expect({ left: after.style.left, top: after.style.top, width: after.style.width }).toEqual(geometry);
   });
 
+  it("Shift+double-click on a warp marker opens the map under it instead of the preview (Plan 6c E3)", async () => {
+    const warps = { Source: { family: "gbc", mapName: "Source", warps: [event(10, 9, "Hidden", { x: 10, y: 9 })] } };
+    vi.stubGlobal("fetch", scopedFetch(warps));
+    const onOpenMap = vi.fn();
+    const { container } = render(<GbcWorldCanvas time="day" mapFilter={new Set(["Source", "Hidden"])} onOpenMap={onOpenMap} />);
+    const stage = container.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement;
+    await waitFor(() => expect(container.querySelector(".world-canvas__status")?.textContent).toContain("zoom 21%"));
+    fireEvent.keyDown(stage, { key: "+" });
+    fireEvent.keyDown(stage, { key: "+" });
+    fireEvent.click(screen.getByRole("switch", { name: "Warps" }));
+    await waitFor(() => expect(container.querySelectorAll(".world-canvas__warp-marker").length).toBe(1));
+    const marker = container.querySelector<HTMLElement>(".world-canvas__warp-marker")!;
+    const point = { clientX: parseFloat(marker.style.left), clientY: parseFloat(marker.style.top) };
+    // The marker sits on Source's body (a 10x9-block map at zoom > 4 covers it); a plain double-click previews, Shift opens.
+    fireEvent.doubleClick(stage, { ...point, shiftKey: true });
+    expect(onOpenMap).toHaveBeenCalledTimes(1);
+    expect(onOpenMap).toHaveBeenCalledWith("Source");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.doubleClick(stage, point);
+    expect(screen.getByRole("dialog", { name: "Hidden preview" })).toBeTruthy();
+    expect(onOpenMap).toHaveBeenCalledTimes(1);
+  });
+
   it("renders the exact raw-half marker and both SVG endpoints at zoom 8, pan (3,7)", async () => {
     const world: GbcWorldPayload = {
       family: "gbc", blockPx: 32,
@@ -800,16 +823,16 @@ describe("GbcWorldCanvas", () => {
       const first = await mountReady({ onSelectMap }, CONFLICT_WORLD, fetchMock);
       first.canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: 200, bottom: 200, width: 200, height: 200, x: 0, y: 0, toJSON() {} });
       fireEvent.contextMenu(first.canvas, { clientX: 100, clientY: 100 });
-      expect(screen.queryByRole("button", { name: "Accept conflict" })).toBeNull();
+      expect(screen.queryByRole("menuitem", { name: "Accept conflict" })).toBeNull();
       fireEvent.mouseDown(first.canvas, { button: 2, clientX: 165, clientY: 10 });
       fireEvent.mouseMove(first.canvas, { button: 2, clientX: 180, clientY: 25 });
       fireEvent.mouseUp(first.canvas, { button: 2, clientX: 180, clientY: 25 });
       fireEvent.contextMenu(first.canvas, { clientX: 165, clientY: 10 });
-      expect(screen.getByRole("button", { name: "Accept conflict" })).toBeTruthy();
+      expect(screen.getByRole("menuitem", { name: "Accept conflict" })).toBeTruthy();
       fireEvent.keyDown(window, { key: "Escape" });
-      expect(screen.queryByRole("button", { name: "Accept conflict" })).toBeNull();
+      expect(screen.queryByRole("menuitem", { name: "Accept conflict" })).toBeNull();
       fireEvent.contextMenu(first.canvas, { clientX: 165, clientY: 10 });
-      fireEvent.click(screen.getByRole("button", { name: "Accept conflict" }));
+      fireEvent.click(screen.getByRole("menuitem", { name: "Accept conflict" }));
       await waitFor(() => expect(first.container.querySelector(".world-canvas__status")?.textContent).toContain("1 conflicts · 1 accepted"));
       expect(first.stageCtx.fillText).toHaveBeenCalledWith("✓", 165, 10);
       expect(first.stageCtx.fillLog).toContain("#6b7280");
@@ -823,7 +846,7 @@ describe("GbcWorldCanvas", () => {
       expect(second.container.querySelector(".world-canvas__status")?.textContent).toContain("1 conflicts · 1 accepted");
       second.canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: 200, bottom: 200, width: 200, height: 200, x: 0, y: 0, toJSON() {} });
       fireEvent.contextMenu(second.canvas, { clientX: 165, clientY: 10 });
-      fireEvent.click(screen.getByRole("button", { name: "Un-accept conflict" }));
+      fireEvent.click(screen.getByRole("menuitem", { name: "Un-accept conflict" }));
       await waitFor(() => expect(second.container.querySelector(".world-canvas__status")?.textContent).toContain("1 conflicts · 0 accepted"));
     });
 
@@ -832,12 +855,12 @@ describe("GbcWorldCanvas", () => {
       mounted.canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: 200, bottom: 200, width: 200, height: 200, x: 0, y: 0, toJSON() {} });
       const originalRect = HTMLElement.prototype.getBoundingClientRect;
       const spy = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
-        if (this.classList.contains("world-canvas__conflict-action")) return { width: 80, height: 30 } as DOMRect;
+        if (this.classList.contains("world-context-menu")) return { width: 80, height: 30 } as DOMRect;
         return originalRect.call(this);
       });
       try {
         fireEvent.contextMenu(mounted.canvas, { clientX: 165, clientY: 10 });
-        const action = mounted.container.querySelector(".world-canvas__conflict-action") as HTMLElement;
+        const action = mounted.container.querySelector(".world-context-menu") as HTMLElement;
         expect(action.style.left).toBe("112px");
         expect(Number.parseFloat(action.style.left) + 80).toBeLessThanOrEqual(200 - 8);
       } finally { spy.mockRestore(); }
@@ -851,13 +874,13 @@ describe("GbcWorldCanvas", () => {
         : originalFetch(url, init)));
       mounted.canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: 200, bottom: 200, width: 200, height: 200, x: 0, y: 0, toJSON() {} });
       fireEvent.contextMenu(mounted.canvas, { clientX: 165, clientY: 10 });
-      fireEvent.click(screen.getByRole("button", { name: "Accept conflict" }));
+      fireEvent.click(screen.getByRole("menuitem", { name: "Accept conflict" }));
       await waitFor(() => expect(screen.getByText(/Could not update conflict:/).textContent).toContain("unexpected shape"));
       expect(mounted.container.querySelector(".world-canvas__status")?.textContent).toContain("1 conflicts · 0 accepted");
-      expect(screen.getByRole("button", { name: "Accept conflict" })).toBeTruthy();
+      expect(screen.getByRole("menuitem", { name: "Accept conflict" })).toBeTruthy();
       vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => url === "/api/world/conflicts/accept"
         ? Promise.reject(new Error("offline")) : originalFetch(url, init)));
-      fireEvent.click(screen.getByRole("button", { name: "Accept conflict" }));
+      fireEvent.click(screen.getByRole("menuitem", { name: "Accept conflict" }));
       await waitFor(() => expect(screen.getByText(/Could not update conflict:/).textContent).toContain("offline"));
       expect(mounted.container.querySelector(".world-canvas__status")?.textContent).toContain("1 conflicts · 0 accepted");
     });
@@ -876,13 +899,13 @@ describe("GbcWorldCanvas", () => {
       // Lexical key order keeps Route18 at x=165 and Route19 at x=143.
       mounted.stageCtx.fillText.mockClear();
       fireEvent.contextMenu(mounted.canvas, { clientX: 143, clientY: 10 });
-      fireEvent.click(screen.getByRole("button", { name: "Un-accept conflict" }));
+      fireEvent.click(screen.getByRole("menuitem", { name: "Un-accept conflict" }));
       await waitFor(() => expect(mounted.stageCtx.fillText).toHaveBeenCalledWith("✓", 165, 10));
       expect(mounted.container.querySelector(".world-canvas__status")?.textContent).toContain("2 conflicts · 1 accepted");
       fireEvent.contextMenu(mounted.canvas, { clientX: 143, clientY: 10 });
-      expect(screen.getByRole("button", { name: "Accept conflict" })).toBeTruthy();
+      expect(screen.getByRole("menuitem", { name: "Accept conflict" })).toBeTruthy();
       fireEvent.contextMenu(mounted.canvas, { clientX: 165, clientY: 10 });
-      expect(screen.getByRole("button", { name: "Un-accept conflict" })).toBeTruthy();
+      expect(screen.getByRole("menuitem", { name: "Un-accept conflict" })).toBeTruthy();
     });
     it("draws a diamond at Conflict.map's top-right corner in --danger, and shows the exact CLI-wording tooltip on hover", async () => {
       const { canvas, stageCtx } = await mountReady({}, CONFLICT_WORLD);
@@ -1794,5 +1817,87 @@ describe("GbcWorldCanvas: encounters/lenses/spotlight (Plan 6b Task 6)", () => {
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "CHIKORITA" } });
     await waitFor(() => expect(document.querySelector(".world-canvas__spotlight-badge")).toBeTruthy());
     expect(document.querySelector(".world-canvas__spotlight-badge")!.textContent).toBe("45% Lv 4-6");
+  });
+});
+
+describe("GbcWorldCanvas: context menu (Plan 6c E3)", () => {
+  // CONFLICT_WORLD fits as zoom 5, pan (25,0): Route17 covers x 25..175, y 0..200; its badge is at (165,10).
+  const EDGE = { left: 0, top: 0, right: 200, bottom: 200, width: 200, height: 200, x: 0, y: 0, toJSON() {} };
+  async function mountMenu(props: Partial<GbcWorldCanvasProps> = {}, fetchMock = mockFetchWorld(CONFLICT_WORLD)) {
+    const mounted = await mountReady(props, CONFLICT_WORLD, fetchMock);
+    mounted.canvas.getBoundingClientRect = () => EDGE;
+    return mounted;
+  }
+
+  it("right-click on a map shows Open in Map view and a disabled Edit here carrying the Plan 7 hint", async () => {
+    const onOpenMap = vi.fn();
+    const { canvas } = await mountMenu({ onOpenMap });
+    fireEvent.contextMenu(canvas, { clientX: 100, clientY: 100 });
+    const edit = screen.getByRole("menuitem", { name: /GBC editing arrives with Plan 7/ }) as HTMLButtonElement;
+    expect(edit.textContent).toContain("Edit here");
+    expect(edit.disabled).toBe(true);
+    expect(edit.getAttribute("aria-disabled")).toBe("true");
+    fireEvent.click(edit);
+    expect(screen.getByRole("menu")).toBeTruthy(); // a disabled item does not close the menu
+    fireEvent.click(screen.getByRole("menuitem", { name: "Open in Map view" }));
+    expect(onOpenMap).toHaveBeenCalledWith("Route17");
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("right-click on a badge adds the conflict item after the map items", async () => {
+    const { canvas } = await mountMenu({ onOpenMap: vi.fn() });
+    fireEvent.contextMenu(canvas, { clientX: 165, clientY: 10 });
+    expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
+      "Open in Map view", "Edit here GBC editing arrives with Plan 7", "Accept conflict",
+    ]);
+  });
+
+  it("right-click on empty space shows no menu and closes an open one", async () => {
+    const { canvas } = await mountMenu({ onOpenMap: vi.fn() });
+    fireEvent.contextMenu(canvas, { clientX: 100, clientY: 100 });
+    expect(screen.getByRole("menu")).toBeTruthy();
+    fireEvent.contextMenu(canvas, { clientX: 10, clientY: 100 }); // left of the map
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("the ContextMenu key and Shift+F10 open the menu for the selected map, at its centre", async () => {
+    const { canvas } = await mountMenu({ onOpenMap: vi.fn() });
+    fireEvent.keyDown(canvas, { key: "ContextMenu" });
+    expect(screen.queryByRole("menu")).toBeNull(); // nothing selected
+    fireEvent.click(canvas, { clientX: 100, clientY: 100 });
+    expect(fireEvent.keyDown(canvas, { key: "ContextMenu" })).toBe(false); // preventDefault
+    expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Open in Map view", "Edit here GBC editing arrives with Plan 7"]);
+    const menu = screen.getByRole("menu");
+    expect([menu.style.left, menu.style.top]).toEqual(["100px", "100px"]); // Route17's centre ((0+15)*5+25, 20*5)
+    fireEvent.keyDown(menu, { key: "Escape" });
+    expect(screen.queryByRole("menu")).toBeNull();
+    fireEvent.keyDown(canvas, { key: "F10", shiftKey: true });
+    expect(screen.getByRole("menu")).toBeTruthy();
+  });
+
+  it("the keyboard opens nothing for a selected map outside the mapFilter", async () => {
+    const mounted = await mountMenu({ onOpenMap: vi.fn() });
+    fireEvent.click(mounted.canvas, { clientX: 100, clientY: 100 });
+    mounted.rerender(<GbcWorldCanvas time="day" mapFilter={new Set(["Elsewhere"])} onOpenMap={vi.fn()} />);
+    fireEvent.keyDown(mounted.canvas, { key: "ContextMenu" });
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("a canvas pointerdown closes an open menu", async () => {
+    const { canvas } = await mountMenu({ onOpenMap: vi.fn() });
+    fireEvent.contextMenu(canvas, { clientX: 100, clientY: 100 });
+    fireEvent.pointerDown(canvas, { clientX: 20, clientY: 150 });
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("the conflict error toast can be dismissed", async () => {
+    const base = mockFetchWorld(CONFLICT_WORLD);
+    const failing = vi.fn((url: string, init?: RequestInit) => url === "/api/world/conflicts/accept" ? Promise.reject(new Error("offline")) : base(url, init));
+    const { canvas } = await mountMenu({}, failing);
+    fireEvent.contextMenu(canvas, { clientX: 165, clientY: 10 });
+    fireEvent.click(screen.getByRole("menuitem", { name: "Accept conflict" }));
+    await waitFor(() => expect(screen.getByText(/Could not update conflict:/).textContent).toContain("offline"));
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(screen.queryByText(/Could not update conflict:/)).toBeNull();
   });
 });
