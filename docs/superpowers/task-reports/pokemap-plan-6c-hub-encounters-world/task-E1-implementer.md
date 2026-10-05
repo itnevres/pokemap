@@ -63,3 +63,41 @@ Expected numbers (fixture 64x64 viewport, pivot (32,32)): fit pan (0,0); 2x pan 
 - CRLF: `MapCanvas.tsx`/`GbcMapCanvas.tsx` are CRLF in the working copy; edits preserved CRLF. New `mapView.ts` is LF (git warns it will normalise; no issue).
 - Controlled mode computes `next` from `viewRef` (latest rendered view); two gestures before the parent re-renders would both derive from the same base. Fine for React event batching; E4 should apply `onViewChange` synchronously into state.
 - Controlled `fit()` uses the canvas's own viewport/encounter-band fit, not the world view's; E4 owns whether to use the Fit button.
+
+# Fix round (coordinator rulings; base 6468896, tree was clean bar `.codex/`)
+
+**Status: DONE.** Existing tests unedited: `git diff aa3b338 -- packages/ui/test | grep -c '^-[^-]'` -> 0.
+
+## Commits
+| sha | what |
+|---|---|
+| a1a59e0 | CSS ruling: GBA keeps 28px single row, right-aligned hover. Shared `.map-canvas`: `min-width:0` (+ long rationale comment moved onto it) and base `.map-canvas__hover { margin-left:auto; min-width:0; overflow:hidden; text-overflow:ellipsis }`. 44px wrapping strip + `margin-left:0; max-width:100%` hover override back under `.gbc-map-canvas`. styles pins (regex `(^|\})\s*sel\s*\{`): `.map-canvas` min-width:0; shared hover ellipsis + margin-left:auto + no max-width; `.gbc-map-canvas .map-canvas__status` 44px and base `.map-canvas__status` 28px. `packages/ui/DESIGN.md` (lines ~239, ~258) updated: GBA 28px single row, ellipsising right-aligned hover; GBC 44px two rows |
+| 8cbb716 | tests (a)-(d) + F3 comment fix (additions only) |
+| ab4a96b | `onViewChangeRef`, `updateView` deps `[controlled]`; prop doc (no controlled/uncontrolled switching; two gestures before parent re-render derive from last rendered view); `mapView.ts` doc no longer "exactly one site"; `GbcMapCanvas.tsx` header (GBA fixed in 6c E1, shared `mapView.ts`, past tense) + blank line before `GbcView` doc restored |
+| (this report) | report commit |
+
+## Red proofs (in-memory mutation, saved bytes restored, byte-compare identical every time; git status clean after)
+Run on pre-refactor code (8cbb716 parent state) so the wheel-deps mutant is still meaningful; then rerun post-refactor.
+| test | mutant | result |
+|---|---|---|
+| (a) controlled gesture after parent applied new view | X1 `next(viewRef.current)` -> `next(controlledView!)` | RED `expected last "spy" call to have been called with [...]`; post-refactor also RED (+ the wheel test: `{4,(-28,4)}` missing) |
+| (b) controlled wheel + rerender with new spy, same zoom | X2 wheel deps `[zoom, updateView]` -> `[zoom]` | RED `expected "spy" to be called 1 times, but got 2 times` (old spy fired) |
+| (c) 2 mousemoves in one drag -> (20,-10) | X8 `d.panX` -> `v.pan.x` | RED `expected [ 35, -16 ] to deeply equal [ 20, -10 ]` (also post-refactor) |
+| (d) 2 wheel ticks 1x->2x(-48,-16)->4x(-144,-48) | X3 wheel deps `[]` | RED `expected [ 128, 128 ] to deeply equal [ 256, 256 ]`; (b) also red (`called 2 times`); also post-refactor |
+| ref | `onViewChangeRef.current` frozen at first value (stale callback) | RED (b) `called 1 times, but got 2 times` |
+| CSS C1 | base hover `margin-left: auto` -> `0` | RED (hover pin) |
+| CSS C2 | drop shared hover `text-overflow` | RED (hover pin) |
+| CSS C3 | GBC strip height 44 -> 28 | RED (strip pin) |
+| CSS C4 | base `.map-canvas__status` height 28 -> 44 | RED `expected ... to match /height\s*:\s*28px/` |
+| CSS C5 | drop `.map-canvas` `min-width: 0` | RED `.map-canvas` pin |
+
+## Deviations / notes
+- **(a) as specified (rerender at 4x, click 2x -> `{2,(7,-3)}`) did NOT kill X1**: zooming back through the same pivot lands on VIEW itself, so a base frozen at VIEW coincides (survived 57/57). Kept that step, and added a second step: parent jumps to an unrelated `{2,(-5,9)}` (same zoom as VIEW), click 4x -> `{4,(-42,-14)}` (frozen base would give `(-18,-38)`). That kills X1.
+- After the ref refactor, X2 (wheel deps `[zoom]`) is **equivalent** (the ref carries the fresh callback, `updateView` identity is stable), so (b) is red-proved on pre-refactor code and kept as a behaviour pin (the frozen-ref mutant above is its post-refactor killer).
+- F3: StrictMode test comment now says old code reached -480 at 4x (probe from spec review); kept the -224 assertion and added `not -480`.
+- Existing GBA hover is no longer left-aligned (reverted); GBA strip is back to 28px.
+
+## Verification
+- `vitest run MapCanvas.test.tsx gbc/GbcMapCanvas.test.tsx styles.test.ts` -> 3 files, 116 tests pass.
+- `npm run typecheck` clean; `npm run build -w @pokemap/ui` built OK (css 41.94 kB, js 325.60 kB).
+- Full suite not run.
