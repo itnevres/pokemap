@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { MapEditingWorkspace, type MapEditingCanvasProps } from "../src/components/MapEditingWorkspace.js";
 import type { useMapEditing } from "../src/hooks/useMapEditing.js";
 import type { UseEditSessionResult } from "../src/hooks/useEditSession.js";
@@ -102,5 +102,47 @@ describe("MapEditingWorkspace", () => {
       <MapEditingWorkspace mapName="Foo" data={DATA} editSession={editSession} editing={makeEditing()} />,
     );
     expect(container.querySelector(".app__map-editing-body canvas.map-canvas__stage")).not.toBeNull();
+  });
+  // Plan 6c E2 fix round (review F1): the wiring App.test.tsx never reaches.
+  it("renders the collision strip only while the collision tool is active", () => {
+    const { container, rerender } = render(
+      <MapEditingWorkspace mapName="Foo" data={DATA} editSession={editSession} editing={makeEditing({ activeToolKind: "collision" })} />,
+    );
+    expect(container.querySelector(".app__collision-strip")).not.toBeNull();
+    rerender(<MapEditingWorkspace mapName="Foo" data={DATA} editSession={editSession} editing={makeEditing({ activeToolKind: "shift" })} />);
+    expect(container.querySelector(".app__collision-strip")).toBeNull();
+  });
+
+  it("renders signAddedMessage as a status banner whose Dismiss calls setSignAddedMessage(null)", () => {
+    const editing = makeEditing({ signAddedMessage: "Added wild sign: Foo_Sign" });
+    const { container } = render(<MapEditingWorkspace mapName="Foo" data={DATA} editSession={editSession} editing={editing} />);
+    const banner = container.querySelector("[role=status]")!;
+    expect(banner.textContent).toContain("Added wild sign: Foo_Sign");
+    fireEvent.click(banner.querySelector("button[aria-label=Dismiss]")!);
+    expect(editing.setSignAddedMessage).toHaveBeenCalledWith(null);
+  });
+
+  it("Toolbar Save and Add Sign call their own open-flag setters, and only those", () => {
+    const editing = makeEditing();
+    // Save is disabled while clean (Toolbar gates it on isDirty).
+    const dirty = { ...editSession, isDirty: true } as UseEditSessionResult;
+    render(<MapEditingWorkspace mapName="Foo" data={DATA} editSession={dirty} editing={editing} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+    expect(editing.setSaveDialogOpen).toHaveBeenCalledWith(true);
+    expect(editing.setSignComposerOpen).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Add Sign" }));
+    expect(editing.setSignComposerOpen).toHaveBeenCalledWith(true);
+    expect(editing.setSaveDialogOpen).toHaveBeenCalledTimes(1);
+  });
+
+  it("the metatile strip is keyed on data.layout.name, not mapName", () => {
+    const { container } = render(
+      <MapEditingWorkspace mapName="Map1" data={DATA} editSession={editSession} editing={makeEditing({ activeToolKind: "pencil" })} />,
+    );
+    const srcs = [...container.querySelectorAll(".app__metatile-strip img")].map((i) => i.getAttribute("src")!);
+    expect(srcs.length).toBeGreaterThan(0);
+    expect(srcs.every((s) => s.startsWith("/api/metatile/Foo_Layout/"))).toBe(true);
   });
 });
