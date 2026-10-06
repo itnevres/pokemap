@@ -2,7 +2,7 @@
 
 > **STATUS (2026-10-06): DONE.** All 17 tasks in phases A-F are done and reviewed. Success criteria 1-9 were demonstrated end to end in one browser session, starting from the hub with no project open; the record is `task-reports/pokemap-plan-6c-hub-encounters-world/_archive/task-F1-closeout.md`.
 >
-> - **Branch:** `plan-6c-hub-encounters-world`, 275+ commits on `master` `ce020d9` (Plan 6b's merge).
+> - **Branch:** `plan-6c-hub-encounters-world`, 275+ commits on `master` `ce020d9` (Plan 6b's merge). Its PR, [itnevres/pokemap#11](https://github.com/itnevres/pokemap/pull/11), is ready for review, not merged.
 > - **Gate at HEAD (Windows):** `npm test` 2,202 pass / 2 fail (130 files). The 2 failures are the known `packages/server/test/world.test.ts` pair caused by the GBA subject's persisted `dungeonAutoLayout:false`. Typecheck is clean and `vite build` passes.
 > - **External state:** the GBA subject and PerfPlus are byte-identical to their recorded state. Every live write (criteria 6 and 8, the Dungeon tab) was restored exactly.
 >
