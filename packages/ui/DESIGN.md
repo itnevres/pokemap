@@ -421,4 +421,4 @@ reserves one band on that side.
   pointerdown disarms that, so real right-clicks are never swallowed). The hint uses `--text-secondary`.
 - Shift+double-click on a map opens it in Map view in both families (in GBC it
   bypasses the warp-marker preview).
-- **Tokens:** `--bg-panel-raised`, `--border-strong`, `--bg-hover`, `--text-muted` (hint).
+- **Tokens:** `--bg-panel-raised`, `--border-strong`, `--bg-hover`, `--text-muted` (disabled label), `--text-secondary` (hint).
