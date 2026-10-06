@@ -296,3 +296,57 @@ describe("App -- in-context editing (Plan 6c E4)", () => {
     expect(screen.getByRole("button", { name: "World" }).getAttribute("aria-pressed")).toBe("true");
   });
 });
+
+describe("App -- in-context editing, fix round (Plan 6c E4)", () => {
+  it("a pencil click on a cell of the overlay canvas goes through the edit session: paint/begin, paint/apply (pencil), paint/end, in order", async () => {
+    const session = { blocks: ROUTE1.blocks, border: [], map: ROUTE1.map, isDirty: true, canUndo: true, canRedo: false };
+    const fetchMock = makeFetchMock();
+    const base = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation((url: string, init?: RequestInit) =>
+      url.startsWith("/api/edit/Route1/paint/") && init?.method === "POST" ? ok(session) : base(url, init));
+    await startApp(fetchMock);
+    const canvas = await enterWorld();
+    dblClickRoute1(canvas); // fresh World, zoom 1: Route1 is x in [11,21) px; the click is at (16, 5)
+    await waitFor(() => expect(contextOverlay()!.querySelector("canvas.map-canvas__stage")).not.toBeNull());
+    const stage = contextOverlay()!.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
+
+    fireEvent.click(screen.getByRole("button", { name: "pencil" }));
+    await waitFor(() => expect(screen.getByPlaceholderText(/search/i)).toBeTruthy());
+    const picked = screen.getByRole("button", { name: /metatile 0x1\b/i }) as HTMLButtonElement;
+    fireEvent.click(picked);
+    await waitFor(() => expect(picked.getAttribute("aria-pressed")).toBe("true"));
+
+    // Snap: Route1 (11,0) 10x10, pointer (16,5), 1x: centre (16,5)*16 = (256,80), world pan (16-256, 5-80) = (-240,-75);
+    // overlay view pan = (11*16 - 240 - 16, 0 - 75 - 16) = (-80, -91), zoom 1 (origin = 1 border block * 16 px).
+    // With the stage box at (100,100), block (0,0) spans client x in [100 - 80 + 16, +16) = [36,52), y [100 - 91 + 16, +16) = [25,41).
+    stage.getBoundingClientRect = () => ({ left: 100, top: 100, right: 500, bottom: 200, width: 400, height: 100, x: 100, y: 100, toJSON() {} });
+    fireEvent.mouseDown(stage, { clientX: 44, clientY: 33, button: 0 });
+    fireEvent.mouseUp(stage, { clientX: 44, clientY: 33, button: 0 });
+
+    const paintCalls = () => fetchMock.mock.calls.filter(([url]) => String(url).startsWith("/api/edit/Route1/paint/"));
+    await waitFor(() => expect(paintCalls().map(([url]) => url)).toEqual([
+      "/api/edit/Route1/paint/begin", "/api/edit/Route1/paint/apply", "/api/edit/Route1/paint/end",
+    ]));
+    const apply = JSON.parse(String(paintCalls()[1]![1]!.body));
+    expect(apply.tool).toBe("pencil");
+    expect(apply.targets).toEqual([{ x: 0, y: 0 }]);
+  });
+
+  it("a selection change that nothing else clears leaves context (defence in depth: the overlay normally covers the canvas)", async () => {
+    await startApp();
+    const canvas = await enterWorld();
+    // Zoom the world to its native 16 px/tile about (0,0): pan stays 0, PalletTown [0,160) px, Route1 [176,336) px.
+    for (let i = 0; i < 20; i++) fireEvent.wheel(canvas, { clientX: 0, clientY: 0, deltaY: -100 });
+    await waitFor(() => expect(document.querySelector(".world-canvas__zoom-readout")!.textContent).toBe("100%"));
+    fireEvent.doubleClick(canvas, { clientX: 256, clientY: 80 }); // Route1's centre: the snap leaves the world where it is
+    await waitFor(() => expect(chrome()).not.toBeNull());
+    expect(contextOverlay()).not.toBeNull();
+
+    // A click that reaches the world canvas itself (not possible with a real pointer: the overlay covers it) on PalletTown.
+    fireEvent.click(canvas, { clientX: 80, clientY: 80 });
+
+    await waitFor(() => expect(contextOverlay()).toBeNull());
+    expect(chrome()).toBeNull();
+    expect(document.querySelector('.map-tree__map[aria-current="true"]')?.textContent).toContain("PalletTown");
+  });
+});
