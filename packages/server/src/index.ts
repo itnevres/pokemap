@@ -922,6 +922,10 @@ export function createProjectHandler(root: string): ProjectHandler {
           console.error(e);
           return send(500, { error: e instanceof Error ? e.message : String(e) });
         }
+        // The render route's pngCache (keyed `name:border`, no expiry) predates this write, and the session-bypass
+        // above ends the moment the session closes below. Clear all of it: layouts can be shared by several maps and
+        // one map serves both the border=0 and border=1 keys.
+        pngCache.clear();
         // Close, not markSaved()-and-keep-open: the session's own `map`/
         // `blocks` reflect what was JUST written, but the world/coverage/
         // encounters caches above this route do NOT (I8's read-only-

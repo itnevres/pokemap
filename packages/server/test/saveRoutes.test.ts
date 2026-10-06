@@ -158,4 +158,34 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("save/commit routes", () => {
     // discipline.
     expect(readFileSync(binPath)).toEqual(before);
   }, 300_000);
+
+  // Plan 6c E4 fix round: the world view refreshes a saved map's tile by re-requesting /api/render/<map>.png, which
+  // used to be served from pngCache (keyed `name:border`, no expiry) with the PRE-commit pixels. CianwoodCity is used
+  // by no other test file against this subject (read-guarded restore: only rewritten if it differs).
+  it("a render fetched before a commit is not served stale after it, for both border keys", async () => {
+    const proj = openProject(SUBJECT_ROOT);
+    const layout = proj.layoutForMap("CianwoodCity");
+    const binPath = `${SUBJECT_ROOT}/${layout.blockdataFilepath}`;
+    const before = readFileSync(binPath);
+    const png = async (path: string) => Buffer.from(await (await get(path)).arrayBuffer());
+    try {
+      // No session open yet, so both renders come from (and fill) pngCache.
+      const plain = await png("/api/render/CianwoodCity.png");
+      const bordered = await png("/api/render/CianwoodCity.png?border=1");
+      expect(await png("/api/render/CianwoodCity.png")).toEqual(plain); // cached: identical
+
+      const current = ((await (await get("/api/map/CianwoodCity")).json()) as any).blocks[0].metatileId as number;
+      await post("/api/edit/CianwoodCity/paint/begin");
+      await post("/api/edit/CianwoodCity/paint/apply", {
+        tool: "pencil", targets: [{ x: 0, y: 0 }], stamp: { width: 1, height: 1, cells: [{ metatileId: current === 1 ? 2 : 1 }] }, origin: { x: 0, y: 0 },
+      });
+      await post("/api/edit/CianwoodCity/paint/end");
+      expect((await post("/api/edit/CianwoodCity/commit")).status).toBe(200);
+
+      expect(await png("/api/render/CianwoodCity.png")).not.toEqual(plain);
+      expect(await png("/api/render/CianwoodCity.png?border=1")).not.toEqual(bordered);
+    } finally {
+      if (!readFileSync(binPath).equals(before)) writeFileSync(binPath, before);
+    }
+  }, 300_000);
 });
