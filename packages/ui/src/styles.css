@@ -1000,6 +1000,64 @@ input {
   font-size: var(--text-xs);
 }
 
+/* In-context editing (Plan 6c E4, GBA): the overlay fills .world-canvas__viewport (position: relative) exactly, so
+   the chromeless MapCanvas inside it has a stage box equal to the world canvas box and the controlled view maps one
+   to one (world/contextView.ts). Above the world's own overlays (z 10), below the context menu (z 12). The dim layer
+   sits under the MapCanvas (a positioned, z-indexed flex item); the bar floats top-left over both. */
+.world-canvas__context {
+  position: absolute;
+  inset: 0;
+  z-index: 11;
+  display: flex;
+}
+
+.world-canvas__context-dim {
+  position: absolute;
+  inset: 0;
+  background: var(--overlay-spotlight-dim);
+}
+
+.world-canvas__context .map-canvas {
+  position: relative;
+  z-index: 1;
+}
+
+.map-canvas--chromeless .map-canvas__viewport {
+  background: transparent;
+}
+
+.world-canvas__context-bar {
+  position: absolute;
+  top: var(--space-2);
+  left: var(--space-2);
+  z-index: 2;
+  max-width: calc(100% - 2 * var(--space-2));
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-1) var(--space-2);
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+.world-canvas__context-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-data);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.world-canvas__context-zoom {
+  display: flex;
+  gap: var(--space-1);
+}
+
 /* Review fix: a failed save (a placement drag or the dungeon toggle) used
    to share loadError's own in-flow placeholder -- shoving/clipping the
    canvas and never clearing until the next successful load. This is

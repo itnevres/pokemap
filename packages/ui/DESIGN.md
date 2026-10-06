@@ -422,3 +422,30 @@ reserves one band on that side.
 - Shift+double-click on a map opens it in Map view in both families (in GBC it
   bypasses the warp-marker preview).
 - **Tokens:** `--bg-panel-raised`, `--border-strong`, `--bg-hover`, `--text-muted` (disabled label), `--text-secondary` (hint).
+
+## In-context editing (GBA, Plan 6c E4)
+
+- Double-clicking a map body on the GBA World view (or the context menu's "Edit here")
+  edits that map in place, with the world still visible around it. Shift+double-click and
+  "Open in Map view" still switch to the Map view. A warp marker (warps on) keeps previewing
+  its destination instead; GBC is unchanged (GBC double-click opens the Map view, "Edit here"
+  stays disabled).
+- **One canvas, never remounted.** The World view is always hosted by `MapEditingWorkspace`;
+  `active` only switches the chrome (Toolbar, strips, banners, `EventInspector`) on, around the
+  same `WorldCanvas`. Its pan/zoom, image cache and toggles survive entering and leaving.
+- **Overlay.** `.world-canvas__context` fills `.world-canvas__viewport` exactly: a dim layer
+  (`--overlay-spotlight-dim`), a `chromeless` `MapCanvas` (no toolbar, status strip or overlay
+  legend; transparent viewport via `.map-canvas--chromeless`), and a bar (`.world-canvas__context-bar`,
+  top-left: map name, 1x/2x/4x, Done) on `--bg-panel-raised` / `--border-strong`. Because the stage
+  box equals the world canvas box, `MapCanvas`'s controlled `view` is the world's own pan/zoom
+  expressed in the composite's frame (`world/contextView.ts`); a wheel, drag or zoom button over the
+  overlay moves the world in lock-step. Entering snaps the world once to 16/32/64 px per tile with the
+  map's centre at the double-click point (or the menu's open point, else the viewport centre).
+  The Grid/Collision/Events/Encounters toggles are not reachable here (the collision tool still forces
+  its overlay), a known limitation.
+- **Exits.** Done, Escape, or a double-click on the overlay outside the map all ask the app to
+  leave. A clean session leaves; a dirty one opens the ordinary Save dialog and stays. A mode switch,
+  a tree click or any other selection change leaves without a prompt (the session persists as it
+  does today). Escape is ignored when another handler took it, a context menu is open, or a modal dialog is open.
+- **After a save** only the saved map's world tile is re-requested (`/api/render/<map>.png?v=<n>`).
+- **Tokens:** `--overlay-spotlight-dim`, `--bg-panel-raised`, `--border-strong`, `--text-primary`.
