@@ -159,3 +159,57 @@ Mechanical sed: `getByRole/queryByRole("button", { name: "Accept conflict"|"Un-a
 - C3: X-d survives: GBC keyboard-open `mapFilter` guard is shadowed by the existing effect that clears `selectedMap` when it leaves `mapFilter`, so the guard is unobservable in tests (kept per spec; D3's `does not keyboard-open a selected map removed from the current scope...` covers Enter likewise).
 - C4: not verified in a real browser: whether a keyboard ContextMenu keypress also fires a native `contextmenu` event after our `preventDefault`ed keydown (if so, `onContextMenu` would hit-test the event's coordinates and could close/replace the keyboard-opened menu). No Browser/dev-server check done (no preview server run). Right-click `pointerdown` ordering (pointerdown closes, then contextmenu reopens) is the designed behaviour.
 - C5: GBC has no explicit "Shift+mousedown, no movement, no POST" pin (spec listed it for GBA only); GBC `commitMapDrag` has the same unchanged-position guard.
+
+---
+
+# Fix round (reviews: quality CHANGES_REQUIRED, spec PASS with gaps)
+
+**Status: DONE.** Code commit `e64196a` (base `09a8b04`). Gate set (spec's 6 files + `AppWorldContextMenu.test.tsx`): 7 files / 309 tests pass; `npm run typecheck` clean; `npm run build -w @pokemap/ui` OK. `git diff 0d2c332 -- packages/ui/test | grep '^-[^-]'` = 0 lines: additions only, no existing or earlier-E3 test edited (one case in my own new batch, the GBC `button -1` one, was adjusted before first commit to avoid a vacuous coincident point). `.codex/` and the coordinator's untracked `task-E4-spec.md` untouched; no checkout/restore/stash.
+
+## Changes
+- **P1-1 + P3-1: `useWorldContextMenu`** exported from `WorldContextMenu.tsx`. Options `{ canvasRef, onOpenMap?, editItem?(map)=>WorldMenuItem, toggle }`; returns `{ menu, close, openFor, onContextMenu(e, resolve), onMenuKey(e, target), onPointerDown }`.
+  - owns: menu state; `close` (counter bump + `setMenu(null)` + canvas refocus); `openFor` (items Open in Map view / `editItem(map)` / conflict toggle with `keepOpen`); the key predicate (ContextMenu, or Shift+F10; plain F10 never); options read through a ref so a long-lived menu calls the latest `onOpenMap`/`toggle`.
+  - keyboard-echo guard: `onMenuKey` stamps `keyboardOpenedAt = e.timeStamp` on a keyboard open; `onContextMenu` always `preventDefault`s, and if a stamp exists and `e.timeStamp - stamp < 1000` it clears the stamp (one-shot) and returns without touching the menu; `onPointerDown` clears the stamp (canvases call it from their canvas `onPointerDown`), so a real mouse right-click (pointerdown first) is never swallowed. GBC gained an `onPointerDown` prop on its canvas; GBA calls it from its existing `onPointerDownCapture`.
+  - canvases keep: hit test (`resolve`), centre computation (`target`), their "Edit here" item (GBA: `onEditHere ? item : undefined`, calling `onEditHereRef`; GBC: always the disabled hint item), toast JSX. `onOpenMapRef`, `closeMenu`, `openMenuAt` and the `WorldMenuItem`/`WorldMenuState` imports are gone from both canvases.
+- **P2-1:** `.world-context-menu { width: max-content; }` (max-width kept).
+- **P2-2:** menu component `onCloseRef`; listener effect depends on `open` only.
+- **P3-2:** GBC `onContextMenu` placed above the "Keyboard path (fix round...)" comment, which now sits directly on `onKeyDown`. **P3-3:** Tab -> `preventDefault` + `onClose`. **P3-4:** `aria-label="Map actions"`. **P3-5:** dead `if (item.disabled) return;` deleted (its test kept). **P3-6:** `menuId` counter (bumped on open and on close); a late `toggle` success closes only if still the issuing menu. **P3-7:** GBA keyboard target requires `!mapFilter || mapFilter.has(name)`. **P3-8:** `onContextMenu` `preventDefault` on the menu div. **P3-9:** hint `color: var(--text-secondary)`. **P3-10:** noted for E4 only (after "Open in Map view" App switches view, the canvas unmounts and focus falls to body; a focus target in the new view would be nicer). The P3-4 Plan 7 note (focusable `aria-disabled` instead of `disabled`) is left as is.
+- **DESIGN.md:** Tab, the hook and the echo guard, the hint token.
+
+## New tests (all additive) and the mutant that kills each
+Harness `implmut.mjs` (scratchpad; the earlier `mut.mjs` was overwritten by a reviewer): exact-once find, CRLF-aware, mutate in memory, `finally` write original bytes, `Buffer.compare` -> every run `BYTE-COMPARE restored: true`; `git status` clean after.
+| test (file) | mutant | result |
+|---|---|---|
+| menu `names the menu for assistive tech` | drop `aria-label` | RED |
+| menu `Tab closes the menu instead of tabbing out of it` | Tab branch `if (false)` | RED |
+| menu `a right-click on the menu is swallowed (no native browser menu over ours)` | drop menu `onContextMenu` | RED |
+| menu `keeps its document/window listeners across a new onClose identity, and calls the latest onClose` | effect deps `[open, onClose]` (churn) / outside handler calls `onClose` not `onCloseRef.current()` (stale) | RED / RED |
+| styles `sizes the world context menu to its content, capped to the viewport, with a readable hint` | remove `width: max-content` / hint `--text-muted` | RED / RED |
+| GBA + GBC `the native contextmenu that follows a keyboard open, {at empty space, over another map (GBA) / over the map (GBC), with button -1 (keyboard origin)}, leaves the menu as it was` (3+3) | no keyboard-open timestamp (guard never arms) | RED (all 6) |
+| GBA + GBC `a real right-click after a keyboard open is not swallowed: any canvas pointerdown re-arms it` | `onPointerDown` no-op / GBC canvas not wired to `onPointerDown` / GBA `onPointerDownCapture` not calling it | RED / RED (GBC) / RED (GBA) |
+| GBA `a keyboard open is one-shot: a second contextmenu is handled normally` | echo not cleared after the first | RED |
+| GBA `a contextmenu long after a keyboard open is not an echo and is handled normally` | time-window check replaced by `true` | RED |
+| GBA `a late successful save closes only the menu that issued it` | `if (ok) close()` without the id check | RED |
+| GBA + GBC `a plain F10 opens nothing` | predicate accepts plain F10 | RED (both) |
+| GBA `the keyboard opens nothing for a selected map outside the current mapFilter` | `mapFilter` check replaced by `true ?` | RED |
+| GBA `Ctrl+Shift and Meta+Shift double-click on a map do not open it` (F1) | Shift branch ignores Ctrl/Meta | RED |
+| GBA + GBC `Escape closes the menu and returns focus to the canvas` (F4; GBC is the port) | `close()` without refocus | RED (both) |
+| GBC `right-click on a badge whose map body is not under the pointer still targets the badge's map` (F4; 1x40-block `Sliver`, badge centre left of its 5px body) | GBC resolve ignores `badge.map` | RED |
+F3 skipped as instructed.
+
+## Self-run E3-M1..M7 on the final code (the 4 E3 test files each)
+| M | mutation | RED killers |
+|---|---|---|
+| M1 | GBC `Edit here` `disabled: false` | GBC `right-click on a map shows Open in Map view and a disabled Edit here carrying the Plan 7 hint` |
+| M2 | GBA Shift+dblclick branch `if (false)` | GBA `Shift+double-click on a map opens it in Map view without ever POSTing a placement` |
+| M3 | remove outside `pointerdown` listener | menu `a pointerdown outside closes; one inside does not`; menu `keeps its document/window listeners ...`; GBA `a canvas mousedown (pan start) closes an open menu`; GBC `a canvas pointerdown closes an open menu` |
+| M4 | Arrow nav over all buttons | menu `ArrowDown/ArrowUp cycle over the enabled items and skip disabled ones` |
+| M5 | GBA keyboard `selected.size >= 1` | GBA `the keyboard opens nothing with zero or two selected maps` |
+| M6 | `toggle` swallows POST failure | D4 GBA `shows a malformed accept response without acknowledging the GBA badge`; D4 GBC `shows a rejected POST response and retains the unaccepted badge`; both `the conflict error toast can be dismissed` |
+| M7 | App ignores `changeSelection` result | `AppWorldContextMenu` `a dirty session with a cancelled confirm keeps World mode and the selection` |
+(M3's extra killer is the listener-lifecycle test, which counts `document.addEventListener` calls and so also needs the pointerdown subscription.)
+
+## Notes / concerns
+- Not browser-verified: the echo guard is proven in jsdom against the coordinator's measured Chromium behaviour (keyup `contextmenu`, `button: -1`, canvas centre); real OS Shift+F10 timing is unmeasured and is covered by the same 1000 ms window. The 1 s cap means a browser that never echoes cannot swallow a later right-click (any pointerdown disarms it too).
+- jsdom menu width is 0, so clamped positions equal the 8px inset (the re-arm test asserts `8px,8px`, versus the map-centre `75px,55px`).
+- X-d (GBC keyboard `mapFilter` guard, shadowed by the `selectedMap` reset effect) is still equivalent; GBA's guard is observable and now pinned (a GBA selection survives a `mapFilter` change).
