@@ -752,6 +752,9 @@ input {
 .world-canvas {
   flex: 1 1 auto;
   min-height: 0;
+  /* Plan 6c E4: in context the world canvas is a flex-row child of .app__map-editing-body beside
+     EventInspector; without this its toolbar's min-content width overflowed the page by 71px at 1280. */
+  min-width: 0;
   display: flex;
   flex-direction: column;
 }

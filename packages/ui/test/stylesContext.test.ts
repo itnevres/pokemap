@@ -15,6 +15,10 @@ describe("styles.css: in-context editing overlay (Plan 6c E4)", () => {
     return m![2]!;
   };
 
+  it("the world canvas can shrink beside EventInspector in context (min-width: 0), so the page never scrolls sideways", () => {
+    expect(ruleBody(".world-canvas")).toMatch(/min-width\s*:\s*0(px)?\s*(;|$)/);
+  });
+
   it("the overlay fills the world viewport box exactly", () => {
     const body = ruleBody(".world-canvas__context");
     expect(body).toMatch(/position\s*:\s*absolute/);
