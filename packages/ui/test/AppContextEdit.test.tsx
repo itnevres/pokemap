@@ -148,7 +148,7 @@ describe("App -- in-context editing (Plan 6c E4)", () => {
     dblClickRoute1(canvas);
     await waitFor(() => expect(chrome()).not.toBeNull());
 
-    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    fireEvent.click(screen.getByRole("button", { name: "Done editing Route1" }));
 
     await waitFor(() => expect(chrome()).toBeNull());
     expect(document.querySelector(".event-inspector")).toBeNull();
@@ -201,7 +201,7 @@ describe("App -- in-context editing (Plan 6c E4)", () => {
 
     it("Done opens the SaveDialog and stays in context", async () => {
       await dirtyRoute1();
-      fireEvent.click(screen.getByRole("button", { name: "Done" }));
+      fireEvent.click(screen.getByRole("button", { name: "Done editing Route1" }));
       expect(await screen.findByRole("dialog", { name: "Save changes" })).toBeTruthy();
       expect(contextOverlay()).not.toBeNull();
     });
@@ -211,7 +211,7 @@ describe("App -- in-context editing (Plan 6c E4)", () => {
       await waitFor(() => expect(FakeImage.instances.map((i) => i.src).sort()).toEqual(["/api/render/PalletTown.png", "/api/render/Route1.png"]));
       const before = FakeImage.instances.length;
 
-      fireEvent.click(screen.getByRole("button", { name: "Done" }));
+      fireEvent.click(screen.getByRole("button", { name: "Done editing Route1" }));
       const dialog = await screen.findByRole("dialog", { name: "Save changes" });
       await waitFor(() => expect((within(dialog).getByRole("button", { name: "Save Changes" }) as HTMLButtonElement).disabled).toBe(false));
       await act(async () => { fireEvent.click(within(dialog).getByRole("button", { name: "Save Changes" })); });

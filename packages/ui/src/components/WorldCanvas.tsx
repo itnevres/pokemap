@@ -30,8 +30,6 @@ const TILE_PX = 16;
  *  CLI. */
 const MIN_ZOOM = 1 / 64;
 const MAX_ZOOM = 16;
-/** In-context editing (Plan 6c E4) lets the world reach 16 * {1, 2, 4} px per tile, the MapCanvas zoom levels. */
-const CONTEXT_MAX_ZOOM = 64;
 const WHEEL_FACTOR = 1.2;
 
 /** Below this many screen px per tile, redraw from the cached downscaled
@@ -381,8 +379,9 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
   // ref: the menu stays open across App renders, and an App-level handler closes over state that can change.
   const onEditHereRef = useRef(onEditHere);
   onEditHereRef.current = onEditHere;
-  // Where the next in-context entry snaps the map's centre (viewport px): the double-click point, or where the menu
-  // opened. Set just before onEditHere; consumed (kept until the context ends) by the snap effect below.
+  // Where the next in-context entry snaps the map's centre, in CLIENT px (the editing chrome mounts after the click and
+  // moves the canvas, so a canvas-relative point would go stale): the double-click point, or where the menu opened.
+  // Set just before onEditHere; read and cleared by the snap effect below.
   const snapPointerRef = useRef<{ x: number; y: number } | null>(null);
   const menuPointRef = useRef<{ x: number; y: number } | null>(null);
   const requestEditHere = (map: string, point: { x: number; y: number } | null) => {
@@ -1440,35 +1439,46 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
   const contextPlacement = contextName ? world?.placements.get(contextName) : undefined;
   const contextSize = contextPlacement ? sizeOfPlacement(contextPlacement, sizeByMap) : null;
 
-  // Snap once per entry: the context map's centre goes to the recorded pointer (viewport centre if none), at the
-  // nearest of 1x/2x/4x. `snappedFor` gates the overlay canvas so it never mounts at the pre-snap zoom. The ref
-  // is the same-tick guard (a StrictMode double run must not snap twice); zoom and pan are separate, sequential
-  // setters, never nested.
+  // Snap once per entry: the context map's centre goes to the recorded pointer (canvas centre if none), at the
+  // nearest of 1x/2x/4x. It waits for `context.origin` (the map's layout): the host mounts its editing chrome in that
+  // same commit, which moves and resizes this canvas, so the pointer (client px) is converted with the canvas box as it
+  // is NOW, not as it was at the click. `snappedFor` gates the overlay canvas so it never mounts at the pre-snap zoom.
+  // The ref is the same-tick guard (a StrictMode double run must not snap twice); zoom and pan are separate,
+  // sequential setters, never nested. Leaving context hands focus back to the canvas (the Done button unmounts).
   const snappedForRef = useRef<string | null>(null);
   const [snappedFor, setSnappedFor] = useState<string | null>(null);
+  const hasContextOrigin = context?.origin != null;
   useEffect(() => {
     if (contextName === null) {
+      if (snappedForRef.current !== null) canvasRef.current?.focus();
       snappedForRef.current = null;
       setSnappedFor(null);
       return;
     }
-    if (snappedForRef.current === contextName || !contextPlacement || !contextSize || contextSize.width <= 0 || contextSize.height <= 0) return;
+    if (!hasContextOrigin || snappedForRef.current === contextName || !contextPlacement || !contextSize || contextSize.width <= 0 || contextSize.height <= 0) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
     snappedForRef.current = contextName;
+    const box = canvas.getBoundingClientRect();
+    const client = snapPointerRef.current;
+    snapPointerRef.current = null;
     const view = enterContextView({
       placement: { x: contextPlacement.x, y: contextPlacement.y, width: contextSize.width, height: contextSize.height },
-      pointer: snapPointerRef.current ?? { x: viewport.w / 2, y: viewport.h / 2 },
+      pointer: client ? { x: client.x - box.left, y: client.y - box.top } : { x: canvas.clientWidth / 2, y: canvas.clientHeight / 2 },
       zoom: snapContextZoom(zoom),
     });
     setZoom(view.zoom);
     setPan(view.pan);
     setSnappedFor(contextName);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- zoom/viewport are read at entry only; the ref guard above is what governs re-entry.
-  }, [contextName, world]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- zoom is read at entry only; the ref guard above is what governs re-entry.
+  }, [contextName, world, hasContextOrigin]);
 
-  // Exits: Escape (window listener, only while in context). Skipped when another handler already took the key
-  // (defaultPrevented), when a context menu is open (it closes on the same key; which listener runs first
-  // depends on registration order), or when a modal dialog is open (SaveDialog, WarpDestinationModal and
-  // SignComposer close on Escape without stopping its propagation).
+  // Exits: Escape (a window listener in the CAPTURE phase, only while in context). Capture runs before every bubble
+  // handler, so what it checks is still the DOM the key press found: SaveDialog, WarpDestinationModal and SignComposer
+  // close on Escape from a React handler without stopping propagation (and React may flush that unmount before a
+  // bubble listener on window ran), and the context menu closes on its own window listener. Skipped when another
+  // handler already took the key (defaultPrevented), when a context menu or a modal dialog is open, and when the key
+  // came from a text field (those use Escape locally).
   const onExitRequestRef = useRef(context?.onExitRequest);
   onExitRequestRef.current = context?.onExitRequest;
   const menuOpenRef = useRef(false);
@@ -1477,10 +1487,11 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
     if (!inContext) return;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || e.defaultPrevented || menuOpenRef.current || document.querySelector('[aria-modal="true"]')) return;
+      if (e.target instanceof Element && e.target.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"]')) return;
       onExitRequestRef.current?.();
     };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [inContext]);
 
   const contextOrigin = context?.origin ?? null;
@@ -1527,14 +1538,16 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
       e.preventDefault();
       const rect = canvas.getBoundingClientRect();
       const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
-      const next = Math.min(inContext ? CONTEXT_MAX_ZOOM : MAX_ZOOM, Math.max(MIN_ZOOM, e.deltaY < 0 ? zoom * WHEEL_FACTOR : zoom / WHEEL_FACTOR));
+      // In-context editing leaves the world at 16 * {1, 2, 4} px per tile (above MAX_ZOOM): the cap never drops below the
+      // current zoom, so a wheel-in there stays put instead of jumping down to 16.
+      const next = Math.min(Math.max(MAX_ZOOM, zoom), Math.max(MIN_ZOOM, e.deltaY < 0 ? zoom * WHEEL_FACTOR : zoom / WHEEL_FACTOR));
       const before = screenToWorld(sx, sy);
       setZoom(next);
       setPan({ x: sx - before.x * next, y: sy - before.y * next });
     };
     canvas.addEventListener("wheel", handler, { passive: false });
     return () => canvas.removeEventListener("wheel", handler);
-  }, [zoom, screenToWorld, inContext]);
+  }, [zoom, screenToWorld]);
 
   const hitTest = useCallback((wx: number, wy: number): Placement | null => {
     for (let i = visible.length - 1; i >= 0; i--) {
@@ -1683,7 +1696,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
     if (!onEditHere) return;
     const w = screenToWorld(sx, sy);
     const hit = hitTest(w.x, w.y);
-    if (hit) requestEditHere(hit.map, { x: sx, y: sy });
+    if (hit) requestEditHere(hit.map, { x: e.clientX, y: e.clientY });
   };
 
   const onMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -1860,7 +1873,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
 
   const onCanvasContextMenu = (e: React.MouseEvent<HTMLCanvasElement>) => {
     contextMenu.onContextMenu(e, (sx, sy) => {
-      menuPointRef.current = { x: sx, y: sy };
+      menuPointRef.current = { x: e.clientX, y: e.clientY };
       const badge = conflictBadgesRef.current.find((item) => Math.hypot(item.x - sx, item.y - sy) <= BADGE_SIZE) ?? null;
       const w = screenToWorld(sx, sy);
       return { map: badge?.map ?? hitTest(w.x, w.y)?.map ?? null, badge };
@@ -1876,7 +1889,8 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
       if (!p) return null;
       const size = sizeOfPlacement(p, sizeByMap);
       const at = { x: (p.x + size.width / 2) * zoom + pan.x, y: (p.y + size.height / 2) * zoom + pan.y };
-      menuPointRef.current = at;
+      const box = canvasRef.current?.getBoundingClientRect();
+      menuPointRef.current = { x: (box?.left ?? 0) + at.x, y: (box?.top ?? 0) + at.y };
       return { ...at, map: p.map };
     });
   };
@@ -2136,9 +2150,9 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
             // In-context editing (Plan 6c E4): fills this viewport box exactly, so the chromeless MapCanvas's stage box
             // equals the world canvas box and the controlled view maps one to one (see world/contextView.ts).
             <div ref={overlayRef} className="world-canvas__context" onDoubleClick={onOverlayDoubleClick}>
-              <div className="world-canvas__context-dim" />
+              <div className="world-canvas__context-dim" aria-hidden="true" />
               {contextView && context.renderCanvas(contextView, onContextViewChange)}
-              <div className="world-canvas__context-bar">
+              <div className="world-canvas__context-bar" role="group" aria-label={`Editing ${context.map} in place`}>
                 <span className="world-canvas__context-name">{context.map}</span>
                 <div className="world-canvas__context-zoom" role="group" aria-label="Zoom">
                   {ZOOM_LEVELS.map((z) => (
@@ -2154,7 +2168,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
                     </button>
                   ))}
                 </div>
-                <button type="button" className="map-canvas__btn" onClick={() => context.onExitRequest()}>
+                <button type="button" className="map-canvas__btn" aria-label={`Done editing ${context.map}`} onClick={() => context.onExitRequest()}>
                   Done
                 </button>
               </div>

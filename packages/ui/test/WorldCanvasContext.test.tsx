@@ -276,12 +276,27 @@ describe("WorldCanvas: in-context overlay (Plan 6c E4)", () => {
   });
 
   describe("zoom clamp", () => {
-    it("the world wheel clamps at 64 px/tile (400%) in context", async () => {
+    it("a wheel-in at 64 px/tile (a 4x editing session's zoom) stays at 64; a wheel-out gives 64 / 1.2", async () => {
       const p = probe();
       const { canvas, container } = await mount({ context: ctx(p.renderCanvas) });
       await waitFor(() => expect(screen.getByTestId("ov-canvas")).toBeTruthy());
-      for (let i = 0; i < 12; i++) fireEvent.wheel(canvas, { clientX: 50, clientY: 50, deltaY: -100 });
-      await waitFor(() => expect(readout(container)).toBe("400%")); // 16 * 1.2^n would pass 64 by the 8th tick
+      p.change({ zoom: 4, pan: { x: 0, y: 0 } });
+      await waitFor(() => expect(readout(container)).toBe("400%"));
+      fireEvent.wheel(canvas, { clientX: 50, clientY: 50, deltaY: -100 });
+      expect(readout(container)).toBe("400%"); // an upper bound of 16 would give 16 (100%), 64 * 1.2 uncapped 480%
+      fireEvent.wheel(canvas, { clientX: 50, clientY: 50, deltaY: 100 });
+      await waitFor(() => expect(readout(container)).toBe("333%")); // 64 / 1.2 = 53.33 -> 333%
+    });
+
+    it("the same holds after leaving context: the leftover 64 is not clamped down by a wheel-in", async () => {
+      const p = probe();
+      const { canvas, container, rerenderWith } = await mount({ context: ctx(p.renderCanvas) });
+      await waitFor(() => expect(screen.getByTestId("ov-canvas")).toBeTruthy());
+      p.change({ zoom: 4, pan: { x: 0, y: 0 } });
+      await waitFor(() => expect(readout(container)).toBe("400%"));
+      rerenderWith({});
+      fireEvent.wheel(canvas, { clientX: 50, clientY: 50, deltaY: -100 });
+      expect(readout(container)).toBe("400%");
     });
 
     it("and at 16 px/tile (100%) outside it", async () => {
@@ -296,24 +311,29 @@ describe("WorldCanvas: in-context overlay (Plan 6c E4)", () => {
       const onExitRequest = vi.fn();
       const p = probe();
       await mount({ context: ctx(p.renderCanvas, onExitRequest) });
-      fireEvent.click(screen.getByRole("button", { name: "Done" }));
+      fireEvent.click(screen.getByRole("button", { name: "Done editing B" }));
       expect(onExitRequest).toHaveBeenCalledTimes(1);
     });
 
     it("Escape calls it once; an Escape another handler already prevented does not", async () => {
       const onExitRequest = vi.fn();
       const p = probe();
-      await mount({ context: ctx(p.renderCanvas, onExitRequest) });
-      fireEvent.keyDown(window, { key: "Escape" });
-      expect(onExitRequest).toHaveBeenCalledTimes(1);
-      fireEvent.keyDown(window, { key: "Enter" });
-      expect(onExitRequest).toHaveBeenCalledTimes(1);
-
-      const prevent = (e: KeyboardEvent) => e.preventDefault();
-      window.addEventListener("keydown", prevent, true); // capture: runs before the context listener
-      fireEvent.keyDown(window, { key: "Escape" });
-      window.removeEventListener("keydown", prevent, true);
-      expect(onExitRequest).toHaveBeenCalledTimes(1);
+      // Registered before the mount, so (both are window capture listeners) it runs before the context listener.
+      let preventing = false;
+      const prevent = (e: KeyboardEvent) => { if (preventing) e.preventDefault(); };
+      window.addEventListener("keydown", prevent, true);
+      try {
+        await mount({ context: ctx(p.renderCanvas, onExitRequest) });
+        fireEvent.keyDown(window, { key: "Escape" });
+        expect(onExitRequest).toHaveBeenCalledTimes(1);
+        fireEvent.keyDown(window, { key: "Enter" });
+        expect(onExitRequest).toHaveBeenCalledTimes(1);
+        preventing = true;
+        fireEvent.keyDown(window, { key: "Escape" });
+        expect(onExitRequest).toHaveBeenCalledTimes(1);
+      } finally {
+        window.removeEventListener("keydown", prevent, true);
+      }
     });
 
     it("Escape does nothing while a modal dialog is open (the GBA modals do not stop propagation)", async () => {
@@ -392,5 +412,146 @@ describe("WorldCanvas: tileVersions (Plan 6c E4)", () => {
     await mount({ tileVersions: { B: 3 } });
     await waitFor(() => expect(FakeImage.instances).toHaveLength(2));
     expect(srcs()).toEqual(["/api/render/A.png", "/api/render/B.png?v=3"]);
+  });
+});
+
+describe("WorldCanvas: in-context fix round (Plan 6c E4)", () => {
+  const ctx = (renderCanvas: ReturnType<typeof probe>["renderCanvas"], onExitRequest = vi.fn(), origin: { x: number; y: number } | null = { x: 16, y: 16 }) =>
+    ({ map: "B", origin, renderCanvas, onExitRequest });
+  const boxAt = (top: number) => ({ ...RECT, top, y: top, bottom: top + VIEWPORT_SIZE });
+
+  describe("Escape", () => {
+    it("is judged before any bubble handler: a document listener that removes the modal on Escape (React's flush) does not let it through", async () => {
+      const onExitRequest = vi.fn();
+      const p = probe();
+      await mount({ context: ctx(p.renderCanvas, onExitRequest) });
+      const modal = document.createElement("div");
+      modal.setAttribute("aria-modal", "true");
+      document.body.appendChild(modal);
+      const flush = (e: KeyboardEvent) => { if (e.key === "Escape") modal.remove(); };
+      document.addEventListener("keydown", flush); // bubble: runs after capture, before a window bubble listener
+      fireEvent.keyDown(modal, { key: "Escape" });
+      document.removeEventListener("keydown", flush);
+      expect(modal.isConnected).toBe(false);
+      expect(onExitRequest).not.toHaveBeenCalled();
+    });
+
+    it.each(["input", "textarea", "select"])("from a <%s> does not request an exit", async (tag) => {
+      const onExitRequest = vi.fn();
+      const p = probe();
+      await mount({ context: ctx(p.renderCanvas, onExitRequest) });
+      const field = document.body.appendChild(document.createElement(tag));
+      fireEvent.keyDown(field, { key: "Escape" });
+      field.remove();
+      expect(onExitRequest).not.toHaveBeenCalled();
+    });
+
+    it("from a contenteditable element does not request an exit; from a plain element it does", async () => {
+      const onExitRequest = vi.fn();
+      const p = probe();
+      await mount({ context: ctx(p.renderCanvas, onExitRequest) });
+      const editable = document.body.appendChild(document.createElement("div"));
+      editable.setAttribute("contenteditable", "true");
+      fireEvent.keyDown(editable, { key: "Escape" });
+      editable.remove();
+      expect(onExitRequest).not.toHaveBeenCalled();
+      fireEvent.keyDown(document.body, { key: "Escape" });
+      expect(onExitRequest).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("snap uses the canvas box as it is when the layout (and so the chrome) arrives", () => {
+    it("waits for context.origin, then converts the recorded client pointer with the shifted box", async () => {
+      const onEditHere = vi.fn();
+      const p = probe();
+      const { canvas, container, rerenderWith } = await mount({ onEditHere });
+      canvas.getBoundingClientRect = () => boxAt(58); // already shifted when the user double-clicks
+      fireEvent.doubleClick(canvas, { clientX: 21, clientY: 59 }); // canvas-relative (21, 1): inside B
+      expect(onEditHere).toHaveBeenCalledWith("B");
+
+      rerenderWith({ onEditHere, context: ctx(p.renderCanvas, vi.fn(), null) }); // layout not loaded: no snap yet
+      await act(async () => { await Promise.resolve(); });
+      expect(p.views).toHaveLength(0);
+      expect(readout(container)).toBe("6%"); // zoom 1 unchanged: still the pre-snap world
+
+      canvas.getBoundingClientRect = () => boxAt(116); // the chrome mounted and moved the canvas down again
+      rerenderWith({ onEditHere, context: ctx(p.renderCanvas) });
+      // pointer = client (21, 59) - box (0, 116) = (21, -57); B centre (344, 24) -> pan (21-344, -57-24) = (-323, -81);
+      // MapCanvas view = (20*16 - 323 - 16, -81 - 16) = (-19, -97).
+      await waitFor(() => expect(p.current()).toEqual({ zoom: 1, pan: { x: -19, y: -97 } }));
+    });
+
+    it("the right-click menu's open point is recorded in client px too", async () => {
+      const onEditHere = vi.fn();
+      const p = probe();
+      const { canvas, rerenderWith } = await mount({ onOpenMap: vi.fn(), onEditHere });
+      canvas.getBoundingClientRect = () => boxAt(58);
+      fireEvent.contextMenu(canvas, { clientX: 22, clientY: 60 }); // canvas-relative (22, 2)
+      fireEvent.click(screen.getByRole("menuitem", { name: "Edit here" }));
+      canvas.getBoundingClientRect = () => boxAt(116);
+      rerenderWith({ onEditHere, context: ctx(p.renderCanvas) });
+      // pointer (22, 60 - 116 = -56); pan = (22-344, -56-24) = (-322, -80); view = (320-322-16, -80-16) = (-18, -96).
+      await waitFor(() => expect(p.current()).toEqual({ zoom: 1, pan: { x: -18, y: -96 } }));
+    });
+
+    it("the ContextMenu key's open point (the selected map's centre) is recorded in client px too", async () => {
+      const onEditHere = vi.fn();
+      const p = probe();
+      const { canvas, rerenderWith } = await mount({ onOpenMap: vi.fn(), onEditHere });
+      canvas.getBoundingClientRect = () => boxAt(58);
+      fireEvent.mouseDown(canvas, { clientX: 21, clientY: 59, button: 0, ctrlKey: true }); // select B
+      fireEvent.keyDown(canvas, { key: "ContextMenu" }); // opens at B's centre: canvas (21.5, 1.5) = client (21.5, 59.5)
+      fireEvent.click(screen.getByRole("menuitem", { name: "Edit here" }));
+      canvas.getBoundingClientRect = () => boxAt(116);
+      rerenderWith({ onEditHere, context: ctx(p.renderCanvas) });
+      // pointer (21.5, 59.5 - 116 = -56.5); pan = (round(21.5-344), round(-56.5-24)) = (-322, -80); view (-18, -96).
+      await waitFor(() => expect(p.current()).toEqual({ zoom: 1, pan: { x: -18, y: -96 } }));
+    });
+
+    it("a later entry does not reuse an earlier pointer: with none recorded the canvas centre is used", async () => {
+      const onEditHere = vi.fn();
+      const p = probe();
+      const { canvas, rerenderWith } = await mount({ onEditHere });
+      fireEvent.doubleClick(canvas, { clientX: 21, clientY: 1 });
+      rerenderWith({ onEditHere, context: ctx(p.renderCanvas) });
+      await waitFor(() => expect(p.current()).toEqual({ zoom: 1, pan: { x: -19, y: -39 } })); // at the pointer (21, 1)
+      rerenderWith({ onEditHere });
+      rerenderWith({ onEditHere, context: ctx(p.renderCanvas) }); // entered some other way: nothing recorded
+      // The world kept zoom 16 (snaps to 1x again); centre fallback (50, 50): pan (-294, 26); view (10, 10).
+      await waitFor(() => expect(p.current()).toEqual({ zoom: 1, pan: { x: 10, y: 10 } }));
+    });
+  });
+
+  it("re-entering at the leftover 4x zoom snaps to 4x (the zoom is not forced back to 1x)", async () => {
+    const p = probe();
+    const { rerenderWith } = await mount({ context: ctx(p.renderCanvas) });
+    await waitFor(() => expect(screen.getByTestId("ov-canvas")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "4×" }));
+    await waitFor(() => expect(p.current().zoom).toBe(4));
+    rerenderWith({});
+    expect(screen.queryByTestId("ov-canvas")).toBeNull();
+    rerenderWith({ context: ctx(p.renderCanvas) });
+    // snapContextZoom(64) = 4; centre fallback (50, 50): B centre (21.5, 1.5)*64 = (1376, 96) -> pan (-1326, -46);
+    // view = (20*64 - 1326 - 16*4, -46 - 16*4) = (-110, -110).
+    await waitFor(() => expect(screen.getByTestId("ov-canvas")).toBeTruthy());
+    expect(p.current()).toEqual({ zoom: 4, pan: { x: -110, y: -110 } });
+  });
+
+  it("labels the bar and the Done button, and hides the dim layer from assistive tech", async () => {
+    const p = probe();
+    const { container } = await mount({ context: ctx(p.renderCanvas) });
+    expect(screen.getByRole("group", { name: "Editing B in place" })).toBe(container.querySelector(".world-canvas__context-bar"));
+    expect(screen.getByRole("button", { name: "Done editing B" })).toBeTruthy();
+    expect(container.querySelector(".world-canvas__context-dim")!.getAttribute("aria-hidden")).toBe("true");
+  });
+
+  it("leaving context returns focus to the world canvas; a canvas that never had a context does not take focus", async () => {
+    const p = probe();
+    const { canvas, rerenderWith } = await mount({ context: ctx(p.renderCanvas) });
+    screen.getByRole("button", { name: "Done editing B" }).focus();
+    rerenderWith({});
+    expect(document.activeElement).toBe(canvas);
+    const other = await mount({});
+    expect(document.activeElement).not.toBe(other.canvas);
   });
 });
