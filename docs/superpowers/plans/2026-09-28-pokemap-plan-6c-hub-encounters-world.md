@@ -1,5 +1,24 @@
 # PokeMap Plan 6c: Project Hub, Encounter Border, World UX (both families)
 
+> **STATUS (2026-10-06): DONE.** All 17 tasks in phases A-F are done and reviewed. Success criteria 1-9 were demonstrated end to end in one browser session, starting from the hub with no project open; the record is `task-reports/pokemap-plan-6c-hub-encounters-world/_archive/task-F1-closeout.md`.
+>
+> - **Branch:** `plan-6c-hub-encounters-world`, 275+ commits on `master` `ce020d9` (Plan 6b's merge).
+> - **Gate at HEAD (Windows):** `npm test` 2,202 pass / 2 fail (130 files). The 2 failures are the known `packages/server/test/world.test.ts` pair caused by the GBA subject's persisted `dungeonAutoLayout:false`. Typecheck is clean and `vite build` passes.
+> - **External state:** the GBA subject and PerfPlus are byte-identical to their recorded state. Every live write (criteria 6 and 8, the Dungeon tab) was restored exactly.
+>
+> **Real file map** (relative to `ce020d9`; tests omitted; 108 files changed in `packages/`):
+>
+> | Area | New | Changed |
+> |---|---|---|
+> | Hub (A) | `server/src/hub.ts`, `server/src/recent.ts`, `core/src/hub/wire.ts`, `ui/src/hub/{ProjectPicker,ProjectSwitcher,SwitchConfirmDialog}.tsx`, `ui/src/hub/guards.ts` | `server/src/{index,gbcRoutes,serve,editSessions}.ts` (the handler split), `core/src/family.ts` (`probeEngineFamily`), `ui/src/Root.tsx`. `ui/src/hooks/useProjectInfo.ts` was deleted |
+> | Encounter border (B) | `core/src/gbc/load/{species,sprites}.ts`, `ui/src/components/EncounterBorder.tsx`, `ui/src/encounters/{borderSide,fit,guards,summary,useMapEncounterSummaries}.ts` | `core/src/gbc/analyse/atlas.ts`. `EncounterGutter.tsx` and `gbc/GbcEncounterGutter.tsx` were deleted |
+> | Lenses and tree (C) | — | `ui/src/components/{LensPanel,MapTree,SpeciesSpotlight}.tsx` |
+> | World (D) | `core/src/world/{nearWarp,nearWarpAdapters,conflictAcceptance}.ts`, `ui/src/world/{conflictAcceptance,useConflictAcceptance}.ts`, `ui/src/gbc/{GbcWarpDestinationModal.tsx,warps.ts,hooks/useGbcDungeons.ts}` | `core/src/world/{resolve,sidecar}.ts`, `core/src/gbc/wire.ts`, `ui/src/world/visibility.ts`, `ui/src/gbc/{GbcApp,GbcWorldCanvas,guards}.tsx/ts` |
+> | Edit in context (E) | `ui/src/components/{mapView.ts,MapEditingWorkspace.tsx,WorldContextMenu.tsx}`, `ui/src/hooks/useMapEditing.ts`, `ui/src/world/contextView.ts` | `ui/src/components/{MapCanvas,WorldCanvas}.tsx`, `ui/src/App.tsx`, `ui/src/gbc/GbcMapCanvas.tsx`, `server/src/index.ts` (`pngCache` cleared on commit) |
+> | Shared | — | `ui/src/styles.css`, `ui/DESIGN.md`, `ui/src/hooks/useGuardedFetch.ts`, `ui/src/gbc/hooks/*`, `ui/src/gbc/time.ts` |
+>
+> **Deferred** (listed in RESUME under the 6c row): the context-mode world toolbar is cramped at 1024 px; MapCanvas overlay toggles aren't reachable in context; the encounter sprite tooltip clips at the viewport's left edge; the A, B and C items recorded per phase.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task.
 >
 > **This plan is written at task level**, like Plan 6b. Re-granularise each task against the real code right before executing it (Plan 0 §1). The executed spec lands in `task-reports/pokemap-plan-6c-hub-encounters-world/task-<ID>-spec.md`, with bite-sized TDD steps, exact file:line anchors and code. Grounding facts below were measured on 2026-09-28. **Re-measure every corpus fact before pinning it**: spec facts have been wrong before (RESUME, "Lessons from Plan 6b").
