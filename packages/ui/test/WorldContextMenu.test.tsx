@@ -136,3 +136,39 @@ describe("WorldContextMenu", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 });
+
+describe("WorldContextMenu (E3 fix round)", () => {
+  it("names the menu for assistive tech", () => {
+    render(<WorldContextMenu menu={{ x: 10, y: 10, items: items() }} viewport={VIEWPORT} onClose={() => {}} />);
+    expect(screen.getByRole("menu", { name: "Map actions" })).toBeTruthy();
+  });
+
+  it("Tab closes the menu instead of tabbing out of it", () => {
+    const onClose = vi.fn();
+    render(<WorldContextMenu menu={{ x: 10, y: 10, items: items() }} viewport={VIEWPORT} onClose={onClose} />);
+    expect(fireEvent.keyDown(document.activeElement!, { key: "Tab" })).toBe(false); // preventDefault
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("a right-click on the menu is swallowed (no native browser menu over ours)", () => {
+    render(<WorldContextMenu menu={{ x: 10, y: 10, items: items() }} viewport={VIEWPORT} onClose={() => {}} />);
+    expect(fireEvent.contextMenu(screen.getByRole("menuitem", { name: "Open in Map view" }))).toBe(false);
+  });
+
+  it("keeps its document/window listeners across a new onClose identity, and calls the latest onClose", () => {
+    const add = vi.spyOn(document, "addEventListener");
+    const winAdd = vi.spyOn(window, "addEventListener");
+    try {
+      const menu = { x: 10, y: 10, items: items() };
+      const first = vi.fn(), second = vi.fn();
+      const mounted = render(<WorldContextMenu menu={menu} viewport={VIEWPORT} onClose={first} />);
+      const count = () => add.mock.calls.length + winAdd.mock.calls.filter(([type]) => type === "keydown").length;
+      const before = count();
+      mounted.rerender(<WorldContextMenu menu={menu} viewport={VIEWPORT} onClose={second} />);
+      expect(count()).toBe(before);
+      fireEvent.pointerDown(document.body);
+      expect(first).not.toHaveBeenCalled();
+      expect(second).toHaveBeenCalledTimes(1);
+    } finally { add.mockRestore(); winAdd.mockRestore(); }
+  });
+});

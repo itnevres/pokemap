@@ -2640,6 +2640,96 @@ describe("WorldCanvas: context menu (Plan 6c E3)", () => {
     expect(document.activeElement).toBe(canvas);
   });
 
+  it("Ctrl+Shift and Meta+Shift double-click on a map do not open it", async () => {
+    const onOpenMap = vi.fn();
+    const { canvas } = await mountMenu({ onOpenMap });
+    fireEvent.doubleClick(canvas, { ctrlKey: true, shiftKey: true, clientX: 70, clientY: 50 });
+    fireEvent.doubleClick(canvas, { metaKey: true, shiftKey: true, clientX: 70, clientY: 50 });
+    expect(onOpenMap).not.toHaveBeenCalled();
+  });
+
+  it("a plain F10 opens nothing", async () => {
+    const { canvas } = await mountMenu({ onOpenMap: vi.fn() });
+    selectB(canvas);
+    fireEvent.keyDown(canvas, { key: "F10" });
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("the keyboard opens nothing for a selected map outside the current mapFilter", async () => {
+    const mounted = await mountMenu({ onOpenMap: vi.fn() });
+    selectB(mounted.canvas);
+    mounted.rerender(<WorldCanvas onOpenMap={vi.fn()} mapFilter={new Set(["A"])} />);
+    fireEvent.keyDown(mounted.canvas, { key: "ContextMenu" });
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  // Chromium fires a native `contextmenu` (keyboard-origin, at the canvas centre, `button: -1`) after the
+  // ContextMenu key even when its keydown was prevented; it must not replace or close the menu the key opened.
+  it.each([
+    ["at empty space", { clientX: 95, clientY: 5 }],
+    ["over another map", { clientX: 5, clientY: 5 }],
+    ["with button -1 (keyboard origin)", { clientX: 50, clientY: 50, button: -1 }],
+  ])("the native contextmenu that follows a keyboard open, %s, leaves the menu as it was", async (_name, native) => {
+    const { canvas } = await mountMenu({ onOpenMap: vi.fn(), onEditHere: vi.fn() });
+    selectB(canvas);
+    fireEvent.keyDown(canvas, { key: "ContextMenu" });
+    const menu = screen.getByRole("menu");
+    const shape = () => [menu.style.left, menu.style.top, screen.getAllByRole("menuitem").map((item) => item.textContent)];
+    const before = shape();
+    expect(fireEvent.contextMenu(canvas, native)).toBe(false); // still preventDefaulted
+    expect(screen.getByRole("menu")).toBe(menu);
+    expect(shape()).toEqual(before);
+    expect(screen.getAllByRole("menuitem")).toContain(document.activeElement);
+  });
+
+  it("a real right-click after a keyboard open is not swallowed: any canvas pointerdown re-arms it", async () => {
+    const { canvas } = await mountMenu({ onOpenMap: vi.fn() });
+    selectB(canvas);
+    fireEvent.keyDown(canvas, { key: "ContextMenu" });
+    fireEvent.pointerDown(canvas, { clientX: 5, clientY: 5, button: 2 });
+    fireEvent.contextMenu(canvas, { clientX: 5, clientY: 5, button: 2 });
+    const menu = screen.getByRole("menu");
+    expect([menu.style.left, menu.style.top]).toEqual(["8px", "8px"]); // the right-click at (5,5) clamped by the 8px inset, not B's centre (75,55)
+  });
+
+  it("a keyboard open is one-shot: a second contextmenu is handled normally", async () => {
+    const { canvas } = await mountMenu({ onOpenMap: vi.fn() });
+    selectB(canvas);
+    fireEvent.keyDown(canvas, { key: "ContextMenu" });
+    fireEvent.contextMenu(canvas, { clientX: 95, clientY: 5 }); // swallowed
+    fireEvent.contextMenu(canvas, { clientX: 95, clientY: 5 }); // empty space: closes
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("a contextmenu long after a keyboard open is not an echo and is handled normally", async () => {
+    const { canvas } = await mountMenu({ onOpenMap: vi.fn() });
+    selectB(canvas);
+    fireEvent.keyDown(canvas, { key: "ContextMenu" });
+    const late = new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 95, clientY: 5 });
+    Object.defineProperty(late, "timeStamp", { value: late.timeStamp + 5000 });
+    fireEvent(canvas, late); // empty space, 5s later: a real right-click that closes the menu
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("a late successful save closes only the menu that issued it", async () => {
+    const { impl } = makeFetchMock(MENU_WORLD);
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const slow = vi.fn((url: string, init?: RequestInit) => url === "/api/world/conflicts/accept"
+      ? gate.then(() => impl(url, init)) : impl(url, init));
+    const { canvas, container } = await mountMenu({ onOpenMap: vi.fn() }, slow);
+    fireEvent.contextMenu(canvas, { clientX: 40, clientY: 10 });
+    fireEvent.click(screen.getByRole("menuitem", { name: "Accept conflict" })); // POST pending, menu stays open
+    expect(screen.getByRole("menu")).toBeTruthy();
+    fireEvent.pointerDown(canvas, { clientX: 95, clientY: 95 }); // user moves on...
+    fireEvent.contextMenu(canvas, { clientX: 70, clientY: 50 }); // ...and opens another menu
+    const other = screen.getByRole("menu");
+    await act(async () => { release(); await gate; });
+    await waitFor(() => expect(container.querySelector(".world-canvas__status")?.textContent).toContain("1 accepted"));
+    expect(screen.getByRole("menu")).toBe(other);
+    expect(document.activeElement).toBe(screen.getByRole("menuitem", { name: "Open in Map view" }));
+  });
+
   it("the conflict error toast can be dismissed", async () => {
     const { impl } = makeFetchMock(MENU_WORLD);
     const failing = vi.fn((url: string, init?: RequestInit) => url === "/api/world/conflicts/accept"

@@ -954,6 +954,7 @@ input {
   position: absolute;
   z-index: 12;
   box-sizing: border-box;
+  width: max-content;
   min-width: 0;
   max-width: calc(100% - 2 * var(--space-2));
   max-height: calc(100% - 2 * var(--space-2));
@@ -995,7 +996,7 @@ input {
 .world-context-menu__hint {
   display: block;
   min-width: 0;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   font-size: var(--text-xs);
 }
 

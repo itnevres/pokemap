@@ -1890,6 +1890,68 @@ describe("GbcWorldCanvas: context menu (Plan 6c E3)", () => {
     expect(screen.queryByRole("menu")).toBeNull();
   });
 
+  it("a plain F10 opens nothing", async () => {
+    const { canvas } = await mountMenu({ onOpenMap: vi.fn() });
+    fireEvent.click(canvas, { clientX: 100, clientY: 100 });
+    fireEvent.keyDown(canvas, { key: "F10" });
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("Escape closes the menu and returns focus to the canvas", async () => {
+    const { canvas } = await mountMenu({ onOpenMap: vi.fn() });
+    fireEvent.contextMenu(canvas, { clientX: 100, clientY: 100 });
+    expect(document.activeElement).toBe(screen.getByRole("menuitem", { name: "Open in Map view" }));
+    fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(document.activeElement).toBe(canvas);
+  });
+
+  it("right-click on a badge whose map body is not under the pointer still targets the badge's map", async () => {
+    // A 1x40-block map fits at zoom 5, so it is 5px wide and its badge centre (92.5,10) sits left of its body.
+    const core = { map: "Sliver", viaA: { from: "X", x: 1, y: 2 }, viaB: { from: "Y", x: 3, y: 4 } };
+    const world: GbcWorldPayload = {
+      family: "gbc", blockPx: 32,
+      placements: { Sliver: { map: "Sliver", x: 0, y: 0, width: 1, height: 40, component: 0, mapType: "ROUTE", manual: false } },
+      components: [{ index: 0, maps: ["Sliver", "Other"], bounds: { x: 0, y: 0, width: 1, height: 40 } }],
+      conflicts: [{ ...core, key: conflictKey(core), accepted: false }],
+    };
+    const onOpenMap = vi.fn();
+    const mounted = await mountReady({ onOpenMap }, world);
+    mounted.canvas.getBoundingClientRect = () => EDGE;
+    fireEvent.contextMenu(mounted.canvas, { clientX: 92, clientY: 10 });
+    fireEvent.click(screen.getByRole("menuitem", { name: "Open in Map view" }));
+    expect(onOpenMap).toHaveBeenCalledWith("Sliver");
+  });
+
+  // Chromium fires a native `contextmenu` (keyboard-origin, at the canvas centre, `button: -1`) after the
+  // ContextMenu key even when its keydown was prevented; it must not replace or close the menu the key opened.
+  it.each([
+    ["at empty space", { clientX: 10, clientY: 100 }],
+    ["over the map", { clientX: 160, clientY: 150 }],
+    ["with button -1 (keyboard origin)", { clientX: 110, clientY: 120, button: -1 }],
+  ])("the native contextmenu that follows a keyboard open, %s, leaves the menu as it was", async (_name, native) => {
+    const { canvas } = await mountMenu({ onOpenMap: vi.fn() });
+    fireEvent.click(canvas, { clientX: 100, clientY: 100 });
+    fireEvent.keyDown(canvas, { key: "ContextMenu" });
+    const menu = screen.getByRole("menu");
+    const shape = () => [menu.style.left, menu.style.top, screen.getAllByRole("menuitem").map((item) => item.textContent)];
+    const before = shape();
+    expect(fireEvent.contextMenu(canvas, native)).toBe(false); // still preventDefaulted
+    expect(screen.getByRole("menu")).toBe(menu);
+    expect(shape()).toEqual(before);
+    expect(screen.getAllByRole("menuitem")).toContain(document.activeElement);
+  });
+
+  it("a real right-click after a keyboard open is not swallowed: any canvas pointerdown re-arms it", async () => {
+    const { canvas } = await mountMenu({ onOpenMap: vi.fn() });
+    fireEvent.click(canvas, { clientX: 100, clientY: 100 });
+    fireEvent.keyDown(canvas, { key: "ContextMenu" });
+    fireEvent.pointerDown(canvas, { clientX: 160, clientY: 150, button: 2 });
+    fireEvent.contextMenu(canvas, { clientX: 160, clientY: 150, button: 2 });
+    const menu = screen.getByRole("menu");
+    expect([menu.style.left, menu.style.top]).toEqual(["160px", "150px"]); // a normal right-click menu, not the map centre
+  });
+
   it("the conflict error toast can be dismissed", async () => {
     const base = mockFetchWorld(CONFLICT_WORLD);
     const failing = vi.fn((url: string, init?: RequestInit) => url === "/api/world/conflicts/accept" ? Promise.reject(new Error("offline")) : base(url, init));

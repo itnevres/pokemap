@@ -415,8 +415,10 @@ reserves one band on that side.
   item. Accepting only acknowledges the conflict; a failed save keeps the menu open and
   shows the dismissible `Could not update conflict:` toast.
 - **Keyboard.** Opening focuses the first enabled item; ArrowDown/ArrowUp cycle the
-  enabled items; Enter/Space activate; Escape closes and refocuses the canvas. A pointerdown
-  outside the menu (a pan start included) or a wheel closes it.
+  enabled items; Enter/Space activate; Escape or Tab closes and refocuses the canvas. A pointerdown
+  outside the menu (a pan start included) or a wheel closes it. `useWorldContextMenu` (same file) is the
+  shared glue; it swallows the one native `contextmenu` Chromium fires after a keyboard open (a canvas
+  pointerdown disarms that, so real right-clicks are never swallowed). The hint uses `--text-secondary`.
 - Shift+double-click on a map opens it in Map view in both families (in GBC it
   bypasses the warp-marker preview).
 - **Tokens:** `--bg-panel-raised`, `--border-strong`, `--bg-hover`, `--text-muted` (hint).

@@ -15,7 +15,7 @@ import { useCoverage } from "../hooks/useCoverage.js";
 import { isDrawnByDefault } from "../world/visibility.js";
 import { conflictBadgeOffsets, isRecord, isWireConflict } from "../world/conflictAcceptance.js";
 import { useConflictAcceptance } from "../world/useConflictAcceptance.js";
-import { WorldContextMenu, type WorldMenuItem, type WorldMenuState } from "./WorldContextMenu.js";
+import { WorldContextMenu, useWorldContextMenu } from "./WorldContextMenu.js";
 
 /** The pixel size a placement's PNG renders at natively (`renderLayout`,
  *  border 0): 16px per tile, same constant the CLI's `render-world --scale
@@ -353,14 +353,16 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
 
   const [world, setWorld] = useState<WorldState | null>(null);
   const conflictAcceptance = useConflictAcceptance(world?.conflicts);
-  // The context menu (right-click or the ContextMenu key). The menu items call the latest
-  // onOpenMap/onEditHere through refs: the menu stays open across App renders, and an
-  // App-level handler closes over state (selection, dirty flag) that can change meanwhile.
-  const [menu, setMenu] = useState<WorldMenuState | null>(null);
-  const onOpenMapRef = useRef(onOpenMap);
-  onOpenMapRef.current = onOpenMap;
+  // The context menu (right-click or the ContextMenu key). "Edit here" calls the latest onEditHere through a
+  // ref: the menu stays open across App renders, and an App-level handler closes over state that can change.
   const onEditHereRef = useRef(onEditHere);
   onEditHereRef.current = onEditHere;
+  const contextMenu = useWorldContextMenu({
+    canvasRef,
+    onOpenMap,
+    editItem: onEditHere ? (map) => ({ label: "Edit here", onSelect: () => onEditHereRef.current?.(map) }) : undefined,
+    toggle: conflictAcceptance.toggle,
+  });
   const [loadError, setLoadError] = useState<string | null>(null);
   // Review fix: postPlacement's and toggleDungeons' own failures used to
   // either be silently discarded or written into loadError -- the same
@@ -1719,6 +1721,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
   // this gesture falls back to onMouseLeaveCanvas's own commit-on-leave
   // handling above, not a crash.
   const onPointerDownCapture = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    contextMenu.onPointerDown();
     try {
       e.currentTarget.setPointerCapture(e.pointerId);
     } catch {
@@ -1727,46 +1730,24 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
     }
   };
 
-  const closeMenu = () => {
-    setMenu(null);
-    canvasRef.current?.focus();
-  };
-
-  // Items in order: Open in Map view, Edit here, then the conflict toggle (badge hits only).
-  // Accept/Un-accept keeps the menu open until the POST succeeds, so a failure leaves the
-  // action to retry beside the error toast.
-  const openMenuAt = (x: number, y: number, map: string | null, badge: { key: string; accepted: boolean } | null) => {
-    const items: WorldMenuItem[] = [];
-    if (map && onOpenMap) items.push({ label: "Open in Map view", onSelect: () => onOpenMapRef.current?.(map) });
-    if (map && onEditHere) items.push({ label: "Edit here", onSelect: () => onEditHereRef.current?.(map) });
-    if (badge) {
-      items.push({
-        label: badge.accepted ? "Un-accept conflict" : "Accept conflict",
-        keepOpen: true,
-        onSelect: () => { void conflictAcceptance.toggle(badge.key, !badge.accepted).then((ok) => { if (ok) closeMenu(); }); },
-      });
-    }
-    setMenu(items.length > 0 ? { x, y, items } : null);
-  };
-
   const onCanvasContextMenu = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    e.preventDefault();
-    const rect = e.currentTarget.getBoundingClientRect();
-    const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
-    const badge = conflictBadgesRef.current.find((item) => Math.hypot(item.x - sx, item.y - sy) <= BADGE_SIZE) ?? null;
-    const w = screenToWorld(sx, sy);
-    openMenuAt(sx, sy, badge?.map ?? hitTest(w.x, w.y)?.map ?? null, badge);
+    contextMenu.onContextMenu(e, (sx, sy) => {
+      const badge = conflictBadgesRef.current.find((item) => Math.hypot(item.x - sx, item.y - sy) <= BADGE_SIZE) ?? null;
+      const w = screenToWorld(sx, sy);
+      return { map: badge?.map ?? hitTest(w.x, w.y)?.map ?? null, badge };
+    });
   };
 
   const onCanvasKeyDown = (e: React.KeyboardEvent<HTMLCanvasElement>) => {
     if (e.key === "Escape") setSelected(new Set());
-    if (e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey)) {
-      const p = selected.size === 1 ? world?.placements.get([...selected][0]!) : undefined;
-      if (!p) return;
-      e.preventDefault();
+    // The menu opens for exactly one selected map that is in view's scope, at its screen-rect centre.
+    contextMenu.onMenuKey(e, () => {
+      const name = selected.size === 1 ? [...selected][0]! : null;
+      const p = name && (!mapFilter || mapFilter.has(name)) ? world?.placements.get(name) : undefined;
+      if (!p) return null;
       const size = sizeOfPlacement(p, sizeByMap);
-      openMenuAt((p.x + size.width / 2) * zoom + pan.x, (p.y + size.height / 2) * zoom + pan.y, p.map, null);
-    }
+      return { x: (p.x + size.width / 2) * zoom + pan.x, y: (p.y + size.height / 2) * zoom + pan.y, map: p.map };
+    });
   };
 
   const onDragOverCanvas = (e: React.DragEvent<HTMLCanvasElement>) => {
@@ -2025,7 +2006,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
               {tooltip.text}
             </div>
           )}
-          <WorldContextMenu menu={menu} viewport={viewport} onClose={closeMenu} />
+          <WorldContextMenu menu={contextMenu.menu} viewport={viewport} onClose={contextMenu.close} />
           {conflictAcceptance.error && (
             <div className="world-canvas__toast" role="alert">
               <span className="world-canvas__toast-text">Could not update conflict: {conflictAcceptance.error}</span>

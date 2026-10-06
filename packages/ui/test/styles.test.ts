@@ -56,4 +56,13 @@ describe("styles.css", () => {
     expect(ruleBody(".gbc-map-canvas .map-canvas__status")).toMatch(/height\s*:\s*44px/);
     expect(ruleBody(".map-canvas__status")).toMatch(/height\s*:\s*28px/);
   });
+
+  // Plan 6c E3 fix round: the menu is absolutely positioned and measured at its previous (stale) left, so without
+  // an intrinsic width a wider menu would shrink-to-fit the space left of that position and stay wrapped.
+  it("sizes the world context menu to its content, capped to the viewport, with a readable hint", () => {
+    const body = ruleBody(".world-context-menu");
+    expect(body).toMatch(/width\s*:\s*max-content/);
+    expect(body).toMatch(/max-width\s*:\s*calc\(/);
+    expect(ruleBody(".world-context-menu__hint")).toMatch(/color\s*:\s*var\(--text-secondary\)/);
+  });
 });

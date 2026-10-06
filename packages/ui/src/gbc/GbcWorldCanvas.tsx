@@ -17,7 +17,7 @@ import { GbcWarpDestinationModal } from "./GbcWarpDestinationModal.js";
 import { fetchGuarded } from "../hooks/useGuardedFetch.js";
 import { conflictBadgeOffsets } from "../world/conflictAcceptance.js";
 import { useConflictAcceptance } from "../world/useConflictAcceptance.js";
-import { WorldContextMenu, type WorldMenuItem, type WorldMenuState } from "../components/WorldContextMenu.js";
+import { WorldContextMenu, useWorldContextMenu } from "../components/WorldContextMenu.js";
 import type { GbcTimeOfDay } from "./time.js";
 
 /**
@@ -480,11 +480,13 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
   const [warpError, setWarpError] = useState<string | null>(null);
   const [warpPopup, setWarpPopup] = useState<string | null>(null);
   const conflictAcceptance = useConflictAcceptance(world?.conflicts);
-  // The context menu (right-click or the ContextMenu key). Its open-map item calls the latest
-  // onOpenMap through a ref: the menu stays open across GbcApp renders.
-  const [menu, setMenu] = useState<WorldMenuState | null>(null);
-  const onOpenMapRef = useRef(onOpenMap);
-  onOpenMapRef.current = onOpenMap;
+  // The context menu (right-click or the ContextMenu key); "Edit here" stays disabled until Plan 7.
+  const contextMenu = useWorldContextMenu({
+    canvasRef,
+    onOpenMap,
+    editItem: () => ({ label: "Edit here", disabled: true, hint: "GBC editing arrives with Plan 7" }),
+    toggle: conflictAcceptance.toggle,
+  });
   const [selectedMap, setSelectedMap] = useState<string | null>(null);
   const [hover, setHover] = useState<HoverInfo | null>(null);
   const [tooltip, setTooltip] = useState<TooltipInfo | null>(null);
@@ -1015,6 +1017,14 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
     if (hit) onOpenMap?.(hit.map);
   };
 
+  const onContextMenu = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    contextMenu.onContextMenu(e, (sx, sy) => {
+      const badge = conflictBadgesRef.current.find((item) => Math.hypot(item.x - sx, item.y - sy) <= BADGE_SIZE) ?? null;
+      const w = screenToWorld(sx, sy);
+      return { map: badge?.map ?? hitTest(w.x, w.y)?.map ?? null, badge };
+    });
+  };
+
   // Keyboard path (fix round, quality review Minor #3): the canvas's own
   // click-to-select/double-click-to-open interactions had no keyboard
   // equivalent -- WorldCanvas.tsx's own canvas is in the same position for
@@ -1026,45 +1036,13 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
   // viewport's own centre through the SAME `zoomWorldAboutPivot` a wheel
   // notch uses (the identical single-state-updater reasoning applies:
   // one `setView` per key, never a nested one).
-  const closeMenu = () => {
-    setMenu(null);
-    canvasRef.current?.focus();
-  };
-
-  // Items in order: Open in Map view, Edit here (always disabled until Plan 7), then the conflict
-  // toggle (badge hits only). Accept/Un-accept keeps the menu open until the POST succeeds, so a
-  // failure leaves the action to retry beside the error toast.
-  const openMenuAt = (x: number, y: number, map: string | null, badge: { key: string; accepted: boolean } | null) => {
-    const items: WorldMenuItem[] = [];
-    if (map && onOpenMap) items.push({ label: "Open in Map view", onSelect: () => onOpenMapRef.current?.(map) });
-    if (map) items.push({ label: "Edit here", disabled: true, hint: "GBC editing arrives with Plan 7" });
-    if (badge) {
-      items.push({
-        label: badge.accepted ? "Un-accept conflict" : "Accept conflict",
-        keepOpen: true,
-        onSelect: () => { void conflictAcceptance.toggle(badge.key, !badge.accepted).then((ok) => { if (ok) closeMenu(); }); },
-      });
-    }
-    setMenu(items.length > 0 ? { x, y, items } : null);
-  };
-
-  const onContextMenu = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    e.preventDefault();
-    const rect = e.currentTarget.getBoundingClientRect();
-    const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
-    const badge = conflictBadgesRef.current.find((item) => Math.hypot(item.x - sx, item.y - sy) <= BADGE_SIZE) ?? null;
-    const w = screenToWorld(sx, sy);
-    openMenuAt(sx, sy, badge?.map ?? hitTest(w.x, w.y)?.map ?? null, badge);
-  };
-
   const onKeyDown = (e: React.KeyboardEvent<HTMLCanvasElement>) => {
-    if (e.key === "ContextMenu" || (e.key === "F10" && e.shiftKey)) {
+    // The menu opens for the selected map (in the mapFilter's scope), at its screen-rect centre.
+    const handled = contextMenu.onMenuKey(e, () => {
       const p = selectedMap && (!mapFilter || mapFilter.has(selectedMap)) ? placements[selectedMap] : undefined;
-      if (!p) return;
-      e.preventDefault();
-      openMenuAt((p.x + p.width / 2) * zoom + pan.x, (p.y + p.height / 2) * zoom + pan.y, p.map, null);
-      return;
-    }
+      return p ? { x: (p.x + p.width / 2) * zoom + pan.x, y: (p.y + p.height / 2) * zoom + pan.y, map: p.map } : null;
+    });
+    if (handled) return;
     if (e.key === "Enter") {
       if (selectedMap && (!mapFilter || mapFilter.has(selectedMap))) onOpenMap?.(selectedMap);
       return;
@@ -1216,6 +1194,7 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
             onMouseMove={onMouseMove}
             onMouseUp={onMouseUp}
             onContextMenu={onContextMenu}
+            onPointerDown={contextMenu.onPointerDown}
             onMouseLeave={onMouseLeave}
             onDragOver={(e) => e.preventDefault()}
             onDrop={(e) => {
@@ -1302,7 +1281,7 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
               {tooltip.text}
             </div>
           )}
-          <WorldContextMenu menu={menu} viewport={viewport} onClose={closeMenu} />
+          <WorldContextMenu menu={contextMenu.menu} viewport={viewport} onClose={contextMenu.close} />
           {conflictAcceptance.error && (
             <div className="world-canvas__toast" role="alert">
               <span className="world-canvas__toast-text">Could not update conflict: {conflictAcceptance.error}</span>
