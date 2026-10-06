@@ -4,7 +4,8 @@ import { WorldCanvas } from "./components/WorldCanvas.js";
 import { DungeonSidebar } from "./components/DungeonSidebar.js";
 import { SaveDialog } from "./components/SaveDialog.js";
 import { SignComposer } from "./components/SignComposer.js";
-import { MapEditingWorkspace } from "./components/MapEditingWorkspace.js";
+import { MapEditingWorkspace, type MapEditingCanvasProps } from "./components/MapEditingWorkspace.js";
+import { MapCanvas, compositeOrigin } from "./components/MapCanvas.js";
 import { useMapGroups } from "./hooks/useMapGroups.js";
 import { useMapLayout } from "./hooks/useMapLayout.js";
 import { useWorldVisibility } from "./hooks/useWorldVisibility.js";
@@ -35,6 +36,10 @@ export function App({ switcher }: AppProps) {
   // passing `selected` as jumpToMap made the first canvas click jump).
   const [jumpTarget, setJumpTarget] = useState<string | null>(null);
   const [openDungeonId, setOpenDungeonId] = useState<string | null>(null);
+  // Plan 6c E4: the map being edited in context on the World view (GBA), or null. Always equals `selected` while set.
+  const [contextMap, setContextMap] = useState<string | null>(null);
+  // Bumped for a map when a save commits while editing it in context; the world re-requests only that tile.
+  const [tileVersions, setTileVersions] = useState<Record<string, number>>({});
 
   const { data, error } = useMapGroups();
   const layout = useMapLayout(selected);
@@ -99,6 +104,8 @@ export function App({ switcher }: AppProps) {
 
   const selectMap = (name: string) => {
     if (!changeSelection(name)) return;
+    // A tree click leaves in-context editing (a jump would also move the world under the overlay).
+    setContextMap(null);
     setJumpTarget(name);
     setSelectVersion((v) => v + 1);
   };
@@ -113,8 +120,35 @@ export function App({ switcher }: AppProps) {
   // The world context menu's "Open in Map view" (and Shift+double-click): select the map through the same
   // dirty guard as a tree click, and switch to Map view only if the user did not cancel it.
   const openMapFromWorld = (name: string) => {
-    if (name === selected || changeSelection(name)) setMode("map");
+    if (name === selected || changeSelection(name)) {
+      setContextMap(null);
+      setMode("map");
+    }
   };
+
+  // Plan 6c E4: double-click / "Edit here" on a world map. Selecting it goes through the same dirty guard as a tree
+  // click; a cancelled confirm means no context.
+  const enterContext = (name: string) => {
+    if (name !== selected && !changeSelection(name)) return;
+    setContextMap(name);
+  };
+
+  // Done, Escape, or a double-click outside the map. A dirty session opens the ordinary SaveDialog and stays in
+  // context (Cancel keeps editing, a commit makes the next exit clean); a clean one just leaves.
+  const requestExitContext = () => {
+    if (editSession.isDirty) editing.setSaveDialogOpen(true);
+    else setContextMap(null);
+  };
+
+  // A mode switch leaves context without a prompt: the session persists exactly as it does today.
+  const switchMode = (next: Mode) => {
+    setContextMap(null);
+    setMode(next);
+  };
+  // `selected` moving off the context map by any other route also leaves it.
+  useEffect(() => {
+    if (contextMap !== null && selected !== contextMap) setContextMap(null);
+  }, [selected, contextMap]);
 
   // Entering World centres on the selected map, wherever the selection came from (tree, world click,
   // Map view). A world click itself never jumps (F1); this is a mode entry, not a click.
@@ -171,6 +205,41 @@ export function App({ switcher }: AppProps) {
     setOpenDungeonId((cur) => (cur === id ? null : cur));
   };
 
+  // The context map's layout, once loaded for THAT map (useMapLayout keeps the previous map's data until its fetch lands).
+  const contextLayout = contextMap !== null && layout.data && layout.data.map.name === contextMap ? layout.data : null;
+  const renderWorld = (canvasProps: MapEditingCanvasProps | null) => (
+    // key="world"/"dungeon": without distinct keys, switching FROM
+    // Dungeon mode TO World mode reconciles as a prop update on the
+    // SAME WorldCanvas instance (both branches render the same
+    // element type in the same position, and openDungeon goes null
+    // in the same commit `mode` flips) -- leaking pan/zoom,
+    // selected, revealedMaps, linesOn, warpsOn, lens,
+    // spotlightHits, and warpPopup across the mode boundary instead
+    // of starting fresh. Distinct keys force React to always treat
+    // a mode switch as a brand-new mount.
+    <WorldCanvas
+      key="world"
+      jumpToMap={jumpTarget}
+      jumpToken={selectVersion}
+      onJumpToMap={selectMap}
+      onSelectMap={selectMapFromWorld}
+      onOpenMap={openMapFromWorld}
+      onEditHere={enterContext}
+      tileVersions={tileVersions}
+      context={
+        contextMap === null
+          ? undefined
+          : {
+              map: contextMap,
+              origin: contextLayout ? compositeOrigin(contextLayout.layout) : null,
+              renderCanvas: (view, onViewChange) =>
+                canvasProps && contextLayout ? <MapCanvas {...canvasProps} chromeless view={view} onViewChange={onViewChange} /> : null,
+              onExitRequest: requestExitContext,
+            }
+      }
+    />
+  );
+
   return (
     <div className="app">
       <header className="app__toolbar">
@@ -180,7 +249,7 @@ export function App({ switcher }: AppProps) {
             type="button"
             className="map-canvas__btn"
             aria-pressed={mode === "map"}
-            onClick={() => setMode("map")}
+            onClick={() => switchMode("map")}
           >
             Map
           </button>
@@ -196,7 +265,7 @@ export function App({ switcher }: AppProps) {
             type="button"
             className="map-canvas__btn"
             aria-pressed={mode === "dungeon"}
-            onClick={() => setMode("dungeon")}
+            onClick={() => switchMode("dungeon")}
           >
             Dungeon
           </button>
@@ -248,23 +317,20 @@ export function App({ switcher }: AppProps) {
         </aside>
         <main className="app__canvas">
           {mode === "world" ? (
-            // key="world"/"dungeon": without distinct keys, switching FROM
-            // Dungeon mode TO World mode reconciles as a prop update on the
-            // SAME WorldCanvas instance (both branches render the same
-            // element type in the same position, and openDungeon goes null
-            // in the same commit `mode` flips) -- leaking pan/zoom,
-            // selected, revealedMaps, linesOn, warpsOn, lens,
-            // spotlightHits, and warpPopup across the mode boundary instead
-            // of starting fresh. Distinct keys force React to always treat
-            // a mode switch as a brand-new mount.
-            <WorldCanvas
-              key="world"
-              jumpToMap={jumpTarget}
-              jumpToken={selectVersion}
-              onJumpToMap={selectMap}
-              onSelectMap={selectMapFromWorld}
-              onOpenMap={openMapFromWorld}
-            />
+            // The World view is hosted by MapEditingWorkspace at all times (one stable element and key), so the
+            // WorldCanvas inside is never remounted when in-context editing turns the chrome on or off.
+            contextLayout ? (
+              <MapEditingWorkspace
+                key="world-host"
+                mapName={contextLayout.map.name}
+                data={contextLayout}
+                editSession={editSession}
+                editing={editing}
+                renderCanvas={renderWorld}
+              />
+            ) : (
+              <MapEditingWorkspace key="world-host" active={false} mapName={selected} data={layout.data} editSession={editSession} editing={editing} renderCanvas={renderWorld} />
+            )
           ) : mode === "dungeon" ? (
             openDungeon ? (
               <WorldCanvas key="dungeon" mapFilter={mapFilter} onOpenMap={openMapFromWorld} />
@@ -298,6 +364,10 @@ export function App({ switcher }: AppProps) {
               onCommitted={() => {
                 editSession.markClean();
                 editing.setSaveDialogOpen(false);
+                // Editing in context: the world still shows this map's pre-save tile; refresh just that one.
+                if (contextMap !== null && contextMap === selected) {
+                  setTileVersions((t) => ({ ...t, [contextMap]: (t[contextMap] ?? 0) + 1 }));
+                }
               }}
               onCancel={() => editing.setSaveDialogOpen(false)}
             />
