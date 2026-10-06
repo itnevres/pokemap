@@ -84,3 +84,51 @@ M1 red (4 tests), M2 red (1), M3 red (3), M4 red (1 for `.clear()`, 2 for no-`?v
 9. `onEditHere` is wired to the World-mode `WorldCanvas` only (Dungeon unchanged). Grid/Collision/Events/Encounters toggles remain unreachable in context (accepted limitation); DESIGN entry notes it.
 10. Paint race-safety: no change to the paint chain; the chromeless rect-stroke race test (release before `beginStroke` resolves, apply before end) passes. The reviewer should still run the `setTimeout`-delayed repro against the live overlay.
 11. A stray shell `cat` I started by mistake blocked in the background (task b28gckl0p); it wrote nothing and is harmless.
+
+---
+
+# Fix round (after the quality + spec reviews)
+
+**Status: DONE.** Base for this round `39edbe2`. Commits: f1068f6 (server), 0206047 (WorldCanvas + test adjustments), bcfb9f7 (App tests), plus this report/DESIGN commit. Tree clean except `.codex/`. No `git checkout/restore/stash`.
+
+## Ruling-by-ruling
+| item | change | proof |
+|---|---|---|
+| 1 P1-1 | `pngCache.clear()` right after `commitSave` succeeds (`packages/server/src/index.ts`), all keys. New test in `saveRoutes.test.ts` (an addition): CianwoodCity (used by no other test against the GBA subject; GBC-only files use the other project): GET render at border 0 and border 1 (cached, a repeat is identical) -> paint pencil (a metatile different from block (0,0)'s) + end + commit (200) -> both renders differ. Read-guarded restore in `finally` (`if (!current.equals(before)) writeFileSync`). Real write, same discipline as the neighbouring tests, so no handler-level stub. | Red before the fix with the real stale bytes (`expected Buffer to not deeply equal Buffer`), and red again with `pngCache.clear()` mutated to `void 0;` (byte-restored). |
+| 2 P1-2 | Escape listener now `addEventListener("keydown", fn, true)` / removed with `true`; keeps `defaultPrevented`, menu-open and `[aria-modal]` guards; returns early when `e.target.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"]')`. Comment rewritten (capture runs before every bubble handler, React flush, menu listener). | New test: a `document` bubble listener removes the `[aria-modal]` node on Escape; `onExitRequest` must not be called. Red with the listener added in bubble phase. Text-field guard: 4 tests (input, textarea, select, contenteditable), red when removed. |
+| 3 P2-1 / F4 | Snap effect gated on `context.origin != null` (`hasContextOrigin` in the deps). All 3 record sites store CLIENT coordinates (dblclick `e.clientX/Y`; right-click `e.clientX/Y`; ContextMenu key: canvas rect + the centre). At snap: `canvasRef.current.getBoundingClientRect()`, pointer = client - box; fallback centre = `canvas.clientWidth/Height / 2`. | 4 tests with a shifted rect (top 58 at click, 116 at snap, via a moving `getBoundingClientRect` stub): dblclick, right-click, ContextMenu key, plus "waits for origin" (no view while `origin` is null, readout still 6%). Derivations in comments: dblclick pointer (21,59)-(0,116) = (21,-57): pan (-323,-81), view (-19,-97); menu (22,60-116=-56): pan (-322,-80), view (-18,-96); key (21.5,-56.5): pan (-322,-80), view (-18,-96). Red when: conversion dropped (3 tests), origin gate removed (1), dblclick/menu/key records canvas-relative (1 each). |
+| 4 P3-1 / F6 | Upper bound `Math.max(MAX_ZOOM, zoom)`; `CONTEXT_MAX_ZOOM` and the `inContext` dep of the wheel effect removed (`inContext` still drives the Escape listener). | My in-context clamp test rewritten: set 64 via an overlay change (4x), wheel-in stays "400%", wheel-out gives "333%" (64/1.2 = 53.33). New: after leaving context the leftover 64 survives a wheel-in. Kept: outside context from zoom <= 16 the cap is still 16 ("100%"). Red with upper bound = `MAX_ZOOM` only (2 tests) -- this is the replacement for E4-M2. |
+| 5 P3-2 | `snapPointerRef` cleared right after the snap reads it. | Test: enter via double-click pointer, exit, re-enter with nothing recorded -> centre fallback view (10,10), not the old (-19,-39). Red when the clear is removed. |
+| 5 P3-3 | Bar `role="group" aria-label="Editing <map> in place"`; Done `aria-label="Done editing <map>"`; dim `aria-hidden="true"`; leaving context focuses the world canvas (in the snap effect's null branch, only if a context had been snapped). | Tests for each + a no-steal check for a canvas that never had a context. Red when each is removed (bar, Done (3 tests), dim, focus). |
+| 6 F1 | App test: enter context on Route1, wait for the overlay stage, click Pencil, pick metatile 0x1, stub the stage rect to left/top 100, mouse down + up at client (44,33) = block (0,0) (derivation in the comment: snap pan (-240,-75), overlay view pan (-80,-91), block (0,0) spans client x [36,52), y [25,41) with the stub box). Asserts the `/api/edit/Route1/paint/begin` -> `/apply` -> `/end` URL order and the apply body (`tool: "pencil"`, `targets [{x:0,y:0}]`). | Red when the overlay MapCanvas gets `editSession={undefined}` and when it gets `activeTool={null}` (both survived before). |
+| 7 F2 | WorldCanvas test: enter, press 4x, exit (rerender with no context), re-enter -> view zoom 4, pan (-110,-110) (snap(64) = 4; centre (50,50); B centre (21.5,1.5)*64 = (1376,96); pan (-1326,-46); view (20*64-1326-64, -46-64)). | Red with the snap zoom fixed at 1. |
+| 8 F3 | The `selected !== contextMap` effect in `App.tsx` is KEPT. Every user route clears `contextMap` itself (tree click, lens jump, mode switch), and the overlay covers the world canvas, so with a real pointer no route reaches it; it IS reachable by a click dispatched to the canvas itself. Test: world at native zoom (wheel at (0,0) so the pan stays 0), double-click Route1's centre, then a click straight on the world canvas at PalletTown (unhittable under the overlay for a real user) -> context ends, PalletTown selected. Documented in the test as defence in depth. | Red with the effect removed. |
+
+## Adjustments to my own E4 test files (none to files that existed before E4, except the saveRoutes addition)
+- `AppContextEdit.test.tsx`: the 3 `getByRole("button", { name: "Done" })` -> `"Done editing Route1"` (the accessible name changed with the aria-label).
+- `WorldCanvasContext.test.tsx`: the Done lookup -> `"Done editing B"`; the "Escape calls it once; an Escape another handler already prevented does not" test now registers its preventing listener on window in the capture phase BEFORE mounting (both are window capture listeners, so registration order decides; previously the listener was added after the mount, which only worked because the context listener was in the bubble phase); the old "wheel clamps at 64 in context" test replaced by the two tests described in item 4 (the "outside it" test kept as is).
+- `AppContextEdit.test.tsx`: one comment typo fixed in the new test. No other edits.
+- Tests added: WorldCanvasContext +12 (37 total), AppContextEdit +2 (12 total), saveRoutes +1 (9 total). `git diff 664189b -- packages/ui/test packages/server/test | grep '^-[^-]'` is empty.
+
+## E4-M1..M7 self-run on the final code (in-memory mutation, bytes restored and compared every time)
+| id | mutation | red |
+|---|---|---|
+| M1 | `mapViewFromWorld` drops `originX*z` | 4 (3 literals + round-trip) |
+| M2' | wheel upper bound = `MAX_ZOOM` only | 2 (wheel-in at 64, leftover 64 after exit) |
+| M3 | exit request ignores `isDirty` | 3 (Escape-dirty, Done-dirty, committed save) |
+| M4a | tile refresh `cache.clear()` | 1 |
+| M4b | no `?v=` | 2 |
+| M5 | inactive workspace renders a different tree | 8 (2 workspace + 6 App incl. the new paint and selected-change tests) |
+| M6 | marker double-click also calls `onEditHere` | 1 |
+| M7 | Escape ignores `defaultPrevented` | 1 |
+Plus: `pngCache.clear()` removed -> the server test red; and all mutants in the table above (bubble phase, text-field guard, client->canvas conversion, origin gate, 3 record sites, pointer not cleared, snap zoom fixed, a11y x4, refocus, overlay `editSession`/`activeTool`, selected-change effect).
+
+## Verification
+- Vitest: the spec list + `MapEditingWorkspaceActive`, `WorldCanvasContext`, `AppContextEdit`, `stylesContext`, `WorldContextMenu`, `packages/server/test/saveRoutes.test.ts`: 14 files, 308 tests, all pass.
+- `npm run typecheck` clean. `npm run build -w @pokemap/ui` OK (js 334.37 kB, css 43.32 kB).
+- GBA subject (`C:/Programming Projects/Pokemon Game/game`, HEAD 718b89f73) `git status --porcelain`, before my server test runs and after the last one: identical (6 pre-existing modified files `data/layouts/NavelRockZygardeChamber/map.bin`, `data/layouts/NavelRock_Fork/map.bin`, `data/layouts/layouts.json`, `data/maps/NavelRock_Fork/map.json`, `data/maps/NavelRock_ZygardeChamber/map.json`, `include/fieldmap.h`, plus untracked `docs/human-tasks-notes.md`). `git diff | sha1sum` = fcc954b2... before and after; `data/layouts/CianwoodCity/map.bin` SHA-1 = c2caf530... before and after. The server test ran 3 times against it (green, red-before-fix, red-with-mutant); each restored the file.
+- DESIGN.md entry updated (capture-phase Escape, text fields, focus return).
+
+## Notes
+- The first mutation attempt of the pngCache line failed to apply (a trailing newline in the argument made the anchor not match); redone with a one-line anchor; the "OLD NOT FOUND" run changed nothing.
+- Concern 5 (leftover zoom) is now handled by the cap; concern 7 (pre-chrome snap) by the origin gate + client-coordinate pointer. Not done, as ruled: P3-4 (tile reload gap), P3-9 (overlay extraction).

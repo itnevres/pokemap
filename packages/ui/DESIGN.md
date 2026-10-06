@@ -446,6 +446,6 @@ reserves one band on that side.
 - **Exits.** Done, Escape, or a double-click on the overlay outside the map all ask the app to
   leave. A clean session leaves; a dirty one opens the ordinary Save dialog and stays. A mode switch,
   a tree click or any other selection change leaves without a prompt (the session persists as it
-  does today). Escape is ignored when another handler took it, a context menu is open, or a modal dialog is open.
+  does today). Escape (a capture-phase window listener) is ignored when another handler took it, a context menu or a modal dialog is open, or the key came from a text field. Leaving context returns focus to the world canvas.
 - **After a save** only the saved map's world tile is re-requested (`/api/render/<map>.png?v=<n>`).
 - **Tokens:** `--overlay-spotlight-dim`, `--bg-panel-raised`, `--border-strong`, `--text-primary`.
