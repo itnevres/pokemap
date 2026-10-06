@@ -53,7 +53,8 @@ export function WorldContextMenu({ menu, viewport, onClose }: { menu: WorldMenuS
     const outside = (event: Event) => {
       if (!menuRef.current?.contains(event.target as Node | null)) onCloseRef.current();
     };
-    const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") onCloseRef.current(); };
+    // preventDefault: the Escape is spent here, so another Escape listener (the world canvas's in-context exit) skips it.
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") { event.preventDefault(); onCloseRef.current(); } };
     document.addEventListener("pointerdown", outside);
     document.addEventListener("wheel", outside, { passive: true });
     window.addEventListener("keydown", onKeyDown);

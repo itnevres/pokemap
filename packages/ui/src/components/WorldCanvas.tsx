@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Placement, Component as WorldComponentInfo, VerticalLink } from "@pokemap/core/src/world/connections.js";
 import type { WireConflict } from "@pokemap/core/src/world/conflictAcceptance.js";
 import type { SpeciesHit } from "@pokemap/core/src/analyse/coverage.js";
@@ -16,6 +16,8 @@ import { isDrawnByDefault } from "../world/visibility.js";
 import { conflictBadgeOffsets, isRecord, isWireConflict } from "../world/conflictAcceptance.js";
 import { useConflictAcceptance } from "../world/useConflictAcceptance.js";
 import { WorldContextMenu, useWorldContextMenu } from "./WorldContextMenu.js";
+import { ZOOM_LEVELS, zoomAboutPivot, type MapView, type Zoom } from "./mapView.js";
+import { enterContextView, mapViewFromWorld, snapContextZoom, worldViewFromMapView } from "../world/contextView.js";
 
 /** The pixel size a placement's PNG renders at natively (`renderLayout`,
  *  border 0): 16px per tile, same constant the CLI's `render-world --scale
@@ -28,6 +30,8 @@ const TILE_PX = 16;
  *  CLI. */
 const MIN_ZOOM = 1 / 64;
 const MAX_ZOOM = 16;
+/** In-context editing (Plan 6c E4) lets the world reach 16 * {1, 2, 4} px per tile, the MapCanvas zoom levels. */
+const CONTEXT_MAX_ZOOM = 64;
 const WHEEL_FACTOR = 1.2;
 
 /** Below this many screen px per tile, redraw from the cached downscaled
@@ -323,8 +327,28 @@ export interface WorldCanvasProps {
   onSelectMap?: (name: string) => void;
   /** The context menu's "Open in Map view" (and Shift+double-click) on a map. Unset: the item is not offered. */
   onOpenMap?: (name: string) => void;
-  /** The context menu's "Edit here" on a map. Unset: the item is not offered. */
+  /** A plain double-click on a map body (no modifier, no drag, not a warp marker) and the context menu's "Edit here".
+   *  The app enters in-context editing and passes `context` below. Unset: neither is offered. */
   onEditHere?: (name: string) => void;
+  /** In-context editing (Plan 6c E4): while set, an overlay fills the viewport box with a dim layer, the host's
+   *  controlled editing canvas and a small bar. The world snaps once to this map, at the pointer `onEditHere` recorded
+   *  (or the viewport centre), and its zoom may reach 64 px per tile. */
+  context?: WorldCanvasContext;
+  /** Per-map render bust: when a map's number changes, only that map's tile is dropped and re-requested as
+   *  `/api/render/<map>.png?v=<n>`; later loads of it keep the `?v`. */
+  tileVersions?: Record<string, number>;
+}
+
+export interface WorldCanvasContext {
+  map: string;
+  /** Composite px of the map's top-left tile (`compositeOrigin`); null until its layout has loaded, when the overlay
+   *  shows only the dim layer and the bar. */
+  origin: { x: number; y: number } | null;
+  /** The host's editing canvas (a chromeless, controlled `MapCanvas`) for the view that lines it up with the world. */
+  renderCanvas: (view: MapView, onViewChange: (next: MapView) => void) => ReactNode;
+  /** Done, Escape, or a double-click on the overlay outside the map. The host decides whether to leave (a dirty
+   *  session opens its save dialog instead). */
+  onExitRequest: () => void;
 }
 
 /**
@@ -334,7 +358,7 @@ export interface WorldCanvasProps {
  * packages/ui/DESIGN.md for the palette/type/spacing tokens this consumes,
  * and this file's own comments for the LOD and culling mechanics.
  */
-export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSelectMap, onOpenMap, onEditHere }: WorldCanvasProps = {}) {
+export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSelectMap, onOpenMap, onEditHere, context, tileVersions }: WorldCanvasProps = {}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageCacheRef = useRef<Map<string, ImageCacheEntry>>(new Map());
@@ -357,10 +381,18 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
   // ref: the menu stays open across App renders, and an App-level handler closes over state that can change.
   const onEditHereRef = useRef(onEditHere);
   onEditHereRef.current = onEditHere;
+  // Where the next in-context entry snaps the map's centre (viewport px): the double-click point, or where the menu
+  // opened. Set just before onEditHere; consumed (kept until the context ends) by the snap effect below.
+  const snapPointerRef = useRef<{ x: number; y: number } | null>(null);
+  const menuPointRef = useRef<{ x: number; y: number } | null>(null);
+  const requestEditHere = (map: string, point: { x: number; y: number } | null) => {
+    snapPointerRef.current = point;
+    onEditHereRef.current?.(map);
+  };
   const contextMenu = useWorldContextMenu({
     canvasRef,
     onOpenMap,
-    editItem: onEditHere ? (map) => ({ label: "Edit here", onSelect: () => onEditHereRef.current?.(map) }) : undefined,
+    editItem: onEditHere ? (map) => ({ label: "Edit here", onSelect: () => requestEditHere(map, menuPointRef.current) }) : undefined,
     toggle: conflictAcceptance.toggle,
   });
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -910,7 +942,17 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
   // doesn't have one yet. A placement already in imageCacheRef is never
   // refetched, and one outside `visible` is never requested at all -- this
   // is the whole culling guarantee in one effect.
+  //
+  // Plan 6c E4: a map whose `tileVersions` number changed since it was last seen loses only its own cache entry
+  // (and so is re-requested below, as `?v=<n>`); every other tile stays cached. A stale in-flight load of the
+  // dropped entry lands on the detached entry object, never the current one.
+  const seenTileVersionsRef = useRef<Record<string, number>>({});
   useEffect(() => {
+    for (const [map, n] of Object.entries(tileVersions ?? {})) {
+      if (seenTileVersionsRef.current[map] === n) continue;
+      seenTileVersionsRef.current[map] = n;
+      imageCacheRef.current.delete(map);
+    }
     for (const p of visible) {
       if (imageCacheRef.current.has(p.map)) continue;
       const entry: ImageCacheEntry = { loaded: false };
@@ -931,9 +973,10 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
         entry.small = small;
         setCompositeVersion((v) => v + 1);
       };
-      img.src = `/api/render/${encodeURIComponent(p.map)}.png`;
+      const version = tileVersions?.[p.map];
+      img.src = `/api/render/${encodeURIComponent(p.map)}.png${version ? `?v=${version}` : ""}`;
     }
-  }, [visible, sizeByMap]);
+  }, [visible, sizeByMap, tileVersions]);
 
   // Fetches each visible placement's encounter data at most once per map,
   // mirroring the image-loading effect just above exactly (same
@@ -1391,6 +1434,82 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
 
   const screenToWorld = useCallback((sx: number, sy: number) => ({ x: (sx - pan.x) / zoom, y: (sy - pan.y) / zoom }), [pan, zoom]);
 
+  // ---- In-context editing (Plan 6c E4) ----
+  const inContext = context !== undefined;
+  const contextName = context?.map ?? null;
+  const contextPlacement = contextName ? world?.placements.get(contextName) : undefined;
+  const contextSize = contextPlacement ? sizeOfPlacement(contextPlacement, sizeByMap) : null;
+
+  // Snap once per entry: the context map's centre goes to the recorded pointer (viewport centre if none), at the
+  // nearest of 1x/2x/4x. `snappedFor` gates the overlay canvas so it never mounts at the pre-snap zoom. The ref
+  // is the same-tick guard (a StrictMode double run must not snap twice); zoom and pan are separate, sequential
+  // setters, never nested.
+  const snappedForRef = useRef<string | null>(null);
+  const [snappedFor, setSnappedFor] = useState<string | null>(null);
+  useEffect(() => {
+    if (contextName === null) {
+      snappedForRef.current = null;
+      setSnappedFor(null);
+      return;
+    }
+    if (snappedForRef.current === contextName || !contextPlacement || !contextSize || contextSize.width <= 0 || contextSize.height <= 0) return;
+    snappedForRef.current = contextName;
+    const view = enterContextView({
+      placement: { x: contextPlacement.x, y: contextPlacement.y, width: contextSize.width, height: contextSize.height },
+      pointer: snapPointerRef.current ?? { x: viewport.w / 2, y: viewport.h / 2 },
+      zoom: snapContextZoom(zoom),
+    });
+    setZoom(view.zoom);
+    setPan(view.pan);
+    setSnappedFor(contextName);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- zoom/viewport are read at entry only; the ref guard above is what governs re-entry.
+  }, [contextName, world]);
+
+  // Exits: Escape (window listener, only while in context). Skipped when another handler already took the key
+  // (defaultPrevented), when a context menu is open (it closes on the same key; which listener runs first
+  // depends on registration order), or when a modal dialog is open (SaveDialog, WarpDestinationModal and
+  // SignComposer close on Escape without stopping its propagation).
+  const onExitRequestRef = useRef(context?.onExitRequest);
+  onExitRequestRef.current = context?.onExitRequest;
+  const menuOpenRef = useRef(false);
+  menuOpenRef.current = contextMenu.menu !== null;
+  useEffect(() => {
+    if (!inContext) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented || menuOpenRef.current || document.querySelector('[aria-modal="true"]')) return;
+      onExitRequestRef.current?.();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [inContext]);
+
+  const contextOrigin = context?.origin ?? null;
+  // The overlay's controlled MapCanvas view: the world's own pan/zoom, expressed in the composite's frame.
+  const contextView =
+    snappedFor === contextName && contextPlacement && contextOrigin
+      ? mapViewFromWorld({ placement: contextPlacement, worldPan: pan, worldZoom: zoom, originX: contextOrigin.x, originY: contextOrigin.y })
+      : null;
+  const onContextViewChange = (next: MapView) => {
+    if (!contextPlacement || !contextOrigin) return;
+    const v = worldViewFromMapView({ placement: contextPlacement, view: next, originX: contextOrigin.x, originY: contextOrigin.y });
+    setZoom(v.zoom);
+    setPan(v.pan);
+  };
+  const setContextZoom = (z: Zoom) => {
+    if (!contextView) return;
+    const next = zoomAboutPivot(contextView, z, viewport.w / 2, viewport.h / 2);
+    if (next !== contextView) onContextViewChange(next);
+  };
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const onOverlayDoubleClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if ((e.target as Element).closest(".world-canvas__context-bar") || !contextPlacement || !contextSize || !overlayRef.current) return;
+    const rect = overlayRef.current.getBoundingClientRect();
+    const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
+    const x0 = contextPlacement.x * zoom + pan.x, y0 = contextPlacement.y * zoom + pan.y;
+    const inside = sx >= x0 && sx < x0 + contextSize.width * zoom && sy >= y0 && sy < y0 + contextSize.height * zoom;
+    if (!inside) context?.onExitRequest();
+  };
+
   // A NATIVE listener with { passive: false }, not React's onWheel prop.
   // React attaches wheel listeners as passive by default (for scroll
   // performance), which makes e.preventDefault() inside a React onWheel
@@ -1408,14 +1527,14 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
       e.preventDefault();
       const rect = canvas.getBoundingClientRect();
       const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
-      const next = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, e.deltaY < 0 ? zoom * WHEEL_FACTOR : zoom / WHEEL_FACTOR));
+      const next = Math.min(inContext ? CONTEXT_MAX_ZOOM : MAX_ZOOM, Math.max(MIN_ZOOM, e.deltaY < 0 ? zoom * WHEEL_FACTOR : zoom / WHEEL_FACTOR));
       const before = screenToWorld(sx, sy);
       setZoom(next);
       setPan({ x: sx - before.x * next, y: sy - before.y * next });
     };
     canvas.addEventListener("wheel", handler, { passive: false });
     return () => canvas.removeEventListener("wheel", handler);
-  }, [zoom, screenToWorld]);
+  }, [zoom, screenToWorld, inContext]);
 
   const hitTest = useCallback((wx: number, wy: number): Placement | null => {
     for (let i = visible.length - 1; i >= 0; i--) {
@@ -1551,11 +1670,20 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
       return;
     }
     if (e.ctrlKey || e.metaKey || e.shiftKey || dragMovedRef.current) return;
-    if (!warpsOn) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
-    const hit = warpMarkerEntries.find((m) => Math.hypot(m.sx - sx, m.sy - sy) <= WARP_HIT_RADIUS);
-    if (hit?.destMapName) setWarpPopup(hit.destMapName);
+    // A warp marker (warps on) wins over the map body under it: it previews the destination, never edits here.
+    if (warpsOn) {
+      const marker = warpMarkerEntries.find((m) => Math.hypot(m.sx - sx, m.sy - sy) <= WARP_HIT_RADIUS);
+      if (marker) {
+        if (marker.destMapName) setWarpPopup(marker.destMapName);
+        return;
+      }
+    }
+    if (!onEditHere) return;
+    const w = screenToWorld(sx, sy);
+    const hit = hitTest(w.x, w.y);
+    if (hit) requestEditHere(hit.map, { x: sx, y: sy });
   };
 
   const onMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -1732,6 +1860,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
 
   const onCanvasContextMenu = (e: React.MouseEvent<HTMLCanvasElement>) => {
     contextMenu.onContextMenu(e, (sx, sy) => {
+      menuPointRef.current = { x: sx, y: sy };
       const badge = conflictBadgesRef.current.find((item) => Math.hypot(item.x - sx, item.y - sy) <= BADGE_SIZE) ?? null;
       const w = screenToWorld(sx, sy);
       return { map: badge?.map ?? hitTest(w.x, w.y)?.map ?? null, badge };
@@ -1746,7 +1875,9 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
       const p = name && (!mapFilter || mapFilter.has(name)) ? world?.placements.get(name) : undefined;
       if (!p) return null;
       const size = sizeOfPlacement(p, sizeByMap);
-      return { x: (p.x + size.width / 2) * zoom + pan.x, y: (p.y + size.height / 2) * zoom + pan.y, map: p.map };
+      const at = { x: (p.x + size.width / 2) * zoom + pan.x, y: (p.y + size.height / 2) * zoom + pan.y };
+      menuPointRef.current = at;
+      return { ...at, map: p.map };
     });
   };
 
@@ -1999,6 +2130,34 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
                   />
                 ),
               )}
+            </div>
+          )}
+          {context && (
+            // In-context editing (Plan 6c E4): fills this viewport box exactly, so the chromeless MapCanvas's stage box
+            // equals the world canvas box and the controlled view maps one to one (see world/contextView.ts).
+            <div ref={overlayRef} className="world-canvas__context" onDoubleClick={onOverlayDoubleClick}>
+              <div className="world-canvas__context-dim" />
+              {contextView && context.renderCanvas(contextView, onContextViewChange)}
+              <div className="world-canvas__context-bar">
+                <span className="world-canvas__context-name">{context.map}</span>
+                <div className="world-canvas__context-zoom" role="group" aria-label="Zoom">
+                  {ZOOM_LEVELS.map((z) => (
+                    <button
+                      key={z}
+                      type="button"
+                      className="map-canvas__btn"
+                      aria-pressed={contextView?.zoom === z}
+                      disabled={!contextView}
+                      onClick={() => setContextZoom(z)}
+                    >
+                      {z}×
+                    </button>
+                  ))}
+                </div>
+                <button type="button" className="map-canvas__btn" onClick={() => context.onExitRequest()}>
+                  Done
+                </button>
+              </div>
             </div>
           )}
           {tooltip && (
