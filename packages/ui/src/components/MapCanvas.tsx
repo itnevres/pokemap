@@ -125,6 +125,10 @@ export interface MapCanvasProps {
   view?: MapView;
   /** Receives the view a user gesture would produce, computed from the current `view` prop (controlled mode). */
   onViewChange?: (next: MapView) => void;
+  /** Plan 6c E4: no toolbar, status strip or overlay legend, and a transparent viewport (root modifier
+   *  `map-canvas--chromeless`), so the stage canvas box equals the root box. Used by the in-context overlay on the
+   *  world canvas, which drives zoom/pan (`view`/`onViewChange`) from its own bar. Painting is unchanged. */
+  chromeless?: boolean;
 }
 
 /** The server-baked border ring the canvas always requests -- see
@@ -132,6 +136,11 @@ export interface MapCanvasProps {
  *  with the query string below and with how `originX`/`originY` are derived
  *  from `layout.borderWidth`/`borderHeight`. */
 const BORDER_RINGS = 1;
+
+/** Composite px of the map's top-left tile (the border ring offsets it). */
+export function compositeOrigin(layout: { borderWidth: number; borderHeight: number }): { x: number; y: number } {
+  return { x: BORDER_RINGS * layout.borderWidth * 16, y: BORDER_RINGS * layout.borderHeight * 16 };
+}
 /** Native px per world unit (one metatile) -- the encounter border's own scale, and what its band is measured in. */
 const METATILE_PX = 16;
 
@@ -183,7 +192,7 @@ interface Hover {
  * one scaled `drawImage`, so dragging or scrolling never re-touches overlay
  * pixels at all.
  */
-export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEvent, selectedEventRef, onMoveEvent, onDropperPick, view: controlledView, onViewChange }: MapCanvasProps) {
+export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEvent, selectedEventRef, onMoveEvent, onDropperPick, view: controlledView, onViewChange, chromeless }: MapCanvasProps) {
   const { layout, split, map: staticMap, blocks: staticBlocks } = data;
   // Live, server-tracked blocks while an edit session is open for this map;
   // the static `data.blocks` prop otherwise. Every effect below already
@@ -392,8 +401,7 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
 
   const pixelWidth = (layout.width + 2 * BORDER_RINGS * layout.borderWidth) * 16;
   const pixelHeight = (layout.height + 2 * BORDER_RINGS * layout.borderHeight) * 16;
-  const originX = BORDER_RINGS * layout.borderWidth * 16;
-  const originY = BORDER_RINGS * layout.borderHeight * 16;
+  const { x: originX, y: originY } = compositeOrigin(layout);
 
   // Encounter border side (B4): the first of left, top, right, bottom with no connection. dive/emerge
   // are not planar, so gbaDirToCompass drops them.
@@ -907,8 +915,8 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
   );
 
   return (
-    <section className="map-canvas" aria-label={`${mapName} canvas`}>
-      <div className="map-canvas__toolbar">
+    <section className={`map-canvas${chromeless ? " map-canvas--chromeless" : ""}`} aria-label={`${mapName} canvas`}>
+      {!chromeless && <div className="map-canvas__toolbar">
         <div className="map-canvas__zoom" role="group" aria-label="Zoom">
           {ZOOM_LEVELS.map((z) => (
             <button
@@ -942,9 +950,9 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
             Encounters
           </button>
         </div>
-      </div>
+      </div>}
 
-      {(anyOverlay || encountersOn) && (
+      {!chromeless && (anyOverlay || encountersOn) && (
         <div className="map-canvas__legend">
           {toggles.grid && (
             <span className="map-canvas__legend-item">
@@ -1011,7 +1019,7 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
         />
       </div>
 
-      <div className="map-canvas__status">
+      {!chromeless && <div className="map-canvas__status">
         <span className="map-canvas__status-item">
           layout_version <strong>{split.version}</strong>
         </span>
@@ -1027,7 +1035,7 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
         ) : (
           <span className="map-canvas__status-item map-canvas__hover map-canvas__hover--empty">Hover the map…</span>
         )}
-      </div>
+      </div>}
     </section>
   );
 }

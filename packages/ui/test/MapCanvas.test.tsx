@@ -1251,3 +1251,60 @@ describe("MapCanvas: multi-step gestures, uncontrolled (Plan 6c E1)", () => {
     expect(lastDraw().slice(5, 7)).toEqual([-144, -48]);
   });
 });
+
+describe("MapCanvas: chromeless (Plan 6c E4)", () => {
+  const VIEW: MapView = { zoom: 2, pan: { x: 7, y: -3 } };
+
+  it("hides the toolbar and the status strip, adds the root modifier, and still draws at the controlled view", async () => {
+    const { container, lastDraw } = await mountReady({ chromeless: true, view: VIEW, onViewChange: vi.fn() });
+    expect(container.querySelector(".map-canvas__toolbar")).toBeNull();
+    expect(container.querySelector(".map-canvas__status")).toBeNull();
+    expect(screen.queryByRole("button", { name: "2×" })).toBeNull();
+    expect(container.querySelector("section.map-canvas")!.classList.contains("map-canvas--chromeless")).toBe(true);
+    expect(container.querySelector(".map-canvas__viewport canvas.map-canvas__stage")).not.toBeNull();
+    expect(lastDraw().slice(5, 9)).toEqual([7, -3, PIXEL_SIZE * 2, PIXEL_SIZE * 2]);
+  });
+
+  it("without chromeless the toolbar, the status strip and no modifier are rendered", async () => {
+    const { container } = await mountReady({ view: VIEW, onViewChange: vi.fn() });
+    expect(container.querySelector(".map-canvas__toolbar")).not.toBeNull();
+    expect(container.querySelector(".map-canvas__status")).not.toBeNull();
+    expect(container.querySelector("section.map-canvas")!.classList.contains("map-canvas--chromeless")).toBe(false);
+  });
+
+  it("never shows the overlay legend row, so the viewport box stays the whole root box (the collision tool forces an overlay)", async () => {
+    const editSession = makeEditSession();
+    const { container } = await mountReady({
+      chromeless: true, view: VIEW, onViewChange: vi.fn(), editSession, activeTool: { kind: "collision", value: { collision: 1, elevation: 0 } },
+    });
+    expect(container.querySelector(".map-canvas__legend")).toBeNull();
+  });
+
+  it("a wheel tick still reports through onViewChange", async () => {
+    const onViewChange = vi.fn();
+    const { canvas } = await mountReady({ chromeless: true, view: VIEW, onViewChange });
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: PIXEL_SIZE, bottom: PIXEL_SIZE, width: PIXEL_SIZE, height: PIXEL_SIZE, x: 0, y: 0, toJSON() {} });
+    fireEvent.wheel(canvas, { clientX: 48, clientY: 16, deltaY: -100 });
+    expect(onViewChange).toHaveBeenCalledWith(zoomAboutPivot(VIEW, 4, 48, 16));
+  });
+
+  // The same race the non-chromeless rect test pins: painting must still go only through pendingPaintRef /
+  // endActiveStroke / paintAt / beginStroke, so a release before begin() resolves cannot drop the paint or reorder end.
+  it("a rect stroke released before begin() resolves still paints, apply before end", async () => {
+    let resolveBegin!: () => void;
+    const beginPromise = new Promise<void>((resolve) => { resolveBegin = resolve; });
+    const editSession = makeEditSession({ beginStroke: vi.fn(() => beginPromise) });
+    const { canvas } = await mountReady({
+      chromeless: true, view: { zoom: 1, pan: { x: 0, y: 0 } }, onViewChange: vi.fn(), editSession,
+      activeTool: { kind: "rect", stamp: { width: 1, height: 1, cells: [{ metatileId: 7 }] } },
+    });
+    fireEvent.mouseDown(canvas, { clientX: 16, clientY: 16, button: 0 });
+    fireEvent.mouseUp(canvas, { clientX: 32, clientY: 32, button: 0 });
+    expect(editSession.applyPaint).not.toHaveBeenCalled();
+    expect(editSession.endStroke).not.toHaveBeenCalled();
+    resolveBegin();
+    await waitFor(() => expect(editSession.applyPaint).toHaveBeenCalledWith(expect.objectContaining({ tool: "rect" })));
+    await waitFor(() => expect(editSession.endStroke).toHaveBeenCalled());
+    expect(vi.mocked(editSession.applyPaint).mock.invocationCallOrder[0]!).toBeLessThan(vi.mocked(editSession.endStroke).mock.invocationCallOrder[0]!);
+  });
+});
