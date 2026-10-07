@@ -43,27 +43,17 @@ export function paintCells(
  * explicit stack array, not a recursive call) -- some real layouts are
  * 60x80+, and a recursive fill would blow the call stack on one.
  *
- * GBC blocks contain only metatileId; this function never adds extra fields
+ * GBC blocks contain only metatileId; this function never adds those fields
  * to output blocks. Every filled block is exactly { metatileId }.
  */
 export function floodFill(blocks: Block[], gridWidth: number, gridHeight: number,
   x: number, y: number, metatileId: number): Block[] {
-  // Read the starting cell to get the target id
-  if (x < 0 || y < 0 || x >= gridWidth || y >= gridHeight) {
-    return blocks.map((b) => ({ metatileId: b.metatileId }));
-  }
-  const start = blocks[y * gridWidth + x];
-  if (!start) {
-    return blocks.map((b) => ({ metatileId: b.metatileId }));
-  }
+  const out = blocks.map((b) => ({ metatileId: b.metatileId }));
+  const inGrid = x >= 0 && y >= 0 && x < gridWidth && y < gridHeight;
+  const start = inGrid ? out[y * gridWidth + x] : undefined;
+  if (!start) return out;
   const targetId = start.metatileId;
 
-  // If already the target id, return a fresh copy
-  if (targetId === metatileId) {
-    return blocks.map((b) => ({ metatileId: b.metatileId }));
-  }
-
-  const out = blocks.map((b) => ({ metatileId: b.metatileId }));
   const visited = new Uint8Array(gridWidth * gridHeight);
   const stack: [number, number][] = [[x, y]];
 
