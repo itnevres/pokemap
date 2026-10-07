@@ -2,12 +2,38 @@ import { readFileSync } from "node:fs";
 import type { Refusal } from "../../write/guards.js";
 import type { GbcProject } from "../project.js";
 import { encodeBlk } from "../load/blocks.js";
-import { changedBlockIndices, type GbcEditSession } from "./save.js";
+import type { Block, Layout } from "../model/types.js";
+import type { GbcEditSession } from "./save.js";
+
+/** The layout's `.blk` on disk. One function for BOTH the guard's read and the
+ *  commit's write, so the file checked is the file written by construction
+ *  (it is `layout.blkPath`, never derived from the map name: 50 maps share
+ *  House1.blk). */
+export function blkFilePath(proj: Pick<GbcProject, "root">, layout: Pick<Layout, "blkPath">): string {
+  return `${proj.root}/${layout.blkPath}`;
+}
+
+/** `maps/<mapName>.asm` on disk (the fixed path, GBC findings §3.1); shared by
+ *  open, the guard's read, and commit's write for the same reason as above. */
+export function eventsFilePath(proj: Pick<GbcProject, "root">, mapName: string): string {
+  return `${proj.root}/maps/${mapName}.asm`;
+}
+
+/** Ascending indices `i < min(len)` whose `metatileId` differs. Ids are the
+ *  whole of a GBC block (no collision/elevation bits), so this is exactly
+ *  the set of bytes a save must patch. Lives here (re-exported by save.ts) so
+ *  this module needs only a type import from save.ts: no runtime cycle. */
+export function changedBlockIndices(original: Block[], current: Block[]): number[] {
+  const out: number[] = [];
+  const n = Math.min(original.length, current.length);
+  for (let i = 0; i < n; i++) if (original[i]!.metatileId !== current[i]!.metatileId) out.push(i);
+  return out;
+}
 
 /** The file's bytes, or `null` when it cannot be read (deleted under us counts as changed). */
-function tryRead(path: string, encoding?: "utf8"): Buffer | string | null {
+function tryRead(path: string): Buffer | null {
   try {
-    return encoding ? readFileSync(path, encoding) : readFileSync(path);
+    return readFileSync(path);
   } catch {
     return null;
   }
@@ -95,7 +121,7 @@ export function guardGbcSave(proj: GbcProject, session: GbcEditSession): Refusal
   // that are never touched, so they need not match.
   if (blocksChanged) {
     const n = session.originalBlocks.length;
-    const disk = tryRead(`${proj.root}/${layout.blkPath}`) as Buffer | null;
+    const disk = tryRead(blkFilePath(proj, layout));
     if (!disk || disk.length < n || !disk.subarray(0, n).equals(encodeBlk(session.originalBlocks))) {
       out.push({
         code: "file-changed-on-disk",
@@ -105,7 +131,7 @@ export function guardGbcSave(proj: GbcProject, session: GbcEditSession): Refusal
       });
     }
   }
-  if (textChanged && tryRead(`${proj.root}/${eventsFile}`, "utf8") !== session.originalEventsText) {
+  if (textChanged && tryRead(eventsFilePath(proj, session.mapName))?.toString("utf8") !== session.originalEventsText) {
     out.push({
       code: "file-changed-on-disk",
       message: `${eventsFile} changed on disk since this session opened it.`,

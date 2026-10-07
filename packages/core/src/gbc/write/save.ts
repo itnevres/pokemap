@@ -4,7 +4,11 @@ import type { PendingChange } from "../../write/save.js";
 import type { GbcProject } from "../project.js";
 import type { Block, GbcMap, GbcMapEvents, Layout } from "../model/types.js";
 import { parseMapEvents } from "../load/events.js";
-import { guardGbcSave } from "./guards.js";
+import { blkFilePath, changedBlockIndices, eventsFilePath, guardGbcSave } from "./guards.js";
+
+// Public surface of the funnel; the definitions live in guards.ts so that file
+// needs only a type import from here (no runtime import cycle).
+export { blkFilePath, changedBlockIndices, eventsFilePath };
 
 /**
  * The open GBC map's current, possibly-edited state, plus the exact state it
@@ -92,7 +96,7 @@ export interface GbcSavePlan {
 export function openGbcEditSession(proj: GbcProject, mapName: string): GbcEditSession {
   const map = proj.map(mapName);
   const { layout } = proj.layout(map);
-  const eventsText = readFileSync(`${proj.root}/maps/${mapName}.asm`, "utf8");
+  const eventsText = readFileSync(eventsFilePath(proj, mapName), "utf8");
   return {
     mapName,
     map,
@@ -106,22 +110,6 @@ export function openGbcEditSession(proj: GbcProject, mapName: string): GbcEditSe
     layoutSharedBy: proj.maps.filter((m) => m.blkPath === layout.blkPath).map((m) => m.name),
     isDirty: false,
   };
-}
-
-/** Ascending indices `i < min(len)` whose `metatileId` differs. Ids are the
- *  whole of a GBC block (no collision/elevation bits), so this is exactly
- *  the set of bytes a save must patch. */
-export function changedBlockIndices(original: Block[], current: Block[]): number[] {
-  const out: number[] = [];
-  const n = Math.min(original.length, current.length);
-  for (let i = 0; i < n; i++) if (original[i]!.metatileId !== current[i]!.metatileId) out.push(i);
-  return out;
-}
-
-/** `${n} ${word}` / `${n} ${word}s` -- the same pluralisation rule as GBA's
- *  change summaries (`write/save.ts`, where it is module-private). */
-function pluralize(n: number, word: string): string {
-  return `${n} ${word}${n === 1 ? "" : "s"}`;
 }
 
 /**
@@ -138,14 +126,14 @@ export function planGbcSave(proj: GbcProject, session: GbcEditSession): GbcSaveP
   if (changed.length > 0) {
     const shared = session.layoutSharedBy.length > 1 ? ` (shared by ${session.layoutSharedBy.length} maps)` : "";
     changes.push({
-      path: `${proj.root}/${layout.blkPath}`,
+      path: blkFilePath(proj, layout),
       kind: "binary",
-      summary: `${layout.blkPath} -- ${pluralize(changed.length, "block")} changed${shared}`,
+      summary: `${layout.blkPath} -- ${changed.length} block${changed.length === 1 ? "" : "s"} changed${shared}`,
     });
   }
   if (session.eventsText !== session.originalEventsText) {
     changes.push({
-      path: `${proj.root}/maps/${mapName}.asm`,
+      path: eventsFilePath(proj, mapName),
       kind: "text",
       summary: `maps/${mapName}.asm -- event block edited`,
     });
@@ -183,12 +171,12 @@ export function commitGbcSave(proj: GbcProject, plan: GbcSavePlan): void {
 
   const changed = changedBlockIndices(session.originalBlocks, session.blocks);
   if (changed.length > 0) {
-    const path = `${proj.root}/${session.layout.blkPath}`;
+    const path = blkFilePath(proj, session.layout);
     const bytes = readFileSync(path);
     for (const i of changed) bytes[i] = session.blocks[i]!.metatileId;
     writeFileSync(path, bytes);
   }
   if (session.eventsText !== session.originalEventsText) {
-    writeFileSync(`${proj.root}/maps/${session.mapName}.asm`, session.eventsText);
+    writeFileSync(eventsFilePath(proj, session.mapName), session.eventsText);
   }
 }
