@@ -4,6 +4,8 @@ import type { AddressInfo } from "node:net";
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createGbcProjectHandler } from "../src/gbcRoutes.js";
 import type { ProjectHandler } from "../src/index.js";
+import { openGbcProject } from "@pokemap/core/src/gbc/project.js";
+import { loadGbcMapEvents } from "@pokemap/core/src/gbc/load/events.js";
 import { paintCells, floodFill, shiftGrid } from "@pokemap/core/src/gbc/edit/paint.js";
 import type { Block } from "@pokemap/core/src/gbc/model/types.js";
 import { GBC_SUBJECT_ROOT, copyGbcSubjectToTemp, hasGbcProject, removeTemp } from "@pokemap/core/test/gbc/helpers/corpus.js";
@@ -202,4 +204,164 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbc edit routes (hermetic tem
     expect(redone.isDirty).toBe(true);
     await post(`${NBT}/discard`);
   });
+
+  // --- events (spec tests 7, 8) -------------------------------------------
+  interface EventsBody extends SessionBody {
+    events: { warps: { x: number; y: number; mapConst: string; destWarp: number }[]; coords: unknown[]; bgs: unknown[]; objects: unknown[]; objectConsts: string[] };
+    warpRenumberWarnings?: { fromMap: string; warpIndex: number; destWarp: number }[];
+  }
+  const ev = (path: string, body: unknown, name = "NewBarkTown") => post(`/api/edit/${name}/event/${path}`, body);
+  const evSession = async (r: Response) => (await r.json()) as EventsBody;
+  // paint/end with no stroke open changes nothing and returns the session shape: a read-only probe.
+  const snapshot = async (name = "NewBarkTown") => ({ session: await evSession(await post(`/api/edit/${name}/paint/end`)), plan: await plan(name) });
+  const OBJ_ARGS = ["5", "5", "SPRITE_YOUNGSTER", "SPRITEMOVEDATA_STANDING_DOWN", "0", "0", "-1", "-1", "0", "OBJECTTYPE_COMMAND", "0", "NewBarkTownTestScript", "-1"];
+
+  it("7a. event move/add/delete update events; plan shows 1 text change; undo reverts each step", async () => {
+    await post(`${NBT}/discard`);
+    const s0 = await evSession(await post(`${NBT}/paint/begin`));
+    const w0 = s0.events.warps[0]!;
+    expect([w0.x, w0.y]).toEqual([6, 3]);
+
+    const moved = await evSession(await ev("move", { kind: "warp", index: 0, x: 7, y: 3 }));
+    expect([moved.events.warps[0]!.x, moved.events.warps[0]!.y]).toEqual([7, 3]);
+    expect(moved.isDirty).toBe(true);
+    expect(moved.canUndo).toBe(true);
+
+    const added = await evSession(await ev("add", { kind: "object", args: OBJ_ARGS, objectConst: "NEWBARKTOWN_TESTER" }));
+    expect(added.events.objects).toHaveLength(s0.events.objects.length + 1);
+    expect(added.events.objectConsts).toEqual([...s0.events.objectConsts, "NEWBARKTOWN_TESTER"]);
+
+    const deleted = await evSession(await ev("delete", { kind: "coord", index: 0 }));
+    expect(deleted.events.coords).toHaveLength(s0.events.coords.length - 1);
+    expect(deleted.warpRenumberWarnings).toEqual([]); // present for every delete, empty for non-warp kinds
+
+    const p = await plan();
+    expect(p.changes).toHaveLength(1);
+    expect(p.changes[0]!.kind).toBe("text");
+    expect(p.refusals).toEqual([]);
+
+    for (let i = 0; i < 2; i++) await post(`${NBT}/undo`);
+    const back = await evSession(await post(`${NBT}/undo`)); // third undo: all three ops reverted
+    expect(back.events).toEqual(s0.events);
+    expect(back.isDirty).toBe(false);
+    expect(back.canUndo).toBe(false);
+    expect(back.canRedo).toBe(true);
+    expect(await plan()).toEqual({ changes: [], refusals: [] });
+    await post(`${NBT}/discard`);
+  });
+
+  it("7b. a move to the event's current position is a no-op: no undo step, not dirty", async () => {
+    await post(`${NBT}/discard`);
+    await post(`${NBT}/paint/begin`);
+    const r = await evSession(await ev("move", { kind: "warp", index: 0, x: 6, y: 3 }));
+    expect(r.isDirty).toBe(false);
+    expect(r.canUndo).toBe(false);
+    await post(`${NBT}/discard`);
+  });
+
+  it("7c. core refusals are 400 with the core's message and leave the session untouched", async () => {
+    await post(`${NBT}/discard`);
+    await post(`${NBT}/paint/begin`);
+    await ev("move", { kind: "bg", index: 0, x: 3, y: 3 }); // some real unsaved state to compare against
+    const before = await snapshot();
+
+    const tooFar = await ev("move", { kind: "warp", index: 0, x: 999, y: 3 });
+    expect(tooFar.status).toBe(400);
+    expect(((await tooFar.json()) as { error: string }).error).toMatch(/x must be an integer 0\.\.255/);
+    const referenced = await ev("delete", { kind: "object", index: 0 });
+    expect(referenced.status).toBe(400);
+    expect(((await referenced.json()) as { error: string }).error).toMatch(/NEWBARKTOWN_TEACHER is still referenced/);
+    expect((await ev("add", { kind: "warp", args: ["1", "1", "NOT_A_MAP", "1"] })).status).toBe(400);
+    expect((await ev("move", { kind: "coord", index: 9, x: 1, y: 1 })).status).toBe(400);
+
+    expect(await snapshot()).toEqual(before);
+    await post(`${NBT}/discard`);
+  });
+
+  it("7d. event bodies are validated: bad kind/index/x/args/objectConst/JSON are 400s naming the field", async () => {
+    const cases: [string, unknown, string][] = [
+      ["move", { kind: "door", index: 0, x: 1, y: 1 }, "kind"],
+      ["move", { kind: "warp", index: 0.5, x: 1, y: 1 }, "index"],
+      ["move", { kind: "warp", index: 0, x: "1", y: 1 }, "x"],
+      ["move", { kind: "warp", index: 0, x: 1 }, "y"],
+      ["add", { kind: "warp", args: "1,1,ELMS_LAB,1" }, "args"],
+      ["add", { kind: "warp", args: ["1", "1", "ELMS_LAB", 1] }, "args"],
+      ["add", { kind: "object", args: OBJ_ARGS, objectConst: 7 }, "objectConst"],
+      ["delete", { kind: "warp" }, "index"],
+      ["delete", { index: 0 }, "kind"],
+    ];
+    for (const [path, body, field] of cases) {
+      const r = await ev(path, body);
+      expect(r.status, `${path} ${JSON.stringify(body)}`).toBe(400);
+      expect(((await r.json()) as { error: string }).error).toContain(`"${field}"`);
+    }
+    const r = await fetch(`${base}${NBT}/event/move`, { method: "POST", body: "{nope" });
+    expect(r.status).toBe(400);
+    expect(h.dirtyMaps()).toEqual([]);
+    await post(`${NBT}/discard`);
+  });
+
+  // The renumber list is a hand-derivable fact about this corpus, pinned
+  // literally AND cross-checked against an independent scan over the files.
+  const WARP0_RENUMBER = [
+    { fromMap: "ElmsLab", warpIndex: 0, destWarp: 1 },
+    { fromMap: "ElmsLab", warpIndex: 1, destWarp: 1 },
+    { fromMap: "PlayersHouse1F", warpIndex: 0, destWarp: 2 },
+    { fromMap: "PlayersHouse1F", warpIndex: 1, destWarp: 2 },
+    { fromMap: "PlayersNeighborsHouse", warpIndex: 0, destWarp: 3 },
+    { fromMap: "PlayersNeighborsHouse", warpIndex: 1, destWarp: 3 },
+    { fromMap: "ElmsHouse", warpIndex: 0, destWarp: 4 },
+    { fromMap: "ElmsHouse", warpIndex: 1, destWarp: 4 },
+  ];
+
+  it("8a. deleting NewBarkTown warp 0 reports every warp targeting NEW_BARK_TOWN with destWarp >= 1", async () => {
+    await post(`${NBT}/discard`);
+    const proj = openGbcProject(tmp);
+    const independent: typeof WARP0_RENUMBER = [];
+    for (const m of proj.maps) {
+      loadGbcMapEvents(tmp, m).events.warps.forEach((w, i) => {
+        if (w.mapConst === "NEW_BARK_TOWN" && w.destWarp >= 1) independent.push({ fromMap: m.name, warpIndex: i, destWarp: w.destWarp });
+      });
+    }
+    expect(independent).toEqual(WARP0_RENUMBER);
+
+    const t0 = performance.now();
+    const r = await evSession(await ev("delete", { kind: "warp", index: 0 }));
+    const ms = performance.now() - t0;
+    expect(r.warpRenumberWarnings).toEqual(WARP0_RENUMBER);
+    expect(r.events.warps).toHaveLength(3);
+    console.log(`warp-scan delete request: ${ms.toFixed(0)} ms`);
+
+    // Deleting warp 1 (id 2) reports only ids >= 2: the id-1 warps do not shift.
+    await post(`${NBT}/discard`);
+    const r1 = await evSession(await ev("delete", { kind: "warp", index: 1 }));
+    expect(r1.warpRenumberWarnings).toEqual(WARP0_RENUMBER.filter((w) => w.destWarp >= 2));
+    await post(`${NBT}/discard`);
+  });
+
+  it("8b. the scan uses the deleting map's session warps (pre-delete), including an earlier unsaved warp edit", async () => {
+    await post(`${NBT}/discard`);
+    await post(`${NBT}/paint/begin`);
+    // Unsaved: a new NewBarkTown warp that targets NewBarkTown itself, destWarp 2. On disk it does not exist.
+    const added = await evSession(await ev("add", { kind: "warp", args: ["2", "2", "NEW_BARK_TOWN", "2"] }));
+    expect(added.events.warps).toHaveLength(5);
+    const r = await evSession(await ev("delete", { kind: "warp", index: 0 }));
+    // Pre-delete index 4 (the delete has not renumbered it).
+    expect(r.warpRenumberWarnings).toContainEqual({ fromMap: "NewBarkTown", warpIndex: 4, destWarp: 2 });
+    expect(r.warpRenumberWarnings).toHaveLength(WARP0_RENUMBER.length + 1);
+    await post(`${NBT}/discard`);
+  });
+
+  it("8c. the scan uses another map's open-session warps over its disk warps", async () => {
+    await post(`${NBT}/discard`);
+    await post("/api/edit/ElmsLab/discard");
+    await post("/api/edit/ElmsLab/paint/begin");
+    await ev("add", { kind: "warp", args: ["1", "1", "NEW_BARK_TOWN", "3"] }, "ElmsLab"); // unsaved on ElmsLab
+    const r = await evSession(await ev("delete", { kind: "warp", index: 0 }));
+    expect(r.warpRenumberWarnings).toContainEqual({ fromMap: "ElmsLab", warpIndex: 2, destWarp: 3 });
+    await post(`${NBT}/discard`);
+    await post("/api/edit/ElmsLab/discard");
+    expect(h.dirtyMaps()).toEqual([]);
+  });
+
 });

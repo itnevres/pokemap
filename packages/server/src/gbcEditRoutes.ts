@@ -12,7 +12,12 @@
  */
 import type { IncomingMessage } from "node:http";
 import type { GbcProject } from "@pokemap/core/src/gbc/project.js";
-import type { Block } from "@pokemap/core/src/gbc/model/types.js";
+import type { Block, GbcWarpEvent } from "@pokemap/core/src/gbc/model/types.js";
+import { loadGbcMapEvents } from "@pokemap/core/src/gbc/load/events.js";
+import {
+  addGbcEvent, deleteGbcEvent, findGbcWarpsRetargetedByDelete, moveGbcEvent,
+  type GbcEventEdit, type GbcEventKind,
+} from "@pokemap/core/src/gbc/edit/events.js";
 import { paintCells, floodFill, shiftGrid, type GbcStamp } from "@pokemap/core/src/gbc/edit/paint.js";
 import { changedBlockIndices, planGbcSave } from "@pokemap/core/src/gbc/write/save.js";
 import { formatDiffJson } from "@pokemap/core/src/write/diff.js";
@@ -49,6 +54,10 @@ function stampOf(v: unknown): GbcStamp {
   return ok ? (v as unknown as GbcStamp) : bad(`"stamp" must be { width, height (positive integers), cells: width*height of { metatileId: integer } }, got ${show(v)}`);
 }
 
+const KINDS: readonly string[] = ["warp", "coord", "bg", "object"];
+const kindOf = (o: Obj): GbcEventKind =>
+  KINDS.includes(o.kind as string) ? (o.kind as GbcEventKind) : bad(`"kind" must be one of ${KINDS.join(", ")}, got ${show(o.kind)}`);
+
 const NOTHING_OPEN = { blocks: [], events: null, isDirty: false, canUndo: false, canRedo: false };
 
 const sessionBody = (e: GbcSessionEntry) => ({
@@ -59,6 +68,42 @@ const sessionBody = (e: GbcSessionEntry) => ({
 export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void }) {
   const store = createGbcEditSessionStore(proj);
   const mapNames = new Set(proj.maps.map((m) => m.name));
+
+  const mapConsts = new Set(proj.maps.map((m) => m.constName));
+
+  /**
+   * The prev-snapshot / core-op / push-undo-command sequence shared by event
+   * move/add/delete. The core op runs on the session's CURRENT text before
+   * anything is assigned, so a refusal (it throws) leaves the session exactly
+   * as it was and surfaces as a 400 with the core's message. An op that
+   * changes nothing (a move to the event's own position) pushes no undo step:
+   * it would only make the session dirty with an empty plan.
+   */
+  function eventOp(entry: GbcSessionEntry, label: string, op: (text: string) => GbcEventEdit): void {
+    const prev = gbcSnapshotOf(entry.session);
+    let edit: GbcEventEdit;
+    try { edit = op(prev.eventsText); }
+    catch (e) { return bad(e instanceof Error ? e.message : String(e)); }
+    if (edit.text === prev.eventsText) return;
+    entry.stack.push(entry.session, snapshotCommand(label, prev, { ...prev, eventsText: edit.text, events: edit.events }));
+  }
+
+  /**
+   * Every map's warps for the delete-renumber scan: the open session's if one
+   * is open (so an unsaved warp edit on ANY map counts), else the file's. The
+   * deleting map uses `preDelete`, its warps as they were before this delete.
+   * ponytail: no cache -- a warp delete re-reads ~391 small map files each
+   * time (measured in the Task 4 report). Upgrade: cache per map, invalidated
+   * on commit (`hooks.onCommit`) and on any event op on that map.
+   */
+  function allWarps(deleting: string, preDelete: GbcWarpEvent[]): { name: string; warps: GbcWarpEvent[] }[] {
+    return proj.maps.map((m) => ({
+      name: m.name,
+      warps: m.name === deleting ? preDelete
+        : store.has(m.name) ? store.open(m.name).session.events.warps
+        : loadGbcMapEvents(proj.root, m).events.warps,
+    }));
+  }
 
   /** Applies a paint tool's request body to the session's blocks. Validates everything before touching the session. */
   function paintApply(name: string, body: Obj): Block[] {
@@ -150,6 +195,32 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void 
       return asSession(entry);
     } },
     "POST discard": { body: false, run: (name) => { store.close(name); return ok(NOTHING_OPEN); } },
+    "POST event/move": { body: true, run: (name, body) => {
+      const [kind, index, x, y] = [kindOf(body), int(body, "index"), int(body, "x"), int(body, "y")];
+      const entry = store.open(name);
+      eventOp(entry, "move event", (text) => moveGbcEvent(text, name, kind, index, x, y));
+      return asSession(entry);
+    } },
+    "POST event/add": { body: true, run: (name, body) => {
+      const kind = kindOf(body);
+      const args = body.args;
+      if (!Array.isArray(args) || !args.every((a) => typeof a === "string")) bad(`"args" must be an array of strings, got ${show(args)}`);
+      const objectConst = body.objectConst;
+      if (objectConst !== undefined && typeof objectConst !== "string") bad(`"objectConst" must be a string when present, got ${show(objectConst)}`);
+      const entry = store.open(name);
+      eventOp(entry, "add event", (text) => addGbcEvent(text, name, kind, args as string[], { mapConsts, objectConst: objectConst as string | undefined }));
+      return asSession(entry);
+    } },
+    "POST event/delete": { body: true, run: (name, body) => {
+      const [kind, index] = [kindOf(body), int(body, "index")];
+      const entry = store.open(name);
+      const preDelete = entry.session.events.warps;
+      eventOp(entry, "delete event", (text) => deleteGbcEvent(text, name, kind, index));
+      const warpRenumberWarnings = kind === "warp"
+        ? findGbcWarpsRetargetedByDelete(allWarps(name, preDelete), { mapName: name, mapConst: entry.session.map.constName, index })
+        : [];
+      return ok({ ...sessionBody(entry), warpRenumberWarnings });
+    } },
     "GET plan": { body: false, run: (name) => ok(formatDiffJson(planGbcSave(proj, store.open(name).session))) },
   };
 
