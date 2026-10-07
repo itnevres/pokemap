@@ -97,3 +97,76 @@ House1 sharer count: **50** (matches findings §3.6; no discrepancy).
 3. Existing `diff.test.ts` line 34 had `session: {} as any` in an object literal; widening to `Pick<>` makes excess-property checking reject it, so I removed that one field (test behaviour identical). Other formatter callers in repo (server/CLI) type-check unchanged.
 4. Latent: the metatile guard permits ids up to `cap-1`; a tileset with >256 metatiles would let `bytes[i] = id` wrap silently. Real tilesets are 1-byte-indexed (<=256), so not guarded (YAGNI, spec-exact); `encodeBlk` would throw if Task 4/6 ever used it.
 5. `isDirty` never set here (spec); not tested beyond open.
+
+## Fix round 1
+
+Status after: **DONE** (all findings addressed; QR9 + `id <= 255` skipped per coordinator).
+
+### New commits
+
+| SHA | Subject |
+|---|---|
+| 15cdc81 | test(core): pin GBC save gaps from reviews (blkPath, order, both-files, disk drift) |
+| 8132a84 | refactor(core): GBC save path helpers shared by guard+commit, drop import cycle |
+| (this section) | docs commit |
+
+Order note: tests landed first (src unchanged, so they were green on arrival; teeth proven by the mutation table below, which went red per survivor). Then the behaviour-preserving refactor, re-green.
+
+### Findings -> change
+
+| Finding | Change |
+|---|---|
+| F1 | fixture blkPath `maps/TestLayout.blk` (file + all 3 maps); test 5 asserts `maps/Testmap.blk` never created |
+| F2 | test "refusals come out in the spec order": 6 refusals asserted in order, last two subjects blk then asm |
+| F3 | test "text-only edit not refused for external .blk change; commit writes just the asm" |
+| F4 | test "out-of-range id already on disk, unedited, is refused" (blk `[1,2,3,9]`) |
+| F5 | test 9 asserts `toThrow(new Error("save refused: metatile-out-of-range (maps/TestLayout.blk)"))` (exact message) |
+| F6 | test ".blk deleted after open -> file-changed-on-disk, commit throws, file stays absent"; `tryRead` null=changed kept |
+| F7 | comment now `cap is 5 (valid ids 0-4)` |
+| QR1 | test "both files changed in one save": paint 0 and 3 + splice; kinds `["binary","text"]`; blk `[0,2,3,1]`; asm === eventsText |
+| QR2 | `tryRead(p): Buffer \| null`, no cast; asm compare `?.toString("utf8")` |
+| QR3 | `pluralize` inlined, helper deleted |
+| QR4 | `changedBlockIndices` defined in `guards.ts`, re-exported from `save.ts`; guards only type-imports save (no runtime cycle) |
+| QR5 | `blkFilePath(proj, layout)` / `eventsFilePath(proj, mapName)` in `guards.ts`, re-exported from `save.ts`; used by open, guard reads, plan paths, commit writes (no inline path strings left) |
+| QR7 | `Fixture.map` dropped |
+| QR8 | merged `events.js` imports; test 18 uses `id + 1`; `expect(sharer).toBeDefined()` before use |
+| QR10 | tests: blk truncated to 3 bytes after open+paint -> refused; "commit does not mutate the session" (`structuredClone` snapshot, `toEqual`) |
+
+Tests now: save.test 15 (+2), guards.test 15 (+5). Final run `gbc/write` + all of `test/write`: 9 files, 123 pass; typecheck clean; PerfPlus untouched (corpus tests never commit).
+
+### Mutations re-run on 8132a84 (applied, narrow test files run, reverted by inverse edit; `git status` clean after loop)
+
+Run set: save.test + guards.test (30 tests), noStrayWrites for M9/M0.
+
+| ID | Mutation | Red tests | R/G |
+|---|---|---|---|
+| M1 | alias `originalBlocks === blocks` | 1, 5, 6, 7, 12, 13, 15a/c/d/e, both-files, 18, order | red |
+| M2 | cap 256 | 9, 10, 11, on-disk-bad-id, order | red |
+| M3 | drop writable branch | 12, 18, order | red |
+| M4 | commit writes full re-encode | 7 | red |
+| M5 | drop both file-changed branches | 15a, 15b, deleted, truncated, order | red |
+| M6 | commit gates on `plan.refusals` | 10 | red |
+| M7 | drop desync branch | 14a, 14d, order | red |
+| M8 | asm written unconditionally | 4, 5 | red |
+| M9 | remove gbc allowlist entry | noStrayWrites | red |
+| M0 | `writeFileSync(` in guards.ts | noStrayWrites | red |
+| O1 | `return out.reverse()` | order test | red (was survivor) |
+| O2 | commit blk path from map name | 5, 7, both-files, no-mutate, 15 (unwritten file) | red (was survivor) |
+| O3 | blk disk check ungated | text-only vs external blk | red (was survivor) |
+| O4 | prefix vs `encodeBlk(session.blocks)` | 5, 7, 9, 10, 11, 12, both-files, no-mutate, 15 | red |
+| O5 | full-file `disk.equals` | 7, 12 | red |
+| O6 | delta rule in both desync branches | 14c | red |
+| O7 | `layoutSharedBy.sort()` | 2 | red |
+| O8 | asm disk check ungated | 15c | red |
+| O9 | metatile loop over changed blocks only | on-disk-bad-id | red (was survivor) |
+| O10 | throw drops `(subject)` | 9 | red (was survivor) |
+| O11 | drop `disk.length < n` | not run | equivalent mutant (per spec review) |
+| O12a | `tryRead` rethrows | deleted-blk test | red (was survivor) |
+| O12b | drop `!disk` null guard | deleted-blk test | red |
+| O12c | `tryRead` catch returns empty Buffer | none | **equivalent**: empty buffer is still refused (`length < n`; asm `"" !== original`), same as null. The spec review's O12 meaning ("missing file treated as unchanged") is covered by O12a/b |
+| O13 | desync only when `!textChanged` | 14a, 14d, order | red |
+| O14 | `originalEvents` getter aliases `events` | 1, 14a, 14d, order | red |
+| O15 (extra) | plan path from map name | 5 | red |
+| O16 (extra) | guard read path from map name | 11, 12, 15, 5, 7, 9, both-files, no-mutate, 10 | red |
+
+Every non-equivalent mutant is red. Equivalent: O11, O12c.
