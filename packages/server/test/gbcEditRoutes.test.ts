@@ -6,6 +6,14 @@ import { createGbcProjectHandler } from "../src/gbcRoutes.js";
 import type { ProjectHandler } from "../src/index.js";
 import { openGbcProject } from "@pokemap/core/src/gbc/project.js";
 import { loadGbcMapEvents } from "@pokemap/core/src/gbc/load/events.js";
+import { readFileSync } from "node:fs";
+import { encodePng } from "@pokemap/cli/src/png.js";
+import { renderGbcMap } from "@pokemap/core/src/gbc/render/map.js";
+import { moveGbcEvent } from "@pokemap/core/src/gbc/edit/events.js";
+import { buildGbcWorld } from "@pokemap/core/src/gbc/world/connections.js";
+import { gbcWarpLinks } from "@pokemap/core/src/world/nearWarpAdapters.js";
+import { readSidecar } from "@pokemap/core/src/world/sidecar.js";
+import { buildGbcWorldPayload } from "../src/gbcRoutes.js";
 import { paintCells, floodFill, shiftGrid } from "@pokemap/core/src/gbc/edit/paint.js";
 import type { Block } from "@pokemap/core/src/gbc/model/types.js";
 import { GBC_SUBJECT_ROOT, copyGbcSubjectToTemp, hasGbcProject, removeTemp } from "@pokemap/core/test/gbc/helpers/corpus.js";
@@ -362,6 +370,114 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbc edit routes (hermetic tem
     await post(`${NBT}/discard`);
     await post("/api/edit/ElmsLab/discard");
     expect(h.dirtyMaps()).toEqual([]);
+  });
+
+
+  // --- commit (spec tests 9-13). These WRITE the temp copy, so they run after every read-only test. ---
+  const read = (rel: string) => readFileSync(`${tmp}/${rel}`);
+  const commit = (name: string) => post(`/api/edit/${name}/commit`);
+  const diffBytes = (a: Buffer, b: Buffer) => { let n = 0; for (let i = 0; i < Math.max(a.length, b.length); i++) if (a[i] !== b[i]) n++; return n; };
+
+  it("9a. commit writes exactly 1 .blk byte and the spliced .asm, closes the session, and invalidates the render cache", async () => {
+    await post(`${NBT}/discard`);
+    const pngBefore = await png("NewBarkTown"); // populates renderCache
+    const blkBefore = read("maps/NewBarkTown.blk");
+    const asmBefore = read("maps/NewBarkTown.asm").toString("utf8");
+
+    await post(`${NBT}/paint/begin`);
+    await pencil(0, 0, 24);
+    await post(`${NBT}/paint/end`);
+    await ev("move", { kind: "warp", index: 0, x: 7, y: 3 });
+    expect(h.dirtyMaps()).toEqual(["NewBarkTown"]);
+
+    const r = await commit("NewBarkTown");
+    expect(r.status).toBe(200);
+    const body = (await r.json()) as PlanBody;
+    expect(body.changes.map((c) => c.kind).sort()).toEqual(["binary", "text"]);
+    expect(body.refusals).toEqual([]);
+
+    const blkAfter = read("maps/NewBarkTown.blk");
+    expect(blkAfter).toHaveLength(blkBefore.length);
+    expect(diffBytes(blkBefore, blkAfter)).toBe(1);
+    expect(blkAfter[0]).toBe(24);
+    expect(read("maps/NewBarkTown.asm").toString("utf8")).toBe(moveGbcEvent(asmBefore, "NewBarkTown", "warp", 0, 7, 3).text);
+
+    expect(h.dirtyMaps()).toEqual([]);
+    expect(await plan()).toEqual({ changes: [], refusals: [] }); // a fresh session opened on the committed files
+    await post(`${NBT}/discard`);
+
+    const pngAfter = await png("NewBarkTown");
+    expect(pngAfter.equals(pngBefore)).toBe(false);
+    expect(pngAfter.equals(encodePng(renderGbcMap(openGbcProject(tmp), "NewBarkTown")))).toBe(true);
+  });
+
+  it("9b. commit invalidates the warp cache: /api/world reflects a moved warp", async () => {
+    const world = async () => ((await (await get("/api/world")).json()) as { placements: Record<string, unknown> }).placements;
+    const before = await world(); // populates warpCache
+    // SproutTower1F is a lone map placed beside VioletCity's warp 6 (its arrival point), so moving that warp moves it.
+    await post("/api/edit/VioletCity/discard");
+    await post("/api/edit/VioletCity/paint/begin");
+    const w6 = (await evSession(await ev("move", { kind: "warp", index: 6, x: 3, y: 5 }, "VioletCity"))).events.warps[6]!;
+    expect([w6.x, w6.y]).toEqual([3, 5]);
+    expect((await commit("VioletCity")).status).toBe(200);
+
+    const after = await world();
+    expect(after["SproutTower1F"]).not.toEqual(before["SproutTower1F"]);
+    const fresh = openGbcProject(tmp);
+    const expected = buildGbcWorldPayload(fresh, buildGbcWorld(fresh), readSidecar(tmp), gbcWarpLinks(fresh)).placements;
+    expect(after).toEqual(JSON.parse(JSON.stringify(expected)));
+  });
+
+  it("10. a refused commit (metatile id out of range) is 400 and writes nothing", async () => {
+    await post("/api/edit/ElmsLab/discard");
+    const files = ["maps/ElmsLab.blk", "maps/ElmsLab.asm"];
+    const before = files.map(read);
+    await post("/api/edit/ElmsLab/paint/begin");
+    await pencil(0, 0, 200, "ElmsLab");
+    await post("/api/edit/ElmsLab/paint/end");
+    const r = await commit("ElmsLab");
+    expect(r.status).toBe(400);
+    expect(((await r.json()) as PlanBody).refusals.map((x) => x.code)).toContain("metatile-out-of-range");
+    files.forEach((f, i) => expect(read(f).equals(before[i]!)).toBe(true));
+    expect(h.dirtyMaps()).toEqual(["ElmsLab"]); // still open and dirty so the client can fix it
+    await post("/api/edit/ElmsLab/discard");
+  });
+
+  it("11. CeruleanCave2F (oversize .blk): plan says layout-not-writable, commit is 400, the file is untouched", async () => {
+    const C = "/api/edit/CeruleanCave2F";
+    const before = read("maps/CeruleanCave2F.blk");
+    expect(before).toHaveLength(400);
+    await post(`${C}/paint/begin`);
+    await pencil(0, 0, 3, "CeruleanCave2F");
+    await post(`${C}/paint/end`);
+    expect((await plan("CeruleanCave2F")).refusals.map((x) => x.code)).toContain("layout-not-writable");
+    expect((await commit("CeruleanCave2F")).status).toBe(400);
+    expect(read("maps/CeruleanCave2F.blk").equals(before)).toBe(true);
+    await post(`${C}/discard`);
+  });
+
+  it("12. a shared layout's plan summary ends with (shared by 50 maps)", async () => {
+    const user = openGbcProject(tmp).maps.find((m) => m.blkPath === "maps/House1.blk")!.name;
+    await post(`/api/edit/${user}/discard`);
+    await post(`/api/edit/${user}/paint/begin`);
+    const cur = (await session(await pencil(0, 0, 1, user))).blocks[0]!.metatileId;
+    if (cur === 1) await pencil(0, 0, 2, user);
+    await post(`/api/edit/${user}/paint/end`);
+    const p = await plan(user);
+    expect(p.changes).toHaveLength(1);
+    expect(p.changes[0]!.summary.endsWith(" (shared by 50 maps)")).toBe(true);
+    await post(`/api/edit/${user}/discard`);
+  });
+
+  it("13. dispose drops every session, then requests are 503", async () => {
+    await post(`${NBT}/paint/begin`);
+    await pencil(0, 0, 40);
+    await post(`${NBT}/paint/end`);
+    expect(h.dirtyMaps()).toEqual(["NewBarkTown"]);
+    h.dispose();
+    expect(h.dirtyMaps()).toEqual([]);
+    expect((await get("/api/project")).status).toBe(503);
+    expect((await post(`${NBT}/paint/begin`)).status).toBe(503);
   });
 
 });

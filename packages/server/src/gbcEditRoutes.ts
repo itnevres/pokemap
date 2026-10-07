@@ -19,7 +19,7 @@ import {
   type GbcEventEdit, type GbcEventKind,
 } from "@pokemap/core/src/gbc/edit/events.js";
 import { paintCells, floodFill, shiftGrid, type GbcStamp } from "@pokemap/core/src/gbc/edit/paint.js";
-import { changedBlockIndices, planGbcSave } from "@pokemap/core/src/gbc/write/save.js";
+import { changedBlockIndices, commitGbcSave, planGbcSave } from "@pokemap/core/src/gbc/write/save.js";
 import { formatDiffJson } from "@pokemap/core/src/write/diff.js";
 import { createGbcEditSessionStore, gbcSnapshotOf, type GbcSessionEntry } from "./gbcEditSessions.js";
 import { snapshotCommand } from "./editSessions.js";
@@ -220,6 +220,23 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void 
         ? findGbcWarpsRetargetedByDelete(allWarps(name, preDelete), { mapName: name, mapConst: entry.session.map.constName, index })
         : [];
       return ok({ ...sessionBody(entry), warpRenumberWarnings });
+    } },
+    "POST commit": { body: false, run: (name) => {
+      const entry = store.open(name);
+      const plan = planGbcSave(proj, entry.session);
+      if (plan.refusals.length > 0) return { code: 400, body: formatDiffJson(plan) };
+      try {
+        commitGbcSave(proj, plan);
+      } catch (e) {
+        console.error(e);
+        return { code: 500, body: { error: e instanceof Error ? e.message : String(e) } };
+      }
+      // Disk changed, so every cache derived from it is stale (the handler
+      // clears them), and the session is closed rather than kept: its
+      // originals predate the write, and the next open() re-reads the files.
+      hooks.onCommit();
+      store.close(name);
+      return ok(formatDiffJson(plan));
     } },
     "GET plan": { body: false, run: (name) => ok(formatDiffJson(planGbcSave(proj, store.open(name).session))) },
   };
