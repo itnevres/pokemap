@@ -349,8 +349,7 @@ describe("CLI end-to-end (spawned, generous timeout)", () => {
       { name: "sign suggest", args: ["sign", "suggest", "NewBarkTown"] },
       { name: "sign add", args: ["sign", "add", "NewBarkTown", "--species", "RATTATA", "--dialogue", "hi", "--x", "0", "--y", "0"] },
       { name: "sign list", args: ["sign", "list", "NewBarkTown"] },
-      { name: "paint", args: ["paint", "NewBarkTown", "--tool", "pencil", "--x", "0", "--y", "0", "--metatile", "1"] },
-      { name: "diff", args: ["diff", "NewBarkTown", "--tool", "pencil", "--x", "0", "--y", "0", "--metatile", "1"] },
+      // paint/diff removed: Plan 7 Task 6 made them GBC commands.
     ];
     for (const { name, args } of cases) {
       const { status, stdout, stderr } = spawnCli(["--project", GBC_SUBJECT_ROOT, ...args]);
