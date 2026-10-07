@@ -219,3 +219,10 @@ Required tests (names approximate):
 - **Never write to PerfPlus** (`C:\Programming Projects\pokecrystal-PerfPlus`) or the GBA subject. Every write test uses a tmpdir.
 - This repo has no `@testing-library/jest-dom` (irrelevant here: core only).
 - Match the surrounding style: doc comments that explain *why*, and named refusals.
+
+## Coordinator amendments (after the implementer's report, 2026-10-06)
+
+- **The fixture tileset cap is 5, not 4.** With a cap of 4, the spec's own fixture byte `4` would be refused, which contradicts tests 4 and 5. Test 11's bad ids become `5, -1, 1.5`; `4` is the valid boundary. The guard semantics are unchanged (`0 <= id < cap`).
+- **Shared-layout fixture is opt-in** (tests 2 and 6), so test 5's summary has no "(shared …)" suffix.
+- `packages/core/test/gbc/helpers/saveFixture.ts` (the shared fixture) is accepted as an extra file.
+- `diff.test.ts`: dropping the excess `session: {} as any` from one literal is accepted (it's forced by the `Pick<>` widening).
