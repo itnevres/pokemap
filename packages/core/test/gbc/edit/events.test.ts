@@ -45,7 +45,10 @@ const TESTMAP_OBJ_B = "\tobject_event  2,  2, SPRITE_B, SPRITEMOVEDATA_STILL, 0,
 const OBJ_ARGS = ["5", "5", "SPRITE_TEACHER", "SPRITEMOVEDATA_STILL", "0", "0", "-1", "-1", "0", "OBJECTTYPE_SCRIPT", "0", "NewScript", "-1"];
 const OBJ_LINE = "\tobject_event  5,  5, SPRITE_TEACHER, SPRITEMOVEDATA_STILL, 0, 0, -1, -1, 0, OBJECTTYPE_SCRIPT, 0, NewScript, -1";
 
-const NBT = `${GBC_SUBJECT_ROOT}/maps/NewBarkTown.asm`;
+/** TESTMAP_ASM plus one object_event line and no const (the desync shape). */
+const insertObjectOnly = (t: string): string => t.replace(TESTMAP_OBJ_B, TESTMAP_OBJ_B + OBJ_LINE + "\n");
+
+const NBT =`${GBC_SUBJECT_ROOT}/maps/NewBarkTown.asm`;
 const readReal = (name: string): string => readFileSync(`${GBC_SUBJECT_ROOT}/maps/${name}.asm`, "utf8");
 
 describe("moveGbcEvent", () => {
@@ -220,6 +223,17 @@ describe("deleteGbcEvent", () => {
     session.eventsText = out.text;
     session.events = out.events;
     expect(guardGbcSave(proj, session).map((r) => r.code)).not.toContain("object-const-desync");
+
+    // the same guard accepts an add (object + const together)...
+    const added = addGbcEvent(TESTMAP_ASM, "Testmap", "object", OBJ_ARGS);
+    const addSession = openGbcEditSession(proj, "Testmap");
+    addSession.eventsText = added.text;
+    addSession.events = added.events;
+    expect(guardGbcSave(proj, addSession).map((r) => r.code)).not.toContain("object-const-desync");
+    // ...and still catches an object added without its const, so the check above has teeth.
+    const bare = parseMapEvents(insertObjectOnly(TESTMAP_ASM), "Testmap");
+    addSession.events = bare;
+    expect(guardGbcSave(proj, addSession).map((r) => r.code)).toContain("object-const-desync");
   });
 
   it("14b. deleting a middle object keeps later consts paired with later objects", () => {
