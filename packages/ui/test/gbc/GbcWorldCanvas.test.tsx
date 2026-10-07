@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, fireEvent, screen, waitFor } from "@testing-library/react";
+import { render, fireEvent, screen, waitFor, act } from "@testing-library/react";
+import { conflictKey } from "@pokemap/core/src/world/conflictAcceptance.js";
 import {
   GbcWorldCanvas,
   zoomWorldAboutPivot,
@@ -11,11 +12,223 @@ import {
   jumpFit,
   methodTint,
   GBC_LOD_ZOOM_THRESHOLD,
+  projectGbcWarpPoint,
   type GbcWorldView,
   type GbcWorldCanvasProps,
 } from "../../src/gbc/GbcWorldCanvas.js";
+
+describe("GBC dungeon warps (Plan 6c D3)", () => {
+  const event = (x: number, y: number, destMapName?: string, destEvent?: { x: number; y: number }) => ({
+    x, y, mapConst: "TARGET", destWarp: 1, lineIndex: 1, destMapName,
+    destEvent: destEvent && { ...destEvent, mapConst: "SOURCE", destWarp: 1, lineIndex: 1 },
+  });
+  const scopedWorld: GbcWorldPayload = {
+    family: "gbc", blockPx: 32,
+    placements: {
+      Source: { map: "Source", x: 10, y: 20, width: 10, height: 10, component: 0, mapType: "TOWN", manual: false },
+      Hidden: { map: "Hidden", x: 30, y: 40, width: 10, height: 10, component: 1, mapType: "INDOOR", manual: false },
+      Outside: { map: "Outside", x: 50, y: 60, width: 10, height: 10, component: 2, mapType: "TOWN", manual: false },
+    },
+    components: [], conflicts: [],
+  };
+  function scopedFetch(warps: Record<string, unknown>, world: GbcWorldPayload = scopedWorld) {
+    const base = mockFetchAll({ world });
+    return vi.fn((url: string) => {
+      const name = url.startsWith("/api/warps/") ? decodeURIComponent(url.slice("/api/warps/".length)) : null;
+      if (name !== null) return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(warps[name] ?? { family: "gbc", mapName: name, warps: [] }) } as Response);
+      return base(url);
+    });
+  }
+
+  it("projects raw half-step BurnedTower endpoints exactly, without a centre offset", () => {
+    expect(projectGbcWarpPoint({ x: 10, y: 20 }, { x: 10, y: 9 }, 8, { x: 3, y: 7 })).toEqual({ x: 123, y: 203 });
+    expect(projectGbcWarpPoint({ x: 30, y: 40 }, { x: 10, y: 9 }, 8, { x: 3, y: 7 })).toEqual({ x: 283, y: 363 });
+  });
+
+  it("scopes hidden members, excludes outsiders from images, warps, drop and lines, with independent toggles", async () => {
+    const fetcher = scopedFetch({
+      Source: { family: "gbc", mapName: "Source", warps: [event(10, 9, "Hidden", { x: 10, y: 9 }), event(1, 1, "Outside", { x: 1, y: 1 }), event(2, 2, "Hidden")] },
+      Hidden: { family: "gbc", mapName: "Hidden", warps: [event(10, 9, "Source", { x: 10, y: 9 })] },
+    });
+    vi.stubGlobal("fetch", fetcher);
+    const { container, rerender } = render(<GbcWorldCanvas time="day" mapFilter={new Set(["Hidden", "Source"])} />);
+    await waitFor(() => expect(container.querySelector('.world-canvas__status')?.textContent).toContain("zoom"));
+    await waitFor(() => expect(FakeImage.instances.some((image) => image.src.includes("Hidden.png"))).toBe(true));
+    expect(FakeImage.instances.some((image) => image.src.includes("Outside.png"))).toBe(false);
+    const stage = container.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement;
+    fireEvent.drop(stage, { clientX: 40, clientY: 40, dataTransfer: { getData: () => "Outside" } });
+    expect(fetcher.mock.calls.some(([url]) => url === "/api/world/placement")).toBe(false);
+    fireEvent.click(screen.getByRole("switch", { name: "Connection lines" }));
+    await waitFor(() => expect(container.querySelectorAll(".world-canvas__connections line").length).toBe(2));
+    const colors = [...container.querySelectorAll(".world-canvas__connections line")].map((line) => line.getAttribute("stroke"));
+    rerender(<GbcWorldCanvas time="day" mapFilter={new Set(["Source", "Hidden"])} />);
+    expect([...container.querySelectorAll(".world-canvas__connections line")].map((line) => line.getAttribute("stroke"))).toEqual(colors);
+    expect(fetcher.mock.calls.some(([url]) => url === "/api/warps/Outside")).toBe(false);
+    expect(screen.getByRole("switch", { name: "Warps" }).getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(screen.getByRole("switch", { name: "Warps" }));
+    fireEvent.keyDown(stage, { key: "+" });
+    fireEvent.keyDown(stage, { key: "+" });
+    await waitFor(() => expect(container.querySelectorAll(".world-canvas__warp-marker").length).toBe(4));
+    expect(screen.getByRole("switch", { name: "Connection lines" }).getAttribute("aria-checked")).toBe("true");
+  });
+
+  // Phase D close (coordinator D3-M3 rerun): Outside above lies beyond the scoped fit, so culling
+  // alone hid it. Here an outsider sits inside the scoped view and only mapFilter can exclude it.
+  it("never draws an outsider that lies inside the scoped view", async () => {
+    const world = { ...scopedWorld, placements: { ...scopedWorld.placements, Outside: { ...scopedWorld.placements.Outside!, x: 22, y: 32 } } };
+    vi.stubGlobal("fetch", scopedFetch({}, world));
+    render(<GbcWorldCanvas time="day" mapFilter={new Set(["Hidden", "Source"])} />);
+    await waitFor(() => expect(FakeImage.instances.some((image) => image.src.includes("Hidden.png"))).toBe(true));
+    expect(FakeImage.instances.some((image) => image.src.includes("Outside.png"))).toBe(false);
+  });
+
+  it("shows malformed warp payload errors and permits retry after a later toggle", async () => {
+    const base = mockFetchAll({ world: scopedWorld });
+    let attempt = 0;
+    const fetcher = vi.fn((url: string) => url === "/api/warps/Source"
+      ? Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(++attempt === 1 ? { family: "gba", mapName: "Source", warps: [], detail: "x".repeat(300) } : { family: "gbc", mapName: "Source", warps: [] }) } as Response)
+      : base(url));
+    vi.stubGlobal("fetch", fetcher);
+    render(<GbcWorldCanvas time="day" mapFilter={new Set(["Source"])} />);
+    fireEvent.click(screen.getByRole("switch", { name: "Connection lines" }));
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("unexpected shape"));
+    const alert = screen.getByRole("alert");
+    expect(alert.textContent!.length).toBeGreaterThan(150);
+    expect(alert.parentElement?.classList.contains("world-canvas__toolbar-group--save-error")).toBe(true);
+    fireEvent.click(screen.getByRole("switch", { name: "Connection lines" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Connection lines" }));
+    await waitFor(() => expect(attempt).toBe(2));
+  });
+
+  it("opens a destination preview before body open and Escape keeps the world view", async () => {
+    const base = mockFetchAll({ world: scopedWorld });
+    const fetcher = vi.fn((url: string) => {
+      if (url === "/api/warps/Source") return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ family: "gbc", mapName: "Source", warps: [event(10, 9, "Hidden", { x: 10, y: 9 })] }) } as Response);
+      if (url.startsWith("/api/map/")) return Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve({}) } as Response);
+      return base(url);
+    });
+    vi.stubGlobal("fetch", fetcher);
+    const { container } = render(<GbcWorldCanvas time="day" mapFilter={new Set(["Source"])} />);
+    const stage = container.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement;
+    await waitFor(() => expect(container.querySelector(".world-canvas__status")?.textContent).toContain("zoom"));
+    fireEvent.click(screen.getByRole("switch", { name: "Warps" }));
+    await waitFor(() => expect(container.querySelector(".world-canvas__warp-marker")).toBeTruthy());
+    const marker = container.querySelector(".world-canvas__warp-marker") as HTMLElement;
+    const before = container.querySelector(".world-canvas__status")?.textContent;
+    fireEvent.doubleClick(stage, { clientX: parseFloat(marker.style.left), clientY: parseFloat(marker.style.top) });
+    expect(screen.getByRole("dialog", { name: "Hidden preview" })).toBeTruthy();
+    await waitFor(() => expect(screen.getByText(/Could not load Hidden/)).toBeTruthy());
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(container.querySelector(".world-canvas__status")?.textContent).toBe(before);
+  });
+
+  it("does not keyboard-open a selected map removed from the current scope, and clears stale hover", async () => {
+    vi.stubGlobal("fetch", scopedFetch({}));
+    const onOpenMap = vi.fn();
+    const onSelectMap = vi.fn();
+    const { container, rerender } = render(<GbcWorldCanvas time="day" mapFilter={new Set(["Source"])} onOpenMap={onOpenMap} onSelectMap={onSelectMap} />);
+    const stage = container.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement;
+    await waitFor(() => expect(container.querySelector(".world-canvas__status")?.textContent).toContain("zoom 63%"));
+    fireEvent.click(stage, { clientX: 50, clientY: 50 });
+    fireEvent.mouseMove(stage, { clientX: 50, clientY: 50 });
+    expect(onSelectMap).toHaveBeenCalledWith("Source");
+    expect(container.querySelector(".world-canvas__hover")?.textContent).toContain("Source");
+    rerender(<GbcWorldCanvas time="day" mapFilter={new Set(["Hidden"])} onOpenMap={onOpenMap} onSelectMap={onSelectMap} />);
+    fireEvent.keyDown(stage, { key: "Enter" });
+    expect(onOpenMap).not.toHaveBeenCalled();
+    expect(container.querySelector(".world-canvas__selection-outline:not(.world-canvas__jump-highlight)")).toBeNull();
+    expect(container.querySelector(".world-canvas__hover")?.textContent).toContain("Hover the world");
+  });
+
+  it("real click, click, dblclick on a warp marker opens preview without changing selection or view", async () => {
+    const warps = {
+      Source: { family: "gbc", mapName: "Source", warps: [event(10, 9, "Hidden", { x: 10, y: 9 })] },
+      Hidden: { family: "gbc", mapName: "Hidden", warps: [event(10, 9, "Source", { x: 10, y: 9 })] },
+    };
+    const base = scopedFetch(warps);
+    vi.stubGlobal("fetch", vi.fn((url: string) => url.startsWith("/api/map/")
+      ? Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve({}) } as Response)
+      : base(url)));
+    const onSelectMap = vi.fn(), onOpenMap = vi.fn();
+    const { container } = render(<GbcWorldCanvas time="day" mapFilter={new Set(["Source", "Hidden"])} onSelectMap={onSelectMap} onOpenMap={onOpenMap} />);
+    const stage = container.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement;
+    await waitFor(() => expect(container.querySelector(".world-canvas__status")?.textContent).toContain("zoom 21%"));
+    fireEvent.click(stage, { clientX: 20, clientY: 20 });
+    expect(onSelectMap).toHaveBeenCalledTimes(1);
+    fireEvent.keyDown(stage, { key: "+" });
+    fireEvent.keyDown(stage, { key: "+" });
+    fireEvent.click(screen.getByRole("switch", { name: "Warps" }));
+    await waitFor(() => expect(container.querySelectorAll(".world-canvas__warp-marker").length).toBe(2));
+    const outline = container.querySelector(".world-canvas__selection-outline:not(.world-canvas__jump-highlight)") as HTMLElement;
+    const geometry = { left: outline.style.left, top: outline.style.top, width: outline.style.width };
+    const marker = [...container.querySelectorAll<HTMLElement>(".world-canvas__warp-marker")].find((node) => parseFloat(node.style.left) > 100)!;
+    const point = { clientX: parseFloat(marker.style.left), clientY: parseFloat(marker.style.top) };
+    fireEvent.click(stage, point);
+    fireEvent.click(stage, point);
+    fireEvent.doubleClick(stage, point);
+    expect(screen.getByRole("dialog", { name: "Source preview" })).toBeTruthy();
+    expect(onSelectMap).toHaveBeenCalledTimes(1);
+    expect(onOpenMap).not.toHaveBeenCalled();
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    const after = container.querySelector(".world-canvas__selection-outline:not(.world-canvas__jump-highlight)") as HTMLElement;
+    expect({ left: after.style.left, top: after.style.top, width: after.style.width }).toEqual(geometry);
+  });
+
+  it("Shift+double-click on a warp marker opens the map under it instead of the preview (Plan 6c E3)", async () => {
+    const warps = { Source: { family: "gbc", mapName: "Source", warps: [event(10, 9, "Hidden", { x: 10, y: 9 })] } };
+    vi.stubGlobal("fetch", scopedFetch(warps));
+    const onOpenMap = vi.fn();
+    const { container } = render(<GbcWorldCanvas time="day" mapFilter={new Set(["Source", "Hidden"])} onOpenMap={onOpenMap} />);
+    const stage = container.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement;
+    await waitFor(() => expect(container.querySelector(".world-canvas__status")?.textContent).toContain("zoom 21%"));
+    fireEvent.keyDown(stage, { key: "+" });
+    fireEvent.keyDown(stage, { key: "+" });
+    fireEvent.click(screen.getByRole("switch", { name: "Warps" }));
+    await waitFor(() => expect(container.querySelectorAll(".world-canvas__warp-marker").length).toBe(1));
+    const marker = container.querySelector<HTMLElement>(".world-canvas__warp-marker")!;
+    const point = { clientX: parseFloat(marker.style.left), clientY: parseFloat(marker.style.top) };
+    // The marker sits on Source's body (a 10x9-block map at zoom > 4 covers it); a plain double-click previews, Shift opens.
+    fireEvent.doubleClick(stage, { ...point, shiftKey: true });
+    expect(onOpenMap).toHaveBeenCalledTimes(1);
+    expect(onOpenMap).toHaveBeenCalledWith("Source");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    fireEvent.doubleClick(stage, point);
+    expect(screen.getByRole("dialog", { name: "Hidden preview" })).toBeTruthy();
+    expect(onOpenMap).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders the exact raw-half marker and both SVG endpoints at zoom 8, pan (3,7)", async () => {
+    const world: GbcWorldPayload = {
+      family: "gbc", blockPx: 32,
+      placements: {
+        BurnedTower1F: { map: "BurnedTower1F", x: 10, y: 20, width: 10, height: 10, component: 0, mapType: "INDOOR", manual: false },
+        BurnedTowerB1F: { map: "BurnedTowerB1F", x: 30, y: 40, width: 5, height: 5, component: 1, mapType: "INDOOR", manual: false },
+      }, components: [], conflicts: [],
+    };
+    vi.stubGlobal("fetch", scopedFetch({
+      BurnedTower1F: { family: "gbc", mapName: "BurnedTower1F", warps: [event(0, 0), event(1, 1), event(10, 9, "BurnedTowerB1F", { x: 10, y: 9 })] },
+      BurnedTowerB1F: { family: "gbc", mapName: "BurnedTowerB1F", warps: [] },
+    }, world));
+    const { container } = render(<GbcWorldCanvas time="day" mapFilter={new Set(["BurnedTowerB1F", "BurnedTower1F"])} />);
+    const stage = container.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement;
+    await waitFor(() => expect(container.querySelector(".world-canvas__status")?.textContent).toContain("zoom 25%"));
+    fireEvent.click(screen.getByRole("switch", { name: "Connection lines" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Warps" }));
+    await waitFor(() => expect(container.querySelector(".world-canvas__connections line")).toBeTruthy());
+    fireEvent.mouseDown(stage, { button: 0, clientX: 0, clientY: 0 });
+    fireEvent.mouseMove(stage, { clientX: 83, clientY: 167 });
+    fireEvent.mouseUp(stage);
+    const marker = [...container.querySelectorAll<HTMLElement>(".world-canvas__warp-marker")][2]!;
+    expect([marker.style.left, marker.style.top]).toEqual(["123px", "203px"]);
+    const line = container.querySelector(".world-canvas__connections line")!;
+    expect([line.getAttribute("x1"), line.getAttribute("y1"), line.getAttribute("x2"), line.getAttribute("y2")]).toEqual(["123", "203", "283", "363"]);
+  });
+});
 import { computeFit } from "../../src/components/WorldCanvas.js";
 import type { GbcWorldPayload } from "@pokemap/core/src/gbc/wire.js";
+import { BORDER_BAND } from "../../src/encounters/borderSide.js";
 
 // ---------------------------------------------------------------------------
 // Pure helpers -- no rendering involved.
@@ -102,16 +315,16 @@ describe("initialFitBounds (pure)", () => {
 describe("fitAllBounds (pure)", () => {
   it("unions every placement, including 1-map interiors", () => {
     const placements = {
-      MapA: { map: "MapA", x: 0, y: 0, width: 10, height: 10, component: 0 },
-      Interior: { map: "Interior", x: 1000, y: 1000, width: 5, height: 5, component: 1 },
+      MapA: { map: "MapA", x: 0, y: 0, width: 10, height: 10, component: 0, mapType: "TOWN", manual: false },
+      Interior: { map: "Interior", x: 1000, y: 1000, width: 5, height: 5, component: 1, mapType: "TOWN", manual: false },
     };
     expect(fitAllBounds(placements)).toEqual({ x: 0, y: 0, width: 1005, height: 1005 });
   });
 
   it("skips a zero-size (orphan) placement", () => {
     const placements = {
-      MapA: { map: "MapA", x: 0, y: 0, width: 10, height: 10, component: 0 },
-      Orphan: { map: "Orphan", x: 500, y: 500, width: 0, height: 0, component: -1 },
+      MapA: { map: "MapA", x: 0, y: 0, width: 10, height: 10, component: 0, mapType: "TOWN", manual: false },
+      Orphan: { map: "Orphan", x: 500, y: 500, width: 0, height: 0, component: -1, mapType: "INDOOR", manual: false },
     };
     expect(fitAllBounds(placements)).toEqual({ x: 0, y: 0, width: 10, height: 10 });
   });
@@ -304,25 +517,31 @@ interface FakeCtx {
   drawImage: ReturnType<typeof vi.fn>;
   clearRect: ReturnType<typeof vi.fn>;
   fillStyle: string;
+  fillLog: string[];
   beginPath: ReturnType<typeof vi.fn>;
   moveTo: ReturnType<typeof vi.fn>;
   lineTo: ReturnType<typeof vi.fn>;
   closePath: ReturnType<typeof vi.fn>;
   fill: ReturnType<typeof vi.fn>;
+  fillText: ReturnType<typeof vi.fn>;
 }
 const ctxByCanvas = new Map<HTMLCanvasElement, FakeCtx>();
 function makeFakeCtx(): FakeCtx {
-  return {
+  const ctx = {
     imageSmoothingEnabled: true,
     drawImage: vi.fn(),
     clearRect: vi.fn(),
     fillStyle: "",
+    fillLog: [] as string[],
     beginPath: vi.fn(),
     moveTo: vi.fn(),
     lineTo: vi.fn(),
     closePath: vi.fn(),
     fill: vi.fn(),
+    fillText: vi.fn(),
   };
+  ctx.fill = vi.fn(() => ctx.fillLog.push(ctx.fillStyle));
+  return ctx;
 }
 
 const VIEWPORT_SIZE = 200;
@@ -336,9 +555,9 @@ const WORLD: GbcWorldPayload = {
   family: "gbc",
   blockPx: 32,
   placements: {
-    MapA: { map: "MapA", x: 0, y: 0, width: 10, height: 10, component: 0 },
-    MapB: { map: "MapB", x: 10, y: 0, width: 10, height: 10, component: 0 },
-    Interior: { map: "Interior", x: 1000, y: 1000, width: 5, height: 5, component: 1 },
+    MapA: { map: "MapA", x: 0, y: 0, width: 10, height: 10, component: 0, mapType: "TOWN", manual: false },
+    MapB: { map: "MapB", x: 10, y: 0, width: 10, height: 10, component: 0, mapType: "ROUTE", manual: false },
+    Interior: { map: "Interior", x: 1000, y: 1000, width: 5, height: 5, component: 1, mapType: "TOWN", manual: false },
   },
   components: [
     { index: 0, maps: ["MapA", "MapB"], bounds: { x: 0, y: 0, width: 20, height: 10 } },
@@ -351,15 +570,23 @@ const CONFLICT_WORLD: GbcWorldPayload = {
   family: "gbc",
   blockPx: 32,
   placements: {
-    Route17: { map: "Route17", x: 0, y: 0, width: 30, height: 40, component: 0 },
+    Route17: { map: "Route17", x: 0, y: 0, width: 30, height: 40, component: 0, mapType: "ROUTE", manual: false },
   },
   components: [{ index: 0, maps: ["Route17", "Route16", "Route18"], bounds: { x: 0, y: 0, width: 30, height: 40 } }],
-  conflicts: [{ map: "Route17", viaA: { from: "Route18", x: 30, y: 50 }, viaB: { from: "Route16", x: 30, y: 49 } }],
+  conflicts: [{ map: "Route17", viaA: { from: "Route18", x: 30, y: 50 }, viaB: { from: "Route16", x: 30, y: 49 }, key: '["Route17","Route18",30,50,"Route16",30,49]', accepted: false }],
 };
 
 function mockFetchWorld(world: unknown) {
-  return vi.fn((url: string) => {
-    if (url === "/api/world") return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(world) } as Response);
+  let current = world;
+  return vi.fn((url: string, init?: RequestInit) => {
+    if (url === "/api/world/conflicts/accept") {
+      const body = JSON.parse(String(init?.body)) as { key: string; accepted: boolean };
+      const typed = current as GbcWorldPayload;
+      current = { ...typed, conflicts: typed.conflicts.map((conflict) =>
+        conflict.key === body.key ? { ...conflict, accepted: body.accepted } : conflict) };
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ acceptedConflicts: (current as GbcWorldPayload).conflicts.filter((conflict) => conflict.accepted).map((conflict) => conflict.key) }) } as Response);
+    }
+    if (url === "/api/world") return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(current) } as Response);
     return Promise.reject(new Error(`unexpected fetch ${url}`));
   });
 }
@@ -393,8 +620,8 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-function renderWorld(props: Partial<GbcWorldCanvasProps> = {}, world: unknown = WORLD) {
-  vi.stubGlobal("fetch", mockFetchWorld(world));
+function renderWorld(props: Partial<GbcWorldCanvasProps> = {}, world: unknown = WORLD, fetchMock = mockFetchWorld(world)) {
+  vi.stubGlobal("fetch", fetchMock);
   const utils = render(<GbcWorldCanvas time="day" {...props} />);
   const canvas = utils.container.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement;
   return { ...utils, canvas };
@@ -406,8 +633,8 @@ function renderWorld(props: Partial<GbcWorldCanvasProps> = {}, world: unknown = 
  *  at the pre-fit default and would make a naive "wait for any zoom%"
  *  check resolve too early -- see GbcApp.test.tsx's own comment on this
  *  exact trap). */
-async function mountReady(props: Partial<GbcWorldCanvasProps> = {}, world: GbcWorldPayload = WORLD) {
-  const utils = renderWorld(props, world);
+async function mountReady(props: Partial<GbcWorldCanvasProps> = {}, world: GbcWorldPayload = WORLD, fetchMock = mockFetchWorld(world)) {
+  const utils = renderWorld(props, world, fetchMock);
   await waitFor(() => expect(screen.getByText(new RegExp(`${world.components.length} components`))).toBeTruthy());
   // Fix round (F5): wait for the INITIAL FIT to have actually committed, not
   // just for `world` to have resolved. Before the fit, `zoom` is still the
@@ -539,7 +766,7 @@ describe("GbcWorldCanvas", () => {
     // file can't detect this bug at all -- it sits outside BOTH windows.
     const world: GbcWorldPayload = {
       ...WORLD,
-      placements: { ...WORLD.placements, NearInterior: { map: "NearInterior", x: 100, y: 150, width: 5, height: 5, component: 2 } },
+      placements: { ...WORLD.placements, NearInterior: { map: "NearInterior", x: 100, y: 150, width: 5, height: 5, component: 2, mapType: "TOWN", manual: false } },
       components: [...WORLD.components, { index: 2, maps: ["NearInterior"], bounds: { x: 100, y: 150, width: 5, height: 5 } }],
     };
     await mountReady({}, world);
@@ -590,6 +817,96 @@ describe("GbcWorldCanvas", () => {
   // Conflict badges + tooltip.
   // -------------------------------------------------------------------
   describe("conflict badge", () => {
+    it("accepts a Route17 badge, persists on remount, and closes the action with Escape", async () => {
+      const fetchMock = mockFetchWorld(CONFLICT_WORLD);
+      const onSelectMap = vi.fn();
+      const first = await mountReady({ onSelectMap }, CONFLICT_WORLD, fetchMock);
+      first.canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: 200, bottom: 200, width: 200, height: 200, x: 0, y: 0, toJSON() {} });
+      fireEvent.contextMenu(first.canvas, { clientX: 100, clientY: 100 });
+      expect(screen.queryByRole("menuitem", { name: "Accept conflict" })).toBeNull();
+      fireEvent.mouseDown(first.canvas, { button: 2, clientX: 165, clientY: 10 });
+      fireEvent.mouseMove(first.canvas, { button: 2, clientX: 180, clientY: 25 });
+      fireEvent.mouseUp(first.canvas, { button: 2, clientX: 180, clientY: 25 });
+      fireEvent.contextMenu(first.canvas, { clientX: 165, clientY: 10 });
+      expect(screen.getByRole("menuitem", { name: "Accept conflict" })).toBeTruthy();
+      fireEvent.keyDown(window, { key: "Escape" });
+      expect(screen.queryByRole("menuitem", { name: "Accept conflict" })).toBeNull();
+      fireEvent.contextMenu(first.canvas, { clientX: 165, clientY: 10 });
+      fireEvent.click(screen.getByRole("menuitem", { name: "Accept conflict" }));
+      await waitFor(() => expect(first.container.querySelector(".world-canvas__status")?.textContent).toContain("1 conflicts · 1 accepted"));
+      expect(first.stageCtx.fillText).toHaveBeenCalledWith("✓", 165, 10);
+      expect(first.stageCtx.fillLog).toContain("#6b7280");
+      fireEvent.mouseMove(first.canvas, { clientX: 165, clientY: 10 });
+      expect(screen.getByRole("tooltip").textContent).toContain("Accepted (right-click to un-accept)");
+      expect(onSelectMap).not.toHaveBeenCalled();
+      expect(fetchMock.mock.calls.some((call) => call[0] === "/api/world/placement")).toBe(false);
+      expect(first.container.querySelectorAll(".world-canvas__selection-outline")).toHaveLength(0);
+      first.unmount();
+      const second = await mountReady({}, CONFLICT_WORLD, fetchMock);
+      expect(second.container.querySelector(".world-canvas__status")?.textContent).toContain("1 conflicts · 1 accepted");
+      second.canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: 200, bottom: 200, width: 200, height: 200, x: 0, y: 0, toJSON() {} });
+      fireEvent.contextMenu(second.canvas, { clientX: 165, clientY: 10 });
+      fireEvent.click(screen.getByRole("menuitem", { name: "Un-accept conflict" }));
+      await waitFor(() => expect(second.container.querySelector(".world-canvas__status")?.textContent).toContain("1 conflicts · 0 accepted"));
+    });
+
+    it("clamps the measured Route17 action at the right edge of the viewport", async () => {
+      const mounted = await mountReady({}, CONFLICT_WORLD);
+      mounted.canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: 200, bottom: 200, width: 200, height: 200, x: 0, y: 0, toJSON() {} });
+      const originalRect = HTMLElement.prototype.getBoundingClientRect;
+      const spy = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+        if (this.classList.contains("world-context-menu")) return { width: 80, height: 30 } as DOMRect;
+        return originalRect.call(this);
+      });
+      try {
+        fireEvent.contextMenu(mounted.canvas, { clientX: 165, clientY: 10 });
+        const action = mounted.container.querySelector(".world-context-menu") as HTMLElement;
+        expect(action.style.left).toBe("112px");
+        expect(Number.parseFloat(action.style.left) + 80).toBeLessThanOrEqual(200 - 8);
+      } finally { spy.mockRestore(); }
+    });
+
+    it("shows a rejected POST response and retains the unaccepted badge", async () => {
+      const mounted = await mountReady({}, CONFLICT_WORLD);
+      const originalFetch = globalThis.fetch;
+      vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => url === "/api/world/conflicts/accept"
+        ? Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ acceptedConflicts: [3] }) } as Response)
+        : originalFetch(url, init)));
+      mounted.canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: 200, bottom: 200, width: 200, height: 200, x: 0, y: 0, toJSON() {} });
+      fireEvent.contextMenu(mounted.canvas, { clientX: 165, clientY: 10 });
+      fireEvent.click(screen.getByRole("menuitem", { name: "Accept conflict" }));
+      await waitFor(() => expect(screen.getByText(/Could not update conflict:/).textContent).toContain("unexpected shape"));
+      expect(mounted.container.querySelector(".world-canvas__status")?.textContent).toContain("1 conflicts · 0 accepted");
+      expect(screen.getByRole("menuitem", { name: "Accept conflict" })).toBeTruthy();
+      vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => url === "/api/world/conflicts/accept"
+        ? Promise.reject(new Error("offline")) : originalFetch(url, init)));
+      fireEvent.click(screen.getByRole("menuitem", { name: "Accept conflict" }));
+      await waitFor(() => expect(screen.getByText(/Could not update conflict:/).textContent).toContain("offline"));
+      expect(mounted.container.querySelector(".world-canvas__status")?.textContent).toContain("1 conflicts · 0 accepted");
+    });
+
+    it("redraws the GBC badges when the accepted key swaps with the same count", async () => {
+      const a = CONFLICT_WORLD.conflicts[0]!;
+      const bCore = { map: a.map, viaA: { ...a.viaA, from: "Route19" }, viaB: a.viaB };
+      const b = { ...bCore, key: conflictKey(bCore), accepted: true };
+      const world: GbcWorldPayload = { ...CONFLICT_WORLD, conflicts: [a, b] };
+      const baseFetch = mockFetchWorld(world);
+      const switched = vi.fn((url: string, init?: RequestInit) => url === "/api/world/conflicts/accept"
+        ? Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ acceptedConflicts: [a.key] }) } as Response)
+        : baseFetch(url, init));
+      const mounted = await mountReady({}, world, switched);
+      mounted.canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: 200, bottom: 200, width: 200, height: 200, x: 0, y: 0, toJSON() {} });
+      // Lexical key order keeps Route18 at x=165 and Route19 at x=143.
+      mounted.stageCtx.fillText.mockClear();
+      fireEvent.contextMenu(mounted.canvas, { clientX: 143, clientY: 10 });
+      fireEvent.click(screen.getByRole("menuitem", { name: "Un-accept conflict" }));
+      await waitFor(() => expect(mounted.stageCtx.fillText).toHaveBeenCalledWith("✓", 165, 10));
+      expect(mounted.container.querySelector(".world-canvas__status")?.textContent).toContain("2 conflicts · 1 accepted");
+      fireEvent.contextMenu(mounted.canvas, { clientX: 143, clientY: 10 });
+      expect(screen.getByRole("menuitem", { name: "Accept conflict" })).toBeTruthy();
+      fireEvent.contextMenu(mounted.canvas, { clientX: 165, clientY: 10 });
+      expect(screen.getByRole("menuitem", { name: "Un-accept conflict" })).toBeTruthy();
+    });
     it("draws a diamond at Conflict.map's top-right corner in --danger, and shows the exact CLI-wording tooltip on hover", async () => {
       const { canvas, stageCtx } = await mountReady({}, CONFLICT_WORLD);
       // computeFit({0,0,30,40}, {200,200}, {1/64,32}): zoom = min(32, min(200/30,200/40)) = 5.
@@ -699,6 +1016,124 @@ describe("GbcWorldCanvas", () => {
       expect(parseFloat(outline().style.left) - leftBefore).toBe(30);
       expect(parseFloat(outline().style.top) - topBefore).toBe(20);
     });
+  });
+
+  it("dropping a hidden map reveals it locally and persists its manual position", async () => {
+    const hiddenWorld: GbcWorldPayload = {
+      ...WORLD,
+      placements: { ...WORLD.placements, Interior: { ...WORLD.placements.Interior!, mapType: "INDOOR", manual: false } },
+    };
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (url === "/api/world") return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(hiddenWorld) } as Response);
+      if (url === "/api/world/placement") return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ ok: true }) } as Response);
+      return Promise.reject(new Error(`unexpected fetch ${url}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const utils = render(<GbcWorldCanvas time="day" />);
+    const canvas = utils.container.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement;
+    await waitFor(() => expect(screen.getByText(/2 components/)).toBeTruthy());
+    await waitFor(() => expect(screen.queryByText(/zoom 3%/)).toBeNull());
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: 200, bottom: 200, width: 200, height: 200, x: 0, y: 0, toJSON() {} });
+    const drop = new Event("drop", { bubbles: true }) as DragEvent;
+    Object.defineProperties(drop, {
+      clientX: { value: 100 }, clientY: { value: 100 },
+      dataTransfer: { value: { getData: () => "Interior" } },
+    });
+    fireEvent(canvas, drop);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/world/placement", { method: "POST", body: JSON.stringify({ map: "Interior", x: 8, y: 3 }) }));
+    const interior = await waitFor(() => {
+      const image = FakeImage.instances.find((candidate) => candidate.src.includes("Interior"));
+      expect(image).toBeTruthy();
+      return image!;
+    });
+    const stageCtx = ctxByCanvas.get(canvas)!;
+    stageCtx.drawImage.mockClear();
+    interior.onload?.();
+    await waitFor(() => expect(stageCtx.drawImage).toHaveBeenCalledWith(interior, 80, 80, 50, 50));
+  });
+
+  it("Shift-dragging preserves the grab offset, persists once, and skips a no-op", async () => {
+    const { canvas } = await mountReady();
+    const fetchMock = vi.fn((url: string) => url === "/api/world/placement"
+      ? Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ ok: true }) } as Response)
+      : Promise.reject(new Error(`unexpected fetch ${url}`)));
+    vi.stubGlobal("fetch", fetchMock);
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: 200, bottom: 200, width: 200, height: 200, x: 0, y: 0, toJSON() {} });
+
+    fireEvent.mouseDown(canvas, { clientX: 20, clientY: 70, button: 0, shiftKey: true }); // world (2,2) in MapA
+    fireEvent.mouseMove(canvas, { clientX: 100, clientY: 120, shiftKey: true }); // world (10,7), keeps grab (2,2) -> (8,5)
+    fireEvent.mouseUp(canvas);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/world/placement", { method: "POST", body: JSON.stringify({ map: "MapA", x: 8, y: 5 }) }));
+    expect(fetchMock.mock.calls.filter(([url]) => url === "/api/world/placement")).toHaveLength(1);
+
+    fireEvent.mouseDown(canvas, { clientX: 100, clientY: 120, button: 0, shiftKey: true });
+    fireEvent.mouseUp(canvas);
+    expect(fetchMock.mock.calls.filter(([url]) => url === "/api/world/placement")).toHaveLength(1);
+  });
+
+  it("commits a changed Shift-drag once when the pointer leaves the canvas", async () => {
+    const { canvas } = await mountReady();
+    const fetchMock = vi.fn((url: string) => url === "/api/world/placement"
+      ? Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ ok: true }) } as Response)
+      : Promise.reject(new Error(`unexpected fetch ${url}`)));
+    vi.stubGlobal("fetch", fetchMock);
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: 200, bottom: 200, width: 200, height: 200, x: 0, y: 0, toJSON() {} });
+
+    fireEvent.mouseDown(canvas, { clientX: 20, clientY: 70, button: 0, shiftKey: true });
+    fireEvent.mouseMove(canvas, { clientX: 90, clientY: 110, shiftKey: true });
+    fireEvent.mouseLeave(canvas);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/world/placement", { method: "POST", body: JSON.stringify({ map: "MapA", x: 7, y: 4 }) }));
+    expect(fetchMock.mock.calls.filter(([url]) => url === "/api/world/placement")).toHaveLength(1);
+  });
+
+  it("clears a placement save alert after a later successful retry", async () => {
+    let attempt = 0;
+    const fetchMock = vi.fn((url: string) => {
+      if (url === "/api/world") return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(WORLD) } as Response);
+      if (url === "/api/world/placement") {
+        attempt += 1;
+        return Promise.resolve(attempt === 1
+          ? { ok: false, status: 500, json: () => Promise.resolve({}) } as Response
+          : { ok: true, status: 200, json: () => Promise.resolve({ ok: true }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected fetch ${url}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const utils = render(<GbcWorldCanvas time="day" />);
+    const canvas = utils.container.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement;
+    await waitFor(() => expect(screen.getByText(/2 components/)).toBeTruthy());
+    await waitFor(() => expect(screen.queryByText(/zoom 3%/)).toBeNull());
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: 200, bottom: 200, width: 200, height: 200, x: 0, y: 0, toJSON() {} });
+    fireEvent.drop(canvas, { clientX: 100, clientY: 100, dataTransfer: { getData: () => "MapA" } });
+    await waitFor(() => expect(screen.getByText(/Could not save placement: POST \/api\/world\/placement -> 500/)).toBeTruthy());
+    fireEvent.drop(canvas, { clientX: 100, clientY: 100, dataTransfer: { getData: () => "MapA" } });
+    await waitFor(() => expect(screen.queryByText(/Could not save placement:/)).toBeNull());
+  });
+
+  it("surfaces status, network, JSON, and shape failures from guarded placement saves", async () => {
+    const failures = [
+      () => Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({}) } as Response),
+      () => Promise.reject(new Error("network down")),
+      () => Promise.resolve({ ok: true, status: 200, json: () => Promise.reject(new Error("bad JSON")) } as Response),
+      () => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ ok: false }) } as Response),
+    ];
+    let attempt = 0;
+    const fetchMock = vi.fn((url: string) => {
+      if (url === "/api/world") return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(WORLD) } as Response);
+      if (url === "/api/world/placement") return failures[attempt++]!();
+      return Promise.reject(new Error(`unexpected fetch ${url}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const utils = render(<GbcWorldCanvas time="day" />);
+    const canvas = utils.container.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement;
+    await waitFor(() => expect(screen.getByText(/2 components/)).toBeTruthy());
+    await waitFor(() => expect(screen.queryByText(/zoom 3%/)).toBeNull());
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: 200, bottom: 200, width: 200, height: 200, x: 0, y: 0, toJSON() {} });
+    for (const message of ["POST /api/world/placement -> 500", "network down", "bad JSON", "POST /api/world/placement returned an unexpected shape"]) {
+      fireEvent.drop(canvas, { dataTransfer: { getData: () => "MapA" } });
+      await waitFor(() => expect(Array.from(document.querySelectorAll(".world-canvas__toolbar-error")).some((node) => node.textContent?.includes(`Could not save placement: ${message}`))).toBe(true));
+    }
   });
 
   it("a double-click that ends a real drag does not open the map (fix round F6; kills mutation X15)", async () => {
@@ -1093,12 +1528,81 @@ describe("GbcWorldCanvas: encounters/lenses/spotlight (Plan 6b Task 6)", () => {
     expect(document.querySelectorAll(".world-canvas__lens-tint").length).toBe(1);
   });
 
-  it("the Encounters toggle shows a species chip built from the real fetched sources", async () => {
+  it("the Encounters toggle shows a species sprite built from the real fetched sources", async () => {
     const sources = [{ method: "rock", chances: [{ species: "GEODUDE", percent: 45, minLevel: 5, maxLevel: 8 }] }];
     await mountReadyAll({ encounters: { MapA: sources, MapB: [] } });
     await waitFor(() => expect(screen.getByRole("button", { name: "Encounters" })).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: "Encounters" }));
-    await waitFor(() => expect(screen.getByText("Geodude 45% Lv 5-8")).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole("button", { name: "Geodude" })).toBeTruthy());
+    expect(screen.getByRole("button", { name: "Geodude" }).querySelector("img")!.getAttribute("src")).toBe("/api/species/GEODUDE/icon.png");
+  });
+
+  // Plan 6c B3: sides are chosen over every placement (memo on `world` only).
+  // MapB sits flush against MapA's right edge, so MapB's left is blocked -> top;
+  // MapA's left is free.
+  it("puts each map's border on the side pickBorderSide gives: MapB (left blocked by MapA) -> top, MapA -> left", async () => {
+    const sources = [{ method: "rock", chances: [{ species: "GEODUDE", percent: 45, minLevel: 5, maxLevel: 8 }] }];
+    const { container } = await mountReadyAll({ encounters: { MapA: sources, MapB: sources } });
+    fireEvent.click(screen.getByRole("button", { name: "Encounters" }));
+    await waitFor(() => expect(container.querySelectorAll(".encounter-border__strip").length).toBe(2));
+    const sides = [...container.querySelectorAll(".encounter-border__strip")].map((s) => /--(left|top|right|bottom)\b/.exec(s.className)![1]);
+    // visible order follows world.placements: MapA, MapB
+    expect(sides).toEqual(["left", "top"]);
+  });
+
+  // Plan 6c B3: time dims, it no longer filters. Fixture mirrors Route30: a
+  // morn/day grass species and a nite-only one.
+  // Fit zoom is 10 (31%). Wheel-out is x1/1.2: 8.33 (26%, still >= 8) -> 6.94 (22%, < 8 = badge); one wheel-in
+  // returns to 8.33 (sprites). Pins the wiring of GBC_LOD_ZOOM_THRESHOLD (8) and BORDER_BAND.gbc (2) into the
+  // border: lodZoom={4} would keep sprites at 6.94, band={BORDER_BAND.gba} would make every band 4 blocks thick.
+  it("wheeling out from the fit zoom: sprites at >= 8, a badge below 8, sprites again after wheeling back; band thickness = BORDER_BAND.gbc * zoom", async () => {
+    const sources = [{ method: "rock", chances: [{ species: "GEODUDE", percent: 45, minLevel: 5, maxLevel: 8 }] }];
+    const { container, canvas } = await mountReadyAll({ encounters: { MapA: sources, MapB: sources } });
+    fireEvent.click(screen.getByRole("button", { name: "Encounters" }));
+    const strips = () => [...container.querySelectorAll<HTMLElement>(".encounter-border__strip")];
+    const badges = () => container.querySelectorAll(".encounter-border__badge");
+    const wheel = async (deltaY: number, pct: RegExp) => {
+      fireEvent.wheel(canvas, { clientX: 100, clientY: 100, deltaY });
+      await waitFor(() => expect(screen.getByText(pct)).toBeTruthy());
+    };
+
+    await waitFor(() => expect(strips().length).toBe(2)); // fit zoom 10
+    expect(badges().length).toBe(0);
+    const left = () => container.querySelector<HTMLElement>(".encounter-border__strip--left")!; // MapA
+    expect(parseFloat(left().style.width)).toBeCloseTo(BORDER_BAND.gbc * 10, 3);
+
+    await wheel(100, /zoom 26%/); // zoom 8.33: still >= 8
+    expect(strips().length).toBe(2);
+    expect(badges().length).toBe(0);
+    expect(parseFloat(left().style.width)).toBeCloseTo(BORDER_BAND.gbc * (10 / 1.2), 3);
+
+    await wheel(100, /zoom 22%/); // zoom 6.94: below 8
+    expect(strips().length).toBe(0);
+    expect(badges().length).toBe(2);
+
+    await wheel(-100, /zoom 26%/); // back to 8.33
+    expect(badges().length).toBe(0);
+    expect(strips().length).toBe(2);
+    expect(parseFloat(left().style.width)).toBeCloseTo(BORDER_BAND.gbc * (10 / 1.2), 3);
+  });
+
+  it("at time=morn a nite-only species renders dimmed (not hidden) and a morn species does not; the time-independent cache means a time switch flips it without a refetch", async () => {
+    const sources = [
+      { method: "grass", time: "morn", encounterRate: 9.765625, chances: [{ species: "CATERPIE", percent: 45, minLevel: 3, maxLevel: 8 }] },
+      { method: "grass", time: "nite", encounterRate: 9.765625, chances: [{ species: "ZUBAT", percent: 10, minLevel: 3, maxLevel: 7 }] },
+    ];
+    const { rerender } = await mountReadyAll({ encounters: { MapA: sources, MapB: [] } }, { time: "morn" });
+    fireEvent.click(screen.getByRole("button", { name: "Encounters" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: /^Zubat/ })).toBeTruthy());
+    const dimmed = (n: string) => screen.getByRole("button", { name: new RegExp(`^${n}(,|$)`) }).classList.contains("encounter-border__sprite--dimmed");
+    expect(dimmed("Zubat")).toBe(true);
+    expect(dimmed("Caterpie")).toBe(false);
+    const encounterCalls = () => vi.mocked(fetch).mock.calls.filter((c) => String(c[0]).startsWith("/api/encounters/")).length;
+    expect(encounterCalls()).toBe(2); // MapA, MapB: one fetch each
+    rerender(<GbcWorldCanvas time="nite" />);
+    expect(dimmed("Zubat")).toBe(false);
+    expect(dimmed("Caterpie")).toBe(true);
+    expect(encounterCalls()).toBe(2); // the time switch refetched nothing
   });
 
   it("method lens tints MapA/MapB by their own fetched method precedence", async () => {
@@ -1130,34 +1634,79 @@ describe("GbcWorldCanvas: encounters/lenses/spotlight (Plan 6b Task 6)", () => {
     expect(document.querySelector<HTMLElement>(".world-canvas__lens-tint")!.style.background).toBe("var(--warn)");
   });
 
-  // Fix round (spec review F11, coordinator correction): the empty-maps
-  // legend's "List them" button is now wired to a real focusEmptyMaps
-  // (mirroring WorldCanvas.tsx's own), not just hidden. WORLD's own fixture:
-  // MapA/MapB share a 2-map component (bounds {x:0,y:0,w:20,h:10}), Interior
-  // is a far singleton. With only MapA empty (and in that multi-map
-  // component), the fit bounds become MapA's own rect {x:0,y:0,w:10,h:10} --
-  // computeFit against the 200x200 viewport gives zoom=min(32,20)=20,
-  // pan={0,0}, distinct from the INITIAL fit's zoom 10 (the whole 2-map
-  // component). Pinned two ways: the status strip's own zoom% text, and the
-  // exact rendered transform of MapA's own lens-tint rect (which folds in
-  // pan too, not just zoom).
-  it("'List them' fits the empty maps inside their own multi-map component, with an exact zoom/pan (F11)", async () => {
-    await mountReadyAll({ coverage: { ...EMPTY_COVERAGE, mapsWithoutEncounters: ["MapA"] } });
-    // Sanity: the INITIAL fit (the whole MapA+MapB component) is zoom 10 ->
-    // round(10/32*100) = 31%, distinct from the post-click 63% below.
-    expect(screen.getByText(/zoom 31%/)).toBeTruthy();
-
+  // Plan 6c C1: the legend is a row below the toolbar (never a popover) and
+  // its lists are real: Empty maps lists coverage's own names and a click
+  // hands the name to the app's onJumpToMap (replaces the old focusEmptyMaps fit, F11).
+  it("Empty maps lens: 'List them' lists the coverage's own empty maps and a click calls onJumpToMap", async () => {
+    const onJumpToMap = vi.fn();
+    await mountReadyAll({ coverage: { ...EMPTY_COVERAGE, mapsWithoutEncounters: ["MapA", "Interior"] } }, { onJumpToMap });
     fireEvent.click(screen.getByLabelText(/empty maps lens/i));
-    await waitFor(() => expect(document.querySelectorAll(".world-canvas__lens-tint").length).toBe(1));
-    fireEvent.click(screen.getByRole("button", { name: /list them/i }));
+    fireEvent.click(screen.getByRole("button", { name: "List them" }));
+    const ul = screen.getByRole("list", { name: "Maps with no encounters" });
+    expect(Array.from(ul.querySelectorAll("button")).map((b) => b.textContent)).toEqual(["MapA", "Interior"]);
+    fireEvent.click(screen.getByRole("button", { name: "Interior" }));
+    expect(onJumpToMap).toHaveBeenCalledTimes(1);
+    expect(onJumpToMap).toHaveBeenCalledWith("Interior");
+  });
 
-    // zoom 20 -> round(20/32*100) = 63%.
-    await waitFor(() => expect(screen.getByText(/zoom 63%/)).toBeTruthy());
-    const tint = document.querySelector<HTMLElement>(".world-canvas__lens-tint")!;
-    expect(tint.style.left).toBe("0px");
-    expect(tint.style.top).toBe("0px");
-    expect(tint.style.width).toBe("200px");
-    expect(tint.style.height).toBe("200px");
+  it("Unused species lens: 'Show list' lists display names from coverage's own unusedSpecies", async () => {
+    await mountReadyAll({ coverage: { ...EMPTY_COVERAGE, unusedSpecies: ["CELEBI"] } });
+    fireEvent.click(screen.getByLabelText(/unused species lens/i));
+    fireEvent.click(screen.getByRole("button", { name: "Show list" }));
+    const ul = screen.getByRole("list", { name: "Unused species" });
+    expect(Array.from(ul.querySelectorAll("li")).map((li) => li.textContent)).toEqual(["Celebi"]);
+  });
+
+  it("the legend is a row directly after the toolbar, outside the toolbar and the viewport", async () => {
+    await mountReadyAll({ coverage: { ...EMPTY_COVERAGE, mapsWithoutEncounters: ["MapA"] } });
+    fireEvent.click(screen.getByLabelText(/empty maps lens/i));
+    const row = document.querySelector(".world-canvas__toolbar")!.nextElementSibling as HTMLElement;
+    expect(row.classList.contains("world-canvas__legend-row")).toBe(true);
+    expect(row.textContent).toMatch(/1 map has no encounters/);
+    expect(row.closest(".world-canvas__toolbar")).toBeNull();
+    expect(row.closest(".world-canvas__viewport")).toBeNull();
+  });
+
+  async function mountWithCoverageAnswer(answer: () => Promise<Response>) {
+    const base = mockFetchAll({});
+    vi.stubGlobal("fetch", vi.fn((url: string) => (url === "/api/coverage" ? answer() : base(url))));
+    render(<GbcWorldCanvas time="day" />);
+    await waitFor(() => expect(screen.getByText(new RegExp(`${WORLD.components.length} components`))).toBeTruthy());
+  }
+  const legendRow = () => document.querySelector(".world-canvas__legend-row");
+
+  it("while coverage is still loading, a lens shows 'Loading coverage…' and never a count or list button", async () => {
+    await mountWithCoverageAnswer(() => new Promise<Response>(() => {}));
+    fireEvent.click(screen.getByLabelText(/empty maps lens/i));
+    expect(legendRow()!.textContent).toContain("Loading coverage…");
+    expect(legendRow()!.textContent).not.toMatch(/0 maps|have no encounters/);
+    expect(screen.queryByRole("button", { name: "List them" })).toBeNull();
+  });
+
+  it("a coverage failure after a lens was clicked removes the legend row and shows the error", async () => {
+    let fail!: () => void;
+    await mountWithCoverageAnswer(() => new Promise<Response>((res) => { fail = () => res({ ok: false, status: 500, json: () => Promise.resolve({}) } as Response); }));
+    fireEvent.click(screen.getByLabelText(/empty maps lens/i));
+    expect(legendRow()).not.toBeNull();
+    await act(async () => { fail(); });
+    await waitFor(() => expect(screen.getByText(/Coverage lenses unavailable/)).toBeTruthy());
+    expect(legendRow()).toBeNull();
+  });
+
+  it("no legend row until a lens is on, and none again once it is turned off", async () => {
+    await mountReadyAll({ coverage: { ...EMPTY_COVERAGE, mapsWithoutEncounters: ["MapA"] } });
+    const toggle = screen.getByLabelText(/empty maps lens/i);
+    expect(legendRow()).toBeNull();
+    fireEvent.click(toggle);
+    expect(legendRow()).not.toBeNull();
+    fireEvent.click(toggle);
+    expect(legendRow()).toBeNull();
+  });
+
+  it("the level-curve lens row carries GBC's own legend copy (legendCopy reaches the legend)", async () => {
+    await mountReadyAll({});
+    fireEvent.click(screen.getByLabelText(/level curve lens/i));
+    expect(legendRow()!.textContent).toContain("an unweighted mean");
   });
 
   // Fix round (spec review F5/R7): the original version of this test only
@@ -1268,5 +1817,149 @@ describe("GbcWorldCanvas: encounters/lenses/spotlight (Plan 6b Task 6)", () => {
     fireEvent.change(screen.getByRole("combobox"), { target: { value: "CHIKORITA" } });
     await waitFor(() => expect(document.querySelector(".world-canvas__spotlight-badge")).toBeTruthy());
     expect(document.querySelector(".world-canvas__spotlight-badge")!.textContent).toBe("45% Lv 4-6");
+  });
+});
+
+describe("GbcWorldCanvas: context menu (Plan 6c E3)", () => {
+  // CONFLICT_WORLD fits as zoom 5, pan (25,0): Route17 covers x 25..175, y 0..200; its badge is at (165,10).
+  const EDGE = { left: 0, top: 0, right: 200, bottom: 200, width: 200, height: 200, x: 0, y: 0, toJSON() {} };
+  async function mountMenu(props: Partial<GbcWorldCanvasProps> = {}, fetchMock = mockFetchWorld(CONFLICT_WORLD)) {
+    const mounted = await mountReady(props, CONFLICT_WORLD, fetchMock);
+    mounted.canvas.getBoundingClientRect = () => EDGE;
+    return mounted;
+  }
+
+  it("right-click on a map shows Open in Map view and a disabled Edit here carrying the Plan 7 hint", async () => {
+    const onOpenMap = vi.fn();
+    const { canvas } = await mountMenu({ onOpenMap });
+    fireEvent.contextMenu(canvas, { clientX: 100, clientY: 100 });
+    const edit = screen.getByRole("menuitem", { name: /GBC editing arrives with Plan 7/ }) as HTMLButtonElement;
+    expect(edit.textContent).toContain("Edit here");
+    expect(edit.disabled).toBe(true);
+    expect(edit.getAttribute("aria-disabled")).toBe("true");
+    fireEvent.click(edit);
+    expect(screen.getByRole("menu")).toBeTruthy(); // a disabled item does not close the menu
+    fireEvent.click(screen.getByRole("menuitem", { name: "Open in Map view" }));
+    expect(onOpenMap).toHaveBeenCalledWith("Route17");
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("right-click on a badge adds the conflict item after the map items", async () => {
+    const { canvas } = await mountMenu({ onOpenMap: vi.fn() });
+    fireEvent.contextMenu(canvas, { clientX: 165, clientY: 10 });
+    expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
+      "Open in Map view", "Edit here GBC editing arrives with Plan 7", "Accept conflict",
+    ]);
+  });
+
+  it("right-click on empty space shows no menu and closes an open one", async () => {
+    const { canvas } = await mountMenu({ onOpenMap: vi.fn() });
+    fireEvent.contextMenu(canvas, { clientX: 100, clientY: 100 });
+    expect(screen.getByRole("menu")).toBeTruthy();
+    fireEvent.contextMenu(canvas, { clientX: 10, clientY: 100 }); // left of the map
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("the ContextMenu key and Shift+F10 open the menu for the selected map, at its centre", async () => {
+    const { canvas } = await mountMenu({ onOpenMap: vi.fn() });
+    fireEvent.keyDown(canvas, { key: "ContextMenu" });
+    expect(screen.queryByRole("menu")).toBeNull(); // nothing selected
+    fireEvent.click(canvas, { clientX: 100, clientY: 100 });
+    expect(fireEvent.keyDown(canvas, { key: "ContextMenu" })).toBe(false); // preventDefault
+    expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Open in Map view", "Edit here GBC editing arrives with Plan 7"]);
+    const menu = screen.getByRole("menu");
+    expect([menu.style.left, menu.style.top]).toEqual(["100px", "100px"]); // Route17's centre ((0+15)*5+25, 20*5)
+    fireEvent.keyDown(menu, { key: "Escape" });
+    expect(screen.queryByRole("menu")).toBeNull();
+    fireEvent.keyDown(canvas, { key: "F10", shiftKey: true });
+    expect(screen.getByRole("menu")).toBeTruthy();
+  });
+
+  it("the keyboard opens nothing for a selected map outside the mapFilter", async () => {
+    const mounted = await mountMenu({ onOpenMap: vi.fn() });
+    fireEvent.click(mounted.canvas, { clientX: 100, clientY: 100 });
+    mounted.rerender(<GbcWorldCanvas time="day" mapFilter={new Set(["Elsewhere"])} onOpenMap={vi.fn()} />);
+    fireEvent.keyDown(mounted.canvas, { key: "ContextMenu" });
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("a canvas pointerdown closes an open menu", async () => {
+    const { canvas } = await mountMenu({ onOpenMap: vi.fn() });
+    fireEvent.contextMenu(canvas, { clientX: 100, clientY: 100 });
+    fireEvent.pointerDown(canvas, { clientX: 20, clientY: 150 });
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("a plain F10 opens nothing", async () => {
+    const { canvas } = await mountMenu({ onOpenMap: vi.fn() });
+    fireEvent.click(canvas, { clientX: 100, clientY: 100 });
+    fireEvent.keyDown(canvas, { key: "F10" });
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("Escape closes the menu and returns focus to the canvas", async () => {
+    const { canvas } = await mountMenu({ onOpenMap: vi.fn() });
+    fireEvent.contextMenu(canvas, { clientX: 100, clientY: 100 });
+    expect(document.activeElement).toBe(screen.getByRole("menuitem", { name: "Open in Map view" }));
+    fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(document.activeElement).toBe(canvas);
+  });
+
+  it("right-click on a badge whose map body is not under the pointer still targets the badge's map", async () => {
+    // A 1x40-block map fits at zoom 5, so it is 5px wide and its badge centre (92.5,10) sits left of its body.
+    const core = { map: "Sliver", viaA: { from: "X", x: 1, y: 2 }, viaB: { from: "Y", x: 3, y: 4 } };
+    const world: GbcWorldPayload = {
+      family: "gbc", blockPx: 32,
+      placements: { Sliver: { map: "Sliver", x: 0, y: 0, width: 1, height: 40, component: 0, mapType: "ROUTE", manual: false } },
+      components: [{ index: 0, maps: ["Sliver", "Other"], bounds: { x: 0, y: 0, width: 1, height: 40 } }],
+      conflicts: [{ ...core, key: conflictKey(core), accepted: false }],
+    };
+    const onOpenMap = vi.fn();
+    const mounted = await mountReady({ onOpenMap }, world);
+    mounted.canvas.getBoundingClientRect = () => EDGE;
+    fireEvent.contextMenu(mounted.canvas, { clientX: 92, clientY: 10 });
+    fireEvent.click(screen.getByRole("menuitem", { name: "Open in Map view" }));
+    expect(onOpenMap).toHaveBeenCalledWith("Sliver");
+  });
+
+  // Chromium fires a native `contextmenu` (keyboard-origin, at the canvas centre, `button: -1`) after the
+  // ContextMenu key even when its keydown was prevented; it must not replace or close the menu the key opened.
+  it.each([
+    ["at empty space", { clientX: 10, clientY: 100 }],
+    ["over the map", { clientX: 160, clientY: 150 }],
+    ["with button -1 (keyboard origin)", { clientX: 110, clientY: 120, button: -1 }],
+  ])("the native contextmenu that follows a keyboard open, %s, leaves the menu as it was", async (_name, native) => {
+    const { canvas } = await mountMenu({ onOpenMap: vi.fn() });
+    fireEvent.click(canvas, { clientX: 100, clientY: 100 });
+    fireEvent.keyDown(canvas, { key: "ContextMenu" });
+    const menu = screen.getByRole("menu");
+    const shape = () => [menu.style.left, menu.style.top, screen.getAllByRole("menuitem").map((item) => item.textContent)];
+    const before = shape();
+    expect(fireEvent.contextMenu(canvas, native)).toBe(false); // still preventDefaulted
+    expect(screen.getByRole("menu")).toBe(menu);
+    expect(shape()).toEqual(before);
+    expect(screen.getAllByRole("menuitem")).toContain(document.activeElement);
+  });
+
+  it("a real right-click after a keyboard open is not swallowed: any canvas pointerdown re-arms it", async () => {
+    const { canvas } = await mountMenu({ onOpenMap: vi.fn() });
+    fireEvent.click(canvas, { clientX: 100, clientY: 100 });
+    fireEvent.keyDown(canvas, { key: "ContextMenu" });
+    fireEvent.pointerDown(canvas, { clientX: 160, clientY: 150, button: 2 });
+    fireEvent.contextMenu(canvas, { clientX: 160, clientY: 150, button: 2 });
+    const menu = screen.getByRole("menu");
+    expect([menu.style.left, menu.style.top]).toEqual(["160px", "150px"]); // a normal right-click menu, not the map centre
+  });
+
+  it("the conflict error toast can be dismissed", async () => {
+    const base = mockFetchWorld(CONFLICT_WORLD);
+    const failing = vi.fn((url: string, init?: RequestInit) => url === "/api/world/conflicts/accept" ? Promise.reject(new Error("offline")) : base(url, init));
+    const { canvas } = await mountMenu({}, failing);
+    fireEvent.contextMenu(canvas, { clientX: 165, clientY: 10 });
+    fireEvent.click(screen.getByRole("menuitem", { name: "Accept conflict" }));
+    await waitFor(() => expect(screen.getByText(/Could not update conflict:/).textContent).toContain("offline"));
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(screen.queryByText(/Could not update conflict:/)).toBeNull();
   });
 });

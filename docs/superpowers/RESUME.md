@@ -1,4 +1,4 @@
-# PokeMap: current state (2026-09-28, read first)
+# PokeMap: current state (2026-10-06, read first)
 
 PokeMap is a Porymap-parity map editor with two engine families:
 - **GBA:** pokeemerald-family decomps. Plans 0-5.
@@ -9,11 +9,15 @@ This file holds the state and the accumulated lessons. The prompt for the next s
 ## Git state: read before branching
 
 - **Merged 2026-09-25.** [itnevres/pokemap#1](https://github.com/itnevres/pokemap/pull/1) merged `plan-6-gbc-foundation` into `master` (merge commit `075cefb`, 169 commits): the world-view and dungeon-mode plans, Plan 2 with its 6 follow-ups, Plan 6, the doc refresh, and the cloud SessionStart hook. A merge commit was used rather than a rebase, so every SHA cited in the docs and task reports is still valid. **Branch new work from `master`.**
-- **Done, awaiting merge: `plan-6b-gbc-app-layer`** (Plan 6b, the GBC app layer). [itnevres/pokemap#3](https://github.com/itnevres/pokemap/pull/3) is ready for review. All tasks are done, and criteria 1-4 were demonstrated end to end on 2026-09-28. It branches from `master` at `3f76262`. Once it merges, branch new work from `master`.
-- **Branch baseline, measured 2026-09-28 on the Windows machine at 6b HEAD:** `npm test` gives **1,679 pass / 0 fail**. `npm run typecheck` is clean, and `vite build` passes.
+- **Merged: Plan 6b.** [itnevres/pokemap#3](https://github.com/itnevres/pokemap/pull/3) merged as `ce020d9`. Its tree is byte-identical to 6b HEAD `243cbef`.
+- **Done, PR open: Plan 6c, `plan-6c-hub-encounters-world`.** Phases A-F are complete (closed 2026-10-06): criteria 1-9 demonstrated end to end in one browser session (`task-reports/pokemap-plan-6c-hub-encounters-world/_archive/task-F1-closeout.md`). The branch is pushed; the PR is [itnevres/pokemap#11](https://github.com/itnevres/pokemap/pull/11). **Next: review and merge that PR, then pick the next line of work from the table below (Plan 7, GBC editing, is unblocked).**
+- **Phase E gate, measured 2026-10-06 on Windows at `a9481bd`:** `npm test` gives **2,202 pass / 2 fail** (130 files). The 2 failures are the same known `world.test.ts` pair. Typecheck is clean and `vite build` passes.
+- **Phase D gate, measured 2026-10-04 on Windows at `6aa47ae`:** `npm test` gives **2,042 pass / 2 fail** (121 files). Both failures are the known `world.test.ts` pair (186 vs 1,209), caused by the GBA subject's persisted `dungeonAutoLayout:false`. They are the same pair as Phase D's start baseline (1,985 / 2). Typecheck is clean and `vite build` passes.
+- **Phase C gate, measured 2026-10-01 on Windows at `1c1b78d` (code) / `e34629a`:** `npm test` gives **1,987 pass / 0 fail** (118 files), on a quiet machine, output captured to a file; typecheck is clean; `vite build` passes. Phase C started at 1,935 / 0 (Phase B's close, re-measured). Phase A closed at 1,780 / 0 (112 files); the 6c branch start was 1,679 / 0 (`task-reports/pokemap-plan-6c-hub-encounters-world/baseline.md`).
+- **Previous branch baseline, measured 2026-09-28 on the Windows machine at 6b HEAD:** `npm test` gives **1,679 pass / 0 fail**. `npm run typecheck` is clean, and `vite build` passes.
   - Before `123d89f`, Windows also had 7 failures in `packages/cli/test`. They came from cloud-written tests that had never run on Windows (`spawnSync("npx")`, and a regex built from a backslash path), and that commit fixes them.
   - **The cloud should see 1,673 / 6** (derived, not measured). The 6 are the local-state deltas below, listed in `task-reports/pokemap-plan-6b-gbc-app-layer/baseline-fails.txt`.
-  - One unidentified test failed once in about 8 Windows full runs and never recurred. If a single failure appears, rerun it in isolation before calling it a regression.
+  - The long-unidentified Windows flake was `WorldCanvas.test.tsx` "pans/zooms to the given map's real placement…" (a real 2 s fade timer racing full-suite load). **Fixed 2026-09-30** (`46bfed0`, test-only). The same test had a second, independent race (a no-op `waitFor` gate), **fixed 2026-10-01** (`89267b8`, test-only; see Phase C lessons). Other load-only flakes seen since are listed under "Lessons from Plan 6c Phase B". If a single failure appears, rerun it in isolation before calling it a regression.
 - **Verified `master` baseline** (cloud session, 2026-09-25), against GitHub clones of the subject and all 5 reference engines at the SHAs pinned in `.claude/hooks/session-start.sh`:
   - `npm test` gives **1,271 pass, 0 skip, 6 fail**; `npm run typecheck` is clean; the 559 GBC tests are green.
   - All 6 failures come from local-only state on the Windows machine that git doesn't carry. None is a code defect:
@@ -27,9 +31,25 @@ This file holds the state and the accumulated lessons. The prompt for the next s
 | Line of work | State | Needs |
 |---|---|---|
 | Plan 6: GBC foundation, read-only | **Done and merged 2026-09-25.** See the plan's STATUS banner for the real file map | — |
-| Plan 7: GBC editing | **Next, after #3 merges.** Its "Grounding from Plan 6" section is required reading. Tasks 1, 2, 3, 6 and 7 (core + CLI) can run at any time; Tasks 4-5 build on 6b's server and UI | PerfPlus clone (+ pret/pokecrystal for the G5 gate) |
+| Plan 7: GBC editing | **Unblocked** (#3 merged). Its "Grounding from Plan 6" section is required reading. Tasks 1, 2, 3, 6 and 7 (core + CLI) can run at any time; Tasks 4-5 build on 6b's server and UI | PerfPlus clone (+ pret/pokecrystal for the G5 gate) |
+| 6c: hub, encounter border, world UX (both families) | **Done 2026-10-06, PR open ([itnevres/pokemap#11](https://github.com/itnevres/pokemap/pull/11)).** Phases A-F. (A 2026-09-30: hub, picker/switcher, criterion 1. B 2026-10-01: GBC front sprites + real GBC icon route, species-summary adapters, `pickBorderSide`, shared `EncounterBorder` replacing both gutters in both world views, the border in both map views; criterion 2. C 2026-10-01: `LensPanel` split into toggles + an in-flow `LensLegend` row (`world-canvas__legend-row`) with real empty-maps (jump like a tree click) and unused-species (names + icons) lists, both `focusEmptyMaps` deleted; `MapTree` reveals the selected row; GBA world single-click selects in the tree without jumping, and entering World centres on the selection (both apps); criteria 3-5 live-verified. D 2026-10-04: GBC visibility, sidecar and drag placement; near-warp auto-layout in core for both families; GBC warp markers, preview and Dungeon tab; conflict acceptance in both families with a badge-only right-click action that E3 absorbs; criteria 6-7 live-verified in both families). `plans/2026-09-28-pokemap-plan-6c-hub-encounters-world.md`: 17 tasks in phases A-F. Run one phase per coordinator session. The user decisions U1-U4 are binding. E 2026-10-06:
+- E1: `MapCanvas` has one view state (follow-ups D1/D2 done) and a controlled `view`/`onViewChange`.
+- E2: `MapEditingWorkspace` and `useMapEditing` were extracted from `App`.
+- E3: `WorldContextMenu` serves both families, with a keyboard open and a guard for Chromium's native `contextmenu` echo.
+- E4: GBA in-context editing. A double-click puts a chromeless MapCanvas overlay on the stable world canvas; saves go through `SaveDialog`, refetch that one tile with `?v=n`, and clear the server `pngCache` on commit.
+- Criterion 8 was live-verified with a real NewBarkTown write, then restored byte-identical by reverse paint.
+
+Deferred from E:
+- At 1024 wide in context mode, the world toolbar is cramped: the zoom readout overlaps "Method". Hiding the world's Unplaced sidebar while in context would fix it.
+- MapCanvas's Grid/Collision/Events/Encounters toggles aren't reachable in context (accepted limitation).
+- A refreshed world tile is blank until its new image loads.
+- After "Open in Map view", focus falls to `body`.
+- GBC has no "Shift+mousedown, no movement, no POST" pin. The same guard as GBA's exists in the code.
+- At narrow widths, the Pencil metatile strip (240 px) leaves a short world area in context mode.
+
+**Next: F.** Evidence: `task-reports/pokemap-plan-6c-hub-encounters-world/_archive/task-{E1,E2,E3,E4}-coordinator.md` plus `task-{A1,A2,B1,B2,B3,B4,C1,C2,D3,D4}-coordinator.md` and `phase-D-review.md`. **R1 from D is fixed** (`6aa47ae`): `placeNearWarps` now treats manual placements as fixed obstacles. Deferred from D: the conflict popup is screen-anchored, doesn't close on pan or left-click, and the error toast has no dismiss (E3's `WorldContextMenu` should own these); the legend's "Accepted" entry was added in the Phase D nits commit; GBC World mode fetches `/api/world` twice, once in `GbcApp` for tree visibility and once in the canvas, which is deliberate parity with GBA's `App.tsx` (about 80 ms warm; folding the two would need canvas-remount freshness handling, so it was left). Deferred from A: a POST body read after a hub swap still runs on the disposed handler (A1 SR-F3); browse doesn't list symlinked dirs; a browse 403 shows only the status code. Deferred from B: in the GBA map editor with Encounters on, a stroke dragged onto a sprite ends early (`mouseleave`; revisit in E1/E4); count badges overlap at Fit all; a map taller than the viewport at 1× shows its side strip starting off-screen. Deferred from C: in the dungeon view the empty-maps copy still ends "Click to list them." with no list button (the list is hidden there by design); an open lens list re-renders with every pan frame (not profiled; memoise if it shows); no Escape-to-close on the lists; a cancelled dirty-session confirm after a GBA world click leaves the canvas outline on the clicked map while the tree keeps the old one | GBA subject + PerfPlus + a browser |
 | 6b: GBC app layer (server + UI, read-only) | **Done 2026-09-28, PR #3 ready for review.** Plan: `plans/2026-09-25-pokemap-plan-6b-gbc-app-layer.md`; its STATUS banner holds the real file map. The close-out evidence is in `task-reports/pokemap-plan-6b-gbc-app-layer/_archive/task-7-closeout.md` | — |
-| 4 remaining GBA follow-up fixes (A/B/C/D) | Planned, not started. **D3** (the styles.css `*/` comment) was already fixed in 6b at `5629602`, with the user's go-ahead. It was worse than recorded: it also swallowed the `.species-spotlight` rule and put the spotlight dropdown off-screen. D1 (StrictMode zoom) and D2 (hover overflow) remain.<br>Also seen in 6b's close-out, and not yet in the plan:<br>- in GBA's world toolbar, the open lens legend popover covers the Encounters toggle;<br>- at mid zoom, gutter strips of adjacent maps overlap (both families).<br>Evidence: `task-reports/pokemap-plan-6b-gbc-app-layer/_archive/task-4-spec-review.md` A/B and `_archive/task-7-closeout.md` | GBA corpus (now available in the cloud) + live browser verify (Chromium is available in the cloud) |
+| 4 remaining GBA follow-up fixes (A/B/C/D) | **Task D is done:** D1/D2 in 6c E1, and D3 earlier, in 6b. Tasks A-C are planned, not started. **D3** (the styles.css `*/` comment) was already fixed in 6b at `5629602`, with the user's go-ahead. It was worse than recorded: it also swallowed the `.species-spotlight` rule and put the spotlight dropdown off-screen. D1 (StrictMode zoom) and D2 (hover overflow) remain.<br>Also seen in 6b's close-out, and not yet in the plan:<br>- ~~in GBA's world toolbar, the open lens legend popover covers the Encounters toggle~~ **fixed by 6c C1** (the legend is now an in-flow row; `elementFromPoint` verified at 1280/1024, both families);<br>- at mid zoom, gutter strips of adjacent maps overlap (both families; the gutters are now 6c B3's `EncounterBorder`).<br>Evidence: `task-reports/pokemap-plan-6b-gbc-app-layer/_archive/task-4-spec-review.md` A/B and `_archive/task-7-closeout.md` | GBA corpus (now available in the cloud) + live browser verify (Chromium is available in the cloud) |
 | Plan 3: GBA data editors | Not started, lower priority | Windows machine |
 | Plans 4-5 | Not started / backlog | — |
 
@@ -109,6 +129,107 @@ This file holds the state and the accumulated lessons. The prompt for the next s
 - **"Existing GBA tests unchanged" needs checking in every fix round.** Task 6's fix round edited a GBA test to make a LensPanel change pass. The coordinator caught it with `git diff <base> -- packages/ui/test/<gba files>` (additions only), then reverted it and made the GBC side real instead.
 - **Canvas-drawn UI (badges, tints) can be verified without DOM hooks.** Scan `getImageData` for the token's exact RGB, cluster the hits, and hover each cluster. For lenses, count the tint elements by `style.background` and compare the counts with an independent in-page recomputation from the API.
 
+## Lessons from Plan 6c Phase A (2026-09-29/30; new, add to everything above)
+
+- **The hub refuses cross-site requests.** Every request (`hub.ts` `isCrossOriginRequest`) is checked:
+  an `Origin` must be a local hostname, and so must the `Host`. That covers every existing project route
+  too (a drive-by POST to `/commit` was possible before). The Vite proxy and node `fetch` in tests both
+  pass. A new client that sets a non-local `Host` gets a 403.
+- **Stale dev servers from an earlier session can hold 5173/5174.** In A2, the 6b session's
+  `serve.ts --gbc` (pre-hub code) and its Vite were still running. Don't kill what this session didn't
+  start. Live-verify on other ports instead:
+  - an `--import` preload that remaps `http.Server.prototype.listen(5174)` to 5184, so the *real*
+    `serve.ts` runs unmodified;
+  - Vite started programmatically (`createServer({ root: packages/ui, configFile: false, plugins: [react()], server: { port: 5183, proxy: { "/api": "http://127.0.0.1:5184" } } })`);
+  - a scratch `POKEMAP_HOME`, so the real `~/.pokemap` stays untouched.
+
+  Each script is about 5 lines. The steps it verified are in `_archive/task-A2-coordinator.md`.
+- **Specs can contradict themselves.** A2's spec said both "mirror SaveDialog's backdrop" and "never two
+  stacked backdrops". The implementer followed both literally, which produced nested backdrops, and Escape
+  closed the whole switcher. Both reviewers caught it. The coordinator's call: a confirm *inside* a modal
+  has no backdrop of its own and stops Escape's propagation. Check new specs for this pattern: a nested
+  dialog plus "mirror the modal shell".
+- **Rate limits hit both implementers mid-fix-round.** The RESUME recipe worked each time (`git status` /
+  `log` / `diff`, then SendMessage the same agent with "revert leftovers first"). One agent died before
+  its first commit, and the tree was clean.
+- **The coordinator's mutation re-run as a node script is cheap and reliable.** Keep a literal anchor
+  asserted to match exactly once, run the narrowest vitest file via `node node_modules/vitest/vitest.mjs run <file>`,
+  restore the in-memory on-disk bytes, and byte-compare the file afterwards. It ran A1's 12 and A2's 13
+  survivors and fix guards, all red, in minutes.
+- **The unidentified Windows flake recurred:** 1 failure in the first of 5 full runs, then 4 clean runs.
+  (Identified and fixed in Phase B, below.)
+
+## Lessons from Plan 6c Phase B (2026-09-30/10-01; new, add to everything above)
+
+- **Capture the first full run to a file, always.** That's how the flake was finally named: the
+  WorldCanvas jump highlight clears on a real 2 s `setTimeout`, and full-suite load stretched
+  mount-to-assert past it. The fix holds that one timer per test and fires it with an explicit `flush()`
+  (a `clearTimeout` of a held id drops it, so "cancelled and never rescheduled" is still caught).
+  Pattern for any real-timer test: hold the timer, don't sleep past it.
+- **Load-only flakes still seen** (each passed alone): `gbcRoutes.test.ts` `/api/where/:species`
+  DUNSPARCE 5 s timeout; `GbcApp.test.tsx` "palette highlight resets…" (1 s `waitFor`). **Never run two
+  full suites at once:** `dungeons.test.ts` reads and writes the subject's shared
+  `.pokemap/dungeons.json`, so concurrent suites race across processes (seen once). Measure the phase
+  gate on a quiet machine.
+- **Corpus facts the plan had wrong:** only `UNOWN` breaks lowercasing in PerfPlus (`→ unown_a`);
+  `NIDORAN_F`/`MR__MIME`/`HO_OH` lowercase to their real folders. The 295 `gfx/pokemon` entries are 278
+  folders + 17 `.asm` files. Every PerfPlus front sprite is opaque with a white index 0 (they render as
+  cards). The species→folder mapping needs both `data/pokemon/pic_pointers.asm` (species-indexed
+  labels) and `gfx/pics.asm` (label→file, label and INCBIN on one line, so `parseIncbins` doesn't apply).
+- **The coordinator's own spec mutations were wrong twice in B2.** "`>=` instead of `>`" was an
+  equivalent mutant (an area product `max(0,w)·max(0,h)` never compares), and "a closed rule flips
+  NewBarkTown" was false (the least-overlap fallback still picks `top`). The Opus reviewer caught both by
+  re-deriving. Before pinning a mutation in a spec, ask whether it can change any output at all.
+- **"Touching" needed a precise rule.** The plan said both "touching blocks" and "a gap ≥ band doesn't".
+  Positive-area overlap with the band satisfies both and makes corners free. Watch for plan sentences
+  that only agree under one reading.
+- **Deleting a component's tests loses pins silently.** B3's old→new table looked complete, but the GBC
+  LOD 7/8 threshold was pinned only by the deleted gutter test; the new component test pinned a generic
+  threshold, not the canvas wiring (mutant `lodZoom={4}` survived). For each deleted test, mutate the
+  *wiring*, not just the component.
+- **`git checkout` as a mutant restore wiped uncommitted work again** (B3 fix round). Putting "never use
+  `git checkout`/`git restore` to undo an experiment; commit first" in the implementer prompt stopped it in B4.
+- **An implementer deleted the coordinator's untracked helper** (`packages/ui/.scratch-vite5183.mjs`)
+  despite "leave it". Keep coordinator scratch outside the repo where possible; recreate if needed.
+- **Live-verify Vite on Windows:** use `fileURLToPath(new URL(".", import.meta.url))` for `root`;
+  `URL.pathname` keeps `%20` for the space in "Programming Projects", and Vite then serves 404s.
+- **Per-map UI state:** a "reset on map change" `useEffect` runs after child hooks' effects, so a hook
+  keyed on the old toggle fires for the new map in the first render (B4 fetched the wrong map). Hold the
+  state as `forMap: string | null` (`on = forMap === mapName`) instead of resetting it.
+- **Rate limits cut off two agents mid-task.** The recipe held: `git status`/`log`/`diff`, then
+  SendMessage the same agent with "verify and revert leftovers first". One resumed with red-first tests
+  still uncommitted and carried on correctly.
+
+## Lessons from Plan 6c Phase C (2026-10-01; new, add to everything above)
+
+- **The in-app browser pane can be hidden, and then layout lies.** With the pane hidden,
+  `document.hidden` is true, `requestAnimationFrame` never runs and a `ResizeObserver` never delivers
+  (not even its initial callback), so the canvas keeps a stale `viewport` and a jump looked off-screen.
+  It was not an app bug. Check `document.visibilityState` first; for anything layout- or resize-dependent,
+  use the Playwright MCP's `browser_run_code_unsafe` (it renders normally) and keep each check in one call.
+- **Ask "what happens on remount, for each selection source?"** C2's spec copied GBC's F1 split
+  (`jumpTarget` set only by tree clicks), and both reviewers confirmed a design gap the coordinator had
+  probed for: after a world click, Map → World re-entry jumped to the *stale* tree target, because the
+  world canvases remount per mode with a fresh `appliedJumpTokenRef`. Fix: entering World from another
+  mode jumps to the current selection (`enterWorld`, both apps). When two fixes work, prefer the one that
+  doesn't touch a shared effect: the alternative changed both canvases' jump effects.
+- **Equivalent mutants, again.** `enterWorld`'s token bump is redundant today (the remount alone makes
+  any token unapplied); it was kept for intent and recorded as equivalent, not chased with a test.
+- **A `waitFor` on a condition that is already true at mount is no gate.** The WorldCanvas jump test's
+  `waitFor(clearRect)` passed on its first check (the draw runs while `world` is null), so the
+  synchronous highlight read raced the jump effect's re-render under load. Wait on the asserted thing
+  itself. Same test as Phase B's timer flake: a second, independent race.
+- **Spec self-check caught a contradiction before dispatch:** per-key state (`listFor === active`)
+  reopens a list when you return to its lens, but the spec's test said "closed". For "always starts
+  fresh on change", a `key={active}` inner component is simpler than per-key state. (Per-key state is
+  still right when the *first render after* a change must already be correct: B4's `encountersFor`.)
+- **Drafting the next task's spec while the current implementer runs** saved a round trip. Commit it
+  with a pathspec commit only after the implementer stops committing, to avoid an index-lock race.
+- **Quick U1 check per test file:** `git diff <base> -- <file> | grep -c '^-[^-]'` (removed lines);
+  anything non-zero outside the spec's table needs a name and a reason.
+- **The Playwright MCP writes console/snapshot logs to `.playwright-mcp/` in the repo root.** Remove
+  your own after a live verify; older files there aren't yours.
+
 ---
 
 ## Where everything is
@@ -125,6 +246,8 @@ This file holds the state and the accumulated lessons. The prompt for the next s
 | Plan 6: GBC foundation (done; STATUS banner holds the real file map) | `docs/superpowers/plans/2026-09-23-pokemap-plan-6-gbc-foundation.md` |
 | Plan 6b: GBC app layer (done; STATUS banner holds the real file map) | `docs/superpowers/plans/2026-09-25-pokemap-plan-6b-gbc-app-layer.md` |
 | 6b task reports: specs, implementer reports, reviews, screenshots, baseline fails, the close-out | `docs/superpowers/task-reports/pokemap-plan-6b-gbc-app-layer/` (all reports in `_archive/`) |
+| Plan 6c: hub, encounter border, world UX (done; STATUS banner holds the real file map) | `docs/superpowers/plans/2026-09-28-pokemap-plan-6c-hub-encounters-world.md` |
+| 6c task reports: baseline, executed specs, reviews, coordinator records, close-out | `docs/superpowers/task-reports/pokemap-plan-6c-hub-encounters-world/_archive/` (everything archived at F1; the close-out is `task-F1-closeout.md`) |
 | Plan 7: GBC editing (after 6b; read "Grounding from Plan 6" first) | `docs/superpowers/plans/2026-09-23-pokemap-plan-7-gbc-editing.md` |
 | GBC format truth (binding Decisions) | `docs/superpowers/specs/2026-09-23-pokemap-gbc-format-findings.md` |
 | GBA design spec and feature specs | `docs/superpowers/specs/2026-08-26-pokemap-design.md`, `2026-09-07-*.md` |
@@ -141,8 +264,8 @@ This file holds the state and the accumulated lessons. The prompt for the next s
 ## Running it
 
 ```bash
-npx tsx packages/server/src/serve.ts        # API on 127.0.0.1:5174 for pokemap.config.json's projectPath (GBA)
-npx tsx packages/server/src/serve.ts --gbc  # the same, for gbc.projectPath (Crystal); a positional root also works, and the family is auto-detected
+npx tsx packages/server/src/serve.ts        # the hub on 127.0.0.1:5174: reopens ~/.pokemap/recent.json's newest project, else the UI shows the project picker (POKEMAP_HOME overrides ~/.pokemap)
+npx tsx packages/server/src/serve.ts --gbc  # the hub with pokemap.config.json's gbc.projectPath opened (Crystal); a positional root also works, and the family is auto-detected
 npm run dev --workspace=@pokemap/ui         # Vite on 5173, proxies /api
 # GBC, CLI only:
 npx tsx packages/cli/src/index.ts --project <PerfPlus> render NewBarkTown -o out.png [--border 3] [--time nite]
@@ -338,6 +461,43 @@ caught a real, unrelated, pre-existing bug (`applyJsonOps` ordering) specificall
 decomp, which a narrower "just check the elevation field persists" test would
 never have reached. Real, end-to-end live-verify keeps finding things scoped
 unit tests structurally cannot.
+
+## Lessons from Plan 6c F1 close-out (2026-10-06; new, add to everything above)
+
+- **Run the end-to-end demo against the real subject, protected by byte snapshots.** Before the demo, copy every file the demo can write: the porcelain, `.pokemap/*.json`, and the layout `map.bin`. Restore by reverse paint where the UI allows it, and by copying the snapshot bytes for sidecars. Then `cmp` everything. A sidecar touched by an accept/un-accept cycle comes back re-serialized with `acceptedConflicts: []`, which differs only in bytes.
+- **A re-entered context snaps to a different view.** The second paint landed on a different tile than the first. Locate painted tiles from the on-disk byte diff (`cmp -l` plus layout width), not from screen positions, then reverse-paint at the hover readout's tile coordinates.
+- **Pick visually distinct metatiles for a "tile updated" check.** Grass 0x00 → 0x01 saved correctly but looked the same.
+- **Read button labels from the DOM before scripting them.** For example, GBC's unused-species list button says "Show list", not "List them". A wrong label silently scripts nothing.
+
+## Lessons from Plan 6c Phase E (2026-10-05/06; new, add to everything above)
+
+- **Live verification found what unit tests couldn't, three times:**
+  - Chromium fires a native `contextmenu` (with `button: -1`) on the ContextMenu key's keyup, even when the keydown is `preventDefault`ed. Measure browser event sequences on a bare test page before designing around them.
+  - The server's `pngCache` was never invalidated on commit. The unit tests faked `Image`, so "saving updates the world tile" would have failed live. The quality reviewer caught it by reading the server, not the UI.
+  - A flex-row child lacked `min-width: 0` (`.world-canvas` beside EventInspector): a 71 px page overflow seen only in a live screenshot. That is the same RESUME lesson again.
+- **Escape listeners that must yield to React modals go in the capture phase.** React 18 flushes a discrete update in the microtask after the root listener, so a window *bubble* listener runs after the modal is already gone. jsdom can't show this; the test has to mimic the flush with a document listener that removes the modal.
+- **Never remount a heavy canvas to add chrome around it.** Render the wrapper in every state and gate its pieces with `{active && …}`, so the canvas slot keeps its position and identity. The test captures the DOM node before and after and counts the `/api/world` calls.
+- **Snapping a view while chrome is mounting uses stale coordinates.** Record pointers in client coordinates and convert at snap time with `getBoundingClientRect()`, after the layout that moves the box has committed.
+- **Subagents hit rate limits mid fix-round.** The recipe held: `git status`/`log`/`diff`, the external-state hashes, stray node processes, then SendMessage the same agent with "verify first, then redo from the start".
+- **The live criterion-8 write protocol worked.** Snapshot the porcelain and the file bytes, Dropper the original block, paint and save, check exactly one changed byte, reverse-paint and save, and require byte-identical. Keep a byte-copy restore only as the fallback.
+
+## Lessons from Plan 6c Phase D close, D3-D4 (2026-10-04; new, add to everything above)
+
+- **ChatGPT/Codex coordinated D1-D4, and a Claude Code session closed it.** The Codex subagent handles (`/root/d4_*`) don't carry across tools. Their final reviews were already committed, so the closing session worked entirely from the reports and the commits.
+- **Every phase gate must run the whole suite.** D3 gave `GbcApp` a Dungeon button and silently broke `Root.test.tsx`, which asserted "no Dungeon text ⇒ App not mounted". No D3 dispatch ran that file; only the full gate caught it. When a task adds UI to a shell, grep the tests for absence assertions (`queryBy…).toBeNull()`) on that text.
+- **Check that every required coordinator mutation run left a committed record.** D3's was missing: only uncommitted scratch harnesses existed. The rerun found a survivor (D3-M3 at the `visible`-memo site). The scoped fixture's outsider lay beyond the fit, so viewport culling hid it with or without the filter. When a mutant removes a filter, make sure the fixture puts the filtered item *inside* the viewport.
+- **Near-warp layout must see manual placements** (`phase-D-review.md` R1, fixed in `6aa47ae`). Before the fix, `placeNearWarps` ran on the automatic positions and `applySidecar` ran last, so obstacle checks never saw where manual maps are drawn. Callers now pass `manualPlacements`.
+- **Scratch live setup on Windows:** `vite.mjs` must import through `pathToFileURL(require.resolve(...)).href`, and its `createRequire` base must be `packages/ui/package.json`, because `@vitejs/plugin-react` is installed only there. Start the hub with `node --import file:///…/preload.mjs --import tsx packages/server/src/serve.ts <root>`.
+- **Canvas badge verification worked:** scan `getImageData` for the exact `--danger` and `--text-muted` RGB, cluster the hits, read each cluster's tooltip by hovering, then right-click its centre. Run each check inside one `browser_run_code_unsafe` call.
+
+## Lessons from Plan 6c Phase D, D1-D2 handoff (2026-10-03)
+
+- **D1-D4 are complete** (see the section above; this bullet originally said D3/D4 were pending).
+- **Near-warp layout is core-owned and family adapters normalize events.** `nearWarp.ts` performs directed singleton → hidden-gate → shown-anchor placement; the final resolved destination endpoint is in the anchor frame. GBA coordinates are already tile units; GBC event steps divide by two into block units, preserving halves. Unresolved arrivals can traverse a hidden map but cannot end an anchor path. `placeNearWarps` preserves its input Map iteration order; deterministic comparisons canonicalize entries rather than imposing a new paint order.
+- **GBA's shelf remains only the enabled-layout fallback.** `resolveWorldPlacements` first retains auto-layout fallback positions, replaces reachable shown singletons near warps, and applies manual sidecar placements last. `dungeonAutoLayout:false` continues to remove singleton placements. D2 did not alter existing GBA server tests; its coordinate coverage uses an explicit in-memory enabled sidecar.
+- **GBC caches normalized warp links at the handler, not the payload builder.** `buildGbcWorldPayload` accepts optional normalized warps; a focused test proves supplied links avoid event loading and that repeated pure resolutions leave the same base placements intact. The route supplies its immutable cache. Do not claim an external test observed the private handler cache unless it gains an intentional seam.
+- **Final D2 checks:** 94 focused tests and typecheck passed in the implementer fix; coordinator reran 12 literal-anchor, in-memory-restored mutation witnesses on final commit `804d6b9`, all red. Reports are archived under `task-reports/pokemap-plan-6c-hub-encounters-world/_archive/`; retain `task-D2-spec.md` as the active executed spec.
+- **External-state caveat persists.** Baseline suite changed GBA subject `.pokemap/world.json` from recorded SHA-1 `4983f...` to `b285bbf...`; exact pre-baseline bytes remain unavailable. Do not claim original restoration. At D2 close, GBA subject HEAD/status remains the preflight state and current world/dungeons SHA-1 values are `b285bbf74a86b9d2fbfbeb7df6aed9624300ac3f` / `f73f9b76922330a60da53d4913790df956a86846`; PerfPlus HEAD `81ededbe311267c774b5540d8c8b381a314dc6d6` is clean and `.pokemap` absent. Use the scratch GBA mirror noted in `task-D-coordinator.md` for write-adjacent live verification.
 
 ## Things that will bite you (carried forward, still all true)
 

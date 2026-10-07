@@ -1,7 +1,9 @@
 import type { ProjectInfo } from "@pokemap/core/src/family.js";
 import type { GbcMapPayload, GbcWorldPayload, GbcEncountersPayload } from "@pokemap/core/src/gbc/wire.js";
 import type { GbcCoverage } from "@pokemap/core/src/gbc/analyse/atlas.js";
+import type { GbcWarpsPayload } from "./warps.js";
 import type { MapGroupsData } from "../components/MapTree.js";
+import { isWireConflict } from "../world/conflictAcceptance.js";
 
 /**
  * Pure runtime type guards for the GBC UI's fetch responses (RESUME:
@@ -18,6 +20,20 @@ import type { MapGroupsData } from "../components/MapTree.js";
  *  exclusion for free rather than each re-deriving it. */
 export function isRecord(x: unknown): x is Record<string, unknown> {
   return typeof x === "object" && x !== null && !Array.isArray(x);
+}
+
+function isWarpEvent(x: unknown): boolean {
+  return isRecord(x) && Number.isFinite(x.x) && Number.isFinite(x.y)
+    && typeof x.mapConst === "string" && Number.isInteger(x.destWarp)
+    && Number.isInteger(x.lineIndex);
+}
+
+export function isGbcWarpsPayload(x: unknown): x is GbcWarpsPayload {
+  return isRecord(x) && x.family === "gbc" && typeof x.mapName === "string"
+    && Array.isArray(x.warps) && x.warps.every((w: unknown) =>
+      isWarpEvent(w) && isRecord(w)
+      && (w.destMapName === undefined || typeof w.destMapName === "string")
+      && (w.destEvent === undefined || isWarpEvent(w.destEvent)));
 }
 
 /** `GET /api/project`'s shape, shared by both engine families. `family` must
@@ -134,10 +150,11 @@ export function isGbcWorldPayload(x: unknown): x is GbcWorldPayload {
     if (typeof p.x !== "number" || typeof p.y !== "number") return false;
     if (typeof p.width !== "number" || typeof p.height !== "number") return false;
     if (typeof p.component !== "number") return false;
+    if (typeof p.mapType !== "string" || typeof p.manual !== "boolean") return false;
   }
 
   if (!Array.isArray(x.components)) return false;
-  if (!Array.isArray(x.conflicts)) return false;
+  if (!Array.isArray(x.conflicts) || !x.conflicts.every(isWireConflict)) return false;
 
   return true;
 }
@@ -152,7 +169,7 @@ export function isGbcWorldPayload(x: unknown): x is GbcWorldPayload {
  * GBA-shaped payload reaching a GBC canvas by mistake (mutation check #8).
  * `sources` is checked only as an array -- "trust the rest, guard what you
  * index by" (this file's own established posture, `isGbcWorldPayload`'s own
- * doc comment): every reader of `sources` (`GbcEncounterGutter`,
+ * doc comment): every reader of `sources` (`summariseGbc`,
  * `methodTint`) only ever reads `.method`/`.chances` off entries it already
  * knows came from the real `gbcEncounterSources` builder, never off
  * arbitrary user input.
@@ -174,7 +191,7 @@ export function isGbcEncountersPayload(x: unknown): x is GbcEncountersPayload {
  * ambiguity here to disambiguate with a tag the way the other two routes
  * need to. Checks only the 3 fields `GbcWorldCanvas`'s own lenses actually
  * read (`levelByMap` for the level-curve tint, `mapsWithoutEncounters`/
- * `unusedSpecies` for `LensPanel`'s own summary counts) -- the same "guard
+ * `unusedSpecies` for `LensLegend`'s own summary counts and lists) -- the same "guard
  * what you index by" posture every other guard in this file already takes;
  * `mapsWithEncounters`/`sourcesByMethod`/`fishGroupWithoutWater`/`defects`
  * are never read by anything this task adds.

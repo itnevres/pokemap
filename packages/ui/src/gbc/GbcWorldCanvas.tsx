@@ -1,19 +1,27 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Placement, Component, Conflict, Bounds } from "@pokemap/core/src/gbc/world/connections.js";
-import type { GbcWorldPayload } from "@pokemap/core/src/gbc/wire.js";
+import type { GbcWorldPayload, GbcWorldPlacement } from "@pokemap/core/src/gbc/wire.js";
 import type { GbcEncounterSource, GbcSpeciesHit } from "@pokemap/core/src/gbc/analyse/atlas.js";
 import { computeFit, drawDiamond, levelColorMap } from "../components/WorldCanvas.js";
-import { LensPanel, type LensId } from "../components/LensPanel.js";
+import { LensPanel, LensLegend, type LensId, type LensPanelSummary } from "../components/LensPanel.js";
 import { SpeciesSpotlight } from "../components/SpeciesSpotlight.js";
-import { GbcEncounterGutter, type GbcEncounterGutterMapEntry, type GbcEncounterGutterRect } from "./GbcEncounterGutter.js";
+import { EncounterBorder, type EncounterBorderEntry } from "../components/EncounterBorder.js";
+import { BORDER_BAND, pickBorderSide, type BorderSide, type Rect } from "../encounters/borderSide.js";
+import { summariseGbc, type SpeciesSummary } from "../encounters/summary.js";
 import { useGbcWorld } from "./hooks/useGbcWorld.js";
 import { useGbcCoverage } from "./hooks/useGbcCoverage.js";
-import { isGbcEncountersPayload } from "./guards.js";
+import { isGbcEncountersPayload, isRecord } from "./guards.js";
+import { isGbcWarpsPayload } from "./guards.js";
+import type { GbcWarpsPayload } from "./warps.js";
+import { GbcWarpDestinationModal } from "./GbcWarpDestinationModal.js";
 import { fetchGuarded } from "../hooks/useGuardedFetch.js";
+import { conflictBadgeOffsets } from "../world/conflictAcceptance.js";
+import { useConflictAcceptance } from "../world/useConflictAcceptance.js";
+import { WorldContextMenu, useWorldContextMenu } from "../components/WorldContextMenu.js";
 import type { GbcTimeOfDay } from "./time.js";
 
 /**
- * The read-only GBC world view (Plan 6b Task 5). Mirrors `WorldCanvas.tsx`'s
+ * The GBC world view (Plan 6b Task 5, D1 manual placement). Mirrors `WorldCanvas.tsx`'s
  * own pan/zoom/viewport/culling/LOD mechanics, for the same reason
  * `GbcMapCanvas.tsx`'s own header comment does it for `MapCanvas.tsx` --
  * these are this project's postmortems, not style preferences. Cited by a
@@ -85,10 +93,9 @@ import type { GbcTimeOfDay } from "./time.js";
  *   fit from the wrong map, or a not-yet-resolved fetch) -- instrument
  *   `drawImage` before explaining one away.
  *
- * GBC-specific, and out of scope entirely (plan Q2, "GBA-only features"):
- * no drag-to-place, no multi-select move, no dungeon auto-layout toggle, no
- * warp markers/connection lines, no sidecar POSTs. Selection is a plain
- * single click (`onSelectMap`); double-click opens the map in Map view
+ * GBC-specific: no multi-select move or dungeon auto-layout toggle.
+ * Shift-drag and tree drops persist individual
+ * placements to the sidecar. Selection is a plain single click (`onSelectMap`); double-click opens the map in Map view
  * (`onOpenMap`) rather than a warp destination modal.
  */
 
@@ -126,6 +133,14 @@ const LOD_SCALE = 0.25;
 export const GBC_LOD_ZOOM_THRESHOLD = BLOCK_PX * LOD_SCALE; // 8
 
 const BADGE_SIZE = 10;
+const WARP_HIT_RADIUS = 8;
+const CONNECTION_COLORS = ["--connection-1", "--connection-2", "--connection-3", "--connection-4", "--connection-5", "--connection-6", "--connection-7", "--connection-8"];
+const CONNECTION_FALLBACK = ["#e879f9", "#34d399", "#fb923c", "#60a5fa", "#facc15", "#f472b6", "#2dd4bf", "#a78bfa"];
+
+/** GBC warp events use 16px steps; world placements use 32px blocks. */
+export function projectGbcWarpPoint(placement: { x: number; y: number }, event: { x: number; y: number }, zoom: number, pan: { x: number; y: number }) {
+  return { x: (placement.x + event.x / 2) * zoom + pan.x, y: (placement.y + event.y / 2) * zoom + pan.y };
+}
 
 /** "Fills about 60% of the viewport" (Task 5 spec's own jump wording) --
  *  distinct from `WorldCanvas.tsx`'s own map-list jump, which fits the
@@ -280,11 +295,11 @@ export function methodTint(sources: GbcEncounterSource[] | undefined): string | 
   return null;
 }
 
-/** `LensPanel`'s own `methodKey` for the GBC method lens (spec's own list,
+/** `LensLegend`'s own `methodKey` for the GBC method lens (spec's own list,
  *  and the coordinator's swatch-slug amendment: only "water", "fishing",
  *  "headbutt" and "rock-smash" -- grass is never in this key, since it's
  *  never tinted; see `methodTint`'s own doc comment). Module scope, not
- *  recreated per render -- `LensPanel`'s own `methodKey` prop is read by
+ *  recreated per render -- `LensLegend`'s own `methodKey` prop is read by
  *  reference identity nowhere that matters (a plain render-time read), but
  *  there is no reason to allocate a fresh array every render either. */
 const GBC_METHOD_LENS_KEY: Array<{ slug: string; label: string }> = [
@@ -294,12 +309,12 @@ const GBC_METHOD_LENS_KEY: Array<{ slug: string; label: string }> = [
   { slug: "rock-smash", label: "Rock Smash" },
 ];
 
-/** `LensPanel`'s own `legendCopy` override for the GBC lens panel (spec's
+/** `LensLegend`'s own `legendCopy` override for the GBC lens legend (spec's
  *  own exact copy for level-curve and method; empty-maps/unused-species are
- *  left at `LensPanel`'s own GBA defaults, which already read generically
+ *  left at `LensLegend`'s own GBA defaults, which already read generically
  *  off `summary` and need no GBC-specific wording). Module scope, for the
  *  same reason as `GBC_METHOD_LENS_KEY` above. */
-const GBC_LEGEND_COPY: Partial<Record<LensId, (s: { emptyMaps: number; unusedSpecies: number }) => string>> = {
+const GBC_LEGEND_COPY: Partial<Record<LensId, (s: LensPanelSummary) => string>> = {
   "level-curve": () =>
     "Colour is the average encounter level: an unweighted mean of each source's average. Blue is low, red is high.",
   method: () => "Which maps reward surfing, fishing, headbutting trees or rock smash.",
@@ -358,13 +373,16 @@ interface ImageCacheEntry {
  *  TIME-INDEPENDENT (spec's own "one fetch per map, ever" -- see the fetch
  *  effect's own comment below): `sources` holds every method/time/rod/list
  *  variant a map has, and time filtering happens client-side, at render,
- *  inside `GbcEncounterGutter`/`methodTint` -- never by refetching on a time
+ *  inside `EncounterBorder` (dimming)/`methodTint` -- never by refetching on a time
  *  switch. `sources` stays unset on a failed fetch (mirrors the image
- *  cache's own best-effort posture: one map's gutter/tint entry just stays
+ *  cache's own best-effort posture: one map's border/tint entry just stays
  *  empty, not a banner over an otherwise-working canvas). */
 interface EncounterCacheEntry {
   loaded: boolean;
   sources?: GbcEncounterSource[];
+  /** `summariseGbc(sources)`, built once on arrival (time-independent: the
+   *  component dims by time, it never filters). */
+  summaries?: SpeciesSummary[];
 }
 
 interface HoverInfo {
@@ -380,8 +398,14 @@ interface TooltipInfo {
   text: string;
 }
 
+type DragState =
+  | { kind: "pan"; x: number; y: number; panX: number; panY: number }
+  | { kind: "map"; map: string; grabX: number; grabY: number; startX: number; startY: number; x: number; y: number }
+  | null;
+
 export interface GbcWorldCanvasProps {
   time: GbcTimeOfDay;
+  mapFilter?: Set<string> | null;
   /** A map name to jump to, or null/undefined for none -- mirrors
    *  `WorldCanvas.tsx`'s own `jumpToMap` (`GbcApp`'s tree clicks). */
   jumpToMap?: string | null;
@@ -394,15 +418,23 @@ export interface GbcWorldCanvasProps {
   /** Fired when a double-click hits a placement -- `GbcApp` switches to Map
    *  view with that map selected. */
   onOpenMap?: (name: string) => void;
+  /** A lens list entry (Empty maps) was clicked; the app selects the map and
+   *  jumps there (the tree-click path). */
+  onJumpToMap?: (name: string) => void;
+  onPlacementSaved?: (name: string) => void;
+}
+
+function isPlacementSaved(x: unknown): x is { ok: true } {
+  return isRecord(x) && x.ok === true;
 }
 
 /**
  * The stitched GBC world: all 391 maps culled to the viewport, panned and
- * zoomed, read-only. See this file's own header comment for the mechanics
+ * zoomed, with manual placements persisted through the world sidecar. See this file's own header comment for the mechanics
  * reproduced from `WorldCanvas.tsx`, and `packages/ui/DESIGN.md` for the
  * `world-canvas__*` classes reused verbatim below.
  */
-export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpenMap }: GbcWorldCanvasProps) {
+export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelectMap, onOpenMap, onJumpToMap, onPlacementSaved }: GbcWorldCanvasProps) {
   const { data: world, error } = useGbcWorld();
   const { data: coverageData, error: coverageError } = useGbcCoverage();
 
@@ -410,8 +442,9 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageCacheRef = useRef<Map<string, ImageCacheEntry>>(new Map());
   const encounterCacheRef = useRef<Map<string, EncounterCacheEntry>>(new Map());
-  const conflictBadgesRef = useRef<Array<{ x: number; y: number; text: string }>>([]);
-  const dragRef = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
+  const warpCacheRef = useRef<Map<string, GbcWarpsPayload | null>>(new Map());
+  const conflictBadgesRef = useRef<Array<{ x: number; y: number; text: string; key: string; map: string; accepted: boolean }>>([]);
+  const dragRef = useRef<DragState>(null);
   // Same "did a real drag happen" guard `WorldCanvas.tsx`'s own
   // `dragMovedRef` is for -- a plain click/dblclick fires even after a
   // same-element drag (browsers do not suppress it), so this is what
@@ -420,7 +453,15 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
 
   const [viewport, setViewport] = useState({ w: 0, h: 0 });
   const [view, setView] = useState<GbcWorldView>({ zoom: 1, pan: { x: 0, y: 0 }, fitted: false });
+  const [placementOverrides, setPlacementOverrides] = useState<Record<string, { x: number; y: number }>>({});
   const { zoom, pan, fitted } = view;
+  const placements = useMemo<Record<string, GbcWorldPlacement>>(
+    () => !world ? {} : Object.fromEntries(Object.entries(world.placements).map(([name, placement]) => {
+      const override = placementOverrides[name];
+      return [name, override ? { ...placement, ...override, manual: true } : placement];
+    })),
+    [world, placementOverrides],
+  );
   const [compositeVersion, setCompositeVersion] = useState(0);
   // Bumped whenever encounterCacheRef's own contents change (a per-map
   // fetch landing) -- the same "a ref never usefully appears in a
@@ -433,9 +474,27 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
   // canvas) -- surfaced as a visible note rather than looking indistinguishable
   // from "this map genuinely has no encounters" (a real, normal state).
   const [encounterFailedCount, setEncounterFailedCount] = useState(0);
+  const [warpsOn, setWarpsOn] = useState(false);
+  const [linesOn, setLinesOn] = useState(false);
+  const [warpVersion, setWarpVersion] = useState(0);
+  const [warpError, setWarpError] = useState<string | null>(null);
+  const [warpPopup, setWarpPopup] = useState<string | null>(null);
+  const conflictAcceptance = useConflictAcceptance(world?.conflicts);
+  // The context menu (right-click or the ContextMenu key); "Edit here" stays disabled until Plan 7.
+  const contextMenu = useWorldContextMenu({
+    canvasRef,
+    onOpenMap,
+    editItem: () => ({ label: "Edit here", disabled: true, hint: "GBC editing arrives with Plan 7" }),
+    toggle: conflictAcceptance.toggle,
+  });
   const [selectedMap, setSelectedMap] = useState<string | null>(null);
   const [hover, setHover] = useState<HoverInfo | null>(null);
   const [tooltip, setTooltip] = useState<TooltipInfo | null>(null);
+  useEffect(() => {
+    setHover(null);
+    setTooltip(null);
+    if (mapFilter) setSelectedMap((current) => current && !mapFilter.has(current) ? null : current);
+  }, [mapFilter]);
   // Coverage lenses + species spotlight (Plan 6b Task 6) -- mirrors
   // WorldCanvas.tsx's own `lens`/`spotlightHits` state exactly, including
   // the three-state `spotlightHits` contract (`null` = no active search,
@@ -480,15 +539,27 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
     if (!world || initialFitDoneRef.current) return;
     if (viewport.w <= 0 || viewport.h <= 0) return;
     initialFitDoneRef.current = true;
-    const bounds = initialFitBounds(world) ?? fitAllBounds(world.placements);
+    const scoped = mapFilter ? Object.fromEntries(Object.entries(placements).filter(([name]) => mapFilter.has(name))) : placements;
+    const bounds = mapFilter ? fitAllBounds(scoped) : initialFitBounds(world) ?? fitAllBounds(placements);
     if (bounds) setView({ ...computeFit(bounds, viewport, GBC_ZOOM_BOUNDS), fitted: true });
-  }, [world, viewport]);
+  }, [world, viewport, placements, mapFilter]);
+
+  const fittedFilterRef = useRef<Set<string> | null>(null);
+  useEffect(() => {
+    if (!mapFilter) { fittedFilterRef.current = null; return; }
+    if (!world || viewport.w <= 0 || viewport.h <= 0 || fittedFilterRef.current === mapFilter) return;
+    fittedFilterRef.current = mapFilter;
+    const scoped = Object.fromEntries(Object.entries(placements).filter(([name]) => mapFilter.has(name)));
+    const bounds = fitAllBounds(scoped);
+    if (bounds) setView({ ...computeFit(bounds, viewport, GBC_ZOOM_BOUNDS), fitted: true });
+  }, [mapFilter, world, viewport, placements]);
 
   const fitAll = useCallback(() => {
     if (!world) return;
-    const bounds = fitAllBounds(world.placements);
+    const scoped = mapFilter ? Object.fromEntries(Object.entries(placements).filter(([name]) => mapFilter.has(name))) : placements;
+    const bounds = fitAllBounds(scoped);
     if (bounds) setView({ ...computeFit(bounds, viewport, GBC_ZOOM_BOUNDS), fitted: true });
-  }, [world, viewport]);
+  }, [world, viewport, placements, mapFilter]);
 
   // Culling: only placements whose block-rect intersects the current
   // viewport are "visible" -- WorldCanvas.tsx's own `visible` memo, minus
@@ -496,16 +567,68 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
   // has no GBC equivalent. Gated on `fitted` (fix round, F5): see the
   // initial-fit effect's own comment above.
   const visible = useMemo(() => {
-    if (!world || !fitted) return [] as Placement[];
+    if (!world || !fitted) return [] as GbcWorldPlacement[];
     const x0 = -pan.x / zoom, y0 = -pan.y / zoom;
     const x1 = (viewport.w - pan.x) / zoom, y1 = (viewport.h - pan.y) / zoom;
-    const out: Placement[] = [];
-    for (const p of Object.values(world.placements)) {
+    const out: GbcWorldPlacement[] = [];
+    for (const p of Object.values(placements)) {
+      if (mapFilter && !mapFilter.has(p.map)) continue;
       if (p.width <= 0 || p.height <= 0) continue;
+      if (!mapFilter && !p.manual && (p.mapType === "INDOOR" || p.mapType === "GATE")) continue;
       if (intersects(p.x, p.y, p.width, p.height, x0, y0, x1, y1)) out.push(p);
     }
     return out;
-  }, [world, pan, zoom, viewport, fitted]);
+  }, [world, placements, pan, zoom, viewport, fitted, mapFilter]);
+
+  useEffect(() => {
+    if (!warpsOn && !(mapFilter && linesOn)) return;
+    const names = new Set<string>();
+    if (warpsOn && zoom >= GBC_LOD_ZOOM_THRESHOLD) visible.forEach((p) => names.add(p.map));
+    if (mapFilter && linesOn) mapFilter.forEach((name) => { if (placements[name]) names.add(name); });
+    for (const name of names) {
+      if (warpCacheRef.current.has(name)) continue;
+      warpCacheRef.current.set(name, null);
+      const url = `/api/warps/${encodeURIComponent(name)}`;
+      fetchGuarded(url, isGbcWarpsPayload).then((payload) => {
+        if (payload.mapName !== name) throw new Error(`GET ${url} returned the wrong map`);
+        warpCacheRef.current.set(name, payload);
+        setWarpVersion((v) => v + 1);
+      }).catch((reason: unknown) => {
+        warpCacheRef.current.delete(name);
+        setWarpError(reason instanceof Error ? reason.message : String(reason));
+      });
+    }
+  }, [warpsOn, linesOn, mapFilter, visible, zoom, placements]);
+
+  const warpMarkerEntries = useMemo(() => {
+    if (!warpsOn || zoom < GBC_LOD_ZOOM_THRESHOLD) return [] as Array<{ key: string; sx: number; sy: number; destMapName?: string }>;
+    return visible.flatMap((p) => (warpCacheRef.current.get(p.map)?.warps ?? []).map((w, index) => ({
+      key: `${p.map}:${index}`, sx: projectGbcWarpPoint(p, w, zoom, pan).x, sy: projectGbcWarpPoint(p, w, zoom, pan).y, destMapName: w.destEvent ? w.destMapName : undefined,
+    })));
+  }, [warpsOn, visible, zoom, pan, warpVersion]);
+
+  const connectionLines = useMemo(() => {
+    if (!mapFilter || !linesOn) return [] as Array<{ key: string; x1: number; y1: number; x2: number; y2: number; color: string }>;
+    const style = typeof getComputedStyle === "function" ? getComputedStyle(document.documentElement) : null;
+    const palette = CONNECTION_COLORS.map((token, i) => style?.getPropertyValue(token).trim() || CONNECTION_FALLBACK[i]!);
+    const lines: Array<{ key: string; x1: number; y1: number; x2: number; y2: number; color: string }> = [];
+    for (const source of [...mapFilter].sort()) {
+      const p = placements[source];
+      if (!p) continue;
+      warpCacheRef.current.get(source)?.warps.forEach((w, index) => {
+        if (!w.destMapName || !mapFilter.has(w.destMapName) || !w.destEvent) return;
+        const dest = placements[w.destMapName];
+        if (!dest) return;
+        lines.push({
+          key: `${source}:${index}`,
+          x1: projectGbcWarpPoint(p, w, zoom, pan).x, y1: projectGbcWarpPoint(p, w, zoom, pan).y,
+          x2: projectGbcWarpPoint(dest, w.destEvent, zoom, pan).x, y2: projectGbcWarpPoint(dest, w.destEvent, zoom, pan).y,
+          color: palette[lines.length % palette.length]!,
+        });
+      });
+    }
+    return lines;
+  }, [mapFilter, linesOn, placements, zoom, pan, warpVersion]);
 
   // GBC-specific: a time switch drops the WHOLE image cache (every
   // reference), so a stale day/nite image is never drawn under the new
@@ -553,8 +676,8 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
   // NOT cleared by the image cache's own time-change effect above -- unlike
   // a rendered PNG (one per time of day), `gbcEncounterSources` returns
   // every method/time/rod/list variant a map has in one response; a time
-  // switch only changes which of those rows `GbcEncounterGutter`/
-  // `methodTint` show, at render, not what was fetched. Mirrors
+  // switch only changes which species `EncounterBorder` dims / which rows
+  // `methodTint` reads, at render, not what was fetched. Mirrors
   // WorldCanvas.tsx's own encounter-fetch effect's cache-by-ref shape
   // (placeholder written synchronously, `loaded` set on arrival, a version
   // bump so its own reader memos re-run).
@@ -574,12 +697,13 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
         .then((d) => {
           entry.loaded = true;
           entry.sources = d.sources;
+          entry.summaries = summariseGbc(d.sources);
           setEncounterVersion((v) => v + 1);
         })
         .catch(() => {
           // Best-effort, mirroring the image cache's own posture (and
           // WorldCanvas.tsx's own identical encounter-fetch catch): a failed
-          // fetch just leaves this one map's gutter/tint entry empty, not a
+          // fetch just leaves this one map's border/tint entry empty, not a
           // banner over an otherwise-working canvas -- but, unlike before
           // (F4), it's now COUNTED, so "empty" is disclosed rather than
           // silently indistinguishable from "no encounters here" (a normal
@@ -594,31 +718,54 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
 
   // One screen-rect-per-visible-placement memo (fix round, spec review F10:
   // the binding Task 5 note's own "build ONE memo of screen-space rects...
-  // feed the gutter and lens overlays from it", which gutterEntries/
+  // feed the border and lens overlays from it", which borderEntries/
   // lensOverlayEntries/spotlightOverlayEntries below each recomputing the
   // same dx/dy/dw/dh formula independently didn't actually satisfy) --
   // consumed by all three.
   const rectByMap = useMemo(() => {
-    const m = new Map<string, GbcEncounterGutterRect>();
+    const m = new Map<string, Rect>();
     for (const p of visible) m.set(p.map, { x: p.x * zoom + pan.x, y: p.y * zoom + pan.y, width: p.width * zoom, height: p.height * zoom });
     return m;
   }, [visible, pan, zoom]);
 
-  // GbcEncounterGutter's own prop shape -- a memo separate from the
+  // Which side of each map the encounter border sits on (B2's pickBorderSide, in
+  // world blocks). Over EVERY placement, not just the viewport-culled `visible`: a
+  // map just off-screen still blocks a side, and every GBC placement is drawn.
+  // Depends on `world` only, never pan/zoom (it would re-run every drag
+  // frame). Every rect is passed as the neighbour list, including the map's
+  // own: that blocks nothing, since the bands lie strictly outside it
+  // (pickBorderSide's own doc comment).
+  // ponytail: O(n^2) over ~391 maps, once per world load; a spatial index if
+  // n grows.
+  const sideByMap = useMemo(() => {
+    const m = new Map<string, BorderSide>();
+    if (!world) return m;
+    const placed = Object.values(placements).filter((p) => (!mapFilter || mapFilter.has(p.map)) && p.width > 0 && p.height > 0);
+    const rects: Rect[] = placed.map((p) => ({ x: p.x, y: p.y, width: p.width, height: p.height }));
+    placed.forEach((p, i) => m.set(p.map, pickBorderSide(rects[i]!, rects, BORDER_BAND.gbc)));
+    return m;
+  }, [world, placements, mapFilter]);
+
+  // EncounterBorder's own prop shape -- a memo separate from the
   // imperative draw effect (Task 5 quality review, binding note), mirroring
-  // WorldCanvas.tsx's own encounterEntries/lensOverlayEntries/
+  // WorldCanvas.tsx's own borderEntries/lensOverlayEntries/
   // spotlightOverlayEntries split. Hoists the `encounterCacheRef.current.get`
   // lookup once per placement (fix round, quality review Q1 -- this used to
   // call `.get(p.map)` twice per entry).
-  const gutterEntries = useMemo<GbcEncounterGutterMapEntry[]>(() => {
+  const borderEntries = useMemo<EncounterBorderEntry[]>(() => {
     return visible.map((p) => {
       const cache = encounterCacheRef.current.get(p.map);
-      return { map: p.map, rect: rectByMap.get(p.map)!, sources: cache?.loaded ? cache.sources : undefined };
+      return {
+        map: p.map,
+        rect: rectByMap.get(p.map)!,
+        side: sideByMap.get(p.map) ?? "left",
+        summaries: cache?.loaded ? (cache.summaries ?? []) : undefined,
+      };
     });
     // encounterVersion, not encounterCacheRef itself (a ref never usefully
     // appears in a dependency array) -- mirrors WorldCanvas.tsx's own
-    // identical comment on its own encounterEntries memo.
-  }, [visible, rectByMap, encounterVersion]);
+    // identical comment on its own borderEntries memo.
+  }, [visible, rectByMap, sideByMap, encounterVersion]);
 
   // mapName -> its already-fetched sources (or undefined if not yet loaded)
   // -- the one place both the method lens and (were it needed) any future
@@ -646,45 +793,13 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
   // mapsWithoutEncounters is already keyed by name.
   const emptyMapNames = useMemo(() => new Set(coverageData?.mapsWithoutEncounters ?? []), [coverageData]);
 
-  // `LensPanel`'s empty-maps legend "next action" (fix round, spec review
-  // F11 -- coordinator decision: wire it, don't just hide it). Mirrors
-  // `WorldCanvas.tsx`'s own `focusEmptyMaps` (grep that name) exactly: fit
-  // the empty maps that sit in a MULTI-map component first (the same
-  // "connected landmasses only" filter `initialFitBounds`/`fitAll` already
-  // use, for the identical reason -- an unfiltered bbox of every empty
-  // placement would be dominated by any far-flung singleton interiors),
-  // falling back to every empty map when none of them resolve to a real
-  // multi-map component, and a no-op when there are no empty maps at all
-  // (degenerate/zero-size bounds). One `setView` call, `fitted: true` in
-  // the same object (never a nested updater -- the same StrictMode
-  // reasoning as `fitAll`/the initial fit above).
-  const focusEmptyMaps = useCallback(() => {
-    if (!world || emptyMapNames.size === 0) return;
-    const inLandmass: Record<string, Placement> = {};
-    for (const [name, p] of Object.entries(world.placements)) {
-      if (!emptyMapNames.has(name)) continue;
-      const comp = p.component >= 0 && p.component < world.components.length ? world.components[p.component]! : null;
-      if (comp && comp.maps.length > 1) inLandmass[name] = p;
-    }
-    let bounds = fitAllBounds(inLandmass);
-    if (!bounds) {
-      const allEmpty: Record<string, Placement> = {};
-      for (const [name, p] of Object.entries(world.placements)) {
-        if (emptyMapNames.has(name)) allEmpty[name] = p;
-      }
-      bounds = fitAllBounds(allEmpty);
-    }
-    if (!bounds) return;
-    setView({ ...computeFit(bounds, viewport, GBC_ZOOM_BOUNDS), fitted: true });
-  }, [world, emptyMapNames, viewport]);
-
   // Per-map lens tint overlay -- mirrors WorldCanvas.tsx's own
   // lensOverlayEntries memo exactly (level-curve/empty-maps/method; GBC has
   // no "unused-species" per-map visual either, for the identical reason
   // that lens documents on itself: it's a fact about species, not a place).
   const lensOverlayEntries = useMemo(() => {
-    if (!lens) return [] as Array<{ map: string; rect: GbcEncounterGutterRect; color: string }>;
-    const out: Array<{ map: string; rect: GbcEncounterGutterRect; color: string }> = [];
+    if (!lens) return [] as Array<{ map: string; rect: Rect; color: string }>;
+    const out: Array<{ map: string; rect: Rect; color: string }> = [];
     for (const p of visible) {
       let color: string | null = null;
       if (lens === "level-curve") color = levelColorByMap.get(p.map) ?? null;
@@ -713,7 +828,7 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
   }, [spotlightHits]);
 
   const spotlightOverlayEntries = useMemo(() => {
-    if (!spotlightHits) return [] as Array<{ map: string; rect: GbcEncounterGutterRect; hit: GbcSpeciesHit | null }>;
+    if (!spotlightHits) return [] as Array<{ map: string; rect: Rect; hit: GbcSpeciesHit | null }>;
     return visible.map((p) => ({ map: p.map, rect: rectByMap.get(p.map)!, hit: spotlightByMap.get(p.map) ?? null }));
   }, [spotlightHits, visible, rectByMap, spotlightByMap]);
 
@@ -740,22 +855,33 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
     if (!world) return;
     const style = typeof getComputedStyle === "function" ? getComputedStyle(document.documentElement) : null;
     const conflictColor = style?.getPropertyValue("--danger").trim() || "#ef4444";
+    const acceptedColor = style?.getPropertyValue("--text-muted").trim() || "#6b7280";
 
     // Conflicts: a diamond at Conflict.map's top-right corner, plus a
     // hit-rect for the hover tooltip below -- WorldCanvas.tsx's own
     // "Conflicts: a diamond at the offending map's top-right corner"
     // comment/loop, never hidden behind a toggle.
-    const badges: Array<{ x: number; y: number; text: string }> = [];
+    const badges: Array<{ x: number; y: number; text: string; key: string; map: string; accepted: boolean }> = [];
+    const badgeOffsets = conflictBadgeOffsets(world.conflicts, BADGE_SIZE * 2 + 2);
     for (const conflict of world.conflicts) {
-      const p = world.placements[conflict.map];
+      if (mapFilter && !mapFilter.has(conflict.map)) continue;
+      const p = placements[conflict.map];
       if (!p || p.width <= 0 || p.height <= 0) continue;
-      const cx = p.x * zoom + pan.x + p.width * zoom - BADGE_SIZE;
+      const cx = p.x * zoom + pan.x + p.width * zoom - BADGE_SIZE - (badgeOffsets.get(conflict.key) ?? 0);
       const cy = p.y * zoom + pan.y + BADGE_SIZE;
-      drawDiamond(ctx, cx, cy, BADGE_SIZE, conflictColor);
-      badges.push({ x: cx, y: cy, text: conflictTooltipText(conflict) });
+      const accepted = conflictAcceptance.isAccepted(conflict);
+      drawDiamond(ctx, cx, cy, BADGE_SIZE, accepted ? acceptedColor : conflictColor);
+      if (accepted) {
+        ctx.fillStyle = style?.getPropertyValue("--text-primary").trim() || "#fff";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("✓", cx, cy);
+      }
+      badges.push({ x: cx, y: cy, key: conflict.key, map: conflict.map, accepted,
+        text: `${accepted ? "Accepted (right-click to un-accept). " : ""}${conflictTooltipText(conflict)}` });
     }
     conflictBadgesRef.current = badges;
-  }, [compositeVersion, pan, zoom, viewport, visible, world]);
+  }, [compositeVersion, pan, zoom, viewport, visible, world, placements, mapFilter, conflictAcceptance.acceptedKeys]);
 
   const screenToWorld = useCallback((sx: number, sy: number) => ({ x: (sx - pan.x) / zoom, y: (sy - pan.y) / zoom }), [pan, zoom]);
 
@@ -775,7 +901,7 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
   }, []);
 
   const hitTest = useCallback(
-    (wx: number, wy: number): Placement | null => {
+    (wx: number, wy: number): GbcWorldPlacement | null => {
       for (let i = visible.length - 1; i >= 0; i--) {
         const p = visible[i]!;
         if (wx >= p.x && wx < p.x + p.width && wy >= p.y && wy < p.y + p.height) return p;
@@ -785,17 +911,42 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
     [visible],
   );
 
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const postPlacement = (map: string, x: number, y: number) => {
+    fetchGuarded("/api/world/placement", isPlacementSaved, undefined, { method: "POST", body: JSON.stringify({ map, x, y }) })
+      .then(() => {
+        setSaveError(null);
+        onPlacementSaved?.(map);
+      })
+      .catch((e: unknown) => setSaveError(e instanceof Error ? e.message : String(e)));
+  };
+
   const onMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (e.button !== 0) return;
     dragMovedRef.current = false;
-    dragRef.current = { x: e.clientX, y: e.clientY, panX: pan.x, panY: pan.y };
+    const rect = e.currentTarget.getBoundingClientRect();
+    const point = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
+    const hit = e.shiftKey ? hitTest(point.x, point.y) : null;
+    dragRef.current = hit
+      ? { kind: "map", map: hit.map, grabX: point.x - hit.x, grabY: point.y - hit.y, startX: hit.x, startY: hit.y, x: hit.x, y: hit.y }
+      : { kind: "pan", x: e.clientX, y: e.clientY, panX: pan.x, panY: pan.y };
   };
 
   const onMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const drag = dragRef.current;
-    if (drag) {
+    if (drag?.kind === "pan") {
       dragMovedRef.current = true;
       setView((v) => ({ ...v, pan: { x: drag.panX + (e.clientX - drag.x), y: drag.panY + (e.clientY - drag.y) } }));
+      return;
+    }
+    if (drag?.kind === "map") {
+      dragMovedRef.current = true;
+      const rect = e.currentTarget.getBoundingClientRect();
+      const point = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
+      const x = Math.round(point.x - drag.grabX), y = Math.round(point.y - drag.grabY);
+      drag.x = x;
+      drag.y = y;
+      setPlacementOverrides((overrides) => ({ ...overrides, [drag.map]: { x, y } }));
       return;
     }
 
@@ -814,11 +965,18 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
     setHover({ map: hit.map, component, width: hit.width, height: hit.height });
   };
 
+  const commitMapDrag = () => {
+    const drag = dragRef.current;
+    if (drag?.kind === "map" && (drag.x !== drag.startX || drag.y !== drag.startY)) postPlacement(drag.map, drag.x, drag.y);
+  };
+
   const onMouseUp = () => {
+    commitMapDrag();
     dragRef.current = null;
   };
 
   const onMouseLeave = () => {
+    commitMapDrag();
     dragRef.current = null;
     setHover(null);
     setTooltip(null);
@@ -827,7 +985,9 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
   const onClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (dragMovedRef.current) return;
     const rect = e.currentTarget.getBoundingClientRect();
-    const w = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
+    const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
+    if (warpsOn && warpMarkerEntries.some((entry) => Math.hypot(entry.sx - sx, entry.sy - sy) <= WARP_HIT_RADIUS)) return;
+    const w = screenToWorld(sx, sy);
     const hit = hitTest(w.x, w.y);
     setSelectedMap(hit ? hit.map : null);
     if (hit) onSelectMap?.(hit.map);
@@ -836,9 +996,33 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
   const onDoubleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (dragMovedRef.current) return;
     const rect = e.currentTarget.getBoundingClientRect();
-    const w = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
+    const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
+    // Shift+double-click always opens the map under the pointer: it bypasses the warp-marker preview.
+    if (e.shiftKey) {
+      const w = screenToWorld(sx, sy);
+      const hit = hitTest(w.x, w.y);
+      if (hit) onOpenMap?.(hit.map);
+      return;
+    }
+    if (warpsOn) {
+      const marker = warpMarkerEntries.find((entry) => Math.hypot(entry.sx - sx, entry.sy - sy) <= WARP_HIT_RADIUS);
+      if (marker) {
+        if (marker.destMapName) { setWarpError(null); setWarpPopup(marker.destMapName); }
+        else setWarpError("This warp destination could not be resolved");
+        return;
+      }
+    }
+    const w = screenToWorld(sx, sy);
     const hit = hitTest(w.x, w.y);
     if (hit) onOpenMap?.(hit.map);
+  };
+
+  const onContextMenu = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    contextMenu.onContextMenu(e, (sx, sy) => {
+      const badge = conflictBadgesRef.current.find((item) => Math.hypot(item.x - sx, item.y - sy) <= BADGE_SIZE) ?? null;
+      const w = screenToWorld(sx, sy);
+      return { map: badge?.map ?? hitTest(w.x, w.y)?.map ?? null, badge };
+    });
   };
 
   // Keyboard path (fix round, quality review Minor #3): the canvas's own
@@ -853,8 +1037,14 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
   // notch uses (the identical single-state-updater reasoning applies:
   // one `setView` per key, never a nested one).
   const onKeyDown = (e: React.KeyboardEvent<HTMLCanvasElement>) => {
+    // The menu opens for the selected map (in the mapFilter's scope), at its screen-rect centre.
+    const handled = contextMenu.onMenuKey(e, () => {
+      const p = selectedMap && (!mapFilter || mapFilter.has(selectedMap)) ? placements[selectedMap] : undefined;
+      return p ? { x: (p.x + p.width / 2) * zoom + pan.x, y: (p.y + p.height / 2) * zoom + pan.y, map: p.map } : null;
+    });
+    if (handled) return;
     if (e.key === "Enter") {
-      if (selectedMap) onOpenMap?.(selectedMap);
+      if (selectedMap && (!mapFilter || mapFilter.has(selectedMap))) onOpenMap?.(selectedMap);
       return;
     }
     if (e.key === "+" || e.key === "=") {
@@ -876,13 +1066,13 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
   const appliedJumpTokenRef = useRef<number | undefined>(undefined);
   useEffect(() => {
     if (jumpToken === undefined || jumpToken === appliedJumpTokenRef.current) return;
-    if (!jumpToMap || !world) return; // retry once `world` itself changes
+    if (!jumpToMap || !world || (mapFilter && !mapFilter.has(jumpToMap))) return; // retry once `world` itself changes
     appliedJumpTokenRef.current = jumpToken;
-    const p = world.placements[jumpToMap];
+    const p = placements[jumpToMap];
     if (!p || p.width <= 0 || p.height <= 0) return;
     setView({ ...jumpFit({ x: p.x, y: p.y, width: p.width, height: p.height }, viewport), fitted: true });
     setJumpHighlight({ map: jumpToMap, token: jumpToken });
-  }, [jumpToken, jumpToMap, world, viewport]);
+  }, [jumpToken, jumpToMap, world, viewport, placements, mapFilter]);
 
   // The fade-out, kept in its own effect scoped to `jumpHighlight` alone --
   // WorldCanvas.tsx's own separately-scoped fade effect gives the same
@@ -907,8 +1097,8 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
   }, [jumpHighlight]);
 
   const zoomPercent = Math.round((zoom / BLOCK_PX) * 100);
-  const selectedRect = selectedMap && world?.placements[selectedMap] ? world.placements[selectedMap]! : null;
-  const jumpRect = jumpHighlight && world?.placements[jumpHighlight.map] ? world.placements[jumpHighlight.map]! : null;
+  const selectedRect = selectedMap && (!mapFilter || mapFilter.has(selectedMap)) ? placements[selectedMap] ?? null : null;
+  const jumpRect = jumpHighlight && (!mapFilter || mapFilter.has(jumpHighlight.map)) ? placements[jumpHighlight.map] ?? null : null;
 
   return (
     <section className="world-canvas" aria-label="World canvas">
@@ -918,6 +1108,19 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
             Fit all
           </button>
         </div>
+        <div className="world-canvas__toolbar-group">
+          <button type="button" role="switch" aria-checked={warpsOn} aria-label="Warps" className="world-canvas__switch" onClick={() => { if (!warpsOn) setWarpError(null); setWarpsOn((on) => !on); }}>
+            <span className="world-canvas__switch-thumb" />
+          </button>
+          <span className="world-canvas__switch-label">Warps {warpsOn ? "on" : "off"}</span>
+        </div>
+        {mapFilter && <div className="world-canvas__toolbar-group">
+          <button type="button" role="switch" aria-checked={linesOn} aria-label="Connection lines" className="world-canvas__switch" onClick={() => { if (!linesOn) setWarpError(null); setLinesOn((on) => !on); }}>
+            <span className="world-canvas__switch-thumb" />
+          </button>
+          <span className="world-canvas__switch-label">Connection lines {linesOn ? "on" : "off"}</span>
+        </div>}
+        {warpError && <div className="world-canvas__toolbar-group world-canvas__toolbar-group--save-error"><span className="world-canvas__toolbar-error" role="alert">Warp data unavailable: {warpError}</span></div>}
         {/* Fix round (spec review F4): a visible note, not a silent gap,
             for however many visible maps' own /api/encounters fetch failed
             (a 500, or a shape that fails isGbcEncountersPayload) -- reuses
@@ -930,6 +1133,11 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
             </span>
           </div>
         )}
+        {saveError && (
+          <div className="world-canvas__toolbar-group world-canvas__toolbar-group--save-error">
+            <span className="world-canvas__toolbar-error" role="alert">Could not save placement: {saveError}</span>
+          </div>
+        )}
         {/* Species spotlight + coverage lenses (Plan 6b Task 6) -- reuses
             WorldCanvas.tsx's own themed grow group so this control cluster
             gets the same extra middle space there, not a bespoke width. */}
@@ -940,24 +1148,31 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
               Coverage lenses unavailable: {coverageError}
             </span>
           ) : (
-            <LensPanel
-              active={lens}
-              onChange={setLens}
-              summary={{
-                emptyMaps: coverageData?.mapsWithoutEncounters.length ?? 0,
-                unusedSpecies: coverageData?.unusedSpecies.length ?? 0,
-              }}
-              methodKey={GBC_METHOD_LENS_KEY}
-              legendCopy={GBC_LEGEND_COPY}
-              onListEmptyMaps={focusEmptyMaps}
-            />
+            <LensPanel active={lens} onChange={setLens} />
           )}
         </div>
       </div>
 
+      {!coverageError && (
+        <LensLegend
+          active={lens}
+          summary={
+            coverageData
+              ? { emptyMapNames: coverageData.mapsWithoutEncounters, unusedSpeciesNames: coverageData.unusedSpecies }
+              : null
+          }
+          onJumpToMap={onJumpToMap}
+          methodKey={GBC_METHOD_LENS_KEY}
+          legendCopy={GBC_LEGEND_COPY}
+        />
+      )}
+
       <div className="world-canvas__legend">
         <span className="world-canvas__legend-item">
           <i className="world-canvas__swatch world-canvas__swatch--conflict" /> Conflict
+        </span>
+        <span className="world-canvas__legend-item">
+          <i className="world-canvas__swatch world-canvas__swatch--conflict world-canvas__swatch--accepted" /> Accepted
         </span>
       </div>
 
@@ -978,12 +1193,33 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
             onMouseDown={onMouseDown}
             onMouseMove={onMouseMove}
             onMouseUp={onMouseUp}
+            onContextMenu={onContextMenu}
+            onPointerDown={contextMenu.onPointerDown}
             onMouseLeave={onMouseLeave}
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault();
+              const map = e.dataTransfer.getData("text/plain");
+              if (mapFilter && !mapFilter.has(map)) return;
+              const placement = placements[map];
+              if (!placement) return;
+              const rect = e.currentTarget.getBoundingClientRect();
+              const point = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
+              const x = Math.round(point.x - placement.width / 2), y = Math.round(point.y - placement.height / 2);
+              setPlacementOverrides((overrides) => ({ ...overrides, [map]: { x, y } }));
+              postPlacement(map, x, y);
+            }}
             onClick={onClick}
             onDoubleClick={onDoubleClick}
             onKeyDown={onKeyDown}
           />
-          <GbcEncounterGutter maps={gutterEntries} zoom={zoom} time={time} />
+          <EncounterBorder entries={borderEntries} zoom={zoom} lodZoom={GBC_LOD_ZOOM_THRESHOLD} band={BORDER_BAND.gbc} time={time} />
+          {warpsOn && warpMarkerEntries.length > 0 && <div className="world-canvas__warps" aria-hidden="true">
+            {warpMarkerEntries.map((entry) => <div key={entry.key} className="world-canvas__warp-marker" style={{ left: entry.sx, top: entry.sy }} />)}
+          </div>}
+          {mapFilter && linesOn && connectionLines.length > 0 && <svg className="world-canvas__connections" aria-hidden="true">
+            {connectionLines.map((line) => <line key={line.key} x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2} stroke={line.color} strokeWidth={2} />)}
+          </svg>}
           {lens && lensOverlayEntries.length > 0 && (
             <div className="world-canvas__lens" aria-hidden="true">
               {lensOverlayEntries.map((e) => (
@@ -1045,12 +1281,19 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
               {tooltip.text}
             </div>
           )}
+          <WorldContextMenu menu={contextMenu.menu} viewport={viewport} onClose={contextMenu.close} />
+          {conflictAcceptance.error && (
+            <div className="world-canvas__toast" role="alert">
+              <span className="world-canvas__toast-text">Could not update conflict: {conflictAcceptance.error}</span>
+              <button type="button" className="world-canvas__toast-dismiss" onClick={() => conflictAcceptance.setError(null)} aria-label="Dismiss">×</button>
+            </div>
+          )}
         </div>
       </div>
 
       <div className="world-canvas__status">
         <span className="world-canvas__status-item">
-          {world ? world.components.length : 0} components · {world ? Object.keys(world.placements).length : 0} maps · zoom {zoomPercent}%
+          {world ? world.components.length : 0} components · {mapFilter ? [...mapFilter].filter((name) => !!placements[name]).length : Object.keys(placements).length} maps · zoom {zoomPercent}% · {world ? world.conflicts.length : 0} conflicts · {conflictAcceptance.acceptedCount} accepted
         </span>
         {hover ? (
           <span className="world-canvas__status-item world-canvas__hover">
@@ -1061,6 +1304,7 @@ export function GbcWorldCanvas({ time, jumpToMap, jumpToken, onSelectMap, onOpen
           <span className="world-canvas__status-item world-canvas__hover world-canvas__hover--empty">Hover the world…</span>
         )}
       </div>
+      {warpPopup && <GbcWarpDestinationModal mapName={warpPopup} time={time} onClose={() => setWarpPopup(null)} />}
     </section>
   );
 }

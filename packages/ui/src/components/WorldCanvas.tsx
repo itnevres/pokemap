@@ -1,13 +1,23 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { Placement, Component as WorldComponentInfo, Conflict, VerticalLink } from "@pokemap/core/src/world/connections.js";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import type { Placement, Component as WorldComponentInfo, VerticalLink } from "@pokemap/core/src/world/connections.js";
+import type { WireConflict } from "@pokemap/core/src/world/conflictAcceptance.js";
 import type { SpeciesHit } from "@pokemap/core/src/analyse/coverage.js";
 import type { WarpEvent } from "@pokemap/core/src/load/maps.js";
-import { EncounterGutter, type EncounterGutterMapEntry, type EncounterGutterRow } from "./EncounterGutter.js";
+import { EncounterBorder, type EncounterBorderEntry } from "./EncounterBorder.js";
+import { BORDER_BAND, pickBorderSide, type BorderSide, type Rect } from "../encounters/borderSide.js";
+import { isGbaEncountersPayload } from "../encounters/guards.js";
+import { summariseGba, type GbaEncounterRow, type SpeciesSummary } from "../encounters/summary.js";
+import { fetchGuarded } from "../hooks/useGuardedFetch.js";
 import { SpeciesSpotlight } from "./SpeciesSpotlight.js";
-import { LensPanel, type LensId } from "./LensPanel.js";
+import { LensPanel, LensLegend, type LensId } from "./LensPanel.js";
 import { WarpDestinationModal } from "./WarpDestinationModal.js";
 import { useCoverage } from "../hooks/useCoverage.js";
 import { isDrawnByDefault } from "../world/visibility.js";
+import { conflictBadgeOffsets, isRecord, isWireConflict } from "../world/conflictAcceptance.js";
+import { useConflictAcceptance } from "../world/useConflictAcceptance.js";
+import { WorldContextMenu, useWorldContextMenu } from "./WorldContextMenu.js";
+import { ZOOM_LEVELS, zoomAboutPivot, type MapView, type Zoom } from "./mapView.js";
+import { enterContextView, mapViewFromWorld, snapContextZoom, worldViewFromMapView } from "../world/contextView.js";
 
 /** The pixel size a placement's PNG renders at natively (`renderLayout`,
  *  border 0): 16px per tile, same constant the CLI's `render-world --scale
@@ -74,15 +84,22 @@ interface WirePlacement extends Placement {
 interface WorldPayload {
   placements: Record<string, WirePlacement>;
   components: WorldComponentInfo[];
-  conflicts: Conflict[];
+  conflicts: WireConflict[];
   verticalLinks: VerticalLink[];
   sidecar: { dungeonAutoLayout: boolean };
+}
+
+function isWorldPayload(value: unknown): value is WorldPayload {
+  return isRecord(value) && isRecord(value.placements) && Array.isArray(value.components)
+    && Array.isArray(value.conflicts) && value.conflicts.every(isWireConflict)
+    && Array.isArray(value.verticalLinks) && isRecord(value.sidecar)
+    && typeof value.sidecar.dungeonAutoLayout === "boolean";
 }
 
 interface WorldState {
   placements: Map<string, WirePlacement>;
   components: WorldComponentInfo[];
-  conflicts: Conflict[];
+  conflicts: WireConflict[];
   verticalLinks: VerticalLink[];
   sidecarDungeonAutoLayout: boolean;
 }
@@ -107,11 +124,13 @@ interface ImageCacheEntry {
  *  placeholder is written synchronously before the fetch starts, so a second
  *  effect run for the same map (another placement scrolling into view, or a
  *  pan that doesn't drop this one) sees `.has(map)` and never double-fetches.
- *  `methods` stays unset on a failed fetch -- EncounterGutter already treats
- *  an unset map as "nothing to show", not an error banner. */
+ *  `methods` stays unset on a failed fetch: that map just shows nothing (the
+ *  failure is counted and disclosed in the toolbar, see `encounterFailedCount`). */
 interface EncounterCacheEntry {
   loaded: boolean;
-  methods?: EncounterGutterRow[];
+  methods?: GbaEncounterRow[];
+  /** `summariseGba(methods)`, built once on arrival. */
+  summaries?: SpeciesSummary[];
 }
 
 /** WarpEvent plus the destMapName the server route resolves onto it. */
@@ -296,6 +315,38 @@ export interface WorldCanvasProps {
    *  by Dungeon mode (App.tsx, a later task) to reuse this exact component
    *  rather than forking a second implementation. */
   mapFilter?: Set<string> | null;
+  /** A lens list entry (Empty maps) was clicked; the app selects the map and
+   *  jumps there (the tree-click path). Unset (a dungeon view) renders the
+   *  entries disabled. */
+  onJumpToMap?: (name: string) => void;
+  /** A plain single click landed on a map (never a modifier click, the end of a
+   *  drag, or a click on empty space). The app mirrors it into its own selection
+   *  (sidebar highlight) but must not treat it as a jump request. */
+  onSelectMap?: (name: string) => void;
+  /** The context menu's "Open in Map view" (and Shift+double-click) on a map. Unset: the item is not offered. */
+  onOpenMap?: (name: string) => void;
+  /** A plain double-click on a map body (no modifier, no drag, not a warp marker) and the context menu's "Edit here".
+   *  The app enters in-context editing and passes `context` below. Unset: neither is offered. */
+  onEditHere?: (name: string) => void;
+  /** In-context editing (Plan 6c E4): while set, an overlay fills the viewport box with a dim layer, the host's
+   *  controlled editing canvas and a small bar. The world snaps once to this map, at the pointer `onEditHere` recorded
+   *  (or the viewport centre), and its zoom may reach 64 px per tile. */
+  context?: WorldCanvasContext;
+  /** Per-map render bust: when a map's number changes, only that map's tile is dropped and re-requested as
+   *  `/api/render/<map>.png?v=<n>`; later loads of it keep the `?v`. */
+  tileVersions?: Record<string, number>;
+}
+
+export interface WorldCanvasContext {
+  map: string;
+  /** Composite px of the map's top-left tile (`compositeOrigin`); null until its layout has loaded, when the overlay
+   *  shows only the dim layer and the bar. */
+  origin: { x: number; y: number } | null;
+  /** The host's editing canvas (a chromeless, controlled `MapCanvas`) for the view that lines it up with the world. */
+  renderCanvas: (view: MapView, onViewChange: (next: MapView) => void) => ReactNode;
+  /** Done, Escape, or a double-click on the overlay outside the map. The host decides whether to leave (a dirty
+   *  session opens its save dialog instead). */
+  onExitRequest: () => void;
 }
 
 /**
@@ -305,14 +356,14 @@ export interface WorldCanvasProps {
  * packages/ui/DESIGN.md for the palette/type/spacing tokens this consumes,
  * and this file's own comments for the LOD and culling mechanics.
  */
-export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProps = {}) {
+export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSelectMap, onOpenMap, onEditHere, context, tileVersions }: WorldCanvasProps = {}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageCacheRef = useRef<Map<string, ImageCacheEntry>>(new Map());
   const encounterCacheRef = useRef<Map<string, EncounterCacheEntry>>(new Map());
   const warpCacheRef = useRef<Map<string, WarpCacheEntry>>(new Map());
   const dragRef = useRef<DragState>(null);
-  const conflictBadgesRef = useRef<Array<{ x: number; y: number; text: string }>>([]);
+  const conflictBadgesRef = useRef<Array<{ x: number; y: number; text: string; key: string; map: string; accepted: boolean }>>([]);
   // Review fix: whether real pointer movement happened during the
   // mousedown-to-mouseup cycle that is about to produce a `click`. The
   // browser does NOT suppress `click` after a same-element drag -- see
@@ -323,6 +374,26 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
   const dragMovedRef = useRef(false);
 
   const [world, setWorld] = useState<WorldState | null>(null);
+  const conflictAcceptance = useConflictAcceptance(world?.conflicts);
+  // The context menu (right-click or the ContextMenu key). "Edit here" calls the latest onEditHere through a
+  // ref: the menu stays open across App renders, and an App-level handler closes over state that can change.
+  const onEditHereRef = useRef(onEditHere);
+  onEditHereRef.current = onEditHere;
+  // Where the next in-context entry snaps the map's centre, in CLIENT px (the editing chrome mounts after the click and
+  // moves the canvas, so a canvas-relative point would go stale): the double-click point, or where the menu opened.
+  // Set just before onEditHere; read and cleared by the snap effect below.
+  const snapPointerRef = useRef<{ x: number; y: number } | null>(null);
+  const menuPointRef = useRef<{ x: number; y: number } | null>(null);
+  const requestEditHere = (map: string, point: { x: number; y: number } | null) => {
+    snapPointerRef.current = point;
+    onEditHereRef.current?.(map);
+  };
+  const contextMenu = useWorldContextMenu({
+    canvasRef,
+    onOpenMap,
+    editItem: onEditHere ? (map) => ({ label: "Edit here", onSelect: () => requestEditHere(map, menuPointRef.current) }) : undefined,
+    toggle: conflictAcceptance.toggle,
+  });
   const [loadError, setLoadError] = useState<string | null>(null);
   // Review fix: postPlacement's and toggleDungeons' own failures used to
   // either be silently discarded or written into loadError -- the same
@@ -352,6 +423,10 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
   const [zoom, setZoom] = useState(1);
   const [compositeVersion, setCompositeVersion] = useState(0);
   const [encounterVersion, setEncounterVersion] = useState(0);
+  // How many maps' /api/encounters fetch failed (non-OK, or a shape that fails
+  // isGbaEncountersPayload, e.g. a GBC-shaped reply): shown as a toolbar note
+  // so a failed map is not indistinguishable from "no encounters here".
+  const [encounterFailedCount, setEncounterFailedCount] = useState(0);
   const [warpVersion, setWarpVersion] = useState(0);
   // Feature B: off by default (spec §4.1), same visual family as the
   // existing dungeon-auto-layout switch.
@@ -450,11 +525,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
   useEffect(() => {
     let cancelled = false;
     setLoadError(null);
-    fetch("/api/world")
-      .then((r) => {
-        if (!r.ok) throw new Error(`GET /api/world -> ${r.status}`);
-        return r.json() as Promise<WorldPayload>;
-      })
+    fetchGuarded("/api/world", isWorldPayload)
       .then((d) => {
         if (cancelled) return;
         setWorld({
@@ -767,15 +838,16 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
     // re-fire it mid-drag.
   }, [mapFilter, world]);
 
-  // Culling: only placements whose tile-rect intersects the current
-  // viewport (in world-tile space) are considered "visible". With 1,209
-  // maps this is what keeps both the draw loop and the image-loading effect
-  // below cheap regardless of how far out the user has zoomed.
-  const visible = useMemo(() => {
-    if (!world) return [] as Placement[];
-    const x0 = -pan.x / zoom, y0 = -pan.y / zoom;
-    const x1 = (viewport.w - pan.x) / zoom, y1 = (viewport.h - pan.y) / zoom;
-    const out: Placement[] = [];
+  // Two memos. `drawnPlacements` is everything drawn (no viewport cull) and
+  // does not depend on pan/zoom, so the encounter border's side choice can be
+  // memoised on it: a map just off-screen still blocks a side. `visible`
+  // below is the culling step: only drawn placements whose tile-rect
+  // intersects the current viewport (in world-tile space). With 1,209 maps
+  // that is what keeps both the draw loop and the image-loading effect
+  // cheap regardless of how far out the user has zoomed.
+  const drawnPlacements = useMemo(() => {
+    if (!world) return [] as WirePlacement[];
+    const out: WirePlacement[] = [];
     // Feature C (dungeon mode): when mapFilter is set, it is the entire
     // candidate corpus, not just an extra filter over world.placements --
     // a dungeon's member maps are usually scattered across the full 1,209-
@@ -784,10 +856,10 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
     // over: it would hide filtered-in maps that happen to sit outside
     // whatever the current pan/zoom shows of the unscoped world, while
     // this component's actual job here is to show exactly (and only) the
-    // filtered set, culled against ITS OWN viewport.
+    // filtered set (`visible` then culls it against ITS OWN viewport).
     // Review fix: the unfiltered branch used to spread world.placements
-    // into a brand-new 1,209-element array on every call -- and `visible`
-    // recomputes every pan/drag frame (it depends on `pan`/`zoom`, both
+    // into a brand-new 1,209-element array on every call -- and this memo
+    // recomputed every pan/drag frame (it depended on `pan`/`zoom`, both
     // updated per mousemove), so that was a needless full-corpus array
     // copy on the hot pan-drag path, the same class of per-drag-frame
     // rebuild sizeByMap's and unplacedNames' own Review fix comments above
@@ -827,10 +899,21 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
       // in `conflicts` or `verticalLinks`), but worth knowing before
       // relying on "visible == everything a badge might touch".
       if (!mapFilter && !drawnByDefault(p) && !revealedMaps.has(p.map)) continue;
+      out.push(p);
+    }
+    return out;
+  }, [world, sizeByMap, revealedMaps, mapFilter]);
+
+  const visible = useMemo(() => {
+    const x0 = -pan.x / zoom, y0 = -pan.y / zoom;
+    const x1 = (viewport.w - pan.x) / zoom, y1 = (viewport.h - pan.y) / zoom;
+    const out: Placement[] = [];
+    for (const p of drawnPlacements) {
+      const size = sizeOfPlacement(p, sizeByMap);
       if (intersects(p.x, p.y, size.width, size.height, x0, y0, x1, y1)) out.push(p);
     }
     return out;
-  }, [world, pan, zoom, viewport, sizeByMap, revealedMaps, mapFilter]);
+  }, [drawnPlacements, pan, zoom, viewport, sizeByMap]);
 
   // Feature A: how many CURRENTLY-PLACED maps are hidden by the same
   // mapType/manual filter `visible` just applied -- i.e. placed but not
@@ -858,7 +941,17 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
   // doesn't have one yet. A placement already in imageCacheRef is never
   // refetched, and one outside `visible` is never requested at all -- this
   // is the whole culling guarantee in one effect.
+  //
+  // Plan 6c E4: a map whose `tileVersions` number changed since it was last seen loses only its own cache entry
+  // (and so is re-requested below, as `?v=<n>`); every other tile stays cached. A stale in-flight load of the
+  // dropped entry lands on the detached entry object, never the current one.
+  const seenTileVersionsRef = useRef<Record<string, number>>({});
   useEffect(() => {
+    for (const [map, n] of Object.entries(tileVersions ?? {})) {
+      if (seenTileVersionsRef.current[map] === n) continue;
+      seenTileVersionsRef.current[map] = n;
+      imageCacheRef.current.delete(map);
+    }
     for (const p of visible) {
       if (imageCacheRef.current.has(p.map)) continue;
       const entry: ImageCacheEntry = { loaded: false };
@@ -879,41 +972,46 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
         entry.small = small;
         setCompositeVersion((v) => v + 1);
       };
-      img.src = `/api/render/${encodeURIComponent(p.map)}.png`;
+      const version = tileVersions?.[p.map];
+      img.src = `/api/render/${encodeURIComponent(p.map)}.png${version ? `?v=${version}` : ""}`;
     }
-  }, [visible, sizeByMap]);
+  }, [visible, sizeByMap, tileVersions]);
 
   // Fetches each visible placement's encounter data at most once per map,
   // mirroring the image-loading effect just above exactly (same
   // cache-by-ref placeholder + version-bump-on-arrival shape). Unconditional
-  // on the encounter gutter's own enabled state -- that toggle is
-  // EncounterGutter's own local state, not lifted here, so it stays a
+  // on the encounter border's own enabled state -- that toggle is
+  // EncounterBorder's own local state, not lifted here, so it stays a
   // self-contained component; fetching for every visible map regardless
   // means turning the toggle on shows data immediately rather than kicking
   // off a fetch at that moment, the same "fetch what's visible, let a
   // toggle only control display" choice the image cache above already
-  // makes.
+  // makes. Goes through the shared fetchGuarded (fetch, ok-check, shape
+  // guard, real Error), like GbcWorldCanvas's own encounter fetch. The
+  // per-map summary is built once, on arrival, so a version bump never
+  // re-summarises every cached map.
   useEffect(() => {
     for (const p of visible) {
       if (encounterCacheRef.current.has(p.map)) continue;
       const entry: EncounterCacheEntry = { loaded: false };
       encounterCacheRef.current.set(p.map, entry);
-      fetch(`/api/encounters/${encodeURIComponent(p.map)}`)
-        .then((r) => {
-          if (!r.ok) throw new Error(`GET /api/encounters/${p.map} -> ${r.status}`);
-          return r.json() as Promise<{ methods: EncounterGutterRow[] }>;
-        })
+      const url = `/api/encounters/${encodeURIComponent(p.map)}`;
+      fetchGuarded(url, isGbaEncountersPayload, url)
         .then((d) => {
           entry.loaded = true;
           entry.methods = d.methods;
+          entry.summaries = summariseGba(d.methods);
           setEncounterVersion((v) => v + 1);
         })
         .catch(() => {
-          // Best-effort, matching the image cache's own posture: a failed
-          // fetch just leaves this one map's gutter entry empty, not a
-          // banner over an otherwise-working canvas. Still marked loaded so
-          // this effect does not retry it forever.
+          // Best-effort, matching the image cache's own posture (one map's
+          // border/tint entry stays empty, not a banner over an otherwise-
+          // working canvas) -- but COUNTED, so "empty" is disclosed rather
+          // than indistinguishable from "no encounters here" (a normal
+          // state). Still marked loaded so this effect never retries a
+          // failed map.
           entry.loaded = true;
+          setEncounterFailedCount((c) => c + 1);
           setEncounterVersion((v) => v + 1);
         });
     }
@@ -953,26 +1051,46 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
     }
   }, [visible]);
 
-  // Screen-space rect per visible placement, in EncounterGutter's own prop
+  // Which side of each drawn map the encounter border sits on (B2's
+  // pickBorderSide, world tiles). Over the DRAWN set, not the viewport-culled
+  // `visible`: a map just off-screen still blocks a side. Deps are
+  // drawnPlacements/sizeByMap only -- never pan/zoom, or this would re-run on
+  // every drag frame. Every drawn rect is passed as the neighbour list,
+  // including the map's own: that blocks nothing, since the bands lie strictly
+  // outside it (pickBorderSide's own doc comment).
+  // ponytail: O(n^2) over the drawn maps (~500 on the GBA corpus), fine once
+  // per layout change; a spatial index if n grows.
+  const sideByMap = useMemo(() => {
+    const rects = drawnPlacements.map((p) => {
+      const size = sizeOfPlacement(p, sizeByMap);
+      return { x: p.x, y: p.y, width: size.width, height: size.height };
+    });
+    const m = new Map<string, BorderSide>();
+    drawnPlacements.forEach((p, i) => m.set(p.map, pickBorderSide(rects[i]!, rects, BORDER_BAND.gba)));
+    return m;
+  }, [drawnPlacements, sizeByMap]);
+
+  // Screen-space rect per visible placement, in EncounterBorder's own prop
   // shape -- the exact same dx/dy/dw/dh formula the draw effect below uses
-  // for each placement's own image blit, so the gutter always lines up with
+  // for each placement's own image blit, so the border always lines up with
   // the map it describes.
-  const encounterEntries = useMemo<EncounterGutterMapEntry[]>(() => {
+  const borderEntries = useMemo<EncounterBorderEntry[]>(() => {
     return visible.map((p) => {
       const size = sizeOfPlacement(p, sizeByMap);
       const cache = encounterCacheRef.current.get(p.map);
       return {
         map: p.map,
         rect: { x: p.x * zoom + pan.x, y: p.y * zoom + pan.y, width: size.width * zoom, height: size.height * zoom },
-        methods: cache?.loaded ? (cache.methods ?? []) : undefined,
+        side: sideByMap.get(p.map) ?? "left",
+        summaries: cache?.loaded ? (cache.summaries ?? []) : undefined,
       };
     });
-  }, [visible, sizeByMap, pan, zoom, encounterVersion]);
+  }, [visible, sizeByMap, sideByMap, pan, zoom, encounterVersion]);
 
   // Task 29: species spotlight + coverage lenses. Both are DOM overlays,
   // not canvas draw calls -- the same "presentational rects positioned by
-  // the exact dx/dy/dw/dh formula the encounter gutter's own `rect` prop
-  // uses" split as encounterEntries just above, kept out of the imperative
+  // the exact dx/dy/dw/dh formula the encounter border's own `rect` prop
+  // uses" split as borderEntries just above, kept out of the imperative
   // draw effect below (already dense, and already the subject of several
   // review-fix postmortems in this file) rather than adding a second kind
   // of per-pixel drawing to it.
@@ -1037,7 +1155,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
 
   // Which non-land method (if any) a visible map's already-fetched
   // encounter rows include, reusing encounterCacheRef -- populated by the
-  // effect above FOR the encounter gutter, but the data it holds (which
+  // effect above FOR the encounter border, but the data it holds (which
   // methods a map has) is exactly what the method lens also needs, so this
   // is a second reader of that same cache, not a second fetch. Water >
   // fishing > rock smash is a fixed display priority for a map with more
@@ -1052,15 +1170,15 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
   }, []);
 
   const lensOverlayEntries = useMemo(() => {
-    if (!lens) return [] as Array<{ map: string; rect: EncounterGutterMapEntry["rect"]; color: string }>;
-    const out: Array<{ map: string; rect: EncounterGutterMapEntry["rect"]; color: string }> = [];
+    if (!lens) return [] as Array<{ map: string; rect: Rect; color: string }>;
+    const out: Array<{ map: string; rect: Rect; color: string }> = [];
     for (const p of visible) {
       let color: string | null = null;
       if (lens === "level-curve") color = levelColorByMap.get(p.map) ?? null;
       else if (lens === "empty-maps") color = emptyMapNames.has(p.map) ? "var(--warn)" : null;
       else if (lens === "method") color = methodTintFor(p.map);
-      // "unused-species" has no per-map visual -- see LensPanel's own
-      // legend copy for that lens: it is a fact about species, not about a
+      // "unused-species" has no per-map visual -- see LensLegend's own
+      // legend copy and species list for that lens: it is a fact about species, not about a
       // place on the map, so there is nothing here to tint.
       if (!color) continue;
       const size = sizeOfPlacement(p, sizeByMap);
@@ -1095,7 +1213,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
   }, [spotlightHits]);
 
   const spotlightOverlayEntries = useMemo(() => {
-    if (!spotlightHits) return [] as Array<{ map: string; rect: EncounterGutterMapEntry["rect"]; hit: SpeciesHit | null }>;
+    if (!spotlightHits) return [] as Array<{ map: string; rect: Rect; hit: SpeciesHit | null }>;
     return visible.map((p) => {
       const size = sizeOfPlacement(p, sizeByMap);
       return {
@@ -1110,14 +1228,13 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
   // already treated as too fine to render -- this file established that
   // exact threshold (4) for exactly that meaning TWICE already: the draw
   // effect's own LOD switch above (full-res image vs. the cached
-  // downscaled buffer) and EncounterGutter's own LOW_ZOOM_THRESHOLD
-  // (deliberately tethered to this same constant, per that component's own
-  // comment). Without this gate, the full corpus's ~1,662 warp markers
+  // downscaled buffer) and EncounterBorder's own `lodZoom` prop
+  // (this same constant is passed to it). Without this gate, the full corpus's ~1,662 warp markers
   // render at full zoom-out with no size scaling of their own -- an
   // unreadable smear on small maps, and real per-frame draw cost at the
   // extreme. Reusing LOD_ZOOM_THRESHOLD itself (not a second literal 4)
   // keeps this file's "too zoomed out for per-map detail" meaning anchored
-  // to one constant, matching EncounterGutter's own precedent.
+  // to one constant, as the EncounterBorder mount below does too.
   const warpMarkerEntries = useMemo<WarpMarkerEntry[]>(() => {
     if (!warpsOn || zoom < LOD_ZOOM_THRESHOLD) return [];
     const out: WarpMarkerEntry[] = [];
@@ -1226,8 +1343,8 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
   }, [mapFilter, linesOn, world, zoom, pan, warpVersion]);
 
   const selectionOverlayEntries = useMemo(() => {
-    if (selected.size === 0) return [] as Array<{ map: string; rect: EncounterGutterMapEntry["rect"] }>;
-    const out: Array<{ map: string; rect: EncounterGutterMapEntry["rect"] }> = [];
+    if (selected.size === 0) return [] as Array<{ map: string; rect: Rect }>;
+    const out: Array<{ map: string; rect: Rect }> = [];
     for (const p of visible) {
       if (!selected.has(p.map)) continue;
       const size = sizeOfPlacement(p, sizeByMap);
@@ -1235,46 +1352,6 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
     }
     return out;
   }, [selected, visible, sizeByMap, pan, zoom]);
-
-  // LensPanel's empty-maps legend "next action" (spec §9: a legend states
-  // what to do next, not just what colours mean). Reuses fitWorld's own
-  // worldBoundsOf/computeFit pair AND its exact "connected landmasses only"
-  // filter (componentOfPlacement(...).maps.length > 1) -- confirmed live
-  // this filter is not optional here either: most of the 982 empty maps
-  // are singleton interiors scattered across autoLayoutUnplaced's own
-  // singleton shelf (fitWorld's own comment: ~25,600 tiles wide), so an
-  // unfiltered bbox of every empty placement is dominated by that shelf and
-  // zooms out to a single-digit percent showing nothing usable -- the same
-  // failure mode fitWorld's own comment already documents and excludes
-  // singletons to avoid. Restricting to landmass members still leaves a
-  // real, useful view: most towns/routes' own interior buildings (empty)
-  // sit inside a multi-map component together with their route.
-  //
-  // Note for a later task: this is entirely unscoped by mapFilter -- it
-  // reads world.placements/world.components directly, the same way
-  // fitWorld's own ELSE branch does, with no dungeon-mode equivalent. That
-  // is silently wrong (not just imprecise) if clicked while viewing a
-  // dungeon: it pans/zooms the camera to the WORLD's own empty-maps
-  // bounding box, completely out of the dungeon currently open, rather
-  // than doing nothing or scoping to the dungeon's own empty members.
-  // Left unfixed here, matching this file's own "flag it, don't fix it
-  // silently" convention for a known imperfection out of scope for this
-  // task.
-  const focusEmptyMaps = useCallback(() => {
-    if (!world) return;
-    const empty = new Map(
-      [...world.placements].filter(([name, p]) => {
-        if (!emptyMapNames.has(name)) return false;
-        const comp = componentOfPlacement(p, world.components);
-        return comp !== null && comp.maps.length > 1;
-      }),
-    );
-    const bounds = worldBoundsOf(empty.size > 0 ? empty : world.placements, sizeByMap);
-    if (bounds.width <= 0 || bounds.height <= 0) return;
-    const fit = computeFit(bounds, viewport);
-    setZoom(fit.zoom);
-    setPan(fit.pan);
-  }, [world, emptyMapNames, sizeByMap, viewport]);
 
   // The actual draw. Reads only from state already current in this render's
   // closure (never a stale ref captured by an earlier effect), so an image
@@ -1304,6 +1381,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
     if (!world) return;
     const style = typeof getComputedStyle === "function" ? getComputedStyle(document.documentElement) : null;
     const conflictColor = style?.getPropertyValue("--danger").trim() || "#ef4444";
+    const acceptedColor = style?.getPropertyValue("--text-muted").trim() || "#6b7280";
     const diveColor = style?.getPropertyValue("--link-dive").trim() || "#3b82f6";
     const emergeColor = style?.getPropertyValue("--link-emerge").trim() || "#f97316";
 
@@ -1324,25 +1402,124 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
     // Conflicts: a diamond at the offending map's top-right corner, plus a
     // hit-rect recorded for the hover tooltip below. Connection bugs become
     // visible as geometry -- these are never hidden behind a toggle.
-    const badges: Array<{ x: number; y: number; text: string }> = [];
+    const badges: Array<{ x: number; y: number; text: string; key: string; map: string; accepted: boolean }> = [];
+    const badgeOffsets = conflictBadgeOffsets(world.conflicts, BADGE_SIZE * 2 + 2);
     for (const conflict of world.conflicts) {
       const p = world.placements.get(conflict.map);
       if (!p) continue;
       const size = sizeOfPlacement(p, sizeByMap);
       if (size.width <= 0 || size.height <= 0) continue;
-      const cx = p.x * zoom + pan.x + size.width * zoom - BADGE_SIZE;
+      const cx = p.x * zoom + pan.x + size.width * zoom - BADGE_SIZE - (badgeOffsets.get(conflict.key) ?? 0);
       const cy = p.y * zoom + pan.y + BADGE_SIZE;
-      drawDiamond(ctx, cx, cy, BADGE_SIZE, conflictColor);
+      const accepted = conflictAcceptance.isAccepted(conflict);
+      drawDiamond(ctx, cx, cy, BADGE_SIZE, accepted ? acceptedColor : conflictColor);
+      if (accepted) {
+        ctx.fillStyle = style?.getPropertyValue("--text-primary").trim() || "#fff";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText("✓", cx, cy);
+      }
       badges.push({
         x: cx,
         y: cy,
-        text: `${conflict.map}: via ${conflict.viaA.from} (${conflict.viaA.x},${conflict.viaA.y}) disagrees with via ${conflict.viaB.from} (${conflict.viaB.x},${conflict.viaB.y})`,
+        key: conflict.key,
+        map: conflict.map,
+        accepted,
+        text: `${accepted ? "Accepted (right-click to un-accept). " : ""}${conflict.map}: via ${conflict.viaA.from} (${conflict.viaA.x},${conflict.viaA.y}) disagrees with via ${conflict.viaB.from} (${conflict.viaB.x},${conflict.viaB.y})`,
       });
     }
     conflictBadgesRef.current = badges;
-  }, [compositeVersion, pan, zoom, viewport, visible, world, sizeByMap]);
+  }, [compositeVersion, pan, zoom, viewport, visible, world, sizeByMap, conflictAcceptance.acceptedKeys]);
 
   const screenToWorld = useCallback((sx: number, sy: number) => ({ x: (sx - pan.x) / zoom, y: (sy - pan.y) / zoom }), [pan, zoom]);
+
+  // ---- In-context editing (Plan 6c E4) ----
+  const inContext = context !== undefined;
+  const contextName = context?.map ?? null;
+  const contextPlacement = contextName ? world?.placements.get(contextName) : undefined;
+  const contextSize = contextPlacement ? sizeOfPlacement(contextPlacement, sizeByMap) : null;
+
+  // Snap once per entry: the context map's centre goes to the recorded pointer (canvas centre if none), at the
+  // nearest of 1x/2x/4x. It waits for `context.origin` (the map's layout): the host mounts its editing chrome in that
+  // same commit, which moves and resizes this canvas, so the pointer (client px) is converted with the canvas box as it
+  // is NOW, not as it was at the click. `snappedFor` gates the overlay canvas so it never mounts at the pre-snap zoom.
+  // The ref is the same-tick guard (a StrictMode double run must not snap twice); zoom and pan are separate,
+  // sequential setters, never nested. Leaving context hands focus back to the canvas (the Done button unmounts).
+  const snappedForRef = useRef<string | null>(null);
+  const [snappedFor, setSnappedFor] = useState<string | null>(null);
+  const hasContextOrigin = context?.origin != null;
+  useEffect(() => {
+    if (contextName === null) {
+      if (snappedForRef.current !== null) canvasRef.current?.focus();
+      snappedForRef.current = null;
+      setSnappedFor(null);
+      return;
+    }
+    if (!hasContextOrigin || snappedForRef.current === contextName || !contextPlacement || !contextSize || contextSize.width <= 0 || contextSize.height <= 0) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    snappedForRef.current = contextName;
+    const box = canvas.getBoundingClientRect();
+    const client = snapPointerRef.current;
+    snapPointerRef.current = null;
+    const view = enterContextView({
+      placement: { x: contextPlacement.x, y: contextPlacement.y, width: contextSize.width, height: contextSize.height },
+      pointer: client ? { x: client.x - box.left, y: client.y - box.top } : { x: canvas.clientWidth / 2, y: canvas.clientHeight / 2 },
+      zoom: snapContextZoom(zoom),
+    });
+    setZoom(view.zoom);
+    setPan(view.pan);
+    setSnappedFor(contextName);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- zoom is read at entry only; the ref guard above is what governs re-entry.
+  }, [contextName, world, hasContextOrigin]);
+
+  // Exits: Escape (a window listener in the CAPTURE phase, only while in context). Capture runs before every bubble
+  // handler, so what it checks is still the DOM the key press found: SaveDialog, WarpDestinationModal and SignComposer
+  // close on Escape from a React handler without stopping propagation (and React may flush that unmount before a
+  // bubble listener on window ran), and the context menu closes on its own window listener. Skipped when another
+  // handler already took the key (defaultPrevented), when a context menu or a modal dialog is open, and when the key
+  // came from a text field (those use Escape locally).
+  const onExitRequestRef = useRef(context?.onExitRequest);
+  onExitRequestRef.current = context?.onExitRequest;
+  const menuOpenRef = useRef(false);
+  menuOpenRef.current = contextMenu.menu !== null;
+  useEffect(() => {
+    if (!inContext) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented || menuOpenRef.current || document.querySelector('[aria-modal="true"]')) return;
+      if (e.target instanceof Element && e.target.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"]')) return;
+      onExitRequestRef.current?.();
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [inContext]);
+
+  const contextOrigin = context?.origin ?? null;
+  // The overlay's controlled MapCanvas view: the world's own pan/zoom, expressed in the composite's frame.
+  const contextView =
+    snappedFor === contextName && contextPlacement && contextOrigin
+      ? mapViewFromWorld({ placement: contextPlacement, worldPan: pan, worldZoom: zoom, originX: contextOrigin.x, originY: contextOrigin.y })
+      : null;
+  const onContextViewChange = (next: MapView) => {
+    if (!contextPlacement || !contextOrigin) return;
+    const v = worldViewFromMapView({ placement: contextPlacement, view: next, originX: contextOrigin.x, originY: contextOrigin.y });
+    setZoom(v.zoom);
+    setPan(v.pan);
+  };
+  const setContextZoom = (z: Zoom) => {
+    if (!contextView) return;
+    const next = zoomAboutPivot(contextView, z, viewport.w / 2, viewport.h / 2);
+    if (next !== contextView) onContextViewChange(next);
+  };
+  const overlayRef = useRef<HTMLDivElement>(null);
+  const onOverlayDoubleClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if ((e.target as Element).closest(".world-canvas__context-bar") || !contextPlacement || !contextSize || !overlayRef.current) return;
+    const rect = overlayRef.current.getBoundingClientRect();
+    const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
+    const x0 = contextPlacement.x * zoom + pan.x, y0 = contextPlacement.y * zoom + pan.y;
+    const inside = sx >= x0 && sx < x0 + contextSize.width * zoom && sy >= y0 && sy < y0 + contextSize.height * zoom;
+    if (!inside) context?.onExitRequest();
+  };
 
   // A NATIVE listener with { passive: false }, not React's onWheel prop.
   // React attaches wheel listeners as passive by default (for scroll
@@ -1361,7 +1538,9 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
       e.preventDefault();
       const rect = canvas.getBoundingClientRect();
       const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
-      const next = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, e.deltaY < 0 ? zoom * WHEEL_FACTOR : zoom / WHEEL_FACTOR));
+      // In-context editing leaves the world at 16 * {1, 2, 4} px per tile (above MAX_ZOOM): the cap never drops below the
+      // current zoom, so a wheel-in there stays put instead of jumping down to 16.
+      const next = Math.min(Math.max(MAX_ZOOM, zoom), Math.max(MIN_ZOOM, e.deltaY < 0 ? zoom * WHEEL_FACTOR : zoom / WHEEL_FACTOR));
       const before = screenToWorld(sx, sy);
       setZoom(next);
       setPan({ x: sx - before.x * next, y: sy - before.y * next });
@@ -1478,6 +1657,9 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
     const w = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
     const hit = hitTest(w.x, w.y);
     setSelected(hit ? new Set([hit.map]) : new Set());
+    // The line above is this canvas's own outline; the app may veto the change (a cancelled dirty-session
+    // confirm), so the outline can differ from the app's selection until the next click.
+    if (hit) onSelectMap?.(hit.map);
   };
 
   // Review fix: mirrors onCanvasClick's own CRITICAL postmortem comment
@@ -1491,12 +1673,30 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
   // (Task 8) over the wrong map at the end of an ordinary pan/drag gesture,
   // so this guard is load-bearing, not defensive-only.
   const onCanvasDoubleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    // Shift+double-click opens the map under the pointer (the Shift+mousedown before it only
+    // armed a map drag that, unmoved, commits nothing). Shift bypasses the warp preview.
+    if (e.shiftKey && !e.ctrlKey && !e.metaKey && !dragMovedRef.current) {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const w = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
+      const hit = hitTest(w.x, w.y);
+      if (hit) onOpenMap?.(hit.map);
+      return;
+    }
     if (e.ctrlKey || e.metaKey || e.shiftKey || dragMovedRef.current) return;
-    if (!warpsOn) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
-    const hit = warpMarkerEntries.find((m) => Math.hypot(m.sx - sx, m.sy - sy) <= WARP_HIT_RADIUS);
-    if (hit?.destMapName) setWarpPopup(hit.destMapName);
+    // A warp marker (warps on) wins over the map body under it: it previews the destination, never edits here.
+    if (warpsOn) {
+      const marker = warpMarkerEntries.find((m) => Math.hypot(m.sx - sx, m.sy - sy) <= WARP_HIT_RADIUS);
+      if (marker) {
+        if (marker.destMapName) setWarpPopup(marker.destMapName);
+        return;
+      }
+    }
+    if (!onEditHere) return;
+    const w = screenToWorld(sx, sy);
+    const hit = hitTest(w.x, w.y);
+    if (hit) requestEditHere(hit.map, { x: e.clientX, y: e.clientY });
   };
 
   const onMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -1662,6 +1862,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
   // this gesture falls back to onMouseLeaveCanvas's own commit-on-leave
   // handling above, not a crash.
   const onPointerDownCapture = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    contextMenu.onPointerDown();
     try {
       e.currentTarget.setPointerCapture(e.pointerId);
     } catch {
@@ -1670,8 +1871,28 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
     }
   };
 
+  const onCanvasContextMenu = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    contextMenu.onContextMenu(e, (sx, sy) => {
+      menuPointRef.current = { x: e.clientX, y: e.clientY };
+      const badge = conflictBadgesRef.current.find((item) => Math.hypot(item.x - sx, item.y - sy) <= BADGE_SIZE) ?? null;
+      const w = screenToWorld(sx, sy);
+      return { map: badge?.map ?? hitTest(w.x, w.y)?.map ?? null, badge };
+    });
+  };
+
   const onCanvasKeyDown = (e: React.KeyboardEvent<HTMLCanvasElement>) => {
     if (e.key === "Escape") setSelected(new Set());
+    // The menu opens for exactly one selected map that is in view's scope, at its screen-rect centre.
+    contextMenu.onMenuKey(e, () => {
+      const name = selected.size === 1 ? [...selected][0]! : null;
+      const p = name && (!mapFilter || mapFilter.has(name)) ? world?.placements.get(name) : undefined;
+      if (!p) return null;
+      const size = sizeOfPlacement(p, sizeByMap);
+      const at = { x: (p.x + size.width / 2) * zoom + pan.x, y: (p.y + size.height / 2) * zoom + pan.y };
+      const box = canvasRef.current?.getBoundingClientRect();
+      menuPointRef.current = { x: (box?.left ?? 0) + at.x, y: (box?.top ?? 0) + at.y };
+      return { ...at, map: p.map };
+    });
   };
 
   const onDragOverCanvas = (e: React.DragEvent<HTMLCanvasElement>) => {
@@ -1743,10 +1964,20 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
             <span className="world-canvas__switch-label">Connection lines {linesOn ? "on" : "off"}</span>
           </div>
         )}
+        {/* A visible note, not a silent gap, for however many maps' own
+            /api/encounters fetch failed (a non-OK status, or a shape that fails
+            isGbaEncountersPayload) -- same markup as GbcWorldCanvas's. */}
+        {encounterFailedCount > 0 && (
+          <div className="world-canvas__toolbar-group">
+            <span className="world-canvas__toolbar-error" role="alert">
+              Encounter data unavailable for {encounterFailedCount} map{encounterFailedCount === 1 ? "" : "s"}
+            </span>
+          </div>
+        )}
         <div className="world-canvas__toolbar-group world-canvas__toolbar-group--grow">
           <SpeciesSpotlight onHits={setSpotlightHits} />
           {/* Review fix: a failed /api/coverage fetch used to fall through
-              to LensPanel anyway via `?? 0`, rendering "0 maps have no
+              to the lenses anyway via `?? 0`, rendering "0 maps have no
               encounters" as if that were a real, checked answer. A failed
               fetch replaces the lens controls with a visible error instead
               -- SpeciesSpotlight above is unaffected (it hits
@@ -1757,15 +1988,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
               Coverage lenses unavailable: {coverageError}
             </span>
           ) : (
-            <LensPanel
-              active={lens}
-              onChange={setLens}
-              summary={{
-                emptyMaps: coverageData?.mapsWithoutEncounters.length ?? 0,
-                unusedSpecies: coverageData?.unusedSpecies.length ?? 0,
-              }}
-              onListEmptyMaps={focusEmptyMaps}
-            />
+            <LensPanel active={lens} onChange={setLens} />
           )}
         </div>
         <div className="world-canvas__toolbar-group">
@@ -1776,9 +1999,24 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
         </div>
       </div>
 
+      {!coverageError && (
+        <LensLegend
+          active={lens}
+          summary={
+            coverageData
+              ? { emptyMapNames: coverageData.mapsWithoutEncounters, unusedSpeciesNames: coverageData.unusedSpecies }
+              : null
+          }
+          onJumpToMap={onJumpToMap}
+        />
+      )}
+
       <div className="world-canvas__legend">
         <span className="world-canvas__legend-item">
           <i className="world-canvas__swatch world-canvas__swatch--conflict" /> Conflict
+        </span>
+        <span className="world-canvas__legend-item">
+          <i className="world-canvas__swatch world-canvas__swatch--conflict world-canvas__swatch--accepted" /> Accepted
         </span>
         <span className="world-canvas__legend-item">
           <i className="world-canvas__swatch world-canvas__swatch--dive" /> Dive
@@ -1804,6 +2042,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
             onMouseDown={onMouseDown}
             onMouseMove={onMouseMove}
             onMouseUp={onMouseUp}
+            onContextMenu={onCanvasContextMenu}
             onClick={onCanvasClick}
             onDoubleClick={onCanvasDoubleClick}
             onKeyDown={onCanvasKeyDown}
@@ -1812,7 +2051,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
             onDragOver={onDragOverCanvas}
             onDrop={onDropOnCanvas}
           />
-          <EncounterGutter maps={encounterEntries} zoom={zoom} />
+          <EncounterBorder entries={borderEntries} zoom={zoom} lodZoom={LOD_ZOOM_THRESHOLD} band={BORDER_BAND.gba} />
           {selectionOverlayEntries.length > 0 && (
             <div className="world-canvas__selection" aria-hidden="true">
               {selectionOverlayEntries.map((e) => (
@@ -1907,9 +2146,44 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
               )}
             </div>
           )}
+          {context && (
+            // In-context editing (Plan 6c E4): fills this viewport box exactly, so the chromeless MapCanvas's stage box
+            // equals the world canvas box and the controlled view maps one to one (see world/contextView.ts).
+            <div ref={overlayRef} className="world-canvas__context" onDoubleClick={onOverlayDoubleClick}>
+              <div className="world-canvas__context-dim" aria-hidden="true" />
+              {contextView && context.renderCanvas(contextView, onContextViewChange)}
+              <div className="world-canvas__context-bar" role="group" aria-label={`Editing ${context.map} in place`}>
+                <span className="world-canvas__context-name">{context.map}</span>
+                <div className="world-canvas__context-zoom" role="group" aria-label="Zoom">
+                  {ZOOM_LEVELS.map((z) => (
+                    <button
+                      key={z}
+                      type="button"
+                      className="map-canvas__btn"
+                      aria-pressed={contextView?.zoom === z}
+                      disabled={!contextView}
+                      onClick={() => setContextZoom(z)}
+                    >
+                      {z}×
+                    </button>
+                  ))}
+                </div>
+                <button type="button" className="map-canvas__btn" aria-label={`Done editing ${context.map}`} onClick={() => context.onExitRequest()}>
+                  Done
+                </button>
+              </div>
+            </div>
+          )}
           {tooltip && (
             <div className="world-canvas__tooltip" style={{ left: tooltip.x + 12, top: tooltip.y + 12 }} role="tooltip">
               {tooltip.text}
+            </div>
+          )}
+          <WorldContextMenu menu={contextMenu.menu} viewport={viewport} onClose={contextMenu.close} />
+          {conflictAcceptance.error && (
+            <div className="world-canvas__toast" role="alert">
+              <span className="world-canvas__toast-text">Could not update conflict: {conflictAcceptance.error}</span>
+              <button type="button" className="world-canvas__toast-dismiss" onClick={() => conflictAcceptance.setError(null)} aria-label="Dismiss">×</button>
             </div>
           )}
           {saveError && (
@@ -1942,7 +2216,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter }: WorldCanvasProp
       <div className="world-canvas__status">
         <span className="world-canvas__status-item">
           placed <strong>{world ? world.placements.size : 0}</strong> · hidden <strong>{hiddenCount}</strong> · unplaced{" "}
-          <strong>{unplacedNames.length}</strong> · conflicts <strong>{world ? world.conflicts.length : 0}</strong>
+          <strong>{unplacedNames.length}</strong> · <strong>{world ? world.conflicts.length : 0}</strong> conflicts · <strong>{conflictAcceptance.acceptedCount}</strong> accepted
         </span>
         {hover ? (
           <span className="world-canvas__status-item world-canvas__hover">

@@ -1,0 +1,35 @@
+# D4 predispatch independent spec review
+
+**Verdict: pass after corrections through `cc61b2c` (`136fdec` badge/mutation correction included).** Reviewed the original `c884031` contract, core Conflict/sidecar types and helpers, both world-route caches/serialization paths, badge draw/hit code, and relevant test assertions. A read-only Node/tsx probe built each real corpus twice and compared conflict arrays and proposed keys. No corpus writes, mutation experiments, or test suites ran. This predispatch check does not replace D4 implementation review.
+
+## Key and corpus evidence
+
+The actual core shape is `{map,viaA:{from,x,y},viaB:{from,x,y}}`; GBC reexports it. There are no `dx` or `dy` fields. JSON serialization of `[map,viaA.from,viaA.x,viaA.y,viaB.from,viaB.x,viaB.y]` preserves all identity-bearing fields and escapes embedded delimiters. Finite integer coordinates are produced by both measured builders. The pair order retains the existing meanings: viaA is the competing connection and viaB is the connection that placed the target. No additional canonical swapping is warranted.
+
+- **GBA:** 19 conflicts, 19 distinct full-tuple keys, zero duplicate keys; the two builds' entire conflict arrays are byte-identical after JSON serialization.
+- **GBC:** 2 conflicts, 2 distinct keys, zero duplicates, also byte-identical across builds. Route17's literal key is `["Route17","Route18",30,50,"Route16",30,49]`; Route18's is `["Route18","Route17",40,87,"FuchsiaCity",40,88]`.
+- **GBA same-map case:** Route111 has two distinct conflicts. Both have viaA coordinates `(160,-230)` and viaB `{from:"MauvilleCity",x:160,y:-232}`, but their viaA.from values are `Route113` and `Route112`. The full tuple distinguishes them correctly.
+
+Stale accepted keys can be retained safely if each response's accepted count is computed from current conflicts marked by membership, not the stored list's length. A changed corpus can invalidate an old key without moving any map or suppressing any current conflict. These are acknowledgement identifiers, not placement instructions.
+
+## Findings corrected during preflight
+
+1. **Real overlapping badge actions:** both current canvases compute a badge solely from its map's top-right corner, and hover uses the first matching hit-list entry. The two Route111 badges consequently overlap exactly; their independent keys alone do not make both actionable, and the last draw can conceal the first one's muted state. Commit `136fdec` adds deterministic key-sorted horizontal separation for same-map badges, using the same coordinates for drawing and hit testing. At radius 10, the specified minimum center spacing is 22 pixels, greater than the two hit radii. One badge keeps the old point and later badges move left. This changes only the conflict overlay, consistent with U3. The new two-key accept/unaccept and draw fixture plus D4-M8 will expose a collapsed-offset regression.
+2. **Equivalent original M1:** shifting both viaA.x and viaB.x by one preserves displacement. Omitting only one x field from the full key still distinguishes that pair through the other retained x field. The original “drop an origin coordinate” mutant was therefore not killed by its named same-delta witness. `136fdec` correctly changes M1 to a displacement-only key. For example A `(10,20)`/B `(8,17)` and A `(11,20)`/B `(9,17)` have identical `(2,3)` displacement but different full keys when all names match. A displacement-only mutant now collides and fails the required inequality.
+3. **Incorrect test inventory:** no existing WorldCanvas test pins the old conflict-status text. The only conflict-specific test there is `draws a marker for every conflict and shows a tooltip naming both disagreeing paths`. Meanwhile core sidecar `round-trips` compares the entire readback with an input lacking acceptedConflicts, so defaulting the new field to `[]` changes that exact expected shape. `cc61b2c` records the real sidecar impact and makes count-display coverage new. Strict GBC wire fixtures and full-conflict comparisons still need metadata updates, named individually at implementation time.
+
+## U3, routes, and UI coherence
+
+Both routes currently retain an immutable base world cache and pass its core conflict array into serialization. D4 should derive fresh conflict objects carrying key/accepted and preserve the cached geometry. The acknowledgement operation only updates the sidecar list; it must retain dungeonAutoLayout, manualPlacements, view, and unknown stored properties as normal read/modify/write does. GET placement records must remain byte-identical across accept, idempotent accept, and unaccept, including a real manual override. The existing GBA count tests need no change.
+
+The optional TypeScript field supports existing constructors; the reader's default supplies the list when older files omit it. Presence with null, a non-array, or a non-string member must fail with the sidecar path in the visible error. Request validation and current-world key membership precede persistence. Unknown keys return 404 without writing, duplicate accepts yield one key, and unaccept removes only that exact key. The response list shape guard is required before UI acknowledgement changes.
+
+The minimal badge action is consistent with E3's later menu: one pointer action, close on Escape, guarded POST, local acknowledgement update after success, visible failure with current state retained. Existing left-button checks in both mouse-down paths already prevent a right-button press from starting a map drag/pan; implementation tests must exercise the full right-click path and preserve selection/view as well as placements. Accepted coloring/check glyph/tooltip and total-plus-accepted status do not erase the core conflict. The same-map separation provides each acknowledgement a distinct target without adding a multi-item menu.
+
+GBA uses an unguarded world payload cast today; GBC guards currently check conflicts only as an array. D4 must validate the consumed new conflict fields and the POST response at the appropriate boundary, preserve visible fetch errors, and update legacy fixtures explicitly rather than silently treating malformed new metadata as accepted. A fresh serialization per GET avoids leaking acceptance state through the cached base object.
+
+## Implementation review obligations
+
+Keep the GBC real write in its existing route-test file, with the mandated cross-package scan and restoration. Use the stated GBA scratch sidecar root and report its real path/conflict; no restoration of the unavailable original preflight bytes is claimed. The read-only key probe in this report did not touch either sidecar.
+
+Recheck exact existing test titles after D2/D3 land, then record every changed test and its D4 reason. Required mutation coverage now includes all eight IDs, particularly delta-only M1 and same-map hit/draw M8. The subsequent independent implementation review must inspect actual cache/object preservation, UI draw/hit identity, response guards, failed persistence behavior, and coordinator replay evidence. No open predispatch finding remains in the corrected contract.

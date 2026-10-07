@@ -13,6 +13,8 @@ import { afterEach } from "vitest";
 // node-environment test run elsewhere in the workspace.
 if (typeof document !== "undefined") {
   const { cleanup } = await import("@testing-library/react");
+  // jsdom lacks scrollIntoView; MapTree calls it on every selection.
+  Element.prototype.scrollIntoView ??= () => {};
   afterEach(() => {
     cleanup();
   });

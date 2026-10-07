@@ -546,3 +546,210 @@ describe("GbcMapCanvas under <StrictMode> (spec review finding 1)", () => {
     expect(lastDraw().slice(5, 7)).toEqual([-3 * pivot[0], -3 * pivot[1]]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Plan 6c B4: the encounter border in the map view (GBC)
+// ---------------------------------------------------------------------------
+describe("GbcMapCanvas: Encounters overlay (Plan 6c B4)", () => {
+  // `GbcEncountersPayload`: ZUBAT lives only in the nite grass table, CATERPIE only in the morn one.
+  const ENC_BODY = {
+    family: "gbc",
+    sources: [
+      { method: "grass", time: "morn", encounterRate: 9.765625, chances: [{ species: "CATERPIE", percent: 45, minLevel: 3, maxLevel: 8 }] },
+      { method: "grass", time: "nite", encounterRate: 9.765625, chances: [{ species: "ZUBAT", percent: 10, minLevel: 3, maxLevel: 7 }] },
+    ],
+  };
+  const GBA_BODY = { mapName: "NewBarkTown", mapId: "MAP_NEW_BARK_TOWN", methods: [] };
+
+  function stubEncounters(body: unknown = ENC_BODY) {
+    const f = vi.fn((_url: string) => Promise.resolve(new Response(JSON.stringify(body), { status: 200 })));
+    vi.stubGlobal("fetch", f);
+    return f;
+  }
+
+  const withConnections = (dirs: Array<"north" | "south" | "east" | "west">): GbcMapPayload => ({
+    ...DATA,
+    map: { ...DATA.map, connections: dirs.map((direction) => ({ direction, targetName: "Route29", targetConst: "ROUTE_29", offset: 0 })) },
+  });
+
+  const setViewport = (px: number) => {
+    Object.defineProperty(HTMLElement.prototype, "clientWidth", { value: px, configurable: true });
+    Object.defineProperty(HTMLElement.prototype, "clientHeight", { value: px, configurable: true });
+  };
+
+  const encBtn = () => screen.getByRole("button", { name: "Encounters" });
+  const stripOf = (c: HTMLElement) => c.querySelector<HTMLElement>(".encounter-border__strip");
+  const box = (el: HTMLElement) => ({ left: el.style.left, top: el.style.top, width: el.style.width, height: el.style.height });
+
+  it("the Encounters toggle is the last button of the Overlays group and starts off", async () => {
+    stubEncounters();
+    await mountReady();
+    const group = screen.getByRole("group", { name: "Overlays" });
+    expect([...group.querySelectorAll("button")].map((b) => b.textContent)).toEqual(["Grid", "Collision", "Events", "Encounters"]);
+    expect(encBtn().getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(encBtn());
+    expect(encBtn().getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("fetches /api/encounters/:map only after the click (none before, one after), and not again on re-toggle", async () => {
+    const f = stubEncounters();
+    const { container } = await mountReady();
+    expect(f).not.toHaveBeenCalled();
+    expect(stripOf(container)).toBeNull();
+
+    fireEvent.click(encBtn());
+    await screen.findByRole("button", { name: /^Caterpie/ });
+    expect(f).toHaveBeenCalledTimes(1);
+    expect(f.mock.calls[0]![0]).toBe("/api/encounters/NewBarkTown");
+
+    fireEvent.click(encBtn());
+    expect(stripOf(container)).toBeNull();
+    fireEvent.click(encBtn());
+    await screen.findByRole("button", { name: /^Caterpie/ });
+    expect(f).toHaveBeenCalledTimes(1);
+  });
+
+  it("a time switch re-dims the sprites without refetching", async () => {
+    const f = stubEncounters();
+    const { rerender } = await mountReady({ time: "morn" });
+    fireEvent.click(encBtn());
+    await screen.findByRole("button", { name: /^Caterpie/ });
+    rerender(<GbcMapCanvas mapName="NewBarkTown" data={DATA} time="nite" />);
+    expect(screen.getByRole("button", { name: /^Caterpie, not encountered at nite/ })).toBeTruthy();
+    expect(f).toHaveBeenCalledTimes(1);
+  });
+
+  it("morn: the nite-only species is dimmed (still present), the morn one is not; the legend names the time and the + buff", async () => {
+    stubEncounters();
+    const { container } = await mountReady({ time: "morn" });
+    fireEvent.click(encBtn());
+    const zubat = await screen.findByRole("button", { name: "Zubat, not encountered at morn" });
+    expect(zubat.className).toContain("encounter-border__sprite--dimmed");
+    expect(screen.getByRole("button", { name: "Caterpie" }).className).not.toContain("encounter-border__sprite--dimmed");
+    expect(container.querySelector(".map-canvas__viewport .encounter-border")).not.toBeNull();
+    expect(screen.getAllByRole("button", { name: "Encounters" })).toHaveLength(1);
+    expect(container.querySelector(".encounter-border__toggle")).toBeNull();
+    expect(screen.queryByRole("note")).toBeNull();
+    expect(
+      screen.getByText("Encounters: hover or focus a sprite; dimmed = not at morn, + = level can roll up to 4 higher", { selector: ".map-canvas__legend-item" }),
+    ).toBeTruthy();
+  });
+
+  it("a failed fetch shows the error as an alert in the legend row", async () => {
+    stubEncounters(GBA_BODY); // a GBA-shaped payload reaching a GBC canvas
+    const { container } = await mountReady();
+    fireEvent.click(encBtn());
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toMatch(/\/api\/encounters\/NewBarkTown returned an unexpected shape/);
+    expect(alert.className).toContain("map-canvas__legend-item");
+    expect(stripOf(container)).toBeNull();
+  });
+
+  it("a map with no wild encounters says so in the legend row instead of promising sprites", async () => {
+    stubEncounters({ family: "gbc", sources: [] });
+    const { container } = await mountReady();
+    fireEvent.click(encBtn());
+    await screen.findByText("Encounters: none on this map", { selector: ".map-canvas__legend-item" });
+    expect(screen.queryByText(/hover or focus a sprite/)).toBeNull();
+    expect(stripOf(container)).toBeNull();
+  });
+
+  it("resets to off when the map changes", async () => {
+    stubEncounters();
+    const { rerender } = await mountReady();
+    fireEvent.click(encBtn());
+    expect(encBtn().getAttribute("aria-pressed")).toBe("true");
+    rerender(<GbcMapCanvas mapName="Route29" data={DATA} time="day" />);
+    await waitFor(() => expect(encBtn().getAttribute("aria-pressed")).toBe("false"));
+  });
+
+  it("a map switch is off in the very first render: no fetch for the new map and its toggle reads off", async () => {
+    const f = stubEncounters();
+    const { rerender } = await mountReady();
+    fireEvent.click(encBtn());
+    await screen.findByRole("button", { name: /^Caterpie/ });
+    expect(f).toHaveBeenCalledTimes(1);
+    rerender(<GbcMapCanvas mapName="Route29" data={DATA} time="day" />);
+    expect(encBtn().getAttribute("aria-pressed")).toBe("false"); // synchronously, no reset effect needed
+    await Promise.resolve();
+    expect(f).toHaveBeenCalledTimes(1);
+  });
+
+  it("north + south connections leave the left side (west) free: the strip is on the left", async () => {
+    stubEncounters();
+    const { container } = await mountReady({ data: withConnections(["north", "south"]) });
+    fireEvent.click(encBtn());
+    await screen.findByRole("button", { name: /^Caterpie/ });
+    expect(container.querySelector(".encounter-border__strip--left")).not.toBeNull();
+  });
+
+  it("west + north connections block left and top: the strip is on the right", async () => {
+    stubEncounters();
+    const { container } = await mountReady({ data: withConnections(["west", "north"]) });
+    fireEvent.click(encBtn());
+    await screen.findByRole("button", { name: /^Caterpie/ });
+    expect(container.querySelector(".encounter-border__strip--right")).not.toBeNull();
+    expect(container.querySelector(".encounter-border__strip--left")).toBeNull();
+  });
+
+  // The fixture image is 128 x 96 native px (layout 2x1 + a 1-block border ring, 32 px blocks) and the GBC band
+  // is 2 blocks = 64 native px. After Fit with the toggle on, the content is image + one band on the side:
+  //  - viewport 400, left side (north+south connections): extraW = 64.
+  //      zoom 2: (128+64)*2 = 384 <= 400; zoom 4: 192*4 = 768 > 400  -> z = 2.
+  //      content 384 x 192; centred: x0 = round((400-384)/2) = 8, y0 = round((400-192)/2) = 104.
+  //      left side: the image is pushed right by band*z = 64*2 = 128 -> pan = (8+128, 104) = (136, 104).
+  //      The image is drawn at (136,104) 256x192. EncounterBorder gets zoom 2*32 = 64 px/block, so
+  //      bandPx = 2*64 = 128 and the left strip = (136-128, 104, 128, 192) = (8, 104, 128, 192).
+  //      (A fit that ignores the band gives zoom 2 at pan (72,104)... and a strip at left -56.)
+  //  - viewport 200, top side (west+east connections): extraH = 64.
+  //      zoom 1: 128 x (96+64) = 128 x 160 fits; zoom 2: 256 > 200 -> z = 1.
+  //      x0 = round((200-128)/2) = 36, y0 = round((200-160)/2) = 20; top: pan.y = 20 + 64 = 84 -> pan (36, 84).
+  //      bandPx = 2*32 = 64; the top strip = (36, 84-64, 128, 64) = (36, 20, 128, 64).
+  it.each([
+    { name: "left, viewport 400", dirs: ["north", "south"] as const, vp: 400, side: "left", draw: [136, 104, 256, 192], strip: { left: "8px", top: "104px", width: "128px", height: "192px" } },
+    { name: "top, viewport 200", dirs: ["west", "east"] as const, vp: 200, side: "top", draw: [36, 84, 128, 96], strip: { left: "36px", top: "20px", width: "128px", height: "64px" } },
+  ])("Fit with Encounters on leaves room for the band: $name", async ({ dirs, vp, side, draw, strip }) => {
+    stubEncounters();
+    setViewport(vp);
+    const { container, lastDraw } = await mountReady({ data: withConnections([...dirs]) });
+    fireEvent.click(encBtn());
+    await screen.findByRole("button", { name: /^Caterpie/ });
+    fireEvent.click(screen.getByRole("button", { name: "Fit" }));
+    await waitFor(() => expect(lastDraw().slice(5, 9)).toEqual(draw));
+    const el = container.querySelector<HTMLElement>(`.encounter-border__strip--${side}`)!;
+    expect(box(el)).toEqual(strip);
+  });
+
+  it("toggling Encounters on does not re-fit: the user's view is kept until Fit", async () => {
+    stubEncounters();
+    setViewport(400);
+    const { lastDraw } = await mountReady({ data: withConnections(["north", "south"]) });
+    const before = lastDraw().slice(5, 9); // no band: zoom 2 (zoom 4 is 512 > 400), centred at (72, 104)
+    expect(before).toEqual([72, 104, 256, 192]);
+    fireEvent.click(encBtn());
+    await screen.findByRole("button", { name: /^Caterpie/ });
+    expect(lastDraw().slice(5, 9)).toEqual(before);
+  });
+
+  it("toggling Encounters on does not recomposite the overlay pixels (the border is DOM, not canvas)", async () => {
+    stubEncounters();
+    const { stageCtx } = await mountReady();
+    const baseCtx = [...ctxByCanvas.values()].find((c) => c !== stageCtx)!;
+    expect(baseCtx.putImageData).not.toHaveBeenCalled();
+    fireEvent.click(encBtn());
+    await screen.findByRole("button", { name: /^Caterpie/ });
+    expect(baseCtx.putImageData).not.toHaveBeenCalled();
+  });
+
+  it("with Grid already on, toggling Encounters does not recomposite either (no new putImageData)", async () => {
+    stubEncounters();
+    const { stageCtx } = await mountReady();
+    const baseCtx = [...ctxByCanvas.values()].find((c) => c !== stageCtx)!;
+    fireEvent.click(screen.getByRole("button", { name: "Grid" }));
+    await waitFor(() => expect(baseCtx.putImageData).toHaveBeenCalledTimes(1));
+    baseCtx.putImageData.mockClear();
+    fireEvent.click(encBtn());
+    await screen.findByRole("button", { name: /^Caterpie/ });
+    expect(baseCtx.putImageData).not.toHaveBeenCalled();
+  });
+});

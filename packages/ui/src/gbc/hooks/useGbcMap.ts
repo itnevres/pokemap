@@ -6,9 +6,9 @@ export type UseGbcMapResult = UseGuardedFetchResult<GbcMapPayload>;
 
 /**
  * Fetches `/api/map/:name` for the GBC map view -- built on the same shared
- * `useGuardedFetch` `useGbcGroups`/`useProjectInfo` use (Task 3's own
- * convention: every fetch goes through it, never a hand-rolled fetch+guard+
- * error block). `name === null` (nothing selected yet, mirroring
+ * `useGuardedFetch` `useGbcGroups`/`Root.tsx`'s own `/api/hub` fetch use
+ * (Task 3's own convention: every fetch goes through it, never a
+ * hand-rolled fetch+guard+error block). `name === null` (nothing selected yet, mirroring
  * `useMapLayout.ts`'s own shape) fetches nothing and idles at
  * `{ data: null, error: null }` -- `useGuardedFetch`'s own `url === null`
  * branch (added by this task) is what makes that possible without this hook

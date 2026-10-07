@@ -191,4 +191,16 @@ describe("fetchGuarded", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 404, json: () => Promise.resolve({}) }));
     await expect(fetchGuarded("/api/a%20b", isThing, "/api/a b")).rejects.toThrow("GET /api/a b -> 404");
   });
+
+  it("guards POST status, JSON, response shape, and network errors", async () => {
+    const init = { method: "POST", body: "{}" };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce({ ok: false, status: 500, json: () => Promise.resolve({}) }));
+    await expect(fetchGuarded("/api/save", isThing, undefined, init)).rejects.toThrow("POST /api/save -> 500");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce({ ok: true, status: 200, json: () => Promise.reject(new Error("bad JSON")) }));
+    await expect(fetchGuarded("/api/save", isThing, undefined, init)).rejects.toThrow("bad JSON");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce({ ok: true, status: 200, json: () => Promise.resolve({ nope: true }) }));
+    await expect(fetchGuarded("/api/save", isThing, undefined, init)).rejects.toThrow("POST /api/save returned an unexpected shape");
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValueOnce(new Error("network down")));
+    await expect(fetchGuarded("/api/save", isThing, undefined, init)).rejects.toThrow("network down");
+  });
 });

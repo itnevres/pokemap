@@ -1,8 +1,13 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RGBA } from "@pokemap/core/src/render/raster.js";
 import { drawGbcGrid, drawGbcCollision, drawGbcEvents, gbcStepInfo, type GbcQuadrantInfo, type GbcQuadrantKey, type GbcStepInfo } from "@pokemap/core/src/gbc/render/overlays.js";
 import type { GbcMapPayload } from "@pokemap/core/src/gbc/wire.js";
 import type { GbcTimeOfDay } from "./time.js";
+import { EncounterBorder, type EncounterBorderEntry } from "../components/EncounterBorder.js";
+import { BORDER_BAND, borderSideFromConnections } from "../encounters/borderSide.js";
+import { fitWithBand } from "../encounters/fit.js";
+import { useMapEncounterSummaries } from "../encounters/useMapEncounterSummaries.js";
+import { ZOOM_LEVELS, zoomAboutPivot, type MapView, type Zoom } from "../components/mapView.js";
 
 /**
  * The read-only GBC map view (Plan 6b Task 4). Plan Q2 accepts this as a
@@ -34,19 +39,19 @@ import type { GbcTimeOfDay } from "./time.js";
  *   destructive), and a separate stage canvas re-blits that composite for
  *   pan/zoom only, never re-touching overlay pixels.
  *
- * **One divergence from `MapCanvas.tsx`, deliberate (fix round, spec review
- * finding 1):** `MapCanvas.tsx:532-542`'s own `applyZoom` nests a `setPan`
- * call inside a `setZoom` updater function. React's `<StrictMode>` (which
+ * **One divergence from `MapCanvas.tsx` (as of Plan 6b; since closed), deliberate
+ * (fix round, spec review finding 1):** `MapCanvas.tsx`'s own `applyZoom` then
+ * nested a `setPan` call inside a `setZoom` updater function. React's `<StrictMode>` (which
  * `main.tsx` wraps the whole app in) double-invokes updater functions in
  * development to surface exactly this kind of impurity -- the nested
  * `setPan` fires twice, so the pan transform is applied twice, landing 2x
  * off-centre and going fully off-canvas (blank) at 4x on every map, not just
  * a large one. This file keeps ONE `view: { zoom, pan }` state updated by a
- * single, pure `zoomAboutPivot` (exported and unit-tested below), so
- * StrictMode's double-invoke is harmless -- it is the standard fix for this
- * exact class of bug, not a fork from GBA's own mechanic. A GBA follow-up
- * for `MapCanvas.tsx:532-542` is filed separately; that file is out of
- * scope here.
+ * single, pure `zoomAboutPivot`, so StrictMode's double-invoke is harmless --
+ * it is the standard fix for this exact class of bug. GBA had the same bug
+ * and was fixed the same way in Plan 6c E1; both canvases now share
+ * `components/mapView.ts` (`zoomAboutPivot` is re-exported below and
+ * unit-tested in this canvas's own test file).
  *
  * Unlike GBA, hover does NOT depend on which overlays are toggled on:
  * `gbcStepInfo` is a pure function of the payload and the hovered step,
@@ -56,34 +61,14 @@ import type { GbcTimeOfDay } from "./time.js";
  */
 
 const BORDER_RINGS = 1;
-const ZOOM_LEVELS = [1, 2, 4] as const;
-type Zoom = (typeof ZOOM_LEVELS)[number];
+/** Native px per world unit (one block) -- the encounter border's own scale, and what its band is measured in. */
+const BLOCK_PX = 32;
 
 /** The canvas's whole pan/zoom state, updated as ONE value (fix round, spec
  *  review finding 1) -- see the header comment for why this replaced two
- *  separate `zoom`/`pan` state variables. */
-export interface GbcView {
-  zoom: Zoom;
-  pan: { x: number; y: number };
-}
-
-/**
- * Pure: given the current view, the next zoom level, and a pivot point in
- * STAGE-canvas pixels, returns the view that keeps the composite-space point
- * under the pivot fixed on screen -- or the SAME `view` object (not a new
- * one with equal fields) when `next === view.zoom`, so a caller can use
- * reference equality to skip work. Exported and unit-tested with exact
- * numbers (fix round, spec review finding 1); called from exactly one
- * `setView(v => zoomAboutPivot(v, ...))` site, so React's `<StrictMode>`
- * double-invoking it twice with the same input `v` is harmless -- both
- * invocations compute the identical result, and only one is ever committed.
- */
-export function zoomAboutPivot(view: GbcView, next: Zoom, pivotX: number, pivotY: number): GbcView {
-  if (view.zoom === next) return view;
-  const cx = (pivotX - view.pan.x) / view.zoom;
-  const cy = (pivotY - view.pan.y) / view.zoom;
-  return { zoom: next, pan: { x: Math.round(pivotX - cx * next), y: Math.round(pivotY - cy * next) } };
-}
+ *  separate `zoom`/`pan` state variables. Shared with `MapCanvas` (Plan 6c E1). */
+export type GbcView = MapView;
+export { zoomAboutPivot };
 
 interface Toggles {
   grid: boolean;
@@ -233,6 +218,11 @@ export function GbcMapCanvas({ mapName, data, time, hoveredMetatile }: GbcMapCan
 
   const [imgLoaded, setImgLoaded] = useState(false);
   const [toggles, setToggles] = useState<Toggles>(NO_TOGGLES);
+  // The encounter border toggle (B4) is DOM over the viewport, not a canvas overlay, so it is not in
+  // `Toggles`. It remembers WHICH map it was turned on for: a map switch reads as off in the very first
+  // render (no fetch for the new map, no stale border), with no reset effect needed.
+  const [encountersFor, setEncountersFor] = useState<string | null>(null);
+  const encountersOn = encountersFor === mapName;
   const [view, setView] = useState<GbcView>({ zoom: 1, pan: { x: 0, y: 0 } });
   const { zoom, pan } = view;
   const [hover, setHover] = useState<GbcStepInfo | null>(null);
@@ -258,11 +248,18 @@ export function GbcMapCanvas({ mapName, data, time, hoveredMetatile }: GbcMapCan
   const originX = BORDER_RINGS * 32;
   const originY = BORDER_RINGS * 32;
 
+  // Encounter border side (B4): the first of left, top, right, bottom with no connection (GBC's
+  // directions are already compass names).
+  const connections = data.map.connections;
+  const side = useMemo(() => borderSideFromConnections(new Set(connections.map((c) => c.direction))), [connections]);
+  const { summaries: encounterSummaries, error: encounterError } = useMapEncounterSummaries(mapName, "gbc", encountersOn);
+
   const imageUrl = `/api/render/${encodeURIComponent(mapName)}.png?border=${BORDER_RINGS}&time=${time}`;
 
   // Fresh overlays/hover on a real map switch -- mirrors MapCanvas.tsx:371-374.
   useEffect(() => {
     setToggles(NO_TOGGLES);
+    setEncountersFor(null); // only so A -> B -> A does not bring A's border back; B is already off without it
     setHover(null);
     hoveredMetatile?.(null);
     // hoveredMetatile is intentionally excluded: it is a plain prop
@@ -283,12 +280,19 @@ export function GbcMapCanvas({ mapName, data, time, hoveredMetatile }: GbcMapCan
   const fit = useCallback(() => {
     const vw = viewport.w || pixelWidth;
     const vh = viewport.h || pixelHeight;
-    let z: Zoom = 1;
-    for (const level of ZOOM_LEVELS) {
-      if (pixelWidth * level <= vw && pixelHeight * level <= vh) z = level;
-    }
-    setView({ zoom: z, pan: { x: Math.round((vw - pixelWidth * z) / 2), y: Math.round((vh - pixelHeight * z) / 2) } });
-  }, [pixelWidth, pixelHeight, viewport]);
+    // Encounters on: the content is the image plus one band on the border's side, so the sprites fit too.
+    setView(
+      fitWithBand({
+        pw: pixelWidth,
+        ph: pixelHeight,
+        vw,
+        vh,
+        levels: ZOOM_LEVELS,
+        bandNative: encountersOn ? BORDER_BAND.gbc * BLOCK_PX : 0,
+        side,
+      }),
+    );
+  }, [pixelWidth, pixelHeight, viewport, encountersOn, side]);
 
   // Once per real map open -- NOT on a time switch, which reuses the same
   // imgLoaded false->true cycle (MapCanvas.tsx:401-416's own fittedForMapRef
@@ -352,11 +356,12 @@ export function GbcMapCanvas({ mapName, data, time, hoveredMetatile }: GbcMapCan
     setCompositeVersion((v) => v + 1);
     // `anyOverlay` is intentionally excluded: it is a plain local
     // (`toggles.grid || toggles.collision || toggles.events`), deterministically
-    // derived from `toggles`, which IS already listed below -- it is not a
+    // derived from the individual canvas-overlay flags listed below (not the whole
+    // `toggles` object, so the DOM-only Encounters toggle never recomposites) -- it is not a
     // separately-changing dependency this effect could miss, just a
     // convenience name for a value already covered.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [imgLoaded, toggles, data, pixelWidth, pixelHeight, originX, originY]);
+  }, [imgLoaded, toggles.grid, toggles.collision, toggles.events, data, pixelWidth, pixelHeight, originX, originY]);
 
   // Step 2: cheap re-blit for pan/zoom -- `viewport` MUST stay in this list
   // (see the header comment's Task 21 citation).
@@ -372,6 +377,13 @@ export function GbcMapCanvas({ mapName, data, time, hoveredMetatile }: GbcMapCan
   }, [compositeVersion, zoom, pan, pixelWidth, pixelHeight, viewport]);
 
   const toggle = (key: keyof Toggles) => setToggles((t) => ({ ...t, [key]: !t[key] }));
+
+  // The drawn image, border ring included, in viewport px: sprites never cover map or border-block pixels.
+  // Memoised so EncounterBorder's tooltip-clearing effect (keyed on `entries`) only fires when something moved.
+  const borderEntries = useMemo<EncounterBorderEntry[]>(
+    () => [{ map: mapName, rect: { x: pan.x, y: pan.y, width: pixelWidth * zoom, height: pixelHeight * zoom }, side, summaries: encounterSummaries }],
+    [mapName, pan.x, pan.y, pixelWidth, pixelHeight, zoom, side, encounterSummaries],
+  );
 
   const applyZoom = (next: Zoom, pivotX: number, pivotY: number) => setView((v) => zoomAboutPivot(v, next, pivotX, pivotY));
 
@@ -466,10 +478,13 @@ export function GbcMapCanvas({ mapName, data, time, hoveredMetatile }: GbcMapCan
           <button type="button" className="map-canvas__btn" aria-pressed={toggles.events} onClick={() => toggle("events")}>
             Events
           </button>
+          <button type="button" className="map-canvas__btn" aria-pressed={encountersOn} onClick={() => setEncountersFor(encountersOn ? null : mapName)}>
+            Encounters
+          </button>
         </div>
       </div>
 
-      {anyOverlay && (
+      {(anyOverlay || encountersOn) && (
         <div className="map-canvas__legend">
           {toggles.grid && (
             <span className="map-canvas__legend-item">
@@ -502,6 +517,18 @@ export function GbcMapCanvas({ mapName, data, time, hoveredMetatile }: GbcMapCan
               </span>
             </>
           )}
+          {encountersOn &&
+            (encounterError ? (
+              <span className="map-canvas__legend-item" role="alert">
+                {encounterError}
+              </span>
+            ) : (
+              <span className="map-canvas__legend-item">
+                {encounterSummaries?.length === 0
+                  ? "Encounters: none on this map"
+                  : `Encounters: hover or focus a sprite; dimmed = not at ${time}, + = level can roll up to 4 higher`}
+              </span>
+            ))}
         </div>
       )}
 
@@ -516,6 +543,14 @@ export function GbcMapCanvas({ mapName, data, time, hoveredMetatile }: GbcMapCan
           onMouseMove={onMouseMove}
           onMouseUp={onMouseUp}
           onMouseLeave={onMouseLeave}
+        />
+        <EncounterBorder
+          enabled={encountersOn}
+          entries={borderEntries}
+          zoom={zoom * BLOCK_PX}
+          lodZoom={0}
+          band={BORDER_BAND.gbc}
+          time={time}
         />
       </div>
 

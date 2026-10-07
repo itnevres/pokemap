@@ -1,10 +1,10 @@
 import { readFileSync } from "node:fs";
-import { createServer as createHttp, type IncomingMessage, type Server } from "node:http";
+import { createServer as createHttp, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { openProject, type Project } from "@pokemap/core/src/project.js";
 import { detectEngineFamily } from "@pokemap/core/src/family.js";
 import type { ProjectInfo } from "@pokemap/core/src/family.js";
 import type { GbcProject } from "@pokemap/core/src/gbc/project.js";
-import { createGbcServer } from "./gbcRoutes.js";
+import { createGbcProjectHandler } from "./gbcRoutes.js";
 import { renderLayout } from "@pokemap/core/src/render/layout.js";
 import { renderMetatile } from "@pokemap/core/src/render/metatile.js";
 import { renderSpeciesIcon } from "@pokemap/core/src/render/species.js";
@@ -14,6 +14,7 @@ import { coverage, whereSpecies, allSpecies } from "@pokemap/core/src/analyse/co
 import { buildWorld, resolveWorldPlacements } from "@pokemap/core/src/world/resolve.js";
 import type { Placement } from "@pokemap/core/src/world/connections.js";
 import { readSidecar, writeSidecar } from "@pokemap/core/src/world/sidecar.js";
+import { conflictKey, isAcceptConflictBody, updatedAcceptedConflicts, wireConflicts } from "@pokemap/core/src/world/conflictAcceptance.js";
 import { readDungeons, writeDungeons } from "@pokemap/core/src/world/dungeons.js";
 import { warpConnectedMapsFrom } from "@pokemap/core/src/world/warpGraph.js";
 import { encodePng } from "@pokemap/cli/src/png.js";
@@ -39,11 +40,40 @@ export type PokemapServer =
   | { port: number; close(): Promise<void>; family: "gbc"; project: GbcProject };
 
 /**
+ * The hub-swappable core of a server (Plan 6c A1): everything `createServer`
+ * used to build BEFORE `createHttp`/`listen`, minus the `node:http` plumbing
+ * itself -- one `node:http.Server` (owned by `createServer` below, and by
+ * `hub.ts`) can point `handle` at a fresh `ProjectHandler` on every
+ * `/api/hub/open`, with no listener restart. `createProjectHandler` is
+ * synchronous (both `openProject` and `openGbcProject` already are) so a
+ * hub's "open new, then swap" is race-free: nothing can arrive between the
+ * two steps because there is no await between them.
+ *
+ * `dirtyMaps()`/`dispose()` are what let the hub enforce "don't silently
+ * discard unsaved edits" (`/api/hub/open`'s dirty-check) and "an in-flight
+ * request against a just-replaced handler must not touch it any further"
+ * (the disposed-503 guard at the top of `handle`) without the hub needing to
+ * know anything about editSessions.ts.
+ */
+export type ProjectHandler =
+  | {
+      family: "gba"; project: Project; info: ProjectInfo;
+      handle(req: IncomingMessage, res: ServerResponse): void;
+      dirtyMaps(): string[]; dispose(): void;
+    }
+  | {
+      family: "gbc"; project: GbcProject; info: ProjectInfo;
+      handle(req: IncomingMessage, res: ServerResponse): void;
+      dirtyMaps(): string[]; dispose(): void;
+    };
+
+/**
  * Buffers a request body to a string. `/api/world/placement` is the first
  * POST route this server has ever needed -- every route before it only ever
- * reads.
+ * reads. Exported (Plan 6c A1) so `hub.ts`'s own `POST /api/hub/open` reuses
+ * this instead of a second copy.
  */
-function readBody(req: IncomingMessage): Promise<string> {
+export function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     req.on("data", (c: Buffer) => chunks.push(c));
@@ -73,10 +103,10 @@ function validateStampAndOrigin(stamp: unknown, origin: unknown): string | undef
   return undefined;
 }
 
-export async function createServer(opts: { projectPath: string; port?: number }): Promise<PokemapServer> {
-  if (detectEngineFamily(opts.projectPath) === "gbc") return createGbcServer(opts);
+export function createProjectHandler(root: string): ProjectHandler {
+  if (detectEngineFamily(root) === "gbc") return createGbcProjectHandler(root);
 
-  const project = openProject(opts.projectPath);
+  const project = openProject(root);
 
   // Unbounded on purpose for now, and worth knowing why: the whole corpus is
   // 1,209 maps and the largest PNG is a few hundred KB, but Route47 at
@@ -184,7 +214,29 @@ export async function createServer(opts: { projectPath: string; port?: number })
     return { map: entry.session.map, isDirty: entry.session.isDirty, extra };
   }
 
-  const http: Server = createHttp((req, res) => {
+  // Set by `dispose()` below -- an in-flight request that already holds this
+  // exact handler (captured before a `/api/hub/open` swap completed) must not
+  // read or write through it any further once it's no longer current. Every
+  // route past this point is unreachable once disposed; the 503 is the whole
+  // guard.
+  let disposed = false;
+
+  const handle = (req: IncomingMessage, res: ServerResponse) => {
+    if (disposed) {
+      res.writeHead(503, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "project closed" }));
+      return;
+    }
+    // ponytail: this guard only catches a request whose HEADERS arrive
+    // before a swap. A POST route below awaits `readBody(req)` before doing
+    // any real work -- if the swap (and this handler's own `dispose()`)
+    // lands during that await, the body-handling code still runs against
+    // this now-disposed handler's `project`/`editSessions` and can answer
+    // 200 from a store that's already been torn down (spec review F3,
+    // deferred as a later task -- fixing it touches every async route body,
+    // not just this guard). Upgrade path: re-check `disposed` after
+    // `readBody` resolves, e.g. by having `readBody` itself reject with a
+    // 503 when the handler that awaited it is no longer current.
     const url = new URL(req.url ?? "/", "http://localhost");
     const send = (code: number, body: unknown) => {
       res.writeHead(code, { "content-type": "application/json" });
@@ -520,9 +572,28 @@ export async function createServer(opts: { projectPath: string; port?: number })
         return send(200, {
           placements,
           components: world.components,
-          conflicts: world.conflicts,
+          conflicts: wireConflicts(world.conflicts, sidecar.acceptedConflicts ?? []),
           verticalLinks: world.verticalLinks,
           sidecar,
+        });
+      }
+
+      if (url.pathname === "/api/world/conflicts/accept" && req.method === "POST") {
+        return readBody(req).then((body) => {
+          let parsed: unknown;
+          try { parsed = JSON.parse(body); }
+          catch (e) { return send(400, { error: `invalid JSON body: ${(e as Error).message}` }); }
+          if (!isAcceptConflictBody(parsed)) return send(400, { error: `expected { key: string, accepted: boolean }, got ${body}` });
+          if (!getWorld().conflicts.some((conflict) => conflictKey(conflict) === parsed.key)) {
+            return send(404, { error: `unknown conflict key ${parsed.key}` });
+          }
+          const sidecar = readSidecar(project.paths.root);
+          sidecar.acceptedConflicts = updatedAcceptedConflicts(sidecar.acceptedConflicts ?? [], parsed.key, parsed.accepted);
+          writeSidecar(project.paths.root, sidecar);
+          return send(200, { acceptedConflicts: sidecar.acceptedConflicts });
+        }).catch((e: unknown) => {
+          console.error(e);
+          send(500, { error: e instanceof Error ? e.message : String(e) });
         });
       }
 
@@ -851,6 +922,10 @@ export async function createServer(opts: { projectPath: string; port?: number })
           console.error(e);
           return send(500, { error: e instanceof Error ? e.message : String(e) });
         }
+        // The render route's pngCache (keyed `name:border`, no expiry) predates this write, and the session-bypass
+        // above ends the moment the session closes below. Clear all of it: layouts can be shared by several maps and
+        // one map serves both the border=0 and border=1 keys.
+        pngCache.clear();
         // Close, not markSaved()-and-keep-open: the session's own `map`/
         // `blocks` reflect what was JUST written, but the world/coverage/
         // encounters caches above this route do NOT (I8's read-only-
@@ -1006,11 +1081,38 @@ export async function createServer(opts: { projectPath: string; port?: number })
       console.error(e);
       return send(500, { error: (e as Error).message });
     }
-  });
+  };
+
+  return {
+    family: "gba",
+    project,
+    info: { family: "gba", root: project.paths.root },
+    handle,
+    dirtyMaps: () => editSessions.dirty(),
+    dispose: () => {
+      editSessions.closeAll();
+      disposed = true;
+    },
+  };
+}
+
+/**
+ * Thin wrapper around `createProjectHandler`: owns the one `node:http`
+ * listener a standalone (non-hub) server needs, for every existing test file
+ * and CLI-adjacent caller that still wants "one project, one server,
+ * one port" rather than the hub's swappable handler. Behaviour-identical to
+ * the pre-split `createServer` (same listen/port/close shape) -- this is the
+ * proof the handler split above is a mechanical move, not a behaviour change.
+ */
+export async function createServer(opts: { projectPath: string; port?: number }): Promise<PokemapServer> {
+  const h = createProjectHandler(opts.projectPath);
+  const http: Server = createHttp(h.handle);
 
   await new Promise<void>((r) => http.listen(opts.port ?? 5174, "127.0.0.1", r));
   const addr = http.address();
   const port = typeof addr === "object" && addr ? addr.port : (opts.port ?? 5174);
+  const close = () => new Promise<void>((r) => http.close(() => r()));
 
-  return { port, family: "gba", project, close: () => new Promise<void>((r) => http.close(() => r())) };
+  if (h.family === "gba") return { port, family: "gba", project: h.project, close };
+  return { port, family: "gbc", project: h.project, close };
 }

@@ -510,9 +510,25 @@ input {
   padding: var(--space-3);
 }
 
+/* Plan 6b Task 4 fix round (spec review findings 1/2, quality review finding
+   1): the GBC hover status text can run to 150-250+ characters (id + 4
+   quadrants, each with an optional bracketed category/talk, plus every
+   event at that step), far longer than any GBA hover string ever produced.
+   Without an explicit `min-width: 0`, `.map-canvas` (a flex item in
+   `.app__map-editing-body`) resolves its own min-width to its min-content
+   width, which includes the `white-space: nowrap` status text -- so the
+   canvas column grows to fit it and pushes the metatile palette past the
+   right edge of the viewport, scrolling the whole page horizontally.
+   Verified live at 1280x800 and 1024x768 (fix round report):
+   `scrollWidth === clientWidth` while hovering the longest realistic status
+   line, both before and after this fix (the CSS is what makes it true).
+   GBA's `.map-canvas` had the identical latent bug; Plan 6c E1 (follow-up
+   D2) moved the fix here, so both families share it (GBC's root carries
+   `map-canvas` too). */
 .map-canvas {
   flex: 1 1 auto;
   min-height: 0;
+  min-width: 0;
   display: flex;
   flex-direction: column;
 }
@@ -574,6 +590,13 @@ input {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
+}
+
+/* A failed encounter fetch shows its message here; the guarded-fetch text can
+   hold a long unspaced token, which must wrap instead of overflowing the row. */
+.map-canvas__legend-item[role="alert"] {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .map-canvas__swatch {
@@ -665,36 +688,23 @@ input {
   font-weight: 600;
 }
 
+/* Right-aligned readout; `min-width: 0` + ellipsis let it shrink instead of
+   widening the strip when a long line has no room (shared by GBA and GBC). */
 .map-canvas__hover {
   margin-left: auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .map-canvas__hover--empty {
   color: var(--text-muted);
 }
 
-/* Plan 6b Task 4 fix round (spec review findings 1/2, quality review finding
-   1): the GBC hover status text can run to 150-250+ characters (id + 4
-   quadrants, each with an optional bracketed category/talk, plus every
-   event at that step), far longer than any GBA hover string ever produced.
-   Without an explicit `min-width: 0`, `.map-canvas` (a flex item in
-   `.app__map-editing-body`) resolves its own min-width to its min-content
-   width, which includes this `white-space: nowrap` text -- so the canvas
-   column grows to fit it and pushes the metatile palette past the right
-   edge of the viewport, scrolling the whole page horizontally. Verified
-   live at 1280x800 and 1024x768 (fix round report): `scrollWidth ===
-   clientWidth` while hovering the longest realistic status line, both
-   before and after this fix (the CSS is what makes it true). GBA's own
-   `.map-canvas` has the identical latent bug (its own hover text is short
-   enough today to never trigger it) -- filed as a separate GBA follow-up,
-   not fixed here (out of this task's scope). */
-.gbc-map-canvas {
-  min-width: 0;
-}
-
-/* A FIXED-height, two-line strip -- wrapping the two status items onto
-   their own line each (not scrolling or clipping to one line) is the
-   primary fix. The height must stay fixed, not grow with content: growing
+/* GBC only (its hover line is far longer than GBA's one-row readout, which
+   keeps the base 28px strip). A FIXED-height, two-line strip -- wrapping the
+   two status items onto their own line each (not scrolling or clipping to
+   one line) is the primary fix. The height must stay fixed, not grow with content: growing
    it would resize `.map-canvas__viewport` under the cursor, firing the
    ResizeObserver and a re-blit, which can oscillate near the bottom edge --
    the same class of bug as Task 21's own blanking postmortem, from the
@@ -706,15 +716,13 @@ input {
   row-gap: 2px;
 }
 
-/* The hover span still shrinks to fit its own line and ellipsises as the
+/* The hover span flows left after the status items (overriding the base
+   right alignment), still shrinks to fit its own line and ellipsises as the
    last resort, in case a future map/tileset combination produces an even
    longer line than any measured today. */
 .gbc-map-canvas .map-canvas__hover {
   margin-left: 0;
-  min-width: 0;
   max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 /* App-level mode switch (Map / World / Dungeon) -- three top-level views,
@@ -744,6 +752,9 @@ input {
 .world-canvas {
   flex: 1 1 auto;
   min-height: 0;
+  /* Plan 6c E4: in context the world canvas is a flex-row child of .app__map-editing-body beside
+     EventInspector; without this its toolbar's min-content width overflowed the page by 71px at 1280. */
+  min-width: 0;
   display: flex;
   flex-direction: column;
 }
@@ -773,6 +784,16 @@ input {
   flex: 1 1 auto;
   min-width: 0;
   justify-content: center;
+}
+
+.world-canvas__toolbar-group--save-error {
+  min-width: 0;
+}
+
+.world-canvas__toolbar-group--save-error .world-canvas__toolbar-error {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Review fix: a failed /api/coverage fetch replaces LensPanel with this,
@@ -868,6 +889,10 @@ input {
   transform: rotate(45deg);
 }
 
+.world-canvas__swatch--accepted {
+  background: var(--text-muted);
+}
+
 .world-canvas__swatch--dive {
   background: var(--link-dive);
   clip-path: polygon(0 0, 100% 0, 50% 100%);
@@ -923,6 +948,117 @@ input {
 .world-canvas__tooltip strong {
   font-family: var(--font-data);
   color: var(--danger);
+}
+
+/* World context menu (Plan 6c E3): the right-click / ContextMenu-key menu both
+   world canvases share. Positioned inside .world-canvas__viewport (position:
+   relative); inline left/top are the measured, clamped viewport-relative px. */
+.world-context-menu {
+  position: absolute;
+  z-index: 12;
+  box-sizing: border-box;
+  width: max-content;
+  min-width: 0;
+  max-width: calc(100% - 2 * var(--space-2));
+  max-height: calc(100% - 2 * var(--space-2));
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-1);
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+.world-context-menu__item {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  text-align: left;
+  padding: var(--space-1) var(--space-2);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-primary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.world-context-menu__item:hover:not(:disabled),
+.world-context-menu__item:focus-visible {
+  background: var(--bg-hover);
+}
+
+.world-context-menu__item:disabled {
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
+.world-context-menu__hint {
+  display: block;
+  min-width: 0;
+  color: var(--text-secondary);
+  font-size: var(--text-xs);
+}
+
+/* In-context editing (Plan 6c E4, GBA): the overlay fills .world-canvas__viewport (position: relative) exactly, so
+   the chromeless MapCanvas inside it has a stage box equal to the world canvas box and the controlled view maps one
+   to one (world/contextView.ts). Above the world's own overlays (z 10), below the context menu (z 12). The dim layer
+   sits under the MapCanvas (a positioned, z-indexed flex item); the bar floats top-left over both. */
+.world-canvas__context {
+  position: absolute;
+  inset: 0;
+  z-index: 11;
+  display: flex;
+}
+
+.world-canvas__context-dim {
+  position: absolute;
+  inset: 0;
+  background: var(--overlay-spotlight-dim);
+}
+
+.world-canvas__context .map-canvas {
+  position: relative;
+  z-index: 1;
+}
+
+.map-canvas--chromeless .map-canvas__viewport {
+  background: transparent;
+}
+
+.world-canvas__context-bar {
+  position: absolute;
+  top: var(--space-2);
+  left: var(--space-2);
+  z-index: 2;
+  max-width: calc(100% - 2 * var(--space-2));
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-1) var(--space-2);
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+.world-canvas__context-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-data);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.world-canvas__context-zoom {
+  display: flex;
+  gap: var(--space-1);
 }
 
 /* Review fix: a failed save (a placement drag or the dungeon toggle) used
@@ -1070,31 +1206,26 @@ input {
   color: var(--text-muted);
 }
 
-/* Encounter gutter (Task 28): a floating overlay layer meant to be mounted
-   once inside .world-canvas__viewport (position: relative, set above), so
-   its own left/top inline styles per map are relative to that same
-   viewport WorldCanvas already positions the canvas, tooltip and toast
-   against. The root is pointer-events: none so it never steals the
-   canvas's own pan/drag handling -- only the toggle and each icon button
-   opt back in. */
-.encounter-gutter {
+/* Encounter border (Plan 6c B3): one sprite per species on a free side of each
+   map, mounted once inside .world-canvas__viewport (position: relative) so the
+   inline left/top/width/height per strip are viewport-relative screen px. The
+   root is pointer-events: none so it never steals the canvas's own pan/drag;
+   only the toggle, legend, sprites and +N chips opt back in. */
+.encounter-border {
   position: absolute;
   inset: 0;
   pointer-events: none;
   z-index: 5;
 }
 
-.encounter-gutter__control {
+.encounter-border__control {
   position: absolute;
   top: var(--space-3);
   right: var(--space-3);
-  /* Confirmed live: with no explicit z-index here, plain DOM order put this
-     BELOW the per-map badges/strips that follow it in EncounterGutter.tsx's
-     JSX (later siblings paint over earlier ones at the same stacking level),
-     so a badge could sit on top of the legend's own explanatory text --
-     exactly backwards, since the legend exists to be read before the data
-     it explains. z-index makes the paint order explicit rather than an
-     accident of source order. */
+  /* Explicit paint order: with no z-index here, later siblings (badges,
+     strips) paint over this control, so a badge could sit on the legend's own
+     text -- backwards, since the legend exists to be read before the data it
+     explains. */
   z-index: 3;
   display: flex;
   flex-direction: column;
@@ -1103,7 +1234,7 @@ input {
   pointer-events: auto;
 }
 
-.encounter-gutter__toggle {
+.encounter-border__toggle {
   background: var(--bg-panel-raised);
   border: 1px solid var(--border);
   color: var(--text-secondary);
@@ -1117,18 +1248,18 @@ input {
   transition: background-color 150ms ease-out, border-color 150ms ease-out, color 150ms ease-out;
 }
 
-.encounter-gutter__toggle:hover {
+.encounter-border__toggle:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
 
-.encounter-gutter__toggle[aria-pressed="true"] {
+.encounter-border__toggle[aria-pressed="true"] {
   background: var(--bg-selected);
   border-color: var(--border-strong);
   color: var(--text-primary);
 }
 
-.encounter-gutter__legend {
+.encounter-border__legend {
   width: 240px;
   padding: var(--space-3);
   background: var(--bg-panel-raised);
@@ -1139,67 +1270,30 @@ input {
   color: var(--text-secondary);
 }
 
-.encounter-gutter__legend-title {
+.encounter-border__legend-title {
   margin: 0 0 var(--space-1);
   font-size: var(--text-sm);
   font-weight: 600;
   color: var(--text-primary);
 }
 
-.encounter-gutter__legend-body {
+.encounter-border__legend-body {
   margin: 0 0 var(--space-2);
   line-height: 1.4;
 }
 
-.encounter-gutter__legend-key {
-  list-style: none;
-  margin: 0 0 var(--space-2);
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-
-.encounter-gutter__legend-item {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.encounter-gutter__legend-swatch {
+/* A tiny dimmed, dashed square: the legend's own picture of a dimmed sprite. */
+.encounter-border__legend-sample {
   display: inline-block;
   width: 10px;
   height: 10px;
-  border-radius: 2px;
-  flex: 0 0 auto;
+  margin-right: var(--space-1);
+  vertical-align: middle;
+  opacity: 0.4;
+  outline: 1px dashed var(--text-muted);
 }
 
-.encounter-gutter__legend-swatch--land {
-  background: var(--encounter-land);
-}
-
-.encounter-gutter__legend-swatch--water {
-  background: var(--encounter-water);
-}
-
-.encounter-gutter__legend-swatch--rock-smash {
-  background: var(--encounter-rock-smash);
-}
-
-.encounter-gutter__legend-swatch--fishing {
-  background: var(--encounter-fishing);
-}
-
-/* GBC-only (Plan 6b Task 6): GbcEncounterGutter's own headbutt row/legend
-   swatch -- the other 4 GBC method slugs it uses (land for grass, water,
-   fishing for fish, rock-smash for rock) reuse the 4 rules already above,
-   since those methods are the same real-world concept GBA's own encounter
-   data already has a colour for. */
-.encounter-gutter__legend-swatch--headbutt {
-  background: var(--encounter-headbutt);
-}
-
-.encounter-gutter__legend-hint {
+.encounter-border__legend-hint {
   margin: 0;
   padding-top: var(--space-2);
   border-top: 1px solid var(--border);
@@ -1208,12 +1302,119 @@ input {
   line-height: 1.4;
 }
 
-/* Low-zoom collapse target -- see LOW_ZOOM_THRESHOLD's own comment in
-   EncounterGutter.tsx for why a plain count replaces icons here rather than
-   shrinking them further. */
-.encounter-gutter__badge {
+/* The strip fills exactly the band beside its map (inline left/top/width/
+   height from bandRect), sprites flowing along the side from the map's top/left
+   corner and centred across the band. */
+.encounter-border__strip {
   position: absolute;
   z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  pointer-events: none;
+}
+
+.encounter-border__strip--left,
+.encounter-border__strip--right {
+  flex-direction: column;
+}
+
+.encounter-border__strip--top,
+.encounter-border__strip--bottom {
+  flex-direction: row;
+}
+
+/* Sized inline (spritePx square). The tile gives GBC's opaque white front
+   sprites a card to sit on rather than reading as a hole, and is harmless
+   behind GBA's transparent icons. */
+.encounter-border__sprite {
+  position: relative;
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  display: block;
+  padding: 0;
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  pointer-events: auto;
+  transition: border-color 150ms ease-out;
+}
+
+.encounter-border__sprite:hover,
+.encounter-border__sprite:focus-visible {
+  border-color: var(--focus-ring);
+  z-index: 1;
+}
+
+.encounter-border__sprite:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.encounter-border__sprite img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 3px;
+  image-rendering: pixelated;
+}
+
+/* Not encountered at the current time of day (GBC): dimmed AND dashed, so the
+   state is not carried by opacity alone. The fade is on the img, not the
+   button: opacity on the button would also fade its focus ring. */
+.encounter-border__sprite--dimmed {
+  outline: 1px dashed var(--text-muted);
+}
+
+.encounter-border__sprite--dimmed img {
+  opacity: 0.4;
+}
+
+.encounter-border__more {
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-data);
+  font-size: var(--text-2xs);
+  color: var(--text-secondary);
+  padding: 0;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.encounter-border__more:hover {
+  color: var(--text-primary);
+}
+
+.encounter-border__more:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+/* Low-zoom collapse: a count pill in the band rect instead of unreadable
+   sprites. The band is often thinner than the text, so the text overflows it
+   (away from the map on the left side). */
+.encounter-border__badge {
+  position: absolute;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  pointer-events: none;
+}
+
+.encounter-border__badge--left {
+  justify-content: flex-end;
+}
+
+.encounter-border__badge-text {
+  flex: 0 0 auto;
   padding: 2px var(--space-2);
   background: var(--bg-panel-raised);
   border: 1px solid var(--border-strong);
@@ -1223,165 +1424,13 @@ input {
   font-weight: 500;
   color: var(--text-secondary);
   white-space: nowrap;
-  pointer-events: none;
 }
 
-.encounter-gutter__strip {
-  position: absolute;
-  z-index: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  max-width: 280px;
-}
-
-.encounter-gutter__row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-1);
-  padding: 2px var(--space-1);
-  background: var(--bg-panel-raised);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
-}
-
-.encounter-gutter__method-tag {
-  flex: 0 0 auto;
-  padding: 1px var(--space-1);
-  border-radius: 3px;
-  font-family: var(--font-ui);
-  font-size: var(--text-2xs);
-  font-weight: 600;
-  color: var(--text-on-accent);
-  white-space: nowrap;
-}
-
-.encounter-gutter__method-tag--land {
-  background: var(--encounter-land);
-}
-
-.encounter-gutter__method-tag--water {
-  background: var(--encounter-water);
-}
-
-.encounter-gutter__method-tag--rock-smash {
-  background: var(--encounter-rock-smash);
-}
-
-.encounter-gutter__method-tag--fishing {
-  background: var(--encounter-fishing);
-}
-
-/* GBC-only (Plan 6b Task 6): see the legend-swatch--headbutt rule above. */
-.encounter-gutter__method-tag--headbutt {
-  background: var(--encounter-headbutt);
-}
-
-/* GBC-only (Plan 6b Task 6): GbcEncounterGutter's own species chip -- text,
-   not an icon (GBC has no per-species icon art, unlike GBA's own
-   .encounter-gutter__icon), so this is a new leaf class under the same
-   .encounter-gutter__* family rather than a reuse of .encounter-gutter__icon
-   itself, which is a fixed 20x20 image button that a text label wouldn't
-   fit. Same hover/focus treatment as .encounter-gutter__icon, sized by its
-   own text instead of a fixed square. */
-.encounter-gutter__chip {
-  display: inline-flex;
-  align-items: center;
-  padding: 1px var(--space-1);
-  background: var(--bg-hover);
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  cursor: pointer;
-  pointer-events: auto;
-  font-family: var(--font-data);
-  font-size: var(--text-2xs);
-  color: var(--text-primary);
-  white-space: nowrap;
-  transition: border-color 150ms ease-out;
-}
-
-.encounter-gutter__chip:hover,
-.encounter-gutter__chip:focus-visible {
-  border-color: var(--focus-ring);
-}
-
-/* GBC-only (Plan 6b Task 6): a row's own encounterRate/biteChance, in muted
-   data type -- "12.5%" per the spec's own example. */
-.encounter-gutter__rate {
-  font-family: var(--font-data);
-  font-size: var(--text-2xs);
-  color: var(--text-muted);
-  white-space: nowrap;
-}
-
-.encounter-gutter__icons {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  flex-wrap: wrap;
-}
-
-.encounter-gutter__icon {
-  position: relative;
-  display: block;
-  width: 20px;
-  height: 20px;
-  padding: 0;
-  background: var(--bg-hover);
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  cursor: pointer;
-  pointer-events: auto;
-  transition: border-color 150ms ease-out, transform 150ms ease-out;
-}
-
-.encounter-gutter__icon:hover,
-.encounter-gutter__icon:focus-visible {
-  border-color: var(--focus-ring);
-  transform: scale(1.15);
-  z-index: 1;
-}
-
-.encounter-gutter__icon-img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  image-rendering: pixelated;
-  image-rendering: crisp-edges;
-}
-
-.encounter-gutter__more {
-  font-family: var(--font-data);
-  font-size: var(--text-2xs);
-  color: var(--text-muted);
-  padding: 0 2px;
-}
-
-/*
- * Review fix: this used to be nested inside .encounter-gutter__icon inside
- * .encounter-gutter__strip, positioned via `bottom: 100%` relative to its
- * own parent. That put it inside TWO nested stacking contexts (the strip's
- * own `position: absolute` + `z-index: 1`, and the icon's `position:
- * relative` + `z-index: 1` from its own :hover/:focus-visible rule below)
- * neither of which it could ever escape -- a CSS stacking context traps
- * every descendant's z-index inside it, however high, so no number here
- * could ever have painted this above .encounter-gutter__control's legend.
- * (This file previously also declared z-index twice in this same rule --
- * 4, then 2 further down winning by cascade order -- compounding the same
- * underlying bug rather than causing it.)
- *
- * Fixed on the JSX side (EncounterGutter.tsx): the tooltip is now a
- * top-level sibling of .encounter-gutter__control, .encounter-gutter__strip
- * and .encounter-gutter__badge, not nested inside any of them, positioned
- * via `left`/`top` computed from the hovered icon's own
- * getBoundingClientRect() at hover time -- the same pattern
- * .world-canvas__tooltip already uses. `left`/`top` here are therefore the
- * anchor point (the icon's own top-center), not this element's own
- * top-left; `transform` both centers it on that point and lifts it clear
- * above the icon.
- */
-.encounter-gutter__tooltip {
+/* A top-level sibling of the control and strips, never nested in a strip: a
+   strip is its own stacking context and would trap this under the legend.
+   left/top are the sprite's top-centre anchor (computed at hover time);
+   transform centres it on that point and lifts it clear above the sprite. */
+.encounter-border__tooltip {
   position: absolute;
   z-index: 4;
   transform: translate(-50%, calc(-100% - 6px));
@@ -1397,9 +1446,17 @@ input {
   pointer-events: none;
 }
 
+.encounter-border__tooltip-line {
+  display: block;
+}
+
+.encounter-border__tooltip-line:first-child {
+  font-weight: 600;
+}
+
 /* Species spotlight + coverage lenses (Task 29). Both toolbar controls are
    purely presentational (search box; toggle strip + legend) -- mirrors
-   EncounterGutter's own "presentational child, caller draws" split; the
+   EncounterBorder's own "presentational child, caller draws" split; the
    world-canvas__spotlight-* and world-canvas__lens-tint rules further below are
    the actual overlay WorldCanvas renders from the data these controls hand
    it back via onHits/onChange. */
@@ -1492,7 +1549,6 @@ input {
 }
 
 .lens-panel {
-  position: relative;
   display: flex;
   align-items: center;
   flex: 0 0 auto;
@@ -1528,55 +1584,51 @@ input {
   color: var(--text-primary);
 }
 
-/* Floats below the toggle strip rather than pushing layout -- the same
-   "dropdown panel anchored to its own trigger" shape as
-   .encounter-gutter__legend, just anchored to a toolbar control instead of
-   a viewport-corner one, so it needs its own z-index high enough to clear
-   both the static conflict/dive/emerge legend row and the canvas viewport
-   beneath it. */
-.lens-panel__legend {
-  position: absolute;
-  z-index: 6;
-  top: calc(100% + var(--space-2));
-  right: 0;
-  width: 280px;
-  padding: var(--space-3);
-  background: var(--bg-panel-raised);
-  border: 1px solid var(--border-strong);
-  border-radius: 6px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+/* The active coverage lens's legend: a row below the world toolbar, in flow
+   (no position), styled like .map-canvas__legend -- never a popover, so it
+   cannot cover the viewport's own Encounters toggle. Prose, so one text step
+   up from the swatch row. */
+.world-canvas__legend-row {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  padding: var(--space-1) var(--space-3);
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border);
   font-size: var(--text-xs);
   color: var(--text-secondary);
-  text-align: left;
 }
 
 .lens-panel__legend-title {
-  margin: 0 0 var(--space-1);
+  margin: 0;
   font-size: var(--text-sm);
   font-weight: 600;
   color: var(--text-primary);
 }
 
 .lens-panel__legend-body {
-  margin: 0 0 var(--space-2);
+  margin: 0;
+  min-width: 0;
   line-height: 1.4;
 }
 
 /* Review fix: the method lens's swatch+label key, added because colour
    alone conveyed which tint meant which method -- mirrors
-   .encounter-gutter__legend-key's own shape exactly (same list-reset,
-   flex-column, 10px swatch), including the identical swatch colours (the
+   the former encounter-gutter legend key's own shape exactly (same list-reset,
+   10px swatch; a wrapping row now that the legend is a row, not a popover), including the identical swatch colours (the
    two files intentionally do not share a class name -- lens-panel and
-   encounter-gutter are independent overlays that can be visible at once,
+   encounter-border are independent overlays that can be visible at once,
    and coupling their CSS would make one's markup change silently affect
    the other). */
 .lens-panel__legend-key {
   list-style: none;
-  margin: 0 0 var(--space-2);
+  margin: 0;
   padding: 0;
   display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
 }
 
 .lens-panel__legend-item {
@@ -1629,12 +1681,67 @@ input {
   background: var(--accent-strong);
 }
 
+/* Empty-maps / unused-species lists, opened from the legend row's action
+   button. Full row width, scrolls past 40vh. */
+.lens-panel__list {
+  flex: 1 0 100%;
+  max-height: 40vh;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: var(--space-1);
+}
+
+.lens-panel__list-btn {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  text-align: left;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-family: var(--font-ui);
+  font-size: var(--text-xs);
+  padding: var(--space-1) var(--space-2);
+  border-radius: 4px;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lens-panel__list-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.lens-panel__species {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.lens-panel__species > img {
+  flex: 0 0 auto;
+}
+
+.lens-panel__species > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* World-canvas overlays the two controls above drive. Both are absolutely
    positioned per-placement rects sharing the exact dx/dy/dw/dh math the
    encounter gutter's own `rect` prop already uses (see WorldCanvas.tsx's
    lensOverlayEntries/spotlightOverlayEntries), so they always line up with
    the map they describe regardless of pan/zoom -- and, like
-   .encounter-gutter itself, `pointer-events: none` throughout so neither
+   .encounter-border itself, `pointer-events: none` throughout so neither
    ever intercepts the canvas's own panning/dragging. */
 .world-canvas__lens,
 .world-canvas__spotlight {
@@ -1701,7 +1808,7 @@ input {
 
 /* Review fix: neither rule declared a z-index (computed `auto`), so both
    painted underneath .world-canvas__lens/.world-canvas__spotlight (z-index:
-   2, above) and .encounter-gutter (z-index: 5, above) -- confirmed live via
+   2, above) and .encounter-border (z-index: 5, above) -- confirmed live via
    elementsFromPoint on the real app: a selected map's outline sat under a
    spotlight's dim and under a lens tint, and the live marquee sat under
    both AND under the whole encounter gutter. Selection outlines sit above
@@ -2697,4 +2804,248 @@ input {
   margin: 0;
   padding-left: var(--space-4);
   list-style: disc;
+}
+
+/* Plan 6c A2: the project hub UI (ProjectPicker/ProjectSwitcher/
+   SwitchConfirmDialog) -- see DESIGN.md's own "Project hub" section for the
+   class list and badge colour choices. Used two ways: directly under
+   Root's own `.app` (no project open yet -- flex:1 fills the remaining
+   column height same as `.app__body` would) and as the sole child of
+   `.warp-modal__panel.hub-picker--modal` (ProjectSwitcher's own modal) --
+   `flex: 1; min-height: 0; overflow-y: auto` works in both parent shapes
+   (`.app`'s own flex column, `.warp-modal__panel`'s own flex column), so
+   this one class satisfies the "the modal's picker list scrolls inside the
+   fixed panel" requirement without a second, modal-only variant. */
+.hub-picker {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  max-width: 640px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.hub-picker__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.hub-picker__title {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.hub-picker__section-title {
+  margin: var(--space-2) 0 var(--space-1);
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.hub-picker__error {
+  color: var(--danger);
+  font-size: var(--text-sm);
+  margin: 0;
+}
+
+.hub-picker__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.hub-picker__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-1) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.hub-picker__row:last-child {
+  border-bottom: none;
+}
+
+/* The one place in this row a long absolute path has to live -- `flex: 1`
+   without `min-width: 0` would refuse to shrink below its own content
+   width and blow out the row instead of wrapping/ellipsizing (this file's
+   own established flex-with-long-text fix, see the former `.encounter-gutter__row`'s
+   own precedent). `overflow-wrap: anywhere` wraps mid-path rather than
+   overflowing, since a path has no natural word-break points a browser's
+   default wrapping would find on its own. */
+.hub-picker__path {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-family: var(--font-data);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+/* Family badge, `.encounter-border__badge-text`'s own pill shape. Colours reuse
+   the two elevation tokens (DESIGN.md's own "dive"/"emerge" hues) purely as
+   two visually distinct, already-themed hues to tell GBA/GBC apart at a
+   glance -- not because either carries any elevation meaning here. */
+.hub-picker__badge {
+  flex: 0 0 auto;
+  padding: 2px var(--space-2);
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  font-family: var(--font-data);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.hub-picker__badge--gba {
+  border-color: var(--overlay-elevation-high);
+  color: var(--overlay-elevation-high);
+}
+
+.hub-picker__badge--gbc {
+  border-color: var(--overlay-elevation-low);
+  color: var(--overlay-elevation-low);
+}
+
+.hub-picker__badge--unsupported {
+  color: var(--text-muted);
+}
+
+.hub-picker__breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.hub-picker__entry-name {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hub-picker__form {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.hub-picker__form-label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  flex: 1;
+  min-width: 0;
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.hub-picker__form-input {
+  font-family: var(--font-data);
+  font-size: var(--text-sm);
+  padding: var(--space-1) var(--space-2);
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-primary);
+}
+
+.hub-picker__form-input:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* ProjectSwitcher's own header button -- pushed to the toolbar's far right
+   (the natural place for a "current context" control), long root names
+   ellipsized rather than stretching the toolbar. */
+.hub-switcher__btn {
+  margin-left: auto;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A little roomier than SaveDialog's own `.warp-modal__panel` default
+   (a picker with a browser + form needs more than a single save summary
+   does), still capped well under the viewport on small windows. */
+.hub-picker--modal {
+  width: min(640px, 92vw);
+  height: min(600px, 88vh);
+}
+
+/* SwitchConfirmDialog -- a danger-bordered section inside the picker's own
+   body (it owns no backdrop or modal panel; see its own doc comment). */
+.hub-confirm {
+  padding: var(--space-4);
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--danger);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+}
+
+.hub-confirm__title {
+  margin: 0 0 var(--space-3);
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.hub-confirm__message {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+}
+
+.hub-confirm__list {
+  margin: 0 0 var(--space-3);
+  padding-left: var(--space-4);
+  list-style: disc;
+  max-height: 200px;
+  overflow-y: auto;
+  font-family: var(--font-data);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.hub-confirm__error {
+  margin: 0 0 var(--space-2);
+  color: var(--danger);
+  font-size: var(--text-sm);
+}
+
+.hub-confirm__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: auto;
+  padding-top: var(--space-2);
+}
+
+/* Same outlined-danger technique as `.toolbar__discard-btn` -- an outline
+   that only fills solid on hover, opposite hue from any primary/accent
+   action in this app. */
+.hub-confirm__btn--danger:not(:disabled) {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.hub-confirm__btn--danger:not(:disabled):hover {
+  background: var(--danger);
+  color: var(--text-on-accent);
 }

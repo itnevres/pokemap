@@ -1,32 +1,39 @@
 /**
- * The GBC (pokecrystal-family) server -- the server-side counterpart of
- * `cli/src/gbcCommands.ts`, the same way `index.ts`'s GBA body is the server
- * counterpart of the CLI's own GBA render/query commands. `createServer`
- * (`index.ts`) branches to `createGbcServer` here the moment
- * `detectEngineFamily` says `"gbc"`, before `openProject` (the GBA loader)
- * ever runs.
+ * The GBC (pokecrystal-family) route handler -- the server-side counterpart
+ * of `cli/src/gbcCommands.ts`, the same way `index.ts`'s GBA body is the
+ * server counterpart of the CLI's own GBA render/query commands.
+ * `createProjectHandler` (`index.ts`) branches to `createGbcProjectHandler`
+ * here the moment `detectEngineFamily` says `"gbc"`, before `openProject`
+ * (the GBA loader) ever runs. Plan 6c A1 split this out of a standalone
+ * `createGbcServer` (which owned its own `node:http` listener) into a plain
+ * `ProjectHandler` -- the `node:http.Server` now lives only in `createServer`
+ * (`index.ts`) and `hub.ts`, either of which can point at this handler's
+ * `handle` without this file knowing anything about a hub or a swap.
  *
  * Task 1a's own routes are `/api/project` and the GBA-only-route 501
  * refusals. Task 1b adds `/api/groups`, `/api/map/:name`,
  * `/api/render/:name.png` and `/api/metatile/:map/:id.png`. Task 2 (this
  * file's current state) adds `/api/world`, `/api/encounters/:map`,
- * `/api/where/:species`, `/api/coverage` and `/api/species` -- everything
- * else still answers a plain 404. Plan 7 adds `/api/edit/*` once GBC gets a
- * write path.
+ * `/api/where/:species`, `/api/coverage` and `/api/species`. D3 adds
+ * `/api/warps/:map` and dungeon CRUD. Plan 7 adds `/api/edit/*` once GBC
+ * gets a write path.
  *
  * The payload-assembly logic for `/api/groups` and `/api/map/:name` is
  * factored into `buildGbcGroupsPayload`/`buildGbcMapPayload` below, exported
  * and unit-testable against a `stubGbcProject` (Task 1b fix round 1, quality
- * review findings 2/5) -- `createGbcServer`'s own body stays a thin dispatch
- * list of `if (match) return send(200, buildX(...))` lines, the same shape
+ * review findings 2/5) -- `createGbcProjectHandler`'s own body stays a thin
+ * dispatch list of `if (match) return send(200, buildX(...))` lines, the same shape
  * Task 2's five new routes should follow rather than growing this function
  * into one 400-line handler the way `index.ts` did.
  */
-import { createServer as createHttp, type Server } from "node:http";
 import { openGbcProject, type GbcProject } from "@pokemap/core/src/gbc/project.js";
 import { loadGbcMapEvents, outOfBoundsEventDefects } from "@pokemap/core/src/gbc/load/events.js";
 import { renderGbcMap, renderGbcMapMetatile } from "@pokemap/core/src/gbc/render/map.js";
 import { buildGbcWorld, type GbcWorld } from "@pokemap/core/src/gbc/world/connections.js";
+import { placeNearWarps, type WarpLink } from "@pokemap/core/src/world/nearWarp.js";
+import { gbcWarpLinks, gbcWarpConnectedMapsFrom } from "@pokemap/core/src/world/nearWarpAdapters.js";
+import { readDungeons, writeDungeons } from "@pokemap/core/src/world/dungeons.js";
+import { randomUUID } from "node:crypto";
 import {
   gbcEncounterSources,
   gbcWhereSpecies,
@@ -43,21 +50,25 @@ import type {
   GbcWorldPayload,
   GbcEncountersPayload,
 } from "@pokemap/core/src/gbc/wire.js";
+import { applySidecar, readSidecar, writeSidecar, type Sidecar } from "@pokemap/core/src/world/sidecar.js";
+import { conflictKey, isAcceptConflictBody, updatedAcceptedConflicts, wireConflicts } from "@pokemap/core/src/world/conflictAcceptance.js";
 import { encodePng } from "@pokemap/cli/src/png.js";
 import { parseBorder, parseTime, type TimeOfDay } from "@pokemap/cli/src/args.js";
-import type { PokemapServer } from "./index.js";
+import type { IncomingMessage, ServerResponse } from "node:http";
+import { loadGbcFrontSprite, loadGbcPicFolders } from "@pokemap/core/src/gbc/load/sprites.js";
+import { readBody, type ProjectHandler } from "./index.js";
 
 /**
  * GBA-only routes this server refuses with a 501, the HTTP counterpart of
  * the CLI's `refuseIfGbc` (`cli/src/index.ts`) -- the route exists, but this
  * family doesn't support it (yet, in Plan 7's case for `/api/edit/*`). An
  * unmatched path stays a plain 404, handled by the fallthrough below, not by
- * this list. `sign/`, `edit/` and the species-icon path end in a required
- * next segment (`sign/NAME/suggestions`, `edit/NAME/undo`,
- * `species/NAME/icon.png`), so their own alternatives don't need a trailing
- * `(/|$)` the way `dungeons` and `world/...`'s bare-vs-nested routes do.
+ * this list. `sign/` and `edit/` end in a required next segment
+ * (`sign/NAME/suggestions`, `edit/NAME/undo`), so their own alternatives
+ * don't need a trailing `(/|$)`. `warps/` and `dungeons` left this list in
+ * D3; `species/NAME/icon.png` left in Plan 6c B1.
  */
-const GBA_ONLY_ROUTE_RE = /^\/api\/(warps\/|dungeons(\/|$)|world\/placement$|world\/dungeons$|sign\/|edit\/|species\/[^/]+\/icon\.png$)/;
+const GBA_ONLY_ROUTE_RE = /^\/api\/(world\/dungeons$|sign\/|edit\/)/;
 
 /**
  * `decodeURIComponent` throws a `URIError` on a malformed percent-escape
@@ -143,7 +154,7 @@ export function buildGbcGroupsPayload(proj: GbcProject): { groupOrder: string[];
  *
  * Exported (fix round 1, quality review findings 2/5) precisely so it can
  * be unit-tested directly against a stub `GbcProject`, without needing
- * `createGbcServer` restructured for dependency injection.
+ * `createGbcProjectHandler` restructured for dependency injection.
  */
 export function buildGbcMapPayload(proj: GbcProject, map: GbcMap): GbcMapPayload {
   const { layout, defects: layoutDefects } = proj.layout(map);
@@ -187,21 +198,37 @@ export function buildGbcMapPayload(proj: GbcProject, map: GbcMap): GbcMapPayload
  * plain `Object.fromEntries` object (`GbcWorldPayload.placements`'s own doc
  * comment: JSON has no `Map`, and serialising one directly gives `{}`, not a
  * refusal -- a mutation this file's tests specifically check for).
- * `components`/`conflicts` pass through unchanged. Takes the already-built
- * `world` rather than `proj`, since nothing here needs anything from `proj`
- * that isn't already in `world` -- `createGbcServer`'s own `getWorld()`
- * (below) is what caches the expensive `buildGbcWorld` call itself; this
- * function is cheap and safe to call fresh on every request, including the
- * "second request returns deep-equal data" test, since `Object.fromEntries`
- * never mutates the `Map` it reads from.
+ * `components`/`conflicts` pass through unchanged. `proj` supplies map types
+ * and, when `warps` is omitted, map events for the near-warp resolver. The
+ * handler passes its cached normalized warp list so requests do not reload
+ * events. Resolution copies placement values and leaves the cached base
+ * world untouched. Manual sidecar positions are fixed obstacles during
+ * resolution (phase-D-review R1) and are applied again afterward.
  */
-export function buildGbcWorldPayload(world: GbcWorld): GbcWorldPayload {
+export function buildGbcWorldPayload(proj: GbcProject, world: GbcWorld, sidecar: Sidecar, warps: readonly WarpLink[] = gbcWarpLinks(proj)): GbcWorldPayload {
+  const mapTypeByName = new Map(proj.maps.map((map) => [map.name, map.environment]));
+  const shown = new Set([...world.placements.keys()].filter((name) => {
+    const type = mapTypeByName.get(name);
+    return (type !== "INDOOR" && type !== "GATE") || Object.hasOwn(sidecar.manualPlacements, name);
+  }));
+  const hidden = new Set([...world.placements.keys()].filter((name) => !shown.has(name)));
+  const sizes = new Map([...world.placements].map(([name, p]) => [name, { width: p.width, height: p.height }]));
+  const automatic = placeNearWarps({ placements: world.placements, shown, hidden, warps, sizes, gap: 4,
+    singletons: new Set(world.components.filter((c) => c.maps.length === 1).map((c) => c.maps[0]!)),
+    manualPlacements: sidecar.manualPlacements });
+  const placements = Object.fromEntries(
+    [...applySidecar(automatic, sidecar)].map(([name, placement]) => [name, {
+      ...placement,
+      mapType: mapTypeByName.get(name) ?? "",
+      manual: name in sidecar.manualPlacements,
+    }]),
+  );
   return {
     family: "gbc",
     blockPx: 32,
-    placements: Object.fromEntries(world.placements),
+    placements,
     components: world.components,
-    conflicts: world.conflicts,
+    conflicts: wireConflicts(world.conflicts, sidecar.acceptedConflicts ?? []),
   } satisfies GbcWorldPayload;
 }
 
@@ -226,8 +253,22 @@ export function buildGbcEncountersPayload(proj: GbcProject, name: string): GbcEn
   } satisfies GbcEncountersPayload;
 }
 
-export async function createGbcServer(opts: { projectPath: string; port?: number }): Promise<PokemapServer> {
-  const proj = openGbcProject(opts.projectPath);
+/** Keep raw event coordinates and source order; only the destination lookup is enriched. */
+export function buildGbcWarpsPayload(proj: GbcProject, name: string) {
+  const byConst = new Map(proj.maps.map((map) => [map.constName, map]));
+  const warps = loadGbcMapEvents(proj.root, proj.map(name)).events.warps.map((event) => {
+    const target = byConst.get(event.mapConst);
+    const destMapName = target?.name;
+    const destEvent = target && event.destWarp > 0
+      ? loadGbcMapEvents(proj.root, target).events.warps[event.destWarp - 1]
+      : undefined;
+    return { ...event, destMapName, destEvent };
+  });
+  return { family: "gbc" as const, mapName: name, warps };
+}
+
+export function createGbcProjectHandler(root: string): ProjectHandler {
+  const proj = openGbcProject(root);
 
   // Built once, not per-request: proj.maps is already fully loaded and
   // read-only for the life of this process (I8, same reasoning as every
@@ -254,6 +295,10 @@ export async function createGbcServer(opts: { projectPath: string; port?: number
   // request that needs it" posture as GBA's own worldCache (index.ts).
   let worldCache: GbcWorld | undefined;
   const getWorld = () => (worldCache ??= buildGbcWorld(proj));
+  let warpCache: readonly WarpLink[] | undefined;
+  const getWarps = () => (warpCache ??= Object.freeze(gbcWarpLinks(proj).map((link) => Object.freeze({
+    ...link, source: Object.freeze(link.source), arrival: link.arrival && Object.freeze(link.arrival),
+  }))));
 
   // gbcCoverage walks every one of the 391 maps' wild-data tables -- warm,
   // measured ~13-19ms against the real corpus, close to the plan review's
@@ -276,7 +321,23 @@ export async function createGbcServer(opts: { projectPath: string; port?: number
   let speciesCache: string[] | undefined;
   const getSpecies = () => (speciesCache ??= loadGbcSpeciesConstants(proj.root));
 
-  const http: Server = createHttp((req, res) => {
+  // Plan 6c B1: species -> gfx/pokemon folder, computed lazily once (the decomp
+  // is read-only for the life of this process, I8), plus one encoded PNG per
+  // normalised species (frame 0 only -- no query params).
+  let picFolders: Map<string, string> | undefined;
+  const speciesIconCache = new Map<string, Buffer>();
+
+  // Same disposed-503 guard as index.ts's GBA handler (Plan 6c A1) -- an
+  // in-flight request holding this exact handler past a `/api/hub/open`
+  // swap must not read through it any further.
+  let disposed = false;
+
+  const handle = (req: IncomingMessage, res: ServerResponse) => {
+    if (disposed) {
+      res.writeHead(503, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "project closed" }));
+      return;
+    }
     const url = new URL(req.url ?? "/", "http://localhost");
     const send = (code: number, body: unknown) => {
       res.writeHead(code, { "content-type": "application/json" });
@@ -392,7 +453,54 @@ export async function createGbcServer(opts: { projectPath: string; port?: number
       // unconditionally -- there is no dungeons-on/off toggle to read a
       // query param for (`gbc/world/connections.ts`'s own doc comment).
       if (url.pathname === "/api/world") {
-        return send(200, buildGbcWorldPayload(getWorld()));
+        return send(200, buildGbcWorldPayload(proj, getWorld(), readSidecar(proj.root), getWarps()));
+      }
+
+      if (url.pathname === "/api/world/conflicts/accept" && req.method === "POST") {
+        return readBody(req).then((body) => {
+          let parsed: unknown;
+          try { parsed = JSON.parse(body); }
+          catch (e) { return send(400, { error: `invalid JSON body: ${(e as Error).message}` }); }
+          if (!isAcceptConflictBody(parsed)) return send(400, { error: `expected { key: string, accepted: boolean }, got ${body}` });
+          if (!getWorld().conflicts.some((conflict) => conflictKey(conflict) === parsed.key)) {
+            return send(404, { error: `unknown conflict key ${parsed.key}` });
+          }
+          const sidecar = readSidecar(proj.root);
+          sidecar.acceptedConflicts = updatedAcceptedConflicts(sidecar.acceptedConflicts ?? [], parsed.key, parsed.accepted);
+          writeSidecar(proj.root, sidecar);
+          return send(200, { acceptedConflicts: sidecar.acceptedConflicts });
+        }).catch((e: unknown) => {
+          console.error(e);
+          send(500, { error: e instanceof Error ? e.message : String(e) });
+        });
+      }
+
+      if (url.pathname === "/api/world/placement" && req.method === "POST") {
+        return readBody(req)
+          .then((body) => {
+            let parsed: unknown;
+            try {
+              parsed = JSON.parse(body);
+            } catch (e) {
+              return send(400, { error: `invalid JSON body: ${(e as Error).message}` });
+            }
+            const placement = parsed as { map?: unknown; x?: unknown; y?: unknown };
+            if (
+              parsed === null || typeof parsed !== "object" || Array.isArray(parsed)
+              || typeof placement.map !== "string" || typeof placement.x !== "number" || typeof placement.y !== "number"
+              || !Number.isFinite(placement.x) || !Number.isFinite(placement.y)
+            ) {
+              return send(400, { error: `expected { map: string, x: number, y: number }, got ${body}` });
+            }
+            const sidecar = readSidecar(proj.root);
+            sidecar.manualPlacements[placement.map] = { x: placement.x, y: placement.y };
+            writeSidecar(proj.root, sidecar);
+            return send(200, { ok: true });
+          })
+          .catch((e: unknown) => {
+            console.error(e);
+            send(500, { error: e instanceof Error ? e.message : String(e) });
+          });
       }
 
       // `(.+)`, not `[^/]+` -- same reasoning as `/api/map/:name` above: a
@@ -401,6 +509,93 @@ export async function createGbcServer(opts: { projectPath: string; port?: number
       // malformed-escape handling (`decodeMapName`) the single place that
       // rejects a bad name, instead of a slash in it silently 404ing through
       // the generic fallthrough.
+      const warpsMatch = /^\/api\/warps\/(.+)$/.exec(url.pathname);
+      if (warpsMatch && req.method === "GET") {
+        const rawName = warpsMatch[1]!;
+        const name = decodeMapName(rawName);
+        if (name === undefined) return send(400, { error: `malformed map name ${rawName}` });
+        if (!mapNames.has(name)) return send(404, { error: `no map ${name}` });
+        return send(200, buildGbcWarpsPayload(proj, name));
+      }
+
+      if (url.pathname === "/api/dungeons" && req.method === "GET") {
+        return send(200, readDungeons(proj.root).dungeons);
+      }
+      if (url.pathname === "/api/dungeons" && req.method === "POST") {
+        return readBody(req).then((body) => {
+          let parsed: unknown;
+          try { parsed = JSON.parse(body); }
+          catch (e) { return send(400, { error: `invalid JSON body: ${(e as Error).message}` }); }
+          if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+            return send(400, { error: `expected a dungeon object, got ${body}` });
+          }
+          const input = parsed as { name?: unknown; seedMap?: unknown; maps?: unknown };
+          if (typeof input.name !== "string" || input.name.trim() === "") {
+            return send(400, { error: `expected a non-empty "name" string, got ${body}` });
+          }
+          if (input.seedMap !== undefined && typeof input.seedMap !== "string") {
+            return send(400, { error: `"seedMap" must be a string when present, got ${body}` });
+          }
+          if (input.maps !== undefined && (!Array.isArray(input.maps) || input.maps.some((m) => typeof m !== "string"))) {
+            return send(400, { error: `"maps" must be a string array when present, got ${body}` });
+          }
+          let maps: string[];
+          if (typeof input.seedMap === "string") {
+            if (!mapNames.has(input.seedMap)) return send(400, { error: `seedMap ${input.seedMap} is not a known map` });
+            maps = [...gbcWarpConnectedMapsFrom(input.seedMap, getWarps())].sort();
+          } else {
+            maps = (input.maps as string[] | undefined) ?? [];
+          }
+          const dungeons = readDungeons(proj.root);
+          const dungeon = { id: randomUUID(), name: input.name, maps };
+          dungeons.dungeons.push(dungeon);
+          writeDungeons(proj.root, dungeons);
+          return send(200, dungeon);
+        }).catch((e: unknown) => {
+          console.error(e);
+          send(500, { error: e instanceof Error ? e.message : String(e) });
+        });
+      }
+      const dungeonIdMatch = /^\/api\/dungeons\/(.+)$/.exec(url.pathname);
+      if (dungeonIdMatch && (req.method === "PATCH" || req.method === "DELETE")) {
+        const rawId = dungeonIdMatch[1]!;
+        const id = decodeMapName(rawId);
+        if (id === undefined) return send(400, { error: `malformed dungeon id ${rawId}` });
+        if (req.method === "DELETE") {
+          const dungeons = readDungeons(proj.root);
+          const before = dungeons.dungeons.length;
+          dungeons.dungeons = dungeons.dungeons.filter((d) => d.id !== id);
+          if (dungeons.dungeons.length === before) return send(404, { error: `no dungeon ${id}` });
+          writeDungeons(proj.root, dungeons);
+          return send(200, { ok: true });
+        }
+        return readBody(req).then((body) => {
+          let parsed: unknown;
+          try { parsed = JSON.parse(body); }
+          catch (e) { return send(400, { error: `invalid JSON body: ${(e as Error).message}` }); }
+          if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+            return send(400, { error: `expected a dungeon object, got ${body}` });
+          }
+          const input = parsed as { name?: unknown; maps?: unknown };
+          if (input.name !== undefined && (typeof input.name !== "string" || input.name.trim() === "")) {
+            return send(400, { error: `"name" must be a non-empty string when present, got ${body}` });
+          }
+          if (input.maps !== undefined && (!Array.isArray(input.maps) || input.maps.some((m) => typeof m !== "string"))) {
+            return send(400, { error: `"maps" must be a string array when present, got ${body}` });
+          }
+          const dungeons = readDungeons(proj.root);
+          const dungeon = dungeons.dungeons.find((d) => d.id === id);
+          if (!dungeon) return send(404, { error: `no dungeon ${id}` });
+          if (typeof input.name === "string") dungeon.name = input.name;
+          if (Array.isArray(input.maps)) dungeon.maps = input.maps as string[];
+          writeDungeons(proj.root, dungeons);
+          return send(200, dungeon);
+        }).catch((e: unknown) => {
+          console.error(e);
+          send(500, { error: e instanceof Error ? e.message : String(e) });
+        });
+      }
+
       const encountersMatch = /^\/api\/encounters\/(.+)$/.exec(url.pathname);
       if (encountersMatch) {
         const rawName = encountersMatch[1]!;
@@ -430,11 +625,30 @@ export async function createGbcServer(opts: { projectPath: string; port?: number
         return send(200, getCoverage());
       }
 
+      // `[^/]+`, same as GBA's `/api/species/:s/icon.png` (`index.ts`); the
+      // raw segment goes through `decodeMapName` and `normalizeGbcSpecies`
+      // like `/api/where/:species` above, so `chikorita` and
+      // `SPECIES_CHIKORITA` both resolve. GBC serves the real GBC front sprite
+      // (frame 0), not GBA's icon/overworld art, so no `?source=`/`?frame=`.
+      const speciesIconMatch = /^\/api\/species\/([^/]+)\/icon\.png$/.exec(url.pathname);
+      if (speciesIconMatch) {
+        const raw = speciesIconMatch[1]!;
+        const decoded = decodeMapName(raw);
+        if (decoded === undefined) return send(400, { error: `malformed species ${raw}` });
+        const species = normalizeGbcSpecies(decoded);
+        let png = speciesIconCache.get(species);
+        if (!png) {
+          const raster = loadGbcFrontSprite(proj.root, species, (picFolders ??= loadGbcPicFolders(proj.root)));
+          if (!raster) return send(404, { error: `no sprite for ${species}` });
+          png = encodePng(raster);
+          speciesIconCache.set(species, png);
+        }
+        res.writeHead(200, { "content-type": "image/png", "cache-control": "no-cache" });
+        return res.end(png);
+      }
+
       // Exact match, not a prefix -- same discipline as GBA's own
-      // `/api/species` (`index.ts`): "/api/species" alone, nothing after it,
-      // so it can never shadow the GBA-only-route refusal below for
-      // "/api/species/:name/icon.png" (GBA_ONLY_ROUTE_RE's own
-      // `species/[^/]+/icon\.png$` alternative).
+      // `/api/species` (`index.ts`): "/api/species" alone, nothing after it.
       if (url.pathname === "/api/species") {
         return send(200, getSpecies());
       }
@@ -448,11 +662,20 @@ export async function createGbcServer(opts: { projectPath: string; port?: number
       console.error(e);
       return send(500, { error: (e as Error).message });
     }
-  });
+  };
 
-  await new Promise<void>((r) => http.listen(opts.port ?? 5174, "127.0.0.1", r));
-  const addr = http.address();
-  const port = typeof addr === "object" && addr ? addr.port : (opts.port ?? 5174);
-
-  return { port, family: "gbc", project: proj, close: () => new Promise<void>((r) => http.close(() => r())) };
+  return {
+    family: "gbc",
+    project: proj,
+    info: { family: "gbc", root: proj.root },
+    handle,
+    // GBC has no edit-session store yet (this file's own header comment:
+    // "Plan 7 adds /api/edit/* once GBC gets a write path") -- nothing can
+    // ever be dirty, so the hub's unsaved-edits guard never blocks swapping
+    // a GBC handler out.
+    dirtyMaps: () => [],
+    dispose: () => {
+      disposed = true;
+    },
+  };
 }

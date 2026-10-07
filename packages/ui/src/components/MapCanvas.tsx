@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { drawGrid, drawCollision, drawElevation, drawEvents, type EventMark } from "@pokemap/core/src/render/overlays.js";
 import type { LayoutRaster } from "@pokemap/core/src/render/layout.js";
 import type { MapData } from "@pokemap/core/src/load/maps.js";
@@ -7,6 +7,11 @@ import type { MapLayoutData } from "../hooks/useMapLayout.js";
 import type { UseEditSessionResult } from "../hooks/useEditSession.js";
 import { readBlock, type Stamp } from "@pokemap/core/src/edit/paint.js";
 import type { CollisionElevation } from "./CollisionPalette.js";
+import { EncounterBorder, type EncounterBorderEntry } from "./EncounterBorder.js";
+import { BORDER_BAND, borderSideFromConnections, gbaDirToCompass, type CompassDir } from "../encounters/borderSide.js";
+import { fitWithBand } from "../encounters/fit.js";
+import { useMapEncounterSummaries } from "../encounters/useMapEncounterSummaries.js";
+import { ZOOM_LEVELS, zoomAboutPivot, type MapView, type Zoom } from "./mapView.js";
 
 /** A bare {kind,index} pointer at one event, the unit MapCanvas's own
  *  selection/drag interaction deals in -- resolving it into a full event
@@ -111,6 +116,19 @@ export interface MapCanvasProps {
    *  Porymap's real eyedropper, which copies the WHOLE block, not just the
    *  tile art. */
   onDropperPick?: (stamp: Stamp) => void;
+  /** Controlled pan/zoom (Plan 6c E1). When present the canvas renders exactly this view and owns no view
+   *  state of its own: every zoom button, wheel tick, pan drag and Fit click is reported through
+   *  `onViewChange` instead of applied, and there is NO automatic fit on image load (the parent owns
+   *  placement; only the explicit Fit button reports a fitted view). Omit for the uncontrolled default.
+   *  Do not switch between controlled and uncontrolled during one mount. In controlled mode two gestures
+   *  fired before the parent re-renders both derive from the last rendered view (the second wins). */
+  view?: MapView;
+  /** Receives the view a user gesture would produce, computed from the current `view` prop (controlled mode). */
+  onViewChange?: (next: MapView) => void;
+  /** Plan 6c E4: no toolbar, status strip or overlay legend, and a transparent viewport (root modifier
+   *  `map-canvas--chromeless`), so the stage canvas box equals the root box. Used by the in-context overlay on the
+   *  world canvas, which drives zoom/pan (`view`/`onViewChange`) from its own bar. Painting is unchanged. */
+  chromeless?: boolean;
 }
 
 /** The server-baked border ring the canvas always requests -- see
@@ -118,8 +136,13 @@ export interface MapCanvasProps {
  *  with the query string below and with how `originX`/`originY` are derived
  *  from `layout.borderWidth`/`borderHeight`. */
 const BORDER_RINGS = 1;
-const ZOOM_LEVELS = [1, 2, 4] as const;
-type Zoom = (typeof ZOOM_LEVELS)[number];
+
+/** Composite px of the map's top-left tile (the border ring offsets it). */
+export function compositeOrigin(layout: { borderWidth: number; borderHeight: number }): { x: number; y: number } {
+  return { x: BORDER_RINGS * layout.borderWidth * 16, y: BORDER_RINGS * layout.borderHeight * 16 };
+}
+/** Native px per world unit (one metatile) -- the encounter border's own scale, and what its band is measured in. */
+const METATILE_PX = 16;
 
 /** Spec-review fix (issue 2): `beginStroke`/`applyPaint`/`endStroke` each
  *  return a FRESH `blocks` array from a fresh JSON parse regardless of
@@ -169,7 +192,7 @@ interface Hover {
  * one scaled `drawImage`, so dragging or scrolling never re-touches overlay
  * pixels at all.
  */
-export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEvent, selectedEventRef, onMoveEvent, onDropperPick }: MapCanvasProps) {
+export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEvent, selectedEventRef, onMoveEvent, onDropperPick, view: controlledView, onViewChange, chromeless }: MapCanvasProps) {
   const { layout, split, map: staticMap, blocks: staticBlocks } = data;
   // Live, server-tracked blocks while an edit session is open for this map;
   // the static `data.blocks` prop otherwise. Every effect below already
@@ -326,8 +349,33 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
     if (paintVersionTimerRef.current) clearTimeout(paintVersionTimerRef.current);
   }, []);
   const [toggles, setToggles] = useState<Toggles>(NO_TOGGLES);
-  const [zoom, setZoom] = useState<Zoom>(1);
-  const [pan, setPan] = useState({ x: 0, y: 0 });
+  // The encounter border toggle (B4) is DOM over the viewport, not a canvas overlay, so it is not in
+  // `Toggles`. It remembers WHICH map it was turned on for: a map switch reads as off in the very first
+  // render (no fetch for the new map, no stale border), with no reset effect needed.
+  const [encountersFor, setEncountersFor] = useState<string | null>(null);
+  const encountersOn = encountersFor === mapName;
+  // ONE view value, so no setter is ever called inside another setter's updater (StrictMode double-invokes
+  // updaters; the old nested setPan applied the zoom pivot twice -- Plan 6c E1, follow-up D1).
+  const [ownView, setOwnView] = useState<MapView>({ zoom: 1, pan: { x: 0, y: 0 } });
+  const controlled = controlledView !== undefined;
+  const view = controlledView ?? ownView;
+  const { zoom, pan } = view;
+  // The single write path. Controlled: compute `next` from the latest props.view OUTSIDE any React updater and
+  // report it (a no-op result, e.g. zoomAboutPivot at the same zoom, is not reported). Uncontrolled: set state.
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  // `onViewChange` goes through a ref so an inline callback never changes `updateView`'s identity (which would
+  // re-create `fit` and re-bind the wheel listener on every parent render).
+  const onViewChangeRef = useRef(onViewChange);
+  onViewChangeRef.current = onViewChange;
+  const updateView = useCallback(
+    (next: MapView | ((v: MapView) => MapView)) => {
+      if (!controlled) return setOwnView(next);
+      const n = typeof next === "function" ? next(viewRef.current) : next;
+      if (n !== viewRef.current) onViewChangeRef.current?.(n);
+    },
+    [controlled],
+  );
   const [hover, setHover] = useState<Hover | null>(null);
   const [compositeVersion, setCompositeVersion] = useState(0);
   // Measured, not read from the ref during render: a ref read at render time
@@ -353,8 +401,17 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
 
   const pixelWidth = (layout.width + 2 * BORDER_RINGS * layout.borderWidth) * 16;
   const pixelHeight = (layout.height + 2 * BORDER_RINGS * layout.borderHeight) * 16;
-  const originX = BORDER_RINGS * layout.borderWidth * 16;
-  const originY = BORDER_RINGS * layout.borderHeight * 16;
+  const { x: originX, y: originY } = compositeOrigin(layout);
+
+  // Encounter border side (B4): the first of left, top, right, bottom with no connection. dive/emerge
+  // are not planar, so gbaDirToCompass drops them.
+  // `?? []`: read-only consumers (WarpDestinationModal's own test fixtures) may hand over a map without the field.
+  const connections = map.connections;
+  const side = useMemo(
+    () => borderSideFromConnections(new Set((connections ?? []).map((c) => gbaDirToCompass(c.direction)).filter((d): d is CompassDir => d !== undefined))),
+    [connections],
+  );
+  const { summaries: encounterSummaries, error: encounterError } = useMapEncounterSummaries(mapName, "gba", encountersOn);
 
   // `v=` only when editing is live -- a read-only viewer (no editSession)
   // never paints, so it never needs a cache-bust, and always appending one
@@ -370,6 +427,7 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
   // instead of two effects fighting over the same state.
   useEffect(() => {
     setToggles(NO_TOGGLES);
+    setEncountersFor(null); // only so A -> B -> A does not bring A's border back; B is already off without it
     setHover(null);
   }, [mapName]);
 
@@ -390,13 +448,18 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
   const fit = useCallback(() => {
     const vw = viewport.w || pixelWidth;
     const vh = viewport.h || pixelHeight;
-    let z: Zoom = 1;
-    for (const level of ZOOM_LEVELS) {
-      if (pixelWidth * level <= vw && pixelHeight * level <= vh) z = level;
-    }
-    setZoom(z);
-    setPan({ x: Math.round((vw - pixelWidth * z) / 2), y: Math.round((vh - pixelHeight * z) / 2) });
-  }, [pixelWidth, pixelHeight, viewport]);
+    // Encounters on: the content is the image plus one band on the border's side, so the sprites fit too.
+    const { zoom: z, pan: p } = fitWithBand({
+      pw: pixelWidth,
+      ph: pixelHeight,
+      vw,
+      vh,
+      levels: ZOOM_LEVELS,
+      bandNative: encountersOn ? BORDER_BAND.gba * METATILE_PX : 0,
+      side,
+    });
+    updateView({ zoom: z, pan: p });
+  }, [pixelWidth, pixelHeight, viewport, encountersOn, side, updateView]);
 
   // Only the FIRST successful image load for a given mapName triggers fit()
   // -- a same-map reload triggered by a paint (imgLoaded cycling false->true
@@ -406,7 +469,7 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
   const fittedForMapRef = useRef<string | null>(null);
   useEffect(() => {
     if (imgLoaded && fittedForMapRef.current !== mapName) {
-      fit();
+      if (!controlled) fit(); // controlled: the parent owns placement, no auto-fit
       fittedForMapRef.current = mapName;
     }
     // Only re-fit once per real map open, not on every render -- the user's
@@ -467,7 +530,7 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
     }
 
     setCompositeVersion((v) => v + 1);
-  }, [imgLoaded, toggles, showCollision, blocks, layout, map, pixelWidth, pixelHeight, originX, originY]);
+  }, [imgLoaded, toggles.grid, toggles.elevation, toggles.events, showCollision, blocks, layout, map, pixelWidth, pixelHeight, originX, originY]);
 
   // Step 2: cheap re-blit of the already-composited buffer for pan/zoom.
   //
@@ -529,17 +592,7 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
 
   const toggle = (key: keyof Toggles) => setToggles((t) => ({ ...t, [key]: !t[key] }));
 
-  const applyZoom = (next: Zoom, pivotX: number, pivotY: number) => {
-    setZoom((prevZoom) => {
-      if (next === prevZoom) return prevZoom;
-      setPan((prevPan) => {
-        const cx = (pivotX - prevPan.x) / prevZoom;
-        const cy = (pivotY - prevPan.y) / prevZoom;
-        return { x: Math.round(pivotX - cx * next), y: Math.round(pivotY - cy * next) };
-      });
-      return next;
-    });
-  };
+  const applyZoom = (next: Zoom, pivotX: number, pivotY: number) => updateView((v) => zoomAboutPivot(v, next, pivotX, pivotY));
 
   const centerPivot = (): [number, number] => {
     const c = canvasRef.current;
@@ -572,7 +625,7 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
     };
     canvas.addEventListener("wheel", handler, { passive: false });
     return () => canvas.removeEventListener("wheel", handler);
-  }, [zoom]);
+  }, [zoom, updateView]);
 
   const hoverAt = (clientX: number, clientY: number) => {
     const canvas = canvasRef.current;
@@ -734,7 +787,7 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
     }
     if (dragRef.current) {
       const d = dragRef.current;
-      setPan({ x: d.panX + (e.clientX - d.x), y: d.panY + (e.clientY - d.y) });
+      updateView((v) => ({ zoom: v.zoom, pan: { x: d.panX + (e.clientX - d.x), y: d.panY + (e.clientY - d.y) } }));
     } else {
       hoverAt(e.clientX, e.clientY);
     }
@@ -854,9 +907,16 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
 
   const anyOverlay = toggles.grid || showCollision || toggles.elevation || toggles.events;
 
+  // The drawn image, border ring included, in viewport px: sprites never cover map or border-block pixels.
+  // Memoised so EncounterBorder's tooltip-clearing effect (keyed on `entries`) only fires when something moved.
+  const borderEntries = useMemo<EncounterBorderEntry[]>(
+    () => [{ map: mapName, rect: { x: pan.x, y: pan.y, width: pixelWidth * zoom, height: pixelHeight * zoom }, side, summaries: encounterSummaries }],
+    [mapName, pan.x, pan.y, pixelWidth, pixelHeight, zoom, side, encounterSummaries],
+  );
+
   return (
-    <section className="map-canvas" aria-label={`${mapName} canvas`}>
-      <div className="map-canvas__toolbar">
+    <section className={`map-canvas${chromeless ? " map-canvas--chromeless" : ""}`} aria-label={`${mapName} canvas`}>
+      {!chromeless && <div className="map-canvas__toolbar">
         <div className="map-canvas__zoom" role="group" aria-label="Zoom">
           {ZOOM_LEVELS.map((z) => (
             <button
@@ -886,10 +946,13 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
           <button type="button" className="map-canvas__btn" aria-pressed={toggles.events} onClick={() => toggle("events")}>
             Events
           </button>
+          <button type="button" className="map-canvas__btn" aria-pressed={encountersOn} onClick={() => setEncountersFor(encountersOn ? null : mapName)}>
+            Encounters
+          </button>
         </div>
-      </div>
+      </div>}
 
-      {anyOverlay && (
+      {!chromeless && (anyOverlay || encountersOn) && (
         <div className="map-canvas__legend">
           {toggles.grid && (
             <span className="map-canvas__legend-item">
@@ -922,6 +985,16 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
               </span>
             </>
           )}
+          {encountersOn &&
+            (encounterError ? (
+              <span className="map-canvas__legend-item" role="alert">
+                {encounterError}
+              </span>
+            ) : (
+              <span className="map-canvas__legend-item">
+                {encounterSummaries?.length === 0 ? "Encounters: none on this map" : "Encounters: hover or focus a sprite"}
+              </span>
+            ))}
         </div>
       )}
 
@@ -937,9 +1010,16 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
           onMouseUp={onMouseUp}
           onMouseLeave={onMouseLeave}
         />
+        <EncounterBorder
+          enabled={encountersOn}
+          entries={borderEntries}
+          zoom={zoom * METATILE_PX}
+          lodZoom={0}
+          band={BORDER_BAND.gba}
+        />
       </div>
 
-      <div className="map-canvas__status">
+      {!chromeless && <div className="map-canvas__status">
         <span className="map-canvas__status-item">
           layout_version <strong>{split.version}</strong>
         </span>
@@ -955,7 +1035,7 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
         ) : (
           <span className="map-canvas__status-item map-canvas__hover map-canvas__hover--empty">Hover the map…</span>
         )}
-      </div>
+      </div>}
     </section>
   );
 }

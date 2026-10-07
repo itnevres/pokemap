@@ -1,6 +1,8 @@
+import { StrictMode } from "react";
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, fireEvent, screen, waitFor, act } from "@testing-library/react";
 import { MapCanvas, type MapCanvasProps } from "../src/components/MapCanvas.js";
+import { zoomAboutPivot, type MapView } from "../src/components/mapView.js";
 import type { MapLayoutData } from "../src/hooks/useMapLayout.js";
 import type { UseEditSessionResult } from "../src/hooks/useEditSession.js";
 
@@ -882,5 +884,427 @@ describe("MapCanvas", () => {
     fireEvent.mouseUp(canvas, { clientX: 20, clientY: 20, button: 0 }); // same block (0,0)
     await waitFor(() => expect(editSession.applyPaint).toHaveBeenCalledWith({ tool: "shift", dx: 0, dy: 0 }));
     await waitFor(() => expect(editSession.endStroke).toHaveBeenCalled());
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Plan 6c B4: the encounter border in the map view (GBA)
+// ---------------------------------------------------------------------------
+describe("MapCanvas: Encounters overlay (Plan 6c B4)", () => {
+  // Espeon's 37.5 is not derivable from its slot count; the GBA wire shape of /api/encounters/:map.
+  const ENC_BODY = {
+    mapName: "Foo",
+    mapId: "MAP_FOO",
+    methods: [
+      { method: "land_mons", chances: [{ species: "SPECIES_ESPEON", percent: 37.5, minLevel: 2, maxLevel: 4, slots: [0, 1] }, { species: "SPECIES_RATTATA", percent: 12.5, minLevel: 3, maxLevel: 3, slots: [2] }] },
+    ],
+  };
+  const GBC_BODY = { family: "gbc", sources: [] };
+
+  function stubEncounters(body: unknown = ENC_BODY) {
+    const f = vi.fn((_url: string) => Promise.resolve(new Response(JSON.stringify(body), { status: 200 })));
+    vi.stubGlobal("fetch", f);
+    return f;
+  }
+
+  const withConnections = (dirs: Array<"up" | "down" | "left" | "right" | "dive" | "emerge">): MapLayoutData => ({
+    ...DATA,
+    map: { ...DATA.map, connections: dirs.map((direction) => ({ map: "Bar", offset: 0, direction })) },
+  });
+
+  const setViewport = (px: number) => {
+    Object.defineProperty(HTMLElement.prototype, "clientWidth", { value: px, configurable: true });
+    Object.defineProperty(HTMLElement.prototype, "clientHeight", { value: px, configurable: true });
+  };
+
+  const encBtn = () => screen.getByRole("button", { name: "Encounters" });
+  const stripOf = (c: HTMLElement) => c.querySelector<HTMLElement>(".encounter-border__strip");
+  const box = (el: HTMLElement) => ({ left: el.style.left, top: el.style.top, width: el.style.width, height: el.style.height });
+
+  it("the Encounters toggle is the last button of the Overlays group and starts off", async () => {
+    stubEncounters();
+    await mountReady();
+    const group = screen.getByRole("group", { name: "Overlays" });
+    expect([...group.querySelectorAll("button")].map((b) => b.textContent)).toEqual(["Grid", "Collision", "Elevation", "Events", "Encounters"]);
+    expect(encBtn().getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(encBtn());
+    expect(encBtn().getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("fetches /api/encounters/:map only after the click (none before, one after), and not again on re-toggle", async () => {
+    const f = stubEncounters();
+    const { container } = await mountReady();
+    expect(f).not.toHaveBeenCalled();
+    expect(stripOf(container)).toBeNull();
+
+    fireEvent.click(encBtn());
+    await screen.findByRole("button", { name: "Espeon" });
+    expect(f).toHaveBeenCalledTimes(1);
+    expect(f.mock.calls[0]![0]).toBe("/api/encounters/Foo");
+
+    fireEvent.click(encBtn());
+    expect(stripOf(container)).toBeNull();
+    fireEvent.click(encBtn());
+    await screen.findByRole("button", { name: "Espeon" });
+    expect(f).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders the border inside the viewport with no second toggle of its own, and the legend row says how to use it", async () => {
+    stubEncounters();
+    const { container } = await mountReady();
+    fireEvent.click(encBtn());
+    await screen.findByRole("button", { name: "Espeon" });
+    expect(container.querySelector(".map-canvas__viewport .encounter-border")).not.toBeNull();
+    expect(screen.getAllByRole("button", { name: "Encounters" })).toHaveLength(1);
+    expect(container.querySelector(".encounter-border__toggle")).toBeNull();
+    expect(screen.queryByRole("note")).toBeNull();
+    expect(screen.getByText("Encounters: hover or focus a sprite", { selector: ".map-canvas__legend-item" })).toBeTruthy();
+  });
+
+  it("a failed fetch shows the error as an alert in the legend row, not a silent empty border", async () => {
+    stubEncounters(GBC_BODY); // a GBC-shaped payload reaching a GBA canvas
+    const { container } = await mountReady();
+    fireEvent.click(encBtn());
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toMatch(/\/api\/encounters\/Foo returned an unexpected shape/);
+    expect(alert.className).toContain("map-canvas__legend-item");
+    expect(stripOf(container)).toBeNull();
+  });
+
+  it("a map with no wild encounters says so in the legend row instead of promising sprites", async () => {
+    stubEncounters({ mapName: "Foo", mapId: "MAP_FOO", methods: [] });
+    const { container } = await mountReady();
+    fireEvent.click(encBtn());
+    await screen.findByText("Encounters: none on this map", { selector: ".map-canvas__legend-item" });
+    expect(screen.queryByText("Encounters: hover or focus a sprite")).toBeNull();
+    expect(stripOf(container)).toBeNull();
+  });
+
+  it("resets to off when the map changes", async () => {
+    stubEncounters();
+    const { rerender } = await mountReady();
+    fireEvent.click(encBtn());
+    expect(encBtn().getAttribute("aria-pressed")).toBe("true");
+    rerender(<MapCanvas mapName="Bar" data={DATA} />);
+    await waitFor(() => expect(encBtn().getAttribute("aria-pressed")).toBe("false"));
+  });
+
+  it("a map switch is off in the very first render: no fetch for the new map and its toggle reads off", async () => {
+    const f = stubEncounters();
+    const { rerender } = await mountReady();
+    fireEvent.click(encBtn());
+    await screen.findByRole("button", { name: "Espeon" });
+    expect(f).toHaveBeenCalledTimes(1);
+    rerender(<MapCanvas mapName="Bar" data={DATA} />);
+    expect(encBtn().getAttribute("aria-pressed")).toBe("false"); // synchronously, no reset effect needed
+    await Promise.resolve();
+    expect(f).toHaveBeenCalledTimes(1);
+  });
+
+  // GBA direction -> compass: up=north, down=south, left=west, right=east. Left blocked = west, top = north.
+  it("up + down connections (north, south) leave the left side free: the strip is on the left", async () => {
+    stubEncounters();
+    const { container } = await mountReady({ data: withConnections(["up", "down"]) });
+    fireEvent.click(encBtn());
+    await screen.findByRole("button", { name: "Espeon" });
+    expect(container.querySelector(".encounter-border__strip--left")).not.toBeNull();
+  });
+
+  it("left + up connections (west, north) block left and top: the strip is on the right", async () => {
+    stubEncounters();
+    const { container } = await mountReady({ data: withConnections(["left", "up"]) });
+    fireEvent.click(encBtn());
+    await screen.findByRole("button", { name: "Espeon" });
+    expect(container.querySelector(".encounter-border__strip--right")).not.toBeNull();
+    expect(container.querySelector(".encounter-border__strip--left")).toBeNull();
+  });
+
+  it("dive/emerge connections are not planar: they block nothing", async () => {
+    stubEncounters();
+    const { container } = await mountReady({ data: withConnections(["dive", "emerge"]) });
+    fireEvent.click(encBtn());
+    await screen.findByRole("button", { name: "Espeon" });
+    expect(container.querySelector(".encounter-border__strip--left")).not.toBeNull();
+  });
+
+  // The fixture image is 64x64 native px (layout 2x2 + a 1-block border ring, 16 px blocks) and the GBA band
+  // is 4 metatiles = 64 native px. After Fit with the toggle on, the content is image + one band on the side:
+  //  - viewport 400, left side (up+down connections): extraW = 64.
+  //      zoom 2: (64+64)*2 = 256 <= 400; zoom 4: 128*4 = 512 > 400  -> z = 2.
+  //      content 256 x 128; centred: x0 = round((400-256)/2) = 72, y0 = round((400-128)/2) = 136.
+  //      left side: the image is pushed right by band*z = 64*2 = 128 -> pan = (72+128, 136) = (200, 136).
+  //      The image is drawn at (200,136) 128x128. EncounterBorder gets zoom 2*16 = 32 px/metatile, so
+  //      bandPx = 4*32 = 128 and the left strip = (200-128, 136, 128, 128) = (72, 136, 128, 128).
+  //      (A fit that ignores the band gives pan (136,136) and a strip at left 8.)
+  //  - viewport 200, top side (left+right connections: west, east blocked): extraH = 64.
+  //      zoom 1: 64 x (64+64) fits; zoom 2: 256 > 200 -> z = 1. Content 64 x 128;
+  //      x0 = round((200-64)/2) = 68, y0 = round((200-128)/2) = 36; top: pan.y = 36 + 64 = 100 -> pan (68, 100).
+  //      bandPx = 4*16 = 64; the top strip = (68, 100-64, 64, 64) = (68, 36, 64, 64).
+  it.each([
+    { name: "left, viewport 400", dirs: ["up", "down"] as const, vp: 400, side: "left", draw: [200, 136, 128, 128], strip: { left: "72px", top: "136px", width: "128px", height: "128px" } },
+    { name: "top, viewport 200", dirs: ["left", "right"] as const, vp: 200, side: "top", draw: [68, 100, 64, 64], strip: { left: "68px", top: "36px", width: "64px", height: "64px" } },
+  ])("Fit with Encounters on leaves room for the band: $name", async ({ dirs, vp, side, draw, strip }) => {
+    stubEncounters();
+    setViewport(vp);
+    const { container, lastDraw } = await mountReady({ data: withConnections([...dirs]) });
+    fireEvent.click(encBtn());
+    await screen.findByRole("button", { name: "Espeon" });
+    fireEvent.click(screen.getByRole("button", { name: "Fit" }));
+    await waitFor(() => expect(lastDraw().slice(5, 9)).toEqual(draw));
+    const el = container.querySelector<HTMLElement>(`.encounter-border__strip--${side}`)!;
+    expect(box(el)).toEqual(strip);
+  });
+
+  it("toggling Encounters on does not re-fit: the user's view is kept until Fit", async () => {
+    stubEncounters();
+    setViewport(400);
+    const { lastDraw } = await mountReady({ data: withConnections(["up", "down"]) });
+    const before = lastDraw().slice(5, 9); // zoom 4 (256 <= 400), centred (72,72)
+    expect(before).toEqual([72, 72, 256, 256]);
+    fireEvent.click(encBtn());
+    await screen.findByRole("button", { name: "Espeon" });
+    expect(lastDraw().slice(5, 9)).toEqual(before);
+  });
+
+  it("toggling Encounters on does not recomposite the overlay pixels (the border is DOM, not canvas)", async () => {
+    stubEncounters();
+    const { stageCtx } = await mountReady();
+    const baseCtx = [...ctxByCanvas.values()].find((c) => c !== stageCtx)!;
+    expect(baseCtx.putImageData).not.toHaveBeenCalled();
+    fireEvent.click(encBtn());
+    await screen.findByRole("button", { name: "Espeon" });
+    expect(baseCtx.putImageData).not.toHaveBeenCalled();
+  });
+
+  it("with Grid already on, toggling Encounters does not recomposite either (no new putImageData)", async () => {
+    stubEncounters();
+    const { stageCtx } = await mountReady();
+    const baseCtx = [...ctxByCanvas.values()].find((c) => c !== stageCtx)!;
+    fireEvent.click(screen.getByRole("button", { name: "Grid" }));
+    await waitFor(() => expect(baseCtx.putImageData).toHaveBeenCalledTimes(1));
+    baseCtx.putImageData.mockClear();
+    fireEvent.click(encBtn());
+    await screen.findByRole("button", { name: "Espeon" });
+    expect(baseCtx.putImageData).not.toHaveBeenCalled();
+  });
+});
+
+describe("MapCanvas under <StrictMode> (Plan 6c E1, follow-up D1)", () => {
+  it("fit -> 2x -> 4x lands on the exact single-application pan, not the doubled pan a nested setState produces", async () => {
+    const utils = render(
+      <StrictMode>
+        <MapCanvas mapName="Foo" data={DATA} />
+      </StrictMode>,
+    );
+    const canvas = utils.container.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
+    const img = utils.container.querySelector("img.map-canvas__source-image") as HTMLImageElement;
+    fireEvent.load(img);
+    await waitFor(() => expect(ctxByCanvas.get(canvas)?.drawImage).toHaveBeenCalled());
+    const stageCtx = ctxByCanvas.get(canvas)!;
+    const lastDraw = () => stageCtx.drawImage.mock.calls.at(-1)!;
+
+    // Fit: viewport === pixel size exactly, so 1x, pan (0,0).
+    expect(lastDraw().slice(5, 9)).toEqual([0, 0, PIXEL_SIZE, PIXEL_SIZE]);
+
+    // pivot = canvas centre = (32, 32).
+    const pivot = [canvas.width / 2, canvas.height / 2] as const;
+    expect(pivot).toEqual([32, 32]);
+
+    // 2x from pan0 (0,0): cx = (32-0)/1 = 32; pan = round(32 - 32*2) = -32 -- applied ONCE.
+    fireEvent.click(utils.getByRole("button", { name: "2×" }));
+    await waitFor(() => expect(lastDraw().slice(-2)).toEqual([PIXEL_SIZE * 2, PIXEL_SIZE * 2]));
+    expect(lastDraw().slice(5, 7)).toEqual([-32, -32]);
+    // Applied twice (the StrictMode-doubled nested setPan): cx = (32 - -32)/1 = 64, pan = 32 - 128 = -96.
+    expect(lastDraw().slice(5, 7)).not.toEqual([-96, -96]);
+
+    // 4x from (zoom 2, pan -32): cx = (32 - -32)/2 = 32; pan = round(32 - 32*4) = -96 -- applied ONCE.
+    fireEvent.click(utils.getByRole("button", { name: "4×" }));
+    await waitFor(() => expect(lastDraw().slice(-2)).toEqual([PIXEL_SIZE * 4, PIXEL_SIZE * 4]));
+    expect(lastDraw().slice(5, 7)).toEqual([-96, -96]);
+    // The old nested code reached -480 here (its 2x was already the doubled -96, and 4x doubled again); doubling
+    // from the correct -32 base would give -224. Neither may appear.
+    expect(lastDraw().slice(5, 7)).not.toEqual([-224, -224]);
+    expect(lastDraw().slice(5, 7)).not.toEqual([-480, -480]);
+  });
+});
+
+describe("MapCanvas: controlled view (Plan 6c E1)", () => {
+  const VIEW: MapView = { zoom: 2, pan: { x: 7, y: -3 } };
+
+  it("renders props.view: the first draw is at its pan, size x2", async () => {
+    const { lastDraw } = await mountReady({ view: VIEW, onViewChange: vi.fn() });
+    expect(lastDraw().slice(5, 9)).toEqual([7, -3, PIXEL_SIZE * 2, PIXEL_SIZE * 2]);
+  });
+
+  it("a zoom button reports zoomAboutPivot(view, 4, centre) once and does not redraw until the parent passes the new view", async () => {
+    const onViewChange = vi.fn();
+    const { canvas, lastDraw, rerender } = await mountReady({ view: VIEW, onViewChange });
+    const expected = zoomAboutPivot(VIEW, 4, canvas.width / 2, canvas.height / 2);
+    expect(expected).toEqual({ zoom: 4, pan: { x: -18, y: -38 } }); // cx=(32-7)/2, cy=(32+3)/2
+    const drawsBefore = ctxByCanvas.get(canvas)!.drawImage.mock.calls.length;
+
+    fireEvent.click(screen.getByRole("button", { name: "4×" }));
+    expect(onViewChange).toHaveBeenCalledTimes(1);
+    expect(onViewChange).toHaveBeenCalledWith(expected);
+    expect(ctxByCanvas.get(canvas)!.drawImage.mock.calls.length).toBe(drawsBefore);
+    expect(lastDraw().slice(5, 9)).toEqual([7, -3, PIXEL_SIZE * 2, PIXEL_SIZE * 2]);
+    expect(screen.getByRole("button", { name: "2×" }).getAttribute("aria-pressed")).toBe("true");
+
+    rerender(<MapCanvas mapName="Foo" data={DATA} view={expected} onViewChange={onViewChange} />);
+    await waitFor(() => expect(lastDraw().slice(5, 9)).toEqual([-18, -38, PIXEL_SIZE * 4, PIXEL_SIZE * 4]));
+  });
+
+  it("a pan drag reports the dragged pan", async () => {
+    const onViewChange = vi.fn();
+    const { canvas } = await mountReady({ view: VIEW, onViewChange });
+    fireEvent.mouseDown(canvas, { clientX: 10, clientY: 10, button: 0 });
+    fireEvent.mouseMove(canvas, { clientX: 25, clientY: 4, button: 0 });
+    expect(onViewChange).toHaveBeenCalledTimes(1);
+    expect(onViewChange).toHaveBeenLastCalledWith({ zoom: 2, pan: { x: 22, y: -9 } }); // 7+15, -3-6
+  });
+
+  it("an image load never reports a view (no auto-fit): the parent owns placement", async () => {
+    const onViewChange = vi.fn();
+    const { lastDraw } = await mountReady({ view: VIEW, onViewChange });
+    expect(onViewChange).not.toHaveBeenCalled();
+    expect(lastDraw().slice(5, 9)).toEqual([7, -3, PIXEL_SIZE * 2, PIXEL_SIZE * 2]);
+  });
+
+  it("a gesture after the parent applied a new view derives from THAT view, not the mount-time one", async () => {
+    const onViewChange = vi.fn();
+    const { canvas, lastDraw, rerender } = await mountReady({ view: VIEW, onViewChange });
+    fireEvent.click(screen.getByRole("button", { name: "4×" }));
+    const at4 = onViewChange.mock.calls[0]![0] as MapView;
+    rerender(<MapCanvas mapName="Foo" data={DATA} view={at4} onViewChange={onViewChange} />);
+    await waitFor(() => expect(lastDraw().slice(5, 9)).toEqual([-18, -38, PIXEL_SIZE * 4, PIXEL_SIZE * 4]));
+
+    // 4x (-18,-38) -> 2x about (32,32): cx=(32+18)/4=12.5 -> 7, cy=(32+38)/4=17.5 -> -3, i.e. back to VIEW.
+    fireEvent.click(screen.getByRole("button", { name: "2×" }));
+    expect(onViewChange).toHaveBeenCalledTimes(2);
+    expect(onViewChange).toHaveBeenLastCalledWith({ zoom: 2, pan: { x: 7, y: -3 } });
+    expect(canvas.width / 2).toBe(32);
+
+    // Zooming back through the same pivot lands on the same point, so also have the parent jump to an unrelated
+    // view (same zoom as VIEW, different pan) and zoom again: from (-5,9)@2, 4x about (32,32) is
+    // cx=(32+5)/2=18.5 -> 32-74=-42, cy=(32-9)/2=11.5 -> 32-46=-14. A base frozen at VIEW would give (-18,-38).
+    const jumped: MapView = { zoom: 2, pan: { x: -5, y: 9 } };
+    rerender(<MapCanvas mapName="Foo" data={DATA} view={jumped} onViewChange={onViewChange} />);
+    fireEvent.click(screen.getByRole("button", { name: "4×" }));
+    expect(onViewChange).toHaveBeenCalledTimes(3);
+    expect(onViewChange).toHaveBeenLastCalledWith({ zoom: 4, pan: { x: -42, y: -14 } });
+  });
+
+  it("wheel reports through onViewChange, and after a rerender with a new view and a new callback only the new callback fires", async () => {
+    const first = vi.fn();
+    const second = vi.fn();
+    const { canvas, rerender } = await mountReady({ view: VIEW, onViewChange: first });
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: PIXEL_SIZE, bottom: PIXEL_SIZE, width: PIXEL_SIZE, height: PIXEL_SIZE, x: 0, y: 0, toJSON() {} });
+
+    // zoom 2 -> 4 about (48,16): cx=(48-7)/2=20.5 -> 48-82=-34, cy=(16+3)/2=9.5 -> 16-38=-22.
+    fireEvent.wheel(canvas, { clientX: 48, clientY: 16, deltaY: -100 });
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(first).toHaveBeenCalledWith({ zoom: 4, pan: { x: -34, y: -22 } });
+    expect(first).toHaveBeenCalledWith(zoomAboutPivot(VIEW, 4, 48, 16));
+
+    // Same zoom, new pan and a NEW callback: the native listener must pick up the fresh callback and view.
+    const next: MapView = { zoom: 2, pan: { x: 10, y: 10 } };
+    rerender(<MapCanvas mapName="Foo" data={DATA} view={next} onViewChange={second} />);
+    fireEvent.wheel(canvas, { clientX: 48, clientY: 16, deltaY: -100 });
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(second).toHaveBeenCalledTimes(1);
+    expect(second).toHaveBeenCalledWith(zoomAboutPivot(next, 4, 48, 16)); // cx=19, cy=3 -> (-28, 4)
+    expect(zoomAboutPivot(next, 4, 48, 16).pan).toEqual({ x: -28, y: 4 });
+  });
+
+  it("the Fit button reports the fitted view", async () => {
+    const onViewChange = vi.fn();
+    await mountReady({ view: VIEW, onViewChange });
+    fireEvent.click(screen.getByRole("button", { name: "Fit" }));
+    expect(onViewChange).toHaveBeenCalledTimes(1);
+    expect(onViewChange).toHaveBeenCalledWith({ zoom: 1, pan: { x: 0, y: 0 } });
+  });
+});
+
+describe("MapCanvas: multi-step gestures, uncontrolled (Plan 6c E1)", () => {
+  it("two mousemoves in one drag land on the start pan plus the TOTAL delta (the base is the drag start, not the live pan)", async () => {
+    const { canvas, lastDraw } = await mountReady();
+    fireEvent.mouseDown(canvas, { clientX: 10, clientY: 10, button: 0 });
+    fireEvent.mouseMove(canvas, { clientX: 25, clientY: 4, button: 0 });
+    await waitFor(() => expect(lastDraw().slice(5, 7)).toEqual([15, -6]));
+    fireEvent.mouseMove(canvas, { clientX: 30, clientY: 0, button: 0 });
+    // start (0,0) + (30-10, 0-10) = (20,-10); an accumulating base would give (35,-16).
+    await waitFor(() => expect(lastDraw().slice(5, 7)).toEqual([20, -10]));
+    fireEvent.mouseUp(canvas);
+  });
+
+  it("two wheel ticks go 1x -> 2x -> 4x with exact pans (the listener sees the new zoom)", async () => {
+    const { canvas, lastDraw } = await mountReady();
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: PIXEL_SIZE, bottom: PIXEL_SIZE, width: PIXEL_SIZE, height: PIXEL_SIZE, x: 0, y: 0, toJSON() {} });
+
+    fireEvent.wheel(canvas, { clientX: 48, clientY: 16, deltaY: -100 });
+    await waitFor(() => expect(lastDraw().slice(-2)).toEqual([PIXEL_SIZE * 2, PIXEL_SIZE * 2]));
+    expect(lastDraw().slice(5, 7)).toEqual([-48, -16]); // 48-48*2, 16-16*2
+
+    fireEvent.wheel(canvas, { clientX: 48, clientY: 16, deltaY: -100 });
+    await waitFor(() => expect(lastDraw().slice(-2)).toEqual([PIXEL_SIZE * 4, PIXEL_SIZE * 4]));
+    // cx=(48+48)/2=48 -> 48-192=-144; cy=(16+16)/2=16 -> 16-64=-48.
+    expect(lastDraw().slice(5, 7)).toEqual([-144, -48]);
+  });
+});
+
+describe("MapCanvas: chromeless (Plan 6c E4)", () => {
+  const VIEW: MapView = { zoom: 2, pan: { x: 7, y: -3 } };
+
+  it("hides the toolbar and the status strip, adds the root modifier, and still draws at the controlled view", async () => {
+    const { container, lastDraw } = await mountReady({ chromeless: true, view: VIEW, onViewChange: vi.fn() });
+    expect(container.querySelector(".map-canvas__toolbar")).toBeNull();
+    expect(container.querySelector(".map-canvas__status")).toBeNull();
+    expect(screen.queryByRole("button", { name: "2×" })).toBeNull();
+    expect(container.querySelector("section.map-canvas")!.classList.contains("map-canvas--chromeless")).toBe(true);
+    expect(container.querySelector(".map-canvas__viewport canvas.map-canvas__stage")).not.toBeNull();
+    expect(lastDraw().slice(5, 9)).toEqual([7, -3, PIXEL_SIZE * 2, PIXEL_SIZE * 2]);
+  });
+
+  it("without chromeless the toolbar, the status strip and no modifier are rendered", async () => {
+    const { container } = await mountReady({ view: VIEW, onViewChange: vi.fn() });
+    expect(container.querySelector(".map-canvas__toolbar")).not.toBeNull();
+    expect(container.querySelector(".map-canvas__status")).not.toBeNull();
+    expect(container.querySelector("section.map-canvas")!.classList.contains("map-canvas--chromeless")).toBe(false);
+  });
+
+  it("never shows the overlay legend row, so the viewport box stays the whole root box (the collision tool forces an overlay)", async () => {
+    const editSession = makeEditSession();
+    const { container } = await mountReady({
+      chromeless: true, view: VIEW, onViewChange: vi.fn(), editSession, activeTool: { kind: "collision", value: { collision: 1, elevation: 0 } },
+    });
+    expect(container.querySelector(".map-canvas__legend")).toBeNull();
+  });
+
+  it("a wheel tick still reports through onViewChange", async () => {
+    const onViewChange = vi.fn();
+    const { canvas } = await mountReady({ chromeless: true, view: VIEW, onViewChange });
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: PIXEL_SIZE, bottom: PIXEL_SIZE, width: PIXEL_SIZE, height: PIXEL_SIZE, x: 0, y: 0, toJSON() {} });
+    fireEvent.wheel(canvas, { clientX: 48, clientY: 16, deltaY: -100 });
+    expect(onViewChange).toHaveBeenCalledWith(zoomAboutPivot(VIEW, 4, 48, 16));
+  });
+
+  // The same race the non-chromeless rect test pins: painting must still go only through pendingPaintRef /
+  // endActiveStroke / paintAt / beginStroke, so a release before begin() resolves cannot drop the paint or reorder end.
+  it("a rect stroke released before begin() resolves still paints, apply before end", async () => {
+    let resolveBegin!: () => void;
+    const beginPromise = new Promise<void>((resolve) => { resolveBegin = resolve; });
+    const editSession = makeEditSession({ beginStroke: vi.fn(() => beginPromise) });
+    const { canvas } = await mountReady({
+      chromeless: true, view: { zoom: 1, pan: { x: 0, y: 0 } }, onViewChange: vi.fn(), editSession,
+      activeTool: { kind: "rect", stamp: { width: 1, height: 1, cells: [{ metatileId: 7 }] } },
+    });
+    fireEvent.mouseDown(canvas, { clientX: 16, clientY: 16, button: 0 });
+    fireEvent.mouseUp(canvas, { clientX: 32, clientY: 32, button: 0 });
+    expect(editSession.applyPaint).not.toHaveBeenCalled();
+    expect(editSession.endStroke).not.toHaveBeenCalled();
+    resolveBegin();
+    await waitFor(() => expect(editSession.applyPaint).toHaveBeenCalledWith(expect.objectContaining({ tool: "rect" })));
+    await waitFor(() => expect(editSession.endStroke).toHaveBeenCalled());
+    expect(vi.mocked(editSession.applyPaint).mock.invocationCallOrder[0]!).toBeLessThan(vi.mocked(editSession.endStroke).mock.invocationCallOrder[0]!);
   });
 });

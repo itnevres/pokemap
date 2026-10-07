@@ -67,7 +67,24 @@ export function createEditSessionStore(project: Project) {
     return sessions.has(mapName);
   }
 
-  return { open, close, has };
+  /** Names (sorted) of every open session whose `session.isDirty` is true --
+   *  the hub's own `ProjectHandler.dirtyMaps()` (Plan 6c A1), which the
+   *  `/api/hub/open` unsaved-edits guard reads before swapping a handler
+   *  out. `EditCommandStack` keeps `isDirty` current on every push/undo/redo,
+   *  so this is a plain filter, not its own tracking. */
+  function dirty(): string[] {
+    return [...sessions.entries()].filter(([, e]) => e.session.isDirty).map(([name]) => name).sort();
+  }
+
+  /** Drops every open session -- the hub's own `dispose()` (Plan 6c A1),
+   *  called on a handler that is about to be replaced or torn down. Same
+   *  "always safe to drop" reasoning as `close()`'s own doc comment: nothing
+   *  here has touched disk. */
+  function closeAll(): void {
+    sessions.clear();
+  }
+
+  return { open, close, has, dirty, closeAll };
 }
 
 /** A snapshot-diff command: `apply`/`revert` just assign the session's own

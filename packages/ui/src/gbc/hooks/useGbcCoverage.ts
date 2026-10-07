@@ -6,7 +6,7 @@ export type UseGbcCoverageResult = UseGuardedFetchResult<GbcCoverage>;
 
 /**
  * `GET /api/coverage` for `GbcWorldCanvas`'s own level-curve/empty-maps
- * lenses and `LensPanel`'s own summary counts (Plan 6b Task 6) -- the
+ * lenses and `LensLegend`'s own summary counts and lists (Plan 6b Task 6) -- the
  * simplest possible `useGuardedFetch` caller, mirroring `useGbcWorld`
  * exactly: a fixed URL (there is only ever the one coverage report) and a
  * guard, giving a real, visible `error` string on a 404, a network failure,

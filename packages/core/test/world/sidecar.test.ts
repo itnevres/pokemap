@@ -23,7 +23,16 @@ describe("sidecar", () => {
     const s: Sidecar = { version: 1, dungeonAutoLayout: false, manualPlacements: { NavelRock_Base: { x: 10, y: 20 } }, view: { x: 0, y: 0, zoom: 1 } };
     writeSidecar(root, s);
     expect(existsSync(`${root}/.pokemap/world.json`)).toBe(true);
-    expect(readSidecar(root)).toEqual(s);
+    expect(readSidecar(root)).toEqual({ ...s, acceptedConflicts: [] });
+  });
+
+  it("defaults acceptedConflicts and rejects non-string entries with the sidecar path", () => {
+    const root = tempRoot();
+    expect(readSidecar(root).acceptedConflicts).toEqual([]);
+    writeSidecar(root, readSidecar(root));
+    writeFileSync(projectPaths(root).sidecar, JSON.stringify({ acceptedConflicts: ["ok", 3] }));
+    expect(() => readSidecar(root)).toThrow(projectPaths(root).sidecar);
+    expect(() => readSidecar(root)).toThrow(/acceptedConflicts/);
   });
 
   it("writes only inside .pokemap/", () => {

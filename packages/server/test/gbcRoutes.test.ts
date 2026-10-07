@@ -1,12 +1,18 @@
-import { readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createServer, type PokemapServer } from "../src/index.js";
-import { buildGbcMapPayload, buildGbcWorldPayload, buildGbcEncountersPayload, decodeMapName, parseTimeParam } from "../src/gbcRoutes.js";
+import { buildGbcMapPayload, buildGbcWorldPayload, buildGbcEncountersPayload, buildGbcWarpsPayload, decodeMapName, parseTimeParam } from "../src/gbcRoutes.js";
 import { openGbcProject } from "@pokemap/core/src/gbc/project.js";
 import { renderGbcMap, renderGbcMapMetatile } from "@pokemap/core/src/gbc/render/map.js";
 import { loadGbcMapEvents } from "@pokemap/core/src/gbc/load/events.js";
 import { buildGbcWorld } from "@pokemap/core/src/gbc/world/connections.js";
+import { wireConflicts } from "@pokemap/core/src/world/conflictAcceptance.js";
+import { placeNearWarps } from "@pokemap/core/src/world/nearWarp.js";
+import { gbcWarpLinks, gbcWarpConnectedMapsFrom } from "@pokemap/core/src/world/nearWarpAdapters.js";
+import type { WarpLink } from "@pokemap/core/src/world/nearWarp.js";
+import type { Sidecar } from "@pokemap/core/src/world/sidecar.js";
 import { gbcEncounterSources, gbcWhereSpecies, gbcCoverage, loadGbcSpeciesConstants } from "@pokemap/core/src/gbc/analyse/atlas.js";
+import { loadGbcFrontSprite } from "@pokemap/core/src/gbc/load/sprites.js";
 import { encodePng } from "@pokemap/cli/src/png.js";
 import { GBC_SUBJECT_ROOT, hasGbcProject, itWithGbcCorpus } from "@pokemap/core/test/gbc/helpers/corpus.js";
 import { stubGbcProject } from "@pokemap/core/test/gbc/helpers/stubGbcProject.js";
@@ -29,10 +35,22 @@ describe("parseTimeParam / decodeMapName (pure helpers, fix round 1)", () => {
   });
 });
 
+describe("GBC directed dungeon seed traversal", () => {
+  it("follows outgoing edges through hidden maps and cycles, including the seed", () => {
+    const link = (from: string, to: string): WarpLink => ({ from, to, sourceOrdinal: 0, destinationOrdinal: 0,
+      source: { x: 0, y: 0 }, arrival: { x: 0, y: 0 } });
+    const links = [link("A", "Hidden"), link("Hidden", "B"), link("B", "A"), link("ReverseOnly", "A")];
+    expect([...gbcWarpConnectedMapsFrom("A", links)].sort()).toEqual(["A", "B", "Hidden"]);
+    expect([...gbcWarpConnectedMapsFrom("Isolated", links)]).toEqual(["Isolated"]);
+  });
+});
+
 let s: PokemapServer;
 const get = async (path: string) => fetch(`http://127.0.0.1:${s.port}${path}`);
 const post = async (path: string, body: unknown = {}) =>
   fetch(`http://127.0.0.1:${s.port}${path}`, { method: "POST", body: JSON.stringify(body) });
+const postRaw = async (path: string, body: string) =>
+  fetch(`http://127.0.0.1:${s.port}${path}`, { method: "POST", body });
 const patch = async (path: string, body: unknown = {}) =>
   fetch(`http://127.0.0.1:${s.port}${path}`, { method: "PATCH", body: JSON.stringify(body) });
 
@@ -74,14 +92,9 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
 
   describe("GBA-only routes are refused with 501, naming the path, for every method", () => {
     const cases: { label: string; call: () => Promise<Response>; path: string }[] = [
-      { label: "/api/warps/:name", path: "/api/warps/NewBarkTown", call: () => get("/api/warps/NewBarkTown") },
-      { label: "/api/dungeons (bare)", path: "/api/dungeons", call: () => get("/api/dungeons") },
-      { label: "/api/dungeons/:id (PATCH)", path: "/api/dungeons/x", call: () => patch("/api/dungeons/x") },
-      { label: "/api/world/placement (POST)", path: "/api/world/placement", call: () => post("/api/world/placement") },
       { label: "/api/world/dungeons (POST)", path: "/api/world/dungeons", call: () => post("/api/world/dungeons") },
       { label: "/api/sign/:name/suggestions", path: "/api/sign/NewBarkTown/suggestions", call: () => get("/api/sign/NewBarkTown/suggestions") },
       { label: "/api/edit/:name/undo (POST)", path: "/api/edit/NewBarkTown/undo", call: () => post("/api/edit/NewBarkTown/undo") },
-      { label: "/api/species/:name/icon.png", path: "/api/species/CHIKORITA/icon.png", call: () => get("/api/species/CHIKORITA/icon.png") },
     ];
 
     for (const { label, call, path } of cases) {
@@ -140,12 +153,15 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
       expect(r.status).toBe(404);
     });
 
-    it("/api/species/CHIKORITA/icon.pngx is a 404 -- the $ anchor on icon\\.png$ must not match a longer path", async () => {
+    // Plan 6c B1: /api/species/:name/icon.png is a real GBC route now (no longer
+    // in GBA_ONLY_ROUTE_RE), so these two near-misses prove the NEW route's own
+    // `$` and `[^/]+` anchors instead.
+    it("/api/species/CHIKORITA/icon.pngx is a 404 -- the icon route's icon\\.png$ anchor must not match a longer path", async () => {
       const r = await get("/api/species/CHIKORITA/icon.pngx");
       expect(r.status).toBe(404);
     });
 
-    it("/api/species/A/B/icon.png is a 404 -- species/[^/]+ must not match a name containing a slash", async () => {
+    it("/api/species/A/B/icon.png is a 404 -- the icon route's species/([^/]+) must not match a name containing a slash", async () => {
       const r = await get("/api/species/A/B/icon.png");
       expect(r.status).toBe(404);
     });
@@ -153,6 +169,59 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
     it("/x/api/warps/y is a 404 -- the leading ^ must not let the pattern match mid-path", async () => {
       const r = await get("/x/api/warps/y");
       expect(r.status).toBe(404);
+    });
+  });
+
+  describe("GET /api/species/:name/icon.png (Plan 6c B1)", () => {
+    const expected = (species: string) => encodePng(loadGbcFrontSprite(GBC_SUBJECT_ROOT, species)!);
+    const bodyOf = async (r: Response) => Buffer.from(await r.arrayBuffer());
+    /** Length first (a readable diff on a size mismatch), then byte-compare. */
+    const expectSameBytes = (got: Buffer, want: Buffer) => {
+      expect(got.length).toBe(want.length);
+      expect(Buffer.compare(got, want)).toBe(0);
+    };
+
+    it("serves frame 0 of the GBC front sprite as a PNG, byte-equal to the core loader's encoding", async () => {
+      const r = await get("/api/species/CHIKORITA/icon.png");
+      expect(r.status).toBe(200);
+      expect(r.headers.get("content-type")).toBe("image/png");
+      expect(r.headers.get("cache-control")).toBe("no-cache");
+      expectSameBytes(await bodyOf(r), expected("CHIKORITA"));
+    });
+
+    it("serves each species its own sprite: DUNSPARCE matches its loader bytes and differs from CHIKORITA's", async () => {
+      const dun = await bodyOf(await get("/api/species/DUNSPARCE/icon.png"));
+      expectSameBytes(dun, expected("DUNSPARCE"));
+      const chik = await bodyOf(await get("/api/species/CHIKORITA/icon.png"));
+      expect(Buffer.compare(dun, chik)).not.toBe(0);
+    });
+
+    it("UNOWN (the one species resolved through UnownPicPointers) is a 200 with its loader bytes", async () => {
+      const r = await get("/api/species/UNOWN/icon.png");
+      expect(r.status).toBe(200);
+      expect(r.headers.get("content-type")).toBe("image/png");
+      expectSameBytes(await bodyOf(r), expected("UNOWN"));
+    });
+
+    it("normalises the species: lowercase and SPECIES_-prefixed names give the same bytes", async () => {
+      const want = expected("CHIKORITA");
+      for (const name of ["chikorita", "SPECIES_CHIKORITA"]) {
+        const r = await get(`/api/species/${name}/icon.png`);
+        expect(r.status).toBe(200);
+        expectSameBytes(await bodyOf(r), want);
+      }
+    });
+
+    it("an unknown species is a 404 with a named error", async () => {
+      const r = await get("/api/species/NOT_A_MON/icon.png");
+      expect(r.status).toBe(404);
+      expect(await r.json()).toEqual({ error: "no sprite for NOT_A_MON" });
+    });
+
+    it("a malformed percent-escape is a 400 naming the raw segment", async () => {
+      const r = await get("/api/species/%E0%A4%A/icon.png");
+      expect(r.status).toBe(400);
+      expect(await r.json()).toEqual({ error: "malformed species %E0%A4%A" });
     });
   });
 
@@ -571,18 +640,29 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
   // ---------------------------------------------------------------------
 
   describe("GET /api/world", () => {
-    it("deep-equals Object.fromEntries(buildGbcWorld(...).placements); 326 components, exactly 3 with more than one map; blockPx 32", async () => {
+    it("deep-equals independently resolved near-warp placements; 326 components, exactly 3 with more than one map; blockPx 32", async () => {
       const proj = openGbcProject(GBC_SUBJECT_ROOT);
       const world = buildGbcWorld(proj);
-      const expectedPlacements = Object.fromEntries(world.placements);
-
       const r = await get("/api/world");
       expect(r.status).toBe(200);
-      const body = await r.json() as { family: string; blockPx: number; placements: Record<string, unknown>; components: { maps: string[] }[]; conflicts: unknown[] };
+      const body = await r.json() as { family: string; blockPx: number; placements: Record<string, any>; components: { maps: string[] }[]; conflicts: unknown[] };
+      const mapTypeByName = new Map(proj.maps.map((map) => [map.name, map.environment]));
+      const shown = new Set(proj.maps.filter((map) => !["INDOOR", "GATE"].includes(map.environment)).map((map) => map.name));
+      const hidden = new Set(proj.maps.filter((map) => !shown.has(map.name)).map((map) => map.name));
+      const resolved = placeNearWarps({ placements: world.placements, shown, hidden, warps: gbcWarpLinks(proj),
+        sizes: new Map([...world.placements].map(([name, p]) => [name, { width: p.width, height: p.height }])), gap: 4,
+        singletons: new Set(world.components.filter((c) => c.maps.length === 1).map((c) => c.maps[0]!)) });
+      const expectedPlacements = Object.fromEntries([...resolved].map(([name, placement]) => [name, {
+        ...placement,
+        mapType: mapTypeByName.get(name) ?? "",
+        manual: false,
+      }]));
 
       expect(body.family).toBe("gbc");
       expect(body.blockPx).toBe(32);
       expect(body.placements).toEqual(expectedPlacements);
+      expect(Object.values(body.placements).filter((p: any) => p.manual || !["INDOOR", "GATE"].includes(p.mapType))).toHaveLength(158);
+      expect(Object.values(body.placements).filter((p: any) => !p.manual && ["INDOOR", "GATE"].includes(p.mapType))).toHaveLength(233);
 
       // Fix round 1, spec review Minor #2: components/conflicts were
       // previously pinned only by count/size (components) or by `.map`
@@ -592,7 +672,7 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
       // Task 5's world canvas consumes -- the fit and the conflict-badge
       // tooltip) would have shipped undetected.
       expect(body.components).toEqual(world.components);
-      expect(body.conflicts).toEqual(world.conflicts);
+      expect(body.conflicts).toEqual(wireConflicts(world.conflicts, []));
 
       // Measured directly against buildGbcWorld's own output (not guessed):
       // 391 maps split into 326 components, of which exactly 3 (sizes
@@ -603,7 +683,7 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
       expect(multiMap).toHaveLength(3);
       expect(multiMap.map((c) => c.maps.length).sort((a, b) => a - b)).toEqual([2, 31, 35]);
 
-      expect(body.placements.NewBarkTown).toMatchObject({ width: 10, height: 9 });
+      expect(body.placements.NewBarkTown).toMatchObject({ width: 10, height: 9, mapType: "TOWN", manual: false });
     });
 
     it("exactly 2 conflicts, on Route17 and Route18, one pinned literally", async () => {
@@ -618,13 +698,67 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
       // once seen from each end), not just from the core function's own
       // output.
       const route17 = body.conflicts.find((c) => c.map === "Route17");
-      expect(route17).toEqual({ map: "Route17", viaA: { from: "Route18", x: 30, y: 50 }, viaB: { from: "Route16", x: 30, y: 49 } });
+      expect(route17).toEqual({ map: "Route17", viaA: { from: "Route18", x: 30, y: 50 }, viaB: { from: "Route16", x: 30, y: 49 },
+        key: '["Route17","Route18",30,50,"Route16",30,49]', accepted: false });
     });
 
-    it("a second request returns deep-equal data -- the world cache is never mutated by serving it", async () => {
+    it("pure payload resolution preserves the same base world after automatic and manual calls", () => {
+      const proj = openGbcProject(GBC_SUBJECT_ROOT);
+      const base = buildGbcWorld(proj);
+      const original = structuredClone([...base.placements]);
+      const warps = gbcWarpLinks(proj);
+      const sidecar: Sidecar = { version: 1, dungeonAutoLayout: true, manualPlacements: {}, view: { x: 0, y: 0, zoom: 1 } };
+      const automatic = buildGbcWorldPayload(proj, base, sidecar, warps);
+      expect(automatic.placements.IlexForest).toMatchObject({ x: 40, y: 259, manual: false });
+      expect([...base.placements]).toEqual(original);
+      const manual = buildGbcWorldPayload(proj, base, { ...sidecar, manualPlacements: { IlexForest: { x: 80, y: 269 } } }, warps);
+      expect(manual.placements.IlexForest).toMatchObject({ x: 80, y: 269, manual: true });
+      expect([...base.placements]).toEqual(original);
+    });
+
+    it("repeated HTTP world responses are equal", async () => {
       const first = await (await get("/api/world")).json();
       const second = await (await get("/api/world")).json();
       expect(second).toEqual(first);
+    });
+
+    it("uses supplied normalized warps without reading map events", () => {
+      const proj = openGbcProject(GBC_SUBJECT_ROOT);
+      const world = buildGbcWorld(proj);
+      const withInvalidEventRoot = { ...proj, root: "C:/pokemap-d2-nonexistent-event-root" };
+      const sidecar: Sidecar = { version: 1, dungeonAutoLayout: true, manualPlacements: {}, view: { x: 0, y: 0, zoom: 1 } };
+      const result = buildGbcWorldPayload(withInvalidEventRoot, world, sidecar, []);
+      expect(result.placements.IlexForest).toMatchObject(world.placements.get("IlexForest")!);
+    });
+
+    it("applies a manual placement last on a moved GBC singleton even when it overlaps a fixed anchor", () => {
+      const proj = openGbcProject(GBC_SUBJECT_ROOT);
+      const world = buildGbcWorld(proj);
+      const warps = gbcWarpLinks(proj);
+      const empty: Sidecar = { version: 1, dungeonAutoLayout: true, manualPlacements: {}, view: { x: 0, y: 0, zoom: 1 } };
+      const automatic = buildGbcWorldPayload(proj, world, empty, warps);
+      expect(automatic.placements.IlexForest).toMatchObject({ x: 40, y: 259, manual: false });
+      const azalea = automatic.placements.AzaleaTown!;
+      const manual = buildGbcWorldPayload(proj, world, { ...empty, manualPlacements: { IlexForest: { x: azalea.x, y: azalea.y } } }, warps);
+      expect(manual.placements.IlexForest).toMatchObject({ x: azalea.x, y: azalea.y, manual: true });
+      expect(manual.placements.IlexForest!.x).not.toBe(automatic.placements.IlexForest!.x);
+      expect(manual.placements.AzaleaTown).toEqual(azalea);
+      expect(manual.placements.IlexForest!.width).toBeGreaterThan(0);
+      expect(manual.placements.IlexForest!.height).toBeGreaterThan(0);
+      expect(azalea.width).toBeGreaterThan(0);
+      expect(azalea.height).toBeGreaterThan(0);
+    });
+
+    it("never auto-places a near-warp map onto a manually placed map (phase-D-review R1)", () => {
+      const proj = openGbcProject(GBC_SUBJECT_ROOT);
+      const world = buildGbcWorld(proj);
+      const warps = gbcWarpLinks(proj);
+      const empty: Sidecar = { version: 1, dungeonAutoLayout: true, manualPlacements: {}, view: { x: 0, y: 0, zoom: 1 } };
+      const ilex = buildGbcWorldPayload(proj, world, empty, warps).placements.IlexForest!;
+      const manual = buildGbcWorldPayload(proj, world, { ...empty, manualPlacements: { AzaleaTown: { x: ilex.x, y: ilex.y } } }, warps).placements;
+      const a = manual.AzaleaTown!, i = manual.IlexForest!;
+      expect(a).toMatchObject({ x: ilex.x, y: ilex.y, manual: true });
+      expect(i.x < a.x + a.width && i.x + i.width > a.x && i.y < a.y + a.height && i.y + i.height > a.y).toBe(false);
     });
 
     // Fix round 1, spec review Minor #3: GBC has no dungeons-on/off toggle
@@ -640,14 +774,261 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
     it("buildGbcWorldPayload wire-shapes a real GbcWorld directly (unit, no HTTP)", () => {
       const proj = openGbcProject(GBC_SUBJECT_ROOT);
       const world = buildGbcWorld(proj);
-      const payload = buildGbcWorldPayload(world);
-      expect(payload).toEqual({
+      const sidecar: Sidecar = {
+        version: 1,
+        dungeonAutoLayout: true,
+        manualPlacements: { NewBarkTown: { x: 321, y: -45 }, AddedMap: { x: 7, y: 8 } },
+        view: { x: 0, y: 0, zoom: 1 },
+      };
+      const mapTypeByName = new Map(proj.maps.map((map) => [map.name, map.environment]));
+      const shown = new Set(proj.maps.filter((map) => !["INDOOR", "GATE"].includes(map.environment) || Object.hasOwn(sidecar.manualPlacements, map.name)).map((map) => map.name));
+      const hidden = new Set(proj.maps.filter((map) => !shown.has(map.name)).map((map) => map.name));
+      const resolved = placeNearWarps({ placements: world.placements, shown, hidden, warps: gbcWarpLinks(proj),
+        sizes: new Map([...world.placements].map(([name, p]) => [name, { width: p.width, height: p.height }])), gap: 4,
+        singletons: new Set(world.components.filter((c) => c.maps.length === 1).map((c) => c.maps[0]!)),
+        manualPlacements: sidecar.manualPlacements });
+      const expectedPlacements = Object.fromEntries([...resolved].map(([name, placement]) => [name, {
+        ...placement,
+        ...(sidecar.manualPlacements[name] ?? {}),
+        mapType: mapTypeByName.get(name) ?? "",
+        manual: Object.prototype.hasOwnProperty.call(sidecar.manualPlacements, name),
+      }]));
+      expectedPlacements.AddedMap = { map: "AddedMap", x: 7, y: 8, width: 0, height: 0, component: -1, mapType: "", manual: true };
+      expect(buildGbcWorldPayload(proj, world, sidecar)).toEqual({
         family: "gbc",
         blockPx: 32,
-        placements: Object.fromEntries(world.placements),
+        placements: expectedPlacements,
         components: world.components,
-        conflicts: world.conflicts,
+        conflicts: wireConflicts(world.conflicts, []),
       });
+    });
+  });
+
+  it("accepts and un-accepts Route17 without moving maps, with exact PerfPlus sidecar restoration", async () => {
+    const path = `${GBC_SUBJECT_ROOT}/.pokemap/world.json`;
+    const dir = `${GBC_SUBJECT_ROOT}/.pokemap`;
+    const dirExisted = existsSync(dir);
+    const before = existsSync(path) ? readFileSync(path) : null;
+    const observed = { lastWritten: null as Buffer | null };
+    try {
+      const observedPost = async (body: unknown) => {
+        try { return await post("/api/world/conflicts/accept", body); }
+        finally { observed.lastWritten = existsSync(path) ? readFileSync(path) : null; }
+      };
+      const observedRawPost = async (body: string) => {
+        try { return await postRaw("/api/world/conflicts/accept", body); }
+        finally { observed.lastWritten = existsSync(path) ? readFileSync(path) : null; }
+      };
+      const start = await (await get("/api/world")).json() as { conflicts: { key: string; accepted: boolean; map: string }[]; placements: unknown };
+      const key = start.conflicts.find((conflict) => conflict.map === "Route17")!.key;
+      expect(start.conflicts.find((conflict) => conflict.key === key)?.accepted).toBe(false);
+      expect((await observedRawPost("{")).status).toBe(400);
+      for (const body of [null, [], { key, accepted: "yes" }, { key: 3, accepted: true }]) {
+        expect((await observedPost(body)).status).toBe(400);
+      }
+      expect((await observedPost({ key: "unknown", accepted: true })).status).toBe(404);
+      expect(existsSync(path)).toBe(before !== null);
+      if (before) expect(readFileSync(path)).toEqual(before);
+
+      const accepted = await observedPost({ key, accepted: true });
+      expect(accepted.status).toBe(200);
+      expect((await accepted.json() as { acceptedConflicts: string[] }).acceptedConflicts).toContain(key);
+      const duplicate = await observedPost({ key, accepted: true });
+      expect((await duplicate.json() as { acceptedConflicts: string[] }).acceptedConflicts.filter((value) => value === key)).toHaveLength(1);
+      const afterAccept = await (await get("/api/world")).json() as typeof start;
+      expect(afterAccept.placements).toEqual(start.placements);
+      expect(afterAccept.conflicts.find((conflict) => conflict.key === key)?.accepted).toBe(true);
+
+      const unaccepted = await observedPost({ key, accepted: false });
+      expect((await unaccepted.json() as { acceptedConflicts: string[] }).acceptedConflicts).not.toContain(key);
+      const afterUnaccept = await (await get("/api/world")).json() as typeof start;
+      expect(afterUnaccept.placements).toEqual(start.placements);
+      expect(afterUnaccept.conflicts.find((conflict) => conflict.key === key)?.accepted).toBe(false);
+    } finally {
+      if (observed.lastWritten && existsSync(path) && readFileSync(path).equals(observed.lastWritten)) {
+        if (before) {
+          if (!observed.lastWritten.equals(before)) writeFileSync(path, before);
+        } else {
+          unlinkSync(path);
+          if (!dirExisted) try { rmdirSync(dir); } catch {}
+        }
+      } else if (observed.lastWritten) throw new Error("PerfPlus sidecar changed outside this test; refusing to overwrite it");
+    }
+  });
+
+  describe("POST /api/world/placement", () => {
+    it("writes a GBC manual placement, surfaces it on GET, and restores PerfPlus's absent sidecar", async () => {
+      const sidecarPath = `${GBC_SUBJECT_ROOT}/.pokemap/world.json`;
+      const sidecarDir = `${GBC_SUBJECT_ROOT}/.pokemap`;
+      const sidecarDirExisted = existsSync(sidecarDir);
+      const before = existsSync(sidecarPath) ? readFileSync(sidecarPath) : null;
+      let written: Buffer | null = null;
+      try {
+        const r = await post("/api/world/placement", { map: "PlayersHouse1F", x: 321, y: -45 });
+        written = existsSync(sidecarPath) ? readFileSync(sidecarPath) : null;
+        expect(r.status).toBe(200);
+        expect(await r.json()).toEqual({ ok: true });
+        expect(written).not.toBeNull();
+        if (!written) throw new Error("placement response succeeded without writing its sidecar");
+        expect(JSON.parse(written.toString("utf8")).manualPlacements.PlayersHouse1F).toEqual({ x: 321, y: -45 });
+
+        const world = await (await get("/api/world")).json() as { placements: Record<string, { x: number; y: number; mapType: string; manual: boolean }> };
+        expect(world.placements.PlayersHouse1F).toMatchObject({ x: 321, y: -45, mapType: "INDOOR", manual: true });
+      } finally {
+        if (before && written) {
+          if (existsSync(sidecarPath) && readFileSync(sidecarPath).equals(written) && !written.equals(before)) writeFileSync(sidecarPath, before);
+        } else if (!before && written && existsSync(sidecarPath) && readFileSync(sidecarPath).equals(written)) {
+          unlinkSync(sidecarPath);
+          if (!sidecarDirExisted) try { rmdirSync(sidecarDir); } catch {}
+        }
+      }
+    });
+
+    it("rejects malformed placement bodies", async () => {
+      const r = await post("/api/world/placement", { map: "PlayersHouse1F", x: "321", y: -45 });
+      expect(r.status).toBe(400);
+      expect(await r.json()).toMatchObject({ error: expect.stringContaining("expected { map: string, x: number, y: number }") });
+    });
+
+    it("rejects null and non-finite coordinates without writing a sidecar", async () => {
+      const sidecarPath = `${GBC_SUBJECT_ROOT}/.pokemap/world.json`;
+      const sidecarDir = `${GBC_SUBJECT_ROOT}/.pokemap`;
+      const sidecarDirExisted = existsSync(sidecarDir);
+      const before = existsSync(sidecarPath) ? readFileSync(sidecarPath) : null;
+      let written: Buffer | null = null;
+      try {
+        for (const body of ["null", '{"map":"PlayersHouse1F","x":1e400,"y":0}']) {
+          const r = await postRaw("/api/world/placement", body);
+          written = existsSync(sidecarPath) ? readFileSync(sidecarPath) : null;
+          expect(r.status).toBe(400);
+          expect(await r.json()).toMatchObject({ error: expect.stringContaining("expected { map: string, x: number, y: number }") });
+        }
+        expect(existsSync(sidecarPath)).toBe(before !== null);
+        if (before) expect(readFileSync(sidecarPath)).toEqual(before);
+      } finally {
+        if (before && written && existsSync(sidecarPath) && readFileSync(sidecarPath).equals(written) && !written.equals(before)) {
+          writeFileSync(sidecarPath, before);
+        } else if (!before && written && existsSync(sidecarPath) && readFileSync(sidecarPath).equals(written)) {
+          unlinkSync(sidecarPath);
+          if (!sidecarDirExisted) try { rmdirSync(sidecarDir); } catch {}
+        }
+      }
+    });
+  });
+
+  describe("GET /api/warps/:map", () => {
+    it("pins BurnedTower1F index 2 to B1F index 0 using raw event coordinates", async () => {
+      const r = await get("/api/warps/BurnedTower1F");
+      expect(r.status).toBe(200);
+      const body = await r.json() as ReturnType<typeof buildGbcWarpsPayload>;
+      const expected = buildGbcWarpsPayload(openGbcProject(GBC_SUBJECT_ROOT), "BurnedTower1F");
+      expect(body).toEqual(expected);
+      expect(body.family).toBe("gbc");
+      expect(body.warps[2]).toMatchObject({ x: 10, y: 9, mapConst: "BURNED_TOWER_B1F", destWarp: 1,
+        destMapName: "BurnedTowerB1F", destEvent: { x: 10, y: 9 } });
+      expect(body.warps[2]!.destEvent).toEqual(loadGbcMapEvents(GBC_SUBJECT_ROOT,
+        openGbcProject(GBC_SUBJECT_ROOT).map("BurnedTowerB1F")).events.warps[0]);
+    });
+
+    it("keeps a named -1 destination edge without a resolved destination event", async () => {
+      const body = await (await get("/api/warps/CeladonDeptStoreElevator")).json() as ReturnType<typeof buildGbcWarpsPayload>;
+      expect(body.warps[0]).toMatchObject({ x: 1, y: 3, mapConst: "CELADON_DEPT_STORE_1F", destWarp: -1,
+        destMapName: "CeladonDeptStore1F" });
+      expect(body.warps[0]!.destEvent).toBeUndefined();
+    });
+
+    it("rejects malformed and unknown source maps before looking up events", async () => {
+      const malformed = await get("/api/warps/%E0%A4%A");
+      expect(malformed.status).toBe(400);
+      expect(await malformed.json()).toMatchObject({ error: expect.stringContaining("malformed map name") });
+      const unknown = await get("/api/warps/NoSuchMap");
+      expect(unknown.status).toBe(404);
+      expect(await unknown.json()).toEqual({ error: "no map NoSuchMap" });
+    });
+  });
+
+  describe("GBC dungeon CRUD", () => {
+    const snapshotSidecar = () => {
+      const dir = `${GBC_SUBJECT_ROOT}/.pokemap`;
+      const path = `${dir}/dungeons.json`;
+      const dirExisted = existsSync(dir);
+      const read = () => existsSync(path) ? readFileSync(path) : null;
+      const before = read();
+      let lastObserved = before;
+      const request = async (call: () => Promise<Response>) => {
+        try { return await call(); }
+        finally { lastObserved = read(); }
+      };
+      const restore = () => {
+        const current = read();
+        const same = (a: Buffer | null, b: Buffer | null) => a === null ? b === null : b !== null && a.equals(b);
+        // Preserve a later write that appeared after the last request completed.
+        if (same(current, lastObserved) && !same(current, before)) {
+          if (before) {
+            mkdirSync(dir, { recursive: true });
+            writeFileSync(path, before);
+          } else if (current) unlinkSync(path);
+        }
+        if (!dirExisted && existsSync(dir)) try { rmdirSync(dir); } catch {}
+      };
+      return { path, dir, dirExisted, before, request, restore };
+    };
+
+    it("roundtrips explicit and seeded dungeons in the root sidecar, then restores exact prior bytes", async () => {
+      const { path, dir, dirExisted, before, request, restore } = snapshotSidecar();
+      try {
+        const explicit = await request(() => post("/api/dungeons", { name: "D3 explicit", maps: ["BurnedTower1F"] }));
+        const afterCreate = existsSync(path) ? readFileSync(path) : null;
+        expect(explicit.status).toBe(200);
+        const created = await explicit.json() as { id: string; name: string; maps: string[] };
+        expect(afterCreate).not.toBeNull();
+        if (!afterCreate) throw new Error("dungeon POST did not write its sidecar");
+        expect(created).toMatchObject({ name: "D3 explicit", maps: ["BurnedTower1F"] });
+        expect(created.id).toEqual(expect.any(String));
+        expect(JSON.parse(afterCreate.toString("utf8")).dungeons).toContainEqual(created);
+        const list = await (await get("/api/dungeons")).json() as { id: string }[];
+        expect(list.some((d) => d.id === created.id)).toBe(true);
+        const changed = await request(() => patch(`/api/dungeons/${created.id}`, { name: "D3 changed", maps: ["BurnedTowerB1F"] }));
+        expect(changed.status).toBe(200);
+        expect(await changed.json()).toMatchObject({ id: created.id, name: "D3 changed", maps: ["BurnedTowerB1F"] });
+        const seeded = await request(() => post("/api/dungeons", { name: "D3 seeded", seedMap: "BurnedTower1F" }));
+        expect(seeded.status).toBe(200);
+        const seedBody = await seeded.json() as { id: string; maps: string[] };
+        expect(seedBody.maps).toContain("BurnedTower1F");
+        expect(seedBody.maps).toContain("BurnedTowerB1F");
+        expect(seedBody.maps).toEqual([...seedBody.maps].sort());
+        const deletedExplicit = await request(() => fetch(`http://127.0.0.1:${s.port}/api/dungeons/${created.id}`, { method: "DELETE" }));
+        expect(deletedExplicit.status).toBe(200);
+        const deletedSeed = await request(() => fetch(`http://127.0.0.1:${s.port}/api/dungeons/${seedBody.id}`, { method: "DELETE" }));
+        expect(deletedSeed.status).toBe(200);
+        expect((await request(() => fetch(`http://127.0.0.1:${s.port}/api/dungeons/missing`, { method: "DELETE" }))).status).toBe(404);
+      } finally {
+        restore();
+      }
+      expect(existsSync(path)).toBe(before !== null);
+      if (before) expect(readFileSync(path)).toEqual(before);
+      expect(existsSync(dir)).toBe(dirExisted);
+    });
+
+    it("rejects invalid create and patch bodies without writing", async () => {
+      const { path, dir, dirExisted, before, request, restore } = snapshotSidecar();
+      try {
+        for (const body of ["null", "[]", "{", '{}', '{"name":" "}', '{"name":5}', '{"name":"x","maps":[1]}', '{"name":"x","seedMap":2}']) {
+          const r = await request(() => postRaw("/api/dungeons", body));
+          expect(r.status).toBe(400);
+          expect(await r.json()).toMatchObject({ error: expect.any(String) });
+        }
+        for (const body of ["null", "[]", "{", '{"name":" "}', '{"name":5}', '{"maps":[1]}']) {
+          const r = await request(() => fetch(`http://127.0.0.1:${s.port}/api/dungeons/missing`, { method: "PATCH", body }));
+          expect(r.status).toBe(400);
+          expect(await r.json()).toMatchObject({ error: expect.any(String) });
+        }
+      } finally {
+        restore();
+      }
+      expect(existsSync(path)).toBe(before !== null);
+      if (before) expect(readFileSync(path)).toEqual(before);
+      expect(existsSync(dir)).toBe(dirExisted);
     });
   });
 

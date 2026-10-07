@@ -19,7 +19,8 @@
  * a new `GbcGroupsPayload` type here -- it's already family-agnostic.
  */
 import type { Block, Collision, DataDefect, GbcMap, GbcMapEvents } from "./model/types.js";
-import type { Placement, Component, Conflict } from "./world/connections.js";
+import type { Placement, Component } from "./world/connections.js";
+import type { WireConflict } from "../world/conflictAcceptance.js";
 import type { GbcEncounterSource } from "./analyse/atlas.js";
 
 /** One of `Collision`'s three coarse buckets (`TileCollisionTable`'s low nybble, `load/tileset.ts`'s `loadGbcCollisionInfo`). */
@@ -77,9 +78,14 @@ export interface GbcWorldPayload {
   family: "gbc";
   blockPx: 32;
   /** Keyed by map name; units are BLOCKS (1 block = 32 px), same as `GbcWorld.placements`. */
-  placements: Record<string, Placement>;
+  placements: Record<string, GbcWorldPlacement>;
   components: Component[];
-  conflicts: Conflict[];
+  conflicts: WireConflict[];
+}
+
+export interface GbcWorldPlacement extends Placement {
+  mapType: string;
+  manual: boolean;
 }
 
 /**

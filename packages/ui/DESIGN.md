@@ -236,7 +236,8 @@ tighter (the row, not just the text, is the hit target).
 │  resizable    │     min-width: 480px                     │
 │  240–420px    │                                         │
 │               ├─────────────────────────────────────────┤
-│               │ status strip (--bg-panel-raised, 28px)   │
+│               │ status strip (--bg-panel-raised, 28px;   │
+│               │ GBC: 44px, two rows)                     │
 └───────────────┴─────────────────────────────────────────┘
 ```
 
@@ -260,6 +261,12 @@ every other panel is furniture around it. Concretely that means:
   (Task 21 §9) because getting that number right is this entire project's
   reason to exist, and it must never be more than a glance away from the art
   it describes.
+- The strip is a fixed height, so a long readout can never resize the
+  viewport under the cursor (that would feed the ResizeObserver and re-blit).
+  GBA: 28px, one row, the hover readout right-aligned and ellipsising when it
+  runs out of room. GBC: 44px, two rows (its hover line is far longer), the
+  readout flowing left after the status items. Both canvases carry
+  `min-width: 0` on `.map-canvas` so a long readout never widens the column.
 
 ## Motion
 
@@ -294,3 +301,151 @@ scope here), and a "no maps match" empty state per spec §9 rather than a
 silently blank panel. Colours/spacing/type above are wired via CSS custom
 properties in `src/App.tsx`'s stylesheet import; components consume the
 tokens, never hard-coded hex.
+
+Selection reveal (Plan 6c C2): on every change of the selected map the tree
+reveals its row (expands the group if collapsed, `scrollIntoView({ block:
+"nearest" })`), but not while the filter input has focus. A world-view single
+click selects the map this way without jumping the view; a tree click, a lens
+list entry, or entering World mode jumps to the selection.
+
+## Project hub (Plan 6c A2)
+
+`ProjectPicker` (`hub-picker*`), `ProjectSwitcher` (`hub-switcher__btn`, plus
+`hub-picker--modal` on the `.warp-modal__panel` it opens) and
+`SwitchConfirmDialog` (`hub-confirm*`) — the recent-projects/browse/typed-path
+open UI and its header switcher button. `ProjectPicker` reuses
+`.map-canvas__btn` for every button in it (folder rows, Up, breadcrumb, Open,
+form submit) rather than inventing a second button look, and
+`SwitchConfirmDialog` mirrors `SaveDialog`'s own `.warp-modal__backdrop`/
+`.warp-modal__panel` shell exactly.
+
+Family badges (`.hub-picker__badge--gba`/`--gbc`) reuse the two elevation
+tokens, `--overlay-elevation-high` (orange) and `--overlay-elevation-low`
+(blue) — already-themed, already-distinct hues (also used for warp dive/
+emerge) borrowed purely to tell the two engine families apart at a glance,
+not because either carries any elevation meaning here. `--unsupported`
+entries get no colour, just `--text-muted`.
+
+Every row holding a full filesystem path (`.hub-picker__path`,
+`.hub-picker__entry-name`) gets `min-width: 0` on the flex item plus
+`overflow-wrap: anywhere` or ellipsis — this app's established fix for a
+long string inside a flex row (the former `.encounter-gutter__row`'s own precedent) —
+so a deep path never blows out the row or the fixed modal width.
+
+## Encounter border (Plan 6c B3)
+
+`EncounterBorder` (`encounter-border*`) replaces the two per-family
+"gutters" (GBA `EncounterGutter`, GBC `GbcEncounterGutter`) in both world
+views. In the world views it is off by default behind its own `Encounters` toggle
+(`aria-pressed`); its legend (`role="note"`) exists only while the toggle is on.
+
+The single-map views (`MapCanvas`, `GbcMapCanvas`) mount the same border inside
+`.map-canvas__viewport` in its controlled mode (`enabled`): no toggle or legend of
+its own. The toggle is the last button of the Overlays group (per-map: it reads off
+on a map switch) and its legend line is a `.map-canvas__legend-item` ("hover or
+focus a sprite", "none on this map", or the fetch error as `role="alert"`). The side
+is the first free of left, top, right, bottom by the map's connections, and `Fit`
+reserves one band on that side.
+
+- **One sprite per species** on a free side of each map: `.encounter-border__strip`
+  (`--left`/`--top`/`--right`/`--bottom`) fills exactly the band beside the map
+  (`bandRect`, B2's `pickBorderSide` picks the side, left, top, right, bottom,
+  first free wins). Sprites are `min(32, band px)` square; a side that cannot
+  fit them all shows `k-1` sprites and a `+N` chip (`.encounter-border__more`,
+  a focusable button named "N more species" whose tooltip lists the hidden names).
+- **Sprite tile:** each `.encounter-border__sprite` sits on a rounded
+  `--bg-panel-raised` tile with a 1px `--border` edge, so GBC's opaque white
+  front sprites read as a card rather than a hole (harmless behind GBA's
+  transparent icons). `image-rendering: pixelated`; hover/focus swaps the edge
+  to `--focus-ring`.
+- **Dimming (GBC):** a species not encountered at the current time of day gets
+  `.encounter-border__sprite--dimmed`: its `img` fades to `opacity: 0.4` (not
+  the button, so the focus ring stays full strength) AND the button gets a
+  dashed `--text-muted` outline, so the state is never colour or opacity alone;
+  the accessible name says "<name>, not encountered at <time>". It is dimmed,
+  never hidden. GBA has no `time`, so nothing is dimmed.
+- **Zoomed out** (below the family's LOD zoom: GBA 4, GBC 8) a strip becomes one
+  `.encounter-border__badge` count pill in the same band rect, `"{map} · {n}
+  species"` in its own visible text (it is `pointer-events: none`, so a `title`
+  could never show).
+- **Tooltip:** a top-level sibling of the control and strips (never inside a
+  strip: a strip is its own stacking context and would trap it under the
+  legend), one `<span>` per line: name, one line per encounter row (label,
+  percent, level, rate or bite), the `+` level-buff note, and "Not encountered
+  at <time>" when dimmed. Cleared whenever its sprite could have moved (toggle,
+  zoom, entries, time).
+- **Tokens:** `--bg-panel-raised`, `--border`, `--border-strong`,
+  `--focus-ring`, `--text-muted`, `--bg-selected`. The per-method
+  `--encounter-*` hues stay for the coverage lenses; the border no longer
+  colours by method.
+
+## Coverage lens legend (Plan 6c C1)
+
+- The active lens's legend is a **row below the world toolbar**
+  (`world-canvas__legend-row`, styled like `map-canvas__legend`, in flow with no
+  `position`), never a popover, so it covers nothing: an earlier popover sat on
+  the viewport's own `Encounters` toggle. `LensPanel` is the four toggles only;
+  both canvases render `LensLegend` with the same `lens` state, so no lens is
+  ever active without its legend.
+- **Lists.** Empty maps gets a "List them" / "Hide list" action opening
+  `lens-panel__list` (`lens-panel__list-btn` per map, payload order); Unused
+  species gets "Show list" / "Hide list" opening `lens-panel__list--species`
+  (`lens-panel__species`: icon + display name, not clickable). A list starts
+  closed on every lens change.
+- A map entry jumps like a tree click (`onJumpToMap` -> the app's `selectMap`).
+  Where no jump target exists (a dungeon view) the Empty maps "List them"
+  action is not rendered at all (never a list of disabled entries); the
+  informational Unused species list still works.
+- Before `/api/coverage` lands the row reads "Loading coverage…" (no counts,
+  lists or method key); the row has `aria-label="Coverage lens legend"`. Map
+  entries and species names carry `title` (the cells ellipsise); singular
+  counts read "1 map has" / "1 species appears".
+
+## World context menu (Plan 6c E3)
+
+- One menu for both world canvases (`WorldContextMenu`, `.world-context-menu`), replacing
+  the badge-only conflict popup. Right-click a map body or a conflict badge, or press the
+  ContextMenu key / Shift+F10 on the focused canvas (opens at the centre of the one
+  selected map, map items only). Absolutely positioned inside `.world-canvas__viewport`
+  and clamped to it by its measured size (8px inset).
+- **Items.** GBA: "Open in Map view" (when `onOpenMap` is wired; App always wires it),
+  "Edit here" (only when `onEditHere` is supplied), then "Accept conflict" /
+  "Un-accept conflict" on a badge. GBC: "Open in Map view", a permanently disabled
+  "Edit here" with the visible hint "GBC editing arrives with Plan 7", then the conflict
+  item. Accepting only acknowledges the conflict; a failed save keeps the menu open and
+  shows the dismissible `Could not update conflict:` toast.
+- **Keyboard.** Opening focuses the first enabled item; ArrowDown/ArrowUp cycle the
+  enabled items; Enter/Space activate; Escape or Tab closes and refocuses the canvas. A pointerdown
+  outside the menu (a pan start included) or a wheel closes it. `useWorldContextMenu` (same file) is the
+  shared glue; it swallows the one native `contextmenu` Chromium fires after a keyboard open (a canvas
+  pointerdown disarms that, so real right-clicks are never swallowed). The hint uses `--text-secondary`.
+- Shift+double-click on a map opens it in Map view in both families (in GBC it
+  bypasses the warp-marker preview).
+- **Tokens:** `--bg-panel-raised`, `--border-strong`, `--bg-hover`, `--text-muted` (disabled label), `--text-secondary` (hint).
+
+## In-context editing (GBA, Plan 6c E4)
+
+- Double-clicking a map body on the GBA World view (or the context menu's "Edit here")
+  edits that map in place, with the world still visible around it. Shift+double-click and
+  "Open in Map view" still switch to the Map view. A warp marker (warps on) keeps previewing
+  its destination instead; GBC is unchanged (GBC double-click opens the Map view, "Edit here"
+  stays disabled).
+- **One canvas, never remounted.** The World view is always hosted by `MapEditingWorkspace`;
+  `active` only switches the chrome (Toolbar, strips, banners, `EventInspector`) on, around the
+  same `WorldCanvas`. Its pan/zoom, image cache and toggles survive entering and leaving.
+- **Overlay.** `.world-canvas__context` fills `.world-canvas__viewport` exactly: a dim layer
+  (`--overlay-spotlight-dim`), a `chromeless` `MapCanvas` (no toolbar, status strip or overlay
+  legend; transparent viewport via `.map-canvas--chromeless`), and a bar (`.world-canvas__context-bar`,
+  top-left: map name, 1x/2x/4x, Done) on `--bg-panel-raised` / `--border-strong`. Because the stage
+  box equals the world canvas box, `MapCanvas`'s controlled `view` is the world's own pan/zoom
+  expressed in the composite's frame (`world/contextView.ts`); a wheel, drag or zoom button over the
+  overlay moves the world in lock-step. Entering snaps the world once to 16/32/64 px per tile with the
+  map's centre at the double-click point (or the menu's open point, else the viewport centre).
+  The Grid/Collision/Events/Encounters toggles are not reachable here (the collision tool still forces
+  its overlay), a known limitation.
+- **Exits.** Done, Escape, or a double-click on the overlay outside the map all ask the app to
+  leave. A clean session leaves; a dirty one opens the ordinary Save dialog and stays. A mode switch,
+  a tree click or any other selection change leaves without a prompt (the session persists as it
+  does today). Escape (a capture-phase window listener) is ignored when another handler took it, a context menu or a modal dialog is open, or the key came from a text field. Leaving context returns focus to the world canvas.
+- **After a save** only the saved map's world tile is re-requested (`/api/render/<map>.png?v=<n>`).
+- **Tokens:** `--overlay-spotlight-dim`, `--bg-panel-raised`, `--border-strong`, `--text-primary`.

@@ -1,13 +1,17 @@
-import { useState } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { MapTree } from "../components/MapTree.js";
 import { useGbcGroups } from "./hooks/useGbcGroups.js";
 import { useGbcMap } from "./hooks/useGbcMap.js";
 import { GbcMapCanvas } from "./GbcMapCanvas.js";
 import { GbcMetatilePalette } from "./GbcMetatilePalette.js";
 import { GbcWorldCanvas } from "./GbcWorldCanvas.js";
+import { useGbcWorld } from "./hooks/useGbcWorld.js";
+import { GBC_HIDDEN_MAP_TYPES } from "../world/visibility.js";
+import { DungeonSidebar } from "../components/DungeonSidebar.js";
+import { useGbcDungeons } from "./hooks/useGbcDungeons.js";
 import type { GbcTimeOfDay } from "./time.js";
 
-type Mode = "map" | "world";
+type Mode = "map" | "world" | "dungeon";
 /** Fix round (quality review finding 3): re-exported from the shared
  *  `gbc/time.ts` (was independently declared here) so a future Task 5/6
  *  consumer of `GbcApp`'s own time type doesn't need to know it moved. */
@@ -17,16 +21,20 @@ const TIME_ORDER: readonly TimeOfDay[] = ["morn", "day", "nite"];
 const TIME_LABEL: Record<TimeOfDay, string> = { morn: "Morn", day: "Day", nite: "Nite" };
 
 export interface GbcAppProps {
-  /** The project root `Root.tsx` read off `/api/project`. Not yet read by
+  /** The project root `Root.tsx` read off `/api/hub`. Not yet read by
    *  this task's own rendering -- kept on the props so Root's routing stays
    *  stable while Tasks 4/5 wire it into GbcMapCanvas/GbcWorldCanvas. */
   root: string;
+  /** Plan 6c A2: the header's project-switcher button (`ProjectSwitcher`),
+   *  supplied by `Root` -- additive and optional so `GbcApp.test.tsx`'s own
+   *  calls (no `switcher`) stay byte-identical in behaviour. */
+  switcher?: ReactNode;
 }
 
 /**
  * The GBC shell (Plan 6b Tasks 3-4). Deliberately much smaller than
  * `App.tsx`: GBC is read-only in 6b, so this never mounts `Toolbar`,
- * `SaveDialog`, `EventInspector`, `DungeonSidebar`, `SignComposer` or
+ * `SaveDialog`, `EventInspector`, `SignComposer` or
  * `CollisionPalette`, and wires no `beforeunload` handler.
  *
  * Reuses the GBA shell's own layout classes (`app`, `app__toolbar`,
@@ -37,7 +45,7 @@ export interface GbcAppProps {
  * app-level setting, not per-view), and the non-dismissible defect banner.
  * Loading/error states for the map view mirror `App.tsx:495-499` exactly.
  */
-export function GbcApp({ root }: GbcAppProps) {
+export function GbcApp({ root, switcher }: GbcAppProps) {
   const [mode, setMode] = useState<Mode>("map");
   const [time, setTime] = useState<TimeOfDay>("day");
   const [selected, setSelected] = useState<string | null>(null);
@@ -64,8 +72,16 @@ export function GbcApp({ root }: GbcAppProps) {
   // switch so a stale highlight from the PREVIOUS map's tileset never
   // survives onto a freshly selected one.
   const [hoveredMetatileId, setHoveredMetatileId] = useState<number | null>(null);
+  const [manualPlacementMaps, setManualPlacementMaps] = useState<ReadonlySet<string>>(new Set());
+  const [openDungeonId, setOpenDungeonId] = useState<string | null>(null);
+  const dungeons = useGbcDungeons(mode === "dungeon");
 
   const { data, error } = useGbcGroups();
+  const { data: world, error: worldError } = useGbcWorld(mode === "world");
+  const worldVisibility = useMemo(
+    () => world && new Map(Object.entries(world.placements).map(([name, placement]) => [name, { mapType: placement.mapType, manual: placement.manual || manualPlacementMaps.has(name) }])),
+    [world, manualPlacementMaps],
+  );
   const map = useGbcMap(selected);
   // Fix round (spec review finding 3): `useGuardedFetch` now resets
   // `data`/`error` on every URL change, but there is still one render tick
@@ -76,6 +92,23 @@ export function GbcApp({ root }: GbcAppProps) {
   // to the currently selected map -- never the previous one's data rendered
   // under the new one's name, and never the previous one's Fit/pan/defects.
   const ready = map.data && map.data.map.name === selected ? map.data : null;
+  const openDungeon = mode === "dungeon" ? dungeons.data?.find((d) => d.id === openDungeonId) ?? null : null;
+  const filterCache = useRef<{ id: string; members: string[]; filter: Set<string> } | null>(null);
+  const mapFilter = useMemo(() => {
+    if (!openDungeon) { filterCache.current = null; return null; }
+    const members = [...openDungeon.maps].sort();
+    const cached = filterCache.current;
+    if (cached?.id === openDungeon.id && cached.members.length === members.length
+      && members.every((name, index) => name === cached.members[index])) return cached.filter;
+    const filter = new Set(openDungeon.maps);
+    filterCache.current = { id: openDungeon.id, members, filter };
+    return filter;
+  }, [openDungeon]);
+  const allMapNames = useMemo(() => data ? data.groupOrder.flatMap((group) => data.groups[group] ?? []) : [], [data]);
+  const deleteDungeon = async (id: string) => {
+    await dungeons.remove(id);
+    setOpenDungeonId((current) => current === id ? null : current);
+  };
 
   const selectMap = (name: string) => {
     setSelected(name);
@@ -91,6 +124,16 @@ export function GbcApp({ root }: GbcAppProps) {
   // click is, per the spec's own "tree clicks in World mode jump" rule) and
   // does NOT switch mode.
   const selectMapFromWorld = (name: string) => setSelected(name);
+  const markManualPlacement = (name: string) => setManualPlacementMaps((previous) => previous.has(name) ? previous : new Set(previous).add(name));
+
+  // Entering World centres on the selected map, wherever the selection came from (tree, world click,
+  // Map view). A world click itself never jumps (F1); this is a mode entry, not a click.
+  const enterWorld = () => {
+    if (mode === "world") return;
+    setJumpTarget(selected);
+    setSelectVersion((v) => v + 1);
+    setMode("world");
+  };
 
   // GbcWorldCanvas's own double-click (Task 5): opens the map in Map view.
   const openMapFromWorld = (name: string) => {
@@ -108,8 +151,11 @@ export function GbcApp({ root }: GbcAppProps) {
           <button type="button" className="map-canvas__btn" aria-pressed={mode === "map"} onClick={() => setMode("map")}>
             Map
           </button>
-          <button type="button" className="map-canvas__btn" aria-pressed={mode === "world"} onClick={() => setMode("world")}>
+          <button type="button" className="map-canvas__btn" aria-pressed={mode === "world"} onClick={enterWorld}>
             World
+          </button>
+          <button type="button" className="map-canvas__btn" aria-pressed={mode === "dungeon"} onClick={() => setMode("dungeon")}>
+            Dungeon
           </button>
         </div>
         <div className="app__mode gbc-app__time" role="group" aria-label="Time of day">
@@ -120,12 +166,17 @@ export function GbcApp({ root }: GbcAppProps) {
           ))}
         </div>
         {mode === "map" && selected && <span className="app__status">{selected}</span>}
+        {switcher}
       </header>
       <div className="app__body">
         <aside className="app__sidebar">
           {error && <p className="map-tree__empty">Could not load map groups: {error}</p>}
-          {error ? null : data ? (
-            <MapTree data={data} selected={selected} onSelect={selectMap} />
+          {mode === "world" && worldError && <p className="map-tree__empty">Could not load world visibility: {worldError}</p>}
+          {mode === "dungeon" ? <DungeonSidebar
+            dungeons={dungeons.data} error={dungeons.error} openId={openDungeonId} onOpen={setOpenDungeonId}
+            onCreate={dungeons.create} onRename={dungeons.rename} onSetMaps={dungeons.setMaps} onDelete={deleteDungeon} allMapNames={allMapNames}
+          /> : error ? null : data ? (
+            <MapTree data={data} selected={selected} onSelect={selectMap} worldMode={mode === "world"} visibility={worldVisibility} hiddenMapTypes={GBC_HIDDEN_MAP_TYPES} />
           ) : (
             <p className="map-tree__empty">Loading map groups…</p>
           )}
@@ -133,12 +184,18 @@ export function GbcApp({ root }: GbcAppProps) {
         <main className="app__canvas">
           {mode === "world" ? (
             <GbcWorldCanvas
+              key="world"
               time={time}
               jumpToMap={jumpTarget}
               jumpToken={selectVersion}
               onSelectMap={selectMapFromWorld}
               onOpenMap={openMapFromWorld}
+              onJumpToMap={selectMap}
+              onPlacementSaved={markManualPlacement}
             />
+          ) : mode === "dungeon" ? (
+            openDungeon ? <GbcWorldCanvas key="dungeon" time={time} mapFilter={mapFilter} onOpenMap={openMapFromWorld} onPlacementSaved={markManualPlacement} />
+              : <p className="app__canvas-placeholder">Select or create a dungeon</p>
           ) : !selected ? (
             <p className="app__canvas-placeholder">Select a map</p>
           ) : map.error ? (

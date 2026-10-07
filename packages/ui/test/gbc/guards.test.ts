@@ -207,13 +207,19 @@ function validGbcWorldPayload(): GbcWorldPayload {
   return {
     family: "gbc",
     blockPx: 32,
-    placements: { Route17: { map: "Route17", x: 10, y: 20, width: 30, height: 40, component: 0 } },
+    placements: { Route17: { map: "Route17", x: 10, y: 20, width: 30, height: 40, component: 0, mapType: "ROUTE", manual: false } },
     components: [{ index: 0, maps: ["Route17"], bounds: { x: 10, y: 20, width: 30, height: 40 } }],
-    conflicts: [{ map: "Route17", viaA: { from: "Route18", x: 30, y: 50 }, viaB: { from: "Route16", x: 30, y: 49 } }],
+    conflicts: [{ map: "Route17", viaA: { from: "Route18", x: 30, y: 50 }, viaB: { from: "Route16", x: 30, y: 49 }, key: '["Route17","Route18",30,50,"Route16",30,49]', accepted: false }],
   };
 }
 
 describe("isGbcWorldPayload", () => {
+  it("refuses conflicts missing acknowledgement metadata or malformed paths", () => {
+    const valid = validGbcWorldPayload();
+    expect(isGbcWorldPayload({ ...valid, conflicts: [{ ...valid.conflicts[0], key: 3 }] })).toBe(false);
+    expect(isGbcWorldPayload({ ...valid, conflicts: [{ ...valid.conflicts[0], accepted: "yes" }] })).toBe(false);
+    expect(isGbcWorldPayload({ ...valid, conflicts: [{ ...valid.conflicts[0], viaA: null }] })).toBe(false);
+  });
   it("accepts a real-shaped payload", () => {
     expect(isGbcWorldPayload(validGbcWorldPayload())).toBe(true);
   });
@@ -257,6 +263,13 @@ describe("isGbcWorldPayload", () => {
   it("rejects a placement entry with a non-string map", () => {
     const p = validGbcWorldPayload();
     expect(isGbcWorldPayload({ ...p, placements: { Route17: { ...p.placements.Route17!, map: 5 } } })).toBe(false);
+  });
+
+  it("rejects a placement missing mapType or manual", () => {
+    const p = validGbcWorldPayload();
+    const route17 = p.placements.Route17!;
+    expect(isGbcWorldPayload({ ...p, placements: { Route17: { ...route17, mapType: undefined } } })).toBe(false);
+    expect(isGbcWorldPayload({ ...p, placements: { Route17: { ...route17, manual: undefined } } })).toBe(false);
   });
 
   it("rejects a non-record placement entry", () => {

@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { isDrawnByDefault, type MapVisibilityInfo } from "../world/visibility.js";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { HIDDEN_MAP_TYPES, isDrawnByDefault, type MapVisibilityInfo } from "../world/visibility.js";
 
 export interface MapGroupsData {
   groupOrder: string[];
@@ -18,10 +18,28 @@ export interface MapTreeProps {
    *  "nothing greyed yet" so the list doesn't flash entirely grey before
    *  the fetch resolves. */
   visibility?: Map<string, MapVisibilityInfo> | null;
+  hiddenMapTypes?: ReadonlySet<string>;
 }
 
-export function MapTree({ data, selected, onSelect, worldMode = false, visibility = null }: MapTreeProps) {
+export function MapTree({ data, selected, onSelect, worldMode = false, visibility = null, hiddenMapTypes = HIDDEN_MAP_TYPES }: MapTreeProps) {
   const [filter, setFilter] = useState("");
+  const navRef = useRef<HTMLElement>(null);
+  const filterRef = useRef<HTMLInputElement>(null);
+
+  // Reveal the selected row (expand its group if collapsed, scroll it in).
+  // Deps are `[selected]` only: typing in the filter, new `data`, worldMode
+  // or visibility must not yank the list around; and while the filter has
+  // focus the user is typing, so a selection change leaves the list alone.
+  // A selected row hidden by the filter is not revealed (nor retried) when
+  // the filter later clears: the user is browsing at that point.
+  useEffect(() => {
+    if (!selected || document.activeElement === filterRef.current) return;
+    const row = navRef.current?.querySelector<HTMLElement>('.map-tree__map[aria-current="true"]');
+    if (!row) return; // filtered out: nothing to show
+    const group = row.closest("details");
+    if (group && !group.open) group.open = true;
+    row.scrollIntoView({ block: "nearest" });
+  }, [selected]);
 
   const visible = useMemo(() => {
     const q = filter.trim().toLowerCase();
@@ -41,12 +59,13 @@ export function MapTree({ data, selected, onSelect, worldMode = false, visibilit
   const isGreyed = (name: string): boolean => {
     if (!worldMode || !visibility) return false;
     const info = visibility.get(name);
-    return !info || !isDrawnByDefault(info.mapType, info.manual);
+    return !info || !isDrawnByDefault(info.mapType, info.manual, hiddenMapTypes);
   };
 
   return (
-    <nav className="map-tree" aria-label="Maps">
+    <nav className="map-tree" aria-label="Maps" ref={navRef}>
       <input
+        ref={filterRef}
         className="map-tree__filter"
         placeholder="Filter maps…"
         value={filter}

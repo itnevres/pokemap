@@ -73,7 +73,7 @@ function displaySpecies(query: string): string {
  * with its rate and level band. Purely a control -- like LensPanel, it
  * draws nothing on the canvas itself; WorldCanvas owns turning `onHits`'
  * payload into the actual dim/highlight overlay, the same split
- * EncounterGutter established.
+ * the encounter overlay (now EncounterBorder) established.
  *
  * The dropdown's data source (`GET /api/species`) is fetched once on mount
  * and filtered CLIENT-SIDE as you type (prefix match, case insensitive) --
