@@ -7,10 +7,10 @@ export interface StampCell { metatileId?: number; collision?: number; elevation?
  *  output is a 1x1 stamp with both fields present). */
 export interface Stamp { width: number; height: number; cells: StampCell[]; }
 
-export function readBlock(blocks: Block[], gridWidth: number, gridHeight: number, x: number, y: number): Block | undefined {
+export function readBlock<B extends object>(blocks: B[], gridWidth: number, gridHeight: number, x: number, y: number): B | undefined {
   if (x < 0 || y < 0 || x >= gridWidth || y >= gridHeight) return undefined;
   const block = blocks[y * gridWidth + x];
-  return block ? { ...block } : undefined;
+  return block ? { ...block } as B : undefined;
 }
 
 /**
@@ -99,14 +99,14 @@ export function floodFill(blocks: Block[], gridWidth: number, gridHeight: number
  * and the caller (Task 10's own event-aware wiring) never feeds this
  * function anything event-shaped to begin with.
  */
-export function shiftGrid(blocks: Block[], gridWidth: number, gridHeight: number, dx: number, dy: number): Block[] {
-  const out = blocks.map((b) => ({ ...b }));
+export function shiftGrid<B extends object>(blocks: B[], gridWidth: number, gridHeight: number, dx: number, dy: number): B[] {
+  const out = blocks.map((b) => ({ ...b } as B));
   for (let y = 0; y < gridHeight; y++) {
     for (let x = 0; x < gridWidth; x++) {
       const srcX = ((x - dx) % gridWidth + gridWidth) % gridWidth;
       const srcY = ((y - dy) % gridHeight + gridHeight) % gridHeight;
       const src = blocks[srcY * gridWidth + srcX];
-      if (src) out[y * gridWidth + x] = { ...src };
+      if (src) out[y * gridWidth + x] = { ...src } as B;
     }
   }
   // Anything at or beyond gridWidth*gridHeight (a trailing block) is
