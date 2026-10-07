@@ -69,7 +69,7 @@ Final run (asmSplice + events + lineIdentity + save + guards): 5 files, 95 passe
 
 | Spec fact | Verdict |
 |---|---|
-| NEWBARKTOWN_TEACHER referenced elsewhere in NewBarkTown.asm | OK: 12 occurrences incl. const line (e.g. `turnobject NEWBARKTOWN_TEACHER, LEFT`) |
+| NEWBARKTOWN_TEACHER referenced elsewhere in NewBarkTown.asm | OK: 9 whole-word occurrences incl. const line (SR4: originally written "12", a substring count that included 3 hits inside `SCENE_NEWBARKTOWN_TEACHER_STOPS_YOU`) (e.g. `turnobject NEWBARKTOWN_TEACHER, LEFT`) |
 | CeruleanCave2F ends `\tdef_object_events`, no final newline | OK; it also has an `object_const_def` with an empty block (-> test 10 adds no const) |
 | MoveDeletersHouse 1 const / 2 objects | OK |
 | NewBarkTown lines for tests 6, 8, 11 | OK: `\twarp_event  6,  3, ELMS_LAB, 1`; `\tbg_event  9, 13, BGEVENT_READ, NewBarkTownElmsHouseSign` (last bg); `\tconst NEWBARKTOWN_RIVAL` last const; file ends `...EVENT_RIVAL_NEW_BARK_TOWN\n` |
@@ -88,3 +88,87 @@ No spec fact was wrong; no NEEDS_CONTEXT condition.
 7. Delete's reference scan covers the whole file including comments (spec: "anywhere ... whole word"); other files are not scanned (`ponytail:` comment in code).
 8. Lone-`\r` terminators are accepted as terminators by the primitive; not exercised by the corpus (all LF).
 9. git prints "LF will be replaced by CRLF" warnings (core.autocrlf=true); working-tree files are LF and the index is LF -- no EOL change committed.
+
+---
+
+# Fix round 1 (spec review COMPLIANT 0/0/4, quality review APPROVED 0/0/11)
+
+**Status: DONE.** Final run (events + load/events + asmSplice + lineIdentity): 4 files, 122 passed; `npm run typecheck` clean; PerfPlus `git status` 0 lines; tree clean except untracked `.codex/`.
+
+## Commits
+
+| SHA | Subject | Covers |
+|---|---|---|
+| 3c63e58 | fix(core): lone CR is not a line terminator for insert/remove (SR1) | SR1, m7(e) comment, m10 title escapes in asmSplice tests |
+| 560735e | fix(core): SR2-SR3, m1-m5, m7-m11 review fixes for GBC event ops | everything else below |
+| (this) | docs(plan-7): Task 3 fix round 1 report | SR4 + this section |
+
+## Items
+
+| Item | Done |
+|---|---|
+| SR1 | `terminatorAt` = LF / CRLF only. New test 4b: lone CR refuses for insert (EOF + mid-file) and remove (EOF + mid-file). Red before the fix (1 failed), green after. |
+| SR2 | New test 7b: `warp_event $06, 03, ...` moved to (6,3) is `toBe(text)`; a real move to (7,3) rewrites just `$06, 03` -> `7, 3`. Kills R6. |
+| SR3 | `addGbcEvent` refuses `opts.objectConst` on a map without paired consts (no block or empty block). Doc comment updated. Test 11d (red first, then green). |
+| SR4 | Report corpus-fact corrected to "9 whole-word". |
+| m1 | `scanObjectConsts(text): {name, line}[]` exported from `load/events.ts`; `parseObjectConsts` = its names. `constBlock` is a 2-line map over it; internal-consistency throw and "same rule as" comment deleted. `load/events.test.ts` untouched, green. |
+| m2 | `function fail(): never`; `marker!` dropped. |
+| m3 | Delete refusal says `first at line N` (1-based); test 14c asserts the exact line. |
+| m4 | Derived-name failure: `derived const name "X" must match ...; pass opts.objectConst`; passed-name failures keep `objectConst "X" ...`. Test 11e. |
+| m5 | lineIdentity: `adds + skippedObjectAdds.length === maps*4`; kept 391 and the skipped-list canary; dropped the literal 1000/1562. |
+| m7 | Comments: (a) positional pairing/append rationale, (b) destWarp 1-based / -1 / mapConsts optional (G4), (c) `ponytail:` uniqueness only vs the file's consts, (d) objectConst refusal documented, (e) `ponytail:` mixed-EOL on `eolOf`. |
+| m8 | Test 19: CRLF-converted map, add/move/delete; no bare-LF lines, result equals CRLF-converted LF result, parse agrees. Green on first run (behaviour already correct); teeth shown by R7 (red). |
+| m9 | One-line "relies on subject eol=lf, not normalised" comments in events.test.ts and lineIdentity.test.ts. |
+| m10 | `\n`/`\r` escaped in asmSplice test titles; test 14 split into 14 + 14d; `bare` removed; redundant parens and `NBT =\`` spacing fixed. |
+| m11 | `const deletedId = deleted.index + 1; // destWarp ids are 1-based`. |
+| m6 | skipped as instructed. |
+
+## Mutations (all re-run on the final code; each: bytes read, edit, 4 test files, bytes restored, `git diff --stat -- <file>` empty -- all confirmed `diff:empty`)
+
+Test files run each time: events.test, asmSplice.test, lineIdentity.test, load/events.test (122 tests).
+
+| ID | Mutation | Result | Red tests |
+|---|---|---|---|
+| E1 | removeLine last line keeps preceding terminator | RED 5 | asmSplice 2, 3 (LF-nofinal, CRLF-nofinal); events 17b; lineIdentity |
+| E2 | EOF insert appends `line + eol` | RED 6 | asmSplice 1, 3 x2, 3b; events 10; lineIdentity |
+| E3 | move splices x before y | RED 2 | events 6, 7b |
+| E4 | add skips const insert | RED 5 | events 11, 11b, 14d, 19; lineIdentity |
+| E5 | delete skips reference scan | RED 2 | events 14c, 15 |
+| E6 | retarget `===` instead of `>=` | RED 2 | 18, 18b |
+| E7 | retarget also reports `-1` (literal "remove exemption" is an equivalent mutant: `>= k+1` already excludes -1) | RED 1 | 18 |
+| E8 | cap `> 15` | RED 1 | 12 |
+| R1 | suffix starts at 1 | RED 1 | 11 |
+| R2 | const inserted after 2nd-to-last const | RED 4 | 11, 11b, 19; lineIdentity |
+| R3 | ref scan substring (no `\b`) | RED 1 | 14c |
+| R4 | delete removes last const, not `index` | RED 3 | 14, 14b, 19 |
+| R5 | anchor = first call | RED 3 | 8, 11; lineIdentity |
+| **R6** | drop same-coord early return | **RED 1 (was SURVIVED)** | 7b |
+| R7 | eolOf always LF | RED 4 | 19; asmSplice 3 (CRLF x2), 3b |
+| R8 | prevEol always 1 | RED 1 | asmSplice 3 (CRLF no-final) |
+| R9 | no deleted-warp exclusion | RED 2 | 18, 18b |
+| R10 | exclude by index only | RED 2 | 18, 18b |
+| R11a | no CONST_NAME check, passed name | RED 2 | 11, 11e |
+| R11b | no CONST_NAME check, derived name | RED 1 | 11e |
+| R12 | no duplicate-name check | RED 2 | 11, 11e |
+| R13 | padStart(3) | RED 5 | 8, 9, 9b, 10, 11 |
+| R14 | mapName not uppercased | RED 7 | 11, 11b, 11e, 12, 14d, 19; lineIdentity |
+| R15 | out-of-step consts not refused | RED 2 | 12, 16 |
+| R16 | destWarp 0 allowed | RED 1 | 13 |
+| R17 | mapConsts check off | RED 1 | 13 |
+| R18 | removeLine start check always true | RED 1 | asmSplice 4 |
+| R19 | insertLineAfter accepts line breaks | RED 1 | asmSplice 4 |
+| R20 | ref scan counts own const line | RED 4 | 14, 14b, 14c, 19 |
+| R21 | x/y range check off | RED 2 | 7, 12 |
+| R22 | y not spliced on move | RED 4 | 6, 6b, 7b, 19 |
+| N1 | (SR1) terminatorAt accepts lone CR again | RED 1 | asmSplice 4b |
+| N2 | (SR3) objectConst-on-unpaired guard off | RED 1 | 11d |
+| N3 | (m3) refusal reports char offset again | RED 1 | 14c |
+| N4 | (m1) shared scanner: `break` -> `continue` | RED 1 | load/events "stops at the first non-const code line" |
+| N5 | (m1) shared scanner: ignore `object_const_def` start | RED 1 | load/events corpus "objectConsts: equal-count 350, marker-absent 40, fewer 1" |
+
+Survivors: none. Documented equivalent: literal E7 only (E7 above is the semantic mutant).
+
+## Notes
+
+- m1 touched `load/events.ts` (export + 1 type import, no behaviour change; `load/events.test.ts` unchanged and green).
+- Procedure slip, already repaired: my first scripted edit of `load/events.ts` mangled it (shell collapsed backslashes); I rebuilt the file from `git show HEAD:` (not checkout/restore) before any commit, redid it with the Edit tool, and the committed diff is the 9+/5- shown by `git diff`.
