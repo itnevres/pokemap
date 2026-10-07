@@ -1,17 +1,18 @@
 import type { EditSession } from "../write/save.js";
 
-export interface EditCommand {
+export interface EditCommand<S = EditSession> {
   label: string;
   /** MUST NOT throw. `undo`/`redo` pop the command from its source stack
    *  before calling `revert`/`apply`; a throw here would lose the command
    *  from both stacks with no defined recovery. */
-  apply(session: EditSession): void;
+  apply(session: S): void;
   /** MUST NOT throw -- see `apply`. */
-  revert(session: EditSession): void;
+  revert(session: S): void;
 }
 
 /**
- * Unbounded undo/redo over one open EditSession. Owns only the stack
+ * Unbounded undo/redo over one open session (GBA `EditSession` by default;
+ * generic so the GBC session reuses the same stack, Plan 7 Task 4). Owns only the stack
  * mechanics -- it has no idea what a "paint stroke" or "event move" is,
  * only that some caller decided one `EditCommand` is one undo step. A
  * stroke being a single command (not one per block) is a property of WHO
@@ -25,12 +26,12 @@ export interface EditCommand {
  * blocks/map data (`planSave`/`commitSave` already read those live off the
  * session; the stack's only job is knowing WHETHER they differ from disk).
  */
-export class EditCommandStack {
-  private undoStack: EditCommand[] = [];
-  private redoStack: EditCommand[] = [];
+export class EditCommandStack<S extends { isDirty: boolean } = EditSession> {
+  private undoStack: EditCommand<S>[] = [];
+  private redoStack: EditCommand<S>[] = [];
   private cleanIndex = 0;
 
-  push(session: EditSession, command: EditCommand): void {
+  push(session: S, command: EditCommand<S>): void {
     // If the clean point lives deeper than where we currently are, it can
     // only be reached by redoing through the branch we're about to discard
     // below. Once discarded, that saved state is unreachable forever --
@@ -46,7 +47,7 @@ export class EditCommandStack {
     session.isDirty = this.isDirty();
   }
 
-  undo(session: EditSession): void {
+  undo(session: S): void {
     const command = this.undoStack.pop();
     if (!command) return; // unbounded but not infinite -- past the start is a no-op
     command.revert(session);
@@ -54,7 +55,7 @@ export class EditCommandStack {
     session.isDirty = this.isDirty();
   }
 
-  redo(session: EditSession): void {
+  redo(session: S): void {
     const command = this.redoStack.pop();
     if (!command) return;
     command.apply(session);

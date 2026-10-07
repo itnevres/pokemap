@@ -118,7 +118,7 @@ export function snapshotOf(session: EditSession): Snapshot {
   };
 }
 
-export function snapshotCommand(label: string, prev: Snapshot, next: Snapshot): EditCommand {
+export function snapshotCommand<S extends object = EditSession>(label: string, prev: NoInfer<Partial<S>>, next: NoInfer<Partial<S>>): EditCommand<S> {
   return {
     label,
     apply: (s) => Object.assign(s, next),
