@@ -1,4 +1,6 @@
-import { existsSync, readFileSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { it } from "vitest";
 
 // Mirrors packages/core/test/helpers/corpus.ts, for the gbc config block
@@ -22,3 +24,18 @@ export const itWithGbcCorpus = it.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT));
 /** The subject root plus every reference root that is actually checked out. */
 export const gbcCorpusRoots = (): string[] =>
   [GBC_SUBJECT_ROOT, ...GBC_REFERENCE_ROOTS].filter(hasGbcProject);
+
+/**
+ * A hermetic copy of the subject decomp (minus `.git`) in a fresh temp dir, for
+ * any test that WRITES (Plan 7 Task 4/6). Never write `GBC_SUBJECT_ROOT` itself.
+ * Pair with `removeTemp` in `afterAll`.
+ */
+export function copyGbcSubjectToTemp(): string {
+  const dir = mkdtempSync(join(tmpdir(), "pokemap-gbc-"));
+  cpSync(GBC_SUBJECT_ROOT, dir, { recursive: true, filter: (src) => !/[\\/]\.git([\\/]|$)/.test(src) });
+  return dir;
+}
+
+export function removeTemp(dir: string): void {
+  rmSync(dir, { recursive: true, force: true, maxRetries: 3 });
+}

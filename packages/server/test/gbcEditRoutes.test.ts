@@ -1,0 +1,205 @@
+import { spawnSync } from "node:child_process";
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { createGbcProjectHandler } from "../src/gbcRoutes.js";
+import type { ProjectHandler } from "../src/index.js";
+import { paintCells, floodFill, shiftGrid } from "@pokemap/core/src/gbc/edit/paint.js";
+import type { Block } from "@pokemap/core/src/gbc/model/types.js";
+import { GBC_SUBJECT_ROOT, copyGbcSubjectToTemp, hasGbcProject, removeTemp } from "@pokemap/core/test/gbc/helpers/corpus.js";
+
+// Plan 7 Task 4. Every test WRITES, so everything runs against a hermetic temp
+// copy of PerfPlus; the real PerfPlus is asserted untouched in afterAll. Hooks
+// live inside the describe for the same reason as gbcRoutes.test.ts (a hoisted
+// beforeAll would run, and copy 18 MB, even under a skipped describe).
+
+const W = 10, H = 9; // NewBarkTown
+const NBT = "/api/edit/NewBarkTown";
+const stamp1 = (metatileId: number) => ({ width: 1, height: 1, cells: [{ metatileId }] });
+
+interface SessionBody { blocks: Block[]; events: unknown; isDirty: boolean; canUndo: boolean; canRedo: boolean }
+interface PlanBody { changes: { path: string; kind: string; summary: string }[]; refusals: { code: string }[] }
+
+describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbc edit routes (hermetic temp copy)", () => {
+  let tmp: string;
+  let h: ProjectHandler;
+  let srv: Server;
+  let base: string;
+
+  beforeAll(async () => {
+    tmp = copyGbcSubjectToTemp();
+    h = createGbcProjectHandler(tmp);
+    srv = createServer(h.handle);
+    await new Promise<void>((resolve) => srv.listen(0, "127.0.0.1", resolve));
+    base = `http://127.0.0.1:${(srv.address() as AddressInfo).port}`;
+  });
+  afterAll(async () => {
+    await new Promise<void>((resolve) => (srv ? srv.close(() => resolve()) : resolve()));
+    if (tmp) removeTemp(tmp);
+    const st = spawnSync("git", ["status", "--porcelain"], { cwd: GBC_SUBJECT_ROOT, encoding: "utf8" });
+    expect(st.status).toBe(0);
+    expect(st.stdout).toBe("");
+  });
+
+  const get = (path: string) => fetch(base + path);
+  const post = (path: string, body: unknown = {}) => fetch(base + path, { method: "POST", body: JSON.stringify(body) });
+  const session = async (r: Response) => (await r.json()) as SessionBody;
+  const png = async (name: string) => Buffer.from(await (await get(`/api/render/${name}.png`)).arrayBuffer());
+  const plan = async (name = "NewBarkTown") => (await (await get(`/api/edit/${name}/plan`)).json()) as PlanBody;
+  const pencil = (x: number, y: number, metatileId: number, name = "NewBarkTown") =>
+    post(`/api/edit/${name}/paint/apply`, { tool: "pencil", targets: [{ x, y }], stamp: stamp1(metatileId), origin: { x, y } });
+
+  it("1. plan on an untouched map is empty", async () => {
+    const r = await get(`${NBT}/plan`);
+    expect(r.status).toBe(200);
+    expect(await r.json()).toEqual({ changes: [], refusals: [] });
+    await post(`${NBT}/discard`);
+  });
+
+  it("2. paint begin/apply/end: session shape, plan, dirtyMaps, render override, discard restores", async () => {
+    const before = await png("NewBarkTown"); // populates renderCache
+    await post(`${NBT}/paint/begin`);
+    const applied = await session(await pencil(0, 0, 24));
+    expect(applied.blocks[0]).toEqual({ metatileId: 24 });
+    const ended = await session(await post(`${NBT}/paint/end`));
+    expect(ended.blocks[0]!.metatileId).toBe(24);
+    expect(ended.isDirty).toBe(true);
+    expect(ended.canUndo).toBe(true);
+    expect(ended.canRedo).toBe(false);
+    expect(ended.events).toMatchObject({ warps: expect.any(Array), objects: expect.any(Array) });
+
+    const p = await plan();
+    expect(p.changes).toHaveLength(1);
+    expect(p.changes[0]!.kind).toBe("binary");
+    expect(h.dirtyMaps()).toEqual(["NewBarkTown"]);
+
+    const during = await png("NewBarkTown");
+    expect(during.equals(before)).toBe(false);
+
+    const gone = await post(`${NBT}/discard`);
+    expect(await gone.json()).toEqual({ blocks: [], events: null, isDirty: false, canUndo: false, canRedo: false });
+    expect(h.dirtyMaps()).toEqual([]);
+    expect((await png("NewBarkTown")).equals(before)).toBe(true);
+  });
+
+  it("3. rect, bucket, shift match the Task 2 paint functions run on the same input", async () => {
+    await post(`${NBT}/discard`);
+    const b0 = (await session(await post(`${NBT}/paint/begin`))).blocks;
+    expect(b0).toHaveLength(W * H);
+
+    const s2 = { width: 2, height: 1, cells: [{ metatileId: 30 }, { metatileId: 31 }] };
+    const rect = await session(await post(`${NBT}/paint/apply`, { tool: "rect", x0: 3, y0: 2, x1: 1, y1: 1, stamp: s2, origin: { x: 1, y: 1 } }));
+    const targets = [];
+    for (let y = 1; y <= 2; y++) for (let x = 1; x <= 3; x++) targets.push({ x, y });
+    const e1 = paintCells(b0, W, H, targets, s2, 1, 1);
+    expect(rect.blocks).toEqual(e1);
+    expect(rect.blocks).not.toEqual(b0);
+
+    const bucket = await session(await post(`${NBT}/paint/apply`, { tool: "bucket", x: 9, y: 8, replacement: { metatileId: 77 } }));
+    const e2 = floodFill(e1, W, H, 9, 8, 77);
+    expect(bucket.blocks).toEqual(e2);
+    expect(bucket.blocks).not.toEqual(e1);
+
+    const shifted = await session(await post(`${NBT}/paint/apply`, { tool: "shift", dx: 1, dy: -1 }));
+    const e3 = shiftGrid(e2, W, H, 1, -1);
+    expect(shifted.blocks).toEqual(e3);
+    expect(shifted.blocks).not.toEqual(e2);
+    await post(`${NBT}/discard`);
+  });
+
+  describe("4. malformed input is a 400/404, never a 500", () => {
+    const apply = (body: unknown) => post(`${NBT}/paint/apply`, body);
+    const okStamp = stamp1(5);
+    const bad: { label: string; body: unknown; field: string }[] = [
+      { label: "unknown tool", body: { tool: "laser" }, field: "tool" },
+      { label: "stamp cells length mismatch", body: { tool: "pencil", targets: [], stamp: { width: 2, height: 2, cells: [{ metatileId: 1 }] }, origin: { x: 0, y: 0 } }, field: "stamp" },
+      { label: "stamp zero width", body: { tool: "pencil", targets: [], stamp: { width: 0, height: 1, cells: [] }, origin: { x: 0, y: 0 } }, field: "stamp" },
+      { label: "non-integer metatileId", body: { tool: "pencil", targets: [], stamp: { width: 1, height: 1, cells: [{ metatileId: 1.5 }] }, origin: { x: 0, y: 0 } }, field: "stamp" },
+      { label: "non-integer target", body: { tool: "pencil", targets: [{ x: 0.5, y: 0 }], stamp: okStamp, origin: { x: 0, y: 0 } }, field: "targets" },
+      { label: "targets not an array", body: { tool: "pencil", targets: "x", stamp: okStamp, origin: { x: 0, y: 0 } }, field: "targets" },
+      { label: "non-integer origin", body: { tool: "pencil", targets: [], stamp: okStamp, origin: { x: 0, y: 1.5 } }, field: "origin" },
+      { label: "rect non-integer corner", body: { tool: "rect", x0: 0, y0: 0, x1: 1.2, y1: 1, stamp: okStamp, origin: { x: 0, y: 0 } }, field: "x1" },
+      { label: "bucket non-integer replacement", body: { tool: "bucket", x: 0, y: 0, replacement: { metatileId: 2.5 } }, field: "replacement" },
+      { label: "bucket non-integer x", body: { tool: "bucket", x: "0", y: 0, replacement: { metatileId: 2 } }, field: "x" },
+      { label: "shift non-integer dx", body: { tool: "shift", dx: 0.5, dy: 0 }, field: "dx" },
+    ];
+    for (const { label, body, field } of bad) {
+      it(`${label} -> 400 naming ${field}`, async () => {
+        const r = await apply(body);
+        expect(r.status).toBe(400);
+        expect(((await r.json()) as { error: string }).error).toContain(`"${field}"`);
+      });
+    }
+
+    it("malformed JSON -> 400", async () => {
+      const r = await fetch(`${base}${NBT}/paint/apply`, { method: "POST", body: "{nope" });
+      expect(r.status).toBe(400);
+      expect(((await r.json()) as { error: string }).error).toMatch(/JSON/);
+    });
+
+    it("unknown map -> 404, malformed name -> 400, unknown sub-route -> 404", async () => {
+      expect((await post("/api/edit/NoSuchMap/paint/begin")).status).toBe(404);
+      expect((await get("/api/edit/NoSuchMap/plan")).status).toBe(404);
+      expect((await post("/api/edit/%E0%A4%A/paint/begin")).status).toBe(400);
+      expect((await post(`${NBT}/frobnicate`)).status).toBe(404);
+      expect((await get("/api/edit/NewBarkTown")).status).toBe(404);
+    });
+
+    it("a rejected apply leaves the session unchanged", async () => {
+      await post(`${NBT}/discard`);
+      const s0 = await session(await post(`${NBT}/paint/begin`));
+      await apply({ tool: "shift", dx: 0.5, dy: 0 });
+      const s1 = await session(await post(`${NBT}/paint/end`));
+      expect(s1.blocks).toEqual(s0.blocks);
+      expect(s1.isDirty).toBe(false);
+      await post(`${NBT}/discard`);
+    });
+  });
+
+  it("5a. paint/end with no change pushes no undo step", async () => {
+    await post(`${NBT}/discard`);
+    await post(`${NBT}/paint/begin`);
+    const same = (await session(await post(`${NBT}/paint/apply`, { tool: "shift", dx: 0, dy: 0 })));
+    expect(same.isDirty).toBe(false);
+    const ended = await session(await post(`${NBT}/paint/end`));
+    expect(ended.canUndo).toBe(false);
+    expect(ended.isDirty).toBe(false);
+    await post(`${NBT}/discard`);
+  });
+
+  it("5b. a second begin keeps the first snapshot: undo restores the pre-first-paint blocks", async () => {
+    await post(`${NBT}/discard`);
+    const b0 = (await session(await post(`${NBT}/paint/begin`))).blocks;
+    await pencil(0, 0, 24);
+    await post(`${NBT}/paint/begin`); // redundant re-begin mid-stroke
+    await pencil(1, 0, 25);
+    const ended = await session(await post(`${NBT}/paint/end`));
+    expect(ended.blocks[0]!.metatileId).toBe(24);
+    expect(ended.blocks[1]!.metatileId).toBe(25);
+    const undone = await session(await post(`${NBT}/undo`));
+    expect(undone.blocks).toEqual(b0);
+    expect(undone.isDirty).toBe(false);
+    await post(`${NBT}/discard`);
+  });
+
+  it("6. undo/redo round-trip blocks; undo/redo on a never-opened map is the nothing-open shape", async () => {
+    const nothing = { blocks: [], events: null, isDirty: false, canUndo: false, canRedo: false };
+    expect(await (await post("/api/edit/ElmsLab/undo")).json()).toEqual(nothing);
+    expect(await (await post("/api/edit/ElmsLab/redo")).json()).toEqual(nothing);
+    expect(h.dirtyMaps()).toEqual([]); // undo must not have opened a session
+
+    await post(`${NBT}/discard`);
+    const b0 = (await session(await post(`${NBT}/paint/begin`))).blocks;
+    await pencil(2, 2, 40);
+    const painted = await session(await post(`${NBT}/paint/end`));
+    const undone = await session(await post(`${NBT}/undo`));
+    expect(undone.blocks).toEqual(b0);
+    expect(undone.canUndo).toBe(false);
+    expect(undone.canRedo).toBe(true);
+    expect(undone.isDirty).toBe(false);
+    const redone = await session(await post(`${NBT}/redo`));
+    expect(redone.blocks).toEqual(painted.blocks);
+    expect(redone.isDirty).toBe(true);
+    await post(`${NBT}/discard`);
+  });
+});
