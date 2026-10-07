@@ -84,3 +84,43 @@ All as the spec required (S5 additionally red in 9a/10/13; S7 caught only after 
 4. Commit with a stroke still open (`strokeStartBlocks` set) commits current blocks; same as GBA.
 5. Two sessions on maps sharing a layout (House1.blk) are independent; the second commit is refused by `file-changed-on-disk` (guard), not tested here.
 6. `.codex/` and `task-5-spec.md` untracked, not mine, untouched. PerfPlus `git status --porcelain` empty (asserted in afterAll); no leftover temp dirs.
+
+## Fix round 1
+Commit `17069d0` (src: gbcEditRoutes.ts, comment-only commands.ts + editSessions.ts; tests: gbcEditRoutes.test.ts). Only `packages/server/**` and the two comment-only core/server files touched. 38 tests pass (was 34); typecheck clean; gbcRoutes 86, hub 21, editSessions 5, paintRoutes 14, eventRoutes 7, saveRoutes 9, api 30, core commands 10 pass.
+
+| finding | change |
+|---|---|
+| F1/R1 | test 9c: GET /api/coverage (cached), paint Route29 (0,0)=metatile 7 (TILESET_JOHTO, water collision; Route29 has FISHGROUP_SHORE but no water, so it leaves `fishGroupWithoutWater`), commit; coverage not containing Route29 and equal to `gbcCoverage(openGbcProject(tmp))` |
+| F2/R13 | test 5c: stroke 1 (0,0)=41, stroke 2 (1,0)=42, undo => blocks equal after-stroke-1, canUndo+isDirty true (first attempt used 24, already committed by 9a => no change; fixed) |
+| F3 | test 14: hub on tmp, paint, `/api/hub/open` 409 `dirtyMaps:["NewBarkTown"]`; `force:true` 200; old handler `dirtyMaps()` []. Own temp home, cleaned up |
+| F4/I3 | test 12 reads block 0 from begin, paints `orig===1?2:1`; count derived from `maps.filter(blkPath==="maps/House1.blk")` (m9) |
+| I1 | `try { commitGbcSave } finally { hooks.onCommit() }`, `store.close` after success; catch removed, throw => `handle` => 500 `{error}`. New test 9d: ElmsHouse paint + warp move, `.asm` chmod 0444 so the .blk lands then the .asm write throws: 500 `{error}`, asm unchanged, session still dirty, after discard the render equals a fresh render (caches cleared). Red before the fix. Test emits an expected `console.error` (EPERM) |
+| I2 | concurrency note moved to file header, reworded (arrival order, not send order; per-map queue upgrade; in-flight request at dispose may reopen a session in the dead handler) |
+| m1 | eventOp doc: core throws plain Error, a core bug would also read 400 |
+| m2 | `.then(...).catch(...)` |
+| m3 | `handle` doc reworded |
+| m4 | `paintApply` returns void |
+| m5 | `points()` helper next to `point()` |
+| m6 | `Result`/`ok` hoisted to module scope; stray blank removed |
+| m7 | why-comments on `NoInfer` (editSessions.ts) and the generic stack (commands.ts) |
+| m8 | header line on error body shapes |
+| m10 | porcelain compared before/after; timing console.log + variables deleted; `beforeEach` discards NewBarkTown/ElmsLab/VioletCity/CeruleanCave2F/Route29; double blanks removed. (ElmsHouse is discarded inside 9d.) |
+
+### Mutations re-run (byte-copy restore, `git diff -- file` empty after each)
+| ID | mutation | red tests (observed) |
+|---|---|---|
+| S1 | render ignores openBlocks | 2 |
+| S2 | session render writes renderCache | 2, 9a |
+| S3 | onCommit no renderCache.clear | 9a, 9d |
+| S4 | onCommit no warpCache reset | 9b |
+| S5 | dirtyMaps [] | 2, 9a, 10, 9d, 13, 14 |
+| S6 | begin overwrites stroke start | 5b |
+| S7 | isDirty=true before core op | 7b, 7e |
+| S8 | commit doesn't close | 9a |
+| S9 | deleting map uses non-pre-delete warps | 8b |
+| S10 | dispose no closeAll | 13, 14 |
+| R1 | onCommit no coverageCache reset | 9c (was SURVIVED) |
+| R13 | paint/end doesn't clear stroke start | 5c (was SURVIVED) |
+| R11 | commit skips onCommit | 9a, 9b, 9c, 9d |
+| I1 | onCommit only after success (no finally) | 9d |
+S8 now red only in 9a (10 and 13 no longer depend on a leftover session, thanks to beforeEach). All 14 red; no survivors among these.
