@@ -5,8 +5,8 @@
  * text together with `parseMapEvents` of it. No filesystem, no session --
  * Task 4 assigns the result onto `GbcEditSession`.
  */
-import { codeLines, escapeRegExp, parseNum, stripComment, type CodeLine } from "../load/asm.js";
-import { parseMapEvents } from "../load/events.js";
+import { escapeRegExp, parseNum, type CodeLine } from "../load/asm.js";
+import { parseMapEvents, scanObjectConsts } from "../load/events.js";
 import type { GbcMapEvents, GbcWarpEvent } from "../model/types.js";
 import { insertLineAfter, locateEventCall, locateEventCalls, removeLine, spliceArg } from "../write/asmSplice.js";
 
@@ -37,9 +37,9 @@ function kindInfo(mapName: string, kind: GbcEventKind): (typeof KINDS)[GbcEventK
   return info;
 }
 
-const fail = (mapName: string, kind: GbcEventKind, message: string, index?: number): never => {
+function fail(mapName: string, kind: GbcEventKind, message: string, index?: number): never {
   throw new Error(`${mapName} ${kind}${index === undefined ? "" : `[${index}]`}: ${message}`);
-};
+}
 
 const isByte = (v: number): boolean => Number.isInteger(v) && v >= 0 && v <= 255;
 
@@ -72,23 +72,10 @@ export function moveGbcEvent(text: string, mapName: string, kind: GbcEventKind, 
   return { text: out, events: parseMapEvents(out, mapName) };
 }
 
-/** The `const NAME` lines right after the top-of-file `object_const_def`, with offsets (same rule as `parseObjectConsts` in `../load/events.ts`). */
+/** The top-of-file object consts with their line spans: the parser's own scan (`scanObjectConsts`), split into parallel arrays. */
 function constBlock(text: string): { lines: CodeLine[]; names: string[] } {
-  const lines: CodeLine[] = [];
-  const names: string[] = [];
-  let inBlock = false;
-  for (const line of codeLines(text)) {
-    const stripped = stripComment(line.text);
-    if (!inBlock) {
-      if (/^\s*object_const_def\b/.test(stripped)) inBlock = true;
-      continue;
-    }
-    const m = stripped.match(/^\s*const\s+([A-Za-z_][A-Za-z0-9_]*)/);
-    if (!m) break;
-    lines.push(line);
-    names.push(m[1]!);
-  }
-  return { lines, names };
+  const consts = scanObjectConsts(text);
+  return { lines: consts.map((c) => c.line), names: consts.map((c) => c.name) };
 }
 
 /**
@@ -100,9 +87,6 @@ function constBlock(text: string): { lines: CodeLine[]; names: string[] } {
  */
 function objectConstPlan(text: string, mapName: string, events: GbcMapEvents): { paired: boolean; lines: CodeLine[]; names: string[] } {
   const { lines, names } = constBlock(text);
-  if (names.join() !== events.objectConsts.join()) {
-    throw new Error(`${mapName}: internal error -- const block [${names.join()}] disagrees with parseMapEvents [${events.objectConsts.join()}]`);
-  }
   if (names.length === 0) return { paired: false, lines, names };
   if (names.length !== events.objects.length) {
     fail(mapName, "object", `object_const_def has ${names.length} const(s) for ${events.objects.length} object_event(s) -- the const list is out of step and must be fixed by hand first`);
@@ -117,7 +101,7 @@ export function eventInsertAnchor(text: string, mapName: string, kind: GbcEventK
   if (calls.length > 0) return calls[calls.length - 1]!.lineEnd;
   const marker = locateEventCalls(text, mapName, info.marker)[0];
   if (!marker) fail(mapName, kind, `no "${info.marker}" line after ${mapName}_MapEvents:`);
-  return marker!.lineEnd;
+  return marker.lineEnd;
 }
 
 const pad2 = (v: number): string => String(v).padStart(2);
@@ -155,10 +139,20 @@ function checkAddArgs(mapName: string, kind: GbcEventKind, args: string[], mapCo
  * none. The line is `\t<macro> <x>, <y>, <rest>` with x/y padded to width 2,
  * matching the corpus. `args` are the macro's arguments in source order.
  *
- * object_event also keeps `object_const_def` in step (see `objectConstPlan`):
- * when the file's consts pair with its objects, a `const NAME` line is added
- * after the last one -- `opts.objectConst`, else `<MAPNAME>_<SPRITE>` with a
- * 2, 3, ... suffix until unique. Refuses past 15 objects.
+ * object_event also keeps `object_const_def` in step (see `objectConstPlan`).
+ * Scripts address objects by position through that list (const N <-> object
+ * N), so appending to both ends keeps every existing pairing. When the file's
+ * consts pair with its objects, a `const NAME` line is added after the last
+ * one -- `opts.objectConst`, else `<MAPNAME>_<SPRITE>` with a 2, 3, ... suffix
+ * until unique. A map with no consts takes none, so `opts.objectConst` there
+ * refuses rather than being silently dropped. Refuses past 15 objects.
+ *
+ * `opts.mapConsts` (G4): the project's known map consts; optional so a caller
+ * without them is unchecked, not wrong. `destWarp` ids are 1-based (0 is
+ * invalid) and `-1` means "return to the previous map's warp".
+ * ponytail: a const name is checked unique only against this file's consts;
+ * RGBDS symbols are global, so a clash with another file's symbol shows up
+ * only at assemble time. Upgrade: scan the project's labels if it bites.
  */
 export function addGbcEvent(
   text: string,
@@ -177,17 +171,21 @@ export function addGbcEvent(
       fail(mapName, kind, `the map already has ${MAX_OBJECTS} object_event(s), the maximum (NUM_OBJECTS 16, slot 0 is the player)`);
     }
     const plan = objectConstPlan(text, mapName, events);
+    if (!plan.paired && opts.objectConst !== undefined) {
+      fail(mapName, kind, `objectConst "${opts.objectConst}" was given but the map has no object_const_def consts to add it to`);
+    }
     if (plan.paired) {
       const taken = new Set(plan.names);
       if (opts.objectConst !== undefined) {
         constName = opts.objectConst;
+        if (!CONST_NAME.test(constName)) fail(mapName, kind, `objectConst "${constName}" must match ${CONST_NAME}`);
+        if (taken.has(constName)) fail(mapName, kind, `objectConst "${constName}" already exists in object_const_def`);
       } else {
         const base = `${mapName.toUpperCase()}_${args[2]!.replace(/^SPRITE_/, "")}`;
         constName = base;
         for (let n = 2; taken.has(constName); n++) constName = `${base}${n}`;
+        if (!CONST_NAME.test(constName)) fail(mapName, kind, `derived const name "${constName}" must match ${CONST_NAME}; pass opts.objectConst`);
       }
-      if (!CONST_NAME.test(constName)) fail(mapName, kind, `objectConst "${constName}" must match ${CONST_NAME}`);
-      if (taken.has(constName)) fail(mapName, kind, `objectConst "${constName}" already exists in object_const_def`);
     }
   }
 
@@ -228,7 +226,7 @@ export function deleteGbcEvent(text: string, mapName: string, kind: GbcEventKind
     const re = new RegExp(`\\b${escapeRegExp(name)}\\b`, "g");
     for (const m of text.matchAll(re)) {
       if (m.index < own.start || m.index >= own.end) {
-        fail(mapName, kind, `const ${name} is still referenced elsewhere in the file (offset ${m.index}); remove or retarget those references first`, index);
+        fail(mapName, kind, `const ${name} is still referenced elsewhere in the file (first at line ${text.slice(0, m.index).split("\n").length}); remove or retarget those references first`, index);
       }
     }
     out = removeLine(text, call.lineStart, call.lineEnd);
@@ -262,10 +260,11 @@ export function findGbcWarpsRetargetedByDelete(
   deleted: { mapName: string; mapConst: string; index: number },
 ): GbcWarpRenumberWarning[] {
   const out: GbcWarpRenumberWarning[] = [];
+  const deletedId = deleted.index + 1; // destWarp ids are 1-based
   for (const m of maps) {
     m.warps.forEach((w, warpIndex) => {
       if (m.name === deleted.mapName && warpIndex === deleted.index) return;
-      if (w.mapConst === deleted.mapConst && w.destWarp >= deleted.index + 1) out.push({ fromMap: m.name, warpIndex, destWarp: w.destWarp });
+      if (w.mapConst === deleted.mapConst && w.destWarp >= deletedId) out.push({ fromMap: m.name, warpIndex, destWarp: w.destWarp });
     });
   }
   return out;

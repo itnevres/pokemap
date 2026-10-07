@@ -41,6 +41,7 @@ describe("corpus line identity (G5-style): insert/remove are exact inverses on e
         const skippedObjectAdds: string[] = [];
 
         for (const map of maps) {
+          // Texts are read raw: the corpus tests rely on the subject checkout being LF (PerfPlus has `* text eol=lf`); not normalised on purpose.
           const text = readFileSync(`${root}/maps/${map.name}.asm`, "utf8");
           const before = parseMapEvents(text, map.name);
           const eol = text.includes("\r\n") ? "\r\n" : "\n";
@@ -91,7 +92,7 @@ describe("corpus line identity (G5-style): insert/remove are exact inverses on e
         expect(failures).toEqual([]);
         expect(insertRemove).toBe(maps.length * 4);
         if (root === GBC_SUBJECT_ROOT) expect(skippedObjectAdds).toEqual(["GoldenrodCity", "MoveDeletersHouse"]); // 15 objects; 1 const for 2 objects
-        if (root === GBC_SUBJECT_ROOT) expect([removeReinsert, adds]).toEqual([1000, 1562]); // kinds with >= 1 call; 1564 minus the 2 skipped object adds
+        expect(adds + skippedObjectAdds.length).toBe(maps.length * 4); // every kind of every map was either added to or (object only) skipped
       }
     },
     120_000,

@@ -6,7 +6,7 @@
  * uses -- neither module re-derives "where does this label's section end".
  */
 import { readFileSync } from "node:fs";
-import { codeLines, scanCalls, stripComment, labelTail, parseNum, type AsmCall } from "./asm.js";
+import { codeLines, scanCalls, stripComment, labelTail, parseNum, type AsmCall, type CodeLine } from "./asm.js";
 import { norm } from "../../config/paths.js";
 import type {
   DataDefect,
@@ -136,10 +136,12 @@ function checkSectionOrder(tailText: string, mapName: string, lineOffset: number
  * The `const NAME` lines immediately following a top-of-file
  * `object_const_def`, stopping at the first non-`const` code line (GBC
  * format findings §3.1: the hand-maintained object index). `[]` when
- * `object_const_def` is absent (40 of 391 maps).
+ * `object_const_def` is absent (40 of 391 maps). Exported with each const's
+ * line span so the event editor (`../edit/events.ts`) splices by the very
+ * rule the parser reads by.
  */
-function parseObjectConsts(text: string): string[] {
-  const out: string[] = [];
+export function scanObjectConsts(text: string): { name: string; line: CodeLine }[] {
+  const out: { name: string; line: CodeLine }[] = [];
   let inBlock = false;
   for (const line of codeLines(text)) {
     const stripped = stripComment(line.text);
@@ -149,10 +151,12 @@ function parseObjectConsts(text: string): string[] {
     }
     const m = stripped.match(/^\s*const\s+([A-Za-z_][A-Za-z0-9_]*)/);
     if (!m) break;
-    out.push(m[1]!);
+    out.push({ name: m[1]!, line });
   }
   return out;
 }
+
+const parseObjectConsts = (text: string): string[] => scanObjectConsts(text).map((c) => c.name);
 
 /**
  * Parses one map's `<mapName>_MapEvents:` and `<mapName>_MapScripts:`

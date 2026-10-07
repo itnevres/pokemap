@@ -48,7 +48,8 @@ const OBJ_LINE = "\tobject_event  5,  5, SPRITE_TEACHER, SPRITEMOVEDATA_STILL, 0
 /** TESTMAP_ASM plus one object_event line and no const (the desync shape). */
 const insertObjectOnly = (t: string): string => t.replace(TESTMAP_OBJ_B, TESTMAP_OBJ_B + OBJ_LINE + "\n");
 
-const NBT =`${GBC_SUBJECT_ROOT}/maps/NewBarkTown.asm`;
+// The corpus tests below hard-code "\n" anchors: they rely on the subject checkout being LF (PerfPlus has `* text eol=lf`); texts are not normalised.
+const NBT = `${GBC_SUBJECT_ROOT}/maps/NewBarkTown.asm`;
 const readReal = (name: string): string => readFileSync(`${GBC_SUBJECT_ROOT}/maps/${name}.asm`, "utf8");
 
 describe("moveGbcEvent", () => {
@@ -86,6 +87,17 @@ describe("moveGbcEvent", () => {
     expect(() => moveGbcEvent(TESTMAP_ASM, "Testmap", "warp", 1, 1, 1)).toThrow(/Testmap.*warp\[1\]/);
     expect(() => moveGbcEvent(TESTMAP_ASM, "Testmap", "warp", -1, 1, 1)).toThrow(/Testmap.*warp\[-1\]/);
     expect(() => moveGbcEvent(TESTMAP_ASM, "Testmap", "coord", 0, 1, 1)).toThrow(/Testmap.*coord\[0\]/);
+  });
+});
+
+describe("moveGbcEvent, non-canonical numerals", () => {
+  it("7b. a move to the event's current (x, y) is a byte-identical no-op even when it is written `$06, 03`", () => {
+    const t = mapText(["TESTMAP_0"], 1).replace("\twarp_event  1,  1, OTHER_MAP, 1", "\twarp_event $06, 03, OTHER_MAP, 1");
+    expect(parseMapEvents(t, "Testmap").warps[0]).toMatchObject({ x: 6, y: 3 });
+    const same = moveGbcEvent(t, "Testmap", "warp", 0, 6, 3);
+    expect(same.text).toBe(t);
+    // a real move rewrites just the two numerals
+    expect(moveGbcEvent(t, "Testmap", "warp", 0, 7, 3).text).toBe(t.replace("$06, 03,", "7, 3,"));
   });
 });
 
@@ -136,7 +148,7 @@ describe("addGbcEvent", () => {
     expect(lastObj.endsWith("\n")).toBe(true);
     const lastConst = "\tconst NEWBARKTOWN_RIVAL\n";
     const out = addGbcEvent(text, "NewBarkTown", "object", OBJ_ARGS);
-    expect(out.text).toBe((text.replace(lastConst, `${lastConst}\tconst NEWBARKTOWN_TEACHER2\n`) + OBJ_LINE + "\n"));
+    expect(out.text).toBe(text.replace(lastConst, `${lastConst}\tconst NEWBARKTOWN_TEACHER2\n`) + OBJ_LINE + "\n");
     expect(out.events.objectConsts).toEqual(["NEWBARKTOWN_TEACHER", "NEWBARKTOWN_FISHER", "NEWBARKTOWN_RIVAL", "NEWBARKTOWN_TEACHER2"]);
     expect(out.events.objects).toHaveLength(4);
 
@@ -164,6 +176,22 @@ describe("addGbcEvent", () => {
     expect(out.events.objectConsts).toEqual([]);
     expect(out.text).not.toContain("const ");
     expect(out.events.objects).toHaveLength(3);
+  });
+
+  it("11d. opts.objectConst on a map with no paired const block refuses (never silently ignored)", () => {
+    expect(() => addGbcEvent(TESTMAP_ASM_NO_CONSTS, "Testmap", "object", OBJ_ARGS, { objectConst: "TESTMAP_GUIDE" })).toThrow(/Testmap.*objectConst "TESTMAP_GUIDE".*no object_const_def/);
+    const emptyBlock = "\tobject_const_def\n\n" + TESTMAP_ASM_NO_CONSTS;
+    expect(() => addGbcEvent(emptyBlock, "Testmap", "object", OBJ_ARGS, { objectConst: "TESTMAP_GUIDE" })).toThrow(/no object_const_def/);
+    // without the option the same map adds fine, no const
+    expect(addGbcEvent(emptyBlock, "Testmap", "object", OBJ_ARGS).events.objects).toHaveLength(3);
+  });
+
+  it("11e. an invalid DERIVED const name and an invalid PASSED objectConst give different messages", () => {
+    const badSprite = [...OBJ_ARGS];
+    badSprite[2] = "SPRITE_lower";
+    expect(() => addGbcEvent(TESTMAP_ASM, "Testmap", "object", badSprite)).toThrow(/derived const name "TESTMAP_lower".*pass opts\.objectConst/);
+    expect(() => addGbcEvent(TESTMAP_ASM, "Testmap", "object", OBJ_ARGS, { objectConst: "lower" })).toThrow(/objectConst "lower" must match/);
+    expect(() => addGbcEvent(TESTMAP_ASM, "Testmap", "object", OBJ_ARGS, { objectConst: "TESTMAP_A" })).toThrow(/objectConst "TESTMAP_A" already exists/);
   });
 
   it("12. object add refusals: 15 objects, out-of-step consts (MoveDeletersHouse shape), wrong arg count, a ',' in an arg", () => {
@@ -223,17 +251,18 @@ describe("deleteGbcEvent", () => {
     session.eventsText = out.text;
     session.events = out.events;
     expect(guardGbcSave(proj, session).map((r) => r.code)).not.toContain("object-const-desync");
+  });
 
-    // the same guard accepts an add (object + const together)...
+  it("14d. the same guard accepts an add (object + const together) and still flags an object added without its const", () => {
+    const { proj } = makeFixture();
     const added = addGbcEvent(TESTMAP_ASM, "Testmap", "object", OBJ_ARGS);
-    const addSession = openGbcEditSession(proj, "Testmap");
-    addSession.eventsText = added.text;
-    addSession.events = added.events;
-    expect(guardGbcSave(proj, addSession).map((r) => r.code)).not.toContain("object-const-desync");
-    // ...and still catches an object added without its const, so the check above has teeth.
-    const bare = parseMapEvents(insertObjectOnly(TESTMAP_ASM), "Testmap");
-    addSession.events = bare;
-    expect(guardGbcSave(proj, addSession).map((r) => r.code)).toContain("object-const-desync");
+    const session = openGbcEditSession(proj, "Testmap");
+    session.eventsText = added.text;
+    session.events = added.events;
+    expect(guardGbcSave(proj, session).map((r) => r.code)).not.toContain("object-const-desync");
+    // teeth: with only the object line (no const), the guard must fire
+    session.events = parseMapEvents(insertObjectOnly(TESTMAP_ASM), "Testmap");
+    expect(guardGbcSave(proj, session).map((r) => r.code)).toContain("object-const-desync");
   });
 
   it("14b. deleting a middle object keeps later consts paired with later objects", () => {
@@ -247,6 +276,8 @@ describe("deleteGbcEvent", () => {
     const t = mapText(["TESTMAP_0", "TESTMAP_1"], 2);
     const referenced = t + "\nTestmapScript:\n\tturnobject TESTMAP_1, UP\n";
     expect(() => deleteGbcEvent(referenced, "Testmap", "object", 1)).toThrow(/TESTMAP_1.*referenced/);
+    const refLine = referenced.split("\n").findIndex((l) => l.includes("turnobject TESTMAP_1")) + 1;
+    expect(() => deleteGbcEvent(referenced, "Testmap", "object", 1)).toThrow(new RegExp(`at line ${refLine}\\b`)); // 1-based line, not a char offset
     const commented = t + "\n; TESTMAP_1 moves\n";
     expect(() => deleteGbcEvent(commented, "Testmap", "object", 1)).toThrow(/TESTMAP_1.*referenced/);
     const lookalike = t + "\nTestmapScript:\n\tturnobject TESTMAP_10, UP\n\tcheckscene SCENE_TESTMAP_1\n";
@@ -282,6 +313,32 @@ describe("deleteGbcEvent", () => {
     const out = deleteGbcEvent(t, "Testmap", "object", 1);
     expect(out.text).toBe(t.slice(0, t.lastIndexOf("\n")));
     expect(out.text.endsWith("\n")).toBe(false);
+  });
+});
+
+describe("CRLF text (e.g. a pret checkout under autocrlf)", () => {
+  const crlf = (t: string): string => t.replace(/\n/g, "\r\n");
+  const bareLfLines = (t: string): number => t.split("\r\n").filter((l) => l.includes("\n")).length;
+
+  it("19. add / move / delete keep every line CRLF, splice the same bytes, and parse agrees", () => {
+    const t = crlf(mapText(["TESTMAP_0", "TESTMAP_1"], 2));
+    expect(bareLfLines(t)).toBe(0);
+
+    const added = addGbcEvent(t, "Testmap", "object", OBJ_ARGS);
+    expect(bareLfLines(added.text)).toBe(0);
+    expect(added.text).toBe(crlf(addGbcEvent(mapText(["TESTMAP_0", "TESTMAP_1"], 2), "Testmap", "object", OBJ_ARGS).text));
+    expect(added.events).toEqual(parseMapEvents(added.text, "Testmap"));
+    expect(added.events.objectConsts).toEqual(["TESTMAP_0", "TESTMAP_1", "TESTMAP_TEACHER"]);
+
+    const moved = moveGbcEvent(added.text, "Testmap", "object", 2, 9, 9);
+    expect(bareLfLines(moved.text)).toBe(0);
+    expect(moved.events.objects[2]).toMatchObject({ x: 9, y: 9 });
+
+    const deleted = deleteGbcEvent(moved.text, "Testmap", "object", 0);
+    expect(bareLfLines(deleted.text)).toBe(0);
+    expect(deleted.events).toEqual(parseMapEvents(deleted.text, "Testmap"));
+    expect(deleted.events.objectConsts).toEqual(["TESTMAP_1", "TESTMAP_TEACHER"]);
+    expect(deleted.events.objects).toHaveLength(2);
   });
 });
 
