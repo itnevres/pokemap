@@ -349,3 +349,101 @@ describe("corpus no-op round trip (G5-for-G3): every call, every arg, over every
     },
   );
 });
+
+// Plan 7 Task 3: line insert/remove primitive. Imports sit next to their describe so the
+// pre-existing block above stays byte-unchanged.
+import { insertLineAfter, removeLine, locateEventCalls } from "../../../src/gbc/write/asmSplice.js";
+
+describe("insertLineAfter / removeLine (line primitive)", () => {
+  /** [start, end) of the n-th (0-based) line's content. */
+  function lineSpan(text: string, n: number): [number, number] {
+    let start = 0;
+    for (let i = 0; i < n; i++) start = text.indexOf("\n", start) + 1;
+    let end = text.indexOf("\n", start);
+    if (end === -1) end = text.length;
+    else if (text[end - 1] === "\r") end--;
+    return [start, end];
+  }
+
+  it("1. insertLineAfter: mid-file, final line with \n, final line without \n (exact strings)", () => {
+    const t = "a\nb\nc\n";
+    expect(insertLineAfter(t, lineSpan(t, 0)[1], "X")).toBe("a\nX\nb\nc\n");
+    expect(insertLineAfter(t, lineSpan(t, 2)[1], "X")).toBe("a\nb\nc\nX\n");
+    const n = "a\nb\nc";
+    expect(insertLineAfter(n, lineSpan(n, 2)[1], "X")).toBe("a\nb\nc\nX");
+    expect(insertLineAfter(n, lineSpan(n, 1)[1], "X")).toBe("a\nb\nX\nc");
+  });
+
+  it("2. removeLine: middle, last with \n, last without \n, only line (exact strings)", () => {
+    const t = "a\nb\nc\n";
+    expect(removeLine(t, ...lineSpan(t, 1))).toBe("a\nc\n");
+    expect(removeLine(t, ...lineSpan(t, 2))).toBe("a\nb\n");
+    const n = "a\nb\nc";
+    expect(removeLine(n, ...lineSpan(n, 2))).toBe("a\nb");
+    expect(removeLine("only", 0, 4)).toBe("");
+    expect(removeLine("only\n", 0, 4)).toBe("");
+    expect(removeLine(n, ...lineSpan(n, 0))).toBe("b\nc");
+  });
+
+  it.each([
+    ["LF, final newline", "a\nb\nc\n"],
+    ["LF, no final newline", "a\nb\nc"],
+    ["CRLF, final newline", "a\r\nb\r\nc\r\n"],
+    ["CRLF, no final newline", "a\r\nb\r\nc"],
+  ])("3. round-trip inverses both ways: %s", (_name, t) => {
+    const eol = t.includes("\r\n") ? "\r\n" : "\n";
+    const lines = t.split(/\r?\n/).filter((_, i, a) => !(i === a.length - 1 && a[i] === ""));
+    for (let i = 0; i < lines.length; i++) {
+      const [s, e] = lineSpan(t, i);
+      // insert then remove the inserted line (which is line i+1 of the result)
+      const inserted = insertLineAfter(t, e, "NEW");
+      expect(inserted.split(eol)).toContain("NEW");
+      expect(removeLine(inserted, ...lineSpan(inserted, i + 1))).toBe(t);
+      // remove then re-insert after the previous line (not possible for line 0)
+      const removed = removeLine(t, s, e);
+      if (i > 0) expect(insertLineAfter(removed, lineSpan(removed, i - 1)[1], t.slice(s, e))).toBe(t);
+    }
+  });
+
+  it("3b. CRLF text inserts CRLF, and an LF-only text never gains \r", () => {
+    expect(insertLineAfter("a\r\nb\r\n", 1, "X")).toBe("a\r\nX\r\nb\r\n");
+    expect(insertLineAfter("a\r\nb", 4, "X")).toBe("a\r\nb\r\nX");
+    expect(insertLineAfter("a\nb", 3, "X")).toBe("a\nb\nX");
+  });
+
+  it("4. refuses a mid-line offset and a line containing \n or \r", () => {
+    const t = "abc\ndef\n";
+    expect(() => insertLineAfter(t, 1, "X")).toThrow(/insertLineAfter/);
+    expect(() => insertLineAfter(t, 99, "X")).toThrow(/insertLineAfter/);
+    expect(() => insertLineAfter(t, 3, "X\nY")).toThrow(/insertLineAfter/);
+    expect(() => insertLineAfter(t, 3, "X\rY")).toThrow(/insertLineAfter/);
+    expect(() => removeLine(t, 1, 3)).toThrow(/removeLine/); // lineStart mid-line
+    expect(() => removeLine(t, 0, 2)).toThrow(/removeLine/); // lineEnd mid-line
+    expect(() => removeLine(t, 0, 7)).toThrow(/removeLine/); // spans two lines
+  });
+});
+
+describe("locateEventCalls", () => {
+  const text = [
+    "Foo_MapEvents:",
+    "\tdb 0, 0",
+    "\tdef_warp_events",
+    "\twarp_event 1, 2, A, 1",
+    "\twarp_event 3, 4, B, 1",
+    "Bar_MapEvents:",
+    "\twarp_event 9, 9, C, 1",
+  ].join("\n");
+
+  it("5. returns every call in the section, absolute offsets, source order", () => {
+    const calls = locateEventCalls(text, "Foo", "warp_event");
+    expect(calls).toHaveLength(2);
+    expect(calls.map((c) => text.slice(c.lineStart, c.lineEnd))).toEqual(["\twarp_event 1, 2, A, 1", "\twarp_event 3, 4, B, 1"]);
+    expect(calls).toEqual([locateEventCall(text, "Foo", "warp_event", 0), locateEventCall(text, "Foo", "warp_event", 1)]);
+    expect(locateEventCalls(text, "Foo", "coord_event")).toEqual([]);
+    expect(locateEventCalls(text, "Bar", "warp_event")).toHaveLength(1);
+  });
+
+  it("5b. refuses a missing label, naming it", () => {
+    expect(() => locateEventCalls(text, "Nope", "warp_event")).toThrow(/Nope_MapEvents/);
+  });
+});

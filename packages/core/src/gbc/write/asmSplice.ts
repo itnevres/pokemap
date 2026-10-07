@@ -65,31 +65,86 @@ export function locateNthCall(text: string, macro: string, ordinal: number): Asm
 }
 
 /**
- * The `ordinal`-th (0-based) `<macro> ...` call after `<mapName>_MapEvents:`
- * in a `maps/<Name>.asm` file's text (the event block is always the file's
- * tail, per the format findings). Section-bounding (label lookup, trailing
- * whitespace tolerance, next-label cutoff) is `../load/asm.ts`'s `labelTail`
- * -- the one place that decides "this label's section ends here", shared
- * with `../load/events.ts`. Refuses, naming what's missing, when the label
- * is absent or the ordinal is out of range.
+ * Every `<macro> ...` call after `<mapName>_MapEvents:` in a `maps/<Name>.asm`
+ * file's text (the event block is always the file's tail, per the format
+ * findings), absolute offsets, source order. Section-bounding (label lookup,
+ * trailing whitespace tolerance, next-label cutoff) is `../load/asm.ts`'s
+ * `labelTail` -- the one place that decides "this label's section ends here",
+ * shared with `../load/events.ts`. Refuses, naming what's missing, when the
+ * label is absent.
  */
-export function locateEventCall(text: string, mapName: string, macro: string, ordinal: number): AsmCall {
+export function locateEventCalls(text: string, mapName: string, macro: string): AsmCall[] {
   let tail;
   try {
     tail = labelTail(text, `${mapName}_MapEvents`);
   } catch (e) {
     throw new Error(`locateEventCall: ${(e as Error).message}`);
   }
-  const matches = scanCalls(tail.text, macro);
-  if (ordinal < 0 || ordinal >= matches.length) {
-    throw new Error(`locateEventCall: ordinal ${ordinal} is out of range for ${matches.length} "${macro}" call(s) after "${mapName}_MapEvents:"`);
-  }
-
-  const call = matches[ordinal]!;
-  return {
+  return scanCalls(tail.text, macro).map((call) => ({
     lineIndex: call.lineIndex + tail.lineIndex,
     lineStart: call.lineStart + tail.offset,
     lineEnd: call.lineEnd + tail.offset,
     args: call.args.map((a) => ({ start: a.start + tail.offset, end: a.end + tail.offset, text: a.text })),
-  };
+  }));
+}
+
+/** The `ordinal`-th (0-based) `<macro> ...` call after `<mapName>_MapEvents:` (see `locateEventCalls`). Refuses when the label is absent or the ordinal is out of range. */
+export function locateEventCall(text: string, mapName: string, macro: string, ordinal: number): AsmCall {
+  const matches = locateEventCalls(text, mapName, macro);
+  if (ordinal < 0 || ordinal >= matches.length) {
+    throw new Error(`locateEventCall: ordinal ${ordinal} is out of range for ${matches.length} "${macro}" call(s) after "${mapName}_MapEvents:"`);
+  }
+  return matches[ordinal]!;
+}
+
+/** The terminator starting at `text[i]` (CRLF, LF or a lone CR); "" when `i` is the end of text; null when `i` is mid-line. */
+function terminatorAt(text: string, i: number): string | null {
+  if (i === text.length) return "";
+  if (text.startsWith("\r\n", i)) return "\r\n";
+  if (text[i] === "\n" || text[i] === "\r") return text[i]!;
+  return null;
+}
+
+/** CRLF when `text` contains one, else LF (the corpus is all LF; CRLF is supported anyway). */
+function eolOf(text: string): string {
+  return text.includes("\r\n") ? "\r\n" : "\n";
+}
+
+/**
+ * Inserts `line` as a new line immediately after the line whose content ends
+ * at `lineEnd`. A last line with no final newline stays the last line with no
+ * final newline (`text + eol + line`), byte-exact, so a file's lack of one is
+ * preserved. Refuses when `lineEnd` is not at a line end or `line` contains a
+ * line break.
+ */
+export function insertLineAfter(text: string, lineEnd: number, line: string): string {
+  if (/[\r\n]/.test(line)) {
+    throw new Error("insertLineAfter: the inserted line must not contain a line break");
+  }
+  const term = Number.isInteger(lineEnd) && lineEnd >= 0 && lineEnd <= text.length ? terminatorAt(text, lineEnd) : null;
+  if (term === null) {
+    throw new Error(`insertLineAfter: offset ${lineEnd} is not at the end of a line`);
+  }
+  const eol = eolOf(text);
+  if (term === "") return text + eol + line;
+  const at = lineEnd + term.length;
+  return text.slice(0, at) + line + eol + text.slice(at);
+}
+
+/**
+ * Removes the line spanning [lineStart, lineEnd) together with exactly one
+ * terminator: its own, or -- for a last line with no final newline -- the
+ * preceding one, so the file still has no final newline. Exact inverse of
+ * `insertLineAfter`. Refuses when the span is not exactly one whole line.
+ */
+export function removeLine(text: string, lineStart: number, lineEnd: number): string {
+  const startOk = Number.isInteger(lineStart) && lineStart >= 0 && (lineStart === 0 || text[lineStart - 1] === "\n");
+  const term = startOk && Number.isInteger(lineEnd) && lineEnd >= lineStart && lineEnd <= text.length ? terminatorAt(text, lineEnd) : null;
+  if (term === null || /[\r\n]/.test(text.slice(lineStart, lineEnd))) {
+    throw new Error(`removeLine: [${lineStart}, ${lineEnd}) is not exactly one whole line`);
+  }
+  if (term !== "") return text.slice(0, lineStart) + text.slice(lineEnd + term.length);
+  if (lineStart === 0) return "";
+  const prevEol = text.startsWith("\r\n", lineStart - 2) ? 2 : 1;
+  return text.slice(0, lineStart - prevEol) + text.slice(lineEnd);
 }
