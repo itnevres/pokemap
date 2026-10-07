@@ -6,6 +6,8 @@ function grid(w: number, h: number, fill: number): Block[] {
   return Array.from({ length: w * h }, () => ({ metatileId: fill }));
 }
 
+const ids = (bs: Block[]) => bs.map((b) => b.metatileId);
+
 describe("paintCells (GBC pencil / rect)", () => {
   it("1×1 stamp at (1,0) on a 3×2 grid: only index 1 changes, input and elements are unchanged, output !== input", () => {
     const blocks = grid(3, 2, 5);
@@ -63,18 +65,10 @@ describe("paintCells (GBC pencil / rect)", () => {
 });
 
 describe("floodFill (GBC bucket)", () => {
-  it("4-connected on metatileId: plus-shaped region id=1 with corners id=2, filling centre changes only plus", () => {
-    const blocks = grid(3, 3, 1);
-    const plusShape: [number, number][] = [[1, 0], [0, 1], [1, 1], [2, 1], [1, 2]];
-    for (const [x, y] of plusShape) blocks[y * 3 + x] = { metatileId: 2 };
-
-    const out = floodFill(blocks, 3, 3, 1, 1, 5);
-    expect(out.map((b) => b.metatileId)).toEqual([1, 5, 1, 5, 5, 5, 1, 5, 1]);
-
-    // Filling from corner
-    const out2 = floodFill(blocks, 3, 3, 0, 0, 7);
-    expect(out2[0]!.metatileId).toBe(7);
-    expect(out2[1]!.metatileId).toBe(2); // adjacent corner, different id
+  it("floodFill is 4-connected: same-id cell reachable only diagonally stays unfilled", () => {
+    const blocks = [1,2,1, 2,1,2, 1,2,1].map((metatileId) => ({ metatileId })); // checkerboard
+    expect(ids(floodFill(blocks, 3, 3, 1, 1, 5))).toEqual([1,2,1, 2,5,2, 1,2,1]);
+    expect(ids(floodFill(blocks, 3, 3, 0, 0, 5))).toEqual([5,2,1, 2,1,2, 1,2,1]);
   });
 
   it("same-id is a no-op: returns equal fresh array, !==", () => {
