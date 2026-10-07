@@ -57,3 +57,33 @@ ElmsLab warp[0], warp[1] -> NEW_BARK_TOWN 1; PlayersHouse1F warp[0], warp[1] -> 
 
 ## Coordinator follow-up
 Named U1 exception (approved): removed the `paint` and `diff` entries from the "every GBA-only command refuses" test's `cases` (replaced by one comment line). U1 grep `git diff 0a6d2b0 -- packages/cli/test/ | grep -c '^-[^-]'` = 2, exactly those. Results: gbcCommands.test.ts 41/41 green; typecheck 0 errors; C1 re-run red (5 new tests failed: 1, 3, 4, 7, 9), source restored (diff empty); PerfPlus `git status --porcelain` empty after (leak path gone).
+
+## Fix round 1
+Commit 17ffe91 `fix(cli): keep warnings behind --yes refusals, widen GBC write tests...` (src: gbcCommands.ts, index.ts; test: gbcCommands.test.ts). packages/cli 89/89 green, typecheck clean, PerfPlus porcelain empty after every run.
+
+| Finding | Change |
+|---|---|
+| F1 | new spawned tests 12 (paint/diff/`event add bg` without `--yes`: exit 0, dry-run line, `.blk`/asm unchanged, diff has no `committed`; `--yes` add changes asm) and 13 (`paint CeruleanCave2F` dry run: stderr `warning:`) on the temp copy |
+| F2 | test 3: rect `x3 y1 x1 1 y1 0` (3x2, off-diagonal, corners reversed) and bucket seed with x != y; both committed on the copy and changed byte INDICES compared with `paintCells`/`floodFill` (counts too) |
+| F3 | `dryRunOrCommitGbc(..., warn)` appends the stderr-bound warning lines (layout defects + retarget lines) to the thrown refusal message; handlers compute stderr before commit (also fixes quality m7). Test 13: `--yes` on CeruleanCave2F exits 1, stderr has `layout-not-writable` and a `warning:` line |
+| F4 | `--x1/--y1` help has units; `paint` description mentions bucket; action opts `tool` typed `"pencil"\|"rect"\|"bucket"`; `return void emit` -> block. GBA `paint`/`diff` help text now mentions gbc: accepted. Test-order coupling: one-line comment added |
+| I1 | `gbaRoot` read in try/catch returning `""` (test 10 then skips) |
+| I2 | comment on `dryRunOrCommitGbc`: mirrors writeCommands.ts dryRunOrCommit, keep in step; GBA files untouched |
+| minors | m2 (`return void`), m4 (kind validated first, comment), m7 done. Skipped: m1 rename, m3, m5, m6, m8 (cosmetic/import merge) |
+
+### Mutations (gbcCommands.test.ts, 43 tests; each restored, `git diff` empty, PerfPlus porcelain 0)
+| ID | Red tests |
+|---|---|
+| C1 dry run commits | 1, 3, 4, 7, 9, 12, 13 (7) |
+| C2 diff honours yes | 5 |
+| C3 skip refusal throw | 4, 13 |
+| C4 drop self-map hits | 9 |
+| C5 NaN accepted | 8, 11 |
+| C6 GBA event not refused | 10 |
+| C7 | equivalent (not run) |
+| M3 bucket seed x/y swapped | 3 |
+| M5 rect target x/y swapped | 3 |
+| M10 paint action yes:true | 12, 13 |
+| M11 event add action yes:false | 12 |
+| M12 diff action -> paint yes:true | 12 |
+| M13 emit drops stderr | 13 |
