@@ -81,7 +81,6 @@ describe("floodFill (GBC bucket)", () => {
 
   it("is iterative: fills 150×150 (22,500 cells) without stack overflow", () => {
     const blocks = grid(150, 150, 3);
-    expect(() => floodFill(blocks, 150, 150, 0, 0, 8)).not.toThrow();
     const out = floodFill(blocks, 150, 150, 0, 0, 8);
     expect(out.every((b) => b.metatileId === 8)).toBe(true);
   });
