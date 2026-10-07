@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { openGbcEditSession } from "../../../src/gbc/write/save.js";
-import { cleanupFixtures, makeFixture } from "../helpers/saveFixture.js";
+import { readFileSync, statSync, utimesSync } from "node:fs";
+import { commitGbcSave, openGbcEditSession, planGbcSave } from "../../../src/gbc/write/save.js";
+import { locateEventCall, spliceArg } from "../../../src/gbc/write/asmSplice.js";
+import { parseMapEvents } from "../../../src/gbc/load/events.js";
+import { cleanupFixtures, makeFixture, type Fixture } from "../helpers/saveFixture.js";
 
 afterEach(cleanupFixtures);
 
@@ -29,7 +32,7 @@ describe("openGbcEditSession", () => {
   });
 
   it("2. layoutSharedBy lists every same-blkPath map, this one included, in proj.maps order", () => {
-    const f = makeFixture();
+    const f = makeFixture({ shared: true });
     expect(openGbcEditSession(f.proj, "Testmap").layoutSharedBy).toEqual(["Zed", "Testmap"]);
   });
 
@@ -39,3 +42,114 @@ describe("openGbcEditSession", () => {
   });
 });
 
+
+/** Pins both files' mtime to a fixed past instant, so any later write (even of
+ *  identical bytes) is visible as an mtime change. */
+function pinMtimes(f: Fixture): () => { blk: number; asm: number } {
+  const past = new Date("2001-01-01T00:00:00Z");
+  utimesSync(f.blk, past, past);
+  utimesSync(f.asm, past, past);
+  return () => ({ blk: statSync(f.blk).mtimeMs, asm: statSync(f.asm).mtimeMs });
+}
+
+const bytes = (p: string) => [...readFileSync(p)];
+
+describe("planGbcSave / commitGbcSave", () => {
+  it("4. an unedited session plans nothing, and commit writes nothing (mtime proves it)", () => {
+    const f = makeFixture();
+    const stamp = pinMtimes(f);
+    const before = stamp();
+    const plan = planGbcSave(f.proj, openGbcEditSession(f.proj, "Testmap"));
+    expect(plan.changes).toEqual([]);
+    expect(plan.refusals).toEqual([]);
+    commitGbcSave(f.proj, plan);
+    expect(stamp()).toEqual(before);
+  });
+
+  it("5. painting one block plans one binary change and patches exactly that byte; asm untouched", () => {
+    const f = makeFixture();
+    const stamp = pinMtimes(f);
+    const asmBefore = readFileSync(f.asm);
+    const before = stamp();
+    const s = openGbcEditSession(f.proj, "Testmap");
+    s.blocks[2]!.metatileId = 0;
+    const plan = planGbcSave(f.proj, s);
+    expect(plan.refusals).toEqual([]);
+    expect(plan.changes).toEqual([
+      { path: `${f.tmp}/maps/Testmap.blk`, kind: "binary", summary: "maps/Testmap.blk -- 1 block changed" },
+    ]);
+    commitGbcSave(f.proj, plan);
+    expect(bytes(f.blk)).toEqual([1, 2, 0, 4]);
+    expect(readFileSync(f.asm).equals(asmBefore)).toBe(true);
+    expect(stamp().asm).toBe(before.asm);
+  });
+
+  it("6. a layout shared by several maps says so in the summary, and pluralises", () => {
+    const f = makeFixture({ shared: true });
+    const s = openGbcEditSession(f.proj, "Testmap");
+    s.blocks[0]!.metatileId = 0;
+    s.blocks[1]!.metatileId = 0;
+    expect(planGbcSave(f.proj, s).changes[0]!.summary).toBe("maps/Testmap.blk -- 2 blocks changed (shared by 2 maps)");
+  });
+
+  it("7. G2: commit patches bytes in place -- a trailing byte past w*h survives (encodeBlk would drop it)", () => {
+    const f = makeFixture({ blk: [1, 2, 3, 4, 77] });
+    // The real loader would say writable:false for 5 bytes; force writable so the
+    // patch (not the guard) is what is under test.
+    const proj = { ...f.proj, layout: (m: Parameters<typeof f.proj.layout>[0]) => {
+      const r = f.proj.layout(m);
+      return { ...r, layout: { ...r.layout, writable: true } };
+    } };
+    const s = openGbcEditSession(proj, "Testmap");
+    expect(s.blocks).toHaveLength(4);
+    s.blocks[0]!.metatileId = 3;
+    commitGbcSave(proj, planGbcSave(proj, s));
+    expect(bytes(f.blk)).toEqual([3, 2, 3, 4, 77]);
+  });
+
+  it("8. a text change plans one text change; commit writes eventsText byte for byte; blk untouched", () => {
+    const f = makeFixture();
+    const stamp = pinMtimes(f);
+    const blkBefore = readFileSync(f.blk);
+    const before = stamp();
+    const s = openGbcEditSession(f.proj, "Testmap");
+    s.eventsText = spliceArg(s.eventsText, locateEventCall(s.eventsText, "Testmap", "object_event", 1), 0, "3");
+    s.events = parseMapEvents(s.eventsText, "Testmap");
+    expect(s.eventsText).toContain("object_event  3,");
+    const plan = planGbcSave(f.proj, s);
+    expect(plan.refusals).toEqual([]);
+    expect(plan.changes).toEqual([
+      { path: `${f.tmp}/maps/Testmap.asm`, kind: "text", summary: "maps/Testmap.asm -- event block edited" },
+    ]);
+    commitGbcSave(f.proj, plan);
+    expect(readFileSync(f.asm, "utf8")).toBe(s.eventsText);
+    expect(readFileSync(f.blk).equals(blkBefore)).toBe(true);
+    expect(stamp().blk).toBe(before.blk);
+  });
+
+  it("9. a refused commit throws and leaves both files byte- and mtime-identical", () => {
+    const f = makeFixture();
+    const stamp = pinMtimes(f);
+    const [blkBefore, asmBefore, before] = [readFileSync(f.blk), readFileSync(f.asm), stamp()];
+    const s = openGbcEditSession(f.proj, "Testmap");
+    s.blocks[0]!.metatileId = 9; // cap is 4
+    expect(() => commitGbcSave(f.proj, planGbcSave(f.proj, s))).toThrow(/save refused: metatile-out-of-range/);
+    expect(readFileSync(f.blk).equals(blkBefore)).toBe(true);
+    expect(readFileSync(f.asm).equals(asmBefore)).toBe(true);
+    expect(stamp()).toEqual(before);
+  });
+
+  it("10. a stale plan cannot bypass the guard: commit re-checks the session's CURRENT state", () => {
+    const f = makeFixture();
+    const stamp = pinMtimes(f);
+    const [blkBefore, before] = [readFileSync(f.blk), stamp()];
+    const s = openGbcEditSession(f.proj, "Testmap");
+    s.blocks[0]!.metatileId = 2;
+    const plan = planGbcSave(f.proj, s);
+    expect(plan.refusals).toEqual([]);
+    s.blocks[1]!.metatileId = 9; // edit lands AFTER the plan was taken
+    expect(() => commitGbcSave(f.proj, plan)).toThrow(/save refused/);
+    expect(readFileSync(f.blk).equals(blkBefore)).toBe(true);
+    expect(stamp()).toEqual(before);
+  });
+});

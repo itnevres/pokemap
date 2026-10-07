@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 const ALLOWED = new Set([
   join("src", "write", "save.ts"),
+  join("src", "gbc", "write", "save.ts"),
   join("src", "world", "sidecar.ts"),
   join("src", "world", "dungeons.ts"),
 ]);
@@ -18,7 +19,7 @@ function walk(dir: string, out: string[] = []): string[] {
 }
 
 describe("I8/I2 static check", () => {
-  it("no file under packages/core/src writes to the filesystem except the sanctioned three", () => {
+  it("no file under packages/core/src writes to the filesystem except the sanctioned four", () => {
     const root = join(__dirname, "..", "..");
     const files = walk(join(root, "src"));
     const offenders: string[] = [];

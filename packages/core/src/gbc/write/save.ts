@@ -1,9 +1,10 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import type { Refusal } from "../../write/guards.js";
 import type { PendingChange } from "../../write/save.js";
 import type { GbcProject } from "../project.js";
 import type { Block, GbcMap, GbcMapEvents, Layout } from "../model/types.js";
 import { parseMapEvents } from "../load/events.js";
+import { guardGbcSave } from "./guards.js";
 
 /**
  * The open GBC map's current, possibly-edited state, plus the exact state it
@@ -115,4 +116,79 @@ export function changedBlockIndices(original: Block[], current: Block[]): number
   const n = Math.min(original.length, current.length);
   for (let i = 0; i < n; i++) if (original[i]!.metatileId !== current[i]!.metatileId) out.push(i);
   return out;
+}
+
+/** `${n} ${word}` / `${n} ${word}s` -- the same pluralisation rule as GBA's
+ *  change summaries (`write/save.ts`, where it is module-private). */
+function pluralize(n: number, word: string): string {
+  return `${n} ${word}${n === 1 ? "" : "s"}`;
+}
+
+/**
+ * Computes what a save WOULD do, without writing. Safe to call on every
+ * keystroke: this never writes; `commitGbcSave` is the only writer, always an
+ * explicit, separate call. Blocks first, then text, nothing else.
+ */
+export function planGbcSave(proj: GbcProject, session: GbcEditSession): GbcSavePlan {
+  const refusals = guardGbcSave(proj, session);
+  const changes: PendingChange[] = [];
+  const { layout, mapName } = session;
+
+  const changed = changedBlockIndices(session.originalBlocks, session.blocks);
+  if (changed.length > 0) {
+    const shared = session.layoutSharedBy.length > 1 ? ` (shared by ${session.layoutSharedBy.length} maps)` : "";
+    changes.push({
+      path: `${proj.root}/${layout.blkPath}`,
+      kind: "binary",
+      summary: `${layout.blkPath} -- ${pluralize(changed.length, "block")} changed${shared}`,
+    });
+  }
+  if (session.eventsText !== session.originalEventsText) {
+    changes.push({
+      path: `${proj.root}/maps/${mapName}.asm`,
+      kind: "text",
+      summary: `maps/${mapName}.asm -- event block edited`,
+    });
+  }
+  return { session, changes, refusals };
+}
+
+/**
+ * The ONLY function in this codebase that writes to a GBC decomp path (G7).
+ * Throws rather than writing anything when a FRESH `guardGbcSave` against
+ * `plan.session`'s current state is non-empty -- a UI that merely does not
+ * render a refusal cannot bypass this, the check lives here. Deliberately
+ * re-derives refusals rather than trusting `plan.refusals` (see that field's
+ * doc comment): a plan can be held across an intervening edit to its live
+ * session, and re-checking here closes that race whatever the caller does.
+ *
+ * The `.blk` write is a G2 byte PATCH, not a re-encode: it reads the on-disk
+ * buffer, sets `bytes[i]` only for blocks whose id changed, and writes the
+ * buffer back, so every byte it was not asked to change (including any past
+ * w*h) survives exactly. An unchanged file is never written at all.
+ *
+ * Not atomic across its two writes (blk, asm): if the second throws (disk
+ * full, a permission error), the first has already landed. Accepted as a real
+ * but out-of-scope risk, the same as GBA's `commitSave` -- rollback machinery
+ * across two files is disproportionate to what this tool needs.
+ *
+ * Does not mutate the session; callers reopen after a commit.
+ */
+export function commitGbcSave(proj: GbcProject, plan: GbcSavePlan): void {
+  const { session } = plan;
+  const refusals = guardGbcSave(proj, session);
+  if (refusals.length > 0) {
+    throw new Error(`save refused: ${refusals.map((r) => `${r.code} (${r.subject})`).join(", ")}`);
+  }
+
+  const changed = changedBlockIndices(session.originalBlocks, session.blocks);
+  if (changed.length > 0) {
+    const path = `${proj.root}/${session.layout.blkPath}`;
+    const bytes = readFileSync(path);
+    for (const i of changed) bytes[i] = session.blocks[i]!.metatileId;
+    writeFileSync(path, bytes);
+  }
+  if (session.eventsText !== session.originalEventsText) {
+    writeFileSync(`${proj.root}/maps/${session.mapName}.asm`, session.eventsText);
+  }
 }

@@ -38,7 +38,10 @@ export const TESTMAP_ASM = [
 /** Same file with no `object_const_def` block at all (40 of 391 real maps). */
 export const TESTMAP_ASM_NO_CONSTS = TESTMAP_ASM.replace(/^\tobject_const_def\n\tconst TESTMAP_A\n\tconst TESTMAP_B\n\n/, "");
 
-export const TILESET_CAP = 4;
+/** 5, not the spec's 4: the spec's own bytes [1,2,3,4] (tests 4-5, 7) contain id 4,
+ *  which a cap of 4 would refuse (valid ids are 0..cap-1). With cap 5, ids 0-4
+ *  are valid and 5 is the first out-of-range id (test 11's boundary). */
+export const TILESET_CAP = 5;
 
 const tmpDirs: string[] = [];
 /** Call from `afterEach`. */
@@ -57,10 +60,12 @@ export interface Fixture {
 /**
  * Builds a real tmpdir with `maps/Testmap.{blk,asm}` and a stub project whose
  * `layout` is the REAL `loadLayout` (so writable/oversize behave for real).
- * `Zed` shares Testmap's blkPath and is listed first; `Other` does not -- so
- * `layoutSharedBy` must come back as ["Zed", "Testmap"], in `maps` order.
+ * With `shared: true`, `Zed` shares Testmap's blkPath and is listed first
+ * while `Other` does not, so `layoutSharedBy` must be ["Zed", "Testmap"], in
+ * `maps` order. By default Testmap is unshared (plan summaries carry no
+ * "shared by" suffix).
  */
-export function makeFixture(opts: { blk?: number[]; asm?: string } = {}): Fixture {
+export function makeFixture(opts: { blk?: number[]; asm?: string; shared?: boolean } = {}): Fixture {
   const tmp = norm(mkdtempSync(join(tmpdir(), "pokemap-gbc-save-")));
   tmpDirs.push(tmp);
   mkdirSync(`${tmp}/maps`);
@@ -73,7 +78,7 @@ export function makeFixture(opts: { blk?: number[]; asm?: string } = {}): Fixtur
     border: 0, connectionFlags: "0", connections: [],
   };
   const maps: GbcMap[] = [
-    { ...base, name: "Zed", blkPath: "maps/Testmap.blk" },
+    ...(opts.shared ? [{ ...base, name: "Zed", blkPath: "maps/Testmap.blk" }] : []),
     { ...base, name: "Other", blkPath: "maps/Other.blk" },
     { ...base, name: "Testmap", blkPath: "maps/Testmap.blk" },
   ];
