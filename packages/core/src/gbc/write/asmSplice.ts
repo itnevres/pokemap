@@ -97,15 +97,23 @@ export function locateEventCall(text: string, mapName: string, macro: string, or
   return matches[ordinal]!;
 }
 
-/** The terminator starting at `text[i]` (CRLF, LF or a lone CR); "" when `i` is the end of text; null when `i` is mid-line. */
+/**
+ * The terminator starting at `text[i]` (CRLF or LF); "" when `i` is the end of
+ * text; null when `i` is mid-line. A lone CR is NOT a terminator: `codeLines`
+ * (the line model every locator is built on) splits only on LF / CRLF, so
+ * accepting one here would splice into what the locators see as one line.
+ */
 function terminatorAt(text: string, i: number): string | null {
   if (i === text.length) return "";
   if (text.startsWith("\r\n", i)) return "\r\n";
-  if (text[i] === "\n" || text[i] === "\r") return text[i]!;
+  if (text[i] === "\n") return "\n";
   return null;
 }
 
-/** CRLF when `text` contains one, else LF (the corpus is all LF; CRLF is supported anyway). */
+/**
+ * CRLF when `text` contains one, else LF (the corpus is all LF; CRLF is supported anyway).
+ * ponytail: "any CRLF means CRLF" -- a mixed-EOL file gets CRLF on inserted lines. Upgrade: reuse the anchor line's own terminator.
+ */
 function eolOf(text: string): string {
   return text.includes("\r\n") ? "\r\n" : "\n";
 }

@@ -365,7 +365,7 @@ describe("insertLineAfter / removeLine (line primitive)", () => {
     return [start, end];
   }
 
-  it("1. insertLineAfter: mid-file, final line with \n, final line without \n (exact strings)", () => {
+  it("1. insertLineAfter: mid-file, final line with \\n, final line without \\n (exact strings)", () => {
     const t = "a\nb\nc\n";
     expect(insertLineAfter(t, lineSpan(t, 0)[1], "X")).toBe("a\nX\nb\nc\n");
     expect(insertLineAfter(t, lineSpan(t, 2)[1], "X")).toBe("a\nb\nc\nX\n");
@@ -374,7 +374,7 @@ describe("insertLineAfter / removeLine (line primitive)", () => {
     expect(insertLineAfter(n, lineSpan(n, 1)[1], "X")).toBe("a\nb\nX\nc");
   });
 
-  it("2. removeLine: middle, last with \n, last without \n, only line (exact strings)", () => {
+  it("2. removeLine: middle, last with \\n, last without \\n, only line (exact strings)", () => {
     const t = "a\nb\nc\n";
     expect(removeLine(t, ...lineSpan(t, 1))).toBe("a\nc\n");
     expect(removeLine(t, ...lineSpan(t, 2))).toBe("a\nb\n");
@@ -405,13 +405,13 @@ describe("insertLineAfter / removeLine (line primitive)", () => {
     }
   });
 
-  it("3b. CRLF text inserts CRLF, and an LF-only text never gains \r", () => {
+  it("3b. CRLF text inserts CRLF, and an LF-only text never gains \\r", () => {
     expect(insertLineAfter("a\r\nb\r\n", 1, "X")).toBe("a\r\nX\r\nb\r\n");
     expect(insertLineAfter("a\r\nb", 4, "X")).toBe("a\r\nb\r\nX");
     expect(insertLineAfter("a\nb", 3, "X")).toBe("a\nb\nX");
   });
 
-  it("4. refuses a mid-line offset and a line containing \n or \r", () => {
+  it("4. refuses a mid-line offset and a line containing \\n or \\r", () => {
     const t = "abc\ndef\n";
     expect(() => insertLineAfter(t, 1, "X")).toThrow(/insertLineAfter/);
     expect(() => insertLineAfter(t, 99, "X")).toThrow(/insertLineAfter/);
@@ -445,5 +445,14 @@ describe("locateEventCalls", () => {
 
   it("5b. refuses a missing label, naming it", () => {
     expect(() => locateEventCalls(text, "Nope", "warp_event")).toThrow(/Nope_MapEvents/);
+  });
+});
+
+describe("lone CR is not a line terminator (codeLines only splits on \n / \r\n)", () => {
+  it("4b. insertLineAfter and removeLine refuse a lone-CR line end instead of mis-splicing", () => {
+    expect(() => insertLineAfter("a\nb\r", 3, "X")).toThrow(/insertLineAfter/); // lone CR at EOF
+    expect(() => insertLineAfter("a\rb\n", 1, "X")).toThrow(/insertLineAfter/); // lone CR mid-file
+    expect(() => removeLine("a\nb\r", 2, 3)).toThrow(/removeLine/);
+    expect(() => removeLine("x\ny\rz\n", 2, 3)).toThrow(/removeLine/);
   });
 });
