@@ -293,13 +293,15 @@ function kindOpt(v: unknown): GbcEventKind {
   return v as GbcEventKind;
 }
 
-/** Dry run prints label + plan; `--yes` throws on refusals (the CLI's own message, same format as GBA's), else commits. */
-function dryRunOrCommitGbc(proj: GbcProject, session: GbcEditSession, yes: boolean, label: string): string {
+/** Mirrors writeCommands.ts dryRunOrCommit (same refusal format) -- keep in step. `warn` (stderr-bound `warning:` lines) is appended to the
+ *  thrown message, since a throw returns no stderr and the user would otherwise lose the data defects behind a refusal.
+ *  Dry run prints label + plan; `--yes` throws on refusals (the CLI's own message, same format as GBA's), else commits. */
+function dryRunOrCommitGbc(proj: GbcProject, session: GbcEditSession, yes: boolean, label: string, warn = ""): string {
   const plan = planGbcSave(proj, session);
   const diffText = formatDiffText(plan);
   if (!yes) return `${label}\n${diffText}\n(dry run -- not written; pass --yes to commit)\n`;
   if (plan.refusals.length > 0) {
-    throw new Error(plan.refusals.map((r) => `${r.code} (${r.subject}): ${r.message} -- ${r.fix}`).join("\n"));
+    throw new Error(plan.refusals.map((r) => `${r.code} (${r.subject}): ${r.message} -- ${r.fix}`).join("\n") + (warn ? `\n${warn.trimEnd()}` : ""));
   }
   commitGbcSave(proj, plan);
   return `${label}\n${diffText}\ncommitted\n`;
@@ -346,8 +348,8 @@ function layoutWarnings(proj: GbcProject, mapName: string): string {
 export function runGbcPaint(root: string, mapName: string, opts: RunGbcPaintOptions): GbcCommandResult {
   const proj = openGbcProject(root);
   const session = gbcPaintSession(proj, mapName, opts);
-  const stdout = dryRunOrCommitGbc(proj, session, !!opts.yes, `${mapName} (${opts.tool})`);
-  return { stdout, stderr: layoutWarnings(proj, mapName) };
+  const stderr = layoutWarnings(proj, mapName);
+  return { stdout: dryRunOrCommitGbc(proj, session, !!opts.yes, `${mapName} (${opts.tool})`, stderr), stderr };
 }
 
 /** `diff <gbcMap>`: always a dry run, whatever the caller smuggles into `opts`. */
@@ -374,7 +376,8 @@ export function runGbcEventMove(root: string, mapName: string, opts: RunGbcEvent
   const proj = openGbcProject(root);
   const { session, kind } = openEventSession(proj, mapName, opts.kind);
   applyEdit(session, moveGbcEvent(session.eventsText, mapName, kind, index, x, y));
-  return { stdout: dryRunOrCommitGbc(proj, session, !!opts.yes, `${mapName} move ${kind}[${index}] -> (${x}, ${y})`), stderr: layoutWarnings(proj, mapName) };
+  const stderr = layoutWarnings(proj, mapName);
+  return { stdout: dryRunOrCommitGbc(proj, session, !!opts.yes, `${mapName} move ${kind}[${index}] -> (${x}, ${y})`, stderr), stderr };
 }
 
 export interface RunGbcEventAddOptions { kind: string; /** The macro's full argument list in source order, comma-separated. */ args: string; const?: string; yes?: boolean }
@@ -387,7 +390,8 @@ export function runGbcEventAdd(root: string, mapName: string, opts: RunGbcEventA
   const args = opts.args.split(",").map((a) => a.trim());
   const mapConsts = new Set(proj.maps.map((m) => m.constName));
   applyEdit(session, addGbcEvent(session.eventsText, mapName, kind, args, { mapConsts, objectConst: opts.const }));
-  return { stdout: dryRunOrCommitGbc(proj, session, !!opts.yes, `${mapName} add ${kind}`), stderr: layoutWarnings(proj, mapName) };
+  const stderr = layoutWarnings(proj, mapName);
+  return { stdout: dryRunOrCommitGbc(proj, session, !!opts.yes, `${mapName} add ${kind}`, stderr), stderr };
 }
 
 export interface RunGbcEventDeleteOptions { kind: string; index: number; yes?: boolean }
@@ -404,5 +408,6 @@ export function runGbcEventDelete(root: string, mapName: string, opts: RunGbcEve
     warnings = hits.map((h) => `warning: ${h.fromMap} warp[${h.warpIndex}] -> ${session.map.constName} ${h.destWarp} will be retargeted\n`).join("");
   }
   applyEdit(session, deleteGbcEvent(session.eventsText, mapName, kind, index));
-  return { stdout: dryRunOrCommitGbc(proj, session, !!opts.yes, `${mapName} delete ${kind}[${index}]`), stderr: warnings + layoutWarnings(proj, mapName) };
+  const stderr = warnings + layoutWarnings(proj, mapName);
+  return { stdout: dryRunOrCommitGbc(proj, session, !!opts.yes, `${mapName} delete ${kind}[${index}]`, stderr), stderr };
 }

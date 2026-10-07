@@ -489,11 +489,19 @@ describe("CLI end-to-end (spawned, generous timeout): Task 12", () => {
 // real PerfPlus; `afterAll` asserts it stayed clean.
 // ---------------------------------------------------------------------------
 describe("GBC write commands (Plan 7 Task 6)", () => {
+  // NOTE: tests share ONE mutable temp copy and run in file order (e.g. 9 relies on 6/7 having edited the asm; each re-reads its own `before`).
   const MAP = "NewBarkTown";
   let copy = "";
   const asm = (root = copy): string => readFileSync(`${root}/maps/${MAP}.asm`, "utf8");
   const blk = (root = copy): Buffer => readFileSync(`${root}/maps/${MAP}.blk`);
-  const gbaRoot = (JSON.parse(readFileSync("pokemap.config.json", "utf8")) as { projectPath: string }).projectPath;
+  // "" on any error (no config / wrong cwd) so collection never throws; test 10 then skips.
+  const gbaRoot = ((): string => {
+    try {
+      return (JSON.parse(readFileSync("pokemap.config.json", "utf8")) as { projectPath: string }).projectPath ?? "";
+    } catch {
+      return "";
+    }
+  })();
 
   beforeAll(() => {
     if (hasGbcProject(GBC_SUBJECT_ROOT)) copy = copyGbcSubjectToTemp();
@@ -539,26 +547,41 @@ describe("GBC write commands (Plan 7 Task 6)", () => {
     expect(after[0]).toBe(m);
   });
 
-  itWithGbcCorpus("3. rect and bucket dry runs name the block counts the Task 2 functions give", () => {
-    const cur = blocks();
-    const m = other(cur[0]!.metatileId);
+  itWithGbcCorpus("3. rect and bucket: block counts AND changed byte indices match the Task 2 functions (off-diagonal, non-square, x != y seed)", () => {
     const { width: w, height: h } = openGbcProject(copy).map(MAP);
-    const stamp = { width: 1, height: 1, cells: [{ metatileId: m }] };
-    const rectExpected = differing(cur, paintGbcCells(cur, w, h, [{ x: 1, y: 1 }, { x: 2, y: 1 }, { x: 1, y: 2 }, { x: 2, y: 2 }], stamp, 1, 1));
-    const rect = runGbcPaint(copy, MAP, { tool: "rect", x: 2, y: 2, x1: 1, y1: 1, metatile: m });
-    expect(rectExpected).toBeGreaterThan(1);
-    expect(rect.stdout).toContain(`maps/NewBarkTown.blk -- ${plural(rectExpected)}`);
+    const idx = (a: { metatileId: number }[], b: { metatileId: number }[]): number[] => a.flatMap((v, i) => (v.metatileId !== b[i]!.metatileId ? [i] : []));
+    const changedBytes = (before: Buffer, after: Buffer): number[] => [...after].flatMap((v, i) => (v !== before[i] ? [i] : []));
 
-    // Seed on the cell whose fill region is largest, so the fill is a real region.
-    let sx = 0, sy = 0, bm = other(cur[0]!.metatileId), bucketExpected = 0;
+    // rect: corners (1,0)-(3,1) given in reverse order -> 3x2, off the diagonal; commit it and compare byte indices.
+    let cur = blocks();
+    const rectTargets = [1, 2, 3].flatMap((x) => [0, 1].map((y) => ({ x, y })));
+    const used = new Set(rectTargets.map((t) => cur[t.y * w + t.x]!.metatileId));
+    let m = 1;
+    while (used.has(m)) m++;
+    const stamp = { width: 1, height: 1, cells: [{ metatileId: m }] };
+    const rectIdx = idx(cur, paintGbcCells(cur, w, h, rectTargets, stamp, 1, 0));
+    expect(rectIdx).toHaveLength(6);
+    const rectDry = runGbcPaint(copy, MAP, { tool: "rect", x: 3, y: 1, x1: 1, y1: 0, metatile: m });
+    expect(rectDry.stdout).toContain(`maps/NewBarkTown.blk -- ${plural(rectIdx.length)}`);
+    let before = blk();
+    runGbcPaint(copy, MAP, { tool: "rect", x: 3, y: 1, x1: 1, y1: 0, metatile: m, yes: true });
+    expect(changedBytes(before, blk())).toEqual(rectIdx);
+
+    // bucket: a seed with x != y and a real region; commit and compare byte indices.
+    cur = blocks();
+    let sx = 0, sy = 0, bm = 1, best = 0;
     for (let i = 0; i < cur.length; i++) {
+      if (i % w === Math.floor(i / w)) continue;
       const id = other(cur[i]!.metatileId);
-      const n = differing(cur, gbcFloodFill(cur, w, h, i % w, Math.floor(i / w), id));
-      if (n > bucketExpected) { bucketExpected = n; sx = i % w; sy = Math.floor(i / w); bm = id; }
+      const n = idx(cur, gbcFloodFill(cur, w, h, i % w, Math.floor(i / w), id)).length;
+      if (n > best) { best = n; sx = i % w; sy = Math.floor(i / w); bm = id; }
     }
-    const bucket = runGbcPaint(copy, MAP, { tool: "bucket", x: sx, y: sy, metatile: bm });
-    expect(bucketExpected).toBeGreaterThan(1);
-    expect(bucket.stdout).toContain(`maps/NewBarkTown.blk -- ${plural(bucketExpected)}`);
+    expect(best).toBeGreaterThan(1);
+    const bucketIdx = idx(cur, gbcFloodFill(cur, w, h, sx, sy, bm));
+    expect(runGbcPaint(copy, MAP, { tool: "bucket", x: sx, y: sy, metatile: bm }).stdout).toContain(`maps/NewBarkTown.blk -- ${plural(bucketIdx.length)}`);
+    before = blk();
+    runGbcPaint(copy, MAP, { tool: "bucket", x: sx, y: sy, metatile: bm, yes: true });
+    expect(changedBytes(before, blk())).toEqual(bucketIdx);
   });
 
   itWithGbcCorpus("4. refusals: out-of-range metatile throws and writes nothing; non-writable layout throws and warns", () => {
@@ -658,6 +681,45 @@ describe("GBC write commands (Plan 7 Task 6)", () => {
     const bad = spawnCli(["--project", copy, "paint", MAP, "--tool", "pencil", "--x", "1", "--y", "0", "--metatile", "abc", "--yes"]);
     expect(bad.status).toBe(1);
     expect(bad.stderr).toMatch(/^pokemap: --metatile must be an integer/);
+  }, 60_000);
+
+  itWithGbcCorpus("12. real process, dry-run defaults: paint/diff/event add without --yes never write; --yes event add does", () => {
+    const m = other(blk()[2]!);
+    const paintArgs = ["paint", MAP, "--tool", "pencil", "--x", "2", "--y", "0", "--metatile", String(m)];
+    const b0 = blk();
+    const dryPaint = spawnCli(["--project", copy, ...paintArgs]);
+    expect(dryPaint.status).toBe(0);
+    expect(dryPaint.stdout).toContain("(dry run -- not written; pass --yes to commit)");
+    expect(blk().equals(b0)).toBe(true);
+
+    const diff = spawnCli(["--project", copy, "diff", MAP, "--tool", "pencil", "--x", "2", "--y", "0", "--metatile", String(m)]);
+    expect(diff.status).toBe(0);
+    expect(diff.stdout).toContain("maps/NewBarkTown.blk -- 1 block changed");
+    expect(diff.stdout).not.toContain("committed");
+    expect(blk().equals(b0)).toBe(true);
+
+    const a0 = asm();
+    const addArgs = ["event", "add", MAP, "--kind", "bg", "--args", "4, 4, BGEVENT_READ, NewBarkTownSign"];
+    const dryAdd = spawnCli(["--project", copy, ...addArgs]);
+    expect(dryAdd.status).toBe(0);
+    expect(dryAdd.stdout).toContain("(dry run -- not written; pass --yes to commit)");
+    expect(asm()).toBe(a0);
+    expect(spawnCli(["--project", copy, ...addArgs, "--yes"]).status).toBe(0);
+    expect(asm()).not.toBe(a0);
+  }, 90_000);
+
+  itWithGbcCorpus("13. real process, CeruleanCave2F: dry run warns on stderr; --yes refusal keeps the size warning in stderr", () => {
+    const cc = "CeruleanCave2F";
+    const ccBlk = readFileSync(`${copy}/maps/${cc}.blk`);
+    const args = ["--project", copy, "paint", cc, "--tool", "pencil", "--x", "0", "--y", "0", "--metatile", String(other(ccBlk[0]!))];
+    const dry = spawnCli(args);
+    expect(dry.status).toBe(0);
+    expect(dry.stderr).toMatch(/^warning: /m);
+    const yes = spawnCli([...args, "--yes"]);
+    expect(yes.status).toBe(1);
+    expect(yes.stderr).toContain("layout-not-writable");
+    expect(yes.stderr).toMatch(/^warning: /m);
+    expect(readFileSync(`${copy}/maps/${cc}.blk`).equals(ccBlk)).toBe(true);
   }, 60_000);
 
   it.skipIf(!existsSync(gbaRoot))("10. event on a GBA root refuses (GBC-only)", () => {

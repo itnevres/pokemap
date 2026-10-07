@@ -345,17 +345,20 @@ sign
 
 program
   .command("paint <map>")
-  .description("paint one metatile (pencil) or a rectangle (rect) -- prints the plan by default, writes only with --yes")
+  .description("paint one metatile (pencil), a rectangle (rect) or a flood fill (bucket, gbc only) -- prints the plan by default, writes only with --yes")
   .requiredOption("--tool <tool>", "pencil or rect (gbc also: bucket)")
   .requiredOption("--x <n>", "tile x (gbc: block x) (or rect's first corner)", Number)
   .requiredOption("--y <n>", "tile y (gbc: block y) (or rect's first corner)", Number)
-  .option("--x1 <n>", "rect's second corner x", Number)
-  .option("--y1 <n>", "rect's second corner y", Number)
+  .option("--x1 <n>", "rect's second corner x (tiles; gbc: blocks)", Number)
+  .option("--y1 <n>", "rect's second corner y (tiles; gbc: blocks)", Number)
   .requiredOption("--metatile <id>", "metatile id to stamp", Number)
   .option("--yes", "actually write")
-  .action((map: string, opts: { tool: "pencil" | "rect"; x: number; y: number; x1?: number; y1?: number; metatile: number; yes?: boolean }) => {
+  .action((map: string, opts: { tool: "pencil" | "rect" | "bucket"; x: number; y: number; x1?: number; y1?: number; metatile: number; yes?: boolean }) => {
     const { root, family } = resolveRootAndFamily(program.opts().project);
-    if (family === "gbc") return void emit(runGbcPaint(root, map, { tool: opts.tool, x: opts.x, y: opts.y, x1: opts.x1, y1: opts.y1, metatile: opts.metatile, yes: !!opts.yes }));
+    if (family === "gbc") {
+      emit(runGbcPaint(root, map, { tool: opts.tool, x: opts.x, y: opts.y, x1: opts.x1, y1: opts.y1, metatile: opts.metatile, yes: !!opts.yes }));
+      return;
+    }
     const proj = resolveProject(root);
     process.stdout.write(`${runPaint(proj, { map, tool: opts.tool, x: opts.x, y: opts.y, x1: opts.x1, y1: opts.y1, metatileId: opts.metatile, yes: !!opts.yes })}\n`);
   });
@@ -366,12 +369,15 @@ program
   .requiredOption("--tool <tool>", "pencil or rect (gbc also: bucket)")
   .requiredOption("--x <n>", "tile x (gbc: block x) (or rect's first corner)", Number)
   .requiredOption("--y <n>", "tile y (gbc: block y) (or rect's first corner)", Number)
-  .option("--x1 <n>", "rect's second corner x", Number)
-  .option("--y1 <n>", "rect's second corner y", Number)
+  .option("--x1 <n>", "rect's second corner x (tiles; gbc: blocks)", Number)
+  .option("--y1 <n>", "rect's second corner y (tiles; gbc: blocks)", Number)
   .requiredOption("--metatile <id>", "metatile id to stamp", Number)
-  .action((map: string, opts: { tool: "pencil" | "rect"; x: number; y: number; x1?: number; y1?: number; metatile: number }) => {
+  .action((map: string, opts: { tool: "pencil" | "rect" | "bucket"; x: number; y: number; x1?: number; y1?: number; metatile: number }) => {
     const { root, family } = resolveRootAndFamily(program.opts().project);
-    if (family === "gbc") return void emit(runGbcDiff(root, map, { tool: opts.tool, x: opts.x, y: opts.y, x1: opts.x1, y1: opts.y1, metatile: opts.metatile }));
+    if (family === "gbc") {
+      emit(runGbcDiff(root, map, { tool: opts.tool, x: opts.x, y: opts.y, x1: opts.x1, y1: opts.y1, metatile: opts.metatile }));
+      return;
+    }
     const proj = resolveProject(root);
     process.stdout.write(`${runDiff(proj, { map, tool: opts.tool, x: opts.x, y: opts.y, x1: opts.x1, y1: opts.y1, metatileId: opts.metatile })}\n`);
   });
