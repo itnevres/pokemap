@@ -164,3 +164,16 @@ Ops:
 ## Rules
 
 Same as Task 1: run single files with vitest, `npm run typecheck` before each commit, pathspec commits, and no git checkout/restore/stash. **Read-only on PerfPlus:** every PerfPlus text is read into memory, and nothing writes it.
+
+## Coordinator amendment (pre-dispatch)
+
+The `findGbcWarpsRetargetedByDelete` signature changes to:
+
+```ts
+export function findGbcWarpsRetargetedByDelete(
+  maps: { name: string; warps: GbcWarpEvent[] }[],
+  deleted: { mapName: string; mapConst: string; index: number },
+): GbcWarpRenumberWarning[];
+```
+
+`maps` includes the deleted map itself, with its warps as they were **before** the delete. The deleted warp is excluded by `(name === deleted.mapName && warpIndex === deleted.index)`. Everything else is as specified above. The old 3-argument form couldn't tell which map's warp was the deleted one.
