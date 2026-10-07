@@ -1,0 +1,92 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { loadLayout } from "../../../src/gbc/load/map.js";
+import { norm } from "../../../src/config/paths.js";
+import type { GbcProject } from "../../../src/gbc/project.js";
+import type { GbcMap } from "../../../src/gbc/model/types.js";
+import { stubGbcProject } from "./stubGbcProject.js";
+
+/** Shared by save.test.ts and guards.test.ts: the hermetic 2x2 `Testmap`
+ *  fixture from Plan 7 Task 1's spec. LF, final newline. 2 objects, 2 consts. */
+export const TESTMAP_ASM = [
+  "\tobject_const_def",
+  "\tconst TESTMAP_A",
+  "\tconst TESTMAP_B",
+  "",
+  "Testmap_MapScripts:",
+  "\tdef_scene_scripts",
+  "",
+  "\tdef_callbacks",
+  "",
+  "Testmap_MapEvents:",
+  "\tdb 0, 0 ; filler",
+  "",
+  "\tdef_warp_events",
+  "\twarp_event  1,  1, OTHER_MAP, 1",
+  "",
+  "\tdef_coord_events",
+  "",
+  "\tdef_bg_events",
+  "",
+  "\tdef_object_events",
+  "\tobject_event  1,  2, SPRITE_A, SPRITEMOVEDATA_STILL, 0, 0, -1, -1, 0, OBJECTTYPE_SCRIPT, 0, ScriptA, -1",
+  "\tobject_event  2,  2, SPRITE_B, SPRITEMOVEDATA_STILL, 0, 0, -1, -1, 0, OBJECTTYPE_SCRIPT, 0, ScriptB, -1",
+  "",
+].join("\n");
+
+/** Same file with no `object_const_def` block at all (40 of 391 real maps). */
+export const TESTMAP_ASM_NO_CONSTS = TESTMAP_ASM.replace(/^\tobject_const_def\n\tconst TESTMAP_A\n\tconst TESTMAP_B\n\n/, "");
+
+export const TILESET_CAP = 4;
+
+const tmpDirs: string[] = [];
+/** Call from `afterEach`. */
+export function cleanupFixtures(): void {
+  for (const d of tmpDirs.splice(0)) rmSync(d, { recursive: true, force: true });
+}
+
+export interface Fixture {
+  tmp: string;
+  proj: GbcProject;
+  map: GbcMap;
+  blk: string;
+  asm: string;
+}
+
+/**
+ * Builds a real tmpdir with `maps/Testmap.{blk,asm}` and a stub project whose
+ * `layout` is the REAL `loadLayout` (so writable/oversize behave for real).
+ * `Zed` shares Testmap's blkPath and is listed first; `Other` does not -- so
+ * `layoutSharedBy` must come back as ["Zed", "Testmap"], in `maps` order.
+ */
+export function makeFixture(opts: { blk?: number[]; asm?: string } = {}): Fixture {
+  const tmp = norm(mkdtempSync(join(tmpdir(), "pokemap-gbc-save-")));
+  tmpDirs.push(tmp);
+  mkdirSync(`${tmp}/maps`);
+  writeFileSync(`${tmp}/maps/Testmap.blk`, Buffer.from(opts.blk ?? [1, 2, 3, 4]));
+  writeFileSync(`${tmp}/maps/Testmap.asm`, opts.asm ?? TESTMAP_ASM);
+
+  const base: Omit<GbcMap, "name" | "blkPath"> = {
+    constName: "TESTMAP", group: 1, number: 1, width: 2, height: 2, tileset: "TILESET_TEST",
+    environment: "TOWN", landmark: "L", music: "M", phoneFlag: "0", palette: "PAL", fishGroup: "FISHGROUP_NONE",
+    border: 0, connectionFlags: "0", connections: [],
+  };
+  const maps: GbcMap[] = [
+    { ...base, name: "Zed", blkPath: "maps/Testmap.blk" },
+    { ...base, name: "Other", blkPath: "maps/Other.blk" },
+    { ...base, name: "Testmap", blkPath: "maps/Testmap.blk" },
+  ];
+  const proj = stubGbcProject({
+    root: tmp,
+    maps,
+    map: (n: string) => {
+      const m = maps.find((x) => x.name === n);
+      if (!m) throw new Error(`unknown map ${n}`);
+      return m;
+    },
+    layout: (m) => loadLayout(tmp, m),
+    tileset: () => ({ constName: "TILESET_TEST", metatiles: new Array(TILESET_CAP) }) as never,
+  });
+  return { tmp, proj, map: proj.map("Testmap"), blk: `${tmp}/maps/Testmap.blk`, asm: `${tmp}/maps/Testmap.asm` };
+}
