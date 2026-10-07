@@ -117,3 +117,12 @@ Run the narrowest files plus `packages/server/test/gbcRoutes.test.ts`, `packages
 ## Rules
 
 Same as earlier tasks: TDD, a commit per green step, pathspec commits, no git checkout/restore/stash, `npm run typecheck` before each commit, and never write the real PerfPlus or the GBA subject. Don't run the full suite.
+
+## Coordinator amendment (pre-dispatch)
+
+- Put the hermetic copy in a **shared helper** that Task 6 reuses:
+  - `copyGbcSubjectToTemp(): string`, in `packages/core/test/gbc/helpers/corpus.ts`;
+  - it does a `cpSync` recursive copy of `GBC_SUBJECT_ROOT` to an `mkdtemp` dir, filtering out `.git`;
+  - companion `removeTemp(dir)`: `rmSync(dir, { recursive: true, force: true, maxRetries: 3 })`.
+  Measure and record the copy time.
+- Task 3's final API is `moveGbcEvent`/`addGbcEvent`/`deleteGbcEvent`/`findGbcWarpsRetargetedByDelete(maps, { mapName, mapConst, index })` in `gbc/edit/events.ts`. Re-check the final code after Task 3's fix round.
