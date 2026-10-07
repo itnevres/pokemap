@@ -52,24 +52,26 @@ export function cleanupFixtures(): void {
 export interface Fixture {
   tmp: string;
   proj: GbcProject;
-  map: GbcMap;
   blk: string;
   asm: string;
 }
 
 /**
- * Builds a real tmpdir with `maps/Testmap.{blk,asm}` and a stub project whose
+ * Builds a real tmpdir with `maps/TestLayout.blk` + `maps/Testmap.asm` and a stub project whose
  * `layout` is the REAL `loadLayout` (so writable/oversize behave for real).
  * With `shared: true`, `Zed` shares Testmap's blkPath and is listed first
  * while `Other` does not, so `layoutSharedBy` must be ["Zed", "Testmap"], in
  * `maps` order. By default Testmap is unshared (plan summaries carry no
- * "shared by" suffix).
+ * "shared by" suffix). The blkPath (`maps/TestLayout.blk`) deliberately differs
+ * from `maps/<mapName>.blk`: a writer that built the path from the map name
+ * would hit a different file, and the tests would see it (real corpus: 50 maps
+ * share House1.blk).
  */
 export function makeFixture(opts: { blk?: number[]; asm?: string; shared?: boolean } = {}): Fixture {
   const tmp = norm(mkdtempSync(join(tmpdir(), "pokemap-gbc-save-")));
   tmpDirs.push(tmp);
   mkdirSync(`${tmp}/maps`);
-  writeFileSync(`${tmp}/maps/Testmap.blk`, Buffer.from(opts.blk ?? [1, 2, 3, 4]));
+  writeFileSync(`${tmp}/maps/TestLayout.blk`, Buffer.from(opts.blk ?? [1, 2, 3, 4]));
   writeFileSync(`${tmp}/maps/Testmap.asm`, opts.asm ?? TESTMAP_ASM);
 
   const base: Omit<GbcMap, "name" | "blkPath"> = {
@@ -78,9 +80,9 @@ export function makeFixture(opts: { blk?: number[]; asm?: string; shared?: boole
     border: 0, connectionFlags: "0", connections: [],
   };
   const maps: GbcMap[] = [
-    ...(opts.shared ? [{ ...base, name: "Zed", blkPath: "maps/Testmap.blk" }] : []),
+    ...(opts.shared ? [{ ...base, name: "Zed", blkPath: "maps/TestLayout.blk" }] : []),
     { ...base, name: "Other", blkPath: "maps/Other.blk" },
-    { ...base, name: "Testmap", blkPath: "maps/Testmap.blk" },
+    { ...base, name: "Testmap", blkPath: "maps/TestLayout.blk" },
   ];
   const proj = stubGbcProject({
     root: tmp,
@@ -93,5 +95,5 @@ export function makeFixture(opts: { blk?: number[]; asm?: string; shared?: boole
     layout: (m) => loadLayout(tmp, m),
     tileset: () => ({ constName: "TILESET_TEST", metatiles: new Array(TILESET_CAP) }) as never,
   });
-  return { tmp, proj, map: proj.map("Testmap"), blk: `${tmp}/maps/Testmap.blk`, asm: `${tmp}/maps/Testmap.asm` };
+  return { tmp, proj, blk: `${tmp}/maps/TestLayout.blk`, asm: `${tmp}/maps/Testmap.asm` };
 }

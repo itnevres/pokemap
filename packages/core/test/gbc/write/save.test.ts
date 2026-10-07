@@ -1,9 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { readFileSync, statSync, utimesSync } from "node:fs";
+import { existsSync, readFileSync, statSync, utimesSync } from "node:fs";
 import { commitGbcSave, openGbcEditSession, planGbcSave } from "../../../src/gbc/write/save.js";
 import { locateEventCall, spliceArg } from "../../../src/gbc/write/asmSplice.js";
-import { parseMapEvents } from "../../../src/gbc/load/events.js";
-import { loadGbcMapEvents } from "../../../src/gbc/load/events.js";
+import { loadGbcMapEvents, parseMapEvents } from "../../../src/gbc/load/events.js";
 import { openGbcProject } from "../../../src/gbc/project.js";
 import { GBC_SUBJECT_ROOT, itWithGbcCorpus } from "../helpers/corpus.js";
 import { cleanupFixtures, makeFixture, type Fixture } from "../helpers/saveFixture.js";
@@ -79,12 +78,14 @@ describe("planGbcSave / commitGbcSave", () => {
     const plan = planGbcSave(f.proj, s);
     expect(plan.refusals).toEqual([]);
     expect(plan.changes).toEqual([
-      { path: `${f.tmp}/maps/Testmap.blk`, kind: "binary", summary: "maps/Testmap.blk -- 1 block changed" },
+      { path: `${f.tmp}/maps/TestLayout.blk`, kind: "binary", summary: "maps/TestLayout.blk -- 1 block changed" },
     ]);
     commitGbcSave(f.proj, plan);
     expect(bytes(f.blk)).toEqual([1, 2, 0, 4]);
     expect(readFileSync(f.asm).equals(asmBefore)).toBe(true);
     expect(stamp().asm).toBe(before.asm);
+    // The write went to the layout's blkPath, not a path derived from the map name.
+    expect(existsSync(`${f.tmp}/maps/Testmap.blk`)).toBe(false);
   });
 
   it("6. a layout shared by several maps says so in the summary, and pluralises", () => {
@@ -92,7 +93,7 @@ describe("planGbcSave / commitGbcSave", () => {
     const s = openGbcEditSession(f.proj, "Testmap");
     s.blocks[0]!.metatileId = 0;
     s.blocks[1]!.metatileId = 0;
-    expect(planGbcSave(f.proj, s).changes[0]!.summary).toBe("maps/Testmap.blk -- 2 blocks changed (shared by 2 maps)");
+    expect(planGbcSave(f.proj, s).changes[0]!.summary).toBe("maps/TestLayout.blk -- 2 blocks changed (shared by 2 maps)");
   });
 
   it("7. G2: commit patches bytes in place -- a trailing byte past w*h survives (encodeBlk would drop it)", () => {
@@ -135,11 +136,38 @@ describe("planGbcSave / commitGbcSave", () => {
     const stamp = pinMtimes(f);
     const [blkBefore, asmBefore, before] = [readFileSync(f.blk), readFileSync(f.asm), stamp()];
     const s = openGbcEditSession(f.proj, "Testmap");
-    s.blocks[0]!.metatileId = 9; // cap is 4
-    expect(() => commitGbcSave(f.proj, planGbcSave(f.proj, s))).toThrow(/save refused: metatile-out-of-range/);
+    s.blocks[0]!.metatileId = 9; // cap is 5 (valid ids 0-4)
+    expect(() => commitGbcSave(f.proj, planGbcSave(f.proj, s))).toThrow(new Error("save refused: metatile-out-of-range (maps/TestLayout.blk)"));
     expect(readFileSync(f.blk).equals(blkBefore)).toBe(true);
     expect(readFileSync(f.asm).equals(asmBefore)).toBe(true);
     expect(stamp()).toEqual(before);
+  });
+
+  it("both files changed in one save: blocks first then text, every changed byte patched, asm written", () => {
+    const f = makeFixture();
+    const s = openGbcEditSession(f.proj, "Testmap");
+    s.blocks[0]!.metatileId = 0;
+    s.blocks[3]!.metatileId = 1;
+    s.eventsText = spliceArg(s.eventsText, locateEventCall(s.eventsText, "Testmap", "object_event", 1), 0, "3");
+    s.events = parseMapEvents(s.eventsText, "Testmap");
+    const plan = planGbcSave(f.proj, s);
+    expect(plan.refusals).toEqual([]);
+    expect(plan.changes.map((c) => c.kind)).toEqual(["binary", "text"]);
+    commitGbcSave(f.proj, plan);
+    expect(bytes(f.blk)).toEqual([0, 2, 3, 1]);
+    expect(readFileSync(f.asm, "utf8")).toBe(s.eventsText);
+  });
+
+  it("commit does not mutate the session", () => {
+    const f = makeFixture();
+    const s = openGbcEditSession(f.proj, "Testmap");
+    s.blocks[0]!.metatileId = 0;
+    s.eventsText = spliceArg(s.eventsText, locateEventCall(s.eventsText, "Testmap", "object_event", 1), 0, "3");
+    s.events = parseMapEvents(s.eventsText, "Testmap");
+    const plan = planGbcSave(f.proj, s);
+    const snapshot = structuredClone(s);
+    commitGbcSave(f.proj, plan);
+    expect(s).toEqual(snapshot);
   });
 
   it("10. a stale plan cannot bypass the guard: commit re-checks the session's CURRENT state", () => {
@@ -171,8 +199,9 @@ describe("real corpus (read-only; never commits)", () => {
 
   itWithGbcCorpus("17. House1.blk is shared by 50 maps (findings 3.6, re-measured)", () => {
     const proj = openGbcProject(GBC_SUBJECT_ROOT);
-    const sharer = proj.maps.find((m) => m.blkPath === "maps/House1.blk")!;
-    expect(openGbcEditSession(proj, sharer.name).layoutSharedBy).toHaveLength(50);
+    const sharer = proj.maps.find((m) => m.blkPath === "maps/House1.blk");
+    expect(sharer).toBeDefined();
+    expect(openGbcEditSession(proj, sharer!.name).layoutSharedBy).toHaveLength(50);
   });
 
   itWithGbcCorpus("18. CeruleanCave2F (oversize .blk): unedited is clean; an in-memory paint is refused", () => {
@@ -182,7 +211,7 @@ describe("real corpus (read-only; never commits)", () => {
     const clean = planGbcSave(proj, s);
     expect(clean.changes).toEqual([]);
     expect(clean.refusals).toEqual([]);
-    s.blocks[0] = { metatileId: (s.blocks[0]!.metatileId + 1) % 2 };
+    s.blocks[0] = { metatileId: s.blocks[0]!.metatileId + 1 };
     expect(planGbcSave(proj, s).refusals.map((r) => r.code)).toContain("layout-not-writable");
     // Deliberately no commitGbcSave: the real corpus is never written.
   });
