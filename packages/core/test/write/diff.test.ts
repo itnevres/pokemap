@@ -31,7 +31,17 @@ describe("formatDiffText", () => {
   });
 
   it("says nothing to save for an empty plan", () => {
-    expect(formatDiffText({ session: {} as any, changes: [], refusals: [] })).toMatch(/nothing to save/i);
+    expect(formatDiffText({ changes: [], refusals: [] })).toMatch(/nothing to save/i);
+  });
+});
+
+describe("formatDiffText on a plain { changes, refusals } object (GBC plans reuse it)", () => {
+  it("formats a plan-shaped object that carries no session", () => {
+    const text = formatDiffText({ changes: PLAN_WITH_CHANGES.changes, refusals: PLAN_WITH_REFUSAL.refusals });
+    expect(text).toBe(
+      "map.bin -- 3 blocks changed\nTest.json -- 1 field edit\n" +
+        "REFUSED [metatile-out-of-range] Test_Layout: bad id 999 -- pick a real one",
+    );
   });
 });
 
