@@ -27,3 +27,11 @@ Same harness as Task 1: anchor asserted to match once, in-memory restore, byte c
 | M10 | stamp stride uses height | red |
 
 P5b and M11 no longer apply: the early return was deleted. `git status` was clean afterwards.
+
+## Full gate after Tasks 1-2 (HEAD `03d393b`, 2026-10-07)
+
+- `npm test`: **2,251 pass / 2 fail** (133 files). The 2 failures are the known local-state `world.test.ts` pair. +49 tests and +3 files vs the baseline.
+- `npm run typecheck`: clean. `npm run build -w @pokemap/ui`: passes.
+- External state is unchanged from preflight:
+  - GBA subject: 7 porcelain lines; `world.json` `b285bbf…`, `dungeons.json` `f73f9b7…`;
+  - PerfPlus: clean, no `.pokemap`.
