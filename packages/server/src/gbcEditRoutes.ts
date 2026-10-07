@@ -9,6 +9,19 @@
  * is checked for its type before anything touches a session, and a bad one is
  * a 400 naming the field. A core event op that refuses (a user-input problem,
  * not a bug) is a 400 with the core's message, and leaves the session as it was.
+ *
+ * Error bodies: validation / refusal-by-core / 500 are `{ error }`; a commit
+ * refused by the save guards is 400 with the diff JSON (`{ changes, refusals }`),
+ * the same split as GBA's commit route.
+ *
+ * Concurrency (accepted, no locking): a request's body is parsed before its
+ * handler runs, and the handler then runs synchronously, so there is no lost
+ * update inside one request. But two in-flight requests on the same map apply
+ * in ARRIVAL order, not send order, so a client that pipelines begin/apply/undo
+ * can see them reordered. The intended client awaits each round trip. Upgrade
+ * path: a per-map promise queue. Likewise a request still in flight when the
+ * handler is disposed may reopen a session in the dead handler; nothing ever
+ * serves it.
  */
 import type { IncomingMessage } from "node:http";
 import type { GbcProject } from "@pokemap/core/src/gbc/project.js";
@@ -28,6 +41,8 @@ import { readBody } from "./index.js";
 
 type Send = (code: number, body: unknown) => void;
 type Obj = Record<string, unknown>;
+type Result = { code: number; body: unknown };
+const ok = (body: unknown): Result => ({ code: 200, body });
 
 /** Thrown by the validators below; `handle` turns it into a 400. */
 class BadRequest extends Error {}
@@ -40,6 +55,10 @@ const show = (v: unknown): string => JSON.stringify(v) ?? "undefined";
 function int(o: Obj, key: string): number {
   const v = o[key];
   return isInt(v) ? v : bad(`"${key}" must be an integer, got ${show(v)}`);
+}
+
+function points(v: unknown, what: string): { x: number; y: number }[] {
+  return Array.isArray(v) ? v.map((p) => point(p, what)) : bad(`"${what}" must be an array of { x: integer, y: integer }, got ${show(v)}`);
 }
 
 function point(v: unknown, what: string): { x: number; y: number } {
@@ -68,7 +87,6 @@ const sessionBody = (e: GbcSessionEntry) => ({
 export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void }) {
   const store = createGbcEditSessionStore(proj);
   const mapNames = new Set(proj.maps.map((m) => m.name));
-
   const mapConsts = new Set(proj.maps.map((m) => m.constName));
 
   /**
@@ -78,6 +96,11 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void 
    * as it was and surfaces as a 400 with the core's message. An op that
    * changes nothing (a move to the event's own position) pushes no undo step:
    * it would only make the session dirty with an empty plan.
+   *
+   * Core ops throw a plain `Error` for a refusal and there is no error class to
+   * tell it apart from a genuine bug in them (a TypeError from a malformed
+   * parse), so a core bug would also read as a 400 here. Accepted; a typed
+   * refusal error in core would split them.
    */
   function eventOp(entry: GbcSessionEntry, label: string, op: (text: string) => GbcEventEdit): void {
     const prev = gbcSnapshotOf(entry.session);
@@ -106,15 +129,11 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void 
   }
 
   /** Applies a paint tool's request body to the session's blocks. Validates everything before touching the session. */
-  function paintApply(name: string, body: Obj): Block[] {
+  function paintApply(name: string, body: Obj): void {
     const tool = body.tool;
     let paint: (blocks: Block[], w: number, h: number) => Block[];
     if (tool === "pencil") {
-      if (!Array.isArray(body.targets)) bad(`"targets" must be an array of { x: integer, y: integer }, got ${show(body.targets)}`);
-      const targets = (body.targets as unknown[]).map((t) => {
-        if (!isObj(t) || !isInt(t.x) || !isInt(t.y)) bad(`"targets" must be an array of { x: integer, y: integer }, got ${show(body.targets)}`);
-        return { x: (t as Obj).x as number, y: (t as Obj).y as number };
-      });
+      const targets = points(body.targets, "targets");
       const stamp = stampOf(body.stamp);
       const origin = point(body.origin, "origin");
       paint = (b, w, h) => paintCells(b, w, h, targets, stamp, origin.x, origin.y);
@@ -145,18 +164,11 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void 
     } else {
       return bad(`"tool" must be one of pencil, rect, bucket, shift, got ${show(tool)}`);
     }
-    // ponytail: this reads then writes entry.session.blocks across the
-    // `readBody` await in `handle`, same accepted gap as GBA's /paint/apply: a
-    // same-map /undo or second /paint/apply could interleave. The intended
-    // client awaits each round trip before the next, so no locking here;
-    // upgrade path is a per-session promise queue if a client ever pipelines.
     const entry = store.open(name);
     const { width: w, height: h } = entry.session.layout;
-    return (entry.session.blocks = paint(entry.session.blocks, w, h));
+    entry.session.blocks = paint(entry.session.blocks, w, h);
   }
 
-  type Result = { code: number; body: unknown };
-  const ok = (body: unknown): Result => ({ code: 200, body });
   const asSession = (entry: GbcSessionEntry) => ok(sessionBody(entry));
 
   /** Route table keyed `METHOD sub-route`. `body: true` routes get the parsed JSON object. */
@@ -225,16 +237,11 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void 
       const entry = store.open(name);
       const plan = planGbcSave(proj, entry.session);
       if (plan.refusals.length > 0) return { code: 400, body: formatDiffJson(plan) };
-      try {
-        commitGbcSave(proj, plan);
-      } catch (e) {
-        console.error(e);
-        return { code: 500, body: { error: e instanceof Error ? e.message : String(e) } };
-      }
-      // Disk changed, so every cache derived from it is stale (the handler
-      // clears them), and the session is closed rather than kept: its
-      // originals predate the write, and the next open() re-reads the files.
-      hooks.onCommit();
+      // A throw (propagates to `handle`: console.error + 500 { error }) can come
+      // after the .blk was already written, so the caches are cleared either way.
+      try { commitGbcSave(proj, plan); } finally { hooks.onCommit(); }
+      // Closed, not kept: the session's originals predate the write, and the
+      // next open() re-reads the files. On a throw it stays open for a retry/discard.
       store.close(name);
       return ok(formatDiffJson(plan));
     } },
@@ -242,7 +249,7 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void 
   };
 
   return {
-    /** Returns true if it handled (or is asynchronously handling) the request. */
+    /** Returns true when it claimed the request (the response is sent now or later); false means fall through. */
     handle(req: IncomingMessage, url: URL, send: Send): boolean {
       if (!url.pathname.startsWith("/api/edit/")) return false;
       const m = /^\/api\/edit\/([^/]+)\/(.+)$/.exec(url.pathname);
@@ -266,14 +273,11 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void 
         }
         return route.run(name, body);
       };
-      run().then(
-        (r) => send(r.code, r.body),
-        (e: unknown) => {
-          if (e instanceof BadRequest) return send(400, { error: e.message });
-          console.error(e);
-          send(500, { error: e instanceof Error ? e.message : String(e) });
-        },
-      );
+      run().then((r) => send(r.code, r.body)).catch((e: unknown) => {
+        if (e instanceof BadRequest) return send(400, { error: e.message });
+        console.error(e);
+        send(500, { error: e instanceof Error ? e.message : String(e) });
+      });
       return true;
     },
     /** Current blocks of an open session for `name`, else undefined (the render route's override). */

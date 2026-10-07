@@ -1,12 +1,14 @@
 import { spawnSync } from "node:child_process";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 import { createGbcProjectHandler } from "../src/gbcRoutes.js";
 import type { ProjectHandler } from "../src/index.js";
 import { openGbcProject } from "@pokemap/core/src/gbc/project.js";
 import { loadGbcMapEvents } from "@pokemap/core/src/gbc/load/events.js";
-import { readFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { encodePng } from "@pokemap/cli/src/png.js";
 import { renderGbcMap } from "@pokemap/core/src/gbc/render/map.js";
 import { moveGbcEvent } from "@pokemap/core/src/gbc/edit/events.js";
@@ -14,6 +16,8 @@ import { buildGbcWorld } from "@pokemap/core/src/gbc/world/connections.js";
 import { gbcWarpLinks } from "@pokemap/core/src/world/nearWarpAdapters.js";
 import { readSidecar } from "@pokemap/core/src/world/sidecar.js";
 import { buildGbcWorldPayload } from "../src/gbcRoutes.js";
+import { createHub } from "../src/hub.js";
+import { gbcCoverage } from "@pokemap/core/src/gbc/analyse/atlas.js";
 import { paintCells, floodFill, shiftGrid } from "@pokemap/core/src/gbc/edit/paint.js";
 import type { Block } from "@pokemap/core/src/gbc/model/types.js";
 import { GBC_SUBJECT_ROOT, copyGbcSubjectToTemp, hasGbcProject, removeTemp } from "@pokemap/core/test/gbc/helpers/corpus.js";
@@ -35,8 +39,16 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbc edit routes (hermetic tem
   let h: ProjectHandler;
   let srv: Server;
   let base: string;
+  // The real checkout may have unrelated dirty files; assert it is unchanged by this run, not that it is clean.
+  const porcelain = () => {
+    const st = spawnSync("git", ["status", "--porcelain"], { cwd: GBC_SUBJECT_ROOT, encoding: "utf8" });
+    expect(st.status).toBe(0);
+    return st.stdout;
+  };
+  let porcelainBefore: string;
 
   beforeAll(async () => {
+    porcelainBefore = porcelain();
     tmp = copyGbcSubjectToTemp();
     h = createGbcProjectHandler(tmp);
     srv = createServer(h.handle);
@@ -46,9 +58,12 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbc edit routes (hermetic tem
   afterAll(async () => {
     await new Promise<void>((resolve) => (srv ? srv.close(() => resolve()) : resolve()));
     if (tmp) removeTemp(tmp);
-    const st = spawnSync("git", ["status", "--porcelain"], { cwd: GBC_SUBJECT_ROOT, encoding: "utf8" });
-    expect(st.status).toBe(0);
-    expect(st.stdout).toBe("");
+    expect(porcelain()).toBe(porcelainBefore);
+  });
+
+  // One failing test must not cascade through leftover sessions in the later ones.
+  beforeEach(async () => {
+    for (const m of ["NewBarkTown", "ElmsLab", "VioletCity", "CeruleanCave2F", "Route29"]) await post(`/api/edit/${m}/discard`);
   });
 
   const get = (path: string) => fetch(base + path);
@@ -346,12 +361,9 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbc edit routes (hermetic tem
     }
     expect(independent).toEqual(WARP0_RENUMBER);
 
-    const t0 = performance.now();
     const r = await evSession(await ev("delete", { kind: "warp", index: 0 }));
-    const ms = performance.now() - t0;
     expect(r.warpRenumberWarnings).toEqual(WARP0_RENUMBER);
     expect(r.events.warps).toHaveLength(3);
-    console.log(`warp-scan delete request: ${ms.toFixed(0)} ms`);
 
     // Deleting warp 1 (id 2) reports only ids >= 2: the id-1 warps do not shift.
     await post(`${NBT}/discard`);
@@ -384,7 +396,6 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbc edit routes (hermetic tem
     await post("/api/edit/ElmsLab/discard");
     expect(h.dirtyMaps()).toEqual([]);
   });
-
 
   // --- commit (spec tests 9-13). These WRITE the temp copy, so they run after every read-only test. ---
   const read = (rel: string) => readFileSync(`${tmp}/${rel}`);
@@ -469,17 +480,72 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbc edit routes (hermetic tem
     await post(`${C}/discard`);
   });
 
-  it("12. a shared layout's plan summary ends with (shared by 50 maps)", async () => {
-    const user = openGbcProject(tmp).maps.find((m) => m.blkPath === "maps/House1.blk")!.name;
-    await post(`/api/edit/${user}/discard`);
+  it("12. a shared layout's plan summary ends with (shared by N maps)", async () => {
+    const maps = openGbcProject(tmp).maps.filter((m) => m.blkPath === "maps/House1.blk");
+    expect(maps.length).toBeGreaterThan(1);
+    const user = maps[0]!.name;
     await post(`/api/edit/${user}/paint/begin`);
-    const cur = (await session(await pencil(0, 0, 1, user))).blocks[0]!.metatileId;
-    if (cur === 1) await pencil(0, 0, 2, user);
+    const orig = (await session(await post(`/api/edit/${user}/paint/end`))).blocks[0]!.metatileId;
+    await post(`/api/edit/${user}/paint/begin`);
+    await pencil(0, 0, orig === 1 ? 2 : 1, user);
     await post(`/api/edit/${user}/paint/end`);
     const p = await plan(user);
     expect(p.changes).toHaveLength(1);
-    expect(p.changes[0]!.summary.endsWith(" (shared by 50 maps)")).toBe(true);
+    expect(p.changes[0]!.summary.endsWith(` (shared by ${maps.length} maps)`)).toBe(true);
     await post(`/api/edit/${user}/discard`);
+  });
+
+  it("5c. two strokes then undo: back to the state after the first stroke (paint/end clears the stroke start)", async () => {
+    await post(`${NBT}/paint/begin`);
+    await pencil(0, 0, 41); // not 24: by now 9a has committed 24 there
+    const first = await session(await post(`${NBT}/paint/end`));
+    await post(`${NBT}/paint/begin`);
+    await pencil(1, 0, 42);
+    await post(`${NBT}/paint/end`);
+    const undone = await session(await post(`${NBT}/undo`));
+    expect(undone.blocks).toEqual(first.blocks);
+    expect(undone.canUndo).toBe(true);
+    expect(undone.isDirty).toBe(true);
+  });
+
+  it("9c. commit invalidates the coverage cache (a map gaining a water tile leaves fishGroupWithoutWater)", async () => {
+    const coverage = async () => (await (await get("/api/coverage")).json()) as { fishGroupWithoutWater: string[] };
+    const before = await coverage(); // populates coverageCache
+    // Route29 has a FISHGROUP but no water tile; TILESET_JOHTO metatile 7 has water collision.
+    expect(before.fishGroupWithoutWater).toContain("Route29");
+    await post("/api/edit/Route29/paint/begin");
+    await pencil(0, 0, 7, "Route29");
+    await post("/api/edit/Route29/paint/end");
+    expect((await commit("Route29")).status).toBe(200);
+
+    const after = await coverage();
+    expect(after.fishGroupWithoutWater).not.toContain("Route29");
+    expect(after).toEqual(JSON.parse(JSON.stringify(gbcCoverage(openGbcProject(tmp)))));
+  });
+
+  it("9d. a commit that throws mid-write is a 500 { error }, still clears the caches, and keeps the session", async () => {
+    const asm = `${tmp}/maps/ElmsHouse.asm`;
+    const asmBefore = readFileSync(asm);
+    const pngBefore = await png("ElmsHouse"); // populates renderCache
+    await post("/api/edit/ElmsHouse/paint/begin");
+    await pencil(0, 0, 9, "ElmsHouse");
+    await post("/api/edit/ElmsHouse/paint/end");
+    await ev("move", { kind: "warp", index: 0, x: 1, y: 1 }, "ElmsHouse");
+    chmodSync(asm, 0o444); // the .blk is written first; the .asm write then fails
+    try {
+      const r = await commit("ElmsHouse");
+      expect(r.status).toBe(500);
+      expect(typeof ((await r.json()) as { error: string }).error).toBe("string");
+    } finally {
+      chmodSync(asm, 0o666);
+    }
+    expect(readFileSync(asm).equals(asmBefore)).toBe(true);
+    expect(h.dirtyMaps()).toEqual(["ElmsHouse"]);
+    await post("/api/edit/ElmsHouse/discard");
+    // The .blk landed, so the cached render must be gone: the next render shows the disk state.
+    const pngAfter = await png("ElmsHouse");
+    expect(pngAfter.equals(pngBefore)).toBe(false);
+    expect(pngAfter.equals(encodePng(renderGbcMap(openGbcProject(tmp), "ElmsHouse")))).toBe(true);
   });
 
   it("13. dispose drops every session, then requests are 503", async () => {
@@ -491,6 +557,28 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbc edit routes (hermetic tem
     expect(h.dirtyMaps()).toEqual([]);
     expect((await get("/api/project")).status).toBe(503);
     expect((await post(`${NBT}/paint/begin`)).status).toBe(503);
+  });
+
+  it("14. hub: a dirty GBC session blocks /api/hub/open with 409 until force: true, then the old handler is disposed", async () => {
+    const home = mkdtempSync(join(tmpdir(), "pokemap-home-"));
+    const hub = await createHub({ port: 0, home, open: tmp });
+    const hubPost = (path: string, body: unknown) => fetch(`http://127.0.0.1:${hub.port}${path}`, { method: "POST", body: JSON.stringify(body) });
+    try {
+      await hubPost(`${NBT}/paint/begin`, {});
+      await hubPost(`${NBT}/paint/apply`, { tool: "pencil", targets: [{ x: 0, y: 0 }], stamp: stamp1(40), origin: { x: 0, y: 0 } });
+      expect(((await (await hubPost(`${NBT}/paint/end`, {})).json()) as SessionBody).isDirty).toBe(true);
+
+      const blocked = await hubPost("/api/hub/open", { path: tmp });
+      expect(blocked.status).toBe(409);
+      expect(((await blocked.json()) as { dirtyMaps: string[] }).dirtyMaps).toEqual(["NewBarkTown"]);
+
+      const old = hub.current()!;
+      expect((await hubPost("/api/hub/open", { path: tmp, force: true })).status).toBe(200);
+      expect(old.dirtyMaps()).toEqual([]);
+    } finally {
+      await hub.close();
+      rmSync(home, { recursive: true, force: true });
+    }
   });
 
 });

@@ -26,6 +26,7 @@ export interface EditCommand<S = EditSession> {
  * blocks/map data (`planSave`/`commitSave` already read those live off the
  * session; the stack's only job is knowing WHETHER they differ from disk).
  */
+// Generic so the GBC session reuses this stack; the EditSession default keeps every GBA use unchanged.
 export class EditCommandStack<S extends { isDirty: boolean } = EditSession> {
   private undoStack: EditCommand<S>[] = [];
   private redoStack: EditCommand<S>[] = [];
