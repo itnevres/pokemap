@@ -286,6 +286,19 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbc edit routes (hermetic tem
     await post(`${NBT}/discard`);
   });
 
+  it("7e. a refusal on a clean session leaves it clean: not dirty, no undo step, empty plan", async () => {
+    await post(`${NBT}/discard`);
+    await post(`${NBT}/paint/begin`);
+    expect((await ev("move", { kind: "warp", index: 0, x: 999, y: 3 })).status).toBe(400);
+    expect((await ev("delete", { kind: "object", index: 0 })).status).toBe(400);
+    const after = await snapshot();
+    expect(after.session.isDirty).toBe(false);
+    expect(after.session.canUndo).toBe(false);
+    expect(after.plan).toEqual({ changes: [], refusals: [] });
+    expect(h.dirtyMaps()).toEqual([]);
+    await post(`${NBT}/discard`);
+  });
+
   it("7d. event bodies are validated: bad kind/index/x/args/objectConst/JSON are 400s naming the field", async () => {
     const cases: [string, unknown, string][] = [
       ["move", { kind: "door", index: 0, x: 1, y: 1 }, "kind"],
