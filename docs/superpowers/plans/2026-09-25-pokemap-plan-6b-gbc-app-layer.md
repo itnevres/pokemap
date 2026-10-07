@@ -2,7 +2,7 @@
 
 > **STATUS (2026-09-28): DONE. All tasks (1a, 1b, 2-7) are done and reviewed, and success criteria 1-4 were demonstrated end to end in one browser session (`_archive/task-7-closeout.md`).**
 >
-> - **Branch:** `plan-6b-gbc-app-layer`. Its PR ([itnevres/pokemap#3](https://github.com/itnevres/pokemap/pull/3)) is ready for review, not merged.
+> - **Branch:** `plan-6b-gbc-app-layer`. Merged to `master` by [itnevres/pokemap#3](https://github.com/itnevres/pokemap/pull/3) as `ce020d9`.
 > - **Gate at HEAD:**
 >   - Windows: `npm test` 1,679 pass / 0 fail, `npm run typecheck` clean, and `vite build` passes.
 >   - Cloud: expected 1,673 / 6. This is derived, not measured: the 6 are `baseline-fails.txt`.

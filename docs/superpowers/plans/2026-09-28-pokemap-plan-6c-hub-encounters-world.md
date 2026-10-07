@@ -2,7 +2,7 @@
 
 > **STATUS (2026-10-06): DONE.** All 17 tasks in phases A-F are done and reviewed. Success criteria 1-9 were demonstrated end to end in one browser session, starting from the hub with no project open; the record is `task-reports/pokemap-plan-6c-hub-encounters-world/_archive/task-F1-closeout.md`.
 >
-> - **Branch:** `plan-6c-hub-encounters-world`, 275+ commits on `master` `ce020d9` (Plan 6b's merge). Its PR, [itnevres/pokemap#11](https://github.com/itnevres/pokemap/pull/11), is ready for review, not merged.
+> - **Branch:** `plan-6c-hub-encounters-world`, 275+ commits on `master` `ce020d9` (Plan 6b's merge). Merged to `master` by [itnevres/pokemap#11](https://github.com/itnevres/pokemap/pull/11) as `a16b604` (2026-10-07).
 > - **Gate at HEAD (Windows):** `npm test` 2,202 pass / 2 fail (130 files). The 2 failures are the known `packages/server/test/world.test.ts` pair caused by the GBA subject's persisted `dungeonAutoLayout:false`. Typecheck is clean and `vite build` passes.
 > - **External state:** the GBA subject and PerfPlus are byte-identical to their recorded state. Every live write (criteria 6 and 8, the Dungeon tab) was restored exactly.
 >
@@ -17,7 +17,7 @@
 > | Edit in context (E) | `ui/src/components/{mapView.ts,MapEditingWorkspace.tsx,WorldContextMenu.tsx}`, `ui/src/hooks/useMapEditing.ts`, `ui/src/world/contextView.ts` | `ui/src/components/{MapCanvas,WorldCanvas}.tsx`, `ui/src/App.tsx`, `ui/src/gbc/GbcMapCanvas.tsx`, `server/src/index.ts` (`pngCache` cleared on commit) |
 > | Shared | — | `ui/src/styles.css`, `ui/DESIGN.md`, `ui/src/hooks/useGuardedFetch.ts`, `ui/src/gbc/hooks/*`, `ui/src/gbc/time.ts` |
 >
-> **Deferred** (listed in RESUME under the 6c row): the context-mode world toolbar is cramped at 1024 px; MapCanvas overlay toggles aren't reachable in context; the encounter sprite tooltip clips at the viewport's left edge; the A, B and C items recorded per phase.
+> **Deferred** (listed in RESUME under the 6c row; the tooltip clip was found in F1): the context-mode world toolbar is cramped at 1024 px; MapCanvas overlay toggles aren't reachable in context; the encounter sprite tooltip clips at the viewport's left edge; the A, B and C items recorded per phase.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task.
 >
