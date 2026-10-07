@@ -3,6 +3,9 @@ import { readFileSync, statSync, utimesSync } from "node:fs";
 import { commitGbcSave, openGbcEditSession, planGbcSave } from "../../../src/gbc/write/save.js";
 import { locateEventCall, spliceArg } from "../../../src/gbc/write/asmSplice.js";
 import { parseMapEvents } from "../../../src/gbc/load/events.js";
+import { loadGbcMapEvents } from "../../../src/gbc/load/events.js";
+import { openGbcProject } from "../../../src/gbc/project.js";
+import { GBC_SUBJECT_ROOT, itWithGbcCorpus } from "../helpers/corpus.js";
 import { cleanupFixtures, makeFixture, type Fixture } from "../helpers/saveFixture.js";
 
 afterEach(cleanupFixtures);
@@ -151,5 +154,36 @@ describe("planGbcSave / commitGbcSave", () => {
     expect(() => commitGbcSave(f.proj, plan)).toThrow(/save refused/);
     expect(readFileSync(f.blk).equals(blkBefore)).toBe(true);
     expect(stamp()).toEqual(before);
+  });
+});
+
+// Real corpus, READ-ONLY: none of these may ever call commitGbcSave.
+describe("real corpus (read-only; never commits)", () => {
+  itWithGbcCorpus("16. NewBarkTown: an unedited plan is empty, and events match loadGbcMapEvents", () => {
+    const proj = openGbcProject(GBC_SUBJECT_ROOT);
+    const s = openGbcEditSession(proj, "NewBarkTown");
+    const plan = planGbcSave(proj, s);
+    expect(plan.changes).toEqual([]);
+    expect(plan.refusals).toEqual([]);
+    expect(s.isDirty).toBe(false);
+    expect(s.events.objects.length).toBe(loadGbcMapEvents(proj.root, proj.map("NewBarkTown")).events.objects.length);
+  });
+
+  itWithGbcCorpus("17. House1.blk is shared by 50 maps (findings 3.6, re-measured)", () => {
+    const proj = openGbcProject(GBC_SUBJECT_ROOT);
+    const sharer = proj.maps.find((m) => m.blkPath === "maps/House1.blk")!;
+    expect(openGbcEditSession(proj, sharer.name).layoutSharedBy).toHaveLength(50);
+  });
+
+  itWithGbcCorpus("18. CeruleanCave2F (oversize .blk): unedited is clean; an in-memory paint is refused", () => {
+    const proj = openGbcProject(GBC_SUBJECT_ROOT);
+    const s = openGbcEditSession(proj, "CeruleanCave2F");
+    expect(s.layout.writable).toBe(false);
+    const clean = planGbcSave(proj, s);
+    expect(clean.changes).toEqual([]);
+    expect(clean.refusals).toEqual([]);
+    s.blocks[0] = { metatileId: (s.blocks[0]!.metatileId + 1) % 2 };
+    expect(planGbcSave(proj, s).refusals.map((r) => r.code)).toContain("layout-not-writable");
+    // Deliberately no commitGbcSave: the real corpus is never written.
   });
 });
