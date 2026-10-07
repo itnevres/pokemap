@@ -24,9 +24,31 @@ Plan 6 is complete on `plan-6-gbc-foundation` (see that plan's STATUS banner for
   - An unknown map/tileset/const.
   - **There is NO event-count desync risk.** Every `def_*` count is assembler-computed, so do not invent a guard for it.
 - **Warp renumbering footgun: CONFIRMED.** `warp_event x, y, MAP_CONST, destWarp` has a 1-based positional `destWarp`, and `-1` means "return to the previous map's warp". Deleting or reordering warps silently retargets every warp elsewhere that points at a later index. The GBA-style `findWarpsTargetingByIndex` warning is needed; key it on (MAP_CONST, index).
-- **No GBC server or UI exists.** Plan 6 explicitly left `packages/server` and `packages/ui` untouched for GBC. **Tasks 4 and 5 below are blocked on the "6b" GBC app layer** (`2026-09-25-pokemap-plan-6b-gbc-app-layer.md`, in progress as of 2026-09-28; Tasks 1a-5 are done, including the server family branch and `gbcRoutes.ts` that Task 4 hangs off) (roadmap §6, scope sketch in §6b: one server with a family branch, not a separate GBC server): a read-only map/world view for a GBC project in the browser. Recommended order is Tasks 1 → 2 → 3 → 6 → 7 (core + CLI, runnable in a cloud session), then plan and execute 6b, then Tasks 4 → 5.
+- **~~No GBC server or UI exists.~~ Superseded:** 6b (merged as `ce020d9`) built the read-only GBC server and UI, and 6c (merged as `a16b604`) reshaped both. Tasks 4 and 5 are unblocked. See "Grounding from 6b and 6c" below.
 - **Reuse the Plan 6 plumbing.** Use `openGbcProject` (`packages/core/src/gbc/project.ts`) for all loading. Put CLI write commands in `packages/cli/src/gbcCommands.ts` behind the existing family branch; today `paint`/`diff` refuse there via `refuseIfGbc` in `index.ts`.
 - **G5 second corpus.** Vanilla `pret/pokecrystal` is public. In a cloud session, clone it and add it to `gbc.referenceProjects` as a local-only config edit. Task 7's gate should cover both trees.
+
+
+## Grounding from 6b and 6c as built (2026-10-07): read this too before re-granularising
+
+- **Server shape.**
+  - `serve.ts` is a hub (`packages/server/src/hub.ts`) that owns one swappable per-project handler.
+  - The GBC handler is `createGbcProjectHandler(root)` in `packages/server/src/gbcRoutes.ts`, which returns a `ProjectHandler` (`{ family, handle, dirtyMaps(), dispose() }`, imported from `index.ts`).
+  - **Routes keep GBA's paths:** `/api/edit/:map/...`, not `/api/gbc/edit/...`. The hub dispatches to the open project's handler. Task 4 removes `edit/` from `gbcRoutes.ts`'s `GBA_ONLY_ROUTE_RE`, which 501s it today. The File structure table's `/api/gbc/edit` wording predates the hub.
+- **The dirty-switch guard depends on GBC.** The GBC handler's `dirtyMaps()` returns `[]` today. Once GBC sessions exist it must report the dirty maps, or the hub's 409 confirm before a project switch (6c A1/A2) silently discards GBC edits.
+- **Render caches.** `gbcRoutes.ts` caches `renderCache`/`metatileCache` per map key. GBA's commit route clears its `pngCache` after a successful commit (6c E4 P1-1); before that fix, a saved tile was served stale. The GBC commit path must do the same, and the GBC render route must render from the open session while one is open (GBA's pattern in `index.ts`'s `/api/render`).
+- **UI building blocks to reuse (Task 5):**
+  - GBA's editing chrome is `components/MapEditingWorkspace.tsx` plus `hooks/useMapEditing.ts` (6c E2), with a `renderCanvas` seam.
+  - `GbcApp.tsx` mounts none of it today.
+  - `GbcMapCanvas.tsx` already shares `components/mapView.ts` (one `view` state, `zoomAboutPivot`).
+  - GBA `MapCanvas`'s paint race-safety chain (`pendingPaintRef`/`endActiveStroke`) is the pattern any GBC paint path must follow.
+- **In-context editing (U2 of Plan 6c): a scope decision for this plan.**
+  - GBC's world right-click menu shows "Edit here" disabled, with the hint "GBC editing arrives with Plan 7" (`GbcWorldCanvas.tsx`, `editItem`).
+  - GBA's version (6c E4) is `WorldCanvas`'s `context` prop + a chromeless controlled `MapCanvas` + `world/contextView.ts`.
+  - Decide with the user whether Plan 7 ports it or leaves "Edit here" disabled.
+- **Live-write discipline (6c lessons in RESUME).**
+  - Snapshot every file a live verify can write (porcelain plus bytes), restore by reverse edit, and require a byte-identical `cmp`. PerfPlus must end clean, with no `.pokemap`.
+  - Tests that write PerfPlus restore read-guarded in `finally`; see `packages/server/test/gbcRoutes.test.ts`.
 
 ---
 
