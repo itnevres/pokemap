@@ -1,6 +1,6 @@
 # Task 6 implementer report: GBC CLI write commands
 
-**Status: NEEDS_CONTEXT** (all work done + green except ONE pre-existing test the spec obsoletes; see Concerns #1).
+**Status: DONE** (Concern 1 resolved by coordinator-approved exception, see follow-up).
 
 ## Commits
 | sha | msg |
@@ -54,3 +54,6 @@ ElmsLab warp[0], warp[1] -> NEW_BARK_TOWN 1; PlayersHouse1F warp[0], warp[1] -> 
 3. Event scan loads all 391 maps' events (about 1 s); fine for a CLI.
 4. Repo files are LF; git emits LF->CRLF warnings on commit, harmless.
 5. **Mutation C1 leaked a write to the real PerfPlus**: the pre-existing stale spawned test runs `paint NewBarkTown --metatile 1` (dry run) against the real root; under C1 (dry run commits) it wrote `maps/NewBarkTown.blk` byte 0 (5 -> 1). Detected via `git status --porcelain`, restored from `git show HEAD:maps/NewBarkTown.blk` by file copy; PerfPlus now clean (0 lines). New tests are hermetic; only that old test touches the real root. Removing its paint/diff cases (Concern 1) also removes this hazard.
+
+## Coordinator follow-up
+Named U1 exception (approved): removed the `paint` and `diff` entries from the "every GBA-only command refuses" test's `cases` (replaced by one comment line). U1 grep `git diff 0a6d2b0 -- packages/cli/test/ | grep -c '^-[^-]'` = 2, exactly those. Results: gbcCommands.test.ts 41/41 green; typecheck 0 errors; C1 re-run red (5 new tests failed: 1, 3, 4, 7, 9), source restored (diff empty); PerfPlus `git status --porcelain` empty after (leak path gone).
