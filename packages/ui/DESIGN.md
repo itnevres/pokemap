@@ -410,9 +410,9 @@ reserves one band on that side.
   and clamped to it by its measured size (8px inset).
 - **Items.** GBA: "Open in Map view" (when `onOpenMap` is wired; App always wires it),
   "Edit here" (only when `onEditHere` is supplied), then "Accept conflict" /
-  "Un-accept conflict" on a badge. GBC: "Open in Map view", a permanently disabled
-  "Edit here" with the visible hint "GBC editing arrives with Plan 7", then the conflict
-  item. Accepting only acknowledges the conflict; a failed save keeps the menu open and
+  "Un-accept conflict" on a badge. GBC: "Open in Map view", an enabled "Edit here"
+  when `onEditHere` is supplied (World mode, since Plan 7 Task 5b), then the conflict
+  item. Dungeon mode omits "Edit here". Accepting only acknowledges the conflict; a failed save keeps the menu open and
   shows the dismissible `Could not update conflict:` toast.
 - **Keyboard.** Opening focuses the first enabled item; ArrowDown/ArrowUp cycle the
   enabled items; Enter/Space activate; Escape or Tab closes and refocuses the canvas. A pointerdown
