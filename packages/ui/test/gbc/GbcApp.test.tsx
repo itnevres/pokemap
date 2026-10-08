@@ -351,7 +351,7 @@ describe("GbcApp", () => {
     await waitFor(() => expect(document.querySelector(".world-canvas__jump-highlight")).toBeTruthy());
   });
 
-  it("double-clicking a map in World mode opens it in Map view (onOpenMap wiring)", async () => {
+  it("Shift+double-clicking a map in World mode opens it in Map view (onOpenMap wiring; Plan 7 Task 5b: a plain double-click now edits in place)", async () => {
     // jsdom elements are 0x0 by default -- a real (non-zero) viewport is
     // needed so GbcWorldCanvas's own initial fit runs and OlivineCity's
     // placement is actually "visible" (culled in otherwise).
@@ -378,7 +378,7 @@ describe("GbcApp", () => {
 
       const canvas = document.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement;
       canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: 100, bottom: 100, width: 100, height: 100, x: 0, y: 0, toJSON() {} });
-      fireEvent.doubleClick(canvas, { clientX: 50, clientY: 50 });
+      fireEvent.doubleClick(canvas, { clientX: 50, clientY: 50, shiftKey: true });
 
       await waitFor(() => expect(document.querySelector(".app__status")?.textContent).toBe("OlivineCity"));
       await waitFor(() => expect(screen.getByText(/tileset TILESET_OLIVINE/)).toBeTruthy());

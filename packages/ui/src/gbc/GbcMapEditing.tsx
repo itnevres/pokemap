@@ -1,9 +1,9 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import type { GbcMapPayload } from "@pokemap/core/src/gbc/wire.js";
 import type { GbcStamp } from "@pokemap/core/src/gbc/edit/paint.js";
 import type { GbcEventKind, GbcWarpRenumberWarning } from "@pokemap/core/src/gbc/edit/events.js";
 import { Toolbar, type ToolKind } from "../components/Toolbar.js";
-import { GbcMapCanvas, type GbcActiveTool, type GbcEventRef } from "./GbcMapCanvas.js";
+import { GbcMapCanvas, type GbcActiveTool, type GbcEventRef, type GbcMapCanvasProps } from "./GbcMapCanvas.js";
 import { GbcMetatilePalette } from "./GbcMetatilePalette.js";
 import { GbcEventInspector } from "./GbcEventInspector.js";
 import type { UseGbcEditSessionResult } from "./hooks/useGbcEditSession.js";
@@ -14,15 +14,32 @@ export const GBC_TOOLS: ToolKind[] = ["pencil", "rect", "bucket", "dropper", "sh
 
 const message = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback);
 
+/** The props this component builds for the canvas it hosts -- everything `GbcMapCanvas` needs for editing. The World
+ *  view's in-context overlay (Plan 7 Task 5b) renders its own chromeless, controlled `GbcMapCanvas` from exactly these,
+ *  through `renderCanvas`, so the prop assembly lives in one place. */
+export type GbcMapEditingCanvasProps = Pick<
+  GbcMapCanvasProps,
+  "mapName" | "data" | "time" | "hoveredMetatile" | "editSession" | "activeTool" | "onDropperPick" | "selectedEvent" | "onSelectEvent" | "onMoveEvent" | "onEditError"
+>;
+
 export interface GbcMapEditingProps {
-  mapName: string;
-  data: GbcMapPayload;
+  /** Null only while `active` is false and no map is selected yet. */
+  mapName: string | null;
+  /** Null only while `active` is false (the World view before the context map's payload has loaded). */
+  data: GbcMapPayload | null;
   time: GbcTimeOfDay;
   session: UseGbcEditSessionResult;
   hoveredMetatileId: number | null;
   onHoverMetatile: (id: number | null) => void;
   /** Opens `SaveDialog`, which `GbcApp` mounts at `<main>` level for stacking (as GBA's `App` does). */
   onOpenSave: () => void;
+  /** Plan 7 Task 5b. False renders only `.app__map-editing-body` holding the canvas slot (no Toolbar, banner, palette or
+   *  inspector), so the World view's canvas keeps its position in the tree and is NOT remounted when in-context editing
+   *  switches the chrome on (GBA's `MapEditingWorkspace` `active={false}` seam). Default true. */
+  active?: boolean;
+  /** The seam for the World host: receives the canvas props built here (null while there is no map payload) and its
+   *  output is rendered in the canvas slot. Omitted: `<GbcMapCanvas {...canvasProps} />`, the Map-view behaviour. */
+  renderCanvas?: (canvasProps: GbcMapEditingCanvasProps | null) => ReactNode;
 }
 
 /**
@@ -39,26 +56,30 @@ export interface GbcMapEditingProps {
  * Non-writable layout (`layout.writable === false`): the paint tools render disabled with the reason, and
  * `activeTool` resolves to null so the canvas cannot paint; event editing, undo/redo and save stay enabled.
  */
-export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId, onHoverMetatile, onOpenSave }: GbcMapEditingProps) {
+export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId, onHoverMetatile, onOpenSave, active = true, renderCanvas }: GbcMapEditingProps) {
   const [toolKind, setToolKind] = useState<ToolKind | null>(null);
-  const [pick, setPick] = useState<{ forMap: string; stamp: GbcStamp | null; event: GbcEventRef | null }>({ forMap: mapName, stamp: null, event: null });
+  // `key` is never a real map name when there is no map, so nothing reads as "mine" until one is selected.
+  const key = mapName ?? "";
+  const [pick, setPick] = useState<{ forMap: string; stamp: GbcStamp | null; event: GbcEventRef | null }>({ forMap: key, stamp: null, event: null });
   const [err, setErr] = useState<{ forMap: string; text: string } | null>(null);
   const [warn, setWarn] = useState<{ forMap: string; list: GbcWarpRenumberWarning[] } | null>(null);
 
-  const mine = pick.forMap === mapName;
+  const mine = pick.forMap === key;
   const stamp = mine ? pick.stamp : null;
   const selectedEvent = mine ? pick.event : null;
-  const error = err && err.forMap === mapName ? err.text : null;
-  const warnings = warn && warn.forMap === mapName ? warn.list : [];
+  const error = err && err.forMap === key ? err.text : null;
+  const warnings = warn && warn.forMap === key ? warn.list : [];
   // Functional updaters: a deferred `setEvent(null)` (a delete resolving) must not overwrite a stamp picked meanwhile.
-  const fresh = (p: typeof pick) => (p.forMap === mapName ? p : { forMap: mapName, stamp: null, event: null });
+  const fresh = (p: typeof pick) => (p.forMap === key ? p : { forMap: key, stamp: null, event: null });
   const setStamp = (next: GbcStamp) => setPick((p) => ({ ...fresh(p), stamp: next }));
   const setEvent = (ref: GbcEventRef | null) => setPick((p) => ({ ...fresh(p), event: ref }));
-  const fail = (e: unknown, fallback = "Edit failed.") => setErr({ forMap: mapName, text: message(e, fallback) });
+  const fail = (e: unknown, fallback = "Edit failed.") => setErr({ forMap: key, text: message(e, fallback) });
   const ok = () => setErr(null);
 
-  const writable = data.layout.writable;
-  const nonWritableTitle = `this map's .blk is flagged non-writable: ${data.defects.find((d) => d.message.includes("not writable"))?.message ?? data.layout.blkPath}`;
+  const writable = data?.layout.writable ?? false;
+  const nonWritableTitle = data
+    ? `this map's .blk is flagged non-writable: ${data.defects.find((d) => d.message.includes("not writable"))?.message ?? data.layout.blkPath}`
+    : "";
 
   const activeTool = useMemo<GbcActiveTool | null>(() => {
     if (!writable || toolKind === null) return null;
@@ -76,7 +97,7 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
     session.deleteEvent(ref.kind, ref.index).then(({ warpRenumberWarnings }) => {
       ok();
       setEvent(null);
-      setWarn(warpRenumberWarnings.length > 0 ? { forMap: mapName, list: warpRenumberWarnings } : null);
+      setWarn(warpRenumberWarnings.length > 0 ? { forMap: key, list: warpRenumberWarnings } : null);
     }).catch((e: unknown) => fail(e, "Failed to delete event."));
   const onDuplicate = (kind: GbcEventKind, args: string[]): Promise<void> => {
     // add always appends, so the copy's index is the list's length BEFORE the call.
@@ -93,9 +114,27 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
     session.discard().then(ok).catch((e: unknown) => fail(e, "Failed to discard."));
   };
 
+  const canvasProps: GbcMapEditingCanvasProps | null =
+    mapName !== null && data !== null
+      ? {
+          mapName,
+          data,
+          time,
+          hoveredMetatile: onHoverMetatile,
+          editSession: session,
+          activeTool,
+          onDropperPick: setStamp,
+          selectedEvent,
+          onSelectEvent: setEvent,
+          onMoveEvent: onMove,
+          onEditError: (m) => setErr({ forMap: key, text: m }),
+        }
+      : null;
+  const canvas = renderCanvas ? renderCanvas(canvasProps) : canvasProps && <GbcMapCanvas {...canvasProps} />;
+
   return (
     <>
-      <Toolbar
+      {active && <Toolbar
         activeToolKind={toolKind}
         onSelectTool={setToolKind}
         tools={GBC_TOOLS}
@@ -108,8 +147,8 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
         canRedo={session.canRedo}
         onOpenSave={onOpenSave}
         onDiscard={onDiscard}
-      />
-      {error && (
+      />}
+      {active && error && (
         <div className="app__event-op-error" role="alert">
           <span>{error}</span>
           <button type="button" className="app__event-op-error-dismiss" onClick={() => setErr(null)} aria-label="Dismiss">
@@ -118,43 +157,33 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
         </div>
       )}
       <div className="app__map-editing-body">
-        <GbcMapCanvas
-          mapName={mapName}
-          data={data}
-          time={time}
-          hoveredMetatile={onHoverMetatile}
-          editSession={session}
-          activeTool={activeTool}
-          onDropperPick={setStamp}
-          selectedEvent={selectedEvent}
-          onSelectEvent={setEvent}
-          onMoveEvent={onMove}
-          onEditError={(m) => setErr({ forMap: mapName, text: m })}
-        />
+        {canvas}
         {/* One right-hand rail (palette over inspector), 260px: three fixed side panels left the canvas about 224px
             at 1024 wide (quality review I4). The rail and its children carry min-width: 0 in the stylesheet. */}
-        <div className="gbc-map-editing__rail">
-        <GbcMetatilePalette
-          mapName={mapName}
-          time={time}
-          tilesetName={data.tileset.constName}
-          metatileCount={data.metatileCount}
-          highlightId={hoveredMetatileId}
-          onSelect={writable ? setStamp : undefined}
-          selected={pickedId}
-        />
-        <GbcEventInspector
-          events={session.events}
-          selected={selectedEvent}
-          stepsW={2 * data.layout.width}
-          stepsH={2 * data.layout.height}
-          onMove={onMove}
-          onDelete={onDelete}
-          onDuplicate={onDuplicate}
-          warnings={warnings}
-          onDismissWarnings={() => setWarn(null)}
-        />
-        </div>
+        {active && mapName !== null && data !== null && (
+          <div className="gbc-map-editing__rail">
+            <GbcMetatilePalette
+              mapName={mapName}
+              time={time}
+              tilesetName={data.tileset.constName}
+              metatileCount={data.metatileCount}
+              highlightId={hoveredMetatileId}
+              onSelect={writable ? setStamp : undefined}
+              selected={pickedId}
+            />
+            <GbcEventInspector
+              events={session.events}
+              selected={selectedEvent}
+              stepsW={2 * data.layout.width}
+              stepsH={2 * data.layout.height}
+              onMove={onMove}
+              onDelete={onDelete}
+              onDuplicate={onDuplicate}
+              warnings={warnings}
+              onDismissWarnings={() => setWarn(null)}
+            />
+          </div>
+        )}
       </div>
     </>
   );

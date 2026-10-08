@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { MapTree } from "../components/MapTree.js";
 import { useGbcGroups } from "./hooks/useGbcGroups.js";
 import { useGbcMap } from "./hooks/useGbcMap.js";
-import { GbcMapEditing } from "./GbcMapEditing.js";
+import { GbcMapEditing, type GbcMapEditingCanvasProps } from "./GbcMapEditing.js";
+import { GbcMapCanvas, GBC_COMPOSITE_ORIGIN } from "./GbcMapCanvas.js";
 import { useGbcEditSession } from "./hooks/useGbcEditSession.js";
 import { SaveDialog } from "../components/SaveDialog.js";
 import { GbcWorldCanvas } from "./GbcWorldCanvas.js";
@@ -76,6 +77,10 @@ export function GbcApp({ root, switcher }: GbcAppProps) {
   const [hoveredMetatileId, setHoveredMetatileId] = useState<number | null>(null);
   const [manualPlacementMaps, setManualPlacementMaps] = useState<ReadonlySet<string>>(new Set());
   const [openDungeonId, setOpenDungeonId] = useState<string | null>(null);
+  // Plan 7 Task 5b: the map being edited in context on the World view, or null. Always equals `selected` while set.
+  const [contextMap, setContextMap] = useState<string | null>(null);
+  // Bumped for a map when a save commits while editing it in context; the world re-requests only that tile.
+  const [tileVersions, setTileVersions] = useState<Record<string, number>>({});
   const dungeons = useGbcDungeons(mode === "dungeon");
 
   const { data, error } = useGbcGroups();
@@ -146,6 +151,7 @@ export function GbcApp({ root, switcher }: GbcAppProps) {
   const selectMap = (name: string) => {
     const go = () => {
       setSwitchError(null);
+      setContextMap(null); // a tree click leaves in-context editing (a jump would also move the world under the overlay)
       setSelected(name);
       setJumpTarget(name);
       setSelectVersion((v) => v + 1);
@@ -178,6 +184,7 @@ export function GbcApp({ root, switcher }: GbcAppProps) {
   const openMapFromWorld = (name: string) => {
     const go = () => {
       setSwitchError(null);
+      setContextMap(null);
       setSelected(name);
       setHoveredMetatileId(null);
       setMode("map");
@@ -185,19 +192,91 @@ export function GbcApp({ root, switcher }: GbcAppProps) {
     if (name === selected) go(); else leave(go);
   };
 
+  // GbcWorldCanvas's double-click / "Edit here" (Plan 7 Task 5b): selecting the map goes through the same dirty guard as a
+  // tree click, and a cancelled confirm means no context. No jump: the world snaps itself to the map.
+  const enterContext = (name: string) => {
+    const go = () => {
+      setSwitchError(null);
+      setSelected(name);
+      setHoveredMetatileId(null);
+      setContextMap(name);
+    };
+    if (name === selected) go(); else leave(go);
+  };
+
+  // Done, Escape, or a double-click outside the map. A dirty session opens the ordinary SaveDialog and stays in context
+  // (Cancel keeps editing, a commit makes the next exit clean); a clean one just leaves.
+  const requestExitContext = () => {
+    if (session.isDirty) setSaveOpen(true);
+    else setContextMap(null);
+  };
+
+  // A mode switch leaves context without a prompt: the session persists exactly as it does today.
+  const switchMode = (next: Mode) => {
+    setContextMap(null);
+    setMode(next);
+  };
+  // `selected` moving off the context map by any other route (a world click on another map) also leaves it.
+  useEffect(() => {
+    if (contextMap !== null && selected !== contextMap) setContextMap(null);
+  }, [selected, contextMap]);
+
+  const defectsBanner = ready && ready.defects.length > 0 && (
+    // Non-dismissible: G4's "never a silent drop" data truth (an oversize .blk, an out-of-bounds event), not a one-shot
+    // notice about something the player just did -- so unlike App.tsx's own eventOpError/signAddedMessage banners, this
+    // one carries no dismiss button and never clears itself.
+    <div className="app__event-op-error" role="alert">
+      <ul className="gbc-app__defects-list">
+        {ready.defects.map((d, i) => (
+          <li key={i}>{d.message}</li>
+        ))}
+      </ul>
+    </div>
+  );
+
+  // The World view is hosted by GbcMapEditing at all times (one stable element and key), so the GbcWorldCanvas inside is
+  // never remounted when in-context editing turns the chrome on or off. The overlay's canvas is built from the SAME props
+  // GbcMapEditing assembles for Map view, plus chromeless and the controlled view.
+  const contextActive = contextMap !== null && ready !== null;
+  const renderWorld = (canvasProps: GbcMapEditingCanvasProps | null) => (
+    <GbcWorldCanvas
+      key="world"
+      time={time}
+      jumpToMap={jumpTarget}
+      jumpToken={selectVersion}
+      onSelectMap={selectMapFromWorld}
+      onOpenMap={openMapFromWorld}
+      onEditHere={enterContext}
+      onJumpToMap={selectMap}
+      onPlacementSaved={markManualPlacement}
+      tileVersions={tileVersions}
+      context={
+        contextMap === null
+          ? undefined
+          : {
+              map: contextMap,
+              origin: ready ? { x: GBC_COMPOSITE_ORIGIN, y: GBC_COMPOSITE_ORIGIN } : null,
+              renderCanvas: (view, onViewChange) =>
+                canvasProps && ready ? <GbcMapCanvas {...canvasProps} chromeless view={view} onViewChange={onViewChange} /> : null,
+              onExitRequest: requestExitContext,
+            }
+      }
+    />
+  );
+
   return (
     <div className="app">
       <header className="app__toolbar">
         <h1 className="app__title">PokeMap</h1>
         <span className="gbc-app__family">Crystal</span>
         <div className="app__mode" role="group" aria-label="View">
-          <button type="button" className="map-canvas__btn" aria-pressed={mode === "map"} onClick={() => setMode("map")}>
+          <button type="button" className="map-canvas__btn" aria-pressed={mode === "map"} onClick={() => switchMode("map")}>
             Map
           </button>
           <button type="button" className="map-canvas__btn" aria-pressed={mode === "world"} onClick={enterWorld}>
             World
           </button>
-          <button type="button" className="map-canvas__btn" aria-pressed={mode === "dungeon"} onClick={() => setMode("dungeon")}>
+          <button type="button" className="map-canvas__btn" aria-pressed={mode === "dungeon"} onClick={() => switchMode("dungeon")}>
             Dungeon
           </button>
         </div>
@@ -236,16 +315,20 @@ export function GbcApp({ root, switcher }: GbcAppProps) {
             </div>
           )}
           {mode === "world" ? (
-            <GbcWorldCanvas
-              key="world"
-              time={time}
-              jumpToMap={jumpTarget}
-              jumpToken={selectVersion}
-              onSelectMap={selectMapFromWorld}
-              onOpenMap={openMapFromWorld}
-              onJumpToMap={selectMap}
-              onPlacementSaved={markManualPlacement}
-            />
+            <div className="app__map-editing" key="world-host">
+              {contextActive && defectsBanner}
+              <GbcMapEditing
+                active={contextActive}
+                mapName={selected}
+                data={ready}
+                time={time}
+                session={session}
+                hoveredMetatileId={hoveredMetatileId}
+                onHoverMetatile={setHoveredMetatileId}
+                onOpenSave={() => setSaveOpen(true)}
+                renderCanvas={renderWorld}
+              />
+            </div>
           ) : mode === "dungeon" ? (
             openDungeon ? <GbcWorldCanvas key="dungeon" time={time} mapFilter={mapFilter} onOpenMap={openMapFromWorld} onPlacementSaved={markManualPlacement} />
               : <p className="app__canvas-placeholder">Select or create a dungeon</p>
@@ -255,20 +338,7 @@ export function GbcApp({ root, switcher }: GbcAppProps) {
             <p className="app__canvas-placeholder">Could not load {selected}: {map.error}</p>
           ) : ready ? (
             <div className="app__map-editing">
-              {/* Non-dismissible: G4's "never a silent drop" data truth (an
-                  oversize .blk, an out-of-bounds event), not a one-shot
-                  notice about something the player just did -- so unlike
-                  App.tsx's own eventOpError/signAddedMessage banners, this
-                  one carries no dismiss button and never clears itself. */}
-              {ready.defects.length > 0 && (
-                <div className="app__event-op-error" role="alert">
-                  <ul className="gbc-app__defects-list">
-                    {ready.defects.map((d, i) => (
-                      <li key={i}>{d.message}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
+              {defectsBanner}
               <GbcMapEditing
                 mapName={selected}
                 data={ready}
@@ -291,6 +361,10 @@ export function GbcApp({ root, switcher }: GbcAppProps) {
               onCommitted={() => {
                 session.markClean();
                 setSaveOpen(false);
+                // Editing in context: the world still shows this map's pre-save tile; refresh just that one.
+                if (contextMap !== null && contextMap === selected) {
+                  setTileVersions((t) => ({ ...t, [contextMap]: (t[contextMap] ?? 0) + 1 }));
+                }
                 map.reload().catch((e: unknown) => setSwitchError(`Saved, but could not reload the map: ${e instanceof Error ? e.message : String(e)}`));
               }}
               onCancel={() => setSaveOpen(false)}
