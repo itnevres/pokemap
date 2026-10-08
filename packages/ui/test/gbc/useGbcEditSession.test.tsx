@@ -162,4 +162,18 @@ describe("useGbcEditSession", () => {
     await act(() => result.current.beginStroke());
     expect(f).not.toHaveBeenCalled();
   });
+  it("responses resolved out of order: only the newer request's response is applied", async () => {
+    const resolvers: ((r: Response) => void)[] = [];
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>((r) => { resolvers.push(r); })));
+    const { result } = renderHook(() => useGbcEditSession("A", SEED_A, EV));
+    let p1!: Promise<void>;
+    let p2!: Promise<void>;
+    act(() => { p1 = result.current.applyPaint({ tool: "shift", dx: 1, dy: 0 }); });
+    act(() => { p2 = result.current.applyPaint({ tool: "shift", dx: 2, dy: 0 }); });
+    const res = (m: number) => ({ ok: true, status: 200, json: () => Promise.resolve(body({ blocks: [{ metatileId: m }, { metatileId: 2 }] })) } as Response);
+    await act(async () => { resolvers[1]!(res(22)); await p2; });
+    expect(result.current.blocks[0]).toEqual({ metatileId: 22 });
+    await act(async () => { resolvers[0]!(res(11)); await p1; });
+    expect(result.current.blocks[0]).toEqual({ metatileId: 22 });
+  });
 });

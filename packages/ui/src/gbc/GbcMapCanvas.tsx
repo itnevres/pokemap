@@ -14,7 +14,7 @@ import { useMapEncounterSummaries } from "../encounters/useMapEncounterSummaries
 import { ZOOM_LEVELS, zoomAboutPivot, type MapView, type Zoom } from "../components/mapView.js";
 
 /**
- * The read-only GBC map view (Plan 6b Task 4). Plan Q2 accepts this as a
+ * The GBC map view (Plan 6b Task 4: read-only; Plan 7 Task 5 added the optional editing props, see below). Plan Q2 accepts this as a
  * deliberate DUPLICATE of `MapCanvas.tsx`'s pan/zoom/viewport mechanics
  * (about 150 lines), not a shared extraction -- `MapCanvas.tsx` is ~70%
  * editing machinery (paint-stroke race safety, event drag) this view has no
@@ -294,6 +294,9 @@ export function GbcMapCanvas({ mapName, data: payload, time, hoveredMetatile, ed
   // True from an edit stroke's mousedown to its end, so onMouseLeave can tell "a stroke is open" from "a session
   // exists" and not fire endStroke on every ordinary mouse-out (MapCanvas.tsx:264-269).
   const strokeOpenRef = useRef(false);
+  // The last block a pencil stroke painted: a held drag fires many mousemoves per block, and each would be a
+  // parallel POST. Reset when the stroke ends.
+  const lastCellRef = useRef<string | null>(null);
   // An event-marker drag in progress: its identity and the STEP it started on (MapCanvas.tsx:270-280).
   const eventDragRef = useRef<{ kind: GbcEventKind; index: number; x: number; y: number } | null>(null);
   const [dragPreview, setDragPreview] = useState<{ x: number; y: number } | null>(null);
@@ -366,6 +369,10 @@ export function GbcMapCanvas({ mapName, data: payload, time, hoveredMetatile, ed
   // Fresh overlays/hover on a real map switch -- mirrors MapCanvas.tsx:371-374.
   useEffect(() => {
     setToggles(NO_TOGGLES);
+    // A stroke belongs to the map it began on: a switch mid-stroke must not let its end/apply go out for the new one.
+    strokeOpenRef.current = false;
+    dragStartRef.current = null;
+    lastCellRef.current = null;
     setEncountersFor(null); // only so A -> B -> A does not bring A's border back; B is already off without it
     setHover(null);
     hoveredMetatile?.(null);
@@ -604,6 +611,7 @@ export function GbcMapCanvas({ mapName, data: payload, time, hoveredMetatile, ed
       const cell = blockAt(e);
       if (!cell) return;
       strokeOpenRef.current = true;
+      lastCellRef.current = `${cell.x},${cell.y}`;
       // Kept in pendingPaintRef, not fire-and-forget: mouseup/mouseleave await it (see endActiveStroke).
       pendingPaintRef.current = editSession.beginStroke().then(() => {
         if (activeTool.kind === "rect" || activeTool.kind === "shift") dragStartRef.current = cell;
@@ -623,7 +631,10 @@ export function GbcMapCanvas({ mapName, data: payload, time, hoveredMetatile, ed
     // exercised for real in a browser (MapCanvas.tsx:777-787).
     if (editSession && activeTool?.kind === "pencil" && dragStartRef.current === null && e.buttons === 1) {
       const cell = blockAt(e);
-      if (cell) paintAt(cell.x, cell.y);
+      if (cell && lastCellRef.current !== `${cell.x},${cell.y}`) {
+        lastCellRef.current = `${cell.x},${cell.y}`;
+        paintAt(cell.x, cell.y);
+      }
       return;
     }
     if (dragRef.current) {
@@ -647,6 +658,7 @@ export function GbcMapCanvas({ mapName, data: payload, time, hoveredMetatile, ed
   const endActiveStroke = (end: { x: number; y: number } | null) => {
     if (!editSession) return;
     strokeOpenRef.current = false;
+    lastCellRef.current = null;
     void pendingPaintRef.current.catch(() => {}).then(() => {
       const start = dragStartRef.current;
       if (activeTool?.kind === "shift" && start && end) {

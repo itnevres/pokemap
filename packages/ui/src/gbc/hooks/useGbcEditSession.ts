@@ -100,6 +100,9 @@ export function useGbcEditSession(mapName: string | null, initialBlocks?: Block[
   const latest = useRef({ mapName, initialBlocks });
   latest.current = { mapName, initialBlocks };
   // Read when a response lands: a new map or seed also drops a stale in-flight response, not just stops showing old state.
+  // `issued`/`applied` order the responses of one map: a pencil drag fires parallel POSTs, and an older response
+  // landing after a newer one must not revert the view (the server is right; the client would be stale).
+  const seq = useRef({ issued: 0, applied: 0 });
 
   const live = state !== null && state.forMap === mapName && state.seed === initialBlocks ? state : null;
   const blocks = live ? live.blocks : initialBlocks ?? [];
@@ -108,13 +111,15 @@ export function useGbcEditSession(mapName: string | null, initialBlocks?: Block[
   const post = useCallback(async (path: string, body?: unknown): Promise<SessionBody | null> => {
     if (!mapName) return null; // nothing open -- same no-op as useEditSession
     const url = `/api/edit/${encodeURIComponent(mapName)}${path}`;
+    const mine = ++seq.current.issued;
     const r = await fetch(url, body === undefined ? { method: "POST" } : { method: "POST", body: JSON.stringify(body) });
     const d: unknown = await r.json().catch(() => null);
     if (!r.ok) throw new Error(isRecord(d) && typeof d.error === "string" ? d.error : `POST /api/edit/${mapName}${path} -> ${r.status}`);
     if (!isSessionBody(d)) throw new Error(`POST /api/edit/${mapName}${path} returned an unexpected shape`);
     if (d.events === null) return null; // nothing open server-side (undo/redo no-op): leave the client as it is
     const seed = initialBlocks;
-    if (latest.current.mapName === mapName && latest.current.initialBlocks === seed) {
+    if (latest.current.mapName === mapName && latest.current.initialBlocks === seed && mine > seq.current.applied) {
+      seq.current.applied = mine;
       setState({ forMap: mapName, seed, blocks: d.blocks, events: d.events, isDirty: d.isDirty, canUndo: d.canUndo, canRedo: d.canRedo });
     }
     return d;
@@ -143,6 +148,7 @@ export function useGbcEditSession(mapName: string | null, initialBlocks?: Block[
     if (!mapName) return;
     const r = await fetch(`/api/edit/${encodeURIComponent(mapName)}/discard`, { method: "POST" });
     if (!r.ok) throw new Error(`POST /api/edit/${mapName}/discard -> ${r.status}`);
+    seq.current.applied = seq.current.issued; // an op still in flight must not resurrect the discarded session
     setState(null); // back to the seed -- disk state, not an empty grid
   }, [mapName]);
 

@@ -181,7 +181,7 @@ describe("GbcMapCanvas events", () => {
     expect(onSelectEvent).not.toHaveBeenCalled();
   });
 
-  it("a click on empty ground deselects and then pans", () => {
+  it("a click on empty ground deselects (and falls through to the pan drag)", () => {
     const onSelectEvent = vi.fn();
     const { canvas } = mount({ editSession: session({ events: withObject }), onSelectEvent });
     fireEvent.mouseDown(canvas, at(120, 100));
@@ -231,6 +231,10 @@ describe("GbcMapCanvas image freshness", () => {
     rerender(<GbcMapCanvas mapName="N" data={DATA} time="day" editSession={{ ...first, blocks: [...BLOCKS] }} />);
     act(() => { vi.advanceTimersByTime(500); });
     expect(img.getAttribute("src")).toBe("/api/render/N.png?border=1&time=day");
+    // ...but tracking resumes: a real edit on the new map still bumps.
+    rerender(<GbcMapCanvas mapName="N" data={DATA} time="day" editSession={{ ...first, blocks: [...BLOCKS] }} />);
+    act(() => { vi.advanceTimersByTime(200); });
+    expect(img.getAttribute("src")).toBe("/api/render/N.png?border=1&time=day&v=1");
   });
 
   it("without a session the URL has no v= even when data changes", () => {
@@ -239,5 +243,40 @@ describe("GbcMapCanvas image freshness", () => {
     rerender(<GbcMapCanvas mapName="M" data={{ ...DATA, blocks: [...BLOCKS] }} time="day" />);
     act(() => { vi.advanceTimersByTime(500); });
     expect(img.getAttribute("src")).toBe("/api/render/M.png?border=1&time=day");
+  });
+});
+
+describe("GbcMapCanvas errors and drag dedupe", () => {
+  it("a rejected request reports its message through onEditError", async () => {
+    const onEditError = vi.fn();
+    const s = session({ beginStroke: vi.fn((): Promise<void> => Promise.reject(new Error("boom: server said no"))) });
+    const { canvas } = mount({ editSession: s, activeTool: { kind: "pencil", stamp: STAMP }, onEditError });
+    fireEvent.mouseDown(canvas, at(72, 72));
+    await waitFor(() => expect(onEditError).toHaveBeenCalledWith("boom: server said no"));
+  });
+
+  it("a held pencil drag paints each new block once, not once per mousemove", async () => {
+    const s = session();
+    const { canvas } = mount({ editSession: s, activeTool: { kind: "pencil", stamp: STAMP } });
+    fireEvent.mouseDown(canvas, at(72, 72)); // block 1,1 (painted by the begin chain)
+    await waitFor(() => expect(s.applyPaint).toHaveBeenCalledTimes(1));
+    fireEvent.mouseMove(canvas, { clientX: 74, clientY: 74, buttons: 1 });
+    fireEvent.mouseMove(canvas, { clientX: 80, clientY: 80, buttons: 1 });
+    expect(s.applyPaint).toHaveBeenCalledTimes(1);
+    fireEvent.mouseMove(canvas, { clientX: 104, clientY: 72, buttons: 1 }); // block 2,1
+    expect(s.applyPaint).toHaveBeenCalledTimes(2);
+    fireEvent.mouseMove(canvas, { clientX: 105, clientY: 73, buttons: 1 });
+    expect(s.applyPaint).toHaveBeenCalledTimes(2);
+  });
+
+  it("the dedupe resets with the stroke: the same block is painted again by the next stroke", async () => {
+    const s = session();
+    const { canvas } = mount({ editSession: s, activeTool: { kind: "pencil", stamp: STAMP } });
+    for (let i = 0; i < 2; i++) {
+      fireEvent.mouseDown(canvas, at(72, 72));
+      fireEvent.mouseUp(canvas, at(72, 72));
+      await waitFor(() => expect(s.applyPaint).toHaveBeenCalledTimes(i + 1));
+      await waitFor(() => expect(log.filter((l) => l === "end").length).toBe(i + 1));
+    }
   });
 });
