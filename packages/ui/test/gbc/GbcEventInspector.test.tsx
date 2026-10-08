@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { GbcEventInspector, duplicateArgs } from "../../src/gbc/GbcEventInspector.js";
 import type { GbcMapEvents } from "@pokemap/core/src/gbc/model/types.js";
 
@@ -34,8 +34,14 @@ describe("duplicateArgs", () => {
     expect(duplicateArgs("coord", EVENTS.coords[0]!, 40, 18)).toEqual(["2", "8", "SCENE_X", "CoordScript"]);
     expect(duplicateArgs("bg", EVENTS.bgs[0]!, 40, 18)).toEqual(["6", "5", "BGEVENT_READ", "SignScript"]);
   });
-  it("clamps x to the step grid", () => {
-    expect(duplicateArgs("bg", { ...EVENTS.bgs[0]!, x: 39 }, 40, 18)[0]).toBe("39");
+  it("at the right edge the copy goes LEFT of the source, never onto it; y is clamped to the grid", () => {
+    expect(duplicateArgs("bg", { ...EVENTS.bgs[0]!, x: 39 }, 40, 18)[0]).toBe("38");
+    expect(duplicateArgs("bg", { ...EVENTS.bgs[0]!, x: 0, y: 99 }, 1, 18).slice(0, 2)).toEqual(["0", "17"]);
+  });
+
+  it("every one of the 13 object fields lands in its own macro slot (all fields distinct)", () => {
+    const o = { x: 10, y: 11, sprite: "SPRITE_S", moveData: "MOVE_M", radiusX: 2, radiusY: 3, hour1: "H1", hour2: "H2", palette: "PAL_P", objectType: "OBJECTTYPE_T", sightRange: 4, script: "ScriptL", eventFlag: "EVENT_F", lineIndex: 0 };
+    expect(duplicateArgs("object", o, 40, 18)).toEqual(["11", "11", "SPRITE_S", "MOVE_M", "2", "3", "H1", "H2", "PAL_P", "OBJECTTYPE_T", "4", "ScriptL", "EVENT_F"]);
   });
 });
 
@@ -53,21 +59,30 @@ describe("GbcEventInspector", () => {
 
   it("move commits in steps on blur and on Enter, not per keystroke", () => {
     const p = setup();
-    const x = screen.getByLabelText("X") as HTMLInputElement;
+    const x = screen.getByLabelText("X (steps)") as HTMLInputElement;
     fireEvent.change(x, { target: { value: "9" } });
     expect(p.onMove).not.toHaveBeenCalled();
     fireEvent.blur(x);
     expect(p.onMove).toHaveBeenCalledWith({ kind: "object", index: 0, x: 9, y: 8 });
-    const y = screen.getByLabelText("Y") as HTMLInputElement;
+    const y = screen.getByLabelText("Y (steps)") as HTMLInputElement;
     fireEvent.change(y, { target: { value: "3" } });
     const blur = vi.spyOn(y, "blur");
     fireEvent.keyDown(y, { key: "Enter" });
     expect(blur).toHaveBeenCalled();
   });
 
+  it("a cleared field reverts on blur and sends nothing; no NaN reaches the input", () => {
+    const p = setup();
+    const x = screen.getByLabelText("X (steps)") as HTMLInputElement;
+    fireEvent.change(x, { target: { value: "" } });
+    fireEvent.blur(x);
+    expect(p.onMove).not.toHaveBeenCalled();
+    expect(x.value).toBe("6");
+  });
+
   it("a blur without a change sends nothing", () => {
     const p = setup();
-    fireEvent.blur(screen.getByLabelText("X"));
+    fireEvent.blur(screen.getByLabelText("X (steps)"));
     expect(p.onMove).not.toHaveBeenCalled();
   });
 
@@ -78,7 +93,8 @@ describe("GbcEventInspector", () => {
     expect(p.onDelete).toHaveBeenCalledWith({ kind: "object", index: 0 });
     await waitFor(() => expect((screen.getByRole("button", { name: /Deleting/ }) as HTMLButtonElement).disabled).toBe(true));
     expect((screen.getByRole("button", { name: "Duplicate" }) as HTMLButtonElement).disabled).toBe(true);
-    done();
+    await act(async () => done());
+    await waitFor(() => expect((screen.getByRole("button", { name: "Duplicate" }) as HTMLButtonElement).disabled).toBe(false));
   });
 
   it("Duplicate posts the exact reconstructed args", () => {

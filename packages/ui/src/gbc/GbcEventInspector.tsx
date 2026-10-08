@@ -29,7 +29,8 @@ function subtitleFor(kind: GbcEventKind, e: AnyEvent): string {
  * back as decimal (a `$2` radius reads `2`), which assembles identically.
  */
 export function duplicateArgs(kind: GbcEventKind, e: AnyEvent, stepsW: number, stepsH: number): string[] {
-  const x = String(Math.max(0, Math.min(stepsW - 1, e.x + 1)));
+  // Right of the source; at the right edge, left of it instead, so a copy never sits exactly on its original.
+  const x = String(Math.max(0, e.x + 1 <= stepsW - 1 ? e.x + 1 : e.x - 1));
   const y = String(Math.max(0, Math.min(stepsH - 1, e.y)));
   if (kind === "warp") { const w = e as GbcMapEvents["warps"][number]; return [x, y, w.mapConst, String(w.destWarp)]; }
   if (kind === "coord") { const c = e as GbcMapEvents["coords"][number]; return [x, y, c.sceneConst, c.script]; }
@@ -64,8 +65,9 @@ export interface GbcEventInspectorProps {
  */
 export function GbcEventInspector({ events, selected, stepsW, stepsH, onMove, onDelete, onDuplicate, warnings, onDismissWarnings }: GbcEventInspectorProps) {
   const ev = lookup(events, selected);
-  const [draft, setDraft] = useState({ x: ev?.x ?? 0, y: ev?.y ?? 0 });
-  useEffect(() => setDraft({ x: ev?.x ?? 0, y: ev?.y ?? 0 }), [selected?.kind, selected?.index, ev?.x, ev?.y]);
+  // Strings, parsed on commit: a controlled number input fed NaN (a cleared field) logs a React warning.
+  const [draft, setDraft] = useState({ x: String(ev?.x ?? 0), y: String(ev?.y ?? 0) });
+  useEffect(() => setDraft({ x: String(ev?.x ?? 0), y: String(ev?.y ?? 0) }), [selected?.kind, selected?.index, ev?.x, ev?.y]);
   const [pending, setPending] = useState<"delete" | "duplicate" | null>(null);
   const run = (what: "delete" | "duplicate", p: Promise<void>) => {
     setPending(what);
@@ -97,12 +99,14 @@ export function GbcEventInspector({ events, selected, stepsW, stepsH, onMove, on
   }
 
   const commit = () => {
-    if (!Number.isInteger(draft.x) || !Number.isInteger(draft.y)) {
-      setDraft({ x: ev.x, y: ev.y }); // a cleared field: show the real position again
+    const x = draft.x.trim() === "" ? NaN : Number(draft.x);
+    const y = draft.y.trim() === "" ? NaN : Number(draft.y);
+    if (!Number.isInteger(x) || !Number.isInteger(y)) {
+      setDraft({ x: String(ev.x), y: String(ev.y) }); // empty or fractional: show the real position again
       return;
     }
-    if (draft.x === ev.x && draft.y === ev.y) return;
-    onMove({ kind: selected.kind, index: selected.index, x: draft.x, y: draft.y });
+    if (x === ev.x && y === ev.y) return;
+    onMove({ kind: selected.kind, index: selected.index, x, y });
   };
   const blurOnEnter = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") e.currentTarget.blur();
@@ -121,10 +125,9 @@ export function GbcEventInspector({ events, selected, stepsW, stepsH, onMove, on
           <span className="event-inspector__field-label">{axis.toUpperCase()} (steps)</span>
           <input
             type="number"
-            aria-label={axis.toUpperCase()}
             className="event-inspector__input"
             value={draft[axis]}
-            onChange={(e) => setDraft({ ...draft, [axis]: e.target.value === "" ? NaN : Number(e.target.value) })}
+            onChange={(e) => setDraft({ ...draft, [axis]: e.target.value })}
             onBlur={commit}
             onKeyDown={blurOnEnter}
           />
