@@ -2790,6 +2790,22 @@ input {
   border-color: var(--border-strong);
 }
 
+/* Plan 7 Task 5: the PICKED cell (what pencil/rect/bucket paint with) -- accent border, distinct from the
+   hover highlight above (bg-selected + border-strong). */
+.gbc-metatile-palette__cell--picked {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.gbc-metatile-palette__cell[tabindex] {
+  cursor: pointer;
+}
+
+.gbc-metatile-palette__cell:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
 .gbc-metatile-palette__thumb {
   image-rendering: pixelated;
   image-rendering: crisp-edges;

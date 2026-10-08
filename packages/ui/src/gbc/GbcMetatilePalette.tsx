@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import type { GbcStamp } from "@pokemap/core/src/gbc/edit/paint.js";
 import type { GbcTimeOfDay } from "./time.js";
 
 export interface GbcMetatilePaletteProps {
@@ -11,6 +12,12 @@ export interface GbcMetatilePaletteProps {
    *  controlled-prop shape as GBA's `MetatilePalette.selected`: this
    *  component never writes anything back. */
   highlightId?: number | null;
+  /** Plan 7 Task 5: click (or Enter/Space) picks a cell as a 1x1 stamp. Absent: cells stay inert, as in 6b.
+   *  No drag-select (YAGNI; GBA's is a later nicety). */
+  onSelect?: (stamp: GbcStamp) => void;
+  /** The picked metatile id. Visually distinct from the hover `highlightId`: the picked cell gets
+   *  `--picked` (accent border) while the hover keeps its legacy `--selected` class, which existing tests pin. */
+  selected?: number | null;
 }
 
 const hex = (n: number) => `0x${n.toString(16)}`;
@@ -35,7 +42,7 @@ const hex = (n: number) => `0x${n.toString(16)}`;
  * announce "list, N items" and treat each cell's `aria-label` as a real list
  * item's accessible name, not N unrelated labelled images in sequence.
  */
-export function GbcMetatilePalette({ mapName, time, tilesetName, metatileCount, highlightId = null }: GbcMetatilePaletteProps) {
+export function GbcMetatilePalette({ mapName, time, tilesetName, metatileCount, highlightId = null, onSelect, selected = null }: GbcMetatilePaletteProps) {
   const cellRefs = useRef(new Map<number, HTMLDivElement>());
 
   useEffect(() => {
@@ -52,7 +59,9 @@ export function GbcMetatilePalette({ mapName, time, tilesetName, metatileCount, 
       </div>
       <div className="gbc-metatile-palette__grid" role="list">
         {ids.map((id) => {
-          const selected = id === highlightId;
+          const hovered = id === highlightId;
+          const picked = id === selected;
+          const pick = () => onSelect?.({ width: 1, height: 1, cells: [{ metatileId: id }] });
           return (
             <div
               key={id}
@@ -61,9 +70,12 @@ export function GbcMetatilePalette({ mapName, time, tilesetName, metatileCount, 
                 else cellRefs.current.delete(id);
               }}
               role="listitem"
-              className={`gbc-metatile-palette__cell${selected ? " gbc-metatile-palette__cell--selected" : ""}`}
+              className={`gbc-metatile-palette__cell${hovered ? " gbc-metatile-palette__cell--selected" : ""}${picked ? " gbc-metatile-palette__cell--picked" : ""}`}
               aria-label={`metatile ${hex(id)}`}
-              aria-current={selected ? "true" : undefined}
+              aria-current={hovered || picked ? "true" : undefined}
+              tabIndex={onSelect ? 0 : undefined}
+              onClick={onSelect ? pick : undefined}
+              onKeyDown={onSelect ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); } } : undefined}
             >
               <img
                 className="gbc-metatile-palette__thumb"
