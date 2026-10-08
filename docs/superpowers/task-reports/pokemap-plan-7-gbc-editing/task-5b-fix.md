@@ -1,5 +1,7 @@
 # Task 5b — combined fix implementer report
 
+**Latest continuation:** cached-image entry fix committed as `f8c88d0`; ready for coordinator live re-verification. The appended live-verification section records this authorized continuation on the same handle and supersedes the earlier GbcMapCanvas scope/hash. The original combined-round evidence below remains historical and unchanged.
+
 **Status: READY for coordinator re-review and full gate.** The authorized single combined round is implemented on the same resumed implementer handle. **293 focused tests pass, typecheck passes, UI build passes; five mutations executed here, five killed, zero survivors.** No full-suite or live-browser claim.
 
 ## Scope, provenance and commits
@@ -117,3 +119,60 @@ Scope from `4db3723` is only the three GBC source files, three GBC test files, f
 - Same-visit out-of-order operations and edit-session transport sequencing are not expanded into a new subsystem. This fix specifically retires actual visits and prevents old-visit local UI writes, including ABA.
 - Coordinator retains full suite, live geometry/pixels/error recovery, and any save/real-corpus verification. No browser was opened or live save executed here. Existing accepted control/layout/image deferrals remain accepted; no new feature or redesign.
 - Test slot released after the final serial App regression. No Vitest process remains from this round; mutations are restored, committed implementation is reviewable, and report is ready.
+
+## Authorized live-verification continuation — cached context entry
+
+**Commit: `f8c88d0 fix(ui): draw cached GBC context images on entry`. Status: READY for coordinator live re-verification.** Continued on the same implementer handle, as explicitly requested, without a second independent agent or fix round. Prior static review passes and coordinator R1/R2/R3 restoration at `3fe84b2` are preserved; they did not cover the cached-at-mount drawing lifecycle.
+
+### Live evidence and diagnosis
+
+Coordinator observed NewBarkTown on PerfPlus before any paint/save: context stage existed; source image `complete=true`, natural384×352; full-stage alpha scan had n=0, including a later scan bounds[740,683,0,0]. The corrected evidence says one reentry +2×/1× produced sample alpha255, later reentry returned0 and further zoom did not reliably recover. This is **not** recorded as a reliable zoom workaround. Screenshots are coordinator scratch artifacts under `C:/Users/Serve/AppData/Local/Temp/pokemap-plan7-codex/live5b/`; read-only inspection of `context-reentry.png` shows context chrome and dimmed World underneath. I performed no browser actions or pixel scan.
+
+Read actual GbcMapCanvas image state, URL reset, Step1/Step2 effects, JSX stage sizing; actual GbcApp controlled render factory; World snap/overlay/bar callers; GBA MapCanvas template's image reset/composite/re-blit and sizing; `main.tsx` StrictMode mount. Step2 **already depends on viewport**. No missing sizing dependency was found and none was removed/changed.
+
+Grounded defect: `imgLoaded` initially false and the image-URL effect unconditionally sets false. Readiness is recognized only by a later onLoad callback. If a mounted image is already complete before that event is observed, Step1 returns without creating the base canvas; Step2 returns because no base exists. An early load can also be overwritten by the unconditional reset. Changing zoom cannot reliably bootstrap missing base content. Deterministic tests reproduce the missing-ready-image path with complete/natural image getters populated **before mount**, no load event and no zoom. This establishes the missing readiness boundary; it does not claim a captured timeline of the live browser's precise event race.
+
+### Tests-first and minimal implementation
+
+- Added normal and StrictMode component lifecycle cases, each mount -> draw -> unmount -> remount -> draw, with image already complete/decoded before mount and **no synthetic load event or input gesture**. Assert the base draws this visit's actual image, stage draws that base at exact controlled placement/scale, and no view-change callback. Added complete-but-broken image (naturalWidth0) rejection.
+- Pre-fix full view suite: **10 pass/2 fail**. Initial failures used a missing-spy matcher; refined it before production edits to assert draw count >0. Targeted cached cases then failed **0 pass/2 assertion failures**, actual count0. This records the refinement rather than claiming the initial matcher error as final proof.
+- Added the same readiness scenario through the **real App in StrictMode**, using coherent10×10 payload/world and384×384 composite. First entry and Done/reentry use distinct stages around the same World/body; each must draw the current mounted image via the base at(-42,-92), size384×384. No load events, zoom buttons, paint requests or save. Before production edits this targeted App case failed **0 pass/1 assertion failure**, stage draw count0 despite complete/naturalWidth assertions passing.
+- First minimal candidate read mounted image readiness into the existing boolean: entry suites became **12/0**, **23/0**. Before committing, added cached/cold time-URL transitions to preserve the existing per-URL composite contract. Cached transition failed **1 pass/1 fail**: new nite image reached the DOM, but base draw count remained0 because true -> true did not recomposite. This was corrected within the same TDD continuation, not shipped or committed as a separate fix.
+- Final change is local to GbcMapCanvas: track the **loaded image URL**, derive readiness by equality with the current URL, read `complete && naturalWidth>0` from the mounted image on each URL effect, and record the current URL on normal load. A new URL is unready on its first render, then cached readiness or its later normal load rebuilds the composite. Complete-but-broken images remain unready. No decoding/polling/retry subsystem, canvas sizing change, forced zoom, host remount, or GBA edit.
+- Cold-URL transition test alone uses a synthetic later load event to exercise the existing noncached path. All cached mount/reentry/cached-transition witnesses use **no load event**. Test image metadata and canvas command stubs model readiness and the real component lifecycle; they do not claim actual raster alpha or browser network timing.
+
+### Final focused verification for this continuation
+
+Each command selected one file, serially, after final URL-tagged readiness implementation:
+
+| File under `packages/ui/test/gbc/` | Passed | Failed |
+|---|---:|---:|
+| GbcMapCanvasView.test.tsx |14|0|
+| GbcAppContext.test.tsx |23|0|
+| GbcMapCanvasEdit.test.tsx |21|0|
+| GbcMapCanvas.test.tsx |53|0|
+| **Continuation total** |**111**|**0**|
+
+This111 is the freshly executed continuation total, **not** added to the previous293 overlapping tests as a new full-suite total. Commands were the same one-file JSON Vitest invocations documented above. `npm run typecheck`: **exit0**, root and UI including tests. `npm run build -w @pokemap/ui`: **exit0**,73 modules. `git diff --check`: **exit0**. No full suite, no concurrent tests.
+
+### New exact mutation proof
+
+Same inline Node harness: unique literal anchor count1; original Buffer held in memory; nonempty baseline; mutation; original write in `finally`; byte equality; nonempty restored green. No checkout/restore/stash. IDs F3/F4/F5 reconciled against three distinct expected definitions, three executed, no missing/duplicate IDs. Separate F3 and F4 intentionally exercise the same production anchor at component and real-App boundaries.
+
+| ID | Exact unique literal mutation | G/R/G and observed assertion |
+|---|---|---|
+| F3-cached-mount | `setLoadedImageUrl(img?.complete === true && img.naturalWidth > 0 ? imageUrl : null);` -> `setLoadedImageUrl(null);` | `GbcMapCanvasView`, filter `cached image already`: **2pass/2fail/2pass**, stage draw count0 in normal and StrictMode. |
+| F4-cached-context | Same exact anchor/replacement | `GbcAppContext`, filter `already-loaded cached context`: **1pass/1fail/1pass**, stage draw count0 after actual context entry with decoded mounted image. |
+| F5-image-url | `const imgLoaded = loadedImageUrl === imageUrl;` -> `const imgLoaded = loadedImageUrl !== null;` | `GbcMapCanvasView`, filter `new image URL`: **2pass/(1pass+1fail)/2pass**. Cached nite transition fails with base image draw count0; cold transition survives. |
+
+**Three additional mutants, three killed, zero survivors/inconclusive; all restored=true.** Prior X1–X8/R1–R4/F1/F2 outcomes retain the provenance/limits already documented. No survivor prompted an independent fix round.
+
+All three mutation runs held/restored identical GbcMapCanvas source SHA-256 **`8995854d25a94afd96800c8c5a1799fc58bfe6c35c13dd15bdd92812d0ee6fde`**. `git diff --exit-code -- packages/ui/src packages/ui/test` returned0 after the green source/test commit. This is the new source hash; the earlier5823… hash was correct for the original combined-round revision.
+
+### Commit/scope and handoff
+
+`f8c88d0` was committed with explicit pathspecs only for `packages/ui/src/gbc/GbcMapCanvas.tsx`, `packages/ui/test/gbc/GbcMapCanvasView.test.tsx`, `packages/ui/test/gbc/GbcAppContext.test.tsx`, after green checks and mutation proof. Report update is a separate docs-only pathspec commit. Original fixes remain unchanged.
+
+No GBA/real corpus/`.codex`/external scratch write, no servers, browser operations, live paint or save. Coordinator-owned untracked rereview/coordinator reports were left untouched. Local screenshot inspection is read-only. The cached tests prove actual React entry/reentry and image -> base -> stage drawing commands; **coordinator must repeat live initial entry and multiple reentries with full-stage alpha scans, without zoom/load injection, before claiming live resolution**. Live URL/time recovery can also be checked there. No claim that screenshots or mock drawing calls prove restored browser pixels.
+
+Serial test slot released; no test process from this continuation remains. Ready for coordinator live verification at `f8c88d0`, on this same implementer context if further authorized evidence arrives.
