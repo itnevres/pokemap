@@ -22,6 +22,27 @@ This file holds the state and the accumulated lessons. The prompt for the next s
   - (b) The subject's uncommitted 2026-08-30 resize of `LAYOUT_NAVEL_ROCK_ZYGARDE_CHAMBER` (+561 blocks): 2 tests.
   - (c) The subject's local `.pokemap/world.json`: its manual placements (1 test). On Windows, `dungeonAutoLayout:false` also accounts for the 2 `world.test.ts` failures above.
 
+## Plan 7 handoff (in progress; branch `plan-7-gbc-editing`, updated 2026-10-07)
+
+- **Done:** Tasks 1, 2, 3, 4 and 6. Each was reviewed, fixed in one round, had its survivors re-run by the coordinator, and passed a full gate. Reports are archived in `task-reports/pokemap-plan-7-gbc-editing/_archive/` (`task-N-coordinator.md` holds each record).
+  - Last gate, at `cba3e23`: **2,340 pass / 2 fail** (the known `world.test.ts` pair).
+- **In progress:** Task 5 (GBC editing UI), executed spec `task-5-spec.md`. The implementer was rate-limited once and resumed.
+- **Pending:** Task 5b, Task 7 and the close-out. Their specs are ready: `task-5b-spec.md` (in-context editing port, user decision U1) and `task-7-spec.md` (G5 gate; adds pret to the corpus).
+  - After Tasks 5 and 5b, the coordinator live-verifies in a real browser on scratch ports 5184/5183, with the byte-snapshot write protocol.
+  - Then close-out: STATUS banner, RESUME update, stop and ask before push/PR.
+- **Preflight and user decisions:** `task-reports/pokemap-plan-7-gbc-editing/preflight.md`.
+  - U1: port in-context editing as Task 5b.
+  - U2: scope as written.
+  - U3: the coordinator cloned pret/pokecrystal to `refs/pokecrystal` at `3bc8daa`.
+- **External state to check on resume:**
+  - GBA subject: HEAD `718b89f`, 7 porcelain lines, `world.json` `b285bbf…`, `dungeons.json` `f73f9b7…`.
+  - PerfPlus: HEAD `81ededbe`, clean, no `.pokemap`.
+  - pret: `3bc8daa`, clean.
+- **Plan 7 lessons so far:**
+  - A test that dry-runs against the real PerfPlus can write under a "dry run commits" mutation. It happened in Task 6's C1 and was restored byte-identical. Use temp copies (`copyGbcSubjectToTemp`) for every test that a mutation could turn into a write.
+  - A cheap model's mutation table can claim red without a run (Task 2's P5). The coordinator re-run catches it.
+  - Spec fixtures can hide the very bug a mutation targets (Task 1's blkPath equal to the map name; Task 2's diagonals). Reviewers found both.
+
 ## Where each line of work stands
 
 | Line of work | State | Needs |
