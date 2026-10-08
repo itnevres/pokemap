@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { execFileSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { addGbcEvent, deleteGbcEvent, moveGbcEvent, type GbcEventEdit, type GbcEventKind } from "../../../src/gbc/edit/events.js";
 import { scanObjectConsts } from "../../../src/gbc/load/events.js";
 import { openGbcProject, type GbcProject } from "../../../src/gbc/project.js";
@@ -533,7 +533,6 @@ function gateRoot(root: string, label: "subject" | "pret"): void {
             }
           } catch (e) {
             failures.push(`${where}: ${(e as Error).message}`);
-            writeFileSync(`${tmp}/${rel}`, snap); // keep one failure from cascading into the map's other kinds
           }
         }
       }
