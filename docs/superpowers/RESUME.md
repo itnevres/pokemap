@@ -24,12 +24,15 @@ This file holds the state and the accumulated lessons. The prompt for the next s
 
 ## Plan 7 handoff (in progress; branch `plan-7-gbc-editing`, updated 2026-10-07)
 
-- **Done:** Tasks 1, 2, 3, 4 and 6. Each was reviewed, fixed in one round, had its survivors re-run by the coordinator, and passed a full gate. Reports are archived in `task-reports/pokemap-plan-7-gbc-editing/_archive/` (`task-N-coordinator.md` holds each record).
-  - Last gate, at `cba3e23`: **2,340 pass / 2 fail** (the known `world.test.ts` pair).
-- **In progress:** Task 5 (GBC editing UI), executed spec `task-5-spec.md`. The implementer was rate-limited once and resumed.
-- **Pending:** Task 5b, Task 7 and the close-out. Their specs are ready: `task-5b-spec.md` (in-context editing port, user decision U1) and `task-7-spec.md` (G5 gate; adds pret to the corpus).
-  - After Tasks 5 and 5b, the coordinator live-verifies in a real browser on scratch ports 5184/5183, with the byte-snapshot write protocol.
-  - Then close-out: STATUS banner, RESUME update, stop and ask before push/PR.
+- **Done:** Tasks 1, 2, 3, 4, 5, 6 and 7. Each was reviewed, fixed in one round, had its survivors re-run by the coordinator, and passed a full gate. Reports are archived in `task-reports/pokemap-plan-7-gbc-editing/_archive/` (`task-N-coordinator.md` holds each record).
+  - Task 5 was live-verified on the real PerfPlus (paint and event round trips, byte-identical afterwards).
+  - Task 7 is the G5 write gate over PerfPlus and pret.
+  - Last gate, at `1c64e15`: **2,432 pass / 2 fail** (the known `world.test.ts` pair).
+- **In progress:** Task 5b (in-context editing port, user decision U1), spec `task-5b-spec.md`.
+- **Pending:**
+  - Task 5b reviews, then the coordinator's live verify (scratch hub 5184 + Vite 5183, byte-snapshot protocol), then a final gate;
+  - close-out: the plan's STATUS banner, a RESUME update, deleting the coordinator's `.playwright-mcp` logs;
+  - **stop and ask the user before push/PR.**
 - **Preflight and user decisions:** `task-reports/pokemap-plan-7-gbc-editing/preflight.md`.
   - U1: port in-context editing as Task 5b.
   - U2: scope as written.
