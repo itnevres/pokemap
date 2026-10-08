@@ -84,3 +84,58 @@ Grep of absence assertions on new labels in GbcApp/Root/Palette tests: none. Sta
 - Same-map tree re-click skips the dirty confirm (GBA prompts); intentional.
 - A deleted-object refusal path is covered through hook error text + banner wiring only by unit tests, not an end-to-end app test.
 - Client unclamped event drags beyond grid rely on server/core refusal -> banner.
+
+---
+
+# Fix round 1 (spec review ISSUES 0/2/6, quality review CHANGES_REQUESTED 0/6/9)
+
+Touched `packages/ui/**` only. typecheck + `npm run build -w @pokemap/ui` clean; gbc dir + Toolbar/SaveDialog/styles: 21 files, 401 tests green.
+
+## Commits
+| sha | content |
+|---|---|
+| 8282ced | I3: hook `issued/applied` seq guard (discard also advances `applied`), canvas `lastCellRef` pencil-drag dedupe, stroke refs reset on map switch (m3), stale header reworded (m2), tests (out-of-order responses, dedupe, T3 resume-after-switch, T2 title) |
+| c757db7 | I5: palette cells `<button type="button" aria-pressed>`, one hoisted handler (`data-id`), `aria-current` picked only, grid `role=group`; F8 comment (palette always shown, why) |
+| 3f411af | I6 string drafts + accessible name "X (steps)"; m7 edge duplicate goes left; F4 all-13-distinct pin; T6 `act` + re-enable assert |
+| e68241e | I1 paint text reaches banner; m4 functional pick updaters; F7/I2 `switchError` banner at `<main>`; `GbcMapEditing.test` (F2, F5, F6, I1) |
+| (next) | F1/F3/F7 `GbcAppWorldGuard.test` (mocked `GbcWorldCanvas`) |
+| a33313d | I4: palette + inspector in one 260px right rail (`.gbc-map-editing__rail`, `min-width:0`), palette CSS comment refreshed |
+| report | this section |
+
+## Existing-test edits (authorised by the brief for I5): removed-line count vs c4ecff2 = 14
+`GbcMetatilePalette.test.tsx`: list/listitem test -> group/button test; aria-current-on-hover test -> hover-class test. `GbcApp.test.tsx`: 3 selectors `.gbc-metatile-palette__cell[aria-current="true"]` -> `.gbc-metatile-palette__cell--selected` (hover is now visual only). No other existing test touched; no GBA test changed.
+
+## Item map
+F1 `GbcAppWorldGuard` (7 tests: world click cancel/confirm + discard-before-fetch ordering, world dbl-click cancel/confirm, dirty+beforeunload held in World, failed discard shown in World). F2 `GbcMapEditing.test` (refusal alert w/ server text, cleared by next success, dismiss, warp status list, discard confirm text + failed discard). F3 beforeunload removal after commit and after discard. F4 synthetic 13-distinct object. F5 stamp keyed by map. F6 Duplicate selects `#<len>`. F7=I2 banner at main, World test. F8 comment. I1 canvas `onEditError("...")` test + banner-text test. I3 hook + dedupe tests. I4 CSS (coordinator screenshot-checks 1024/1280; not run by me). I5, I6 done. Minors applied: m2, m3, m4, m7, T2, T3, T6. Skipped: m1 (extract hook, optional), m5, m6 (discard `-> 500` string is pinned), m8 (focus/Escape polish), m9 (pre-existing, shared files), T1 (real-timer race tests kept; they fail without the fix).
+
+## Mutation table (observed; script mutates one site, runs gbc dir + Toolbar + SaveDialog, restores bytes, asserts `git diff --quiet`; red = failed tests)
+| ID | mutation | red |
+|---|---|---|
+| U1 | paintAt before `beginStroke().then` | 2 |
+| U2 | `endActiveStroke` not awaiting `pendingPaintRef` | 3 |
+| U3 | debounce timer no-op | 3 |
+| U4 | `&v=` always present | 6 (incl. 3 existing GbcApp/GbcMapCanvas URL tests) |
+| U5 | block math /16 | 11 |
+| U6 / R16 | hook gets `null` outside map mode | 6 (World-path tests; was SURVIVING before) |
+| U7 | dirty guard skipped | 7 |
+| U8 | Toolbar default `slice(0,5)` | 4 (3 GBA Toolbar tests + 1 new) |
+| U9a | radiusX/Y swapped | 3 |
+| U9b | hour1/hour2 swapped (was SURVIVING) | 1 (13-distinct pin; real-pin alone still can't see it) |
+| U10 | `availableTools` ignores writable | 1 |
+| R1 | world click skips `leave` | 4 |
+| R2 | `openMapFromWorld` skips `leave` | 1 |
+| R3 | beforeunload cleanup no-op | 2 |
+| R6 | banner never cleared on success | 1 |
+| R7 | delete refusal swallowed | 2 |
+| R8 | warp warnings never set | 1 |
+| R12 | Discard confirm removed | 1 |
+| R14 | stamp not keyed by map | 1 |
+| R15 | Duplicate does not select copy | 1 |
+| I3 seq | `mine > applied` dropped | 1 |
+| I3 dedupe | same-cell dedupe dropped | 1 |
+| I1 | paint message replaced by generic text | 1 |
+| F7 | switchError only in Map mode | 1 |
+| I5 | aria-current also on hover | 2 |
+| I6 | cleared field parsed as 0 | 2 (one extra red was a World-path test; not investigated, likely timing, first-pass run was green) |
+| R10 | equivalent mutant (seed identity subsumes forMap) | not run |
+Tree clean after every mutation. Note: the I3 seq, dedupe and F-series tests were written after their code (I3) or alongside; teeth are this table.
