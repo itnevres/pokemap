@@ -32,12 +32,25 @@ export const gbcCorpusRoots = (): string[] =>
  */
 export function copyGbcRootToTemp(root: string): string {
   const dir = mkdtempSync(join(tmpdir(), "pokemap-gbc-"));
-  cpSync(root, dir, { recursive: true, filter: (src) => !/[\\/]\.git([\\/]|$)/.test(src) });
+  try {
+    cpSync(root, dir, { recursive: true, filter: (src) => !/[\\/]\.git([\\/]|$)/.test(src) });
+  } catch (e) {
+    removeTemp(dir); // a half-copied temp dir must not leak
+    throw e;
+  }
   return dir;
 }
 
 export const copyGbcSubjectToTemp = (): string => copyGbcRootToTemp(GBC_SUBJECT_ROOT);
 
+/** Windows AV/indexers hold files briefly after thousands of writes (EBUSY), hence the generous retries. */
 export function removeTemp(dir: string): void {
-  rmSync(dir, { recursive: true, force: true, maxRetries: 3 });
+  rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+}
+
+/** "subject" (the configured gbc.projectPath) or "pret" (vanilla pret/pokecrystal); anything else throws, so a new reference root cannot silently inherit another root's pins. */
+export function gbcRootLabel(root: string): "subject" | "pret" {
+  if (root === GBC_SUBJECT_ROOT) return "subject";
+  if (/[\\/]pokecrystal$/.test(root)) return "pret";
+  throw new Error(`gbcRootLabel: no pins for corpus root ${root}; add them (and a label) before adding a reference project`);
 }
