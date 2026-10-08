@@ -131,6 +131,9 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
           onMoveEvent={onMove}
           onEditError={(m) => setErr({ forMap: mapName, text: m })}
         />
+        {/* One right-hand rail (palette over inspector), 260px: three fixed side panels left the canvas about 224px
+            at 1024 wide (quality review I4). The rail and its children carry min-width: 0 in the stylesheet. */}
+        <div className="gbc-map-editing__rail">
         <GbcMetatilePalette
           mapName={mapName}
           time={time}
@@ -151,6 +154,7 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
           warnings={warnings}
           onDismissWarnings={() => setWarn(null)}
         />
+        </div>
       </div>
     </>
   );

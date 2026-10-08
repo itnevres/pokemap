@@ -2741,6 +2741,36 @@ input {
   color: var(--text-on-accent);
 }
 
+/* Plan 7 Task 5 (quality review I4): the GBC palette and inspector share ONE 260px right-hand rail, palette on top
+   (taking the spare height, scrolling inside), inspector below (capped at half the height, scrolling inside), so
+   the canvas keeps the rest of the row. min-width: 0 on every flex child so long text cannot widen the rail. */
+.gbc-map-editing__rail {
+  width: 260px;
+  flex: 0 0 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--border);
+}
+
+.gbc-map-editing__rail > .gbc-metatile-palette {
+  width: auto;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  border-left: none;
+}
+
+.gbc-map-editing__rail > .event-inspector {
+  width: auto;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-height: 50%;
+  border-left: none;
+  border-top: 1px solid var(--border);
+}
+
 /* Plan 7 Task 5: GbcEventInspector additions. Duplicate and Delete share the actions row (space between, not
    the lone right-aligned Delete GBA has); the renumber warning is a warn-bordered note at the panel top. */
 .event-inspector__actions--gbc {
@@ -2773,12 +2803,13 @@ input {
   word-break: break-word;
 }
 
-/* Plan 6b Task 4: GbcMetatilePalette -- a read-only right-side panel next to
+/* Plan 6b Task 4: GbcMetatilePalette -- a right-side panel next to
    GbcMapCanvas, the same fixed-width-sidebar shape .event-inspector already
    uses on MapCanvas's own other edge (DESIGN.md's own layout section: "an
    inspector, a metatile palette"). Unlike GBA's .metatile-palette (a
    horizontal strip above the canvas, built for drag-select painting), this
-   is read-only and vertical -- there is nothing here to paint with. */
+   is vertical, and picks a single metatile per click (Plan 7 Task 5); with no
+   editing mounted its cells are inert. */
 .gbc-metatile-palette {
   width: 260px;
   flex: 0 0 auto;
