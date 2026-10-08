@@ -428,8 +428,7 @@ reserves one band on that side.
 - Double-clicking a map body on the GBA World view (or the context menu's "Edit here")
   edits that map in place, with the world still visible around it. Shift+double-click and
   "Open in Map view" still switch to the Map view. A warp marker (warps on) keeps previewing
-  its destination instead; GBC is unchanged (GBC double-click opens the Map view, "Edit here"
-  stays disabled).
+  its destination instead; GBC does the same since Plan 7 Task 5b (below).
 - **One canvas, never remounted.** The World view is always hosted by `MapEditingWorkspace`;
   `active` only switches the chrome (Toolbar, strips, banners, `EventInspector`) on, around the
   same `WorldCanvas`. Its pan/zoom, image cache and toggles survive entering and leaving.
@@ -449,3 +448,16 @@ reserves one band on that side.
   does today). Escape (a capture-phase window listener) is ignored when another handler took it, a context menu or a modal dialog is open, or the key came from a text field. Leaving context returns focus to the world canvas.
 - **After a save** only the saved map's world tile is re-requested (`/api/render/<map>.png?v=<n>`).
 - **Tokens:** `--overlay-spotlight-dim`, `--bg-panel-raised`, `--border-strong`, `--text-primary`.
+
+## In-context editing (GBC, Plan 7 Task 5b)
+
+The same design, ported: the classes, tokens and exits above are shared (`GbcWorldCanvas` reuses `.world-canvas__context*`
+and `.map-canvas--chromeless`). Differences only:
+- The host is `GbcMapEditing` with `active={false}` (canvas slot only) and a `renderCanvas` seam; the overlay canvas is a
+  chromeless, controlled `GbcMapCanvas`. Entering by a plain double-click or the menu's enabled "Edit here"; Shift+double-click
+  and "Open in Map view" still open the Map view. Dungeon mode has no "Edit here" (a double-click still opens the Map view).
+- World zoom is px per BLOCK (native 32): the context snaps to 32/64/128, and its cap is 128 (32 outside). `contextView.ts` takes a
+  `native` argument (16 for GBA, 32 for GBC); the composite origin is the 1-block border ring (`GBC_COMPOSITE_ORIGIN` = 32 px).
+- After a save only that map's tile is re-requested, as `/api/render/<map>.png?time=<t>&v=<n>`.
+- Known GBA deferrals carried over unchanged: the world toolbar is cramped at 1024 px wide, the Grid/Collision/Events/Encounters
+  toggles are unreachable in context, and a tile is blank until its image loads.
