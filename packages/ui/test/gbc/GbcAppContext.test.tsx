@@ -177,6 +177,37 @@ describe("GbcApp -- in-context editing (Plan 7 Task 5b)", () => {
     expect(contextOverlay()!.querySelector(".map-canvas__status")).toBeNull();
   });
 
+  it("the overlay composite lines up under the world tile: its origin is the border ring (32 px), not 0", async () => {
+    // Real 2D-context stubs here (the other tests run without): record every drawImage per canvas.
+    const draws = new Map<HTMLCanvasElement, unknown[][]>();
+    const original = HTMLCanvasElement.prototype.getContext;
+    // @ts-expect-error -- test stub, narrower than the real overload set
+    HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, kind: string) {
+      if (kind !== "2d") return null;
+      const log: unknown[][] = draws.get(this) ?? [];
+      draws.set(this, log);
+      return new Proxy({ imageSmoothingEnabled: true, drawImage: (...args: unknown[]) => { log.push(args); }, clearRect: vi.fn() } as Record<string, unknown>, {
+        get: (t, k) => (k in t ? t[k as string] : (t[k as string] = vi.fn())),
+      });
+    };
+    try {
+      await startApp();
+      const canvas = await enterWorld();
+      dblClickPort(canvas);
+      await waitFor(() => expect(contextOverlay()!.querySelector("canvas.map-canvas__stage")).not.toBeNull());
+      const stage = contextOverlay()!.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
+      fireEvent.load(contextOverlay()!.querySelector("img.map-canvas__source-image")!);
+      act(() => { for (const img of FakeImage.instances) img.onload?.(); });
+      // Double-click at (150,100) snaps OlivinePort (10,0) 10x10 blocks to 1x = 32 px/block with its centre at the pointer:
+      // pan = (150 - 15*32, 100 - 5*32) = (-330, -60), so the world draws the map at (10*32 - 330, -60) = (-10, -60).
+      await waitFor(() => expect((draws.get(canvas) ?? []).some((a) => a[1] === -10 && a[2] === -60 && a[3] === 320)).toBe(true));
+      // The composite carries a one-block ring, so it must be drawn one ring (32 px at 1x) up and left of the map: (-42, -92).
+      await waitFor(() => expect(draws.get(stage)?.at(-1)?.slice(5, 7)).toEqual([-42, -92]));
+    } finally {
+      HTMLCanvasElement.prototype.getContext = original;
+    }
+  });
+
   it("Done on a clean session removes the chrome and the overlay; World stays and the canvas is the same node", async () => {
     await startApp();
     const canvas = await enterWorld();
