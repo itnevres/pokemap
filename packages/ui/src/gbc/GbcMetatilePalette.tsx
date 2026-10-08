@@ -36,14 +36,15 @@ const hex = (n: number) => `0x${n.toString(16)}`;
  * change, never on an unrelated re-render (e.g. the app's time-of-day
  * toggle) that leaves `highlightId` the same primitive value.
  *
- * `role="list"`/`role="listitem"` (fix round, quality review finding 5): an
- * `aria-label` on a plain, role-less `<div>` is not reliably announced by a
- * screen reader as part of a collection -- with these roles, a reader can
- * announce "list, N items" and treat each cell's `aria-label` as a real list
- * item's accessible name, not N unrelated labelled images in sequence.
+ * Cells are real `<button type="button" aria-pressed>` (Plan 7 Task 5 fix round; they were `role="listitem"`
+ * with a tabindex, an interactive element under a non-interactive role). `aria-current` marks the PICKED cell
+ * only; the hover echo is visual (`--selected`) so assistive tech does not announce a transient pointer position
+ * as "current". Disabled when there is no `onSelect` (read-only), which also takes them out of the Tab order.
+ * Deliberately always shown, unlike GBA's strip, which only mounts for pencil/rect/bucket: browsing the tileset
+ * while read-only predates editing (6b) and hiding it would regress that.
  */
 export function GbcMetatilePalette({ mapName, time, tilesetName, metatileCount, highlightId = null, onSelect, selected = null }: GbcMetatilePaletteProps) {
-  const cellRefs = useRef(new Map<number, HTMLDivElement>());
+  const cellRefs = useRef(new Map<number, HTMLButtonElement>());
 
   useEffect(() => {
     if (highlightId === null) return;
@@ -51,31 +52,35 @@ export function GbcMetatilePalette({ mapName, time, tilesetName, metatileCount, 
   }, [highlightId]);
 
   const ids = Array.from({ length: metatileCount }, (_, i) => i);
+  // One handler for all cells (the id rides on `data-id`), not 500+ closures rebuilt on every hover re-render.
+  const pick = (e: React.MouseEvent<HTMLButtonElement>) => {
+    onSelect?.({ width: 1, height: 1, cells: [{ metatileId: Number(e.currentTarget.dataset.id) }] });
+  };
 
   return (
     <aside className="gbc-metatile-palette">
       <div className="gbc-metatile-palette__header">
         {tilesetName} · {metatileCount} metatiles
       </div>
-      <div className="gbc-metatile-palette__grid" role="list">
+      <div className="gbc-metatile-palette__grid" role="group" aria-label="Metatiles">
         {ids.map((id) => {
           const hovered = id === highlightId;
           const picked = id === selected;
-          const pick = () => onSelect?.({ width: 1, height: 1, cells: [{ metatileId: id }] });
           return (
-            <div
+            <button
               key={id}
+              type="button"
+              data-id={id}
               ref={(el) => {
                 if (el) cellRefs.current.set(id, el);
                 else cellRefs.current.delete(id);
               }}
-              role="listitem"
               className={`gbc-metatile-palette__cell${hovered ? " gbc-metatile-palette__cell--selected" : ""}${picked ? " gbc-metatile-palette__cell--picked" : ""}`}
               aria-label={`metatile ${hex(id)}`}
-              aria-current={hovered || picked ? "true" : undefined}
-              tabIndex={onSelect ? 0 : undefined}
-              onClick={onSelect ? pick : undefined}
-              onKeyDown={onSelect ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); } } : undefined}
+              aria-pressed={picked}
+              aria-current={picked ? "true" : undefined}
+              disabled={!onSelect}
+              onClick={pick}
             >
               <img
                 className="gbc-metatile-palette__thumb"
@@ -85,7 +90,7 @@ export function GbcMetatilePalette({ mapName, time, tilesetName, metatileCount, 
                 height={32}
                 loading="lazy"
               />
-            </div>
+            </button>
           );
         })}
       </div>

@@ -527,7 +527,7 @@ describe("GbcApp", () => {
     fireEvent.mouseMove(canvas, { clientX: 80, clientY: 48 });
 
     await waitFor(() => {
-      const current = document.querySelector('.gbc-metatile-palette__cell[aria-current="true"]');
+      const current = document.querySelector('.gbc-metatile-palette__cell--selected');
       expect(current?.getAttribute("aria-label")).toBe("metatile 0x1");
     });
   });
@@ -547,7 +547,7 @@ describe("GbcApp", () => {
     const canvas = document.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
     canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: 128, bottom: 96, width: 128, height: 96, x: 0, y: 0, toJSON() {} });
     fireEvent.mouseMove(canvas, { clientX: 80, clientY: 48 });
-    await waitFor(() => expect(document.querySelector('.gbc-metatile-palette__cell[aria-current="true"]')).toBeTruthy());
+    await waitFor(() => expect(document.querySelector('.gbc-metatile-palette__cell--selected')).toBeTruthy());
 
     fireEvent.click(screen.getByText("MahoganyTown"));
     // Both conditions in ONE waitFor (not a waitFor followed by a separate
@@ -559,7 +559,7 @@ describe("GbcApp", () => {
     // reason).
     await waitFor(() => {
       expect(screen.getByText("TILESET_MAHOGANY · 2 metatiles")).toBeTruthy();
-      expect(document.querySelector('.gbc-metatile-palette__cell[aria-current="true"]')).toBeNull();
+      expect(document.querySelector('.gbc-metatile-palette__cell--selected')).toBeNull();
     });
     // NOTE (investigated during the fix round): GbcMapCanvas's own
     // pre-existing "fresh overlays/hover on a real map switch" effect

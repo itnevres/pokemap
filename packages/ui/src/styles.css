@@ -2805,6 +2805,8 @@ input {
 }
 
 .gbc-metatile-palette__cell {
+  padding: 0;
+  background: transparent;
   width: 32px;
   height: 32px;
   display: flex;
@@ -2829,7 +2831,7 @@ input {
   box-shadow: 0 0 0 1px var(--accent);
 }
 
-.gbc-metatile-palette__cell[tabindex] {
+.gbc-metatile-palette__cell:not(:disabled) {
   cursor: pointer;
 }
 
