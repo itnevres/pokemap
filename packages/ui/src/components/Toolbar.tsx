@@ -27,7 +27,7 @@ export interface ToolbarProps {
    *  below): the wild-sign write path is fully wired this task, so the
    *  button renders enabled immediately, same as Undo/Redo/Save's own
    *  always-available posture. */
-  onOpenSignComposer: () => void;
+  onOpenSignComposer?: () => void;
   /** Code-review fix: which tools actually have MapCanvas-side behaviour
    *  wired today. Every tool in `TOOLS` renders as a button (matching
    *  Porymap's own toolbox, and ready for the follow-up tasks that wire the
@@ -38,6 +38,11 @@ export interface ToolbarProps {
    *  could otherwise select "pencil," click the map, see nothing happen,
    *  and reasonably conclude the app is broken. */
   availableTools: ToolKind[];
+  /** Plan 7 Task 5: which tool buttons to render; default is all six (GBA renders byte-identically). GBC passes
+   *  five, with no collision button. */
+  tools?: ToolKind[];
+  /** Title of a disabled tool button; default "Not yet available". GBC uses it to say WHY (non-writable layout). */
+  unavailableTitle?: string;
 }
 
 /**
@@ -46,11 +51,11 @@ export interface ToolbarProps {
  * in this app writes to disk; this button (disabled until `isDirty`) is the
  * only door into that flow.
  */
-export function Toolbar({ activeToolKind, onSelectTool, isDirty, onUndo, onRedo, canUndo, canRedo, onOpenSave, onDiscard, onOpenSignComposer, availableTools }: ToolbarProps) {
+export function Toolbar({ activeToolKind, onSelectTool, isDirty, onUndo, onRedo, canUndo, canRedo, onOpenSave, onDiscard, onOpenSignComposer, availableTools, tools = TOOLS, unavailableTitle = "Not yet available" }: ToolbarProps) {
   return (
     <div className="toolbar">
       <div className="toolbar__tools" role="group" aria-label="Tools">
-        {TOOLS.map((kind) => {
+        {tools.map((kind) => {
           const available = availableTools.includes(kind);
           return (
             <button
@@ -59,7 +64,7 @@ export function Toolbar({ activeToolKind, onSelectTool, isDirty, onUndo, onRedo,
               aria-label={kind}
               aria-pressed={activeToolKind === kind}
               disabled={!available}
-              title={available ? undefined : "Not yet available"}
+              title={available ? undefined : unavailableTitle}
               className="map-canvas__btn toolbar__tool-btn"
               onClick={() => onSelectTool(kind)}
             >
@@ -76,11 +81,13 @@ export function Toolbar({ activeToolKind, onSelectTool, isDirty, onUndo, onRedo,
           ↷ Redo
         </button>
       </div>
-      <div className="toolbar__sign" role="group" aria-label="Sign">
-        <button type="button" className="map-canvas__btn" onClick={onOpenSignComposer}>
-          Add Sign
-        </button>
-      </div>
+      {onOpenSignComposer && (
+        <div className="toolbar__sign" role="group" aria-label="Sign">
+          <button type="button" className="map-canvas__btn" onClick={onOpenSignComposer}>
+            Add Sign
+          </button>
+        </div>
+      )}
       <div className="toolbar__save">
         {isDirty && <span data-testid="dirty-indicator" className="toolbar__dirty-dot" title="Unsaved changes" />}
         <button
