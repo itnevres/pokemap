@@ -104,7 +104,7 @@ cat > pokemap.config.json <<EOF
   ],
   "gbc": {
     "projectPath": "$CORPUS/pokecrystal-PerfPlus",
-    "referenceProjects": []
+    "referenceProjects": ["$CORPUS/pokecrystal"]
   }
 }
 EOF

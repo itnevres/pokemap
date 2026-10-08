@@ -2,7 +2,14 @@ import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { scanCalls, stripComment, escapeRegExp, type AsmCall } from "../../../src/gbc/load/asm.js";
 import { spliceArg, locateCall, locateEventCall, locateNthCall } from "../../../src/gbc/write/asmSplice.js";
-import { itWithGbcCorpus, gbcCorpusRoots } from "../helpers/corpus.js";
+import { itWithGbcCorpus, gbcCorpusRoots, GBC_SUBJECT_ROOT } from "../helpers/corpus.js";
+
+const PRET_PINS = { maps: 388, attrArgc: 3, counts: { warp_event: 1312, coord_event: 114, bg_event: 792, object_event: 1466, scene_script: 170, callback: 103, map_attributes: 388, connection: 142, map: 388, map_const: 388, tilecoll: 2368 } };
+/** Per-root corpus pins. subject = PerfPlus; pret = vanilla pret/pokecrystal @ 3bc8daa (a pret bump re-measures). */
+const PINS = {
+  subject: { maps: 391, attrArgc: 4, counts: { warp_event: 1327, coord_event: 114, bg_event: 792, object_event: 1468, scene_script: 170, callback: 105, map_attributes: 391, connection: 142, map: 391, map_const: 391, tilecoll: 2368 } },
+  pret: PRET_PINS,
+};
 
 describe("spliceArg", () => {
   it("replaces exactly the argument's own span, leaving every other byte untouched", () => {
@@ -238,7 +245,7 @@ describe("corpus no-op round trip (G5-for-G3): every call, every arg, over every
     for (const root of gbcCorpusRoots()) {
       const scriptsAsm = readFileSync(`${root}/data/maps/scripts.asm`, "utf8");
       const mapFiles = includedPaths(scriptsAsm, /INCLUDE "(maps\/[^"]+\.asm)"/g);
-      expect(mapFiles).toHaveLength(391);
+      expect(mapFiles).toHaveLength(PINS[root === GBC_SUBJECT_ROOT ? "subject" : "pret"].maps);
 
       const tilesetsAsm = readFileSync(`${root}/gfx/tilesets.asm`, "utf8");
       const collisionFiles = includedPaths(tilesetsAsm, /INCLUDE "(data\/tilesets\/[^"]+_collision\.asm)"/g);
@@ -250,8 +257,8 @@ describe("corpus no-op round trip (G5-for-G3): every call, every arg, over every
     "no-op splice of every arg of every call is byte-identical; call spans reconstruct exactly; per-macro call/arg-count pins",
     () => {
       const failures: string[] = [];
-      const counts: Record<string, number> = {};
-      const argCountsSeen: Record<string, Set<number>> = {};
+      let counts: Record<string, number> = {};
+      let argCountsSeen: Record<string, Set<number>> = {};
 
       function record(macro: string, call: AsmCall) {
         counts[macro] = (counts[macro] ?? 0) + 1;
@@ -291,9 +298,12 @@ describe("corpus no-op round trip (G5-for-G3): every call, every arg, over every
       }
 
       for (const root of gbcCorpusRoots()) {
+        counts = {};
+        argCountsSeen = {};
+        const pins = PINS[root === GBC_SUBJECT_ROOT ? "subject" : "pret"];
         const scriptsAsm = readFileSync(`${root}/data/maps/scripts.asm`, "utf8");
         const mapFiles = includedPaths(scriptsAsm, /INCLUDE "(maps\/[^"]+\.asm)"/g);
-        expect(mapFiles).toHaveLength(391);
+        expect(mapFiles).toHaveLength(pins.maps);
         for (const rel of mapFiles) {
           const text = readFileSync(`${root}/${rel}`, "utf8");
           checkFile(rel, text, ["warp_event", "coord_event", "bg_event", "object_event", "scene_script", "callback"]);
@@ -315,37 +325,38 @@ describe("corpus no-op round trip (G5-for-G3): every call, every arg, over every
           const text = readFileSync(`${root}/${rel}`, "utf8");
           checkFile(rel, text, ["tilecoll"]);
         }
+
+        expect(failures).toEqual([]);
+
+        // Per-macro total call counts, measured over the subject corpus (findings doc §3.1,
+        // cross-checked directly against the real files before writing this pin; tilecoll's
+        // total was not given in the findings doc and was measured here: 2368).
+        expect(counts["warp_event"]).toBe(pins.counts.warp_event);
+        expect(counts["coord_event"]).toBe(pins.counts.coord_event);
+        expect(counts["bg_event"]).toBe(pins.counts.bg_event);
+        expect(counts["object_event"]).toBe(pins.counts.object_event);
+        expect(counts["scene_script"]).toBe(pins.counts.scene_script);
+        expect(counts["callback"]).toBe(pins.counts.callback);
+        expect(counts["map_attributes"]).toBe(pins.counts.map_attributes);
+        expect(counts["connection"]).toBe(pins.counts.connection);
+        expect(counts["map"]).toBe(pins.counts.map);
+        expect(counts["map_const"]).toBe(pins.counts.map_const);
+        expect(counts["tilecoll"]).toBe(pins.counts.tilecoll);
+
+        // Per-macro arg-count sets: a scanner bug that mis-splits an argument list shows up here.
+        expect(argCountsSeen["warp_event"]).toEqual(new Set([4]));
+        expect(argCountsSeen["coord_event"]).toEqual(new Set([4]));
+        expect(argCountsSeen["bg_event"]).toEqual(new Set([4]));
+        expect(argCountsSeen["object_event"]).toEqual(new Set([13]));
+        expect(argCountsSeen["scene_script"]).toEqual(new Set([1, 2]));
+        expect(argCountsSeen["callback"]).toEqual(new Set([2]));
+        expect(argCountsSeen["map_attributes"]).toEqual(new Set([pins.attrArgc])); // vanilla pret has no trailing flags arg (3); PerfPlus has it (4)
+        expect(argCountsSeen["connection"]).toEqual(new Set([4]));
+        expect(argCountsSeen["map"]).toEqual(new Set([8]));
+        expect(argCountsSeen["map_const"]).toEqual(new Set([3]));
+        expect(argCountsSeen["tilecoll"]).toEqual(new Set([4]));
       }
 
-      expect(failures).toEqual([]);
-
-      // Per-macro total call counts, measured over the subject corpus (findings doc §3.1,
-      // cross-checked directly against the real files before writing this pin; tilecoll's
-      // total was not given in the findings doc and was measured here: 2368).
-      expect(counts["warp_event"]).toBe(1327);
-      expect(counts["coord_event"]).toBe(114);
-      expect(counts["bg_event"]).toBe(792);
-      expect(counts["object_event"]).toBe(1468);
-      expect(counts["scene_script"]).toBe(170);
-      expect(counts["callback"]).toBe(105);
-      expect(counts["map_attributes"]).toBe(391);
-      expect(counts["connection"]).toBe(142);
-      expect(counts["map"]).toBe(391);
-      expect(counts["map_const"]).toBe(391);
-      expect(counts["tilecoll"]).toBe(2368);
-
-      // Per-macro arg-count sets: a scanner bug that mis-splits an argument list shows up here.
-      expect(argCountsSeen["warp_event"]).toEqual(new Set([4]));
-      expect(argCountsSeen["coord_event"]).toEqual(new Set([4]));
-      expect(argCountsSeen["bg_event"]).toEqual(new Set([4]));
-      expect(argCountsSeen["object_event"]).toEqual(new Set([13]));
-      expect(argCountsSeen["scene_script"]).toEqual(new Set([1, 2]));
-      expect(argCountsSeen["callback"]).toEqual(new Set([2]));
-      expect(argCountsSeen["map_attributes"]).toEqual(new Set([4]));
-      expect(argCountsSeen["connection"]).toEqual(new Set([4]));
-      expect(argCountsSeen["map"]).toEqual(new Set([8]));
-      expect(argCountsSeen["map_const"]).toEqual(new Set([3]));
-      expect(argCountsSeen["tilecoll"]).toEqual(new Set([4]));
     },
   );
 });

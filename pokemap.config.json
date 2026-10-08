@@ -9,6 +9,6 @@
   ],
   "gbc": {
     "projectPath": "C:/Programming Projects/pokecrystal-PerfPlus",
-    "referenceProjects": []
+    "referenceProjects": ["C:/Programming Projects/Pokemon Game/refs/pokecrystal"]
   }
 }
