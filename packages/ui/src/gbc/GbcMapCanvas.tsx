@@ -315,7 +315,7 @@ export function GbcMapCanvas({ mapName, data: payload, time, hoveredMetatile, ed
   const paintVersionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevBlocksRef = useRef({ mapName, blocks: data.blocks });
 
-  const [imgLoaded, setImgLoaded] = useState(false);
+  const [loadedImageUrl, setLoadedImageUrl] = useState<string | null>(null);
   const [toggles, setToggles] = useState<Toggles>(NO_TOGGLES);
   // The encounter border toggle (B4) is DOM over the viewport, not a canvas overlay, so it is not in
   // `Toggles`. It remembers WHICH map it was turned on for: a map switch reads as off in the very first
@@ -373,6 +373,7 @@ export function GbcMapCanvas({ mapName, data: payload, time, hoveredMetatile, ed
   // `v=` only with a session and only once something was painted: a read-only viewer never needs a cache-bust,
   // and an unpainted map keeps today's exact URL (MapCanvas.tsx:416-420).
   const imageUrl = `/api/render/${encodeURIComponent(mapName)}.png?border=${BORDER_RINGS}&time=${time}${editSession && paintVersion > 0 ? `&v=${paintVersion}` : ""}`;
+  const imgLoaded = loadedImageUrl === imageUrl;
 
   // Debounced bump when the blocks change for the SAME map (a real edit, undo, discard or a refetched payload).
   // paintVersion is deliberately never reset (MapCanvas.tsx:315-324: "same URL => same content" stays structural).
@@ -412,11 +413,12 @@ export function GbcMapCanvas({ mapName, data: payload, time, hoveredMetatile, ed
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapName]);
 
-  // Reset per URL (map OR time switch) -- MapCanvas.tsx:386-388's own
-  // reasoning: the composite effect must wait for THIS image's real load,
-  // not recomposite whatever the <img> still shows from the previous url.
+  // Read THIS URL's mounted image: a cached image may already be decoded before its load event is observed.
+  // An unconditional false here can also overwrite an early onLoad and strand the composite until another load.
+  // Incomplete/failed images still wait for the normal load path (naturalWidth excludes complete-but-broken images).
   useEffect(() => {
-    setImgLoaded(false);
+    const img = imgRef.current;
+    setLoadedImageUrl(img?.complete === true && img.naturalWidth > 0 ? imageUrl : null);
   }, [imageUrl]);
 
   const fit = useCallback(() => {
@@ -454,7 +456,7 @@ export function GbcMapCanvas({ mapName, data: payload, time, hoveredMetatile, ed
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [imgLoaded, mapName]);
 
-  const onImgLoad = () => setImgLoaded(true);
+  const onImgLoad = () => setLoadedImageUrl(imageUrl);
 
   const anyOverlay = toggles.grid || toggles.collision || toggles.events;
 

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor, act, within } from "@testing-library/react";
+import { StrictMode } from "react";
 import { GbcApp } from "../../src/gbc/GbcApp.js";
 import type { GbcMapPayload } from "@pokemap/core/src/gbc/wire.js";
 
@@ -162,6 +163,51 @@ async function enterWorldAfterJump() {
 }
 
 describe("GbcApp -- in-context editing (Plan 7 Task 5b)", () => {
+  it("draws an already-loaded cached context image on real App entry and reentry without load events or zoom", async () => {
+    const { calls } = mockFetch();
+    vi.spyOn(HTMLImageElement.prototype, "complete", "get").mockReturnValue(true);
+    vi.spyOn(HTMLImageElement.prototype, "naturalWidth", "get").mockReturnValue(384); // (10+2)*32
+    vi.spyOn(HTMLImageElement.prototype, "naturalHeight", "get").mockReturnValue(384);
+    const draws = new Map<HTMLCanvasElement, unknown[][]>();
+    const original = HTMLCanvasElement.prototype.getContext;
+    // @ts-expect-error -- drawing-command stub, narrower than the real overloads
+    HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, kind: string) {
+      if (kind !== "2d") return null;
+      const log = draws.get(this) ?? [];
+      draws.set(this, log);
+      return new Proxy({ drawImage: (...args: unknown[]) => { log.push(args); } } as Record<string, unknown>, {
+        get: (target, key) => key in target ? target[key as string] : (target[key as string] = vi.fn()),
+      });
+    };
+    try {
+      render(<StrictMode><GbcApp root="/x" /></StrictMode>);
+      await screen.findByRole("button", { name: "OlivinePort" });
+      const world = await enterWorld();
+      const body = document.querySelector(".app__map-editing-body");
+      let previousStage: HTMLCanvasElement | null = null;
+      for (let visit = 0; visit < 2; visit++) {
+        dblClickPort(world);
+        const stage = await overlayStage();
+        const image = contextOverlay()!.querySelector("img.map-canvas__source-image") as HTMLImageElement;
+        expect(image.complete).toBe(true);
+        expect(image.naturalWidth).toBe(384);
+        expect(stage).not.toBe(previousStage);
+        await waitFor(() => expect(draws.get(stage)?.length ?? 0).toBeGreaterThan(0));
+        const draw = draws.get(stage)!.at(-1)!;
+        expect(draw.slice(5, 9)).toEqual([-42, -92, 384, 384]);
+        expect(draws.get(draw[0] as HTMLCanvasElement)?.some((args) => args[0] === image)).toBe(true);
+        expect(worldCanvas()).toBe(world);
+        expect(document.querySelector(".app__map-editing-body")).toBe(body);
+        previousStage = stage;
+        fireEvent.click(screen.getByRole("button", { name: "Done editing OlivinePort" }));
+        await waitFor(() => expect(contextOverlay()).toBeNull());
+      }
+      expect(calls.some((call) => call.includes("/api/edit/"))).toBe(false);
+    } finally {
+      HTMLCanvasElement.prototype.getContext = original;
+    }
+  });
+
   it("double-clicking a map in World shows the editing chrome around the SAME world canvas, with no /api/world refetch", async () => {
     const { calls } = await startApp();
     const canvas = await enterWorld();

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, fireEvent, screen, waitFor } from "@testing-library/react";
+import { StrictMode } from "react";
 import { GbcMapCanvas, zoomAboutPivot, GBC_COMPOSITE_ORIGIN, type GbcMapCanvasProps, type GbcView } from "../../src/gbc/GbcMapCanvas.js";
 import type { GbcMapPayload } from "@pokemap/core/src/gbc/wire.js";
 
@@ -110,6 +111,7 @@ afterEach(() => {
   HTMLCanvasElement.prototype.getContext = originalGetContext;
   ctxByCanvas.clear();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 function renderCanvas(extraProps: Partial<GbcMapCanvasProps> = {}) {
@@ -194,6 +196,69 @@ describe("GbcMapCanvas: controlled view (Plan 7 Task 5b)", () => {
 });
 
 describe("GbcMapCanvas: chromeless (Plan 7 Task 5b)", () => {
+  it.each([false, true])("draws a cached image already loaded at mount and reentry without a load event or gesture (StrictMode=%s)", async (strict) => {
+    // Browser cache may have completed the image before passive effects run. No fireEvent.load here:
+    // readiness must come from the mounted image, not a future event that may never arrive.
+    vi.spyOn(HTMLImageElement.prototype, "complete", "get").mockReturnValue(true);
+    vi.spyOn(HTMLImageElement.prototype, "naturalWidth", "get").mockReturnValue(PIXEL_WIDTH);
+    vi.spyOn(HTMLImageElement.prototype, "naturalHeight", "get").mockReturnValue(PIXEL_HEIGHT);
+    const onViewChange = vi.fn();
+    const view: GbcView = { zoom: 2, pan: { x: 7, y: -3 } };
+    const element = <GbcMapCanvas mapName="NewBarkTown" data={DATA} time="day" chromeless view={view} onViewChange={onViewChange} />;
+    let previousStage: HTMLCanvasElement | null = null;
+    for (let visit = 0; visit < 2; visit++) {
+      const mounted = render(strict ? <StrictMode>{element}</StrictMode> : element);
+      const stage = mounted.container.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
+      const img = mounted.container.querySelector("img.map-canvas__source-image") as HTMLImageElement;
+      expect(img.complete).toBe(true);
+      expect(img.naturalWidth).toBe(PIXEL_WIDTH);
+      expect(stage).not.toBe(previousStage);
+      await waitFor(() => expect(ctxByCanvas.get(stage)?.drawImage.mock.calls.length ?? 0).toBeGreaterThan(0));
+      const draw = ctxByCanvas.get(stage)!.drawImage.mock.calls.at(-1)!;
+      const base = draw[0] as HTMLCanvasElement;
+      expect(base).not.toBe(stage);
+      expect(ctxByCanvas.get(base)!.drawImage).toHaveBeenCalledWith(img, 0, 0);
+      expect(draw.slice(5, 9)).toEqual([7, -3, PIXEL_WIDTH * 2, PIXEL_HEIGHT * 2]);
+      expect(stage.width).toBe(PIXEL_WIDTH);
+      expect(stage.height).toBe(PIXEL_HEIGHT);
+      expect(onViewChange).not.toHaveBeenCalled();
+      previousStage = stage;
+      mounted.unmount();
+    }
+  });
+
+  it("does not composite an incomplete or failed image merely because it mounted", () => {
+    vi.spyOn(HTMLImageElement.prototype, "complete", "get").mockReturnValue(true);
+    vi.spyOn(HTMLImageElement.prototype, "naturalWidth", "get").mockReturnValue(0);
+    const { canvas } = renderCanvas({ chromeless: true, view: { zoom: 1, pan: { x: 0, y: 0 } } });
+    expect(ctxByCanvas.get(canvas)?.drawImage.mock.calls.length ?? 0).toBe(0);
+  });
+
+  it.each([false, true])("rebuilds for a new image URL only when that image is ready (already cached=%s)", async (cached) => {
+    let ready = true;
+    vi.spyOn(HTMLImageElement.prototype, "complete", "get").mockImplementation(() => ready);
+    vi.spyOn(HTMLImageElement.prototype, "naturalWidth", "get").mockImplementation(() => ready ? PIXEL_WIDTH : 0);
+    const view: GbcView = { zoom: 2, pan: { x: 7, y: -3 } };
+    const { canvas, img, rerender } = renderCanvas({ chromeless: true, view });
+    await waitFor(() => expect(ctxByCanvas.get(canvas)?.drawImage.mock.calls.length ?? 0).toBeGreaterThan(0));
+    const stageCtx = ctxByCanvas.get(canvas)!;
+    const base = stageCtx.drawImage.mock.calls.at(-1)![0] as HTMLCanvasElement;
+    const baseCtx = ctxByCanvas.get(base)!;
+    baseCtx.drawImage.mockClear();
+    stageCtx.drawImage.mockClear();
+    ready = cached;
+    rerender(<GbcMapCanvas mapName="NewBarkTown" data={DATA} time="nite" chromeless view={view} />);
+    expect(img.getAttribute("src")).toContain("time=nite");
+    if (!cached) {
+      expect(baseCtx.drawImage).not.toHaveBeenCalled();
+      ready = true;
+      fireEvent.load(img); // Only the cold URL needs a later browser load event.
+    }
+    await waitFor(() => expect(baseCtx.drawImage).toHaveBeenCalledWith(img, 0, 0));
+    await waitFor(() => expect(stageCtx.drawImage).toHaveBeenCalled());
+    expect(stageCtx.drawImage.mock.calls.at(-1)!.slice(5, 9)).toEqual([7, -3, PIXEL_WIDTH * 2, PIXEL_HEIGHT * 2]);
+  });
+
   it("hides the toolbar, legend and status strip, adds the root modifier, and still draws at the controlled view", async () => {
     const { container, lastDraw } = await mountReady({ chromeless: true, view: { zoom: 2, pan: { x: 7, y: -3 } }, onViewChange: vi.fn() });
     expect(container.querySelector(".map-canvas__toolbar")).toBeNull();
