@@ -50,8 +50,10 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
   const selectedEvent = mine ? pick.event : null;
   const error = err && err.forMap === mapName ? err.text : null;
   const warnings = warn && warn.forMap === mapName ? warn.list : [];
-  const setStamp = (next: GbcStamp) => setPick({ forMap: mapName, stamp: next, event: selectedEvent });
-  const setEvent = (ref: GbcEventRef | null) => setPick({ forMap: mapName, stamp, event: ref });
+  // Functional updaters: a deferred `setEvent(null)` (a delete resolving) must not overwrite a stamp picked meanwhile.
+  const fresh = (p: typeof pick) => (p.forMap === mapName ? p : { forMap: mapName, stamp: null, event: null });
+  const setStamp = (next: GbcStamp) => setPick((p) => ({ ...fresh(p), stamp: next }));
+  const setEvent = (ref: GbcEventRef | null) => setPick((p) => ({ ...fresh(p), event: ref }));
   const fail = (e: unknown, fallback = "Edit failed.") => setErr({ forMap: mapName, text: message(e, fallback) });
   const ok = () => setErr(null);
 
@@ -127,7 +129,7 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
           selectedEvent={selectedEvent}
           onSelectEvent={setEvent}
           onMoveEvent={onMove}
-          onEditError={fail}
+          onEditError={(m) => setErr({ forMap: mapName, text: m })}
         />
         <GbcMetatilePalette
           mapName={mapName}

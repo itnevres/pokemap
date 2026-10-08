@@ -225,6 +225,16 @@ export function GbcApp({ root, switcher }: GbcAppProps) {
           )}
         </aside>
         <main className="app__canvas">
+          {/* At <main> level so a failed discard-before-switch (or a failed post-save reload) is visible in EVERY
+              mode: a world click or double-click abandons the switch, and the user is still in World. */}
+          {switchError && (
+            <div className="app__event-op-error" role="alert">
+              <span>{switchError}</span>
+              <button type="button" className="app__event-op-error-dismiss" onClick={() => setSwitchError(null)} aria-label="Dismiss">
+                ×
+              </button>
+            </div>
+          )}
           {mode === "world" ? (
             <GbcWorldCanvas
               key="world"
@@ -257,14 +267,6 @@ export function GbcApp({ root, switcher }: GbcAppProps) {
                       <li key={i}>{d.message}</li>
                     ))}
                   </ul>
-                </div>
-              )}
-              {switchError && (
-                <div className="app__event-op-error" role="alert">
-                  <span>{switchError}</span>
-                  <button type="button" className="app__event-op-error-dismiss" onClick={() => setSwitchError(null)} aria-label="Dismiss">
-                    ×
-                  </button>
                 </div>
               )}
               <GbcMapEditing
