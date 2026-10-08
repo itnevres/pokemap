@@ -1,7 +1,7 @@
 import { describe, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { addGbcEvent, eventInsertAnchor, type GbcEventKind } from "../../../src/gbc/edit/events.js";
-import { parseMapEvents } from "../../../src/gbc/load/events.js";
+import { objectConstDefLine, parseMapEvents } from "../../../src/gbc/load/events.js";
 import { openGbcProject } from "../../../src/gbc/project.js";
 import { insertLineAfter, locateEventCalls, removeLine } from "../../../src/gbc/write/asmSplice.js";
 import { gbcCorpusRoots, GBC_SUBJECT_ROOT, itWithGbcCorpus } from "../helpers/corpus.js";
@@ -70,7 +70,7 @@ describe("corpus line identity (G5-style): insert/remove are exact inverses on e
             }
 
             // 3. The add op itself: +1 of this kind, nothing else changed (modulo line indices).
-            const paired = before.objectConsts.length > 0;
+            const paired = objectConstDefLine(text) !== null; // the marker pairs the list, even when empty
             if (kind === "object" && (before.objects.length >= 15 || (paired && before.objectConsts.length !== before.objects.length))) {
               skippedObjectAdds.push(map.name);
               continue;

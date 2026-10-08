@@ -6,7 +6,7 @@
  * Task 4 assigns the result onto `GbcEditSession`.
  */
 import { escapeRegExp, parseNum, type CodeLine } from "../load/asm.js";
-import { parseMapEvents, scanObjectConsts } from "../load/events.js";
+import { objectConstDefLine, parseMapEvents, scanObjectConsts } from "../load/events.js";
 import type { GbcMapEvents, GbcWarpEvent } from "../model/types.js";
 import { insertLineAfter, locateEventCall, locateEventCalls, removeLine, spliceArg } from "../write/asmSplice.js";
 
@@ -79,15 +79,17 @@ function constBlock(text: string): { lines: CodeLine[]; names: string[] } {
 }
 
 /**
- * Whether object_event add/delete must also touch the const list. No consts
- * (no block, or an empty one) -> `paired: false`, the list is left alone.
- * Consts === objects -> `paired: true`. Anything else (the corpus's
+ * Whether object_event add/delete must also touch the const list. The list is
+ * in play iff the file has an `object_const_def` marker, even an empty one
+ * (deleting a sole object leaves exactly that, and re-adding must restore its
+ * const). No marker -> `paired: false`, the list is left alone. Marker with
+ * consts === objects (0 === 0 included) -> `paired: true`. Anything else (the corpus's
  * `MoveDeletersHouse`: 1 const for 2 objects) refuses: which const belongs to
  * which object is unknowable, so any edit could re-point a script.
  */
 function objectConstPlan(text: string, mapName: string, events: GbcMapEvents): { paired: boolean; lines: CodeLine[]; names: string[] } {
   const { lines, names } = constBlock(text);
-  if (names.length === 0) return { paired: false, lines, names };
+  if (objectConstDefLine(text) === null) return { paired: false, lines, names };
   if (names.length !== events.objects.length) {
     fail(mapName, "object", `object_const_def has ${names.length} const(s) for ${events.objects.length} object_event(s) -- the const list is out of step and must be fixed by hand first`);
   }
@@ -193,8 +195,9 @@ export function addGbcEvent(
   // The const block is above the event block, so insert the event line first and re-locate the block after.
   let out = insertLineAfter(text, eventInsertAnchor(text, mapName, kind), line);
   if (constName !== null) {
+    // After the last const, or straight after the marker when the block is empty.
     const { lines } = constBlock(out);
-    out = insertLineAfter(out, lines[lines.length - 1]!.end, `\tconst ${constName}`);
+    out = insertLineAfter(out, (lines[lines.length - 1] ?? objectConstDefLine(out)!).end, `\tconst ${constName}`);
   }
   return { text: out, events: parseMapEvents(out, mapName) };
 }

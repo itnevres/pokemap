@@ -113,6 +113,22 @@ describe("guardGbcSave", () => {
       expect(guardGbcSave(f.proj, s)).toEqual([]);
     });
 
+    it("a marker-present map with 0 consts and 0 objects is paired: gaining an object plus its const is fine, an object alone is a desync", () => {
+      const OBJ_A = OBJ_B.replace("2,  2, SPRITE_B", "1,  2, SPRITE_A").replace("ScriptB", "ScriptA");
+      const empty = TESTMAP_ASM.replace(OBJ_A, "").replace(OBJ_B, "").replace("\tconst TESTMAP_A\n\tconst TESTMAP_B\n", "");
+      expect(empty).toContain("\tobject_const_def\n\n");
+      const f = makeFixture({ asm: empty });
+      const s = openGbcEditSession(f.proj, "Testmap");
+      expect(s.originalEvents.objects).toEqual([]);
+      expect(s.originalEvents.objectConsts).toEqual([]);
+      setText(s, (empty + OBJ_B).replace("\tobject_const_def\n", "\tobject_const_def\n\tconst TESTMAP_B\n"));
+      expect(s.events.objects).toHaveLength(1);
+      expect(s.events.objectConsts).toHaveLength(1);
+      expect(guardGbcSave(f.proj, s)).toEqual([]);
+      setText(s, empty + OBJ_B);
+      expect(codes(guardGbcSave(f.proj, s))).toEqual(["object-const-desync"]);
+    });
+
     it("...but may not grow a const block out of nowhere", () => {
       const f = makeFixture({ asm: TESTMAP_ASM_NO_CONSTS });
       const s = openGbcEditSession(f.proj, "Testmap");

@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import type { Refusal } from "../../write/guards.js";
 import type { GbcProject } from "../project.js";
 import { encodeBlk } from "../load/blocks.js";
+import { objectConstDefLine } from "../load/events.js";
 import type { Block, Layout } from "../model/types.js";
 import type { GbcEditSession } from "./save.js";
 
@@ -103,7 +104,7 @@ export function guardGbcSave(proj: GbcProject, session: GbcEditSession): Refusal
   const constDelta = session.events.objectConsts.length - session.originalEvents.objectConsts.length;
   const objectDelta = session.events.objects.length - session.originalEvents.objects.length;
   const desync =
-    session.originalEvents.objectConsts.length > 0
+    objectConstDefLine(session.originalEventsText) !== null
       ? constDelta !== objectDelta
       : session.events.objectConsts.length !== 0;
   if (desync) {

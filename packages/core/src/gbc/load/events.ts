@@ -132,6 +132,14 @@ function checkSectionOrder(tailText: string, mapName: string, lineOffset: number
   }
 }
 
+/** The top-of-file `object_const_def` marker line, or null when the file has none (40 of 391 maps). A present marker with no consts below it is a real, empty const block (it is what deleting a sole object leaves). */
+export function objectConstDefLine(text: string): CodeLine | null {
+  for (const line of codeLines(text)) {
+    if (/^\s*object_const_def\b/.test(stripComment(line.text))) return line;
+  }
+  return null;
+}
+
 /**
  * The `const NAME` lines immediately following a top-of-file
  * `object_const_def`, stopping at the first non-`const` code line (GBC

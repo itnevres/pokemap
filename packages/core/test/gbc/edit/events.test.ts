@@ -135,11 +135,12 @@ describe("addGbcEvent", () => {
     const text = readReal("CeruleanCave2F");
     expect(text.endsWith("\tdef_object_events")).toBe(true);
     const out = addGbcEvent(text, "CeruleanCave2F", "object", OBJ_ARGS);
-    expect(out.text).toBe(`${text}\n${OBJ_LINE}`);
+    // The empty object_const_def block is a paired (0 === 0) const list, so the new object gets its const (Task 7 fix round).
+    expect(out.text).toBe(`${text.replace("\tobject_const_def\n", "\tobject_const_def\n\tconst CERULEANCAVE2F_TEACHER\n")}\n${OBJ_LINE}`);
     expect(out.text.endsWith("\n")).toBe(false);
     expect(out.text.split("\n").at(-1)).toBe(OBJ_LINE);
     expect(out.events.objects).toHaveLength(1);
-    expect(out.events.objectConsts).toEqual([]); // empty object_const_def block: no const added
+    expect(out.events.objectConsts).toEqual(["CERULEANCAVE2F_TEACHER"]);
   });
 
   itWithGbcCorpus("11. object added to NewBarkTown: line appended, const after the last const; auto-name suffix, explicit name, bad/duplicate names refuse", () => {
@@ -181,9 +182,22 @@ describe("addGbcEvent", () => {
   it("11d. opts.objectConst on a map with no paired const block refuses (never silently ignored)", () => {
     expect(() => addGbcEvent(TESTMAP_ASM_NO_CONSTS, "Testmap", "object", OBJ_ARGS, { objectConst: "TESTMAP_GUIDE" })).toThrow(/Testmap.*objectConst "TESTMAP_GUIDE".*no object_const_def/);
     const emptyBlock = "\tobject_const_def\n\n" + TESTMAP_ASM_NO_CONSTS;
-    expect(() => addGbcEvent(emptyBlock, "Testmap", "object", OBJ_ARGS, { objectConst: "TESTMAP_GUIDE" })).toThrow(/no object_const_def/);
-    // without the option the same map adds fine, no const
-    expect(addGbcEvent(emptyBlock, "Testmap", "object", OBJ_ARGS).events.objects).toHaveLength(3);
+    // A present-but-empty block with 2 objects is out of step (Task 7 fix round: the marker, not the const count, decides pairing).
+    expect(() => addGbcEvent(emptyBlock, "Testmap", "object", OBJ_ARGS, { objectConst: "TESTMAP_GUIDE" })).toThrow(/out of step/);
+    expect(() => addGbcEvent(emptyBlock, "Testmap", "object", OBJ_ARGS)).toThrow(/out of step/);
+  });
+
+  it("11f. delete the sole object of a paired map, then re-add with its const: byte-identical; an empty marker with 0 objects is paired", () => {
+    const one = mapText(["TESTMAP_ONLY"], 1);
+    const del = deleteGbcEvent(one, "Testmap", "object", 0);
+    expect(del.events.objects).toEqual([]);
+    expect(del.events.objectConsts).toEqual([]);
+    expect(del.text).toContain("\tobject_const_def\n\nTestmap_MapScripts:"); // marker survives, empty
+    const args = ["0", "2", "SPRITE_0", "SPRITEMOVEDATA_STILL", "0", "0", "-1", "-1", "0", "OBJECTTYPE_SCRIPT", "0", "Script0", "-1"];
+    const back = addGbcEvent(del.text, "Testmap", "object", args, { objectConst: "TESTMAP_ONLY" });
+    expect(back.text).toBe(one);
+    // without the option the const is derived, still added
+    expect(addGbcEvent(del.text, "Testmap", "object", args).events.objectConsts).toEqual(["TESTMAP_0"]);
   });
 
   it("11e. an invalid DERIVED const name and an invalid PASSED objectConst give different messages", () => {
