@@ -26,15 +26,17 @@ export const gbcCorpusRoots = (): string[] =>
   [GBC_SUBJECT_ROOT, ...GBC_REFERENCE_ROOTS].filter(hasGbcProject);
 
 /**
- * A hermetic copy of the subject decomp (minus `.git`) in a fresh temp dir, for
- * any test that WRITES (Plan 7 Task 4/6). Never write `GBC_SUBJECT_ROOT` itself.
+ * A hermetic copy of a corpus root (minus `.git`) in a fresh temp dir, for any
+ * test that WRITES (Plan 7 Task 4/6/7). Never write a real root itself.
  * Pair with `removeTemp` in `afterAll`.
  */
-export function copyGbcSubjectToTemp(): string {
+export function copyGbcRootToTemp(root: string): string {
   const dir = mkdtempSync(join(tmpdir(), "pokemap-gbc-"));
-  cpSync(GBC_SUBJECT_ROOT, dir, { recursive: true, filter: (src) => !/[\\/]\.git([\\/]|$)/.test(src) });
+  cpSync(root, dir, { recursive: true, filter: (src) => !/[\\/]\.git([\\/]|$)/.test(src) });
   return dir;
 }
+
+export const copyGbcSubjectToTemp = (): string => copyGbcRootToTemp(GBC_SUBJECT_ROOT);
 
 export function removeTemp(dir: string): void {
   rmSync(dir, { recursive: true, force: true, maxRetries: 3 });
