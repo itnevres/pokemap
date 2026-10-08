@@ -75,3 +75,68 @@ Note: the first G2 run (B4 catch still restoring files) left B5 green, hiding th
 - git warns "LF will be replaced by CRLF" on edited test files (autocrlf); commits unaffected.
 - `.codex/` untracked is pre-existing.
 - Part C (full `npm test`, UI build) is left to the coordinator. Verified here: typecheck green; gbc test files writeGate 12, asmSplice 43, lineIdentity 1, save 15, blocks 10, map 58, tileset 69 all pass.
+
+---
+
+# Fix round 1
+
+**Correction:** the original report claimed a `PINNED` hook entry for pret; the diff had none (only the config line). Added now (2428ac6).
+
+Status: DONE_WITH_CONCERNS. Touched only packages/core/**, pokemap.config.json (none this round), .claude/hooks/session-start.sh. PerfPlus and pret porcelain empty after every run.
+
+## Commits
+| sha | what |
+|---|---|
+| 2428ac6 | hook: `PINNED` entry `pokecrystal\|https://github.com/pret/pokecrystal\|3bc8daa4173e96a7f4011dad3922eb6fa5dad5c6` after PerfPlus (`bash -n` ok); diff is that one line |
+| 61a8e05 | F3 product fix: pair object consts by `object_const_def` marker. New export `objectConstDefLine(text)` in `load/events.ts` (no `GbcMapEvents` change); `edit/events.ts` `objectConstPlan` uses it (marker present => paired, consts must === objects, 0 === 0 ok; add inserts the first const straight after the marker when the block is empty); `write/guards.ts` desync rule keyed on `objectConstDefLine(originalEventsText) !== null`. Tests below |
+| 572c9d2 | gate rework (F2, I1-I6, m1-m5, m7, m9, F4), `gbcRootLabel`, asmSplice root tags |
+| (next) | this section |
+
+## Existing-test edits (named)
+- `edit/events.test.ts` 10 (CeruleanCave2F object add): empty marker + 0 objects is now paired, so the add also inserts `const CERULEANCAVE2F_TEACHER` after the marker; expected text and `objectConsts` updated. Old rule asserted no const.
+- `edit/events.test.ts` 11d: the empty-block case (marker, 0 consts, 2 objects) now refuses with `out of step` (both with and without `objectConst`); the no-marker `objectConst` refusal assertion is unchanged.
+- `write/lineIdentity.test.ts`: `paired` is now `objectConstDefLine(text) !== null` (was `objectConsts.length > 0`), same skip rule, so CeruleanCave2F's add still expects +1 const.
+- `write/asmSplice.test.ts` (I4/m2/m9): pins inline under `PINS`, `gbcRootLabel(root)`, counts compared as one `toEqual(pins.counts)`, every in-loop assert root-tagged. No pin value changed.
+- Task 1 guard tests, Task 3 events tests other than 10/11d, save/load tests: unchanged and green.
+- New tests: `events.test.ts` 11f (delete sole object + re-add with const => identical text; derived const also added; marker survives empty); `guards.test.ts` "marker-present 0-const 0-object map": object + const => no refusal, object alone => `object-const-desync`.
+
+## Gate changes (writeGate.test.ts, corpus.ts)
+F2 `every configured corpus root is present` (roots === [subject, ...GBC_REFERENCE_ROOTS]; whole file skips only when the subject itself is absent). I1 pins are counts by reason plus the few named exceptions (no 120-string lists); pret derived from subject via spread. I2 `moveRoundTrip`/`deleteReAdd`/`addDelete` helpers, `call` computed once. I3 `at(step, f)` prefixes sub-step; asserts `failures.slice(0,20)` with total in message. I5 B2/B3 assert the pinned writable/non-writable classification; comment that a dirty copy after a B4 failure intentionally makes B5 red. I6 `try { expect(porcelain) } finally { removeTemp }`; helper retries 10 x 200 ms; mkdtemp split from cpSync with cleanup on failure. m1 per-test timeouts (heavy 180 s, others 60 s; global `vi.setConfig` removed). m2 `gbcRootLabel` throws on unknown root. m3 re-measure comment (`-t B6`). m4 walk only `maps` for the snapshot. m5 B5 uses set diffs (extra / missing / differing). m6 `git --no-optional-locks`. m7 B2 asserts the plan path ends with the layout's blkPath. F4 move asserts the single differing line is event 0's line index.
+
+## New pins (after F3)
+| | subject | pret |
+|---|---|---|
+| deleteReAdds w/c/b/o | 379/44/223/**286** (was 226, +60) | 379/44/223/**287** (was 226, +61) |
+| constReferenced (was 48) | **60** | **59** |
+| lineNotCanonical | same 6 names | same 2 names |
+| constLineNotCanonical | MountMoonGiftShop, CopycatsHouse2F | same |
+| outOfStep | [] | [] |
+| moves, addDeletes, layouts, binary | unchanged | unchanged |
+Note: the 72 sole-object-with-const skips became 60 (subject) / 61 (pret) real round trips; the other 12 / 11 sole objects have their const referenced elsewhere, now counted in `constReferenced` (48 -> 60 / 59).
+
+## Mutation table (subject, `-t subject`; each restored, `git diff -- packages/core/src` empty)
+| ID | mutation | observed |
+|---|---|---|
+| G1 | blk re-encode instead of patch | gate green (equivalent, as before); `save.test.ts` 7 RED |
+| G2 | asm + trailing newline | B4, B5, B6 RED |
+| G3 | EOF insert appends `line + eol` | B4, B5, B6 RED |
+| G4 | removeLine EOF keeps preceding terminator | B4, B5, B6 RED |
+| G5 | const inserted before the last const | B4, B5, B6 RED |
+| G6 | stray `maps/zz.txt` in commit | B5 RED only |
+| M3 | patch writes `bytes[i+1]` | B2, B5, B6 RED |
+| M5 | delete removes const[0] | B4, B5, B6 RED |
+| M6 | move swaps x/y | B4, B5, B6 RED |
+| M8 | layout-not-writable guard disabled | B3 RED |
+| F3 | `objectConstPlan` back to `names.length === 0` | gate B4, B5, B6 RED (sole-object round trips); events 10, 11d, 11f RED; lineIdentity RED |
+| F3g | guard back to `originalEvents.objectConsts.length > 0` | guards "marker-present" test RED |
+M1, M2, M7 (spec-review survivors) not re-run: out of gate scope / need a test edit, unchanged by this round. The two-part G6 variant (walk skipping maps/) not run.
+
+## Runtime
+Full writeGate file 149 s in the last green run (machine shared with the coordinator's UI mutation runs; 47 s and 117 s on earlier runs this round). Per-phase B4 13-17 s per root when quiet, up to ~65 s under load.
+
+## Verified
+typecheck green; writeGate 13, asmSplice 43, lineIdentity 1, save 15, guards 16, edit/events 28, edit/paint 18, load/{events 51, blocks 10, map 58, tileset 69} all pass; `bash -n` hook ok.
+
+## Concerns
+- F3 changes product behavior for 2 real maps (empty marker, 0 objects): adding an object there now also adds a const; and an empty marker with objects > 0 refuses as out of step (no such corpus map).
+- Remaining skips are line/comment-canonicalisation (accepted in spec review) and 60/59 const-referenced objects.
