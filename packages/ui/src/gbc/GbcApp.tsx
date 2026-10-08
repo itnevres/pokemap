@@ -33,10 +33,11 @@ export interface GbcAppProps {
 }
 
 /**
- * The GBC shell (Plan 6b Tasks 3-4). Deliberately much smaller than
- * `App.tsx`: GBC is read-only in 6b, so this never mounts `Toolbar`,
- * `SaveDialog`, `EventInspector`, `SignComposer` or
- * `CollisionPalette`, and wires no `beforeunload` handler.
+ * The GBC shell (Plan 6b Tasks 3-4; editing added in Plan 7 Task 5). Smaller
+ * than `App.tsx`: no `SignComposer` or `CollisionPalette`. Editing is mounted
+ * through `GbcMapEditing`; the edit session, `SaveDialog`, the dirty-switch
+ * guard and the `beforeunload` handler live here, as their GBA twins live in
+ * `App.tsx`.
  *
  * Reuses the GBA shell's own layout classes (`app`, `app__toolbar`,
  * `app__title`, `app__body`, `app__sidebar`, `app__canvas`,
