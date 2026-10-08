@@ -317,6 +317,10 @@ export function GbcApp({ root, switcher }: GbcAppProps) {
           {mode === "world" ? (
             <div className="app__map-editing" key="world-host">
               {contextActive && defectsBanner}
+              {contextMap !== null && !ready && (
+                map.error ? <p className="app__event-op-error" role="alert">Could not load {contextMap}: {map.error}</p>
+                  : <p className="app__canvas-placeholder" role="status">Loading {contextMap}…</p>
+              )}
               <GbcMapEditing
                 active={contextActive}
                 mapName={selected}

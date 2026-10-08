@@ -25,12 +25,12 @@ function payload(name: string): GbcMapPayload {
   return {
     family: "gbc",
     map: {
-      name, constName: name.toUpperCase(), group: 1, number: 1, width: 2, height: 1, blkPath: `maps/${name}.blk`,
+      name, constName: name.toUpperCase(), group: 1, number: 1, width: 10, height: 10, blkPath: `maps/${name}.blk`,
       tileset: "TILESET_OLIVINE", environment: "E", landmark: "L", music: "M", phoneFlag: "0", palette: "P",
       fishGroup: "0", border: 3, connectionFlags: "0", connections: [],
     },
-    layout: { blkPath: `maps/${name}.blk`, width: 2, height: 1, writable: true },
-    blocks: [{ metatileId: 0 }, { metatileId: 1 }],
+    layout: { blkPath: `maps/${name}.blk`, width: 10, height: 10, writable: true },
+    blocks: Array.from({ length: 100 }, () => ({ metatileId: 0 })),
     metatileCount: 2,
     tileset: { constName: "TILESET_OLIVINE", name: "TilesetOlivine" },
     collision: [{ tl: 0, tr: 0, bl: 0, br: 0 }, { tl: 7, tr: 7, bl: 7, br: 7 }],
@@ -40,11 +40,12 @@ function payload(name: string): GbcMapPayload {
 }
 
 const ok = (b: unknown) => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(b) } as Response);
-const DIRTY = { blocks: [{ metatileId: 1 }, { metatileId: 1 }], events: EMPTY_EVENTS, isDirty: true, canUndo: true, canRedo: false };
+const CLEAN = { blocks: payload("OlivinePort").blocks, events: EMPTY_EVENTS, isDirty: false, canUndo: false, canRedo: false };
 
 /** A fetch mock for the whole GBC app plus the edit routes; `calls` records `METHOD url` in order. */
 function mockFetch() {
   const calls: string[] = [];
+  let state = { ...CLEAN };
   const f = vi.fn((url: string, init?: RequestInit) => {
     calls.push(`${init?.method ?? "GET"} ${url}`);
     if (url === "/api/groups") return ok(GROUPS);
@@ -58,7 +59,13 @@ function mockFetch() {
     if (/\/discard$/.test(url)) return ok({ blocks: [], events: null, isDirty: false, canUndo: false, canRedo: false });
     if (/\/plan$/.test(url)) return ok({ changes: [{ path: "maps/x.blk", kind: "binary", summary: "1 block changed" }], refusals: [] });
     if (/\/commit$/.test(url)) return ok({ changes: [], refusals: [] });
-    if (/\/api\/edit\//.test(url)) return ok(DIRTY);
+    if (/\/paint\/apply$/.test(url)) {
+      const body = JSON.parse(init!.body as string) as { targets: { x: number; y: number }[]; stamp: { cells: { metatileId: number }[] } };
+      const blocks = state.blocks.map((b) => ({ ...b }));
+      for (const p of body.targets) blocks[p.y * 10 + p.x] = { metatileId: body.stamp.cells[0]!.metatileId };
+      state = { ...state, blocks, isDirty: true, canUndo: true };
+    }
+    if (/\/api\/edit\//.test(url)) return ok(state);
     return Promise.reject(new Error(`unexpected fetch: ${url}`));
   });
   vi.stubGlobal("fetch", f);
@@ -95,6 +102,12 @@ const worldCanvas = () => document.querySelector("canvas.world-canvas__stage") a
 const contextOverlay = () => document.querySelector(".world-canvas__context");
 const chrome = () => document.querySelector(".toolbar");
 const status = () => document.querySelector(".world-canvas__status")?.textContent ?? "";
+async function overlayStage() {
+  await waitFor(() => expect(contextOverlay()?.querySelector("canvas.map-canvas__stage")).toBeTruthy());
+  const stage = contextOverlay()!.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
+  stage.getBoundingClientRect = () => RECT;
+  return stage;
+}
 
 async function startApp() {
   const mock = mockFetch();
@@ -326,20 +339,7 @@ describe("GbcApp -- in-context editing (Plan 7 Task 5b)", () => {
       expect(chrome()).toBeNull();
     });
 
-    it("painting through the overlay's chromeless canvas dirties the session via the edit routes", async () => {
-      const { calls } = await dirtyContextOnCity();
-      // Discard first so the paint below is what dirties it: the mock answers every /api/edit/ route with a dirty state.
-      const stage = contextOverlay()!.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
-      fireEvent.click(screen.getByRole("button", { name: "pencil" }));
-      fireEvent.click(screen.getByLabelText("metatile 0x1"));
-      calls.length = 0;
-      // OlivineCity snaps at the double-click point (100,100): centre (5,5)*32 = (160,160), pan (100-160) = -60 at zoom 32
-      // (12 -> 1x); view pan = (0 - 60 - 32) = -92. Block (0,0) is composite x in [32,64): client x in [-60, -28).
-      fireEvent.mouseDown(stage, { clientX: -50, clientY: -50, button: 0 });
-      fireEvent.mouseUp(stage, { clientX: -50, clientY: -50, button: 0 });
-      await waitFor(() => expect(calls).toContain("POST /api/edit/OlivineCity/paint/end"));
-      expect(calls.indexOf("POST /api/edit/OlivineCity/paint/begin")).toBeLessThan(calls.indexOf("POST /api/edit/OlivineCity/paint/apply"));
-    });
+
   });
 
   it("a double-click on another map with a dirty session and a cancelled confirm does not enter context", async () => {
@@ -386,4 +386,148 @@ describe("GbcApp -- in-context editing (Plan 7 Task 5b)", () => {
     await waitFor(() => expect(contextOverlay()).toBeNull());
     expect(chrome()).toBeNull();
   });
+  it("keyboard Edit here keeps stepped zoom, wheel and Fit all obey the context contract", async () => {
+    await startApp();
+    const canvas = await enterWorld();
+    fireEvent.click(canvas, { clientX: 150, clientY: 100 });
+    fireEvent.keyDown(canvas, { key: "ContextMenu" });
+    fireEvent.click(screen.getByRole("menuitem", { name: "Edit here" }));
+    const stage = await overlayStage();
+    expect(document.activeElement).toBe(canvas);
+
+    fireEvent.keyDown(canvas, { key: "+" });
+    await waitFor(() => expect(status()).toContain("zoom 200%"));
+    fireEvent.keyDown(canvas, { key: "_" });
+    await waitFor(() => expect(status()).toContain("zoom 100%"));
+    fireEvent.wheel(stage, { deltaY: -100, clientX: 100, clientY: 100 });
+    await waitFor(() => expect(status()).toContain("zoom 200%"));
+    fireEvent.keyDown(canvas, { key: "=" });
+    await waitFor(() => expect(status()).toContain("zoom 400%"));
+    fireEvent.keyDown(canvas, { key: "-" });
+    await waitFor(() => expect(status()).toContain("zoom 200%"));
+    expect((screen.getByRole("button", { name: "Fit all" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("pending context consumes zoom keys without continuous zoom", async () => {
+    const { f } = await startApp();
+    const original = f.getMockImplementation()!;
+    f.mockImplementation((url, init) => url === "/api/map/OlivinePort" ? new Promise<Response>(() => {}) : original(url, init));
+    const canvas = await enterWorld();
+    dblClickPort(canvas);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Done editing OlivinePort" })).toBeTruthy());
+    expect(screen.getByRole("status").textContent).toContain("Loading OlivinePort");
+    const before = status();
+    for (const key of ["+", "=", "-", "_"]) {
+      fireEvent.keyDown(canvas, { key });
+      expect(status()).toBe(before);
+    }
+    expect((screen.getByRole("button", { name: "Fit all" }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it.each(["rejection", "http", "shape"])("context payload %s is visible without remount, and exit permits recovery", async (kind) => {
+    const { f } = await startApp();
+    const original = f.getMockImplementation()!;
+    f.mockImplementation((url, init) => {
+      if (url !== "/api/map/OlivinePort") return original(url, init);
+      if (kind === "rejection") return Promise.reject(new Error("payload unavailable"));
+      if (kind === "http") return Promise.resolve({ ok: false, status: 503 } as Response);
+      return ok({ family: "wrong" });
+    });
+    const canvas = await enterWorld();
+    const body = document.querySelector(".app__map-editing-body");
+    dblClickPort(canvas);
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain(kind === "rejection" ? "payload unavailable" : kind === "http" ? "503" : "unexpected shape");
+    expect(worldCanvas()).toBe(canvas);
+    expect(document.querySelector(".app__map-editing-body")).toBe(body);
+    expect(contextOverlay()?.querySelector("canvas.map-canvas__stage")).toBeNull();
+    if (kind === "http") fireEvent.keyDown(document.body, { key: "Escape" });
+    else fireEvent.click(screen.getByRole("button", { name: "Done editing OlivinePort" }));
+    await waitFor(() => expect(contextOverlay()).toBeNull());
+    expect(screen.queryByRole("alert")).toBeNull();
+    f.mockImplementation(original);
+    fireEvent.click(screen.getByRole("button", { name: "OlivineCity" }));
+    await waitFor(() => expect(status()).toContain("zoom 38%"));
+    fireEvent.doubleClick(canvas, { clientX: 100, clientY: 100 });
+    await overlayStage();
+    expect(worldCanvas()).toBe(canvas);
+    expect(document.querySelector(".app__map-editing-body")).toBe(body);
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("visible clean overlay paint uses 32px blocks and waits for begin before apply and end", async () => {
+    const { f, calls } = await startApp();
+    const original = f.getMockImplementation()!;
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    f.mockImplementation((url, init) => {
+      if (url.endsWith("/paint/begin")) {
+        calls.push("POST " + url);
+        return held.then(() => ok(CLEAN));
+      }
+      return original(url, init);
+    });
+    const canvas = await enterWorld();
+    dblClickPort(canvas);
+    const stage = await overlayStage();
+    fireEvent.click(screen.getByRole("button", { name: "pencil" }));
+    fireEvent.click(screen.getByLabelText("metatile 0x1"));
+    expect(screen.queryByTestId("dirty-indicator")).toBeNull();
+    calls.length = 0;
+    // Body (-10,-60); client (134,52) gives offset (144,112): block (4,3) at 32px.
+    fireEvent.mouseDown(stage, { clientX: 134, clientY: 52, button: 0 });
+    fireEvent.mouseUp(stage, { clientX: 134, clientY: 52, button: 0 });
+    expect(calls).toEqual(["POST /api/edit/OlivinePort/paint/begin"]);
+    expect(screen.queryByTestId("dirty-indicator")).toBeNull();
+    await act(async () => { release(); });
+    await waitFor(() => expect(calls).toContain("POST /api/edit/OlivinePort/paint/end"));
+    expect(calls).toEqual(["POST /api/edit/OlivinePort/paint/begin", "POST /api/edit/OlivinePort/paint/apply", "POST /api/edit/OlivinePort/paint/end"]);
+    const apply = f.mock.calls.find(([url]) => url.endsWith("/paint/apply"))!;
+    expect(JSON.parse(apply[1]!.body as string)).toEqual({ tool: "pencil", targets: [{ x: 4, y: 3 }], origin: { x: 4, y: 3 }, stamp: { width: 1, height: 1, cells: [{ metatileId: 1 }] } });
+    await waitFor(() => expect(screen.getByTestId("dirty-indicator")).toBeTruthy());
+  });
+
+  it("overlay event drag uses 16px steps through the actual App move callback", async () => {
+    const { f, calls } = await startApp();
+    const original = f.getMockImplementation()!;
+    f.mockImplementation((url, init) => url === "/api/map/OlivinePort"
+      ? ok({ ...payload("OlivinePort"), events: { ...EMPTY_EVENTS, warps: [{ x: 9, y: 7, mapConst: "OLIVINE_CITY", destWarp: 1, lineIndex: 0 }] } })
+      : original(url, init));
+    const canvas = await enterWorld();
+    dblClickPort(canvas);
+    const stage = await overlayStage();
+    // Offset (144,112) gives step (9,7); (160,128) gives (10,8).
+    fireEvent.mouseDown(stage, { clientX: 134, clientY: 52, button: 0 });
+    fireEvent.mouseMove(stage, { clientX: 150, clientY: 68, buttons: 1 });
+    fireEvent.mouseUp(stage, { clientX: 150, clientY: 68, button: 0 });
+    await waitFor(() => expect(calls).toContain("POST /api/edit/OlivinePort/event/move"));
+    const move = f.mock.calls.find(([url]) => url.endsWith("/event/move"))!;
+    expect(JSON.parse(move[1]!.body as string)).toEqual({ kind: "warp", index: 0, x: 10, y: 8 });
+  });
+
+  it("different-map tree visits retire a context stamp across A to B to A while preserving tool and host", async () => {
+    await startApp();
+    const canvas = await enterWorld();
+    dblClickPort(canvas);
+    await overlayStage();
+    const body = document.querySelector(".app__map-editing-body");
+    fireEvent.click(screen.getByRole("button", { name: "pencil" }));
+    fireEvent.click(screen.getByLabelText("metatile 0x1"));
+    fireEvent.click(screen.getByRole("button", { name: "OlivineCity" }));
+    await waitFor(() => expect(contextOverlay()).toBeNull());
+    await waitFor(() => expect(status()).toContain("zoom 38%"));
+    fireEvent.doubleClick(canvas, { clientX: 100, clientY: 100 });
+    await overlayStage();
+    expect(screen.getByLabelText("metatile 0x1").getAttribute("aria-current")).not.toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "OlivinePort" }));
+    await waitFor(() => expect(contextOverlay()).toBeNull());
+    await waitFor(() => expect(status()).toContain("zoom 38%"));
+    fireEvent.doubleClick(canvas, { clientX: 100, clientY: 100 });
+    await overlayStage();
+    expect(screen.getByLabelText("metatile 0x1").getAttribute("aria-current")).not.toBe("true");
+    expect(screen.getByRole("button", { name: "pencil" }).getAttribute("aria-pressed")).toBe("true");
+    expect(worldCanvas()).toBe(canvas);
+    expect(document.querySelector(".app__map-editing-body")).toBe(body);
+  });
+
 });

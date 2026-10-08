@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { GbcMapPayload } from "@pokemap/core/src/gbc/wire.js";
 import type { GbcStamp } from "@pokemap/core/src/gbc/edit/paint.js";
 import type { GbcEventKind, GbcWarpRenumberWarning } from "@pokemap/core/src/gbc/edit/events.js";
@@ -45,13 +45,11 @@ export interface GbcMapEditingProps {
 /**
  * The GBC counterpart of `components/MapEditingWorkspace.tsx`, without GBA types: toolbar, the metatile palette,
  * the event-op error banner, and canvas + inspector in `.app__map-editing-body`. The edit session itself lives in
- * `GbcApp` (always mounted); everything here is per-visit UI state and is rebuilt when the user comes back from
- * World, which is fine -- nothing here is server state.
+ * `GbcApp` (always mounted); everything here is per-visit UI state, including in the persistent World host.
  *
  * Per-map state (the picked stamp, the selected event, the error banner, warnings) is held as `{ forMap, ... }`
- * and read only while `forMap === mapName` (6c B4): a map switch reads as empty on the very first render, with no
- * reset effect and no one-tick window. The chosen TOOL deliberately survives a map switch; a stamp is a metatile
- * id of one tileset and must not.
+ * and retired on a map visit change before children render. A committed visit identity guards deferred local
+ * callbacks, including A -> B -> A. The chosen TOOL deliberately survives; tileset picks must not.
  *
  * Non-writable layout (`layout.writable === false`): the paint tools render disabled with the reason, and
  * `activeTool` resolves to null so the canvas cannot paint; event editing, undo/redo and save stay enabled.
@@ -63,6 +61,20 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
   const [pick, setPick] = useState<{ forMap: string; stamp: GbcStamp | null; event: GbcEventRef | null }>({ forMap: key, stamp: null, event: null });
   const [err, setErr] = useState<{ forMap: string; text: string } | null>(null);
   const [warn, setWarn] = useState<{ forMap: string; list: GbcWarpRenumberWarning[] } | null>(null);
+  const [visit, setVisit] = useState({ mapName });
+  const currentVisit = useRef<typeof visit | null>(visit);
+  // Adjust this component's state during render: React retries it before rendering children, so no old pick is exposed.
+  if (visit.mapName !== mapName) {
+    setVisit({ mapName });
+    setPick({ forMap: key, stamp: null, event: null });
+    setErr(null);
+    setWarn(null);
+  }
+  useLayoutEffect(() => {
+    currentVisit.current = visit;
+    return () => { currentVisit.current = null; };
+  }, [visit]);
+  const isCurrent = () => currentVisit.current === visit;
 
   const mine = pick.forMap === key;
   const stamp = mine ? pick.stamp : null;
@@ -71,10 +83,10 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
   const warnings = warn && warn.forMap === key ? warn.list : [];
   // Functional updaters: a deferred `setEvent(null)` (a delete resolving) must not overwrite a stamp picked meanwhile.
   const fresh = (p: typeof pick) => (p.forMap === key ? p : { forMap: key, stamp: null, event: null });
-  const setStamp = (next: GbcStamp) => setPick((p) => ({ ...fresh(p), stamp: next }));
-  const setEvent = (ref: GbcEventRef | null) => setPick((p) => ({ ...fresh(p), event: ref }));
-  const fail = (e: unknown, fallback = "Edit failed.") => setErr({ forMap: key, text: message(e, fallback) });
-  const ok = () => setErr(null);
+  const setStamp = (next: GbcStamp) => { if (isCurrent()) setPick((p) => ({ ...fresh(p), stamp: next })); };
+  const setEvent = (ref: GbcEventRef | null) => { if (isCurrent()) setPick((p) => ({ ...fresh(p), event: ref })); };
+  const fail = (e: unknown, fallback = "Edit failed.") => { if (isCurrent()) setErr({ forMap: key, text: message(e, fallback) }); };
+  const ok = () => { if (isCurrent()) setErr(null); };
 
   const writable = data?.layout.writable ?? false;
   const nonWritableTitle = data
@@ -95,6 +107,7 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
   };
   const onDelete = (ref: GbcEventRef): Promise<void> =>
     session.deleteEvent(ref.kind, ref.index).then(({ warpRenumberWarnings }) => {
+      if (!isCurrent()) return;
       ok();
       setEvent(null);
       setWarn(warpRenumberWarnings.length > 0 ? { forMap: key, list: warpRenumberWarnings } : null);
@@ -104,6 +117,7 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
     const list = kind === "object" ? session.events.objects : kind === "warp" ? session.events.warps : kind === "coord" ? session.events.coords : session.events.bgs;
     const newIndex = list.length;
     return session.addEvent(kind, args).then(() => {
+      if (!isCurrent()) return;
       ok();
       setEvent({ kind, index: newIndex });
     }).catch((e: unknown) => fail(e, "Failed to duplicate event."));
@@ -127,7 +141,7 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
           selectedEvent,
           onSelectEvent: setEvent,
           onMoveEvent: onMove,
-          onEditError: (m) => setErr({ forMap: key, text: m }),
+          onEditError: (m) => fail(new Error(m)),
         }
       : null;
   const canvas = renderCanvas ? renderCanvas(canvasProps) : canvasProps && <GbcMapCanvas {...canvasProps} />;
@@ -151,7 +165,7 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
       {active && error && (
         <div className="app__event-op-error" role="alert">
           <span>{error}</span>
-          <button type="button" className="app__event-op-error-dismiss" onClick={() => setErr(null)} aria-label="Dismiss">
+          <button type="button" className="app__event-op-error-dismiss" onClick={ok} aria-label="Dismiss">
             ×
           </button>
         </div>
@@ -180,7 +194,7 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
               onDelete={onDelete}
               onDuplicate={onDuplicate}
               warnings={warnings}
-              onDismissWarnings={() => setWarn(null)}
+              onDismissWarnings={() => { if (isCurrent()) setWarn(null); }}
             />
           </div>
         )}

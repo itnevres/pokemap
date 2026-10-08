@@ -1194,6 +1194,15 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
       if (selectedMap && (!mapFilter || mapFilter.has(selectedMap))) onOpenMap?.(selectedMap);
       return;
     }
+    if (inContext && ["+", "=", "-", "_"].includes(e.key)) {
+      e.preventDefault();
+      if (contextView) {
+        const direction = e.key === "+" || e.key === "=" ? 1 : -1;
+        const index = ZOOM_LEVELS.indexOf(contextView.zoom);
+        setContextZoom(ZOOM_LEVELS[Math.max(0, Math.min(ZOOM_LEVELS.length - 1, index + direction))]!);
+      }
+      return; // Pending payloads must not enter the continuous World zoom path either.
+    }
     if (e.key === "+" || e.key === "=") {
       e.preventDefault();
       setView((v) => zoomWorldAboutPivot(v, WHEEL_FACTOR, viewport.w / 2, viewport.h / 2, zoomBoundsFor(v.zoom)));
@@ -1251,7 +1260,7 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
     <section className="world-canvas" aria-label="World canvas">
       <div className="world-canvas__toolbar">
         <div className="world-canvas__toolbar-group">
-          <button type="button" className="map-canvas__btn" onClick={fitAll}>
+          <button type="button" className="map-canvas__btn" onClick={fitAll} disabled={inContext}>
             Fit all
           </button>
         </div>
