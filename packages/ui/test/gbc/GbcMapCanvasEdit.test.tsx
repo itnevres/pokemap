@@ -387,6 +387,7 @@ describe("GbcMapCanvas stroke completion barrier (B1)", () => {
     await waitFor(() => expect(s.endStroke).toHaveBeenCalledTimes(1));
     fireEvent.mouseDown(canvas, at(72, 40));
     fireEvent.mouseUp(canvas, at(72, 40));
+    await act(async () => {}); // Let queued begin run if it incorrectly bypasses the held end round trip.
     expect(s.beginStroke).toHaveBeenCalledTimes(1);
     await act(async () => end.resolve());
     await waitFor(() => expect(s.endStroke).toHaveBeenCalledTimes(2));
