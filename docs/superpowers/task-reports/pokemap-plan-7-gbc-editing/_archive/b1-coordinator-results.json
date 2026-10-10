@@ -1,0 +1,423 @@
+{
+  "revision": "1eb8f81d4f28e7eb69c091d33a9696eb1ae9fbaa",
+  "expectedIds": [
+    "R1-selection",
+    "R2-event-props",
+    "R3-paint-units",
+    "X7",
+    "B1-first-apply",
+    "B1-drag-queue",
+    "B1-end-chain",
+    "B1-visit",
+    "B1-retire-cleanup"
+  ],
+  "mutants": [
+    {
+      "id": "R1-selection",
+      "file": "packages/ui/src/gbc/GbcApp.tsx",
+      "anchor": "if (contextMap !== null && selected !== contextMap) setContextMap(null);",
+      "replacement": "/* omit selection invariant */",
+      "test": "packages/ui/test/gbc/GbcAppContextSelection.test.tsx",
+      "sha256": "f1fd67cfae70afcbc74e110d9dfbbb9c71a077beeb599889f6ecb352c6dcdeea",
+      "green": {
+        "exit": 0,
+        "passed": 1,
+        "failed": 0,
+        "failures": [],
+        "stderr": ""
+      },
+      "red": {
+        "exit": 1,
+        "passed": 0,
+        "failed": 1,
+        "failures": [
+          {
+            "name": "GbcApp isolated context selection invariant a World selection callback moving off the context map exits without a tree or mode handler",
+            "messages": [
+              "AssertionError: expected 'A' to be 'none' // Object.is equality\n\nIgnored nodes: comments, script, style\n\u001b[36m<html>\u001b[39m\n  \u001b[36m<head />\u001b[39m\n  \u001b[36m<body>\u001b[39m\n    \u001b[36m<div>\u001b[39m\n      \u001b[36m<div\u001b[39m\n        \u001b[33mclass\u001b[39m=\u001b[32m\"app\"\u001b[39m\n      \u001b[36m>\u001b[39m\n        \u001b[36m<header\u001b[39m\n          \u001b[33mclass\u001b[39m=\u001b[32m\"app__toolbar\"\u001b[39m\n        \u001b[36m>\u001b[39m\n          \u001b[36m<h1\u001b[39m\n            \u001b[33mclass\u001b[39m=\u001b[32m\"app__title\"\u001b[39m\n          \u001b[36m>\u001b[39m\n            \u001b[0mPokeMap\u001b[0m\n          \u001b[36m</h1>\u001b[39m\n          \u001b[36m<span\u001b[39m\n            \u001b[33mclass\u001b[39m=\u001b[32m\"gbc-app__family\"\u001b[39m\n          \u001b[36m>\u001b[39m\n            \u001b[0mCrystal\u001b[0m\n          \u001b[36m</span>\u001b[39m\n          \u001b[36m<div\u001b[39m\n            \u001b[33maria-label\u001b[39m=\u001b[32m\"View\"\u001b[39m\n            \u001b[33mclass\u001b[39m=\u001b[32m\"app__mode\"\u001b[39m\n            \u001b[33mrole\u001b[39m=\u001b[32m\"group\"\u001b[39m\n          \u001b[36m>\u001b[39m\n            \u001b[36m<button\u001b[39m\n              \u001b[33maria-pressed\u001b[39m=\u001b[32m\"false\"\u001b[39m\n              \u001b[33mclass\u001b[39m=\u001b[32m\"map-canvas__btn\"\u001b[39m\n              \u001b[33mtype\u001b[39m=\u001b[32m\"button\"\u001b[39m\n            \u001b[36m>\u001b[39m\n              \u001b[0mMap\u001b[0m\n            \u001b[36m</button>\u001b[39m\n            \u001b[36m<button\u001b[39m\n              \u001b[33maria-pressed\u001b[39m=\u001b[32m\"true\"\u001b[39m\n              \u001b[33mclass\u001b[39m=\u001b[32m\"map-canvas__btn\"\u001b[39m\n              \u001b[33mtype\u001b[39m=\u001b[32m\"button\"\u001b[39m\n            \u001b[36m>\u001b[39m\n              \u001b[0mWorld\u001b[0m\n            \u001b[36m</button>\u001b[39m\n            \u001b[36m<button\u001b[39m\n              \u001b[33maria-pressed\u001b[39m=\u001b[32m\"false\"\u001b[39m\n              \u001b[33mclass\u001b[39m=\u001b[32m\"map-canvas__btn\"\u001b[39m\n              \u001b[33mtype\u001b[39m=\u001b[32m\"button\"\u001b[39m\n            \u001b[36m>\u001b[39m\n              \u001b[0mDungeon\u001b[0m\n            \u001b[36m</button>\u001b[39m\n          \u001b[36m</div>\u001b[39m\n          \u001b[36m<div\u001b[39m\n            \u001b[33maria-label\u001b[39m=\u001b[32m\"Time of day\"\u001b[39m\n            \u001b[33mclass\u001b[39m=\u001b[32m\"app__mode gbc-app__time\"\u001b[39m\n            \u001b[33mrole\u001b[39m=\u001b[32m\"group\"\u001b[39m\n          \u001b[36m>\u001b[39m\n            \u001b[36m<button\u001b[39m\n              \u001b[33maria-pressed\u001b[39m=\u001b[32m\"false\"\u001b[39m\n              \u001b[33mclass\u001b[39m=\u001b[32m\"map-canvas__btn\"\u001b[39m\n              \u001b[33mtype\u001b[39m=\u001b[32m\"button\"\u001b[39m\n            \u001b[36m>\u001b[39m\n              \u001b[0mMorn\u001b[0m\n            \u001b[36m</button>\u001b[39m\n            \u001b[36m<button\u001b[39m\n              \u001b[33maria-pressed\u001b[39m=\u001b[32m\"true\"\u001b[39m\n              \u001b[33mclass\u001b[39m=\u001b[32m\"map-canvas__btn\"\u001b[39m\n              \u001b[33mtype\u001b[39m=\u001b[32m\"button\"\u001b[39m\n            \u001b[36m>\u001b[39m\n              \u001b[0mDay\u001b[0m\n            \u001b[36m</button>\u001b[39m\n            \u001b[36m<button\u001b[39m\n              \u001b[33maria-pressed\u001b[39m=\u001b[32m\"false\"\u001b[39m\n              \u001b[33mclass\u001b[39m=\u001b[32m\"map-canvas__btn\"\u001b[39m\n              \u001b[33mtype\u001b[39m=\u001b[32m\"button\"\u001b[39m\n            \u001b[36m>\u001b[39m\n              \u001b[0mNite\u001b[0m\n            \u001b[36m</button>\u001b[39m\n          \u001b[36m</div>\u001b[39m\n        \u001b[36m</header>\u001b[39m\n        \u001b[36m<div\u001b[39m\n          \u001b[33mclass\u001b[39m=\u001b[32m\"app__body\"\u001b[39m\n        \u001b[36m>\u001b[39m\n          \u001b[36m<aside\u001b[39m\n            \u001b[33mclass\u001b[39m=\u001b[32m\"app__sidebar\"\u001b[39m\n          \u001b[36m>\u001b[39m\n            \u001b[36m<nav\u001b[39m\n              \u001b[33maria-label\u001b[39m=\u001b[32m\"Maps\"\u001b[39m\n              \u001b[33mclass\u001b[39m=\u001b[32m\"map-tree\"\u001b[39m\n            \u001b[36m>\u001b[39m\n              \u001b[36m<input\u001b[39m\n                \u001b[33mclass\u001b[39m=\u001b[32m\"map-tree__filter\"\u001b[39m\n                \u001b[33mplaceholder\u001b[39m=\u001b[32m\"Filter maps…\"\u001b[39m\n                \u001b[33mvalue\u001b[39m=\u001b[32m\"\"\u001b[39m\n              \u001b[36m/>\u001b[39m\n              \u001b[36m<details\u001b[39m\n                \u001b[33mclass\u001b[39m=\u001b[32m\"map-tree__group\"\u001b[39m\n                \u001b[33mopen\u001b[39m=\u001b[32m\"\"\u001b[39m\n              \u001b[36m>\u001b[39m\n                \u001b[36m<summary\u001b[39m\n                  \u001b[33mclass\u001b[39m=\u001b[32m\"map-tree__summary\"\u001b[39m\n                \u001b[36m>\u001b[39m\n                  \u001b[36m<span\u001b[39m\n                    \u001b[33mclass\u001b[39m=\u001b[32m\"map-tree__group-name\"\u001b[39m\n                  \u001b[36m>\u001b[39m\n                    \u001b[0mG\u001b[0m\n                  \u001b[36m</span>\u001b[39m\n                  \u001b[36m<span\u001b[39m\n                    \u001b[33mclass\u001b[39m=\u001b[32m\"map-tree__count\"\u001b[39m\n                  \u001b[36m>\u001b[39m\n                    \u001b[0m2\u001b[0m\n                  \u001b[36m</span>\u001b[39m\n                \u001b[36m</summary>\u001b[39m\n                \u001b[36m<ul\u001b[39m\n                  \u001b[33mclass\u001b[39m=\u001b[32m\"map-tree__list\"\u001b[39m\n                \u001b[36m>\u001b[39m\n                  \u001b[36m<li>\u001b[39m\n                    \u001b[36m<button\u001b[39m\n                      \u001b[33mclass\u001b[39m=\u001b[32m\"map-tree__map\"\u001b[39m\n                      \u001b[33mdraggable\u001b[39m=\u001b[32m\"false\"\u001b[39m\n                      \u001b[33mtype\u001b[39m=\u001b[32m\"button\"\u001b[39m\n                    \u001b[36m>\u001b[39m\n                      \u001b[0mA\u001b[0m\n                    \u001b[36m</button>\u001b[39m\n                  \u001b[36m</li>\u001b[39m\n                  \u001b[36m<li>\u001b[39m\n                    \u001b[36m<button\u001b[39m\n                      \u001b[33maria-current\u001b[39m=\u001b[32m\"true\"\u001b[39m\n                      \u001b[33mclass\u001b[39m=\u001b[32m\"map-tree__map\"\u001b[39m\n                      \u001b[33mdraggable\u001b[39m=\u001b[32m\"false\"\u001b[39m\n                      \u001b[33mtype\u001b[39m=\u001b[32m\"button\"\u001b[39m\n                    \u001b[36m>\u001b[39m\n                      \u001b[0mB\u001b[0m\n                    \u001b[36m</button>\u001b[39m\n                  \u001b[36m</li>\u001b[39m\n                \u001b[36m</ul>\u001b[39m\n              \u001b[36m</details>\u001b[39m\n            \u001b[36m</nav>\u001b[39m\n          \u001b[36m</aside>\u001b[39m\n          \u001b[36m<main\u001b[39m\n            \u001b[33mclass\u001b[39m=\u001b[32m\"app__canvas\"\u001b[39m\n          \u001b[36m>\u001b[39m\n            \u001b[36m<div\u001b[39m\n              \u001b[33mclass\u001b[39m=\u001b[32m\"app__map-editing\"\u001b[39m\n            \u001b[36m>\u001b[39m\n              \u001b[36m<p\u001b[39m\n                \u001b[33mclass\u001b[39m=\u001b[32m\"app__canvas-placeholder\"\u001b[39m\n                \u001b[33mrole\u001b[39m=\u001b[32m\"status\"\u001b[39m\n              \u001b[36m>\u001b[39m\n                \u001b[0mLoading \u001b[0m\n                \u001b[0mA\u001b[0m\n                \u001b[0m…\u001b[0m\n              \u001b[36m</p>\u001b[39m\n              \u001b[36m<div\u001b[39m\n                \u001b[33mclass\u001b[39m=\u001b[32m\"app__map-editing-body\"\u001b[39m\n              \u001b[36m>\u001b[39m\n                \u001b[36m<div>\u001b[39m\n                  \u001b[36m<button>\u001b[39m\n                    \u001b[0mEnter A callback\u001b[0m\n                  \u001b[36m</button>\u001b[39m\n                  \u001b[36m<button>\u001b[39m\n                    \u001b[0mSelect B callback\u001b[0m\n                  \u001b[36m</button>\u001b[39m\n                  \u001b[36m<output\u001b[39m\n                    \u001b[33mdata-testid\u001b[39m=\u001b[32m\"context-name\"\u001b[39m\n                  \u001b[36m>\u001b[39m\n                    \u001b[0mA\u001b[0m\n                  \u001b[36m</output>\u001b[39m\n                \u001b[36m</div>\u001b[39m\n              \u001b[36m</div>\u001b[39m\n            \u001b[36m</div>\u001b[39m\n          \u001b[36m</main>\u001b[39m\n        \u001b[36m</div>\u001b[39m\n      \u001b[36m</div>\u001b[39m\n    \u001b[36m</div>\u001b[39m\n  \u001b[36m</body>\u001b[39m\n\u001b[36m</html>\u001b[39m\n    at C:\\Programming Projects\\PokeMap\\packages\\ui\\test\\gbc\\GbcAppContextSelection.test.tsx:29:80\n    at runWithExpensiveErrorDiagnosticsDisabled (C:\\Programming Projects\\PokeMap\\node_modules\\@testing-library\\dom\\dist\\config.js:47:12)\n    at checkCallback (C:\\Programming Projects\\PokeMap\\node_modules\\@testing-library\\dom\\dist\\wait-for.js:124:77)\n    at Timeout.checkRealTimersCallback (C:\\Programming Projects\\PokeMap\\node_modules\\@testing-library\\dom\\dist\\wait-for.js:118:16)\n    at listOnTimeout (node:internal/timers:605:17)\n    at processTimers (node:internal/timers:541:7)"
+            ]
+          }
+        ],
+        "stderr": ""
+      },
+      "restored": true,
+      "final": {
+        "exit": 0,
+        "passed": 1,
+        "failed": 0,
+        "failures": [],
+        "stderr": ""
+      }
+    },
+    {
+      "id": "R2-event-props",
+      "file": "packages/ui/src/gbc/GbcApp.tsx",
+      "anchor": "<GbcMapCanvas {...canvasProps} chromeless view={view} onViewChange={onViewChange} />",
+      "replacement": "<GbcMapCanvas {...canvasProps} onMoveEvent={undefined} chromeless view={view} onViewChange={onViewChange} />",
+      "test": "packages/ui/test/gbc/GbcAppContext.test.tsx",
+      "filter": "overlay event drag uses",
+      "sha256": "f1fd67cfae70afcbc74e110d9dfbbb9c71a077beeb599889f6ecb352c6dcdeea",
+      "green": {
+        "exit": 0,
+        "passed": 1,
+        "failed": 0,
+        "failures": [],
+        "stderr": ""
+      },
+      "red": {
+        "exit": 1,
+        "passed": 0,
+        "failed": 1,
+        "failures": [
+          {
+            "name": "GbcApp -- in-context editing (Plan 7 Task 5b) overlay event drag uses 16px steps through the actual App move callback",
+            "messages": [
+              "AssertionError: expected [ 'GET /api/groups', …(6) ] to include 'POST /api/edit/OlivinePort/event/move'\n\nIgnored nodes: comments, script, style\n\u001b[36m<html>\u001b[39m\n  \u001b[36m<head />\u001b[39m\n  \u001b[36m<body>\u001b[39m\n    \u001b[36m<div>\u001b[39m\n      \u001b[36m<div\u001b[39m\n        \u001b[33mclass\u001b[39m=\u001b[32m\"app\"\u001b[39m\n      \u001b[36m>\u001b[39m\n        \u001b[36m<header\u001b[39m\n          \u001b[33mclass\u001b[39m=\u001b[32m\"app__toolbar\"\u001b[39m\n        \u001b[36m>\u001b[39m\n          \u001b[36m<h1\u001b[39m\n            \u001b[33mclass\u001b[39m=\u001b[32m\"app__title\"\u001b[39m\n          \u001b[36m>\u001b[39m\n            \u001b[0mPokeMap\u001b[0m\n          \u001b[36m</h1>\u001b[39m\n          \u001b[36m<span\u001b[39m\n            \u001b[33mclass\u001b[39m=\u001b[32m\"gbc-app__family\"\u001b[39m\n          \u001b[36m>\u001b[39m\n            \u001b[0mCrystal\u001b[0m\n          \u001b[36m</span>\u001b[39m\n          \u001b[36m<div\u001b[39m\n            \u001b[33maria-label\u001b[39m=\u001b[32m\"View\"\u001b[39m\n            \u001b[33mclass\u001b[39m=\u001b[32m\"app__mode\"\u001b[39m\n            \u001b[33mrole\u001b[39m=\u001b[32m\"group\"\u001b[39m\n          \u001b[36m>\u001b[39m\n            \u001b[36m<button\u001b[39m\n              \u001b[33maria-pressed\u001b[39m=\u001b[32m\"false\"\u001b[39m\n              \u001b[33mclass\u001b[39m=\u001b[32m\"map-canvas__btn\"\u001b[39m\n              \u001b[33mtype\u001b[39m=\u001b[32m\"button\"\u001b[39m\n            \u001b[36m>\u001b[39m\n              \u001b[0mMap\u001b[0m\n            \u001b[36m</button>\u001b[39m\n            \u001b[36m<button\u001b[39m\n              \u001b[33maria-pressed\u001b[39m=\u001b[32m\"true\"\u001b[39m\n              \u001b[33mclass\u001b[39m=\u001b[32m\"map-canvas__btn\"\u001b[39m\n              \u001b[33mtype\u001b[39m=\u001b[32m\"button\"\u001b[39m\n            \u001b[36m>\u001b[39m\n              \u001b[0mWorld\u001b[0m\n            \u001b[36m</button>\u001b[39m\n            \u001b[36m<button\u001b[39m\n              \u001b[33maria-pressed\u001b[39m=\u001b[32m\"false\"\u001b[39m\n              \u001b[33mclass\u001b[39m=\u001b[32m\"map-canvas__btn\"\u001b[39m\n              \u001b[33mtype\u001b[39m=\u001b[32m\"button\"\u001b[39m\n            \u001b[36m>\u001b[39m\n              \u001b[0mDungeon\u001b[0m\n            \u001b[36m</button>\u001b[39m\n          \u001b[36m</div>\u001b[39m\n          \u001b[36m<div\u001b[39m\n            \u001b[33maria-label\u001b[39m=\u001b[32m\"Time of day\"\u001b[39m\n            \u001b[33mclass\u001b[39m=\u001b[32m\"app__mode gbc-app__time\"\u001b[39m\n            \u001b[33mrole\u001b[39m=\u001b[32m\"group\"\u001b[39m\n          \u001b[36m>\u001b[39m\n            \u001b[36m<button\u001b[39m\n              \u001b[33maria-pressed\u001b[39m=\u001b[32m\"false\"\u001b[39m\n              \u001b[33mclass\u001b[39m=\u001b[32m\"map-canvas__btn\"\u001b[39m\n              \u001b[33mtype\u001b[39m=\u001b[32m\"button\"\u001b[39m\n            \u001b[36m>\u001b[39m\n              \u001b[0mMorn\u001b[0m\n            \u001b[36m</button>\u001b[39m\n            \u001b[36m<button\u001b[39m\n              \u001b[33maria-pressed\u001b[39m=\u001b[32m\"true\"\u001b[39m\n              \u001b[33mclass\u001b[39m=\u001b[32m\"map-canvas__btn\"\u001b[39m\n              \u001b[33mtype\u001b[39m=\u001b[32m\"button\"\u001b[39m\n            \u001b[36m>\u001b[39m\n              \u001b[0mDay\u001b[0m\n            \u001b[36m</button>\u001b[39m\n            \u001b[36m<button\u001b[39m\n              \u001b[33maria-pressed\u001b[39m=\u001b[32m\"false\"\u001b[39m\n              \u001b[33mclass\u001b[39m=\u001b[32m\"map-canvas__btn\"\u001b[39m\n              \u001b[33mtype\u001b[39m=\u001b[32m\"button\"\u001b[39m\n            \u001b[36m>\u001b[39m\n              \u001b[0mNite\u001b[0m\n            \u001b[36m</button>\u001b[39m\n          \u001b[36m</div>\u001b[39m\n        \u001b[36m</header>\u001b[39m\n        \u001b[36m<div\u001b[39m\n          \u001b[33mclass\u001b[39m=\u001b[32m\"app__body\"\u001b[39m\n        \u001b[36m>\u001b[39m\n          \u001b[36m<aside\u001b[39m\n            \u001b[33mclass\u001b[39m=\u001b[32m\"app__sidebar\"\u001b[39m\n          \u001b[36m>\u001b[39m\n            \u001b[36m<nav\u001b[39m\n              \u001b[33maria-label\u001b[39m=\u001b[32m\"Maps\"\u001b[39m\n              \u001b[33mclass\u001b[39m=\u001b[32m\"map-tree\"\u001b[39m\n            \u001b[36m>\u001b[39m\n              \u001b[36m<input\u001b[39m\n                \u001b[33mclass\u001b[39m=\u001b[32m\"map-tree__filter\"\u001b[39m\n                \u001b[33mplaceholder\u001b[39m=\u001b[32m\"Filter maps…\"\u001b[39m\n                \u001b[33mvalue\u001b[39m=\u001b[32m\"\"\u001b[39m\n              \u001b[36m/>\u001b[39m\n              \u001b[36m<details\u001b[39m\n                \u001b[33mclass\u001b[39m=\u001b[32m\"map-tree__group\"\u001b[39m\n                \u001b[33mopen\u001b[39m=\u001b[32m\"\"\u001b[39m\n              \u001b[36m>\u001b[39m\n                \u001b[36m<summary\u001b[39m\n                  \u001b[33mclass\u001b[39m=\u001b[32m\"map-tree__summary\"\u001b[39m\n                \u001b[36m>\u001b[39m\n                  \u001b[36m<span\u001b[39m\n                    \u001b[33mclass\u001b[39m=\u001b[32m\"map-tree__group-name\"\u001b[39m\n                  \u001b[36m>\u001b[39m\n                    \u001b[0mOLIVINE\u001b[0m\n                  \u001b[36m</span>\u001b[39m\n                  \u001b[36m<span\u001b[39m\n                    \u001b[33mclass\u001b[39m=\u001b[32m\"map-tree__count\"\u001b[39m\n                  \u001b[36m>\u001b[39m\n                    \u001b[0m2\u001b[0m\n                  \u001b[36m</span>\u001b[39m\n                \u001b[36m</summary>\u001b[39m\n                \u001b[36m<ul\u001b[39m\n                  \u001b[33mclass\u001b[39m=\u001b[32m\"map-tree__list\"\u001b[39m\n                \u001b[36m>\u001b[39m\n                  \u001b[36m<li>\u001b[39m\n                    \u001b[36m<button\u001b[39m\n                      \u001b[33mclass\u001b[39m=\u001b[32m\"map-tree__map\"\u001b[39m\n                      \u001b[33mdraggable\u001b[39m=\u001b[32m\"false\"\u001b[39m\n                      \u001b[33mtype\u001b[39m=\u001b[32m\"button\"\u001b[39m\n                    \u001b[36m>\u001b[39m\n                      \u001b[0mOlivineCity\u001b[0m\n                    \u001b[36m</button>\u001b[39m\n                  \u001b[36m</li>\u001b[39m\n                  \u001b[36m<li>\u001b[39m\n                    \u001b[36m<button\u001b[39m\n                      \u001b[33maria-current\u001b[39m=\u001b[32m\"true\"\u001b[39m\n                      \u001b[33mclass\u001b[39m=\u001b[32m\"map-tree__map\"\u001b[39m\n                      \u001b[33mdraggable\u001b[39m=\u001b[32m\"false\"\u001b[39m\n                      \u001b[33mtype\u001b[39m=\u001b[32m\"button\"\u001b[39m\n                    \u001b[36m>\u001b[39m\n                      \u001b[0mOlivinePort\u001b[0m\n                    \u001b[36m</button>\u001b[39m\n                  \u001b[36m</li>\u001b[39m\n                \u001b[36m</ul>\u001b[39m\n              \u001b[36m</details>\u001b[39m\n            \u001b[36m</nav>\u001b[39m\n          \u001b[36m</aside>\u001b[39m\n          \u001b[36m<main\u001b[39m\n            \u001b[33mclass\u001b[39m=\u001b[32m\"app__canvas\"\u001b[39m\n          \u001b[36m>\u001b[39m\n            \u001b[36m<div\u001b[39m\n              \u001b[33mclass\u001b[39m=\u001b[32m\"app__map-editing\"\u001b[39m\n            \u001b[36m>\u001b[39m\n              \u001b[36m<div\u001b[39m\n                \u001b[33mclass\u001b[39m=\u001b[32m\"toolbar\"\u001b[39m\n              \u001b[36m>\u001b[39m\n                \u001b[36m<div\u001b[39m\n                  \u001b[33maria-label\u001b[39m=\u001b[32m\"Tools\"\u001b[39m\n                  \u001b[33mclass\u001b[39m=\u001b[32m\"toolbar__tools\"\u001b[39m\n                  \u001b[33mrole\u001b[39m=\u001b[32m\"group\"\u001b[39m\n                \u001b[36m>\u001b[39m\n                  \u001b[36m<button\u001b[39m\n                    \u001b[33maria-label\u001b[39m=\u001b[32m\"pencil\"\u001b[39m\n                    \u001b[33maria-pressed\u001b[39m=\u001b[32m\"false\"\u001b[39m\n                    \u001b[33mclass\u001b[39m=\u001b[32m\"map-canvas__btn toolbar__tool-btn\"\u001b[39m\n                    \u001b[33mtype\u001b[39m=\u001b[32m\"button\"\u001b[39m\n                  \u001b[36m>\u001b[39m\n                    \u001b[0mpencil\u001b[0m\n                  \u001b[36m</button>\u001b[39m\n                  \u001b[36m<button\u001b[39m\n                    \u001b[33maria-label\u001b[39m=\u001b[32m\"rect\"\u001b[39m\n                    \u001b[33maria-pressed\u001b[39m=\u001b[32m\"false\"\u001b[39m\n                    \u001b[33mclass\u001b[39m=\u001b[32m\"map-canvas__btn toolbar__tool-btn\"\u001b[39m\n                    \u001b[33mtype\u001b[39m=\u001b[32m\"button\"\u001b[39m\n                  \u001b[36m>\u001b[39m\n                    \u001b[0mrect\u001b[0m\n                  \u001b[36m</button>\u001b[39m\n                  \u001b[36m<button\u001b[39m\n                    \u001b[33maria-label\u001b[39m=\u001b[32m\"bucket\"\u001b[39m\n                    \u001b[33maria-pressed\u001b[39m=\u001b[32m\"false\"\u001b[39m\n                    \u001b[33mclass\u001b[39m=\u001b[32m\"map-canvas__btn toolbar__tool-btn\"\u001b[39m\n                    \u001b[33mtype\u001b[39m=\u001b[32m\"button\"\u001b[39m\n                  \u001b[36m>\u001b[39m\n                    \u001b[0mbucket\u001b[0m\n                  \u001b[36m</button>\u001b[39m\n                  \u001b[36m<button\u001b[39m\n                    \u001b[33maria-label\u001b[39m=\u001b[32m\"dropper\"\u001b[39m\n                    \u001b[33maria-pressed\u001b[39m=\u001b[32m\"false\"\u001b[39m\n              ...\n    at Proxy.<anonymous> (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/expect/dist/index.js:1196:17)\n    at Proxy.<anonymous> (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/expect/dist/index.js:972:17)\n    at Proxy.methodWrapper (file:///C:/Programming%20Projects/PokeMap/node_modules/chai/index.js:1686:25)\n    at C:\\Programming Projects\\PokeMap\\packages\\ui\\test\\gbc\\GbcAppContext.test.tsx:566:39\n    at runWithExpensiveErrorDiagnosticsDisabled (C:\\Programming Projects\\PokeMap\\node_modules\\@testing-library\\dom\\dist\\config.js:47:12)\n    at checkCallback (C:\\Programming Projects\\PokeMap\\node_modules\\@testing-library\\dom\\dist\\wait-for.js:124:77)\n    at Timeout.checkRealTimersCallback (C:\\Programming Projects\\PokeMap\\node_modules\\@testing-library\\dom\\dist\\wait-for.js:118:16)\n    at listOnTimeout (node:internal/timers:605:17)\n    at processTimers (node:internal/timers:541:7)"
+            ]
+          }
+        ],
+        "stderr": ""
+      },
+      "restored": true,
+      "final": {
+        "exit": 0,
+        "passed": 1,
+        "failed": 0,
+        "failures": [],
+        "stderr": ""
+      }
+    },
+    {
+      "id": "R3-paint-units",
+      "file": "packages/ui/src/gbc/GbcMapCanvas.tsx",
+      "anchor": "x: Math.floor(((e.clientX - rect.left - pan.x) / zoom - originX) / BLOCK_PX),",
+      "replacement": "x: Math.floor(((e.clientX - rect.left - pan.x) / zoom - originX) / (controlled ? 16 : BLOCK_PX)),",
+      "test": "packages/ui/test/gbc/GbcAppContext.test.tsx",
+      "filter": "visible clean overlay paint",
+      "sha256": "e249e4cfa676ec7f9f8f9f05f106db5fb0ca3c412380d49be836dced530402d1",
+      "green": {
+        "exit": 0,
+        "passed": 1,
+        "failed": 0,
+        "failures": [],
+        "stderr": ""
+      },
+      "red": {
+        "exit": 1,
+        "passed": 0,
+        "failed": 1,
+        "failures": [
+          {
+            "name": "GbcApp -- in-context editing (Plan 7 Task 5b) visible clean overlay paint uses 32px blocks and waits for begin before apply and end",
+            "messages": [
+              "AssertionError: expected { tool: 'pencil', …(3) } to deeply equal { tool: 'pencil', …(3) }\n    at C:\\Programming Projects\\PokeMap\\packages\\ui\\test\\gbc\\GbcAppContext.test.tsx:549:50\n    at file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:533:5\n    at runTest (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1056:11)\n    at runSuite (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1205:15)\n    at runSuite (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1205:15)\n    at runFiles (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1262:5)\n    at startTests (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1271:3)\n    at file:///C:/Programming%20Projects/PokeMap/node_modules/vitest/dist/chunks/runBaseTests.3qpJUEJM.js:126:11\n    at withEnv (file:///C:/Programming%20Projects/PokeMap/node_modules/vitest/dist/chunks/runBaseTests.3qpJUEJM.js:90:5)\n    at run (file:///C:/Programming%20Projects/PokeMap/node_modules/vitest/dist/chunks/runBaseTests.3qpJUEJM.js:112:3)"
+            ]
+          }
+        ],
+        "stderr": ""
+      },
+      "restored": true,
+      "final": {
+        "exit": 0,
+        "passed": 1,
+        "failed": 0,
+        "failures": [],
+        "stderr": ""
+      }
+    },
+    {
+      "id": "X7",
+      "file": "packages/ui/src/gbc/GbcMapCanvas.tsx",
+      "anchor": "export const GBC_COMPOSITE_ORIGIN = BORDER_RINGS * BLOCK_PX;",
+      "replacement": "export const GBC_COMPOSITE_ORIGIN = 0;",
+      "test": "packages/ui/test/gbc/GbcAppContext.test.tsx",
+      "filter": "the overlay composite lines up under the world tile",
+      "sha256": "e249e4cfa676ec7f9f8f9f05f106db5fb0ca3c412380d49be836dced530402d1",
+      "green": {
+        "exit": 0,
+        "passed": 1,
+        "failed": 0,
+        "failures": [],
+        "stderr": ""
+      },
+      "red": {
+        "exit": 1,
+        "passed": 0,
+        "failed": 1,
+        "failures": [
+          {
+            "name": "GbcApp -- in-context editing (Plan 7 Task 5b) the overlay composite lines up under the world tile: its origin is the border ring (32 px), not 0",
+            "messages": [
+              "AssertionError: expected [ -10, -60 ] to deeply equal [ -42, -92 ]\n\nIgnored nodes: comments, script, style\n\u001b[36m<html>\u001b[39m\n  \u001b[36m<head />\u001b[39m\n  \u001b[36m<body>\u001b[39m\n    \u001b[36m<div>\u001b[39m\n      \u001b[36m<div\u001b[39m\n        \u001b[33mclass\u001b[39m=\u001b[32m\"app\"\u001b[39m\n      \u001b[36m>\u001b[39m\n        \u001b[36m<header\u001b[39m\n          \u001b[33mclass\u001b[39m=\u001b[32m\"app__toolbar\"\u001b[39m\n        \u001b[36m>\u001b[39m\n          \u001b[36m<h1\u001b[39m\n            \u001b[33mclass\u001b[39m=\u001b[32m\"app__title\"\u001b[39m\n          \u001b[36m>\u001b[39m\n            \u001b[0mPokeMap\u001b[0m\n          \u001b[36m</h1>\u001b[39m\n          \u001b[36m<span\u001b[39m\n            \u001b[33mclass\u001b[39m=\u001b[32m\"gbc-app__family\"\u001b[39m\n          \u001b[36m>\u001b[39m\n            \u001b[0mCrystal\u001b[0m\n          \u001b[36m</span>\u001b[39m\n          \u001b[36m<div\u001b[39m\n            \u001b[33maria-label\u001b[39m=\u001b[32m\"View\"\u001b[39m\n            \u001b[33mclass\u001b[39m=\u001b[32m\"app__mode\"\u001b[39m\n            \u001b[33mrole\u001b[39m=\u001b[32m\"group\"\u001b[39m\n          \u001b[36m>\u001b[39m\n            \u001b[36m<button\u001b[39m\n              \u001b[33maria-pressed\u001b[39m=\u001b[32m\"false\"\u001b[39m\n              \u001b[33mclass\u001b[39m=\u001b[32m\"map-canvas__btn\"\u001b[39m\n              \u001b[33mtype\u001b[39m=\u001b[32m\"button\"\u001b[39m\n            \u001b[36m>\u001b[39m\n              \u001b[0mMap\u001b[0m\n            \u001b[36m</button>\u001b[39m\n            \u001b[36m<button\u001b[39m\n              \u001b[33maria-pressed\u001b[39m=\u001b[32m\"true\"\u001b[39m\n              \u001b[33mclass\u001b[39m=\u001b[32m\"map-canvas__btn\"\u001b[39m\n              \u001b[33mtype\u001b[39m=\u001b[32m\"button\"\u001b[39m\n            \u001b[36m>\u001b[39m\n              \u001b[0mWorld\u001b[0m\n            \u001b[36m</button>\u001b[39m\n            \u001b[36m<button\u001b[39m\n              \u001b[33maria-pressed\u001b[39m=\u001b[32m\"false\"\u001b[39m\n              \u001b[33mclass\u001b[39m=\u001b[32m\"map-canvas__btn\"\u001b[39m\n              \u001b[33mtype\u001b[39m=\u001b[32m\"button\"\u001b[39m\n            \u001b[36m>\u001b[39m\n              \u001b[0mDungeon\u001b[0m\n            \u001b[36m</button>\u001b[39m\n          \u001b[36m</div>\u001b[39m\n          \u001b[36m<div\u001b[39m\n            \u001b[33maria-label\u001b[39m=\u001b[32m\"Time of day\"\u001b[39m\n            \u001b[33mclass\u001b[39m=\u001b[32m\"app__mode gbc-app__time\"\u001b[39m\n            \u001b[33mrole\u001b[39m=\u001b[32m\"group\"\u001b[39m\n          \u001b[36m>\u001b[39m\n            \u001b[36m<button\u001b[39m\n              \u001b[33maria-pressed\u001b[39m=\u001b[32m\"false\"\u001b[39m\n              \u001b[33mclass\u001b[39m=\u001b[32m\"map-canvas__btn\"\u001b[39m\n              \u001b[33mtype\u001b[39m=\u001b[32m\"button\"\u001b[39m\n            \u001b[36m>\u001b[39m\n              \u001b[0mMorn\u001b[0m\n            \u001b[36m</button>\u001b[39m\n            \u001b[36m<button\u001b[39m\n              \u001b[33maria-pressed\u001b[39m=\u001b[32m\"true\"\u001b[39m\n              \u001b[33mclass\u001b[39m=\u001b[32m\"map-canvas__btn\"\u001b[39m\n              \u001b[33mtype\u001b[39m=\u001b[32m\"button\"\u001b[39m\n            \u001b[36m>\u001b[39m\n              \u001b[0mDay\u001b[0m\n            \u001b[36m</button>\u001b[39m\n            \u001b[36m<button\u001b[39m\n              \u001b[33maria-pressed\u001b[39m=\u001b[32m\"false\"\u001b[39m\n              \u001b[33mclass\u001b[39m=\u001b[32m\"map-canvas__btn\"\u001b[39m\n              \u001b[33mtype\u001b[39m=\u001b[32m\"button\"\u001b[39m\n            \u001b[36m>\u001b[39m\n              \u001b[0mNite\u001b[0m\n            \u001b[36m</button>\u001b[39m\n          \u001b[36m</div>\u001b[39m\n        \u001b[36m</header>\u001b[39m\n        \u001b[36m<div\u001b[39m\n          \u001b[33mclass\u001b[39m=\u001b[32m\"app__body\"\u001b[39m\n        \u001b[36m>\u001b[39m\n          \u001b[36m<aside\u001b[39m\n            \u001b[33mclass\u001b[39m=\u001b[32m\"app__sidebar\"\u001b[39m\n          \u001b[36m>\u001b[39m\n            \u001b[36m<nav\u001b[39m\n              \u001b[33maria-label\u001b[39m=\u001b[32m\"Maps\"\u001b[39m\n              \u001b[33mclass\u001b[39m=\u001b[32m\"map-tree\"\u001b[39m\n            \u001b[36m>\u001b[39m\n              \u001b[36m<input\u001b[39m\n                \u001b[33mclass\u001b[39m=\u001b[32m\"map-tree__filter\"\u001b[39m\n                \u001b[33mplaceholder\u001b[39m=\u001b[32m\"Filter maps…\"\u001b[39m\n                \u001b[33mvalue\u001b[39m=\u001b[32m\"\"\u001b[39m\n              \u001b[36m/>\u001b[39m\n              \u001b[36m<details\u001b[39m\n                \u001b[33mclass\u001b[39m=\u001b[32m\"map-tree__group\"\u001b[39m\n                \u001b[33mopen\u001b[39m=\u001b[32m\"\"\u001b[39m\n              \u001b[36m>\u001b[39m\n                \u001b[36m<summary\u001b[39m\n                  \u001b[33mclass\u001b[39m=\u001b[32m\"map-tree__summary\"\u001b[39m\n                \u001b[36m>\u001b[39m\n                  \u001b[36m<span\u001b[39m\n                    \u001b[33mclass\u001b[39m=\u001b[32m\"map-tree__group-name\"\u001b[39m\n                  \u001b[36m>\u001b[39m\n                    \u001b[0mOLIVINE\u001b[0m\n                  \u001b[36m</span>\u001b[39m\n                  \u001b[36m<span\u001b[39m\n                    \u001b[33mclass\u001b[39m=\u001b[32m\"map-tree__count\"\u001b[39m\n                  \u001b[36m>\u001b[39m\n                    \u001b[0m2\u001b[0m\n                  \u001b[36m</span>\u001b[39m\n                \u001b[36m</summary>\u001b[39m\n                \u001b[36m<ul\u001b[39m\n                  \u001b[33mclass\u001b[39m=\u001b[32m\"map-tree__list\"\u001b[39m\n                \u001b[36m>\u001b[39m\n                  \u001b[36m<li>\u001b[39m\n                    \u001b[36m<button\u001b[39m\n                      \u001b[33mclass\u001b[39m=\u001b[32m\"map-tree__map\"\u001b[39m\n                      \u001b[33mdraggable\u001b[39m=\u001b[32m\"false\"\u001b[39m\n                      \u001b[33mtype\u001b[39m=\u001b[32m\"button\"\u001b[39m\n                    \u001b[36m>\u001b[39m\n                      \u001b[0mOlivineCity\u001b[0m\n                    \u001b[36m</button>\u001b[39m\n                  \u001b[36m</li>\u001b[39m\n                  \u001b[36m<li>\u001b[39m\n                    \u001b[36m<button\u001b[39m\n                      \u001b[33maria-current\u001b[39m=\u001b[32m\"true\"\u001b[39m\n                      \u001b[33mclass\u001b[39m=\u001b[32m\"map-tree__map\"\u001b[39m\n                      \u001b[33mdraggable\u001b[39m=\u001b[32m\"false\"\u001b[39m\n                      \u001b[33mtype\u001b[39m=\u001b[32m\"button\"\u001b[39m\n                    \u001b[36m>\u001b[39m\n                      \u001b[0mOlivinePort\u001b[0m\n                    \u001b[36m</button>\u001b[39m\n                  \u001b[36m</li>\u001b[39m\n                \u001b[36m</ul>\u001b[39m\n              \u001b[36m</details>\u001b[39m\n            \u001b[36m</nav>\u001b[39m\n          \u001b[36m</aside>\u001b[39m\n          \u001b[36m<main\u001b[39m\n            \u001b[33mclass\u001b[39m=\u001b[32m\"app__canvas\"\u001b[39m\n          \u001b[36m>\u001b[39m\n            \u001b[36m<div\u001b[39m\n              \u001b[33mclass\u001b[39m=\u001b[32m\"app__map-editing\"\u001b[39m\n            \u001b[36m>\u001b[39m\n              \u001b[36m<div\u001b[39m\n                \u001b[33mclass\u001b[39m=\u001b[32m\"toolbar\"\u001b[39m\n              \u001b[36m>\u001b[39m\n                \u001b[36m<div\u001b[39m\n                  \u001b[33maria-label\u001b[39m=\u001b[32m\"Tools\"\u001b[39m\n                  \u001b[33mclass\u001b[39m=\u001b[32m\"toolbar__tools\"\u001b[39m\n                  \u001b[33mrole\u001b[39m=\u001b[32m\"group\"\u001b[39m\n                \u001b[36m>\u001b[39m\n                  \u001b[36m<button\u001b[39m\n                    \u001b[33maria-label\u001b[39m=\u001b[32m\"pencil\"\u001b[39m\n                    \u001b[33maria-pressed\u001b[39m=\u001b[32m\"false\"\u001b[39m\n                    \u001b[33mclass\u001b[39m=\u001b[32m\"map-canvas__btn toolbar__tool-btn\"\u001b[39m\n                    \u001b[33mtype\u001b[39m=\u001b[32m\"button\"\u001b[39m\n                  \u001b[36m>\u001b[39m\n                    \u001b[0mpencil\u001b[0m\n                  \u001b[36m</button>\u001b[39m\n                  \u001b[36m<button\u001b[39m\n                    \u001b[33maria-label\u001b[39m=\u001b[32m\"rect\"\u001b[39m\n                    \u001b[33maria-pressed\u001b[39m=\u001b[32m\"false\"\u001b[39m\n                    \u001b[33mclass\u001b[39m=\u001b[32m\"map-canvas__btn toolbar__tool-btn\"\u001b[39m\n                    \u001b[33mtype\u001b[39m=\u001b[32m\"button\"\u001b[39m\n                  \u001b[36m>\u001b[39m\n                    \u001b[0mrect\u001b[0m\n                  \u001b[36m</button>\u001b[39m\n                  \u001b[36m<button\u001b[39m\n                    \u001b[33maria-label\u001b[39m=\u001b[32m\"bucket\"\u001b[39m\n                    \u001b[33maria-pressed\u001b[39m=\u001b[32m\"false\"\u001b[39m\n                    \u001b[33mclass\u001b[39m=\u001b[32m\"map-canvas__btn toolbar__tool-btn\"\u001b[39m\n                    \u001b[33mtype\u001b[39m=\u001b[32m\"button\"\u001b[39m\n                  \u001b[36m>\u001b[39m\n                    \u001b[0mbucket\u001b[0m\n                  \u001b[36m</button>\u001b[39m\n                  \u001b[36m<button\u001b[39m\n                    \u001b[33maria-label\u001b[39m=\u001b[32m\"dropper\"\u001b[39m\n                    \u001b[33maria-pressed\u001b[39m=\u001b[32m\"false\"\u001b[39m\n              ...\n    at C:\\Programming Projects\\PokeMap\\packages\\ui\\test\\gbc\\GbcAppContext.test.tsx:272:73\n    at runWithExpensiveErrorDiagnosticsDisabled (C:\\Programming Projects\\PokeMap\\node_modules\\@testing-library\\dom\\dist\\config.js:47:12)\n    at checkCallback (C:\\Programming Projects\\PokeMap\\node_modules\\@testing-library\\dom\\dist\\wait-for.js:124:77)\n    at Timeout.checkRealTimersCallback (C:\\Programming Projects\\PokeMap\\node_modules\\@testing-library\\dom\\dist\\wait-for.js:118:16)\n    at listOnTimeout (node:internal/timers:605:17)\n    at processTimers (node:internal/timers:541:7)"
+            ]
+          }
+        ],
+        "stderr": ""
+      },
+      "restored": true,
+      "final": {
+        "exit": 0,
+        "passed": 1,
+        "failed": 0,
+        "failures": [],
+        "stderr": ""
+      }
+    },
+    {
+      "id": "B1-first-apply",
+      "file": "packages/ui/src/gbc/GbcMapCanvas.tsx",
+      "anchor": "return paintAt(cell.x, cell.y);\n      }).catch((e)",
+      "replacement": "void paintAt(cell.x, cell.y);\n      }).catch((e)",
+      "test": "packages/ui/test/gbc/GbcMapCanvasEdit.test.tsx",
+      "filter": "(pencil|bucket) immediate mouseup waits",
+      "sha256": "e249e4cfa676ec7f9f8f9f05f106db5fb0ca3c412380d49be836dced530402d1",
+      "green": {
+        "exit": 0,
+        "passed": 2,
+        "failed": 0,
+        "failures": [],
+        "stderr": ""
+      },
+      "red": {
+        "exit": 1,
+        "passed": 0,
+        "failed": 2,
+        "failures": [
+          {
+            "name": "GbcMapCanvas stroke completion barrier (B1) pencil immediate mouseup waits for an independently held first apply",
+            "messages": [
+              "AssertionError: expected \"spy\" to not be called at all, but actually been called 1 times\n\nReceived: \n\n  1st spy call:\n\n    Array []\n\n\nNumber of calls: 1\n\n    at Proxy.<anonymous> (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/expect/dist/index.js:1448:13)\n    at Proxy.<anonymous> (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/expect/dist/index.js:972:17)\n    at Proxy.methodWrapper (file:///C:/Programming%20Projects/PokeMap/node_modules/chai/index.js:1686:25)\n    at C:\\Programming Projects\\PokeMap\\packages\\ui\\test\\gbc\\GbcMapCanvasEdit.test.tsx:352:29\n    at file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:533:5\n    at runTest (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1056:11)\n    at runSuite (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1205:15)\n    at runSuite (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1205:15)\n    at runFiles (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1262:5)\n    at startTests (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1271:3)"
+            ]
+          },
+          {
+            "name": "GbcMapCanvas stroke completion barrier (B1) bucket immediate mouseup waits for an independently held first apply",
+            "messages": [
+              "AssertionError: expected \"spy\" to not be called at all, but actually been called 1 times\n\nReceived: \n\n  1st spy call:\n\n    Array []\n\n\nNumber of calls: 1\n\n    at Proxy.<anonymous> (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/expect/dist/index.js:1448:13)\n    at Proxy.<anonymous> (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/expect/dist/index.js:972:17)\n    at Proxy.methodWrapper (file:///C:/Programming%20Projects/PokeMap/node_modules/chai/index.js:1686:25)\n    at C:\\Programming Projects\\PokeMap\\packages\\ui\\test\\gbc\\GbcMapCanvasEdit.test.tsx:352:29\n    at file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:533:5\n    at runTest (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1056:11)\n    at runSuite (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1205:15)\n    at runSuite (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1205:15)\n    at runFiles (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1262:5)\n    at startTests (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1271:3)"
+            ]
+          }
+        ],
+        "stderr": ""
+      },
+      "restored": true,
+      "final": {
+        "exit": 0,
+        "passed": 2,
+        "failed": 0,
+        "failures": [],
+        "stderr": ""
+      }
+    },
+    {
+      "id": "B1-drag-queue",
+      "file": "packages/ui/src/gbc/GbcMapCanvas.tsx",
+      "anchor": "pendingPaintRef.current = pendingPaintRef.current.then(() => {\r\n          if (ownsStroke(stroke) && stroke.begun) return paintAt(cell.x, cell.y);\r\n        }).catch((e) => { if (ownsStroke(stroke)) fail(e); });",
+      "replacement": "pendingPaintRef.current = paintAt(cell.x, cell.y).catch((e) => { if (ownsStroke(stroke)) fail(e); });",
+      "test": "packages/ui/test/gbc/GbcMapCanvasEdit.test.tsx",
+      "filter": "queues a held-begin|serializes three independently",
+      "sha256": "e249e4cfa676ec7f9f8f9f05f106db5fb0ca3c412380d49be836dced530402d1",
+      "green": {
+        "exit": 0,
+        "passed": 2,
+        "failed": 0,
+        "failures": [],
+        "stderr": ""
+      },
+      "red": {
+        "exit": 1,
+        "passed": 0,
+        "failed": 2,
+        "failures": [
+          {
+            "name": "GbcMapCanvas stroke completion barrier (B1) queues a held-begin pencil move behind begin and the initial cell",
+            "messages": [
+              "AssertionError: expected \"spy\" to not be called at all, but actually been called 1 times\n\nReceived: \n\n  1st spy call:\n\n    Array [\n      Object {\n        \"origin\": Object {\n          \"x\": 1,\n          \"y\": 0,\n        },\n        \"stamp\": Object {\n          \"cells\": Array [\n            Object {\n              \"metatileId\": 9,\n            },\n          ],\n          \"height\": 1,\n          \"width\": 1,\n        },\n        \"targets\": Array [\n          Object {\n            \"x\": 1,\n            \"y\": 0,\n          },\n        ],\n        \"tool\": \"pencil\",\n      },\n    ]\n\n\nNumber of calls: 1\n\n    at Proxy.<anonymous> (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/expect/dist/index.js:1448:13)\n    at Proxy.<anonymous> (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/expect/dist/index.js:972:17)\n    at Proxy.methodWrapper (file:///C:/Programming%20Projects/PokeMap/node_modules/chai/index.js:1686:25)\n    at C:\\Programming Projects\\PokeMap\\packages\\ui\\test\\gbc\\GbcMapCanvasEdit.test.tsx:334:30\n    at file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:533:5\n    at runTest (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1056:11)\n    at runSuite (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1205:15)\n    at runSuite (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1205:15)\n    at runFiles (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1262:5)\n    at startTests (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1271:3)"
+            ]
+          },
+          {
+            "name": "GbcMapCanvas stroke completion barrier (B1) serializes three independently held drag applies and end waits for every cell",
+            "messages": [
+              "AssertionError: expected \"spy\" to be called 1 times, but got 3 times\n    at C:\\Programming Projects\\PokeMap\\packages\\ui\\test\\gbc\\GbcMapCanvasEdit.test.tsx:368:26\n    at file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:533:5\n    at runTest (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1056:11)\n    at runSuite (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1205:15)\n    at runSuite (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1205:15)\n    at runFiles (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1262:5)\n    at startTests (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1271:3)\n    at file:///C:/Programming%20Projects/PokeMap/node_modules/vitest/dist/chunks/runBaseTests.3qpJUEJM.js:126:11\n    at withEnv (file:///C:/Programming%20Projects/PokeMap/node_modules/vitest/dist/chunks/runBaseTests.3qpJUEJM.js:90:5)\n    at run (file:///C:/Programming%20Projects/PokeMap/node_modules/vitest/dist/chunks/runBaseTests.3qpJUEJM.js:112:3)"
+            ]
+          }
+        ],
+        "stderr": ""
+      },
+      "restored": true,
+      "final": {
+        "exit": 0,
+        "passed": 2,
+        "failed": 0,
+        "failures": [],
+        "stderr": ""
+      }
+    },
+    {
+      "id": "B1-end-chain",
+      "file": "packages/ui/src/gbc/GbcMapCanvas.tsx",
+      "anchor": "await editSession.endStroke();",
+      "replacement": "void editSession.endStroke();",
+      "test": "packages/ui/test/gbc/GbcMapCanvasEdit.test.tsx",
+      "filter": "a following stroke waits",
+      "sha256": "e249e4cfa676ec7f9f8f9f05f106db5fb0ca3c412380d49be836dced530402d1",
+      "green": {
+        "exit": 0,
+        "passed": 1,
+        "failed": 0,
+        "failures": [],
+        "stderr": ""
+      },
+      "red": {
+        "exit": 1,
+        "passed": 0,
+        "failed": 1,
+        "failures": [
+          {
+            "name": "GbcMapCanvas stroke completion barrier (B1) a following stroke waits for the previous end round trip",
+            "messages": [
+              "AssertionError: expected \"spy\" to be called 1 times, but got 2 times\n    at C:\\Programming Projects\\PokeMap\\packages\\ui\\test\\gbc\\GbcMapCanvasEdit.test.tsx:391:27\n    at file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:533:5\n    at runTest (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1056:11)\n    at runSuite (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1205:15)\n    at runSuite (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1205:15)\n    at runFiles (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1262:5)\n    at startTests (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1271:3)\n    at file:///C:/Programming%20Projects/PokeMap/node_modules/vitest/dist/chunks/runBaseTests.3qpJUEJM.js:126:11\n    at withEnv (file:///C:/Programming%20Projects/PokeMap/node_modules/vitest/dist/chunks/runBaseTests.3qpJUEJM.js:90:5)\n    at run (file:///C:/Programming%20Projects/PokeMap/node_modules/vitest/dist/chunks/runBaseTests.3qpJUEJM.js:112:3)"
+            ]
+          }
+        ],
+        "stderr": ""
+      },
+      "restored": true,
+      "final": {
+        "exit": 0,
+        "passed": 1,
+        "failed": 0,
+        "failures": [],
+        "stderr": ""
+      }
+    },
+    {
+      "id": "B1-visit",
+      "file": "packages/ui/src/gbc/GbcMapCanvas.tsx",
+      "anchor": "const ownsStroke = (stroke: NonNullable<typeof strokeRef.current>) => stroke.visit === canvasVisitRef.current;",
+      "replacement": "const ownsStroke = (_stroke: NonNullable<typeof strokeRef.current>) => true;",
+      "test": "packages/ui/test/gbc/GbcMapCanvasEdit.test.tsx",
+      "filter": "retires queued|unmount retires pending",
+      "sha256": "e249e4cfa676ec7f9f8f9f05f106db5fb0ca3c412380d49be836dced530402d1",
+      "green": {
+        "exit": 0,
+        "passed": 7,
+        "failed": 0,
+        "failures": [],
+        "stderr": ""
+      },
+      "red": {
+        "exit": 1,
+        "passed": 2,
+        "failed": 5,
+        "failures": [
+          {
+            "name": "GbcMapCanvas stroke completion barrier (B1) retires queued begin work on a map visit change (ABA=false)",
+            "messages": [
+              "AssertionError: expected \"spy\" to be called +0 times, but got 2 times\n    at C:\\Programming Projects\\PokeMap\\packages\\ui\\test\\gbc\\GbcMapCanvasEdit.test.tsx:412:30\n    at file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:533:5\n    at runTest (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1056:11)\n    at runSuite (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1205:15)\n    at runSuite (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1205:15)\n    at runFiles (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1262:5)\n    at startTests (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1271:3)\n    at file:///C:/Programming%20Projects/PokeMap/node_modules/vitest/dist/chunks/runBaseTests.3qpJUEJM.js:126:11\n    at withEnv (file:///C:/Programming%20Projects/PokeMap/node_modules/vitest/dist/chunks/runBaseTests.3qpJUEJM.js:90:5)\n    at run (file:///C:/Programming%20Projects/PokeMap/node_modules/vitest/dist/chunks/runBaseTests.3qpJUEJM.js:112:3)"
+            ]
+          },
+          {
+            "name": "GbcMapCanvas stroke completion barrier (B1) retires queued apply work on a map visit change (ABA=false)",
+            "messages": [
+              "AssertionError: expected \"spy\" to be called 1 times, but got 2 times\n    at C:\\Programming Projects\\PokeMap\\packages\\ui\\test\\gbc\\GbcMapCanvasEdit.test.tsx:412:30\n    at file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:533:5\n    at runTest (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1056:11)\n    at runSuite (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1205:15)\n    at runSuite (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1205:15)\n    at runFiles (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1262:5)\n    at startTests (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1271:3)\n    at file:///C:/Programming%20Projects/PokeMap/node_modules/vitest/dist/chunks/runBaseTests.3qpJUEJM.js:126:11\n    at withEnv (file:///C:/Programming%20Projects/PokeMap/node_modules/vitest/dist/chunks/runBaseTests.3qpJUEJM.js:90:5)\n    at run (file:///C:/Programming%20Projects/PokeMap/node_modules/vitest/dist/chunks/runBaseTests.3qpJUEJM.js:112:3)"
+            ]
+          },
+          {
+            "name": "GbcMapCanvas stroke completion barrier (B1) retires queued begin work on a map visit change (ABA=true)",
+            "messages": [
+              "AssertionError: expected \"spy\" to be called +0 times, but got 2 times\n    at C:\\Programming Projects\\PokeMap\\packages\\ui\\test\\gbc\\GbcMapCanvasEdit.test.tsx:412:30\n    at file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:533:5\n    at runTest (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1056:11)\n    at runSuite (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1205:15)\n    at runSuite (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1205:15)\n    at runFiles (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1262:5)\n    at startTests (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1271:3)\n    at file:///C:/Programming%20Projects/PokeMap/node_modules/vitest/dist/chunks/runBaseTests.3qpJUEJM.js:126:11\n    at withEnv (file:///C:/Programming%20Projects/PokeMap/node_modules/vitest/dist/chunks/runBaseTests.3qpJUEJM.js:90:5)\n    at run (file:///C:/Programming%20Projects/PokeMap/node_modules/vitest/dist/chunks/runBaseTests.3qpJUEJM.js:112:3)"
+            ]
+          },
+          {
+            "name": "GbcMapCanvas stroke completion barrier (B1) retires queued apply work on a map visit change (ABA=true)",
+            "messages": [
+              "AssertionError: expected \"spy\" to be called 1 times, but got 2 times\n    at C:\\Programming Projects\\PokeMap\\packages\\ui\\test\\gbc\\GbcMapCanvasEdit.test.tsx:412:30\n    at file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:533:5\n    at runTest (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1056:11)\n    at runSuite (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1205:15)\n    at runSuite (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1205:15)\n    at runFiles (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1262:5)\n    at startTests (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1271:3)\n    at file:///C:/Programming%20Projects/PokeMap/node_modules/vitest/dist/chunks/runBaseTests.3qpJUEJM.js:126:11\n    at withEnv (file:///C:/Programming%20Projects/PokeMap/node_modules/vitest/dist/chunks/runBaseTests.3qpJUEJM.js:90:5)\n    at run (file:///C:/Programming%20Projects/PokeMap/node_modules/vitest/dist/chunks/runBaseTests.3qpJUEJM.js:112:3)"
+            ]
+          },
+          {
+            "name": "GbcMapCanvas stroke completion barrier (B1) unmount retires pending begin continuations",
+            "messages": [
+              "AssertionError: expected \"spy\" to not be called at all, but actually been called 1 times\n\nReceived: \n\n  1st spy call:\n\n    Array [\n      Object {\n        \"origin\": Object {\n          \"x\": 0,\n          \"y\": 0,\n        },\n        \"stamp\": Object {\n          \"cells\": Array [\n            Object {\n              \"metatileId\": 9,\n            },\n          ],\n          \"height\": 1,\n          \"width\": 1,\n        },\n        \"targets\": Array [\n          Object {\n            \"x\": 0,\n            \"y\": 0,\n          },\n        ],\n        \"tool\": \"pencil\",\n      },\n    ]\n\n\nNumber of calls: 1\n\n    at Proxy.<anonymous> (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/expect/dist/index.js:1448:13)\n    at Proxy.<anonymous> (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/expect/dist/index.js:972:17)\n    at Proxy.methodWrapper (file:///C:/Programming%20Projects/PokeMap/node_modules/chai/index.js:1686:25)\n    at C:\\Programming Projects\\PokeMap\\packages\\ui\\test\\gbc\\GbcMapCanvasEdit.test.tsx:429:30\n    at file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:533:5\n    at runTest (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1056:11)\n    at runSuite (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1205:15)\n    at runSuite (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1205:15)\n    at runFiles (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1262:5)\n    at startTests (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1271:3)"
+            ]
+          }
+        ],
+        "stderr": ""
+      },
+      "restored": true,
+      "final": {
+        "exit": 0,
+        "passed": 7,
+        "failed": 0,
+        "failures": [],
+        "stderr": ""
+      }
+    },
+    {
+      "id": "B1-retire-cleanup",
+      "file": "packages/ui/src/gbc/GbcMapCanvas.tsx",
+      "anchor": "if (stroke.begun) await stroke.end();",
+      "replacement": "/* omit retired stroke cleanup */",
+      "test": "packages/ui/test/gbc/GbcMapCanvasEdit.test.tsx",
+      "filter": "without mouseup",
+      "sha256": "e249e4cfa676ec7f9f8f9f05f106db5fb0ca3c412380d49be836dced530402d1",
+      "green": {
+        "exit": 0,
+        "passed": 6,
+        "failed": 0,
+        "failures": [],
+        "stderr": ""
+      },
+      "red": {
+        "exit": 1,
+        "passed": 0,
+        "failed": 6,
+        "failures": [
+          {
+            "name": "GbcMapCanvas stroke completion barrier (B1) map retires pending begin without mouseup and finishes its issued begin",
+            "messages": [
+              "AssertionError: expected \"spy\" to be called 1 times, but got 0 times\n    at C:\\Programming Projects\\PokeMap\\packages\\ui\\test\\gbc\\GbcMapCanvasEdit.test.tsx:322:27\n    at file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:533:5\n    at runTest (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1056:11)\n    at runSuite (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1205:15)\n    at runSuite (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1205:15)\n    at runFiles (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1262:5)\n    at startTests (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1271:3)\n    at file:///C:/Programming%20Projects/PokeMap/node_modules/vitest/dist/chunks/runBaseTests.3qpJUEJM.js:126:11\n    at withEnv (file:///C:/Programming%20Projects/PokeMap/node_modules/vitest/dist/chunks/runBaseTests.3qpJUEJM.js:90:5)\n    at run (file:///C:/Programming%20Projects/PokeMap/node_modules/vitest/dist/chunks/runBaseTests.3qpJUEJM.js:112:3)"
+            ]
+          },
+          {
+            "name": "GbcMapCanvas stroke completion barrier (B1) ABA retires pending begin without mouseup and finishes its issued begin",
+            "messages": [
+              "AssertionError: expected \"spy\" to be called 1 times, but got 0 times\n    at C:\\Programming Projects\\PokeMap\\packages\\ui\\test\\gbc\\GbcMapCanvasEdit.test.tsx:322:27\n    at file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:533:5\n    at runTest (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1056:11)\n    at runSuite (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1205:15)\n    at runSuite (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1205:15)\n    at runFiles (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1262:5)\n    at startTests (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1271:3)\n    at file:///C:/Programming%20Projects/PokeMap/node_modules/vitest/dist/chunks/runBaseTests.3qpJUEJM.js:126:11\n    at withEnv (file:///C:/Programming%20Projects/PokeMap/node_modules/vitest/dist/chunks/runBaseTests.3qpJUEJM.js:90:5)\n    at run (file:///C:/Programming%20Projects/PokeMap/node_modules/vitest/dist/chunks/runBaseTests.3qpJUEJM.js:112:3)"
+            ]
+          },
+          {
+            "name": "GbcMapCanvas stroke completion barrier (B1) unmount retires pending begin without mouseup and finishes its issued begin",
+            "messages": [
+              "AssertionError: expected \"spy\" to be called 1 times, but got 0 times\n    at C:\\Programming Projects\\PokeMap\\packages\\ui\\test\\gbc\\GbcMapCanvasEdit.test.tsx:322:27\n    at file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:533:5\n    at runTest (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1056:11)\n    at runSuite (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1205:15)\n    at runSuite (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1205:15)\n    at runFiles (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1262:5)\n    at startTests (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1271:3)\n    at file:///C:/Programming%20Projects/PokeMap/node_modules/vitest/dist/chunks/runBaseTests.3qpJUEJM.js:126:11\n    at withEnv (file:///C:/Programming%20Projects/PokeMap/node_modules/vitest/dist/chunks/runBaseTests.3qpJUEJM.js:90:5)\n    at run (file:///C:/Programming%20Projects/PokeMap/node_modules/vitest/dist/chunks/runBaseTests.3qpJUEJM.js:112:3)"
+            ]
+          },
+          {
+            "name": "GbcMapCanvas stroke completion barrier (B1) map retires pending apply without mouseup and finishes its issued begin",
+            "messages": [
+              "AssertionError: expected \"spy\" to be called 1 times, but got 0 times\n    at C:\\Programming Projects\\PokeMap\\packages\\ui\\test\\gbc\\GbcMapCanvasEdit.test.tsx:322:27\n    at file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:533:5\n    at runTest (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1056:11)\n    at runSuite (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1205:15)\n    at runSuite (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1205:15)\n    at runFiles (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1262:5)\n    at startTests (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1271:3)\n    at file:///C:/Programming%20Projects/PokeMap/node_modules/vitest/dist/chunks/runBaseTests.3qpJUEJM.js:126:11\n    at withEnv (file:///C:/Programming%20Projects/PokeMap/node_modules/vitest/dist/chunks/runBaseTests.3qpJUEJM.js:90:5)\n    at run (file:///C:/Programming%20Projects/PokeMap/node_modules/vitest/dist/chunks/runBaseTests.3qpJUEJM.js:112:3)"
+            ]
+          },
+          {
+            "name": "GbcMapCanvas stroke completion barrier (B1) ABA retires pending apply without mouseup and finishes its issued begin",
+            "messages": [
+              "AssertionError: expected \"spy\" to be called 1 times, but got 0 times\n    at C:\\Programming Projects\\PokeMap\\packages\\ui\\test\\gbc\\GbcMapCanvasEdit.test.tsx:322:27\n    at file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:533:5\n    at runTest (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1056:11)\n    at runSuite (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1205:15)\n    at runSuite (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1205:15)\n    at runFiles (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1262:5)\n    at startTests (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1271:3)\n    at file:///C:/Programming%20Projects/PokeMap/node_modules/vitest/dist/chunks/runBaseTests.3qpJUEJM.js:126:11\n    at withEnv (file:///C:/Programming%20Projects/PokeMap/node_modules/vitest/dist/chunks/runBaseTests.3qpJUEJM.js:90:5)\n    at run (file:///C:/Programming%20Projects/PokeMap/node_modules/vitest/dist/chunks/runBaseTests.3qpJUEJM.js:112:3)"
+            ]
+          },
+          {
+            "name": "GbcMapCanvas stroke completion barrier (B1) unmount retires pending apply without mouseup and finishes its issued begin",
+            "messages": [
+              "AssertionError: expected \"spy\" to be called 1 times, but got 0 times\n    at C:\\Programming Projects\\PokeMap\\packages\\ui\\test\\gbc\\GbcMapCanvasEdit.test.tsx:322:27\n    at file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:533:5\n    at runTest (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1056:11)\n    at runSuite (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1205:15)\n    at runSuite (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1205:15)\n    at runFiles (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1262:5)\n    at startTests (file:///C:/Programming%20Projects/PokeMap/node_modules/@vitest/runner/dist/index.js:1271:3)\n    at file:///C:/Programming%20Projects/PokeMap/node_modules/vitest/dist/chunks/runBaseTests.3qpJUEJM.js:126:11\n    at withEnv (file:///C:/Programming%20Projects/PokeMap/node_modules/vitest/dist/chunks/runBaseTests.3qpJUEJM.js:90:5)\n    at run (file:///C:/Programming%20Projects/PokeMap/node_modules/vitest/dist/chunks/runBaseTests.3qpJUEJM.js:112:3)"
+            ]
+          }
+        ],
+        "stderr": ""
+      },
+      "restored": true,
+      "final": {
+        "exit": 0,
+        "passed": 6,
+        "failed": 0,
+        "failures": [],
+        "stderr": ""
+      }
+    }
+  ]
+}

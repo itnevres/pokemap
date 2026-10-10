@@ -1,4 +1,4 @@
-# PokeMap: current state (2026-10-07, read first)
+# PokeMap: current state (2026-10-10, read first)
 
 PokeMap is a Porymap-parity map editor with two engine families:
 - **GBA:** pokeemerald-family decomps. Plans 0-5.
@@ -22,36 +22,40 @@ This file holds the state and the accumulated lessons. The prompt for the next s
   - (b) The subject's uncommitted 2026-08-30 resize of `LAYOUT_NAVEL_ROCK_ZYGARDE_CHAMBER` (+561 blocks): 2 tests.
   - (c) The subject's local `.pokemap/world.json`: its manual placements (1 test). On Windows, `dungeonAutoLayout:false` also accounts for the 2 `world.test.ts` failures above.
 
-## Plan 7 handoff (in progress; branch `plan-7-gbc-editing`, updated 2026-10-07)
+## Plan 7 handoff (complete locally; branch `plan-7-gbc-editing`, updated 2026-10-10)
 
 - **Done:** Tasks 1, 2, 3, 4, 5, 6 and 7. Each was reviewed, fixed in one round, had its survivors re-run by the coordinator, and passed a full gate. Reports are archived in `task-reports/pokemap-plan-7-gbc-editing/_archive/` (`task-N-coordinator.md` holds each record).
   - Task 5 was live-verified on the real PerfPlus (paint and event round trips, byte-identical afterwards).
   - Task 7 is the G5 write gate over PerfPlus and pret.
-  - Last gate, at `1c64e15`: **2,432 pass / 2 fail** (the known `world.test.ts` pair).
-- **In progress:** Task 5b (in-context editing port, user decision U1), spec `task-5b-spec.md`.
-- **Pending:**
-  - Task 5b reviews, then the coordinator's live verify (scratch hub 5184 + Vite 5183, byte-snapshot protocol), then a final gate;
-  - close-out: the plan's STATUS banner, a RESUME update, deleting the coordinator's `.playwright-mcp` logs;
-  - **stop and ask the user before push/PR.**
+  - Earlier Task 7 gate at `1c64e15`: **2,432 pass / 2 fail** (the known `world.test.ts` pair).
+- **Done:** Task 5b in-context editing (U1), including cached-image entry repair `f8c88d0` and B1 completion chain `b0f448a`. Test-only follow-up `1eb8f81` makes the adjacent-stroke witness observe queued microtasks while previous end remains held. Independent spec and quality reviews pass; scoped broad B1 closure and coordinator acceptance are archived.
+  - Final nine coordinator R1/R2/R3/X7/B1 mutants all killed with nonempty green/red/restored runs, unique literal anchors, in-memory/finally byte restoration and exact ID reconciliation. Initial B1-end-chain survivor is preserved as historical evidence.
+  - Final-code real PerfPlus context draws pixels, aligns byte-for-byte with World, serializes rapid click/drag across held responses, preserves dirty/undo, refreshes World on save, and restores blk/asm byte-identically by reverse UI edit. No corpus fallback or Git undo was used.
+  - Fresh full gate at `1eb8f81`: **2,572 pass / 2 known GBA local-state failures**,150 files. Typecheck and UI build pass. The earlier App readiness failure is gone; its fixture now supplies complete decoded 384×384 metadata before synthetic load, with exact coordinate assertions and normal timeouts retained.
+- **Pending:** user approval before push or PR. Branch is local and unpushed. Do not restart completed tasks or repeat their diagnosis.
+- **Final evidence:** `task-reports/pokemap-plan-7-gbc-editing/_archive/task-5b-b1-coordinator.md`, `task-final-branch-review.md`, scoped B1 reviews and captured final gate/mutation ledgers. Executed specs remain at the active report-directory root.
 - **Preflight and user decisions:** `task-reports/pokemap-plan-7-gbc-editing/preflight.md`.
   - U1: port in-context editing as Task 5b.
   - U2: scope as written.
   - U3: the coordinator cloned pret/pokecrystal to `refs/pokecrystal` at `3bc8daa`.
 - **External state to check on resume:**
-  - GBA subject: HEAD `718b89f`, 7 porcelain lines, `world.json` `b285bbf…`, `dungeons.json` `f73f9b7…`.
+  - GBA subject: HEAD `718b89f`, same 7 porcelain lines, **current** `world.json` SHA-1 `9c8ab2a86d8fad7ac534629a138be0a87df30cea`, `dungeons.json` `f73f9b7…`. The world sidecar changed externally on October8; preserve this newer state, never restore the superseded `b285bbf…` bytes.
   - PerfPlus: HEAD `81ededbe`, clean, no `.pokemap`.
   - pret: `3bc8daa`, clean.
 - **Plan 7 lessons so far:**
   - A test that dry-runs against the real PerfPlus can write under a "dry run commits" mutation. It happened in Task 6's C1 and was restored byte-identical. Use temp copies (`copyGbcSubjectToTemp`) for every test that a mutation could turn into a write.
   - A cheap model's mutation table can claim red without a run (Task 2's P5). The coordinator re-run catches it.
   - Spec fixtures can hide the very bug a mutation targets (Task 1's blkPath equal to the map name; Task 2's diagonals). Reviewers found both.
+  - Retaining a ref to the latest request does not make a stroke completion barrier. Return the first apply promise, queue every move, await end, and capture visit identity plus start/end cleanup.
+  - A deferred test's negative assertion must let the relevant queued microtasks run. The original adjacent-stroke witness missed removal of the end await until the coordinator mutation exposed its scheduling gap.
+  - Cached image readiness needs decoded metadata and the current image URL. A synthetic load event without natural dimensions can race the mounted-image readiness effect; do not weaken geometry assertions or inflate timeouts.
 
 ## Where each line of work stands
 
 | Line of work | State | Needs |
 |---|---|---|
 | Plan 6: GBC foundation, read-only | **Done and merged 2026-09-25.** See the plan's STATUS banner for the real file map | — |
-| Plan 7: GBC editing | **Unblocked; the recommended next line of work.** Its "Grounding from Plan 6" section is required reading. Tasks 1, 2, 3, 6 and 7 (core + CLI) can run at any time; Tasks 4-5 build on 6b's server and UI | PerfPlus clone (+ pret/pokecrystal for the G5 gate) |
+| Plan 7: GBC editing | **Complete locally; awaiting push/PR approval.** Tasks 1–7 and Task 5b accepted; final gate2,572 pass/2 known local-state failures, typecheck/build pass. Plan STATUS and archived acceptance reports hold details. | User approval before push/PR |
 | 6c: hub, encounter border, world UX (both families) | **Done and merged 2026-10-07** ([itnevres/pokemap#11](https://github.com/itnevres/pokemap/pull/11) → `a16b604`). Phases A-F; the close-out is `_archive/task-F1-closeout.md`. (A 2026-09-30: hub, picker/switcher, criterion 1. B 2026-10-01: GBC front sprites + real GBC icon route, species-summary adapters, `pickBorderSide`, shared `EncounterBorder` replacing both gutters in both world views, the border in both map views; criterion 2. C 2026-10-01: `LensPanel` split into toggles + an in-flow `LensLegend` row (`world-canvas__legend-row`) with real empty-maps (jump like a tree click) and unused-species (names + icons) lists, both `focusEmptyMaps` deleted; `MapTree` reveals the selected row; GBA world single-click selects in the tree without jumping, and entering World centres on the selection (both apps); criteria 3-5 live-verified. D 2026-10-04: GBC visibility, sidecar and drag placement; near-warp auto-layout in core for both families; GBC warp markers, preview and Dungeon tab; conflict acceptance in both families with a badge-only right-click action that E3 absorbs; criteria 6-7 live-verified in both families). `plans/2026-09-28-pokemap-plan-6c-hub-encounters-world.md`: 17 tasks in phases A-F. Run one phase per coordinator session. The user decisions U1-U4 are binding. E 2026-10-06:
 - E1: `MapCanvas` has one view state (follow-ups D1/D2 done) and a controlled `view`/`onViewChange`.
 - E2: `MapEditingWorkspace` and `useMapEditing` were extracted from `App`.
