@@ -255,7 +255,15 @@ describe("GbcApp -- in-context editing (Plan 7 Task 5b)", () => {
       dblClickPort(canvas);
       await waitFor(() => expect(contextOverlay()!.querySelector("canvas.map-canvas__stage")).not.toBeNull());
       const stage = contextOverlay()!.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
-      fireEvent.load(contextOverlay()!.querySelector("img.map-canvas__source-image")!);
+      const img = contextOverlay()!.querySelector("img.map-canvas__source-image") as HTMLImageElement;
+      // A real successful load has decoded dimensions. fireEvent.load alone leaves jsdom's image unready,
+      // so a later mount URL effect could legitimately clear readiness after this synthetic event.
+      Object.defineProperties(img, {
+        complete: { configurable: true, value: true },
+        naturalWidth: { configurable: true, value: 384 }, // (10 + 2 border rings) * 32
+        naturalHeight: { configurable: true, value: 384 },
+      });
+      fireEvent.load(img);
       act(() => { for (const img of FakeImage.instances) img.onload?.(); });
       // Double-click at (150,100) snaps OlivinePort (10,0) 10x10 blocks to 1x = 32 px/block with its centre at the pointer:
       // pan = (150 - 15*32, 100 - 5*32) = (-330, -60), so the world draws the map at (10*32 - 330, -60) = (-10, -60).
@@ -506,10 +514,16 @@ describe("GbcApp -- in-context editing (Plan 7 Task 5b)", () => {
     const original = f.getMockImplementation()!;
     let release!: () => void;
     const held = new Promise<void>((resolve) => { release = resolve; });
+    let releaseApply!: () => void;
+    const heldApply = new Promise<void>((resolve) => { releaseApply = resolve; });
     f.mockImplementation((url, init) => {
       if (url.endsWith("/paint/begin")) {
         calls.push("POST " + url);
         return held.then(() => ok(CLEAN));
+      }
+      if (url.endsWith("/paint/apply")) {
+        const reply = original(url, init);
+        return heldApply.then(() => reply); // Hold the round trip independently of begin.
       }
       return original(url, init);
     });
@@ -523,9 +537,12 @@ describe("GbcApp -- in-context editing (Plan 7 Task 5b)", () => {
     // Body (-10,-60); client (134,52) gives offset (144,112): block (4,3) at 32px.
     fireEvent.mouseDown(stage, { clientX: 134, clientY: 52, button: 0 });
     fireEvent.mouseUp(stage, { clientX: 134, clientY: 52, button: 0 });
-    expect(calls).toEqual(["POST /api/edit/OlivinePort/paint/begin"]);
+    await waitFor(() => expect(calls).toEqual(["POST /api/edit/OlivinePort/paint/begin"]));
     expect(screen.queryByTestId("dirty-indicator")).toBeNull();
     await act(async () => { release(); });
+    await waitFor(() => expect(calls).toEqual(["POST /api/edit/OlivinePort/paint/begin", "POST /api/edit/OlivinePort/paint/apply"]));
+    expect(screen.queryByTestId("dirty-indicator")).toBeNull();
+    await act(async () => { releaseApply(); });
     await waitFor(() => expect(calls).toContain("POST /api/edit/OlivinePort/paint/end"));
     expect(calls).toEqual(["POST /api/edit/OlivinePort/paint/begin", "POST /api/edit/OlivinePort/paint/apply", "POST /api/edit/OlivinePort/paint/end"]);
     const apply = f.mock.calls.find(([url]) => url.endsWith("/paint/apply"))!;

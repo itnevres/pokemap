@@ -264,7 +264,7 @@ describe("GbcMapCanvas errors and drag dedupe", () => {
     fireEvent.mouseMove(canvas, { clientX: 80, clientY: 80, buttons: 1 });
     expect(s.applyPaint).toHaveBeenCalledTimes(1);
     fireEvent.mouseMove(canvas, { clientX: 104, clientY: 72, buttons: 1 }); // block 2,1
-    expect(s.applyPaint).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(s.applyPaint).toHaveBeenCalledTimes(2));
     fireEvent.mouseMove(canvas, { clientX: 105, clientY: 73, buttons: 1 });
     expect(s.applyPaint).toHaveBeenCalledTimes(2);
   });
@@ -278,5 +278,199 @@ describe("GbcMapCanvas errors and drag dedupe", () => {
       await waitFor(() => expect(s.applyPaint).toHaveBeenCalledTimes(i + 1));
       await waitFor(() => expect(log.filter((l) => l === "end").length).toBe(i + 1));
     }
+  });
+});
+
+function held() {
+  let resolve!: () => void;
+  let reject!: (error: Error) => void;
+  const promise = new Promise<void>((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+
+describe("GbcMapCanvas stroke completion barrier (B1)", () => {
+  it.each(["begin", "apply", "end"] as const)("retired %s failure does not update the next visit's error UI", async (phase) => {
+    const pending = held();
+    const onEditError = vi.fn();
+    const old = session({ [phase === "begin" ? "beginStroke" : phase === "apply" ? "applyPaint" : "endStroke"]: vi.fn(() => pending.promise) });
+    const props = { activeTool: { kind: "rect" as const, stamp: STAMP }, onEditError };
+    const mounted = mount({ ...props, editSession: old });
+    fireEvent.mouseDown(mounted.canvas, at(40, 40));
+    fireEvent.mouseUp(mounted.canvas, at(72, 72));
+    await waitFor(() => expect(phase === "begin" ? old.beginStroke : phase === "apply" ? old.applyPaint : old.endStroke).toHaveBeenCalledTimes(1));
+    mounted.rerender(<GbcMapCanvas mapName="N" data={DATA} time="day" {...props} editSession={session()} />);
+    await act(async () => pending.reject(new Error("retired failure")));
+    expect(onEditError).not.toHaveBeenCalled();
+  });
+  for (const phase of ["begin", "apply"] as const) it.each(["map", "ABA", "unmount"])("%s retires pending " + phase + " without mouseup and finishes its issued begin", async (retirement) => {
+    const begin = held();
+    const old = session(phase === "begin" ? { beginStroke: vi.fn(() => begin.promise) } : { applyPaint: vi.fn(() => begin.promise) });
+    const next = session();
+    const props = { activeTool: { kind: phase === "begin" ? "rect" as const : "pencil" as const, stamp: STAMP } };
+    const mounted = mount({ ...props, editSession: old });
+    fireEvent.mouseDown(mounted.canvas, at(40, 40));
+    await waitFor(() => expect(old.beginStroke).toHaveBeenCalledTimes(1));
+    if (phase === "apply") await waitFor(() => expect(old.applyPaint).toHaveBeenCalledTimes(1));
+    if (retirement === "unmount") mounted.unmount();
+    else {
+      mounted.rerender(<GbcMapCanvas mapName="N" data={DATA} time="day" {...props} editSession={next} />);
+      if (retirement === "ABA") mounted.rerender(<GbcMapCanvas mapName="M" data={DATA} time="day" {...props} editSession={next} />);
+      fireEvent.mouseUp(mounted.canvas, at(104, 72));
+    }
+    await act(async () => begin.resolve());
+    expect(old.applyPaint).toHaveBeenCalledTimes(phase === "begin" ? 0 : 1);
+    expect(old.endStroke).toHaveBeenCalledTimes(1);
+    expect(next.applyPaint).not.toHaveBeenCalled();
+    expect(next.endStroke).not.toHaveBeenCalled();
+  });
+  it("queues a held-begin pencil move behind begin and the initial cell", async () => {
+    const begin = held();
+    const s = session({ beginStroke: vi.fn(() => begin.promise) });
+    const { canvas } = mount({ editSession: s, activeTool: { kind: "pencil", stamp: STAMP } });
+    fireEvent.mouseDown(canvas, at(40, 40));
+    await waitFor(() => expect(s.beginStroke).toHaveBeenCalledTimes(1));
+    fireEvent.mouseMove(canvas, { ...at(72, 40), buttons: 1 });
+    fireEvent.mouseUp(canvas, at(72, 40));
+    expect(s.applyPaint).not.toHaveBeenCalled();
+    expect(s.endStroke).not.toHaveBeenCalled();
+    await act(async () => begin.resolve());
+    await waitFor(() => expect(s.endStroke).toHaveBeenCalledTimes(1));
+    expect((s.applyPaint as ReturnType<typeof vi.fn>).mock.calls.map(([body]) => body.targets)).toEqual([[{ x: 0, y: 0 }], [{ x: 1, y: 0 }]]);
+  });
+
+  it.each(["pencil", "bucket", "rect", "shift"] as const)("%s immediate mouseup waits for an independently held first apply", async (kind) => {
+    const begin = held();
+    const apply = held();
+    const s = session({ beginStroke: vi.fn(() => begin.promise), applyPaint: vi.fn(() => apply.promise) });
+    const { canvas } = mount({ editSession: s, activeTool: { kind, stamp: STAMP } });
+    fireEvent.mouseDown(canvas, at(40, 40));
+    fireEvent.mouseUp(canvas, at(104, 72));
+    await waitFor(() => expect(s.beginStroke).toHaveBeenCalledTimes(1));
+    expect(s.applyPaint).not.toHaveBeenCalled();
+    await act(async () => begin.resolve());
+    expect(s.applyPaint).toHaveBeenCalledTimes(1);
+    expect(s.endStroke).not.toHaveBeenCalled();
+    await act(async () => apply.resolve());
+    await waitFor(() => expect(s.endStroke).toHaveBeenCalledTimes(1));
+  });
+
+  it("serializes three independently held drag applies and end waits for every cell", async () => {
+    const cells = [held(), held(), held()];
+    let index = 0;
+    const s = session({ applyPaint: vi.fn(() => cells[index++]!.promise) });
+    const { canvas } = mount({ editSession: s, activeTool: { kind: "pencil", stamp: STAMP } });
+    fireEvent.mouseDown(canvas, at(40, 40));
+    await waitFor(() => expect(s.applyPaint).toHaveBeenCalledTimes(1));
+    fireEvent.mouseMove(canvas, { ...at(72, 40), buttons: 1 });
+    fireEvent.mouseMove(canvas, { ...at(104, 40), buttons: 1 });
+    fireEvent.mouseMove(canvas, { ...at(105, 41), buttons: 1 }); // same-cell dedupe while queued
+    fireEvent.mouseUp(canvas, at(104, 40));
+    expect(s.applyPaint).toHaveBeenCalledTimes(1);
+    expect(s.endStroke).not.toHaveBeenCalled();
+    await act(async () => cells[0]!.resolve());
+    expect(s.applyPaint).toHaveBeenCalledTimes(2);
+    expect(s.endStroke).not.toHaveBeenCalled();
+    await act(async () => cells[1]!.resolve());
+    expect(s.applyPaint).toHaveBeenCalledTimes(3);
+    expect(s.endStroke).not.toHaveBeenCalled();
+    await act(async () => cells[2]!.resolve());
+    expect(s.endStroke).toHaveBeenCalledTimes(1);
+    expect((s.applyPaint as ReturnType<typeof vi.fn>).mock.calls.map(([body]) => body.targets)).toEqual([[{ x: 0, y: 0 }], [{ x: 1, y: 0 }], [{ x: 2, y: 0 }]]);
+  });
+
+  it("a following stroke waits for the previous end round trip", async () => {
+    const end = held();
+    const s = session({ endStroke: vi.fn().mockImplementationOnce(() => end.promise).mockResolvedValue(undefined) });
+    const { canvas } = mount({ editSession: s, activeTool: { kind: "pencil", stamp: STAMP } });
+    fireEvent.mouseDown(canvas, at(40, 40));
+    fireEvent.mouseUp(canvas, at(40, 40));
+    await waitFor(() => expect(s.endStroke).toHaveBeenCalledTimes(1));
+    fireEvent.mouseDown(canvas, at(72, 40));
+    fireEvent.mouseUp(canvas, at(72, 40));
+    expect(s.beginStroke).toHaveBeenCalledTimes(1);
+    await act(async () => end.resolve());
+    await waitFor(() => expect(s.endStroke).toHaveBeenCalledTimes(2));
+    expect(s.beginStroke).toHaveBeenCalledTimes(2);
+  });
+
+  for (const aba of [false, true]) for (const phase of ["begin", "apply"] as const) {
+    it("retires queued " + phase + " work on a map visit change (ABA=" + aba + ")", async () => {
+      const pending = held();
+      const old = session(phase === "begin" ? { beginStroke: vi.fn(() => pending.promise) } : { applyPaint: vi.fn(() => pending.promise) });
+      const next = session();
+      const props = { activeTool: { kind: "pencil" as const, stamp: STAMP } };
+      const mounted = mount({ ...props, editSession: old });
+      fireEvent.mouseDown(mounted.canvas, at(40, 40));
+      await waitFor(() => expect(old.beginStroke).toHaveBeenCalledTimes(1));
+      if (phase === "apply") await waitFor(() => expect(old.applyPaint).toHaveBeenCalledTimes(1));
+      fireEvent.mouseMove(mounted.canvas, { ...at(72, 40), buttons: 1 });
+      fireEvent.mouseUp(mounted.canvas, at(72, 40));
+      mounted.rerender(<GbcMapCanvas mapName="N" data={{ ...DATA, map: { ...DATA.map, name: "N" } }} time="day" {...props} editSession={next} />);
+      if (aba) mounted.rerender(<GbcMapCanvas mapName="M" data={DATA} time="day" {...props} editSession={next} />);
+      await act(async () => pending.resolve());
+      expect(old.applyPaint).toHaveBeenCalledTimes(phase === "begin" ? 0 : 1);
+      expect(old.endStroke).toHaveBeenCalledTimes(1); // Finish only the captured old session, not the new map.
+      expect(next.beginStroke).not.toHaveBeenCalled();
+      expect(next.applyPaint).not.toHaveBeenCalled();
+      expect(next.endStroke).not.toHaveBeenCalled();
+    });
+  }
+
+  it("unmount retires pending begin continuations", async () => {
+    const begin = held();
+    const s = session({ beginStroke: vi.fn(() => begin.promise) });
+    const mounted = mount({ editSession: s, activeTool: { kind: "pencil", stamp: STAMP } });
+    fireEvent.mouseDown(mounted.canvas, at(40, 40));
+    fireEvent.mouseUp(mounted.canvas, at(40, 40));
+    await waitFor(() => expect(s.beginStroke).toHaveBeenCalledTimes(1));
+    mounted.unmount();
+    await act(async () => begin.resolve());
+    expect(s.applyPaint).not.toHaveBeenCalled();
+    expect(s.endStroke).toHaveBeenCalledTimes(1);
+  });
+
+  it("begin failure is visible and queued moves do not paint after it", async () => {
+    const begin = held();
+    const onEditError = vi.fn();
+    const s = session({ beginStroke: vi.fn(() => begin.promise) });
+    const { canvas } = mount({ editSession: s, activeTool: { kind: "pencil", stamp: STAMP }, onEditError });
+    fireEvent.mouseDown(canvas, at(40, 40));
+    await waitFor(() => expect(s.beginStroke).toHaveBeenCalledTimes(1));
+    fireEvent.mouseMove(canvas, { ...at(72, 40), buttons: 1 });
+    fireEvent.mouseUp(canvas, at(72, 40));
+    await act(async () => begin.reject(new Error("held begin failed")));
+    expect(onEditError).toHaveBeenCalledWith("held begin failed");
+    expect(s.applyPaint).not.toHaveBeenCalled();
+    expect(s.endStroke).toHaveBeenCalledTimes(1); // cleanup remains after the settled failure
+  });
+
+  it("apply failure is visible and later queued apply still blocks end until settled", async () => {
+    const first = held();
+    const second = held();
+    const onEditError = vi.fn();
+    const s = session({ applyPaint: vi.fn().mockImplementationOnce(() => first.promise).mockImplementationOnce(() => second.promise) });
+    const { canvas } = mount({ editSession: s, activeTool: { kind: "pencil", stamp: STAMP }, onEditError });
+    fireEvent.mouseDown(canvas, at(40, 40));
+    await waitFor(() => expect(s.applyPaint).toHaveBeenCalledTimes(1));
+    fireEvent.mouseMove(canvas, { ...at(72, 40), buttons: 1 });
+    fireEvent.mouseUp(canvas, at(72, 40));
+    await act(async () => first.reject(new Error("held apply failed")));
+    expect(onEditError).toHaveBeenCalledWith("held apply failed");
+    expect(s.applyPaint).toHaveBeenCalledTimes(2);
+    expect(s.endStroke).not.toHaveBeenCalled();
+    await act(async () => second.resolve());
+    expect(s.endStroke).toHaveBeenCalledTimes(1);
+  });
+
+  it("an off-map mousedown followed by a held move creates no apply or end without begin", async () => {
+    const s = session();
+    const { canvas } = mount({ editSession: s, activeTool: { kind: "pencil", stamp: STAMP } });
+    fireEvent.mouseDown(canvas, at(5, 5));
+    fireEvent.mouseMove(canvas, { ...at(40, 40), buttons: 1 });
+    fireEvent.mouseUp(canvas, at(40, 40));
+    await act(async () => {});
+    expect(s.beginStroke).not.toHaveBeenCalled();
+    expect(s.applyPaint).not.toHaveBeenCalled();
+    expect(s.endStroke).not.toHaveBeenCalled();
   });
 });
