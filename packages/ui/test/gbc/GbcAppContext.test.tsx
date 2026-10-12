@@ -576,6 +576,7 @@ describe("GbcApp -- in-context editing (Plan 7 Task 5b)", () => {
     const body = document.querySelector(".app__map-editing-body");
     fireEvent.click(screen.getByRole("button", { name: "pencil" }));
     fireEvent.click(screen.getByLabelText("metatile 0x1"));
+    expect(screen.getByLabelText("metatile 0x1").getAttribute("aria-current")).toBe("true"); // positive control
     fireEvent.click(screen.getByRole("button", { name: "OlivineCity" }));
     await waitFor(() => expect(contextOverlay()).toBeNull());
     await waitFor(() => expect(status()).toContain("zoom 38%"));

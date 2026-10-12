@@ -262,10 +262,12 @@ describe("GbcMapCanvas errors and drag dedupe", () => {
     await waitFor(() => expect(s.applyPaint).toHaveBeenCalledTimes(1));
     fireEvent.mouseMove(canvas, { clientX: 74, clientY: 74, buttons: 1 });
     fireEvent.mouseMove(canvas, { clientX: 80, clientY: 80, buttons: 1 });
+    await act(async () => {}); // moves queue on the stroke chain; let them run before the negative count
     expect(s.applyPaint).toHaveBeenCalledTimes(1);
     fireEvent.mouseMove(canvas, { clientX: 104, clientY: 72, buttons: 1 }); // block 2,1
     await waitFor(() => expect(s.applyPaint).toHaveBeenCalledTimes(2));
     fireEvent.mouseMove(canvas, { clientX: 105, clientY: 73, buttons: 1 });
+    await act(async () => {});
     expect(s.applyPaint).toHaveBeenCalledTimes(2);
   });
 

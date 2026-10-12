@@ -173,6 +173,7 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("world api", () => {
 
     try {
       const flipped = await (await fetch(`http://127.0.0.1:${s.port}/api/world`)).json() as any;
+      expect(flipped.sidecar.dungeonAutoLayout).toBe(true); // fixture precondition: the flip below turns dungeons off
       const target = !flipped.sidecar.dungeonAutoLayout;
 
       const post = await fetch(`http://127.0.0.1:${s.port}/api/world/dungeons`, {
