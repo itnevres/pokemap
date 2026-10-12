@@ -1,6 +1,15 @@
 # PokeMap Plan 7 — GBC Editing (Pokémon Crystal write path)
 
-## STATUS — complete locally, awaiting push/PR approval (2026-10-10)
+## STATUS — complete locally, Claude-audited, awaiting push/PR approval (2026-10-12)
+
+**2026-10-12 Claude audit of the Codex continuation (`ede8df3..ef248a3`):**
+- Independent Opus spec review: PASS. Sonnet quality review: APPROVED. Both report 0 Critical and 0 Important findings.
+- Coordinator mutations: 13/13 killed (X1–X8, four B1 ordering mutants, cached-image readiness).
+- Test-only fix round: three tests strengthened.
+- Live PerfPlus verification: context entry, 0-mismatch pixel alignment, paint/save/one-tile refresh, and reverse save. Both NewBarkTown files compare byte-identical with `cmp`.
+- Final gate: **2,574 pass / 0 fail**, 150 files; typecheck and build pass.
+- Codex's uncommitted issues #5/#6 work was moved, by user decision, to branch `issues-5-6-warp-popups`. It is not part of Plan 7.
+- Record and deferred Minor follow-ups: `task-reports/pokemap-plan-7-gbc-editing/_archive/task-5b-claude-audit-coordinator.md`.
 
 Tasks 1–7 and the user-authorized Task 5b in-context editing port are complete. Final production repair is `b0f448a`; `1eb8f81` strengthens the adjacent-stroke completion witness. The cached-image entry fix remains `f8c88d0`. B1 now retains begin, every apply response, and end in one client promise chain, captures stroke ownership across map/ABA/unmount, and finishes issued strokes retired without mouseup. No server locking was added.
 

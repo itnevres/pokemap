@@ -1,0 +1,322 @@
+{
+  "base": {
+    "exit": 0,
+    "passed": 689,
+    "failed": 0,
+    "assertion": false,
+    "failedNames": []
+  },
+  "mutations": [
+    {
+      "id": "X1-native-default",
+      "killed": true,
+      "mutant": {
+        "exit": 1,
+        "passed": 663,
+        "failed": 26,
+        "assertion": true,
+        "failedNames": [
+          "snapContextZoom: clamp(round(log2(worldZoom / 16)), 0, 2) as 2^k > 23 px/tile -> 2x 8ms",
+          "snapContextZoom: clamp(round(log2(worldZoom / 16)), 0, 2) as 2^k > 45 px/tile -> 2x 1ms",
+          "snapContextZoom: clamp(round(log2(worldZoom / 16)), 0, 2) as 2^k > 46 px/tile -> 4x 1ms",
+          "enterContextView: the map's centre lands on the pointer > z=2: placement (10,20) 30x20, pointer (200,150) 3ms",
+          "enterContextView: the map's centre lands on the pointer > z=1, odd size: placement (3,4) 5x7, pointer (100,100) 1ms",
+          "enterContextView: the map's centre lands on the pointer > z=4: placement (0,0) 3x3, pointer (50,60) 1ms",
+          "enterContextView: the map's centre lands on the pointer > rounds the pan to whole px (Math.round: .5 goes up) 1ms",
+          "mapViewFromWorld > p=(10,20), origin (32,32), z=2, worldPan (5,-7) -> pan (261, 569) 1ms",
+          "mapViewFromWorld > z=1, p=(0,0), origin (16,32), worldPan (100,50) -> pan (84, 18) 1ms",
+          "mapViewFromWorld > z=4, negative placement, p=(-3,2), origin (48,32), worldPan (-10,7) -> pan (-394, 7) 1ms",
+          "worldViewFromMapView > view {2, (261,569)}, p=(10,20), origin (32,32) -> world zoom 32, pan (5, -7) 1ms",
+          "snapContextZoom, native 32 > without native it is still the GBA scale (16) 8ms"
+        ]
+      },
+      "restoredGreen": true,
+      "restoredPassed": 689,
+      "bytesRestored": true
+    },
+    {
+      "id": "X2-gbc-native-16",
+      "killed": true,
+      "mutant": {
+        "exit": 1,
+        "passed": 672,
+        "failed": 17,
+        "assertion": true,
+        "failedNames": [
+          "GbcApp editing (Plan 7 Task 5) > dirty guard: cancel keeps the map; confirm discards the server session BEFORE switching 407ms",
+          "GbcApp -- in-context editing (Plan 7 Task 5b) > draws an already-loaded cached context image on real App entry and reentry without load events or zoom 436ms",
+          "GbcApp -- in-context editing (Plan 7 Task 5b) > the overlay composite lines up under the world tile: its origin is the border ring (32 px), not 0 1122ms",
+          "GbcApp -- in-context editing (Plan 7 Task 5b) > keyboard Edit here keeps stepped zoom, wheel and Fit all obey the context contract 1112ms",
+          "GbcApp -- in-context editing (Plan 7 Task 5b) > visible clean overlay paint uses 32px blocks and waits for begin before apply and end 182ms",
+          "GbcApp -- in-context editing (Plan 7 Task 5b) > overlay event drag uses 16px steps through the actual App move callback 1130ms",
+          "GbcWorldCanvas: Edit here and double-click (Plan 7 Task 5b) > the context menu's Edit here is enabled (no Plan 7 hint) and calls onEditHere, snapping at the menu's open position 1090ms",
+          "</button>",
+          "</button>",
+          "</button>",
+          "GbcWorldCanvas: Edit here and double-click (Plan 7 Task 5b) > the ContextMenu key's Edit here snaps at the selected map's screen centre 1056ms",
+          "</button>"
+        ]
+      },
+      "restoredGreen": true,
+      "restoredPassed": 689,
+      "bytesRestored": true
+    },
+    {
+      "id": "X3-remount",
+      "killed": true,
+      "mutant": {
+        "exit": 1,
+        "passed": 676,
+        "failed": 13,
+        "assertion": true,
+        "failedNames": [
+          "GbcWorldCanvas: in-context overlay (Plan 7 Task 5b) > keeps the SAME world canvas node when the overlay appears and goes, and does not refetch /api/world 78ms",
+          "GbcWorldCanvas: in-context overlay (Plan 7 Task 5b) > snap uses the canvas box as it is when the payload (and so the chrome) arrives > waits for context.origin, then converts the recorded client pointer with the shifted box 1061ms",
+          "</button>",
+          "</button>",
+          "</button>",
+          "GbcWorldCanvas: in-context overlay (Plan 7 Task 5b) > snap uses the canvas box as it is when the payload (and so the chrome) arrives > the right-click menu's open point is recorded in client px too 1076ms",
+          "</button>",
+          "</button>",
+          "</button>",
+          "GbcWorldCanvas: in-context overlay (Plan 7 Task 5b) > leaving context returns focus to the world canvas; a canvas that never had a context does not take focus 41ms",
+          "GbcApp -- in-context editing (Plan 7 Task 5b) > draws an already-loaded cached context image on real App entry and reentry without load events or zoom 438ms",
+          "GbcApp -- in-context editing (Plan 7 Task 5b) > double-clicking a map in World shows the editing chrome around the SAME world canvas, with no /api/world refetch 100ms"
+        ]
+      },
+      "restoredGreen": true,
+      "restoredPassed": 689,
+      "bytesRestored": true
+    },
+    {
+      "id": "X4-bubble-escape",
+      "killed": true,
+      "mutant": {
+        "exit": 1,
+        "passed": 688,
+        "failed": 1,
+        "assertion": true,
+        "failedNames": [
+          "GbcWorldCanvas: in-context overlay (Plan 7 Task 5b) > exit requests > Escape is judged in the capture phase: a document listener that removes the modal on Escape (React's flush) does not let it through 44ms",
+          "packages/ui/test/gbc/GbcWorldCanvasContext.test.tsx > GbcWorldCanvas: in-context overlay (Plan 7 Task 5b) > exit requests > Escape is judged in the capture phase: a document listener that removes the modal on Escape (React's flush) does not let it through"
+        ]
+      },
+      "restoredGreen": true,
+      "restoredPassed": 689,
+      "bytesRestored": true
+    },
+    {
+      "id": "X5-dirty-exit-no-dialog",
+      "killed": false,
+      "mutant": {
+        "exit": 1,
+        "passed": 686,
+        "failed": 3,
+        "assertion": false,
+        "failedNames": [
+          "GbcApp -- in-context editing (Plan 7 Task 5b) > with a dirty session > Done opens the SaveDialog and stays in context; Cancel keeps editing 1271ms",
+          "GbcApp -- in-context editing (Plan 7 Task 5b) > with a dirty session > Escape opens the SaveDialog and stays in context; Escape inside the dialog cancels only the dialog 1237ms",
+          "GbcApp -- in-context editing (Plan 7 Task 5b) > with a dirty session > a committed save refreshes exactly that map's world tile, as &v=1, marks the session clean, re-reads the payload 1292ms",
+          "packages/ui/test/gbc/GbcAppContext.test.tsx > GbcApp -- in-context editing (Plan 7 Task 5b) > with a dirty session > Done opens the SaveDialog and stays in context; Cancel keeps editing",
+          "packages/ui/test/gbc/GbcAppContext.test.tsx > GbcApp -- in-context editing (Plan 7 Task 5b) > with a dirty session > Escape opens the SaveDialog and stays in context; Escape inside the dialog cancels only the dialog",
+          "packages/ui/test/gbc/GbcAppContext.test.tsx > GbcApp -- in-context editing (Plan 7 Task 5b) > with a dirty session > a committed save refreshes exactly that map's world tile, as &v=1, marks the session clean, re-reads the payload"
+        ]
+      },
+      "restoredGreen": true,
+      "restoredPassed": 689,
+      "bytesRestored": true
+    },
+    {
+      "id": "X6-bump-every-tile",
+      "killed": true,
+      "mutant": {
+        "exit": 1,
+        "passed": 687,
+        "failed": 2,
+        "assertion": true,
+        "failedNames": [
+          "GbcWorldCanvas: tileVersions (Plan 7 Task 5b) > a bumped version re-requests exactly that map, as &v=<n>, and nothing else 1050ms",
+          "GbcApp > hovering the canvas highlights the matching palette cell (spec review finding 9, mutation check X13) 1044ms",
+          "</button>",
+          "</button>",
+          "</button>",
+          "1",
+          "packages/ui/test/gbc/GbcApp.test.tsx > GbcApp > hovering the canvas highlights the matching palette cell (spec review finding 9, mutation check X13)",
+          "</button>",
+          "</button>",
+          "</button>",
+          "1",
+          "packages/ui/test/gbc/GbcWorldCanvasContext.test.tsx > GbcWorldCanvas: tileVersions (Plan 7 Task 5b) > a bumped version re-requests exactly that map, as &v=<n>, and nothing else"
+        ]
+      },
+      "restoredGreen": true,
+      "restoredPassed": 689,
+      "bytesRestored": true
+    },
+    {
+      "id": "X7-origin-literal-0",
+      "killed": true,
+      "mutant": {
+        "exit": 1,
+        "passed": 649,
+        "failed": 40,
+        "assertion": true,
+        "failedNames": [
+          "GBC_COMPOSITE_ORIGIN > is the border ring in px: one 32 px block 9ms",
+          "GbcMapEditing wiring (spec review F2/F5/F6, QR I1) > a delete refusal shows the server's text in a role=alert, and the next success clears it 353ms",
+          "</button>",
+          "</button>",
+          "</button>",
+          "2",
+          "GbcMapEditing wiring (spec review F2/F5/F6, QR I1) > the banner can be dismissed 145ms",
+          "</button>",
+          "</button>",
+          "</button>",
+          "2",
+          "GbcMapEditing wiring (spec review F2/F5/F6, QR I1) > a warp delete lists the renumber warnings in a role=status and clears the selection 30ms"
+        ]
+      },
+      "restoredGreen": true,
+      "restoredPassed": 689,
+      "bytesRestored": true
+    },
+    {
+      "id": "X8-edit-here-disabled",
+      "killed": true,
+      "mutant": {
+        "exit": 1,
+        "passed": 682,
+        "failed": 7,
+        "assertion": true,
+        "failedNames": [
+          "GbcApp editing (Plan 7 Task 5) > dirty guard: cancel keeps the map; confirm discards the server session BEFORE switching 436ms",
+          "GbcWorldCanvas: Edit here and double-click (Plan 7 Task 5b) > the context menu's Edit here is enabled (no Plan 7 hint) and calls onEditHere, snapping at the menu's open position 62ms",
+          "GbcWorldCanvas: Edit here and double-click (Plan 7 Task 5b) > the ContextMenu key's Edit here snaps at the selected map's screen centre 1081ms",
+          "</button>",
+          "</button>",
+          "</button>",
+          "GbcWorldCanvas: in-context overlay (Plan 7 Task 5b) > snap uses the canvas box as it is when the payload (and so the chrome) arrives > the right-click menu's open point is recorded in client px too 1046ms",
+          "</button>",
+          "</button>",
+          "</button>",
+          "GbcApp -- in-context editing (Plan 7 Task 5b) > the context menu's Edit here enters context 1093ms",
+          "GbcApp -- in-context editing (Plan 7 Task 5b) > keyboard Edit here keeps stepped zoom, wheel and Fit all obey the context contract 1063ms"
+        ]
+      },
+      "restoredGreen": true,
+      "restoredPassed": 689,
+      "bytesRestored": true
+    },
+    {
+      "id": "B1-begin-not-awaited",
+      "killed": true,
+      "mutant": {
+        "exit": 1,
+        "passed": 677,
+        "failed": 12,
+        "assertion": true,
+        "failedNames": [
+          "GbcMapEditing wiring (spec review F2/F5/F6, QR I1) > a paint request's failure text reaches the banner (not a generic message) 1063ms",
+          "</button>",
+          "</button>",
+          "</button>",
+          "2",
+          "</button>",
+          "</button>",
+          "</button>",
+          "2",
+          "GbcMapCanvas errors and drag dedupe > a rejected request reports its message through onEditError 1026ms",
+          "</button>",
+          "</button>"
+        ]
+      },
+      "restoredGreen": true,
+      "restoredPassed": 689,
+      "bytesRestored": true
+    },
+    {
+      "id": "B1-drag-apply-not-chained",
+      "killed": true,
+      "mutant": {
+        "exit": 1,
+        "passed": 687,
+        "failed": 2,
+        "assertion": true,
+        "failedNames": [
+          "GbcMapCanvas stroke completion barrier (B1) > serializes three independently held drag applies and end waits for every cell 84ms",
+          "GbcMapCanvas stroke completion barrier (B1) > apply failure is visible and later queued apply still blocks end until settled 86ms",
+          "packages/ui/test/gbc/GbcMapCanvasEdit.test.tsx > GbcMapCanvas stroke completion barrier (B1) > serializes three independently held drag applies and end waits for every cell",
+          "packages/ui/test/gbc/GbcMapCanvasEdit.test.tsx > GbcMapCanvas stroke completion barrier (B1) > apply failure is visible and later queued apply still blocks end until settled"
+        ]
+      },
+      "restoredGreen": true,
+      "restoredPassed": 689,
+      "bytesRestored": true
+    },
+    {
+      "id": "B1-end-not-awaited",
+      "killed": true,
+      "mutant": {
+        "exit": 1,
+        "passed": 688,
+        "failed": 1,
+        "assertion": true,
+        "failedNames": [
+          "GbcMapCanvas stroke completion barrier (B1) > a following stroke waits for the previous end round trip 92ms",
+          "packages/ui/test/gbc/GbcMapCanvasEdit.test.tsx > GbcMapCanvas stroke completion barrier (B1) > a following stroke waits for the previous end round trip"
+        ]
+      },
+      "restoredGreen": true,
+      "restoredPassed": 689,
+      "bytesRestored": true
+    },
+    {
+      "id": "B1-retired-visit-paints",
+      "killed": true,
+      "mutant": {
+        "exit": 1,
+        "passed": 686,
+        "failed": 3,
+        "assertion": true,
+        "failedNames": [
+          "GbcMapCanvas stroke completion barrier (B1) > retires queued begin work on a map visit change (ABA=false) 95ms",
+          "GbcMapCanvas stroke completion barrier (B1) > retires queued begin work on a map visit change (ABA=true) 81ms",
+          "GbcMapCanvas stroke completion barrier (B1) > unmount retires pending begin continuations 78ms",
+          "packages/ui/test/gbc/GbcMapCanvasEdit.test.tsx > GbcMapCanvas stroke completion barrier (B1) > retires queued begin work on a map visit change (ABA=false)",
+          "packages/ui/test/gbc/GbcMapCanvasEdit.test.tsx > GbcMapCanvas stroke completion barrier (B1) > retires queued begin work on a map visit change (ABA=true)",
+          "packages/ui/test/gbc/GbcMapCanvasEdit.test.tsx > GbcMapCanvas stroke completion barrier (B1) > unmount retires pending begin continuations"
+        ]
+      },
+      "restoredGreen": true,
+      "restoredPassed": 689,
+      "bytesRestored": true
+    },
+    {
+      "id": "IMG-cached-ignored",
+      "killed": true,
+      "mutant": {
+        "exit": 1,
+        "passed": 683,
+        "failed": 6,
+        "assertion": true,
+        "failedNames": [
+          "GbcApp World-path dirty guards (spec review F1, F3, F7) > a world click, confirmed: POST /discard goes out BEFORE the new map is fetched 200ms",
+          "GbcMapCanvas: chromeless (Plan 7 Task 5b) > draws a cached image already loaded at mount and reentry without a load event or gesture (StrictMode=false) 1028ms",
+          "GbcMapCanvas: chromeless (Plan 7 Task 5b) > draws a cached image already loaded at mount and reentry without a load event or gesture (StrictMode=true) 1026ms",
+          "GbcMapCanvas: chromeless (Plan 7 Task 5b) > rebuilds for a new image URL only when that image is ready (already cached=false) 1018ms",
+          "GbcMapCanvas: chromeless (Plan 7 Task 5b) > rebuilds for a new image URL only when that image is ready (already cached=true) 1013ms",
+          "GbcApp -- in-context editing (Plan 7 Task 5b) > draws an already-loaded cached context image on real App entry and reentry without load events or zoom 1420ms",
+          "packages/ui/test/gbc/GbcAppContext.test.tsx > GbcApp -- in-context editing (Plan 7 Task 5b) > draws an already-loaded cached context image on real App entry and reentry without load events or zoom",
+          "packages/ui/test/gbc/GbcAppWorldGuard.test.tsx > GbcApp World-path dirty guards (spec review F1, F3, F7) > a world click, confirmed: POST /discard goes out BEFORE the new map is fetched",
+          "packages/ui/test/gbc/GbcMapCanvasView.test.tsx > GbcMapCanvas: chromeless (Plan 7 Task 5b) > draws a cached image already loaded at mount and reentry without a load event or gesture (StrictMode=false)",
+          "packages/ui/test/gbc/GbcMapCanvasView.test.tsx > GbcMapCanvas: chromeless (Plan 7 Task 5b) > draws a cached image already loaded at mount and reentry without a load event or gesture (StrictMode=true)",
+          "packages/ui/test/gbc/GbcMapCanvasView.test.tsx > GbcMapCanvas: chromeless (Plan 7 Task 5b) > rebuilds for a new image URL only when that image is ready (already cached=false)",
+          "packages/ui/test/gbc/GbcMapCanvasView.test.tsx > GbcMapCanvas: chromeless (Plan 7 Task 5b) > rebuilds for a new image URL only when that image is ready (already cached=true)"
+        ]
+      },
+      "restoredGreen": true,
+      "restoredPassed": 689,
+      "bytesRestored": true
+    }
+  ]
+}
