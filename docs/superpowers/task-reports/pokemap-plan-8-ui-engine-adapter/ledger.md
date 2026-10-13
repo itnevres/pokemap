@@ -34,3 +34,20 @@ Ruling: T1 executed spec rulings R1-R9 are in `task-1-spec.md` (notably R2: GBA 
 ## Progress
 
 Task 0: complete (preflight.md; baseline 2,572/2 load-only flakes, both pass isolated 44/44; typecheck+build pass; external state unchanged)
+Ruling: Task 1 implementer = Claude Sonnet (delegate §1: the task builds its own oracle and is concurrency, so no offload hop), not Opus — the logic is a move of already-reviewed GBC B1 code, and the GBA witnesses mirror existing GBC tests; Opus does the split spec review — cost if wrong: an extra fix round.
+Task 1: BASE f05ff8b; implementer dispatched (sonnet)
+Task 1: implementer DONE f05ff8b..cfa6bdd (2,616 pass /153 files; oracle diff 0 lines). Incidental GBA changes: R2, R5, plus mouseup/mouseleave with no open stroke now sends no endStroke (matches GBC).
+Ruling: accept "no endStroke without an open stroke" in GBA — an end with no begin is a no-op server call; GBC already pins it — cost if wrong: none user-visible.
+Task 1: quality review (sonnet) Approved, 0C/0I/5 Minor (task-1-quality-review.md).
+Task 1: minor (deferred): stale pendingPaintRef/dragStartRef comments MapCanvas.tsx:108/255/785, GbcMapCanvas.tsx:64; garbled endActiveStroke doc in GbcMapCanvas.
+Task 1: minor (deferred): render-phase onErrorRef write; settled()/redundant .then; test hygiene (double flush, one weak negative, real 40 ms timer).
+Task 1: coordinator mutations M1-M6 all killed (task-1-mutations.log; M0 baseline green; restore byte-identical). M6 kills shared+GBC only, per ruling. M2/M4 not killed by gbcNew alone but killed by gbcEdit.
+Task 1: spec review (opus) Spec ❌, 0C/2I/4M (task-1-spec-review.md).
+Ruling: I1 (M3 incomplete on finish path: throwing onError inside the last-apply catch skips endStroke) is real — fix in the hook so report never throws, plus a shared test — cost if wrong: none.
+Ruling: I2 (retired GBA stroke's end response clobbers the new map's state) — fix now with a map-only response guard in GBA `useEditSession.call` (a `latestMapRef`, apply only if still the same map), mirroring GBC's `latest.current.mapName === mapName`; tested in a NEW file. Outside Task 1's file list; named reason: the chain must end a retired begun stroke (R6) and that end's response must not paint the new map. Task 5's shared core subsumes it — cost if wrong: Task 5 merges one extra line.
+Ruling: spec Minor 1 (GBA no end without open stroke) — already ruled above. Minor 2 (GBC stroke now uses session captured at mousedown; mid-stroke same-map seed change drops later responses from the view) — accept; narrow edge, Task 5's core revisits the seed guard — cost if wrong: a stale view after a mid-stroke refetch until the next edit.
+Task 1: minor (deferred): spec-review Minors 3-4 (see task-1-spec-review.md; retire-before-begin untested, etc.).
+Task 1: fix round 1/5 (4 addressed, 0 open — I1 M3 finish path, I2 GBA map guard, Minor 3 test gaps, Minor 4 act flushes; commits cfa6bdd..e3d66b9). Re-review (sonnet) all ADDRESSED, 0 new breakage. Gate 2,624/0, 154 files.
+Task 1: coordinator mutations r1 (task-1-mutations-r1.log): M1-M5, M7, M8, M9 killed; M0 green; restore byte-identical.
+Ruling: M6 (terminal catch removed) now survives as an EQUIVALENT mutant — after the I1 fix `report` cannot throw, so the terminal `.catch(() => {})` is unreachable; M8 (report unguarded) is the live M3 witness and is killed in shared+GBC — cost if wrong: none (the catch stays as defence in depth).
+Task 1: live check both families PASS (task-1-coordinator.md). Task 1: complete (commits f05ff8b..e3d66b9, review clean after 1 fix round)

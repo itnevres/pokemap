@@ -1,0 +1,1308 @@
+cfa6bdd docs(plan-8): Task 1 implementer report
+94c2f03 feat(ui): GBA MapCanvas gains the stroke completion barrier via the shared chain (F6)
+e9bbfd9 refactor(ui): GbcMapCanvas consumes shared stroke chain; lost-mouseup and M3 tests
+7ffae94 feat(ui): shared stroke chain hook (B1 extracted)
+ .../task-1-report.md                               |  30 +++
+ packages/ui/src/components/MapCanvas.tsx           | 166 ++++----------
+ packages/ui/src/gbc/GbcMapCanvas.tsx               | 100 +++------
+ packages/ui/src/shared/useStrokeChain.ts           | 104 +++++++++
+ packages/ui/test/MapCanvasStroke.test.tsx          | 248 +++++++++++++++++++++
+ packages/ui/test/gbc/GbcMapCanvasStroke.test.tsx   |  95 ++++++++
+ packages/ui/test/shared/useStrokeChain.test.tsx    | 243 ++++++++++++++++++++
+ 7 files changed, 794 insertions(+), 192 deletions(-)
+diff --git a/packages/ui/src/components/MapCanvas.tsx b/packages/ui/src/components/MapCanvas.tsx
+index b2965d9..19f8f7b 100644
+--- a/packages/ui/src/components/MapCanvas.tsx
++++ b/packages/ui/src/components/MapCanvas.tsx
+@@ -1,17 +1,18 @@
+ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+ import { drawGrid, drawCollision, drawElevation, drawEvents, type EventMark } from "@pokemap/core/src/render/overlays.js";
+ import type { LayoutRaster } from "@pokemap/core/src/render/layout.js";
+ import type { MapData } from "@pokemap/core/src/load/maps.js";
+ import type { EventKind } from "@pokemap/core/src/edit/events.js";
+ import type { MapLayoutData } from "../hooks/useMapLayout.js";
+-import type { UseEditSessionResult } from "../hooks/useEditSession.js";
++import type { PaintApplyBody, UseEditSessionResult } from "../hooks/useEditSession.js";
++import { useStrokeChain } from "../shared/useStrokeChain.js";
+ import { readBlock, type Stamp } from "@pokemap/core/src/edit/paint.js";
+ import type { CollisionElevation } from "./CollisionPalette.js";
+ import { EncounterBorder, type EncounterBorderEntry } from "./EncounterBorder.js";
+ import { BORDER_BAND, borderSideFromConnections, gbaDirToCompass, type CompassDir } from "../encounters/borderSide.js";
+ import { fitWithBand } from "../encounters/fit.js";
+ import { useMapEncounterSummaries } from "../encounters/useMapEncounterSummaries.js";
+ import { ZOOM_LEVELS, zoomAboutPivot, type MapView, type Zoom } from "./mapView.js";
+ 
+ /** A bare {kind,index} pointer at one event, the unit MapCanvas's own
+  *  selection/drag interaction deals in -- resolving it into a full event
+@@ -232,48 +233,25 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
+   const baseCanvasRef = useRef<HTMLCanvasElement | null>(null);
+   const containerRef = useRef<HTMLDivElement>(null);
+   const dragRef = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
+   // Shared start-cell ref for BOTH drag-shaped tools: a rect's own corner,
+   // or a shift's reference point (the drag's dx/dy is computed from this
+   // start and the mouseup end cell -- see endActiveStroke below). Neither
+   // tool paints progressively like pencil, so both need only a single
+   // start->end gesture recorded here, not a per-cell trail.
+   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
+   const marksRef = useRef<EventMark[]>([]);
+-  // Tracks the most recent in-flight paint request -- begin's own chain
+-  // (whose .then() callback sets dragStartRef for "rect", or paints
+-  // directly for pencil/bucket), or the latest pencil/bucket applyPaint.
+-  // `endActiveStroke` below (onMouseUp and onMouseLeave both route through
+-  // it) awaits this before deciding what to do. Confirmed live (Task 11
+-  // Step 8) against the real dev server, not hypothetical: without it, a
+-  // plain click's mouseup fired endStroke()'s own fetch immediately, and
+-  // on localhost it could beat the still-in-flight begin-then-apply chain
+-  // onto the wire (begin, end, apply, in that order) -- /paint/end then
+-  // snapshots blocks BEFORE the apply has mutated them, sees no change,
+-  // and clears strokeStartBlocks with no undo command pushed. The apply
+-  // arrives moments later and DOES mutate entry.session.blocks, but
+-  // nothing is tracking it anymore -- an edit silently invisible to undo/
+-  // redo. A code-review pass later found the SAME race, worse, on the
+-  // rect path specifically (see endActiveStroke's own doc comment: a fast
+-  // rect gesture could drop the paint entirely, not just its undo entry).
+-  // This is exactly the class of bug Plan 0 Section 7 says only a real
+-  // browser catches; no jsdom-driven test in this file reproduced it
+-  // originally because the mocked editSession never raced real requests
+-  // against each other -- the rect variant now has a deterministic
+-  // repro using a controlled, delayed beginStroke promise instead.
+-  const pendingPaintRef = useRef<Promise<void>>(Promise.resolve());
+-  // True from the moment onMouseDown begins an edit-session stroke until
+-  // that stroke actually ends (onMouseUp, or onMouseLeave's own mirrored
+-  // cleanup below). Lets onMouseLeave tell "a stroke is genuinely open"
+-  // apart from "editSession/activeTool are simply present" -- it must not
+-  // fire endStroke() on every ordinary mouse-out.
+-  const strokeOpenRef = useRef(false);
++  // One completion chain for begin, every queued apply and end (shared with the GBC canvas, Plan 8 Task 1): no
++  // request in a stroke outruns its predecessor, a lost mouseup ends the open stroke before the next begin, and a
++  // map switch retires queued work. This canvas shows no paint errors, so the error report is a no-op; the chain
++  // still swallows every rejection.
++  const chain = useStrokeChain<PaintApplyBody>(mapName, () => {});
+   // Task 14: set from onMouseDown's own hit-test the instant a click lands
+   // on an event marker (with no paint tool active), holding the event's
+   // {kind,index} AND the block cell the drag STARTED at -- the start cell
+   // is what onMouseUp compares the final cell against to decide whether
+   // anything actually moved (see the corrected onMouseUp below: those
+   // fields are captured into local consts before this ref is nulled, not
+   // read after -- the exact stale-ref-after-null mistake class Task 11's
+   // endActiveStroke/pendingPaintRef pair was written to avoid; the teeth-
+   // proof in this task's own report reintroduces the bug once to confirm
+   // the test that would have caught it actually does).
+@@ -668,52 +646,41 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
+ 
+   /** Same math, but null outside the layout -- used where painting a single
+    *  cell (pencil/bucket, or a rect's own start corner) must not fire on a
+    *  click that lands off the map entirely. */
+   const blockAt = (e: React.MouseEvent<HTMLCanvasElement>): { x: number; y: number } | null => {
+     const cell = rawBlockAt(e);
+     if (cell.x < 0 || cell.y < 0 || cell.x >= layout.width || cell.y >= layout.height) return null;
+     return cell;
+   };
+ 
+-  const paintAt = (bx: number, by: number) => {
+-    if (!editSession || !activeTool) return;
++  /** The apply body a pencil/bucket/collision stroke sends at a block; null when there is nothing to send.
++   *  rect/shift are applied once, at mouseup (endActiveStroke). */
++  const paintBody = (bx: number, by: number): PaintApplyBody | null => {
++    if (!activeTool) return null;
+     if (activeTool.kind === "pencil") {
+-      pendingPaintRef.current = editSession.applyPaint({ tool: "pencil", targets: [{ x: bx, y: by }], stamp: activeTool.stamp, origin: { x: bx, y: by } });
++      return { tool: "pencil", targets: [{ x: bx, y: by }], stamp: activeTool.stamp, origin: { x: bx, y: by } };
+     } else if (activeTool.kind === "bucket") {
+       const cell = activeTool.stamp.cells[0];
+-      // Runtime guard, not a non-null assertion: StampCell.metatileId is
+-      // optional ONLY because the collision tool needs a stamp cell that
+-      // omits it (Task 12's own widening of the type). Bucket's own stamp
+-      // is expected to always carry a real id (from a palette/dropper
+-      // pick), but nothing at the type level stops a future caller from
+-      // routing a collision-only stamp through "bucket" -- asserting here
+-      // would make that a silent lie (either a crash or a bogus
+-      // `replacement.metatileId: undefined` sent to the server). No-op
+-      // instead: there is nothing sensible to flood-fill with.
+-      if (cell?.metatileId === undefined) return;
+-      pendingPaintRef.current = editSession.applyPaint({ tool: "bucket", x: bx, y: by, replacement: { metatileId: cell.metatileId, collision: cell.collision, elevation: cell.elevation } });
++      // StampCell.metatileId is optional only for the collision tool; bucket needs a real id, so no-op without one.
++      if (cell?.metatileId === undefined) return null;
++      return { tool: "bucket", x: bx, y: by, replacement: { metatileId: cell.metatileId, collision: cell.collision, elevation: cell.elevation } };
+     } else if (activeTool.kind === "collision") {
+-      // Reuses the pencil tool server-side with a 1x1 stamp whose cell
+-      // omits metatileId -- paintCells's own merge (Task 12's fix to
+-      // packages/core/src/edit/paint.ts) leaves the target's existing id
+-      // untouched, painting collision/elevation only.
+-      pendingPaintRef.current = editSession.applyPaint({
++      // Reuses the pencil tool server-side with a 1x1 stamp whose cell omits metatileId: collision/elevation only.
++      return {
+         tool: "pencil",
+         targets: [{ x: bx, y: by }],
+         stamp: { width: 1, height: 1, cells: [{ collision: activeTool.value.collision, elevation: activeTool.value.elevation }] },
+         origin: { x: bx, y: by },
+-      });
++      };
+     }
+-    // "rect" is handled entirely by onMouseUp below (it needs a start AND
+-    // end cell, unlike pencil/bucket/collision which act on a single cell)
+-    // -- see dragStartRef.
++    return null;
+   };
+ 
+   const onMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+     if (e.button !== 0) return;
+     // Task 14: ahead of the Task 11 paint branch -- selection only engages
+     // when no paint tool is active (activeTool null), the natural signal
+     // that the player is in "select/move events" mode rather than
+     // "paint" mode; the two never compete for the same click. Uses
+     // rawBlockAt (unclamped), not blockAt: a click just past the layout
+     // edge should still be able to DESELECT (onSelectEvent(null)) even
+@@ -737,31 +704,24 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
+     if (editSession && activeTool?.kind === "dropper") {
+       const cell = blockAt(e);
+       if (!cell) return;
+       const block = readBlock(blocks, layout.width, layout.height, cell.x, cell.y);
+       if (block) onDropperPick?.({ width: 1, height: 1, cells: [{ metatileId: block.metatileId, collision: block.collision, elevation: block.elevation }] });
+       return;
+     }
+     if (editSession && activeTool) {
+       const cell = blockAt(e);
+       if (!cell) return;
+-      strokeOpenRef.current = true;
+-      // Stored in pendingPaintRef too, not just fired-and-forgotten -- see
+-      // that ref's own doc comment above for why onMouseUp/onMouseLeave
+-      // need it.
+-      pendingPaintRef.current = editSession.beginStroke().then(() => {
+-        // "shift" is a drag gesture shaped like "rect" (start cell now,
+-        // apply once at mouseup using start+end) -- see endActiveStroke
+-        // below -- not a per-cell trail like pencil.
+-        if (activeTool.kind === "rect" || activeTool.kind === "shift") dragStartRef.current = cell;
+-        else paintAt(cell.x, cell.y);
+-      });
++      // "shift" is a drag gesture shaped like "rect": the start cell is captured now and the single apply is made
++      // at mouseup from start + end cell (endActiveStroke). The others paint the first cell right after begin.
++      dragStartRef.current = activeTool.kind === "rect" || activeTool.kind === "shift" ? cell : null;
++      chain.start(editSession, paintBody(cell.x, cell.y));
+       return;
+     }
+     dragRef.current = { x: e.clientX, y: e.clientY, panX: pan.x, panY: pan.y };
+   };
+ 
+   const onMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+     // Task 14: an event marker drag in progress -- track the CANDIDATE
+     // drop cell locally only (dragPreview, redrawn by the blit effect
+     // below); onMoveEvent itself fires exactly once, from onMouseUp, never
+     // here. No e.buttons===1 guard needed (unlike the pencil/collision
+@@ -773,94 +733,54 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
+       const cell = rawBlockAt(e);
+       setDragPreview({ kind: eventDragRef.current.kind, index: eventDragRef.current.index, x: cell.x, y: cell.y });
+       return;
+     }
+     // A pencil (or collision -- Task 12: painting collision by dragging
+     // mirrors pencil's own trail, the natural expectation) drag paints a
+     // trail as the mouse moves while the button is held -- jsdom's
+     // synthetic mouseMove never sets `e.buttons` the way a real held-button
+     // drag does (Step 9's teeth-proof), so this guard is exercised for real
+     // only in a live browser, not by this file's own tests.
+-    if (editSession && (activeTool?.kind === "pencil" || activeTool?.kind === "collision") && dragStartRef.current === null && e.buttons === 1) {
++    if (editSession && (activeTool?.kind === "pencil" || activeTool?.kind === "collision") && chain.isOpen() && e.buttons === 1) {
+       const cell = blockAt(e);
+-      if (cell) paintAt(cell.x, cell.y);
++      const body = cell && paintBody(cell.x, cell.y);
++      if (body) chain.queue(body);
+       return;
+     }
+     if (dragRef.current) {
+       const d = dragRef.current;
+       updateView((v) => ({ zoom: v.zoom, pan: { x: d.panX + (e.clientX - d.x), y: d.panY + (e.clientY - d.y) } }));
+     } else {
+       hoverAt(e.clientX, e.clientY);
+     }
+   };
+ 
+   /**
+-   * Ends whatever paint stroke onMouseDown opened -- shared by a normal
+-   * mouse-up and by onMouseLeave's own mirrored cleanup below, since a
+-   * drag that leaves the canvas before releasing the button never fires
+-   * React's own onMouseUp at all (Important review fix: without this
+-   * mirroring, that left the server-side session's stroke open
+-   * indefinitely -- the NEXT stroke's begin() does not override an
+-   * already-open one, by design, see paintRoutes.test.ts's own stray-
+-   * double-begin test -- so two unrelated edits would get squashed into
+-   * one undo step).
+-   *
+-   * `end` is the finishing cell for a rect; null from onMouseLeave, which
+-   * has no reliable finishing cell of its own -- an in-progress rect is
+-   * simply abandoned unpainted (nothing was ever applied for it, unlike
+-   * pencil/bucket which paint progressively) rather than guessed at from
+-   * wherever the cursor happened to exit.
++   * Ends whatever paint stroke onMouseDown opened -- shared by a normal mouse-up and by onMouseLeave, since a drag
++   * that leaves the canvas never fires onMouseUp (without it the server's stroke stayed open and two edits were
++   * squashed into one undo step).
+    *
+-   * Critical review fix: this waits for `pendingPaintRef` -- which is
+-   * ALSO what onMouseDown's own beginStroke().then() chain populates --
+-   * before reading `dragStartRef.current` at all. The bug this closes,
+-   * reproduced live by review: a fast rect mousedown-then-mouseup could
+-   * reach here BEFORE that chain's callback had run, so `dragStartRef`
+-   * was still null, this fell into the "else" branch, and `applyPaint`
+-   * for the rect never fired at all -- not just left out of undo like the
+-   * pencil/bucket race, but silently dropped entirely, with no error.
+-   * Waiting on `pendingPaintRef` first guarantees the chain's callback
+-   * (which sets `dragStartRef`, or paints via `paintAt` for pencil/
+-   * bucket) has already run by the time this checks it -- see
+-   * `MapCanvas.test.tsx`'s own race-repro test for the deterministic
+-   * version of this, using a controlled, delayed `beginStroke` promise.
++   * `end` is the finishing cell for a rect/shift; null from onMouseLeave, which abandons an unapplied rect/shift.
++   * The chain applies the rect/shift after every queued link, then ends (see useStrokeChain).
+    */
+   const endActiveStroke = (end: { x: number; y: number } | null) => {
+-    if (!editSession) return;
+-    strokeOpenRef.current = false;
+-    void pendingPaintRef.current.catch(() => {}).then(() => {
+-      if (activeTool?.kind === "shift" && dragStartRef.current && end) {
+-        const start = dragStartRef.current;
+-        dragStartRef.current = null;
+-        // A zero-length drag (dx===0, dy===0 -- a plain click) is a real,
+-        // harmless no-op: shiftGrid with (0,0) maps every block to itself,
+-        // and /paint/end's own JSON.stringify(prev.blocks) !==
+-        // JSON.stringify(next.blocks) check already means no undo entry
+-        // gets pushed for it -- no client-side special-casing needed.
+-        const applied = editSession.applyPaint({ tool: "shift", dx: end.x - start.x, dy: end.y - start.y }).catch(() => {});
+-        pendingPaintRef.current = applied;
+-        void applied.then(() => editSession.endStroke());
+-      } else if (activeTool?.kind === "rect" && dragStartRef.current && end) {
+-        const start = dragStartRef.current;
+-        dragStartRef.current = null;
+-        const applied = editSession
+-          .applyPaint({ tool: "rect", x0: start.x, y0: start.y, x1: end.x, y1: end.y, stamp: activeTool.stamp, origin: start })
+-          // Matches the pencil/bucket path just below: a rejected apply
+-          // must not leave the stroke stuck open forever.
+-          .catch(() => {});
+-        pendingPaintRef.current = applied;
+-        void applied.then(() => editSession.endStroke());
+-      } else {
+-        dragStartRef.current = null;
+-        void editSession.endStroke();
+-      }
+-    });
++    if (!editSession || !chain.isOpen()) return;
++    const start = dragStartRef.current;
++    dragStartRef.current = null;
++    let last: PaintApplyBody | null = null;
++    if (activeTool?.kind === "shift" && start && end) {
++      // A zero-length drag (a plain click) is a harmless no-op server-side: no undo entry is pushed for it.
++      last = { tool: "shift", dx: end.x - start.x, dy: end.y - start.y };
++    } else if (activeTool?.kind === "rect" && start && end) {
++      last = { tool: "rect", x0: start.x, y0: start.y, x1: end.x, y1: end.y, stamp: activeTool.stamp, origin: start };
++    }
++    chain.finish(last);
+   };
+ 
+   const onMouseUp = (e: React.MouseEvent<HTMLCanvasElement>) => {
+     // Task 14: ends an event-marker drag. Critical fix (this task's own
+     // teeth-proof, Step 8, confirms it): `kind`/`index`/start `x`/`y` are
+     // destructured into LOCAL consts BEFORE `eventDragRef.current` is set
+     // to null, not read from the ref afterward -- reading a ref after
+     // nulling it is exactly the stale-read mistake class Task 11's
+     // endActiveStroke/pendingPaintRef pair exists to avoid on the paint
+     // side (see that function's own doc comment above). Reads the mouseup
+@@ -895,21 +815,21 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
+     // Task 14: mirrors onMouseUp's own event-drag cleanup for the same
+     // reason the paint path mirrors it just below -- a drag that exits the
+     // canvas before releasing the button never fires React's own
+     // onMouseUp. Abandoned at wherever it was, not committed: there is no
+     // reliable "final" cell to move to from a mouse-LEAVE (same posture
+     // endActiveStroke(null) already takes for an abandoned rect).
+     if (eventDragRef.current) {
+       eventDragRef.current = null;
+       setDragPreview(null);
+     }
+-    if (editSession && activeTool && strokeOpenRef.current) endActiveStroke(null);
++    if (editSession && activeTool && chain.isOpen()) endActiveStroke(null);
+   };
+ 
+   const anyOverlay = toggles.grid || showCollision || toggles.elevation || toggles.events;
+ 
+   // The drawn image, border ring included, in viewport px: sprites never cover map or border-block pixels.
+   // Memoised so EncounterBorder's tooltip-clearing effect (keyed on `entries`) only fires when something moved.
+   const borderEntries = useMemo<EncounterBorderEntry[]>(
+     () => [{ map: mapName, rect: { x: pan.x, y: pan.y, width: pixelWidth * zoom, height: pixelHeight * zoom }, side, summaries: encounterSummaries }],
+     [mapName, pan.x, pan.y, pixelWidth, pixelHeight, zoom, side, encounterSummaries],
+   );
+diff --git a/packages/ui/src/gbc/GbcMapCanvas.tsx b/packages/ui/src/gbc/GbcMapCanvas.tsx
+index fb37e4d..4a296c1 100644
+--- a/packages/ui/src/gbc/GbcMapCanvas.tsx
++++ b/packages/ui/src/gbc/GbcMapCanvas.tsx
+@@ -1,18 +1,19 @@
+-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
++import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+ import type { RGBA } from "@pokemap/core/src/render/raster.js";
+ import { drawGbcGrid, drawGbcCollision, drawGbcEvents, gbcStepInfo, type GbcQuadrantInfo, type GbcQuadrantKey, type GbcStepInfo } from "@pokemap/core/src/gbc/render/overlays.js";
+ import type { GbcMapPayload } from "@pokemap/core/src/gbc/wire.js";
+ import type { GbcMapEvents } from "@pokemap/core/src/gbc/model/types.js";
+ import type { GbcStamp } from "@pokemap/core/src/gbc/edit/paint.js";
+ import type { GbcEventKind } from "@pokemap/core/src/gbc/edit/events.js";
+-import type { UseGbcEditSessionResult } from "./hooks/useGbcEditSession.js";
++import type { GbcPaintBody, UseGbcEditSessionResult } from "./hooks/useGbcEditSession.js";
++import { useStrokeChain } from "../shared/useStrokeChain.js";
+ import type { GbcTimeOfDay } from "./time.js";
+ import { EncounterBorder, type EncounterBorderEntry } from "../components/EncounterBorder.js";
+ import { BORDER_BAND, borderSideFromConnections } from "../encounters/borderSide.js";
+ import { fitWithBand } from "../encounters/fit.js";
+ import { useMapEncounterSummaries } from "../encounters/useMapEncounterSummaries.js";
+ import { ZOOM_LEVELS, zoomAboutPivot, type MapView, type Zoom } from "../components/mapView.js";
+ 
+ /**
+  * The GBC map view (Plan 6b Task 4: read-only; Plan 7 Task 5 added the optional editing props, see below). Plan Q2 accepts this as a
+  * deliberate DUPLICATE of `MapCanvas.tsx`'s pan/zoom/viewport mechanics
+@@ -290,40 +291,24 @@ export function GbcMapCanvas({ mapName, data: payload, time, hoveredMetatile, ed
+   const data = useMemo<GbcMapPayload>(
+     () => (sessionBlocks && sessionEvents ? { ...payload, blocks: sessionBlocks, events: sessionEvents } : payload),
+     [payload, sessionBlocks, sessionEvents],
+   );
+ 
+   const imgRef = useRef<HTMLImageElement>(null);
+   const canvasRef = useRef<HTMLCanvasElement>(null);
+   const baseCanvasRef = useRef<HTMLCanvasElement | null>(null);
+   const containerRef = useRef<HTMLDivElement>(null);
+   const dragRef = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
+-  // Completion chain for begin, every queued apply and end; no request in a stroke outruns its predecessor.
+-  const pendingPaintRef = useRef<Promise<void>>(Promise.resolve());
+-  // True from an edit stroke's mousedown to its end, so onMouseLeave can tell "a stroke is open" from "a session
+-  // exists" and not fire endStroke on every ordinary mouse-out (MapCanvas.tsx:264-269).
+-  const strokeOpenRef = useRef(false);
+-  const canvasVisitRef = useRef<object>({});
+-  const strokeRef = useRef<{ visit: object; begun: boolean; start: { x: number; y: number }; end: () => Promise<void> } | null>(null);
+-  useLayoutEffect(() => {
+-    canvasVisitRef.current = {};
+-    return () => {
+-      canvasVisitRef.current = {};
+-      const stroke = strokeRef.current;
+-      if (stroke) pendingPaintRef.current = pendingPaintRef.current.then(async () => {
+-        if (stroke.begun) await stroke.end();
+-      }).catch(() => {}); // The retired visit cannot display a late error.
+-      strokeRef.current = null;
+-      strokeOpenRef.current = false;
+-    };
+-  }, [mapName]);
+-  const ownsStroke = (stroke: NonNullable<typeof strokeRef.current>) => stroke.visit === canvasVisitRef.current;
++  // Completion chain for begin, every queued apply and end (shared with the GBA canvas); the start cell of an
++  // open rect/shift stroke is captured at mousedown.
++  const chain = useStrokeChain<GbcPaintBody>(mapName, (message) => onEditError?.(message));
++  const strokeStartRef = useRef<{ x: number; y: number } | null>(null);
+   // The last block a pencil stroke painted: a held drag fires many mousemoves per block, and each would be a
+   // parallel POST. Reset when the stroke ends.
+   const lastCellRef = useRef<string | null>(null);
+   // An event-marker drag in progress: its identity and the STEP it started on (MapCanvas.tsx:270-280).
+   const eventDragRef = useRef<{ kind: GbcEventKind; index: number; x: number; y: number } | null>(null);
+   const [dragPreview, setDragPreview] = useState<{ x: number; y: number } | null>(null);
+   const [paintVersion, setPaintVersion] = useState(0);
+   const paintVersionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+   const prevBlocksRef = useRef({ mapName, blocks: data.blocks });
+ 
+@@ -403,22 +388,21 @@ export function GbcMapCanvas({ mapName, data: payload, time, hoveredMetatile, ed
+     // editSession is read only as a presence flag; the blocks identity is the trigger.
+     // eslint-disable-next-line react-hooks/exhaustive-deps
+   }, [mapName, data.blocks]);
+   useEffect(() => () => {
+     if (paintVersionTimerRef.current) clearTimeout(paintVersionTimerRef.current);
+   }, []);
+ 
+   // Fresh overlays/hover on a real map switch -- mirrors MapCanvas.tsx:371-374.
+   useEffect(() => {
+     setToggles(NO_TOGGLES);
+-    // A stroke belongs to the map it began on: a switch mid-stroke must not let its end/apply go out for the new one.
+-    strokeOpenRef.current = false;
++    strokeStartRef.current = null; // the chain retires the stroke itself (useStrokeChain)
+     lastCellRef.current = null;
+     setEncountersFor(null); // only so A -> B -> A does not bring A's border back; B is already off without it
+     setHover(null);
+     hoveredMetatile?.(null);
+     // hoveredMetatile is intentionally excluded: it is a plain prop
+     // callback, not state this effect reads, and including it would re-run
+     // (and re-clear the hover the player is mid-hovering) on every parent
+     // re-render that passes a fresh inline function, not only on a real
+     // map switch.
+     // eslint-disable-next-line react-hooks/exhaustive-deps
+@@ -606,34 +590,31 @@ export function GbcMapCanvas({ mapName, data: payload, time, hoveredMetatile, ed
+   const blockAt = (e: React.MouseEvent<HTMLCanvasElement>): { x: number; y: number } | null => {
+     const c = rawBlockAt(e);
+     return c.x < 0 || c.y < 0 || c.x >= layout.width || c.y >= layout.height ? null : c;
+   };
+   /** Client -> event step (16 px), through the real `clientToStep`. */
+   const rawStepAt = (e: React.MouseEvent<HTMLCanvasElement>): { x: number; y: number } => {
+     const { sx, sy } = clientToStep(e.clientX, e.clientY, e.currentTarget.getBoundingClientRect(), pan, zoom, originX, originY);
+     return { x: sx, y: sy };
+   };
+ 
+-  // Every paint request's rejection lands here -- a visible error, never an unhandled rejection.
+-  const fail = (e: unknown) => onEditError?.(e instanceof Error ? e.message : "Paint failed.");
+-
+-  const paintAt = (bx: number, by: number): Promise<void> => {
+-    if (!editSession || !activeTool?.stamp) return Promise.resolve();
++  /** The apply body a pencil/bucket stroke sends at a block; null when there is nothing to send. rect/shift are applied once, at mouseup. */
++  const paintBody = (bx: number, by: number): GbcPaintBody | null => {
++    if (!activeTool?.stamp) return null;
+     if (activeTool.kind === "pencil") {
+-      return editSession.applyPaint({ tool: "pencil", targets: [{ x: bx, y: by }], stamp: activeTool.stamp, origin: { x: bx, y: by } });
++      return { tool: "pencil", targets: [{ x: bx, y: by }], stamp: activeTool.stamp, origin: { x: bx, y: by } };
+     } else if (activeTool.kind === "bucket") {
+       const cell = activeTool.stamp.cells[0];
+-      if (!cell) return Promise.resolve(); // nothing sensible to fill with
+-      return editSession.applyPaint({ tool: "bucket", x: bx, y: by, replacement: { metatileId: cell.metatileId } });
++      if (!cell) return null; // nothing sensible to fill with
++      return { tool: "bucket", x: bx, y: by, replacement: { metatileId: cell.metatileId } };
+     }
+-    // rect/shift are applied once, at mouseup (endActiveStroke).
+-    return Promise.resolve();
++    return null;
+   };
+ 
+   const onMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+     if (e.button !== 0) return;
+     // Ahead of the paint branch, and only with no active tool (MapCanvas.tsx:714-732). Unclamped on purpose:
+     // a click just past the edge can still deselect. A miss falls through to the pan drag below.
+     if (onSelectEvent && !activeTool) {
+       const step = rawStepAt(e);
+       const hit = findEventAt(data.events, step.x, step.y);
+       onSelectEvent(hit);
+@@ -645,90 +626,71 @@ export function GbcMapCanvas({ mapName, data: payload, time, hoveredMetatile, ed
+     // Dropper: only READS a block; no stroke lifecycle (MapCanvas.tsx:733-743).
+     if (editSession && activeTool?.kind === "dropper") {
+       const cell = blockAt(e);
+       const block = cell && data.blocks[cell.y * layout.width + cell.x];
+       if (block) onDropperPick?.({ width: 1, height: 1, cells: [{ metatileId: block.metatileId }] });
+       return;
+     }
+     if (editSession && activeTool) {
+       const cell = blockAt(e);
+       if (!cell) return;
+-      strokeOpenRef.current = true;
+-      const stroke = { visit: canvasVisitRef.current, begun: false, start: cell, end: editSession.endStroke };
+-      strokeRef.current = stroke;
++      strokeStartRef.current = cell;
+       lastCellRef.current = `${cell.x},${cell.y}`;
+-      // One retained chain includes the previous end, this begin and the first apply's round trip.
+-      pendingPaintRef.current = pendingPaintRef.current.then(async () => {
+-        if (!ownsStroke(stroke)) return;
+-        await editSession.beginStroke();
+-        stroke.begun = true;
+-        if (!ownsStroke(stroke)) return;
+-        return paintAt(cell.x, cell.y);
+-      }).catch((e) => { if (ownsStroke(stroke)) fail(e); });
++      chain.start(editSession, paintBody(cell.x, cell.y));
+       return;
+     }
+     dragRef.current = { x: e.clientX, y: e.clientY, panX: pan.x, panY: pan.y };
+   };
+ 
+   const onMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+     if (eventDragRef.current) {
+       setDragPreview(rawStepAt(e)); // local candidate only; onMoveEvent fires once, on mouseup
+       return;
+     }
+     // A held pencil queues each new cell behind begin and every preceding apply round trip.
+-    const stroke = strokeRef.current;
+-    if (editSession && activeTool?.kind === "pencil" && strokeOpenRef.current && stroke && e.buttons === 1) {
++    if (editSession && activeTool?.kind === "pencil" && chain.isOpen() && e.buttons === 1) {
+       const cell = blockAt(e);
+       if (cell && lastCellRef.current !== `${cell.x},${cell.y}`) {
+         lastCellRef.current = `${cell.x},${cell.y}`;
+-        pendingPaintRef.current = pendingPaintRef.current.then(() => {
+-          if (ownsStroke(stroke) && stroke.begun) return paintAt(cell.x, cell.y);
+-        }).catch((e) => { if (ownsStroke(stroke)) fail(e); });
++        const body = paintBody(cell.x, cell.y);
++        if (body) chain.queue(body);
+       }
+       return;
+     }
+     if (dragRef.current) {
+       const d = dragRef.current;
+       updateView((v) => ({ ...v, pan: { x: d.panX + (e.clientX - d.x), y: d.panY + (e.clientY - d.y) } }));
+     } else {
+       hoverAt(e.clientX, e.clientY);
+     }
+   };
+ 
+   /**
+    * Ends whatever stroke onMouseDown opened -- shared by mouseup and by mouseleave (a drag that leaves the canvas
+    * never fires onMouseUp, which used to leave the server's stroke open and squash two edits into one undo step).
+    * `end` is the finishing block for rect/shift; null from mouseleave, which abandons an unapplied rect/shift.
+    *
+    * Append to the same completion chain using the captured start. End waits for every
+    * apply round trip (not just its invocation), and a following stroke also waits for this end round trip.
+    */
+   const endActiveStroke = (end: { x: number; y: number } | null) => {
+-    const stroke = strokeRef.current;
+-    if (!editSession || !strokeOpenRef.current || !stroke) return;
+-    strokeRef.current = null;
+-    strokeOpenRef.current = false;
++    if (!editSession || !chain.isOpen()) return;
++    const start = strokeStartRef.current;
++    strokeStartRef.current = null;
+     lastCellRef.current = null;
+-    const strokeFail = (e: unknown) => { if (ownsStroke(stroke)) fail(e); };
+-    pendingPaintRef.current = pendingPaintRef.current.then(async () => {
+-      if (!ownsStroke(stroke) && !stroke.begun) return;
+-      const start = ownsStroke(stroke) && stroke.begun ? stroke.start : null;
+-      if (activeTool?.kind === "shift" && start && end) {
+-        await editSession.applyPaint({ tool: "shift", dx: end.x - start.x, dy: end.y - start.y }).catch(strokeFail);
+-      } else if (activeTool?.kind === "rect" && activeTool.stamp && start && end) {
+-        await editSession
+-          .applyPaint({ tool: "rect", x0: start.x, y0: start.y, x1: end.x, y1: end.y, stamp: activeTool.stamp, origin: start })
+-          .catch(strokeFail); // a rejected apply must not leave the stroke open forever
+-      }
+-      // A retired visit stops queued paint but still finishes an issued stroke on its captured old session.
+-      await editSession.endStroke();
+-    }).catch((e) => { if (ownsStroke(stroke)) fail(e); });
++    let last: GbcPaintBody | null = null;
++    if (activeTool?.kind === "shift" && start && end) {
++      last = { tool: "shift", dx: end.x - start.x, dy: end.y - start.y };
++    } else if (activeTool?.kind === "rect" && activeTool.stamp && start && end) {
++      last = { tool: "rect", x0: start.x, y0: start.y, x1: end.x, y1: end.y, stamp: activeTool.stamp, origin: start };
++    }
++    chain.finish(last);
+   };
+ 
+   const onMouseUp = (e: React.MouseEvent<HTMLCanvasElement>) => {
+     // Locals BEFORE the ref is nulled, never read after (the stale-ref mistake MapCanvas.tsx:860-871 postmortems).
+     if (eventDragRef.current) {
+       const step = rawStepAt(e);
+       const { kind, index, x: ox, y: oy } = eventDragRef.current;
+       eventDragRef.current = null;
+       setDragPreview(null);
+       if (step.x !== ox || step.y !== oy) onMoveEvent?.({ kind, index, x: step.x, y: step.y });
+@@ -744,21 +706,21 @@ export function GbcMapCanvas({ mapName, data: payload, time, hoveredMetatile, ed
+ 
+   const onMouseLeave = () => {
+     dragRef.current = null;
+     setHover(null);
+     hoveredMetatile?.(null);
+     // A drag that exits is abandoned where it was, not committed (no reliable final cell).
+     if (eventDragRef.current) {
+       eventDragRef.current = null;
+       setDragPreview(null);
+     }
+-    if (editSession && activeTool && strokeOpenRef.current) endActiveStroke(null);
++    if (editSession && activeTool && chain.isOpen()) endActiveStroke(null);
+   };
+ 
+   const quadrantLabel = (key: GbcQuadrantKey, label: string, info: GbcQuadrantInfo, hovered: boolean) => {
+     const text = formatQuadrant(label, info);
+     return hovered ? <strong key={key}>{text}</strong> : <span key={key}>{text}</span>;
+   };
+ 
+   return (
+     <section className={`map-canvas gbc-map-canvas${chromeless ? " map-canvas--chromeless" : ""}`} aria-label={`${mapName} canvas`}>
+       {!chromeless && <div className="map-canvas__toolbar">
+diff --git a/packages/ui/src/shared/useStrokeChain.ts b/packages/ui/src/shared/useStrokeChain.ts
+new file mode 100644
+index 0000000..e342857
+--- /dev/null
++++ b/packages/ui/src/shared/useStrokeChain.ts
+@@ -0,0 +1,104 @@
++import { useLayoutEffect, useMemo, useRef } from "react";
++
++export interface StrokeSession<Body> {
++  beginStroke(): Promise<void>;
++  applyPaint(body: Body): Promise<unknown>;
++  endStroke(): Promise<void>;
++}
++
++export interface StrokeChain<Body> {
++  /** mousedown: ends any still-open stroke first (F3/M4), then begin, then `first` (if any) as one awaited link. */
++  start(session: StrokeSession<Body>, first: Body | null): void;
++  /** held move: queued behind every earlier link; dropped if the visit retired or begin failed. */
++  queue(body: Body): void;
++  /** mouseup/mouseleave: `last` (rect/shift final apply, or null), then end, after every queued link. */
++  finish(last: Body | null): void;
++  isOpen(): boolean;
++  /** Resolves when every link issued so far has settled. */
++  settled(): Promise<void>;
++}
++
++interface Stroke<Body> {
++  visit: object;
++  begun: boolean;
++  session: StrokeSession<Body>;
++}
++
++/**
++ * One completion chain for begin, every apply and end, so no request in a stroke outruns its predecessor (B1,
++ * moved out of GbcMapCanvas). `visitKey` = the map name: a change or unmount retires the visit, so queued work
++ * drops and a begun stroke still ends on its captured session; errors of a retired visit are not reported.
++ */
++export function useStrokeChain<Body>(visitKey: string, onError: (message: string) => void): StrokeChain<Body> {
++  const tailRef = useRef<Promise<void>>(Promise.resolve());
++  const visitRef = useRef<object>({});
++  const strokeRef = useRef<Stroke<Body> | null>(null);
++  const onErrorRef = useRef(onError);
++  onErrorRef.current = onError;
++
++  useLayoutEffect(() => {
++    visitRef.current = {};
++    return () => {
++      visitRef.current = {};
++      const stroke = strokeRef.current;
++      strokeRef.current = null;
++      if (stroke) {
++        tailRef.current = tailRef.current.then(async () => {
++          if (stroke.begun) await stroke.session.endStroke();
++        }).catch(() => {}); // The retired visit cannot display a late error.
++      }
++    };
++  }, [visitKey]);
++
++  return useMemo<StrokeChain<Body>>(() => {
++    const owns = (stroke: Stroke<Body>) => stroke.visit === visitRef.current;
++    const report = (stroke: Stroke<Body>, e: unknown) => {
++      if (owns(stroke)) onErrorRef.current(e instanceof Error ? e.message : "Paint failed.");
++    };
++    /** Append a link. The terminal catch keeps a throwing onError from rejecting (poisoning) the chain (M3). */
++    const append = (stroke: Stroke<Body>, link: () => Promise<unknown> | void) => {
++      tailRef.current = tailRef.current
++        .then(link)
++        .catch((e) => report(stroke, e))
++        .catch(() => {})
++        .then(() => {});
++    };
++    const finish = (last: Body | null) => {
++      const stroke = strokeRef.current;
++      if (!stroke) return;
++      strokeRef.current = null;
++      append(stroke, async () => {
++        if (!owns(stroke) && !stroke.begun) return;
++        if (last !== null && owns(stroke) && stroke.begun) {
++          await stroke.session.applyPaint(last).catch((e) => report(stroke, e)); // a rejected apply must not leave the stroke open
++        }
++        // A retired visit stops queued paint but still finishes an issued stroke on its captured session.
++        await stroke.session.endStroke();
++      });
++    };
++    return {
++      start(session, first) {
++        finish(null); // lost mouseup: the old stroke ends before the new begin
++        const stroke: Stroke<Body> = { visit: visitRef.current, begun: false, session };
++        strokeRef.current = stroke;
++        append(stroke, async () => {
++          if (!owns(stroke)) return;
++          await session.beginStroke();
++          stroke.begun = true;
++          if (!owns(stroke) || first === null) return;
++          await session.applyPaint(first);
++        });
++      },
++      queue(body) {
++        const stroke = strokeRef.current;
++        if (!stroke) return;
++        append(stroke, () => {
++          if (owns(stroke) && stroke.begun) return stroke.session.applyPaint(body);
++        });
++      },
++      finish,
++      isOpen: () => strokeRef.current !== null,
++      settled: () => tailRef.current.then(() => {}),
++    };
++  }, []);
++}
+diff --git a/packages/ui/test/MapCanvasStroke.test.tsx b/packages/ui/test/MapCanvasStroke.test.tsx
+new file mode 100644
+index 0000000..c2e446d
+--- /dev/null
++++ b/packages/ui/test/MapCanvasStroke.test.tsx
+@@ -0,0 +1,248 @@
++import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
++import { render, fireEvent, act, waitFor } from "@testing-library/react";
++import { MapCanvas, type MapCanvasProps } from "../src/components/MapCanvas.js";
++import type { MapLayoutData } from "../src/hooks/useMapLayout.js";
++import type { UseEditSessionResult } from "../src/hooks/useEditSession.js";
++
++// Plan 8 Task 1 (F6): the GBA canvas gains the GBC stroke-completion barrier (B1) through the shared chain.
++// Mirrors GbcMapCanvasEdit.test.tsx "stroke completion barrier (B1)". Fixture as MapCanvas.test.tsx: 2x2 layout,
++// 1-block border, 16 px blocks, viewport 64 -> zoom 1 pan 0, so client (16 + 16x, 16 + 16y) is block (x, y).
++const DATA: MapLayoutData = {
++  map: {
++    id: "MAP_FOO", name: "Foo", layout: "LAYOUT_FOO", music: "MUS_DUMMY", regionMapSection: "MAPSEC_NONE",
++    mapType: "MAP_TYPE_TOWN", weather: "WEATHER_NONE", connections: [], objectEvents: [], warpEvents: [], coordEvents: [], bgEvents: [],
++  },
++  layout: {
++    id: "LAYOUT_FOO", name: "Foo_Layout", width: 2, height: 2, borderWidth: 1, borderHeight: 1,
++    primaryTileset: "gTileset_General", secondaryTileset: "gTileset_Petalburg",
++    borderFilepath: "data/layouts/Foo/border.bin", blockdataFilepath: "data/layouts/Foo/map.bin",
++  },
++  split: { version: "emerald", tiles: 512, metatiles: 512, pals: 6 },
++  blocks: [
++    { metatileId: 0x10, collision: 0, elevation: 3, behavior: 0x05 },
++    { metatileId: 0x11, collision: 1, elevation: 3, behavior: 0x05 },
++    { metatileId: 0x12, collision: 0, elevation: 0, behavior: 0x05 },
++    { metatileId: 0x13, collision: 0, elevation: 3, behavior: 0x09 },
++  ],
++  primaryCount: 512,
++  secondaryCount: 144,
++};
++const STAMP = { width: 1, height: 1, cells: [{ metatileId: 9 }] };
++const at = (bx: number, by: number) => ({ clientX: 16 + 16 * bx, clientY: 16 + 16 * by, button: 0 });
++const held = () => {
++  let resolve!: () => void;
++  let reject!: (error: Error) => void;
++  const promise = new Promise<void>((yes, no) => { resolve = yes; reject = no; });
++  return { promise, resolve, reject };
++};
++let log: string[];
++
++function session(over: Partial<UseEditSessionResult> = {}): UseEditSessionResult {
++  const note = (n: string) => vi.fn((..._a: unknown[]) => { log.push(n); return Promise.resolve(); });
++  return {
++    blocks: [], border: [], map: undefined, isDirty: false, canUndo: false, canRedo: false,
++    beginStroke: note("begin"),
++    applyPaint: vi.fn((b: { targets?: { x: number }[] }) => { log.push(`apply ${b.targets?.[0]?.x}`); return Promise.resolve(); }) as UseEditSessionResult["applyPaint"],
++    endStroke: note("end"), undo: note("undo"), redo: note("redo"), markClean: vi.fn(), moveEvent: note("move"),
++    addEvent: note("add"), deleteEvent: vi.fn().mockResolvedValue(undefined), applyExternalMapUpdate: vi.fn(), discard: note("discard"),
++    ...over,
++  };
++}
++
++class FakeResizeObserver { observe() {} unobserve() {} disconnect() {} }
++let originalGetContext: typeof HTMLCanvasElement.prototype.getContext;
++beforeEach(() => {
++  log = [];
++  vi.stubGlobal("ResizeObserver", FakeResizeObserver);
++  originalGetContext = HTMLCanvasElement.prototype.getContext;
++  // @ts-expect-error -- narrow test stub
++  HTMLCanvasElement.prototype.getContext = () => ({ imageSmoothingEnabled: true, drawImage() {}, clearRect() {}, getImageData: (_x: number, _y: number, w: number, h: number) => ({ data: new Uint8ClampedArray(w * h * 4), width: w, height: h }), putImageData() {}, save() {}, restore() {}, strokeRect() {} });
++  Object.defineProperty(HTMLElement.prototype, "clientWidth", { value: 64, configurable: true });
++  Object.defineProperty(HTMLElement.prototype, "clientHeight", { value: 64, configurable: true });
++});
++afterEach(() => {
++  HTMLCanvasElement.prototype.getContext = originalGetContext;
++  vi.unstubAllGlobals();
++});
++
++function mount(props: Partial<MapCanvasProps> = {}) {
++  const u = render(<MapCanvas mapName="Foo" data={DATA} {...props} />);
++  const canvas = u.container.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
++  return { ...u, canvas };
++}
++const rerenderAs = (u: ReturnType<typeof mount>, mapName: string, props: Partial<MapCanvasProps>) =>
++  u.rerender(<MapCanvas mapName={mapName} data={DATA} {...props} />);
++const calls = (fn: unknown) => (fn as ReturnType<typeof vi.fn>).mock.calls;
++
++describe("MapCanvas stroke completion barrier (Plan 8 Task 1, F6)", () => {
++  it("a fast click with a delayed begin applies once, then ends, in order", async () => {
++    const s = session({ beginStroke: vi.fn(() => { log.push("begin"); return new Promise<void>((r) => setTimeout(r, 40)); }) });
++    const { canvas } = mount({ editSession: s, activeTool: { kind: "pencil", stamp: STAMP } });
++    fireEvent.mouseDown(canvas, at(0, 0));
++    fireEvent.mouseUp(canvas, at(0, 0));
++    await waitFor(() => expect(log).toContain("end"));
++    expect(log).toEqual(["begin", "apply 0", "end"]);
++  });
++
++  it("queues a held-begin pencil move behind begin and the initial cell", async () => {
++    const begin = held();
++    const s = session({ beginStroke: vi.fn(() => begin.promise) });
++    const { canvas } = mount({ editSession: s, activeTool: { kind: "pencil", stamp: STAMP } });
++    fireEvent.mouseDown(canvas, at(0, 0));
++    await waitFor(() => expect(s.beginStroke).toHaveBeenCalledTimes(1));
++    fireEvent.mouseMove(canvas, { ...at(1, 0), buttons: 1 });
++    fireEvent.mouseUp(canvas, at(1, 0));
++    expect(s.applyPaint).not.toHaveBeenCalled();
++    expect(s.endStroke).not.toHaveBeenCalled();
++    await act(async () => begin.resolve());
++    await waitFor(() => expect(s.endStroke).toHaveBeenCalledTimes(1));
++    expect(calls(s.applyPaint).map(([body]) => body.targets)).toEqual([[{ x: 0, y: 0 }], [{ x: 1, y: 0 }]]);
++  });
++
++  it.each(["pencil", "bucket", "rect", "shift"] as const)("%s immediate mouseup waits for an independently held first apply", async (kind) => {
++    const begin = held();
++    const apply = held();
++    const s = session({ beginStroke: vi.fn(() => begin.promise), applyPaint: vi.fn(() => apply.promise) });
++    const { canvas } = mount({ editSession: s, activeTool: { kind, stamp: STAMP } });
++    fireEvent.mouseDown(canvas, at(0, 0));
++    fireEvent.mouseUp(canvas, at(1, 1));
++    await waitFor(() => expect(s.beginStroke).toHaveBeenCalledTimes(1));
++    expect(s.applyPaint).not.toHaveBeenCalled();
++    await act(async () => begin.resolve());
++    expect(s.applyPaint).toHaveBeenCalledTimes(1);
++    expect(s.endStroke).not.toHaveBeenCalled();
++    await act(async () => apply.resolve());
++    await waitFor(() => expect(s.endStroke).toHaveBeenCalledTimes(1));
++  });
++
++  it("serializes four independently held drag applies (no dedupe on GBA) and end waits for every cell", async () => {
++    const cells = [held(), held(), held(), held()];
++    let index = 0;
++    const s = session({ applyPaint: vi.fn(() => cells[index++]!.promise) });
++    const { canvas } = mount({ editSession: s, activeTool: { kind: "pencil", stamp: STAMP } });
++    fireEvent.mouseDown(canvas, at(0, 0));
++    await waitFor(() => expect(s.applyPaint).toHaveBeenCalledTimes(1));
++    fireEvent.mouseMove(canvas, { ...at(1, 0), buttons: 1 });
++    fireEvent.mouseMove(canvas, { ...at(0, 1), buttons: 1 });
++    fireEvent.mouseMove(canvas, { ...at(1, 1), buttons: 1 });
++    fireEvent.mouseUp(canvas, at(1, 1));
++    for (let i = 1; i <= 4; i++) {
++      expect(s.applyPaint).toHaveBeenCalledTimes(i);
++      expect(s.endStroke).not.toHaveBeenCalled();
++      await act(async () => cells[i - 1]!.resolve());
++    }
++    await waitFor(() => expect(s.endStroke).toHaveBeenCalledTimes(1));
++    expect(calls(s.applyPaint).map(([body]) => body.targets)).toEqual([[{ x: 0, y: 0 }], [{ x: 1, y: 0 }], [{ x: 0, y: 1 }], [{ x: 1, y: 1 }]]);
++  });
++
++  it("a following stroke waits for the previous end round trip", async () => {
++    const end = held();
++    const s = session({ endStroke: vi.fn().mockImplementationOnce(() => end.promise).mockResolvedValue(undefined) });
++    const { canvas } = mount({ editSession: s, activeTool: { kind: "pencil", stamp: STAMP } });
++    fireEvent.mouseDown(canvas, at(0, 0));
++    fireEvent.mouseUp(canvas, at(0, 0));
++    await waitFor(() => expect(s.endStroke).toHaveBeenCalledTimes(1));
++    fireEvent.mouseDown(canvas, at(1, 0));
++    fireEvent.mouseUp(canvas, at(1, 0));
++    await act(async () => {}); // Let a queued begin run if it incorrectly bypasses the held end round trip.
++    expect(s.beginStroke).toHaveBeenCalledTimes(1);
++    await act(async () => end.resolve());
++    await waitFor(() => expect(s.endStroke).toHaveBeenCalledTimes(2));
++    expect(s.beginStroke).toHaveBeenCalledTimes(2);
++  });
++
++  it("a lost mouseup: a second mousedown ends the open stroke before the new begin (two undo steps)", async () => {
++    const end = held();
++    const s = session({ endStroke: vi.fn(() => { log.push("end"); return end.promise; }) });
++    const { canvas } = mount({ editSession: s, activeTool: { kind: "pencil", stamp: STAMP } });
++    fireEvent.mouseDown(canvas, at(0, 0));
++    await waitFor(() => expect(log).toEqual(["begin", "apply 0"]));
++    fireEvent.mouseDown(canvas, at(1, 0)); // no mouseup in between
++    await act(async () => {});
++    expect(log).toEqual(["begin", "apply 0", "end"]);
++    await act(async () => end.resolve());
++    await waitFor(() => expect(log).toEqual(["begin", "apply 0", "end", "begin", "apply 1"]));
++  });
++
++  for (const phase of ["begin", "apply"] as const) it.each(["map", "ABA", "unmount"])("%s retires pending " + phase + " and still finishes its issued begin", async (retirement) => {
++    const pending = held();
++    const old = session(phase === "begin" ? { beginStroke: vi.fn(() => pending.promise) } : { applyPaint: vi.fn(() => pending.promise) });
++    const next = session();
++    const props = { activeTool: { kind: "pencil" as const, stamp: STAMP } };
++    const mounted = mount({ ...props, editSession: old });
++    fireEvent.mouseDown(mounted.canvas, at(0, 0));
++    await waitFor(() => expect(old.beginStroke).toHaveBeenCalledTimes(1));
++    if (phase === "apply") await waitFor(() => expect(old.applyPaint).toHaveBeenCalledTimes(1));
++    fireEvent.mouseMove(mounted.canvas, { ...at(1, 0), buttons: 1 });
++    if (retirement === "unmount") mounted.unmount();
++    else {
++      rerenderAs(mounted, "Bar", { ...props, editSession: next });
++      if (retirement === "ABA") rerenderAs(mounted, "Foo", { ...props, editSession: next });
++      fireEvent.mouseUp(mounted.canvas, at(1, 0));
++    }
++    await act(async () => pending.resolve());
++    expect(old.applyPaint).toHaveBeenCalledTimes(phase === "begin" ? 0 : 1);
++    expect(old.endStroke).toHaveBeenCalledTimes(1); // only the captured old session finishes, never the new map's
++    expect(next.beginStroke).not.toHaveBeenCalled();
++    expect(next.applyPaint).not.toHaveBeenCalled();
++    expect(next.endStroke).not.toHaveBeenCalled();
++  });
++
++  it("a retired held end is not followed by new work on the next visit's session", async () => {
++    const end = held();
++    const old = session({ endStroke: vi.fn(() => end.promise) });
++    const next = session();
++    const props = { activeTool: { kind: "pencil" as const, stamp: STAMP } };
++    const mounted = mount({ ...props, editSession: old });
++    fireEvent.mouseDown(mounted.canvas, at(0, 0));
++    fireEvent.mouseUp(mounted.canvas, at(0, 0));
++    await waitFor(() => expect(old.endStroke).toHaveBeenCalledTimes(1));
++    rerenderAs(mounted, "Bar", { ...props, editSession: next });
++    fireEvent.mouseDown(mounted.canvas, at(1, 0));
++    await act(async () => {});
++    expect(next.beginStroke).not.toHaveBeenCalled(); // waits behind the old visit's held end
++    await act(async () => end.resolve());
++    await waitFor(() => expect(next.beginStroke).toHaveBeenCalledTimes(1));
++  });
++
++  it("begin failure: queued moves do not paint after it, and end still follows", async () => {
++    const begin = held();
++    const s = session({ beginStroke: vi.fn(() => begin.promise) });
++    const { canvas } = mount({ editSession: s, activeTool: { kind: "pencil", stamp: STAMP } });
++    fireEvent.mouseDown(canvas, at(0, 0));
++    await waitFor(() => expect(s.beginStroke).toHaveBeenCalledTimes(1));
++    fireEvent.mouseMove(canvas, { ...at(1, 0), buttons: 1 });
++    fireEvent.mouseUp(canvas, at(1, 0));
++    await act(async () => begin.reject(new Error("held begin failed")));
++    expect(s.applyPaint).not.toHaveBeenCalled();
++    expect(s.endStroke).toHaveBeenCalledTimes(1);
++  });
++
++  it("apply failure: a later queued apply still runs and end waits for it", async () => {
++    const first = held();
++    const second = held();
++    const s = session({ applyPaint: vi.fn().mockImplementationOnce(() => first.promise).mockImplementationOnce(() => second.promise) });
++    const { canvas } = mount({ editSession: s, activeTool: { kind: "pencil", stamp: STAMP } });
++    fireEvent.mouseDown(canvas, at(0, 0));
++    await waitFor(() => expect(s.applyPaint).toHaveBeenCalledTimes(1));
++    fireEvent.mouseMove(canvas, { ...at(1, 0), buttons: 1 });
++    fireEvent.mouseUp(canvas, at(1, 0));
++    await act(async () => first.reject(new Error("held apply failed")));
++    expect(s.applyPaint).toHaveBeenCalledTimes(2);
++    expect(s.endStroke).not.toHaveBeenCalled();
++    await act(async () => second.resolve());
++    expect(s.endStroke).toHaveBeenCalledTimes(1);
++  });
++
++  it("an off-map mousedown followed by a held move creates no apply or end without begin", async () => {
++    const s = session();
++    const { canvas } = mount({ editSession: s, activeTool: { kind: "pencil", stamp: STAMP } });
++    fireEvent.mouseDown(canvas, { clientX: 60, clientY: 60, button: 0 });
++    fireEvent.mouseMove(canvas, { ...at(0, 0), buttons: 1 });
++    fireEvent.mouseUp(canvas, at(0, 0));
++    await act(async () => {});
++    expect(s.beginStroke).not.toHaveBeenCalled();
++    expect(s.applyPaint).not.toHaveBeenCalled();
++    expect(s.endStroke).not.toHaveBeenCalled();
++  });
++});
+diff --git a/packages/ui/test/gbc/GbcMapCanvasStroke.test.tsx b/packages/ui/test/gbc/GbcMapCanvasStroke.test.tsx
+new file mode 100644
+index 0000000..eb39be2
+--- /dev/null
++++ b/packages/ui/test/gbc/GbcMapCanvasStroke.test.tsx
+@@ -0,0 +1,95 @@
++import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
++import { render, fireEvent, act, waitFor } from "@testing-library/react";
++import { GbcMapCanvas, type GbcMapCanvasProps } from "../../src/gbc/GbcMapCanvas.js";
++import type { UseGbcEditSessionResult } from "../../src/gbc/hooks/useGbcEditSession.js";
++import type { GbcMapPayload } from "@pokemap/core/src/gbc/wire.js";
++import type { GbcMapEvents } from "@pokemap/core/src/gbc/model/types.js";
++
++// Shared stroke chain (Plan 8 Task 1): lost mouseup (F3/M4) and a throwing error handler (M3) on the GBC canvas.
++// Fixture mirrors GbcMapCanvasEdit.test.tsx: 3x2 blocks, border 1; client (40,40) -> block (0,0), (72,72) -> (1,1).
++const NO_EVENTS: GbcMapEvents = { warps: [], coords: [], bgs: [], objects: [], sceneScripts: [], callbacks: [], objectConsts: [] };
++const BLOCKS = [0, 1, 2, 3, 4, 5].map((metatileId) => ({ metatileId }));
++const DATA: GbcMapPayload = {
++  family: "gbc",
++  map: {
++    name: "M", constName: "M", group: 1, number: 1, width: 3, height: 2, blkPath: "maps/M.blk", tileset: "T",
++    environment: "E", landmark: "L", music: "X", phoneFlag: "0", palette: "P", fishGroup: "0", border: 1, connectionFlags: "0", connections: [],
++  },
++  layout: { blkPath: "maps/M.blk", width: 3, height: 2, writable: true },
++  blocks: BLOCKS,
++  metatileCount: 6,
++  tileset: { constName: "T", name: "T" },
++  collision: Array.from({ length: 6 }, () => ({ tl: 0, tr: 0, bl: 0, br: 0 })),
++  collisionInfo: { "0": { name: "COLL_FLOOR", category: "land", talk: false } },
++  events: NO_EVENTS,
++  defects: [],
++  paddingWidth: 3,
++};
++const STAMP = { width: 1, height: 1, cells: [{ metatileId: 9 }] };
++let log: string[];
++
++function held() {
++  let resolve!: () => void;
++  const promise = new Promise<void>((yes) => { resolve = yes; });
++  return { promise, resolve };
++}
++function session(over: Partial<UseGbcEditSessionResult> = {}): UseGbcEditSessionResult {
++  const note = (n: string) => vi.fn((..._a: unknown[]) => { log.push(n); return Promise.resolve(); });
++  return {
++    blocks: BLOCKS, events: NO_EVENTS, isDirty: false, canUndo: false, canRedo: false,
++    beginStroke: note("begin"), applyPaint: vi.fn((b: { targets?: { x: number }[] }) => { log.push(`apply ${b.targets?.[0]?.x}`); return Promise.resolve(); }) as UseGbcEditSessionResult["applyPaint"],
++    endStroke: note("end"), undo: note("undo"), redo: note("redo"), discard: note("discard"), markClean: vi.fn(),
++    moveEvent: note("move"), addEvent: note("add"), deleteEvent: vi.fn(() => Promise.resolve({ warpRenumberWarnings: [] })),
++    ...over,
++  };
++}
++
++class FakeResizeObserver { observe() {} unobserve() {} disconnect() {} }
++let originalGetContext: typeof HTMLCanvasElement.prototype.getContext;
++beforeEach(() => {
++  log = [];
++  vi.stubGlobal("ResizeObserver", FakeResizeObserver);
++  originalGetContext = HTMLCanvasElement.prototype.getContext;
++  // @ts-expect-error -- narrow test stub
++  HTMLCanvasElement.prototype.getContext = () => ({ imageSmoothingEnabled: true, drawImage() {}, clearRect() {}, getImageData: (_x: number, _y: number, w: number, h: number) => ({ data: new Uint8ClampedArray(w * h * 4), width: w, height: h }), putImageData() {}, save() {}, restore() {}, strokeRect() {} });
++  Object.defineProperty(HTMLElement.prototype, "clientWidth", { value: 160, configurable: true });
++  Object.defineProperty(HTMLElement.prototype, "clientHeight", { value: 128, configurable: true });
++});
++afterEach(() => {
++  HTMLCanvasElement.prototype.getContext = originalGetContext;
++  vi.unstubAllGlobals();
++});
++
++function mount(props: Partial<GbcMapCanvasProps> = {}) {
++  const u = render(<GbcMapCanvas mapName="M" data={DATA} time="day" {...props} />);
++  const canvas = u.container.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
++  return { ...u, canvas };
++}
++const at = (x: number, y: number) => ({ clientX: x, clientY: y, button: 0 });
++
++describe("GbcMapCanvas shared stroke chain (Plan 8 Task 1)", () => {
++  it("a lost mouseup: a second mousedown ends the open stroke before the new begin (two undo steps)", async () => {
++    const end = held();
++    const s = session({ endStroke: vi.fn(() => { log.push("end"); return end.promise; }) });
++    const { canvas } = mount({ editSession: s, activeTool: { kind: "pencil", stamp: STAMP } });
++    fireEvent.mouseDown(canvas, at(40, 40));
++    await waitFor(() => expect(log).toEqual(["begin", "apply 0"]));
++    fireEvent.mouseDown(canvas, at(72, 40)); // no mouseup in between
++    await act(async () => {});
++    expect(log).toEqual(["begin", "apply 0", "end"]);
++    await act(async () => end.resolve());
++    await waitFor(() => expect(log).toEqual(["begin", "apply 0", "end", "begin", "apply 1"]));
++  });
++
++  it("a throwing onEditError does not stop the next stroke (M3)", async () => {
++    const onEditError = vi.fn(() => { throw new Error("ui broke"); });
++    const s = session({ beginStroke: vi.fn().mockImplementationOnce(() => { log.push("begin"); return Promise.reject(new Error("boom")); }).mockImplementation(() => { log.push("begin"); return Promise.resolve(); }) });
++    const { canvas } = mount({ editSession: s, activeTool: { kind: "pencil", stamp: STAMP }, onEditError });
++    fireEvent.mouseDown(canvas, at(40, 40));
++    fireEvent.mouseUp(canvas, at(40, 40));
++    await waitFor(() => expect(onEditError).toHaveBeenCalledWith("boom"));
++    fireEvent.mouseDown(canvas, at(72, 40));
++    fireEvent.mouseUp(canvas, at(72, 40));
++    await waitFor(() => expect(log).toEqual(["begin", "end", "begin", "apply 1", "end"]));
++  });
++});
+diff --git a/packages/ui/test/shared/useStrokeChain.test.tsx b/packages/ui/test/shared/useStrokeChain.test.tsx
+new file mode 100644
+index 0000000..13ab669
+--- /dev/null
++++ b/packages/ui/test/shared/useStrokeChain.test.tsx
+@@ -0,0 +1,243 @@
++import { describe, it, expect, vi } from "vitest";
++import { renderHook, act } from "@testing-library/react";
++import { useStrokeChain, type StrokeSession } from "../../src/shared/useStrokeChain.js";
++
++function held() {
++  let resolve!: () => void;
++  let reject!: (error: Error) => void;
++  const promise = new Promise<void>((yes, no) => { resolve = yes; reject = no; });
++  return { promise, resolve, reject };
++}
++const flush = () => act(async () => {});
++
++type Held = ReturnType<typeof held>;
++/** A session whose every call is logged and held until the test releases it. */
++function heldSession(log: string[]) {
++  const begins: Held[] = [], applies: Held[] = [], ends: Held[] = [];
++  const session: StrokeSession<number> = {
++    beginStroke() { const h = held(); begins.push(h); log.push("begin"); return h.promise; },
++    applyPaint(b: number) { const h = held(); applies.push(h); log.push(`apply:${b}`); return h.promise; },
++    endStroke() { const h = held(); ends.push(h); log.push("end"); return h.promise; },
++  };
++  return { session, begins, applies, ends };
++}
++
++function setup(visitKey = "A", onError: (m: string) => void = () => {}) {
++  return renderHook(({ k }) => useStrokeChain<number>(k, onError), { initialProps: { k: visitKey } });
++}
++
++describe("useStrokeChain", () => {
++  it("runs begin, each apply round trip, then end, strictly in order", async () => {
++    const log: string[] = [];
++    const s = heldSession(log);
++    const { result } = setup();
++    act(() => { result.current.start(s.session, 1); result.current.queue(2); result.current.queue(3); result.current.finish(4); });
++    await flush();
++    expect(log).toEqual(["begin"]);
++    await flush(); s.begins[0]!.resolve(); await flush();
++    expect(log).toEqual(["begin", "apply:1"]);
++    await flush(); s.applies[0]!.resolve(); await flush();
++    expect(log).toEqual(["begin", "apply:1", "apply:2"]);
++    await flush(); s.applies[1]!.resolve(); await flush();
++    expect(log).toEqual(["begin", "apply:1", "apply:2", "apply:3"]);
++    await flush(); s.applies[2]!.resolve(); await flush();
++    expect(log).toEqual(["begin", "apply:1", "apply:2", "apply:3", "apply:4"]);
++    await flush(); s.applies[3]!.resolve(); await flush();
++    expect(log).toEqual(["begin", "apply:1", "apply:2", "apply:3", "apply:4", "end"]);
++    await flush(); s.ends[0]!.resolve(); await flush();
++    expect(result.current.isOpen()).toBe(false);
++  });
++
++  it("a null first and null last issue only begin and end", async () => {
++    const log: string[] = [];
++    const s = heldSession(log);
++    const { result } = setup();
++    act(() => { result.current.start(s.session, null); result.current.finish(null); });
++    await flush();
++    await flush(); s.begins[0]!.resolve(); await flush();
++    expect(log).toEqual(["begin", "end"]);
++  });
++
++  it("the next stroke begin waits for the previous end", async () => {
++    const log: string[] = [];
++    const s = heldSession(log);
++    const { result } = setup();
++    act(() => { result.current.start(s.session, null); result.current.finish(null); });
++    await flush(); s.begins[0]!.resolve(); await flush();
++    act(() => { result.current.start(s.session, null); });
++    await flush();
++    expect(log).toEqual(["begin", "end"]);
++    await flush(); s.ends[0]!.resolve(); await flush();
++    expect(log).toEqual(["begin", "end", "begin"]);
++  });
++
++  it("a lost mouseup: start while open ends the old stroke before the new begin", async () => {
++    const log: string[] = [];
++    const s = heldSession(log);
++    const { result } = setup();
++    act(() => { result.current.start(s.session, 1); });
++    await flush(); s.begins[0]!.resolve(); await flush();
++    await flush(); s.applies[0]!.resolve(); await flush();
++    act(() => { result.current.start(s.session, 2); });
++    await flush();
++    expect(log).toEqual(["begin", "apply:1", "end"]);
++    await flush(); s.ends[0]!.resolve(); await flush();
++    expect(log).toEqual(["begin", "apply:1", "end", "begin"]);
++    expect(result.current.isOpen()).toBe(true);
++  });
++
++  it("queue without an open stroke is a no-op", async () => {
++    const { result } = setup();
++    act(() => { result.current.queue(1); result.current.finish(2); });
++    await flush();
++    expect(result.current.isOpen()).toBe(false);
++  });
++
++  describe("retirement", () => {
++    type R = ReturnType<typeof setup>;
++    const retire: Record<string, (r: R) => void> = {
++      "map change": (r) => r.rerender({ k: "B" }),
++      "A -> B -> A": (r) => { r.rerender({ k: "B" }); r.rerender({ k: "A" }); },
++      "unmount": (r) => r.unmount(),
++    };
++    for (const [label, go] of Object.entries(retire)) {
++      it(`${label} during begin: nothing paints, the begun stroke still ends, no error`, async () => {
++        const log: string[] = [];
++        const onError = vi.fn();
++        const s = heldSession(log);
++        const r = setup("A", onError);
++        act(() => { r.result.current.start(s.session, 1); r.result.current.queue(2); });
++        await flush();
++        go(r);
++        await flush(); s.begins[0]!.resolve(); await flush();
++        expect(log).toEqual(["begin", "end"]);
++        await flush(); s.ends[0]!.reject(new Error("late")); await flush();
++        expect(onError).not.toHaveBeenCalled();
++      });
++
++      it(`${label} during an apply: queued applies drop, end still issues, no error`, async () => {
++        const log: string[] = [];
++        const onError = vi.fn();
++        const s = heldSession(log);
++        const r = setup("A", onError);
++        act(() => { r.result.current.start(s.session, 1); r.result.current.queue(2); r.result.current.queue(3); });
++        await flush(); s.begins[0]!.resolve(); await flush();
++        go(r);
++        await flush(); s.applies[0]!.reject(new Error("late")); await flush();
++        expect(log).toEqual(["begin", "apply:1", "end"]);
++        expect(onError).not.toHaveBeenCalled();
++      });
++
++      it(`${label} during end: the end is not reported`, async () => {
++        const log: string[] = [];
++        const onError = vi.fn();
++        const s = heldSession(log);
++        const r = setup("A", onError);
++        act(() => { r.result.current.start(s.session, null); r.result.current.finish(null); });
++        await flush(); s.begins[0]!.resolve(); await flush();
++        go(r);
++        await flush(); s.ends[0]!.reject(new Error("late")); await flush();
++        expect(log).toEqual(["begin", "end"]);
++        expect(onError).not.toHaveBeenCalled();
++      });
++    }
++
++    it("a retired stroke whose begin failed issues no end", async () => {
++      const log: string[] = [];
++      const s = heldSession(log);
++      const r = setup();
++      act(() => { r.result.current.start(s.session, 1); });
++      await flush();
++      act(() => r.rerender({ k: "B" }));
++      await flush(); s.begins[0]!.reject(new Error("x")); await flush();
++      expect(log).toEqual(["begin"]);
++    });
++
++    it("a new visit stroke waits behind the retired visit end", async () => {
++      const log: string[] = [];
++      const s = heldSession(log);
++      const r = setup();
++      act(() => { r.result.current.start(s.session, null); });
++      await flush(); s.begins[0]!.resolve(); await flush();
++      act(() => r.rerender({ k: "B" }));
++      act(() => { r.result.current.start(s.session, null); });
++      await flush();
++      expect(log).toEqual(["begin", "end"]);
++      await flush(); s.ends[0]!.resolve(); await flush();
++      expect(log).toEqual(["begin", "end", "begin"]);
++    });
++  });
++
++  describe("errors", () => {
++    it("a begin failure reports once, drops queued applies, and finish still ends", async () => {
++      const log: string[] = [];
++      const onError = vi.fn();
++      const s = heldSession(log);
++      const { result } = setup("A", onError);
++      act(() => { result.current.start(s.session, 1); result.current.queue(2); result.current.finish(3); });
++      await flush(); s.begins[0]!.reject(new Error("no begin")); await flush();
++      expect(log).toEqual(["begin", "end"]);
++      expect(onError).toHaveBeenCalledTimes(1);
++      expect(onError).toHaveBeenCalledWith("no begin");
++    });
++
++    it("an apply failure is reported; later applies still run and end still waits", async () => {
++      const log: string[] = [];
++      const onError = vi.fn();
++      const s = heldSession(log);
++      const { result } = setup("A", onError);
++      act(() => { result.current.start(s.session, 1); result.current.queue(2); result.current.finish(null); });
++      await flush(); s.begins[0]!.resolve(); await flush();
++      await flush(); s.applies[0]!.reject(new Error("bad")); await flush();
++      expect(onError).toHaveBeenCalledWith("bad");
++      expect(log).toEqual(["begin", "apply:1", "apply:2"]);
++      await flush(); s.applies[1]!.resolve(); await flush();
++      expect(log).toEqual(["begin", "apply:1", "apply:2", "end"]);
++    });
++
++    it("a non-Error rejection reports the generic message", async () => {
++      const onError = vi.fn();
++      const s: StrokeSession<number> = { beginStroke: () => Promise.reject("x"), applyPaint: () => Promise.resolve(), endStroke: () => Promise.resolve() };
++      const { result } = setup("A", onError);
++      act(() => { result.current.start(s, null); });
++      await flush();
++      expect(onError).toHaveBeenCalledWith("Paint failed.");
++    });
++
++    it("a throwing onError does not poison the chain (M3)", async () => {
++      const log: string[] = [];
++      const onError = vi.fn(() => { throw new Error("ui broke"); });
++      const bad: StrokeSession<number> = {
++        beginStroke: () => { log.push("begin"); return Promise.reject(new Error("x")); },
++        applyPaint: (b) => { log.push(`apply:${b}`); return Promise.resolve(); },
++        endStroke: () => { log.push("end"); return Promise.resolve(); },
++      };
++      const { result } = setup("A", onError);
++      act(() => { result.current.start(bad, 1); result.current.finish(null); });
++      await flush();
++      expect(onError).toHaveBeenCalled();
++      const good: StrokeSession<number> = {
++        beginStroke: () => { log.push("begin2"); return Promise.resolve(); },
++        applyPaint: (b) => { log.push(`apply2:${b}`); return Promise.resolve(); },
++        endStroke: () => { log.push("end2"); return Promise.resolve(); },
++      };
++      act(() => { result.current.start(good, 7); result.current.finish(null); });
++      await flush();
++      expect(log).toEqual(["begin", "end", "begin2", "apply2:7", "end2"]);
++    });
++  });
++
++  it("settled() waits for a held apply", async () => {
++    const log: string[] = [];
++    const s = heldSession(log);
++    const { result } = setup();
++    act(() => { result.current.start(s.session, 1); });
++    await flush(); s.begins[0]!.resolve(); await flush();
++    let done = false;
++    void result.current.settled().then(() => { done = true; });
++    await flush();
++    expect(done).toBe(false);
++    await flush(); s.applies[0]!.resolve(); await flush();
++    expect(done).toBe(true);
++  });
++});
