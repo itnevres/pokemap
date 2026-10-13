@@ -1,4 +1,4 @@
-# PokeMap: current state (2026-10-12, read first)
+# PokeMap: current state (2026-10-12, read first; Plan 8 in progress on `plan-8-ui-engine-adapter`)
 
 PokeMap is a Porymap-parity map editor with two engine families:
 - **GBA:** pokeemerald-family decomps. Plans 0-5.
@@ -58,13 +58,26 @@ This file holds the state and the accumulated lessons. The prompt for the next s
   - Tell reviewers which directories they must not write. A 2026-10-12 spec reviewer `tar`-extracted HEAD over the coordinator's running mutation worktree. Run mutations in their own worktree, and rerun any mutant that was in flight.
   - A mutation classifier must count `TestingLibraryElementError` as an assertion failure, not only `AssertionError`/`expected`. X5 was first mislabelled a survivor.
 
+## Plan 8 lessons so far (2026-10-12)
+
+- **New load-only flakes** (baseline gate at `3f9f8ce` gave 2,572/2; both files passed 44/44 in isolation): `WorldCanvasContext.test.tsx` "Escape that closes an open context menu…", with the tell `TestingLibraryElementError … role "menu"`; and `gbc/GbcAppEditing.test.tsx` "dirty guard…", with the tell `EPERM … pokemap-gbc-*\maps\ElmsHouse.asm`. Rerun them in isolation before calling either a regression.
+- Run vitest from the repo **root**. From `packages/ui`, the jsdom glob misses, and the tell is `document is not defined`.
+- Live check:
+  - Saving clears undo history. Reverse a saved GBC edit by repainting the original metatiles, and read them with `cmp -l` (its byte values are **octal**).
+  - GBA at 1× opens with the map anchored at the stage's bottom right, so the stage centre is off the map. The tell: no requests and "Hover the map…". Hover first to find on-map points.
+  - In GBA, pick a stamp from a palette thumb. Dropper-then-Pencil gave no stamp; this is unconfirmed on `master`.
+  - `TaskStop` on a `npx tsx` hub leaves the node child listening on 5184. Stop it by port (`Get-NetTCPConnection -LocalPort 5184`).
+  - Playwright MCP may only write under the main checkout's `.playwright-mcp/` (pre-existing, untracked). Remove your own files from it afterwards.
+  - Keep `browser_run_code_unsafe` results small. An `evaluateAll` over the GBA palette returned about 2,000 rows.
+- An "equivalent mutant" is still a finding: after a fix makes a guard unreachable, record it as equivalent with the live witness named (Task 1's M6/M8).
+
 ## Where each line of work stands
 
 | Line of work | State | Needs |
 |---|---|---|
 | Plan 6: GBC foundation, read-only | **Done and merged 2026-09-25.** See the plan's STATUS banner for the real file map | — |
-| Plan 8: unify GBA/GBC UI over an engine adapter | **Planned 2026-10-12, not started.** `plans/2026-10-12-pokemap-plan-8-ui-engine-adapter.md`: Tasks 0-8 (stroke chain, world context, app context controller, data hooks, edit-session core, workspace slots, adapter, canvas decision gate). Plan 7 is merged; branch from `master`. | User decides #5/#6 ordering at preflight |
-| Issues #5/#6: warp destination popups, `scope=dungeon` (Codex) | **Uncommitted on branch `issues-5-6-warp-popups` (`ef248a3`) in the main checkout. Unverified:** its gate collected 0 tests (EPERM), with no live acceptance. Its record is `task-reports/warp-dungeon-issues/coordinator.md` (in that working tree only). | Focused and full gate, live check, a named reason for the changed GBA tests, then commit |
+| Plan 8: unify GBA/GBC UI over an engine adapter | **In progress on branch `plan-8-ui-engine-adapter`** (unpushed, from `master` `3f9f8ce`). `plans/2026-10-12-pokemap-plan-8-ui-engine-adapter.md`. **Done:** Task 0 (preflight `f05ff8b`) and Task 1, the shared stroke chain `shared/useStrokeChain.ts`, used by both map canvases. GBA gains B1 (F6), plus the lost-mouseup end (F3/M4), the M3 terminal catch and a map-only response guard in GBA `useEditSession.call`. Reviewed (Opus spec, Sonnet quality, 1 fix round), 8 mutants killed, and live-verified in both families (`f05ff8b..1cbc1fa`). Gate at `e3d66b9`: **2,624 pass / 0 fail, 154 files.** The ledger (rulings, deferred minors) is `task-reports/pokemap-plan-8-ui-engine-adapter/ledger.md`. Evidence is in that folder's `_archive/`. **Next: Task 2** (world context, high risk, split reviews). | Continue SDD at Task 2 |
+| Issues #5/#6: warp destination popups, `scope=dungeon` (Codex) | **Uncommitted on branch `issues-5-6-warp-popups` (`ef248a3`) in the main checkout. Unverified:** its gate collected 0 tests (EPERM), with no live acceptance. Its record is `task-reports/warp-dungeon-issues/coordinator.md` (in that working tree only). **User decision 2026-10-12: park it until Plan 8 finishes, then rebase onto the shared modules.** Leave the main checkout alone; Plan 8 runs in a scratch worktree. | After Plan 8: rebase, focused and full gate, live check, a named reason for the changed GBA tests, then commit |
 | Plan 7: GBC editing | **Done and merged 2026-10-12** ([itnevres/pokemap#13](https://github.com/itnevres/pokemap/pull/13) → `dbb1761`), Claude-audited. Tasks 1–7 and Task 5b accepted; final gate 2,574 pass/0 fail, typecheck/build pass. Plan STATUS and archived acceptance reports hold details. | — |
 | 6c: hub, encounter border, world UX (both families) | **Done and merged 2026-10-07** ([itnevres/pokemap#11](https://github.com/itnevres/pokemap/pull/11) → `a16b604`). Phases A-F; the close-out is `_archive/task-F1-closeout.md`. (A 2026-09-30: hub, picker/switcher, criterion 1. B 2026-10-01: GBC front sprites + real GBC icon route, species-summary adapters, `pickBorderSide`, shared `EncounterBorder` replacing both gutters in both world views, the border in both map views; criterion 2. C 2026-10-01: `LensPanel` split into toggles + an in-flow `LensLegend` row (`world-canvas__legend-row`) with real empty-maps (jump like a tree click) and unused-species (names + icons) lists, both `focusEmptyMaps` deleted; `MapTree` reveals the selected row; GBA world single-click selects in the tree without jumping, and entering World centres on the selection (both apps); criteria 3-5 live-verified. D 2026-10-04: GBC visibility, sidecar and drag placement; near-warp auto-layout in core for both families; GBC warp markers, preview and Dungeon tab; conflict acceptance in both families with a badge-only right-click action that E3 absorbs; criteria 6-7 live-verified in both families). `plans/2026-09-28-pokemap-plan-6c-hub-encounters-world.md`: 17 tasks in phases A-F. Run one phase per coordinator session. The user decisions U1-U4 are binding. E 2026-10-06:
 - E1: `MapCanvas` has one view state (follow-ups D1/D2 done) and a controlled `view`/`onViewChange`.
