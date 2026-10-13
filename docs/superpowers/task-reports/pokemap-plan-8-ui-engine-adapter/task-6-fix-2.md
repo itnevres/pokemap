@@ -1,0 +1,9 @@
+# Task 6 fix round 2 (review task-6-review.md M1-M3 + coordinator mutation V1)
+
+The coordinator committed your work as e2fbb6c (code) and 9a72738 (docs), plus a new pin `packages/ui/test/AppContextVisit.test.tsx`. Fix only these:
+
+1. M1 / V1 survivor: `packages/ui/test/shared/useVisit.test.tsx` first test never observes `changed === true` (mutant "`const changed = false;` but still `setVisit`" passes the whole file). Record `visit.changed` per render into an array and assert the sequence is exactly `[false, true, false]` around the A -> B rerender (no StrictMode; if React renders extra times, assert the first `true` appears exactly once and only after the rerender). Make the child-value check unmasked: reset with a bare value (no `forMap` filtering) so a missed reset would expose "picked" to a render with key B. Prove it: temporarily apply the mutant to `packages/ui/src/shared/useVisit.ts` (`const changed = false;` + `if (visit.key !== key) setVisit({ key });`), run the file, confirm a failure with an assertion message, then restore the source byte-identically. Record the evidence in the report.
+2. M2: `packages/ui/src/shared/useVisit.ts` header JSDoc wrongly describes EditingWorkspace's canvas/body position; replace with what the hook does ("Stable until `key` changes; `changed` is true for exactly the render that changes it; `isCurrent` …").
+3. M3: `packages/ui/src/hooks/useMapEditing.ts` the new `mapName?` arg gets a one-line JSDoc ("Visit key (App passes `selected`); omitted, it never changes.").
+
+Run `npx vitest run packages/ui/test/shared/useVisit.test.tsx packages/ui/test/useMapEditing.test.tsx packages/ui/test/AppVisitGuard.test.tsx packages/ui/test/gbc/GbcMapEditing.test.tsx` (Node API fallback if needed) and typecheck. Append a "Fix round 2" section to task-6-report.md. No git state changes, no other files.

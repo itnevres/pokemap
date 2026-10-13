@@ -25,3 +25,9 @@ Restored the original GBA workspace comments and multiline JSX, the GBC rail com
 The requested Node-API focused run is recorded in `task-6-fix-1.log`: 5 files / 18 tests passed, while one existing `MapEditingWorkspace.test.tsx` test failed only because the sandbox fallback omits the repository's configured automatic DOM cleanup and accumulated prior test DOM nodes. `npm.cmd run typecheck` and `npm.cmd run build -w @pokemap/ui` both exited 0 (their outputs are `task-6-fix-1-typecheck.log` and `task-6-fix-1-build.log`).
 
 The World-context A -> B -> A pin was not added: its required fixture/harness extraction could not be completed inside this fix round. This task remains `DONE_WITH_CONCERNS` for that missing requested witness and the sandbox-configured test limitation.
+
+## Fix round 2
+
+The `useVisit` visit-change witness now records the render sequence and unmasked child values: A -> B requires `[false, true, false]` and only delivers `["picked", null]` to the child. Mutation V1 (`changed = false` while retaining the visit state update) failed as intended: `expected [ false, false, false ] to deeply equal [ false, true, false ]` (`task-6-fix-2-mutation.log`). The production source was restored byte-identically with `const changed = visit.key !== key; if (changed) setVisit({ key });`.
+
+Also corrected the shared hook header JSDoc and documented `useMapEditing`'s optional visit key. `npm.cmd run typecheck` exited 0 (`task-6-fix-2-typecheck.log`). The required four-file Node API fallback run is recorded in `task-6-fix-2.log`: the shared, GBA hook, and App guard suites pass; `GbcMapEditing.test.tsx` fails under `config:false` because its normal automatic DOM cleanup setup is absent, accumulating DOM across cases. The normal configured suite had already passed before this documentation/test-only fix.
