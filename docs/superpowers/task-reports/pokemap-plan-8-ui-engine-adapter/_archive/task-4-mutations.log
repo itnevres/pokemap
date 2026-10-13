@@ -1,0 +1,8 @@
+T0 baseline (no change)  sharedOld=0F/17P  shared=0F/4P  gba=0F/4P  gbc=0F/2P
+T1 stale-response guard removed (Step 4)  sharedOld=0F/17P  shared=1F/3P KILL  gba=2F/2P KILL  gbc=2F/0P KILL
+T2 unguarded rejects everything  sharedOld=0F/17P  shared=1F/3P KILL  gba=3F/1P KILL  gbc=0F/2P
+restored byte-identical: [ true ]
+
+T0 baseline (no change)  sharedOld=0F/17P  shared=0F/4P  gba=0F/4P  gbc=0F/2P
+T1 stale-response guard removed (Step 4)  sharedOld=0F/17P  shared=1F/3P KILL  gba=2F/2P KILL  gbc=2F/0P KILL
+T2 unguarded rejects everything  sharedOld=0F/17P  shared=1F/3P KILL  gba=3F/1P KILL  gbc=0F/2P
