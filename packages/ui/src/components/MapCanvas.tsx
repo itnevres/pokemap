@@ -4,7 +4,8 @@ import type { LayoutRaster } from "@pokemap/core/src/render/layout.js";
 import type { MapData } from "@pokemap/core/src/load/maps.js";
 import type { EventKind } from "@pokemap/core/src/edit/events.js";
 import type { MapLayoutData } from "../hooks/useMapLayout.js";
-import type { UseEditSessionResult } from "../hooks/useEditSession.js";
+import type { PaintApplyBody, UseEditSessionResult } from "../hooks/useEditSession.js";
+import { useStrokeChain } from "../shared/useStrokeChain.js";
 import { readBlock, type Stamp } from "@pokemap/core/src/edit/paint.js";
 import type { CollisionElevation } from "./CollisionPalette.js";
 import { EncounterBorder, type EncounterBorderEntry } from "./EncounterBorder.js";
@@ -239,34 +240,11 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
   // start->end gesture recorded here, not a per-cell trail.
   const dragStartRef = useRef<{ x: number; y: number } | null>(null);
   const marksRef = useRef<EventMark[]>([]);
-  // Tracks the most recent in-flight paint request -- begin's own chain
-  // (whose .then() callback sets dragStartRef for "rect", or paints
-  // directly for pencil/bucket), or the latest pencil/bucket applyPaint.
-  // `endActiveStroke` below (onMouseUp and onMouseLeave both route through
-  // it) awaits this before deciding what to do. Confirmed live (Task 11
-  // Step 8) against the real dev server, not hypothetical: without it, a
-  // plain click's mouseup fired endStroke()'s own fetch immediately, and
-  // on localhost it could beat the still-in-flight begin-then-apply chain
-  // onto the wire (begin, end, apply, in that order) -- /paint/end then
-  // snapshots blocks BEFORE the apply has mutated them, sees no change,
-  // and clears strokeStartBlocks with no undo command pushed. The apply
-  // arrives moments later and DOES mutate entry.session.blocks, but
-  // nothing is tracking it anymore -- an edit silently invisible to undo/
-  // redo. A code-review pass later found the SAME race, worse, on the
-  // rect path specifically (see endActiveStroke's own doc comment: a fast
-  // rect gesture could drop the paint entirely, not just its undo entry).
-  // This is exactly the class of bug Plan 0 Section 7 says only a real
-  // browser catches; no jsdom-driven test in this file reproduced it
-  // originally because the mocked editSession never raced real requests
-  // against each other -- the rect variant now has a deterministic
-  // repro using a controlled, delayed beginStroke promise instead.
-  const pendingPaintRef = useRef<Promise<void>>(Promise.resolve());
-  // True from the moment onMouseDown begins an edit-session stroke until
-  // that stroke actually ends (onMouseUp, or onMouseLeave's own mirrored
-  // cleanup below). Lets onMouseLeave tell "a stroke is genuinely open"
-  // apart from "editSession/activeTool are simply present" -- it must not
-  // fire endStroke() on every ordinary mouse-out.
-  const strokeOpenRef = useRef(false);
+  // One completion chain for begin, every queued apply and end (shared with the GBC canvas, Plan 8 Task 1): no
+  // request in a stroke outruns its predecessor, a lost mouseup ends the open stroke before the next begin, and a
+  // map switch retires queued work. This canvas shows no paint errors, so the error report is a no-op; the chain
+  // still swallows every rejection.
+  const chain = useStrokeChain<PaintApplyBody>(mapName, () => {});
   // Task 14: set from onMouseDown's own hit-test the instant a click lands
   // on an event marker (with no paint tool active), holding the event's
   // {kind,index} AND the block cell the drag STARTED at -- the start cell
@@ -675,38 +653,27 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
     return cell;
   };
 
-  const paintAt = (bx: number, by: number) => {
-    if (!editSession || !activeTool) return;
+  /** The apply body a pencil/bucket/collision stroke sends at a block; null when there is nothing to send.
+   *  rect/shift are applied once, at mouseup (endActiveStroke). */
+  const paintBody = (bx: number, by: number): PaintApplyBody | null => {
+    if (!activeTool) return null;
     if (activeTool.kind === "pencil") {
-      pendingPaintRef.current = editSession.applyPaint({ tool: "pencil", targets: [{ x: bx, y: by }], stamp: activeTool.stamp, origin: { x: bx, y: by } });
+      return { tool: "pencil", targets: [{ x: bx, y: by }], stamp: activeTool.stamp, origin: { x: bx, y: by } };
     } else if (activeTool.kind === "bucket") {
       const cell = activeTool.stamp.cells[0];
-      // Runtime guard, not a non-null assertion: StampCell.metatileId is
-      // optional ONLY because the collision tool needs a stamp cell that
-      // omits it (Task 12's own widening of the type). Bucket's own stamp
-      // is expected to always carry a real id (from a palette/dropper
-      // pick), but nothing at the type level stops a future caller from
-      // routing a collision-only stamp through "bucket" -- asserting here
-      // would make that a silent lie (either a crash or a bogus
-      // `replacement.metatileId: undefined` sent to the server). No-op
-      // instead: there is nothing sensible to flood-fill with.
-      if (cell?.metatileId === undefined) return;
-      pendingPaintRef.current = editSession.applyPaint({ tool: "bucket", x: bx, y: by, replacement: { metatileId: cell.metatileId, collision: cell.collision, elevation: cell.elevation } });
+      // StampCell.metatileId is optional only for the collision tool; bucket needs a real id, so no-op without one.
+      if (cell?.metatileId === undefined) return null;
+      return { tool: "bucket", x: bx, y: by, replacement: { metatileId: cell.metatileId, collision: cell.collision, elevation: cell.elevation } };
     } else if (activeTool.kind === "collision") {
-      // Reuses the pencil tool server-side with a 1x1 stamp whose cell
-      // omits metatileId -- paintCells's own merge (Task 12's fix to
-      // packages/core/src/edit/paint.ts) leaves the target's existing id
-      // untouched, painting collision/elevation only.
-      pendingPaintRef.current = editSession.applyPaint({
+      // Reuses the pencil tool server-side with a 1x1 stamp whose cell omits metatileId: collision/elevation only.
+      return {
         tool: "pencil",
         targets: [{ x: bx, y: by }],
         stamp: { width: 1, height: 1, cells: [{ collision: activeTool.value.collision, elevation: activeTool.value.elevation }] },
         origin: { x: bx, y: by },
-      });
+      };
     }
-    // "rect" is handled entirely by onMouseUp below (it needs a start AND
-    // end cell, unlike pencil/bucket/collision which act on a single cell)
-    // -- see dragStartRef.
+    return null;
   };
 
   const onMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -744,17 +711,10 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
     if (editSession && activeTool) {
       const cell = blockAt(e);
       if (!cell) return;
-      strokeOpenRef.current = true;
-      // Stored in pendingPaintRef too, not just fired-and-forgotten -- see
-      // that ref's own doc comment above for why onMouseUp/onMouseLeave
-      // need it.
-      pendingPaintRef.current = editSession.beginStroke().then(() => {
-        // "shift" is a drag gesture shaped like "rect" (start cell now,
-        // apply once at mouseup using start+end) -- see endActiveStroke
-        // below -- not a per-cell trail like pencil.
-        if (activeTool.kind === "rect" || activeTool.kind === "shift") dragStartRef.current = cell;
-        else paintAt(cell.x, cell.y);
-      });
+      // "shift" is a drag gesture shaped like "rect": the start cell is captured now and the single apply is made
+      // at mouseup from start + end cell (endActiveStroke). The others paint the first cell right after begin.
+      dragStartRef.current = activeTool.kind === "rect" || activeTool.kind === "shift" ? cell : null;
+      chain.start(editSession, paintBody(cell.x, cell.y));
       return;
     }
     dragRef.current = { x: e.clientX, y: e.clientY, panX: pan.x, panY: pan.y };
@@ -780,9 +740,10 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
     // synthetic mouseMove never sets `e.buttons` the way a real held-button
     // drag does (Step 9's teeth-proof), so this guard is exercised for real
     // only in a live browser, not by this file's own tests.
-    if (editSession && (activeTool?.kind === "pencil" || activeTool?.kind === "collision") && dragStartRef.current === null && e.buttons === 1) {
+    if (editSession && (activeTool?.kind === "pencil" || activeTool?.kind === "collision") && chain.isOpen() && e.buttons === 1) {
       const cell = blockAt(e);
-      if (cell) paintAt(cell.x, cell.y);
+      const body = cell && paintBody(cell.x, cell.y);
+      if (body) chain.queue(body);
       return;
     }
     if (dragRef.current) {
@@ -794,66 +755,25 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
   };
 
   /**
-   * Ends whatever paint stroke onMouseDown opened -- shared by a normal
-   * mouse-up and by onMouseLeave's own mirrored cleanup below, since a
-   * drag that leaves the canvas before releasing the button never fires
-   * React's own onMouseUp at all (Important review fix: without this
-   * mirroring, that left the server-side session's stroke open
-   * indefinitely -- the NEXT stroke's begin() does not override an
-   * already-open one, by design, see paintRoutes.test.ts's own stray-
-   * double-begin test -- so two unrelated edits would get squashed into
-   * one undo step).
+   * Ends whatever paint stroke onMouseDown opened -- shared by a normal mouse-up and by onMouseLeave, since a drag
+   * that leaves the canvas never fires onMouseUp (without it the server's stroke stayed open and two edits were
+   * squashed into one undo step).
    *
-   * `end` is the finishing cell for a rect; null from onMouseLeave, which
-   * has no reliable finishing cell of its own -- an in-progress rect is
-   * simply abandoned unpainted (nothing was ever applied for it, unlike
-   * pencil/bucket which paint progressively) rather than guessed at from
-   * wherever the cursor happened to exit.
-   *
-   * Critical review fix: this waits for `pendingPaintRef` -- which is
-   * ALSO what onMouseDown's own beginStroke().then() chain populates --
-   * before reading `dragStartRef.current` at all. The bug this closes,
-   * reproduced live by review: a fast rect mousedown-then-mouseup could
-   * reach here BEFORE that chain's callback had run, so `dragStartRef`
-   * was still null, this fell into the "else" branch, and `applyPaint`
-   * for the rect never fired at all -- not just left out of undo like the
-   * pencil/bucket race, but silently dropped entirely, with no error.
-   * Waiting on `pendingPaintRef` first guarantees the chain's callback
-   * (which sets `dragStartRef`, or paints via `paintAt` for pencil/
-   * bucket) has already run by the time this checks it -- see
-   * `MapCanvas.test.tsx`'s own race-repro test for the deterministic
-   * version of this, using a controlled, delayed `beginStroke` promise.
+   * `end` is the finishing cell for a rect/shift; null from onMouseLeave, which abandons an unapplied rect/shift.
+   * The chain applies the rect/shift after every queued link, then ends (see useStrokeChain).
    */
   const endActiveStroke = (end: { x: number; y: number } | null) => {
-    if (!editSession) return;
-    strokeOpenRef.current = false;
-    void pendingPaintRef.current.catch(() => {}).then(() => {
-      if (activeTool?.kind === "shift" && dragStartRef.current && end) {
-        const start = dragStartRef.current;
-        dragStartRef.current = null;
-        // A zero-length drag (dx===0, dy===0 -- a plain click) is a real,
-        // harmless no-op: shiftGrid with (0,0) maps every block to itself,
-        // and /paint/end's own JSON.stringify(prev.blocks) !==
-        // JSON.stringify(next.blocks) check already means no undo entry
-        // gets pushed for it -- no client-side special-casing needed.
-        const applied = editSession.applyPaint({ tool: "shift", dx: end.x - start.x, dy: end.y - start.y }).catch(() => {});
-        pendingPaintRef.current = applied;
-        void applied.then(() => editSession.endStroke());
-      } else if (activeTool?.kind === "rect" && dragStartRef.current && end) {
-        const start = dragStartRef.current;
-        dragStartRef.current = null;
-        const applied = editSession
-          .applyPaint({ tool: "rect", x0: start.x, y0: start.y, x1: end.x, y1: end.y, stamp: activeTool.stamp, origin: start })
-          // Matches the pencil/bucket path just below: a rejected apply
-          // must not leave the stroke stuck open forever.
-          .catch(() => {});
-        pendingPaintRef.current = applied;
-        void applied.then(() => editSession.endStroke());
-      } else {
-        dragStartRef.current = null;
-        void editSession.endStroke();
-      }
-    });
+    if (!editSession || !chain.isOpen()) return;
+    const start = dragStartRef.current;
+    dragStartRef.current = null;
+    let last: PaintApplyBody | null = null;
+    if (activeTool?.kind === "shift" && start && end) {
+      // A zero-length drag (a plain click) is a harmless no-op server-side: no undo entry is pushed for it.
+      last = { tool: "shift", dx: end.x - start.x, dy: end.y - start.y };
+    } else if (activeTool?.kind === "rect" && start && end) {
+      last = { tool: "rect", x0: start.x, y0: start.y, x1: end.x, y1: end.y, stamp: activeTool.stamp, origin: start };
+    }
+    chain.finish(last);
   };
 
   const onMouseUp = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -902,7 +822,7 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
       eventDragRef.current = null;
       setDragPreview(null);
     }
-    if (editSession && activeTool && strokeOpenRef.current) endActiveStroke(null);
+    if (editSession && activeTool && chain.isOpen()) endActiveStroke(null);
   };
 
   const anyOverlay = toggles.grid || showCollision || toggles.elevation || toggles.events;
