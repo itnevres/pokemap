@@ -36,7 +36,7 @@ The template is `world/contextView.ts`. Plan 7 Task 5b gave it a `native` parame
 
 ## Global constraints
 
-- **Order:** start after Plan 7 merges to `master`. Branch `plan-8-ui-engine-adapter` from `master`.
+- **Order:** Plan 7 merged to `master` 2026-10-12 (`dbb1761`). Branch `plan-8-ui-engine-adapter` from `master`.
   - Issues #5/#6 (branch `issues-5-6-warp-popups`, uncommitted, unverified) edit the same paired files in both families.
   - The user decides at preflight: land #5/#6 first, then rebase it onto Plan 8's shared modules; or park it until Plan 8 finishes. Do not do both lines at once.
 - **Behaviour:**
