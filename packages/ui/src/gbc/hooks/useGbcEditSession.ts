@@ -93,8 +93,8 @@ export function useGbcEditSession(mapName: string | null, initialBlocks?: Block[
     const d = reply.data;
     if (!isSessionBody(d)) throw new Error(`POST /api/edit/${mapName}${path} returned an unexpected shape`);
     if (d.events === null) return null; // nothing open server-side (undo/redo no-op): leave the client as it is
-    const events = d.events;
-    apply({ state: () => ({ blocks: d.blocks, events }), isDirty: d.isDirty, canUndo: d.canUndo, canRedo: d.canRedo }, reply.ticket);
+    const nextEvents = d.events;
+    apply({ state: () => ({ blocks: d.blocks, events: nextEvents }), isDirty: d.isDirty, canUndo: d.canUndo, canRedo: d.canRedo }, reply.ticket);
     return d;
   }, [corePost, apply, mapName]);
 

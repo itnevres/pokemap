@@ -22,6 +22,27 @@ function deferred() {
 }
 
 describe("GBA shared edit-session witnesses", () => {
+  it("discard throws on a failed response and keeps the dirtied session", async () => {
+    const dirtied = painted(9);
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce(response(dirtied))
+      .mockResolvedValueOnce({ ok: false, status: 500 }));
+    let last!: Session;
+    render(<Host mapName="A" blocks={seed} map={mapA} onResult={(s) => { last = s; }} />);
+    await act(() => last.applyPaint({ tool: "shift", dx: 1, dy: 0 }));
+    expect(last.blocks).toEqual(dirtied.blocks);
+    expect(last.isDirty).toBe(true);
+
+    let caught: unknown;
+    await act(async () => {
+      try { await last.discard(); } catch (e) { caught = e; }
+    });
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toBe("POST /api/edit/A/discard -> 500");
+    expect(last.blocks).toEqual(dirtied.blocks);
+    expect(last.isDirty).toBe(true);
+  });
+
   it("keeps only the newer out-of-order paint reply", async () => {
     const a = deferred(); const b = deferred();
     vi.stubGlobal("fetch", vi.fn().mockReturnValueOnce(a.promise).mockReturnValueOnce(b.promise));

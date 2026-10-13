@@ -21,7 +21,7 @@ describe("useEditSessionCore", () => {
     vi.stubGlobal("fetch", vi.fn(() => pending.promise));
     const { result, rerender } = mount();
     const reply = result.current.post("/x");
-    const nextSeed = { n: 2 };
+    const nextSeed = changed === "map" ? seed : { n: 2 };
     rerender({ map: changed === "map" ? "B" : "A", seed: nextSeed });
     pending.resolve(response());
     const landed = (await reply)!;
