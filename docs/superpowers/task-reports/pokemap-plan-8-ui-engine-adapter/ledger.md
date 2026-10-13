@@ -136,3 +136,5 @@ Task 6: live check both families PASS (task-6-coordinator.md).
 Task 6: fix round 2/5 dispatched (codex resume 01a13658…): M1 (shared changed witness, prove V1 kill), M2 useVisit JSDoc, M3 mapName JSDoc.
 Task 6: minor (deferred): App.select's resetForMapChange now redundant with visit.changed for stamp/selection (Task 7 shell convergence); AppContextVisit pin uses a fixed clientX 200 re-entry point.
 Task 6: fix round 2/5 (3 addressed, 0 open — M1 changed witness, M2/M3 JSDoc; commit 8740779). Coordinator re-ran V1 against the new test: killed (AssertionError [false,false,false] vs [false,true,false]); the copied test file in scratch m6b was then reset with git checkout (scratch-only deviation from the no-checkout rule). Gate at 8740779: 2,697/0, 169 files; typecheck + build pass; oracle empty.
+Task 6: re-review 2 (sonnet) M1-M3 ADDRESSED, 0 new (task-6-rereview-2.md).
+Task 6: complete (commits 8121835..8740779, review clean after 2 fix rounds)
