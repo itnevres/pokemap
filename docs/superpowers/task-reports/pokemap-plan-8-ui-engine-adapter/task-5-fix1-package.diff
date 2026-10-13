@@ -1,0 +1,105 @@
+a86983d test(ui): GBA failed-discard witness, isolate core map guard (Task 5 fix round 1)
+e7a7200 docs(plan-8): Task 5 reviews, mutation evidence, ledger
+5e1d7bb docs(plan-8): Task 5 implementer report, gate triage, ledger
+diff --git a/packages/ui/src/gbc/hooks/useGbcEditSession.ts b/packages/ui/src/gbc/hooks/useGbcEditSession.ts
+index d54f3e6..7ae15b8 100644
+--- a/packages/ui/src/gbc/hooks/useGbcEditSession.ts
++++ b/packages/ui/src/gbc/hooks/useGbcEditSession.ts
+@@ -86,22 +86,22 @@ export function useGbcEditSession(mapName: string | null, initialBlocks?: Block[
+   const seed = useMemo(() => ({ blocks: initialBlocks ?? [], events: initialEvents ?? NO_EVENTS }), [initialBlocks, initialEvents]);
+   const { state, isDirty, canUndo, canRedo, post: corePost, apply, discard, markClean } = useEditSessionCore("/api/edit", mapName, seed, { readServerError: true });
+   const { blocks, events } = state;
+ 
+   const post = useCallback(async (path: string, body?: unknown): Promise<SessionBody | null> => {
+     const reply = await corePost<unknown>(path, body);
+     if (!reply) return null;
+     const d = reply.data;
+     if (!isSessionBody(d)) throw new Error(`POST /api/edit/${mapName}${path} returned an unexpected shape`);
+     if (d.events === null) return null; // nothing open server-side (undo/redo no-op): leave the client as it is
+-    const events = d.events;
+-    apply({ state: () => ({ blocks: d.blocks, events }), isDirty: d.isDirty, canUndo: d.canUndo, canRedo: d.canRedo }, reply.ticket);
++    const nextEvents = d.events;
++    apply({ state: () => ({ blocks: d.blocks, events: nextEvents }), isDirty: d.isDirty, canUndo: d.canUndo, canRedo: d.canRedo }, reply.ticket);
+     return d;
+   }, [corePost, apply, mapName]);
+ 
+   const beginStroke = useCallback(() => post("/paint/begin").then(() => {}), [post]);
+   const applyPaint = useCallback((body: GbcPaintBody) => post("/paint/apply", body).then(() => {}), [post]);
+   const endStroke = useCallback(() => post("/paint/end").then(() => {}), [post]);
+   const undo = useCallback(() => post("/undo").then(() => {}), [post]);
+   const redo = useCallback(() => post("/redo").then(() => {}), [post]);
+   const moveEvent = useCallback((kind: GbcEventKind, index: number, x: number, y: number) => post("/event/move", { kind, index, x, y }).then(() => {}), [post]);
+   const addEvent = useCallback(
+diff --git a/packages/ui/test/shared/useEditSessionCore.test.tsx b/packages/ui/test/shared/useEditSessionCore.test.tsx
+index d1d3c8d..8c544d1 100644
+--- a/packages/ui/test/shared/useEditSessionCore.test.tsx
++++ b/packages/ui/test/shared/useEditSessionCore.test.tsx
+@@ -14,21 +14,21 @@ function deferred() {
+ function mount(map: string | null = "A") {
+   return renderHook((p) => useEditSessionCore("/api/edit", p.map, p.seed), { initialProps: { map, seed } });
+ }
+ 
+ describe("useEditSessionCore", () => {
+   it.each(["map", "seed"])("rejects a reply after its %s changes", async (changed) => {
+     const pending = deferred();
+     vi.stubGlobal("fetch", vi.fn(() => pending.promise));
+     const { result, rerender } = mount();
+     const reply = result.current.post("/x");
+-    const nextSeed = { n: 2 };
++    const nextSeed = changed === "map" ? seed : { n: 2 };
+     rerender({ map: changed === "map" ? "B" : "A", seed: nextSeed });
+     pending.resolve(response());
+     const landed = (await reply)!;
+     act(() => { expect(result.current.apply({ state: () => ({ n: 9 }), ...flags }, landed.ticket)).toBe(false); });
+     expect(result.current.state).toBe(nextSeed);
+     expect(result.current.isDirty).toBe(false);
+   });
+ 
+   it("keeps the newer of two out-of-order replies", async () => {
+     const first = deferred(); const second = deferred();
+diff --git a/packages/ui/test/useEditSessionShared.test.tsx b/packages/ui/test/useEditSessionShared.test.tsx
+index 1550e85..3833c8e 100644
+--- a/packages/ui/test/useEditSessionShared.test.tsx
++++ b/packages/ui/test/useEditSessionShared.test.tsx
+@@ -15,20 +15,41 @@ const mapA: MapData = { id: "MAP_A", name: "A", layout: "LAYOUT_A", music: "MUS_
+ const mapB: MapData = { ...mapA, id: "MAP_B", name: "B" };
+ const response = (data: unknown) => ({ ok: true, status: 200, json: async () => data }) as Response;
+ const painted = (id: number) => ({ blocks: [{ metatileId: id, collision: 0, elevation: 0 }], border: [], isDirty: true, canUndo: true, canRedo: false });
+ function deferred() {
+   let resolve!: (r: Response) => void;
+   const promise = new Promise<Response>((r) => { resolve = r; });
+   return { promise, resolve };
+ }
+ 
+ describe("GBA shared edit-session witnesses", () => {
++  it("discard throws on a failed response and keeps the dirtied session", async () => {
++    const dirtied = painted(9);
++    vi.stubGlobal("fetch", vi.fn()
++      .mockResolvedValueOnce(response(dirtied))
++      .mockResolvedValueOnce({ ok: false, status: 500 }));
++    let last!: Session;
++    render(<Host mapName="A" blocks={seed} map={mapA} onResult={(s) => { last = s; }} />);
++    await act(() => last.applyPaint({ tool: "shift", dx: 1, dy: 0 }));
++    expect(last.blocks).toEqual(dirtied.blocks);
++    expect(last.isDirty).toBe(true);
++
++    let caught: unknown;
++    await act(async () => {
++      try { await last.discard(); } catch (e) { caught = e; }
++    });
++    expect(caught).toBeInstanceOf(Error);
++    expect((caught as Error).message).toBe("POST /api/edit/A/discard -> 500");
++    expect(last.blocks).toEqual(dirtied.blocks);
++    expect(last.isDirty).toBe(true);
++  });
++
+   it("keeps only the newer out-of-order paint reply", async () => {
+     const a = deferred(); const b = deferred();
+     vi.stubGlobal("fetch", vi.fn().mockReturnValueOnce(a.promise).mockReturnValueOnce(b.promise));
+     let last!: Session;
+     render(<Host mapName="A" blocks={seed} map={mapA} onResult={(s) => { last = s; }} />);
+     const first = last.applyPaint({ tool: "shift", dx: 1, dy: 0 });
+     const second = last.applyPaint({ tool: "shift", dx: 2, dy: 0 });
+     await act(async () => { b.resolve(response(painted(3))); await second; });
+     await act(async () => { a.resolve(response(painted(2))); await first; });
+     expect(last.blocks[0]!.metatileId).toBe(3);
