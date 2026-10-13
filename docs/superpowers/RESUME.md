@@ -1,4 +1,4 @@
-# PokeMap: current state (2026-10-10, read first)
+# PokeMap: current state (2026-10-12, read first)
 
 PokeMap is a Porymap-parity map editor with two engine families:
 - **GBA:** pokeemerald-family decomps. Plans 0-5.
@@ -15,6 +15,7 @@ This file holds the state and the accumulated lessons. The prompt for the next s
 - **Windows baseline on `master`, measured 2026-10-06 at `a9481bd`** (every later commit is docs-only): `npm test` gives **2,202 pass / 2 fail** (130 files). Typecheck is clean and `vite build` passes.
   - The 2 failures are `packages/server/test/world.test.ts` › "returns placements, components, conflicts and vertical links" (186 vs 1,209) and "respects the dungeonAutoLayout flag".
   - Both come from local state: the GBA subject's `.pokemap/world.json` (SHA-1 `b285bbf…`) has `dungeonAutoLayout:false`. They are not a code defect. Its pre-6c-Phase-D bytes (`4983f97…`) were never recovered; see the Phase D lessons.
+  - **Fixed on `plan-7-gbc-editing` by `ef248a3`** (the test now uses a scratch fixture sidecar). Plan 7 branch gate: **2,574 pass / 0 fail**, 150 files, re-measured 2026-10-12 at `133b47e`. After Plan 7 merges, `master` expects 0 failures.
   - Rerun any other single failure in isolation before calling it a regression. Known load-only flakes are listed in the Phase B and C lessons.
   - History: the 6c branch started at 1,679 / 0 (`_archive/baseline.md`). Before `123d89f`, Windows had 7 cloud-written `packages/cli/test` portability failures, now fixed.
 - **Cloud baseline: not re-measured since 2026-09-25,** when the then-`master` gave 1,271 / 6. Re-measure it at the next cloud session. Failures expected from local-only state that git doesn't carry:
@@ -61,6 +62,8 @@ This file holds the state and the accumulated lessons. The prompt for the next s
 | Line of work | State | Needs |
 |---|---|---|
 | Plan 6: GBC foundation, read-only | **Done and merged 2026-09-25.** See the plan's STATUS banner for the real file map | — |
+| Plan 8: unify GBA/GBC UI over an engine adapter | **Planned 2026-10-12, not started.** `plans/2026-10-12-pokemap-plan-8-ui-engine-adapter.md`: Tasks 0-8 (stroke chain, world context, app context controller, data hooks, edit-session core, workspace slots, adapter, canvas decision gate). Start after Plan 7 merges. | User decides #5/#6 ordering at preflight |
+| Issues #5/#6: warp destination popups, `scope=dungeon` (Codex) | **Uncommitted on branch `issues-5-6-warp-popups` (`ef248a3`) in the main checkout. Unverified:** its gate collected 0 tests (EPERM), with no live acceptance. Its record is `task-reports/warp-dungeon-issues/coordinator.md` (in that working tree only). | Focused and full gate, live check, a named reason for the changed GBA tests, then commit |
 | Plan 7: GBC editing | **Complete locally, Claude-audited 2026-10-12; awaiting push/PR approval.** Tasks 1–7 and Task 5b accepted; final gate 2,574 pass/0 fail, typecheck/build pass. Plan STATUS and archived acceptance reports hold details. | User approval before push/PR |
 | 6c: hub, encounter border, world UX (both families) | **Done and merged 2026-10-07** ([itnevres/pokemap#11](https://github.com/itnevres/pokemap/pull/11) → `a16b604`). Phases A-F; the close-out is `_archive/task-F1-closeout.md`. (A 2026-09-30: hub, picker/switcher, criterion 1. B 2026-10-01: GBC front sprites + real GBC icon route, species-summary adapters, `pickBorderSide`, shared `EncounterBorder` replacing both gutters in both world views, the border in both map views; criterion 2. C 2026-10-01: `LensPanel` split into toggles + an in-flow `LensLegend` row (`world-canvas__legend-row`) with real empty-maps (jump like a tree click) and unused-species (names + icons) lists, both `focusEmptyMaps` deleted; `MapTree` reveals the selected row; GBA world single-click selects in the tree without jumping, and entering World centres on the selection (both apps); criteria 3-5 live-verified. D 2026-10-04: GBC visibility, sidecar and drag placement; near-warp auto-layout in core for both families; GBC warp markers, preview and Dungeon tab; conflict acceptance in both families with a badge-only right-click action that E3 absorbs; criteria 6-7 live-verified in both families). `plans/2026-09-28-pokemap-plan-6c-hub-encounters-world.md`: 17 tasks in phases A-F. Run one phase per coordinator session. The user decisions U1-U4 are binding. E 2026-10-06:
 - E1: `MapCanvas` has one view state (follow-ups D1/D2 done) and a controlled `view`/`onViewChange`.
@@ -280,6 +283,7 @@ Evidence: `task-reports/pokemap-plan-6c-hub-encounters-world/_archive/task-{E1,E
 | Plan 6c: hub, encounter border, world UX (done; STATUS banner holds the real file map) | `docs/superpowers/plans/2026-09-28-pokemap-plan-6c-hub-encounters-world.md` |
 | 6c task reports: baseline, executed specs, reviews, coordinator records, close-out | `docs/superpowers/task-reports/pokemap-plan-6c-hub-encounters-world/_archive/` (everything archived at F1; the close-out is `task-F1-closeout.md`) |
 | Plan 7: GBC editing (after 6b; read "Grounding from Plan 6" first) | `docs/superpowers/plans/2026-09-23-pokemap-plan-7-gbc-editing.md` |
+| Plan 8: unify GBA/GBC UI over an engine adapter (after Plan 7 merges) | `docs/superpowers/plans/2026-10-12-pokemap-plan-8-ui-engine-adapter.md` |
 | GBC format truth (binding Decisions) | `docs/superpowers/specs/2026-09-23-pokemap-gbc-format-findings.md` |
 | GBA design spec and feature specs | `docs/superpowers/specs/2026-08-26-pokemap-design.md`, `2026-09-07-*.md` |
 | Design system, binding on all UI tasks | `packages/ui/DESIGN.md` |
