@@ -56,6 +56,7 @@ export interface UseMapEditingArgs {
   editSession: UseEditSessionResult;
   /** `layout.data` from `useMapLayout(selected)` -- `null`/`undefined` until loaded. */
   layoutData: MapLayoutData | null | undefined;
+  /** Visit key (App passes `selected`); omitted, it never changes. */
   mapName?: string | null;
 }
 

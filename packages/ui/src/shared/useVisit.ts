@@ -9,8 +9,8 @@ export interface Visit {
   isCurrent(): boolean;
 }
 
-/** Keeps a visit object stable until its key changes; consumers use it to preserve
- * their stable canvas/body position while retiring only their visit-scoped state. */
+/** Stable until `key` changes; `changed` is true for exactly the render that
+ * changes it, and `isCurrent` retires callbacks once that visit is replaced. */
 export function useVisit(key: string | null): Visit {
   const [visit, setVisit] = useState({ key });
   const currentVisit = useRef<typeof visit | null>(visit);

@@ -1,24 +1,25 @@
 import { useState } from "react";
 import { describe, expect, it } from "vitest";
-import { act, renderHook } from "@testing-library/react";
+import { act, render, renderHook } from "@testing-library/react";
 import { useVisit } from "../../src/shared/useVisit.js";
 
 describe("useVisit", () => {
   it("reports a new key before children can receive the previous visit state", () => {
-    const seen: Array<string | null> = [];
-    const { result, rerender } = renderHook(({ key }) => {
-      const visit = useVisit(key);
-      const [pick, setPick] = useState<{ forMap: string | null; value: string | null }>({ forMap: key, value: "picked" });
-      if (visit.changed) setPick({ forMap: key, value: null });
-      seen.push(pick.forMap === key ? pick.value : null);
-      return visit.changed;
-    }, { initialProps: { key: "A" } });
+    const changes: boolean[] = [];
+    const childValues: Array<string | null> = [];
+    function Child({ value }: { value: string | null }) { childValues.push(value); return null; }
+    function Host({ visitKey }: { visitKey: string }) {
+      const visit = useVisit(visitKey);
+      const [pick, setPick] = useState<string | null>("picked");
+      changes.push(visit.changed);
+      if (visit.changed) setPick(null);
+      return <Child value={pick} />;
+    }
+    const { rerender } = render(<Host visitKey="A" />);
+    rerender(<Host visitKey="B" />);
 
-    expect(result.current).toBe(false);
-    rerender({ key: "B" });
-    expect(result.current).toBe(false);
-    expect(seen.at(-1)).toBeNull();
-    expect(seen.slice(1)).not.toContain("picked");
+    expect(changes).toEqual([false, true, false]);
+    expect(childValues).toEqual(["picked", null]);
   });
 
   it("retires captured guards across A to B and A to B to A", () => {
