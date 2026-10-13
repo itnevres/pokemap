@@ -1,0 +1,10 @@
+E0 baseline (no change)  core=0F/13P  gba=0F/15P  gbaGuard=0F/2P  gbaShared=0F/5P  gbc=0F/14P  gbcShared=0F/1P
+E1 response guard removed  core=4F/9P KILL  gba=0F/15P  gbaGuard=1F/1P KILL  gbaShared=4F/1P KILL  gbc=2F/12P KILL  gbcShared=1F/0P KILL
+E2 discard stores an empty grid  core=2F/11P KILL  gba=1F/14P KILL  gbaGuard=0F/2P  gbaShared=1F/4P KILL  gbc=1F/13P KILL  gbcShared=1F/0P KILL
+E3 discard swallows !ok  core=1F/12P FAIL(no-assert-msg)  gba=0F/15P  gbaGuard=0F/2P  gbaShared=0F/5P  gbc=1F/13P FAIL(no-assert-msg)  gbcShared=0F/1P
+restored byte-identical: [ true ]
+
+E0 baseline (no change)  core=0F/13P  gba=0F/15P  gbaGuard=0F/2P  gbaShared=0F/5P  gbc=0F/14P  gbcShared=0F/1P
+E1 response guard removed  core=4F/9P KILL  gba=0F/15P  gbaGuard=1F/1P KILL  gbaShared=4F/1P KILL  gbc=2F/12P KILL  gbcShared=1F/0P KILL
+E2 discard stores an empty grid  core=2F/11P KILL  gba=1F/14P KILL  gbaGuard=0F/2P  gbaShared=1F/4P KILL  gbc=1F/13P KILL  gbcShared=1F/0P KILL
+E3 discard swallows !ok  core=1F/12P FAIL(no-assert-msg)  gba=0F/15P  gbaGuard=0F/2P  gbaShared=0F/5P  gbc=1F/13P FAIL(no-assert-msg)  gbcShared=0F/1P

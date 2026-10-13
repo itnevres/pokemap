@@ -1,0 +1,751 @@
+6ce48d8 refactor(ui): shared edit-session core for both families (Task 5)
+ packages/ui/src/gbc/hooks/useGbcEditSession.ts     |  65 ++-------
+ packages/ui/src/hooks/useEditSession.ts            | 158 +++++----------------
+ packages/ui/src/shared/useEditSessionCore.ts       |  77 ++++++++++
+ .../ui/test/gbc/useGbcEditSessionShared.test.tsx   |  23 +++
+ .../ui/test/shared/useEditSessionCore.test.tsx     | 135 ++++++++++++++++++
+ packages/ui/test/useEditSessionShared.test.tsx     |  85 +++++++++++
+ 6 files changed, 365 insertions(+), 178 deletions(-)
+diff --git a/packages/ui/src/gbc/hooks/useGbcEditSession.ts b/packages/ui/src/gbc/hooks/useGbcEditSession.ts
+index 0c06ac1..d54f3e6 100644
+--- a/packages/ui/src/gbc/hooks/useGbcEditSession.ts
++++ b/packages/ui/src/gbc/hooks/useGbcEditSession.ts
+@@ -1,11 +1,12 @@
+-import { useCallback, useRef, useState } from "react";
++import { useCallback, useMemo } from "react";
++import { useEditSessionCore } from "../../shared/useEditSessionCore.js";
+ import type { Block, GbcMapEvents } from "@pokemap/core/src/gbc/model/types.js";
+ import type { GbcStamp } from "@pokemap/core/src/gbc/edit/paint.js";
+ import type { GbcEventKind, GbcWarpRenumberWarning } from "@pokemap/core/src/gbc/edit/events.js";
+ import { isRecord } from "../guards.js";
+ 
+ export type { GbcEventKind, GbcWarpRenumberWarning };
+ 
+ /** The `paint/apply` request bodies (`gbcEditRoutes.ts`'s `paintApply`). Coordinates are BLOCKS (32 px). */
+ export type GbcPaintBody =
+   | { tool: "pencil"; targets: { x: number; y: number }[]; stamp: GbcStamp; origin: { x: number; y: number } }
+@@ -59,101 +60,61 @@ function isSessionBody(x: unknown): x is SessionBody {
+   if (typeof x.isDirty !== "boolean" || typeof x.canUndo !== "boolean" || typeof x.canRedo !== "boolean") return false;
+   if (x.warpRenumberWarnings !== undefined) {
+     const w = x.warpRenumberWarnings;
+     if (!Array.isArray(w) || !w.every((e) => isRecord(e) && typeof e.fromMap === "string" && Number.isInteger(e.warpIndex) && Number.isInteger(e.destWarp))) return false;
+   }
+   return true;
+ }
+ 
+ const NO_EVENTS: GbcMapEvents = { warps: [], coords: [], bgs: [], objects: [], sceneScripts: [], callbacks: [], objectConsts: [] };
+ 
+-interface Live {
+-  forMap: string;
+-  /** The `initialBlocks` this state was derived from: a new payload (a refetch after a commit) invalidates it. */
+-  seed: Block[] | undefined;
+-  blocks: Block[];
+-  events: GbcMapEvents;
+-  isDirty: boolean;
+-  canUndo: boolean;
+-  canRedo: boolean;
+-}
+-
+ /**
+  * The client face of `gbcEditRoutes.ts` (`/api/edit/:map/*`), mirroring `useEditSession.ts` for GBA with the
+  * same discipline: a thin mirror of whatever the server's session holds, never computing anything itself.
+  *
++ * Both families use the shared core for map/seed-derived state and ordered response tickets.
+  * Differences from the GBA hook, all deliberate:
+- * - Per-map state is keyed by `forMap` (and by the `initialBlocks` seed) and derived at render, not reset by an
+- *   effect (6c B4). `useEditSession`'s reset effect leaves a one-tick window and a documented clobber gap
+- *   (lines 209-241); here a map switch, or a refetched payload, simply stops matching `live` and the seed shows.
+- * - A response that lands after the map changed is dropped, so a slow request never paints into the next map.
+  * - Every response is shape-checked (RESUME) before it touches state; a malformed one throws with the state unchanged.
+  * - The server's `{ error }` body is surfaced as the thrown message: event refusals (a referenced object const,
+  *   the 15-object cap) are 400s whose text is the whole explanation.
+  * - All event ops return the full session (`blocks` + `events` + flags), so there is none of GBA's
+  *   `callEvent` canUndo-guessing.
+  *
+  * Lives in `GbcApp`, always mounted, so a World/Dungeon round trip never loses the client's view of a session
+  * the server still holds dirty (the reasoning at `App.tsx:50-62`).
+  */
+ export function useGbcEditSession(mapName: string | null, initialBlocks?: Block[], initialEvents?: GbcMapEvents): UseGbcEditSessionResult {
+-  const [state, setState] = useState<Live | null>(null);
+-  const latest = useRef({ mapName, initialBlocks });
+-  latest.current = { mapName, initialBlocks };
+-  // Read when a response lands: a new map or seed also drops a stale in-flight response, not just stops showing old state.
+-  // `issued`/`applied` order the responses of one map: a pencil drag fires parallel POSTs, and an older response
+-  // landing after a newer one must not revert the view (the server is right; the client would be stale).
+-  const seq = useRef({ issued: 0, applied: 0 });
+-
+-  const live = state !== null && state.forMap === mapName && state.seed === initialBlocks ? state : null;
+-  const blocks = live ? live.blocks : initialBlocks ?? [];
+-  const events = live ? live.events : initialEvents ?? NO_EVENTS;
++  const seed = useMemo(() => ({ blocks: initialBlocks ?? [], events: initialEvents ?? NO_EVENTS }), [initialBlocks, initialEvents]);
++  const { state, isDirty, canUndo, canRedo, post: corePost, apply, discard, markClean } = useEditSessionCore("/api/edit", mapName, seed, { readServerError: true });
++  const { blocks, events } = state;
+ 
+   const post = useCallback(async (path: string, body?: unknown): Promise<SessionBody | null> => {
+-    if (!mapName) return null; // nothing open -- same no-op as useEditSession
+-    const url = `/api/edit/${encodeURIComponent(mapName)}${path}`;
+-    const mine = ++seq.current.issued;
+-    const r = await fetch(url, body === undefined ? { method: "POST" } : { method: "POST", body: JSON.stringify(body) });
+-    const d: unknown = await r.json().catch(() => null);
+-    if (!r.ok) throw new Error(isRecord(d) && typeof d.error === "string" ? d.error : `POST /api/edit/${mapName}${path} -> ${r.status}`);
++    const reply = await corePost<unknown>(path, body);
++    if (!reply) return null;
++    const d = reply.data;
+     if (!isSessionBody(d)) throw new Error(`POST /api/edit/${mapName}${path} returned an unexpected shape`);
+     if (d.events === null) return null; // nothing open server-side (undo/redo no-op): leave the client as it is
+-    const seed = initialBlocks;
+-    if (latest.current.mapName === mapName && latest.current.initialBlocks === seed && mine > seq.current.applied) {
+-      seq.current.applied = mine;
+-      setState({ forMap: mapName, seed, blocks: d.blocks, events: d.events, isDirty: d.isDirty, canUndo: d.canUndo, canRedo: d.canRedo });
+-    }
++    const events = d.events;
++    apply({ state: () => ({ blocks: d.blocks, events }), isDirty: d.isDirty, canUndo: d.canUndo, canRedo: d.canRedo }, reply.ticket);
+     return d;
+-  }, [mapName, initialBlocks]);
++  }, [corePost, apply, mapName]);
+ 
+   const beginStroke = useCallback(() => post("/paint/begin").then(() => {}), [post]);
+   const applyPaint = useCallback((body: GbcPaintBody) => post("/paint/apply", body).then(() => {}), [post]);
+   const endStroke = useCallback(() => post("/paint/end").then(() => {}), [post]);
+   const undo = useCallback(() => post("/undo").then(() => {}), [post]);
+   const redo = useCallback(() => post("/redo").then(() => {}), [post]);
+   const moveEvent = useCallback((kind: GbcEventKind, index: number, x: number, y: number) => post("/event/move", { kind, index, x, y }).then(() => {}), [post]);
+   const addEvent = useCallback(
+     (kind: GbcEventKind, args: string[], objectConst?: string) => post("/event/add", objectConst === undefined ? { kind, args } : { kind, args, objectConst }).then(() => {}),
+     [post],
+   );
+   const deleteEvent = useCallback(
+     (kind: GbcEventKind, index: number) => post("/event/delete", { kind, index }).then((d) => ({ warpRenumberWarnings: d?.warpRenumberWarnings ?? [] })),
+     [post],
+   );
+ 
+-  const markClean = useCallback(() => {
+-    setState((prev) => (prev === null ? prev : { ...prev, isDirty: false, canUndo: false, canRedo: false }));
+-  }, []);
+-
+-  const discard = useCallback(async () => {
+-    if (!mapName) return;
+-    const r = await fetch(`/api/edit/${encodeURIComponent(mapName)}/discard`, { method: "POST" });
+-    if (!r.ok) throw new Error(`POST /api/edit/${mapName}/discard -> ${r.status}`);
+-    seq.current.applied = seq.current.issued; // an op still in flight must not resurrect the discarded session
+-    setState(null); // back to the seed -- disk state, not an empty grid
+-  }, [mapName]);
+-
+   return {
+-    blocks, events, isDirty: live?.isDirty ?? false, canUndo: live?.canUndo ?? false, canRedo: live?.canRedo ?? false,
++    blocks, events, isDirty, canUndo, canRedo,
+     beginStroke, applyPaint, endStroke, undo, redo, discard, markClean, moveEvent, addEvent, deleteEvent,
+   };
+ }
+diff --git a/packages/ui/src/hooks/useEditSession.ts b/packages/ui/src/hooks/useEditSession.ts
+index dbf9a30..66830e2 100644
+--- a/packages/ui/src/hooks/useEditSession.ts
++++ b/packages/ui/src/hooks/useEditSession.ts
+@@ -1,11 +1,12 @@
+-import { useCallback, useEffect, useRef, useState } from "react";
++import { useCallback, useMemo } from "react";
++import { useEditSessionCore } from "../shared/useEditSessionCore.js";
+ import type { Block } from "@pokemap/core/src/model/types.js";
+ import type { Stamp } from "@pokemap/core/src/edit/paint.js";
+ import type { MapData } from "@pokemap/core/src/load/maps.js";
+ import type { EventKind, WarpRenumberWarning } from "@pokemap/core/src/edit/events.js";
+ 
+ export type PaintApplyBody =
+   | { tool: "pencil"; targets: { x: number; y: number }[]; stamp: Stamp; origin: { x: number; y: number } }
+   | { tool: "rect"; x0: number; y0: number; x1: number; y1: number; stamp: Stamp; origin: { x: number; y: number } }
+   | { tool: "bucket"; x: number; y: number; replacement: { metatileId: number; collision?: number; elevation?: number } }
+   | { tool: "shift"; dx: number; dy: number };
+@@ -93,56 +94,56 @@ export interface UseEditSessionResult {
+    *  this with the same response body SignComposer already parsed, so
+    *  there's no second round trip -- just applying data already in hand,
+    *  the same tail `callEvent` runs internally for every `/event/*` call. */
+   applyExternalMapUpdate(map: MapData, isDirty: boolean): void;
+   /** Plan 2 follow-up 5: `POST /api/edit/:map/discard` (editSessions.ts's
+    *  own `close()`) -- "give up on this whole session, revert to disk
+    *  state," a separate, explicit Toolbar action, not a repurposed
+    *  SaveDialog Cancel (that button deliberately stays non-destructive, see
+    *  its own comment).
+    *
+-   *  Deliberately does NOT go through `call()`/`applyResponse` above, even
+-   *  though every other mutating method here does. The discard route's own
++   *  Deliberately uses the core discard path instead of merging a session
++   *  reply as the other mutating methods do. The discard route's own
+    *  response is the exact same "nothing open" shape undo/redo already
+    *  return on a closed session (`blocks: []`, `map: null`) -- and
+    *  MapCanvas.tsx's own `blocks` local is `editSession ? editSession.blocks
+    *  : staticBlocks`. App.tsx ALWAYS passes a real (non-undefined)
+    *  `editSession` object as a prop, so that ternary ALWAYS takes the
+    *  `editSession.blocks` branch, even for an empty array. Routing a
+-   *  discard through `applyResponse` would therefore set `blocks` to `[]`
++   *  discard through the session reply merge would set `blocks` to `[]`
+    *  and the canvas would go instantly blank -- and STAY blank, since
+-   *  nothing else re-triggers this hook's own `[mapName, initialBlocks,
+-   *  initialMap]` reset effect on a discard (`mapName` doesn't change).
++   *  the map and seed identities do not change on discard, so the core
++   *  would continue to show that empty live state.
+    *
+    *  Instead, once the server confirms the session is closed, this resets
+-   *  local state to the exact same pre-edit seed that reset effect already
+-   *  uses (`initialBlocks`/`initialMap`) -- what the map looked like BEFORE
++   *  local state to the core's pre-edit seed
++   *  (`initialBlocks`/`initialMap`) -- what the map looked like BEFORE
+    *  any edits, i.e. real disk state, not an empty grid. A future
+    *  "simplification" back to `call()` would silently reintroduce exactly
+    *  that blank-canvas regression.
+    *
+    *  Throws on a non-ok response rather than resetting local state anyway:
+    *  a discard that LOOKS like it worked but didn't actually close the
+    *  server-side session would desync client/server state (the player sees
+    *  a reverted canvas while the server still thinks the map is dirty), so
+    *  the failure must surface to the caller instead of being swallowed.
+    */
+   discard(): Promise<void>;
+ }
+ 
+ interface SessionResponse {
+   blocks: Block[];
+   border: Block[];
+   /** Present on paint begin/apply/end and undo/redo (all route through the
+    *  server's own `sendSession` helper, packages/server/src/index.ts) --
+    *  `null` on undo/redo's own "nothing open" no-op response, absent from
+-   *  nothing else that reaches `applyResponse`. */
++   *  nothing else that reaches the core session reply merge. */
+   map?: MapData | null;
+   isDirty: boolean;
+   canUndo?: boolean;
+   canRedo?: boolean;
+ }
+ 
+ /** The `/event/move|add|delete` routes' own response shape -- deliberately
+  *  narrower than SessionResponse above: unlike every OTHER mutating route,
+  *  these three build `{ map, isDirty }` by hand instead of routing through
+  *  the server's own `sendSession` helper (which is what supplies
+@@ -192,162 +193,67 @@ interface EventOpResponse {
+  * `initialMap` (Task 14): the exact same seeding problem as `initialBlocks`
+  * above, one level up -- no route returns a freshly-opened session's `map`
+  * on its own either, so without a seed MapCanvas's event markers would
+  * render from `undefined` (falling back to `data.map`, harmlessly, per that
+  * component's own doc comment) right up until the first paint or event op.
+  * Passing `useMapLayout`'s own already-fetched `data.map` here means the
+  * live/static switch in MapCanvas is invisible to the player from the very
+  * first render, not just after their first edit.
+  */
+ export function useEditSession(mapName: string | null, initialBlocks?: Block[], initialMap?: MapData): UseEditSessionResult {
+-  const [blocks, setBlocks] = useState<Block[]>(initialBlocks ?? []);
+-  const [border, setBorder] = useState<Block[]>([]);
+-  const [map, setMap] = useState<MapData | undefined>(initialMap);
+-  const [isDirty, setIsDirty] = useState(false);
+-  const [canUndo, setCanUndo] = useState(false);
+-  const [canRedo, setCanRedo] = useState(false);
+-
+-  // Reset to the new map's own seed whenever `mapName` OR `initialBlocks`
+-  // changes -- otherwise a session opened for map A would leak its blocks/
+-  // dirty/undo state into map B's view the instant `selected` changes, the
+-  // same class of bug App.tsx's own WorldCanvas `key` fix (Task 15) guards
+-  // against for a different component.
+-  //
+-  // Depending on `initialBlocks` too (not just `mapName`) matters because of
+-  // an ordering gotcha between this hook and useMapLayout, its usual source
+-  // for the seed: when `selected` changes, useMapLayout's own `data` does
+-  // NOT reset synchronously -- it keeps the PREVIOUS map's blocks until its
+-  // fetch resolves (see that hook's own effect: it only guards `!name`, it
+-  // never resets `data` on a plain name change). If this effect only ran on
+-  // `mapName`, the very first reset after a map switch would seed from the
+-  // OLD map's blocks. Re-running when `initialBlocks`'s reference changes
+-  // means a second, corrective reset lands once useMapLayout's fetch
+-  // actually resolves for the NEW map. Code-review correction: this used to
+-  // claim that second reset "always lands before the player could possibly
+-  // have started editing" -- not accurate. App.tsx renders MapCanvas with
+-  // no `key`, and `useMapLayout` keeps serving the OLD map's `data` (not
+-  // undefined/loading) until its own fetch resolves, so MapCanvas stays
+-  // mounted and genuinely paintable, already carrying the NEW `mapName`,
+-  // for the whole gap between the switch and this corrective reset. A paint
+-  // landing in that (typically brief) window gets clobbered by this reset
+-  // -- a real, pre-existing gap, not a new one; not fixed here (would need
+-  // a design change to App.tsx/useMapLayout, not just this hook).
+-  useEffect(() => {
+-    setBlocks(initialBlocks ?? []);
+-    setBorder([]);
+-    setMap(initialMap);
+-    setIsDirty(false);
+-    setCanUndo(false);
+-    setCanRedo(false);
+-  }, [mapName, initialBlocks, initialMap]);
+-
+-  const applyResponse = (d: SessionResponse) => {
+-    setBlocks(d.blocks);
+-    setBorder(d.border);
+-    if (d.map !== undefined) setMap(d.map ?? undefined);
+-    setIsDirty(d.isDirty);
+-    setCanUndo(d.canUndo ?? false);
+-    setCanRedo(d.canRedo ?? false);
+-  };
+-
+-  // The map this hook is currently open for. A response for another map is dropped (a retired stroke's end
+-  // lands after a map switch, Plan 8 Task 1); the full seq/seed guard of useGbcEditSession is Plan 8 Task 5.
+-  const currentMapRef = useRef(mapName);
+-  currentMapRef.current = mapName;
++  const seed = useMemo(() => ({ blocks: initialBlocks ?? [], border: [] as Block[], map: initialMap }), [initialBlocks, initialMap]);
++  const { state, isDirty, canUndo, canRedo, post, apply, discard, markClean } = useEditSessionCore("/api/edit", mapName, seed);
++  const { blocks, border, map } = state;
+ 
++  // The core derives the live view from map/seed identity and guards every reply with its issue ticket.
+   const call = useCallback(
+     async (path: string, body: unknown = {}) => {
+-      if (!mapName) return; // nothing open -- see this hook's own doc comment
+-      const r = await fetch(`/api/edit/${encodeURIComponent(mapName)}${path}`, { method: "POST", body: JSON.stringify(body) });
+-      if (!r.ok) throw new Error(`POST /api/edit/${mapName}${path} -> ${r.status}`);
+-      const d = (await r.json()) as SessionResponse;
+-      if (currentMapRef.current === mapName) applyResponse(d);
++      const reply = await post<SessionResponse>(path, body);
++      if (!reply) return;
++      const d = reply.data;
++      apply({
++        state: (prev) => ({ blocks: d.blocks, border: d.border, map: d.map === undefined ? prev.map : d.map ?? undefined }),
++        isDirty: d.isDirty, canUndo: d.canUndo ?? false, canRedo: d.canRedo ?? false,
++      }, reply.ticket);
+     },
+-    [mapName],
++    [post, apply],
+   );
+ 
+   const beginStroke = useCallback(() => call("/paint/begin"), [call]);
+   const applyPaint = useCallback((body: PaintApplyBody) => call("/paint/apply", body), [call]);
+   const endStroke = useCallback(() => call("/paint/end"), [call]);
+   const undo = useCallback(() => call("/undo"), [call]);
+   const redo = useCallback(() => call("/redo"), [call]);
+ 
+-  const markClean = useCallback(() => {
+-    setIsDirty(false);
+-    setCanUndo(false);
+-    setCanRedo(false);
+-  }, []);
+-
+-  // Task 14: the three `/event/*` routes get their OWN call path, not
+-  // `call` above -- their response is `{ map, isDirty }` only (see
+-  // EventOpResponse's own doc comment), never blocks/border/canUndo/
+-  // canRedo, so routing them through `applyResponse` (which expects the
+-  // full SessionResponse shape) would stomp `blocks` to `undefined` the
+-  // instant a player moved an event. `blocks`/`border` are left
+-  // deliberately untouched here -- event ops never mutate them server-side
+-  // either (handleEventOp only ever reassigns `entry.session.map`).
++  // Event replies omit blocks/border and stack flags. Merge only the map through the core;
++  // every successful event op pushes an undo entry and clears redo on the server.
+   const callEvent = useCallback(
+     async (path: string, body: unknown): Promise<WarpRenumberWarning[]> => {
+-      if (!mapName) return []; // nothing open -- see this hook's own doc comment
+-      const r = await fetch(`/api/edit/${encodeURIComponent(mapName)}${path}`, { method: "POST", body: JSON.stringify(body) });
+-      if (!r.ok) throw new Error(`POST /api/edit/${mapName}${path} -> ${r.status}`);
+-      const d = (await r.json()) as EventOpResponse;
+-      setMap(d.map);
+-      setIsDirty(d.isDirty);
+-      // canUndo/canRedo aren't in this route's response (EventOpResponse's
+-      // own doc comment above explains why) -- but handleEventOp
+-      // (packages/server/src/index.ts) unconditionally calls
+-      // `entry.stack.push(...)` for every one of these three ops before
+-      // responding, and EditCommandStack.push (packages/core/src/edit/
+-      // commands.ts) is unconditional too: it always appends to undoStack
+-      // and always resets redoStack to []. So canUndo=true/canRedo=false
+-      // is exactly what the server-side stack now holds after ANY
+-      // successful move/add/delete, deterministically -- setting it here
+-      // keeps the Toolbar's Undo/Redo buttons honest without a round trip
+-      // the route doesn't currently provide.
+-      setCanUndo(true);
+-      setCanRedo(false);
++      const reply = await post<EventOpResponse>(path, body);
++      if (!reply) return [];
++      const d = reply.data;
++      apply({ state: (prev) => ({ ...prev, map: d.map }), isDirty: d.isDirty, canUndo: true, canRedo: false }, reply.ticket);
+       return d.warpRenumberWarnings ?? [];
+     },
+-    [mapName],
++    [post, apply],
+   );
+ 
+   // moveEvent/addEvent stay Promise<void> -- their own routes never carry
+   // warpRenumberWarnings (only /event/delete does), so callEvent's return
+   // value is meaningless to them; discarded via `.then(() => {})` rather
+   // than widening their own public signature to something callers would
+   // have to needlessly check.
+   const moveEvent = useCallback(
+     (kind: EventKind, index: number, x: number, y: number, elevation?: number) =>
+       callEvent("/event/move", { kind, index, x, y, elevation }).then(() => {}),
+     [callEvent],
+   );
+   const addEvent = useCallback((kind: EventKind, value: Record<string, unknown>) => callEvent("/event/add", { kind, value }).then(() => {}), [callEvent]);
+   const deleteEvent = useCallback((kind: EventKind, index: number) => callEvent("/event/delete", { kind, index }), [callEvent]);
+ 
+-  // Same tail as callEvent above (setMap/setIsDirty/canUndo=true/
+-  // canRedo=false) -- see this method's own doc comment on
+-  // UseEditSessionResult for why SignComposer's already-fetched response
+-  // lands here instead of a fourth call path duplicating `call`/`callEvent`.
++  // SignComposer supplies an already-parsed map; the core applies it to the current map/seed.
+   const applyExternalMapUpdate = useCallback((nextMap: MapData, nextIsDirty: boolean) => {
+-    setMap(nextMap);
+-    setIsDirty(nextIsDirty);
+-    setCanUndo(true);
+-    setCanRedo(false);
+-  }, []);
+-
+-  // See `discard`'s own doc comment on UseEditSessionResult for why this
+-  // bypasses `call()` entirely instead of being `call("/discard")`.
+-  const discard = useCallback(async () => {
+-    if (!mapName) return; // nothing open -- see this hook's own doc comment
+-    const r = await fetch(`/api/edit/${encodeURIComponent(mapName)}/discard`, { method: "POST" });
+-    if (!r.ok) throw new Error(`POST /api/edit/${mapName}/discard -> ${r.status}`);
+-    setBlocks(initialBlocks ?? []);
+-    setBorder([]);
+-    setMap(initialMap);
+-    setIsDirty(false);
+-    setCanUndo(false);
+-    setCanRedo(false);
+-  }, [mapName, initialBlocks, initialMap]);
++    apply({ state: (prev) => ({ ...prev, map: nextMap }), isDirty: nextIsDirty, canUndo: true, canRedo: false });
++  }, [apply]);
+ 
+   return { blocks, border, map, isDirty, canUndo, canRedo, beginStroke, applyPaint, endStroke, undo, redo, markClean, moveEvent, addEvent, deleteEvent, applyExternalMapUpdate, discard };
+ }
+diff --git a/packages/ui/src/shared/useEditSessionCore.ts b/packages/ui/src/shared/useEditSessionCore.ts
+new file mode 100644
+index 0000000..a9d635e
+--- /dev/null
++++ b/packages/ui/src/shared/useEditSessionCore.ts
+@@ -0,0 +1,77 @@
++import { useCallback, useRef, useState } from "react";
++
++export interface EditFlags { isDirty: boolean; canUndo: boolean; canRedo: boolean }
++/** An updater lets family hooks merge partial replies without losing other state. */
++export type EditUpdate<State> = { state?: (prev: State) => State } & Partial<EditFlags>;
++export interface EditTicket { readonly map: string; readonly seed: unknown; readonly seq: number }
++export interface EditSessionCore<State> extends EditFlags {
++  state: State;
++  post<R>(path: string, body?: unknown): Promise<{ data: R; ticket: EditTicket } | null>;
++  apply(update: EditUpdate<State>, ticket?: EditTicket): boolean;
++  discard(): Promise<void>;
++  markClean(): void;
++}
++
++interface Stored<State> extends EditFlags {
++  forMap: string | null;
++  seed: State;
++  state: State;
++}
++
++/** Map/seed identity controls the rendered view; tickets order asynchronous replies. */
++export function useEditSessionCore<State>(base: string, mapName: string | null, seed: State, opts?: { readServerError?: boolean }): EditSessionCore<State> {
++  const [stored, setStored] = useState<Stored<State> | null>(null);
++  const latest = useRef({ mapName, seed });
++  latest.current = { mapName, seed };
++  const seq = useRef({ issued: 0, applied: 0 });
++  const readServerError = opts?.readServerError ?? false;
++  const live = stored !== null && stored.forMap === mapName && stored.seed === seed ? stored : null;
++
++  const post = useCallback(async <R,>(path: string, body?: unknown): Promise<{ data: R; ticket: EditTicket } | null> => {
++    if (mapName === null) return null;
++    const ticket: EditTicket = { map: mapName, seed, seq: ++seq.current.issued };
++    const r = await fetch(`${base}/${encodeURIComponent(mapName)}${path}`, body === undefined ? { method: "POST" } : { method: "POST", body: JSON.stringify(body) });
++    // GBC reads even malformed bodies once, then its family shape check owns the failure.
++    const data: unknown = readServerError ? await r.json().catch(() => null) : undefined;
++    if (!r.ok) {
++      const message = data !== null && typeof data === "object" && "error" in data && typeof data.error === "string" ? data.error : `POST ${base}/${mapName}${path} -> ${r.status}`;
++      throw new Error(message);
++    }
++    return { data: (readServerError ? data : await r.json()) as R, ticket };
++  }, [base, mapName, seed, readServerError]);
++
++  const apply = useCallback((update: EditUpdate<State>, ticket?: EditTicket): boolean => {
++    const current = latest.current;
++    if (ticket) {
++      if (current.mapName !== ticket.map || current.seed !== ticket.seed || ticket.seq <= seq.current.applied) return false;
++      seq.current.applied = ticket.seq;
++    }
++    setStored((prev) => {
++      const start = prev !== null && prev.forMap === current.mapName && prev.seed === current.seed
++        ? prev
++        : { forMap: current.mapName, seed: current.seed, state: current.seed, isDirty: false, canUndo: false, canRedo: false };
++      return {
++        ...start,
++        state: update.state ? update.state(start.state) : start.state,
++        isDirty: update.isDirty ?? start.isDirty,
++        canUndo: update.canUndo ?? start.canUndo,
++        canRedo: update.canRedo ?? start.canRedo,
++      };
++    });
++    return true;
++  }, []);
++
++  const discard = useCallback(async () => {
++    if (mapName === null) return;
++    const r = await fetch(`${base}/${encodeURIComponent(mapName)}/discard`, { method: "POST" });
++    if (!r.ok) throw new Error(`POST ${base}/${mapName}/discard -> ${r.status}`);
++    seq.current.applied = seq.current.issued; // in-flight edits cannot resurrect a discarded session
++    setStored(null); // show disk seed, never the server's empty closed-session reply
++  }, [base, mapName]);
++
++  const markClean = useCallback(() => {
++    setStored((prev) => prev === null ? prev : { ...prev, isDirty: false, canUndo: false, canRedo: false });
++  }, []);
++
++  return { state: live ? live.state : seed, isDirty: live?.isDirty ?? false, canUndo: live?.canUndo ?? false, canRedo: live?.canRedo ?? false, post, apply, discard, markClean };
++}
+diff --git a/packages/ui/test/gbc/useGbcEditSessionShared.test.tsx b/packages/ui/test/gbc/useGbcEditSessionShared.test.tsx
+new file mode 100644
+index 0000000..a792e24
+--- /dev/null
++++ b/packages/ui/test/gbc/useGbcEditSessionShared.test.tsx
+@@ -0,0 +1,23 @@
++import { afterEach, expect, it, vi } from "vitest";
++import { act, renderHook } from "@testing-library/react";
++import { useGbcEditSession } from "../../src/gbc/hooks/useGbcEditSession.js";
++
++afterEach(() => vi.unstubAllGlobals());
++it("GBC does not resurrect an in-flight edit after discard", async () => {
++  const seed = [{ metatileId: 1 }];
++  const events = { warps: [], coords: [], bgs: [], objects: [], sceneScripts: [], callbacks: [], objectConsts: [] };
++  let resolve!: (r: Response) => void;
++  const pending = new Promise<Response>((r) => { resolve = r; });
++  const response = (data: unknown) => ({ ok: true, status: 200, json: async () => data }) as Response;
++  vi.stubGlobal("fetch", vi.fn().mockReturnValueOnce(pending).mockResolvedValue(response({ blocks: [], events: null })));
++  const { result } = renderHook(() => useGbcEditSession("A", seed, events));
++  const reply = result.current.applyPaint({ tool: "shift", dx: 1, dy: 0 });
++  await act(() => result.current.discard());
++  await act(async () => {
++    resolve(response({ blocks: [{ metatileId: 9 }], events, isDirty: true, canUndo: true, canRedo: false }));
++    await reply;
++  });
++  expect(result.current.blocks).toBe(seed);
++  expect(result.current.events).toBe(events);
++  expect(result.current.isDirty).toBe(false);
++});
+diff --git a/packages/ui/test/shared/useEditSessionCore.test.tsx b/packages/ui/test/shared/useEditSessionCore.test.tsx
+new file mode 100644
+index 0000000..d1d3c8d
+--- /dev/null
++++ b/packages/ui/test/shared/useEditSessionCore.test.tsx
+@@ -0,0 +1,135 @@
++import { afterEach, describe, expect, it, vi } from "vitest";
++import { act, renderHook } from "@testing-library/react";
++import { useEditSessionCore } from "../../src/shared/useEditSessionCore.js";
++
++afterEach(() => vi.unstubAllGlobals());
++const seed = { n: 1 };
++const flags = { isDirty: true, canUndo: true, canRedo: false };
++const response = (data: unknown = {}, status = 200) => ({ ok: status < 400, status, json: vi.fn().mockResolvedValue(data) }) as unknown as Response;
++function deferred() {
++  let resolve!: (r: Response) => void;
++  const promise = new Promise<Response>((r) => { resolve = r; });
++  return { promise, resolve };
++}
++function mount(map: string | null = "A") {
++  return renderHook((p) => useEditSessionCore("/api/edit", p.map, p.seed), { initialProps: { map, seed } });
++}
++
++describe("useEditSessionCore", () => {
++  it.each(["map", "seed"])("rejects a reply after its %s changes", async (changed) => {
++    const pending = deferred();
++    vi.stubGlobal("fetch", vi.fn(() => pending.promise));
++    const { result, rerender } = mount();
++    const reply = result.current.post("/x");
++    const nextSeed = { n: 2 };
++    rerender({ map: changed === "map" ? "B" : "A", seed: nextSeed });
++    pending.resolve(response());
++    const landed = (await reply)!;
++    act(() => { expect(result.current.apply({ state: () => ({ n: 9 }), ...flags }, landed.ticket)).toBe(false); });
++    expect(result.current.state).toBe(nextSeed);
++    expect(result.current.isDirty).toBe(false);
++  });
++
++  it("keeps the newer of two out-of-order replies", async () => {
++    const first = deferred(); const second = deferred();
++    vi.stubGlobal("fetch", vi.fn().mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise));
++    const { result } = mount();
++    const a = result.current.post("/x"); const b = result.current.post("/x");
++    second.resolve(response());
++    const newer = (await b)!;
++    act(() => { expect(result.current.apply({ state: () => ({ n: 3 }) }, newer.ticket)).toBe(true); });
++    first.resolve(response());
++    const older = (await a)!;
++    act(() => { expect(result.current.apply({ state: () => ({ n: 2 }) }, older.ticket)).toBe(false); });
++    expect(result.current.state).toEqual({ n: 3 });
++  });
++
++  it("discard restores the seed and clears flags without applying the empty reply", async () => {
++    const fetchMock = vi.fn().mockResolvedValue(response({ blocks: [] }));
++    vi.stubGlobal("fetch", fetchMock);
++    const { result } = mount();
++    act(() => { result.current.apply({ state: () => ({ n: 9 }), ...flags, canRedo: true }); });
++    await act(() => result.current.discard());
++    expect(result.current.state).toBe(seed);
++    expect(result.current).toMatchObject({ isDirty: false, canUndo: false, canRedo: false });
++    expect(fetchMock).toHaveBeenCalledWith("/api/edit/A/discard", { method: "POST" });
++  });
++
++  it("discard throws on failure and keeps the applied state", async () => {
++    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({}, 500)));
++    const { result } = mount();
++    act(() => { result.current.apply({ state: () => ({ n: 9 }), ...flags }); });
++    await expect(result.current.discard()).rejects.toThrow("POST /api/edit/A/discard -> 500");
++    expect(result.current.state).toEqual({ n: 9 });
++    expect(result.current.isDirty).toBe(true);
++  });
++
++  it("discard prevents an in-flight reply from resurrecting the session", async () => {
++    const pending = deferred();
++    vi.stubGlobal("fetch", vi.fn().mockReturnValueOnce(pending.promise).mockResolvedValue(response()));
++    const { result } = mount();
++    const reply = result.current.post("/x");
++    await act(() => result.current.discard());
++    pending.resolve(response());
++    const landed = (await reply)!;
++    act(() => { expect(result.current.apply({ state: () => ({ n: 9 }), ...flags }, landed.ticket)).toBe(false); });
++    expect(result.current.state).toBe(seed);
++  });
++
++  it("markClean keeps state, clears flags and makes no request, including before any update", () => {
++    const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);
++    const { result } = mount();
++    act(() => result.current.markClean());
++    expect(result.current.state).toBe(seed);
++    act(() => { result.current.apply({ state: () => ({ n: 9 }), ...flags, canRedo: true }); });
++    const edited = result.current.state;
++    act(() => result.current.markClean());
++    expect(result.current.state).toBe(edited);
++    expect(result.current).toMatchObject({ isDirty: false, canUndo: false, canRedo: false });
++    expect(fetchMock).not.toHaveBeenCalled();
++  });
++
++  it("takes flags from the update and preserves omitted state", () => {
++    const { result } = mount();
++    act(() => { result.current.apply(flags); });
++    expect(result.current).toMatchObject(flags);
++    expect(result.current.state).toBe(seed);
++    act(() => { result.current.apply({ canUndo: false, canRedo: true }); });
++    expect(result.current).toMatchObject({ isDirty: true, canUndo: false, canRedo: true });
++  });
++
++  it("null map makes post and discard network-free no-ops", async () => {
++    const fetchMock = vi.fn(); vi.stubGlobal("fetch", fetchMock);
++    const { result } = mount(null);
++    expect(await result.current.post("/x")).toBeNull();
++    await result.current.discard();
++    expect(fetchMock).not.toHaveBeenCalled();
++  });
++
++  it.each([false, true])("reads server error text only when enabled (%s)", async (readServerError) => {
++    const r = response({ error: "nope" }, 400);
++    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(r));
++    const { result } = renderHook(() => useEditSessionCore("/api/edit", "A", seed, { readServerError }));
++    await expect(result.current.post("/x")).rejects.toThrow(readServerError ? "nope" : "POST /api/edit/A/x -> 400");
++    expect(r.json).toHaveBeenCalledTimes(readServerError ? 1 : 0);
++  });
++
++  it("omits an undefined body but serializes an explicit empty object", async () => {
++    const fetchMock = vi.fn().mockResolvedValue(response()); vi.stubGlobal("fetch", fetchMock);
++    const { result } = mount();
++    await result.current.post("/x");
++    await result.current.post("/x", {});
++    expect(fetchMock).toHaveBeenNthCalledWith(1, "/api/edit/A/x", { method: "POST" });
++    expect(fetchMock).toHaveBeenNthCalledWith(2, "/api/edit/A/x", { method: "POST", body: "{}" });
++  });
++
++  it("applies without a ticket to the current map, starting from its seed", () => {
++    const { result, rerender } = mount();
++    const apply = result.current.apply;
++    act(() => { apply({ state: () => ({ n: 99 }), ...flags }); });
++    rerender({ map: "B", seed: { n: 5 } });
++    act(() => { expect(apply({ state: (prev) => ({ n: prev.n + 1 }) })).toBe(true); });
++    expect(result.current.state).toEqual({ n: 6 });
++    expect(result.current).toMatchObject({ isDirty: false, canUndo: false, canRedo: false });
++  });
++});
+diff --git a/packages/ui/test/useEditSessionShared.test.tsx b/packages/ui/test/useEditSessionShared.test.tsx
+new file mode 100644
+index 0000000..1550e85
+--- /dev/null
++++ b/packages/ui/test/useEditSessionShared.test.tsx
+@@ -0,0 +1,85 @@
++import { afterEach, describe, expect, it, vi } from "vitest";
++import { act, render } from "@testing-library/react";
++import { useEditSession } from "../src/hooks/useEditSession.js";
++import type { Block } from "@pokemap/core/src/model/types.js";
++import type { MapData } from "@pokemap/core/src/load/maps.js";
++
++afterEach(() => vi.unstubAllGlobals());
++type Session = ReturnType<typeof useEditSession>;
++function Host({ mapName, blocks, map, onResult }: { mapName: string; blocks: Block[]; map: MapData; onResult: (s: Session) => void }) {
++  onResult(useEditSession(mapName, blocks, map));
++  return null;
++}
++const seed = [{ metatileId: 1, collision: 0, elevation: 0 }];
++const mapA: MapData = { id: "MAP_A", name: "A", layout: "LAYOUT_A", music: "MUS_DUMMY", regionMapSection: "MAPSEC_NONE", mapType: "MAP_TYPE_TOWN", weather: "WEATHER_NONE", connections: [], objectEvents: [], warpEvents: [], coordEvents: [], bgEvents: [] };
++const mapB: MapData = { ...mapA, id: "MAP_B", name: "B" };
++const response = (data: unknown) => ({ ok: true, status: 200, json: async () => data }) as Response;
++const painted = (id: number) => ({ blocks: [{ metatileId: id, collision: 0, elevation: 0 }], border: [], isDirty: true, canUndo: true, canRedo: false });
++function deferred() {
++  let resolve!: (r: Response) => void;
++  const promise = new Promise<Response>((r) => { resolve = r; });
++  return { promise, resolve };
++}
++
++describe("GBA shared edit-session witnesses", () => {
++  it("keeps only the newer out-of-order paint reply", async () => {
++    const a = deferred(); const b = deferred();
++    vi.stubGlobal("fetch", vi.fn().mockReturnValueOnce(a.promise).mockReturnValueOnce(b.promise));
++    let last!: Session;
++    render(<Host mapName="A" blocks={seed} map={mapA} onResult={(s) => { last = s; }} />);
++    const first = last.applyPaint({ tool: "shift", dx: 1, dy: 0 });
++    const second = last.applyPaint({ tool: "shift", dx: 2, dy: 0 });
++    await act(async () => { b.resolve(response(painted(3))); await second; });
++    await act(async () => { a.resolve(response(painted(2))); await first; });
++    expect(last.blocks[0]!.metatileId).toBe(3);
++  });
++
++  it("drops a moveEvent reply after switching maps", async () => {
++    const pending = deferred(); vi.stubGlobal("fetch", vi.fn(() => pending.promise));
++    let last!: Session; const onResult = (s: Session) => { last = s; };
++    const { rerender } = render(<Host mapName="A" blocks={seed} map={mapA} onResult={onResult} />);
++    const reply = last.moveEvent("object", 0, 2, 3);
++    rerender(<Host mapName="B" blocks={seed} map={mapB} onResult={onResult} />);
++    await act(async () => { pending.resolve(response({ map: mapA, isDirty: true })); await reply; });
++    expect(last.map).toBe(mapB);
++    expect(last.isDirty).toBe(false);
++  });
++
++  it("drops a paint reply issued before a same-map seed refetch", async () => {
++    const pending = deferred(); vi.stubGlobal("fetch", vi.fn(() => pending.promise));
++    let last!: Session; const onResult = (s: Session) => { last = s; };
++    const { rerender } = render(<Host mapName="A" blocks={seed} map={mapA} onResult={onResult} />);
++    const reply = last.applyPaint({ tool: "shift", dx: 1, dy: 0 });
++    const refreshed = [{ metatileId: 7, collision: 0, elevation: 0 }];
++    rerender(<Host mapName="A" blocks={refreshed} map={mapA} onResult={onResult} />);
++    await act(async () => { pending.resolve(response(painted(9))); await reply; });
++    expect(last.blocks).toBe(refreshed);
++    expect(last.isDirty).toBe(false);
++  });
++
++  it("does not resurrect an in-flight edit after discard", async () => {
++    const pending = deferred();
++    vi.stubGlobal("fetch", vi.fn().mockReturnValueOnce(pending.promise).mockResolvedValue(response({ blocks: [], map: null })));
++    let last!: Session;
++    render(<Host mapName="A" blocks={seed} map={mapA} onResult={(s) => { last = s; }} />);
++    const reply = last.applyPaint({ tool: "shift", dx: 1, dy: 0 });
++    await act(() => last.discard());
++    await act(async () => { pending.resolve(response(painted(9))); await reply; });
++    expect(last.blocks).toBe(seed);
++    expect(last.isDirty).toBe(false);
++  });
++
++  it("shows the new seed on the very first render after a map switch", async () => {
++    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response(painted(9))));
++    let last!: Session; const renders: Session[] = [];
++    const onResult = (s: Session) => { last = s; renders.push(s); };
++    const { rerender } = render(<Host mapName="A" blocks={seed} map={mapA} onResult={onResult} />);
++    await act(() => last.undo());
++    renders.length = 0;
++    const nextSeed = [{ metatileId: 7, collision: 0, elevation: 0 }];
++    rerender(<Host mapName="B" blocks={nextSeed} map={mapB} onResult={onResult} />);
++    expect(renders[0]!.blocks).toBe(nextSeed);
++    expect(renders[0]!.map).toBe(mapB);
++    expect(renders[0]!.isDirty).toBe(false);
++  });
++});
