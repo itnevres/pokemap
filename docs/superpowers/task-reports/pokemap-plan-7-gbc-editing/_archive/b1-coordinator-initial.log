@@ -1,0 +1,25 @@
+{"id":"R1-selection","green":1,"red":1,"restored":1,"byteIdentical":true,"failures":["GbcApp isolated context selection invariant a World selection callback moving off the context map exits without a tree or mode handler"]}
+{"id":"R2-event-props","green":1,"red":1,"restored":1,"byteIdentical":true,"failures":["GbcApp -- in-context editing (Plan 7 Task 5b) overlay event drag uses 16px steps through the actual App move callback"]}
+{"id":"R3-paint-units","green":1,"red":1,"restored":1,"byteIdentical":true,"failures":["GbcApp -- in-context editing (Plan 7 Task 5b) visible clean overlay paint uses 32px blocks and waits for begin before apply and end"]}
+{"id":"X7","green":1,"red":1,"restored":1,"byteIdentical":true,"failures":["GbcApp -- in-context editing (Plan 7 Task 5b) the overlay composite lines up under the world tile: its origin is the border ring (32 px), not 0"]}
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: unique literal anchor B1-first-apply
+
+0 !== 1
+
+    at file:///C:/Programming%20Projects/PokeMap/docs/superpowers/task-reports/pokemap-plan-7-gbc-editing/b1-coordinator-mutations.mjs:39:10
+    at ModuleJob.run (node:internal/modules/esm/module_job:413:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:660:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5) {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: 0,
+  expected: 1,
+  operator: 'strictEqual',
+  diff: 'simple'
+}
+
+Node.js v24.13.0

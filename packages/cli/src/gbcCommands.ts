@@ -7,6 +7,11 @@ import { loadGbcMapEvents } from "@pokemap/core/src/gbc/load/events.js";
 import type { Conflict } from "@pokemap/core/src/gbc/world/connections.js";
 import { gbcEncounterSources, gbcWhereSpecies, gbcCoverage, normalizeGbcSpecies, type GbcEncounterSource, type GbcSpeciesHit } from "@pokemap/core/src/gbc/analyse/atlas.js";
 import type { DataDefect, GbcMap } from "@pokemap/core/src/gbc/model/types.js";
+import type { GbcProject } from "@pokemap/core/src/gbc/project.js";
+import { openGbcEditSession, planGbcSave, commitGbcSave, type GbcEditSession } from "@pokemap/core/src/gbc/write/save.js";
+import { paintCells as paintGbcCells, floodFill } from "@pokemap/core/src/gbc/edit/paint.js";
+import { moveGbcEvent, addGbcEvent, deleteGbcEvent, findGbcWarpsRetargetedByDelete, type GbcEventKind, type GbcEventEdit } from "@pokemap/core/src/gbc/edit/events.js";
+import { formatDiffText } from "@pokemap/core/src/write/diff.js";
 import { encodePng } from "./png.js";
 import type { TimeOfDay, Bbox } from "./args.js";
 
@@ -266,4 +271,143 @@ export function runGbcCoverage(root: string, opts: RunGbcCoverageOptions): GbcCo
   if (opts.empty) for (const m of c.mapsWithoutEncounters) stdout += `  ${m}\n`;
   if (opts.unused) for (const s of c.unusedSpecies) stdout += `  ${s}\n`;
   return { stdout, stderr };
+}
+
+// ---------------------------------------------------------------------------
+// Plan 7 Task 6: GBC write commands -- `paint`/`diff` (GBC branch) and
+// `event move|add|delete`. Separate block (see the Task 12 block's own note).
+// Every write goes through core's `commitGbcSave`; dry run is the default.
+// ---------------------------------------------------------------------------
+
+const GBC_KINDS: readonly GbcEventKind[] = ["warp", "coord", "bg", "object"];
+const GBC_TOOLS = ["pencil", "rect", "bucket"] as const;
+
+/** Commander's `Number` parser gives `NaN` for junk and happily takes 1.5. */
+function intOpt(name: string, v: unknown): number {
+  if (typeof v !== "number" || !Number.isInteger(v)) throw new Error(`--${name} must be an integer, got ${String(v)}`);
+  return v;
+}
+
+function kindOpt(v: unknown): GbcEventKind {
+  if (!GBC_KINDS.includes(v as GbcEventKind)) throw new Error(`--kind must be one of ${GBC_KINDS.join(", ")}, got ${String(v)}`);
+  return v as GbcEventKind;
+}
+
+/** Mirrors writeCommands.ts dryRunOrCommit (same refusal format) -- keep in step. `warn` (stderr-bound `warning:` lines) is appended to the
+ *  thrown message, since a throw returns no stderr and the user would otherwise lose the data defects behind a refusal.
+ *  Dry run prints label + plan; `--yes` throws on refusals (the CLI's own message, same format as GBA's), else commits. */
+function dryRunOrCommitGbc(proj: GbcProject, session: GbcEditSession, yes: boolean, label: string, warn = ""): string {
+  const plan = planGbcSave(proj, session);
+  const diffText = formatDiffText(plan);
+  if (!yes) return `${label}\n${diffText}\n(dry run -- not written; pass --yes to commit)\n`;
+  if (plan.refusals.length > 0) {
+    throw new Error(plan.refusals.map((r) => `${r.code} (${r.subject}): ${r.message} -- ${r.fix}`).join("\n") + (warn ? `\n${warn.trimEnd()}` : ""));
+  }
+  commitGbcSave(proj, plan);
+  return `${label}\n${diffText}\ncommitted\n`;
+}
+
+export interface RunGbcPaintOptions {
+  tool: string;
+  /** Block coordinates. */
+  x: number;
+  y: number;
+  x1?: number;
+  y1?: number;
+  metatile: number;
+  yes?: boolean;
+}
+
+function gbcPaintSession(proj: GbcProject, mapName: string, opts: RunGbcPaintOptions): GbcEditSession {
+  if (!(GBC_TOOLS as readonly string[]).includes(opts.tool)) throw new Error(`--tool must be one of ${GBC_TOOLS.join(", ")}, got ${opts.tool}`);
+  const x = intOpt("x", opts.x), y = intOpt("y", opts.y), metatile = intOpt("metatile", opts.metatile);
+  const x1 = opts.x1 === undefined ? x : intOpt("x1", opts.x1);
+  const y1 = opts.y1 === undefined ? y : intOpt("y1", opts.y1);
+  const session = openGbcEditSession(proj, mapName);
+  const { width, height } = session.layout;
+  if (opts.tool === "bucket") {
+    session.blocks = floodFill(session.blocks, width, height, x, y, metatile);
+  } else {
+    const targets: { x: number; y: number }[] = [];
+    if (opts.tool === "rect") {
+      for (let ty = Math.min(y, y1); ty <= Math.max(y, y1); ty++) {
+        for (let tx = Math.min(x, x1); tx <= Math.max(x, x1); tx++) targets.push({ x: tx, y: ty });
+      }
+    } else targets.push({ x, y });
+    session.blocks = paintGbcCells(session.blocks, width, height, targets, { width: 1, height: 1, cells: [{ metatileId: metatile }] }, x, y);
+  }
+  return session;
+}
+
+/** `layout`'s data defects (e.g. CeruleanCave2F's oversize .blk) as `warning:` lines. */
+function layoutWarnings(proj: GbcProject, mapName: string): string {
+  return warningLines(proj.layout(proj.map(mapName)).defects);
+}
+
+/** `paint <gbcMap>`: dry run unless `opts.yes`. Coordinates are in blocks. */
+export function runGbcPaint(root: string, mapName: string, opts: RunGbcPaintOptions): GbcCommandResult {
+  const proj = openGbcProject(root);
+  const session = gbcPaintSession(proj, mapName, opts);
+  const stderr = layoutWarnings(proj, mapName);
+  return { stdout: dryRunOrCommitGbc(proj, session, !!opts.yes, `${mapName} (${opts.tool})`, stderr), stderr };
+}
+
+/** `diff <gbcMap>`: always a dry run, whatever the caller smuggles into `opts`. */
+export function runGbcDiff(root: string, mapName: string, opts: Omit<RunGbcPaintOptions, "yes">): GbcCommandResult {
+  const proj = openGbcProject(root);
+  const session = gbcPaintSession(proj, mapName, opts);
+  return { stdout: `${formatDiffText(planGbcSave(proj, session))}\n`, stderr: layoutWarnings(proj, mapName) };
+}
+
+function openEventSession(proj: GbcProject, mapName: string, kind: unknown): { session: GbcEditSession; kind: GbcEventKind } {
+  const k = kindOpt(kind);
+  return { session: openGbcEditSession(proj, mapName), kind: k };
+}
+
+function applyEdit(session: GbcEditSession, edit: GbcEventEdit): void {
+  session.eventsText = edit.text;
+  session.events = edit.events;
+}
+
+export interface RunGbcEventMoveOptions { kind: string; index: number; /** Event steps (16 px). */ x: number; y: number; yes?: boolean }
+
+export function runGbcEventMove(root: string, mapName: string, opts: RunGbcEventMoveOptions): GbcCommandResult {
+  const index = intOpt("index", opts.index), x = intOpt("x", opts.x), y = intOpt("y", opts.y);
+  const proj = openGbcProject(root);
+  const { session, kind } = openEventSession(proj, mapName, opts.kind);
+  applyEdit(session, moveGbcEvent(session.eventsText, mapName, kind, index, x, y));
+  const stderr = layoutWarnings(proj, mapName);
+  return { stdout: dryRunOrCommitGbc(proj, session, !!opts.yes, `${mapName} move ${kind}[${index}] -> (${x}, ${y})`, stderr), stderr };
+}
+
+export interface RunGbcEventAddOptions { kind: string; /** The macro's full argument list in source order, comma-separated. */ args: string; const?: string; yes?: boolean }
+
+export function runGbcEventAdd(root: string, mapName: string, opts: RunGbcEventAddOptions): GbcCommandResult {
+  const proj = openGbcProject(root);
+  const { session, kind } = openEventSession(proj, mapName, opts.kind);
+  if (opts.const !== undefined && kind !== "object") throw new Error(`--const only applies to --kind object, got --kind ${kind}`);
+  if (typeof opts.args !== "string") throw new Error("--args is required");
+  const args = opts.args.split(",").map((a) => a.trim());
+  const mapConsts = new Set(proj.maps.map((m) => m.constName));
+  applyEdit(session, addGbcEvent(session.eventsText, mapName, kind, args, { mapConsts, objectConst: opts.const }));
+  const stderr = layoutWarnings(proj, mapName);
+  return { stdout: dryRunOrCommitGbc(proj, session, !!opts.yes, `${mapName} add ${kind}`, stderr), stderr };
+}
+
+export interface RunGbcEventDeleteOptions { kind: string; index: number; yes?: boolean }
+
+export function runGbcEventDelete(root: string, mapName: string, opts: RunGbcEventDeleteOptions): GbcCommandResult {
+  const index = intOpt("index", opts.index);
+  const proj = openGbcProject(root);
+  const { session, kind } = openEventSession(proj, mapName, opts.kind);
+  let warnings = "";
+  if (kind === "warp") {
+    // The deleting map contributes its PRE-delete session warps; every other map its on-disk ones.
+    const maps = proj.maps.map((m) => ({ name: m.name, warps: m.name === mapName ? session.events.warps : loadGbcMapEvents(root, m).events.warps }));
+    const hits = findGbcWarpsRetargetedByDelete(maps, { mapName, mapConst: session.map.constName, index });
+    warnings = hits.map((h) => `warning: ${h.fromMap} warp[${h.warpIndex}] -> ${session.map.constName} ${h.destWarp} will be retargeted\n`).join("");
+  }
+  applyEdit(session, deleteGbcEvent(session.eventsText, mapName, kind, index));
+  const stderr = warnings + layoutWarnings(proj, mapName);
+  return { stdout: dryRunOrCommitGbc(proj, session, !!opts.yes, `${mapName} delete ${kind}[${index}]`, stderr), stderr };
 }

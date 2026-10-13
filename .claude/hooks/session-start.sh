@@ -50,6 +50,7 @@ PINNED=(
   "refs/modern-emerald|https://github.com/resetes12/pokeemerald|67f2cc43d2a5e6112e6cfc477e7ef75d78e2a46b"
   "refs/pokeclassic|https://github.com/danenders/pokeclassic|9c3a49affcb9b9f5e67dd9ae6a5e079af3bf26b5"
   "pokecrystal-PerfPlus|https://github.com/itnevres/pokecrystal-PerfPlus|81ededbe311267c774b5540d8c8b381a314dc6d6"
+  "pokecrystal|https://github.com/pret/pokecrystal|3bc8daa4173e96a7f4011dad3922eb6fa5dad5c6"
 )
 
 fetch_pinned() {
@@ -104,7 +105,7 @@ cat > pokemap.config.json <<EOF
   ],
   "gbc": {
     "projectPath": "$CORPUS/pokecrystal-PerfPlus",
-    "referenceProjects": []
+    "referenceProjects": ["$CORPUS/pokecrystal"]
   }
 }
 EOF

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import "../styles.css";
 
-interface PendingChange { path: string; kind: "json" | "binary"; summary: string }
+interface PendingChange { path: string; kind: "json" | "binary" | "text"; summary: string }
 interface Refusal { code: string; message: string; fix: string; subject: string }
 interface DiffPlan { changes: PendingChange[]; refusals: Refusal[] }
 

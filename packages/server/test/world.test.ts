@@ -5,8 +5,10 @@ import { join, resolve } from "node:path";
 import { createServer, type PokemapServer } from "../src/index.js";
 import { SUBJECT_ROOT, hasProject } from "@pokemap/core/test/helpers/corpus.js";
 import { projectPaths } from "@pokemap/core/src/config/paths.js";
+import { writeSidecar } from "@pokemap/core/src/world/sidecar.js";
 
 let s: PokemapServer;
+let fixtureRoot: string;
 
 // The hooks live INSIDE the describe, not beside it -- same reasoning as
 // packages/server/test/api.test.ts: `createServer` opens the real project,
@@ -16,8 +18,33 @@ let s: PokemapServer;
 // code for this file put the hooks outside the describe; this is fixed
 // independently of the dungeon-toggle defect.
 describe.skipIf(!hasProject(SUBJECT_ROOT))("world api", () => {
-  beforeAll(async () => { s = await createServer({ projectPath: SUBJECT_ROOT, port: 0 }); });
-  afterAll(async () => { await s?.close(); });
+  beforeAll(async () => {
+    fixtureRoot = mkdtempSync(join(tmpdir(), "pokemap-world-gba-"));
+    for (const dir of ["data", "src", "include", "graphics"]) symlinkSync(join(SUBJECT_ROOT, dir), join(fixtureRoot, dir), "junction");
+    copyFileSync(join(SUBJECT_ROOT, "porymap.project.cfg"), join(fixtureRoot, "porymap.project.cfg"));
+    // Saved user state must not decide whether the dungeon-on branch is tested.
+    writeSidecar(fixtureRoot, {
+      version: 1,
+      dungeonAutoLayout: true,
+      manualPlacements: { Route119: { x: 0, y: 0 } },
+      view: { x: 0, y: 0, zoom: 1 },
+    });
+    s = await createServer({ projectPath: fixtureRoot, port: 0 });
+  });
+  afterAll(async () => {
+    try {
+      await s?.close();
+    } finally {
+      if (fixtureRoot) {
+        if (!resolve(fixtureRoot).startsWith(join(resolve(tmpdir()), "pokemap-world-gba-"))) throw new Error("scratch cleanup escaped temp root");
+        for (const dir of ["data", "src", "include", "graphics"]) {
+          const link = join(fixtureRoot, dir);
+          if (existsSync(link)) unlinkSync(link);
+        }
+        rmSync(fixtureRoot, { recursive: true, force: true });
+      }
+    }
+  });
 
   it("returns placements, components, conflicts and vertical links", async () => {
     const w = await (await fetch(`http://127.0.0.1:${s.port}/api/world`)).json() as any;
@@ -32,7 +59,7 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("world api", () => {
     try {
       for (const dir of ["data", "src", "include", "graphics"]) symlinkSync(join(SUBJECT_ROOT, dir), join(scratch, dir), "junction");
       copyFileSync(join(SUBJECT_ROOT, "porymap.project.cfg"), join(scratch, "porymap.project.cfg"));
-      const originalSidecar = projectPaths(SUBJECT_ROOT).sidecar;
+      const originalSidecar = projectPaths(fixtureRoot).sidecar;
       if (existsSync(originalSidecar)) {
         mkdirSync(join(scratch, ".pokemap"));
         copyFileSync(originalSidecar, projectPaths(scratch).sidecar);
@@ -75,6 +102,8 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("world api", () => {
   it("respects the dungeonAutoLayout flag", async () => {
     const on = await (await fetch(`http://127.0.0.1:${s.port}/api/world?dungeons=1`)).json() as any;
     const off = await (await fetch(`http://127.0.0.1:${s.port}/api/world?dungeons=0`)).json() as any;
+    expect(on.sidecar.dungeonAutoLayout).toBe(true);
+    expect(off.sidecar.dungeonAutoLayout).toBe(true);
     expect(Object.keys(on.placements).length).toBeGreaterThan(Object.keys(off.placements).length);
   }, 300_000);
 
@@ -92,12 +121,8 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("world api", () => {
   }, 300_000);
 
   it("persists a manual placement, reflected in the next GET /api/world", async () => {
-    // Writes the real decomp's .pokemap/world.json (I8's sanctioned write
-    // path) under a map name that can never collide with a real one, then
-    // restores whatever was there (or removes the file if it didn't exist)
-    // so this test leaves no trace for the Step 7 manual verification pass
-    // that exercises the same file for real.
-    const sidecarPath = projectPaths(SUBJECT_ROOT).sidecar;
+    // Restore the scratch sidecar so later tests see the same fixture.
+    const sidecarPath = projectPaths(fixtureRoot).sidecar;
     const before = existsSync(sidecarPath) ? readFileSync(sidecarPath, "utf8") : null;
 
     try {
@@ -143,11 +168,12 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("world api", () => {
   // discarded it. Same restore-afterward discipline as the placement
   // persistence test above.
   it("persists the dungeon-layout flag, reflected in the next GET /api/world's sidecar", async () => {
-    const sidecarPath = projectPaths(SUBJECT_ROOT).sidecar;
+    const sidecarPath = projectPaths(fixtureRoot).sidecar;
     const before = existsSync(sidecarPath) ? readFileSync(sidecarPath, "utf8") : null;
 
     try {
       const flipped = await (await fetch(`http://127.0.0.1:${s.port}/api/world`)).json() as any;
+      expect(flipped.sidecar.dungeonAutoLayout).toBe(true); // fixture precondition: the flip below turns dungeons off
       const target = !flipped.sidecar.dungeonAutoLayout;
 
       const post = await fetch(`http://127.0.0.1:${s.port}/api/world/dungeons`, {
@@ -159,6 +185,9 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("world api", () => {
 
       const after = await (await fetch(`http://127.0.0.1:${s.port}/api/world`)).json() as any;
       expect(after.sidecar.dungeonAutoLayout).toBe(target);
+      expect(Object.keys(after.placements).length).toBeLessThan(Object.keys(flipped.placements).length);
+      const requestedOn = await (await fetch(`http://127.0.0.1:${s.port}/api/world?dungeons=1`)).json() as any;
+      expect(requestedOn.placements).toEqual(after.placements);
     } finally {
       if (before === null) rmSync(sidecarPath, { force: true });
       else writeFileSync(sidecarPath, before);
@@ -191,7 +220,7 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("world api", () => {
   // map branch (see index.ts's own comment on this route), where the two
   // expressions happen to agree. The real divergence only shows up on a
   // map that's BOTH a known project map AND manually placed -- which the
-  // live sidecar has today (e.g. Route119) but no earlier test in this
+  // fixture includes explicitly (Route119) but no earlier test in this
   // file asserts on. Checking every placement, not just one or two, is
   // what actually kills that mutant regardless of which real maps happen
   // to be manually placed at test time.
@@ -201,7 +230,7 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("world api", () => {
       expect(p.manual).toBe(name in body.sidecar.manualPlacements);
     }
     // Not a vacuous check -- confirm at least one entry is genuinely manual
-    // (the live sidecar has real manual placements today), so this test
+    // (the fixture includes Route119), so this test
     // cannot pass merely because manualPlacements happened to be empty.
     expect(Object.keys(body.sidecar.manualPlacements).length).toBeGreaterThan(0);
   }, 300_000);

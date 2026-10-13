@@ -14,7 +14,7 @@ import { resolveProject, resolveRoot, layoutNameFor } from "./context.js";
 import { parseBorder, parseBbox, parseScale, parseTime } from "./args.js";
 import { resolvePlacementRect } from "./renderWorld.js";
 import { runSignSuggest, runSignAdd, runSignList, runPaint, runDiff } from "./writeCommands.js";
-import { runGbcRender, runGbcQuery, runGbcRenderWorld, runGbcEncounters, runGbcWhere, runGbcCoverage } from "./gbcCommands.js";
+import { runGbcRender, runGbcQuery, runGbcRenderWorld, runGbcEncounters, runGbcWhere, runGbcCoverage, runGbcPaint, runGbcDiff, runGbcEventMove, runGbcEventAdd, runGbcEventDelete, type GbcCommandResult } from "./gbcCommands.js";
 
 const program = new Command();
 program.name("pokemap").option("-p, --project <path>", "decomp root");
@@ -42,6 +42,12 @@ function refuseIfGbc(family: EngineFamily, command: string): void {
   if (family === "gbc") {
     throw new Error(`${command} is not supported for gbc (pokecrystal-family) projects yet`);
   }
+}
+
+/** Prints a GBC handler's result: stderr (warnings) first, then stdout. */
+function emit(r: GbcCommandResult): void {
+  if (r.stderr) process.stderr.write(r.stderr);
+  process.stdout.write(r.stdout);
 }
 
 program
@@ -339,17 +345,20 @@ sign
 
 program
   .command("paint <map>")
-  .description("paint one metatile (pencil) or a rectangle (rect) -- prints the plan by default, writes only with --yes")
-  .requiredOption("--tool <tool>", "pencil or rect")
-  .requiredOption("--x <n>", "tile x (or rect's first corner)", Number)
-  .requiredOption("--y <n>", "tile y (or rect's first corner)", Number)
-  .option("--x1 <n>", "rect's second corner x", Number)
-  .option("--y1 <n>", "rect's second corner y", Number)
+  .description("paint one metatile (pencil), a rectangle (rect) or a flood fill (bucket, gbc only) -- prints the plan by default, writes only with --yes")
+  .requiredOption("--tool <tool>", "pencil or rect (gbc also: bucket)")
+  .requiredOption("--x <n>", "tile x (gbc: block x) (or rect's first corner)", Number)
+  .requiredOption("--y <n>", "tile y (gbc: block y) (or rect's first corner)", Number)
+  .option("--x1 <n>", "rect's second corner x (tiles; gbc: blocks)", Number)
+  .option("--y1 <n>", "rect's second corner y (tiles; gbc: blocks)", Number)
   .requiredOption("--metatile <id>", "metatile id to stamp", Number)
   .option("--yes", "actually write")
-  .action((map: string, opts: { tool: "pencil" | "rect"; x: number; y: number; x1?: number; y1?: number; metatile: number; yes?: boolean }) => {
+  .action((map: string, opts: { tool: "pencil" | "rect" | "bucket"; x: number; y: number; x1?: number; y1?: number; metatile: number; yes?: boolean }) => {
     const { root, family } = resolveRootAndFamily(program.opts().project);
-    refuseIfGbc(family, "paint");
+    if (family === "gbc") {
+      emit(runGbcPaint(root, map, { tool: opts.tool, x: opts.x, y: opts.y, x1: opts.x1, y1: opts.y1, metatile: opts.metatile, yes: !!opts.yes }));
+      return;
+    }
     const proj = resolveProject(root);
     process.stdout.write(`${runPaint(proj, { map, tool: opts.tool, x: opts.x, y: opts.y, x1: opts.x1, y1: opts.y1, metatileId: opts.metatile, yes: !!opts.yes })}\n`);
   });
@@ -357,17 +366,64 @@ program
 program
   .command("diff <map>")
   .description("preview a paint edit's plan without writing (always a dry run)")
-  .requiredOption("--tool <tool>", "pencil or rect")
-  .requiredOption("--x <n>", "tile x (or rect's first corner)", Number)
-  .requiredOption("--y <n>", "tile y (or rect's first corner)", Number)
-  .option("--x1 <n>", "rect's second corner x", Number)
-  .option("--y1 <n>", "rect's second corner y", Number)
+  .requiredOption("--tool <tool>", "pencil or rect (gbc also: bucket)")
+  .requiredOption("--x <n>", "tile x (gbc: block x) (or rect's first corner)", Number)
+  .requiredOption("--y <n>", "tile y (gbc: block y) (or rect's first corner)", Number)
+  .option("--x1 <n>", "rect's second corner x (tiles; gbc: blocks)", Number)
+  .option("--y1 <n>", "rect's second corner y (tiles; gbc: blocks)", Number)
   .requiredOption("--metatile <id>", "metatile id to stamp", Number)
-  .action((map: string, opts: { tool: "pencil" | "rect"; x: number; y: number; x1?: number; y1?: number; metatile: number }) => {
+  .action((map: string, opts: { tool: "pencil" | "rect" | "bucket"; x: number; y: number; x1?: number; y1?: number; metatile: number }) => {
     const { root, family } = resolveRootAndFamily(program.opts().project);
-    refuseIfGbc(family, "diff");
+    if (family === "gbc") {
+      emit(runGbcDiff(root, map, { tool: opts.tool, x: opts.x, y: opts.y, x1: opts.x1, y1: opts.y1, metatile: opts.metatile }));
+      return;
+    }
     const proj = resolveProject(root);
     process.stdout.write(`${runDiff(proj, { map, tool: opts.tool, x: opts.x, y: opts.y, x1: opts.x1, y1: opts.y1, metatileId: opts.metatile })}\n`);
+  });
+
+// GBC-only event editing (Plan 7 Task 6). Same nested-command shape as `sign`
+// above. Coordinates are event steps (16 px), not blocks. On a GBA root every
+// sub refuses: GBA's CLI never had event commands.
+function gbcOnlyRoot(sub: string): string {
+  const { root, family } = resolveRootAndFamily(program.opts().project);
+  if (family !== "gbc") throw new Error(`event ${sub} is not supported for gba projects (GBC-only today)`);
+  return root;
+}
+
+const event = program.command("event").description("GBC event editing -- prints the plan by default, writes only with --yes");
+
+event
+  .command("move <map>")
+  .description("move one event to (x, y), in event steps")
+  .requiredOption("--kind <kind>", "warp, coord, bg or object")
+  .requiredOption("--index <n>", "0-based index within that kind", Number)
+  .requiredOption("--x <n>", "event x (16 px steps)", Number)
+  .requiredOption("--y <n>", "event y (16 px steps)", Number)
+  .option("--yes", "actually write")
+  .action((map: string, opts: { kind: string; index: number; x: number; y: number; yes?: boolean }) => {
+    emit(runGbcEventMove(gbcOnlyRoot("move"), map, { ...opts, yes: !!opts.yes }));
+  });
+
+event
+  .command("add <map>")
+  .description("append one event; --args is the macro's full argument list in source order")
+  .requiredOption("--kind <kind>", "warp, coord, bg or object")
+  .requiredOption("--args <list>", "comma-separated macro arguments (4 for warp/coord/bg, 13 for object)")
+  .option("--const <NAME>", "object only: name of the new object_const_def const")
+  .option("--yes", "actually write")
+  .action((map: string, opts: { kind: string; args: string; const?: string; yes?: boolean }) => {
+    emit(runGbcEventAdd(gbcOnlyRoot("add"), map, { ...opts, yes: !!opts.yes }));
+  });
+
+event
+  .command("delete <map>")
+  .description("delete one event (a warp delete warns about warps it re-targets)")
+  .requiredOption("--kind <kind>", "warp, coord, bg or object")
+  .requiredOption("--index <n>", "0-based index within that kind", Number)
+  .option("--yes", "actually write")
+  .action((map: string, opts: { kind: string; index: number; yes?: boolean }) => {
+    emit(runGbcEventDelete(gbcOnlyRoot("delete"), map, { ...opts, yes: !!opts.yes }));
   });
 
 // parseAsync, not a sync parse()+try/catch: every action handler today is

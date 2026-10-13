@@ -1,0 +1,70 @@
+{
+  "base": {
+    "exit": 1,
+    "passed": 688,
+    "failed": 1,
+    "assertion": true,
+    "failedNames": [
+      "GbcApp > hovering the canvas highlights the matching palette cell (spec review finding 9, mutation check X13) 1050ms",
+      "</button>",
+      "</button>",
+      "</button>",
+      "1",
+      "packages/ui/test/gbc/GbcApp.test.tsx > GbcApp > hovering the canvas highlights the matching palette cell (spec review finding 9, mutation check X13)",
+      "</button>",
+      "</button>",
+      "</button>",
+      "1"
+    ]
+  },
+  "mutations": [
+    {
+      "id": "X5-dirty-exit-no-dialog",
+      "killed": true,
+      "mutant": {
+        "exit": 1,
+        "passed": 686,
+        "failed": 3,
+        "assertion": true,
+        "failedNames": [
+          "GbcApp -- in-context editing (Plan 7 Task 5b) > with a dirty session > Done opens the SaveDialog and stays in context; Cancel keeps editing 1263ms",
+          "GbcApp -- in-context editing (Plan 7 Task 5b) > with a dirty session > Escape opens the SaveDialog and stays in context; Escape inside the dialog cancels only the dialog 1212ms",
+          "GbcApp -- in-context editing (Plan 7 Task 5b) > with a dirty session > a committed save refreshes exactly that map's world tile, as &v=1, marks the session clean, re-reads the payload 1212ms",
+          "packages/ui/test/gbc/GbcAppContext.test.tsx > GbcApp -- in-context editing (Plan 7 Task 5b) > with a dirty session > Done opens the SaveDialog and stays in context; Cancel keeps editing",
+          "packages/ui/test/gbc/GbcAppContext.test.tsx > GbcApp -- in-context editing (Plan 7 Task 5b) > with a dirty session > Escape opens the SaveDialog and stays in context; Escape inside the dialog cancels only the dialog",
+          "packages/ui/test/gbc/GbcAppContext.test.tsx > GbcApp -- in-context editing (Plan 7 Task 5b) > with a dirty session > a committed save refreshes exactly that map's world tile, as &v=1, marks the session clean, re-reads the payload"
+        ]
+      },
+      "restoredGreen": true,
+      "restoredPassed": 689,
+      "bytesRestored": true
+    },
+    {
+      "id": "B1-begin-not-awaited",
+      "killed": true,
+      "mutant": {
+        "exit": 1,
+        "passed": 676,
+        "failed": 13,
+        "assertion": true,
+        "failedNames": [
+          "GbcMapEditing wiring (spec review F2/F5/F6, QR I1) > a paint request's failure text reaches the banner (not a generic message) 1068ms",
+          "</button>",
+          "</button>",
+          "</button>",
+          "2",
+          "</button>",
+          "</button>",
+          "</button>",
+          "2",
+          "GbcApp World-path dirty guards (spec review F1, F3, F7) > a world click, confirmed: POST /discard goes out BEFORE the new map is fetched 193ms",
+          "GbcMapCanvas errors and drag dedupe > a rejected request reports its message through onEditError 1027ms",
+          "</button>"
+        ]
+      },
+      "restoredGreen": true,
+      "restoredPassed": 689,
+      "bytesRestored": true
+    }
+  ]
+}

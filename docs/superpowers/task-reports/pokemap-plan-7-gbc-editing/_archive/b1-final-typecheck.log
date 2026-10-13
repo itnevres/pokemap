@@ -1,0 +1,4 @@
+
+> typecheck
+> tsc --noEmit -p tsconfig.base.json && tsc --noEmit -p packages/ui/tsconfig.json
+

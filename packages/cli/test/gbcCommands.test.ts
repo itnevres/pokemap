@@ -12,6 +12,14 @@ import { renderGbcWorld } from "@pokemap/core/src/gbc/render/world.js";
 import { GBC_SUBJECT_ROOT, itWithGbcCorpus } from "../../core/test/gbc/helpers/corpus.js";
 import { runGbcRender, runGbcQuery, runGbcRenderWorld, runGbcEncounters, runGbcWhere, runGbcCoverage } from "../src/gbcCommands.js";
 import { gbcEncounterSources } from "@pokemap/core/src/gbc/analyse/atlas.js";
+import { beforeAll } from "vitest";
+import { existsSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { hasGbcProject, copyGbcSubjectToTemp, removeTemp } from "../../core/test/gbc/helpers/corpus.js";
+import { runGbcPaint, runGbcDiff, runGbcEventMove, runGbcEventAdd, runGbcEventDelete } from "../src/gbcCommands.js";
+import { paintCells as paintGbcCells, floodFill as gbcFloodFill } from "@pokemap/core/src/gbc/edit/paint.js";
+import { moveGbcEvent, addGbcEvent } from "@pokemap/core/src/gbc/edit/events.js";
+import { parseMapEvents } from "@pokemap/core/src/gbc/load/events.js";
 
 /**
  * Decodes exactly the shape `encodePng` (`../src/png.ts`) writes -- 8-bit
@@ -341,8 +349,7 @@ describe("CLI end-to-end (spawned, generous timeout)", () => {
       { name: "sign suggest", args: ["sign", "suggest", "NewBarkTown"] },
       { name: "sign add", args: ["sign", "add", "NewBarkTown", "--species", "RATTATA", "--dialogue", "hi", "--x", "0", "--y", "0"] },
       { name: "sign list", args: ["sign", "list", "NewBarkTown"] },
-      { name: "paint", args: ["paint", "NewBarkTown", "--tool", "pencil", "--x", "0", "--y", "0", "--metatile", "1"] },
-      { name: "diff", args: ["diff", "NewBarkTown", "--tool", "pencil", "--x", "0", "--y", "0", "--metatile", "1"] },
+      // paint/diff removed: Plan 7 Task 6 made them GBC commands.
     ];
     for (const { name, args } of cases) {
       const { status, stdout, stderr } = spawnCli(["--project", GBC_SUBJECT_ROOT, ...args]);
@@ -473,5 +480,251 @@ describe("CLI end-to-end (spawned, generous timeout): Task 12", () => {
     expect(status).toBe(0);
     expect(stderr).toMatch(/^warning: data\/wild\/kanto_grass\.asm:/);
     expect(stdout).toBe(runGbcWhere(GBC_SUBJECT_ROOT, "DUNSPARCE", {}).stdout);
+  }, 30_000);
+});
+
+// ---------------------------------------------------------------------------
+// Plan 7 Task 6: GBC write commands. Every test (dry run or not) runs on one
+// shared temp copy of the subject, so a mutated dry run can never touch the
+// real PerfPlus; `afterAll` asserts it stayed clean.
+// ---------------------------------------------------------------------------
+describe("GBC write commands (Plan 7 Task 6)", () => {
+  // NOTE: tests share ONE mutable temp copy and run in file order (e.g. 9 relies on 6/7 having edited the asm; each re-reads its own `before`).
+  const MAP = "NewBarkTown";
+  let copy = "";
+  const asm = (root = copy): string => readFileSync(`${root}/maps/${MAP}.asm`, "utf8");
+  const blk = (root = copy): Buffer => readFileSync(`${root}/maps/${MAP}.blk`);
+  // "" on any error (no config / wrong cwd) so collection never throws; test 10 then skips.
+  const gbaRoot = ((): string => {
+    try {
+      return (JSON.parse(readFileSync("pokemap.config.json", "utf8")) as { projectPath: string }).projectPath ?? "";
+    } catch {
+      return "";
+    }
+  })();
+
+  beforeAll(() => {
+    if (hasGbcProject(GBC_SUBJECT_ROOT)) copy = copyGbcSubjectToTemp();
+  }, 60_000);
+  afterAll(() => {
+    if (copy) removeTemp(copy);
+    if (hasGbcProject(GBC_SUBJECT_ROOT)) {
+      expect(execFileSync("git", ["-C", GBC_SUBJECT_ROOT, "status", "--porcelain"], { encoding: "utf8" })).toBe("");
+    }
+  });
+
+  /** A metatile id that differs from `cur`, valid for NewBarkTown's tileset. */
+  const other = (cur: number): number => (cur === 1 ? 2 : 1);
+  const tilesetCap = (): number => {
+    const proj = openGbcProject(copy);
+    return proj.tileset(proj.map(MAP).tileset).metatiles.length;
+  };
+  /** Blocks of NewBarkTown (as laid out on disk in the copy). */
+  const blocks = (): { metatileId: number }[] => {
+    const proj = openGbcProject(copy);
+    return proj.layout(proj.map(MAP)).layout.blocks.map((b) => ({ metatileId: b.metatileId }));
+  };
+  const differing = (a: { metatileId: number }[], b: { metatileId: number }[]): number => a.filter((v, i) => v.metatileId !== b[i]!.metatileId).length;
+  const plural = (n: number): string => `${n} block${n === 1 ? "" : "s"} changed`;
+
+  itWithGbcCorpus("1. paint pencil dry run: summary + dry-run line, .blk bytes unchanged", () => {
+    const before = blk();
+    const m = other(before[0]!);
+    const { stdout } = runGbcPaint(copy, MAP, { tool: "pencil", x: 0, y: 0, metatile: m });
+    expect(stdout).toContain("maps/NewBarkTown.blk -- 1 block changed");
+    expect(stdout).toContain("(dry run -- not written; pass --yes to commit)");
+    expect(blk().equals(before)).toBe(true);
+  });
+
+  itWithGbcCorpus("2. paint pencil --yes commits: stdout ends committed, exactly 1 byte differs at index 0", () => {
+    const before = blk();
+    const m = other(before[0]!);
+    const { stdout } = runGbcPaint(copy, MAP, { tool: "pencil", x: 0, y: 0, metatile: m, yes: true });
+    expect(stdout.trimEnd().endsWith("committed")).toBe(true);
+    const after = blk();
+    const diffs = [...after].map((v, i) => (v !== before[i] ? i : -1)).filter((i) => i >= 0);
+    expect(diffs).toEqual([0]);
+    expect(after[0]).toBe(m);
+  });
+
+  itWithGbcCorpus("3. rect and bucket: block counts AND changed byte indices match the Task 2 functions (off-diagonal, non-square, x != y seed)", () => {
+    const { width: w, height: h } = openGbcProject(copy).map(MAP);
+    const idx = (a: { metatileId: number }[], b: { metatileId: number }[]): number[] => a.flatMap((v, i) => (v.metatileId !== b[i]!.metatileId ? [i] : []));
+    const changedBytes = (before: Buffer, after: Buffer): number[] => [...after].flatMap((v, i) => (v !== before[i] ? [i] : []));
+
+    // rect: corners (1,0)-(3,1) given in reverse order -> 3x2, off the diagonal; commit it and compare byte indices.
+    let cur = blocks();
+    const rectTargets = [1, 2, 3].flatMap((x) => [0, 1].map((y) => ({ x, y })));
+    const used = new Set(rectTargets.map((t) => cur[t.y * w + t.x]!.metatileId));
+    let m = 1;
+    while (used.has(m)) m++;
+    const stamp = { width: 1, height: 1, cells: [{ metatileId: m }] };
+    const rectIdx = idx(cur, paintGbcCells(cur, w, h, rectTargets, stamp, 1, 0));
+    expect(rectIdx).toHaveLength(6);
+    const rectDry = runGbcPaint(copy, MAP, { tool: "rect", x: 3, y: 1, x1: 1, y1: 0, metatile: m });
+    expect(rectDry.stdout).toContain(`maps/NewBarkTown.blk -- ${plural(rectIdx.length)}`);
+    let before = blk();
+    runGbcPaint(copy, MAP, { tool: "rect", x: 3, y: 1, x1: 1, y1: 0, metatile: m, yes: true });
+    expect(changedBytes(before, blk())).toEqual(rectIdx);
+
+    // bucket: a seed with x != y and a real region; commit and compare byte indices.
+    cur = blocks();
+    let sx = 0, sy = 0, bm = 1, best = 0;
+    for (let i = 0; i < cur.length; i++) {
+      if (i % w === Math.floor(i / w)) continue;
+      const id = other(cur[i]!.metatileId);
+      const n = idx(cur, gbcFloodFill(cur, w, h, i % w, Math.floor(i / w), id)).length;
+      if (n > best) { best = n; sx = i % w; sy = Math.floor(i / w); bm = id; }
+    }
+    expect(best).toBeGreaterThan(1);
+    const bucketIdx = idx(cur, gbcFloodFill(cur, w, h, sx, sy, bm));
+    expect(runGbcPaint(copy, MAP, { tool: "bucket", x: sx, y: sy, metatile: bm }).stdout).toContain(`maps/NewBarkTown.blk -- ${plural(bucketIdx.length)}`);
+    before = blk();
+    runGbcPaint(copy, MAP, { tool: "bucket", x: sx, y: sy, metatile: bm, yes: true });
+    expect(changedBytes(before, blk())).toEqual(bucketIdx);
+  });
+
+  itWithGbcCorpus("4. refusals: out-of-range metatile throws and writes nothing; non-writable layout throws and warns", () => {
+    const before = blk();
+    const cap = tilesetCap();
+    expect(() => runGbcPaint(copy, MAP, { tool: "pencil", x: 0, y: 0, metatile: cap, yes: true })).toThrow(/metatile-out-of-range \(maps\/NewBarkTown\.blk\): /);
+    expect(blk().equals(before)).toBe(true);
+    expect(runGbcPaint(copy, MAP, { tool: "pencil", x: 0, y: 0, metatile: cap }).stdout).toContain("REFUSED [metatile-out-of-range]");
+
+    const cc = "CeruleanCave2F";
+    const ccBlk = readFileSync(`${copy}/maps/${cc}.blk`);
+    const dry = runGbcPaint(copy, cc, { tool: "pencil", x: 0, y: 0, metatile: other(ccBlk[0]!) });
+    expect(dry.stderr).toMatch(/^warning: /);
+    expect(() => runGbcPaint(copy, cc, { tool: "pencil", x: 0, y: 0, metatile: other(ccBlk[0]!), yes: true })).toThrow(/layout-not-writable \(maps\/CeruleanCave2F\.blk\): /);
+    expect(readFileSync(`${copy}/maps/${cc}.blk`).equals(ccBlk)).toBe(true);
+  });
+
+  itWithGbcCorpus("5. diff never writes, even when handed yes: true", () => {
+    const before = blk();
+    const m = other(before[0]!);
+    const { stdout } = runGbcDiff(copy, MAP, { tool: "pencil", x: 0, y: 0, metatile: m, yes: true } as never);
+    expect(stdout).toContain("maps/NewBarkTown.blk -- 1 block changed");
+    expect(stdout).not.toContain("committed");
+    expect(blk().equals(before)).toBe(true);
+  });
+
+  itWithGbcCorpus("6. event move warp 0 --yes rewrites exactly that line, same as moveGbcEvent", () => {
+    const before = asm();
+    const { stdout } = runGbcEventMove(copy, MAP, { kind: "warp", index: 0, x: 12, y: 4, yes: true });
+    expect(stdout.trimEnd().endsWith("committed")).toBe(true);
+    const after = asm();
+    expect(after).toContain("\twarp_event  12,  4, ELMS_LAB, 1");
+    expect(after).toBe(moveGbcEvent(before, MAP, "warp", 0, 12, 4).text);
+    const a = before.split("\n"), b = after.split("\n");
+    expect(b).toHaveLength(a.length);
+    expect(b.filter((l, i) => l !== a[i])).toHaveLength(1);
+  });
+
+  itWithGbcCorpus("7. event add bg: dry run names the asm, --yes writes addGbcEvent's output", () => {
+    const before = asm();
+    const args = "1, 2, BGEVENT_READ, NewBarkTownSign";
+    const dry = runGbcEventAdd(copy, MAP, { kind: "bg", args });
+    expect(dry.stdout).toContain("maps/NewBarkTown.asm -- event block edited");
+    expect(asm()).toBe(before);
+    runGbcEventAdd(copy, MAP, { kind: "bg", args, yes: true });
+    expect(asm()).toBe(addGbcEvent(before, MAP, "bg", args.split(", ")).text);
+  });
+
+  itWithGbcCorpus("8. bad input refuses with a named error and writes nothing", () => {
+    const before = asm();
+    const objArgs = "5, 5, SPRITE_FISHER, SPRITEMOVEDATA_STANDING_DOWN, 0, 0, -1, -1, 0, OBJECTTYPE_SCRIPT, 0, NewBarkTownFisherScript, -1";
+    const cases: [() => unknown, RegExp][] = [
+      [() => runGbcEventAdd(copy, MAP, { kind: "object", args: objArgs, const: "lower_case", yes: true }), /objectConst "lower_case" must match/],
+      [() => runGbcEventAdd(copy, MAP, { kind: "warp", args: "1, 1, NOT_A_MAP, 1", yes: true }), /not a known map const/],
+      [() => runGbcEventDelete(copy, MAP, { kind: "object", index: 0, yes: true }), /const NEWBARKTOWN_TEACHER is still referenced/],
+      [() => runGbcEventMove(copy, MAP, { kind: "warp", index: 1.5, x: 1, y: 1, yes: true }), /--index must be an integer, got 1\.5/],
+      [() => runGbcEventMove(copy, MAP, { kind: "warp", index: Number("abc"), x: 1, y: 1, yes: true }), /--index must be an integer, got NaN/],
+      [() => runGbcEventMove(copy, MAP, { kind: "foo", index: 0, x: 1, y: 1, yes: true }), /--kind must be one of warp, coord, bg, object, got foo/],
+      [() => runGbcEventAdd(copy, MAP, { kind: "bg", args: "1, 2, BGEVENT_READ, X", const: "FOO", yes: true }), /--const only applies to --kind object/],
+      [() => runGbcPaint(copy, MAP, { tool: "pencil", x: Number("abc"), y: 0, metatile: 1, yes: true }), /--x must be an integer, got NaN/],
+      [() => runGbcPaint(copy, MAP, { tool: "spray", x: 0, y: 0, metatile: 1, yes: true }), /--tool must be one of pencil, rect, bucket, got spray/],
+    ];
+    for (const [fn, re] of cases) expect(fn).toThrow(re);
+    expect(asm()).toBe(before);
+  });
+
+  itWithGbcCorpus("9. event delete warp: one stderr warning per retarget hit, equals an independent scan (incl. a self-map hit)", () => {
+    // A warp on NewBarkTown pointing back at itself, so the deleting map's own pre-delete warps matter.
+    runGbcEventAdd(copy, MAP, { kind: "warp", args: "2, 2, NEW_BARK_TOWN, 2", yes: true });
+    const proj = openGbcProject(copy);
+    const me = proj.map(MAP);
+    const expected: string[] = [];
+    for (const m of proj.maps) {
+      parseMapEvents(readFileSync(`${copy}/maps/${m.name}.asm`, "utf8"), m.name).warps.forEach((w, i) => {
+        if (m.name === MAP && i === 0) return;
+        if (w.mapConst === me.constName && w.destWarp >= 1) expected.push(`warning: ${m.name} warp[${i}] -> ${me.constName} ${w.destWarp} will be retargeted`);
+      });
+    }
+    const before = asm();
+    const dry = runGbcEventDelete(copy, MAP, { kind: "warp", index: 0 });
+    const lines = dry.stderr.split("\n").filter((l) => l.startsWith("warning: "));
+    expect(lines).toEqual(expected);
+    expect(lines).toContain("warning: ElmsLab warp[0] -> NEW_BARK_TOWN 1 will be retargeted");
+    expect(lines.some((l) => l.startsWith("warning: NewBarkTown warp["))).toBe(true);
+    expect(asm()).toBe(before);
+    // and on commit too
+    const committed = runGbcEventDelete(copy, MAP, { kind: "warp", index: 0, yes: true });
+    expect(committed.stderr.split("\n").filter((l) => l.startsWith("warning: "))).toEqual(expected);
+  }, 60_000);
+
+  itWithGbcCorpus("11. real process: --yes paint changes the copy; --metatile abc exits 1 with 'pokemap: '", () => {
+    const before = blk();
+    const m = other(before[1]!);
+    const ok = spawnCli(["--project", copy, "paint", MAP, "--tool", "pencil", "--x", "1", "--y", "0", "--metatile", String(m), "--yes"]);
+    expect(ok.status).toBe(0);
+    expect(blk()[1]).toBe(m);
+    const bad = spawnCli(["--project", copy, "paint", MAP, "--tool", "pencil", "--x", "1", "--y", "0", "--metatile", "abc", "--yes"]);
+    expect(bad.status).toBe(1);
+    expect(bad.stderr).toMatch(/^pokemap: --metatile must be an integer/);
+  }, 60_000);
+
+  itWithGbcCorpus("12. real process, dry-run defaults: paint/diff/event add without --yes never write; --yes event add does", () => {
+    const m = other(blk()[2]!);
+    const paintArgs = ["paint", MAP, "--tool", "pencil", "--x", "2", "--y", "0", "--metatile", String(m)];
+    const b0 = blk();
+    const dryPaint = spawnCli(["--project", copy, ...paintArgs]);
+    expect(dryPaint.status).toBe(0);
+    expect(dryPaint.stdout).toContain("(dry run -- not written; pass --yes to commit)");
+    expect(blk().equals(b0)).toBe(true);
+
+    const diff = spawnCli(["--project", copy, "diff", MAP, "--tool", "pencil", "--x", "2", "--y", "0", "--metatile", String(m)]);
+    expect(diff.status).toBe(0);
+    expect(diff.stdout).toContain("maps/NewBarkTown.blk -- 1 block changed");
+    expect(diff.stdout).not.toContain("committed");
+    expect(blk().equals(b0)).toBe(true);
+
+    const a0 = asm();
+    const addArgs = ["event", "add", MAP, "--kind", "bg", "--args", "4, 4, BGEVENT_READ, NewBarkTownSign"];
+    const dryAdd = spawnCli(["--project", copy, ...addArgs]);
+    expect(dryAdd.status).toBe(0);
+    expect(dryAdd.stdout).toContain("(dry run -- not written; pass --yes to commit)");
+    expect(asm()).toBe(a0);
+    expect(spawnCli(["--project", copy, ...addArgs, "--yes"]).status).toBe(0);
+    expect(asm()).not.toBe(a0);
+  }, 90_000);
+
+  itWithGbcCorpus("13. real process, CeruleanCave2F: dry run warns on stderr; --yes refusal keeps the size warning in stderr", () => {
+    const cc = "CeruleanCave2F";
+    const ccBlk = readFileSync(`${copy}/maps/${cc}.blk`);
+    const args = ["--project", copy, "paint", cc, "--tool", "pencil", "--x", "0", "--y", "0", "--metatile", String(other(ccBlk[0]!))];
+    const dry = spawnCli(args);
+    expect(dry.status).toBe(0);
+    expect(dry.stderr).toMatch(/^warning: /m);
+    const yes = spawnCli([...args, "--yes"]);
+    expect(yes.status).toBe(1);
+    expect(yes.stderr).toContain("layout-not-writable");
+    expect(yes.stderr).toMatch(/^warning: /m);
+    expect(readFileSync(`${copy}/maps/${cc}.blk`).equals(ccBlk)).toBe(true);
+  }, 60_000);
+
+  it.skipIf(!existsSync(gbaRoot))("10. event on a GBA root refuses (GBC-only)", () => {
+    const r = spawnCli(["--project", gbaRoot, "event", "move", "Route101", "--kind", "warp", "--index", "0", "--x", "1", "--y", "1"]);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toBe("pokemap: event move is not supported for gba projects (GBC-only today)\n");
   }, 30_000);
 });

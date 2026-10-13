@@ -1,5 +1,26 @@
 # PokeMap Plan 7 — GBC Editing (Pokémon Crystal write path)
 
+## STATUS — complete locally, Claude-audited, awaiting push/PR approval (2026-10-12)
+
+**2026-10-12 Claude audit of the Codex continuation (`ede8df3..ef248a3`):**
+- Independent Opus spec review: PASS. Sonnet quality review: APPROVED. Both report 0 Critical and 0 Important findings.
+- Coordinator mutations: 13/13 killed (X1–X8, four B1 ordering mutants, cached-image readiness).
+- Test-only fix round: three tests strengthened.
+- Live PerfPlus verification: context entry, 0-mismatch pixel alignment, paint/save/one-tile refresh, and reverse save. Both NewBarkTown files compare byte-identical with `cmp`.
+- Final gate: **2,574 pass / 0 fail**, 150 files; typecheck and build pass.
+- Codex's uncommitted issues #5/#6 work was moved, by user decision, to branch `issues-5-6-warp-popups`. It is not part of Plan 7.
+- Record and deferred Minor follow-ups: `task-reports/pokemap-plan-7-gbc-editing/_archive/task-5b-claude-audit-coordinator.md`.
+
+Tasks 1–7 and the user-authorized Task 5b in-context editing port are complete. Final production repair is `b0f448a`; `1eb8f81` strengthens the adjacent-stroke completion witness. The cached-image entry fix remains `f8c88d0`. B1 now retains begin, every apply response, and end in one client promise chain, captures stroke ownership across map/ABA/unmount, and finishes issued strokes retired without mouseup. No server locking was added.
+
+Independent scoped spec and quality reviews pass. Coordinator killed all nine final R1/R2/R3/X7/B1 mutations with unique literal anchors, nonempty green/red/restored runs, in-memory `finally` restoration and exact ID reconciliation. The initial adjacent-stroke survivor remains recorded; the stronger witness kills it. Final-code real PerfPlus context click/drag, undo/dirty state, pixel alignment and save/reverse-save verification passed. Both NewBarkTown files returned byte-identical through UI reverse editing.
+
+Fresh final gate at `1eb8f81`: **2,572 pass / 2 known GBA local-state failures**,150 files. Typecheck and UI build pass. The App synthetic image-readiness failure is resolved by decoded fixture metadata; exact coordinate assertions and normal timeouts remain. GBA world.json retains the newer October8 SHA-1 `9c8ab2a86d8fad7ac534629a138be0a87df30cea`; external heads/status/sidecars are unchanged. PerfPlus and pret remain clean, with no PerfPlus `.pokemap`.
+
+Actual implementation: core GBC guards/save/paint/events and line splicing; `gbcEditSessions.ts`/`gbcEditRoutes.ts`; GBC session hook/editing workspace/canvas/inspector; CLI GBC write commands; real-write G5 gate over PerfPlus and pret. Task 5b adds stable World context wiring and controlled GBC canvas geometry. Executed specs remain in `task-reports/pokemap-plan-7-gbc-editing/`; completed reports and captured final evidence are archived under its `_archive/` directory. `task-5b-b1-coordinator.md` and `task-final-branch-review.md` hold final acceptance and scoped B1 closure.
+
+Branch `plan-7-gbc-editing` is unpushed. User approval is required before push or PR. Existing documented UI and independent transport-operation limitations remain deferred; collision painting and wild signs remain out of scope.
+
 > **For agentic workers:** REQUIRED READING FIRST: the roadmap (`2026-09-23-pokemap-plan-6-gbc-roadmap.md`, invariants G1-G7) and Plan 6 itself (`2026-09-23-pokemap-plan-6-gbc-foundation.md`) — this plan builds directly on Plan 6's loaders, renderer, and the two round-trip identity proofs (Task 2's binary codec, Task 4's no-op assembly splice). Written to TASK level, not full TDD-step — **re-read every task against the REAL code Plan 6 actually produced** (not this document's own assumptions about it) and re-granularise before executing, exactly Plan 0 §1's own established discipline. Start only once Plan 6's two round-trip identity tests are green across the real corpus. They are, as of 2026-09-25. Plan 6 is merged; branch from `master`.
 
 **Goal:** Give the Crystal side of PokeMap its first write path — tile painting and event editing — mirroring GBA Plan 2's own scope (painting, event editing) but deliberately NOT porting collision/elevation painting as a literal feature: Crystal's own collision model (roadmap §0, G-family research) is a per-TILESET table, not a per-map-instance byte, so "paint collision on this map" has no direct target the way it does for GBA. If per-tileset collision editing turns out to be wanted, that is a distinct, later task — do not silently reinterpret it as per-instance painting just to reuse GBA's own UI pattern.

@@ -118,7 +118,9 @@ export function snapshotOf(session: EditSession): Snapshot {
   };
 }
 
-export function snapshotCommand(label: string, prev: Snapshot, next: Snapshot): EditCommand {
+// NoInfer: S comes from the return-type context (or the EditSession default at the GBA call sites), never from
+// prev/next -- without it S is inferred as Snapshot there and the GBA call sites stop compiling.
+export function snapshotCommand<S extends object = EditSession>(label: string, prev: NoInfer<Partial<S>>, next: NoInfer<Partial<S>>): EditCommand<S> {
   return {
     label,
     apply: (s) => Object.assign(s, next),

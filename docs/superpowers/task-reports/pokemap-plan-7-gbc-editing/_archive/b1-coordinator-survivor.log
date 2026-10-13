@@ -1,0 +1,21 @@
+{"id":"B1-first-apply","green":2,"red":2,"restored":2,"byteIdentical":true,"failures":["GbcMapCanvas stroke completion barrier (B1) pencil immediate mouseup waits for an independently held first apply","GbcMapCanvas stroke completion barrier (B1) bucket immediate mouseup waits for an independently held first apply"]}
+{"id":"B1-drag-queue","green":2,"red":2,"restored":2,"byteIdentical":true,"failures":["GbcMapCanvas stroke completion barrier (B1) queues a held-begin pencil move behind begin and the initial cell","GbcMapCanvas stroke completion barrier (B1) serializes three independently held drag applies and end waits for every cell"]}
+{"id":"B1-end-chain","green":1,"red":0,"restored":1,"byteIdentical":true,"failures":[]}
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: assertion kill B1-end-chain
+    at file:///C:/Programming%20Projects/PokeMap/docs/superpowers/task-reports/pokemap-plan-7-gbc-editing/b1-coordinator-mutations.mjs:57:3
+    at ModuleJob.run (node:internal/modules/esm/module_job:413:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:660:26)
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5) {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: false,
+  expected: true,
+  operator: '==',
+  diff: 'simple'
+}
+
+Node.js v24.13.0

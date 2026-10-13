@@ -1829,26 +1829,29 @@ describe("GbcWorldCanvas: context menu (Plan 6c E3)", () => {
     return mounted;
   }
 
-  it("right-click on a map shows Open in Map view and a disabled Edit here carrying the Plan 7 hint", async () => {
+  it("right-click on a map shows Open in Map view and an enabled Edit here (Plan 7 Task 5b: no Plan 7 hint)", async () => {
     const onOpenMap = vi.fn();
-    const { canvas } = await mountMenu({ onOpenMap });
+    const onEditHere = vi.fn();
+    const { canvas } = await mountMenu({ onOpenMap, onEditHere });
     fireEvent.contextMenu(canvas, { clientX: 100, clientY: 100 });
-    const edit = screen.getByRole("menuitem", { name: /GBC editing arrives with Plan 7/ }) as HTMLButtonElement;
-    expect(edit.textContent).toContain("Edit here");
-    expect(edit.disabled).toBe(true);
-    expect(edit.getAttribute("aria-disabled")).toBe("true");
+    const edit = screen.getByRole("menuitem", { name: "Edit here" }) as HTMLButtonElement;
+    expect(edit.disabled).toBe(false);
+    expect(edit.getAttribute("aria-disabled")).not.toBe("true");
+    expect(edit.textContent).not.toContain("Plan 7");
     fireEvent.click(edit);
-    expect(screen.getByRole("menu")).toBeTruthy(); // a disabled item does not close the menu
+    expect(onEditHere).toHaveBeenCalledWith("Route17");
+    expect(screen.queryByRole("menu")).toBeNull(); // selecting closes the menu
+    fireEvent.contextMenu(canvas, { clientX: 100, clientY: 100 });
     fireEvent.click(screen.getByRole("menuitem", { name: "Open in Map view" }));
     expect(onOpenMap).toHaveBeenCalledWith("Route17");
     expect(screen.queryByRole("menu")).toBeNull();
   });
 
   it("right-click on a badge adds the conflict item after the map items", async () => {
-    const { canvas } = await mountMenu({ onOpenMap: vi.fn() });
+    const { canvas } = await mountMenu({ onOpenMap: vi.fn(), onEditHere: vi.fn() });
     fireEvent.contextMenu(canvas, { clientX: 165, clientY: 10 });
     expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
-      "Open in Map view", "Edit here GBC editing arrives with Plan 7", "Accept conflict",
+      "Open in Map view", "Edit here", "Accept conflict",
     ]);
   });
 
@@ -1861,12 +1864,12 @@ describe("GbcWorldCanvas: context menu (Plan 6c E3)", () => {
   });
 
   it("the ContextMenu key and Shift+F10 open the menu for the selected map, at its centre", async () => {
-    const { canvas } = await mountMenu({ onOpenMap: vi.fn() });
+    const { canvas } = await mountMenu({ onOpenMap: vi.fn(), onEditHere: vi.fn() });
     fireEvent.keyDown(canvas, { key: "ContextMenu" });
     expect(screen.queryByRole("menu")).toBeNull(); // nothing selected
     fireEvent.click(canvas, { clientX: 100, clientY: 100 });
     expect(fireEvent.keyDown(canvas, { key: "ContextMenu" })).toBe(false); // preventDefault
-    expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Open in Map view", "Edit here GBC editing arrives with Plan 7"]);
+    expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Open in Map view", "Edit here"]);
     const menu = screen.getByRole("menu");
     expect([menu.style.left, menu.style.top]).toEqual(["100px", "100px"]); // Route17's centre ((0+15)*5+25, 20*5)
     fireEvent.keyDown(menu, { key: "Escape" });

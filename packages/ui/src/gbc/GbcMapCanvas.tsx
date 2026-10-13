@@ -1,7 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { RGBA } from "@pokemap/core/src/render/raster.js";
 import { drawGbcGrid, drawGbcCollision, drawGbcEvents, gbcStepInfo, type GbcQuadrantInfo, type GbcQuadrantKey, type GbcStepInfo } from "@pokemap/core/src/gbc/render/overlays.js";
 import type { GbcMapPayload } from "@pokemap/core/src/gbc/wire.js";
+import type { GbcMapEvents } from "@pokemap/core/src/gbc/model/types.js";
+import type { GbcStamp } from "@pokemap/core/src/gbc/edit/paint.js";
+import type { GbcEventKind } from "@pokemap/core/src/gbc/edit/events.js";
+import type { UseGbcEditSessionResult } from "./hooks/useGbcEditSession.js";
 import type { GbcTimeOfDay } from "./time.js";
 import { EncounterBorder, type EncounterBorderEntry } from "../components/EncounterBorder.js";
 import { BORDER_BAND, borderSideFromConnections } from "../encounters/borderSide.js";
@@ -10,7 +14,7 @@ import { useMapEncounterSummaries } from "../encounters/useMapEncounterSummaries
 import { ZOOM_LEVELS, zoomAboutPivot, type MapView, type Zoom } from "../components/mapView.js";
 
 /**
- * The read-only GBC map view (Plan 6b Task 4). Plan Q2 accepts this as a
+ * The GBC map view (Plan 6b Task 4: read-only; Plan 7 Task 5 added the optional editing props, see below). Plan Q2 accepts this as a
  * deliberate DUPLICATE of `MapCanvas.tsx`'s pan/zoom/viewport mechanics
  * (about 150 lines), not a shared extraction -- `MapCanvas.tsx` is ~70%
  * editing machinery (paint-stroke race safety, event drag) this view has no
@@ -53,6 +57,23 @@ import { ZOOM_LEVELS, zoomAboutPivot, type MapView, type Zoom } from "../compone
  * `components/mapView.ts` (`zoomAboutPivot` is re-exported below and
  * unit-tested in this canvas's own test file).
  *
+ * **Editing (Plan 7 Task 5), all optional and additive** -- with none of the editing props the component is the
+ * read-only view above, byte for byte (its image URL included). The paint chain is ported from `MapCanvas.tsx`,
+ * not improvised; each piece below cites its postmortem:
+ * - `pendingPaintRef` / `beginStroke().then(...)` / `endActiveStroke` awaiting it (`MapCanvas.tsx:242-269`,
+ *   `796-857`): a fast click's mouseup must not put `endStroke` on the wire before the begin-then-apply chain.
+ * - Captured rect/shift start, applied once at mouseup; `mouseleave` ends the stroke (`MapCanvas.tsx:892-906`).
+ * - `paintVersion`, debounced, folded into the image URL as `&v=` only while a session exists
+ *   (`MapCanvas.tsx:147-155`, `292-347`, `416-420`). One deliberate change: GBA's `skipNextBumpRef` swallows the
+ *   first `blocks` change because its session hook re-seeds in a later tick; `useGbcEditSession` derives its seed
+ *   at render, so there is no such tick and the same flag would swallow the first real paint. A map switch is
+ *   excluded by comparing the previous map name instead. `v=` is also omitted while it is 0, so an unpainted map
+ *   requests the exact read-only URL.
+ * - Event select/drag precedence is `MapCanvas.tsx:712-761`: left button only; with no tool an event under the
+ *   cursor is selected and dragged, else the click falls through to pan; the dropper only reads; any other tool
+ *   opens a stroke.
+ * Units: paint targets are BLOCKS (32 px); event hit-testing and moves are STEPS (16 px, `clientToStep`).
+ *
  * Unlike GBA, hover does NOT depend on which overlays are toggled on:
  * `gbcStepInfo` is a pure function of the payload and the hovered step,
  * independent of `toggles` -- the status strip always shows the real
@@ -63,6 +84,9 @@ import { ZOOM_LEVELS, zoomAboutPivot, type MapView, type Zoom } from "../compone
 const BORDER_RINGS = 1;
 /** Native px per world unit (one block) -- the encounter border's own scale, and what its band is measured in. */
 const BLOCK_PX = 32;
+/** The composite px of the map's top-left block (the border ring), on both axes: what the World view's in-context
+ *  overlay aligns the composite by. Derived from the ring count, never a literal. */
+export const GBC_COMPOSITE_ORIGIN = BORDER_RINGS * BLOCK_PX;
 
 /** The canvas's whole pan/zoom state, updated as ONE value (fix round, spec
  *  review finding 1) -- see the header comment for why this replaced two
@@ -77,13 +101,63 @@ interface Toggles {
 }
 const NO_TOGGLES: Toggles = { grid: false, collision: false, events: false };
 
+/** A bare pointer at one event -- selection is the parent's, resolved against the live events. */
+export interface GbcEventRef {
+  kind: GbcEventKind;
+  index: number;
+}
+
+export type GbcActiveTool = { kind: "pencil" | "rect" | "bucket" | "shift" | "dropper"; stamp?: GbcStamp };
+
+/** Debounce for the `&v=` bump: a stroke yields several fresh `blocks` arrays (see `MapCanvas.tsx:147-155`). */
+const PAINT_VERSION_DEBOUNCE_MS = 200;
+
+/** First event on step (sx,sy), scanning object, warp, coord, bg (the order and rationale of `MapCanvas.tsx:27-53`). */
+function findEventAt(events: GbcMapEvents, sx: number, sy: number): GbcEventRef | null {
+  const lists: [GbcEventKind, { x: number; y: number }[]][] = [["object", events.objects], ["warp", events.warps], ["coord", events.coords], ["bg", events.bgs]];
+  for (const [kind, list] of lists) {
+    const index = list.findIndex((e) => e.x === sx && e.y === sy);
+    if (index !== -1) return { kind, index };
+  }
+  return null;
+}
+
+function eventPosition(events: GbcMapEvents, ref: GbcEventRef | null | undefined): { x: number; y: number } | null {
+  if (!ref) return null;
+  const list = ref.kind === "object" ? events.objects : ref.kind === "warp" ? events.warps : ref.kind === "coord" ? events.coords : events.bgs;
+  const e = list[ref.index];
+  return e ? { x: e.x, y: e.y } : null;
+}
+
 export interface GbcMapCanvasProps {
   mapName: string;
   data: GbcMapPayload;
   time: GbcTimeOfDay;
+  /** Present once editing is mounted for this map. Its blocks and events win over `data`'s for drawing, hover
+   *  and the dropper. Absent: the read-only view. */
+  editSession?: UseGbcEditSessionResult;
+  activeTool?: GbcActiveTool | null;
+  /** Dropper: fired with the clicked block's id as a 1x1 stamp. */
+  onDropperPick?: (stamp: GbcStamp) => void;
+  /** The selected event, for the selection ring only (the hit test always re-derives from the click). */
+  selectedEvent?: GbcEventRef | null;
+  /** Fires with the hit event, or `null` on a click that hits nothing. Engaged only with no active tool. */
+  onSelectEvent?: (ref: GbcEventRef | null) => void;
+  /** Once, on mouseup, with the event's dropped STEP -- never per mousemove. */
+  onMoveEvent?: (next: { kind: GbcEventKind; index: number; x: number; y: number }) => void;
+  /** A failed paint request's message, for the parent's error banner. */
+  onEditError?: (message: string) => void;
   /** Fired with the hovered block's metatile id, or `null` on leave -- drives
    *  `GbcMetatilePalette`'s highlight. */
   hoveredMetatile?: (id: number | null) => void;
+  /** Controlled pan/zoom (Plan 7 Task 5b, as `MapCanvas`'s E1 prop). When present the canvas renders exactly this
+   *  view, owns no view state, and never auto-fits on image load: a gesture reports the view it would produce
+   *  through `onViewChange` instead of applying it. Do not switch between controlled and uncontrolled in one mount. */
+  view?: GbcView;
+  onViewChange?: (next: GbcView) => void;
+  /** Hides the toolbar, legend and status strip (root modifier `map-canvas--chromeless`), so the stage box equals the
+   *  root box. Used by the World view's in-context overlay. Painting is unchanged. */
+  chromeless?: boolean;
 }
 
 const hex = (n: number) => `0x${n.toString(16)}`;
@@ -207,24 +281,78 @@ export function parseColorToken(value: string): RGBA {
   return FALLBACK_COLOR;
 }
 
-export function GbcMapCanvas({ mapName, data, time, hoveredMetatile }: GbcMapCanvasProps) {
-  const { layout } = data;
+export function GbcMapCanvas({ mapName, data: payload, time, hoveredMetatile, editSession, activeTool, onDropperPick, selectedEvent, onSelectEvent, onMoveEvent, onEditError, view: controlledView, onViewChange, chromeless }: GbcMapCanvasProps) {
+  const { layout } = payload;
+  // The session's live blocks/events win once a session exists; every effect below reads `data` by name and
+  // never needs to know which source it came from (the trick of `MapCanvas.tsx:215-228`).
+  const sessionBlocks = editSession?.blocks;
+  const sessionEvents = editSession?.events;
+  const data = useMemo<GbcMapPayload>(
+    () => (sessionBlocks && sessionEvents ? { ...payload, blocks: sessionBlocks, events: sessionEvents } : payload),
+    [payload, sessionBlocks, sessionEvents],
+  );
 
   const imgRef = useRef<HTMLImageElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const baseCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
+  // Completion chain for begin, every queued apply and end; no request in a stroke outruns its predecessor.
+  const pendingPaintRef = useRef<Promise<void>>(Promise.resolve());
+  // True from an edit stroke's mousedown to its end, so onMouseLeave can tell "a stroke is open" from "a session
+  // exists" and not fire endStroke on every ordinary mouse-out (MapCanvas.tsx:264-269).
+  const strokeOpenRef = useRef(false);
+  const canvasVisitRef = useRef<object>({});
+  const strokeRef = useRef<{ visit: object; begun: boolean; start: { x: number; y: number }; end: () => Promise<void> } | null>(null);
+  useLayoutEffect(() => {
+    canvasVisitRef.current = {};
+    return () => {
+      canvasVisitRef.current = {};
+      const stroke = strokeRef.current;
+      if (stroke) pendingPaintRef.current = pendingPaintRef.current.then(async () => {
+        if (stroke.begun) await stroke.end();
+      }).catch(() => {}); // The retired visit cannot display a late error.
+      strokeRef.current = null;
+      strokeOpenRef.current = false;
+    };
+  }, [mapName]);
+  const ownsStroke = (stroke: NonNullable<typeof strokeRef.current>) => stroke.visit === canvasVisitRef.current;
+  // The last block a pencil stroke painted: a held drag fires many mousemoves per block, and each would be a
+  // parallel POST. Reset when the stroke ends.
+  const lastCellRef = useRef<string | null>(null);
+  // An event-marker drag in progress: its identity and the STEP it started on (MapCanvas.tsx:270-280).
+  const eventDragRef = useRef<{ kind: GbcEventKind; index: number; x: number; y: number } | null>(null);
+  const [dragPreview, setDragPreview] = useState<{ x: number; y: number } | null>(null);
+  const [paintVersion, setPaintVersion] = useState(0);
+  const paintVersionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prevBlocksRef = useRef({ mapName, blocks: data.blocks });
 
-  const [imgLoaded, setImgLoaded] = useState(false);
+  const [loadedImageUrl, setLoadedImageUrl] = useState<string | null>(null);
   const [toggles, setToggles] = useState<Toggles>(NO_TOGGLES);
   // The encounter border toggle (B4) is DOM over the viewport, not a canvas overlay, so it is not in
   // `Toggles`. It remembers WHICH map it was turned on for: a map switch reads as off in the very first
   // render (no fetch for the new map, no stale border), with no reset effect needed.
   const [encountersFor, setEncountersFor] = useState<string | null>(null);
   const encountersOn = encountersFor === mapName;
-  const [view, setView] = useState<GbcView>({ zoom: 1, pan: { x: 0, y: 0 } });
+  // ONE view value (never a setter inside an updater). Controlled: `next` is computed OUTSIDE any updater from the
+  // latest `view` prop and reported (a no-op result is not); uncontrolled: set state (MapCanvas.tsx's E1 pattern).
+  const [ownView, setOwnView] = useState<GbcView>({ zoom: 1, pan: { x: 0, y: 0 } });
+  const controlled = controlledView !== undefined;
+  const view = controlledView ?? ownView;
   const { zoom, pan } = view;
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  // Through a ref so an inline callback never changes `updateView`'s identity (it would re-create `fit`).
+  const onViewChangeRef = useRef(onViewChange);
+  onViewChangeRef.current = onViewChange;
+  const updateView = useCallback(
+    (next: GbcView | ((v: GbcView) => GbcView)) => {
+      if (!controlled) return setOwnView(next);
+      const n = typeof next === "function" ? next(viewRef.current) : next;
+      if (n !== viewRef.current) onViewChangeRef.current?.(n);
+    },
+    [controlled],
+  );
   const [hover, setHover] = useState<GbcStepInfo | null>(null);
   const [compositeVersion, setCompositeVersion] = useState(0);
   const [viewport, setViewport] = useState({ w: 0, h: 0 });
@@ -245,8 +373,8 @@ export function GbcMapCanvas({ mapName, data, time, hoveredMetatile }: GbcMapCan
 
   const pixelWidth = (layout.width + 2 * BORDER_RINGS) * 32;
   const pixelHeight = (layout.height + 2 * BORDER_RINGS) * 32;
-  const originX = BORDER_RINGS * 32;
-  const originY = BORDER_RINGS * 32;
+  const originX = GBC_COMPOSITE_ORIGIN;
+  const originY = GBC_COMPOSITE_ORIGIN;
 
   // Encounter border side (B4): the first of left, top, right, bottom with no connection (GBC's
   // directions are already compass names).
@@ -254,11 +382,37 @@ export function GbcMapCanvas({ mapName, data, time, hoveredMetatile }: GbcMapCan
   const side = useMemo(() => borderSideFromConnections(new Set(connections.map((c) => c.direction))), [connections]);
   const { summaries: encounterSummaries, error: encounterError } = useMapEncounterSummaries(mapName, "gbc", encountersOn);
 
-  const imageUrl = `/api/render/${encodeURIComponent(mapName)}.png?border=${BORDER_RINGS}&time=${time}`;
+  // `v=` only with a session and only once something was painted: a read-only viewer never needs a cache-bust,
+  // and an unpainted map keeps today's exact URL (MapCanvas.tsx:416-420).
+  const imageUrl = `/api/render/${encodeURIComponent(mapName)}.png?border=${BORDER_RINGS}&time=${time}${editSession && paintVersion > 0 ? `&v=${paintVersion}` : ""}`;
+  const imgLoaded = loadedImageUrl === imageUrl;
+
+  // Debounced bump when the blocks change for the SAME map (a real edit, undo, discard or a refetched payload).
+  // paintVersion is deliberately never reset (MapCanvas.tsx:315-324: "same URL => same content" stays structural).
+  useEffect(() => {
+    const prev = prevBlocksRef.current;
+    prevBlocksRef.current = { mapName, blocks: data.blocks };
+    if (prev.mapName !== mapName) {
+      if (paintVersionTimerRef.current) clearTimeout(paintVersionTimerRef.current);
+      paintVersionTimerRef.current = null;
+      return;
+    }
+    if (prev.blocks === data.blocks || !editSession) return;
+    if (paintVersionTimerRef.current) clearTimeout(paintVersionTimerRef.current);
+    paintVersionTimerRef.current = setTimeout(() => setPaintVersion((v) => v + 1), PAINT_VERSION_DEBOUNCE_MS);
+    // editSession is read only as a presence flag; the blocks identity is the trigger.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mapName, data.blocks]);
+  useEffect(() => () => {
+    if (paintVersionTimerRef.current) clearTimeout(paintVersionTimerRef.current);
+  }, []);
 
   // Fresh overlays/hover on a real map switch -- mirrors MapCanvas.tsx:371-374.
   useEffect(() => {
     setToggles(NO_TOGGLES);
+    // A stroke belongs to the map it began on: a switch mid-stroke must not let its end/apply go out for the new one.
+    strokeOpenRef.current = false;
+    lastCellRef.current = null;
     setEncountersFor(null); // only so A -> B -> A does not bring A's border back; B is already off without it
     setHover(null);
     hoveredMetatile?.(null);
@@ -270,18 +424,19 @@ export function GbcMapCanvas({ mapName, data, time, hoveredMetatile }: GbcMapCan
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapName]);
 
-  // Reset per URL (map OR time switch) -- MapCanvas.tsx:386-388's own
-  // reasoning: the composite effect must wait for THIS image's real load,
-  // not recomposite whatever the <img> still shows from the previous url.
+  // Read THIS URL's mounted image: a cached image may already be decoded before its load event is observed.
+  // An unconditional false here can also overwrite an early onLoad and strand the composite until another load.
+  // Incomplete/failed images still wait for the normal load path (naturalWidth excludes complete-but-broken images).
   useEffect(() => {
-    setImgLoaded(false);
+    const img = imgRef.current;
+    setLoadedImageUrl(img?.complete === true && img.naturalWidth > 0 ? imageUrl : null);
   }, [imageUrl]);
 
   const fit = useCallback(() => {
     const vw = viewport.w || pixelWidth;
     const vh = viewport.h || pixelHeight;
     // Encounters on: the content is the image plus one band on the border's side, so the sprites fit too.
-    setView(
+    updateView(
       fitWithBand({
         pw: pixelWidth,
         ph: pixelHeight,
@@ -292,7 +447,7 @@ export function GbcMapCanvas({ mapName, data, time, hoveredMetatile }: GbcMapCan
         side,
       }),
     );
-  }, [pixelWidth, pixelHeight, viewport, encountersOn, side]);
+  }, [pixelWidth, pixelHeight, viewport, encountersOn, side, updateView]);
 
   // Once per real map open -- NOT on a time switch, which reuses the same
   // imgLoaded false->true cycle (MapCanvas.tsx:401-416's own fittedForMapRef
@@ -300,7 +455,7 @@ export function GbcMapCanvas({ mapName, data, time, hoveredMetatile }: GbcMapCan
   const fittedForMapRef = useRef<string | null>(null);
   useEffect(() => {
     if (imgLoaded && fittedForMapRef.current !== mapName) {
-      fit();
+      if (!controlled) fit(); // controlled: the parent owns placement, no auto-fit
       fittedForMapRef.current = mapName;
     }
     // `fit` is intentionally excluded: it is a NEW function identity on
@@ -312,7 +467,7 @@ export function GbcMapCanvas({ mapName, data, time, hoveredMetatile }: GbcMapCan
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [imgLoaded, mapName]);
 
-  const onImgLoad = () => setImgLoaded(true);
+  const onImgLoad = () => setLoadedImageUrl(imageUrl);
 
   const anyOverlay = toggles.grid || toggles.collision || toggles.events;
 
@@ -374,7 +529,20 @@ export function GbcMapCanvas({ mapName, data, time, hoveredMetatile }: GbcMapCan
     ctx.imageSmoothingEnabled = false;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(base, 0, 0, pixelWidth, pixelHeight, pan.x, pan.y, pixelWidth * zoom, pixelHeight * zoom);
-  }, [compositeVersion, zoom, pan, pixelWidth, pixelHeight, viewport]);
+
+    // Selection ring / drag preview: ephemeral, on the stage canvas only (MapCanvas.tsx:559-590), one STEP square.
+    // The drag candidate wins over the static ring: it is where the event is about to land.
+    const highlight = dragPreview ?? eventPosition(data.events, selectedEvent);
+    if (highlight) {
+      const size = 16 * zoom;
+      const color = getComputedStyle(document.documentElement).getPropertyValue("--overlay-selection").trim() || "#22d3ee";
+      ctx.save();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = dragPreview ? "#ffffff" : color;
+      ctx.strokeRect(pan.x + (originX + highlight.x * 16) * zoom + 1, pan.y + (originY + highlight.y * 16) * zoom + 1, size - 2, size - 2);
+      ctx.restore();
+    }
+  }, [compositeVersion, zoom, pan, pixelWidth, pixelHeight, viewport, dragPreview, selectedEvent, data.events, originX, originY]);
 
   const toggle = (key: keyof Toggles) => setToggles((t) => ({ ...t, [key]: !t[key] }));
 
@@ -385,7 +553,7 @@ export function GbcMapCanvas({ mapName, data, time, hoveredMetatile }: GbcMapCan
     [mapName, pan.x, pan.y, pixelWidth, pixelHeight, zoom, side, encounterSummaries],
   );
 
-  const applyZoom = (next: Zoom, pivotX: number, pivotY: number) => setView((v) => zoomAboutPivot(v, next, pivotX, pivotY));
+  const applyZoom = (next: Zoom, pivotX: number, pivotY: number) => updateView((v) => zoomAboutPivot(v, next, pivotX, pivotY));
 
   const centerPivot = (): [number, number] => {
     const c = canvasRef.current;
@@ -414,7 +582,7 @@ export function GbcMapCanvas({ mapName, data, time, hoveredMetatile }: GbcMapCan
     // correct and avoids tearing down/re-attaching the native listener on
     // every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [zoom]);
+  }, [zoom, updateView]);
 
   const hoverAt = (clientX: number, clientY: number) => {
     const canvas = canvasRef.current;
@@ -426,21 +594,151 @@ export function GbcMapCanvas({ mapName, data, time, hoveredMetatile }: GbcMapCan
     hoveredMetatile?.(info ? info.metatileId : null);
   };
 
+  /** Client -> block cell (32 px), unclamped: a rect's second corner may overshoot the edge (the server skips it). */
+  const rawBlockAt = (e: React.MouseEvent<HTMLCanvasElement>): { x: number; y: number } => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    return {
+      x: Math.floor(((e.clientX - rect.left - pan.x) / zoom - originX) / BLOCK_PX),
+      y: Math.floor(((e.clientY - rect.top - pan.y) / zoom - originY) / BLOCK_PX),
+    };
+  };
+  /** Same, but null outside the layout -- a single-cell paint must not fire on a click off the map. */
+  const blockAt = (e: React.MouseEvent<HTMLCanvasElement>): { x: number; y: number } | null => {
+    const c = rawBlockAt(e);
+    return c.x < 0 || c.y < 0 || c.x >= layout.width || c.y >= layout.height ? null : c;
+  };
+  /** Client -> event step (16 px), through the real `clientToStep`. */
+  const rawStepAt = (e: React.MouseEvent<HTMLCanvasElement>): { x: number; y: number } => {
+    const { sx, sy } = clientToStep(e.clientX, e.clientY, e.currentTarget.getBoundingClientRect(), pan, zoom, originX, originY);
+    return { x: sx, y: sy };
+  };
+
+  // Every paint request's rejection lands here -- a visible error, never an unhandled rejection.
+  const fail = (e: unknown) => onEditError?.(e instanceof Error ? e.message : "Paint failed.");
+
+  const paintAt = (bx: number, by: number): Promise<void> => {
+    if (!editSession || !activeTool?.stamp) return Promise.resolve();
+    if (activeTool.kind === "pencil") {
+      return editSession.applyPaint({ tool: "pencil", targets: [{ x: bx, y: by }], stamp: activeTool.stamp, origin: { x: bx, y: by } });
+    } else if (activeTool.kind === "bucket") {
+      const cell = activeTool.stamp.cells[0];
+      if (!cell) return Promise.resolve(); // nothing sensible to fill with
+      return editSession.applyPaint({ tool: "bucket", x: bx, y: by, replacement: { metatileId: cell.metatileId } });
+    }
+    // rect/shift are applied once, at mouseup (endActiveStroke).
+    return Promise.resolve();
+  };
+
   const onMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (e.button !== 0) return;
+    // Ahead of the paint branch, and only with no active tool (MapCanvas.tsx:714-732). Unclamped on purpose:
+    // a click just past the edge can still deselect. A miss falls through to the pan drag below.
+    if (onSelectEvent && !activeTool) {
+      const step = rawStepAt(e);
+      const hit = findEventAt(data.events, step.x, step.y);
+      onSelectEvent(hit);
+      if (hit) {
+        eventDragRef.current = { kind: hit.kind, index: hit.index, x: step.x, y: step.y };
+        return;
+      }
+    }
+    // Dropper: only READS a block; no stroke lifecycle (MapCanvas.tsx:733-743).
+    if (editSession && activeTool?.kind === "dropper") {
+      const cell = blockAt(e);
+      const block = cell && data.blocks[cell.y * layout.width + cell.x];
+      if (block) onDropperPick?.({ width: 1, height: 1, cells: [{ metatileId: block.metatileId }] });
+      return;
+    }
+    if (editSession && activeTool) {
+      const cell = blockAt(e);
+      if (!cell) return;
+      strokeOpenRef.current = true;
+      const stroke = { visit: canvasVisitRef.current, begun: false, start: cell, end: editSession.endStroke };
+      strokeRef.current = stroke;
+      lastCellRef.current = `${cell.x},${cell.y}`;
+      // One retained chain includes the previous end, this begin and the first apply's round trip.
+      pendingPaintRef.current = pendingPaintRef.current.then(async () => {
+        if (!ownsStroke(stroke)) return;
+        await editSession.beginStroke();
+        stroke.begun = true;
+        if (!ownsStroke(stroke)) return;
+        return paintAt(cell.x, cell.y);
+      }).catch((e) => { if (ownsStroke(stroke)) fail(e); });
+      return;
+    }
     dragRef.current = { x: e.clientX, y: e.clientY, panX: pan.x, panY: pan.y };
   };
 
   const onMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (eventDragRef.current) {
+      setDragPreview(rawStepAt(e)); // local candidate only; onMoveEvent fires once, on mouseup
+      return;
+    }
+    // A held pencil queues each new cell behind begin and every preceding apply round trip.
+    const stroke = strokeRef.current;
+    if (editSession && activeTool?.kind === "pencil" && strokeOpenRef.current && stroke && e.buttons === 1) {
+      const cell = blockAt(e);
+      if (cell && lastCellRef.current !== `${cell.x},${cell.y}`) {
+        lastCellRef.current = `${cell.x},${cell.y}`;
+        pendingPaintRef.current = pendingPaintRef.current.then(() => {
+          if (ownsStroke(stroke) && stroke.begun) return paintAt(cell.x, cell.y);
+        }).catch((e) => { if (ownsStroke(stroke)) fail(e); });
+      }
+      return;
+    }
     if (dragRef.current) {
       const d = dragRef.current;
-      setView((v) => ({ ...v, pan: { x: d.panX + (e.clientX - d.x), y: d.panY + (e.clientY - d.y) } }));
+      updateView((v) => ({ ...v, pan: { x: d.panX + (e.clientX - d.x), y: d.panY + (e.clientY - d.y) } }));
     } else {
       hoverAt(e.clientX, e.clientY);
     }
   };
 
-  const onMouseUp = () => {
+  /**
+   * Ends whatever stroke onMouseDown opened -- shared by mouseup and by mouseleave (a drag that leaves the canvas
+   * never fires onMouseUp, which used to leave the server's stroke open and squash two edits into one undo step).
+   * `end` is the finishing block for rect/shift; null from mouseleave, which abandons an unapplied rect/shift.
+   *
+   * Append to the same completion chain using the captured start. End waits for every
+   * apply round trip (not just its invocation), and a following stroke also waits for this end round trip.
+   */
+  const endActiveStroke = (end: { x: number; y: number } | null) => {
+    const stroke = strokeRef.current;
+    if (!editSession || !strokeOpenRef.current || !stroke) return;
+    strokeRef.current = null;
+    strokeOpenRef.current = false;
+    lastCellRef.current = null;
+    const strokeFail = (e: unknown) => { if (ownsStroke(stroke)) fail(e); };
+    pendingPaintRef.current = pendingPaintRef.current.then(async () => {
+      if (!ownsStroke(stroke) && !stroke.begun) return;
+      const start = ownsStroke(stroke) && stroke.begun ? stroke.start : null;
+      if (activeTool?.kind === "shift" && start && end) {
+        await editSession.applyPaint({ tool: "shift", dx: end.x - start.x, dy: end.y - start.y }).catch(strokeFail);
+      } else if (activeTool?.kind === "rect" && activeTool.stamp && start && end) {
+        await editSession
+          .applyPaint({ tool: "rect", x0: start.x, y0: start.y, x1: end.x, y1: end.y, stamp: activeTool.stamp, origin: start })
+          .catch(strokeFail); // a rejected apply must not leave the stroke open forever
+      }
+      // A retired visit stops queued paint but still finishes an issued stroke on its captured old session.
+      await editSession.endStroke();
+    }).catch((e) => { if (ownsStroke(stroke)) fail(e); });
+  };
+
+  const onMouseUp = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    // Locals BEFORE the ref is nulled, never read after (the stale-ref mistake MapCanvas.tsx:860-871 postmortems).
+    if (eventDragRef.current) {
+      const step = rawStepAt(e);
+      const { kind, index, x: ox, y: oy } = eventDragRef.current;
+      eventDragRef.current = null;
+      setDragPreview(null);
+      if (step.x !== ox || step.y !== oy) onMoveEvent?.({ kind, index, x: step.x, y: step.y });
+      return;
+    }
+    // The dropper never began a stroke, so it must not end one.
+    if (editSession && activeTool && activeTool.kind !== "dropper") {
+      endActiveStroke(rawBlockAt(e));
+      return;
+    }
     dragRef.current = null;
   };
 
@@ -448,6 +746,12 @@ export function GbcMapCanvas({ mapName, data, time, hoveredMetatile }: GbcMapCan
     dragRef.current = null;
     setHover(null);
     hoveredMetatile?.(null);
+    // A drag that exits is abandoned where it was, not committed (no reliable final cell).
+    if (eventDragRef.current) {
+      eventDragRef.current = null;
+      setDragPreview(null);
+    }
+    if (editSession && activeTool && strokeOpenRef.current) endActiveStroke(null);
   };
 
   const quadrantLabel = (key: GbcQuadrantKey, label: string, info: GbcQuadrantInfo, hovered: boolean) => {
@@ -456,8 +760,8 @@ export function GbcMapCanvas({ mapName, data, time, hoveredMetatile }: GbcMapCan
   };
 
   return (
-    <section className="map-canvas gbc-map-canvas" aria-label={`${mapName} canvas`}>
-      <div className="map-canvas__toolbar">
+    <section className={`map-canvas gbc-map-canvas${chromeless ? " map-canvas--chromeless" : ""}`} aria-label={`${mapName} canvas`}>
+      {!chromeless && <div className="map-canvas__toolbar">
         <div className="map-canvas__zoom" role="group" aria-label="Zoom">
           {ZOOM_LEVELS.map((z) => (
             <button key={z} type="button" className="map-canvas__btn" aria-pressed={zoom === z} onClick={() => applyZoom(z, ...centerPivot())}>
@@ -482,9 +786,9 @@ export function GbcMapCanvas({ mapName, data, time, hoveredMetatile }: GbcMapCan
             Encounters
           </button>
         </div>
-      </div>
+      </div>}
 
-      {(anyOverlay || encountersOn) && (
+      {!chromeless && (anyOverlay || encountersOn) && (
         <div className="map-canvas__legend">
           {toggles.grid && (
             <span className="map-canvas__legend-item">
@@ -554,7 +858,7 @@ export function GbcMapCanvas({ mapName, data, time, hoveredMetatile }: GbcMapCan
         />
       </div>
 
-      <div className="map-canvas__status">
+      {!chromeless && <div className="map-canvas__status">
         <span className="map-canvas__status-item">
           tileset {data.tileset.constName} · {data.metatileCount} metatiles · {layout.width}×{layout.height}
           {!layout.writable ? " · not writable" : ""}
@@ -572,7 +876,7 @@ export function GbcMapCanvas({ mapName, data, time, hoveredMetatile }: GbcMapCan
         ) : (
           <span className="map-canvas__status-item map-canvas__hover map-canvas__hover--empty">Hover the map…</span>
         )}
-      </div>
+      </div>}
     </section>
   );
 }

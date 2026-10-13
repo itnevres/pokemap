@@ -26,12 +26,14 @@ describe("GbcMetatilePalette", () => {
     expect(img?.getAttribute("loading")).toBe("lazy");
   });
 
-  it("gives the grid role=list and every cell role=listitem (quality review finding 5)", () => {
+  it("the grid is a labelled group of real buttons (Plan 7 Task 5 fix round: was list/listitem)", () => {
     const { container } = render(<GbcMetatilePalette mapName="Foo" time="day" tilesetName="T" metatileCount={3} />);
-    expect(container.querySelector(".gbc-metatile-palette__grid")?.getAttribute("role")).toBe("list");
+    const grid = container.querySelector(".gbc-metatile-palette__grid");
+    expect(grid?.getAttribute("role")).toBe("group");
+    expect(grid?.getAttribute("aria-label")).toBe("Metatiles");
     const cells = container.querySelectorAll(".gbc-metatile-palette__cell");
     expect(cells.length).toBe(3);
-    for (const cell of cells) expect(cell.getAttribute("role")).toBe("listitem");
+    for (const cell of cells) expect(cell.tagName).toBe("BUTTON");
   });
 
   it("encodes the map name in the thumbnail src", () => {
@@ -51,24 +53,19 @@ describe("GbcMetatilePalette", () => {
     expect(screen.getByText("TilesetJohto · 640 metatiles")).toBeTruthy();
   });
 
-  it("aria-current moves with highlightId, and the selected class follows it", () => {
+  it("the hover class follows highlightId; hover is NOT aria-current (that marks the picked cell only)", () => {
     const { rerender, container } = render(
       <GbcMetatilePalette mapName="Foo" time="day" tilesetName="T" metatileCount={3} highlightId={0} />,
     );
     const cellAt = (id: number) => container.querySelectorAll(".gbc-metatile-palette__cell")[id] as HTMLElement;
 
-    expect(cellAt(0).getAttribute("aria-current")).toBe("true");
-    expect(cellAt(1).getAttribute("aria-current")).toBeNull();
     expect(cellAt(0).className).toContain("gbc-metatile-palette__cell--selected");
+    expect(cellAt(1).className).not.toContain("gbc-metatile-palette__cell--selected");
+    expect(container.querySelector('[aria-current="true"]')).toBeNull();
 
     rerender(<GbcMetatilePalette mapName="Foo" time="day" tilesetName="T" metatileCount={3} highlightId={2} />);
-    expect(cellAt(0).getAttribute("aria-current")).toBeNull();
-    expect(cellAt(2).getAttribute("aria-current")).toBe("true");
+    expect(cellAt(0).className).not.toContain("gbc-metatile-palette__cell--selected");
     expect(cellAt(2).className).toContain("gbc-metatile-palette__cell--selected");
-  });
-
-  it("no cell is aria-current when highlightId is null", () => {
-    const { container } = render(<GbcMetatilePalette mapName="Foo" time="day" tilesetName="T" metatileCount={3} highlightId={null} />);
     expect(container.querySelector('[aria-current="true"]')).toBeNull();
   });
 

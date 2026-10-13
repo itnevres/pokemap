@@ -2741,12 +2741,75 @@ input {
   color: var(--text-on-accent);
 }
 
-/* Plan 6b Task 4: GbcMetatilePalette -- a read-only right-side panel next to
+/* Plan 7 Task 5 (quality review I4): the GBC palette and inspector share ONE 260px right-hand rail, palette on top
+   (taking the spare height, scrolling inside), inspector below (capped at half the height, scrolling inside), so
+   the canvas keeps the rest of the row. min-width: 0 on every flex child so long text cannot widen the rail. */
+.gbc-map-editing__rail {
+  width: 260px;
+  flex: 0 0 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--border);
+}
+
+.gbc-map-editing__rail > .gbc-metatile-palette {
+  width: auto;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+  border-left: none;
+}
+
+.gbc-map-editing__rail > .event-inspector {
+  width: auto;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-height: 50%;
+  border-left: none;
+  border-top: 1px solid var(--border);
+}
+
+/* Plan 7 Task 5: GbcEventInspector additions. Duplicate and Delete share the actions row (space between, not
+   the lone right-aligned Delete GBA has); the renumber warning is a warn-bordered note at the panel top. */
+.event-inspector__actions--gbc {
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.event-inspector__warnings {
+  padding: var(--space-2);
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--warn);
+  border-radius: 4px;
+  font-size: var(--text-xs);
+  color: var(--text-primary);
+  min-width: 0;
+}
+
+.event-inspector__warnings-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.event-inspector__warnings-list {
+  margin: var(--space-1) 0 0;
+  padding-left: var(--space-4);
+  font-family: var(--font-data);
+  word-break: break-word;
+}
+
+/* Plan 6b Task 4: GbcMetatilePalette -- a right-side panel next to
    GbcMapCanvas, the same fixed-width-sidebar shape .event-inspector already
    uses on MapCanvas's own other edge (DESIGN.md's own layout section: "an
    inspector, a metatile palette"). Unlike GBA's .metatile-palette (a
    horizontal strip above the canvas, built for drag-select painting), this
-   is read-only and vertical -- there is nothing here to paint with. */
+   is vertical, and picks a single metatile per click (Plan 7 Task 5); with no
+   editing mounted its cells are inert. */
 .gbc-metatile-palette {
   width: 260px;
   flex: 0 0 auto;
@@ -2773,6 +2836,8 @@ input {
 }
 
 .gbc-metatile-palette__cell {
+  padding: 0;
+  background: transparent;
   width: 32px;
   height: 32px;
   display: flex;
@@ -2788,6 +2853,22 @@ input {
 .gbc-metatile-palette__cell--selected {
   background: var(--bg-selected);
   border-color: var(--border-strong);
+}
+
+/* Plan 7 Task 5: the PICKED cell (what pencil/rect/bucket paint with) -- accent border, distinct from the
+   hover highlight above (bg-selected + border-strong). */
+.gbc-metatile-palette__cell--picked {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.gbc-metatile-palette__cell:not(:disabled) {
+  cursor: pointer;
+}
+
+.gbc-metatile-palette__cell:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
 }
 
 .gbc-metatile-palette__thumb {

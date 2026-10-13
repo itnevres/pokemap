@@ -15,8 +15,8 @@
  * `/api/render/:name.png` and `/api/metatile/:map/:id.png`. Task 2 (this
  * file's current state) adds `/api/world`, `/api/encounters/:map`,
  * `/api/where/:species`, `/api/coverage` and `/api/species`. D3 adds
- * `/api/warps/:map` and dungeon CRUD. Plan 7 adds `/api/edit/*` once GBC
- * gets a write path.
+ * `/api/warps/:map` and dungeon CRUD. Plan 7 Task 4 adds `/api/edit/*`
+ * (`gbcEditRoutes.ts`).
  *
  * The payload-assembly logic for `/api/groups` and `/api/map/:name` is
  * factored into `buildGbcGroupsPayload`/`buildGbcMapPayload` below, exported
@@ -57,18 +57,19 @@ import { parseBorder, parseTime, type TimeOfDay } from "@pokemap/cli/src/args.js
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { loadGbcFrontSprite, loadGbcPicFolders } from "@pokemap/core/src/gbc/load/sprites.js";
 import { readBody, type ProjectHandler } from "./index.js";
+import { createGbcEditRoutes } from "./gbcEditRoutes.js";
 
 /**
  * GBA-only routes this server refuses with a 501, the HTTP counterpart of
  * the CLI's `refuseIfGbc` (`cli/src/index.ts`) -- the route exists, but this
- * family doesn't support it (yet, in Plan 7's case for `/api/edit/*`). An
- * unmatched path stays a plain 404, handled by the fallthrough below, not by
- * this list. `sign/` and `edit/` end in a required next segment
- * (`sign/NAME/suggestions`, `edit/NAME/undo`), so their own alternatives
- * don't need a trailing `(/|$)`. `warps/` and `dungeons` left this list in
- * D3; `species/NAME/icon.png` left in Plan 6c B1.
+ * family doesn't support it. An unmatched path stays a plain 404, handled by
+ * the fallthrough below, not by this list. `sign/` ends in a required next
+ * segment (`sign/NAME/suggestions`), so its alternative doesn't need a
+ * trailing `(/|$)`. `warps/` and `dungeons` left this list in D3;
+ * `species/NAME/icon.png` left in Plan 6c B1; `edit/` left in Plan 7 Task 4
+ * (`gbcEditRoutes.ts` serves it).
  */
-const GBA_ONLY_ROUTE_RE = /^\/api\/(world\/dungeons$|sign\/|edit\/)/;
+const GBA_ONLY_ROUTE_RE = /^\/api\/(world\/dungeons$|sign\/)/;
 
 /**
  * `decodeURIComponent` throws a `URIError` on a malformed percent-escape
@@ -314,6 +315,19 @@ export function createGbcProjectHandler(root: string): ProjectHandler {
   let coverageCache: GbcCoverage | undefined;
   const getCoverage = () => (coverageCache ??= gbcCoverage(proj));
 
+  // Plan 7 Task 4: the edit routes and their session store. A commit writes
+  // blocks and events to disk, so everything derived from either goes stale:
+  // the rendered PNGs (blocks), the warp links (event positions) and the
+  // coverage table. worldCache and metatileCache depend on neither (connections
+  // and metatile art), so they stay.
+  const edit = createGbcEditRoutes(proj, {
+    onCommit: () => {
+      renderCache.clear();
+      warpCache = undefined;
+      coverageCache = undefined;
+    },
+  });
+
   // loadGbcSpeciesConstants reads one small .asm file and returns it already
   // sorted -- cheap even uncached, but the answer can't change for the life
   // of this read-only-decomp process (I8), same reasoning as every other
@@ -398,6 +412,16 @@ export function createGbcProjectHandler(root: string): ProjectHandler {
         const timeResult = parseTimeParam(url);
         if ("error" in timeResult) return send(400, { error: timeResult.error });
         const { time } = timeResult;
+
+        // An open edit session renders its own, possibly unsaved, blocks --
+        // and neither reads nor writes renderCache, which only ever holds the
+        // on-disk state (a discard must show it again).
+        const sessionBlocks = edit.openBlocks(name);
+        if (sessionBlocks) {
+          const live = encodePng(renderGbcMap(proj, name, { border, time, blocksOverride: sessionBlocks }));
+          res.writeHead(200, { "content-type": "image/png", "cache-control": "no-cache" });
+          return res.end(live);
+        }
 
         const key = `${name}:${border}:${time}`;
         let png = renderCache.get(key);
@@ -653,6 +677,8 @@ export function createGbcProjectHandler(root: string): ProjectHandler {
         return send(200, getSpecies());
       }
 
+      if (edit.handle(req, url, send)) return;
+
       if (GBA_ONLY_ROUTE_RE.test(url.pathname)) {
         return send(501, { error: `${url.pathname} is not supported for gbc (pokecrystal-family) projects yet` });
       }
@@ -669,13 +695,11 @@ export function createGbcProjectHandler(root: string): ProjectHandler {
     project: proj,
     info: { family: "gbc", root: proj.root },
     handle,
-    // GBC has no edit-session store yet (this file's own header comment:
-    // "Plan 7 adds /api/edit/* once GBC gets a write path") -- nothing can
-    // ever be dirty, so the hub's unsaved-edits guard never blocks swapping
-    // a GBC handler out.
-    dirtyMaps: () => [],
+    // The hub's unsaved-edits guard (409 on /api/hub/open) reads this.
+    dirtyMaps: () => edit.dirtyMaps(),
     dispose: () => {
       disposed = true;
+      edit.closeAll();
     },
   };
 }
