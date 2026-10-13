@@ -1,0 +1,2002 @@
+3b7051f refactor(ui): WorldCanvas consumes shared world context
+88340ad refactor(ui): GbcWorldCanvas consumes shared world context (fixes M6 +/- from a non-level zoom)
+de33885 refactor(ui): shared world context hook and overlay (tests; GBC M6 witness red)
+ .../task-2-red.log                                 | 957 +++++++++++++++++++++
+ packages/ui/src/components/WorldCanvas.tsx         | 132 +--
+ packages/ui/src/gbc/GbcWorldCanvas.tsx             | 143 +--
+ packages/ui/src/shared/WorldContextOverlay.tsx     |  41 +
+ packages/ui/src/shared/useWorldContext.ts          | 133 +++
+ .../ui/test/gbc/GbcWorldCanvasContextZoom.test.tsx | 126 +++
+ packages/ui/test/shared/useWorldContext.test.tsx   | 249 ++++++
+ 7 files changed, 1542 insertions(+), 239 deletions(-)
+diff --git a/docs/superpowers/task-reports/pokemap-plan-8-ui-engine-adapter/task-2-red.log b/docs/superpowers/task-reports/pokemap-plan-8-ui-engine-adapter/task-2-red.log
+new file mode 100644
+index 0000000..6be0fbb
+--- /dev/null
++++ b/docs/superpowers/task-reports/pokemap-plan-8-ui-engine-adapter/task-2-red.log
+@@ -0,0 +1,957 @@
++
++ RUN  v2.1.9 C:/Users/Serve/AppData/Local/Temp/claude/C--Programming-Projects-PokeMap/74282ac3-2fdd-538d-8b69-bd7f0f0598f7/scratchpad/p8
++
++ ❯ packages/ui/test/shared/useWorldContext.test.tsx (0 test)
++ ❯ packages/ui/test/gbc/GbcWorldCanvasContextZoom.test.tsx (2 tests | 2 failed) 2234ms
++   × GbcWorldCanvas: in-context +/- from a non-level zoom (Plan 8 M6) > + steps up to 4x (not down to 1x) 1172ms
++     → expected 'false' to be 'true' // Object.is equality
++
++Ignored nodes: comments, script, style
++[36m<html>[39m
++  [36m<head />[39m
++  [36m<body>[39m
++    [36m<div>[39m
++      [36m<section[39m
++        [33maria-label[39m=[32m"World canvas"[39m
++        [33mclass[39m=[32m"world-canvas"[39m
++      [36m>[39m
++        [36m<div[39m
++          [33mclass[39m=[32m"world-canvas__toolbar"[39m
++        [36m>[39m
++          [36m<div[39m
++            [33mclass[39m=[32m"world-canvas__toolbar-group"[39m
++          [36m>[39m
++            [36m<button[39m
++              [33mclass[39m=[32m"map-canvas__btn"[39m
++              [33mdisabled[39m=[32m""[39m
++              [33mtype[39m=[32m"button"[39m
++            [36m>[39m
++              [0mFit all[0m
++            [36m</button>[39m
++          [36m</div>[39m
++          [36m<div[39m
++            [33mclass[39m=[32m"world-canvas__toolbar-group"[39m
++          [36m>[39m
++            [36m<button[39m
++              [33maria-checked[39m=[32m"false"[39m
++              [33maria-label[39m=[32m"Warps"[39m
++              [33mclass[39m=[32m"world-canvas__switch"[39m
++              [33mrole[39m=[32m"switch"[39m
++              [33mtype[39m=[32m"button"[39m
++            [36m>[39m
++              [36m<span[39m
++                [33mclass[39m=[32m"world-canvas__switch-thumb"[39m
++              [36m/>[39m
++            [36m</button>[39m
++            [36m<span[39m
++              [33mclass[39m=[32m"world-canvas__switch-label"[39m
++            [36m>[39m
++              [0mWarps [0m
++              [0moff[0m
++            [36m</span>[39m
++          [36m</div>[39m
++          [36m<div[39m
++            [33mclass[39m=[32m"world-canvas__toolbar-group"[39m
++          [36m>[39m
++            [36m<span[39m
++              [33mclass[39m=[32m"world-canvas__toolbar-error"[39m
++              [33mrole[39m=[32m"alert"[39m
++            [36m>[39m
++              [0mEncounter data unavailable for [0m
++              [0m2[0m
++              [0m map[0m
++              [0ms[0m
++            [36m</span>[39m
++          [36m</div>[39m
++          [36m<div[39m
++            [33mclass[39m=[32m"world-canvas__toolbar-group world-canvas__toolbar-group--grow"[39m
++          [36m>[39m
++            [36m<div[39m
++              [33mclass[39m=[32m"species-spotlight"[39m
++            [36m>[39m
++              [36m<input[39m
++                [33maria-expanded[39m=[32m"false"[39m
++                [33maria-label[39m=[32m"Species spotlight"[39m
++                [33mclass[39m=[32m"species-spotlight__input"[39m
++                [33mplaceholder[39m=[32m"Spotlight a species…"[39m
++                [33mrole[39m=[32m"combobox"[39m
++                [33mtype[39m=[32m"search"[39m
++                [33mvalue[39m=[32m""[39m
++              [36m/>[39m
++            [36m</div>[39m
++            [36m<span[39m
++              [33mclass[39m=[32m"world-canvas__toolbar-error"[39m
++              [33mrole[39m=[32m"alert"[39m
++            [36m>[39m
++              [0mCoverage lenses unavailable: [0m
++              [0munexpected fetch /api/coverage[0m
++            [36m</span>[39m
++          [36m</div>[39m
++        [36m</div>[39m
++        [36m<div[39m
++          [33mclass[39m=[32m"world-canvas__legend"[39m
++        [36m>[39m
++          [36m<span[39m
++            [33mclass[39m=[32m"world-canvas__legend-item"[39m
++          [36m>[39m
++            [36m<i[39m
++              [33mclass[39m=[32m"world-canvas__swatch world-canvas__swatch--conflict"[39m
++            [36m/>[39m
++            [0m Conflict[0m
++          [36m</span>[39m
++          [36m<span[39m
++            [33mclass[39m=[32m"world-canvas__legend-item"[39m
++          [36m>[39m
++            [36m<i[39m
++              [33mclass[39m=[32m"world-canvas__swatch world-canvas__swatch--conflict world-canvas__swatch--accepted"[39m
++            [36m/>[39m
++            [0m Accepted[0m
++          [36m</span>[39m
++        [36m</div>[39m
++        [36m<div[39m
++          [33mclass[39m=[32m"world-canvas__body"[39m
++        [36m>[39m
++          [36m<div[39m
++            [33mclass[39m=[32m"world-canvas__viewport"[39m
++          [36m>[39m
++            [36m<canvas[39m
++              [33maria-label[39m=[32m"World map. Plus or minus zooms; Enter opens the selected map."[39m
++              [33mclass[39m=[32m"world-canvas__stage"[39m
++              [33mheight[39m=[32m"200"[39m
++              [33mtabindex[39m=[32m"0"[39m
++              [33mwidth[39m=[32m"200"[39m
++            [36m/>[39m
++            [36m<div[39m
++              [33mclass[39m=[32m"encounter-border"[39m
++            [36m>[39m
++              [36m<div[39m
++                [33mclass[39m=[32m"encounter-border__control"[39m
++              [36m>[39m
++                [36m<button[39m
++                  [33maria-pressed[39m=[32m"false"[39m
++                  [33mclass[39m=[32m"encounter-border__toggle"[39m
++                  [33mtype[39m=[32m"button"[39m
++                [36m>[39m
++                  [0mEncounters[0m
++                [36m</button>[39m
++              [36m</div>[39m
++            [36m</div>[39m
++            [36m<div[39m
++              [33mclass[39m=[32m"world-canvas__context"[39m
++            [36m>[39m
++              [36m<div[39m
++                [33maria-hidden[39m=[32m"true"[39m
++                [33mclass[39m=[32m"world-canvas__context-dim"[39m
++              [36m/>[39m
++              [36m<div[39m
++                [33mdata-testid[39m=[32m"ov-canvas"[39m
++                [33mdata-view[39m=[32m"{\"zoom\":1,\"pan\":{\"x\":75,\"y\":75}}"[39m
++              [36m/>[39m
++              [36m<div[39m
++                [33maria-label[39m=[32m"Editing MapB in place"[39m
++                [33mclass[39m=[32m"world-canvas__context-bar"[39m
++                [33mrole[39m=[32m"group"[39m
++              [36m>[39m
++                [36m<span[39m
++                  [33mclass[39m=[32m"world-canvas__context-name"[39m
++                [36m>[39m
++                  [0mMapB[0m
++                [36m</span>[39m
++                [36m<div[39m
++                  [33maria-label[39m=[32m"Zoom"[39m
++                  [33mclass[39m=[32m"world-canvas__context-zoom"[39m
++                  [33mrole[39m=[32m"group"[39m
++                [36m>[39m
++                  [36m<button[39m
++                    [33maria-pressed[39m=[32m"true"[39m
++                    [33mclass[39m=[32m"map-canvas__btn"[39m
++                    [33mtype[39m=[32m"button"[39m
++                  [36m>[39m
++                    [0m1[0m
++                    [0m×[0m
++                  [36m</button>[39m
++                  [36m<button[39m
++                    [33maria-pressed[39m=[32m"false"[39m
++                    [33mclass[39m=[32m"map-canvas__btn"[39m
++                    [33mtype[39m=[32m"button"[39m
++                  [36m>[39m
++                    [0m2[0m
++                    [0m×[0m
++                  [36m</button>[39m
++                  [36m<button[39m
++                    [33maria-pressed[39m=[32m"false"[39m
++                    [33mclass[39m=[32m"map-canvas__btn"[39m
++                    [33mtype[39m=[32m"button"[39m
++                  [36m>[39m
++                    [0m4[0m
++                    [0m×[0m
++                  [36m</button>[39m
++                [36m</div>[39m
++                [36m<button[39m
++                  [33maria-label[39m=[32m"Done editing MapB"[39m
++                  [33mclass[39m=[32m"map-canvas__btn"[39m
++                  [33mtype[39m=[32m"button"[39m
++                [36m>[39m
++                  [0mDone[0m
++                [36m</button>[39m
++              [36m</div>[39m
++            [36m</div>[39m
++          [36m</div>[39m
++        [36m</div>[39m
++        [36m<div[39m
++          [33mclass[39m=[32m"world-canvas__status"[39m
++        [36m>[39m
++          [36m<span[39m
++            [33mclass[39m=[32m"world-canvas__status-item"[39m
++          [36m>[39m
++            [0m1[0m
++            [0m components · [0m
++            [0m2[0m
++            [0m maps · zoom [0m
++            [0m100[0m
++            [0m% · [0m
++            [0m0[0m
++            [0m conflicts · [0m
++            [0m0[0m
++            [0m accepted[0m
++          [36m</span>[39m
++          [36m<span[39m
++            [33mclass[39m=[32m"world-canvas__status-item world-canvas__hover world-canvas__hover--empty"[39m
++          [36m>[39m
++            [0mHover the world…[0m
++          [36m</span>[39m
++        [36m</div>[39m
++      [36m</section>[39m
++    [36m</div>[39m
++  [36m</body>[39m
++[36m</html>[39m
++   × GbcWorldCanvas: in-context +/- from a non-level zoom (Plan 8 M6) > - steps down to 2x 1059ms
++     → expected 'false' to be 'true' // Object.is equality
++
++Ignored nodes: comments, script, style
++[36m<html>[39m
++  [36m<head />[39m
++  [36m<body>[39m
++    [36m<div>[39m
++      [36m<section[39m
++        [33maria-label[39m=[32m"World canvas"[39m
++        [33mclass[39m=[32m"world-canvas"[39m
++      [36m>[39m
++        [36m<div[39m
++          [33mclass[39m=[32m"world-canvas__toolbar"[39m
++        [36m>[39m
++          [36m<div[39m
++            [33mclass[39m=[32m"world-canvas__toolbar-group"[39m
++          [36m>[39m
++            [36m<button[39m
++              [33mclass[39m=[32m"map-canvas__btn"[39m
++              [33mdisabled[39m=[32m""[39m
++              [33mtype[39m=[32m"button"[39m
++            [36m>[39m
++              [0mFit all[0m
++            [36m</button>[39m
++          [36m</div>[39m
++          [36m<div[39m
++            [33mclass[39m=[32m"world-canvas__toolbar-group"[39m
++          [36m>[39m
++            [36m<button[39m
++              [33maria-checked[39m=[32m"false"[39m
++              [33maria-label[39m=[32m"Warps"[39m
++              [33mclass[39m=[32m"world-canvas__switch"[39m
++              [33mrole[39m=[32m"switch"[39m
++              [33mtype[39m=[32m"button"[39m
++            [36m>[39m
++              [36m<span[39m
++                [33mclass[39m=[32m"world-canvas__switch-thumb"[39m
++              [36m/>[39m
++            [36m</button>[39m
++            [36m<span[39m
++              [33mclass[39m=[32m"world-canvas__switch-label"[39m
++            [36m>[39m
++              [0mWarps [0m
++              [0moff[0m
++            [36m</span>[39m
++          [36m</div>[39m
++          [36m<div[39m
++            [33mclass[39m=[32m"world-canvas__toolbar-group"[39m
++          [36m>[39m
++            [36m<span[39m
++              [33mclass[39m=[32m"world-canvas__toolbar-error"[39m
++              [33mrole[39m=[32m"alert"[39m
++            [36m>[39m
++              [0mEncounter data unavailable for [0m
++              [0m2[0m
++              [0m map[0m
++              [0ms[0m
++            [36m</span>[39m
++          [36m</div>[39m
++          [36m<div[39m
++            [33mclass[39m=[32m"world-canvas__toolbar-group world-canvas__toolbar-group--grow"[39m
++          [36m>[39m
++            [36m<div[39m
++              [33mclass[39m=[32m"species-spotlight"[39m
++            [36m>[39m
++              [36m<input[39m
++                [33maria-expanded[39m=[32m"false"[39m
++                [33maria-label[39m=[32m"Species spotlight"[39m
++                [33mclass[39m=[32m"species-spotlight__input"[39m
++                [33mplaceholder[39m=[32m"Spotlight a species…"[39m
++                [33mrole[39m=[32m"combobox"[39m
++                [33mtype[39m=[32m"search"[39m
++                [33mvalue[39m=[32m""[39m
++              [36m/>[39m
++            [36m</div>[39m
++            [36m<span[39m
++              [33mclass[39m=[32m"world-canvas__toolbar-error"[39m
++              [33mrole[39m=[32m"alert"[39m
++            [36m>[39m
++              [0mCoverage lenses unavailable: [0m
++              [0munexpected fetch /api/coverage[0m
++            [36m</span>[39m
++          [36m</div>[39m
++        [36m</div>[39m
++        [36m<div[39m
++          [33mclass[39m=[32m"world-canvas__legend"[39m
++        [36m>[39m
++          [36m<span[39m
++            [33mclass[39m=[32m"world-canvas__legend-item"[39m
++          [36m>[39m
++            [36m<i[39m
++              [33mclass[39m=[32m"world-canvas__swatch world-canvas__swatch--conflict"[39m
++            [36m/>[39m
++            [0m Conflict[0m
++          [36m</span>[39m
++          [36m<span[39m
++            [33mclass[39m=[32m"world-canvas__legend-item"[39m
++          [36m>[39m
++            [36m<i[39m
++              [33mclass[39m=[32m"world-canvas__swatch world-canvas__swatch--conflict world-canvas__swatch--accepted"[39m
++            [36m/>[39m
++            [0m Accepted[0m
++          [36m</span>[39m
++        [36m</div>[39m
++        [36m<div[39m
++          [33mclass[39m=[32m"world-canvas__body"[39m
++        [36m>[39m
++          [36m<div[39m
++            [33mclass[39m=[32m"world-canvas__viewport"[39m
++          [36m>[39m
++            [36m<canvas[39m
++              [33maria-label[39m=[32m"World map. Plus or minus zooms; Enter opens the selected map."[39m
++              [33mclass[39m=[32m"world-canvas__stage"[39m
++              [33mheight[39m=[32m"200"[39m
++              [33mtabindex[39m=[32m"0"[39m
++              [33mwidth[39m=[32m"200"[39m
++            [36m/>[39m
++            [36m<div[39m
++              [33mclass[39m=[32m"encounter-border"[39m
++            [36m>[39m
++              [36m<div[39m
++                [33mclass[39m=[32m"encounter-border__control"[39m
++              [36m>[39m
++                [36m<button[39m
++                  [33maria-pressed[39m=[32m"false"[39m
++                  [33mclass[39m=[32m"encounter-border__toggle"[39m
++                  [33mtype[39m=[32m"button"[39m
++                [36m>[39m
++                  [0mEncounters[0m
++                [36m</button>[39m
++              [36m</div>[39m
++            [36m</div>[39m
++            [36m<div[39m
++              [33mclass[39m=[32m"world-canvas__context"[39m
++            [36m>[39m
++              [36m<div[39m
++                [33maria-hidden[39m=[32m"true"[39m
++                [33mclass[39m=[32m"world-canvas__context-dim"[39m
++              [36m/>[39m
++              [36m<div[39m
++                [33mdata-testid[39m=[32m"ov-canvas"[39m
++                [33mdata-view[39m=[32m"{\"zoom\":1,\"pan\":{\"x\":75,\"y\":75}}"[39m
++              [36m/>[39m
++              [36m<div[39m
++                [33maria-label[39m=[32m"Editing MapB in place"[39m
++                [33mclass[39m=[32m"world-canvas__context-bar"[39m
++                [33mrole[39m=[32m"group"[39m
++              [36m>[39m
++                [36m<span[39m
++                  [33mclass[39m=[32m"world-canvas__context-name"[39m
++                [36m>[39m
++                  [0mMapB[0m
++                [36m</span>[39m
++                [36m<div[39m
++                  [33maria-label[39m=[32m"Zoom"[39m
++                  [33mclass[39m=[32m"world-canvas__context-zoom"[39m
++                  [33mrole[39m=[32m"group"[39m
++                [36m>[39m
++                  [36m<button[39m
++                    [33maria-pressed[39m=[32m"true"[39m
++                    [33mclass[39m=[32m"map-canvas__btn"[39m
++                    [33mtype[39m=[32m"button"[39m
++                  [36m>[39m
++                    [0m1[0m
++                    [0m×[0m
++                  [36m</button>[39m
++                  [36m<button[39m
++                    [33maria-pressed[39m=[32m"false"[39m
++                    [33mclass[39m=[32m"map-canvas__btn"[39m
++                    [33mtype[39m=[32m"button"[39m
++                  [36m>[39m
++                    [0m2[0m
++                    [0m×[0m
++                  [36m</button>[39m
++                  [36m<button[39m
++                    [33maria-pressed[39m=[32m"false"[39m
++                    [33mclass[39m=[32m"map-canvas__btn"[39m
++                    [33mtype[39m=[32m"button"[39m
++                  [36m>[39m
++                    [0m4[0m
++                    [0m×[0m
++                  [36m</button>[39m
++                [36m</div>[39m
++                [36m<button[39m
++                  [33maria-label[39m=[32m"Done editing MapB"[39m
++                  [33mclass[39m=[32m"map-canvas__btn"[39m
++                  [33mtype[39m=[32m"button"[39m
++                [36m>[39m
++                  [0mDone[0m
++                [36m</button>[39m
++              [36m</div>[39m
++            [36m</div>[39m
++          [36m</div>[39m
++        [36m</div>[39m
++        [36m<div[39m
++          [33mclass[39m=[32m"world-canvas__status"[39m
++        [36m>[39m
++          [36m<span[39m
++            [33mclass[39m=[32m"world-canvas__status-item"[39m
++          [36m>[39m
++            [0m1[0m
++            [0m components · [0m
++            [0m2[0m
++            [0m maps · zoom [0m
++            [0m100[0m
++            [0m% · [0m
++            [0m0[0m
++            [0m conflicts · [0m
++            [0m0[0m
++            [0m accepted[0m
++          [36m</span>[39m
++          [36m<span[39m
++            [33mclass[39m=[32m"world-canvas__status-item world-canvas__hover world-canvas__hover--empty"[39m
++          [36m>[39m
++            [0mHover the world…[0m
++          [36m</span>[39m
++        [36m</div>[39m
++      [36m</section>[39m
++    [36m</div>[39m
++  [36m</body>[39m
++[36m</html>[39m
++
++⎯⎯⎯⎯⎯⎯ Failed Suites 1 ⎯⎯⎯⎯⎯⎯⎯
++
++ FAIL  packages/ui/test/shared/useWorldContext.test.tsx [ packages/ui/test/shared/useWorldContext.test.tsx ]
++Error: Failed to resolve import "../../src/shared/useWorldContext.js" from "packages/ui/test/shared/useWorldContext.test.tsx". Does the file exist?
++  Plugin: vite:import-analysis
++  File: C:/Users/Serve/AppData/Local/Temp/claude/C--Programming-Projects-PokeMap/74282ac3-2fdd-538d-8b69-bd7f0f0598f7/scratchpad/p8/packages/ui/test/shared/useWorldContext.test.tsx:5:55
++  3  |  import { renderHook, act } from "@testing-library/react";
++  4  |  import { StrictMode, useState } from "react";
++  5  |  import { useWorldContext } from "../../src/shared/useWorldContext.js";
++     |                                   ^
++  6  |  const PLACEMENT = { x: 0, y: 0, width: 10, height: 10 };
++  7  |  function makeCanvas(w = 200, h = 200) {
++ ❯ TransformPluginContext._formatError node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js:49258:41
++ ❯ TransformPluginContext.error node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js:49253:16
++ ❯ normalizeUrl node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js:64307:23
++ ❯ node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js:64439:39
++ ❯ TransformPluginContext.transform node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js:64366:7
++ ❯ PluginContainer.transform node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js:49099:18
++ ❯ loadAndTransform node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js:51978:27
++
++⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
++
++⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
++
++ FAIL  packages/ui/test/gbc/GbcWorldCanvasContextZoom.test.tsx > GbcWorldCanvas: in-context +/- from a non-level zoom (Plan 8 M6) > + steps up to 4x (not down to 1x)
++AssertionError: expected 'false' to be 'true' // Object.is equality
++
++Ignored nodes: comments, script, style
++[36m<html>[39m
++  [36m<head />[39m
++  [36m<body>[39m
++    [36m<div>[39m
++      [36m<section[39m
++        [33maria-label[39m=[32m"World canvas"[39m
++        [33mclass[39m=[32m"world-canvas"[39m
++      [36m>[39m
++        [36m<div[39m
++          [33mclass[39m=[32m"world-canvas__toolbar"[39m
++        [36m>[39m
++          [36m<div[39m
++            [33mclass[39m=[32m"world-canvas__toolbar-group"[39m
++          [36m>[39m
++            [36m<button[39m
++              [33mclass[39m=[32m"map-canvas__btn"[39m
++              [33mdisabled[39m=[32m""[39m
++              [33mtype[39m=[32m"button"[39m
++            [36m>[39m
++              [0mFit all[0m
++            [36m</button>[39m
++          [36m</div>[39m
++          [36m<div[39m
++            [33mclass[39m=[32m"world-canvas__toolbar-group"[39m
++          [36m>[39m
++            [36m<button[39m
++              [33maria-checked[39m=[32m"false"[39m
++              [33maria-label[39m=[32m"Warps"[39m
++              [33mclass[39m=[32m"world-canvas__switch"[39m
++              [33mrole[39m=[32m"switch"[39m
++              [33mtype[39m=[32m"button"[39m
++            [36m>[39m
++              [36m<span[39m
++                [33mclass[39m=[32m"world-canvas__switch-thumb"[39m
++              [36m/>[39m
++            [36m</button>[39m
++            [36m<span[39m
++              [33mclass[39m=[32m"world-canvas__switch-label"[39m
++            [36m>[39m
++              [0mWarps [0m
++              [0moff[0m
++            [36m</span>[39m
++          [36m</div>[39m
++          [36m<div[39m
++            [33mclass[39m=[32m"world-canvas__toolbar-group"[39m
++          [36m>[39m
++            [36m<span[39m
++              [33mclass[39m=[32m"world-canvas__toolbar-error"[39m
++              [33mrole[39m=[32m"alert"[39m
++            [36m>[39m
++              [0mEncounter data unavailable for [0m
++              [0m2[0m
++              [0m map[0m
++              [0ms[0m
++            [36m</span>[39m
++          [36m</div>[39m
++          [36m<div[39m
++            [33mclass[39m=[32m"world-canvas__toolbar-group world-canvas__toolbar-group--grow"[39m
++          [36m>[39m
++            [36m<div[39m
++              [33mclass[39m=[32m"species-spotlight"[39m
++            [36m>[39m
++              [36m<input[39m
++                [33maria-expanded[39m=[32m"false"[39m
++                [33maria-label[39m=[32m"Species spotlight"[39m
++                [33mclass[39m=[32m"species-spotlight__input"[39m
++                [33mplaceholder[39m=[32m"Spotlight a species…"[39m
++                [33mrole[39m=[32m"combobox"[39m
++                [33mtype[39m=[32m"search"[39m
++                [33mvalue[39m=[32m""[39m
++              [36m/>[39m
++            [36m</div>[39m
++            [36m<span[39m
++              [33mclass[39m=[32m"world-canvas__toolbar-error"[39m
++              [33mrole[39m=[32m"alert"[39m
++            [36m>[39m
++              [0mCoverage lenses unavailable: [0m
++              [0munexpected fetch /api/coverage[0m
++            [36m</span>[39m
++          [36m</div>[39m
++        [36m</div>[39m
++        [36m<div[39m
++          [33mclass[39m=[32m"world-canvas__legend"[39m
++        [36m>[39m
++          [36m<span[39m
++            [33mclass[39m=[32m"world-canvas__legend-item"[39m
++          [36m>[39m
++            [36m<i[39m
++              [33mclass[39m=[32m"world-canvas__swatch world-canvas__swatch--conflict"[39m
++            [36m/>[39m
++            [0m Conflict[0m
++          [36m</span>[39m
++          [36m<span[39m
++            [33mclass[39m=[32m"world-canvas__legend-item"[39m
++          [36m>[39m
++            [36m<i[39m
++              [33mclass[39m=[32m"world-canvas__swatch world-canvas__swatch--conflict world-canvas__swatch--accepted"[39m
++            [36m/>[39m
++            [0m Accepted[0m
++          [36m</span>[39m
++        [36m</div>[39m
++        [36m<div[39m
++          [33mclass[39m=[32m"world-canvas__body"[39m
++        [36m>[39m
++          [36m<div[39m
++            [33mclass[39m=[32m"world-canvas__viewport"[39m
++          [36m>[39m
++            [36m<canvas[39m
++              [33maria-label[39m=[32m"World map. Plus or minus zooms; Enter opens the selected map."[39m
++              [33mclass[39m=[32m"world-canvas__stage"[39m
++              [33mheight[39m=[32m"200"[39m
++              [33mtabindex[39m=[32m"0"[39m
++              [33mwidth[39m=[32m"200"[39m
++            [36m/>[39m
++            [36m<div[39m
++              [33mclass[39m=[32m"encounter-border"[39m
++            [36m>[39m
++              [36m<div[39m
++                [33mclass[39m=[32m"encounter-border__control"[39m
++              [36m>[39m
++                [36m<button[39m
++                  [33maria-pressed[39m=[32m"false"[39m
++                  [33mclass[39m=[32m"encounter-border__toggle"[39m
++                  [33mtype[39m=[32m"button"[39m
++                [36m>[39m
++                  [0mEncounters[0m
++                [36m</button>[39m
++              [36m</div>[39m
++            [36m</div>[39m
++            [36m<div[39m
++              [33mclass[39m=[32m"world-canvas__context"[39m
++            [36m>[39m
++              [36m<div[39m
++                [33maria-hidden[39m=[32m"true"[39m
++                [33mclass[39m=[32m"world-canvas__context-dim"[39m
++              [36m/>[39m
++              [36m<div[39m
++                [33mdata-testid[39m=[32m"ov-canvas"[39m
++                [33mdata-view[39m=[32m"{\"zoom\":1,\"pan\":{\"x\":75,\"y\":75}}"[39m
++              [36m/>[39m
++              [36m<div[39m
++                [33maria-label[39m=[32m"Editing MapB in place"[39m
++                [33mclass[39m=[32m"world-canvas__context-bar"[39m
++                [33mrole[39m=[32m"group"[39m
++              [36m>[39m
++                [36m<span[39m
++                  [33mclass[39m=[32m"world-canvas__context-name"[39m
++                [36m>[39m
++                  [0mMapB[0m
++                [36m</span>[39m
++                [36m<div[39m
++                  [33maria-label[39m=[32m"Zoom"[39m
++                  [33mclass[39m=[32m"world-canvas__context-zoom"[39m
++                  [33mrole[39m=[32m"group"[39m
++                [36m>[39m
++                  [36m<button[39m
++                    [33maria-pressed[39m=[32m"true"[39m
++                    [33mclass[39m=[32m"map-canvas__btn"[39m
++                    [33mtype[39m=[32m"button"[39m
++                  [36m>[39m
++                    [0m1[0m
++                    [0m×[0m
++                  [36m</button>[39m
++                  [36m<button[39m
++                    [33maria-pressed[39m=[32m"false"[39m
++                    [33mclass[39m=[32m"map-canvas__btn"[39m
++                    [33mtype[39m=[32m"button"[39m
++                  [36m>[39m
++                    [0m2[0m
++                    [0m×[0m
++                  [36m</button>[39m
++                  [36m<button[39m
++                    [33maria-pressed[39m=[32m"false"[39m
++                    [33mclass[39m=[32m"map-canvas__btn"[39m
++                    [33mtype[39m=[32m"button"[39m
++                  [36m>[39m
++                    [0m4[0m
++                    [0m×[0m
++                  [36m</button>[39m
++                [36m</div>[39m
++                [36m<button[39m
++                  [33maria-label[39m=[32m"Done editing MapB"[39m
++                  [33mclass[39m=[32m"map-canvas__btn"[39m
++                  [33mtype[39m=[32m"button"[39m
++                [36m>[39m
++                  [0mDone[0m
++                [36m</button>[39m
++              [36m</div>[39m
++            [36m</div>[39m
++          [36m</div>[39m
++        [36m</div>[39m
++        [36m<div[39m
++          [33mclass[39m=[32m"world-canvas__status"[39m
++        [36m>[39m
++          [36m<span[39m
++            [33mclass[39m=[32m"world-canvas__status-item"[39m
++          [36m>[39m
++            [0m1[0m
++            [0m components · [0m
++            [0m2[0m
++            [0m maps · zoom [0m
++            [0m100[0m
++            [0m% · [0m
++            [0m0[0m
++            [0m conflicts · [0m
++            [0m0[0m
++            [0m accepted[0m
++          [36m</span>[39m
++          [36m<span[39m
++            [33mclass[39m=[32m"world-canvas__status-item world-canvas__hover world-canvas__hover--empty"[39m
++          [36m>[39m
++            [0mHover the world…[0m
++          [36m</span>[39m
++        [36m</div>[39m
++      [36m</section>[39m
++    [36m</div>[39m
++  [36m</body>[39m
++[36m</html>[39m
++
++Expected: "true"
++Received: "false"
++
++ ❯ packages/ui/test/gbc/GbcWorldCanvasContextZoom.test.tsx:118:47
++    116|     const { canvas } = await wheeledOut();
++    117|     fireEvent.keyDown(canvas, { key: "+" });
++    118|     await waitFor(() => expect(pressed("4×")).toBe("true"));
++       |                                               ^
++    119|   });
++    120| 
++ ❯ runWithExpensiveErrorDiagnosticsDisabled node_modules/@testing-library/dom/dist/config.js:47:12
++ ❯ checkCallback node_modules/@testing-library/dom/dist/wait-for.js:124:77
++ ❯ Timeout.checkRealTimersCallback node_modules/@testing-library/dom/dist/wait-for.js:118:16
++
++⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
++
++ FAIL  packages/ui/test/gbc/GbcWorldCanvasContextZoom.test.tsx > GbcWorldCanvas: in-context +/- from a non-level zoom (Plan 8 M6) > - steps down to 2x
++AssertionError: expected 'false' to be 'true' // Object.is equality
++
++Ignored nodes: comments, script, style
++[36m<html>[39m
++  [36m<head />[39m
++  [36m<body>[39m
++    [36m<div>[39m
++      [36m<section[39m
++        [33maria-label[39m=[32m"World canvas"[39m
++        [33mclass[39m=[32m"world-canvas"[39m
++      [36m>[39m
++        [36m<div[39m
++          [33mclass[39m=[32m"world-canvas__toolbar"[39m
++        [36m>[39m
++          [36m<div[39m
++            [33mclass[39m=[32m"world-canvas__toolbar-group"[39m
++          [36m>[39m
++            [36m<button[39m
++              [33mclass[39m=[32m"map-canvas__btn"[39m
++              [33mdisabled[39m=[32m""[39m
++              [33mtype[39m=[32m"button"[39m
++            [36m>[39m
++              [0mFit all[0m
++            [36m</button>[39m
++          [36m</div>[39m
++          [36m<div[39m
++            [33mclass[39m=[32m"world-canvas__toolbar-group"[39m
++          [36m>[39m
++            [36m<button[39m
++              [33maria-checked[39m=[32m"false"[39m
++              [33maria-label[39m=[32m"Warps"[39m
++              [33mclass[39m=[32m"world-canvas__switch"[39m
++              [33mrole[39m=[32m"switch"[39m
++              [33mtype[39m=[32m"button"[39m
++            [36m>[39m
++              [36m<span[39m
++                [33mclass[39m=[32m"world-canvas__switch-thumb"[39m
++              [36m/>[39m
++            [36m</button>[39m
++            [36m<span[39m
++              [33mclass[39m=[32m"world-canvas__switch-label"[39m
++            [36m>[39m
++              [0mWarps [0m
++              [0moff[0m
++            [36m</span>[39m
++          [36m</div>[39m
++          [36m<div[39m
++            [33mclass[39m=[32m"world-canvas__toolbar-group"[39m
++          [36m>[39m
++            [36m<span[39m
++              [33mclass[39m=[32m"world-canvas__toolbar-error"[39m
++              [33mrole[39m=[32m"alert"[39m
++            [36m>[39m
++              [0mEncounter data unavailable for [0m
++              [0m2[0m
++              [0m map[0m
++              [0ms[0m
++            [36m</span>[39m
++          [36m</div>[39m
++          [36m<div[39m
++            [33mclass[39m=[32m"world-canvas__toolbar-group world-canvas__toolbar-group--grow"[39m
++          [36m>[39m
++            [36m<div[39m
++              [33mclass[39m=[32m"species-spotlight"[39m
++            [36m>[39m
++              [36m<input[39m
++                [33maria-expanded[39m=[32m"false"[39m
++                [33maria-label[39m=[32m"Species spotlight"[39m
++                [33mclass[39m=[32m"species-spotlight__input"[39m
++                [33mplaceholder[39m=[32m"Spotlight a species…"[39m
++                [33mrole[39m=[32m"combobox"[39m
++                [33mtype[39m=[32m"search"[39m
++                [33mvalue[39m=[32m""[39m
++              [36m/>[39m
++            [36m</div>[39m
++            [36m<span[39m
++              [33mclass[39m=[32m"world-canvas__toolbar-error"[39m
++              [33mrole[39m=[32m"alert"[39m
++            [36m>[39m
++              [0mCoverage lenses unavailable: [0m
++              [0munexpected fetch /api/coverage[0m
++            [36m</span>[39m
++          [36m</div>[39m
++        [36m</div>[39m
++        [36m<div[39m
++          [33mclass[39m=[32m"world-canvas__legend"[39m
++        [36m>[39m
++          [36m<span[39m
++            [33mclass[39m=[32m"world-canvas__legend-item"[39m
++          [36m>[39m
++            [36m<i[39m
++              [33mclass[39m=[32m"world-canvas__swatch world-canvas__swatch--conflict"[39m
++            [36m/>[39m
++            [0m Conflict[0m
++          [36m</span>[39m
++          [36m<span[39m
++            [33mclass[39m=[32m"world-canvas__legend-item"[39m
++          [36m>[39m
++            [36m<i[39m
++              [33mclass[39m=[32m"world-canvas__swatch world-canvas__swatch--conflict world-canvas__swatch--accepted"[39m
++            [36m/>[39m
++            [0m Accepted[0m
++          [36m</span>[39m
++        [36m</div>[39m
++        [36m<div[39m
++          [33mclass[39m=[32m"world-canvas__body"[39m
++        [36m>[39m
++          [36m<div[39m
++            [33mclass[39m=[32m"world-canvas__viewport"[39m
++          [36m>[39m
++            [36m<canvas[39m
++              [33maria-label[39m=[32m"World map. Plus or minus zooms; Enter opens the selected map."[39m
++              [33mclass[39m=[32m"world-canvas__stage"[39m
++              [33mheight[39m=[32m"200"[39m
++              [33mtabindex[39m=[32m"0"[39m
++              [33mwidth[39m=[32m"200"[39m
++            [36m/>[39m
++            [36m<div[39m
++              [33mclass[39m=[32m"encounter-border"[39m
++            [36m>[39m
++              [36m<div[39m
++                [33mclass[39m=[32m"encounter-border__control"[39m
++              [36m>[39m
++                [36m<button[39m
++                  [33maria-pressed[39m=[32m"false"[39m
++                  [33mclass[39m=[32m"encounter-border__toggle"[39m
++                  [33mtype[39m=[32m"button"[39m
++                [36m>[39m
++                  [0mEncounters[0m
++                [36m</button>[39m
++              [36m</div>[39m
++            [36m</div>[39m
++            [36m<div[39m
++              [33mclass[39m=[32m"world-canvas__context"[39m
++            [36m>[39m
++              [36m<div[39m
++                [33maria-hidden[39m=[32m"true"[39m
++                [33mclass[39m=[32m"world-canvas__context-dim"[39m
++              [36m/>[39m
++              [36m<div[39m
++                [33mdata-testid[39m=[32m"ov-canvas"[39m
++                [33mdata-view[39m=[32m"{\"zoom\":1,\"pan\":{\"x\":75,\"y\":75}}"[39m
++              [36m/>[39m
++              [36m<div[39m
++                [33maria-label[39m=[32m"Editing MapB in place"[39m
++                [33mclass[39m=[32m"world-canvas__context-bar"[39m
++                [33mrole[39m=[32m"group"[39m
++              [36m>[39m
++                [36m<span[39m
++                  [33mclass[39m=[32m"world-canvas__context-name"[39m
++                [36m>[39m
++                  [0mMapB[0m
++                [36m</span>[39m
++                [36m<div[39m
++                  [33maria-label[39m=[32m"Zoom"[39m
++                  [33mclass[39m=[32m"world-canvas__context-zoom"[39m
++                  [33mrole[39m=[32m"group"[39m
++                [36m>[39m
++                  [36m<button[39m
++                    [33maria-pressed[39m=[32m"true"[39m
++                    [33mclass[39m=[32m"map-canvas__btn"[39m
++                    [33mtype[39m=[32m"button"[39m
++                  [36m>[39m
++                    [0m1[0m
++                    [0m×[0m
++                  [36m</button>[39m
++                  [36m<button[39m
++                    [33maria-pressed[39m=[32m"false"[39m
++                    [33mclass[39m=[32m"map-canvas__btn"[39m
++                    [33mtype[39m=[32m"button"[39m
++                  [36m>[39m
++                    [0m2[0m
++                    [0m×[0m
++                  [36m</button>[39m
++                  [36m<button[39m
++                    [33maria-pressed[39m=[32m"false"[39m
++                    [33mclass[39m=[32m"map-canvas__btn"[39m
++                    [33mtype[39m=[32m"button"[39m
++                  [36m>[39m
++                    [0m4[0m
++                    [0m×[0m
++                  [36m</button>[39m
++                [36m</div>[39m
++                [36m<button[39m
++                  [33maria-label[39m=[32m"Done editing MapB"[39m
++                  [33mclass[39m=[32m"map-canvas__btn"[39m
++                  [33mtype[39m=[32m"button"[39m
++                [36m>[39m
++                  [0mDone[0m
++                [36m</button>[39m
++              [36m</div>[39m
++            [36m</div>[39m
++          [36m</div>[39m
++        [36m</div>[39m
++        [36m<div[39m
++          [33mclass[39m=[32m"world-canvas__status"[39m
++        [36m>[39m
++          [36m<span[39m
++            [33mclass[39m=[32m"world-canvas__status-item"[39m
++          [36m>[39m
++            [0m1[0m
++            [0m components · [0m
++            [0m2[0m
++            [0m maps · zoom [0m
++            [0m100[0m
++            [0m% · [0m
++            [0m0[0m
++            [0m conflicts · [0m
++            [0m0[0m
++            [0m accepted[0m
++          [36m</span>[39m
++          [36m<span[39m
++            [33mclass[39m=[32m"world-canvas__status-item world-canvas__hover world-canvas__hover--empty"[39m
++          [36m>[39m
++            [0mHover the world…[0m
++          [36m</span>[39m
++        [36m</div>[39m
++      [36m</section>[39m
++    [36m</div>[39m
++  [36m</body>[39m
++[36m</html>[39m
++
++Expected: "true"
++Received: "false"
++
++ ❯ packages/ui/test/gbc/GbcWorldCanvasContextZoom.test.tsx:124:47
++    122|     const { canvas } = await wheeledOut();
++    123|     fireEvent.keyDown(canvas, { key: "-" });
++    124|     await waitFor(() => expect(pressed("2×")).toBe("true"));
++       |                                               ^
++    125|   });
++    126| });
++ ❯ runWithExpensiveErrorDiagnosticsDisabled node_modules/@testing-library/dom/dist/config.js:47:12
++ ❯ checkCallback node_modules/@testing-library/dom/dist/wait-for.js:124:77
++ ❯ Timeout.checkRealTimersCallback node_modules/@testing-library/dom/dist/wait-for.js:118:16
++
++⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
++
++ Test Files  2 failed (2)
++      Tests  2 failed (2)
++   Start at  18:41:22
++   Duration  3.82s (transform 263ms, setup 262ms, collect 358ms, tests 2.23s, environment 1.52s, prepare 178ms)
++
+diff --git a/packages/ui/src/components/WorldCanvas.tsx b/packages/ui/src/components/WorldCanvas.tsx
+index ae52029..2b9449c 100644
+--- a/packages/ui/src/components/WorldCanvas.tsx
++++ b/packages/ui/src/components/WorldCanvas.tsx
+@@ -9,22 +9,23 @@ import { isGbaEncountersPayload } from "../encounters/guards.js";
+ import { summariseGba, type GbaEncounterRow, type SpeciesSummary } from "../encounters/summary.js";
+ import { fetchGuarded } from "../hooks/useGuardedFetch.js";
+ import { SpeciesSpotlight } from "./SpeciesSpotlight.js";
+ import { LensPanel, LensLegend, type LensId } from "./LensPanel.js";
+ import { WarpDestinationModal } from "./WarpDestinationModal.js";
+ import { useCoverage } from "../hooks/useCoverage.js";
+ import { isDrawnByDefault } from "../world/visibility.js";
+ import { conflictBadgeOffsets, isRecord, isWireConflict } from "../world/conflictAcceptance.js";
+ import { useConflictAcceptance } from "../world/useConflictAcceptance.js";
+ import { WorldContextMenu, useWorldContextMenu } from "./WorldContextMenu.js";
+-import { ZOOM_LEVELS, zoomAboutPivot, type MapView, type Zoom } from "./mapView.js";
+-import { enterContextView, mapViewFromWorld, snapContextZoom, worldViewFromMapView } from "../world/contextView.js";
++import type { MapView } from "./mapView.js";
++import { useWorldContext } from "../shared/useWorldContext.js";
++import { WorldContextOverlay } from "../shared/WorldContextOverlay.js";
+ 
+ /** The pixel size a placement's PNG renders at natively (`renderLayout`,
+  *  border 0): 16px per tile, same constant the CLI's `render-world --scale
+  *  16` calls "full size". */
+ const TILE_PX = 16;
+ 
+ /** Zoom is screen pixels per tile -- 16 is native resolution, matching the
+  *  CLI's own `--scale` semantics (`16 = full size, 4 = overview`), so the
+  *  same mental model applies whether the raster comes from the UI or the
+  *  CLI. */
+@@ -1426,107 +1427,33 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
+         map: conflict.map,
+         accepted,
+         text: `${accepted ? "Accepted (right-click to un-accept). " : ""}${conflict.map}: via ${conflict.viaA.from} (${conflict.viaA.x},${conflict.viaA.y}) disagrees with via ${conflict.viaB.from} (${conflict.viaB.x},${conflict.viaB.y})`,
+       });
+     }
+     conflictBadgesRef.current = badges;
+   }, [compositeVersion, pan, zoom, viewport, visible, world, sizeByMap, conflictAcceptance.acceptedKeys]);
+ 
+   const screenToWorld = useCallback((sx: number, sy: number) => ({ x: (sx - pan.x) / zoom, y: (sy - pan.y) / zoom }), [pan, zoom]);
+ 
+-  // ---- In-context editing (Plan 6c E4) ----
+-  const inContext = context !== undefined;
+-  const contextName = context?.map ?? null;
+-  const contextPlacement = contextName ? world?.placements.get(contextName) : undefined;
++  // ---- In-context editing (Plan 6c E4); the mode itself lives in shared/useWorldContext.ts ----
++  const contextPlacement = context ? world?.placements.get(context.map) : undefined;
+   const contextSize = contextPlacement ? sizeOfPlacement(contextPlacement, sizeByMap) : null;
+-
+-  // Snap once per entry: the context map's centre goes to the recorded pointer (canvas centre if none), at the
+-  // nearest of 1x/2x/4x. It waits for `context.origin` (the map's layout): the host mounts its editing chrome in that
+-  // same commit, which moves and resizes this canvas, so the pointer (client px) is converted with the canvas box as it
+-  // is NOW, not as it was at the click. `snappedFor` gates the overlay canvas so it never mounts at the pre-snap zoom.
+-  // The ref is the same-tick guard (a StrictMode double run must not snap twice); zoom and pan are separate,
+-  // sequential setters, never nested. Leaving context hands focus back to the canvas (the Done button unmounts).
+-  const snappedForRef = useRef<string | null>(null);
+-  const [snappedFor, setSnappedFor] = useState<string | null>(null);
+-  const hasContextOrigin = context?.origin != null;
+-  useEffect(() => {
+-    if (contextName === null) {
+-      if (snappedForRef.current !== null) canvasRef.current?.focus();
+-      snappedForRef.current = null;
+-      setSnappedFor(null);
+-      return;
+-    }
+-    if (!hasContextOrigin || snappedForRef.current === contextName || !contextPlacement || !contextSize || contextSize.width <= 0 || contextSize.height <= 0) return;
+-    const canvas = canvasRef.current;
+-    if (!canvas) return;
+-    snappedForRef.current = contextName;
+-    const box = canvas.getBoundingClientRect();
+-    const client = snapPointerRef.current;
+-    snapPointerRef.current = null;
+-    const view = enterContextView({
+-      placement: { x: contextPlacement.x, y: contextPlacement.y, width: contextSize.width, height: contextSize.height },
+-      pointer: client ? { x: client.x - box.left, y: client.y - box.top } : { x: canvas.clientWidth / 2, y: canvas.clientHeight / 2 },
+-      zoom: snapContextZoom(zoom),
+-    });
+-    setZoom(view.zoom);
+-    setPan(view.pan);
+-    setSnappedFor(contextName);
+-    // eslint-disable-next-line react-hooks/exhaustive-deps -- zoom is read at entry only; the ref guard above is what governs re-entry.
+-  }, [contextName, world, hasContextOrigin]);
+-
+-  // Exits: Escape (a window listener in the CAPTURE phase, only while in context). Capture runs before every bubble
+-  // handler, so what it checks is still the DOM the key press found: SaveDialog, WarpDestinationModal and SignComposer
+-  // close on Escape from a React handler without stopping propagation (and React may flush that unmount before a
+-  // bubble listener on window ran), and the context menu closes on its own window listener. Skipped when another
+-  // handler already took the key (defaultPrevented), when a context menu or a modal dialog is open, and when the key
+-  // came from a text field (those use Escape locally).
+-  const onExitRequestRef = useRef(context?.onExitRequest);
+-  onExitRequestRef.current = context?.onExitRequest;
+-  const menuOpenRef = useRef(false);
+-  menuOpenRef.current = contextMenu.menu !== null;
+-  useEffect(() => {
+-    if (!inContext) return;
+-    const onKeyDown = (e: KeyboardEvent) => {
+-      if (e.key !== "Escape" || e.defaultPrevented || menuOpenRef.current || document.querySelector('[aria-modal="true"]')) return;
+-      if (e.target instanceof Element && e.target.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"]')) return;
+-      onExitRequestRef.current?.();
+-    };
+-    window.addEventListener("keydown", onKeyDown, true);
+-    return () => window.removeEventListener("keydown", onKeyDown, true);
+-  }, [inContext]);
+-
+-  const contextOrigin = context?.origin ?? null;
+-  // The overlay's controlled MapCanvas view: the world's own pan/zoom, expressed in the composite's frame.
+-  const contextView =
+-    snappedFor === contextName && contextPlacement && contextOrigin
+-      ? mapViewFromWorld({ placement: contextPlacement, worldPan: pan, worldZoom: zoom, originX: contextOrigin.x, originY: contextOrigin.y })
+-      : null;
+-  const onContextViewChange = (next: MapView) => {
+-    if (!contextPlacement || !contextOrigin) return;
+-    const v = worldViewFromMapView({ placement: contextPlacement, view: next, originX: contextOrigin.x, originY: contextOrigin.y });
+-    setZoom(v.zoom);
+-    setPan(v.pan);
+-  };
+-  const setContextZoom = (z: Zoom) => {
+-    if (!contextView) return;
+-    const next = zoomAboutPivot(contextView, z, viewport.w / 2, viewport.h / 2);
+-    if (next !== contextView) onContextViewChange(next);
+-  };
+-  const overlayRef = useRef<HTMLDivElement>(null);
+-  const onOverlayDoubleClick = (e: React.MouseEvent<HTMLDivElement>) => {
+-    if ((e.target as Element).closest(".world-canvas__context-bar") || !contextPlacement || !contextSize || !overlayRef.current) return;
+-    const rect = overlayRef.current.getBoundingClientRect();
+-    const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
+-    const x0 = contextPlacement.x * zoom + pan.x, y0 = contextPlacement.y * zoom + pan.y;
+-    const inside = sx >= x0 && sx < x0 + contextSize.width * zoom && sy >= y0 && sy < y0 + contextSize.height * zoom;
+-    if (!inside) context?.onExitRequest();
+-  };
++  const worldContext = useWorldContext({
++    native: 16,
++    context: context ?? null,
++    placement: contextPlacement && contextSize && contextSize.width > 0 && contextSize.height > 0 ? { x: contextPlacement.x, y: contextPlacement.y, ...contextSize } : null,
++    world: { pan, zoom, setView: (v) => { setZoom(v.zoom); setPan(v.pan); } },
++    viewport,
++    canvasRef,
++    snapPointerRef,
++    isBlocked: () => contextMenu.menu !== null,
++  });
+ 
+   // A NATIVE listener with { passive: false }, not React's onWheel prop.
+   // React attaches wheel listeners as passive by default (for scroll
+   // performance), which makes e.preventDefault() inside a React onWheel
+   // handler a silent no-op -- confirmed against the real running app, not
+   // hypothetical: it logs "Unable to preventDefault inside passive event
+   // listener invocation" and, more importantly, the PAGE scrolls
+   // underneath the canvas at the same time the canvas is trying to zoom.
+   // No jsdom-based test catches this (jsdom does not enforce passive
+   // listener semantics the way a real browser does), which is exactly why
+@@ -2139,48 +2066,21 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
+                 ) : (
+                   <div
+                     key={e.map}
+                     className="world-canvas__spotlight-dim"
+                     style={{ left: e.rect.x, top: e.rect.y, width: e.rect.width, height: e.rect.height }}
+                   />
+                 ),
+               )}
+             </div>
+           )}
+-          {context && (
+-            // In-context editing (Plan 6c E4): fills this viewport box exactly, so the chromeless MapCanvas's stage box
+-            // equals the world canvas box and the controlled view maps one to one (see world/contextView.ts).
+-            <div ref={overlayRef} className="world-canvas__context" onDoubleClick={onOverlayDoubleClick}>
+-              <div className="world-canvas__context-dim" aria-hidden="true" />
+-              {contextView && context.renderCanvas(contextView, onContextViewChange)}
+-              <div className="world-canvas__context-bar" role="group" aria-label={`Editing ${context.map} in place`}>
+-                <span className="world-canvas__context-name">{context.map}</span>
+-                <div className="world-canvas__context-zoom" role="group" aria-label="Zoom">
+-                  {ZOOM_LEVELS.map((z) => (
+-                    <button
+-                      key={z}
+-                      type="button"
+-                      className="map-canvas__btn"
+-                      aria-pressed={contextView?.zoom === z}
+-                      disabled={!contextView}
+-                      onClick={() => setContextZoom(z)}
+-                    >
+-                      {z}×
+-                    </button>
+-                  ))}
+-                </div>
+-                <button type="button" className="map-canvas__btn" aria-label={`Done editing ${context.map}`} onClick={() => context.onExitRequest()}>
+-                  Done
+-                </button>
+-              </div>
+-            </div>
+-          )}
++          {context && <WorldContextOverlay map={context.map} ctx={worldContext} renderCanvas={context.renderCanvas} onDone={() => context.onExitRequest()} />}
+           {tooltip && (
+             <div className="world-canvas__tooltip" style={{ left: tooltip.x + 12, top: tooltip.y + 12 }} role="tooltip">
+               {tooltip.text}
+             </div>
+           )}
+           <WorldContextMenu menu={contextMenu.menu} viewport={viewport} onClose={contextMenu.close} />
+           {conflictAcceptance.error && (
+             <div className="world-canvas__toast" role="alert">
+               <span className="world-canvas__toast-text">Could not update conflict: {conflictAcceptance.error}</span>
+               <button type="button" className="world-canvas__toast-dismiss" onClick={() => conflictAcceptance.setError(null)} aria-label="Dismiss">×</button>
+diff --git a/packages/ui/src/gbc/GbcWorldCanvas.tsx b/packages/ui/src/gbc/GbcWorldCanvas.tsx
+index 6b84830..4705b43 100644
+--- a/packages/ui/src/gbc/GbcWorldCanvas.tsx
++++ b/packages/ui/src/gbc/GbcWorldCanvas.tsx
+@@ -11,22 +11,23 @@ import { summariseGbc, type SpeciesSummary } from "../encounters/summary.js";
+ import { useGbcWorld } from "./hooks/useGbcWorld.js";
+ import { useGbcCoverage } from "./hooks/useGbcCoverage.js";
+ import { isGbcEncountersPayload, isRecord } from "./guards.js";
+ import { isGbcWarpsPayload } from "./guards.js";
+ import type { GbcWarpsPayload } from "./warps.js";
+ import { GbcWarpDestinationModal } from "./GbcWarpDestinationModal.js";
+ import { fetchGuarded } from "../hooks/useGuardedFetch.js";
+ import { conflictBadgeOffsets } from "../world/conflictAcceptance.js";
+ import { useConflictAcceptance } from "../world/useConflictAcceptance.js";
+ import { WorldContextMenu, useWorldContextMenu } from "../components/WorldContextMenu.js";
+-import { ZOOM_LEVELS, zoomAboutPivot, type MapView, type Zoom } from "../components/mapView.js";
+-import { enterContextView, mapViewFromWorld, snapContextZoom, worldViewFromMapView } from "../world/contextView.js";
++import type { MapView } from "../components/mapView.js";
++import { useWorldContext } from "../shared/useWorldContext.js";
++import { WorldContextOverlay } from "../shared/WorldContextOverlay.js";
+ import type { GbcTimeOfDay } from "./time.js";
+ 
+ /**
+  * The GBC world view (Plan 6b Task 5, D1 manual placement). Mirrors `WorldCanvas.tsx`'s
+  * own pan/zoom/viewport/culling/LOD mechanics, for the same reason
+  * `GbcMapCanvas.tsx`'s own header comment does it for `MapCanvas.tsx` --
+  * these are this project's postmortems, not style preferences. Cited by a
+  * grep-able anchor phrase rather than a line number (fix round, quality
+  * review Important #1: every hand-counted line range here was wrong from
+  * the day it was written, and `WorldCanvas.tsx` is exactly the file Task 6
+@@ -102,22 +103,20 @@ import type { GbcTimeOfDay } from "./time.js";
+  */
+ 
+ /** Native block size, px (`GbcWorldPayload.blockPx`, always 32). Zoom here
+  *  is screen px PER BLOCK, not per tile -- see `computeFit`'s own
+  *  `zoomBounds` doc comment for why GBA's `MAX_ZOOM` (a px/tile cap) is the
+  *  wrong unit for this canvas. */
+ const BLOCK_PX = 32;
+ 
+ const GBC_MIN_ZOOM = 1 / 64;
+ const GBC_MAX_ZOOM = 32;
+-/** In-context editing leaves the world at 32 * {1, 2, 4} px per block, so its zoom cap rises to the 4x level. */
+-const GBC_CONTEXT_MAX_ZOOM = GBC_MAX_ZOOM * 4;
+ /** Passed to every `computeFit` call in this file -- GBC's zoom unit is
+  *  screen px per BLOCK (native 32), not per tile (WorldCanvas.tsx's own
+  *  MIN_ZOOM/MAX_ZOOM are a px/TILE cap of 16, which would silently limit a
+  *  GBC fit to half native resolution). */
+ const GBC_ZOOM_BOUNDS = { min: GBC_MIN_ZOOM, max: GBC_MAX_ZOOM };
+ 
+ /** Continuous zoom step per wheel notch, same constant and same
+  *  multiplicative mechanic as `WorldCanvas.tsx`'s own `WHEEL_FACTOR`
+  *  (`WorldCanvas.tsx`'s own `const WHEEL_FACTOR = 1.2;` declaration) --
+  *  GBC's world zoom is continuous, unlike
+@@ -926,109 +925,38 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
+         ctx.fillText("✓", cx, cy);
+       }
+       badges.push({ x: cx, y: cy, key: conflict.key, map: conflict.map, accepted,
+         text: `${accepted ? "Accepted (right-click to un-accept). " : ""}${conflictTooltipText(conflict)}` });
+     }
+     conflictBadgesRef.current = badges;
+   }, [compositeVersion, pan, zoom, viewport, visible, world, placements, mapFilter, conflictAcceptance.acceptedKeys]);
+ 
+   const screenToWorld = useCallback((sx: number, sy: number) => ({ x: (sx - pan.x) / zoom, y: (sy - pan.y) / zoom }), [pan, zoom]);
+ 
+-  // ---- In-context editing (Plan 7 Task 5b; the twin of WorldCanvas.tsx's "In-context editing (Plan 6c E4)") ----
+-  const inContext = context !== undefined;
+-  const contextName = context?.map ?? null;
+-  const contextPlacement = contextName ? placements[contextName] : undefined;
+-  const validContextPlacement = contextPlacement && contextPlacement.width > 0 && contextPlacement.height > 0 ? contextPlacement : undefined;
++  // ---- In-context editing (Plan 7 Task 5b); the mode itself lives in shared/useWorldContext.ts ----
++  const contextPlacement = context ? placements[context.map] : undefined;
++  const validContextPlacement = contextPlacement && contextPlacement.width > 0 && contextPlacement.height > 0 ? contextPlacement : null;
++  const worldContext = useWorldContext({
++    native: BLOCK_PX,
++    context: context ?? null,
++    placement: validContextPlacement,
++    world: { pan, zoom, setView: (v) => setView((prev) => ({ ...prev, zoom: v.zoom, pan: v.pan })) },
++    viewport,
++    canvasRef,
++    snapPointerRef,
++    isBlocked: () => contextMenu.menu !== null,
++  });
++  const { inContext, contextView } = worldContext;
+ 
+   // The world's zoom bounds: in context the cap is the 4x level (128 px per block); it never drops below the current
+   // zoom, so a wheel-in there stays put instead of jumping down. Pure of `v`, so safe inside a setView updater.
+-  const zoomBoundsFor = (current: number) => ({ min: GBC_MIN_ZOOM, max: Math.max(inContext ? GBC_CONTEXT_MAX_ZOOM : GBC_MAX_ZOOM, current) });
+-
+-  // Snap once per entry: the context map's centre goes to the recorded pointer (canvas centre if none), at the nearest
+-  // of 1x/2x/4x. It waits for `context.origin` (the map's payload): GbcApp mounts its editing chrome in that same
+-  // commit, which moves and resizes this canvas, so the pointer (client px) is converted with the canvas box as it is
+-  // NOW, not as it was at the click. `snappedFor` gates the overlay canvas so it never mounts at the pre-snap zoom.
+-  // The ref is the same-tick guard (a StrictMode double run must not snap twice); one setView, never nested. Leaving
+-  // context hands focus back to the canvas (the Done button unmounts).
+-  const snappedForRef = useRef<string | null>(null);
+-  const [snappedFor, setSnappedFor] = useState<string | null>(null);
+-  const hasContextOrigin = context?.origin != null;
+-  useEffect(() => {
+-    if (contextName === null) {
+-      if (snappedForRef.current !== null) canvasRef.current?.focus();
+-      snappedForRef.current = null;
+-      setSnappedFor(null);
+-      return;
+-    }
+-    if (!hasContextOrigin || snappedForRef.current === contextName || !validContextPlacement) return;
+-    const canvas = canvasRef.current;
+-    if (!canvas) return;
+-    snappedForRef.current = contextName;
+-    const box = canvas.getBoundingClientRect();
+-    const client = snapPointerRef.current;
+-    snapPointerRef.current = null;
+-    const next = enterContextView({
+-      placement: { x: validContextPlacement.x, y: validContextPlacement.y, width: validContextPlacement.width, height: validContextPlacement.height },
+-      pointer: client ? { x: client.x - box.left, y: client.y - box.top } : { x: canvas.clientWidth / 2, y: canvas.clientHeight / 2 },
+-      zoom: snapContextZoom(zoom, BLOCK_PX),
+-      native: BLOCK_PX,
+-    });
+-    setView((v) => ({ ...v, zoom: next.zoom, pan: next.pan }));
+-    setSnappedFor(contextName);
+-    // eslint-disable-next-line react-hooks/exhaustive-deps -- zoom is read at entry only; the ref guard above is what governs re-entry.
+-  }, [contextName, world, hasContextOrigin]);
+-
+-  // Exits: Escape (a window listener in the CAPTURE phase, only while in context). Capture runs before every bubble
+-  // handler, so what it checks is still the DOM the key press found: SaveDialog and the warp modal close on Escape from
+-  // a React handler without stopping propagation (and React may flush that unmount before a bubble listener on window
+-  // ran), and the context menu closes on its own window listener. Skipped when another handler already took the key
+-  // (defaultPrevented), when a context menu or a modal dialog is open, and when the key came from a text field.
+-  const onExitRequestRef = useRef(context?.onExitRequest);
+-  onExitRequestRef.current = context?.onExitRequest;
+-  const menuOpenRef = useRef(false);
+-  menuOpenRef.current = contextMenu.menu !== null;
+-  useEffect(() => {
+-    if (!inContext) return;
+-    const onKeyDown = (e: KeyboardEvent) => {
+-      if (e.key !== "Escape" || e.defaultPrevented || menuOpenRef.current || document.querySelector('[aria-modal="true"]')) return;
+-      if (e.target instanceof Element && e.target.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"]')) return;
+-      onExitRequestRef.current?.();
+-    };
+-    window.addEventListener("keydown", onKeyDown, true);
+-    return () => window.removeEventListener("keydown", onKeyDown, true);
+-  }, [inContext]);
+-
+-  const contextOrigin = context?.origin ?? null;
+-  // The overlay's controlled GbcMapCanvas view: the world's own pan/zoom, expressed in the composite's frame.
+-  const contextView =
+-    snappedFor === contextName && validContextPlacement && contextOrigin
+-      ? mapViewFromWorld({ placement: validContextPlacement, worldPan: pan, worldZoom: zoom, originX: contextOrigin.x, originY: contextOrigin.y, native: BLOCK_PX })
+-      : null;
+-  const onContextViewChange = (next: MapView) => {
+-    if (!validContextPlacement || !contextOrigin) return;
+-    const w = worldViewFromMapView({ placement: validContextPlacement, view: next, originX: contextOrigin.x, originY: contextOrigin.y, native: BLOCK_PX });
+-    setView((v) => ({ ...v, zoom: w.zoom, pan: w.pan }));
+-  };
+-  const setContextZoom = (z: Zoom) => {
+-    if (!contextView) return;
+-    const next = zoomAboutPivot(contextView, z, viewport.w / 2, viewport.h / 2);
+-    if (next !== contextView) onContextViewChange(next);
+-  };
+-  const overlayRef = useRef<HTMLDivElement>(null);
+-  const onOverlayDoubleClick = (e: React.MouseEvent<HTMLDivElement>) => {
+-    if ((e.target as Element).closest(".world-canvas__context-bar") || !validContextPlacement || !overlayRef.current) return;
+-    const rect = overlayRef.current.getBoundingClientRect();
+-    const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
+-    const x0 = validContextPlacement.x * zoom + pan.x, y0 = validContextPlacement.y * zoom + pan.y;
+-    const inside = sx >= x0 && sx < x0 + validContextPlacement.width * zoom && sy >= y0 && sy < y0 + validContextPlacement.height * zoom;
+-    if (!inside) context?.onExitRequest();
+-  };
++  const zoomBoundsFor = (current: number) => ({ min: GBC_MIN_ZOOM, max: Math.max(worldContext.maxWorldZoom(GBC_MAX_ZOOM), current) });
+ 
+   // Native, { passive: false } -- see the header comment.
+   useEffect(() => {
+     const canvas = canvasRef.current;
+     if (!canvas) return;
+     const handler = (e: WheelEvent) => {
+       e.preventDefault();
+       const rect = canvas.getBoundingClientRect();
+       const x = e.clientX - rect.left, y = e.clientY - rect.top;
+       const factor = e.deltaY < 0 ? WHEEL_FACTOR : 1 / WHEEL_FACTOR;
+@@ -1189,25 +1117,21 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
+       menuPointRef.current = { x: (box?.left ?? 0) + at.x, y: (box?.top ?? 0) + at.y };
+       return { ...at, map: p.map };
+     });
+     if (handled) return;
+     if (e.key === "Enter") {
+       if (selectedMap && (!mapFilter || mapFilter.has(selectedMap))) onOpenMap?.(selectedMap);
+       return;
+     }
+     if (inContext && ["+", "=", "-", "_"].includes(e.key)) {
+       e.preventDefault();
+-      if (contextView) {
+-        const direction = e.key === "+" || e.key === "=" ? 1 : -1;
+-        const index = ZOOM_LEVELS.indexOf(contextView.zoom);
+-        setContextZoom(ZOOM_LEVELS[Math.max(0, Math.min(ZOOM_LEVELS.length - 1, index + direction))]!);
+-      }
++      worldContext.stepZoom(e.key === "+" || e.key === "=" ? 1 : -1);
+       return; // Pending payloads must not enter the continuous World zoom path either.
+     }
+     if (e.key === "+" || e.key === "=") {
+       e.preventDefault();
+       setView((v) => zoomWorldAboutPivot(v, WHEEL_FACTOR, viewport.w / 2, viewport.h / 2, zoomBoundsFor(v.zoom)));
+       return;
+     }
+     if (e.key === "-" || e.key === "_") {
+       e.preventDefault();
+       setView((v) => zoomWorldAboutPivot(v, 1 / WHEEL_FACTOR, viewport.w / 2, viewport.h / 2, zoomBoundsFor(v.zoom)));
+@@ -1425,48 +1349,21 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
+                   fix): without it, re-jumping to the same map name reuses
+                   the same DOM node, whose `forwards`-filling fade animation
+                   has already finished, so it would not visibly restart. */}
+               <div
+                 key={jumpToken}
+                 className="world-canvas__selection-outline world-canvas__jump-highlight"
+                 style={{ left: jumpRect.x * zoom + pan.x, top: jumpRect.y * zoom + pan.y, width: jumpRect.width * zoom, height: jumpRect.height * zoom }}
+               />
+             </div>
+           )}
+-          {context && (
+-            // In-context editing: fills this viewport box exactly, so the chromeless GbcMapCanvas's stage box equals the
+-            // world canvas box and the controlled view maps one to one (see world/contextView.ts, native 32).
+-            <div ref={overlayRef} className="world-canvas__context" onDoubleClick={onOverlayDoubleClick}>
+-              <div className="world-canvas__context-dim" aria-hidden="true" />
+-              {contextView && context.renderCanvas(contextView, onContextViewChange)}
+-              <div className="world-canvas__context-bar" role="group" aria-label={`Editing ${context.map} in place`}>
+-                <span className="world-canvas__context-name">{context.map}</span>
+-                <div className="world-canvas__context-zoom" role="group" aria-label="Zoom">
+-                  {ZOOM_LEVELS.map((z) => (
+-                    <button
+-                      key={z}
+-                      type="button"
+-                      className="map-canvas__btn"
+-                      aria-pressed={contextView?.zoom === z}
+-                      disabled={!contextView}
+-                      onClick={() => setContextZoom(z)}
+-                    >
+-                      {z}×
+-                    </button>
+-                  ))}
+-                </div>
+-                <button type="button" className="map-canvas__btn" aria-label={`Done editing ${context.map}`} onClick={() => context.onExitRequest()}>
+-                  Done
+-                </button>
+-              </div>
+-            </div>
+-          )}
++          {context && <WorldContextOverlay map={context.map} ctx={worldContext} renderCanvas={context.renderCanvas} onDone={() => context.onExitRequest()} />}
+           {tooltip && (
+             <div className="world-canvas__tooltip" style={{ left: tooltip.x + 12, top: tooltip.y + 12 }} role="tooltip">
+               {tooltip.text}
+             </div>
+           )}
+           <WorldContextMenu menu={contextMenu.menu} viewport={viewport} onClose={contextMenu.close} />
+           {conflictAcceptance.error && (
+             <div className="world-canvas__toast" role="alert">
+               <span className="world-canvas__toast-text">Could not update conflict: {conflictAcceptance.error}</span>
+               <button type="button" className="world-canvas__toast-dismiss" onClick={() => conflictAcceptance.setError(null)} aria-label="Dismiss">×</button>
+diff --git a/packages/ui/src/shared/WorldContextOverlay.tsx b/packages/ui/src/shared/WorldContextOverlay.tsx
+new file mode 100644
+index 0000000..66878b5
+--- /dev/null
++++ b/packages/ui/src/shared/WorldContextOverlay.tsx
+@@ -0,0 +1,41 @@
++import type React from "react";
++import { ZOOM_LEVELS, type MapView } from "../components/mapView.js";
++import type { WorldContext } from "./useWorldContext.js";
++
++/** The in-context editing overlay, shared by both world canvases. It fills the world viewport box exactly, so the
++ *  chromeless map canvas's stage box equals the world canvas box and the controlled view maps one to one (see
++ *  world/contextView.ts). Module-level on purpose: defining it inside a canvas body would remount it every render. */
++export function WorldContextOverlay({ map, ctx, renderCanvas, onDone }: {
++  map: string;
++  ctx: WorldContext;
++  renderCanvas(view: MapView, onViewChange: (v: MapView) => void): React.ReactNode;
++  onDone(): void;
++}) {
++  const { contextView } = ctx;
++  return (
++    <div ref={ctx.overlayRef} className="world-canvas__context" onDoubleClick={ctx.onOverlayDoubleClick}>
++      <div className="world-canvas__context-dim" aria-hidden="true" />
++      {contextView && renderCanvas(contextView, ctx.onContextViewChange)}
++      <div className="world-canvas__context-bar" role="group" aria-label={`Editing ${map} in place`}>
++        <span className="world-canvas__context-name">{map}</span>
++        <div className="world-canvas__context-zoom" role="group" aria-label="Zoom">
++          {ZOOM_LEVELS.map((z) => (
++            <button
++              key={z}
++              type="button"
++              className="map-canvas__btn"
++              aria-pressed={contextView?.zoom === z}
++              disabled={!contextView}
++              onClick={() => ctx.setContextZoom(z)}
++            >
++              {z}×
++            </button>
++          ))}
++        </div>
++        <button type="button" className="map-canvas__btn" aria-label={`Done editing ${map}`} onClick={onDone}>
++          Done
++        </button>
++      </div>
++    </div>
++  );
++}
+diff --git a/packages/ui/src/shared/useWorldContext.ts b/packages/ui/src/shared/useWorldContext.ts
+new file mode 100644
+index 0000000..cd33093
+--- /dev/null
++++ b/packages/ui/src/shared/useWorldContext.ts
+@@ -0,0 +1,133 @@
++import { useEffect, useRef, useState } from "react";
++import type React from "react";
++import { ZOOM_LEVELS, zoomAboutPivot, type MapView, type Zoom } from "../components/mapView.js";
++import { enterContextView, mapViewFromWorld, snapContextZoom, worldViewFromMapView } from "../world/contextView.js";
++
++export interface ContextPlacement { x: number; y: number; width: number; height: number }
++
++export interface UseWorldContextArgs {
++  /** World px per unit at 1x: 16 (GBA tile) or 32 (GBC block). Required, no default. */
++  native: number;
++  context: { map: string; origin: { x: number; y: number } | null; onExitRequest(): void } | null;
++  /** null unless the context map is placed with width > 0 && height > 0. */
++  placement: ContextPlacement | null;
++  world: { pan: { x: number; y: number }; zoom: number; setView(v: { pan: { x: number; y: number }; zoom: number }): void };
++  /** Pivot for setContextZoom (its centre). */
++  viewport: { w: number; h: number };
++  /** The box for the pointer at snap time; the focus target on exit. */
++  canvasRef: React.RefObject<HTMLCanvasElement | null>;
++  /** Client px recorded by the host before entering; read and cleared at snap. */
++  snapPointerRef: React.MutableRefObject<{ x: number; y: number } | null>;
++  /** Family-specific: its context menu is open (it closes on its own window listener). */
++  isBlocked(): boolean;
++}
++
++export interface WorldContext {
++  inContext: boolean;
++  contextView: MapView | null;
++  onContextViewChange(next: MapView): void;
++  setContextZoom(z: Zoom): void;
++  /** Keyboard +/-: toward `direction` from the nearest level (a wheel can leave a non-level zoom). No-op outside a snapped context. */
++  stepZoom(direction: 1 | -1): void;
++  overlayRef: React.RefObject<HTMLDivElement | null>;
++  onOverlayDoubleClick(e: React.MouseEvent<HTMLDivElement>): void;
++  maxWorldZoom(base: number): number;
++}
++
++/** In-context editing of one world map, shared by the GBA and GBC world canvases (`native` is the per-family parameter). */
++export function useWorldContext(args: UseWorldContextArgs): WorldContext {
++  const { native, context, placement, world, viewport, canvasRef, snapPointerRef } = args;
++  const inContext = context !== null;
++  const contextName = context?.map ?? null;
++  const contextOrigin = context?.origin ?? null;
++  const hasOrigin = contextOrigin !== null;
++
++  // Snap once per entry: the context map's centre goes to the recorded pointer (canvas centre if none), at the nearest
++  // of 1x/2x/4x. It waits for `context.origin` (the map's layout): the host mounts its editing chrome in that same
++  // commit, which moves and resizes this canvas, so the pointer (client px) is converted with the canvas box as it is
++  // NOW, not as it was at the click. `snappedFor` gates the overlay canvas so it never mounts at the pre-snap zoom.
++  // The ref is the same-tick guard (a StrictMode double run must not snap twice); one setView, never nested. Leaving
++  // context hands focus back to the canvas (the Done button unmounts).
++  const snappedForRef = useRef<string | null>(null);
++  const [snappedFor, setSnappedFor] = useState<string | null>(null);
++  useEffect(() => {
++    if (contextName === null) {
++      if (snappedForRef.current !== null) canvasRef.current?.focus();
++      snappedForRef.current = null;
++      setSnappedFor(null);
++      return;
++    }
++    if (!hasOrigin || snappedForRef.current === contextName || !placement) return;
++    const canvas = canvasRef.current;
++    if (!canvas) return;
++    snappedForRef.current = contextName;
++    const box = canvas.getBoundingClientRect();
++    const client = snapPointerRef.current;
++    snapPointerRef.current = null;
++    const next = enterContextView({
++      placement: { x: placement.x, y: placement.y, width: placement.width, height: placement.height },
++      pointer: client ? { x: client.x - box.left, y: client.y - box.top } : { x: canvas.clientWidth / 2, y: canvas.clientHeight / 2 },
++      zoom: snapContextZoom(world.zoom, native),
++      native,
++    });
++    world.setView(next);
++    setSnappedFor(contextName);
++    // eslint-disable-next-line react-hooks/exhaustive-deps -- zoom is read at entry only; the ref guard above is what governs re-entry.
++  }, [contextName, placement?.x, placement?.y, placement?.width, placement?.height, hasOrigin]);
++
++  // Exits: Escape (a window listener in the CAPTURE phase, only while in context). Capture runs before every bubble
++  // handler, so what it checks is still the DOM the key press found: SaveDialog, WarpDestinationModal and SignComposer
++  // close on Escape from a React handler without stopping propagation (and React may flush that unmount before a
++  // bubble listener on window ran), and the context menu closes on its own window listener. Skipped when another
++  // handler already took the key (defaultPrevented), when a context menu or a modal dialog is open, and when the key
++  // came from a text field (those use Escape locally).
++  const onExitRequestRef = useRef(context?.onExitRequest);
++  onExitRequestRef.current = context?.onExitRequest;
++  const isBlockedRef = useRef(args.isBlocked);
++  isBlockedRef.current = args.isBlocked;
++  useEffect(() => {
++    if (!inContext) return;
++    const onKeyDown = (e: KeyboardEvent) => {
++      if (e.key !== "Escape" || e.defaultPrevented || isBlockedRef.current() || document.querySelector('[aria-modal="true"]')) return;
++      if (e.target instanceof Element && e.target.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"]')) return;
++      onExitRequestRef.current?.();
++    };
++    window.addEventListener("keydown", onKeyDown, true);
++    return () => window.removeEventListener("keydown", onKeyDown, true);
++  }, [inContext]);
++
++  // The overlay's controlled map view: the world's own pan/zoom, expressed in the composite's frame.
++  const contextView =
++    snappedFor === contextName && placement && contextOrigin
++      ? mapViewFromWorld({ placement, worldPan: world.pan, worldZoom: world.zoom, originX: contextOrigin.x, originY: contextOrigin.y, native })
++      : null;
++  const onContextViewChange = (next: MapView) => {
++    if (!placement || !contextOrigin) return;
++    world.setView(worldViewFromMapView({ placement, view: next, originX: contextOrigin.x, originY: contextOrigin.y, native }));
++  };
++  const setContextZoom = (z: Zoom) => {
++    if (!contextView) return;
++    const next = zoomAboutPivot(contextView, z, viewport.w / 2, viewport.h / 2);
++    if (next !== contextView) onContextViewChange(next);
++  };
++  const stepZoom = (direction: 1 | -1) => {
++    if (!contextView) return;
++    const z = contextView.zoom;
++    const target =
++      direction === 1
++        ? (ZOOM_LEVELS.find((l) => l > z) ?? ZOOM_LEVELS[ZOOM_LEVELS.length - 1]!)
++        : ([...ZOOM_LEVELS].reverse().find((l) => l < z) ?? ZOOM_LEVELS[0]);
++    setContextZoom(target);
++  };
++  const overlayRef = useRef<HTMLDivElement>(null);
++  const onOverlayDoubleClick = (e: React.MouseEvent<HTMLDivElement>) => {
++    if ((e.target as Element).closest(".world-canvas__context-bar") || !placement || !overlayRef.current) return;
++    const rect = overlayRef.current.getBoundingClientRect();
++    const sx = e.clientX - rect.left, sy = e.clientY - rect.top;
++    const x0 = placement.x * world.zoom + world.pan.x, y0 = placement.y * world.zoom + world.pan.y;
++    const inside = sx >= x0 && sx < x0 + placement.width * world.zoom && sy >= y0 && sy < y0 + placement.height * world.zoom;
++    if (!inside) context?.onExitRequest();
++  };
++
++  return { inContext, contextView, onContextViewChange, setContextZoom, stepZoom, overlayRef, onOverlayDoubleClick, maxWorldZoom: (base) => (inContext ? base * 4 : base) };
++}
+diff --git a/packages/ui/test/gbc/GbcWorldCanvasContextZoom.test.tsx b/packages/ui/test/gbc/GbcWorldCanvasContextZoom.test.tsx
+new file mode 100644
+index 0000000..854dec9
+--- /dev/null
++++ b/packages/ui/test/gbc/GbcWorldCanvasContextZoom.test.tsx
+@@ -0,0 +1,126 @@
++import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
++import { render, fireEvent, screen, waitFor, act } from "@testing-library/react";
++import type { GbcWorldPayload } from "@pokemap/core/src/gbc/wire.js";
++import { GbcWorldCanvas, type GbcWorldCanvasProps } from "../../src/gbc/GbcWorldCanvas.js";
++import type { MapView } from "../../src/components/mapView.js";
++
++// Plan 8 Task 2 (M6): in-context +/- from a non-level zoom (after a wheel). Harness copied from GbcWorldCanvasContext.test.tsx.
++// Zoom here is px per BLOCK, native 32. Viewport 200x200; the initial fit of the one 20x10-block component is zoom 10,
++// pan (0, 50), so MapA covers x [0,100), y [50,150) and MapB x [100,200), y [50,150) in screen px.
++
++const VIEWPORT_SIZE = 200;
++const WORLD: GbcWorldPayload = {
++  family: "gbc",
++  blockPx: 32,
++  placements: {
++    MapA: { map: "MapA", x: 0, y: 0, width: 10, height: 10, component: 0, mapType: "TOWN", manual: false },
++    MapB: { map: "MapB", x: 10, y: 0, width: 10, height: 10, component: 0, mapType: "ROUTE", manual: false },
++  },
++  components: [{ index: 0, maps: ["MapA", "MapB"], bounds: { x: 0, y: 0, width: 20, height: 10 } }],
++  conflicts: [],
++};
++
++const ok = (body: unknown) => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) } as Response);
++function makeFetch(warps: Record<string, unknown[]> = {}) {
++  return vi.fn((url: string) => {
++    if (url === "/api/world") return ok(WORLD);
++    const w = /^\/api\/warps\/(.+)$/.exec(url);
++    if (w) return ok({ family: "gbc", mapName: decodeURIComponent(w[1]!), warps: warps[decodeURIComponent(w[1]!)] ?? [] });
++    if (url.startsWith("/api/map/")) return Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve({}) } as Response);
++    return Promise.reject(new Error(`unexpected fetch ${url}`));
++  });
++}
++
++interface FakeCtx { imageSmoothingEnabled: boolean; drawImage: ReturnType<typeof vi.fn>; clearRect: ReturnType<typeof vi.fn>; [k: string]: unknown }
++const ctxByCanvas = new Map<HTMLCanvasElement, FakeCtx>();
++class FakeImage {
++  static instances: FakeImage[] = [];
++  src = "";
++  onload: (() => void) | null = null;
++  constructor() { FakeImage.instances.push(this); }
++}
++class FakeResizeObserver { observe() {} unobserve() {} disconnect() {} }
++let originalGetContext: typeof HTMLCanvasElement.prototype.getContext;
++
++beforeEach(() => {
++  FakeImage.instances = [];
++  vi.stubGlobal("Image", FakeImage);
++  vi.stubGlobal("ResizeObserver", FakeResizeObserver);
++  originalGetContext = HTMLCanvasElement.prototype.getContext;
++  // @ts-expect-error -- test stub, narrower than the real overload set
++  HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, kind: string) {
++    if (kind !== "2d") return null;
++    let ctx = ctxByCanvas.get(this);
++    if (!ctx) {
++      ctx = new Proxy({ imageSmoothingEnabled: true, drawImage: vi.fn(), clearRect: vi.fn() } as FakeCtx, {
++        get: (t, k) => (k in t ? t[k as string] : (t[k as string] = vi.fn())),
++      });
++      ctxByCanvas.set(this, ctx);
++    }
++    return ctx;
++  };
++  Object.defineProperty(HTMLElement.prototype, "clientWidth", { value: VIEWPORT_SIZE, configurable: true });
++  Object.defineProperty(HTMLElement.prototype, "clientHeight", { value: VIEWPORT_SIZE, configurable: true });
++});
++afterEach(() => {
++  HTMLCanvasElement.prototype.getContext = originalGetContext;
++  ctxByCanvas.clear();
++  vi.unstubAllGlobals();
++});
++
++const RECT = { left: 0, top: 0, right: VIEWPORT_SIZE, bottom: VIEWPORT_SIZE, width: VIEWPORT_SIZE, height: VIEWPORT_SIZE, x: 0, y: 0, toJSON() {} };
++const boxAt = (top: number) => ({ ...RECT, top, y: top, bottom: top + VIEWPORT_SIZE });
++
++async function mount(props: Partial<GbcWorldCanvasProps> = {}, impl = makeFetch()) {
++  vi.stubGlobal("fetch", impl);
++  const utils = render(<GbcWorldCanvas time="day" {...props} />);
++  const canvas = utils.container.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement;
++  canvas.getBoundingClientRect = () => RECT;
++  await waitFor(() => expect(screen.getByText(/1 components/)).toBeTruthy());
++  await waitFor(() => expect(screen.queryByText(/zoom 3%/)).toBeNull()); // the initial fit has been applied (zoom 10 = 31%)
++  const rerenderWith = (next: Partial<GbcWorldCanvasProps>) => utils.rerender(<GbcWorldCanvas time="day" {...next} />);
++  return { ...utils, canvas, rerenderWith, fetcher: impl };
++}
++
++/** What the overlay hands the host's renderCanvas: the controlled GbcMapCanvas view. */
++function probe() {
++  const views: MapView[] = [];
++  const onViewChanges: Array<(v: MapView) => void> = [];
++  const renderCanvas = (view: MapView, onViewChange: (v: MapView) => void) => {
++    views.push(view);
++    onViewChanges.push(onViewChange);
++    return <div data-testid="ov-canvas" data-view={JSON.stringify(view)} />;
++  };
++  const current = () => JSON.parse(screen.getByTestId("ov-canvas").getAttribute("data-view")!) as MapView;
++  return { renderCanvas, views, current, change: (v: MapView) => act(() => onViewChanges.at(-1)!(v)) };
++}
++const ctxOf = (renderCanvas: ReturnType<typeof probe>["renderCanvas"], onExitRequest = vi.fn(), origin: { x: number; y: number } | null = { x: 32, y: 32 }) =>
++  ({ map: "MapB", origin, renderCanvas, onExitRequest });
++const status = (container: HTMLElement) => container.querySelector(".world-canvas__status")!.textContent!;
++const lastDraw = (canvas: HTMLCanvasElement) => ctxByCanvas.get(canvas)!.drawImage.mock.calls.at(-1)!;
++
++describe("GbcWorldCanvas: in-context +/- from a non-level zoom (Plan 8 M6)", () => {
++  async function wheeledOut() {
++    const p = probe();
++    const { canvas } = await mount({ context: ctxOf(p.renderCanvas) });
++    await waitFor(() => expect(screen.getByTestId("ov-canvas")).toBeTruthy());
++    p.change({ zoom: 4, pan: { x: 0, y: 0 } }); // 128 px/block
++    await waitFor(() => expect(p.current().zoom).toBe(4));
++    fireEvent.wheel(canvas, { clientX: 100, clientY: 100, deltaY: 100 }); // 128 / 1.2: overlay zoom 3.33, between 2x and 4x
++    await waitFor(() => expect(p.current().zoom).toBeCloseTo(10 / 3, 5));
++    return { canvas };
++  }
++  const pressed = (name: string) => screen.getByRole("button", { name }).getAttribute("aria-pressed");
++
++  it("+ steps up to 4x (not down to 1x)", async () => {
++    const { canvas } = await wheeledOut();
++    fireEvent.keyDown(canvas, { key: "+" });
++    await waitFor(() => expect(pressed("4×")).toBe("true"));
++  });
++
++  it("- steps down to 2x", async () => {
++    const { canvas } = await wheeledOut();
++    fireEvent.keyDown(canvas, { key: "-" });
++    await waitFor(() => expect(pressed("2×")).toBe("true"));
++  });
++});
+diff --git a/packages/ui/test/shared/useWorldContext.test.tsx b/packages/ui/test/shared/useWorldContext.test.tsx
+new file mode 100644
+index 0000000..4b73846
+--- /dev/null
++++ b/packages/ui/test/shared/useWorldContext.test.tsx
+@@ -0,0 +1,249 @@
++import { describe, it, expect, vi, afterEach } from "vitest";
++import { renderHook, act } from "@testing-library/react";
++import { StrictMode, useState, type ReactNode } from "react";
++import type { MapView, Zoom } from "../../src/components/mapView.js";
++import { useWorldContext, type ContextPlacement } from "../../src/shared/useWorldContext.js";
++
++type View = { pan: { x: number; y: number }; zoom: number };
++const PLACEMENT: ContextPlacement = { x: 0, y: 0, width: 10, height: 10 };
++
++function makeCanvas(w = 200, h = 200) {
++  const canvas = document.createElement("canvas");
++  Object.defineProperty(canvas, "clientWidth", { value: w });
++  Object.defineProperty(canvas, "clientHeight", { value: h });
++  canvas.getBoundingClientRect = () => ({ left: 10, top: 20, right: 10 + w, bottom: 20 + h, width: w, height: h, x: 10, y: 20, toJSON() {} });
++  return canvas;
++}
++
++interface Opts {
++  native: number;
++  zoom: number;
++  origin?: { x: number; y: number } | null;
++  placement?: ContextPlacement | null;
++  inContext?: boolean;
++}
++
++/** The hook over a real world state, with spies for the host callbacks. */
++function setup(o: Opts) {
++  const canvas = makeCanvas();
++  const onExitRequest = vi.fn();
++  const setViewSpy = vi.fn();
++  const snapPointerRef = { current: null as { x: number; y: number } | null };
++  const flags = { blocked: false };
++  const canvasRef = { current: canvas };
++  const result = renderHook(
++    (p: { origin: { x: number; y: number } | null; inContext: boolean }) => {
++      const [view, setV] = useState<View>({ pan: { x: 0, y: 0 }, zoom: o.zoom });
++      return useWorldContext({
++        native: o.native,
++        context: p.inContext ? { map: "MapB", origin: p.origin, onExitRequest } : null,
++        placement: o.placement === undefined ? PLACEMENT : o.placement,
++        world: { pan: view.pan, zoom: view.zoom, setView: (v) => { setViewSpy(v); setV(v); } },
++        viewport: { w: 200, h: 200 },
++        canvasRef,
++        snapPointerRef,
++        isBlocked: () => flags.blocked,
++      });
++    },
++    { initialProps: { origin: o.origin === undefined ? { x: 0, y: 0 } : o.origin, inContext: o.inContext ?? true }, wrapper: ({ children }: { children: ReactNode }) => <>{children}</> },
++  );
++  return { ...result, canvas, onExitRequest, setViewSpy, snapPointerRef, flags };
++}
++
++const esc = (target: EventTarget = document.body) => {
++  const e = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
++  target.dispatchEvent(e);
++  return e;
++};
++
++afterEach(() => { document.body.innerHTML = ""; });
++
++describe("useWorldContext: snap per family", () => {
++  it.each([
++    [16, [16, 32, 64]],
++    [32, [32, 64, 128]],
++  ])("native %i snaps world zoom %j to 1x/2x/4x", (native, zooms) => {
++    [1, 2, 4].forEach((expected, i) => {
++      const h = setup({ native, zoom: zooms![i]! });
++      expect(h.result.current.contextView?.zoom).toBe(expected);
++    });
++  });
++
++  it("centres the placement on the recorded pointer (converted with the canvas box) and clears the pointer ref", () => {
++    const h = setup({ native: 16, zoom: 16, origin: null });
++    h.snapPointerRef.current = { x: 110, y: 120 }; // canvas box is at (10, 20): pointer (100, 100) in canvas px
++    h.rerender({ origin: { x: 0, y: 0 }, inContext: true });
++    // 1x = 16 px/tile; centre (5,5) tiles -> (80,80); pan = (100-80, 100-80)
++    expect(h.setViewSpy).toHaveBeenCalledTimes(1);
++    expect(h.setViewSpy).toHaveBeenCalledWith({ zoom: 16, pan: { x: 20, y: 20 } });
++    expect(h.snapPointerRef.current).toBeNull();
++    expect(h.result.current.contextView).toEqual({ zoom: 1, pan: { x: 20, y: 20 } });
++  });
++
++  it("centres on the canvas centre when no pointer was recorded", () => {
++    const h = setup({ native: 32, zoom: 32 });
++    expect(h.setViewSpy).toHaveBeenCalledWith({ zoom: 32, pan: { x: 100 - 160, y: 100 - 160 } });
++  });
++
++  it("does not snap while origin is null, and not while the placement is null", () => {
++    const h = setup({ native: 16, zoom: 16, origin: null });
++    expect(h.setViewSpy).not.toHaveBeenCalled();
++    expect(h.result.current.contextView).toBeNull();
++    const g = setup({ native: 16, zoom: 16, placement: null });
++    expect(g.setViewSpy).not.toHaveBeenCalled();
++    expect(g.result.current.contextView).toBeNull();
++  });
++
++  it("snaps once per entry (a StrictMode double run does not snap twice)", () => {
++    const setViewSpy = vi.fn();
++    const canvasRef = { current: makeCanvas() };
++    renderHook(
++      () => {
++        const [view, setV] = useState<View>({ pan: { x: 0, y: 0 }, zoom: 16 });
++        return useWorldContext({
++          native: 16,
++          context: { map: "MapB", origin: { x: 0, y: 0 }, onExitRequest: () => {} },
++          placement: PLACEMENT,
++          world: { pan: view.pan, zoom: view.zoom, setView: (v) => { setViewSpy(v); setV(v); } },
++          viewport: { w: 200, h: 200 },
++          canvasRef,
++          snapPointerRef: { current: null },
++          isBlocked: () => false,
++        });
++      },
++      { wrapper: StrictMode },
++    );
++    expect(setViewSpy).toHaveBeenCalledTimes(1);
++  });
++});
++
++describe("useWorldContext: Escape", () => {
++  it("calls onExitRequest once, from a capture-phase window listener", () => {
++    const h = setup({ native: 16, zoom: 16 });
++    esc();
++    expect(h.onExitRequest).toHaveBeenCalledTimes(1);
++  });
++
++  it("is ignored when isBlocked(), from a text field, or with a modal open", () => {
++    const h = setup({ native: 16, zoom: 16 });
++    h.flags.blocked = true;
++    esc();
++    expect(h.onExitRequest).not.toHaveBeenCalled();
++    h.flags.blocked = false;
++
++    const input = document.body.appendChild(document.createElement("input"));
++    esc(input);
++    const editable = document.body.appendChild(document.createElement("div"));
++    editable.setAttribute("contenteditable", "true");
++    esc(editable);
++    expect(h.onExitRequest).not.toHaveBeenCalled();
++
++    const modal = document.body.appendChild(document.createElement("div"));
++    modal.setAttribute("aria-modal", "true");
++    esc();
++    expect(h.onExitRequest).not.toHaveBeenCalled();
++  });
++
++  it("honours defaultPrevented set before the window capture listener", () => {
++    const h = setup({ native: 16, zoom: 16 });
++    const e = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
++    e.preventDefault();
++    document.body.dispatchEvent(e);
++    expect(h.onExitRequest).not.toHaveBeenCalled();
++  });
++
++  it("judges the modal before a document bubble listener removes it (capture runs first)", () => {
++    const h = setup({ native: 16, zoom: 16 });
++    const modal = document.body.appendChild(document.createElement("div"));
++    modal.setAttribute("aria-modal", "true");
++    const flush = () => modal.remove();
++    document.addEventListener("keydown", flush);
++    esc();
++    document.removeEventListener("keydown", flush);
++    expect(document.querySelector('[aria-modal="true"]')).toBeNull();
++    expect(h.onExitRequest).not.toHaveBeenCalled();
++  });
++
++  it("has no listener when not in context", () => {
++    const h = setup({ native: 16, zoom: 16, inContext: false });
++    esc();
++    expect(h.onExitRequest).not.toHaveBeenCalled();
++  });
++});
++
++describe("useWorldContext: overlay double-click", () => {
++  function overlay(h: ReturnType<typeof setup>) {
++    const div = document.createElement("div");
++    div.getBoundingClientRect = () => ({ left: 0, top: 0, right: 200, bottom: 200, width: 200, height: 200, x: 0, y: 0, toJSON() {} });
++    const bar = div.appendChild(document.createElement("div"));
++    bar.className = "world-canvas__context-bar";
++    (h.result.current.overlayRef as { current: HTMLDivElement | null }).current = div;
++    const dbl = (target: Element, clientX: number, clientY: number) =>
++      h.result.current.onOverlayDoubleClick({ target, clientX, clientY } as unknown as React.MouseEvent<HTMLDivElement>);
++    return { div, bar, dbl };
++  }
++
++  it("exits for a click outside the placement rect; not inside, nor on the bar", () => {
++    const h = setup({ native: 16, zoom: 16 }); // centred: placement covers [20, 180) on both axes
++    const o = overlay(h);
++    o.dbl(o.div, 100, 100);
++    o.dbl(o.bar, 5, 5);
++    expect(h.onExitRequest).not.toHaveBeenCalled();
++    o.dbl(o.div, 5, 5);
++    expect(h.onExitRequest).toHaveBeenCalledTimes(1);
++  });
++});
++
++describe("useWorldContext: stepZoom (M6)", () => {
++  const nonLevel = (h: ReturnType<typeof setup>, zoom: number) =>
++    act(() => h.result.current.onContextViewChange({ zoom: zoom as Zoom, pan: { x: 0, y: 0 } } as MapView));
++
++  it.each([
++    [16, 1.5, 2, 1],
++    [32, 3.2, 4, 2],
++  ])("native %i at overlay zoom %f: +1 goes to %i and -1 to %i", (native, z, up, down) => {
++    const h = setup({ native, zoom: native });
++    nonLevel(h, z);
++    expect(h.result.current.contextView?.zoom).toBe(z);
++    act(() => h.result.current.stepZoom(1));
++    expect(h.result.current.contextView?.zoom).toBe(up);
++    nonLevel(h, z);
++    act(() => h.result.current.stepZoom(-1));
++    expect(h.result.current.contextView?.zoom).toBe(down);
++  });
++
++  it("clamps at the ends", () => {
++    const h = setup({ native: 16, zoom: 64 });
++    expect(h.result.current.contextView?.zoom).toBe(4);
++    act(() => h.result.current.stepZoom(1));
++    expect(h.result.current.contextView?.zoom).toBe(4);
++    const g = setup({ native: 16, zoom: 16 });
++    act(() => g.result.current.stepZoom(-1));
++    expect(g.result.current.contextView?.zoom).toBe(1);
++  });
++
++  it("is a no-op before the snap", () => {
++    const h = setup({ native: 16, zoom: 16, origin: null });
++    act(() => h.result.current.stepZoom(1));
++    expect(h.setViewSpy).not.toHaveBeenCalled();
++  });
++});
++
++describe("useWorldContext: zoom cap and focus", () => {
++  it("maxWorldZoom is base*4 in context and base outside", () => {
++    expect(setup({ native: 32, zoom: 32 }).result.current.maxWorldZoom(32)).toBe(128);
++    expect(setup({ native: 32, zoom: 32, inContext: false }).result.current.maxWorldZoom(32)).toBe(32);
++  });
++
++  it("focuses the canvas on exit only after a snap", () => {
++    const snapped = setup({ native: 16, zoom: 16 });
++    const focus = vi.spyOn(snapped.canvas, "focus");
++    snapped.rerender({ origin: { x: 0, y: 0 }, inContext: false });
++    expect(focus).toHaveBeenCalledTimes(1);
++
++    const waiting = setup({ native: 16, zoom: 16, origin: null });
++    const focus2 = vi.spyOn(waiting.canvas, "focus");
++    waiting.rerender({ origin: null, inContext: false });
++    expect(focus2).not.toHaveBeenCalled();
++  });
++});
