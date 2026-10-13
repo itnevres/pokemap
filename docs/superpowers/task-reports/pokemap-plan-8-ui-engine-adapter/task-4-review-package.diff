@@ -1,0 +1,353 @@
+95ddd81 refactor(ui): GBA groups and coverage hooks wrap useGuardedFetch (Task 4)
+f5e3e66 docs(plan-8): Task 4 spec and Codex brief
+ packages/ui/src/hooks/useCoverage.ts              | 32 +---------
+ packages/ui/src/hooks/useGuardedFetch.ts          |  3 +
+ packages/ui/src/hooks/useMapGroups.ts             | 33 +---------
+ packages/ui/test/gbc/useFetchedFamilyGbc.test.tsx | 65 +++++++++++++++++++
+ packages/ui/test/useFetchedFamilyGba.test.tsx     | 77 +++++++++++++++++++++++
+ packages/ui/test/useGuardedFetch.stale.test.ts    | 57 +++++++++++++++++
+ 6 files changed, 208 insertions(+), 59 deletions(-)
+diff --git a/packages/ui/src/hooks/useCoverage.ts b/packages/ui/src/hooks/useCoverage.ts
+index df39b31..a479c8d 100644
+--- a/packages/ui/src/hooks/useCoverage.ts
++++ b/packages/ui/src/hooks/useCoverage.ts
+@@ -1,11 +1,11 @@
+-import { useEffect, useState } from "react";
++import { unguarded, useGuardedFetch } from "./useGuardedFetch.js";
+ import type { Coverage } from "@pokemap/core/src/analyse/coverage.js";
+ 
+ /**
+  * The server's own `/api/coverage` response: `coverage(project)`'s own
+  * shape, with each `levelByMap` entry ALSO carrying the map's display
+  * name. The level-curve lens paints by placement, and the world view's
+  * placements are keyed by map NAME, not mapId (see
+  * packages/core/src/world/connections.ts's own `Placement.map`), while
+  * `coverage()`'s own `levelByMap` is keyed by mapId only (see
+  * coverage.ts's doc comment on `Coverage.levelByMap`). Rather than
+@@ -16,40 +16,14 @@ import type { Coverage } from "@pokemap/core/src/analyse/coverage.js";
+  */
+ export interface CoverageResponse extends Coverage {
+   levelByMap: Array<Coverage["levelByMap"][number] & { mapName?: string }>;
+ }
+ 
+ export interface UseCoverageResult {
+   data: CoverageResponse | null;
+   error: string | null;
+ }
+ 
+-/**
+- * Fetches `/api/coverage` once. The server itself caches `coverage(project)`
+- * -- it walks all 497 tables (Task 29 Step 3) -- so this hook only needs
+- * the usual "fetch once per mount" shape every other single-resource hook
+- * in this package already uses (mirrors useMapGroups.ts almost exactly).
+- */
++/** Wraps useGuardedFetch without a shape guard for /api/coverage. */
+ export function useCoverage(): UseCoverageResult {
+-  const [data, setData] = useState<CoverageResponse | null>(null);
+-  const [error, setError] = useState<string | null>(null);
+-
+-  useEffect(() => {
+-    let cancelled = false;
+-    fetch("/api/coverage")
+-      .then((r) => {
+-        if (!r.ok) throw new Error(`GET /api/coverage -> ${r.status}`);
+-        return r.json() as Promise<CoverageResponse>;
+-      })
+-      .then((d) => {
+-        if (!cancelled) setData(d);
+-      })
+-      .catch((e: unknown) => {
+-        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+-      });
+-    return () => {
+-      cancelled = true;
+-    };
+-  }, []);
+-
+-  return { data, error };
++  return useGuardedFetch<CoverageResponse>("/api/coverage", unguarded);
+ }
+diff --git a/packages/ui/src/hooks/useGuardedFetch.ts b/packages/ui/src/hooks/useGuardedFetch.ts
+index f103979..4837b39 100644
+--- a/packages/ui/src/hooks/useGuardedFetch.ts
++++ b/packages/ui/src/hooks/useGuardedFetch.ts
+@@ -1,12 +1,15 @@
+ import { useEffect, useState } from "react";
+ 
++/** For callers that trust the server's shape, such as the GBA hooks. */
++export function unguarded<T>(_x: unknown): _x is T { return true; }
++
+ export interface UseGuardedFetchResult<T> {
+   data: T | null;
+   error: string | null;
+ }
+ 
+ /** Truncates a received-value fragment to 200 characters, so a huge or
+  *  malformed body never blows up an error banner. Exported so the one
+  *  existing unit test (`useGuardedFetch.test.ts`) can pin the exact
+  *  truncation boundary once, rather than every guarded-fetch hook's own
+  *  test having to re-derive it. */
+diff --git a/packages/ui/src/hooks/useMapGroups.ts b/packages/ui/src/hooks/useMapGroups.ts
+index 5519fdc..6a52c37 100644
+--- a/packages/ui/src/hooks/useMapGroups.ts
++++ b/packages/ui/src/hooks/useMapGroups.ts
+@@ -1,39 +1,12 @@
+-import { useEffect, useState } from "react";
++import { unguarded, useGuardedFetch } from "./useGuardedFetch.js";
+ import type { MapGroupsData } from "../components/MapTree.js";
+ 
+ export interface UseMapGroupsResult {
+   data: MapGroupsData | null;
+   error: string | null;
+ }
+ 
+-/**
+- * Extracted from App.tsx (Task 20 built it inline). Task 21 adds a second
+- * fetch-and-error block for the selected map's layout (`useMapLayout`), and
+- * two copy-pasted inline effects in one component is the thing not to build
+- * -- so this one moved out first, unchanged in behaviour, to give both a
+- * shared shape.
+- */
++/** Wraps useGuardedFetch without a shape guard for /api/groups. */
+ export function useMapGroups(): UseMapGroupsResult {
+-  const [data, setData] = useState<MapGroupsData | null>(null);
+-  const [error, setError] = useState<string | null>(null);
+-
+-  useEffect(() => {
+-    let cancelled = false;
+-    fetch("/api/groups")
+-      .then((r) => {
+-        if (!r.ok) throw new Error(`GET /api/groups -> ${r.status}`);
+-        return r.json() as Promise<MapGroupsData>;
+-      })
+-      .then((d) => {
+-        if (!cancelled) setData(d);
+-      })
+-      .catch((e: unknown) => {
+-        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+-      });
+-    return () => {
+-      cancelled = true;
+-    };
+-  }, []);
+-
+-  return { data, error };
++  return useGuardedFetch<MapGroupsData>("/api/groups", unguarded);
+ }
+diff --git a/packages/ui/test/gbc/useFetchedFamilyGbc.test.tsx b/packages/ui/test/gbc/useFetchedFamilyGbc.test.tsx
+new file mode 100644
+index 0000000..df1db29
+--- /dev/null
++++ b/packages/ui/test/gbc/useFetchedFamilyGbc.test.tsx
+@@ -0,0 +1,65 @@
++import { afterEach, describe, expect, it, vi } from "vitest";
++import { act, renderHook, waitFor } from "@testing-library/react";
++import { useGbcGroups } from "../../src/gbc/hooks/useGbcGroups.js";
++import { useGbcCoverage } from "../../src/gbc/hooks/useGbcCoverage.js";
++
++afterEach(() => vi.unstubAllGlobals());
++
++function deferred() {
++  let resolve!: (response: Response) => void;
++  const promise = new Promise<Response>((release) => { resolve = release; });
++  return { promise, resolve };
++}
++
++function response(body: unknown): Response {
++  return { ok: true, status: 200, json: () => Promise.resolve(body) } as Response;
++}
++
++const coverageA = {
++  mapsWithEncounters: 125, mapsWithoutEncounters: ["PlayersHouse1F"],
++  sourcesByMethod: { grass: 288, water: 62, fish: 40, headbutt: 10, rock: 5 },
++  levelByMap: [{ mapName: "Route29", averageLevel: 3.5 }],
++  unusedSpecies: ["CELEBI"], fishGroupWithoutWater: [], defects: [],
++};
++const coverageB = {
++  mapsWithEncounters: 126, mapsWithoutEncounters: ["PlayersHouse1F"],
++  sourcesByMethod: { grass: 289, water: 62, fish: 40, headbutt: 10, rock: 5 },
++  levelByMap: [{ mapName: "Route30", averageLevel: 4.5 }],
++  unusedSpecies: ["CELEBI"], fishGroupWithoutWater: [], defects: [],
++};
++
++describe("GBC fetched family", () => {
++  it("useGbcGroups keeps the second StrictMode response when the first resolves late", async () => {
++    const first = deferred();
++    const second = deferred();
++    const fetchMock = vi.fn().mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
++    vi.stubGlobal("fetch", fetchMock);
++    const { result } = renderHook(() => useGbcGroups(), { reactStrictMode: true });
++    expect(fetchMock).toHaveBeenCalledTimes(2);
++    second.resolve(response({ groupOrder: ["B"], groups: { B: [] } }));
++    await waitFor(() => expect(result.current.data).toEqual({ groupOrder: ["B"], groups: { B: [] } }));
++    first.resolve(response({ groupOrder: ["A"], groups: { A: [] } }));
++    await act(async () => {});
++    await act(async () => {});
++    expect(result.current.data).toEqual({ groupOrder: ["B"], groups: { B: [] } });
++    expect(result.current.error).toBeNull();
++    expect(fetchMock).toHaveBeenCalledTimes(2);
++  });
++
++  it("useGbcCoverage keeps the second StrictMode response when the first resolves late", async () => {
++    const first = deferred();
++    const second = deferred();
++    const fetchMock = vi.fn().mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
++    vi.stubGlobal("fetch", fetchMock);
++    const { result } = renderHook(() => useGbcCoverage(), { reactStrictMode: true });
++    expect(fetchMock).toHaveBeenCalledTimes(2);
++    second.resolve(response(coverageB));
++    await waitFor(() => expect(result.current.data).toEqual(coverageB));
++    first.resolve(response(coverageA));
++    await act(async () => {});
++    await act(async () => {});
++    expect(result.current.data).toEqual(coverageB);
++    expect(result.current.error).toBeNull();
++    expect(fetchMock).toHaveBeenCalledTimes(2);
++  });
++});
+diff --git a/packages/ui/test/useFetchedFamilyGba.test.tsx b/packages/ui/test/useFetchedFamilyGba.test.tsx
+new file mode 100644
+index 0000000..5955737
+--- /dev/null
++++ b/packages/ui/test/useFetchedFamilyGba.test.tsx
+@@ -0,0 +1,77 @@
++import { afterEach, describe, expect, it, vi } from "vitest";
++import { act, renderHook, waitFor } from "@testing-library/react";
++import { useMapGroups } from "../src/hooks/useMapGroups.js";
++import { useCoverage } from "../src/hooks/useCoverage.js";
++
++afterEach(() => vi.unstubAllGlobals());
++
++function deferred() {
++  let resolve!: (response: Response) => void;
++  const promise = new Promise<Response>((release) => { resolve = release; });
++  return { promise, resolve };
++}
++
++function response(body: unknown): Response {
++  return { ok: true, status: 200, json: () => Promise.resolve(body) } as Response;
++}
++
++const coverageA = {
++  mapsWithEncounters: 1, encounterTables: 1, mapsWithoutEncounters: [],
++  levelByMap: [{ mapId: "A", mapName: "A", averageLevel: 3 }], unusedSpecies: [],
++  byMethod: { land_mons: 1, water_mons: 0, rock_smash_mons: 0, fishing_mons: 0 },
++};
++const coverageB = {
++  mapsWithEncounters: 2, encounterTables: 2, mapsWithoutEncounters: [],
++  levelByMap: [{ mapId: "B", mapName: "B", averageLevel: 4 }], unusedSpecies: [],
++  byMethod: { land_mons: 2, water_mons: 0, rock_smash_mons: 0, fishing_mons: 0 },
++};
++
++describe("GBA fetched family", () => {
++  it("useMapGroups keeps the second StrictMode response when the first resolves late", async () => {
++    const first = deferred();
++    const second = deferred();
++    const fetchMock = vi.fn().mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
++    vi.stubGlobal("fetch", fetchMock);
++    const { result } = renderHook(() => useMapGroups(), { reactStrictMode: true });
++    expect(fetchMock).toHaveBeenCalledTimes(2);
++    second.resolve(response({ groupOrder: ["B"], groups: { B: [] } }));
++    await waitFor(() => expect(result.current.data).toEqual({ groupOrder: ["B"], groups: { B: [] } }));
++    first.resolve(response({ groupOrder: ["A"], groups: { A: [] } }));
++    await act(async () => {});
++    await act(async () => {});
++    expect(result.current.data).toEqual({ groupOrder: ["B"], groups: { B: [] } });
++    expect(result.current.error).toBeNull();
++    expect(fetchMock).toHaveBeenCalledTimes(2);
++  });
++
++  it("useCoverage keeps the second StrictMode response when the first resolves late", async () => {
++    const first = deferred();
++    const second = deferred();
++    const fetchMock = vi.fn().mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
++    vi.stubGlobal("fetch", fetchMock);
++    const { result } = renderHook(() => useCoverage(), { reactStrictMode: true });
++    expect(fetchMock).toHaveBeenCalledTimes(2);
++    second.resolve(response(coverageB));
++    await waitFor(() => expect(result.current.data).toEqual(coverageB));
++    first.resolve(response(coverageA));
++    await act(async () => {});
++    await act(async () => {});
++    expect(result.current.data).toEqual(coverageB);
++    expect(result.current.error).toBeNull();
++    expect(fetchMock).toHaveBeenCalledTimes(2);
++  });
++
++  it("useMapGroups trusts a malformed server body", async () => {
++    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({ nope: true })));
++    const { result } = renderHook(() => useMapGroups());
++    await waitFor(() => expect(result.current.data).toEqual({ nope: true }));
++    expect(result.current.error).toBeNull();
++  });
++
++  it("useCoverage surfaces the exact 404 error", async () => {
++    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 404 }));
++    const { result } = renderHook(() => useCoverage());
++    await waitFor(() => expect(result.current.error).toBe("GET /api/coverage -> 404"));
++    expect(result.current.data).toBeNull();
++  });
++});
+diff --git a/packages/ui/test/useGuardedFetch.stale.test.ts b/packages/ui/test/useGuardedFetch.stale.test.ts
+new file mode 100644
+index 0000000..b96e3cd
+--- /dev/null
++++ b/packages/ui/test/useGuardedFetch.stale.test.ts
+@@ -0,0 +1,57 @@
++import { afterEach, describe, expect, it, vi } from "vitest";
++import { act, renderHook, waitFor } from "@testing-library/react";
++import { unguarded, useGuardedFetch } from "../src/hooks/useGuardedFetch.js";
++
++afterEach(() => vi.unstubAllGlobals());
++
++function isThing(x: unknown): x is { name: string } {
++  return typeof x === "object" && x !== null && typeof (x as Record<string, unknown>).name === "string";
++}
++
++function deferred() {
++  let resolve!: (response: Response) => void;
++  const promise = new Promise<Response>((release) => { resolve = release; });
++  return { promise, resolve };
++}
++
++function response(body: unknown): Response {
++  return { ok: true, status: 200, json: () => Promise.resolve(body) } as Response;
++}
++
++describe("useGuardedFetch stale response contract", () => {
++  it("returns null data and error while loading", () => {
++    vi.stubGlobal("fetch", vi.fn().mockReturnValue(deferred().promise));
++    const { result } = renderHook(() => useGuardedFetch("/api/a", isThing));
++    expect(result.current).toEqual({ data: null, error: null });
++  });
++
++  it("surfaces a rejected fetch as boom with null data", async () => {
++    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("boom")));
++    const { result } = renderHook(() => useGuardedFetch("/api/a", isThing));
++    await waitFor(() => expect(result.current.error).toBe("boom"));
++    expect(result.current.data).toBeNull();
++  });
++
++  it("keeps B when the old A response resolves after a URL change", async () => {
++    const a = deferred();
++    const b = deferred();
++    vi.stubGlobal("fetch", vi.fn().mockReturnValueOnce(a.promise).mockReturnValueOnce(b.promise));
++    const { result, rerender } = renderHook(({ url }) => useGuardedFetch(url, isThing), {
++      initialProps: { url: "/api/a" },
++    });
++    rerender({ url: "/api/b" });
++    b.resolve(response({ name: "B" }));
++    await waitFor(() => expect(result.current.data).toEqual({ name: "B" }));
++    a.resolve(response({ name: "A" }));
++    await act(async () => {});
++    await act(async () => {});
++    expect(result.current.data).toEqual({ name: "B" });
++  });
++
++  it("unguarded accepts an arbitrary server body", async () => {
++    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({ weird: 1 })));
++    const { result } = renderHook(() => useGuardedFetch("/api/x", unguarded));
++    await waitFor(() => expect(result.current.data).toEqual({ weird: 1 }));
++    expect(result.current.error).toBeNull();
++  });
++});
