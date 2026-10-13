@@ -8,6 +8,7 @@ import type { EventKind } from "@pokemap/core/src/edit/events.js";
 import type { Stamp } from "@pokemap/core/src/edit/paint.js";
 import type { UseEditSessionResult } from "./useEditSession.js";
 import type { MapLayoutData } from "./useMapLayout.js";
+import { useVisit } from "../shared/useVisit.js";
 
 /** Task 14: resolves a bare {kind,index} ref (MapCanvas's own selection
  *  unit) into EventInspector's richer `SelectedEvent`, by looking the event
@@ -55,6 +56,7 @@ export interface UseMapEditingArgs {
   editSession: UseEditSessionResult;
   /** `layout.data` from `useMapLayout(selected)` -- `null`/`undefined` until loaded. */
   layoutData: MapLayoutData | null | undefined;
+  mapName?: string | null;
 }
 
 /** Plan 6c E2: the map-editing state and handlers `App` used to hold inline,
@@ -64,7 +66,8 @@ export interface UseMapEditingArgs {
  *  see the comment above its call site), so it is passed in. `App` calls this
  *  once, in the same place the state used to live, so its lifetime is
  *  unchanged: it survives mode switches. */
-export function useMapEditing({ editSession, layoutData }: UseMapEditingArgs) {
+export function useMapEditing({ editSession, layoutData, mapName }: UseMapEditingArgs) {
+  const visit = useVisit(mapName ?? null);
   // Task 14: whichever event (any kind) is currently selected on the
   // canvas, in real component state -- NOT recomputed inline from
   // editSession.map/layout.data on every render, which is what keeps
@@ -78,7 +81,8 @@ export function useMapEditing({ editSession, layoutData }: UseMapEditingArgs) {
   // dismiss button on the banner itself (MapEditingWorkspace.tsx). Deliberately its own
   // state, not reusing layout.error/dungeons.error/etc.: those are per-hook
   // load errors that persist until the underlying fetch succeeds again,
-  // this is a one-shot "your last click didn't take" notice.
+  // this is a one-shot "your last click didn't take" notice and retires on
+  // a map visit change.
   const [eventOpError, setEventOpError] = useState<string | null>(null);
   // Whichever `map` is actually live right now -- same live/static
   // precedence MapCanvas.tsx's own internal `map` local uses (editSession's
@@ -100,10 +104,11 @@ export function useMapEditing({ editSession, layoutData }: UseMapEditingArgs) {
     editSession
       .moveEvent(next.kind, next.index, next.x, next.y)
       .then(() => {
+        if (!visit.isCurrent()) return;
         setEventOpError(null);
         setSelectedEvent((prev) => (prev && prev.kind === next.kind && prev.index === next.index ? { ...prev, x: next.x, y: next.y } : prev));
       })
-      .catch((e: unknown) => setEventOpError(eventOpErrorMessage(e)));
+      .catch((e: unknown) => { if (visit.isCurrent()) setEventOpError(eventOpErrorMessage(e)); });
   };
 
   // EventInspector's own X/Y/Elevation fields -- follow-up to Task 14: core's
@@ -117,6 +122,7 @@ export function useMapEditing({ editSession, layoutData }: UseMapEditingArgs) {
     editSession
       .moveEvent(next.kind, next.index, next.x, next.y, next.elevation)
       .then(() => {
+        if (!visit.isCurrent()) return;
         setEventOpError(null);
         setSelectedEvent((prev) =>
           prev && prev.kind === next.kind && prev.index === next.index
@@ -124,7 +130,7 @@ export function useMapEditing({ editSession, layoutData }: UseMapEditingArgs) {
             : prev,
         );
       })
-      .catch((e: unknown) => setEventOpError(eventOpErrorMessage(e)));
+      .catch((e: unknown) => { if (visit.isCurrent()) setEventOpError(eventOpErrorMessage(e)); });
   };
 
   // Returns a Promise (never rejects -- the .catch below turns a failure
@@ -135,6 +141,7 @@ export function useMapEditing({ editSession, layoutData }: UseMapEditingArgs) {
     return editSession
       .deleteEvent(ref.kind, ref.index)
       .then((warpRenumberWarnings) => {
+        if (!visit.isCurrent()) return;
         setEventOpError(null);
         setSelectedEvent(null);
         // Task 7/9's own purpose-built cross-map footgun warning (see
@@ -156,7 +163,7 @@ export function useMapEditing({ editSession, layoutData }: UseMapEditingArgs) {
           );
         }
       })
-      .catch((e: unknown) => setEventOpError(eventOpErrorMessage(e)));
+      .catch((e: unknown) => { if (visit.isCurrent()) setEventOpError(eventOpErrorMessage(e)); });
   };
 
   // onAdd's exact shape is deliberately underspecified by the plan this
@@ -194,10 +201,11 @@ export function useMapEditing({ editSession, layoutData }: UseMapEditingArgs) {
     return editSession
       .addEvent("object", value)
       .then(() => {
+        if (!visit.isCurrent()) return;
         setEventOpError(null);
         setSelectedEvent({ kind: "object", index: newIndex, x, y, elevation: 0, graphicsId, movementType });
       })
-      .catch((e: unknown) => setEventOpError(eventOpErrorMessage(e)));
+      .catch((e: unknown) => { if (visit.isCurrent()) setEventOpError(eventOpErrorMessage(e)); });
   };
 
   // Which paint tool the Toolbar has selected, and the small piece of state
@@ -223,6 +231,12 @@ export function useMapEditing({ editSession, layoutData }: UseMapEditingArgs) {
   // re-pick in between. Clearing it on every tool switch would force an
   // annoying re-pick for that normal workflow.
   const [currentStamp, setCurrentStamp] = useState<Stamp | null>(null);
+  // Render-phase reset means no child ever sees a previous visit's pick, selection, or error.
+  if (visit.changed) {
+    setSelectedEvent(null);
+    setCurrentStamp(null);
+    setEventOpError(null);
+  }
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   // Task 17: SignComposer's own open/close flag, same shape as
   // saveDialogOpen above. signAddedMessage is a one-shot confirmation --
@@ -230,8 +244,8 @@ export function useMapEditing({ editSession, layoutData }: UseMapEditingArgs) {
   // eventOpError's danger-bordered banner), so this is a small, deliberate
   // new one: same dismissible-banner shape as eventOpError, accent-toned
   // instead of danger-toned, cleared by its own dismiss button or replaced
-  // by the next sign add -- never auto-cleared on map switch, mirroring
-  // eventOpError's own (also never auto-cleared) precedent exactly.
+  // by the next sign add -- never auto-cleared on map switch. Unlike it,
+  // eventOpError retires with its visit-scoped event operation.
   const [signComposerOpen, setSignComposerOpen] = useState(false);
   const [signAddedMessage, setSignAddedMessage] = useState<string | null>(null);
 
@@ -280,8 +294,8 @@ export function useMapEditing({ editSession, layoutData }: UseMapEditingArgs) {
     if (!window.confirm("Discard all unsaved changes on this map? This cannot be undone.")) return;
     editSession
       .discard()
-      .then(() => setEventOpError(null))
-      .catch((e: unknown) => setEventOpError(eventOpErrorMessage(e)));
+      .then(() => { if (visit.isCurrent()) setEventOpError(null); })
+      .catch((e: unknown) => { if (visit.isCurrent()) setEventOpError(eventOpErrorMessage(e)); });
   };
 
   // The per-map resets `App.changeSelection` runs on a map switch. Deliberately

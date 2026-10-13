@@ -65,7 +65,7 @@ export function App({ switcher }: AppProps) {
   // Plan 6c E2: map-editing state and handlers (selected event, tool/dialog
   // state, event ops, discard) -- see useMapEditing.ts. Called here, at the same
   // spot the state used to live, so its lifetime is unchanged.
-  const editing = useMapEditing({ editSession, layoutData: layout.data });
+  const editing = useMapEditing({ editSession, layoutData: layout.data, mapName: selected });
 
   // I6: "no autosave, ever" also means losing a dirty session silently must
   // never happen -- closing the tab is the browser-level case (this effect),
