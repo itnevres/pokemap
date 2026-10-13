@@ -1,0 +1,909 @@
+diff --git a/docs/superpowers/task-reports/pokemap-plan-8-ui-engine-adapter/ledger.md b/docs/superpowers/task-reports/pokemap-plan-8-ui-engine-adapter/ledger.md
+index e22fc7d..6721a47 100644
+--- a/docs/superpowers/task-reports/pokemap-plan-8-ui-engine-adapter/ledger.md
++++ b/docs/superpowers/task-reports/pokemap-plan-8-ui-engine-adapter/ledger.md
+@@ -121,3 +121,8 @@ Task 5: fix round 1/5 (3 addressed, 0 open — GBA failed-discard witness, core
+ Task 5: PENDING — plan Step 4 live check (paint, undo, redo, save round trip in both families, cmp after a reverse edit). Not started; session handed off. Then archive Task 5 reports and mark complete.
+ Task 5: live check (plan Step 4) PASS both families (task-5-coordinator.md): paint/undo/redo/save round trip in GBC NewBarkTown and GBA LittlerootTown Map view; undo restores the pre-paint canvas hash and clears dirty; cmp -l after save = one byte each (GBC blk byte 46, GBA map.bin byte 261, octal 1→7); reverse edit through the UI → cmp identical, porcelain and sidecars unchanged.
+ Task 5: complete (commits d37959e..a86983d, review clean after 1 fix round)
++Task 6: BASE 8121835. External baselines re-measured at session start (2026-10-13): all match. Executed spec `task-6-spec.md`.
++Ruling: T6 R1 — per-visit state stays in hooks; the shared visit identity/guard is `shared/useVisit.ts`, used by GbcMapEditing and by GBA's useMapEditing (App-level, so it survives Map↔World switches as today); moving GBA state into the workspace component would drop stamp/selection on every mode switch — cost if wrong: none user-visible; placement differs from the plan's wording.
++Ruling: T6 R2 — `WorkspaceSlots` is node-shaped (`top`, `side`, `canvasProps`, `Canvas`) in `shared/EditingWorkspace.tsx`, not `Palette`/`Inspector` component types (families' panels take unrelated props and sit in different places); Task 3's onStrokeChain spread stays in both canvas-prop builders — cost if wrong: Task 7's adapter `slots` is node-shaped.
++Ruling: T6 R6 — GBA named changes: deferred event-op results from a previous visit are dropped, and the event-op error banner retires on a visit change (plan-named "err"); each gets a GBA witness — cost if wrong: an undismissed stale GBA error banner disappears on map switch.
++Ruling: T6 implementer tier = Sonnet (multi-file integration from a prose spec) → delegate chain straight to Codex (>3 files) with `-m gpt-5.6-terra`; fallback `gpt-6-astra`, then Sonnet.
+diff --git a/docs/superpowers/task-reports/pokemap-plan-8-ui-engine-adapter/task-6-brief.md b/docs/superpowers/task-reports/pokemap-plan-8-ui-engine-adapter/task-6-brief.md
+new file mode 100644
+index 0000000..56409eb
+--- /dev/null
++++ b/docs/superpowers/task-reports/pokemap-plan-8-ui-engine-adapter/task-6-brief.md
+@@ -0,0 +1,32 @@
++### Task 6: One editing workspace with family slots. Risk: medium
++
++**Files:**
++- Modify: `components/MapEditingWorkspace.tsx`. It becomes the single workspace, with slots.
++- Modify: `gbc/GbcMapEditing.tsx`. It becomes a GBC slot configuration over the shared workspace and keeps its export and props.
++- Read: `hooks/useMapEditing.ts`, which holds the GBA per-visit state that GBC keeps inline (`pick`, `err`, `warn`, the visit identity at `GbcMapEditing.tsx:60-91`).
++
++**Interfaces (produces):**
++
++```ts
++export interface WorkspaceSlots<CanvasProps> {
++  Palette: React.ComponentType<{ mapKey: string; onPick(stamp: unknown): void }>;
++  Inspector: React.ComponentType<{ mapKey: string }>;
++  toolbarExtras?: React.ReactNode;
++  buildCanvasProps(): CanvasProps | null; // the existing GbcMapEditingCanvasProps builder / GBA equivalent
++}
++// MapEditingWorkspace gains `slots` and keeps `active` + `renderCanvas` (the E2/5b seam) exactly.
++```
++
++The per-visit state and the visit-identity guard (`isCurrent`) move into the shared workspace, so GBA gains the A→B→A protection GBC has.
++
++- [ ] **Step 1:** Write tests for the workspace with stub slots:
++  - a visit change retires the pick, error and warning before children render;
++  - a deferred callback from the old visit is ignored;
++  - `active={false}` hides the chrome but keeps the canvas node.
++
++  Run them and confirm they fail.
++- [ ] **Step 2:** Implement the shared workspace. Wire GBC first: `GbcMapEditing.test.tsx` and `GbcAppContext*` stay unchanged and green. Then wire GBA: `MapEditingWorkspace*.test.tsx` and `AppContextEdit.test.tsx` stay unchanged and green.
++- [ ] **Step 3:** Add a GBA test for the A→B→A stale-pick case that GBC already covers (`GbcAppContext.test.tsx` "different-map tree visits retire a context stamp…"). It fails before Step 2 and passes after.
++- [ ] **Step 4:** Teeth-proof: drop the visit reset, drop `isCurrent`, and remount the canvas on `active` toggle.
++- [ ] **Step 5:** Gate. Live check: context edit in both families. Commit.
++
+diff --git a/docs/superpowers/task-reports/pokemap-plan-8-ui-engine-adapter/task-6-delegate-brief.md b/docs/superpowers/task-reports/pokemap-plan-8-ui-engine-adapter/task-6-delegate-brief.md
+new file mode 100644
+index 0000000..decb0f8
+--- /dev/null
++++ b/docs/superpowers/task-reports/pokemap-plan-8-ui-engine-adapter/task-6-delegate-brief.md
+@@ -0,0 +1,27 @@
++# Codex brief: PokeMap Plan 8 Task 6 (one editing workspace with family slots)
++
++You are implementing one task in this repository (a git worktree on branch `plan-8-ui-engine-adapter`). Work only inside this directory.
++
++## Read first (your requirements, exact values verbatim)
++1. `docs/superpowers/task-reports/pokemap-plan-8-ui-engine-adapter/task-6-brief.md` (the plan's Task 6 text).
++2. `docs/superpowers/task-reports/pokemap-plan-8-ui-engine-adapter/task-6-spec.md` (executed spec: anchors, binding rulings R1-R7, test list, oracle). Where the spec and the brief differ, the spec wins.
++
++Style references: `packages/ui/src/shared/useContextEditing.ts` and its test in `packages/ui/test/shared/`; the App harness in `packages/ui/test/App.test.tsx` (`makeEditFetchMock`) and `packages/ui/test/AppContextEdit.test.tsx`.
++
++## Constraints
++- Keep Task 3's `onStrokeChain` spread in both families' canvas props (spec R2).
++- Tests 3 items 1-3 must be RED before your src change: write them first, save the red run, then implement.
++- Write tests first (the spec's Tests section), run them, save the output to `docs/superpowers/task-reports/pokemap-plan-8-ui-engine-adapter/task-6-red.log`, and report honestly which were red and why. Then implement until green. If you need StrictMode use `renderHook(..., { reactStrictMode: true })` (a `<StrictMode>` wrapper does not double-invoke effects in this setup).
++- Every EXISTING test file stays byte-unchanged. Check: `git diff HEAD -- ':(glob)packages/*/test/**' | grep -E '^-[^-]'` must print nothing. If an existing test fails after your change, stop and say so in your final message (do not edit the test).
++- No new dependencies. No changes under `packages/server`, `packages/core`, `packages/cli`.
++- Run vitest from the repository ROOT, never from `packages/ui` (tell: "document is not defined"). Focused run: `npx vitest run packages/ui/test/shared/useVisit.test.tsx packages/ui/test/shared/EditingWorkspace.test.tsx packages/ui/test/AppVisitGuard.test.tsx packages/ui/test/MapEditingWorkspace.test.tsx packages/ui/test/MapEditingWorkspaceActive.test.tsx packages/ui/test/useMapEditing.test.tsx packages/ui/test/AppContextEdit.test.tsx packages/ui/test/AppEditingWiring.test.tsx packages/ui/test/App.test.tsx packages/ui/test/gbc/GbcMapEditing.test.tsx packages/ui/test/gbc/GbcAppContext.test.tsx packages/ui/test/gbc/GbcAppContextSelection.test.tsx packages/ui/test/gbc/GbcAppContextStroke.test.tsx packages/ui/test/AppContextStroke.test.tsx`. If the Vitest CLI cannot load its config in your sandbox, use the Vitest Node API as before and say so.
++- Final verification, run once each, output to files: `npm test > docs/superpowers/task-reports/pokemap-plan-8-ui-engine-adapter/task-6-gate.log 2>&1`, `npm run typecheck > .../task-6-typecheck.log 2>&1`, `npm run build -w @pokemap/ui > .../task-6-build.log 2>&1`. Never run two full suites at once. Known load-only flakes (rerun that file alone before calling it a regression): WorldCanvasContext "Escape that closes an open context menu…", gbc/GbcAppEditing "dirty guard…" (EPERM on ElmsHouse.asm), GbcApp "hovering the canvas highlights…" / "palette highlight resets…", gbc/GbcAppWorldGuard "a world click, confirmed: POST /discard…" ("expected N to be less than -1").
++- Do NOT run any git command that changes state (no commit, add, checkout, restore, stash, reset). The coordinator commits after verifying your work.
++- Do not touch files outside the ones this task needs. Report unrelated bugs instead of fixing them.
++
++## Final message (also write it to `docs/superpowers/task-reports/pokemap-plan-8-ui-engine-adapter/task-6-report.md`)
++- Status: DONE | DONE_WITH_CONCERNS | BLOCKED.
++- Files changed and what each change does.
++- RED evidence (command, the failing test names and the assertion lines) and GREEN evidence (command, pass counts).
++- Gate results: test files / tests passed / failed, typecheck and build exit status, and the oracle-check output.
++- Any deviation from the spec rulings, with the reason.
+diff --git a/docs/superpowers/task-reports/pokemap-plan-8-ui-engine-adapter/task-6-spec.md b/docs/superpowers/task-reports/pokemap-plan-8-ui-engine-adapter/task-6-spec.md
+new file mode 100644
+index 0000000..21d44f2
+--- /dev/null
++++ b/docs/superpowers/task-reports/pokemap-plan-8-ui-engine-adapter/task-6-spec.md
+@@ -0,0 +1,81 @@
++# Task 6 executed spec (coordinator, 2026-10-13)
++
++BASE: 8121835. Plan text: `task-6-brief.md`. Where this spec and the brief differ, this spec wins.
++Sources: `packages/ui/src/components/MapEditingWorkspace.tsx` (GBA, 160 lines), `packages/ui/src/hooks/useMapEditing.ts` (GBA per-map state, 332), `packages/ui/src/gbc/GbcMapEditing.tsx` (GBC, 206), mount sites `App.tsx:310-336`, `gbc/GbcApp.tsx:305-345`.
++
++## What the two sides share today, and what differs
++
++Shared shape: `{active && <Toolbar …>}` … `<div className="app__map-editing-body">{canvas}{active && <side panel>}</div>`, where `canvas = renderCanvas ? renderCanvas(canvasProps) : canvasProps && <FamilyCanvas {...canvasProps} />` and `canvasProps` is null unless `mapName !== null && data !== null`, and spreads `onStrokeChain` only when given (Task 3).
++
++Differs, and stays per family:
++- GBA wraps everything in `<div className="app__map-editing">`; GBC returns a fragment (its host `GbcApp` supplies that div).
++- Above the body: GBA has Toolbar, collision strip, metatile strip (tool-dependent), event-op error banner, sign-added banner; GBC has Toolbar and its error banner. Beside the canvas: GBA `EventInspector`; GBC `.gbc-map-editing__rail` (palette over inspector), shown only with a map.
++- GBA per-map state lives in the hook `useMapEditing`, called once in `App`. It survives Map ↔ World mode switches (those mount different `MapEditingWorkspace` elements). Its reset is `resetForMapChange()`, called from `App.select`. It has NO visit-identity guard: a deferred event-op callback from map A (`onAddEvent` → `setSelectedEvent({index:newIndex})`, `onDeleteEvent` → `setSelectedEvent(null)`, the move handlers, `handleDiscard`'s `.then/.catch` → `setEventOpError`) lands on whatever map is showing when it resolves.
++- GBC per-map state lives inside the `GbcMapEditing` component (`pick`, `err`, `warn` as `{forMap,…}`), retired by a render-phase visit check (lines 65-78) and guarded by `isCurrent()` (A→B→A safe).
++
++## Rulings
++
++- **R1: per-visit state stays in hooks; the shared visit logic is a hook, not a component.** Moving GBA's per-map state into the workspace component (the plan's literal "move into the shared workspace") would drop GBA's stamp/selection on every Map ↔ World switch, because the two modes mount different workspace elements: an unnamed behaviour change. So the visit identity and its guard become `shared/useVisit.ts`, used by `GbcMapEditing` (where the state already lives) and by `useMapEditing` (where GBA's lives). GBA gains the A→B→A protection exactly as the plan intends. Cost if wrong: none user-visible; the plan's "inside the workspace" placement differs.
++- **R2: `WorkspaceSlots` becomes nodes, not component types.** The families' palettes/inspectors take unrelated props and sit in different places (GBA strips above the canvas, GBC rail beside it), so a `Palette: ComponentType<{mapKey,onPick}>` slot would need adapters in both families for no gain. The shared shell is:
++  ```ts
++  // packages/ui/src/shared/EditingWorkspace.tsx
++  export interface WorkspaceSlots<CanvasProps> {
++    /** Rendered only while active, before the body (toolbar, strips, banners). */
++    top: React.ReactNode;
++    /** Rendered only while active, inside the body after the canvas (inspector / rail). */
++    side: React.ReactNode;
++    /** Null while there is no map (inactive host before load). */
++    canvasProps: CanvasProps | null;
++    /** The family's own canvas, used when renderCanvas is absent. */
++    Canvas: React.ComponentType<CanvasProps>;
++  }
++  export function EditingWorkspace<CanvasProps>(props: WorkspaceSlots<CanvasProps> & {
++    active: boolean;
++    renderCanvas?: (canvasProps: CanvasProps | null) => React.ReactNode;
++  }): JSX.Element // <>{active && top}<div className="app__map-editing-body">{canvas}{active && side}</div></>
++  ```
++  `buildCanvasProps` stays the one expression each family already has (it now feeds `canvasProps`); it must keep the Task 3 `...(onStrokeChain ? { onStrokeChain } : {})` spread in both families. Cost if wrong: Task 7's adapter `slots` field is node-shaped, not component-shaped.
++- **R3: the visit hook.**
++  ```ts
++  // packages/ui/src/shared/useVisit.ts
++  export interface Visit {
++    /** True on the render where `key` changed from the previous visit (before children render). The caller resets
++     *  its per-visit state in that same render (setState during render), as GbcMapEditing does today. */
++    changed: boolean;
++    /** False once this render's visit is no longer the committed one (key changed, including A → B → A, or unmount). */
++    isCurrent(): boolean;
++  }
++  export function useVisit(key: string | null): Visit;
++  ```
++  Implementation is GBC's current code moved verbatim (state `{ mapName }`, render-phase `setVisit`, `useLayoutEffect` committing to a ref and nulling it on cleanup, `isCurrent = () => ref.current === visit`). A → B → A must give a NEW visit object for the second A.
++- **R4: GBC.** `GbcMapEditing` keeps its export, props and DOM. It replaces its inline visit code with `useVisit(mapName)`, runs its existing three resets when `changed`, and renders through `EditingWorkspace` (fragment output, so `GbcApp`'s wrapper div is unchanged). No other change.
++- **R5: GBA.** `useMapEditing` takes a new OPTIONAL arg `mapName?: string | null` (absent → the key never changes, so `useMapEditing.test.tsx` is unaffected); `App.tsx` passes `selected` (its only change). Inside: `const visit = useVisit(mapName ?? null)`; when `visit.changed`, reset `selectedEvent`, `currentStamp` and `eventOpError` in that render. Every deferred `.then`/`.catch` in `onCanvasMoveEvent`, `onMoveEventFromInspector`, `onDeleteEvent` (including its `window.alert`), `onAddEvent` and `handleDiscard` first checks `visit.isCurrent()` and returns if false. `resetForMapChange` stays exported and still called by `App.select` unchanged (its test and the workspace test mocks use it). `activeToolKind`, `collisionValue`, `saveDialogOpen`, `signComposerOpen`, `signAddedMessage` are not per-visit and are untouched. The returned object's keys stay exactly as today. `MapEditingWorkspace` keeps its export, props, and DOM, and renders through `EditingWorkspace` inside its `<div className="app__map-editing">`.
++- **R6: named GBA behaviour changes** (plan-named: "per-visit state … pick, err, warn"): (a) a deferred event-op result from a previous visit no longer selects/deselects an event or sets/clears the error banner on the current map; (b) the event-op error banner is retired on a map visit change (today it persists across maps; the comment at `useMapEditing.ts:76-82`/`232-234` that says "never auto-cleared on map switch" is updated for eventOpError only — `signAddedMessage` keeps that rule). Each gets a GBA witness (Tests 3). Cost if wrong: a GBA user switching maps loses a stale error banner they had not dismissed.
++- **R7: deferred minors** — none folded in (the chain registry and SaveDialog state are App-shell concerns for Task 7; Task 5's Q2 is core-hook scope).
++
++## Tests (new files only; every existing test file stays byte-unchanged)
++
++1. `packages/ui/test/shared/useVisit.test.tsx`:
++   - `changed` is true exactly on the first render with a new key, false on re-renders with the same key; a host that resets a `{forMap}` state when `changed` never renders a child with the previous key's value (record every value a child receives).
++   - a guard captured during visit A returns false after A → B, and after A → B → A (the second A is a new visit); true while A is still current.
++   - unmount makes a captured `isCurrent` return false.
++2. `packages/ui/test/shared/EditingWorkspace.test.tsx` (stub `Canvas` that renders `<canvas data-testid="c" />`):
++   - active: renders `top`, the body with the canvas, then `side` (DOM order); inactive: renders only `.app__map-editing-body` with the canvas, no `top`/`side` nodes.
++   - toggling `active` false → true → false keeps the SAME canvas DOM node and the same body node.
++   - `renderCanvas` given: its output replaces `Canvas` and it receives `canvasProps` (including `null`).
++3. GBA family witnesses, new file `packages/ui/test/AppVisitGuard.test.tsx` (copy the harness style of `App.test.tsx` `makeEditFetchMock`: PalletTown and Route1 maps; stub `window.confirm` → true):
++   - **A → B → A deferred add:** select PalletTown (Map mode), click "Add Event" with the `/event/add` POST held on a deferred promise, select Route1, select PalletTown again, resolve the add with a 200 `{ map, isDirty: true }`. Expect the EventInspector shows no selected event (its empty state, e.g. the "Add Event" button is present and no X/Y form for index N). Must FAIL before R5 (red log) and pass after.
++   - **deferred failure:** same, but resolve with 500 → no `role="alert"` banner on PalletTown. Fails before R5.
++   - **error retired on switch:** a failed add on PalletTown shows the alert; select Route1 → no alert. Fails before R5.
++   - **plan Step 3 mirror:** in World context (copy `AppContextEdit.test.tsx`'s harness), pencil + pick a metatile on map A, tree-click B, re-enter A: the stamp is not current, the pencil tool stays pressed, the world canvas and `.app__map-editing-body` nodes are the same. Expected to PASS before R5 too (GBA's `resetForMapChange` already clears the stamp); record that in the report as a regression pin, not a red witness.
++4. GBC: no new family test needed (`GbcMapEditing.test.tsx` "retires stamp, event and error on an actual visit, including A to B to A" and `GbcAppContext.test.tsx` "different-map tree visits retire…" already pin R4); they must stay green unchanged.
++
++## Teeth-proof (coordinator, after implementation)
++
++- V1 `useVisit` never reports `changed` → must kill shared + GBC + GBA (error-retired witness).
++- V2 `isCurrent` always true → must kill shared + GBC + GBA (deferred add/failure witnesses).
++- V3 `EditingWorkspace` keys/moves the body by `active` (remount) → must kill shared + `MapEditingWorkspaceActive.test.tsx` + `GbcAppContext.test.tsx` node-identity tests.
++
++## Oracle
++
++`git diff 8121835 -- ':(glob)packages/*/test/**' | grep -E '^-[^-]'` prints nothing. No server/core/cli changes. No new dependencies.
+diff --git a/packages/ui/src/App.tsx b/packages/ui/src/App.tsx
+index 3113663..b65b976 100644
+--- a/packages/ui/src/App.tsx
++++ b/packages/ui/src/App.tsx
+@@ -65,7 +65,7 @@ export function App({ switcher }: AppProps) {
+   // Plan 6c E2: map-editing state and handlers (selected event, tool/dialog
+   // state, event ops, discard) -- see useMapEditing.ts. Called here, at the same
+   // spot the state used to live, so its lifetime is unchanged.
+-  const editing = useMapEditing({ editSession, layoutData: layout.data });
++  const editing = useMapEditing({ editSession, layoutData: layout.data, mapName: selected });
+ 
+   // I6: "no autosave, ever" also means losing a dirty session silently must
+   // never happen -- closing the tab is the browser-level case (this effect),
+diff --git a/packages/ui/src/components/MapEditingWorkspace.tsx b/packages/ui/src/components/MapEditingWorkspace.tsx
+index 30b9844..0eff36b 100644
+--- a/packages/ui/src/components/MapEditingWorkspace.tsx
++++ b/packages/ui/src/components/MapEditingWorkspace.tsx
+@@ -7,6 +7,7 @@ import { EventInspector } from "./EventInspector.js";
+ import type { UseEditSessionResult } from "../hooks/useEditSession.js";
+ import type { MapLayoutData } from "../hooks/useMapLayout.js";
+ import type { useMapEditing } from "../hooks/useMapEditing.js";
++import { EditingWorkspace } from "../shared/EditingWorkspace.js";
+ 
+ /** The props the workspace builds for the canvas it hosts -- exactly what
+  *  `App` passed to `MapCanvas` before the extraction (the controlled
+@@ -71,13 +72,9 @@ export function MapEditingWorkspace({ active = true, mapName, data, editSession,
+           onDropperPick: setCurrentStamp,
+         }
+       : null;
+-  // Active, a map always exists (see ActiveMapEditingWorkspaceProps); inactive, the host's renderCanvas takes the null.
+-  const canvas = renderCanvas
+-    ? (renderCanvas as (p: MapEditingCanvasProps | null) => ReactNode)(canvasProps)
+-    : canvasProps && <MapCanvas {...canvasProps} />;
+-  return (
+-    <div className="app__map-editing">
+-      {active && <Toolbar
++  const top = (
++    <>
++      <Toolbar
+         activeToolKind={activeToolKind}
+         onSelectTool={setActiveToolKind}
+         isDirty={editSession.isDirty}
+@@ -94,13 +91,13 @@ export function MapEditingWorkspace({ active = true, mapName, data, editSession,
+         // not clickable-but-silently-inert. All six tools are now
+         // wired.
+         availableTools={["collision", "pencil", "rect", "bucket", "dropper", "shift"]}
+-      />}
+-      {active && activeToolKind === "collision" && (
++      />
++      {activeToolKind === "collision" && (
+         <div className="app__collision-strip">
+           <CollisionPalette selected={collisionValue} onSelect={setCollisionValue} />
+         </div>
+       )}
+-      {active && data && (activeToolKind === "pencil" || activeToolKind === "rect" || activeToolKind === "bucket") && (
++      {data && (activeToolKind === "pencil" || activeToolKind === "rect" || activeToolKind === "bucket") && (
+         <div className="app__metatile-strip">
+           <MetatilePalette
+             layoutName={data.layout.name}
+@@ -119,7 +116,7 @@ export function MapEditingWorkspace({ active = true, mapName, data, editSession,
+           a second error-surface convention. Dismissible so it
+           doesn't linger forever after the player has seen it; also
+           cleared automatically on the next successful event op. */}
+-      {active && eventOpError && (
++      {eventOpError && (
+         <div className="app__event-op-error" role="alert">
+           <span>{eventOpError}</span>
+           <button type="button" className="app__event-op-error-dismiss" onClick={() => setEventOpError(null)} aria-label="Dismiss">
+@@ -133,7 +130,7 @@ export function MapEditingWorkspace({ active = true, mapName, data, editSession,
+           success, not a failure. role="status" (not "alert"): this
+           is informational, not urgent, matching the semantic
+           distinction between the two ARIA live-region roles. */}
+-      {active && signAddedMessage && (
++      {signAddedMessage && (
+         <div className="app__sign-added" role="status">
+           <span>{signAddedMessage}</span>
+           <button type="button" className="app__sign-added-dismiss" onClick={() => setSignAddedMessage(null)} aria-label="Dismiss">
+@@ -141,20 +138,29 @@ export function MapEditingWorkspace({ active = true, mapName, data, editSession,
+           </button>
+         </div>
+       )}
+-      {/* Task 14: EventInspector docks as a real side panel next to
+-          the canvas (DESIGN.md's own layout section anticipates
+-          exactly this -- "whatever Task 21+ adds -- an inspector, a
+-          metatile palette"), not another horizontal strip like
+-          CollisionPalette above it -- its X/Y/Elevation/Delete form
+-          reads naturally as a vertical column, the same shape
+-          app__sidebar's own MapTree already uses on the opposite
+-          edge of the screen. Always mounted (not gated on a
+-          selection): EventInspector's own empty state carries the
+-          Add Event entry point. */}
+-      <div className="app__map-editing-body">
+-        {canvas}
+-        {active && <EventInspector selected={selectedEvent} onMove={onMoveEventFromInspector} onDelete={onDeleteEvent} onAdd={onAddEvent} />}
+-      </div>
++    </>
++  );
++  /* Task 14: EventInspector docks as a real side panel next to
++     the canvas (DESIGN.md's own layout section anticipates
++     exactly this -- "whatever Task 21+ adds -- an inspector, a
++     metatile palette"), not another horizontal strip like
++     CollisionPalette above it -- its X/Y/Elevation/Delete form
++     reads naturally as a vertical column, the same shape
++     app__sidebar's own MapTree already uses on the opposite
++     edge of the screen. Always mounted (not gated on a
++     selection): EventInspector's own empty state carries the
++     Add Event entry point. */
++  const side = <EventInspector selected={selectedEvent} onMove={onMoveEventFromInspector} onDelete={onDeleteEvent} onAdd={onAddEvent} />;
++  return (
++    <div className="app__map-editing">
++      <EditingWorkspace
++        active={active}
++        top={top}
++        side={side}
++        canvasProps={canvasProps}
++        Canvas={MapCanvas}
++        renderCanvas={renderCanvas as ((p: MapEditingCanvasProps | null) => ReactNode) | undefined}
++      />
+     </div>
+   );
+ }
+diff --git a/packages/ui/src/gbc/GbcMapEditing.tsx b/packages/ui/src/gbc/GbcMapEditing.tsx
+index a680921..2899f5d 100644
+--- a/packages/ui/src/gbc/GbcMapEditing.tsx
++++ b/packages/ui/src/gbc/GbcMapEditing.tsx
+@@ -1,4 +1,4 @@
+-import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
++import { useMemo, useState, type ReactNode } from "react";
+ import type { GbcMapPayload } from "@pokemap/core/src/gbc/wire.js";
+ import type { GbcStamp } from "@pokemap/core/src/gbc/edit/paint.js";
+ import type { GbcEventKind, GbcWarpRenumberWarning } from "@pokemap/core/src/gbc/edit/events.js";
+@@ -8,6 +8,8 @@ import { GbcMetatilePalette } from "./GbcMetatilePalette.js";
+ import { GbcEventInspector } from "./GbcEventInspector.js";
+ import type { UseGbcEditSessionResult } from "./hooks/useGbcEditSession.js";
+ import type { GbcTimeOfDay } from "./time.js";
++import { EditingWorkspace } from "../shared/EditingWorkspace.js";
++import { useVisit } from "../shared/useVisit.js";
+ 
+ /** No collision button (Plan 7 Goal: GBC collision is per metatile, not per block) and no sign composer. */
+ export const GBC_TOOLS: ToolKind[] = ["pencil", "rect", "bucket", "dropper", "shift"];
+@@ -62,20 +64,14 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
+   const [pick, setPick] = useState<{ forMap: string; stamp: GbcStamp | null; event: GbcEventRef | null }>({ forMap: key, stamp: null, event: null });
+   const [err, setErr] = useState<{ forMap: string; text: string } | null>(null);
+   const [warn, setWarn] = useState<{ forMap: string; list: GbcWarpRenumberWarning[] } | null>(null);
+-  const [visit, setVisit] = useState({ mapName });
+-  const currentVisit = useRef<typeof visit | null>(visit);
++  const visit = useVisit(mapName);
+   // Adjust this component's state during render: React retries it before rendering children, so no old pick is exposed.
+-  if (visit.mapName !== mapName) {
+-    setVisit({ mapName });
++  if (visit.changed) {
+     setPick({ forMap: key, stamp: null, event: null });
+     setErr(null);
+     setWarn(null);
+   }
+-  useLayoutEffect(() => {
+-    currentVisit.current = visit;
+-    return () => { currentVisit.current = null; };
+-  }, [visit]);
+-  const isCurrent = () => currentVisit.current === visit;
++  const isCurrent = visit.isCurrent;
+ 
+   const mine = pick.forMap === key;
+   const stamp = mine ? pick.stamp : null;
+@@ -146,11 +142,8 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
+           onEditError: (m) => fail(new Error(m)),
+         }
+       : null;
+-  const canvas = renderCanvas ? renderCanvas(canvasProps) : canvasProps && <GbcMapCanvas {...canvasProps} />;
+-
+-  return (
+-    <>
+-      {active && <Toolbar
++  const top = <>
++      <Toolbar
+         activeToolKind={toolKind}
+         onSelectTool={setToolKind}
+         tools={GBC_TOOLS}
+@@ -163,8 +156,8 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
+         canRedo={session.canRedo}
+         onOpenSave={onOpenSave}
+         onDiscard={onDiscard}
+-      />}
+-      {active && error && (
++      />
++      {error && (
+         <div className="app__event-op-error" role="alert">
+           <span>{error}</span>
+           <button type="button" className="app__event-op-error-dismiss" onClick={ok} aria-label="Dismiss">
+@@ -172,11 +165,10 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
+           </button>
+         </div>
+       )}
+-      <div className="app__map-editing-body">
+-        {canvas}
+-        {/* One right-hand rail (palette over inspector), 260px: three fixed side panels left the canvas about 224px
+-            at 1024 wide (quality review I4). The rail and its children carry min-width: 0 in the stylesheet. */}
+-        {active && mapName !== null && data !== null && (
++    </>;
++  // One right-hand rail (palette over inspector), 260px: three fixed side panels left the canvas about 224px
++  // at 1024 wide (quality review I4). The rail and its children carry min-width: 0 in the stylesheet.
++  const side = mapName !== null && data !== null ? (
+           <div className="gbc-map-editing__rail">
+             <GbcMetatilePalette
+               mapName={mapName}
+@@ -199,8 +191,6 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
+               onDismissWarnings={() => { if (isCurrent()) setWarn(null); }}
+             />
+           </div>
+-        )}
+-      </div>
+-    </>
+-  );
++  ) : null;
++  return <EditingWorkspace active={active} top={top} side={side} canvasProps={canvasProps} Canvas={GbcMapCanvas} renderCanvas={renderCanvas} />;
+ }
+diff --git a/packages/ui/src/hooks/useMapEditing.ts b/packages/ui/src/hooks/useMapEditing.ts
+index 335d028..d4ec13d 100644
+--- a/packages/ui/src/hooks/useMapEditing.ts
++++ b/packages/ui/src/hooks/useMapEditing.ts
+@@ -8,6 +8,7 @@ import type { EventKind } from "@pokemap/core/src/edit/events.js";
+ import type { Stamp } from "@pokemap/core/src/edit/paint.js";
+ import type { UseEditSessionResult } from "./useEditSession.js";
+ import type { MapLayoutData } from "./useMapLayout.js";
++import { useVisit } from "../shared/useVisit.js";
+ 
+ /** Task 14: resolves a bare {kind,index} ref (MapCanvas's own selection
+  *  unit) into EventInspector's richer `SelectedEvent`, by looking the event
+@@ -55,6 +56,7 @@ export interface UseMapEditingArgs {
+   editSession: UseEditSessionResult;
+   /** `layout.data` from `useMapLayout(selected)` -- `null`/`undefined` until loaded. */
+   layoutData: MapLayoutData | null | undefined;
++  mapName?: string | null;
+ }
+ 
+ /** Plan 6c E2: the map-editing state and handlers `App` used to hold inline,
+@@ -64,7 +66,8 @@ export interface UseMapEditingArgs {
+  *  see the comment above its call site), so it is passed in. `App` calls this
+  *  once, in the same place the state used to live, so its lifetime is
+  *  unchanged: it survives mode switches. */
+-export function useMapEditing({ editSession, layoutData }: UseMapEditingArgs) {
++export function useMapEditing({ editSession, layoutData, mapName }: UseMapEditingArgs) {
++  const visit = useVisit(mapName ?? null);
+   // Task 14: whichever event (any kind) is currently selected on the
+   // canvas, in real component state -- NOT recomputed inline from
+   // editSession.map/layout.data on every render, which is what keeps
+@@ -78,7 +81,8 @@ export function useMapEditing({ editSession, layoutData }: UseMapEditingArgs) {
+   // dismiss button on the banner itself (MapEditingWorkspace.tsx). Deliberately its own
+   // state, not reusing layout.error/dungeons.error/etc.: those are per-hook
+   // load errors that persist until the underlying fetch succeeds again,
+-  // this is a one-shot "your last click didn't take" notice.
++  // this is a one-shot "your last click didn't take" notice and retires on
++  // a map visit change.
+   const [eventOpError, setEventOpError] = useState<string | null>(null);
+   // Whichever `map` is actually live right now -- same live/static
+   // precedence MapCanvas.tsx's own internal `map` local uses (editSession's
+@@ -100,10 +104,11 @@ export function useMapEditing({ editSession, layoutData }: UseMapEditingArgs) {
+     editSession
+       .moveEvent(next.kind, next.index, next.x, next.y)
+       .then(() => {
++        if (!visit.isCurrent()) return;
+         setEventOpError(null);
+         setSelectedEvent((prev) => (prev && prev.kind === next.kind && prev.index === next.index ? { ...prev, x: next.x, y: next.y } : prev));
+       })
+-      .catch((e: unknown) => setEventOpError(eventOpErrorMessage(e)));
++      .catch((e: unknown) => { if (visit.isCurrent()) setEventOpError(eventOpErrorMessage(e)); });
+   };
+ 
+   // EventInspector's own X/Y/Elevation fields -- follow-up to Task 14: core's
+@@ -117,6 +122,7 @@ export function useMapEditing({ editSession, layoutData }: UseMapEditingArgs) {
+     editSession
+       .moveEvent(next.kind, next.index, next.x, next.y, next.elevation)
+       .then(() => {
++        if (!visit.isCurrent()) return;
+         setEventOpError(null);
+         setSelectedEvent((prev) =>
+           prev && prev.kind === next.kind && prev.index === next.index
+@@ -124,7 +130,7 @@ export function useMapEditing({ editSession, layoutData }: UseMapEditingArgs) {
+             : prev,
+         );
+       })
+-      .catch((e: unknown) => setEventOpError(eventOpErrorMessage(e)));
++      .catch((e: unknown) => { if (visit.isCurrent()) setEventOpError(eventOpErrorMessage(e)); });
+   };
+ 
+   // Returns a Promise (never rejects -- the .catch below turns a failure
+@@ -135,6 +141,7 @@ export function useMapEditing({ editSession, layoutData }: UseMapEditingArgs) {
+     return editSession
+       .deleteEvent(ref.kind, ref.index)
+       .then((warpRenumberWarnings) => {
++        if (!visit.isCurrent()) return;
+         setEventOpError(null);
+         setSelectedEvent(null);
+         // Task 7/9's own purpose-built cross-map footgun warning (see
+@@ -156,7 +163,7 @@ export function useMapEditing({ editSession, layoutData }: UseMapEditingArgs) {
+           );
+         }
+       })
+-      .catch((e: unknown) => setEventOpError(eventOpErrorMessage(e)));
++      .catch((e: unknown) => { if (visit.isCurrent()) setEventOpError(eventOpErrorMessage(e)); });
+   };
+ 
+   // onAdd's exact shape is deliberately underspecified by the plan this
+@@ -194,10 +201,11 @@ export function useMapEditing({ editSession, layoutData }: UseMapEditingArgs) {
+     return editSession
+       .addEvent("object", value)
+       .then(() => {
++        if (!visit.isCurrent()) return;
+         setEventOpError(null);
+         setSelectedEvent({ kind: "object", index: newIndex, x, y, elevation: 0, graphicsId, movementType });
+       })
+-      .catch((e: unknown) => setEventOpError(eventOpErrorMessage(e)));
++      .catch((e: unknown) => { if (visit.isCurrent()) setEventOpError(eventOpErrorMessage(e)); });
+   };
+ 
+   // Which paint tool the Toolbar has selected, and the small piece of state
+@@ -223,6 +231,12 @@ export function useMapEditing({ editSession, layoutData }: UseMapEditingArgs) {
+   // re-pick in between. Clearing it on every tool switch would force an
+   // annoying re-pick for that normal workflow.
+   const [currentStamp, setCurrentStamp] = useState<Stamp | null>(null);
++  // Render-phase reset means no child ever sees a previous visit's pick, selection, or error.
++  if (visit.changed) {
++    setSelectedEvent(null);
++    setCurrentStamp(null);
++    setEventOpError(null);
++  }
+   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+   // Task 17: SignComposer's own open/close flag, same shape as
+   // saveDialogOpen above. signAddedMessage is a one-shot confirmation --
+@@ -230,8 +244,8 @@ export function useMapEditing({ editSession, layoutData }: UseMapEditingArgs) {
+   // eventOpError's danger-bordered banner), so this is a small, deliberate
+   // new one: same dismissible-banner shape as eventOpError, accent-toned
+   // instead of danger-toned, cleared by its own dismiss button or replaced
+-  // by the next sign add -- never auto-cleared on map switch, mirroring
+-  // eventOpError's own (also never auto-cleared) precedent exactly.
++  // by the next sign add -- never auto-cleared on map switch. Unlike it,
++  // eventOpError retires with its visit-scoped event operation.
+   const [signComposerOpen, setSignComposerOpen] = useState(false);
+   const [signAddedMessage, setSignAddedMessage] = useState<string | null>(null);
+ 
+@@ -280,8 +294,8 @@ export function useMapEditing({ editSession, layoutData }: UseMapEditingArgs) {
+     if (!window.confirm("Discard all unsaved changes on this map? This cannot be undone.")) return;
+     editSession
+       .discard()
+-      .then(() => setEventOpError(null))
+-      .catch((e: unknown) => setEventOpError(eventOpErrorMessage(e)));
++      .then(() => { if (visit.isCurrent()) setEventOpError(null); })
++      .catch((e: unknown) => { if (visit.isCurrent()) setEventOpError(eventOpErrorMessage(e)); });
+   };
+ 
+   // The per-map resets `App.changeSelection` runs on a map switch. Deliberately
+diff --git a/packages/ui/src/shared/EditingWorkspace.tsx b/packages/ui/src/shared/EditingWorkspace.tsx
+new file mode 100644
+index 0000000..668bcc9
+--- /dev/null
++++ b/packages/ui/src/shared/EditingWorkspace.tsx
+@@ -0,0 +1,22 @@
++import type { ComponentType, ReactNode } from "react";
++
++/** The shared editing shell used by both map families. It keeps the body and
++ * canvas in one position while active chrome appears around them. */
++export interface WorkspaceSlots<CanvasProps> {
++  /** Rendered only while active, before the stable body (toolbar, strips, banners). */
++  top: ReactNode;
++  /** Rendered only while active, inside the body after the canvas (inspector / rail). */
++  side: ReactNode;
++  /** Null while there is no map (inactive host before load). */
++  canvasProps: CanvasProps | null;
++  /** The family's own canvas, used when renderCanvas is absent. */
++  Canvas: ComponentType<CanvasProps>;
++}
++
++export function EditingWorkspace<CanvasProps>({ active, top, side, canvasProps, Canvas, renderCanvas }: WorkspaceSlots<CanvasProps> & {
++  active: boolean;
++  renderCanvas?: (canvasProps: CanvasProps | null) => ReactNode;
++}) {
++  const canvas = renderCanvas ? renderCanvas(canvasProps) : canvasProps && <Canvas {...canvasProps} />;
++  return <>{active && top}<div className="app__map-editing-body">{canvas}{active && side}</div></>;
++}
+diff --git a/packages/ui/src/shared/useVisit.ts b/packages/ui/src/shared/useVisit.ts
+new file mode 100644
+index 0000000..4598d8a
+--- /dev/null
++++ b/packages/ui/src/shared/useVisit.ts
+@@ -0,0 +1,24 @@
++import { useLayoutEffect, useRef, useState } from "react";
++
++/** A committed visit identity shared by the GBA and GBC editing hooks. It
++ * lets each hook retire per-map UI state during render, before children see it. */
++export interface Visit {
++  /** True on the render where `key` changed from the previous visit. */
++  changed: boolean;
++  /** False once this render's visit is no longer committed, including A -> B -> A or unmount. */
++  isCurrent(): boolean;
++}
++
++/** Keeps a visit object stable until its key changes; consumers use it to preserve
++ * their stable canvas/body position while retiring only their visit-scoped state. */
++export function useVisit(key: string | null): Visit {
++  const [visit, setVisit] = useState({ key });
++  const currentVisit = useRef<typeof visit | null>(visit);
++  const changed = visit.key !== key;
++  if (changed) setVisit({ key });
++  useLayoutEffect(() => {
++    currentVisit.current = visit;
++    return () => { currentVisit.current = null; };
++  }, [visit]);
++  return { changed, isCurrent: () => currentVisit.current === visit };
++}
+diff --git a/packages/ui/test/AppContextVisit.test.tsx b/packages/ui/test/AppContextVisit.test.tsx
+new file mode 100644
+index 0000000..28bacc2
+--- /dev/null
++++ b/packages/ui/test/AppContextVisit.test.tsx
+@@ -0,0 +1,141 @@
++// Plan 8 Task 6 (spec Tests 3 item 4): GBA mirror of GbcAppContext "different-map tree visits retire a context stamp".
++// A regression pin, not a red witness: GBA's resetForMapChange already cleared the stamp before Task 6. Harness copied
++// from AppContextEdit.test.tsx (each App test file keeps its own).
++import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
++import { render, screen, fireEvent, waitFor } from "@testing-library/react";
++import { App } from "../src/App.js";
++
++const LAYOUT = {
++  map: {
++    id: "MAP_PALLET_TOWN", name: "PalletTown", layout: "LAYOUT_PALLET_TOWN",
++    music: "MUS_DUMMY", regionMapSection: "MAPSEC_NONE", mapType: "MAP_TYPE_TOWN", weather: "WEATHER_NONE",
++    connections: [], objectEvents: [], warpEvents: [], coordEvents: [], bgEvents: [],
++  },
++  layout: {
++    id: "LAYOUT_PALLET_TOWN", name: "PalletTown_Layout", width: 2, height: 2, borderWidth: 1, borderHeight: 1,
++    primaryTileset: "gTileset_General", secondaryTileset: "gTileset_Petalburg",
++    borderFilepath: "data/layouts/PalletTown/border.bin", blockdataFilepath: "data/layouts/PalletTown/map.bin",
++  },
++  split: { version: "emerald", tiles: 512, metatiles: 512, pals: 6 },
++  blocks: [
++    { metatileId: 0x10, collision: 0, elevation: 3, behavior: 0 },
++    { metatileId: 0x11, collision: 0, elevation: 3, behavior: 0 },
++    { metatileId: 0x12, collision: 0, elevation: 3, behavior: 0 },
++    { metatileId: 0x13, collision: 0, elevation: 3, behavior: 0 },
++  ],
++  primaryCount: 4,
++  secondaryCount: 2,
++};
++const ROUTE1 = { ...LAYOUT, map: { ...LAYOUT.map, id: "MAP_ROUTE1", name: "Route1" } };
++const GROUPS = { groupOrder: ["Kanto"], groups: { Kanto: ["PalletTown", "Route1"] } };
++// PalletTown at world x 0, Route1 at x 11, both 10x10 tiles. Viewport 400x100, zoom 1: PalletTown [0,10), Route1 [11,21).
++const WORLD = {
++  placements: {
++    PalletTown: { map: "PalletTown", x: 0, y: 0, width: 10, height: 10, component: 0 },
++    Route1: { map: "Route1", x: 11, y: 0, width: 10, height: 10, component: 1 },
++  },
++  components: [
++    { index: 0, maps: ["PalletTown"], bounds: { x: 0, y: 0, width: 10, height: 10 } },
++    { index: 1, maps: ["Route1"], bounds: { x: 11, y: 0, width: 10, height: 10 } },
++  ],
++  conflicts: [], verticalLinks: [], sidecar: { dungeonAutoLayout: true },
++};
++
++const ok = (body: unknown) => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) } as Response);
++
++function makeFetchMock() {
++  return vi.fn((url: string, init?: RequestInit) => {
++    const method = init?.method ?? "GET";
++    if (url === "/api/groups") return ok(GROUPS);
++    if (url === "/api/map/PalletTown") return ok(LAYOUT);
++    if (url === "/api/map/Route1") return ok(ROUTE1);
++    if (url === "/api/world") return ok(WORLD);
++    if (url === "/api/edit/PalletTown/event/add" && method === "POST") return ok({ map: LAYOUT.map, isDirty: true });
++    if (url === "/api/edit/PalletTown/plan") return ok({ changes: [{ path: "data/maps/PalletTown/map.json", kind: "json", summary: "map.json: 1 event added" }], refusals: [] });
++    if (url === "/api/edit/PalletTown/commit" && method === "POST") return ok({ changes: [], refusals: [] });
++    if (url === "/api/coverage") {
++      return ok({ mapsWithEncounters: 0, encounterTables: 0, mapsWithoutEncounters: [], levelByMap: [], unusedSpecies: [],
++        byMethod: { land_mons: 0, water_mons: 0, rock_smash_mons: 0, fishing_mons: 0 } });
++    }
++    if (url === "/api/species") return ok([]);
++    if (url.startsWith("/api/warps/")) return ok({ warps: [] });
++    if (url.startsWith("/api/encounters/")) return ok({ methods: [] });
++    return Promise.reject(new Error(`unexpected fetch ${url}`));
++  });
++}
++
++class FakeImage {
++  static instances: FakeImage[] = [];
++  src = "";
++  onload: (() => void) | null = null;
++  constructor() { FakeImage.instances.push(this); }
++}
++
++const sizes = {
++  w: Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth"),
++  h: Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight"),
++};
++beforeEach(() => {
++  FakeImage.instances = [];
++  vi.stubGlobal("Image", FakeImage);
++  Object.defineProperty(HTMLElement.prototype, "clientWidth", { value: 400, configurable: true });
++  Object.defineProperty(HTMLElement.prototype, "clientHeight", { value: 100, configurable: true });
++});
++afterEach(() => {
++  vi.unstubAllGlobals();
++  vi.restoreAllMocks();
++  if (sizes.w) Object.defineProperty(HTMLElement.prototype, "clientWidth", sizes.w);
++  if (sizes.h) Object.defineProperty(HTMLElement.prototype, "clientHeight", sizes.h);
++});
++
++const RECT = { left: 0, top: 0, right: 400, bottom: 100, width: 400, height: 100, x: 0, y: 0, toJSON() {} };
++const worldCanvas = () => document.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement | null;
++
++async function enterWorld() {
++  fireEvent.click(screen.getByRole("button", { name: "World" }));
++  await waitFor(() => expect(worldCanvas()).toBeTruthy());
++  const canvas = worldCanvas()!;
++  canvas.getBoundingClientRect = () => RECT;
++  await waitFor(() => expect(document.querySelector(".world-canvas__zoom-readout")).toBeTruthy());
++  await waitFor(() => expect(screen.queryByText(/Loading world/)).toBeNull());
++  return canvas;
++}
++
++async function startApp(fetchMock = makeFetchMock()) {
++  vi.stubGlobal("fetch", fetchMock);
++  render(<App />);
++  await waitFor(() => expect(screen.getByRole("button", { name: "Route1" })).toBeTruthy());
++  return fetchMock;
++}
++
++/** Fresh World view: Route1's body is x in [11,21), so (16,5) is inside it. */
++const dblClickRoute1 = (canvas: HTMLCanvasElement) => fireEvent.doubleClick(canvas, { clientX: 16, clientY: 5 });
++const contextOverlay = () => document.querySelector(".world-canvas__context");
++const chrome = () => document.querySelector(".toolbar");
++
++
++describe("App -- in-context visits (Plan 8 Task 6)", () => {
++  it("different-map tree visits retire a context stamp across A to B to A while preserving tool and host", async () => {
++    await startApp();
++    const canvas = await enterWorld();
++    dblClickRoute1(canvas);
++    await waitFor(() => expect(contextOverlay()!.querySelector("canvas.map-canvas__stage")).not.toBeNull());
++    const body = document.querySelector(".app__map-editing-body");
++    fireEvent.click(screen.getByRole("button", { name: "pencil" }));
++    const picked = await screen.findByRole("button", { name: /metatile 0x1\b/i });
++    fireEvent.click(picked);
++    await waitFor(() => expect(picked.getAttribute("aria-pressed")).toBe("true")); // positive control
++
++    fireEvent.click(screen.getByRole("button", { name: "PalletTown" }));
++    await waitFor(() => expect(contextOverlay()).toBeNull());
++    fireEvent.click(screen.getByRole("button", { name: "Route1" }));
++    await waitFor(() => expect(document.querySelector('.map-tree__map[aria-current="true"]')?.textContent).toContain("Route1"));
++    fireEvent.doubleClick(canvas, { clientX: 200, clientY: 50 }); // the tree jump centres Route1 in the 400x100 stage
++    await waitFor(() => expect(contextOverlay()!.querySelector("canvas.map-canvas__stage")).not.toBeNull());
++
++    expect(screen.getByRole("button", { name: /metatile 0x1\b/i }).getAttribute("aria-pressed")).not.toBe("true");
++    expect(screen.getByRole("button", { name: "pencil" }).getAttribute("aria-pressed")).toBe("true");
++    expect(worldCanvas()).toBe(canvas);
++    expect(document.querySelector(".app__map-editing-body")).toBe(body);
++  });
++});
+diff --git a/packages/ui/test/AppVisitGuard.test.tsx b/packages/ui/test/AppVisitGuard.test.tsx
+new file mode 100644
+index 0000000..2cd7ac9
+--- /dev/null
++++ b/packages/ui/test/AppVisitGuard.test.tsx
+@@ -0,0 +1,72 @@
++import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
++import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
++import { App } from "../src/App.js";
++
++const PALLET = {
++  map: { id: "MAP_PALLET", name: "PalletTown", layout: "LAYOUT_PALLET", music: "MUS_DUMMY", regionMapSection: "MAPSEC_NONE", mapType: "MAP_TYPE_TOWN", weather: "WEATHER_NONE", connections: [], objectEvents: [], warpEvents: [], coordEvents: [], bgEvents: [] },
++  layout: { id: "LAYOUT_PALLET", name: "Pallet_Layout", width: 2, height: 2, borderWidth: 1, borderHeight: 1, primaryTileset: "gTileset_General", secondaryTileset: "gTileset_Petalburg", borderFilepath: "data/layouts/Pallet/border.bin", blockdataFilepath: "data/layouts/Pallet/map.bin" },
++  split: { version: "emerald", tiles: 512, metatiles: 512, pals: 6 }, blocks: [], primaryCount: 4, secondaryCount: 2,
++};
++const ROUTE = { ...PALLET, map: { ...PALLET.map, id: "MAP_ROUTE", name: "Route1" } };
++const GROUPS = { groupOrder: ["Kanto"], groups: { Kanto: ["PalletTown", "Route1"] } };
++
++function deferred() {
++  let resolve!: (response: Response) => void;
++  const promise = new Promise<Response>((yes) => { resolve = yes; });
++  return { promise, resolve };
++}
++function response(ok: boolean, body: unknown) {
++  return { ok, status: ok ? 200 : 500, json: () => Promise.resolve(body) } as Response;
++}
++function fetchMock(add: ReturnType<typeof deferred>) {
++  return vi.fn((url: string, init?: RequestInit) => {
++    if (url === "/api/groups") return Promise.resolve(response(true, GROUPS));
++    if (url === "/api/map/PalletTown") return Promise.resolve(response(true, PALLET));
++    if (url === "/api/map/Route1") return Promise.resolve(response(true, ROUTE));
++    if (url === "/api/edit/PalletTown/event/add" && init?.method === "POST") return add.promise;
++    return Promise.reject(new Error(`unexpected fetch ${url}`));
++  });
++}
++async function openPallet() {
++  fireEvent.click(await screen.findByRole("button", { name: "PalletTown" }));
++  await screen.findByRole("button", { name: "Add Event" });
++}
++async function switchTo(name: "PalletTown" | "Route1") {
++  fireEvent.click(screen.getByRole("button", { name }));
++  await waitFor(() => expect(document.querySelector(`[aria-label="${name} canvas"]`)).toBeTruthy());
++}
++
++afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
++beforeEach(() => { Element.prototype.scrollIntoView = vi.fn(); });
++
++describe("App GBA visit guard", () => {
++  it("ignores a deferred A to B to A add success", async () => {
++    const add = deferred(); vi.stubGlobal("fetch", fetchMock(add)); render(<App />); await openPallet();
++    fireEvent.click(screen.getByRole("button", { name: "Add Event" }));
++    await switchTo("Route1"); await switchTo("PalletTown");
++    await act(async () => add.resolve(response(true, { map: PALLET.map, isDirty: true })));
++    await act(async () => {});
++    expect(screen.getByText("No event selected.")).toBeTruthy();
++    expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
++    expect(screen.queryByRole("spinbutton", { name: "X" })).toBeNull();
++    expect(screen.queryByRole("spinbutton", { name: "Y" })).toBeNull();
++  });
++
++  it("ignores a deferred A to B to A add failure", async () => {
++    const add = deferred(); vi.stubGlobal("fetch", fetchMock(add)); render(<App />); await openPallet();
++    fireEvent.click(screen.getByRole("button", { name: "Add Event" }));
++    await switchTo("Route1"); await switchTo("PalletTown");
++    await act(async () => add.resolve(response(false, { error: "old failure" })));
++    await act(async () => {});
++    expect(screen.queryByRole("alert")).toBeNull();
++  });
++
++  it("retires an event error when switching visits", async () => {
++    const add = deferred(); vi.stubGlobal("fetch", fetchMock(add)); render(<App />); await openPallet();
++    fireEvent.click(screen.getByRole("button", { name: "Add Event" }));
++    await act(async () => add.resolve(response(false, { error: "old failure" })));
++    await screen.findByRole("alert");
++    await switchTo("Route1");
++    expect(screen.queryByRole("alert")).toBeNull();
++  });
++});
+diff --git a/packages/ui/test/shared/EditingWorkspace.test.tsx b/packages/ui/test/shared/EditingWorkspace.test.tsx
+new file mode 100644
+index 0000000..59a42ea
+--- /dev/null
++++ b/packages/ui/test/shared/EditingWorkspace.test.tsx
+@@ -0,0 +1,48 @@
++import { useEffect } from "react";
++import { describe, expect, it, vi } from "vitest";
++import { render } from "@testing-library/react";
++import { EditingWorkspace } from "../../src/shared/EditingWorkspace.js";
++
++function Canvas({ label }: { label: string }) {
++  return <canvas data-testid="canvas" aria-label={label} />;
++}
++
++describe("EditingWorkspace", () => {
++  it("renders active top, body canvas, and side in order, while inactive retains only body and canvas", () => {
++    const slots = { top: <div data-testid="top" />, side: <div data-testid="side" />, canvasProps: { label: "main" }, Canvas };
++    const { container, rerender } = render(<EditingWorkspace active {...slots} />);
++    expect([...container.children].map((node) => node.getAttribute("data-testid") ?? node.className)).toEqual(["top", "app__map-editing-body"]);
++    expect([...container.querySelector(".app__map-editing-body")!.children].map((node) => node.getAttribute("data-testid") ?? node.tagName)).toEqual(["canvas", "side"]);
++    expect(container.querySelector("canvas")?.getAttribute("aria-label")).toBe("main");
++    rerender(<EditingWorkspace active={false} {...slots} />);
++    expect(container.querySelector("[data-testid=top]")).toBeNull();
++    expect(container.querySelector("[data-testid=side]")).toBeNull();
++    expect(container.children).toHaveLength(1);
++    expect(container.firstElementChild?.className).toBe("app__map-editing-body");
++    expect(container.querySelector("canvas")?.getAttribute("aria-label")).toBe("main");
++  });
++
++  it("keeps the same canvas and body nodes across active toggles", () => {
++    let mounts = 0;
++    function Probe() { useEffect(() => { mounts++; }, []); return <canvas data-testid="canvas" />; }
++    const slots = { top: <div />, side: <div />, canvasProps: {}, Canvas: Probe };
++    const { container, rerender } = render(<EditingWorkspace active={false} {...slots} />);
++    const canvas = container.querySelector("canvas");
++    const body = container.querySelector(".app__map-editing-body");
++    rerender(<EditingWorkspace active {...slots} />);
++    rerender(<EditingWorkspace active={false} {...slots} />);
++    expect(container.querySelector("canvas")).toBe(canvas);
++    expect(container.querySelector(".app__map-editing-body")).toBe(body);
++    expect(mounts).toBe(1);
++  });
++
++  it("uses renderCanvas instead of Canvas and passes its canvas props, including null", () => {
++    const renderCanvas = vi.fn((props: { label: string } | null) => <output>{props?.label ?? "empty"}</output>);
++    const { rerender, getByText } = render(<EditingWorkspace active top={null} side={null} canvasProps={{ label: "custom" }} Canvas={Canvas} renderCanvas={renderCanvas} />);
++    expect(getByText("custom")).toBeTruthy();
++    expect(renderCanvas).toHaveBeenLastCalledWith({ label: "custom" });
++    rerender(<EditingWorkspace active={false} top={null} side={null} canvasProps={null} Canvas={Canvas} renderCanvas={renderCanvas} />);
++    expect(getByText("empty")).toBeTruthy();
++    expect(renderCanvas).toHaveBeenLastCalledWith(null);
++  });
++});
+diff --git a/packages/ui/test/shared/useVisit.test.tsx b/packages/ui/test/shared/useVisit.test.tsx
+new file mode 100644
+index 0000000..2eecbe6
+--- /dev/null
++++ b/packages/ui/test/shared/useVisit.test.tsx
+@@ -0,0 +1,44 @@
++import { useState } from "react";
++import { describe, expect, it } from "vitest";
++import { act, renderHook } from "@testing-library/react";
++import { useVisit } from "../../src/shared/useVisit.js";
++
++describe("useVisit", () => {
++  it("reports a new key before children can receive the previous visit state", () => {
++    const seen: Array<string | null> = [];
++    const { result, rerender } = renderHook(({ key }) => {
++      const visit = useVisit(key);
++      const [pick, setPick] = useState<{ forMap: string | null; value: string | null }>({ forMap: key, value: "picked" });
++      if (visit.changed) setPick({ forMap: key, value: null });
++      seen.push(pick.forMap === key ? pick.value : null);
++      return visit.changed;
++    }, { initialProps: { key: "A" } });
++
++    expect(result.current).toBe(false);
++    rerender({ key: "B" });
++    expect(result.current).toBe(false);
++    expect(seen.at(-1)).toBeNull();
++    expect(seen.slice(1)).not.toContain("picked");
++  });
++
++  it("retires captured guards across A to B and A to B to A", () => {
++    const { result, rerender } = renderHook(({ key }) => useVisit(key), { initialProps: { key: "A" } });
++    const firstA = result.current.isCurrent;
++    expect(firstA()).toBe(true);
++    rerender({ key: "B" });
++    expect(firstA()).toBe(false);
++    const b = result.current.isCurrent;
++    expect(b()).toBe(true);
++    rerender({ key: "A" });
++    expect(firstA()).toBe(false);
++    expect(b()).toBe(false);
++    expect(result.current.isCurrent()).toBe(true);
++  });
++
++  it("retires a captured guard on unmount", () => {
++    const { result, unmount } = renderHook(() => useVisit("A"));
++    const guard = result.current.isCurrent;
++    act(() => unmount());
++    expect(guard()).toBe(false);
++  });
++});
