@@ -1,13 +1,9 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor, act, within } from "@testing-library/react";
-import { StrictMode } from "react";
+import { it, expect, vi, beforeEach, afterEach } from "vitest";
+import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { GbcApp } from "../../src/gbc/GbcApp.js";
 import type { GbcMapPayload } from "@pokemap/core/src/gbc/wire.js";
 
-// Plan 7 Task 5b: GBC in-context editing at the app level, the twin of AppContextEdit.test.tsx (6c E4). The World view's
-// double-click enters it, the editing chrome appears around the SAME world canvas, exits go through the dirty guard, and a
-// save refreshes only that map's tile. Viewport 200x200: the one 20x10-block component fits at zoom 10, pan (0, 50), so
-// OlivineCity covers x [0,100) and OlivinePort x [100,200), both y [50,150).
+// M5: GBC context exit waits for pending paint before deciding whether to open SaveDialog.
 
 const GROUPS = { groupOrder: ["OLIVINE"], groups: { OLIVINE: ["OlivineCity", "OlivinePort"] } };
 const EMPTY_EVENTS = { warps: [], coords: [], bgs: [], objects: [], sceneScripts: [], callbacks: [], objectConsts: [] };
@@ -101,7 +97,6 @@ afterEach(() => {
 const RECT = { left: 0, top: 0, right: 200, bottom: 200, width: 200, height: 200, x: 0, y: 0, toJSON() {} };
 const worldCanvas = () => document.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement | null;
 const contextOverlay = () => document.querySelector(".world-canvas__context");
-const chrome = () => document.querySelector(".toolbar");
 const status = () => document.querySelector(".world-canvas__status")?.textContent ?? "";
 async function overlayStage() {
   await waitFor(() => expect(contextOverlay()?.querySelector("canvas.map-canvas__stage")).toBeTruthy());

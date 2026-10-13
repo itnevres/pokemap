@@ -48,3 +48,36 @@ Skipped: coordinator-only mutations, live checks and commit; no unrelated fixes.
 Risk: the full repository gate is not green in this sandbox. Run it in the coordinator's normal environment before committing.
 
 Full API gate failure inventory (including the subsequently fixed workspace failure):
+
+
+## Fix round 1
+
+Status: DONE.
+
+Changed only the two requested witness files and this report (plus verification logs):
+- `packages/ui/test/AppContextStroke.test.tsx`: added ONE test, `dirty Map and Dungeon mode switches leave context without prompting and preserve the session`. It enters context, paints through the actual App/session/canvas path with a non-held fetch response, waits for the dirty indicator and paint/end, switches to Map, and checks overlay removal, no SaveDialog and retained dirty state. It reenters context, switches to Dungeon, verifies the same exit/no-dialog behavior, then returns to Map and verifies dirty state remains. A confirm spy also proves no browser prompt occurred.
+- Both family witness files: removed unused `describe`, `within` and `chrome`; removed GBC's unused `StrictMode`; replaced copied headers with M5-specific comments. No other test files changed.
+
+Mutation RED: temporarily inserted `if (editSession.isDirty) { ctx.requestExit(); return; }` before `ctx.leaveContext()` in GBA `switchMode`. Root Vitest API run filtered to the new test (`testNamePattern: 'dirty Map and Dungeon mode switches'`) failed, exit 1: 1 test failed / 1 skipped, 1 file failed. Failure: `dirty Map and Dungeon mode switches leave context without prompting and preserve the session`, `AppContextStroke.test.tsx:180`, `expect(contextOverlay()).toBeNull()` received the still-mounted overlay. Complete output: `task-3-fix-round-1-red.log`.
+
+Restoration: Python captured the original bytes and restored them in `finally`, verified byte equality and SHA256 `f87689ec91cf64d24c13691eb886f693bb8dde354446b31ff766ed6114749777`. `git diff --quiet -- packages/ui/src/App.tsx` returned 0. No git checkout/restore/stash or other git state-changing command was used.
+
+GREEN: attempted the required root command `npx.cmd vitest run packages/ui/test/AppContextStroke.test.tsx packages/ui/test/gbc/GbcAppContextStroke.test.tsx`, exit 1 before collection due to the same sandbox esbuild ancestor-directory/config-loading restriction (`task-3-fix-round-1-cli.log`). Used the same root API fallback:
+
+```js
+import { startVitest } from 'vitest/node';
+const ctx = await startVitest('test', [
+  'packages/ui/test/AppContextStroke.test.tsx',
+  'packages/ui/test/gbc/GbcAppContextStroke.test.tsx',
+], {
+  config: false, run: true, globals: false, environment: 'node',
+  environmentMatchGlobs: [['packages/ui/**', 'jsdom']],
+  include: ['packages/*/test/**/*.test.{ts,tsx}'],
+  setupFiles: ['packages/ui/test/setup.ts'],
+});
+await ctx?.close();
+```
+
+Executed via `node --input-type=module` from repository root: 2 files passed / 3 tests passed / 0 failures, exit 0 (`task-3-fix-round-1-green.log`). Existing jsdom canvas warnings remain. `git diff --check` passed.
+
+Skipped full suite, typecheck and build for this test-only fix round, as scoped; no production diff remains. No new risk identified.

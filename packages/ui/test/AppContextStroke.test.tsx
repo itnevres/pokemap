@@ -1,10 +1,9 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor, act, within } from "@testing-library/react";
+import { it, expect, vi, beforeEach, afterEach } from "vitest";
+import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { App } from "../src/App.js";
 
-// Plan 6c E4: GBA in-context editing at the App level -- the World view's double-click enters it, the editing chrome
-// appears around the SAME world canvas, exits go through the dirty guard, and a save refreshes only that map's tile.
-// Fixture/mocks follow AppWorldContextMenu.test.tsx (each App test file keeps its own).
+// M5: GBA context exit waits for pending paint before deciding whether to open SaveDialog.
+// Dirty mode switches leave context without prompting and preserve the edit session.
 
 const LAYOUT = {
   map: {
@@ -112,7 +111,6 @@ async function startApp(fetchMock = makeFetchMock()) {
 /** Fresh World view: Route1's body is x in [11,21), so (16,5) is inside it. */
 const dblClickRoute1 = (canvas: HTMLCanvasElement) => fireEvent.doubleClick(canvas, { clientX: 16, clientY: 5 });
 const contextOverlay = () => document.querySelector(".world-canvas__context");
-const chrome = () => document.querySelector(".toolbar");
 
 it("M5: Done waits for held paint/apply before deciding the dirty exit", async () => {
   let release!: () => void;
@@ -148,4 +146,57 @@ it("M5: Done waits for held paint/apply before deciding the dirty exit", async (
   await act(async () => { release(); });
   expect(await screen.findByRole("dialog", { name: "Save changes" })).toBeTruthy();
   expect(contextOverlay()).not.toBeNull();
+});
+
+it("dirty Map and Dungeon mode switches leave context without prompting and preserve the session", async () => {
+  const fetchMock = makeFetchMock();
+  const base = fetchMock.getMockImplementation()!;
+  let state = { blocks: ROUTE1.blocks, border: [], map: ROUTE1.map, isDirty: false, canUndo: false, canRedo: false };
+  fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+    if (url === "/api/edit/Route1/paint/apply") {
+      state = { ...state, blocks: [{ ...state.blocks[0]!, metatileId: 1 }, ...state.blocks.slice(1)], isDirty: true, canUndo: true };
+    }
+    if (url.startsWith("/api/edit/Route1/paint/")) return ok(state);
+    if (url === "/api/edit/Route1/plan") return ok({ changes: [], refusals: [] });
+    if (url === "/api/dungeons") return ok([]);
+    return base(url, init);
+  });
+  await startApp(fetchMock);
+  const canvas = await enterWorld();
+  dblClickRoute1(canvas);
+  await waitFor(() => expect(contextOverlay()?.querySelector("canvas.map-canvas__stage")).toBeTruthy());
+  const stage = contextOverlay()!.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
+  stage.getBoundingClientRect = () => ({ ...RECT, left: 100, top: 100 });
+  fireEvent.click(screen.getByRole("button", { name: "pencil" }));
+  fireEvent.click(await screen.findByRole("button", { name: /metatile 0x1\b/i }));
+  fireEvent.mouseDown(stage, { clientX: 44, clientY: 33, button: 0 });
+  fireEvent.mouseUp(stage, { clientX: 44, clientY: 33, button: 0 });
+  await screen.findByTestId("dirty-indicator");
+  await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => url.endsWith("/paint/end"))).toBe(true));
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+
+  fireEvent.click(screen.getByRole("button", { name: "Map" }));
+  await act(async () => {});
+  expect(contextOverlay()).toBeNull();
+  expect(screen.queryByRole("dialog", { name: "Save changes" })).toBeNull();
+  expect(screen.getByTestId("dirty-indicator")).toBeTruthy();
+
+  const world = await enterWorld();
+  await waitFor(() => expect(document.querySelector(".world-canvas__jump-highlight")).toBeTruthy());
+  const highlight = document.querySelector(".world-canvas__jump-highlight") as HTMLElement;
+  fireEvent.doubleClick(world, {
+    clientX: parseFloat(highlight.style.left) + parseFloat(highlight.style.width) / 2,
+    clientY: parseFloat(highlight.style.top) + parseFloat(highlight.style.height) / 2,
+  });
+  await waitFor(() => expect(contextOverlay()?.querySelector("canvas.map-canvas__stage")).toBeTruthy());
+  fireEvent.click(screen.getByRole("button", { name: "Dungeon" }));
+  await act(async () => {});
+  expect(contextOverlay()).toBeNull();
+  expect(screen.queryByRole("dialog", { name: "Save changes" })).toBeNull();
+  expect(screen.getByRole("button", { name: "Dungeon" }).getAttribute("aria-pressed")).toBe("true");
+  fireEvent.click(screen.getByRole("button", { name: "Map" }));
+  await act(async () => {});
+  expect(screen.getByTestId("dirty-indicator")).toBeTruthy();
+  expect(screen.queryByRole("dialog", { name: "Save changes" })).toBeNull();
+  expect(confirm).not.toHaveBeenCalled();
 });
