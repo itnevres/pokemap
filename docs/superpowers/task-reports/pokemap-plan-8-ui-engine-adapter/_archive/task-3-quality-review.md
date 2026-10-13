@@ -1,0 +1,25 @@
+# Task 3 code-quality review (base e1050b2, head ef36751)
+
+Verdict: Approved (0 Critical, 0 Important, 7 Minor)
+
+## Async correctness (M5 path) - no defects found
+- Promise handling: `requestExit` (useContextEditing.ts) `strokeSettled().then(...)` has no catch. `settled()` is `tail.then(()=>{})` over a tail whose every append ends in `.catch().catch().then()`, so it never rejects; `Promise.all` of such promises cannot reject. Safe; a one-line comment saying so would help.
+- Deciding on the render after settle (exitPending state + effect) is correct: the session's paint-response setState calls are queued before the chain tail resolves, so the exitPending render sees the post-apply `isDirty`. The effect's early return plus the immediate `setExitPending(false)` makes it fire once; `openSave` being an inline function in both Apps (new identity per render) only re-runs a cheap guarded effect.
+- Coalescing/retirement: `exitRequested` token is cleared by `leaveContext` and by the effect, and the `.then` checks identity, so a mode switch (even with re-entry) retires a held exit; covered by the two hook tests. A set-state after unmount is a no-op in React 18.
+- No render-phase side effects. Stale closure risk: `enter`'s async `go` (GBC discard path) compares `map !== selected` using the render-time `selected`; harmless (select of an already-selected map is idempotent) and identical to old behaviour.
+
+## onStrokeChain lifecycle - OK
+- App/GbcApp callback is `useCallback([])`, and `useStrokeChain` returns a `useMemo([])` object, so the canvas effect `[chain, onStrokeChain]` registers once per mount; no churn. StrictMode double-invoke (add/delete/add) is safe with a Set. Chain removed from the Set on unmount while its retirement `endStroke` is still queued on its own tail: a Done pressed in that window does not wait for it. Edge only (map switch already leaves context), not blocking.
+- `MapEditingWorkspace` spreads `onStrokeChain` conditionally, so absent prop leaves canvas props byte-identical; no heavy-canvas remount introduced.
+
+## Minor findings
+1. App.tsx:~99-107 and GbcApp.tsx:~463-472: the `chains` ref + `onStrokeChain` useCallback + `strokeSettled` lambda are duplicated verbatim, and the inline type `{ settled(): Promise<void> }` is repeated in 4 places (App, GbcApp, MapCanvas.tsx prop, GbcMapCanvas.tsx prop). Consequence: two copies to keep in sync. Suggest a tiny shared `useStrokeChainRegistry()` returning `{ onStrokeChain, settled }` plus one exported `StrokeChainHandle` type next to `useStrokeChain`.
+2. useContextEditing.ts: no doc comment on the hook or on the `strokeSettled`/`leave`/`select` contract (the old App.tsx comments explaining dirty-guard, "Cancel keeps editing", "mode switch leaves without prompt", "selection moving off leaves context" were deleted, not moved). Reviewer-of-record loses the why. Re-add 3-4 lines on the hook.
+3. useContextEditing.ts: `leaveContext` is recreated each render and missing from the selection-leaves effect deps (works because it only uses setters/ref; exhaustive-deps would flag it). Wrap in `useCallback([])`, which also gives callers a stable identity.
+4. App.tsx `select` lost the explanatory comment about per-map resets living with `resetForMapChange`; `enterContext = ctx.enter` / `requestExitContext = ctx.requestExit` are pure aliases that could be used directly.
+5. GbcApp.tsx:~416 stray extra blank line added; both Apps put `onStrokeChain={onStrokeChain}` on the same line as the tag opener (`<MapEditingWorkspace onStrokeChain=... \n key=...`, `<GbcMapEditing onStrokeChain=...`), inconsistent with surrounding one-prop-per-line layout. MapCanvasProps/GbcMapCanvasProps new prop has no doc comment and is placed first rather than with the other optional props.
+6. Test hygiene: unused imports/helpers in both new App tests - `describe`, `within` (AppContextStroke.test.tsx:1-2, GbcAppContextStroke.test.tsx:1-2), unused `chrome` helper (AppContextStroke.test.tsx:115, GbcAppContextStroke.test.tsx:104), and unused `StrictMode` import (GbcAppContextStroke.test.tsx:3, apparently left over from a StrictMode test that was not kept - so StrictMode registration safety is not actually asserted). AppContextStroke.test.tsx header comment is a stale copy of AppContextEdit's ("Plan 6c E4 ... save refreshes only that map's tile") and does not describe this test's M5 purpose.
+7. Gate log noise: the new App tests emit jsdom "HTMLCanvasElement.getContext not implemented" stderr (log lines ~764-793), same class as the pre-existing App*/GbcApp* context tests; not a regression. useContextEditing.test.tsx adds none.
+
+## Tests
+Real behaviour, deterministic: the M5 App tests hold the apply with a manually released promise and flush with `act(async)` (no timers/sleeps); the negative (no dialog, overlay still present) is asserted after a flush while the apply is still held, and the positive after release. Hook tests cover coalescing (double requestExit), clean/dirty branches, mode-switch retirement and re-entry. Fixtures are copied wholesale from AppContextEdit (large for one test) - acceptable, noted only.
