@@ -1,6 +1,6 @@
 # PokeMap Plan 7 — GBC Editing (Pokémon Crystal write path)
 
-## STATUS — complete locally, Claude-audited, awaiting push/PR approval (2026-10-12)
+## STATUS — done and merged 2026-10-12 ([itnevres/pokemap#13](https://github.com/itnevres/pokemap/pull/13) → `dbb1761`), Claude-audited
 
 **2026-10-12 Claude audit of the Codex continuation (`ede8df3..ef248a3`):**
 - Independent Opus spec review: PASS. Sonnet quality review: APPROVED. Both report 0 Critical and 0 Important findings.
@@ -19,7 +19,7 @@ Fresh final gate at `1eb8f81`: **2,572 pass / 2 known GBA local-state failures**
 
 Actual implementation: core GBC guards/save/paint/events and line splicing; `gbcEditSessions.ts`/`gbcEditRoutes.ts`; GBC session hook/editing workspace/canvas/inspector; CLI GBC write commands; real-write G5 gate over PerfPlus and pret. Task 5b adds stable World context wiring and controlled GBC canvas geometry. Executed specs remain in `task-reports/pokemap-plan-7-gbc-editing/`; completed reports and captured final evidence are archived under its `_archive/` directory. `task-5b-b1-coordinator.md` and `task-final-branch-review.md` hold final acceptance and scoped B1 closure.
 
-Branch `plan-7-gbc-editing` is unpushed. User approval is required before push or PR. Existing documented UI and independent transport-operation limitations remain deferred; collision painting and wild signs remain out of scope.
+Merged to `master` by merge commit `dbb1761`. Existing documented UI and independent transport-operation limitations remain deferred; collision painting and wild signs remain out of scope.
 
 > **For agentic workers:** REQUIRED READING FIRST: the roadmap (`2026-09-23-pokemap-plan-6-gbc-roadmap.md`, invariants G1-G7) and Plan 6 itself (`2026-09-23-pokemap-plan-6-gbc-foundation.md`) — this plan builds directly on Plan 6's loaders, renderer, and the two round-trip identity proofs (Task 2's binary codec, Task 4's no-op assembly splice). Written to TASK level, not full TDD-step — **re-read every task against the REAL code Plan 6 actually produced** (not this document's own assumptions about it) and re-granularise before executing, exactly Plan 0 §1's own established discipline. Start only once Plan 6's two round-trip identity tests are green across the real corpus. They are, as of 2026-09-25. Plan 6 is merged; branch from `master`.
 
