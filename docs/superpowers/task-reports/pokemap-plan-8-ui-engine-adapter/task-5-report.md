@@ -66,3 +66,29 @@ Consumer FILTERS:
  'packages/ui/test/App.test.tsx']
 ```
 Full gate FILTERS: `[]`.
+
+
+## Fix round 1
+
+Status: DONE (this requested fix round only; no new full-gate claim).
+
+Only the three requested source/test changes were made:
+- Added `discard throws on a failed response and keeps the dirtied session` to `useEditSessionShared.test.tsx`. It first dirties the session through a paint reply, catches discard's rejection inside `act`, then asserts an Error with exactly `POST /api/edit/A/discard -> 500` and retained dirty blocks/isDirty. The existing `useEditSession.test.tsx` was not changed.
+- Changed the core's parameterized map/seed witness to retain the identical seed object for the map-only case.
+- Renamed GBC post's shadowing local to `nextEvents`, used as `events: nextEvents`.
+
+Tests were changed before the production rename. Teeth evidence (each run used `node --input-type=module` with the same `startVitest` configuration recorded above; exact invocations and output are in the individual logs):
+- Temporarily removed only discard's `if (!r.ok) throw ...` statement. Ran `startVitest('test', ['packages/ui/test/useEditSessionShared.test.tsx'], CONFIG)`: exit 1; 1 failed / 5 passed. The new test itself failed at line 40, `expect(caught).toBeInstanceOf(Error)`, with `expected undefined to be an instance of Error`. No unhandled rejection was reported. Log: `task-5-fix-1-teeth-discard.log`.
+- Restored core bytes, then temporarily removed only `current.mapName !== ticket.map || `. Ran `startVitest('test', ['packages/ui/test/shared/useEditSessionCore.test.tsx'], CONFIG)`: exit 1; 1 failed / 12 passed. `rejects a reply after its map changes` failed at line 28: apply returned true instead of false; the seed-only case passed. Log: `task-5-fix-1-teeth-map.log`.
+- Both mutations were restored in `finally` using the original bytes, without Git restoration. Byte equality was asserted after each; final SHA256 rechecked as `31b67cf32b4b04830526ed1d27bd828297e80852c99c56b209a08c870f719214`. The first harness's console-print step encountered a Windows cp1252 UnicodeEncodeError AFTER saving the complete discard test output and restoring bytes; the map mutation was then run separately. This did not affect either test result or restoration.
+
+Verification commands/results:
+```powershell
+npx.cmd vitest run packages/ui/test/shared/useEditSessionCore.test.tsx packages/ui/test/useEditSessionShared.test.tsx packages/ui/test/gbc/useGbcEditSessionShared.test.tsx packages/ui/test/useEditSession.test.tsx packages/ui/test/useEditSessionGuard.test.tsx packages/ui/test/gbc/useGbcEditSession.test.tsx
+npm.cmd run typecheck
+```
+Focused CLI exit 1: sandbox access denied loading `vitest.config.ts`. Used the brief-authorized Node API fallback (`node --input-type=module`, exact RED/GREEN FILTERS and CONFIG recorded above): exit 0, 6 files / 51 tests passed, zero failures. CLI and fallback output: `task-5-fix-1-focused.log`.
+
+Typecheck exit 0; output: `task-5-fix-1-typecheck.log`.
+
+No full suite, build, commit, or other Git state change was run in this fix round. The report is appended; prior evidence is retained.
