@@ -19,10 +19,11 @@ const message = (e: unknown, fallback: string) => (e instanceof Error ? e.messag
  *  through `renderCanvas`, so the prop assembly lives in one place. */
 export type GbcMapEditingCanvasProps = Pick<
   GbcMapCanvasProps,
-  "mapName" | "data" | "time" | "hoveredMetatile" | "editSession" | "activeTool" | "onDropperPick" | "selectedEvent" | "onSelectEvent" | "onMoveEvent" | "onEditError"
+  "onStrokeChain" | "mapName" | "data" | "time" | "hoveredMetatile" | "editSession" | "activeTool" | "onDropperPick" | "selectedEvent" | "onSelectEvent" | "onMoveEvent" | "onEditError"
 >;
 
 export interface GbcMapEditingProps {
+  onStrokeChain?: GbcMapCanvasProps["onStrokeChain"];
   /** Null only while `active` is false and no map is selected yet. */
   mapName: string | null;
   /** Null only while `active` is false (the World view before the context map's payload has loaded). */
@@ -54,7 +55,7 @@ export interface GbcMapEditingProps {
  * Non-writable layout (`layout.writable === false`): the paint tools render disabled with the reason, and
  * `activeTool` resolves to null so the canvas cannot paint; event editing, undo/redo and save stay enabled.
  */
-export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId, onHoverMetatile, onOpenSave, active = true, renderCanvas }: GbcMapEditingProps) {
+export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId, onHoverMetatile, onOpenSave, active = true, renderCanvas, onStrokeChain }: GbcMapEditingProps) {
   const [toolKind, setToolKind] = useState<ToolKind | null>(null);
   // `key` is never a real map name when there is no map, so nothing reads as "mine" until one is selected.
   const key = mapName ?? "";
@@ -131,6 +132,7 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
   const canvasProps: GbcMapEditingCanvasProps | null =
     mapName !== null && data !== null
       ? {
+          ...(onStrokeChain ? { onStrokeChain } : {}),
           mapName,
           data,
           time,

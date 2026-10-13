@@ -131,6 +131,7 @@ function eventPosition(events: GbcMapEvents, ref: GbcEventRef | null | undefined
 }
 
 export interface GbcMapCanvasProps {
+  onStrokeChain?: (chain: { settled(): Promise<void> }, mounted: boolean) => void;
   mapName: string;
   data: GbcMapPayload;
   time: GbcTimeOfDay;
@@ -282,7 +283,7 @@ export function parseColorToken(value: string): RGBA {
   return FALLBACK_COLOR;
 }
 
-export function GbcMapCanvas({ mapName, data: payload, time, hoveredMetatile, editSession, activeTool, onDropperPick, selectedEvent, onSelectEvent, onMoveEvent, onEditError, view: controlledView, onViewChange, chromeless }: GbcMapCanvasProps) {
+export function GbcMapCanvas({ mapName, data: payload, time, hoveredMetatile, editSession, activeTool, onDropperPick, selectedEvent, onSelectEvent, onMoveEvent, onEditError, view: controlledView, onViewChange, chromeless, onStrokeChain }: GbcMapCanvasProps) {
   const { layout } = payload;
   // The session's live blocks/events win once a session exists; every effect below reads `data` by name and
   // never needs to know which source it came from (the trick of `MapCanvas.tsx:215-228`).
@@ -301,6 +302,10 @@ export function GbcMapCanvas({ mapName, data: payload, time, hoveredMetatile, ed
   // Completion chain for begin, every queued apply and end (shared with the GBA canvas); the start cell of an
   // open rect/shift stroke is captured at mousedown.
   const chain = useStrokeChain<GbcPaintBody>(mapName, (message) => onEditError?.(message));
+  useEffect(() => {
+    onStrokeChain?.(chain, true);
+    return () => onStrokeChain?.(chain, false);
+  }, [chain, onStrokeChain]);
   const strokeStartRef = useRef<{ x: number; y: number } | null>(null);
   // The last block a pencil stroke painted: a held drag fires many mousemoves per block, and each would be a
   // parallel POST. Reset when the stroke ends.

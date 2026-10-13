@@ -64,6 +64,7 @@ function eventPositionAt(map: MapData, ref: EventRef | null | undefined): { x: n
 }
 
 export interface MapCanvasProps {
+  onStrokeChain?: (chain: { settled(): Promise<void> }, mounted: boolean) => void;
   mapName: string;
   data: MapLayoutData;
   /** Present only when editing is active for THIS map -- see
@@ -193,7 +194,7 @@ interface Hover {
  * one scaled `drawImage`, so dragging or scrolling never re-touches overlay
  * pixels at all.
  */
-export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEvent, selectedEventRef, onMoveEvent, onDropperPick, view: controlledView, onViewChange, chromeless }: MapCanvasProps) {
+export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEvent, selectedEventRef, onMoveEvent, onDropperPick, view: controlledView, onViewChange, chromeless, onStrokeChain }: MapCanvasProps) {
   const { layout, split, map: staticMap, blocks: staticBlocks } = data;
   // Live, server-tracked blocks while an edit session is open for this map;
   // the static `data.blocks` prop otherwise. Every effect below already
@@ -245,6 +246,10 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
   // map switch retires queued work. This canvas shows no paint errors, so the error report is a no-op; the chain
   // still swallows every rejection.
   const chain = useStrokeChain<PaintApplyBody>(mapName, () => {});
+  useEffect(() => {
+    onStrokeChain?.(chain, true);
+    return () => onStrokeChain?.(chain, false);
+  }, [chain, onStrokeChain]);
   // Task 14: set from onMouseDown's own hit-test the instant a click lands
   // on an event marker (with no paint tool active), holding the event's
   // {kind,index} AND the block cell the drag STARTED at -- the start cell

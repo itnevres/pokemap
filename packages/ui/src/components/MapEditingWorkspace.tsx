@@ -14,10 +14,11 @@ import type { useMapEditing } from "../hooks/useMapEditing.js";
  *  wants it adds it in its own `renderCanvas`). */
 export type MapEditingCanvasProps = Pick<
   MapCanvasProps,
-  "mapName" | "data" | "editSession" | "activeTool" | "onSelectEvent" | "selectedEventRef" | "onMoveEvent" | "onDropperPick"
+  "onStrokeChain" | "mapName" | "data" | "editSession" | "activeTool" | "onSelectEvent" | "selectedEventRef" | "onMoveEvent" | "onDropperPick"
 >;
 
 interface MapEditingWorkspaceBase {
+  onStrokeChain?: MapCanvasProps["onStrokeChain"];
   editSession: UseEditSessionResult;
   editing: ReturnType<typeof useMapEditing>;
 }
@@ -49,7 +50,7 @@ export type MapEditingWorkspaceProps = ActiveMapEditingWorkspaceProps | Inactive
  *  banners, canvas + inspector) lifted verbatim out of `App.tsx`. State lives
  *  in `useMapEditing`; the edit session in `App`; `SaveDialog`/`SignComposer`
  *  stay siblings at `<main>` level in `App` for stacking reasons. */
-export function MapEditingWorkspace({ active = true, mapName, data, editSession, editing, renderCanvas }: MapEditingWorkspaceProps) {
+export function MapEditingWorkspace({ active = true, mapName, data, editSession, editing, renderCanvas, onStrokeChain }: MapEditingWorkspaceProps) {
   const {
     activeToolKind, setActiveToolKind, collisionValue, setCollisionValue, currentStamp, setCurrentStamp,
     setSaveDialogOpen, setSignComposerOpen, signAddedMessage, setSignAddedMessage, eventOpError, setEventOpError,
@@ -59,6 +60,7 @@ export function MapEditingWorkspace({ active = true, mapName, data, editSession,
   const canvasProps: MapEditingCanvasProps | null =
     mapName !== null && data !== null
       ? {
+          ...(onStrokeChain ? { onStrokeChain } : {}),
           mapName,
           data,
           editSession,
