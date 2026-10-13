@@ -92,6 +92,7 @@ describe("MapCanvas stroke completion barrier (Plan 8 Task 1, F6)", () => {
     await waitFor(() => expect(s.beginStroke).toHaveBeenCalledTimes(1));
     fireEvent.mouseMove(canvas, { ...at(1, 0), buttons: 1 });
     fireEvent.mouseUp(canvas, at(1, 0));
+    await act(async () => {});
     expect(s.applyPaint).not.toHaveBeenCalled();
     expect(s.endStroke).not.toHaveBeenCalled();
     await act(async () => begin.resolve());
@@ -107,6 +108,7 @@ describe("MapCanvas stroke completion barrier (Plan 8 Task 1, F6)", () => {
     fireEvent.mouseDown(canvas, at(0, 0));
     fireEvent.mouseUp(canvas, at(1, 1));
     await waitFor(() => expect(s.beginStroke).toHaveBeenCalledTimes(1));
+    await act(async () => {});
     expect(s.applyPaint).not.toHaveBeenCalled();
     await act(async () => begin.resolve());
     expect(s.applyPaint).toHaveBeenCalledTimes(1);
@@ -127,6 +129,7 @@ describe("MapCanvas stroke completion barrier (Plan 8 Task 1, F6)", () => {
     fireEvent.mouseMove(canvas, { ...at(1, 1), buttons: 1 });
     fireEvent.mouseUp(canvas, at(1, 1));
     for (let i = 1; i <= 4; i++) {
+      await act(async () => {});
       expect(s.applyPaint).toHaveBeenCalledTimes(i);
       expect(s.endStroke).not.toHaveBeenCalled();
       await act(async () => cells[i - 1]!.resolve());
@@ -183,6 +186,28 @@ describe("MapCanvas stroke completion barrier (Plan 8 Task 1, F6)", () => {
     await act(async () => pending.resolve());
     expect(old.applyPaint).toHaveBeenCalledTimes(phase === "begin" ? 0 : 1);
     expect(old.endStroke).toHaveBeenCalledTimes(1); // only the captured old session finishes, never the new map's
+    expect(next.beginStroke).not.toHaveBeenCalled();
+    expect(next.applyPaint).not.toHaveBeenCalled();
+    expect(next.endStroke).not.toHaveBeenCalled();
+  });
+
+  it.each(["map", "ABA", "unmount"])("%s retires a held end: nothing reaches the next visit, a late end failure is silent", async (retirement) => {
+    const end = held();
+    const old = session({ endStroke: vi.fn(() => end.promise) });
+    const next = session();
+    const props = { activeTool: { kind: "pencil" as const, stamp: STAMP } };
+    const mounted = mount({ ...props, editSession: old });
+    fireEvent.mouseDown(mounted.canvas, at(0, 0));
+    fireEvent.mouseUp(mounted.canvas, at(0, 0));
+    await waitFor(() => expect(old.endStroke).toHaveBeenCalledTimes(1));
+    if (retirement === "unmount") mounted.unmount();
+    else {
+      rerenderAs(mounted, "Bar", { ...props, editSession: next });
+      if (retirement === "ABA") rerenderAs(mounted, "Foo", { ...props, editSession: next });
+    }
+    await act(async () => end.reject(new Error("late end")));
+    await act(async () => {});
+    expect(old.endStroke).toHaveBeenCalledTimes(1);
     expect(next.beginStroke).not.toHaveBeenCalled();
     expect(next.applyPaint).not.toHaveBeenCalled();
     expect(next.endStroke).not.toHaveBeenCalled();

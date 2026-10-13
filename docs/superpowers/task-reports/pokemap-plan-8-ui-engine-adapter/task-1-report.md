@@ -28,3 +28,11 @@ R1 MapCanvas passes a no-op onError (no new prop/UI). R2 GBA move handler queues
 - GBC passes the whole editSession object as the StrokeSession (methods are stable useCallbacks); retired strokes end on the captured object.
 - GBC ownership of end now binds to the session object captured at mousedown (was the same captured endStroke).
 - Run vitest from the repo root: environmentMatchGlobs is root-relative, so running inside packages/ui gives "document is not defined".
+
+## Fix round 1
+1. M3 finish path: `report` in useStrokeChain.ts now wraps the onError call in try/catch. New tests: shared "a throwing onError on the last apply still lets end go out, reported once" and GbcMapCanvasStroke rect final-apply case. Red with the old report (cmd: `npx vitest run packages/ui/test/shared packages/ui/test/gbc/GbcMapCanvasStroke.test.tsx`): `expected [ 'begin', 'apply:5' ] to deeply equal [ 'begin', 'apply:5', 'end' ]` and `expected [ 'begin', 'apply' ] to deeply equal [ 'begin', 'apply', 'end' ]` (2 failed | 24 passed); green after.
+2. useEditSession `call`: `currentMapRef` updated each render; `applyResponse` runs only if it still equals the issuing mapName (comment names Plan 8 Task 1; seq/seed left to Task 5). New file test/useEditSessionGuard.test.tsx (2 cases). Red before guard: `expected [ { metatileId: 99 ...} ] to deeply equal [ { metatileId: 2 ...} ]` (1 failed | 1 passed); 2 passed after.
+3. Added: shared "retired before the begin link runs" (no begin, no end), observable queue/finish no-op after a finished stroke; GBA end-phase retirement for map/ABA/unmount (late end rejection silent, nothing on next session).
+4. `await act(async () => {})` added before the negative assertions in MapCanvasStroke (held-begin move, immediate-mouseup apply, drag loop).
+Covering run (root): shared, MapCanvasStroke, GbcMapCanvasStroke, GbcMapCanvasEdit, MapCanvas, useEditSession*: 7 files, 172 passed.
+Gate: `npm test > task-1-gate-r1.log` 154 files / 2624 tests passed (log gitignored); typecheck clean; UI build ok; oracle diff prints nothing.

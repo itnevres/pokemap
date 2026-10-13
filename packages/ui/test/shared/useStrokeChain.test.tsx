@@ -86,10 +86,16 @@ describe("useStrokeChain", () => {
     expect(result.current.isOpen()).toBe(true);
   });
 
-  it("queue without an open stroke is a no-op", async () => {
+  it("queue and finish without an open stroke are no-ops, even after an earlier stroke finished", async () => {
+    const log: string[] = [];
+    const s = heldSession(log);
     const { result } = setup();
+    act(() => { result.current.start(s.session, null); result.current.finish(null); });
+    await flush(); s.begins[0]!.resolve(); await flush(); s.ends[0]!.resolve(); await flush();
+    expect(log).toEqual(["begin", "end"]);
     act(() => { result.current.queue(1); result.current.finish(2); });
     await flush();
+    expect(log).toEqual(["begin", "end"]);
     expect(result.current.isOpen()).toBe(false);
   });
 
@@ -153,6 +159,21 @@ describe("useStrokeChain", () => {
       expect(log).toEqual(["begin"]);
     });
 
+    it("retired before the begin link runs (queued behind a held previous end): no begin, no end", async () => {
+      const log: string[] = [];
+      const s = heldSession(log);
+      const r = setup();
+      act(() => { r.result.current.start(s.session, null); r.result.current.finish(null); });
+      await flush(); s.begins[0]!.resolve(); await flush();
+      expect(log).toEqual(["begin", "end"]); // previous end held
+      act(() => { r.result.current.start(s.session, 1); });
+      await flush();
+      r.rerender({ k: "B" });
+      await flush(); s.ends[0]!.resolve(); await flush();
+      expect(log).toEqual(["begin", "end"]);
+      expect(r.result.current.isOpen()).toBe(false);
+    });
+
     it("a new visit stroke waits behind the retired visit end", async () => {
       const log: string[] = [];
       const s = heldSession(log);
@@ -202,6 +223,18 @@ describe("useStrokeChain", () => {
       act(() => { result.current.start(s, null); });
       await flush();
       expect(onError).toHaveBeenCalledWith("Paint failed.");
+    });
+
+    it("a throwing onError on the last apply still lets end go out, reported once (M3, finish path)", async () => {
+      const log: string[] = [];
+      const onError = vi.fn(() => { throw new Error("ui broke"); });
+      const s = heldSession(log);
+      const { result } = setup("A", onError);
+      act(() => { result.current.start(s.session, null); result.current.finish(5); });
+      await flush(); s.begins[0]!.resolve(); await flush();
+      s.applies[0]!.reject(new Error("rect failed")); await flush();
+      expect(log).toEqual(["begin", "apply:5", "end"]);
+      expect(onError).toHaveBeenCalledTimes(1);
     });
 
     it("a throwing onError does not poison the chain (M3)", async () => {

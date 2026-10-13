@@ -53,7 +53,8 @@ export function useStrokeChain<Body>(visitKey: string, onError: (message: string
   return useMemo<StrokeChain<Body>>(() => {
     const owns = (stroke: Stroke<Body>) => stroke.visit === visitRef.current;
     const report = (stroke: Stroke<Body>, e: unknown) => {
-      if (owns(stroke)) onErrorRef.current(e instanceof Error ? e.message : "Paint failed.");
+      if (!owns(stroke)) return;
+      try { onErrorRef.current(e instanceof Error ? e.message : "Paint failed."); } catch { /* a throwing handler must not skip the end (M3) */ }
     };
     /** Append a link. The terminal catch keeps a throwing onError from rejecting (poisoning) the chain (M3). */
     const append = (stroke: Stroke<Body>, link: () => Promise<unknown> | void) => {

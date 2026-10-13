@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Block } from "@pokemap/core/src/model/types.js";
 import type { Stamp } from "@pokemap/core/src/edit/paint.js";
 import type { MapData } from "@pokemap/core/src/load/maps.js";
@@ -249,12 +249,18 @@ export function useEditSession(mapName: string | null, initialBlocks?: Block[], 
     setCanRedo(d.canRedo ?? false);
   };
 
+  // The map this hook is currently open for. A response for another map is dropped (a retired stroke's end
+  // lands after a map switch, Plan 8 Task 1); the full seq/seed guard of useGbcEditSession is Plan 8 Task 5.
+  const currentMapRef = useRef(mapName);
+  currentMapRef.current = mapName;
+
   const call = useCallback(
     async (path: string, body: unknown = {}) => {
       if (!mapName) return; // nothing open -- see this hook's own doc comment
       const r = await fetch(`/api/edit/${encodeURIComponent(mapName)}${path}`, { method: "POST", body: JSON.stringify(body) });
       if (!r.ok) throw new Error(`POST /api/edit/${mapName}${path} -> ${r.status}`);
-      applyResponse((await r.json()) as SessionResponse);
+      const d = (await r.json()) as SessionResponse;
+      if (currentMapRef.current === mapName) applyResponse(d);
     },
     [mapName],
   );

@@ -81,6 +81,16 @@ describe("GbcMapCanvas shared stroke chain (Plan 8 Task 1)", () => {
     await waitFor(() => expect(log).toEqual(["begin", "apply 0", "end", "begin", "apply 1"]));
   });
 
+  it("a throwing onEditError on a rect's final apply still sends end, reported once (M3, finish path)", async () => {
+    const onEditError = vi.fn(() => { throw new Error("ui broke"); });
+    const s = session({ applyPaint: vi.fn(() => { log.push("apply"); return Promise.reject(new Error("rect failed")); }) });
+    const { canvas } = mount({ editSession: s, activeTool: { kind: "rect", stamp: STAMP }, onEditError });
+    fireEvent.mouseDown(canvas, at(40, 40));
+    fireEvent.mouseUp(canvas, at(72, 72));
+    await waitFor(() => expect(log).toEqual(["begin", "apply", "end"]));
+    expect(onEditError).toHaveBeenCalledTimes(1);
+  });
+
   it("a throwing onEditError does not stop the next stroke (M3)", async () => {
     const onEditError = vi.fn(() => { throw new Error("ui broke"); });
     const s = session({ beginStroke: vi.fn().mockImplementationOnce(() => { log.push("begin"); return Promise.reject(new Error("boom")); }).mockImplementation(() => { log.push("begin"); return Promise.resolve(); }) });
