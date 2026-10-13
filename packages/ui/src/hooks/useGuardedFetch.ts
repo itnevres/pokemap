@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
 
+/** For callers that trust the server's shape, such as the GBA hooks. */
+export function unguarded<T>(_x: unknown): _x is T { return true; }
+
 export interface UseGuardedFetchResult<T> {
   data: T | null;
   error: string | null;
