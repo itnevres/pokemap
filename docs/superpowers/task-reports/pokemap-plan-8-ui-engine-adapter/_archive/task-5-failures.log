@@ -1,0 +1,49 @@
+FAIL  packages/cli/test/gbcCommands.test.ts > GBC write commands (Plan 7 Task 6)
+FAIL  packages/server/test/gbcEditRoutes.test.ts > gbc edit routes (hermetic temp copy)
+FAIL  packages/core/test/gbc/write/writeGate.test.ts > G5 write gate: subject (C:/Programming Projects/pokecrystal-PerfPlus)
+FAIL  packages/core/test/gbc/write/writeGate.test.ts > G5 write gate: pret (C:/Programming Projects/Pokemon Game/refs/pokecrystal)
+FAIL  packages/cli/test/context.test.ts > resolveRoot > returns the explicit path verbatim, never reading pokemap.config.json even when the cwd has none
+FAIL  packages/cli/test/context.test.ts > resolveRoot > falls back to pokemap.config.json's projectPath in the cwd when no explicit path is given
+FAIL  packages/cli/test/context.test.ts > resolveRoot > an explicit path wins over an existing, different pokemap.config.json -- never reads the file at all
+FAIL  packages/cli/test/context.test.ts > resolveRoot > refuses, naming the cwd and the --project alternative, when neither an explicit path nor a config file is given
+FAIL  packages/cli/test/gbcCommands.test.ts > CLI end-to-end (spawned, generous timeout) > render NewBarkTown against the real subject exits 0 and prints the stdout line
+FAIL  packages/cli/test/gbcCommands.test.ts > CLI end-to-end (spawned, generous timeout) > render CeruleanCave2F against the real subject: the warning lands on stderr, never stdout
+FAIL  packages/cli/test/gbcCommands.test.ts > CLI end-to-end (spawned, generous timeout) > query NoSuchMap against the real subject exits 1 with the loader's unknown-map message
+FAIL  packages/cli/test/gbcCommands.test.ts > CLI end-to-end (spawned, generous timeout) > render-world against the real subject, with no --scale, exits 0 using the GBC default of 8
+FAIL  packages/cli/test/gbcCommands.test.ts > CLI end-to-end (spawned, generous timeout) > every GBA-only command refuses on the real gbc root with its own named message, never touching a GBA loader
+FAIL  packages/cli/test/gbcCommands.test.ts > CLI end-to-end (spawned, generous timeout): Task 12 > where DUNSPARCE against the real subject exits 0 and matches runGbcWhere's own output
+FAIL  packages/cli/test/gbcCommands.test.ts > GBC write commands (Plan 7 Task 6) > 11. real process: --yes paint changes the copy; --metatile abc exits 1 with 'pokemap: '
+FAIL  packages/cli/test/gbcCommands.test.ts > GBC write commands (Plan 7 Task 6) > 12. real process, dry-run defaults: paint/diff/event add without --yes never write; --yes event add does
+FAIL  packages/cli/test/gbcCommands.test.ts > GBC write commands (Plan 7 Task 6) > 13. real process, CeruleanCave2F: dry run warns on stderr; --yes refusal keeps the size warning in stderr
+FAIL  packages/cli/test/gbcCommands.test.ts > GBC write commands (Plan 7 Task 6) > 10. event on a GBA root refuses (GBC-only)
+FAIL  packages/cli/test/writeCommands.test.ts > writeCommands > runSignAdd with --yes actually commits, then restores
+FAIL  packages/cli/test/writeCommands.test.ts > writeCommands > runSignAdd refuses and writes nothing when the derived label already exists, even with --yes
+FAIL  packages/cli/test/writeCommands.test.ts > writeCommands > runPaint with --yes actually paints one block and commits, then restores
+FAIL  packages/cli/test/writeCommands.test.ts > writeCommands > runPaint rect tool paints the whole rectangle
+FAIL  packages/server/test/dungeons.test.ts > dungeons api > lists an empty array when no dungeons exist yet
+FAIL  packages/server/test/dungeons.test.ts > dungeons api > creates a dungeon from an explicit maps list, lists it, then deletes it
+FAIL  packages/server/test/dungeons.test.ts > dungeons api > creates a dungeon from a seedMap, computing its members via the warp BFS
+FAIL  packages/server/test/dungeons.test.ts > dungeons api > 400s a create with an unknown seedMap
+FAIL  packages/server/test/dungeons.test.ts > dungeons api > PATCHes a dungeon's name and maps, reflected in the next GET
+FAIL  packages/server/test/dungeons.test.ts > dungeons api > 400s a PATCH with an empty/whitespace-only name, without persisting it
+FAIL  packages/server/test/dungeons.test.ts > dungeons api > PATCHes only the keys present in the body, leaving the others untouched
+FAIL  packages/server/test/dungeons.test.ts > dungeons api > 404s a PATCH or DELETE for an unknown dungeon id
+FAIL  packages/server/test/dungeons.test.ts > dungeons api > 400s a create with no name
+FAIL  packages/server/test/dungeons.test.ts > dungeons api > 400s a malformed dungeon-create body instead of hanging the request
+FAIL  packages/server/test/dungeons.test.ts > dungeons api > 400s a malformed dungeon-patch body instead of hanging the request
+FAIL  packages/server/test/gbcRoutes.test.ts > gbcRoutes > accepts and un-accepts Route17 without moving maps, with exact PerfPlus sidecar restoration
+FAIL  packages/server/test/gbcRoutes.test.ts > gbcRoutes > POST /api/world/placement > writes a GBC manual placement, surfaces it on GET, and restores PerfPlus's absent sidecar
+FAIL  packages/server/test/gbcRoutes.test.ts > gbcRoutes > GBC dungeon CRUD > roundtrips explicit and seeded dungeons in the root sidecar, then restores exact prior bytes
+FAIL  packages/server/test/saveRoutes.test.ts > save/commit routes > paint, GET /plan shows one binary change, POST /commit actually writes it, then restores
+FAIL  packages/server/test/saveRoutes.test.ts > save/commit routes > commit refuses (400) when the plan contains a refusal, and writes nothing
+FAIL  packages/server/test/saveRoutes.test.ts > save/commit routes > after a successful commit, the session is closed -- a later GET /plan reflects the NEW on-disk state as its own fresh baseline (zero changes again)
+FAIL  packages/server/test/saveRoutes.test.ts > save/commit routes > a render fetched before a commit is not served stale after it, for both border keys
+FAIL  packages/server/test/signRoutes.test.ts > sign routes > POST /sign/add on a route with grass and a real scripts.inc succeeds, GET /plan shows one object-events insert and one text append, then restores
+FAIL  packages/server/test/signRoutes.test.ts > sign routes > POST /sign/add refuses (400) with the real guardSignWrite refusal when the derived label already exists
+FAIL  packages/core/test/write/corpus.test.ts > identity corpus (invariant I5) > paints one real block on one real map, commits through the full save funnel, and restores byte-identical, in C:/Programming Projects/Pokemon Game/game
+FAIL  packages/core/test/write/corpus.test.ts > identity corpus (invariant I5) > paints one real block on one real map, commits through the full save funnel, and restores byte-identical, in C:/Programming Projects/Pokemon Game/refs/pokeemerald
+FAIL  packages/core/test/write/corpus.test.ts > identity corpus (invariant I5) > paints one real block on one real map, commits through the full save funnel, and restores byte-identical, in C:/Programming Projects/Pokemon Game/refs/pokefirered
+FAIL  packages/core/test/write/corpus.test.ts > identity corpus (invariant I5) > paints one real block on one real map, commits through the full save funnel, and restores byte-identical, in C:/Programming Projects/Pokemon Game/refs/pokeemerald-expansion
+FAIL  packages/core/test/write/corpus.test.ts > identity corpus (invariant I5) > paints one real block on one real map, commits through the full save funnel, and restores byte-identical, in C:/Programming Projects/Pokemon Game/refs/modern-emerald
+FAIL  packages/core/test/write/corpus.test.ts > identity corpus (invariant I5) > paints one real block on one real map, commits through the full save funnel, and restores byte-identical, in C:/Programming Projects/Pokemon Game/refs/pokeclassic
+FAIL  packages/ui/test/gbc/GbcApp.test.tsx > GbcApp > the palette highlight resets when switching to a different map (spec review finding 9, mutation check X17)

@@ -1,0 +1,1127 @@
+
+> test
+> vitest run
+
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mC:/Users/Serve/AppData/Local/Temp/claude/C--Programming-Projects-PokeMap/74282ac3-2fdd-538d-8b69-bd7f0f0598f7/scratchpad/p8[39m
+
+ [32m✓[39m packages/ui/test/encounters/summary.test.ts [2m([22m[2m25 tests[22m[2m)[22m[90m 7[2mms[22m[39m
+[90mstderr[2m | packages/ui/test/App.test.tsx[2m > [22m[2mApp[2m > [22m[2mremounts WorldCanvas fresh when switching from Dungeon mode back to World mode
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/AppContextEdit.test.tsx[2m > [22m[2mApp -- in-context editing (Plan 6c E4)[2m > [22m[2mdouble-clicking a map in World shows the editing chrome around the SAME world canvas, with no /api/world refetch
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/AppContextEdit.test.tsx[2m > [22m[2mApp -- in-context editing (Plan 6c E4)[2m > [22m[2mdouble-clicking a map in World shows the editing chrome around the SAME world canvas, with no /api/world refetch
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/App.test.tsx[2m > [22m[2mApp[2m > [22m[2mremounts WorldCanvas fresh when switching from Dungeon mode back to World mode
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/App.test.tsx[2m > [22m[2mApp[2m > [22m[2mremounts WorldCanvas fresh when switching from Dungeon mode back to World mode
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/App.test.tsx[2m > [22m[2mApp[2m > [22m[2mdoes not clear the open dungeon when a delete fails
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/App.test.tsx[2m > [22m[2mApp[2m > [22m[2mdoes not clear the open dungeon when a delete fails
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/AppContextEdit.test.tsx[2m > [22m[2mApp -- in-context editing (Plan 6c E4)[2m > [22m[2mdouble-clicking a map in World shows the editing chrome around the SAME world canvas, with no /api/world refetch
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/AppContextEdit.test.tsx[2m > [22m[2mApp -- in-context editing (Plan 6c E4)[2m > [22m[2mDone on a clean session removes the chrome and the overlay; World stays
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/AppContextEdit.test.tsx[2m > [22m[2mApp -- in-context editing (Plan 6c E4)[2m > [22m[2mDone on a clean session removes the chrome and the overlay; World stays
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcApp.test.tsx[2m > [22m[2mGbcApp[2m > [22m[2mcreates, opens, edits membership, renames, and deletes a GBC dungeon
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/App.test.tsx[2m > [22m[2mApp[2m > [22m[2mkeeps a newly-opened dungeon open when an earlier dungeon's in-flight delete resolves after the switch
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/App.test.tsx[2m > [22m[2mApp[2m > [22m[2mkeeps a newly-opened dungeon open when an earlier dungeon's in-flight delete resolves after the switch
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/AppContextEdit.test.tsx[2m > [22m[2mApp -- in-context editing (Plan 6c E4)[2m > [22m[2mDone on a clean session removes the chrome and the overlay; World stays
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcApp.test.tsx[2m > [22m[2mGbcApp[2m > [22m[2mcreates, opens, edits membership, renames, and deletes a GBC dungeon
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mdouble-clicking a map in World shows the editing chrome around the SAME world canvas, with no /api/world refetch
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mdouble-clicking a map in World shows the editing chrome around the SAME world canvas, with no /api/world refetch
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+ [32m✓[39m packages/ui/test/encounters/EncounterBorder.test.tsx [2m([22m[2m49 tests[22m[2m)[22m[33m 947[2mms[22m[39m
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mdouble-clicking a map in World shows the editing chrome around the SAME world canvas, with no /api/world refetch
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/AppContextEdit.test.tsx[2m > [22m[2mApp -- in-context editing (Plan 6c E4)[2m > [22m[2mEscape on a clean session leaves context too
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/AppContextEdit.test.tsx[2m > [22m[2mApp -- in-context editing (Plan 6c E4)[2m > [22m[2mEscape on a clean session leaves context too
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/AppContextEdit.test.tsx[2m > [22m[2mApp -- in-context editing (Plan 6c E4)[2m > [22m[2mEscape on a clean session leaves context too
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcApp.test.tsx[2m > [22m[2mGbcApp[2m > [22m[2mcreates, opens, edits membership, renames, and deletes a GBC dungeon
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/AppContextEdit.test.tsx[2m > [22m[2mApp -- in-context editing (Plan 6c E4)[2m > [22m[2mwith a dirty session[2m > [22m[2mEscape opens the SaveDialog and stays in context; Escape inside the dialog cancels only the dialog
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/AppContextEdit.test.tsx[2m > [22m[2mApp -- in-context editing (Plan 6c E4)[2m > [22m[2mwith a dirty session[2m > [22m[2mEscape opens the SaveDialog and stays in context; Escape inside the dialog cancels only the dialog
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcApp.test.tsx[2m > [22m[2mGbcApp[2m > [22m[2mpreserves dungeon pan on rename and refits after membership changes
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcApp.test.tsx[2m > [22m[2mGbcApp[2m > [22m[2mpreserves dungeon pan on rename and refits after membership changes
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mDone on a clean session removes the chrome and the overlay; World stays and the canvas is the same node
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcApp.test.tsx[2m > [22m[2mGbcApp[2m > [22m[2mpreserves dungeon pan on rename and refits after membership changes
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mDone on a clean session removes the chrome and the overlay; World stays and the canvas is the same node
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/AppContextEdit.test.tsx[2m > [22m[2mApp -- in-context editing (Plan 6c E4)[2m > [22m[2mwith a dirty session[2m > [22m[2mEscape opens the SaveDialog and stays in context; Escape inside the dialog cancels only the dialog
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcApp.test.tsx[2m > [22m[2mGbcApp[2m > [22m[2mpreserves dungeon pan on rename and refits after membership changes
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mDone on a clean session removes the chrome and the overlay; World stays and the canvas is the same node
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/AppContextEdit.test.tsx[2m > [22m[2mApp -- in-context editing (Plan 6c E4)[2m > [22m[2mwith a dirty session[2m > [22m[2mDone opens the SaveDialog and stays in context
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/AppContextEdit.test.tsx[2m > [22m[2mApp -- in-context editing (Plan 6c E4)[2m > [22m[2mwith a dirty session[2m > [22m[2mDone opens the SaveDialog and stays in context
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mEscape on a clean session leaves context too
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mEscape on a clean session leaves context too
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+ [32m✓[39m packages/ui/test/hub/ProjectPicker.test.tsx [2m([22m[2m20 tests[22m[2m)[22m[33m 1316[2mms[22m[39m
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mEscape on a clean session leaves context too
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mShift+double-click still opens the Map view and enters no context
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mShift+double-click still opens the Map view and enters no context
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mShift+double-click still opens the Map view and enters no context
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/AppContextEdit.test.tsx[2m > [22m[2mApp -- in-context editing (Plan 6c E4)[2m > [22m[2mwith a dirty session[2m > [22m[2mDone opens the SaveDialog and stays in context
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcApp.test.tsx[2m > [22m[2mGbcApp[2m > [22m[2mthe World toggle swaps to the real GbcWorldCanvas
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mthe context menu's Edit here enters context
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mthe context menu's Edit here enters context
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcApp.test.tsx[2m > [22m[2mGbcApp[2m > [22m[2mthe World toggle swaps to the real GbcWorldCanvas
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mthe context menu's Edit here enters context
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcApp.test.tsx[2m > [22m[2mGbcApp[2m > [22m[2mswitching to World view hides the selected-map status
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/AppContextEdit.test.tsx[2m > [22m[2mApp -- in-context editing (Plan 6c E4)[2m > [22m[2mwith a dirty session[2m > [22m[2ma committed save refreshes exactly that map's world tile, as ?v=1
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/AppContextEdit.test.tsx[2m > [22m[2mApp -- in-context editing (Plan 6c E4)[2m > [22m[2mwith a dirty session[2m > [22m[2ma committed save refreshes exactly that map's world tile, as ?v=1
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcApp.test.tsx[2m > [22m[2mGbcApp[2m > [22m[2ma tree click in World mode jumps GbcWorldCanvas there (jumpToMap/jumpToken wiring)
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcApp.test.tsx[2m > [22m[2mGbcApp[2m > [22m[2ma tree click in World mode jumps GbcWorldCanvas there (jumpToMap/jumpToken wiring)
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcApp.test.tsx[2m > [22m[2mGbcApp[2m > [22m[2mShift+double-clicking a map in World mode opens it in Map view (onOpenMap wiring; Plan 7 Task 5b: a plain double-click now edits in place)
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcApp.test.tsx[2m > [22m[2mGbcApp[2m > [22m[2mShift+double-clicking a map in World mode opens it in Map view (onOpenMap wiring; Plan 7 Task 5b: a plain double-click now edits in place)
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/AppContextEdit.test.tsx[2m > [22m[2mApp -- in-context editing (Plan 6c E4)[2m > [22m[2mwith a dirty session[2m > [22m[2ma committed save refreshes exactly that map's world tile, as ?v=1
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mwith a dirty session[2m > [22m[2mDone opens the SaveDialog and stays in context; Cancel keeps editing
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mwith a dirty session[2m > [22m[2mDone opens the SaveDialog and stays in context; Cancel keeps editing
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcApp.test.tsx[2m > [22m[2mGbcApp[2m > [22m[2ma canvas click (no tree click yet) does not jump the view -- pinned exact view (spec review F1)
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcApp.test.tsx[2m > [22m[2mGbcApp[2m > [22m[2ma canvas click (no tree click yet) does not jump the view -- pinned exact view (spec review F1)
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mwith a dirty session[2m > [22m[2mDone opens the SaveDialog and stays in context; Cancel keeps editing
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+ [32m✓[39m packages/ui/test/gbc/guards.test.ts [2m([22m[2m52 tests[22m[2m)[22m[90m 14[2mms[22m[39m
+[90mstderr[2m | packages/ui/test/gbc/GbcApp.test.tsx[2m > [22m[2mGbcApp[2m > [22m[2ma second tree click (a different map) still jumps -- selectVersion must bump on every tree click, not just the first (mutation check X12)
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcApp.test.tsx[2m > [22m[2mGbcApp[2m > [22m[2ma second tree click (a different map) still jumps -- selectVersion must bump on every tree click, not just the first (mutation check X12)
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/AppContextEdit.test.tsx[2m > [22m[2mApp -- in-context editing (Plan 6c E4)[2m > [22m[2ma mode switch leaves context without a prompt; coming back to World starts without it
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/AppContextEdit.test.tsx[2m > [22m[2mApp -- in-context editing (Plan 6c E4)[2m > [22m[2ma mode switch leaves context without a prompt; coming back to World starts without it
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mwith a dirty session[2m > [22m[2mEscape opens the SaveDialog and stays in context; Escape inside the dialog cancels only the dialog
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mwith a dirty session[2m > [22m[2mEscape opens the SaveDialog and stays in context; Escape inside the dialog cancels only the dialog
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mwith a dirty session[2m > [22m[2mEscape opens the SaveDialog and stays in context; Escape inside the dialog cancels only the dialog
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/AppContextEdit.test.tsx[2m > [22m[2mApp -- in-context editing (Plan 6c E4)[2m > [22m[2ma mode switch leaves context without a prompt; coming back to World starts without it
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/AppContextEdit.test.tsx[2m > [22m[2mApp -- in-context editing (Plan 6c E4)[2m > [22m[2ma mode switch leaves context without a prompt; coming back to World starts without it
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/AppContextEdit.test.tsx[2m > [22m[2mApp -- in-context editing (Plan 6c E4)[2m > [22m[2ma tree click on the map being edited also leaves context (the jump it requests would move the world under the overlay)
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/AppContextEdit.test.tsx[2m > [22m[2mApp -- in-context editing (Plan 6c E4)[2m > [22m[2ma tree click on the map being edited also leaves context (the jump it requests would move the world under the overlay)
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+ [32m✓[39m packages/ui/test/gbc/GbcMapCanvas.test.tsx [2m([22m[2m53 tests[22m[2m)[22m[33m 2031[2mms[22m[39m
+[90mstderr[2m | packages/ui/test/AppContextEdit.test.tsx[2m > [22m[2mApp -- in-context editing (Plan 6c E4)[2m > [22m[2ma tree click on the map being edited also leaves context (the jump it requests would move the world under the overlay)
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/AppContextEdit.test.tsx[2m > [22m[2mApp -- in-context editing (Plan 6c E4)[2m > [22m[2ma tree click on another map leaves context (no remount of the chrome, no overlay) and selects that map
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+ [32m✓[39m packages/ui/test/gbc/GbcWorldCanvasContext.test.tsx [2m([22m[2m36 tests[22m[2m)[22m[33m 1963[2mms[22m[39m
+[90mstderr[2m | packages/ui/test/AppContextEdit.test.tsx[2m > [22m[2mApp -- in-context editing (Plan 6c E4)[2m > [22m[2ma tree click on another map leaves context (no remount of the chrome, no overlay) and selects that map
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mwith a dirty session[2m > [22m[2ma committed save refreshes exactly that map's world tile, as &v=1, marks the session clean, re-reads the payload
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mwith a dirty session[2m > [22m[2ma committed save refreshes exactly that map's world tile, as &v=1, marks the session clean, re-reads the payload
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mwith a dirty session[2m > [22m[2ma committed save refreshes exactly that map's world tile, as &v=1, marks the session clean, re-reads the payload
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mwith a dirty session[2m > [22m[2ma committed save refreshes exactly that map's world tile, as &v=1, marks the session clean, re-reads the payload
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/AppContextEdit.test.tsx[2m > [22m[2mApp -- in-context editing (Plan 6c E4)[2m > [22m[2ma tree click on another map leaves context (no remount of the chrome, no overlay) and selects that map
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+ [32m✓[39m packages/ui/test/WorldCanvasContext.test.tsx [2m([22m[2m37 tests[22m[2m)[22m[33m 2219[2mms[22m[39m
+[90mstderr[2m | packages/ui/test/AppContextEdit.test.tsx[2m > [22m[2mApp -- in-context editing (Plan 6c E4)[2m > [22m[2ma double-click on another map with a dirty session and a cancelled confirm does not enter context
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/AppContextEdit.test.tsx[2m > [22m[2mApp -- in-context editing (Plan 6c E4)[2m > [22m[2ma double-click on another map with a dirty session and a cancelled confirm does not enter context
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/AppContextEdit.test.tsx[2m > [22m[2mApp -- in-context editing, fix round (Plan 6c E4)[2m > [22m[2ma pencil click on a cell of the overlay canvas goes through the edit session: paint/begin, paint/apply (pencil), paint/end, in order
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/AppContextEdit.test.tsx[2m > [22m[2mApp -- in-context editing, fix round (Plan 6c E4)[2m > [22m[2ma pencil click on a cell of the overlay canvas goes through the edit session: paint/begin, paint/apply (pencil), paint/end, in order
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mwith a dirty session[2m > [22m[2ma mode switch leaves context without a prompt; the session persists (still dirty back in Map view)
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mwith a dirty session[2m > [22m[2ma mode switch leaves context without a prompt; the session persists (still dirty back in Map view)
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mwith a dirty session[2m > [22m[2ma mode switch leaves context without a prompt; the session persists (still dirty back in Map view)
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/AppContextEdit.test.tsx[2m > [22m[2mApp -- in-context editing, fix round (Plan 6c E4)[2m > [22m[2ma pencil click on a cell of the overlay canvas goes through the edit session: paint/begin, paint/apply (pencil), paint/end, in order
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mwith a dirty session[2m > [22m[2ma mode switch leaves context without a prompt; the session persists (still dirty back in Map view)
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mwith a dirty session[2m > [22m[2ma mode switch leaves context without a prompt; the session persists (still dirty back in Map view)
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/AppContextEdit.test.tsx[2m > [22m[2mApp -- in-context editing, fix round (Plan 6c E4)[2m > [22m[2ma selection change that nothing else clears leaves context (defence in depth: the overlay normally covers the canvas)
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/AppContextEdit.test.tsx[2m > [22m[2mApp -- in-context editing, fix round (Plan 6c E4)[2m > [22m[2ma selection change that nothing else clears leaves context (defence in depth: the overlay normally covers the canvas)
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+ [32m✓[39m packages/ui/test/useEditSession.test.tsx [2m([22m[2m15 tests[22m[2m)[22m[90m 69[2mms[22m[39m
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mwith a dirty session[2m > [22m[2ma tree click on another map leaves context only after the dirty guard (cancel keeps editing)
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mwith a dirty session[2m > [22m[2ma tree click on another map leaves context only after the dirty guard (cancel keeps editing)
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/AppContextEdit.test.tsx[2m > [22m[2mApp -- in-context editing, fix round (Plan 6c E4)[2m > [22m[2ma selection change that nothing else clears leaves context (defence in depth: the overlay normally covers the canvas)
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mwith a dirty session[2m > [22m[2ma tree click on another map leaves context only after the dirty guard (cancel keeps editing)
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mwith a dirty session[2m > [22m[2ma tree click on another map leaves context only after the dirty guard (cancel keeps editing)
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/AppContextEdit.test.tsx[2m > [22m[2mApp -- in-context editing, fix round (Plan 6c E4)[2m > [22m[2ma selection change that nothing else clears leaves context (defence in depth: the overlay normally covers the canvas)
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+ [32m✓[39m packages/ui/test/AppContextEdit.test.tsx [2m([22m[2m12 tests[22m[2m)[22m[33m 2519[2mms[22m[39m
+   [33m[2m✓[22m[39m App -- in-context editing (Plan 6c E4)[2m > [22mdouble-clicking a map in World shows the editing chrome around the SAME world canvas, with no /api/world refetch [33m434[2mms[22m[39m
+   [33m[2m✓[22m[39m App -- in-context editing (Plan 6c E4)[2m > [22mwith a dirty session[2m > [22ma committed save refreshes exactly that map's world tile, as ?v=1 [33m317[2mms[22m[39m
+[90mstderr[2m | packages/ui/test/App.test.tsx[2m > [22m[2mApp -- coverage lens list jump (Plan 6c C1)[2m > [22m[2mclicking an Empty maps list entry in World mode selects that map and jumps the canvas there, like a tree click
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/App.test.tsx[2m > [22m[2mApp -- coverage lens list jump (Plan 6c C1)[2m > [22m[2mclicking an Empty maps list entry in World mode selects that map and jumps the canvas there, like a tree click
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2ma double-click on another map with a dirty session and a cancelled confirm does not enter context
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2ma double-click on another map with a dirty session and a cancelled confirm does not enter context
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/App.test.tsx[2m > [22m[2mApp -- coverage lens list jump (Plan 6c C1)[2m > [22m[2mclicking an Empty maps list entry in World mode selects that map and jumps the canvas there, like a tree click
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/App.test.tsx[2m > [22m[2mApp -- coverage lens list jump (Plan 6c C1)[2m > [22m[2min Dungeon mode (no jump target) the Empty maps lens offers no List them button
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/App.test.tsx[2m > [22m[2mApp -- coverage lens list jump (Plan 6c C1)[2m > [22m[2min Dungeon mode (no jump target) the Empty maps lens offers no List them button
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/App.test.tsx[2m > [22m[2mApp -- world click selects the map in the tree (Plan 6c C2)[2m > [22m[2ma canvas click on a map highlights its tree row and scrolls it into view, without jumping the view (GBA mirror of GbcApp's F1 test)
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2ma confirmed discard enters context on the other map, discarding the server session first
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2ma confirmed discard enters context on the other map, discarding the server session first
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/App.test.tsx[2m > [22m[2mApp -- world click selects the map in the tree (Plan 6c C2)[2m > [22m[2ma canvas click on a map highlights its tree row and scrolls it into view, without jumping the view (GBA mirror of GbcApp's F1 test)
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/App.test.tsx[2m > [22m[2mApp -- world click selects the map in the tree (Plan 6c C2)[2m > [22m[2ma canvas click after a tree jump selects the new map but does not re-jump (no new jump highlight, view kept)
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2ma tree click on the map being edited also leaves context
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2ma tree click on the map being edited also leaves context
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+ [32m✓[39m packages/ui/test/gbc/GbcMapCanvasEdit.test.tsx [2m([22m[2m45 tests[22m[2m)[22m[33m 3077[2mms[22m[39m
+[90mstderr[2m | packages/ui/test/App.test.tsx[2m > [22m[2mApp -- world click selects the map in the tree (Plan 6c C2)[2m > [22m[2ma canvas click after a tree jump selects the new map but does not re-jump (no new jump highlight, view kept)
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2ma tree click on the map being edited also leaves context
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/App.test.tsx[2m > [22m[2mApp -- world click selects the map in the tree (Plan 6c C2)[2m > [22m[2mentering World after tree-click A, world-click B, Map view centres on B, not on the stale tree target A
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/App.test.tsx[2m > [22m[2mApp -- world click selects the map in the tree (Plan 6c C2)[2m > [22m[2mentering World after tree-click A, world-click B, Map view centres on B, not on the stale tree target A
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mkeyboard Edit here keeps stepped zoom, wheel and Fit all obey the context contract
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mkeyboard Edit here keeps stepped zoom, wheel and Fit all obey the context contract
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mkeyboard Edit here keeps stepped zoom, wheel and Fit all obey the context contract
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/App.test.tsx[2m > [22m[2mApp -- world click selects the map in the tree (Plan 6c C2)[2m > [22m[2mentering World after tree-click A, world-click B, Map view centres on B, not on the stale tree target A
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mkeyboard Edit here keeps stepped zoom, wheel and Fit all obey the context contract
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/App.test.tsx[2m > [22m[2mApp -- world click selects the map in the tree (Plan 6c C2)[2m > [22m[2mentering World after tree-click A, world-click B, Map view centres on B, not on the stale tree target A
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mkeyboard Edit here keeps stepped zoom, wheel and Fit all obey the context contract
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mkeyboard Edit here keeps stepped zoom, wheel and Fit all obey the context contract
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mkeyboard Edit here keeps stepped zoom, wheel and Fit all obey the context contract
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/App.test.tsx[2m > [22m[2mApp -- world click selects the map in the tree (Plan 6c C2)[2m > [22m[2mentering World after only a world click on B (no tree click ever) jumps to B
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/App.test.tsx[2m > [22m[2mApp -- world click selects the map in the tree (Plan 6c C2)[2m > [22m[2mentering World after only a world click on B (no tree click ever) jumps to B
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mpending context consumes zoom keys without continuous zoom
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mpending context consumes zoom keys without continuous zoom
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/App.test.tsx[2m > [22m[2mApp -- world click selects the map in the tree (Plan 6c C2)[2m > [22m[2mentering World after only a world click on B (no tree click ever) jumps to B
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/App.test.tsx[2m > [22m[2mApp -- world click selects the map in the tree (Plan 6c C2)[2m > [22m[2mentering World after only a world click on B (no tree click ever) jumps to B
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/App.test.tsx[2m > [22m[2mApp -- world click selects the map in the tree (Plan 6c C2)[2m > [22m[2mpressing World while already in World does not re-jump (no new highlight, view kept)
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mcontext payload rejection is visible without remount, and exit permits recovery
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mcontext payload rejection is visible without remount, and exit permits recovery
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/App.test.tsx[2m > [22m[2mApp -- world click selects the map in the tree (Plan 6c C2)[2m > [22m[2mpressing World while already in World does not re-jump (no new highlight, view kept)
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/App.test.tsx[2m > [22m[2mApp -- world click selects the map in the tree (Plan 6c C2)[2m > [22m[2min Dungeon mode a canvas click on a map does not change the app's selection (the dungeon canvas gets no onSelectMap)
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/App.test.tsx[2m > [22m[2mApp -- world click selects the map in the tree (Plan 6c C2)[2m > [22m[2min Dungeon mode a canvas click on a map does not change the app's selection (the dungeon canvas gets no onSelectMap)
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mcontext payload rejection is visible without remount, and exit permits recovery
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mcontext payload rejection is visible without remount, and exit permits recovery
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mcontext payload http is visible without remount, and exit permits recovery
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mcontext payload http is visible without remount, and exit permits recovery
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mcontext payload http is visible without remount, and exit permits recovery
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mcontext payload http is visible without remount, and exit permits recovery
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/App.test.tsx[2m > [22m[2mApp -- world click selects the map in the tree (Plan 6c C2)[2m > [22m[2mwith a dirty edit session on PalletTown[2m > [22m[2ma world click on another map asks to discard first; cancelling leaves the tree on the original map
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/App.test.tsx[2m > [22m[2mApp -- world click selects the map in the tree (Plan 6c C2)[2m > [22m[2mwith a dirty edit session on PalletTown[2m > [22m[2ma world click on another map asks to discard first; cancelling leaves the tree on the original map
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mcontext payload shape is visible without remount, and exit permits recovery
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mcontext payload shape is visible without remount, and exit permits recovery
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mcontext payload shape is visible without remount, and exit permits recovery
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mcontext payload shape is visible without remount, and exit permits recovery
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcApp.test.tsx[2m > [22m[2mGbcApp[2m > [22m[2ma second tree click (a different map) still jumps -- selectVersion must bump on every tree click, not just the first (mutation check X12)
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mvisible clean overlay paint uses 32px blocks and waits for begin before apply and end
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mvisible clean overlay paint uses 32px blocks and waits for begin before apply and end
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/App.test.tsx[2m > [22m[2mApp -- world click selects the map in the tree (Plan 6c C2)[2m > [22m[2mwith a dirty edit session on PalletTown[2m > [22m[2mconfirming the discard switches the tree to the clicked map
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/App.test.tsx[2m > [22m[2mApp -- world click selects the map in the tree (Plan 6c C2)[2m > [22m[2mwith a dirty edit session on PalletTown[2m > [22m[2mconfirming the discard switches the tree to the clicked map
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+ [32m✓[39m packages/ui/test/gbc/GbcMapCanvasView.test.tsx [2m([22m[2m14 tests[22m[2m)[22m[33m 465[2mms[22m[39m
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mvisible clean overlay paint uses 32px blocks and waits for begin before apply and end
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/App.test.tsx[2m > [22m[2mApp -- world click selects the map in the tree (Plan 6c C2)[2m > [22m[2mwith a dirty edit session on PalletTown[2m > [22m[2mre-clicking the already-selected map in the world does not raise the confirm
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/App.test.tsx[2m > [22m[2mApp -- world click selects the map in the tree (Plan 6c C2)[2m > [22m[2mwith a dirty edit session on PalletTown[2m > [22m[2mre-clicking the already-selected map in the world does not raise the confirm
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+ [32m✓[39m packages/ui/test/App.test.tsx [2m([22m[2m28 tests[22m[2m)[22m[33m 3846[2mms[22m[39m
+   [33m[2m✓[22m[39m App[2m > [22mremounts WorldCanvas fresh when switching from Dungeon mode back to World mode [33m361[2mms[22m[39m
+ [32m✓[39m packages/ui/test/LensPanel.test.tsx [2m([22m[2m21 tests[22m[2m)[22m[33m 326[2mms[22m[39m
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2moverlay event drag uses 16px steps through the actual App move callback
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2moverlay event drag uses 16px steps through the actual App move callback
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2moverlay event drag uses 16px steps through the actual App move callback
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2moverlay event drag uses 16px steps through the actual App move callback
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcApp.test.tsx[2m > [22m[2mGbcApp -- coverage lens list jump (Plan 6c C1)[2m > [22m[2mclicking an Empty maps list entry in World mode selects that map (tree row becomes current)
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mdifferent-map tree visits retire a context stamp across A to B to A while preserving tool and host
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mdifferent-map tree visits retire a context stamp across A to B to A while preserving tool and host
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+ [32m✓[39m packages/ui/test/SpeciesSpotlight.test.tsx [2m([22m[2m22 tests[22m[2m)[22m[33m 4351[2mms[22m[39m
+   [33m[2m✓[22m[39m SpeciesSpotlight[2m > [22mdims every map except the hits [33m379[2mms[22m[39m
+   [33m[2m✓[22m[39m SpeciesSpotlight[2m > [22mnever calls onHits before the user has typed anything [33m404[2mms[22m[39m
+   [33m[2m✓[22m[39m SpeciesSpotlight[2m > [22mcalls onHits(null) when the box is cleared after a real search, not [] again [33m302[2mms[22m[39m
+   [33m[2m✓[22m[39m SpeciesSpotlight[2m > [22mtype-ahead[2m > [22mexact-match pick fires only one fetch, not two, even past the debounce window [33m437[2mms[22m[39m
+   [33m[2m✓[22m[39m SpeciesSpotlight[2m > [22mtype-ahead[2m > [22mretyping the same species after a pick fires a new, real search -- not silently suppressed [33m330[2mms[22m[39m
+   [33m[2m✓[22m[39m SpeciesSpotlight[2m > [22mtype-ahead[2m > [22mpicking an option after typing a mere prefix still fires only one fetch, not two [33m448[2mms[22m[39m
+[90mstderr[2m | packages/ui/test/gbc/GbcApp.test.tsx[2m > [22m[2mGbcApp -- coverage lens list jump (Plan 6c C1)[2m > [22m[2mclicking an Empty maps list entry in World mode selects that map (tree row becomes current)
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcApp.test.tsx[2m > [22m[2mGbcApp -- world click selects the map in the tree (Plan 6c C2)[2m > [22m[2ma canvas click on a map makes its tree row current and scrolls it into view
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcApp.test.tsx[2m > [22m[2mGbcApp -- world click selects the map in the tree (Plan 6c C2)[2m > [22m[2ma canvas click on a map makes its tree row current and scrolls it into view
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mdifferent-map tree visits retire a context stamp across A to B to A while preserving tool and host
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcApp.test.tsx[2m > [22m[2mGbcApp -- world click selects the map in the tree (Plan 6c C2)[2m > [22m[2ma canvas click on a map makes its tree row current and scrolls it into view
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mdifferent-map tree visits retire a context stamp across A to B to A while preserving tool and host
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcApp.test.tsx[2m > [22m[2mGbcApp -- GBC world visibility (Plan 6c D1)[2m > [22m[2mgreys an automatic indoor map in World mode while leaving a town visible
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcApp.test.tsx[2m > [22m[2mGbcApp -- GBC world visibility (Plan 6c D1)[2m > [22m[2mgreys an automatic indoor map in World mode while leaving a town visible
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mdifferent-map tree visits retire a context stamp across A to B to A while preserving tool and host
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContext.test.tsx[2m > [22m[2mGbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22m[2mdifferent-map tree visits retire a context stamp across A to B to A while preserving tool and host
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+ [32m✓[39m packages/ui/test/shared/useStrokeChain.test.tsx [2m([22m[2m23 tests[22m[2m)[22m[90m 60[2mms[22m[39m
+[90mstderr[2m | packages/ui/test/gbc/GbcApp.test.tsx[2m > [22m[2mGbcApp -- GBC world visibility (Plan 6c D1)[2m > [22m[2ma successful hidden-map drop immediately ungreys its tree row
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcApp.test.tsx[2m > [22m[2mGbcApp -- GBC world visibility (Plan 6c D1)[2m > [22m[2ma successful hidden-map drop immediately ungreys its tree row
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+ [32m✓[39m packages/ui/test/gbc/GbcAppContext.test.tsx [2m([22m[2m23 tests[22m[2m)[22m[33m 4307[2mms[22m[39m
+   [33m[2m✓[22m[39m GbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22mdraws an already-loaded cached context image on real App entry and reentry without load events or zoom [33m635[2mms[22m[39m
+   [33m[2m✓[22m[39m GbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22mwith a dirty session[2m > [22ma committed save refreshes exactly that map's world tile, as &v=1, marks the session clean, re-reads the payload [33m318[2mms[22m[39m
+   [33m[2m✓[22m[39m GbcApp -- in-context editing (Plan 7 Task 5b)[2m > [22mdifferent-map tree visits retire a context stamp across A to B to A while preserving tool and host [33m312[2mms[22m[39m
+ [32m✓[39m packages/ui/test/MapCanvas.test.tsx [2m([22m[2m62 tests[22m[2m)[22m[33m 4498[2mms[22m[39m
+   [33m[2m✓[22m[39m MapCanvas[2m > [22mincludes a v= cache-bust param once editSession is present; the presumed reseed tick is swallowed, and a real paint bumps exactly once after debouncing, even across rapid changes [33m937[2mms[22m[39m
+   [33m[2m✓[22m[39m MapCanvas[2m > [22missue 4a: pan/zoom survives a same-map paint reload -- fails if fittedForMapRef's once-per-map guard is ever removed [33m389[2mms[22m[39m
+   [33m[2m✓[22m[39m MapCanvas[2m > [22missue 4b: the composite effect waits for the real reload before redrawing -- fails if the imageUrl-keyed imgLoaded reset is ever removed [33m342[2mms[22m[39m
+[90mstderr[2m | packages/ui/test/gbc/GbcApp.test.tsx[2m > [22m[2mGbcApp -- entering World centres on the selection (Plan 6c C2 fix round)[2m > [22m[2mtree-click A, world-click B, Map, World: the view centres on B, not on the stale tree target A
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcApp.test.tsx[2m > [22m[2mGbcApp -- entering World centres on the selection (Plan 6c C2 fix round)[2m > [22m[2mtree-click A, world-click B, Map, World: the view centres on B, not on the stale tree target A
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcApp.test.tsx[2m > [22m[2mGbcApp -- entering World centres on the selection (Plan 6c C2 fix round)[2m > [22m[2mtree-click A, world-click B, Map, World: the view centres on B, not on the stale tree target A
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcApp.test.tsx[2m > [22m[2mGbcApp -- entering World centres on the selection (Plan 6c C2 fix round)[2m > [22m[2mtree-click A, world-click B, Map, World: the view centres on B, not on the stale tree target A
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcApp.test.tsx[2m > [22m[2mGbcApp -- entering World centres on the selection (Plan 6c C2 fix round)[2m > [22m[2mtree-click A, world-click B, Map, World: the view centres on B, not on the stale tree target A
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcApp.test.tsx[2m > [22m[2mGbcApp -- entering World centres on the selection (Plan 6c C2 fix round)[2m > [22m[2mworld-click B only (no tree click ever), Map, World: jumps to B
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcApp.test.tsx[2m > [22m[2mGbcApp -- entering World centres on the selection (Plan 6c C2 fix round)[2m > [22m[2mworld-click B only (no tree click ever), Map, World: jumps to B
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcApp.test.tsx[2m > [22m[2mGbcApp -- entering World centres on the selection (Plan 6c C2 fix round)[2m > [22m[2mworld-click B only (no tree click ever), Map, World: jumps to B
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcApp.test.tsx[2m > [22m[2mGbcApp -- entering World centres on the selection (Plan 6c C2 fix round)[2m > [22m[2mworld-click B only (no tree click ever), Map, World: jumps to B
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcApp.test.tsx[2m > [22m[2mGbcApp -- entering World centres on the selection (Plan 6c C2 fix round)[2m > [22m[2mpressing World while already in World does not re-jump (no new highlight, view kept)
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcApp.test.tsx[2m > [22m[2mGbcApp -- entering World centres on the selection (Plan 6c C2 fix round)[2m > [22m[2mpressing World while already in World does not re-jump (no new highlight, view kept)
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcApp.test.tsx[2m > [22m[2mGbcApp -- entering World centres on the selection (Plan 6c C2 fix round)[2m > [22m[2mpressing World while already in World does not re-jump (no new highlight, view kept)
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+ [32m✓[39m packages/ui/test/gbc/GbcApp.test.tsx [2m([22m[2m33 tests[22m[2m)[22m[33m 4644[2mms[22m[39m
+   [33m[2m✓[22m[39m GbcApp[2m > [22mcreates, opens, edits membership, renames, and deletes a GBC dungeon [33m389[2mms[22m[39m
+   [33m[2m✓[22m[39m GbcApp[2m > [22ma second tree click (a different map) still jumps -- selectVersion must bump on every tree click, not just the first (mutation check X12) [33m2088[2mms[22m[39m
+ [32m✓[39m packages/ui/test/gbc/Root.test.tsx [2m([22m[2m11 tests[22m[2m)[22m[33m 737[2mms[22m[39m
+ [32m✓[39m packages/ui/test/MapCanvasStroke.test.tsx [2m([22m[2m22 tests[22m[2m)[22m[33m 1910[2mms[22m[39m
+ [32m✓[39m packages/ui/test/MetatilePalette.test.tsx [2m([22m[2m11 tests[22m[2m)[22m[33m 426[2mms[22m[39m
+ [32m✓[39m packages/ui/test/WorldCanvas.test.tsx [2m([22m[2m102 tests[22m[2m)[22m[33m 5023[2mms[22m[39m
+[90mstderr[2m | packages/ui/test/AppContextStroke.test.tsx[2m > [22m[2mM5: Done waits for held paint/apply before deciding the dirty exit
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/AppContextStroke.test.tsx[2m > [22m[2mM5: Done waits for held paint/apply before deciding the dirty exit
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/AppContextStroke.test.tsx[2m > [22m[2mM5: Done waits for held paint/apply before deciding the dirty exit
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/AppContextStroke.test.tsx[2m > [22m[2mdirty Map and Dungeon mode switches leave context without prompting and preserve the session
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/AppContextStroke.test.tsx[2m > [22m[2mdirty Map and Dungeon mode switches leave context without prompting and preserve the session
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/AppContextStroke.test.tsx[2m > [22m[2mdirty Map and Dungeon mode switches leave context without prompting and preserve the session
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/AppContextStroke.test.tsx[2m > [22m[2mdirty Map and Dungeon mode switches leave context without prompting and preserve the session
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/AppContextStroke.test.tsx[2m > [22m[2mdirty Map and Dungeon mode switches leave context without prompting and preserve the session
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/AppContextStroke.test.tsx[2m > [22m[2mdirty Map and Dungeon mode switches leave context without prompting and preserve the session
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+ [32m✓[39m packages/ui/test/AppContextStroke.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[33m 975[2mms[22m[39m
+   [33m[2m✓[22m[39m M5: Done waits for held paint/apply before deciding the dirty exit [33m531[2mms[22m[39m
+   [33m[2m✓[22m[39m dirty Map and Dungeon mode switches leave context without prompting and preserve the session [33m443[2mms[22m[39m
+ [32m✓[39m packages/ui/test/gbc/GbcMapEditing.test.tsx [2m([22m[2m36 tests[22m[2m)[22m[33m 2306[2mms[22m[39m
+ [32m✓[39m packages/ui/test/shared/useWorldContext.test.tsx [2m([22m[2m18 tests[22m[2m)[22m[90m 100[2mms[22m[39m
+ [32m✓[39m packages/ui/test/gbc/useGbcEditSession.test.tsx [2m([22m[2m14 tests[22m[2m)[22m[90m 69[2mms[22m[39m
+ [32m✓[39m packages/ui/test/WorldContextMenu.test.tsx [2m([22m[2m16 tests[22m[2m)[22m[90m 298[2mms[22m[39m
+ [32m✓[39m packages/ui/test/MapTree.test.tsx [2m([22m[2m20 tests[22m[2m)[22m[90m 201[2mms[22m[39m
+ [32m✓[39m packages/ui/test/hub/guards.test.ts [2m([22m[2m34 tests[22m[2m)[22m[90m 15[2mms[22m[39m
+ [32m✓[39m packages/ui/test/useGuardedFetch.test.ts [2m([22m[2m17 tests[22m[2m)[22m[33m 821[2mms[22m[39m
+ [32m✓[39m packages/ui/test/DungeonSidebar.test.tsx [2m([22m[2m10 tests[22m[2m)[22m[90m 170[2mms[22m[39m
+ [32m✓[39m packages/ui/test/SaveDialog.test.tsx [2m([22m[2m9 tests[22m[2m)[22m[33m 404[2mms[22m[39m
+ [32m✓[39m packages/ui/test/SignComposer.test.tsx [2m([22m[2m8 tests[22m[2m)[22m[33m 498[2mms[22m[39m
+[90mstderr[2m | packages/ui/test/gbc/GbcAppEditing.test.tsx[2m > [22m[2mGbcApp editing (Plan 7 Task 5)[2m > [22m[2mWorld <-> Map preserves the session (dirty flag and painted blocks survive)
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContextStroke.test.tsx[2m > [22m[2mM5: Done waits for held paint/apply before deciding the dirty exit
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContextStroke.test.tsx[2m > [22m[2mM5: Done waits for held paint/apply before deciding the dirty exit
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppEditing.test.tsx[2m > [22m[2mGbcApp editing (Plan 7 Task 5)[2m > [22m[2mWorld <-> Map preserves the session (dirty flag and painted blocks survive)
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/gbc/GbcAppContextStroke.test.tsx[2m > [22m[2mM5: Done waits for held paint/apply before deciding the dirty exit
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+ [32m✓[39m packages/ui/test/gbc/GbcAppContextStroke.test.tsx [2m([22m[2m1 test[22m[2m)[22m[33m 499[2mms[22m[39m
+   [33m[2m✓[22m[39m M5: Done waits for held paint/apply before deciding the dirty exit [33m498[2mms[22m[39m
+ [32m✓[39m packages/ui/test/gbc/GbcAppEditing.test.tsx [2m([22m[2m7 tests[22m[2m)[22m[33m 1341[2mms[22m[39m
+   [33m[2m✓[22m[39m GbcApp editing (Plan 7 Task 5)[2m > [22mdirty guard: cancel keeps the map; confirm discards the server session BEFORE switching [33m354[2mms[22m[39m
+ [32m✓[39m packages/ui/test/gbc/GbcAppWorldGuard.test.tsx [2m([22m[2m7 tests[22m[2m)[22m[33m 1620[2mms[22m[39m
+   [33m[2m✓[22m[39m GbcApp World-path dirty guards (spec review F1, F3, F7)[2m > [22ma world click on another map: GBA confirm; cancel keeps the selection and discards nothing [33m428[2mms[22m[39m
+   [33m[2m✓[22m[39m GbcApp World-path dirty guards (spec review F1, F3, F7)[2m > [22mbeforeunload is removed after a committed save [33m316[2mms[22m[39m
+ [32m✓[39m packages/ui/test/EventInspector.test.tsx [2m([22m[2m9 tests[22m[2m)[22m[90m 299[2mms[22m[39m
+[90mstderr[2m | packages/ui/test/AppWorldContextMenu.test.tsx[2m > [22m[2mApp -- world context menu Open in Map view (Plan 6c E3)[2m > [22m[2mopens the right-clicked map in Map mode with that map selected
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+ [32m✓[39m packages/ui/test/MapEditingWorkspace.test.tsx [2m([22m[2m6 tests[22m[2m)[22m[33m 452[2mms[22m[39m
+[90mstderr[2m | packages/ui/test/AppWorldContextMenu.test.tsx[2m > [22m[2mApp -- world context menu Open in Map view (Plan 6c E3)[2m > [22m[2mopens the right-clicked map in Map mode with that map selected
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+ [32m✓[39m packages/ui/test/shared/useEditSessionCore.test.tsx [2m([22m[2m13 tests[22m[2m)[22m[90m 48[2mms[22m[39m
+[90mstderr[2m | packages/ui/test/AppWorldContextMenu.test.tsx[2m > [22m[2mApp -- world context menu Open in Map view (Plan 6c E3)[2m > [22m[2ma dirty session with a cancelled confirm keeps World mode and the selection
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+Not implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/AppWorldContextMenu.test.tsx[2m > [22m[2mApp -- world context menu Open in Map view (Plan 6c E3)[2m > [22m[2ma dirty session with a cancelled confirm keeps World mode and the selection
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+[90mstderr[2m | packages/ui/test/AppWorldContextMenu.test.tsx[2m > [22m[2mApp -- world context menu Open in Map view (Plan 6c E3)[2m > [22m[2ma dirty session with a cancelled confirm keeps World mode and the selection
+[22m[39mNot implemented: HTMLCanvasElement's getContext() method: without installing the canvas npm package
+
+ [32m✓[39m packages/ui/test/AppWorldContextMenu.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[33m 636[2mms[22m[39m
+   [33m[2m✓[22m[39m App -- world context menu Open in Map view (Plan 6c E3)[2m > [22mopens the right-clicked map in Map mode with that map selected [33m357[2mms[22m[39m
+ [32m✓[39m packages/ui/test/encounters/useMapEncounterSummaries.test.tsx [2m([22m[2m11 tests[22m[2m)[22m[33m 1015[2mms[22m[39m
+ [32m✓[39m packages/ui/test/Toolbar.test.tsx [2m([22m[2m10 tests[22m[2m)[22m[33m 497[2mms[22m[39m
+ [32m✓[39m packages/ui/test/gbc/GbcEventInspector.test.tsx [2m([22m[2m14 tests[22m[2m)[22m[33m 351[2mms[22m[39m
+ [32m✓[39m packages/ui/test/gbc/GbcWorldCanvasContextZoom.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[33m 416[2mms[22m[39m
+ [32m✓[39m packages/ui/test/shared/useContextEditing.test.tsx [2m([22m[2m10 tests[22m[2m)[22m[90m 46[2mms[22m[39m
+ [32m✓[39m packages/ui/test/gbc/GbcMapCanvasStroke.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[33m 381[2mms[22m[39m
+ [32m✓[39m packages/ui/test/useEditSessionShared.test.tsx [2m([22m[2m6 tests[22m[2m)[22m[90m 37[2mms[22m[39m
+ [32m✓[39m packages/ui/test/gbc/GbcMetatilePalette.test.tsx [2m([22m[2m9 tests[22m[2m)[22m[90m 263[2mms[22m[39m
+ [32m✓[39m packages/ui/test/encounters/borderSide.test.ts [2m([22m[2m34 tests[22m[2m)[22m[90m 10[2mms[22m[39m
+ [32m✓[39m packages/ui/test/AppEditingWiring.test.tsx [2m([22m[2m4 tests[22m[2m)[22m[33m 1195[2mms[22m[39m
+   [33m[2m✓[22m[39m App -- editing dialogs wiring[2m > [22mToolbar Save opens SaveDialog and not SignComposer [33m428[2mms[22m[39m
+   [33m[2m✓[22m[39m App -- selection resets[2m > [22ma cancelled map switch (dirty session) keeps the selected event and the chosen stamp [33m326[2mms[22m[39m
+ [32m✓[39m packages/ui/test/world/contextView.test.ts [2m([22m[2m16 tests[22m[2m)[22m[90m 7[2mms[22m[39m
+ [32m✓[39m packages/ui/test/hub/ProjectSwitcher.test.tsx [2m([22m[2m5 tests[22m[2m)[22m[33m 322[2mms[22m[39m
+ [32m✓[39m packages/ui/test/useDungeons.test.tsx [2m([22m[2m4 tests[22m[2m)[22m[33m 656[2mms[22m[39m
+   [33m[2m✓[22m[39m useDungeons[2m > [22mfetches the list once enabled, and reloads after create/rename/setMaps/remove [33m400[2mms[22m[39m
+ [32m✓[39m packages/ui/test/world/contextViewGbc.test.ts [2m([22m[2m14 tests[22m[2m)[22m[90m 9[2mms[22m[39m
+ [32m✓[39m packages/ui/test/MapEditingWorkspaceActive.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[90m 285[2mms[22m[39m
+ [32m✓[39m packages/ui/test/useFetchedFamilyGba.test.tsx [2m([22m[2m4 tests[22m[2m)[22m[33m 332[2mms[22m[39m
+ [32m✓[39m packages/ui/test/hub/SwitchConfirmDialog.test.tsx [2m([22m[2m7 tests[22m[2m)[22m[90m 267[2mms[22m[39m
+ [32m✓[39m packages/ui/test/gbc/useGbcMap.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 329[2mms[22m[39m
+ [32m✓[39m packages/ui/test/gbc/useGbcGroups.test.ts [2m([22m[2m5 tests[22m[2m)[22m[33m 323[2mms[22m[39m
+ [32m✓[39m packages/ui/test/encounters/fit.test.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 6[2mms[22m[39m
+ [32m✓[39m packages/ui/test/WarpDestinationModal.test.tsx [2m([22m[2m4 tests[22m[2m)[22m[90m 261[2mms[22m[39m
+ [32m✓[39m packages/ui/test/gbc/useFetchedFamilyGbc.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[90m 162[2mms[22m[39m
+ [32m✓[39m packages/ui/test/useWorldVisibility.test.tsx [2m([22m[2m4 tests[22m[2m)[22m[90m 258[2mms[22m[39m
+ [32m✓[39m packages/ui/test/useMapLayout.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 264[2mms[22m[39m
+ [32m✓[39m packages/ui/test/gbc/ToolbarGbc.test.tsx [2m([22m[2m4 tests[22m[2m)[22m[90m 283[2mms[22m[39m
+ [32m✓[39m packages/ui/test/CollisionPalette.test.tsx [2m([22m[2m4 tests[22m[2m)[22m[33m 305[2mms[22m[39m
+ [32m✓[39m packages/ui/test/gbc/useGbcWorld.test.ts [2m([22m[2m4 tests[22m[2m)[22m[33m 325[2mms[22m[39m
+ [32m✓[39m packages/ui/test/gbc/useGbcCoverage.test.ts [2m([22m[2m4 tests[22m[2m)[22m[33m 324[2mms[22m[39m
+ [32m✓[39m packages/ui/test/gbc/GbcWorldCanvas.test.tsx [2m([22m[2m121 tests[22m[2m)[22m[33m 13463[2mms[22m[39m
+   [33m[2m✓[22m[39m GBC dungeon warps (Plan 6c D3)[2m > [22mscopes hidden members, excludes outsiders from images, warps, drop and lines, with independent toggles [33m324[2mms[22m[39m
+   [33m[2m✓[22m[39m GbcWorldCanvas[2m > [22mjump: centres jumpToMap at ~60% of the viewport and flashes an outline that fades after 2s [33m2064[2mms[22m[39m
+   [33m[2m✓[22m[39m GbcWorldCanvas[2m > [22ma viewport resize after a jump does not re-trigger it (the applied-token guard; fix round F6, kills mutation X13) [33m2179[2mms[22m[39m
+   [33m[2m✓[22m[39m GbcWorldCanvas[2m > [22mre-jumping to the SAME map restarts the fade timer, rather than expiring on the first click's own original schedule (F7) [33m3606[2mms[22m[39m
+   [33m[2m✓[22m[39m GbcWorldCanvas: encounters/lenses/spotlight (Plan 6b Task 6)[2m > [22mspecies spotlight dims non-matching maps and lights a hit with its percent/level badge [33m319[2mms[22m[39m
+   [33m[2m✓[22m[39m GbcWorldCanvas: encounters/lenses/spotlight (Plan 6b Task 6)[2m > [22mwith two hits on the same map, the spotlight badge shows the HIGHER percent (mutation check F8) [33m314[2mms[22m[39m
+ [32m✓[39m packages/ui/test/useEditSessionGuard.test.tsx [2m([22m[2m2 tests[22m[2m)[22m[90m 25[2mms[22m[39m
+ [32m✓[39m packages/ui/test/useGuardedFetch.stale.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 252[2mms[22m[39m
+ [32m✓[39m packages/ui/test/useMapEditing.test.tsx [2m([22m[2m1 test[22m[2m)[22m[90m 22[2mms[22m[39m
+ [32m✓[39m packages/ui/test/gbc/GbcMetatilePaletteSelect.test.tsx [2m([22m[2m3 tests[22m[2m)[22m[90m 58[2mms[22m[39m
+ [32m✓[39m packages/ui/test/encounters/guards.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 4[2mms[22m[39m
+ [32m✓[39m packages/ui/test/gbc/GbcAppContextSelection.test.tsx [2m([22m[2m1 test[22m[2m)[22m[33m 371[2mms[22m[39m
+   [33m[2m✓[22m[39m GbcApp isolated context selection invariant[2m > [22ma World selection callback moving off the context map exits without a tree or mode handler [33m369[2mms[22m[39m
+ [32m✓[39m packages/ui/test/world/visibility.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 4[2mms[22m[39m
+ [32m✓[39m packages/core/test/gbc/edit/events.test.ts [2m([22m[2m28 tests[22m[2m)[22m[90m 76[2mms[22m[39m
+ [32m✓[39m packages/core/test/gbc/load/map.test.ts [2m([22m[2m58 tests[22m[2m)[22m[33m 605[2mms[22m[39m
+ [32m✓[39m packages/ui/test/useMapGroups.test.ts [2m([22m[2m2 tests[22m[2m)[22m[90m 169[2mms[22m[39m
+ [32m✓[39m packages/core/test/gbc/load/encounters.test.ts [2m([22m[2m115 tests[22m[2m)[22m[33m 1017[2mms[22m[39m
+ [32m✓[39m packages/ui/test/gbc/useGbcEditSessionShared.test.tsx [2m([22m[2m1 test[22m[2m)[22m[90m 21[2mms[22m[39m
+ [32m✓[39m packages/core/test/gbc/load/tileset.test.ts [2m([22m[2m69 tests[22m[2m)[22m[33m 1390[2mms[22m[39m
+   [33m[2m✓[22m[39m GbcTileset corpus[2m > [22mall 37 Tilesets table entries load, with the documented aliases [33m371[2mms[22m[39m
+   [33m[2m✓[22m[39m GbcTileset corpus[2m > [22mevery placed tile id (in every metatile of every tileset actually used by a real map, incl. border) resolves to a non-null PNG tile index within that PNG's tile count [33m581[2mms[22m[39m
+ [32m✓[39m packages/core/test/gbc/world/connections.test.ts [2m([22m[2m16 tests[22m[2m)[22m[90m 147[2mms[22m[39m
+ [32m✓[39m packages/core/test/gbc/render/overlays.test.ts [2m([22m[2m16 tests[22m[2m)[22m[90m 135[2mms[22m[39m
+ [32m✓[39m packages/server/test/hub.test.ts [2m([22m[2m21 tests[22m[2m)[22m[33m 729[2mms[22m[39m
+ [32m✓[39m packages/core/test/gbc/load/roofs.test.ts [2m([22m[2m17 tests[22m[2m)[22m[90m 84[2mms[22m[39m
+ [32m✓[39m packages/core/test/write/save.test.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 101[2mms[22m[39m
+ [32m✓[39m packages/server/test/paintRoutes.test.ts [2m([22m[2m14 tests[22m[2m)[22m[33m 458[2mms[22m[39m
+ [32m✓[39m packages/core/test/gbc/write/asmSplice.test.ts [2m([22m[2m43 tests[22m[2m)[22m[33m 1509[2mms[22m[39m
+   [33m[2m✓[22m[39m corpus no-op round trip (G5-for-G3): every call, every arg, over every file in the enumerated set[2m > [22mno-op splice of every arg of every call is byte-identical; call spans reconstruct exactly; per-macro call/arg-count pins [33m1478[2mms[22m[39m
+ [32m✓[39m packages/core/test/gbc/render/world.test.ts [2m([22m[2m9 tests[22m[2m)[22m[33m 421[2mms[22m[39m
+ [32m✓[39m packages/core/test/render/metatile.test.ts [2m([22m[2m13 tests[22m[2m)[22m[90m 12[2mms[22m[39m
+ [32m✓[39m packages/core/test/gbc/load/sprites.test.ts [2m([22m[2m18 tests[22m[2m)[22m[90m 207[2mms[22m[39m
+ [32m✓[39m packages/cli/test/writeCommands.test.ts [2m([22m[2m12 tests[22m[2m)[22m[33m 603[2mms[22m[39m
+ [32m✓[39m packages/core/test/gbc/load/asm.test.ts [2m([22m[2m29 tests[22m[2m)[22m[90m 15[2mms[22m[39m
+ [32m✓[39m packages/core/test/gbc/load/png.test.ts [2m([22m[2m13 tests[22m[2m)[22m[90m 16[2mms[22m[39m
+ [32m✓[39m packages/core/test/write/guards.test.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 8[2mms[22m[39m
+ [32m✓[39m packages/core/test/gbc/render/map.test.ts [2m([22m[2m36 tests[22m[2m)[22m[33m 4237[2mms[22m[39m
+   [33m[2m✓[22m[39m corpus[2m > [22mNewBarkTown renders byte-identical data across two calls (determinism) [33m1467[2mms[22m[39m
+   [33m[2m✓[22m[39m corpus[2m > [22mall 391 maps render without throwing; outOfRangeCount and unmappedTileCount are both 0; exactly 2 maps carry a defect naming their .blk files [33m2058[2mms[22m[39m
+ [32m✓[39m packages/core/test/render/overlays.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 104[2mms[22m[39m
+ [32m✓[39m packages/core/test/gbc/analyse/atlas.test.ts [2m([22m[2m34 tests[22m[2m)[22m[33m 4091[2mms[22m[39m
+   [33m[2m✓[22m[39m corpus[2m > [22mgbcWhereSpecies('DUNSPARCE') includes DarkCaveVioletEntrance grass swarm at 45% Lv2-8 [33m651[2mms[22m[39m
+   [33m[2m✓[22m[39m corpus[2m > [22mgbcWhereSpecies for a nite-only species (HOUNDOUR) returns only nite hits, matching real Crystal locations (Route 36/37) [33m621[2mms[22m[39m
+   [33m[2m✓[22m[39m corpus[2m > [22msuccess criterion 5: where CHIKORITA reports a real Crystal location (Route31) [33m645[2mms[22m[39m
+   [33m[2m✓[22m[39m corpus[2m > [22mgbcCoverage over the whole corpus: pinned mapsWithEncounters/sourcesByMethod/fishGroupWithoutWater/unusedSpecies/defects [33m811[2mms[22m[39m
+   [33m[2m✓[22m[39m corpus[2m > [22mvacuous-pass guard: every corpus assertion above actually iterated something [33m1048[2mms[22m[39m
+ [32m✓[39m packages/core/test/gbc/write/save.test.ts [2m([22m[2m15 tests[22m[2m)[22m[90m 169[2mms[22m[39m
+ [32m✓[39m packages/core/test/gbc/write/guards.test.ts [2m([22m[2m16 tests[22m[2m)[22m[90m 147[2mms[22m[39m
+ [32m✓[39m packages/core/test/load/png.test.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 30[2mms[22m[39m
+ [32m✓[39m packages/server/test/api.test.ts [2m([22m[2m30 tests[22m[2m)[22m[33m 3667[2mms[22m[39m
+   [33m[2m✓[22m[39m server[2m > [22mreturns a map's warp events, with each destination resolved to a map NAME too [33m986[2mms[22m[39m
+ [32m✓[39m packages/core/test/edit/paint.test.ts [2m([22m[2m16 tests[22m[2m)[22m[90m 38[2mms[22m[39m
+ [32m✓[39m packages/core/test/write/jsonEdit.test.ts [2m([22m[2m20 tests[22m[2m)[22m[33m 1259[2mms[22m[39m
+   [33m[2m✓[22m[39m insertArrayElement / removeArrayElement[2m > [22minsert then remove is the identity across every real map.json's object_events array [33m1249[2mms[22m[39m
+ [32m✓[39m packages/core/test/gbc/load/events.test.ts [2m([22m[2m51 tests[22m[2m)[22m[33m 5684[2mms[22m[39m
+   [33m[2m✓[22m[39m corpus[2m > [22mall 391 maps load, with the exact corpus totals [33m473[2mms[22m[39m
+   [33m[2m✓[22m[39m corpus[2m > [22mper-map maxima: warps 33 (EcruteakGym), coords 30 (TeamRocketBaseB1F), bgs 38 (CeladonGameCorner), objects 15 (GoldenrodCity) [33m368[2mms[22m[39m
+   [33m[2m✓[22m[39m corpus[2m > [22mBGEVENT type counts: READ 632 ITEM 85 UP 47 RIGHT 12 LEFT 10 IFNOTSET 4 IFSET 1 DOWN 1 [33m422[2mms[22m[39m
+   [33m[2m✓[22m[39m corpus[2m > [22mhour limits: -1,-1 x1457, -1,DAY x5, -1,MORN x3, -1,NITE x3 [33m414[2mms[22m[39m
+   [33m[2m✓[22m[39m corpus[2m > [22mwarp dest -1 in exactly 6 events across exactly 4 maps [33m449[2mms[22m[39m
+   [33m[2m✓[22m[39m corpus[2m > [22mobjectConsts: equal-count (incl. 0=0) 350, marker-absent 40, fewer 1 (MoveDeletersHouse) -> exactly 1 defect [33m814[2mms[22m[39m
+   [33m[2m✓[22m[39m corpus[2m > [22mevery warp's MAP_CONST is a real map constName (0 unknown) [33m671[2mms[22m[39m
+   [33m[2m✓[22m[39m corpus[2m > [22mevery event's lineIndex points at a line starting with its own macro name [33m1147[2mms[22m[39m
+   [33m[2m✓[22m[39m corpus[2m > [22mraw file count backs the parser: 391 '_MapEvents:' labels [33m454[2mms[22m[39m
+   [33m[2m✓[22m[39m outOfBoundsEventDefects[2m > [22mexactly 7 out-of-bounds events across all 391 maps: 3+3 warps (CeruleanCave1F/2F) + 1 object (GoldenrodPokecenter1F) [33m428[2mms[22m[39m
+ [32m✓[39m packages/server/test/dungeons.test.ts [2m([22m[2m11 tests[22m[2m)[22m[33m 928[2mms[22m[39m
+   [33m[2m✓[22m[39m dungeons api[2m > [22mcreates a dungeon from a seedMap, computing its members via the warp BFS [33m763[2mms[22m[39m
+ [32m✓[39m packages/core/test/gbc/edit/paint.test.ts [2m([22m[2m18 tests[22m[2m)[22m[90m 35[2mms[22m[39m
+ [32m✓[39m packages/core/test/load/encounters.test.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 9[2mms[22m[39m
+ [32m✓[39m packages/core/test/edit/commands.test.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 7[2mms[22m[39m
+ [32m✓[39m packages/core/test/load/tilesets.test.ts [2m([22m[2m9 tests[22m[2m)[22m[90m 104[2mms[22m[39m
+ [32m✓[39m packages/core/test/load/tilesetData.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 115[2mms[22m[39m
+ [32m✓[39m packages/core/test/render/raster.test.ts [2m([22m[2m11 tests[22m[2m)[22m[90m 8[2mms[22m[39m
+ [32m✓[39m packages/core/test/edit/events.test.ts [2m([22m[2m12 tests[22m[2m)[22m[90m 8[2mms[22m[39m
+ [32m✓[39m packages/core/test/world/sidecar.test.ts [2m([22m[2m10 tests[22m[2m)[22m[90m 33[2mms[22m[39m
+ [32m✓[39m packages/core/test/gbc/load/incbin.test.ts [2m([22m[2m18 tests[22m[2m)[22m[90m 11[2mms[22m[39m
+ [32m✓[39m packages/server/test/saveRoutes.test.ts [2m([22m[2m9 tests[22m[2m)[22m[33m 3763[2mms[22m[39m
+   [33m[2m✓[22m[39m save/commit routes[2m > [22ma render fetched before a commit is not served stale after it, for both border keys [33m386[2mms[22m[39m
+ [32m✓[39m packages/core/test/write/binary.test.ts [2m([22m[2m8 tests[22m[2m)[22m[33m 1225[2mms[22m[39m
+   [33m[2m✓[22m[39m planBlockdataWrite[2m > [22mround-trips every one of the 1,020 real layouts in the subject corpus, including all 19 trailing-block ones [33m1199[2mms[22m[39m
+ [32m✓[39m packages/cli/test/png.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 9[2mms[22m[39m
+ [32m✓[39m packages/core/test/family.test.ts [2m([22m[2m16 tests[22m[2m)[22m[90m 44[2mms[22m[39m
+[90mstdout[2m | packages/server/test/gbcRoutes.test.ts[2m > [22m[2mgbcRoutes[2m > [22m[2mGET /api/encounters/:map[2m > [22m[2mevery grass/water source across the whole corpus sums to 100% (measured runtime in the implementer report)
+[22m[39m[corpus percent-sum check] 350 grass/water sources, 590.3ms
+
+ [32m✓[39m packages/cli/test/args.test.ts [2m([22m[2m17 tests[22m[2m)[22m[90m 8[2mms[22m[39m
+ [32m✓[39m packages/server/test/eventRoutes.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 847[2mms[22m[39m
+   [33m[2m✓[22m[39m event routes[2m > [22mevent/delete on a warp returns a warpRenumberWarnings array (possibly empty), computed against the real corpus [33m698[2mms[22m[39m
+ [32m✓[39m packages/core/test/load/blocks.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 3548[2mms[22m[39m
+   [33m[2m✓[22m[39m parseBlocks[2m > [22mthe three fields are independent -- a wrong shift moves them together [33m1279[2mms[22m[39m
+   [33m[2m✓[22m[39m parseBlocks[2m > [22m19 layouts carry one trailing block beyond width * height [33m510[2mms[22m[39m
+   [33m[2m✓[22m[39m parseBlocks[2m > [22mborder.bin always matches borderWidth * borderHeight exactly [33m532[2mms[22m[39m
+   [33m[2m✓[22m[39m parseBlocks[2m > [22mencodeBlocks is the exact inverse of parseBlocks, every layout, both files [33m1218[2mms[22m[39m
+ [32m✓[39m packages/core/test/config/engine.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 7[2mms[22m[39m
+ [32m✓[39m packages/cli/test/context.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 11[2mms[22m[39m
+ [32m✓[39m packages/core/test/gbc/project.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 118[2mms[22m[39m
+ [32m✓[39m packages/core/test/gbc/write/lineIdentity.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 2154[2mms[22m[39m
+   [33m[2m✓[22m[39m corpus line identity (G5-style): insert/remove are exact inverses on every real map file[2m > [22mevery maps/<Name>.asm, all 4 kinds: insert+remove and remove+reinsert are byte-identical; a bg add is exactly +1 bg [33m2153[2mms[22m[39m
+ [32m✓[39m packages/core/test/load/maps.test.ts [2m([22m[2m10 tests[22m[2m)[22m[33m 896[2mms[22m[39m
+   [33m[2m✓[22m[39m parseMap[2m > [22mparses all 1,209 maps in the subject repo without throwing [33m648[2mms[22m[39m
+ [32m✓[39m packages/core/test/load/layouts.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 17[2mms[22m[39m
+ [32m✓[39m packages/core/test/render/species.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 15[2mms[22m[39m
+ [32m✓[39m packages/core/test/render/layout.test.ts [2m([22m[2m8 tests[22m[2m)[22m[33m 5928[2mms[22m[39m
+   [33m[2m✓[22m[39m renderLayout[2m > [22mrenders every layout in the subject repo, and only one is out of range [33m5759[2mms[22m[39m
+ [32m✓[39m packages/core/test/analyse/coverage.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 895[2mms[22m[39m
+   [33m[2m✓[22m[39m whereSpecies[2m > [22mfinds every map containing a species, with rate and level band [33m746[2mms[22m[39m
+ [32m✓[39m packages/core/test/gbc/load/blocks.test.ts [2m([22m[2m10 tests[22m[2m)[22m[33m 341[2mms[22m[39m
+   [33m[2m✓[22m[39m parseBlk / encodeBlk[2m > [22mcorpus[2m > [22mevery .blk INCBIN path round-trips byte-identically, across every gbc corpus root [33m327[2mms[22m[39m
+ [32m✓[39m packages/server/test/recent.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 45[2mms[22m[39m
+ [32m✓[39m packages/ui/test/styles.test.ts [2m([22m[2m7 tests[22m[2m)[22m[90m 42[2mms[22m[39m
+ [32m✓[39m packages/core/test/signs/write.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 16[2mms[22m[39m
+ [32m✓[39m packages/core/test/signs/script.test.ts [2m([22m[2m8 tests[22m[2m)[22m[90m 5[2mms[22m[39m
+ [32m✓[39m packages/server/test/signRoutes.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 203[2mms[22m[39m
+[90mstderr[2m | packages/server/test/gbcEditRoutes.test.ts[2m > [22m[2mgbc edit routes (hermetic temp copy)[2m > [22m[2m9d. a commit that throws mid-write is a 500 { error }, still clears the caches, and keeps the session
+[22m[39mError: EPERM: operation not permitted, open 'C:\Users\Serve\AppData\Local\Temp\pokemap-gbc-rbNYeD\maps\ElmsHouse.asm'
+[90m    at Proxy.writeFileSync (node:fs:2427:20)[39m
+    at Module.commitGbcSave [90m(C:\Users\Serve\AppData\Local\Temp\claude\C--Programming-Projects-PokeMap\74282ac3-2fdd-538d-8b69-bd7f0f0598f7\scratchpad\p8\[39mpackages\core\src\gbc\write\save.ts:180:5[90m)[39m
+    at Object.run [90m(C:\Users\Serve\AppData\Local\Temp\claude\C--Programming-Projects-PokeMap\74282ac3-2fdd-538d-8b69-bd7f0f0598f7\scratchpad\p8\[39mpackages\server\src\gbcEditRoutes.ts:242:13[90m)[39m
+    at run [90m(C:\Users\Serve\AppData\Local\Temp\claude\C--Programming-Projects-PokeMap\74282ac3-2fdd-538d-8b69-bd7f0f0598f7\scratchpad\p8\[39mpackages\server\src\gbcEditRoutes.ts:274:22[90m)[39m
+    at Object.handle [90m(C:\Users\Serve\AppData\Local\Temp\claude\C--Programming-Projects-PokeMap\74282ac3-2fdd-538d-8b69-bd7f0f0598f7\scratchpad\p8\[39mpackages\server\src\gbcEditRoutes.ts:276:7[90m)[39m
+    at Server.handle [90m(C:\Users\Serve\AppData\Local\Temp\claude\C--Programming-Projects-PokeMap\74282ac3-2fdd-538d-8b69-bd7f0f0598f7\scratchpad\p8\[39mpackages\server\src\gbcRoutes.ts:680:16[90m)[39m
+[90m    at Server.emit (node:events:508:28)[39m
+[90m    at parserOnIncoming (node:_http_server:1210:12)[39m
+[90m    at HTTPParser.parserOnHeadersComplete (node:_http_common:123:17)[39m {
+  errno: [33m-4048[39m,
+  code: [32m'EPERM'[39m,
+  syscall: [32m'open'[39m,
+  path: [32m'C:\\Users\\Serve\\AppData\\Local\\Temp\\pokemap-gbc-rbNYeD\\maps\\ElmsHouse.asm'[39m
+}
+
+ [32m✓[39m packages/core/test/render/visual.test.ts [2m([22m[2m2 tests[22m[2m)[22m[90m 167[2mms[22m[39m
+ [32m✓[39m packages/server/test/gbcRoutes.test.ts [2m([22m[2m86 tests[22m[2m)[22m[33m 11024[2mms[22m[39m
+   [33m[2m✓[22m[39m gbcRoutes[2m > [22mGET /api/render/:name.png[2m > [22mNewBarkTown at borders 0/1/3 and times morn/day/nite: byte-equal to encodePng(renderGbcMap(...)), computed independently [33m305[2mms[22m[39m
+   [33m[2m✓[22m[39m gbcRoutes[2m > [22mGET /api/world[2m > [22mdeep-equals independently resolved near-warp placements; 326 components, exactly 3 with more than one map; blockPx 32 [33m1894[2mms[22m[39m
+   [33m[2m✓[22m[39m gbcRoutes[2m > [22mGET /api/world[2m > [22mpure payload resolution preserves the same base world after automatic and manual calls [33m803[2mms[22m[39m
+   [33m[2m✓[22m[39m gbcRoutes[2m > [22mGET /api/world[2m > [22mapplies a manual placement last on a moved GBC singleton even when it overlaps a fixed anchor [33m861[2mms[22m[39m
+   [33m[2m✓[22m[39m gbcRoutes[2m > [22mGET /api/world[2m > [22mnever auto-places a near-warp map onto a manually placed map (phase-D-review R1) [33m680[2mms[22m[39m
+   [33m[2m✓[22m[39m gbcRoutes[2m > [22mGET /api/world[2m > [22mbuildGbcWorldPayload wire-shapes a real GbcWorld directly (unit, no HTTP) [33m853[2mms[22m[39m
+   [33m[2m✓[22m[39m gbcRoutes[2m > [22maccepts and un-accepts Route17 without moving maps, with exact PerfPlus sidecar restoration [33m306[2mms[22m[39m
+   [33m[2m✓[22m[39m gbcRoutes[2m > [22mGET /api/encounters/:map[2m > [22mevery grass/water source across the whole corpus sums to 100% (measured runtime in the implementer report) [33m604[2mms[22m[39m
+   [33m[2m✓[22m[39m gbcRoutes[2m > [22mGET /api/where/:species[2m > [22mDUNSPARCE, dunsparce and SPECIES_DUNSPARCE all return the same array -- exactly 6 hits, all on DarkCaveVioletEntrance [33m958[2mms[22m[39m
+   [33m[2m✓[22m[39m gbcRoutes[2m > [22mGET /api/where/:species[2m > [22mmatches gbcWhereSpecies(proj, 'CHIKORITA') directly [33m824[2mms[22m[39m
+   [33m[2m✓[22m[39m gbcRoutes[2m > [22mGET /api/coverage[2m > [22mdeep-equals gbcCoverage(openGbcProject(root)); mapsWithEncounters=125, unusedSpecies.length=70 (measured, cross-checked against the CLI's --json output) [33m880[2mms[22m[39m
+ [32m✓[39m packages/core/test/signs/suggest.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 75[2mms[22m[39m
+ [32m✓[39m packages/cli/test/renderWorld.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 6[2mms[22m[39m
+ [32m✓[39m packages/server/test/editSessions.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 22[2mms[22m[39m
+ [32m✓[39m packages/core/test/project.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 3[2mms[22m[39m
+ [32m✓[39m packages/core/test/world/dungeons.test.ts [2m([22m[2m6 tests[22m[2m)[22m[90m 21[2mms[22m[39m
+ [32m✓[39m packages/core/test/gbc/load/palette.test.ts [2m([22m[2m41 tests[22m[2m)[22m[33m 11335[2mms[22m[39m
+   [33m[2m✓[22m[39m resolveMapPalettes corpus[2m > [22mevery real map resolves at all 3 times x flash {true, false} without throwing (391 x 3 x 2 = 2346 cases) [33m10894[2mms[22m[39m
+ [32m✓[39m packages/core/test/config/fieldmap.test.ts [2m([22m[2m4 tests[22m[2m)[22m[90m 5[2mms[22m[39m
+ [32m✓[39m packages/core/test/write/diff.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 5[2mms[22m[39m
+ [32m✓[39m packages/core/test/config/paths.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 4[2mms[22m[39m
+ [32m✓[39m packages/ui/test/stylesContext.test.ts [2m([22m[2m5 tests[22m[2m)[22m[90m 5[2mms[22m[39m
+ [32m✓[39m packages/server/test/gbcEditRoutes.test.ts [2m([22m[2m38 tests[22m[2m)[22m[33m 11681[2mms[22m[39m
+   [33m[2m✓[22m[39m gbc edit routes (hermetic temp copy)[2m > [22m8a. deleting NewBarkTown warp 0 reports every warp targeting NEW_BARK_TOWN with destWarp >= 1 [33m968[2mms[22m[39m
+   [33m[2m✓[22m[39m gbc edit routes (hermetic temp copy)[2m > [22m8b. the scan uses the deleting map's session warps (pre-delete), including an earlier unsaved warp edit [33m361[2mms[22m[39m
+   [33m[2m✓[22m[39m gbc edit routes (hermetic temp copy)[2m > [22m8c. the scan uses another map's open-session warps over its disk warps [33m357[2mms[22m[39m
+   [33m[2m✓[22m[39m gbc edit routes (hermetic temp copy)[2m > [22m9b. commit invalidates the warp cache: /api/world reflects a moved warp [33m1280[2mms[22m[39m
+   [33m[2m✓[22m[39m gbc edit routes (hermetic temp copy)[2m > [22m9c. commit invalidates the coverage cache (a map gaining a water tile leaves fishGroupWithoutWater) [33m1465[2mms[22m[39m
+ [32m✓[39m packages/core/test/world/conflictAcceptance.test.ts [2m([22m[2m3 tests[22m[2m)[22m[90m 5[2mms[22m[39m
+ [32m✓[39m packages/cli/test/query.test.ts [2m([22m[2m2 tests[22m[2m)[22m[90m 7[2mms[22m[39m
+ [32m✓[39m packages/core/test/write/noStrayWrites.test.ts [2m([22m[2m1 test[22m[2m)[22m[90m 41[2mms[22m[39m
+ [32m✓[39m packages/ui/test/encounters/borderSide.corpus.test.ts [2m([22m[2m2 tests[22m[2m)[22m[90m 40[2mms[22m[39m
+ [32m✓[39m packages/core/test/world/warpGraph.test.ts [2m([22m[2m9 tests[22m[2m)[22m[33m 7579[2mms[22m[39m
+   [33m[2m✓[22m[39m autoLayoutUnplaced[2m > [22mplaces every map that has no planar connections [33m812[2mms[22m[39m
+   [33m[2m✓[22m[39m autoLayoutUnplaced[2m > [22mproduces no overlapping placements [33m6706[2mms[22m[39m
+ [32m✓[39m packages/core/test/load/pal.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 1973[2mms[22m[39m
+   [33m[2m✓[22m[39m parseJascPal[2m > [22mreads every .pal in the tree, honouring each declared count [33m1966[2mms[22m[39m
+ [32m✓[39m packages/core/test/world/resolve.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 3634[2mms[22m[39m
+   [33m[2m✓[22m[39m resolveWorldPlacements[2m > [22mrespects the dungeons option: off actually removes unplaced maps, not just repositions them [33m3603[2mms[22m[39m
+ [32m✓[39m packages/core/test/world/connections.test.ts [2m([22m[2m7 tests[22m[2m)[22m[33m 7471[2mms[22m[39m
+   [33m[2m✓[22m[39m buildWorld[2m > [22mplaces NewBarkTown's left neighbour to its left, at the stated offset [33m754[2mms[22m[39m
+   [33m[2m✓[22m[39m buildWorld[2m > [22mgives every component a non-overlapping bounding box [33m6634[2mms[22m[39m
+ [32m✓[39m packages/core/test/validate/metatileRange.test.ts [2m([22m[2m4 tests[22m[2m)[22m[33m 6792[2mms[22m[39m
+   [33m[2m✓[22m[39m validateMetatileRange[2m > [22magrees with the subject repo's Python checker: only Saffron_Temp is out of range [33m2977[2mms[22m[39m
+   [33m[2m✓[22m[39m validateMetatileRange[2m > [22ma finding reports the split actually used, not the layout's stored version [33m800[2mms[22m[39m
+   [33m[2m✓[22m[39m validateMetatileRange[2m > [22mchecking every layout against one global constant is the bug, not the test [33m2784[2mms[22m[39m
+ [32m✓[39m packages/core/test/write/corpus.test.ts [2m([22m[2m37 tests[22m[2m)[22m[33m 17789[2mms[22m[39m
+   [33m[2m✓[22m[39m identity corpus (invariant I5)[2m > [22medits and restores every map.json in C:/Programming Projects/Pokemon Game/game, byte for byte [33m1061[2mms[22m[39m
+   [33m[2m✓[22m[39m identity corpus (invariant I5)[2m > [22medits and restores every map.json in C:/Programming Projects/Pokemon Game/refs/pokeemerald, byte for byte [33m536[2mms[22m[39m
+   [33m[2m✓[22m[39m identity corpus (invariant I5)[2m > [22medits and restores every map.json in C:/Programming Projects/Pokemon Game/refs/pokefirered, byte for byte [33m431[2mms[22m[39m
+   [33m[2m✓[22m[39m identity corpus (invariant I5)[2m > [22medits and restores every map.json in C:/Programming Projects/Pokemon Game/refs/pokeemerald-expansion, byte for byte [33m974[2mms[22m[39m
+   [33m[2m✓[22m[39m identity corpus (invariant I5)[2m > [22medits and restores every map.json in C:/Programming Projects/Pokemon Game/refs/modern-emerald, byte for byte [33m776[2mms[22m[39m
+   [33m[2m✓[22m[39m identity corpus (invariant I5)[2m > [22medits and restores every map.json in C:/Programming Projects/Pokemon Game/refs/pokeclassic, byte for byte [33m1069[2mms[22m[39m
+   [33m[2m✓[22m[39m identity corpus (invariant I5)[2m > [22minsertArrayElement then removeArrayElement round-trips every map.json's object_events array byte-identical, across C:/Programming Projects/Pokemon Game/game [33m1587[2mms[22m[39m
+   [33m[2m✓[22m[39m identity corpus (invariant I5)[2m > [22minsertArrayElement then removeArrayElement round-trips every map.json's object_events array byte-identical, across C:/Programming Projects/Pokemon Game/refs/pokeemerald [33m480[2mms[22m[39m
+   [33m[2m✓[22m[39m identity corpus (invariant I5)[2m > [22minsertArrayElement then removeArrayElement round-trips every map.json's object_events array byte-identical, across C:/Programming Projects/Pokemon Game/refs/pokefirered [33m406[2mms[22m[39m
+   [33m[2m✓[22m[39m identity corpus (invariant I5)[2m > [22minsertArrayElement then removeArrayElement round-trips every map.json's object_events array byte-identical, across C:/Programming Projects/Pokemon Game/refs/pokeemerald-expansion [33m947[2mms[22m[39m
+   [33m[2m✓[22m[39m identity corpus (invariant I5)[2m > [22minsertArrayElement then removeArrayElement round-trips every map.json's object_events array byte-identical, across C:/Programming Projects/Pokemon Game/refs/modern-emerald [33m551[2mms[22m[39m
+   [33m[2m✓[22m[39m identity corpus (invariant I5)[2m > [22minsertArrayElement then removeArrayElement round-trips every map.json's object_events array byte-identical, across C:/Programming Projects/Pokemon Game/refs/pokeclassic [33m609[2mms[22m[39m
+   [33m[2m✓[22m[39m identity corpus (invariant I5)[2m > [22minsertArrayElement at index 0 then removeArrayElement at index 0 round-trips byte-identical, across C:/Programming Projects/Pokemon Game/game [33m1331[2mms[22m[39m
+   [33m[2m✓[22m[39m identity corpus (invariant I5)[2m > [22minsertArrayElement at index 0 then removeArrayElement at index 0 round-trips byte-identical, across C:/Programming Projects/Pokemon Game/refs/pokeemerald [33m619[2mms[22m[39m
+   [33m[2m✓[22m[39m identity corpus (invariant I5)[2m > [22minsertArrayElement at index 0 then removeArrayElement at index 0 round-trips byte-identical, across C:/Programming Projects/Pokemon Game/refs/pokefirered [33m588[2mms[22m[39m
+   [33m[2m✓[22m[39m identity corpus (invariant I5)[2m > [22minsertArrayElement at index 0 then removeArrayElement at index 0 round-trips byte-identical, across C:/Programming Projects/Pokemon Game/refs/pokeemerald-expansion [33m714[2mms[22m[39m
+   [33m[2m✓[22m[39m identity corpus (invariant I5)[2m > [22minsertArrayElement at index 0 then removeArrayElement at index 0 round-trips byte-identical, across C:/Programming Projects/Pokemon Game/refs/modern-emerald [33m368[2mms[22m[39m
+   [33m[2m✓[22m[39m identity corpus (invariant I5)[2m > [22minsertArrayElement at index 0 then removeArrayElement at index 0 round-trips byte-identical, across C:/Programming Projects/Pokemon Game/refs/pokeclassic [33m412[2mms[22m[39m
+   [33m[2m✓[22m[39m identity corpus (invariant I5)[2m > [22mencodeBlocks(parseBlocks(bytes)) round-trips every layout's map.bin and border.bin byte-identical, across C:/Programming Projects/Pokemon Game/game [33m948[2mms[22m[39m
+   [33m[2m✓[22m[39m identity corpus (invariant I5)[2m > [22mencodeBlocks(parseBlocks(bytes)) round-trips every layout's map.bin and border.bin byte-identical, across C:/Programming Projects/Pokemon Game/refs/pokeemerald [33m428[2mms[22m[39m
+   [33m[2m✓[22m[39m identity corpus (invariant I5)[2m > [22mencodeBlocks(parseBlocks(bytes)) round-trips every layout's map.bin and border.bin byte-identical, across C:/Programming Projects/Pokemon Game/refs/pokefirered [33m528[2mms[22m[39m
+   [33m[2m✓[22m[39m identity corpus (invariant I5)[2m > [22mencodeBlocks(parseBlocks(bytes)) round-trips every layout's map.bin and border.bin byte-identical, across C:/Programming Projects/Pokemon Game/refs/pokeemerald-expansion [33m904[2mms[22m[39m
+   [33m[2m✓[22m[39m identity corpus (invariant I5)[2m > [22mencodeBlocks(parseBlocks(bytes)) round-trips every layout's map.bin and border.bin byte-identical, across C:/Programming Projects/Pokemon Game/refs/modern-emerald [33m454[2mms[22m[39m
+   [33m[2m✓[22m[39m identity corpus (invariant I5)[2m > [22mencodeBlocks(parseBlocks(bytes)) round-trips every layout's map.bin and border.bin byte-identical, across C:/Programming Projects/Pokemon Game/refs/pokeclassic [33m864[2mms[22m[39m
+ [32m✓[39m packages/core/test/world/nearWarp.test.ts [2m([22m[2m11 tests[22m[2m)[22m[33m 20566[2mms[22m[39m
+   [33m[2m✓[22m[39m GBA near-warp uses resolved zero-based arrivals for Granite Cave, Meteor Falls, and Seafloor Cavern [33m14519[2mms[22m[39m
+   [33m[2m✓[22m[39m GBA near-warp avoids a map manually placed on its preferred spot (phase-D-review R1) [33m5591[2mms[22m[39m
+   [33m[2m✓[22m[39m GBC adapter preserves half-block endpoints and null out-of-range arrival [33m435[2mms[22m[39m
+ [32m✓[39m packages/cli/test/gbcCommands.test.ts [2m([22m[2m43 tests[22m[2m)[22m[33m 22453[2mms[22m[39m
+   [33m[2m✓[22m[39m CLI end-to-end (spawned, generous timeout)[2m > [22mrender NewBarkTown against the real subject exits 0 and prints the stdout line [33m701[2mms[22m[39m
+   [33m[2m✓[22m[39m CLI end-to-end (spawned, generous timeout)[2m > [22mrender CeruleanCave2F against the real subject: the warning lands on stderr, never stdout [33m621[2mms[22m[39m
+   [33m[2m✓[22m[39m CLI end-to-end (spawned, generous timeout)[2m > [22mquery NoSuchMap against the real subject exits 1 with the loader's unknown-map message [33m547[2mms[22m[39m
+   [33m[2m✓[22m[39m CLI end-to-end (spawned, generous timeout)[2m > [22mrender-world against the real subject, with no --scale, exits 0 using the GBC default of 8 [33m671[2mms[22m[39m
+   [33m[2m✓[22m[39m CLI end-to-end (spawned, generous timeout)[2m > [22mevery GBA-only command refuses on the real gbc root with its own named message, never touching a GBA loader [33m1990[2mms[22m[39m
+   [33m[2m✓[22m[39m runGbcWhere[2m > [22mDUNSPARCE: one row per hit, mapName padded, sorted by percent descending [33m805[2mms[22m[39m
+   [33m[2m✓[22m[39m runGbcWhere[2m > [22ma species in no source prints the GBA-matching empty message [33m508[2mms[22m[39m
+   [33m[2m✓[22m[39m runGbcWhere[2m > [22maccepts lower-case input, resolving identically to upper-case (M7) [33m1111[2mms[22m[39m
+   [33m[2m✓[22m[39m runGbcWhere[2m > [22maccepts a SPECIES_-prefixed name, resolving identically to the bare name [33m1069[2mms[22m[39m
+   [33m[2m✓[22m[39m runGbcWhere[2m > [22mthe empty-result message echoes the raw input as typed, not the normalized lookup key [33m522[2mms[22m[39m
+   [33m[2m✓[22m[39m runGbcWhere[2m > [22m--json prints exactly gbcWhereSpecies's own output [33m1135[2mms[22m[39m
+   [33m[2m✓[22m[39m runGbcCoverage[2m > [22msummary line, --empty and --unused each add one line per entry [33m1822[2mms[22m[39m
+   [33m[2m✓[22m[39m runGbcCoverage[2m > [22m--json includes fishGroupWithoutWater and defects, which text mode never prints [33m378[2mms[22m[39m
+   [33m[2m✓[22m[39m CLI end-to-end (spawned, generous timeout): Task 12[2m > [22mwhere DUNSPARCE against the real subject exits 0 and matches runGbcWhere's own output [33m954[2mms[22m[39m
+   [33m[2m✓[22m[39m GBC write commands (Plan 7 Task 6)[2m > [22m9. event delete warp: one stderr warning per retarget hit, equals an independent scan (incl. a self-map hit) [33m646[2mms[22m[39m
+   [33m[2m✓[22m[39m GBC write commands (Plan 7 Task 6)[2m > [22m11. real process: --yes paint changes the copy; --metatile abc exits 1 with 'pokemap: ' [33m535[2mms[22m[39m
+   [33m[2m✓[22m[39m GBC write commands (Plan 7 Task 6)[2m > [22m12. real process, dry-run defaults: paint/diff/event add without --yes never write; --yes event add does [33m1106[2mms[22m[39m
+   [33m[2m✓[22m[39m GBC write commands (Plan 7 Task 6)[2m > [22m13. real process, CeruleanCave2F: dry run warns on stderr; --yes refusal keeps the size warning in stderr [33m546[2mms[22m[39m
+ [32m✓[39m packages/server/test/world.test.ts [2m([22m[2m9 tests[22m[2m)[22m[33m 62223[2mms[22m[39m
+   [33m[2m✓[22m[39m world api[2m > [22mreturns placements, components, conflicts and vertical links [33m4981[2mms[22m[39m
+   [33m[2m✓[22m[39m world api[2m > [22macknowledges a GBA conflict through a scratch-root sidecar without moving maps [33m23395[2mms[22m[39m
+   [33m[2m✓[22m[39m world api[2m > [22mrespects the dungeonAutoLayout flag [33m6664[2mms[22m[39m
+   [33m[2m✓[22m[39m world api[2m > [22mpersists a manual placement, reflected in the next GET /api/world [33m2639[2mms[22m[39m
+   [33m[2m✓[22m[39m world api[2m > [22mpersists the dungeon-layout flag, reflected in the next GET /api/world's sidecar [33m5009[2mms[22m[39m
+   [33m[2m✓[22m[39m world api[2m > [22mtags each placement with its map kind and whether it was manually placed (Feature A) [33m10274[2mms[22m[39m
+   [33m[2m✓[22m[39m world api[2m > [22mmanual is true iff the map name is a key in sidecar.manualPlacements, for every placement (Feature A) [33m9188[2mms[22m[39m
+[90mstdout[2m | packages/core/test/gbc/write/writeGate.test.ts[2m > [22m[2mG5 write gate: subject (C:/Programming Projects/pokecrystal-PerfPlus)[2m > [22m[2mB6 pinned counts
+[22m[39mGATE-STATS subject {"maps":391,"layouts":257,"writable":255,"nonWritable":["CeruleanCave2F","CeruleanCaveB1"],"binaryRoundTrips":255,"moves":{"warp":384,"coord":44,"bg":223,"object":349},"deleteReAdds":{"warp":379,"coord":44,"bg":223,"object":286},"addDeletes":{"warp":7,"coord":347,"bg":168,"object":42},"lineNotCanonical":["CeruleanCave1F warp","CeruleanCave2F warp","CeruleanCaveB1 warp","BurnedTower1F warp","BlackthornGym2F warp","MoveDeletersHouse object"],"constLineNotCanonical":["MountMoonGiftShop","CopycatsHouse2F"],"constReferenced":60,"outOfStep":[]}
+
+[90mstdout[2m | packages/core/test/gbc/write/writeGate.test.ts[2m > [22m[2mG5 write gate: pret (C:/Programming Projects/Pokemon Game/refs/pokecrystal)[2m > [22m[2mB6 pinned counts
+[22m[39mGATE-STATS pret {"maps":388,"layouts":254,"writable":254,"nonWritable":[],"binaryRoundTrips":254,"moves":{"warp":381,"coord":44,"bg":223,"object":348},"deleteReAdds":{"warp":379,"coord":44,"bg":223,"object":287},"addDeletes":{"warp":7,"coord":344,"bg":165,"object":40},"lineNotCanonical":["BurnedTower1F warp","BlackthornGym2F warp"],"constLineNotCanonical":["MountMoonGiftShop","CopycatsHouse2F"],"constReferenced":59,"outOfStep":[]}
+
+ [32m✓[39m packages/core/test/gbc/write/writeGate.test.ts [2m([22m[2m13 tests[22m[2m)[22m[33m 83924[2mms[22m[39m
+   [33m[2m✓[22m[39m G5 write gate: subject (C:/Programming Projects/pokecrystal-PerfPlus)[2m > [22mB1 baseline: snapshot maps/ + blocks.asm + attributes.asm; classify distinct layouts [33m571[2mms[22m[39m
+   [33m[2m✓[22m[39m G5 write gate: subject (C:/Programming Projects/pokecrystal-PerfPlus)[2m > [22mB2 binary round trip: every writable layout, block 0 changes exactly byte 0, then restores byte-identically [33m2900[2mms[22m[39m
+   [33m[2m✓[22m[39m G5 write gate: subject (C:/Programming Projects/pokecrystal-PerfPlus)[2m > [22mB4 event round trips: every map, all 4 kinds (move, delete-last + re-add, add-then-delete), byte-identical [33m22993[2mms[22m[39m
+   [33m[2m✓[22m[39m G5 write gate: subject (C:/Programming Projects/pokecrystal-PerfPlus)[2m > [22mB5 no stray write: the whole copy equals the real root byte for byte; no .pokemap [33m3954[2mms[22m[39m
+   [33m[2m✓[22m[39m G5 write gate: pret (C:/Programming Projects/Pokemon Game/refs/pokecrystal)[2m > [22mB1 baseline: snapshot maps/ + blocks.asm + attributes.asm; classify distinct layouts [33m315[2mms[22m[39m
+   [33m[2m✓[22m[39m G5 write gate: pret (C:/Programming Projects/Pokemon Game/refs/pokecrystal)[2m > [22mB2 binary round trip: every writable layout, block 0 changes exactly byte 0, then restores byte-identically [33m2567[2mms[22m[39m
+   [33m[2m✓[22m[39m G5 write gate: pret (C:/Programming Projects/Pokemon Game/refs/pokecrystal)[2m > [22mB4 event round trips: every map, all 4 kinds (move, delete-last + re-add, add-then-delete), byte-identical [33m38133[2mms[22m[39m
+   [33m[2m✓[22m[39m G5 write gate: pret (C:/Programming Projects/Pokemon Game/refs/pokecrystal)[2m > [22mB5 no stray write: the whole copy equals the real root byte for byte; no .pokemap [33m3215[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m165 passed[39m[22m[90m (165)[39m
+[2m      Tests [22m [1m[32m2687 passed[39m[22m[90m (2687)[39m
+[2m   Start at [22m 08:32:57
+[2m   Duration [22m 102.41s[2m (transform 8.11s, setup 19.89s, collect 21.66s, tests 396.03s, environment 115.79s, prepare 19.49s)[22m
+
