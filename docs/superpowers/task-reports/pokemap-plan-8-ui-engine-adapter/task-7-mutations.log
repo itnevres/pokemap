@@ -1,0 +1,16 @@
+M0 baseline (no change)  guard=0F/1P  registry=0F/4P  core=0F/14P  gbaApp=0F/28P  gbcEditing=0F/7P  gbaStroke=0F/2P  gbcStroke=0F/1P  mapEditing=0F/1P  gbaCtxVisit=0F/1P
+M1 guard always attached  guard=1F/0P KILL  registry=0F/4P  core=0F/14P  gbaApp=1F/27P KILL  gbcEditing=1F/6P KILL  gbaStroke=0F/2P  gbcStroke=0F/1P  mapEditing=0F/1P  gbaCtxVisit=0F/1P
+M2 strokeSettled resolves at once  guard=0F/1P  registry=1F/3P KILL  core=0F/14P  gbaApp=0F/28P  gbcEditing=0F/7P  gbaStroke=1F/1P KILL  gbcStroke=1F/0P KILL  mapEditing=0F/1P  gbaCtxVisit=0F/1P
+M3 registry ignores unmount  guard=0F/1P  registry=1F/3P FAIL(no-assert-msg)  core=0F/14P  gbaApp=0F/28P  gbcEditing=0F/7P  gbaStroke=0F/2P  gbcStroke=0F/1P  mapEditing=0F/1P  gbaCtxVisit=0F/1P
+M4 discard wipes unconditionally  guard=0F/1P  registry=0F/4P  core=1F/13P KILL  gbaApp=0F/28P  gbcEditing=0F/7P  gbaStroke=0F/2P  gbcStroke=0F/1P  mapEditing=0F/1P  gbaCtxVisit=0F/1P
+M5 visit reset removed  guard=0F/1P  registry=0F/4P  core=0F/14P  gbaApp=1F/27P KILL  gbcEditing=0F/7P  gbaStroke=0F/2P  gbcStroke=0F/1P  mapEditing=1F/0P KILL  gbaCtxVisit=1F/0P KILL
+restored byte-identical: [ true, true, true, true ]
+
+M0 baseline (no change)  guard=0F/1P  registry=0F/4P  core=0F/14P  gbaApp=0F/28P  gbcEditing=0F/7P  gbaStroke=0F/2P  gbcStroke=0F/1P  mapEditing=0F/1P  gbaCtxVisit=0F/1P
+M1 guard always attached  guard=1F/0P KILL  registry=0F/4P  core=0F/14P  gbaApp=1F/27P KILL  gbcEditing=1F/6P KILL  gbaStroke=0F/2P  gbcStroke=0F/1P  mapEditing=0F/1P  gbaCtxVisit=0F/1P
+M2 strokeSettled resolves at once  guard=0F/1P  registry=1F/3P KILL  core=0F/14P  gbaApp=0F/28P  gbcEditing=0F/7P  gbaStroke=1F/1P KILL  gbcStroke=1F/0P KILL  mapEditing=0F/1P  gbaCtxVisit=0F/1P
+M3 registry ignores unmount  guard=0F/1P  registry=1F/3P FAIL(no-assert-msg)  core=0F/14P  gbaApp=0F/28P  gbcEditing=0F/7P  gbaStroke=0F/2P  gbcStroke=0F/1P  mapEditing=0F/1P  gbaCtxVisit=0F/1P
+M4 discard wipes unconditionally  guard=0F/1P  registry=0F/4P  core=1F/13P KILL  gbaApp=0F/28P  gbcEditing=0F/7P  gbaStroke=0F/2P  gbcStroke=0F/1P  mapEditing=0F/1P  gbaCtxVisit=0F/1P
+M5 visit reset removed  guard=0F/1P  registry=0F/4P  core=0F/14P  gbaApp=1F/27P KILL  gbcEditing=0F/7P  gbaStroke=0F/2P  gbcStroke=0F/1P  mapEditing=1F/0P KILL  gbaCtxVisit=1F/0P KILL
+(node:38380) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
+(Use `node --trace-deprecation ...` to show where the warning was created)

@@ -1,0 +1,151 @@
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mC:/Users/Serve/AppData/Local/Temp/claude/C--Programming-Projects-PokeMap/9bba062b-1d67-5eaa-9ec7-185b70b60cfb/scratchpad/mut7[39m
+
+ [31m❯[39m packages/ui/test/shared/useBeforeUnloadGuard.test.tsx [2m([22m[2m0 test[22m[2m)[22m
+ [31m❯[39m packages/ui/test/shared/useStrokeChainRegistry.test.tsx [2m([22m[2m4 tests[22m[2m | [22m[31m4 failed[39m[2m)[22m[90m 54[2mms[22m[39m
+[31m   [31m×[31m useStrokeChainRegistry[2m > [22mwaits for every chain registered when strokeSettled starts[90m 46[2mms[22m[31m[39m
+[31m     → useStrokeChainRegistry is not a function[39m
+[31m   [31m×[31m useStrokeChainRegistry[2m > [22mdoes not wait for a chain after it unmounts[90m 2[2mms[22m[31m[39m
+[31m     → useStrokeChainRegistry is not a function[39m
+[31m   [31m×[31m useStrokeChainRegistry[2m > [22mkeeps its callbacks stable across a rerender[90m 2[2mms[22m[31m[39m
+[31m     → useStrokeChainRegistry is not a function[39m
+[31m   [31m×[31m useStrokeChainRegistry[2m > [22msettles immediately with no registered chains[90m 2[2mms[22m[31m[39m
+[31m     → useStrokeChainRegistry is not a function[39m
+ [31m❯[39m packages/ui/test/shared/useEditSessionCore.test.tsx [2m([22m[2m14 tests[22m[2m | [22m[31m1 failed[39m[2m)[22m[90m 97[2mms[22m[39m
+[31m   [31m×[31m useEditSessionCore[2m > [22ma discard that settles after a map switch keeps the new map's record[90m 15[2mms[22m[31m[39m
+[31m     → expected { n: 1 } to deeply equal { n: 9 }[39m
+
+[31m⎯⎯⎯⎯⎯⎯[1m[7m Failed Suites 1 [27m[22m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[31m[1m[7m FAIL [27m[22m[39m packages/ui/test/shared/useBeforeUnloadGuard.test.tsx[2m [ packages/ui/test/shared/useBeforeUnloadGuard.test.tsx ][22m
+[31m[1mError[22m: Failed to resolve import "../../src/shared/useBeforeUnloadGuard.js" from "packages/ui/test/shared/useBeforeUnloadGuard.test.tsx". Does the file exist?[39m
+  Plugin: [35mvite:import-analysis[39m
+  File: [36mC:/Users/Serve/AppData/Local/Temp/claude/C--Programming-Projects-PokeMap/9bba062b-1d67-5eaa-9ec7-185b70b60cfb/scratchpad/mut7/packages/ui/test/shared/useBeforeUnloadGuard.test.tsx[39m:3:37
+[33m  1  |  import { renderHook } from "@testing-library/react";
+  2  |  import { describe, expect, it } from "vitest";
+  3  |  import { useBeforeUnloadGuard } from "../../src/shared/useBeforeUnloadGuard.js";
+     |                                        ^
+  4  |  describe("useBeforeUnloadGuard", () => {
+  5  |    it("prevents navigation only while dirty", () => {[39m
+[90m [2m❯[22m TransformPluginContext._formatError node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js:[2m49258:41[22m[39m
+[90m [2m❯[22m TransformPluginContext.error node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js:[2m49253:16[22m[39m
+[90m [2m❯[22m normalizeUrl node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js:[2m64307:23[22m[39m
+[90m [2m❯[22m node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js:[2m64439:39[22m[39m
+[90m [2m❯[22m TransformPluginContext.transform node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js:[2m64366:7[22m[39m
+[90m [2m❯[22m PluginContainer.transform node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js:[2m49099:18[22m[39m
+[90m [2m❯[22m loadAndTransform node_modules/vite/dist/node/chunks/dep-BK3b2jBa.js:[2m51978:27[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/6]⎯[22m[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[1m[7m Failed Tests 5 [27m[22m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[31m[1m[7m FAIL [27m[22m[39m packages/ui/test/shared/useEditSessionCore.test.tsx[2m > [22museEditSessionCore[2m > [22ma discard that settles after a map switch keeps the new map's record
+[31m[1mAssertionError[22m: expected { n: 1 } to deeply equal { n: 9 }[39m
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[2m  Object {[22m
+[32m-   "n": 9,[39m
+[31m+   "n": 1,[39m
+[2m  }[22m
+
+[36m [2m❯[22m packages/ui/test/shared/useEditSessionCore.test.tsx:[2m67:34[22m[39m
+    [90m 65| [39m    pending[33m.[39m[34mresolve[39m([34mresponse[39m())[33m;[39m
+    [90m 66| [39m    [35mawait[39m [34mact[39m([35masync[39m () [33m=>[39m { [35mawait[39m discard[33m;[39m })[33m;[39m
+    [90m 67| [39m    [34mexpect[39m(result[33m.[39mcurrent[33m.[39mstate)[33m.[39m[34mtoEqual[39m({ n[33m:[39m [34m9[39m })[33m;[39m
+    [90m   | [39m                                 [31m^[39m
+    [90m 68| [39m    [34mexpect[39m(result[33m.[39mcurrent[33m.[39misDirty)[33m.[39m[34mtoBe[39m([35mtrue[39m)[33m;[39m
+    [90m 69| [39m  })[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/6]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m packages/ui/test/shared/useStrokeChainRegistry.test.tsx[2m > [22museStrokeChainRegistry[2m > [22mwaits for every chain registered when strokeSettled starts
+[31m[1mTypeError[22m: useStrokeChainRegistry is not a function[39m
+[36m [2m❯[22m packages/ui/test/shared/useStrokeChainRegistry.test.tsx:[2m15:41[22m[39m
+    [90m 13| [39m    [35mconst[39m first [33m=[39m [34mdeferred[39m()[33m;[39m
+    [90m 14| [39m    [35mconst[39m second [33m=[39m [34mdeferred[39m()[33m;[39m
+    [90m 15| [39m    [35mconst[39m { result } [33m=[39m [34mrenderHook[39m(() [33m=>[39m [34museStrokeChainRegistry[39m())[33m;[39m
+    [90m   | [39m                                        [31m^[39m
+    [90m 16| [39m    [34mact[39m(() [33m=>[39m {
+    [90m 17| [39m      result[33m.[39mcurrent[33m.[39m[34monStrokeChain[39m({ settled[33m:[39m () [33m=>[39m first[33m.[39mpromise }[33m,[39m [35mt[39m…
+[90m [2m❯[22m TestComponent node_modules/@testing-library/react/dist/pure.js:[2m339:27[22m[39m
+[90m [2m❯[22m Object.react_stack_bottom_frame node_modules/react-dom/cjs/react-dom-client.development.js:[2m25904:20[22m[39m
+[90m [2m❯[22m renderWithHooks node_modules/react-dom/cjs/react-dom-client.development.js:[2m7662:22[22m[39m
+[90m [2m❯[22m updateFunctionComponent node_modules/react-dom/cjs/react-dom-client.development.js:[2m10166:19[22m[39m
+[90m [2m❯[22m beginWork node_modules/react-dom/cjs/react-dom-client.development.js:[2m11778:18[22m[39m
+[90m [2m❯[22m runWithFiberInDEV node_modules/react-dom/cjs/react-dom-client.development.js:[2m874:13[22m[39m
+[90m [2m❯[22m performUnitOfWork node_modules/react-dom/cjs/react-dom-client.development.js:[2m17641:22[22m[39m
+[90m [2m❯[22m workLoopSync node_modules/react-dom/cjs/react-dom-client.development.js:[2m17469:41[22m[39m
+[90m [2m❯[22m renderRootSync node_modules/react-dom/cjs/react-dom-client.development.js:[2m17450:11[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/6]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m packages/ui/test/shared/useStrokeChainRegistry.test.tsx[2m > [22museStrokeChainRegistry[2m > [22mdoes not wait for a chain after it unmounts
+[31m[1mTypeError[22m: useStrokeChainRegistry is not a function[39m
+[36m [2m❯[22m packages/ui/test/shared/useStrokeChainRegistry.test.tsx:[2m35:41[22m[39m
+    [90m 33| [39m  [34mit[39m([32m"does not wait for a chain after it unmounts"[39m[33m,[39m [35masync[39m () [33m=>[39m {
+    [90m 34| [39m    [35mconst[39m never[33m:[39m [33mSettledChain[39m [33m=[39m { settled[33m:[39m () [33m=>[39m [35mnew[39m [33mPromise[39m[33m<[39m[35mvoid[39m[33m>[39m(() …
+    [90m 35| [39m    [35mconst[39m { result } [33m=[39m [34mrenderHook[39m(() [33m=>[39m [34museStrokeChainRegistry[39m())[33m;[39m
+    [90m   | [39m                                        [31m^[39m
+    [90m 36| [39m    [34mact[39m(() [33m=>[39m {
+    [90m 37| [39m      result[33m.[39mcurrent[33m.[39m[34monStrokeChain[39m(never[33m,[39m [35mtrue[39m)[33m;[39m
+[90m [2m❯[22m TestComponent node_modules/@testing-library/react/dist/pure.js:[2m339:27[22m[39m
+[90m [2m❯[22m Object.react_stack_bottom_frame node_modules/react-dom/cjs/react-dom-client.development.js:[2m25904:20[22m[39m
+[90m [2m❯[22m renderWithHooks node_modules/react-dom/cjs/react-dom-client.development.js:[2m7662:22[22m[39m
+[90m [2m❯[22m updateFunctionComponent node_modules/react-dom/cjs/react-dom-client.development.js:[2m10166:19[22m[39m
+[90m [2m❯[22m beginWork node_modules/react-dom/cjs/react-dom-client.development.js:[2m11778:18[22m[39m
+[90m [2m❯[22m runWithFiberInDEV node_modules/react-dom/cjs/react-dom-client.development.js:[2m874:13[22m[39m
+[90m [2m❯[22m performUnitOfWork node_modules/react-dom/cjs/react-dom-client.development.js:[2m17641:22[22m[39m
+[90m [2m❯[22m workLoopSync node_modules/react-dom/cjs/react-dom-client.development.js:[2m17469:41[22m[39m
+[90m [2m❯[22m renderRootSync node_modules/react-dom/cjs/react-dom-client.development.js:[2m17450:11[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/6]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m packages/ui/test/shared/useStrokeChainRegistry.test.tsx[2m > [22museStrokeChainRegistry[2m > [22mkeeps its callbacks stable across a rerender
+[31m[1mTypeError[22m: useStrokeChainRegistry is not a function[39m
+[36m [2m❯[22m renderHook.initialProps.value packages/ui/test/shared/useStrokeChainRegistry.test.tsx:[2m44:60[22m[39m
+    [90m 42| [39m
+    [90m 43| [39m  [34mit[39m([32m"keeps its callbacks stable across a rerender"[39m[33m,[39m () [33m=>[39m {
+    [90m 44| [39m    [35mconst[39m { result[33m,[39m rerender } [33m=[39m [34mrenderHook[39m(({ value }) [33m=>[39m [34museStrokeCh[39m…
+    [90m   | [39m                                                           [31m^[39m
+    [90m 45| [39m    [35mconst[39m first [33m=[39m result[33m.[39mcurrent[33m;[39m
+    [90m 46| [39m    [34mrerender[39m({ value[33m:[39m [34m2[39m })[33m;[39m
+[90m [2m❯[22m TestComponent node_modules/@testing-library/react/dist/pure.js:[2m339:27[22m[39m
+[90m [2m❯[22m Object.react_stack_bottom_frame node_modules/react-dom/cjs/react-dom-client.development.js:[2m25904:20[22m[39m
+[90m [2m❯[22m renderWithHooks node_modules/react-dom/cjs/react-dom-client.development.js:[2m7662:22[22m[39m
+[90m [2m❯[22m updateFunctionComponent node_modules/react-dom/cjs/react-dom-client.development.js:[2m10166:19[22m[39m
+[90m [2m❯[22m beginWork node_modules/react-dom/cjs/react-dom-client.development.js:[2m11778:18[22m[39m
+[90m [2m❯[22m runWithFiberInDEV node_modules/react-dom/cjs/react-dom-client.development.js:[2m874:13[22m[39m
+[90m [2m❯[22m performUnitOfWork node_modules/react-dom/cjs/react-dom-client.development.js:[2m17641:22[22m[39m
+[90m [2m❯[22m workLoopSync node_modules/react-dom/cjs/react-dom-client.development.js:[2m17469:41[22m[39m
+[90m [2m❯[22m renderRootSync node_modules/react-dom/cjs/react-dom-client.development.js:[2m17450:11[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/6]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m packages/ui/test/shared/useStrokeChainRegistry.test.tsx[2m > [22museStrokeChainRegistry[2m > [22msettles immediately with no registered chains
+[31m[1mTypeError[22m: useStrokeChainRegistry is not a function[39m
+[36m [2m❯[22m packages/ui/test/shared/useStrokeChainRegistry.test.tsx:[2m52:41[22m[39m
+    [90m 50| [39m
+    [90m 51| [39m  [34mit[39m([32m"settles immediately with no registered chains"[39m[33m,[39m [35masync[39m () [33m=>[39m {
+    [90m 52| [39m    [35mconst[39m { result } [33m=[39m [34mrenderHook[39m(() [33m=>[39m [34museStrokeChainRegistry[39m())[33m;[39m
+    [90m   | [39m                                        [31m^[39m
+    [90m 53| [39m    [35mawait[39m [34mexpect[39m(result[33m.[39mcurrent[33m.[39m[34mstrokeSettled[39m())[33m.[39mresolves[33m.[39m[34mtoBeUndefine[39m…
+    [90m 54| [39m  })[33m;[39m
+[90m [2m❯[22m TestComponent node_modules/@testing-library/react/dist/pure.js:[2m339:27[22m[39m
+[90m [2m❯[22m Object.react_stack_bottom_frame node_modules/react-dom/cjs/react-dom-client.development.js:[2m25904:20[22m[39m
+[90m [2m❯[22m renderWithHooks node_modules/react-dom/cjs/react-dom-client.development.js:[2m7662:22[22m[39m
+[90m [2m❯[22m updateFunctionComponent node_modules/react-dom/cjs/react-dom-client.development.js:[2m10166:19[22m[39m
+[90m [2m❯[22m beginWork node_modules/react-dom/cjs/react-dom-client.development.js:[2m11778:18[22m[39m
+[90m [2m❯[22m runWithFiberInDEV node_modules/react-dom/cjs/react-dom-client.development.js:[2m874:13[22m[39m
+[90m [2m❯[22m performUnitOfWork node_modules/react-dom/cjs/react-dom-client.development.js:[2m17641:22[22m[39m
+[90m [2m❯[22m workLoopSync node_modules/react-dom/cjs/react-dom-client.development.js:[2m17469:41[22m[39m
+[90m [2m❯[22m renderRootSync node_modules/react-dom/cjs/react-dom-client.development.js:[2m17450:11[22m[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/6]⎯[22m[39m
+
+[2m Test Files [22m [1m[31m3 failed[39m[22m[90m (3)[39m
+[2m      Tests [22m [1m[31m5 failed[39m[22m[2m | [22m[1m[32m13 passed[39m[22m[90m (18)[39m
+[2m   Start at [22m 17:22:59
+[2m   Duration [22m 37.51s[2m (transform 176ms, setup 16.97s, collect 255ms, tests 151ms, environment 91.39s, prepare 2.39s)[22m
+
