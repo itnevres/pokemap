@@ -15,6 +15,9 @@ User rulings made while writing this spec (2026-10-14):
 - **R2. GBA palette hover-link is in Plan 9:** the GBA rail palette highlights the metatile under the cursor, as GBC's
   does.
 - **R3. Adapter shape:** one runtime hook per family (approach 1 below).
+- **R4. Follow-hover toggle, both families** (user, 2026-10-14, after the plan was written): the palette scrolls to the
+  hovered metatile only while a "Follow hover" switch is on. One shared hook and one shared switch serve both palettes,
+  so the behaviour is identical. Default on (today's GBC behaviour); the choice is remembered per browser.
 
 ## Behaviour that does NOT change in Plan 9
 
@@ -174,6 +177,8 @@ The implementation plan's first task writes characterisation tests for every suc
   metatile id, and with null on leave.
 - `MetatilePalette` gets `highlightId?: number | null` and marks that cell (the GBC palette's highlight class and token).
 - The hovered id lives in the GBA runtime and resets on a map switch (`onSelected`), as GBC's does.
+- R4: both palettes scroll the hovered cell into view (`block: "nearest"`) only while "Follow hover" is on
+  (`shared/useFollowHover.ts` + `shared/FollowHoverSwitch.tsx`, `role="switch"`, in each palette's header).
 
 ## Toolbar (D5) and shortcuts (R1)
 

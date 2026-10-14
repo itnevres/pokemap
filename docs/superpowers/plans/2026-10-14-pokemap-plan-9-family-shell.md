@@ -18,6 +18,7 @@
 - No new npm dependency (icons are inline SVG in `components/toolIcons.tsx`).
 - Tool labels exactly: `Pencil`, `Rect`, `Bucket`, `Dropper`, `Shift`, `Collision`. Tooltips exactly `"Pencil (P)"` … ; `"Undo (Ctrl+Z)"`, `"Redo (Ctrl+Y)"`. Disabled tools keep their reason title (GBC non-writable `.blk`; default `"Not yet available"`).
 - Shortcuts exactly: P R B I S C; Ctrl/Cmd+Z undo; Ctrl/Cmd+Y and Ctrl/Cmd+Shift+Z redo. Ignored when `defaultPrevented`, target is input/textarea/select/contenteditable, an `[aria-modal="true"]` element exists, a letter key has any modifier (Ctrl, Meta, Alt, Shift), the tool is absent or disabled, or Undo/Redo is unavailable. Handled keys call `preventDefault`.
+- R4 (user ruling 2026-10-14, added to the spec): both palettes scroll the hovered cell into view only while the shared "Follow hover" switch is on. One hook (`shared/useFollowHover.ts`), one switch (`shared/FollowHoverSwitch.tsx`), identical in both families. Default on; remembered in `localStorage` key `pokemap.palette.followHover`, every read/write in try/catch (falls back to on).
 - Rail: `.edit-rail`, 260 px; order collision palette (Collision tool only) → metatile palette (always, flex, scrolls) → inspector (≤ 50 % height). Removed: `.app__metatile-strip`, `.app__collision-strip`, `.gbc-map-editing__rail`. Flex children `min-width: 0`.
 - Tests are moved, never dropped. Gate: **2,703 + tests added by this plan, 0 fail**; typecheck and `npm run build -w @pokemap/ui` pass. Per moved file: `git diff master -- <file> | grep -c '^-[^-]'`, every removed line given a reason in the task report.
 - Run vitest **from the repo root** (tell: `document is not defined`). Capture every full run to a file: `npm test > <scratch>/run-N.txt 2>&1`.
@@ -45,7 +46,8 @@ The spec leaves these open or slightly under-determined; each is the smallest fa
 - **`onSelected` is called on every selection change**, including a GBC world click (`GbcApp.tsx:169` cleared only `switchError`, not the hover id). Clearing a hover id that belongs to the previous map is the spec's own reset rule ("resets on a map switch"); no test pins the old omission.
 - **World-visibility load error placement** follows GBC (`GbcApp.tsx:276`: shown in World mode even when the groups load failed). GBA (`App.tsx:277`) showed it only when groups loaded. Same text; strictly more information.
 - **Capability flags read via constants.** `GBA_CAPABILITIES`/`GBC_CAPABILITIES` live in `shell/adapter.ts`; `toolsFor(caps)` derives each family's tool list (GBA all six; GBC five), and GBA's `MapEditingWorkspace` gates Add Sign on `GBA_CAPABILITIES.addSign`. Manual placements: `FamilyApp` owns `manualPlacementMaps` and merges it into tree visibility only when `manualPlacements` is set.
-- **GBA hover look** reuses GBC's hover token pair (`--bg-selected` + `--border-strong`, new class `metatile-palette__cell--hovered`). GBA's picked-stamp class already uses the same pair, so hover and pick look alike on GBA until a later plan restyles the pick. GBA palette does not auto-scroll to the hovered cell (GBC does); add when asked.
+- **GBA hover look** reuses GBC's hover token pair (`--bg-selected` + `--border-strong`, new class `metatile-palette__cell--hovered`). GBA's picked-stamp class already uses the same pair, so hover and pick look alike on GBA until a later plan restyles the pick.
+- **Follow hover (R4)** is a palette preference, not shell state: each palette calls `useFollowHover()` and renders `FollowHoverSwitch` in its header, so no prop plumbing through runtimes. Only one rail exists at a time; `localStorage` keeps the choice across remounts, map switches, families and reloads.
 - **`useDungeonFilter(openDungeon, cache)`** (new, `shell/useDungeonFilter.ts`) holds both memo forms verbatim, unit-tested in Task 2.
 
 ## File map
@@ -65,7 +67,9 @@ The spec leaves these open or slightly under-determined; each is the smallest fa
 | `packages/ui/src/components/Toolbar.tsx` | 8, 9 | labels, icons, tooltips, shortcut listener |
 | `packages/ui/src/components/toolIcons.tsx` | 8 | inline SVG per tool |
 | `packages/ui/src/components/MapCanvas.tsx` | 10 | `onHoverMetatile` |
-| `packages/ui/src/components/MetatilePalette.tsx` | 10 | `highlightId` |
+| `packages/ui/src/components/MetatilePalette.tsx` | 10 | `highlightId`, follow-hover scroll + switch |
+| `packages/ui/src/gbc/GbcMetatilePalette.tsx` | 10 | scroll gated on follow-hover; switch in header |
+| `packages/ui/src/shared/useFollowHover.ts`, `shared/FollowHoverSwitch.tsx` | 10 | R4 preference hook and its switch |
 | `packages/ui/src/styles.css` | 7, 8, 10 | rail, toolbar icon, hovered cell |
 | `packages/ui/DESIGN.md` | 11 | layout, rail, toolbar, shortcuts, shell row |
 
@@ -84,7 +88,7 @@ Before every implementer dispatch run the `delegate` skill; walk the tier's chai
 | 7 Rail + CSS | Sonnet → Codex `gpt-5.6-terra` | context editing (no remount) | split (Sonnet + Sonnet) |
 | 8 Toolbar icons/labels/tooltips + query renames | Haiku → Codex `gpt-6-luna` (12+ files) | low | merged (Sonnet) |
 | 9 Shortcuts | Sonnet → Aider Laguna S 2.1 → Nemotron 3 Super → Codex `gpt-5.6-terra` | StrictMode, global listener | split (Sonnet + Sonnet) |
-| 10 GBA hover-link | Sonnet → Codex `gpt-5.6-terra` | low | merged (Sonnet) |
+| 10 GBA hover-link + follow-hover toggle (R4) | Sonnet → Codex `gpt-5.6-terra` | low (browser storage at a trust boundary: try/catch) | merged (Sonnet) |
 | 11 DESIGN.md | Haiku → Aider Laguna S 2.1 | docs | merged (Sonnet) |
 | 12 Live acceptance | Anthropic direct — verification (delegate §3); orchestrator or a Sonnet subagent with Playwright | real-corpus writes | the orchestrator re-checks every `cmp` and screenshot |
 | Final | — | — | whole-branch review (**Opus**) |
@@ -1877,11 +1881,12 @@ git commit -m "feat(ui): tool and undo/redo keyboard shortcuts (Plan 9 Task 9, R
 
 ---
 
-### Task 10: GBA palette hover-link (R2)
+### Task 10: GBA palette hover-link (R2) and the follow-hover toggle for both families (R4)
 
 **Files:**
 - Modify: `packages/ui/src/components/MapCanvas.tsx` (props interface ~67-135; one effect near `hover` state at 363), `packages/ui/src/components/MetatilePalette.tsx` (props 5-35; cell className at 154), `packages/ui/src/components/MapEditingWorkspace.tsx` (props, `MapEditingCanvasProps` Pick at 16-19, canvasProps, palette), `packages/ui/src/gba/adapter.tsx` (hover state, `onSelected`, both `MapEditingWorkspace` usages), `packages/ui/src/styles.css`
-- Test: `packages/ui/test/MetatilePalette.test.tsx`, `packages/ui/test/MapCanvas.test.tsx`, `packages/ui/test/App.test.tsx`
+- Create (R4): `packages/ui/src/shared/useFollowHover.ts`, `packages/ui/src/shared/FollowHoverSwitch.tsx`; modify `packages/ui/src/gbc/GbcMetatilePalette.tsx:46-64`
+- Test: `packages/ui/test/MetatilePalette.test.tsx`, `packages/ui/test/MapCanvas.test.tsx`, `packages/ui/test/App.test.tsx`, `packages/ui/test/gbc/GbcMetatilePalette.test.tsx`, create `packages/ui/test/shared/useFollowHover.test.tsx`
 
 **Interfaces:**
 - `MapCanvasProps.onHoverMetatile?: (id: number | null) => void` — called with the hovered block's metatile id whenever it changes, `null` when nothing is hovered (leave, out of bounds, map switch).
@@ -1973,13 +1978,127 @@ Destructure it, and after `const [hover, setHover] = useState<Hover | null>(null
 
 pass `hoveredMetatileId={hoveredMetatileId} onHoverMetatile={setHoveredMetatileId}` to all three `MapEditingWorkspace` elements, and set `onSelected: () => setHoveredMetatileId(null)`. `onEnterContext` stays a no-op (spec: GBA does not clear on context entry).
 
-- [ ] **Step 5: Run, gate, commit**
+- [ ] **Step 5: Follow-hover tests (R4), failing first**
 
-Targeted → PASS. Gate: **2,745 + 4 = 2,749 pass**, 174 files; typecheck; build.
+`packages/ui/test/shared/useFollowHover.test.tsx` (new):
+
+```tsx
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { renderHook, act } from "@testing-library/react";
+import { useFollowHover, FOLLOW_HOVER_KEY } from "../../src/shared/useFollowHover.js";
+
+afterEach(() => {
+  localStorage.clear();
+  vi.restoreAllMocks();
+});
+
+describe("useFollowHover (Plan 9 R4)", () => {
+  it("defaults to on", () => {
+    expect(renderHook(() => useFollowHover()).result.current[0]).toBe(true);
+  });
+  it("remembers off across mounts", () => {
+    const first = renderHook(() => useFollowHover());
+    act(() => first.result.current[1](false));
+    expect(localStorage.getItem(FOLLOW_HOVER_KEY)).toBe("off");
+    first.unmount();
+    expect(renderHook(() => useFollowHover()).result.current[0]).toBe(false);
+  });
+  it("falls back to on, and still toggles, when storage throws", () => {
+    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => { throw new Error("blocked"); });
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("blocked"); });
+    const { result } = renderHook(() => useFollowHover());
+    expect(result.current[0]).toBe(true);
+    act(() => result.current[1](false));
+    expect(result.current[0]).toBe(false);
+  });
+});
+```
+
+Append to `test/gbc/GbcMetatilePalette.test.tsx` and to `test/MetatilePalette.test.tsx` (each with `afterEach(() => localStorage.clear())` and the file's own base props; stub `Element.prototype.scrollIntoView = vi.fn()` in a `beforeEach` if the file does not already):
+
+```tsx
+  it("scrolls the hovered cell into view while Follow hover is on (Plan 9 R4)", () => {
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    const { rerender } = render(<Palette {...base} highlightId={null} />);
+    expect(screen.getByRole("switch", { name: "Follow hover" }).getAttribute("aria-checked")).toBe("true");
+    rerender(<Palette {...base} highlightId={1} />);
+    expect(scroll).toHaveBeenCalledWith({ block: "nearest" });
+  });
+
+  it("does not scroll once Follow hover is switched off, and the switch shows off (Plan 9 R4)", () => {
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    const { rerender } = render(<Palette {...base} highlightId={null} />);
+    fireEvent.click(screen.getByRole("switch", { name: "Follow hover" }));
+    expect(screen.getByRole("switch", { name: "Follow hover" }).getAttribute("aria-checked")).toBe("false");
+    rerender(<Palette {...base} highlightId={1} />);
+    expect(scroll).not.toHaveBeenCalled();
+  });
+```
+
+(`Palette`/`base` = `GbcMetatilePalette` and its test props in the GBC file; `MetatilePalette` and its props in the GBA file.) Run → FAIL.
+
+Before implementing, `grep -rn 'getAllByRole("switch"' packages/ui/test`: any test counting switches in a view that now shows a palette must be updated (reason "R4 adds a switch") — expected none, since the World bar's switches are counted only in World tests without the rail.
+
+- [ ] **Step 6: Implement R4**
+
+`packages/ui/src/shared/useFollowHover.ts`:
+
+```ts
+import { useState } from "react";
+
+export const FOLLOW_HOVER_KEY = "pokemap.palette.followHover";
+
+/** Plan 9 (R4): whether a metatile palette scrolls to the cell under the canvas cursor. One per-browser preference
+ *  for both families; storage can be blocked (private mode, cleared site data), so it falls back to on. */
+export function useFollowHover(): [boolean, (on: boolean) => void] {
+  const [on, setOn] = useState(() => {
+    try { return localStorage.getItem(FOLLOW_HOVER_KEY) !== "off"; } catch { return true; }
+  });
+  const set = (next: boolean) => {
+    setOn(next);
+    try { localStorage.setItem(FOLLOW_HOVER_KEY, next ? "on" : "off"); } catch { /* keep the in-memory choice */ }
+  };
+  return [on, set];
+}
+```
+
+`packages/ui/src/shared/FollowHoverSwitch.tsx`:
+
+```tsx
+/** Plan 9 (R4): the palette header's "Follow hover" switch -- same switch pattern as the World bar's toggles. */
+export function FollowHoverSwitch({ on, onChange }: { on: boolean; onChange(next: boolean): void }) {
+  return (
+    <button type="button" role="switch" aria-checked={on} className="world-canvas__switch palette__follow" onClick={() => onChange(!on)}>
+      Follow hover
+    </button>
+  );
+}
+```
+
+`GbcMetatilePalette.tsx`: `const [follow, setFollow] = useFollowHover();`; the scroll effect (lines 49-52) becomes `if (!follow || highlightId === null) return;` with deps `[highlightId, follow]`; the header (line 62-64) renders `<FollowHoverSwitch on={follow} onChange={setFollow} />` after the tileset text.
+
+`MetatilePalette.tsx`: add `const cellRefs = useRef(new Map<number, HTMLButtonElement>());` and on each cell button `ref={(el) => { if (el) cellRefs.current.set(id, el); else cellRefs.current.delete(id); }}`; the same hook and effect as GBC (`cellRefs.current.get(highlightId)?.scrollIntoView({ block: "nearest" })`, a cell hidden by the search filter has no ref and is skipped); render `<FollowHoverSwitch on={follow} onChange={setFollow} />` above the search input.
+
+CSS:
+
+```css
+/* Plan 9 (R4): the palette header's Follow hover switch sits on its own line, right-aligned. */
+.palette__follow {
+  align-self: flex-end;
+}
+```
+
+(If `.world-canvas__switch` relies on a World-bar parent for its look, copy its declarations into `.palette__follow` instead and drop the `world-canvas__switch` class; say which in the report.)
+
+- [ ] **Step 7: Run, gate, commit**
+
+Targeted → PASS. Gate: **2,745 + 11 = 2,756 pass** (R2: 4; R4: 3 hook + 2 GBC + 2 GBA), 175 files; typecheck; build.
 
 ```bash
-git add packages/ui/src/components/MapCanvas.tsx packages/ui/src/components/MetatilePalette.tsx packages/ui/src/components/MapEditingWorkspace.tsx packages/ui/src/gba/adapter.tsx packages/ui/src/styles.css packages/ui/test/MetatilePalette.test.tsx packages/ui/test/MapCanvas.test.tsx packages/ui/test/App.test.tsx
-git commit -m "feat(ui): GBA palette highlights the metatile under the cursor (Plan 9 Task 10, R2)"
+git add packages/ui/src/components/MapCanvas.tsx packages/ui/src/components/MetatilePalette.tsx packages/ui/src/gbc/GbcMetatilePalette.tsx packages/ui/src/shared/useFollowHover.ts packages/ui/src/shared/FollowHoverSwitch.tsx packages/ui/src/components/MapEditingWorkspace.tsx packages/ui/src/gba/adapter.tsx packages/ui/src/styles.css packages/ui/test/MetatilePalette.test.tsx packages/ui/test/gbc/GbcMetatilePalette.test.tsx packages/ui/test/shared/useFollowHover.test.tsx packages/ui/test/MapCanvas.test.tsx packages/ui/test/App.test.tsx
+git commit -m "feat(ui): GBA palette hover-link and a shared Follow hover toggle for both palettes (Plan 9 Task 10, R2/R4)"
 ```
 
 ---
@@ -1988,7 +2107,7 @@ git commit -m "feat(ui): GBA palette highlights the metatile under the cursor (P
 
 **Files:** Modify `packages/ui/DESIGN.md` (sections "Layout shape" at 226, "Shared modules (Plan 8)" at 465).
 
-- [ ] **Step 1: Layout shape.** After the existing diagram's "What the canvas is owed" bullets, add a subsection `### Edit layout (Plan 9, D4/D5)` with the spec's diagram (spec lines 147-156, verbatim) and bullets: the rail (`.edit-rail`, 260 px, order, collision palette only with Collision, palette always and a pick with another tool only sets the stamp, inspector ≤ 50 %, `min-width: 0`); the toolbar (icon + capitalised label, tooltip `Label (Key)`, disabled tools keep their reason title, Undo/Redo tooltips); the shortcuts and their ignore rules (copy the Global Constraints lines); the GBA hover-link (`metatile-palette__cell--hovered`, GBC's hover token pair). Update the first bullet of "What the canvas is owed" that mentions "whatever Task 21+ adds — an inspector, a metatile palette" to name the rail.
+- [ ] **Step 1: Layout shape.** After the existing diagram's "What the canvas is owed" bullets, add a subsection `### Edit layout (Plan 9, D4/D5)` with the spec's diagram (spec lines 147-156, verbatim) and bullets: the rail (`.edit-rail`, 260 px, order, collision palette only with Collision, palette always and a pick with another tool only sets the stamp, inspector ≤ 50 %, `min-width: 0`); the toolbar (icon + capitalised label, tooltip `Label (Key)`, disabled tools keep their reason title, Undo/Redo tooltips); the shortcuts and their ignore rules (copy the Global Constraints lines); the GBA hover-link (`metatile-palette__cell--hovered`, GBC's hover token pair); the shared "Follow hover" switch (R4: both palettes, default on, remembered per browser). Add `shared/useFollowHover.ts` + `FollowHoverSwitch.tsx` as a Shared modules row (consumers `MetatilePalette` / `GbcMetatilePalette`). Update the first bullet of "What the canvas is owed" that mentions "whatever Task 21+ adds — an inspector, a metatile palette" to name the rail.
 - [ ] **Step 2: Shared modules.** Add rows:
 
 | Module | What it owns | GBA consumer | GBC consumer |
@@ -2020,7 +2139,7 @@ Verification stays on Anthropic (delegate §3). Follow LESSONS "Live Browser Ver
   3. Paint + save in Map view and in-context; restore by reverse paint + save.
   4. Dirty switch: GBA confirm; GBC discard; GBC forced discard failure shows `switchError` (in the same `browser_run_code_unsafe` call: `await page.route("**/api/edit/*/discard", (r) => r.fulfill({ status: 500, body: "{}" }))`, trigger the switch, read the alert, then `page.unroute`).
   5. GBC Time of day; GBC defects banner on CeruleanCave2F; GBA Add Sign opens and cancels.
-  6. GBA hover-link follows the cursor and clears on a map switch.
+  6. GBA hover-link follows the cursor and clears on a map switch. Follow hover (both families): on, hovering a block whose cell is scrolled out of the palette brings it into view; off, the palette stays put; the choice survives a reload and a switch to the other family.
   7. Issue #4: World auto-shows major areas (GBA hides indoor/none, GBC indoor/gate); an unplaced map greys in the tree and drags onto the world. Screenshots.
 - [ ] **Step 4: `cmp` every snapshot** against the live files. Any difference: restore from the snapshot (sidecars by copy; Porymap-stripped `layout_version` per LESSONS by splicing from `git show HEAD:…`, never `git checkout`), then record it as a finding.
 - [ ] **Step 5: Stop the hub by port** (`Get-NetTCPConnection -LocalPort 5184`), remove your own `.playwright-mcp/` files, commit the report and screenshots with explicit pathspecs. Closing issue #4 with the evidence waits for the user's go-ahead.
@@ -2029,6 +2148,6 @@ Verification stays on Anthropic (delegate §3). Follow LESSONS "Live Browser Ver
 
 ### Finish
 
-- [ ] Whole-branch review (Opus): spec coverage, every "disagree" case behind the runtime, test-count ledger (2,703 → 2,749, 171 → 174 files), removed-line accounting across all tasks.
+- [ ] Whole-branch review (Opus): spec coverage, every "disagree" case behind the runtime, test-count ledger (2,703 → 2,756, 171 → 175 files), removed-line accounting across all tasks.
 - [ ] RESUME: Unified UI row → Plan 9 executed; new baseline; Plan 10 next.
 - [ ] Stop for the user: push, PR, issue #4 closure are the user's calls (`superpowers:finishing-a-development-branch`).
