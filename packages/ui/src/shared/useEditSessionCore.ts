@@ -66,7 +66,7 @@ export function useEditSessionCore<State>(base: string, mapName: string | null, 
     const r = await fetch(`${base}/${encodeURIComponent(mapName)}/discard`, { method: "POST" });
     if (!r.ok) throw new Error(`POST ${base}/${mapName}/discard -> ${r.status}`);
     seq.current.applied = seq.current.issued; // in-flight edits cannot resurrect a discarded session
-    setStored(null); // show disk seed, never the server's empty closed-session reply
+    setStored((prev) => (prev?.forMap === mapName ? null : prev)); // a switch during the await keeps the new map's record
   }, [base, mapName]);
 
   const markClean = useCallback(() => {

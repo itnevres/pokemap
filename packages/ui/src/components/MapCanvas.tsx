@@ -6,6 +6,7 @@ import type { EventKind } from "@pokemap/core/src/edit/events.js";
 import type { MapLayoutData } from "../hooks/useMapLayout.js";
 import type { PaintApplyBody, UseEditSessionResult } from "../hooks/useEditSession.js";
 import { useStrokeChain } from "../shared/useStrokeChain.js";
+import type { SettledChain } from "../shared/useStrokeChain.js";
 import { readBlock, type Stamp } from "@pokemap/core/src/edit/paint.js";
 import type { CollisionElevation } from "./CollisionPalette.js";
 import { EncounterBorder, type EncounterBorderEntry } from "./EncounterBorder.js";
@@ -64,7 +65,7 @@ function eventPositionAt(map: MapData, ref: EventRef | null | undefined): { x: n
 }
 
 export interface MapCanvasProps {
-  onStrokeChain?: (chain: { settled(): Promise<void> }, mounted: boolean) => void;
+  onStrokeChain?: (chain: SettledChain, mounted: boolean) => void;
   mapName: string;
   data: MapLayoutData;
   /** Present only when editing is active for THIS map -- see

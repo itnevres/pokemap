@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { MapTree } from "./components/MapTree.js";
 import { WorldCanvas } from "./components/WorldCanvas.js";
 import { DungeonSidebar } from "./components/DungeonSidebar.js";
@@ -13,6 +13,8 @@ import { useDungeons } from "./hooks/useDungeons.js";
 import { useEditSession } from "./hooks/useEditSession.js";
 import { useMapEditing } from "./hooks/useMapEditing.js";
 import { useContextEditing } from "./shared/useContextEditing.js";
+import { useBeforeUnloadGuard } from "./shared/useBeforeUnloadGuard.js";
+import { useStrokeChainRegistry } from "./shared/useStrokeChain.js";
 
 type Mode = "map" | "world" | "dungeon";
 
@@ -67,23 +69,8 @@ export function App({ switcher }: AppProps) {
   // spot the state used to live, so its lifetime is unchanged.
   const editing = useMapEditing({ editSession, layoutData: layout.data, mapName: selected });
 
-  // I6: "no autosave, ever" also means losing a dirty session silently must
-  // never happen -- closing the tab is the browser-level case (this effect),
-  // switching maps is the in-app case (selectMap's own guard just below).
-  // Gated on isDirty, not just "an edit session exists": an OPEN session
-  // that matches disk (nothing painted yet, or already saved) is not lossy
-  // to abandon, and a handler that's always attached would make Step 13's
-  // own teeth-proof test meaningful (attaching unconditionally is exactly
-  // the bug that test exists to catch).
-  useEffect(() => {
-    if (!editSession.isDirty) return;
-    const handler = (e: BeforeUnloadEvent) => {
-      e.preventDefault();
-      e.returnValue = "";
-    };
-    window.addEventListener("beforeunload", handler);
-    return () => window.removeEventListener("beforeunload", handler);
-  }, [editSession.isDirty]);
+  // Shared browser-level half of I6's dirty-session guard; the in-app guard is below.
+  useBeforeUnloadGuard(editSession.isDirty);
 
   // The dirty guard shared by tree, world and context entry.
   const leave = (go: () => void) => {
@@ -92,16 +79,12 @@ export function App({ switcher }: AppProps) {
   };
   const select = (name: string) => {
     setSelected(name);
-    editing.resetForMapChange();
   };
-  const chains = useRef(new Set<{ settled(): Promise<void> }>());
-  const onStrokeChain = useCallback((chain: { settled(): Promise<void> }, mounted: boolean) => {
-    if (mounted) chains.current.add(chain); else chains.current.delete(chain);
-  }, []);
+  const { onStrokeChain, strokeSettled } = useStrokeChainRegistry();
   const ctx = useContextEditing({
     selected, session: editSession, leave, select,
     openSave: () => editing.setSaveDialogOpen(true),
-    strokeSettled: () => Promise.all([...chains.current].map((c) => c.settled())).then(() => {}),
+    strokeSettled,
   });
   const { contextMap, tileVersions } = ctx;
   const changeSelection = (name: string): boolean => {

@@ -7,6 +7,7 @@ import type { GbcStamp } from "@pokemap/core/src/gbc/edit/paint.js";
 import type { GbcEventKind } from "@pokemap/core/src/gbc/edit/events.js";
 import type { GbcPaintBody, UseGbcEditSessionResult } from "./hooks/useGbcEditSession.js";
 import { useStrokeChain } from "../shared/useStrokeChain.js";
+import type { SettledChain } from "../shared/useStrokeChain.js";
 import type { GbcTimeOfDay } from "./time.js";
 import { EncounterBorder, type EncounterBorderEntry } from "../components/EncounterBorder.js";
 import { BORDER_BAND, borderSideFromConnections } from "../encounters/borderSide.js";
@@ -131,7 +132,7 @@ function eventPosition(events: GbcMapEvents, ref: GbcEventRef | null | undefined
 }
 
 export interface GbcMapCanvasProps {
-  onStrokeChain?: (chain: { settled(): Promise<void> }, mounted: boolean) => void;
+  onStrokeChain?: (chain: SettledChain, mounted: boolean) => void;
   mapName: string;
   data: GbcMapPayload;
   time: GbcTimeOfDay;

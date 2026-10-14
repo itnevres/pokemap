@@ -225,7 +225,7 @@ export function useMapEditing({ editSession, layoutData, mapName }: UseMapEditin
   // below it a stamp for.
   //
   // Deliberately SHARED across all three tools, and NOT cleared on a tool
-  // switch (only on a map switch -- see resetForMapChange below): this is intended
+  // switch (only on a map switch -- see the visit reset below): this is intended
   // Porymap-parity behaviour, not an oversight. Pick a metatile once, then
   // pencil/rect/bucket-fill with it freely -- e.g. pencil in a small detail,
   // then bucket-fill the surrounding area with that SAME tile, with no
@@ -234,7 +234,18 @@ export function useMapEditing({ editSession, layoutData, mapName }: UseMapEditin
   const [currentStamp, setCurrentStamp] = useState<Stamp | null>(null);
   // Render-phase reset means no child ever sees a previous visit's pick, selection, or error.
   if (visit.changed) {
+    // Task 14: a selected event belongs to the map it was selected on --
+    // without this, switching from map A (something selected) to map B
+    // would carry A's {kind,index} ref into EventInspector, which would
+    // either show map B's UNRELATED event at that same index, or (once B's
+    // own events run out at that index) crash resolveEventRef's own array
+    // lookup path into rendering `null` silently at best.
     setSelectedEvent(null);
+    // Plan 2 follow-up 1: a stamp chosen against one layout's tileset (a
+    // specific metatile id) is meaningless -- and potentially out-of-range
+    // -- against a DIFFERENT layout's own tileset. A stale stamp must never
+    // survive a map switch; pencil/rect/bucket go back to inert until the
+    // player picks a fresh one from the newly mounted MetatilePalette.
     setCurrentStamp(null);
     setEventOpError(null);
   }
@@ -299,25 +310,6 @@ export function useMapEditing({ editSession, layoutData, mapName }: UseMapEditin
       .catch((e: unknown) => { if (visit.isCurrent()) setEventOpError(eventOpErrorMessage(e)); });
   };
 
-  // The per-map resets `App.changeSelection` runs on a map switch. Deliberately
-  // does NOT touch `activeToolKind`/`collisionValue`: the chosen tool persists
-  // across map switches.
-  const resetForMapChange = () => {
-    // Task 14: a selected event belongs to the map it was selected on --
-    // without this, switching from map A (something selected) to map B
-    // would carry A's {kind,index} ref into EventInspector, which would
-    // either show map B's UNRELATED event at that same index, or (once B's
-    // own events run out at that index) crash resolveEventRef's own array
-    // lookup path into rendering `null` silently at best.
-    setSelectedEvent(null);
-    // Plan 2 follow-up 1: a stamp chosen against one layout's tileset (a
-    // specific metatile id) is meaningless -- and potentially out-of-range
-    // -- against a DIFFERENT layout's own tileset. A stale stamp must never
-    // survive a map switch; pencil/rect/bucket go back to inert until the
-    // player picks a fresh one from the newly mounted MetatilePalette.
-    setCurrentStamp(null);
-  };
-
   return {
     selectedEvent,
     eventOpError,
@@ -342,6 +334,5 @@ export function useMapEditing({ editSession, layoutData, mapName }: UseMapEditin
     setSignAddedMessage,
     activeTool,
     handleDiscard,
-    resetForMapChange,
   };
 }

@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef } from "react";
 
 export interface StrokeSession<Body> {
   beginStroke(): Promise<void>;
@@ -16,6 +16,17 @@ export interface StrokeChain<Body> {
   isOpen(): boolean;
   /** Resolves when every link issued so far has settled. */
   settled(): Promise<void>;
+}
+
+export type SettledChain = Pick<StrokeChain<unknown>, "settled">;
+
+export function useStrokeChainRegistry(): { onStrokeChain(chain: SettledChain, mounted: boolean): void; strokeSettled(): Promise<void> } {
+  const chains = useRef(new Set<SettledChain>());
+  const onStrokeChain = useCallback((chain: SettledChain, mounted: boolean) => {
+    if (mounted) chains.current.add(chain); else chains.current.delete(chain);
+  }, []);
+  const strokeSettled = useCallback(() => Promise.all([...chains.current].map((chain) => chain.settled())).then(() => {}), []);
+  return { onStrokeChain, strokeSettled };
 }
 
 interface Stroke<Body> {

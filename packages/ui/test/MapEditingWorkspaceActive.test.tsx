@@ -26,7 +26,6 @@ const editing = {
   activeToolKind: "pencil", setActiveToolKind: vi.fn(), collisionValue: { collision: 0, elevation: 0 }, setCollisionValue: vi.fn(),
   currentStamp: null, setCurrentStamp: vi.fn(), saveDialogOpen: false, setSaveDialogOpen: vi.fn(), signComposerOpen: false,
   setSignComposerOpen: vi.fn(), signAddedMessage: "Added", setSignAddedMessage: vi.fn(), activeTool: null, handleDiscard: vi.fn(),
-  resetForMapChange: vi.fn(),
 } as unknown as ReturnType<typeof useMapEditing>;
 
 const CHROME = [".toolbar", ".app__metatile-strip", ".app__event-op-error", ".app__sign-added", ".event-inspector"];

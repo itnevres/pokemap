@@ -1,5 +1,5 @@
 // Plan 8 Task 6 (spec Tests 3 item 4): GBA mirror of GbcAppContext "different-map tree visits retire a context stamp".
-// A regression pin, not a red witness: GBA's resetForMapChange already cleared the stamp before Task 6. Harness copied
+// A regression pin, not a red witness: GBA's visit reset already cleared the stamp before Task 6. Harness copied
 // from AppContextEdit.test.tsx (each App test file keeps its own).
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";

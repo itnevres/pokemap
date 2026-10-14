@@ -55,6 +55,19 @@ describe("useEditSessionCore", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/edit/A/discard", { method: "POST" });
   });
 
+  it("a discard that settles after a map switch keeps the new map's record", async () => {
+    const pending = deferred();
+    vi.stubGlobal("fetch", vi.fn(() => pending.promise));
+    const { result, rerender } = mount();
+    const discard = result.current.discard();
+    rerender({ map: "B", seed });
+    act(() => { result.current.apply({ state: () => ({ n: 9 }), ...flags }); });
+    pending.resolve(response());
+    await act(async () => { await discard; });
+    expect(result.current.state).toEqual({ n: 9 });
+    expect(result.current.isDirty).toBe(true);
+  });
+
   it("discard throws on failure and keeps the applied state", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({}, 500)));
     const { result } = mount();

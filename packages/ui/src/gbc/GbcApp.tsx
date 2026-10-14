@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { MapTree } from "../components/MapTree.js";
 import { useGbcGroups } from "./hooks/useGbcGroups.js";
 import { useGbcMap } from "./hooks/useGbcMap.js";
@@ -13,6 +13,8 @@ import { DungeonSidebar } from "../components/DungeonSidebar.js";
 import { useGbcDungeons } from "./hooks/useGbcDungeons.js";
 import type { GbcTimeOfDay } from "./time.js";
 import { useContextEditing } from "../shared/useContextEditing.js";
+import { useBeforeUnloadGuard } from "../shared/useBeforeUnloadGuard.js";
+import { useStrokeChainRegistry } from "../shared/useStrokeChain.js";
 
 type Mode = "map" | "world" | "dungeon";
 /** Fix round (quality review finding 3): re-exported from the shared
@@ -105,17 +107,8 @@ export function GbcApp({ root, switcher }: GbcAppProps) {
   // A failed discard-before-switch: the switch is abandoned and this says why.
   const [switchError, setSwitchError] = useState<string | null>(null);
 
-  // I6: no silent loss of a dirty session -- closing the tab (this effect) and switching maps (`leave`).
-  // Registered only while dirty: an always-attached handler would prompt on a clean tab.
-  useEffect(() => {
-    if (!session.isDirty) return;
-    const handler = (e: BeforeUnloadEvent) => {
-      e.preventDefault();
-      e.returnValue = "";
-    };
-    window.addEventListener("beforeunload", handler);
-    return () => window.removeEventListener("beforeunload", handler);
-  }, [session.isDirty]);
+  // Shared browser-level half of I6's dirty-session guard; `leave` handles switching below.
+  useBeforeUnloadGuard(session.isDirty);
 
   // Every change of `selected` goes through this: tree click, world click, world double-click, jump. A clean
   // session just proceeds. A dirty one needs GBA's exact confirm, then the server session is discarded BEFORE the
@@ -128,15 +121,12 @@ export function GbcApp({ root, switcher }: GbcAppProps) {
     if (!window.confirm("You have unsaved changes on this map. Discard them and switch maps?")) return;
     session.discard().then(go).catch((e: unknown) => setSwitchError(e instanceof Error ? e.message : "Could not discard the changes."));
   };
-  const chains = useRef(new Set<{ settled(): Promise<void> }>());
-  const onStrokeChain = useCallback((chain: { settled(): Promise<void> }, mounted: boolean) => {
-    if (mounted) chains.current.add(chain); else chains.current.delete(chain);
-  }, []);
+  const { onStrokeChain, strokeSettled } = useStrokeChainRegistry();
   const ctx = useContextEditing({
     selected, session, leave,
     select: (name) => { setSwitchError(null); setSelected(name); setHoveredMetatileId(null); },
     openSave: () => setSaveOpen(true),
-    strokeSettled: () => Promise.all([...chains.current].map((c) => c.settled())).then(() => {}),
+    strokeSettled,
   });
   const { contextMap, tileVersions } = ctx;
   const openDungeon = mode === "dungeon" ? dungeons.data?.find((d) => d.id === openDungeonId) ?? null : null;
