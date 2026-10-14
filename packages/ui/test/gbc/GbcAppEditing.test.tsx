@@ -87,6 +87,7 @@ describe("GbcApp editing (Plan 7 Task 5)", () => {
     confirm.mockReturnValue(true);
     fireEvent.click(screen.getByText("OlivinePort"));
     await waitFor(() => expect(document.querySelector(".app__status")!.textContent).toBe("OlivinePort"));
+    await waitFor(() => expect(calls).toContain("GET /api/map/OlivinePort"));
     const discardAt = calls.indexOf("POST /api/edit/OlivineCity/discard");
     expect(discardAt).toBeGreaterThan(-1);
     expect(discardAt).toBeLessThan(calls.indexOf("GET /api/map/OlivinePort"));

@@ -25,6 +25,9 @@ export function useEditSessionCore<State>(base: string, mapName: string | null, 
   latest.current = { mapName, seed };
   const seq = useRef({ issued: 0, applied: 0 });
   const readServerError = opts?.readServerError ?? false;
+  // A seed change resets the view. GBA's useMapLayout keeps the previous map data until B's fetch lands, so a
+  // paint in that window is shown then wiped when B's seed arrives while the server session stays dirty: a
+  // pre-existing gap, kept as before Plan 8.
   const live = stored !== null && stored.forMap === mapName && stored.seed === seed ? stored : null;
 
   const post = useCallback(async <R,>(path: string, body?: unknown): Promise<{ data: R; ticket: EditTicket } | null> => {

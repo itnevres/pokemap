@@ -24,3 +24,7 @@ Gate results:
 - Oracle (`git diff HEAD -- ':(glob)packages/*/test/**' | Select-String '^-[^-]'`): the five removals in `task-7-oracle.log` are exactly the R3-authorised AppContextVisit comment, two `resetForMapChange` mock fields, and the old reset test title/call. No other existing-test removal appears. `git diff --check` reported no whitespace errors (only line-ending/config-ignore warnings).
 
 No implementation-ruling deviations. The Plan Step 3 live smoke and coordinator mutations remain coordinator-owned. The sole concern is that the configured full suite could not start in the sandbox; focused fallback coverage, typecheck, and UI build are green.
+
+## Final-review fix
+
+The required root CLI command (`npx.cmd vitest run packages/ui/test/gbc/GbcAppWorldGuard.test.tsx packages/ui/test/gbc/GbcAppEditing.test.tsx packages/ui/test/shared/useEditSessionCore.test.tsx`) was attempted first but could not load `vitest.config.ts` because the sandbox denies ancestor-directory access. The permitted Node API fallback over the same three files passed 3 files / 28 tests / 0 failures. `npm.cmd run typecheck` exited 0. The three ordering witnesses now wait for `GET /api/map/OlivinePort` before comparing indexes, and the core's seed-window limitation is documented without behaviour change.

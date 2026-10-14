@@ -95,6 +95,7 @@ describe("GbcApp World-path dirty guards (spec review F1, F3, F7)", () => {
     fireEvent.click(screen.getByText("world-select-port"));
     fireEvent.click(screen.getByRole("button", { name: "Map" }));
     await waitFor(() => expect(status()).toBe("OlivinePort"));
+    await waitFor(() => expect(calls).toContain("GET /api/map/OlivinePort"));
     const d = calls.indexOf("POST /api/edit/OlivineCity/discard");
     expect(d).toBeGreaterThan(-1);
     expect(d).toBeLessThan(calls.indexOf("GET /api/map/OlivinePort"));
@@ -113,6 +114,7 @@ describe("GbcApp World-path dirty guards (spec review F1, F3, F7)", () => {
     confirm.mockReturnValue(true);
     fireEvent.click(screen.getByText("world-open-port"));
     await waitFor(() => expect(status()).toBe("OlivinePort"));
+    await waitFor(() => expect(calls).toContain("GET /api/map/OlivinePort"));
     expect(calls.indexOf("POST /api/edit/OlivineCity/discard")).toBeLessThan(calls.indexOf("GET /api/map/OlivinePort"));
   });
 
