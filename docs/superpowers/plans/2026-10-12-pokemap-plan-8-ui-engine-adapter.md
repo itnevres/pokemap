@@ -1,5 +1,7 @@
 # PokeMap Plan 8: unify the GBA and GBC UI over an engine adapter
 
+> **STATUS (2026-10-13): DONE on branch `plan-8-ui-engine-adapter` (unpushed; push/PR awaits the user).** Tasks 0-8 are done and reviewed. The shared modules are mapped in `packages/ui/DESIGN.md` ("Shared modules (Plan 8)"). **Task 7 was reduced by a user decision:** the stop rule fired (App and GbcApp differ for real), so only the identical sections were lifted (`shared/useBeforeUnloadGuard.ts`, `useStrokeChainRegistry`); `family/*.ts` and the EngineAdapter were skipped (no consumer while the shells stay separate). **Task 8:** numbers in `task-reports/pokemap-plan-8-ui-engine-adapter/task-8-measurement.md`; canvas-core unification is a separate plan, written only if the user asks. Rulings, deferred minors and evidence: the ledger and `_archive/` in that folder.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task by task. Steps use checkbox (`- [ ]`) syntax for tracking.
 >
 > This plan follows the repo's convention (Plans 6-7): it is written to **task** level. Before dispatching each task, the coordinator re-reads the real code and writes the executed spec `task-reports/pokemap-plan-8-ui-engine-adapter/task-N-spec.md`, with exact anchors, test code and teeth-proof. Interfaces below are binding. File line numbers are as of `580c710` and will drift.
