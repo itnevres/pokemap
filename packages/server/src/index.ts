@@ -535,7 +535,11 @@ export function createProjectHandler(root: string): ProjectHandler {
         const dungeons = url.searchParams.get("dungeons") !== "0";
         const world = getWorld();
         const sidecar = readSidecar(project.paths.root);
-        const merged = resolveWorldPlacements(project, world, sidecar, { dungeons });
+        // Curated views need indoor placements without changing the user's world setting.
+        const layoutSidecar = url.searchParams.get("scope") === "dungeon"
+          ? { ...sidecar, dungeonAutoLayout: true }
+          : sidecar;
+        const merged = resolveWorldPlacements(project, world, layoutSidecar, { dungeons });
 
         // Feature A (dungeon-mode-and-warp-tools spec §3.2): the world
         // view's default-population filter needs each placement's own map

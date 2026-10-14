@@ -130,6 +130,8 @@ function eventPosition(events: GbcMapEvents, ref: GbcEventRef | null | undefined
 }
 
 export interface GbcMapCanvasProps {
+  editingDisabled?: boolean;
+  onEditBusyChange?: (busy: boolean) => void;
   mapName: string;
   data: GbcMapPayload;
   time: GbcTimeOfDay;
@@ -281,7 +283,7 @@ export function parseColorToken(value: string): RGBA {
   return FALLBACK_COLOR;
 }
 
-export function GbcMapCanvas({ mapName, data: payload, time, hoveredMetatile, editSession, activeTool, onDropperPick, selectedEvent, onSelectEvent, onMoveEvent, onEditError, view: controlledView, onViewChange, chromeless }: GbcMapCanvasProps) {
+export function GbcMapCanvas({ mapName, data: payload, time, hoveredMetatile, editSession, activeTool, onDropperPick, selectedEvent, onSelectEvent, onMoveEvent, onEditError, view: controlledView, onViewChange, chromeless, editingDisabled, onEditBusyChange }: GbcMapCanvasProps) {
   const { layout } = payload;
   // The session's live blocks/events win once a session exists; every effect below reads `data` by name and
   // never needs to know which source it came from (the trick of `MapCanvas.tsx:215-228`).
@@ -302,6 +304,7 @@ export function GbcMapCanvas({ mapName, data: payload, time, hoveredMetatile, ed
   // True from an edit stroke's mousedown to its end, so onMouseLeave can tell "a stroke is open" from "a session
   // exists" and not fire endStroke on every ordinary mouse-out (MapCanvas.tsx:264-269).
   const strokeOpenRef = useRef(false);
+  const finishingStrokeRef = useRef(false);
   const canvasVisitRef = useRef<object>({});
   const strokeRef = useRef<{ visit: object; begun: boolean; start: { x: number; y: number }; end: () => Promise<void> } | null>(null);
   useLayoutEffect(() => {
@@ -630,6 +633,7 @@ export function GbcMapCanvas({ mapName, data: payload, time, hoveredMetatile, ed
   };
 
   const onMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (editingDisabled) return;
     if (e.button !== 0) return;
     // Ahead of the paint branch, and only with no active tool (MapCanvas.tsx:714-732). Unclamped on purpose:
     // a click just past the edge can still deselect. A miss falls through to the pan drag below.
@@ -650,8 +654,11 @@ export function GbcMapCanvas({ mapName, data: payload, time, hoveredMetatile, ed
       return;
     }
     if (editSession && activeTool) {
+      if (onEditBusyChange && finishingStrokeRef.current) return;
       const cell = blockAt(e);
       if (!cell) return;
+      finishingStrokeRef.current = true;
+      onEditBusyChange?.(true);
       strokeOpenRef.current = true;
       const stroke = { visit: canvasVisitRef.current, begun: false, start: cell, end: editSession.endStroke };
       strokeRef.current = stroke;
@@ -721,7 +728,7 @@ export function GbcMapCanvas({ mapName, data: payload, time, hoveredMetatile, ed
       }
       // A retired visit stops queued paint but still finishes an issued stroke on its captured old session.
       await editSession.endStroke();
-    }).catch((e) => { if (ownsStroke(stroke)) fail(e); });
+    }).catch((e) => { if (ownsStroke(stroke)) fail(e); }).finally(() => { if (ownsStroke(stroke)) { finishingStrokeRef.current = false; onEditBusyChange?.(false); } });
   };
 
   const onMouseUp = (e: React.MouseEvent<HTMLCanvasElement>) => {

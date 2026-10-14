@@ -193,6 +193,27 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("world api", () => {
     }
   }, 300_000);
 
+  it("includes indoor maps in a curated dungeon view without changing the saved layout flag", async () => {
+    const sidecarPath = projectPaths(fixtureRoot).sidecar;
+    const before = readFileSync(sidecarPath);
+    try {
+      const response = await fetch(`http://127.0.0.1:${s.port}/api/world/dungeons`, {
+        method: "POST", body: JSON.stringify({ enabled: false }),
+      });
+      expect(response.status).toBe(200);
+      const savedOff = readFileSync(sidecarPath);
+      const normal = await (await fetch(`http://127.0.0.1:${s.port}/api/world`)).json() as any;
+      const scoped = await (await fetch(`http://127.0.0.1:${s.port}/api/world?scope=dungeon`)).json() as any;
+      expect(scoped.sidecar.dungeonAutoLayout).toBe(false);
+      expect(Object.keys(scoped.placements)).toHaveLength(1209);
+      expect(Object.keys(scoped.placements).length).toBeGreaterThan(Object.keys(normal.placements).length);
+      expect(scoped.placements.NewBarkTown_Lab).toBeDefined();
+      expect(readFileSync(sidecarPath).equals(savedOff)).toBe(true);
+    } finally {
+      writeFileSync(sidecarPath, before);
+    }
+  }, 300_000);
+
   it("400s a malformed dungeon-layout body instead of hanging the request", async () => {
     const r = await fetch(`http://127.0.0.1:${s.port}/api/world/dungeons`, {
       method: "POST",

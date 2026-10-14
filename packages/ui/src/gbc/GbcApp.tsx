@@ -1,3 +1,4 @@
+import { GbcWarpDestinationModal } from "./GbcWarpDestinationModal.js";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { MapTree } from "../components/MapTree.js";
 import { useGbcGroups } from "./hooks/useGbcGroups.js";
@@ -80,6 +81,21 @@ export function GbcApp({ root, switcher }: GbcAppProps) {
   // Plan 7 Task 5b: the map being edited in context on the World view, or null. Always equals `selected` while set.
   const [contextMap, setContextMap] = useState<string | null>(null);
   // Bumped for a map when a save commits while editing it in context; the world re-requests only that tile.
+  const popupOpenerRef = useRef<HTMLElement | null>(null);
+  const [popupRefreshError, setPopupRefreshError] = useState<string | null>(null);
+  const warpOpeningRef = useRef(false);
+  const [warpOpening, setWarpOpening] = useState(false);
+  const [warpPopup, setWarpPopup] = useState<string | null>(null);
+  const [popupBusy, setPopupBusy] = useState(false);
+  const popupBusyRef = useRef(false);
+  const popupPaintBusyRef = useRef(false);
+  const popupOperationsRef = useRef(0);
+  const updatePopupBusy = () => { const busy = popupPaintBusyRef.current || popupOperationsRef.current > 0; popupBusyRef.current = busy; setPopupBusy(busy); };
+  const popupBusyChanged = (busy: boolean) => { popupPaintBusyRef.current = busy; updatePopupBusy(); };
+  const trackPopupOperation = <T,>(operation: () => Promise<T>): Promise<T> => {
+    popupOperationsRef.current++; updatePopupBusy();
+    return operation().finally(() => { popupOperationsRef.current--; updatePopupBusy(); });
+  };
   const [tileVersions, setTileVersions] = useState<Record<string, number>>({});
   const dungeons = useGbcDungeons(mode === "dungeon");
 
@@ -103,6 +119,16 @@ export function GbcApp({ root, switcher }: GbcAppProps) {
   // World/Dungeon round trip cannot lose the client's view of a session the server still holds dirty (the
   // reasoning at App.tsx:50-62). Seeded from the ready payload only: `ready` already ignores the previous map's.
   const session = useGbcEditSession(selected, ready?.blocks, ready?.events);
+  const popupSession = {
+    ...session,
+    moveEvent: (...args: Parameters<typeof session.moveEvent>) => trackPopupOperation(() => session.moveEvent(...args)),
+    addEvent: (...args: Parameters<typeof session.addEvent>) => trackPopupOperation(() => session.addEvent(...args)),
+    deleteEvent: (...args: Parameters<typeof session.deleteEvent>) => trackPopupOperation(() => session.deleteEvent(...args)),
+    undo: (...args: Parameters<typeof session.undo>) => trackPopupOperation(() => session.undo(...args)),
+    redo: (...args: Parameters<typeof session.redo>) => trackPopupOperation(() => session.redo(...args)),
+    discard: (...args: Parameters<typeof session.discard>) => trackPopupOperation(() => session.discard(...args)),
+  };
+
   const [saveOpen, setSaveOpen] = useState(false);
   // A failed discard-before-switch: the switch is abandoned and this says why.
   const [switchError, setSwitchError] = useState<string | null>(null);
@@ -148,7 +174,33 @@ export function GbcApp({ root, switcher }: GbcAppProps) {
     setOpenDungeonId((current) => current === id ? null : current);
   };
 
+  const openWarpDestination = async (name: string) => {
+    if (warpOpeningRef.current || popupBusyRef.current || popupRefreshError) return;
+    popupOpenerRef.current = document.activeElement as HTMLElement | null;
+    if (name !== selected && session.isDirty) {
+      if (!window.confirm("You have unsaved changes on this map. Discard them and switch maps?")) return;
+      warpOpeningRef.current = true; setWarpOpening(true);
+      try { await session.discard(); }
+      catch (error) { setSwitchError(error instanceof Error ? error.message : "Could not discard changes."); popupOpenerRef.current?.focus(); return; }
+      finally { warpOpeningRef.current = false; setWarpOpening(false); }
+    }
+    if (name !== selected) { setSelected(name); setHoveredMetatileId(null); }
+    setContextMap(null); setSwitchError(null); setWarpPopup(name);
+  };
+  useEffect(() => {
+    if (warpPopup && !popupRefreshError && !(saveOpen)) document.querySelector<HTMLElement>(".warp-modal__close")?.focus();
+  }, [warpPopup, saveOpen, popupRefreshError]);
+  const refreshPopupSeed = () => trackPopupOperation(() => map.reload())
+    .then(() => setPopupRefreshError(null))
+    .catch((error: unknown) => setPopupRefreshError(`Saved, but could not reload the map: ${error instanceof Error ? error.message : String(error)}`));
+  useEffect(() => { setPopupRefreshError(null); }, [selected]);
+  const closeWarpDestination = () => {
+    if (popupBusyRef.current || popupRefreshError || saveOpen) return;
+    if (session.isDirty) setSaveOpen(true); else setWarpPopup(null);
+  };
+
   const selectMap = (name: string) => {
+    if (warpOpeningRef.current || (warpPopup && (popupBusyRef.current || popupRefreshError))) return;
     const go = () => {
       setSwitchError(null);
       setContextMap(null); // a tree click leaves in-context editing (a jump would also move the world under the overlay)
@@ -167,6 +219,7 @@ export function GbcApp({ root, switcher }: GbcAppProps) {
   // click is, per the spec's own "tree clicks in World mode jump" rule) and
   // does NOT switch mode.
   const selectMapFromWorld = (name: string) => {
+    if (warpOpeningRef.current || (warpPopup && (popupBusyRef.current || popupRefreshError))) return;
     if (name !== selected) leave(() => { setSwitchError(null); setSelected(name); });
   };
   const markManualPlacement = (name: string) => setManualPlacementMaps((previous) => previous.has(name) ? previous : new Set(previous).add(name));
@@ -174,6 +227,7 @@ export function GbcApp({ root, switcher }: GbcAppProps) {
   // Entering World centres on the selected map, wherever the selection came from (tree, world click,
   // Map view). A world click itself never jumps (F1); this is a mode entry, not a click.
   const enterWorld = () => {
+    if (warpOpeningRef.current || warpPopup) return;
     if (mode === "world") return;
     setJumpTarget(selected);
     setSelectVersion((v) => v + 1);
@@ -182,6 +236,7 @@ export function GbcApp({ root, switcher }: GbcAppProps) {
 
   // GbcWorldCanvas's own double-click (Task 5): opens the map in Map view.
   const openMapFromWorld = (name: string) => {
+    if (warpOpeningRef.current || (warpPopup && (popupBusyRef.current || popupRefreshError))) return;
     const go = () => {
       setSwitchError(null);
       setContextMap(null);
@@ -195,6 +250,7 @@ export function GbcApp({ root, switcher }: GbcAppProps) {
   // GbcWorldCanvas's double-click / "Edit here" (Plan 7 Task 5b): selecting the map goes through the same dirty guard as a
   // tree click, and a cancelled confirm means no context. No jump: the world snaps itself to the map.
   const enterContext = (name: string) => {
+    if (warpOpeningRef.current || (warpPopup && (popupBusyRef.current || popupRefreshError))) return;
     const go = () => {
       setSwitchError(null);
       setSelected(name);
@@ -213,6 +269,7 @@ export function GbcApp({ root, switcher }: GbcAppProps) {
 
   // A mode switch leaves context without a prompt: the session persists exactly as it does today.
   const switchMode = (next: Mode) => {
+    if (warpOpeningRef.current || warpPopup) return;
     setContextMap(null);
     setMode(next);
   };
@@ -249,6 +306,7 @@ export function GbcApp({ root, switcher }: GbcAppProps) {
       onEditHere={enterContext}
       onJumpToMap={selectMap}
       onPlacementSaved={markManualPlacement}
+      onOpenWarpDestination={(name) => void openWarpDestination(name)}
       tileVersions={tileVersions}
       context={
         contextMap === null
@@ -334,7 +392,7 @@ export function GbcApp({ root, switcher }: GbcAppProps) {
               />
             </div>
           ) : mode === "dungeon" ? (
-            openDungeon ? <GbcWorldCanvas key="dungeon" time={time} mapFilter={mapFilter} onOpenMap={openMapFromWorld} onPlacementSaved={markManualPlacement} />
+            openDungeon ? <GbcWorldCanvas key="dungeon" onOpenWarpDestination={openWarpDestination} tileVersions={tileVersions} time={time} mapFilter={mapFilter} onOpenMap={openMapFromWorld} onPlacementSaved={markManualPlacement} />
               : <p className="app__canvas-placeholder">Select or create a dungeon</p>
           ) : !selected ? (
             <p className="app__canvas-placeholder">Select a map</p>
@@ -356,6 +414,21 @@ export function GbcApp({ root, switcher }: GbcAppProps) {
           ) : (
             <p className="app__canvas-placeholder">Loading {selected}…</p>
           )}
+          {warpOpening && <div className="warp-modal__backdrop" role="dialog" aria-modal="true" aria-label="Switching maps" tabIndex={-1} ref={(element) => element?.focus()} onKeyDown={(event) => { event.preventDefault(); event.stopPropagation(); }}><p role="status">Waiting for changes to be discarded…</p></div>}
+          {warpPopup && <GbcWarpDestinationModal opener={popupOpenerRef.current} mapName={warpPopup} time={time} onClose={closeWarpDestination}>
+            {popupRefreshError && <div role="alert"><p>{popupRefreshError}</p><button type="button" className="map-canvas__btn" disabled={popupBusy} onClick={() => void refreshPopupSeed()}>Retry reload</button></div>}
+            {map.error ? <p role="alert">Could not load {warpPopup}: {map.error}</p> : ready?.map.name === warpPopup ?
+              <fieldset disabled={popupBusy || popupRefreshError !== null} style={{ border: 0, margin: 0, padding: 0, minWidth: 0, flex: 1, display: "flex", flexDirection: "column", overflow: "auto" }}>
+                {popupBusy && <p role="status">Finishing edit…</p>}
+                <div className="app__mode" role="group" aria-label="Popup time of day">
+                  {TIME_ORDER.map((t) => <button key={t} type="button" className="map-canvas__btn" aria-pressed={time === t} onClick={() => setTime(t)}>{TIME_LABEL[t]}</button>)}
+                </div>
+                {defectsBanner}
+                <GbcMapEditing mapName={warpPopup} data={ready} time={time} session={popupSession}
+                  hoveredMetatileId={hoveredMetatileId} onHoverMetatile={setHoveredMetatileId} onOpenSave={() => setSaveOpen(true)}
+                  renderCanvas={(props) => props && <GbcMapCanvas {...props} editingDisabled={popupBusy || popupRefreshError !== null} onEditBusyChange={popupBusyChanged} />} />
+              </fieldset> : <p role="status">Loading {warpPopup}…</p>}
+          </GbcWarpDestinationModal>}
           {/* At <main> level, not inside the map branch, for the stacking reason App.tsx documents on its own
               SaveDialog. markClean first: the dialog's commit is a plain fetch that closes the server session
               behind the hook's back. Then the payload is re-read so the canvas and palette show what is on disk. */}
@@ -366,10 +439,11 @@ export function GbcApp({ root, switcher }: GbcAppProps) {
                 session.markClean();
                 setSaveOpen(false);
                 // Editing in context: the world still shows this map's pre-save tile; refresh just that one.
-                if (contextMap !== null && contextMap === selected) {
-                  setTileVersions((t) => ({ ...t, [contextMap]: (t[contextMap] ?? 0) + 1 }));
+                if ((contextMap !== null || warpPopup !== null) && selected) {
+                  setTileVersions((t) => ({ ...t, [selected]: (t[selected] ?? 0) + 1 }));
                 }
-                map.reload().catch((e: unknown) => setSwitchError(`Saved, but could not reload the map: ${e instanceof Error ? e.message : String(e)}`));
+                if (warpPopup !== null) void refreshPopupSeed();
+                else map.reload().catch((e: unknown) => setSwitchError(`Saved, but could not reload the map: ${e instanceof Error ? e.message : String(e)}`));
               }}
               onCancel={() => setSaveOpen(false)}
             />

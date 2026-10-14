@@ -61,3 +61,11 @@ describe("WarpDestinationModal", () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 });
+
+it("hosts the shared editing workspace instead of fetching another preview", () => {
+  const fetchMock = vi.fn(() => Promise.reject(new Error("unexpected fetch")));
+  vi.stubGlobal("fetch", fetchMock);
+  render(<WarpDestinationModal mapName="B" onClose={() => {}}><button>Save shared session</button></WarpDestinationModal>);
+  expect(screen.getByRole("button", { name: "Save shared session" })).toBeTruthy();
+  expect(fetchMock).not.toHaveBeenCalled();
+});

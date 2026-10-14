@@ -1,0 +1,24 @@
+{
+  "scratchRoot": "C:\\Users\\Serve\\AppData\\Local\\Packages\\sandbox.{3c4fdf91-968a-4660-a362-5f61242c358b}\\AC\\Temp\\pokemap-issues-gate-Rkmh1V",
+  "configRestoredByteIdentically": true,
+  "results": [
+    {
+      "name": "full-suite",
+      "command": "npm test",
+      "status": 1,
+      "nonempty": true
+    },
+    {
+      "name": "typecheck",
+      "command": "npm run typecheck",
+      "status": 0,
+      "nonempty": true
+    },
+    {
+      "name": "build",
+      "command": "npm run build --workspace @pokemap/ui",
+      "status": 0,
+      "nonempty": true
+    }
+  ]
+}

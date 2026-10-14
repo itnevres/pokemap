@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { WarpDestinationModal } from "./components/WarpDestinationModal.js";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { MapTree } from "./components/MapTree.js";
 import { WorldCanvas } from "./components/WorldCanvas.js";
 import { DungeonSidebar } from "./components/DungeonSidebar.js";
@@ -39,6 +40,21 @@ export function App({ switcher }: AppProps) {
   // Plan 6c E4: the map being edited in context on the World view (GBA), or null. Always equals `selected` while set.
   const [contextMap, setContextMap] = useState<string | null>(null);
   // Bumped for a map when a save commits while editing it in context; the world re-requests only that tile.
+  const popupOpenerRef = useRef<HTMLElement | null>(null);
+  const [popupRefreshError, setPopupRefreshError] = useState<string | null>(null);
+  const warpOpeningRef = useRef(false);
+  const [warpOpening, setWarpOpening] = useState(false);
+  const [warpPopup, setWarpPopup] = useState<string | null>(null);
+  const [popupBusy, setPopupBusy] = useState(false);
+  const popupBusyRef = useRef(false);
+  const popupPaintBusyRef = useRef(false);
+  const popupOperationsRef = useRef(0);
+  const updatePopupBusy = () => { const busy = popupPaintBusyRef.current || popupOperationsRef.current > 0; popupBusyRef.current = busy; setPopupBusy(busy); };
+  const popupBusyChanged = (busy: boolean) => { popupPaintBusyRef.current = busy; updatePopupBusy(); };
+  const trackPopupOperation = <T,>(operation: () => Promise<T>): Promise<T> => {
+    popupOperationsRef.current++; updatePopupBusy();
+    return operation().finally(() => { popupOperationsRef.current--; updatePopupBusy(); });
+  };
   const [tileVersions, setTileVersions] = useState<Record<string, number>>({});
 
   const { data, error } = useMapGroups();
@@ -69,7 +85,18 @@ export function App({ switcher }: AppProps) {
   // Plan 6c E2: map-editing state and handlers (selected event, tool/dialog
   // state, event ops, discard) -- see useMapEditing.ts. Called here, at the same
   // spot the state used to live, so its lifetime is unchanged.
-  const editing = useMapEditing({ editSession, layoutData: layout.data });
+  const editing = useMapEditing({ editSession: { ...editSession,
+    moveEvent: (...args) => trackPopupOperation(() => editSession.moveEvent(...args)),
+    addEvent: (...args) => trackPopupOperation(() => editSession.addEvent(...args)),
+    deleteEvent: (...args) => trackPopupOperation(() => editSession.deleteEvent(...args)),
+    discard: () => trackPopupOperation(() => editSession.discard()),
+  }, layoutData: layout.data });
+
+  const popupSession = {
+    ...editSession,
+    undo: (...args: Parameters<typeof editSession.undo>) => trackPopupOperation(() => editSession.undo(...args)).catch((error) => editing.setEventOpError(error instanceof Error ? error.message : "Undo failed.")),
+    redo: (...args: Parameters<typeof editSession.redo>) => trackPopupOperation(() => editSession.redo(...args)).catch((error) => editing.setEventOpError(error instanceof Error ? error.message : "Redo failed.")),
+  };
 
   // I6: "no autosave, ever" also means losing a dirty session silently must
   // never happen -- closing the tab is the browser-level case (this effect),
@@ -102,7 +129,34 @@ export function App({ switcher }: AppProps) {
     return true;
   };
 
+  const [popupError, setPopupError] = useState<string | null>(null);
+  const openWarpDestination = async (name: string) => {
+    if (warpOpeningRef.current || popupBusyRef.current || popupRefreshError) return;
+    popupOpenerRef.current = document.activeElement as HTMLElement | null;
+    if (name !== selected && editSession.isDirty) {
+      if (!window.confirm("You have unsaved changes on this map. Discard them and switch maps?")) return;
+      warpOpeningRef.current = true; setWarpOpening(true);
+      try { await editSession.discard(); }
+      catch (error) { setPopupError(error instanceof Error ? error.message : "Could not discard changes."); popupOpenerRef.current?.focus(); return; }
+      finally { warpOpeningRef.current = false; setWarpOpening(false); }
+    }
+    if (name !== selected) { setSelected(name); editing.resetForMapChange(); }
+    setContextMap(null); setPopupError(null); setWarpPopup(name);
+  };
+  useEffect(() => {
+    if (warpPopup && !popupRefreshError && !(editing.saveDialogOpen || editing.signComposerOpen)) document.querySelector<HTMLElement>(".warp-modal__close")?.focus();
+  }, [warpPopup, editing.saveDialogOpen, editing.signComposerOpen, popupRefreshError]);
+  const refreshPopupSeed = () => trackPopupOperation(() => layout.reload())
+    .then(() => setPopupRefreshError(null))
+    .catch((error: unknown) => setPopupRefreshError(`Saved, but could not reload the map: ${error instanceof Error ? error.message : String(error)}`));
+  useEffect(() => { setPopupRefreshError(null); }, [selected]);
+  const closeWarpDestination = () => {
+    if (popupBusyRef.current || popupRefreshError || editing.saveDialogOpen || editing.signComposerOpen) return;
+    if (editSession.isDirty) editing.setSaveDialogOpen(true); else setWarpPopup(null);
+  };
+
   const selectMap = (name: string) => {
+    if (warpOpeningRef.current || (warpPopup && (popupBusyRef.current || popupRefreshError))) return;
     if (!changeSelection(name)) return;
     // A tree click leaves in-context editing (a jump would also move the world under the overlay).
     setContextMap(null);
@@ -114,12 +168,14 @@ export function App({ switcher }: AppProps) {
   // request. Re-clicking the already-selected map must not raise the
   // "discard and switch" confirm.
   const selectMapFromWorld = (name: string) => {
+    if (warpOpeningRef.current || (warpPopup && (popupBusyRef.current || popupRefreshError))) return;
     if (name !== selected) changeSelection(name);
   };
 
   // The world context menu's "Open in Map view" (and Shift+double-click): select the map through the same
   // dirty guard as a tree click, and switch to Map view only if the user did not cancel it.
   const openMapFromWorld = (name: string) => {
+    if (warpOpeningRef.current || (warpPopup && (popupBusyRef.current || popupRefreshError))) return;
     if (name === selected || changeSelection(name)) {
       setContextMap(null);
       setMode("map");
@@ -129,6 +185,7 @@ export function App({ switcher }: AppProps) {
   // Plan 6c E4: double-click / "Edit here" on a world map. Selecting it goes through the same dirty guard as a tree
   // click; a cancelled confirm means no context.
   const enterContext = (name: string) => {
+    if (warpOpeningRef.current || (warpPopup && (popupBusyRef.current || popupRefreshError))) return;
     if (name !== selected && !changeSelection(name)) return;
     setContextMap(name);
   };
@@ -142,6 +199,7 @@ export function App({ switcher }: AppProps) {
 
   // A mode switch leaves context without a prompt: the session persists exactly as it does today.
   const switchMode = (next: Mode) => {
+    if (warpOpeningRef.current || warpPopup) return;
     setContextMap(null);
     setMode(next);
   };
@@ -153,6 +211,7 @@ export function App({ switcher }: AppProps) {
   // Entering World centres on the selected map, wherever the selection came from (tree, world click,
   // Map view). A world click itself never jumps (F1); this is a mode entry, not a click.
   const enterWorld = () => {
+    if (warpOpeningRef.current || warpPopup) return;
     if (mode === "world") return;
     setJumpTarget(selected);
     setSelectVersion((v) => v + 1);
@@ -225,6 +284,7 @@ export function App({ switcher }: AppProps) {
       onSelectMap={selectMapFromWorld}
       onOpenMap={openMapFromWorld}
       onEditHere={enterContext}
+      onOpenWarpDestination={(name) => void openWarpDestination(name)}
       tileVersions={tileVersions}
       context={
         contextMap === null
@@ -333,7 +393,7 @@ export function App({ switcher }: AppProps) {
             )
           ) : mode === "dungeon" ? (
             openDungeon ? (
-              <WorldCanvas key="dungeon" mapFilter={mapFilter} onOpenMap={openMapFromWorld} />
+              <WorldCanvas key="dungeon" onOpenWarpDestination={(name) => void openWarpDestination(name)} tileVersions={tileVersions} mapFilter={mapFilter} onOpenMap={openMapFromWorld} />
             ) : (
               <p className="app__canvas-placeholder">Select or create a dungeon</p>
             )
@@ -346,6 +406,18 @@ export function App({ switcher }: AppProps) {
           ) : (
             <p className="app__canvas-placeholder">Loading {selected}…</p>
           )}
+          {popupError && !warpPopup && <p role="alert">{popupError}</p>}
+          {warpOpening && <div className="warp-modal__backdrop" role="dialog" aria-modal="true" aria-label="Switching maps" tabIndex={-1} ref={(element) => element?.focus()} onKeyDown={(event) => { event.preventDefault(); event.stopPropagation(); }}><p role="status">Waiting for changes to be discarded…</p></div>}
+          {warpPopup && <WarpDestinationModal opener={popupOpenerRef.current} mapName={warpPopup} onClose={closeWarpDestination}>
+            {popupRefreshError && <div role="alert"><p>{popupRefreshError}</p><button type="button" className="map-canvas__btn" disabled={popupBusy} onClick={() => void refreshPopupSeed()}>Retry reload</button></div>}
+            {layout.error ? <p role="alert">Could not load {warpPopup}: {layout.error}</p> : layout.data?.map.name === warpPopup ?
+              <fieldset disabled={popupBusy || popupRefreshError !== null} style={{ border: 0, margin: 0, padding: 0, minWidth: 0, flex: 1, display: "flex", flexDirection: "column", overflow: "auto" }}>
+                {popupError && <p role="alert">{popupError}</p>}
+                {popupBusy && <p role="status">Finishing edit…</p>}
+                <MapEditingWorkspace mapName={warpPopup} data={layout.data} editSession={popupSession} editing={editing}
+                  renderCanvas={(props) => <MapCanvas {...props} editingDisabled={popupBusy || popupRefreshError !== null} onEditBusyChange={popupBusyChanged} onEditError={(error) => editing.setEventOpError(error instanceof Error ? error.message : "Paint failed.")} />} />
+              </fieldset> : <p role="status">Loading {warpPopup}…</p>}
+          </WarpDestinationModal>}
           {/* Task 13: SaveDialog owns its own modal shell (backdrop, Escape-
               to-cancel, autofocus -- mirrors WarpDestinationModal's own
               established pattern exactly, see that component's own "Review
@@ -363,10 +435,11 @@ export function App({ switcher }: AppProps) {
               // dirty dot would stay on after a real, successful save.
               onCommitted={() => {
                 editSession.markClean();
+                if (warpPopup !== null) void refreshPopupSeed();
                 editing.setSaveDialogOpen(false);
                 // Editing in context: the world still shows this map's pre-save tile; refresh just that one.
-                if (contextMap !== null && contextMap === selected) {
-                  setTileVersions((t) => ({ ...t, [contextMap]: (t[contextMap] ?? 0) + 1 }));
+                if ((contextMap !== null || warpPopup !== null) && selected) {
+                  setTileVersions((t) => ({ ...t, [selected]: (t[selected] ?? 0) + 1 }));
                 }
               }}
               onCancel={() => editing.setSaveDialogOpen(false)}

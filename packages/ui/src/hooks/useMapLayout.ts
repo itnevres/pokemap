@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { MapData } from "@pokemap/core/src/load/maps.js";
 import type { Layout, Split } from "@pokemap/core/src/model/types.js";
 
@@ -24,6 +24,7 @@ export interface UseMapLayoutResult {
   data: MapLayoutData | null;
   error: string | null;
   loading: boolean;
+  reload: () => Promise<void>;
 }
 
 /**
@@ -35,6 +36,8 @@ export interface UseMapLayoutResult {
  * rather than the component having to guard every render on `selected`.
  */
 export function useMapLayout(name: string | null): UseMapLayoutResult {
+  const visit = useRef({ name });
+  if (visit.current.name !== name) visit.current = { name };
   const [data, setData] = useState<MapLayoutData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -74,5 +77,13 @@ export function useMapLayout(name: string | null): UseMapLayoutResult {
     };
   }, [name]);
 
-  return { data, error, loading };
+  const reload = async () => {
+    if (!name) return;
+    const issued = visit.current;
+    const r = await fetch(`/api/map/${encodeURIComponent(name)}`);
+    if (!r.ok) throw new Error(`GET /api/map/${name} -> ${r.status}`);
+    const next = await r.json() as MapLayoutData;
+    if (visit.current === issued) setData(next);
+  };
+  return { data, error, loading, reload };
 }

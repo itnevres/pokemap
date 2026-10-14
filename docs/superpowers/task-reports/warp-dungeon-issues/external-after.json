@@ -1,0 +1,57 @@
+{
+  "files": [
+    {
+      "path": "C:/Programming Projects/Pokemon Game/game/.pokemap/world.json",
+      "hash": "9C8AB2A86D8FAD7AC534629A138BE0A87DF30CEA"
+    },
+    {
+      "path": "C:/Programming Projects/Pokemon Game/game/.pokemap/dungeons.json",
+      "hash": "F73F9B76922330A60DA53D4913790DF956A86846"
+    },
+    {
+      "path": "C:/Programming Projects/pokecrystal-PerfPlus/maps/NewBarkTown.blk",
+      "hash": "0B7D45D83179CF3C5A2D96A0DF3CC48C06118889"
+    },
+    {
+      "path": "C:/Programming Projects/pokecrystal-PerfPlus/maps/NewBarkTown.asm",
+      "hash": "56F87EF714147AB404442ADA7378C5ED4EF1D080"
+    }
+  ],
+  "perfPlusSidecarPresent": false,
+  "repos": [
+    {
+      "statusOutput": [
+        "fatal: cannot change to 'C:/Programming Projects/Pokemon Game/game': Permission denied"
+      ],
+      "statusReadExit": 128,
+      "path": "C:/Programming Projects/Pokemon Game/game",
+      "headOutput": [
+        "fatal: cannot change to 'C:/Programming Projects/Pokemon Game/game': Permission denied"
+      ],
+      "headReadExit": 128
+    },
+    {
+      "statusOutput": [
+        "fatal: cannot change to 'C:/Programming Projects/pokecrystal-PerfPlus': Permission denied"
+      ],
+      "statusReadExit": 128,
+      "path": "C:/Programming Projects/pokecrystal-PerfPlus",
+      "headOutput": [
+        "fatal: cannot change to 'C:/Programming Projects/pokecrystal-PerfPlus': Permission denied"
+      ],
+      "headReadExit": 128
+    },
+    {
+      "statusOutput": [
+        "fatal: cannot change to 'C:/Programming Projects/Pokemon Game/refs/pokecrystal': Permission denied"
+      ],
+      "statusReadExit": 128,
+      "path": "C:/Programming Projects/Pokemon Game/refs/pokecrystal",
+      "headOutput": [
+        "fatal: cannot change to 'C:/Programming Projects/Pokemon Game/refs/pokecrystal': Permission denied"
+      ],
+      "headReadExit": 128
+    }
+  ],
+  "filesRecheckedAfterCapturedGate": true
+}

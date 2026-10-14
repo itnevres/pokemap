@@ -1,10 +1,20 @@
-# PokeMap: current state (2026-10-10, read first)
+# PokeMap: current state (2026-10-11, read first)
 
 PokeMap is a Porymap-parity map editor with two engine families:
 - **GBA:** pokeemerald-family decomps. Plans 0-5.
 - **GBC:** Pokémon Crystal now, Yellow later. Plans 6+, with its own roadmap and invariants G1-G7.
 
 This file holds the state and the accumulated lessons. The prompt for the next session is written fresh at each handoff, so none is kept here.
+
+## Issues 5/6 follow-up (source complete, runtime acceptance pending)
+
+User authorized implementing linked GitHub issues [#5](https://github.com/itnevres/pokemap/issues/5) and [#6](https://github.com/itnevres/pokemap/issues/6). Changes are **uncommitted on `plan-7-gbc-editing`, HEAD `ef248a3`**; this session's Git metadata is read-only. Preserve all working changes and pre-existing `.codex/`. No push, PR or issue closure occurred.
+
+Both GBA/GBC warp destination popups now reuse the App-owned editing workspace/session, protect pending and dirty edits, save/reload safely, and retain World/Dungeon canvas ownership. Reload failure blocks editing with visible Retry recovery. Dungeon warp lines refresh incoming saved endpoints and reject stale GBC replies. Curated GBA requests use read-only `/api/world?scope=dungeon` so indoor members remain available when the user's global auto-layout flag is off; the saved preference stays unchanged.
+
+Independent spec and quality **source reviews pass**, with findings/history preserved in `task-reports/warp-dungeon-issues/_archive/`. Final captured typecheck and UI build pass. The fresh full suite **did not collect or execute any tests**: 152 EPERM errors resolving `node_modules/vitest/dist/spy.js`. Latest new regressions remain unverified; earlier focused green runs apply only to their recorded snapshots. Original local test config was restored byte-identically. Browser MCP was unavailable under approval policy never, so no final live acceptance is claimed.
+
+Continue from `task-reports/warp-dungeon-issues/coordinator.md` and its gate logs/results. Run focused regressions, one captured full suite and protected live popup editing before committing/closing the issues. Remeasure external HEAD/status: those Git reads were permission-denied on resume. GBA world/dungeon and PerfPlus NewBarkTown hashes still match their snapshots, including current world SHA-1 `9c8ab2a86d8fad7ac534629a138be0a87df30cea`; PerfPlus still has no `.pokemap`. Preserve anchored-first dungeon initial fit and the documented shared-layout sibling-image invalidation limitation.
 
 ## Git state: read before branching
 

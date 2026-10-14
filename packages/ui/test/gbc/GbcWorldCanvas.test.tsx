@@ -199,6 +199,70 @@ describe("GBC dungeon warps (Plan 6c D3)", () => {
     expect(onOpenMap).toHaveBeenCalledTimes(1);
   });
 
+  const cacheWorld: GbcWorldPayload = {
+    ...scopedWorld,
+    placements: {
+      Source: { ...scopedWorld.placements.Source!, x: 0, y: 0 },
+      Hidden: { ...scopedWorld.placements.Hidden!, x: 15, y: 0 },
+    },
+  };
+  const warpResponse = (warps: unknown[]) => ({ ok: true, status: 200, json: () => Promise.resolve({ family: "gbc", mapName: "Source", warps }) }) as Response;
+  // Bounds 25x10 in the 200x200 viewport give zoom 8, pan (0,60); raw warp coords halve into blocks.
+  const expectFreshCache = (container: HTMLElement) => {
+    const line = container.querySelector(".world-canvas__connections line")!;
+    expect(line).toBeTruthy();
+    expect([line.getAttribute("x1"), line.getAttribute("y1"), line.getAttribute("x2"), line.getAttribute("y2")]).toEqual(["8", "76", "160", "108"]);
+    const markers = container.querySelectorAll<HTMLElement>(".world-canvas__warp-marker");
+    expect(markers).toHaveLength(1);
+    expect([markers[0]!.style.left, markers[0]!.style.top]).toEqual(["8px", "76px"]);
+  };
+
+  it("saving a destination refreshes incoming cached warp endpoints", async () => {
+    const base = scopedFetch({}, cacheWorld);
+    let saved = false;
+    const fetcher = vi.fn((url: string) => url === "/api/warps/Source"
+      ? Promise.resolve(warpResponse([event(2, 4, "Hidden", saved ? { x: 10, y: 12 } : { x: 6, y: 8 })]))
+      : base(url));
+    vi.stubGlobal("fetch", fetcher);
+    const filter = new Set(["Source", "Hidden"]);
+    const { container, rerender } = render(<GbcWorldCanvas time="day" mapFilter={filter} />);
+    await waitFor(() => expect(container.querySelector(".world-canvas__status")?.textContent).toContain("zoom"));
+    fireEvent.click(screen.getByRole("switch", { name: "Connection lines" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Warps" }));
+    await waitFor(() => expect(container.querySelector(".world-canvas__connections line")?.getAttribute("x2")).toBe("144"));
+    saved = true;
+    rerender(<GbcWorldCanvas time="day" mapFilter={filter} tileVersions={{ Hidden: 1 }} />);
+    await waitFor(() => expectFreshCache(container));
+    expect(fetcher.mock.calls.filter(([url]) => url === "/api/warps/Source")).toHaveLength(2);
+  });
+
+  it.each(["success", "failure"] as const)("ignores an older deferred warp %s after a save loads fresh markers and lines", async (outcome) => {
+    const base = scopedFetch({}, cacheWorld);
+    let resolveOld!: (response: Response) => void;
+    let rejectOld!: (reason: Error) => void;
+    const old = new Promise<Response>((resolve, reject) => { resolveOld = resolve; rejectOld = reject; });
+    let sourceRequests = 0;
+    vi.stubGlobal("fetch", vi.fn((url: string) => url === "/api/warps/Source"
+      ? ++sourceRequests === 1 ? old : Promise.resolve(warpResponse([event(2, 4, "Hidden", { x: 10, y: 12 })]))
+      : base(url)));
+    const filter = new Set(["Source", "Hidden"]);
+    const { container, rerender } = render(<GbcWorldCanvas time="day" mapFilter={filter} />);
+    await waitFor(() => expect(container.querySelector(".world-canvas__status")?.textContent).toContain("zoom"));
+    fireEvent.click(screen.getByRole("switch", { name: "Connection lines" }));
+    fireEvent.click(screen.getByRole("switch", { name: "Warps" }));
+    await waitFor(() => expect(sourceRequests).toBe(1));
+    rerender(<GbcWorldCanvas time="day" mapFilter={filter} tileVersions={{ Hidden: 1 }} />);
+    await waitFor(() => expectFreshCache(container));
+    await act(async () => {
+      if (outcome === "success") resolveOld(warpResponse([event(8, 10, "Hidden", { x: 6, y: 8 })]));
+      else rejectOld(new Error("obsolete warp request failed"));
+      await old.catch(() => undefined);
+    });
+    expectFreshCache(container);
+    expect(screen.queryByText(/obsolete warp request failed/)).toBeNull();
+    expect(sourceRequests).toBe(2);
+  });
+
   it("renders the exact raw-half marker and both SVG endpoints at zoom 8, pan (3,7)", async () => {
     const world: GbcWorldPayload = {
       family: "gbc", blockPx: 32,

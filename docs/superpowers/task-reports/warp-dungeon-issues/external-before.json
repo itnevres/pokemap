@@ -1,0 +1,45 @@
+{
+  "files": [
+    {
+      "hash": "9C8AB2A86D8FAD7AC534629A138BE0A87DF30CEA",
+      "path": "C:/Programming Projects/Pokemon Game/game/.pokemap/world.json"
+    },
+    {
+      "hash": "F73F9B76922330A60DA53D4913790DF956A86846",
+      "path": "C:/Programming Projects/Pokemon Game/game/.pokemap/dungeons.json"
+    },
+    {
+      "hash": "0B7D45D83179CF3C5A2D96A0DF3CC48C06118889",
+      "path": "C:/Programming Projects/pokecrystal-PerfPlus/maps/NewBarkTown.blk"
+    },
+    {
+      "hash": "56F87EF714147AB404442ADA7378C5ED4EF1D080",
+      "path": "C:/Programming Projects/pokecrystal-PerfPlus/maps/NewBarkTown.asm"
+    }
+  ],
+  "repos": [
+    {
+      "path": "C:/Programming Projects/Pokemon Game/game",
+      "head": "718b89f739666056655be65fad703a28a4abeb9d",
+      "status": [
+        " M data/layouts/NavelRockZygardeChamber/map.bin",
+        " M data/layouts/NavelRock_Fork/map.bin",
+        " M data/layouts/layouts.json",
+        " M data/maps/NavelRock_Fork/map.json",
+        " M data/maps/NavelRock_ZygardeChamber/map.json",
+        " M include/fieldmap.h",
+        "?? docs/human-tasks-notes.md"
+      ]
+    },
+    {
+      "path": "C:/Programming Projects/pokecrystal-PerfPlus",
+      "head": "81ededbe311267c774b5540d8c8b381a314dc6d6",
+      "status": []
+    },
+    {
+      "path": "C:/Programming Projects/Pokemon Game/refs/pokecrystal",
+      "head": "3bc8daa4173e96a7f4011dad3922eb6fa5dad5c6",
+      "status": []
+    }
+  ]
+}

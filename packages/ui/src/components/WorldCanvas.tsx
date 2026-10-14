@@ -335,6 +335,7 @@ export interface WorldCanvasProps {
   /** Per-map render bust: when a map's number changes, only that map's tile is dropped and re-requested as
    *  `/api/render/<map>.png?v=<n>`; later loads of it keep the `?v`. */
   tileVersions?: Record<string, number>;
+  onOpenWarpDestination?: (mapName: string) => void;
 }
 
 export interface WorldCanvasContext {
@@ -356,11 +357,12 @@ export interface WorldCanvasContext {
  * packages/ui/DESIGN.md for the palette/type/spacing tokens this consumes,
  * and this file's own comments for the LOD and culling mechanics.
  */
-export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSelectMap, onOpenMap, onEditHere, context, tileVersions }: WorldCanvasProps = {}) {
+export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSelectMap, onOpenMap, onEditHere, context, tileVersions, onOpenWarpDestination }: WorldCanvasProps = {}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageCacheRef = useRef<Map<string, ImageCacheEntry>>(new Map());
   const encounterCacheRef = useRef<Map<string, EncounterCacheEntry>>(new Map());
+  const seenWarpVersionsRef = useRef<Record<string, number>>({});
   const warpCacheRef = useRef<Map<string, WarpCacheEntry>>(new Map());
   const dragRef = useRef<DragState>(null);
   const conflictBadgesRef = useRef<Array<{ x: number; y: number; text: string; key: string; map: string; accepted: boolean }>>([]);
@@ -525,7 +527,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
   useEffect(() => {
     let cancelled = false;
     setLoadError(null);
-    fetchGuarded("/api/world", isWorldPayload)
+    fetchGuarded(mapFilter ? "/api/world?scope=dungeon" : "/api/world", isWorldPayload)
       .then((d) => {
         if (cancelled) return;
         setWorld({
@@ -550,7 +552,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
     return () => {
       cancelled = true;
     };
-  }, [refetchGen]);
+  }, [refetchGen, Boolean(mapFilter)]);
 
   // Persists the toggle to sidecar.dungeonAutoLayout (POST
   // /api/world/dungeons, mirroring /api/world/placement's own shape) and
@@ -951,6 +953,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
       if (seenTileVersionsRef.current[map] === n) continue;
       seenTileVersionsRef.current[map] = n;
       imageCacheRef.current.delete(map);
+
     }
     for (const p of visible) {
       if (imageCacheRef.current.has(p.map)) continue;
@@ -1025,7 +1028,15 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
   // later task), which need warp data for a dungeon's own member maps
   // independent of this toggle's own on/off state.
   useEffect(() => {
-    for (const p of visible) {
+    for (const [name, version] of Object.entries(tileVersions ?? {})) {
+      if (seenWarpVersionsRef.current[name] === version) continue;
+      seenWarpVersionsRef.current[name] = version;
+      warpCacheRef.current.clear();
+      setWarpVersion((v) => v + 1);
+    }
+    const candidates = new Map(visible.map((p) => [p.map, p]));
+    if (mapFilter && linesOn) for (const p of world?.placements.values() ?? []) if (mapFilter.has(p.map)) candidates.set(p.map, p);
+    for (const p of candidates.values()) {
       if (warpCacheRef.current.has(p.map)) continue;
       const entry: WarpCacheEntry = { loaded: false };
       warpCacheRef.current.set(p.map, entry);
@@ -1049,7 +1060,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
           setWarpVersion((v) => v + 1);
         });
     }
-  }, [visible]);
+  }, [visible, world, mapFilter, linesOn, tileVersions]);
 
   // Which side of each drawn map the encounter border sits on (B2's
   // pickBorderSide, world tiles). Over the DRAWN set, not the viewport-culled
@@ -1654,7 +1665,9 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
   const onCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (e.ctrlKey || e.metaKey || e.shiftKey || dragMovedRef.current) return;
     const rect = e.currentTarget.getBoundingClientRect();
-    const w = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
+    const sx = e.clientX - rect.left; const sy = e.clientY - rect.top;
+    if (warpsOn && warpMarkerEntries.some((marker) => Math.hypot(marker.sx - sx, marker.sy - sy) <= WARP_HIT_RADIUS)) return;
+    const w = screenToWorld(sx, sy);
     const hit = hitTest(w.x, w.y);
     setSelected(hit ? new Set([hit.map]) : new Set());
     // The line above is this canvas's own outline; the app may veto the change (a cancelled dirty-session
@@ -1689,7 +1702,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
     if (warpsOn) {
       const marker = warpMarkerEntries.find((m) => Math.hypot(m.sx - sx, m.sy - sy) <= WARP_HIT_RADIUS);
       if (marker) {
-        if (marker.destMapName) setWarpPopup(marker.destMapName);
+        if (marker.destMapName) (onOpenWarpDestination ?? setWarpPopup)(marker.destMapName);
         return;
       }
     }
@@ -1923,7 +1936,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
   return (
     <section className="world-canvas" aria-label="World canvas">
       <div className="world-canvas__toolbar">
-        <div className="world-canvas__toolbar-group">
+        {!mapFilter && <div className="world-canvas__toolbar-group">
           <button
             type="button"
             role="switch"
@@ -1935,7 +1948,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
             <span className="world-canvas__switch-thumb" />
           </button>
           <span className="world-canvas__switch-label">Dungeon auto-layout {dungeonsOn ? "on" : "off"}</span>
-        </div>
+        </div>}
         <div className="world-canvas__toolbar-group">
           <button
             type="button"

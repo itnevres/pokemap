@@ -1,9 +1,13 @@
+import { trapDialogFocus } from "./dialogFocus.js";
+import { useEffect, useRef, type ReactNode } from "react";
 import { useMapLayout } from "../hooks/useMapLayout.js";
 import { MapCanvas } from "./MapCanvas.js";
 
 export interface WarpDestinationModalProps {
   mapName: string;
   onClose: () => void;
+  children?: ReactNode;
+  opener?: HTMLElement | null;
 }
 
 /**
@@ -20,8 +24,13 @@ export interface WarpDestinationModalProps {
  * here: a modal buried inside a lower stacking context could never paint
  * above its siblings, however high its own z-index is set.
  */
-export function WarpDestinationModal({ mapName, onClose }: WarpDestinationModalProps) {
-  const { data, error } = useMapLayout(mapName);
+export function WarpDestinationModal({ mapName, onClose, children, opener }: WarpDestinationModalProps) {
+  const openerRef = useRef(opener ?? document.activeElement as HTMLElement | null);
+  useEffect(() => {
+    const previous = openerRef.current;
+    return () => { if (previous?.isConnected) previous.focus(); };
+  }, []);
+  const { data, error } = useMapLayout(children === undefined ? mapName : null);
 
   return (
     // Review fix: Escape here is defense-in-depth alongside the close
@@ -34,14 +43,14 @@ export function WarpDestinationModal({ mapName, onClose }: WarpDestinationModalP
     <div
       className="warp-modal__backdrop"
       onKeyDown={(e) => {
-        if (e.key === "Escape") onClose();
+        if (e.key === "Escape") { e.stopPropagation(); onClose(); }
       }}
     >
       {/* Review fix: role="dialog"/aria-modal/aria-label moved here, onto
           the actual dialog boundary -- the panel is what visually reads as
           "the dialog"; the backdrop is a full-viewport scrim behind it, not
           part of the dialog itself. */}
-      <div className="warp-modal__panel" role="dialog" aria-modal="true" aria-label={`${mapName} preview`}>
+      <div className="warp-modal__panel" onKeyDown={trapDialogFocus} role="dialog" aria-modal="true" aria-label={`${mapName} preview`}>
         <div className="warp-modal__header">
           <span className="warp-modal__title">{mapName}</span>
           {/* Review fix: autoFocus moves keyboard focus into the modal on
@@ -54,8 +63,8 @@ export function WarpDestinationModal({ mapName, onClose }: WarpDestinationModalP
             ×
           </button>
         </div>
-        <div className="warp-modal__body">
-          {error ? (
+        <div className="warp-modal__body" style={children !== undefined ? { flexDirection: "column" } : undefined}>
+          {children !== undefined ? children : error ? (
             <p className="app__canvas-placeholder">Could not load {mapName}: {error}</p>
           ) : data ? (
             <MapCanvas mapName={mapName} data={data} />

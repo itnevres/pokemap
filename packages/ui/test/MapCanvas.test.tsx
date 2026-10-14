@@ -1308,3 +1308,37 @@ describe("MapCanvas: chromeless (Plan 6c E4)", () => {
     expect(vi.mocked(editSession.applyPaint).mock.invocationCallOrder[0]!).toBeLessThan(vi.mocked(editSession.endStroke).mock.invocationCallOrder[0]!);
   });
 });
+
+
+it.each(["pencil", "rect", "shift"] as const)("reports %s apply errors and finishes the popup stroke", async (kind) => {
+  const error = new Error("paint refused"); const onEditError = vi.fn(); const onEditBusyChange = vi.fn();
+  const editSession = makeEditSession({ applyPaint: vi.fn().mockRejectedValue(error) });
+  const activeTool = kind === "shift" ? { kind } : { kind, stamp: { width: 1, height: 1, cells: [{ metatileId: 7 }] } };
+  const { canvas } = renderMapCanvas({ editSession, activeTool, onEditError, onEditBusyChange });
+  fireEvent.mouseDown(canvas, { clientX: 20, clientY: 20, button: 0 });
+  fireEvent.mouseUp(canvas, { clientX: 36, clientY: 36, button: 0 });
+  await waitFor(() => expect(editSession.endStroke).toHaveBeenCalledTimes(1));
+  expect(onEditError).toHaveBeenCalledWith(error);
+  await waitFor(() => expect(onEditBusyChange).toHaveBeenLastCalledWith(false));
+});
+
+it("retains every held GBA pencil apply before the stroke end", async () => {
+  let begin!: () => void; const apply: (() => void)[] = [];
+  const editSession = makeEditSession({
+    beginStroke: vi.fn(() => new Promise<void>((resolve) => { begin = resolve; })),
+    applyPaint: vi.fn(() => new Promise<void>((resolve) => { apply.push(resolve); })),
+  });
+  const { canvas } = renderMapCanvas({ editSession, activeTool: { kind: "pencil", stamp: { width: 1, height: 1, cells: [{ metatileId: 7 }] } } });
+  fireEvent.mouseDown(canvas, { clientX: 20, clientY: 20, button: 0 });
+  fireEvent.mouseMove(canvas, { clientX: 36, clientY: 20, buttons: 1 });
+  fireEvent.mouseMove(canvas, { clientX: 36, clientY: 36, buttons: 1 });
+  fireEvent.mouseUp(canvas, { clientX: 36, clientY: 36, button: 0 });
+  await waitFor(() => expect(begin).toBeTypeOf("function"));
+  await act(async () => begin());
+  for (let i = 0; i < 3; i++) {
+    await waitFor(() => expect(apply).toHaveLength(i + 1));
+    expect(editSession.endStroke).not.toHaveBeenCalled();
+    await act(async () => apply[i]!());
+  }
+  await waitFor(() => expect(editSession.endStroke).toHaveBeenCalledTimes(1));
+});

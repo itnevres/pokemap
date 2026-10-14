@@ -1752,7 +1752,9 @@ describe("WorldCanvas", () => {
         }
         return wrapped(url, init);
       });
-      const { canvas } = await mountReady(fullMock);
+      const { canvas, rerender } = await mountReady(fullMock);
+      const onSelectMap = vi.fn();
+      rerender(<WorldCanvas onSelectMap={onSelectMap} />);
       fireEvent.click(screen.getByRole("switch", { name: /warps/i }));
       // Zoom in past LOD_ZOOM_THRESHOLD (4) the same way the other tests in
       // this describe block do: 8 wheel ticks anchored at screen (0,0),
@@ -1784,7 +1786,10 @@ describe("WorldCanvas", () => {
       // Then a hit within the radius but off-centre (+3px, not the exact
       // marker position) confirms the radius check is a real, bounded
       // circle, not merely re-testing distance 0.
+      fireEvent.click(canvas, { clientX: mx + 3, clientY: my });
+      fireEvent.click(canvas, { clientX: mx + 3, clientY: my });
       fireEvent.doubleClick(canvas, { clientX: mx + 3, clientY: my });
+      expect(onSelectMap).not.toHaveBeenCalled();
       await waitFor(() => expect(screen.getByRole("dialog")).toBeTruthy());
       expect(screen.getByRole("dialog").getAttribute("aria-label")).toBe("B preview");
 
@@ -1803,12 +1808,21 @@ describe("WorldCanvas", () => {
       return makeWorld({
         placements: {
           InDungeon1: { map: "InDungeon1", x: 0, y: 0, width: 10, height: 10, component: 0 },
-          InDungeon2: { map: "InDungeon2", x: 20, y: 0, width: 10, height: 10, component: 1 },
+          InDungeon2: { map: "InDungeon2", x: 20, y: 0, width: 10, height: 10, component: 1, mapType: "MAP_TYPE_INDOOR", manual: false },
           OutsideDungeon: { map: "OutsideDungeon", x: 0, y: 20, width: 10, height: 10, component: 2 },
           Far: { map: "Far", x: 500, y: 500, width: 10, height: 10, component: 3 },
         },
       });
     }
+
+    it("loads curated dungeon placements without exposing the global auto-layout switch", async () => {
+      const { impl } = makeFetchMock(fourMapsWorld());
+      vi.stubGlobal("fetch", impl);
+      render(<WorldCanvas mapFilter={new Set(["InDungeon1", "InDungeon2"])} />);
+      await waitFor(() => expect(screen.queryByText(/Loading world/)).toBeNull());
+      expect(impl.mock.calls.some(([url]) => url === "/api/world?scope=dungeon")).toBe(true);
+      expect(screen.queryByRole("switch", { name: "Dungeon auto-layout" })).toBeNull();
+    });
 
     it("draws and fetches art only for maps in mapFilter, ignoring viewport-only culling for the rest of the corpus", async () => {
       const { impl } = makeFetchMock(fourMapsWorld());
@@ -1995,6 +2009,23 @@ describe("WorldCanvas", () => {
         },
       });
     }
+
+    it("loads offscreen dungeon members for connection lines without fetching outsiders", async () => {
+      const world = dungeonWorld();
+      world.placements.Room2 = { ...world.placements.Room2!, x: 10000, component: 99, mapType: "MAP_TYPE_INDOOR" };
+      const { impl } = makeFetchMock(world);
+      const fetcher = withWarps(impl, {
+        Room1: [{ x: 1, y: 1, elevation: 0, destMap: "MAP_ROOM2", destWarpId: "0", destMapName: "Room2" }],
+        Room2: [{ x: 3, y: 3, elevation: 0, destMap: "MAP_ROOM1", destWarpId: "0", destMapName: "Room1" }],
+      });
+      vi.stubGlobal("fetch", fetcher);
+      const utils = render(<WorldCanvas mapFilter={new Set(["Room1", "Room2"])} />);
+      await waitFor(() => expect(utils.queryByText(/Loading world/)).toBeNull());
+      fireEvent.click(utils.getByRole("switch", { name: /connection lines/i }));
+      await waitFor(() => expect(utils.container.querySelectorAll(".world-canvas__connections line")).toHaveLength(2));
+      expect(fetcher.mock.calls.some(([url]) => url === "/api/warps/Room2")).toBe(true);
+      expect(fetcher.mock.calls.some(([url]) => url === "/api/warps/Outside")).toBe(false);
+    });
 
     it("draws a line only between two maps that are BOTH members of the open dungeon", async () => {
       const { impl } = makeFetchMock(dungeonWorld());

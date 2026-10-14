@@ -1,3 +1,4 @@
+import { trapDialogFocus } from "./dialogFocus.js";
 import { useEffect, useState } from "react";
 import type { MapData } from "@pokemap/core/src/load/maps.js";
 import "../styles.css";
@@ -135,7 +136,7 @@ export function SignComposer({ mapName, onAdded, onSessionUpdated, onCancel }: S
           WarpDestinationModal's own panel chrome (bg-panel-raised/
           border-strong/radius), same as SaveDialog's own root className,
           rather than a second, independently-styled panel shape. */}
-      <div className="sign-composer warp-modal__panel" role="dialog" aria-modal="true" aria-label="Add wild sign">
+      <div className="sign-composer warp-modal__panel" onKeyDown={trapDialogFocus} role="dialog" aria-modal="true" aria-label="Add wild sign">
         <h2 className="sign-composer__title">Add Wild Sign</h2>
         {loadError ? (
           <p className="save-dialog__load-error">Could not load suggestions: {loadError}</p>

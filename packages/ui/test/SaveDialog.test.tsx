@@ -126,3 +126,14 @@ describe("SaveDialog", () => {
     vi.unstubAllGlobals();
   });
 });
+
+it("confines keyboard focus above an editing popup", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve({ changes: [{ path: "x", kind: "binary", summary: "edit" }], refusals: [] }) }));
+  render(<><button>Background edit</button><SaveDialog mapName="A" onCommitted={() => {}} onCancel={() => {}} /></>);
+  const save = await screen.findByRole("button", { name: "Save Changes" });
+  const cancel = screen.getByRole("button", { name: "Cancel" });
+  cancel.focus(); fireEvent.keyDown(cancel, { key: "Tab", shiftKey: true });
+  expect(document.activeElement).toBe(save);
+  fireEvent.keyDown(save, { key: "Tab" });
+  expect(document.activeElement).toBe(cancel);
+});

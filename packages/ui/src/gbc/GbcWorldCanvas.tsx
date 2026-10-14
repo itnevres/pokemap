@@ -436,6 +436,7 @@ export interface GbcWorldCanvasProps {
   /** Per-map render bust: when a map's number changes, only that map's tile is dropped and re-requested with
    *  `&v=<n>`; later loads of it (a time switch included) keep the `&v`. */
   tileVersions?: Record<string, number>;
+  onOpenWarpDestination?: (mapName: string) => void;
 }
 
 export interface GbcWorldCanvasContext {
@@ -459,7 +460,7 @@ function isPlacementSaved(x: unknown): x is { ok: true } {
  * reproduced from `WorldCanvas.tsx`, and `packages/ui/DESIGN.md` for the
  * `world-canvas__*` classes reused verbatim below.
  */
-export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelectMap, onOpenMap, onJumpToMap, onPlacementSaved, onEditHere, context, tileVersions }: GbcWorldCanvasProps) {
+export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelectMap, onOpenMap, onJumpToMap, onPlacementSaved, onEditHere, context, tileVersions, onOpenWarpDestination }: GbcWorldCanvasProps) {
   const { data: world, error } = useGbcWorld();
   const { data: coverageData, error: coverageError } = useGbcCoverage();
 
@@ -467,6 +468,8 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageCacheRef = useRef<Map<string, ImageCacheEntry>>(new Map());
   const encounterCacheRef = useRef<Map<string, EncounterCacheEntry>>(new Map());
+  const warpRequestsRef = useRef(new Map<string, object>());
+  const seenWarpVersionsRef = useRef<Record<string, number>>({});
   const warpCacheRef = useRef<Map<string, GbcWarpsPayload | null>>(new Map());
   const conflictBadgesRef = useRef<Array<{ x: number; y: number; text: string; key: string; map: string; accepted: boolean }>>([]);
   const dragRef = useRef<DragState>(null);
@@ -618,24 +621,35 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
   }, [world, placements, pan, zoom, viewport, fitted, mapFilter]);
 
   useEffect(() => {
+    for (const [name, version] of Object.entries(tileVersions ?? {})) {
+      if (seenWarpVersionsRef.current[name] === version) continue;
+      seenWarpVersionsRef.current[name] = version;
+      warpCacheRef.current.clear();
+      warpRequestsRef.current.clear();
+      setWarpVersion((v) => v + 1);
+    }
     if (!warpsOn && !(mapFilter && linesOn)) return;
     const names = new Set<string>();
     if (warpsOn && zoom >= GBC_LOD_ZOOM_THRESHOLD) visible.forEach((p) => names.add(p.map));
     if (mapFilter && linesOn) mapFilter.forEach((name) => { if (placements[name]) names.add(name); });
     for (const name of names) {
       if (warpCacheRef.current.has(name)) continue;
+      const request = {};
+      warpRequestsRef.current.set(name, request);
       warpCacheRef.current.set(name, null);
       const url = `/api/warps/${encodeURIComponent(name)}`;
       fetchGuarded(url, isGbcWarpsPayload).then((payload) => {
+        if (warpRequestsRef.current.get(name) !== request) return;
         if (payload.mapName !== name) throw new Error(`GET ${url} returned the wrong map`);
         warpCacheRef.current.set(name, payload);
         setWarpVersion((v) => v + 1);
       }).catch((reason: unknown) => {
+        if (warpRequestsRef.current.get(name) !== request) return;
         warpCacheRef.current.delete(name);
         setWarpError(reason instanceof Error ? reason.message : String(reason));
       });
     }
-  }, [warpsOn, linesOn, mapFilter, visible, zoom, placements]);
+  }, [warpsOn, linesOn, mapFilter, visible, zoom, placements, tileVersions]);
 
   const warpMarkerEntries = useMemo(() => {
     if (!warpsOn || zoom < GBC_LOD_ZOOM_THRESHOLD) return [] as Array<{ key: string; sx: number; sy: number; destMapName?: string }>;
@@ -693,6 +707,7 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
       if (seenTileVersionsRef.current[map] === n) continue;
       seenTileVersionsRef.current[map] = n;
       imageCacheRef.current.delete(map);
+
     }
     for (const p of visible) {
       if (imageCacheRef.current.has(p.map)) continue;
@@ -1146,7 +1161,7 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
     if (warpsOn) {
       const marker = warpMarkerEntries.find((entry) => Math.hypot(entry.sx - sx, entry.sy - sy) <= WARP_HIT_RADIUS);
       if (marker) {
-        if (marker.destMapName) { setWarpError(null); setWarpPopup(marker.destMapName); }
+        if (marker.destMapName) { setWarpError(null); (onOpenWarpDestination ?? setWarpPopup)(marker.destMapName); }
         else setWarpError("This warp destination could not be resolved");
         return;
       }
