@@ -1,0 +1,10 @@
+﻿
+-// A regression pin, not a red witness: GBA's resetForMapChange already cleared the stamp before Task 6. Harness 
+copied
+-    resetForMapChange: vi.fn(),
+-  resetForMapChange: vi.fn(),
+-  it("resetForMapChange clears selectedEvent and currentStamp but keeps activeToolKind and collisionValue", () => {
+-    const { result } = renderHook(() => useMapEditing({ editSession, layoutData: null }));
+-    act(() => result.current.resetForMapChange());
+
+

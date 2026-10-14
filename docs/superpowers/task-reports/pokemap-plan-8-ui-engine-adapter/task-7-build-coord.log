@@ -1,0 +1,14 @@
+
+> @pokemap/ui@0.0.0 build
+> vite build
+
+[36mvite v8.2.2 [32mbuilding client environment for production...[36m[39m
+transforming...
+✓ 81 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                   0.40 kB │ gzip:   0.27 kB
+dist/assets/index-DUrVuQFw.css   44.55 kB │ gzip:   6.72 kB
+dist/assets/index-DD1fCRFX.js   354.01 kB │ gzip: 106.94 kB
+
+[32m✓ built in 178ms[39m
