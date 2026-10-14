@@ -1,11 +1,13 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { RGBA } from "@pokemap/core/src/render/raster.js";
 import { drawGbcGrid, drawGbcCollision, drawGbcEvents, gbcStepInfo, type GbcQuadrantInfo, type GbcQuadrantKey, type GbcStepInfo } from "@pokemap/core/src/gbc/render/overlays.js";
 import type { GbcMapPayload } from "@pokemap/core/src/gbc/wire.js";
 import type { GbcMapEvents } from "@pokemap/core/src/gbc/model/types.js";
 import type { GbcStamp } from "@pokemap/core/src/gbc/edit/paint.js";
 import type { GbcEventKind } from "@pokemap/core/src/gbc/edit/events.js";
-import type { UseGbcEditSessionResult } from "./hooks/useGbcEditSession.js";
+import type { GbcPaintBody, UseGbcEditSessionResult } from "./hooks/useGbcEditSession.js";
+import { useStrokeChain } from "../shared/useStrokeChain.js";
+import type { SettledChain } from "../shared/useStrokeChain.js";
 import type { GbcTimeOfDay } from "./time.js";
 import { EncounterBorder, type EncounterBorderEntry } from "../components/EncounterBorder.js";
 import { BORDER_BAND, borderSideFromConnections } from "../encounters/borderSide.js";
@@ -130,6 +132,7 @@ function eventPosition(events: GbcMapEvents, ref: GbcEventRef | null | undefined
 }
 
 export interface GbcMapCanvasProps {
+  onStrokeChain?: (chain: SettledChain, mounted: boolean) => void;
   mapName: string;
   data: GbcMapPayload;
   time: GbcTimeOfDay;
@@ -281,7 +284,7 @@ export function parseColorToken(value: string): RGBA {
   return FALLBACK_COLOR;
 }
 
-export function GbcMapCanvas({ mapName, data: payload, time, hoveredMetatile, editSession, activeTool, onDropperPick, selectedEvent, onSelectEvent, onMoveEvent, onEditError, view: controlledView, onViewChange, chromeless }: GbcMapCanvasProps) {
+export function GbcMapCanvas({ mapName, data: payload, time, hoveredMetatile, editSession, activeTool, onDropperPick, selectedEvent, onSelectEvent, onMoveEvent, onEditError, view: controlledView, onViewChange, chromeless, onStrokeChain }: GbcMapCanvasProps) {
   const { layout } = payload;
   // The session's live blocks/events win once a session exists; every effect below reads `data` by name and
   // never needs to know which source it came from (the trick of `MapCanvas.tsx:215-228`).
@@ -297,26 +300,14 @@ export function GbcMapCanvas({ mapName, data: payload, time, hoveredMetatile, ed
   const baseCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
-  // Completion chain for begin, every queued apply and end; no request in a stroke outruns its predecessor.
-  const pendingPaintRef = useRef<Promise<void>>(Promise.resolve());
-  // True from an edit stroke's mousedown to its end, so onMouseLeave can tell "a stroke is open" from "a session
-  // exists" and not fire endStroke on every ordinary mouse-out (MapCanvas.tsx:264-269).
-  const strokeOpenRef = useRef(false);
-  const canvasVisitRef = useRef<object>({});
-  const strokeRef = useRef<{ visit: object; begun: boolean; start: { x: number; y: number }; end: () => Promise<void> } | null>(null);
-  useLayoutEffect(() => {
-    canvasVisitRef.current = {};
-    return () => {
-      canvasVisitRef.current = {};
-      const stroke = strokeRef.current;
-      if (stroke) pendingPaintRef.current = pendingPaintRef.current.then(async () => {
-        if (stroke.begun) await stroke.end();
-      }).catch(() => {}); // The retired visit cannot display a late error.
-      strokeRef.current = null;
-      strokeOpenRef.current = false;
-    };
-  }, [mapName]);
-  const ownsStroke = (stroke: NonNullable<typeof strokeRef.current>) => stroke.visit === canvasVisitRef.current;
+  // Completion chain for begin, every queued apply and end (shared with the GBA canvas); the start cell of an
+  // open rect/shift stroke is captured at mousedown.
+  const chain = useStrokeChain<GbcPaintBody>(mapName, (message) => onEditError?.(message));
+  useEffect(() => {
+    onStrokeChain?.(chain, true);
+    return () => onStrokeChain?.(chain, false);
+  }, [chain, onStrokeChain]);
+  const strokeStartRef = useRef<{ x: number; y: number } | null>(null);
   // The last block a pencil stroke painted: a held drag fires many mousemoves per block, and each would be a
   // parallel POST. Reset when the stroke ends.
   const lastCellRef = useRef<string | null>(null);
@@ -410,8 +401,7 @@ export function GbcMapCanvas({ mapName, data: payload, time, hoveredMetatile, ed
   // Fresh overlays/hover on a real map switch -- mirrors MapCanvas.tsx:371-374.
   useEffect(() => {
     setToggles(NO_TOGGLES);
-    // A stroke belongs to the map it began on: a switch mid-stroke must not let its end/apply go out for the new one.
-    strokeOpenRef.current = false;
+    strokeStartRef.current = null; // the chain retires the stroke itself (useStrokeChain)
     lastCellRef.current = null;
     setEncountersFor(null); // only so A -> B -> A does not bring A's border back; B is already off without it
     setHover(null);
@@ -613,20 +603,17 @@ export function GbcMapCanvas({ mapName, data: payload, time, hoveredMetatile, ed
     return { x: sx, y: sy };
   };
 
-  // Every paint request's rejection lands here -- a visible error, never an unhandled rejection.
-  const fail = (e: unknown) => onEditError?.(e instanceof Error ? e.message : "Paint failed.");
-
-  const paintAt = (bx: number, by: number): Promise<void> => {
-    if (!editSession || !activeTool?.stamp) return Promise.resolve();
+  /** The apply body a pencil/bucket stroke sends at a block; null when there is nothing to send. rect/shift are applied once, at mouseup. */
+  const paintBody = (bx: number, by: number): GbcPaintBody | null => {
+    if (!activeTool?.stamp) return null;
     if (activeTool.kind === "pencil") {
-      return editSession.applyPaint({ tool: "pencil", targets: [{ x: bx, y: by }], stamp: activeTool.stamp, origin: { x: bx, y: by } });
+      return { tool: "pencil", targets: [{ x: bx, y: by }], stamp: activeTool.stamp, origin: { x: bx, y: by } };
     } else if (activeTool.kind === "bucket") {
       const cell = activeTool.stamp.cells[0];
-      if (!cell) return Promise.resolve(); // nothing sensible to fill with
-      return editSession.applyPaint({ tool: "bucket", x: bx, y: by, replacement: { metatileId: cell.metatileId } });
+      if (!cell) return null; // nothing sensible to fill with
+      return { tool: "bucket", x: bx, y: by, replacement: { metatileId: cell.metatileId } };
     }
-    // rect/shift are applied once, at mouseup (endActiveStroke).
-    return Promise.resolve();
+    return null;
   };
 
   const onMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -652,18 +639,9 @@ export function GbcMapCanvas({ mapName, data: payload, time, hoveredMetatile, ed
     if (editSession && activeTool) {
       const cell = blockAt(e);
       if (!cell) return;
-      strokeOpenRef.current = true;
-      const stroke = { visit: canvasVisitRef.current, begun: false, start: cell, end: editSession.endStroke };
-      strokeRef.current = stroke;
+      strokeStartRef.current = cell;
       lastCellRef.current = `${cell.x},${cell.y}`;
-      // One retained chain includes the previous end, this begin and the first apply's round trip.
-      pendingPaintRef.current = pendingPaintRef.current.then(async () => {
-        if (!ownsStroke(stroke)) return;
-        await editSession.beginStroke();
-        stroke.begun = true;
-        if (!ownsStroke(stroke)) return;
-        return paintAt(cell.x, cell.y);
-      }).catch((e) => { if (ownsStroke(stroke)) fail(e); });
+      chain.start(editSession, paintBody(cell.x, cell.y));
       return;
     }
     dragRef.current = { x: e.clientX, y: e.clientY, panX: pan.x, panY: pan.y };
@@ -675,14 +653,12 @@ export function GbcMapCanvas({ mapName, data: payload, time, hoveredMetatile, ed
       return;
     }
     // A held pencil queues each new cell behind begin and every preceding apply round trip.
-    const stroke = strokeRef.current;
-    if (editSession && activeTool?.kind === "pencil" && strokeOpenRef.current && stroke && e.buttons === 1) {
+    if (editSession && activeTool?.kind === "pencil" && chain.isOpen() && e.buttons === 1) {
       const cell = blockAt(e);
       if (cell && lastCellRef.current !== `${cell.x},${cell.y}`) {
         lastCellRef.current = `${cell.x},${cell.y}`;
-        pendingPaintRef.current = pendingPaintRef.current.then(() => {
-          if (ownsStroke(stroke) && stroke.begun) return paintAt(cell.x, cell.y);
-        }).catch((e) => { if (ownsStroke(stroke)) fail(e); });
+        const body = paintBody(cell.x, cell.y);
+        if (body) chain.queue(body);
       }
       return;
     }
@@ -703,25 +679,17 @@ export function GbcMapCanvas({ mapName, data: payload, time, hoveredMetatile, ed
    * apply round trip (not just its invocation), and a following stroke also waits for this end round trip.
    */
   const endActiveStroke = (end: { x: number; y: number } | null) => {
-    const stroke = strokeRef.current;
-    if (!editSession || !strokeOpenRef.current || !stroke) return;
-    strokeRef.current = null;
-    strokeOpenRef.current = false;
+    if (!editSession || !chain.isOpen()) return;
+    const start = strokeStartRef.current;
+    strokeStartRef.current = null;
     lastCellRef.current = null;
-    const strokeFail = (e: unknown) => { if (ownsStroke(stroke)) fail(e); };
-    pendingPaintRef.current = pendingPaintRef.current.then(async () => {
-      if (!ownsStroke(stroke) && !stroke.begun) return;
-      const start = ownsStroke(stroke) && stroke.begun ? stroke.start : null;
-      if (activeTool?.kind === "shift" && start && end) {
-        await editSession.applyPaint({ tool: "shift", dx: end.x - start.x, dy: end.y - start.y }).catch(strokeFail);
-      } else if (activeTool?.kind === "rect" && activeTool.stamp && start && end) {
-        await editSession
-          .applyPaint({ tool: "rect", x0: start.x, y0: start.y, x1: end.x, y1: end.y, stamp: activeTool.stamp, origin: start })
-          .catch(strokeFail); // a rejected apply must not leave the stroke open forever
-      }
-      // A retired visit stops queued paint but still finishes an issued stroke on its captured old session.
-      await editSession.endStroke();
-    }).catch((e) => { if (ownsStroke(stroke)) fail(e); });
+    let last: GbcPaintBody | null = null;
+    if (activeTool?.kind === "shift" && start && end) {
+      last = { tool: "shift", dx: end.x - start.x, dy: end.y - start.y };
+    } else if (activeTool?.kind === "rect" && activeTool.stamp && start && end) {
+      last = { tool: "rect", x0: start.x, y0: start.y, x1: end.x, y1: end.y, stamp: activeTool.stamp, origin: start };
+    }
+    chain.finish(last);
   };
 
   const onMouseUp = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -751,7 +719,7 @@ export function GbcMapCanvas({ mapName, data: payload, time, hoveredMetatile, ed
       eventDragRef.current = null;
       setDragPreview(null);
     }
-    if (editSession && activeTool && strokeOpenRef.current) endActiveStroke(null);
+    if (editSession && activeTool && chain.isOpen()) endActiveStroke(null);
   };
 
   const quadrantLabel = (key: GbcQuadrantKey, label: string, info: GbcQuadrantInfo, hovered: boolean) => {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { MapTree } from "./components/MapTree.js";
 import { WorldCanvas } from "./components/WorldCanvas.js";
 import { DungeonSidebar } from "./components/DungeonSidebar.js";
@@ -12,6 +12,9 @@ import { useWorldVisibility } from "./hooks/useWorldVisibility.js";
 import { useDungeons } from "./hooks/useDungeons.js";
 import { useEditSession } from "./hooks/useEditSession.js";
 import { useMapEditing } from "./hooks/useMapEditing.js";
+import { useContextEditing } from "./shared/useContextEditing.js";
+import { useBeforeUnloadGuard } from "./shared/useBeforeUnloadGuard.js";
+import { useStrokeChainRegistry } from "./shared/useStrokeChain.js";
 
 type Mode = "map" | "world" | "dungeon";
 
@@ -36,11 +39,6 @@ export function App({ switcher }: AppProps) {
   // passing `selected` as jumpToMap made the first canvas click jump).
   const [jumpTarget, setJumpTarget] = useState<string | null>(null);
   const [openDungeonId, setOpenDungeonId] = useState<string | null>(null);
-  // Plan 6c E4: the map being edited in context on the World view (GBA), or null. Always equals `selected` while set.
-  const [contextMap, setContextMap] = useState<string | null>(null);
-  // Bumped for a map when a save commits while editing it in context; the world re-requests only that tile.
-  const [tileVersions, setTileVersions] = useState<Record<string, number>>({});
-
   const { data, error } = useMapGroups();
   const layout = useMapLayout(selected);
   // Known limitation, accepted for now (predates this task): this is a
@@ -69,43 +67,36 @@ export function App({ switcher }: AppProps) {
   // Plan 6c E2: map-editing state and handlers (selected event, tool/dialog
   // state, event ops, discard) -- see useMapEditing.ts. Called here, at the same
   // spot the state used to live, so its lifetime is unchanged.
-  const editing = useMapEditing({ editSession, layoutData: layout.data });
+  const editing = useMapEditing({ editSession, layoutData: layout.data, mapName: selected });
 
-  // I6: "no autosave, ever" also means losing a dirty session silently must
-  // never happen -- closing the tab is the browser-level case (this effect),
-  // switching maps is the in-app case (selectMap's own guard just below).
-  // Gated on isDirty, not just "an edit session exists": an OPEN session
-  // that matches disk (nothing painted yet, or already saved) is not lossy
-  // to abandon, and a handler that's always attached would make Step 13's
-  // own teeth-proof test meaningful (attaching unconditionally is exactly
-  // the bug that test exists to catch).
-  useEffect(() => {
-    if (!editSession.isDirty) return;
-    const handler = (e: BeforeUnloadEvent) => {
-      e.preventDefault();
-      e.returnValue = "";
-    };
-    window.addEventListener("beforeunload", handler);
-    return () => window.removeEventListener("beforeunload", handler);
-  }, [editSession.isDirty]);
+  // Shared browser-level half of I6's dirty-session guard; the in-app guard is below.
+  useBeforeUnloadGuard(editSession.isDirty);
 
-  // The dirty guard and the per-map resets shared by a tree click and a
-  // world click. Returns false when the user cancelled the guard.
-  const changeSelection = (name: string): boolean => {
-    if (editSession.isDirty && !window.confirm("You have unsaved changes on this map. Discard them and switch maps?")) {
-      return false;
-    }
+  // The dirty guard shared by tree, world and context entry.
+  const leave = (go: () => void) => {
+    if (editSession.isDirty && !window.confirm("You have unsaved changes on this map. Discard them and switch maps?")) return;
+    go();
+  };
+  const select = (name: string) => {
     setSelected(name);
-    // Per-map resets (selected event, stale stamp) live with the state they
-    // reset -- see useMapEditing.ts's own resetForMapChange comments.
-    editing.resetForMapChange();
-    return true;
+  };
+  const { onStrokeChain, strokeSettled } = useStrokeChainRegistry();
+  const ctx = useContextEditing({
+    selected, session: editSession, leave, select,
+    openSave: () => editing.setSaveDialogOpen(true),
+    strokeSettled,
+  });
+  const { contextMap, tileVersions } = ctx;
+  const changeSelection = (name: string): boolean => {
+    let changed = false;
+    leave(() => { select(name); changed = true; });
+    return changed;
   };
 
   const selectMap = (name: string) => {
     if (!changeSelection(name)) return;
     // A tree click leaves in-context editing (a jump would also move the world under the overlay).
-    setContextMap(null);
+    ctx.leaveContext();
     setJumpTarget(name);
     setSelectVersion((v) => v + 1);
   };
@@ -121,34 +112,17 @@ export function App({ switcher }: AppProps) {
   // dirty guard as a tree click, and switch to Map view only if the user did not cancel it.
   const openMapFromWorld = (name: string) => {
     if (name === selected || changeSelection(name)) {
-      setContextMap(null);
+      ctx.leaveContext();
       setMode("map");
     }
   };
 
-  // Plan 6c E4: double-click / "Edit here" on a world map. Selecting it goes through the same dirty guard as a tree
-  // click; a cancelled confirm means no context.
-  const enterContext = (name: string) => {
-    if (name !== selected && !changeSelection(name)) return;
-    setContextMap(name);
-  };
-
-  // Done, Escape, or a double-click outside the map. A dirty session opens the ordinary SaveDialog and stays in
-  // context (Cancel keeps editing, a commit makes the next exit clean); a clean one just leaves.
-  const requestExitContext = () => {
-    if (editSession.isDirty) editing.setSaveDialogOpen(true);
-    else setContextMap(null);
-  };
-
-  // A mode switch leaves context without a prompt: the session persists exactly as it does today.
+  const enterContext = ctx.enter;
+  const requestExitContext = ctx.requestExit;
   const switchMode = (next: Mode) => {
-    setContextMap(null);
+    ctx.leaveContext();
     setMode(next);
   };
-  // `selected` moving off the context map by any other route also leaves it.
-  useEffect(() => {
-    if (contextMap !== null && selected !== contextMap) setContextMap(null);
-  }, [selected, contextMap]);
 
   // Entering World centres on the selected map, wherever the selection came from (tree, world click,
   // Map view). A world click itself never jumps (F1); this is a mode entry, not a click.
@@ -320,7 +294,7 @@ export function App({ switcher }: AppProps) {
             // The World view is hosted by MapEditingWorkspace at all times (one stable element and key), so the
             // WorldCanvas inside is never remounted when in-context editing turns the chrome on or off.
             contextLayout ? (
-              <MapEditingWorkspace
+              <MapEditingWorkspace onStrokeChain={onStrokeChain}
                 key="world-host"
                 mapName={contextLayout.map.name}
                 data={contextLayout}
@@ -329,7 +303,7 @@ export function App({ switcher }: AppProps) {
                 renderCanvas={renderWorld}
               />
             ) : (
-              <MapEditingWorkspace key="world-host" active={false} mapName={selected} data={layout.data} editSession={editSession} editing={editing} renderCanvas={renderWorld} />
+              <MapEditingWorkspace onStrokeChain={onStrokeChain} key="world-host" active={false} mapName={selected} data={layout.data} editSession={editSession} editing={editing} renderCanvas={renderWorld} />
             )
           ) : mode === "dungeon" ? (
             openDungeon ? (
@@ -342,7 +316,7 @@ export function App({ switcher }: AppProps) {
           ) : layout.error ? (
             <p className="app__canvas-placeholder">Could not load {selected}: {layout.error}</p>
           ) : layout.data ? (
-            <MapEditingWorkspace mapName={selected} data={layout.data} editSession={editSession} editing={editing} />
+            <MapEditingWorkspace onStrokeChain={onStrokeChain} mapName={selected} data={layout.data} editSession={editSession} editing={editing} />
           ) : (
             <p className="app__canvas-placeholder">Loading {selected}…</p>
           )}
@@ -362,12 +336,8 @@ export function App({ switcher }: AppProps) {
               // bypasses this hook entirely, so without this the Toolbar's
               // dirty dot would stay on after a real, successful save.
               onCommitted={() => {
-                editSession.markClean();
+                ctx.onCommitted();
                 editing.setSaveDialogOpen(false);
-                // Editing in context: the world still shows this map's pre-save tile; refresh just that one.
-                if (contextMap !== null && contextMap === selected) {
-                  setTileVersions((t) => ({ ...t, [contextMap]: (t[contextMap] ?? 0) + 1 }));
-                }
               }}
               onCancel={() => editing.setSaveDialogOpen(false)}
             />

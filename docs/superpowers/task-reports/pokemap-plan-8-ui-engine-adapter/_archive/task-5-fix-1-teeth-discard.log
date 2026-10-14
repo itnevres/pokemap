@@ -1,0 +1,34 @@
+COMMAND: node --input-type=module
+import { startVitest } from 'vitest/node';
+const ctx = await startVitest('test', ['packages/ui/test/useEditSessionShared.test.tsx'], {config:false,root:process.cwd(),run:true,pool:'threads',maxWorkers:2,minWorkers:1,globals:false,environment:'node',environmentMatchGlobs:[['packages/ui/**','jsdom']],include:['packages/*/test/**/*.test.{ts,tsx}'],setupFiles:['packages/ui/test/setup.ts']});
+await ctx.close();
+
+
+ RUN  v2.1.9 C:/Users/Serve/AppData/Local/Temp/claude/C--Programming-Projects-PokeMap/74282ac3-2fdd-538d-8b69-bd7f0f0598f7/scratchpad/p8
+
+ ❯ packages/ui/test/useEditSessionShared.test.tsx (6 tests | 1 failed) 37ms
+   × GBA shared edit-session witnesses > discard throws on a failed response and keeps the dirtied session 24ms
+     → expected undefined to be an instance of Error
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  packages/ui/test/useEditSessionShared.test.tsx > GBA shared edit-session witnesses > discard throws on a failed response and keeps the dirtied session
+AssertionError: expected undefined to be an instance of Error
+ ❯ packages/ui/test/useEditSessionShared.test.tsx:40:20
+     38|       try { await last.discard(); } catch (e) { caught = e; }
+     39|     });
+     40|     expect(caught).toBeInstanceOf(Error);
+       |                    ^
+     41|     expect((caught as Error).message).toBe("POST /api/edit/A/discard -…
+     42|     expect(last.blocks).toEqual(dirtied.blocks);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 5 passed (6)
+   Start at  08:29:54
+   Duration  1.42s (transform 114ms, setup 186ms, collect 52ms, tests 37ms, environment 910ms, prepare 91ms)
+
+
+Exit: 1
+Restored byte-identically; SHA256: 31b67cf32b4b04830526ed1d27bd828297e80852c99c56b209a08c870f719214

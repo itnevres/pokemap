@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { unguarded, useGuardedFetch } from "./useGuardedFetch.js";
 import type { Coverage } from "@pokemap/core/src/analyse/coverage.js";
 
 /**
@@ -23,33 +23,7 @@ export interface UseCoverageResult {
   error: string | null;
 }
 
-/**
- * Fetches `/api/coverage` once. The server itself caches `coverage(project)`
- * -- it walks all 497 tables (Task 29 Step 3) -- so this hook only needs
- * the usual "fetch once per mount" shape every other single-resource hook
- * in this package already uses (mirrors useMapGroups.ts almost exactly).
- */
+/** Wraps useGuardedFetch without a shape guard for /api/coverage. */
 export function useCoverage(): UseCoverageResult {
-  const [data, setData] = useState<CoverageResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetch("/api/coverage")
-      .then((r) => {
-        if (!r.ok) throw new Error(`GET /api/coverage -> ${r.status}`);
-        return r.json() as Promise<CoverageResponse>;
-      })
-      .then((d) => {
-        if (!cancelled) setData(d);
-      })
-      .catch((e: unknown) => {
-        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  return { data, error };
+  return useGuardedFetch<CoverageResponse>("/api/coverage", unguarded);
 }

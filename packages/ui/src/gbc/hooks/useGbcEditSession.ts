@@ -1,4 +1,5 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo } from "react";
+import { useEditSessionCore } from "../../shared/useEditSessionCore.js";
 import type { Block, GbcMapEvents } from "@pokemap/core/src/gbc/model/types.js";
 import type { GbcStamp } from "@pokemap/core/src/gbc/edit/paint.js";
 import type { GbcEventKind, GbcWarpRenumberWarning } from "@pokemap/core/src/gbc/edit/events.js";
@@ -66,26 +67,12 @@ function isSessionBody(x: unknown): x is SessionBody {
 
 const NO_EVENTS: GbcMapEvents = { warps: [], coords: [], bgs: [], objects: [], sceneScripts: [], callbacks: [], objectConsts: [] };
 
-interface Live {
-  forMap: string;
-  /** The `initialBlocks` this state was derived from: a new payload (a refetch after a commit) invalidates it. */
-  seed: Block[] | undefined;
-  blocks: Block[];
-  events: GbcMapEvents;
-  isDirty: boolean;
-  canUndo: boolean;
-  canRedo: boolean;
-}
-
 /**
  * The client face of `gbcEditRoutes.ts` (`/api/edit/:map/*`), mirroring `useEditSession.ts` for GBA with the
  * same discipline: a thin mirror of whatever the server's session holds, never computing anything itself.
  *
+ * Both families use the shared core for map/seed-derived state and ordered response tickets.
  * Differences from the GBA hook, all deliberate:
- * - Per-map state is keyed by `forMap` (and by the `initialBlocks` seed) and derived at render, not reset by an
- *   effect (6c B4). `useEditSession`'s reset effect leaves a one-tick window and a documented clobber gap
- *   (lines 209-241); here a map switch, or a refetched payload, simply stops matching `live` and the seed shows.
- * - A response that lands after the map changed is dropped, so a slow request never paints into the next map.
  * - Every response is shape-checked (RESUME) before it touches state; a malformed one throws with the state unchanged.
  * - The server's `{ error }` body is surfaced as the thrown message: event refusals (a referenced object const,
  *   the 15-object cap) are 400s whose text is the whole explanation.
@@ -96,34 +83,20 @@ interface Live {
  * the server still holds dirty (the reasoning at `App.tsx:50-62`).
  */
 export function useGbcEditSession(mapName: string | null, initialBlocks?: Block[], initialEvents?: GbcMapEvents): UseGbcEditSessionResult {
-  const [state, setState] = useState<Live | null>(null);
-  const latest = useRef({ mapName, initialBlocks });
-  latest.current = { mapName, initialBlocks };
-  // Read when a response lands: a new map or seed also drops a stale in-flight response, not just stops showing old state.
-  // `issued`/`applied` order the responses of one map: a pencil drag fires parallel POSTs, and an older response
-  // landing after a newer one must not revert the view (the server is right; the client would be stale).
-  const seq = useRef({ issued: 0, applied: 0 });
-
-  const live = state !== null && state.forMap === mapName && state.seed === initialBlocks ? state : null;
-  const blocks = live ? live.blocks : initialBlocks ?? [];
-  const events = live ? live.events : initialEvents ?? NO_EVENTS;
+  const seed = useMemo(() => ({ blocks: initialBlocks ?? [], events: initialEvents ?? NO_EVENTS }), [initialBlocks, initialEvents]);
+  const { state, isDirty, canUndo, canRedo, post: corePost, apply, discard, markClean } = useEditSessionCore("/api/edit", mapName, seed, { readServerError: true });
+  const { blocks, events } = state;
 
   const post = useCallback(async (path: string, body?: unknown): Promise<SessionBody | null> => {
-    if (!mapName) return null; // nothing open -- same no-op as useEditSession
-    const url = `/api/edit/${encodeURIComponent(mapName)}${path}`;
-    const mine = ++seq.current.issued;
-    const r = await fetch(url, body === undefined ? { method: "POST" } : { method: "POST", body: JSON.stringify(body) });
-    const d: unknown = await r.json().catch(() => null);
-    if (!r.ok) throw new Error(isRecord(d) && typeof d.error === "string" ? d.error : `POST /api/edit/${mapName}${path} -> ${r.status}`);
+    const reply = await corePost<unknown>(path, body);
+    if (!reply) return null;
+    const d = reply.data;
     if (!isSessionBody(d)) throw new Error(`POST /api/edit/${mapName}${path} returned an unexpected shape`);
     if (d.events === null) return null; // nothing open server-side (undo/redo no-op): leave the client as it is
-    const seed = initialBlocks;
-    if (latest.current.mapName === mapName && latest.current.initialBlocks === seed && mine > seq.current.applied) {
-      seq.current.applied = mine;
-      setState({ forMap: mapName, seed, blocks: d.blocks, events: d.events, isDirty: d.isDirty, canUndo: d.canUndo, canRedo: d.canRedo });
-    }
+    const nextEvents = d.events;
+    apply({ state: () => ({ blocks: d.blocks, events: nextEvents }), isDirty: d.isDirty, canUndo: d.canUndo, canRedo: d.canRedo }, reply.ticket);
     return d;
-  }, [mapName, initialBlocks]);
+  }, [corePost, apply, mapName]);
 
   const beginStroke = useCallback(() => post("/paint/begin").then(() => {}), [post]);
   const applyPaint = useCallback((body: GbcPaintBody) => post("/paint/apply", body).then(() => {}), [post]);
@@ -140,20 +113,8 @@ export function useGbcEditSession(mapName: string | null, initialBlocks?: Block[
     [post],
   );
 
-  const markClean = useCallback(() => {
-    setState((prev) => (prev === null ? prev : { ...prev, isDirty: false, canUndo: false, canRedo: false }));
-  }, []);
-
-  const discard = useCallback(async () => {
-    if (!mapName) return;
-    const r = await fetch(`/api/edit/${encodeURIComponent(mapName)}/discard`, { method: "POST" });
-    if (!r.ok) throw new Error(`POST /api/edit/${mapName}/discard -> ${r.status}`);
-    seq.current.applied = seq.current.issued; // an op still in flight must not resurrect the discarded session
-    setState(null); // back to the seed -- disk state, not an empty grid
-  }, [mapName]);
-
   return {
-    blocks, events, isDirty: live?.isDirty ?? false, canUndo: live?.canUndo ?? false, canRedo: live?.canRedo ?? false,
+    blocks, events, isDirty, canUndo, canRedo,
     beginStroke, applyPaint, endStroke, undo, redo, discard, markClean, moveEvent, addEvent, deleteEvent,
   };
 }

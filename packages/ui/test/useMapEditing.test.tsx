@@ -16,8 +16,8 @@ const MAP: MapData = {
 const editSession = { map: MAP } as unknown as UseEditSessionResult;
 
 describe("useMapEditing", () => {
-  it("resetForMapChange clears selectedEvent and currentStamp but keeps activeToolKind and collisionValue", () => {
-    const { result } = renderHook(() => useMapEditing({ editSession, layoutData: null }));
+  it("a map change clears selectedEvent and currentStamp but keeps activeToolKind and collisionValue", () => {
+    const { result, rerender } = renderHook((p) => useMapEditing({ editSession, layoutData: null, mapName: p.mapName }), { initialProps: { mapName: "A" } });
     const stamp = { width: 1, height: 1, cells: [{ metatileId: 9 }] };
     act(() => {
       result.current.setActiveToolKind("pencil");
@@ -29,7 +29,7 @@ describe("useMapEditing", () => {
     expect(result.current.currentStamp).toBe(stamp);
     expect(result.current.activeTool).toEqual({ kind: "pencil", stamp });
 
-    act(() => result.current.resetForMapChange());
+    rerender({ mapName: "B" });
 
     expect(result.current.selectedEvent).toBeNull();
     expect(result.current.currentStamp).toBeNull();

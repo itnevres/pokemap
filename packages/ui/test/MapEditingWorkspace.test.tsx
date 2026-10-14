@@ -60,7 +60,6 @@ function makeEditing(overrides: Partial<ReturnType<typeof useMapEditing>> = {}):
     setSignAddedMessage: vi.fn(),
     activeTool: null,
     handleDiscard: vi.fn(),
-    resetForMapChange: vi.fn(),
     ...overrides,
   };
 }

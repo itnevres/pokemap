@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import type { GbcMapPayload } from "@pokemap/core/src/gbc/wire.js";
 import type { GbcStamp } from "@pokemap/core/src/gbc/edit/paint.js";
 import type { GbcEventKind, GbcWarpRenumberWarning } from "@pokemap/core/src/gbc/edit/events.js";
@@ -8,6 +8,8 @@ import { GbcMetatilePalette } from "./GbcMetatilePalette.js";
 import { GbcEventInspector } from "./GbcEventInspector.js";
 import type { UseGbcEditSessionResult } from "./hooks/useGbcEditSession.js";
 import type { GbcTimeOfDay } from "./time.js";
+import { EditingWorkspace } from "../shared/EditingWorkspace.js";
+import { useVisit } from "../shared/useVisit.js";
 
 /** No collision button (Plan 7 Goal: GBC collision is per metatile, not per block) and no sign composer. */
 export const GBC_TOOLS: ToolKind[] = ["pencil", "rect", "bucket", "dropper", "shift"];
@@ -19,10 +21,11 @@ const message = (e: unknown, fallback: string) => (e instanceof Error ? e.messag
  *  through `renderCanvas`, so the prop assembly lives in one place. */
 export type GbcMapEditingCanvasProps = Pick<
   GbcMapCanvasProps,
-  "mapName" | "data" | "time" | "hoveredMetatile" | "editSession" | "activeTool" | "onDropperPick" | "selectedEvent" | "onSelectEvent" | "onMoveEvent" | "onEditError"
+  "onStrokeChain" | "mapName" | "data" | "time" | "hoveredMetatile" | "editSession" | "activeTool" | "onDropperPick" | "selectedEvent" | "onSelectEvent" | "onMoveEvent" | "onEditError"
 >;
 
 export interface GbcMapEditingProps {
+  onStrokeChain?: GbcMapCanvasProps["onStrokeChain"];
   /** Null only while `active` is false and no map is selected yet. */
   mapName: string | null;
   /** Null only while `active` is false (the World view before the context map's payload has loaded). */
@@ -54,27 +57,21 @@ export interface GbcMapEditingProps {
  * Non-writable layout (`layout.writable === false`): the paint tools render disabled with the reason, and
  * `activeTool` resolves to null so the canvas cannot paint; event editing, undo/redo and save stay enabled.
  */
-export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId, onHoverMetatile, onOpenSave, active = true, renderCanvas }: GbcMapEditingProps) {
+export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId, onHoverMetatile, onOpenSave, active = true, renderCanvas, onStrokeChain }: GbcMapEditingProps) {
   const [toolKind, setToolKind] = useState<ToolKind | null>(null);
   // `key` is never a real map name when there is no map, so nothing reads as "mine" until one is selected.
   const key = mapName ?? "";
   const [pick, setPick] = useState<{ forMap: string; stamp: GbcStamp | null; event: GbcEventRef | null }>({ forMap: key, stamp: null, event: null });
   const [err, setErr] = useState<{ forMap: string; text: string } | null>(null);
   const [warn, setWarn] = useState<{ forMap: string; list: GbcWarpRenumberWarning[] } | null>(null);
-  const [visit, setVisit] = useState({ mapName });
-  const currentVisit = useRef<typeof visit | null>(visit);
+  const visit = useVisit(mapName);
   // Adjust this component's state during render: React retries it before rendering children, so no old pick is exposed.
-  if (visit.mapName !== mapName) {
-    setVisit({ mapName });
+  if (visit.changed) {
     setPick({ forMap: key, stamp: null, event: null });
     setErr(null);
     setWarn(null);
   }
-  useLayoutEffect(() => {
-    currentVisit.current = visit;
-    return () => { currentVisit.current = null; };
-  }, [visit]);
-  const isCurrent = () => currentVisit.current === visit;
+  const isCurrent = visit.isCurrent;
 
   const mine = pick.forMap === key;
   const stamp = mine ? pick.stamp : null;
@@ -131,6 +128,7 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
   const canvasProps: GbcMapEditingCanvasProps | null =
     mapName !== null && data !== null
       ? {
+          ...(onStrokeChain ? { onStrokeChain } : {}),
           mapName,
           data,
           time,
@@ -144,11 +142,8 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
           onEditError: (m) => fail(new Error(m)),
         }
       : null;
-  const canvas = renderCanvas ? renderCanvas(canvasProps) : canvasProps && <GbcMapCanvas {...canvasProps} />;
-
-  return (
-    <>
-      {active && <Toolbar
+  const top = <>
+      <Toolbar
         activeToolKind={toolKind}
         onSelectTool={setToolKind}
         tools={GBC_TOOLS}
@@ -161,8 +156,8 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
         canRedo={session.canRedo}
         onOpenSave={onOpenSave}
         onDiscard={onDiscard}
-      />}
-      {active && error && (
+      />
+      {error && (
         <div className="app__event-op-error" role="alert">
           <span>{error}</span>
           <button type="button" className="app__event-op-error-dismiss" onClick={ok} aria-label="Dismiss">
@@ -170,11 +165,10 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
           </button>
         </div>
       )}
-      <div className="app__map-editing-body">
-        {canvas}
-        {/* One right-hand rail (palette over inspector), 260px: three fixed side panels left the canvas about 224px
-            at 1024 wide (quality review I4). The rail and its children carry min-width: 0 in the stylesheet. */}
-        {active && mapName !== null && data !== null && (
+    </>;
+  // One right-hand rail (palette over inspector), 260px: three fixed side panels left the canvas about 224px
+  // at 1024 wide (quality review I4). The rail and its children carry min-width: 0 in the stylesheet.
+  const side = mapName !== null && data !== null ? (
           <div className="gbc-map-editing__rail">
             <GbcMetatilePalette
               mapName={mapName}
@@ -197,8 +191,6 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
               onDismissWarnings={() => { if (isCurrent()) setWarn(null); }}
             />
           </div>
-        )}
-      </div>
-    </>
-  );
+  ) : null;
+  return <EditingWorkspace active={active} top={top} side={side} canvasProps={canvasProps} Canvas={GbcMapCanvas} renderCanvas={renderCanvas} />;
 }

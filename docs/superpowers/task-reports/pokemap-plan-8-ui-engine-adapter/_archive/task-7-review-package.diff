@@ -1,0 +1,728 @@
+d373d86 refactor(ui): share beforeunload guard and stroke-chain registry
+ .../task-7-report.md                               | 26 ++++++++++
+ packages/ui/src/App.tsx                            | 31 +++---------
+ packages/ui/src/components/MapCanvas.tsx           |  3 +-
+ packages/ui/src/gbc/GbcApp.tsx                     | 24 +++-------
+ packages/ui/src/gbc/GbcMapCanvas.tsx               |  3 +-
+ packages/ui/src/hooks/useMapEditing.ts             | 33 +++++--------
+ packages/ui/src/shared/useBeforeUnloadGuard.ts     | 15 ++++++
+ packages/ui/src/shared/useEditSessionCore.ts       |  2 +-
+ packages/ui/src/shared/useStrokeChain.ts           | 13 ++++-
+ packages/ui/test/AppContextVisit.test.tsx          |  2 +-
+ packages/ui/test/MapEditingWorkspace.test.tsx      |  1 -
+ .../ui/test/MapEditingWorkspaceActive.test.tsx     |  1 -
+ .../ui/test/shared/useBeforeUnloadGuard.test.tsx   | 24 ++++++++++
+ .../ui/test/shared/useEditSessionCore.test.tsx     | 13 +++++
+ .../ui/test/shared/useStrokeChainRegistry.test.tsx | 55 ++++++++++++++++++++++
+ packages/ui/test/useMapEditing.test.tsx            |  6 +--
+ 16 files changed, 180 insertions(+), 72 deletions(-)
+diff --git a/packages/ui/src/App.tsx b/packages/ui/src/App.tsx
+index b65b976..e7388ac 100644
+--- a/packages/ui/src/App.tsx
++++ b/packages/ui/src/App.tsx
+@@ -1,25 +1,27 @@
+-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
++import { useMemo, useRef, useState, type ReactNode } from "react";
+ import { MapTree } from "./components/MapTree.js";
+ import { WorldCanvas } from "./components/WorldCanvas.js";
+ import { DungeonSidebar } from "./components/DungeonSidebar.js";
+ import { SaveDialog } from "./components/SaveDialog.js";
+ import { SignComposer } from "./components/SignComposer.js";
+ import { MapEditingWorkspace, type MapEditingCanvasProps } from "./components/MapEditingWorkspace.js";
+ import { MapCanvas, compositeOrigin } from "./components/MapCanvas.js";
+ import { useMapGroups } from "./hooks/useMapGroups.js";
+ import { useMapLayout } from "./hooks/useMapLayout.js";
+ import { useWorldVisibility } from "./hooks/useWorldVisibility.js";
+ import { useDungeons } from "./hooks/useDungeons.js";
+ import { useEditSession } from "./hooks/useEditSession.js";
+ import { useMapEditing } from "./hooks/useMapEditing.js";
+ import { useContextEditing } from "./shared/useContextEditing.js";
++import { useBeforeUnloadGuard } from "./shared/useBeforeUnloadGuard.js";
++import { useStrokeChainRegistry } from "./shared/useStrokeChain.js";
+ 
+ type Mode = "map" | "world" | "dungeon";
+ 
+ export interface AppProps {
+   /** Plan 6c A2: the header's project-switcher button (`ProjectSwitcher`),
+    *  supplied by `Root` -- additive and optional so `App.test.tsx`'s own
+    *  `<App />` (no props) stays byte-identical in behaviour. `null`/
+    *  `undefined` renders nothing extra in the toolbar. */
+   switcher?: ReactNode;
+ }
+@@ -60,55 +62,36 @@ export function App({ switcher }: AppProps) {
+   // exactly the value we want available everywhere the "you have unsaved
+   // changes" guards below need it, not just while Map mode's own UI is
+   // rendered.
+   const editSession = useEditSession(selected, layout.data?.blocks, layout.data?.map);
+ 
+   // Plan 6c E2: map-editing state and handlers (selected event, tool/dialog
+   // state, event ops, discard) -- see useMapEditing.ts. Called here, at the same
+   // spot the state used to live, so its lifetime is unchanged.
+   const editing = useMapEditing({ editSession, layoutData: layout.data, mapName: selected });
+ 
+-  // I6: "no autosave, ever" also means losing a dirty session silently must
+-  // never happen -- closing the tab is the browser-level case (this effect),
+-  // switching maps is the in-app case (selectMap's own guard just below).
+-  // Gated on isDirty, not just "an edit session exists": an OPEN session
+-  // that matches disk (nothing painted yet, or already saved) is not lossy
+-  // to abandon, and a handler that's always attached would make Step 13's
+-  // own teeth-proof test meaningful (attaching unconditionally is exactly
+-  // the bug that test exists to catch).
+-  useEffect(() => {
+-    if (!editSession.isDirty) return;
+-    const handler = (e: BeforeUnloadEvent) => {
+-      e.preventDefault();
+-      e.returnValue = "";
+-    };
+-    window.addEventListener("beforeunload", handler);
+-    return () => window.removeEventListener("beforeunload", handler);
+-  }, [editSession.isDirty]);
++  // Shared browser-level half of I6's dirty-session guard; the in-app guard is below.
++  useBeforeUnloadGuard(editSession.isDirty);
+ 
+   // The dirty guard shared by tree, world and context entry.
+   const leave = (go: () => void) => {
+     if (editSession.isDirty && !window.confirm("You have unsaved changes on this map. Discard them and switch maps?")) return;
+     go();
+   };
+   const select = (name: string) => {
+     setSelected(name);
+-    editing.resetForMapChange();
+   };
+-  const chains = useRef(new Set<{ settled(): Promise<void> }>());
+-  const onStrokeChain = useCallback((chain: { settled(): Promise<void> }, mounted: boolean) => {
+-    if (mounted) chains.current.add(chain); else chains.current.delete(chain);
+-  }, []);
++  const { onStrokeChain, strokeSettled } = useStrokeChainRegistry();
+   const ctx = useContextEditing({
+     selected, session: editSession, leave, select,
+     openSave: () => editing.setSaveDialogOpen(true),
+-    strokeSettled: () => Promise.all([...chains.current].map((c) => c.settled())).then(() => {}),
++    strokeSettled,
+   });
+   const { contextMap, tileVersions } = ctx;
+   const changeSelection = (name: string): boolean => {
+     let changed = false;
+     leave(() => { select(name); changed = true; });
+     return changed;
+   };
+ 
+   const selectMap = (name: string) => {
+     if (!changeSelection(name)) return;
+diff --git a/packages/ui/src/components/MapCanvas.tsx b/packages/ui/src/components/MapCanvas.tsx
+index 4a40aaf..af1e07a 100644
+--- a/packages/ui/src/components/MapCanvas.tsx
++++ b/packages/ui/src/components/MapCanvas.tsx
+@@ -1,18 +1,19 @@
+ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+ import { drawGrid, drawCollision, drawElevation, drawEvents, type EventMark } from "@pokemap/core/src/render/overlays.js";
+ import type { LayoutRaster } from "@pokemap/core/src/render/layout.js";
+ import type { MapData } from "@pokemap/core/src/load/maps.js";
+ import type { EventKind } from "@pokemap/core/src/edit/events.js";
+ import type { MapLayoutData } from "../hooks/useMapLayout.js";
+ import type { PaintApplyBody, UseEditSessionResult } from "../hooks/useEditSession.js";
+ import { useStrokeChain } from "../shared/useStrokeChain.js";
++import type { SettledChain } from "../shared/useStrokeChain.js";
+ import { readBlock, type Stamp } from "@pokemap/core/src/edit/paint.js";
+ import type { CollisionElevation } from "./CollisionPalette.js";
+ import { EncounterBorder, type EncounterBorderEntry } from "./EncounterBorder.js";
+ import { BORDER_BAND, borderSideFromConnections, gbaDirToCompass, type CompassDir } from "../encounters/borderSide.js";
+ import { fitWithBand } from "../encounters/fit.js";
+ import { useMapEncounterSummaries } from "../encounters/useMapEncounterSummaries.js";
+ import { ZOOM_LEVELS, zoomAboutPivot, type MapView, type Zoom } from "./mapView.js";
+ 
+ /** A bare {kind,index} pointer at one event, the unit MapCanvas's own
+  *  selection/drag interaction deals in -- resolving it into a full event
+@@ -57,21 +58,21 @@ function findEventAt(map: MapData, bx: number, by: number): EventRef | null {
+  *  static selection ring (as opposed to `dragPreview`'s own in-flight
+  *  candidate position, see the blit effect below). */
+ function eventPositionAt(map: MapData, ref: EventRef | null | undefined): { x: number; y: number } | null {
+   if (!ref) return null;
+   const list = ref.kind === "object" ? map.objectEvents : ref.kind === "warp" ? map.warpEvents : ref.kind === "coord" ? map.coordEvents : map.bgEvents;
+   const e = list[ref.index];
+   return e ? { x: e.x, y: e.y } : null;
+ }
+ 
+ export interface MapCanvasProps {
+-  onStrokeChain?: (chain: { settled(): Promise<void> }, mounted: boolean) => void;
++  onStrokeChain?: (chain: SettledChain, mounted: boolean) => void;
+   mapName: string;
+   data: MapLayoutData;
+   /** Present only when editing is active for THIS map -- see
+    *  useEditSession.ts. Every existing read-only consumer (Map mode's
+    *  default view, WarpDestinationModal's preview) never passes this and
+    *  is completely unaffected by anything in this task. */
+   editSession?: UseEditSessionResult;
+   /** "collision" (Task 12) paints a stamp whose cell carries only
+    *  collision/elevation -- no metatileId -- leaving the id untouched
+    *  (paintCells's own field-by-field merge, see packages/core/src/edit/
+diff --git a/packages/ui/src/gbc/GbcApp.tsx b/packages/ui/src/gbc/GbcApp.tsx
+index bf4f097..c70bc76 100644
+--- a/packages/ui/src/gbc/GbcApp.tsx
++++ b/packages/ui/src/gbc/GbcApp.tsx
+@@ -1,25 +1,27 @@
+-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
++import { useMemo, useRef, useState, type ReactNode } from "react";
+ import { MapTree } from "../components/MapTree.js";
+ import { useGbcGroups } from "./hooks/useGbcGroups.js";
+ import { useGbcMap } from "./hooks/useGbcMap.js";
+ import { GbcMapEditing, type GbcMapEditingCanvasProps } from "./GbcMapEditing.js";
+ import { GbcMapCanvas, GBC_COMPOSITE_ORIGIN } from "./GbcMapCanvas.js";
+ import { useGbcEditSession } from "./hooks/useGbcEditSession.js";
+ import { SaveDialog } from "../components/SaveDialog.js";
+ import { GbcWorldCanvas } from "./GbcWorldCanvas.js";
+ import { useGbcWorld } from "./hooks/useGbcWorld.js";
+ import { GBC_HIDDEN_MAP_TYPES } from "../world/visibility.js";
+ import { DungeonSidebar } from "../components/DungeonSidebar.js";
+ import { useGbcDungeons } from "./hooks/useGbcDungeons.js";
+ import type { GbcTimeOfDay } from "./time.js";
+ import { useContextEditing } from "../shared/useContextEditing.js";
++import { useBeforeUnloadGuard } from "../shared/useBeforeUnloadGuard.js";
++import { useStrokeChainRegistry } from "../shared/useStrokeChain.js";
+ 
+ type Mode = "map" | "world" | "dungeon";
+ /** Fix round (quality review finding 3): re-exported from the shared
+  *  `gbc/time.ts` (was independently declared here) so a future Task 5/6
+  *  consumer of `GbcApp`'s own time type doesn't need to know it moved. */
+ export type TimeOfDay = GbcTimeOfDay;
+ 
+ 
+ const TIME_ORDER: readonly TimeOfDay[] = ["morn", "day", "nite"];
+ const TIME_LABEL: Record<TimeOfDay, string> = { morn: "Morn", day: "Day", nite: "Nite" };
+@@ -98,52 +100,40 @@ export function GbcApp({ root, switcher }: GbcAppProps) {
+   // under the new one's name, and never the previous one's Fit/pan/defects.
+   const ready = map.data && map.data.map.name === selected ? map.data : null;
+   // Plan 7 Task 5: the edit session for whatever map is `selected`, tracked here and never gated on `mode`, so a
+   // World/Dungeon round trip cannot lose the client's view of a session the server still holds dirty (the
+   // reasoning at App.tsx:50-62). Seeded from the ready payload only: `ready` already ignores the previous map's.
+   const session = useGbcEditSession(selected, ready?.blocks, ready?.events);
+   const [saveOpen, setSaveOpen] = useState(false);
+   // A failed discard-before-switch: the switch is abandoned and this says why.
+   const [switchError, setSwitchError] = useState<string | null>(null);
+ 
+-  // I6: no silent loss of a dirty session -- closing the tab (this effect) and switching maps (`leave`).
+-  // Registered only while dirty: an always-attached handler would prompt on a clean tab.
+-  useEffect(() => {
+-    if (!session.isDirty) return;
+-    const handler = (e: BeforeUnloadEvent) => {
+-      e.preventDefault();
+-      e.returnValue = "";
+-    };
+-    window.addEventListener("beforeunload", handler);
+-    return () => window.removeEventListener("beforeunload", handler);
+-  }, [session.isDirty]);
++  // Shared browser-level half of I6's dirty-session guard; `leave` handles switching below.
++  useBeforeUnloadGuard(session.isDirty);
+ 
+   // Every change of `selected` goes through this: tree click, world click, world double-click, jump. A clean
+   // session just proceeds. A dirty one needs GBA's exact confirm, then the server session is discarded BEFORE the
+   // switch (the hook is keyed on `selected`, so switching first would orphan a dirty server session the client
+   // can no longer see). A failed discard keeps the user on the map with the reason shown.
+   // The Map tab itself changes no selection, so entering it from World needs no guard of its own: the world click
+   // that moved the selection already passed through here.
+   const leave = (go: () => void) => {
+     if (!session.isDirty) { go(); return; }
+     if (!window.confirm("You have unsaved changes on this map. Discard them and switch maps?")) return;
+     session.discard().then(go).catch((e: unknown) => setSwitchError(e instanceof Error ? e.message : "Could not discard the changes."));
+   };
+-  const chains = useRef(new Set<{ settled(): Promise<void> }>());
+-  const onStrokeChain = useCallback((chain: { settled(): Promise<void> }, mounted: boolean) => {
+-    if (mounted) chains.current.add(chain); else chains.current.delete(chain);
+-  }, []);
++  const { onStrokeChain, strokeSettled } = useStrokeChainRegistry();
+   const ctx = useContextEditing({
+     selected, session, leave,
+     select: (name) => { setSwitchError(null); setSelected(name); setHoveredMetatileId(null); },
+     openSave: () => setSaveOpen(true),
+-    strokeSettled: () => Promise.all([...chains.current].map((c) => c.settled())).then(() => {}),
++    strokeSettled,
+   });
+   const { contextMap, tileVersions } = ctx;
+   const openDungeon = mode === "dungeon" ? dungeons.data?.find((d) => d.id === openDungeonId) ?? null : null;
+   const filterCache = useRef<{ id: string; members: string[]; filter: Set<string> } | null>(null);
+   const mapFilter = useMemo(() => {
+     if (!openDungeon) { filterCache.current = null; return null; }
+     const members = [...openDungeon.maps].sort();
+     const cached = filterCache.current;
+     if (cached?.id === openDungeon.id && cached.members.length === members.length
+       && members.every((name, index) => name === cached.members[index])) return cached.filter;
+diff --git a/packages/ui/src/gbc/GbcMapCanvas.tsx b/packages/ui/src/gbc/GbcMapCanvas.tsx
+index 2cb299c..39aa3c7 100644
+--- a/packages/ui/src/gbc/GbcMapCanvas.tsx
++++ b/packages/ui/src/gbc/GbcMapCanvas.tsx
+@@ -1,19 +1,20 @@
+ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+ import type { RGBA } from "@pokemap/core/src/render/raster.js";
+ import { drawGbcGrid, drawGbcCollision, drawGbcEvents, gbcStepInfo, type GbcQuadrantInfo, type GbcQuadrantKey, type GbcStepInfo } from "@pokemap/core/src/gbc/render/overlays.js";
+ import type { GbcMapPayload } from "@pokemap/core/src/gbc/wire.js";
+ import type { GbcMapEvents } from "@pokemap/core/src/gbc/model/types.js";
+ import type { GbcStamp } from "@pokemap/core/src/gbc/edit/paint.js";
+ import type { GbcEventKind } from "@pokemap/core/src/gbc/edit/events.js";
+ import type { GbcPaintBody, UseGbcEditSessionResult } from "./hooks/useGbcEditSession.js";
+ import { useStrokeChain } from "../shared/useStrokeChain.js";
++import type { SettledChain } from "../shared/useStrokeChain.js";
+ import type { GbcTimeOfDay } from "./time.js";
+ import { EncounterBorder, type EncounterBorderEntry } from "../components/EncounterBorder.js";
+ import { BORDER_BAND, borderSideFromConnections } from "../encounters/borderSide.js";
+ import { fitWithBand } from "../encounters/fit.js";
+ import { useMapEncounterSummaries } from "../encounters/useMapEncounterSummaries.js";
+ import { ZOOM_LEVELS, zoomAboutPivot, type MapView, type Zoom } from "../components/mapView.js";
+ 
+ /**
+  * The GBC map view (Plan 6b Task 4: read-only; Plan 7 Task 5 added the optional editing props, see below). Plan Q2 accepts this as a
+  * deliberate DUPLICATE of `MapCanvas.tsx`'s pan/zoom/viewport mechanics
+@@ -124,21 +125,21 @@ function findEventAt(events: GbcMapEvents, sx: number, sy: number): GbcEventRef
+ }
+ 
+ function eventPosition(events: GbcMapEvents, ref: GbcEventRef | null | undefined): { x: number; y: number } | null {
+   if (!ref) return null;
+   const list = ref.kind === "object" ? events.objects : ref.kind === "warp" ? events.warps : ref.kind === "coord" ? events.coords : events.bgs;
+   const e = list[ref.index];
+   return e ? { x: e.x, y: e.y } : null;
+ }
+ 
+ export interface GbcMapCanvasProps {
+-  onStrokeChain?: (chain: { settled(): Promise<void> }, mounted: boolean) => void;
++  onStrokeChain?: (chain: SettledChain, mounted: boolean) => void;
+   mapName: string;
+   data: GbcMapPayload;
+   time: GbcTimeOfDay;
+   /** Present once editing is mounted for this map. Its blocks and events win over `data`'s for drawing, hover
+    *  and the dropper. Absent: the read-only view. */
+   editSession?: UseGbcEditSessionResult;
+   activeTool?: GbcActiveTool | null;
+   /** Dropper: fired with the clicked block's id as a 1x1 stamp. */
+   onDropperPick?: (stamp: GbcStamp) => void;
+   /** The selected event, for the selection ring only (the hit test always re-derives from the click). */
+diff --git a/packages/ui/src/hooks/useMapEditing.ts b/packages/ui/src/hooks/useMapEditing.ts
+index 506e144..16bd14b 100644
+--- a/packages/ui/src/hooks/useMapEditing.ts
++++ b/packages/ui/src/hooks/useMapEditing.ts
+@@ -218,30 +218,41 @@ export function useMapEditing({ editSession, layoutData, mapName }: UseMapEditin
+   // own doc comment below).
+   const [activeToolKind, setActiveToolKind] = useState<ToolKind | null>(null);
+   const [collisionValue, setCollisionValue] = useState<CollisionElevation>({ collision: 0, elevation: 0 });
+   // The metatile selection pencil/rect/bucket paint with -- chosen via
+   // MetatilePalette, mounted in MapEditingWorkspace.tsx while one of those three tools is active.
+   // `null` until the player picks a cell (or a rect drag), same
+   // null-until-configured posture `activeTool` already gives every tool
+   // below it a stamp for.
+   //
+   // Deliberately SHARED across all three tools, and NOT cleared on a tool
+-  // switch (only on a map switch -- see resetForMapChange below): this is intended
++  // switch (only on a map switch -- see the visit reset below): this is intended
+   // Porymap-parity behaviour, not an oversight. Pick a metatile once, then
+   // pencil/rect/bucket-fill with it freely -- e.g. pencil in a small detail,
+   // then bucket-fill the surrounding area with that SAME tile, with no
+   // re-pick in between. Clearing it on every tool switch would force an
+   // annoying re-pick for that normal workflow.
+   const [currentStamp, setCurrentStamp] = useState<Stamp | null>(null);
+   // Render-phase reset means no child ever sees a previous visit's pick, selection, or error.
+   if (visit.changed) {
++    // Task 14: a selected event belongs to the map it was selected on --
++    // without this, switching from map A (something selected) to map B
++    // would carry A's {kind,index} ref into EventInspector, which would
++    // either show map B's UNRELATED event at that same index, or (once B's
++    // own events run out at that index) crash resolveEventRef's own array
++    // lookup path into rendering `null` silently at best.
+     setSelectedEvent(null);
++    // Plan 2 follow-up 1: a stamp chosen against one layout's tileset (a
++    // specific metatile id) is meaningless -- and potentially out-of-range
++    // -- against a DIFFERENT layout's own tileset. A stale stamp must never
++    // survive a map switch; pencil/rect/bucket go back to inert until the
++    // player picks a fresh one from the newly mounted MetatilePalette.
+     setCurrentStamp(null);
+     setEventOpError(null);
+   }
+   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+   // Task 17: SignComposer's own open/close flag, same shape as
+   // saveDialogOpen above. signAddedMessage is a one-shot confirmation --
+   // this app had no existing "success" notice anywhere to reuse (only
+   // eventOpError's danger-bordered banner), so this is a small, deliberate
+   // new one: same dismissible-banner shape as eventOpError, accent-toned
+   // instead of danger-toned, cleared by its own dismiss button or replaced
+@@ -292,39 +303,20 @@ export function useMapEditing({ editSession, layoutData, mapName }: UseMapEditin
+   // fails would leave the player thinking their edits are gone when the
+   // server-side session is actually still open and dirty.
+   const handleDiscard = () => {
+     if (!window.confirm("Discard all unsaved changes on this map? This cannot be undone.")) return;
+     editSession
+       .discard()
+       .then(() => { if (visit.isCurrent()) setEventOpError(null); })
+       .catch((e: unknown) => { if (visit.isCurrent()) setEventOpError(eventOpErrorMessage(e)); });
+   };
+ 
+-  // The per-map resets `App.changeSelection` runs on a map switch. Deliberately
+-  // does NOT touch `activeToolKind`/`collisionValue`: the chosen tool persists
+-  // across map switches.
+-  const resetForMapChange = () => {
+-    // Task 14: a selected event belongs to the map it was selected on --
+-    // without this, switching from map A (something selected) to map B
+-    // would carry A's {kind,index} ref into EventInspector, which would
+-    // either show map B's UNRELATED event at that same index, or (once B's
+-    // own events run out at that index) crash resolveEventRef's own array
+-    // lookup path into rendering `null` silently at best.
+-    setSelectedEvent(null);
+-    // Plan 2 follow-up 1: a stamp chosen against one layout's tileset (a
+-    // specific metatile id) is meaningless -- and potentially out-of-range
+-    // -- against a DIFFERENT layout's own tileset. A stale stamp must never
+-    // survive a map switch; pencil/rect/bucket go back to inert until the
+-    // player picks a fresh one from the newly mounted MetatilePalette.
+-    setCurrentStamp(null);
+-  };
+-
+   return {
+     selectedEvent,
+     eventOpError,
+     setEventOpError,
+     currentMap,
+     onSelectEvent,
+     onCanvasMoveEvent,
+     onMoveEventFromInspector,
+     onDeleteEvent,
+     onAddEvent,
+@@ -335,13 +327,12 @@ export function useMapEditing({ editSession, layoutData, mapName }: UseMapEditin
+     currentStamp,
+     setCurrentStamp,
+     saveDialogOpen,
+     setSaveDialogOpen,
+     signComposerOpen,
+     setSignComposerOpen,
+     signAddedMessage,
+     setSignAddedMessage,
+     activeTool,
+     handleDiscard,
+-    resetForMapChange,
+   };
+ }
+diff --git a/packages/ui/src/shared/useBeforeUnloadGuard.ts b/packages/ui/src/shared/useBeforeUnloadGuard.ts
+new file mode 100644
+index 0000000..82714ee
+--- /dev/null
++++ b/packages/ui/src/shared/useBeforeUnloadGuard.ts
+@@ -0,0 +1,15 @@
++import { useEffect } from "react";
++
++/** No autosave means a dirty session must never be lost silently at the browser boundary.
++ * Attach only while dirty: a session matching disk is safe to abandon, and an always-on handler would falsely prompt. */
++export function useBeforeUnloadGuard(isDirty: boolean): void {
++  useEffect(() => {
++    if (!isDirty) return;
++    const handler = (e: BeforeUnloadEvent) => {
++      e.preventDefault();
++      e.returnValue = "";
++    };
++    window.addEventListener("beforeunload", handler);
++    return () => window.removeEventListener("beforeunload", handler);
++  }, [isDirty]);
++}
+diff --git a/packages/ui/src/shared/useEditSessionCore.ts b/packages/ui/src/shared/useEditSessionCore.ts
+index a9d635e..6abf032 100644
+--- a/packages/ui/src/shared/useEditSessionCore.ts
++++ b/packages/ui/src/shared/useEditSessionCore.ts
+@@ -59,19 +59,19 @@ export function useEditSessionCore<State>(base: string, mapName: string | null,
+       };
+     });
+     return true;
+   }, []);
+ 
+   const discard = useCallback(async () => {
+     if (mapName === null) return;
+     const r = await fetch(`${base}/${encodeURIComponent(mapName)}/discard`, { method: "POST" });
+     if (!r.ok) throw new Error(`POST ${base}/${mapName}/discard -> ${r.status}`);
+     seq.current.applied = seq.current.issued; // in-flight edits cannot resurrect a discarded session
+-    setStored(null); // show disk seed, never the server's empty closed-session reply
++    setStored((prev) => (prev?.forMap === mapName ? null : prev)); // a switch during the await keeps the new map's record
+   }, [base, mapName]);
+ 
+   const markClean = useCallback(() => {
+     setStored((prev) => prev === null ? prev : { ...prev, isDirty: false, canUndo: false, canRedo: false });
+   }, []);
+ 
+   return { state: live ? live.state : seed, isDirty: live?.isDirty ?? false, canUndo: live?.canUndo ?? false, canRedo: live?.canRedo ?? false, post, apply, discard, markClean };
+ }
+diff --git a/packages/ui/src/shared/useStrokeChain.ts b/packages/ui/src/shared/useStrokeChain.ts
+index 2564d87..3c3c66d 100644
+--- a/packages/ui/src/shared/useStrokeChain.ts
++++ b/packages/ui/src/shared/useStrokeChain.ts
+@@ -1,30 +1,41 @@
+-import { useLayoutEffect, useMemo, useRef } from "react";
++import { useCallback, useLayoutEffect, useMemo, useRef } from "react";
+ 
+ export interface StrokeSession<Body> {
+   beginStroke(): Promise<void>;
+   applyPaint(body: Body): Promise<unknown>;
+   endStroke(): Promise<void>;
+ }
+ 
+ export interface StrokeChain<Body> {
+   /** mousedown: ends any still-open stroke first (F3/M4), then begin, then `first` (if any) as one awaited link. */
+   start(session: StrokeSession<Body>, first: Body | null): void;
+   /** held move: queued behind every earlier link; dropped if the visit retired or begin failed. */
+   queue(body: Body): void;
+   /** mouseup/mouseleave: `last` (rect/shift final apply, or null), then end, after every queued link. */
+   finish(last: Body | null): void;
+   isOpen(): boolean;
+   /** Resolves when every link issued so far has settled. */
+   settled(): Promise<void>;
+ }
+ 
++export type SettledChain = Pick<StrokeChain<unknown>, "settled">;
++
++export function useStrokeChainRegistry(): { onStrokeChain(chain: SettledChain, mounted: boolean): void; strokeSettled(): Promise<void> } {
++  const chains = useRef(new Set<SettledChain>());
++  const onStrokeChain = useCallback((chain: SettledChain, mounted: boolean) => {
++    if (mounted) chains.current.add(chain); else chains.current.delete(chain);
++  }, []);
++  const strokeSettled = useCallback(() => Promise.all([...chains.current].map((chain) => chain.settled())).then(() => {}), []);
++  return { onStrokeChain, strokeSettled };
++}
++
+ interface Stroke<Body> {
+   visit: object;
+   begun: boolean;
+   session: StrokeSession<Body>;
+ }
+ 
+ /**
+  * One completion chain for begin, every apply and end, so no request in a stroke outruns its predecessor (B1,
+  * moved out of GbcMapCanvas). `visitKey` = the map name: a change or unmount retires the visit, so queued work
+  * drops and a begun stroke still ends on its captured session; errors of a retired visit are not reported.
+diff --git a/packages/ui/test/AppContextVisit.test.tsx b/packages/ui/test/AppContextVisit.test.tsx
+index 28bacc2..f6d2f93 100644
+--- a/packages/ui/test/AppContextVisit.test.tsx
++++ b/packages/ui/test/AppContextVisit.test.tsx
+@@ -1,12 +1,12 @@
+ // Plan 8 Task 6 (spec Tests 3 item 4): GBA mirror of GbcAppContext "different-map tree visits retire a context stamp".
+-// A regression pin, not a red witness: GBA's resetForMapChange already cleared the stamp before Task 6. Harness copied
++// A regression pin, not a red witness: GBA's visit reset already cleared the stamp before Task 6. Harness copied
+ // from AppContextEdit.test.tsx (each App test file keeps its own).
+ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+ import { App } from "../src/App.js";
+ 
+ const LAYOUT = {
+   map: {
+     id: "MAP_PALLET_TOWN", name: "PalletTown", layout: "LAYOUT_PALLET_TOWN",
+     music: "MUS_DUMMY", regionMapSection: "MAPSEC_NONE", mapType: "MAP_TYPE_TOWN", weather: "WEATHER_NONE",
+     connections: [], objectEvents: [], warpEvents: [], coordEvents: [], bgEvents: [],
+diff --git a/packages/ui/test/MapEditingWorkspace.test.tsx b/packages/ui/test/MapEditingWorkspace.test.tsx
+index fc5157f..56309cc 100644
+--- a/packages/ui/test/MapEditingWorkspace.test.tsx
++++ b/packages/ui/test/MapEditingWorkspace.test.tsx
+@@ -53,21 +53,20 @@ function makeEditing(overrides: Partial<ReturnType<typeof useMapEditing>> = {}):
+     currentStamp: null,
+     setCurrentStamp: vi.fn(),
+     saveDialogOpen: false,
+     setSaveDialogOpen: vi.fn(),
+     signComposerOpen: false,
+     setSignComposerOpen: vi.fn(),
+     signAddedMessage: null,
+     setSignAddedMessage: vi.fn(),
+     activeTool: null,
+     handleDiscard: vi.fn(),
+-    resetForMapChange: vi.fn(),
+     ...overrides,
+   };
+ }
+ 
+ describe("MapEditingWorkspace", () => {
+   it("renderCanvas receives exactly the canvas props built from `editing`, and its output sits in .app__map-editing-body before EventInspector", () => {
+     const activeTool = { kind: "dropper" as const };
+     const editing = makeEditing({
+       activeTool,
+       selectedEvent: { kind: "warp", index: 2, x: 1, y: 1, elevation: 0, destMap: "MAP_BAR", destWarpId: "0" },
+diff --git a/packages/ui/test/MapEditingWorkspaceActive.test.tsx b/packages/ui/test/MapEditingWorkspaceActive.test.tsx
+index 0f16e8c..5e71868 100644
+--- a/packages/ui/test/MapEditingWorkspaceActive.test.tsx
++++ b/packages/ui/test/MapEditingWorkspaceActive.test.tsx
+@@ -19,21 +19,20 @@ const DATA = {
+ } as unknown as MapLayoutData;
+ 
+ const editSession = { blocks: [], border: [], map: undefined, isDirty: false, canUndo: false, canRedo: false } as unknown as UseEditSessionResult;
+ 
+ const editing = {
+   selectedEvent: null, eventOpError: "boom", setEventOpError: vi.fn(), currentMap: undefined, onSelectEvent: vi.fn(),
+   onCanvasMoveEvent: vi.fn(), onMoveEventFromInspector: vi.fn(), onDeleteEvent: vi.fn(), onAddEvent: vi.fn(),
+   activeToolKind: "pencil", setActiveToolKind: vi.fn(), collisionValue: { collision: 0, elevation: 0 }, setCollisionValue: vi.fn(),
+   currentStamp: null, setCurrentStamp: vi.fn(), saveDialogOpen: false, setSaveDialogOpen: vi.fn(), signComposerOpen: false,
+   setSignComposerOpen: vi.fn(), signAddedMessage: "Added", setSignAddedMessage: vi.fn(), activeTool: null, handleDiscard: vi.fn(),
+-  resetForMapChange: vi.fn(),
+ } as unknown as ReturnType<typeof useMapEditing>;
+ 
+ const CHROME = [".toolbar", ".app__metatile-strip", ".app__event-op-error", ".app__sign-added", ".event-inspector"];
+ 
+ describe("MapEditingWorkspace: active flag (Plan 6c E4)", () => {
+   it("inactive renders only the wrapper and the canvas slot, handing renderCanvas null when there is no map data", () => {
+     const renderCanvas = vi.fn((_p: MapEditingCanvasProps | null) => <div data-testid="slot" />);
+     const { container } = render(
+       <MapEditingWorkspace active={false} mapName={null} data={null} editSession={editSession} editing={editing} renderCanvas={renderCanvas} />,
+     );
+diff --git a/packages/ui/test/shared/useBeforeUnloadGuard.test.tsx b/packages/ui/test/shared/useBeforeUnloadGuard.test.tsx
+new file mode 100644
+index 0000000..13b0eea
+--- /dev/null
++++ b/packages/ui/test/shared/useBeforeUnloadGuard.test.tsx
+@@ -0,0 +1,24 @@
++import { renderHook } from "@testing-library/react";
++import { describe, expect, it } from "vitest";
++import { useBeforeUnloadGuard } from "../../src/shared/useBeforeUnloadGuard.js";
++
++describe("useBeforeUnloadGuard", () => {
++  it("prevents navigation only while dirty", () => {
++    const { rerender, unmount } = renderHook(({ dirty }) => useBeforeUnloadGuard(dirty), { initialProps: { dirty: true } });
++
++    const dirtyEvent = new Event("beforeunload", { cancelable: true });
++    window.dispatchEvent(dirtyEvent);
++    expect(dirtyEvent.defaultPrevented).toBe(true);
++
++    rerender({ dirty: false });
++    const cleanEvent = new Event("beforeunload", { cancelable: true });
++    window.dispatchEvent(cleanEvent);
++    expect(cleanEvent.defaultPrevented).toBe(false);
++
++    rerender({ dirty: true });
++    unmount();
++    const unmountedEvent = new Event("beforeunload", { cancelable: true });
++    window.dispatchEvent(unmountedEvent);
++    expect(unmountedEvent.defaultPrevented).toBe(false);
++  });
++});
+diff --git a/packages/ui/test/shared/useEditSessionCore.test.tsx b/packages/ui/test/shared/useEditSessionCore.test.tsx
+index 8c544d1..aa3c595 100644
+--- a/packages/ui/test/shared/useEditSessionCore.test.tsx
++++ b/packages/ui/test/shared/useEditSessionCore.test.tsx
+@@ -48,20 +48,33 @@ describe("useEditSessionCore", () => {
+     const fetchMock = vi.fn().mockResolvedValue(response({ blocks: [] }));
+     vi.stubGlobal("fetch", fetchMock);
+     const { result } = mount();
+     act(() => { result.current.apply({ state: () => ({ n: 9 }), ...flags, canRedo: true }); });
+     await act(() => result.current.discard());
+     expect(result.current.state).toBe(seed);
+     expect(result.current).toMatchObject({ isDirty: false, canUndo: false, canRedo: false });
+     expect(fetchMock).toHaveBeenCalledWith("/api/edit/A/discard", { method: "POST" });
+   });
+ 
++  it("a discard that settles after a map switch keeps the new map's record", async () => {
++    const pending = deferred();
++    vi.stubGlobal("fetch", vi.fn(() => pending.promise));
++    const { result, rerender } = mount();
++    const discard = result.current.discard();
++    rerender({ map: "B", seed });
++    act(() => { result.current.apply({ state: () => ({ n: 9 }), ...flags }); });
++    pending.resolve(response());
++    await act(async () => { await discard; });
++    expect(result.current.state).toEqual({ n: 9 });
++    expect(result.current.isDirty).toBe(true);
++  });
++
+   it("discard throws on failure and keeps the applied state", async () => {
+     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({}, 500)));
+     const { result } = mount();
+     act(() => { result.current.apply({ state: () => ({ n: 9 }), ...flags }); });
+     await expect(result.current.discard()).rejects.toThrow("POST /api/edit/A/discard -> 500");
+     expect(result.current.state).toEqual({ n: 9 });
+     expect(result.current.isDirty).toBe(true);
+   });
+ 
+   it("discard prevents an in-flight reply from resurrecting the session", async () => {
+diff --git a/packages/ui/test/shared/useStrokeChainRegistry.test.tsx b/packages/ui/test/shared/useStrokeChainRegistry.test.tsx
+new file mode 100644
+index 0000000..86d0ce6
+--- /dev/null
++++ b/packages/ui/test/shared/useStrokeChainRegistry.test.tsx
+@@ -0,0 +1,55 @@
++import { act, renderHook } from "@testing-library/react";
++import { describe, expect, it } from "vitest";
++import { useStrokeChainRegistry, type SettledChain } from "../../src/shared/useStrokeChain.js";
++
++function deferred() {
++  let resolve!: () => void;
++  const promise = new Promise<void>((done) => { resolve = done; });
++  return { promise, resolve };
++}
++
++describe("useStrokeChainRegistry", () => {
++  it("waits for every chain registered when strokeSettled starts", async () => {
++    const first = deferred();
++    const second = deferred();
++    const { result } = renderHook(() => useStrokeChainRegistry());
++    act(() => {
++      result.current.onStrokeChain({ settled: () => first.promise }, true);
++      result.current.onStrokeChain({ settled: () => second.promise }, true);
++    });
++
++    let settled = false;
++    void result.current.strokeSettled().then(() => { settled = true; });
++    await act(async () => {});
++    expect(settled).toBe(false);
++    first.resolve();
++    await act(async () => {});
++    expect(settled).toBe(false);
++    second.resolve();
++    await act(async () => {});
++    expect(settled).toBe(true);
++  });
++
++  it("does not wait for a chain after it unmounts", async () => {
++    const never: SettledChain = { settled: () => new Promise<void>(() => {}) };
++    const { result } = renderHook(() => useStrokeChainRegistry());
++    act(() => {
++      result.current.onStrokeChain(never, true);
++      result.current.onStrokeChain(never, false);
++    });
++    await expect(result.current.strokeSettled()).resolves.toBeUndefined();
++  });
++
++  it("keeps its callbacks stable across a rerender", () => {
++    const { result, rerender } = renderHook(({ value }) => useStrokeChainRegistry(), { initialProps: { value: 1 } });
++    const first = result.current;
++    rerender({ value: 2 });
++    expect(result.current.onStrokeChain).toBe(first.onStrokeChain);
++    expect(result.current.strokeSettled).toBe(first.strokeSettled);
++  });
++
++  it("settles immediately with no registered chains", async () => {
++    const { result } = renderHook(() => useStrokeChainRegistry());
++    await expect(result.current.strokeSettled()).resolves.toBeUndefined();
++  });
++});
+diff --git a/packages/ui/test/useMapEditing.test.tsx b/packages/ui/test/useMapEditing.test.tsx
+index 1a17c12..0015e54 100644
+--- a/packages/ui/test/useMapEditing.test.tsx
++++ b/packages/ui/test/useMapEditing.test.tsx
+@@ -9,31 +9,31 @@ const MAP: MapData = {
+   regionMapSection: "MAPSEC_NONE", mapType: "MAP_TYPE_TOWN", weather: "WEATHER_NONE",
+   connections: [],
+   objectEvents: [
+     { graphicsId: "OBJ_EVENT_GFX_BOY_1", x: 3, y: 4, elevation: 0, movementType: "MOVEMENT_TYPE_FACE_DOWN", movementRangeX: 1, movementRangeY: 1, trainerType: "TRAINER_TYPE_NONE", trainerSightOrBerryTreeId: "0", script: "NULL", flag: "0" },
+   ],
+   warpEvents: [], coordEvents: [], bgEvents: [],
+ };
+ const editSession = { map: MAP } as unknown as UseEditSessionResult;
+ 
+ describe("useMapEditing", () => {
+-  it("resetForMapChange clears selectedEvent and currentStamp but keeps activeToolKind and collisionValue", () => {
+-    const { result } = renderHook(() => useMapEditing({ editSession, layoutData: null }));
++  it("a map change clears selectedEvent and currentStamp but keeps activeToolKind and collisionValue", () => {
++    const { result, rerender } = renderHook((p) => useMapEditing({ editSession, layoutData: null, mapName: p.mapName }), { initialProps: { mapName: "A" } });
+     const stamp = { width: 1, height: 1, cells: [{ metatileId: 9 }] };
+     act(() => {
+       result.current.setActiveToolKind("pencil");
+       result.current.setCollisionValue({ collision: 1, elevation: 2 });
+       result.current.setCurrentStamp(stamp);
+       result.current.onSelectEvent({ kind: "object", index: 0 });
+     });
+     expect(result.current.selectedEvent).toMatchObject({ kind: "object", index: 0, x: 3, y: 4 });
+     expect(result.current.currentStamp).toBe(stamp);
+     expect(result.current.activeTool).toEqual({ kind: "pencil", stamp });
+ 
+-    act(() => result.current.resetForMapChange());
++    rerender({ mapName: "B" });
+ 
+     expect(result.current.selectedEvent).toBeNull();
+     expect(result.current.currentStamp).toBeNull();
+     expect(result.current.activeToolKind).toBe("pencil");
+     expect(result.current.collisionValue).toEqual({ collision: 1, elevation: 2 });
+   });
+ });

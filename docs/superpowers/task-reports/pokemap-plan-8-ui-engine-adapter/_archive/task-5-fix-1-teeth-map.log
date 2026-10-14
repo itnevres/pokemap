@@ -1,0 +1,45 @@
+COMMAND: node --input-type=module
+import { startVitest } from 'vitest/node';
+const ctx = await startVitest('test', ['packages/ui/test/shared/useEditSessionCore.test.tsx'], {config:false,root:process.cwd(),run:true,pool:'threads',maxWorkers:2,minWorkers:1,globals:false,environment:'node',environmentMatchGlobs:[['packages/ui/**','jsdom']],include:['packages/*/test/**/*.test.{ts,tsx}'],setupFiles:['packages/ui/test/setup.ts']});
+await ctx.close();
+
+
+ RUN  v2.1.9 C:/Users/Serve/AppData/Local/Temp/claude/C--Programming-Projects-PokeMap/74282ac3-2fdd-538d-8b69-bd7f0f0598f7/scratchpad/p8
+
+ ❯ packages/ui/test/shared/useEditSessionCore.test.tsx (13 tests | 1 failed) 39ms
+   × useEditSessionCore > rejects a reply after its map changes 25ms
+     → expected true to be false // Object.is equality
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  packages/ui/test/shared/useEditSessionCore.test.tsx > useEditSessionCore > rejects a reply after its map changes
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ packages/ui/test/shared/useEditSessionCore.test.tsx:28:100
+     26|     pending.resolve(response());
+     27|     const landed = (await reply)!;
+     28|     act(() => { expect(result.current.apply({ state: () => ({ n: 9 }),…
+       |                                                                                                    ^
+     29|     expect(result.current.state).toBe(nextSeed);
+     30|     expect(result.current.isDirty).toBe(false);
+ ❯ node_modules/@testing-library/react/dist/act-compat.js:47:24
+ ❯ process.env.NODE_ENV.exports.act node_modules/react/cjs/react.development.js:814:22
+ ❯ Proxy.<anonymous> node_modules/@testing-library/react/dist/act-compat.js:46:25
+ ❯ packages/ui/test/shared/useEditSessionCore.test.tsx:28:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 12 passed (13)
+   Start at  08:30:15
+   Duration  1.66s (transform 117ms, setup 225ms, collect 35ms, tests 39ms, environment 1.00s, prepare 145ms)
+
+
+Exit: 1
+Restored byte-identically; SHA256: 31b67cf32b4b04830526ed1d27bd828297e80852c99c56b209a08c870f719214

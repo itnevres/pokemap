@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useMemo } from "react";
+import { useEditSessionCore } from "../shared/useEditSessionCore.js";
 import type { Block } from "@pokemap/core/src/model/types.js";
 import type { Stamp } from "@pokemap/core/src/edit/paint.js";
 import type { MapData } from "@pokemap/core/src/load/maps.js";
@@ -100,22 +101,22 @@ export interface UseEditSessionResult {
    *  SaveDialog Cancel (that button deliberately stays non-destructive, see
    *  its own comment).
    *
-   *  Deliberately does NOT go through `call()`/`applyResponse` above, even
-   *  though every other mutating method here does. The discard route's own
+   *  Deliberately uses the core discard path instead of merging a session
+   *  reply as the other mutating methods do. The discard route's own
    *  response is the exact same "nothing open" shape undo/redo already
    *  return on a closed session (`blocks: []`, `map: null`) -- and
    *  MapCanvas.tsx's own `blocks` local is `editSession ? editSession.blocks
    *  : staticBlocks`. App.tsx ALWAYS passes a real (non-undefined)
    *  `editSession` object as a prop, so that ternary ALWAYS takes the
    *  `editSession.blocks` branch, even for an empty array. Routing a
-   *  discard through `applyResponse` would therefore set `blocks` to `[]`
+   *  discard through the session reply merge would set `blocks` to `[]`
    *  and the canvas would go instantly blank -- and STAY blank, since
-   *  nothing else re-triggers this hook's own `[mapName, initialBlocks,
-   *  initialMap]` reset effect on a discard (`mapName` doesn't change).
+   *  the map and seed identities do not change on discard, so the core
+   *  would continue to show that empty live state.
    *
    *  Instead, once the server confirms the session is closed, this resets
-   *  local state to the exact same pre-edit seed that reset effect already
-   *  uses (`initialBlocks`/`initialMap`) -- what the map looked like BEFORE
+   *  local state to the core's pre-edit seed
+   *  (`initialBlocks`/`initialMap`) -- what the map looked like BEFORE
    *  any edits, i.e. real disk state, not an empty grid. A future
    *  "simplification" back to `call()` would silently reintroduce exactly
    *  that blank-canvas regression.
@@ -135,7 +136,7 @@ interface SessionResponse {
   /** Present on paint begin/apply/end and undo/redo (all route through the
    *  server's own `sendSession` helper, packages/server/src/index.ts) --
    *  `null` on undo/redo's own "nothing open" no-op response, absent from
-   *  nothing else that reaches `applyResponse`. */
+   *  nothing else that reaches the core session reply merge. */
   map?: MapData | null;
   isDirty: boolean;
   canUndo?: boolean;
@@ -199,64 +200,22 @@ interface EventOpResponse {
  * first render, not just after their first edit.
  */
 export function useEditSession(mapName: string | null, initialBlocks?: Block[], initialMap?: MapData): UseEditSessionResult {
-  const [blocks, setBlocks] = useState<Block[]>(initialBlocks ?? []);
-  const [border, setBorder] = useState<Block[]>([]);
-  const [map, setMap] = useState<MapData | undefined>(initialMap);
-  const [isDirty, setIsDirty] = useState(false);
-  const [canUndo, setCanUndo] = useState(false);
-  const [canRedo, setCanRedo] = useState(false);
+  const seed = useMemo(() => ({ blocks: initialBlocks ?? [], border: [] as Block[], map: initialMap }), [initialBlocks, initialMap]);
+  const { state, isDirty, canUndo, canRedo, post, apply, discard, markClean } = useEditSessionCore("/api/edit", mapName, seed);
+  const { blocks, border, map } = state;
 
-  // Reset to the new map's own seed whenever `mapName` OR `initialBlocks`
-  // changes -- otherwise a session opened for map A would leak its blocks/
-  // dirty/undo state into map B's view the instant `selected` changes, the
-  // same class of bug App.tsx's own WorldCanvas `key` fix (Task 15) guards
-  // against for a different component.
-  //
-  // Depending on `initialBlocks` too (not just `mapName`) matters because of
-  // an ordering gotcha between this hook and useMapLayout, its usual source
-  // for the seed: when `selected` changes, useMapLayout's own `data` does
-  // NOT reset synchronously -- it keeps the PREVIOUS map's blocks until its
-  // fetch resolves (see that hook's own effect: it only guards `!name`, it
-  // never resets `data` on a plain name change). If this effect only ran on
-  // `mapName`, the very first reset after a map switch would seed from the
-  // OLD map's blocks. Re-running when `initialBlocks`'s reference changes
-  // means a second, corrective reset lands once useMapLayout's fetch
-  // actually resolves for the NEW map. Code-review correction: this used to
-  // claim that second reset "always lands before the player could possibly
-  // have started editing" -- not accurate. App.tsx renders MapCanvas with
-  // no `key`, and `useMapLayout` keeps serving the OLD map's `data` (not
-  // undefined/loading) until its own fetch resolves, so MapCanvas stays
-  // mounted and genuinely paintable, already carrying the NEW `mapName`,
-  // for the whole gap between the switch and this corrective reset. A paint
-  // landing in that (typically brief) window gets clobbered by this reset
-  // -- a real, pre-existing gap, not a new one; not fixed here (would need
-  // a design change to App.tsx/useMapLayout, not just this hook).
-  useEffect(() => {
-    setBlocks(initialBlocks ?? []);
-    setBorder([]);
-    setMap(initialMap);
-    setIsDirty(false);
-    setCanUndo(false);
-    setCanRedo(false);
-  }, [mapName, initialBlocks, initialMap]);
-
-  const applyResponse = (d: SessionResponse) => {
-    setBlocks(d.blocks);
-    setBorder(d.border);
-    if (d.map !== undefined) setMap(d.map ?? undefined);
-    setIsDirty(d.isDirty);
-    setCanUndo(d.canUndo ?? false);
-    setCanRedo(d.canRedo ?? false);
-  };
-
+  // The core derives the live view from map/seed identity and guards every reply with its issue ticket.
   const call = useCallback(
     async (path: string, body: unknown = {}) => {
-      if (!mapName) return; // nothing open -- see this hook's own doc comment
-      const r = await fetch(`/api/edit/${encodeURIComponent(mapName)}${path}`, { method: "POST", body: JSON.stringify(body) });
-      if (!r.ok) throw new Error(`POST /api/edit/${mapName}${path} -> ${r.status}`);
-      applyResponse((await r.json()) as SessionResponse);
+      const reply = await post<SessionResponse>(path, body);
+      if (!reply) return;
+      const d = reply.data;
+      apply({
+        state: (prev) => ({ blocks: d.blocks, border: d.border, map: d.map === undefined ? prev.map : d.map ?? undefined }),
+        isDirty: d.isDirty, canUndo: d.canUndo ?? false, canRedo: d.canRedo ?? false,
+      }, reply.ticket);
     },
-    [mapName],
+    [post, apply],
   );
 
   const beginStroke = useCallback(() => call("/paint/begin"), [call]);
@@ -265,44 +224,17 @@ export function useEditSession(mapName: string | null, initialBlocks?: Block[], 
   const undo = useCallback(() => call("/undo"), [call]);
   const redo = useCallback(() => call("/redo"), [call]);
 
-  const markClean = useCallback(() => {
-    setIsDirty(false);
-    setCanUndo(false);
-    setCanRedo(false);
-  }, []);
-
-  // Task 14: the three `/event/*` routes get their OWN call path, not
-  // `call` above -- their response is `{ map, isDirty }` only (see
-  // EventOpResponse's own doc comment), never blocks/border/canUndo/
-  // canRedo, so routing them through `applyResponse` (which expects the
-  // full SessionResponse shape) would stomp `blocks` to `undefined` the
-  // instant a player moved an event. `blocks`/`border` are left
-  // deliberately untouched here -- event ops never mutate them server-side
-  // either (handleEventOp only ever reassigns `entry.session.map`).
+  // Event replies omit blocks/border and stack flags. Merge only the map through the core;
+  // every successful event op pushes an undo entry and clears redo on the server.
   const callEvent = useCallback(
     async (path: string, body: unknown): Promise<WarpRenumberWarning[]> => {
-      if (!mapName) return []; // nothing open -- see this hook's own doc comment
-      const r = await fetch(`/api/edit/${encodeURIComponent(mapName)}${path}`, { method: "POST", body: JSON.stringify(body) });
-      if (!r.ok) throw new Error(`POST /api/edit/${mapName}${path} -> ${r.status}`);
-      const d = (await r.json()) as EventOpResponse;
-      setMap(d.map);
-      setIsDirty(d.isDirty);
-      // canUndo/canRedo aren't in this route's response (EventOpResponse's
-      // own doc comment above explains why) -- but handleEventOp
-      // (packages/server/src/index.ts) unconditionally calls
-      // `entry.stack.push(...)` for every one of these three ops before
-      // responding, and EditCommandStack.push (packages/core/src/edit/
-      // commands.ts) is unconditional too: it always appends to undoStack
-      // and always resets redoStack to []. So canUndo=true/canRedo=false
-      // is exactly what the server-side stack now holds after ANY
-      // successful move/add/delete, deterministically -- setting it here
-      // keeps the Toolbar's Undo/Redo buttons honest without a round trip
-      // the route doesn't currently provide.
-      setCanUndo(true);
-      setCanRedo(false);
+      const reply = await post<EventOpResponse>(path, body);
+      if (!reply) return [];
+      const d = reply.data;
+      apply({ state: (prev) => ({ ...prev, map: d.map }), isDirty: d.isDirty, canUndo: true, canRedo: false }, reply.ticket);
       return d.warpRenumberWarnings ?? [];
     },
-    [mapName],
+    [post, apply],
   );
 
   // moveEvent/addEvent stay Promise<void> -- their own routes never carry
@@ -318,30 +250,10 @@ export function useEditSession(mapName: string | null, initialBlocks?: Block[], 
   const addEvent = useCallback((kind: EventKind, value: Record<string, unknown>) => callEvent("/event/add", { kind, value }).then(() => {}), [callEvent]);
   const deleteEvent = useCallback((kind: EventKind, index: number) => callEvent("/event/delete", { kind, index }), [callEvent]);
 
-  // Same tail as callEvent above (setMap/setIsDirty/canUndo=true/
-  // canRedo=false) -- see this method's own doc comment on
-  // UseEditSessionResult for why SignComposer's already-fetched response
-  // lands here instead of a fourth call path duplicating `call`/`callEvent`.
+  // SignComposer supplies an already-parsed map; the core applies it to the current map/seed.
   const applyExternalMapUpdate = useCallback((nextMap: MapData, nextIsDirty: boolean) => {
-    setMap(nextMap);
-    setIsDirty(nextIsDirty);
-    setCanUndo(true);
-    setCanRedo(false);
-  }, []);
-
-  // See `discard`'s own doc comment on UseEditSessionResult for why this
-  // bypasses `call()` entirely instead of being `call("/discard")`.
-  const discard = useCallback(async () => {
-    if (!mapName) return; // nothing open -- see this hook's own doc comment
-    const r = await fetch(`/api/edit/${encodeURIComponent(mapName)}/discard`, { method: "POST" });
-    if (!r.ok) throw new Error(`POST /api/edit/${mapName}/discard -> ${r.status}`);
-    setBlocks(initialBlocks ?? []);
-    setBorder([]);
-    setMap(initialMap);
-    setIsDirty(false);
-    setCanUndo(false);
-    setCanRedo(false);
-  }, [mapName, initialBlocks, initialMap]);
+    apply({ state: (prev) => ({ ...prev, map: nextMap }), isDirty: nextIsDirty, canUndo: true, canRedo: false });
+  }, [apply]);
 
   return { blocks, border, map, isDirty, canUndo, canRedo, beginStroke, applyPaint, endStroke, undo, redo, markClean, moveEvent, addEvent, deleteEvent, applyExternalMapUpdate, discard };
 }

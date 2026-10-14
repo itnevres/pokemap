@@ -1,0 +1,12 @@
+V0 baseline (no change)  visit=0F/3P  shell=0F/3P  gbaGuard=0F/3P  gbaActive=0F/3P  gbaCtx=0F/12P  gbaCtxVisit=0F/1P  gbcEditing=0F/36P  gbcCtx=0F/23P
+V1 changed never reported  visit=0F/3P  shell=0F/3P  gbaGuard=1F/2P KILL  gbaActive=0F/3P  gbaCtx=0F/12P  gbaCtxVisit=0F/1P  gbcEditing=2F/34P KILL  gbcCtx=1F/22P KILL
+V2 isCurrent always true  visit=2F/1P KILL  shell=0F/3P  gbaGuard=2F/1P KILL  gbaActive=0F/3P  gbaCtx=0F/12P  gbaCtxVisit=0F/1P  gbcEditing=26F/10P KILL  gbcCtx=0F/23P
+V3 body remounts on active toggle  visit=0F/3P  shell=1F/2P KILL  gbaGuard=0F/3P  gbaActive=1F/2P KILL  gbaCtx=6F/6P KILL  gbaCtxVisit=1F/0P FAIL(no-assert-msg)  gbcEditing=0F/36P  gbcCtx=12F/11P KILL
+restored byte-identical: [ true, true ]
+
+V0 baseline (no change)  visit=0F/3P  shell=0F/3P  gbaGuard=0F/3P  gbaActive=0F/3P  gbaCtx=0F/12P  gbaCtxVisit=0F/1P  gbcEditing=0F/36P  gbcCtx=0F/23P
+V1 changed never reported  visit=0F/3P  shell=0F/3P  gbaGuard=1F/2P KILL  gbaActive=0F/3P  gbaCtx=0F/12P  gbaCtxVisit=0F/1P  gbcEditing=2F/34P KILL  gbcCtx=1F/22P KILL
+V2 isCurrent always true  visit=2F/1P KILL  shell=0F/3P  gbaGuard=2F/1P KILL  gbaActive=0F/3P  gbaCtx=0F/12P  gbaCtxVisit=0F/1P  gbcEditing=26F/10P KILL  gbcCtx=0F/23P
+V3 body remounts on active toggle  visit=0F/3P  shell=1F/2P KILL  gbaGuard=0F/3P  gbaActive=1F/2P KILL  gbaCtx=6F/6P KILL  gbaCtxVisit=1F/0P FAIL(no-assert-msg)  gbcEditing=0F/36P  gbcCtx=12F/11P KILL
+(node:40296) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
+(Use `node --trace-deprecation ...` to show where the warning was created)

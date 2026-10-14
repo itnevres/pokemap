@@ -461,3 +461,23 @@ and `.map-canvas--chromeless`). Differences only:
 - After a save only that map's tile is re-requested, as `/api/render/<map>.png?time=<t>&v=<n>`.
 - Known GBA deferrals carried over unchanged: the world toolbar is cramped at 1024 px wide, the Grid/Collision/Events/Encounters
   toggles are unreachable in context, and a tile is blank until its image loads.
+
+## Shared modules (Plan 8)
+
+Behaviour that both families need lives once, in `src/shared/` (plus `hooks/useGuardedFetch.ts`); the family files keep only
+what really differs. Change a row's module, not its two consumers.
+
+| Module | What it owns | GBA consumer | GBC consumer |
+|---|---|---|---|
+| `shared/useStrokeChain.ts` | one ordered begin/apply/end chain per stroke, visit retirement; `useStrokeChainRegistry` (App-level `onStrokeChain` + `strokeSettled`) | `MapCanvas`, `App` | `GbcMapCanvas`, `GbcApp` |
+| `shared/useWorldContext.ts` + `WorldContextOverlay.tsx` | in-context view sync, exits, Escape, the overlay bar | `WorldCanvas` | `GbcWorldCanvas` |
+| `shared/useContextEditing.ts` | context map, exit-with-save, tile versions after a save | `App` | `GbcApp` |
+| `shared/useEditSessionCore.ts` | session record keyed on map + seed, reply ordering (tickets), discard, markClean | `hooks/useEditSession` | `gbc/hooks/useGbcEditSession` |
+| `shared/EditingWorkspace.tsx` | the editing shell's slots (`top`, `side`, canvas) | `MapEditingWorkspace` | `GbcMapEditing` |
+| `shared/useVisit.ts` | per-map visit identity: render-phase reset + stale-callback guard | `hooks/useMapEditing` | `GbcMapEditing` |
+| `shared/useBeforeUnloadGuard.ts` | the dirty-only `beforeunload` prompt | `App` | `GbcApp` |
+| `hooks/useGuardedFetch.ts` | fetch-once data hooks with a stale-response guard (older, used well beyond this pair) | `useCoverage`, `useMapGroups` | `useGbcCoverage`, `useGbcGroups` |
+
+Still per family, on purpose (Plan 8 Task 7 stop rule): the app shells (`App` / `GbcApp`: GBC discards before a switch and
+shows `switchError`; time of day, manual placements, defects banner and the dungeon filter cache are GBC-only; `SignComposer`
+and `useMapEditing` are GBA-only), the canvases' rendering and hit-testing, and the dungeon and map-layout hooks.

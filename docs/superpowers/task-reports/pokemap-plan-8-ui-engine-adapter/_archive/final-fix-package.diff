@@ -1,0 +1,99 @@
+diff --git a/packages/ui/src/shared/useEditSessionCore.ts b/packages/ui/src/shared/useEditSessionCore.ts
+index 6abf032..550b923 100644
+--- a/packages/ui/src/shared/useEditSessionCore.ts
++++ b/packages/ui/src/shared/useEditSessionCore.ts
+@@ -18,20 +18,23 @@ interface Stored<State> extends EditFlags {
+   state: State;
+ }
+ 
+ /** Map/seed identity controls the rendered view; tickets order asynchronous replies. */
+ export function useEditSessionCore<State>(base: string, mapName: string | null, seed: State, opts?: { readServerError?: boolean }): EditSessionCore<State> {
+   const [stored, setStored] = useState<Stored<State> | null>(null);
+   const latest = useRef({ mapName, seed });
+   latest.current = { mapName, seed };
+   const seq = useRef({ issued: 0, applied: 0 });
+   const readServerError = opts?.readServerError ?? false;
++  // A seed change resets the view. GBA's useMapLayout keeps the previous map data until B's fetch lands, so a
++  // paint in that window is shown then wiped when B's seed arrives while the server session stays dirty: a
++  // pre-existing gap, kept as before Plan 8.
+   const live = stored !== null && stored.forMap === mapName && stored.seed === seed ? stored : null;
+ 
+   const post = useCallback(async <R,>(path: string, body?: unknown): Promise<{ data: R; ticket: EditTicket } | null> => {
+     if (mapName === null) return null;
+     const ticket: EditTicket = { map: mapName, seed, seq: ++seq.current.issued };
+     const r = await fetch(`${base}/${encodeURIComponent(mapName)}${path}`, body === undefined ? { method: "POST" } : { method: "POST", body: JSON.stringify(body) });
+     // GBC reads even malformed bodies once, then its family shape check owns the failure.
+     const data: unknown = readServerError ? await r.json().catch(() => null) : undefined;
+     if (!r.ok) {
+       const message = data !== null && typeof data === "object" && "error" in data && typeof data.error === "string" ? data.error : `POST ${base}/${mapName}${path} -> ${r.status}`;
+diff --git a/packages/ui/test/gbc/GbcAppEditing.test.tsx b/packages/ui/test/gbc/GbcAppEditing.test.tsx
+index 0593af6..49bd595 100644
+--- a/packages/ui/test/gbc/GbcAppEditing.test.tsx
++++ b/packages/ui/test/gbc/GbcAppEditing.test.tsx
+@@ -80,20 +80,21 @@ describe("GbcApp editing (Plan 7 Task 5)", () => {
+ 
+     fireEvent.click(screen.getByText("OlivinePort"));
+     expect(confirm).toHaveBeenCalledWith("You have unsaved changes on this map. Discard them and switch maps?");
+     expect(document.querySelector(".app__status")!.textContent).toBe("OlivineCity");
+     expect(calls.some((c) => c.includes("/discard"))).toBe(false);
+     expect(screen.getByTestId("dirty-indicator")).toBeTruthy();
+ 
+     confirm.mockReturnValue(true);
+     fireEvent.click(screen.getByText("OlivinePort"));
+     await waitFor(() => expect(document.querySelector(".app__status")!.textContent).toBe("OlivinePort"));
++    await waitFor(() => expect(calls).toContain("GET /api/map/OlivinePort"));
+     const discardAt = calls.indexOf("POST /api/edit/OlivineCity/discard");
+     expect(discardAt).toBeGreaterThan(-1);
+     expect(discardAt).toBeLessThan(calls.indexOf("GET /api/map/OlivinePort"));
+   });
+ 
+   it("a failed discard keeps the user on the map and says why", async () => {
+     const { f } = mockFetch({ OlivineCity: payload("OlivineCity"), OlivinePort: payload("OlivinePort") });
+     vi.spyOn(window, "confirm").mockReturnValue(true);
+     render(<GbcApp root="/x" />);
+     await openCity();
+diff --git a/packages/ui/test/gbc/GbcAppWorldGuard.test.tsx b/packages/ui/test/gbc/GbcAppWorldGuard.test.tsx
+index 1d46b9b..1248ac0 100644
+--- a/packages/ui/test/gbc/GbcAppWorldGuard.test.tsx
++++ b/packages/ui/test/gbc/GbcAppWorldGuard.test.tsx
+@@ -88,38 +88,40 @@ describe("GbcApp World-path dirty guards (spec review F1, F3, F7)", () => {
+   });
+ 
+   it("a world click, confirmed: POST /discard goes out BEFORE the new map is fetched", async () => {
+     const calls = mockFetch();
+     vi.spyOn(window, "confirm").mockReturnValue(true);
+     render(<GbcApp root="/x" />);
+     await paintThenWorld();
+     fireEvent.click(screen.getByText("world-select-port"));
+     fireEvent.click(screen.getByRole("button", { name: "Map" }));
+     await waitFor(() => expect(status()).toBe("OlivinePort"));
++    await waitFor(() => expect(calls).toContain("GET /api/map/OlivinePort"));
+     const d = calls.indexOf("POST /api/edit/OlivineCity/discard");
+     expect(d).toBeGreaterThan(-1);
+     expect(d).toBeLessThan(calls.indexOf("GET /api/map/OlivinePort"));
+   });
+ 
+   it("a world double-click (open): cancel stays in World; confirm discards then opens Map on the new map", async () => {
+     const calls = mockFetch();
+     const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+     render(<GbcApp root="/x" />);
+     await paintThenWorld();
+     fireEvent.click(screen.getByText("world-open-port"));
+     expect(confirm).toHaveBeenCalledWith(GUARD_TEXT);
+     expect(screen.getByTestId("world")).toBeTruthy();
+     expect(calls.some((c) => c.includes("/discard"))).toBe(false);
+ 
+     confirm.mockReturnValue(true);
+     fireEvent.click(screen.getByText("world-open-port"));
+     await waitFor(() => expect(status()).toBe("OlivinePort"));
++    await waitFor(() => expect(calls).toContain("GET /api/map/OlivinePort"));
+     expect(calls.indexOf("POST /api/edit/OlivineCity/discard")).toBeLessThan(calls.indexOf("GET /api/map/OlivinePort"));
+   });
+ 
+   it("the dirty session and its beforeunload handler are held while in World", async () => {
+     mockFetch();
+     const add = vi.spyOn(window, "addEventListener");
+     const remove = vi.spyOn(window, "removeEventListener");
+     render(<GbcApp root="/x" />);
+     await paintThenWorld();
+     expect(beforeUnload(add)).toBe(1);

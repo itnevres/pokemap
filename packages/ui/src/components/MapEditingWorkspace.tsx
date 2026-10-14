@@ -7,6 +7,7 @@ import { EventInspector } from "./EventInspector.js";
 import type { UseEditSessionResult } from "../hooks/useEditSession.js";
 import type { MapLayoutData } from "../hooks/useMapLayout.js";
 import type { useMapEditing } from "../hooks/useMapEditing.js";
+import { EditingWorkspace } from "../shared/EditingWorkspace.js";
 
 /** The props the workspace builds for the canvas it hosts -- exactly what
  *  `App` passed to `MapCanvas` before the extraction (the controlled
@@ -14,10 +15,11 @@ import type { useMapEditing } from "../hooks/useMapEditing.js";
  *  wants it adds it in its own `renderCanvas`). */
 export type MapEditingCanvasProps = Pick<
   MapCanvasProps,
-  "mapName" | "data" | "editSession" | "activeTool" | "onSelectEvent" | "selectedEventRef" | "onMoveEvent" | "onDropperPick"
+  "onStrokeChain" | "mapName" | "data" | "editSession" | "activeTool" | "onSelectEvent" | "selectedEventRef" | "onMoveEvent" | "onDropperPick"
 >;
 
 interface MapEditingWorkspaceBase {
+  onStrokeChain?: MapCanvasProps["onStrokeChain"];
   editSession: UseEditSessionResult;
   editing: ReturnType<typeof useMapEditing>;
 }
@@ -49,7 +51,7 @@ export type MapEditingWorkspaceProps = ActiveMapEditingWorkspaceProps | Inactive
  *  banners, canvas + inspector) lifted verbatim out of `App.tsx`. State lives
  *  in `useMapEditing`; the edit session in `App`; `SaveDialog`/`SignComposer`
  *  stay siblings at `<main>` level in `App` for stacking reasons. */
-export function MapEditingWorkspace({ active = true, mapName, data, editSession, editing, renderCanvas }: MapEditingWorkspaceProps) {
+export function MapEditingWorkspace({ active = true, mapName, data, editSession, editing, renderCanvas, onStrokeChain }: MapEditingWorkspaceProps) {
   const {
     activeToolKind, setActiveToolKind, collisionValue, setCollisionValue, currentStamp, setCurrentStamp,
     setSaveDialogOpen, setSignComposerOpen, signAddedMessage, setSignAddedMessage, eventOpError, setEventOpError,
@@ -59,6 +61,7 @@ export function MapEditingWorkspace({ active = true, mapName, data, editSession,
   const canvasProps: MapEditingCanvasProps | null =
     mapName !== null && data !== null
       ? {
+          ...(onStrokeChain ? { onStrokeChain } : {}),
           mapName,
           data,
           editSession,
@@ -69,13 +72,9 @@ export function MapEditingWorkspace({ active = true, mapName, data, editSession,
           onDropperPick: setCurrentStamp,
         }
       : null;
-  // Active, a map always exists (see ActiveMapEditingWorkspaceProps); inactive, the host's renderCanvas takes the null.
-  const canvas = renderCanvas
-    ? (renderCanvas as (p: MapEditingCanvasProps | null) => ReactNode)(canvasProps)
-    : canvasProps && <MapCanvas {...canvasProps} />;
-  return (
-    <div className="app__map-editing">
-      {active && <Toolbar
+  const top = (
+    <>
+      <Toolbar
         activeToolKind={activeToolKind}
         onSelectTool={setActiveToolKind}
         isDirty={editSession.isDirty}
@@ -92,13 +91,13 @@ export function MapEditingWorkspace({ active = true, mapName, data, editSession,
         // not clickable-but-silently-inert. All six tools are now
         // wired.
         availableTools={["collision", "pencil", "rect", "bucket", "dropper", "shift"]}
-      />}
-      {active && activeToolKind === "collision" && (
+      />
+      {activeToolKind === "collision" && (
         <div className="app__collision-strip">
           <CollisionPalette selected={collisionValue} onSelect={setCollisionValue} />
         </div>
       )}
-      {active && data && (activeToolKind === "pencil" || activeToolKind === "rect" || activeToolKind === "bucket") && (
+      {data && (activeToolKind === "pencil" || activeToolKind === "rect" || activeToolKind === "bucket") && (
         <div className="app__metatile-strip">
           <MetatilePalette
             layoutName={data.layout.name}
@@ -117,7 +116,7 @@ export function MapEditingWorkspace({ active = true, mapName, data, editSession,
           a second error-surface convention. Dismissible so it
           doesn't linger forever after the player has seen it; also
           cleared automatically on the next successful event op. */}
-      {active && eventOpError && (
+      {eventOpError && (
         <div className="app__event-op-error" role="alert">
           <span>{eventOpError}</span>
           <button type="button" className="app__event-op-error-dismiss" onClick={() => setEventOpError(null)} aria-label="Dismiss">
@@ -131,7 +130,7 @@ export function MapEditingWorkspace({ active = true, mapName, data, editSession,
           success, not a failure. role="status" (not "alert"): this
           is informational, not urgent, matching the semantic
           distinction between the two ARIA live-region roles. */}
-      {active && signAddedMessage && (
+      {signAddedMessage && (
         <div className="app__sign-added" role="status">
           <span>{signAddedMessage}</span>
           <button type="button" className="app__sign-added-dismiss" onClick={() => setSignAddedMessage(null)} aria-label="Dismiss">
@@ -139,20 +138,29 @@ export function MapEditingWorkspace({ active = true, mapName, data, editSession,
           </button>
         </div>
       )}
-      {/* Task 14: EventInspector docks as a real side panel next to
-          the canvas (DESIGN.md's own layout section anticipates
-          exactly this -- "whatever Task 21+ adds -- an inspector, a
-          metatile palette"), not another horizontal strip like
-          CollisionPalette above it -- its X/Y/Elevation/Delete form
-          reads naturally as a vertical column, the same shape
-          app__sidebar's own MapTree already uses on the opposite
-          edge of the screen. Always mounted (not gated on a
-          selection): EventInspector's own empty state carries the
-          Add Event entry point. */}
-      <div className="app__map-editing-body">
-        {canvas}
-        {active && <EventInspector selected={selectedEvent} onMove={onMoveEventFromInspector} onDelete={onDeleteEvent} onAdd={onAddEvent} />}
-      </div>
+    </>
+  );
+  /* Task 14: EventInspector docks as a real side panel next to
+     the canvas (DESIGN.md's own layout section anticipates
+     exactly this -- "whatever Task 21+ adds -- an inspector, a
+     metatile palette"), not another horizontal strip like
+     CollisionPalette above it -- its X/Y/Elevation/Delete form
+     reads naturally as a vertical column, the same shape
+     app__sidebar's own MapTree already uses on the opposite
+     edge of the screen. Always mounted (not gated on a
+     selection): EventInspector's own empty state carries the
+     Add Event entry point. */
+  const side = <EventInspector selected={selectedEvent} onMove={onMoveEventFromInspector} onDelete={onDeleteEvent} onAdd={onAddEvent} />;
+  return (
+    <div className="app__map-editing">
+      <EditingWorkspace
+        active={active}
+        top={top}
+        side={side}
+        canvasProps={canvasProps}
+        Canvas={MapCanvas}
+        renderCanvas={renderCanvas as ((p: MapEditingCanvasProps | null) => ReactNode) | undefined}
+      />
     </div>
   );
 }

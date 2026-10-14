@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { MapTree } from "../components/MapTree.js";
 import { useGbcGroups } from "./hooks/useGbcGroups.js";
 import { useGbcMap } from "./hooks/useGbcMap.js";
@@ -12,12 +12,16 @@ import { GBC_HIDDEN_MAP_TYPES } from "../world/visibility.js";
 import { DungeonSidebar } from "../components/DungeonSidebar.js";
 import { useGbcDungeons } from "./hooks/useGbcDungeons.js";
 import type { GbcTimeOfDay } from "./time.js";
+import { useContextEditing } from "../shared/useContextEditing.js";
+import { useBeforeUnloadGuard } from "../shared/useBeforeUnloadGuard.js";
+import { useStrokeChainRegistry } from "../shared/useStrokeChain.js";
 
 type Mode = "map" | "world" | "dungeon";
 /** Fix round (quality review finding 3): re-exported from the shared
  *  `gbc/time.ts` (was independently declared here) so a future Task 5/6
  *  consumer of `GbcApp`'s own time type doesn't need to know it moved. */
 export type TimeOfDay = GbcTimeOfDay;
+
 
 const TIME_ORDER: readonly TimeOfDay[] = ["morn", "day", "nite"];
 const TIME_LABEL: Record<TimeOfDay, string> = { morn: "Morn", day: "Day", nite: "Nite" };
@@ -77,10 +81,6 @@ export function GbcApp({ root, switcher }: GbcAppProps) {
   const [hoveredMetatileId, setHoveredMetatileId] = useState<number | null>(null);
   const [manualPlacementMaps, setManualPlacementMaps] = useState<ReadonlySet<string>>(new Set());
   const [openDungeonId, setOpenDungeonId] = useState<string | null>(null);
-  // Plan 7 Task 5b: the map being edited in context on the World view, or null. Always equals `selected` while set.
-  const [contextMap, setContextMap] = useState<string | null>(null);
-  // Bumped for a map when a save commits while editing it in context; the world re-requests only that tile.
-  const [tileVersions, setTileVersions] = useState<Record<string, number>>({});
   const dungeons = useGbcDungeons(mode === "dungeon");
 
   const { data, error } = useGbcGroups();
@@ -107,17 +107,8 @@ export function GbcApp({ root, switcher }: GbcAppProps) {
   // A failed discard-before-switch: the switch is abandoned and this says why.
   const [switchError, setSwitchError] = useState<string | null>(null);
 
-  // I6: no silent loss of a dirty session -- closing the tab (this effect) and switching maps (`leave`).
-  // Registered only while dirty: an always-attached handler would prompt on a clean tab.
-  useEffect(() => {
-    if (!session.isDirty) return;
-    const handler = (e: BeforeUnloadEvent) => {
-      e.preventDefault();
-      e.returnValue = "";
-    };
-    window.addEventListener("beforeunload", handler);
-    return () => window.removeEventListener("beforeunload", handler);
-  }, [session.isDirty]);
+  // Shared browser-level half of I6's dirty-session guard; `leave` handles switching below.
+  useBeforeUnloadGuard(session.isDirty);
 
   // Every change of `selected` goes through this: tree click, world click, world double-click, jump. A clean
   // session just proceeds. A dirty one needs GBA's exact confirm, then the server session is discarded BEFORE the
@@ -130,6 +121,14 @@ export function GbcApp({ root, switcher }: GbcAppProps) {
     if (!window.confirm("You have unsaved changes on this map. Discard them and switch maps?")) return;
     session.discard().then(go).catch((e: unknown) => setSwitchError(e instanceof Error ? e.message : "Could not discard the changes."));
   };
+  const { onStrokeChain, strokeSettled } = useStrokeChainRegistry();
+  const ctx = useContextEditing({
+    selected, session, leave,
+    select: (name) => { setSwitchError(null); setSelected(name); setHoveredMetatileId(null); },
+    openSave: () => setSaveOpen(true),
+    strokeSettled,
+  });
+  const { contextMap, tileVersions } = ctx;
   const openDungeon = mode === "dungeon" ? dungeons.data?.find((d) => d.id === openDungeonId) ?? null : null;
   const filterCache = useRef<{ id: string; members: string[]; filter: Set<string> } | null>(null);
   const mapFilter = useMemo(() => {
@@ -151,7 +150,7 @@ export function GbcApp({ root, switcher }: GbcAppProps) {
   const selectMap = (name: string) => {
     const go = () => {
       setSwitchError(null);
-      setContextMap(null); // a tree click leaves in-context editing (a jump would also move the world under the overlay)
+      ctx.leaveContext(); // a tree click leaves in-context editing (a jump would also move the world under the overlay)
       setSelected(name);
       setJumpTarget(name);
       setSelectVersion((v) => v + 1);
@@ -184,7 +183,7 @@ export function GbcApp({ root, switcher }: GbcAppProps) {
   const openMapFromWorld = (name: string) => {
     const go = () => {
       setSwitchError(null);
-      setContextMap(null);
+      ctx.leaveContext();
       setSelected(name);
       setHoveredMetatileId(null);
       setMode("map");
@@ -192,34 +191,15 @@ export function GbcApp({ root, switcher }: GbcAppProps) {
     if (name === selected) go(); else leave(go);
   };
 
-  // GbcWorldCanvas's double-click / "Edit here" (Plan 7 Task 5b): selecting the map goes through the same dirty guard as a
-  // tree click, and a cancelled confirm means no context. No jump: the world snaps itself to the map.
   const enterContext = (name: string) => {
-    const go = () => {
-      setSwitchError(null);
-      setSelected(name);
-      setHoveredMetatileId(null);
-      setContextMap(name);
-    };
-    if (name === selected) go(); else leave(go);
+    if (name === selected) { setSwitchError(null); setHoveredMetatileId(null); }
+    ctx.enter(name);
   };
-
-  // Done, Escape, or a double-click outside the map. A dirty session opens the ordinary SaveDialog and stays in context
-  // (Cancel keeps editing, a commit makes the next exit clean); a clean one just leaves.
-  const requestExitContext = () => {
-    if (session.isDirty) setSaveOpen(true);
-    else setContextMap(null);
-  };
-
-  // A mode switch leaves context without a prompt: the session persists exactly as it does today.
+  const requestExitContext = ctx.requestExit;
   const switchMode = (next: Mode) => {
-    setContextMap(null);
+    ctx.leaveContext();
     setMode(next);
   };
-  // `selected` moving off the context map by any other route (a world click on another map) also leaves it.
-  useEffect(() => {
-    if (contextMap !== null && selected !== contextMap) setContextMap(null);
-  }, [selected, contextMap]);
 
   const defectsBanner = ready && ready.defects.length > 0 && (
     // Non-dismissible: G4's "never a silent drop" data truth (an oversize .blk, an out-of-bounds event), not a one-shot
@@ -321,7 +301,7 @@ export function GbcApp({ root, switcher }: GbcAppProps) {
                 map.error ? <p className="app__event-op-error" role="alert">Could not load {contextMap}: {map.error}</p>
                   : <p className="app__canvas-placeholder" role="status">Loading {contextMap}…</p>
               )}
-              <GbcMapEditing
+              <GbcMapEditing onStrokeChain={onStrokeChain}
                 active={contextActive}
                 mapName={selected}
                 data={ready}
@@ -343,7 +323,7 @@ export function GbcApp({ root, switcher }: GbcAppProps) {
           ) : ready ? (
             <div className="app__map-editing">
               {defectsBanner}
-              <GbcMapEditing
+              <GbcMapEditing onStrokeChain={onStrokeChain}
                 mapName={selected}
                 data={ready}
                 time={time}
@@ -363,12 +343,8 @@ export function GbcApp({ root, switcher }: GbcAppProps) {
             <SaveDialog
               mapName={selected}
               onCommitted={() => {
-                session.markClean();
+                ctx.onCommitted();
                 setSaveOpen(false);
-                // Editing in context: the world still shows this map's pre-save tile; refresh just that one.
-                if (contextMap !== null && contextMap === selected) {
-                  setTileVersions((t) => ({ ...t, [contextMap]: (t[contextMap] ?? 0) + 1 }));
-                }
                 map.reload().catch((e: unknown) => setSwitchError(`Saved, but could not reload the map: ${e instanceof Error ? e.message : String(e)}`));
               }}
               onCancel={() => setSaveOpen(false)}

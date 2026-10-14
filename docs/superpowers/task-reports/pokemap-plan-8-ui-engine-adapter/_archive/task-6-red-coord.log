@@ -1,0 +1,988 @@
+
+[1m[7m[36m RUN [39m[27m[22m [36mv2.1.9 [39m[90mC:/Users/Serve/AppData/Local/Temp/claude/C--Programming-Projects-PokeMap/74282ac3-2fdd-538d-8b69-bd7f0f0598f7/scratchpad/m6[39m
+
+ [31m❯[39m packages/ui/test/AppVisitGuard.test.tsx [2m([22m[2m3 tests[22m[2m | [22m[31m3 failed[39m[2m)[22m[33m 1745[2mms[22m[39m
+[31m   [31m×[31m App GBA visit guard[2m > [22mignores a deferred A to B to A add success[33m 1119[2mms[22m[31m[39m
+[31m     → Unable to find an element with the text: No event selected.. This could be because the text is broken up by multiple elements. In this case, you can provide a function for your text matcher to make your matcher more flexible.
+
+Ignored nodes: comments, script, style
+[36m<body>[31m
+  [36m<div>[31m
+    [36m<div[31m
+      [33mclass[31m=[32m"app"[31m
+    [36m>[31m
+      [36m<header[31m
+        [33mclass[31m=[32m"app__toolbar"[31m
+      [36m>[31m
+        [36m<h1[31m
+          [33mclass[31m=[32m"app__title"[31m
+        [36m>[31m
+          [0mPokeMap[0m
+        [36m</h1>[31m
+        [36m<div[31m
+          [33maria-label[31m=[32m"View"[31m
+          [33mclass[31m=[32m"app__mode"[31m
+          [33mrole[31m=[32m"group"[31m
+        [36m>[31m
+          [36m<button[31m
+            [33maria-pressed[31m=[32m"true"[31m
+            [33mclass[31m=[32m"map-canvas__btn"[31m
+            [33mtype[31m=[32m"button"[31m
+          [36m>[31m
+            [0mMap[0m
+          [36m</button>[31m
+          [36m<button[31m
+            [33maria-pressed[31m=[32m"false"[31m
+            [33mclass[31m=[32m"map-canvas__btn"[31m
+            [33mtype[31m=[32m"button"[31m
+          [36m>[31m
+            [0mWorld[0m
+          [36m</button>[31m
+          [36m<button[31m
+            [33maria-pressed[31m=[32m"false"[31m
+            [33mclass[31m=[32m"map-canvas__btn"[31m
+            [33mtype[31m=[32m"button"[31m
+          [36m>[31m
+            [0mDungeon[0m
+          [36m</button>[31m
+        [36m</div>[31m
+        [36m<span[31m
+          [33mclass[31m=[32m"app__status"[31m
+        [36m>[31m
+          [0mPalletTown[0m
+        [36m</span>[31m
+      [36m</header>[31m
+      [36m<div[31m
+        [33mclass[31m=[32m"app__body"[31m
+      [36m>[31m
+        [36m<aside[31m
+          [33mclass[31m=[32m"app__sidebar"[31m
+        [36m>[31m
+          [36m<nav[31m
+            [33maria-label[31m=[32m"Maps"[31m
+            [33mclass[31m=[32m"map-tree"[31m
+          [36m>[31m
+            [36m<input[31m
+              [33mclass[31m=[32m"map-tree__filter"[31m
+              [33mplaceholder[31m=[32m"Filter maps…"[31m
+              [33mvalue[31m=[32m""[31m
+            [36m/>[31m
+            [36m<details[31m
+              [33mclass[31m=[32m"map-tree__group"[31m
+              [33mopen[31m=[32m""[31m
+            [36m>[31m
+              [36m<summary[31m
+                [33mclass[31m=[32m"map-tree__summary"[31m
+              [36m>[31m
+                [36m<span[31m
+                  [33mclass[31m=[32m"map-tree__group-name"[31m
+                [36m>[31m
+                  [0mKanto[0m
+                [36m</span>[31m
+                [36m<span[31m
+                  [33mclass[31m=[32m"map-tree__count"[31m
+                [36m>[31m
+                  [0m2[0m
+                [36m</span>[31m
+              [36m</summary>[31m
+              [36m<ul[31m
+                [33mclass[31m=[32m"map-tree__list"[31m
+              [36m>[31m
+                [36m<li>[31m
+                  [36m<button[31m
+                    [33maria-current[31m=[32m"true"[31m
+                    [33mclass[31m=[32m"map-tree__map"[31m
+                    [33mdraggable[31m=[32m"false"[31m
+                    [33mtype[31m=[32m"button"[31m
+                  [36m>[31m
+                    [0mPalletTown[0m
+                  [36m</button>[31m
+                [36m</li>[31m
+                [36m<li>[31m
+                  [36m<button[31m
+                    [33mclass[31m=[32m"map-tree__map"[31m
+                    [33mdraggable[31m=[32m"false"[31m
+                    [33mtype[31m=[32m"button"[31m
+                  [36m>[31m
+                    [0mRoute1[0m
+                  [36m</button>[31m
+                [36m</li>[31m
+              [36m</ul>[31m
+            [36m</details>[31m
+          [36m</nav>[31m
+        [36m</aside>[31m
+        [36m<main[31m
+          [33mclass[31m=[32m"app__canvas"[31m
+        [36m>[31m
+          [36m<div[31m
+            [33mclass[31m=[32m"app__map-editing"[31m
+          [36m>[31m
+            [36m<div[31m
+              [33mclass[31m=[32m"toolbar"[31m
+            [36m>[31m
+              [36m<div[31m
+                [33maria-label[31m=[32m"Tools"[31m
+                [33mclass[31m=[32m"toolbar__tools"[31m
+                [33mrole[31m=[32m"group"[31m
+              [36m>[31m
+                [36m<button[31m
+                  [33maria-label[31m=[32m"pencil"[31m
+                  [33maria-pressed[31m=[32m"false"[31m
+                  [33mclass[31m=[32m"map-canvas__btn toolbar__tool-btn"[31m
+                  [33mtype[31m=[32m"button"[31m
+                [36m>[31m
+                  [0mpencil[0m
+                [36m</button>[31m
+                [36m<button[31m
+                  [33maria-label[31m=[32m"rect"[31m
+                  [33maria-pressed[31m=[32m"false"[31m
+                  [33mclass[31m=[32m"map-canvas__btn toolbar__tool-btn"[31m
+                  [33mtype[31m=[32m"button"[31m
+                [36m>[31m
+                  [0mrect[0m
+                [36m</button>[31m
+                [36m<button[31m
+                  [33maria-label[31m=[32m"bucket"[31m
+                  [33maria-pressed[31m=[32m"false"[31m
+                  [33mclass[31m=[32m"map-canvas__btn toolbar__tool-btn"[31m
+                  [33mtype[31m=[32m"button"[31m
+                [36m>[31m
+                  [0mbucket[0m
+                [36m</button>[31m
+                [36m<button[31m
+                  [33maria-label[31m=[32m"dropper"[31m
+                  [33maria-pressed[31m=[32m"false"[31m
+                  [33mclass[31m=[32m"map-canvas__btn toolbar__tool-btn"[31m
+                  [33mtype[31m=[32m"button"[31m
+                [36m>[31m
+                  [0mdropper[0m
+                [36m</button>[31m
+                [36m<button[31m
+                  [33maria-label[31m=[32m"shift"[31m
+                  [33maria-pressed[31m=[32m"false"[31m
+                  [33mclass[31m=[32m"map-canvas__btn toolbar__tool-btn"[31m
+                  [33mtype[31m=[32m"button"[31m
+                [36m>[31m
+                  [0mshift[0m
+                [36m</button>[31m
+                [36m<button[31m
+                  [33maria-label[31m=[32m"collision"[31m
+                  [33maria-pressed[31m=[32m"false"[31m
+                  [33mclass[31m=[32m"map-canvas__btn toolbar__tool-btn"[31m
+                  [33mtype[31m=[32m"button"[31m
+                [36m>[31m
+                  [0mcollision[0m
+                [36m</button>[31m
+              [36m</div>[31m
+              [36m<div[31m
+                [33maria-label[31m=[32m"History"[31m
+                [33mclass[31m=[32m"toolbar__history"[31m
+                [33mrole[31m=[32m"group"[31m
+              [36m>[31m
+                [36m<button[31m
+                  [33maria-label[31m=[32m"Undo"[31m
+                  [33mclass[31m=[32m"map-canvas__btn"[31m
+                  [33mdisabled[31m=[32m""[31m
+                  [33mtype[31m=[32m"button"[31m
+                [36m>[31m
+                  [0m↶ Undo[0m
+                [36m</button>[31m
+                [36m<button[31m
+                  [33maria-label[31m=[32m"Redo"[31m
+                  [33mclass[31m=[32m"map-canvas__btn"[31m
+                  [33mdisabled[31m=[32m""[31m
+                  [33mtype[31m=[32m"button"[31m
+                [36m>[31m
+                  [0m↷ Redo[0m
+                [36m</button>[31m
+              [36m</div>[31m
+              [36m<div[31m
+                [33maria-label[31m=[32m"Sign"[31m
+                [33mclass[31m=[32m"toolbar__sign"[31m
+                [33mrole[31m=[32m"group"[31m
+              [36m>[31m
+                [36m<button[31m
+                  [33mclass[31m=[32m"map-canvas__btn"[31m
+                  [33mtype[31m=[32m"button"[31m
+                [36m>[31m
+                  [0mAdd Sign[0m
+                [36m</button>[31m
+              [36m</div>[31m
+              [36m<div[31m
+                [33mclass[31m=[32m"toolbar__save"[31m
+              [36m>[31m
+                [36m<button[31m
+                  [33maria-label[31m=[32m"Save Changes"[31m
+                  [33mclass[31m=[32m"map-canvas__btn toolbar__save-btn"[31m
+                  [33mdisabled[31m=[32m""[31m
+                  [33mtype[31m=[32m"button"[31m
+                [36m>[31m
+                  [0mSave[0m
+                [36m</button>[31m
+              [36m</div>[31m
+              [36m<div[31m
+                [33mclass[31m=[32m"toolbar__discard"[31m
+              [36m>[31m
+                [36m<button[31m
+                  [33maria-label[31m=[32m"Discard Changes"[31m
+                  [33mclass[31m=[32m"map-canvas__btn toolbar__discard-btn"[31m
+                  [33mdisabled[31m=[32m""[31m
+                  [33mtype[31m=[32m"button"[31m
+                [36m>[31m
+                  [0mDiscard Changes[0m
+                [36m</button>[31m
+              [36m</div>[31m
+            [36m</div>[31m
+            [36m<div[31m
+              [33mclass[31m=[32m"app__map-editing-body"[31m
+            [36m>[31m
+              [36m<section[31m
+                [33maria-label[31m=[32m"PalletTown canvas"[31m
+                [33mclass[31m=[32m"map-canvas"[31m
+              [36m>[31m
+                [36m<div[31m
+                  [33mclass[31m=[32m"map-canvas__toolbar"[31m
+                [36m>[31m
+                  [36m<div[31m
+                    [33maria-label[31m=[32m"Zoom"[31m
+                    [33mclass[31m=[32m"map-canvas__zoom"[31m
+                    [33mrole[31m=[32m"group"[31m
+                  [36m>[31m
+                    [36m<button[31m
+                      [33maria-pressed[31m=[32m"true"[31m
+                      [33mclass[31m=[32m"map-canvas__btn"[31m
+                      [33mtype[31m=[32m"button"[31m
+                    [36m>[31m
+                      [0m1[0m
+                      [0m×[0m
+                    [36m</button>[31m
+                    [36m<button[31m
+                      [33maria-pressed[31m=[32m"false"[31m
+                      [33mclass[31m=[32m"map-canvas__btn"[31m
+                      [33mtype[31m=[32m"button"[31m
+                    [36m>[31m
+                      [0m2[0m
+                      [0m×[0m
+                    [36m</button>[31m
+                    [36m<button[31m
+                      [33maria-pressed[31m=[32m"false"[31m
+                      [33mclass[31m=[32m"map-canvas__btn"[31m
+                      [33mtype[31m=[32m"button"[31m
+                    [36m>[31m
+                      [0m4[0m
+                      [0m×[0m
+                    [36m</button>[31m
+                    [36m<button[31m
+                      [33mclass[31m=[32m"map-canvas__btn"[31m
+                      [33mtype[31m=[32m"button"[31m
+                    [36m>[31m
+                      [0mFit[0m
+                    [36m</button>[31m
+                  [36m</div>[31m
+                  [36m<div[31m
+                    [33maria-label[31m=[32m"Overlays"[31m
+                    [33mclass[31m=[32m"map-canvas__toggles"[31m
+                    [33mrole[31m=[32m"group"[31m
+                  [36m>[31m
+                    [36m<button[31m
+                      [33maria-pressed[31m=[32m"false"[31m
+                      [33mclass[31m=[32m"map-canvas__btn"[31m
+                      [33mtype[31m=[32m"button"[31m
+                    [36m>[31m
+                      [0mGrid[0m
+                    [36m</button>[31m
+                    [36m<button[31m
+                      [33maria-pressed[31m=[32m"false"[31m
+                      [33mclass[31m=[32m"map-canvas__btn"[31m
+                      [33mtype[31m=[32m"button"[31m
+                    [36m>[31m
+                      [0mCollision[0m
+                    [36m</button>[31m
+                    [36m<button[31m
+                      [33maria-pressed[31m=[32m"false"[31m
+                      [33mclass[31m=[32m"map-canvas__btn"[31m
+                      [33mtype[31m=[32m"button"[31m
+                    [36m>[31m
+                      [0mElevation[0m
+                    [36m</button>[31m
+                    [36m<button[31m
+                      [33maria-pressed[31m=[32m"false"[31m
+                      [33mclass[31m=[32m"map-canvas__btn"[31m
+                      [33mtype[31m=[32m"button"[31m
+                    [36m>[31m
+                      [0mEvents[0m
+                    [36m</button>[31m
+                    [36m<button[31m
+                      [33maria-pressed[31m=[32m"false"[31m
+                      [33mclass[31m=[32m"map-canvas__btn"[31m
+                      [33mtype[31m=[32m"button"[31m
+                    [36m>[31m
+                      [0mEncounters[0m
+                    [36m</button>[31m
+                  [36m</div>[31m
+                [36m</div>[31m
+                [36m<div[31m
+                  [33mclass[31m=[32m"map-canvas__viewport"[31m
+                [36m>[31m
+                  [36m<img[31m
+                    [33malt[31m=[32m""[31m
+                    [33mclass[31m=[32m"map-canvas__source-image"[31m
+                    [33msrc[31m=[32m"/api/render/PalletTown.png?border=1&v=0"[31m
+                  [36m/>[31m
+                  [36m<canvas[31m
+                    [33mclass[31m=[32m"map-canvas__stage"[31m
+                    [33mheight[31m=[32m"64"[31m
+                    [33mwidth[31m=[32m"64"[31m
+                  [36m/>[31m
+                  [36m<div[31m
+                    [33mclass[31m=[32m"encounter-border"[31m
+                  [36m/>[31m
+                [36m</div>[31m
+                [36m<div[31m
+                  [33mclass[31m=[32m"map-canvas__status"[31m
+                [36m>[31m
+                  [36m<span[31m
+                    [33mclass[31m=[32m"map-canvas__status-item"[31m
+                  [36m>[31m
+                    [0mlayout_version [0m
+                    [36m<strong>[31m
+                      [0memerald[0m
+                    [36m</strong>[31m
+                  [36m</span>[31m
+                  [36m<span[31m
+                    [33mclass[31m=[32m"map-canvas__status-item"[31m
+                  [36m>[31m
+                    [0msplit metatiles [0m
+                    [0m512[0m
+                    [0m · tiles [0m
+                    [0m512[0m
+                    [0m · pals [0m
+                    [0m6[0m
+                  [36m</span>[31m
+                  [36m<span[31m
+                    [33mclass[31m=[32m"map-canvas__status-item map-canvas__hover map-canvas__hover--empty"[31m
+                  [36m>[31m
+                    [0mHover the map…[0m
+                  [36m</span>[31m
+                [36m</div>[31m
+              [36m</section>[31m
+              [36m<div[31m
+                [33mclass[31m=[32m"event-inspector"[31m
+              [36m>[31m
+                [36m<h3[31m
+                  [33mclass[31m=[32m"event-inspector__title"[31m
+                [36m>[31m
+                  [36m<span[31m
+                    [33maria-hidden[31m=[32m"true"[31m
+                    [33mclass[31m=[32m"event-inspector__kind-dot event-inspector__kind-dot--object"[31m
+                  [36m/>[31m
+                  [0mObject[0m
+                  [0m event #[0m
+                  [0m0[0m
+                [36m</h3>[31m
+                [36m<p[31m
+                  [33mclass[31m=[32m"event-inspector__subtitle"[31m
+                [36m>[31m
+                  [0mOBJ_EVENT_GFX_BOY_1 · MOVEMENT_TYPE_FACE_DOWN[0m
+                [36m</p>[31m
+                [36m<label[31m
+                  [33mclass[31m=[32m"event-inspector__field"[31m
+                [36m>[31m
+                  [36m<span[31m
+                    [33mclass[31m=[32m"event-inspector__field-label"[31m
+                  [36m>[31m
+                    [0mX[0m
+                  [36m</span>[31m
+                  [36m<input[31m
+                    [33maria-label[31m=[32m"X"[31m
+                    [33mclass[31m=[32m"event-inspector__input"[31m
+                    [33mtype[31m=[32m"number"[31m
+                    [33mvalue[31m=[32m"1"[31m
+                  [36m/>[31m
+                [36m</label>[31m
+                [36m<label[31m
+                  [33mclass[31m=[32m"event-inspector__field"[31m
+                [36m>[31m
+                  [36m<span[31m
+                    [33mclass[31m=[32m"event-inspector__field-label"[31m
+                  [36m>[31m
+                    [0mY[0m
+                  [36m</span>[31m
+                  [36m<input[31m
+                    [33maria-label[31m=[32m"Y"[31m
+                    [33mclass[31m=[32m"event-inspector__input"[31m
+                    [33mtype[31m=[32m"number"[31m
+                    [33mvalue[31m=[32m"1"[31m
+                  [36m/>[31m
+                [36m</label>[31m
+                [36m<label[31m
+                  [33mclass[31m=[32m"event-inspector__field"[31m
+                [36m>[31m
+                  [36m<span[31m
+                    [33mclass[31m=[32m"event-inspector__field-label"[31m
+                  [36m>[31m
+                    [0mElevation[0m
+                  [36m</span>[31m
+                  [36m<input[31m
+                    [33maria-label[31m=[32m"Elevation"[31m
+                    [33mclass[31m=[32m"event-inspector__input"[31m
+                    [33mtype[31m=[32m"number"[31m
+                    [33mvalue[31m=[32m"0"[31m
+                  [36m/>[31m
+                [36m</label>[31m
+                [36m<div[31m
+                  [33mclass[31m=[32m"event-inspector__actions"[31m
+                [36m>[31m
+                  [36m<button[31m
+                    [33mclass[31m=[32m"map-canvas__btn event-inspector__delete-btn"[31m
+                    [33mtype[31m=[32m"button"[31m
+                  [36m>[31m
+                    [0mDelete[0m
+                  [36m</button>[31m
+                [36m</div>[31m
+              [36m</div>[31m
+            [36m</div>[31m
+          [36m</div>[31m
+        [36m</main>[31m
+      [36m</div>[31m
+    [36m</div>[31m
+  [36m</div>[31m
+[36m</body>[31m[39m
+[31m   [31m×[31m App GBA visit guard[2m > [22mignores a deferred A to B to A add failure[33m 469[2mms[22m[31m[39m
+[31m     → expected <div …(2)>…(2)</div> to be null[39m
+[31m   [31m×[31m App GBA visit guard[2m > [22mretires an event error when switching visits[90m 155[2mms[22m[31m[39m
+[31m     → expected <div …(2)>…(2)</div> to be null[39m
+
+[31m⎯⎯⎯⎯⎯⎯⎯[1m[7m Failed Tests 3 [27m[22m⎯⎯⎯⎯⎯⎯⎯[39m
+
+[31m[1m[7m FAIL [27m[22m[39m packages/ui/test/AppVisitGuard.test.tsx[2m > [22mApp GBA visit guard[2m > [22mignores a deferred A to B to A add success
+[31m[1mTestingLibraryElementError[22m[39m: Unable to find an element with the text: No event selected.. This could be because the text is broken up by multiple elements. In this case, you can provide a function for your text matcher to make your matcher more flexible.
+
+Ignored nodes: comments, script, style
+[36m<body>[39m
+  [36m<div>[39m
+    [36m<div[39m
+      [33mclass[39m=[32m"app"[39m
+    [36m>[39m
+      [36m<header[39m
+        [33mclass[39m=[32m"app__toolbar"[39m
+      [36m>[39m
+        [36m<h1[39m
+          [33mclass[39m=[32m"app__title"[39m
+        [36m>[39m
+          [0mPokeMap[0m
+        [36m</h1>[39m
+        [36m<div[39m
+          [33maria-label[39m=[32m"View"[39m
+          [33mclass[39m=[32m"app__mode"[39m
+          [33mrole[39m=[32m"group"[39m
+        [36m>[39m
+          [36m<button[39m
+            [33maria-pressed[39m=[32m"true"[39m
+            [33mclass[39m=[32m"map-canvas__btn"[39m
+            [33mtype[39m=[32m"button"[39m
+          [36m>[39m
+            [0mMap[0m
+          [36m</button>[39m
+          [36m<button[39m
+            [33maria-pressed[39m=[32m"false"[39m
+            [33mclass[39m=[32m"map-canvas__btn"[39m
+            [33mtype[39m=[32m"button"[39m
+          [36m>[39m
+            [0mWorld[0m
+          [36m</button>[39m
+          [36m<button[39m
+            [33maria-pressed[39m=[32m"false"[39m
+            [33mclass[39m=[32m"map-canvas__btn"[39m
+            [33mtype[39m=[32m"button"[39m
+          [36m>[39m
+            [0mDungeon[0m
+          [36m</button>[39m
+        [36m</div>[39m
+        [36m<span[39m
+          [33mclass[39m=[32m"app__status"[39m
+        [36m>[39m
+          [0mPalletTown[0m
+        [36m</span>[39m
+      [36m</header>[39m
+      [36m<div[39m
+        [33mclass[39m=[32m"app__body"[39m
+      [36m>[39m
+        [36m<aside[39m
+          [33mclass[39m=[32m"app__sidebar"[39m
+        [36m>[39m
+          [36m<nav[39m
+            [33maria-label[39m=[32m"Maps"[39m
+            [33mclass[39m=[32m"map-tree"[39m
+          [36m>[39m
+            [36m<input[39m
+              [33mclass[39m=[32m"map-tree__filter"[39m
+              [33mplaceholder[39m=[32m"Filter maps…"[39m
+              [33mvalue[39m=[32m""[39m
+            [36m/>[39m
+            [36m<details[39m
+              [33mclass[39m=[32m"map-tree__group"[39m
+              [33mopen[39m=[32m""[39m
+            [36m>[39m
+              [36m<summary[39m
+                [33mclass[39m=[32m"map-tree__summary"[39m
+              [36m>[39m
+                [36m<span[39m
+                  [33mclass[39m=[32m"map-tree__group-name"[39m
+                [36m>[39m
+                  [0mKanto[0m
+                [36m</span>[39m
+                [36m<span[39m
+                  [33mclass[39m=[32m"map-tree__count"[39m
+                [36m>[39m
+                  [0m2[0m
+                [36m</span>[39m
+              [36m</summary>[39m
+              [36m<ul[39m
+                [33mclass[39m=[32m"map-tree__list"[39m
+              [36m>[39m
+                [36m<li>[39m
+                  [36m<button[39m
+                    [33maria-current[39m=[32m"true"[39m
+                    [33mclass[39m=[32m"map-tree__map"[39m
+                    [33mdraggable[39m=[32m"false"[39m
+                    [33mtype[39m=[32m"button"[39m
+                  [36m>[39m
+                    [0mPalletTown[0m
+                  [36m</button>[39m
+                [36m</li>[39m
+                [36m<li>[39m
+                  [36m<button[39m
+                    [33mclass[39m=[32m"map-tree__map"[39m
+                    [33mdraggable[39m=[32m"false"[39m
+                    [33mtype[39m=[32m"button"[39m
+                  [36m>[39m
+                    [0mRoute1[0m
+                  [36m</button>[39m
+                [36m</li>[39m
+              [36m</ul>[39m
+            [36m</details>[39m
+          [36m</nav>[39m
+        [36m</aside>[39m
+        [36m<main[39m
+          [33mclass[39m=[32m"app__canvas"[39m
+        [36m>[39m
+          [36m<div[39m
+            [33mclass[39m=[32m"app__map-editing"[39m
+          [36m>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"toolbar"[39m
+            [36m>[39m
+              [36m<div[39m
+                [33maria-label[39m=[32m"Tools"[39m
+                [33mclass[39m=[32m"toolbar__tools"[39m
+                [33mrole[39m=[32m"group"[39m
+              [36m>[39m
+                [36m<button[39m
+                  [33maria-label[39m=[32m"pencil"[39m
+                  [33maria-pressed[39m=[32m"false"[39m
+                  [33mclass[39m=[32m"map-canvas__btn toolbar__tool-btn"[39m
+                  [33mtype[39m=[32m"button"[39m
+                [36m>[39m
+                  [0mpencil[0m
+                [36m</button>[39m
+                [36m<button[39m
+                  [33maria-label[39m=[32m"rect"[39m
+                  [33maria-pressed[39m=[32m"false"[39m
+                  [33mclass[39m=[32m"map-canvas__btn toolbar__tool-btn"[39m
+                  [33mtype[39m=[32m"button"[39m
+                [36m>[39m
+                  [0mrect[0m
+                [36m</button>[39m
+                [36m<button[39m
+                  [33maria-label[39m=[32m"bucket"[39m
+                  [33maria-pressed[39m=[32m"false"[39m
+                  [33mclass[39m=[32m"map-canvas__btn toolbar__tool-btn"[39m
+                  [33mtype[39m=[32m"button"[39m
+                [36m>[39m
+                  [0mbucket[0m
+                [36m</button>[39m
+                [36m<button[39m
+                  [33maria-label[39m=[32m"dropper"[39m
+                  [33maria-pressed[39m=[32m"false"[39m
+                  [33mclass[39m=[32m"map-canvas__btn toolbar__tool-btn"[39m
+                  [33mtype[39m=[32m"button"[39m
+                [36m>[39m
+                  [0mdropper[0m
+                [36m</button>[39m
+                [36m<button[39m
+                  [33maria-label[39m=[32m"shift"[39m
+                  [33maria-pressed[39m=[32m"false"[39m
+                  [33mclass[39m=[32m"map-canvas__btn toolbar__tool-btn"[39m
+                  [33mtype[39m=[32m"button"[39m
+                [36m>[39m
+                  [0mshift[0m
+                [36m</button>[39m
+                [36m<button[39m
+                  [33maria-label[39m=[32m"collision"[39m
+                  [33maria-pressed[39m=[32m"false"[39m
+                  [33mclass[39m=[32m"map-canvas__btn toolbar__tool-btn"[39m
+                  [33mtype[39m=[32m"button"[39m
+                [36m>[39m
+                  [0mcollision[0m
+                [36m</button>[39m
+              [36m</div>[39m
+              [36m<div[39m
+                [33maria-label[39m=[32m"History"[39m
+                [33mclass[39m=[32m"toolbar__history"[39m
+                [33mrole[39m=[32m"group"[39m
+              [36m>[39m
+                [36m<button[39m
+                  [33maria-label[39m=[32m"Undo"[39m
+                  [33mclass[39m=[32m"map-canvas__btn"[39m
+                  [33mdisabled[39m=[32m""[39m
+                  [33mtype[39m=[32m"button"[39m
+                [36m>[39m
+                  [0m↶ Undo[0m
+                [36m</button>[39m
+                [36m<button[39m
+                  [33maria-label[39m=[32m"Redo"[39m
+                  [33mclass[39m=[32m"map-canvas__btn"[39m
+                  [33mdisabled[39m=[32m""[39m
+                  [33mtype[39m=[32m"button"[39m
+                [36m>[39m
+                  [0m↷ Redo[0m
+                [36m</button>[39m
+              [36m</div>[39m
+              [36m<div[39m
+                [33maria-label[39m=[32m"Sign"[39m
+                [33mclass[39m=[32m"toolbar__sign"[39m
+                [33mrole[39m=[32m"group"[39m
+              [36m>[39m
+                [36m<button[39m
+                  [33mclass[39m=[32m"map-canvas__btn"[39m
+                  [33mtype[39m=[32m"button"[39m
+                [36m>[39m
+                  [0mAdd Sign[0m
+                [36m</button>[39m
+              [36m</div>[39m
+              [36m<div[39m
+                [33mclass[39m=[32m"toolbar__save"[39m
+              [36m>[39m
+                [36m<button[39m
+                  [33maria-label[39m=[32m"Save Changes"[39m
+                  [33mclass[39m=[32m"map-canvas__btn toolbar__save-btn"[39m
+                  [33mdisabled[39m=[32m""[39m
+                  [33mtype[39m=[32m"button"[39m
+                [36m>[39m
+                  [0mSave[0m
+                [36m</button>[39m
+              [36m</div>[39m
+              [36m<div[39m
+                [33mclass[39m=[32m"toolbar__discard"[39m
+              [36m>[39m
+                [36m<button[39m
+                  [33maria-label[39m=[32m"Discard Changes"[39m
+                  [33mclass[39m=[32m"map-canvas__btn toolbar__discard-btn"[39m
+                  [33mdisabled[39m=[32m""[39m
+                  [33mtype[39m=[32m"button"[39m
+                [36m>[39m
+                  [0mDiscard Changes[0m
+                [36m</button>[39m
+              [36m</div>[39m
+            [36m</div>[39m
+            [36m<div[39m
+              [33mclass[39m=[32m"app__map-editing-body"[39m
+            [36m>[39m
+              [36m<section[39m
+                [33maria-label[39m=[32m"PalletTown canvas"[39m
+                [33mclass[39m=[32m"map-canvas"[39m
+              [36m>[39m
+                [36m<div[39m
+                  [33mclass[39m=[32m"map-canvas__toolbar"[39m
+                [36m>[39m
+                  [36m<div[39m
+                    [33maria-label[39m=[32m"Zoom"[39m
+                    [33mclass[39m=[32m"map-canvas__zoom"[39m
+                    [33mrole[39m=[32m"group"[39m
+                  [36m>[39m
+                    [36m<button[39m
+                      [33maria-pressed[39m=[32m"true"[39m
+                      [33mclass[39m=[32m"map-canvas__btn"[39m
+                      [33mtype[39m=[32m"button"[39m
+                    [36m>[39m
+                      [0m1[0m
+                      [0m×[0m
+                    [36m</button>[39m
+                    [36m<button[39m
+                      [33maria-pressed[39m=[32m"false"[39m
+                      [33mclass[39m=[32m"map-canvas__btn"[39m
+                      [33mtype[39m=[32m"button"[39m
+                    [36m>[39m
+                      [0m2[0m
+                      [0m×[0m
+                    [36m</button>[39m
+                    [36m<button[39m
+                      [33maria-pressed[39m=[32m"false"[39m
+                      [33mclass[39m=[32m"map-canvas__btn"[39m
+                      [33mtype[39m=[32m"button"[39m
+                    [36m>[39m
+                      [0m4[0m
+                      [0m×[0m
+                    [36m</button>[39m
+                    [36m<button[39m
+                      [33mclass[39m=[32m"map-canvas__btn"[39m
+                      [33mtype[39m=[32m"button"[39m
+                    [36m>[39m
+                      [0mFit[0m
+                    [36m</button>[39m
+                  [36m</div>[39m
+                  [36m<div[39m
+                    [33maria-label[39m=[32m"Overlays"[39m
+                    [33mclass[39m=[32m"map-canvas__toggles"[39m
+                    [33mrole[39m=[32m"group"[39m
+                  [36m>[39m
+                    [36m<button[39m
+                      [33maria-pressed[39m=[32m"false"[39m
+                      [33mclass[39m=[32m"map-canvas__btn"[39m
+                      [33mtype[39m=[32m"button"[39m
+                    [36m>[39m
+                      [0mGrid[0m
+                    [36m</button>[39m
+                    [36m<button[39m
+                      [33maria-pressed[39m=[32m"false"[39m
+                      [33mclass[39m=[32m"map-canvas__btn"[39m
+                      [33mtype[39m=[32m"button"[39m
+                    [36m>[39m
+                      [0mCollision[0m
+                    [36m</button>[39m
+                    [36m<button[39m
+                      [33maria-pressed[39m=[32m"false"[39m
+                      [33mclass[39m=[32m"map-canvas__btn"[39m
+                      [33mtype[39m=[32m"button"[39m
+                    [36m>[39m
+                      [0mElevation[0m
+                    [36m</button>[39m
+                    [36m<button[39m
+                      [33maria-pressed[39m=[32m"false"[39m
+                      [33mclass[39m=[32m"map-canvas__btn"[39m
+                      [33mtype[39m=[32m"button"[39m
+                    [36m>[39m
+                      [0mEvents[0m
+                    [36m</button>[39m
+                    [36m<button[39m
+                      [33maria-pressed[39m=[32m"false"[39m
+                      [33mclass[39m=[32m"map-canvas__btn"[39m
+                      [33mtype[39m=[32m"button"[39m
+                    [36m>[39m
+                      [0mEncounters[0m
+                    [36m</button>[39m
+                  [36m</div>[39m
+                [36m</div>[39m
+                [36m<div[39m
+                  [33mclass[39m=[32m"map-canvas__viewport"[39m
+                [36m>[39m
+                  [36m<img[39m
+                    [33malt[39m=[32m""[39m
+                    [33mclass[39m=[32m"map-canvas__source-image"[39m
+                    [33msrc[39m=[32m"/api/render/PalletTown.png?border=1&v=0"[39m
+                  [36m/>[39m
+                  [36m<canvas[39m
+                    [33mclass[39m=[32m"map-canvas__stage"[39m
+                    [33mheight[39m=[32m"64"[39m
+                    [33mwidth[39m=[32m"64"[39m
+                  [36m/>[39m
+                  [36m<div[39m
+                    [33mclass[39m=[32m"encounter-border"[39m
+                  [36m/>[39m
+                [36m</div>[39m
+                [36m<div[39m
+                  [33mclass[39m=[32m"map-canvas__status"[39m
+                [36m>[39m
+                  [36m<span[39m
+                    [33mclass[39m=[32m"map-canvas__status-item"[39m
+                  [36m>[39m
+                    [0mlayout_version [0m
+                    [36m<strong>[39m
+                      [0memerald[0m
+                    [36m</strong>[39m
+                  [36m</span>[39m
+                  [36m<span[39m
+                    [33mclass[39m=[32m"map-canvas__status-item"[39m
+                  [36m>[39m
+                    [0msplit metatiles [0m
+                    [0m512[0m
+                    [0m · tiles [0m
+                    [0m512[0m
+                    [0m · pals [0m
+                    [0m6[0m
+                  [36m</span>[39m
+                  [36m<span[39m
+                    [33mclass[39m=[32m"map-canvas__status-item map-canvas__hover map-canvas__hover--empty"[39m
+                  [36m>[39m
+                    [0mHover the map…[0m
+                  [36m</span>[39m
+                [36m</div>[39m
+              [36m</section>[39m
+              [36m<div[39m
+                [33mclass[39m=[32m"event-inspector"[39m
+              [36m>[39m
+                [36m<h3[39m
+                  [33mclass[39m=[32m"event-inspector__title"[39m
+                [36m>[39m
+                  [36m<span[39m
+                    [33maria-hidden[39m=[32m"true"[39m
+                    [33mclass[39m=[32m"event-inspector__kind-dot event-inspector__kind-dot--object"[39m
+                  [36m/>[39m
+                  [0mObject[0m
+                  [0m event #[0m
+                  [0m0[0m
+                [36m</h3>[39m
+                [36m<p[39m
+                  [33mclass[39m=[32m"event-inspector__subtitle"[39m
+                [36m>[39m
+                  [0mOBJ_EVENT_GFX_BOY_1 · MOVEMENT_TYPE_FACE_DOWN[0m
+                [36m</p>[39m
+                [36m<label[39m
+                  [33mclass[39m=[32m"event-inspector__field"[39m
+                [36m>[39m
+                  [36m<span[39m
+                    [33mclass[39m=[32m"event-inspector__field-label"[39m
+                  [36m>[39m
+                    [0mX[0m
+                  [36m</span>[39m
+                  [36m<input[39m
+                    [33maria-label[39m=[32m"X"[39m
+                    [33mclass[39m=[32m"event-inspector__input"[39m
+                    [33mtype[39m=[32m"number"[39m
+                    [33mvalue[39m=[32m"1"[39m
+                  [36m/>[39m
+                [36m</label>[39m
+                [36m<label[39m
+                  [33mclass[39m=[32m"event-inspector__field"[39m
+                [36m>[39m
+                  [36m<span[39m
+                    [33mclass[39m=[32m"event-inspector__field-label"[39m
+                  [36m>[39m
+                    [0mY[0m
+                  [36m</span>[39m
+                  [36m<input[39m
+                    [33maria-label[39m=[32m"Y"[39m
+                    [33mclass[39m=[32m"event-inspector__input"[39m
+                    [33mtype[39m=[32m"number"[39m
+                    [33mvalue[39m=[32m"1"[39m
+                  [36m/>[39m
+                [36m</label>[39m
+                [36m<label[39m
+                  [33mclass[39m=[32m"event-inspector__field"[39m
+                [36m>[39m
+                  [36m<span[39m
+                    [33mclass[39m=[32m"event-inspector__field-label"[39m
+                  [36m>[39m
+                    [0mElevation[0m
+                  [36m</span>[39m
+                  [36m<input[39m
+                    [33maria-label[39m=[32m"Elevation"[39m
+                    [33mclass[39m=[32m"event-inspector__input"[39m
+                    [33mtype[39m=[32m"number"[39m
+                    [33mvalue[39m=[32m"0"[39m
+                  [36m/>[39m
+                [36m</label>[39m
+                [36m<div[39m
+                  [33mclass[39m=[32m"event-inspector__actions"[39m
+                [36m>[39m
+                  [36m<button[39m
+                    [33mclass[39m=[32m"map-canvas__btn event-inspector__delete-btn"[39m
+                    [33mtype[39m=[32m"button"[39m
+                  [36m>[39m
+                    [0mDelete[0m
+                  [36m</button>[39m
+                [36m</div>[39m
+              [36m</div>[39m
+            [36m</div>[39m
+          [36m</div>[39m
+        [36m</main>[39m
+      [36m</div>[39m
+    [36m</div>[39m
+  [36m</div>[39m
+[36m</body>[39m
+[90m [2m❯[22m Object.getElementError node_modules/@testing-library/dom/dist/config.js:[2m37:19[22m[39m
+[90m [2m❯[22m node_modules/@testing-library/dom/dist/query-helpers.js:[2m76:38[22m[39m
+[90m [2m❯[22m node_modules/@testing-library/dom/dist/query-helpers.js:[2m52:17[22m[39m
+[90m [2m❯[22m node_modules/@testing-library/dom/dist/query-helpers.js:[2m95:19[22m[39m
+[36m [2m❯[22m packages/ui/test/AppVisitGuard.test.tsx:[2m49:19[22m[39m
+    [90m 47| [39m    [35mawait[39m [34mact[39m([35masync[39m () [33m=>[39m add[33m.[39m[34mresolve[39m([34mresponse[39m([35mtrue[39m[33m,[39m { map[33m:[39m [33mPALLET[39m[33m.[39mmap…
+    [90m 48| [39m    [35mawait[39m [34mact[39m([35masync[39m () [33m=>[39m {})[33m;[39m
+    [90m 49| [39m    [34mexpect[39m(screen[33m.[39m[34mgetByText[39m([32m"No event selected."[39m))[33m.[39m[34mtoBeTruthy[39m()[33m;[39m
+    [90m   | [39m                  [31m^[39m
+    [90m 50| [39m    [34mexpect[39m(screen[33m.[39m[34mqueryByRole[39m([32m"button"[39m[33m,[39m { name[33m:[39m [32m"Delete"[39m }))[33m.[39m[34mtoBeNull[39m(…
+    [90m 51| [39m    [34mexpect[39m(screen[33m.[39m[34mqueryByRole[39m([32m"spinbutton"[39m[33m,[39m { name[33m:[39m [32m"X"[39m }))[33m.[39m[34mtoBeNull[39m()[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m packages/ui/test/AppVisitGuard.test.tsx[2m > [22mApp GBA visit guard[2m > [22mignores a deferred A to B to A add failure
+[31m[1mAssertionError[22m: expected <div …(2)>…(2)</div> to be null[39m
+
+[32m- Expected:[39m 
+null
+
+[31m+ Received:[39m 
+<div
+  class="app__event-op-error"
+  role="alert"
+>
+  <span>
+    POST /api/edit/PalletTown/event/add -&gt; 500
+  </span>
+  <button
+    aria-label="Dismiss"
+    class="app__event-op-error-dismiss"
+    type="button"
+  >
+    ×
+  </button>
+</div>
+
+[36m [2m❯[22m packages/ui/test/AppVisitGuard.test.tsx:[2m61:41[22m[39m
+    [90m 59| [39m    [35mawait[39m [34mact[39m([35masync[39m () [33m=>[39m add[33m.[39m[34mresolve[39m([34mresponse[39m([35mfalse[39m[33m,[39m { error[33m:[39m [32m"old fa[39m…
+    [90m 60| [39m    [35mawait[39m [34mact[39m([35masync[39m () [33m=>[39m {})[33m;[39m
+    [90m 61| [39m    [34mexpect[39m(screen[33m.[39m[34mqueryByRole[39m([32m"alert"[39m))[33m.[39m[34mtoBeNull[39m()[33m;[39m
+    [90m   | [39m                                        [31m^[39m
+    [90m 62| [39m  })[33m;[39m
+    [90m 63| [39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯[22m[39m
+
+[31m[1m[7m FAIL [27m[22m[39m packages/ui/test/AppVisitGuard.test.tsx[2m > [22mApp GBA visit guard[2m > [22mretires an event error when switching visits
+[31m[1mAssertionError[22m: expected <div …(2)>…(2)</div> to be null[39m
+
+[32m- Expected:[39m 
+null
+
+[31m+ Received:[39m 
+<div
+  class="app__event-op-error"
+  role="alert"
+>
+  <span>
+    POST /api/edit/PalletTown/event/add -&gt; 500
+  </span>
+  <button
+    aria-label="Dismiss"
+    class="app__event-op-error-dismiss"
+    type="button"
+  >
+    ×
+  </button>
+</div>
+
+[36m [2m❯[22m packages/ui/test/AppVisitGuard.test.tsx:[2m70:41[22m[39m
+    [90m 68| [39m    [35mawait[39m screen[33m.[39m[34mfindByRole[39m([32m"alert"[39m)[33m;[39m
+    [90m 69| [39m    [35mawait[39m [34mswitchTo[39m([32m"Route1"[39m)[33m;[39m
+    [90m 70| [39m    [34mexpect[39m(screen[33m.[39m[34mqueryByRole[39m([32m"alert"[39m))[33m.[39m[34mtoBeNull[39m()[33m;[39m
+    [90m   | [39m                                        [31m^[39m
+    [90m 71| [39m  })[33m;[39m
+    [90m 72| [39m})[33m;[39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯[22m[39m
+
+[2m Test Files [22m [1m[31m1 failed[39m[22m[90m (1)[39m
+[2m      Tests [22m [1m[31m3 failed[39m[22m[90m (3)[39m
+[2m   Start at [22m 12:42:24
+[2m   Duration [22m 39.97s[2m (transform 1.10s, setup 4.50s, collect 1.48s, tests 1.74s, environment 30.89s, prepare 904ms)[22m
+
