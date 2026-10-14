@@ -1,0 +1,4 @@
+# Hidden from ripgrep-based search (Claude Code Grep/Glob) but still tracked by git.
+# History and archived evidence: read by path when needed.
+docs/superpowers/history/
+docs/superpowers/task-reports/**/_archive/
