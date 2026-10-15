@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import { MapTree } from "../components/MapTree.js";
 import { DungeonSidebar } from "../components/DungeonSidebar.js";
 import { SaveDialog } from "../components/SaveDialog.js";
@@ -72,6 +72,11 @@ export function FamilyApp({ adapter, switcher }: FamilyAppProps) {
       setJumpTarget(name);
       setSelectVersion((v) => v + 1);
     }, { sameMap: name === selected });
+
+  // The memoised tree gets one stable callback that always runs the latest selectMap (Plan 9 follow-up O2).
+  const selectMapRef = useRef(selectMap);
+  selectMapRef.current = selectMap;
+  const onTreeSelect = useCallback((name: string) => selectMapRef.current(name), []);
 
   // A world-view click selects (tree highlight + scroll) but is not a jump request. Re-clicking the selected map
   // must not raise the "discard and switch" confirm.
@@ -201,7 +206,7 @@ export function FamilyApp({ adapter, switcher }: FamilyAppProps) {
               onOpen={setOpenDungeonId} onCreate={runtime.dungeons.create} onRename={runtime.dungeons.rename}
               onSetMaps={runtime.dungeons.setMaps} onDelete={deleteDungeon} allMapNames={allMapNames} />
           ) : error ? null : data ? (
-            <MapTree data={data} selected={selected} onSelect={selectMap} worldMode={mode === "world"}
+            <MapTree data={data} selected={selected} onSelect={onTreeSelect} worldMode={mode === "world"}
               visibility={visibility} hiddenMapTypes={runtime.hiddenMapTypes} />
           ) : (
             <p className="map-tree__empty">Loading map groups…</p>

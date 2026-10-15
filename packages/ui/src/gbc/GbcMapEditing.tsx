@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import type { GbcMapPayload } from "@pokemap/core/src/gbc/wire.js";
 import type { GbcStamp } from "@pokemap/core/src/gbc/edit/paint.js";
 import type { GbcEventKind, GbcWarpRenumberWarning } from "@pokemap/core/src/gbc/edit/events.js";
@@ -84,6 +84,10 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
   // Functional updaters: a deferred `setEvent(null)` (a delete resolving) must not overwrite a stamp picked meanwhile.
   const fresh = (p: typeof pick) => (p.forMap === key ? p : { forMap: key, stamp: null, event: null });
   const setStamp = (next: GbcStamp) => { if (isCurrent()) setPick((p) => ({ ...fresh(p), stamp: next })); };
+  // The memoised palette gets one stable pick callback that runs the latest setStamp (Plan 9 follow-up O2).
+  const setStampRef = useRef(setStamp);
+  setStampRef.current = setStamp;
+  const onPalettePick = useCallback((next: GbcStamp) => setStampRef.current(next), []);
   const setEvent = (ref: GbcEventRef | null) => { if (isCurrent()) setPick((p) => ({ ...fresh(p), event: ref })); };
   const fail = (e: unknown, fallback = "Edit failed.") => { if (isCurrent()) setErr({ forMap: key, text: message(e, fallback) }); };
   const ok = () => { if (isCurrent()) setErr(null); };
@@ -178,7 +182,7 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
         tilesetName={data.tileset.constName}
         metatileCount={data.metatileCount}
         highlightId={hoveredMetatileId}
-        onSelect={writable ? setStamp : undefined}
+        onSelect={writable ? onPalettePick : undefined}
         selected={pickedId}
       />
       <GbcEventInspector

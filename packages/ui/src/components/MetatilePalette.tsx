@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, memo, useEffect, useMemo, useRef, useState } from "react";
 import type { Split } from "@pokemap/core/src/model/types.js";
 import type { Stamp, StampCell } from "@pokemap/core/src/edit/paint.js";
 import { useFollowHover } from "../shared/useFollowHover.js";
@@ -49,7 +49,8 @@ const hex = (n: number) => `0x${n.toString(16).toUpperCase()}`;
  * visibly impossible to repeat, matching this project's own reason to
  * exist rather than just describing it.
  */
-export function MetatilePalette({
+// Memoised like MapTree (Plan 9 follow-up O2): up to 1,024 cells, and every prop is stable across edit-session replies.
+export const MetatilePalette = memo(function MetatilePalette({
   layoutName, split, primaryCount, secondaryCount, onSelect, selected, highlightId = null, visibleCount, columns = 8,
 }: MetatilePaletteProps) {
   const [query, setQuery] = useState("");
@@ -205,4 +206,4 @@ export function MetatilePalette({
       </div>
     </div>
   );
-}
+});

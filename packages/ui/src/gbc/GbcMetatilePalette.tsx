@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { memo, useEffect, useRef } from "react";
 import type { GbcStamp } from "@pokemap/core/src/gbc/edit/paint.js";
 import type { GbcTimeOfDay } from "./time.js";
 import { useFollowHover } from "../shared/useFollowHover.js";
@@ -45,7 +45,8 @@ const hex = (n: number) => `0x${n.toString(16)}`;
  * Deliberately always shown, unlike GBA's strip, which only mounts for pencil/rect/bucket: browsing the tileset
  * while read-only predates editing (6b) and hiding it would regress that.
  */
-export function GbcMetatilePalette({ mapName, time, tilesetName, metatileCount, highlightId = null, onSelect, selected = null }: GbcMetatilePaletteProps) {
+// Memoised like MapTree (Plan 9 follow-up O2); GbcMapEditing passes a stable onSelect.
+export const GbcMetatilePalette = memo(function GbcMetatilePalette({ mapName, time, tilesetName, metatileCount, highlightId = null, onSelect, selected = null }: GbcMetatilePaletteProps) {
   const cellRefs = useRef(new Map<number, HTMLButtonElement>());
   const [follow, setFollow] = useFollowHover();
 
@@ -100,4 +101,4 @@ export function GbcMetatilePalette({ mapName, time, tilesetName, metatileCount, 
       </div>
     </aside>
   );
-}
+});

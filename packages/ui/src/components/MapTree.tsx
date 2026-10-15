@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { HIDDEN_MAP_TYPES, isDrawnByDefault, type MapVisibilityInfo } from "../world/visibility.js";
 
 export interface MapGroupsData {
@@ -21,7 +21,9 @@ export interface MapTreeProps {
   hiddenMapTypes?: ReadonlySet<string>;
 }
 
-export function MapTree({ data, selected, onSelect, worldMode = false, visibility = null, hiddenMapTypes = HIDDEN_MAP_TYPES }: MapTreeProps) {
+// Memoised: the shell re-renders on every edit-session reply and hover; the tree (up to 1,209 rows) must not
+// (Plan 9 follow-up O2). Callers pass a stable onSelect.
+export const MapTree = memo(function MapTree({ data, selected, onSelect, worldMode = false, visibility = null, hiddenMapTypes = HIDDEN_MAP_TYPES }: MapTreeProps) {
   const [filter, setFilter] = useState("");
   const navRef = useRef<HTMLElement>(null);
   const filterRef = useRef<HTMLInputElement>(null);
@@ -114,4 +116,4 @@ export function MapTree({ data, selected, onSelect, worldMode = false, visibilit
       )}
     </nav>
   );
-}
+});
