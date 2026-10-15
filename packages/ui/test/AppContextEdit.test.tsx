@@ -379,6 +379,20 @@ describe("App -- in-context editing, fix round (Plan 6c E4)", () => {
     expect(document.querySelector('.map-tree__map[aria-current="true"]')?.textContent).toContain("PalletTown");
   });
 
+  it("Fit is disabled while the context map loads (Plan 9 R5; mirrors GbcAppContext's pending-context test)", async () => {
+    const fetchMock = makeFetchMock();
+    const original = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => (url === "/api/map/Route1" ? new Promise<Response>(() => {}) : original(url, init)));
+    await startApp(fetchMock);
+    const canvas = await enterWorld();
+    dblClickRoute1(canvas);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Done editing Route1" })).toBeTruthy());
+    const readout = document.querySelector(".world-canvas__zoom-readout")!.textContent;
+    expect((screen.getByRole("button", { name: "Fit" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.keyDown(document.body, { key: "f" });
+    expect(document.querySelector(".world-canvas__zoom-readout")!.textContent).toBe(readout);
+  });
+
   it("in-context Fit and F fit the map being edited, as Map view's Fit does (Plan 9 R5)", async () => {
     const draws = new Map<HTMLCanvasElement, unknown[][]>();
     const original = HTMLCanvasElement.prototype.getContext;
