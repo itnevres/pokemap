@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** GBA and GBC run through one `FamilyApp` shell over a per-family `EngineAdapter` (one `useRuntime` hook each), and both families show the D4 right-hand edit rail and the D5 toolbar (icon + label, shortcut in the tooltip, R1 keyboard shortcuts), plus R2's GBA palette hover-link. Nothing else changes behaviour.
+**Goal:** GBA and GBC run through one `FamilyApp` shell over a per-family `EngineAdapter` (one `useRuntime` hook each), and both families show the D4 right-hand edit rail and the D5 toolbar (icon + label, shortcut in the tooltip, R1 keyboard shortcuts), plus R2's GBA palette hover-link, R4's Follow hover switch and R5's F fit-to-screen key. Nothing else changes behaviour.
 
 **Architecture:** `shell/FamilyApp.tsx` owns everything the two shells share today (mode, selection, jump token, open dungeon, stroke registry, context editing, header, sidebar, SaveDialog). Each family's `useRuntime` hook owns its data hooks, edit session, switch policy (`leave(go, { sameMap })`) and render slots. Root keys `FamilyApp` on `family:root:gen`, so the adapter (and the runtime hook's hook order) never changes within a mount. `App.tsx` and `GbcApp.tsx` become thin wrappers for one task (so all 13 shell test files prove the merge unchanged), then are deleted when the tests move.
 
@@ -12,12 +12,13 @@
 
 ## Global Constraints
 
-- Behaviour does not change apart from layout (D4 rail), toolbar (D5), shortcuts (R1) and the GBA hover-link (R2). Switch semantics stay per family behind `runtime.leave(go, { sameMap })`; D1 save-or-discard is Plan 10.
+- Behaviour does not change apart from layout (D4 rail), toolbar (D5), shortcuts (R1), the GBA hover-link (R2), the Follow hover switch (R4) and the F fit-to-screen key (R5). Switch semantics stay per family behind `runtime.leave(go, { sameMap })`; D1 save-or-discard is Plan 10.
 - Sign composer GBA only; Duplicate GBC only; manual placements, defects banner, dungeon filter cache GBC only; Dungeon auto-layout toggle and Unplaced rail GBA only. Canvas rendering and hit-testing untouched (Plans 11/12) except R2's hover callback.
 - Edit-state lifetimes stay: GBA `useMapEditing` at shell (runtime) level, survives mode switches; GBC per-visit state inside `GbcMapEditing`, resets with its mount.
 - No new npm dependency (icons are inline SVG in `components/toolIcons.tsx`).
 - Tool labels exactly: `Pencil`, `Rect`, `Bucket`, `Dropper`, `Shift`, `Collision`. Tooltips exactly `"Pencil (P)"` … ; `"Undo (Ctrl+Z)"`, `"Redo (Ctrl+Y)"`. Disabled tools keep their reason title (GBC non-writable `.blk`; default `"Not yet available"`).
 - Shortcuts exactly: P R B I S C; Ctrl/Cmd+Z undo; Ctrl/Cmd+Y and Ctrl/Cmd+Shift+Z redo. Ignored when `defaultPrevented`, target is input/textarea/select/contenteditable, an `[aria-modal="true"]` element exists, a letter key has any modifier (Ctrl, Meta, Alt, Shift), the tool is absent or disabled, or Undo/Redo is unavailable. Handled keys call `preventDefault`.
+- R5 (user ruling 2026-10-14, added to the spec): **F** fits the current view (Map, World, Dungeon; both families) by calling that canvas's own Fit action, and only while its Fit button is shown and enabled. Same ignore rules as R1 (one shared `shared/shortcutGuard.ts`); F with any modifier is ignored (Ctrl+F stays the browser's find). Fit buttons keep their labels and gain the tooltip `"Fit to screen (F)"`. No new fit logic.
 - R4 (user ruling 2026-10-14, added to the spec): both palettes scroll the hovered cell into view only while the shared "Follow hover" switch is on. One hook (`shared/useFollowHover.ts`), one switch (`shared/FollowHoverSwitch.tsx`), identical in both families. Default on; remembered in `localStorage` key `pokemap.palette.followHover`, every read/write in try/catch (falls back to on).
 - Rail: `.edit-rail`, 260 px; order collision palette (Collision tool only) → metatile palette (always, flex, scrolls) → inspector (≤ 50 % height). Removed: `.app__metatile-strip`, `.app__collision-strip`, `.gbc-map-editing__rail`. Flex children `min-width: 0`.
 - Tests are moved, never dropped. Gate: **2,703 + tests added by this plan, 0 fail**; typecheck and `npm run build -w @pokemap/ui` pass. Per moved file: `git diff master -- <file> | grep -c '^-[^-]'`, every removed line given a reason in the task report.
@@ -36,6 +37,7 @@
 3. **A 1024 px wide window** with tree + rail must not scroll sideways and must leave the canvas usable, in Map view and in-context. Test: Task 7 CSS pins (`min-width: 0`, 260 px, inspector ≤ 50 %) + Task 12 live check at 1280/1024.
 4. **Switching project family through the header switcher** (GBC → GBA without a reload) must give a fresh shell, never a runtime hook swapped under a live mount. Test: Task 5 Root family-switch test.
 5. **A stale palette highlight from the previous map** (GBA, after R2) must clear on every map switch: tree, world click, Open in Map view. Test: Task 10 integration (tree switch) + `onSelected` is the single choke point all selection paths call (Task 5).
+6. **F typed in the palette search box or an inspector field** must never refit the canvas, and Ctrl+F must stay the browser's find. Test: Task 9b unit tests (input target, modifiers).
 
 ## Decisions taken in this plan (for the user's review)
 
@@ -48,6 +50,7 @@ The spec leaves these open or slightly under-determined; each is the smallest fa
 - **Capability flags read via constants.** `GBA_CAPABILITIES`/`GBC_CAPABILITIES` live in `shell/adapter.ts`; `toolsFor(caps)` derives each family's tool list (GBA all six; GBC five), and GBA's `MapEditingWorkspace` gates Add Sign on `GBA_CAPABILITIES.addSign`. Manual placements: `FamilyApp` owns `manualPlacementMaps` and merges it into tree visibility only when `manualPlacements` is set.
 - **GBA hover look** reuses GBC's hover token pair (`--bg-selected` + `--border-strong`, new class `metatile-palette__cell--hovered`). GBA's picked-stamp class already uses the same pair, so hover and pick look alike on GBA until a later plan restyles the pick.
 - **Follow hover (R4)** is a palette preference, not shell state: each palette calls `useFollowHover()` and renders `FollowHoverSwitch` in its header, so no prop plumbing through runtimes. Only one rail exists at a time; `localStorage` keeps the choice across remounts, map switches, families and reloads.
+- **F follows each canvas's own Fit button (R5).** GBA's "Fit world" is enabled in-context, so F refits there; GBC's "Fit all" is disabled in-context, so F does nothing there. Harmonising the two is canvas work (Plans 11/12). Task 9 puts the shared ignore rules in `shared/shortcutGuard.ts` so the toolbar listener and `useFitShortcut` cannot drift apart.
 - **`useDungeonFilter(openDungeon, cache)`** (new, `shell/useDungeonFilter.ts`) holds both memo forms verbatim, unit-tested in Task 2.
 
 ## File map
@@ -66,7 +69,10 @@ The spec leaves these open or slightly under-determined; each is the smallest fa
 | `packages/ui/src/gbc/GbcMapEditing.tsx` | 7, 8 | own rail wrapper removed; `GBC_TOOLS = toolsFor(GBC_CAPABILITIES)` |
 | `packages/ui/src/components/Toolbar.tsx` | 8, 9 | labels, icons, tooltips, shortcut listener |
 | `packages/ui/src/components/toolIcons.tsx` | 8 | inline SVG per tool |
-| `packages/ui/src/components/MapCanvas.tsx` | 10 | `onHoverMetatile` |
+| `packages/ui/src/components/MapCanvas.tsx` | 9b, 10 | F fit (R5); `onHoverMetatile` |
+| `packages/ui/src/shared/shortcutGuard.ts` | 9 | `isTextTarget`, `shortcutBlocked` (the shared ignore rules) |
+| `packages/ui/src/shared/useFitShortcut.ts` | 9b | R5: F calls the canvas's own fit |
+| `packages/ui/src/gbc/GbcMapCanvas.tsx`, `components/WorldCanvas.tsx`, `gbc/GbcWorldCanvas.tsx` | 9b | `useFitShortcut` call + Fit tooltip |
 | `packages/ui/src/components/MetatilePalette.tsx` | 10 | `highlightId`, follow-hover scroll + switch |
 | `packages/ui/src/gbc/GbcMetatilePalette.tsx` | 10 | scroll gated on follow-hover; switch in header |
 | `packages/ui/src/shared/useFollowHover.ts`, `shared/FollowHoverSwitch.tsx` | 10 | R4 preference hook and its switch |
@@ -88,6 +94,7 @@ Before every implementer dispatch run the `delegate` skill; walk the tier's chai
 | 7 Rail + CSS | Sonnet → Codex `gpt-5.6-terra` | context editing (no remount) | split (Sonnet + Sonnet) |
 | 8 Toolbar icons/labels/tooltips + query renames | Haiku → Codex `gpt-6-luna` (12+ files) | low | merged (Sonnet) |
 | 9 Shortcuts | Sonnet → Aider Laguna S 2.1 → Nemotron 3 Super → Codex `gpt-5.6-terra` | StrictMode, global listener | split (Sonnet + Sonnet) |
+| 9b Fit to screen (R5) | Sonnet → Aider Laguna S 2.1 → Nemotron 3 Super → Codex `gpt-5.6-terra` (5 source + 5 test files: likely Codex) | global listener, hook order in 4 canvases | merged (Sonnet) |
 | 10 GBA hover-link + follow-hover toggle (R4) | Sonnet → Codex `gpt-5.6-terra` | low (browser storage at a trust boundary: try/catch) | merged (Sonnet) |
 | 11 DESIGN.md | Haiku → Aider Laguna S 2.1 | docs | merged (Sonnet) |
 | 12 Live acceptance | Anthropic direct — verification (delegate §3); orchestrator or a Sonnet subagent with Playwright | real-corpus writes | the orchestrator re-checks every `cmp` and screenshot |
@@ -1669,6 +1676,7 @@ git commit -m "feat(ui): toolbar icons, capitalised labels and shortcut tooltips
 
 **Files:**
 - Modify: `packages/ui/src/components/Toolbar.tsx` (one `useEffect`)
+- Create: `packages/ui/src/shared/shortcutGuard.ts` (the ignore rules, shared with Task 9b's F key)
 - Test: create `packages/ui/test/ToolbarShortcuts.test.tsx`; append one integration test to `packages/ui/test/App.test.tsx`
 
 **Interfaces:** Consumes `TOOL_KEY` (Task 8). No new props: the listener reads the props `Toolbar` already has.
@@ -1816,7 +1824,7 @@ Add `import { useEffect, useRef } from "react";` and, at the top of the componen
   latest.current = { tools, availableTools, onSelectTool, onUndo, onRedo, canUndo, canRedo };
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.defaultPrevented || isTextTarget(e.target) || document.querySelector('[aria-modal="true"]')) return;
+      if (shortcutBlocked(e)) return;
       const p = latest.current;
       const key = e.key.toLowerCase();
       const mod = e.ctrlKey || e.metaKey;
@@ -1838,12 +1846,16 @@ Add `import { useEffect, useRef } from "react";` and, at the top of the componen
   }, []);
 ```
 
-and at module level:
+and `import { shortcutBlocked } from "../shared/shortcutGuard.js";`, with `packages/ui/src/shared/shortcutGuard.ts`:
 
-```tsx
+```ts
 /** Typing never triggers a shortcut. */
-const isTextTarget = (t: EventTarget | null) =>
+export const isTextTarget = (t: EventTarget | null) =>
   t instanceof Element && t.closest('input, textarea, select, [contenteditable=""], [contenteditable="true"]') !== null;
+
+/** The ignore rules every Plan 9 shortcut shares (spec "Toolbar (D5) and shortcuts (R1)"): already handled, typing, or a modal open. */
+export const shortcutBlocked = (e: KeyboardEvent) =>
+  e.defaultPrevented || isTextTarget(e.target) || document.querySelector('[aria-modal="true"]') !== null;
 ```
 
 Bubble phase on purpose: the spec's `defaultPrevented` rule needs target handlers to have run first (unlike `useWorldContext`'s capture-phase Escape).
@@ -1875,8 +1887,157 @@ Bubble phase on purpose: the spec's `defaultPrevented` rule needs target handler
 Targeted runs → PASS. Gate: **2,728 + 17 = 2,745 pass** (16 unit, `it.each` counting 6, plus 1 integration), 174 files; typecheck; build.
 
 ```bash
-git add packages/ui/src/components/Toolbar.tsx packages/ui/test/ToolbarShortcuts.test.tsx packages/ui/test/App.test.tsx
+git add packages/ui/src/components/Toolbar.tsx packages/ui/src/shared/shortcutGuard.ts packages/ui/test/ToolbarShortcuts.test.tsx packages/ui/test/App.test.tsx
 git commit -m "feat(ui): tool and undo/redo keyboard shortcuts (Plan 9 Task 9, R1)"
+```
+
+---
+
+### Task 9b: Fit to screen (R5)
+
+User ruling R5 (2026-10-14, after Task 7): **F** fits the current view to the window: Map view (the map), World view (the whole world) and Dungeon view (the open dungeon's maps), both families. F does exactly what that canvas's own Fit button already does ("Fit" on `MapCanvas`/`GbcMapCanvas`, "Fit world" on `WorldCanvas`, "Fit all" on `GbcWorldCanvas`), and is ignored whenever that button is absent or disabled. No new fit logic.
+
+**Files:**
+- Create: `packages/ui/src/shared/useFitShortcut.ts`
+- Modify: `packages/ui/src/components/MapCanvas.tsx`, `packages/ui/src/gbc/GbcMapCanvas.tsx`, `packages/ui/src/components/WorldCanvas.tsx`, `packages/ui/src/gbc/GbcWorldCanvas.tsx` (one hook call and one `title` each)
+- Test: create `packages/ui/test/shared/useFitShortcut.test.tsx`; append one test each to `packages/ui/test/MapCanvas.test.tsx`, `packages/ui/test/gbc/GbcMapCanvas.test.tsx`, `packages/ui/test/WorldCanvas.test.tsx`, `packages/ui/test/gbc/GbcWorldCanvas.test.tsx`
+
+**Interfaces:** Consumes `shortcutBlocked` from `shared/shortcutGuard.ts` (Task 9). Produces `export function useFitShortcut(fit: () => void, enabled: boolean): void`.
+
+- [ ] **Step 1: Write the failing unit tests** — `packages/ui/test/shared/useFitShortcut.test.tsx`
+
+```tsx
+import { describe, it, expect, vi, afterEach } from "vitest";
+import { renderHook, cleanup } from "@testing-library/react";
+import { useFitShortcut } from "../../src/shared/useFitShortcut.js";
+
+afterEach(() => {
+  cleanup();
+  document.body.innerHTML = "";
+});
+
+const press = (key: string, init: KeyboardEventInit = {}, target: EventTarget = window) => {
+  const ev = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...init });
+  target.dispatchEvent(ev);
+  return ev;
+};
+
+describe("useFitShortcut (Plan 9 R5)", () => {
+  it("f fits once and prevents the default, under StrictMode", () => {
+    const fit = vi.fn();
+    renderHook(() => useFitShortcut(fit, true), { reactStrictMode: true });
+    const ev = press("f");
+    expect(fit).toHaveBeenCalledTimes(1);
+    expect(ev.defaultPrevented).toBe(true);
+  });
+  it("calls the latest fit after a rerender", () => {
+    const a = vi.fn();
+    const b = vi.fn();
+    const { rerender } = renderHook(({ fit }) => useFitShortcut(fit, true), { initialProps: { fit: a } });
+    rerender({ fit: b });
+    press("f");
+    expect(a).not.toHaveBeenCalled();
+    expect(b).toHaveBeenCalledTimes(1);
+  });
+  it("does nothing while disabled, and stops listening on unmount", () => {
+    const fit = vi.fn();
+    renderHook(() => useFitShortcut(fit, false));
+    press("f");
+    const { unmount } = renderHook(() => useFitShortcut(fit, true));
+    unmount();
+    press("f");
+    expect(fit).not.toHaveBeenCalled();
+  });
+  it.each([
+    ["Ctrl", { ctrlKey: true }],
+    ["Meta", { metaKey: true }],
+    ["Alt", { altKey: true }],
+    ["Shift", { shiftKey: true, key: "F" }],
+  ] as const)("ignores f with %s held", (_name, init) => {
+    const fit = vi.fn();
+    renderHook(() => useFitShortcut(fit, true));
+    const ev = press("f", init);
+    expect(fit).not.toHaveBeenCalled();
+    expect(ev.defaultPrevented).toBe(false);
+  });
+  it("ignores f typed in an input", () => {
+    const fit = vi.fn();
+    renderHook(() => useFitShortcut(fit, true));
+    const input = document.body.appendChild(document.createElement("input"));
+    press("f", {}, input);
+    expect(fit).not.toHaveBeenCalled();
+  });
+  it("ignored while an aria-modal dialog is open", () => {
+    const fit = vi.fn();
+    renderHook(() => useFitShortcut(fit, true));
+    document.body.appendChild(document.createElement("div")).setAttribute("aria-modal", "true");
+    press("f");
+    expect(fit).not.toHaveBeenCalled();
+  });
+  it("ignores a keydown another handler already prevented", () => {
+    const fit = vi.fn();
+    renderHook(() => useFitShortcut(fit, true));
+    const el = document.body.appendChild(document.createElement("div"));
+    el.addEventListener("keydown", (e) => e.preventDefault());
+    press("f", {}, el);
+    expect(fit).not.toHaveBeenCalled();
+  });
+});
+```
+
+Run `npx vitest run packages/ui/test/shared/useFitShortcut.test.tsx` → FAIL (module missing).
+
+- [ ] **Step 2: Write `packages/ui/src/shared/useFitShortcut.ts`**
+
+```ts
+import { useEffect, useRef } from "react";
+import { shortcutBlocked } from "./shortcutGuard.js";
+
+/**
+ * Plan 9 (R5): F fits the current view -- exactly what the calling canvas's own Fit button does. One window keydown
+ * listener while `enabled`. Callers pass `enabled` = "my Fit button is shown and enabled", so the chromeless
+ * in-context map canvas never listens and each view has at most one listener. Same ignore rules as the toolbar's
+ * shortcuts (shortcutBlocked), and F with any modifier is left alone (Ctrl+F stays the browser's find).
+ */
+export function useFitShortcut(fit: () => void, enabled: boolean): void {
+  const latest = useRef(fit);
+  latest.current = fit;
+  useEffect(() => {
+    if (!enabled) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (shortcutBlocked(e) || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || e.key.toLowerCase() !== "f") return;
+      e.preventDefault();
+      latest.current();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [enabled]);
+}
+```
+
+Run the unit tests → PASS (10: `it.each` counts 4).
+
+- [ ] **Step 3: Wire the four canvases**
+
+Each call goes right after the canvas's fit callback is defined and before any early return (hook order). Each canvas's Fit button gains `title="Fit to screen (F)"`; its visible label and accessible name do not change.
+- `MapCanvas.tsx`: `useFitShortcut(fit, !chromeless);` (the chromeless canvas renders no toolbar, so it has no Fit button).
+- `GbcMapCanvas.tsx`: `useFitShortcut(fit, !chromeless);` (same).
+- `WorldCanvas.tsx`: `useFitShortcut(fitWorld, true);` ("Fit world" is never disabled; in-context the map canvas inside is chromeless, so this is the only listener). The same component serves Dungeon view (`mapFilter`), where `fitWorld` fits the dungeon's maps.
+- `GbcWorldCanvas.tsx`: `useFitShortcut(fitAll, !inContext);` (mirrors `disabled={inContext}` on "Fit all").
+
+If a canvas declares its fit callback after an early return, place the hook at the first point after the callback where no early return precedes it, and say so in the report.
+
+- [ ] **Step 4: One integration test per canvas**
+
+In each of the four canvas test files, find the existing test that clicks that canvas's Fit button (`grep -n "Fit" <file>`). Append a copy named `"F does what the Fit button does (Plan 9 R5)"` that replaces the click with `fireEvent.keyDown(window, { key: "f" })`, keeps the original's assertions, and adds `expect(<the Fit button>.getAttribute("title")).toBe("Fit to screen (F)")`. If a canvas has no existing Fit-button test, write one: change the view first (a zoom button or wheel, as that file's other tests do), press f, and assert the zoom readout (or `onViewChange` value) equals the value right after the mount's own fit. The report names the source test for each copy.
+
+- [ ] **Step 5: Run, gate, commit**
+
+Targeted runs → PASS. `grep -rn "Fit to screen" packages/ui/test/gbc/Root.test.tsx` → nothing (no Root absence assertion collides). Gate: **2,745 + 14 = 2,759 pass** (10 unit + 4 integration), 175 files; typecheck; build.
+
+```bash
+git add packages/ui/src/shared/useFitShortcut.ts packages/ui/src/components/MapCanvas.tsx packages/ui/src/gbc/GbcMapCanvas.tsx packages/ui/src/components/WorldCanvas.tsx packages/ui/src/gbc/GbcWorldCanvas.tsx packages/ui/test/shared/useFitShortcut.test.tsx packages/ui/test/MapCanvas.test.tsx packages/ui/test/gbc/GbcMapCanvas.test.tsx packages/ui/test/WorldCanvas.test.tsx packages/ui/test/gbc/GbcWorldCanvas.test.tsx
+git commit -m "feat(ui): F fits the map, world or dungeon view (Plan 9 Task 9b, R5)"
 ```
 
 ---
@@ -2094,7 +2255,7 @@ CSS:
 
 - [ ] **Step 7: Run, gate, commit**
 
-Targeted → PASS. Gate: **2,745 + 11 = 2,756 pass** (R2: 4; R4: 3 hook + 2 GBC + 2 GBA), 175 files; typecheck; build.
+Targeted → PASS. Gate: **2,759 + 11 = 2,770 pass** (R2: 4; R4: 3 hook + 2 GBC + 2 GBA), 176 files; typecheck; build.
 
 ```bash
 git add packages/ui/src/components/MapCanvas.tsx packages/ui/src/components/MetatilePalette.tsx packages/ui/src/gbc/GbcMetatilePalette.tsx packages/ui/src/shared/useFollowHover.ts packages/ui/src/shared/FollowHoverSwitch.tsx packages/ui/src/components/MapEditingWorkspace.tsx packages/ui/src/gba/adapter.tsx packages/ui/src/styles.css packages/ui/test/MetatilePalette.test.tsx packages/ui/test/gbc/GbcMetatilePalette.test.tsx packages/ui/test/shared/useFollowHover.test.tsx packages/ui/test/MapCanvas.test.tsx packages/ui/test/App.test.tsx
@@ -2107,7 +2268,7 @@ git commit -m "feat(ui): GBA palette hover-link and a shared Follow hover toggle
 
 **Files:** Modify `packages/ui/DESIGN.md` (sections "Layout shape" at 226, "Shared modules (Plan 8)" at 465).
 
-- [ ] **Step 1: Layout shape.** After the existing diagram's "What the canvas is owed" bullets, add a subsection `### Edit layout (Plan 9, D4/D5)` with the spec's diagram (spec lines 147-156, verbatim) and bullets: the rail (`.edit-rail`, 260 px, order, collision palette only with Collision, palette always and a pick with another tool only sets the stamp, inspector ≤ 50 %, `min-width: 0`); the toolbar (icon + capitalised label, tooltip `Label (Key)`, disabled tools keep their reason title, Undo/Redo tooltips); the shortcuts and their ignore rules (copy the Global Constraints lines); the GBA hover-link (`metatile-palette__cell--hovered`, GBC's hover token pair); the shared "Follow hover" switch (R4: both palettes, default on, remembered per browser). Add `shared/useFollowHover.ts` + `FollowHoverSwitch.tsx` as a Shared modules row (consumers `MetatilePalette` / `GbcMetatilePalette`). Update the first bullet of "What the canvas is owed" that mentions "whatever Task 21+ adds — an inspector, a metatile palette" to name the rail.
+- [ ] **Step 1: Layout shape.** After the existing diagram's "What the canvas is owed" bullets, add a subsection `### Edit layout (Plan 9, D4/D5)` with the spec's diagram (spec lines 147-156, verbatim) and bullets: the rail (`.edit-rail`, 260 px, order, collision palette only with Collision, palette always and a pick with another tool only sets the stamp, inspector ≤ 50 %, `min-width: 0`); the toolbar (icon + capitalised label, tooltip `Label (Key)`, disabled tools keep their reason title, Undo/Redo tooltips); the shortcuts and their ignore rules (copy the Global Constraints lines, including R5: F fits the view via the canvas's own Fit, tooltip `Fit to screen (F)`); the GBA hover-link (`metatile-palette__cell--hovered`, GBC's hover token pair); the shared "Follow hover" switch (R4: both palettes, default on, remembered per browser). Add `shared/useFollowHover.ts` + `FollowHoverSwitch.tsx` as a Shared modules row (consumers `MetatilePalette` / `GbcMetatilePalette`), and `shared/shortcutGuard.ts` + `shared/useFitShortcut.ts` (consumers `Toolbar`, `MapCanvas`/`WorldCanvas` / `GbcMapCanvas`/`GbcWorldCanvas`). Update the first bullet of "What the canvas is owed" that mentions "whatever Task 21+ adds — an inspector, a metatile palette" to name the rail.
 - [ ] **Step 2: Shared modules.** Add rows:
 
 | Module | What it owns | GBA consumer | GBC consumer |
@@ -2135,7 +2296,7 @@ Verification stays on Anthropic (delegate §3). Follow LESSONS "Live Browser Ver
 - [ ] **Step 2: Start the hub** on the branch (Vite root via `fileURLToPath(new URL(".", import.meta.url))`). Drive with the Playwright MCP's `browser_run_code_unsafe`, one check per call; if the MCP is held, use the CDP fallback in LESSONS.
 - [ ] **Step 3: Each family, run spec "Live acceptance" items 1-7:**
   1. Rail at 1280 and 1024 px: `document.documentElement.scrollWidth === clientWidth` in Map view and in-context; GBA Collision tool shows the collision palette at the rail top.
-  2. Every shortcut (P R B I S C; Ctrl+Z; Ctrl+Y; Ctrl+Shift+Z) and each ignore rule: typing in an event-inspector input and in the GBA palette search; with SaveDialog open.
+  2. Every shortcut (P R B I S C; Ctrl+Z; Ctrl+Y; Ctrl+Shift+Z; F) and each ignore rule: typing in an event-inspector input and in the GBA palette search; with SaveDialog open. F (R5): pan and zoom away, press F in Map view, World view and Dungeon view; each returns to the same framing as clicking that view's Fit button; Ctrl+F still opens the browser's find.
   3. Paint + save in Map view and in-context; restore by reverse paint + save.
   4. Dirty switch: GBA confirm; GBC discard; GBC forced discard failure shows `switchError` (in the same `browser_run_code_unsafe` call: `await page.route("**/api/edit/*/discard", (r) => r.fulfill({ status: 500, body: "{}" }))`, trigger the switch, read the alert, then `page.unroute`).
   5. GBC Time of day; GBC defects banner on CeruleanCave2F; GBA Add Sign opens and cancels.
@@ -2148,6 +2309,6 @@ Verification stays on Anthropic (delegate §3). Follow LESSONS "Live Browser Ver
 
 ### Finish
 
-- [ ] Whole-branch review (Opus): spec coverage, every "disagree" case behind the runtime, test-count ledger (2,703 → 2,756, 171 → 175 files), removed-line accounting across all tasks.
+- [ ] Whole-branch review (Opus): spec coverage, every "disagree" case behind the runtime, test-count ledger (2,703 → 2,770, 171 → 176 files), removed-line accounting across all tasks.
 - [ ] RESUME: Unified UI row → Plan 9 executed; new baseline; Plan 10 next.
 - [ ] Stop for the user: push, PR, issue #4 closure are the user's calls (`superpowers:finishing-a-development-branch`).

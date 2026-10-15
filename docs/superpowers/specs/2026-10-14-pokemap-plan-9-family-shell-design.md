@@ -18,6 +18,9 @@ User rulings made while writing this spec (2026-10-14):
 - **R4. Follow-hover toggle, both families** (user, 2026-10-14, after the plan was written): the palette scrolls to the
   hovered metatile only while a "Follow hover" switch is on. One shared hook and one shared switch serve both palettes,
   so the behaviour is identical. Default on (today's GBC behaviour); the choice is remembered per browser.
+- **R5. Fit to screen on F, both families** (user, 2026-10-14, after plan Task 7): F zooms the current view to fit
+  everything in it into the window: the map in Map view, the whole world in World view, the open dungeon's maps in
+  Dungeon view. It calls the canvas's existing Fit action, so it does nothing a Fit button click would not.
 
 ## Behaviour that does NOT change in Plan 9
 
@@ -194,6 +197,11 @@ The implementation plan's first task writes characterisation tests for every suc
 - A key is ignored when: `defaultPrevented`; the target is an input, textarea, select or contenteditable; an
   `[aria-modal="true"]` element exists (the same check `useWorldContext` uses for Escape); a letter key has any modifier;
   the tool is absent or disabled; Undo/Redo is not available. A handled key calls `preventDefault`.
+- **F: fit to screen (R5).** Each canvas whose Fit button is shown and enabled (`MapCanvas`/`GbcMapCanvas` "Fit",
+  `WorldCanvas` "Fit world", `GbcWorldCanvas` "Fit all") listens for F through one shared hook
+  (`shared/useFitShortcut.ts`) and calls that button's own fit. The chromeless in-context map canvas does not listen.
+  Same ignore rules as above (shared in `shared/shortcutGuard.ts`); F with any modifier is ignored, so Ctrl+F stays
+  the browser's find. The Fit buttons keep their labels and gain the tooltip "Fit to screen (F)".
 - The header and the hub keep no shortcuts.
 
 ## Errors
@@ -215,7 +223,8 @@ Every banner keeps its owner, text and role:
 - **Characterisation first** (plan Task 1): the switch-policy difference, re-click of a dirty selection, `enterContext`
   side effects, `switchError` placement, the dungeon filter cache, GBA's tool and stamp surviving a mode switch, GBC's
   resetting.
-- **New tests:** capability values per adapter; toolbar icon, label and tooltip; each shortcut and each ignore rule
+- **New tests:** F fit (R5): the hook's ignore rules and StrictMode, and one per canvas proving F equals its Fit button;
+  capability values per adapter; toolbar icon, label and tooltip; each shortcut and each ignore rule
   (input, modal, modifier, disabled, absent); rail order and the collision palette only with Collision; the GBA palette
   shown outside pencil/rect/bucket; GBA hover-link and its reset on a map switch; GBA in-context editing shows the rail
   without remounting the world canvas (DOM node identity and the `/api/world` call count, the 6c E pattern); StrictMode
@@ -228,7 +237,8 @@ Every banner keeps its owner, text and role:
 GBA subject and PerfPlus, with byte snapshots of every writable file before and `cmp` after (LESSONS: Editing Sessions
 & Save Safety; Live Browser Verification):
 1. The rail at 1280 and 1024 px wide; no horizontal scroll; the collision palette appears with Collision (GBA).
-2. Every shortcut, including the ignore rules in the event inspector's inputs and with SaveDialog open.
+2. Every shortcut, including the ignore rules in the event inspector's inputs and with SaveDialog open; F fits Map,
+   World and Dungeon view the same as each view's Fit button.
 3. A paint and save in Map view and in-context, restored by reverse paint.
 4. A dirty switch: GBA confirm; GBC discard, plus a forced discard failure showing `switchError`.
 5. Time of day (GBC); the defects banner on CeruleanCave2F (GBC); Add Sign opens and cancels (GBA).
