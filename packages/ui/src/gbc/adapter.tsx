@@ -80,6 +80,7 @@ export function useGbcRuntime({ selected, mode }: RuntimeArgs): FamilyRuntime {
     time, session, hoveredMetatileId,
     onHoverMetatile: setHoveredMetatileId,
     onOpenSave: () => setSaveOpen(true),
+    onDiscarded: () => setSwitchError(null),
   };
 
   const renderWorld = (s: ShellSlots) => {

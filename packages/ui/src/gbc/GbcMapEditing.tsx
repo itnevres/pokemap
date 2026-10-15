@@ -37,6 +37,8 @@ export interface GbcMapEditingProps {
   onHoverMetatile: (id: number | null) => void;
   /** Opens `SaveDialog`, which `GbcApp` mounts at `<main>` level for stacking (as GBA's `App` does). */
   onOpenSave: () => void;
+  /** After a successful toolbar Discard: the runtime clears its stale failed-discard-before-switch banner (Plan 9 O1). */
+  onDiscarded?: () => void;
   /** Plan 7 Task 5b. False renders only `.app__map-editing-body` holding the canvas slot (no Toolbar, banner, palette or
    *  inspector), so the World view's canvas keeps its position in the tree and is NOT remounted when in-context editing
    *  switches the chrome on (GBA's `MapEditingWorkspace` `active={false}` seam). Default true. */
@@ -58,7 +60,7 @@ export interface GbcMapEditingProps {
  * Non-writable layout (`layout.writable === false`): the paint tools render disabled with the reason, and
  * `activeTool` resolves to null so the canvas cannot paint; event editing, undo/redo and save stay enabled.
  */
-export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId, onHoverMetatile, onOpenSave, active = true, renderCanvas, onStrokeChain }: GbcMapEditingProps) {
+export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId, onHoverMetatile, onOpenSave, onDiscarded, active = true, renderCanvas, onStrokeChain }: GbcMapEditingProps) {
   const [toolKind, setToolKind] = useState<ToolKind | null>(null);
   // `key` is never a real map name when there is no map, so nothing reads as "mine" until one is selected.
   const key = mapName ?? "";
@@ -123,7 +125,7 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
 
   const onDiscard = () => {
     if (!window.confirm("Discard all unsaved changes on this map? This cannot be undone.")) return;
-    session.discard().then(ok).catch((e: unknown) => fail(e, "Failed to discard."));
+    session.discard().then(() => { ok(); onDiscarded?.(); }).catch((e: unknown) => fail(e, "Failed to discard."));
   };
 
   const canvasProps: GbcMapEditingCanvasProps | null =

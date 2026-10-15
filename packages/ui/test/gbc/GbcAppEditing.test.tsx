@@ -139,6 +139,25 @@ describe("GbcApp editing (Plan 7 Task 5)", () => {
     expect(document.querySelector(".app__status")!.textContent).toBe("OlivineCity");
   });
 
+  // Plan 9 follow-up O1: the toolbar's Discard Changes succeeding on the same map makes the failed-discard error stale.
+  it("a successful toolbar discard on the same map clears a failed-discard error", async () => {
+    const { f } = mockFetch({ OlivineCity: payload("OlivineCity"), OlivinePort: payload("OlivinePort") });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(<FamilyApp adapter={gbcAdapter} />);
+    await openCity();
+    await paintOnce();
+    const base = f.getMockImplementation()!;
+    f.mockImplementation((url: string, init?: RequestInit) => /\/discard$/.test(url) ? Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({}) } as Response) : base(url, init));
+    fireEvent.click(screen.getByText("OlivinePort"));
+    await waitFor(() => expect(screen.getByText(/discard -> 500/)).toBeTruthy());
+
+    f.mockImplementation(base);
+    fireEvent.click(screen.getByRole("button", { name: "Discard Changes" }));
+    await waitFor(() => expect(screen.queryByTestId("dirty-indicator")).toBeNull());
+    await waitFor(() => expect(screen.queryByText(/discard -> 500/)).toBeNull());
+    expect(document.querySelector(".app__status")!.textContent).toBe("OlivineCity");
+  });
+
   // Plan 9 characterisation: GBC's tool lives in GbcMapEditing, which remounts between the Map branch and the
   // World host (GbcApp.tsx:297-335), so a mode round trip resets it. FamilyApp must keep that.
   it("characterisation (Plan 9): the chosen tool resets on a Map -> World -> Map round trip", async () => {
