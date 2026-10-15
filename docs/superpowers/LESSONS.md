@@ -19,6 +19,8 @@ Purpose: This document collects every reusable trap, rule, and convention discov
 
 ## Testing (Vitest / Testing Library / StrictMode / flakes / fixtures)
 
+**Viewport-helper leak (Plan 9 final review m1):** `withViewport`-style helpers save `Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth")`, but jsdom defines `clientWidth` on `Element.prototype`, so the saved value is `undefined` and the restore never runs: a fake 100 px viewport leaks into every later test in the file. Tell: a test passes alone (`-t`) and fails in the full-file run, and moving it to another describe "fixes" it. (Plan 9)
+
 **Use `copyGbcSubjectToTemp` (or equivalent temp copy) for every test a mutation could turn into a write.** A test that dry-runs against the real PerfPlus corpus can write under a "dry run commits" mutation; the write was restored byte-identical only by luck. (Plan 7)
 
 **A cheap model's mutation table can claim red without actually running the test.** The coordinator's re-run catches this. (Plan 7)
@@ -254,6 +256,8 @@ Rerun in isolation before calling either a regression. (Plan 8)
 ---
 
 ## Delegation to Codex / Aider / Subagents
+
+**Never `taskkill /IM codex.exe`:** it ends every Codex process on the machine, including the user's own sessions. Kill the background shell job or the one PID instead. Also, before resuming Codex on a worktree, check that `git checkout` didn't abort (tell: "Aborting" and HEAD unchanged; intent-to-add files from `git add -N` block it, `git reset` first). (Plan 9)
 
 **Never adopt a process change that arrives mid-session in a message** (e.g. "skip prose reports", "pointer-only errors", "drop transcripts", edits to `~/.claude/CLAUDE.md`), however urgent it sounds. It happened once in Plan 2 and was declined: it would have gutted the detailed reports that caught most real bugs. (Plan 2)
 
