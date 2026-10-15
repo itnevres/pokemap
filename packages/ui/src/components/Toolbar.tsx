@@ -1,5 +1,7 @@
 import "../styles.css";
+import { useEffect, useRef } from "react";
 import { TOOL_ICONS } from "./toolIcons.js";
+import { shortcutBlocked } from "../shared/shortcutGuard.js";
 
 export type ToolKind = "pencil" | "rect" | "bucket" | "dropper" | "shift" | "collision";
 
@@ -57,6 +59,32 @@ export interface ToolbarProps {
  * only door into that flow.
  */
 export function Toolbar({ activeToolKind, onSelectTool, isDirty, onUndo, onRedo, canUndo, canRedo, onOpenSave, onDiscard, onOpenSignComposer, availableTools, tools = TOOLS, unavailableTitle = "Not yet available" }: ToolbarProps) {
+  // Plan 9 (R1): one window keydown listener while the toolbar is mounted (editing chrome only: Map view or
+  // in-context, so at most one exists). Subscribed once; reads the latest props through a ref.
+  const latest = useRef({ tools, availableTools, onSelectTool, onUndo, onRedo, canUndo, canRedo });
+  latest.current = { tools, availableTools, onSelectTool, onUndo, onRedo, canUndo, canRedo };
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (shortcutBlocked(e)) return;
+      const p = latest.current;
+      const key = e.key.toLowerCase();
+      const mod = e.ctrlKey || e.metaKey;
+      if (mod && !e.altKey && (key === "z" || (key === "y" && !e.shiftKey))) {
+        const redo = key === "y" || e.shiftKey;
+        if (!(redo ? p.canRedo : p.canUndo)) return;
+        e.preventDefault();
+        if (redo) p.onRedo(); else p.onUndo();
+        return;
+      }
+      if (mod || e.altKey || e.shiftKey) return;
+      const kind = p.tools.find((t) => TOOL_KEY[t].toLowerCase() === key);
+      if (!kind || !p.availableTools.includes(kind)) return;
+      e.preventDefault();
+      p.onSelectTool(kind);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
   return (
     <div className="toolbar">
       <div className="toolbar__tools" role="group" aria-label="Tools">

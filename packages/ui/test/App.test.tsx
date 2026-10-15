@@ -633,6 +633,22 @@ describe("App -- metatile palette wiring", () => {
 
     vi.unstubAllGlobals();
   });
+
+  // Plan 9 (R1, Review Focus 1): shortcuts work in Map view; typing in the rail's palette search never switches tools.
+  it("P selects Pencil in Map view; typing p in the palette search box does not", async () => {
+    vi.stubGlobal("fetch", makeEditFetchMock());
+    render(<FamilyApp adapter={gbaAdapter} />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "PalletTown" })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "PalletTown" }));
+    const search = await screen.findByPlaceholderText(/search/i);
+
+    fireEvent.keyDown(search, { key: "p" });
+    expect(screen.getByRole("button", { name: "Pencil" }).getAttribute("aria-pressed")).toBe("false");
+
+    fireEvent.keyDown(window, { key: "p" });
+    expect(screen.getByRole("button", { name: "Pencil" }).getAttribute("aria-pressed")).toBe("true");
+    vi.unstubAllGlobals();
+  });
 });
 
 describe("App -- Plan 9 shell characterisation", () => {
