@@ -1,7 +1,8 @@
 import { useState } from "react";
 import type { ProjectInfo } from "@pokemap/core/src/family.js";
-import { App } from "./App.js";
-import { GbcApp } from "./gbc/GbcApp.js";
+import { FamilyApp } from "./shell/FamilyApp.js";
+import { gbaAdapter } from "./gba/adapter.js";
+import { gbcAdapter } from "./gbc/adapter.js";
 import { ProjectPicker } from "./hub/ProjectPicker.js";
 import { ProjectSwitcher } from "./hub/ProjectSwitcher.js";
 import { isHubState } from "./hub/guards.js";
@@ -10,7 +11,7 @@ import { useGuardedFetch } from "./hooks/useGuardedFetch.js";
 /**
  * Family bootstrap + project hub entry point (Plan 6b Task 3 / Plan 6c A2).
  * Fetches `/api/hub` once (`{ current, recent }`) and mounts the matching
- * shell -- `App` (GBA) or `GbcApp` (GBC) once a project is open, or
+ * `FamilyApp` with the matching family's adapter once a project is open, or
  * `ProjectPicker` (no modal shell -- there's nothing to close back to) when
  * none is.
  *
@@ -56,9 +57,5 @@ export function Root() {
   const key = `${family}:${root}:${opened?.gen ?? 0}`;
   const switcher = <ProjectSwitcher current={current} onOpened={onOpened} />;
 
-  if (family === "gbc") {
-    return <GbcApp key={key} root={root} switcher={switcher} />;
-  }
-
-  return <App key={key} switcher={switcher} />;
+  return <FamilyApp key={key} adapter={family === "gbc" ? gbcAdapter : gbaAdapter} switcher={switcher} />;
 }

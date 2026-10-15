@@ -249,4 +249,27 @@ describe("Root", () => {
       expect(screen.getByRole("button", { name: "Nite" }).getAttribute("aria-pressed")).toBe("false");
     }
   });
+
+  // Plan 9: Root keys FamilyApp on family:root:gen, so switching family mounts a fresh shell with the other
+  // adapter (a runtime hook is never swapped under a live mount).
+  it("switching family through the switcher mounts a fresh shell for the other family", async () => {
+    const ROOT_GBC = "/root/pokemap-corpus/pokecrystal-A";
+    const { mock } = makeFetchMock(
+      { family: "gbc", root: ROOT_GBC },
+      { openResponses: { "/x": { family: "gba", root: "/x" } } },
+    );
+    vi.stubGlobal("fetch", mock);
+    render(<Root />);
+    await waitFor(() => expect(screen.getByRole("group", { name: "Time of day" })).toBeTruthy());
+    expect(screen.getByText("Crystal")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /switch project/i }));
+    const dialog = await screen.findByRole("dialog", { name: "Switch project" });
+    fireEvent.change(within(dialog).getByLabelText("Folder path"), { target: { value: "/x" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Open" }));
+
+    await waitFor(() => expect(screen.queryByRole("group", { name: "Time of day" })).toBeNull());
+    expect(screen.queryByText("Crystal")).toBeNull();
+    expect(screen.getAllByRole("group", { name: "View" })).toHaveLength(1);
+  });
 });
