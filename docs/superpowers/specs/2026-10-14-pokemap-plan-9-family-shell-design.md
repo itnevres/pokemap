@@ -20,7 +20,10 @@ User rulings made while writing this spec (2026-10-14):
   so the behaviour is identical. Default on (today's GBC behaviour); the choice is remembered per browser.
 - **R5. Fit to screen on F, both families** (user, 2026-10-14, after plan Task 7): F zooms the current view to fit
   everything in it into the window: the map in Map view, the whole world in World view, the open dungeon's maps in
-  Dungeon view. It calls the canvas's existing Fit action, so it does nothing a Fit button click would not.
+  Dungeon view. It calls the canvas's Fit action, so it does nothing a Fit button click would not.
+  Follow-up (user, 2026-10-14): World view's "Fit world" (GBA) and "Fit all" (GBC) become one `Fit`, matching the map
+  editor. In-context editing, Fit (button and F) zooms to the map being edited, mirroring Map view's Fit (same
+  stepped fit), in both families; it is disabled only while the context map loads.
 
 ## Behaviour that does NOT change in Plan 9
 
@@ -197,11 +200,13 @@ The implementation plan's first task writes characterisation tests for every suc
 - A key is ignored when: `defaultPrevented`; the target is an input, textarea, select or contenteditable; an
   `[aria-modal="true"]` element exists (the same check `useWorldContext` uses for Escape); a letter key has any modifier;
   the tool is absent or disabled; Undo/Redo is not available. A handled key calls `preventDefault`.
-- **F: fit to screen (R5).** Each canvas whose Fit button is shown and enabled (`MapCanvas`/`GbcMapCanvas` "Fit",
-  `WorldCanvas` "Fit world", `GbcWorldCanvas` "Fit all") listens for F through one shared hook
+- **F: fit to screen (R5).** Each canvas whose Fit button is shown and enabled (every one is labelled `Fit`: the map
+  canvases' and, renamed from "Fit world"/"Fit all", the world canvases') listens for F through one shared hook
   (`shared/useFitShortcut.ts`) and calls that button's own fit. The chromeless in-context map canvas does not listen.
   Same ignore rules as above (shared in `shared/shortcutGuard.ts`); F with any modifier is ignored, so Ctrl+F stays
-  the browser's find. The Fit buttons keep their labels and gain the tooltip "Fit to screen (F)".
+  the browser's find. Every Fit button has the tooltip "Fit to screen (F)". In-context, the world canvas's Fit fits
+  the edited map exactly as Map view's Fit does (`fitWithBand`, the same zoom steps), replacing GBA's whole-world refit
+  and GBC's disabled button there.
 - The header and the hub keep no shortcuts.
 
 ## Errors
@@ -238,7 +243,7 @@ GBA subject and PerfPlus, with byte snapshots of every writable file before and 
 & Save Safety; Live Browser Verification):
 1. The rail at 1280 and 1024 px wide; no horizontal scroll; the collision palette appears with Collision (GBA).
 2. Every shortcut, including the ignore rules in the event inspector's inputs and with SaveDialog open; F fits Map,
-   World and Dungeon view the same as each view's Fit button.
+   World and Dungeon view the same as each view's Fit button; in-context, Fit and F frame the edited map like Map view.
 3. A paint and save in Map view and in-context, restored by reverse paint.
 4. A dirty switch: GBA confirm; GBC discard, plus a forced discard failure showing `switchError`.
 5. Time of day (GBC); the defects banner on CeruleanCave2F (GBC); Add Sign opens and cancels (GBA).

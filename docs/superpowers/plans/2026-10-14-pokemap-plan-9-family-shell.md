@@ -18,7 +18,7 @@
 - No new npm dependency (icons are inline SVG in `components/toolIcons.tsx`).
 - Tool labels exactly: `Pencil`, `Rect`, `Bucket`, `Dropper`, `Shift`, `Collision`. Tooltips exactly `"Pencil (P)"` … ; `"Undo (Ctrl+Z)"`, `"Redo (Ctrl+Y)"`. Disabled tools keep their reason title (GBC non-writable `.blk`; default `"Not yet available"`).
 - Shortcuts exactly: P R B I S C; Ctrl/Cmd+Z undo; Ctrl/Cmd+Y and Ctrl/Cmd+Shift+Z redo. Ignored when `defaultPrevented`, target is input/textarea/select/contenteditable, an `[aria-modal="true"]` element exists, a letter key has any modifier (Ctrl, Meta, Alt, Shift), the tool is absent or disabled, or Undo/Redo is unavailable. Handled keys call `preventDefault`.
-- R5 (user ruling 2026-10-14, added to the spec): **F** fits the current view (Map, World, Dungeon; both families) by calling that canvas's own Fit action, and only while its Fit button is shown and enabled. Same ignore rules as R1 (one shared `shared/shortcutGuard.ts`); F with any modifier is ignored (Ctrl+F stays the browser's find). Fit buttons keep their labels and gain the tooltip `"Fit to screen (F)"`. No new fit logic.
+- R5 (user ruling 2026-10-14, added to the spec): **F** fits the current view (Map, World, Dungeon; both families) by calling that canvas's own Fit action, and only while its Fit button is shown and enabled. Same ignore rules as R1 (one shared `shared/shortcutGuard.ts`); F with any modifier is ignored (Ctrl+F stays the browser's find). Every Fit button is labelled `Fit` (World view's "Fit world" (GBA) and "Fit all" (GBC) are renamed; user ruling 2026-10-14) and has the tooltip `"Fit to screen (F)"`. In-context editing: Fit (button and F) fits the map being edited, exactly as Map view's Fit does (stepped zoom, `fitWithBand`), in both families; while the context map is still loading, Fit is disabled.
 - R4 (user ruling 2026-10-14, added to the spec): both palettes scroll the hovered cell into view only while the shared "Follow hover" switch is on. One hook (`shared/useFollowHover.ts`), one switch (`shared/FollowHoverSwitch.tsx`), identical in both families. Default on; remembered in `localStorage` key `pokemap.palette.followHover`, every read/write in try/catch (falls back to on).
 - Rail: `.edit-rail`, 260 px; order collision palette (Collision tool only) → metatile palette (always, flex, scrolls) → inspector (≤ 50 % height). Removed: `.app__metatile-strip`, `.app__collision-strip`, `.gbc-map-editing__rail`. Flex children `min-width: 0`.
 - Tests are moved, never dropped. Gate: **2,703 + tests added by this plan, 0 fail**; typecheck and `npm run build -w @pokemap/ui` pass. Per moved file: `git diff master -- <file> | grep -c '^-[^-]'`, every removed line given a reason in the task report.
@@ -50,7 +50,7 @@ The spec leaves these open or slightly under-determined; each is the smallest fa
 - **Capability flags read via constants.** `GBA_CAPABILITIES`/`GBC_CAPABILITIES` live in `shell/adapter.ts`; `toolsFor(caps)` derives each family's tool list (GBA all six; GBC five), and GBA's `MapEditingWorkspace` gates Add Sign on `GBA_CAPABILITIES.addSign`. Manual placements: `FamilyApp` owns `manualPlacementMaps` and merges it into tree visibility only when `manualPlacements` is set.
 - **GBA hover look** reuses GBC's hover token pair (`--bg-selected` + `--border-strong`, new class `metatile-palette__cell--hovered`). GBA's picked-stamp class already uses the same pair, so hover and pick look alike on GBA until a later plan restyles the pick.
 - **Follow hover (R4)** is a palette preference, not shell state: each palette calls `useFollowHover()` and renders `FollowHoverSwitch` in its header, so no prop plumbing through runtimes. Only one rail exists at a time; `localStorage` keeps the choice across remounts, map switches, families and reloads.
-- **F follows each canvas's own Fit button (R5).** GBA's "Fit world" is enabled in-context, so F refits there; GBC's "Fit all" is disabled in-context, so F does nothing there. Harmonising the two is canvas work (Plans 11/12). Task 9 puts the shared ignore rules in `shared/shortcutGuard.ts` so the toolbar listener and `useFitShortcut` cannot drift apart.
+- **F follows each canvas's own Fit button (R5).** One label everywhere (`Fit`, user ruling: matches the map editor). In World view, Fit fits the whole world (or the open dungeon's maps); in-context it fits the map being edited the same way Map view's Fit does, in both families (user ruling 2026-10-14: this replaces GBA refitting the whole world and GBC's disabled "Fit all"). Task 9 puts the shared ignore rules in `shared/shortcutGuard.ts` so the toolbar listener and `useFitShortcut` cannot drift apart.
 - **`useDungeonFilter(openDungeon, cache)`** (new, `shell/useDungeonFilter.ts`) holds both memo forms verbatim, unit-tested in Task 2.
 
 ## File map
@@ -72,7 +72,7 @@ The spec leaves these open or slightly under-determined; each is the smallest fa
 | `packages/ui/src/components/MapCanvas.tsx` | 9b, 10 | F fit (R5); `onHoverMetatile` |
 | `packages/ui/src/shared/shortcutGuard.ts` | 9 | `isTextTarget`, `shortcutBlocked` (the shared ignore rules) |
 | `packages/ui/src/shared/useFitShortcut.ts` | 9b | R5: F calls the canvas's own fit |
-| `packages/ui/src/gbc/GbcMapCanvas.tsx`, `components/WorldCanvas.tsx`, `gbc/GbcWorldCanvas.tsx` | 9b | `useFitShortcut` call + Fit tooltip |
+| `packages/ui/src/gbc/GbcMapCanvas.tsx`, `components/WorldCanvas.tsx`, `gbc/GbcWorldCanvas.tsx` | 9b | `useFitShortcut` call + Fit tooltip; world canvases: label `Fit`, in-context fit of the edited map |
 | `packages/ui/src/components/MetatilePalette.tsx` | 10 | `highlightId`, follow-hover scroll + switch |
 | `packages/ui/src/gbc/GbcMetatilePalette.tsx` | 10 | scroll gated on follow-hover; switch in header |
 | `packages/ui/src/shared/useFollowHover.ts`, `shared/FollowHoverSwitch.tsx` | 10 | R4 preference hook and its switch |
@@ -94,7 +94,7 @@ Before every implementer dispatch run the `delegate` skill; walk the tier's chai
 | 7 Rail + CSS | Sonnet → Codex `gpt-5.6-terra` | context editing (no remount) | split (Sonnet + Sonnet) |
 | 8 Toolbar icons/labels/tooltips + query renames | Haiku → Codex `gpt-6-luna` (12+ files) | low | merged (Sonnet) |
 | 9 Shortcuts | Sonnet → Aider Laguna S 2.1 → Nemotron 3 Super → Codex `gpt-5.6-terra` | StrictMode, global listener | split (Sonnet + Sonnet) |
-| 9b Fit to screen (R5) | Sonnet → Aider Laguna S 2.1 → Nemotron 3 Super → Codex `gpt-5.6-terra` (5 source + 5 test files: likely Codex) | global listener, hook order in 4 canvases | merged (Sonnet) |
+| 9b Fit to screen (R5) | Sonnet → Codex `gpt-5.6-terra` (multi-file, must find its way in two world canvases) | global listener, hook order in 4 canvases, in-context view math (stepped zoom) | split: spec (**Opus**) + quality (Sonnet) |
 | 10 GBA hover-link + follow-hover toggle (R4) | Sonnet → Codex `gpt-5.6-terra` | low (browser storage at a trust boundary: try/catch) | merged (Sonnet) |
 | 11 DESIGN.md | Haiku → Aider Laguna S 2.1 | docs | merged (Sonnet) |
 | 12 Live acceptance | Anthropic direct — verification (delegate §3); orchestrator or a Sonnet subagent with Playwright | real-corpus writes | the orchestrator re-checks every `cmp` and screenshot |
@@ -1895,12 +1895,14 @@ git commit -m "feat(ui): tool and undo/redo keyboard shortcuts (Plan 9 Task 9, R
 
 ### Task 9b: Fit to screen (R5)
 
-User ruling R5 (2026-10-14, after Task 7): **F** fits the current view to the window: Map view (the map), World view (the whole world) and Dungeon view (the open dungeon's maps), both families. F does exactly what that canvas's own Fit button already does ("Fit" on `MapCanvas`/`GbcMapCanvas`, "Fit world" on `WorldCanvas`, "Fit all" on `GbcWorldCanvas`), and is ignored whenever that button is absent or disabled. No new fit logic.
+User ruling R5 (2026-10-14, after Task 7): **F** fits the current view to the window: Map view (the map), World view (the whole world) and Dungeon view (the open dungeon's maps), both families. F does exactly what that canvas's own Fit button does, and is ignored whenever that button is absent or disabled.
+
+Follow-up ruling (user, 2026-10-14): the World-view buttons "Fit world" (GBA) and "Fit all" (GBC) become one `Fit`, matching the map editor. In-context editing, Fit (button and F) zooms to the map being edited, mirroring Map view's Fit: the same stepped fit (`fitWithBand` over the canvas's zoom steps) applied to the context map's world placement. This replaces today's behaviour (GBA refits the whole world in-context; GBC disables "Fit all" in-context). While the context map is still loading (no origin yet), Fit stays disabled.
 
 **Files:**
 - Create: `packages/ui/src/shared/useFitShortcut.ts`
-- Modify: `packages/ui/src/components/MapCanvas.tsx`, `packages/ui/src/gbc/GbcMapCanvas.tsx`, `packages/ui/src/components/WorldCanvas.tsx`, `packages/ui/src/gbc/GbcWorldCanvas.tsx` (one hook call and one `title` each)
-- Test: create `packages/ui/test/shared/useFitShortcut.test.tsx`; append one test each to `packages/ui/test/MapCanvas.test.tsx`, `packages/ui/test/gbc/GbcMapCanvas.test.tsx`, `packages/ui/test/WorldCanvas.test.tsx`, `packages/ui/test/gbc/GbcWorldCanvas.test.tsx`
+- Modify: `packages/ui/src/components/MapCanvas.tsx`, `packages/ui/src/gbc/GbcMapCanvas.tsx` (hook call + `title`); `packages/ui/src/components/WorldCanvas.tsx`, `packages/ui/src/gbc/GbcWorldCanvas.tsx` (hook call, `title`, label `Fit`, in-context fit)
+- Test: create `packages/ui/test/shared/useFitShortcut.test.tsx`; append one test each to `packages/ui/test/MapCanvas.test.tsx`, `packages/ui/test/gbc/GbcMapCanvas.test.tsx`, `packages/ui/test/WorldCanvas.test.tsx`, `packages/ui/test/gbc/GbcWorldCanvas.test.tsx`; one in-context test each to `packages/ui/test/AppContextEdit.test.tsx` and `packages/ui/test/gbc/GbcAppContext.test.tsx`; label retargets in `App.test.tsx`, `WorldCanvas.test.tsx`, `gbc/GbcWorldCanvas.test.tsx`, `gbc/GbcAppContext.test.tsx`
 
 **Interfaces:** Consumes `shortcutBlocked` from `shared/shortcutGuard.ts` (Task 9). Produces `export function useFitShortcut(fit: () => void, enabled: boolean): void`.
 
@@ -2019,25 +2021,39 @@ Run the unit tests → PASS (10: `it.each` counts 4).
 
 - [ ] **Step 3: Wire the four canvases**
 
-Each call goes right after the canvas's fit callback is defined and before any early return (hook order). Each canvas's Fit button gains `title="Fit to screen (F)"`; its visible label and accessible name do not change.
+Each call goes right after the canvas's fit callback is defined and before any early return (hook order). Every Fit button gets `title="Fit to screen (F)"`; the World-view buttons are relabelled `Fit` (Step 3b); the map canvases' label is already `Fit`.
 - `MapCanvas.tsx`: `useFitShortcut(fit, !chromeless);` (the chromeless canvas renders no toolbar, so it has no Fit button).
 - `GbcMapCanvas.tsx`: `useFitShortcut(fit, !chromeless);` (same).
-- `WorldCanvas.tsx`: `useFitShortcut(fitWorld, true);` ("Fit world" is never disabled; in-context the map canvas inside is chromeless, so this is the only listener). The same component serves Dungeon view (`mapFilter`), where `fitWorld` fits the dungeon's maps.
-- `GbcWorldCanvas.tsx`: `useFitShortcut(fitAll, !inContext);` (mirrors `disabled={inContext}` on "Fit all").
+- `WorldCanvas.tsx`: `useFitShortcut(fit, fitEnabled);` where `fit`/`fitEnabled` are Step 3b's. In-context the map canvas inside is chromeless, so this is the only listener. The same component serves Dungeon view (`mapFilter`), where the world fit fits the dungeon's maps.
+- `GbcWorldCanvas.tsx`: `useFitShortcut(fit, fitEnabled);` (same).
 
 If a canvas declares its fit callback after an early return, place the hook at the first point after the callback where no early return precedes it, and say so in the report.
+
+- [ ] **Step 3b: One `Fit` in World view; in-context it fits the map being edited**
+
+In each world canvas (`WorldCanvas.tsx`, `GbcWorldCanvas.tsx`):
+- Relabel the button `Fit` (was "Fit world" / "Fit all"); keep `className`, add the tooltip. Doc comments that name the old labels say `Fit`.
+- `fit`: outside in-context editing it is the existing world fit (`fitWorld` / `fitAll`, unchanged, dungeon filter included). In-context with the context map loaded (its `origin` is non-null), it fits that map exactly as Map view's Fit does: the same `fitWithBand` call `MapCanvas.fit` / `GbcMapCanvas.fit` make (the same zoom-level list the in-context overlay steps through; the same encounter band when the overlay shows encounters), over the context map's pixel size, then panned so the map's world placement sits where Map view would put the map in a viewport of the world canvas's size. Reuse `fitWithBand` (`src/encounters/fit.ts`); do not write a second fit formula. If the world canvas's in-context zoom steps differ from the map canvas's `ZOOM_LEVELS`, use the in-context steps (the overlay must stay on a step) and say so in the report.
+- `fitEnabled`: `true` outside context; in-context, `true` once the context map's origin is known, `false` while it is loading. The button's `disabled` is `!fitEnabled`.
+- The result must equal Map view's Fit framing for the same map and viewport size: same zoom step, and the map's top-left at the same screen offset (within 1 px).
+- GBC today disables "Fit all" in-context (`disabled={inContext}`) and GBA's "Fit world" refits the whole world in-context; both change here by user ruling. `test/gbc/GbcAppContext.test.tsx` "keyboard Edit here keeps stepped zoom, wheel and Fit all obey the context contract" asserts the GBC button is disabled in-context with the map loaded: retarget that assertion to `disabled === false` (reason "R5: in-context Fit fits the context map"). The pending-context test's disabled assertion stays (renamed query only).
 
 - [ ] **Step 4: One integration test per canvas**
 
 In each of the four canvas test files, find the existing test that clicks that canvas's Fit button (`grep -n "Fit" <file>`). Append a copy named `"F does what the Fit button does (Plan 9 R5)"` that replaces the click with `fireEvent.keyDown(window, { key: "f" })`, keeps the original's assertions, and adds `expect(<the Fit button>.getAttribute("title")).toBe("Fit to screen (F)")`. If a canvas has no existing Fit-button test, write one: change the view first (a zoom button or wheel, as that file's other tests do), press f, and assert the zoom readout (or `onViewChange` value) equals the value right after the mount's own fit. The report names the source test for each copy.
 
+Retarget every query of the old World-view labels (`{ name: "Fit world" }`, `{ name: "Fit all" }`) to `{ name: "Fit" }`: `App.test.tsx` (2), `WorldCanvas.test.tsx` (1), `gbc/GbcWorldCanvas.test.tsx` (2), `gbc/GbcAppContext.test.tsx` (2). Test titles that mention the old labels stay. Removed-line reason: "Fit label unified (R5)".
+
+Add one in-context test per family:
+- `AppContextEdit.test.tsx` (GBA) and `gbc/GbcAppContext.test.tsx` (GBC): `"in-context Fit and F fit the map being edited, as Map view's Fit does (Plan 9 R5)"`. Enter in-context editing on a map with that file's own helpers; zoom away (the in-context zoom keys, as the file's other tests do); press f; assert the zoom readout equals the stepped fit Map view's Fit gives that map at the same viewport size (derive the expected step from `fitWithBand` with the same inputs, never a hard-coded number copied from another family), and that the context map is on screen (its overlay stage rect inside the world canvas rect). Then zoom away again, click `Fit`, assert the same readout.
+
 - [ ] **Step 5: Run, gate, commit**
 
-Targeted runs → PASS. `grep -rn "Fit to screen" packages/ui/test/gbc/Root.test.tsx` → nothing (no Root absence assertion collides). Gate: **2,745 + 14 = 2,759 pass** (10 unit + 4 integration), 175 files; typecheck; build.
+Targeted runs → PASS. `grep -rn "Fit to screen" packages/ui/test/gbc/Root.test.tsx` → nothing (no Root absence assertion collides). Gate: **2,745 + 16 = 2,761 pass** (10 unit + 4 per-canvas + 2 in-context), 175 files; typecheck; build. Removed-line accounting per modified test file (reasons: "Fit label unified (R5)", "R5: in-context Fit fits the context map").
 
 ```bash
-git add packages/ui/src/shared/useFitShortcut.ts packages/ui/src/components/MapCanvas.tsx packages/ui/src/gbc/GbcMapCanvas.tsx packages/ui/src/components/WorldCanvas.tsx packages/ui/src/gbc/GbcWorldCanvas.tsx packages/ui/test/shared/useFitShortcut.test.tsx packages/ui/test/MapCanvas.test.tsx packages/ui/test/gbc/GbcMapCanvas.test.tsx packages/ui/test/WorldCanvas.test.tsx packages/ui/test/gbc/GbcWorldCanvas.test.tsx
-git commit -m "feat(ui): F fits the map, world or dungeon view (Plan 9 Task 9b, R5)"
+git add packages/ui/src/shared/useFitShortcut.ts packages/ui/src/components/MapCanvas.tsx packages/ui/src/gbc/GbcMapCanvas.tsx packages/ui/src/components/WorldCanvas.tsx packages/ui/src/gbc/GbcWorldCanvas.tsx packages/ui/test/shared/useFitShortcut.test.tsx packages/ui/test/MapCanvas.test.tsx packages/ui/test/gbc/GbcMapCanvas.test.tsx packages/ui/test/WorldCanvas.test.tsx packages/ui/test/gbc/GbcWorldCanvas.test.tsx packages/ui/test/App.test.tsx packages/ui/test/AppContextEdit.test.tsx packages/ui/test/gbc/GbcAppContext.test.tsx
+git commit -m "feat(ui): one Fit, on F too; in-context it fits the edited map (Plan 9 Task 9b, R5)"
 ```
 
 ---
@@ -2255,7 +2271,7 @@ CSS:
 
 - [ ] **Step 7: Run, gate, commit**
 
-Targeted → PASS. Gate: **2,759 + 11 = 2,770 pass** (R2: 4; R4: 3 hook + 2 GBC + 2 GBA), 176 files; typecheck; build.
+Targeted → PASS. Gate: **2,761 + 11 = 2,772 pass** (R2: 4; R4: 3 hook + 2 GBC + 2 GBA), 176 files; typecheck; build.
 
 ```bash
 git add packages/ui/src/components/MapCanvas.tsx packages/ui/src/components/MetatilePalette.tsx packages/ui/src/gbc/GbcMetatilePalette.tsx packages/ui/src/shared/useFollowHover.ts packages/ui/src/shared/FollowHoverSwitch.tsx packages/ui/src/components/MapEditingWorkspace.tsx packages/ui/src/gba/adapter.tsx packages/ui/src/styles.css packages/ui/test/MetatilePalette.test.tsx packages/ui/test/gbc/GbcMetatilePalette.test.tsx packages/ui/test/shared/useFollowHover.test.tsx packages/ui/test/MapCanvas.test.tsx packages/ui/test/App.test.tsx
@@ -2268,7 +2284,7 @@ git commit -m "feat(ui): GBA palette hover-link and a shared Follow hover toggle
 
 **Files:** Modify `packages/ui/DESIGN.md` (sections "Layout shape" at 226, "Shared modules (Plan 8)" at 465).
 
-- [ ] **Step 1: Layout shape.** After the existing diagram's "What the canvas is owed" bullets, add a subsection `### Edit layout (Plan 9, D4/D5)` with the spec's diagram (spec lines 147-156, verbatim) and bullets: the rail (`.edit-rail`, 260 px, order, collision palette only with Collision, palette always and a pick with another tool only sets the stamp, inspector ≤ 50 %, `min-width: 0`); the toolbar (icon + capitalised label, tooltip `Label (Key)`, disabled tools keep their reason title, Undo/Redo tooltips); the shortcuts and their ignore rules (copy the Global Constraints lines, including R5: F fits the view via the canvas's own Fit, tooltip `Fit to screen (F)`); the GBA hover-link (`metatile-palette__cell--hovered`, GBC's hover token pair); the shared "Follow hover" switch (R4: both palettes, default on, remembered per browser). Add `shared/useFollowHover.ts` + `FollowHoverSwitch.tsx` as a Shared modules row (consumers `MetatilePalette` / `GbcMetatilePalette`), and `shared/shortcutGuard.ts` + `shared/useFitShortcut.ts` (consumers `Toolbar`, `MapCanvas`/`WorldCanvas` / `GbcMapCanvas`/`GbcWorldCanvas`). Update the first bullet of "What the canvas is owed" that mentions "whatever Task 21+ adds — an inspector, a metatile palette" to name the rail.
+- [ ] **Step 1: Layout shape.** After the existing diagram's "What the canvas is owed" bullets, add a subsection `### Edit layout (Plan 9, D4/D5)` with the spec's diagram (spec lines 147-156, verbatim) and bullets: the rail (`.edit-rail`, 260 px, order, collision palette only with Collision, palette always and a pick with another tool only sets the stamp, inspector ≤ 50 %, `min-width: 0`); the toolbar (icon + capitalised label, tooltip `Label (Key)`, disabled tools keep their reason title, Undo/Redo tooltips); the shortcuts and their ignore rules (copy the Global Constraints lines, including R5: one `Fit` label, F fits the view via that Fit, tooltip `Fit to screen (F)`, in-context Fit fits the edited map like Map view); the GBA hover-link (`metatile-palette__cell--hovered`, GBC's hover token pair); the shared "Follow hover" switch (R4: both palettes, default on, remembered per browser). Add `shared/useFollowHover.ts` + `FollowHoverSwitch.tsx` as a Shared modules row (consumers `MetatilePalette` / `GbcMetatilePalette`), and `shared/shortcutGuard.ts` + `shared/useFitShortcut.ts` (consumers `Toolbar`, `MapCanvas`/`WorldCanvas` / `GbcMapCanvas`/`GbcWorldCanvas`). Update the first bullet of "What the canvas is owed" that mentions "whatever Task 21+ adds — an inspector, a metatile palette" to name the rail.
 - [ ] **Step 2: Shared modules.** Add rows:
 
 | Module | What it owns | GBA consumer | GBC consumer |
@@ -2296,7 +2312,7 @@ Verification stays on Anthropic (delegate §3). Follow LESSONS "Live Browser Ver
 - [ ] **Step 2: Start the hub** on the branch (Vite root via `fileURLToPath(new URL(".", import.meta.url))`). Drive with the Playwright MCP's `browser_run_code_unsafe`, one check per call; if the MCP is held, use the CDP fallback in LESSONS.
 - [ ] **Step 3: Each family, run spec "Live acceptance" items 1-7:**
   1. Rail at 1280 and 1024 px: `document.documentElement.scrollWidth === clientWidth` in Map view and in-context; GBA Collision tool shows the collision palette at the rail top.
-  2. Every shortcut (P R B I S C; Ctrl+Z; Ctrl+Y; Ctrl+Shift+Z; F) and each ignore rule: typing in an event-inspector input and in the GBA palette search; with SaveDialog open. F (R5): pan and zoom away, press F in Map view, World view and Dungeon view; each returns to the same framing as clicking that view's Fit button; Ctrl+F still opens the browser's find.
+  2. Every shortcut (P R B I S C; Ctrl+Z; Ctrl+Y; Ctrl+Shift+Z; F) and each ignore rule: typing in an event-inspector input and in the GBA palette search; with SaveDialog open. F (R5): pan and zoom away, press F in Map view, World view and Dungeon view; each returns to the same framing as clicking that view's Fit button; World view shows one `Fit` button in both families; in-context (both families) F and Fit frame the edited map the same as Map view's Fit at that window size (screenshot both); Ctrl+F still opens the browser's find.
   3. Paint + save in Map view and in-context; restore by reverse paint + save.
   4. Dirty switch: GBA confirm; GBC discard; GBC forced discard failure shows `switchError` (in the same `browser_run_code_unsafe` call: `await page.route("**/api/edit/*/discard", (r) => r.fulfill({ status: 500, body: "{}" }))`, trigger the switch, read the alert, then `page.unroute`).
   5. GBC Time of day; GBC defects banner on CeruleanCave2F; GBA Add Sign opens and cancels.
@@ -2309,6 +2325,6 @@ Verification stays on Anthropic (delegate §3). Follow LESSONS "Live Browser Ver
 
 ### Finish
 
-- [ ] Whole-branch review (Opus): spec coverage, every "disagree" case behind the runtime, test-count ledger (2,703 → 2,770, 171 → 176 files), removed-line accounting across all tasks.
+- [ ] Whole-branch review (Opus): spec coverage, every "disagree" case behind the runtime, test-count ledger (2,703 → 2,772, 171 → 176 files), removed-line accounting across all tasks.
 - [ ] RESUME: Unified UI row → Plan 9 executed; new baseline; Plan 10 next.
 - [ ] Stop for the user: push, PR, issue #4 closure are the user's calls (`superpowers:finishing-a-development-branch`).
