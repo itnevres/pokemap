@@ -14,7 +14,7 @@ const EMPTY_BROWSE = { dir: null, parent: null, entries: [] };
  * Task A2 (U1 behaviour change): Root now fetches `/api/hub`
  * (`{ current, recent }`), not `/api/project` -- this mock's `project`
  * fixture now seeds `/api/hub`'s `current` field instead of being the whole
- * response. Still records every call App's/GbcApp's full tree can reach in
+ * response. Still records every call the GBA/GBC shell's full tree can reach in
  * Map mode (mirroring App.test.tsx's own `makeFetchMock`), and now also
  * answers `/api/hub/browse` (an empty listing -- `ProjectPicker`, mounted
  * whenever `current` is null or the header switcher's modal is open, always
@@ -59,7 +59,7 @@ function makeFetchMock(
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(info) } as Response);
     }
     // No /api/dungeons (or /api/world/etc.) branch here on purpose: every
-    // one of App's own GBA-only fetches is gated on `mode` (App's default
+    // one of the GBA shell's own GBA-only fetches is gated on `mode` (the shell's default
     // is "map"), so none of them are ever actually requested by any
     // scenario in this file. An unexpected call to one is exactly what the
     // rejection below is for.
@@ -76,12 +76,14 @@ describe("Root", () => {
     expect(screen.getByText("Loading project…")).toBeTruthy();
   });
 
-  it("gba renders App -- proven by App's own Dungeon button", async () => {
+  it("gba renders the GBA shell -- a View group, and no Crystal label or Time of day group", async () => {
     const { mock } = makeFetchMock({ family: "gba", root: "/x" });
     vi.stubGlobal("fetch", mock);
     render(<Root />);
 
     await waitFor(() => expect(screen.getByText("Dungeon")).toBeTruthy());
+    expect(screen.queryByText("Crystal")).toBeNull();
+    expect(screen.queryByRole("group", { name: "Time of day" })).toBeNull();
   });
 
   it("gbc renders GbcApp -- proven by the Time of day group", async () => {
@@ -120,12 +122,12 @@ describe("Root", () => {
     await waitFor(() => expect(screen.getByRole("group", { name: "Time of day" })).toBeTruthy());
 
     // Spec review finding 1: the fetch-list assertions below stay green even
-    // if Root mounted a hidden <App/> ALONGSIDE <GbcApp/>, since App's own
+    // if Root mounted a hidden GBA shell ALONGSIDE the GBC shell, since the GBA shell's own
     // GBA-only fetches are all gated on `mode` (default "map") and never
     // fire at mount regardless. This DOM assertion is what actually proves
-    // App isn't mounted at all -- App's header renders its Dungeon button
+    // the GBA shell isn't mounted at all -- the shell header renders its Dungeon button
     // unconditionally, independent of any fetch ever resolving. Since D3,
-    // GbcApp has its own Dungeon button too, so a mounted App shows as a
+    // the GBC shell has its own Dungeon button too, so a mounted GBA shell shows as a
     // second "View" group with a second Dungeon button.
     expect(screen.getAllByRole("group", { name: "View" })).toHaveLength(1);
     expect(screen.getAllByText("Dungeon")).toHaveLength(1);
@@ -150,7 +152,7 @@ describe("Root", () => {
     expect(calls).not.toContain("/api/groups");
   });
 
-  // Task A2 addition: the switcher button (App.tsx/GbcApp.tsx's own
+  // Task A2 addition: the switcher button (the GBA/GBC shell's own
   // additive `switcher` prop) renders in both shells' headers once a
   // project is open.
   it("the header switcher button renders for both App and GbcApp", async () => {
@@ -168,7 +170,7 @@ describe("Root", () => {
   });
 
   // Task A2 addition (re-key remount, spec test 6): opening a DIFFERENT
-  // root through the header switcher must remount GbcApp fresh -- proven by
+  // root through the header switcher must remount the GBC shell fresh -- proven by
   // its own local `time` state (bumped to "nite" pre-switch) resetting back
   // to the "day" default, since a real new mount always starts there.
   it("re-key remount: opening a different root through the switcher resets GbcApp's own state", async () => {

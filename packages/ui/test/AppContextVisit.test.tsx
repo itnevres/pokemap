@@ -3,7 +3,8 @@
 // from AppContextEdit.test.tsx (each App test file keeps its own).
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { App } from "../src/App.js";
+import { FamilyApp } from "../src/shell/FamilyApp.js";
+import { gbaAdapter } from "../src/gba/adapter.js";
 
 const LAYOUT = {
   map: {
@@ -103,7 +104,7 @@ async function enterWorld() {
 
 async function startApp(fetchMock = makeFetchMock()) {
   vi.stubGlobal("fetch", fetchMock);
-  render(<App />);
+  render(<FamilyApp adapter={gbaAdapter} />);
   await waitFor(() => expect(screen.getByRole("button", { name: "Route1" })).toBeTruthy());
   return fetchMock;
 }

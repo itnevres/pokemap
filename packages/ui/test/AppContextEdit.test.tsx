@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor, act, within } from "@testing-library/react";
-import { App } from "../src/App.js";
+import { FamilyApp } from "../src/shell/FamilyApp.js";
+import { gbaAdapter } from "../src/gba/adapter.js";
 
 // Plan 6c E4: GBA in-context editing at the App level -- the World view's double-click enters it, the editing chrome
 // appears around the SAME world canvas, exits go through the dirty guard, and a save refreshes only that map's tile.
@@ -104,7 +105,7 @@ async function enterWorld() {
 
 async function startApp(fetchMock = makeFetchMock()) {
   vi.stubGlobal("fetch", fetchMock);
-  render(<App />);
+  render(<FamilyApp adapter={gbaAdapter} />);
   await waitFor(() => expect(screen.getByRole("button", { name: "Route1" })).toBeTruthy());
   return fetchMock;
 }

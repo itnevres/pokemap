@@ -1,6 +1,7 @@
 import { it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
-import { GbcApp } from "../../src/gbc/GbcApp.js";
+import { FamilyApp } from "../../src/shell/FamilyApp.js";
+import { gbcAdapter } from "../../src/gbc/adapter.js";
 import type { GbcMapPayload } from "@pokemap/core/src/gbc/wire.js";
 
 // M5: GBC context exit waits for pending paint before deciding whether to open SaveDialog.
@@ -107,7 +108,7 @@ async function overlayStage() {
 
 async function startApp() {
   const mock = mockFetch();
-  render(<GbcApp root="/x" />);
+  render(<FamilyApp adapter={gbcAdapter} />);
   await waitFor(() => expect(screen.getByText("OlivinePort")).toBeTruthy());
   return mock;
 }

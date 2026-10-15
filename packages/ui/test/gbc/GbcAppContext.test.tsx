@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor, act, within } from "@testing-library/react";
 import { StrictMode } from "react";
-import { GbcApp } from "../../src/gbc/GbcApp.js";
+import { FamilyApp } from "../../src/shell/FamilyApp.js";
+import { gbcAdapter } from "../../src/gbc/adapter.js";
 import type { GbcMapPayload } from "@pokemap/core/src/gbc/wire.js";
 
 // Plan 7 Task 5b: GBC in-context editing at the app level, the twin of AppContextEdit.test.tsx (6c E4). The World view's
@@ -112,7 +113,7 @@ async function overlayStage() {
 
 async function startApp() {
   const mock = mockFetch();
-  render(<GbcApp root="/x" />);
+  render(<FamilyApp adapter={gbcAdapter} />);
   await waitFor(() => expect(screen.getByText("OlivinePort")).toBeTruthy());
   return mock;
 }
@@ -180,7 +181,7 @@ describe("GbcApp -- in-context editing (Plan 7 Task 5b)", () => {
       });
     };
     try {
-      render(<StrictMode><GbcApp root="/x" /></StrictMode>);
+      render(<StrictMode><FamilyApp adapter={gbcAdapter} /></StrictMode>);
       await screen.findByRole("button", { name: "OlivinePort" });
       const world = await enterWorld();
       const body = document.querySelector(".app__map-editing-body");

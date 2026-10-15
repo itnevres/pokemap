@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { GbcWorldCanvasProps } from "../../src/gbc/GbcWorldCanvas.js";
-import { GbcApp } from "../../src/gbc/GbcApp.js";
+import { FamilyApp } from "../../src/shell/FamilyApp.js";
+import { gbcAdapter } from "../../src/gbc/adapter.js";
 
 // Isolate the public World callbacks to exercise the safety fallback, independently of tree/mode exit handlers.
 // Ordinary pointer input is covered by the overlay; this is an App callback invariant, not a live pointer scenario.
@@ -20,7 +21,7 @@ afterEach(() => vi.unstubAllGlobals());
 describe("GbcApp isolated context selection invariant", () => {
   it("a World selection callback moving off the context map exits without a tree or mode handler", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ groupOrder: ["G"], groups: { G: ["A", "B"] } }) })));
-    render(<GbcApp root="/fixture" />);
+    render(<FamilyApp adapter={gbcAdapter} />);
     await screen.findByRole("button", { name: "B" });
     fireEvent.click(screen.getByRole("button", { name: "World" }));
     fireEvent.click(screen.getByRole("button", { name: "Enter A callback" }));

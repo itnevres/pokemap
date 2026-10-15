@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
-import { App } from "../src/App.js";
+import { FamilyApp } from "../src/shell/FamilyApp.js";
+import { gbaAdapter } from "../src/gba/adapter.js";
 
 // Plan 6c E3: the GBA world canvas's context-menu "Open in Map view", wired through App's
 // openMapFromWorld (dirty-confirm guarded). Fetch-mock shape borrowed from App.test.tsx /
@@ -94,7 +95,7 @@ describe("App -- world context menu Open in Map view (Plan 6c E3)", () => {
   it("opens the right-clicked map in Map mode with that map selected", async () => {
     vi.stubGlobal("fetch", makeFetchMock());
     withViewport();
-    render(<App />);
+    render(<FamilyApp adapter={gbaAdapter} />);
     await waitFor(() => expect(screen.getByRole("button", { name: "Route1" })).toBeTruthy());
     const canvas = await enterWorld();
     // Fresh World view (nothing selected): zoom 1, pan 0 -- PalletTown [0,10), Route1 [11,21).
@@ -112,7 +113,7 @@ describe("App -- world context menu Open in Map view (Plan 6c E3)", () => {
     vi.stubGlobal("fetch", makeFetchMock());
     withViewport();
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
-    render(<App />);
+    render(<FamilyApp adapter={gbaAdapter} />);
     await waitFor(() => expect(screen.getByRole("button", { name: "PalletTown" })).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: "PalletTown" }));
     await screen.findByRole("button", { name: "Add Event" });

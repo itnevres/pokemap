@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
-import { App } from "../src/App.js";
+import { FamilyApp } from "../src/shell/FamilyApp.js";
+import { gbaAdapter } from "../src/gba/adapter.js";
 
 // Plan 6c E2 fix round (review F1/F4): App-level wiring pins for the state
 // that moved into useMapEditing / MapEditingWorkspace. App.test.tsx never
@@ -59,7 +60,7 @@ afterEach(() => {
 });
 
 async function openPalletTown() {
-  render(<App />);
+  render(<FamilyApp adapter={gbaAdapter} />);
   await waitFor(() => expect(screen.getByRole("button", { name: "PalletTown" })).toBeTruthy());
   fireEvent.click(screen.getByRole("button", { name: "PalletTown" }));
   await screen.findByRole("button", { name: "Add Event" });
