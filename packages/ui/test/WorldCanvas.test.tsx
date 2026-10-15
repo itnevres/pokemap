@@ -557,7 +557,7 @@ describe("WorldCanvas", () => {
     for (const img of FakeImage.instances) act(() => img.onload?.());
     await waitFor(() => expect(stageCtx.drawImage).toHaveBeenCalled());
 
-    fireEvent.click(screen.getByRole("button", { name: "Fit world" }));
+    fireEvent.click(screen.getByRole("button", { name: "Fit" }));
 
     // A (0,0) at zoom 2, pan {0,30} draws at destination (0,30).
     await waitFor(() => {
@@ -2741,5 +2741,34 @@ describe("WorldCanvas: context menu (Plan 6c E3)", () => {
     expect(screen.getByRole("menuitem", { name: "Accept conflict" })).toBeTruthy(); // a failed save keeps the menu open
     fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
     expect(screen.queryByText(/Could not update conflict:/)).toBeNull();
+  });
+
+  it("F does what the Fit button does (Plan 9 R5)", async () => {
+    const { impl } = makeFetchMock(
+      makeWorld({
+        placements: {
+          A: { map: "A", x: 0, y: 0, width: 30, height: 20, component: 0 },
+          B: { map: "B", x: 30, y: 0, width: 20, height: 10, component: 0 },
+          Ghost: { map: "Ghost", x: 10_000, y: 10_000, width: 5, height: 5, component: 1 },
+        },
+        components: [
+          { index: 0, maps: ["A", "B"], bounds: { x: 0, y: 0, width: 50, height: 20 } },
+          { index: 1, maps: ["Ghost"], bounds: { x: 10_000, y: 10_000, width: 5, height: 5 } },
+        ],
+      }),
+    );
+    const { canvas, stageCtx } = await mountReady(impl);
+    for (const img of FakeImage.instances) act(() => img.onload?.());
+    await waitFor(() => expect(stageCtx.drawImage).toHaveBeenCalled());
+
+    const fit = screen.getByRole("button", { name: "Fit" });
+    fireEvent.keyDown(window, { key: "f" });
+
+    await waitFor(() => {
+      const call = stageCtx.drawImage.mock.calls.find((c) => c[3] === 30 * 2 && c[4] === 20 * 2);
+      expect(call?.slice(1, 3)).toEqual([0, 30]);
+    });
+    expect(screen.getByText("13%")).toBeTruthy();
+    expect(fit.getAttribute("title")).toBe("Fit to screen (F)");
   });
 });

@@ -752,4 +752,18 @@ describe("GbcMapCanvas: Encounters overlay (Plan 6c B4)", () => {
     await screen.findByRole("button", { name: /^Caterpie/ });
     expect(baseCtx.putImageData).not.toHaveBeenCalled();
   });
+
+  it("F does what the Fit button does (Plan 9 R5)", async () => {
+    const { canvas, lastDraw } = await mountReady();
+    fireEvent.click(screen.getByRole("button", { name: "4×" }));
+    await waitFor(() => expect(lastDraw().slice(-2)).toEqual([PIXEL_WIDTH * 4, PIXEL_HEIGHT * 4]));
+    fireEvent.mouseDown(canvas, { clientX: 0, clientY: 0, button: 0 });
+    fireEvent.mouseMove(canvas, { clientX: 50, clientY: 50 });
+    fireEvent.mouseUp(canvas);
+
+    const fit = screen.getByRole("button", { name: "Fit" });
+    fireEvent.keyDown(window, { key: "f" });
+    await waitFor(() => expect(lastDraw().slice(-2)).toEqual([PIXEL_WIDTH * 1, PIXEL_HEIGHT * 1]));
+    expect(fit.getAttribute("title")).toBe("Fit to screen (F)");
+  });
 });

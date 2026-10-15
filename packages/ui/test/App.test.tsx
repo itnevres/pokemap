@@ -682,7 +682,7 @@ describe("App -- Plan 9 shell characterisation", () => {
       fireEvent.click(screen.getByRole("button", { name: /Tower/ }));
       const stage = container.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement;
       await waitFor(() => expect(container.querySelector(".world-canvas__status")?.textContent).toContain("placed 2"));
-      fireEvent.click(screen.getByRole("button", { name: "Fit world" }));
+      fireEvent.click(screen.getByRole("button", { name: "Fit" }));
       fireEvent.click(stage, { clientX: 50, clientY: 50 });
       const outline = () => container.querySelector(".world-canvas__selection-outline:not(.world-canvas__jump-highlight)") as HTMLElement;
       const position = () => [outline().style.left, outline().style.top];
@@ -713,7 +713,7 @@ describe("App -- Plan 9 shell characterisation", () => {
       fireEvent.mouseMove(stage, { clientX: 20, clientY: 10 });
       fireEvent.mouseUp(stage);
       expect(position()).not.toEqual(membershipFitPosition);
-      fireEvent.click(screen.getByRole("button", { name: "Fit world" }));
+      fireEvent.click(screen.getByRole("button", { name: "Fit" }));
       expect(position()).toEqual(membershipFitPosition);
       expect(container.querySelector(".world-canvas__zoom-readout")!.textContent).toBe(membershipFitZoom);
     } finally {

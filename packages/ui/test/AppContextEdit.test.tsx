@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor, act, within } from "@testing-library/react";
 import { FamilyApp } from "../src/shell/FamilyApp.js";
 import { gbaAdapter } from "../src/gba/adapter.js";
+import { fitWithBand } from "../src/encounters/fit.js";
 
 // Plan 6c E4: GBA in-context editing at the App level -- the World view's double-click enters it, the editing chrome
 // appears around the SAME world canvas, exits go through the dirty guard, and a save refreshes only that map's tile.
@@ -381,5 +382,32 @@ describe("App -- in-context editing, fix round (Plan 6c E4)", () => {
     await waitFor(() => expect(contextOverlay()).toBeNull());
     expect(chrome()).toBeNull();
     expect(document.querySelector('.map-tree__map[aria-current="true"]')?.textContent).toContain("PalletTown");
+  });
+
+  it("in-context Fit and F fit the map being edited, as Map view's Fit does (Plan 9 R5)", async () => {
+    await startApp();
+    const canvas = await enterWorld();
+    dblClickRoute1(canvas);
+    await waitFor(() => expect(contextOverlay()?.querySelector("canvas.map-canvas__stage")).toBeTruthy());
+    const stage = contextOverlay()!.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
+    stage.getBoundingClientRect = () => RECT;
+    const expected = fitWithBand({ pw: 10 * 16 + 2 * 16, ph: 10 * 16 + 2 * 16, vw: 400, vh: 100, levels: [1, 2, 4], bandNative: 0, side: "left" });
+    const fittedReadout = `${expected.zoom * 100}%`;
+
+    fireEvent.wheel(stage, { deltaY: -100, clientX: 200, clientY: 50 });
+    await waitFor(() => expect(document.querySelector(".world-canvas__zoom-readout")!.textContent).not.toBe(fittedReadout));
+    fireEvent.keyDown(window, { key: "f" });
+    await waitFor(() => expect(document.querySelector(".world-canvas__zoom-readout")!.textContent).toBe(fittedReadout));
+    const worldRect = canvas.getBoundingClientRect();
+    const stageRect = stage.getBoundingClientRect();
+    expect(stageRect.left).toBeGreaterThanOrEqual(worldRect.left);
+    expect(stageRect.top).toBeGreaterThanOrEqual(worldRect.top);
+    expect(stageRect.right).toBeLessThanOrEqual(worldRect.right);
+    expect(stageRect.bottom).toBeLessThanOrEqual(worldRect.bottom);
+
+    fireEvent.wheel(stage, { deltaY: -100, clientX: 200, clientY: 50 });
+    await waitFor(() => expect(document.querySelector(".world-canvas__zoom-readout")!.textContent).not.toBe(fittedReadout));
+    fireEvent.click(screen.getByRole("button", { name: "Fit" }));
+    await waitFor(() => expect(document.querySelector(".world-canvas__zoom-readout")!.textContent).toBe(fittedReadout));
   });
 });

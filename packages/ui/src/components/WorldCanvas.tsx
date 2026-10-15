@@ -16,9 +16,12 @@ import { isDrawnByDefault } from "../world/visibility.js";
 import { conflictBadgeOffsets, isRecord, isWireConflict } from "../world/conflictAcceptance.js";
 import { useConflictAcceptance } from "../world/useConflictAcceptance.js";
 import { WorldContextMenu, useWorldContextMenu } from "./WorldContextMenu.js";
-import type { MapView } from "./mapView.js";
+import { ZOOM_LEVELS, type MapView } from "./mapView.js";
 import { useWorldContext } from "../shared/useWorldContext.js";
 import { WorldContextOverlay } from "../shared/WorldContextOverlay.js";
+import { useFitShortcut } from "../shared/useFitShortcut.js";
+import { fitWithBand } from "../encounters/fit.js";
+import { worldViewFromMapView } from "../world/contextView.js";
 
 /** The pixel size a placement's PNG renders at natively (`renderLayout`,
  *  border 0): 16px per tile, same constant the CLI's `render-world --scale
@@ -632,7 +635,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
   // by definition puts every single placement's bounding box inside the
   // viewport, which would fetch all 1,209 source images on the very first
   // render -- the exact cost culling exists to avoid. The default view is
-  // a modest, fixed zoom at the world origin; "Fit world" below is an
+  // a modest, fixed zoom at the world origin; "Fit" below is an
   // explicit action the user takes to reach an overview.
   //
   // That overview fits the connected landmasses/clusters, not literally
@@ -787,7 +790,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
   // is entirely about the cost of loading all 1,209 placements' images at
   // once), a curated dungeon is small and, at the default origin-anchored
   // view, may contain none of its own maps on screen at all -- effectively
-  // blank until the user finds "Fit world" themselves.
+  // blank until the user finds "Fit" themselves.
   //
   // Review fix (Task 12 review): this used to depend on [mapFilter, world]
   // alone and rely on mapFilter's IDENTITY not changing to make it "fire
@@ -1447,6 +1450,32 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
     snapPointerRef,
     isBlocked: () => contextMenu.menu !== null,
   });
+  const fitContext = useCallback(() => {
+    if (!context || !contextPlacement || !contextSize || !context.origin) return;
+    const view = fitWithBand({
+      pw: contextSize.width * TILE_PX + 2 * context.origin.x,
+      ph: contextSize.height * TILE_PX + 2 * context.origin.y,
+      vw: viewport.w || contextSize.width * TILE_PX + 2 * context.origin.x,
+      vh: viewport.h || contextSize.height * TILE_PX + 2 * context.origin.y,
+      levels: ZOOM_LEVELS,
+      bandNative: 0,
+      side: "left",
+    });
+    const next = worldViewFromMapView({
+      placement: contextPlacement,
+      view,
+      originX: context.origin.x,
+      originY: context.origin.y,
+    });
+    setZoom(next.zoom);
+    setPan(next.pan);
+  }, [context, contextPlacement, contextSize, viewport]);
+  const fit = useCallback(() => {
+    if (worldContext.inContext) fitContext();
+    else fitWorld();
+  }, [worldContext.inContext, fitContext, fitWorld]);
+  const fitEnabled = !worldContext.inContext || context?.origin !== null;
+  useFitShortcut(fit, fitEnabled);
 
   // A NATIVE listener with { passive: false }, not React's onWheel prop.
   // React attaches wheel listeners as passive by default (for scroll
@@ -1920,8 +1949,8 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
         </div>
         <div className="world-canvas__toolbar-group">
           <span className="world-canvas__zoom-readout">{Math.round((zoom / TILE_PX) * 100)}%</span>
-          <button type="button" className="map-canvas__btn" onClick={fitWorld}>
-            Fit world
+          <button type="button" className="map-canvas__btn" onClick={fit} disabled={!fitEnabled} title="Fit to screen (F)">
+            Fit
           </button>
         </div>
       </div>

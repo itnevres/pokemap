@@ -18,10 +18,13 @@ import { fetchGuarded } from "../hooks/useGuardedFetch.js";
 import { conflictBadgeOffsets } from "../world/conflictAcceptance.js";
 import { useConflictAcceptance } from "../world/useConflictAcceptance.js";
 import { WorldContextMenu, useWorldContextMenu } from "../components/WorldContextMenu.js";
-import type { MapView } from "../components/mapView.js";
+import { ZOOM_LEVELS, type MapView } from "../components/mapView.js";
 import { useWorldContext } from "../shared/useWorldContext.js";
 import { WorldContextOverlay } from "../shared/WorldContextOverlay.js";
 import type { GbcTimeOfDay } from "./time.js";
+import { useFitShortcut } from "../shared/useFitShortcut.js";
+import { fitWithBand } from "../encounters/fit.js";
+import { worldViewFromMapView } from "../world/contextView.js";
 
 /**
  * The GBC world view (Plan 6b Task 5, D1 manual placement). Mirrors `WorldCanvas.tsx`'s
@@ -229,7 +232,7 @@ export function initialFitBounds(world: { components: readonly Component[] }): B
   return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
 }
 
-/** The union of every placement's own bounds -- "Fit all" (Task 5 spec).
+/** The union of every placement's own bounds -- "Fit" (Task 5 spec).
  *  `null` for an empty world. */
 export function fitAllBounds(placements: Record<string, Placement>): Bounds | null {
   const list = Object.values(placements);
@@ -946,6 +949,32 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
     isBlocked: () => contextMenu.menu !== null,
   });
   const { inContext, contextView } = worldContext;
+  const fitContext = useCallback(() => {
+    if (!context || !validContextPlacement || !context.origin) return;
+    const view = fitWithBand({
+      pw: validContextPlacement.width * BLOCK_PX + 2 * context.origin.x,
+      ph: validContextPlacement.height * BLOCK_PX + 2 * context.origin.y,
+      vw: viewport.w || validContextPlacement.width * BLOCK_PX + 2 * context.origin.x,
+      vh: viewport.h || validContextPlacement.height * BLOCK_PX + 2 * context.origin.y,
+      levels: ZOOM_LEVELS,
+      bandNative: 0,
+      side: "left",
+    });
+    const next = worldViewFromMapView({
+      placement: validContextPlacement,
+      view,
+      originX: context.origin.x,
+      originY: context.origin.y,
+      native: BLOCK_PX,
+    });
+    setView((prev) => ({ ...prev, zoom: next.zoom, pan: next.pan }));
+  }, [context, validContextPlacement, viewport]);
+  const fit = useCallback(() => {
+    if (inContext) fitContext();
+    else fitAll();
+  }, [inContext, fitContext, fitAll]);
+  const fitEnabled = !inContext || context?.origin !== null;
+  useFitShortcut(fit, fitEnabled);
 
   // The world's zoom bounds: in context the cap is the 4x level (128 px per block); it never drops below the current
   // zoom, so a wheel-in there stays put instead of jumping down. Pure of `v`, so safe inside a setView updater.
@@ -1184,8 +1213,8 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
     <section className="world-canvas" aria-label="World canvas">
       <div className="world-canvas__toolbar">
         <div className="world-canvas__toolbar-group">
-          <button type="button" className="map-canvas__btn" onClick={fitAll} disabled={inContext}>
-            Fit all
+          <button type="button" className="map-canvas__btn" onClick={fit} disabled={!fitEnabled} title="Fit to screen (F)">
+            Fit
           </button>
         </div>
         <div className="world-canvas__toolbar-group">

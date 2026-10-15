@@ -6,6 +6,7 @@ import type { EventKind } from "@pokemap/core/src/edit/events.js";
 import type { MapLayoutData } from "../hooks/useMapLayout.js";
 import type { PaintApplyBody, UseEditSessionResult } from "../hooks/useEditSession.js";
 import { useStrokeChain } from "../shared/useStrokeChain.js";
+import { useFitShortcut } from "../shared/useFitShortcut.js";
 import type { SettledChain } from "../shared/useStrokeChain.js";
 import { readBlock, type Stamp } from "@pokemap/core/src/edit/paint.js";
 import type { CollisionElevation } from "./CollisionPalette.js";
@@ -444,6 +445,7 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
     });
     updateView({ zoom: z, pan: p });
   }, [pixelWidth, pixelHeight, viewport, encountersOn, side, updateView]);
+  useFitShortcut(fit, !chromeless);
 
   // Only the FIRST successful image load for a given mapName triggers fit()
   // -- a same-map reload triggered by a paint (imgLoaded cycling false->true
@@ -855,7 +857,7 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
               {z}×
             </button>
           ))}
-          <button type="button" className="map-canvas__btn" onClick={fit}>
+          <button type="button" className="map-canvas__btn" onClick={fit} title="Fit to screen (F)">
             Fit
           </button>
         </div>

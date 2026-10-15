@@ -4,6 +4,7 @@ import { StrictMode } from "react";
 import { FamilyApp } from "../../src/shell/FamilyApp.js";
 import { gbcAdapter } from "../../src/gbc/adapter.js";
 import type { GbcMapPayload } from "@pokemap/core/src/gbc/wire.js";
+import { fitWithBand } from "../../src/encounters/fit.js";
 
 // Plan 7 Task 5b: GBC in-context editing at the app level, the twin of AppContextEdit.test.tsx (6c E4). The World view's
 // double-click enters it, the editing chrome appears around the SAME world canvas, exits go through the dirty guard, and a
@@ -460,7 +461,7 @@ describe("GbcApp -- in-context editing (Plan 7 Task 5b)", () => {
     await waitFor(() => expect(status()).toContain("zoom 400%"));
     fireEvent.keyDown(canvas, { key: "-" });
     await waitFor(() => expect(status()).toContain("zoom 200%"));
-    expect((screen.getByRole("button", { name: "Fit all" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Fit" }) as HTMLButtonElement).disabled).toBe(false);
   });
 
   it("pending context consumes zoom keys without continuous zoom", async () => {
@@ -476,7 +477,7 @@ describe("GbcApp -- in-context editing (Plan 7 Task 5b)", () => {
       fireEvent.keyDown(canvas, { key });
       expect(status()).toBe(before);
     }
-    expect((screen.getByRole("button", { name: "Fit all" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Fit" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it.each(["rejection", "http", "shape"])("context payload %s is visible without remount, and exit permits recovery", async (kind) => {
@@ -593,6 +594,30 @@ describe("GbcApp -- in-context editing (Plan 7 Task 5b)", () => {
     expect(screen.getByRole("button", { name: "Pencil" }).getAttribute("aria-pressed")).toBe("true");
     expect(worldCanvas()).toBe(canvas);
     expect(document.querySelector(".app__map-editing-body")).toBe(body);
+  });
+
+  it("in-context Fit and F fit the map being edited, as Map view's Fit does (Plan 9 R5)", async () => {
+    await startApp();
+    const canvas = await enterWorld();
+    dblClickPort(canvas);
+    const stage = await overlayStage();
+    const expected = fitWithBand({ pw: 10 * 32 + 2 * 32, ph: 10 * 32 + 2 * 32, vw: 200, vh: 200, levels: [1, 2, 4], bandNative: 0, side: "left" });
+
+    fireEvent.keyDown(canvas, { key: "+" });
+    await waitFor(() => expect(status()).toContain("zoom 200%"));
+    fireEvent.keyDown(window, { key: "f" });
+    await waitFor(() => expect(status()).toContain(`zoom ${expected.zoom * 100}%`));
+    const worldRect = canvas.getBoundingClientRect();
+    const stageRect = stage.getBoundingClientRect();
+    expect(stageRect.left).toBeGreaterThanOrEqual(worldRect.left);
+    expect(stageRect.top).toBeGreaterThanOrEqual(worldRect.top);
+    expect(stageRect.right).toBeLessThanOrEqual(worldRect.right);
+    expect(stageRect.bottom).toBeLessThanOrEqual(worldRect.bottom);
+
+    fireEvent.keyDown(canvas, { key: "+" });
+    await waitFor(() => expect(status()).toContain("zoom 200%"));
+    fireEvent.click(screen.getByRole("button", { name: "Fit" }));
+    await waitFor(() => expect(status()).toContain(`zoom ${expected.zoom * 100}%`));
   });
 
 });
