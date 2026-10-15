@@ -45,6 +45,12 @@ describe("styles.css", () => {
     expect(ruleBody(".map-canvas")).toMatch(/min-width\s*:\s*0(px)?\s*(;|$)/);
   });
 
+  it(".toolbar wraps instead of overflowing (Plan 9 Task 12 F1)", () => {
+    const body = ruleBody(".toolbar");
+    expect(body).toMatch(/flex-wrap\s*:\s*wrap/);
+    expect(body).toMatch(/min-width\s*:\s*0(px)?\s*(;|$)/);
+  });
+
   it("keeps the shared hover right-aligned and ellipsising, with no margin-left: 0 or max-width on it", () => {
     const body = ruleBody(".map-canvas__hover");
     expect(body).toMatch(/text-overflow\s*:\s*ellipsis/);
