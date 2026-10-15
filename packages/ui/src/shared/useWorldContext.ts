@@ -1,9 +1,24 @@
-import { useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import type React from "react";
 import { ZOOM_LEVELS, zoomAboutPivot, type MapView, type Zoom } from "../components/mapView.js";
 import { enterContextView, mapViewFromWorld, snapContextZoom, worldViewFromMapView } from "../world/contextView.js";
 
 export interface ContextPlacement { x: number; y: number; width: number; height: number }
+
+type RegisterFit = (fit: (() => void) | null) => void;
+export const ContextMapFit = createContext<RegisterFit | null>(null);
+
+/** Register the map canvas's own Fit, preserving its exact composite size and viewport fallback. */
+export function useContextMapFit(fit: () => void, chromeless: boolean | undefined): void {
+  const register = useContext(ContextMapFit);
+  const latest = useRef(fit);
+  latest.current = fit;
+  useEffect(() => {
+    if (!register || !chromeless) return;
+    register(() => latest.current());
+    return () => register(null);
+  }, [register, chromeless]);
+}
 
 export interface UseWorldContextArgs {
   /** World px per unit at 1x: 16 (GBA tile) or 32 (GBC block). Required, no default. */
@@ -23,6 +38,9 @@ export interface UseWorldContextArgs {
 }
 
 export interface WorldContext {
+  registerFit: RegisterFit;
+  fit(): void;
+  fitEnabled: boolean;
   inContext: boolean;
   contextView: MapView | null;
   onContextViewChange(next: MapView): void;
@@ -41,6 +59,16 @@ export function useWorldContext(args: UseWorldContextArgs): WorldContext {
   const contextName = context?.map ?? null;
   const contextOrigin = context?.origin ?? null;
   const hasOrigin = contextOrigin !== null;
+  const mapFitRef = useRef<(() => void) | null>(null);
+  const [hasMapFit, setHasMapFit] = useState(false);
+  const registerFit = useCallback<RegisterFit>((fit) => {
+    mapFitRef.current = fit;
+    setHasMapFit(fit !== null);
+  }, []);
+  const fitEnabled = !!(placement && contextOrigin && hasMapFit);
+  const fit = () => {
+    if (fitEnabled) mapFitRef.current?.();
+  };
 
   // Snap once per entry: the context map's centre goes to the recorded pointer (canvas centre if none), at the nearest
   // of 1x/2x/4x. It waits for `context.origin` (the map's layout): the host mounts its editing chrome in that same
@@ -129,5 +157,5 @@ export function useWorldContext(args: UseWorldContextArgs): WorldContext {
     if (!inside) context?.onExitRequest();
   };
 
-  return { inContext, contextView, onContextViewChange, setContextZoom, stepZoom, overlayRef, onOverlayDoubleClick, maxWorldZoom: (base) => (inContext ? base * 4 : base) };
+  return { registerFit, fit, fitEnabled, inContext, contextView, onContextViewChange, setContextZoom, stepZoom, overlayRef, onOverlayDoubleClick, maxWorldZoom: (base) => (inContext ? base * 4 : base) };
 }

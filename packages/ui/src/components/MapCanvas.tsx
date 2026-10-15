@@ -7,6 +7,7 @@ import type { MapLayoutData } from "../hooks/useMapLayout.js";
 import type { PaintApplyBody, UseEditSessionResult } from "../hooks/useEditSession.js";
 import { useStrokeChain } from "../shared/useStrokeChain.js";
 import { useFitShortcut } from "../shared/useFitShortcut.js";
+import { useContextMapFit } from "../shared/useWorldContext.js";
 import type { SettledChain } from "../shared/useStrokeChain.js";
 import { readBlock, type Stamp } from "@pokemap/core/src/edit/paint.js";
 import type { CollisionElevation } from "./CollisionPalette.js";
@@ -431,6 +432,7 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
   }, [imageUrl]);
 
   const fit = useCallback(() => {
+    // Before the viewport is measured, use the composite's native dimensions.
     const vw = viewport.w || pixelWidth;
     const vh = viewport.h || pixelHeight;
     // Encounters on: the content is the image plus one band on the border's side, so the sprites fit too.
@@ -440,12 +442,14 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
       vw,
       vh,
       levels: ZOOM_LEVELS,
+      // Chromeless in-context maps cannot show encounters, so their band is 0.
       bandNative: encountersOn ? BORDER_BAND.gba * METATILE_PX : 0,
       side,
     });
     updateView({ zoom: z, pan: p });
   }, [pixelWidth, pixelHeight, viewport, encountersOn, side, updateView]);
   useFitShortcut(fit, !chromeless);
+  useContextMapFit(fit, chromeless);
 
   // Only the FIRST successful image load for a given mapName triggers fit()
   // -- a same-map reload triggered by a paint (imgLoaded cycling false->true

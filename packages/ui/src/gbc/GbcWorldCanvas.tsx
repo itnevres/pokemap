@@ -18,13 +18,11 @@ import { fetchGuarded } from "../hooks/useGuardedFetch.js";
 import { conflictBadgeOffsets } from "../world/conflictAcceptance.js";
 import { useConflictAcceptance } from "../world/useConflictAcceptance.js";
 import { WorldContextMenu, useWorldContextMenu } from "../components/WorldContextMenu.js";
-import { ZOOM_LEVELS, type MapView } from "../components/mapView.js";
-import { useWorldContext } from "../shared/useWorldContext.js";
+import type { MapView } from "../components/mapView.js";
+import { ContextMapFit, useWorldContext } from "../shared/useWorldContext.js";
 import { WorldContextOverlay } from "../shared/WorldContextOverlay.js";
 import type { GbcTimeOfDay } from "./time.js";
 import { useFitShortcut } from "../shared/useFitShortcut.js";
-import { fitWithBand } from "../encounters/fit.js";
-import { worldViewFromMapView } from "../world/contextView.js";
 
 /**
  * The GBC world view (Plan 6b Task 5, D1 manual placement). Mirrors `WorldCanvas.tsx`'s
@@ -949,31 +947,11 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
     isBlocked: () => contextMenu.menu !== null,
   });
   const { inContext, contextView } = worldContext;
-  const fitContext = useCallback(() => {
-    if (!context || !validContextPlacement || !context.origin) return;
-    const view = fitWithBand({
-      pw: validContextPlacement.width * BLOCK_PX + 2 * context.origin.x,
-      ph: validContextPlacement.height * BLOCK_PX + 2 * context.origin.y,
-      vw: viewport.w || validContextPlacement.width * BLOCK_PX + 2 * context.origin.x,
-      vh: viewport.h || validContextPlacement.height * BLOCK_PX + 2 * context.origin.y,
-      levels: ZOOM_LEVELS,
-      bandNative: 0,
-      side: "left",
-    });
-    const next = worldViewFromMapView({
-      placement: validContextPlacement,
-      view,
-      originX: context.origin.x,
-      originY: context.origin.y,
-      native: BLOCK_PX,
-    });
-    setView((prev) => ({ ...prev, zoom: next.zoom, pan: next.pan }));
-  }, [context, validContextPlacement, viewport]);
-  const fit = useCallback(() => {
-    if (inContext) fitContext();
+  const fit = () => {
+    if (worldContext.inContext) worldContext.fit();
     else fitAll();
-  }, [inContext, fitContext, fitAll]);
-  const fitEnabled = !inContext || context?.origin !== null;
+  };
+  const fitEnabled = !worldContext.inContext || worldContext.fitEnabled;
   useFitShortcut(fit, fitEnabled);
 
   // The world's zoom bounds: in context the cap is the 4x level (128 px per block); it never drops below the current
@@ -1385,7 +1363,7 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
               />
             </div>
           )}
-          {context && <WorldContextOverlay map={context.map} ctx={worldContext} renderCanvas={context.renderCanvas} onDone={() => context.onExitRequest()} />}
+          {context && <WorldContextOverlay map={context.map} ctx={worldContext} renderCanvas={(view, onViewChange) => <ContextMapFit.Provider value={worldContext.registerFit}>{context.renderCanvas(view, onViewChange)}</ContextMapFit.Provider>} onDone={() => context.onExitRequest()} />}
           {tooltip && (
             <div className="world-canvas__tooltip" style={{ left: tooltip.x + 12, top: tooltip.y + 12 }} role="tooltip">
               {tooltip.text}

@@ -385,29 +385,70 @@ describe("App -- in-context editing, fix round (Plan 6c E4)", () => {
   });
 
   it("in-context Fit and F fit the map being edited, as Map view's Fit does (Plan 9 R5)", async () => {
-    await startApp();
-    const canvas = await enterWorld();
-    dblClickRoute1(canvas);
-    await waitFor(() => expect(contextOverlay()?.querySelector("canvas.map-canvas__stage")).toBeTruthy());
-    const stage = contextOverlay()!.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
-    stage.getBoundingClientRect = () => RECT;
-    const expected = fitWithBand({ pw: 10 * 16 + 2 * 16, ph: 10 * 16 + 2 * 16, vw: 400, vh: 100, levels: [1, 2, 4], bandNative: 0, side: "left" });
-    const fittedReadout = `${expected.zoom * 100}%`;
+    const draws = new Map<HTMLCanvasElement, unknown[][]>();
+    const original = HTMLCanvasElement.prototype.getContext;
+    // @ts-expect-error -- drawing-command stub, narrower than the real overloads
+    HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, kind: string) {
+      if (kind !== "2d") return null;
+      const log = draws.get(this) ?? [];
+      draws.set(this, log);
+      return new Proxy({ imageSmoothingEnabled: true, drawImage: (...args: unknown[]) => { log.push(args); }, clearRect: vi.fn() } as Record<string, unknown>, {
+        get: (t, k) => (k in t ? t[k as string] : (t[k as string] = vi.fn())),
+      });
+    };
+    try {
+      await startApp();
+      const canvas = await enterWorld();
+      dblClickRoute1(canvas);
+      await waitFor(() => expect(contextOverlay()?.querySelector("canvas.map-canvas__stage")).toBeTruthy());
+      const stage = contextOverlay()!.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
+      // Resize after entry so the existing world's hit-test helper still uses its original viewport.
+      const viewport = 160;
+      Object.defineProperty(HTMLElement.prototype, "clientWidth", { value: viewport, configurable: true });
+      Object.defineProperty(HTMLElement.prototype, "clientHeight", { value: viewport, configurable: true });
+      fireEvent(window, new Event("resize"));
+      stage.getBoundingClientRect = () => ({ ...RECT, right: viewport, bottom: viewport, width: viewport, height: viewport });
+      // ROUTE1's payload is 2x2 metatiles with one 16px border tile on each side (64x64).
+      // Use the map payload, not WORLD's deliberately different 10x10 placement size.
+      const { layout } = ROUTE1;
+      const pw = (layout.width + 2 * layout.borderWidth) * 16;
+      const ph = (layout.height + 2 * layout.borderHeight) * 16;
+      const img = contextOverlay()!.querySelector("img.map-canvas__source-image") as HTMLImageElement;
+      Object.defineProperties(img, {
+        complete: { configurable: true, value: true },
+        naturalWidth: { configurable: true, value: pw },
+        naturalHeight: { configurable: true, value: ph },
+      });
+      fireEvent.load(img);
+      const expected = fitWithBand({ pw, ph, vw: viewport, vh: viewport, levels: [1, 2, 4], bandNative: 0, side: "left" });
+      expect(expected.zoom).toBeGreaterThan(1);
+      const fittedReadout = `${expected.zoom * 100}%`;
+      const readout = () => document.querySelector(".world-canvas__zoom-readout")!.textContent;
+      const assertFit = async () => {
+        await waitFor(() => {
+          expect(readout()).toBe(fittedReadout);
+          const draw = draws.get(stage)?.at(-1);
+          expect(draw).toBeTruthy();
+          expect(Math.abs(Number(draw![5]) - expected.pan.x)).toBeLessThanOrEqual(1);
+          expect(Math.abs(Number(draw![6]) - expected.pan.y)).toBeLessThanOrEqual(1);
+          expect(draw![7]).toBe(pw * expected.zoom);
+          expect(draw![8]).toBe(ph * expected.zoom);
+        });
+      };
 
-    fireEvent.wheel(stage, { deltaY: -100, clientX: 200, clientY: 50 });
-    await waitFor(() => expect(document.querySelector(".world-canvas__zoom-readout")!.textContent).not.toBe(fittedReadout));
-    fireEvent.keyDown(window, { key: "f" });
-    await waitFor(() => expect(document.querySelector(".world-canvas__zoom-readout")!.textContent).toBe(fittedReadout));
-    const worldRect = canvas.getBoundingClientRect();
-    const stageRect = stage.getBoundingClientRect();
-    expect(stageRect.left).toBeGreaterThanOrEqual(worldRect.left);
-    expect(stageRect.top).toBeGreaterThanOrEqual(worldRect.top);
-    expect(stageRect.right).toBeLessThanOrEqual(worldRect.right);
-    expect(stageRect.bottom).toBeLessThanOrEqual(worldRect.bottom);
+      // Entry snaps to 1x; two wheel ticks reach 4x, beyond the expected 2x fit.
+      fireEvent.wheel(stage, { deltaY: -100, clientX: 50, clientY: 50 });
+      fireEvent.wheel(stage, { deltaY: -100, clientX: 50, clientY: 50 });
+      await waitFor(() => expect(readout()).toBe("400%"));
+      fireEvent.keyDown(window, { key: "f" });
+      await assertFit();
 
-    fireEvent.wheel(stage, { deltaY: -100, clientX: 200, clientY: 50 });
-    await waitFor(() => expect(document.querySelector(".world-canvas__zoom-readout")!.textContent).not.toBe(fittedReadout));
-    fireEvent.click(screen.getByRole("button", { name: "Fit" }));
-    await waitFor(() => expect(document.querySelector(".world-canvas__zoom-readout")!.textContent).toBe(fittedReadout));
+      fireEvent.wheel(stage, { deltaY: -100, clientX: 50, clientY: 50 });
+      await waitFor(() => expect(readout()).not.toBe(fittedReadout));
+      fireEvent.click(screen.getByRole("button", { name: "Fit" }));
+      await assertFit();
+    } finally {
+      HTMLCanvasElement.prototype.getContext = original;
+    }
   });
 });

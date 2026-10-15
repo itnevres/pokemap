@@ -16,12 +16,10 @@ import { isDrawnByDefault } from "../world/visibility.js";
 import { conflictBadgeOffsets, isRecord, isWireConflict } from "../world/conflictAcceptance.js";
 import { useConflictAcceptance } from "../world/useConflictAcceptance.js";
 import { WorldContextMenu, useWorldContextMenu } from "./WorldContextMenu.js";
-import { ZOOM_LEVELS, type MapView } from "./mapView.js";
-import { useWorldContext } from "../shared/useWorldContext.js";
+import type { MapView } from "./mapView.js";
+import { ContextMapFit, useWorldContext } from "../shared/useWorldContext.js";
 import { WorldContextOverlay } from "../shared/WorldContextOverlay.js";
 import { useFitShortcut } from "../shared/useFitShortcut.js";
-import { fitWithBand } from "../encounters/fit.js";
-import { worldViewFromMapView } from "../world/contextView.js";
 
 /** The pixel size a placement's PNG renders at natively (`renderLayout`,
  *  border 0): 16px per tile, same constant the CLI's `render-world --scale
@@ -1450,31 +1448,11 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
     snapPointerRef,
     isBlocked: () => contextMenu.menu !== null,
   });
-  const fitContext = useCallback(() => {
-    if (!context || !contextPlacement || !contextSize || !context.origin) return;
-    const view = fitWithBand({
-      pw: contextSize.width * TILE_PX + 2 * context.origin.x,
-      ph: contextSize.height * TILE_PX + 2 * context.origin.y,
-      vw: viewport.w || contextSize.width * TILE_PX + 2 * context.origin.x,
-      vh: viewport.h || contextSize.height * TILE_PX + 2 * context.origin.y,
-      levels: ZOOM_LEVELS,
-      bandNative: 0,
-      side: "left",
-    });
-    const next = worldViewFromMapView({
-      placement: contextPlacement,
-      view,
-      originX: context.origin.x,
-      originY: context.origin.y,
-    });
-    setZoom(next.zoom);
-    setPan(next.pan);
-  }, [context, contextPlacement, contextSize, viewport]);
-  const fit = useCallback(() => {
-    if (worldContext.inContext) fitContext();
+  const fit = () => {
+    if (worldContext.inContext) worldContext.fit();
     else fitWorld();
-  }, [worldContext.inContext, fitContext, fitWorld]);
-  const fitEnabled = !worldContext.inContext || context?.origin !== null;
+  };
+  const fitEnabled = !worldContext.inContext || worldContext.fitEnabled;
   useFitShortcut(fit, fitEnabled);
 
   // A NATIVE listener with { passive: false }, not React's onWheel prop.
@@ -2102,7 +2080,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
               )}
             </div>
           )}
-          {context && <WorldContextOverlay map={context.map} ctx={worldContext} renderCanvas={context.renderCanvas} onDone={() => context.onExitRequest()} />}
+          {context && <WorldContextOverlay map={context.map} ctx={worldContext} renderCanvas={(view, onViewChange) => <ContextMapFit.Provider value={worldContext.registerFit}>{context.renderCanvas(view, onViewChange)}</ContextMapFit.Provider>} onDone={() => context.onExitRequest()} />}
           {tooltip && (
             <div className="world-canvas__tooltip" style={{ left: tooltip.x + 12, top: tooltip.y + 12 }} role="tooltip">
               {tooltip.text}

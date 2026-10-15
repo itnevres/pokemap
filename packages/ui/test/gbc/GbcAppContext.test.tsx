@@ -597,27 +597,69 @@ describe("GbcApp -- in-context editing (Plan 7 Task 5b)", () => {
   });
 
   it("in-context Fit and F fit the map being edited, as Map view's Fit does (Plan 9 R5)", async () => {
-    await startApp();
-    const canvas = await enterWorld();
-    dblClickPort(canvas);
-    const stage = await overlayStage();
-    const expected = fitWithBand({ pw: 10 * 32 + 2 * 32, ph: 10 * 32 + 2 * 32, vw: 200, vh: 200, levels: [1, 2, 4], bandNative: 0, side: "left" });
+    const draws = new Map<HTMLCanvasElement, unknown[][]>();
+    const original = HTMLCanvasElement.prototype.getContext;
+    // @ts-expect-error -- drawing-command stub, narrower than the real overloads
+    HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, kind: string) {
+      if (kind !== "2d") return null;
+      const log = draws.get(this) ?? [];
+      draws.set(this, log);
+      return new Proxy({ imageSmoothingEnabled: true, drawImage: (...args: unknown[]) => { log.push(args); }, clearRect: vi.fn() } as Record<string, unknown>, {
+        get: (t, k) => (k in t ? t[k as string] : (t[k as string] = vi.fn())),
+      });
+    };
+    try {
+      await startApp();
+      const canvas = await enterWorld();
+      dblClickPort(canvas);
+      await waitFor(() => expect(contextOverlay()?.querySelector("canvas.map-canvas__stage")).toBeTruthy());
+      const stage = contextOverlay()!.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
+      // Resize after entry so the existing world's hit-test helper still uses its original viewport.
+      const viewport = 900;
+      Object.defineProperty(HTMLElement.prototype, "clientWidth", { value: viewport, configurable: true });
+      Object.defineProperty(HTMLElement.prototype, "clientHeight", { value: viewport, configurable: true });
+      fireEvent(window, new Event("resize"));
+      stage.getBoundingClientRect = () => ({ ...RECT, right: viewport, bottom: viewport, width: viewport, height: viewport });
+      // Fixture payload: 10x10 blocks plus a one-block ring on each side, 32 px/block.
+      const { layout } = payload("OlivinePort");
+      const pw = (layout.width + 2) * 32, ph = (layout.height + 2) * 32;
+      const img = contextOverlay()!.querySelector("img.map-canvas__source-image") as HTMLImageElement;
+      Object.defineProperties(img, {
+        complete: { configurable: true, value: true },
+        naturalWidth: { configurable: true, value: pw },
+        naturalHeight: { configurable: true, value: ph },
+      });
+      fireEvent.load(img);
+      const expected = fitWithBand({ pw, ph, vw: viewport, vh: viewport, levels: [1, 2, 4], bandNative: 0, side: "left" });
+      expect(expected.zoom).toBeGreaterThan(1);
+      const fittedReadout = `${expected.zoom * 100}%`;
+      const readout = () => /zoom (\d+%)/.exec(status())?.[1];
+      const assertFit = async () => {
+        await waitFor(() => {
+          expect(readout()).toBe(fittedReadout);
+          const draw = draws.get(stage)?.at(-1);
+          expect(draw).toBeTruthy();
+          expect(Math.abs(Number(draw![5]) - expected.pan.x)).toBeLessThanOrEqual(1);
+          expect(Math.abs(Number(draw![6]) - expected.pan.y)).toBeLessThanOrEqual(1);
+          expect(draw![7]).toBe(pw * expected.zoom);
+          expect(draw![8]).toBe(ph * expected.zoom);
+        });
+      };
 
-    fireEvent.keyDown(canvas, { key: "+" });
-    await waitFor(() => expect(status()).toContain("zoom 200%"));
-    fireEvent.keyDown(window, { key: "f" });
-    await waitFor(() => expect(status()).toContain(`zoom ${expected.zoom * 100}%`));
-    const worldRect = canvas.getBoundingClientRect();
-    const stageRect = stage.getBoundingClientRect();
-    expect(stageRect.left).toBeGreaterThanOrEqual(worldRect.left);
-    expect(stageRect.top).toBeGreaterThanOrEqual(worldRect.top);
-    expect(stageRect.right).toBeLessThanOrEqual(worldRect.right);
-    expect(stageRect.bottom).toBeLessThanOrEqual(worldRect.bottom);
+      // Entry snaps to 1x; two wheel ticks reach 4x, beyond the expected 2x fit.
+      fireEvent.wheel(stage, { deltaY: -100, clientX: 50, clientY: 50 });
+      fireEvent.wheel(stage, { deltaY: -100, clientX: 50, clientY: 50 });
+      await waitFor(() => expect(readout()).toBe("400%"));
+      fireEvent.keyDown(window, { key: "f" });
+      await assertFit();
 
-    fireEvent.keyDown(canvas, { key: "+" });
-    await waitFor(() => expect(status()).toContain("zoom 200%"));
-    fireEvent.click(screen.getByRole("button", { name: "Fit" }));
-    await waitFor(() => expect(status()).toContain(`zoom ${expected.zoom * 100}%`));
+      fireEvent.wheel(stage, { deltaY: -100, clientX: 50, clientY: 50 });
+      await waitFor(() => expect(readout()).not.toBe(fittedReadout));
+      fireEvent.click(screen.getByRole("button", { name: "Fit" }));
+      await assertFit();
+    } finally {
+      HTMLCanvasElement.prototype.getContext = original;
+    }
   });
 
 });
