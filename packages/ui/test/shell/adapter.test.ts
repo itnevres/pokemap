@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { GBA_CAPABILITIES, GBC_CAPABILITIES, toolsFor, ALL_TOOLS } from "../../src/shell/adapter.js";
 import { gbaAdapter } from "../../src/gba/adapter.js";
+import { gbcAdapter } from "../../src/gbc/adapter.js";
 
 describe("capabilities (Plan 9)", () => {
   it("pins every GBA flag", () => {
@@ -29,5 +30,13 @@ describe("gbaAdapter (Plan 9)", () => {
     expect(gbaAdapter.family).toBe("gba");
     expect(gbaAdapter.label).toBeNull();
     expect(gbaAdapter.capabilities).toBe(GBA_CAPABILITIES);
+  });
+});
+
+describe("gbcAdapter (Plan 9)", () => {
+  it("is the GBC family labelled Crystal with GBC's capabilities", () => {
+    expect(gbcAdapter.family).toBe("gbc");
+    expect(gbcAdapter.label).toBe("Crystal");
+    expect(gbcAdapter.capabilities).toBe(GBC_CAPABILITIES);
   });
 });
