@@ -135,7 +135,7 @@ const dblClickPort = (canvas: HTMLCanvasElement) => fireEvent.doubleClick(canvas
 async function dirtyCityInMapView() {
   fireEvent.click(screen.getByText("OlivineCity"));
   await waitFor(() => expect(screen.getByText(/tileset TILESET_OLIVINE/)).toBeTruthy());
-  fireEvent.click(screen.getByRole("button", { name: "pencil" }));
+  fireEvent.click(screen.getByRole("button", { name: "Pencil" }));
   fireEvent.click(screen.getByLabelText("metatile 0x1"));
   const stage = document.querySelector("canvas.map-canvas__stage")!;
   fireEvent.mouseDown(stage, { clientX: 40, clientY: 40, button: 0 });
@@ -531,7 +531,7 @@ describe("GbcApp -- in-context editing (Plan 7 Task 5b)", () => {
     const canvas = await enterWorld();
     dblClickPort(canvas);
     const stage = await overlayStage();
-    fireEvent.click(screen.getByRole("button", { name: "pencil" }));
+    fireEvent.click(screen.getByRole("button", { name: "Pencil" }));
     fireEvent.click(screen.getByLabelText("metatile 0x1"));
     expect(screen.queryByTestId("dirty-indicator")).toBeNull();
     calls.length = 0;
@@ -575,7 +575,7 @@ describe("GbcApp -- in-context editing (Plan 7 Task 5b)", () => {
     dblClickPort(canvas);
     await overlayStage();
     const body = document.querySelector(".app__map-editing-body");
-    fireEvent.click(screen.getByRole("button", { name: "pencil" }));
+    fireEvent.click(screen.getByRole("button", { name: "Pencil" }));
     fireEvent.click(screen.getByLabelText("metatile 0x1"));
     expect(screen.getByLabelText("metatile 0x1").getAttribute("aria-current")).toBe("true"); // positive control
     fireEvent.click(screen.getByRole("button", { name: "OlivineCity" }));
@@ -590,7 +590,7 @@ describe("GbcApp -- in-context editing (Plan 7 Task 5b)", () => {
     fireEvent.doubleClick(canvas, { clientX: 100, clientY: 100 });
     await overlayStage();
     expect(screen.getByLabelText("metatile 0x1").getAttribute("aria-current")).not.toBe("true");
-    expect(screen.getByRole("button", { name: "pencil" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "Pencil" }).getAttribute("aria-pressed")).toBe("true");
     expect(worldCanvas()).toBe(canvas);
     expect(document.querySelector(".app__map-editing-body")).toBe(body);
   });

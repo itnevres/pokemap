@@ -10,9 +10,10 @@ import type { UseGbcEditSessionResult } from "./hooks/useGbcEditSession.js";
 import type { GbcTimeOfDay } from "./time.js";
 import { EditingWorkspace } from "../shared/EditingWorkspace.js";
 import { useVisit } from "../shared/useVisit.js";
+import { GBC_CAPABILITIES, toolsFor } from "../shell/adapter.js";
 
 /** No collision button (Plan 7 Goal: GBC collision is per metatile, not per block) and no sign composer. */
-export const GBC_TOOLS: ToolKind[] = ["pencil", "rect", "bucket", "dropper", "shift"];
+export const GBC_TOOLS: ToolKind[] = toolsFor(GBC_CAPABILITIES);
 
 const message = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback);
 

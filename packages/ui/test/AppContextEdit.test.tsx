@@ -343,7 +343,7 @@ describe("App -- in-context editing, fix round (Plan 6c E4)", () => {
     await waitFor(() => expect(contextOverlay()!.querySelector("canvas.map-canvas__stage")).not.toBeNull());
     const stage = contextOverlay()!.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
 
-    fireEvent.click(screen.getByRole("button", { name: "pencil" }));
+    fireEvent.click(screen.getByRole("button", { name: "Pencil" }));
     await waitFor(() => expect(screen.getByPlaceholderText(/search/i)).toBeTruthy());
     const picked = screen.getByRole("button", { name: /metatile 0x1\b/i }) as HTMLButtonElement;
     fireEvent.click(picked);

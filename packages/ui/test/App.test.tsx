@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, act, within } from "@testing-library/react";
 import { FamilyApp } from "../src/shell/FamilyApp.js";
 import { gbaAdapter } from "../src/gba/adapter.js";
 
@@ -381,8 +381,8 @@ async function renderAppInEditModeWithDirtySession() {
   await waitFor(() => expect(screen.getByRole("button", { name: "PalletTown" })).toBeTruthy());
   fireEvent.click(screen.getByRole("button", { name: "PalletTown" }));
 
-  await screen.findByRole("button", { name: "collision" });
-  fireEvent.click(screen.getByRole("button", { name: "collision" }));
+  await within(await screen.findByRole("group", { name: "Tools" })).findByRole("button", { name: "Collision" });
+  fireEvent.click(within(screen.getByRole("group", { name: "Tools" })).getByRole("button", { name: "Collision" }));
 
   const canvas = document.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
   await act(async () => {
@@ -444,7 +444,7 @@ describe("App -- Task 13 save flow", () => {
     render(<FamilyApp adapter={gbaAdapter} />);
     await waitFor(() => expect(screen.getByText("PalletTown")).toBeTruthy());
     fireEvent.click(screen.getByText("PalletTown"));
-    await screen.findByRole("button", { name: "collision" }); // MapCanvas is mounted, nothing painted
+    await within(await screen.findByRole("group", { name: "Tools" })).findByRole("button", { name: "Collision" }); // MapCanvas is mounted, nothing painted
 
     expect(addSpy).not.toHaveBeenCalledWith("beforeunload", expect.any(Function));
 
@@ -490,8 +490,8 @@ describe("App -- metatile palette wiring", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "PalletTown" })).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: "PalletTown" }));
 
-    await screen.findByRole("button", { name: "pencil" });
-    fireEvent.click(screen.getByRole("button", { name: "pencil" }));
+    await screen.findByRole("button", { name: "Pencil" });
+    fireEvent.click(screen.getByRole("button", { name: "Pencil" }));
 
     // MetatilePalette is now mounted -- its own search input is a
     // distinguishing marker, same query MetatilePalette.test.tsx itself uses.
@@ -526,8 +526,8 @@ describe("App -- metatile palette wiring", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "PalletTown" })).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: "PalletTown" }));
 
-    await screen.findByRole("button", { name: "pencil" });
-    fireEvent.click(screen.getByRole("button", { name: "pencil" }));
+    await screen.findByRole("button", { name: "Pencil" });
+    fireEvent.click(screen.getByRole("button", { name: "Pencil" }));
     await waitFor(() => expect(screen.getByPlaceholderText(/search/i)).toBeTruthy());
 
     const picked = screen.getByRole("button", { name: /metatile 0x1\b/i }) as HTMLButtonElement;
@@ -550,13 +550,13 @@ describe("App -- metatile palette wiring", () => {
     render(<FamilyApp adapter={gbaAdapter} />);
     await waitFor(() => expect(screen.getByRole("button", { name: "PalletTown" })).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: "PalletTown" }));
-    fireEvent.click(await screen.findByRole("button", { name: "pencil" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Pencil" }));
     fireEvent.click(await screen.findByRole("button", { name: /metatile 0x1\b/i }));
 
     fireEvent.click(screen.getByRole("button", { name: "World" }));
     fireEvent.click(screen.getByRole("button", { name: "Map" }));
 
-    await waitFor(() => expect(screen.getByRole("button", { name: "pencil" }).getAttribute("aria-pressed")).toBe("true"));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Pencil" }).getAttribute("aria-pressed")).toBe("true"));
     expect(screen.getByRole("button", { name: /metatile 0x1\b/i }).getAttribute("aria-pressed")).toBe("true");
     vi.unstubAllGlobals();
   });
@@ -569,13 +569,13 @@ describe("App -- metatile palette wiring", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "PalletTown" })).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: "PalletTown" }));
 
-    await screen.findByRole("button", { name: "pencil" });
-    fireEvent.click(screen.getByRole("button", { name: "pencil" }));
+    await screen.findByRole("button", { name: "Pencil" });
+    fireEvent.click(screen.getByRole("button", { name: "Pencil" }));
     await waitFor(() => expect(screen.getByPlaceholderText(/search/i)).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: /metatile 0x1\b/i }));
 
     // Switch straight to bucket -- deliberately no fresh metatile pick here.
-    fireEvent.click(screen.getByRole("button", { name: "bucket" }));
+    fireEvent.click(screen.getByRole("button", { name: "Bucket" }));
     await waitFor(() => expect(screen.getByPlaceholderText(/search/i)).toBeTruthy());
 
     const canvas = document.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
@@ -604,8 +604,8 @@ describe("App -- metatile palette wiring", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "PalletTown" })).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: "PalletTown" }));
 
-    await screen.findByRole("button", { name: "pencil" });
-    fireEvent.click(screen.getByRole("button", { name: "pencil" }));
+    await screen.findByRole("button", { name: "Pencil" });
+    fireEvent.click(screen.getByRole("button", { name: "Pencil" }));
     await waitFor(() => expect(screen.getByPlaceholderText(/search/i)).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: /metatile 0x1\b/i }));
 
@@ -723,8 +723,8 @@ describe("App -- dropper/shift tool wiring", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "PalletTown" })).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: "PalletTown" }));
 
-    const dropperBtn = await screen.findByRole("button", { name: "dropper" });
-    const shiftBtn = await screen.findByRole("button", { name: "shift" });
+    const dropperBtn = await screen.findByRole("button", { name: "Dropper" });
+    const shiftBtn = await screen.findByRole("button", { name: "Shift" });
     expect(dropperBtn.hasAttribute("disabled")).toBe(false);
     expect(shiftBtn.hasAttribute("disabled")).toBe(false);
     expect(dropperBtn.getAttribute("title")).not.toBe("Not yet available");
@@ -741,8 +741,8 @@ describe("App -- dropper/shift tool wiring", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "PalletTown" })).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: "PalletTown" }));
 
-    await screen.findByRole("button", { name: "dropper" });
-    fireEvent.click(screen.getByRole("button", { name: "dropper" }));
+    await screen.findByRole("button", { name: "Dropper" });
+    fireEvent.click(screen.getByRole("button", { name: "Dropper" }));
 
     const canvas = document.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
     // Block (1,1) of PALLET_TOWN_LAYOUT (2x2, border 1, origin 16): composite
@@ -759,7 +759,7 @@ describe("App -- dropper/shift tool wiring", () => {
 
     // Switch straight to pencil -- no MetatilePalette click, activeTool must
     // already resolve from the stamp the dropper just set.
-    fireEvent.click(screen.getByRole("button", { name: "pencil" }));
+    fireEvent.click(screen.getByRole("button", { name: "Pencil" }));
 
     await act(async () => {
       fireEvent.mouseDown(canvas, { clientX: 20, clientY: 20, button: 0 }); // block (0,0)
@@ -782,8 +782,8 @@ describe("App -- dropper/shift tool wiring", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "PalletTown" })).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: "PalletTown" }));
 
-    await screen.findByRole("button", { name: "shift" });
-    fireEvent.click(screen.getByRole("button", { name: "shift" }));
+    await screen.findByRole("button", { name: "Shift" });
+    fireEvent.click(screen.getByRole("button", { name: "Shift" }));
 
     const canvas = document.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
     await act(async () => {
@@ -869,8 +869,8 @@ describe("App -- discard flow", () => {
     await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
 
     // Dirty the session via a real paint so Discard Changes is enabled.
-    await screen.findByRole("button", { name: "collision" });
-    fireEvent.click(screen.getByRole("button", { name: "collision" }));
+    await within(await screen.findByRole("group", { name: "Tools" })).findByRole("button", { name: "Collision" });
+    fireEvent.click(within(screen.getByRole("group", { name: "Tools" })).getByRole("button", { name: "Collision" }));
     const canvas = document.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
     await act(async () => {
       fireEvent.mouseDown(canvas, { clientX: 20, clientY: 20, button: 0 });

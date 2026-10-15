@@ -135,7 +135,7 @@ it("M5: Done waits for held paint/apply before deciding the dirty exit", async (
   const canvas = await enterWorld();
   dblClickPort(canvas);
   const stage = await overlayStage();
-  fireEvent.click(screen.getByRole("button", { name: "pencil" }));
+  fireEvent.click(screen.getByRole("button", { name: "Pencil" }));
   fireEvent.click(screen.getByLabelText("metatile 0x1"));
   fireEvent.mouseDown(stage, { clientX: 134, clientY: 52, button: 0 });
   fireEvent.mouseUp(stage, { clientX: 134, clientY: 52, button: 0 });

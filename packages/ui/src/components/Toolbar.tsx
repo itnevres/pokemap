@@ -1,8 +1,13 @@
 import "../styles.css";
+import { TOOL_ICONS } from "./toolIcons.js";
 
 export type ToolKind = "pencil" | "rect" | "bucket" | "dropper" | "shift" | "collision";
 
 const TOOLS: ToolKind[] = ["pencil", "rect", "bucket", "dropper", "shift", "collision"];
+
+export const TOOL_LABEL: Record<ToolKind, string> = { pencil: "Pencil", rect: "Rect", bucket: "Bucket", dropper: "Dropper", shift: "Shift", collision: "Collision" };
+/** Plan 9 (R1): the shortcut letter shown in each tool's tooltip; Toolbar's keydown listener reads the same table. */
+export const TOOL_KEY: Record<ToolKind, string> = { pencil: "P", rect: "R", bucket: "B", dropper: "I", shift: "S", collision: "C" };
 
 export interface ToolbarProps {
   activeToolKind: ToolKind | null;
@@ -61,23 +66,23 @@ export function Toolbar({ activeToolKind, onSelectTool, isDirty, onUndo, onRedo,
             <button
               key={kind}
               type="button"
-              aria-label={kind}
               aria-pressed={activeToolKind === kind}
               disabled={!available}
-              title={available ? undefined : unavailableTitle}
+              title={available ? `${TOOL_LABEL[kind]} (${TOOL_KEY[kind]})` : unavailableTitle}
               className="map-canvas__btn toolbar__tool-btn"
               onClick={() => onSelectTool(kind)}
             >
-              {kind}
+              {TOOL_ICONS[kind]}
+              <span>{TOOL_LABEL[kind]}</span>
             </button>
           );
         })}
       </div>
       <div className="toolbar__history" role="group" aria-label="History">
-        <button type="button" aria-label="Undo" onClick={onUndo} disabled={!canUndo} className="map-canvas__btn">
+        <button type="button" aria-label="Undo" title="Undo (Ctrl+Z)" onClick={onUndo} disabled={!canUndo} className="map-canvas__btn">
           ↶ Undo
         </button>
-        <button type="button" aria-label="Redo" onClick={onRedo} disabled={!canRedo} className="map-canvas__btn">
+        <button type="button" aria-label="Redo" title="Redo (Ctrl+Y)" onClick={onRedo} disabled={!canRedo} className="map-canvas__btn">
           ↷ Redo
         </button>
       </div>

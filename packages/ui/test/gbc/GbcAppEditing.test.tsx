@@ -63,7 +63,7 @@ async function openCity() {
 }
 
 async function paintOnce() {
-  fireEvent.click(screen.getByRole("button", { name: "pencil" }));
+  fireEvent.click(screen.getByRole("button", { name: "Pencil" }));
   fireEvent.click(screen.getByLabelText("metatile 0x1"));
   const canvas = document.querySelector("canvas.map-canvas__stage")!;
   fireEvent.mouseDown(canvas, { clientX: 40, clientY: 40, button: 0 });
@@ -145,12 +145,12 @@ describe("GbcApp editing (Plan 7 Task 5)", () => {
     mockFetch({ OlivineCity: payload("OlivineCity") });
     render(<FamilyApp adapter={gbcAdapter} />);
     await openCity();
-    fireEvent.click(screen.getByRole("button", { name: "pencil" }));
-    expect(screen.getByRole("button", { name: "pencil" }).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "Pencil" }));
+    expect(screen.getByRole("button", { name: "Pencil" }).getAttribute("aria-pressed")).toBe("true");
 
     fireEvent.click(screen.getByRole("button", { name: "World" }));
     fireEvent.click(screen.getByRole("button", { name: "Map" }));
-    await waitFor(() => expect(screen.getByRole("button", { name: "pencil" }).getAttribute("aria-pressed")).toBe("false"));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Pencil" }).getAttribute("aria-pressed")).toBe("false"));
   });
 
   it("a clean session switches with no confirm", async () => {
@@ -195,7 +195,7 @@ describe("GbcApp editing (Plan 7 Task 5)", () => {
     });
     render(<FamilyApp adapter={gbcAdapter} />);
     await openCity();
-    for (const tool of ["pencil", "rect", "bucket", "dropper", "shift"]) {
+    for (const tool of ["Pencil", "Rect", "Bucket", "Dropper", "Shift"]) {
       const b = screen.getByRole("button", { name: tool }) as HTMLButtonElement;
       expect(b.disabled).toBe(true);
       expect(b.title).toContain("this map's .blk is flagged non-writable: maps/OlivineCity.blk: actual size 9 bytes");

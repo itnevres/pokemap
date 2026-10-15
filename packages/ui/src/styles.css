@@ -2284,12 +2284,15 @@ input {
   gap: var(--space-1);
 }
 
-/* .map-canvas__btn already supplies the base look (border, hover, aria-
-   pressed selected state); this just fixes the tool label's own casing --
-   ToolKind values ("pencil", "rect", ...) are lowercase identifiers, not
-   prose, but should still read as a normal button label. */
+/* Plan 9 (D5): icon + capitalised label. */
 .toolbar__tool-btn {
-  text-transform: capitalize;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.toolbar__icon {
+  flex: none;
 }
 
 .toolbar__save {

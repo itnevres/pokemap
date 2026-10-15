@@ -63,7 +63,7 @@ async function paintThenWorld() {
   await waitFor(() => expect(screen.getByText("OlivineCity")).toBeTruthy());
   fireEvent.click(screen.getByText("OlivineCity"));
   await waitFor(() => expect(screen.getByText(/tileset TILESET_OLIVINE/)).toBeTruthy());
-  fireEvent.click(screen.getByRole("button", { name: "pencil" }));
+  fireEvent.click(screen.getByRole("button", { name: "Pencil" }));
   fireEvent.click(screen.getByLabelText("metatile 0x1"));
   const canvas = document.querySelector("canvas.map-canvas__stage")!;
   fireEvent.mouseDown(canvas, { clientX: 40, clientY: 40, button: 0 });

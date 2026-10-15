@@ -122,7 +122,7 @@ describe("App -- in-context visits (Plan 8 Task 6)", () => {
     dblClickRoute1(canvas);
     await waitFor(() => expect(contextOverlay()!.querySelector("canvas.map-canvas__stage")).not.toBeNull());
     const body = document.querySelector(".app__map-editing-body");
-    fireEvent.click(screen.getByRole("button", { name: "pencil" }));
+    fireEvent.click(screen.getByRole("button", { name: "Pencil" }));
     const picked = await screen.findByRole("button", { name: /metatile 0x1\b/i });
     fireEvent.click(picked);
     await waitFor(() => expect(picked.getAttribute("aria-pressed")).toBe("true")); // positive control
@@ -135,7 +135,7 @@ describe("App -- in-context visits (Plan 8 Task 6)", () => {
     await waitFor(() => expect(contextOverlay()!.querySelector("canvas.map-canvas__stage")).not.toBeNull());
 
     expect(screen.getByRole("button", { name: /metatile 0x1\b/i }).getAttribute("aria-pressed")).not.toBe("true");
-    expect(screen.getByRole("button", { name: "pencil" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "Pencil" }).getAttribute("aria-pressed")).toBe("true");
     expect(worldCanvas()).toBe(canvas);
     expect(document.querySelector(".app__map-editing-body")).toBe(body);
   });

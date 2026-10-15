@@ -105,7 +105,7 @@ describe("App -- selection resets", () => {
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
     await openPalletTown();
 
-    fireEvent.click(screen.getByRole("button", { name: "pencil" }));
+    fireEvent.click(screen.getByRole("button", { name: "Pencil" }));
     await waitFor(() => expect(screen.getByPlaceholderText(/search/i)).toBeTruthy());
     const picked = screen.getByRole("button", { name: /metatile 0x1\b/i }) as HTMLButtonElement;
     fireEvent.click(picked);

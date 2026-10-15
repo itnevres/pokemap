@@ -8,6 +8,7 @@ import type { UseEditSessionResult } from "../hooks/useEditSession.js";
 import type { MapLayoutData } from "../hooks/useMapLayout.js";
 import type { useMapEditing } from "../hooks/useMapEditing.js";
 import { EditingWorkspace } from "../shared/EditingWorkspace.js";
+import { GBA_CAPABILITIES, toolsFor } from "../shell/adapter.js";
 
 /** The props the workspace builds for the canvas it hosts -- exactly what
  *  `App` passed to `MapCanvas` before the extraction (the controlled
@@ -84,13 +85,14 @@ export function MapEditingWorkspace({ active = true, mapName, data, editSession,
         canRedo={editSession.canRedo}
         onOpenSave={() => setSaveDialogOpen(true)}
         onDiscard={handleDiscard}
-        onOpenSignComposer={() => setSignComposerOpen(true)}
         // Code-review fix: only tools actually wired to MapCanvas
         // may render enabled (see `activeTool`'s own doc comment in
         // useMapEditing.ts) -- everything else must render visibly disabled,
         // not clickable-but-silently-inert. All six tools are now
         // wired.
-        availableTools={["collision", "pencil", "rect", "bucket", "dropper", "shift"]}
+        tools={toolsFor(GBA_CAPABILITIES)}
+        availableTools={toolsFor(GBA_CAPABILITIES)}
+        onOpenSignComposer={GBA_CAPABILITIES.addSign ? () => setSignComposerOpen(true) : undefined}
       />
       {/* Review fix: a failed move/add/delete used to be an
           unhandled rejection with zero visible signal -- reuses

@@ -134,7 +134,7 @@ it("M5: Done waits for held paint/apply before deciding the dirty exit", async (
   await waitFor(() => expect(contextOverlay()?.querySelector("canvas.map-canvas__stage")).toBeTruthy());
   const stage = contextOverlay()!.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
   stage.getBoundingClientRect = () => ({ ...RECT, left: 100, top: 100 });
-  fireEvent.click(screen.getByRole("button", { name: "pencil" }));
+  fireEvent.click(screen.getByRole("button", { name: "Pencil" }));
   fireEvent.click(await screen.findByRole("button", { name: /metatile 0x1\b/i }));
   fireEvent.mouseDown(stage, { clientX: 44, clientY: 33, button: 0 });
   fireEvent.mouseUp(stage, { clientX: 44, clientY: 33, button: 0 });
@@ -168,7 +168,7 @@ it("dirty Map and Dungeon mode switches leave context without prompting and pres
   await waitFor(() => expect(contextOverlay()?.querySelector("canvas.map-canvas__stage")).toBeTruthy());
   const stage = contextOverlay()!.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
   stage.getBoundingClientRect = () => ({ ...RECT, left: 100, top: 100 });
-  fireEvent.click(screen.getByRole("button", { name: "pencil" }));
+  fireEvent.click(screen.getByRole("button", { name: "Pencil" }));
   fireEvent.click(await screen.findByRole("button", { name: /metatile 0x1\b/i }));
   fireEvent.mouseDown(stage, { clientX: 44, clientY: 33, button: 0 });
   fireEvent.mouseUp(stage, { clientX: 44, clientY: 33, button: 0 });
