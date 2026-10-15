@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor, act } from "@testing-library/react"
 import { FamilyApp } from "../../src/shell/FamilyApp.js";
 import { gbcAdapter } from "../../src/gbc/adapter.js";
 import type { GbcMapPayload } from "@pokemap/core/src/gbc/wire.js";
+import { restoreViewport, stubViewport, withViewport } from "../viewport.js";
 
 // jsdom does not implement scrollIntoView (GbcMetatilePalette calls it when
 // the hover-driven highlight changes).
@@ -160,10 +161,7 @@ describe("GbcApp", () => {
   });
 
   it("preserves dungeon pan on rename and refits after membership changes", async () => {
-    const width = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth");
-    const height = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight");
-    Object.defineProperty(HTMLElement.prototype, "clientWidth", { value: 100, configurable: true });
-    Object.defineProperty(HTMLElement.prototype, "clientHeight", { value: 100, configurable: true });
+    stubViewport(100);
     try {
       const world = { family: "gbc" as const, blockPx: 32 as const, placements: {
         OlivineCity: { map: "OlivineCity", x: 0, y: 0, width: 10, height: 10, component: 0, mapType: "TOWN", manual: false },
@@ -199,13 +197,10 @@ describe("GbcApp", () => {
       fireEvent.click(screen.getByRole("button", { name: "Add" }));
       await waitFor(() => expect([outline().style.left, outline().style.top]).toEqual(["0px", "37.5px"]));
     } finally {
-      if (width) Object.defineProperty(HTMLElement.prototype, "clientWidth", width);
-      else Reflect.deleteProperty(HTMLElement.prototype, "clientWidth");
-      if (height) Object.defineProperty(HTMLElement.prototype, "clientHeight", height);
-      else Reflect.deleteProperty(HTMLElement.prototype, "clientHeight");
+      restoreViewport();
     }
-    expect(Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth")).toEqual(width);
-    expect(Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight")).toEqual(height);
+    expect(Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth")).toBeUndefined();
+    expect(Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight")).toBeUndefined();
   });
   it("shows the real-shaped fixture groups in the tree", async () => {
     vi.stubGlobal("fetch", makeFetchMock());
@@ -356,10 +351,7 @@ describe("GbcApp", () => {
     // jsdom elements are 0x0 by default -- a real (non-zero) viewport is
     // needed so GbcWorldCanvas's own initial fit runs and OlivineCity's
     // placement is actually "visible" (culled in otherwise).
-    const originalClientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth");
-    const originalClientHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight");
-    Object.defineProperty(HTMLElement.prototype, "clientWidth", { value: 100, configurable: true });
-    Object.defineProperty(HTMLElement.prototype, "clientHeight", { value: 100, configurable: true });
+    stubViewport(100);
     try {
       vi.stubGlobal("fetch", makeFetchMock({ world: WORLD_ONE, maps: { OlivineCity: mapPayload("OlivineCity") } }));
       render(<FamilyApp adapter={gbcAdapter} />);
@@ -384,18 +376,14 @@ describe("GbcApp", () => {
       await waitFor(() => expect(document.querySelector(".app__status")?.textContent).toBe("OlivineCity"));
       await waitFor(() => expect(screen.getByText(/tileset TILESET_OLIVINE/)).toBeTruthy());
     } finally {
-      if (originalClientWidth) Object.defineProperty(HTMLElement.prototype, "clientWidth", originalClientWidth);
-      if (originalClientHeight) Object.defineProperty(HTMLElement.prototype, "clientHeight", originalClientHeight);
+      restoreViewport();
     }
   });
 
   it("a canvas click (no tree click yet) does not jump the view -- pinned exact view (spec review F1)", async () => {
     // jsdom elements are 0x0 by default -- a real viewport is needed so the
     // initial fit actually runs and OlivineCity is "visible".
-    const originalClientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth");
-    const originalClientHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight");
-    Object.defineProperty(HTMLElement.prototype, "clientWidth", { value: 100, configurable: true });
-    Object.defineProperty(HTMLElement.prototype, "clientHeight", { value: 100, configurable: true });
+    stubViewport(100);
     try {
       vi.stubGlobal("fetch", makeFetchMock({ world: WORLD_ONE }));
       render(<FamilyApp adapter={gbcAdapter} />);
@@ -427,8 +415,7 @@ describe("GbcApp", () => {
       const outline = document.querySelector(".world-canvas__selection-outline:not(.world-canvas__jump-highlight)") as HTMLElement;
       expect([outline.style.left, outline.style.top, outline.style.width, outline.style.height]).toEqual(["0px", "0px", "100px", "100px"]);
     } finally {
-      if (originalClientWidth) Object.defineProperty(HTMLElement.prototype, "clientWidth", originalClientWidth);
-      if (originalClientHeight) Object.defineProperty(HTMLElement.prototype, "clientHeight", originalClientHeight);
+      restoreViewport();
     }
   });
 
@@ -666,10 +653,7 @@ describe("GbcApp -- world click selects the map in the tree (Plan 6c C2)", () =>
   it("a canvas click on a map makes its tree row current and scrolls it into view", async () => {
     // jsdom elements are 0x0 by default -- a real viewport so the initial fit runs and OlivineCity is visible
     // (same recipe as the F1 test above).
-    const originalClientWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth");
-    const originalClientHeight = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight");
-    Object.defineProperty(HTMLElement.prototype, "clientWidth", { value: 100, configurable: true });
-    Object.defineProperty(HTMLElement.prototype, "clientHeight", { value: 100, configurable: true });
+    stubViewport(100);
     try {
       const world = {
         family: "gbc" as const,
@@ -698,8 +682,7 @@ describe("GbcApp -- world click selects the map in the tree (Plan 6c C2)", () =>
       expect(scrollSpy.mock.contexts).toContain(currentRow());
       expect(scrollSpy).toHaveBeenCalledWith({ block: "nearest" });
     } finally {
-      if (originalClientWidth) Object.defineProperty(HTMLElement.prototype, "clientWidth", originalClientWidth);
-      if (originalClientHeight) Object.defineProperty(HTMLElement.prototype, "clientHeight", originalClientHeight);
+      restoreViewport();
     }
   });
 });
@@ -776,18 +759,6 @@ describe("GbcApp -- entering World centres on the selection (Plan 6c C2 fix roun
     ],
     conflicts: [],
   };
-  async function withViewport(fn: () => Promise<void>) {
-    const w = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth");
-    const h = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight");
-    Object.defineProperty(HTMLElement.prototype, "clientWidth", { value: 100, configurable: true });
-    Object.defineProperty(HTMLElement.prototype, "clientHeight", { value: 100, configurable: true });
-    try {
-      await fn();
-    } finally {
-      if (w) Object.defineProperty(HTMLElement.prototype, "clientWidth", w);
-      if (h) Object.defineProperty(HTMLElement.prototype, "clientHeight", h);
-    }
-  }
   const clickMode = (name: "Map" | "World") =>
     fireEvent.click(Array.from(screen.getByRole("group", { name: "View" }).querySelectorAll("button")).find((b) => b.textContent === name) as HTMLElement);
   const zoomText = () => document.querySelector(".world-canvas__status")?.textContent ?? "";

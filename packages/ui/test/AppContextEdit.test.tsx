@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor, act, within } from "@testing-librar
 import { FamilyApp } from "../src/shell/FamilyApp.js";
 import { gbaAdapter } from "../src/gba/adapter.js";
 import { fitWithBand } from "../src/encounters/fit.js";
+import { restoreViewport, stubViewport } from "./viewport.js";
 
 // Plan 6c E4: GBA in-context editing at the App level -- the World view's double-click enters it, the editing chrome
 // appears around the SAME world canvas, exits go through the dirty guard, and a save refreshes only that map's tile.
@@ -74,21 +75,15 @@ class FakeImage {
   constructor() { FakeImage.instances.push(this); }
 }
 
-const sizes = {
-  w: Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth"),
-  h: Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight"),
-};
 beforeEach(() => {
   FakeImage.instances = [];
   vi.stubGlobal("Image", FakeImage);
-  Object.defineProperty(HTMLElement.prototype, "clientWidth", { value: 400, configurable: true });
-  Object.defineProperty(HTMLElement.prototype, "clientHeight", { value: 100, configurable: true });
+  stubViewport(400, 100);
 });
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
-  if (sizes.w) Object.defineProperty(HTMLElement.prototype, "clientWidth", sizes.w);
-  if (sizes.h) Object.defineProperty(HTMLElement.prototype, "clientHeight", sizes.h);
+  restoreViewport();
 });
 
 const RECT = { left: 0, top: 0, right: 400, bottom: 100, width: 400, height: 100, x: 0, y: 0, toJSON() {} };
@@ -404,8 +399,7 @@ describe("App -- in-context editing, fix round (Plan 6c E4)", () => {
       const stage = contextOverlay()!.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
       // Resize after entry so the existing world's hit-test helper still uses its original viewport.
       const viewport = 160;
-      Object.defineProperty(HTMLElement.prototype, "clientWidth", { value: viewport, configurable: true });
-      Object.defineProperty(HTMLElement.prototype, "clientHeight", { value: viewport, configurable: true });
+      stubViewport(viewport);
       fireEvent(window, new Event("resize"));
       stage.getBoundingClientRect = () => ({ ...RECT, right: viewport, bottom: viewport, width: viewport, height: viewport });
       // ROUTE1's payload is 2x2 metatiles with one 16px border tile on each side (64x64).

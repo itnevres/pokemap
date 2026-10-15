@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor, act } from "@testing-library/react"
 import { FamilyApp } from "../../src/shell/FamilyApp.js";
 import { gbcAdapter } from "../../src/gbc/adapter.js";
 import type { GbcMapPayload } from "@pokemap/core/src/gbc/wire.js";
+import { restoreViewport, stubViewport } from "../viewport.js";
 
 // M5: GBC context exit waits for pending paint before deciding whether to open SaveDialog.
 
@@ -77,22 +78,16 @@ class FakeImage {
   constructor() { FakeImage.instances.push(this); }
 }
 
-const sizes = {
-  w: Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth"),
-  h: Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight"),
-};
 beforeEach(() => {
   Element.prototype.scrollIntoView = vi.fn();
   FakeImage.instances = [];
   vi.stubGlobal("Image", FakeImage);
-  Object.defineProperty(HTMLElement.prototype, "clientWidth", { value: 200, configurable: true });
-  Object.defineProperty(HTMLElement.prototype, "clientHeight", { value: 200, configurable: true });
+  stubViewport(200);
 });
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
-  if (sizes.w) Object.defineProperty(HTMLElement.prototype, "clientWidth", sizes.w);
-  if (sizes.h) Object.defineProperty(HTMLElement.prototype, "clientHeight", sizes.h);
+  restoreViewport();
 });
 
 const RECT = { left: 0, top: 0, right: 200, bottom: 200, width: 200, height: 200, x: 0, y: 0, toJSON() {} };

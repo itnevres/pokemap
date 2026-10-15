@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor, act, within } from "@testing-library/react";
 import { FamilyApp } from "../src/shell/FamilyApp.js";
 import { gbaAdapter } from "../src/gba/adapter.js";
+import { restoreViewport, stubViewport, withViewport } from "./viewport.js";
 
 /**
  * Pins the three review-flagged behaviours from Task 15's review, each
@@ -728,10 +729,7 @@ describe("App -- metatile palette wiring", () => {
 
 describe("App -- Plan 9 shell characterisation", () => {
   it("characterisation (Plan 9): a dungeon rename refits the GBA dungeon canvas (no filter cache, App.tsx:136-149)", async () => {
-    const width = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth");
-    const height = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight");
-    Object.defineProperty(HTMLElement.prototype, "clientWidth", { value: 100, configurable: true });
-    Object.defineProperty(HTMLElement.prototype, "clientHeight", { value: 100, configurable: true });
+    stubViewport(100);
     try {
       const world = {
         placements: {
@@ -792,13 +790,10 @@ describe("App -- Plan 9 shell characterisation", () => {
       expect(position()).toEqual(membershipFitPosition);
       expect(container.querySelector(".world-canvas__zoom-readout")!.textContent).toBe(membershipFitZoom);
     } finally {
-      if (width) Object.defineProperty(HTMLElement.prototype, "clientWidth", width);
-      else Reflect.deleteProperty(HTMLElement.prototype, "clientWidth");
-      if (height) Object.defineProperty(HTMLElement.prototype, "clientHeight", height);
-      else Reflect.deleteProperty(HTMLElement.prototype, "clientHeight");
+      restoreViewport();
     }
-    expect(Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth")).toEqual(width);
-    expect(Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight")).toEqual(height);
+    expect(Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth")).toBeUndefined();
+    expect(Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight")).toBeUndefined();
   });
 });
 
@@ -1046,20 +1041,8 @@ describe("App -- coverage lens list jump (Plan 6c C1)", () => {
 });
 
 describe("App -- world click selects the map in the tree (Plan 6c C2)", () => {
-  /** jsdom elements are 0x0; WorldCanvas measures its viewport once on mount, so this must be in force
-   *  before the World button is clicked. */
-  async function withViewport(fn: () => Promise<void>, width = 100) {
-    const w = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth");
-    const h = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight");
-    Object.defineProperty(HTMLElement.prototype, "clientWidth", { value: width, configurable: true });
-    Object.defineProperty(HTMLElement.prototype, "clientHeight", { value: 100, configurable: true });
-    try {
-      await fn();
-    } finally {
-      if (w) Object.defineProperty(HTMLElement.prototype, "clientWidth", w);
-      if (h) Object.defineProperty(HTMLElement.prototype, "clientHeight", h);
-    }
-  }
+  // withViewport (test/viewport.ts): WorldCanvas measures its viewport once on mount, so it must be in
+  // force before the World button is clicked.
   const zoomReadout = () => document.querySelector(".world-canvas__zoom-readout")!.textContent;
   /** Enters World mode and waits for `readout` (the world has loaded and any jump on entry has applied).
    *  WorldCanvas never auto-fits on load: a fresh view is zoom 1, pan 0 ("6%"); entering World mode with a map
