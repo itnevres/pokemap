@@ -1,6 +1,8 @@
 import { useEffect, useRef } from "react";
 import type { GbcStamp } from "@pokemap/core/src/gbc/edit/paint.js";
 import type { GbcTimeOfDay } from "./time.js";
+import { useFollowHover } from "../shared/useFollowHover.js";
+import { FollowHoverSwitch } from "../shared/FollowHoverSwitch.js";
 
 export interface GbcMetatilePaletteProps {
   mapName: string;
@@ -45,11 +47,12 @@ const hex = (n: number) => `0x${n.toString(16)}`;
  */
 export function GbcMetatilePalette({ mapName, time, tilesetName, metatileCount, highlightId = null, onSelect, selected = null }: GbcMetatilePaletteProps) {
   const cellRefs = useRef(new Map<number, HTMLButtonElement>());
+  const [follow, setFollow] = useFollowHover();
 
   useEffect(() => {
-    if (highlightId === null) return;
+    if (!follow || highlightId === null) return;
     cellRefs.current.get(highlightId)?.scrollIntoView({ block: "nearest" });
-  }, [highlightId]);
+  }, [highlightId, follow]);
 
   const ids = Array.from({ length: metatileCount }, (_, i) => i);
   // One handler for all cells (the id rides on `data-id`), not 500+ closures rebuilt on every hover re-render.
@@ -61,6 +64,7 @@ export function GbcMetatilePalette({ mapName, time, tilesetName, metatileCount, 
     <aside className="gbc-metatile-palette">
       <div className="gbc-metatile-palette__header">
         {tilesetName} · {metatileCount} metatiles
+        <FollowHoverSwitch on={follow} onChange={setFollow} />
       </div>
       <div className="gbc-metatile-palette__grid" role="group" aria-label="Metatiles">
         {ids.map((id) => {

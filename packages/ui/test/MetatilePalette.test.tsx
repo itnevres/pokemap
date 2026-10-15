@@ -1,8 +1,19 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { MetatilePalette } from "../src/components/MetatilePalette.js";
 
-afterEach(() => vi.unstubAllGlobals());
+let originalScrollIntoView: typeof Element.prototype.scrollIntoView;
+
+beforeEach(() => {
+  originalScrollIntoView = Element.prototype.scrollIntoView;
+  Element.prototype.scrollIntoView = vi.fn();
+});
+
+afterEach(() => {
+  localStorage.clear();
+  Element.prototype.scrollIntoView = originalScrollIntoView;
+  vi.unstubAllGlobals();
+});
 
 const SPLIT = { version: "hns" as const, tiles: 640, metatiles: 640, pals: 7 };
 
@@ -189,5 +200,31 @@ describe("MetatilePalette", () => {
     );
     expect(screen.getByRole("button", { name: /metatile 0x1\b/i }).getAttribute("aria-pressed")).toBe("false");
     expect(screen.getByRole("button", { name: /metatile 0x2\b/i }).getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("highlightId marks exactly that cell as hovered (Plan 9 R2)", () => {
+    const { container } = render(<MetatilePalette layoutName="Test_Layout" split={SPLIT} primaryCount={4} secondaryCount={3} onSelect={() => {}} highlightId={1} />);
+    const hovered = [...container.querySelectorAll(".metatile-palette__cell--hovered")];
+    expect(hovered).toHaveLength(1);
+    expect(hovered[0]!.getAttribute("aria-label")).toBe("metatile 0x1");
+  });
+
+  it("scrolls the hovered cell into view while Follow hover is on (Plan 9 R4)", () => {
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    const { rerender } = render(<MetatilePalette layoutName="Test_Layout" split={SPLIT} primaryCount={4} secondaryCount={3} onSelect={() => {}} highlightId={null} />);
+    expect(screen.getByRole("switch", { name: "Follow hover" }).getAttribute("aria-checked")).toBe("true");
+    rerender(<MetatilePalette layoutName="Test_Layout" split={SPLIT} primaryCount={4} secondaryCount={3} onSelect={() => {}} highlightId={1} />);
+    expect(scroll).toHaveBeenCalledWith({ block: "nearest" });
+  });
+
+  it("does not scroll once Follow hover is switched off, and the switch shows off (Plan 9 R4)", () => {
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    const { rerender } = render(<MetatilePalette layoutName="Test_Layout" split={SPLIT} primaryCount={4} secondaryCount={3} onSelect={() => {}} highlightId={null} />);
+    fireEvent.click(screen.getByRole("switch", { name: "Follow hover" }));
+    expect(screen.getByRole("switch", { name: "Follow hover" }).getAttribute("aria-checked")).toBe("false");
+    rerender(<MetatilePalette layoutName="Test_Layout" split={SPLIT} primaryCount={4} secondaryCount={3} onSelect={() => {}} highlightId={1} />);
+    expect(scroll).not.toHaveBeenCalled();
   });
 });

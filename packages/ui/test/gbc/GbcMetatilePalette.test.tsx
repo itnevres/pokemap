@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { GbcMetatilePalette } from "../../src/gbc/GbcMetatilePalette.js";
 
 let originalScrollIntoView: typeof Element.prototype.scrollIntoView;
@@ -10,6 +10,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  localStorage.clear();
   Element.prototype.scrollIntoView = originalScrollIntoView;
 });
 
@@ -104,5 +105,24 @@ describe("GbcMetatilePalette", () => {
     const { rerender } = render(<GbcMetatilePalette mapName="Foo" time="day" tilesetName="T" metatileCount={3} />);
     rerender(<GbcMetatilePalette mapName="Foo" time="nite" tilesetName="T" metatileCount={3} />);
     expect(Element.prototype.scrollIntoView).not.toHaveBeenCalled();
+  });
+
+  it("scrolls the hovered cell into view while Follow hover is on (Plan 9 R4)", () => {
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    const { rerender } = render(<GbcMetatilePalette mapName="Foo" time="day" tilesetName="T" metatileCount={3} highlightId={null} />);
+    expect(screen.getByRole("switch", { name: "Follow hover" }).getAttribute("aria-checked")).toBe("true");
+    rerender(<GbcMetatilePalette mapName="Foo" time="day" tilesetName="T" metatileCount={3} highlightId={1} />);
+    expect(scroll).toHaveBeenCalledWith({ block: "nearest" });
+  });
+
+  it("does not scroll once Follow hover is switched off, and the switch shows off (Plan 9 R4)", () => {
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    const { rerender } = render(<GbcMetatilePalette mapName="Foo" time="day" tilesetName="T" metatileCount={3} highlightId={null} />);
+    fireEvent.click(screen.getByRole("switch", { name: "Follow hover" }));
+    expect(screen.getByRole("switch", { name: "Follow hover" }).getAttribute("aria-checked")).toBe("false");
+    rerender(<GbcMetatilePalette mapName="Foo" time="day" tilesetName="T" metatileCount={3} highlightId={1} />);
+    expect(scroll).not.toHaveBeenCalled();
   });
 });

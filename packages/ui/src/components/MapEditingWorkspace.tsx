@@ -16,11 +16,13 @@ import { GBA_CAPABILITIES, toolsFor } from "../shell/adapter.js";
  *  wants it adds it in its own `renderCanvas`). */
 export type MapEditingCanvasProps = Pick<
   MapCanvasProps,
-  "onStrokeChain" | "mapName" | "data" | "editSession" | "activeTool" | "onSelectEvent" | "selectedEventRef" | "onMoveEvent" | "onDropperPick"
+  "onStrokeChain" | "mapName" | "data" | "editSession" | "activeTool" | "onSelectEvent" | "selectedEventRef" | "onMoveEvent" | "onDropperPick" | "onHoverMetatile"
 >;
 
 interface MapEditingWorkspaceBase {
   onStrokeChain?: MapCanvasProps["onStrokeChain"];
+  hoveredMetatileId?: number | null;
+  onHoverMetatile?: (id: number | null) => void;
   editSession: UseEditSessionResult;
   editing: ReturnType<typeof useMapEditing>;
 }
@@ -52,7 +54,7 @@ export type MapEditingWorkspaceProps = ActiveMapEditingWorkspaceProps | Inactive
  *  lifted verbatim out of `App.tsx`. State lives
  *  in `useMapEditing`; the edit session in `App`; `SaveDialog`/`SignComposer`
  *  stay siblings at `<main>` level in `App` for stacking reasons. */
-export function MapEditingWorkspace({ active = true, mapName, data, editSession, editing, renderCanvas, onStrokeChain }: MapEditingWorkspaceProps) {
+export function MapEditingWorkspace({ active = true, mapName, data, editSession, editing, renderCanvas, onStrokeChain, hoveredMetatileId, onHoverMetatile }: MapEditingWorkspaceProps) {
   const {
     activeToolKind, setActiveToolKind, collisionValue, setCollisionValue, currentStamp, setCurrentStamp,
     setSaveDialogOpen, setSignComposerOpen, signAddedMessage, setSignAddedMessage, eventOpError, setEventOpError,
@@ -63,6 +65,7 @@ export function MapEditingWorkspace({ active = true, mapName, data, editSession,
     mapName !== null && data !== null
       ? {
           ...(onStrokeChain ? { onStrokeChain } : {}),
+          ...(onHoverMetatile ? { onHoverMetatile } : {}),
           mapName,
           data,
           editSession,
@@ -139,6 +142,7 @@ export function MapEditingWorkspace({ active = true, mapName, data, editSession,
           secondaryCount={data.secondaryCount}
           onSelect={setCurrentStamp}
           selected={currentStamp}
+          highlightId={hoveredMetatileId ?? null}
         />
       )}
       <EventInspector selected={selectedEvent} onMove={onMoveEventFromInspector} onDelete={onDeleteEvent} onAdd={onAddEvent} />

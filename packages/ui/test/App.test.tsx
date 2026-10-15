@@ -649,6 +649,81 @@ describe("App -- metatile palette wiring", () => {
     expect(screen.getByRole("button", { name: "Pencil" }).getAttribute("aria-pressed")).toBe("true");
     vi.unstubAllGlobals();
   });
+
+  it("hovering the canvas highlights the matching palette cell (Plan 9 R2)", async () => {
+    const layout = {
+      ...PALLET_TOWN_LAYOUT,
+      blocks: PALLET_TOWN_LAYOUT.blocks.map((block, index) => index === 1 ? { ...block, metatileId: 1 } : block),
+    };
+    const base = makeEditFetchMock();
+    vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => url === "/api/map/PalletTown"
+      ? Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(layout) } as Response)
+      : base(url, init)));
+    render(<FamilyApp adapter={gbaAdapter} />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "PalletTown" })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "PalletTown" }));
+    await screen.findByPlaceholderText(/search/i);
+
+    const canvas = document.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: 64, bottom: 64, width: 64, height: 64, x: 0, y: 0, toJSON() {} });
+    // jsdom's unmeasured viewport makes Fit use the 64x64 composite: zoom 1, pan (0,0).
+    fireEvent.click(screen.getByRole("button", { name: "Fit" }));
+    expect(screen.getByRole("button", { name: "1\u00d7" }).getAttribute("aria-pressed")).toBe("true");
+    // Origin (16,16): (40,20) maps to block (1,0), index 1, locally set to rendered primary id 1.
+    fireEvent.mouseMove(canvas, { clientX: 40, clientY: 20 });
+
+    await waitFor(() => {
+      const hovered = document.querySelector(".metatile-palette__cell--hovered");
+      expect(hovered?.getAttribute("aria-label")).toBe("metatile 0x1");
+    });
+
+    // A same-map selection calls onSelected without triggering MapCanvas's redundant mapName reset.
+    fireEvent.click(screen.getByRole("button", { name: "PalletTown" }));
+    expect(document.querySelector(".metatile-palette__cell--hovered")).toBeNull();
+  });
+
+  it("the palette highlight clears when switching to a different map (Plan 9 R2)", async () => {
+    const layout = {
+      ...PALLET_TOWN_LAYOUT,
+      blocks: PALLET_TOWN_LAYOUT.blocks.map((block, index) => index === 1 ? { ...block, metatileId: 1 } : block),
+    };
+    const base = makeEditFetchMock();
+    const route1 = { ...ROUTE1_LAYOUT, layout: { ...ROUTE1_LAYOUT.layout, name: "Route1_Layout" } };
+    vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => {
+      if (url === "/api/map/PalletTown" || url === "/api/map/Route1") {
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(url === "/api/map/PalletTown" ? layout : route1) } as Response);
+      }
+      return base(url, init);
+    }));
+    render(<FamilyApp adapter={gbaAdapter} />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "PalletTown" })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "PalletTown" }));
+    await screen.findByPlaceholderText(/search/i);
+
+    const canvas = document.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: 64, bottom: 64, width: 64, height: 64, x: 0, y: 0, toJSON() {} });
+    // Fit falls back to the native 64x64 composite in jsdom: zoom 1, pan (0,0).
+    fireEvent.click(screen.getByRole("button", { name: "Fit" }));
+    expect(screen.getByRole("button", { name: "1\u00d7" }).getAttribute("aria-pressed")).toBe("true");
+    // Subtract origin (16,16), divide by 16: (40,20) is block (1,0), index 1, metatile id 1.
+    fireEvent.mouseMove(canvas, { clientX: 40, clientY: 20 });
+    await waitFor(() => expect(document.querySelector(".metatile-palette__cell--hovered")?.getAttribute("aria-label")).toBe("metatile 0x1"));
+
+    // Prove onSelected clears independently of MapCanvas's mapName-change reset, then hover again.
+    fireEvent.click(screen.getByRole("button", { name: "PalletTown" }));
+    expect(document.querySelector(".metatile-palette__cell--hovered")).toBeNull();
+    fireEvent.mouseLeave(canvas);
+    fireEvent.mouseMove(canvas, { clientX: 40, clientY: 20 });
+    await waitFor(() => expect(document.querySelector(".metatile-palette__cell--hovered")?.getAttribute("aria-label")).toBe("metatile 0x1"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Route1" }));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Route1" }).getAttribute("aria-current")).toBe("true");
+      expect(screen.getByRole("region", { name: "Route1 canvas" })).toBeTruthy();
+      expect(document.querySelector('.metatile-palette__thumb[src="/api/metatile/Route1_Layout/1.png"]')).toBeTruthy();
+      expect(document.querySelector(".metatile-palette__cell--hovered")).toBeNull();
+    });
+  });
 });
 
 describe("App -- Plan 9 shell characterisation", () => {
@@ -1262,4 +1337,5 @@ describe("App -- world click selects the map in the tree (Plan 6c C2)", () => {
       }
     });
   });
+
 });

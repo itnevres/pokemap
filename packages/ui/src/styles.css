@@ -2093,6 +2093,11 @@ input {
   outline-offset: 2px;
 }
 
+/* Plan 9 (R4): the palette header's Follow hover switch sits on its own line, right-aligned. */
+.palette__follow {
+  align-self: flex-end;
+}
+
 .metatile-palette__grid {
   display: grid;
   gap: var(--space-1);
@@ -2183,6 +2188,12 @@ input {
    disabled) but brings this rule to the same specificity, so -- combined
    with sitting after the hover rule in source -- it wins the tie. */
 .metatile-palette__cell.metatile-palette__cell--selected:not(:disabled) {
+  background: var(--bg-selected);
+  border-color: var(--border-strong);
+}
+
+/* Plan 9 (R2): the cell under the canvas cursor -- GBC's hover pair (.gbc-metatile-palette__cell--selected). */
+.metatile-palette__cell--hovered {
   background: var(--bg-selected);
   border-color: var(--border-strong);
 }

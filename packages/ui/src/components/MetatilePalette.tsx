@@ -1,6 +1,8 @@
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { Split } from "@pokemap/core/src/model/types.js";
 import type { Stamp, StampCell } from "@pokemap/core/src/edit/paint.js";
+import { useFollowHover } from "../shared/useFollowHover.js";
+import { FollowHoverSwitch } from "../shared/FollowHoverSwitch.js";
 
 export interface MetatilePaletteProps {
   layoutName: string;
@@ -18,6 +20,8 @@ export interface MetatilePaletteProps {
    *  general, per paint.ts's own doc comment, but never for a stamp that
    *  reaches this component). */
   selected?: Stamp | null;
+  /** Plan 9 (R2): the metatile under the canvas cursor, marked like GBC's hover highlight */
+  highlightId?: number | null;
   /** Overrides the rendered id set with a single contiguous `0..N-1` range
    *  -- ONLY meaningful for exercising the out-of-range gap between a
    *  tileset's REAL count and the split boundary (ids `primaryCount` up to
@@ -46,10 +50,17 @@ const hex = (n: number) => `0x${n.toString(16).toUpperCase()}`;
  * exist rather than just describing it.
  */
 export function MetatilePalette({
-  layoutName, split, primaryCount, secondaryCount, onSelect, selected, visibleCount, columns = 8,
+  layoutName, split, primaryCount, secondaryCount, onSelect, selected, highlightId = null, visibleCount, columns = 8,
 }: MetatilePaletteProps) {
   const [query, setQuery] = useState("");
   const [dragStart, setDragStart] = useState<number | null>(null);
+  const cellRefs = useRef(new Map<number, HTMLButtonElement>());
+  const [follow, setFollow] = useFollowHover();
+
+  useEffect(() => {
+    if (!follow || highlightId === null) return;
+    cellRefs.current.get(highlightId)?.scrollIntoView({ block: "nearest" });
+  }, [highlightId, follow]);
 
   const selectedIds = useMemo(
     () => new Set((selected?.cells ?? []).map((c) => c.metatileId).filter((id): id is number => id !== undefined)),
@@ -129,6 +140,7 @@ export function MetatilePalette({
 
   return (
     <div className="metatile-palette">
+      <FollowHoverSwitch on={follow} onChange={setFollow} />
       <input
         className="metatile-palette__search"
         placeholder="Search by hex id…"
@@ -151,8 +163,9 @@ export function MetatilePalette({
                 type="button"
                 aria-label={`metatile ${hex(id)}`}
                 aria-pressed={isSelected}
-                className={`metatile-palette__cell${outOfRange ? " metatile-palette__cell--out-of-range" : ""}${isSelected ? " metatile-palette__cell--selected" : ""}`}
+                className={`metatile-palette__cell${outOfRange ? " metatile-palette__cell--out-of-range" : ""}${isSelected ? " metatile-palette__cell--selected" : ""}${id === highlightId ? " metatile-palette__cell--hovered" : ""}`}
                 disabled={outOfRange}
+                ref={(el) => { if (el) cellRefs.current.set(id, el); else cellRefs.current.delete(id); }}
                 // Split three ways, not two: `onMouseDown`/`onMouseUp` alone
                 // detect a drag-rect (down on one cell, up on another) but
                 // never fire for a keyboard Enter/Space activation -- a

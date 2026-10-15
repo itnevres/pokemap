@@ -121,6 +121,8 @@ export interface MapCanvasProps {
    *  Porymap's real eyedropper, which copies the WHOLE block, not just the
    *  tile art. */
   onDropperPick?: (stamp: Stamp) => void;
+  /** Plan 9 (R2): the hovered block's metatile id whenever it changes; null when nothing is hovered. */
+  onHoverMetatile?: (id: number | null) => void;
   /** Controlled pan/zoom (Plan 6c E1). When present the canvas renders exactly this view and owns no view
    *  state of its own: every zoom button, wheel tick, pan drag and Fit click is reported through
    *  `onViewChange` instead of applied, and there is NO automatic fit on image load (the parent owns
@@ -197,7 +199,7 @@ interface Hover {
  * one scaled `drawImage`, so dragging or scrolling never re-touches overlay
  * pixels at all.
  */
-export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEvent, selectedEventRef, onMoveEvent, onDropperPick, view: controlledView, onViewChange, chromeless, onStrokeChain }: MapCanvasProps) {
+export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEvent, selectedEventRef, onMoveEvent, onDropperPick, onHoverMetatile, view: controlledView, onViewChange, chromeless, onStrokeChain }: MapCanvasProps) {
   const { layout, split, map: staticMap, blocks: staticBlocks } = data;
   // Live, server-tracked blocks while an edit session is open for this map;
   // the static `data.blocks` prop otherwise. Every effect below already
@@ -363,6 +365,13 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
     [controlled],
   );
   const [hover, setHover] = useState<Hover | null>(null);
+  // Driven by `hover` itself, so every path that sets or clears it (hoverAt, leave, a map switch) reports.
+  const hoveredMetatileId = hover ? hover.metatileId : null;
+  const onHoverMetatileRef = useRef(onHoverMetatile);
+  onHoverMetatileRef.current = onHoverMetatile;
+  useEffect(() => {
+    onHoverMetatileRef.current?.(hoveredMetatileId);
+  }, [hoveredMetatileId]);
   const [compositeVersion, setCompositeVersion] = useState(0);
   // Measured, not read from the ref during render: a ref read at render time
   // always sees the previous commit (null on the very first pass), which

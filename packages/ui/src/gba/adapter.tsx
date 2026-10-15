@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { MapEditingWorkspace, type MapEditingCanvasProps } from "../components/MapEditingWorkspace.js";
 import { MapCanvas, compositeOrigin } from "../components/MapCanvas.js";
 import { WorldCanvas } from "../components/WorldCanvas.js";
@@ -44,6 +45,10 @@ export function useGbaRuntime({ selected, mode }: RuntimeArgs): FamilyRuntime {
   // state, event ops, discard) -- see useMapEditing.ts. Called here, at the same
   // spot the state used to live, so its lifetime is unchanged.
   const editing = useMapEditing({ editSession, layoutData: layout.data, mapName: selected });
+
+  // Plan 9 (R2): the hovered block's metatile id, driving the palette highlight; cleared on every map switch
+  // (onSelected) so the previous map's highlight never shows on the next one.
+  const [hoveredMetatileId, setHoveredMetatileId] = useState<number | null>(null);
 
   // GBA's switch policy (App.tsx:76-79): confirm when dirty, then switch; the server session is never discarded here.
   // `sameMap` is ignored on purpose: a tree re-click of the selected map prompts too (App.tsx:96-102).
@@ -93,9 +98,9 @@ export function useGbaRuntime({ selected, mode }: RuntimeArgs): FamilyRuntime {
     // The World view is hosted by MapEditingWorkspace at all times (one stable element and key), so the
     // WorldCanvas inside is never remounted when in-context editing turns the chrome on or off.
     return contextLayout ? (
-      <MapEditingWorkspace onStrokeChain={s.onStrokeChain} key="world-host" mapName={contextLayout.map.name} data={contextLayout} editSession={editSession} editing={editing} renderCanvas={world} />
+      <MapEditingWorkspace onStrokeChain={s.onStrokeChain} hoveredMetatileId={hoveredMetatileId} onHoverMetatile={setHoveredMetatileId} key="world-host" mapName={contextLayout.map.name} data={contextLayout} editSession={editSession} editing={editing} renderCanvas={world} />
     ) : (
-      <MapEditingWorkspace onStrokeChain={s.onStrokeChain} key="world-host" active={false} mapName={selected} data={layout.data} editSession={editSession} editing={editing} renderCanvas={world} />
+      <MapEditingWorkspace onStrokeChain={s.onStrokeChain} hoveredMetatileId={hoveredMetatileId} onHoverMetatile={setHoveredMetatileId} key="world-host" active={false} mapName={selected} data={layout.data} editSession={editSession} editing={editing} renderCanvas={world} />
     );
   };
 
@@ -103,7 +108,7 @@ export function useGbaRuntime({ selected, mode }: RuntimeArgs): FamilyRuntime {
     groups,
     session: editSession,
     leave: (go) => leave(go),
-    onSelected: () => {},
+    onSelected: () => setHoveredMetatileId(null),
     onEnterContext: () => {},
     visibility: { placed, error: visibilityError },
     hiddenMapTypes: HIDDEN_MAP_TYPES,
@@ -111,7 +116,7 @@ export function useGbaRuntime({ selected, mode }: RuntimeArgs): FamilyRuntime {
     map: { error: layout.error, ready: Boolean(layout.data) },
     renderMap: (s) =>
       selected && layout.data ? (
-        <MapEditingWorkspace onStrokeChain={s.onStrokeChain} mapName={selected} data={layout.data} editSession={editSession} editing={editing} />
+        <MapEditingWorkspace onStrokeChain={s.onStrokeChain} hoveredMetatileId={hoveredMetatileId} onHoverMetatile={setHoveredMetatileId} mapName={selected} data={layout.data} editSession={editSession} editing={editing} />
       ) : null,
     renderWorld,
     renderDungeon: (mapFilter, s) => <WorldCanvas key="dungeon" mapFilter={mapFilter} onOpenMap={s.openMapFromWorld} />,
