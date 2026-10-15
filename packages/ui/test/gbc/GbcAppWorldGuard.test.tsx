@@ -8,10 +8,11 @@ import type { GbcMapPayload } from "@pokemap/core/src/gbc/wire.js";
 vi.mock("../../src/gbc/GbcWorldCanvas.js", async () => {
   const R = await import("react");
   return {
-    GbcWorldCanvas: (p: { onSelectMap?: (n: string) => void; onOpenMap?: (n: string) => void }) =>
+    GbcWorldCanvas: (p: { onSelectMap?: (n: string) => void; onOpenMap?: (n: string) => void; onEditHere?: (n: string) => void }) =>
       R.createElement("div", { "data-testid": "world" },
         R.createElement("button", { type: "button", onClick: () => p.onSelectMap?.("OlivinePort") }, "world-select-port"),
-        R.createElement("button", { type: "button", onClick: () => p.onOpenMap?.("OlivinePort") }, "world-open-port")),
+        R.createElement("button", { type: "button", onClick: () => p.onOpenMap?.("OlivinePort") }, "world-open-port"),
+        R.createElement("button", { type: "button", onClick: () => p.onEditHere?.("OlivineCity") }, "world-edit-city")),
   };
 });
 
@@ -166,6 +167,22 @@ describe("GbcApp World-path dirty guards (spec review F1, F3, F7)", () => {
     expect(screen.getByTestId("world")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
     expect(screen.queryByRole("alert")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Map" }));
+    await waitFor(() => expect(status()).toBe("OlivineCity"));
+  });
+
+  // Plan 9 characterisation: GbcApp.tsx:194-197 -- entering context on the SELECTED map clears switchError first.
+  it("characterisation (Plan 9): Edit here on the selected map clears a discard error shown in World", async () => {
+    mockFetch({ discardFails: true });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(<GbcApp root="/x" />);
+    await paintThenWorld();
+    fireEvent.click(screen.getByText("world-select-port"));
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("discard -> 500"));
+
+    fireEvent.click(screen.getByText("world-edit-city"));
+    await waitFor(() => expect(screen.queryByText(/discard -> 500/)).toBeNull());
+    expect(screen.getByTestId("world")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Map" }));
     await waitFor(() => expect(status()).toBe("OlivineCity"));
   });

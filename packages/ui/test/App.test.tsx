@@ -450,6 +450,28 @@ describe("App -- Task 13 save flow", () => {
     addSpy.mockRestore();
     vi.unstubAllGlobals();
   });
+
+  // Plan 9 characterisation: App.tsx:96-102 -- selectMap -> changeSelection -> leave, so even the
+  // ALREADY-selected map prompts while dirty. GBA never calls the server's discard before a switch.
+  it("characterisation (Plan 9): re-clicking the selected map in the tree while dirty asks first; GBA never discards on the server", async () => {
+    const fetchMock = makeEditFetchMock();
+    vi.stubGlobal("fetch", fetchMock);
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    await renderAppInEditModeWithDirtySession();
+
+    fireEvent.click(screen.getByRole("button", { name: "PalletTown" }));
+    expect(confirmSpy).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("dirty-indicator")).toBeTruthy();
+
+    confirmSpy.mockReturnValue(true);
+    fireEvent.click(screen.getByRole("button", { name: "PalletTown" }));
+    expect(confirmSpy).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith("/discard"))).toBe(false);
+    expect(screen.getByTestId("dirty-indicator")).toBeTruthy();
+
+    confirmSpy.mockRestore();
+    vi.unstubAllGlobals();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -514,6 +536,27 @@ describe("App -- metatile palette wiring", () => {
 
     await waitFor(() => expect(picked.getAttribute("aria-pressed")).toBe("true"));
 
+    vi.unstubAllGlobals();
+  });
+
+  // Plan 9 characterisation: useMapEditing lives at shell level (App.tsx:70), so the chosen tool and stamp
+  // survive a mode round trip. FamilyApp keeps it in the GBA runtime, which lives as long as the shell.
+  it("characterisation (Plan 9): the chosen tool and stamp survive a Map -> World -> Map round trip", async () => {
+    const base = makeEditFetchMock();
+    vi.stubGlobal("fetch", vi.fn((u: string, i?: RequestInit) => u === "/api/world"
+      ? Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(makeWorld()) } as Response)
+      : base(u, i)));
+    render(<App />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "PalletTown" })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "PalletTown" }));
+    fireEvent.click(await screen.findByRole("button", { name: "pencil" }));
+    fireEvent.click(await screen.findByRole("button", { name: /metatile 0x1\b/i }));
+
+    fireEvent.click(screen.getByRole("button", { name: "World" }));
+    fireEvent.click(screen.getByRole("button", { name: "Map" }));
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "pencil" }).getAttribute("aria-pressed")).toBe("true"));
+    expect(screen.getByRole("button", { name: /metatile 0x1\b/i }).getAttribute("aria-pressed")).toBe("true");
     vi.unstubAllGlobals();
   });
 
@@ -588,6 +631,82 @@ describe("App -- metatile palette wiring", () => {
     expect(fetchMock.mock.calls.length).toBe(callsBefore);
 
     vi.unstubAllGlobals();
+  });
+});
+
+describe("App -- Plan 9 shell characterisation", () => {
+  it("characterisation (Plan 9): a dungeon rename refits the GBA dungeon canvas (no filter cache, App.tsx:136-149)", async () => {
+    const width = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth");
+    const height = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight");
+    Object.defineProperty(HTMLElement.prototype, "clientWidth", { value: 100, configurable: true });
+    Object.defineProperty(HTMLElement.prototype, "clientHeight", { value: 100, configurable: true });
+    try {
+      const world = {
+        placements: {
+          Route1: { map: "Route1", x: 0, y: 0, width: 10, height: 10, component: 0 },
+          Route2: { map: "Route2", x: 30, y: 0, width: 10, height: 10, component: 1 },
+        },
+        components: [], conflicts: [], verticalLinks: [], sidecar: { dungeonAutoLayout: true },
+      };
+      const base = makeFetchMock();
+      let dungeon = { id: "d1", name: "Tower", maps: ["Route1"] };
+      vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => {
+        if (url === "/api/dungeons" && !init) return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([{ ...dungeon, maps: [...dungeon.maps] }]) } as Response);
+        if (url === "/api/dungeons/d1" && init?.method === "PATCH") {
+          dungeon = { ...dungeon, ...JSON.parse(String(init.body)) };
+          return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(dungeon) } as Response);
+        }
+        if (url === "/api/world") return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(world) } as Response);
+        return base(url, init);
+      }));
+      const { container } = render(<App />);
+      fireEvent.click(screen.getByRole("button", { name: "Dungeon" }));
+      await waitFor(() => expect(screen.getByRole("button", { name: /Tower/ })).toBeTruthy());
+      fireEvent.click(screen.getByRole("button", { name: /Tower/ }));
+      const stage = container.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement;
+      await waitFor(() => expect(container.querySelector(".world-canvas__status")?.textContent).toContain("placed 2"));
+      fireEvent.click(screen.getByRole("button", { name: "Fit world" }));
+      fireEvent.click(stage, { clientX: 50, clientY: 50 });
+      const outline = () => container.querySelector(".world-canvas__selection-outline:not(.world-canvas__jump-highlight)") as HTMLElement;
+      const position = () => [outline().style.left, outline().style.top];
+      const fitPosition = position();
+      const fitZoom = container.querySelector(".world-canvas__zoom-readout")!.textContent;
+      fireEvent.mouseDown(stage, { button: 0, clientX: 0, clientY: 0 });
+      fireEvent.mouseMove(stage, { clientX: 20, clientY: 10 });
+      fireEvent.mouseUp(stage);
+      expect(position()).not.toEqual(fitPosition);
+      fireEvent.change(screen.getByRole("textbox", { name: "Dungeon name" }), { target: { value: "New Tower" } });
+      fireEvent.blur(screen.getByRole("textbox", { name: "Dungeon name" }));
+      await waitFor(() => expect(screen.getByRole("button", { name: /New Tower/ })).toBeTruthy());
+      await waitFor(() => expect(position()).toEqual(fitPosition));
+      expect(container.querySelector(".world-canvas__zoom-readout")!.textContent).toBe(fitZoom);
+      fireEvent.mouseDown(stage, { button: 0, clientX: 0, clientY: 0 });
+      fireEvent.mouseMove(stage, { clientX: 20, clientY: 10 });
+      fireEvent.mouseUp(stage);
+      const panBeforeMembershipChange = position();
+      expect(panBeforeMembershipChange).not.toEqual(fitPosition);
+      fireEvent.change(screen.getByPlaceholderText("Add map…"), { target: { value: "Route2" } });
+      fireEvent.click(screen.getByRole("button", { name: "Add" }));
+      await waitFor(() => expect(screen.getByRole("button", { name: "Remove Route2" })).toBeTruthy());
+      await waitFor(() => expect(position()).not.toEqual(panBeforeMembershipChange));
+      const membershipFitPosition = position();
+      const membershipFitZoom = container.querySelector(".world-canvas__zoom-readout")!.textContent;
+      // The canvas's explicit fit is the oracle for the new membership's automatic fit.
+      fireEvent.mouseDown(stage, { button: 0, clientX: 0, clientY: 0 });
+      fireEvent.mouseMove(stage, { clientX: 20, clientY: 10 });
+      fireEvent.mouseUp(stage);
+      expect(position()).not.toEqual(membershipFitPosition);
+      fireEvent.click(screen.getByRole("button", { name: "Fit world" }));
+      expect(position()).toEqual(membershipFitPosition);
+      expect(container.querySelector(".world-canvas__zoom-readout")!.textContent).toBe(membershipFitZoom);
+    } finally {
+      if (width) Object.defineProperty(HTMLElement.prototype, "clientWidth", width);
+      else Reflect.deleteProperty(HTMLElement.prototype, "clientWidth");
+      if (height) Object.defineProperty(HTMLElement.prototype, "clientHeight", height);
+      else Reflect.deleteProperty(HTMLElement.prototype, "clientHeight");
+    }
+    expect(Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth")).toEqual(width);
+    expect(Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight")).toEqual(height);
   });
 });
 
