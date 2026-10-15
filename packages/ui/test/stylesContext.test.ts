@@ -42,4 +42,14 @@ describe("styles.css: in-context editing overlay (Plan 6c E4)", () => {
     expect(body).toMatch(/border-radius\s*:\s*4px/);
     expect(ruleBody(".world-canvas__context-name")).toMatch(/min-width\s*:\s*0/);
   });
+
+  it("the edit rail is a 260px column that cannot widen the page; the inspector takes at most half (Plan 9 D4)", () => {
+    const rail = ruleBody(".edit-rail");
+    expect(rail).toMatch(/width\s*:\s*260px/);
+    expect(rail).toMatch(/min-width\s*:\s*0(px)?\s*(;|$)/);
+    expect(rail).toMatch(/flex-direction\s*:\s*column/);
+    expect(ruleBody(".edit-rail > .event-inspector")).toMatch(/max-height\s*:\s*50%/);
+    expect(ruleBody(".edit-rail > .metatile-palette")).toMatch(/min-width\s*:\s*0(px)?\s*(;|$)/);
+    expect(out).not.toMatch(/\.app__metatile-strip|\.app__collision-strip|\.gbc-map-editing__rail/);
+  });
 });

@@ -216,14 +216,14 @@ describe("GbcApp -- in-context editing (Plan 7 Task 5b)", () => {
     const baseline = worldFetches();
     expect(baseline).toBeGreaterThan(0);
     expect(chrome()).toBeNull();
-    expect(document.querySelector(".gbc-map-editing__rail")).toBeNull();
+    expect(document.querySelector(".edit-rail")).toBeNull();
     const body = document.querySelector(".app__map-editing-body");
     expect(body).not.toBeNull();
 
     dblClickPort(canvas);
 
     await waitFor(() => expect(chrome()).not.toBeNull());
-    expect(document.querySelector(".gbc-map-editing__rail")).not.toBeNull(); // palette + inspector
+    expect(document.querySelector(".edit-rail")).not.toBeNull(); // palette + inspector
     expect(worldCanvas()).toBe(canvas); // same DOM node: the world canvas was not remounted
     expect(document.querySelector(".app__map-editing-body")).toBe(body);
     expect(calls.filter((c) => c === "GET /api/world").length).toBe(baseline);
@@ -285,7 +285,7 @@ describe("GbcApp -- in-context editing (Plan 7 Task 5b)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Done editing OlivinePort" }));
 
     await waitFor(() => expect(chrome()).toBeNull());
-    expect(document.querySelector(".gbc-map-editing__rail")).toBeNull();
+    expect(document.querySelector(".edit-rail")).toBeNull();
     expect(contextOverlay()).toBeNull();
     expect(worldCanvas()).toBe(canvas);
     expect(screen.getByRole("button", { name: "World" }).getAttribute("aria-pressed")).toBe("true");

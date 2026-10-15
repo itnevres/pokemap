@@ -47,8 +47,8 @@ interface InactiveMapEditingWorkspaceProps extends MapEditingWorkspaceBase {
 
 export type MapEditingWorkspaceProps = ActiveMapEditingWorkspaceProps | InactiveMapEditingWorkspaceProps;
 
-/** Plan 6c E2: the map-editing chrome (toolbar, tool strips, event-op/sign
- *  banners, canvas + inspector) lifted verbatim out of `App.tsx`. State lives
+/** Plan 6c E2: the map-editing chrome (toolbar, banners, canvas + rail)
+ *  lifted verbatim out of `App.tsx`. State lives
  *  in `useMapEditing`; the edit session in `App`; `SaveDialog`/`SignComposer`
  *  stay siblings at `<main>` level in `App` for stacking reasons. */
 export function MapEditingWorkspace({ active = true, mapName, data, editSession, editing, renderCanvas, onStrokeChain }: MapEditingWorkspaceProps) {
@@ -92,23 +92,6 @@ export function MapEditingWorkspace({ active = true, mapName, data, editSession,
         // wired.
         availableTools={["collision", "pencil", "rect", "bucket", "dropper", "shift"]}
       />
-      {activeToolKind === "collision" && (
-        <div className="app__collision-strip">
-          <CollisionPalette selected={collisionValue} onSelect={setCollisionValue} />
-        </div>
-      )}
-      {data && (activeToolKind === "pencil" || activeToolKind === "rect" || activeToolKind === "bucket") && (
-        <div className="app__metatile-strip">
-          <MetatilePalette
-            layoutName={data.layout.name}
-            split={data.split}
-            primaryCount={data.primaryCount}
-            secondaryCount={data.secondaryCount}
-            onSelect={setCurrentStamp}
-            selected={currentStamp}
-          />
-        </div>
-      )}
       {/* Review fix: a failed move/add/delete used to be an
           unhandled rejection with zero visible signal -- reuses
           SaveDialog's own `.save-dialog__refusal`-style danger
@@ -140,17 +123,25 @@ export function MapEditingWorkspace({ active = true, mapName, data, editSession,
       )}
     </>
   );
-  /* Task 14: EventInspector docks as a real side panel next to
-     the canvas (DESIGN.md's own layout section anticipates
-     exactly this -- "whatever Task 21+ adds -- an inspector, a
-     metatile palette"), not another horizontal strip like
-     CollisionPalette above it -- its X/Y/Elevation/Delete form
-     reads naturally as a vertical column, the same shape
-     app__sidebar's own MapTree already uses on the opposite
-     edge of the screen. Always mounted (not gated on a
-     selection): EventInspector's own empty state carries the
-     Add Event entry point. */
-  const side = <EventInspector selected={selectedEvent} onMove={onMoveEventFromInspector} onDelete={onDeleteEvent} onAdd={onAddEvent} />;
+  /* Plan 9 (D4): one right-hand rail, as GBC has had since Plan 7 -- the collision palette while the Collision tool
+     is active, the metatile palette always (a pick with another tool active only sets the stamp, as a dropper pick
+     does), then EventInspector (always mounted: its empty state carries Add Event). */
+  const side = (
+    <>
+      {activeToolKind === "collision" && <CollisionPalette selected={collisionValue} onSelect={setCollisionValue} />}
+      {data && (
+        <MetatilePalette
+          layoutName={data.layout.name}
+          split={data.split}
+          primaryCount={data.primaryCount}
+          secondaryCount={data.secondaryCount}
+          onSelect={setCurrentStamp}
+          selected={currentStamp}
+        />
+      )}
+      <EventInspector selected={selectedEvent} onMove={onMoveEventFromInspector} onDelete={onDeleteEvent} onAdd={onAddEvent} />
+    </>
+  );
   return (
     <div className="app__map-editing">
       <EditingWorkspace

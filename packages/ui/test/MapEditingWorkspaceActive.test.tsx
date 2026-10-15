@@ -28,7 +28,7 @@ const editing = {
   setSignComposerOpen: vi.fn(), signAddedMessage: "Added", setSignAddedMessage: vi.fn(), activeTool: null, handleDiscard: vi.fn(),
 } as unknown as ReturnType<typeof useMapEditing>;
 
-const CHROME = [".toolbar", ".app__metatile-strip", ".app__event-op-error", ".app__sign-added", ".event-inspector"];
+const CHROME = [".toolbar", ".edit-rail", ".app__event-op-error", ".app__sign-added", ".event-inspector"];
 
 describe("MapEditingWorkspace: active flag (Plan 6c E4)", () => {
   it("inactive renders only the wrapper and the canvas slot, handing renderCanvas null when there is no map data", () => {

@@ -255,30 +255,6 @@ input {
   flex-direction: column;
 }
 
-.app__collision-strip {
-  flex: 0 0 auto;
-  padding: var(--space-2) var(--space-3);
-  background: var(--bg-panel);
-  border-bottom: 1px solid var(--border);
-}
-
-/* Plan 2 follow-up 1: hosts MetatilePalette above the canvas, same slot
-   .app__collision-strip occupies for the collision tool. Unlike that one
-   fixed-height row, a real layout's grid can run 60+ rows (500+ metatiles at
-   8 columns) -- unconstrained, mounting this would push the canvas off
-   screen. Capped well under .app__body's typical available height (a few
-   hundred px on a normal window) and scrollable on its own;
-   .metatile-palette itself already carries `overflow-y: auto`, this just
-   gives it a bounded box to actually scroll within. */
-.app__metatile-strip {
-  flex: 0 0 auto;
-  max-height: 240px;
-  overflow-y: auto;
-  padding: var(--space-2) var(--space-3);
-  background: var(--bg-panel);
-  border-bottom: 1px solid var(--border);
-}
-
 /* Task 14: wraps MapCanvas + EventInspector in a row -- MapCanvas keeps its
    own `flex: 1 1 auto` (still the one element in this whole screen with no
    max-width, per DESIGN.md's "what the canvas is owed"), EventInspector
@@ -2741,10 +2717,11 @@ input {
   color: var(--text-on-accent);
 }
 
-/* Plan 7 Task 5 (quality review I4): the GBC palette and inspector share ONE 260px right-hand rail, palette on top
-   (taking the spare height, scrolling inside), inspector below (capped at half the height, scrolling inside), so
-   the canvas keeps the rest of the row. min-width: 0 on every flex child so long text cannot widen the rail. */
-.gbc-map-editing__rail {
+/* Plan 9 (D4): one 260px right-hand rail for both families -- [collision palette, Collision tool only] over the
+   metatile palette (takes the spare height, scrolls inside) over the event inspector (at most half the height,
+   scrolls inside); the canvas keeps the rest of the row. min-width: 0 on every flex child so long text cannot
+   widen the rail (LESSONS: React / UI Patterns). */
+.edit-rail {
   width: 260px;
   flex: 0 0 auto;
   min-width: 0;
@@ -2752,9 +2729,22 @@ input {
   display: flex;
   flex-direction: column;
   border-left: 1px solid var(--border);
+  background: var(--bg-panel);
 }
 
-.gbc-map-editing__rail > .gbc-metatile-palette {
+.edit-rail > .collision-palette {
+  flex: 0 0 auto;
+  min-width: 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.edit-rail > .metatile-palette {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+}
+
+.edit-rail > .gbc-metatile-palette {
   width: auto;
   flex: 1 1 0;
   min-width: 0;
@@ -2762,7 +2752,7 @@ input {
   border-left: none;
 }
 
-.gbc-map-editing__rail > .event-inspector {
+.edit-rail > .event-inspector {
   width: auto;
   flex: 0 1 auto;
   min-width: 0;

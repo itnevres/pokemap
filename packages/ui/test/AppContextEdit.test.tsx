@@ -143,6 +143,38 @@ describe("App -- in-context editing (Plan 6c E4)", () => {
     expect(contextOverlay()!.querySelector(".map-canvas__status")).toBeNull();
   });
 
+  it("in context, GBA editing gets the rail (palette + inspector) around the SAME world canvas, with no /api/world refetch (Plan 9 D4)", async () => {
+    const fetchMock = await startApp();
+    const canvas = await enterWorld();
+    const worldFetches = () => fetchMock.mock.calls.filter(([url]) => url === "/api/world").length;
+    const baseline = worldFetches(); // the canvas and the visibility hook each load it once
+    expect(baseline).toBeGreaterThan(0);
+    expect(chrome()).toBeNull();
+    expect(document.querySelector(".event-inspector")).toBeNull();
+    const body = document.querySelector(".app__map-editing-body");
+
+    dblClickRoute1(canvas);
+
+    await waitFor(() => expect(chrome()).not.toBeNull());
+    const rail = document.querySelector(".edit-rail")!;
+    expect(rail).toBeTruthy();
+    expect(rail.querySelector(".metatile-palette")).toBeTruthy();
+    expect(rail.querySelector(".event-inspector")).toBeTruthy();
+    expect(document.querySelector(".app__metatile-strip")).toBeNull();
+    expect(document.querySelector(".event-inspector")).not.toBeNull();
+    expect(worldCanvas()).toBe(canvas); // same DOM node: the world canvas was not remounted
+    expect(document.querySelector(".app__map-editing-body")).toBe(body);
+    expect(worldFetches()).toBe(baseline);
+    expect(contextOverlay()).not.toBeNull();
+    expect(document.querySelector(".world-canvas__context-bar")!.textContent).toContain("Route1");
+    expect(document.querySelector('.map-tree__map[aria-current="true"]')?.textContent).toContain("Route1");
+    expect(screen.getByRole("button", { name: "World" }).getAttribute("aria-pressed")).toBe("true");
+    // The map's layout loads, then the overlay hosts a chromeless MapCanvas: no map toolbar, no status strip.
+    await waitFor(() => expect(contextOverlay()!.querySelector("section.map-canvas.map-canvas--chromeless canvas.map-canvas__stage")).not.toBeNull());
+    expect(contextOverlay()!.querySelector(".map-canvas__toolbar")).toBeNull();
+    expect(contextOverlay()!.querySelector(".map-canvas__status")).toBeNull();
+  });
+
   it("Done on a clean session removes the chrome and the overlay; World stays", async () => {
     await startApp();
     const canvas = await enterWorld();

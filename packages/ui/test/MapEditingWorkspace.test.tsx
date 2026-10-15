@@ -103,13 +103,13 @@ describe("MapEditingWorkspace", () => {
     expect(container.querySelector(".app__map-editing-body canvas.map-canvas__stage")).not.toBeNull();
   });
   // Plan 6c E2 fix round (review F1): the wiring App.test.tsx never reaches.
-  it("renders the collision strip only while the collision tool is active", () => {
+  it("renders the collision palette in the rail only while the collision tool is active", () => {
     const { container, rerender } = render(
       <MapEditingWorkspace mapName="Foo" data={DATA} editSession={editSession} editing={makeEditing({ activeToolKind: "collision" })} />,
     );
-    expect(container.querySelector(".app__collision-strip")).not.toBeNull();
+    expect(container.querySelector(".edit-rail > .collision-palette")).not.toBeNull();
     rerender(<MapEditingWorkspace mapName="Foo" data={DATA} editSession={editSession} editing={makeEditing({ activeToolKind: "shift" })} />);
-    expect(container.querySelector(".app__collision-strip")).toBeNull();
+    expect(container.querySelector(".edit-rail > .collision-palette")).toBeNull();
   });
 
   it("renders signAddedMessage as a status banner whose Dismiss calls setSignAddedMessage(null)", () => {
@@ -136,12 +136,34 @@ describe("MapEditingWorkspace", () => {
     expect(editing.setSaveDialogOpen).toHaveBeenCalledTimes(1);
   });
 
-  it("the metatile strip is keyed on data.layout.name, not mapName", () => {
+  it("the rail's metatile palette is keyed on data.layout.name, not mapName", () => {
     const { container } = render(
       <MapEditingWorkspace mapName="Map1" data={DATA} editSession={editSession} editing={makeEditing({ activeToolKind: "pencil" })} />,
     );
-    const srcs = [...container.querySelectorAll(".app__metatile-strip img")].map((i) => i.getAttribute("src")!);
+    const srcs = [...container.querySelectorAll(".edit-rail .metatile-palette img")].map((i) => i.getAttribute("src")!);
     expect(srcs.length).toBeGreaterThan(0);
     expect(srcs.every((s) => s.startsWith("/api/metatile/Foo_Layout/"))).toBe(true);
+  });
+
+  // Plan 9 (D4): one right-hand rail -- [collision palette] over the metatile palette over the inspector.
+  const railOrder = (container: HTMLElement) =>
+    [...container.querySelector(".edit-rail")!.children].map((el) => el.className.split(" ")[0]);
+
+  it("rail order: collision palette (Collision only), then the metatile palette, then the inspector", () => {
+    const { container, rerender } = render(
+      <MapEditingWorkspace mapName="Foo" data={DATA} editSession={editSession} editing={makeEditing({ activeToolKind: "collision" })} />,
+    );
+    expect(railOrder(container)).toEqual(["collision-palette", "metatile-palette", "event-inspector"]);
+    rerender(<MapEditingWorkspace mapName="Foo" data={DATA} editSession={editSession} editing={makeEditing({ activeToolKind: "shift" })} />);
+    expect(railOrder(container)).toEqual(["metatile-palette", "event-inspector"]);
+    expect(container.querySelector(".app__metatile-strip, .app__collision-strip")).toBeNull();
+  });
+
+  it("the GBA palette shows with no paint tool, and a pick only sets the stamp", () => {
+    const editing = makeEditing({ activeToolKind: null });
+    render(<MapEditingWorkspace mapName="Foo" data={DATA} editSession={editSession} editing={editing} />);
+    fireEvent.click(screen.getByRole("button", { name: /metatile 0x1\b/i }));
+    expect(editing.setCurrentStamp).toHaveBeenCalledWith({ width: 1, height: 1, cells: [{ metatileId: 1 }] });
+    expect(editing.setActiveToolKind).not.toHaveBeenCalled();
   });
 });

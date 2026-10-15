@@ -166,31 +166,30 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
         </div>
       )}
     </>;
-  // One right-hand rail (palette over inspector), 260px: three fixed side panels left the canvas about 224px
-  // at 1024 wide (quality review I4). The rail and its children carry min-width: 0 in the stylesheet.
+  // The shared rail (EditingWorkspace, .edit-rail): palette over inspector.
   const side = mapName !== null && data !== null ? (
-          <div className="gbc-map-editing__rail">
-            <GbcMetatilePalette
-              mapName={mapName}
-              time={time}
-              tilesetName={data.tileset.constName}
-              metatileCount={data.metatileCount}
-              highlightId={hoveredMetatileId}
-              onSelect={writable ? setStamp : undefined}
-              selected={pickedId}
-            />
-            <GbcEventInspector
-              events={session.events}
-              selected={selectedEvent}
-              stepsW={2 * data.layout.width}
-              stepsH={2 * data.layout.height}
-              onMove={onMove}
-              onDelete={onDelete}
-              onDuplicate={onDuplicate}
-              warnings={warnings}
-              onDismissWarnings={() => { if (isCurrent()) setWarn(null); }}
-            />
-          </div>
+    <>
+      <GbcMetatilePalette
+        mapName={mapName}
+        time={time}
+        tilesetName={data.tileset.constName}
+        metatileCount={data.metatileCount}
+        highlightId={hoveredMetatileId}
+        onSelect={writable ? setStamp : undefined}
+        selected={pickedId}
+      />
+      <GbcEventInspector
+        events={session.events}
+        selected={selectedEvent}
+        stepsW={2 * data.layout.width}
+        stepsH={2 * data.layout.height}
+        onMove={onMove}
+        onDelete={onDelete}
+        onDuplicate={onDuplicate}
+        warnings={warnings}
+        onDismissWarnings={() => { if (isCurrent()) setWarn(null); }}
+      />
+    </>
   ) : null;
   return <EditingWorkspace active={active} top={top} side={side} canvasProps={canvasProps} Canvas={GbcMapCanvas} renderCanvas={renderCanvas} />;
 }
