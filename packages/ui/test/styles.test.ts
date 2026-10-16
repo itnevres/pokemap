@@ -51,6 +51,41 @@ describe("styles.css", () => {
     expect(body).toMatch(/min-width\s*:\s*0(px)?\s*(;|$)/);
   });
 
+  // Plan 9 addendum R-F7 / R-F5: abutting cells, inset marks, a pinned header and a rail wide enough for 256 px.
+  it.each([".metatile-palette__cell", ".gbc-metatile-palette__cell"])("%s abuts its neighbours: no border, padding or radius", (sel) => {
+    const body = ruleBody(sel);
+    expect(body).toMatch(/border\s*:\s*(none|0)/);
+    expect(body).toMatch(/padding\s*:\s*0/);
+    expect(body).not.toMatch(/border-radius\s*:\s*[1-9]/);
+  });
+  it("palette columns have no gap between cells", () => {
+    expect(ruleBody(".palette__column")).toMatch(/gap\s*:\s*0/);
+  });
+  it("picked marks are an inset box-shadow; hovered marks an inward dashed outline (Review Focus 4)", () => {
+    expect(ruleBody(".metatile-palette__cell.metatile-palette__cell--selected")).toMatch(/box-shadow\s*:\s*inset/);
+    expect(ruleBody(".gbc-metatile-palette__cell--picked")).toMatch(/box-shadow\s*:\s*inset/);
+    for (const sel of [".metatile-palette__cell--hovered", ".gbc-metatile-palette__cell--selected"]) {
+      const body = ruleBody(sel);
+      expect(body).toMatch(/outline\s*:[^;]*dashed/);
+      expect(body).toMatch(/outline-offset\s*:\s*-2px/);
+      expect(body).not.toMatch(/box-shadow/);
+    }
+  });
+  it("only .palette__scroll scrolls; the palette root does not", () => {
+    expect(ruleBody(".palette__scroll")).toMatch(/overflow-y\s*:\s*auto/);
+    expect(ruleBody(".palette")).not.toMatch(/overflow/);
+    expect(ruleBody(".metatile-palette")).not.toMatch(/overflow/);
+    expect(ruleBody(".gbc-metatile-palette")).not.toMatch(/overflow/);
+  });
+  it("no stale grid rule can stack the columns, and the split divider wraps", () => {
+    const out = transform({ filename: "styles.css", code: css, errorRecovery: true }).code.toString();
+    expect(out).not.toMatch(/(^|\})\s*\.metatile-palette__grid\s*\{/);
+    expect(out).not.toMatch(/(^|\})\s*\.gbc-metatile-palette__grid\s*\{/);
+    expect(ruleBody(".metatile-palette__boundary")).not.toMatch(/nowrap/);
+  });
+  it("the edit rail is 272 px (256 px of columns + rule + thin scrollbar + border)", () => {
+    expect(ruleBody(".edit-rail")).toMatch(/width\s*:\s*272px/);
+  });
   it("keeps the shared hover right-aligned and ellipsising, with no margin-left: 0 or max-width on it", () => {
     const body = ruleBody(".map-canvas__hover");
     expect(body).toMatch(/text-overflow\s*:\s*ellipsis/);
