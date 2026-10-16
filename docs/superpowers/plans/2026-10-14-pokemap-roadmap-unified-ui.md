@@ -92,6 +92,13 @@ Both families already render the same `components/Toolbar.tsx`; the differences 
 - **Risk:** medium-high. The GBC sign composer writes new source text (save safety, LESSONS: Editing Sessions & Save
   Safety; GBC Format & Engine Quirks); the switch prompt touches session ownership and the server-side discard.
 - **Depends on:** D1, D2, D3, D6, D8.
+- **Split (user, 2026-10-16):** **10a** = D1 + a new Sign tool (spec
+  `specs/2026-10-16-pokemap-plan-10a-switch-and-signs-design.md`, plan `plans/2026-10-16-pokemap-plan-10a-switch-and-signs.md`);
+  **10a2** = Pokémon Indicator; **10b** = D3 + F2, D6, D8.
+- **D2 amended (user, 2026-10-16):** the GBA "sign composer" is not a sign: it adds an object event (a catchable
+  species' sprite with cry + one line). It is renamed **Pokémon Indicator** and ported to GBC in 10a2. D2's "GBC sign
+  composer" becomes a real **Sign tool** in both families (readable bg-event signs; free text or text linked to the map
+  name / catchable species, kept current by the tool at save time; the decomp's original simple signs are editable).
 - **Carried from Plan 9 (user, 2026-10-15):** with D3's manual placements in GBA, dragging a greyed (unplaced) map from the
   tree onto the World canvas must un-grey its tree row at once, as GBC does (`onPlacementSaved`). Today the GBA row stays
   greyed until a view switch or reload, because GBA snapshots world visibility once per World-mode entry. Plan 9 Task 12

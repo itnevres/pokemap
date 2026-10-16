@@ -100,11 +100,11 @@ both families: a readable sign (bg event) with customisable text.
 - **S4. Linked text.**
   - **Map name.** GBA: `region_map_section` → display string in the subject's region map data
     (`src/data/region_map/region_map_entries.h`, `sMapName_*`). GBC: map header landmark → `data/maps/landmarks.asm`
-    name string; the charmap's multi-character tokens (e.g. `<TOWN>`) are kept as written.
+    name string; `<BSP>` becomes a space; other charmap tokens are kept as written.
   - **Catchable species.** All species catchable on the map (the same sources the Indicator's ranking uses:
     `signs/suggest.ts` for GBA, `gbc/load/encounters.ts` `wildForMap` for GBC), ordered by best encounter chance,
     shown as display names (each family's species-name table), comma-separated and wrapped. Generated text starts with
-    the map name line. Empty list: "No wild POKéMON here." (charmap-legal per family).
+    the map name line. Empty list: "No wild POKEMON here." (plain, charmap-safe in both families).
 - **S5. Live linking.** Every time the tool builds a save plan for a map (the Save dialog's plan, which is also what
   commit writes), it regenerates every linked sign on that map from current data. Changed text is part of the plan
   and shows in the diff like any other edit. No engine command, no decomp change.
@@ -121,8 +121,9 @@ both families: a readable sign (bg event) with customisable text.
     label) opens the editor read-only with the reason ("This sign's script is too complex to edit here: <reason>").
   - **Round trip.** Loading a body into the editor maps GBC `line`/`cont` and GBA `\n`/`\l` to a newline, and GBC
     `para` / GBA `\p` to a blank line. Saving maps them back the same way, and only over-long lines are wrapped. So an
-    Update with no text change writes identical bytes, apart from the added marker (B6). Which of `line`/`cont` (GBC)
-    or `\n`/`\l` (GBA) is used is preserved per position where the line count is unchanged; new lines follow S3.
+    Update with no text change writes identical bytes, apart from the added marker (B6). (Amended while planning: if the
+    edited text equals the parsed text, the body bytes are kept as-is; otherwise the body is rendered fresh per S3.
+    No per-position `line`/`cont` or `\n`/`\l` preservation.)
 - **S7. Hand-edit safety (user, 2026-10-16).** Before rewriting a marked sign (S5 refresh or an editor Update), the
   tool hashes the current text body. If it differs from the marker's hash, that sign is **not rewritten** and the save
   is **not blocked**:
@@ -183,7 +184,7 @@ both families: a readable sign (bg event) with customisable text.
     returns except swarms.
   - Charmap: GBC parses `constants/charmap.asm`; GBA parses the subject's `charmap.txt`. Free text may use plain
     characters and any token the charmap defines (originals use them, e.g. GBA `{UP_ARROW}`). For wrapping, a token
-    counts as its fixed expansion width where it has one (`<TOWN>` style), and runtime-name tokens (`<PLAYER>`,
+    counts as its fixed expansion width where it has one (e.g. `<PK>`, `<MN>`), and runtime-name tokens (`<PLAYER>`,
     `<RIVAL>`, GBA `{PLAYER}`) count at their maximum name length (`ponytail:` conservative). A token the charmap does
     not define is refused.
   - GBC build check: the repo has no assembler check. The G5 write gate (`core/test/gbc/write/writeGate.test.ts`,
@@ -197,8 +198,8 @@ both families: a readable sign (bg event) with customisable text.
 - B1. Golden fixtures: for one GBC map and one GBA map, placing a free-text sign produces exactly the expected `.asm` /
   `map.json` + `scripts.inc` bytes (fixture files, CRLF and LF variants for GBC).
 - B2. Wrap: fixtures for 18-char GBC wrapping (`line`/`cont`/`para`), a word longer than a line (refused), a charmap
-  miss (refused, names the character), `<TOWN>`-style tokens counted per the charmap.
-- B3. Linked name: GBC NewBarkTown → `NEW BARK<TOWN>`; GBA Route101 → `ROUTE 101`. Linked species: Route 29 (GBC) and
+  miss (refused, names the character), `<PLAYER>` counted at its maximum width.
+- B3. Linked name: GBC NewBarkTown → `NEW BARK TOWN` (`landmarks.asm` has `NEW BARK<BSP>TOWN`; `<BSP>` → space); GBA Route101 → `ROUTE 101`. Linked species: Route 29 (GBC) and
   Route 101 (GBA) lists match an independently written expected list.
 - B4. Refresh: change the name source in a temp copy of the subject, save the map → plan diff shows only the sign text
   change and the new marker hash.

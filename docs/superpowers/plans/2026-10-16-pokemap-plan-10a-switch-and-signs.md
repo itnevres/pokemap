@@ -31,7 +31,7 @@ S9a; acceptance A1-A7, B1-B9). Read it first; this plan cites rulings by id inst
   181 files; a lower pass count is a finding), `npm run typecheck`, `npm run build -w @pokemap/ui`.
 - Commit with explicit pathspecs. Task reports to `docs/superpowers/task-reports/pokemap-plan-10a-switch-and-signs/`.
 
-## Spec corrections made while planning (record in spec, Task 9)
+## Spec corrections made while planning (already applied to the spec)
 
 - B3 GBC name: `landmarks.asm` has `NewBarkTownName: db "NEW BARK<BSP>TOWN@"`. `<BSP>` (breakable space) becomes a
   space in sign text → expected `NEW BARK TOWN`.
@@ -315,5 +315,4 @@ test touches may change, and the test restores them (discard or revert via the a
 
 ### Task 9: Docs — **Low** (text only)
 
-- [ ] Spec: apply "Spec corrections made while planning". Roadmap Plan 10: record the 10a/10a2/10b split and D2
-  amended. RESUME "Unified UI" row + Git state. LESSONS: anything new. Commit `docs: Plan 10a status`.
+- [ ] RESUME "Unified UI" row + Git state. LESSONS: anything new. Commit `docs: Plan 10a status`.
