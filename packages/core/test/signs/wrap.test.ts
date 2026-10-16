@@ -1,7 +1,8 @@
 import { it, expect } from "vitest";
 import { itWithGbcCorpus, GBC_SUBJECT_ROOT } from "../gbc/helpers/corpus.js";
+import { itWithCorpus, SUBJECT_ROOT } from "../helpers/corpus.js";
 import { readFileSync } from "node:fs";
-import { parseGbcCharmap, tokenize } from "../../src/signs/charmap.js";
+import { parseGbcCharmap, parseGbaCharmap, tokenize } from "../../src/signs/charmap.js";
 import { wrapSign } from "../../src/signs/wrap.js";
 
 // Helper to build a minimal GBC charmap for inline tests
@@ -121,4 +122,46 @@ itWithGbcCorpus("wrap 18 with real GBC charmap: <PLAYER> long word after", () =>
   const result = wrapSign("<PLAYER> ABCDEFGHIJK", cm, 18);
   if ("refusal" in result) throw new Error(result.refusal);
   expect(result.paragraphs).toEqual([["<PLAYER>", "ABCDEFGHIJK"]]);
+});
+
+// New tests from fix round 1
+
+itWithGbcCorpus("wrap 18 with real GBC charmap: refuses ~", () => {
+  const text = readFileSync(`${GBC_SUBJECT_ROOT}/constants/charmap.asm`, "utf8");
+  const cm = parseGbcCharmap(text);
+  const result = wrapSign("A~B", cm, 18);
+  if (!("refusal" in result)) throw new Error("Expected refusal");
+  expect(result.refusal).toContain("~");
+});
+
+itWithCorpus("wrap 36 with real GBA charmap: simple line", () => {
+  const text = readFileSync(`${SUBJECT_ROOT}/charmap.txt`, "utf8");
+  const cm = parseGbaCharmap(text);
+  const result = wrapSign("Hello people", cm, 36);
+  if ("refusal" in result) throw new Error(result.refusal);
+  expect(result.paragraphs).toEqual([["Hello people"]]);
+});
+
+itWithCorpus("wrap 36 with real GBA charmap: refuses $", () => {
+  const text = readFileSync(`${SUBJECT_ROOT}/charmap.txt`, "utf8");
+  const cm = parseGbaCharmap(text);
+  const result = wrapSign("A$B", cm, 36);
+  if (!("refusal" in result)) throw new Error("Expected refusal");
+  expect(result.refusal).toContain("$");
+});
+
+it("wrap 18: three-line paragraph from short words", () => {
+  const cm = createMinimalGbcCharmap();
+  // 50-character sentence of short words: "THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG"
+  const sentence = "THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG";
+  const result = wrapSign(sentence, cm, 18);
+  if ("refusal" in result) throw new Error(result.refusal);
+  // Expected hand-computed wrapping at width 18:
+  // "THE QUICK BROWN" (14) + space + "FOX" (3) = 18 -> "THE QUICK BROWN FOX" is 18? Actually let's compute:
+  // Words: THE(3), QUICK(5), BROWN(5), FOX(3), JUMPS(5), OVER(4), THE(3), LAZY(4), DOG(3)
+  // Greedy:
+  // Line1: THE(3) + space + QUICK(5) = 9, + space + BROWN(5) = 15, + space + FOX(3) = 19 > 18 -> so line1 = "THE QUICK BROWN" (15)
+  // Line2: FOX(3) + space + JUMPS(5) = 9, + space + OVER(4) = 14, + space + THE(3) = 18, + space + LAZY(4) = 23 > 18 -> line2 = "FOX JUMPS OVER THE" (18)
+  // Line3: LAZY(4) + space + DOG(3) = 8 -> line3 = "LAZY DOG"
+  expect(result.paragraphs).toEqual([["THE QUICK BROWN", "FOX JUMPS OVER THE", "LAZY DOG"]]);
 });

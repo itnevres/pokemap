@@ -1,4 +1,19 @@
-import { Charmap, tokenize } from "./charmap.js";
+import type { Charmap } from "./charmap.js";
+import { tokenize } from "./charmap.js";
+
+// Helper: compute total width of a line, or return refusal
+function widthOfLine(
+  line: string,
+  cm: Charmap
+): { width: number } | { refusal: string } {
+  const result = tokenize(line, cm);
+  if ("refusal" in result) return result;
+  let width = 0;
+  for (const t of result.tokens) {
+    width += cm.widthOf(t);
+  }
+  return { width };
+}
 
 export function wrapSign(
   input: string,
@@ -18,18 +33,11 @@ export function wrapSign(
       continue;
     }
 
-    const tokenizeResult = tokenize(line, cm);
-    if ("refusal" in tokenizeResult) {
-      return tokenizeResult;
+    const lineResult = widthOfLine(line, cm);
+    if ("refusal" in lineResult) {
+      return lineResult;
     }
-    const tokens = tokenizeResult.tokens;
-
-    let totalWidth = 0;
-    for (const t of tokens) {
-      totalWidth += cm.widthOf(t);
-    }
-
-    if (totalWidth <= width) {
+    if (lineResult.width <= width) {
       currentParagraph.push(line);
     } else {
       const words = line.split(/\s+/).filter((w) => w.length > 0);
@@ -38,15 +46,12 @@ export function wrapSign(
         continue;
       }
 
+      // Compute width of each word
       const wordWidths: number[] = [];
       for (const w of words) {
-        const wr = tokenize(w, cm);
+        const wr = widthOfLine(w, cm);
         if ("refusal" in wr) return wr;
-        let ww = 0;
-        for (const t of wr.tokens) {
-          ww += cm.widthOf(t);
-        }
-        wordWidths.push(ww);
+        wordWidths.push(wr.width);
       }
 
       const wrappedLines: string[] = [];
@@ -55,6 +60,10 @@ export function wrapSign(
       for (let i = 0; i < words.length; i++) {
         const w = words[i];
         const ww = wordWidths[i];
+        if (w === undefined || ww === undefined) {
+          // This should not happen, but guard to satisfy TypeScript
+          throw new Error("Unexpected undefined word or width");
+        }
         if (curLine === "") {
           if (ww > width) {
             return { refusal: `"${w}" is longer than one line (${width}).` };

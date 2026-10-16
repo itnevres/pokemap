@@ -111,3 +111,51 @@ it("tokenize refuses unknown token", () => {
   if (!("refusal" in result)) throw new Error("Expected refusal");
   expect(result.refusal).toContain("<FOO>");
 });
+
+// New tests from fix round 1
+
+it("GBA real charmap: allows l, p, = and disallows empty string and $", () => {
+  const text = readFileSync(`${SUBJECT_ROOT}/charmap.txt`, "utf8");
+  const cm = parseGbaCharmap(text);
+  expect(cm.has("l")).toBe(true);
+  expect(cm.has("p")).toBe(true);
+  expect(cm.has("=")).toBe(true);
+  expect(cm.has("")).toBe(false);
+  expect(cm.has("$")).toBe(false);
+});
+
+itWithCorpus("GBA real charmap: widths of multi-byte tokens", () => {
+  const text = readFileSync(`${SUBJECT_ROOT}/charmap.txt`, "utf8");
+  const cm = parseGbaCharmap(text);
+  expect(cm.widthOf("{PKMN}")).toBe(2);
+  expect(cm.widthOf("{POKEBLOCK}")).toBe(5);
+  expect(cm.widthOf("{KYOGRE}")).toBe(7);
+  expect(cm.has("{COLOR}")).toBe(false);
+  expect(cm.has("{STRING}")).toBe(false);
+});
+
+itWithGbcCorpus("GBC real charmap: token widths and control tokens", () => {
+  const text = readFileSync(`${GBC_SUBJECT_ROOT}/constants/charmap.asm`, "utf8");
+  const cm = parseGbcCharmap(text);
+  expect(cm.widthOf("<POKE>")).toBe(2);
+  expect(cm.widthOf("<TRAINER>")).toBe(7);
+  expect(cm.widthOf("<PK>")).toBe(1);
+  expect(cm.has("<NULL>")).toBe(false);
+  expect(cm.has("<SCROLL>")).toBe(false);
+});
+
+it("empty GBC charmap text throws", () => {
+  expect(() => parseGbcCharmap("")).toThrow("gbc charmap has no entries");
+});
+
+it("empty GBA charmap text throws", () => {
+  expect(() => parseGbaCharmap("")).toThrow("gba charmap has no entries");
+});
+
+itWithGbcCorpus("GBC real charmap: refuses ~", () => {
+  const text = readFileSync(`${GBC_SUBJECT_ROOT}/constants/charmap.asm`, "utf8");
+  const cm = parseGbcCharmap(text);
+  const result = tokenize("A~B", cm);
+  if (!("refusal" in result)) throw new Error("Expected refusal");
+  expect(result.refusal).toContain("~");
+});
