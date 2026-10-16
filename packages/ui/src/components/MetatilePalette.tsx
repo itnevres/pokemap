@@ -102,6 +102,10 @@ export const MetatilePalette = memo(function MetatilePalette({
   // The primary/secondary boundary is a safe cut only when secondary starts a fresh row in the index order.
   const boundaryRow = visibleCount === undefined && secondaryCount > 0 && primaryCount % columns === 0 ? primaryCount / columns : undefined;
   const fold = searching ? rows.length : pickFold(rows.length, uniformRows, boundaryRow);
+  // Plan 9F final review: a drag whose ends sit in different newspaper columns would select the logical rectangle
+  // between them (up to ~80 rows the user cannot see as one shape); it selects nothing.
+  const sameColumn = (a: number, b: number) =>
+    (Math.floor(visible.indexOf(a) / columns) < fold) === (Math.floor(visible.indexOf(b) / columns) < fold);
   const selectionCells = selected ? Array.from({ length: selected.width * selected.height }, (_, i) => selected.cells[i]?.metatileId ?? null) : [];
 
   const selectSingle = (id: number) => {
@@ -202,7 +206,7 @@ export const MetatilePalette = memo(function MetatilePalette({
                 // events at all.
                 onMouseDown={() => setDragStart(id)}
                 onMouseUp={() => {
-                  if (dragStart !== null && dragStart !== id) selectRect(dragStart, id);
+                  if (dragStart !== null && dragStart !== id && sameColumn(dragStart, id)) selectRect(dragStart, id);
                   setDragStart(null);
                 }}
                 onClick={() => selectSingle(id)}

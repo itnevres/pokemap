@@ -86,7 +86,8 @@ describe("MetatilePalette", () => {
   // result must stay small and contain only ids actually on screen.
   it("a drag from the last primary id to the first secondary id produces a small rect, not one spanning the unused split gap", () => {
     const onSelect = vi.fn();
-    render(<MetatilePalette layoutName="Test_Layout" split={SPLIT} primaryCount={4} secondaryCount={3} onSelect={onSelect} columns={4} />);
+    // Plan 9F: 28 secondary ids (8 rows) keep the boundary far from the middle, so rows 0 and 1 share the left column.
+    render(<MetatilePalette layoutName="Test_Layout" split={SPLIT} primaryCount={4} secondaryCount={28} onSelect={onSelect} columns={4} />);
     fireEvent.mouseDown(screen.getByRole("button", { name: "metatile 0x3" })); // last primary id
     fireEvent.mouseUp(screen.getByRole("button", { name: "metatile 0x280" })); // first secondary id (640 decimal)
 
@@ -95,7 +96,7 @@ describe("MetatilePalette", () => {
     expect(stamp.width).toBeLessThanOrEqual(4);
     expect(stamp.height).toBeLessThanOrEqual(2);
     const ids = stamp.cells.filter((c): c is { metatileId: number } => Boolean(c)).map((c) => c.metatileId).sort((a, b) => a - b);
-    expect(ids).toEqual([0, 1, 2, 3, 640, 641, 642]);
+    expect(ids).toEqual([0, 1, 2, 3, 640, 641, 642, 643]);
     // The old bug's own failure signature: nothing from the unused gap
     // (real ids 4-639, none of them ever rendered) leaks into the stamp.
     expect(ids.every((id) => id < 4 || id >= 640)).toBe(true);
@@ -279,6 +280,18 @@ describe("MetatilePalette", () => {
     const { container } = render(<MetatilePalette layoutName="L" split={SPLIT} primaryCount={8} secondaryCount={0} onSelect={() => {}} selected={stamp} />);
     expect(container.querySelector(".palette__selection")!.textContent).toBe("Selection · 2x1 from 0x3");
     expect([...container.querySelectorAll(".palette__selection img")].map((i) => i.getAttribute("src"))).toEqual(["/api/metatile/L/3.png", "/api/metatile/L/4.png"]);
+  });
+
+  it("a drag from the left column into the right one selects nothing; within one column it still selects (Plan 9F)", () => {
+    const onSelect = vi.fn();
+    render(<MetatilePalette layoutName="L" split={SPLIT} primaryCount={32} secondaryCount={0} onSelect={onSelect} />);
+    // 4 rows of 8, folded at row 2: 0x1 (row 0) is left, 0x11 (row 2) is right.
+    fireEvent.mouseDown(screen.getByRole("button", { name: "metatile 0x1" }));
+    fireEvent.mouseUp(screen.getByRole("button", { name: "metatile 0x11" }));
+    expect(onSelect).not.toHaveBeenCalled();
+    fireEvent.mouseDown(screen.getByRole("button", { name: "metatile 0x1" }));
+    fireEvent.mouseUp(screen.getByRole("button", { name: "metatile 0x9" }));
+    expect(onSelect).toHaveBeenCalledTimes(1);
   });
 
   it("a cell both picked and hovered carries both classes (Review Focus 4)", () => {

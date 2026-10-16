@@ -9,12 +9,14 @@ describe("pickFold (Plan 9 addendum R-F3)", () => {
     [10, [], undefined, 5, "no candidate: the middle"],
     [9, [], undefined, 5, "odd count: ceil of the middle"],
     [10, [4], undefined, 5, "after a uniform row at the middle"],
-    [10, [1], undefined, 2, "the only safe cut wins, however far from the middle"],
+    [10, [1], undefined, 5, "a cut more than rowCount / 4 from the middle is ignored"],
     [10, [2, 6], undefined, 3, "two equidistant cuts (3 and 7): the earlier"],
     [10, [9], undefined, 5, "a uniform LAST row gives no cut (nothing after it)"],
     [10, [], 3, 3, "the primary/secondary boundary is a candidate"],
     [10, [4], 3, 5, "a uniform-row cut nearer the middle beats the boundary"],
-    [77, [], 64, 64, "GBA 512 primary + 104 secondary: boundary only"],
+    [77, [], 64, 39, "GBA 512 primary + 104 secondary: the boundary is too far from the middle"],
+    [98, [], 80, 49, "GBA Route29 (640 primary + 144 secondary): boundary at row 80 is too far, cut at the middle"],
+    [8, [], 2, 2, "the limit is inclusive: |2 - 4| = 2 = 8 / 4"],
   ] as const)("rowCount %i, uniform %j, boundary %s -> %i (%s)", (rowCount, uniform, boundary, expected, _why) => {
     expect(pickFold(rowCount, new Set(uniform), boundary)).toBe(expected);
   });

@@ -19,7 +19,9 @@ the selection preview, search and Follow hover never scroll away (final review m
     repeated tile). The cut is the index of the next row.
   - GBA only: the primary/secondary boundary row (secondary starts on a fresh row, see below).
 
-  Pick the candidate nearest `rowCount / 2` (tie: the earlier one). No candidate: cut at `ceil(rowCount / 2)`.
+  Pick the candidate nearest `rowCount / 2` (tie: the earlier one), ignoring any more than `rowCount / 4` rows from it.
+  No candidate: cut at `ceil(rowCount / 2)`. (Amended 2026-10-15 after the live check: GBA Route29's boundary sat at row
+  80 of 98, leaving a 288 px right column beside a 1,280 px left one.)
   `rowCount < 2`: one column. Uniform rows are judged from the loaded thumbnails (drawn to a canvas once each
   thumbnail loads); until they are known the fold uses the other candidates, then settles.
 - **R-F4 No zoom control.**
@@ -43,7 +45,8 @@ the selection preview, search and Follow hover never scroll away (final review m
 - `shared/useUniformRows.ts`: from loaded `<img>` cells, returns the set of uniform row indices. Injectable compare for
   tests (jsdom has no canvas pixels).
 - GBA rows: primary ids `0..primaryCount-1` in rows of 8, then secondary from a fresh row (the primary/secondary divider
-  stays, spanning its column). Drag-rect keeps logical tileset coordinates (row, col in the unfolded order).
+  stays, spanning its column). Drag-rect keeps logical tileset coordinates (row, col in the unfolded order); a drag whose ends sit in different
+  columns selects nothing (amended 2026-10-15: it selected up to ~80 rows the user could not see as one shape).
   While a search filter is active: one column, plain 8-wide flow (no fold).
 - GBC: rows of 4, fold as above; search filters by hex id, one column while active.
 - Class names that tests pin stay (`metatile-palette__cell`, `--selected`, `--hovered`, `--out-of-range`,
