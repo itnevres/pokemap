@@ -79,7 +79,7 @@ both families: a readable sign (bg event) with customisable text.
 - **S1. Tool.** A new toolbar tool **Sign** (icon + label, shortcut **G**, tooltip "Sign (G)"), in both families,
   behind a new capability `signTool: true` for both. It does not paint. Clicking a tile:
   - empty tile (no bg event there): opens the **sign editor** for a new sign at that tile;
-  - a tile holding a sign this tool can edit (S6): opens the editor on that sign;
+  - a tile holding a sign (any bg sign event): opens the editor on that sign, editable or read-only per S6;
   - a tile holding another bg event: the editor says "This tile already has a <kind> event" and offers nothing else.
 - **S2. Editor.** A small popover anchored at the clicked tile (not a full modal; `role="dialog"`, Escape closes,
   `aria-modal="true"` so tool shortcuts are suppressed while it is open). Fields:
@@ -109,11 +109,20 @@ both families: a readable sign (bg event) with customisable text.
   commit writes), it regenerates every linked sign on that map from current data. Changed text is part of the plan
   and shows in the diff like any other edit. No engine command, no decomp change.
   - Known limit (accepted): a sign only refreshes when its own map is saved.
-- **S6. Marker and ownership.** Each tool-made sign carries a one-line marker comment directly above its text label:
-  GBC `; pokemap:sign <mode> <hash>`, GBA `@ pokemap:sign <mode> <hash>`, where `<mode>` is `free`, `name` or
-  `species` and `<hash>` is a short hash of the text body the tool last wrote. The tool edits only signs that carry
-  a marker. Signs without a marker (every original decomp sign) are left alone; the editor shows them as "Not made
-  with the Sign tool" and offers no edit.
+- **S6. Marker and editable signs (user, 2026-10-16: the decomp's original signs are editable too).**
+  - Tool-made signs carry a one-line marker comment directly above the text label: GBC `; pokemap:sign <mode> <hash>`,
+    GBA `@ pokemap:sign <mode> <hash>`; `<mode>` is `free`, `name` or `species`, `<hash>` a short hash of the body the
+    tool last wrote.
+  - **Original signs are editable** when their script has the simple shape: GBC `<Label>:` + `jumptext <X>`; GBA
+    `<Label>::` + `msgbox <X>, MSGBOX_SIGN` + `end`; and `<X>` is one text block in the same file that no other script
+    references. The first Update **adopts** the sign: the body is rewritten and the marker is added (the diff shows
+    both). Before adoption the hand-edit baseline is the body as read when the session opened (in-tool, no git).
+  - Any other shape (`opentext`/`writetext`, `jumpstd`, `text_far`, text in another file, shared text, a missing
+    label) opens the editor read-only with the reason ("This sign's script is too complex to edit here: <reason>").
+  - **Round trip.** Loading a body into the editor maps GBC `line`/`cont` and GBA `\n`/`\l` to a newline, and GBC
+    `para` / GBA `\p` to a blank line. Saving maps them back the same way, and only over-long lines are wrapped. So an
+    Update with no text change writes identical bytes, apart from the added marker (B6). Which of `line`/`cont` (GBC)
+    or `\n`/`\l` (GBA) is used is preserved per position where the line count is unchanged; new lines follow S3.
 - **S7. Hand-edit safety (user, 2026-10-16).** Before rewriting a marked sign (S5 refresh or an editor Update), the
   tool hashes the current text body. If it differs from the marker's hash, that sign is **not rewritten** and the save
   is **not blocked**:
@@ -159,8 +168,8 @@ both families: a readable sign (bg event) with customisable text.
   - GBA bg event: `player_facing_dir: "BG_EVENT_PLAYER_FACING_ANY"` (the real Route101 sign); drop the S2 facing field.
     GBC always `BGEVENT_READ`. Signs sit on solid tiles in both games, so no collision check; an object event on the
     tile is shown as a note in the editor, not refused.
-  - S1 "a sign this tool can edit" = a bg event whose script label has a `pokemap:sign` marker on its text. Other bg
-    events show their kind (GBA `type`, GBC the `BGEVENT_*` value).
+  - S1: non-sign bg events (GBA `type` other than `sign`, GBC `BGEVENT_*` other than `READ`/`UP`/`DOWN`/`LEFT`/
+    `RIGHT`) show their kind and nothing else.
   - `<N>`: lowest number unused in that map's own file (`.asm` / `scripts.inc` + `map.json`). Undo of a new sign frees
     it; an orphan left by an inspector delete keeps its number taken.
   - Sessions are server-side. GBC: the whole `.asm` is `eventsText`, so script/text inserts are text edits in the same
@@ -173,9 +182,10 @@ both families: a readable sign (bg event) with customisable text.
     (`suggest.ts` already keeps the highest chance per species), no evolutions; GBC includes every source `wildForMap`
     returns except swarms.
   - Charmap: GBC parses `constants/charmap.asm`; GBA parses the subject's `charmap.txt`. Free text may use plain
-    characters only; `<...>` tokens are refused in free text. In linked names, a token's width is its charmap
-    expansion where fixed-width (`<TOWN>` style); runtime-expanding tokens (`<PLAYER>`, `<RIVAL>`) are refused with a
-    located refusal.
+    characters and any token the charmap defines (originals use them, e.g. GBA `{UP_ARROW}`). For wrapping, a token
+    counts as its fixed expansion width where it has one (`<TOWN>` style), and runtime-name tokens (`<PLAYER>`,
+    `<RIVAL>`, GBA `{PLAYER}`) count at their maximum name length (`ponytail:` conservative). A token the charmap does
+    not define is refused.
   - GBC build check: the repo has no assembler check. The G5 write gate (`core/test/gbc/write/writeGate.test.ts`,
     byte round trips over the corpus) gains a sign case: place then undo restores exact bytes on every map. B8's GBC
     live check re-parses the written `.asm` with the app's loader. GBA: B8 re-loads the map with the app's loader.
@@ -194,7 +204,9 @@ both families: a readable sign (bg event) with customisable text.
   change and the new marker hash.
 - B5. Hand edit: alter a marked body in a temp copy, save → commit succeeds, that sign's bytes unchanged, notice shown;
   Refresh → body rewritten; Unlink → body kept, marker `free`; both visible in the diff before commit.
-- B6. Unmarked original sign: tool click opens the read-only notice; no edit path exists; a save never changes it.
+- B6. Original signs: GBC Route29Sign1 and GBA Route101 RouteSign open editable with their exact text; Update with no
+  change writes only the marker line; Update with new text rewrites only that body. A complex-shape sign (one real
+  example per family) opens read-only with its reason. An original sign nobody opened is never changed by a save.
 - B7. Undo/redo of Place and Update restores the session text exactly.
 - B8. Live, both families: place a linked sign, Save, files changed exactly as the diff showed; hash of unrelated
   subject files unchanged. For GBC, the written `.asm` re-parses with the app's loader (and assembles, if a build check
