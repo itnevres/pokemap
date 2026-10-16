@@ -19,7 +19,7 @@ Purpose: This document collects every reusable trap, rule, and convention discov
 
 ## Testing (Vitest / Testing Library / StrictMode / flakes / fixtures)
 
-**Viewport-helper leak (Plan 9 final review m1):** `withViewport`-style helpers save `Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth")`, but jsdom defines `clientWidth` on `Element.prototype`, so the saved value is `undefined` and the restore never runs: a fake 100 px viewport leaks into every later test in the file. Tell: a test passes alone (`-t`) and fails in the full-file run, and moving it to another describe "fixes" it. (Plan 9)
+**Viewport-helper leak (Plan 9 final review m1):** `withViewport`-style helpers save `Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth")`, but jsdom defines `clientWidth` on `Element.prototype`, so the saved value is `undefined` and the restore never runs: a fake 100 px viewport leaks into every later test in the file. Tell: a test passes alone (`-t`) and fails in the full-file run, and moving it to another describe "fixes" it. (Plan 9) **Fixed 2026-10-15:** use `test/viewport.ts` (`stubViewport`/`restoreViewport`/`withViewport`), never a new copy.
 
 **Use `copyGbcSubjectToTemp` (or equivalent temp copy) for every test a mutation could turn into a write.** A test that dry-runs against the real PerfPlus corpus can write under a "dry run commits" mutation; the write was restored byte-identical only by luck. (Plan 7)
 
@@ -93,6 +93,8 @@ Rerun in isolation before calling either a regression. (Plan 8)
 ---
 
 ## React / UI Patterns
+
+**Shell-level state re-renders everything below it.** The edit session and the hovered metatile id live in the family runtime, so every edit reply and every hover re-renders `FamilyApp`. Big lists under it (`MapTree`, both palettes) must be `memo` with stable callbacks (a ref-held latest handler). Tell: in the Vite dev build the dirty indicator trails a paint by 0.3-0.7 s and a CPU profile is mostly `jsxDEV` under `MapTree`; the production build hides it (~40 ms). Measure dev and `vite preview` both. (Plan 9 O2)
 
 **Never call one React state setter inside another's updater.** `main.tsx` renders under `<StrictMode>`, which runs updaters twice in dev. So `setZoom(z => { setPan(...) })` applies the pan twice. **Tell:** zoom/pan is wrong or the canvas is blank only in the Vite dev server, and correct in a production build. Instrument `drawImage`'s destination rect before explaining it. **Fix:** a single `view = { zoom, pan }` state, plus a StrictMode test that pins the exact pan. Fixed for GBA in 6c E1: `MapCanvas` now holds one `view` state; do not split it again. (Plan 6b)
 
