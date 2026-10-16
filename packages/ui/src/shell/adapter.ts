@@ -43,6 +43,7 @@ export const toolsFor = (caps: Capabilities): ToolKind[] => ALL_TOOLS.filter((k)
 export interface RuntimeArgs {
   selected: string | null;
   mode: Mode;
+  requestPrompt(go: () => void): void;
 }
 
 /** What FamilyApp hands the runtime's render slots on every render (never hook inputs). */
@@ -63,7 +64,8 @@ export interface ShellSlots {
 export interface FamilyRuntime {
   groups: { data: MapGroupsData | null; error: string | null };
   /** The edit session for `selected` (beforeunload guard and context editing). */
-  session: UseContextEditingArgs["session"];
+  session: UseContextEditingArgs["session"] & { discard(): Promise<void> };
+  setSwitchError(message: string | null): void;
   /** The family's switch policy. `sameMap` is true only for a tree click on the selected map. */
   leave(go: () => void, opts: { sameMap: boolean }): void;
   /** Family side effects of every selection change (after setSelected). */

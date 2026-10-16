@@ -169,7 +169,6 @@ it("dirty Map and Dungeon mode switches leave context without prompting and pres
   fireEvent.mouseUp(stage, { clientX: 44, clientY: 33, button: 0 });
   await screen.findByTestId("dirty-indicator");
   await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => url.endsWith("/paint/end"))).toBe(true));
-  const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
 
   fireEvent.click(screen.getByRole("button", { name: "Map" }));
   await act(async () => {});
@@ -194,5 +193,5 @@ it("dirty Map and Dungeon mode switches leave context without prompting and pres
   await act(async () => {});
   expect(screen.getByTestId("dirty-indicator")).toBeTruthy();
   expect(screen.queryByRole("dialog", { name: "Save changes" })).toBeNull();
-  expect(confirm).not.toHaveBeenCalled();
+  expect(screen.queryByRole("dialog", { name: "Unsaved changes" })).toBeNull();
 });

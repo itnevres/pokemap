@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import { MapTree } from "../components/MapTree.js";
 import { DungeonSidebar } from "../components/DungeonSidebar.js";
+import { SwitchPromptDialog } from "../shared/SwitchPromptDialog.js";
 import { SaveDialog } from "../components/SaveDialog.js";
 import { useContextEditing } from "../shared/useContextEditing.js";
 import { useBeforeUnloadGuard } from "../shared/useBeforeUnloadGuard.js";
@@ -45,13 +46,34 @@ export function FamilyApp({ adapter, switcher }: FamilyAppProps) {
   const [openDungeonId, setOpenDungeonId] = useState<string | null>(null);
   const [manualPlacementMaps, setManualPlacementMaps] = useState<ReadonlySet<string>>(new Set());
 
-  const runtime = adapter.useRuntime({ selected, mode });
+  const [pendingSwitch, setPendingSwitch] = useState<{ go: () => void } | null>(null);
+  const [switchBusy, setSwitchBusy] = useState(false);
+  // Refs also guard requests made before React has rendered the pending state.
+  const switchPending = useRef(false);
+  const switchInFlight = useRef(false);
+  const saveAfterSwitch = useRef<(() => void) | null>(null);
+  const requestPrompt = (go: () => void) => {
+    if (switchPending.current) return;
+    switchPending.current = true;
+    setPendingSwitch({ go });
+  };
+  const clearSwitch = () => {
+    switchPending.current = false;
+    switchInFlight.current = false;
+    saveAfterSwitch.current = null;
+    setPendingSwitch(null);
+    setSwitchBusy(false);
+  };
+  const runtime = adapter.useRuntime({ selected, mode, requestPrompt });
+  const guardedLeave = (go: () => void, opts: { sameMap: boolean }) => {
+    if (!switchPending.current) runtime.leave(go, opts);
+  };
 
   // Shared browser-level half of I6's dirty-session guard; the in-app guard is runtime.leave.
   useBeforeUnloadGuard(runtime.session.isDirty);
 
   // Context entry and every non-tree switch: the family's policy, never the same-map shortcut.
-  const leave = (go: () => void) => runtime.leave(go, { sameMap: false });
+  const leave = (go: () => void) => guardedLeave(go, { sameMap: false });
   // Every change of `selected` runs the family's side effects (GBC clears switchError and the hover id).
   const select = (name: string) => {
     setSelected(name);
@@ -65,8 +87,9 @@ export function FamilyApp({ adapter, switcher }: FamilyAppProps) {
   });
 
   // A tree click: GBA prompts even for the selected map; GBC does not (runtime.leave's sameMap).
+  // Plan 10a: both families now bypass the prompt for the selected map.
   const selectMap = (name: string) =>
-    runtime.leave(() => {
+    guardedLeave(() => {
       select(name);
       ctx.leaveContext(); // a tree click leaves in-context editing (a jump would also move the world under the overlay)
       setJumpTarget(name);
@@ -87,6 +110,7 @@ export function FamilyApp({ adapter, switcher }: FamilyAppProps) {
   // The world context menu's "Open in Map view" (and Shift+double-click, GBC double-click): select through the
   // family's guard, and switch to Map view only if the user did not cancel it.
   const openMapFromWorld = (name: string) => {
+    if (switchPending.current) return;
     const go = () => {
       select(name);
       ctx.leaveContext();
@@ -96,6 +120,7 @@ export function FamilyApp({ adapter, switcher }: FamilyAppProps) {
   };
 
   const enterContext = (name: string) => {
+    if (switchPending.current) return;
     runtime.onEnterContext(name);
     ctx.enter(name);
   };
@@ -231,8 +256,37 @@ export function FamilyApp({ adapter, switcher }: FamilyAppProps) {
             <SaveDialog mapName={selected}
               // markClean first (ctx.onCommitted): the dialog's commit closes the server session behind the hook's
               // back. Then the family's own follow-up (GBC re-reads the map).
-              onCommitted={() => { ctx.onCommitted(); runtime.saveDialog.setOpen(false); runtime.saveDialog.onCommitted(); }}
-              onCancel={() => runtime.saveDialog.setOpen(false)} />
+              onCommitted={() => {
+                ctx.onCommitted(); runtime.saveDialog.setOpen(false); runtime.saveDialog.onCommitted();
+                const go = saveAfterSwitch.current;
+                clearSwitch();
+                go?.();
+              }}
+              onCancel={() => { runtime.saveDialog.setOpen(false); clearSwitch(); }} />
+          )}
+          {pendingSwitch && selected && !runtime.saveDialog.open && (
+            <SwitchPromptDialog mapName={selected} busy={switchBusy}
+              onCancel={() => { if (!switchInFlight.current) clearSwitch(); }}
+              onSave={() => {
+                if (switchInFlight.current) return;
+                switchInFlight.current = true;
+                setSwitchBusy(true);
+                saveAfterSwitch.current = pendingSwitch.go;
+                runtime.saveDialog.setOpen(true);
+              }}
+              onDiscard={() => {
+                if (switchInFlight.current) return;
+                switchInFlight.current = true;
+                setSwitchBusy(true);
+                strokeSettled().then(() => runtime.session.discard()).then(() => {
+                  const go = pendingSwitch.go;
+                  clearSwitch();
+                  go();
+                }, (e: unknown) => {
+                  clearSwitch();
+                  runtime.setSwitchError(e instanceof Error ? e.message : "Could not discard the changes.");
+                });
+              }} />
           )}
           {runtime.modals}
         </main>

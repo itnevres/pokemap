@@ -72,21 +72,21 @@ async function paintOnce() {
 }
 
 describe("GbcApp editing (Plan 7 Task 5)", () => {
-  it("dirty guard: cancel keeps the map; confirm discards the server session BEFORE switching", async () => {
+  it("dirty guard: cancel keeps the map; Discard discards the server session BEFORE switching", async () => {
     const { calls } = mockFetch({ OlivineCity: payload("OlivineCity"), OlivinePort: payload("OlivinePort") });
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
     render(<FamilyApp adapter={gbcAdapter} />);
     await openCity();
     await paintOnce();
 
     fireEvent.click(screen.getByText("OlivinePort"));
-    expect(confirm).toHaveBeenCalledWith("You have unsaved changes on this map. Discard them and switch maps?");
+    expect(screen.getByRole("dialog", { name: "Unsaved changes" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(document.querySelector(".app__status")!.textContent).toBe("OlivineCity");
     expect(calls.some((c) => c.includes("/discard"))).toBe(false);
     expect(screen.getByTestId("dirty-indicator")).toBeTruthy();
 
-    confirm.mockReturnValue(true);
     fireEvent.click(screen.getByText("OlivinePort"));
+    fireEvent.click(screen.getByRole("button", { name: "Discard" }));
     await waitFor(() => expect(document.querySelector(".app__status")!.textContent).toBe("OlivinePort"));
     await waitFor(() => expect(calls).toContain("GET /api/map/OlivinePort"));
     const discardAt = calls.indexOf("POST /api/edit/OlivineCity/discard");
@@ -96,13 +96,13 @@ describe("GbcApp editing (Plan 7 Task 5)", () => {
 
   it("a failed discard keeps the user on the map and says why", async () => {
     const { f } = mockFetch({ OlivineCity: payload("OlivineCity"), OlivinePort: payload("OlivinePort") });
-    vi.spyOn(window, "confirm").mockReturnValue(true);
     render(<FamilyApp adapter={gbcAdapter} />);
     await openCity();
     await paintOnce();
     const base = f.getMockImplementation()!;
     f.mockImplementation((url: string, init?: RequestInit) => /\/discard$/.test(url) ? Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({}) } as Response) : base(url, init));
     fireEvent.click(screen.getByText("OlivinePort"));
+    fireEvent.click(screen.getByRole("button", { name: "Discard" }));
     await waitFor(() => expect(screen.getByText(/discard -> 500/)).toBeTruthy());
     expect(document.querySelector(".app__status")!.textContent).toBe("OlivineCity");
   });
@@ -110,13 +110,12 @@ describe("GbcApp editing (Plan 7 Task 5)", () => {
   // Plan 9 characterisation: GbcApp.tsx:159 -- `if (name === selected) go()`: no confirm, no discard.
   it("characterisation (Plan 9): re-clicking the selected map while dirty neither asks nor discards", async () => {
     const { calls } = mockFetch({ OlivineCity: payload("OlivineCity"), OlivinePort: payload("OlivinePort") });
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
     render(<FamilyApp adapter={gbcAdapter} />);
     await openCity();
     await paintOnce();
 
     fireEvent.click(screen.getByRole("button", { name: "OlivineCity" }));
-    expect(confirm).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog", { name: "Unsaved changes" })).toBeNull();
     expect(calls.some((c) => c.includes("/discard"))).toBe(false);
     expect(screen.getByTestId("dirty-indicator")).toBeTruthy();
     expect(document.querySelector(".app__status")!.textContent).toBe("OlivineCity");
@@ -125,7 +124,6 @@ describe("GbcApp editing (Plan 7 Task 5)", () => {
   // Plan 9 characterisation: GbcApp.tsx:152 -- selectMap's go() clears switchError first.
   it("characterisation (Plan 9): a tree re-click of the selected map clears a failed-discard error", async () => {
     const { f } = mockFetch({ OlivineCity: payload("OlivineCity"), OlivinePort: payload("OlivinePort") });
-    vi.spyOn(window, "confirm").mockReturnValue(true);
     render(<FamilyApp adapter={gbcAdapter} />);
     await openCity();
     await paintOnce();
@@ -133,6 +131,7 @@ describe("GbcApp editing (Plan 7 Task 5)", () => {
     f.mockImplementation((url: string, init?: RequestInit) => /\/discard$/.test(url) ? Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({}) } as Response) : base(url, init));
 
     fireEvent.click(screen.getByText("OlivinePort"));
+    fireEvent.click(screen.getByRole("button", { name: "Discard" }));
     await waitFor(() => expect(screen.getByText(/discard -> 500/)).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: "OlivineCity" }));
     await waitFor(() => expect(screen.queryByText(/discard -> 500/)).toBeNull());
@@ -142,16 +141,17 @@ describe("GbcApp editing (Plan 7 Task 5)", () => {
   // Plan 9 follow-up O1: the toolbar's Discard Changes succeeding on the same map makes the failed-discard error stale.
   it("a successful toolbar discard on the same map clears a failed-discard error", async () => {
     const { f } = mockFetch({ OlivineCity: payload("OlivineCity"), OlivinePort: payload("OlivinePort") });
-    vi.spyOn(window, "confirm").mockReturnValue(true);
     render(<FamilyApp adapter={gbcAdapter} />);
     await openCity();
     await paintOnce();
     const base = f.getMockImplementation()!;
     f.mockImplementation((url: string, init?: RequestInit) => /\/discard$/.test(url) ? Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({}) } as Response) : base(url, init));
     fireEvent.click(screen.getByText("OlivinePort"));
+    fireEvent.click(screen.getByRole("button", { name: "Discard" }));
     await waitFor(() => expect(screen.getByText(/discard -> 500/)).toBeTruthy());
 
     f.mockImplementation(base);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
     fireEvent.click(screen.getByRole("button", { name: "Discard Changes" }));
     await waitFor(() => expect(screen.queryByTestId("dirty-indicator")).toBeNull());
     await waitFor(() => expect(screen.queryByText(/discard -> 500/)).toBeNull());
@@ -172,13 +172,12 @@ describe("GbcApp editing (Plan 7 Task 5)", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Pencil" }).getAttribute("aria-pressed")).toBe("false"));
   });
 
-  it("a clean session switches with no confirm", async () => {
+  it("a clean session switches with no prompt", async () => {
     mockFetch({ OlivineCity: payload("OlivineCity"), OlivinePort: payload("OlivinePort") });
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
     render(<FamilyApp adapter={gbcAdapter} />);
     await openCity();
     fireEvent.click(screen.getByText("OlivinePort"));
-    expect(confirm).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog", { name: "Unsaved changes" })).toBeNull();
     expect(document.querySelector(".app__status")!.textContent).toBe("OlivinePort");
   });
 
