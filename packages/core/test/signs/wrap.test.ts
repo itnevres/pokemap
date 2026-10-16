@@ -152,7 +152,7 @@ itWithCorpus("wrap 36 with real GBA charmap: refuses $", () => {
 
 it("wrap 18: three-line paragraph from short words", () => {
   const cm = createMinimalGbcCharmap();
-  // 50-character sentence of short words: "THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG"
+  // 43-character sentence of short words: "THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG"
   const sentence = "THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG";
   const result = wrapSign(sentence, cm, 18);
   if ("refusal" in result) throw new Error(result.refusal);
@@ -164,4 +164,12 @@ it("wrap 18: three-line paragraph from short words", () => {
   // Line2: FOX(3) + space + JUMPS(5) = 9, + space + OVER(4) = 14, + space + THE(3) = 18, + space + LAZY(4) = 23 > 18 -> line2 = "FOX JUMPS OVER THE" (18)
   // Line3: LAZY(4) + space + DOG(3) = 8 -> line3 = "LAZY DOG"
   expect(result.paragraphs).toEqual([["THE QUICK BROWN", "FOX JUMPS OVER THE", "LAZY DOG"]]);
+});
+
+itWithCorpus("wrap 36 with real GBA charmap: DON'T", () => {
+  const text = readFileSync(`${SUBJECT_ROOT}/charmap.txt`, "utf8");
+  const cm = parseGbaCharmap(text);
+  const result = wrapSign("DON'T", cm, 36);
+  if ("refusal" in result) throw new Error(result.refusal);
+  expect(result.paragraphs).toEqual([["DON'T"]]);
 });

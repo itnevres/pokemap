@@ -92,22 +92,13 @@ export function parseGbaCharmap(text: string): Charmap {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith("@")) continue;
 
-    // Find the first '=' outside of quotes
-    let eqIndex = -1;
-    let inQuotes = false;
-    for (let i = 0; i < trimmed.length; i++) {
-      const ch = trimmed.charAt(i);
-      if (ch === "'") {
-        inQuotes = !inQuotes;
-      } else if (ch === "=" && !inQuotes) {
-        eqIndex = i;
-        break;
-      }
-    }
-    if (eqIndex === -1) continue;
-
-    const left = trimmed.substring(0, eqIndex).trim();
-    const right = trimmed.substring(eqIndex + 1).trim();
+    // Match line: either a quoted character or a bare token, then '=', then hex bytes
+    const m = /^('(?:\\.|[^'\\])+'|\S+)\s*=\s*(.*)$/.exec(trimmed);
+    if (!m) continue;
+    const left = m[1];
+    let right = m[2];
+    if (left === undefined || right === undefined) continue;
+    right = right.trim();
 
     // Parse left side
     let token: string;

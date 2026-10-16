@@ -159,3 +159,9 @@ itWithGbcCorpus("GBC real charmap: refuses ~", () => {
   if (!("refusal" in result)) throw new Error("Expected refusal");
   expect(result.refusal).toContain("~");
 });
+
+itWithCorpus("GBA real charmap: has apostrophe", () => {
+  const text = readFileSync(`${SUBJECT_ROOT}/charmap.txt`, "utf8");
+  const cm = parseGbaCharmap(text);
+  expect(cm.has("'")).toBe(true);
+});
