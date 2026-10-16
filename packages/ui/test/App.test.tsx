@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
-import { App } from "../src/App.js";
+import { render, screen, fireEvent, waitFor, act, within } from "@testing-library/react";
+import { FamilyApp } from "../src/shell/FamilyApp.js";
+import { gbaAdapter } from "../src/gba/adapter.js";
+import { restoreViewport, stubViewport, withViewport } from "./viewport.js";
 
 /**
  * Pins the three review-flagged behaviours from Task 15's review, each
@@ -112,7 +114,7 @@ afterEach(() => vi.unstubAllGlobals());
 describe("App", () => {
   it("remounts WorldCanvas fresh when switching from Dungeon mode back to World mode", async () => {
     vi.stubGlobal("fetch", makeFetchMock());
-    render(<App />);
+    render(<FamilyApp adapter={gbaAdapter} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Dungeon" }));
     await waitFor(() => expect(screen.getByText("Mt Moon")).toBeTruthy());
@@ -137,7 +139,7 @@ describe("App", () => {
 
   it("does not clear the open dungeon when a delete fails", async () => {
     vi.stubGlobal("fetch", makeFetchMock({ deleteFails: true }));
-    render(<App />);
+    render(<FamilyApp adapter={gbaAdapter} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Dungeon" }));
     await waitFor(() => expect(screen.getByText("Mt Moon")).toBeTruthy());
@@ -224,7 +226,7 @@ describe("App", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<App />);
+    render(<FamilyApp adapter={gbaAdapter} />);
     fireEvent.click(screen.getByRole("button", { name: "Dungeon" }));
     await waitFor(() => expect(screen.getByText("Mt Moon")).toBeTruthy());
 
@@ -252,7 +254,7 @@ describe("App", () => {
 
   it("surfaces a groups-load failure in Dungeon mode too", async () => {
     vi.stubGlobal("fetch", makeFetchMock({ groupsFail: true }));
-    render(<App />);
+    render(<FamilyApp adapter={gbaAdapter} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Dungeon" }));
 
@@ -373,15 +375,15 @@ function makeEditFetchMock(paintApplyBodies?: unknown[], opts: { failEventAdd?: 
  *  through the REAL begin/apply/end round trip, not a mocked editSession
  *  object. */
 async function renderAppInEditModeWithDirtySession() {
-  const utils = render(<App />);
+  const utils = render(<FamilyApp adapter={gbaAdapter} />);
   // `getByRole("button", ...)`, not `getByText` -- once PalletTown is
   // selected, App.tsx's own `.app__status` header span ALSO renders the
   // map name as plain text, so a text-only query would match two elements.
   await waitFor(() => expect(screen.getByRole("button", { name: "PalletTown" })).toBeTruthy());
   fireEvent.click(screen.getByRole("button", { name: "PalletTown" }));
 
-  await screen.findByRole("button", { name: "collision" });
-  fireEvent.click(screen.getByRole("button", { name: "collision" }));
+  await within(await screen.findByRole("group", { name: "Tools" })).findByRole("button", { name: "Collision" });
+  fireEvent.click(within(screen.getByRole("group", { name: "Tools" })).getByRole("button", { name: "Collision" }));
 
   const canvas = document.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
   await act(async () => {
@@ -440,14 +442,36 @@ describe("App -- Task 13 save flow", () => {
     vi.stubGlobal("fetch", makeEditFetchMock());
     const addSpy = vi.spyOn(window, "addEventListener");
 
-    render(<App />);
+    render(<FamilyApp adapter={gbaAdapter} />);
     await waitFor(() => expect(screen.getByText("PalletTown")).toBeTruthy());
     fireEvent.click(screen.getByText("PalletTown"));
-    await screen.findByRole("button", { name: "collision" }); // MapCanvas is mounted, nothing painted
+    await within(await screen.findByRole("group", { name: "Tools" })).findByRole("button", { name: "Collision" }); // MapCanvas is mounted, nothing painted
 
     expect(addSpy).not.toHaveBeenCalledWith("beforeunload", expect.any(Function));
 
     addSpy.mockRestore();
+    vi.unstubAllGlobals();
+  });
+
+  // Plan 9 characterisation: App.tsx:96-102 -- selectMap -> changeSelection -> leave, so even the
+  // ALREADY-selected map prompts while dirty. GBA never calls the server's discard before a switch.
+  it("characterisation (Plan 9): re-clicking the selected map in the tree while dirty asks first; GBA never discards on the server", async () => {
+    const fetchMock = makeEditFetchMock();
+    vi.stubGlobal("fetch", fetchMock);
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    await renderAppInEditModeWithDirtySession();
+
+    fireEvent.click(screen.getByRole("button", { name: "PalletTown" }));
+    expect(confirmSpy).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("dirty-indicator")).toBeTruthy();
+
+    confirmSpy.mockReturnValue(true);
+    fireEvent.click(screen.getByRole("button", { name: "PalletTown" }));
+    expect(confirmSpy).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith("/discard"))).toBe(false);
+    expect(screen.getByTestId("dirty-indicator")).toBeTruthy();
+
+    confirmSpy.mockRestore();
     vi.unstubAllGlobals();
   });
 });
@@ -462,13 +486,13 @@ describe("App -- metatile palette wiring", () => {
   it("mounts MetatilePalette once pencil is selected, and a subsequent paint sends the chosen stamp", async () => {
     const paintApplyBodies: unknown[] = [];
     vi.stubGlobal("fetch", makeEditFetchMock(paintApplyBodies));
-    render(<App />);
+    render(<FamilyApp adapter={gbaAdapter} />);
 
     await waitFor(() => expect(screen.getByRole("button", { name: "PalletTown" })).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: "PalletTown" }));
 
-    await screen.findByRole("button", { name: "pencil" });
-    fireEvent.click(screen.getByRole("button", { name: "pencil" }));
+    await screen.findByRole("button", { name: "Pencil" });
+    fireEvent.click(screen.getByRole("button", { name: "Pencil" }));
 
     // MetatilePalette is now mounted -- its own search input is a
     // distinguishing marker, same query MetatilePalette.test.tsx itself uses.
@@ -498,13 +522,13 @@ describe("App -- metatile palette wiring", () => {
   // end-to-end round trip App.tsx's `selected={currentStamp}` line adds.
   it("highlights the picked metatile in the palette itself after a real click, via currentStamp flowing back into selected", async () => {
     vi.stubGlobal("fetch", makeEditFetchMock());
-    render(<App />);
+    render(<FamilyApp adapter={gbaAdapter} />);
 
     await waitFor(() => expect(screen.getByRole("button", { name: "PalletTown" })).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: "PalletTown" }));
 
-    await screen.findByRole("button", { name: "pencil" });
-    fireEvent.click(screen.getByRole("button", { name: "pencil" }));
+    await screen.findByRole("button", { name: "Pencil" });
+    fireEvent.click(screen.getByRole("button", { name: "Pencil" }));
     await waitFor(() => expect(screen.getByPlaceholderText(/search/i)).toBeTruthy());
 
     const picked = screen.getByRole("button", { name: /metatile 0x1\b/i }) as HTMLButtonElement;
@@ -517,21 +541,42 @@ describe("App -- metatile palette wiring", () => {
     vi.unstubAllGlobals();
   });
 
+  // Plan 9 characterisation: useMapEditing lives at shell level (App.tsx:70), so the chosen tool and stamp
+  // survive a mode round trip. FamilyApp keeps it in the GBA runtime, which lives as long as the shell.
+  it("characterisation (Plan 9): the chosen tool and stamp survive a Map -> World -> Map round trip", async () => {
+    const base = makeEditFetchMock();
+    vi.stubGlobal("fetch", vi.fn((u: string, i?: RequestInit) => u === "/api/world"
+      ? Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(makeWorld()) } as Response)
+      : base(u, i)));
+    render(<FamilyApp adapter={gbaAdapter} />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "PalletTown" })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "PalletTown" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Pencil" }));
+    fireEvent.click(await screen.findByRole("button", { name: /metatile 0x1\b/i }));
+
+    fireEvent.click(screen.getByRole("button", { name: "World" }));
+    fireEvent.click(screen.getByRole("button", { name: "Map" }));
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "Pencil" }).getAttribute("aria-pressed")).toBe("true"));
+    expect(screen.getByRole("button", { name: /metatile 0x1\b/i }).getAttribute("aria-pressed")).toBe("true");
+    vi.unstubAllGlobals();
+  });
+
   it("keeps the chosen stamp when switching tools -- pencil/rect/bucket deliberately share one stamp (Porymap parity), no re-pick needed", async () => {
     const paintApplyBodies: unknown[] = [];
     vi.stubGlobal("fetch", makeEditFetchMock(paintApplyBodies));
-    render(<App />);
+    render(<FamilyApp adapter={gbaAdapter} />);
 
     await waitFor(() => expect(screen.getByRole("button", { name: "PalletTown" })).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: "PalletTown" }));
 
-    await screen.findByRole("button", { name: "pencil" });
-    fireEvent.click(screen.getByRole("button", { name: "pencil" }));
+    await screen.findByRole("button", { name: "Pencil" });
+    fireEvent.click(screen.getByRole("button", { name: "Pencil" }));
     await waitFor(() => expect(screen.getByPlaceholderText(/search/i)).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: /metatile 0x1\b/i }));
 
     // Switch straight to bucket -- deliberately no fresh metatile pick here.
-    fireEvent.click(screen.getByRole("button", { name: "bucket" }));
+    fireEvent.click(screen.getByRole("button", { name: "Bucket" }));
     await waitFor(() => expect(screen.getByPlaceholderText(/search/i)).toBeTruthy());
 
     const canvas = document.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
@@ -555,13 +600,13 @@ describe("App -- metatile palette wiring", () => {
 
   it("clears the chosen stamp when a different map is selected -- pencil goes inert until a fresh pick", async () => {
     vi.stubGlobal("fetch", makeEditFetchMock());
-    render(<App />);
+    render(<FamilyApp adapter={gbaAdapter} />);
 
     await waitFor(() => expect(screen.getByRole("button", { name: "PalletTown" })).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: "PalletTown" }));
 
-    await screen.findByRole("button", { name: "pencil" });
-    fireEvent.click(screen.getByRole("button", { name: "pencil" }));
+    await screen.findByRole("button", { name: "Pencil" });
+    fireEvent.click(screen.getByRole("button", { name: "Pencil" }));
     await waitFor(() => expect(screen.getByPlaceholderText(/search/i)).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: /metatile 0x1\b/i }));
 
@@ -589,6 +634,167 @@ describe("App -- metatile palette wiring", () => {
 
     vi.unstubAllGlobals();
   });
+
+  // Plan 9 (R1, Review Focus 1): shortcuts work in Map view; typing in the rail's palette search never switches tools.
+  it("P selects Pencil in Map view; typing p in the palette search box does not", async () => {
+    vi.stubGlobal("fetch", makeEditFetchMock());
+    render(<FamilyApp adapter={gbaAdapter} />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "PalletTown" })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "PalletTown" }));
+    const search = await screen.findByPlaceholderText(/search/i);
+
+    fireEvent.keyDown(search, { key: "p" });
+    expect(screen.getByRole("button", { name: "Pencil" }).getAttribute("aria-pressed")).toBe("false");
+
+    fireEvent.keyDown(window, { key: "p" });
+    expect(screen.getByRole("button", { name: "Pencil" }).getAttribute("aria-pressed")).toBe("true");
+    vi.unstubAllGlobals();
+  });
+
+  it("hovering the canvas highlights the matching palette cell (Plan 9 R2)", async () => {
+    const layout = {
+      ...PALLET_TOWN_LAYOUT,
+      blocks: PALLET_TOWN_LAYOUT.blocks.map((block, index) => index === 1 ? { ...block, metatileId: 1 } : block),
+    };
+    const base = makeEditFetchMock();
+    vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => url === "/api/map/PalletTown"
+      ? Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(layout) } as Response)
+      : base(url, init)));
+    render(<FamilyApp adapter={gbaAdapter} />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "PalletTown" })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "PalletTown" }));
+    await screen.findByPlaceholderText(/search/i);
+
+    const canvas = document.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: 64, bottom: 64, width: 64, height: 64, x: 0, y: 0, toJSON() {} });
+    // jsdom's unmeasured viewport makes Fit use the 64x64 composite: zoom 1, pan (0,0).
+    fireEvent.click(screen.getByRole("button", { name: "Fit" }));
+    expect(screen.getByRole("button", { name: "1\u00d7" }).getAttribute("aria-pressed")).toBe("true");
+    // Origin (16,16): (40,20) maps to block (1,0), index 1, locally set to rendered primary id 1.
+    fireEvent.mouseMove(canvas, { clientX: 40, clientY: 20 });
+
+    await waitFor(() => {
+      const hovered = document.querySelector(".metatile-palette__cell--hovered");
+      expect(hovered?.getAttribute("aria-label")).toBe("metatile 0x1");
+    });
+
+    // A same-map selection calls onSelected without triggering MapCanvas's redundant mapName reset.
+    fireEvent.click(screen.getByRole("button", { name: "PalletTown" }));
+    expect(document.querySelector(".metatile-palette__cell--hovered")).toBeNull();
+  });
+
+  it("the palette highlight clears when switching to a different map (Plan 9 R2)", async () => {
+    const layout = {
+      ...PALLET_TOWN_LAYOUT,
+      blocks: PALLET_TOWN_LAYOUT.blocks.map((block, index) => index === 1 ? { ...block, metatileId: 1 } : block),
+    };
+    const base = makeEditFetchMock();
+    const route1 = { ...ROUTE1_LAYOUT, layout: { ...ROUTE1_LAYOUT.layout, name: "Route1_Layout" } };
+    vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => {
+      if (url === "/api/map/PalletTown" || url === "/api/map/Route1") {
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(url === "/api/map/PalletTown" ? layout : route1) } as Response);
+      }
+      return base(url, init);
+    }));
+    render(<FamilyApp adapter={gbaAdapter} />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "PalletTown" })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "PalletTown" }));
+    await screen.findByPlaceholderText(/search/i);
+
+    const canvas = document.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: 64, bottom: 64, width: 64, height: 64, x: 0, y: 0, toJSON() {} });
+    // Fit falls back to the native 64x64 composite in jsdom: zoom 1, pan (0,0).
+    fireEvent.click(screen.getByRole("button", { name: "Fit" }));
+    expect(screen.getByRole("button", { name: "1\u00d7" }).getAttribute("aria-pressed")).toBe("true");
+    // Subtract origin (16,16), divide by 16: (40,20) is block (1,0), index 1, metatile id 1.
+    fireEvent.mouseMove(canvas, { clientX: 40, clientY: 20 });
+    await waitFor(() => expect(document.querySelector(".metatile-palette__cell--hovered")?.getAttribute("aria-label")).toBe("metatile 0x1"));
+
+    // Prove onSelected clears independently of MapCanvas's mapName-change reset, then hover again.
+    fireEvent.click(screen.getByRole("button", { name: "PalletTown" }));
+    expect(document.querySelector(".metatile-palette__cell--hovered")).toBeNull();
+    fireEvent.mouseLeave(canvas);
+    fireEvent.mouseMove(canvas, { clientX: 40, clientY: 20 });
+    await waitFor(() => expect(document.querySelector(".metatile-palette__cell--hovered")?.getAttribute("aria-label")).toBe("metatile 0x1"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Route1" }));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Route1" }).getAttribute("aria-current")).toBe("true");
+      expect(screen.getByRole("region", { name: "Route1 canvas" })).toBeTruthy();
+      expect(document.querySelector('.metatile-palette__thumb[src="/api/metatile/Route1_Layout/1.png"]')).toBeTruthy();
+      expect(document.querySelector(".metatile-palette__cell--hovered")).toBeNull();
+    });
+  });
+});
+
+describe("App -- Plan 9 shell characterisation", () => {
+  it("characterisation (Plan 9): a dungeon rename refits the GBA dungeon canvas (no filter cache, App.tsx:136-149)", async () => {
+    stubViewport(100);
+    try {
+      const world = {
+        placements: {
+          Route1: { map: "Route1", x: 0, y: 0, width: 10, height: 10, component: 0 },
+          Route2: { map: "Route2", x: 30, y: 0, width: 10, height: 10, component: 1 },
+        },
+        components: [], conflicts: [], verticalLinks: [], sidecar: { dungeonAutoLayout: true },
+      };
+      const base = makeFetchMock();
+      let dungeon = { id: "d1", name: "Tower", maps: ["Route1"] };
+      vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => {
+        if (url === "/api/dungeons" && !init) return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve([{ ...dungeon, maps: [...dungeon.maps] }]) } as Response);
+        if (url === "/api/dungeons/d1" && init?.method === "PATCH") {
+          dungeon = { ...dungeon, ...JSON.parse(String(init.body)) };
+          return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(dungeon) } as Response);
+        }
+        if (url === "/api/world") return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(world) } as Response);
+        return base(url, init);
+      }));
+      const { container } = render(<FamilyApp adapter={gbaAdapter} />);
+      fireEvent.click(screen.getByRole("button", { name: "Dungeon" }));
+      await waitFor(() => expect(screen.getByRole("button", { name: /Tower/ })).toBeTruthy());
+      fireEvent.click(screen.getByRole("button", { name: /Tower/ }));
+      const stage = container.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement;
+      await waitFor(() => expect(container.querySelector(".world-canvas__status")?.textContent).toContain("placed 2"));
+      fireEvent.click(screen.getByRole("button", { name: "Fit" }));
+      fireEvent.click(stage, { clientX: 50, clientY: 50 });
+      const outline = () => container.querySelector(".world-canvas__selection-outline:not(.world-canvas__jump-highlight)") as HTMLElement;
+      const position = () => [outline().style.left, outline().style.top];
+      const fitPosition = position();
+      const fitZoom = container.querySelector(".world-canvas__zoom-readout")!.textContent;
+      fireEvent.mouseDown(stage, { button: 0, clientX: 0, clientY: 0 });
+      fireEvent.mouseMove(stage, { clientX: 20, clientY: 10 });
+      fireEvent.mouseUp(stage);
+      expect(position()).not.toEqual(fitPosition);
+      fireEvent.change(screen.getByRole("textbox", { name: "Dungeon name" }), { target: { value: "New Tower" } });
+      fireEvent.blur(screen.getByRole("textbox", { name: "Dungeon name" }));
+      await waitFor(() => expect(screen.getByRole("button", { name: /New Tower/ })).toBeTruthy());
+      await waitFor(() => expect(position()).toEqual(fitPosition));
+      expect(container.querySelector(".world-canvas__zoom-readout")!.textContent).toBe(fitZoom);
+      fireEvent.mouseDown(stage, { button: 0, clientX: 0, clientY: 0 });
+      fireEvent.mouseMove(stage, { clientX: 20, clientY: 10 });
+      fireEvent.mouseUp(stage);
+      const panBeforeMembershipChange = position();
+      expect(panBeforeMembershipChange).not.toEqual(fitPosition);
+      fireEvent.change(screen.getByPlaceholderText("Add map…"), { target: { value: "Route2" } });
+      fireEvent.click(screen.getByRole("button", { name: "Add" }));
+      await waitFor(() => expect(screen.getByRole("button", { name: "Remove Route2" })).toBeTruthy());
+      await waitFor(() => expect(position()).not.toEqual(panBeforeMembershipChange));
+      const membershipFitPosition = position();
+      const membershipFitZoom = container.querySelector(".world-canvas__zoom-readout")!.textContent;
+      // The canvas's explicit fit is the oracle for the new membership's automatic fit.
+      fireEvent.mouseDown(stage, { button: 0, clientX: 0, clientY: 0 });
+      fireEvent.mouseMove(stage, { clientX: 20, clientY: 10 });
+      fireEvent.mouseUp(stage);
+      expect(position()).not.toEqual(membershipFitPosition);
+      fireEvent.click(screen.getByRole("button", { name: "Fit" }));
+      expect(position()).toEqual(membershipFitPosition);
+      expect(container.querySelector(".world-canvas__zoom-readout")!.textContent).toBe(membershipFitZoom);
+    } finally {
+      restoreViewport();
+    }
+    expect(Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth")).toBeUndefined();
+    expect(Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight")).toBeUndefined();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -598,13 +804,13 @@ describe("App -- metatile palette wiring", () => {
 describe("App -- dropper/shift tool wiring", () => {
   it("dropper and shift render enabled (not 'Not yet available')", async () => {
     vi.stubGlobal("fetch", makeEditFetchMock());
-    render(<App />);
+    render(<FamilyApp adapter={gbaAdapter} />);
 
     await waitFor(() => expect(screen.getByRole("button", { name: "PalletTown" })).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: "PalletTown" }));
 
-    const dropperBtn = await screen.findByRole("button", { name: "dropper" });
-    const shiftBtn = await screen.findByRole("button", { name: "shift" });
+    const dropperBtn = await screen.findByRole("button", { name: "Dropper" });
+    const shiftBtn = await screen.findByRole("button", { name: "Shift" });
     expect(dropperBtn.hasAttribute("disabled")).toBe(false);
     expect(shiftBtn.hasAttribute("disabled")).toBe(false);
     expect(dropperBtn.getAttribute("title")).not.toBe("Not yet available");
@@ -616,13 +822,13 @@ describe("App -- dropper/shift tool wiring", () => {
   it("dropper activates with no currentStamp needed -- a picked block immediately becomes what pencil paints with next, no palette click required", async () => {
     const paintApplyBodies: unknown[] = [];
     vi.stubGlobal("fetch", makeEditFetchMock(paintApplyBodies));
-    render(<App />);
+    render(<FamilyApp adapter={gbaAdapter} />);
 
     await waitFor(() => expect(screen.getByRole("button", { name: "PalletTown" })).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: "PalletTown" }));
 
-    await screen.findByRole("button", { name: "dropper" });
-    fireEvent.click(screen.getByRole("button", { name: "dropper" }));
+    await screen.findByRole("button", { name: "Dropper" });
+    fireEvent.click(screen.getByRole("button", { name: "Dropper" }));
 
     const canvas = document.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
     // Block (1,1) of PALLET_TOWN_LAYOUT (2x2, border 1, origin 16): composite
@@ -639,7 +845,7 @@ describe("App -- dropper/shift tool wiring", () => {
 
     // Switch straight to pencil -- no MetatilePalette click, activeTool must
     // already resolve from the stamp the dropper just set.
-    fireEvent.click(screen.getByRole("button", { name: "pencil" }));
+    fireEvent.click(screen.getByRole("button", { name: "Pencil" }));
 
     await act(async () => {
       fireEvent.mouseDown(canvas, { clientX: 20, clientY: 20, button: 0 }); // block (0,0)
@@ -657,13 +863,13 @@ describe("App -- dropper/shift tool wiring", () => {
   it("shift activates with no currentStamp needed -- a drag sends {tool:'shift', dx, dy} to the server", async () => {
     const paintApplyBodies: unknown[] = [];
     vi.stubGlobal("fetch", makeEditFetchMock(paintApplyBodies));
-    render(<App />);
+    render(<FamilyApp adapter={gbaAdapter} />);
 
     await waitFor(() => expect(screen.getByRole("button", { name: "PalletTown" })).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: "PalletTown" }));
 
-    await screen.findByRole("button", { name: "shift" });
-    fireEvent.click(screen.getByRole("button", { name: "shift" }));
+    await screen.findByRole("button", { name: "Shift" });
+    fireEvent.click(screen.getByRole("button", { name: "Shift" }));
 
     const canvas = document.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
     await act(async () => {
@@ -739,7 +945,7 @@ describe("App -- discard flow", () => {
     vi.stubGlobal("fetch", makeEditFetchMock(undefined, { failEventAdd: true }));
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
 
-    render(<App />);
+    render(<FamilyApp adapter={gbaAdapter} />);
     await waitFor(() => expect(screen.getByRole("button", { name: "PalletTown" })).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: "PalletTown" }));
 
@@ -749,8 +955,8 @@ describe("App -- discard flow", () => {
     await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
 
     // Dirty the session via a real paint so Discard Changes is enabled.
-    await screen.findByRole("button", { name: "collision" });
-    fireEvent.click(screen.getByRole("button", { name: "collision" }));
+    await within(await screen.findByRole("group", { name: "Tools" })).findByRole("button", { name: "Collision" });
+    fireEvent.click(within(screen.getByRole("group", { name: "Tools" })).getByRole("button", { name: "Collision" }));
     const canvas = document.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
     await act(async () => {
       fireEvent.mouseDown(canvas, { clientX: 20, clientY: 20, button: 0 });
@@ -797,7 +1003,7 @@ describe("App -- coverage lens list jump (Plan 6c C1)", () => {
 
   it("clicking an Empty maps list entry in World mode selects that map and jumps the canvas there, like a tree click", async () => {
     stubEmptyCoverage();
-    render(<App />);
+    render(<FamilyApp adapter={gbaAdapter} />);
     await waitFor(() => expect(screen.getByRole("button", { name: "Route2" })).toBeTruthy());
     const currentTreeRow = () => screen.getAllByRole("button", { name: "Route2" }).find((b) => b.getAttribute("aria-current") === "true");
     expect(currentTreeRow()).toBeUndefined();
@@ -824,7 +1030,7 @@ describe("App -- coverage lens list jump (Plan 6c C1)", () => {
 
   it("in Dungeon mode (no jump target) the Empty maps lens offers no List them button", async () => {
     stubEmptyCoverage();
-    render(<App />);
+    render(<FamilyApp adapter={gbaAdapter} />);
     fireEvent.click(screen.getByRole("button", { name: "Dungeon" }));
     await waitFor(() => expect(screen.getByText("Mt Moon")).toBeTruthy());
     fireEvent.click(screen.getByText("Mt Moon"));
@@ -835,20 +1041,8 @@ describe("App -- coverage lens list jump (Plan 6c C1)", () => {
 });
 
 describe("App -- world click selects the map in the tree (Plan 6c C2)", () => {
-  /** jsdom elements are 0x0; WorldCanvas measures its viewport once on mount, so this must be in force
-   *  before the World button is clicked. */
-  async function withViewport(fn: () => Promise<void>, width = 100) {
-    const w = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth");
-    const h = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight");
-    Object.defineProperty(HTMLElement.prototype, "clientWidth", { value: width, configurable: true });
-    Object.defineProperty(HTMLElement.prototype, "clientHeight", { value: 100, configurable: true });
-    try {
-      await fn();
-    } finally {
-      if (w) Object.defineProperty(HTMLElement.prototype, "clientWidth", w);
-      if (h) Object.defineProperty(HTMLElement.prototype, "clientHeight", h);
-    }
-  }
+  // withViewport (test/viewport.ts): WorldCanvas measures its viewport once on mount, so it must be in
+  // force before the World button is clicked.
   const zoomReadout = () => document.querySelector(".world-canvas__zoom-readout")!.textContent;
   /** Enters World mode and waits for `readout` (the world has loaded and any jump on entry has applied).
    *  WorldCanvas never auto-fits on load: a fresh view is zoom 1, pan 0 ("6%"); entering World mode with a map
@@ -903,7 +1097,7 @@ describe("App -- world click selects the map in the tree (Plan 6c C2)", () => {
     try {
       await withViewport(async () => {
         vi.stubGlobal("fetch", makeFetchMock());
-        render(<App />);
+        render(<FamilyApp adapter={gbaAdapter} />);
         await waitFor(() => expect(screen.getByRole("button", { name: "Route1" })).toBeTruthy());
         const canvas = await worldCanvasReady("6%");
         await waitFor(() => expect(screen.queryByText(/Loading world/)).toBeNull());
@@ -927,7 +1121,7 @@ describe("App -- world click selects the map in the tree (Plan 6c C2)", () => {
   it("a canvas click after a tree jump selects the new map but does not re-jump (no new jump highlight, view kept)", async () => {
     await withViewport(async () => {
       stubTwoMapWorld();
-      render(<App />);
+      render(<FamilyApp adapter={gbaAdapter} />);
       await waitFor(() => expect(screen.getByRole("button", { name: "Route1" })).toBeTruthy());
       const canvas = await worldCanvasReady("6%", 200);
       await waitFor(() => expect(screen.queryByText(/Loading world/)).toBeNull());
@@ -953,7 +1147,7 @@ describe("App -- world click selects the map in the tree (Plan 6c C2)", () => {
   it("entering World after tree-click A, world-click B, Map view centres on B, not on the stale tree target A", async () => {
     await withViewport(async () => {
       stubTwoMapWorld();
-      render(<App />);
+      render(<FamilyApp adapter={gbaAdapter} />);
       await waitFor(() => expect(screen.getByRole("button", { name: "Route1" })).toBeTruthy());
       const canvas = await worldCanvasReady("6%", 200);
       await waitFor(() => expect(screen.queryByText(/Loading world/)).toBeNull());
@@ -978,7 +1172,7 @@ describe("App -- world click selects the map in the tree (Plan 6c C2)", () => {
   it("entering World after only a world click on B (no tree click ever) jumps to B", async () => {
     await withViewport(async () => {
       stubTwoMapWorld();
-      render(<App />);
+      render(<FamilyApp adapter={gbaAdapter} />);
       await waitFor(() => expect(screen.getByRole("button", { name: "Route1" })).toBeTruthy());
       const canvas = await worldCanvasReady("6%", 200);
       await waitFor(() => expect(screen.queryByText(/Loading world/)).toBeNull());
@@ -997,7 +1191,7 @@ describe("App -- world click selects the map in the tree (Plan 6c C2)", () => {
   it("pressing World while already in World does not re-jump (no new highlight, view kept)", async () => {
     await withViewport(async () => {
       stubTwoMapWorld();
-      render(<App />);
+      render(<FamilyApp adapter={gbaAdapter} />);
       await waitFor(() => expect(screen.getByRole("button", { name: "Route1" })).toBeTruthy());
       await worldCanvasReady("6%", 200);
       await waitFor(() => expect(screen.queryByText(/Loading world/)).toBeNull());
@@ -1018,7 +1212,7 @@ describe("App -- world click selects the map in the tree (Plan 6c C2)", () => {
   it("in Dungeon mode a canvas click on a map does not change the app's selection (the dungeon canvas gets no onSelectMap)", async () => {
     await withViewport(async () => {
       vi.stubGlobal("fetch", makeFetchMock()); // dungeon "Mt Moon" holds Route1
-      render(<App />);
+      render(<FamilyApp adapter={gbaAdapter} />);
       clickMode("Dungeon");
       await waitFor(() => expect(screen.getByText("Mt Moon")).toBeTruthy());
       fireEvent.click(screen.getByText("Mt Moon"));
@@ -1126,4 +1320,5 @@ describe("App -- world click selects the map in the tree (Plan 6c C2)", () => {
       }
     });
   });
+
 });

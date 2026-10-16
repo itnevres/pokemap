@@ -12,7 +12,8 @@ describe("EditingWorkspace", () => {
     const slots = { top: <div data-testid="top" />, side: <div data-testid="side" />, canvasProps: { label: "main" }, Canvas };
     const { container, rerender } = render(<EditingWorkspace active {...slots} />);
     expect([...container.children].map((node) => node.getAttribute("data-testid") ?? node.className)).toEqual(["top", "app__map-editing-body"]);
-    expect([...container.querySelector(".app__map-editing-body")!.children].map((node) => node.getAttribute("data-testid") ?? node.tagName)).toEqual(["canvas", "side"]);
+    expect([...container.querySelector(".app__map-editing-body")!.children].map((node) => node.getAttribute("data-testid") ?? node.className)).toEqual(["canvas", "edit-rail"]);
+    expect(container.querySelector(".edit-rail > [data-testid=side]")).toBeTruthy();
     expect(container.querySelector("canvas")?.getAttribute("aria-label")).toBe("main");
     rerender(<EditingWorkspace active={false} {...slots} />);
     expect(container.querySelector("[data-testid=top]")).toBeNull();

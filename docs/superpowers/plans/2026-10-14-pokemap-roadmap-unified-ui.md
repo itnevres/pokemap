@@ -92,6 +92,10 @@ Both families already render the same `components/Toolbar.tsx`; the differences 
 - **Risk:** medium-high. The GBC sign composer writes new source text (save safety, LESSONS: Editing Sessions & Save
   Safety; GBC Format & Engine Quirks); the switch prompt touches session ownership and the server-side discard.
 - **Depends on:** D1, D2, D3, D6, D8.
+- **Carried from Plan 9 (user, 2026-10-15):** with D3's manual placements in GBA, dragging a greyed (unplaced) map from the
+  tree onto the World canvas must un-grey its tree row at once, as GBC does (`onPlacementSaved`). Today the GBA row stays
+  greyed until a view switch or reload, because GBA snapshots world visibility once per World-mode entry. Plan 9 Task 12
+  finding F2 (`task-reports/pokemap-plan-9-family-shell/task-12-live.md`); predates Plan 9.
 
 ### Plan 11: canvas leaf extractions
 
@@ -102,6 +106,10 @@ Both families already render the same `components/Toolbar.tsx`; the differences 
 - **Order:** after Plan 10 (the flags settle which toggles exist per family).
 - **Risk:** low-medium. Pure extraction; the canvas tests must pass unchanged.
 - **Depends on:** D9.
+- **Carried from Plan 9 (user, 2026-10-15):** when the overlay toggles move out of the canvases, give GBA Map view's two
+  "Collision" buttons distinct accessible names (the toolbar's Collision tool and the canvas's Collision overlay toggle,
+  `MapCanvas.tsx` overlay group); tests currently scope by the "Tools" group to tell them apart. Plan 9 Task 8 ruling;
+  final review minor m3 (`task-reports/pokemap-plan-9-family-shell/final-review.md`).
 
 ### Plan 12: shared canvas core
 

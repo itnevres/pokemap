@@ -7,6 +7,8 @@ import type { GbcStamp } from "@pokemap/core/src/gbc/edit/paint.js";
 import type { GbcEventKind } from "@pokemap/core/src/gbc/edit/events.js";
 import type { GbcPaintBody, UseGbcEditSessionResult } from "./hooks/useGbcEditSession.js";
 import { useStrokeChain } from "../shared/useStrokeChain.js";
+import { useFitShortcut } from "../shared/useFitShortcut.js";
+import { useContextMapFit } from "../shared/useWorldContext.js";
 import type { SettledChain } from "../shared/useStrokeChain.js";
 import type { GbcTimeOfDay } from "./time.js";
 import { EncounterBorder, type EncounterBorderEntry } from "../components/EncounterBorder.js";
@@ -423,6 +425,7 @@ export function GbcMapCanvas({ mapName, data: payload, time, hoveredMetatile, ed
   }, [imageUrl]);
 
   const fit = useCallback(() => {
+    // Before the viewport is measured, use the composite's native dimensions.
     const vw = viewport.w || pixelWidth;
     const vh = viewport.h || pixelHeight;
     // Encounters on: the content is the image plus one band on the border's side, so the sprites fit too.
@@ -433,11 +436,14 @@ export function GbcMapCanvas({ mapName, data: payload, time, hoveredMetatile, ed
         vw,
         vh,
         levels: ZOOM_LEVELS,
+        // Chromeless in-context maps cannot show encounters, so their band is 0.
         bandNative: encountersOn ? BORDER_BAND.gbc * BLOCK_PX : 0,
         side,
       }),
     );
   }, [pixelWidth, pixelHeight, viewport, encountersOn, side, updateView]);
+  useFitShortcut(fit, !chromeless);
+  useContextMapFit(fit, chromeless);
 
   // Once per real map open -- NOT on a time switch, which reuses the same
   // imgLoaded false->true cycle (MapCanvas.tsx:401-416's own fittedForMapRef
@@ -736,7 +742,7 @@ export function GbcMapCanvas({ mapName, data: payload, time, hoveredMetatile, ed
               {z}×
             </button>
           ))}
-          <button type="button" className="map-canvas__btn" onClick={fit}>
+          <button type="button" className="map-canvas__btn" onClick={fit} title="Fit to screen (F)">
             Fit
           </button>
         </div>

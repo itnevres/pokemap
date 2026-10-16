@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { GbcApp } from "../../src/gbc/GbcApp.js";
+import { FamilyApp } from "../../src/shell/FamilyApp.js";
+import { gbcAdapter } from "../../src/gbc/adapter.js";
 import type { GbcMapPayload } from "@pokemap/core/src/gbc/wire.js";
 
 beforeEach(() => {
@@ -62,7 +63,7 @@ async function openCity() {
 }
 
 async function paintOnce() {
-  fireEvent.click(screen.getByRole("button", { name: "pencil" }));
+  fireEvent.click(screen.getByRole("button", { name: "Pencil" }));
   fireEvent.click(screen.getByLabelText("metatile 0x1"));
   const canvas = document.querySelector("canvas.map-canvas__stage")!;
   fireEvent.mouseDown(canvas, { clientX: 40, clientY: 40, button: 0 });
@@ -74,7 +75,7 @@ describe("GbcApp editing (Plan 7 Task 5)", () => {
   it("dirty guard: cancel keeps the map; confirm discards the server session BEFORE switching", async () => {
     const { calls } = mockFetch({ OlivineCity: payload("OlivineCity"), OlivinePort: payload("OlivinePort") });
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
-    render(<GbcApp root="/x" />);
+    render(<FamilyApp adapter={gbcAdapter} />);
     await openCity();
     await paintOnce();
 
@@ -96,7 +97,7 @@ describe("GbcApp editing (Plan 7 Task 5)", () => {
   it("a failed discard keeps the user on the map and says why", async () => {
     const { f } = mockFetch({ OlivineCity: payload("OlivineCity"), OlivinePort: payload("OlivinePort") });
     vi.spyOn(window, "confirm").mockReturnValue(true);
-    render(<GbcApp root="/x" />);
+    render(<FamilyApp adapter={gbcAdapter} />);
     await openCity();
     await paintOnce();
     const base = f.getMockImplementation()!;
@@ -106,10 +107,75 @@ describe("GbcApp editing (Plan 7 Task 5)", () => {
     expect(document.querySelector(".app__status")!.textContent).toBe("OlivineCity");
   });
 
+  // Plan 9 characterisation: GbcApp.tsx:159 -- `if (name === selected) go()`: no confirm, no discard.
+  it("characterisation (Plan 9): re-clicking the selected map while dirty neither asks nor discards", async () => {
+    const { calls } = mockFetch({ OlivineCity: payload("OlivineCity"), OlivinePort: payload("OlivinePort") });
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    render(<FamilyApp adapter={gbcAdapter} />);
+    await openCity();
+    await paintOnce();
+
+    fireEvent.click(screen.getByRole("button", { name: "OlivineCity" }));
+    expect(confirm).not.toHaveBeenCalled();
+    expect(calls.some((c) => c.includes("/discard"))).toBe(false);
+    expect(screen.getByTestId("dirty-indicator")).toBeTruthy();
+    expect(document.querySelector(".app__status")!.textContent).toBe("OlivineCity");
+  });
+
+  // Plan 9 characterisation: GbcApp.tsx:152 -- selectMap's go() clears switchError first.
+  it("characterisation (Plan 9): a tree re-click of the selected map clears a failed-discard error", async () => {
+    const { f } = mockFetch({ OlivineCity: payload("OlivineCity"), OlivinePort: payload("OlivinePort") });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(<FamilyApp adapter={gbcAdapter} />);
+    await openCity();
+    await paintOnce();
+    const base = f.getMockImplementation()!;
+    f.mockImplementation((url: string, init?: RequestInit) => /\/discard$/.test(url) ? Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({}) } as Response) : base(url, init));
+
+    fireEvent.click(screen.getByText("OlivinePort"));
+    await waitFor(() => expect(screen.getByText(/discard -> 500/)).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "OlivineCity" }));
+    await waitFor(() => expect(screen.queryByText(/discard -> 500/)).toBeNull());
+    expect(document.querySelector(".app__status")!.textContent).toBe("OlivineCity");
+  });
+
+  // Plan 9 follow-up O1: the toolbar's Discard Changes succeeding on the same map makes the failed-discard error stale.
+  it("a successful toolbar discard on the same map clears a failed-discard error", async () => {
+    const { f } = mockFetch({ OlivineCity: payload("OlivineCity"), OlivinePort: payload("OlivinePort") });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(<FamilyApp adapter={gbcAdapter} />);
+    await openCity();
+    await paintOnce();
+    const base = f.getMockImplementation()!;
+    f.mockImplementation((url: string, init?: RequestInit) => /\/discard$/.test(url) ? Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({}) } as Response) : base(url, init));
+    fireEvent.click(screen.getByText("OlivinePort"));
+    await waitFor(() => expect(screen.getByText(/discard -> 500/)).toBeTruthy());
+
+    f.mockImplementation(base);
+    fireEvent.click(screen.getByRole("button", { name: "Discard Changes" }));
+    await waitFor(() => expect(screen.queryByTestId("dirty-indicator")).toBeNull());
+    await waitFor(() => expect(screen.queryByText(/discard -> 500/)).toBeNull());
+    expect(document.querySelector(".app__status")!.textContent).toBe("OlivineCity");
+  });
+
+  // Plan 9 characterisation: GBC's tool lives in GbcMapEditing, which remounts between the Map branch and the
+  // World host (GbcApp.tsx:297-335), so a mode round trip resets it. FamilyApp must keep that.
+  it("characterisation (Plan 9): the chosen tool resets on a Map -> World -> Map round trip", async () => {
+    mockFetch({ OlivineCity: payload("OlivineCity") });
+    render(<FamilyApp adapter={gbcAdapter} />);
+    await openCity();
+    fireEvent.click(screen.getByRole("button", { name: "Pencil" }));
+    expect(screen.getByRole("button", { name: "Pencil" }).getAttribute("aria-pressed")).toBe("true");
+
+    fireEvent.click(screen.getByRole("button", { name: "World" }));
+    fireEvent.click(screen.getByRole("button", { name: "Map" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Pencil" }).getAttribute("aria-pressed")).toBe("false"));
+  });
+
   it("a clean session switches with no confirm", async () => {
     mockFetch({ OlivineCity: payload("OlivineCity"), OlivinePort: payload("OlivinePort") });
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
-    render(<GbcApp root="/x" />);
+    render(<FamilyApp adapter={gbcAdapter} />);
     await openCity();
     fireEvent.click(screen.getByText("OlivinePort"));
     expect(confirm).not.toHaveBeenCalled();
@@ -119,7 +185,7 @@ describe("GbcApp editing (Plan 7 Task 5)", () => {
   it("beforeunload is registered only while dirty", async () => {
     mockFetch({ OlivineCity: payload("OlivineCity") });
     const add = vi.spyOn(window, "addEventListener");
-    render(<GbcApp root="/x" />);
+    render(<FamilyApp adapter={gbcAdapter} />);
     await openCity();
     expect(add.mock.calls.filter((c) => c[0] === "beforeunload").length).toBe(0);
     await paintOnce();
@@ -128,7 +194,7 @@ describe("GbcApp editing (Plan 7 Task 5)", () => {
 
   it("World <-> Map preserves the session (dirty flag and painted blocks survive)", async () => {
     mockFetch({ OlivineCity: payload("OlivineCity") });
-    render(<GbcApp root="/x" />);
+    render(<FamilyApp adapter={gbcAdapter} />);
     await openCity();
     await paintOnce();
     fireEvent.click(screen.getByRole("button", { name: "World" }));
@@ -146,9 +212,9 @@ describe("GbcApp editing (Plan 7 Task 5)", () => {
         defects: [{ file: "maps/OlivineCity.blk", message: "maps/OlivineCity.blk: actual size 9 bytes -- not writable" }],
       }),
     });
-    render(<GbcApp root="/x" />);
+    render(<FamilyApp adapter={gbcAdapter} />);
     await openCity();
-    for (const tool of ["pencil", "rect", "bucket", "dropper", "shift"]) {
+    for (const tool of ["Pencil", "Rect", "Bucket", "Dropper", "Shift"]) {
       const b = screen.getByRole("button", { name: tool }) as HTMLButtonElement;
       expect(b.disabled).toBe(true);
       expect(b.title).toContain("this map's .blk is flagged non-writable: maps/OlivineCity.blk: actual size 9 bytes");
@@ -158,7 +224,7 @@ describe("GbcApp editing (Plan 7 Task 5)", () => {
 
   it("Save -> commit -> markClean -> the map payload is re-read", async () => {
     const { calls } = mockFetch({ OlivineCity: payload("OlivineCity") });
-    render(<GbcApp root="/x" />);
+    render(<FamilyApp adapter={gbcAdapter} />);
     await openCity();
     await paintOnce();
     fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));

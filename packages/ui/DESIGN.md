@@ -245,8 +245,8 @@ tighter (the row, not just the text, is the hit target).
 every other panel is furniture around it. Concretely that means:
 
 - The canvas region's width is `flex: 1` with no max-width; every other panel
-  (tree, and whatever Task 21+ adds — an inspector, a metatile palette) is
-  the one that gets a fixed or resizable-with-limits width, never the canvas.
+  (tree, and the `.edit-rail` contents) is the one that gets a fixed or
+  resizable-with-limits width, never the canvas.
 - The canvas never shrinks to fit its content at a fractional CSS pixel — it
   gets a whole-pixel size from its flex box and then draws at an *integer*
   device-pixel zoom (1×/2×/4×) inside that box, because a blurred metatile
@@ -267,6 +267,27 @@ every other panel is furniture around it. Concretely that means:
   runs out of room. GBC: 44px, two rows (its hover line is far longer), the
   readout flowing left after the status items. Both canvases carry
   `min-width: 0` on `.map-canvas` so a long readout never widens the column.
+
+### Edit layout (Plan 9, D4/D5)
+
+```
+┌ toolbar: tools (icon + label) │ Undo Redo │ [Add Sign] │ Save │ Discard ┐
+├ banners (event-op error, sign added, GBC edit error)                    ┤
+├──────────────────────────────────────────────┬──────────────────────────┤
+│                                              │ edit-rail (272 px)       │
+│  canvas (flex: 1, no max width)              │ [collision palette]      │
+│                                              │ metatile palette (flex)  │
+│                                              │ inspector (≤ 50%)        │
+└──────────────────────────────────────────────┴──────────────────────────┘
+```
+
+- **Rail** (`.edit-rail`, 272 px): order collision palette (Collision tool only) → metatile palette (always, flex, scrolls) → inspector (≤ 50 % height). Removed: `.app__metatile-strip`, `.app__collision-strip`, `.gbc-map-editing__rail`. Flex children `min-width: 0`.
+- **Rail palette** (Plan 9F, addendum `specs/2026-10-15-pokemap-plan-9-palette-addendum.md`): always shown; a pick while another tool is active only sets the stamp. One frame for both families (`shared/PaletteFrame.tsx`): a pinned header (GBC caption, Selection box with the picked stamp at palette scale, hex search, Follow hover) above `.palette__scroll`, the only scroller. Cells abut (no gap, border or radius) in the tileset's own rows (GBA 8, GBC 4: Polished Map's width), folded into two newspaper columns (`shared/FoldedGrid.tsx`): GBA 2 x 8 x 16 px, GBC 2 x 4 x 32 px. The fold (`shared/paletteFold.ts`) cuts after the pixel-identical row nearest the middle (`shared/useUniformRows.ts`), or GBA's primary/secondary boundary, ignoring a cut more than a quarter of the rows from the middle, else at the middle; one column while searching. A GBA drag-select whose ends sit in different columns selects nothing. Picked = inset accent ring, hovered = inward dashed outline, so both read on abutting cells.
+- **Toolbar** (D5): each tool is an inline SVG icon (`components/toolIcons.tsx`) plus its capitalised label (`Pencil`, `Rect`, `Bucket`, `Dropper`, `Shift`, `Collision`), tooltip `Label (Key)`; disabled tools keep their reason title instead. Undo/Redo tooltips `Undo (Ctrl+Z)` / `Redo (Ctrl+Y)`.
+- **Shortcuts** (R1): P R B I S C; Ctrl/Cmd+Z undo; Ctrl/Cmd+Y and Ctrl/Cmd+Shift+Z redo. Ignored when `defaultPrevented`, target is input/textarea/select/contenteditable, an `[aria-modal="true"]` element exists, a letter key has any modifier (Ctrl, Meta, Alt, Shift), the tool is absent or disabled, or Undo/Redo is unavailable. Handled keys call `preventDefault`.
+- **GBA hover-link** (R2): `metatile-palette__cell--hovered`, GBC's hover token pair.
+- **Follow hover switch** (R4): both palettes scroll the hovered cell into view only while the shared "Follow hover" switch is on. One hook (`shared/useFollowHover.ts`), one switch (`shared/FollowHoverSwitch.tsx`), identical in both families. Default on; remembered in `localStorage` key `pokemap.palette.followHover`, every read/write in try/catch (falls back to on).
+- **Fit shortcut** (R5): **F** fits the current view (Map, World, Dungeon; both families) by calling that canvas's own Fit action, and only while its Fit button is shown and enabled. Same ignore rules as R1 (one shared `shared/shortcutGuard.ts`); F with any modifier is ignored (Ctrl+F stays the browser's find). Every Fit button is labelled `Fit` (World view's "Fit world" (GBA) and "Fit all" (GBC) are renamed; user ruling 2026-10-14) and has the tooltip `"Fit to screen (F)"`. In-context editing: Fit (button and F) fits the map being edited, exactly as Map view's Fit does (stepped zoom, `fitWithBand`), in both families -- the world canvas calls the chromeless map canvas's own `fit`, registered through `useWorldContext` -- and while the context map is still loading, Fit is disabled.
 
 ## Motion
 
@@ -469,15 +490,20 @@ what really differs. Change a row's module, not its two consumers.
 
 | Module | What it owns | GBA consumer | GBC consumer |
 |---|---|---|---|
-| `shared/useStrokeChain.ts` | one ordered begin/apply/end chain per stroke, visit retirement; `useStrokeChainRegistry` (App-level `onStrokeChain` + `strokeSettled`) | `MapCanvas`, `App` | `GbcMapCanvas`, `GbcApp` |
+| `shared/useStrokeChain.ts` | one ordered begin/apply/end chain per stroke, visit retirement; `useStrokeChainRegistry` (App-level `onStrokeChain` + `strokeSettled`) | `MapCanvas`, `FamilyApp` | `GbcMapCanvas`, `FamilyApp` |
 | `shared/useWorldContext.ts` + `WorldContextOverlay.tsx` | in-context view sync, exits, Escape, the overlay bar | `WorldCanvas` | `GbcWorldCanvas` |
-| `shared/useContextEditing.ts` | context map, exit-with-save, tile versions after a save | `App` | `GbcApp` |
+| `shared/useContextEditing.ts` | context map, exit-with-save, tile versions after a save | `FamilyApp` | `FamilyApp` |
 | `shared/useEditSessionCore.ts` | session record keyed on map + seed, reply ordering (tickets), discard, markClean | `hooks/useEditSession` | `gbc/hooks/useGbcEditSession` |
-| `shared/EditingWorkspace.tsx` | the editing shell's slots (`top`, `side`, canvas) | `MapEditingWorkspace` | `GbcMapEditing` |
+| `shared/EditingWorkspace.tsx` | the editing shell's slots (`top`, the `.edit-rail` contents, canvas) | `MapEditingWorkspace` | `GbcMapEditing` |
 | `shared/useVisit.ts` | per-map visit identity: render-phase reset + stale-callback guard | `hooks/useMapEditing` | `GbcMapEditing` |
-| `shared/useBeforeUnloadGuard.ts` | the dirty-only `beforeunload` prompt | `App` | `GbcApp` |
+| `shared/useBeforeUnloadGuard.ts` | the dirty-only `beforeunload` prompt | `FamilyApp` | `FamilyApp` |
 | `hooks/useGuardedFetch.ts` | fetch-once data hooks with a stale-response guard (older, used well beyond this pair) | `useCoverage`, `useMapGroups` | `useGbcCoverage`, `useGbcGroups` |
+| `shared/useFollowHover.ts` + `FollowHoverSwitch.tsx` | the shared "Follow hover" switch (R4) | `MetatilePalette` | `GbcMetatilePalette` |
+| `shared/shortcutGuard.ts` + `shared/useFitShortcut.ts` | shortcut ignore rules (R1/R5) and the F fit-to-screen key | `Toolbar`, `MapCanvas`/`WorldCanvas` | `Toolbar`, `GbcMapCanvas`/`GbcWorldCanvas` |
+| `shell/FamilyApp.tsx` + `shell/adapter.ts` | the one app shell; `EngineAdapter`, `Capabilities`, `FamilyRuntime`, `ShellSlots`; `toolsFor` | `gba/adapter.tsx` (`useGbaRuntime`) | `gbc/adapter.tsx` (`useGbcRuntime`) |
+| `shell/useDungeonFilter.ts` | the open dungeon's map filter (cached when `dungeonFilterCache`) | `FamilyApp` | `FamilyApp` |
 
-Still per family, on purpose (Plan 8 Task 7 stop rule): the app shells (`App` / `GbcApp`: GBC discards before a switch and
-shows `switchError`; time of day, manual placements, defects banner and the dungeon filter cache are GBC-only; `SignComposer`
-and `useMapEditing` are GBA-only), the canvases' rendering and hit-testing, and the dungeon and map-layout hooks.
+Still per family, on purpose (Plan 8 Task 7 stop rule): the app shell is now one (`FamilyApp`), so per family means
+*behind the runtime or a capability* (switch policy in `runtime.leave`, `switchError`, time of day, defects banner, sign
+composer, `useMapEditing` vs `GbcMapEditing` state lifetimes), with D1-D3/D6/D8 moving them in Plan 10. The canvases'
+rendering and hit-testing, and the dungeon and map-layout hooks, also stay per family.

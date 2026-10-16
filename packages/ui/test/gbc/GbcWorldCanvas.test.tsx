@@ -684,7 +684,7 @@ describe("GbcWorldCanvas", () => {
 
   it("Fit all fits every placement, including the far-away interior", async () => {
     await mountReady();
-    fireEvent.click(screen.getByRole("button", { name: "Fit all" }));
+    fireEvent.click(screen.getByRole("button", { name: "Fit" }));
 
     const expectedZoom = computeFit({ x: 0, y: 0, width: 1005, height: 1005 }, { w: VIEWPORT_SIZE, h: VIEWPORT_SIZE }, { min: 1 / 64, max: 32 }).zoom;
     const expectedPercent = Math.round((expectedZoom / 32) * 100);
@@ -1305,7 +1305,7 @@ describe("GbcWorldCanvas", () => {
     fireEvent.wheel(canvas, { clientX: 100, clientY: 100, deltaY: -100 });
     await waitFor(() => expect(screen.getByText(/zoom 38%/)).toBeTruthy());
 
-    fireEvent.click(screen.getByRole("button", { name: "Fit all" }));
+    fireEvent.click(screen.getByRole("button", { name: "Fit" }));
     const expected = computeFit({ x: 0, y: 0, width: 1005, height: 1005 }, { w: VIEWPORT_SIZE, h: VIEWPORT_SIZE }, { min: 1 / 64, max: 32 });
     const expectedPercent = Math.round((expected.zoom / 32) * 100);
     await waitFor(() => expect(screen.getByText(new RegExp(`zoom ${expectedPercent}%`))).toBeTruthy());
@@ -1964,5 +1964,17 @@ describe("GbcWorldCanvas: context menu (Plan 6c E3)", () => {
     await waitFor(() => expect(screen.getByText(/Could not update conflict:/).textContent).toContain("offline"));
     fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
     expect(screen.queryByText(/Could not update conflict:/)).toBeNull();
+  });
+
+  it("F does what the Fit button does (Plan 9 R5)", async () => {
+    await mountReady();
+    const fit = screen.getByRole("button", { name: "Fit" });
+    fireEvent.keyDown(window, { key: "f" });
+
+    const expectedZoom = computeFit({ x: 0, y: 0, width: 1005, height: 1005 }, { w: VIEWPORT_SIZE, h: VIEWPORT_SIZE }, { min: 1 / 64, max: 32 }).zoom;
+    const expectedPercent = Math.round((expectedZoom / 32) * 100);
+    await waitFor(() => expect(screen.getByText(new RegExp(`zoom ${expectedPercent}%`))).toBeTruthy());
+    await waitFor(() => expect(FakeImage.instances.some((i) => i.src.startsWith("/api/render/Interior.png"))).toBe(true));
+    expect(fit.getAttribute("title")).toBe("Fit to screen (F)");
   });
 });

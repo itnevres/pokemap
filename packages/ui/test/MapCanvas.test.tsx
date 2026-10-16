@@ -377,6 +377,16 @@ describe("MapCanvas", () => {
     expect(await screen.findByText(/hover the map/i)).toBeTruthy();
   });
 
+  it("reports the hovered block's metatile id, and null on leave (Plan 9 R2)", async () => {
+    const onHoverMetatile = vi.fn();
+    const { canvas } = await mountReady({ onHoverMetatile });
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: PIXEL_SIZE, bottom: PIXEL_SIZE, width: PIXEL_SIZE, height: PIXEL_SIZE, x: 0, y: 0, toJSON() {} });
+    fireEvent.mouseMove(canvas, { clientX: ORIGIN + 24, clientY: ORIGIN + 4 });
+    expect(onHoverMetatile).toHaveBeenLastCalledWith(0x11);
+    fireEvent.mouseLeave(canvas);
+    expect(onHoverMetatile).toHaveBeenLastCalledWith(null);
+  });
+
   it("always shows layout_version and the resolved split, with no hover needed", async () => {
     await mountReady();
     expect(screen.getByText("emerald")).toBeTruthy();
@@ -1306,5 +1316,22 @@ describe("MapCanvas: chromeless (Plan 6c E4)", () => {
     await waitFor(() => expect(editSession.applyPaint).toHaveBeenCalledWith(expect.objectContaining({ tool: "rect" })));
     await waitFor(() => expect(editSession.endStroke).toHaveBeenCalled());
     expect(vi.mocked(editSession.applyPaint).mock.invocationCallOrder[0]!).toBeLessThan(vi.mocked(editSession.endStroke).mock.invocationCallOrder[0]!);
+  });
+
+  it("F does what the Fit button does (Plan 9 R5)", async () => {
+    const { canvas, lastDraw } = await mountReady();
+
+    fireEvent.click(screen.getByRole("button", { name: "4×" }));
+    await waitFor(() => expect(lastDraw().slice(-2)).toEqual([PIXEL_SIZE * 4, PIXEL_SIZE * 4]));
+    fireEvent.mouseDown(canvas, { clientX: 0, clientY: 0, button: 0 });
+    fireEvent.mouseMove(canvas, { clientX: 50, clientY: 50 });
+    fireEvent.mouseUp(canvas);
+
+    const fit = screen.getByRole("button", { name: "Fit" });
+    fireEvent.keyDown(window, { key: "f" });
+    await waitFor(() => expect(lastDraw().slice(-2)).toEqual([PIXEL_SIZE * 1, PIXEL_SIZE * 1]));
+    expect(lastDraw().slice(5, 7)).toEqual([0, 0]);
+    expect(screen.getByRole("button", { name: "1×" }).getAttribute("aria-pressed")).toBe("true");
+    expect(fit.getAttribute("title")).toBe("Fit to screen (F)");
   });
 });

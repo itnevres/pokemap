@@ -17,8 +17,9 @@ import { conflictBadgeOffsets, isRecord, isWireConflict } from "../world/conflic
 import { useConflictAcceptance } from "../world/useConflictAcceptance.js";
 import { WorldContextMenu, useWorldContextMenu } from "./WorldContextMenu.js";
 import type { MapView } from "./mapView.js";
-import { useWorldContext } from "../shared/useWorldContext.js";
+import { ContextMapFit, useWorldContext } from "../shared/useWorldContext.js";
 import { WorldContextOverlay } from "../shared/WorldContextOverlay.js";
+import { useFitShortcut } from "../shared/useFitShortcut.js";
 
 /** The pixel size a placement's PNG renders at natively (`renderLayout`,
  *  border 0): 16px per tile, same constant the CLI's `render-world --scale
@@ -632,7 +633,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
   // by definition puts every single placement's bounding box inside the
   // viewport, which would fetch all 1,209 source images on the very first
   // render -- the exact cost culling exists to avoid. The default view is
-  // a modest, fixed zoom at the world origin; "Fit world" below is an
+  // a modest, fixed zoom at the world origin; "Fit" below is an
   // explicit action the user takes to reach an overview.
   //
   // That overview fits the connected landmasses/clusters, not literally
@@ -787,7 +788,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
   // is entirely about the cost of loading all 1,209 placements' images at
   // once), a curated dungeon is small and, at the default origin-anchored
   // view, may contain none of its own maps on screen at all -- effectively
-  // blank until the user finds "Fit world" themselves.
+  // blank until the user finds "Fit" themselves.
   //
   // Review fix (Task 12 review): this used to depend on [mapFilter, world]
   // alone and rely on mapFilter's IDENTITY not changing to make it "fire
@@ -1447,6 +1448,12 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
     snapPointerRef,
     isBlocked: () => contextMenu.menu !== null,
   });
+  const fit = () => {
+    if (worldContext.inContext) worldContext.fit();
+    else fitWorld();
+  };
+  const fitEnabled = !worldContext.inContext || worldContext.fitEnabled;
+  useFitShortcut(fit, fitEnabled);
 
   // A NATIVE listener with { passive: false }, not React's onWheel prop.
   // React attaches wheel listeners as passive by default (for scroll
@@ -1920,8 +1927,8 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
         </div>
         <div className="world-canvas__toolbar-group">
           <span className="world-canvas__zoom-readout">{Math.round((zoom / TILE_PX) * 100)}%</span>
-          <button type="button" className="map-canvas__btn" onClick={fitWorld}>
-            Fit world
+          <button type="button" className="map-canvas__btn" onClick={fit} disabled={!fitEnabled} title="Fit to screen (F)">
+            Fit
           </button>
         </div>
       </div>
@@ -2073,7 +2080,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
               )}
             </div>
           )}
-          {context && <WorldContextOverlay map={context.map} ctx={worldContext} renderCanvas={context.renderCanvas} onDone={() => context.onExitRequest()} />}
+          {context && <WorldContextOverlay map={context.map} ctx={worldContext} renderCanvas={(view, onViewChange) => <ContextMapFit.Provider value={worldContext.registerFit}>{context.renderCanvas(view, onViewChange)}</ContextMapFit.Provider>} onDone={() => context.onExitRequest()} />}
           {tooltip && (
             <div className="world-canvas__tooltip" style={{ left: tooltip.x + 12, top: tooltip.y + 12 }} role="tooltip">
               {tooltip.text}

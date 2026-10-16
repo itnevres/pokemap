@@ -1,7 +1,9 @@
 import { it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
-import { GbcApp } from "../../src/gbc/GbcApp.js";
+import { FamilyApp } from "../../src/shell/FamilyApp.js";
+import { gbcAdapter } from "../../src/gbc/adapter.js";
 import type { GbcMapPayload } from "@pokemap/core/src/gbc/wire.js";
+import { restoreViewport, stubViewport } from "../viewport.js";
 
 // M5: GBC context exit waits for pending paint before deciding whether to open SaveDialog.
 
@@ -76,22 +78,16 @@ class FakeImage {
   constructor() { FakeImage.instances.push(this); }
 }
 
-const sizes = {
-  w: Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth"),
-  h: Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight"),
-};
 beforeEach(() => {
   Element.prototype.scrollIntoView = vi.fn();
   FakeImage.instances = [];
   vi.stubGlobal("Image", FakeImage);
-  Object.defineProperty(HTMLElement.prototype, "clientWidth", { value: 200, configurable: true });
-  Object.defineProperty(HTMLElement.prototype, "clientHeight", { value: 200, configurable: true });
+  stubViewport(200);
 });
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
-  if (sizes.w) Object.defineProperty(HTMLElement.prototype, "clientWidth", sizes.w);
-  if (sizes.h) Object.defineProperty(HTMLElement.prototype, "clientHeight", sizes.h);
+  restoreViewport();
 });
 
 const RECT = { left: 0, top: 0, right: 200, bottom: 200, width: 200, height: 200, x: 0, y: 0, toJSON() {} };
@@ -107,7 +103,7 @@ async function overlayStage() {
 
 async function startApp() {
   const mock = mockFetch();
-  render(<GbcApp root="/x" />);
+  render(<FamilyApp adapter={gbcAdapter} />);
   await waitFor(() => expect(screen.getByText("OlivinePort")).toBeTruthy());
   return mock;
 }
@@ -134,7 +130,7 @@ it("M5: Done waits for held paint/apply before deciding the dirty exit", async (
   const canvas = await enterWorld();
   dblClickPort(canvas);
   const stage = await overlayStage();
-  fireEvent.click(screen.getByRole("button", { name: "pencil" }));
+  fireEvent.click(screen.getByRole("button", { name: "Pencil" }));
   fireEvent.click(screen.getByLabelText("metatile 0x1"));
   fireEvent.mouseDown(stage, { clientX: 134, clientY: 52, button: 0 });
   fireEvent.mouseUp(stage, { clientX: 134, clientY: 52, button: 0 });

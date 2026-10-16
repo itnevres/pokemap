@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
 import type { GbcMapPayload } from "@pokemap/core/src/gbc/wire.js";
 import type { GbcStamp } from "@pokemap/core/src/gbc/edit/paint.js";
 import type { GbcEventKind, GbcWarpRenumberWarning } from "@pokemap/core/src/gbc/edit/events.js";
@@ -10,9 +10,10 @@ import type { UseGbcEditSessionResult } from "./hooks/useGbcEditSession.js";
 import type { GbcTimeOfDay } from "./time.js";
 import { EditingWorkspace } from "../shared/EditingWorkspace.js";
 import { useVisit } from "../shared/useVisit.js";
+import { GBC_CAPABILITIES, toolsFor } from "../shell/adapter.js";
 
 /** No collision button (Plan 7 Goal: GBC collision is per metatile, not per block) and no sign composer. */
-export const GBC_TOOLS: ToolKind[] = ["pencil", "rect", "bucket", "dropper", "shift"];
+export const GBC_TOOLS: ToolKind[] = toolsFor(GBC_CAPABILITIES);
 
 const message = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback);
 
@@ -36,6 +37,8 @@ export interface GbcMapEditingProps {
   onHoverMetatile: (id: number | null) => void;
   /** Opens `SaveDialog`, which `GbcApp` mounts at `<main>` level for stacking (as GBA's `App` does). */
   onOpenSave: () => void;
+  /** After a successful toolbar Discard: the runtime clears its stale failed-discard-before-switch banner (Plan 9 O1). */
+  onDiscarded?: () => void;
   /** Plan 7 Task 5b. False renders only `.app__map-editing-body` holding the canvas slot (no Toolbar, banner, palette or
    *  inspector), so the World view's canvas keeps its position in the tree and is NOT remounted when in-context editing
    *  switches the chrome on (GBA's `MapEditingWorkspace` `active={false}` seam). Default true. */
@@ -57,7 +60,7 @@ export interface GbcMapEditingProps {
  * Non-writable layout (`layout.writable === false`): the paint tools render disabled with the reason, and
  * `activeTool` resolves to null so the canvas cannot paint; event editing, undo/redo and save stay enabled.
  */
-export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId, onHoverMetatile, onOpenSave, active = true, renderCanvas, onStrokeChain }: GbcMapEditingProps) {
+export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId, onHoverMetatile, onOpenSave, onDiscarded, active = true, renderCanvas, onStrokeChain }: GbcMapEditingProps) {
   const [toolKind, setToolKind] = useState<ToolKind | null>(null);
   // `key` is never a real map name when there is no map, so nothing reads as "mine" until one is selected.
   const key = mapName ?? "";
@@ -81,6 +84,10 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
   // Functional updaters: a deferred `setEvent(null)` (a delete resolving) must not overwrite a stamp picked meanwhile.
   const fresh = (p: typeof pick) => (p.forMap === key ? p : { forMap: key, stamp: null, event: null });
   const setStamp = (next: GbcStamp) => { if (isCurrent()) setPick((p) => ({ ...fresh(p), stamp: next })); };
+  // The memoised palette gets one stable pick callback that runs the latest setStamp (Plan 9 follow-up O2).
+  const setStampRef = useRef(setStamp);
+  setStampRef.current = setStamp;
+  const onPalettePick = useCallback((next: GbcStamp) => setStampRef.current(next), []);
   const setEvent = (ref: GbcEventRef | null) => { if (isCurrent()) setPick((p) => ({ ...fresh(p), event: ref })); };
   const fail = (e: unknown, fallback = "Edit failed.") => { if (isCurrent()) setErr({ forMap: key, text: message(e, fallback) }); };
   const ok = () => { if (isCurrent()) setErr(null); };
@@ -122,7 +129,7 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
 
   const onDiscard = () => {
     if (!window.confirm("Discard all unsaved changes on this map? This cannot be undone.")) return;
-    session.discard().then(ok).catch((e: unknown) => fail(e, "Failed to discard."));
+    session.discard().then(() => { ok(); onDiscarded?.(); }).catch((e: unknown) => fail(e, "Failed to discard."));
   };
 
   const canvasProps: GbcMapEditingCanvasProps | null =
@@ -166,31 +173,30 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
         </div>
       )}
     </>;
-  // One right-hand rail (palette over inspector), 260px: three fixed side panels left the canvas about 224px
-  // at 1024 wide (quality review I4). The rail and its children carry min-width: 0 in the stylesheet.
+  // The shared rail (EditingWorkspace, .edit-rail): palette over inspector.
   const side = mapName !== null && data !== null ? (
-          <div className="gbc-map-editing__rail">
-            <GbcMetatilePalette
-              mapName={mapName}
-              time={time}
-              tilesetName={data.tileset.constName}
-              metatileCount={data.metatileCount}
-              highlightId={hoveredMetatileId}
-              onSelect={writable ? setStamp : undefined}
-              selected={pickedId}
-            />
-            <GbcEventInspector
-              events={session.events}
-              selected={selectedEvent}
-              stepsW={2 * data.layout.width}
-              stepsH={2 * data.layout.height}
-              onMove={onMove}
-              onDelete={onDelete}
-              onDuplicate={onDuplicate}
-              warnings={warnings}
-              onDismissWarnings={() => { if (isCurrent()) setWarn(null); }}
-            />
-          </div>
+    <>
+      <GbcMetatilePalette
+        mapName={mapName}
+        time={time}
+        tilesetName={data.tileset.constName}
+        metatileCount={data.metatileCount}
+        highlightId={hoveredMetatileId}
+        onSelect={writable ? onPalettePick : undefined}
+        selected={pickedId}
+      />
+      <GbcEventInspector
+        events={session.events}
+        selected={selectedEvent}
+        stepsW={2 * data.layout.width}
+        stepsH={2 * data.layout.height}
+        onMove={onMove}
+        onDelete={onDelete}
+        onDuplicate={onDuplicate}
+        warnings={warnings}
+        onDismissWarnings={() => { if (isCurrent()) setWarn(null); }}
+      />
+    </>
   ) : null;
   return <EditingWorkspace active={active} top={top} side={side} canvasProps={canvasProps} Canvas={GbcMapCanvas} renderCanvas={renderCanvas} />;
 }

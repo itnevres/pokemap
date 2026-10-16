@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { App } from "../src/App.js";
+import { FamilyApp } from "../src/shell/FamilyApp.js";
+import { gbaAdapter } from "../src/gba/adapter.js";
 
 const PALLET = {
   map: { id: "MAP_PALLET", name: "PalletTown", layout: "LAYOUT_PALLET", music: "MUS_DUMMY", regionMapSection: "MAPSEC_NONE", mapType: "MAP_TYPE_TOWN", weather: "WEATHER_NONE", connections: [], objectEvents: [], warpEvents: [], coordEvents: [], bgEvents: [] },
@@ -41,7 +42,7 @@ beforeEach(() => { Element.prototype.scrollIntoView = vi.fn(); });
 
 describe("App GBA visit guard", () => {
   it("ignores a deferred A to B to A add success", async () => {
-    const add = deferred(); vi.stubGlobal("fetch", fetchMock(add)); render(<App />); await openPallet();
+    const add = deferred(); vi.stubGlobal("fetch", fetchMock(add)); render(<FamilyApp adapter={gbaAdapter} />); await openPallet();
     fireEvent.click(screen.getByRole("button", { name: "Add Event" }));
     await switchTo("Route1"); await switchTo("PalletTown");
     await act(async () => add.resolve(response(true, { map: PALLET.map, isDirty: true })));
@@ -53,7 +54,7 @@ describe("App GBA visit guard", () => {
   });
 
   it("ignores a deferred A to B to A add failure", async () => {
-    const add = deferred(); vi.stubGlobal("fetch", fetchMock(add)); render(<App />); await openPallet();
+    const add = deferred(); vi.stubGlobal("fetch", fetchMock(add)); render(<FamilyApp adapter={gbaAdapter} />); await openPallet();
     fireEvent.click(screen.getByRole("button", { name: "Add Event" }));
     await switchTo("Route1"); await switchTo("PalletTown");
     await act(async () => add.resolve(response(false, { error: "old failure" })));
@@ -62,7 +63,7 @@ describe("App GBA visit guard", () => {
   });
 
   it("retires an event error when switching visits", async () => {
-    const add = deferred(); vi.stubGlobal("fetch", fetchMock(add)); render(<App />); await openPallet();
+    const add = deferred(); vi.stubGlobal("fetch", fetchMock(add)); render(<FamilyApp adapter={gbaAdapter} />); await openPallet();
     fireEvent.click(screen.getByRole("button", { name: "Add Event" }));
     await act(async () => add.resolve(response(false, { error: "old failure" })));
     await screen.findByRole("alert");

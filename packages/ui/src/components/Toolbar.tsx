@@ -1,8 +1,15 @@
 import "../styles.css";
+import { useEffect, useRef } from "react";
+import { TOOL_ICONS } from "./toolIcons.js";
+import { shortcutBlocked } from "../shared/shortcutGuard.js";
 
 export type ToolKind = "pencil" | "rect" | "bucket" | "dropper" | "shift" | "collision";
 
 const TOOLS: ToolKind[] = ["pencil", "rect", "bucket", "dropper", "shift", "collision"];
+
+export const TOOL_LABEL: Record<ToolKind, string> = { pencil: "Pencil", rect: "Rect", bucket: "Bucket", dropper: "Dropper", shift: "Shift", collision: "Collision" };
+/** Plan 9 (R1): the shortcut letter shown in each tool's tooltip; Toolbar's keydown listener reads the same table. */
+export const TOOL_KEY: Record<ToolKind, string> = { pencil: "P", rect: "R", bucket: "B", dropper: "I", shift: "S", collision: "C" };
 
 export interface ToolbarProps {
   activeToolKind: ToolKind | null;
@@ -52,6 +59,32 @@ export interface ToolbarProps {
  * only door into that flow.
  */
 export function Toolbar({ activeToolKind, onSelectTool, isDirty, onUndo, onRedo, canUndo, canRedo, onOpenSave, onDiscard, onOpenSignComposer, availableTools, tools = TOOLS, unavailableTitle = "Not yet available" }: ToolbarProps) {
+  // Plan 9 (R1): one window keydown listener while the toolbar is mounted (editing chrome only: Map view or
+  // in-context, so at most one exists). Subscribed once; reads the latest props through a ref.
+  const latest = useRef({ tools, availableTools, onSelectTool, onUndo, onRedo, canUndo, canRedo });
+  latest.current = { tools, availableTools, onSelectTool, onUndo, onRedo, canUndo, canRedo };
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (shortcutBlocked(e)) return;
+      const p = latest.current;
+      const key = e.key.toLowerCase();
+      const mod = e.ctrlKey || e.metaKey;
+      if (mod && !e.altKey && (key === "z" || (key === "y" && !e.shiftKey))) {
+        const redo = key === "y" || e.shiftKey;
+        if (!(redo ? p.canRedo : p.canUndo)) return;
+        e.preventDefault();
+        if (redo) p.onRedo(); else p.onUndo();
+        return;
+      }
+      if (mod || e.altKey || e.shiftKey) return;
+      const kind = p.tools.find((t) => TOOL_KEY[t].toLowerCase() === key);
+      if (!kind || !p.availableTools.includes(kind)) return;
+      e.preventDefault();
+      p.onSelectTool(kind);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
   return (
     <div className="toolbar">
       <div className="toolbar__tools" role="group" aria-label="Tools">
@@ -61,23 +94,23 @@ export function Toolbar({ activeToolKind, onSelectTool, isDirty, onUndo, onRedo,
             <button
               key={kind}
               type="button"
-              aria-label={kind}
               aria-pressed={activeToolKind === kind}
               disabled={!available}
-              title={available ? undefined : unavailableTitle}
+              title={available ? `${TOOL_LABEL[kind]} (${TOOL_KEY[kind]})` : unavailableTitle}
               className="map-canvas__btn toolbar__tool-btn"
               onClick={() => onSelectTool(kind)}
             >
-              {kind}
+              {TOOL_ICONS[kind]}
+              <span>{TOOL_LABEL[kind]}</span>
             </button>
           );
         })}
       </div>
       <div className="toolbar__history" role="group" aria-label="History">
-        <button type="button" aria-label="Undo" onClick={onUndo} disabled={!canUndo} className="map-canvas__btn">
+        <button type="button" aria-label="Undo" title="Undo (Ctrl+Z)" onClick={onUndo} disabled={!canUndo} className="map-canvas__btn">
           ↶ Undo
         </button>
-        <button type="button" aria-label="Redo" onClick={onRedo} disabled={!canRedo} className="map-canvas__btn">
+        <button type="button" aria-label="Redo" title="Redo (Ctrl+Y)" onClick={onRedo} disabled={!canRedo} className="map-canvas__btn">
           ↷ Redo
         </button>
       </div>

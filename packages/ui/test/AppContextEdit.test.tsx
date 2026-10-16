@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor, act, within } from "@testing-library/react";
-import { App } from "../src/App.js";
+import { FamilyApp } from "../src/shell/FamilyApp.js";
+import { gbaAdapter } from "../src/gba/adapter.js";
+import { fitWithBand } from "../src/encounters/fit.js";
+import { restoreViewport, stubViewport } from "./viewport.js";
 
 // Plan 6c E4: GBA in-context editing at the App level -- the World view's double-click enters it, the editing chrome
 // appears around the SAME world canvas, exits go through the dirty guard, and a save refreshes only that map's tile.
@@ -72,21 +75,15 @@ class FakeImage {
   constructor() { FakeImage.instances.push(this); }
 }
 
-const sizes = {
-  w: Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth"),
-  h: Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight"),
-};
 beforeEach(() => {
   FakeImage.instances = [];
   vi.stubGlobal("Image", FakeImage);
-  Object.defineProperty(HTMLElement.prototype, "clientWidth", { value: 400, configurable: true });
-  Object.defineProperty(HTMLElement.prototype, "clientHeight", { value: 100, configurable: true });
+  stubViewport(400, 100);
 });
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
-  if (sizes.w) Object.defineProperty(HTMLElement.prototype, "clientWidth", sizes.w);
-  if (sizes.h) Object.defineProperty(HTMLElement.prototype, "clientHeight", sizes.h);
+  restoreViewport();
 });
 
 const RECT = { left: 0, top: 0, right: 400, bottom: 100, width: 400, height: 100, x: 0, y: 0, toJSON() {} };
@@ -104,7 +101,7 @@ async function enterWorld() {
 
 async function startApp(fetchMock = makeFetchMock()) {
   vi.stubGlobal("fetch", fetchMock);
-  render(<App />);
+  render(<FamilyApp adapter={gbaAdapter} />);
   await waitFor(() => expect(screen.getByRole("button", { name: "Route1" })).toBeTruthy());
   return fetchMock;
 }
@@ -128,6 +125,38 @@ describe("App -- in-context editing (Plan 6c E4)", () => {
     dblClickRoute1(canvas);
 
     await waitFor(() => expect(chrome()).not.toBeNull());
+    expect(document.querySelector(".event-inspector")).not.toBeNull();
+    expect(worldCanvas()).toBe(canvas); // same DOM node: the world canvas was not remounted
+    expect(document.querySelector(".app__map-editing-body")).toBe(body);
+    expect(worldFetches()).toBe(baseline);
+    expect(contextOverlay()).not.toBeNull();
+    expect(document.querySelector(".world-canvas__context-bar")!.textContent).toContain("Route1");
+    expect(document.querySelector('.map-tree__map[aria-current="true"]')?.textContent).toContain("Route1");
+    expect(screen.getByRole("button", { name: "World" }).getAttribute("aria-pressed")).toBe("true");
+    // The map's layout loads, then the overlay hosts a chromeless MapCanvas: no map toolbar, no status strip.
+    await waitFor(() => expect(contextOverlay()!.querySelector("section.map-canvas.map-canvas--chromeless canvas.map-canvas__stage")).not.toBeNull());
+    expect(contextOverlay()!.querySelector(".map-canvas__toolbar")).toBeNull();
+    expect(contextOverlay()!.querySelector(".map-canvas__status")).toBeNull();
+  });
+
+  it("in context, GBA editing gets the rail (palette + inspector) around the SAME world canvas, with no /api/world refetch (Plan 9 D4)", async () => {
+    const fetchMock = await startApp();
+    const canvas = await enterWorld();
+    const worldFetches = () => fetchMock.mock.calls.filter(([url]) => url === "/api/world").length;
+    const baseline = worldFetches(); // the canvas and the visibility hook each load it once
+    expect(baseline).toBeGreaterThan(0);
+    expect(chrome()).toBeNull();
+    expect(document.querySelector(".event-inspector")).toBeNull();
+    const body = document.querySelector(".app__map-editing-body");
+
+    dblClickRoute1(canvas);
+
+    await waitFor(() => expect(chrome()).not.toBeNull());
+    const rail = document.querySelector(".edit-rail")!;
+    expect(rail).toBeTruthy();
+    expect(rail.querySelector(".metatile-palette")).toBeTruthy();
+    expect(rail.querySelector(".event-inspector")).toBeTruthy();
+    expect(document.querySelector(".app__metatile-strip")).toBeNull();
     expect(document.querySelector(".event-inspector")).not.toBeNull();
     expect(worldCanvas()).toBe(canvas); // same DOM node: the world canvas was not remounted
     expect(document.querySelector(".app__map-editing-body")).toBe(body);
@@ -310,7 +339,7 @@ describe("App -- in-context editing, fix round (Plan 6c E4)", () => {
     await waitFor(() => expect(contextOverlay()!.querySelector("canvas.map-canvas__stage")).not.toBeNull());
     const stage = contextOverlay()!.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
 
-    fireEvent.click(screen.getByRole("button", { name: "pencil" }));
+    fireEvent.click(screen.getByRole("button", { name: "Pencil" }));
     await waitFor(() => expect(screen.getByPlaceholderText(/search/i)).toBeTruthy());
     const picked = screen.getByRole("button", { name: /metatile 0x1\b/i }) as HTMLButtonElement;
     fireEvent.click(picked);
@@ -348,5 +377,86 @@ describe("App -- in-context editing, fix round (Plan 6c E4)", () => {
     await waitFor(() => expect(contextOverlay()).toBeNull());
     expect(chrome()).toBeNull();
     expect(document.querySelector('.map-tree__map[aria-current="true"]')?.textContent).toContain("PalletTown");
+  });
+
+  it("Fit is disabled while the context map loads (Plan 9 R5; mirrors GbcAppContext's pending-context test)", async () => {
+    const fetchMock = makeFetchMock();
+    const original = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => (url === "/api/map/Route1" ? new Promise<Response>(() => {}) : original(url, init)));
+    await startApp(fetchMock);
+    const canvas = await enterWorld();
+    dblClickRoute1(canvas);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Done editing Route1" })).toBeTruthy());
+    const readout = document.querySelector(".world-canvas__zoom-readout")!.textContent;
+    expect((screen.getByRole("button", { name: "Fit" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.keyDown(document.body, { key: "f" });
+    expect(document.querySelector(".world-canvas__zoom-readout")!.textContent).toBe(readout);
+  });
+
+  it("in-context Fit and F fit the map being edited, as Map view's Fit does (Plan 9 R5)", async () => {
+    const draws = new Map<HTMLCanvasElement, unknown[][]>();
+    const original = HTMLCanvasElement.prototype.getContext;
+    // @ts-expect-error -- drawing-command stub, narrower than the real overloads
+    HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, kind: string) {
+      if (kind !== "2d") return null;
+      const log = draws.get(this) ?? [];
+      draws.set(this, log);
+      return new Proxy({ imageSmoothingEnabled: true, drawImage: (...args: unknown[]) => { log.push(args); }, clearRect: vi.fn() } as Record<string, unknown>, {
+        get: (t, k) => (k in t ? t[k as string] : (t[k as string] = vi.fn())),
+      });
+    };
+    try {
+      await startApp();
+      const canvas = await enterWorld();
+      dblClickRoute1(canvas);
+      await waitFor(() => expect(contextOverlay()?.querySelector("canvas.map-canvas__stage")).toBeTruthy());
+      const stage = contextOverlay()!.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
+      // Resize after entry so the existing world's hit-test helper still uses its original viewport.
+      const viewport = 160;
+      stubViewport(viewport);
+      fireEvent(window, new Event("resize"));
+      stage.getBoundingClientRect = () => ({ ...RECT, right: viewport, bottom: viewport, width: viewport, height: viewport });
+      // ROUTE1's payload is 2x2 metatiles with one 16px border tile on each side (64x64).
+      // Use the map payload, not WORLD's deliberately different 10x10 placement size.
+      const { layout } = ROUTE1;
+      const pw = (layout.width + 2 * layout.borderWidth) * 16;
+      const ph = (layout.height + 2 * layout.borderHeight) * 16;
+      const img = contextOverlay()!.querySelector("img.map-canvas__source-image") as HTMLImageElement;
+      Object.defineProperties(img, {
+        complete: { configurable: true, value: true },
+        naturalWidth: { configurable: true, value: pw },
+        naturalHeight: { configurable: true, value: ph },
+      });
+      fireEvent.load(img);
+      const expected = fitWithBand({ pw, ph, vw: viewport, vh: viewport, levels: [1, 2, 4], bandNative: 0, side: "left" });
+      expect(expected.zoom).toBeGreaterThan(1);
+      const fittedReadout = `${expected.zoom * 100}%`;
+      const readout = () => document.querySelector(".world-canvas__zoom-readout")!.textContent;
+      const assertFit = async () => {
+        await waitFor(() => {
+          expect(readout()).toBe(fittedReadout);
+          const draw = draws.get(stage)?.at(-1);
+          expect(draw).toBeTruthy();
+          expect(Math.abs(Number(draw![5]) - expected.pan.x)).toBeLessThanOrEqual(1);
+          expect(Math.abs(Number(draw![6]) - expected.pan.y)).toBeLessThanOrEqual(1);
+          expect(draw![7]).toBe(pw * expected.zoom);
+          expect(draw![8]).toBe(ph * expected.zoom);
+        });
+      };
+
+      // Entry snaps to 1x; two wheel ticks reach 4x, beyond the expected 2x fit.
+      fireEvent.wheel(stage, { deltaY: -100, clientX: 50, clientY: 50 });
+      fireEvent.wheel(stage, { deltaY: -100, clientX: 50, clientY: 50 });
+      await waitFor(() => expect(readout()).toBe("400%"));
+      fireEvent.keyDown(window, { key: "f" });
+      await assertFit();
+
+      fireEvent.wheel(stage, { deltaY: -100, clientX: 50, clientY: 50 });
+      await waitFor(() => expect(readout()).not.toBe(fittedReadout));
+      fireEvent.click(screen.getByRole("button", { name: "Fit" }));
+      await assertFit();
+    } finally {
+      HTMLCanvasElement.prototype.getContext = original;
+    }
   });
 });

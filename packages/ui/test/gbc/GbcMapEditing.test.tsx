@@ -117,7 +117,7 @@ describe("GbcMapEditing wiring (spec review F2/F5/F6, QR I1)", () => {
   it("a paint request's failure text reaches the banner (not a generic message)", async () => {
     const s = stub({ beginStroke: vi.fn(() => Promise.reject(new Error("POST /api/edit/M/paint/begin -> 500"))) });
     const m = mount(s);
-    fireEvent.click(screen.getByRole("button", { name: "pencil" }));
+    fireEvent.click(screen.getByRole("button", { name: "Pencil" }));
     fireEvent.click(screen.getByLabelText("metatile 0x3"));
     click(m.canvas(), 72, 72);
     await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("paint/begin -> 500"));
@@ -126,7 +126,7 @@ describe("GbcMapEditing wiring (spec review F2/F5/F6, QR I1)", () => {
   it("the picked stamp is keyed by map: it does not survive a switch", async () => {
     const s = stub();
     const m = mount(s);
-    fireEvent.click(screen.getByRole("button", { name: "pencil" }));
+    fireEvent.click(screen.getByRole("button", { name: "Pencil" }));
     fireEvent.click(screen.getByLabelText("metatile 0x3"));
     expect(screen.getByLabelText("metatile 0x3").className).toContain("--picked");
     m.switchTo("N");
@@ -158,7 +158,7 @@ describe("GbcMapEditing per-visit local state", () => {
   it("retires stamp, event and error on an actual visit, including A to B to A without intervening picks", () => {
     const host = localHost(stub());
     const slot = screen.getByTestId("persistent-canvas-slot");
-    fireEvent.click(screen.getByRole("button", { name: "pencil" }));
+    fireEvent.click(screen.getByRole("button", { name: "Pencil" }));
     fireEvent.click(screen.getByLabelText("metatile 0x3"));
     act(() => { host.current().onSelectEvent?.({ kind: "object", index: 0 }); host.current().onEditError?.("old error"); });
     host.switchTo("N");
@@ -167,7 +167,7 @@ describe("GbcMapEditing per-visit local state", () => {
     expect(host.current().activeTool).toBeNull();
     expect(host.current().selectedEvent).toBeNull();
     expect(screen.queryByRole("alert")).toBeNull();
-    expect(screen.getByRole("button", { name: "pencil" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "Pencil" }).getAttribute("aria-pressed")).toBe("true");
     expect(screen.getByTestId("persistent-canvas-slot")).toBe(slot);
   });
 
@@ -204,7 +204,7 @@ describe("GbcMapEditing per-visit local state", () => {
       expect(fn).toHaveBeenCalledTimes(1);
       host.switchTo("N");
       if (aba) host.switchTo("M");
-      fireEvent.click(screen.getByRole("button", { name: "pencil" }));
+      fireEvent.click(screen.getByRole("button", { name: "Pencil" }));
       fireEvent.click(screen.getByLabelText("metatile 0x3"));
       act(() => { host.current().onSelectEvent?.({ kind: "warp", index: 0 }); host.current().onEditError?.("current visit error"); });
       await act(async () => {

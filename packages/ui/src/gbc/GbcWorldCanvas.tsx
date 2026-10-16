@@ -19,9 +19,10 @@ import { conflictBadgeOffsets } from "../world/conflictAcceptance.js";
 import { useConflictAcceptance } from "../world/useConflictAcceptance.js";
 import { WorldContextMenu, useWorldContextMenu } from "../components/WorldContextMenu.js";
 import type { MapView } from "../components/mapView.js";
-import { useWorldContext } from "../shared/useWorldContext.js";
+import { ContextMapFit, useWorldContext } from "../shared/useWorldContext.js";
 import { WorldContextOverlay } from "../shared/WorldContextOverlay.js";
 import type { GbcTimeOfDay } from "./time.js";
+import { useFitShortcut } from "../shared/useFitShortcut.js";
 
 /**
  * The GBC world view (Plan 6b Task 5, D1 manual placement). Mirrors `WorldCanvas.tsx`'s
@@ -229,7 +230,7 @@ export function initialFitBounds(world: { components: readonly Component[] }): B
   return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
 }
 
-/** The union of every placement's own bounds -- "Fit all" (Task 5 spec).
+/** The union of every placement's own bounds -- "Fit" (Task 5 spec).
  *  `null` for an empty world. */
 export function fitAllBounds(placements: Record<string, Placement>): Bounds | null {
   const list = Object.values(placements);
@@ -946,6 +947,12 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
     isBlocked: () => contextMenu.menu !== null,
   });
   const { inContext, contextView } = worldContext;
+  const fit = () => {
+    if (worldContext.inContext) worldContext.fit();
+    else fitAll();
+  };
+  const fitEnabled = !worldContext.inContext || worldContext.fitEnabled;
+  useFitShortcut(fit, fitEnabled);
 
   // The world's zoom bounds: in context the cap is the 4x level (128 px per block); it never drops below the current
   // zoom, so a wheel-in there stays put instead of jumping down. Pure of `v`, so safe inside a setView updater.
@@ -1184,8 +1191,8 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
     <section className="world-canvas" aria-label="World canvas">
       <div className="world-canvas__toolbar">
         <div className="world-canvas__toolbar-group">
-          <button type="button" className="map-canvas__btn" onClick={fitAll} disabled={inContext}>
-            Fit all
+          <button type="button" className="map-canvas__btn" onClick={fit} disabled={!fitEnabled} title="Fit to screen (F)">
+            Fit
           </button>
         </div>
         <div className="world-canvas__toolbar-group">
@@ -1356,7 +1363,7 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
               />
             </div>
           )}
-          {context && <WorldContextOverlay map={context.map} ctx={worldContext} renderCanvas={context.renderCanvas} onDone={() => context.onExitRequest()} />}
+          {context && <WorldContextOverlay map={context.map} ctx={worldContext} renderCanvas={(view, onViewChange) => <ContextMapFit.Provider value={worldContext.registerFit}>{context.renderCanvas(view, onViewChange)}</ContextMapFit.Provider>} onDone={() => context.onExitRequest()} />}
           {tooltip && (
             <div className="world-canvas__tooltip" style={{ left: tooltip.x + 12, top: tooltip.y + 12 }} role="tooltip">
               {tooltip.text}

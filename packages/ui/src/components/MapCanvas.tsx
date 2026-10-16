@@ -6,6 +6,8 @@ import type { EventKind } from "@pokemap/core/src/edit/events.js";
 import type { MapLayoutData } from "../hooks/useMapLayout.js";
 import type { PaintApplyBody, UseEditSessionResult } from "../hooks/useEditSession.js";
 import { useStrokeChain } from "../shared/useStrokeChain.js";
+import { useFitShortcut } from "../shared/useFitShortcut.js";
+import { useContextMapFit } from "../shared/useWorldContext.js";
 import type { SettledChain } from "../shared/useStrokeChain.js";
 import { readBlock, type Stamp } from "@pokemap/core/src/edit/paint.js";
 import type { CollisionElevation } from "./CollisionPalette.js";
@@ -119,6 +121,8 @@ export interface MapCanvasProps {
    *  Porymap's real eyedropper, which copies the WHOLE block, not just the
    *  tile art. */
   onDropperPick?: (stamp: Stamp) => void;
+  /** Plan 9 (R2): the hovered block's metatile id whenever it changes; null when nothing is hovered. */
+  onHoverMetatile?: (id: number | null) => void;
   /** Controlled pan/zoom (Plan 6c E1). When present the canvas renders exactly this view and owns no view
    *  state of its own: every zoom button, wheel tick, pan drag and Fit click is reported through
    *  `onViewChange` instead of applied, and there is NO automatic fit on image load (the parent owns
@@ -195,7 +199,7 @@ interface Hover {
  * one scaled `drawImage`, so dragging or scrolling never re-touches overlay
  * pixels at all.
  */
-export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEvent, selectedEventRef, onMoveEvent, onDropperPick, view: controlledView, onViewChange, chromeless, onStrokeChain }: MapCanvasProps) {
+export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEvent, selectedEventRef, onMoveEvent, onDropperPick, onHoverMetatile, view: controlledView, onViewChange, chromeless, onStrokeChain }: MapCanvasProps) {
   const { layout, split, map: staticMap, blocks: staticBlocks } = data;
   // Live, server-tracked blocks while an edit session is open for this map;
   // the static `data.blocks` prop otherwise. Every effect below already
@@ -361,6 +365,13 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
     [controlled],
   );
   const [hover, setHover] = useState<Hover | null>(null);
+  // Driven by `hover` itself, so every path that sets or clears it (hoverAt, leave, a map switch) reports.
+  const hoveredMetatileId = hover ? hover.metatileId : null;
+  const onHoverMetatileRef = useRef(onHoverMetatile);
+  onHoverMetatileRef.current = onHoverMetatile;
+  useEffect(() => {
+    onHoverMetatileRef.current?.(hoveredMetatileId);
+  }, [hoveredMetatileId]);
   const [compositeVersion, setCompositeVersion] = useState(0);
   // Measured, not read from the ref during render: a ref read at render time
   // always sees the previous commit (null on the very first pass), which
@@ -430,6 +441,7 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
   }, [imageUrl]);
 
   const fit = useCallback(() => {
+    // Before the viewport is measured, use the composite's native dimensions.
     const vw = viewport.w || pixelWidth;
     const vh = viewport.h || pixelHeight;
     // Encounters on: the content is the image plus one band on the border's side, so the sprites fit too.
@@ -439,11 +451,14 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
       vw,
       vh,
       levels: ZOOM_LEVELS,
+      // Chromeless in-context maps cannot show encounters, so their band is 0.
       bandNative: encountersOn ? BORDER_BAND.gba * METATILE_PX : 0,
       side,
     });
     updateView({ zoom: z, pan: p });
   }, [pixelWidth, pixelHeight, viewport, encountersOn, side, updateView]);
+  useFitShortcut(fit, !chromeless);
+  useContextMapFit(fit, chromeless);
 
   // Only the FIRST successful image load for a given mapName triggers fit()
   // -- a same-map reload triggered by a paint (imgLoaded cycling false->true
@@ -855,7 +870,7 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
               {z}×
             </button>
           ))}
-          <button type="button" className="map-canvas__btn" onClick={fit}>
+          <button type="button" className="map-canvas__btn" onClick={fit} title="Fit to screen (F)">
             Fit
           </button>
         </div>

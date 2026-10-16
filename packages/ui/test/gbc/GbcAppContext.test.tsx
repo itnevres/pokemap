@@ -1,8 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor, act, within } from "@testing-library/react";
 import { StrictMode } from "react";
-import { GbcApp } from "../../src/gbc/GbcApp.js";
+import { FamilyApp } from "../../src/shell/FamilyApp.js";
+import { gbcAdapter } from "../../src/gbc/adapter.js";
 import type { GbcMapPayload } from "@pokemap/core/src/gbc/wire.js";
+import { fitWithBand } from "../../src/encounters/fit.js";
+import { restoreViewport, stubViewport } from "../viewport.js";
 
 // Plan 7 Task 5b: GBC in-context editing at the app level, the twin of AppContextEdit.test.tsx (6c E4). The World view's
 // double-click enters it, the editing chrome appears around the SAME world canvas, exits go through the dirty guard, and a
@@ -80,22 +83,16 @@ class FakeImage {
   constructor() { FakeImage.instances.push(this); }
 }
 
-const sizes = {
-  w: Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth"),
-  h: Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight"),
-};
 beforeEach(() => {
   Element.prototype.scrollIntoView = vi.fn();
   FakeImage.instances = [];
   vi.stubGlobal("Image", FakeImage);
-  Object.defineProperty(HTMLElement.prototype, "clientWidth", { value: 200, configurable: true });
-  Object.defineProperty(HTMLElement.prototype, "clientHeight", { value: 200, configurable: true });
+  stubViewport(200);
 });
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
-  if (sizes.w) Object.defineProperty(HTMLElement.prototype, "clientWidth", sizes.w);
-  if (sizes.h) Object.defineProperty(HTMLElement.prototype, "clientHeight", sizes.h);
+  restoreViewport();
 });
 
 const RECT = { left: 0, top: 0, right: 200, bottom: 200, width: 200, height: 200, x: 0, y: 0, toJSON() {} };
@@ -112,7 +109,7 @@ async function overlayStage() {
 
 async function startApp() {
   const mock = mockFetch();
-  render(<GbcApp root="/x" />);
+  render(<FamilyApp adapter={gbcAdapter} />);
   await waitFor(() => expect(screen.getByText("OlivinePort")).toBeTruthy());
   return mock;
 }
@@ -134,7 +131,7 @@ const dblClickPort = (canvas: HTMLCanvasElement) => fireEvent.doubleClick(canvas
 async function dirtyCityInMapView() {
   fireEvent.click(screen.getByText("OlivineCity"));
   await waitFor(() => expect(screen.getByText(/tileset TILESET_OLIVINE/)).toBeTruthy());
-  fireEvent.click(screen.getByRole("button", { name: "pencil" }));
+  fireEvent.click(screen.getByRole("button", { name: "Pencil" }));
   fireEvent.click(screen.getByLabelText("metatile 0x1"));
   const stage = document.querySelector("canvas.map-canvas__stage")!;
   fireEvent.mouseDown(stage, { clientX: 40, clientY: 40, button: 0 });
@@ -180,7 +177,7 @@ describe("GbcApp -- in-context editing (Plan 7 Task 5b)", () => {
       });
     };
     try {
-      render(<StrictMode><GbcApp root="/x" /></StrictMode>);
+      render(<StrictMode><FamilyApp adapter={gbcAdapter} /></StrictMode>);
       await screen.findByRole("button", { name: "OlivinePort" });
       const world = await enterWorld();
       const body = document.querySelector(".app__map-editing-body");
@@ -215,14 +212,14 @@ describe("GbcApp -- in-context editing (Plan 7 Task 5b)", () => {
     const baseline = worldFetches();
     expect(baseline).toBeGreaterThan(0);
     expect(chrome()).toBeNull();
-    expect(document.querySelector(".gbc-map-editing__rail")).toBeNull();
+    expect(document.querySelector(".edit-rail")).toBeNull();
     const body = document.querySelector(".app__map-editing-body");
     expect(body).not.toBeNull();
 
     dblClickPort(canvas);
 
     await waitFor(() => expect(chrome()).not.toBeNull());
-    expect(document.querySelector(".gbc-map-editing__rail")).not.toBeNull(); // palette + inspector
+    expect(document.querySelector(".edit-rail")).not.toBeNull(); // palette + inspector
     expect(worldCanvas()).toBe(canvas); // same DOM node: the world canvas was not remounted
     expect(document.querySelector(".app__map-editing-body")).toBe(body);
     expect(calls.filter((c) => c === "GET /api/world").length).toBe(baseline);
@@ -284,7 +281,7 @@ describe("GbcApp -- in-context editing (Plan 7 Task 5b)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Done editing OlivinePort" }));
 
     await waitFor(() => expect(chrome()).toBeNull());
-    expect(document.querySelector(".gbc-map-editing__rail")).toBeNull();
+    expect(document.querySelector(".edit-rail")).toBeNull();
     expect(contextOverlay()).toBeNull();
     expect(worldCanvas()).toBe(canvas);
     expect(screen.getByRole("button", { name: "World" }).getAttribute("aria-pressed")).toBe("true");
@@ -459,7 +456,7 @@ describe("GbcApp -- in-context editing (Plan 7 Task 5b)", () => {
     await waitFor(() => expect(status()).toContain("zoom 400%"));
     fireEvent.keyDown(canvas, { key: "-" });
     await waitFor(() => expect(status()).toContain("zoom 200%"));
-    expect((screen.getByRole("button", { name: "Fit all" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Fit" }) as HTMLButtonElement).disabled).toBe(false);
   });
 
   it("pending context consumes zoom keys without continuous zoom", async () => {
@@ -475,7 +472,7 @@ describe("GbcApp -- in-context editing (Plan 7 Task 5b)", () => {
       fireEvent.keyDown(canvas, { key });
       expect(status()).toBe(before);
     }
-    expect((screen.getByRole("button", { name: "Fit all" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Fit" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it.each(["rejection", "http", "shape"])("context payload %s is visible without remount, and exit permits recovery", async (kind) => {
@@ -530,7 +527,7 @@ describe("GbcApp -- in-context editing (Plan 7 Task 5b)", () => {
     const canvas = await enterWorld();
     dblClickPort(canvas);
     const stage = await overlayStage();
-    fireEvent.click(screen.getByRole("button", { name: "pencil" }));
+    fireEvent.click(screen.getByRole("button", { name: "Pencil" }));
     fireEvent.click(screen.getByLabelText("metatile 0x1"));
     expect(screen.queryByTestId("dirty-indicator")).toBeNull();
     calls.length = 0;
@@ -574,7 +571,7 @@ describe("GbcApp -- in-context editing (Plan 7 Task 5b)", () => {
     dblClickPort(canvas);
     await overlayStage();
     const body = document.querySelector(".app__map-editing-body");
-    fireEvent.click(screen.getByRole("button", { name: "pencil" }));
+    fireEvent.click(screen.getByRole("button", { name: "Pencil" }));
     fireEvent.click(screen.getByLabelText("metatile 0x1"));
     expect(screen.getByLabelText("metatile 0x1").getAttribute("aria-current")).toBe("true"); // positive control
     fireEvent.click(screen.getByRole("button", { name: "OlivineCity" }));
@@ -589,9 +586,74 @@ describe("GbcApp -- in-context editing (Plan 7 Task 5b)", () => {
     fireEvent.doubleClick(canvas, { clientX: 100, clientY: 100 });
     await overlayStage();
     expect(screen.getByLabelText("metatile 0x1").getAttribute("aria-current")).not.toBe("true");
-    expect(screen.getByRole("button", { name: "pencil" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "Pencil" }).getAttribute("aria-pressed")).toBe("true");
     expect(worldCanvas()).toBe(canvas);
     expect(document.querySelector(".app__map-editing-body")).toBe(body);
+  });
+
+  it("in-context Fit and F fit the map being edited, as Map view's Fit does (Plan 9 R5)", async () => {
+    const draws = new Map<HTMLCanvasElement, unknown[][]>();
+    const original = HTMLCanvasElement.prototype.getContext;
+    // @ts-expect-error -- drawing-command stub, narrower than the real overloads
+    HTMLCanvasElement.prototype.getContext = function (this: HTMLCanvasElement, kind: string) {
+      if (kind !== "2d") return null;
+      const log = draws.get(this) ?? [];
+      draws.set(this, log);
+      return new Proxy({ imageSmoothingEnabled: true, drawImage: (...args: unknown[]) => { log.push(args); }, clearRect: vi.fn() } as Record<string, unknown>, {
+        get: (t, k) => (k in t ? t[k as string] : (t[k as string] = vi.fn())),
+      });
+    };
+    try {
+      await startApp();
+      const canvas = await enterWorld();
+      dblClickPort(canvas);
+      await waitFor(() => expect(contextOverlay()?.querySelector("canvas.map-canvas__stage")).toBeTruthy());
+      const stage = contextOverlay()!.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
+      // Resize after entry so the existing world's hit-test helper still uses its original viewport.
+      const viewport = 900;
+      stubViewport(viewport);
+      fireEvent(window, new Event("resize"));
+      stage.getBoundingClientRect = () => ({ ...RECT, right: viewport, bottom: viewport, width: viewport, height: viewport });
+      // Fixture payload: 10x10 blocks plus a one-block ring on each side, 32 px/block.
+      const { layout } = payload("OlivinePort");
+      const pw = (layout.width + 2) * 32, ph = (layout.height + 2) * 32;
+      const img = contextOverlay()!.querySelector("img.map-canvas__source-image") as HTMLImageElement;
+      Object.defineProperties(img, {
+        complete: { configurable: true, value: true },
+        naturalWidth: { configurable: true, value: pw },
+        naturalHeight: { configurable: true, value: ph },
+      });
+      fireEvent.load(img);
+      const expected = fitWithBand({ pw, ph, vw: viewport, vh: viewport, levels: [1, 2, 4], bandNative: 0, side: "left" });
+      expect(expected.zoom).toBeGreaterThan(1);
+      const fittedReadout = `${expected.zoom * 100}%`;
+      const readout = () => /zoom (\d+%)/.exec(status())?.[1];
+      const assertFit = async () => {
+        await waitFor(() => {
+          expect(readout()).toBe(fittedReadout);
+          const draw = draws.get(stage)?.at(-1);
+          expect(draw).toBeTruthy();
+          expect(Math.abs(Number(draw![5]) - expected.pan.x)).toBeLessThanOrEqual(1);
+          expect(Math.abs(Number(draw![6]) - expected.pan.y)).toBeLessThanOrEqual(1);
+          expect(draw![7]).toBe(pw * expected.zoom);
+          expect(draw![8]).toBe(ph * expected.zoom);
+        });
+      };
+
+      // Entry snaps to 1x; two wheel ticks reach 4x, beyond the expected 2x fit.
+      fireEvent.wheel(stage, { deltaY: -100, clientX: 50, clientY: 50 });
+      fireEvent.wheel(stage, { deltaY: -100, clientX: 50, clientY: 50 });
+      await waitFor(() => expect(readout()).toBe("400%"));
+      fireEvent.keyDown(window, { key: "f" });
+      await assertFit();
+
+      fireEvent.wheel(stage, { deltaY: -100, clientX: 50, clientY: 50 });
+      await waitFor(() => expect(readout()).not.toBe(fittedReadout));
+      fireEvent.click(screen.getByRole("button", { name: "Fit" }));
+      await assertFit();
+    } finally {
+      HTMLCanvasElement.prototype.getContext = original;
+    }
   });
 
 });

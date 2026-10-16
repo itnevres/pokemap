@@ -1,8 +1,20 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { render, screen, fireEvent, act, waitFor } from "@testing-library/react";
 import { MetatilePalette } from "../src/components/MetatilePalette.js";
+import type { ThumbSignature } from "../src/shared/useUniformRows.js";
 
-afterEach(() => vi.unstubAllGlobals());
+let originalScrollIntoView: typeof Element.prototype.scrollIntoView;
+
+beforeEach(() => {
+  originalScrollIntoView = Element.prototype.scrollIntoView;
+  Element.prototype.scrollIntoView = vi.fn();
+});
+
+afterEach(() => {
+  localStorage.clear();
+  Element.prototype.scrollIntoView = originalScrollIntoView;
+  vi.unstubAllGlobals();
+});
 
 const SPLIT = { version: "hns" as const, tiles: 640, metatiles: 640, pals: 7 };
 
@@ -74,7 +86,8 @@ describe("MetatilePalette", () => {
   // result must stay small and contain only ids actually on screen.
   it("a drag from the last primary id to the first secondary id produces a small rect, not one spanning the unused split gap", () => {
     const onSelect = vi.fn();
-    render(<MetatilePalette layoutName="Test_Layout" split={SPLIT} primaryCount={4} secondaryCount={3} onSelect={onSelect} columns={4} />);
+    // Plan 9F: 28 secondary ids (8 rows) keep the boundary far from the middle, so rows 0 and 1 share the left column.
+    render(<MetatilePalette layoutName="Test_Layout" split={SPLIT} primaryCount={4} secondaryCount={28} onSelect={onSelect} columns={4} />);
     fireEvent.mouseDown(screen.getByRole("button", { name: "metatile 0x3" })); // last primary id
     fireEvent.mouseUp(screen.getByRole("button", { name: "metatile 0x280" })); // first secondary id (640 decimal)
 
@@ -83,7 +96,7 @@ describe("MetatilePalette", () => {
     expect(stamp.width).toBeLessThanOrEqual(4);
     expect(stamp.height).toBeLessThanOrEqual(2);
     const ids = stamp.cells.filter((c): c is { metatileId: number } => Boolean(c)).map((c) => c.metatileId).sort((a, b) => a - b);
-    expect(ids).toEqual([0, 1, 2, 3, 640, 641, 642]);
+    expect(ids).toEqual([0, 1, 2, 3, 640, 641, 642, 643]);
     // The old bug's own failure signature: nothing from the unused gap
     // (real ids 4-639, none of them ever rendered) leaks into the stamp.
     expect(ids.every((id) => id < 4 || id >= 640)).toBe(true);
@@ -189,5 +202,102 @@ describe("MetatilePalette", () => {
     );
     expect(screen.getByRole("button", { name: /metatile 0x1\b/i }).getAttribute("aria-pressed")).toBe("false");
     expect(screen.getByRole("button", { name: /metatile 0x2\b/i }).getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("highlightId marks exactly that cell as hovered (Plan 9 R2)", () => {
+    const { container } = render(<MetatilePalette layoutName="Test_Layout" split={SPLIT} primaryCount={4} secondaryCount={3} onSelect={() => {}} highlightId={1} />);
+    const hovered = [...container.querySelectorAll(".metatile-palette__cell--hovered")];
+    expect(hovered).toHaveLength(1);
+    expect(hovered[0]!.getAttribute("aria-label")).toBe("metatile 0x1");
+  });
+
+  it("scrolls the hovered cell into view while Follow hover is on (Plan 9 R4)", () => {
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    const { rerender } = render(<MetatilePalette layoutName="Test_Layout" split={SPLIT} primaryCount={4} secondaryCount={3} onSelect={() => {}} highlightId={null} />);
+    expect(screen.getByRole("switch", { name: "Follow hover" }).getAttribute("aria-checked")).toBe("true");
+    rerender(<MetatilePalette layoutName="Test_Layout" split={SPLIT} primaryCount={4} secondaryCount={3} onSelect={() => {}} highlightId={1} />);
+    expect(scroll).toHaveBeenCalledWith({ block: "nearest" });
+  });
+
+  it("does not scroll once Follow hover is switched off, and the switch shows off (Plan 9 R4)", () => {
+    const scroll = vi.fn();
+    Element.prototype.scrollIntoView = scroll;
+    const { rerender } = render(<MetatilePalette layoutName="Test_Layout" split={SPLIT} primaryCount={4} secondaryCount={3} onSelect={() => {}} highlightId={null} />);
+    fireEvent.click(screen.getByRole("switch", { name: "Follow hover" }));
+    expect(screen.getByRole("switch", { name: "Follow hover" }).getAttribute("aria-checked")).toBe("false");
+    rerender(<MetatilePalette layoutName="Test_Layout" split={SPLIT} primaryCount={4} secondaryCount={3} onSelect={() => {}} highlightId={1} />);
+    expect(scroll).not.toHaveBeenCalled();
+  });
+
+  // Plan 9F: the pinned header, the two-column fold, the Selection box.
+  const ids = (el: Element | null) => [...(el?.querySelectorAll(".metatile-palette__cell") ?? [])].map((b) => b.getAttribute("aria-label"));
+
+  it("the header (Selection, search, Follow hover) sits outside the scroller", () => {
+    const { container } = render(<MetatilePalette layoutName="L" split={SPLIT} primaryCount={16} secondaryCount={0} onSelect={() => {}} />);
+    const pinned = container.querySelector(".palette__pinned")!;
+    expect(pinned.querySelector('input[placeholder="Search by hex id…"]')).toBeTruthy();
+    expect(pinned.querySelector('[role="switch"]')).toBeTruthy();
+    expect(pinned.textContent).toContain("Selection · Nothing picked");
+    expect(container.querySelector(".palette__scroll .metatile-palette__grid")).toBeTruthy();
+  });
+
+  it("folds 4 rows of 8 at the middle into two columns when no row is known uniform", () => {
+    const { container } = render(<MetatilePalette layoutName="L" split={SPLIT} primaryCount={32} secondaryCount={0} onSelect={() => {}} />);
+    expect(ids(container.querySelector(".palette__column--left"))).toHaveLength(16);
+    expect(ids(container.querySelector(".palette__column--right"))[0]).toBe("metatile 0x10");
+  });
+
+  it("folds at the primary/secondary boundary when primaryCount is a whole number of rows", () => {
+    // 2 primary rows (0-15) + 4 secondary rows (640-671): rows 6, middle 3, boundary 2 is the only candidate.
+    const { container } = render(<MetatilePalette layoutName="L" split={SPLIT} primaryCount={16} secondaryCount={32} onSelect={() => {}} />);
+    expect(ids(container.querySelector(".palette__column--right"))[0]).toBe("metatile 0x280");
+    expect(container.querySelector(".palette__column--right .metatile-palette__boundary")).toBeTruthy();
+  });
+
+  it("folds after a row whose thumbnails turn out identical, once they load", async () => {
+    // 6 rows of 8; row 1 (ids 8-15) is blank -> cut 2 (|2-3| = 1) beats nothing; then the right column starts at 0x10.
+    const sig: ThumbSignature = (img) => (/\/(8|9|1[0-5])\.png$/.test(img.getAttribute("src")!) ? "blank" : img.getAttribute("src"));
+    const { container } = render(<MetatilePalette layoutName="L" split={SPLIT} primaryCount={48} secondaryCount={0} onSelect={() => {}} thumbSignature={sig} />);
+    expect(ids(container.querySelector(".palette__column--right"))[0]).toBe("metatile 0x18"); // middle (3) before loads
+    act(() => {
+      for (const img of container.querySelectorAll(".palette__scroll img")) fireEvent.load(img);
+    });
+    await waitFor(() => expect(ids(container.querySelector(".palette__column--right"))[0]).toBe("metatile 0x10"));
+  });
+
+  it("an active search shows one column of the matches; no matches keeps the header (Review Focus 1)", () => {
+    const { container } = render(<MetatilePalette layoutName="L" split={SPLIT} primaryCount={32} secondaryCount={0} onSelect={() => {}} />);
+    fireEvent.change(screen.getByPlaceholderText("Search by hex id…"), { target: { value: "1" } });
+    expect(container.querySelector(".palette__column--right")).toBeNull();
+    fireEvent.change(screen.getByPlaceholderText("Search by hex id…"), { target: { value: "zz" } });
+    expect(container.querySelectorAll(".metatile-palette__cell")).toHaveLength(0);
+    expect(container.querySelector(".palette__pinned [role=switch]")).toBeTruthy();
+  });
+
+  it("the Selection box shows the picked stamp, abutting, with its caption", () => {
+    const stamp = { width: 2, height: 1, cells: [{ metatileId: 3 }, { metatileId: 4 }] };
+    const { container } = render(<MetatilePalette layoutName="L" split={SPLIT} primaryCount={8} secondaryCount={0} onSelect={() => {}} selected={stamp} />);
+    expect(container.querySelector(".palette__selection")!.textContent).toBe("Selection · 2x1 from 0x3");
+    expect([...container.querySelectorAll(".palette__selection img")].map((i) => i.getAttribute("src"))).toEqual(["/api/metatile/L/3.png", "/api/metatile/L/4.png"]);
+  });
+
+  it("a drag from the left column into the right one selects nothing; within one column it still selects (Plan 9F)", () => {
+    const onSelect = vi.fn();
+    render(<MetatilePalette layoutName="L" split={SPLIT} primaryCount={32} secondaryCount={0} onSelect={onSelect} />);
+    // 4 rows of 8, folded at row 2: 0x1 (row 0) is left, 0x11 (row 2) is right.
+    fireEvent.mouseDown(screen.getByRole("button", { name: "metatile 0x1" }));
+    fireEvent.mouseUp(screen.getByRole("button", { name: "metatile 0x11" }));
+    expect(onSelect).not.toHaveBeenCalled();
+    fireEvent.mouseDown(screen.getByRole("button", { name: "metatile 0x1" }));
+    fireEvent.mouseUp(screen.getByRole("button", { name: "metatile 0x9" }));
+    expect(onSelect).toHaveBeenCalledTimes(1);
+  });
+
+  it("a cell both picked and hovered carries both classes (Review Focus 4)", () => {
+    render(<MetatilePalette layoutName="L" split={SPLIT} primaryCount={8} secondaryCount={0} onSelect={() => {}} selected={{ width: 1, height: 1, cells: [{ metatileId: 2 }] }} highlightId={2} />);
+    const cls = screen.getByRole("button", { name: "metatile 0x2" }).className;
+    expect(cls).toContain("metatile-palette__cell--selected");
+    expect(cls).toContain("metatile-palette__cell--hovered");
   });
 });

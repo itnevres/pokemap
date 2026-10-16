@@ -1,6 +1,11 @@
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, memo, useEffect, useMemo, useRef, useState } from "react";
 import type { Split } from "@pokemap/core/src/model/types.js";
 import type { Stamp, StampCell } from "@pokemap/core/src/edit/paint.js";
+import { useFollowHover } from "../shared/useFollowHover.js";
+import { chunkRows, pickFold } from "../shared/paletteFold.js";
+import { useUniformRows, type ThumbSignature } from "../shared/useUniformRows.js";
+import { PaletteFrame, PaletteSelection } from "../shared/PaletteFrame.js";
+import { FoldedGrid } from "../shared/FoldedGrid.js";
 
 export interface MetatilePaletteProps {
   layoutName: string;
@@ -18,6 +23,8 @@ export interface MetatilePaletteProps {
    *  general, per paint.ts's own doc comment, but never for a stamp that
    *  reaches this component). */
   selected?: Stamp | null;
+  /** Plan 9 (R2): the metatile under the canvas cursor, marked like GBC's hover highlight */
+  highlightId?: number | null;
   /** Overrides the rendered id set with a single contiguous `0..N-1` range
    *  -- ONLY meaningful for exercising the out-of-range gap between a
    *  tileset's REAL count and the split boundary (ids `primaryCount` up to
@@ -32,6 +39,8 @@ export interface MetatilePaletteProps {
    *  rendering into that gap on demand; production code never passes it. */
   visibleCount?: number;
   columns?: number;
+  /** Test seam for the fold's uniform-row check (Plan 9F); production uses the canvas pixel signature. */
+  thumbSignature?: ThumbSignature;
 }
 
 const hex = (n: number) => `0x${n.toString(16).toUpperCase()}`;
@@ -45,11 +54,19 @@ const hex = (n: number) => `0x${n.toString(16).toUpperCase()}`;
  * visibly impossible to repeat, matching this project's own reason to
  * exist rather than just describing it.
  */
-export function MetatilePalette({
-  layoutName, split, primaryCount, secondaryCount, onSelect, selected, visibleCount, columns = 8,
+// Memoised like MapTree (Plan 9 follow-up O2): up to 1,024 cells, and every prop is stable across edit-session replies.
+export const MetatilePalette = memo(function MetatilePalette({
+  layoutName, split, primaryCount, secondaryCount, onSelect, selected, highlightId = null, visibleCount, columns = 8, thumbSignature,
 }: MetatilePaletteProps) {
   const [query, setQuery] = useState("");
   const [dragStart, setDragStart] = useState<number | null>(null);
+  const cellRefs = useRef(new Map<number, HTMLButtonElement>());
+  const [follow, setFollow] = useFollowHover();
+
+  useEffect(() => {
+    if (!follow || highlightId === null) return;
+    cellRefs.current.get(highlightId)?.scrollIntoView({ block: "nearest" });
+  }, [highlightId, follow]);
 
   const selectedIds = useMemo(
     () => new Set((selected?.cells ?? []).map((c) => c.metatileId).filter((id): id is number => id !== undefined)),
@@ -74,9 +91,22 @@ export function MetatilePalette({
     id < split.metatiles ? id >= primaryCount : id >= split.metatiles + secondaryCount;
 
   const normalizedQuery = query.trim().toLowerCase();
-  const visible = normalizedQuery
+  const visible = useMemo(() => normalizedQuery
     ? ids.filter((id) => hex(id).toLowerCase().includes(normalizedQuery))
-    : ids;
+    : ids, [ids, normalizedQuery]);
+
+  const searching = normalizedQuery !== "";
+  const rows = useMemo(() => chunkRows(visible, columns), [visible, columns]);
+  const src = (id: number) => `/api/metatile/${encodeURIComponent(layoutName)}/${id}.png`;
+  const { uniformRows, onThumbLoad, onThumbError } = useUniformRows(searching ? [] : rows, layoutName, thumbSignature);
+  // The primary/secondary boundary is a safe cut only when secondary starts a fresh row in the index order.
+  const boundaryRow = visibleCount === undefined && secondaryCount > 0 && primaryCount % columns === 0 ? primaryCount / columns : undefined;
+  const fold = searching ? rows.length : pickFold(rows.length, uniformRows, boundaryRow);
+  // Plan 9F final review: a drag whose ends sit in different newspaper columns would select the logical rectangle
+  // between them (up to ~80 rows the user cannot see as one shape); it selects nothing.
+  const sameColumn = (a: number, b: number) =>
+    (Math.floor(visible.indexOf(a) / columns) < fold) === (Math.floor(visible.indexOf(b) / columns) < fold);
+  const selectionCells = selected ? Array.from({ length: selected.width * selected.height }, (_, i) => selected.cells[i]?.metatileId ?? null) : [];
 
   const selectSingle = (id: number) => {
     if (isOutOfRange(id)) return;
@@ -128,15 +158,21 @@ export function MetatilePalette({
   };
 
   return (
-    <div className="metatile-palette">
-      <input
-        className="metatile-palette__search"
-        placeholder="Search by hex id…"
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-      />
-      <div className="metatile-palette__grid" style={{ gridTemplateColumns: `repeat(${columns}, auto)` }}>
-        {visible.map((id) => {
+    <PaletteFrame
+      className="metatile-palette"
+      selection={<PaletteSelection cells={selectionCells} width={selected?.width ?? 0} src={src} cellPx={16} />}
+      query={query}
+      onQuery={setQuery}
+      follow={follow}
+      onFollow={setFollow}
+    >
+      <FoldedGrid
+        rows={rows}
+        fold={fold}
+        columns={columns}
+        cellPx={16}
+        className="metatile-palette__grid"
+        renderCell={(id) => {
           const outOfRange = isOutOfRange(id);
           const atBoundary = id === split.metatiles;
           const isSelected = selectedIds.has(id);
@@ -151,8 +187,9 @@ export function MetatilePalette({
                 type="button"
                 aria-label={`metatile ${hex(id)}`}
                 aria-pressed={isSelected}
-                className={`metatile-palette__cell${outOfRange ? " metatile-palette__cell--out-of-range" : ""}${isSelected ? " metatile-palette__cell--selected" : ""}`}
+                className={`metatile-palette__cell${outOfRange ? " metatile-palette__cell--out-of-range" : ""}${isSelected ? " metatile-palette__cell--selected" : ""}${id === highlightId ? " metatile-palette__cell--hovered" : ""}`}
                 disabled={outOfRange}
+                ref={(el) => { if (el) cellRefs.current.set(id, el); else cellRefs.current.delete(id); }}
                 // Split three ways, not two: `onMouseDown`/`onMouseUp` alone
                 // detect a drag-rect (down on one cell, up on another) but
                 // never fire for a keyboard Enter/Space activation -- a
@@ -169,7 +206,7 @@ export function MetatilePalette({
                 // events at all.
                 onMouseDown={() => setDragStart(id)}
                 onMouseUp={() => {
-                  if (dragStart !== null && dragStart !== id) selectRect(dragStart, id);
+                  if (dragStart !== null && dragStart !== id && sameColumn(dragStart, id)) selectRect(dragStart, id);
                   setDragStart(null);
                 }}
                 onClick={() => selectSingle(id)}
@@ -184,12 +221,12 @@ export function MetatilePalette({
                     so this was invisible there). This is the standard fix
                     for "an image inside a click/drag target shouldn't start
                     its own drag". */}
-                <img className="metatile-palette__thumb" src={`/api/metatile/${encodeURIComponent(layoutName)}/${id}.png`} alt="" width={16} height={16} draggable={false} />
+                <img className="metatile-palette__thumb" src={src(id)} alt="" width={16} height={16} draggable={false} onLoad={(e) => onThumbLoad(id, e.currentTarget)} onError={() => onThumbError(id)} />
               </button>
             </Fragment>
           );
-        })}
-      </div>
-    </div>
+        }}
+      />
+    </PaletteFrame>
   );
-}
+});

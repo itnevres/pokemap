@@ -31,9 +31,9 @@ describe("Toolbar", () => {
 
   it("renders one button per tool (pencil, rect, bucket, dropper, shift, collision) and marks the active one aria-pressed", () => {
     render(<Toolbar {...baseProps} />);
-    expect(screen.getByRole("button", { name: "pencil" }).getAttribute("aria-pressed")).toBe("true");
-    expect(screen.getByRole("button", { name: "rect" }).getAttribute("aria-pressed")).toBe("false");
-    for (const name of ["pencil", "rect", "bucket", "dropper", "shift", "collision"]) {
+    expect(screen.getByRole("button", { name: "Pencil" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "Rect" }).getAttribute("aria-pressed")).toBe("false");
+    for (const name of ["Pencil", "Rect", "Bucket", "Dropper", "Shift", "Collision"]) {
       expect(screen.getByRole("button", { name })).toBeTruthy();
     }
   });
@@ -41,7 +41,7 @@ describe("Toolbar", () => {
   it("clicking a tool button calls onSelectTool with that tool's kind", () => {
     const onSelectTool = vi.fn();
     render(<Toolbar {...baseProps} onSelectTool={onSelectTool} />);
-    fireEvent.click(screen.getByRole("button", { name: "bucket" }));
+    fireEvent.click(screen.getByRole("button", { name: "Bucket" }));
     expect(onSelectTool).toHaveBeenCalledWith("bucket");
   });
 
@@ -107,24 +107,47 @@ describe("Toolbar", () => {
 
     it("disables every tool not in availableTools, and leaves available ones enabled", () => {
       render(<Toolbar {...baseProps} activeToolKind={null} availableTools={["collision"]} />);
-      for (const name of ["pencil", "rect", "bucket", "dropper", "shift"]) {
+      for (const name of ["Pencil", "Rect", "Bucket", "Dropper", "Shift"]) {
         expect((screen.getByRole("button", { name }) as HTMLButtonElement).disabled).toBe(true);
       }
-      expect((screen.getByRole("button", { name: "collision" }) as HTMLButtonElement).disabled).toBe(false);
+      expect((screen.getByRole("button", { name: "Collision" }) as HTMLButtonElement).disabled).toBe(false);
     });
 
     it("clicking a disabled (unavailable) tool never calls onSelectTool", () => {
       onSelectTool.mockClear();
       render(<Toolbar {...baseProps} activeToolKind={null} availableTools={["collision"]} onSelectTool={onSelectTool} />);
-      fireEvent.click(screen.getByRole("button", { name: "pencil" }));
+      fireEvent.click(screen.getByRole("button", { name: "Pencil" }));
       expect(onSelectTool).not.toHaveBeenCalled();
     });
 
     it("clicking an available tool still calls onSelectTool", () => {
       onSelectTool.mockClear();
       render(<Toolbar {...baseProps} activeToolKind={null} availableTools={["collision"]} onSelectTool={onSelectTool} />);
-      fireEvent.click(screen.getByRole("button", { name: "collision" }));
+      fireEvent.click(screen.getByRole("button", { name: "Collision" }));
       expect(onSelectTool).toHaveBeenCalledWith("collision");
+    });
+  });
+
+  describe("Toolbar -- icon, label and tooltip (Plan 9 D5)", () => {
+    it("each tool shows an aria-hidden icon and its capitalised label, tooltip names the shortcut", () => {
+      render(<Toolbar {...baseProps} availableTools={ALL_TOOLS} />);
+      const expected = [["Pencil", "P"], ["Rect", "R"], ["Bucket", "B"], ["Dropper", "I"], ["Shift", "S"], ["Collision", "C"]];
+      for (const [label, key] of expected) {
+        const btn = screen.getByRole("button", { name: label });
+        expect(btn.getAttribute("title")).toBe(`${label} (${key})`);
+        expect(btn.textContent).toBe(label);
+        const svg = btn.querySelector("svg")!;
+        expect(svg.getAttribute("aria-hidden")).toBe("true");
+      }
+    });
+    it("a disabled tool keeps its reason title instead of the shortcut", () => {
+      render(<Toolbar {...baseProps} availableTools={[]} unavailableTitle="this map's .blk is flagged non-writable: x" />);
+      expect(screen.getByRole("button", { name: "Pencil" }).getAttribute("title")).toBe("this map's .blk is flagged non-writable: x");
+    });
+    it("Undo and Redo tooltips name their shortcuts", () => {
+      render(<Toolbar {...baseProps} />);
+      expect(screen.getByRole("button", { name: "Undo" }).getAttribute("title")).toBe("Undo (Ctrl+Z)");
+      expect(screen.getByRole("button", { name: "Redo" }).getAttribute("title")).toBe("Redo (Ctrl+Y)");
     });
   });
 });

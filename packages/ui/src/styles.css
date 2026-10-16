@@ -255,30 +255,6 @@ input {
   flex-direction: column;
 }
 
-.app__collision-strip {
-  flex: 0 0 auto;
-  padding: var(--space-2) var(--space-3);
-  background: var(--bg-panel);
-  border-bottom: 1px solid var(--border);
-}
-
-/* Plan 2 follow-up 1: hosts MetatilePalette above the canvas, same slot
-   .app__collision-strip occupies for the collision tool. Unlike that one
-   fixed-height row, a real layout's grid can run 60+ rows (500+ metatiles at
-   8 columns) -- unconstrained, mounting this would push the canvas off
-   screen. Capped well under .app__body's typical available height (a few
-   hundred px on a normal window) and scrollable on its own;
-   .metatile-palette itself already carries `overflow-y: auto`, this just
-   gives it a bounded box to actually scroll within. */
-.app__metatile-strip {
-  flex: 0 0 auto;
-  max-height: 240px;
-  overflow-y: auto;
-  padding: var(--space-2) var(--space-3);
-  background: var(--bg-panel);
-  border-bottom: 1px solid var(--border);
-}
-
 /* Task 14: wraps MapCanvas + EventInspector in a row -- MapCanvas keeps its
    own `flex: 1 1 auto` (still the one element in this whole screen with no
    max-width, per DESIGN.md's "what the canvas is owed"), EventInspector
@@ -2097,30 +2073,101 @@ input {
 .metatile-palette {
   display: flex;
   flex-direction: column;
-  padding: var(--space-2);
   background: var(--bg-panel);
-  overflow-y: auto;
 }
 
-.metatile-palette__search {
+/* Plan 9 (R4): the palette header's Follow hover switch + its label use the World-bar pattern. */
+.palette__follow {
+  align-self: flex-end;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+
+/* Plan 9F (addendum R-F5): one frame for both palettes. The pinned header never scrolls; only .palette__scroll does. */
+.palette {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--bg-panel);
+}
+
+.palette__pinned {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--border);
+}
+
+.palette__caption {
+  font-family: var(--font-data);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.palette__search {
   background: var(--bg-panel-raised);
   border: 1px solid var(--border);
   border-radius: 4px;
   color: var(--text-primary);
   padding: var(--space-2) var(--space-3);
-  margin-bottom: var(--space-2);
   font-size: var(--text-sm);
 }
 
-.metatile-palette__search:focus-visible {
+.palette__search:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
-.metatile-palette__grid {
-  display: grid;
+.palette__selection {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
   gap: var(--space-1);
+}
+
+.palette__selection-caption {
+  font-family: var(--font-data);
+  font-size: var(--text-xs);
+  color: var(--text-secondary);
+}
+
+.palette__selection-grid {
+  display: grid;
+  gap: 0;
+  justify-content: start;
+  max-height: 96px;
+  overflow: hidden;
+}
+
+.palette__selection-grid img {
+  display: block;
+  image-rendering: pixelated;
+}
+
+.palette__scroll {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.palette__grid {
+  display: flex;
+  align-items: flex-start;
+}
+
+.palette__column {
+  display: grid;
+  gap: 0;
   align-content: start;
+}
+
+.palette__column--right {
+  border-left: 2px solid var(--border-strong);
 }
 
 /* Full-width row (grid-column below spans the whole grid) naming the
@@ -2137,32 +2184,19 @@ input {
   color: var(--text-secondary);
   font-family: var(--font-data);
   font-size: var(--text-2xs);
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .metatile-palette__cell {
   position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
+  display: block;
+  width: 16px;
+  height: 16px;
   padding: 0;
-  background: var(--bg-panel-raised);
-  border: 1px solid var(--border);
-  border-radius: 2px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
   cursor: pointer;
-  transition: background-color 150ms ease-out, border-color 150ms ease-out;
-}
-
-.metatile-palette__cell:hover:not(:disabled) {
-  background: var(--bg-hover);
-  border-color: var(--border-strong);
-}
-
-.metatile-palette__cell:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
 }
 
 /* Disabled AND struck through -- colour is never the only signal (DESIGN.md
@@ -2190,28 +2224,24 @@ input {
 /* Follow-up 6: the currently-picked metatile (echoed back via App.tsx's own
    `currentStamp` as this component's `selected` prop) had zero visual
    confirmation -- a pick worked (fed pencil/rect/bucket) but looked
-   identical to every other cell. Same selected/active-state pairing this
-   app already uses everywhere else (.map-canvas__btn[aria-pressed="true"],
-   .toolbar__tool-btn--active, .lens-panel__toggle[aria-pressed="true"]):
-   --bg-selected + --border-strong. Can't co-occur with --out-of-range in
-   practice (out-of-range cells are never selectable -- selectSingle/
-   selectRect both already skip them), but the out-of-range strike-through
-   (::after, a real red line) still paints on top regardless of background,
-   so the two would read fine together even if it somehow happened.
-   Confirmed live: `.metatile-palette__cell.metatile-palette__cell--selected`
-   alone (2 classes) loses the cascade to the existing
-   `.metatile-palette__cell:hover:not(:disabled)` rule just above (3
-   classes/pseudo-classes) regardless of source order -- hovering a selected
-   cell silently reverted it to the plain hover look. The extra
-   `:not(:disabled)` here is a no-op for real usage (a selected cell is never
-   disabled) but brings this rule to the same specificity, so -- combined
-   with sitting after the hover rule in source -- it wins the tie. */
-.metatile-palette__cell.metatile-palette__cell--selected:not(:disabled) {
-  background: var(--bg-selected);
-  border-color: var(--border-strong);
+   identical to every other cell. Plan 9F: an inset ring, so it reads on abutting cells and coexists with the hover outline. */
+.metatile-palette__cell.metatile-palette__cell--selected {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+/* Plan 9 (R2): the cell under the canvas cursor -- GBC's hover pair (.gbc-metatile-palette__cell--selected). */
+.metatile-palette__cell--hovered {
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
+}
+
+.metatile-palette__cell:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
 }
 
 .metatile-palette__thumb {
+  display: block;
   width: 16px;
   height: 16px;
   image-rendering: pixelated;
@@ -2291,11 +2321,15 @@ input {
    above MapCanvas in Map mode, same toolbar-row shape as .map-canvas
    __toolbar just above (bg-panel-raised, border-bottom, space-2/3
    padding) -- one more instrument-panel strip, not a new visual language. */
+/* Plan 9 Task 12 F1: the D5 toolbar (icons + labels, Add Sign) is wider than the 1024 px window's main column; wrap rather than scroll sideways. */
 .toolbar {
   flex: 0 0 auto;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-4);
+  row-gap: var(--space-2);
+  min-width: 0;
   padding: var(--space-2) var(--space-3);
   background: var(--bg-panel-raised);
   border-bottom: 1px solid var(--border);
@@ -2308,12 +2342,15 @@ input {
   gap: var(--space-1);
 }
 
-/* .map-canvas__btn already supplies the base look (border, hover, aria-
-   pressed selected state); this just fixes the tool label's own casing --
-   ToolKind values ("pencil", "rect", ...) are lowercase identifiers, not
-   prose, but should still read as a normal button label. */
+/* Plan 9 (D5): icon + capitalised label. */
 .toolbar__tool-btn {
-  text-transform: capitalize;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.toolbar__icon {
+  flex: none;
 }
 
 .toolbar__save {
@@ -2741,20 +2778,34 @@ input {
   color: var(--text-on-accent);
 }
 
-/* Plan 7 Task 5 (quality review I4): the GBC palette and inspector share ONE 260px right-hand rail, palette on top
-   (taking the spare height, scrolling inside), inspector below (capped at half the height, scrolling inside), so
-   the canvas keeps the rest of the row. min-width: 0 on every flex child so long text cannot widen the rail. */
-.gbc-map-editing__rail {
-  width: 260px;
+/* Plan 9 (D4): one 272px right-hand rail for both families -- [collision palette, Collision tool only] over the
+   metatile palette (takes the spare height, scrolls inside) over the event inspector (at most half the height,
+   scrolls inside); the canvas keeps the rest of the row. min-width: 0 on every flex child so long text cannot
+   widen the rail (LESSONS: React / UI Patterns). */
+.edit-rail {
+  width: 272px; /* Plan 9F: 2 x 128 px columns + 2 px rule + thin scrollbar + 1 px border. */
   flex: 0 0 auto;
   min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
   border-left: 1px solid var(--border);
+  background: var(--bg-panel);
 }
 
-.gbc-map-editing__rail > .gbc-metatile-palette {
+.edit-rail > .collision-palette {
+  flex: 0 0 auto;
+  min-width: 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.edit-rail > .metatile-palette {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+}
+
+.edit-rail > .gbc-metatile-palette {
   width: auto;
   flex: 1 1 0;
   min-width: 0;
@@ -2762,7 +2813,7 @@ input {
   border-left: none;
 }
 
-.gbc-map-editing__rail > .event-inspector {
+.edit-rail > .event-inspector {
   width: auto;
   flex: 0 1 auto;
   min-width: 0;
@@ -2811,13 +2862,9 @@ input {
    is vertical, and picks a single metatile per click (Plan 7 Task 5); with no
    editing mounted its cells are inert. */
 .gbc-metatile-palette {
-  width: 260px;
   flex: 0 0 auto;
-  overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-3);
   background: var(--bg-panel);
   border-left: 1px solid var(--border);
 }
@@ -2829,37 +2876,25 @@ input {
   color: var(--text-secondary);
 }
 
-.gbc-metatile-palette__grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, 32px);
-  gap: var(--space-1);
-}
-
 .gbc-metatile-palette__cell {
-  padding: 0;
-  background: transparent;
+  position: relative;
+  display: block;
   width: 32px;
   height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid transparent;
-  border-radius: 2px;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  cursor: pointer;
 }
 
-/* Same selected-state pairing as everywhere else in this app
-   (.map-canvas__btn[aria-pressed="true"], .metatile-palette__cell--selected):
-   --bg-selected + --border-strong, never a bespoke highlight colour. */
 .gbc-metatile-palette__cell--selected {
-  background: var(--bg-selected);
-  border-color: var(--border-strong);
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
 }
 
-/* Plan 7 Task 5: the PICKED cell (what pencil/rect/bucket paint with) -- accent border, distinct from the
-   hover highlight above (bg-selected + border-strong). */
 .gbc-metatile-palette__cell--picked {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent);
+  box-shadow: inset 0 0 0 2px var(--accent);
 }
 
 .gbc-metatile-palette__cell:not(:disabled) {
@@ -2868,10 +2903,11 @@ input {
 
 .gbc-metatile-palette__cell:focus-visible {
   outline: 2px solid var(--focus-ring);
-  outline-offset: 1px;
+  outline-offset: -2px;
 }
 
 .gbc-metatile-palette__thumb {
+  display: block;
   image-rendering: pixelated;
   image-rendering: crisp-edges;
 }

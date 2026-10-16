@@ -15,14 +15,14 @@ describe("Toolbar for GBC (additive props)", () => {
   it("renders exactly the 5 GBC tools and no collision or sign button", () => {
     render(<Toolbar {...base} tools={GBC_TOOLS} availableTools={GBC_TOOLS} />);
     const group = screen.getByRole("group", { name: "Tools" });
-    expect(Array.from(group.querySelectorAll("button")).map((b) => b.getAttribute("aria-label"))).toEqual(GBC_TOOLS);
-    expect(screen.queryByRole("button", { name: "collision" })).toBeNull();
+    expect(Array.from(group.querySelectorAll("button")).map((b) => b.textContent)).toEqual(["Pencil", "Rect", "Bucket", "Dropper", "Shift"]);
+    expect(screen.queryByRole("button", { name: "Collision" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Add Sign" })).toBeNull();
   });
 
   it("unavailable tools are disabled with the supplied reason as title", () => {
     render(<Toolbar {...base} tools={GBC_TOOLS} availableTools={[]} unavailableTitle="this map's .blk is flagged non-writable: oversize" />);
-    const b = screen.getByRole("button", { name: "pencil" }) as HTMLButtonElement;
+    const b = screen.getByRole("button", { name: "Pencil" }) as HTMLButtonElement;
     expect(b.disabled).toBe(true);
     expect(b.title).toBe("this map's .blk is flagged non-writable: oversize");
   });
@@ -31,7 +31,7 @@ describe("Toolbar for GBC (additive props)", () => {
     render(<Toolbar {...base} onOpenSignComposer={vi.fn()} availableTools={[]} />);
     expect(screen.getByRole("group", { name: "Tools" }).querySelectorAll("button").length).toBe(6);
     expect(screen.getByRole("button", { name: "Add Sign" })).toBeTruthy();
-    expect((screen.getByRole("button", { name: "pencil" }) as HTMLButtonElement).title).toBe("Not yet available");
+    expect((screen.getByRole("button", { name: "Pencil" }) as HTMLButtonElement).title).toBe("Not yet available");
   });
 });
 

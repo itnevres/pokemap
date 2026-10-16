@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { GbcApp } from "../../src/gbc/GbcApp.js";
+import { FamilyApp } from "../../src/shell/FamilyApp.js";
+import { gbcAdapter } from "../../src/gbc/adapter.js";
 import type { GbcMapPayload } from "@pokemap/core/src/gbc/wire.js";
 
 // GbcWorldCanvas replaced by two buttons that call its real selection props, so the World-path dirty guards
@@ -8,10 +9,11 @@ import type { GbcMapPayload } from "@pokemap/core/src/gbc/wire.js";
 vi.mock("../../src/gbc/GbcWorldCanvas.js", async () => {
   const R = await import("react");
   return {
-    GbcWorldCanvas: (p: { onSelectMap?: (n: string) => void; onOpenMap?: (n: string) => void }) =>
+    GbcWorldCanvas: (p: { onSelectMap?: (n: string) => void; onOpenMap?: (n: string) => void; onEditHere?: (n: string) => void }) =>
       R.createElement("div", { "data-testid": "world" },
         R.createElement("button", { type: "button", onClick: () => p.onSelectMap?.("OlivinePort") }, "world-select-port"),
-        R.createElement("button", { type: "button", onClick: () => p.onOpenMap?.("OlivinePort") }, "world-open-port")),
+        R.createElement("button", { type: "button", onClick: () => p.onOpenMap?.("OlivinePort") }, "world-open-port"),
+        R.createElement("button", { type: "button", onClick: () => p.onEditHere?.("OlivineCity") }, "world-edit-city")),
   };
 });
 
@@ -61,7 +63,7 @@ async function paintThenWorld() {
   await waitFor(() => expect(screen.getByText("OlivineCity")).toBeTruthy());
   fireEvent.click(screen.getByText("OlivineCity"));
   await waitFor(() => expect(screen.getByText(/tileset TILESET_OLIVINE/)).toBeTruthy());
-  fireEvent.click(screen.getByRole("button", { name: "pencil" }));
+  fireEvent.click(screen.getByRole("button", { name: "Pencil" }));
   fireEvent.click(screen.getByLabelText("metatile 0x1"));
   const canvas = document.querySelector("canvas.map-canvas__stage")!;
   fireEvent.mouseDown(canvas, { clientX: 40, clientY: 40, button: 0 });
@@ -77,7 +79,7 @@ describe("GbcApp World-path dirty guards (spec review F1, F3, F7)", () => {
   it("a world click on another map: GBA confirm; cancel keeps the selection and discards nothing", async () => {
     const calls = mockFetch();
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
-    render(<GbcApp root="/x" />);
+    render(<FamilyApp adapter={gbcAdapter} />);
     await paintThenWorld();
     fireEvent.click(screen.getByText("world-select-port"));
     expect(confirm).toHaveBeenCalledWith(GUARD_TEXT);
@@ -90,7 +92,7 @@ describe("GbcApp World-path dirty guards (spec review F1, F3, F7)", () => {
   it("a world click, confirmed: POST /discard goes out BEFORE the new map is fetched", async () => {
     const calls = mockFetch();
     vi.spyOn(window, "confirm").mockReturnValue(true);
-    render(<GbcApp root="/x" />);
+    render(<FamilyApp adapter={gbcAdapter} />);
     await paintThenWorld();
     fireEvent.click(screen.getByText("world-select-port"));
     fireEvent.click(screen.getByRole("button", { name: "Map" }));
@@ -104,7 +106,7 @@ describe("GbcApp World-path dirty guards (spec review F1, F3, F7)", () => {
   it("a world double-click (open): cancel stays in World; confirm discards then opens Map on the new map", async () => {
     const calls = mockFetch();
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
-    render(<GbcApp root="/x" />);
+    render(<FamilyApp adapter={gbcAdapter} />);
     await paintThenWorld();
     fireEvent.click(screen.getByText("world-open-port"));
     expect(confirm).toHaveBeenCalledWith(GUARD_TEXT);
@@ -122,7 +124,7 @@ describe("GbcApp World-path dirty guards (spec review F1, F3, F7)", () => {
     mockFetch();
     const add = vi.spyOn(window, "addEventListener");
     const remove = vi.spyOn(window, "removeEventListener");
-    render(<GbcApp root="/x" />);
+    render(<FamilyApp adapter={gbcAdapter} />);
     await paintThenWorld();
     expect(beforeUnload(add)).toBe(1);
     expect(beforeUnload(remove)).toBe(0);
@@ -136,7 +138,7 @@ describe("GbcApp World-path dirty guards (spec review F1, F3, F7)", () => {
     mockFetch();
     vi.spyOn(window, "confirm").mockReturnValue(true);
     const remove = vi.spyOn(window, "removeEventListener");
-    render(<GbcApp root="/x" />);
+    render(<FamilyApp adapter={gbcAdapter} />);
     await paintThenWorld();
     fireEvent.click(screen.getByText("world-select-port"));
     await waitFor(() => expect(beforeUnload(remove)).toBe(1));
@@ -145,7 +147,7 @@ describe("GbcApp World-path dirty guards (spec review F1, F3, F7)", () => {
   it("beforeunload is removed after a committed save", async () => {
     mockFetch();
     const remove = vi.spyOn(window, "removeEventListener");
-    render(<GbcApp root="/x" />);
+    render(<FamilyApp adapter={gbcAdapter} />);
     await paintThenWorld();
     fireEvent.click(screen.getByRole("button", { name: "Map" }));
     await waitFor(() => expect(screen.getByTestId("dirty-indicator")).toBeTruthy());
@@ -159,13 +161,29 @@ describe("GbcApp World-path dirty guards (spec review F1, F3, F7)", () => {
   it("a failed discard from World is shown in World and keeps the selection", async () => {
     mockFetch({ discardFails: true });
     vi.spyOn(window, "confirm").mockReturnValue(true);
-    render(<GbcApp root="/x" />);
+    render(<FamilyApp adapter={gbcAdapter} />);
     await paintThenWorld();
     fireEvent.click(screen.getByText("world-select-port"));
     await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("discard -> 500"));
     expect(screen.getByTestId("world")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
     expect(screen.queryByRole("alert")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Map" }));
+    await waitFor(() => expect(status()).toBe("OlivineCity"));
+  });
+
+  // Plan 9 characterisation: GbcApp.tsx:194-197 -- entering context on the SELECTED map clears switchError first.
+  it("characterisation (Plan 9): Edit here on the selected map clears a discard error shown in World", async () => {
+    mockFetch({ discardFails: true });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(<FamilyApp adapter={gbcAdapter} />);
+    await paintThenWorld();
+    fireEvent.click(screen.getByText("world-select-port"));
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("discard -> 500"));
+
+    fireEvent.click(screen.getByText("world-edit-city"));
+    await waitFor(() => expect(screen.queryByText(/discard -> 500/)).toBeNull());
+    expect(screen.getByTestId("world")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Map" }));
     await waitFor(() => expect(status()).toBe("OlivineCity"));
   });

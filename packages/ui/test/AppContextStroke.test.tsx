@@ -1,6 +1,8 @@
 import { it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
-import { App } from "../src/App.js";
+import { FamilyApp } from "../src/shell/FamilyApp.js";
+import { gbaAdapter } from "../src/gba/adapter.js";
+import { restoreViewport, stubViewport } from "./viewport.js";
 
 // M5: GBA context exit waits for pending paint before deciding whether to open SaveDialog.
 // Dirty mode switches leave context without prompting and preserve the edit session.
@@ -71,21 +73,15 @@ class FakeImage {
   constructor() { FakeImage.instances.push(this); }
 }
 
-const sizes = {
-  w: Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth"),
-  h: Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientHeight"),
-};
 beforeEach(() => {
   FakeImage.instances = [];
   vi.stubGlobal("Image", FakeImage);
-  Object.defineProperty(HTMLElement.prototype, "clientWidth", { value: 400, configurable: true });
-  Object.defineProperty(HTMLElement.prototype, "clientHeight", { value: 100, configurable: true });
+  stubViewport(400, 100);
 });
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
-  if (sizes.w) Object.defineProperty(HTMLElement.prototype, "clientWidth", sizes.w);
-  if (sizes.h) Object.defineProperty(HTMLElement.prototype, "clientHeight", sizes.h);
+  restoreViewport();
 });
 
 const RECT = { left: 0, top: 0, right: 400, bottom: 100, width: 400, height: 100, x: 0, y: 0, toJSON() {} };
@@ -103,7 +99,7 @@ async function enterWorld() {
 
 async function startApp(fetchMock = makeFetchMock()) {
   vi.stubGlobal("fetch", fetchMock);
-  render(<App />);
+  render(<FamilyApp adapter={gbaAdapter} />);
   await waitFor(() => expect(screen.getByRole("button", { name: "Route1" })).toBeTruthy());
   return fetchMock;
 }
@@ -133,7 +129,7 @@ it("M5: Done waits for held paint/apply before deciding the dirty exit", async (
   await waitFor(() => expect(contextOverlay()?.querySelector("canvas.map-canvas__stage")).toBeTruthy());
   const stage = contextOverlay()!.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
   stage.getBoundingClientRect = () => ({ ...RECT, left: 100, top: 100 });
-  fireEvent.click(screen.getByRole("button", { name: "pencil" }));
+  fireEvent.click(screen.getByRole("button", { name: "Pencil" }));
   fireEvent.click(await screen.findByRole("button", { name: /metatile 0x1\b/i }));
   fireEvent.mouseDown(stage, { clientX: 44, clientY: 33, button: 0 });
   fireEvent.mouseUp(stage, { clientX: 44, clientY: 33, button: 0 });
@@ -167,7 +163,7 @@ it("dirty Map and Dungeon mode switches leave context without prompting and pres
   await waitFor(() => expect(contextOverlay()?.querySelector("canvas.map-canvas__stage")).toBeTruthy());
   const stage = contextOverlay()!.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
   stage.getBoundingClientRect = () => ({ ...RECT, left: 100, top: 100 });
-  fireEvent.click(screen.getByRole("button", { name: "pencil" }));
+  fireEvent.click(screen.getByRole("button", { name: "Pencil" }));
   fireEvent.click(await screen.findByRole("button", { name: /metatile 0x1\b/i }));
   fireEvent.mouseDown(stage, { clientX: 44, clientY: 33, button: 0 });
   fireEvent.mouseUp(stage, { clientX: 44, clientY: 33, button: 0 });
