@@ -10,17 +10,22 @@ export const canvasSignature: ThumbSignature = (img) => {
   c.height = img.naturalHeight;
   const ctx = c.width > 0 ? c.getContext("2d") : null;
   if (!ctx) return null;
-  ctx.drawImage(img, 0, 0);
-  const d = ctx.getImageData(0, 0, c.width, c.height).data;
-  let h = 2166136261;
-  for (let i = 0; i < d.length; i++) h = Math.imul(h ^ d[i]!, 16777619);
-  return `${c.width}x${c.height}:${h >>> 0}`;
+  try {
+    ctx.drawImage(img, 0, 0);
+    const d = ctx.getImageData(0, 0, c.width, c.height).data;
+    let h = 2166136261;
+    for (let i = 0; i < d.length; i++) h = Math.imul(h ^ d[i]!, 16777619);
+    return `${c.width}x${c.height}:${h >>> 0}`;
+  } catch {
+    return null;
+  }
 };
 
 /** Plan 9 addendum R-F3: the rows (indices into `rows`) whose loaded thumbnails are all pixel-identical, a safe
  *  newspaper fold. `key` names what the thumbnails show (layout, map + time); a new key forgets every signature. */
 export function useUniformRows(rows: readonly (readonly number[])[], key: string, signature: ThumbSignature = canvasSignature) {
   const sigs = useRef(new Map<number, string | null>());
+  const sigKey = useRef(key);
   const [version, setVersion] = useState(0);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   // ponytail: one re-render per 30 ms of thumbnail loads, not one per image (784 GBA thumbnails load at mount).
@@ -31,11 +36,12 @@ export function useUniformRows(rows: readonly (readonly number[])[], key: string
       setVersion((v) => v + 1);
     }, 30);
   }, []);
-  useEffect(() => () => { if (timer.current !== null) clearTimeout(timer.current); }, []);
-  useEffect(() => {
+  useEffect(() => () => { if (timer.current !== null) { clearTimeout(timer.current); timer.current = null; } }, []);
+
+  if (sigKey.current !== key) {
+    sigKey.current = key;
     sigs.current = new Map();
-    setVersion((v) => v + 1);
-  }, [key]);
+  }
 
   const onThumbLoad = useCallback((id: number, img: HTMLImageElement) => {
     sigs.current.set(id, signature(img));
@@ -55,7 +61,7 @@ export function useUniformRows(rows: readonly (readonly number[])[], key: string
       if (first && row.every((id) => sigs.current.get(id) === first)) out.add(r);
     });
     return out;
-  }, [rows, version]);
+  }, [rows, version, key]);
 
   return { uniformRows, onThumbLoad, onThumbError };
 }

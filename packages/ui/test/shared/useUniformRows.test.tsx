@@ -31,15 +31,21 @@ describe("useUniformRows (Plan 9 addendum R-F3)", () => {
     await waitFor(() => expect([...result.current.uniformRows]).toEqual([2]));
   });
 
-  it("a key change forgets what the old thumbnails looked like (Review Focus 2)", async () => {
-    const { result, rerender } = renderHook(({ k }) => useUniformRows(ROWS, k, bySig), { initialProps: { k: "Route1:day" } });
+  it("a key change forgets what the old thumbnails looked like, from its first render (Review Focus 2)", async () => {
+    const seen: { k: string; rows: number[] }[] = [];
+    const { result, rerender } = renderHook(({ k }) => {
+      const r = useUniformRows(ROWS, k, bySig);
+      seen.push({ k, rows: [...r.uniformRows] });
+      return r;
+    }, { initialProps: { k: "Route1:day" } });
     act(() => {
       result.current.onThumbLoad(0, img("blank"));
       result.current.onThumbLoad(1, img("blank"));
     });
     await waitFor(() => expect([...result.current.uniformRows]).toEqual([0]));
     rerender({ k: "Route1:nite" });
-    await waitFor(() => expect([...result.current.uniformRows]).toEqual([]));
+    expect(seen.filter((s) => s.k === "Route1:nite").map((s) => s.rows)).not.toContainEqual([0]);
+    expect([...result.current.uniformRows]).toEqual([]);
   });
 
   it("a one-cell row is never uniform (nothing to compare)", async () => {
