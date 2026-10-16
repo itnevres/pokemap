@@ -274,15 +274,15 @@ every other panel is furniture around it. Concretely that means:
 ┌ toolbar: tools (icon + label) │ Undo Redo │ [Add Sign] │ Save │ Discard ┐
 ├ banners (event-op error, sign added, GBC edit error)                    ┤
 ├──────────────────────────────────────────────┬──────────────────────────┤
-│                                              │ edit-rail (260 px)       │
+│                                              │ edit-rail (272 px)       │
 │  canvas (flex: 1, no max width)              │ [collision palette]      │
 │                                              │ metatile palette (flex)  │
 │                                              │ inspector (≤ 50%)        │
 └──────────────────────────────────────────────┴──────────────────────────┘
 ```
 
-- **Rail** (`.edit-rail`, 260 px): order collision palette (Collision tool only) → metatile palette (always, flex, scrolls) → inspector (≤ 50 % height). Removed: `.app__metatile-strip`, `.app__collision-strip`, `.gbc-map-editing__rail`. Flex children `min-width: 0`.
-- **Rail palette**: always shown; a pick while another tool is active only sets the stamp.
+- **Rail** (`.edit-rail`, 272 px): order collision palette (Collision tool only) → metatile palette (always, flex, scrolls) → inspector (≤ 50 % height). Removed: `.app__metatile-strip`, `.app__collision-strip`, `.gbc-map-editing__rail`. Flex children `min-width: 0`.
+- **Rail palette** (Plan 9F, addendum `specs/2026-10-15-pokemap-plan-9-palette-addendum.md`): always shown; a pick while another tool is active only sets the stamp. One frame for both families (`shared/PaletteFrame.tsx`): a pinned header (GBC caption, Selection box with the picked stamp at palette scale, hex search, Follow hover) above `.palette__scroll`, the only scroller. Cells abut (no gap, border or radius) in the tileset's own rows (GBA 8, GBC 4: Polished Map's width), folded into two newspaper columns (`shared/FoldedGrid.tsx`): GBA 2 x 8 x 16 px, GBC 2 x 4 x 32 px. The fold (`shared/paletteFold.ts`) cuts after the pixel-identical row nearest the middle (`shared/useUniformRows.ts`), or GBA's primary/secondary boundary, else at the middle; one column while searching. Picked = inset accent ring, hovered = inward dashed outline, so both read on abutting cells.
 - **Toolbar** (D5): each tool is an inline SVG icon (`components/toolIcons.tsx`) plus its capitalised label (`Pencil`, `Rect`, `Bucket`, `Dropper`, `Shift`, `Collision`), tooltip `Label (Key)`; disabled tools keep their reason title instead. Undo/Redo tooltips `Undo (Ctrl+Z)` / `Redo (Ctrl+Y)`.
 - **Shortcuts** (R1): P R B I S C; Ctrl/Cmd+Z undo; Ctrl/Cmd+Y and Ctrl/Cmd+Shift+Z redo. Ignored when `defaultPrevented`, target is input/textarea/select/contenteditable, an `[aria-modal="true"]` element exists, a letter key has any modifier (Ctrl, Meta, Alt, Shift), the tool is absent or disabled, or Undo/Redo is unavailable. Handled keys call `preventDefault`.
 - **GBA hover-link** (R2): `metatile-palette__cell--hovered`, GBC's hover token pair.
