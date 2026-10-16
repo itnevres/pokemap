@@ -92,6 +92,10 @@ Rerun in isolation before calling either a regression. (Plan 8)
 
 ---
 
+**`renderHook` + `act()` hides a stale first render.** `act` flushes effects before `result.current` is read, so a test of "the first render after a key change already forgets old state" passes against an effect-based reset too. Record every render in the hook callback (`seen.push(...)`) and assert on that list. Tell: the fix's test also passes with the pre-fix source restored. (Plan 9F)
+
+**The GbcApp "palette highlight resets when switching to a different map" load flake recurred** after `6560014` (1 of ~6 full runs on 2026-10-15, 33/33 in isolation twice). Rerun it alone before calling it a regression. (Plan 9F)
+
 ## React / UI Patterns
 
 **Shell-level state re-renders everything below it.** The edit session and the hovered metatile id live in the family runtime, so every edit reply and every hover re-renders `FamilyApp`. Big lists under it (`MapTree`, both palettes) must be `memo` with stable callbacks (a ref-held latest handler). Tell: in the Vite dev build the dirty indicator trails a paint by 0.3-0.7 s and a CPU profile is mostly `jsxDEV` under `MapTree`; the production build hides it (~40 ms). Measure dev and `vite preview` both. (Plan 9 O2)
@@ -147,6 +151,8 @@ Rerun in isolation before calling either a regression. (Plan 8)
 **Read button labels from the DOM before scripting them.** For example, GBC's unused-species list button says "Show list", not "List them". A wrong label silently scripts nothing. (Plan 6c F1 close-out)
 
 ---
+
+**Live hover checks: the palette's hover echo lags the pointer.** Reading `.metatile-palette__cell--hovered` right after `mouse.move` gives the previous point's id; settle ~120 ms per point. In-context the canvas is `canvas.world-canvas__stage` (not `map-canvas__stage`), and a locator wait on the Map-view-only `.map-canvas__hover` stalls 30 s per point. Tell: the in-context run hangs to timeout while the Map-view run passes. Script: scratchpad `live/f9.mjs`. (Plan 9F)
 
 ## Editing Sessions & Save Safety
 
@@ -257,6 +263,8 @@ Rerun in isolation before calling either a regression. (Plan 8)
 
 ---
 
+**Git Bash `sed -i` writes LF.** A one-line `sed -i` on a CRLF file converts the whole file. Tell: `file` stops saying "with CRLF line terminators". Restore with `sed -i 's/\r$//; s/$/\r/'`, or edit with Python `open(..., newline="")`. (Plan 9F)
+
 ## Delegation to Codex / Aider / Subagents
 
 **Never `taskkill /IM codex.exe`:** it ends every Codex process on the machine, including the user's own sessions. Kill the background shell job or the one PID instead. Also, before resuming Codex on a worktree, check that `git checkout` didn't abort (tell: "Aborting" and HEAD unchanged; intent-to-add files from `git add -N` block it, `git reset` first). (Plan 9)
@@ -278,3 +286,10 @@ Rerun in isolation before calling either a regression. (Plan 8)
 **The coordinator's mutation re-run as a node script is cheap and reliable.** Keep a literal anchor asserted to match exactly once, run the narrowest vitest file via `node node_modules/vitest/vitest.mjs run <file>`, restore the in-memory on-disk bytes, and byte-compare the file afterwards. It ran A1's 12 and A2's 13 survivors and fix guards, all red, in minutes. (Plan 6c Phase A)
 
 The raw per-phase lessons this was distilled from, with the session narrative, are in `docs/superpowers/history/` (git-tracked, hidden from Claude's search by the root `.ignore`).
+
+**Aider in a worktree:** with git it fails (`BadObject … Is your git repo corrupted?`, GitPython can't read worktree objects); with `--no-git` from the worktree root it nests paths (`packages/ui/packages/ui/...`). Run it `--no-git` with the cwd at `packages/ui` and paths relative to it: no nesting. Delete the `.aider.*` files it leaves. (Plan 9F)
+
+**Codex outside a git repo** needs `--skip-git-repo-check` (tell: `Not inside a trusted directory`, exit 1 in seconds). With `-C <dir>`, a brief path like `live/f9.mjs` lands at `<dir>/live/f9.mjs` and relative imports shift with it. Name output paths relative to `-C`. (Plan 9F)
+
+**Codex (gpt-6-luna) wrote `·` and `…` as a literal `?`**, not mojibake, so a grep for `â€|Ã` misses it. Tell: `file` says ASCII on a file whose brief has non-ASCII; the placeholder test fails. Grep new files for the brief's non-ASCII strings, or keep briefs ASCII and add those characters yourself. (Plan 9F)
+

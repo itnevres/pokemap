@@ -1,5 +1,7 @@
 # Plan 9F: Porymap-style metatile palette Implementation Plan
 
+> **STATUS (2026-10-15): done, merged to master via PR #19.** Commits `21e7e22`..`46d663e`. Final-review fixes `1a7995e` amended R-F3 (far fold candidates ignored) and made a GBA cross-column drag select nothing; this plan's text predates them, the spec addendum is current.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Before every implementer hop run the `delegate` skill (offload chain first) and give every Claude dispatch an explicit model.
 
 **Goal:** Both metatile palettes (GBA and GBC) show abutting tiles in the tileset's own row order, folded into two newspaper columns that fill the edit rail, under a pinned header (Selection box, search, Follow hover) that never scrolls.
