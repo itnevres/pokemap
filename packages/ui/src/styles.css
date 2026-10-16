@@ -2229,6 +2229,7 @@ input {
   box-shadow: inset 0 0 0 2px var(--accent);
 }
 
+/* Plan 9 (R2): the cell under the canvas cursor -- GBC's hover pair (.gbc-metatile-palette__cell--selected). */
 .metatile-palette__cell--hovered {
   outline: 2px dashed var(--accent);
   outline-offset: -2px;
@@ -2237,12 +2238,6 @@ input {
 .metatile-palette__cell:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: -2px;
-}
-
-/* Plan 9 (R2): the cell under the canvas cursor -- GBC's hover pair (.gbc-metatile-palette__cell--selected). */
-.metatile-palette__cell--hovered {
-  background: var(--bg-selected);
-  border-color: var(--border-strong);
 }
 
 .metatile-palette__thumb {
@@ -2783,7 +2778,10 @@ input {
   color: var(--text-on-accent);
 }
 
-/* Plan 9 (D4): one right-hand rail for both families. */
+/* Plan 9 (D4): one 272px right-hand rail for both families -- [collision palette, Collision tool only] over the
+   metatile palette (takes the spare height, scrolls inside) over the event inspector (at most half the height,
+   scrolls inside); the canvas keeps the rest of the row. min-width: 0 on every flex child so long text cannot
+   widen the rail (LESSONS: React / UI Patterns). */
 .edit-rail {
   width: 272px; /* Plan 9F: 2 x 128 px columns + 2 px rule + thin scrollbar + 1 px border. */
   flex: 0 0 auto;
