@@ -47,3 +47,11 @@ Script notes: in-context entry (double-click the World viewport centre) missed o
 in-context canvas is `canvas.world-canvas__stage`, and the hover scan reads the palette's hovered cell after a 120 ms
 settle (reading it immediately gave the previous point's id). The two GBA Map-view rows ran before that fix: their id
 is the scan's target, not a read-back label (scrollTop > 0 and the hovered cell inside the scroller still hold).
+
+## Recheck after the final-review fixes (`1a7995e`)
+
+The fold now ignores a candidate more than `rowCount / 4` rows from the middle (spec R-F3 amended). GBA Route29 at
+1280, Map view: fold at row 49 of 98 (first right id 0x188, the middle; the boundary at 80 is too far), two 128 px
+columns, rail 272 px, pinned header unmoved, rail and page scrollTop 0. Screenshot `followup-F-gba-1280-map-fixed.png`:
+the columns are balanced and the right column starts at the top of a building. Hashes unchanged after the recheck.
+GBC is unaffected (its folds were already at the middle).
