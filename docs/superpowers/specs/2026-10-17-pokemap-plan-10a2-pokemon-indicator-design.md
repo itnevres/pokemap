@@ -62,7 +62,8 @@ Indicator's species (and text) can be changed later.
 - **C1. Text.** The one text field accepts any length; it is wrapped and validated with the Sign tool's code (10a S3:
   per-family width, charmap from the subject, GBC `text`/`line`/`cont`/`para`/`done`, GBA `\n`/`\p`/`$`). A refusal
   names the bad character or over-long word and the dialog stays open. Today's GBA "no newline, one line" limit goes.
-  Loading text for Edit uses the Sign tool's round trip (10a S6).
+  Loading text for Edit uses the Sign tool's round trip (10a S6). (Planning correction, 2026-10-17: the width Plan 10a
+  shipped is 18 in both families, `server/src/signRefresh.ts:82`; the Indicator uses the same shared constant.)
 - **C2. New labels.** Numbered, not species-named, so a species edit never leaves a stale label and two Indicators of
   one species on a map do not collide. GBA `<Map>_EventScript_PokemonIndicator<N>` / `<Map>_Text_PokemonIndicator<N>`;
   GBC `<Map>PokemonIndicator<N>` / `<Map>PokemonIndicator<N>Text`. `<N>` = lowest unused in that map's file(s), as 10a
@@ -152,8 +153,8 @@ Builder check (Codex `gpt-5.6-terra`, read-only, 2026-10-17): "nothing important
 ## Risk classification (CLAUDE.md)
 
 High: every task that writes subject source or parses decomp data (GBC writer, sprite-constant parser, shape
-recogniser/edit writers both families, GBC collision-based suggestion). Medium: rename and capability wiring, dialog and
-inspector UI over a tested API. Low: docs. The plan tags each task.
+recogniser/edit writers both families, GBC collision-based suggestion), and (plan review, 2026-10-17) the dialog and
+inspector UI, whose hub responses and stale-request ordering are High triggers. Low: docs. The plan tags each task.
 
 ## Left to the builder
 
