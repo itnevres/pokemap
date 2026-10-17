@@ -181,7 +181,9 @@ both families: a readable sign (bg event) with customisable text.
     `server/src/index.ts`).
   - Species list: deduped by species, ordered by each species' best chance across all methods and times
     (`suggest.ts` already keeps the highest chance per species), no evolutions; GBC includes every source `wildForMap`
-    returns except swarms.
+    returns except swarms. **Ruling (user, 2026-10-16):** species signs match the encounter panel, so header
+    fishing counts only on maps with reachable water (`gbcEncounterSources` without a water override); a dry
+    interior with a fish group in its header lists no fish.
   - Charmap: GBC parses `constants/charmap.asm`; GBA parses the subject's `charmap.txt`. Free text may use plain
     characters and any token the charmap defines (originals use them, e.g. GBA `{UP_ARROW}`). For wrapping, a token
     counts as its fixed expansion width where it has one (e.g. `<PK>`, `<MN>`), and runtime-name tokens (`<PLAYER>`,

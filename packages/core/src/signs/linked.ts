@@ -106,9 +106,10 @@ export function linkedSpecies(family: "gba" | "gbc", proj: Project | GbcProject,
     const gbc = proj as GbcProject;
     names = gbcSpeciesNames(gbc.root);
     file = `${norm(gbc.root)}/data/pokemon/names.asm`;
-    // S9a includes every wildForMap source, even header fishing on dry maps.
-    // Reuse the atlas's per-table sums and exact fishing-byte probabilities.
-    for (const source of gbcEncounterSources(gbc, mapName, true)) {
+    // S9a (user ruling 2026-10-16): same sources as the encounter panel, so header
+    // fishing only counts on maps with reachable water. Reuse the atlas's per-table
+    // sums and exact fishing-byte probabilities.
+    for (const source of gbcEncounterSources(gbc, mapName)) {
       if (source.conditional === "swarm") continue;
       for (const chance of source.chances) {
         best.set(chance.species, Math.max(best.get(chance.species) ?? 0, chance.percent));

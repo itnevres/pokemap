@@ -45,8 +45,9 @@ describe("linked text", () => {
 
   itWithGbcCorpus("pins the coordinator's Route29 oracle verbatim", () => {
     expect(linkedSpecies("gbc", openGbcProject(GBC_SUBJECT_ROOT), "Route29")).toEqual(
-      ["MAGIKARP","KRABBY","HOOTHOOT","PIDGEY","RATTATA","SENTRET","PINECO","CORSOLA","STARYU","EXEGGCUTE",
-        "LEDYBA","SPINARAK","HOPPIP","KINGLER"],
+      // S9a ruling: Route29 has no reachable water, so its header fish (MAGIKARP, KRABBY, CORSOLA, STARYU,
+      // KINGLER) drop out; the remaining order is the oracle's.
+      ["HOOTHOOT","PIDGEY","RATTATA","SENTRET","PINECO","EXEGGCUTE","LEDYBA","SPINARAK","HOPPIP"],
     );
   });
 
@@ -98,7 +99,7 @@ describe("linked text", () => {
     expect(() => gbcSpeciesNames(proj.root)).toThrow(/names\.asm.*IVYSAUR/);
   });
 
-  itWithGbcCorpus("excludes swarm sources and includes header fishing even on a dry map", () => {
+  itWithGbcCorpus("excludes swarm sources and header fishing on a dry map", () => {
     const proj = openGbcProject(GBC_SUBJECT_ROOT);
     const data = proj.wild();
     const base = data.grass.find((entry) => entry.mapConst === "ROUTE_29" && !entry.swarm)!;
@@ -106,8 +107,8 @@ describe("linked text", () => {
     const withSwarm = { ...proj, wild: () => ({ ...data, grass: [...data.grass,
       { ...base, swarm: true, slots: { morn: slots, day: slots, nite: slots } }] }) };
     expect(linkedSpecies("gbc", withSwarm, "Route29")).toEqual(linkedSpecies("gbc", proj, "Route29"));
-    expect(linkedSpecies("gbc", proj, "PlayersHouse1F")).toEqual(
-      ["MAGIKARP", "KRABBY", "CORSOLA", "STARYU", "KINGLER"],
-    );
+    // PlayersHouse1F has FISHGROUP_SHORE in its header but no water: no fish (S9a ruling).
+    expect(proj.map("PlayersHouse1F").fishGroup).toBe("FISHGROUP_SHORE");
+    expect(linkedSpecies("gbc", proj, "PlayersHouse1F")).toEqual([]);
   });
 });
