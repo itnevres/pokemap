@@ -16,6 +16,7 @@ export interface RemoveOp { path: JsonPath; index: number; }
  *  documents specifically; a plain-text append changes nothing it doesn't
  *  touch by construction). */
 export interface ScriptAppend { path: string; text: string; }
+export interface ScriptReplace { path: string; before: string; after: string; }
 
 /**
  * The open map's current, possibly-edited state, plus enough of its
@@ -93,6 +94,7 @@ export interface EditSession {
    *  to every fixture already written into this plan) -- pending plain-text
    *  appends, currently only ever populated by Task 17's sign write path. */
   scriptAppends?: ScriptAppend[];
+  scriptReplaces?: ScriptReplace[];
   isDirty: boolean;
 }
 
@@ -123,6 +125,17 @@ function collectRefusals(proj: Project, session: EditSession): Refusal[] {
   return [
     ...guardLayoutSave(proj, session.layout, session.blocks, session.border),
     ...guardMapSave(proj, session.layout, session.originalMap, session.map, session.originalBlocks, session.blocks),
+    ...(session.scriptReplaces ?? []).flatMap((replace): Refusal[] => {
+      try {
+        if (readFileSync(replace.path).equals(Buffer.from(replace.before, "utf8"))) return [];
+      } catch { /* Missing or unreadable source must also refuse before any write. */ }
+      return [{ code: "script-changed-on-disk", subject: replace.path,
+        message: `${replace.path} changed on disk or cannot be read.`, fix: "Reopen the map before editing its signs." }];
+    }),
+    // One replace per path (ruling R-e): a second entry would silently overwrite the first at commit.
+    ...(session.scriptReplaces ?? []).filter((replace, i, all) => all.findIndex((r) => r.path === replace.path) !== i)
+      .map((replace): Refusal => ({ code: "script-replace-duplicate", subject: replace.path,
+        message: `${replace.path} has more than one staged sign-text replacement.`, fix: "Reopen the map before editing its signs." })),
   ];
 }
 
@@ -160,6 +173,10 @@ export function planSave(proj: Project, session: EditSession): SavePlan {
       path: proj.paths.mapJson(session.mapName), kind: "json",
       summary: `${session.mapName}.json -- ${pluralize(opCount, "field edit")}`,
     });
+  }
+
+  for (const path of new Set((session.scriptReplaces ?? []).map((replace) => replace.path))) {
+    changes.push({ path, kind: "text", summary: "Update sign text in scripts.inc" });
   }
 
   // Every entry here was placed by an explicit, already-guarded write (e.g.
@@ -210,7 +227,7 @@ function lineCount(text: string): number {
  * caller discipline.
  *
  * Not atomic across its own several writes (blockdata, border, map.json,
- * scriptAppends): if one throws partway through (disk full, a permission
+ * scriptReplaces, scriptAppends):if one throws partway through (disk full, a permission
  * error), earlier writes in this same call have already landed on disk.
  * Accepted as a real but out-of-scope risk for this plan -- transactional/
  * rollback machinery across up to four independent decomp files is
@@ -231,6 +248,8 @@ export function commitSave(proj: Project, plan: SavePlan): void {
 
   const jsonText = applyJsonOps(session);
   if (jsonText !== session.originalMapJson) writeFileSync(proj.paths.mapJson(session.mapName), jsonText);
+
+  for (const replace of session.scriptReplaces ?? []) writeFileSync(replace.path, replace.after);
 
   // Read-concat-write, the same "read real state, write back the whole
   // file" shape as the map.json branch above -- NOT appendFileSync, so

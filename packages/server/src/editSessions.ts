@@ -108,6 +108,7 @@ export interface Snapshot {
    *  `[]`), unlike EditSession's own optional field, so every snapshot is
    *  a complete, unambiguous state to revert TO. */
   scriptAppends: NonNullable<EditSession["scriptAppends"]>;
+  scriptReplaces: NonNullable<EditSession["scriptReplaces"]>;
 }
 
 export function snapshotOf(session: EditSession): Snapshot {
@@ -115,6 +116,7 @@ export function snapshotOf(session: EditSession): Snapshot {
     blocks: session.blocks, border: session.border, map: session.map,
     jsonEdits: session.jsonEdits, insertOps: session.insertOps, removeOps: session.removeOps,
     scriptAppends: session.scriptAppends ?? [],
+    scriptReplaces: session.scriptReplaces ?? [],
   };
 }
 

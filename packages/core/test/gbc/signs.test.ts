@@ -9,6 +9,9 @@ const tiny = "Tiny_MapScripts:\n\tdef_scene_scripts\n\tdef_callbacks\n\nTiny_Map
 const original = "Sign:\n\tjumptext SignText\n\nSignText:\n\ttext \"HELLO\"\n\tdone\n";
 
 describe("GBC sign source", () => {
+  it("refuses text shared by jumptextfaceplayer", () => {
+    expect(findGbcSign(original + "Other:\n\tjumptextfaceplayer SignText\n", "Sign")).toMatchObject({ editable: false, reason: "shared text" });
+  });
   it("B1 inserts the exact S8 block, preserving EOL and final-newline state", () => {
     // FNV value below independently calculated over tab-text through done, including LF.
     const expected = "Tiny_MapScripts:\n\tdef_scene_scripts\n\tdef_callbacks\n\nTinyPokemapSign1:\n\tjumptext TinyPokemapSign1Text\n\n; pokemap:sign free 11eed898\nTinyPokemapSign1Text:\n\ttext \"HELLO\"\n\tdone\n\nTiny_MapEvents:\n\tdb 0, 0\n\tdef_warp_events\n\tdef_coord_events\n\tdef_bg_events\n\tdef_object_events\n";

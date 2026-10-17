@@ -39,12 +39,10 @@ export function findGbcSign(text: string, scriptLabel: string): SignBlock {
   block.textLabel = textLabel;
   const labels = lines.filter((line) => line.code === `${textLabel}:`);
   if (labels.length !== 1) return refuse("text label not found in this file");
-  const references = lines.filter((line) => {
-    const ref = /^(?:jumptext|writetext|text_far)\s+(\S+)$/.exec(line.code);
-    return ref?.[1] === textLabel;
-  });
-  if (references.length !== 1) return refuse("shared text");
   const label = labels[0]!;
+  const ownJump = lines.find((line) => line.lineIndex > scripts[0]!.lineIndex && line.code === commands[0])!;
+  const word = new RegExp(`\\b${textLabel.replace(/\./g, "\\.")}\\b`);
+  if (rawLines.some((line, i) => i !== label.lineIndex && i !== ownJump.lineIndex && word.test(line))) return refuse("shared text");
   block.marker = parseMarker(rawLines[label.lineIndex - 1] ?? "");
   block.bodyStart = label.lineIndex + 1;
   let nextLine = block.bodyStart;
@@ -121,7 +119,7 @@ export function updateGbcSign(
   opts: { force: boolean; baselineHash?: string },
 ): string {
   const current = findGbcSign(text, block.scriptLabel);
-  const baseline = block.marker?.hash ?? opts.baselineHash;
+  const baseline = current.marker?.hash ?? opts.baselineHash;
   if (!current.editable || (!opts.force && (baseline === undefined || signHash(current.body) !== baseline))) {
     throw new Error("hand-edited");
   }
