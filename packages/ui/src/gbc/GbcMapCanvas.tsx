@@ -111,7 +111,7 @@ export interface GbcEventRef {
   index: number;
 }
 
-export type GbcActiveTool = { kind: "pencil" | "rect" | "bucket" | "shift" | "dropper"; stamp?: GbcStamp };
+export type GbcActiveTool = { kind: "pencil" | "rect" | "bucket" | "shift" | "dropper" | "sign"; stamp?: GbcStamp };
 
 /** Debounce for the `&v=` bump: a stroke yields several fresh `blocks` arrays (see `MapCanvas.tsx:147-155`). */
 const PAINT_VERSION_DEBOUNCE_MS = 200;
@@ -142,6 +142,7 @@ export interface GbcMapCanvasProps {
    *  and the dropper. Absent: the read-only view. */
   editSession?: UseGbcEditSessionResult;
   activeTool?: GbcActiveTool | null;
+  onSignPick?: (x: number, y: number, anchor: DOMRect) => void;
   /** Dropper: fired with the clicked block's id as a 1x1 stamp. */
   onDropperPick?: (stamp: GbcStamp) => void;
   /** The selected event, for the selection ring only (the hit test always re-derives from the click). */
@@ -286,7 +287,7 @@ export function parseColorToken(value: string): RGBA {
   return FALLBACK_COLOR;
 }
 
-export function GbcMapCanvas({ mapName, data: payload, time, hoveredMetatile, editSession, activeTool, onDropperPick, selectedEvent, onSelectEvent, onMoveEvent, onEditError, view: controlledView, onViewChange, chromeless, onStrokeChain }: GbcMapCanvasProps) {
+export function GbcMapCanvas({ mapName, data: payload, time, hoveredMetatile, editSession, activeTool, onSignPick, onDropperPick, selectedEvent, onSelectEvent, onMoveEvent, onEditError, view: controlledView, onViewChange, chromeless, onStrokeChain }: GbcMapCanvasProps) {
   const { layout } = payload;
   // The session's live blocks/events win once a session exists; every effect below reads `data` by name and
   // never needs to know which source it came from (the trick of `MapCanvas.tsx:215-228`).
@@ -609,6 +610,18 @@ export function GbcMapCanvas({ mapName, data: payload, time, hoveredMetatile, ed
     return { x: sx, y: sy };
   };
 
+  const signAnchor = (canvas: HTMLCanvasElement, step: { x: number; y: number }): DOMRect => {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = rect.width / canvas.width;
+    const scaleY = rect.height / canvas.height;
+    return new DOMRect(
+      rect.left + (pan.x + (originX + step.x * 16) * zoom) * scaleX,
+      rect.top + (pan.y + (originY + step.y * 16) * zoom) * scaleY,
+      16 * zoom * scaleX,
+      16 * zoom * scaleY,
+    );
+  };
+
   /** The apply body a pencil/bucket stroke sends at a block; null when there is nothing to send. rect/shift are applied once, at mouseup. */
   const paintBody = (bx: number, by: number): GbcPaintBody | null => {
     if (!activeTool?.stamp) return null;
@@ -624,6 +637,11 @@ export function GbcMapCanvas({ mapName, data: payload, time, hoveredMetatile, ed
 
   const onMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (e.button !== 0) return;
+    if (activeTool?.kind === "sign") {
+      const step = rawStepAt(e);
+      if (step.x >= 0 && step.y >= 0 && step.x < 2 * layout.width && step.y < 2 * layout.height) onSignPick?.(step.x, step.y, signAnchor(e.currentTarget, step));
+      return;
+    }
     // Ahead of the paint branch, and only with no active tool (MapCanvas.tsx:714-732). Unclamped on purpose:
     // a click just past the edge can still deselect. A miss falls through to the pan drag below.
     if (onSelectEvent && !activeTool) {

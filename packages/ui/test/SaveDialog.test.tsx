@@ -79,6 +79,22 @@ describe("SaveDialog", () => {
     vi.unstubAllGlobals();
   });
 
+  it("shows linked sign notices and refresh re-plans before save", async () => {
+    const plan = { changes: [], refusals: [], signNotices: [{ scriptLabel: "Route29Sign1", message: "Route29Sign1 was edited outside PokeMap and was not refreshed." }] };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: () => Promise.resolve(plan) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: () => Promise.resolve({}) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: () => Promise.resolve({ changes: [{ path: "maps/Route29.asm", kind: "text", summary: "Route29 sign refreshed" }], refusals: [], signNotices: [] }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<SaveDialog mapName="Route29" onCommitted={vi.fn()} onCancel={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText(/was edited outside PokeMap/)).toBeTruthy());
+    expect((screen.getByRole("button", { name: "Save Changes" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Refresh Route29Sign1" }));
+    await waitFor(() => expect(screen.getByText("Route29 sign refreshed")).toBeTruthy());
+    expect(fetchMock).toHaveBeenCalledWith("/api/edit/Route29/sign/resolve", expect.objectContaining({ method: "POST", body: JSON.stringify({ scriptLabel: "Route29Sign1", action: "refresh" }) }));
+    vi.unstubAllGlobals();
+  });
+
   // Code-review fix (Critical): both `GET /plan` and `POST /commit` can
   // fail with a route-level 500 -- `{ error: string }`, NOT the
   // `{changes, refusals}` shape formatDiffJson normally sends. Casting the

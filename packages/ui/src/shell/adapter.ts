@@ -15,6 +15,7 @@ export interface Capabilities {
   elevationOverlay: boolean;    // descriptive (MapCanvas owns the toggle); read from Plan 11
   addEvent: boolean;            // descriptive (the inspector is per family); read from Plan 10
   addSign: boolean;             // read: toolbar "Add Sign"
+  signTool: boolean;            // read: toolbar Sign tool
   timeOfDay: boolean;           // read: header slot
   defectsBanner: boolean;       // descriptive (GBC renderMap owns it); read from Plan 10 (D3)
   manualPlacements: boolean;    // read: tree visibility merge in FamilyApp
@@ -23,21 +24,21 @@ export interface Capabilities {
 }
 
 export const GBA_CAPABILITIES: Capabilities = {
-  collisionTool: true, elevationOverlay: true, addEvent: true, addSign: true, timeOfDay: false,
+  collisionTool: true, elevationOverlay: true, addEvent: true, addSign: true, signTool: true, timeOfDay: false,
   defectsBanner: false, manualPlacements: false, dungeonFilterCache: false,
   worldBar: { dungeonAutoLayout: true, unplacedRail: true },
 };
 
 export const GBC_CAPABILITIES: Capabilities = {
-  collisionTool: false, elevationOverlay: false, addEvent: false, addSign: false, timeOfDay: true,
+  collisionTool: false, elevationOverlay: false, addEvent: false, addSign: false, signTool: true, timeOfDay: true,
   defectsBanner: true, manualPlacements: true, dungeonFilterCache: true,
   worldBar: { dungeonAutoLayout: false, unplacedRail: false },
 };
 
-export const ALL_TOOLS: ToolKind[] = ["pencil", "rect", "bucket", "dropper", "shift", "collision"];
+export const ALL_TOOLS: ToolKind[] = ["pencil", "rect", "bucket", "dropper", "shift", "collision", "sign"];
 
 /** The toolbar's tool list for a family, in toolbar order. */
-export const toolsFor = (caps: Capabilities): ToolKind[] => ALL_TOOLS.filter((k) => k !== "collision" || caps.collisionTool);
+export const toolsFor = (caps: Capabilities): ToolKind[] => ALL_TOOLS.filter((k) => (k !== "collision" || caps.collisionTool) && (k !== "sign" || caps.signTool));
 
 /** The runtime hook's only inputs. Everything else reaches the render slots as ShellSlots. */
 export interface RuntimeArgs {

@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
-import { Toolbar, type ToolKind } from "../../src/components/Toolbar.js";
+import { Toolbar } from "../../src/components/Toolbar.js";
 import { SaveDialog } from "../../src/components/SaveDialog.js";
+import { GBC_TOOLS } from "../../src/gbc/GbcMapEditing.js";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -9,14 +10,13 @@ const base = {
   activeToolKind: null, onSelectTool: vi.fn(), isDirty: false, onUndo: vi.fn(), onRedo: vi.fn(),
   canUndo: false, canRedo: false, onOpenSave: vi.fn(), onDiscard: vi.fn(),
 };
-const GBC_TOOLS: ToolKind[] = ["pencil", "rect", "bucket", "dropper", "shift"];
-
 describe("Toolbar for GBC (additive props)", () => {
-  it("renders exactly the 5 GBC tools and no collision or sign button", () => {
+  it("renders the GBC Sign tool through the GBC tool wiring", () => {
     render(<Toolbar {...base} tools={GBC_TOOLS} availableTools={GBC_TOOLS} />);
     const group = screen.getByRole("group", { name: "Tools" });
-    expect(Array.from(group.querySelectorAll("button")).map((b) => b.textContent)).toEqual(["Pencil", "Rect", "Bucket", "Dropper", "Shift"]);
+    expect(Array.from(group.querySelectorAll("button")).map((b) => b.textContent)).toEqual(["Pencil", "Rect", "Bucket", "Dropper", "Shift", "Sign"]);
     expect(screen.queryByRole("button", { name: "Collision" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Sign" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Add Sign" })).toBeNull();
   });
 
@@ -29,7 +29,7 @@ describe("Toolbar for GBC (additive props)", () => {
 
   it("GBA default (no tools prop) still has six tools plus the sign button", () => {
     render(<Toolbar {...base} onOpenSignComposer={vi.fn()} availableTools={[]} />);
-    expect(screen.getByRole("group", { name: "Tools" }).querySelectorAll("button").length).toBe(6);
+    expect(screen.getByRole("group", { name: "Tools" }).querySelectorAll("button").length).toBe(7);
     expect(screen.getByRole("button", { name: "Add Sign" })).toBeTruthy();
     expect((screen.getByRole("button", { name: "Pencil" }) as HTMLButtonElement).title).toBe("Not yet available");
   });

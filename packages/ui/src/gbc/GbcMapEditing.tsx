@@ -11,6 +11,7 @@ import type { GbcTimeOfDay } from "./time.js";
 import { EditingWorkspace } from "../shared/EditingWorkspace.js";
 import { useVisit } from "../shared/useVisit.js";
 import { GBC_CAPABILITIES, toolsFor } from "../shell/adapter.js";
+import { SignEditor } from "../shared/SignEditor.js";
 
 /** No collision button (Plan 7 Goal: GBC collision is per metatile, not per block) and no sign composer. */
 export const GBC_TOOLS: ToolKind[] = toolsFor(GBC_CAPABILITIES);
@@ -22,7 +23,7 @@ const message = (e: unknown, fallback: string) => (e instanceof Error ? e.messag
  *  through `renderCanvas`, so the prop assembly lives in one place. */
 export type GbcMapEditingCanvasProps = Pick<
   GbcMapCanvasProps,
-  "onStrokeChain" | "mapName" | "data" | "time" | "hoveredMetatile" | "editSession" | "activeTool" | "onDropperPick" | "selectedEvent" | "onSelectEvent" | "onMoveEvent" | "onEditError"
+  "onStrokeChain" | "mapName" | "data" | "time" | "hoveredMetatile" | "editSession" | "activeTool" | "onSignPick" | "onDropperPick" | "selectedEvent" | "onSelectEvent" | "onMoveEvent" | "onEditError"
 >;
 
 export interface GbcMapEditingProps {
@@ -62,6 +63,7 @@ export interface GbcMapEditingProps {
  */
 export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId, onHoverMetatile, onOpenSave, onDiscarded, active = true, renderCanvas, onStrokeChain }: GbcMapEditingProps) {
   const [toolKind, setToolKind] = useState<ToolKind | null>(null);
+  const [signPick, setSignPick] = useState<{ x: number; y: number; anchor: DOMRect } | null>(null);
   // `key` is never a real map name when there is no map, so nothing reads as "mine" until one is selected.
   const key = mapName ?? "";
   const [pick, setPick] = useState<{ forMap: string; stamp: GbcStamp | null; event: GbcEventRef | null }>({ forMap: key, stamp: null, event: null });
@@ -99,7 +101,7 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
 
   const activeTool = useMemo<GbcActiveTool | null>(() => {
     if (!writable || toolKind === null) return null;
-    if (toolKind === "shift" || toolKind === "dropper") return { kind: toolKind };
+    if (toolKind === "shift" || toolKind === "dropper" || toolKind === "sign") return { kind: toolKind };
     if (toolKind === "pencil" || toolKind === "rect" || toolKind === "bucket") return stamp ? { kind: toolKind, stamp } : null; // inert until a cell is picked
     return null;
   }, [writable, toolKind, stamp]);
@@ -143,6 +145,7 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
           editSession: session,
           activeTool,
           onDropperPick: setStamp,
+          onSignPick: (x, y, anchor) => setSignPick({ x, y, anchor }),
           selectedEvent,
           onSelectEvent: setEvent,
           onMoveEvent: onMove,
@@ -198,5 +201,10 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
       />
     </>
   ) : null;
-  return <EditingWorkspace active={active} top={top} side={side} canvasProps={canvasProps} Canvas={GbcMapCanvas} renderCanvas={renderCanvas} />;
+  return <>
+    <EditingWorkspace active={active} top={top} side={side} canvasProps={canvasProps} Canvas={GbcMapCanvas} renderCanvas={renderCanvas} />
+    {signPick && mapName && <SignEditor mapName={mapName} x={signPick.x} y={signPick.y} anchor={signPick.anchor}
+      hasObjectEvent={session.events.objects.some((event) => event.x === signPick.x && event.y === signPick.y)}
+      onCancel={() => setSignPick(null)} onDone={() => setSignPick(null)} onSessionUpdated={(body) => session.applyExternalSession?.(body)} />}
+  </>;
 }

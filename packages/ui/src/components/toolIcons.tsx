@@ -16,4 +16,5 @@ export const TOOL_ICONS: Record<ToolKind, ReactElement> = {
   dropper: svg([<path key="a" d="M10 2.5l3.5 3.5-1.5 1.5-3.5-3.5z" />, <path key="b" d="M9 6l-6 6v1.5h1.5l6-6" />]),
   shift: svg(<path d="M8 1.5v13M1.5 8h13M6 3.5l2-2 2 2M6 12.5l2 2 2-2M3.5 6l-2 2 2 2M12.5 6l2 2-2 2" />),
   collision: svg([<rect key="a" x="2.5" y="2.5" width="11" height="11" />, <path key="b" d="M2.5 13.5l11-11" />]),
+  sign: svg([<path key="a" d="M3 2.5h10v8H7l-3 3v-11z" />, <path key="b" d="M5.5 5.5h5M5.5 7.5h3" />]),
 };
