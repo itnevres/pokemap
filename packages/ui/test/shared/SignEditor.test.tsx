@@ -20,6 +20,19 @@ describe("SignEditor", () => {
     vi.unstubAllGlobals();
   });
 
+  it("opens below a tile in the upper half, above a tile in the lower half, inside the window", () => {
+    vi.stubGlobal("fetch", vi.fn().mockReturnValue(new Promise(() => {})));
+    const h = window.innerHeight, w = window.innerWidth;
+    const { unmount } = render(<SignEditor mapName="Route29" x={2} y={3} anchor={anchor} onDone={vi.fn()} onCancel={vi.fn()} onSessionUpdated={vi.fn()} />);
+    let style = screen.getByRole("dialog").style;
+    expect([style.top, style.bottom, style.left]).toEqual(["44px", "", "10px"]);
+    unmount();
+    render(<SignEditor mapName="Route29" x={2} y={3} anchor={new DOMRect(w - 20, h - 40, 16, 16)} onDone={vi.fn()} onCancel={vi.fn()} onSessionUpdated={vi.fn()} />);
+    style = screen.getByRole("dialog").style;
+    expect([style.top, style.bottom, style.left]).toEqual(["", "48px", `${w - 308}px`]);
+    vi.unstubAllGlobals();
+  });
+
   it.each([
     [{ kind: "other", eventKind: "hidden_item" }, "This tile already has a hidden_item event"],
     [{ kind: "sign", scriptLabel: "Complex", editable: false, reason: "jumpstd", mode: null, text: "", handEdited: false }, "This sign's script is too complex to edit here: jumpstd"],

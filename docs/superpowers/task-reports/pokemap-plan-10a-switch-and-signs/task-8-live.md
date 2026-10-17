@@ -48,7 +48,7 @@ misleading, and the ruling (Minor, display only) stands.
 
 ## Findings (not fixed here; Task 8 is evidence only)
 
-- **F1 (Important, UI, both families).** The Sign editor renders 720×560 px. It is mostly unstyled: bare fieldset
+- **F1 (Important, UI, both families; fixed 2026-10-17, see below).** The Sign editor renders 720×560 px. It is mostly unstyled: bare fieldset
   and a full-width button row. Opened at a tile in the lower half, it runs past the viewport bottom (y 395 + 560 > 900).
   S2 asks for "a small popover anchored at the clicked tile". Anchoring is right; size and clamping are not.
   Cause: it reuses `warp-modal__panel` outside the modal backdrop. Shots: `*-long-2-placed.png`, `*-b8r-1-reload-editor.png`.
@@ -59,6 +59,23 @@ misleading, and the ruling (Minor, display only) stands.
 - **F4 (Minor).** The GBA Save dialog lists `scripts.inc` by absolute path; `map.json` uses a short name.
 - **F5 (Info).** The pre-existing toolbar "Add Sign" composer button still shows next to the new Sign tool (GBA).
 - **F6 (Info, pre-existing).** The hover readout keeps the pre-paint metatile id until the mouse moves.
+
+## F1 fix (2026-10-17)
+
+`SignEditor` now has its own `.sign-editor` style: 300 px wide, padded, `max-height: calc(100vh - 16px)` with
+scrolling. It opens below a tile in the upper half of the window and above a tile in the lower half, and `left` is
+clamped inside the window. Live, at 1400×900 viewport:
+
+| Case | Click | Editor box |
+|---|---|---|
+| GBA upper (4,2) | (611,386) | (608,395) 300×303 |
+| GBA lower (4,19) | (611,648) | (608,332) 300×303, ends above the tile |
+| GBC upper (19,2) | (534,381) | (528,403) 300×303 |
+| GBC lower (19,11) | (534,527) | (528,212) 300×303, ends above the tile |
+
+New jsdom test pins both placements and the clamp; forcing "always below" fails it. Gate 2,991 pass / 0 fail /
+192 files; typecheck and UI build pass. Both subjects unchanged. Shots: `gba-f1-0.7-2-placed.png`,
+`gbc-f1-0.55-2-placed.png`.
 
 ## Gate at start
 

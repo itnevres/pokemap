@@ -29,7 +29,7 @@ async function openMap(name) {
 }
 const tool = (label) => page.locator(`button[title^="${label} ("]`).first().click();
 const dirty = () => page.evaluate(() => !!document.querySelector('[data-testid="dirty-indicator"]'));
-const editorText = () => page.locator('[role="dialog"][aria-label="Sign editor"]').innerText().catch(() => "");
+const editorText = () => page.locator('[role="dialog"][aria-label="Sign editor"]').innerText({ timeout: 1000 }).catch(() => "");
 
 try {
   await openMap(map);
@@ -45,19 +45,19 @@ try {
       out.paintedCell = i;
     }
     out.dirtyAfterPaint = await dirty();
-    out.hover = await page.locator(".map-canvas__hover").first().innerText().catch(() => "");
+    out.hover = await page.locator(".map-canvas__hover").first().innerText({ timeout: 1000 }).catch(() => "");
     await shot(page, "1-painted");
     await page.locator(".map-tree, .app__sidebar").getByText(other, { exact: true }).first().click(); await wait(page, 1200);
     const prompt = page.locator('[role="dialog"][aria-label="Unsaved changes"]');
     out.promptShown = await prompt.count() > 0;
-    out.promptText = await prompt.innerText().catch(() => "");
+    out.promptText = await prompt.innerText({ timeout: 1000 }).catch(() => "");
     await shot(page, "2-prompt");
     if (choice === "discard") {
       await prompt.getByRole("button", { name: "Discard", exact: true }).click(); await wait(page, 3000);
     } else {
       await prompt.getByRole("button", { name: "Save", exact: true }).click(); await wait(page, 2000);
       const dlg = page.locator('[role="dialog"][aria-label="Save changes"]');
-      out.saveDialogText = await dlg.innerText().catch(() => "");
+      out.saveDialogText = await dlg.innerText({ timeout: 1000 }).catch(() => "");
       await shot(page, "3-savedialog");
       await dlg.getByRole("button", { name: "Save Changes", exact: true }).click(); await wait(page, 4000);
     }
@@ -69,7 +69,7 @@ try {
     await tool("Sign"); await wait(page, 300);
     out.pressed = await page.evaluate(() => [...document.querySelectorAll("button[aria-pressed=true]")].map((b) => b.title).join(","));
     let picked = null;
-    for (let fy = 0.35; fy < 0.9 && !picked; fy += 0.11) for (let fx = 0.3; fx < 0.9 && !picked; fx += 0.09) {
+    for (let fy = Number(process.env.FY0 ?? 0.35); fy < 0.95 && !picked; fy += 0.11) for (let fx = 0.3; fx < 0.9 && !picked; fx += 0.09) {
       const px = Math.round(box.x + box.width * fx), py = Math.round(box.y + box.height * fy);
       await page.mouse.click(px, py); await wait(page, 900);
       const t = await editorText();
@@ -88,17 +88,17 @@ try {
       await dlg.getByLabel(label).check(); await wait(page, 200);
       if (mode === "free") await dlg.getByLabel("Text", { exact: true }).fill(text ?? "HELLO");
       await wait(page, 300);
-      out.preview = await dlg.locator('pre[aria-label="Preview"]').innerText().catch(() => "");
+      out.preview = await dlg.locator('pre[aria-label="Preview"]').innerText({ timeout: 1000 }).catch(() => "");
       await shot(page, "1-editor");
       await dlg.getByRole("button", { name: "Place", exact: true }).click(); await wait(page, 1500);
       out.editorOpenAfterPlace = await dlg.count() > 0;
-      out.editorAlert = await dlg.locator('[role="alert"]').innerText().catch(() => "");
+      out.editorAlert = await dlg.locator('[role="alert"]').innerText({ timeout: 1000 }).catch(() => "");
       out.dirty = await dirty();
       await shot(page, "2-placed");
       if (commit === "commit" && out.dirty) {
         await page.locator('.toolbar__save button[aria-label="Save Changes"]').click(); await wait(page, 2000);
         const sd = page.locator('[role="dialog"][aria-label="Save changes"]');
-        out.saveDialogText = await sd.innerText().catch(() => "");
+        out.saveDialogText = await sd.innerText({ timeout: 1000 }).catch(() => "");
         await shot(page, "3-savedialog");
         await sd.getByRole("button", { name: "Save Changes", exact: true }).click(); await wait(page, 4000);
         out.dialogsLeft = await page.locator('[role="dialog"]').count();

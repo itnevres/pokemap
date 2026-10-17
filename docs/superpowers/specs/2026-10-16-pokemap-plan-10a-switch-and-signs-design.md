@@ -214,9 +214,8 @@ both families: a readable sign (bg event) with customisable text.
   - `project.map` cache can serve pre-commit data.
   - The Task 1 stale comments and shared `switchError` banner.
   - Orphaned scripts after a sign delete stay (out of scope).
-  - **Open from Task 8 (Important, UI):** the Sign editor renders about 720×560 px, mostly unstyled. In the lower
-    half of the canvas it overflows the viewport, so it is not yet the "small popover" S2 asks for. Its anchoring is
-    correct. See `task-reports/pokemap-plan-10a-switch-and-signs/task-8-live.md` F1.
+  - Task 8 F1 (the Sign editor was about 720×560 px and overflowed the viewport) is fixed. It is now a 300 px
+    popover that opens below or above the tile and stays inside the window. See `task-8-live.md`.
 
 ### Acceptance criteria (Sign tool)
 

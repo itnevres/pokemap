@@ -16,7 +16,8 @@ export interface SignEditorProps {
   onSessionUpdated: (body: unknown) => void;
 }
 
-const isReply = (body: unknown): body is SignReply => !!body && typeof body === "object" && ["empty", "other", "sign"].includes((body as { kind?: string }).kind ?? "");
+const SIGN_EDITOR_WIDTH = 300; // keep in sync with .sign-editor in styles.css
+const isReply =(body: unknown): body is SignReply => !!body && typeof body === "object" && ["empty", "other", "sign"].includes((body as { kind?: string }).kind ?? "");
 const refusals = (body: unknown): Refusal[] => body && typeof body === "object" && Array.isArray((body as { refusals?: unknown }).refusals) ? (body as { refusals: Refusal[] }).refusals : [];
 
 /** Small, anchored editor for server-validated sign text. The server remains the source of truth for wrapping and character validation. */
@@ -70,10 +71,16 @@ export function SignEditor({ mapName, x, y, anchor, hasObjectEvent = false, onDo
     });
     return paragraphIndex === 0 ? lines : ["", ...lines];
   });
-  const style = { left: Math.max(8, anchor.left), top: Math.max(8, anchor.bottom + 8), position: "fixed" as const, zIndex: 20 };
+  // Below the tile in the upper half of the window, above it in the lower half; max-height (CSS) keeps it on screen.
+  const below = anchor.top < window.innerHeight / 2;
+  const style = {
+    left: Math.max(8, Math.min(anchor.left, window.innerWidth - SIGN_EDITOR_WIDTH - 8)),
+    ...(below ? { top: anchor.bottom + 8 } : { bottom: window.innerHeight - anchor.top + 8 }),
+    position: "fixed" as const, zIndex: 20,
+  };
   const canEdit = reply?.kind === "empty" || (reply?.kind === "sign" && reply.editable);
   const action = reply?.kind === "sign" ? "Update" : "Place";
-  return <div className="sign-editor warp-modal__panel" style={style} role="dialog" aria-modal="true" aria-label="Sign editor" onKeyDown={(e) => { if (e.key === "Escape") onCancel(); }}>
+  return <div className="sign-editor" style={style} role="dialog" aria-modal="true" aria-label="Sign editor" onKeyDown={(e) => { if (e.key === "Escape") onCancel(); }}>
     <h2 className="sign-composer__title">Sign</h2>
     {error && <p role="alert" className="save-dialog__refusal-message">{error}</p>}
     {hasObjectEvent && <p>An object event is on this tile.</p>}
