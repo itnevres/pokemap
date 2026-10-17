@@ -194,6 +194,29 @@ both families: a readable sign (bg event) with customisable text.
     live check re-parses the written `.asm` with the app's loader. GBA: B8 re-loads the map with the app's loader.
 - **S10. Guards.** Label collisions, a missing `_MapEvents:` label (GBC), a missing `scripts.inc` (GBA), an unreadable
   charmap or name table → a located refusal (file, line where known, fix), never a partial write. See S9a for the build check.
+- **S10a. Save-time consequences of S10 (builder rulings, 2026-10-16).**
+  - A save refuses two `ScriptReplace` entries for the same path (`script-replace-duplicate`), so one file can never
+    be written twice with "last wins".
+  - A linked sign that cannot refresh (for example a missing landmark or charmap entry) blocks **every** save of that
+    map, including paint-only saves, until the source is fixed or the sign is unlinked.
+  - A GBA map with sign `bg_events` but no `scripts.inc` refuses saves.
+  - These are deliberate: refresh-on-save must write exactly what the plan showed, and a partial write is worse than
+    a refusal.
+- **S11. Deferred minors (not bugs; nobody blocked).** Full list in the ledger
+  (`.superpowers/sdd/2026-10-16-pokemap-plan-10a-switch-and-signs/progress.md`). Main ones:
+  - The editor preview shows a single word over 18 characters as one overlong line. The server refuses it (live,
+    both families).
+  - Linked modes preview the placeholder "Linked text preview", not the generated text.
+  - A too-long-word refusal names the charmap file as its location.
+  - GBC mixed-EOL `replaceLines` and contraction width overcount.
+  - GBA EOF-without-newline append hash fragility.
+  - The refusal subject names the map file, not the failing source.
+  - `project.map` cache can serve pre-commit data.
+  - The Task 1 stale comments and shared `switchError` banner.
+  - Orphaned scripts after a sign delete stay (out of scope).
+  - **Open from Task 8 (Important, UI):** the Sign editor renders about 720×560 px, mostly unstyled. In the lower
+    half of the canvas it overflows the viewport, so it is not yet the "small popover" S2 asks for. Its anchoring is
+    correct. See `task-reports/pokemap-plan-10a-switch-and-signs/task-8-live.md` F1.
 
 ### Acceptance criteria (Sign tool)
 
