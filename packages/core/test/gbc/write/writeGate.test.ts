@@ -8,6 +8,8 @@ import { locateEventCall } from "../../../src/gbc/write/asmSplice.js";
 import { commitGbcSave, openGbcEditSession, planGbcSave, type GbcEditSession } from "../../../src/gbc/write/save.js";
 import type { GbcMap } from "../../../src/gbc/model/types.js";
 import { copyGbcRootToTemp, gbcCorpusRoots, gbcRootLabel, GBC_REFERENCE_ROOTS, GBC_SUBJECT_ROOT, hasGbcProject, removeTemp } from "../helpers/corpus.js";
+import { insertGbcSign, nextGbcSignNumber } from "../../../src/gbc/signs.js";
+import { parseMapEvents } from "../../../src/gbc/load/events.js";
 
 // Plan 7 Task 7: the G5 write gate. Real writes through the real funnel
 // (openGbcEditSession -> edit -> planGbcSave -> commitGbcSave) over every map of
@@ -339,6 +341,40 @@ function gateRoot(root: string): void {
         }
       }
       expect(failures.slice(0, 20), `${failures.length} failure(s)`).toEqual([]);
+    }, HEAVY);
+
+    it("B7 signs: every map reparses with one new bg event and line-diff removal restores exact bytes", () => {
+      let checked = 0;
+      for (const map of proj.maps) {
+        const text = snapOf(`maps/${map.name}.asm`).toString("utf8");
+        expect(map.width, map.name).toBeGreaterThan(0);
+        expect(map.height, map.name).toBeGreaterThan(0);
+        const n = nextGbcSignNumber(text, map.name);
+        const script = `${map.name}PokemapSign${n}`;
+        const placed = insertGbcSign(text, map.name, n, "free", [["HELLO"]]);
+        const edited = addGbcEvent(placed, map.name, "bg", ["0", "0", "BGEVENT_READ", script]).text;
+        const beforeEvents = parseMapEvents(text, map.name);
+        const afterEvents = parseMapEvents(edited, map.name);
+        expect(afterEvents.bgs, map.name).toHaveLength(beforeEvents.bgs.length + 1);
+        expect(afterEvents.bgs.at(-1), map.name).toMatchObject({ x: 0, y: 0, script });
+        // An insertion-only line diff: match original lines in order; every other
+        // line must be an addition. Keep terminators in each line for byte checks.
+        const oldLines = text.match(/[^\n]*\n|[^\n]+$/g) ?? [];
+        const newLines = edited.match(/[^\n]*\n|[^\n]+$/g) ?? [];
+        let cursor = 0;
+        const added: number[] = [];
+        for (let i = 0; i < newLines.length; i++) {
+          if (cursor < oldLines.length && newLines[i] === oldLines[cursor]) cursor++;
+          else added.push(i);
+        }
+        expect(cursor, map.name).toBe(oldLines.length);
+        expect(added, map.name).toHaveLength(9);
+        const additions = new Set(added);
+        const undone = newLines.filter((_, i) => !additions.has(i)).join("");
+        expect(Buffer.from(undone).equals(Buffer.from(text)), map.name).toBe(true);
+        checked++;
+      }
+      expect(checked).toBe(pins.maps);
     }, HEAVY);
 
     it("B5 no stray write: the whole copy equals the real root byte for byte; no .pokemap", () => {
