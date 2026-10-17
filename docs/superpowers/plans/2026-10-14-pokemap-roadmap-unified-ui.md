@@ -36,6 +36,12 @@ Made 2026-10-14 (this session):
   tileset; same family only** (GBA to GBA, GBC to GBC). Cross-family conversion is backlog.
 - D16. **#7 is triage only:** rate HMA features, split keepers into issues. No implementation.
 
+Made 2026-10-16 (user-approved Reddit feature assessment):
+- D17. **Keep Plans 10-14 in order; insert 14A stamps, 14B terrain painting, then 14C adjacent-map creation before Plan 15.** Both families use the shared canvas and adapter. Plan 17 reuses 14C's destination-map creation machinery.
+- D18. **Plan 17A follows Plan 17:** a 2D collision-aware walking preview in both families. Plan 18 remains independent triage and may run any time.
+
+Execution order: **10 → 11 → 12 → 13 → 14 → 14A → 14B → 14C → 15 → 16 → 17 → 17A**; Plan 18 is independent. New entries are roadmap scope; each still needs its own spec and implementation plan.
+
 ## Issue map (all 7 open, reviewed 2026-10-14)
 
 | # | Title (short) | Category | State on master | Where it goes |
@@ -153,13 +159,28 @@ Both families already render the same `components/Toolbar.tsx`; the differences 
 - **Risk:** medium-high. New `.asm` text and tileset-wide writes (LESSONS: GBC Format & Engine Quirks).
 - **Depends on:** D6, D7.
 
+### Plan 14A: shared stamps and saved patterns
+
+- **Goal/scope:** after Plan 14, rectangular selection in both families, capture a map area, preview/place exact arrangements, and save named patterns tied to compatible tilesets. Reuse existing stamp painting; keep pattern management small. Acceptance: both families can capture, save, reselect and place a pattern, reject incompatible tilesets, and undo a placement.
+- **Risk/dependencies:** high (shared canvas interactions and edit-session behavior); depends on Plans 12/14 and D17. Stamps place exact arrangements; terrain brushes remain a separate tool.
+
+### Plan 14B: terrain painting
+
+- **Goal/scope:** after 14A, tileset-specific named brushes with thumbnails and editable tile assignments. First phase: water and paths with centers, inner/outer corners, narrow sections and junctions; painting and erasing repair neighboring edges, show a preview and form one undoable stroke. Define movement permissions per engine rather than silently retaining incorrect collision. Acceptance covers these shapes and erase repairs in both families. Later phase: forests and cliffs with explicit elevation, directional-ledge and terrain-transition rules; separately spec and verify that phase.
+- **Risk/dependencies:** high (shared canvas, terrain rules and collision semantics); depends on Plans 12/14/14A and D17. Reuse brush selection/previews without making a large stamp library a prerequisite.
+
+### Plan 14C: create and connect adjacent maps
+
+- **Goal/scope:** after 14B, select an existing map edge, choose dimensions/tileset and a blank fill or compatible template, slide a ghost preview to set offset, then create the map and validated reciprocal game connections. Acceptance: save/reload preserves the new map and connections in both families; failure leaves no partially created map or one-sided connection. Editor-only world placement is distinct from game connectivity.
+- **Risk/dependencies:** high (multi-file subject-source writes and save ownership); depends on Plans 10/12/14B and D17. Bring reusable destination-map creation forward from Plan 17; no dependency on town-map editing/minimap. Verify writes on scratch projects.
+
 ### Plan 15: town map editor (#9)
 
 - **Goal:** edit the in-game region map: map-section boundaries and names, fly points, tile graphics (D14).
 - **Scope:** per-engine loaders and writers behind the adapter (GBA `src/data/region_map/`; Crystal's town map data and
   pokegear graphics); a region-map view in the shell with three tools (section paint, fly-point placement, tilemap paint
   with PNG round trip). Likely two or three phases: data model and read-only view, then each editing tool.
-- **Order:** after Plan 14.
+- **Order:** after Plan 14C (D17).
 - **Risk:** high. Two unfamiliar formats; graphics writes. Spec must first measure both formats in the subject decomp and
   pokecrystal-PerfPlus.
 - **Depends on:** D14.
@@ -184,14 +205,19 @@ Both families already render the same `components/Toolbar.tsx`; the differences 
 - **Risk:** high. Writes many files into a second project (GBA: map/layout JSON, `scripts.inc`, encounters JSON, tileset
   directories and their C headers; GBC: `.blk`, `.asm`, constants, attributes, tilesets). Name and constant collisions,
   save safety across two corpora; never test against the real subject without a scratch copy.
-- **Depends on:** D15.
+- **Depends on:** D15, D17 and Plan 14C's reusable destination-map creation machinery; retain the full D15 copy scope.
+
+### Plan 17A: walking preview
+
+- **Goal/scope:** immediately after Plan 17, a shared 2D player walking preview using each engine's movement/collision rules and connected-map transitions. Acceptance: walkable/blocked terrain, supported ledges/elevation and crossings agree with independently checked engine fixtures in both families. Surface unsupported rules; the preview does not replace in-game testing. 3D rendering and full game emulation are outside this plan.
+- **Risk/dependencies:** high (movement correctness may look plausible while wrong); depends on Plans 12/14/14B/14C/17 and D18. Verify representative terrain and map seams, including the later cliff phase when supported.
 
 ### Plan 18: HexManiacAdvance triage (#7)
 
 - **Goal:** rate each HMA feature listed in #7 and split the keepers into issues.
 - **Scope:** for each feature: fit with PokeMap's decomp-first model (HMA edits ROMs), engine coverage, cost; keepers become
   issues mapped to Plan 3 (GBA data editors) or adapter features. No implementation.
-- **Order:** last; can run any time as a short docs-only session.
+- **Order:** independent; can run any time as a short docs-only session (D18).
 - **Risk:** low.
 - **Depends on:** D16.
 

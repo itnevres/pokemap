@@ -1,5 +1,7 @@
 # PokeMap workflow
 
+Launch steps and the required maintenance rule are in [LAUNCH.md](LAUNCH.md). Keep it updated alongside any launch-related change.
+
 The global `~/.claude/CLAUDE.md` rules still apply: session length, offload, and the cost-discipline rules 0-7. This file only adds risk-based execution on top of them. Where a Superpowers skill's default asks for more process than the task's tier, this file wins.
 
 ## Keep Anthropic token use to a minimum
