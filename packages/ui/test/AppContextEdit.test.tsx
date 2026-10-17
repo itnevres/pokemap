@@ -294,13 +294,12 @@ describe("App -- in-context editing (Plan 6c E4)", () => {
     expect(worldCanvas()).toBe(canvas);
   });
 
-  it("a double-click on another map with a dirty session and a cancelled confirm does not enter context", async () => {
+  it("a double-click on another map with a dirty session and a cancelled switch prompt does not enter context", async () => {
     await startApp();
     fireEvent.click(screen.getByRole("button", { name: "PalletTown" }));
     await screen.findByRole("button", { name: "Add Event" });
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Add Event" })); });
     await waitFor(() => expect(screen.getByTestId("dirty-indicator")).toBeTruthy());
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
     // The overlay must never mount, not even for a frame that a later effect then cleans up.
     let overlaysMounted = 0;
     const observer = new MutationObserver((records) => {
@@ -317,7 +316,8 @@ describe("App -- in-context editing (Plan 6c E4)", () => {
 
     await act(async () => { await Promise.resolve(); }); // let the observer deliver
     observer.disconnect();
-    expect(confirmSpy).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("dialog", { name: "Unsaved changes" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(overlaysMounted).toBe(0);
     expect(contextOverlay()).toBeNull();
     expect(chrome()).toBeNull();

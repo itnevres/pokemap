@@ -156,3 +156,28 @@ export function removeLine(text: string, lineStart: number, lineEnd: number): st
   const prevEol = text.startsWith("\r\n", lineStart - 2) ? 2 : 1;
   return text.slice(0, lineStart - prevEol) + text.slice(lineEnd);
 }
+
+/** Replaces whole 0-based lines, retaining untouched bytes and final-newline state. */
+export function replaceLines(text: string, startLine: number, endLineExclusive: number, lines: string[]): string {
+  const chunks = text.match(/[^\n]*\n|[^\n]+$/g) ?? [];
+  if (!Number.isInteger(startLine) || !Number.isInteger(endLineExclusive) ||
+      startLine < 0 || endLineExclusive < startLine || endLineExclusive > chunks.length) {
+    throw new Error("replaceLines: invalid line range");
+  }
+  if (lines.some((line) => /[\r\n]/.test(line))) {
+    throw new Error("replaceLines: replacement lines must not contain line breaks");
+  }
+  if (startLine === endLineExclusive && lines.length === 0) return text;
+  const eol = text.match(/\r?\n/)?.[0] ?? "\n";
+  const finalNewline = text.endsWith("\n");
+  let prefix = chunks.slice(0, startLine).join("");
+  const suffix = chunks.slice(endLineExclusive).join("");
+  let replacement = lines.join(eol);
+  if (lines.length > 0) {
+    if (prefix && !prefix.endsWith("\n")) prefix += eol;
+    if (suffix || finalNewline) replacement += eol;
+  } else if (!suffix && !finalNewline) {
+    prefix = prefix.replace(/\r?\n$/, "");
+  }
+  return prefix + replacement + suffix;
+}

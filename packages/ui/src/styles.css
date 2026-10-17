@@ -2538,6 +2538,24 @@ input {
   gap: var(--space-3);
 }
 
+/* Sign tool editor: compact popover at the clicked tile (SignEditor.tsx positions it). */
+.sign-editor {
+  width: 300px;
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  color: var(--text-primary);
+}
+
+.sign-editor textarea { width: 100%; box-sizing: border-box; min-height: 4em; }
+.sign-editor pre { margin: 0; font-family: var(--font-data); }
+
 .sign-composer__title {
   margin: 0;
   font-family: var(--font-ui);

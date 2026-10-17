@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { MapCanvas, type MapCanvasProps } from "./MapCanvas.js";
 import { Toolbar } from "./Toolbar.js";
 import { CollisionPalette } from "./CollisionPalette.js";
@@ -9,6 +9,7 @@ import type { MapLayoutData } from "../hooks/useMapLayout.js";
 import type { useMapEditing } from "../hooks/useMapEditing.js";
 import { EditingWorkspace } from "../shared/EditingWorkspace.js";
 import { GBA_CAPABILITIES, toolsFor } from "../shell/adapter.js";
+import { SignEditor } from "../shared/SignEditor.js";
 
 /** The props the workspace builds for the canvas it hosts -- exactly what
  *  `App` passed to `MapCanvas` before the extraction (the controlled
@@ -16,7 +17,7 @@ import { GBA_CAPABILITIES, toolsFor } from "../shell/adapter.js";
  *  wants it adds it in its own `renderCanvas`). */
 export type MapEditingCanvasProps = Pick<
   MapCanvasProps,
-  "onStrokeChain" | "mapName" | "data" | "editSession" | "activeTool" | "onSelectEvent" | "selectedEventRef" | "onMoveEvent" | "onDropperPick" | "onHoverMetatile"
+  "onStrokeChain" | "mapName" | "data" | "editSession" | "activeTool" | "onSignPick" | "onSelectEvent" | "selectedEventRef" | "onMoveEvent" | "onDropperPick" | "onHoverMetatile"
 >;
 
 interface MapEditingWorkspaceBase {
@@ -55,10 +56,11 @@ export type MapEditingWorkspaceProps = ActiveMapEditingWorkspaceProps | Inactive
  *  in `useMapEditing`; the edit session in `App`; `SaveDialog`/`SignComposer`
  *  stay siblings at `<main>` level in `App` for stacking reasons. */
 export function MapEditingWorkspace({ active = true, mapName, data, editSession, editing, renderCanvas, onStrokeChain, hoveredMetatileId, onHoverMetatile }: MapEditingWorkspaceProps) {
+  const [signPick, setSignPick] = useState<{ x: number; y: number; anchor: DOMRect } | null>(null);
   const {
     activeToolKind, setActiveToolKind, collisionValue, setCollisionValue, currentStamp, setCurrentStamp,
     setSaveDialogOpen, setSignComposerOpen, signAddedMessage, setSignAddedMessage, eventOpError, setEventOpError,
-    selectedEvent, activeTool, handleDiscard, onSelectEvent, onCanvasMoveEvent, onMoveEventFromInspector,
+    selectedEvent, currentMap, activeTool, handleDiscard, onSelectEvent, onCanvasMoveEvent, onMoveEventFromInspector,
     onDeleteEvent, onAddEvent,
   } = editing;
   const canvasProps: MapEditingCanvasProps | null =
@@ -74,6 +76,7 @@ export function MapEditingWorkspace({ active = true, mapName, data, editSession,
           selectedEventRef: selectedEvent ? { kind: selectedEvent.kind, index: selectedEvent.index } : null,
           onMoveEvent: onCanvasMoveEvent,
           onDropperPick: setCurrentStamp,
+          onSignPick: (x, y, anchor) => setSignPick({ x, y, anchor }),
         }
       : null;
   const top = (
@@ -158,6 +161,14 @@ export function MapEditingWorkspace({ active = true, mapName, data, editSession,
         Canvas={MapCanvas}
         renderCanvas={renderCanvas as ((p: MapEditingCanvasProps | null) => ReactNode) | undefined}
       />
+      {signPick && mapName && <SignEditor mapName={mapName} x={signPick.x} y={signPick.y} anchor={signPick.anchor}
+        hasObjectEvent={currentMap?.objectEvents.some((event) => event.x === signPick.x && event.y === signPick.y) ?? false}
+        onCancel={() => setSignPick(null)} onDone={() => setSignPick(null)}
+        onSessionUpdated={(body) => {
+          if (body && typeof body === "object" && "map" in body && "isDirty" in body) {
+            editSession.applyExternalMapUpdate((body as { map: Parameters<typeof editSession.applyExternalMapUpdate>[0] }).map, Boolean((body as { isDirty: unknown }).isDirty));
+          }
+        }} />}
     </div>
   );
 }

@@ -27,7 +27,6 @@ afterEach(() => {
 
 const GROUPS = { groupOrder: ["OLIVINE"], groups: { OLIVINE: ["OlivineCity", "OlivinePort"] } };
 const EMPTY_EVENTS = { warps: [], coords: [], bgs: [], objects: [], sceneScripts: [], callbacks: [], objectConsts: [] };
-const GUARD_TEXT = "You have unsaved changes on this map. Discard them and switch maps?";
 
 function payload(name: string): GbcMapPayload {
   return {
@@ -76,25 +75,25 @@ const status = () => document.querySelector(".app__status")?.textContent;
 const beforeUnload = (spy: { mock: { calls: unknown[][] } }) => spy.mock.calls.filter((c) => c[0] === "beforeunload").length;
 
 describe("GbcApp World-path dirty guards (spec review F1, F3, F7)", () => {
-  it("a world click on another map: GBA confirm; cancel keeps the selection and discards nothing", async () => {
+  it("a world click on another map: switch prompt; Cancel keeps the selection and discards nothing", async () => {
     const calls = mockFetch();
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
     render(<FamilyApp adapter={gbcAdapter} />);
     await paintThenWorld();
     fireEvent.click(screen.getByText("world-select-port"));
-    expect(confirm).toHaveBeenCalledWith(GUARD_TEXT);
+    expect(screen.getByRole("dialog", { name: "Unsaved changes" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(calls.some((c) => c.includes("/discard"))).toBe(false);
     fireEvent.click(screen.getByRole("button", { name: "Map" }));
     await waitFor(() => expect(status()).toBe("OlivineCity"));
     expect(screen.getByTestId("dirty-indicator")).toBeTruthy();
   });
 
-  it("a world click, confirmed: POST /discard goes out BEFORE the new map is fetched", async () => {
+  it("a world click, Discard: POST /discard goes out BEFORE the new map is fetched", async () => {
     const calls = mockFetch();
-    vi.spyOn(window, "confirm").mockReturnValue(true);
     render(<FamilyApp adapter={gbcAdapter} />);
     await paintThenWorld();
     fireEvent.click(screen.getByText("world-select-port"));
+    fireEvent.click(screen.getByRole("button", { name: "Discard" }));
     fireEvent.click(screen.getByRole("button", { name: "Map" }));
     await waitFor(() => expect(status()).toBe("OlivinePort"));
     await waitFor(() => expect(calls).toContain("GET /api/map/OlivinePort"));
@@ -103,18 +102,18 @@ describe("GbcApp World-path dirty guards (spec review F1, F3, F7)", () => {
     expect(d).toBeLessThan(calls.indexOf("GET /api/map/OlivinePort"));
   });
 
-  it("a world double-click (open): cancel stays in World; confirm discards then opens Map on the new map", async () => {
+  it("a world double-click (open): cancel stays in World; Discard discards then opens Map on the new map", async () => {
     const calls = mockFetch();
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
     render(<FamilyApp adapter={gbcAdapter} />);
     await paintThenWorld();
     fireEvent.click(screen.getByText("world-open-port"));
-    expect(confirm).toHaveBeenCalledWith(GUARD_TEXT);
+    expect(screen.getByRole("dialog", { name: "Unsaved changes" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.getByTestId("world")).toBeTruthy();
     expect(calls.some((c) => c.includes("/discard"))).toBe(false);
 
-    confirm.mockReturnValue(true);
     fireEvent.click(screen.getByText("world-open-port"));
+    fireEvent.click(screen.getByRole("button", { name: "Discard" }));
     await waitFor(() => expect(status()).toBe("OlivinePort"));
     await waitFor(() => expect(calls).toContain("GET /api/map/OlivinePort"));
     expect(calls.indexOf("POST /api/edit/OlivineCity/discard")).toBeLessThan(calls.indexOf("GET /api/map/OlivinePort"));
@@ -129,18 +128,18 @@ describe("GbcApp World-path dirty guards (spec review F1, F3, F7)", () => {
     expect(beforeUnload(add)).toBe(1);
     expect(beforeUnload(remove)).toBe(0);
     // ...and a world click is therefore guarded (an un-dirty hook would skip the confirm)
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
     fireEvent.click(screen.getByText("world-select-port"));
-    expect(confirm).toHaveBeenCalled();
+    expect(screen.getByRole("dialog", { name: "Unsaved changes" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   });
 
   it("beforeunload is removed after a discard", async () => {
     mockFetch();
-    vi.spyOn(window, "confirm").mockReturnValue(true);
     const remove = vi.spyOn(window, "removeEventListener");
     render(<FamilyApp adapter={gbcAdapter} />);
     await paintThenWorld();
     fireEvent.click(screen.getByText("world-select-port"));
+    fireEvent.click(screen.getByRole("button", { name: "Discard" }));
     await waitFor(() => expect(beforeUnload(remove)).toBe(1));
   });
 
@@ -160,10 +159,10 @@ describe("GbcApp World-path dirty guards (spec review F1, F3, F7)", () => {
 
   it("a failed discard from World is shown in World and keeps the selection", async () => {
     mockFetch({ discardFails: true });
-    vi.spyOn(window, "confirm").mockReturnValue(true);
     render(<FamilyApp adapter={gbcAdapter} />);
     await paintThenWorld();
     fireEvent.click(screen.getByText("world-select-port"));
+    fireEvent.click(screen.getByRole("button", { name: "Discard" }));
     await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("discard -> 500"));
     expect(screen.getByTestId("world")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
@@ -175,10 +174,10 @@ describe("GbcApp World-path dirty guards (spec review F1, F3, F7)", () => {
   // Plan 9 characterisation: GbcApp.tsx:194-197 -- entering context on the SELECTED map clears switchError first.
   it("characterisation (Plan 9): Edit here on the selected map clears a discard error shown in World", async () => {
     mockFetch({ discardFails: true });
-    vi.spyOn(window, "confirm").mockReturnValue(true);
     render(<FamilyApp adapter={gbcAdapter} />);
     await paintThenWorld();
     fireEvent.click(screen.getByText("world-select-port"));
+    fireEvent.click(screen.getByRole("button", { name: "Discard" }));
     await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("discard -> 500"));
 
     fireEvent.click(screen.getByText("world-edit-city"));

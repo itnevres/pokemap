@@ -1,10 +1,29 @@
 import { describe, it, expect } from "vitest";
 import { openProject } from "@pokemap/core/src/project.js";
-import { createEditSessionStore } from "../src/editSessions.js";
+import { createEditSessionStore, snapshotOf, snapshotCommand } from "../src/editSessions.js";
 import { SUBJECT_ROOT, hasProject } from "@pokemap/core/test/helpers/corpus.js";
 
 describe.skipIf(!hasProject(SUBJECT_ROOT))("createEditSessionStore", () => {
   const project = openProject(SUBJECT_ROOT);
+
+  it("snapshots script replacements and restores previous arrays on undo and redo", () => {
+    const { session, stack } = createEditSessionStore(project).open("NewBarkTown_Lab");
+    const empty = snapshotOf(session);
+    expect(empty.scriptReplaces).toEqual([]);
+    const first = [{ path: "scripts.inc", before: "old", after: "first" }];
+    session.scriptReplaces = first;
+    const prev = snapshotOf(session);
+    session.scriptReplaces = [{ path: "scripts.inc", before: "old", after: "second" }];
+    const next = snapshotOf(session);
+    expect(prev.scriptReplaces).toBe(first);
+    stack.push(session, snapshotCommand("sign", prev, next));
+    stack.undo(session);
+    expect(session.scriptReplaces).toBe(first);
+    stack.redo(session);
+    expect(session.scriptReplaces).toEqual([{ path: "scripts.inc", before: "old", after: "second" }]);
+    stack.push(session, snapshotCommand("clear", next, empty));
+    expect(session.scriptReplaces).toEqual([]);
+  });
 
   it("opening a map twice returns the SAME session (in-memory, not re-read from disk each time)", () => {
     const store = createEditSessionStore(project);

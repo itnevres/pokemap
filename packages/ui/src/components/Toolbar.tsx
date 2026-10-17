@@ -3,13 +3,13 @@ import { useEffect, useRef } from "react";
 import { TOOL_ICONS } from "./toolIcons.js";
 import { shortcutBlocked } from "../shared/shortcutGuard.js";
 
-export type ToolKind = "pencil" | "rect" | "bucket" | "dropper" | "shift" | "collision";
+export type ToolKind = "pencil" | "rect" | "bucket" | "dropper" | "shift" | "collision" | "sign";
 
-const TOOLS: ToolKind[] = ["pencil", "rect", "bucket", "dropper", "shift", "collision"];
+const TOOLS: ToolKind[] = ["pencil", "rect", "bucket", "dropper", "shift", "collision", "sign"];
 
-export const TOOL_LABEL: Record<ToolKind, string> = { pencil: "Pencil", rect: "Rect", bucket: "Bucket", dropper: "Dropper", shift: "Shift", collision: "Collision" };
+export const TOOL_LABEL: Record<ToolKind, string> = { pencil: "Pencil", rect: "Rect", bucket: "Bucket", dropper: "Dropper", shift: "Shift", collision: "Collision", sign: "Sign" };
 /** Plan 9 (R1): the shortcut letter shown in each tool's tooltip; Toolbar's keydown listener reads the same table. */
-export const TOOL_KEY: Record<ToolKind, string> = { pencil: "P", rect: "R", bucket: "B", dropper: "I", shift: "S", collision: "C" };
+export const TOOL_KEY: Record<ToolKind, string> = { pencil: "P", rect: "R", bucket: "B", dropper: "I", shift: "S", collision: "C", sign: "G" };
 
 export interface ToolbarProps {
   activeToolKind: ToolKind | null;

@@ -87,7 +87,9 @@ export interface MapCanvasProps {
     | { kind: "collision"; value: CollisionElevation }
     | { kind: "shift" }
     | { kind: "dropper" }
+    | { kind: "sign" }
     | null;
+  onSignPick?: (x: number, y: number, anchor: DOMRect) => void;
   /** Task 14: click-to-select/drag-to-move for event markers. Gated on
    *  `!activeTool` (see onMouseDown below) rather than on `editSession` --
    *  select/deselect is harmless read-only navigation even without an open
@@ -199,7 +201,7 @@ interface Hover {
  * one scaled `drawImage`, so dragging or scrolling never re-touches overlay
  * pixels at all.
  */
-export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEvent, selectedEventRef, onMoveEvent, onDropperPick, onHoverMetatile, view: controlledView, onViewChange, chromeless, onStrokeChain }: MapCanvasProps) {
+export function MapCanvas({ mapName, data, editSession, activeTool, onSignPick, onSelectEvent, selectedEventRef, onMoveEvent, onDropperPick, onHoverMetatile, view: controlledView, onViewChange, chromeless, onStrokeChain }: MapCanvasProps) {
   const { layout, split, map: staticMap, blocks: staticBlocks } = data;
   // Live, server-tracked blocks while an edit session is open for this map;
   // the static `data.blocks` prop otherwise. Every effect below already
@@ -674,6 +676,18 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
     return cell;
   };
 
+  const signAnchor = (canvas: HTMLCanvasElement, cell: { x: number; y: number }): DOMRect => {
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = rect.width / canvas.width;
+    const scaleY = rect.height / canvas.height;
+    return new DOMRect(
+      rect.left + (pan.x + (originX + cell.x * 16) * zoom) * scaleX,
+      rect.top + (pan.y + (originY + cell.y * 16) * zoom) * scaleY,
+      16 * zoom * scaleX,
+      16 * zoom * scaleY,
+    );
+  };
+
   /** The apply body a pencil/bucket/collision stroke sends at a block; null when there is nothing to send.
    *  rect/shift are applied once, at mouseup (endActiveStroke). */
   const paintBody = (bx: number, by: number): PaintApplyBody | null => {
@@ -699,6 +713,11 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSelectEven
 
   const onMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (e.button !== 0) return;
+    if (activeTool?.kind === "sign") {
+      const cell = blockAt(e);
+      if (cell) onSignPick?.(cell.x, cell.y, signAnchor(e.currentTarget, cell));
+      return;
+    }
     // Task 14: ahead of the Task 11 paint branch -- selection only engages
     // when no paint tool is active (activeTool null), the natural signal
     // that the player is in "select/move events" mode rather than

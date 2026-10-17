@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { Toolbar, type ToolKind } from "../src/components/Toolbar.js";
 
-const ALL_TOOLS: ToolKind[] = ["pencil", "rect", "bucket", "dropper", "shift", "collision"];
+const ALL_TOOLS: ToolKind[] = ["pencil", "rect", "bucket", "dropper", "shift", "collision", "sign"];
 
 // No @testing-library/jest-dom in this repo (confirmed: no matcher
 // extension anywhere under packages/ui/test) -- toHaveAttribute/
@@ -29,11 +29,11 @@ describe("Toolbar", () => {
     availableTools: ALL_TOOLS,
   };
 
-  it("renders one button per tool (pencil, rect, bucket, dropper, shift, collision) and marks the active one aria-pressed", () => {
+  it("renders one button per tool (including Sign) and marks the active one aria-pressed", () => {
     render(<Toolbar {...baseProps} />);
     expect(screen.getByRole("button", { name: "Pencil" }).getAttribute("aria-pressed")).toBe("true");
     expect(screen.getByRole("button", { name: "Rect" }).getAttribute("aria-pressed")).toBe("false");
-    for (const name of ["Pencil", "Rect", "Bucket", "Dropper", "Shift", "Collision"]) {
+    for (const name of ["Pencil", "Rect", "Bucket", "Dropper", "Shift", "Collision", "Sign"]) {
       expect(screen.getByRole("button", { name })).toBeTruthy();
     }
   });
@@ -43,6 +43,14 @@ describe("Toolbar", () => {
     render(<Toolbar {...baseProps} onSelectTool={onSelectTool} />);
     fireEvent.click(screen.getByRole("button", { name: "Bucket" }));
     expect(onSelectTool).toHaveBeenCalledWith("bucket");
+  });
+
+  it("G selects the Sign tool", () => {
+    const onSelectTool = vi.fn();
+    render(<Toolbar {...baseProps} activeToolKind={null} onSelectTool={onSelectTool} />);
+    fireEvent.keyDown(window, { key: "g" });
+    expect(onSelectTool).toHaveBeenCalledWith("sign");
+    expect(screen.getByRole("button", { name: "Sign" }).getAttribute("title")).toBe("Sign (G)");
   });
 
   it("undo/redo buttons are disabled when canUndo/canRedo are false, enabled and clickable otherwise", () => {
@@ -107,7 +115,7 @@ describe("Toolbar", () => {
 
     it("disables every tool not in availableTools, and leaves available ones enabled", () => {
       render(<Toolbar {...baseProps} activeToolKind={null} availableTools={["collision"]} />);
-      for (const name of ["Pencil", "Rect", "Bucket", "Dropper", "Shift"]) {
+      for (const name of ["Pencil", "Rect", "Bucket", "Dropper", "Shift", "Sign"]) {
         expect((screen.getByRole("button", { name }) as HTMLButtonElement).disabled).toBe(true);
       }
       expect((screen.getByRole("button", { name: "Collision" }) as HTMLButtonElement).disabled).toBe(false);
@@ -131,7 +139,7 @@ describe("Toolbar", () => {
   describe("Toolbar -- icon, label and tooltip (Plan 9 D5)", () => {
     it("each tool shows an aria-hidden icon and its capitalised label, tooltip names the shortcut", () => {
       render(<Toolbar {...baseProps} availableTools={ALL_TOOLS} />);
-      const expected = [["Pencil", "P"], ["Rect", "R"], ["Bucket", "B"], ["Dropper", "I"], ["Shift", "S"], ["Collision", "C"]];
+      const expected = [["Pencil", "P"], ["Rect", "R"], ["Bucket", "B"], ["Dropper", "I"], ["Shift", "S"], ["Collision", "C"], ["Sign", "G"]];
       for (const [label, key] of expected) {
         const btn = screen.getByRole("button", { name: label });
         expect(btn.getAttribute("title")).toBe(`${label} (${key})`);

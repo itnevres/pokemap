@@ -12,10 +12,8 @@ import { useMapEditing } from "../hooks/useMapEditing.js";
 import { HIDDEN_MAP_TYPES } from "../world/visibility.js";
 import { GBA_CAPABILITIES, type EngineAdapter, type FamilyRuntime, type RuntimeArgs, type ShellSlots } from "../shell/adapter.js";
 
-const GUARD_TEXT = "You have unsaved changes on this map. Discard them and switch maps?";
-
 /** The GBA-only half of the shell (was App.tsx): data hooks, edit session, map editing state, switch policy, canvases. */
-export function useGbaRuntime({ selected, mode }: RuntimeArgs): FamilyRuntime {
+export function useGbaRuntime({ selected, mode, requestPrompt }: RuntimeArgs): FamilyRuntime {
   const groups = useMapGroups();
   const layout = useMapLayout(selected);
   // Known limitation, accepted for now (predates this task): this is a
@@ -40,6 +38,7 @@ export function useGbaRuntime({ selected, mode }: RuntimeArgs): FamilyRuntime {
   // changes" guards below need it, not just while Map mode's own UI is
   // rendered.
   const editSession = useEditSession(selected, layout.data?.blocks, layout.data?.map);
+  const [switchError, setSwitchError] = useState<string | null>(null);
 
   // Plan 6c E2: map-editing state and handlers (selected event, tool/dialog
   // state, event ops, discard) -- see useMapEditing.ts. Called here, at the same
@@ -52,9 +51,10 @@ export function useGbaRuntime({ selected, mode }: RuntimeArgs): FamilyRuntime {
 
   // GBA's switch policy (App.tsx:76-79): confirm when dirty, then switch; the server session is never discarded here.
   // `sameMap` is ignored on purpose: a tree re-click of the selected map prompts too (App.tsx:96-102).
-  const leave = (go: () => void) => {
-    if (editSession.isDirty && !window.confirm(GUARD_TEXT)) return;
-    go();
+  // Plan 10a supersedes the policy above: same-map bypass; the shell owns prompt and server discard.
+  const leave = (go: () => void, { sameMap }: { sameMap: boolean }) => {
+    if (sameMap || !editSession.isDirty) go();
+    else requestPrompt(go);
   };
 
   // The context map's layout, once loaded for THAT map (useMapLayout keeps the previous map's data until its fetch lands).
@@ -107,8 +107,9 @@ export function useGbaRuntime({ selected, mode }: RuntimeArgs): FamilyRuntime {
   return {
     groups,
     session: editSession,
-    leave: (go) => leave(go),
-    onSelected: () => setHoveredMetatileId(null),
+    leave,
+    setSwitchError,
+    onSelected: () => { setSwitchError(null); setHoveredMetatileId(null); },
     onEnterContext: () => {},
     visibility: { placed, error: visibilityError },
     hiddenMapTypes: HIDDEN_MAP_TYPES,
@@ -121,7 +122,12 @@ export function useGbaRuntime({ selected, mode }: RuntimeArgs): FamilyRuntime {
     renderWorld,
     renderDungeon: (mapFilter, s) => <WorldCanvas key="dungeon" mapFilter={mapFilter} onOpenMap={s.openMapFromWorld} />,
     headerExtras: null,
-    banners: null,
+    banners: switchError && (
+      <div className="app__event-op-error" role="alert">
+        <span>{switchError}</span>
+        <button type="button" className="app__event-op-error-dismiss" onClick={() => setSwitchError(null)} aria-label="Dismiss">x</button>
+      </div>
+    ),
     /* Task 17: SignComposer owns its own modal shell exactly like
        SaveDialog above (Step 10's own design correction) -- App.tsx
        just conditionally renders it as a sibling, same stacking-

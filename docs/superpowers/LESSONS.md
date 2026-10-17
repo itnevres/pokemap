@@ -38,6 +38,8 @@ Purpose: This document collects every reusable trap, rule, and convention discov
 - `gbc/GbcAppEditing.test.tsx` "dirty guard…" — tell: `EPERM … pokemap-gbc-*\maps\ElmsHouse.asm`  
 Rerun in isolation before calling either a regression. (Plan 8)
 
+**Plan 10a load flakes (each passed alone):** `App.test` "P selects Pencil" (once in Task 7, 3/3 alone) and `gbc/GbcAppEditing` "beforeunload is registered only while dirty" (tell: `expected +0 to be 1`; 11/11 in 3 isolated reruns). Rerun alone before calling a regression. (Plan 10a)
+
 **For StrictMode witnesses use `renderHook(..., { reactStrictMode: true })`.** A `<StrictMode>` wrapper runs effects only ONCE here (React 19.2, RTL 16.3); the option runs them twice. (Plan 8)
 
 **New load-only flake class since Task 5** (tell: `expected N to be less than -1` in `gbc/GbcAppWorldGuard` "a world click, confirmed: POST /discard goes out BEFORE…" or `gbc/GbcAppEditing` "dirty guard: … BEFORE switching"; also `GbcApp` "palette highlight resets…"): the status shows the new map before its GET effect fires. Order `discard < GET` held in every instrumented run. **Fixed in `6560014`**: the three ordering tests now wait for the new map's GET (cause: status text commits a scheduler task before the fetch effect runs). (Plan 8)
@@ -224,6 +226,10 @@ Rerun in isolation before calling either a regression. (Plan 8)
 
 **Escape listeners that must yield to React modals go in the capture phase.** React 18 flushes a discrete update in the microtask after the root listener, so a window *bubble* listener runs after the modal is already gone. jsdom can't show this; the test has to mimic the flush with a document listener that removes the modal. (Plan 6c Phase E)
 
+**Hash a subject repo with absolute output paths.** A manifest script that `cd`s into the subject and redirects to a relative file writes that file *inside* the subject, and the manifest then hashes itself (tell: an untracked `*.txt` in the subject's porcelain). Manifest = `git status --porcelain -uall` plus `sha1sum` of `git ls-files -co --exclude-standard`; restore from byte copies taken before, not `git checkout` (autocrlf). (Plan 10a Task 8)
+
+**Restart the hub before a reload check after writing to disk.** The hub caches `project.map`, so after a commit or a hand restore a reload can show pre-write data (ledger M8). Stop by port, start again, then reload. Background hubs stopped by port report `exit 127` in the task notice; that is expected. (Plan 10a Task 8)
+
 ---
 
 ## Windows / Tooling / Git / Worktrees
@@ -264,6 +270,8 @@ Rerun in isolation before calling either a regression. (Plan 8)
 ---
 
 **Git Bash `sed -i` writes LF.** A one-line `sed -i` on a CRLF file converts the whole file. Tell: `file` stops saying "with CRLF line terminators". Restore with `sed -i 's/\r$//; s/$/\r/'`, or edit with Python `open(..., newline="")`. (Plan 9F)
+
+**Bash heredocs mangle backslashes in replacement text** (tell: an Edit or script pattern containing `\r` or `\n` reports "not found"). Use the Edit tool, or a quoted `<<'EOF'` heredoc into Python, for text with backslashes. (Plan 10a)
 
 ## Delegation to Codex / Aider / Subagents
 

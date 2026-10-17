@@ -37,6 +37,8 @@ export interface UseGbcEditSessionResult {
   /** `args` are the macro's arguments as source text, in macro order. */
   addEvent(kind: GbcEventKind, args: string[], objectConst?: string): Promise<void>;
   deleteEvent(kind: GbcEventKind, index: number): Promise<{ warpRenumberWarnings: GbcWarpRenumberWarning[] }>;
+  /** Applies the full session body returned by SignEditor without a second request. */
+  applyExternalSession?(body: unknown): void;
 }
 
 interface SessionBody {
@@ -112,9 +114,13 @@ export function useGbcEditSession(mapName: string | null, initialBlocks?: Block[
     (kind: GbcEventKind, index: number) => post("/event/delete", { kind, index }).then((d) => ({ warpRenumberWarnings: d?.warpRenumberWarnings ?? [] })),
     [post],
   );
+  const applyExternalSession = useCallback((body: unknown) => {
+    if (!isSessionBody(body) || body.events === null) return;
+    apply({ state: () => ({ blocks: body.blocks, events: body.events! }), isDirty: body.isDirty, canUndo: body.canUndo, canRedo: body.canRedo });
+  }, [apply]);
 
   return {
     blocks, events, isDirty, canUndo, canRedo,
-    beginStroke, applyPaint, endStroke, undo, redo, discard, markClean, moveEvent, addEvent, deleteEvent,
+    beginStroke, applyPaint, endStroke, undo, redo, discard, markClean, moveEvent, addEvent, deleteEvent, applyExternalSession,
   };
 }

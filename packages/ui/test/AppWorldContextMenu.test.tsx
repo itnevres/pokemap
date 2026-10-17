@@ -100,10 +100,9 @@ describe("App -- world context menu Open in Map view (Plan 6c E3)", () => {
     expect(document.querySelector('.map-tree__map[aria-current="true"]')?.textContent).toContain("Route1");
   });
 
-  it("a dirty session with a cancelled confirm keeps World mode and the selection", async () => {
+  it("a dirty session with a cancelled switch prompt keeps World mode and the selection", async () => {
     vi.stubGlobal("fetch", makeFetchMock());
     stubViewport(400, 100);
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
     render(<FamilyApp adapter={gbaAdapter} />);
     await waitFor(() => expect(screen.getByRole("button", { name: "PalletTown" })).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: "PalletTown" }));
@@ -120,7 +119,8 @@ describe("App -- world context menu Open in Map view (Plan 6c E3)", () => {
     fireEvent.contextMenu(canvas, point);
     fireEvent.click(screen.getByRole("menuitem", { name: "Open in Map view" }));
 
-    expect(confirmSpy).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("dialog", { name: "Unsaved changes" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(document.querySelector("canvas.world-canvas__stage")).toBeTruthy(); // still World mode
     expect(screen.getByRole("button", { name: "World" }).getAttribute("aria-pressed")).toBe("true");
     expect(document.querySelector('.map-tree__map[aria-current="true"]')?.textContent).toContain("PalletTown");

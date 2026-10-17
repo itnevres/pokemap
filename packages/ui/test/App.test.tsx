@@ -398,21 +398,20 @@ async function renderAppInEditModeWithDirtySession() {
 }
 
 describe("App -- Task 13 save flow", () => {
-  it("in Map mode with a dirty session, attempting to switch maps shows a confirm() guard instead of switching silently, and does not switch on cancel", async () => {
+  it("in Map mode with a dirty session, attempting to switch maps shows the switch prompt, and does not switch on cancel", async () => {
     vi.stubGlobal("fetch", makeEditFetchMock());
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
 
     await renderAppInEditModeWithDirtySession();
 
     fireEvent.click(screen.getByRole("button", { name: "Route1" }));
 
-    expect(confirmSpy).toHaveBeenCalled();
+    expect(screen.getByRole("dialog", { name: "Unsaved changes" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     // Cancelled (confirm -> false): still on PalletTown, not silently
     // switched to Route1.
     expect(screen.getByRole("button", { name: "PalletTown" }).getAttribute("aria-current")).toBe("true");
     expect(screen.getByRole("button", { name: "Route1" }).getAttribute("aria-current")).not.toBe("true");
 
-    confirmSpy.mockRestore();
     vi.unstubAllGlobals();
   });
 
@@ -455,23 +454,21 @@ describe("App -- Task 13 save flow", () => {
 
   // Plan 9 characterisation: App.tsx:96-102 -- selectMap -> changeSelection -> leave, so even the
   // ALREADY-selected map prompts while dirty. GBA never calls the server's discard before a switch.
-  it("characterisation (Plan 9): re-clicking the selected map in the tree while dirty asks first; GBA never discards on the server", async () => {
+  // Plan 10a R2 supersedes the historical behavior above: same-map never prompts in either family.
+  it("re-clicking the selected map in the tree while dirty neither prompts nor discards", async () => {
     const fetchMock = makeEditFetchMock();
     vi.stubGlobal("fetch", fetchMock);
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
     await renderAppInEditModeWithDirtySession();
 
     fireEvent.click(screen.getByRole("button", { name: "PalletTown" }));
-    expect(confirmSpy).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("dialog", { name: "Unsaved changes" })).toBeNull();
     expect(screen.getByTestId("dirty-indicator")).toBeTruthy();
 
-    confirmSpy.mockReturnValue(true);
     fireEvent.click(screen.getByRole("button", { name: "PalletTown" }));
-    expect(confirmSpy).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole("dialog", { name: "Unsaved changes" })).toBeNull();
     expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith("/discard"))).toBe(false);
     expect(screen.getByTestId("dirty-indicator")).toBeTruthy();
 
-    confirmSpy.mockRestore();
     vi.unstubAllGlobals();
   });
 });
@@ -1267,57 +1264,44 @@ describe("App -- world click selects the map in the tree (Plan 6c C2)", () => {
 
     it("a world click on another map asks to discard first; cancelling leaves the tree on the original map", async () => {
       stubDirtyWorld();
-      const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
-      try {
-        await renderAppInEditModeWithDirtySession();
-        await withViewport(async () => {
-          const canvas = await worldCanvasReady("63%", 200);
-          expect(currentRow()?.textContent).toBe("PalletTown");
+      await renderAppInEditModeWithDirtySession();
+      await withViewport(async () => {
+        const canvas = await worldCanvasReady("63%", 200);
+        expect(currentRow()?.textContent).toBe("PalletTown");
 
-          clickAt(canvas, ROUTE1);
+        clickAt(canvas, ROUTE1);
 
-          expect(confirmSpy).toHaveBeenCalledTimes(1);
-          expect(currentRow()?.textContent).toBe("PalletTown");
-        }, 200);
-      } finally {
-        confirmSpy.mockRestore();
-      }
+        expect(screen.getByRole("dialog", { name: "Unsaved changes" })).toBeTruthy();
+        fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+        expect(currentRow()?.textContent).toBe("PalletTown");
+      }, 200);
     });
 
-    it("confirming the discard switches the tree to the clicked map", async () => {
+    it("choosing Discard switches the tree to the clicked map", async () => {
       stubDirtyWorld();
-      const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
-      try {
-        await renderAppInEditModeWithDirtySession();
-        await withViewport(async () => {
-          const canvas = await worldCanvasReady("63%", 200);
-          clickAt(canvas, ROUTE1);
-          expect(confirmSpy).toHaveBeenCalledTimes(1);
-          await waitFor(() => expect(currentRow()?.textContent).toBe("Route1"));
-        }, 200);
-      } finally {
-        confirmSpy.mockRestore();
-      }
+      await renderAppInEditModeWithDirtySession();
+      await withViewport(async () => {
+        const canvas = await worldCanvasReady("63%", 200);
+        clickAt(canvas, ROUTE1);
+        fireEvent.click(screen.getByRole("button", { name: "Discard" }));
+        await waitFor(() => expect(currentRow()?.textContent).toBe("Route1"));
+      }, 200);
     });
 
-    it("re-clicking the already-selected map in the world does not raise the confirm", async () => {
+    it("re-clicking the already-selected map in the world does not raise the prompt", async () => {
       stubDirtyWorld();
-      const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
-      try {
-        await renderAppInEditModeWithDirtySession();
-        await withViewport(async () => {
-          const canvas = await worldCanvasReady("63%", 200);
-          clickAt(canvas, PALLET); // already selected and dirty
-          expect(confirmSpy).not.toHaveBeenCalled();
-          expect(currentRow()?.textContent).toBe("PalletTown");
+      await renderAppInEditModeWithDirtySession();
+      await withViewport(async () => {
+        const canvas = await worldCanvasReady("63%", 200);
+        clickAt(canvas, PALLET); // already selected and dirty
+        expect(screen.queryByRole("dialog", { name: "Unsaved changes" })).toBeNull();
+        expect(currentRow()?.textContent).toBe("PalletTown");
 
-          // Positive control: the canvas is live, so a click on another map does ask.
-          clickAt(canvas, ROUTE1);
-          expect(confirmSpy).toHaveBeenCalledTimes(1);
-        }, 200);
-      } finally {
-        confirmSpy.mockRestore();
-      }
+        // Positive control: the canvas is live, so a click on another map does ask.
+        clickAt(canvas, ROUTE1);
+        expect(screen.getByRole("dialog", { name: "Unsaved changes" })).toBeTruthy();
+        fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+      }, 200);
     });
   });
 

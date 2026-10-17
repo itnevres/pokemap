@@ -78,7 +78,7 @@ describe("MapEditingWorkspace", () => {
     expect(renderCanvas).toHaveBeenCalled();
     const p = renderCanvas.mock.calls[0]![0];
     expect(Object.keys(p).sort()).toEqual(
-      ["activeTool", "data", "editSession", "mapName", "onDropperPick", "onMoveEvent", "onSelectEvent", "selectedEventRef"],
+      ["activeTool", "data", "editSession", "mapName", "onDropperPick", "onMoveEvent", "onSelectEvent", "onSignPick", "selectedEventRef"],
     );
     expect(p.mapName).toBe("Foo");
     expect(p.data).toBe(DATA);

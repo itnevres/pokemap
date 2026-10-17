@@ -3,7 +3,8 @@ import "../styles.css";
 
 interface PendingChange { path: string; kind: "json" | "binary" | "text"; summary: string }
 interface Refusal { code: string; message: string; fix: string; subject: string }
-interface DiffPlan { changes: PendingChange[]; refusals: Refusal[] }
+interface SignNotice { scriptLabel: string; message: string }
+interface DiffPlan { changes: PendingChange[]; refusals: Refusal[]; signNotices?: SignNotice[] }
 
 export interface SaveDialogProps {
   mapName: string;
@@ -60,7 +61,7 @@ export function SaveDialog({ mapName, onCommitted, onCancel }: SaveDialogProps) 
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const loadPlan = () => {
     let cancelled = false;
     fetch(`/api/edit/${encodeURIComponent(mapName)}/plan`)
       .then(async (r) => {
@@ -76,7 +77,22 @@ export function SaveDialog({ mapName, onCommitted, onCancel }: SaveDialogProps) 
         if (!cancelled) setLoadError(e instanceof Error ? e.message : "Failed to load pending changes.");
       });
     return () => { cancelled = true; };
-  }, [mapName]);
+  };
+
+  useEffect(loadPlan, [mapName]);
+
+  const resolveNotice = async (scriptLabel: string, action: "refresh" | "unlink") => {
+    setSaving(true);
+    try {
+      const r = await fetch(`/api/edit/${encodeURIComponent(mapName)}/sign/resolve`, { method: "POST", body: JSON.stringify({ scriptLabel, action }) });
+      if (!r.ok) { setSaveError("Could not update linked sign."); return; }
+      const planResponse = await fetch(`/api/edit/${encodeURIComponent(mapName)}/plan`);
+      const body: unknown = await planResponse.json().catch(() => null);
+      if (!planResponse.ok || !isDiffPlan(body)) { setSaveError(errorMessageFrom(body) ?? "Could not reload pending changes."); return; }
+      setPlan(body);
+    } catch (e) { setSaveError(e instanceof Error ? e.message : "Could not update linked sign."); }
+    finally { setSaving(false); }
+  };
 
   const save = async () => {
     setSaving(true);
@@ -137,6 +153,16 @@ export function SaveDialog({ mapName, onCommitted, onCancel }: SaveDialogProps) 
               </li>
             ))}
           </ul>
+        )}
+        {plan?.signNotices && plan.signNotices.length > 0 && (
+          <section aria-label="Linked signs">
+            <h3>Linked signs</h3>
+            {plan.signNotices.map((notice) => <div key={notice.scriptLabel} className="save-dialog__refusal">
+              <p>{notice.message}</p>
+              <button type="button" className="map-canvas__btn" disabled={saving} aria-label={`Refresh ${notice.scriptLabel}`} onClick={() => void resolveNotice(notice.scriptLabel, "refresh")}>Refresh</button>
+              <button type="button" className="map-canvas__btn" disabled={saving} aria-label={`Unlink ${notice.scriptLabel}`} onClick={() => void resolveNotice(notice.scriptLabel, "unlink")}>Unlink</button>
+            </div>)}
+          </section>
         )}
         {saveError && (
           <div className="save-dialog__refusal" role="alert">

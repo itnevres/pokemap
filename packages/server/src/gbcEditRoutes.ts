@@ -1,3 +1,7 @@
+import { findGbcSign, insertGbcSign, nextGbcSignNumber, updateGbcSign } from "@pokemap/core/src/gbc/signs.js";
+import { parseMapEvents } from "@pokemap/core/src/gbc/load/events.js";
+import { signHash, type SignMode } from "@pokemap/core/src/signs/marker.js";
+import { gbcSignLabels, gbcSignParagraphs, refreshGbcLinkedSigns } from "./signRefresh.js";
 /**
  * `/api/edit/:map/*` for GBC (pokecrystal-family) projects -- the GBC
  * counterpart of the edit routes in `index.ts`, with the same paths and the
@@ -171,8 +175,86 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void 
 
   const asSession = (entry: GbcSessionEntry) => ok(sessionBody(entry));
 
+  const signFailure = (name: string, error: unknown): Result => ({ code: 400, body: { refusals: [{
+    code: error instanceof Error && error.message === "hand-edited" ? "hand-edited" : "sign",
+    fix: "Check the named source or sign text; refresh or unlink hand-edited signs explicitly.",
+    subject: `${proj.root}/maps/${name}.asm`, message: error instanceof Error ? error.message : String(error),
+  }] } });
+
+  /** Plan-shaped refusal (same wire shape as GBA): 200 for a plan, 400 for a commit. */
+  const planFailure = (name: string, error: unknown, code: number): Result =>
+    ({ code, body: { changes: [], ...(signFailure(name, error).body as object), signNotices: [] } });
+
+  const isSignEvent = (kind: string) => /^BGEVENT_(READ|UP|DOWN|LEFT|RIGHT)$/.test(kind);
+  function stageSign(entry: GbcSessionEntry, label: string, text: string): Result {
+    const prev = gbcSnapshotOf(entry.session);
+    const events = parseMapEvents(text, entry.session.mapName);
+    if (text !== prev.eventsText) entry.stack.push(entry.session, snapshotCommand(label, prev, { ...prev, eventsText: text, events }));
+    return asSession(entry);
+  }
+  function signPlan(name: string) {
+    const refreshed = refreshGbcLinkedSigns(proj, store.open(name));
+    const plan = planGbcSave(proj, refreshed.session);
+    return { plan, body: { ...formatDiffJson(plan), signNotices: refreshed.notices } };
+  }
+
   /** Route table keyed `METHOD sub-route`. `body: true` routes get the parsed JSON object. */
   const routes: Record<string, { body: boolean; run(name: string, body: Obj): Result }> = {
+    "GET sign/at": { body: false, run: (name, body) => {
+      const [x, y] = [int(body, "x"), int(body, "y")];
+      const entry = store.open(name);
+      const event = entry.session.events.bgs.find((e) => e.x === x && e.y === y);
+      if (!event) return ok({ kind: "empty" });
+      if (!isSignEvent(event.bgEventType)) return ok({ kind: "other", eventKind: event.bgEventType });
+      const block = findGbcSign(entry.session.eventsText, event.script);
+      const baseline = block.marker?.hash ?? entry.signBaselines.get(event.script);
+      return ok({ kind: "sign", scriptLabel: event.script, editable: block.editable, reason: block.reason,
+        mode: block.marker?.mode ?? null, text: block.paragraphs.map((p) => p.join("\n")).join("\n\n"),
+        handEdited: baseline !== undefined && (!block.editable || signHash(block.body) !== baseline) });
+    } },
+    "POST sign/put": { body: true, run: (name, body) => {
+      const [x, y] = [int(body, "x"), int(body, "y")];
+      if (!["free", "name", "species"].includes(body.mode as string)) bad('"mode" must be free, name, or species');
+      if (typeof body.text !== "string") bad('"text" must be a string');
+      if (body.scriptLabel !== undefined && typeof body.scriptLabel !== "string") bad('"scriptLabel" must be a string');
+      if (body.force !== undefined && typeof body.force !== "boolean") bad('"force" must be a boolean');
+      const entry = store.open(name);
+      try {
+        if (x < 0 || y < 0 || x >= entry.session.layout.width * 2 || y >= entry.session.layout.height * 2) throw new Error("sign coordinates outside map");
+        const mode = body.mode as SignMode;
+        const paragraphs = gbcSignParagraphs(proj, entry, mode, body.text as string);
+        const event = entry.session.events.bgs.find((e) => e.x === x && e.y === y);
+        let text: string;
+        if (body.scriptLabel !== undefined) {
+          if (!event || !isSignEvent(event.bgEventType) || event.script !== body.scriptLabel) throw new Error("sign label does not match tile");
+          const block = findGbcSign(entry.session.eventsText, event.script);
+          if (!block.editable) throw new Error(block.reason ?? "unsupported sign");
+          text = updateGbcSign(entry.session.eventsText, block, mode, paragraphs,
+            { force: body.force === true, baselineHash: entry.signBaselines.get(event.script) });
+        } else {
+          if (event) throw new Error(`tile already has ${event.bgEventType} event`);
+          const reserved = gbcSignLabels(entry.session.eventsText)
+            .filter((label) => new RegExp(`^${name}PokemapSign[0-9]+(?:Text)?$`).test(label))
+            .map((label) => `${label.replace(/Text$/, "")}:`).join("\n");
+          const n = nextGbcSignNumber(`${entry.session.eventsText}\n${reserved}`, name);
+          text = insertGbcSign(entry.session.eventsText, name, n, mode, paragraphs);
+          text = addGbcEvent(text, name, "bg", [String(x), String(y), "BGEVENT_READ", `${name}PokemapSign${n}`]).text;
+        }
+        return stageSign(entry, body.scriptLabel === undefined ? "place sign" : "update sign", text);
+      } catch (error) { return signFailure(name, error); }
+    } },
+    "POST sign/resolve": { body: true, run: (name, body) => {
+      if (typeof body.scriptLabel !== "string") bad('"scriptLabel" must be a string');
+      if (body.action !== "refresh" && body.action !== "unlink") bad('"action" must be refresh or unlink');
+      const entry = store.open(name);
+      try {
+        const block = findGbcSign(entry.session.eventsText, body.scriptLabel as string);
+        if (!block.editable || !block.marker) throw new Error(block.reason ?? "sign has no marker");
+        const mode = body.action === "unlink" ? "free" : block.marker.mode;
+        const paragraphs = body.action === "unlink" ? block.paragraphs : gbcSignParagraphs(proj, entry, mode, block.paragraphs.map((p) => p.join("\n")).join("\n\n"));
+        return stageSign(entry, `${body.action} sign`, updateGbcSign(entry.session.eventsText, block, mode, paragraphs, { force: true }));
+      } catch (error) { return signFailure(name, error); }
+    } },
     "POST paint/begin": { body: false, run: (name) => {
       const entry = store.open(name);
       // A redundant begin (no intervening end) must NOT overwrite the real
@@ -234,18 +316,21 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void 
       return ok({ ...sessionBody(entry), warpRenumberWarnings });
     } },
     "POST commit": { body: false, run: (name) => {
-      const entry = store.open(name);
-      const plan = planGbcSave(proj, entry.session);
-      if (plan.refusals.length > 0) return { code: 400, body: formatDiffJson(plan) };
+      let prepared: ReturnType<typeof signPlan>;
+      try { prepared = signPlan(name); } catch (error) { return planFailure(name, error, 400); }
+      const { plan, body } = prepared;
+      if (plan.refusals.length > 0) return { code: 400, body };
       // A throw (propagates to `handle`: console.error + 500 { error }) can come
       // after the .blk was already written, so the caches are cleared either way.
       try { commitGbcSave(proj, plan); } finally { hooks.onCommit(); }
       // Closed, not kept: the session's originals predate the write, and the
       // next open() re-reads the files. On a throw it stays open for a retry/discard.
       store.close(name);
-      return ok(formatDiffJson(plan));
+      return ok(body);
     } },
-    "GET plan": { body: false, run: (name) => ok(formatDiffJson(planGbcSave(proj, store.open(name).session))) },
+    "GET plan": { body: false, run: (name) => {
+      try { return ok(signPlan(name).body); } catch (error) { return planFailure(name, error, 200); }
+    } },
   };
 
   return {
@@ -270,6 +355,13 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void 
           catch (e) { return { code: 400, body: { error: `invalid JSON body: ${(e as Error).message}` } }; }
           if (!isObj(parsed)) return { code: 400, body: { error: `expected a JSON object body, got ${text}` } };
           body = parsed;
+        }
+        if (req.method === "GET" && m[2] === "sign/at") {
+          for (const key of ["x", "y"]) {
+            const value = url.searchParams.get(key);
+            if (value === null || !/^-?\d+$/.test(value)) return { code: 400, body: { error: `"${key}" must be an integer` } };
+            body[key] = Number(value);
+          }
         }
         return route.run(name, body);
       };

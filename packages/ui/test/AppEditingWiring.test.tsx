@@ -102,7 +102,6 @@ describe("App -- selection resets", () => {
   // switch must not wipe the selected event or the chosen stamp.
   it("a cancelled map switch (dirty session) keeps the selected event and the chosen stamp", async () => {
     vi.stubGlobal("fetch", makeFetchMock());
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
     await openPalletTown();
 
     fireEvent.click(screen.getByRole("button", { name: "Pencil" }));
@@ -114,7 +113,8 @@ describe("App -- selection resets", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Route1" }));
 
-    expect(confirmSpy).toHaveBeenCalled();
+    expect(screen.getByRole("dialog", { name: "Unsaved changes" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.getByRole("button", { name: "Delete" })).toBeTruthy(); // event still selected
     expect(screen.queryByText("No event selected.")).toBeNull();
     expect((screen.getByRole("button", { name: /metatile 0x1\b/i }) as HTMLButtonElement).getAttribute("aria-pressed")).toBe("true");

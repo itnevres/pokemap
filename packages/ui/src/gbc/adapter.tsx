@@ -13,11 +13,10 @@ import { GBC_CAPABILITIES, type EngineAdapter, type FamilyRuntime, type RuntimeA
 
 const TIME_ORDER: readonly GbcTimeOfDay[] = ["morn", "day", "nite"];
 const TIME_LABEL: Record<GbcTimeOfDay, string> = { morn: "Morn", day: "Day", nite: "Nite" };
-const GUARD_TEXT = "You have unsaved changes on this map. Discard them and switch maps?";
 
 /** The GBC-only half of the shell (was GbcApp.tsx): time of day, data hooks, edit session, discard-before-switch,
  *  switchError, defects banner, canvases. */
-export function useGbcRuntime({ selected, mode }: RuntimeArgs): FamilyRuntime {
+export function useGbcRuntime({ selected, mode, requestPrompt }: RuntimeArgs): FamilyRuntime {
   const [time, setTime] = useState<GbcTimeOfDay>("day");
   // The hovered block's metatile id (GbcMapCanvas's own hoveredMetatile
   // callback), driving GbcMetatilePalette's highlight -- reset on a real map
@@ -57,10 +56,10 @@ export function useGbcRuntime({ selected, mode }: RuntimeArgs): FamilyRuntime {
   // The Map tab itself changes no selection, so entering it from World needs no guard of its own: the world click
   // that moved the selection already passed through here.
   // `sameMap` (a tree click on the selected map, GbcApp.tsx:159): no prompt and no discard.
+  // Plan 10a: the shared shell now owns the prompt and waits for strokes before server discard.
   const leave = (go: () => void, { sameMap }: { sameMap: boolean }) => {
-    if (sameMap || !session.isDirty) { go(); return; }
-    if (!window.confirm(GUARD_TEXT)) return;
-    session.discard().then(go).catch((e: unknown) => setSwitchError(e instanceof Error ? e.message : "Could not discard the changes."));
+    if (sameMap || !session.isDirty) go();
+    else requestPrompt(go);
   };
 
   const defectsBanner = ready && ready.defects.length > 0 && (
@@ -129,6 +128,7 @@ export function useGbcRuntime({ selected, mode }: RuntimeArgs): FamilyRuntime {
     groups,
     session,
     leave,
+    setSwitchError,
     onSelected: () => { setSwitchError(null); setHoveredMetatileId(null); },
     onEnterContext: (name) => { if (name === selected) { setSwitchError(null); setHoveredMetatileId(null); } },
     visibility: { placed, error: worldError },

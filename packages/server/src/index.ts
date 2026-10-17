@@ -1,3 +1,7 @@
+import { parseMap } from "@pokemap/core/src/load/maps.js";
+import { findGbaSign, gbaSignScript, gbaSignText, nextGbaSignNumber, updateGbaSign } from "@pokemap/core/src/signs/gbaSign.js";
+import { formatMarker, signHash, type SignMode } from "@pokemap/core/src/signs/marker.js";
+import { effectiveGbaScripts, gbaSignLabels, gbaSignParagraphs, refreshGbaLinkedSigns, replaceGbaScripts } from "./signRefresh.js";
 import { readFileSync } from "node:fs";
 import { createServer as createHttp, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { openProject, type Project } from "@pokemap/core/src/project.js";
@@ -22,7 +26,7 @@ import { parseBorder } from "@pokemap/cli/src/args.js";
 import { randomUUID } from "node:crypto";
 import { createEditSessionStore, snapshotOf, snapshotCommand } from "./editSessions.js";
 import { paintCells, floodFill, shiftGrid, type Stamp } from "@pokemap/core/src/edit/paint.js";
-import { planSave, commitSave, type EditSession } from "@pokemap/core/src/write/save.js";
+import { applyScriptAppend, planSave, commitSave, type EditSession } from "@pokemap/core/src/write/save.js";
 import { formatDiffJson } from "@pokemap/core/src/write/diff.js";
 import { moveEvent, addEvent, deleteEvent, findWarpsTargetingByIndex, type EventKind } from "@pokemap/core/src/edit/events.js";
 import { rankSpeciesForSign, suggestSignPlacement } from "@pokemap/core/src/signs/suggest.js";
@@ -173,9 +177,24 @@ export function createProjectHandler(root: string): ProjectHandler {
 
   const EVENT_KINDS = new Set<EventKind>(["object", "warp", "coord", "bg"]);
 
-  const editSessions = createEditSessionStore(project);
+  // A reopened edit session must see map.json written by the previous commit.
+  const editSessions = createEditSessionStore({ ...project,
+    map: (name) => parseMap(readFileSync(project.paths.mapJson(name), "utf8")),
+  });
 
   const editEntryFor = (name: string) => editSessions.open(name);
+
+  const signFailure = (name: string, error: unknown) => ({ refusals: [{
+    code: error instanceof Error && error.message === "hand-edited" ? "hand-edited" : "sign",
+    fix: "Check the named source or sign text; refresh or unlink hand-edited signs explicitly.",
+    subject: project.paths.mapScriptsInc(name), message: error instanceof Error ? error.message : String(error),
+  }] });
+  function signPlan(name: string) {
+    const refreshed = refreshGbaLinkedSigns(project, editEntryFor(name));
+    const plan = planSave(project, refreshed.session);
+    return { plan, body: { ...formatDiffJson(plan), signNotices: refreshed.notices } };
+  }
+
 
   // `map` is included alongside blocks/border/isDirty (added for Task 9):
   // undo/redo are shared by every edit kind, including event moves/adds/
@@ -904,18 +923,19 @@ export function createProjectHandler(root: string): ProjectHandler {
       if (planMatch && req.method === "GET") {
         const name = decodeURIComponent(planMatch[1]!);
         if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
-        const entry = editEntryFor(name);
-        const plan = planSave(project, entry.session);
-        return send(200, formatDiffJson(plan));
+        try { return send(200, signPlan(name).body); }
+        catch (error) { return send(200, { changes: [], ...signFailure(name, error), signNotices: [] }); }
       }
 
       const commitMatch = /^\/api\/edit\/(.+)\/commit$/.exec(url.pathname);
       if (commitMatch && req.method === "POST") {
         const name = decodeURIComponent(commitMatch[1]!);
         if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
-        const entry = editEntryFor(name);
-        const plan = planSave(project, entry.session);
-        if (plan.refusals.length > 0) return send(400, formatDiffJson(plan));
+        let prepared: ReturnType<typeof signPlan>;
+        try { prepared = signPlan(name); }
+        catch (error) { return send(400, { changes: [], ...signFailure(name, error), signNotices: [] }); }
+        const { plan, body } = prepared;
+        if (plan.refusals.length > 0) return send(400, body);
         try {
           commitSave(project, plan);
         } catch (e) {
@@ -936,7 +956,7 @@ export function createProjectHandler(root: string): ProjectHandler {
         // real disk state fresh rather than trusting an in-memory session
         // that predates caches it can no longer invalidate.
         editSessions.close(name);
-        return send(200, formatDiffJson(plan));
+        return send(200, body);
       }
 
       // Task 9: event move/add/delete. Each is its own undo step, the same
@@ -1037,6 +1057,113 @@ export function createProjectHandler(root: string): ProjectHandler {
           species: rankSpeciesForSign(project, name),
           placement: suggestSignPlacement(project, name),
         });
+      }
+
+      const signAtMatch = /^\/api\/edit\/(.+)\/sign\/at$/.exec(url.pathname);
+      if (signAtMatch && req.method === "GET") {
+        const name = decodeURIComponent(signAtMatch[1]!);
+        if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
+        const xs = url.searchParams.get("x"), ys = url.searchParams.get("y");
+        const x = Number(xs), y = Number(ys);
+        if (xs === null || ys === null || !xs.trim() || !ys.trim() || !Number.isInteger(x) || !Number.isInteger(y)) return send(400, { error: '"x" and "y" must be integers' });
+        try {
+          const entry = editEntryFor(name);
+          const event = entry.session.map.bgEvents.find(e => e.x === x && e.y === y);
+          if (!event) return send(200, { kind: "empty" });
+          if (event.type !== "sign") return send(200, { kind: "other", eventKind: event.type });
+          const label = event.script as string;
+          const block = findGbaSign(effectiveGbaScripts(project, entry.session), label);
+          const baseline = block.marker?.hash ?? entry.signBaselines.get(label);
+          return send(200, { kind: "sign", scriptLabel: label, editable: block.editable, reason: block.reason,
+            mode: block.marker?.mode ?? null, text: block.paragraphs.map(p => p.join("\n")).join("\n\n"),
+            handEdited: baseline !== undefined && (!block.editable || signHash(block.body) !== baseline) });
+        } catch (error) { return send(400, signFailure(name, error)); }
+      }
+
+      const signEditMatch = /^\/api\/edit\/(.+)\/sign\/(put|resolve)$/.exec(url.pathname);
+      if (signEditMatch && req.method === "POST") {
+        const name = decodeURIComponent(signEditMatch[1]!);
+        if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
+        return readBody(req).then(raw => {
+          let body: Record<string, unknown>;
+          try {
+            const parsed: unknown = JSON.parse(raw);
+            if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new Error("body must be an object");
+            body = parsed as Record<string, unknown>;
+          } catch (error) { return send(400, { error: `invalid JSON body: ${(error as Error).message}` }); }
+          const resolve = signEditMatch[2] === "resolve";
+          if (resolve) {
+            if (typeof body.scriptLabel !== "string") return send(400, { error: '"scriptLabel" must be a string' });
+            if (body.action !== "refresh" && body.action !== "unlink") return send(400, { error: '"action" must be refresh or unlink' });
+          } else {
+            if (!Number.isInteger(body.x) || !Number.isInteger(body.y)) return send(400, { error: '"x" and "y" must be integers' });
+            if (!["free", "name", "species"].includes(body.mode as string)) return send(400, { error: '"mode" must be free, name, or species' });
+            if (typeof body.text !== "string") return send(400, { error: '"text" must be a string' });
+            if (body.scriptLabel !== undefined && typeof body.scriptLabel !== "string") return send(400, { error: '"scriptLabel" must be a string' });
+            if (body.force !== undefined && typeof body.force !== "boolean") return send(400, { error: '"force" must be a boolean' });
+          }
+          try {
+            const entry = editEntryFor(name);
+            const prev = snapshotOf(entry.session);
+            // Work only on a copy until every core operation has succeeded.
+            const session = { ...entry.session };
+            const text = effectiveGbaScripts(project, session);
+            let command: string;
+            if (resolve) {
+              const block = findGbaSign(text, body.scriptLabel as string);
+              if (!block.editable || !block.marker) throw new Error(block.reason ?? "sign has no marker");
+              const mode = body.action === "unlink" ? "free" : block.marker.mode;
+              const paragraphs = body.action === "unlink" ? block.paragraphs : gbaSignParagraphs(project, entry, mode, block.paragraphs.map(p => p.join("\n")).join("\n\n"));
+              replaceGbaScripts(project, session, updateGbaSign(text, block, mode, paragraphs, { force: true }));
+              command = `${body.action} sign`;
+            } else {
+              const x = body.x as number, y = body.y as number;
+              if (x < 0 || y < 0 || x >= session.layout.width || y >= session.layout.height) throw new Error("sign coordinates outside map");
+              const mode = body.mode as SignMode;
+              const paragraphs = gbaSignParagraphs(project, entry, mode, body.text as string);
+              const event = session.map.bgEvents.find(e => e.x === x && e.y === y);
+              if (body.scriptLabel !== undefined) {
+                if (!event || event.type !== "sign" || event.script !== body.scriptLabel) throw new Error("sign label does not match tile");
+                const block = findGbaSign(text, body.scriptLabel as string);
+                if (!block.editable) throw new Error(block.reason ?? "unsupported sign");
+                replaceGbaScripts(project, session, updateGbaSign(text, block, mode, paragraphs,
+                  { force: body.force === true, baselineHash: entry.signBaselines.get(body.scriptLabel as string) }));
+                command = "update sign";
+              } else {
+                if (event) throw new Error(`tile already has ${event.type} event`);
+                const reserved = session.map.bgEvents.map(e => `${e.script}::`).join("\n");
+                const n = nextGbaSignNumber(text + "\n" + reserved, name);
+                const label = `${name}_EventScript_PokemapSign${n}`;
+                const added = addEvent(session.map, "bg", { type: "sign", x, y, elevation: 0,
+                  player_facing_dir: "BG_EVENT_PLAYER_FACING_ANY", script: label });
+                const eol = text.includes("\r\n") ? "\r\n" : "\n";
+                let append = [...gbaSignScript(name, n), "", ...gbaSignText(name, n, mode, paragraphs)].join(eol) + (text.endsWith("\n") ? eol : "");
+                // The last body may lack a newline; hash the bytes actually staged.
+                append = append.replace(/^@ pokemap:sign [^\r\n]+/m, formatMarker("gba", mode, signHash(findGbaSign(append, label).body)));
+                session.map = added.map;
+                session.insertOps = [...session.insertOps, added.insertOp];
+                const pending = { path: project.paths.mapScriptsInc(name), text: append };
+                session.scriptAppends = [...(session.scriptAppends ?? []), pending];
+                // Appending after an unterminated EOF supplies the previous body's newline.
+                // Re-hash only that previously clean marked body; keep hand edits protected.
+                if (!text.endsWith("\n")) {
+                  let combined = applyScriptAppend(text, pending);
+                  for (const previous of gbaSignLabels(text)) {
+                    const block = findGbaSign(text, previous);
+                    if (!block.editable || !block.marker || block.marker.hash !== signHash(block.body)) continue;
+                    const fresh = findGbaSign(combined, previous);
+                    if (signHash(fresh.body) !== block.marker.hash) combined = updateGbaSign(combined, fresh, block.marker.mode, block.paragraphs, { force: true });
+                  }
+                  if (combined !== applyScriptAppend(text, pending)) replaceGbaScripts(project, session, combined);
+                }
+                command = "place sign";
+              }
+            }
+            const next = snapshotOf(session);
+            if (JSON.stringify(prev) !== JSON.stringify(next)) entry.stack.push(entry.session, snapshotCommand(command, prev, next));
+            return sendSession(send, 200, entry);
+          } catch (error) { return send(400, signFailure(name, error)); }
+        }).catch((error: unknown) => send(400, signFailure(name, error)));
       }
 
       const signAddMatch = /^\/api\/edit\/(.+)\/sign\/add$/.exec(url.pathname);

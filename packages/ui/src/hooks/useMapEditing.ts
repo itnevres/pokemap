@@ -281,6 +281,7 @@ export function useMapEditing({ editSession, layoutData, mapName }: UseMapEditin
   //     block pick) need no Stamp/value at all, so they resolve
   //     unconditionally, same as "collision".
   const activeTool = useMemo(() => {
+    if (activeToolKind === "sign") return { kind: "sign" as const };
     if (activeToolKind === "collision") return { kind: "collision" as const, value: collisionValue };
     if (activeToolKind === "shift") return { kind: "shift" as const };
     if (activeToolKind === "dropper") return { kind: "dropper" as const };

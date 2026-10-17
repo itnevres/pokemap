@@ -1,3 +1,6 @@
+import { findGbcSign } from "@pokemap/core/src/gbc/signs.js";
+import { signHash } from "@pokemap/core/src/signs/marker.js";
+import { gbcSignLabels } from "./signRefresh.js";
 import type { GbcProject } from "@pokemap/core/src/gbc/project.js";
 import type { Block, GbcMapEvents } from "@pokemap/core/src/gbc/model/types.js";
 import { EditCommandStack } from "@pokemap/core/src/edit/commands.js";
@@ -5,6 +8,7 @@ import { openGbcEditSession, type GbcEditSession } from "@pokemap/core/src/gbc/w
 
 export interface GbcSessionEntry {
   session: GbcEditSession;
+  signBaselines: Map<string, string>;
   stack: EditCommandStack<GbcEditSession>;
   /** Set by /paint/begin, cleared by /paint/end -- the blocks a live gesture
    *  reverts to if the client never calls /end. Not itself part of the undo
@@ -39,7 +43,11 @@ export function createGbcEditSessionStore(proj: GbcProject) {
   function open(mapName: string): GbcSessionEntry {
     let entry = sessions.get(mapName);
     if (!entry) {
-      entry = { session: openGbcEditSession(proj, mapName), stack: new EditCommandStack<GbcEditSession>(), strokeStartBlocks: null };
+      entry = { session: openGbcEditSession(proj, mapName), stack: new EditCommandStack<GbcEditSession>(), strokeStartBlocks: null, signBaselines: new Map() };
+      for (const label of gbcSignLabels(entry.session.eventsText)) {
+        const block = findGbcSign(entry.session.eventsText, label);
+        if (block.editable) entry.signBaselines.set(label, signHash(block.body));
+      }
       sessions.set(mapName, entry);
     }
     return entry;

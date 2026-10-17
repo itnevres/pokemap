@@ -363,9 +363,8 @@ describe("GbcApp -- in-context editing (Plan 7 Task 5b)", () => {
 
     it("a mode switch leaves context without a prompt; the session persists (still dirty back in Map view)", async () => {
       await dirtyContextOnCity();
-      const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
       fireEvent.click(screen.getByRole("button", { name: "Map" }));
-      expect(confirmSpy).not.toHaveBeenCalled();
+      expect(screen.queryByRole("dialog", { name: "Unsaved changes" })).toBeNull();
       expect(screen.queryByRole("dialog", { name: "Save changes" })).toBeNull();
       expect(contextOverlay()).toBeNull();
       await waitFor(() => expect(screen.getByText(/tileset TILESET_OLIVINE/)).toBeTruthy());
@@ -379,13 +378,13 @@ describe("GbcApp -- in-context editing (Plan 7 Task 5b)", () => {
 
     it("a tree click on another map leaves context only after the dirty guard (cancel keeps editing)", async () => {
       await dirtyContextOnCity();
-      const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
       fireEvent.click(screen.getByText("OlivinePort"));
-      expect(confirmSpy).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole("dialog", { name: "Unsaved changes" })).toBeTruthy();
+      fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
       expect(contextOverlay()).not.toBeNull();
       expect(document.querySelector('.map-tree__map[aria-current="true"]')?.textContent).toContain("OlivineCity");
-      confirmSpy.mockReturnValue(true);
       fireEvent.click(screen.getByText("OlivinePort"));
+      fireEvent.click(screen.getByRole("button", { name: "Discard" }));
       await waitFor(() => expect(contextOverlay()).toBeNull());
       expect(chrome()).toBeNull();
     });
@@ -393,10 +392,9 @@ describe("GbcApp -- in-context editing (Plan 7 Task 5b)", () => {
 
   });
 
-  it("a double-click on another map with a dirty session and a cancelled confirm does not enter context", async () => {
+  it("a double-click on another map with a dirty session and a cancelled switch prompt does not enter context", async () => {
     await startApp();
     await dirtyCityInMapView();
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
     // The overlay must never mount, not even for a frame that a later effect then cleans up.
     let overlaysMounted = 0;
     const observer = new MutationObserver((records) => {
@@ -409,7 +407,8 @@ describe("GbcApp -- in-context editing (Plan 7 Task 5b)", () => {
 
     await act(async () => { await Promise.resolve(); }); // let the observer deliver
     observer.disconnect();
-    expect(confirmSpy).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("dialog", { name: "Unsaved changes" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(overlaysMounted).toBe(0);
     expect(contextOverlay()).toBeNull();
     expect(chrome()).toBeNull();
@@ -417,12 +416,12 @@ describe("GbcApp -- in-context editing (Plan 7 Task 5b)", () => {
     expect(screen.getByRole("button", { name: "World" }).getAttribute("aria-pressed")).toBe("true");
   });
 
-  it("a confirmed discard enters context on the other map, discarding the server session first", async () => {
+  it("choosing Discard enters context on the other map, discarding the server session first", async () => {
     const { calls } = await startApp();
     await dirtyCityInMapView();
-    vi.spyOn(window, "confirm").mockReturnValue(true);
     const canvas = await enterWorldAfterJump();
     fireEvent.doubleClick(canvas, { clientX: 180, clientY: 100 });
+    fireEvent.click(screen.getByRole("button", { name: "Discard" }));
     await waitFor(() => expect(contextOverlay()).not.toBeNull());
     expect(document.querySelector(".world-canvas__context-bar")!.textContent).toContain("OlivinePort");
     expect(calls).toContain("POST /api/edit/OlivineCity/discard");

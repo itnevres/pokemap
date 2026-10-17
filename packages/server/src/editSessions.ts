@@ -1,4 +1,7 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { findGbaSign } from "@pokemap/core/src/signs/gbaSign.js";
+import { signHash } from "@pokemap/core/src/signs/marker.js";
+import { gbaSignLabels } from "./signRefresh.js";
 import type { Project } from "@pokemap/core/src/project.js";
 import type { EditSession } from "@pokemap/core/src/write/save.js";
 import { EditCommandStack, type EditCommand } from "@pokemap/core/src/edit/commands.js";
@@ -6,6 +9,7 @@ import { parseBlocks } from "@pokemap/core/src/load/blocks.js";
 
 export interface SessionEntry {
   session: EditSession;
+  signBaselines: Map<string, string>;
   stack: EditCommandStack;
   /** Set by /paint/begin, cleared by /paint/end -- the blocks snapshot a
    *  live gesture reverts to if the client never calls /end (e.g. it
@@ -54,7 +58,15 @@ export function createEditSessionStore(project: Project) {
       originalBlocks: blocks.map((b) => ({ ...b })), originalMap: structuredClone(map),
       originalMapJson, jsonEdits: [], insertOps: [], removeOps: [], isDirty: false,
     };
-    entry = { session, stack: new EditCommandStack(), strokeStartBlocks: null };
+    entry = { session, stack: new EditCommandStack(), strokeStartBlocks: null, signBaselines: new Map() };
+    const scriptsPath = project.paths.mapScriptsInc(mapName);
+    if (existsSync(scriptsPath)) {
+      const text = readFileSync(scriptsPath, "utf8");
+      for (const label of gbaSignLabels(text)) {
+        const block = findGbaSign(text, label);
+        if (block.editable) entry.signBaselines.set(label, signHash(block.body));
+      }
+    }
     sessions.set(mapName, entry);
     return entry;
   }
@@ -108,6 +120,7 @@ export interface Snapshot {
    *  `[]`), unlike EditSession's own optional field, so every snapshot is
    *  a complete, unambiguous state to revert TO. */
   scriptAppends: NonNullable<EditSession["scriptAppends"]>;
+  scriptReplaces: NonNullable<EditSession["scriptReplaces"]>;
 }
 
 export function snapshotOf(session: EditSession): Snapshot {
@@ -115,6 +128,7 @@ export function snapshotOf(session: EditSession): Snapshot {
     blocks: session.blocks, border: session.border, map: session.map,
     jsonEdits: session.jsonEdits, insertOps: session.insertOps, removeOps: session.removeOps,
     scriptAppends: session.scriptAppends ?? [],
+    scriptReplaces: session.scriptReplaces ?? [],
   };
 }
 
