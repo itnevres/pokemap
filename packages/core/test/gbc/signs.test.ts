@@ -20,6 +20,14 @@ describe("GBC sign source", () => {
       .toBe(expected.trimEnd().replace(/\n/g, "\r\n"));
   });
 
+  it("a sign inserted into CRLF source re-reads with its own marker hash (not hand-edited)", () => {
+    const inserted = insertGbcSign(tiny.replace(/\n/g, "\r\n"), "Tiny", 1, "name", [["HELLO"]]);
+    const block = findGbcSign(inserted, "TinyPokemapSign1");
+    expect(block.body).toContain("\r\n");
+    expect(signHash(block.body)).toBe(block.marker!.hash);
+    expect(() => updateGbcSign(inserted, block, "name", [["BYE"]], { force: false })).not.toThrow();
+  });
+
   it("renders paragraph commands and reads line/cont into the same paragraph", () => {
     const lines = ['\ttext "A"', '\tline "B"', '\tcont "C"', "", '\tpara "D"', '\tline "E"', "\tdone"];
     expect(renderGbcBody([["A", "B", "C"], ["D", "E"]])).toEqual(lines);

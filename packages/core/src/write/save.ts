@@ -18,6 +18,13 @@ export interface RemoveOp { path: JsonPath; index: number; }
 export interface ScriptAppend { path: string; text: string; }
 export interface ScriptReplace { path: string; before: string; after: string; }
 
+/** The single append separator rule, shared by commit and sign previews. */
+export function applyScriptAppend(text: string, append: ScriptAppend): string {
+  const eol = text.includes("\r\n") ? "\r\n" : "\n";
+  const sep = text.endsWith(eol + eol) ? "" : text.endsWith(eol) ? eol : eol + eol;
+  return text + sep + append.text;
+}
+
 /**
  * The open map's current, possibly-edited state, plus enough of its
  * ORIGINAL state to guard against (guardMapSave needs the map/blocks
@@ -258,8 +265,7 @@ export function commitSave(proj: Project, plan: SavePlan): void {
   // exempted call shape to track.
   for (const append of session.scriptAppends ?? []) {
     const existing = readFileSync(append.path, "utf8");
-    const sep = existing.endsWith("\n\n") ? "" : existing.endsWith("\n") ? "\n" : "\n\n";
-    writeFileSync(append.path, existing + sep + append.text);
+    writeFileSync(append.path, applyScriptAppend(existing, append));
   }
 }
 

@@ -181,6 +181,10 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void 
     subject: `${proj.root}/maps/${name}.asm`, message: error instanceof Error ? error.message : String(error),
   }] } });
 
+  /** Plan-shaped refusal (same wire shape as GBA): 200 for a plan, 400 for a commit. */
+  const planFailure = (name: string, error: unknown, code: number): Result =>
+    ({ code, body: { changes: [], ...(signFailure(name, error).body as object), signNotices: [] } });
+
   const isSignEvent = (kind: string) => /^BGEVENT_(READ|UP|DOWN|LEFT|RIGHT)$/.test(kind);
   function stageSign(entry: GbcSessionEntry, label: string, text: string): Result {
     const prev = gbcSnapshotOf(entry.session);
@@ -313,7 +317,7 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void 
     } },
     "POST commit": { body: false, run: (name) => {
       let prepared: ReturnType<typeof signPlan>;
-      try { prepared = signPlan(name); } catch (error) { return signFailure(name, error); }
+      try { prepared = signPlan(name); } catch (error) { return planFailure(name, error, 400); }
       const { plan, body } = prepared;
       if (plan.refusals.length > 0) return { code: 400, body };
       // A throw (propagates to `handle`: console.error + 500 { error }) can come
@@ -325,7 +329,7 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void 
       return ok(body);
     } },
     "GET plan": { body: false, run: (name) => {
-      try { return ok(signPlan(name).body); } catch (error) { return signFailure(name, error); }
+      try { return ok(signPlan(name).body); } catch (error) { return planFailure(name, error, 200); }
     } },
   };
 

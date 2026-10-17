@@ -136,9 +136,14 @@ describe("GBC sign routes", () => {
     await post("paint/begin");
     await post("paint/apply", { tool: "pencil", targets: [{ x: 0, y: 0 }], stamp: { width: 1, height: 1, cells: [{ metatileId: (blocks[0]! + 1) % 16 }] }, origin: { x: 0, y: 0 } });
     await post("paint/end");
-    expect((await get("plan")).refusals).toHaveLength(1);
+    const planRes = await fetch(`${base}/api/edit/Route29/plan`);
+    expect(planRes.status).toBe(200); // SaveDialog needs r.ok to show the located refusal
+    const plan = await planRes.json() as WireBody;
+    expect(plan).toMatchObject({ changes: [], signNotices: [] });
+    expect(plan.refusals).toHaveLength(1);
     const commit = await post("commit");
     expect(commit.status).toBe(400);
+    expect(commit.body).toMatchObject({ changes: [], signNotices: [] });
     expect(commit.body.refusals).toHaveLength(1);
     expect(disk()).toBe(before);
     expect(readFileSync(blkPath)).toEqual(blocks);
