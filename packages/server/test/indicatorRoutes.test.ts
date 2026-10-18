@@ -13,6 +13,7 @@ import { signHash } from "@pokemap/core/src/signs/marker.js";
 import { createEditSessionStore, snapshotOf } from "../src/editSessions.js";
 import * as sessions from "../src/editSessions.js";
 import { buildGbaIndicator } from "@pokemap/core/src/indicator/gba.js";
+import { suggestIndicatorPlacement } from "@pokemap/core/src/signs/suggest.js";
 import { effectiveGbaScripts } from "../src/signRefresh.js";
 import { insertArrayElement } from "@pokemap/core/src/write/jsonEdit.js";
 import { applyScriptAppend } from "@pokemap/core/src/write/save.js";
@@ -59,6 +60,26 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("GBA Indicator and background sign ro
   const updateIndicator = (species = "ZIGZAGOON", text = "HELLO", extra = {}) => request("indicator/update", {
     index: indicatorIndex(), scriptLabel: `${map}_EventScript_PokemonIndicator1`, species, text, ...extra,
   });
+  it("suggestions exclude staged object positions and preserve the no-session default", async () => {
+    const suggest = async () => {
+      const r = await fetch(`http://127.0.0.1:${server.port}/api/indicator/${map}/suggestions`);
+      expect(r.status).toBe(200);
+      return (await r.json() as any).placement;
+    };
+    expect(store.has(map)).toBe(false);
+    const first = await suggest();
+    expect(first).toEqual(suggestIndicatorPlacement(openProject(root), map));
+    expect(first).not.toBeNull(); expect(store.has(map)).toBe(false);
+    expect((await request("indicator/add", { ...first, species: "RATTATA", text: "HELLO" })).status).toBe(200);
+    const next = await suggest();
+    expect(next).not.toBeNull(); expect(next).not.toEqual(first);
+    expect(store.open(map).session.map.objectEvents.some(e => e.x === next.x && e.y === next.y)).toBe(false);
+    expect(readFileSync(json(), "utf8")).toBe(originalMap);
+    await request("undo", {}); expect(await suggest()).toEqual(first);
+    await request("redo", {}); expect(await suggest()).toEqual(next);
+    await request("discard", {}); expect(await suggest()).toEqual(first);
+    expect(store.has(map)).toBe(false);
+  });
   it("Indicator suggestions have the shared species contract and old add is gone", async () => {
     const r = await fetch(`http://127.0.0.1:${server.port}/api/indicator/${map}/suggestions`);
     expect(r.status).toBe(200);
@@ -92,6 +113,52 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("GBA Indicator and background sign ro
     expect((await request("commit", {})).status).toBe(200); expect(disk()).toBe(expected);
     expect(readFileSync(json(), "utf8")).toBe(expectedJson);
     expect(JSON.parse(readFileSync(json(), "utf8")).object_events.at(-1)).toEqual(built.objectEvent);
+  });
+  it.each([undefined, 4])("Indicator Place -> move folds coordinates into the insert and saves exactly those bytes (elevation %j)", async elevation => {
+    expect((await addIndicator()).status).toBe(200);
+    const placed = state(), index = indicatorIndex();
+    const inserted = structuredClone(store.open(map).session.insertOps[0]!);
+    const movedValue = { ...(inserted.value as Record<string, unknown>), x: 2, y: 3, ...(elevation !== undefined ? { elevation } : {}) };
+    expect((await request("event/move", { kind: "object", index, x: 2, y: 3, elevation })).status).toBe(200);
+    const moved = state();
+    expect(moved.jsonEdits).toEqual([]);
+    expect(moved.insertOps).toEqual([{ ...inserted, value: movedValue }]);
+    expect(moved.map.objectEvents[index]).toMatchObject({ x: 2, y: 3, elevation: elevation ?? 0 });
+    const plan = (await request("plan")).body;
+    expect(plan.refusals).toEqual([]);
+    expect(plan.changes.map((c: any) => c.kind).sort()).toEqual(["json", "text"]);
+    await request("undo", {}); expect(state()).toEqual(placed);
+    await request("redo", {}); expect(state()).toEqual(moved);
+    const expectedScripts = effectiveGbaScripts(openProject(root), store.open(map).session);
+    expect(readFileSync(json(), "utf8")).toBe(originalMap);
+    expect((await request("commit", {})).status).toBe(200);
+    expect(readFileSync(json(), "utf8")).toBe(insertArrayElement(originalMap, ["object_events"], index, movedValue));
+    expect(JSON.parse(readFileSync(json(), "utf8")).object_events[index]).toEqual(movedValue);
+    expect(disk()).toBe(expectedScripts);
+  });
+  it("plain Add Event -> move plans and commits a clean object insert", async () => {
+    const value = { ...JSON.parse(originalMap).object_events[0], x: 1, y: 1, elevation: 2 };
+    const index = openProject(root).map(map).objectEvents.length;
+    expect((await request("event/add", { kind: "object", value })).status).toBe(200);
+    const added = state();
+    expect((await request("event/move", { kind: "object", index, x: 2, y: 3 })).status).toBe(200);
+    expect(store.open(map).session.jsonEdits).toEqual([]);
+    expect((await request("plan")).body.refusals).toEqual([]);
+    await request("undo", {}); expect(state()).toEqual(added);
+    await request("redo", {});
+    expect((await request("commit", {})).status).toBe(200);
+    expect(readFileSync(json(), "utf8")).toBe(insertArrayElement(originalMap, ["object_events"], index, { ...value, x: 2, y: 3 }));
+    expect(disk()).toBe(original);
+  });
+  it("moving an on-disk object still stages scalar jsonEdits", async () => {
+    expect((await request("event/move", { kind: "object", index: 0, x: 2, y: 3, elevation: 4 })).status).toBe(200);
+    expect(store.open(map).session.insertOps).toEqual([]);
+    expect(store.open(map).session.jsonEdits).toEqual([
+      { path: ["object_events", 0, "x"], value: 2 },
+      { path: ["object_events", 0, "y"], value: 3 },
+      { path: ["object_events", 0, "elevation"], value: 4 },
+    ]);
+    expect((await request("plan")).body.refusals).toEqual([]);
   });
   it("species Update plans graphics and cry changes with stable labels and commits exactly those bytes", async () => {
     expect((await addIndicator()).status).toBe(200); expect((await request("commit", {})).status).toBe(200);

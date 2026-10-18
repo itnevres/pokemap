@@ -29,6 +29,17 @@ describe("SaveDialog", () => {
     vi.unstubAllGlobals();
   });
 
+  it.each([{ changes: [] }, { changes: [{ path: "a", kind: "json", summary: "a changed" }] }])("shows plan refusals and disables Save Changes (changes %j)", async ({ changes }) => {
+    const refusal = { code: "JSON_EDIT_FAILED", subject: "PalletTown", message: "index 7 is not present", fix: "Undo the move and retry." };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve({ changes, refusals: [refusal] }) }));
+    render(<SaveDialog mapName="PalletTown" onCommitted={vi.fn()} onCancel={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText(refusal.message)).toBeTruthy());
+    expect(screen.getByText(refusal.fix)).toBeTruthy();
+    expect(screen.queryByText("No changes to save.")).toBeNull();
+    expect((screen.getByRole("button", { name: "Save Changes" }) as HTMLButtonElement).disabled).toBe(true);
+    vi.unstubAllGlobals();
+  });
+
   it("clicking Save Changes POSTs to /commit and calls onCommitted when the response carries no refusals", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, status: 200, json: () => Promise.resolve({ changes: [{ path: "a", kind: "binary", summary: "a changed" }], refusals: [] }) })

@@ -54,7 +54,7 @@ export function rankGbcIndicatorSpecies(proj: GbcProject, mapName: string): Indi
 }
 
 /** Scan grass STEP coordinates row-major; try up/down/left/right per grass step. */
-export function suggestGbcIndicatorPlacement(proj: GbcProject, mapName: string): { x: number; y: number } | null {
+export function suggestGbcIndicatorPlacement(proj: GbcProject, mapName: string, occupied?: ReadonlySet<string>): { x: number; y: number } | null {
   const map = proj.map(mapName);
   const file = "constants/collision_constants.asm";
   const grass = readData(proj.root, file, () =>
@@ -62,8 +62,7 @@ export function suggestGbcIndicatorPlacement(proj: GbcProject, mapName: string):
   if (grass === undefined) throw fileRefusal(proj.root, file, "missing COLL_TALL_GRASS");
   const { layout } = proj.layout(map);
   const tileset = proj.tileset(map.tileset);
-  const { events } = loadGbcMapEvents(proj.root, map);
-  const occupied = new Set(events.objects.map(({ x, y }) => `${x},${y}`));
+  const occupiedPositions = occupied ?? new Set(loadGbcMapEvents(proj.root, map).events.objects.map(({ x, y }) => `${x},${y}`));
   const width = map.width * 2;
   const height = map.height * 2;
   const collisionAt = (x: number, y: number): number | undefined => {
@@ -81,7 +80,7 @@ export function suggestGbcIndicatorPlacement(proj: GbcProject, mapName: string):
         const nx = x + dx;
         const ny = y + dy;
         if (nx < 0 || ny < 0 || nx >= width || ny >= height) continue;
-        if (collisionAt(nx, ny) === grass || occupied.has(`${nx},${ny}`)) continue;
+        if (collisionAt(nx, ny) === grass || occupiedPositions.has(`${nx},${ny}`)) continue;
         return { x: nx, y: ny };
       }
     }

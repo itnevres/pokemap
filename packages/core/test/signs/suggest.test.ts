@@ -39,6 +39,22 @@ describe("suggestIndicatorPlacement", () => {
     expect(Number.isInteger(placement!.y)).toBe(true);
   });
 
+  itWithCorpus("uses supplied current occupancy without changing the default or mutating the set", () => {
+    const first = suggestIndicatorPlacement(proj, "Route101");
+    expect(first).not.toBeNull();
+    const occupied = new Set(proj.map("Route101").objectEvents.map(e => `${e.x},${e.y}`));
+    occupied.add(`${first!.x},${first!.y}`);
+    const before = new Set(occupied);
+    const next = suggestIndicatorPlacement(proj, "Route101", occupied);
+    expect(next).not.toBeNull(); expect(next).not.toEqual(first);
+    expect(occupied.has(`${next!.x},${next!.y}`)).toBe(false);
+    expect(occupied).toEqual(before);
+    expect(suggestIndicatorPlacement(proj, "Route101")).toEqual(first);
+    const { width, height } = proj.layoutForMap("Route101");
+    const full = new Set(Array.from({ length: width * height }, (_, i) => `${i % width},${Math.floor(i / width)}`));
+    expect(suggestIndicatorPlacement(proj, "Route101", full)).toBeNull();
+  });
+
   itWithCorpus("returns null (not a guess) when the map has no tall-grass metatile at all", () => {
     const placement = suggestIndicatorPlacement(proj, "PalletTown");
     expect(placement).toBeNull();

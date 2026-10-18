@@ -29,7 +29,7 @@ import { createEditSessionStore, snapshotOf, snapshotCommand } from "./editSessi
 import { paintCells, floodFill, shiftGrid, type Stamp } from "@pokemap/core/src/edit/paint.js";
 import { applyScriptAppend, planSave, commitSave, type EditSession } from "@pokemap/core/src/write/save.js";
 import { formatDiffJson } from "@pokemap/core/src/write/diff.js";
-import { moveEvent, addEvent, deleteEvent, setObjectGraphics, findWarpsTargetingByIndex, type EventKind } from "@pokemap/core/src/edit/events.js";
+import { moveEvent, addEvent, deleteEvent, setObjectGraphics, findWarpsTargetingByIndex, EVENT_ARRAY_KEY, type EventKind } from "@pokemap/core/src/edit/events.js";
 import { rankIndicatorSpecies, suggestIndicatorPlacement } from "@pokemap/core/src/signs/suggest.js";
 import { buildGbaIndicator, guardGbaIndicatorWrite, findGbaIndicator, updateGbaIndicator, gbaIndicatorGraphics } from "@pokemap/core/src/indicator/gba.js";
 
@@ -997,7 +997,12 @@ export function createProjectHandler(root: string): ProjectHandler {
             const entry = editEntryFor(name);
             const result = handleEventOp(entry, "move event", (map) => {
               const { map: nextMap, jsonEdits } = moveEvent(map, parsed.kind as EventKind, parsed.index as number, parsed.x as number, parsed.y as number, parsed.elevation as number | undefined);
-              entry.session.jsonEdits = [...entry.session.jsonEdits, ...jsonEdits];
+              const arrayKey = EVENT_ARRAY_KEY[parsed.kind as EventKind];
+              const pending = entry.session.insertOps.find(op => op.path.length === 1 && op.path[0] === arrayKey && op.index === parsed.index);
+              if (pending) {
+                entry.session.insertOps = entry.session.insertOps.map(op => op === pending
+                  ? { ...op, value: { ...(op.value as Record<string, unknown>), x: parsed.x as number, y: parsed.y as number, ...(parsed.elevation !== undefined ? { elevation: parsed.elevation as number } : {}) } } : op);
+              } else entry.session.jsonEdits = [...entry.session.jsonEdits, ...jsonEdits];
               return { map: nextMap };
             });
             return send(200, { map: result.map, isDirty: result.isDirty });
@@ -1058,6 +1063,8 @@ export function createProjectHandler(root: string): ProjectHandler {
         if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
         try {
           const names = gbaSpeciesNames(project);
+          const occupied = editSessions.has(name)
+            ? new Set(editEntryFor(name).session.map.objectEvents.map(({ x, y }) => `${x},${y}`)) : undefined;
           return send(200, {
             species: rankIndicatorSpecies(project, name).map(({ species, percent }) => {
               const bare = species.replace(/^SPECIES_/, "");
@@ -1065,7 +1072,7 @@ export function createProjectHandler(root: string): ProjectHandler {
               if (display === undefined) throw new Error(`${project.paths.root}/src/data/text/species_names.h: missing ${species}`);
               return { species: bare, name: display, percent };
             }),
-            placement: suggestIndicatorPlacement(project, name),
+            placement: suggestIndicatorPlacement(project, name, occupied),
           });
         } catch (error) { return send(400, indicatorFailure(name, error)); }
       }

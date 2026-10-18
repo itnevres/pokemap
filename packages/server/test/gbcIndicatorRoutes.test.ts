@@ -5,6 +5,8 @@ import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { createGbcProjectHandler } from "../src/gbcRoutes.js";
 import * as sessions from "../src/gbcEditSessions.js";
 import { copyGbcSubjectToTemp, removeTemp, hasGbcProject, GBC_SUBJECT_ROOT } from "@pokemap/core/test/gbc/helpers/corpus.js";
+import { openGbcProject } from "@pokemap/core/src/gbc/project.js";
+import { suggestGbcIndicatorPlacement } from "@pokemap/core/src/indicator/gbcData.js";
 import { insertGbcIndicator } from "@pokemap/core/src/indicator/gbc.js";
 
 describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("GBC Indicator routes", () => {
@@ -31,6 +33,26 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("GBC Indicator routes", () => 
   afterEach(async () => {
     if (server) await new Promise<void>(resolve => server.close(() => resolve()));
     vi.restoreAllMocks(); if (root) removeTemp(root);
+  });
+  it("suggestions exclude staged object STEP positions and preserve the no-session default", async () => {
+    const suggest = async () => {
+      const r = await fetch(`${base}/api/indicator/Route29/suggestions`);
+      expect(r.status).toBe(200);
+      return (await r.json() as any).placement;
+    };
+    expect(store.has("Route29")).toBe(false);
+    const first = await suggest();
+    expect(first).toEqual(suggestGbcIndicatorPlacement(openGbcProject(root), "Route29"));
+    expect(first).not.toBeNull(); expect(store.has("Route29")).toBe(false);
+    expect((await req("indicator/add", { ...first, species: "SENTRET", text: "HELLO" })).status).toBe(200);
+    const next = await suggest();
+    expect(next).not.toBeNull(); expect(next).not.toEqual(first);
+    expect(store.open("Route29").session.events.objects.some(e => e.x === next.x && e.y === next.y)).toBe(false);
+    expect(disk()).toBe(original);
+    await req("undo", {}); expect(await suggest()).toEqual(first);
+    await req("redo", {}); expect(await suggest()).toEqual(next);
+    await req("discard", {}); expect(await suggest()).toEqual(first);
+    expect(store.has("Route29")).toBe(false);
   });
   it("suggestions expose IndicatorSpecies and old add is gone", async () => {
     const r = await fetch(`${base}/api/indicator/Route29/suggestions`); expect(r.status).toBe(200);

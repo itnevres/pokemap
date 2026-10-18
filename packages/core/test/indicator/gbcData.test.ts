@@ -165,6 +165,17 @@ describe("GBC Indicator placement", () => {
       .toEqual(expected);
   });
 
+  it("uses supplied current STEP occupancy instead of disk objects without mutating it", () => {
+    const proj = placementFixture([{ x: 1, y: 1 }], [{ x: 1, y: 0 }]);
+    expect(suggestGbcIndicatorPlacement(proj, "Test")).toEqual({ x: 1, y: 2 });
+    const occupied = new Set(["1,0", "1,2"]);
+    expect(suggestGbcIndicatorPlacement(proj, "Test", occupied)).toEqual({ x: 0, y: 1 });
+    expect(occupied).toEqual(new Set(["1,0", "1,2"]));
+    expect(suggestGbcIndicatorPlacement(proj, "Test", new Set())).toEqual({ x: 1, y: 0 });
+    expect(suggestGbcIndicatorPlacement(proj, "Test", new Set(["1,0", "1,2", "0,1", "2,1"]))).toBeNull();
+    expect(suggestGbcIndicatorPlacement(proj, "Test")).toEqual({ x: 1, y: 2 });
+  });
+
   it("scans grass in STEP row-major order across block boundaries", () => {
     expect(suggestGbcIndicatorPlacement(placementFixture([{ x: 0, y: 1 }, { x: 2, y: 0 }]), "Test"))
       .toEqual({ x: 2, y: 1 });

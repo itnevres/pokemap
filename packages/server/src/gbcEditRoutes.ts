@@ -400,7 +400,11 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void 
       if (suggestion && req.method === "GET") {
         const name = decodeMapName(suggestion[1]!);
         if (name === undefined || !mapNames.has(name)) { send(404, { error: "no such map" }); return true; }
-        try { send(200, { species: rankGbcIndicatorSpecies(proj, name), placement: suggestGbcIndicatorPlacement(proj, name) }); }
+        try {
+          const occupied = store.has(name)
+            ? new Set(store.open(name).session.events.objects.map(({ x, y }) => `${x},${y}`)) : undefined;
+          send(200, { species: rankGbcIndicatorSpecies(proj, name), placement: suggestGbcIndicatorPlacement(proj, name, occupied) });
+        }
         catch (error) { const result = indicatorFailure(name, error); send(result.code, result.body); }
         return true;
       }
