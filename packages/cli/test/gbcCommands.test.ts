@@ -331,7 +331,7 @@ describe("CLI end-to-end (spawned, generous timeout)", () => {
     expect(stdout).toMatch(/^.*e2e-world\.png 320x72 maps=2\n$/);
   }, 30_000);
 
-  // Covers the deliverables list's required "sign list" case AND, in the
+  // Covers the deliverables list's required "sign list" case (now "indicator list") AND, in the
   // same test, every other GBA-only command (Task 10's mutation-check item
   // "remove one GBA-only refusal, e.g. paint, so it falls into the GBA
   // path") -- proving each one refuses BEFORE any GBA loader runs against
@@ -346,9 +346,9 @@ describe("CLI end-to-end (spawned, generous timeout)", () => {
       // render-world is NOT in this list: Task 11 gives it a real GBC
       // implementation, tested separately below.
       { name: "validate", args: ["validate"] },
-      { name: "sign suggest", args: ["sign", "suggest", "NewBarkTown"] },
-      { name: "sign add", args: ["sign", "add", "NewBarkTown", "--species", "RATTATA", "--dialogue", "hi", "--x", "0", "--y", "0"] },
-      { name: "sign list", args: ["sign", "list", "NewBarkTown"] },
+      { name: "indicator suggest", args: ["indicator", "suggest", "NewBarkTown"] },
+      { name: "indicator add", args: ["indicator", "add", "NewBarkTown", "--species", "RATTATA", "--text", "hi", "--x", "0", "--y", "0"] },
+      { name: "indicator list", args: ["indicator", "list", "NewBarkTown"] },
       // paint/diff removed: Plan 7 Task 6 made them GBC commands.
     ];
     for (const { name, args } of cases) {

@@ -13,7 +13,7 @@ import { encodePng } from "./png.js";
 import { resolveProject, resolveRoot, layoutNameFor } from "./context.js";
 import { parseBorder, parseBbox, parseScale, parseTime } from "./args.js";
 import { resolvePlacementRect } from "./renderWorld.js";
-import { runSignSuggest, runSignAdd, runSignList, runPaint, runDiff } from "./writeCommands.js";
+import { runIndicatorSuggest, runIndicatorAdd, runIndicatorList, runPaint, runDiff } from "./writeCommands.js";
 import { runGbcRender, runGbcQuery, runGbcRenderWorld, runGbcEncounters, runGbcWhere, runGbcCoverage, runGbcPaint, runGbcDiff, runGbcEventMove, runGbcEventAdd, runGbcEventDelete, type GbcCommandResult } from "./gbcCommands.js";
 
 const program = new Command();
@@ -303,44 +303,44 @@ program
 // whitespace AGAIN and defines two positional arguments -- one literally
 // named "suggest", one named "map" -- not a nested "sign suggest"
 // subcommand at all. Real nesting needs an attached parent command
-// (`program.command("sign")`) with subcommands created off of THAT
+// (`program.command("indicator")`) with subcommands created off of THAT
 // object, exactly as below.
-const sign = program.command("sign").description("wild sign commands");
+const indicator = program.command("indicator").description("Pok\u00e9mon Indicator commands");
 
-sign
+indicator
   .command("suggest <map>")
-  .description("rank catchable species and suggest a placement for a wild sign on this map")
+  .description("rank catchable species and suggest a placement for a Pok\u00e9mon Indicator on this map")
   .action((map: string) => {
     const { root, family } = resolveRootAndFamily(program.opts().project);
-    refuseIfGbc(family, "sign suggest");
+    refuseIfGbc(family, "indicator suggest");
     const proj = resolveProject(root);
-    process.stdout.write(`${runSignSuggest(proj, map)}\n`);
+    process.stdout.write(`${runIndicatorSuggest(proj, map)}\n`);
   });
 
-sign
+indicator
   .command("add <map>")
-  .description("add a wild sign -- prints the plan by default, writes only with --yes")
+  .description("add a Pok\u00e9mon Indicator -- prints the plan by default, writes only with --yes")
   .requiredOption("--species <name>", "e.g. RATTATA or SPECIES_RATTATA")
-  .requiredOption("--dialogue <text>", "the one line shown on interact")
+  .requiredOption("--text <text>", "text shown on interact (wrapped to the subject text width)")
   .requiredOption("--x <n>", "tile x", Number)
   .requiredOption("--y <n>", "tile y", Number)
   .option("--elevation <n>", "tile elevation", Number, 0)
   .option("--yes", "actually write")
-  .action((map: string, opts: { species: string; dialogue: string; x: number; y: number; elevation: number; yes?: boolean }) => {
+  .action((map: string, opts: { species: string; text: string; x: number; y: number; elevation: number; yes?: boolean }) => {
     const { root, family } = resolveRootAndFamily(program.opts().project);
-    refuseIfGbc(family, "sign add");
+    refuseIfGbc(family, "indicator add");
     const proj = resolveProject(root);
-    process.stdout.write(`${runSignAdd(proj, { map, x: opts.x, y: opts.y, elevation: opts.elevation, species: opts.species, dialogue: opts.dialogue, yes: !!opts.yes })}\n`);
+    process.stdout.write(`${runIndicatorAdd(proj, { map, x: opts.x, y: opts.y, elevation: opts.elevation, species: opts.species, text: opts.text, yes: !!opts.yes })}\n`);
   });
 
-sign
+indicator
   .command("list <map>")
-  .description("list existing wild signs (overworld-species object events) on a map")
+  .description("list existing Pok\u00e9mon Indicators (overworld-species object events) on a map")
   .action((map: string) => {
     const { root, family } = resolveRootAndFamily(program.opts().project);
-    refuseIfGbc(family, "sign list");
+    refuseIfGbc(family, "indicator list");
     const proj = resolveProject(root);
-    process.stdout.write(`${runSignList(proj, map)}\n`);
+    process.stdout.write(`${runIndicatorList(proj, map)}\n`);
   });
 
 program

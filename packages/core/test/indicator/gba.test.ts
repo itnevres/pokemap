@@ -193,7 +193,7 @@ describe("buildGbaIndicator", () => {
     expect(result.objectEvent.graphics_id).toBe("OBJ_EVENT_GFX_SPECIES(RATTATA)");
   });
 
-  it("propagates buildGbaIndicator's own empty-dialogue refusal rather than swallowing it", () => {
+  it("propagates buildGbaIndicator's own empty-text refusal rather than swallowing it", () => {
     expect(() => buildGbaIndicator("Route101", "", [], { x: 0, y: 0, elevation: 0, species: "RATTATA", paragraphs: [] })).toThrow(/empty|nonempty/i);
   });
 });

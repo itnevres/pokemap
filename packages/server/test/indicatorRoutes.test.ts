@@ -1,79 +1,23 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect } from "vitest";
 import { readFileSync, writeFileSync } from "node:fs";
 import { createServer, type PokemapServer } from "../src/index.js";
 import { SUBJECT_ROOT, hasProject } from "@pokemap/core/test/helpers/corpus.js";
 import { openProject } from "@pokemap/core/src/project.js";
 
-let s: PokemapServer;
-const post = async (path: string, body: unknown = {}) => fetch(`http://127.0.0.1:${s.port}${path}`, { method: "POST", body: JSON.stringify(body) });
-const get = async (path: string) => fetch(`http://127.0.0.1:${s.port}${path}`);
-
-describe.skipIf(!hasProject(SUBJECT_ROOT))("sign routes", () => {
-  beforeAll(async () => { s = await createServer({ projectPath: SUBJECT_ROOT, port: 0 }); });
-  afterAll(async () => { await s?.close(); });
-
-  it("GET /api/sign/:map/suggestions returns a ranked species list and a placement (or null) for a real route", async () => {
-    const r = await get("/api/sign/Route29/suggestions"); // confirmed real route with a wild encounter table
-    expect(r.status).toBe(200);
-    const body = await r.json() as any;
-    expect(Array.isArray(body.species)).toBe(true);
-  }, 300_000);
-
-  it("POST /sign/add on a route with grass and a real scripts.inc succeeds, GET /plan shows one object-events insert and one text append, then restores", async () => {
-    const proj = openProject(SUBJECT_ROOT);
-    const map = "Route29"; // confirmed real map with a wild table AND a real scripts.inc
-    const scriptsPath = proj.paths.mapScriptsInc(map);
-    const beforeScripts = readFileSync(scriptsPath, "utf8");
-    try {
-      const addRes = await post(`/api/edit/${map}/sign/add`, { x: 1, y: 1, elevation: 3, species: "RATTATA", dialogue: "RATTATA: Skreee!" });
-      expect(addRes.status).toBe(200);
-      const body = await addRes.json() as any;
-      expect(body.scriptLabel).toBe(`${map}_EventScript_WildSign_Rattata`);
-
-      const planRes = await get(`/api/edit/${map}/plan`);
-      const plan = await planRes.json() as any;
-      expect(plan.changes.some((c: any) => c.kind === "json")).toBe(true);
-      expect(plan.changes.some((c: any) => c.kind === "text")).toBe(true);
-    } finally {
-      writeFileSync(scriptsPath, beforeScripts);
-    }
-  }, 300_000);
-
-  it("POST /sign/add refuses (400) with the real guardSignWrite refusal when the derived label already exists", async () => {
-    const proj = openProject(SUBJECT_ROOT);
-    const map = "Route30"; // a second confirmed-real map with scripts.inc
-    const scriptsPath = proj.paths.mapScriptsInc(map);
-    const beforeScripts = readFileSync(scriptsPath, "utf8");
-    try {
-      writeFileSync(scriptsPath, beforeScripts + `\n${map}_EventScript_WildSign_Rattata::\n\tend\n`);
-      const addRes = await post(`/api/edit/${map}/sign/add`, { x: 1, y: 1, elevation: 3, species: "RATTATA", dialogue: "RATTATA: Skreee!" });
-      expect(addRes.status).toBe(400);
-      const body = await addRes.json() as any;
-      expect(body.refusals[0].code).toBe("SIGN_LABEL_EXISTS");
-    } finally {
-      writeFileSync(scriptsPath, beforeScripts);
-    }
-  }, 300_000);
-
-  it("undo after a sign add removes BOTH the object-events insert and the scripts.inc append from the plan", async () => {
-    const map = "Route31"; // a third confirmed-real map with scripts.inc
-    await post(`/api/edit/${map}/sign/add`, { x: 1, y: 1, elevation: 3, species: "RATTATA", dialogue: "RATTATA: Skreee!" });
-    await post(`/api/edit/${map}/undo`);
-    const planRes = await get(`/api/edit/${map}/plan`);
-    const plan = await planRes.json() as any;
-    expect(plan.changes).toEqual([]);
-  }, 300_000);
-});
-import { beforeEach, afterEach } from "vitest";
+import { beforeEach, afterEach, vi } from "vitest";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { findGbaSign } from "@pokemap/core/src/signs/gbaSign.js";
 import { signHash } from "@pokemap/core/src/signs/marker.js";
-import { createEditSessionStore } from "../src/editSessions.js";
+import { createEditSessionStore, snapshotOf } from "../src/editSessions.js";
+import * as sessions from "../src/editSessions.js";
+import { buildGbaIndicator } from "@pokemap/core/src/indicator/gba.js";
+import { effectiveGbaScripts } from "../src/signRefresh.js";
+import { applyScriptAppend } from "@pokemap/core/src/write/save.js";
 
 
-describe.skipIf(!hasProject(SUBJECT_ROOT))("GBA background sign routes (temporary subject copy)", () => {
+describe.skipIf(!hasProject(SUBJECT_ROOT))("GBA Indicator and background sign routes (temporary subject copy)", () => {
   let root: string, server: PokemapServer, original: string, originalMap: string;
   const map = "Route101", label = "Route101_EventScript_PokemapSign1";
   const scripts = () => `${root}/data/maps/${map}/scripts.inc`;
@@ -84,7 +28,10 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("GBA background sign routes (temporar
     return { status: r.status, body: await r.json() as any };
   };
   const put = (mode = "free", text = "HELLO", extra = {}) => request("sign/put", { x: 0, y: 0, mode, text, ...extra });
+  let store: ReturnType<typeof createEditSessionStore>;
+  const factory = createEditSessionStore;
   beforeEach(async () => {
+    vi.spyOn(sessions, "createEditSessionStore").mockImplementation(proj => { store = factory(proj); return store; });
     root = mkdtempSync(join(tmpdir(), "pokemap-gba-sign-"));
     // Real source files only; omit unrelated art/build output and the source .git.
     for (const part of ["data/layouts", "data/maps/Route101", "data/tilesets", "graphics/tilesets", "include", "src/data", "src/graphics.c", "charmap.txt", "porymap.project.cfg"]) {
@@ -98,11 +45,101 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("GBA background sign routes (temporar
   }, 300_000);
   afterEach(async () => {
     await server?.close();
+    vi.restoreAllMocks();
     if (root) {
       const target = resolve(root);
       if (!target.startsWith(resolve(tmpdir()) + "\\") || !target.includes("pokemap-gba-sign-")) throw new Error("unsafe temporary path");
       rmSync(target, { recursive: true, force: true });
     }
+  });
+  const addIndicator = (species = "RATTATA", text = "HELLO") => request("indicator/add", { x: 1, y: 1, species, text });
+  const state = () => structuredClone(snapshotOf(store.open(map).session));
+  const indicatorIndex = () => store.open(map).session.map.objectEvents.length - 1;
+  const updateIndicator = (species = "ZIGZAGOON", text = "HELLO", extra = {}) => request("indicator/update", {
+    index: indicatorIndex(), scriptLabel: `${map}_EventScript_PokemonIndicator1`, species, text, ...extra,
+  });
+  it("Indicator suggestions have the shared species contract and old add is gone", async () => {
+    const r = await fetch(`http://127.0.0.1:${server.port}/api/indicator/${map}/suggestions`);
+    expect(r.status).toBe(200);
+    const body = await r.json() as any;
+    expect(body.species.length).toBeGreaterThan(0);
+    for (const item of body.species) expect(item).toEqual({ species: expect.any(String), name: expect.any(String), percent: expect.any(Number) });
+    expect(body).toHaveProperty("placement");
+    expect((await request("sign/add", {})).status).toBe(404);
+  });
+  it.each(["\n", "\r\n"])("Indicator add stages exact core bytes, commit equals plan (%j)", async eol => {
+    const before = original.replace(/\r?\n/g, eol).replace(/(?:\r?\n)+$/, "");
+    writeFileSync(scripts(), before);
+    const proj = openProject(root);
+    const built = buildGbaIndicator(map, before, proj.map(map).objectEvents.map(e => e.script), {
+      x: 1, y: 1, elevation: 0, species: "RATTATA", paragraphs: [["HELLO"]],
+    });
+    const response = await addIndicator(); expect(response.status).toBe(200);
+    expect(response.body.scriptLabel).toBe(built.scriptLabel);
+    expect(disk()).toBe(before);
+    expect(effectiveGbaScripts(proj, store.open(map).session)).toBe(applyScriptAppend(before, { path: scripts(), text: built.scriptAppendText }));
+    const plan = (await request("plan")).body; expect(plan.refusals).toEqual([]);
+    expect(plan.changes.map((c: any) => c.kind).sort()).toEqual(["json", "text"]);
+    const expected = effectiveGbaScripts(proj, store.open(map).session);
+    expect((await request("commit", {})).status).toBe(200); expect(disk()).toBe(expected);
+    expect(JSON.parse(readFileSync(json(), "utf8")).object_events.at(-1)).toEqual(built.objectEvent);
+  });
+  it("Indicator Place -> Update -> undo x2 -> redo x2 restores full snapshots", async () => {
+    const before = state(); expect((await addIndicator()).status).toBe(200); const placed = state();
+    expect((await updateIndicator()).status).toBe(200); const updated = state();
+    expect(updated.map.objectEvents.at(-1)?.graphicsId).toBe("OBJ_EVENT_GFX_SPECIES(ZIGZAGOON)");
+    const scriptsBefore = effectiveGbaScripts(openProject(root), { ...store.open(map).session, ...placed });
+    const scriptsAfter = effectiveGbaScripts(openProject(root), store.open(map).session);
+    expect(scriptsAfter).toBe(scriptsBefore.replace("playmoncry SPECIES_RATTATA", "playmoncry SPECIES_ZIGZAGOON"));
+    await request("undo", {}); expect(state()).toEqual(placed);
+    await request("undo", {}); expect(state()).toEqual(before); expect((await request("plan")).body.changes).toEqual([]);
+    await request("redo", {}); expect(state()).toEqual(placed);
+    await request("redo", {}); expect(state()).toEqual(updated);
+    expect((await request("plan")).body.refusals).toEqual([]);
+    expect((await request("commit", {})).status).toBe(200);
+    expect(disk()).toBe(scriptsAfter);
+    expect(JSON.parse(readFileSync(json(), "utf8")).object_events.at(-1).graphics_id).toBe("OBJ_EVENT_GFX_SPECIES(ZIGZAGOON)");
+    // An identical update after Save must also leave an empty plan.
+    expect((await updateIndicator()).status).toBe(200);
+    expect((await request("plan")).body.changes).toEqual([]);
+  });
+  it("Indicator add twice numbers independently; unchanged update has no script diff or undo step", async () => {
+    await addIndicator(); const placed = state();
+    expect((await updateIndicator("RATTATA")).status).toBe(200); expect(state()).toEqual(placed);
+    expect((await addIndicator()).body.scriptLabel).toBe(`${map}_EventScript_PokemonIndicator2`);
+    await request("undo", {}); expect(state()).toEqual(placed);
+    await request("undo", {}); expect((await request("plan")).body.changes).toEqual([]);
+  });
+  it.each(["add", "update"])("Indicator %s unreadable charmap refuses without altering session or undo", async op => {
+    await addIndicator(); const before = state();
+    const { unlinkSync } = await import("node:fs"); unlinkSync(`${root}/charmap.txt`);
+    const response = op === "add" ? await addIndicator() : await updateIndicator();
+    expect(response.status).toBe(400); expect(JSON.stringify(response.body.refusals)).toContain("charmap.txt"); expect(state()).toEqual(before);
+    await request("undo", {}); expect(state().scriptAppends).toEqual([]);
+  });
+  it.each(["data/maps/Route101/scripts.inc", "src/data/text/species_names.h"])("Indicator missing %s refuses with its file and leaves undo untouched", async file => {
+    const before = state(); const { unlinkSync } = await import("node:fs"); unlinkSync(`${root}/${file}`);
+    const r = await addIndicator(); expect(r.status).toBe(400);
+    expect(JSON.stringify(r.body.refusals)).toContain(file.split("/").at(-1));
+    expect(state()).toEqual(before); expect(store.open(map).stack.canUndo()).toBe(false);
+  });
+  it("Indicator shared script is disabled and update refuses against current map", async () => {
+    await addIndicator(); const entry = store.open(map); const event = entry.session.map.objectEvents.at(-1)!;
+    entry.session.map = { ...entry.session.map, objectEvents: [...entry.session.map.objectEvents, { ...event }] };
+    const before = state();
+    expect((await request(`indicator/at?index=${indicatorIndex()}`)).body.indicator).toMatchObject({ editable: false, reason: expect.stringContaining("shared script") });
+    expect((await updateIndicator()).status).toBe(400); expect(state()).toEqual(before);
+  });
+  it("Indicator stale label, changed shape, unknown species and bad wrapping refuse atomically", async () => {
+    await addIndicator(); const before = state();
+    for (const extra of [{ scriptLabel: "Stale" }, { species: "BOGUS" }, { text: "ABCDEFGHIJKLMNOPQRSTUVWXY" }]) {
+      const r = await updateIndicator("RATTATA", "HELLO", extra); expect(r.status).toBe(400); expect(r.body.refusals.length).toBeGreaterThan(0); expect(state()).toEqual(before);
+    }
+    const entry = store.open(map);
+    entry.session.scriptAppends = entry.session.scriptAppends!.map(a => ({ ...a, text: a.text.replace("\tlock", "\tend") }));
+    const changed = state();
+    expect((await request(`indicator/at?index=${indicatorIndex()}`)).body.indicator.editable).toBe(false);
+    expect((await updateIndicator()).status).toBe(400); expect(state()).toEqual(changed);
   });
   it.each(["\n", "\r\n"])("places exact bytes and one bg event preserving EOL and absent final newline (%j)", async (eol) => {
     const before = original.replace(/\r?\n/g, eol).replace(/(?:\r?\n)+$/, "");
