@@ -1,6 +1,8 @@
 import type { Charmap } from "./charmap.js";
 import { tokenize } from "./charmap.js";
 
+export const SIGN_WIDTH = 18;
+
 // Helper: compute total width of a line, or return refusal
 function widthOfLine(
   line: string,

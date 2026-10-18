@@ -27,7 +27,7 @@ export interface SignSpeciesSuggestion {
  * rod) chance -- because a sign proposes ONE species to stand as, not a
  * table.
  */
-export function rankSpeciesForSign(proj: Project, mapName: string): SignSpeciesSuggestion[] {
+export function rankIndicatorSpecies(proj: Project, mapName: string): SignSpeciesSuggestion[] {
   const mapId = proj.map(mapName).id;
   const enc = proj.encounters();
   const entries = enc.forMap(mapId);
@@ -64,7 +64,7 @@ export interface SignPlacement {
  * Poliwrath does (see this task's own header comment). Returns null rather
  * than guessing when the map has no tall grass at all (I7).
  */
-export function suggestSignPlacement(proj: Project, mapName: string): SignPlacement | null {
+export function suggestIndicatorPlacement(proj: Project, mapName: string): SignPlacement | null {
   const layout = proj.layoutForMap(mapName);
   const split = proj.splitFor(layout);
   const primary = proj.tileset(layout.primaryTileset);

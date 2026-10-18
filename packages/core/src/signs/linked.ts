@@ -7,7 +7,7 @@ import { norm } from "../config/paths.js";
 import { codeLines, escapeRegExp, parseConstDefs, scanCalls, stripComment } from "../gbc/load/asm.js";
 import { loadGbcSpeciesIds } from "../gbc/load/species.js";
 import { gbcEncounterSources } from "../gbc/analyse/atlas.js";
-import { rankSpeciesForSign } from "./suggest.js";
+import { rankIndicatorSpecies } from "./suggest.js";
 
 function required<K>(table: Map<K, string>, key: K, file: string): string {
   const value = table.get(key);
@@ -101,7 +101,7 @@ export function linkedSpecies(family: "gba" | "gbc", proj: Project | GbcProject,
     const gba = proj as Project;
     names = gbaSpeciesNames(gba);
     file = `${gba.paths.root}/src/data/text/species_names.h`;
-    for (const chance of rankSpeciesForSign(gba, mapName)) best.set(chance.species, chance.percent);
+    for (const chance of rankIndicatorSpecies(gba, mapName)) best.set(chance.species, chance.percent);
   } else {
     const gbc = proj as GbcProject;
     names = gbcSpeciesNames(gbc.root);

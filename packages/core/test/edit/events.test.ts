@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { moveEvent, addEvent, deleteEvent, findWarpsTargetingByIndex, EVENT_ARRAY_KEY } from "../../src/edit/events.js";
+import { moveEvent, setObjectGraphics, addEvent, deleteEvent, findWarpsTargetingByIndex, EVENT_ARRAY_KEY } from "../../src/edit/events.js";
 import type { MapData } from "../../src/load/maps.js";
 
 const BASE_MAP: MapData = {
@@ -118,5 +118,16 @@ describe("findWarpsTargetingByIndex", () => {
       { x: 0, y: 0, elevation: 0, destMap: "MAP_SOMEWHERE_ELSE", destWarpId: "0" },
     ] } }];
     expect(findWarpsTargetingByIndex(others, "MAP_TEST", 0)).toEqual([]);
+  });
+});
+
+describe("setObjectGraphics", () => {
+  it("emits only the graphics edit and preserves the original map", () => {
+    const graphics = "OBJ_EVENT_GFX_SPECIES(ODDISH)";
+    const result = setObjectGraphics(BASE_MAP, 0, graphics);
+    expect(result.jsonEdits).toEqual([{ path: ["object_events", 0, "graphics_id"], value: graphics }]);
+    expect(result.map.objectEvents[0]).toEqual({ ...BASE_MAP.objectEvents[0], graphicsId: graphics });
+    expect(BASE_MAP.objectEvents[0]!.graphicsId).toBe("OBJ_EVENT_GFX_BOY_1");
+    expect(result.map.warpEvents).toBe(BASE_MAP.warpEvents);
   });
 });

@@ -3,8 +3,8 @@ import type { Project } from "@pokemap/core/src/project.js";
 import { parseBlocks } from "@pokemap/core/src/load/blocks.js";
 import { paintCells, type Stamp } from "@pokemap/core/src/edit/paint.js";
 import { addEvent } from "@pokemap/core/src/edit/events.js";
-import { rankSpeciesForSign, suggestSignPlacement } from "@pokemap/core/src/signs/suggest.js";
-import { buildWildSign, guardSignWrite } from "@pokemap/core/src/signs/write.js";
+import { rankIndicatorSpecies, suggestIndicatorPlacement } from "@pokemap/core/src/signs/suggest.js";
+import { buildGbaIndicator, guardGbaIndicatorWrite } from "@pokemap/core/src/indicator/gba.js";
 import { planSave, commitSave, type EditSession } from "@pokemap/core/src/write/save.js";
 import { formatDiffText } from "@pokemap/core/src/write/diff.js";
 
@@ -50,8 +50,8 @@ function dryRunOrCommit(proj: Project, session: EditSession, yes: boolean, label
 }
 
 export function runSignSuggest(proj: Project, mapName: string): string {
-  const ranked = rankSpeciesForSign(proj, mapName);
-  const placement = suggestSignPlacement(proj, mapName);
+  const ranked = rankIndicatorSpecies(proj, mapName);
+  const placement = suggestIndicatorPlacement(proj, mapName);
   const lines = ranked.map((r) => `  ${r.percent.toFixed(1).padStart(5)}%  Lv ${r.minLevel}-${r.maxLevel}  ${r.species}  (${r.method})`);
   const placementLine = placement ? `suggested placement: (${placement.x}, ${placement.y})` : "no tall grass on this map -- no placement suggested";
   return ranked.length === 0
@@ -62,8 +62,8 @@ export function runSignSuggest(proj: Project, mapName: string): string {
 export interface SignAddArgs { map: string; x: number; y: number; elevation: number; species: string; dialogue: string; yes: boolean }
 
 export function runSignAdd(proj: Project, args: SignAddArgs): string {
-  const built = buildWildSign(args.map, args);
-  const refusals = guardSignWrite(proj.paths.root, args.map, built.scriptLabel);
+  const built = buildGbaIndicator(args.map, args);
+  const refusals = guardGbaIndicatorWrite(proj.paths.root, args.map, built.scriptLabel);
   if (refusals.length > 0) {
     throw new Error(refusals.map((r) => `${r.code} (${r.subject}): ${r.message} -- ${r.fix}`).join("\n"));
   }

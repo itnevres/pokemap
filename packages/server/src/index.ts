@@ -29,8 +29,8 @@ import { paintCells, floodFill, shiftGrid, type Stamp } from "@pokemap/core/src/
 import { applyScriptAppend, planSave, commitSave, type EditSession } from "@pokemap/core/src/write/save.js";
 import { formatDiffJson } from "@pokemap/core/src/write/diff.js";
 import { moveEvent, addEvent, deleteEvent, findWarpsTargetingByIndex, type EventKind } from "@pokemap/core/src/edit/events.js";
-import { rankSpeciesForSign, suggestSignPlacement } from "@pokemap/core/src/signs/suggest.js";
-import { buildWildSign, guardSignWrite } from "@pokemap/core/src/signs/write.js";
+import { rankIndicatorSpecies, suggestIndicatorPlacement } from "@pokemap/core/src/signs/suggest.js";
+import { buildGbaIndicator, guardGbaIndicatorWrite } from "@pokemap/core/src/indicator/gba.js";
 
 /**
  * A discriminated union on `family` (Plan 6b task spec) -- the gbc branch's
@@ -1040,8 +1040,8 @@ export function createProjectHandler(root: string): ProjectHandler {
 
       // Task 17: wild sign write path. GET /suggestions is read-only (ranks
       // catchable species and suggests a grass-adjacent placement, Task
-      // 15's own rankSpeciesForSign/suggestSignPlacement); POST /sign/add
-      // composes Task 16's generateSignScript (via core's buildWildSign)
+      // 15's own rankIndicatorSpecies/suggestIndicatorPlacement); POST /sign/add
+      // composes Task 16's generateSignScript (via core's buildGbaIndicator)
       // into ONE object-event insert plus ONE scripts.inc append, both
       // staged on the session the same way the event routes above stage
       // theirs -- reuses handleEventOp for the identical prev-snapshot/
@@ -1054,8 +1054,8 @@ export function createProjectHandler(root: string): ProjectHandler {
         const name = decodeURIComponent(signSuggestMatch[1]!);
         if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
         return send(200, {
-          species: rankSpeciesForSign(project, name),
-          placement: suggestSignPlacement(project, name),
+          species: rankIndicatorSpecies(project, name),
+          placement: suggestIndicatorPlacement(project, name),
         });
       }
 
@@ -1179,13 +1179,13 @@ export function createProjectHandler(root: string): ProjectHandler {
               || typeof parsed.species !== "string" || typeof parsed.dialogue !== "string") {
               return send(400, { error: `expected { x, y, elevation: number, species, dialogue: string }, got ${body}` });
             }
-            let built: ReturnType<typeof buildWildSign>;
+            let built: ReturnType<typeof buildGbaIndicator>;
             try {
-              built = buildWildSign(name, parsed as { x: number; y: number; elevation: number; species: string; dialogue: string });
+              built = buildGbaIndicator(name, parsed as { x: number; y: number; elevation: number; species: string; dialogue: string });
             } catch (e) {
               return send(400, { error: e instanceof Error ? e.message : String(e) });
             }
-            const refusals = guardSignWrite(project.paths.root, name, built.scriptLabel);
+            const refusals = guardGbaIndicatorWrite(project.paths.root, name, built.scriptLabel);
             if (refusals.length > 0) return send(400, { refusals });
 
             const entry = editEntryFor(name);
