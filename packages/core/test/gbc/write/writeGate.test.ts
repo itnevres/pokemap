@@ -2,12 +2,13 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { addGbcEvent, deleteGbcEvent, moveGbcEvent, type GbcEventEdit, type GbcEventKind } from "../../../src/gbc/edit/events.js";
-import { scanObjectConsts } from "../../../src/gbc/load/events.js";
+import { objectConstDefLine, scanObjectConsts } from "../../../src/gbc/load/events.js";
 import { openGbcProject, type GbcProject } from "../../../src/gbc/project.js";
 import { locateEventCall } from "../../../src/gbc/write/asmSplice.js";
 import { commitGbcSave, openGbcEditSession, planGbcSave, type GbcEditSession } from "../../../src/gbc/write/save.js";
 import type { GbcMap } from "../../../src/gbc/model/types.js";
 import { copyGbcRootToTemp, gbcCorpusRoots, gbcRootLabel, GBC_REFERENCE_ROOTS, GBC_SUBJECT_ROOT, hasGbcProject, removeTemp } from "../helpers/corpus.js";
+import { insertGbcIndicator } from "../../../src/indicator/gbc.js";
 import { insertGbcSign, nextGbcSignNumber } from "../../../src/gbc/signs.js";
 import { parseMapEvents } from "../../../src/gbc/load/events.js";
 
@@ -372,6 +373,48 @@ function gateRoot(root: string): void {
         const additions = new Set(added);
         const undone = newLines.filter((_, i) => !additions.has(i)).join("");
         expect(Buffer.from(undone).equals(Buffer.from(text)), map.name).toBe(true);
+        checked++;
+      }
+      expect(checked).toBe(pins.maps);
+    }, HEAVY);
+
+    it("B8 indicators: Place then undo restores exact bytes on every corpus map", () => {
+      let checked = 0;
+      for (const map of proj.maps) {
+        const text = snapOf(`maps/${map.name}.asm`).toString("utf8");
+        const before = parseMapEvents(text, map.name);
+        // Guarded maps still exercise Place: the refusal must preserve source bytes.
+        let placed: string;
+        try {
+          placed = insertGbcIndicator(text, map.name, {
+            x: 0, y: 0, species: "SENTRET", sprite: "SPRITE_MONSTER", paragraphs: [["HELLO"]],
+          }).text;
+        } catch (e) {
+          expect((e as Error).message, map.name).toMatch(/15 object_event|out of step/);
+          expect(before.objects.length === 15 || scanObjectConsts(text).length !== before.objects.length, map.name).toBe(true);
+          checked++;
+          continue;
+        }
+        expect(parseMapEvents(placed, map.name).objects, map.name).toHaveLength(before.objects.length + 1);
+        const oldLines = text.match(/[^\n]*\n|[^\n]+$/g) ?? [];
+        const newLines = placed.match(/[^\n]*\n|[^\n]+$/g) ?? [];
+        let cursor = 0;
+        const kept: string[] = [];
+        const eol = text.includes("\r\n") ? "\r\n" : "\n";
+        expect(placed.endsWith("\n"), map.name).toBe(text.endsWith("\n"));
+        for (const line of newLines) {
+          const original = oldLines[cursor];
+          // Appending an event after an unterminated last line introduces
+          // exactly one separator there; undo removes that separator too.
+          const separator = cursor === oldLines.length - 1 && original !== undefined && !original.endsWith("\n") ? eol : "";
+          if (original !== undefined && (line === original || line === original + separator)) {
+            kept.push(line === original ? line : line.slice(0, line.length - separator.length));
+            cursor++;
+          }
+        }
+        expect(cursor, map.name).toBe(oldLines.length);
+        expect(newLines.length - kept.length, map.name).toBe(14 + (objectConstDefLine(text) !== null ? 1 : 0));
+        expect(Buffer.from(kept.join("")).equals(Buffer.from(text)), map.name).toBe(true);
         checked++;
       }
       expect(checked).toBe(pins.maps);
