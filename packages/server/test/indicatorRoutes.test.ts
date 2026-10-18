@@ -14,6 +14,7 @@ import { createEditSessionStore, snapshotOf } from "../src/editSessions.js";
 import * as sessions from "../src/editSessions.js";
 import { buildGbaIndicator } from "@pokemap/core/src/indicator/gba.js";
 import { effectiveGbaScripts } from "../src/signRefresh.js";
+import { insertArrayElement } from "@pokemap/core/src/write/jsonEdit.js";
 import { applyScriptAppend } from "@pokemap/core/src/write/save.js";
 
 
@@ -32,7 +33,7 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("GBA Indicator and background sign ro
   const factory = createEditSessionStore;
   beforeEach(async () => {
     vi.spyOn(sessions, "createEditSessionStore").mockImplementation(proj => { store = factory(proj); return store; });
-    root = mkdtempSync(join(tmpdir(), "pokemap-gba-sign-"));
+    root = mkdtempSync(join(tmpdir(), "pokemap-gba-sign-")).replace(/\\/g, "/");
     // Real source files only; omit unrelated art/build output and the source .git.
     for (const part of ["data/layouts", "data/maps/Route101", "data/tilesets", "graphics/tilesets", "include", "src/data", "src/graphics.c", "charmap.txt", "porymap.project.cfg"]) {
       if (!existsSync(`${SUBJECT_ROOT}/${part}`)) continue;
@@ -79,10 +80,69 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("GBA Indicator and background sign ro
     expect(disk()).toBe(before);
     expect(effectiveGbaScripts(proj, store.open(map).session)).toBe(applyScriptAppend(before, { path: scripts(), text: built.scriptAppendText }));
     const plan = (await request("plan")).body; expect(plan.refusals).toEqual([]);
-    expect(plan.changes.map((c: any) => c.kind).sort()).toEqual(["json", "text"]);
+    expect(plan.changes).toEqual([
+      { path: json(), kind: "json", summary: "Route101.json -- 1 field edit" },
+      { path: scripts(), kind: "text", summary: `${scripts()} -- append 13 lines` },
+    ]);
+    expect(built.objectEvent.graphics_id).toBe("OBJ_EVENT_GFX_SPECIES(RATTATA)");
+    expect(built.scriptAppendText).toContain("\tplaymoncry SPECIES_RATTATA, CRY_MODE_NORMAL");
+    expect(built.scriptAppendText).toContain('\t.string "HELLO$"');
+    const expectedJson = insertArrayElement(originalMap, ["object_events"], proj.map(map).objectEvents.length, built.objectEvent);
     const expected = effectiveGbaScripts(proj, store.open(map).session);
     expect((await request("commit", {})).status).toBe(200); expect(disk()).toBe(expected);
+    expect(readFileSync(json(), "utf8")).toBe(expectedJson);
     expect(JSON.parse(readFileSync(json(), "utf8")).object_events.at(-1)).toEqual(built.objectEvent);
+  });
+  it("species Update plans graphics and cry changes with stable labels and commits exactly those bytes", async () => {
+    expect((await addIndicator()).status).toBe(200); expect((await request("commit", {})).status).toBe(200);
+    const beforeJson = readFileSync(json(), "utf8"), beforeScripts = disk();
+    const beforeBlock = (await request(`indicator/at?index=${indicatorIndex()}`)).body.indicator;
+    expect((await updateIndicator()).status).toBe(200);
+    const plan = (await request("plan")).body;
+    expect(plan.refusals).toEqual([]);
+    expect(plan.changes).toEqual([
+      { path: json(), kind: "json", summary: "Route101.json -- 1 field edit" },
+      { path: scripts(), kind: "text", summary: "Update sign text in scripts.inc" },
+    ]);
+    expect(store.open(map).session.jsonEdits).toEqual([
+      { path: ["object_events", indicatorIndex(), "graphics_id"], value: "OBJ_EVENT_GFX_SPECIES(ZIGZAGOON)" },
+    ]);
+    const expectedScripts = beforeScripts.replace("playmoncry SPECIES_RATTATA", "playmoncry SPECIES_ZIGZAGOON");
+    const expectedJson = beforeJson.replace('"OBJ_EVENT_GFX_SPECIES(RATTATA)"', '"OBJ_EVENT_GFX_SPECIES(ZIGZAGOON)"');
+    expect(effectiveGbaScripts(openProject(root), store.open(map).session)).toBe(expectedScripts);
+    expect((await request(`indicator/at?index=${indicatorIndex()}`)).body.indicator).toMatchObject({
+      scriptLabel: beforeBlock.scriptLabel, textLabel: beforeBlock.textLabel, text: beforeBlock.text,
+    });
+    expect((await request("commit", {})).status).toBe(200);
+    expect(readFileSync(json(), "utf8")).toBe(expectedJson); expect(disk()).toBe(expectedScripts);
+  });
+  it("refuses update after an earlier object deletion without consuming undo; undoing deletion allows update", async () => {
+    // Persist the Indicator to exercise original-JSON indices rather than pending-insert folding.
+    await addIndicator(); expect((await request("commit", {})).status).toBe(200);
+    expect(indicatorIndex()).toBeGreaterThan(0);
+    expect((await request("event/delete", { kind: "object", index: 0 })).status).toBe(200);
+    const before = state(); const entry = store.open(map);
+    const history = { undo: entry.stack.canUndo(), redo: entry.stack.canRedo(), dirty: entry.session.isDirty };
+    const r = await updateIndicator(); expect(r.status).toBe(400);
+    expect(r.body.refusals[0].message).toContain("Save or undo the pending object deletion before editing this Indicator");
+    expect(state()).toEqual(before);
+    expect({ undo: entry.stack.canUndo(), redo: entry.stack.canRedo(), dirty: entry.session.isDirty }).toEqual(history);
+    await request("undo", {}); expect(entry.session.removeOps).toEqual([]);
+    expect((await updateIndicator()).status).toBe(200);
+  });
+  it.each(["add", "update"])("Indicator %s malformed charmaps name the real file and preserve history", async op => {
+    await addIndicator(); const before = state(), entry = store.open(map);
+    const history = { undo: entry.stack.canUndo(), redo: entry.stack.canRedo(), dirty: entry.session.isDirty };
+    for (const malformed of ["", "this is not a charmap"]) {
+      writeFileSync(`${root}/charmap.txt`, malformed);
+      const r = op === "add" ? await addIndicator() : await updateIndicator();
+      expect(r.status).toBe(400); expect(r.body.refusals[0].subject).toBe(`${root}/charmap.txt`);
+      expect(r.body.refusals[0].message).toContain(`${root}/charmap.txt`);
+      expect(r.body.refusals[0].fix).toBe("Restore a valid subject charmap and correct unsupported Indicator text before retrying.");
+      expect(state()).toEqual(before);
+      expect({ undo: entry.stack.canUndo(), redo: entry.stack.canRedo(), dirty: entry.session.isDirty }).toEqual(history);
+    }
+    await request("undo", {}); expect(state().scriptAppends).toEqual([]);
   });
   it("Indicator Place -> Update -> undo x2 -> redo x2 restores full snapshots", async () => {
     const before = state(); expect((await addIndicator()).status).toBe(200); const placed = state();

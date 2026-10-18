@@ -190,9 +190,19 @@ export function createProjectHandler(root: string): ProjectHandler {
     fix: "Check the named source or sign text; refresh or unlink hand-edited signs explicitly.",
     subject: project.paths.mapScriptsInc(name), message: error instanceof Error ? error.message : String(error),
   }] });
-  const indicatorFailure = (name: string, error: unknown) => ({ refusals: signFailure(name, error).refusals.map(r => ({
-    ...r, code: "indicator", fix: "Check the named source, restore the generated Indicator shape, or correct the species and text before retrying.",
-  })) });
+  const indicatorCharmapPath = `${project.paths.root}/charmap.txt`;
+  const indicatorCharmapFix = "Restore a valid subject charmap and correct unsupported Indicator text before retrying.";
+  const indicatorFailure = (name: string, error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    const charmap = message.startsWith(`${indicatorCharmapPath}:`);
+    return { refusals: [{ code: "indicator", subject: charmap ? indicatorCharmapPath : project.paths.mapScriptsInc(name), message,
+      fix: charmap ? indicatorCharmapFix : "Check the named source, restore the generated Indicator shape, or correct the species and text before retrying.",
+    }] };
+  };
+  function indicatorParagraphs(entry: ReturnType<typeof editEntryFor>, text: string): string[][] {
+    try { return gbaSignParagraphs(project, entry, "free", text); }
+    catch (error) { throw new Error(`${indicatorCharmapPath}: ${error instanceof Error ? error.message : String(error)}. ${indicatorCharmapFix}`); }
+  }
   function signPlan(name: string) {
     const refreshed = refreshGbaLinkedSigns(project, editEntryFor(name));
     const plan = planSave(project, refreshed.session);
@@ -468,7 +478,7 @@ export function createProjectHandler(root: string): ProjectHandler {
         // no row at all, rather than one present as `null` or `[]`, so the
         // gutter can tell "no table for this" from "table exists but is
         // empty" without a second signal. A map with no encounters at all
-        // (982 of 1,209 -- spec ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§9) still answers 200 with `methods: []`:
+        // (982 of 1,209 -- spec §9) still answers 200 with `methods: []`:
         // that is real data, not an error.
         //
         // fishing_mons gets THREE rows, one per rod, not one. Review fix:
@@ -493,7 +503,7 @@ export function createProjectHandler(root: string): ProjectHandler {
         return send(200, { mapName: name, mapId, methods });
       }
 
-      // Feature B (dungeon-mode-and-warp-tools spec ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§4.2): a map's warp
+      // Feature B (dungeon-mode-and-warp-tools spec §4.2): a map's warp
       // events, already fully parsed by load/maps.ts but not exposed
       // anywhere until now. Reused by BOTH the warp-marker toggle (fetched
       // lazily per visible map, mirroring the encounter cache exactly --
@@ -560,7 +570,7 @@ export function createProjectHandler(root: string): ProjectHandler {
         const sidecar = readSidecar(project.paths.root);
         const merged = resolveWorldPlacements(project, world, sidecar, { dungeons });
 
-        // Feature A (dungeon-mode-and-warp-tools spec ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§3.2): the world
+        // Feature A (dungeon-mode-and-warp-tools spec §3.2): the world
         // view's default-population filter needs each placement's own map
         // kind and whether the user ever manually placed it -- both are
         // UI-only display concerns layered onto the wire response, not onto
@@ -677,7 +687,7 @@ export function createProjectHandler(root: string): ProjectHandler {
           });
       }
 
-      // Feature C (dungeon-mode-and-warp-tools spec ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â§5.3): user-curated
+      // Feature C (dungeon-mode-and-warp-tools spec §5.3): user-curated
       // named groups of maps, persisted to their own sidecar file --
       // .pokemap/dungeons.json, not world.json, for the same single-
       // responsibility split sidecar.ts's own file already established.
@@ -1206,10 +1216,13 @@ export function createProjectHandler(root: string): ProjectHandler {
             const prev = snapshotOf(entry.session);
             const session = { ...entry.session };
             // Validate and build on a copy before publishing a single snapshot.
-            const paragraphs = gbaSignParagraphs(project, entry, "free", body.text);
+            const paragraphs = indicatorParagraphs(entry, body.text);
             const text = effectiveGbaScripts(project, session);
             let scriptLabel: string;
             if (update) {
+              if (session.removeOps.some(op => op.path.length === 1 && op.path[0] === "object_events" && op.index <= (body.index as number))) {
+                throw new Error("Save or undo the pending object deletion before editing this Indicator");
+              }
               const event = session.map.objectEvents[body.index as number];
               if (!event || event.script !== body.scriptLabel) throw new Error("object script no longer matches this Indicator");
               const block = findGbaIndicator(text, { script: event.script, graphics_id: event.graphicsId });

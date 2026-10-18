@@ -184,10 +184,21 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void 
     subject: `${proj.root}/maps/${name}.asm`, message: error instanceof Error ? error.message : String(error),
   }] } });
 
-  const indicatorFailure = (name: string, error: unknown): Result => ({ code: 400, body: { refusals: [{
-    code: "indicator", subject: `${proj.root}/maps/${name}.asm`, message: error instanceof Error ? error.message : String(error),
-    fix: "Check the named source, restore the generated Indicator shape, or correct the species and text before retrying.",
-  }] } });
+  const indicatorCharmapPath = `${proj.root}/constants/charmap.asm`;
+  const indicatorCharmapFix = "Restore a valid subject charmap and correct unsupported Indicator text before retrying.";
+  const indicatorFailure = (name: string, error: unknown, line?: number,
+    fix = "Check the named source, restore the generated Indicator shape, or correct the species and text before retrying."): Result => {
+    const message = error instanceof Error ? error.message : String(error);
+    const charmap = message.startsWith(`${indicatorCharmapPath}:`);
+    const subject = charmap ? indicatorCharmapPath : `${proj.root}/maps/${name}.asm`;
+    return { code: 400, body: { refusals: [{ code: "indicator", subject,
+      message: line === undefined ? message : `${subject}:${line}: ${message}`, fix: charmap ? indicatorCharmapFix : fix,
+    }] } };
+  };
+  function indicatorParagraphs(entry: GbcSessionEntry, text: string): string[][] {
+    try { return gbcSignParagraphs(proj, entry, "free", text); }
+    catch (error) { throw new Error(`${indicatorCharmapPath}: ${error instanceof Error ? error.message : String(error)}. ${indicatorCharmapFix}`); }
+  }
 
   /** Plan-shaped refusal (same wire shape as GBA): 200 for a plan, 400 for a commit. */
   const planFailure = (name: string, error: unknown, code: number): Result =>
@@ -225,7 +236,7 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void 
         const species = body.species.toUpperCase().replace(/^SPECIES_/, "");
         if (!gbcSpeciesNames(proj.root).has(species)) throw new Error(`${proj.root}/data/pokemon/names.asm: unknown species ${species}`);
         const own = loadGbcOwnSprites(proj.root);
-        const paragraphs = gbcSignParagraphs(proj, entry, "free", body.text);
+        const paragraphs = indicatorParagraphs(entry, body.text);
         const added = insertGbcIndicator(entry.session.eventsText, name, { x, y, species, sprite: gbcIndicatorSprite(species, own), paragraphs });
         const result = stageSign(entry, "place Indicator", added.text);
         return ok({ ...(result.body as object), scriptLabel: added.scriptLabel });
@@ -236,13 +247,16 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void 
         const index = int(body, "index");
         if (index < 0 || typeof body.scriptLabel !== "string" || typeof body.species !== "string" || typeof body.text !== "string") throw new Error("expected index, scriptLabel, species and text");
         const entry = store.open(name), event = entry.session.events.objects[index];
-        if (!event || event.script !== body.scriptLabel) throw new Error("object script no longer matches this Indicator");
+        if (!event || event.script !== body.scriptLabel) return indicatorFailure(name,
+          new Error("object script no longer matches this Indicator"), event === undefined ? undefined : event.lineIndex + 1,
+          "Reload the map and select the current Indicator before retrying.");
         const own = loadGbcOwnSprites(proj.root);
         const block = findGbcIndicator(entry.session.eventsText, event, own);
-        if (!block?.editable) throw new Error(block?.reason ?? "object is not an editable Indicator");
+        if (!block?.editable) return indicatorFailure(name, new Error(block?.reason ?? "object is not an editable Indicator"),
+          event.lineIndex + 1, "Restore the generated Indicator shape or select an editable Indicator before retrying.");
         const species = body.species.toUpperCase().replace(/^SPECIES_/, "");
         if (!gbcSpeciesNames(proj.root).has(species)) throw new Error(`${proj.root}/data/pokemon/names.asm: unknown species ${species}`);
-        const paragraphs = gbcSignParagraphs(proj, entry, "free", body.text);
+        const paragraphs = indicatorParagraphs(entry, body.text);
         return stageSign(entry, "update Indicator", updateGbcIndicator(entry.session.eventsText, name, index, block, species, gbcIndicatorSprite(species, own), paragraphs));
       } catch (error) { return indicatorFailure(name, error); }
     } },

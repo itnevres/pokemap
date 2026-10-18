@@ -22,7 +22,7 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("GBC Indicator routes", () => 
   const index = () => store.open("Route29").session.events.objects.length - 1;
   const update = (extra = {}) => req("indicator/update", { index: index(), scriptLabel: "Route29PokemonIndicator1", species: "GEODUDE", text: "HELLO", ...extra });
   beforeEach(async () => {
-    root = copyGbcSubjectToTemp(); original = disk();
+    root = copyGbcSubjectToTemp().replace(/\\/g, "/"); original = disk();
     vi.spyOn(sessions, "createGbcEditSessionStore").mockImplementation(proj => { store = factory(proj); return store; });
     server = createServer(createGbcProjectHandler(root).handle);
     await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
@@ -43,8 +43,57 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("GBC Indicator routes", () => 
     const expected = insertGbcIndicator(before, "Route29", { x: 1, y: 1, species: "SENTRET", sprite: "SPRITE_MONSTER", paragraphs: [["HELLO"]] });
     const r = await add(); expect(r.status).toBe(200); expect(r.body.scriptLabel).toBe(expected.scriptLabel);
     expect(state().eventsText).toBe(expected.text); expect(disk()).toBe(before);
-    const plan = (await req("plan")).body; expect(plan.refusals).toEqual([]); expect(plan.changes).toHaveLength(1);
+    const plan = (await req("plan")).body; expect(plan.refusals).toEqual([]);
+    expect(plan.changes).toEqual([{ path: path(), kind: "text", summary: "maps/Route29.asm -- event block edited" }]);
+    expect(state().eventsText).toContain("\tcry SENTRET");
+    expect(state().eventsText).toMatch(/object_event[^\r\n]*SPRITE_MONSTER[^\r\n]*Route29PokemonIndicator1/);
+    expect(state().eventsText).toContain('\ttext "HELLO"');
     expect((await req("commit", {})).status).toBe(200); expect(disk()).toBe(expected.text);
+  });
+  it("species Update plans only sprite and cry changes, retains labels and commits the exact bytes", async () => {
+    await add(); expect((await req("commit", {})).status).toBe(200);
+    const before = disk(), beforeBlock = (await req(`indicator/at?index=${index()}`)).body.indicator;
+    expect((await update()).status).toBe(200);
+    const plan = (await req("plan")).body; expect(plan.refusals).toEqual([]);
+    expect(plan.changes).toEqual([{ path: path(), kind: "text", summary: "maps/Route29.asm -- event block edited" }]);
+    const expected = before.replace("\tcry SENTRET", "\tcry GEODUDE")
+      .replace(/(object_event[^\r\n]*)SPRITE_MONSTER([^\r\n]*Route29PokemonIndicator1)/, "$1SPRITE_GEODUDE$2");
+    expect(expected).not.toBe(before); expect(state().eventsText).toBe(expected);
+    expect((await req(`indicator/at?index=${index()}`)).body.indicator).toMatchObject({
+      scriptLabel: beforeBlock.scriptLabel, textLabel: beforeBlock.textLabel, text: beforeBlock.text,
+    });
+    expect((await req("commit", {})).status).toBe(200); expect(disk()).toBe(expected);
+  });
+  it.each(["add", "update"])("%s malformed charmaps name the real file and preserve history", async op => {
+    await add(); const before = state(), entry = store.open("Route29");
+    const history = { undo: entry.stack.canUndo(), redo: entry.stack.canRedo(), dirty: entry.session.isDirty };
+    for (const malformed of ["", "this is not a charmap"]) {
+      writeFileSync(`${root}/constants/charmap.asm`, malformed);
+      const r = op === "add" ? await add() : await update();
+      expect(r.status).toBe(400); expect(r.body.refusals[0].subject).toBe(`${root}/constants/charmap.asm`);
+      expect(r.body.refusals[0].message).toContain(`${root}/constants/charmap.asm`);
+      expect(r.body.refusals[0].fix).toBe("Restore a valid subject charmap and correct unsupported Indicator text before retrying.");
+      expect(state()).toEqual(before);
+      expect({ undo: entry.stack.canUndo(), redo: entry.stack.canRedo(), dirty: entry.session.isDirty }).toEqual(history);
+    }
+    await req("undo", {}); expect(state().eventsText).toBe(original);
+  });
+  it("stale ownership and non-editable blocks report their object's file and line with an actionable fix", async () => {
+    await add(); const entry = store.open("Route29"), event = entry.session.events.objects[index()]!;
+    const before = state();
+    const stale = await update({ scriptLabel: "Stale" }); expect(stale.status).toBe(400);
+    expect(stale.body.refusals[0]).toMatchObject({ subject: path(),
+      message: `${path()}:${event.lineIndex + 1}: object script no longer matches this Indicator`,
+      fix: "Reload the map and select the current Indicator before retrying.",
+    });
+    expect(state()).toEqual(before);
+    entry.session.eventsText = entry.session.eventsText.replace("\tcry SENTRET", "\tcry SENTRET\n\tend");
+    const changed = state(), r = await update(); expect(r.status).toBe(400);
+    expect(r.body.refusals[0].subject).toBe(path());
+    expect(r.body.refusals[0].message).toContain(`${path()}:${event.lineIndex + 1}:`);
+    expect(r.body.refusals[0].fix).toBe("Restore the generated Indicator shape or select an editable Indicator before retrying.");
+    expect(state()).toEqual(changed);
+    await req("undo", {}); expect(state().eventsText).toBe(original);
   });
   it("Place -> Update -> undo x2 -> redo x2 restores full eventsText and parsed events", async () => {
     const before = state(); expect((await add()).status).toBe(200); const placed = state();
