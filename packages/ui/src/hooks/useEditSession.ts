@@ -262,6 +262,15 @@ export function useEditSession(mapName: string | null, initialBlocks?: Block[], 
 export function isIndicatorMapUpdate(body: unknown): body is { map: MapData; isDirty: boolean } {
   if (!body || typeof body !== "object") return false;
   const b = body as { map?: MapData; isDirty?: unknown };
-  return typeof b.isDirty === "boolean" && !!b.map && typeof b.map === "object"
-    && typeof b.map.name === "string" && [b.map.objectEvents, b.map.warpEvents, b.map.coordEvents, b.map.bgEvents, b.map.connections].every(Array.isArray);
+  const isRecord = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
+  const isEvent = (value: unknown): value is Record<string, unknown> => isRecord(value)
+    && Number.isFinite(value.x) && Number.isFinite(value.y) && Number.isFinite(value.elevation);
+  const eventList = (value: unknown, strings: string[]) => Array.isArray(value)
+    && value.every(event => isEvent(event) && strings.every(key => typeof event[key] === "string"));
+  return typeof b.isDirty === "boolean" && isRecord(b.map) && typeof b.map.name === "string"
+    && eventList(b.map.objectEvents, ["graphicsId", "movementType", "script"])
+    && eventList(b.map.warpEvents, ["destMap", "destWarpId"])
+    && eventList(b.map.coordEvents, []) && eventList(b.map.bgEvents, ["type"])
+    && Array.isArray(b.map.connections) && b.map.connections.every(connection => isRecord(connection)
+      && typeof connection.map === "string" && typeof connection.direction === "string" && Number.isFinite(connection.offset));
 }

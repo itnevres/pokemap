@@ -141,7 +141,7 @@ export function PokemonIndicatorDialog({ mapName, edit, onDone, onCancel }: Poke
     <div
       className="warp-modal__backdrop"
       onKeyDown={(e) => {
-        if (e.key === "Escape") onCancel();
+        if (e.key === "Escape" && !submitPending.current) onCancel();
       }}
     >
       {/* `warp-modal__panel` alongside `sign-composer`: reuses
@@ -201,7 +201,7 @@ export function PokemonIndicatorDialog({ mapName, edit, onDone, onCancel }: Poke
         ))}
 
         <div className="sign-composer__actions">
-          <button type="button" className="map-canvas__btn" onClick={onCancel} autoFocus>
+          <button type="button" className="map-canvas__btn" onClick={onCancel} disabled={submitting} autoFocus>
             Cancel
           </button>
           <button

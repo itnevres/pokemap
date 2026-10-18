@@ -67,3 +67,40 @@ Remaining broad-run failure suites, all requiring coordinator environment verifi
 ## Open concerns
 
 No known remaining Task 5 implementation defect. The broad gate has **not** been rerun green after the fixes; coordinator must run the normal full gate with local dependencies and subject permissions. Live browser validation was not attempted here: coordinator must check Place/Edit in both real family UIs, including drag and Save acceptance. No live Save or source write is claimed. Separate high-risk spec/quality reviews remain coordinator-owned. Keep this report in place until those reviews pass; do not delete it.
+
+
+## Fix round 1
+
+Addressed both verified Important findings against `5647307`. Risk remains High: external success-payload validation and pending-request/session ownership. Continued in the same implementation session, following the delegate routing guidance; the narrowly specified fix and regression commands fit direct execution. No recursive dispatch, git writes, subject-source edits, unrelated files, comment rewrites, or JSX reflow. All added source/test text is ASCII; feature labels use `Pok\u00e9mon` escapes. This section supersedes the earlier implementation status where these two defects were not yet known.
+
+Files changed in this round:
+- `packages/ui/src/hooks/useEditSession.ts`.
+- `packages/ui/src/gbc/hooks/useGbcEditSession.ts`.
+- `packages/ui/src/components/PokemonIndicatorDialog.tsx`.
+- `packages/ui/test/AppEditingWiring.test.tsx`.
+- `packages/ui/test/PokemonIndicatorDialog.test.tsx`.
+- This report (append only).
+
+### 1. Reject malformed event entries before publishing a success
+
+GBA `isIndicatorMapUpdate` now validates every coordinate-event entry as a non-null, non-array object with finite numeric x, y and elevation. It also validates the object graphics/movement/script strings, warp destination strings, background type, and connection records (map/direction strings and finite offset). These are the values the canvas, border selection and inspector consume. Validation completes before the existing adapter calls `applyExternalMapUpdate`, so a rejected body cannot alter the live map, blocks, dirty flag or undo state.
+
+GBC's existing `isSessionBody`, already used by the adapter and session hook, now validates each object, warp, coordinate and background event with finite x/y and the corresponding numeric/string fields used by rendering, inspection and duplication. It keeps the existing null-events undo/redo no-op behavior and the prior block/container/flag/warning checks. The adapter rejects invalid bodies before calling `applyExternalSession`; the dialog catches the validation error, shows error text and stays open. No adapter changes were necessary because both existing callers already validate before applying.
+
+The integration tests send otherwise valid success envelopes containing malformed entries in every coordinate-event list, plus GBA connections. Cases cover null, array, empty record, string x, NaN x and infinite y. Additional cases give objects valid coordinates but an invalid graphicsId/sprite value. Each test asserts visible error text, the dialog still mounted and exact serialized session equality with the pre-submit snapshot. Valid payload application remains covered for both families.
+
+### 2. Preserve ownership until a pending POST completes
+
+Cancel is disabled while `submitting`; Escape checks the synchronous `submitPending` ref and ignores dismissal during the request. The ref also covers the interval before React commits the disabled button. The existing generation/stale-response behavior is retained. Normal cancellation becomes available again after completion or failure.
+
+Deferred add integration tests attempt Escape and Cancel for both family runtimes, then resolve the request and assert that the dialog closes with the returned event in the live session and dirty/undo state updated. Dialog-level tests cover both add and update: neither cancellation path calls onCancel while pending, eventual success calls onDone with the correct label/payload, and Cancel works again after completion. No existing tests were removed or renamed in this round.
+
+### Verification
+
+- Tests were added first. The initial selected run was RED: six regressions failed across both test files (pending add/update cancellation, pending runtime cancellation, and invalid displayed fields in both families).
+- Final focused regression run: **246 passed, 0 failed, 15 files**. This includes all Task 5 UI tests, both session-hook suites and GBC shared-session coverage, plus the existing inspector/workspace/switch-prompt regressions.
+- Mutation run: **6 expected failures** when the two entry guards and pending-cancellation controls were reverted in memory. Both families' null-object-entry and invalid-displayed-field tests failed, as did the add/update pending-cancellation tests. Mutation plugins altered transformed code only; no mutation was written to source.
+- Root and UI TypeScript checks: **0 diagnostics each**. Vite in-memory production build: **PASS**, 113 modules. Dependencies were borrowed read-only from the installed checkout, with application/test paths resolved to this worktree and no config changes or emitted artifacts.
+- `git diff --check`: **PASS**. Scope checked against the six files above.
+
+The complete project gate was not repeated in this round: the previously recorded sandbox/dependency/worker limitations remain, and the coordinator's earlier passing gate does not validate these new edits. A fresh normal full gate and re-reviews remain coordinator-owned. No new live browser check or real Save is claimed. No remaining implementation concern is identified for the two requested findings.

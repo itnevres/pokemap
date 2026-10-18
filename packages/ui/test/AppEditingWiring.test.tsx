@@ -199,4 +199,79 @@ describe.each(["gba", "gbc"] as const)("%s Indicator adapter", family => {
     expect(screen.getByRole("dialog")).toBeTruthy();
     expect(JSON.parse(screen.getByTestId("session").textContent!).isDirty).toBe(false);
   });
+  const lists = family === "gba" ? ["objectEvents", "warpEvents", "coordEvents", "bgEvents", "connections"] : ["objects", "warps", "coords", "bgs"];
+  it.each(lists.flatMap(list => [null, [], {}, { x: "1", y: 0 }, { x: NaN, y: 0 }, { x: 0, y: Infinity }].map(entry => ({ list, entry }))))("rejects malformed $list entry $entry before applying the session", async ({ list, entry }) => {
+    const payload = family === "gba"
+      ? { map: { ...LAYOUT.map, [list]: [entry] }, isDirty: true, scriptLabel: SCRIPT }
+      : { blocks: GBC_LAYOUT.blocks, events: { ...GBC_LAYOUT.events, [list]: [entry] }, isDirty: true, canUndo: true, canRedo: false, scriptLabel: SCRIPT };
+    vi.stubGlobal("fetch", vi.fn((url: string) => {
+      if (url === "/api/groups") return ok(GROUPS);
+      if (url === "/api/map/PalletTown") return ok(family === "gba" ? LAYOUT : GBC_LAYOUT);
+      if (url === "/api/indicator/PalletTown/suggestions") return ok(SUGGESTIONS);
+      if (url === "/api/edit/PalletTown/indicator/add") return ok(payload);
+      return Promise.reject(new Error(`unexpected fetch ${url}`));
+    }));
+    render(<RuntimeHarness family={family} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Pok\u00e9mon Indicator" }));
+    fireEvent.click(await screen.findByRole("button", { name: /Rattata/ }));
+    fireEvent.change(screen.getByLabelText("Dialogue"), { target: { value: "Hi" } });
+    const before = screen.getByTestId("session").textContent;
+    fireEvent.click(screen.getByRole("button", { name: "Place" }));
+    await screen.findByText(/Invalid Indicator session response/);
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(screen.getByTestId("session").textContent).toBe(before);
+  });
+  it("rejects an object with valid coordinates but a malformed displayed field", async () => {
+    const payload = family === "gba"
+      ? { map: { ...LAYOUT.map, objectEvents: [{ ...GBA_OBJECT, graphicsId: {} }] }, isDirty: true, scriptLabel: SCRIPT }
+      : { blocks: GBC_LAYOUT.blocks, events: { ...GBC_LAYOUT.events, objects: [{ ...GBC_OBJECT, sprite: {} }] }, isDirty: true, canUndo: true, canRedo: false, scriptLabel: SCRIPT };
+    vi.stubGlobal("fetch", vi.fn((url: string) => {
+      if (url === "/api/groups") return ok(GROUPS);
+      if (url === "/api/map/PalletTown") return ok(family === "gba" ? LAYOUT : GBC_LAYOUT);
+      if (url === "/api/indicator/PalletTown/suggestions") return ok(SUGGESTIONS);
+      if (url === "/api/edit/PalletTown/indicator/add") return ok(payload);
+      return Promise.reject(new Error(`unexpected fetch ${url}`));
+    }));
+    render(<RuntimeHarness family={family} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Pok\u00e9mon Indicator" }));
+    fireEvent.click(await screen.findByRole("button", { name: /Rattata/ }));
+    fireEvent.change(screen.getByLabelText("Dialogue"), { target: { value: "Hi" } });
+    const before = screen.getByTestId("session").textContent;
+    fireEvent.click(screen.getByRole("button", { name: "Place" }));
+    await screen.findByText(/Invalid Indicator session response/);
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(screen.getByTestId("session").textContent).toBe(before);
+  });
+  it("keeps the dialog mounted during a deferred POST despite Escape and Cancel, then applies the session", async () => {
+    let resolve!: (response: Response) => void;
+    const payload = family === "gba"
+      ? { map: { ...LAYOUT.map, objectEvents: [GBA_OBJECT] }, isDirty: true, scriptLabel: SCRIPT }
+      : { blocks: GBC_LAYOUT.blocks, events: { ...GBC_LAYOUT.events, objects: [GBC_OBJECT] }, isDirty: true, canUndo: true, canRedo: false, scriptLabel: SCRIPT };
+    vi.stubGlobal("fetch", vi.fn((url: string) => {
+      if (url === "/api/groups") return ok(GROUPS);
+      if (url === "/api/map/PalletTown") return ok(family === "gba" ? LAYOUT : GBC_LAYOUT);
+      if (url === "/api/indicator/PalletTown/suggestions") return ok(SUGGESTIONS);
+      if (url === "/api/edit/PalletTown/indicator/add") return new Promise<Response>(r => { resolve = r; });
+      return Promise.reject(new Error(`unexpected fetch ${url}`));
+    }));
+    render(<RuntimeHarness family={family} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Pok\u00e9mon Indicator" }));
+    fireEvent.click(await screen.findByRole("button", { name: /Rattata/ }));
+    fireEvent.change(screen.getByLabelText("Dialogue"), { target: { value: "Hi" } });
+    fireEvent.click(screen.getByRole("button", { name: "Place" }));
+    const cancel = screen.getByRole("button", { name: "Cancel" }) as HTMLButtonElement;
+    expect(cancel.disabled).toBe(true);
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    fireEvent.click(cancel);
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(JSON.parse(screen.getByTestId("session").textContent!).isDirty).toBe(false);
+    await act(async () => resolve(await ok(payload)));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    const session = JSON.parse(screen.getByTestId("session").textContent!);
+    expect(session.isDirty).toBe(true);
+    expect(session.canUndo).toBe(true);
+    if (family === "gba") expect(session.map.objectEvents).toEqual([GBA_OBJECT]);
+    else expect(session.events.objects).toEqual([GBC_OBJECT]);
+  });
+
 });

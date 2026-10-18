@@ -267,3 +267,29 @@ describe("Indicator text round trip", () => {
     expect(JSON.parse(fetchMock.mock.calls[1]![1].body).text).toBe(text);
   });
 });
+
+describe.each([false, true])("pending Indicator POST (edit=%s)", editing => {
+  it("ignores Escape and Cancel until onDone receives the deferred success", async () => {
+    let resolve!: (response: ReturnType<typeof reply>) => void;
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(reply(SUGGESTIONS)).mockImplementationOnce(() => new Promise(r => { resolve = r; })));
+    const onCancel = vi.fn();
+    const onDone = vi.fn();
+    const payload = { map: {}, isDirty: true, ...(editing ? {} : { scriptLabel: BLOCK.scriptLabel }) };
+    render(<PokemonIndicatorDialog mapName="Map" edit={editing ? { index: 0, block: BLOCK } : undefined} onCancel={onCancel} onDone={onDone} />);
+    await screen.findByText(/Pidgey/);
+    if (!editing) {
+      fireEvent.click(screen.getByText(/Rattata/));
+      fireEvent.change(screen.getByLabelText("Dialogue"), { target: { value: "Hi" } });
+    }
+    fireEvent.click(screen.getByRole("button", { name: editing ? "Update" : "Place" }));
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(onCancel).not.toHaveBeenCalled();
+    expect((screen.getByRole("button", { name: "Cancel" }) as HTMLButtonElement).disabled).toBe(true);
+    await act(async () => resolve(reply(payload)));
+    expect(onDone).toHaveBeenCalledWith(BLOCK.scriptLabel, payload);
+    expect((screen.getByRole("button", { name: "Cancel" }) as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(onCancel).toHaveBeenCalledOnce();
+  });
+});

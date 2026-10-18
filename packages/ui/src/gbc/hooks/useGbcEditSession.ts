@@ -58,6 +58,13 @@ export function isSessionBody(x: unknown): x is SessionBody {
   if (!Array.isArray(x.blocks) || !x.blocks.every((b) => isRecord(b) && Number.isInteger(b.metatileId))) return false;
   if (x.events !== null) {
     if (!isRecord(x.events) || !EVENT_LISTS.every((k) => Array.isArray((x.events as Record<string, unknown>)[k]))) return false;
+    const eventList = (value: unknown, strings: string[], numbers: string[] = []) => Array.isArray(value)
+      && value.every(event => isRecord(event) && Number.isFinite(event.x) && Number.isFinite(event.y)
+        && strings.every(key => typeof event[key] === "string") && numbers.every(key => Number.isFinite(event[key])));
+    if (!eventList(x.events.objects, ["sprite", "moveData", "hour1", "hour2", "palette", "objectType", "script", "eventFlag"], ["radiusX", "radiusY", "sightRange", "lineIndex"])
+      || !eventList(x.events.warps, ["mapConst"], ["destWarp", "lineIndex"])
+      || !eventList(x.events.coords, ["sceneConst", "script"], ["lineIndex"])
+      || !eventList(x.events.bgs, ["bgEventType", "script"], ["lineIndex"])) return false;
   }
   if (typeof x.isDirty !== "boolean" || typeof x.canUndo !== "boolean" || typeof x.canRedo !== "boolean") return false;
   if (x.warpRenumberWarnings !== undefined) {
