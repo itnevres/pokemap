@@ -9,11 +9,26 @@ import { gbcEncounterSources } from "../gbc/analyse/atlas.js";
 import { gbcSpeciesNames } from "../signs/linked.js";
 import type { IndicatorSpecies } from "./gba.js";
 
+function fileRefusal(root: string, file: string, error: unknown): Error {
+  const detail = error instanceof Error ? error.message : String(error);
+  return new Error(`${norm(root)}/${file}: ${detail}. Restore ${file} from the decomp, or check the project root.`);
+}
+
+function readData<T>(root: string, file: string, load: () => T): T {
+  try {
+    return load();
+  } catch (error) {
+    // Preserve loader details, including any source line in its message.
+    throw fileRefusal(root, file, error);
+  }
+}
+
 /** Both the regular overworld and SpriteMons blocks can supply own sprites. */
 export function loadGbcOwnSprites(root: string): Set<string> {
-  const file = `${norm(root)}/constants/sprite_constants.asm`;
-  const sprites = parseConstDefs(readFileSync(file, "utf8"));
-  return new Set([...loadGbcSpeciesIds(root).keys()].filter((species) => sprites.has(`SPRITE_${species}`)));
+  const file = "constants/sprite_constants.asm";
+  const sprites = readData(root, file, () => parseConstDefs(readFileSync(`${norm(root)}/${file}`, "utf8")));
+  const species = readData(root, "constants/pokemon_constants.asm", () => loadGbcSpeciesIds(root));
+  return new Set([...species.keys()].filter((name) => sprites.has(`SPRITE_${name}`)));
 }
 
 export function gbcIndicatorSprite(species: string, own: Set<string>): string {
@@ -22,7 +37,8 @@ export function gbcIndicatorSprite(species: string, own: Set<string>): string {
 
 /** Best chance across ordinary sources, using the Sign tool's display-name tie break. */
 export function rankGbcIndicatorSpecies(proj: GbcProject, mapName: string): IndicatorSpecies[] {
-  const names = gbcSpeciesNames(proj.root);
+  const file = "data/pokemon/names.asm";
+  const names = readData(proj.root, file, () => gbcSpeciesNames(proj.root));
   const best = new Map<string, number>();
   for (const source of gbcEncounterSources(proj, mapName)) {
     if (source.conditional === "swarm") continue;
@@ -32,7 +48,7 @@ export function rankGbcIndicatorSpecies(proj: GbcProject, mapName: string): Indi
   }
   return [...best].map(([species, percent]) => {
     const name = names.get(species);
-    if (name === undefined) throw new Error(`${norm(proj.root)}/data/pokemon/names.asm: missing name for ${species}`);
+    if (name === undefined) throw fileRefusal(proj.root, file, `missing name for ${species}`);
     return { species, name, percent };
   }).sort((a, b) => b.percent - a.percent || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 }
@@ -40,14 +56,10 @@ export function rankGbcIndicatorSpecies(proj: GbcProject, mapName: string): Indi
 /** Scan grass STEP coordinates row-major; try up/down/left/right per grass step. */
 export function suggestGbcIndicatorPlacement(proj: GbcProject, mapName: string): { x: number; y: number } | null {
   const map = proj.map(mapName);
-  const file = `${norm(proj.root)}/constants/collision_constants.asm`;
-  let grass: number | undefined;
-  try {
-    grass = parseCollisionConstants(readFileSync(file, "utf8")).get("COLL_TALL_GRASS");
-  } catch (error) {
-    throw new Error(`${file}: ${(error as Error).message}`);
-  }
-  if (grass === undefined) throw new Error(`${file}: missing COLL_TALL_GRASS`);
+  const file = "constants/collision_constants.asm";
+  const grass = readData(proj.root, file, () =>
+    parseCollisionConstants(readFileSync(`${norm(proj.root)}/${file}`, "utf8")).get("COLL_TALL_GRASS"));
+  if (grass === undefined) throw fileRefusal(proj.root, file, "missing COLL_TALL_GRASS");
   const { layout } = proj.layout(map);
   const tileset = proj.tileset(map.tileset);
   const { events } = loadGbcMapEvents(proj.root, map);

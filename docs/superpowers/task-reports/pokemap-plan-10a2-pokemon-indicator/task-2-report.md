@@ -81,3 +81,36 @@ Coordinator still needs the targeted Vitest run, full gate with pass/fail/file
 counts, typecheck, UI build, separate high-risk reviews and mutation checks.
 No UI was changed. No unrelated bug was found. Report stays in the active
 task-report directory pending those reviews rather than being archived early.
+
+## Fix round 1
+
+Addressed the two requested refusal findings in `gbcData.ts` and its test only
+(plus this required report append). Retained High risk classification because
+this changes parsing/error boundaries. Continued the existing Codex implementer
+session under the delegate skill's fix-round rule; no new dispatch was needed.
+
+- Added a local file-boundary wrapper that preserves the underlying error
+  message, prefixes the root-qualified file path, and appends the sentence
+  `Restore <relative file> from the decomp, or check the project root.`
+- Wrapped sprite constants reading AND `parseConstDefs`, so malformed
+  `const_def BOGUS` reports `constants/sprite_constants.asm`, the original
+  parseNum detail, and fix guidance. The current parser supplies no line number;
+  none is invented. Any line in an underlying loader message is retained.
+- Wrapped the species-constant and species-name loaders and collision-constant
+  reading/parsing. Explicit missing species-name and COLL_TALL_GRASS refusals
+  now use the same path and fix guidance.
+- Wrote regressions before the implementation changes: missing sprite file,
+  unreadable sprite file (a directory at the file path), malformed sprite
+  const_def, missing species constants, missing/unreadable names table, and
+  missing/empty/malformed collision constants. Required assertions check both
+  the file path and complete fix sentence. Existing checks were retained.
+- Placement candidate selection and species ranking are unchanged in this fix
+  round; other findings mentioned in session memory were outside this request.
+
+Verification: targeted Vitest red execution remains unavailable because
+`node_modules/.bin/vitest.cmd` is absent. No installation or download attempted.
+Node `--experimental-strip-types --check` passed for both changed TypeScript
+files; `git diff --check` passed (only repository CRLF-conversion notices).
+Runtime tests, full gate counts, typecheck, UI build, reviews and mutations
+remain with the coordinator; this report does not claim those checks passed.
+No git writes or subject writes were made.

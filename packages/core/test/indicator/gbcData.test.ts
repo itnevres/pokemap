@@ -68,13 +68,38 @@ describe("GBC Indicator sprites and species", () => {
 
   it("guard names the missing sprite constants file", () => {
     const root = tempRoot();
-    expect(() => loadGbcOwnSprites(root)).toThrow(/constants[\\/]sprite_constants\.asm/);
+    expect(() => loadGbcOwnSprites(root)).toThrow(/constants[\\/]sprite_constants\.asm.*Restore constants\/sprite_constants\.asm from the decomp, or check the project root\./);
+  });
+
+  it("locates malformed sprite const_def errors and explains the fix", () => {
+    const root = tempRoot();
+    put(root, "constants/sprite_constants.asm", "const_def BOGUS\n");
+    expect(() => loadGbcOwnSprites(root)).toThrow(/constants[\\/]sprite_constants\.asm.*parseNum:.*BOGUS.*Restore constants\/sprite_constants\.asm from the decomp, or check the project root\./);
+  });
+
+  it("adds fix guidance when sprite constants are unreadable", () => {
+    const root = tempRoot();
+    mkdirSync(join(root, "constants/sprite_constants.asm"), { recursive: true });
+    expect(() => loadGbcOwnSprites(root)).toThrow(/constants[\\/]sprite_constants\.asm.*Restore constants\/sprite_constants\.asm from the decomp, or check the project root\./);
+  });
+
+  it("locates missing species constants and explains the fix", () => {
+    const root = tempRoot();
+    put(root, "constants/sprite_constants.asm", "const_def\nconst SPRITE_GEODUDE\n");
+    expect(() => loadGbcOwnSprites(root)).toThrow(/constants[\\/]pokemon_constants\.asm.*Restore constants\/pokemon_constants\.asm from the decomp, or check the project root\./);
   });
 
   it("names guard names the missing names file before reading encounters", () => {
     const root = tempRoot();
     expect(() => rankGbcIndicatorSpecies(stubGbcProject({ root }), "Route29"))
-      .toThrow(/data[\\/]pokemon[\\/]names\.asm/);
+      .toThrow(/data[\\/]pokemon[\\/]names\.asm.*Restore data\/pokemon\/names\.asm from the decomp, or check the project root\./);
+  });
+
+  it("adds fix guidance when the species-name table is unreadable", () => {
+    const root = tempRoot();
+    mkdirSync(join(root, "data/pokemon/names.asm"), { recursive: true });
+    expect(() => rankGbcIndicatorSpecies(stubGbcProject({ root }), "Route29"))
+      .toThrow(/data[\\/]pokemon[\\/]names\.asm.*Restore data\/pokemon\/names\.asm from the decomp, or check the project root\./);
   });
 
   itWithGbcCorpus("species Route29 match linkedSpecies and the independent 10a B3 order", () => {
@@ -121,6 +146,15 @@ function placementFixture(grass: { x: number; y: number }[], occupied: { x: numb
 }
 
 describe("GBC Indicator placement", () => {
+  it.each([undefined, "", "DEF COLL_TALL_GRASS EQU BOGUS\n"])(
+    "locates missing or malformed collision constants and explains the fix: %s", (text) => {
+      const proj = { ...placementFixture([]), root: tempRoot() };
+      if (text !== undefined) put(proj.root, "constants/collision_constants.asm", text);
+      expect(() => suggestGbcIndicatorPlacement(proj, "Test"))
+        .toThrow(/constants[\\/]collision_constants\.asm.*Restore constants\/collision_constants\.asm from the decomp, or check the project root\./);
+    },
+  );
+
   it.each([
     { occupied: [], expected: { x: 1, y: 0 } },
     { occupied: [{ x: 1, y: 0 }], expected: { x: 1, y: 2 } },
