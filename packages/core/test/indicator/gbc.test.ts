@@ -35,16 +35,67 @@ describe("GBC Indicator", () => {
     expect(insertGbcIndicator('\tmacro "semi;colon", Route29PokemonIndicator1\n' + base(), "Route29", input).scriptLabel).toBe("Route29PokemonIndicator2");
   });
 
-  it("surfaces the 15-object cap and out-of-step const refusal unchanged", () => {
+  it("locates cap and const refusals, preserving the original message and adding a fix", () => {
     const args = ["0", "0", "SPRITE_MONSTER", "SPRITEMOVEDATA_POKEMON", "0", "0", "-1", "-1", "0", "OBJECTTYPE_SCRIPT", "0", event.script, "-1"];
     let capped = base();
     for (let i = 1; i < 15; i++) capped = addGbcEvent(capped, "Route29", "object", args).text;
-    for (const text of [capped, base().replace("\tconst ROUTE29_YOUNGSTER\n", "")]) {
+    for (const [text, marker, fix] of [
+      [capped, "def_object_events", "Remove an object_event from this map or place the Indicator on another map."],
+      [base().replace("\tconst ROUTE29_YOUNGSTER\n", ""), "object_const_def", "Make object_const_def list one const per object_event."],
+    ]) {
       let refusal = "";
-      try { addGbcEvent(text, "Route29", "object", args); } catch (e) { refusal = (e as Error).message; }
+      try { addGbcEvent(text!, "Route29", "object", args); } catch (e) { refusal = (e as Error).message; }
       expect(refusal).toMatch(/15 object_event|out of step/);
-      expect(() => insertGbcIndicator(text, "Route29", input)).toThrow(refusal);
+      const line = text!.split("\n").findIndex(value => value.trim() === marker) + 1;
+      let message = "";
+      try { insertGbcIndicator(text!, "Route29", input); } catch (e) { message = (e as Error).message; }
+      expect(message).toContain(`maps/Route29.asm:${line}:`);
+      expect(message).toContain(refusal);
+      expect(message).toContain(fix);
+
     }
+  });
+
+  it("locates a missing object section and supplies a repair", () => {
+    const text = base().replace(/^\tobject_event.*\n/gm, "").replace("\tconst ROUTE29_YOUNGSTER\n", "").replace("\tdef_object_events\n", "");
+    let original = "";
+    const args = ["5", "7", "SPRITE_GEODUDE", "SPRITEMOVEDATA_POKEMON", "0", "0", "-1", "-1", "0", "OBJECTTYPE_SCRIPT", "0", event.script, "-1"];
+    try { addGbcEvent(text, "Route29", "object", args); } catch (e) { original = (e as Error).message; }
+    expect(original).toMatch(/missing "def_object_events" section/);
+    let message = "";
+    try { insertGbcIndicator(text, "Route29", input); } catch (e) { message = (e as Error).message; }
+    expect(message).toContain(`maps/Route29.asm:${text.split("\n").findIndex(line => line === "Route29_MapEvents:") + 1}:`);
+    expect(message).toContain(original);
+    expect(message).toContain("Restore the missing event section markers below Route29_MapEvents:.");
+  });
+
+  it("refuses a script shared by two objects and stale updates without changing bytes", () => {
+    const original = golden();
+    const stale = findGbcIndicator(original, event, own)!;
+    const shared = addGbcEvent(original, "Route29", "object", ["9", "9", "SPRITE_GEODUDE", "SPRITEMOVEDATA_POKEMON", "0", "0", "-1", "-1", "0", "OBJECTTYPE_SCRIPT", "0", event.script, "-1"]).text;
+    const snapshot = shared;
+    for (const index of [1, 2]) {
+      const block = findGbcIndicator(shared, { ...event }, own)!;
+      expect(block).toMatchObject({ editable: false, reason: expect.stringContaining("shared script") });
+      for (const candidate of [block, stale]) {
+        expect(() => updateGbcIndicator(shared, "Route29", index, candidate, "SENTRET", "SPRITE_MONSTER", [["Hello"]])).toThrow(/maps\/Route29\.asm:\d+:.*shared script.*Restore/);
+      }
+    }
+    expect(shared).toBe(snapshot);
+    expect(findGbcIndicator(original, event, own)?.editable).toBe(true);
+  });
+
+  it.each([
+    `Other:\n\tscall ${event.script}\n`,
+    `\tobject_event 1, 1, SPRITE_MONSTER, SPRITEMOVEDATA_POKEMON, 0, 0, -1, -1, 0, OBJECTTYPE_SCRIPT, 0, OtherScript, ${event.script}\n`,
+  ])("refuses other real script references: %j", reference => {
+    const text = golden() + reference;
+    expect(findGbcIndicator(text, event, own)).toMatchObject({ editable: false, reason: expect.stringContaining("shared script") });
+  });
+
+  it("ignores comments and literals when checking script ownership", () => {
+    const text = golden() + `; ${event.script}\nOther:\n\ttext "${event.script}"\n\tdone\n`;
+    expect(findGbcIndicator(text, event, own)?.editable).toBe(true);
   });
 
   it("locates a missing or duplicate MapEvents anchor and gives a fix", () => {

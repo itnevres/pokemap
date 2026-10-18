@@ -1,6 +1,7 @@
 import type { IndicatorBlock } from "./gba.js";
 import { gbcIndicatorSprite } from "./gbcData.js";
 import { addGbcEvent } from "../gbc/edit/events.js";
+import { scanCalls } from "../gbc/load/asm.js";
 import { renderGbcBody } from "../gbc/signs.js";
 import { locateEventCall, replaceLines, spliceArg } from "../gbc/write/asmSplice.js";
 
@@ -16,8 +17,8 @@ function symbols(line: string): string[] {
 const label = /^[A-Za-z_.][\w.]*::?$/;
 const rawLines = (text: string): string[] => (text.match(/[^\n]*\n|[^\n]+$/g) ?? []).map(line => line.replace(/\r?\n$/, ""));
 
-function refusal(mapName: string, message: string, line?: number): Error {
-  return new Error(`maps/${mapName}.asm:${line === undefined ? "" : `${line + 1}:`} ${message}. Restore the Indicator's generated shape or choose valid Indicator input before retrying.`);
+function refusal(mapName: string, message: string, line?: number, fix = "Restore the Indicator's generated shape or choose valid Indicator input before retrying."): Error {
+  return new Error(`maps/${mapName}.asm:${line === undefined ? "" : `${line + 1}:`} ${message}. ${fix}`);
 }
 
 function validate(mapName: string, species: string, sprite: string, paragraphs: string[][]): string[] {
@@ -41,11 +42,25 @@ export function insertGbcIndicator(
   while (used.has(`${mapName}PokemonIndicator${n}`) || used.has(`${mapName}PokemonIndicator${n}Text`)) n++;
   const scriptLabel = `${mapName}PokemonIndicator${n}`;
   const textLabel = `${scriptLabel}Text`;
-  // Let the existing cap and paired-const guards surface unchanged.
-  const added = addGbcEvent(text, mapName, "object", [
-    String(input.x), String(input.y), input.sprite, "SPRITEMOVEDATA_POKEMON", "0", "0", "-1", "-1", "0",
-    "OBJECTTYPE_SCRIPT", "0", scriptLabel, "-1",
-  ]).text;
+  let added: string;
+  try {
+    added = addGbcEvent(text, mapName, "object", [
+      String(input.x), String(input.y), input.sprite, "SPRITEMOVEDATA_POKEMON", "0", "0", "-1", "-1", "0",
+      "OBJECTTYPE_SCRIPT", "0", scriptLabel, "-1",
+    ]).text;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const outOfStep = message.includes("object_const_def");
+    const capped = message.includes("the maximum");
+    const missingSection = /(?:no|missing) "def_/.test(message);
+    const marker = outOfStep ? "object_const_def" : "def_object_events";
+    const markerLine = rawLines(text).findIndex(line => code(line) === marker);
+    const fix = outOfStep ? "Make object_const_def list one const per object_event."
+      : capped ? "Remove an object_event from this map or place the Indicator on another map."
+      : missingSection ? `Restore the missing event section markers below ${mapName}_MapEvents:.`
+      : "Restore the map's event sections or choose valid object_event arguments before retrying.";
+    throw refusal(mapName, message, markerLine < 0 ? anchors[0] : markerLine, fix);
+  }
   const anchor = rawLines(added).findIndex(line => code(line) === `${mapName}_MapEvents:`);
   // Same multi-line insertion primitive as insertGbcSign; never reconstruct the file.
   return { scriptLabel, text: replaceLines(added, anchor, anchor, [
@@ -82,6 +97,15 @@ function inspect(text: string, event: { sprite: string; script: string }, own: S
     || !/^cry\s/.test(commands[3]!) || commands[4] !== "waitbutton" || commands[5] !== "closetext" || commands[6] !== "end") {
     return refuse("script does not match the Indicator shape");
   }
+  // Exactly one object may own the script. Any other real reference could
+  // observe a changed cry while retaining an incompatible object sprite.
+  const owners = scanCalls(text, "object_event").filter(call => call.args[11]?.text === event.script);
+  const references = symbolsByLine(text);
+  if (owners.length > 1 || references.some((tokens, i) => {
+    if (i === section.start) return false;
+    const count = tokens.filter(token => token === event.script).length;
+    return count > (i === owners[0]?.lineIndex ? 1 : 0);
+  })) return refuse("shared script");
   if (event.sprite !== gbcIndicatorSprite(block.species, own)) return refuse("sprite and cry species disagree");
   const texts = lines.flatMap((line, i) => line === `${block.textLabel}:` || line === `${block.textLabel}::` ? [i] : []);
   if (texts.length !== 1 || lines[texts[0]!] !== `${block.textLabel}:`) return refuse("text label not found exactly once in this file");
