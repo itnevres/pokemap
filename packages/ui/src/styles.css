@@ -2321,7 +2321,7 @@ input {
    above MapCanvas in Map mode, same toolbar-row shape as .map-canvas
    __toolbar just above (bg-panel-raised, border-bottom, space-2/3
    padding) -- one more instrument-panel strip, not a new visual language. */
-/* Plan 9 Task 12 F1: the D5 toolbar (icons + labels, Add Sign) is wider than the 1024 px window's main column; wrap rather than scroll sideways. */
+/* Plan 9 Task 12 F1: the D5 toolbar (icons + labels, Pok\u00e9mon Indicator) is wider than the 1024 px window's main column; wrap rather than scroll sideways. */
 .toolbar {
   flex: 0 0 auto;
   display: flex;
@@ -2522,8 +2522,8 @@ input {
   color: var(--text-on-accent);
 }
 
-/* Task 17: SignComposer -- one-shot wild-sign authoring flow, opened from
-   Toolbar's own "Add Sign" button (separate from the six paint tools: this
+/* Task 17: PokemonIndicatorDialog -- one-shot Indicator authoring flow, opened from
+   Toolbar's own "Pok\u00e9mon Indicator" button (separate from the six paint tools: this
    is a modal composer, not a paint-and-drag tool). Reuses
    .warp-modal__backdrop/.warp-modal__panel for its shell (same as
    SaveDialog above) and .save-dialog__loading/__empty/__load-error for its

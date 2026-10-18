@@ -2,12 +2,12 @@ import { useState } from "react";
 import { MapEditingWorkspace, type MapEditingCanvasProps } from "../components/MapEditingWorkspace.js";
 import { MapCanvas, compositeOrigin } from "../components/MapCanvas.js";
 import { WorldCanvas } from "../components/WorldCanvas.js";
-import { SignComposer } from "../components/SignComposer.js";
+import { PokemonIndicatorDialog } from "../components/PokemonIndicatorDialog.js";
 import { useMapGroups } from "../hooks/useMapGroups.js";
 import { useMapLayout } from "../hooks/useMapLayout.js";
 import { useWorldVisibility } from "../hooks/useWorldVisibility.js";
 import { useDungeons } from "../hooks/useDungeons.js";
-import { useEditSession } from "../hooks/useEditSession.js";
+import { useEditSession, isIndicatorMapUpdate } from "../hooks/useEditSession.js";
 import { useMapEditing } from "../hooks/useMapEditing.js";
 import { HIDDEN_MAP_TYPES } from "../world/visibility.js";
 import { GBA_CAPABILITIES, type EngineAdapter, type FamilyRuntime, type RuntimeArgs, type ShellSlots } from "../shell/adapter.js";
@@ -128,20 +128,23 @@ export function useGbaRuntime({ selected, mode, requestPrompt }: RuntimeArgs): F
         <button type="button" className="app__event-op-error-dismiss" onClick={() => setSwitchError(null)} aria-label="Dismiss">x</button>
       </div>
     ),
-    /* Task 17: SignComposer owns its own modal shell exactly like
+    /* Task 17: PokemonIndicatorDialog owns its own modal shell exactly like
        SaveDialog above (Step 10's own design correction) -- App.tsx
        just conditionally renders it as a sibling, same stacking-
        context reasoning as SaveDialog's own comment just above. */
     modals:
-      editing.signComposerOpen && selected ? (
-        <SignComposer
+      editing.indicatorOpen && selected ? (
+        <PokemonIndicatorDialog
+          key={`${selected}:${editing.indicatorEdit?.index ?? "add"}`}
           mapName={selected}
-          onSessionUpdated={(map, isDirty) => editSession.applyExternalMapUpdate(map, isDirty)}
-          onAdded={(scriptLabel) => {
-            editing.setSignComposerOpen(false);
-            editing.setSignAddedMessage(`Added wild sign: ${scriptLabel}`);
+          edit={editing.indicatorEdit}
+          onDone={(scriptLabel, payload) => {
+            if (!isIndicatorMapUpdate(payload) || payload.map.name !== selected) throw new Error("Invalid Indicator session response.");
+            editSession.applyExternalMapUpdate(payload.map, payload.isDirty);
+            editing.setIndicatorOpen(false);
+            editing.setSignAddedMessage(`${editing.indicatorEdit ? "Updated" : "Placed"} Pok\u00e9mon Indicator: ${scriptLabel}`);
           }}
-          onCancel={() => editing.setSignComposerOpen(false)}
+          onCancel={() => editing.setIndicatorOpen(false)}
         />
       ) : null,
     saveDialog: { open: editing.saveDialogOpen, setOpen: editing.setSaveDialogOpen, onCommitted: () => {} },

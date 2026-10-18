@@ -53,7 +53,7 @@ interface SessionBody {
 
 const EVENT_LISTS = ["warps", "coords", "bgs", "objects", "sceneScripts", "callbacks", "objectConsts"] as const;
 
-function isSessionBody(x: unknown): x is SessionBody {
+export function isSessionBody(x: unknown): x is SessionBody {
   if (!isRecord(x)) return false;
   if (!Array.isArray(x.blocks) || !x.blocks.every((b) => isRecord(b) && Number.isInteger(b.metatileId))) return false;
   if (x.events !== null) {

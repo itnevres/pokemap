@@ -80,18 +80,18 @@ export interface UseEditSessionResult {
    *  The caller (App.tsx) is responsible for actually surfacing these --
    *  this hook only threads them through, it doesn't decide how. */
   deleteEvent(kind: EventKind, index: number): Promise<WarpRenumberWarning[]>;
-  /** Task 17: `POST /api/edit/:map/sign/add` (SignComposer) has the exact
+  /** Task 17: `POST /api/edit/:map/indicator/add` (PokemonIndicatorDialog) has the exact
    *  same `{ map, isDirty }` response shape as the `/event/*` routes
    *  (EventOpResponse above) -- it's built by the same `handleEventOp`
-   *  helper server-side -- but SignComposer calls it directly via `fetch`
+   *  helper server-side -- but PokemonIndicatorDialog calls it directly via `fetch`
    *  (it also needs `scriptLabel`, which isn't part of this hook's own
-   *  surface, and its own onAdded callback is specified to carry only that
-   *  string, not the whole response). Without this, editSession's local
-   *  `map`/`isDirty`/`canUndo` would go stale the instant a sign was added
+   *  surface; the adapter validates the opaque onDone payload before applying
+   *  its map and dirty flag here). Without this, editSession's local
+   *  `map`/`isDirty`/`canUndo` would go stale the instant an Indicator was placed
    *  -- MapCanvas's event markers and the Toolbar's dirty dot would not
    *  reflect the new object event until some OTHER edit op (a paint stroke,
-   *  a move) happened to sync them. App.tsx's own SignComposer mount calls
-   *  this with the same response body SignComposer already parsed, so
+   *  a move) happened to sync them. App.tsx's own PokemonIndicatorDialog mount calls
+   *  this with the same response body PokemonIndicatorDialog already parsed, so
    *  there's no second round trip -- just applying data already in hand,
    *  the same tail `callEvent` runs internally for every `/event/*` call. */
   applyExternalMapUpdate(map: MapData, isDirty: boolean): void;
@@ -250,10 +250,18 @@ export function useEditSession(mapName: string | null, initialBlocks?: Block[], 
   const addEvent = useCallback((kind: EventKind, value: Record<string, unknown>) => callEvent("/event/add", { kind, value }).then(() => {}), [callEvent]);
   const deleteEvent = useCallback((kind: EventKind, index: number) => callEvent("/event/delete", { kind, index }), [callEvent]);
 
-  // SignComposer supplies an already-parsed map; the core applies it to the current map/seed.
+  // PokemonIndicatorDialog supplies an already-parsed map; the core applies it to the current map/seed.
   const applyExternalMapUpdate = useCallback((nextMap: MapData, nextIsDirty: boolean) => {
     apply({ state: (prev) => ({ ...prev, map: nextMap }), isDirty: nextIsDirty, canUndo: true, canRedo: false });
   }, [apply]);
 
   return { blocks, border, map, isDirty, canUndo, canRedo, beginStroke, applyPaint, endStroke, undo, redo, markClean, moveEvent, addEvent, deleteEvent, applyExternalMapUpdate, discard };
+}
+
+/** Indicator responses use the same map/dirty payload as event operations. */
+export function isIndicatorMapUpdate(body: unknown): body is { map: MapData; isDirty: boolean } {
+  if (!body || typeof body !== "object") return false;
+  const b = body as { map?: MapData; isDirty?: unknown };
+  return typeof b.isDirty === "boolean" && !!b.map && typeof b.map === "object"
+    && typeof b.map.name === "string" && [b.map.objectEvents, b.map.warpEvents, b.map.coordEvents, b.map.bgEvents, b.map.connections].every(Array.isArray);
 }

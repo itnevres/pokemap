@@ -27,14 +27,14 @@ export interface ToolbarProps {
    *  first (this component never does -- see that file's own handleDiscard)
    *  before actually calling editSession.discard(). */
   onDiscard: () => void;
-  /** Task 17: opens SignComposer -- a one-shot modal authoring flow, not a
+  /** Task 17: opens PokemonIndicatorDialog -- a one-shot modal authoring flow, not a
    *  canvas paint tool, so it is its own button rather than a seventh entry
    *  in `TOOLS` (which drives MapCanvas's activeTool selection). Not gated
    *  by `availableTools` (that mechanism only governs the six paint tools
-   *  below): the wild-sign write path is fully wired this task, so the
+   *  below): the Indicator write path is fully wired this task, so the
    *  button renders enabled immediately, same as Undo/Redo/Save's own
    *  always-available posture. */
-  onOpenSignComposer?: () => void;
+  onOpenIndicator?: () => void;
   /** Code-review fix: which tools actually have MapCanvas-side behaviour
    *  wired today. Every tool in `TOOLS` renders as a button (matching
    *  Porymap's own toolbox, and ready for the follow-up tasks that wire the
@@ -58,7 +58,7 @@ export interface ToolbarProps {
  * in this app writes to disk; this button (disabled until `isDirty`) is the
  * only door into that flow.
  */
-export function Toolbar({ activeToolKind, onSelectTool, isDirty, onUndo, onRedo, canUndo, canRedo, onOpenSave, onDiscard, onOpenSignComposer, availableTools, tools = TOOLS, unavailableTitle = "Not yet available" }: ToolbarProps) {
+export function Toolbar({ activeToolKind, onSelectTool, isDirty, onUndo, onRedo, canUndo, canRedo, onOpenSave, onDiscard, onOpenIndicator, availableTools, tools = TOOLS, unavailableTitle = "Not yet available" }: ToolbarProps) {
   // Plan 9 (R1): one window keydown listener while the toolbar is mounted (editing chrome only: Map view or
   // in-context, so at most one exists). Subscribed once; reads the latest props through a ref.
   const latest = useRef({ tools, availableTools, onSelectTool, onUndo, onRedo, canUndo, canRedo });
@@ -114,10 +114,10 @@ export function Toolbar({ activeToolKind, onSelectTool, isDirty, onUndo, onRedo,
           ↷ Redo
         </button>
       </div>
-      {onOpenSignComposer && (
-        <div className="toolbar__sign" role="group" aria-label="Sign">
-          <button type="button" className="map-canvas__btn" onClick={onOpenSignComposer}>
-            Add Sign
+      {onOpenIndicator && (
+        <div className="toolbar__sign" role="group" aria-label={"Pok\u00e9mon Indicator"}>
+          <button type="button" className="map-canvas__btn toolbar__tool-btn" onClick={onOpenIndicator} title={"Pok\u00e9mon Indicator"}>
+            {TOOL_ICONS.sign}<span>{"Pok\u00e9mon Indicator"}</span>
           </button>
         </div>
       )}

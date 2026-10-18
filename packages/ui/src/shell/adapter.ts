@@ -14,7 +14,7 @@ export interface Capabilities {
   collisionTool: boolean;       // read: toolbar tool list (toolsFor)
   elevationOverlay: boolean;    // descriptive (MapCanvas owns the toggle); read from Plan 11
   addEvent: boolean;            // descriptive (the inspector is per family); read from Plan 10
-  addSign: boolean;             // read: toolbar "Add Sign"
+  pokemonIndicator: boolean;             // read: toolbar "Pok\u00e9mon Indicator"
   signTool: boolean;            // read: toolbar Sign tool
   timeOfDay: boolean;           // read: header slot
   defectsBanner: boolean;       // descriptive (GBC renderMap owns it); read from Plan 10 (D3)
@@ -24,13 +24,13 @@ export interface Capabilities {
 }
 
 export const GBA_CAPABILITIES: Capabilities = {
-  collisionTool: true, elevationOverlay: true, addEvent: true, addSign: true, signTool: true, timeOfDay: false,
+  collisionTool: true, elevationOverlay: true, addEvent: true, pokemonIndicator: true, signTool: true, timeOfDay: false,
   defectsBanner: false, manualPlacements: false, dungeonFilterCache: false,
   worldBar: { dungeonAutoLayout: true, unplacedRail: true },
 };
 
 export const GBC_CAPABILITIES: Capabilities = {
-  collisionTool: false, elevationOverlay: false, addEvent: false, addSign: false, signTool: true, timeOfDay: true,
+  collisionTool: false, elevationOverlay: false, addEvent: false, pokemonIndicator: true, signTool: true, timeOfDay: true,
   defectsBanner: true, manualPlacements: true, dungeonFilterCache: true,
   worldBar: { dungeonAutoLayout: false, unplacedRail: false },
 };

@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { Toolbar } from "../../src/components/Toolbar.js";
 import { SaveDialog } from "../../src/components/SaveDialog.js";
+import { GBA_CAPABILITIES, GBC_CAPABILITIES } from "../../src/shell/adapter.js";
 import { GBC_TOOLS } from "../../src/gbc/GbcMapEditing.js";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -17,7 +18,7 @@ describe("Toolbar for GBC (additive props)", () => {
     expect(Array.from(group.querySelectorAll("button")).map((b) => b.textContent)).toEqual(["Pencil", "Rect", "Bucket", "Dropper", "Shift", "Sign"]);
     expect(screen.queryByRole("button", { name: "Collision" })).toBeNull();
     expect(screen.getByRole("button", { name: "Sign" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Add Sign" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Pok\u00e9mon Indicator" })).toBeNull();
   });
 
   it("unavailable tools are disabled with the supplied reason as title", () => {
@@ -28,9 +29,9 @@ describe("Toolbar for GBC (additive props)", () => {
   });
 
   it("GBA default (no tools prop) still has six tools plus the sign button", () => {
-    render(<Toolbar {...base} onOpenSignComposer={vi.fn()} availableTools={[]} />);
+    render(<Toolbar {...base} onOpenIndicator={vi.fn()} availableTools={[]} />);
     expect(screen.getByRole("group", { name: "Tools" }).querySelectorAll("button").length).toBe(7);
-    expect(screen.getByRole("button", { name: "Add Sign" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Pok\u00e9mon Indicator" })).toBeTruthy();
     expect((screen.getByRole("button", { name: "Pencil" }) as HTMLButtonElement).title).toBe("Not yet available");
   });
 });
@@ -41,5 +42,18 @@ describe("SaveDialog with a GBC text change", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve(plan) }));
     render(<SaveDialog mapName="NewBarkTown" onCommitted={vi.fn()} onCancel={vi.fn()} />);
     await waitFor(() => expect(screen.getByText("maps/NewBarkTown.asm -- 1 event moved")).toBeTruthy());
+  });
+});
+
+describe.each([GBA_CAPABILITIES, GBC_CAPABILITIES])("Indicator capability %j", capabilities => {
+  it("shows the feature for either enabled family and hides it when disabled", () => {
+    const open = vi.fn();
+    const view = render(<Toolbar {...base} availableTools={[]} onOpenIndicator={capabilities.pokemonIndicator ? open : undefined} />);
+    const button = screen.getByRole("button", { name: "Pok\u00e9mon Indicator" });
+    expect(button.title).toBe("Pok\u00e9mon Indicator");
+    fireEvent.click(button);
+    expect(open).toHaveBeenCalledOnce();
+    view.rerender(<Toolbar {...base} availableTools={[]} onOpenIndicator={undefined} />);
+    expect(screen.queryByRole("button", { name: "Pok\u00e9mon Indicator" })).toBeNull();
   });
 });
