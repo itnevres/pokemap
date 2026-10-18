@@ -299,5 +299,9 @@ The raw per-phase lessons this was distilled from, with the session narrative, a
 
 **Codex outside a git repo** needs `--skip-git-repo-check` (tell: `Not inside a trusted directory`, exit 1 in seconds). With `-C <dir>`, a brief path like `live/f9.mjs` lands at `<dir>/live/f9.mjs` and relative imports shift with it. Name output paths relative to `-C`. (Plan 9F)
 
+**Codex (gpt-6.1-sol) re-encoded untouched UTF-8 comments** in `server/src/index.ts` (`§` became `ÃƒÆ’…` mojibake) while editing nearby routes. Tell: `git diff | grep '^+.*\(Ã\|â€\)'` hits lines the task never meant to change. Grep every Codex diff before committing; name the file's non-ASCII lines in the brief. (Plan 10a2)
+
+**Golden fixtures need `-text` under `core.autocrlf=true`.** An LF fixture checked out as CRLF fails byte-exact goldens (tell: diff shows identical lines, every one differing only by `\r`). `.gitattributes` marks `packages/core/test/fixtures/indicator/** -text`; do the same for any new byte-exact fixture folder. (Plan 10a2)
+
 **Codex (gpt-6-luna) wrote `·` and `…` as a literal `?`**, not mojibake, so a grep for `â€|Ã` misses it. Tell: `file` says ASCII on a file whose brief has non-ASCII; the placeholder test fails. Grep new files for the brief's non-ASCII strings, or keep briefs ASCII and add those characters yourself. (Plan 9F)
 
