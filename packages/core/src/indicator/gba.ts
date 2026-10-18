@@ -57,7 +57,9 @@ export function buildGbaIndicator(
   const body = renderGbaBody(input.paragraphs);
   // Reserve either label anywhere in source, including references without definitions.
   // Species never participates in numbering; select the lowest unused pair.
-  const used = new Set((incText + "\n" + mapScripts.join("\n")).match(/[A-Za-z_][\w.]*/g) ?? []);
+  // Comments and quoted text mention labels without defining or referencing them.
+  const source = (incText + "\n" + mapScripts.join("\n")).replace(/"(?:\\.|[^"\\\r\n])*"|@[^\r\n]*/g, " ");
+  const used = new Set(source.match(/[A-Za-z_][\w.]*/g) ?? []);
   let n = 1;
   while (used.has(`${mapName}_EventScript_PokemonIndicator${n}`) || used.has(`${mapName}_Text_PokemonIndicator${n}`)) n++;
   const scriptLabel = `${mapName}_EventScript_PokemonIndicator${n}`;
@@ -66,7 +68,8 @@ export function buildGbaIndicator(
   const scriptAppendText = [
     `${scriptLabel}::`, "\tlock", "\tfaceplayer", "\twaitse",
     `\tplaymoncry SPECIES_${species}, CRY_MODE_NORMAL`, `\tmsgbox ${textLabel}, MSGBOX_DEFAULT`,
-    "\twaitmoncry", "\tclosemessage", "\trelease", "\tend", "", `${textLabel}:`, ...body, "",
+    "\twaitmoncry", "\tclosemessage", "\trelease", "\tend", "", `${textLabel}:`, ...body,
+    ...(incText.length === 0 || incText.endsWith("\n") ? [""] : []),
   ].join(eol);
   return {
     objectEvent: {
@@ -110,6 +113,13 @@ function inspectIndicator(incText: string, event: { graphics_id: string; script:
   adapted[section.indices[1]!] = "\tend\n";
   const sign = findGbaSign(adapted.join(""), event.script);
   if (!sign.editable) return refuse(sign.reason ?? "unsupported text body");
+  // Only the tool's own text layout is editable: a re-render must not erase
+  // indentation, comments, blank lines or trailing whitespace from the source.
+  const body = raw.slice(sign.bodyStart, sign.bodyEnd).map(line => line.replace(/\r?\n$/, ""));
+  const canonical = renderGbaBody(sign.paragraphs);
+  if (body.length !== canonical.length || body.some((line, i) => line !== canonical[i])) {
+    return refuse("text layout changed outside PokeMap");
+  }
   // A terminator followed by another command is outside the generated shape.
   const tail = lines.findIndex((line, i) => i >= sign.bodyEnd && labelPattern.test(line));
   if (lines.slice(sign.bodyEnd, tail < 0 ? undefined : tail).some(Boolean)) return refuse("extra text command after terminator");

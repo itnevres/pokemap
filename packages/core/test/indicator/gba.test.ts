@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildGbaIndicator, findGbaIndicator, updateGbaIndicator, gbaIndicatorGraphics, guardGbaIndicatorWrite } from "../../src/indicator/gba.js";
 import { wrapSign, SIGN_WIDTH } from "../../src/signs/wrap.js";
+import { applyScriptAppend } from "../../src/write/save.js";
 
 const input = { x: 5, y: 7, elevation: 0, species: "POLIWRATH", paragraphs: [["POLIWRATH: Ribi ribit!"]] };
 const build = (species: string, paragraphs: string[][]) => buildGbaIndicator("Route101", "", [], { ...input, species, paragraphs });
@@ -56,6 +57,53 @@ describe("GBA Indicator", () => {
     expect(buildGbaIndicator("Route101", first.scriptAppendText, ["Route101_EventScript_PokemonIndicator3"], input).scriptLabel).toBe(second.scriptLabel);
     expect(build("NIDORAN_F", [["..."]]).scriptLabel).toBe(first.scriptLabel);
     expect(build("MR__MIME", [["..."]]).objectEvent.graphics_id).toBe("OBJ_EVENT_GFX_SPECIES(MR__MIME)");
+  });
+
+  it.each([
+    ["comment-only mention", "@ Route101_EventScript_PokemonIndicator1\n", []],
+    ["quoted mention", '.string "Route101_Text_PokemonIndicator1"\n', []],
+    ["mapScripts comment", "", ["@ Route101_EventScript_PokemonIndicator1"]],
+    ["mapScripts quoted mention", "", ['.string "Route101_EventScript_PokemonIndicator1"']],
+  ] as const)("ignores %s when allocating the lowest unused label", (_name, incText, scripts) => {
+    const out = buildGbaIndicator("Route101", incText, [...scripts], input);
+    expect(out.scriptLabel).toBe("Route101_EventScript_PokemonIndicator1");
+  });
+
+  it("reserves real mapScripts references after quoted strings containing @", () => {
+    const out = buildGbaIndicator("Route101", '@ Route101_EventScript_PokemonIndicator2\n', [
+      'some_macro "@ Route101_EventScript_PokemonIndicator2", Route101_EventScript_PokemonIndicator1 @ keep',
+    ], input);
+    expect(out.scriptLabel).toBe("Route101_EventScript_PokemonIndicator2");
+  });
+
+  it.each([
+    ["LF with final newline", "\n", true],
+    ["LF without final newline", "\n", false],
+    ["CRLF with final newline", "\r\n", true],
+    ["CRLF without final newline", "\r\n", false],
+  ] as const)("preserves EOL style and final-newline state when appending to %s", (_name, eol, finalNewline) => {
+    const before = ["Existing::", "\tend"].join(eol) + (finalNewline ? eol : "");
+    const out = buildGbaIndicator("Route101", before, [], input);
+    const after = applyScriptAppend(before, { path: "data/maps/Route101/scripts.inc", text: out.scriptAppendText });
+    expect(out.scriptAppendText.endsWith("\n")).toBe(finalNewline);
+    expect(after.endsWith("\n")).toBe(before.endsWith("\n"));
+    expect(after.match(/\r?\n/g)).toEqual(expect.arrayContaining([eol]));
+    expect(after.match(/\r?\n/g)?.every(ending => ending === eol)).toBe(true);
+    expect(after.startsWith(before)).toBe(true);
+  });
+
+  it.each([
+    ["extra indentation", '\t\t.string "Hello$"'],
+    ["inline comment", '\t.string "Hello$" @ keep'],
+    ["standalone comment", '@ keep\n\t.string "Hello$"'],
+    ["trailing whitespace", '\t.string "Hello$" '],
+    ["blank body line", '\n\t.string "Hello$"'],
+  ])("refuses text layout changed outside PokeMap: %s", (_name, body) => {
+    const out = build("POLIWRATH", [["Hello"]]);
+    const changed = out.scriptAppendText.replace('\t.string "Hello$"', body);
+    const block = findGbaIndicator(changed, event(out.scriptLabel));
+    expect(block).toMatchObject({ editable: false, reason: "text layout changed outside PokeMap" });
+    expect(() => updateGbaIndicator(changed, block!, "POLIWRATH", [["New"]])).toThrow("text layout changed outside PokeMap");
   });
 
   it("rejects empty text and illegal literal characters", () => {

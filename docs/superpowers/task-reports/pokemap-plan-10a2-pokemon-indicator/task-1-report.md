@@ -78,3 +78,20 @@ The four-argument builder scans source plus mapScripts for identifiers. Either t
 Tests were written/moved before production edits; follow-up edge-case tests preceded their implementation edits. Per the explicit task instruction, Vitest, the full gate, typecheck, UI build and mutation checks were not run; no pass claim is made. Coordinator must run the required verification and mutations.
 
 Static validation: `node --check` succeeded for new indicator source/test and edited events source; `git diff --check` succeeded. All edited pre-existing text files retain CRLF; fixtures deliberately contain literal LF source bytes. No git writes or commits performed.
+
+## Fix round 1
+
+Risk remains High: source recognition and byte-preserving writes. Same assigned Codex implementer continued after reading the delegate skill; no further dispatch or git writes. Only indicator/gba.ts, indicator/gba.test.ts and this report changed.
+
+Changes:
+- Recognition compares every raw text-body line from immediately after the text label through the terminator against renderGbaBody(parsed paragraphs), stripping only LF/CRLF line endings for comparison. Extra indentation, standalone/inline comments, blank lines and trailing whitespace now return editable:false with the exact reason `text layout changed outside PokeMap`. The existing legacy WildSign fixture remains unchanged and is still covered by the editable-legacy assertion. This supersedes the original report's acceptance of noncanonical body layout.
+- Number allocation removes double-quoted strings (including escaped quoted content) and @ comments outside strings before collecting identifiers from incText and mapScripts. Actual definitions/references still reserve either label; mentions in comments/dialogue no longer reserve a number. This supersedes the original report's conservative comment/string reservation note.
+- Placement appends omit the terminal EOL only when incText is nonempty and lacks a final LF. Existing empty-input and final-newline golden behavior remains unchanged. Integration tests invoke the real applyScriptAppend to check EOL style and final-newline state; save.ts was not modified.
+
+New test names (parameterized variants shown):
+- `ignores %s when allocating the lowest unused label`: comment-only mention; quoted mention; mapScripts comment; mapScripts quoted mention.
+- `reserves real mapScripts references after quoted strings containing @`: the real reference follows the quoted @ on the same line, testing quote-aware comment removal.
+- `preserves EOL style and final-newline state when appending to %s`: LF with final newline; LF without final newline; CRLF with final newline; CRLF without final newline.
+- `refuses text layout changed outside PokeMap: %s`: extra indentation; inline comment; standalone comment; trailing whitespace; blank body line. Each also verifies update refuses the block with the same exact reason.
+
+Validation: regression tests were added before production changes. `node --check` passed for both modified TypeScript files; `git diff --check` passed. CRLF preserved in all three modified files. Vitest, typecheck, full gate/UI build and mutations were not run, per the original sandbox/coordinator instructions; coordinator runtime verification remains pending. No checks were loosened; existing golden and legacy-recognition expectations were preserved. No open implementation concern specific to these three review findings.
