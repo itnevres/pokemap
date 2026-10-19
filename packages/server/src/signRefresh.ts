@@ -11,7 +11,7 @@ import { findGbcSign, updateGbcSign } from "@pokemap/core/src/gbc/signs.js";
 import { parseGbcCharmap } from "@pokemap/core/src/signs/charmap.js";
 import { gbcMapDisplayName, linkedSpecies, linkedText } from "@pokemap/core/src/signs/linked.js";
 import { signHash, type SignMode } from "@pokemap/core/src/signs/marker.js";
-import { wrapSign } from "@pokemap/core/src/signs/wrap.js";
+import { wrapSign, SIGN_WIDTH } from "@pokemap/core/src/signs/wrap.js";
 import type { GbcSessionEntry } from "./gbcEditSessions.js";
 
 export interface SignNotice { scriptLabel: string; message: string }
@@ -28,7 +28,7 @@ export function gbcSignParagraphs(proj: GbcProject, entry: GbcSessionEntry, mode
       mode === "species" ? linkedSpecies("gbc", current, entry.session.mapName) : []);
   }
   const path = `${proj.root}/constants/charmap.asm`;
-  const wrapped = wrapSign(text, parseGbcCharmap(readFileSync(path, "utf8")), 18);
+  const wrapped = wrapSign(text, parseGbcCharmap(readFileSync(path, "utf8")), SIGN_WIDTH);
   if ("refusal" in wrapped) throw new Error(`${path}: ${wrapped.refusal}`);
   if (!wrapped.paragraphs.length) throw new Error(`${path}: sign text must not be empty`);
   return wrapped.paragraphs;
@@ -79,7 +79,7 @@ export function gbaSignParagraphs(proj: Project, entry: SessionEntry, mode: Sign
       mode === "species" ? linkedSpecies("gba", current, entry.session.mapName) : []);
   }
   const path = `${proj.paths.root}/charmap.txt`;
-  const wrapped = wrapSign(text, parseGbaCharmap(readFileSync(path, "utf8")), 18);
+  const wrapped = wrapSign(text, parseGbaCharmap(readFileSync(path, "utf8")), SIGN_WIDTH);
   if ("refusal" in wrapped) throw new Error(`${path}: ${wrapped.refusal}`);
   if (!wrapped.paragraphs.length) throw new Error(`${path}: sign text must not be empty`);
   return wrapped.paragraphs;

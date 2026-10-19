@@ -104,7 +104,7 @@ export function useWorldContext(args: UseWorldContextArgs): WorldContext {
   }, [contextName, placement?.x, placement?.y, placement?.width, placement?.height, hasOrigin]);
 
   // Exits: Escape (a window listener in the CAPTURE phase, only while in context). Capture runs before every bubble
-  // handler, so what it checks is still the DOM the key press found: SaveDialog, WarpDestinationModal and SignComposer
+  // handler, so what it checks is still the DOM the key press found: SaveDialog, WarpDestinationModal and PokemonIndicatorDialog
   // close on Escape from a React handler without stopping propagation (and React may flush that unmount before a
   // bubble listener on window ran), and the context menu closes on its own window listener. Skipped when another
   // handler already took the key (defaultPrevented), when a context menu or a modal dialog is open, and when the key

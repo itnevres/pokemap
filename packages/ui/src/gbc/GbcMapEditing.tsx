@@ -11,9 +11,10 @@ import type { GbcTimeOfDay } from "./time.js";
 import { EditingWorkspace } from "../shared/EditingWorkspace.js";
 import { useVisit } from "../shared/useVisit.js";
 import { GBC_CAPABILITIES, toolsFor } from "../shell/adapter.js";
+import type { IndicatorBlock } from "@pokemap/core/src/indicator/gba.js";
 import { SignEditor } from "../shared/SignEditor.js";
 
-/** No collision button (Plan 7 Goal: GBC collision is per metatile, not per block) and no sign composer. */
+/** No collision button (Plan 7 Goal: GBC collision is per metatile, not per block) with the shared Indicator dialog. */
 export const GBC_TOOLS: ToolKind[] = toolsFor(GBC_CAPABILITIES);
 
 const message = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback);
@@ -38,6 +39,9 @@ export interface GbcMapEditingProps {
   onHoverMetatile: (id: number | null) => void;
   /** Opens `SaveDialog`, which `GbcApp` mounts at `<main>` level for stacking (as GBA's `App` does). */
   onOpenSave: () => void;
+  onOpenIndicator?: (edit?: { index: number; block: IndicatorBlock }) => void;
+  indicatorMessage?: string | null;
+  onDismissIndicatorMessage?: () => void;
   /** After a successful toolbar Discard: the runtime clears its stale failed-discard-before-switch banner (Plan 9 O1). */
   onDiscarded?: () => void;
   /** Plan 7 Task 5b. False renders only `.app__map-editing-body` holding the canvas slot (no Toolbar, banner, palette or
@@ -61,7 +65,7 @@ export interface GbcMapEditingProps {
  * Non-writable layout (`layout.writable === false`): the paint tools render disabled with the reason, and
  * `activeTool` resolves to null so the canvas cannot paint; event editing, undo/redo and save stay enabled.
  */
-export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId, onHoverMetatile, onOpenSave, onDiscarded, active = true, renderCanvas, onStrokeChain }: GbcMapEditingProps) {
+export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId, onHoverMetatile, onOpenSave, onOpenIndicator, indicatorMessage, onDismissIndicatorMessage, onDiscarded, active = true, renderCanvas, onStrokeChain }: GbcMapEditingProps) {
   const [toolKind, setToolKind] = useState<ToolKind | null>(null);
   const [signPick, setSignPick] = useState<{ x: number; y: number; anchor: DOMRect } | null>(null);
   // `key` is never a real map name when there is no map, so nothing reads as "mine" until one is selected.
@@ -166,7 +170,9 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
         canRedo={session.canRedo}
         onOpenSave={onOpenSave}
         onDiscard={onDiscard}
+        onOpenIndicator={GBC_CAPABILITIES.pokemonIndicator && onOpenIndicator ? () => onOpenIndicator() : undefined}
       />
+      {indicatorMessage && <div className="app__sign-added" role="status"><span>{indicatorMessage}</span><button type="button" className="app__sign-added-dismiss" aria-label="Dismiss" onClick={onDismissIndicatorMessage}>x</button></div>}
       {error && (
         <div className="app__event-op-error" role="alert">
           <span>{error}</span>
@@ -189,6 +195,8 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
         selected={pickedId}
       />
       <GbcEventInspector
+        mapName={onOpenIndicator ? mapName : undefined}
+        onEditIndicator={onOpenIndicator}
         events={session.events}
         selected={selectedEvent}
         stepsW={2 * data.layout.width}

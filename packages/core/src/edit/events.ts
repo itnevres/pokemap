@@ -35,6 +35,14 @@ export function moveEvent(map: MapData, kind: EventKind, index: number, x: numbe
   return { map: { ...map, [camelKey]: list }, jsonEdits };
 }
 
+export function setObjectGraphics(map: MapData, index: number, graphicsId: string): { map: MapData; jsonEdits: JsonEdit[] } {
+  const objectEvents = map.objectEvents.map((event, i) => i === index ? { ...event, graphicsId } : event);
+  return {
+    map: { ...map, objectEvents },
+    jsonEdits: [{ path: ["object_events", index, "graphics_id"], value: graphicsId }],
+  };
+}
+
 /** `value` is a RAW object literal (snake_case field names) -- it is
  *  spliced verbatim into map.json by insertArrayElement, so it must match
  *  the file's own field names, not MapData's camelCase ones. Appends at

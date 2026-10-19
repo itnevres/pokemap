@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import type { EventKind } from "@pokemap/core/src/edit/events.js";
+import { useIndicatorBlock } from "./PokemonIndicatorDialog.js";
+import type { IndicatorBlock } from "@pokemap/core/src/indicator/gba.js";
 import "../styles.css";
 
 /**
@@ -31,6 +33,9 @@ export type SelectedEvent =
   | ({ kind: "bg"; index: number; x: number; y: number; elevation: number } & { [k: string]: unknown });
 
 export interface EventInspectorProps {
+  mapName?: string;
+  indicatorSource?: unknown;
+  onEditIndicator?: (edit: { index: number; block: IndicatorBlock }) => void;
   selected: SelectedEvent | null;
   /** `elevation` rides along with every commit alongside x/y -- core's
    *  `moveEvent` now persists all three as real jsonEdits (follow-up to
@@ -69,7 +74,7 @@ function subtitleFor(e: SelectedEvent): string {
  * CollisionPalette's own controlled shape (Task 12): selection lives in the
  * PARENT (App.tsx's own `selectedEvent` state, populated by MapCanvas's
  * onSelectEvent), and this component is a pure display+edit form over
- * whatever is currently selected there. It never fetches, never owns
+ * whatever is currently selected there. Indicator recognition is fetched from the current staged session; it never owns
  * selection itself.
  *
  * `draft` is local, uncommitted edit state -- typing in a field updates the
@@ -81,7 +86,8 @@ function subtitleFor(e: SelectedEvent): string {
  * this effect does not fire on unrelated App re-renders and clobber an
  * in-progress, not-yet-blurred edit.
  */
-export function EventInspector({ selected, onMove, onDelete, onAdd }: EventInspectorProps) {
+export function EventInspector({ indicatorSource, mapName, onEditIndicator, selected, onMove, onDelete, onAdd }: EventInspectorProps) {
+  const indicator = useIndicatorBlock(mapName, selected?.kind === "object" ? selected.index : undefined, indicatorSource ?? selected);
   const [draft, setDraft] = useState(selected);
   useEffect(() => setDraft(selected), [selected]);
   // In-flight guard for Add/Delete -- see onAdd/onDelete's own doc comment
@@ -200,6 +206,13 @@ export function EventInspector({ selected, onMove, onDelete, onAdd }: EventInspe
         </>
       )}
 
+      {indicator.error && <p className="save-dialog__load-error">{indicator.error}</p>}
+      {indicator.block && <>
+        <button type="button" className="map-canvas__btn" disabled={!indicator.block.editable || !onEditIndicator}
+          title={indicator.block.editable ? "Edit Indicator" : `This Indicator's script was changed outside PokeMap: ${indicator.block.reason ?? "unsupported script"}`}
+          onClick={() => { if (indicator.block?.editable) onEditIndicator?.({ index: selected.index, block: indicator.block }); }}>Edit Indicator</button>
+        {!indicator.block.editable && <p>This Indicator's script was changed outside PokeMap: {indicator.block.reason ?? "unsupported script"}</p>}
+      </>}
       <div className="event-inspector__actions">
         <button type="button" className="map-canvas__btn event-inspector__delete-btn" onClick={handleDelete} disabled={pending}>
           {pending ? "Deleting…" : "Delete"}

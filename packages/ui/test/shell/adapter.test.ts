@@ -6,14 +6,14 @@ import { gbcAdapter } from "../../src/gbc/adapter.js";
 describe("capabilities (Plan 9)", () => {
   it("pins every GBA flag", () => {
     expect(GBA_CAPABILITIES).toEqual({
-      collisionTool: true, elevationOverlay: true, addEvent: true, addSign: true, signTool: true, timeOfDay: false,
+      collisionTool: true, elevationOverlay: true, addEvent: true, pokemonIndicator: true, signTool: true, timeOfDay: false,
       defectsBanner: false, manualPlacements: false, dungeonFilterCache: false,
       worldBar: { dungeonAutoLayout: true, unplacedRail: true },
     });
   });
   it("pins every GBC flag", () => {
     expect(GBC_CAPABILITIES).toEqual({
-      collisionTool: false, elevationOverlay: false, addEvent: false, addSign: false, signTool: true, timeOfDay: true,
+      collisionTool: false, elevationOverlay: false, addEvent: false, pokemonIndicator: true, signTool: true, timeOfDay: true,
       defectsBanner: true, manualPlacements: true, dungeonFilterCache: true,
       worldBar: { dungeonAutoLayout: false, unplacedRail: false },
     });

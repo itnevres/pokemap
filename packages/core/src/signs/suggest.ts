@@ -27,7 +27,7 @@ export interface SignSpeciesSuggestion {
  * rod) chance -- because a sign proposes ONE species to stand as, not a
  * table.
  */
-export function rankSpeciesForSign(proj: Project, mapName: string): SignSpeciesSuggestion[] {
+export function rankIndicatorSpecies(proj: Project, mapName: string): SignSpeciesSuggestion[] {
   const mapId = proj.map(mapName).id;
   const enc = proj.encounters();
   const entries = enc.forMap(mapId);
@@ -64,7 +64,7 @@ export interface SignPlacement {
  * Poliwrath does (see this task's own header comment). Returns null rather
  * than guessing when the map has no tall grass at all (I7).
  */
-export function suggestSignPlacement(proj: Project, mapName: string): SignPlacement | null {
+export function suggestIndicatorPlacement(proj: Project, mapName: string, occupied?: ReadonlySet<string>): SignPlacement | null {
   const layout = proj.layoutForMap(mapName);
   const split = proj.splitFor(layout);
   const primary = proj.tileset(layout.primaryTileset);
@@ -79,7 +79,7 @@ export function suggestSignPlacement(proj: Project, mapName: string): SignPlacem
   const blockdataPath = `${proj.paths.root}/${layout.blockdataFilepath}`;
   const blocks = parseBlocks(readFileSync(blockdataPath), proj.profile);
   const { width, height } = layout;
-  const occupied = new Set(proj.map(mapName).objectEvents.map((e) => `${e.x},${e.y}`));
+  const occupiedPositions = occupied ?? new Set(proj.map(mapName).objectEvents.map((e) => `${e.x},${e.y}`));
 
   const isGrass = (x: number, y: number): boolean => {
     if (x < 0 || y < 0 || x >= width || y >= height) return false;
@@ -98,7 +98,7 @@ export function suggestSignPlacement(proj: Project, mapName: string): SignPlacem
       for (const n of neighbors) {
         if (n.x < 0 || n.y < 0 || n.x >= width || n.y >= height) continue;
         if (isGrass(n.x, n.y)) continue;
-        if (occupied.has(`${n.x},${n.y}`)) continue;
+        if (occupiedPositions.has(`${n.x},${n.y}`)) continue;
         return n;
       }
     }

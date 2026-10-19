@@ -53,13 +53,13 @@ export type MapEditingWorkspaceProps = ActiveMapEditingWorkspaceProps | Inactive
 
 /** Plan 6c E2: the map-editing chrome (toolbar, banners, canvas + rail)
  *  lifted verbatim out of `App.tsx`. State lives
- *  in `useMapEditing`; the edit session in `App`; `SaveDialog`/`SignComposer`
+ *  in `useMapEditing`; the edit session in `App`; `SaveDialog`/`PokemonIndicatorDialog`
  *  stay siblings at `<main>` level in `App` for stacking reasons. */
 export function MapEditingWorkspace({ active = true, mapName, data, editSession, editing, renderCanvas, onStrokeChain, hoveredMetatileId, onHoverMetatile }: MapEditingWorkspaceProps) {
   const [signPick, setSignPick] = useState<{ x: number; y: number; anchor: DOMRect } | null>(null);
   const {
     activeToolKind, setActiveToolKind, collisionValue, setCollisionValue, currentStamp, setCurrentStamp,
-    setSaveDialogOpen, setSignComposerOpen, signAddedMessage, setSignAddedMessage, eventOpError, setEventOpError,
+    setSaveDialogOpen, setIndicatorOpen, signAddedMessage, setSignAddedMessage, eventOpError, setEventOpError,
     selectedEvent, currentMap, activeTool, handleDiscard, onSelectEvent, onCanvasMoveEvent, onMoveEventFromInspector,
     onDeleteEvent, onAddEvent,
   } = editing;
@@ -98,7 +98,7 @@ export function MapEditingWorkspace({ active = true, mapName, data, editSession,
         // wired.
         tools={toolsFor(GBA_CAPABILITIES)}
         availableTools={toolsFor(GBA_CAPABILITIES)}
-        onOpenSignComposer={GBA_CAPABILITIES.addSign ? () => setSignComposerOpen(true) : undefined}
+        onOpenIndicator={GBA_CAPABILITIES.pokemonIndicator ? () => { editing.setIndicatorEdit(undefined); setIndicatorOpen(true); } : undefined}
       />
       {/* Review fix: a failed move/add/delete used to be an
           unhandled rejection with zero visible signal -- reuses
@@ -148,7 +148,7 @@ export function MapEditingWorkspace({ active = true, mapName, data, editSession,
           highlightId={hoveredMetatileId ?? null}
         />
       )}
-      <EventInspector selected={selectedEvent} onMove={onMoveEventFromInspector} onDelete={onDeleteEvent} onAdd={onAddEvent} />
+      <EventInspector indicatorSource={currentMap} mapName={mapName ?? undefined} onEditIndicator={(edit) => { editing.setIndicatorEdit(edit); setIndicatorOpen(true); }} selected={selectedEvent} onMove={onMoveEventFromInspector} onDelete={onDeleteEvent} onAdd={onAddEvent} />
     </>
   );
   return (

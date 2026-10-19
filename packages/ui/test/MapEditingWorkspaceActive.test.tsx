@@ -24,8 +24,8 @@ const editing = {
   selectedEvent: null, eventOpError: "boom", setEventOpError: vi.fn(), currentMap: undefined, onSelectEvent: vi.fn(),
   onCanvasMoveEvent: vi.fn(), onMoveEventFromInspector: vi.fn(), onDeleteEvent: vi.fn(), onAddEvent: vi.fn(),
   activeToolKind: "pencil", setActiveToolKind: vi.fn(), collisionValue: { collision: 0, elevation: 0 }, setCollisionValue: vi.fn(),
-  currentStamp: null, setCurrentStamp: vi.fn(), saveDialogOpen: false, setSaveDialogOpen: vi.fn(), signComposerOpen: false,
-  setSignComposerOpen: vi.fn(), signAddedMessage: "Added", setSignAddedMessage: vi.fn(), activeTool: null, handleDiscard: vi.fn(),
+  currentStamp: null, setCurrentStamp: vi.fn(), saveDialogOpen: false, setSaveDialogOpen: vi.fn(), indicatorOpen: false, indicatorEdit: undefined, setIndicatorEdit: vi.fn(),
+  setIndicatorOpen: vi.fn(), signAddedMessage: "Added", setSignAddedMessage: vi.fn(), activeTool: null, handleDiscard: vi.fn(),
 } as unknown as ReturnType<typeof useMapEditing>;
 
 const CHROME = [".toolbar", ".edit-rail", ".app__event-op-error", ".app__sign-added", ".event-inspector"];

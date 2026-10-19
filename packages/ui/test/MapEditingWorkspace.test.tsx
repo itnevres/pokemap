@@ -54,8 +54,8 @@ function makeEditing(overrides: Partial<ReturnType<typeof useMapEditing>> = {}):
     setCurrentStamp: vi.fn(),
     saveDialogOpen: false,
     setSaveDialogOpen: vi.fn(),
-    signComposerOpen: false,
-    setSignComposerOpen: vi.fn(),
+    indicatorOpen: false, indicatorEdit: undefined, setIndicatorEdit: vi.fn(),
+    setIndicatorOpen: vi.fn(),
     signAddedMessage: null,
     setSignAddedMessage: vi.fn(),
     activeTool: null,
@@ -113,15 +113,15 @@ describe("MapEditingWorkspace", () => {
   });
 
   it("renders signAddedMessage as a status banner whose Dismiss calls setSignAddedMessage(null)", () => {
-    const editing = makeEditing({ signAddedMessage: "Added wild sign: Foo_Sign" });
+    const editing = makeEditing({ signAddedMessage: "Placed Pok\u00e9mon Indicator: Foo_Sign" });
     const { container } = render(<MapEditingWorkspace mapName="Foo" data={DATA} editSession={editSession} editing={editing} />);
     const banner = container.querySelector("[role=status]")!;
-    expect(banner.textContent).toContain("Added wild sign: Foo_Sign");
+    expect(banner.textContent).toContain("Placed Pok\u00e9mon Indicator: Foo_Sign");
     fireEvent.click(banner.querySelector("button[aria-label=Dismiss]")!);
     expect(editing.setSignAddedMessage).toHaveBeenCalledWith(null);
   });
 
-  it("Toolbar Save and Add Sign call their own open-flag setters, and only those", () => {
+  it("Toolbar Save and Pok\u00e9mon Indicator call their own open-flag setters, and only those", () => {
     const editing = makeEditing();
     // Save is disabled while clean (Toolbar gates it on isDirty).
     const dirty = { ...editSession, isDirty: true } as UseEditSessionResult;
@@ -129,10 +129,10 @@ describe("MapEditingWorkspace", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
     expect(editing.setSaveDialogOpen).toHaveBeenCalledWith(true);
-    expect(editing.setSignComposerOpen).not.toHaveBeenCalled();
+    expect(editing.setIndicatorOpen).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole("button", { name: "Add Sign" }));
-    expect(editing.setSignComposerOpen).toHaveBeenCalledWith(true);
+    fireEvent.click(screen.getByRole("button", { name: "Pok\u00e9mon Indicator" }));
+    expect(editing.setIndicatorOpen).toHaveBeenCalledWith(true);
     expect(editing.setSaveDialogOpen).toHaveBeenCalledTimes(1);
   });
 

@@ -1,10 +1,12 @@
+import { parseGbaCharmap } from "@pokemap/core/src/signs/charmap.js";
+import { wrapSign, SIGN_WIDTH } from "@pokemap/core/src/signs/wrap.js";
 import { readFileSync } from "node:fs";
 import type { Project } from "@pokemap/core/src/project.js";
 import { parseBlocks } from "@pokemap/core/src/load/blocks.js";
 import { paintCells, type Stamp } from "@pokemap/core/src/edit/paint.js";
 import { addEvent } from "@pokemap/core/src/edit/events.js";
-import { rankSpeciesForSign, suggestSignPlacement } from "@pokemap/core/src/signs/suggest.js";
-import { buildWildSign, guardSignWrite } from "@pokemap/core/src/signs/write.js";
+import { rankIndicatorSpecies, suggestIndicatorPlacement } from "@pokemap/core/src/signs/suggest.js";
+import { buildGbaIndicator, guardGbaIndicatorWrite } from "@pokemap/core/src/indicator/gba.js";
 import { planSave, commitSave, type EditSession } from "@pokemap/core/src/write/save.js";
 import { formatDiffText } from "@pokemap/core/src/write/diff.js";
 
@@ -49,9 +51,9 @@ function dryRunOrCommit(proj: Project, session: EditSession, yes: boolean, label
   return `${label}\n${diffText}\ncommitted`;
 }
 
-export function runSignSuggest(proj: Project, mapName: string): string {
-  const ranked = rankSpeciesForSign(proj, mapName);
-  const placement = suggestSignPlacement(proj, mapName);
+export function runIndicatorSuggest(proj: Project, mapName: string): string {
+  const ranked = rankIndicatorSpecies(proj, mapName);
+  const placement = suggestIndicatorPlacement(proj, mapName);
   const lines = ranked.map((r) => `  ${r.percent.toFixed(1).padStart(5)}%  Lv ${r.minLevel}-${r.maxLevel}  ${r.species}  (${r.method})`);
   const placementLine = placement ? `suggested placement: (${placement.x}, ${placement.y})` : "no tall grass on this map -- no placement suggested";
   return ranked.length === 0
@@ -59,29 +61,40 @@ export function runSignSuggest(proj: Project, mapName: string): string {
     : `${lines.join("\n")}\n${placementLine}`;
 }
 
-export interface SignAddArgs { map: string; x: number; y: number; elevation: number; species: string; dialogue: string; yes: boolean }
+export interface IndicatorAddArgs { map: string; x: number; y: number; elevation: number; species: string; text: string; yes: boolean }
 
-export function runSignAdd(proj: Project, args: SignAddArgs): string {
-  const built = buildWildSign(args.map, args);
-  const refusals = guardSignWrite(proj.paths.root, args.map, built.scriptLabel);
-  if (refusals.length > 0) {
-    throw new Error(refusals.map((r) => `${r.code} (${r.subject}): ${r.message} -- ${r.fix}`).join("\n"));
+export function runIndicatorAdd(proj: Project, args: IndicatorAddArgs): string {
+  try {
+    const session = openCliEditSession(proj, args.map);
+    if (!Number.isSafeInteger(args.x) || !Number.isSafeInteger(args.y) || !Number.isSafeInteger(args.elevation)
+      || args.x < 0 || args.y < 0 || args.x >= session.layout.width || args.y >= session.layout.height) {
+      throw new Error(`${proj.paths.mapJson(args.map)}: Indicator coordinates must be integers within the map`);
+    }
+    const path = `${proj.paths.root}/charmap.txt`;
+    const wrapped = wrapSign(args.text, parseGbaCharmap(readFileSync(path, "utf8")), SIGN_WIDTH);
+    if ("refusal" in wrapped) throw new Error(`${path}: ${wrapped.refusal}. Fix the Indicator text before retrying.`);
+    const built = buildGbaIndicator(args.map, readFileSync(proj.paths.mapScriptsInc(args.map), "utf8"), session.map.objectEvents.map(e => e.script), { ...args, paragraphs: wrapped.paragraphs });
+    const refusals = guardGbaIndicatorWrite(proj.paths.root, args.map, built.scriptLabel, args.species);
+    if (refusals.length > 0) {
+      throw new Error(refusals.map((r) => `${r.code} (${r.subject}): ${r.message} -- ${r.fix}`).join("\n"));
+    }
+    const { map, insertOp } = addEvent(session.map, "object", built.objectEvent);
+    session.map = map;
+    session.insertOps = [...session.insertOps, insertOp];
+    session.scriptAppends = [...(session.scriptAppends ?? []), { path: proj.paths.mapScriptsInc(args.map), text: built.scriptAppendText }];
+    return dryRunOrCommit(proj, session, args.yes, built.scriptLabel);
+  } catch (error) {
+    throw new Error(`${error instanceof Error ? error.message : String(error)} -- Check the named source and correct the Indicator species, coordinates and text before retrying.`);
   }
-  const session = openCliEditSession(proj, args.map);
-  const { map, insertOp } = addEvent(session.map, "object", built.objectEvent);
-  session.map = map;
-  session.insertOps = [...session.insertOps, insertOp];
-  session.scriptAppends = [...(session.scriptAppends ?? []), { path: proj.paths.mapScriptsInc(args.map), text: built.scriptAppendText }];
-  return dryRunOrCommit(proj, session, args.yes, built.scriptLabel);
 }
 
 /** OBJ_EVENT_GFX_SPECIES(...) is the ONE signal a wild sign object event
  *  carries that a hand-placed NPC never does (see Task 15's own header
  *  comment) -- this is a read-only scan, no EditSession needed. */
-export function runSignList(proj: Project, mapName: string): string {
+export function runIndicatorList(proj: Project, mapName: string): string {
   const map = proj.map(mapName);
   const signs = map.objectEvents.filter((e) => /^OBJ_EVENT_GFX_SPECIES\(/.test(e.graphicsId));
-  if (signs.length === 0) return `${mapName}: no wild signs found`;
+  if (signs.length === 0) return `${mapName}: no Pok\u00e9mon Indicators found`;
   return signs.map((e) => `  (${e.x}, ${e.y}) ${e.graphicsId} -> ${e.script}`).join("\n");
 }
 

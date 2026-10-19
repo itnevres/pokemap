@@ -124,7 +124,8 @@ export function SaveDialog({ mapName, onCommitted, onCancel }: SaveDialogProps) 
     }
   };
 
-  const nothingToSave = plan !== null && plan.changes.length === 0;
+  const displayedRefusals = plan?.refusals ?? refusals;
+  const nothingToSave = plan !== null && plan.changes.length === 0 && displayedRefusals.length === 0;
 
   return (
     <div
@@ -169,7 +170,7 @@ export function SaveDialog({ mapName, onCommitted, onCancel }: SaveDialogProps) 
             <p className="save-dialog__refusal-message">Could not save: {saveError}</p>
           </div>
         )}
-        {refusals.map((r) => (
+        {displayedRefusals.map((r) => (
           <div key={r.code + r.subject} className="save-dialog__refusal" role="alert">
             <p className="save-dialog__refusal-message">{r.message}</p>
             <p className="save-dialog__refusal-fix">{r.fix}</p>
@@ -197,7 +198,7 @@ export function SaveDialog({ mapName, onCommitted, onCancel }: SaveDialogProps) 
             type="button"
             className="map-canvas__btn save-dialog__btn--primary"
             onClick={() => void save()}
-            disabled={saving || plan === null || nothingToSave || loadError !== null}
+            disabled={saving || plan === null || nothingToSave || displayedRefusals.length > 0 || loadError !== null}
           >
             {saving ? "Saving…" : "Save Changes"}
           </button>

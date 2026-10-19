@@ -8,6 +8,7 @@ import type { EventKind } from "@pokemap/core/src/edit/events.js";
 import type { Stamp } from "@pokemap/core/src/edit/paint.js";
 import type { UseEditSessionResult } from "./useEditSession.js";
 import type { MapLayoutData } from "./useMapLayout.js";
+import type { IndicatorBlock } from "@pokemap/core/src/indicator/gba.js";
 import { useVisit } from "../shared/useVisit.js";
 
 /** Task 14: resolves a bare {kind,index} ref (MapCanvas's own selection
@@ -232,8 +233,12 @@ export function useMapEditing({ editSession, layoutData, mapName }: UseMapEditin
   // re-pick in between. Clearing it on every tool switch would force an
   // annoying re-pick for that normal workflow.
   const [currentStamp, setCurrentStamp] = useState<Stamp | null>(null);
+  const [indicatorOpen, setIndicatorOpen] = useState(false);
+  const [indicatorEdit, setIndicatorEdit] = useState<{ index: number; block: IndicatorBlock } | undefined>();
   // Render-phase reset means no child ever sees a previous visit's pick, selection, or error.
   if (visit.changed) {
+    setIndicatorOpen(false);
+    setIndicatorEdit(undefined);
     // Task 14: a selected event belongs to the map it was selected on --
     // without this, switching from map A (something selected) to map B
     // would carry A's {kind,index} ref into EventInspector, which would
@@ -250,7 +255,7 @@ export function useMapEditing({ editSession, layoutData, mapName }: UseMapEditin
     setEventOpError(null);
   }
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
-  // Task 17: SignComposer's own open/close flag, same shape as
+  // Task 17: PokemonIndicatorDialog's own open/close flag, same shape as
   // saveDialogOpen above. signAddedMessage is a one-shot confirmation --
   // this app had no existing "success" notice anywhere to reuse (only
   // eventOpError's danger-bordered banner), so this is a small, deliberate
@@ -258,7 +263,6 @@ export function useMapEditing({ editSession, layoutData, mapName }: UseMapEditin
   // instead of danger-toned, cleared by its own dismiss button or replaced
   // by the next sign add -- never auto-cleared on map switch. Unlike it,
   // eventOpError retires with its visit-scoped event operation.
-  const [signComposerOpen, setSignComposerOpen] = useState(false);
   const [signAddedMessage, setSignAddedMessage] = useState<string | null>(null);
 
   // Translates the Toolbar's bare ToolKind into the shape MapCanvas's own
@@ -329,8 +333,9 @@ export function useMapEditing({ editSession, layoutData, mapName }: UseMapEditin
     setCurrentStamp,
     saveDialogOpen,
     setSaveDialogOpen,
-    signComposerOpen,
-    setSignComposerOpen,
+    indicatorEdit, setIndicatorEdit,
+    indicatorOpen,
+    setIndicatorOpen,
     signAddedMessage,
     setSignAddedMessage,
     activeTool,

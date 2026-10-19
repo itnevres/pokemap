@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readFileSync, writeFileSync } from "node:fs";
 import { openProject } from "@pokemap/core/src/project.js";
 import { SUBJECT_ROOT, itWithCorpus } from "../../core/test/helpers/corpus.js";
-import { openCliEditSession, runSignSuggest, runSignAdd, runSignList, runPaint, runDiff } from "../src/writeCommands.js";
+import { openCliEditSession, runIndicatorSuggest, runIndicatorAdd, runIndicatorList, runPaint, runDiff } from "../src/writeCommands.js";
 
 describe("writeCommands", () => {
   itWithCorpus("openCliEditSession builds the exact same EditSession shape editSessions.ts's open() does, from real disk state", () => {
@@ -14,25 +14,35 @@ describe("writeCommands", () => {
     expect(session.jsonEdits).toEqual([]);
   });
 
-  itWithCorpus("runSignSuggest prints ranked species and a placement for a real route, and never writes", () => {
+  itWithCorpus("runIndicatorSuggest prints ranked species and a placement for a real route, and never writes", () => {
     const proj = openProject(SUBJECT_ROOT);
     const before = readFileSync(proj.paths.mapScriptsInc("Route29"), "utf8");
-    const out = runSignSuggest(proj, "Route29");
+    const out = runIndicatorSuggest(proj, "Route29");
     expect(out).toContain("%");
     expect(readFileSync(proj.paths.mapScriptsInc("Route29"), "utf8")).toBe(before);
   });
 
-  itWithCorpus("runSignAdd without --yes prints the plan and writes nothing", () => {
+  itWithCorpus("runIndicatorAdd without --yes prints the plan and writes nothing", () => {
     const proj = openProject(SUBJECT_ROOT);
     const scriptsPath = proj.paths.mapScriptsInc("Route29");
     const before = readFileSync(scriptsPath, "utf8");
-    const out = runSignAdd(proj, { map: "Route29", x: 1, y: 1, elevation: 3, species: "RATTATA", dialogue: "RATTATA: Skreee!", yes: false });
-    expect(out).toContain("Route29_EventScript_WildSign_Rattata");
+    const out = runIndicatorAdd(proj, { map: "Route29", x: 1, y: 1, elevation: 3, species: "RATTATA", text: "RATTATA: Skreee!", yes: false });
+    expect(out).toContain("Route29_EventScript_PokemonIndicator1");
     expect(out).toMatch(/dry.?run|not written|--yes/i);
     expect(readFileSync(scriptsPath, "utf8")).toBe(before);
   });
 
-  itWithCorpus("runSignAdd with --yes actually commits, then restores", () => {
+  itWithCorpus("runIndicatorAdd refuses invalid text and unknown species without writing", () => {
+    const proj = openProject(SUBJECT_ROOT), path = proj.paths.mapScriptsInc("Route29");
+    const before = readFileSync(path, "utf8"), beforeMap = readFileSync(proj.paths.mapJson("Route29"), "utf8");
+    for (const input of [{ species: "BOGUS", text: "HELLO" }, { species: "RATTATA", text: "ABCDEFGHIJKLMNOPQRSTUVWXYZ" }]) {
+      expect(() => runIndicatorAdd(proj, { map: "Route29", x: 1, y: 1, elevation: 0, ...input, yes: true })).toThrow(/species_names.h|charmap.txt/);
+      expect(readFileSync(path, "utf8")).toBe(before);
+      expect(readFileSync(proj.paths.mapJson("Route29"), "utf8")).toBe(beforeMap);
+    }
+  });
+
+  itWithCorpus("runIndicatorAdd with --yes actually commits, then restores", () => {
     const proj = openProject(SUBJECT_ROOT);
     // Route35, not Route30 (the plan's own original choice): signRoutes.test.ts's
     // own "refuses ... when the derived label already exists" test (Task 17)
@@ -48,7 +58,7 @@ describe("writeCommands", () => {
     const beforeScripts = readFileSync(scriptsPath, "utf8");
     const beforeMapJson = readFileSync(mapJsonPath, "utf8");
     try {
-      const out = runSignAdd(proj, { map: "Route35", x: 1, y: 1, elevation: 3, species: "RATTATA", dialogue: "RATTATA: Skreee!", yes: true });
+      const out = runIndicatorAdd(proj, { map: "Route35", x: 1, y: 1, elevation: 3, species: "RATTATA", text: "RATTATA: Skreee!", yes: true });
       expect(out).toMatch(/committed|saved|wrote/i);
       expect(readFileSync(scriptsPath, "utf8")).not.toBe(beforeScripts);
       expect(readFileSync(mapJsonPath, "utf8")).not.toBe(beforeMapJson);
@@ -58,45 +68,28 @@ describe("writeCommands", () => {
     }
   });
 
-  itWithCorpus("runSignAdd refuses and writes nothing when the derived label already exists, even with --yes", () => {
+  itWithCorpus("runIndicatorAdd allocates a fresh number for an existing species label", () => {
     const proj = openProject(SUBJECT_ROOT);
-    // Route40, not Route31 (the plan's own original choice): this test does two
-    // REAL writeFileSync calls against the target's real scripts.inc (seed the
-    // colliding label, then restore in `finally`), and signRoutes.test.ts's own
-    // Route31 test (Task 17, "undo after a sign add removes BOTH...") does a
-    // real POST /sign/add against that same real Route31 scripts.inc with the
-    // SAME derived label (species RATTATA) via guardSignWrite's real read of
-    // the file. Under vitest's parallel-file execution, a read from that test
-    // landing between this test's seed-write and its restore would see the
-    // seeded label and get refused -- signRoutes.test.ts's own assertion
-    // (`plan.changes` equals `[]`) happens to pass either way, but that's a
-    // coincidence of what it asserts today, not a guarantee -- exactly the
-    // same class of hazard as the Route33/Route34 fix below. Route40 is
-    // confirmed real (data/maps/Route40/{map.json,scripts.inc} both exist,
-    // distinct LAYOUT_ROUTE40) and is not referenced anywhere else in this
-    // repo's test suite.
-    const scriptsPath = proj.paths.mapScriptsInc("Route40");
-    const before = readFileSync(scriptsPath, "utf8");
+    const path = proj.paths.mapScriptsInc("Route40"), before = readFileSync(path, "utf8");
     try {
-      writeFileSync(scriptsPath, before + "\nRoute40_EventScript_WildSign_Rattata::\n\tend\n");
-      expect(() => runSignAdd(proj, { map: "Route40", x: 1, y: 1, elevation: 3, species: "RATTATA", dialogue: "...", yes: true })).toThrow(/SIGN_LABEL_EXISTS/);
-      expect(readFileSync(proj.paths.mapJson("Route40"), "utf8")).toEqual(readFileSync(proj.paths.mapJson("Route40"), "utf8")); // map.json untouched (trivially true; real assertion is the throw itself plus the finally-restore below)
-    } finally {
-      writeFileSync(scriptsPath, before);
-    }
+      writeFileSync(path, before + "\nRoute40_EventScript_PokemonIndicator1::\n\tend\n");
+      const out = runIndicatorAdd(proj, { map: "Route40", x: 1, y: 1, elevation: 0, species: "RATTATA", text: "HELLO", yes: false });
+      expect(out).toContain("Route40_EventScript_PokemonIndicator2");
+      expect(readFileSync(path, "utf8")).toBe(before + "\nRoute40_EventScript_PokemonIndicator1::\n\tend\n");
+    } finally { writeFileSync(path, before); }
   });
 
-  itWithCorpus("runSignList finds an existing overworld-species object event on a real map with one -- CeladonCity's own Poliwrath", () => {
+  itWithCorpus("runIndicatorList finds an existing overworld-species object event on a real map with one -- CeladonCity's own Poliwrath", () => {
     const proj = openProject(SUBJECT_ROOT);
-    const out = runSignList(proj, "CeladonCity");
+    const out = runIndicatorList(proj, "CeladonCity");
     expect(out).toContain("POLIWRATH");
     expect(out).toContain("CeladonCity_EventScript_Poliwrath");
   });
 
-  itWithCorpus("runSignList reports none found on a map with no overworld-species object events", () => {
+  itWithCorpus("runIndicatorList reports none found on a map with no overworld-species object events", () => {
     const proj = openProject(SUBJECT_ROOT);
-    const out = runSignList(proj, "PalletTown");
-    expect(out).toMatch(/no wild sign|none found/i);
+    const out = runIndicatorList(proj, "PalletTown");
+    expect(out).toMatch(/no.*indicator|none found/i);
   });
 
   itWithCorpus("runDiff never writes, regardless of the requested edit", () => {

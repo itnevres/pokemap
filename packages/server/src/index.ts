@@ -1,3 +1,4 @@
+import { gbaSpeciesNames } from "@pokemap/core/src/signs/linked.js";
 import { parseMap } from "@pokemap/core/src/load/maps.js";
 import { findGbaSign, gbaSignScript, gbaSignText, nextGbaSignNumber, updateGbaSign } from "@pokemap/core/src/signs/gbaSign.js";
 import { formatMarker, signHash, type SignMode } from "@pokemap/core/src/signs/marker.js";
@@ -28,9 +29,9 @@ import { createEditSessionStore, snapshotOf, snapshotCommand } from "./editSessi
 import { paintCells, floodFill, shiftGrid, type Stamp } from "@pokemap/core/src/edit/paint.js";
 import { applyScriptAppend, planSave, commitSave, type EditSession } from "@pokemap/core/src/write/save.js";
 import { formatDiffJson } from "@pokemap/core/src/write/diff.js";
-import { moveEvent, addEvent, deleteEvent, findWarpsTargetingByIndex, type EventKind } from "@pokemap/core/src/edit/events.js";
-import { rankSpeciesForSign, suggestSignPlacement } from "@pokemap/core/src/signs/suggest.js";
-import { buildWildSign, guardSignWrite } from "@pokemap/core/src/signs/write.js";
+import { moveEvent, addEvent, deleteEvent, setObjectGraphics, findWarpsTargetingByIndex, EVENT_ARRAY_KEY, type EventKind } from "@pokemap/core/src/edit/events.js";
+import { rankIndicatorSpecies, suggestIndicatorPlacement } from "@pokemap/core/src/signs/suggest.js";
+import { buildGbaIndicator, guardGbaIndicatorWrite, findGbaIndicator, updateGbaIndicator, gbaIndicatorGraphics } from "@pokemap/core/src/indicator/gba.js";
 
 /**
  * A discriminated union on `family` (Plan 6b task spec) -- the gbc branch's
@@ -189,6 +190,19 @@ export function createProjectHandler(root: string): ProjectHandler {
     fix: "Check the named source or sign text; refresh or unlink hand-edited signs explicitly.",
     subject: project.paths.mapScriptsInc(name), message: error instanceof Error ? error.message : String(error),
   }] });
+  const indicatorCharmapPath = `${project.paths.root}/charmap.txt`;
+  const indicatorCharmapFix = "Restore a valid subject charmap and correct unsupported Indicator text before retrying.";
+  const indicatorFailure = (name: string, error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error);
+    const charmap = message.startsWith(`${indicatorCharmapPath}:`);
+    return { refusals: [{ code: "indicator", subject: charmap ? indicatorCharmapPath : project.paths.mapScriptsInc(name), message,
+      fix: charmap ? indicatorCharmapFix : "Check the named source, restore the generated Indicator shape, or correct the species and text before retrying.",
+    }] };
+  };
+  function indicatorParagraphs(entry: ReturnType<typeof editEntryFor>, text: string): string[][] {
+    try { return gbaSignParagraphs(project, entry, "free", text); }
+    catch (error) { throw new Error(`${indicatorCharmapPath}: ${error instanceof Error ? error.message : String(error)}. ${indicatorCharmapFix}`); }
+  }
   function signPlan(name: string) {
     const refreshed = refreshGbaLinkedSigns(project, editEntryFor(name));
     const plan = planSave(project, refreshed.session);
@@ -983,7 +997,12 @@ export function createProjectHandler(root: string): ProjectHandler {
             const entry = editEntryFor(name);
             const result = handleEventOp(entry, "move event", (map) => {
               const { map: nextMap, jsonEdits } = moveEvent(map, parsed.kind as EventKind, parsed.index as number, parsed.x as number, parsed.y as number, parsed.elevation as number | undefined);
-              entry.session.jsonEdits = [...entry.session.jsonEdits, ...jsonEdits];
+              const arrayKey = EVENT_ARRAY_KEY[parsed.kind as EventKind];
+              const pending = entry.session.insertOps.find(op => op.path.length === 1 && op.path[0] === arrayKey && op.index === parsed.index);
+              if (pending) {
+                entry.session.insertOps = entry.session.insertOps.map(op => op === pending
+                  ? { ...op, value: { ...(op.value as Record<string, unknown>), x: parsed.x as number, y: parsed.y as number, ...(parsed.elevation !== undefined ? { elevation: parsed.elevation as number } : {}) } } : op);
+              } else entry.session.jsonEdits = [...entry.session.jsonEdits, ...jsonEdits];
               return { map: nextMap };
             });
             return send(200, { map: result.map, isDirty: result.isDirty });
@@ -1038,25 +1057,42 @@ export function createProjectHandler(root: string): ProjectHandler {
           .catch((e: unknown) => { console.error(e); send(500, { error: e instanceof Error ? e.message : String(e) }); });
       }
 
-      // Task 17: wild sign write path. GET /suggestions is read-only (ranks
-      // catchable species and suggests a grass-adjacent placement, Task
-      // 15's own rankSpeciesForSign/suggestSignPlacement); POST /sign/add
-      // composes Task 16's generateSignScript (via core's buildWildSign)
-      // into ONE object-event insert plus ONE scripts.inc append, both
-      // staged on the session the same way the event routes above stage
-      // theirs -- reuses handleEventOp for the identical prev-snapshot/
-      // mutate/push-undo-command sequence, extended here to also push a
-      // scriptAppends entry alongside insertOps (editSessions.ts's own
-      // Snapshot/snapshotOf already carry scriptAppends, so undo reverts
-      // both halves as one step for free).
-      const signSuggestMatch = /^\/api\/sign\/(.+)\/suggestions$/.exec(url.pathname);
-      if (signSuggestMatch && req.method === "GET") {
-        const name = decodeURIComponent(signSuggestMatch[1]!);
+      const indicatorSuggestMatch = /^\/api\/indicator\/(.+)\/suggestions$/.exec(url.pathname);
+      if (indicatorSuggestMatch && req.method === "GET") {
+        const name = decodeURIComponent(indicatorSuggestMatch[1]!);
         if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
-        return send(200, {
-          species: rankSpeciesForSign(project, name),
-          placement: suggestSignPlacement(project, name),
-        });
+        try {
+          const names = gbaSpeciesNames(project);
+          const occupied = editSessions.has(name)
+            ? new Set(editEntryFor(name).session.map.objectEvents.map(({ x, y }) => `${x},${y}`)) : undefined;
+          return send(200, {
+            species: rankIndicatorSpecies(project, name).map(({ species, percent }) => {
+              const bare = species.replace(/^SPECIES_/, "");
+              const display = names.get(`SPECIES_${bare}`);
+              if (display === undefined) throw new Error(`${project.paths.root}/src/data/text/species_names.h: missing ${species}`);
+              return { species: bare, name: display, percent };
+            }),
+            placement: suggestIndicatorPlacement(project, name, occupied),
+          });
+        } catch (error) { return send(400, indicatorFailure(name, error)); }
+      }
+
+      const indicatorAtMatch = /^\/api\/edit\/(.+)\/indicator\/at$/.exec(url.pathname);
+      if (indicatorAtMatch && req.method === "GET") {
+        const name = decodeURIComponent(indicatorAtMatch[1]!);
+        if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
+        try {
+          const raw = url.searchParams.get("index");
+          if (raw === null || !/^\d+$/.test(raw) || !Number.isSafeInteger(Number(raw))) throw new Error('"index" must be a non-negative integer');
+          const session = editEntryFor(name).session;
+          const event = session.map.objectEvents[Number(raw)];
+          if (!event) return send(200, { indicator: null });
+          let indicator = findGbaIndicator(effectiveGbaScripts(project, session), { script: event.script, graphics_id: event.graphicsId });
+          if (indicator && session.map.objectEvents.filter(e => e.script === event.script).length > 1) {
+            indicator = { ...indicator, editable: false, reason: "shared script" };
+          }
+          return send(200, { indicator });
+        } catch (error) { return send(400, indicatorFailure(name, error)); }
       }
 
       const signAtMatch = /^\/api\/edit\/(.+)\/sign\/at$/.exec(url.pathname);
@@ -1166,41 +1202,75 @@ export function createProjectHandler(root: string): ProjectHandler {
         }).catch((error: unknown) => send(400, signFailure(name, error)));
       }
 
-      const signAddMatch = /^\/api\/edit\/(.+)\/sign\/add$/.exec(url.pathname);
-      if (signAddMatch && req.method === "POST") {
-        const name = decodeURIComponent(signAddMatch[1]!);
+      const indicatorEditMatch = /^\/api\/edit\/(.+)\/indicator\/(add|update)$/.exec(url.pathname);
+      if (indicatorEditMatch && req.method === "POST") {
+        const name = decodeURIComponent(indicatorEditMatch[1]!);
         if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
-        return readBody(req)
-          .then((body) => {
-            let parsed: { x?: unknown; y?: unknown; elevation?: unknown; species?: unknown; dialogue?: unknown };
-            try { parsed = JSON.parse(body) as typeof parsed; }
-            catch (e) { return send(400, { error: `invalid JSON body: ${(e as Error).message}` }); }
-            if (typeof parsed.x !== "number" || typeof parsed.y !== "number" || typeof parsed.elevation !== "number"
-              || typeof parsed.species !== "string" || typeof parsed.dialogue !== "string") {
-              return send(400, { error: `expected { x, y, elevation: number, species, dialogue: string }, got ${body}` });
+        return readBody(req).then(raw => {
+          try {
+            const parsed: unknown = JSON.parse(raw);
+            if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("body must be an object");
+            const body = parsed as Record<string, unknown>;
+            if (typeof body.species !== "string" || typeof body.text !== "string") throw new Error('"species" and "text" must be strings');
+            const species = body.species.toUpperCase().replace(/^SPECIES_/, "");
+            const update = indicatorEditMatch[2] === "update";
+            if (update) {
+              if (!Number.isSafeInteger(body.index) || (body.index as number) < 0 || typeof body.scriptLabel !== "string") throw new Error('expected { index: non-negative integer, scriptLabel: string }');
+            } else if (!Number.isSafeInteger(body.x) || !Number.isSafeInteger(body.y) || (body.elevation !== undefined && !Number.isSafeInteger(body.elevation))) {
+              throw new Error('"x", "y" and optional "elevation" must be integers');
             }
-            let built: ReturnType<typeof buildWildSign>;
-            try {
-              built = buildWildSign(name, parsed as { x: number; y: number; elevation: number; species: string; dialogue: string });
-            } catch (e) {
-              return send(400, { error: e instanceof Error ? e.message : String(e) });
-            }
-            const refusals = guardSignWrite(project.paths.root, name, built.scriptLabel);
-            if (refusals.length > 0) return send(400, { refusals });
-
             const entry = editEntryFor(name);
-            const result = handleEventOp(entry, "add wild sign", (map) => {
-              const { map: nextMap, insertOp } = addEvent(map, "object", built.objectEvent);
-              entry.session.insertOps = [...entry.session.insertOps, insertOp];
-              entry.session.scriptAppends = [
-                ...(entry.session.scriptAppends ?? []),
-                { path: project.paths.mapScriptsInc(name), text: built.scriptAppendText },
-              ];
-              return { map: nextMap };
-            });
-            return send(200, { map: result.map, isDirty: result.isDirty, scriptLabel: built.scriptLabel });
-          })
-          .catch((e: unknown) => { console.error(e); send(500, { error: e instanceof Error ? e.message : String(e) }); });
+            const prev = snapshotOf(entry.session);
+            const session = { ...entry.session };
+            // Validate and build on a copy before publishing a single snapshot.
+            const paragraphs = indicatorParagraphs(entry, body.text);
+            const text = effectiveGbaScripts(project, session);
+            let scriptLabel: string;
+            if (update) {
+              if (session.removeOps.some(op => op.path.length === 1 && op.path[0] === "object_events" && op.index <= (body.index as number))) {
+                throw new Error("Save or undo the pending object deletion before editing this Indicator");
+              }
+              const event = session.map.objectEvents[body.index as number];
+              if (!event || event.script !== body.scriptLabel) throw new Error("object script no longer matches this Indicator");
+              const block = findGbaIndicator(text, { script: event.script, graphics_id: event.graphicsId });
+              if (!block?.editable) throw new Error(block?.reason ?? "object is not an editable Indicator");
+              if (session.map.objectEvents.filter(e => e.script === event.script).length > 1) throw new Error("shared script");
+              // The existing label belongs to this block; validate species without treating it as a new definition.
+              const guard = guardGbaIndicatorWrite(project.paths.root, name, block.scriptLabel, species).filter(r => r.code !== "SIGN_LABEL_EXISTS");
+              if (guard.length) return send(400, { refusals: guard });
+              const after = updateGbaIndicator(text, block, species, paragraphs);
+              if (event.graphicsId !== gbaIndicatorGraphics(species)) {
+                const changed = setObjectGraphics(session.map, body.index as number, gbaIndicatorGraphics(species));
+                session.map = changed.map;
+                // Scalar edits run before insertions at save time. Fold a staged object's
+                // graphics change into its insert instead of addressing absent disk data.
+                const pending = session.insertOps.find(op => op.path.length === 1 && op.path[0] === "object_events" && op.index === body.index);
+                if (pending) {
+                  session.insertOps = session.insertOps.map(op => op === pending
+                    ? { ...op, value: { ...(op.value as Record<string, unknown>), graphics_id: gbaIndicatorGraphics(species) } } : op);
+                } else session.jsonEdits = [...session.jsonEdits.filter(edit => !(edit.path[0] === "object_events" && edit.path[1] === body.index && edit.path[2] === "graphics_id")), ...changed.jsonEdits];
+              }
+              if (after !== text) replaceGbaScripts(project, session, after);
+              scriptLabel = block.scriptLabel;
+            } else {
+              const x = body.x as number, y = body.y as number;
+              if (x < 0 || y < 0 || x >= session.layout.width || y >= session.layout.height) throw new Error("Indicator coordinates outside map");
+              const built = buildGbaIndicator(name, text, session.map.objectEvents.map(e => e.script), {
+                x, y, elevation: (body.elevation as number | undefined) ?? 0, species, paragraphs,
+              });
+              const refusals = guardGbaIndicatorWrite(project.paths.root, name, built.scriptLabel, species);
+              if (refusals.length) return send(400, { refusals });
+              const added = addEvent(session.map, "object", built.objectEvent);
+              session.map = added.map;
+              session.insertOps = [...session.insertOps, added.insertOp];
+              session.scriptAppends = [...(session.scriptAppends ?? []), { path: project.paths.mapScriptsInc(name), text: built.scriptAppendText }];
+              scriptLabel = built.scriptLabel;
+            }
+            const next = snapshotOf(session);
+            if (JSON.stringify(prev) !== JSON.stringify(next)) entry.stack.push(entry.session, snapshotCommand(update ? "update Indicator" : "place Indicator", prev, next));
+            return send(200, { map: entry.session.map, isDirty: entry.session.isDirty, ...(update ? {} : { scriptLabel }) });
+          } catch (error) { return send(400, indicatorFailure(name, error)); }
+        }).catch(error => send(400, indicatorFailure(name, error)));
       }
 
       return send(404, { error: "not found" });

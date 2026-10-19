@@ -1,3 +1,6 @@
+import { findGbcIndicator, insertGbcIndicator, updateGbcIndicator } from "@pokemap/core/src/indicator/gbc.js";
+import { loadGbcOwnSprites, gbcIndicatorSprite, rankGbcIndicatorSpecies, suggestGbcIndicatorPlacement } from "@pokemap/core/src/indicator/gbcData.js";
+import { gbcSpeciesNames } from "@pokemap/core/src/signs/linked.js";
 import { findGbcSign, insertGbcSign, nextGbcSignNumber, updateGbcSign } from "@pokemap/core/src/gbc/signs.js";
 import { parseMapEvents } from "@pokemap/core/src/gbc/load/events.js";
 import { signHash, type SignMode } from "@pokemap/core/src/signs/marker.js";
@@ -181,6 +184,22 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void 
     subject: `${proj.root}/maps/${name}.asm`, message: error instanceof Error ? error.message : String(error),
   }] } });
 
+  const indicatorCharmapPath = `${proj.root}/constants/charmap.asm`;
+  const indicatorCharmapFix = "Restore a valid subject charmap and correct unsupported Indicator text before retrying.";
+  const indicatorFailure = (name: string, error: unknown, line?: number,
+    fix = "Check the named source, restore the generated Indicator shape, or correct the species and text before retrying."): Result => {
+    const message = error instanceof Error ? error.message : String(error);
+    const charmap = message.startsWith(`${indicatorCharmapPath}:`);
+    const subject = charmap ? indicatorCharmapPath : `${proj.root}/maps/${name}.asm`;
+    return { code: 400, body: { refusals: [{ code: "indicator", subject,
+      message: line === undefined ? message : `${subject}:${line}: ${message}`, fix: charmap ? indicatorCharmapFix : fix,
+    }] } };
+  };
+  function indicatorParagraphs(entry: GbcSessionEntry, text: string): string[][] {
+    try { return gbcSignParagraphs(proj, entry, "free", text); }
+    catch (error) { throw new Error(`${indicatorCharmapPath}: ${error instanceof Error ? error.message : String(error)}. ${indicatorCharmapFix}`); }
+  }
+
   /** Plan-shaped refusal (same wire shape as GBA): 200 for a plan, 400 for a commit. */
   const planFailure = (name: string, error: unknown, code: number): Result =>
     ({ code, body: { changes: [], ...(signFailure(name, error).body as object), signNotices: [] } });
@@ -200,6 +219,47 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void 
 
   /** Route table keyed `METHOD sub-route`. `body: true` routes get the parsed JSON object. */
   const routes: Record<string, { body: boolean; run(name: string, body: Obj): Result }> = {
+    "GET indicator/at": { body: false, run: (name, body) => {
+      try {
+        const index = int(body, "index");
+        if (index < 0) throw new Error('"index" must be non-negative');
+        const entry = store.open(name), event = entry.session.events.objects[index];
+        return ok({ indicator: event ? findGbcIndicator(entry.session.eventsText, event, loadGbcOwnSprites(proj.root)) : null });
+      } catch (error) { return indicatorFailure(name, error); }
+    } },
+    "POST indicator/add": { body: true, run: (name, body) => {
+      try {
+        const x = int(body, "x"), y = int(body, "y");
+        if (typeof body.species !== "string" || typeof body.text !== "string") throw new Error('"species" and "text" must be strings');
+        const entry = store.open(name);
+        if (x < 0 || y < 0 || x >= entry.session.map.width * 2 || y >= entry.session.map.height * 2) throw new Error("Indicator coordinates outside map");
+        const species = body.species.toUpperCase().replace(/^SPECIES_/, "");
+        if (!gbcSpeciesNames(proj.root).has(species)) throw new Error(`${proj.root}/data/pokemon/names.asm: unknown species ${species}`);
+        const own = loadGbcOwnSprites(proj.root);
+        const paragraphs = indicatorParagraphs(entry, body.text);
+        const added = insertGbcIndicator(entry.session.eventsText, name, { x, y, species, sprite: gbcIndicatorSprite(species, own), paragraphs });
+        const result = stageSign(entry, "place Indicator", added.text);
+        return ok({ ...(result.body as object), scriptLabel: added.scriptLabel });
+      } catch (error) { return indicatorFailure(name, error); }
+    } },
+    "POST indicator/update": { body: true, run: (name, body) => {
+      try {
+        const index = int(body, "index");
+        if (index < 0 || typeof body.scriptLabel !== "string" || typeof body.species !== "string" || typeof body.text !== "string") throw new Error("expected index, scriptLabel, species and text");
+        const entry = store.open(name), event = entry.session.events.objects[index];
+        if (!event || event.script !== body.scriptLabel) return indicatorFailure(name,
+          new Error("object script no longer matches this Indicator"), event === undefined ? undefined : event.lineIndex + 1,
+          "Reload the map and select the current Indicator before retrying.");
+        const own = loadGbcOwnSprites(proj.root);
+        const block = findGbcIndicator(entry.session.eventsText, event, own);
+        if (!block?.editable) return indicatorFailure(name, new Error(block?.reason ?? "object is not an editable Indicator"),
+          event.lineIndex + 1, "Restore the generated Indicator shape or select an editable Indicator before retrying.");
+        const species = body.species.toUpperCase().replace(/^SPECIES_/, "");
+        if (!gbcSpeciesNames(proj.root).has(species)) throw new Error(`${proj.root}/data/pokemon/names.asm: unknown species ${species}`);
+        const paragraphs = indicatorParagraphs(entry, body.text);
+        return stageSign(entry, "update Indicator", updateGbcIndicator(entry.session.eventsText, name, index, block, species, gbcIndicatorSprite(species, own), paragraphs));
+      } catch (error) { return indicatorFailure(name, error); }
+    } },
     "GET sign/at": { body: false, run: (name, body) => {
       const [x, y] = [int(body, "x"), int(body, "y")];
       const entry = store.open(name);
@@ -336,6 +396,18 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void 
   return {
     /** Returns true when it claimed the request (the response is sent now or later); false means fall through. */
     handle(req: IncomingMessage, url: URL, send: Send): boolean {
+      const suggestion = /^\/api\/indicator\/([^/]+)\/suggestions$/.exec(url.pathname);
+      if (suggestion && req.method === "GET") {
+        const name = decodeMapName(suggestion[1]!);
+        if (name === undefined || !mapNames.has(name)) { send(404, { error: "no such map" }); return true; }
+        try {
+          const occupied = store.has(name)
+            ? new Set(store.open(name).session.events.objects.map(({ x, y }) => `${x},${y}`)) : undefined;
+          send(200, { species: rankGbcIndicatorSpecies(proj, name), placement: suggestGbcIndicatorPlacement(proj, name, occupied) });
+        }
+        catch (error) { const result = indicatorFailure(name, error); send(result.code, result.body); }
+        return true;
+      }
       if (!url.pathname.startsWith("/api/edit/")) return false;
       const m = /^\/api\/edit\/([^/]+)\/(.+)$/.exec(url.pathname);
       if (!m) { send(404, { error: "not found" }); return true; }
@@ -356,8 +428,8 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void 
           if (!isObj(parsed)) return { code: 400, body: { error: `expected a JSON object body, got ${text}` } };
           body = parsed;
         }
-        if (req.method === "GET" && m[2] === "sign/at") {
-          for (const key of ["x", "y"]) {
+        if (req.method === "GET" && (m[2] === "sign/at" || m[2] === "indicator/at")) {
+          for (const key of m[2] === "indicator/at" ? ["index"] : ["x", "y"]) {
             const value = url.searchParams.get(key);
             if (value === null || !/^-?\d+$/.test(value)) return { code: 400, body: { error: `"${key}" must be an integer` } };
             body[key] = Number(value);

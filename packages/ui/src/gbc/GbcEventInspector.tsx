@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import type { GbcMapEvents } from "@pokemap/core/src/gbc/model/types.js";
 import type { GbcEventKind, GbcWarpRenumberWarning } from "@pokemap/core/src/gbc/edit/events.js";
 import type { GbcEventRef } from "./GbcMapCanvas.js";
+import { useIndicatorBlock } from "../components/PokemonIndicatorDialog.js";
+import type { IndicatorBlock } from "@pokemap/core/src/indicator/gba.js";
 import "../styles.css";
 
 type AnyEvent = GbcMapEvents["warps"][number] | GbcMapEvents["coords"][number] | GbcMapEvents["bgs"][number] | GbcMapEvents["objects"][number];
@@ -40,6 +42,8 @@ export function duplicateArgs(kind: GbcEventKind, e: AnyEvent, stepsW: number, s
 }
 
 export interface GbcEventInspectorProps {
+  mapName?: string;
+  onEditIndicator?: (edit: { index: number; block: IndicatorBlock }) => void;
   events: GbcMapEvents;
   selected: GbcEventRef | null;
   stepsW: number;
@@ -63,8 +67,9 @@ export interface GbcEventInspectorProps {
  * Add is "Duplicate" only: scripts address objects by position, so a from-scratch event needs a script label
  * that exists, which only the CLI (`pokemap event add`) can author safely.
  */
-export function GbcEventInspector({ events, selected, stepsW, stepsH, onMove, onDelete, onDuplicate, warnings, onDismissWarnings }: GbcEventInspectorProps) {
+export function GbcEventInspector({ mapName, onEditIndicator, events, selected, stepsW, stepsH, onMove, onDelete, onDuplicate, warnings, onDismissWarnings }: GbcEventInspectorProps) {
   const ev = lookup(events, selected);
+  const indicator = useIndicatorBlock(mapName, selected?.kind === "object" ? selected.index : undefined, events);
   // Strings, parsed on commit: a controlled number input fed NaN (a cleared field) logs a React warning.
   const [draft, setDraft] = useState({ x: String(ev?.x ?? 0), y: String(ev?.y ?? 0) });
   useEffect(() => setDraft({ x: String(ev?.x ?? 0), y: String(ev?.y ?? 0) }), [selected?.kind, selected?.index, ev?.x, ev?.y]);
@@ -133,6 +138,13 @@ export function GbcEventInspector({ events, selected, stepsW, stepsH, onMove, on
           />
         </label>
       ))}
+      {indicator.error && <p className="save-dialog__load-error">{indicator.error}</p>}
+      {indicator.block && <>
+        <button type="button" className="map-canvas__btn" disabled={!indicator.block.editable || !onEditIndicator}
+          title={indicator.block.editable ? "Edit Indicator" : `This Indicator's script was changed outside PokeMap: ${indicator.block.reason ?? "unsupported script"}`}
+          onClick={() => { if (indicator.block?.editable) onEditIndicator?.({ index: selected.index, block: indicator.block }); }}>Edit Indicator</button>
+        {!indicator.block.editable && <p>This Indicator's script was changed outside PokeMap: {indicator.block.reason ?? "unsupported script"}</p>}
+      </>}
       <div className="event-inspector__actions event-inspector__actions--gbc">
         <button
           type="button"

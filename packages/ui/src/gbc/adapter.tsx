@@ -1,10 +1,12 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { GbcMapEditing, type GbcMapEditingCanvasProps } from "./GbcMapEditing.js";
 import { GbcMapCanvas, GBC_COMPOSITE_ORIGIN } from "./GbcMapCanvas.js";
 import { GbcWorldCanvas } from "./GbcWorldCanvas.js";
 import { useGbcGroups } from "./hooks/useGbcGroups.js";
 import { useGbcMap } from "./hooks/useGbcMap.js";
-import { useGbcEditSession } from "./hooks/useGbcEditSession.js";
+import { PokemonIndicatorDialog } from "../components/PokemonIndicatorDialog.js";
+import type { IndicatorBlock } from "@pokemap/core/src/indicator/gba.js";
+import { useGbcEditSession, isSessionBody } from "./hooks/useGbcEditSession.js";
 import { useGbcWorld } from "./hooks/useGbcWorld.js";
 import { useGbcDungeons } from "./hooks/useGbcDungeons.js";
 import type { GbcTimeOfDay } from "./time.js";
@@ -46,6 +48,9 @@ export function useGbcRuntime({ selected, mode, requestPrompt }: RuntimeArgs): F
   // reasoning at App.tsx:50-62). Seeded from the ready payload only: `ready` already ignores the previous map's.
   const session = useGbcEditSession(selected, ready?.blocks, ready?.events);
   const [saveOpen, setSaveOpen] = useState(false);
+  const [indicator, setIndicator] = useState<{ mapName: string; edit?: { index: number; block: IndicatorBlock } } | null>(null);
+  const [indicatorMessage, setIndicatorMessage] = useState<string | null>(null);
+  useEffect(() => { setIndicator(null); }, [selected]);
   // A failed discard-before-switch (or post-save reload): the switch is abandoned and this says why.
   const [switchError, setSwitchError] = useState<string | null>(null);
 
@@ -79,6 +84,9 @@ export function useGbcRuntime({ selected, mode, requestPrompt }: RuntimeArgs): F
     time, session, hoveredMetatileId,
     onHoverMetatile: setHoveredMetatileId,
     onOpenSave: () => setSaveOpen(true),
+    onOpenIndicator: (edit?: { index: number; block: IndicatorBlock }) => { if (selected) setIndicator({ mapName: selected, edit }); },
+    indicatorMessage,
+    onDismissIndicatorMessage: () => setIndicatorMessage(null),
     onDiscarded: () => setSwitchError(null),
   };
 
@@ -165,7 +173,16 @@ export function useGbcRuntime({ selected, mode, requestPrompt }: RuntimeArgs): F
         </button>
       </div>
     ),
-    modals: null,
+    modals: indicator && indicator.mapName === selected ? (
+      <PokemonIndicatorDialog key={`${selected}:${indicator.edit?.index ?? "add"}`} mapName={indicator.mapName} edit={indicator.edit}
+        onCancel={() => setIndicator(null)}
+        onDone={(scriptLabel, payload) => {
+          if (!isSessionBody(payload) || payload.events === null) throw new Error("Invalid Indicator session response.");
+          session.applyExternalSession?.(payload);
+          setIndicator(null);
+          setIndicatorMessage(`${indicator.edit ? "Updated" : "Placed"} Pok\u00e9mon Indicator: ${scriptLabel}`);
+        }} />
+    ) : null,
     saveDialog: {
       open: saveOpen,
       setOpen: setSaveOpen,

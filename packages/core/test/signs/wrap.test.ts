@@ -173,3 +173,13 @@ itWithCorpus("wrap 36 with real GBA charmap: DON'T", () => {
   if ("refusal" in result) throw new Error(result.refusal);
   expect(result.paragraphs).toEqual([["DON'T"]]);
 });
+
+
+it.each([
+  "HI ABCDEFGHIJKLMNOPQRST",
+  "THE QUICK BROWN FOX JUMPS OVER THE ABCDEFGHIJKLMNOPQRST",
+])("wrap 18: refuses an overlong later word in %s", input => {
+  expect(wrapSign(input, createMinimalGbcCharmap(), 18)).toEqual({
+    refusal: '"ABCDEFGHIJKLMNOPQRST" is longer than one line (18).',
+  });
+});
