@@ -26,3 +26,14 @@ Verification:
 Coordinator follow-up: run the added tests, full gate, typecheck, UI build, and real-app suggestion-failure check in the normal environment. No unrelated bugs were found during this bounded fix wave.
 
 Commit blocker: git add and git commit both failed because Git cannot create C:/Programming Projects/PokeMap/.git/worktrees/wt-final/index.lock (Permission denied). The linked worktree metadata is outside the writable sandbox. No commit was created; all scoped changes and this report remain saved in the working tree. Intended message: fix(indicator): address final review refusals and label detection.
+
+## Coordinator verification (2026-10-18)
+
+- Gate at `669d99e`: 3,201 pass / 0 fail / 195 files; typecheck and UI build pass.
+- Mutation: reverting the `wrap.ts` and `gba.ts` fixes fails 6 of the new tests.
+- Scoped re-review (Codex gpt-5.6-terra): I3, M1, M2 addressed, no new breakage.
+- Live (hub 5184 via preload, Vite 5183, headless Chromium shell 1248), GBA Route101: dialog loads suggestions
+  (no stuck "Loading", no alert); Place with `HI ABCDEFGHIJKLMNOPQRST` returns 400 refusal shown in the dialog,
+  session stays clean (`task-6-shots/final-overlong-refused.png`). GBA subject manifest `a0349693144d` before and after.
+- Observed (pre-existing, deferred): the GBA add route wraps a wrap refusal as a charmap fault, repeating the path and
+  fix text inside the message.
