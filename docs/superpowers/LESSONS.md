@@ -305,3 +305,6 @@ The raw per-phase lessons this was distilled from, with the session narrative, a
 
 **Codex (gpt-6-luna) wrote `·` and `…` as a literal `?`**, not mojibake, so a grep for `â€|Ã` misses it. Tell: `file` says ASCII on a file whose brief has non-ASCII; the placeholder test fails. Grep new files for the brief's non-ASCII strings, or keep briefs ASCII and add those characters yourself. (Plan 9F)
 
+**Aider crashes in this repo with `BadObject: b'1b37016…'` / "Is your git repo corrupted?"** (GitPython vs this repo's objects; `git fsck` is not needed). Tell: exits before any edit, `.aider.chat.history.md` appears. Run Aider with `--no-git --no-pretty --no-fancy-input` and `TERM=dumb`; delete `.aider.*` history files after. (Plan 10a3 Task 1)
+
+**Codex (gpt-6.1-sol) can start a new file with a UTF-8 BOM.** Tell: `head -c3 file | xxd` shows `efbb bf`; a grep for `^import` on line 1 shows a stray `ï»¿`. Strip with `sed -i '1s/^ï»¿//'` before committing. (Plan 10a3 Task 1)
