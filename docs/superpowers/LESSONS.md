@@ -218,6 +218,8 @@ Rerun in isolation before calling either a regression. (Plan 8)
 
 **Live-verify Vite on Windows:** use `fileURLToPath(new URL(".", import.meta.url))` for `root`; `URL.pathname` keeps `%20` for the space in "Programming Projects", and Vite then serves 404s. (Plan 6c Phase B)
 
+**`chromium-1208` is gone; use `chromium_headless_shell-1248`** (`%LOCALAPPDATA%\ms-playwright\chromium_headless_shell-1248\chrome-headless-shell-win64\chrome-headless-shell.exe`) as `executablePath` for the cached `playwright-core`. **A Pencil click paints nothing until a palette metatile is picked** (tell: Selection reads "Nothing picked", the Save button stays disabled); click the palette first. Driver: `task-reports/pokemap-plan-10a3-save-integrity/shots/live.mjs`. (Plan 10a3)
+
 **Cloud browser:** `import { chromium } from "/opt/node22/lib/node_modules/playwright/index.mjs"` works without `playwright install`. (Plan 6b)
 
 **Windows browser:** the Playwright MCP's `browser_run_code_unsafe` can save screenshots to disk. Keep each check inside one call: twice, a synthetic click (pointerdown→click within 1 ms) landed on an open dropdown *between* calls. An in-page event logger caught it. (Plan 6b)

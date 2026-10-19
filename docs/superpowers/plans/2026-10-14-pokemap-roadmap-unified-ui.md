@@ -100,7 +100,9 @@ Both families already render the same `components/Toolbar.tsx`; the differences 
 - **Depends on:** D1, D2, D3, D6, D8.
 - **Split (user, 2026-10-16):** **10a** = D1 + a new Sign tool (spec
   `specs/2026-10-16-pokemap-plan-10a-switch-and-signs-design.md`, plan `plans/2026-10-16-pokemap-plan-10a-switch-and-signs.md`);
-  **10a2** = Pokémon Indicator (10a2 done, branch `plan-10a2-pokemon-indicator`); **10b** = D3 + F2, D6, D8.
+  **10a2** = Pokémon Indicator (done, merged via #21); **10a3** = save integrity: all-or-nothing save and
+  commit bound to the previewed plan (spec `specs/2026-10-19-pokemap-plan-10a3-save-integrity-design.md`; Tasks 1-5 done,
+  branch `plan-10a3-save-integrity`); **10b** = D3 + F2, D6, D8.
 - **D2 amended (user, 2026-10-16):** the GBA "sign composer" is not a sign: it adds an object event (a catchable
   species' sprite with cry + one line). It is renamed **Pokémon Indicator** and ported to GBC in 10a2. D2's "GBC sign
   composer" becomes a real **Sign tool** in both families (readable bg-event signs; free text or text linked to the map
