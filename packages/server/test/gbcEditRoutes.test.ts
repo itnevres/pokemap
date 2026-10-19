@@ -1,12 +1,13 @@
 import { spawnSync } from "node:child_process";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from "vitest";
+import * as editRoutes from "../src/gbcEditRoutes.js";
 import { createGbcProjectHandler } from "../src/gbcRoutes.js";
 import type { ProjectHandler } from "../src/index.js";
 import { openGbcProject } from "@pokemap/core/src/gbc/project.js";
 import { loadGbcMapEvents } from "@pokemap/core/src/gbc/load/events.js";
-import { chmodSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { encodePng } from "@pokemap/cli/src/png.js";
@@ -22,6 +23,21 @@ import { paintCells, floodFill, shiftGrid } from "@pokemap/core/src/gbc/edit/pai
 import type { Block } from "@pokemap/core/src/gbc/model/types.js";
 import { GBC_SUBJECT_ROOT, copyGbcSubjectToTemp, hasGbcProject, removeTemp } from "@pokemap/core/test/gbc/helpers/corpus.js";
 
+// atomic.ts captures named fs imports at module initialization, so inject before it loads.
+const renameFailure = vi.hoisted(() => ({ target: "", swaps: [] as string[], failed: false }));
+vi.mock("node:fs", async importOriginal => {
+  const fs = await importOriginal<typeof import("node:fs")>();
+  return { ...fs, renameSync: ((from, to) => {
+    if (renameFailure.target && String(to).replace(/\\/g, "/") === renameFailure.target.replace(/\\/g, "/")) {
+      renameFailure.target = ""; // fail once, allowing rollback/cleanup to proceed
+      renameFailure.failed = true;
+      throw new Error("injected ElmsHouse asm rename failure");
+    }
+    fs.renameSync(from, to);
+    if (renameFailure.target) renameFailure.swaps.push(String(to).replace(/\\/g, "/"));
+  }) as typeof fs.renameSync };
+});
+
 // Plan 7 Task 4. Every test WRITES, so everything runs against a hermetic temp
 // copy of PerfPlus; the real PerfPlus is asserted untouched in afterAll. Hooks
 // live inside the describe for the same reason as gbcRoutes.test.ts (a hoisted
@@ -32,9 +48,11 @@ const NBT = "/api/edit/NewBarkTown";
 const stamp1 = (metatileId: number) => ({ width: 1, height: 1, cells: [{ metatileId }] });
 
 interface SessionBody { blocks: Block[]; events: unknown; isDirty: boolean; canUndo: boolean; canRedo: boolean }
-interface PlanBody { changes: { path: string; kind: string; summary: string }[]; refusals: { code: string }[] }
+interface PlanBody { fingerprint: string | null; changes: { path: string; kind: string; summary: string }[]; refusals: { code: string }[] }
 
 describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbc edit routes (hermetic temp copy)", () => {
+  const editRoutesFactory = editRoutes.createGbcEditRoutes;
+  let commitHookCalls = 0;
   let tmp: string;
   let h: ProjectHandler;
   let srv: Server;
@@ -50,6 +68,8 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbc edit routes (hermetic tem
   beforeAll(async () => {
     porcelainBefore = porcelain();
     tmp = copyGbcSubjectToTemp();
+    vi.spyOn(editRoutes, "createGbcEditRoutes").mockImplementation((proj, hooks) =>
+      editRoutesFactory(proj, { onCommit: () => { commitHookCalls++; hooks.onCommit(); } }));
     h = createGbcProjectHandler(tmp);
     srv = createServer(h.handle);
     await new Promise<void>((resolve) => srv.listen(0, "127.0.0.1", resolve));
@@ -57,6 +77,7 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbc edit routes (hermetic tem
   });
   afterAll(async () => {
     await new Promise<void>((resolve) => (srv ? srv.close(() => resolve()) : resolve()));
+    vi.restoreAllMocks();
     if (tmp) removeTemp(tmp);
     expect(porcelain()).toBe(porcelainBefore);
   });
@@ -77,7 +98,7 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbc edit routes (hermetic tem
   it("1. plan on an untouched map is empty", async () => {
     const r = await get(`${NBT}/plan`);
     expect(r.status).toBe(200);
-    expect(await r.json()).toEqual({ changes: [], refusals: [], signNotices: [] });
+    expect(await r.json()).toEqual({ changes: [], refusals: [], signNotices: [], fingerprint: expect.any(String) });
     await post(`${NBT}/discard`);
   });
 
@@ -269,7 +290,7 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbc edit routes (hermetic tem
     expect(back.isDirty).toBe(false);
     expect(back.canUndo).toBe(false);
     expect(back.canRedo).toBe(true);
-    expect(await plan()).toEqual({ changes: [], refusals: [], signNotices: [] });
+    expect(await plan()).toEqual({ changes: [], refusals: [], signNotices: [], fingerprint: expect.any(String) });
     await post(`${NBT}/discard`);
   });
 
@@ -309,7 +330,7 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbc edit routes (hermetic tem
     const after = await snapshot();
     expect(after.session.isDirty).toBe(false);
     expect(after.session.canUndo).toBe(false);
-    expect(after.plan).toEqual({ changes: [], refusals: [], signNotices: [] });
+    expect(after.plan).toEqual({ changes: [], refusals: [], signNotices: [], fingerprint: expect.any(String) });
     expect(h.dirtyMaps()).toEqual([]);
     await post(`${NBT}/discard`);
   });
@@ -399,7 +420,7 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbc edit routes (hermetic tem
 
   // --- commit (spec tests 9-13). These WRITE the temp copy, so they run after every read-only test. ---
   const read = (rel: string) => readFileSync(`${tmp}/${rel}`);
-  const commit = (name: string) => post(`/api/edit/${name}/commit`);
+  const commit = async (name: string) => post(`/api/edit/${name}/commit`, { fingerprint: (await plan(name)).fingerprint ?? "refused-plan" });
   const diffBytes = (a: Buffer, b: Buffer) => { let n = 0; for (let i = 0; i < Math.max(a.length, b.length); i++) if (a[i] !== b[i]) n++; return n; };
 
   it("9a. commit writes exactly 1 .blk byte and the spliced .asm, closes the session, and invalidates the render cache", async () => {
@@ -427,7 +448,7 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbc edit routes (hermetic tem
     expect(read("maps/NewBarkTown.asm").toString("utf8")).toBe(moveGbcEvent(asmBefore, "NewBarkTown", "warp", 0, 7, 3).text);
 
     expect(h.dirtyMaps()).toEqual([]);
-    expect(await plan()).toEqual({ changes: [], refusals: [], signNotices: [] }); // a fresh session opened on the committed files
+    expect(await plan()).toEqual({ changes: [], refusals: [], signNotices: [], fingerprint: expect.any(String) }); // a fresh session opened on the committed files
     await post(`${NBT}/discard`);
 
     const pngAfter = await png("NewBarkTown");
@@ -533,14 +554,20 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbc edit routes (hermetic tem
     await pencil(0, 0, 9, "ElmsHouse");
     await post("/api/edit/ElmsHouse/paint/end");
     await ev("move", { kind: "warp", index: 0, x: 1, y: 1 }, "ElmsHouse");
-    chmodSync(asm, 0o444); // the .blk swaps first; the .asm swap then fails and the .blk is restored
+    const hooksBefore = commitHookCalls;
+    renameFailure.target = asm;
+    renameFailure.swaps = [];
+    renameFailure.failed = false;
     try {
       const r = await commit("ElmsHouse");
       expect(r.status).toBe(500);
       expect(typeof ((await r.json()) as { error: string }).error).toBe("string");
     } finally {
-      chmodSync(asm, 0o666);
+      renameFailure.target = "";
     }
+    expect(commitHookCalls).toBe(hooksBefore + 1); // failed commits must invalidate caches
+    expect(renameFailure.failed).toBe(true);
+    expect(renameFailure.swaps).toContain(blk.replace(/\\/g, "/")); // prove an earlier target really swapped
     expect(readFileSync(asm).equals(asmBefore)).toBe(true);
     expect(h.dirtyMaps()).toEqual(["ElmsHouse"]);
     await post("/api/edit/ElmsHouse/discard");

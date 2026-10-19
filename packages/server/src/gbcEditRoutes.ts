@@ -39,7 +39,8 @@ import {
   type GbcEventEdit, type GbcEventKind,
 } from "@pokemap/core/src/gbc/edit/events.js";
 import { paintCells, floodFill, shiftGrid, type GbcStamp } from "@pokemap/core/src/gbc/edit/paint.js";
-import { changedBlockIndices, commitGbcSave, planGbcSave } from "@pokemap/core/src/gbc/write/save.js";
+import { changedBlockIndices, commitGbcSave, planGbcSave, prepareGbcSave } from "@pokemap/core/src/gbc/write/save.js";
+import { planFingerprint, type AtomicEntry } from "@pokemap/core/src/write/atomic.js";
 import { formatDiffJson } from "@pokemap/core/src/write/diff.js";
 import { createGbcEditSessionStore, gbcSnapshotOf, type GbcSessionEntry } from "./gbcEditSessions.js";
 import { snapshotCommand } from "./editSessions.js";
@@ -202,7 +203,7 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void 
 
   /** Plan-shaped refusal (same wire shape as GBA): 200 for a plan, 400 for a commit. */
   const planFailure = (name: string, error: unknown, code: number): Result =>
-    ({ code, body: { changes: [], ...(signFailure(name, error).body as object), signNotices: [] } });
+    ({ code, body: { changes: [], ...(signFailure(name, error).body as object), signNotices: [], ...(code === 200 ? { fingerprint: null } : {}) } });
 
   const isSignEvent = (kind: string) => /^BGEVENT_(READ|UP|DOWN|LEFT|RIGHT)$/.test(kind);
   function stageSign(entry: GbcSessionEntry, label: string, text: string): Result {
@@ -214,7 +215,15 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void 
   function signPlan(name: string) {
     const refreshed = refreshGbcLinkedSigns(proj, store.open(name));
     const plan = planGbcSave(proj, refreshed.session);
-    return { plan, body: { ...formatDiffJson(plan), signNotices: refreshed.notices } };
+    let prepared: AtomicEntry[] = [];
+    let prepareError: unknown;
+    if (plan.refusals.length === 0) {
+      try { prepared = prepareGbcSave(proj, plan.session); }
+      catch (error) { prepareError = error instanceof Error ? error : new Error(String(error)); }
+    }
+    return { plan, prepared, prepareError, body: { ...formatDiffJson(plan), signNotices: refreshed.notices,
+      fingerprint: plan.refusals.length > 0 || prepareError !== undefined ? null : planFingerprint(prepared),
+    } };
   }
 
   /** Route table keyed `METHOD sub-route`. `body: true` routes get the parsed JSON object. */
@@ -375,14 +384,22 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void 
         : [];
       return ok({ ...sessionBody(entry), warpRenumberWarnings });
     } },
-    "POST commit": { body: false, run: (name) => {
-      let prepared: ReturnType<typeof signPlan>;
-      try { prepared = signPlan(name); } catch (error) { return planFailure(name, error, 400); }
-      const { plan, body } = prepared;
+    "POST commit": { body: true, run: (name, posted) => {
+      if (typeof posted.fingerprint !== "string") return { code: 400, body: {
+        changes: [], refusals: [{ code: "PLAN_FINGERPRINT_MISSING", subject: name,
+          message: "The Save request carried no plan fingerprint", fix: "Reopen Save and try again" }], signNotices: [],
+      } };
+      let fresh: ReturnType<typeof signPlan>;
+      try { fresh = signPlan(name); } catch (error) { return planFailure(name, error, 400); }
+      const { plan, prepared, prepareError, body } = fresh;
       if (plan.refusals.length > 0) return { code: 400, body };
-      // A throw (propagates to `handle`: console.error + 500 { error }) can come
-      // after the .blk was already written, so the caches are cleared either way.
-      try { commitGbcSave(proj, plan); } finally { hooks.onCommit(); }
+      if (prepareError !== undefined) return { code: 500, body: { error: prepareError instanceof Error ? prepareError.message : String(prepareError) } };
+      if (body.fingerprint !== posted.fingerprint) return { code: 409, body: { ...body, notice: {
+        code: "PLAN_CHANGED", subject: name, message: "Changes were made since you opened Save",
+        fix: "Review the updated changes and save again",
+      } } };
+      // Clear caches on writer failure as well as success; keep the session on failure.
+      try { commitGbcSave(proj, plan, prepared); } finally { hooks.onCommit(); }
       // Closed, not kept: the session's originals predate the write, and the
       // next open() re-reads the files. On a throw it stays open for a retry/discard.
       store.close(name);
@@ -423,7 +440,7 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void 
         if (route.body) {
           const text = await readBody(req);
           let parsed: unknown;
-          try { parsed = JSON.parse(text); }
+          try { parsed = m[2] === "commit" && text.trim() === "" ? {} : JSON.parse(text); }
           catch (e) { return { code: 400, body: { error: `invalid JSON body: ${(e as Error).message}` } }; }
           if (!isObj(parsed)) return { code: 400, body: { error: `expected a JSON object body, got ${text}` } };
           body = parsed;

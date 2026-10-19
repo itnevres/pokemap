@@ -27,7 +27,8 @@ import { parseBorder } from "@pokemap/cli/src/args.js";
 import { randomUUID } from "node:crypto";
 import { createEditSessionStore, snapshotOf, snapshotCommand } from "./editSessions.js";
 import { paintCells, floodFill, shiftGrid, type Stamp } from "@pokemap/core/src/edit/paint.js";
-import { applyScriptAppend, planSave, commitSave, type EditSession } from "@pokemap/core/src/write/save.js";
+import { applyScriptAppend, planSave, prepareSave, commitSave, type EditSession } from "@pokemap/core/src/write/save.js";
+import { planFingerprint, type AtomicEntry } from "@pokemap/core/src/write/atomic.js";
 import { formatDiffJson } from "@pokemap/core/src/write/diff.js";
 import { moveEvent, addEvent, deleteEvent, setObjectGraphics, findWarpsTargetingByIndex, EVENT_ARRAY_KEY, type EventKind } from "@pokemap/core/src/edit/events.js";
 import { rankIndicatorSpecies, suggestIndicatorPlacement } from "@pokemap/core/src/signs/suggest.js";
@@ -206,7 +207,15 @@ export function createProjectHandler(root: string): ProjectHandler {
   function signPlan(name: string) {
     const refreshed = refreshGbaLinkedSigns(project, editEntryFor(name));
     const plan = planSave(project, refreshed.session);
-    return { plan, body: { ...formatDiffJson(plan), signNotices: refreshed.notices } };
+    let prepared: AtomicEntry[] = [];
+    let prepareError: unknown;
+    if (plan.refusals.length === 0) {
+      try { prepared = prepareSave(project, plan.session); }
+      catch (error) { prepareError = error instanceof Error ? error : new Error(String(error)); }
+    }
+    return { plan, prepared, prepareError, body: { ...formatDiffJson(plan), signNotices: refreshed.notices,
+      fingerprint: plan.refusals.length > 0 || prepareError !== undefined ? null : planFingerprint(prepared),
+    } };
   }
 
 
@@ -938,39 +947,57 @@ export function createProjectHandler(root: string): ProjectHandler {
         const name = decodeURIComponent(planMatch[1]!);
         if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
         try { return send(200, signPlan(name).body); }
-        catch (error) { return send(200, { changes: [], ...signFailure(name, error), signNotices: [] }); }
+        catch (error) { return send(200, { changes: [], ...signFailure(name, error), signNotices: [], fingerprint: null }); }
       }
 
       const commitMatch = /^\/api\/edit\/(.+)\/commit$/.exec(url.pathname);
       if (commitMatch && req.method === "POST") {
         const name = decodeURIComponent(commitMatch[1]!);
         if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
-        let prepared: ReturnType<typeof signPlan>;
-        try { prepared = signPlan(name); }
-        catch (error) { return send(400, { changes: [], ...signFailure(name, error), signNotices: [] }); }
-        const { plan, body } = prepared;
-        if (plan.refusals.length > 0) return send(400, body);
-        try {
-          commitSave(project, plan);
-        } catch (e) {
-          console.error(e);
-          return send(500, { error: e instanceof Error ? e.message : String(e) });
-        }
-        // The render route's pngCache (keyed `name:border`, no expiry) predates this write, and the session-bypass
-        // above ends the moment the session closes below. Clear all of it: layouts can be shared by several maps and
-        // one map serves both the border=0 and border=1 keys.
-        pngCache.clear();
-        // Close, not markSaved()-and-keep-open: the session's own `map`/
-        // `blocks` reflect what was JUST written, but the world/coverage/
-        // encounters caches above this route do NOT (I8's read-only-
-        // project assumption is now stale for this one map) -- Task 15's
-        // corpus gate is what actually proves writes round-trip; this
-        // route's own job ends at "committed successfully," and the
-        // simplest correct thing is forcing the NEXT open() to re-read
-        // real disk state fresh rather than trusting an in-memory session
-        // that predates caches it can no longer invalidate.
-        editSessions.close(name);
-        return send(200, body);
+        return readBody(req).then(raw => {
+          let parsed: unknown;
+          try { parsed = raw.trim() === "" ? {} : JSON.parse(raw); }
+          catch (error) { return send(400, { error: `invalid JSON body: ${(error as Error).message}` }); }
+          if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+            return send(400, { error: `expected a JSON object body, got ${raw}` });
+          }
+          const fingerprint = (parsed as { fingerprint?: unknown }).fingerprint;
+          if (typeof fingerprint !== "string") return send(400, {
+            changes: [], refusals: [{ code: "PLAN_FINGERPRINT_MISSING", subject: name,
+              message: "The Save request carried no plan fingerprint", fix: "Reopen Save and try again" }], signNotices: [],
+          });
+          let fresh: ReturnType<typeof signPlan>;
+          try { fresh = signPlan(name); }
+          catch (error) { return send(400, { changes: [], ...signFailure(name, error), signNotices: [] }); }
+          const { plan, prepared, prepareError, body } = fresh;
+          if (plan.refusals.length > 0) return send(400, body);
+          if (prepareError !== undefined) return send(500, { error: prepareError instanceof Error ? prepareError.message : String(prepareError) });
+          if (body.fingerprint !== fingerprint) return send(409, { ...body, notice: {
+            code: "PLAN_CHANGED", subject: name, message: "Changes were made since you opened Save",
+            fix: "Review the updated changes and save again",
+          } });
+          try {
+            commitSave(project, plan, prepared);
+          } catch (e) {
+            console.error(e);
+            return send(500, { error: e instanceof Error ? e.message : String(e) });
+          }
+          // The render route's pngCache (keyed `name:border`, no expiry) predates this write, and the session-bypass
+          // above ends the moment the session closes below. Clear all of it: layouts can be shared by several maps and
+          // one map serves both the border=0 and border=1 keys.
+          pngCache.clear();
+          // Close, not markSaved()-and-keep-open: the session's own `map`/
+          // `blocks` reflect what was JUST written, but the world/coverage/
+          // encounters caches above this route do NOT (I8's read-only-
+          // project assumption is now stale for this one map) -- Task 15's
+          // corpus gate is what actually proves writes round-trip; this
+          // route's own job ends at "committed successfully," and the
+          // simplest correct thing is forcing the NEXT open() to re-read
+          // real disk state fresh rather than trusting an in-memory session
+          // that predates caches it can no longer invalidate.
+          editSessions.close(name);
+          return send(200, body);
+        }).catch(error => send(400, { error: error instanceof Error ? error.message : String(error) }));
       }
 
       // Task 9: event move/add/delete. Each is its own undo step, the same
