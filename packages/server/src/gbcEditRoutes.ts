@@ -221,7 +221,12 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void 
       try { prepared = prepareGbcSave(proj, plan.session); }
       catch (error) { prepareError = error instanceof Error ? error : new Error(String(error)); }
     }
-    return { plan, prepared, prepareError, body: { ...formatDiffJson(plan), signNotices: refreshed.notices,
+    // A prepare failure (a planned target unreadable) is shown in the plan as a located refusal, so the dialog says why Save is off.
+    const diff = formatDiffJson(plan);
+    const refusals = prepareError === undefined ? diff.refusals : [...diff.refusals, { code: "SAVE_PREPARE_FAILED", subject: name,
+      message: `Could not read the files this save would write: ${(prepareError as Error).message}`,
+      fix: "Close any program holding the file or fix its permissions, then reopen Save" }];
+    return { plan, prepared, prepareError, body: { ...diff, refusals, signNotices: refreshed.notices,
       fingerprint: plan.refusals.length > 0 || prepareError !== undefined ? null : planFingerprint(prepared),
     } };
   }

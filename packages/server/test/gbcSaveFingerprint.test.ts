@@ -82,7 +82,9 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("GBC preview-bound saves (temp
     const plan = await request("plan");
     expect(plan.status).toBe(200);
     expect(plan.body.changes.length).toBeGreaterThan(0);
-    expect(plan.body.refusals).toEqual([]);
+    expect(plan.body.refusals).toEqual([{ code: "SAVE_PREPARE_FAILED", subject: map,
+      message: "Could not read the files this save would write: injected prepare failure",
+      fix: "Close any program holding the file or fix its permissions, then reopen Save" }]);
     expect(plan.body.fingerprint).toBeNull();
     const result = await request("commit", { fingerprint: "previous-preview" });
     expect(result.status).toBe(500);
