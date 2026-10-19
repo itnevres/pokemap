@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 const ALLOWED = new Set([
   join("src", "write", "save.ts"),
+  join("src", "write", "atomic.ts"),
   join("src", "gbc", "write", "save.ts"),
   join("src", "world", "sidecar.ts"),
   join("src", "world", "dungeons.ts"),
