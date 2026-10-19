@@ -249,3 +249,25 @@ describe("Indicator species guard", () => {
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
 });
+
+
+describe("Indicator write label detection", () => {
+  it.each([
+    ["comment", "@ Route101_EventScript_PokemonIndicator1::\n", false],
+    ["quoted string", '\t.string "Route101_EventScript_PokemonIndicator1::"\n', false],
+    ["escaped quote in string", '\t.string "say \\"Route101_EventScript_PokemonIndicator1::\\""\n', false],
+    ["double-colon definition", "Route101_EventScript_PokemonIndicator1::\n\tend\n", true],
+    ["single-colon definition", "Route101_EventScript_PokemonIndicator1: @ defined\n\tend\n", true],
+    ["inline command", "Route101_EventScript_PokemonIndicator1:: end\n", true],
+    ["other label suffix", "OtherRoute101_EventScript_PokemonIndicator1::\n", false],
+  ])("checks %s without treating mentions as definitions", (_name, source, collision) => {
+    const root = mkdtempSync(join(tmpdir(), "pokemap-indicator-label-"));
+    try {
+      const dir = join(root, "data", "maps", "Route101");
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, "scripts.inc"), source);
+      const refusals = guardGbaIndicatorWrite(root, "Route101", "Route101_EventScript_PokemonIndicator1");
+      expect(refusals.map(r => r.code)).toEqual(collision ? ["SIGN_LABEL_EXISTS"] : []);
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+});

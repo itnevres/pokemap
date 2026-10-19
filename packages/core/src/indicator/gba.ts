@@ -41,6 +41,10 @@ function code(line: string): string {
   return line.trim();
 }
 
+function withoutCommentsAndStrings(source: string): string {
+  return source.replace(/"(?:\\.|[^"\\\r\n])*"|@[^\r\n]*/g, " ");
+}
+
 const labelPattern = /^[A-Za-z_][\w.]*::?$/;
 
 export function buildGbaIndicator(
@@ -53,7 +57,7 @@ export function buildGbaIndicator(
   // Reserve either label anywhere in source, including references without definitions.
   // Species never participates in numbering; select the lowest unused pair.
   // Comments and quoted text mention labels without defining or referencing them.
-  const source = (incText + "\n" + mapScripts.join("\n")).replace(/"(?:\\.|[^"\\\r\n])*"|@[^\r\n]*/g, " ");
+  const source = withoutCommentsAndStrings(incText + "\n" + mapScripts.join("\n"));
   const used = new Set(source.match(/[A-Za-z_][\w.]*/g) ?? []);
   let n = 1;
   while (used.has(`${mapName}_EventScript_PokemonIndicator${n}`) || used.has(`${mapName}_Text_PokemonIndicator${n}`)) n++;
@@ -196,7 +200,9 @@ export function guardGbaIndicatorWrite(root: string, mapName: string, scriptLabe
     }
   }
   const text = readFileSync(scriptsPath, "utf8");
-  if (text.includes(`${scriptLabel}::`) || text.includes(`${scriptLabel}:`)) {
+  if (withoutCommentsAndStrings(text).split(/\r?\n/).some(line => {
+    return /^\s*([A-Za-z_][\w.]*)::?(?=\s|$)/.exec(line)?.[1] === scriptLabel;
+  })) {
     return [{
       code: "SIGN_LABEL_EXISTS", subject: scriptLabel,
       message: `${scriptLabel} is already defined in ${mapName}/scripts.inc`,

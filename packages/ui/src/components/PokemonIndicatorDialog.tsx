@@ -90,6 +90,10 @@ export function PokemonIndicatorDialog({ mapName, edit, onDone, onCancel }: Poke
         const body: unknown = await r.json().catch(() => null);
         if (cancelled) return;
         if (!r.ok || !isIndicatorSuggestions(body)) {
+          if (isRefusalResponse(body)) {
+            setRefusals(body.refusals);
+            return;
+          }
           setLoadError(errorMessageFrom(body) ?? `Failed to load suggestions (status ${r.status}).`);
           return;
         }
@@ -153,7 +157,7 @@ export function PokemonIndicatorDialog({ mapName, edit, onDone, onCancel }: Poke
         {loadError ? (
           <p className="save-dialog__load-error">Could not load suggestions: {loadError}</p>
         ) : suggestions === null ? (
-          <p className="save-dialog__loading">Loading suggestions…</p>
+          refusals.length === 0 && <p className="save-dialog__loading">Loading suggestions…</p>
         ) : suggestions.species.length === 0 ? (
           <p className="save-dialog__empty">No wild encounters on this map to base an Indicator on.</p>
         ) : (
@@ -196,6 +200,7 @@ export function PokemonIndicatorDialog({ mapName, edit, onDone, onCancel }: Poke
         {refusals.map((r) => (
           <div key={r.code + r.subject} className="sign-composer__refusal" role="alert">
             <p className="sign-composer__refusal-message">Could not place Indicator: {r.message}</p>
+            <p className="sign-composer__refusal-subject">{r.subject}</p>
             <p className="sign-composer__refusal-fix">{r.fix}</p>
           </div>
         ))}

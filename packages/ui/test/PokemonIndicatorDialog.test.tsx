@@ -293,3 +293,23 @@ describe.each([false, true])("pending Indicator POST (edit=%s)", editing => {
     expect(onCancel).toHaveBeenCalledOnce();
   });
 });
+
+
+it("shows suggestion GET refusal message, subject and fix", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+    ok: false, status: 400,
+    json: async () => ({ refusals: [{
+      code: "NO_SPECIES_NAMES", subject: "src/data/text/species_names.h",
+      message: "Cannot read species names", fix: "Restore the species name table",
+    }] }),
+  }));
+  const onDone = vi.fn();
+  render(<PokemonIndicatorDialog mapName="Route101" onDone={onDone} onCancel={vi.fn()} />);
+  const alert = await screen.findByRole("alert");
+  expect(alert.textContent).toContain("Cannot read species names");
+  expect(alert.textContent).toContain("src/data/text/species_names.h");
+  expect(alert.textContent).toContain("Restore the species name table");
+  expect(screen.queryByText(/Failed to load suggestions/)).toBeNull();
+  expect(screen.queryByText(/Loading suggestions/)).toBeNull();
+  expect(onDone).not.toHaveBeenCalled();
+});

@@ -66,10 +66,10 @@ export function wrapSign(
           // This should not happen, but guard to satisfy TypeScript
           throw new Error("Unexpected undefined word or width");
         }
+        if (ww > width) {
+          return { refusal: `"${w}" is longer than one line (${width}).` };
+        }
         if (curLine === "") {
-          if (ww > width) {
-            return { refusal: `"${w}" is longer than one line (${width}).` };
-          }
           curLine = w;
           curWidth = ww;
         } else {
