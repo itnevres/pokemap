@@ -523,15 +523,17 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbc edit routes (hermetic tem
     expect(after).toEqual(JSON.parse(JSON.stringify(gbcCoverage(openGbcProject(tmp)))));
   });
 
-  it("9d. a commit that throws mid-write is a 500 { error }, still clears the caches, and keeps the session", async () => {
+  it("9d. a commit that throws mid-write is a 500 { error }, restores every file, still clears the caches, and keeps the session", async () => {
     const asm = `${tmp}/maps/ElmsHouse.asm`;
+    const blk = `${tmp}/maps/ElmsHouse.blk`;
     const asmBefore = readFileSync(asm);
+    const blkBefore = readFileSync(blk);
     const pngBefore = await png("ElmsHouse"); // populates renderCache
     await post("/api/edit/ElmsHouse/paint/begin");
     await pencil(0, 0, 9, "ElmsHouse");
     await post("/api/edit/ElmsHouse/paint/end");
     await ev("move", { kind: "warp", index: 0, x: 1, y: 1 }, "ElmsHouse");
-    chmodSync(asm, 0o444); // the .blk is written first; the .asm write then fails
+    chmodSync(asm, 0o444); // the .blk swaps first; the .asm swap then fails and the .blk is restored
     try {
       const r = await commit("ElmsHouse");
       expect(r.status).toBe(500);
@@ -542,9 +544,10 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbc edit routes (hermetic tem
     expect(readFileSync(asm).equals(asmBefore)).toBe(true);
     expect(h.dirtyMaps()).toEqual(["ElmsHouse"]);
     await post("/api/edit/ElmsHouse/discard");
-    // The .blk landed, so the cached render must be gone: the next render shows the disk state.
+    expect(readFileSync(blk).equals(blkBefore)).toBe(true);
+    // All-or-nothing (Plan 10a3): the .blk was restored, so the next render shows the unchanged disk state.
     const pngAfter = await png("ElmsHouse");
-    expect(pngAfter.equals(pngBefore)).toBe(false);
+    expect(pngAfter.equals(pngBefore)).toBe(true);
     expect(pngAfter.equals(encodePng(renderGbcMap(openGbcProject(tmp), "ElmsHouse")))).toBe(true);
   });
 

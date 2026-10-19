@@ -1,4 +1,5 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
+import { writeFilesAtomically, type AtomicEntry, type AtomicIo } from "../../write/atomic.js";
 import type { Refusal } from "../../write/guards.js";
 import type { PendingChange } from "../../write/save.js";
 import type { GbcProject } from "../project.js";
@@ -141,42 +142,37 @@ export function planGbcSave(proj: GbcProject, session: GbcEditSession): GbcSaveP
   return { session, changes, refusals };
 }
 
+/** Computes complete final bytes without writing; patches only changed block ids. */
+export function prepareGbcSave(proj: GbcProject, session: GbcEditSession): AtomicEntry[] {
+  const entries: AtomicEntry[] = [];
+  const changed = changedBlockIndices(session.originalBlocks, session.blocks);
+  if (changed.length > 0) {
+    const path = blkFilePath(proj, session.layout);
+    const before = readFileSync(path);
+    const after = Buffer.from(before);
+    for (const i of changed) after[i] = session.blocks[i]!.metatileId;
+    entries.push({ path, before, after });
+  }
+  if (session.eventsText !== session.originalEventsText) {
+    const path = eventsFilePath(proj, session.mapName);
+    entries.push({ path, before: readFileSync(path), after: Buffer.from(session.eventsText, "utf8") });
+  }
+  return entries;
+}
+
 /**
- * The ONLY function in this codebase that writes to a GBC decomp path (G7).
- * Throws rather than writing anything when a FRESH `guardGbcSave` against
- * `plan.session`'s current state is non-empty -- a UI that merely does not
- * render a refusal cannot bypass this, the check lives here. Deliberately
- * re-derives refusals rather than trusting `plan.refusals` (see that field's
- * doc comment): a plan can be held across an intervening edit to its live
- * session, and re-checking here closes that race whatever the caller does.
- *
- * The `.blk` write is a G2 byte PATCH, not a re-encode: it reads the on-disk
- * buffer, sets `bytes[i]` only for blocks whose id changed, and writes the
- * buffer back, so every byte it was not asked to change (including any past
- * w*h) survives exactly. An unchanged file is never written at all.
- *
- * Not atomic across its two writes (blk, asm): if the second throws (disk
- * full, a permission error), the first has already landed. Accepted as a real
- * but out-of-scope risk, the same as GBA's `commitSave` -- rollback machinery
- * across two files is disproportionate to what this tool needs.
- *
- * Does not mutate the session; callers reopen after a commit.
+ * Commits through the shared all-or-nothing writer, after a FRESH guardGbcSave
+ * against the live session (never trusting the plan's snapshot).
+ * Stages and checks every target before swapping; handled failures restore
+ * swapped targets and remove owned temps best effort, reporting any failures.
+ * A crash mid-swap or another program writing between check and rename is
+ * outside this guarantee. Does not mutate the session.
  */
-export function commitGbcSave(proj: GbcProject, plan: GbcSavePlan): void {
+export function commitGbcSave(proj: GbcProject, plan: GbcSavePlan, prepared?: AtomicEntry[], io?: AtomicIo): void {
   const { session } = plan;
   const refusals = guardGbcSave(proj, session);
   if (refusals.length > 0) {
     throw new Error(`save refused: ${refusals.map((r) => `${r.code} (${r.subject})`).join(", ")}`);
   }
-
-  const changed = changedBlockIndices(session.originalBlocks, session.blocks);
-  if (changed.length > 0) {
-    const path = blkFilePath(proj, session.layout);
-    const bytes = readFileSync(path);
-    for (const i of changed) bytes[i] = session.blocks[i]!.metatileId;
-    writeFileSync(path, bytes);
-  }
-  if (session.eventsText !== session.originalEventsText) {
-    writeFileSync(eventsFilePath(proj, session.mapName), session.eventsText);
-  }
+  writeFilesAtomically(prepared ?? prepareGbcSave(proj, session), io);
 }

@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, writeFileSync, renameSync, unlinkSync } from "node:fs";
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 
 export interface AtomicEntry {
   path: string;
@@ -91,4 +91,22 @@ export function writeFilesAtomically(entries: AtomicEntry[], io: AtomicIo = defa
     }
     throw new Error(messages.join("; "));
   }
+}
+
+/** SHA-256 of ordered, unambiguously framed paths and before/after bytes. */
+export function planFingerprint(entries: AtomicEntry[]): string {
+  const hash = createHash("sha256");
+  const field = (bytes: Buffer): void => {
+    const length = Buffer.alloc(8);
+    length.writeBigUInt64BE(BigInt(bytes.length));
+    hash.update(length);
+    hash.update(bytes);
+  };
+  for (const entry of entries) {
+    field(Buffer.from(entry.path, "utf8"));
+    hash.update(Buffer.from([entry.before === null ? 0 : 1]));
+    if (entry.before !== null) field(entry.before);
+    field(entry.after);
+  }
+  return hash.digest("hex");
 }
