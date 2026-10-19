@@ -152,4 +152,51 @@ describe("SaveDialog", () => {
     expect(onCancel).toHaveBeenCalledTimes(1);
     vi.unstubAllGlobals();
   });
+
+  it("Save posts the loaded plan's fingerprint", async () => {
+    const plan = { changes: [{ path: "a", kind: "binary", summary: "a changed" }], refusals: [], fingerprint: "fp1" };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: () => Promise.resolve(plan) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: () => Promise.resolve({ changes: [], refusals: [] }) });
+    vi.stubGlobal("fetch", fetchMock);
+    const onCommitted = vi.fn();
+    render(<SaveDialog mapName="PalletTown" onCommitted={onCommitted} onCancel={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText("a changed")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+    await waitFor(() => expect(onCommitted).toHaveBeenCalled());
+    expect(fetchMock).toHaveBeenCalledWith("/api/edit/PalletTown/commit", expect.objectContaining({ method: "POST", body: JSON.stringify({ fingerprint: "fp1" }) }));
+    vi.unstubAllGlobals();
+  });
+
+  it("409 re-renders with the new plan and notice, keeps Save Changes enabled, and does not call onCommitted", async () => {
+    const plan = { changes: [{ path: "a", kind: "binary", summary: "a changed" }], refusals: [], fingerprint: "fp1" };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: () => Promise.resolve(plan) })
+      .mockResolvedValueOnce({ ok: false, status: 409, json: () => Promise.resolve({ changes: [{ path: "b", kind: "text", summary: "b changed" }], refusals: [], fingerprint: "fp2", notice: { code: "PLAN_CHANGED", subject: "PalletTown", message: "Changes were made since you opened Save", fix: "Review the updated changes and save again" } }) })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: () => Promise.resolve({ changes: [], refusals: [] }) });
+    vi.stubGlobal("fetch", fetchMock);
+    const onCommitted = vi.fn();
+    render(<SaveDialog mapName="PalletTown" onCommitted={onCommitted} onCancel={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText("a changed")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+    await waitFor(() => expect(screen.getByText("b changed")).toBeTruthy());
+    expect(screen.getByText("Changes were made since you opened Save")).toBeTruthy();
+    expect(screen.getByText("Review the updated changes and save again")).toBeTruthy();
+    expect((screen.getByRole("button", { name: "Save Changes" }) as HTMLButtonElement).disabled).toBe(false);
+    expect(onCommitted).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
+    await waitFor(() => expect(onCommitted).toHaveBeenCalled());
+    expect(fetchMock).toHaveBeenCalledWith("/api/edit/PalletTown/commit", expect.objectContaining({ method: "POST", body: JSON.stringify({ fingerprint: "fp2" }) }));
+    expect(screen.queryByText("Changes were made since you opened Save")).toBeNull();
+    vi.unstubAllGlobals();
+  });
+
+  it("the Save Changes button is disabled when the plan has fingerprint: null", async () => {
+    const plan = { changes: [{ path: "a", kind: "binary", summary: "a changed" }], refusals: [], fingerprint: null };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve(plan) }));
+    render(<SaveDialog mapName="PalletTown" onCommitted={vi.fn()} onCancel={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText("a changed")).toBeTruthy());
+    expect((screen.getByRole("button", { name: "Save Changes" }) as HTMLButtonElement).disabled).toBe(true);
+    vi.unstubAllGlobals();
+  });
 });
