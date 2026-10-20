@@ -19,6 +19,10 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("GBC Indicator routes", () => 
     const r = await fetch(`${base}/api/edit/Route29/${route}`, body === undefined ? {} : { method: "POST", body: JSON.stringify(body) });
     return { status: r.status, body: await r.json() as any };
   };
+  const commit = async () => {
+    const plan = (await req("plan")).body;
+    return req("commit", { fingerprint: plan.fingerprint ?? "refused-plan" });
+  };
   const add = (species = "SENTRET", text = "HELLO") => req("indicator/add", { x: 1, y: 1, species, text });
   const state = () => structuredClone(sessions.gbcSnapshotOf(store.open("Route29").session));
   const index = () => store.open("Route29").session.events.objects.length - 1;
@@ -70,10 +74,10 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("GBC Indicator routes", () => 
     expect(state().eventsText).toContain("\tcry SENTRET");
     expect(state().eventsText).toMatch(/object_event[^\r\n]*SPRITE_MONSTER[^\r\n]*Route29PokemonIndicator1/);
     expect(state().eventsText).toContain('\ttext "HELLO"');
-    expect((await req("commit", {})).status).toBe(200); expect(disk()).toBe(expected.text);
+    expect((await commit()).status).toBe(200); expect(disk()).toBe(expected.text);
   });
   it("species Update plans only sprite and cry changes, retains labels and commits the exact bytes", async () => {
-    await add(); expect((await req("commit", {})).status).toBe(200);
+    await add(); expect((await commit()).status).toBe(200);
     const before = disk(), beforeBlock = (await req(`indicator/at?index=${index()}`)).body.indicator;
     expect((await update()).status).toBe(200);
     const plan = (await req("plan")).body; expect(plan.refusals).toEqual([]);
@@ -84,7 +88,7 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("GBC Indicator routes", () => 
     expect((await req(`indicator/at?index=${index()}`)).body.indicator).toMatchObject({
       scriptLabel: beforeBlock.scriptLabel, textLabel: beforeBlock.textLabel, text: beforeBlock.text,
     });
-    expect((await req("commit", {})).status).toBe(200); expect(disk()).toBe(expected);
+    expect((await commit()).status).toBe(200); expect(disk()).toBe(expected);
   });
   it.each(["add", "update"])("%s malformed charmaps name the real file and preserve history", async op => {
     await add(); const before = state(), entry = store.open("Route29");
@@ -127,7 +131,7 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("GBC Indicator routes", () => 
     await req("redo", {}); expect(state()).toEqual(placed);
     await req("redo", {}); expect(state()).toEqual(updated);
     expect((await req("plan")).body.refusals).toEqual([]);
-    expect((await req("commit", {})).status).toBe(200); expect(disk()).toBe(updated.eventsText);
+    expect((await commit()).status).toBe(200); expect(disk()).toBe(updated.eventsText);
     expect((await update()).status).toBe(200); expect((await req("plan")).body.changes).toEqual([]);
   });
   it("same species gets two labels and unchanged update pushes no command", async () => {

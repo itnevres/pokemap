@@ -1,0 +1,48 @@
+{
+ "tag": "gbc",
+ "map": "Route33",
+ "family": "gbc",
+ "net": [
+  {
+   "m": "GET",
+   "u": "/edit/Route33/plan",
+   "s": 200,
+   "res": "{\"changes\":[{\"path\":\"C:/Programming Projects/pokecrystal-PerfPlus/maps/Route33.blk\",\"kind\":\"binary\",\"summary\":\"maps/Route33.blk -- 1 block changed\"}],\"refusals\":[],\"signNotices\":[],\"fingerprint\":\"a168fdb68e339707701e56ee6f7728195e63bb511b59aeec2f311b85a2d25e0c\"}"
+  },
+  {
+   "m": "GET",
+   "u": "/edit/Route33/plan",
+   "s": 200,
+   "res": "{\"changes\":[{\"path\":\"C:/Programming Projects/pokecrystal-PerfPlus/maps/Route33.blk\",\"kind\":\"binary\",\"summary\":\"maps/Route33.blk -- 1 block changed\"}],\"refusals\":[],\"signNotices\":[],\"fingerprint\":\"a168fdb68e339707701e56ee6f7728195e63bb511b59aeec2f311b85a2d25e0c\"}"
+  },
+  {
+   "m": "POST",
+   "u": "/edit/Route33/commit",
+   "s": 409,
+   "req": "{\"fingerprint\":\"a168fdb68e339707701e56ee6f7728195e63bb511b59aeec2f311b85a2d25e0c\"}",
+   "res": "{\"changes\":[{\"path\":\"C:/Programming Projects/pokecrystal-PerfPlus/maps/Route33.blk\",\"kind\":\"binary\",\"summary\":\"maps/Route33.blk -- 2 blocks changed\"}],\"refusals\":[],\"signNotices\":[],\"fingerprint\":\"cb7f28c2f166575a5c88d1e56645f860e79f1e94004e3ac145cde18d72a7d9b5\",\"notice\":{\"code\":\"PLAN_CHANGED\",\"subject\":\"Route33\",\"message\":\"Changes were made since you opened Save\",\"fix\":\"Review the updated changes and save again\"}}"
+  },
+  {
+   "m": "POST",
+   "u": "/edit/Route33/commit",
+   "s": 200,
+   "req": "{\"fingerprint\":\"cb7f28c2f166575a5c88d1e56645f860e79f1e94004e3ac145cde18d72a7d9b5\"}",
+   "res": "{\"changes\":[{\"path\":\"C:/Programming Projects/pokecrystal-PerfPlus/maps/Route33.blk\",\"kind\":\"binary\",\"summary\":\"maps/Route33.blk -- 2 blocks changed\"}],\"refusals\":[],\"signNotices\":[],\"fingerprint\":\"cb7f28c2f166575a5c88d1e56645f860e79f1e94004e3ac145cde18d72a7d9b5\"}"
+  }
+ ],
+ "selection": "Selection · 0x0",
+ "dirtyA": true,
+ "dialogBefore": "Save Changes\nmaps/Route33.blk -- 1 block changed\nCancel\nSave Changes",
+ "tabB": [
+  200,
+  200,
+  200
+ ],
+ "diskBefore409": "f96d73e75f6d",
+ "diskAfter409": "f96d73e75f6d",
+ "dialogAfter409": "Save Changes\n\nChanges were made since you opened Save\n\nReview the updated changes and save again\n\nmaps/Route33.blk -- 2 blocks changed\nCancel\nSave Changes",
+ "saveEnabledAfter409": true,
+ "dialogsLeft": 0,
+ "dirtyAfterSave": false,
+ "diskAfterSave": "512345ece425"
+}

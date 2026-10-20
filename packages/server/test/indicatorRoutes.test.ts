@@ -29,6 +29,10 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("GBA Indicator and background sign ro
     const r = await fetch(`http://127.0.0.1:${server.port}/api/edit/${map}/${route}`, body === undefined ? {} : { method: "POST", body: JSON.stringify(body) });
     return { status: r.status, body: await r.json() as any };
   };
+  const commit = async () => {
+    const plan = (await request("plan")).body;
+    return request("commit", { fingerprint: plan.fingerprint ?? "refused-plan" });
+  };
   const put = (mode = "free", text = "HELLO", extra = {}) => request("sign/put", { x: 0, y: 0, mode, text, ...extra });
   let store: ReturnType<typeof createEditSessionStore>;
   const factory = createEditSessionStore;
@@ -110,7 +114,7 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("GBA Indicator and background sign ro
     expect(built.scriptAppendText).toContain('\t.string "HELLO$"');
     const expectedJson = insertArrayElement(originalMap, ["object_events"], proj.map(map).objectEvents.length, built.objectEvent);
     const expected = effectiveGbaScripts(proj, store.open(map).session);
-    expect((await request("commit", {})).status).toBe(200); expect(disk()).toBe(expected);
+    expect((await commit()).status).toBe(200); expect(disk()).toBe(expected);
     expect(readFileSync(json(), "utf8")).toBe(expectedJson);
     expect(JSON.parse(readFileSync(json(), "utf8")).object_events.at(-1)).toEqual(built.objectEvent);
   });
@@ -131,7 +135,7 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("GBA Indicator and background sign ro
     await request("redo", {}); expect(state()).toEqual(moved);
     const expectedScripts = effectiveGbaScripts(openProject(root), store.open(map).session);
     expect(readFileSync(json(), "utf8")).toBe(originalMap);
-    expect((await request("commit", {})).status).toBe(200);
+    expect((await commit()).status).toBe(200);
     expect(readFileSync(json(), "utf8")).toBe(insertArrayElement(originalMap, ["object_events"], index, movedValue));
     expect(JSON.parse(readFileSync(json(), "utf8")).object_events[index]).toEqual(movedValue);
     expect(disk()).toBe(expectedScripts);
@@ -146,7 +150,7 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("GBA Indicator and background sign ro
     expect((await request("plan")).body.refusals).toEqual([]);
     await request("undo", {}); expect(state()).toEqual(added);
     await request("redo", {});
-    expect((await request("commit", {})).status).toBe(200);
+    expect((await commit()).status).toBe(200);
     expect(readFileSync(json(), "utf8")).toBe(insertArrayElement(originalMap, ["object_events"], index, { ...value, x: 2, y: 3 }));
     expect(disk()).toBe(original);
   });
@@ -161,7 +165,7 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("GBA Indicator and background sign ro
     expect((await request("plan")).body.refusals).toEqual([]);
   });
   it("species Update plans graphics and cry changes with stable labels and commits exactly those bytes", async () => {
-    expect((await addIndicator()).status).toBe(200); expect((await request("commit", {})).status).toBe(200);
+    expect((await addIndicator()).status).toBe(200); expect((await commit()).status).toBe(200);
     const beforeJson = readFileSync(json(), "utf8"), beforeScripts = disk();
     const beforeBlock = (await request(`indicator/at?index=${indicatorIndex()}`)).body.indicator;
     expect((await updateIndicator()).status).toBe(200);
@@ -180,12 +184,12 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("GBA Indicator and background sign ro
     expect((await request(`indicator/at?index=${indicatorIndex()}`)).body.indicator).toMatchObject({
       scriptLabel: beforeBlock.scriptLabel, textLabel: beforeBlock.textLabel, text: beforeBlock.text,
     });
-    expect((await request("commit", {})).status).toBe(200);
+    expect((await commit()).status).toBe(200);
     expect(readFileSync(json(), "utf8")).toBe(expectedJson); expect(disk()).toBe(expectedScripts);
   });
   it("refuses update after an earlier object deletion without consuming undo; undoing deletion allows update", async () => {
     // Persist the Indicator to exercise original-JSON indices rather than pending-insert folding.
-    await addIndicator(); expect((await request("commit", {})).status).toBe(200);
+    await addIndicator(); expect((await commit()).status).toBe(200);
     expect(indicatorIndex()).toBeGreaterThan(0);
     expect((await request("event/delete", { kind: "object", index: 0 })).status).toBe(200);
     const before = state(); const entry = store.open(map);
@@ -223,7 +227,7 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("GBA Indicator and background sign ro
     await request("redo", {}); expect(state()).toEqual(placed);
     await request("redo", {}); expect(state()).toEqual(updated);
     expect((await request("plan")).body.refusals).toEqual([]);
-    expect((await request("commit", {})).status).toBe(200);
+    expect((await commit()).status).toBe(200);
     expect(disk()).toBe(scriptsAfter);
     expect(JSON.parse(readFileSync(json(), "utf8")).object_events.at(-1).graphics_id).toBe("OBJ_EVENT_GFX_SPECIES(ZIGZAGOON)");
     // An identical update after Save must also leave an empty plan.
@@ -278,7 +282,7 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("GBA Indicator and background sign ro
     expect(plan.changes.map((c: any) => c.kind).sort()).toEqual(["json", "text"]);
     const hash = signHash('\t.string "HELLO$"');
     const expected = before + eol + eol + [label + "::", "\tmsgbox Route101_Text_PokemapSign1, MSGBOX_SIGN", "\tend", "", `@ pokemap:sign free ${hash}`, "Route101_Text_PokemapSign1:", '\t.string "HELLO$"'].join(eol);
-    expect((await request("commit", {})).status).toBe(200);
+    expect((await commit()).status).toBe(200);
     expect(disk()).toBe(expected);
     expect(JSON.parse(readFileSync(json(), "utf8")).bg_events.at(-1)).toEqual({ type: "sign", x: 0, y: 0, elevation: 0, player_facing_dir: "BG_EVENT_PLAYER_FACING_ANY", script: label });
   });
@@ -288,7 +292,7 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("GBA Indicator and background sign ro
     expect(at.text).toBe(findGbaSign(original, "Route101_EventScript_RouteSign").paragraphs.map(p => p.join("\n")).join("\n\n"));
     expect((await put("free", at.text, { x: 5, y: 9, scriptLabel: at.scriptLabel })).status).toBe(200);
     await request("undo", {}); expect((await request("plan")).body.changes).toEqual([]);
-    await request("redo", {}); expect((await request("commit", {})).status).toBe(200);
+    await request("redo", {}); expect((await commit()).status).toBe(200);
     expect(disk().replace(/^@ pokemap:sign free [a-f0-9]{8}\r?\n/m, "")).toBe(original);
   });
   it("undo frees the lowest number, update folds pending appends, discard writes nothing", async () => {
@@ -303,7 +307,7 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("GBA Indicator and background sign ro
     await request("discard", {}); expect(disk()).toBe(original); expect(readFileSync(json(), "utf8")).toBe(originalMap);
   });
   it("refresh is pure and deterministic and commit writes the planned bytes", async () => {
-    expect((await put("name")).status).toBe(200); expect((await request("commit", {})).status).toBe(200);
+    expect((await put("name")).status).toBe(200); expect((await commit()).status).toBe(200);
     expect((await request("plan")).body.changes).toEqual([]); await request("discard", {});
     const names = `${root}/src/data/region_map/region_map_entries.h`;
     writeFileSync(names, readFileSync(names, "utf8").replace('_("ROUTE 101")', '_("NEW ROUTE")'));
@@ -317,10 +321,10 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("GBA Indicator and background sign ro
     const planned = refreshed.session.scriptReplaces![0]!.after;
     expect(planned).toContain('"NEW ROUTE$"');
     expect((await request("plan")).body.changes).toHaveLength(1);
-    expect((await request("commit", {})).status).toBe(200); expect(disk()).toBe(planned);
+    expect((await commit()).status).toBe(200); expect(disk()).toBe(planned);
   });
   it.each(["leave", "refresh", "unlink"])("protects hand edits and supports %s", async action => {
-    await put("name"); await request("commit", {});
+    await put("name"); await commit();
     writeFileSync(scripts(), disk().replace('"ROUTE 101$"', '"HAND EDIT$"'));
     const edited = disk();
     expect((await request("plan")).body.signNotices).toEqual([{ scriptLabel: label, message: `${label} was edited outside PokeMap and was not refreshed.` }]);
@@ -331,7 +335,7 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("GBA Indicator and background sign ro
       await request("undo", {}); expect((await request("plan")).body.signNotices).toHaveLength(1);
       await request("redo", {});
     }
-    expect((await request("commit", {})).status).toBe(200);
+    expect((await commit()).status).toBe(200);
     if (action === "leave") expect(disk()).toBe(edited);
     else expect(findGbaSign(disk(), label)).toMatchObject({ marker: { mode: action === "unlink" ? "free" : "name" }, paragraphs: [[action === "unlink" ? "HAND EDIT" : "ROUTE 101"]] });
   });
@@ -344,10 +348,10 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("GBA Indicator and background sign ro
   it("painting alone preserves scripts exactly", async () => {
     const start = (await request("paint/begin", {})).body;
     await request("paint/apply", { tool: "pencil", targets: [{ x: 0, y: 0 }], stamp: { width: 1, height: 1, cells: [{ ...start.blocks[0], metatileId: (start.blocks[0].metatileId + 1) % 16 }] }, origin: { x: 0, y: 0 } });
-    await request("paint/end", {}); expect((await request("commit", {})).status).toBe(200); expect(disk()).toBe(original);
+    await request("paint/end", {}); expect((await commit()).status).toBe(200); expect(disk()).toBe(original);
   });
   it("source refusals prevent paint and script writes", async () => {
-    await put("name"); await request("commit", {});
+    await put("name"); await commit();
     const before = disk();
     const proj = openProject(root), blocksPath = `${root}/${proj.layoutForMap(map).blockdataFilepath}`, blocks = readFileSync(blocksPath);
     const start = (await request("paint/begin", {})).body;
@@ -355,7 +359,7 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("GBA Indicator and background sign ro
     await request("paint/end", {});
     writeFileSync(`${root}/src/data/region_map/region_map_entries.h`, "// missing names\n");
     expect((await request("plan")).body.refusals).toHaveLength(1);
-    expect((await request("commit", {})).status).toBe(400);
+    expect((await commit()).status).toBe(400);
     expect(disk()).toBe(before); expect(readFileSync(blocksPath)).toEqual(blocks);
   });
   it("validates requests and refuses occupancy, label mismatch and bad text without staging", async () => {
@@ -371,7 +375,7 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("GBA Indicator and background sign ro
     expect((await put("free", "SECOND", { x: 1 })).status).toBe(200);
     expect((await request("sign/at?x=0&y=0")).body.handEdited).toBe(false);
     expect((await request("plan")).body.signNotices).toEqual([]);
-    expect((await request("commit", {})).status).toBe(200);
+    expect((await commit()).status).toBe(200);
     expect(findGbaSign(disk(), label).marker?.hash).toBe(signHash(findGbaSign(disk(), label).body));
   });
   it("regenerates species text from current data and handles maps with no wild data", async () => {
@@ -381,7 +385,7 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("GBA Indicator and background sign ro
     const data = JSON.parse(readFileSync(path, "utf8"));
     for (const group of data.wild_encounter_groups) group.encounters = group.encounters.filter((e: any) => e.map !== "MAP_ROUTE101");
     writeFileSync(path, JSON.stringify(data));
-    expect((await request("commit", {})).status).toBe(200);
+    expect((await commit()).status).toBe(200);
     expect(findGbaSign(disk(), label).paragraphs.flat().join(" ")).toContain("No wild POKEMON here.");
   });
   it("returns empty and other wire shapes and refuses missing scripts and charmap", async () => {
@@ -396,7 +400,7 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("GBA Indicator and background sign ro
     rmSync(scripts());
     expect((await put()).body.refusals[0].subject).toBe(openProject(root).paths.mapScriptsInc(map));
     expect((await request("plan")).body.refusals).toHaveLength(1);
-    expect((await request("commit", {})).status).toBe(400);
+    expect((await commit()).status).toBe(400);
   });
 
 });

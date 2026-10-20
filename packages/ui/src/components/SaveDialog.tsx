@@ -4,7 +4,7 @@ import "../styles.css";
 interface PendingChange { path: string; kind: "json" | "binary" | "text"; summary: string }
 interface Refusal { code: string; message: string; fix: string; subject: string }
 interface SignNotice { scriptLabel: string; message: string }
-interface DiffPlan { changes: PendingChange[]; refusals: Refusal[]; signNotices?: SignNotice[] }
+interface DiffPlan { changes: PendingChange[]; refusals: Refusal[]; signNotices?: SignNotice[]; fingerprint?: string | null; notice?: { code: string; subject: string; message: string; fix: string } }
 
 export interface SaveDialogProps {
   mapName: string;
@@ -60,6 +60,7 @@ export function SaveDialog({ mapName, onCommitted, onCancel }: SaveDialogProps) 
   const [saving, setSaving] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ code: string; subject: string; message: string; fix: string } | null>(null);
 
   const loadPlan = () => {
     let cancelled = false;
@@ -98,10 +99,17 @@ export function SaveDialog({ mapName, onCommitted, onCancel }: SaveDialogProps) 
     setSaving(true);
     setSaveError(null);
     setRefusals([]);
+    setNotice(null);
     try {
-      const r = await fetch(`/api/edit/${encodeURIComponent(mapName)}/commit`, { method: "POST" });
+      const r = await fetch(`/api/edit/${encodeURIComponent(mapName)}/commit`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ fingerprint: plan?.fingerprint }) });
       const body: unknown = await r.json().catch(() => null);
       setSaving(false);
+      if (r.status === 409 && isDiffPlan(body)) {
+        setPlan(body);
+        setRefusals(body.refusals);
+        setNotice(body.notice ?? null);
+        return;
+      }
       if (!isDiffPlan(body)) {
         // e.g. commitSave threw -- the route's own catch sends { error }.
         setSaveError(errorMessageFrom(body) ?? `Failed to save (status ${r.status}).`);
@@ -140,6 +148,12 @@ export function SaveDialog({ mapName, onCommitted, onCancel }: SaveDialogProps) 
           itself, rather than a second, independently-styled panel shape. */}
       <div className="save-dialog warp-modal__panel" role="dialog" aria-modal="true" aria-label="Save changes">
         <h2 className="save-dialog__title">Save Changes</h2>
+        {notice && (
+          <div className="save-dialog__refusal" role="status">
+            <p className="save-dialog__refusal-message">{notice.message}</p>
+            <p className="save-dialog__refusal-fix">{notice.fix}</p>
+          </div>
+        )}
         {loadError ? (
           <p className="save-dialog__load-error" role="alert">Could not load pending changes: {loadError}</p>
         ) : plan === null ? (
@@ -198,7 +212,7 @@ export function SaveDialog({ mapName, onCommitted, onCancel }: SaveDialogProps) 
             type="button"
             className="map-canvas__btn save-dialog__btn--primary"
             onClick={() => void save()}
-            disabled={saving || plan === null || nothingToSave || displayedRefusals.length > 0 || loadError !== null}
+            disabled={saving || plan === null || nothingToSave || displayedRefusals.length > 0 || loadError !== null || plan?.fingerprint === null}
           >
             {saving ? "Saving…" : "Save Changes"}
           </button>

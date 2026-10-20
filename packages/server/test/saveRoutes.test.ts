@@ -7,6 +7,10 @@ import { openProject } from "@pokemap/core/src/project.js";
 let s: PokemapServer;
 const post = async (path: string, body: unknown = {}) =>
   fetch(`http://127.0.0.1:${s.port}${path}`, { method: "POST", body: JSON.stringify(body) });
+const commit = async (path: string) => {
+  const plan = await (await get(path.replace(/commit$/, "plan"))).json() as { fingerprint: string | null };
+  return post(path, { fingerprint: plan.fingerprint ?? "refused-plan" });
+};
 const get = async (path: string) => fetch(`http://127.0.0.1:${s.port}${path}`);
 
 describe.skipIf(!hasProject(SUBJECT_ROOT))("save/commit routes", () => {
@@ -16,7 +20,7 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("save/commit routes", () => {
   it("404s /plan and /commit for an unknown map", async () => {
     const planRes = await get("/api/edit/__pokemap_no_such_map__/plan");
     expect(planRes.status).toBe(404);
-    const commitRes = await post("/api/edit/__pokemap_no_such_map__/commit");
+    const commitRes = await commit("/api/edit/__pokemap_no_such_map__/commit");
     expect(commitRes.status).toBe(404);
   }, 300_000);
 
@@ -45,7 +49,7 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("save/commit routes", () => {
       expect(plan.changes).toHaveLength(1);
       expect(plan.changes[0].kind).toBe("binary");
 
-      const commitRes = await post("/api/edit/EcruteakCity/commit");
+      const commitRes = await commit("/api/edit/EcruteakCity/commit");
       expect(commitRes.status).toBe(200);
       expect(readFileSync(binPath)).not.toEqual(before);
     } finally {
@@ -76,7 +80,7 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("save/commit routes", () => {
         tool: "pencil", targets: [{ x: 0, y: 0 }], stamp: { width: 1, height: 1, cells: [{ metatileId: 999 }] }, origin: { x: 0, y: 0 },
       });
       await post("/api/edit/OlivineCity/paint/end");
-      const commitRes = await post("/api/edit/OlivineCity/commit");
+      const commitRes = await commit("/api/edit/OlivineCity/commit");
       expect(commitRes.status).toBe(400);
       expect(readFileSync(binPath)).toEqual(before);
     } finally {
@@ -95,7 +99,7 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("save/commit routes", () => {
         tool: "pencil", targets: [{ x: 0, y: 0 }], stamp: { width: 1, height: 1, cells: [{ metatileId: 2 }] }, origin: { x: 0, y: 0 },
       });
       await post("/api/edit/BlackthornCity/paint/end");
-      await post("/api/edit/BlackthornCity/commit");
+      await commit("/api/edit/BlackthornCity/commit");
 
       const planRes = await get("/api/edit/BlackthornCity/plan");
       const plan = await planRes.json() as any;
@@ -180,7 +184,7 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("save/commit routes", () => {
         tool: "pencil", targets: [{ x: 0, y: 0 }], stamp: { width: 1, height: 1, cells: [{ metatileId: current === 1 ? 2 : 1 }] }, origin: { x: 0, y: 0 },
       });
       await post("/api/edit/CianwoodCity/paint/end");
-      expect((await post("/api/edit/CianwoodCity/commit")).status).toBe(200);
+      expect((await commit("/api/edit/CianwoodCity/commit")).status).toBe(200);
 
       expect(await png("/api/render/CianwoodCity.png")).not.toEqual(plain);
       expect(await png("/api/render/CianwoodCity.png?border=1")).not.toEqual(bordered);

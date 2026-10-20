@@ -1,4 +1,5 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { writeFilesAtomically, type AtomicEntry, type AtomicIo } from "./atomic.js";
 import type { Project } from "../project.js";
 import type { Block, Layout } from "../model/types.js";
 import type { MapData } from "../load/maps.js";
@@ -219,54 +220,52 @@ function lineCount(text: string): number {
   return stripped.length === 0 ? 0 : stripped.split("\n").length;
 }
 
+/** Computes complete final bytes without writing, in the commit's stable file order. */
+export function prepareSave(proj: Project, session: EditSession): AtomicEntry[] {
+  const entries: AtomicEntry[] = [];
+  const add = (path: string, after: Buffer): void => {
+    entries.push({ path, before: existsSync(path) ? readFileSync(path) : null, after });
+  };
+  const blockPlan = planBlockdataWrite(proj.paths.root, session.layout, session.blocks, proj.profile);
+  if (blockPlan) add(blockPlan.path, blockPlan.bytes);
+  const borderPlan = planBorderWrite(proj.paths.root, session.layout, session.border, proj.profile);
+  if (borderPlan) add(borderPlan.path, borderPlan.bytes);
+  const jsonText = applyJsonOps(session);
+  if (jsonText !== session.originalMapJson) add(proj.paths.mapJson(session.mapName), Buffer.from(jsonText, "utf8"));
+
+  const scripts = new Map<string, AtomicEntry>();
+  for (const replace of session.scriptReplaces ?? []) {
+    const entry = { path: replace.path, before: readFileSync(replace.path), after: Buffer.from(replace.after, "utf8") };
+    scripts.set(replace.path, entry);
+  }
+  for (const append of session.scriptAppends ?? []) {
+    let entry = scripts.get(append.path);
+    if (!entry) {
+      const before = readFileSync(append.path);
+      entry = { path: append.path, before, after: before };
+      scripts.set(append.path, entry);
+    }
+    entry.after = Buffer.from(applyScriptAppend(entry.after.toString("utf8"), append), "utf8");
+  }
+  entries.push(...scripts.values());
+  return entries;
+}
+
 /**
- * The ONLY function in this codebase that writes to a decomp path (I8),
- * other than sidecar.ts/dungeons.ts's own separate `.pokemap/` writers,
- * which are I8-exempt by design (they never touch a decomp data file).
- * Throws rather than writing anything when a FRESH refusal check against
- * `plan.session`'s current state is non-empty -- a UI that simply does not
- * RENDER a refusal cannot bypass this guard by omission, the check lives
- * here, not in whatever calls it. Deliberately re-derives refusals rather
- * than trusting `plan.refusals` (see that field's own doc comment): a
- * `SavePlan` can be held across an intervening mutation of its `session`
- * (edits keep landing on the same in-memory `EditSession` the player is
- * still working in), and re-checking here closes that race regardless of
- * caller discipline.
- *
- * Not atomic across its own several writes (blockdata, border, map.json,
- * scriptReplaces, scriptAppends):if one throws partway through (disk full, a permission
- * error), earlier writes in this same call have already landed on disk.
- * Accepted as a real but out-of-scope risk for this plan -- transactional/
- * rollback machinery across up to four independent decomp files is
- * disproportionate to what this tool needs, not an oversight.
+ * Commits through the shared all-or-nothing writer, after a FRESH refusal
+ * check against the live session (never trusting the plan's snapshot).
+ * Stages and checks every target before swapping; handled failures restore
+ * swapped targets and remove owned temps best effort, reporting any failures.
+ * A crash mid-swap or another program writing between check and rename is
+ * outside this guarantee. Does not mutate the session.
  */
-export function commitSave(proj: Project, plan: SavePlan): void {
+export function commitSave(proj: Project, plan: SavePlan, prepared?: AtomicEntry[], io?: AtomicIo): void {
   const { session } = plan;
   const refusals = collectRefusals(proj, session);
   if (refusals.length > 0) {
     throw new Error(`save refused: ${refusals.map((r) => `${r.code} (${r.subject})`).join(", ")}`);
   }
-
-  const blockPlan = planBlockdataWrite(proj.paths.root, session.layout, session.blocks, proj.profile);
-  if (blockPlan) writeFileSync(blockPlan.path, blockPlan.bytes);
-
-  const borderPlan = planBorderWrite(proj.paths.root, session.layout, session.border, proj.profile);
-  if (borderPlan) writeFileSync(borderPlan.path, borderPlan.bytes);
-
-  const jsonText = applyJsonOps(session);
-  if (jsonText !== session.originalMapJson) writeFileSync(proj.paths.mapJson(session.mapName), jsonText);
-
-  for (const replace of session.scriptReplaces ?? []) writeFileSync(replace.path, replace.after);
-
-  // Read-concat-write, the same "read real state, write back the whole
-  // file" shape as the map.json branch above -- NOT appendFileSync, so
-  // Task 4's own noStrayWrites grep (which checks writeFileSync/writeFile
-  // only) keeps covering every write this function makes with no second
-  // exempted call shape to track.
-  for (const append of session.scriptAppends ?? []) {
-    const existing = readFileSync(append.path, "utf8");
-    writeFileSync(append.path, applyScriptAppend(existing, append));
-  }
+  writeFilesAtomically(prepared ?? prepareSave(proj, session), io);
 }
 
 /** jsonEdits (scalar replace) first, then insertOps, then removeOps --

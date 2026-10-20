@@ -3,8 +3,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 const ALLOWED = new Set([
-  join("src", "write", "save.ts"),
-  join("src", "gbc", "write", "save.ts"),
+  join("src", "write", "atomic.ts"),
   join("src", "world", "sidecar.ts"),
   join("src", "world", "dungeons.ts"),
 ]);
@@ -19,7 +18,7 @@ function walk(dir: string, out: string[] = []): string[] {
 }
 
 describe("I8/I2 static check", () => {
-  it("no file under packages/core/src writes to the filesystem except the sanctioned four", () => {
+  it("no file under packages/core/src writes to the filesystem except the sanctioned three", () => {
     const root = join(__dirname, "..", "..");
     const files = walk(join(root, "src"));
     const offenders: string[] = [];
@@ -27,7 +26,7 @@ describe("I8/I2 static check", () => {
       const rel = f.slice(root.length + 1);
       if (ALLOWED.has(rel)) continue;
       const text = readFileSync(f, "utf8");
-      if (/\bwriteFileSync\s*\(|\bwriteFile\s*\(/.test(text)) offenders.push(rel);
+      if (/\b(writeFileSync|writeFile|renameSync|unlinkSync|rmSync|openSync)\s*\(/.test(text)) offenders.push(rel);
     }
     expect(offenders, offenders.join(", ")).toEqual([]);
   });

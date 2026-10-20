@@ -218,6 +218,8 @@ Rerun in isolation before calling either a regression. (Plan 8)
 
 **Live-verify Vite on Windows:** use `fileURLToPath(new URL(".", import.meta.url))` for `root`; `URL.pathname` keeps `%20` for the space in "Programming Projects", and Vite then serves 404s. (Plan 6c Phase B)
 
+**`chromium-1208` is gone; use `chromium_headless_shell-1248`** (`%LOCALAPPDATA%\ms-playwright\chromium_headless_shell-1248\chrome-headless-shell-win64\chrome-headless-shell.exe`) as `executablePath` for the cached `playwright-core`. **A Pencil click paints nothing until a palette metatile is picked** (tell: Selection reads "Nothing picked", the Save button stays disabled); click the palette first. Driver: `task-reports/pokemap-plan-10a3-save-integrity/shots/live.mjs`. (Plan 10a3)
+
 **Cloud browser:** `import { chromium } from "/opt/node22/lib/node_modules/playwright/index.mjs"` works without `playwright install`. (Plan 6b)
 
 **Windows browser:** the Playwright MCP's `browser_run_code_unsafe` can save screenshots to disk. Keep each check inside one call: twice, a synthetic click (pointerdown→click within 1 ms) landed on an open dropdown *between* calls. An in-page event logger caught it. (Plan 6b)
@@ -305,3 +307,6 @@ The raw per-phase lessons this was distilled from, with the session narrative, a
 
 **Codex (gpt-6-luna) wrote `·` and `…` as a literal `?`**, not mojibake, so a grep for `â€|Ã` misses it. Tell: `file` says ASCII on a file whose brief has non-ASCII; the placeholder test fails. Grep new files for the brief's non-ASCII strings, or keep briefs ASCII and add those characters yourself. (Plan 9F)
 
+**Aider crashes in this repo with `BadObject: b'1b37016…'` / "Is your git repo corrupted?"** (GitPython vs this repo's objects; `git fsck` is not needed). Tell: exits before any edit, `.aider.chat.history.md` appears. Run Aider with `--no-git --no-pretty --no-fancy-input` and `TERM=dumb`; delete `.aider.*` history files after. (Plan 10a3 Task 1)
+
+**Codex (gpt-6.1-sol) can start a new file with a UTF-8 BOM.** Tell: `head -c3 file | xxd` shows `efbb bf`; a grep for `^import` on line 1 shows a stray `ï»¿`. Strip with `sed -i '1s/^ï»¿//'` before committing. (Plan 10a3 Task 1)

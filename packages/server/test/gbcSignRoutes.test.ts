@@ -12,6 +12,7 @@ import { parseMapEvents } from "@pokemap/core/src/gbc/load/events.js";
 import { copyGbcSubjectToTemp, removeTemp } from "@pokemap/core/test/gbc/helpers/corpus.js";
 
 interface WireBody {
+  fingerprint: string | null;
   changes: { path: string }[];
   refusals: { code: string }[];
   signNotices: { scriptLabel: string; message: string }[];
@@ -29,6 +30,7 @@ describe("GBC sign routes", () => {
     const response = await fetch(`${base}/api/edit/Route29/${route}`, { method: "POST", body: JSON.stringify(body) });
     return { status: response.status, body: await response.json() as WireBody };
   };
+  const commitPreview = async () => post("commit", { fingerprint: (await get("plan")).fingerprint ?? "refused-plan" });
   const put = (mode = "free", text = "HELLO") => post("sign/put", { x: 0, y: 0, mode, text });
   const label = "Route29PokemapSign1";
   beforeEach(async () => {
@@ -54,7 +56,7 @@ describe("GBC sign routes", () => {
     const block = [label + ":", `\tjumptext ${label}Text`, "", `; pokemap:sign free ${hash}`, label + "Text:", '\ttext "HELLO"', "\tdone", ""].join(eol) + eol;
     const expected = before.replace("Route29_MapEvents:", block + "Route29_MapEvents:")
       .replace(/(\tdef_bg_events[^\r\n]*(?:\r?\n\tbg_event[^\r\n]*)*)/, '$1' + eol + `\tbg_event  0,  0, BGEVENT_READ, ${label}`);
-    expect((await post("commit")).status).toBe(200);
+    expect((await commitPreview()).status).toBe(200);
     expect(disk()).toBe(expected);
     expect(parseMapEvents(disk(), "Route29").bgs.at(-1)?.script).toBe(label);
   });
@@ -66,7 +68,7 @@ describe("GBC sign routes", () => {
     await post("undo");
     expect((await get("plan")).changes).toEqual([]);
     await post("redo");
-    await post("commit");
+    await commitPreview();
     expect(findGbcSign(disk(), event.script).body).toBe(findGbcSign(original, event.script).body);
     expect(disk().replace(/^; pokemap:sign free [a-f0-9]{8}\r?\n/m, "")).toBe(original);
   });
@@ -84,7 +86,7 @@ describe("GBC sign routes", () => {
   });
   it("refresh is pure and deterministic, plan and commit use the same bytes", async () => {
     expect((await put("name")).status).toBe(200);
-    await post("commit");
+    await commitPreview();
     expect((await get("plan")).changes).toEqual([]);
     await post("discard");
     const names = `${root}/data/maps/landmarks.asm`;
@@ -98,11 +100,11 @@ describe("GBC sign routes", () => {
     const plan = await get("plan");
     expect(plan.changes).toHaveLength(1);
     expect(plan.signNotices).toEqual([]);
-    await post("commit");
+    await commitPreview();
     expect(disk()).toBe(refreshed.session.eventsText);
   });
   it.each(["refresh", "unlink", "leave"])("protects hand edits and supports %s", async (action) => {
-    await put("name"); await post("commit");
+    await put("name"); await commitPreview();
     const source = disk();
     const offset = source.indexOf(`${label}Text:`);
     expect(offset).toBeGreaterThan(0);
@@ -118,7 +120,7 @@ describe("GBC sign routes", () => {
       await post("undo"); expect((await get("plan")).signNotices).toHaveLength(1);
       await post("redo");
     }
-    expect((await post("commit")).status).toBe(200);
+    expect((await commitPreview()).status).toBe(200);
     if (action === "leave") expect(disk()).toBe(edited);
     else {
       const block = findGbcSign(disk(), label);
@@ -129,7 +131,7 @@ describe("GBC sign routes", () => {
   });
   it("refresh source refusals prevent every write, including pending paint", async () => {
     expect((await put("name")).status).toBe(200);
-    expect((await post("commit")).status).toBe(200);
+    expect((await commitPreview()).status).toBe(200);
     const before = disk();
     const blkPath = `${root}/maps/Route29.blk`, blocks = readFileSync(blkPath);
     writeFileSync(`${root}/data/maps/landmarks.asm`, "; missing source names\n");
@@ -141,7 +143,7 @@ describe("GBC sign routes", () => {
     const plan = await planRes.json() as WireBody;
     expect(plan).toMatchObject({ changes: [], signNotices: [] });
     expect(plan.refusals).toHaveLength(1);
-    const commit = await post("commit");
+    const commit = await commitPreview();
     expect(commit.status).toBe(400);
     expect(commit.body).toMatchObject({ changes: [], signNotices: [] });
     expect(commit.body.refusals).toHaveLength(1);
@@ -159,7 +161,7 @@ describe("GBC sign routes", () => {
     const id = (start.body.blocks[0]!.metatileId + 1) % 16;
     await post("paint/apply", { tool: "pencil", targets: [{ x: 0, y: 0 }], stamp: { width: 1, height: 1, cells: [{ metatileId: id }] }, origin: { x: 0, y: 0 } });
     await post("paint/end");
-    expect((await post("commit")).status).toBe(200);
+    expect((await commitPreview()).status).toBe(200);
     expect(disk()).toBe(original);
   });
   it("refuses invalid text, labels, occupancy, and missing source data without staging", async () => {
