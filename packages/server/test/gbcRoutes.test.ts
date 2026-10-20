@@ -293,7 +293,7 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
       expect(r.status).toBe(200);
       const body = await r.json() as {
         map: unknown;
-        layout: { blkPath: string; width: number; height: number; writable: boolean };
+        layout: { blkPath: string; width: number; height: number };
         blocks: { metatileId: number }[];
         metatileCount: number;
         tileset: { constName: string; name: string };
@@ -318,7 +318,7 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
       // attributes.asm:100 -- `map_attributes NewBarkTown, NEW_BARK_TOWN, $05, WEST | EAST`.
       expect((body.map as { connections: unknown[] }).connections).toHaveLength(2);
 
-      expect(body.layout).toEqual({ blkPath: "maps/NewBarkTown.blk", width: 10, height: 9, writable: true });
+      expect(body.layout).toEqual({ blkPath: "maps/NewBarkTown.blk", width: 10, height: 9 });
       expect(body.layout.blkPath).toBe(layout.blkPath);
 
       // Read the real .blk bytes independently of the route/core renderer --
@@ -354,13 +354,15 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
       expect(body.paddingWidth).toBe(proj.paddingWidth());
     });
 
-    it("CeruleanCave2F: not writable, .blk defect first, then exactly 3 out-of-bounds warp defects", async () => {
+    it("CeruleanCave2F: editable, .blk defect first, then exactly 3 out-of-bounds warp defects", async () => {
       const r = await get("/api/map/CeruleanCave2F");
       expect(r.status).toBe(200);
-      const body = await r.json() as { layout: { writable: boolean }; defects: { file: string; message: string }[] };
-      expect(body.layout.writable).toBe(false);
+      const body = await r.json() as { layout: { blkPath: string; width: number; height: number }; defects: { file: string; message: string }[] };
+      expect(body.layout).toEqual({ blkPath: "maps/CeruleanCave2F.blk", width: 9, height: 15 });
       expect(body.defects).toHaveLength(4);
-      expect(body.defects[0]!.message).toContain("CeruleanCave2F.blk");
+      expect(body.defects[0]).toEqual({ file: "maps/CeruleanCave2F.blk", kind: "size",
+        message: "maps/CeruleanCave2F.blk: actual size 400 bytes, expected 135 bytes",
+        fix: "Change the map_const dimensions in constants/map_constants.asm or trim/extend maps/CeruleanCave2F.blk from 400 to 135 bytes." });
       for (const d of body.defects.slice(1)) {
         expect(d.message).toMatch(/outside the .* step grid/);
         expect(d.message).toContain("warp");

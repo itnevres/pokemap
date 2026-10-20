@@ -32,7 +32,7 @@ function payload(name: string): GbcMapPayload {
   return {
     family: "gbc",
     map: { name, constName: name.toUpperCase(), group: 1, number: 1, width: 2, height: 1, blkPath: `maps/${name}.blk`, tileset: "T", environment: "E", landmark: "L", music: "M", phoneFlag: "0", palette: "P", fishGroup: "0", border: 3, connectionFlags: "0", connections: [] },
-    layout: { blkPath: `maps/${name}.blk`, width: 2, height: 1, writable: true },
+    layout: { blkPath: `maps/${name}.blk`, width: 2, height: 1 },
     blocks: [{ metatileId: 0 }, { metatileId: 1 }], metatileCount: 2, tileset: { constName: "TILESET_OLIVINE", name: "T" },
     collision: [{ tl: 0, tr: 0, bl: 0, br: 0 }, { tl: 7, tr: 7, bl: 7, br: 7 }],
     collisionInfo: { "0": { name: "COLL_FLOOR", category: "land", talk: false } },

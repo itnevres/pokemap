@@ -23,12 +23,14 @@ function diffChangedBlocks(prevBytes: Buffer, nextBytes: Buffer): number[] {
  * a legal write target), short-circuit to null on an exact match (I6's own
  * "no write when nothing changed" half), else diff and return a plan.
  *
+ * When requested for map blockdata, keeps disk bytes past the encoded words.
  * Takes the already-encoded buffer rather than `(blocks, profile)` -- the
  * encode step is each public function's own (different source array, same
  * `encodeBlocks` call), only the read/compare/diff after it is identical.
  */
-function buildPlan(path: string, next: Buffer): BinaryWrite | null {
+function buildPlan(path: string, next: Buffer, keepTail = false): BinaryWrite | null {
   const prevBytes = existsSync(path) ? readFileSync(path) : Buffer.alloc(0);
+  if (keepTail) next = Buffer.concat([next, prevBytes.subarray(next.length)]);
   if (prevBytes.equals(next)) return null;
   return { path, bytes: next, changedBlocks: diffChangedBlocks(prevBytes, next) };
 }
@@ -54,7 +56,7 @@ export function planBlockdataWrite(
 ): BinaryWrite | null {
   const path = `${root}/${layout.blockdataFilepath}`;
   const next = encodeBlocks(blocks, profile); // throws on an out-of-mask value -- I7, not this function's job to catch twice
-  return buildPlan(path, next);
+  return buildPlan(path, next, true);
 }
 
 /**

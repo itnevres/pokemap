@@ -853,7 +853,6 @@ export function GbcMapCanvas({ mapName, data: payload, time, hoveredMetatile, ed
       {!chromeless && <div className="map-canvas__status">
         <span className="map-canvas__status-item">
           tileset {data.tileset.constName} · {data.metatileCount} metatiles · {layout.width}×{layout.height}
-          {!layout.writable ? " · not writable" : ""}
         </span>
         {hover ? (
           <span className="map-canvas__status-item map-canvas__hover">

@@ -147,7 +147,7 @@ export function runGbcQuery(root: string, mapName: string, opts: RunGbcQueryOpti
     const { layout, defects: layoutDefects } = proj.layout(map);
     out.header = {
       ...rest,
-      layout: { blkPath: layout.blkPath, width: layout.width, height: layout.height, writable: layout.writable },
+      layout: { blkPath: layout.blkPath, width: layout.width, height: layout.height },
     };
     defects.push(...layoutDefects);
   }

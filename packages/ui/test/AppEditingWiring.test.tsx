@@ -137,7 +137,7 @@ describe("App -- selection resets", () => {
 
 const GBC_LAYOUT = {
   family: "gbc", map: { name: "PalletTown", constName: "PALLET_TOWN", group: 1, number: 1, width: 2, height: 1, blkPath: "maps/PalletTown.blk", tileset: "T", environment: "E", landmark: "L", music: "X", phoneFlag: "0", palette: "P", fishGroup: "0", border: 1, connectionFlags: "0", connections: [] },
-  layout: { blkPath: "maps/PalletTown.blk", width: 2, height: 1, writable: true },
+  layout: { blkPath: "maps/PalletTown.blk", width: 2, height: 1 },
   blocks: [{ metatileId: 0 }, { metatileId: 1 }], metatileCount: 2, tileset: { constName: "T", name: "T" },
   collision: Array.from({ length: 2 }, () => ({ tl: 0, tr: 0, bl: 0, br: 0 })), collisionInfo: { "0": { name: "COLL_FLOOR", category: "land", talk: false } },
   events: { warps: [], coords: [], bgs: [], objects: [], sceneScripts: [], callbacks: [], objectConsts: [] }, defects: [], paddingWidth: 3,

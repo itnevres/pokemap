@@ -139,7 +139,7 @@ function placementFixture(grass: { x: number; y: number }[], occupied: { x: numb
   };
   return stubGbcProject({
     root, maps: [map], map: () => map,
-    layout: () => ({ layout: { blkPath: map.blkPath, width: 2, height: 2, writable: true,
+    layout: () => ({ layout: { blkPath: map.blkPath, width: 2, height: 2,
       blocks: [0, 1, 2, 3].map((metatileId) => ({ metatileId })) }, defects: [] }),
     tileset: () => ({ collision }) as GbcTileset,
   });

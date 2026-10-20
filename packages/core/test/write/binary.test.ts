@@ -24,6 +24,22 @@ function makeLayout(root: string, blockdataFilepath: string): Layout {
 }
 
 describe("planBlockdataWrite", () => {
+  it("keeps an odd trailing byte when editing one declared block", () => {
+    const root = tempRoot();
+    const original = Buffer.from([0, 48, 1, 48, 2, 48, 3, 48, 4, 48, 5, 48, 6, 48, 7, 48, 8, 48, 9, 48, 10, 48, 11, 48, 173]);
+    writeFileSync(join(root, "map.bin"), original);
+    const blocks = parseBlocks(original, profile);
+    expect(planBlockdataWrite(root, makeLayout(root, "map.bin"), blocks, profile)).toBeNull();
+    blocks[5] = { metatileId: 999, collision: 0, elevation: 3 };
+    const plan = planBlockdataWrite(root, makeLayout(root, "map.bin"), blocks, profile);
+    const expected = Buffer.from(original);
+    expected[10] = 231;
+    expected[11] = 51;
+    expect(plan!.changedBlocks).toEqual([5]);
+    expect(plan!.bytes).toEqual(expected);
+    expect(readFileSync(join(root, "map.bin"))).toEqual(original);
+  });
+
   it("returns null when nothing changed", () => {
     const root = tempRoot();
     const blocks: Block[] = Array.from({ length: 12 }, (_, i) => ({ metatileId: i, collision: 0, elevation: 3 }));

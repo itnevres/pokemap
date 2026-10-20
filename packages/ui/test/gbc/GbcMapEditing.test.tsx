@@ -18,7 +18,7 @@ const BLOCKS = [0, 1, 2, 3, 4, 5].map((metatileId) => ({ metatileId }));
 const DATA: GbcMapPayload = {
   family: "gbc",
   map: { name: "M", constName: "M", group: 1, number: 1, width: 3, height: 2, blkPath: "maps/M.blk", tileset: "T", environment: "E", landmark: "L", music: "X", phoneFlag: "0", palette: "P", fishGroup: "0", border: 1, connectionFlags: "0", connections: [] },
-  layout: { blkPath: "maps/M.blk", width: 3, height: 2, writable: true },
+  layout: { blkPath: "maps/M.blk", width: 3, height: 2 },
   blocks: BLOCKS, metatileCount: 6, tileset: { constName: "T", name: "T" },
   collision: Array.from({ length: 6 }, () => ({ tl: 0, tr: 0, bl: 0, br: 0 })),
   collisionInfo: { "0": { name: "COLL_FLOOR", category: "land", talk: false } },

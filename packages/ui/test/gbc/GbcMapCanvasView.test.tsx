@@ -15,7 +15,7 @@ const DATA: GbcMapPayload = {
     landmark: "LANDMARK_NONE", music: "MUSIC_NONE", phoneFlag: "0", palette: "PAL_MAP_TOWN",
     fishGroup: "0", border: 9, connectionFlags: "0", connections: [],
   },
-  layout: { blkPath: "maps/NewBarkTown.blk", width: 2, height: 1, writable: true },
+  layout: { blkPath: "maps/NewBarkTown.blk", width: 2, height: 1 },
   blocks: [{ metatileId: 0 }, { metatileId: 1 }],
   metatileCount: 2,
   tileset: { constName: "TILESET_JOHTO", name: "TilesetJohto" },

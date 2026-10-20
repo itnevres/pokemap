@@ -83,17 +83,6 @@ export function guardGbcSave(proj: GbcProject, session: GbcEditSession): Refusal
   const changed = changedBlockIndices(session.originalBlocks, session.blocks);
   const blocksChanged = changed.length > 0;
 
-  // An unchanged non-writable layout is not refused: nothing would be written
-  // to it. Writable is false when the .blk's size disagreed with w*h at load.
-  if (!layout.writable && blocksChanged) {
-    out.push({
-      code: "layout-not-writable",
-      message: `${layout.blkPath} was flagged non-writable when loaded (its size on disk disagrees with ${layout.width}x${layout.height}).`,
-      fix: "Fix the file's size to match the map's declared dimensions in the decomp, then reopen.",
-      subject: layout.blkPath,
-    });
-  }
-
   // Object consts are the hand-maintained object index (findings §3.1) and
   // scripts address objects through them. Adding/removing an object_event
   // without the matching const silently re-points every later object. When

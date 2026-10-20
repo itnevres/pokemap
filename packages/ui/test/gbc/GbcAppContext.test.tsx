@@ -33,7 +33,7 @@ function payload(name: string): GbcMapPayload {
       tileset: "TILESET_OLIVINE", environment: "E", landmark: "L", music: "M", phoneFlag: "0", palette: "P",
       fishGroup: "0", border: 3, connectionFlags: "0", connections: [],
     },
-    layout: { blkPath: `maps/${name}.blk`, width: 10, height: 10, writable: true },
+    layout: { blkPath: `maps/${name}.blk`, width: 10, height: 10 },
     blocks: Array.from({ length: 100 }, () => ({ metatileId: 0 })),
     metatileCount: 2,
     tileset: { constName: "TILESET_OLIVINE", name: "TilesetOlivine" },

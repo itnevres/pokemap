@@ -24,7 +24,7 @@ function payload(name: string, over: Partial<GbcMapPayload> = {}): GbcMapPayload
       tileset: "TILESET_OLIVINE", environment: "E", landmark: "L", music: "M", phoneFlag: "0", palette: "P",
       fishGroup: "0", border: 3, connectionFlags: "0", connections: [],
     },
-    layout: { blkPath: `maps/${name}.blk`, width: 2, height: 1, writable: true },
+    layout: { blkPath: `maps/${name}.blk`, width: 2, height: 1 },
     blocks: [{ metatileId: 0 }, { metatileId: 1 }],
     metatileCount: 2,
     tileset: { constName: "TILESET_OLIVINE", name: "TilesetOlivine" },
@@ -204,20 +204,22 @@ describe("GbcApp editing (Plan 7 Task 5)", () => {
     expect((screen.getByRole("button", { name: "Undo" }) as HTMLButtonElement).disabled).toBe(false);
   });
 
-  it("a non-writable layout disables the paint tools with the reason; event editing stays", async () => {
+  it("an oversized layout keeps paint tools enabled and shows its size defect", async () => {
     mockFetch({
       OlivineCity: payload("OlivineCity", {
-        layout: { blkPath: "maps/OlivineCity.blk", width: 2, height: 1, writable: false },
-        defects: [{ file: "maps/OlivineCity.blk", kind: "size", fix: "Correct the blockdata size in maps/OlivineCity.blk.", message: "maps/OlivineCity.blk: actual size 9 bytes -- not writable" }],
+        layout: { blkPath: "maps/OlivineCity.blk", width: 2, height: 1 },
+        defects: [{ file: "maps/OlivineCity.blk", kind: "size", fix: "Correct the blockdata size in maps/OlivineCity.blk.", message: "maps/OlivineCity.blk: actual size 9 bytes, expected 2 bytes" }],
       }),
     });
     render(<FamilyApp adapter={gbcAdapter} />);
     await openCity();
     for (const tool of ["Pencil", "Rect", "Bucket", "Dropper", "Shift"]) {
       const b = screen.getByRole("button", { name: tool }) as HTMLButtonElement;
-      expect(b.disabled).toBe(true);
-      expect(b.title).toContain("this map's .blk is flagged non-writable: maps/OlivineCity.blk: actual size 9 bytes");
+      expect(b.disabled).toBe(false);
     }
+    expect(screen.getByRole("alert").textContent).toContain("maps/OlivineCity.blk: actual size 9 bytes, expected 2 bytes");
+    await paintOnce();
+    expect(screen.getByTestId("dirty-indicator")).toBeTruthy();
     expect(screen.getByText(/Select an event to duplicate it/)).toBeTruthy();
   });
 

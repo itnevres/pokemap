@@ -51,7 +51,7 @@ function fixturePayload(): GbcMapPayload {
       connectionFlags: "0",
       connections: [],
     },
-    layout: { blkPath: "maps/Fixture.blk", width: 1, height: 1, writable: true },
+    layout: { blkPath: "maps/Fixture.blk", width: 1, height: 1 },
     blocks,
     metatileCount: 1,
     tileset: { constName: "TILESET_FIXTURE", name: "TilesetFixture" },
@@ -363,7 +363,7 @@ describe("real-corpus case: NewBarkTown", () => {
     const payload: GbcMapPayload = {
       family: "gbc",
       map,
-      layout: { blkPath: layout.blkPath, width: layout.width, height: layout.height, writable: layout.writable },
+      layout: { blkPath: layout.blkPath, width: layout.width, height: layout.height },
       blocks: layout.blocks,
       metatileCount: ts.metatiles.length,
       tileset: { constName: ts.constName, name: ts.name },

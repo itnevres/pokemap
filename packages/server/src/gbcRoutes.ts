@@ -181,7 +181,7 @@ export function buildGbcMapPayload(proj: GbcProject, map: GbcMap): GbcMapPayload
   return {
     family: "gbc",
     map,
-    layout: { blkPath: layout.blkPath, width: layout.width, height: layout.height, writable: layout.writable },
+    layout: { blkPath: layout.blkPath, width: layout.width, height: layout.height },
     blocks: layout.blocks,
     metatileCount: ts.metatiles.length,
     tileset: { constName: ts.constName, name: ts.name },

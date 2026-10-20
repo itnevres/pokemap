@@ -61,9 +61,7 @@ export interface GbcMapEditingProps {
  * Per-map state (the picked stamp, the selected event, the error banner, warnings) is held as `{ forMap, ... }`
  * and retired on a map visit change before children render. A committed visit identity guards deferred local
  * callbacks, including A -> B -> A. The chosen TOOL deliberately survives; tileset picks must not.
- *
- * Non-writable layout (`layout.writable === false`): the paint tools render disabled with the reason, and
- * `activeTool` resolves to null so the canvas cannot paint; event editing, undo/redo and save stay enabled.
+
  */
 export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId, onHoverMetatile, onOpenSave, onOpenIndicator, indicatorMessage, onDismissIndicatorMessage, onDiscarded, active = true, renderCanvas, onStrokeChain }: GbcMapEditingProps) {
   const [toolKind, setToolKind] = useState<ToolKind | null>(null);
@@ -98,17 +96,12 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
   const fail = (e: unknown, fallback = "Edit failed.") => { if (isCurrent()) setErr({ forMap: key, text: message(e, fallback) }); };
   const ok = () => { if (isCurrent()) setErr(null); };
 
-  const writable = data?.layout.writable ?? false;
-  const nonWritableTitle = data
-    ? `this map's .blk is flagged non-writable: ${data.defects.find((d) => d.message.includes("not writable"))?.message ?? data.layout.blkPath}`
-    : "";
-
   const activeTool = useMemo<GbcActiveTool | null>(() => {
-    if (!writable || toolKind === null) return null;
+    if (toolKind === null) return null;
     if (toolKind === "shift" || toolKind === "dropper" || toolKind === "sign") return { kind: toolKind };
     if (toolKind === "pencil" || toolKind === "rect" || toolKind === "bucket") return stamp ? { kind: toolKind, stamp } : null; // inert until a cell is picked
     return null;
-  }, [writable, toolKind, stamp]);
+  }, [toolKind, stamp]);
 
   const pickedId = stamp && stamp.cells.length === 1 ? stamp.cells[0]!.metatileId : null;
 
@@ -161,8 +154,7 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
         activeToolKind={toolKind}
         onSelectTool={setToolKind}
         tools={GBC_TOOLS}
-        availableTools={writable ? GBC_TOOLS : []}
-        unavailableTitle={nonWritableTitle}
+        availableTools={GBC_TOOLS}
         isDirty={session.isDirty}
         onUndo={() => void session.undo().then(ok).catch((e: unknown) => fail(e, "Undo failed."))}
         onRedo={() => void session.redo().then(ok).catch((e: unknown) => fail(e, "Redo failed."))}
@@ -191,7 +183,7 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
         tilesetName={data.tileset.constName}
         metatileCount={data.metatileCount}
         highlightId={hoveredMetatileId}
-        onSelect={writable ? onPalettePick : undefined}
+        onSelect={onPalettePick}
         selected={pickedId}
       />
       <GbcEventInspector

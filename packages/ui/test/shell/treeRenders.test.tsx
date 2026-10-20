@@ -34,7 +34,7 @@ const PAYLOAD = {
     tileset: "TILESET_OLIVINE", environment: "E", landmark: "L", music: "M", phoneFlag: "0", palette: "P",
     fishGroup: "0", border: 3, connectionFlags: "0", connections: [],
   },
-  layout: { blkPath: "maps/OlivineCity.blk", width: 2, height: 1, writable: true },
+  layout: { blkPath: "maps/OlivineCity.blk", width: 2, height: 1 },
   blocks: [{ metatileId: 0 }, { metatileId: 1 }],
   metatileCount: 2,
   tileset: { constName: "TILESET_OLIVINE", name: "TilesetOlivine" },

@@ -365,7 +365,7 @@ describe("loadGbcMaps / loadLayout join refusals (temp root)", () => {
     expect(loadGbcMaps(withTrailingSlash).map("FooTown").blkPath).toBe("maps/FooTown.blk");
     expect(loadGbcMaps(withBackslashes).map("FooTown").blkPath).toBe("maps/FooTown.blk");
     const { layout } = loadLayout(withBackslashes, loadGbcMaps(root).map("FooTown"));
-    expect(layout.writable).toBe(true);
+    expect(layout).not.toHaveProperty("writable");
   });
 
   it("loads a single self-consistent map with all fields joined", () => {
@@ -556,25 +556,26 @@ describe("loadGbcMaps / loadLayout join refusals (temp root)", () => {
     const { maps } = loadGbcMaps(root);
     const { layout, defects } = loadLayout(root, maps[0]!);
     expect(defects).toEqual([]);
-    expect(layout.writable).toBe(true);
+    expect(layout).not.toHaveProperty("writable");
     expect(layout.blocks).toHaveLength(16);
     expect(layout.blocks.every((b) => b.metatileId === 7)).toBe(true);
   });
 
-  it("loadLayout: oversize .blk loads first w*h bytes, flags a defect, and is not writable", () => {
+  it("loadLayout: oversize .blk loads first w*h bytes, flags a size defect, and stays editable", () => {
     const oversized = Buffer.alloc(40);
     for (let i = 0; i < oversized.length; i++) oversized[i] = i;
     root = writeCorpus(baseFiles());
     writeFileSync(join(root, "maps/FooTown.blk"), oversized);
     const { maps } = loadGbcMaps(root);
     const { layout, defects } = loadLayout(root, maps[0]!);
-    expect(layout.writable).toBe(false);
+    expect(layout).not.toHaveProperty("writable");
     expect(layout.blocks).toHaveLength(16);
     expect(layout.blocks.map((b) => b.metatileId)).toEqual([...Array(16).keys()]);
     expect(defects).toHaveLength(1);
     expect(defects[0]!.file).toBe("maps/FooTown.blk");
-    expect(defects[0]!.message).toMatch(/40/);
-    expect(defects[0]!.message).toMatch(/16/);
+    expect(defects[0]).toEqual({ file: "maps/FooTown.blk", kind: "size",
+      message: "maps/FooTown.blk: actual size 40 bytes, expected 16 bytes",
+      fix: "Change the map_const dimensions in constants/map_constants.asm or trim/extend maps/FooTown.blk from 40 to 16 bytes." });
   });
 
   it("loadLayout: undersize .blk refuses (throws) rather than guessing", () => {
@@ -582,7 +583,7 @@ describe("loadGbcMaps / loadLayout join refusals (temp root)", () => {
     writeFileSync(join(root, "maps/FooTown.blk"), Buffer.alloc(3));
     const { maps } = loadGbcMaps(root);
     expect(() => loadLayout(root, maps[0]!)).toThrow(/FooTown\.blk/);
-    expect(() => loadLayout(root, maps[0]!)).toThrow(/3/);
+    expect(() => loadLayout(root, maps[0]!)).toThrow(new Error("maps/FooTown.blk: actual size 3 bytes, expected 16 bytes -- refusing to guess. Change the map_const dimensions in constants/map_constants.asm or trim/extend maps/FooTown.blk from 3 to 16 bytes."));
   });
 });
 
@@ -684,7 +685,7 @@ describe("corpus", () => {
     expect(sharedGroups).toBe(23);
   });
 
-  itWithGbcCorpus("loadLayout over every map: exactly 2 defects total, both not writable with 135 blocks", () => {
+  itWithGbcCorpus("loadLayout over every map: exactly 2 defects total, both editable with 135 blocks", () => {
     const { maps } = loadGbcMaps(GBC_SUBJECT_ROOT);
     expect(maps).toHaveLength(391);
     const allDefects: { name: string; message: string }[] = [];
@@ -696,7 +697,7 @@ describe("corpus", () => {
       seenBlk.add(m.blkPath);
       const { layout, defects } = loadLayout(GBC_SUBJECT_ROOT, m);
       for (const d of defects) allDefects.push({ name: m.name, message: d.message });
-      if (layout.writable) {
+      if (defects.length === 0) {
         writableCount++;
       } else {
         notWritableCount++;

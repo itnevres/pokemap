@@ -50,7 +50,7 @@ export interface GbcCollisionInfoEntry {
 export interface GbcMapPayload {
   family: "gbc";
   map: GbcMap;
-  layout: { blkPath: string; width: number; height: number; writable: boolean };
+  layout: { blkPath: string; width: number; height: number };
   /** Exactly `layout.width * layout.height` entries, raw ids (0 NOT substituted). */
   blocks: Block[];
   metatileCount: number;

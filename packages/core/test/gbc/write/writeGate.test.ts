@@ -58,7 +58,7 @@ interface Pins {
 // Measured on the first green run after the F3 marker rule. The pret pins are for vanilla
 // pret/pokecrystal @ 3bc8daa; pret shares most numbers with the subject (it lacks the 3 CeruleanCave maps).
 const SUBJECT: Pins = {
-  maps: 391, layouts: 257, writable: 255, nonWritable: ["CeruleanCave2F", "CeruleanCaveB1"], binaryRoundTrips: 255,
+  maps: 391, layouts: 257, writable: 257, nonWritable: ["CeruleanCave2F", "CeruleanCaveB1"], binaryRoundTrips: 257,
   moves: perKind(384, 44, 223, 349), deleteReAdds: perKind(379, 44, 223, 286), addDeletes: perKind(7, 347, 168, 42),
   lineNotCanonical: ["CeruleanCave1F warp", "CeruleanCave2F warp", "CeruleanCaveB1 warp", "BurnedTower1F warp", "BlackthornGym2F warp", "MoveDeletersHouse object"],
   constLineNotCanonical: ["MountMoonGiftShop", "CopycatsHouse2F"], constReferenced: 60, outOfStep: [],
@@ -266,7 +266,8 @@ function gateRoot(root: string): void {
       for (const m of proj.maps) {
         if (seen.has(m.blkPath)) continue;
         seen.add(m.blkPath);
-        (proj.layout(m).layout.writable ? writable : nonWritable).push(m);
+        writable.push(m);
+        if (proj.layout(m).defects.some((d) => d.kind === "size")) nonWritable.push(m);
       }
       stats.layouts = seen.size;
       stats.writable = writable.length;
@@ -306,15 +307,21 @@ function gateRoot(root: string): void {
       expect(failures.slice(0, 20), `${failures.length} failure(s)`).toEqual([]);
     }, HEAVY);
 
-    it("B3 non-writable layouts refuse: layout-not-writable, commit throws, file unchanged", () => {
-      expect(nonWritable.map((m) => m.name), "non-writable layouts (B1 classification)").toEqual(pins.nonWritable);
+    it("B3 oversized layouts paint exactly one byte and preserve the full tail", () => {
+      expect(nonWritable.map((m) => m.name), "oversized layouts (B1 classification)").toEqual(pins.nonWritable);
       for (const m of nonWritable) {
         const s = openGbcEditSession(proj, m.name);
         s.blocks[0] = { metatileId: (s.blocks[0]!.metatileId + 1) % capOf(m) };
         const plan = planGbcSave(proj, s);
-        expect(plan.refusals.map((r) => r.code), m.name).toContain("layout-not-writable");
-        expect(() => commitGbcSave(proj, plan), m.name).toThrow(/layout-not-writable/);
-        expect(disk(m.blkPath).equals(snapOf(m.blkPath)), m.name).toBe(true);
+        expect(plan.refusals, m.name).toEqual([]);
+        commitGbcSave(proj, plan);
+        const expected = Buffer.from(snapOf(m.blkPath));
+        expected[0] = s.blocks[0]!.metatileId;
+        expect(disk(m.blkPath), m.name).toEqual(expected);
+        const back = openGbcEditSession(proj, m.name);
+        back.blocks[0] = { metatileId: snapOf(m.blkPath)[0]! };
+        commit(back);
+        expect(disk(m.blkPath), m.name).toEqual(snapOf(m.blkPath));
       }
     }, LIGHT);
 

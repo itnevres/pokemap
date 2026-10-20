@@ -314,7 +314,7 @@ function stubProject(root = "<stub-root-never-read-except-by-loadGbcSpeciesConst
     },
     tileset: () => tileset,
     layout: (map): { layout: Layout; defects: [] } => ({
-      layout: { blkPath: map.blkPath, width: 1, height: 1, writable: true, blocks: [{ metatileId: map.blkPath === "waterful.blk" ? 1 : 0 }] },
+      layout: { blkPath: map.blkPath, width: 1, height: 1, blocks: [{ metatileId: map.blkPath === "waterful.blk" ? 1 : 0 }] },
       defects: [],
     }),
     wild: () => wildData,

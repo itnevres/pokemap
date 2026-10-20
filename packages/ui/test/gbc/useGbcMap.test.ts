@@ -9,7 +9,7 @@ afterEach(() => {
 const VALID_BODY = {
   family: "gbc",
   map: { name: "NewBarkTown" },
-  layout: { width: 10, height: 9, writable: true, blkPath: "maps/NewBarkTown.blk" },
+  layout: { width: 10, height: 9, blkPath: "maps/NewBarkTown.blk" },
   blocks: Array.from({ length: 90 }, () => ({ metatileId: 0 })),
   metatileCount: 1,
   tileset: { constName: "TILESET_JOHTO", name: "TilesetJohto" },

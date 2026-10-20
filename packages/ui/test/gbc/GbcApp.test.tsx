@@ -32,7 +32,7 @@ function mapPayload(name: string, overrides: Partial<GbcMapPayload> = {}): GbcMa
       landmark: "LANDMARK_NONE", music: "MUSIC_NONE", phoneFlag: "0", palette: "PAL_MAP_TOWN",
       fishGroup: "0", border: 3, connectionFlags: "0", connections: [],
     },
-    layout: { blkPath: `maps/${name}.blk`, width: 2, height: 1, writable: true },
+    layout: { blkPath: `maps/${name}.blk`, width: 2, height: 1 },
     blocks: [{ metatileId: 0 }, { metatileId: 1 }],
     metatileCount: 2,
     tileset: { constName: "TILESET_OLIVINE", name: "TilesetOlivine" },
@@ -466,9 +466,9 @@ describe("GbcApp", () => {
     // CeruleanCave2F-shaped defect list, deliberately, to keep this test's
     // fetch mock aligned with the fixture GROUPS tree above.
     const withDefects = mapPayload("OlivinePort", {
-      layout: { blkPath: "maps/OlivinePort.blk", width: 2, height: 1, writable: false },
+      layout: { blkPath: "maps/OlivinePort.blk", width: 2, height: 1 },
       defects: [
-        { file: "maps/CeruleanCave2F.blk", kind: "size", fix: "Change the map_const dimensions in constants/map_constants.asm or trim/extend maps/CeruleanCave2F.blk from 400 to 135 bytes.", message: "maps/CeruleanCave2F.blk: actual size 400 bytes, declared 9x15=135 -- loaded first 135 bytes, not writable" },
+        { file: "maps/CeruleanCave2F.blk", kind: "size", fix: "Change the map_const dimensions in constants/map_constants.asm or trim/extend maps/CeruleanCave2F.blk from 400 to 135 bytes.", message: "maps/CeruleanCave2F.blk: actual size 400 bytes, expected 135 bytes" },
         { file: "maps/CeruleanCave2F.asm", kind: "gameplay", fix: "Move the warp at index 0 inside the 18x30 step grid in maps/CeruleanCave2F.asm.", message: "maps/CeruleanCave2F.asm: warp[0] at (23,7) is outside the 18x30 step grid" },
       ],
     });
@@ -479,7 +479,8 @@ describe("GbcApp", () => {
     fireEvent.click(screen.getByText("OlivinePort"));
     await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
     const alert = screen.getByRole("alert");
-    expect(alert.textContent).toContain("not writable");
+    expect(alert.textContent).toContain("actual size 400 bytes, expected 135 bytes");
+    expect(alert.textContent).toContain("Change the map_const dimensions in constants/map_constants.asm or trim/extend maps/CeruleanCave2F.blk from 400 to 135 bytes.");
     expect(alert.textContent).toContain("outside the 18x30 step grid");
   });
 

@@ -106,7 +106,7 @@ function validGbcMapPayload(): GbcMapPayload {
       landmark: "LANDMARK_NONE", music: "MUSIC_NONE", phoneFlag: "0", palette: "PAL_MAP_TOWN",
       fishGroup: "0", border: 3, connectionFlags: "0", connections: [],
     },
-    layout: { blkPath: "maps/Fixture.blk", width: 2, height: 2, writable: true },
+    layout: { blkPath: "maps/Fixture.blk", width: 2, height: 2 },
     blocks: [{ metatileId: 0 }, { metatileId: 1 }, { metatileId: 2 }, { metatileId: 0 }],
     metatileCount: 3,
     tileset: { constName: "TILESET_FIXTURE", name: "TilesetFixture" },

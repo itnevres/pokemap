@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { parseBlk } from "./blocks.js";
 import { parseIncbins } from "./incbin.js";
 import { stripComment, stripMacroDefs, matchCall, parseNum } from "./asm.js";
+import { sizeDefect } from "../../defects/size.js";
 import { norm } from "../../config/paths.js";
 import type { Connection, DataDefect, GbcMap, Layout } from "../model/types.js";
 
@@ -333,7 +334,7 @@ export function loadGbcMaps(root: string): LoadedGbcMaps {
  * Reads a map's `.blk` and decodes it against its declared width x height.
  * Mimics the engine's `ChangeMap`, which copies exactly w*h bytes: an
  * oversize file (2 real hits in the corpus, both PerfPlus-added) loads its
- * first w*h bytes with a flagged, non-writable `Layout` (Decision 3) rather
+ * first w*h bytes with a size defect (R2) rather
  * than the whole buffer. An undersize file has nothing sensible to copy, so
  * it refuses (throws) instead of guessing (G4).
  */
@@ -345,28 +346,13 @@ export function loadLayout(root: string, map: Pick<GbcMap, "blkPath" | "width" |
   const buf = readFileSync(`${r}/${map.blkPath}`);
   const expected = map.width * map.height;
 
+  const defect = sizeDefect(map.blkPath, buf.length, expected, "the map_const dimensions in constants/map_constants.asm");
   if (buf.length < expected) {
-    throw new Error(
-      `${map.blkPath}: buffer is ${buf.length} bytes, smaller than declared ${map.width}x${map.height}=${expected} -- refusing to guess`,
-    );
-  }
-
-  if (buf.length !== expected) {
-    return {
-      layout: { blkPath: map.blkPath, width: map.width, height: map.height, blocks: parseBlk(buf.subarray(0, expected)), writable: false },
-      defects: [
-        {
-          file: map.blkPath,
-          kind: "size",
-          fix: `Change the map_const dimensions in constants/map_constants.asm or trim/extend ${map.blkPath} from ${buf.length} to ${expected} bytes.`,
-          message: `${map.blkPath}: actual size ${buf.length} bytes, declared ${map.width}x${map.height}=${expected} -- loaded first ${expected} bytes, not writable`,
-        },
-      ],
-    };
+    throw new Error(`${defect.message} -- refusing to guess. ${defect.fix}`);
   }
 
   return {
-    layout: { blkPath: map.blkPath, width: map.width, height: map.height, blocks: parseBlk(buf), writable: true },
-    defects: [],
+    layout: { blkPath: map.blkPath, width: map.width, height: map.height, blocks: parseBlk(buf.subarray(0, expected)) },
+    defects: buf.length === expected ? [] : [defect],
   };
 }
