@@ -208,7 +208,7 @@ describe("GbcApp editing (Plan 7 Task 5)", () => {
     mockFetch({
       OlivineCity: payload("OlivineCity", {
         layout: { blkPath: "maps/OlivineCity.blk", width: 2, height: 1, writable: false },
-        defects: [{ file: "maps/OlivineCity.blk", message: "maps/OlivineCity.blk: actual size 9 bytes -- not writable" }],
+        defects: [{ file: "maps/OlivineCity.blk", kind: "size", fix: "Correct the blockdata size in maps/OlivineCity.blk.", message: "maps/OlivineCity.blk: actual size 9 bytes -- not writable" }],
       }),
     });
     render(<FamilyApp adapter={gbcAdapter} />);

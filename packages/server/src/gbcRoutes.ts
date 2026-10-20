@@ -175,8 +175,8 @@ export function buildGbcMapPayload(proj: GbcProject, map: GbcMap): GbcMapPayload
     if (entry) collisionInfo[String(v)] = entry;
   }
 
-  const { events, defects: eventDefects } = loadGbcMapEvents(proj.root, map);
-  const defects = [...layoutDefects, ...eventDefects, ...outOfBoundsEventDefects(map, events)];
+  const { events } = loadGbcMapEvents(proj.root, map);
+  const defects = [...layoutDefects, ...outOfBoundsEventDefects(map, events)];
 
   return {
     family: "gbc",

@@ -468,8 +468,8 @@ describe("GbcApp", () => {
     const withDefects = mapPayload("OlivinePort", {
       layout: { blkPath: "maps/OlivinePort.blk", width: 2, height: 1, writable: false },
       defects: [
-        { file: "maps/CeruleanCave2F.blk", message: "maps/CeruleanCave2F.blk: actual size 400 bytes, declared 9x15=135 -- loaded first 135 bytes, not writable" },
-        { file: "maps/CeruleanCave2F.asm", message: "maps/CeruleanCave2F.asm: warp[0] at (23,7) is outside the 18x30 step grid" },
+        { file: "maps/CeruleanCave2F.blk", kind: "size", fix: "Change the map_const dimensions in constants/map_constants.asm or trim/extend maps/CeruleanCave2F.blk from 400 to 135 bytes.", message: "maps/CeruleanCave2F.blk: actual size 400 bytes, declared 9x15=135 -- loaded first 135 bytes, not writable" },
+        { file: "maps/CeruleanCave2F.asm", kind: "gameplay", fix: "Move the warp at index 0 inside the 18x30 step grid in maps/CeruleanCave2F.asm.", message: "maps/CeruleanCave2F.asm: warp[0] at (23,7) is outside the 18x30 step grid" },
       ],
     });
     vi.stubGlobal("fetch", makeFetchMock({ maps: { OlivinePort: withDefects } }));

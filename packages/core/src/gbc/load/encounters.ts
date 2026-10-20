@@ -215,7 +215,7 @@ export function parseGrassFile(text: string, file: string, options: { swarm?: bo
 
   const defects: DataDefect[] = terminated
     ? []
-    : [{ file, message: `${file}: no "db -1" terminator found -- end of file ends the list (Decision 4)` }];
+    : [{ file, kind: "gameplay", fix: `Add a final db -1 terminator to ${file}.`, message: `${file}: no "db -1" terminator found -- end of file ends the list (Decision 4)` }];
   return { entries, defects };
 }
 
@@ -254,7 +254,7 @@ export function parseWaterFile(text: string, file: string, options: { swarm?: bo
 
   const defects: DataDefect[] = terminated
     ? []
-    : [{ file, message: `${file}: no "db -1" terminator found -- end of file ends the list (Decision 4)` }];
+    : [{ file, kind: "gameplay", fix: `Add a final db -1 terminator to ${file}.`, message: `${file}: no "db -1" terminator found -- end of file ends the list (Decision 4)` }];
   return { entries, defects };
 }
 

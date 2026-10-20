@@ -367,6 +367,21 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
       }
     });
 
+    it("MoveDeletersHouse: omits the legacy object_const_def diagnostic from the map payload", async () => {
+      const proj = openGbcProject(GBC_SUBJECT_ROOT);
+      const map = proj.map("MoveDeletersHouse");
+      expect(loadGbcMapEvents(proj.root, map).defects).toEqual([{
+        file: "maps/MoveDeletersHouse.asm",
+        message: "maps/MoveDeletersHouse.asm: object_const_def has 1 const(s) for 2 object_event(s) -- later objects have no matching const; a script indexing by position may be mistargeted",
+        kind: "gameplay",
+        fix: "Add matching object constants for the later object_event entries in maps/MoveDeletersHouse.asm.",
+      }]);
+      const response = await get("/api/map/MoveDeletersHouse");
+      expect(response.status).toBe(200);
+      const body = await response.json() as { defects: unknown[] };
+      expect(body.defects).toEqual([]);
+    });
+
     it("ElmsLab: a border $00 interior, real dimensions", async () => {
       const r = await get("/api/map/ElmsLab");
       expect(r.status).toBe(200);

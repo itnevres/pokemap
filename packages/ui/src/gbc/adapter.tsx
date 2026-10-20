@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { GbcMapEditing, type GbcMapEditingCanvasProps } from "./GbcMapEditing.js";
 import { GbcMapCanvas, GBC_COMPOSITE_ORIGIN } from "./GbcMapCanvas.js";
 import { GbcWorldCanvas } from "./GbcWorldCanvas.js";
+import { DefectsBanner } from "../shared/DefectsBanner.js";
 import { useGbcGroups } from "./hooks/useGbcGroups.js";
 import { useGbcMap } from "./hooks/useGbcMap.js";
 import { PokemonIndicatorDialog } from "../components/PokemonIndicatorDialog.js";
@@ -67,18 +68,7 @@ export function useGbcRuntime({ selected, mode, requestPrompt }: RuntimeArgs): F
     else requestPrompt(go);
   };
 
-  const defectsBanner = ready && ready.defects.length > 0 && (
-    // Non-dismissible: G4's "never a silent drop" data truth (an oversize .blk, an out-of-bounds event), not a one-shot
-    // notice about something the player just did -- so unlike App.tsx's own eventOpError/signAddedMessage banners, this
-    // one carries no dismiss button and never clears itself.
-    <div className="app__event-op-error" role="alert">
-      <ul className="gbc-app__defects-list">
-        {ready.defects.map((d, i) => (
-          <li key={i}>{d.message}</li>
-        ))}
-      </ul>
-    </div>
-  );
+  const defectsBanner = ready && <DefectsBanner key={selected} defects={ready.defects} />;
 
   const editingProps = {
     time, session, hoveredMetatileId,

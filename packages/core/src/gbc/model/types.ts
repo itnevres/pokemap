@@ -27,10 +27,8 @@ export interface Metatile {
  * throw for a defect and never silently drop it. The CLI is responsible for
  * surfacing them to the user.
  */
-export interface DataDefect {
-  file: string;
-  message: string;
-}
+export type { DataDefect } from "../../defects/types.js";
+import type { DataDefect } from "../../defects/types.js";
 
 /**
  * One `connection` line from `data/maps/attributes.asm`. The axis is the

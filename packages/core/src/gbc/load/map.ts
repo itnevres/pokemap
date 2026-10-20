@@ -357,6 +357,8 @@ export function loadLayout(root: string, map: Pick<GbcMap, "blkPath" | "width" |
       defects: [
         {
           file: map.blkPath,
+          kind: "size",
+          fix: `Change the map_const dimensions in constants/map_constants.asm or trim/extend ${map.blkPath} from ${buf.length} to ${expected} bytes.`,
           message: `${map.blkPath}: actual size ${buf.length} bytes, declared ${map.width}x${map.height}=${expected} -- loaded first ${expected} bytes, not writable`,
         },
       ],

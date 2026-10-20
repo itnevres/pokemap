@@ -225,6 +225,8 @@ export function outOfBoundsEventDefects(map: Pick<GbcMap, "name" | "width" | "he
       if (e.x < 0 || e.y < 0 || e.x >= stepWidth || e.y >= stepHeight) {
         defects.push({
           file,
+          kind: "gameplay",
+          fix: `Move the ${kind.slice(0, -1)} at index ${index} inside the ${stepWidth}x${stepHeight} step grid in ${file}.`,
           message: `${file}: ${kind.slice(0, -1)}[${index}] at (${e.x},${e.y}) is outside the ${stepWidth}x${stepHeight} step grid`,
         });
       }
@@ -251,6 +253,8 @@ export function loadGbcMapEvents(root: string, map: Pick<GbcMap, "name">): { eve
   if (events.objectConsts.length > 0 && events.objectConsts.length < events.objects.length) {
     defects.push({
       file,
+      kind: "gameplay",
+      fix: `Add matching object constants for the later object_event entries in ${file}.`,
       message: `${file}: object_const_def has ${events.objectConsts.length} const(s) for ${events.objects.length} object_event(s) -- later objects have no matching const; a script indexing by position may be mistargeted`,
     });
   }
