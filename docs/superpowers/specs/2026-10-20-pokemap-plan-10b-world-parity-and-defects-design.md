@@ -135,7 +135,7 @@ Report: `task-reports/pokemap-plan-10b-world-parity/spec-review.md`. Findings 1-
 - **SR14 (build, 2026-10-20). GBA C2 is dropped from v1.** After the SR1 exemptions the GBA subject still has 71 off-map
   events (60 objects, 9 warps, 2 bg), including proven-legitimate scripted staging (`SSAqua_RoomNW/scripts.inc:7-13`
   repositions off-map objects). Bounds alone cannot separate them from errors, so the zero-false-positive rule drops it.
-  GBC C2 is decided in Task 4 against its own corpus. The GBA subject has no real C1; acceptance 2 uses a temporary
+  GBC C2 is dropped too (Task 4): both PerfPlus and pret stage the GoldenrodPokecenter1F receptionist at (16,8) on a 10x8 step grid, then `moveobject` her into view (pret `maps/GoldenrodPokecenter1F.asm:27,59`). The GBA subject has no real C1; acceptance 2 uses a temporary
   `layouts.json` edit restored byte-for-byte.
 - **SR15 (build, 2026-10-20). Partial checks are visible.** `GET /api/defects/:map` returns `{ defects, incomplete }`;
   when another map cannot be read, C4/C11 withhold unresolved targets and the banner says the checks may be incomplete.
