@@ -105,7 +105,7 @@ function makeFetchMock(opts: MockOpts = {}) {
     if (url.startsWith("/api/encounters/")) {
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ methods: [] }) } as Response);
     }
-    if (url.startsWith("/api/defects/")) return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ defects: [] }) } as Response);
+    if (url.startsWith("/api/defects/")) return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ defects: [], incomplete: [] }) } as Response);
     return Promise.reject(new Error(`unexpected fetch ${url}`));
   });
 }
@@ -223,7 +223,7 @@ describe("App", () => {
       if (url.startsWith("/api/encounters/")) {
         return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ methods: [] }) } as Response);
       }
-      if (url.startsWith("/api/defects/")) return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ defects: [] }) } as Response);
+      if (url.startsWith("/api/defects/")) return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ defects: [], incomplete: [] }) } as Response);
       return Promise.reject(new Error(`unexpected fetch ${url}`));
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -366,7 +366,7 @@ function makeEditFetchMock(paintApplyBodies?: unknown[], opts: { failEventAdd?: 
         json: () => Promise.resolve({ blocks: [], border: [], map: null, isDirty: false, canUndo: false, canRedo: false }),
       } as Response);
     }
-    if (url.startsWith("/api/defects/")) return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ defects: [] }) } as Response);
+    if (url.startsWith("/api/defects/")) return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ defects: [], incomplete: [] }) } as Response);
     return Promise.reject(new Error(`unexpected fetch ${url}`));
   });
 }

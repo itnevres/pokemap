@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
-import type { DataDefect } from "@pokemap/core/src/defects/types.js";
+import type { MapDefectsCheck } from "@pokemap/core/src/defects/types.js";
 
-interface MapDefectsResult { defects: DataDefect[]; error: string | null }
-const EMPTY: MapDefectsResult = { defects: [], error: null };
+interface MapDefectsResult extends MapDefectsCheck { error: string | null }
+const EMPTY: MapDefectsResult = { defects: [], incomplete: [], error: null };
 
 export function useMapDefects(mapName: string | null, saveToken: number): MapDefectsResult {
-  const [result, setResult] = useState<{ mapName: string; saveToken: number; defects: DataDefect[]; error: string | null } | null>(null);
+  const [result, setResult] = useState<MapDefectsResult & { mapName: string; saveToken: number } | null>(null);
   useEffect(() => {
     if (mapName === null) return;
     let cancelled = false;
@@ -19,16 +19,16 @@ export function useMapDefects(mapName: string | null, saveToken: number): MapDef
           } catch { /* Keep the HTTP status when the error body is not JSON. */ }
           throw new Error(reason);
         }
-        return r.json() as Promise<{ defects: DataDefect[] }>;
+        return r.json() as Promise<MapDefectsCheck>;
       })
-      .then(({ defects }) => { if (!cancelled) setResult({ mapName, saveToken, defects, error: null }); })
+      .then(({ defects, incomplete }) => { if (!cancelled) setResult({ mapName, saveToken, defects, incomplete, error: null }); })
       .catch((e: unknown) => {
         if (!cancelled) {
           console.error("Could not check map defects", e);
-          setResult({ mapName, saveToken, defects: [], error: e instanceof Error ? e.message : String(e) });
+          setResult({ mapName, saveToken, defects: [], incomplete: [], error: e instanceof Error ? e.message : String(e) });
         }
       });
     return () => { cancelled = true; };
   }, [mapName, saveToken]);
-  return result?.mapName === mapName && result.saveToken === saveToken ? { defects: result.defects, error: result.error } : EMPTY;
+  return result?.mapName === mapName && result.saveToken === saveToken ? { defects: result.defects, incomplete: result.incomplete, error: result.error } : EMPTY;
 }

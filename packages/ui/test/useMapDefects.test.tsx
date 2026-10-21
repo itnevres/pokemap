@@ -7,30 +7,30 @@ const defect = { file: "map.bin", kind: "size", message: "wrong size", fix: "Fix
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 it("fetches on map selection and successful-save token changes, with no stale defects", async () => {
-  const fetcher = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ defects: [defect] }) });
+  const fetcher = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ defects: [defect], incomplete: [] }) });
   vi.stubGlobal("fetch", fetcher);
   const { result, rerender } = renderHook(({ name, token }) => useMapDefects(name, token), {
     initialProps: { name: "Old" as string | null, token: 0 },
   });
-  await waitFor(() => expect(result.current).toEqual({ defects: [defect], error: null }));
+  await waitFor(() => expect(result.current).toEqual({ defects: [defect], error: null, incomplete: [] }));
   let finish!: (r: unknown) => void;
   fetcher.mockImplementationOnce(() => new Promise((r) => { finish = r; }));
   rerender({ name: "Next Map", token: 0 });
-  expect(result.current).toEqual({ defects: [], error: null });
+  expect(result.current).toEqual({ defects: [], error: null, incomplete: [] });
   expect(fetcher).toHaveBeenLastCalledWith("/api/defects/Next%20Map");
   rerender({ name: "Next Map", token: 1 });
-  await waitFor(() => expect(result.current).toEqual({ defects: [defect], error: null }));
-  await act(async () => { finish({ ok: true, json: async () => ({ defects: [] }) }); });
-  expect(result.current).toEqual({ defects: [defect], error: null });
+  await waitFor(() => expect(result.current).toEqual({ defects: [defect], error: null, incomplete: [] }));
+  await act(async () => { finish({ ok: true, json: async () => ({ defects: [], incomplete: [] }) }); });
+  expect(result.current).toEqual({ defects: [defect], error: null, incomplete: [] });
   expect(fetcher).toHaveBeenCalledTimes(3);
   rerender({ name: null, token: 1 });
-  expect(result.current).toEqual({ defects: [], error: null });
+  expect(result.current).toEqual({ defects: [], error: null, incomplete: [] });
   expect(fetcher).toHaveBeenCalledTimes(3);
 });
 
 function Probe({ name = "Test", token = 0 }: { name?: string | null; token?: number }) {
   const result = useMapDefects(name, token);
-  return <DefectsBanner defects={result.defects} error={result.error} />;
+  return <DefectsBanner defects={result.defects} error={result.error} incomplete={result.incomplete} />;
 }
 
 it.each([
@@ -55,8 +55,32 @@ it("clears check failures on selection and a successful retry after save", async
   expect(screen.queryByRole("alert")).toBeNull();
   rerender(<Probe />);
   await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("offline"));
-  fetcher.mockResolvedValue({ ok: true, json: async () => ({ defects: [] }) });
+  fetcher.mockResolvedValue({ ok: true, json: async () => ({ defects: [], incomplete: [] }) });
   rerender(<Probe token={1} />);
   await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(3));
   expect(screen.queryByRole("alert")).toBeNull();
+});
+
+it.each([{ defects: [] }, { defects: [defect] }])("shows the partial-check line alongside any defects: %j", async ({ defects }) => {
+  const incomplete = [{ file: "data/maps/Other/map.json", reason: "invalid JSON" }, { file: "data/maps/Next/map.json", reason: "unreadable" }];
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ defects, incomplete }) }));
+  const { rerender } = render(<Probe />);
+  await waitFor(() => expect(screen.getByRole("alert").textContent).toContain(
+    "Some maps could not be read, so warp and connection checks may be incomplete: data/maps/Other/map.json, data/maps/Next/map.json"));
+  expect(screen.queryByRole("button")).toBeNull();
+  if (defects.length) expect(screen.getByText("wrong size")).toBeTruthy();
+  rerender(<Probe name={null} />);
+  expect(screen.queryByRole("alert")).toBeNull();
+});
+
+it("clears partial results when a successful save triggers a complete recheck", async () => {
+  const incomplete = [{ file: "data/maps/Other/map.json", reason: "invalid JSON" }];
+  const fetcher = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ defects: [], incomplete }) });
+  vi.stubGlobal("fetch", fetcher);
+  const { result, rerender } = renderHook(({ token }) => useMapDefects("Test", token), { initialProps: { token: 0 } });
+  await waitFor(() => expect(result.current).toEqual({ defects: [], incomplete, error: null }));
+  fetcher.mockResolvedValue({ ok: true, json: async () => ({ defects: [], incomplete: [] }) });
+  rerender({ token: 1 });
+  await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(result.current).toEqual({ defects: [], incomplete: [], error: null }));
 });

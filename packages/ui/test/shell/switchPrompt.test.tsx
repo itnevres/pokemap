@@ -73,7 +73,7 @@ for (const base of [gbaAdapter, gbcAdapter]) describe(`${base.family} switch pro
         return ok({ isDirty: false });
       }
       if (url.startsWith("/api/edit/")) return ok({ blocks: LAYOUT.blocks, map: LAYOUT.map, events: EMPTY_EVENTS, isDirty: true, canUndo: true, canRedo: false });
-      if (url.startsWith("/api/defects/")) return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ defects: [] }) } as Response);
+      if (url.startsWith("/api/defects/")) return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ defects: [], incomplete: [] }) } as Response);
       throw new Error(`unexpected fetch ${init?.method} ${url}`);
     });
     vi.stubGlobal("fetch", fetcher);

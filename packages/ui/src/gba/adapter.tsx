@@ -17,8 +17,8 @@ import { GBA_CAPABILITIES, type EngineAdapter, type FamilyRuntime, type RuntimeA
 /** The GBA-only half of the shell (was App.tsx): data hooks, edit session, map editing state, switch policy, canvases. */
 export function useGbaRuntime({ selected, mode, requestPrompt }: RuntimeArgs): FamilyRuntime {
   const [saveToken, setSaveToken] = useState(0);
-  const { defects, error: defectsError } = useMapDefects(selected, saveToken);
-  const defectsBanner = <DefectsBanner key={selected} defects={defects} error={defectsError} />;
+  const { defects, incomplete, error: defectsError } = useMapDefects(selected, saveToken);
+  const defectsBanner = <DefectsBanner key={selected} defects={defects} incomplete={incomplete} error={defectsError} />;
   const groups = useMapGroups();
   const layout = useMapLayout(selected);
   // Known limitation, accepted for now (predates this task): this is a

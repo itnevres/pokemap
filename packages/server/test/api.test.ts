@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createServer, type PokemapServer } from "../src/index.js";
 import { SUBJECT_ROOT, hasProject } from "@pokemap/core/test/helpers/corpus.js";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { norm } from "@pokemap/core/src/config/paths.js";
@@ -55,9 +55,10 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("server", () => {
   it("GET /api/defects returns structural defects and 404s unknown maps", async () => {
     const r = await get("/api/defects/Route101");
     expect(r.status).toBe(200);
-    expect(await r.json()).toEqual({ defects: [] });
+    expect(await r.json()).toEqual({ defects: [], incomplete: [] });
     expect((await get("/api/defects/NoSuchMap")).status).toBe(404);
     const bad = await (await get("/api/defects/Saffron_Temp")).json() as any;
+    expect(bad.incomplete).toEqual([]);
     expect(bad.defects).toEqual(expect.arrayContaining([expect.objectContaining({ kind: "gameplay" })]));
   });
 
@@ -384,11 +385,12 @@ describe("defects route parse failures (temporary project)", () => {
   let root: string, server: PokemapServer;
   beforeAll(async () => {
     root = mkdtempSync(join(tmpdir(), "pokemap-defects-api-"));
-    for (const dir of ["include", "data/maps/Test", "data/maps/Other", "data/layouts", "src/data/tilesets"]) {
+    for (const dir of ["include/constants", "data/maps/Test", "data/maps/Other", "data/layouts", "src/data/tilesets"]) {
       mkdirSync(join(root, dir), { recursive: true });
     }
     const put = (path: string, data: string | Buffer) => writeFileSync(join(root, path), data);
     put("include/fieldmap.h", "");
+    put("include/constants/map_groups.h", "#define MAP_TEST (0 | (0 << 8))\n#define MAP_OTHER (1 | (0 << 8))\n");
     put("data/maps/map_groups.json", JSON.stringify({ group_order: ["g"], g: ["Test", "Other"] }));
     for (const name of ["Test", "Other"]) put(`data/maps/${name}/map.json`, JSON.stringify({
       id: `MAP_${name.toUpperCase()}`, name, layout: "L", warp_events: [], object_events: [],
@@ -413,7 +415,28 @@ describe("defects route parse failures (temporary project)", () => {
     writeFileSync(join(root, "data/maps/Other/map.json"), bad);
     const r = await fetch(`http://127.0.0.1:${server.port}/api/defects/Test`);
     expect(r.status).toBe(200);
-    expect(await r.json()).toMatchObject({ defects: [{ kind: "size", file: "data/layouts/map.bin" }] });
+    expect(await r.json()).toEqual({
+      defects: [expect.objectContaining({ kind: "size", file: "data/layouts/map.bin" })],
+      incomplete: [{ file: "data/maps/Other/map.json", reason: expect.any(String) }],
+    });
+  });
+  it("reports a missing warp target and the unrelated unreadable file together", async () => {
+    const mapFile = join(root, "data/maps/Test/map.json");
+    const before = readFileSync(mapFile);
+    try {
+      writeFileSync(join(root, "data/layouts/map.bin"), Buffer.alloc(8));
+      writeFileSync(join(root, "data/maps/Other/map.json"), "{");
+      writeFileSync(mapFile, JSON.stringify({ ...JSON.parse(before.toString()), warp_events: [{ dest_map: "MAP_UNKNOWN_X", dest_warp_id: "0" }] }));
+      const r = await fetch(`http://127.0.0.1:${server.port}/api/defects/Test`);
+      expect(r.status).toBe(200);
+      expect(await r.json()).toEqual({
+        defects: [expect.objectContaining({ kind: "build", message: expect.stringContaining("MAP_UNKNOWN_X") })],
+        incomplete: [{ file: "data/maps/Other/map.json", reason: expect.any(String) }],
+      });
+    } finally {
+      writeFileSync(mapFile, before);
+      writeFileSync(join(root, "data/layouts/map.bin"), Buffer.alloc(10));
+    }
   });
   it("returns 500 with the selected map filename when it is malformed", async () => {
     writeFileSync(join(root, "data/maps/Test/map.json"), "{");

@@ -1,4 +1,4 @@
-import { gbaMapDefects } from "@pokemap/core/src/defects/gba.js";
+import { checkGbaMapDefects } from "@pokemap/core/src/defects/gba.js";
 import { gbaSpeciesNames } from "@pokemap/core/src/signs/linked.js";
 import { parseMap } from "@pokemap/core/src/load/maps.js";
 import { findGbaSign, gbaSignScript, gbaSignText, nextGbaSignNumber, updateGbaSign } from "@pokemap/core/src/signs/gbaSign.js";
@@ -304,7 +304,7 @@ export function createProjectHandler(root: string): ProjectHandler {
       if (defectsMatch && req.method === "GET") {
         const name = decodeURIComponent(defectsMatch[1]!);
         if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
-        return send(200, { defects: gbaMapDefects(project, name) });
+        return send(200, checkGbaMapDefects(project, name));
       }
 
       const mapMatch = /^\/api\/map\/(.+)$/.exec(url.pathname);

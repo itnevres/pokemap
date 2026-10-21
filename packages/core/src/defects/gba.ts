@@ -1,11 +1,11 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import type { Project } from "../project.js";
 import { parseMap, parseMapGroups } from "../load/maps.js";
 import { parseLayouts } from "../load/layouts.js";
 import { parseTilesetPaths } from "../load/tilesets.js";
 import { parseBlocks } from "../load/blocks.js";
 import { sizeDefect } from "./size.js";
-import type { DataDefect } from "./types.js";
+import type { DataDefect, MapDefectsCheck } from "./types.js";
 
 import type { SymbolIndex } from "./symbols.js";
 
@@ -13,12 +13,23 @@ const SPECIAL_MAPS = new Set(["MAP_DYNAMIC", "MAP_UNDEFINED"]);
 const SPECIAL_WARPS = new Set(["WARP_ID_NONE", "WARP_ID_DYNAMIC", "WARP_ID_SECRET_BASE"]);
 
 /** Read source data afresh: Project.map/layout caches can predate a successful save. */
-export function gbaMapDefects(proj: Project, mapName: string, _opts?: { symbols?: SymbolIndex }): DataDefect[] {
-  const names = parseMapGroups(readFileSync(proj.paths.mapGroupsJson, "utf8")).allMapNames();
+export function gbaMapDefects(proj: Project, mapName: string, opts?: { symbols?: SymbolIndex }): DataDefect[] {
+  return checkGbaMapDefects(proj, mapName, opts).defects;
+}
+
+export function checkGbaMapDefects(proj: Project, mapName: string, _opts?: { symbols?: SymbolIndex }): MapDefectsCheck {
+  const groups = parseMapGroups(readFileSync(proj.paths.mapGroupsJson, "utf8"));
+  const names = groups.allMapNames();
+  const declaredIds = new Map<string, string>();
   if (!names.includes(mapName)) throw new Error(`unknown map ${mapName}`);
   const readMap = (name: string) => {
     const path = proj.paths.mapJson(name);
-    try { return parseMap(readFileSync(path, "utf8")); }
+    try {
+      const text = readFileSync(path, "utf8");
+      const id: unknown = JSON.parse(text)?.id;
+      if (typeof id === "string") declaredIds.set(name, id);
+      return parseMap(text);
+    }
     catch (error) { throw new Error(`${path}: ${error instanceof Error ? error.message : String(error)}`); }
   };
   const map = readMap(mapName);
@@ -59,23 +70,48 @@ export function gbaMapDefects(proj: Project, mapName: string, _opts?: { symbols?
 
   // Resolve by the declared id, never by a guessed conversion of directory names.
   const byId = new Map([[map.id, map]]);
-  let complete = true;
+  const incomplete: MapDefectsCheck["incomplete"] = [];
+  const unreadable = new Set<string>();
   for (const name of names) {
     if (name === mapName) continue;
     try {
       const other = readMap(name);
       byId.set(other.id, other);
-    } catch {
-      // An unreadable map may declare any id. Keep local/known-target checks, but
-      // do not claim an unresolved destination is missing from an incomplete index.
-      complete = false;
+    } catch (error) {
+      unreadable.add(name);
+      incomplete.push({ file: `data/maps/${name}/map.json`, reason: error instanceof Error ? error.message : String(error) });
     }
+  }
+  const recoveredNames = new Set([...unreadable].filter((name) => declaredIds.has(name)));
+  const unreadableIds = new Set([...unreadable].flatMap((name) => {
+    const id = declaredIds.get(name);
+    return id ? [id] : [];
+  }));
+  // Generated constants bind declared IDs to the exact group/map slots, including
+  // non-canonical IDs. Use only slots belonging to unreadable registered maps.
+  const header = `${proj.paths.root}/include/constants/map_groups.h`;
+  if (unreadable.size && existsSync(header)) {
+    const text = readFileSync(header, "utf8");
+    for (const m of text.matchAll(/^\s*#define\s+(MAP_\w+)\s+\(\s*(\d+)\s*\|\s*\(\s*(\d+)\s*<<\s*8\s*\)\s*\)/gm)) {
+      const group = groups.groupOrder[Number(m[3])];
+      const name = group === undefined ? undefined : groups.groups[group]?.[Number(m[2])];
+      if (name && unreadable.has(name) && !declaredIds.has(name)) {
+        unreadableIds.add(m[1]!);
+        recoveredNames.add(name);
+      }
+    }
+  }
+  // A directory-derived candidate is only a conservative exemption when the
+  // declaration is unavailable; readable maps always resolve by their actual id.
+  for (const name of unreadable) {
+    if (recoveredNames.has(name)) continue;
+    unreadableIds.add(`MAP_${name.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toUpperCase()}`);
   }
   map.warpEvents.forEach((warp, i) => {
     if (SPECIAL_MAPS.has(warp.destMap)) return;
     const dest = byId.get(warp.destMap);
     if (!dest) {
-      if (!complete) return;
+      if (unreadableIds.has(warp.destMap)) return;
       add("build", `Warp ${i} destination ${warp.destMap} does not exist in data/maps/map_groups.json.`,
         `Set warp ${i} dest_map in ${file} to a map id listed in data/maps/map_groups.json.`);
       return;
@@ -91,8 +127,8 @@ export function gbaMapDefects(proj: Project, mapName: string, _opts?: { symbols?
   if (map.objectEvents.length > 64) add("gameplay", `${map.objectEvents.length} object events exceed OBJECT_EVENT_TEMPLATES_COUNT (64).`,
     `Reduce object_events in ${file} to at most 64 (include/constants/global.h: OBJECT_EVENT_TEMPLATES_COUNT).`);
   map.connections.forEach((connection, i) => {
-    if (complete && !byId.has(connection.map)) add("build", `Connection ${i} destination ${connection.map} does not exist in data/maps/map_groups.json.`,
+    if (!byId.has(connection.map) && !unreadableIds.has(connection.map)) add("build", `Connection ${i} destination ${connection.map} does not exist in data/maps/map_groups.json.`,
       `Set connection ${i} map in ${file} to a map id listed in data/maps/map_groups.json.`);
   });
-  return out;
+  return { defects: out, incomplete };
 }

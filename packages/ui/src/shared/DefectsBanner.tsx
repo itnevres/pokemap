@@ -1,13 +1,14 @@
 import { useState } from "react";
-import { DEFECT_KIND_LABEL, type DataDefect } from "@pokemap/core/src/defects/types.js";
+import { DEFECT_KIND_LABEL, type IncompleteDefectCheck, type DataDefect } from "@pokemap/core/src/defects/types.js";
 
-export function DefectsBanner({ defects, error }: { defects: DataDefect[]; error?: string | null }) {
+export function DefectsBanner({ defects, error, incomplete = [] }: { defects: DataDefect[]; error?: string | null; incomplete?: IncompleteDefectCheck[] }) {
   const [expanded, setExpanded] = useState(false);
-  if (defects.length === 0 && !error) return null;
+  if (defects.length === 0 && !error && incomplete.length === 0) return null;
 
   return (
     <div className="app__event-op-error" role="alert">
       {error && <div>Could not check this map for defects: {error}</div>}
+      {incomplete.length > 0 && <div>Some maps could not be read, so warp and connection checks may be incomplete: {incomplete.map((entry) => entry.file).join(", ")}</div>}
       <ul className="gbc-app__defects-list">
         {(expanded ? defects : defects.slice(0, 5)).map((defect, index) => (
           <li key={index}>

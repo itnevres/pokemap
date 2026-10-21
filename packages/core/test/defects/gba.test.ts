@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { gbaMapDefects } from "../../src/defects/gba.js";
+import { gbaMapDefects, checkGbaMapDefects } from "../../src/defects/gba.js";
 import { projectPaths } from "../../src/config/paths.js";
 import { stubProject, stubTileset } from "../helpers/stubProject.js";
 import { openProject, type Project } from "../../src/project.js";
@@ -46,6 +46,8 @@ const u16 gAttributes_${s}[] = INCBIN_U16("./${s}.attributes.bin");`).join("\n")
   writeFileSync(join(root, "Secondary.bin"), Buffer.alloc(2 * 16));
   mkdirSync(join(root, "include"), { recursive: true });
   writeFileSync(paths.fieldmapH, "");
+  mkdirSync(join(root, "include/constants"), { recursive: true });
+  writeFileSync(join(root, "include/constants/map_groups.h"), "#define MAP_TEST (0 | (0 << 8))\n#define MAP_DEST (1 | (0 << 8))\n");
   writeFileSync(join(root, "Primary.attributes.bin"), Buffer.alloc(8));
   writeFileSync(join(root, "Secondary.attributes.bin"), Buffer.alloc(4));
   writeFileSync(join(root, "tiles.png"), Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAMAAAAoyzS7AAAAA1BMVEUAAACnej3aAAAACklEQVR4nGNgAAAAAgABSK+kcQAAAABJRU5ErkJggg==", "base64"));
@@ -127,6 +129,40 @@ describe("GBA structural defects", () => {
     // Its hidden id must not produce false missing-destination/connection warnings.
     editMap({ warp_events: [warp], connections: [{ map: "MAP_DEST", offset: 0, direction: "up" }] });
     onlyDefect("size", "data/layouts/Test/map.bin");
+  });
+  it.each(["warp", "connection"])("reports a missing %s target alongside an unreadable unrelated map", (kind) => {
+    writeFileSync(proj.paths.mapJson("Dest"), "{");
+    editMap(kind === "warp" ? { warp_events: [{ ...warp, dest_map: "MAP_UNKNOWN_X" }] }
+      : { connections: [{ map: "MAP_UNKNOWN_X", offset: 0, direction: "up" }] });
+    const result = checkGbaMapDefects(proj, "Test");
+    expect(result.defects).toEqual([expect.objectContaining({ kind: "build", message: expect.stringContaining("MAP_UNKNOWN_X") })]);
+    expect(result.incomplete).toEqual([{ file: "data/maps/Dest/map.json", reason: expect.any(String) }]);
+    expect(result.incomplete[0]!.reason.length).toBeGreaterThan(0);
+  });
+  it("does not report unreadable destinations whose declared ID differs from the directory name", () => {
+    writeFileSync(join(root, "include/constants/map_groups.h"), "#define MAP_CUSTOM_TARGET (1 | (0 << 8))\n");
+    writeFileSync(proj.paths.mapJson("Dest"), "{");
+    editMap({ warp_events: [{ ...warp, dest_map: "MAP_CUSTOM_TARGET" }],
+      connections: [{ map: "MAP_CUSTOM_TARGET", offset: 0, direction: "up" }] });
+    const result = checkGbaMapDefects(proj, "Test");
+    expect(result.defects).toEqual([]);
+    expect(result.incomplete).toEqual([{ file: "data/maps/Dest/map.json", reason: expect.any(String) }]);
+  });
+  it("recovers a declared ID from valid JSON even when event parsing fails", () => {
+    writeFileSync(proj.paths.mapJson("Dest"), '{"id":"MAP_CUSTOM_TARGET","warp_events":{}}');
+    editMap({ warp_events: [{ ...warp, dest_map: "MAP_CUSTOM_TARGET" }] });
+    expect(checkGbaMapDefects(proj, "Test").defects).toEqual([]);
+  });
+  it("keeps missing-target checks active without a generated header", () => {
+    rmSync(join(root, "include/constants/map_groups.h"));
+    writeFileSync(proj.paths.mapJson("Dest"), "{");
+    editMap({ warp_events: [warp, { ...warp, dest_map: "MAP_UNKNOWN_X" }] });
+    const result = checkGbaMapDefects(proj, "Test");
+    expect(result.defects).toEqual([expect.objectContaining({ kind: "build", message: expect.stringContaining("MAP_UNKNOWN_X") })]);
+    expect(result.incomplete).toEqual([{ file: "data/maps/Dest/map.json", reason: expect.any(String) }]);
+  });
+  it("returns an exact clean result with no incomplete reads", () => {
+    expect(checkGbaMapDefects(proj, "Test")).toEqual({ defects: [], incomplete: [] });
   });
   it("still checks a readable destination's warp count with an unreadable third map", () => {
     mkdirSync(proj.paths.mapDir("Other"), { recursive: true });
