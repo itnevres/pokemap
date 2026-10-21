@@ -49,6 +49,15 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("server", () => {
     expect(body.groups[body.groupOrder[0]!]).toContain("NewBarkTown");
   });
 
+  it("GET /api/defects returns structural defects and 404s unknown maps", async () => {
+    const r = await get("/api/defects/Route101");
+    expect(r.status).toBe(200);
+    expect(await r.json()).toEqual({ defects: [] });
+    expect((await get("/api/defects/NoSuchMap")).status).toBe(404);
+    const bad = await (await get("/api/defects/Saffron_Temp")).json() as any;
+    expect(bad.defects).toEqual(expect.arrayContaining([expect.objectContaining({ kind: "gameplay" })]));
+  });
+
   it("returns a map's header, split and layout metadata", async () => {
     const body = await (await get("/api/map/NewBarkTown")).json() as any;
     expect(body.map.id).toBe("MAP_NEW_BARK_TOWN");

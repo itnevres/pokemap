@@ -1,3 +1,4 @@
+import { gbaMapDefects } from "@pokemap/core/src/defects/gba.js";
 import { gbaSpeciesNames } from "@pokemap/core/src/signs/linked.js";
 import { parseMap } from "@pokemap/core/src/load/maps.js";
 import { findGbaSign, gbaSignScript, gbaSignText, nextGbaSignNumber, updateGbaSign } from "@pokemap/core/src/signs/gbaSign.js";
@@ -297,6 +298,13 @@ export function createProjectHandler(root: string): ProjectHandler {
 
       if (url.pathname === "/api/groups") {
         return send(200, { groupOrder: project.groups.groupOrder, groups: project.groups.groups });
+      }
+
+      const defectsMatch = /^\/api\/defects\/(.+)$/.exec(url.pathname);
+      if (defectsMatch && req.method === "GET") {
+        const name = decodeURIComponent(defectsMatch[1]!);
+        if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
+        return send(200, { defects: gbaMapDefects(project, name) });
       }
 
       const mapMatch = /^\/api\/map\/(.+)$/.exec(url.pathname);
