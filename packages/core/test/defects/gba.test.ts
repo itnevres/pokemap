@@ -130,14 +130,21 @@ describe("GBA structural defects", () => {
     editMap({ warp_events: [warp], connections: [{ map: "MAP_DEST", offset: 0, direction: "up" }] });
     onlyDefect("size", "data/layouts/Test/map.bin");
   });
-  it.each(["warp", "connection"])("reports a missing %s target alongside an unreadable unrelated map", (kind) => {
+  it.each(["warp", "connection"])("withholds a missing %s target while an unrelated map is unreadable", (kind) => {
     writeFileSync(proj.paths.mapJson("Dest"), "{");
     editMap(kind === "warp" ? { warp_events: [{ ...warp, dest_map: "MAP_UNKNOWN_X" }] }
       : { connections: [{ map: "MAP_UNKNOWN_X", offset: 0, direction: "up" }] });
     const result = checkGbaMapDefects(proj, "Test");
-    expect(result.defects).toEqual([expect.objectContaining({ kind: "build", message: expect.stringContaining("MAP_UNKNOWN_X") })]);
+    expect(result.defects).toEqual([]);
     expect(result.incomplete).toEqual([{ file: "data/maps/Dest/map.json", reason: expect.any(String) }]);
     expect(result.incomplete[0]!.reason.length).toBeGreaterThan(0);
+  });
+  it.each(["warp", "connection"])("reports a missing %s target when every map is readable", (kind) => {
+    editMap(kind === "warp" ? { warp_events: [{ ...warp, dest_map: "MAP_UNKNOWN_X" }] }
+      : { connections: [{ map: "MAP_UNKNOWN_X", offset: 0, direction: "up" }] });
+    const result = checkGbaMapDefects(proj, "Test");
+    expect(result.defects).toEqual([expect.objectContaining({ kind: "build", message: expect.stringContaining("MAP_UNKNOWN_X") })]);
+    expect(result.incomplete).toEqual([]);
   });
   it("does not report unreadable destinations whose declared ID differs from the directory name", () => {
     writeFileSync(join(root, "include/constants/map_groups.h"), "#define MAP_CUSTOM_TARGET (1 | (0 << 8))\n");
@@ -148,17 +155,19 @@ describe("GBA structural defects", () => {
     expect(result.defects).toEqual([]);
     expect(result.incomplete).toEqual([{ file: "data/maps/Dest/map.json", reason: expect.any(String) }]);
   });
-  it("recovers a declared ID from valid JSON even when event parsing fails", () => {
+  it("withholds unresolved targets when destination event parsing fails", () => {
     writeFileSync(proj.paths.mapJson("Dest"), '{"id":"MAP_CUSTOM_TARGET","warp_events":{}}');
     editMap({ warp_events: [{ ...warp, dest_map: "MAP_CUSTOM_TARGET" }] });
     expect(checkGbaMapDefects(proj, "Test").defects).toEqual([]);
   });
-  it("keeps missing-target checks active without a generated header", () => {
+  it("does not guess the ID of an unreadable custom-ID destination without a header", () => {
     rmSync(join(root, "include/constants/map_groups.h"));
+    editMap({ id: "MAP_CUSTOM_TARGET" }, "Dest");
     writeFileSync(proj.paths.mapJson("Dest"), "{");
-    editMap({ warp_events: [warp, { ...warp, dest_map: "MAP_UNKNOWN_X" }] });
+    editMap({ warp_events: [{ ...warp, dest_map: "MAP_CUSTOM_TARGET" }],
+      connections: [{ map: "MAP_CUSTOM_TARGET", offset: 0, direction: "up" }] });
     const result = checkGbaMapDefects(proj, "Test");
-    expect(result.defects).toEqual([expect.objectContaining({ kind: "build", message: expect.stringContaining("MAP_UNKNOWN_X") })]);
+    expect(result.defects).toEqual([]);
     expect(result.incomplete).toEqual([{ file: "data/maps/Dest/map.json", reason: expect.any(String) }]);
   });
   it("returns an exact clean result with no incomplete reads", () => {

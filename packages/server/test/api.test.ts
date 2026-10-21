@@ -420,21 +420,24 @@ describe("defects route parse failures (temporary project)", () => {
       incomplete: [{ file: "data/maps/Other/map.json", reason: expect.any(String) }],
     });
   });
-  it("reports a missing warp target and the unrelated unreadable file together", async () => {
+  it.each([false, true])("reports a missing warp target only when the map index is complete: %s", async (complete) => {
     const mapFile = join(root, "data/maps/Test/map.json");
     const before = readFileSync(mapFile);
+    const otherFile = join(root, "data/maps/Other/map.json");
+    const otherBefore = readFileSync(otherFile);
     try {
       writeFileSync(join(root, "data/layouts/map.bin"), Buffer.alloc(8));
-      writeFileSync(join(root, "data/maps/Other/map.json"), "{");
+      writeFileSync(otherFile, complete ? JSON.stringify({ id: "MAP_OTHER", name: "Other", layout: "L", warp_events: [], object_events: [] }) : "{");
       writeFileSync(mapFile, JSON.stringify({ ...JSON.parse(before.toString()), warp_events: [{ dest_map: "MAP_UNKNOWN_X", dest_warp_id: "0" }] }));
       const r = await fetch(`http://127.0.0.1:${server.port}/api/defects/Test`);
       expect(r.status).toBe(200);
       expect(await r.json()).toEqual({
-        defects: [expect.objectContaining({ kind: "build", message: expect.stringContaining("MAP_UNKNOWN_X") })],
-        incomplete: [{ file: "data/maps/Other/map.json", reason: expect.any(String) }],
+        defects: complete ? [expect.objectContaining({ kind: "build", message: expect.stringContaining("MAP_UNKNOWN_X") })] : [],
+        incomplete: complete ? [] : [{ file: "data/maps/Other/map.json", reason: expect.any(String) }],
       });
     } finally {
       writeFileSync(mapFile, before);
+      writeFileSync(otherFile, otherBefore);
       writeFileSync(join(root, "data/layouts/map.bin"), Buffer.alloc(10));
     }
   });
