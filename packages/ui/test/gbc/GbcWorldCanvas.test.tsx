@@ -29,7 +29,7 @@ describe("GBC dungeon warps (Plan 6c D3)", () => {
       Hidden: { map: "Hidden", x: 30, y: 40, width: 10, height: 10, component: 1, mapType: "INDOOR", manual: false },
       Outside: { map: "Outside", x: 50, y: 60, width: 10, height: 10, component: 2, mapType: "TOWN", manual: false },
     },
-    components: [], conflicts: [],
+    components: [], conflicts: [], sidecar: { dungeonAutoLayout: true },
   };
   function scopedFetch(warps: Record<string, unknown>, world: GbcWorldPayload = scopedWorld) {
     const base = mockFetchAll({ world });
@@ -205,7 +205,7 @@ describe("GBC dungeon warps (Plan 6c D3)", () => {
       placements: {
         BurnedTower1F: { map: "BurnedTower1F", x: 10, y: 20, width: 10, height: 10, component: 0, mapType: "INDOOR", manual: false },
         BurnedTowerB1F: { map: "BurnedTowerB1F", x: 30, y: 40, width: 5, height: 5, component: 1, mapType: "INDOOR", manual: false },
-      }, components: [], conflicts: [],
+      }, components: [], conflicts: [], sidecar: { dungeonAutoLayout: true },
     };
     vi.stubGlobal("fetch", scopedFetch({
       BurnedTower1F: { family: "gbc", mapName: "BurnedTower1F", warps: [event(0, 0), event(1, 1), event(10, 9, "BurnedTowerB1F", { x: 10, y: 9 })] },
@@ -563,7 +563,7 @@ const WORLD: GbcWorldPayload = {
     { index: 0, maps: ["MapA", "MapB"], bounds: { x: 0, y: 0, width: 20, height: 10 } },
     { index: 1, maps: ["Interior"], bounds: { x: 1000, y: 1000, width: 5, height: 5 } },
   ],
-  conflicts: [],
+  conflicts: [], sidecar: { dungeonAutoLayout: true },
 };
 
 const CONFLICT_WORLD: GbcWorldPayload = {
@@ -573,7 +573,7 @@ const CONFLICT_WORLD: GbcWorldPayload = {
     Route17: { map: "Route17", x: 0, y: 0, width: 30, height: 40, component: 0, mapType: "ROUTE", manual: false },
   },
   components: [{ index: 0, maps: ["Route17", "Route16", "Route18"], bounds: { x: 0, y: 0, width: 30, height: 40 } }],
-  conflicts: [{ map: "Route17", viaA: { from: "Route18", x: 30, y: 50 }, viaB: { from: "Route16", x: 30, y: 49 }, key: '["Route17","Route18",30,50,"Route16",30,49]', accepted: false }],
+  conflicts: [{ map: "Route17", viaA: { from: "Route18", x: 30, y: 50 }, viaB: { from: "Route16", x: 30, y: 49 }, key: '["Route17","Route18",30,50,"Route16",30,49]', accepted: false }], sidecar: { dungeonAutoLayout: true },
 };
 
 function mockFetchWorld(world: unknown) {
@@ -1916,7 +1916,7 @@ describe("GbcWorldCanvas: context menu (Plan 6c E3)", () => {
       family: "gbc", blockPx: 32,
       placements: { Sliver: { map: "Sliver", x: 0, y: 0, width: 1, height: 40, component: 0, mapType: "ROUTE", manual: false } },
       components: [{ index: 0, maps: ["Sliver", "Other"], bounds: { x: 0, y: 0, width: 1, height: 40 } }],
-      conflicts: [{ ...core, key: conflictKey(core), accepted: false }],
+      conflicts: [{ ...core, key: conflictKey(core), accepted: false }], sidecar: { dungeonAutoLayout: true },
     };
     const onOpenMap = vi.fn();
     const mounted = await mountReady({ onOpenMap }, world);

@@ -1,6 +1,10 @@
 import { existsSync, mkdirSync, readFileSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { createServer as createHttpServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
 import { createServer, type PokemapServer } from "../src/index.js";
+import { createGbcProjectHandler } from "../src/gbcRoutes.js";
+import type { GbcWorldPayload } from "@pokemap/core/src/gbc/wire.js";
 import { buildGbcMapPayload, buildGbcWorldPayload, buildGbcEncountersPayload, buildGbcWarpsPayload, decodeMapName, parseTimeParam } from "../src/gbcRoutes.js";
 import { openGbcProject } from "@pokemap/core/src/gbc/project.js";
 import { renderGbcMap, renderGbcMapMetatile } from "@pokemap/core/src/gbc/render/map.js";
@@ -14,7 +18,7 @@ import type { Sidecar } from "@pokemap/core/src/world/sidecar.js";
 import { gbcEncounterSources, gbcWhereSpecies, gbcCoverage, loadGbcSpeciesConstants } from "@pokemap/core/src/gbc/analyse/atlas.js";
 import { loadGbcFrontSprite } from "@pokemap/core/src/gbc/load/sprites.js";
 import { encodePng } from "@pokemap/cli/src/png.js";
-import { GBC_SUBJECT_ROOT, hasGbcProject, itWithGbcCorpus } from "@pokemap/core/test/gbc/helpers/corpus.js";
+import { GBC_SUBJECT_ROOT, copyGbcSubjectToTemp, hasGbcProject, itWithGbcCorpus, removeTemp } from "@pokemap/core/test/gbc/helpers/corpus.js";
 import { stubGbcProject } from "@pokemap/core/test/gbc/helpers/stubGbcProject.js";
 
 // Pure functions -- no server, no corpus needed, so these run unconditionally
@@ -92,7 +96,6 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
 
   describe("GBA-only routes are refused with 501, naming the path, for every method", () => {
     const cases: { label: string; call: () => Promise<Response>; path: string }[] = [
-      { label: "/api/world/dungeons (POST)", path: "/api/world/dungeons", call: () => post("/api/world/dungeons") },
       { label: "/api/sign/:name/suggestions", path: "/api/sign/NewBarkTown/suggestions", call: () => get("/api/sign/NewBarkTown/suggestions") },
     ];
 
@@ -811,6 +814,7 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
         placements: expectedPlacements,
         components: world.components,
         conflicts: wireConflicts(world.conflicts, []),
+        sidecar: { dungeonAutoLayout: true },
       });
     });
   });
@@ -1262,5 +1266,62 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
       expect(body).not.toContain("NO_MON");
       expect(body).not.toContain("EGG");
     });
+  });
+});
+
+// Plan 10b Task 7a: runs against a temp copy so the PerfPlus subject never gains a .pokemap/.
+describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("POST /api/world/dungeons (GBC, temp copy)", () => {
+  let root: string, server: Server, base: string;
+  const world = async () => (await fetch(`${base}/api/world`)).json() as Promise<GbcWorldPayload>;
+  const toggle = (body: unknown) => fetch(`${base}/api/world/dungeons`, { method: "POST", body: JSON.stringify(body) });
+  const singletons = (w: GbcWorldPayload) => w.components.filter((c) => c.maps.length === 1).map((c) => c.maps[0]!);
+  beforeEach(async () => {
+    root = copyGbcSubjectToTemp();
+    server = createHttpServer(createGbcProjectHandler(root).handle);
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  });
+  afterEach(async () => {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    removeTemp(root);
+  });
+
+  it("exposes sidecar.dungeonAutoLayout, true by default", async () => {
+    expect((await world()).sidecar).toEqual({ dungeonAutoLayout: true });
+  });
+
+  it("toggle off drops manual-less singleton maps, keeps manual ones with sizes; sidecar placements and accepted conflicts unchanged", async () => {
+    const on = await world();
+    const [manual, auto] = singletons(on);
+    expect(manual && auto).toBeTruthy();
+    const sidecarPath = `${root}/.pokemap/world.json`;
+    const placed = await fetch(`${base}/api/world/placement`, { method: "POST", body: JSON.stringify({ map: manual, x: 11, y: 12 }) });
+    expect(placed.status).toBe(200);
+    const before = JSON.parse(readFileSync(sidecarPath, "utf8")) as { manualPlacements: unknown; acceptedConflicts?: unknown };
+    const r = await toggle({ enabled: false });
+    expect(r.status).toBe(200);
+    expect(await r.json()).toEqual({ dungeonAutoLayout: false });
+    const off = await world();
+    expect(off.sidecar.dungeonAutoLayout).toBe(false);
+    expect(off.placements[auto!]).toBeUndefined();
+    expect(off.placements[manual!]).toMatchObject({ manual: true, x: 11, y: 12, width: on.placements[manual!]!.width, height: on.placements[manual!]!.height });
+    expect(off.placements[manual!]!.width).toBeGreaterThan(0);
+    const after = JSON.parse(readFileSync(sidecarPath, "utf8")) as typeof before & { dungeonAutoLayout: boolean };
+    expect(after.dungeonAutoLayout).toBe(false);
+    expect(after.manualPlacements).toEqual(before.manualPlacements);
+    expect(after.acceptedConflicts).toEqual(before.acceptedConflicts);
+  });
+
+  it("toggle on restores the earlier payload exactly", async () => {
+    const on = await world();
+    expect((await toggle({ enabled: false })).status).toBe(200);
+    expect((await toggle({ enabled: true })).status).toBe(200);
+    expect(await world()).toEqual(on);
+  });
+
+  it.each([["{}"], ['{"enabled":"yes"}'], ["not json"], ["[]"]])("bad body %s is a 400 and writes nothing", async (body) => {
+    const r = await fetch(`${base}/api/world/dungeons`, { method: "POST", body });
+    expect(r.status).toBe(400);
+    expect(existsSync(`${root}/.pokemap/world.json`)).toBe(false);
   });
 });

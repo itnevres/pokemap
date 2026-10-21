@@ -17,7 +17,7 @@ const WORLD: GbcWorldPayload = {
     MapB: { map: "MapB", x: 10, y: 0, width: 10, height: 10, component: 0, mapType: "ROUTE", manual: false },
   },
   components: [{ index: 0, maps: ["MapA", "MapB"], bounds: { x: 0, y: 0, width: 20, height: 10 } }],
-  conflicts: [],
+  conflicts: [], sidecar: { dungeonAutoLayout: true },
 };
 
 const ok = (body: unknown) => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(body) } as Response);

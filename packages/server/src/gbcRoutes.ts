@@ -72,7 +72,7 @@ import { createGbcEditRoutes } from "./gbcEditRoutes.js";
  * `species/NAME/icon.png` left in Plan 6c B1; `edit/` left in Plan 7 Task 4
  * (`gbcEditRoutes.ts` serves it).
  */
-const GBA_ONLY_ROUTE_RE = /^\/api\/(world\/dungeons$|sign\/)/;
+const GBA_ONLY_ROUTE_RE = /^\/api\/(sign\/)/;
 
 /**
  * `decodeURIComponent` throws a `URIError` on a malformed percent-escape
@@ -220,8 +220,10 @@ export function buildGbcWorldPayload(proj: GbcProject, world: GbcWorld, sidecar:
   const automatic = placeNearWarps({ placements: world.placements, shown, hidden, warps, sizes, gap: 4,
     singletons: new Set(world.components.filter((c) => c.maps.length === 1).map((c) => c.maps[0]!)),
     manualPlacements: sidecar.manualPlacements });
+  // Off: singleton components without a manual placement leave the world (they show in the Unplaced rail), as GBA's resolveWorldPlacements does.
+  const singletonNames = new Set(world.components.filter((c) => c.maps.length === 1).map((c) => c.maps[0]!));
   const placements = Object.fromEntries(
-    [...applySidecar(automatic, sidecar)].map(([name, placement]) => [name, {
+    [...applySidecar(automatic, sidecar)].filter(([name]) => sidecar.dungeonAutoLayout || !singletonNames.has(name) || Object.hasOwn(sidecar.manualPlacements, name)).map(([name, placement]) => [name, {
       ...placement,
       mapType: mapTypeByName.get(name) ?? "",
       manual: name in sidecar.manualPlacements,
@@ -233,6 +235,7 @@ export function buildGbcWorldPayload(proj: GbcProject, world: GbcWorld, sidecar:
     placements,
     components: world.components,
     conflicts: wireConflicts(world.conflicts, sidecar.acceptedConflicts ?? []),
+    sidecar: { dungeonAutoLayout: sidecar.dungeonAutoLayout },
   } satisfies GbcWorldPayload;
 }
 
@@ -502,6 +505,30 @@ export function createGbcProjectHandler(root: string): ProjectHandler {
           console.error(e);
           send(500, { error: e instanceof Error ? e.message : String(e) });
         });
+      }
+
+      // The world payload is rebuilt from the sidecar on every request, so no cache needs clearing.
+      if (url.pathname === "/api/world/dungeons" && req.method === "POST") {
+        return readBody(req)
+          .then((body) => {
+            let parsed: { enabled?: unknown };
+            try {
+              parsed = JSON.parse(body) as typeof parsed;
+            } catch (e) {
+              return send(400, { error: `invalid JSON body: ${(e as Error).message}` });
+            }
+            if (parsed === null || typeof parsed !== "object" || typeof parsed.enabled !== "boolean") {
+              return send(400, { error: `expected { enabled: boolean }, got ${body}` });
+            }
+            const sidecar = readSidecar(proj.root);
+            sidecar.dungeonAutoLayout = parsed.enabled;
+            writeSidecar(proj.root, sidecar);
+            return send(200, { dungeonAutoLayout: sidecar.dungeonAutoLayout });
+          })
+          .catch((e: unknown) => {
+            console.error(e);
+            send(500, { error: e instanceof Error ? e.message : String(e) });
+          });
       }
 
       if (url.pathname === "/api/world/placement" && req.method === "POST") {

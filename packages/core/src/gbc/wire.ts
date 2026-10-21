@@ -81,6 +81,7 @@ export interface GbcWorldPayload {
   placements: Record<string, GbcWorldPlacement>;
   components: Component[];
   conflicts: WireConflict[];
+  sidecar: { dungeonAutoLayout: boolean };
 }
 
 export interface GbcWorldPlacement extends Placement {
