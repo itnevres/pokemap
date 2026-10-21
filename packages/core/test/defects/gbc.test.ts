@@ -15,7 +15,7 @@ function events(name: string, warp = "", objects = "") {
 function write(file: string, text: string | Buffer) { writeFileSync(join(root, file), text); }
 function edit(file: string, from: string, to: string) { write(file, readFileSync(join(root, file), "utf8").replace(from, to)); }
 function warp(dest = "DEST", index = 1) { write("maps/Test.asm", events("Test", `\twarp_event 1, 1, ${dest}, ${index}`)); }
-function check() { return gbcMapDefects(proj, "Test", { symbols: { labels: new Set(), constants: new Set() } }); }
+function check() { return gbcMapDefects(proj, "Test"); }
 
 beforeEach(() => {
   root = mkdtempSync(join(tmpdir(), "pokemap-gbc-defects-"));
@@ -34,6 +34,35 @@ beforeEach(() => {
   proj = openGbcProject(root);
 });
 afterEach(() => rmSync(root, { recursive: true, force: true }));
+
+it("C7-C9 report unknown object references only when supplied an index", () => {
+  write("maps/Test.asm", events("Test", "", object.replace("Script, -1", "MissingScript, EVENT_MISSING")));
+  expect(check()).toEqual([]);
+  const hits = gbcMapDefects(proj, "Test", { symbols: { labels: new Set(), constants: new Set() } });
+  expect(hits.map((d) => d.message.slice(0, 2))).toEqual(["C7", "C8", "C9"]);
+});
+it("SR2 accepts backup flags and variable sprite expressions", () => {
+  write("maps/Test.asm", events("Test", "", object.replace("SPRITE_TEST", "SPRITE_VARS + 1")));
+  expect(gbcMapDefects(proj, "Test", { symbols: { labels: new Set(["Script"]), constants: new Set(["SPRITE_VARS"]) } })).toEqual([]);
+});
+it("C7 resolves local callback labels in scope and catches missing local labels", () => {
+  const source = events("Test").replace("\tdef_callbacks", "\tdef_callbacks\n\tcallback MAPCALLBACK_NEWMAP, .Local\n.Local:\n\tendcallback");
+  write("maps/Test.asm", source);
+  const symbols = { labels: new Set(["Test_MapScripts.Local"]), constants: new Set<string>() };
+  expect(gbcMapDefects(proj, "Test", { symbols })).toEqual([]);
+  write("maps/Test.asm", source.replace(", .Local", ", .Missing"));
+  expect(gbcMapDefects(proj, "Test", { symbols })[0]!.message).toContain("Test_MapScripts.Missing");
+});
+it("C9 includes stored hidden-item and trainer flags", () => {
+  const source = events("Test", "", object.replace("SCRIPT, 0, Script, -1", "OBJECTTYPE_TRAINER, 0, Trainer, -1"))
+    .replace("\tdef_bg_events", "\tdef_bg_events\n\tbg_event 1, 1, BGEVENT_ITEM, Hidden")
+    + "Hidden:\n\thiddenitem POTION, EVENT_HIDDEN_MISSING\nTrainer:\n\ttrainer YOUNGSTER, JOEY, EVENT_TRAINER_MISSING, Seen, Beaten, 0, After\n";
+  write("maps/Test.asm", source);
+  const hits = gbcMapDefects(proj, "Test", { symbols: { labels: new Set(["Hidden", "Trainer"]), constants: new Set(["SPRITE_TEST"]) } });
+  expect(hits.map((d) => d.message.slice(0, 2))).toEqual(["C9", "C9"]);
+  expect(hits[0]!.message).toContain("EVENT_HIDDEN_MISSING");
+  expect(hits[1]!.message).toContain("EVENT_TRAINER_MISSING");
+});
 
 it("C1 names map_const and both repairs with exact byte counts and the shared blk path", () => {
   write("maps/Shared.blk", Buffer.alloc(5));

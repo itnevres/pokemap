@@ -2,15 +2,55 @@ import { readFileSync } from "node:fs";
 import type { GbcProject } from "../gbc/project.js";
 import { loadGbcMaps } from "../gbc/load/map.js";
 import { loadGbcMapEvents } from "../gbc/load/events.js";
-import { parseConstDefs } from "../gbc/load/asm.js";
+import { parseConstDefs, labelTail, scanCalls, codeLines, stripComment } from "../gbc/load/asm.js";
 import { parseTilesetsTable } from "../gbc/load/tileset.js";
 import { parseIncbins } from "../gbc/load/incbin.js";
 import { sizeDefect } from "./size.js";
 import type { DataDefect } from "./types.js";
-import type { SymbolIndex } from "./symbols.js";
+import { resolvesAll, type SymbolIndex } from "./symbols.js";
+import type { GbcMapEvents } from "../gbc/model/types.js";
+
+export function gbcEventSymbolDefects(name: string, events: GbcMapEvents, text: string, symbols: SymbolIndex): DataDefect[] {
+  const file = `maps/${name}.asm`;
+  const out: DataDefect[] = [];
+  const scopes = codeLines(text).flatMap((line) => {
+    const label = /^([A-Za-z_]\w*)::?/.exec(stripComment(line.text));
+    return label ? [{ lineIndex: line.lineIndex, label: label[1]! }] : [];
+  });
+  const script = (event: { script: string; lineIndex: number }, subject: string) => {
+    const scope = scopes.findLast((s) => s.lineIndex <= event.lineIndex)?.label ?? "";
+    check("C7", subject, event.script.startsWith(".") ? scope + event.script : event.script, true);
+  };
+  const check = (code: string, subject: string, expr: string, labels = false) => {
+    if (!resolvesAll(expr, { labels: labels ? symbols.labels : new Set(), constants: labels ? new Set() : symbols.constants })) {
+      out.push({ file, kind: "build", message: `${code}: ${subject} references undefined ${expr}.`,
+        fix: `Define ${expr} in the project's .asm sources, or correct ${subject} in ${file}.` });
+    }
+  };
+  const flagIn = (label: string, macro: string, arg: number) => {
+    // External labels are indexed too, but their bodies do not belong to this map's events.
+    if (!new RegExp(`^${label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}::?\\s*(?:;.*)?$`, "m").test(text)) return;
+    for (const call of scanCalls(labelTail(text, label).text, macro)) {
+      const flag = call.args[arg]?.text;
+      if (flag !== undefined) check("C9", `${label} ${macro} flag`, flag);
+    }
+  };
+  for (const event of [...events.coords, ...events.sceneScripts, ...events.callbacks]) script(event, "script");
+  events.bgs.forEach((event, i) => {
+    script(event, `bg ${i} script`);
+    if (event.bgEventType === "BGEVENT_ITEM") flagIn(event.script, "hiddenitem", 1);
+  });
+  events.objects.forEach((event, i) => {
+    script(event, `object ${i} script`);
+    check("C8", `object ${i} sprite`, event.sprite);
+    check("C9", `object ${i} flag`, event.eventFlag);
+    if (event.objectType === "OBJECTTYPE_TRAINER") flagIn(event.script, "trainer", 2);
+  });
+  return out;
+}
 
 /** Read structural sources afresh, without loading artwork or using project caches. */
-export function gbcMapDefects(proj: GbcProject, mapName: string, _opts?: { symbols?: SymbolIndex }): DataDefect[] {
+export function gbcMapDefects(proj: GbcProject, mapName: string, opts?: { symbols?: SymbolIndex }): DataDefect[] {
   const read = (file: string) => readFileSync(`${proj.root}/${file}`, "utf8");
   const { maps, map: getMap } = loadGbcMaps(proj.root);
   const map = getMap(mapName);
@@ -71,5 +111,6 @@ export function gbcMapDefects(proj: GbcProject, mapName: string, _opts?: { symbo
       `Set connection ${i} in data/maps/attributes.asm to a matching map name from data/maps/maps.asm and constant from constants/map_constants.asm.`,
       "data/maps/attributes.asm");
   });
+  if (opts?.symbols) out.push(...gbcEventSymbolDefects(mapName, events, read(file), opts.symbols));
   return out;
 }

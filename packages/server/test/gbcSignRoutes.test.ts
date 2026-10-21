@@ -44,6 +44,18 @@ describe("GBC sign routes", () => {
     if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
     if (root) removeTemp(root);
   });
+  it("SR3 invalidates the symbol index after saving a new sign without reload", async () => {
+    const defects = async () => {
+      const response = await fetch(`${base}/api/map/Route29`);
+      expect(response.status).toBe(200);
+      return (await response.json() as { defects: { message: string }[] }).defects;
+    };
+    expect(await defects()).toEqual([]); // Build the index before the label exists.
+    expect((await put()).status).toBe(200);
+    expect((await commitPreview()).status).toBe(200);
+    expect(parseMapEvents(disk(), "Route29").bgs.at(-1)?.script).toBe(label);
+    expect(await defects()).toEqual([]);
+  });
   it.each(["\n", "\r\n"])("places exact free-sign bytes and commits the planned session (%j)", async (eol) => {
     const before = original.replace(/\r?\n/g, eol).replace(/\r?\n$/, "");
     writeFileSync(path(), before);

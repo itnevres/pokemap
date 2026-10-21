@@ -1,12 +1,14 @@
 import { expect } from "vitest";
 import { gbcMapDefects } from "../../src/defects/gbc.js";
+import { buildGbcSymbolIndex } from "../../src/defects/symbols.js";
 import { openGbcProject } from "../../src/gbc/project.js";
 import { gbcCorpusRoots, gbcRootLabel, itWithGbcCorpus } from "../gbc/helpers/corpus.js";
 
 itWithGbcCorpus("GBC structural corpus equals the triaged real-defect allow-list", () => {
   for (const root of gbcCorpusRoots()) {
     const proj = openGbcProject(root);
-    const hits = proj.maps.flatMap((map) => gbcMapDefects(proj, map.name).map((defect) => ({ map: map.name, ...defect })));
+    const symbols = buildGbcSymbolIndex(root);
+    const hits = proj.maps.flatMap((map) => gbcMapDefects(proj, map.name, { symbols }).map((defect) => ({ map: map.name, ...defect })));
     // PerfPlus cave blockdata is 400 bytes, but each map_const declares 9*15=135.
     // CeruleanCave1F targets warp 7; CeruleanCity.asm defines only 6 warp_events.
     // C2 is deferred: the Goldenrod receptionist is deliberately staged off-map,

@@ -27,6 +27,8 @@
  * into one 400-line handler the way `index.ts` did.
  */
 import { gbcMapDefects } from "@pokemap/core/src/defects/gbc.js";
+import type { SymbolIndex } from "@pokemap/core/src/defects/symbols.js";
+import { createSymbolIndexCache } from "./projectSymbols.js";
 import { openGbcProject, type GbcProject } from "@pokemap/core/src/gbc/project.js";
 import { loadGbcMapEvents } from "@pokemap/core/src/gbc/load/events.js";
 import { renderGbcMap, renderGbcMapMetatile } from "@pokemap/core/src/gbc/render/map.js";
@@ -158,7 +160,7 @@ export function buildGbcGroupsPayload(proj: GbcProject): { groupOrder: string[];
  * be unit-tested directly against a stub `GbcProject`, without needing
  * `createGbcProjectHandler` restructured for dependency injection.
  */
-export function buildGbcMapPayload(proj: GbcProject, map: GbcMap): GbcMapPayload {
+export function buildGbcMapPayload(proj: GbcProject, map: GbcMap, symbols?: SymbolIndex): GbcMapPayload {
   const { layout } = proj.layout(map);
   const ts = proj.tileset(map.tileset);
 
@@ -177,7 +179,7 @@ export function buildGbcMapPayload(proj: GbcProject, map: GbcMap): GbcMapPayload
   }
 
   const { events } = loadGbcMapEvents(proj.root, map);
-  const defects = gbcMapDefects(proj, map.name);
+  const defects = gbcMapDefects(proj, map.name, { symbols });
 
   return {
     family: "gbc",
@@ -270,6 +272,7 @@ export function buildGbcWarpsPayload(proj: GbcProject, name: string) {
 }
 
 export function createGbcProjectHandler(root: string): ProjectHandler {
+  const symbols = createSymbolIndexCache(root, "gbc");
   const proj = openGbcProject(root);
 
   // Built once, not per-request: proj.maps is already fully loaded and
@@ -323,6 +326,7 @@ export function createGbcProjectHandler(root: string): ProjectHandler {
   // and metatile art), so they stay.
   const edit = createGbcEditRoutes(proj, {
     onCommit: () => {
+      symbols.invalidate();
       renderCache.clear();
       warpCache = undefined;
       coverageCache = undefined;
@@ -374,7 +378,7 @@ export function createGbcProjectHandler(root: string): ProjectHandler {
         const name = decodeMapName(rawName);
         if (name === undefined) return send(400, { error: `malformed map name ${rawName}` });
         if (!mapNames.has(name)) return send(404, { error: `no map ${name}` });
-        return send(200, buildGbcMapPayload(proj, proj.map(name)));
+        return send(200, buildGbcMapPayload(proj, proj.map(name), symbols.get()));
       }
 
       // Both PNG routes below resolve the map name FIRST (404), then
@@ -699,6 +703,7 @@ export function createGbcProjectHandler(root: string): ProjectHandler {
     // The hub's unsaved-edits guard (409 on /api/hub/open) reads this.
     dirtyMaps: () => edit.dirtyMaps(),
     dispose: () => {
+      symbols.invalidate();
       disposed = true;
       edit.closeAll();
     },

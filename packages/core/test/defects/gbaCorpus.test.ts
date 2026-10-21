@@ -1,11 +1,13 @@
 import { expect } from "vitest";
 import { gbaMapDefects } from "../../src/defects/gba.js";
+import { buildGbaSymbolIndex } from "../../src/defects/symbols.js";
 import { openProject } from "../../src/project.js";
 import { SUBJECT_ROOT, itWithCorpus } from "../helpers/corpus.js";
 
 itWithCorpus("GBA structural corpus equals the triaged real-defect allow-list", () => {
   const proj = openProject(SUBJECT_ROOT);
-  const hits = proj.mapNames().flatMap((map) => gbaMapDefects(proj, map).map((defect) => ({ map, ...defect })));
+  const symbols = buildGbaSymbolIndex(SUBJECT_ROOT);
+  const hits = proj.mapNames().flatMap((map) => gbaMapDefects(proj, map, { symbols }).map((defect) => ({ map, ...defect })));
   // 640-primary split + 230 secondary metatiles = ids through 869.
   // Independently decoded map.bin contains these ids beyond that ceiling; see Task 3 report.
   // C2 is dropped: 71 off-map events in the subject are staging/edge-adjacent/vanilla leftovers, not provable errors.

@@ -67,6 +67,27 @@ function onlyDefect(kind: string, file: string) {
 }
 
 describe("GBA structural defects", () => {
+  it("C7-C9 report unknown references and skip checks without an index", () => {
+    editMap({ object_events: [{ ...object, script: "MissingScript", flag: "FLAG_MISSING", graphics_id: "OBJ_EVENT_GFX_MISSING" }] });
+    expect(gbaMapDefects(proj, "Test")).toEqual([]);
+    const hits = gbaMapDefects(proj, "Test", { symbols: { labels: new Set(), constants: new Set() } });
+    expect(hits.map((d) => d.message.slice(0, 2))).toEqual(["C7", "C8", "C9"]);
+    expect(hits.every((d) => d.kind === "build" && d.fix.includes("data/maps/Test/map.json"))).toBe(true);
+  });
+  it("SR2 accepts null scripts, zero flags, variable graphics and known expressions", () => {
+    const symbols = { labels: new Set<string>(), constants: new Set(["OBJ_EVENT_GFX_MON_BASE", "SPECIES_MACHAMP", "FLAG_NONE"]) };
+    for (const script of ["0x0", "NULL"]) for (const graphics_id of ["OBJ_EVENT_GFX_VAR_0", "OBJ_EVENT_GFX_MON_BASE+SPECIES_MACHAMP", "OBJ_EVENT_GFX_SPECIES(ZYGARDE)"]) {
+      editMap({ object_events: [{ ...object, script, flag: "0", graphics_id }] });
+      expect(gbaMapDefects(proj, "Test", { symbols })).toEqual([]);
+    }
+  });
+  it("C7 covers coord/background scripts and C9 hidden-item flags", () => {
+    editMap({ coord_events: [{ x: 0, y: 0, script: "MissingCoord" }], bg_events: [
+      { type: "sign", script: "MissingSign" }, { type: "hidden_item", flag: "FLAG_MISSING_ITEM" },
+    ] });
+    const hits = gbaMapDefects(proj, "Test", { symbols: { labels: new Set(), constants: new Set() } });
+    expect(hits.map((d) => d.message.slice(0, 2))).toEqual(["C7", "C7", "C9"]);
+  });
   it("reports C1: map.bin 561 blocks over, with both repair options and byte counts", () => {
     writeFileSync(join(root, "data/layouts/Test/map.bin"), Buffer.alloc(8 + 561 * 2));
     const d = onlyDefect("size", "data/layouts/Test/map.bin");

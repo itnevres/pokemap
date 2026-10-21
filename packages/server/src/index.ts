@@ -1,4 +1,5 @@
 import { checkGbaMapDefects } from "@pokemap/core/src/defects/gba.js";
+import { createSymbolIndexCache } from "./projectSymbols.js";
 import { gbaSpeciesNames } from "@pokemap/core/src/signs/linked.js";
 import { parseMap } from "@pokemap/core/src/load/maps.js";
 import { findGbaSign, gbaSignScript, gbaSignText, nextGbaSignNumber, updateGbaSign } from "@pokemap/core/src/signs/gbaSign.js";
@@ -114,6 +115,7 @@ export function createProjectHandler(root: string): ProjectHandler {
   if (detectEngineFamily(root) === "gbc") return createGbcProjectHandler(root);
 
   const project = openProject(root);
+  const symbols = createSymbolIndexCache(root, "gba");
 
   // Unbounded on purpose for now, and worth knowing why: the whole corpus is
   // 1,209 maps and the largest PNG is a few hundred KB, but Route47 at
@@ -304,7 +306,7 @@ export function createProjectHandler(root: string): ProjectHandler {
       if (defectsMatch && req.method === "GET") {
         const name = decodeURIComponent(defectsMatch[1]!);
         if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
-        return send(200, checkGbaMapDefects(project, name));
+        return send(200, checkGbaMapDefects(project, name, { symbols: symbols.get() }));
       }
 
       const mapMatch = /^\/api\/map\/(.+)$/.exec(url.pathname);
@@ -991,6 +993,7 @@ export function createProjectHandler(root: string): ProjectHandler {
           } });
           try {
             commitSave(project, plan, prepared);
+            symbols.invalidate();
           } catch (e) {
             console.error(e);
             return send(500, { error: e instanceof Error ? e.message : String(e) });
@@ -1327,6 +1330,7 @@ export function createProjectHandler(root: string): ProjectHandler {
     handle,
     dirtyMaps: () => editSessions.dirty(),
     dispose: () => {
+      symbols.invalidate();
       editSessions.closeAll();
       disposed = true;
     },
