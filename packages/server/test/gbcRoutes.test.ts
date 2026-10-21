@@ -359,14 +359,9 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
       expect(r.status).toBe(200);
       const body = await r.json() as { layout: { blkPath: string; width: number; height: number }; defects: { file: string; message: string }[] };
       expect(body.layout).toEqual({ blkPath: "maps/CeruleanCave2F.blk", width: 9, height: 15 });
-      expect(body.defects).toHaveLength(4);
-      expect(body.defects[0]).toEqual({ file: "maps/CeruleanCave2F.blk", kind: "size",
+      expect(body.defects).toEqual([{ file: "maps/CeruleanCave2F.blk", kind: "size",
         message: "maps/CeruleanCave2F.blk: actual size 400 bytes, expected 135 bytes",
-        fix: "Change the map_const dimensions in constants/map_constants.asm or trim/extend maps/CeruleanCave2F.blk from 400 to 135 bytes." });
-      for (const d of body.defects.slice(1)) {
-        expect(d.message).toMatch(/outside the .* step grid/);
-        expect(d.message).toContain("warp");
-      }
+        fix: "Change the CERULEAN_CAVE_2F map_const dimensions in constants/map_constants.asm or trim/extend maps/CeruleanCave2F.blk from 400 to 135 bytes." }]);
     });
 
     it("MoveDeletersHouse: omits the legacy object_const_def diagnostic from the map payload", async () => {

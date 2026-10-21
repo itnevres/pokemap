@@ -468,8 +468,7 @@ describe("GbcApp", () => {
     const withDefects = mapPayload("OlivinePort", {
       layout: { blkPath: "maps/OlivinePort.blk", width: 2, height: 1 },
       defects: [
-        { file: "maps/CeruleanCave2F.blk", kind: "size", fix: "Change the map_const dimensions in constants/map_constants.asm or trim/extend maps/CeruleanCave2F.blk from 400 to 135 bytes.", message: "maps/CeruleanCave2F.blk: actual size 400 bytes, expected 135 bytes" },
-        { file: "maps/CeruleanCave2F.asm", kind: "gameplay", fix: "Move the warp at index 0 inside the 18x30 step grid in maps/CeruleanCave2F.asm.", message: "maps/CeruleanCave2F.asm: warp[0] at (23,7) is outside the 18x30 step grid" },
+        { file: "maps/CeruleanCave2F.blk", kind: "size", fix: "Change the CERULEAN_CAVE_2F map_const dimensions in constants/map_constants.asm or trim/extend maps/CeruleanCave2F.blk from 400 to 135 bytes.", message: "maps/CeruleanCave2F.blk: actual size 400 bytes, expected 135 bytes" },
       ],
     });
     vi.stubGlobal("fetch", makeFetchMock({ maps: { OlivinePort: withDefects } }));
@@ -480,8 +479,8 @@ describe("GbcApp", () => {
     await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
     const alert = screen.getByRole("alert");
     expect(alert.textContent).toContain("actual size 400 bytes, expected 135 bytes");
-    expect(alert.textContent).toContain("Change the map_const dimensions in constants/map_constants.asm or trim/extend maps/CeruleanCave2F.blk from 400 to 135 bytes.");
-    expect(alert.textContent).toContain("outside the 18x30 step grid");
+    expect(alert.textContent).toContain("Change the CERULEAN_CAVE_2F map_const dimensions in constants/map_constants.asm or trim/extend maps/CeruleanCave2F.blk from 400 to 135 bytes.");
+    expect(alert.textContent).not.toContain("outside the 18x30 step grid");
   });
 
   it("the defect banner is absent when there are no defects", async () => {

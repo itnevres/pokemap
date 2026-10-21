@@ -185,7 +185,7 @@ export function parseMapEvents(text: string, mapName: string): GbcMapEvents {
   const objects = scanCalls(eventsTail.text, "object_event").map((c) => toObject(c, eventsTail.lineIndex, mapName));
 
   if (objects.length > MAX_OBJECT_EVENTS) {
-    fail(mapName, null, `${objects.length} object_events, more than the ${MAX_OBJECT_EVENTS} allowed (NUM_OBJECTS 16, slot 0 is the player)`);
+    fail(mapName, null, `${objects.length} object_events, more than the ${MAX_OBJECT_EVENTS} allowed (NUM_OBJECTS 16, slot 0 is the player). Fix: reduce object_event entries in maps/${mapName}.asm to at most ${MAX_OBJECT_EVENTS}`);
   }
 
   const scriptsTail = labelTail(text, `${mapName}_MapScripts`);

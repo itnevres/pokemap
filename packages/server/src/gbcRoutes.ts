@@ -26,8 +26,9 @@
  * Task 2's five new routes should follow rather than growing this function
  * into one 400-line handler the way `index.ts` did.
  */
+import { gbcMapDefects } from "@pokemap/core/src/defects/gbc.js";
 import { openGbcProject, type GbcProject } from "@pokemap/core/src/gbc/project.js";
-import { loadGbcMapEvents, outOfBoundsEventDefects } from "@pokemap/core/src/gbc/load/events.js";
+import { loadGbcMapEvents } from "@pokemap/core/src/gbc/load/events.js";
 import { renderGbcMap, renderGbcMapMetatile } from "@pokemap/core/src/gbc/render/map.js";
 import { buildGbcWorld, type GbcWorld } from "@pokemap/core/src/gbc/world/connections.js";
 import { placeNearWarps, type WarpLink } from "@pokemap/core/src/world/nearWarp.js";
@@ -158,7 +159,7 @@ export function buildGbcGroupsPayload(proj: GbcProject): { groupOrder: string[];
  * `createGbcProjectHandler` restructured for dependency injection.
  */
 export function buildGbcMapPayload(proj: GbcProject, map: GbcMap): GbcMapPayload {
-  const { layout, defects: layoutDefects } = proj.layout(map);
+  const { layout } = proj.layout(map);
   const ts = proj.tileset(map.tileset);
 
   const usedValues = new Set<number>();
@@ -176,7 +177,7 @@ export function buildGbcMapPayload(proj: GbcProject, map: GbcMap): GbcMapPayload
   }
 
   const { events } = loadGbcMapEvents(proj.root, map);
-  const defects = [...layoutDefects, ...outOfBoundsEventDefects(map, events)];
+  const defects = gbcMapDefects(proj, map.name);
 
   return {
     family: "gbc",
