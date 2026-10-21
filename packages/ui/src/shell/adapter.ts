@@ -17,22 +17,14 @@ export interface Capabilities {
   pokemonIndicator: boolean;             // read: toolbar "Pok\u00e9mon Indicator"
   signTool: boolean;            // read: toolbar Sign tool
   timeOfDay: boolean;           // read: header slot
-  defectsBanner: boolean;       // descriptive (GBC renderMap owns it); read from Plan 10 (D3)
-  manualPlacements: boolean;    // read: tree visibility merge in FamilyApp
-  dungeonFilterCache: boolean;  // read: FamilyApp's mapFilter (useDungeonFilter)
-  worldBar: { dungeonAutoLayout: boolean; unplacedRail: boolean }; // descriptive (inside the world canvas); read from Plan 10
 }
 
 export const GBA_CAPABILITIES: Capabilities = {
   collisionTool: true, elevationOverlay: true, addEvent: true, pokemonIndicator: true, signTool: true, timeOfDay: false,
-  defectsBanner: false, manualPlacements: false, dungeonFilterCache: false,
-  worldBar: { dungeonAutoLayout: true, unplacedRail: true },
 };
 
 export const GBC_CAPABILITIES: Capabilities = {
   collisionTool: false, elevationOverlay: false, addEvent: false, pokemonIndicator: true, signTool: true, timeOfDay: true,
-  defectsBanner: true, manualPlacements: true, dungeonFilterCache: true,
-  worldBar: { dungeonAutoLayout: false, unplacedRail: false },
 };
 
 export const ALL_TOOLS: ToolKind[] = ["pencil", "rect", "bucket", "dropper", "shift", "collision", "sign"];

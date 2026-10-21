@@ -156,6 +156,8 @@ export function isGbcWorldPayload(x: unknown): x is GbcWorldPayload {
   if (!Array.isArray(x.components)) return false;
   if (!Array.isArray(x.conflicts) || !x.conflicts.every(isWireConflict)) return false;
 
+  if (!isRecord(x.sidecar) || typeof x.sidecar.dungeonAutoLayout !== "boolean") return false;
+
   return true;
 }
 

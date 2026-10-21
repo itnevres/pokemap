@@ -28,8 +28,8 @@ export function useGbcRuntime({ selected, mode, requestPrompt }: RuntimeArgs): F
   const [hoveredMetatileId, setHoveredMetatileId] = useState<number | null>(null);
   const dungeons = useGbcDungeons(mode === "dungeon");
   const groups = useGbcGroups();
-  const { data: world, error: worldError } = useGbcWorld(mode === "world");
-  // Tree visibility before FamilyApp merges this session's manual placements (manualPlacements capability).
+  const { data: world, error: worldError, reload: reloadWorld } = useGbcWorld(mode === "world");
+  // Tree visibility before FamilyApp merges this session's manual placements (FamilyApp's SR8 merge).
   const placed = useMemo(
     () => world ? new Map(Object.entries(world.placements).map(([name, p]) => [name, { mapType: p.mapType, manual: p.manual }])) : null,
     [world],
@@ -95,7 +95,8 @@ export function useGbcRuntime({ selected, mode, requestPrompt }: RuntimeArgs): F
         onOpenMap={s.openMapFromWorld}
         onEditHere={s.enterContext}
         onJumpToMap={s.selectMap}
-        onPlacementSaved={s.markManualPlacement}
+        onPlacementSaved={(name) => { s.markManualPlacement(name); reloadWorld(); }}
+        onLayoutChanged={reloadWorld}
         tileVersions={s.tileVersions}
         context={
           s.contextMap === null
@@ -142,7 +143,7 @@ export function useGbcRuntime({ selected, mode, requestPrompt }: RuntimeArgs): F
       ) : null,
     renderWorld,
     renderDungeon: (mapFilter, s) => (
-      <GbcWorldCanvas key="dungeon" time={time} mapFilter={mapFilter} onOpenMap={s.openMapFromWorld} onPlacementSaved={s.markManualPlacement} />
+      <GbcWorldCanvas key="dungeon" time={time} mapFilter={mapFilter} onOpenMap={s.openMapFromWorld} onPlacementSaved={s.markManualPlacement} onLayoutChanged={reloadWorld} />
     ),
     headerExtras: (
       <div className="app__mode gbc-app__time" role="group" aria-label="Time of day">

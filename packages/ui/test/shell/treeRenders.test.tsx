@@ -53,7 +53,7 @@ describe("map tree render isolation (Plan 9 follow-up O2)", () => {
     let n = 0;
     vi.stubGlobal("fetch", vi.fn((url: string) => {
       if (url === "/api/groups") return ok({ groupOrder: ["OLIVINE"], groups: { OLIVINE: ["OlivineCity", "OlivinePort"] } });
-      if (url === "/api/world") return ok({ family: "gbc", blockPx: 32, placements: {}, components: [], conflicts: [] });
+      if (url === "/api/world") return ok({ family: "gbc", blockPx: 32, placements: {}, components: [], conflicts: [], sidecar: { dungeonAutoLayout: true } });
       if (url === "/api/map/OlivineCity") return ok(PAYLOAD);
       // Each reply is a new object, as the real server's are.
       if (url.startsWith("/api/edit/")) return ok({ blocks: [{ metatileId: 1 }, { metatileId: ++n % 2 }], events: EMPTY_EVENTS, isDirty: url.endsWith("/end"), canUndo: true, canRedo: false });

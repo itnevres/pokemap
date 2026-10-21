@@ -14,7 +14,7 @@ afterEach(() => {
 
 const GROUPS = { groupOrder: ["OLIVINE"], groups: { OLIVINE: ["OlivineCity", "OlivinePort"] } };
 const EMPTY_EVENTS = { warps: [], coords: [], bgs: [], objects: [], sceneScripts: [], callbacks: [], objectConsts: [] };
-const EMPTY_WORLD = { family: "gbc", blockPx: 32, placements: {}, components: [], conflicts: [] };
+const EMPTY_WORLD = { family: "gbc", blockPx: 32, placements: {}, components: [], conflicts: [], sidecar: { dungeonAutoLayout: true } };
 
 function payload(name: string, over: Partial<GbcMapPayload> = {}): GbcMapPayload {
   return {

@@ -26,7 +26,7 @@ export function useGbaRuntime({ selected, mode, requestPrompt }: RuntimeArgs): F
   // can go stale within the session after a drag or a jump-reveal on
   // WorldCanvas's own canvas. A full refresh currently requires leaving and
   // re-entering World mode.
-  const { placed, error: visibilityError } = useWorldVisibility(mode === "world");
+  const { placed, error: visibilityError, refresh: refreshVisibility } = useWorldVisibility(mode === "world");
   const dungeons = useDungeons(mode === "dungeon");
 
   // Task 13: the edit session for whatever map is `selected`, tracked
@@ -87,6 +87,8 @@ export function useGbaRuntime({ selected, mode, requestPrompt }: RuntimeArgs): F
         onOpenMap={s.openMapFromWorld}
         onEditHere={s.enterContext}
         tileVersions={s.tileVersions}
+        onPlacementSaved={(name) => { s.markManualPlacement(name); refreshVisibility(); }}
+        onLayoutChanged={refreshVisibility}
         context={
           s.contextMap === null
             ? undefined

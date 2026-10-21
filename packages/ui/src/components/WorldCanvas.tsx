@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Placement, Component as WorldComponentInfo, VerticalLink } from "@pokemap/core/src/world/connections.js";
 import type { WireConflict } from "@pokemap/core/src/world/conflictAcceptance.js";
 import type { SpeciesHit } from "@pokemap/core/src/analyse/coverage.js";
@@ -20,6 +20,8 @@ import type { MapView } from "./mapView.js";
 import { ContextMapFit, useWorldContext } from "../shared/useWorldContext.js";
 import { WorldContextOverlay } from "../shared/WorldContextOverlay.js";
 import { useFitShortcut } from "../shared/useFitShortcut.js";
+import { DungeonAutoLayoutSwitch } from "../world/DungeonAutoLayoutSwitch.js";
+import { UnplacedRail } from "../world/UnplacedRail.js";
 
 /** The pixel size a placement's PNG renders at natively (`renderLayout`,
  *  border 0): 16px per tile, same constant the CLI's `render-world --scale
@@ -337,6 +339,10 @@ export interface WorldCanvasProps {
   /** Per-map render bust: when a map's number changes, only that map's tile is dropped and re-requested as
    *  `/api/render/<map>.png?v=<n>`; later loads of it keep the `?v`. */
   tileVersions?: Record<string, number>;
+  /** A placement POST succeeded (a tree or rail drop, or a Shift-drag move). The app mirrors it into tree visibility. */
+  onPlacementSaved?: (name: string) => void;
+  /** The dungeon auto-layout toggle was saved. The app refreshes any world data it holds of its own. */
+  onLayoutChanged?: () => void;
 }
 
 export interface WorldCanvasContext {
@@ -358,7 +364,7 @@ export interface WorldCanvasContext {
  * packages/ui/DESIGN.md for the palette/type/spacing tokens this consumes,
  * and this file's own comments for the LOD and culling mechanics.
  */
-export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSelectMap, onOpenMap, onEditHere, context, tileVersions }: WorldCanvasProps = {}) {
+export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSelectMap, onOpenMap, onEditHere, context, tileVersions, onPlacementSaved, onLayoutChanged }: WorldCanvasProps = {}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageCacheRef = useRef<Map<string, ImageCacheEntry>>(new Map());
@@ -569,6 +575,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
       .then((r) => {
         if (!r.ok) throw new Error(`POST /api/world/dungeons -> ${r.status}`);
         setRefetchGen((g) => g + 1);
+        onLayoutChanged?.();
       })
       .catch((e: unknown) => {
         setDungeonsPending(null);
@@ -1503,6 +1510,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
         // refusal on a corrupted world.json) resolves normally and landed
         // here silently discarded, with no banner and no console output.
         if (!r.ok) throw new Error(`POST /api/world/placement -> ${r.status}`);
+        onPlacementSaved?.(map);
       })
       .catch((e: unknown) => {
         // The optimistic local move already reflects the drag -- a failed
@@ -1857,19 +1865,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
   return (
     <section className="world-canvas" aria-label="World canvas">
       <div className="world-canvas__toolbar">
-        <div className="world-canvas__toolbar-group">
-          <button
-            type="button"
-            role="switch"
-            aria-checked={dungeonsOn}
-            aria-label="Dungeon auto-layout"
-            className="world-canvas__switch"
-            onClick={toggleDungeons}
-          >
-            <span className="world-canvas__switch-thumb" />
-          </button>
-          <span className="world-canvas__switch-label">Dungeon auto-layout {dungeonsOn ? "on" : "off"}</span>
-        </div>
+        <DungeonAutoLayoutSwitch on={dungeonsOn} onToggle={toggleDungeons} />
         <div className="world-canvas__toolbar-group">
           <button
             type="button"
@@ -2140,74 +2136,6 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
     </section>
   );
 }
-
-interface UnplacedRailProps {
-  unplacedNames: string[];
-  filter: string;
-  onFilterChange: (value: string) => void;
-}
-
-/**
- * Review fix: this used to be built inline inside WorldCanvas's own render,
- * so canvas-state churn that has nothing to do with the rail -- pan and
- * hover state, both updated at pointer frequency by onMouseMove -- forced a
- * full re-render and re-reconciliation of all 1,028 <li> rows (the live
- * corpus's unplaced-singleton count with the dungeon toggle off) on every
- * single frame. That defeats Task 25's own "panning stays smooth"
- * acceptance criterion in exactly the one mode (dungeons off) this rail
- * exists to serve -- likely missed by prior spec-review passes because the
- * default sidecar has dungeons ON, where the rail is empty.
- *
- * Wrapped in React.memo and given only the three props it actually needs
- * (the raw unplaced-names list, the current filter string, and a
- * filter-change callback -- NOT a pre-filtered list, so the filtering
- * itself also lives here, out of WorldCanvas's own per-render work), so a
- * pan or hover update -- which changes neither -- leaves this whole subtree
- * untouched. `onFilterChange` must stay a `useState` setter passed straight
- * through by its caller (never a fresh inline arrow function) for the memo
- * comparison to actually hold across those unrelated re-renders.
- */
-export const UnplacedRail = memo(function UnplacedRail({ unplacedNames, filter, onFilterChange }: UnplacedRailProps) {
-  const filtered = useMemo(() => {
-    const q = filter.trim().toLowerCase();
-    return q ? unplacedNames.filter((n) => n.toLowerCase().includes(q)) : unplacedNames;
-  }, [unplacedNames, filter]);
-
-  return (
-    <aside className="world-canvas__rail" aria-label="Unplaced maps">
-      <div className="world-canvas__rail-header">
-        <span className="world-canvas__rail-title">Unplaced</span>
-        <span className="world-canvas__rail-count">{unplacedNames.length}</span>
-      </div>
-      <input
-        className="world-canvas__rail-filter"
-        placeholder="Filter…"
-        value={filter}
-        onChange={(e) => onFilterChange(e.target.value)}
-      />
-      {filtered.length === 0 ? (
-        <p className="world-canvas__rail-empty">
-          {unplacedNames.length === 0 ? "Every map is placed." : `No matches for “${filter}”.`}
-        </p>
-      ) : (
-        <ul className="world-canvas__rail-list">
-          {filtered.map((name) => (
-            <li key={name}>
-              <button
-                type="button"
-                className="world-canvas__rail-item"
-                draggable
-                onDragStart={(e) => e.dataTransfer.setData("text/plain", name)}
-              >
-                {name}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </aside>
-  );
-});
 
 function drawTriangle(ctx: CanvasRenderingContext2D, cx: number, cy: number, size: number, pointDown: boolean, color: string): void {
   ctx.fillStyle = color;

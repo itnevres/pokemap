@@ -57,7 +57,7 @@ function imgWithSrc(src: string): HTMLImageElement | undefined {
   return Array.from(document.querySelectorAll("img")).find((i) => i.getAttribute("src") === src);
 }
 
-const EMPTY_WORLD = { family: "gbc" as const, blockPx: 32 as const, placements: {}, components: [], conflicts: [] };
+const EMPTY_WORLD = { family: "gbc" as const, blockPx: 32 as const, placements: {}, components: [], conflicts: [], sidecar: { dungeonAutoLayout: true } };
 
 function makeFetchMock(opts: { groupsFail?: boolean; maps?: Record<string, GbcMapPayload | "fail">; world?: unknown } = {}) {
   return vi.fn((url: string) => {
@@ -166,7 +166,7 @@ describe("GbcApp", () => {
       const world = { family: "gbc" as const, blockPx: 32 as const, placements: {
         OlivineCity: { map: "OlivineCity", x: 0, y: 0, width: 10, height: 10, component: 0, mapType: "TOWN", manual: false },
         OlivinePort: { map: "OlivinePort", x: 30, y: 0, width: 10, height: 10, component: 1, mapType: "TOWN", manual: false },
-      }, components: [], conflicts: [] };
+      }, components: [], conflicts: [], sidecar: { dungeonAutoLayout: true } };
       const base = makeFetchMock({ world });
       let dungeon = { id: "d1", name: "Tower", maps: ["OlivineCity"] };
       vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => {
@@ -327,7 +327,7 @@ describe("GbcApp", () => {
     blockPx: 32 as const,
     placements: { OlivineCity: { map: "OlivineCity", x: 0, y: 0, width: 10, height: 10, component: 0, mapType: "TOWN", manual: false } },
     components: [{ index: 0, maps: ["OlivineCity"], bounds: { x: 0, y: 0, width: 10, height: 10 } }],
-    conflicts: [],
+    conflicts: [], sidecar: { dungeonAutoLayout: true },
   };
 
   it("a tree click in World mode jumps GbcWorldCanvas there (jumpToMap/jumpToken wiring)", async () => {
@@ -431,7 +431,7 @@ describe("GbcApp", () => {
         { index: 0, maps: ["OlivineCity"], bounds: { x: 0, y: 0, width: 10, height: 10 } },
         { index: 1, maps: ["OlivinePort"], bounds: { x: 100, y: 100, width: 10, height: 10 } },
       ],
-      conflicts: [],
+      conflicts: [], sidecar: { dungeonAutoLayout: true },
     };
     vi.stubGlobal("fetch", makeFetchMock({ world: WORLD_TWO }));
     render(<FamilyApp adapter={gbcAdapter} />);
@@ -612,7 +612,7 @@ describe("GbcApp -- coverage lens list jump (Plan 6c C1)", () => {
       blockPx: 32 as const,
       placements: { OlivineCity: { map: "OlivineCity", x: 0, y: 0, width: 10, height: 10, component: 0, mapType: "TOWN", manual: false } },
       components: [{ index: 0, maps: ["OlivineCity"], bounds: { x: 0, y: 0, width: 10, height: 10 } }],
-      conflicts: [],
+      conflicts: [], sidecar: { dungeonAutoLayout: true },
     };
     const base = makeFetchMock({ world });
     vi.stubGlobal(
@@ -660,7 +660,7 @@ describe("GbcApp -- world click selects the map in the tree (Plan 6c C2)", () =>
         blockPx: 32 as const,
         placements: { OlivineCity: { map: "OlivineCity", x: 0, y: 0, width: 10, height: 10, component: 0, mapType: "TOWN", manual: false } },
         components: [{ index: 0, maps: ["OlivineCity"], bounds: { x: 0, y: 0, width: 10, height: 10 } }],
-        conflicts: [],
+        conflicts: [], sidecar: { dungeonAutoLayout: true },
       };
       vi.stubGlobal("fetch", makeFetchMock({ world }));
       render(<FamilyApp adapter={gbcAdapter} />);
@@ -700,7 +700,7 @@ describe("GbcApp -- GBC world visibility (Plan 6c D1)", () => {
         { index: 0, maps: ["OlivineCity"], bounds: { x: 0, y: 0, width: 10, height: 10 } },
         { index: 1, maps: ["OlivinePort"], bounds: { x: 11, y: 0, width: 10, height: 10 } },
       ],
-      conflicts: [],
+      conflicts: [], sidecar: { dungeonAutoLayout: true },
     };
     vi.stubGlobal("fetch", makeFetchMock({ world }));
     render(<FamilyApp adapter={gbcAdapter} />);
@@ -723,7 +723,7 @@ describe("GbcApp -- GBC world visibility (Plan 6c D1)", () => {
         { index: 0, maps: ["OlivineCity"], bounds: { x: 0, y: 0, width: 10, height: 10 } },
         { index: 1, maps: ["OlivinePort"], bounds: { x: 11, y: 0, width: 10, height: 10 } },
       ],
-      conflicts: [],
+      conflicts: [], sidecar: { dungeonAutoLayout: true },
     };
     const base = makeFetchMock({ world });
     const fetchMock = vi.fn((url: string) => url === "/api/world/placement"
@@ -757,7 +757,7 @@ describe("GbcApp -- entering World centres on the selection (Plan 6c C2 fix roun
       { index: 0, maps: ["OlivineCity"], bounds: { x: 0, y: 0, width: 10, height: 10 } },
       { index: 1, maps: ["OlivinePort"], bounds: { x: 11, y: 0, width: 10, height: 10 } },
     ],
-    conflicts: [],
+    conflicts: [], sidecar: { dungeonAutoLayout: true },
   };
   const clickMode = (name: "Map" | "World") =>
     fireEvent.click(Array.from(screen.getByRole("group", { name: "View" }).querySelectorAll("button")).find((b) => b.textContent === name) as HTMLElement);

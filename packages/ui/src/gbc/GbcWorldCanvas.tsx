@@ -23,6 +23,8 @@ import { ContextMapFit, useWorldContext } from "../shared/useWorldContext.js";
 import { WorldContextOverlay } from "../shared/WorldContextOverlay.js";
 import type { GbcTimeOfDay } from "./time.js";
 import { useFitShortcut } from "../shared/useFitShortcut.js";
+import { DungeonAutoLayoutSwitch } from "../world/DungeonAutoLayoutSwitch.js";
+import { UnplacedRail } from "../world/UnplacedRail.js";
 
 /**
  * The GBC world view (Plan 6b Task 5, D1 manual placement). Mirrors `WorldCanvas.tsx`'s
@@ -425,7 +427,10 @@ export interface GbcWorldCanvasProps {
   /** A lens list entry (Empty maps) was clicked; the app selects the map and
    *  jumps there (the tree-click path). */
   onJumpToMap?: (name: string) => void;
+  /** A placement POST succeeded (tree drop, rail drop, or Shift-drag move). */
   onPlacementSaved?: (name: string) => void;
+  /** The dungeon auto-layout toggle was saved; the app refreshes any world data it holds of its own. */
+  onLayoutChanged?: () => void;
   /** Plan 7 Task 5b: a plain double-click on a map body (no modifier, no drag, not a warp marker) and the context
    *  menu's "Edit here". The app enters in-context editing and passes `context`. Unset: a double-click opens the
    *  map in Map view instead (Dungeon mode), and the menu offers no "Edit here". */
@@ -453,14 +458,18 @@ function isPlacementSaved(x: unknown): x is { ok: true } {
   return isRecord(x) && x.ok === true;
 }
 
+function isLayoutSaved(x: unknown): x is { dungeonAutoLayout: boolean } {
+  return isRecord(x) && typeof x.dungeonAutoLayout === "boolean";
+}
+
 /**
  * The stitched GBC world: all 391 maps culled to the viewport, panned and
  * zoomed, with manual placements persisted through the world sidecar. See this file's own header comment for the mechanics
  * reproduced from `WorldCanvas.tsx`, and `packages/ui/DESIGN.md` for the
  * `world-canvas__*` classes reused verbatim below.
  */
-export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelectMap, onOpenMap, onJumpToMap, onPlacementSaved, onEditHere, context, tileVersions }: GbcWorldCanvasProps) {
-  const { data: world, error } = useGbcWorld();
+export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelectMap, onOpenMap, onJumpToMap, onPlacementSaved, onLayoutChanged, onEditHere, context, tileVersions }: GbcWorldCanvasProps) {
+  const { data: world, error, reload: reloadWorld } = useGbcWorld();
   const { data: coverageData, error: coverageError } = useGbcCoverage();
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -480,13 +489,30 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
   const [view, setView] = useState<GbcWorldView>({ zoom: 1, pan: { x: 0, y: 0 }, fitted: false });
   const [placementOverrides, setPlacementOverrides] = useState<Record<string, { x: number; y: number }>>({});
   const { zoom, pan, fitted } = view;
-  const placements = useMemo<Record<string, GbcWorldPlacement>>(
-    () => !world ? {} : Object.fromEntries(Object.entries(world.placements).map(([name, placement]) => {
+  // Every singleton map's own size (its component's bounds): sizes a rail drop of a map absent from `placements`.
+  const sizeByMap = useMemo(() => {
+    const m = new Map<string, { width: number; height: number }>();
+    if (world) for (const c of world.components) if (c.maps.length === 1) m.set(c.maps[0]!, { width: c.bounds.width, height: c.bounds.height });
+    return m;
+  }, [world?.components]);
+  const placements = useMemo<Record<string, GbcWorldPlacement>>(() => {
+    if (!world) return {};
+    const out: Record<string, GbcWorldPlacement> = Object.fromEntries(Object.entries(world.placements).map(([name, placement]) => {
       const override = placementOverrides[name];
       return [name, override ? { ...placement, ...override, manual: true } : placement];
-    })),
-    [world, placementOverrides],
-  );
+    }));
+    // A map dropped from the rail while absent (dungeon auto-layout off): a manual placement of its own size.
+    for (const [name, at] of Object.entries(placementOverrides)) {
+      const size = sizeByMap.get(name);
+      if (!out[name] && size) out[name] = { map: name, ...at, ...size, component: -1, mapType: "", manual: true };
+    }
+    return out;
+  }, [world, placementOverrides, sizeByMap]);
+  const unplacedNames = useMemo(() => [...sizeByMap.keys()].filter((name) => !placements[name]).sort(), [sizeByMap, placements]);
+  const [railFilter, setRailFilter] = useState("");
+  const [dungeonsPending, setDungeonsPending] = useState<boolean | null>(null);
+  const dungeonsOn = dungeonsPending ?? world?.sidecar?.dungeonAutoLayout ?? true;
+  useEffect(() => { setDungeonsPending(null); }, [world]);
   const [compositeVersion, setCompositeVersion] = useState(0);
   // Bumped whenever encounterCacheRef's own contents change (a per-map
   // fetch landing) -- the same "a ref never usefully appears in a
@@ -995,6 +1021,22 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
       .catch((e: unknown) => setSaveError(e instanceof Error ? e.message : String(e)));
   };
 
+  const [layoutError, setLayoutError] = useState<string | null>(null);
+  const toggleDungeons = () => {
+    const next = !dungeonsOn;
+    setDungeonsPending(next);
+    fetchGuarded("/api/world/dungeons", isLayoutSaved, undefined, { method: "POST", body: JSON.stringify({ enabled: next }) })
+      .then(() => {
+        setLayoutError(null);
+        reloadWorld();
+        onLayoutChanged?.();
+      })
+      .catch((e: unknown) => {
+        setDungeonsPending(null);
+        setLayoutError(e instanceof Error ? e.message : String(e));
+      });
+  };
+
   const onMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (e.button !== 0) return;
     dragMovedRef.current = false;
@@ -1195,6 +1237,12 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
             Fit
           </button>
         </div>
+        <DungeonAutoLayoutSwitch on={dungeonsOn} onToggle={toggleDungeons} />
+        {layoutError && (
+          <div className="world-canvas__toolbar-group world-canvas__toolbar-group--save-error">
+            <span className="world-canvas__toolbar-error" role="alert">Could not save dungeon auto-layout: {layoutError}</span>
+          </div>
+        )}
         <div className="world-canvas__toolbar-group">
           <button type="button" role="switch" aria-checked={warpsOn} aria-label="Warps" className="world-canvas__switch" onClick={() => { if (!warpsOn) setWarpError(null); setWarpsOn((on) => !on); }}>
             <span className="world-canvas__switch-thumb" />
@@ -1288,7 +1336,7 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
               e.preventDefault();
               const map = e.dataTransfer.getData("text/plain");
               if (mapFilter && !mapFilter.has(map)) return;
-              const placement = placements[map];
+              const placement = placements[map] ?? sizeByMap.get(map);
               if (!placement) return;
               const rect = e.currentTarget.getBoundingClientRect();
               const point = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
@@ -1377,6 +1425,7 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
             </div>
           )}
         </div>
+        <UnplacedRail unplacedNames={unplacedNames} filter={railFilter} onFilterChange={setRailFilter} />
       </div>
 
       <div className="world-canvas__status">

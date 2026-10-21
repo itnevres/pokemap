@@ -4,41 +4,40 @@ import { useDungeonFilter } from "../../src/shell/useDungeonFilter.js";
 import type { Dungeon } from "../../src/hooks/useDungeons.js";
 
 const d = (maps: string[], id = "d1") => ({ id, name: "D", maps }) as unknown as Dungeon;
-const mount = (dungeon: Dungeon | null, cache: boolean) =>
-  renderHook(({ dg, c }) => useDungeonFilter(dg, c), { initialProps: { dg: dungeon, c: cache } });
+const mount = (dungeon: Dungeon | null) =>
+  renderHook(({ dg }) => useDungeonFilter(dg), { initialProps: { dg: dungeon } });
 
 describe("useDungeonFilter (Plan 9)", () => {
   it("null dungeon gives null", () => {
-    expect(mount(null, false).result.current).toBeNull();
-    expect(mount(null, true).result.current).toBeNull();
+    expect(mount(null).result.current).toBeNull();
   });
-  it("without the cache, a new dungeon object re-mints the filter (GBA: a rename refits)", () => {
-    const { result, rerender } = mount(d(["A", "B"]), false);
+  it("a rename (a new dungeon object, same id and members) keeps the filter identity for both families (Plan 10b)", () => {
+    const { result, rerender } = mount(d(["A", "B"]));
     const first = result.current;
-    rerender({ dg: d(["A", "B"]), c: false });
-    expect(result.current).not.toBe(first);
+    rerender({ dg: { ...d(["A", "B"]), name: "Renamed" } as unknown as Dungeon });
+    expect(result.current).toBe(first);
     expect([...result.current!].sort()).toEqual(["A", "B"]);
   });
-  it("with the cache, the same id and members keep the filter identity, in any order", () => {
-    const { result, rerender } = mount(d(["A", "B"]), true);
+  it("the same id and members keep the filter identity, in any order", () => {
+    const { result, rerender } = mount(d(["A", "B"]));
     const first = result.current;
-    rerender({ dg: d(["B", "A"]), c: true });
+    rerender({ dg: d(["B", "A"]) });
     expect(result.current).toBe(first);
   });
-  it("with the cache, a membership change or another id re-mints", () => {
-    const { result, rerender } = mount(d(["A", "B"]), true);
+  it("a membership change or another id re-mints", () => {
+    const { result, rerender } = mount(d(["A", "B"]));
     const first = result.current;
-    rerender({ dg: d(["A", "B", "C"]), c: true });
+    rerender({ dg: d(["A", "B", "C"]) });
     expect(result.current).not.toBe(first);
     const second = result.current;
-    rerender({ dg: d(["A", "B", "C"], "d2"), c: true });
+    rerender({ dg: d(["A", "B", "C"], "d2") });
     expect(result.current).not.toBe(second);
   });
-  it("with the cache, closing the dungeon drops the cache", () => {
-    const { result, rerender } = mount(d(["A"]), true);
+  it("closing the dungeon drops the cache", () => {
+    const { result, rerender } = mount(d(["A"]));
     const first = result.current;
-    rerender({ dg: null, c: true });
-    rerender({ dg: d(["A"]), c: true });
+    rerender({ dg: null });
+    rerender({ dg: d(["A"]) });
     expect(result.current).not.toBe(first);
   });
 });

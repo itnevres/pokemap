@@ -225,7 +225,15 @@ describe("isGbcWorldPayload", () => {
   });
 
   it("accepts an empty world (no placements/components/conflicts)", () => {
-    expect(isGbcWorldPayload({ family: "gbc", blockPx: 32, placements: {}, components: [], conflicts: [] })).toBe(true);
+    expect(isGbcWorldPayload({ family: "gbc", blockPx: 32, placements: {}, components: [], conflicts: [], sidecar: { dungeonAutoLayout: false } })).toBe(true);
+  });
+
+  it("rejects a missing or malformed sidecar (Plan 10b Task 7b)", () => {
+    const { sidecar: _omitted, ...withoutSidecar } = validGbcWorldPayload();
+    expect(isGbcWorldPayload(withoutSidecar)).toBe(false);
+    expect(isGbcWorldPayload({ ...validGbcWorldPayload(), sidecar: null })).toBe(false);
+    expect(isGbcWorldPayload({ ...validGbcWorldPayload(), sidecar: {} })).toBe(false);
+    expect(isGbcWorldPayload({ ...validGbcWorldPayload(), sidecar: { dungeonAutoLayout: "yes" } })).toBe(false);
   });
 
   it("rejects a non-object", () => {
