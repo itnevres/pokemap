@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { gbaMapDefects } from "../../src/defects/gba.js";
 import { projectPaths } from "../../src/config/paths.js";
 import { stubProject, stubTileset } from "../helpers/stubProject.js";
-import type { Project } from "../../src/project.js";
+import { openProject, type Project } from "../../src/project.js";
 
 let root: string;
 let proj: Project;
@@ -28,12 +28,30 @@ beforeEach(() => {
   }));
   writeFileSync(paths.layoutsJson, JSON.stringify({ layouts_table_label: "gLayouts", layouts: [{
     id: "LAYOUT_TEST", name: "Test_Layout", width: 2, height: 2,
-    primary_tileset: "Primary", secondary_tileset: "Secondary", blockdata_filepath: "data/layouts/Test/map.bin",
+    primary_tileset: "gTileset_Primary", secondary_tileset: "gTileset_Secondary", blockdata_filepath: "data/layouts/Test/map.bin",
   }] }));
   writeFileSync(join(root, "data/layouts/Test/map.bin"), Buffer.alloc(8));
+  mkdirSync(join(root, "src/data/tilesets"), { recursive: true });
+  writeFileSync(paths.tilesetHeadersH, ["Primary", "Secondary"].map((s) =>
+    `const struct Tileset gTileset_${s} = {
+.metatiles = gMetatiles_${s},
+.metatileAttributes = gAttributes_${s},
+};`).join("\n"));
+  writeFileSync(paths.tilesetMetatilesH, ["Primary", "Secondary"].map((s) =>
+    `const u16 gMetatiles_${s}[] = INCBIN_U16("./${s}.bin");
+const u16 gAttributes_${s}[] = INCBIN_U16("./${s}.attributes.bin");`).join("\n"));
+  writeFileSync(paths.tilesetGraphicsH, "");
+  writeFileSync(paths.tilesetGraphicsC, "");
+  writeFileSync(join(root, "Primary.bin"), Buffer.alloc(4 * 16));
+  writeFileSync(join(root, "Secondary.bin"), Buffer.alloc(2 * 16));
+  mkdirSync(join(root, "include"), { recursive: true });
+  writeFileSync(paths.fieldmapH, "");
+  writeFileSync(join(root, "Primary.attributes.bin"), Buffer.alloc(8));
+  writeFileSync(join(root, "Secondary.attributes.bin"), Buffer.alloc(4));
+  writeFileSync(join(root, "tiles.png"), Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAMAAAAoyzS7AAAAA1BMVEUAAACnej3aAAAACklEQVR4nGNgAAAAAgABSK+kcQAAAABJRU5ErkJggg==", "base64"));
   proj = stubProject({ paths, constants: { metatilesTotal: 1024 } as Project["constants"],
     splitFor: () => ({ metatiles: 512, tiles: 512, pals: 6, version: "emerald" }),
-    tileset: (s) => stubTileset(s, s === "Primary" ? 4 : 2),
+    tileset: (s) => stubTileset(s, s === "gTileset_Primary" ? 4 : 2),
   });
 });
 afterEach(() => rmSync(root, { recursive: true, force: true }));
@@ -76,7 +94,9 @@ describe("GBA structural defects", () => {
   it("C3 rejects id 600 in the hns primary gap but accepts it in the emerald secondary range", () => {
     const bytes = Buffer.alloc(8); bytes.writeUInt16LE(600);
     writeFileSync(join(root, "data/layouts/Test/map.bin"), bytes);
-    proj = { ...proj, tileset: (s) => stubTileset(s, s === "Primary" ? 512 : 128) };
+    writeFileSync(join(root, "Primary.bin"), Buffer.alloc(512 * 16));
+    writeFileSync(join(root, "Secondary.bin"), Buffer.alloc(128 * 16));
+    proj = { ...proj, tileset: (s) => stubTileset(s, s === "gTileset_Primary" ? 512 : 128) };
     expect(gbaMapDefects(proj, "Test")).toEqual([]);
     proj = { ...proj, splitFor: () => ({ metatiles: 640, tiles: 640, pals: 7, version: "hns" }) };
     onlyDefect("gameplay", "data/layouts/Test/map.bin");
@@ -85,13 +105,47 @@ describe("GBA structural defects", () => {
     editMap({ warp_events: [{ ...warp, dest_map: "MAP_UNKNOWN_X" }] });
     onlyDefect("build", "data/maps/Test/map.json");
   });
+  it("reports C4 for the undefined MAP_NONE destination", () => {
+    editMap({ warp_events: [{ ...warp, dest_map: "MAP_NONE" }] });
+    expect(onlyDefect("build", "data/maps/Test/map.json").message).toContain("MAP_NONE");
+  });
+  it.each(["Primary", "Secondary"])("C3 reads changed %s metatiles on the same Project", (tileset) => {
+    proj = openProject(root);
+    // Warm the actual Project cache before changing its on-disk source.
+    proj.tileset(`gTileset_${tileset}`);
+    const bytes = Buffer.alloc(8); bytes.writeUInt16LE(tileset === "Primary" ? 3 : 513);
+    writeFileSync(join(root, "data/layouts/Test/map.bin"), bytes);
+    expect(gbaMapDefects(proj, "Test")).toEqual([]);
+    writeFileSync(join(root, `${tileset}.bin`), Buffer.alloc(16));
+    onlyDefect("gameplay", "data/layouts/Test/map.bin");
+    writeFileSync(join(root, `${tileset}.bin`), Buffer.alloc(4 * 16));
+    expect(gbaMapDefects(proj, "Test")).toEqual([]);
+  });
+  it.each(["{", '{"id":"MAP_DEST","warp_events":{}}'])("keeps selected defects when an unrelated map is unreadable: %s", (bad) => {
+    writeFileSync(proj.paths.mapJson("Dest"), bad);
+    writeFileSync(join(root, "data/layouts/Test/map.bin"), Buffer.alloc(10));
+    // Its hidden id must not produce false missing-destination/connection warnings.
+    editMap({ warp_events: [warp], connections: [{ map: "MAP_DEST", offset: 0, direction: "up" }] });
+    onlyDefect("size", "data/layouts/Test/map.bin");
+  });
+  it("still checks a readable destination's warp count with an unreadable third map", () => {
+    mkdirSync(proj.paths.mapDir("Other"), { recursive: true });
+    writeFileSync(proj.paths.mapGroupsJson, JSON.stringify({ group_order: ["g"], g: ["Test", "Dest", "Other"] }));
+    writeFileSync(proj.paths.mapJson("Other"), "{");
+    editMap({ warp_events: [{ ...warp, dest_warp_id: "1" }] });
+    expect(onlyDefect("gameplay", "data/maps/Test/map.json").message).toContain("destination index 1");
+  });
+  it.each(["{", '{"warp_events":{}}'])("names an unreadable selected map: %s", (bad) => {
+    writeFileSync(proj.paths.mapJson("Test"), bad);
+    expect(() => gbaMapDefects(proj, "Test")).toThrow("data/maps/Test/map.json");
+  });
   it("reports C5 at the 0-based count boundary and accepts index zero", () => {
     editMap({ warp_events: [warp] });
     expect(gbaMapDefects(proj, "Test")).toEqual([]);
     editMap({ warp_events: [{ ...warp, dest_warp_id: "1" }] });
     onlyDefect("gameplay", "data/maps/Test/map.json");
   });
-  it.each(["MAP_DYNAMIC", "MAP_UNDEFINED", "MAP_NONE"])("accepts special map %s", (dest_map) => {
+  it.each(["MAP_DYNAMIC", "MAP_UNDEFINED"])("accepts special map %s", (dest_map) => {
     editMap({ warp_events: [{ ...warp, dest_map, dest_warp_id: "999" }] });
     expect(gbaMapDefects(proj, "Test")).toEqual([]);
   });

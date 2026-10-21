@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { DEFECT_KIND_LABEL, type DataDefect } from "@pokemap/core/src/defects/types.js";
 
-export function DefectsBanner({ defects }: { defects: DataDefect[] }) {
+export function DefectsBanner({ defects, error }: { defects: DataDefect[]; error?: string | null }) {
   const [expanded, setExpanded] = useState(false);
-  if (defects.length === 0) return null;
+  if (defects.length === 0 && !error) return null;
 
   return (
     <div className="app__event-op-error" role="alert">
+      {error && <div>Could not check this map for defects: {error}</div>}
       <ul className="gbc-app__defects-list">
         {(expanded ? defects : defects.slice(0, 5)).map((defect, index) => (
           <li key={index}>

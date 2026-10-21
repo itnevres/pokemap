@@ -2,20 +2,26 @@ import { readFileSync } from "node:fs";
 import type { Project } from "../project.js";
 import { parseMap, parseMapGroups } from "../load/maps.js";
 import { parseLayouts } from "../load/layouts.js";
+import { parseTilesetPaths } from "../load/tilesets.js";
 import { parseBlocks } from "../load/blocks.js";
 import { sizeDefect } from "./size.js";
 import type { DataDefect } from "./types.js";
 
 import type { SymbolIndex } from "./symbols.js";
 
-const SPECIAL_MAPS = new Set(["MAP_DYNAMIC", "MAP_UNDEFINED", "MAP_NONE"]);
+const SPECIAL_MAPS = new Set(["MAP_DYNAMIC", "MAP_UNDEFINED"]);
 const SPECIAL_WARPS = new Set(["WARP_ID_NONE", "WARP_ID_DYNAMIC", "WARP_ID_SECRET_BASE"]);
 
 /** Read source data afresh: Project.map/layout caches can predate a successful save. */
 export function gbaMapDefects(proj: Project, mapName: string, _opts?: { symbols?: SymbolIndex }): DataDefect[] {
   const names = parseMapGroups(readFileSync(proj.paths.mapGroupsJson, "utf8")).allMapNames();
   if (!names.includes(mapName)) throw new Error(`unknown map ${mapName}`);
-  const map = parseMap(readFileSync(proj.paths.mapJson(mapName), "utf8"));
+  const readMap = (name: string) => {
+    const path = proj.paths.mapJson(name);
+    try { return parseMap(readFileSync(path, "utf8")); }
+    catch (error) { throw new Error(`${path}: ${error instanceof Error ? error.message : String(error)}`); }
+  };
+  const map = readMap(mapName);
   const layout = parseLayouts(readFileSync(proj.paths.layoutsJson, "utf8")).layouts.find((l) => l.id === map.layout);
   if (!layout) throw new Error(`no layout ${map.layout} for ${mapName}`);
   const file = `data/maps/${mapName}/map.json`;
@@ -32,8 +38,19 @@ export function gbaMapDefects(proj: Project, mapName: string, _opts?: { symbols?
   // bounds alone cannot tell them from errors. See the Task 3 report.
 
   const split = proj.splitFor(layout).metatiles;
-  const primary = proj.tileset(layout.primaryTileset).metatileCount;
-  const ceiling = Math.min(split + proj.tileset(layout.secondaryTileset).metatileCount, proj.constants.metatilesTotal);
+  const tilesets = parseTilesetPaths(
+    readFileSync(proj.paths.tilesetHeadersH, "utf8"),
+    readFileSync(proj.paths.tilesetMetatilesH, "utf8"),
+    [readFileSync(proj.paths.tilesetGraphicsH, "utf8"), readFileSync(proj.paths.tilesetGraphicsC, "utf8")],
+  );
+  const count = (symbol: string) => {
+    const paths = tilesets.get(symbol);
+    if (!paths) throw new Error(`Unknown tileset ${symbol} in ${proj.paths.tilesetHeadersH}`);
+    // Eight u16 tile entries per metatile, as in loadTileset; no art or cached tileset is needed.
+    return readFileSync(`${proj.paths.root}/${paths.metatilesBin}`).length / 16;
+  };
+  const primary = count(layout.primaryTileset);
+  const ceiling = Math.min(split + count(layout.secondaryTileset), proj.constants.metatilesTotal);
   const badIds = [...new Set(parseBlocks(raw, proj.profile).slice(0, layout.width * layout.height)
     .map((b) => b.metatileId).filter((id) => id < split ? id >= primary : id >= ceiling))].sort((a, b) => a - b);
   if (badIds.length) add("gameplay", `Metatile id(s) ${badIds.join(", ")} are out of range for this layout's split.`,
@@ -41,14 +58,24 @@ export function gbaMapDefects(proj: Project, mapName: string, _opts?: { symbols?
     layout.blockdataFilepath);
 
   // Resolve by the declared id, never by a guessed conversion of directory names.
-  const byId = new Map(names.map((name) => {
-    const m = name === mapName ? map : parseMap(readFileSync(proj.paths.mapJson(name), "utf8"));
-    return [m.id, m] as const;
-  }));
+  const byId = new Map([[map.id, map]]);
+  let complete = true;
+  for (const name of names) {
+    if (name === mapName) continue;
+    try {
+      const other = readMap(name);
+      byId.set(other.id, other);
+    } catch {
+      // An unreadable map may declare any id. Keep local/known-target checks, but
+      // do not claim an unresolved destination is missing from an incomplete index.
+      complete = false;
+    }
+  }
   map.warpEvents.forEach((warp, i) => {
     if (SPECIAL_MAPS.has(warp.destMap)) return;
     const dest = byId.get(warp.destMap);
     if (!dest) {
+      if (!complete) return;
       add("build", `Warp ${i} destination ${warp.destMap} does not exist in data/maps/map_groups.json.`,
         `Set warp ${i} dest_map in ${file} to a map id listed in data/maps/map_groups.json.`);
       return;
@@ -64,7 +91,7 @@ export function gbaMapDefects(proj: Project, mapName: string, _opts?: { symbols?
   if (map.objectEvents.length > 64) add("gameplay", `${map.objectEvents.length} object events exceed OBJECT_EVENT_TEMPLATES_COUNT (64).`,
     `Reduce object_events in ${file} to at most 64 (include/constants/global.h: OBJECT_EVENT_TEMPLATES_COUNT).`);
   map.connections.forEach((connection, i) => {
-    if (!byId.has(connection.map)) add("build", `Connection ${i} destination ${connection.map} does not exist in data/maps/map_groups.json.`,
+    if (complete && !byId.has(connection.map)) add("build", `Connection ${i} destination ${connection.map} does not exist in data/maps/map_groups.json.`,
       `Set connection ${i} map in ${file} to a map id listed in data/maps/map_groups.json.`);
   });
   return out;

@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { createServer, type PokemapServer } from "../src/index.js";
 import { SUBJECT_ROOT, hasProject } from "@pokemap/core/test/helpers/corpus.js";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { norm } from "@pokemap/core/src/config/paths.js";
 
 let s: PokemapServer;
@@ -373,5 +376,49 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("server", () => {
 
   it("400s a non-integer metatile id", async () => {
     expect((await get("/api/metatile/PetalburgCity_Layout/abc.png")).status).toBe(400);
+  });
+});
+
+
+describe("defects route parse failures (temporary project)", () => {
+  let root: string, server: PokemapServer;
+  beforeAll(async () => {
+    root = mkdtempSync(join(tmpdir(), "pokemap-defects-api-"));
+    for (const dir of ["include", "data/maps/Test", "data/maps/Other", "data/layouts", "src/data/tilesets"]) {
+      mkdirSync(join(root, dir), { recursive: true });
+    }
+    const put = (path: string, data: string | Buffer) => writeFileSync(join(root, path), data);
+    put("include/fieldmap.h", "");
+    put("data/maps/map_groups.json", JSON.stringify({ group_order: ["g"], g: ["Test", "Other"] }));
+    for (const name of ["Test", "Other"]) put(`data/maps/${name}/map.json`, JSON.stringify({
+      id: `MAP_${name.toUpperCase()}`, name, layout: "L", warp_events: [], object_events: [],
+    }));
+    put("data/layouts/layouts.json", JSON.stringify({ layouts: [{ id: "L", name: "L", width: 2, height: 2,
+      primary_tileset: "gTileset_Test", secondary_tileset: "gTileset_Test", blockdata_filepath: "data/layouts/map.bin" }] }));
+    put("data/layouts/map.bin", Buffer.alloc(10)); // Known C1 independent of cross-map lookups.
+    put("src/data/tilesets/headers.h", "const struct Tileset gTileset_Test = {\n.metatiles = gMetatiles_Test,\n.metatileAttributes = gAttributes_Test,\n};");
+    put("src/data/tilesets/metatiles.h", 'const u16 gMetatiles_Test[] = INCBIN_U16("./metatiles.bin");\nconst u16 gAttributes_Test[] = INCBIN_U16("./attributes.bin");');
+    put("src/data/tilesets/graphics.h", "");
+    put("src/graphics.c", "");
+    put("metatiles.bin", Buffer.alloc(16));
+    put("attributes.bin", Buffer.alloc(2));
+    put("tiles.png", Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAMAAAAoyzS7AAAAA1BMVEUAAACnej3aAAAACklEQVR4nGNgAAAAAgABSK+kcQAAAABJRU5ErkJggg==", "base64"));
+    server = await createServer({ projectPath: root, port: 0 });
+  });
+  afterAll(async () => {
+    await server?.close();
+    if (root) rmSync(root, { recursive: true, force: true });
+  });
+  it.each(["{", '{"warp_events":{}}'])("returns the selected defect despite unrelated malformed JSON/events: %s", async (bad) => {
+    writeFileSync(join(root, "data/maps/Other/map.json"), bad);
+    const r = await fetch(`http://127.0.0.1:${server.port}/api/defects/Test`);
+    expect(r.status).toBe(200);
+    expect(await r.json()).toMatchObject({ defects: [{ kind: "size", file: "data/layouts/map.bin" }] });
+  });
+  it("returns 500 with the selected map filename when it is malformed", async () => {
+    writeFileSync(join(root, "data/maps/Test/map.json"), "{");
+    const r = await fetch(`http://127.0.0.1:${server.port}/api/defects/Test`);
+    expect(r.status).toBe(500);
+    expect(await r.json()).toMatchObject({ error: expect.stringContaining("data/maps/Test/map.json") });
   });
 });

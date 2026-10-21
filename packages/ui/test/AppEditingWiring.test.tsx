@@ -53,6 +53,7 @@ function makeFetchMock() {
       return ok({ map: LAYOUT.map, isDirty: true, warpRenumberWarnings: [] });
     }
     // The two dialogs fetch on mount; their load-failure paths are not under test.
+    if (url.startsWith("/api/defects/")) return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ defects: [] }) } as Response);
     return Promise.reject(new Error(`unexpected fetch ${url}`));
   });
 }
@@ -163,6 +164,7 @@ describe.each(["gba", "gbc"] as const)("%s Indicator adapter", family => {
       if (url === "/api/map/PalletTown") return ok(family === "gba" ? LAYOUT : GBC_LAYOUT);
       if (url === "/api/indicator/PalletTown/suggestions") return ok(SUGGESTIONS);
       if (url === "/api/edit/PalletTown/indicator/add") return ok(payload);
+      if (url.startsWith("/api/defects/")) return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ defects: [] }) } as Response);
       return Promise.reject(new Error(`unexpected fetch ${url}`));
     }));
     render(<RuntimeHarness family={family} />);
@@ -188,6 +190,7 @@ describe.each(["gba", "gbc"] as const)("%s Indicator adapter", family => {
       if (url === "/api/map/PalletTown") return ok(family === "gba" ? LAYOUT : GBC_LAYOUT);
       if (url === "/api/indicator/PalletTown/suggestions") return ok(SUGGESTIONS);
       if (url === "/api/edit/PalletTown/indicator/add") return ok({ map: {}, events: {}, blocks: [], isDirty: true, scriptLabel: SCRIPT });
+      if (url.startsWith("/api/defects/")) return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ defects: [] }) } as Response);
       return Promise.reject(new Error(`unexpected fetch ${url}`));
     }));
     render(<RuntimeHarness family={family} />);
@@ -209,6 +212,7 @@ describe.each(["gba", "gbc"] as const)("%s Indicator adapter", family => {
       if (url === "/api/map/PalletTown") return ok(family === "gba" ? LAYOUT : GBC_LAYOUT);
       if (url === "/api/indicator/PalletTown/suggestions") return ok(SUGGESTIONS);
       if (url === "/api/edit/PalletTown/indicator/add") return ok(payload);
+      if (url.startsWith("/api/defects/")) return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ defects: [] }) } as Response);
       return Promise.reject(new Error(`unexpected fetch ${url}`));
     }));
     render(<RuntimeHarness family={family} />);
@@ -230,6 +234,7 @@ describe.each(["gba", "gbc"] as const)("%s Indicator adapter", family => {
       if (url === "/api/map/PalletTown") return ok(family === "gba" ? LAYOUT : GBC_LAYOUT);
       if (url === "/api/indicator/PalletTown/suggestions") return ok(SUGGESTIONS);
       if (url === "/api/edit/PalletTown/indicator/add") return ok(payload);
+      if (url.startsWith("/api/defects/")) return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ defects: [] }) } as Response);
       return Promise.reject(new Error(`unexpected fetch ${url}`));
     }));
     render(<RuntimeHarness family={family} />);
@@ -252,6 +257,7 @@ describe.each(["gba", "gbc"] as const)("%s Indicator adapter", family => {
       if (url === "/api/map/PalletTown") return ok(family === "gba" ? LAYOUT : GBC_LAYOUT);
       if (url === "/api/indicator/PalletTown/suggestions") return ok(SUGGESTIONS);
       if (url === "/api/edit/PalletTown/indicator/add") return new Promise<Response>(r => { resolve = r; });
+      if (url.startsWith("/api/defects/")) return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ defects: [] }) } as Response);
       return Promise.reject(new Error(`unexpected fetch ${url}`));
     }));
     render(<RuntimeHarness family={family} />);

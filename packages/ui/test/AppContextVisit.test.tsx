@@ -62,6 +62,7 @@ function makeFetchMock() {
     if (url === "/api/species") return ok([]);
     if (url.startsWith("/api/warps/")) return ok({ warps: [] });
     if (url.startsWith("/api/encounters/")) return ok({ methods: [] });
+    if (url.startsWith("/api/defects/")) return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ defects: [] }) } as Response);
     return Promise.reject(new Error(`unexpected fetch ${url}`));
   });
 }
