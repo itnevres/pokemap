@@ -127,3 +127,37 @@ describe("EventInspector", () => {
     await waitFor(() => expect(button.disabled).toBe(false));
   });
 });
+
+describe("EventInspector Duplicate (Plan 10b D6)", () => {
+  const props = { onMove: vi.fn(), onDelete: vi.fn().mockResolvedValue(undefined), onAdd: vi.fn().mockResolvedValue(undefined) };
+  const dup = () => screen.getByRole("button", { name: /^duplicat/i }) as HTMLButtonElement;
+
+  it("is disabled with nothing selected", () => {
+    render(<EventInspector selected={null} {...props} onDuplicate={vi.fn().mockResolvedValue(undefined)} />);
+    expect(dup().disabled).toBe(true);
+  });
+
+  it("calls onDuplicate once and is disabled while in flight", async () => {
+    let resolve!: () => void;
+    const onDuplicate = vi.fn(() => new Promise<void>((r) => { resolve = r; }));
+    render(<EventInspector selected={objectEvent} {...props} onDuplicate={onDuplicate} />);
+    fireEvent.click(dup());
+    expect(onDuplicate).toHaveBeenCalledTimes(1);
+    expect(dup().disabled).toBe(true);
+    expect((screen.getByRole("button", { name: /delete/i }) as HTMLButtonElement).disabled).toBe(true);
+    resolve();
+    await waitFor(() => expect(dup().disabled).toBe(false));
+  });
+
+  it("is disabled while a Delete is in flight", () => {
+    render(<EventInspector selected={objectEvent} {...props} onDelete={vi.fn(() => new Promise<void>(() => {}))} onDuplicate={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: /delete/i }));
+    expect(dup().disabled).toBe(true);
+  });
+
+  it("duplicateDisabledReason disables it and becomes the title", () => {
+    render(<EventInspector selected={objectEvent} {...props} onDuplicate={vi.fn()} duplicateDisabledReason="The map already has 64 object events" />);
+    expect(dup().disabled).toBe(true);
+    expect(dup().title).toBe("The map already has 64 object events");
+  });
+});
