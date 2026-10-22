@@ -1282,8 +1282,8 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("POST /api/world/dungeons (GBC
     base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   });
   afterEach(async () => {
-    await new Promise<void>((resolve) => server.close(() => resolve()));
-    removeTemp(root);
+    if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
+    if (root) removeTemp(root);
   });
 
   it("exposes sidecar.dungeonAutoLayout, true by default", async () => {
@@ -1294,6 +1294,9 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("POST /api/world/dungeons (GBC
     const on = await world();
     const [manual, auto] = singletons(on);
     expect(manual && auto).toBeTruthy();
+    expect(on.placements[auto!]).toBeDefined();
+    const conflictKey = on.conflicts[0]!.key;
+    expect((await fetch(`${base}/api/world/conflicts/accept`, { method: "POST", body: JSON.stringify({ key: conflictKey, accepted: true }) })).status).toBe(200);
     const sidecarPath = `${root}/.pokemap/world.json`;
     const placed = await fetch(`${base}/api/world/placement`, { method: "POST", body: JSON.stringify({ map: manual, x: 11, y: 12 }) });
     expect(placed.status).toBe(200);
@@ -1303,6 +1306,11 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("POST /api/world/dungeons (GBC
     expect(await r.json()).toEqual({ dungeonAutoLayout: false });
     const off = await world();
     expect(off.sidecar.dungeonAutoLayout).toBe(false);
+    const gone = new Set(singletons(on).filter((n) => n !== manual));
+    expect(Object.keys(off.placements).sort()).toEqual(Object.keys(on.placements).filter((n) => !gone.has(n)).sort());
+    for (const [name, placement] of Object.entries(off.placements)) {
+      if (!singletons(on).includes(name)) expect(placement).toEqual(on.placements[name]);
+    }
     expect(off.placements[auto!]).toBeUndefined();
     expect(off.placements[manual!]).toMatchObject({ manual: true, x: 11, y: 12, width: on.placements[manual!]!.width, height: on.placements[manual!]!.height });
     expect(off.placements[manual!]!.width).toBeGreaterThan(0);
@@ -1310,6 +1318,10 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("POST /api/world/dungeons (GBC
     expect(after.dungeonAutoLayout).toBe(false);
     expect(after.manualPlacements).toEqual(before.manualPlacements);
     expect(after.acceptedConflicts).toEqual(before.acceptedConflicts);
+    expect(after.acceptedConflicts).toEqual([conflictKey]);
+    expect(off.conflicts.find((c) => c.key === conflictKey)?.accepted).toBe(true);
+    expect((await toggle({ enabled: true })).status).toBe(200);
+    expect((await world()).conflicts.find((c) => c.key === conflictKey)?.accepted).toBe(true);
   });
 
   it("toggle on restores the earlier payload exactly", async () => {
@@ -1319,7 +1331,7 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("POST /api/world/dungeons (GBC
     expect(await world()).toEqual(on);
   });
 
-  it.each([["{}"], ['{"enabled":"yes"}'], ["not json"], ["[]"]])("bad body %s is a 400 and writes nothing", async (body) => {
+  it.each([["{}"], ['{"enabled":"yes"}'], ["not json"], ["[]"], ["null"]])("bad body %s is a 400 and writes nothing", async (body) => {
     const r = await fetch(`${base}/api/world/dungeons`, { method: "POST", body });
     expect(r.status).toBe(400);
     expect(existsSync(`${root}/.pokemap/world.json`)).toBe(false);

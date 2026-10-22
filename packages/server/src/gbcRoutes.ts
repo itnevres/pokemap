@@ -69,10 +69,11 @@ import { createGbcEditRoutes } from "./gbcEditRoutes.js";
  * the fallthrough below, not by this list. `sign/` ends in a required next
  * segment (`sign/NAME/suggestions`), so its alternative doesn't need a
  * trailing `(/|$)`. `warps/` and `dungeons` left this list in D3;
+ * `world/dungeons` left in Plan 10b Task 7a;
  * `species/NAME/icon.png` left in Plan 6c B1; `edit/` left in Plan 7 Task 4
  * (`gbcEditRoutes.ts` serves it).
  */
-const GBA_ONLY_ROUTE_RE = /^\/api\/(sign\/)/;
+const GBA_ONLY_ROUTE_RE = /^\/api\/sign\//;
 
 /**
  * `decodeURIComponent` throws a `URIError` on a malformed percent-escape
@@ -217,13 +218,15 @@ export function buildGbcWorldPayload(proj: GbcProject, world: GbcWorld, sidecar:
   }));
   const hidden = new Set([...world.placements.keys()].filter((name) => !shown.has(name)));
   const sizes = new Map([...world.placements].map(([name, p]) => [name, { width: p.width, height: p.height }]));
+  const singletonNames = new Set(world.components.filter((c) => c.maps.length === 1).map((c) => c.maps[0]!));
   const automatic = placeNearWarps({ placements: world.placements, shown, hidden, warps, sizes, gap: 4,
-    singletons: new Set(world.components.filter((c) => c.maps.length === 1).map((c) => c.maps[0]!)),
+    singletons: singletonNames,
     manualPlacements: sidecar.manualPlacements });
   // Off: singleton components without a manual placement leave the world (they show in the Unplaced rail), as GBA's resolveWorldPlacements does.
-  const singletonNames = new Set(world.components.filter((c) => c.maps.length === 1).map((c) => c.maps[0]!));
+  const keep = (name: string) =>
+    sidecar.dungeonAutoLayout || !singletonNames.has(name) || Object.hasOwn(sidecar.manualPlacements, name);
   const placements = Object.fromEntries(
-    [...applySidecar(automatic, sidecar)].filter(([name]) => sidecar.dungeonAutoLayout || !singletonNames.has(name) || Object.hasOwn(sidecar.manualPlacements, name)).map(([name, placement]) => [name, {
+    [...applySidecar(automatic, sidecar)].filter(([name]) => keep(name)).map(([name, placement]) => [name, {
       ...placement,
       mapType: mapTypeByName.get(name) ?? "",
       manual: name in sidecar.manualPlacements,
