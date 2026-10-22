@@ -488,6 +488,15 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
   const [viewport, setViewport] = useState({ w: 0, h: 0 });
   const [view, setView] = useState<GbcWorldView>({ zoom: 1, pan: { x: 0, y: 0 }, fitted: false });
   const [placementOverrides, setPlacementOverrides] = useState<Record<string, { x: number; y: number }>>({});
+  const savedOverrides = useRef<Record<string, { x: number; y: number }>>({});
+  useEffect(() => {
+    if (!world) return;
+    setPlacementOverrides((overrides) => Object.fromEntries(Object.entries(overrides).filter(([name, at]) => {
+      const saved = savedOverrides.current[name];
+      if (!saved || saved.x !== at.x || saved.y !== at.y || !world.placements[name]) return true;
+      return false;
+    })));
+  }, [world]);
   const { zoom, pan, fitted } = view;
   // Every singleton map's own size (its component's bounds): sizes a rail drop of a map absent from `placements`.
   const sizeByMap = useMemo(() => {
@@ -1016,6 +1025,8 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
     fetchGuarded("/api/world/placement", isPlacementSaved, undefined, { method: "POST", body: JSON.stringify({ map, x, y }) })
       .then(() => {
         setSaveError(null);
+        savedOverrides.current[map] = { x, y };
+        reloadWorld();
         onPlacementSaved?.(map);
       })
       .catch((e: unknown) => setSaveError(e instanceof Error ? e.message : String(e)));

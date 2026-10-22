@@ -51,3 +51,8 @@ it("numeric literals resolve without treating radix digits as identifiers", () =
   for (const expr of ["0", "-1", "0xFF", "$ff", "%101", "0b101", "123"]) expect(resolvesAll(expr, idx)).toBe(true);
   expect(resolvesAll("MISSING + 0xFF", idx)).toBe(false);
 });
+
+it("qualified local labels do not replace the current global scope", () => {
+  const idx = buildGbcSymbolIndex(fixture({ "maps/A.asm": "Global:\nGlobal.First:\n.Second:\nNext:\n.Local:\n" }));
+  expect([...idx.labels]).toEqual(["Global", "Global.First", "Global.Second", "Next", "Next.Local"]);
+});

@@ -68,7 +68,7 @@ export function useGbcRuntime({ selected, mode, requestPrompt }: RuntimeArgs): F
     else requestPrompt(go);
   };
 
-  const defectsBanner = ready && <DefectsBanner key={selected} defects={ready.defects} />;
+  const defectsBanner = ready && <DefectsBanner key={selected} defects={ready.defects} incomplete={ready.incomplete} />;
 
   const editingProps = {
     time, session, hoveredMetatileId,

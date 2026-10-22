@@ -17,7 +17,7 @@ const VALID_BODY = {
   collisionInfo: { "0": { name: "COLL_FLOOR", category: "land", talk: false } },
   events: { warps: [], coords: [], bgs: [], objects: [], sceneScripts: [], callbacks: [], objectConsts: [] },
   defects: [],
-  paddingWidth: 3,
+  incomplete: [], paddingWidth: 3,
 };
 
 describe("useGbcMap", () => {

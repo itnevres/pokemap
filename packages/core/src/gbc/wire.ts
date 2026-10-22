@@ -22,6 +22,7 @@ import type { Block, Collision, DataDefect, GbcMap, GbcMapEvents } from "./model
 import type { Placement, Component } from "./world/connections.js";
 import type { WireConflict } from "../world/conflictAcceptance.js";
 import type { GbcEncounterSource } from "./analyse/atlas.js";
+import type { IncompleteDefectCheck } from "../defects/types.js";
 
 /** One of `Collision`'s three coarse buckets (`TileCollisionTable`'s low nybble, `load/tileset.ts`'s `loadGbcCollisionInfo`). */
 export type GbcCollisionCategory = "land" | "water" | "wall";
@@ -62,6 +63,7 @@ export interface GbcMapPayload {
   events: GbcMapEvents;
   /** Layout defects, then event defects, then out-of-bounds-event defects, in that order. */
   defects: DataDefect[];
+  incomplete: IncompleteDefectCheck[];
   paddingWidth: number;
 }
 

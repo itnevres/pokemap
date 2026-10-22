@@ -26,7 +26,7 @@
  * Task 2's five new routes should follow rather than growing this function
  * into one 400-line handler the way `index.ts` did.
  */
-import { gbcMapDefects } from "@pokemap/core/src/defects/gbc.js";
+import { checkGbcMapDefects } from "@pokemap/core/src/defects/gbc.js";
 import type { SymbolIndex } from "@pokemap/core/src/defects/symbols.js";
 import { createSymbolIndexCache } from "./projectSymbols.js";
 import { openGbcProject, type GbcProject } from "@pokemap/core/src/gbc/project.js";
@@ -180,7 +180,7 @@ export function buildGbcMapPayload(proj: GbcProject, map: GbcMap, symbols?: Symb
   }
 
   const { events } = loadGbcMapEvents(proj.root, map);
-  const defects = gbcMapDefects(proj, map.name, { symbols });
+  const { defects, incomplete } = checkGbcMapDefects(proj, map.name, { symbols });
 
   return {
     family: "gbc",
@@ -193,6 +193,7 @@ export function buildGbcMapPayload(proj: GbcProject, map: GbcMap, symbols?: Symb
     collisionInfo,
     events,
     defects,
+    incomplete,
     paddingWidth: proj.paddingWidth(),
   } satisfies GbcMapPayload;
 }
@@ -384,7 +385,7 @@ export function createGbcProjectHandler(root: string): ProjectHandler {
         const name = decodeMapName(rawName);
         if (name === undefined) return send(400, { error: `malformed map name ${rawName}` });
         if (!mapNames.has(name)) return send(404, { error: `no map ${name}` });
-        return send(200, buildGbcMapPayload(proj, proj.map(name), symbols.get()));
+        return send(200, symbols.check((index) => buildGbcMapPayload(proj, proj.map(name), index)));
       }
 
       // Both PNG routes below resolve the map name FIRST (404), then

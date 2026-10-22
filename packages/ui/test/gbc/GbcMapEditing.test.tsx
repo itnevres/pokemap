@@ -22,7 +22,7 @@ const DATA: GbcMapPayload = {
   blocks: BLOCKS, metatileCount: 6, tileset: { constName: "T", name: "T" },
   collision: Array.from({ length: 6 }, () => ({ tl: 0, tr: 0, bl: 0, br: 0 })),
   collisionInfo: { "0": { name: "COLL_FLOOR", category: "land", talk: false } },
-  events: EVENTS, defects: [], paddingWidth: 3,
+  events: EVENTS, defects: [], incomplete: [], paddingWidth: 3,
 };
 
 function stub(over: Partial<UseGbcEditSessionResult> = {}): UseGbcEditSessionResult {

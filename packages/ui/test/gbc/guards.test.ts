@@ -114,11 +114,18 @@ function validGbcMapPayload(): GbcMapPayload {
     collisionInfo: { "0": { name: "COLL_FLOOR", category: "land", talk: false }, "7": { name: "COLL_WALL", category: "wall", talk: false } },
     events: { warps: [], coords: [], bgs: [], objects: [], sceneScripts: [], callbacks: [], objectConsts: [] },
     defects: [],
-    paddingWidth: 3,
+    incomplete: [], paddingWidth: 3,
   };
 }
 
 describe("isGbcMapPayload", () => {
+  it("requires well-formed incomplete-check details", () => {
+    const p = validGbcMapPayload();
+    expect(isGbcMapPayload({ ...p, incomplete: [{ file: "maps/Other.asm", reason: "C5 unavailable" }] })).toBe(true);
+    for (const incomplete of [undefined, {}, [null], [{ file: "a" }], [{ file: 3, reason: "bad" }]]) {
+      expect(isGbcMapPayload({ ...p, incomplete })).toBe(false);
+    }
+  });
   it("accepts a real-shaped payload", () => {
     expect(isGbcMapPayload(validGbcMapPayload())).toBe(true);
   });

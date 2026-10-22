@@ -39,7 +39,10 @@ export function buildGbcSymbolIndex(root: string): SymbolIndex {
       if (label) {
         const name = label[1]!;
         if (name.startsWith(".")) idx.labels.add(scope + name);
-        else { scope = name; idx.labels.add(name); }
+        else {
+          if (!name.includes(".")) scope = name;
+          idx.labels.add(name);
+        }
       }
       const constant = /^\s*(?:DEF\s+([A-Za-z_]\w*)\b|([A-Za-z_]\w*)\s+(?:EQU|SET|=)\s|(?:const|const_skip_name|map_const)\s+([A-Za-z_]\w*)\b)/.exec(text);
       if (constant) idx.constants.add((constant[1] ?? constant[2] ?? constant[3])!);

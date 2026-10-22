@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, it } from "vitest";
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { gbcMapDefects } from "../../src/defects/gbc.js";
+import { gbcMapDefects, checkGbcMapDefects } from "../../src/defects/gbc.js";
 import { openGbcProject, type GbcProject } from "../../src/gbc/project.js";
 import { parseMapEvents, outOfBoundsEventDefects } from "../../src/gbc/load/events.js";
 
@@ -113,6 +113,19 @@ it("C5 rereads destination event counts", () => {
   expect(check()).toEqual([]);
   write("maps/Dest.asm", events("Dest"));
   expect(check()[0]!.kind).toBe("gameplay");
+});
+it.each(["missing section", "sixteen objects"])("C5 isolates a destination with %s and retains other defects", (bad) => {
+  warp();
+  write("maps/Shared.blk", Buffer.alloc(5));
+  write("maps/Dest.asm", bad === "missing section" ? "Dest_MapScripts:\n" : events("Dest", "", Array(16).fill(object).join("\n")));
+  const result = checkGbcMapDefects(proj, "Test");
+  expect(result.defects.map((d) => d.kind)).toEqual(["size"]);
+  expect(result.incomplete).toEqual([{ file: "maps/Dest.asm", reason: expect.stringContaining("C5") }]);
+});
+it("C5 backup warp skips reading malformed destination events", () => {
+  warp("DEST", -1);
+  write("maps/Dest.asm", "broken");
+  expect(checkGbcMapDefects(proj, "Test")).toEqual({ defects: [], incomplete: [] });
 });
 it.each(["Missing, DEST", "Dest, UNKNOWN", "Dest, TEST"])("C11 checks both name and constant: %s", (target) => {
   edit("data/maps/attributes.asm", "\tmap_attributes Dest", `\tconnection north, ${target}, 0\n\tmap_attributes Dest`);

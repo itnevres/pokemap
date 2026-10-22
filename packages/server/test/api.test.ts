@@ -1,4 +1,6 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import { createServer, type PokemapServer } from "../src/index.js";
 import { SUBJECT_ROOT, hasProject } from "@pokemap/core/test/helpers/corpus.js";
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
@@ -439,6 +441,32 @@ describe("defects route parse failures (temporary project)", () => {
       writeFileSync(mapFile, before);
       writeFileSync(otherFile, otherBefore);
       writeFileSync(join(root, "data/layouts/map.bin"), Buffer.alloc(10));
+    }
+  });
+  it("retains structural defects when the GBA index throws and retries the next request", async () => {
+    const isolated = await createServer({ projectPath: root, port: 0 });
+    const readDir = fs.readdirSync;
+    const spy = vi.spyOn(fs, "readdirSync").mockImplementation(((...args: Parameters<typeof readDir>) => {
+      if (String(args[0]).replace(/\\/g, "/") === root.replace(/\\/g, "/")) throw new Error("injected unreadable symbol directory");
+      return Reflect.apply(readDir, fs, args);
+    }) as typeof readDir);
+    syncBuiltinESMExports();
+    try {
+      const get = () => fetch(`http://127.0.0.1:${isolated.port}/api/defects/Test`);
+      const first = await get();
+      expect(first.status).toBe(200);
+      const partial = await first.json() as { defects: unknown[]; incomplete: { reason: string }[] };
+      expect(partial).toMatchObject({ defects: [expect.objectContaining({ kind: "size" })], incomplete: expect.arrayContaining([
+        expect.objectContaining({ reason: expect.stringContaining("C7-C9") }),
+      ]) });
+      spy.mockRestore(); syncBuiltinESMExports();
+      const second = await get();
+      expect(second.status).toBe(200);
+      const complete = await second.json() as { defects: unknown[]; incomplete: { reason: string }[] };
+      expect(complete.defects).toEqual(partial.defects);
+      expect(complete.incomplete.some((entry) => entry.reason.includes("C7-C9"))).toBe(false);
+    } finally {
+      spy.mockRestore(); syncBuiltinESMExports(); await isolated.close();
     }
   });
   it("returns 500 with the selected map filename when it is malformed", async () => {

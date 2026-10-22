@@ -119,6 +119,8 @@ export function isGbcMapPayload(x: unknown): x is GbcMapPayload {
   if (!Array.isArray(ev.warps) || !Array.isArray(ev.coords) || !Array.isArray(ev.bgs) || !Array.isArray(ev.objects)) return false;
 
   if (!Array.isArray(x.defects)) return false;
+  if (!Array.isArray(x.incomplete) || !x.incomplete.every((entry) =>
+    isRecord(entry) && typeof entry.file === "string" && typeof entry.reason === "string")) return false;
 
   return true;
 }

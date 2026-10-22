@@ -306,7 +306,7 @@ export function createProjectHandler(root: string): ProjectHandler {
       if (defectsMatch && req.method === "GET") {
         const name = decodeURIComponent(defectsMatch[1]!);
         if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
-        return send(200, checkGbaMapDefects(project, name, { symbols: symbols.get() }));
+        return send(200, symbols.check((index) => checkGbaMapDefects(project, name, { symbols: index })));
       }
 
       const mapMatch = /^\/api\/map\/(.+)$/.exec(url.pathname);

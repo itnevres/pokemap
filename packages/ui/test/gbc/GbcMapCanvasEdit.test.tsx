@@ -25,7 +25,7 @@ const DATA: GbcMapPayload = {
   collisionInfo: { "0": { name: "COLL_FLOOR", category: "land", talk: false } },
   events: NO_EVENTS,
   defects: [],
-  paddingWidth: 3,
+  incomplete: [], paddingWidth: 3,
 };
 
 const STAMP = { width: 1, height: 1, cells: [{ metatileId: 9 }] };

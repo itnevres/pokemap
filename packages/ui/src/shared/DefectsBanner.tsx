@@ -8,7 +8,7 @@ export function DefectsBanner({ defects, error, incomplete = [] }: { defects: Da
   return (
     <div className="app__event-op-error" role="alert">
       {error && <div>Could not check this map for defects: {error}</div>}
-      {incomplete.length > 0 && <div>Some maps could not be read, so warp and connection checks may be incomplete: {incomplete.map((entry) => entry.file).join(", ")}</div>}
+      {incomplete.length > 0 && <div>Some defect checks may be incomplete: {incomplete.map((entry) => `${entry.file}: ${entry.reason}`).join(", ")}</div>}
       <ul className="gbc-app__defects-list">
         {(expanded ? defects : defects.slice(0, 5)).map((defect, index) => (
           <li key={index}>

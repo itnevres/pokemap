@@ -6,7 +6,7 @@ import { parseConstDefs, labelTail, scanCalls, codeLines, stripComment } from ".
 import { parseTilesetsTable } from "../gbc/load/tileset.js";
 import { parseIncbins } from "../gbc/load/incbin.js";
 import { sizeDefect } from "./size.js";
-import type { DataDefect } from "./types.js";
+import type { DataDefect, MapDefectsCheck } from "./types.js";
 import { resolvesAll, type SymbolIndex } from "./symbols.js";
 import type { GbcMapEvents } from "../gbc/model/types.js";
 
@@ -51,12 +51,17 @@ export function gbcEventSymbolDefects(name: string, events: GbcMapEvents, text: 
 
 /** Read structural sources afresh, without loading artwork or using project caches. */
 export function gbcMapDefects(proj: GbcProject, mapName: string, opts?: { symbols?: SymbolIndex }): DataDefect[] {
+  return checkGbcMapDefects(proj, mapName, opts).defects;
+}
+
+export function checkGbcMapDefects(proj: GbcProject, mapName: string, opts?: { symbols?: SymbolIndex }): MapDefectsCheck {
   const read = (file: string) => readFileSync(`${proj.root}/${file}`, "utf8");
   const { maps, map: getMap } = loadGbcMaps(proj.root);
   const map = getMap(mapName);
   const file = `maps/${mapName}.asm`;
   const { events } = loadGbcMapEvents(proj.root, map);
   const out: DataDefect[] = [];
+  const incomplete: MapDefectsCheck["incomplete"] = [];
   const add = (kind: DataDefect["kind"], message: string, fix: string, target = file) =>
     out.push({ file: target, kind, message, fix });
   const raw = readFileSync(`${proj.root}/${map.blkPath}`);
@@ -97,7 +102,11 @@ export function gbcMapDefects(proj: GbcProject, mapName: string, opts?: { symbol
     if (warp.destWarp === -1) return; // Engine backup warp, not a 1-based destination index.
     let count = warpCounts.get(dest.constName);
     if (count === undefined) {
-      count = loadGbcMapEvents(proj.root, dest).events.warps.length;
+      try { count = loadGbcMapEvents(proj.root, dest).events.warps.length; }
+      catch (error) {
+        incomplete.push({ file: `maps/${dest.name}.asm`, reason: `C5 destination warp check unavailable: ${error instanceof Error ? error.message : String(error)}` });
+        return;
+      }
       warpCounts.set(dest.constName, count);
     }
     if (warp.destWarp < 1 || warp.destWarp > count) add("gameplay",
@@ -112,5 +121,5 @@ export function gbcMapDefects(proj: GbcProject, mapName: string, opts?: { symbol
       "data/maps/attributes.asm");
   });
   if (opts?.symbols) out.push(...gbcEventSymbolDefects(mapName, events, read(file), opts.symbols));
-  return out;
+  return { defects: out, incomplete };
 }

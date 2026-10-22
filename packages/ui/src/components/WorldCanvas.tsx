@@ -371,6 +371,8 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
   const encounterCacheRef = useRef<Map<string, EncounterCacheEntry>>(new Map());
   const warpCacheRef = useRef<Map<string, WarpCacheEntry>>(new Map());
   const dragRef = useRef<DragState>(null);
+  const placementEdits = useRef(new Map<string, number>());
+  const savedPlacementEdits = useRef(new Map<string, number>());
   const conflictBadgesRef = useRef<Array<{ x: number; y: number; text: string; key: string; map: string; accepted: boolean }>>([]);
   // Review fix: whether real pointer movement happened during the
   // mousedown-to-mouseup cycle that is about to produce a `click`. The
@@ -532,16 +534,24 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
   // API completeness and packages/server/test/world.test.ts's coverage.
   useEffect(() => {
     let cancelled = false;
+    const savedAtRequest = new Map(savedPlacementEdits.current);
     setLoadError(null);
     fetchGuarded("/api/world", isWorldPayload)
       .then((d) => {
         if (cancelled) return;
-        setWorld({
-          placements: new Map(Object.entries(d.placements)),
+        setWorld((previous) => {
+          const placements = new Map(Object.entries(d.placements));
+          for (const [name, version] of placementEdits.current) {
+            const local = previous?.placements.get(name);
+            if (local && version > (savedAtRequest.get(name) ?? 0)) placements.set(name, local);
+          }
+          return {
+          placements,
           components: d.components,
           conflicts: d.conflicts,
           verticalLinks: d.verticalLinks,
           sidecarDungeonAutoLayout: d.sidecar.dungeonAutoLayout,
+          };
         });
         setCompositeVersion((v) => v + 1);
         // Review fix: the server's own truth has now landed -- stop
@@ -1499,8 +1509,11 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
     return null;
   }, [visible, sizeByMap]);
 
-  const postPlacement = (map: string, x: number, y: number) => {
-    fetch("/api/world/placement", {
+  const postPlacements = (placements: Array<{ map: string; x: number; y: number }>) => {
+    if (!placements.length) return;
+    void Promise.all(placements.map(({ map, x, y }) => {
+      const version = placementEdits.current.get(map) ?? 0;
+      return fetch("/api/world/placement", {
       method: "POST",
       body: JSON.stringify({ map, x, y }),
     })
@@ -1510,7 +1523,8 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
         // refusal on a corrupted world.json) resolves normally and landed
         // here silently discarded, with no banner and no console output.
         if (!r.ok) throw new Error(`POST /api/world/placement -> ${r.status}`);
-        onPlacementSaved?.(map);
+        savedPlacementEdits.current.set(map, Math.max(version, savedPlacementEdits.current.get(map) ?? 0));
+        return map;
       })
       .catch((e: unknown) => {
         // The optimistic local move already reflects the drag -- a failed
@@ -1519,8 +1533,17 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
         // loadError (which claims the whole world failed to load, over a
         // canvas that is working fine).
         setSaveError(e instanceof Error ? e.message : String(e));
+        return null;
+      });
+    })).then((saved) => {
+        const names = saved.filter((name): name is string => name !== null);
+        if (names.length) {
+          setRefetchGen((g) => g + 1);
+          names.forEach((name) => onPlacementSaved?.(name));
+        }
       });
   };
+  const postPlacement = (map: string, x: number, y: number) => postPlacements([{ map, x, y }]);
 
   // Review fix: a plain mousedown used to start a map-drag whenever the
   // cursor happened to be over a placement, with no way to tell that
@@ -1654,6 +1677,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
       const rect = e.currentTarget.getBoundingClientRect();
       const w = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
       const nx = Math.round(w.x - drag.grabDX), ny = Math.round(w.y - drag.grabDY);
+      placementEdits.current.set(drag.map, (placementEdits.current.get(drag.map) ?? 0) + 1);
       setWorld((prev) => {
         if (!prev) return prev;
         const existing = prev.placements.get(drag.map);
@@ -1671,6 +1695,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
       const anchorStart = drag.starts.get(drag.anchorMap)!;
       const rawX = w.x - drag.grabDX, rawY = w.y - drag.grabDY;
       const dx = Math.round(rawX) - anchorStart.x, dy = Math.round(rawY) - anchorStart.y;
+      for (const name of drag.starts.keys()) placementEdits.current.set(name, (placementEdits.current.get(name) ?? 0) + 1);
       setWorld((prev) => {
         if (!prev) return prev;
         // Review fix: mirrors the "map" branch's own no-op guard just above
@@ -1730,10 +1755,12 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
   const commitGroupDrag = () => {
     const drag = dragRef.current;
     if (drag?.kind !== "group") return;
+    const changed: Array<{ map: string; x: number; y: number }> = [];
     for (const [name, start] of drag.starts) {
       const p = world?.placements.get(name);
-      if (p && (p.x !== start.x || p.y !== start.y)) postPlacement(name, p.x, p.y);
+      if (p && (p.x !== start.x || p.y !== start.y)) changed.push({ map: name, x: p.x, y: p.y });
     }
+    postPlacements(changed);
   };
 
   const commitMarquee = () => {
@@ -1850,6 +1877,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
     const rect = e.currentTarget.getBoundingClientRect();
     const w = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
     const x = Math.round(w.x - size.width / 2), y = Math.round(w.y - size.height / 2);
+    placementEdits.current.set(map, (placementEdits.current.get(map) ?? 0) + 1);
     setWorld((prev) => {
       if (!prev) return prev;
       const next = new Map(prev.placements);

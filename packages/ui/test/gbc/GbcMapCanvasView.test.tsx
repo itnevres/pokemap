@@ -33,7 +33,7 @@ const DATA: GbcMapPayload = {
     coords: [], bgs: [], objects: [], sceneScripts: [], callbacks: [], objectConsts: [],
   },
   defects: [],
-  paddingWidth: 3,
+  incomplete: [], paddingWidth: 3,
 };
 
 const PIXEL_WIDTH = 128; // (2+2)*32

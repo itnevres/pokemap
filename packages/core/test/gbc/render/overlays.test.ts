@@ -64,7 +64,7 @@ function fixturePayload(): GbcMapPayload {
     },
     events: { warps: [], coords: [], bgs: [], objects: [], sceneScripts: [], callbacks: [], objectConsts: [] },
     defects: [],
-    paddingWidth: 3,
+    incomplete: [], paddingWidth: 3,
   };
 }
 
@@ -371,7 +371,7 @@ describe("real-corpus case: NewBarkTown", () => {
       collisionInfo,
       events,
       defects: [],
-      paddingWidth: proj.paddingWidth(),
+      incomplete: [], paddingWidth: proj.paddingWidth(),
     };
 
     const info = gbcStepInfo(payload, 11, 13)!;

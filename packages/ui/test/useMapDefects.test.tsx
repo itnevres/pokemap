@@ -66,7 +66,7 @@ it.each([{ defects: [] }, { defects: [defect] }])("shows the partial-check line 
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ defects, incomplete }) }));
   const { rerender } = render(<Probe />);
   await waitFor(() => expect(screen.getByRole("alert").textContent).toContain(
-    "Some maps could not be read, so warp and connection checks may be incomplete: data/maps/Other/map.json, data/maps/Next/map.json"));
+    "Some defect checks may be incomplete: data/maps/Other/map.json: invalid JSON, data/maps/Next/map.json: unreadable"));
   expect(screen.queryByRole("button")).toBeNull();
   if (defects.length) expect(screen.getByText("wrong size")).toBeTruthy();
   rerender(<Probe name={null} />);

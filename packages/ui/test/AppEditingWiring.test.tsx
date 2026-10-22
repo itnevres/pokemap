@@ -141,7 +141,7 @@ const GBC_LAYOUT = {
   layout: { blkPath: "maps/PalletTown.blk", width: 2, height: 1 },
   blocks: [{ metatileId: 0 }, { metatileId: 1 }], metatileCount: 2, tileset: { constName: "T", name: "T" },
   collision: Array.from({ length: 2 }, () => ({ tl: 0, tr: 0, bl: 0, br: 0 })), collisionInfo: { "0": { name: "COLL_FLOOR", category: "land", talk: false } },
-  events: { warps: [], coords: [], bgs: [], objects: [], sceneScripts: [], callbacks: [], objectConsts: [] }, defects: [], paddingWidth: 3,
+  events: { warps: [], coords: [], bgs: [], objects: [], sceneScripts: [], callbacks: [], objectConsts: [] }, defects: [], incomplete: [], paddingWidth: 3,
 };
 const SUGGESTIONS = { species: [{ species: "RATTATA", name: "Rattata", percent: 40 }], placement: { x: 1, y: 0 } };
 const SCRIPT = "PalletTownPokemonIndicator1";

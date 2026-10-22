@@ -40,7 +40,7 @@ const PAYLOAD = {
   tileset: { constName: "TILESET_OLIVINE", name: "TilesetOlivine" },
   collision: [{ tl: 0, tr: 0, bl: 0, br: 0 }, { tl: 7, tr: 7, bl: 7, br: 7 }],
   collisionInfo: { "0": { name: "COLL_FLOOR", category: "land", talk: false } },
-  events: EMPTY_EVENTS, defects: [], paddingWidth: 3,
+  events: EMPTY_EVENTS, defects: [], incomplete: [], paddingWidth: 3,
 };
 const ok = (b: unknown) => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(b) } as Response);
 

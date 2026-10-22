@@ -43,7 +43,7 @@ function mapPayload(name: string, overrides: Partial<GbcMapPayload> = {}): GbcMa
     },
     events: { warps: [], coords: [], bgs: [], objects: [], sceneScripts: [], callbacks: [], objectConsts: [] },
     defects: [],
-    paddingWidth: 3,
+    incomplete: [], paddingWidth: 3,
     ...overrides,
   };
 }
@@ -483,6 +483,19 @@ describe("GbcApp", () => {
     expect(alert.textContent).not.toContain("outside the 18x30 step grid");
   });
 
+  it("shows incomplete GBC checks beside structural defects in the shared banner", async () => {
+    const data = mapPayload("OlivineCity", {
+      defects: [{ file: "maps/OlivineCity.blk", kind: "size", message: "wrong size", fix: "repair blockdata" }],
+      incomplete: [{ file: "maps/Other.asm", reason: "C5 unavailable" }, { file: "project", reason: "C7-C9 unavailable" }],
+    });
+    vi.stubGlobal("fetch", makeFetchMock({ maps: { OlivineCity: data } }));
+    render(<FamilyApp adapter={gbcAdapter} />);
+    fireEvent.click(await screen.findByText("OlivineCity"));
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("C7-C9 unavailable"));
+    expect(screen.getByRole("alert").textContent).toContain("maps/Other.asm: C5 unavailable");
+    expect(screen.getByRole("alert").textContent).toContain("wrong size");
+    expect(screen.getByRole("alert").textContent).toContain("repair blockdata");
+  });
   it("the defect banner is absent when there are no defects", async () => {
     vi.stubGlobal("fetch", makeFetchMock({ maps: { OlivineCity: mapPayload("OlivineCity") } }));
     render(<FamilyApp adapter={gbcAdapter} />);
