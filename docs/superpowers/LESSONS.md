@@ -291,6 +291,10 @@ Rerun in isolation before calling either a regression. (Plan 8)
 
 **Aider tell `uv trampoline failed to canonicalize script path`**: `~/.local/bin/aider.exe` points at a deleted `%APPDATA%/uv/tools/aider-chat`. Fixed 2026-10-13: `py -m pip install --user uv`, then `uv tool install --force --python 3.12 aider-chat` (aider 0.86.2; Nemotron probe OK). (Plan 8)
 
+**`codex exec` run in the background can hang on stdin** (tell: the log holds only "Reading additional input from stdin..." and no `thread.started`; the run times out with no output). Append `< /dev/null`. (Plan 10b, twice)
+
+**A Codex implementer may run its own SDD loop and spend the quota on reviews** (tell: `docs/superpowers/task-reports/<new-slug>/` with its own ledger and spec/quality reviews in the worktree, then a usage-limit `turn.failed`). Say in the brief: no self-review, no sub-dispatch; write only the named report. (Plan 10b)
+
 **Codex `"You've hit your usage limit … try again at HH:MM"`** (turn.failed) is the user's OpenAI quota, unlike "at capacity". The partial diff stays in the tree; wait for the stated time, then `codex exec resume <thread> -m <model> "continue"` (Task 6 resumed cleanly). (Plan 8)
 
 **Codex tends to strip existing comments and reflow JSX when it restructures a component** (Task 6 `MapEditingWorkspace`): check `git diff` for deleted comments before review. (Plan 8)
