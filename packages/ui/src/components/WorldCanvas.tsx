@@ -1509,6 +1509,12 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
     return null;
   }, [visible, sizeByMap]);
 
+  // An edit version with nothing to save (a drag that ended on its start tile)
+  // or whose POST failed is settled: later /api/world reloads take the server
+  // position instead of pinning the stale local one.
+  const settlePlacementEdits = (names: Iterable<string>) => {
+    for (const name of names) savedPlacementEdits.current.set(name, Math.max(placementEdits.current.get(name) ?? 0, savedPlacementEdits.current.get(name) ?? 0));
+  };
   const postPlacements = (placements: Array<{ map: string; x: number; y: number }>) => {
     if (!placements.length) return;
     void Promise.all(placements.map(({ map, x, y }) => {
@@ -1527,6 +1533,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
         return map;
       })
       .catch((e: unknown) => {
+        savedPlacementEdits.current.set(map, Math.max(version, savedPlacementEdits.current.get(map) ?? 0));
         // The optimistic local move already reflects the drag -- a failed
         // POST means it will not survive a reload, so this goes through
         // saveError (dismissible, does not disturb the canvas) rather than
@@ -1749,6 +1756,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
       // that rounds back to the same tile) must not silently POST an
       // unchanged position and spend a write for nothing.
       if (p && (p.x !== drag.startTileX || p.y !== drag.startTileY)) postPlacement(drag.map, p.x, p.y);
+      else settlePlacementEdits([drag.map]);
     }
   };
 
@@ -1760,6 +1768,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
       const p = world?.placements.get(name);
       if (p && (p.x !== start.x || p.y !== start.y)) changed.push({ map: name, x: p.x, y: p.y });
     }
+    settlePlacementEdits([...drag.starts.keys()].filter((name) => !changed.some((c) => c.map === name)));
     postPlacements(changed);
   };
 

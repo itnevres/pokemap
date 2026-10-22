@@ -489,9 +489,13 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
   const [view, setView] = useState<GbcWorldView>({ zoom: 1, pan: { x: 0, y: 0 }, fitted: false });
   const [placementOverrides, setPlacementOverrides] = useState<Record<string, { x: number; y: number }>>({});
   const savedOverrides = useRef<Record<string, { x: number; y: number }>>({});
+  // Overrides with nothing to save (a drag that ended on its start tile) or whose POST failed: the next reload drops them.
+  const settledOverrides = useRef(new Set<string>());
   useEffect(() => {
     if (!world) return;
+    const settled = settledOverrides.current;
     setPlacementOverrides((overrides) => Object.fromEntries(Object.entries(overrides).filter(([name, at]) => {
+      if (settled.has(name)) return false;
       const saved = savedOverrides.current[name];
       if (!saved || saved.x !== at.x || saved.y !== at.y || !world.placements[name]) return true;
       return false;
@@ -1029,7 +1033,10 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
         reloadWorld();
         onPlacementSaved?.(map);
       })
-      .catch((e: unknown) => setSaveError(e instanceof Error ? e.message : String(e)));
+      .catch((e: unknown) => {
+        settledOverrides.current.add(map);
+        setSaveError(e instanceof Error ? e.message : String(e));
+      });
   };
 
   const [layoutError, setLayoutError] = useState<string | null>(null);
@@ -1073,6 +1080,7 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
       const x = Math.round(point.x - drag.grabX), y = Math.round(point.y - drag.grabY);
       drag.x = x;
       drag.y = y;
+      settledOverrides.current.delete(drag.map);
       setPlacementOverrides((overrides) => ({ ...overrides, [drag.map]: { x, y } }));
       return;
     }
@@ -1094,7 +1102,9 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
 
   const commitMapDrag = () => {
     const drag = dragRef.current;
-    if (drag?.kind === "map" && (drag.x !== drag.startX || drag.y !== drag.startY)) postPlacement(drag.map, drag.x, drag.y);
+    if (drag?.kind !== "map") return;
+    if (drag.x !== drag.startX || drag.y !== drag.startY) postPlacement(drag.map, drag.x, drag.y);
+    else settledOverrides.current.add(drag.map);
   };
 
   const onMouseUp = () => {
@@ -1352,6 +1362,7 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
               const rect = e.currentTarget.getBoundingClientRect();
               const point = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
               const x = Math.round(point.x - placement.width / 2), y = Math.round(point.y - placement.height / 2);
+              settledOverrides.current.delete(map);
               setPlacementOverrides((overrides) => ({ ...overrides, [map]: { x, y } }));
               postPlacement(map, x, y);
             }}

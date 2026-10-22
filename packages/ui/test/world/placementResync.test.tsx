@@ -37,14 +37,15 @@ it.each(["gba", "gbc"] as const)("%s keeps a newer drag when an older placement 
 });
 afterEach(() => { HTMLCanvasElement.prototype.getContext = originalContext; restoreViewport(); vi.unstubAllGlobals(); });
 
-function server(family: "gba" | "gbc") {
-  let gets = 0;
+function server(family: "gba" | "gbc", failFirstPost = false) {
+  let gets = 0; let posts = 0;
   const posted: string[] = [];
   const manual: Record<string, { x: number; y: number }> = {};
   const ok = (body: unknown) => Promise.resolve({ ok: true, status: 200, json: async () => body } as Response);
   const fetcher = vi.fn((url: string, init?: RequestInit) => {
     if (url === "/api/world/placement") {
       const p = JSON.parse(String(init?.body)) as { map: string; x: number; y: number };
+      if (failFirstPost && ++posts === 1) return Promise.resolve({ ok: false, status: 500, json: async () => ({}) } as Response);
       posted.push(p.map); manual[p.map] = p;
       return ok({ ok: true });
     }
@@ -94,6 +95,31 @@ describe.each(["gba", "gbc"] as const)("%s placement canvas resync", (family) =>
     });
     expect(api.gets()).toBe(2);
     expect(screen.queryAllByRole("alert").map((node) => node.textContent)).toEqual([]);
+  });
+});
+
+describe.each(["gba", "gbc"] as const)("%s unsaved edit does not pin a map against later reloads", (family) => {
+  it.each([["same-tile Shift-drag", false], ["failed placement POST", true]] as const)("%s shows the server position after a reload", async (_name, failFirst) => {
+    const api = server(family, failFirst); vi.stubGlobal("fetch", api.fetcher);
+    const { container } = render(family === "gba" ? <WorldCanvas /> : <GbcWorldCanvas time="day" />);
+    await waitFor(() => expect(screen.getByRole("switch", { name: "Dungeon auto-layout" }).getAttribute("aria-checked")).toBe("false"));
+    fireEvent.click(screen.getByRole("button", { name: "Fit" }));
+    const canvas = container.querySelector("canvas.world-canvas__stage")!;
+    // Neighbour sits at screen x 100..200. A sub-tile move stays on its tile (no POST); a 1-tile move POSTs and gets a 500.
+    fireEvent.mouseDown(canvas, { clientX: 120, clientY: 70, button: 0, shiftKey: true });
+    fireEvent.mouseMove(canvas, failFirst ? { clientX: 120, clientY: 60, shiftKey: true } : { clientX: 121, clientY: 71, shiftKey: true });
+    fireEvent.mouseUp(canvas);
+    await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
+    if (!failFirst) expect(api.posted).toEqual([]);
+    const drop = new MouseEvent("drop", { bubbles: true, clientX: 50, clientY: 100 });
+    Object.defineProperty(drop, "dataTransfer", { value: { getData: () => "Unplaced" } });
+    fireEvent(canvas, drop);
+    await waitFor(() => expect(api.gets()).toBe(2));
+    // The reload now has Neighbour at y=5 (screen y 100..200); (150,175) is inside it only once the server position shows.
+    await waitFor(() => {
+      fireEvent.mouseMove(canvas, { clientX: 150, clientY: 175 });
+      expect(container.querySelector(".world-canvas__hover")?.textContent ?? "").toContain("Neighbour");
+    });
   });
 });
 
