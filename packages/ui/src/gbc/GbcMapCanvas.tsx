@@ -12,7 +12,7 @@ import { useContextMapFit } from "../shared/useWorldContext.js";
 import { useCanvasAutoFit, useCanvasView, useCanvasZoom } from "../shared/useCanvasView.js";
 import { CanvasZoomBar } from "../shared/CanvasZoomBar.js";
 import { OverlayToggleGroup } from "../shared/OverlayToggleGroup.js";
-import { LegendBar } from "../shared/LegendBar.js";
+import { EncountersLegendItem, EventsLegendItems, LegendBar } from "../shared/LegendBar.js";
 import type { SettledChain } from "../shared/useStrokeChain.js";
 import type { GbcTimeOfDay } from "./time.js";
 import { EncounterBorder, type EncounterBorderEntry } from "../components/EncounterBorder.js";
@@ -727,34 +727,8 @@ export function GbcMapCanvas({ mapName, data: payload, time, hoveredMetatile, ed
               </span>
             </>
           )}
-          {toggles.events && (
-            <>
-              <span className="map-canvas__legend-item">
-                <i className="map-canvas__swatch map-canvas__swatch--event-object" /> Object
-              </span>
-              <span className="map-canvas__legend-item">
-                <i className="map-canvas__swatch map-canvas__swatch--event-warp" /> Warp
-              </span>
-              <span className="map-canvas__legend-item">
-                <i className="map-canvas__swatch map-canvas__swatch--event-coord" /> Coord
-              </span>
-              <span className="map-canvas__legend-item">
-                <i className="map-canvas__swatch map-canvas__swatch--event-bg" /> Bg
-              </span>
-            </>
-          )}
-          {encountersOn &&
-            (encounterError ? (
-              <span className="map-canvas__legend-item" role="alert">
-                {encounterError}
-              </span>
-            ) : (
-              <span className="map-canvas__legend-item">
-                {encounterSummaries?.length === 0
-                  ? "Encounters: none on this map"
-                  : `Encounters: hover or focus a sprite; dimmed = not at ${time}, + = level can roll up to 4 higher`}
-              </span>
-            ))}
+          {toggles.events && <EventsLegendItems />}
+          {encountersOn && <EncountersLegendItem error={encounterError} empty={encounterSummaries?.length === 0} hint={`Encounters: hover or focus a sprite; dimmed = not at ${time}, + = level can roll up to 4 higher`} />}
         </LegendBar>
       )}
 

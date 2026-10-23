@@ -11,7 +11,7 @@ import { useContextMapFit } from "../shared/useWorldContext.js";
 import { useCanvasAutoFit, useCanvasView, useCanvasZoom } from "../shared/useCanvasView.js";
 import { CanvasZoomBar } from "../shared/CanvasZoomBar.js";
 import { OverlayToggleGroup } from "../shared/OverlayToggleGroup.js";
-import { LegendBar } from "../shared/LegendBar.js";
+import { EncountersLegendItem, EventsLegendItems, LegendBar } from "../shared/LegendBar.js";
 import type { SettledChain } from "../shared/useStrokeChain.js";
 import { readBlock, type Stamp } from "@pokemap/core/src/edit/paint.js";
 import type { CollisionElevation } from "./CollisionPalette.js";
@@ -847,32 +847,8 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSignPick, 
               <i className="map-canvas__swatch map-canvas__swatch--elevation" /> Elevation (low → high)
             </span>
           )}
-          {toggles.events && (
-            <>
-              <span className="map-canvas__legend-item">
-                <i className="map-canvas__swatch map-canvas__swatch--event-object" /> Object
-              </span>
-              <span className="map-canvas__legend-item">
-                <i className="map-canvas__swatch map-canvas__swatch--event-warp" /> Warp
-              </span>
-              <span className="map-canvas__legend-item">
-                <i className="map-canvas__swatch map-canvas__swatch--event-coord" /> Coord
-              </span>
-              <span className="map-canvas__legend-item">
-                <i className="map-canvas__swatch map-canvas__swatch--event-bg" /> Bg
-              </span>
-            </>
-          )}
-          {encountersOn &&
-            (encounterError ? (
-              <span className="map-canvas__legend-item" role="alert">
-                {encounterError}
-              </span>
-            ) : (
-              <span className="map-canvas__legend-item">
-                {encounterSummaries?.length === 0 ? "Encounters: none on this map" : "Encounters: hover or focus a sprite"}
-              </span>
-            ))}
+          {toggles.events && <EventsLegendItems />}
+          {encountersOn && <EncountersLegendItem error={encounterError} empty={encounterSummaries?.length === 0} hint="Encounters: hover or focus a sprite" />}
         </LegendBar>
       )}
 
