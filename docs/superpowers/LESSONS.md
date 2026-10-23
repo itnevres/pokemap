@@ -299,6 +299,12 @@ Rerun in isolation before calling either a regression. (Plan 8)
 
 **Codex `"You've hit your usage limit … try again at HH:MM"`** (turn.failed) is the user's OpenAI quota, unlike "at capacity". The partial diff stays in the tree; wait for the stated time, then `codex exec resume <thread> -m <model> "continue"` (Task 6 resumed cleanly). (Plan 8)
 
+**`codex exec resume` has no `-C`; it runs in the shell's cwd** (tell: the scratch worktree shows no diff after a resumed fix round, and the main checkout has the edits). `cd` into the worktree before resuming. (Plan 11 T1)
+
+**Codex drops rationale comments when it moves code** (tell: the moved block in `shared/` has none of the "why" comments the original carried, e.g. the passive-wheel-listener note). Diff the removed comment lines and restore the load-bearing ones in the new home. (Plan 11 T1)
+
+**Extraction reviews ask for a ruling on every leftover duplicated run** (tell: re-review after re-review names one more run). Run `measure.py ... --all` up front and put a ruling for every run (draw path, hit-test, stroke, call-site input, declaration) in the task report before the first review. Plan 11 T1 took three review rounds without it. (Plan 11 T1)
+
 **Codex tends to strip existing comments and reflow JSX when it restructures a component** (Task 6 `MapEditingWorkspace`): check `git diff` for deleted comments before review. (Plan 8)
 
 **Subagents hit rate limits mid fix-round.** The recipe held: `git status`/`log`/`diff`, the external-state hashes, stray node processes, then SendMessage the same agent with "verify first, then redo from the start". (Plan 6c Phase E)

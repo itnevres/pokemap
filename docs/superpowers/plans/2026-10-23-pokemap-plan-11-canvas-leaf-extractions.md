@@ -1,5 +1,7 @@
 # Plan 11: canvas leaf extractions — Implementation Plan
 
+**STATUS (2026-10-23):** Task 1 done (`626427f`..`0916b7c`, reviews clean). Next: Task 2.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Move every shared run outside the draw path of the two canvas pairs into `packages/ui/src/shared/`, fix the Plan 10b deferred world-canvas minors (T7b, Final fix, N1), and give GBA's two "Collision" buttons distinct accessible names.
