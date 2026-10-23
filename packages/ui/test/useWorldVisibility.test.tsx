@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { useWorldVisibility } from "../src/hooks/useWorldVisibility.js";
 
 afterEach(() => vi.unstubAllGlobals());
@@ -61,5 +61,20 @@ describe("useWorldVisibility", () => {
     rerender({ enabled: false });
     await waitFor(() => expect(result.current.placed).toBeNull());
     expect(result.current.error).toBeNull();
+  });
+
+  it("refresh() refetches in place, keeping placed until the new answer lands (Plan 10b SR9)", async () => {
+    const bodies = [WORLD_BODY, { placements: { ...WORLD_BODY.placements, Cave: { mapType: "MAP_TYPE_INDOOR", manual: true } } }];
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(bodies[Math.min(fetchMock.mock.calls.length - 1, 1)]) }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderHook(() => useWorldVisibility(true));
+    await waitFor(() => expect(result.current.placed).not.toBeNull());
+    expect(result.current.placed!.has("Cave")).toBe(false);
+
+    act(() => result.current.refresh());
+    expect(result.current.placed).not.toBeNull();
+    await waitFor(() => expect(result.current.placed!.get("Cave")).toEqual({ mapType: "MAP_TYPE_INDOOR", manual: true }));
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

@@ -275,6 +275,10 @@ Rerun in isolation before calling either a regression. (Plan 8)
 
 **Bash heredocs mangle backslashes in replacement text** (tell: an Edit or script pattern containing `\r` or `\n` reports "not found"). Use the Edit tool, or a quoted `<<'EOF'` heredoc into Python, for text with backslashes. (Plan 10a)
 
+- **The full gate at default workers crashed this PC three times (2026-10-20/21, Kernel-Power 41), each time mid-suite.** Each crash zeroed the same 7-8 GBA subject files (Route35 `map.json`, Johto `map.bin`s); back up, restore those paths from subject HEAD, keep the user's own porcelain lines. Run the gate as `npm test -- --maxWorkers=4 --minWorkers=1` (Vitest refuses `--maxWorkers` alone: "options.minThreads and options.maxThreads must not conflict", and runs 0 tests); same pass count, no crash since. (Plan 10b)
+- **A power cut during the gate zeroes subject files.** Several corpus tests edit the real GBA subject in place and restore it (`core/test/write/corpus.test.ts`, `cli/test/writeCommands.test.ts`). An unclean shutdown mid-run (2026-10-20, Kernel-Power 41) left 8 subject files all-NUL at their old size; the next gate then re-wrote the zeros. Tell: a burst of unrelated corpus failures ("Unexpected token" on a map.json, world/coverage tests) and new subject porcelain lines with fresh mtimes. Check `tr -d ' ' < f | wc -c` = 0, back up, restore only files outside the user's own baseline lines from the subject's HEAD, then re-check the manifest hashes.
+- **PowerShell `Out-File` mangles a patch.** It rewrites LF as CRLF, so `git apply` fails with "patch does not apply". Write patches from Git Bash (`git diff --cached --binary > file`), or strip CRs with `sed 's/$//'`.
+
 ## Delegation to Codex / Aider / Subagents
 
 **Never `taskkill /IM codex.exe`:** it ends every Codex process on the machine, including the user's own sessions. Kill the background shell job or the one PID instead. Also, before resuming Codex on a worktree, check that `git checkout` didn't abort (tell: "Aborting" and HEAD unchanged; intent-to-add files from `git add -N` block it, `git reset` first). (Plan 9)
@@ -286,6 +290,10 @@ Rerun in isolation before calling either a regression. (Plan 8)
 **Codex `"Selected model is at capacity"`** (turn.failed in `--json` events) is transient OpenAI capacity for `gpt-6.1-sol`, not the user's quota; it recurred mid-run after a trivial probe passed. Use `-m gpt-6-astra` (slugs in `~/.codex/models_cache.json`), or `codex exec resume <thread> -m gpt-6-astra "<continue>"`. (Plan 8)
 
 **Aider tell `uv trampoline failed to canonicalize script path`**: `~/.local/bin/aider.exe` points at a deleted `%APPDATA%/uv/tools/aider-chat`. Fixed 2026-10-13: `py -m pip install --user uv`, then `uv tool install --force --python 3.12 aider-chat` (aider 0.86.2; Nemotron probe OK). (Plan 8)
+
+**`codex exec` run in the background can hang on stdin** (tell: the log holds only "Reading additional input from stdin..." and no `thread.started`; the run times out with no output). Append `< /dev/null`. (Plan 10b, twice)
+
+**A Codex implementer may run its own SDD loop and spend the quota on reviews** (tell: `docs/superpowers/task-reports/<new-slug>/` with its own ledger and spec/quality reviews in the worktree, then a usage-limit `turn.failed`). Say in the brief: no self-review, no sub-dispatch; write only the named report. (Plan 10b)
 
 **Codex `"You've hit your usage limit … try again at HH:MM"`** (turn.failed) is the user's OpenAI quota, unlike "at capacity". The partial diff stays in the tree; wait for the stated time, then `codex exec resume <thread> -m <model> "continue"` (Task 6 resumed cleanly). (Plan 8)
 
@@ -310,3 +318,6 @@ The raw per-phase lessons this was distilled from, with the session narrative, a
 **Aider crashes in this repo with `BadObject: b'1b37016…'` / "Is your git repo corrupted?"** (GitPython vs this repo's objects; `git fsck` is not needed). Tell: exits before any edit, `.aider.chat.history.md` appears. Run Aider with `--no-git --no-pretty --no-fancy-input` and `TERM=dumb`; delete `.aider.*` history files after. (Plan 10a3 Task 1)
 
 **Codex (gpt-6.1-sol) can start a new file with a UTF-8 BOM.** Tell: `head -c3 file | xxd` shows `efbb bf`; a grep for `^import` on line 1 shows a stray `ï»¿`. Strip with `sed -i '1s/^ï»¿//'` before committing. (Plan 10a3 Task 1)
+- **Codex leaves junctions it does not report.** Besides a root `node_modules` junction it created `packages/{server,ui}/node_modules/@pokemap/core` junctions (Plan 10b T3). Tell: `git worktree remove` fails with "Directory not empty". List reparse points (`Get-ChildItem -Recurse -Force -Attributes ReparsePoint`), `cmd /c rmdir` each (never follows the target), then delete the folder. Never `rm -rf` a worktree before that.
+- **Codex stalls on a literal file list.** "Touch only files the brief names" made it stop and ask twice when an interface change needed a support file. The ledger's `codex-rules.md` now allows strictly needed support files, listed in the report.
+- **Strict UI fetch mocks break on any new GET.** Adding a fetch to the GBA runtime (`/api/defects`) failed tests whose mocks throw "unexpected fetch". Tell: a new `role="alert"` in unrelated App/visit-guard tests. Add the route to every strict GBA mock.

@@ -158,12 +158,12 @@ describe("renderGbcWorld: corpus", () => {
    * maps each name their own distinct `.blk`).
    */
   it("dedupeDefects collapses byte-identical {file, message} entries across different lists", () => {
-    const shared: DataDefect = { file: "maps/Shared.blk", message: "actual size 10 bytes, declared 2x2=4 -- loaded first 4 bytes, not writable" };
-    const onlyInFirst: DataDefect = { file: "maps/OnlyA.blk", message: "onlyA defect" };
-    const onlyInSecond: DataDefect = { file: "maps/OnlyB.blk", message: "onlyB defect" };
+    const shared: DataDefect = { file: "maps/Shared.blk", message: "actual size 10 bytes, expected 4 bytes", kind: "size", fix: "Correct the blockdata size in maps/Shared.blk." };
+    const onlyInFirst: DataDefect = { file: "maps/OnlyA.blk", message: "onlyA defect", kind: "size", fix: "Correct the blockdata size in maps/OnlyA.blk." };
+    const onlyInSecond: DataDefect = { file: "maps/OnlyB.blk", message: "onlyB defect", kind: "size", fix: "Correct the blockdata size in maps/OnlyB.blk." };
     // A same-file, DIFFERENT-message entry must NOT collapse with `shared` --
     // the key is (file, message) together, not `file` alone.
-    const sameFileDifferentMessage: DataDefect = { file: "maps/Shared.blk", message: "a completely different defect" };
+    const sameFileDifferentMessage: DataDefect = { file: "maps/Shared.blk", message: "a completely different defect", kind: "size", fix: "Correct the blockdata size in maps/Shared.blk." };
 
     const result = dedupeDefects([
       [shared, onlyInFirst],

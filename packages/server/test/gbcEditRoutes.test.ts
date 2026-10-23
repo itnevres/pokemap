@@ -488,16 +488,18 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbc edit routes (hermetic tem
     await post("/api/edit/ElmsLab/discard");
   });
 
-  it("11. CeruleanCave2F (oversize .blk): plan says layout-not-writable, commit is 400, the file is untouched", async () => {
+  it("11. CeruleanCave2F (oversize .blk): plan allows paint, commit is 200, all tail bytes survive", async () => {
     const C = "/api/edit/CeruleanCave2F";
     const before = read("maps/CeruleanCave2F.blk");
     expect(before).toHaveLength(400);
     await post(`${C}/paint/begin`);
     await pencil(0, 0, 3, "CeruleanCave2F");
     await post(`${C}/paint/end`);
-    expect((await plan("CeruleanCave2F")).refusals.map((x) => x.code)).toContain("layout-not-writable");
-    expect((await commit("CeruleanCave2F")).status).toBe(400);
-    expect(read("maps/CeruleanCave2F.blk").equals(before)).toBe(true);
+    expect((await plan("CeruleanCave2F")).refusals).toEqual([]);
+    expect((await commit("CeruleanCave2F")).status).toBe(200);
+    const expected = Buffer.from(before);
+    expected[0] = 3;
+    expect(read("maps/CeruleanCave2F.blk")).toEqual(expected);
     await post(`${C}/discard`);
   });
 

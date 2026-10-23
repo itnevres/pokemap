@@ -59,6 +59,38 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("GBC preview-bound saves (temp
     expect((await request("paint/end", {})).status).toBe(200);
   };
 
+  it("preserves a three-byte tail changed before preview", async () => {
+    const path = targets()[1]!;
+    const original = readFileSync(path);
+    writeFileSync(path, Buffer.concat([original, Buffer.from([77, 88, 99])]));
+    await paint();
+    writeFileSync(path, Buffer.concat([original, Buffer.from([101, 102, 103])]));
+    const plan = await preview();
+    expect((await request("commit", { fingerprint: plan.fingerprint })).status).toBe(200);
+    const expected = Buffer.concat([original, Buffer.from([101, 102, 103])]);
+    expected[0] = original[0] === 1 ? 2 : 1;
+    expect(readFileSync(path)).toEqual(expected);
+  });
+
+  it("rejects a tail-only change after preview with PLAN_CHANGED and writes nothing", async () => {
+    const path = targets()[1]!;
+    const original = readFileSync(path);
+    writeFileSync(path, Buffer.concat([original, Buffer.from([77, 88, 99])]));
+    await paint();
+    const plan = await preview();
+    writeFileSync(path, Buffer.concat([original, Buffer.from([77, 88, 100])]));
+    const before = disk();
+    const result = await request("commit", { fingerprint: plan.fingerprint });
+    expect(result.status).toBe(409);
+    expect(result.body.notice).toEqual({ code: "PLAN_CHANGED", subject: map,
+      message: "Changes were made since you opened Save", fix: "Review the updated changes and save again" });
+    expect(result.body.refusals).toEqual([]);
+    expect(result.body.fingerprint).toMatch(/^[a-f0-9]{64}$/);
+    expect(result.body.fingerprint).not.toBe(plan.fingerprint);
+    expect(disk()).toEqual(before);
+    expect(store.has(map)).toBe(true);
+  });
+
   it("commits the preview fingerprint and closes the session", async () => {
     const preparedSpy = vi.spyOn(saves, "prepareGbcSave");
     const commitSpy = vi.spyOn(saves, "commitGbcSave");

@@ -31,7 +31,7 @@ const DATA: GbcMapPayload = {
     landmark: "LANDMARK_NONE", music: "MUSIC_NONE", phoneFlag: "0", palette: "PAL_MAP_TOWN",
     fishGroup: "0", border: 9, connectionFlags: "0", connections: [],
   },
-  layout: { blkPath: "maps/NewBarkTown.blk", width: 2, height: 1, writable: true },
+  layout: { blkPath: "maps/NewBarkTown.blk", width: 2, height: 1 },
   blocks: [{ metatileId: 0 }, { metatileId: 1 }],
   metatileCount: 2,
   tileset: { constName: "TILESET_JOHTO", name: "TilesetJohto" },
@@ -49,7 +49,7 @@ const DATA: GbcMapPayload = {
     coords: [], bgs: [], objects: [], sceneScripts: [], callbacks: [], objectConsts: [],
   },
   defects: [],
-  paddingWidth: 3,
+  incomplete: [], paddingWidth: 3,
 };
 
 const PIXEL_WIDTH = 128; // (2+2)*32
@@ -415,9 +415,10 @@ describe("GbcMapCanvas", () => {
     expect(screen.getByText(/tileset TILESET_JOHTO · 2 metatiles · 2×1/)).toBeTruthy();
   });
 
-  it("shows 'not writable' when the layout isn't", async () => {
-    await mountReady({ data: { ...DATA, layout: { ...DATA.layout, writable: false } } });
-    expect(screen.getByText(/not writable/)).toBeTruthy();
+  it("keeps the normal status for a layout with a size defect", async () => {
+    await mountReady({ data: { ...DATA, defects: [{ file: DATA.layout.blkPath, kind: "size", message: "actual size 5 bytes, expected 2 bytes", fix: "Change map_const or trim/extend the blockdata." }] } });
+    expect(screen.queryByText(/not writable/)).toBeNull();
+    expect(screen.getByText(/tileset TILESET_JOHTO/)).toBeTruthy();
   });
 
   it("calls hoveredMetatile with the hovered id, and null on leave", async () => {

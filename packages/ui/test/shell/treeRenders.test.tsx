@@ -34,13 +34,13 @@ const PAYLOAD = {
     tileset: "TILESET_OLIVINE", environment: "E", landmark: "L", music: "M", phoneFlag: "0", palette: "P",
     fishGroup: "0", border: 3, connectionFlags: "0", connections: [],
   },
-  layout: { blkPath: "maps/OlivineCity.blk", width: 2, height: 1, writable: true },
+  layout: { blkPath: "maps/OlivineCity.blk", width: 2, height: 1 },
   blocks: [{ metatileId: 0 }, { metatileId: 1 }],
   metatileCount: 2,
   tileset: { constName: "TILESET_OLIVINE", name: "TilesetOlivine" },
   collision: [{ tl: 0, tr: 0, bl: 0, br: 0 }, { tl: 7, tr: 7, bl: 7, br: 7 }],
   collisionInfo: { "0": { name: "COLL_FLOOR", category: "land", talk: false } },
-  events: EMPTY_EVENTS, defects: [], paddingWidth: 3,
+  events: EMPTY_EVENTS, defects: [], incomplete: [], paddingWidth: 3,
 };
 const ok = (b: unknown) => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(b) } as Response);
 
@@ -53,7 +53,7 @@ describe("map tree render isolation (Plan 9 follow-up O2)", () => {
     let n = 0;
     vi.stubGlobal("fetch", vi.fn((url: string) => {
       if (url === "/api/groups") return ok({ groupOrder: ["OLIVINE"], groups: { OLIVINE: ["OlivineCity", "OlivinePort"] } });
-      if (url === "/api/world") return ok({ family: "gbc", blockPx: 32, placements: {}, components: [], conflicts: [] });
+      if (url === "/api/world") return ok({ family: "gbc", blockPx: 32, placements: {}, components: [], conflicts: [], sidecar: { dungeonAutoLayout: true } });
       if (url === "/api/map/OlivineCity") return ok(PAYLOAD);
       // Each reply is a new object, as the real server's are.
       if (url.startsWith("/api/edit/")) return ok({ blocks: [{ metatileId: 1 }, { metatileId: ++n % 2 }], events: EMPTY_EVENTS, isDirty: url.endsWith("/end"), canUndo: true, canRedo: false });

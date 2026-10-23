@@ -1,8 +1,12 @@
 import type { GbcWorldPayload } from "@pokemap/core/src/gbc/wire.js";
 import { isGbcWorldPayload } from "../guards.js";
-import { useGuardedFetch, type UseGuardedFetchResult } from "../../hooks/useGuardedFetch.js";
+import { useCallback, useEffect, useState } from "react";
+import { fetchGuarded, type UseGuardedFetchResult } from "../../hooks/useGuardedFetch.js";
 
-export type UseGbcWorldResult = UseGuardedFetchResult<GbcWorldPayload>;
+export interface UseGbcWorldResult extends UseGuardedFetchResult<GbcWorldPayload> {
+  /** Refetches in place: the current `data` stays until the new answer lands. */
+  reload(): void;
+}
 
 /**
  * Fetches `/api/world` once for the GBC world view -- built on the same
@@ -14,5 +18,17 @@ export type UseGbcWorldResult = UseGuardedFetchResult<GbcWorldPayload>;
  * silently-empty world.
  */
 export function useGbcWorld(enabled: boolean = true): UseGbcWorldResult {
-  return useGuardedFetch(enabled ? "/api/world" : null, isGbcWorldPayload);
+  const [data, setData] = useState<GbcWorldPayload | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [gen, setGen] = useState(0);
+  const reload = useCallback(() => setGen((g) => g + 1), []);
+  useEffect(() => {
+    if (!enabled) { setData(null); setError(null); return; }
+    let cancelled = false;
+    fetchGuarded("/api/world", isGbcWorldPayload)
+      .then((d) => { if (!cancelled) { setData(d); setError(null); } })
+      .catch((e: unknown) => { if (!cancelled) setError(e instanceof Error ? e.message : String(e)); });
+    return () => { cancelled = true; };
+  }, [enabled, gen]);
+  return { data, error, reload };
 }

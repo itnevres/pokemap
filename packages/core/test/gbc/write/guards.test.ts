@@ -32,10 +32,10 @@ describe("guardGbcSave", () => {
     expect(guardGbcSave(f.proj, s)).toEqual([]);
   });
 
-  it("12. layout-not-writable: refused only when something would be written to it", () => {
-    const f = makeFixture({ blk: [1, 2, 3, 4, 0] }); // 5 bytes for 2x2 -> real loadLayout says writable:false
+  it("12. oversized layouts allow painting and keep the tail", () => {
+    const f = makeFixture({ blk: [1, 2, 3, 4, 0] }); // 5 bytes for 2x2
     const s = openGbcEditSession(f.proj, "Testmap");
-    expect(s.layout.writable).toBe(false);
+    expect(s.layout).not.toHaveProperty("writable");
     const plan0 = planGbcSave(f.proj, s);
     expect(plan0.refusals).toEqual([]);
     expect(plan0.changes).toEqual([]);
@@ -43,10 +43,9 @@ describe("guardGbcSave", () => {
     const before = readFileSync(f.blk);
     s.blocks[0]!.metatileId = 0;
     const plan = planGbcSave(f.proj, s);
-    expect(codes(plan.refusals)).toEqual(["layout-not-writable"]);
-    expect(plan.refusals[0]!.subject).toBe("maps/TestLayout.blk");
-    expect(() => commitGbcSave(f.proj, plan)).toThrow(/save refused: layout-not-writable/);
-    expect(readFileSync(f.blk).equals(before)).toBe(true);
+    expect(plan.refusals).toEqual([]);
+    commitGbcSave(f.proj, plan);
+    expect(readFileSync(f.blk)).toEqual(Buffer.from([0, 2, 3, 4, 0]));
     expect(before).toHaveLength(5);
   });
 
@@ -56,8 +55,8 @@ describe("guardGbcSave", () => {
     expect(codes(guardGbcSave(f.proj, s))).toEqual(["metatile-out-of-range"]);
   });
 
-  it("refusals come out in the spec order (length, metatile, writable, const desync, file-changed blk, asm)", () => {
-    const f = makeFixture({ blk: [1, 2, 3, 4, 0] }); // oversize -> writable:false
+  it("refusals come out in the spec order (length, metatile, const desync, file-changed blk, asm)", () => {
+    const f = makeFixture({ blk: [1, 2, 3, 4, 0] }); // oversize stays editable
     const s = openGbcEditSession(f.proj, "Testmap");
     s.blocks.push({ metatileId: 9 });
     s.blocks[0]!.metatileId = 0;
@@ -67,7 +66,6 @@ describe("guardGbcSave", () => {
     expect(codes(guardGbcSave(f.proj, s))).toEqual([
       "blocks-length-changed",
       "metatile-out-of-range",
-      "layout-not-writable",
       "object-const-desync",
       "file-changed-on-disk",
       "file-changed-on-disk",

@@ -16,7 +16,7 @@ const WORLD = {
     OlivinePort: { map: "OlivinePort", x: 10, y: 0, width: 10, height: 10, component: 0, mapType: "TOWN", manual: false },
   },
   components: [{ index: 0, maps: ["OlivineCity", "OlivinePort"], bounds: { x: 0, y: 0, width: 20, height: 10 } }],
-  conflicts: [],
+  conflicts: [], sidecar: { dungeonAutoLayout: true },
 };
 const EMPTY_COVERAGE = { mapsWithEncounters: 0, mapsWithoutEncounters: [], sourcesByMethod: {}, levelByMap: [], unusedSpecies: [], fishGroupWithoutWater: [], defects: [] };
 
@@ -28,13 +28,13 @@ function payload(name: string): GbcMapPayload {
       tileset: "TILESET_OLIVINE", environment: "E", landmark: "L", music: "M", phoneFlag: "0", palette: "P",
       fishGroup: "0", border: 3, connectionFlags: "0", connections: [],
     },
-    layout: { blkPath: `maps/${name}.blk`, width: 10, height: 10, writable: true },
+    layout: { blkPath: `maps/${name}.blk`, width: 10, height: 10 },
     blocks: Array.from({ length: 100 }, () => ({ metatileId: 0 })),
     metatileCount: 2,
     tileset: { constName: "TILESET_OLIVINE", name: "TilesetOlivine" },
     collision: [{ tl: 0, tr: 0, bl: 0, br: 0 }, { tl: 7, tr: 7, bl: 7, br: 7 }],
     collisionInfo: { "0": { name: "COLL_FLOOR", category: "land", talk: false } },
-    events: EMPTY_EVENTS, defects: [], paddingWidth: 3,
+    events: EMPTY_EVENTS, defects: [], incomplete: [], paddingWidth: 3,
   };
 }
 

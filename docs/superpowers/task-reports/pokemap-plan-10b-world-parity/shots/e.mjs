@@ -1,0 +1,24 @@
+import { open } from "./lib.mjs";
+const { browser, page, wait, shot } = await open();
+const net = [];
+page.on("response", async (r) => { if (/\/plan|\/commit|defects/.test(r.url()) && !/\.(tsx?|js)/.test(r.url())) net.push(r.request().method() + " " + r.url().replace(/^.*\/api/, "") + " " + r.status() + " " + (await r.text().catch(()=>"")).slice(0, 400)); });
+await page.goto("http://localhost:5183/"); await wait(3000);
+await page.locator(".map-tree").getByText("CeruleanCave2F", { exact: true }).first().click(); await wait(3500);
+const out = { banner: await page.locator("[class*=defect]").allInnerTexts() };
+await shot("gbc-e-1-banner");
+await page.keyboard.press("p"); await wait(300);
+await page.mouse.click(1145, 300); await wait(500);
+out.selection = await page.getByText(/^Selection/).first().innerText().catch(() => "");
+const b = await page.locator("canvas.gbc-map-canvas__stage, canvas.map-canvas__stage").first().boundingBox(); out.box = b;
+const dirty = () => page.evaluate(() => !!document.querySelector('[data-testid="dirty-indicator"]'));
+for (const f of [0.5, 0.35, 0.65]) { await page.mouse.click(b.x + b.width * f, b.y + b.height * f); await wait(1500); if (await dirty()) break; }
+out.dirty = await dirty();
+await page.locator('.toolbar__save button[aria-label="Save Changes"]').click(); await wait(2500);
+const sd = page.locator('[role="dialog"][aria-label="Save changes"]');
+out.dialog = (await sd.innerText().catch(() => "")).slice(0, 300);
+await shot("gbc-e-2-save-dialog");
+await sd.getByRole("button", { name: "Save Changes", exact: true }).click(); await wait(3500);
+out.dirtyAfter = await dirty(); out.dialogsLeft = await page.locator('[role="dialog"]').count();
+await shot("gbc-e-3-saved");
+out.net = net.map(n => n.slice(0, 450));
+console.log(JSON.stringify(out, null, 1)); await browser.close();

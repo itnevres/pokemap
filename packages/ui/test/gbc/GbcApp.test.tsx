@@ -32,7 +32,7 @@ function mapPayload(name: string, overrides: Partial<GbcMapPayload> = {}): GbcMa
       landmark: "LANDMARK_NONE", music: "MUSIC_NONE", phoneFlag: "0", palette: "PAL_MAP_TOWN",
       fishGroup: "0", border: 3, connectionFlags: "0", connections: [],
     },
-    layout: { blkPath: `maps/${name}.blk`, width: 2, height: 1, writable: true },
+    layout: { blkPath: `maps/${name}.blk`, width: 2, height: 1 },
     blocks: [{ metatileId: 0 }, { metatileId: 1 }],
     metatileCount: 2,
     tileset: { constName: "TILESET_OLIVINE", name: "TilesetOlivine" },
@@ -43,7 +43,7 @@ function mapPayload(name: string, overrides: Partial<GbcMapPayload> = {}): GbcMa
     },
     events: { warps: [], coords: [], bgs: [], objects: [], sceneScripts: [], callbacks: [], objectConsts: [] },
     defects: [],
-    paddingWidth: 3,
+    incomplete: [], paddingWidth: 3,
     ...overrides,
   };
 }
@@ -57,7 +57,7 @@ function imgWithSrc(src: string): HTMLImageElement | undefined {
   return Array.from(document.querySelectorAll("img")).find((i) => i.getAttribute("src") === src);
 }
 
-const EMPTY_WORLD = { family: "gbc" as const, blockPx: 32 as const, placements: {}, components: [], conflicts: [] };
+const EMPTY_WORLD = { family: "gbc" as const, blockPx: 32 as const, placements: {}, components: [], conflicts: [], sidecar: { dungeonAutoLayout: true } };
 
 function makeFetchMock(opts: { groupsFail?: boolean; maps?: Record<string, GbcMapPayload | "fail">; world?: unknown } = {}) {
   return vi.fn((url: string) => {
@@ -166,7 +166,7 @@ describe("GbcApp", () => {
       const world = { family: "gbc" as const, blockPx: 32 as const, placements: {
         OlivineCity: { map: "OlivineCity", x: 0, y: 0, width: 10, height: 10, component: 0, mapType: "TOWN", manual: false },
         OlivinePort: { map: "OlivinePort", x: 30, y: 0, width: 10, height: 10, component: 1, mapType: "TOWN", manual: false },
-      }, components: [], conflicts: [] };
+      }, components: [], conflicts: [], sidecar: { dungeonAutoLayout: true } };
       const base = makeFetchMock({ world });
       let dungeon = { id: "d1", name: "Tower", maps: ["OlivineCity"] };
       vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => {
@@ -327,7 +327,7 @@ describe("GbcApp", () => {
     blockPx: 32 as const,
     placements: { OlivineCity: { map: "OlivineCity", x: 0, y: 0, width: 10, height: 10, component: 0, mapType: "TOWN", manual: false } },
     components: [{ index: 0, maps: ["OlivineCity"], bounds: { x: 0, y: 0, width: 10, height: 10 } }],
-    conflicts: [],
+    conflicts: [], sidecar: { dungeonAutoLayout: true },
   };
 
   it("a tree click in World mode jumps GbcWorldCanvas there (jumpToMap/jumpToken wiring)", async () => {
@@ -431,7 +431,7 @@ describe("GbcApp", () => {
         { index: 0, maps: ["OlivineCity"], bounds: { x: 0, y: 0, width: 10, height: 10 } },
         { index: 1, maps: ["OlivinePort"], bounds: { x: 100, y: 100, width: 10, height: 10 } },
       ],
-      conflicts: [],
+      conflicts: [], sidecar: { dungeonAutoLayout: true },
     };
     vi.stubGlobal("fetch", makeFetchMock({ world: WORLD_TWO }));
     render(<FamilyApp adapter={gbcAdapter} />);
@@ -466,10 +466,9 @@ describe("GbcApp", () => {
     // CeruleanCave2F-shaped defect list, deliberately, to keep this test's
     // fetch mock aligned with the fixture GROUPS tree above.
     const withDefects = mapPayload("OlivinePort", {
-      layout: { blkPath: "maps/OlivinePort.blk", width: 2, height: 1, writable: false },
+      layout: { blkPath: "maps/OlivinePort.blk", width: 2, height: 1 },
       defects: [
-        { file: "maps/CeruleanCave2F.blk", message: "maps/CeruleanCave2F.blk: actual size 400 bytes, declared 9x15=135 -- loaded first 135 bytes, not writable" },
-        { file: "maps/CeruleanCave2F.asm", message: "maps/CeruleanCave2F.asm: warp[0] at (23,7) is outside the 18x30 step grid" },
+        { file: "maps/CeruleanCave2F.blk", kind: "size", fix: "Change the CERULEAN_CAVE_2F map_const dimensions in constants/map_constants.asm or trim/extend maps/CeruleanCave2F.blk from 400 to 135 bytes.", message: "maps/CeruleanCave2F.blk: actual size 400 bytes, expected 135 bytes" },
       ],
     });
     vi.stubGlobal("fetch", makeFetchMock({ maps: { OlivinePort: withDefects } }));
@@ -479,10 +478,24 @@ describe("GbcApp", () => {
     fireEvent.click(screen.getByText("OlivinePort"));
     await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
     const alert = screen.getByRole("alert");
-    expect(alert.textContent).toContain("not writable");
-    expect(alert.textContent).toContain("outside the 18x30 step grid");
+    expect(alert.textContent).toContain("actual size 400 bytes, expected 135 bytes");
+    expect(alert.textContent).toContain("Change the CERULEAN_CAVE_2F map_const dimensions in constants/map_constants.asm or trim/extend maps/CeruleanCave2F.blk from 400 to 135 bytes.");
+    expect(alert.textContent).not.toContain("outside the 18x30 step grid");
   });
 
+  it("shows incomplete GBC checks beside structural defects in the shared banner", async () => {
+    const data = mapPayload("OlivineCity", {
+      defects: [{ file: "maps/OlivineCity.blk", kind: "size", message: "wrong size", fix: "repair blockdata" }],
+      incomplete: [{ file: "maps/Other.asm", reason: "C5 unavailable" }, { file: "project", reason: "C7-C9 unavailable" }],
+    });
+    vi.stubGlobal("fetch", makeFetchMock({ maps: { OlivineCity: data } }));
+    render(<FamilyApp adapter={gbcAdapter} />);
+    fireEvent.click(await screen.findByText("OlivineCity"));
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("C7-C9 unavailable"));
+    expect(screen.getByRole("alert").textContent).toContain("maps/Other.asm: C5 unavailable");
+    expect(screen.getByRole("alert").textContent).toContain("wrong size");
+    expect(screen.getByRole("alert").textContent).toContain("repair blockdata");
+  });
   it("the defect banner is absent when there are no defects", async () => {
     vi.stubGlobal("fetch", makeFetchMock({ maps: { OlivineCity: mapPayload("OlivineCity") } }));
     render(<FamilyApp adapter={gbcAdapter} />);
@@ -612,7 +625,7 @@ describe("GbcApp -- coverage lens list jump (Plan 6c C1)", () => {
       blockPx: 32 as const,
       placements: { OlivineCity: { map: "OlivineCity", x: 0, y: 0, width: 10, height: 10, component: 0, mapType: "TOWN", manual: false } },
       components: [{ index: 0, maps: ["OlivineCity"], bounds: { x: 0, y: 0, width: 10, height: 10 } }],
-      conflicts: [],
+      conflicts: [], sidecar: { dungeonAutoLayout: true },
     };
     const base = makeFetchMock({ world });
     vi.stubGlobal(
@@ -660,7 +673,7 @@ describe("GbcApp -- world click selects the map in the tree (Plan 6c C2)", () =>
         blockPx: 32 as const,
         placements: { OlivineCity: { map: "OlivineCity", x: 0, y: 0, width: 10, height: 10, component: 0, mapType: "TOWN", manual: false } },
         components: [{ index: 0, maps: ["OlivineCity"], bounds: { x: 0, y: 0, width: 10, height: 10 } }],
-        conflicts: [],
+        conflicts: [], sidecar: { dungeonAutoLayout: true },
       };
       vi.stubGlobal("fetch", makeFetchMock({ world }));
       render(<FamilyApp adapter={gbcAdapter} />);
@@ -700,7 +713,7 @@ describe("GbcApp -- GBC world visibility (Plan 6c D1)", () => {
         { index: 0, maps: ["OlivineCity"], bounds: { x: 0, y: 0, width: 10, height: 10 } },
         { index: 1, maps: ["OlivinePort"], bounds: { x: 11, y: 0, width: 10, height: 10 } },
       ],
-      conflicts: [],
+      conflicts: [], sidecar: { dungeonAutoLayout: true },
     };
     vi.stubGlobal("fetch", makeFetchMock({ world }));
     render(<FamilyApp adapter={gbcAdapter} />);
@@ -723,7 +736,7 @@ describe("GbcApp -- GBC world visibility (Plan 6c D1)", () => {
         { index: 0, maps: ["OlivineCity"], bounds: { x: 0, y: 0, width: 10, height: 10 } },
         { index: 1, maps: ["OlivinePort"], bounds: { x: 11, y: 0, width: 10, height: 10 } },
       ],
-      conflicts: [],
+      conflicts: [], sidecar: { dungeonAutoLayout: true },
     };
     const base = makeFetchMock({ world });
     const fetchMock = vi.fn((url: string) => url === "/api/world/placement"
@@ -757,7 +770,7 @@ describe("GbcApp -- entering World centres on the selection (Plan 6c C2 fix roun
       { index: 0, maps: ["OlivineCity"], bounds: { x: 0, y: 0, width: 10, height: 10 } },
       { index: 1, maps: ["OlivinePort"], bounds: { x: 11, y: 0, width: 10, height: 10 } },
     ],
-    conflicts: [],
+    conflicts: [], sidecar: { dungeonAutoLayout: true },
   };
   const clickMode = (name: "Map" | "World") =>
     fireEvent.click(Array.from(screen.getByRole("group", { name: "View" }).querySelectorAll("button")).find((b) => b.textContent === name) as HTMLElement);

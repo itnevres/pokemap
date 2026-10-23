@@ -1,0 +1,20 @@
+import { open } from "./lib.mjs";
+const { browser, page, wait, shot } = await open();
+const out = { net: [] };
+page.on("response", (r) => { if (/\/api\/world/.test(r.url())) out.net.push(r.request().method() + " " + r.url().replace(/^.*\/api/, "") + " " + r.status() + " " + (r.request().postData() || "").slice(0, 100)); });
+await page.goto("http://localhost:5183/"); await wait(3000);
+await page.getByRole("button", { name: "World", exact: true }).click(); await wait(3500);
+const canvas = page.locator("canvas").first();
+const auto = page.getByRole("switch", { name: "Dungeon auto-layout" });
+await auto.click(); await wait(3000);
+out.auto = await auto.getAttribute("aria-checked");
+out.net.push("--- drop");
+const nm = process.argv[2];
+const row = page.locator(".map-tree__map", { hasText: new RegExp("^" + nm + "$") }).first();
+await row.scrollIntoViewIfNeeded();
+out.before = await row.getAttribute("class");
+await row.dragTo(canvas, { targetPosition: { x: 500, y: 300 } });
+for (const t of [500, 1500, 3000]) { await wait(t); out["after" + t] = await row.getAttribute("class"); }
+await shot("gba-a-3b-tree-drop-auto-on");
+await auto.click(); await wait(2500); out.autoEnd = await auto.getAttribute("aria-checked");
+console.log(JSON.stringify(out, null, 1)); await browser.close();

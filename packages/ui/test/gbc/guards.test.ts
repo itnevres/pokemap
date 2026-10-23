@@ -106,7 +106,7 @@ function validGbcMapPayload(): GbcMapPayload {
       landmark: "LANDMARK_NONE", music: "MUSIC_NONE", phoneFlag: "0", palette: "PAL_MAP_TOWN",
       fishGroup: "0", border: 3, connectionFlags: "0", connections: [],
     },
-    layout: { blkPath: "maps/Fixture.blk", width: 2, height: 2, writable: true },
+    layout: { blkPath: "maps/Fixture.blk", width: 2, height: 2 },
     blocks: [{ metatileId: 0 }, { metatileId: 1 }, { metatileId: 2 }, { metatileId: 0 }],
     metatileCount: 3,
     tileset: { constName: "TILESET_FIXTURE", name: "TilesetFixture" },
@@ -114,11 +114,18 @@ function validGbcMapPayload(): GbcMapPayload {
     collisionInfo: { "0": { name: "COLL_FLOOR", category: "land", talk: false }, "7": { name: "COLL_WALL", category: "wall", talk: false } },
     events: { warps: [], coords: [], bgs: [], objects: [], sceneScripts: [], callbacks: [], objectConsts: [] },
     defects: [],
-    paddingWidth: 3,
+    incomplete: [], paddingWidth: 3,
   };
 }
 
 describe("isGbcMapPayload", () => {
+  it("requires well-formed incomplete-check details", () => {
+    const p = validGbcMapPayload();
+    expect(isGbcMapPayload({ ...p, incomplete: [{ file: "maps/Other.asm", reason: "C5 unavailable" }] })).toBe(true);
+    for (const incomplete of [undefined, {}, [null], [{ file: "a" }], [{ file: 3, reason: "bad" }]]) {
+      expect(isGbcMapPayload({ ...p, incomplete })).toBe(false);
+    }
+  });
   it("accepts a real-shaped payload", () => {
     expect(isGbcMapPayload(validGbcMapPayload())).toBe(true);
   });
@@ -209,7 +216,7 @@ function validGbcWorldPayload(): GbcWorldPayload {
     blockPx: 32,
     placements: { Route17: { map: "Route17", x: 10, y: 20, width: 30, height: 40, component: 0, mapType: "ROUTE", manual: false } },
     components: [{ index: 0, maps: ["Route17"], bounds: { x: 10, y: 20, width: 30, height: 40 } }],
-    conflicts: [{ map: "Route17", viaA: { from: "Route18", x: 30, y: 50 }, viaB: { from: "Route16", x: 30, y: 49 }, key: '["Route17","Route18",30,50,"Route16",30,49]', accepted: false }],
+    conflicts: [{ map: "Route17", viaA: { from: "Route18", x: 30, y: 50 }, viaB: { from: "Route16", x: 30, y: 49 }, key: '["Route17","Route18",30,50,"Route16",30,49]', accepted: false }], sidecar: { dungeonAutoLayout: true },
   };
 }
 
@@ -225,7 +232,15 @@ describe("isGbcWorldPayload", () => {
   });
 
   it("accepts an empty world (no placements/components/conflicts)", () => {
-    expect(isGbcWorldPayload({ family: "gbc", blockPx: 32, placements: {}, components: [], conflicts: [] })).toBe(true);
+    expect(isGbcWorldPayload({ family: "gbc", blockPx: 32, placements: {}, components: [], conflicts: [], sidecar: { dungeonAutoLayout: false } })).toBe(true);
+  });
+
+  it("rejects a missing or malformed sidecar (Plan 10b Task 7b)", () => {
+    const { sidecar: _omitted, ...withoutSidecar } = validGbcWorldPayload();
+    expect(isGbcWorldPayload(withoutSidecar)).toBe(false);
+    expect(isGbcWorldPayload({ ...validGbcWorldPayload(), sidecar: null })).toBe(false);
+    expect(isGbcWorldPayload({ ...validGbcWorldPayload(), sidecar: {} })).toBe(false);
+    expect(isGbcWorldPayload({ ...validGbcWorldPayload(), sidecar: { dungeonAutoLayout: "yes" } })).toBe(false);
   });
 
   it("rejects a non-object", () => {

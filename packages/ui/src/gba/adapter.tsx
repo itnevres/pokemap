@@ -1,3 +1,5 @@
+import { DefectsBanner } from "../shared/DefectsBanner.js";
+import { useMapDefects } from "../hooks/useMapDefects.js";
 import { useState } from "react";
 import { MapEditingWorkspace, type MapEditingCanvasProps } from "../components/MapEditingWorkspace.js";
 import { MapCanvas, compositeOrigin } from "../components/MapCanvas.js";
@@ -14,6 +16,9 @@ import { GBA_CAPABILITIES, type EngineAdapter, type FamilyRuntime, type RuntimeA
 
 /** The GBA-only half of the shell (was App.tsx): data hooks, edit session, map editing state, switch policy, canvases. */
 export function useGbaRuntime({ selected, mode, requestPrompt }: RuntimeArgs): FamilyRuntime {
+  const [saveToken, setSaveToken] = useState(0);
+  const { defects, incomplete, error: defectsError } = useMapDefects(selected, saveToken);
+  const defectsBanner = <DefectsBanner key={selected} defects={defects} incomplete={incomplete} error={defectsError} />;
   const groups = useMapGroups();
   const layout = useMapLayout(selected);
   // Known limitation, accepted for now (predates this task): this is a
@@ -21,7 +26,7 @@ export function useGbaRuntime({ selected, mode, requestPrompt }: RuntimeArgs): F
   // can go stale within the session after a drag or a jump-reveal on
   // WorldCanvas's own canvas. A full refresh currently requires leaving and
   // re-entering World mode.
-  const { placed, error: visibilityError } = useWorldVisibility(mode === "world");
+  const { placed, error: visibilityError, refresh: refreshVisibility } = useWorldVisibility(mode === "world");
   const dungeons = useDungeons(mode === "dungeon");
 
   // Task 13: the edit session for whatever map is `selected`, tracked
@@ -82,6 +87,8 @@ export function useGbaRuntime({ selected, mode, requestPrompt }: RuntimeArgs): F
         onOpenMap={s.openMapFromWorld}
         onEditHere={s.enterContext}
         tileVersions={s.tileVersions}
+        onPlacementSaved={(name) => { s.markManualPlacement(name); refreshVisibility(); }}
+        onLayoutChanged={refreshVisibility}
         context={
           s.contextMap === null
             ? undefined
@@ -97,10 +104,15 @@ export function useGbaRuntime({ selected, mode, requestPrompt }: RuntimeArgs): F
     );
     // The World view is hosted by MapEditingWorkspace at all times (one stable element and key), so the
     // WorldCanvas inside is never remounted when in-context editing turns the chrome on or off.
-    return contextLayout ? (
-      <MapEditingWorkspace onStrokeChain={s.onStrokeChain} hoveredMetatileId={hoveredMetatileId} onHoverMetatile={setHoveredMetatileId} key="world-host" mapName={contextLayout.map.name} data={contextLayout} editSession={editSession} editing={editing} renderCanvas={world} />
-    ) : (
-      <MapEditingWorkspace onStrokeChain={s.onStrokeChain} hoveredMetatileId={hoveredMetatileId} onHoverMetatile={setHoveredMetatileId} key="world-host" active={false} mapName={selected} data={layout.data} editSession={editSession} editing={editing} renderCanvas={world} />
+    return (
+      <div className="app__map-editing" key="world-host">
+        {contextLayout && defectsBanner}
+        {contextLayout ? (
+          <MapEditingWorkspace onStrokeChain={s.onStrokeChain} hoveredMetatileId={hoveredMetatileId} onHoverMetatile={setHoveredMetatileId} mapName={contextLayout.map.name} data={contextLayout} editSession={editSession} editing={editing} renderCanvas={world} />
+        ) : (
+          <MapEditingWorkspace onStrokeChain={s.onStrokeChain} hoveredMetatileId={hoveredMetatileId} onHoverMetatile={setHoveredMetatileId} active={false} mapName={selected} data={layout.data} editSession={editSession} editing={editing} renderCanvas={world} />
+        )}
+      </div>
     );
   };
 
@@ -117,7 +129,10 @@ export function useGbaRuntime({ selected, mode, requestPrompt }: RuntimeArgs): F
     map: { error: layout.error, ready: Boolean(layout.data) },
     renderMap: (s) =>
       selected && layout.data ? (
-        <MapEditingWorkspace onStrokeChain={s.onStrokeChain} hoveredMetatileId={hoveredMetatileId} onHoverMetatile={setHoveredMetatileId} mapName={selected} data={layout.data} editSession={editSession} editing={editing} />
+        <div className="app__map-editing">
+          {defectsBanner}
+          <MapEditingWorkspace onStrokeChain={s.onStrokeChain} hoveredMetatileId={hoveredMetatileId} onHoverMetatile={setHoveredMetatileId} mapName={selected} data={layout.data} editSession={editSession} editing={editing} />
+        </div>
       ) : null,
     renderWorld,
     renderDungeon: (mapFilter, s) => <WorldCanvas key="dungeon" mapFilter={mapFilter} onOpenMap={s.openMapFromWorld} />,
@@ -147,7 +162,7 @@ export function useGbaRuntime({ selected, mode, requestPrompt }: RuntimeArgs): F
           onCancel={() => editing.setIndicatorOpen(false)}
         />
       ) : null,
-    saveDialog: { open: editing.saveDialogOpen, setOpen: editing.setSaveDialogOpen, onCommitted: () => {} },
+    saveDialog: { open: editing.saveDialogOpen, setOpen: editing.setSaveDialogOpen, onCommitted: () => setSaveToken((token) => token + 1) },
   };
 }
 

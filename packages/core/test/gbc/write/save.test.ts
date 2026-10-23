@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { existsSync, readFileSync, statSync, utimesSync } from "node:fs";
+import { existsSync, readFileSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { commitGbcSave, openGbcEditSession, planGbcSave } from "../../../src/gbc/write/save.js";
 import { locateEventCall, spliceArg } from "../../../src/gbc/write/asmSplice.js";
 import { loadGbcMapEvents, parseMapEvents } from "../../../src/gbc/load/events.js";
@@ -96,19 +96,26 @@ describe("planGbcSave / commitGbcSave", () => {
     expect(planGbcSave(f.proj, s).changes[0]!.summary).toBe("maps/TestLayout.blk -- 2 blocks changed (shared by 2 maps)");
   });
 
-  it("7. G2: commit patches bytes in place -- a trailing byte past w*h survives (encodeBlk would drop it)", () => {
-    const f = makeFixture({ blk: [1, 2, 3, 4, 77] });
-    // The real loader would say writable:false for 5 bytes; force writable so the
-    // patch (not the guard) is what is under test.
-    const proj = { ...f.proj, layout: (m: Parameters<typeof f.proj.layout>[0]) => {
-      const r = f.proj.layout(m);
-      return { ...r, layout: { ...r.layout, writable: true } };
-    } };
-    const s = openGbcEditSession(proj, "Testmap");
-    expect(s.blocks).toHaveLength(4);
+  it("7. G2: an oversized layout stays editable and preserves all three tail bytes", () => {
+    const f = makeFixture({ blk: [1, 2, 3, 4, 77, 88, 99] });
+    const s = openGbcEditSession(f.proj, "Testmap");
+    expect(s.blocks).toEqual([{ metatileId: 1 }, { metatileId: 2 }, { metatileId: 3 }, { metatileId: 4 }]);
     s.blocks[0]!.metatileId = 3;
-    commitGbcSave(proj, planGbcSave(proj, s));
-    expect(bytes(f.blk)).toEqual([3, 2, 3, 4, 77]);
+    const plan = planGbcSave(f.proj, s);
+    expect(plan.refusals).toEqual([]);
+    commitGbcSave(f.proj, plan);
+    expect(bytes(f.blk)).toEqual([3, 2, 3, 4, 77, 88, 99]);
+  });
+
+  it("keeps a tail changed on disk before planning", () => {
+    const f = makeFixture({ blk: [1, 2, 3, 4, 77, 88, 99] });
+    const s = openGbcEditSession(f.proj, "Testmap");
+    s.blocks[1]!.metatileId = 0;
+    writeFileSync(f.blk, Buffer.from([1, 2, 3, 4, 101, 102, 103]));
+    const plan = planGbcSave(f.proj, s);
+    expect(plan.refusals).toEqual([]);
+    commitGbcSave(f.proj, plan);
+    expect(bytes(f.blk)).toEqual([1, 0, 3, 4, 101, 102, 103]);
   });
 
   it("8. a text change plans one text change; commit writes eventsText byte for byte; blk untouched", () => {
@@ -204,15 +211,16 @@ describe("real corpus (read-only; never commits)", () => {
     expect(openGbcEditSession(proj, sharer!.name).layoutSharedBy).toHaveLength(50);
   });
 
-  itWithGbcCorpus("18. CeruleanCave2F (oversize .blk): unedited is clean; an in-memory paint is refused", () => {
+  itWithGbcCorpus("18. CeruleanCave2F (oversize .blk): unedited is clean; an in-memory paint is allowed", () => {
     const proj = openGbcProject(GBC_SUBJECT_ROOT);
     const s = openGbcEditSession(proj, "CeruleanCave2F");
-    expect(s.layout.writable).toBe(false);
+    expect(s.layout).not.toHaveProperty("writable");
     const clean = planGbcSave(proj, s);
     expect(clean.changes).toEqual([]);
     expect(clean.refusals).toEqual([]);
     s.blocks[0] = { metatileId: s.blocks[0]!.metatileId + 1 };
-    expect(planGbcSave(proj, s).refusals.map((r) => r.code)).toContain("layout-not-writable");
+    expect(planGbcSave(proj, s).refusals).toEqual([]);
+    expect(planGbcSave(proj, s).changes).toEqual([{ path: `${proj.root}/maps/CeruleanCave2F.blk`, kind: "binary", summary: "maps/CeruleanCave2F.blk -- 1 block changed" }]);
     // Deliberately no commitGbcSave: the real corpus is never written.
   });
 });

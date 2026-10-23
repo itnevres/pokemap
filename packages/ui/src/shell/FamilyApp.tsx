@@ -139,7 +139,7 @@ export function FamilyApp({ adapter, switcher }: FamilyAppProps) {
   };
 
   const openDungeon = mode === "dungeon" ? (runtime.dungeons.data?.find((d) => d.id === openDungeonId) ?? null) : null;
-  const mapFilter = useDungeonFilter(openDungeon, caps.dungeonFilterCache);
+  const mapFilter = useDungeonFilter(openDungeon);
   const groupsData = runtime.groups.data;
   const allMapNames = useMemo(
     () => (groupsData ? groupsData.groupOrder.flatMap((g) => groupsData.groups[g] ?? []) : []),
@@ -175,13 +175,14 @@ export function FamilyApp({ adapter, switcher }: FamilyAppProps) {
   const markManualPlacement = (name: string) =>
     setManualPlacementMaps((previous) => (previous.has(name) ? previous : new Set(previous).add(name)));
   const placed = runtime.visibility.placed;
-  const visibility = useMemo(
-    () =>
-      caps.manualPlacements && placed
-        ? new Map([...placed].map(([name, info]) => [name, { ...info, manual: info.manual || manualPlacementMaps.has(name) }]))
-        : placed,
-    [caps.manualPlacements, placed, manualPlacementMaps],
-  );
+  // SR8: a placement also ADDS the entry a map lacks (a singleton absent from `placed` with auto-layout off), so its
+  // row un-greys in the same render pass; `manual` makes the mapType irrelevant to isDrawnByDefault.
+  const visibility = useMemo(() => {
+    if (!placed) return placed;
+    const merged = new Map([...placed].map(([name, info]) => [name, { ...info, manual: info.manual || manualPlacementMaps.has(name) }]));
+    for (const name of manualPlacementMaps) if (!merged.has(name)) merged.set(name, { mapType: "", manual: true });
+    return merged;
+  }, [placed, manualPlacementMaps]);
 
   const slots: ShellSlots = {
     jumpTarget, jumpToken: selectVersion, selectMap, selectMapFromWorld, openMapFromWorld, enterContext,

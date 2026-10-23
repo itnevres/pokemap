@@ -335,9 +335,9 @@ describe("renderGbcMap: block-0 substitution and border ring", () => {
 
   it("without blocksOverride, calls proj.layout(map) and surfaces its defects", () => {
     const layoutBlocks = [{ metatileId: 1 }, { metatileId: 1 }, { metatileId: 1 }];
-    const defect = { file: "maps/TestMap.blk", message: "synthetic defect" };
+    const defect = { file: "maps/TestMap.blk", message: "synthetic defect", kind: "size" as const, fix: "Trim maps/TestMap.blk to 3 bytes." };
     const r = renderGbcMap(
-      proj({ layout: () => ({ layout: { blkPath: "maps/TestMap.blk", width: 3, height: 1, blocks: layoutBlocks, writable: false }, defects: [defect] }) }),
+      proj({ layout: () => ({ layout: { blkPath: "maps/TestMap.blk", width: 3, height: 1, blocks: layoutBlocks }, defects: [defect] }) }),
       "TestMap",
     );
     expect(r.defects).toEqual([defect]);

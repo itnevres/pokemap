@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { GbcMapEditing, type GbcMapEditingCanvasProps } from "./GbcMapEditing.js";
 import { GbcMapCanvas, GBC_COMPOSITE_ORIGIN } from "./GbcMapCanvas.js";
 import { GbcWorldCanvas } from "./GbcWorldCanvas.js";
+import { DefectsBanner } from "../shared/DefectsBanner.js";
 import { useGbcGroups } from "./hooks/useGbcGroups.js";
 import { useGbcMap } from "./hooks/useGbcMap.js";
 import { PokemonIndicatorDialog } from "../components/PokemonIndicatorDialog.js";
@@ -27,8 +28,8 @@ export function useGbcRuntime({ selected, mode, requestPrompt }: RuntimeArgs): F
   const [hoveredMetatileId, setHoveredMetatileId] = useState<number | null>(null);
   const dungeons = useGbcDungeons(mode === "dungeon");
   const groups = useGbcGroups();
-  const { data: world, error: worldError } = useGbcWorld(mode === "world");
-  // Tree visibility before FamilyApp merges this session's manual placements (manualPlacements capability).
+  const { data: world, error: worldError, reload: reloadWorld } = useGbcWorld(mode === "world");
+  // Tree visibility before FamilyApp merges this session's manual placements (FamilyApp's SR8 merge).
   const placed = useMemo(
     () => world ? new Map(Object.entries(world.placements).map(([name, p]) => [name, { mapType: p.mapType, manual: p.manual }])) : null,
     [world],
@@ -67,18 +68,7 @@ export function useGbcRuntime({ selected, mode, requestPrompt }: RuntimeArgs): F
     else requestPrompt(go);
   };
 
-  const defectsBanner = ready && ready.defects.length > 0 && (
-    // Non-dismissible: G4's "never a silent drop" data truth (an oversize .blk, an out-of-bounds event), not a one-shot
-    // notice about something the player just did -- so unlike App.tsx's own eventOpError/signAddedMessage banners, this
-    // one carries no dismiss button and never clears itself.
-    <div className="app__event-op-error" role="alert">
-      <ul className="gbc-app__defects-list">
-        {ready.defects.map((d, i) => (
-          <li key={i}>{d.message}</li>
-        ))}
-      </ul>
-    </div>
-  );
+  const defectsBanner = ready && <DefectsBanner key={selected} defects={ready.defects} incomplete={ready.incomplete} />;
 
   const editingProps = {
     time, session, hoveredMetatileId,
@@ -105,7 +95,8 @@ export function useGbcRuntime({ selected, mode, requestPrompt }: RuntimeArgs): F
         onOpenMap={s.openMapFromWorld}
         onEditHere={s.enterContext}
         onJumpToMap={s.selectMap}
-        onPlacementSaved={s.markManualPlacement}
+        onPlacementSaved={(name) => { s.markManualPlacement(name); reloadWorld(); }}
+        onLayoutChanged={reloadWorld}
         tileVersions={s.tileVersions}
         context={
           s.contextMap === null
@@ -152,7 +143,7 @@ export function useGbcRuntime({ selected, mode, requestPrompt }: RuntimeArgs): F
       ) : null,
     renderWorld,
     renderDungeon: (mapFilter, s) => (
-      <GbcWorldCanvas key="dungeon" time={time} mapFilter={mapFilter} onOpenMap={s.openMapFromWorld} onPlacementSaved={s.markManualPlacement} />
+      <GbcWorldCanvas key="dungeon" time={time} mapFilter={mapFilter} onOpenMap={s.openMapFromWorld} onPlacementSaved={s.markManualPlacement} onLayoutChanged={reloadWorld} />
     ),
     headerExtras: (
       <div className="app__mode gbc-app__time" role="group" aria-label="Time of day">

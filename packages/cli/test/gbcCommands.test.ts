@@ -154,7 +154,7 @@ describe("runGbcRender", () => {
     const out = tmpFile("cc2f-message.png");
     const { stderr } = runGbcRender(GBC_SUBJECT_ROOT, "CeruleanCave2F", { out });
     expect(stderr).toBe(
-      "warning: maps/CeruleanCave2F.blk: actual size 400 bytes, declared 9x15=135 -- loaded first 135 bytes, not writable\n",
+      "warning: maps/CeruleanCave2F.blk: actual size 400 bytes, expected 135 bytes\n",
     );
   });
 });
@@ -164,7 +164,7 @@ describe("runGbcQuery", () => {
     const { stdout, stderr } = runGbcQuery(GBC_SUBJECT_ROOT, "NewBarkTown", {});
     expect(stderr).toBe(""); // NewBarkTown carries no defect on either loader
     const parsed = JSON.parse(stdout) as {
-      header: { tileset: string; environment: string; palette: string; fishGroup: string; border: number; group: number; layout: { blkPath: string; width: number; height: number; writable: boolean } };
+      header: { tileset: string; environment: string; palette: string; fishGroup: string; border: number; group: number; layout: { blkPath: string; width: number; height: number } };
       connections: { direction: string; targetName: string }[];
       events: { warps: unknown[]; coords: unknown[]; bgs: unknown[]; objects: unknown[] };
     };
@@ -175,7 +175,7 @@ describe("runGbcQuery", () => {
     expect(parsed.header.fishGroup).toBe("FISHGROUP_OCEAN");
     expect(parsed.header.border).toBe(5);
     expect(parsed.header.group).toBe(24);
-    expect(parsed.header.layout).toEqual({ blkPath: "maps/NewBarkTown.blk", width: 10, height: 9, writable: true });
+    expect(parsed.header.layout).toEqual({ blkPath: "maps/NewBarkTown.blk", width: 10, height: 9 });
 
     expect(parsed.connections).toHaveLength(2);
     expect(parsed.connections.map((c) => c.direction).sort()).toEqual(["east", "west"]);
@@ -245,7 +245,7 @@ describe("runGbcRenderWorld", () => {
     const { stderr } = runGbcRenderWorld(GBC_SUBJECT_ROOT, {
       bbox: { x: p.x, y: p.y, w: p.width, h: p.height }, out, scale: 32,
     });
-    expect(stderr).toBe("warning: maps/CeruleanCave2F.blk: actual size 400 bytes, declared 9x15=135 -- loaded first 135 bytes, not writable\n");
+    expect(stderr).toBe("warning: maps/CeruleanCave2F.blk: actual size 400 bytes, expected 135 bytes\n");
   });
 
   /**
@@ -584,7 +584,7 @@ describe("GBC write commands (Plan 7 Task 6)", () => {
     expect(changedBytes(before, blk())).toEqual(bucketIdx);
   });
 
-  itWithGbcCorpus("4. refusals: out-of-range metatile throws and writes nothing; non-writable layout throws and warns", () => {
+  itWithGbcCorpus("4. refusals: out-of-range metatile throws and writes nothing; oversized layout paints and warns", () => {
     const before = blk();
     const cap = tilesetCap();
     expect(() => runGbcPaint(copy, MAP, { tool: "pencil", x: 0, y: 0, metatile: cap, yes: true })).toThrow(/metatile-out-of-range \(maps\/NewBarkTown\.blk\): /);
@@ -595,8 +595,10 @@ describe("GBC write commands (Plan 7 Task 6)", () => {
     const ccBlk = readFileSync(`${copy}/maps/${cc}.blk`);
     const dry = runGbcPaint(copy, cc, { tool: "pencil", x: 0, y: 0, metatile: other(ccBlk[0]!) });
     expect(dry.stderr).toMatch(/^warning: /);
-    expect(() => runGbcPaint(copy, cc, { tool: "pencil", x: 0, y: 0, metatile: other(ccBlk[0]!), yes: true })).toThrow(/layout-not-writable \(maps\/CeruleanCave2F\.blk\): /);
-    expect(readFileSync(`${copy}/maps/${cc}.blk`).equals(ccBlk)).toBe(true);
+    runGbcPaint(copy, cc, { tool: "pencil", x: 0, y: 0, metatile: other(ccBlk[0]!), yes: true });
+    const expected = Buffer.from(ccBlk);
+    expected[0] = other(ccBlk[0]!);
+    expect(readFileSync(`${copy}/maps/${cc}.blk`)).toEqual(expected);
   });
 
   itWithGbcCorpus("5. diff never writes, even when handed yes: true", () => {
@@ -708,7 +710,7 @@ describe("GBC write commands (Plan 7 Task 6)", () => {
     expect(asm()).not.toBe(a0);
   }, 90_000);
 
-  itWithGbcCorpus("13. real process, CeruleanCave2F: dry run warns on stderr; --yes refusal keeps the size warning in stderr", () => {
+  itWithGbcCorpus("13. real process, CeruleanCave2F: dry run warns on stderr; --yes saves and keeps the size warning in stderr", () => {
     const cc = "CeruleanCave2F";
     const ccBlk = readFileSync(`${copy}/maps/${cc}.blk`);
     const args = ["--project", copy, "paint", cc, "--tool", "pencil", "--x", "0", "--y", "0", "--metatile", String(other(ccBlk[0]!))];
@@ -716,10 +718,12 @@ describe("GBC write commands (Plan 7 Task 6)", () => {
     expect(dry.status).toBe(0);
     expect(dry.stderr).toMatch(/^warning: /m);
     const yes = spawnCli([...args, "--yes"]);
-    expect(yes.status).toBe(1);
-    expect(yes.stderr).toContain("layout-not-writable");
+    expect(yes.status).toBe(0);
+    expect(yes.stdout).toContain("committed");
     expect(yes.stderr).toMatch(/^warning: /m);
-    expect(readFileSync(`${copy}/maps/${cc}.blk`).equals(ccBlk)).toBe(true);
+    const expected = Buffer.from(ccBlk);
+    expected[0] = other(ccBlk[0]!);
+    expect(readFileSync(`${copy}/maps/${cc}.blk`)).toEqual(expected);
   }, 60_000);
 
   it.skipIf(!existsSync(gbaRoot))("10. event on a GBA root refuses (GBC-only)", () => {

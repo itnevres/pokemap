@@ -1,6 +1,11 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import fs from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import { createServer, type PokemapServer } from "../src/index.js";
 import { SUBJECT_ROOT, hasProject } from "@pokemap/core/test/helpers/corpus.js";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { norm } from "@pokemap/core/src/config/paths.js";
 
 let s: PokemapServer;
@@ -47,6 +52,16 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("server", () => {
     const body = await r.json() as { groupOrder: string[]; groups: Record<string, string[]> };
     expect(body.groupOrder[0]).toBe("gMapGroup_TownsAndRoutes");
     expect(body.groups[body.groupOrder[0]!]).toContain("NewBarkTown");
+  });
+
+  it("GET /api/defects returns structural defects and 404s unknown maps", async () => {
+    const r = await get("/api/defects/Route101");
+    expect(r.status).toBe(200);
+    expect(await r.json()).toEqual({ defects: [], incomplete: [] });
+    expect((await get("/api/defects/NoSuchMap")).status).toBe(404);
+    const bad = await (await get("/api/defects/Saffron_Temp")).json() as any;
+    expect(bad.incomplete).toEqual([]);
+    expect(bad.defects).toEqual(expect.arrayContaining([expect.objectContaining({ kind: "gameplay" })]));
   });
 
   it("returns a map's header, split and layout metadata", async () => {
@@ -364,5 +379,100 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("server", () => {
 
   it("400s a non-integer metatile id", async () => {
     expect((await get("/api/metatile/PetalburgCity_Layout/abc.png")).status).toBe(400);
+  });
+});
+
+
+describe("defects route parse failures (temporary project)", () => {
+  let root: string, server: PokemapServer;
+  beforeAll(async () => {
+    root = mkdtempSync(join(tmpdir(), "pokemap-defects-api-"));
+    for (const dir of ["include/constants", "data/maps/Test", "data/maps/Other", "data/layouts", "src/data/tilesets"]) {
+      mkdirSync(join(root, dir), { recursive: true });
+    }
+    const put = (path: string, data: string | Buffer) => writeFileSync(join(root, path), data);
+    put("include/fieldmap.h", "");
+    put("include/constants/map_groups.h", "#define MAP_TEST (0 | (0 << 8))\n#define MAP_OTHER (1 | (0 << 8))\n");
+    put("data/maps/map_groups.json", JSON.stringify({ group_order: ["g"], g: ["Test", "Other"] }));
+    for (const name of ["Test", "Other"]) put(`data/maps/${name}/map.json`, JSON.stringify({
+      id: `MAP_${name.toUpperCase()}`, name, layout: "L", warp_events: [], object_events: [],
+    }));
+    put("data/layouts/layouts.json", JSON.stringify({ layouts: [{ id: "L", name: "L", width: 2, height: 2,
+      primary_tileset: "gTileset_Test", secondary_tileset: "gTileset_Test", blockdata_filepath: "data/layouts/map.bin" }] }));
+    put("data/layouts/map.bin", Buffer.alloc(10)); // Known C1 independent of cross-map lookups.
+    put("src/data/tilesets/headers.h", "const struct Tileset gTileset_Test = {\n.metatiles = gMetatiles_Test,\n.metatileAttributes = gAttributes_Test,\n};");
+    put("src/data/tilesets/metatiles.h", 'const u16 gMetatiles_Test[] = INCBIN_U16("./metatiles.bin");\nconst u16 gAttributes_Test[] = INCBIN_U16("./attributes.bin");');
+    put("src/data/tilesets/graphics.h", "");
+    put("src/graphics.c", "");
+    put("metatiles.bin", Buffer.alloc(16));
+    put("attributes.bin", Buffer.alloc(2));
+    put("tiles.png", Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAMAAAAoyzS7AAAAA1BMVEUAAACnej3aAAAACklEQVR4nGNgAAAAAgABSK+kcQAAAABJRU5ErkJggg==", "base64"));
+    server = await createServer({ projectPath: root, port: 0 });
+  });
+  afterAll(async () => {
+    await server?.close();
+    if (root) rmSync(root, { recursive: true, force: true });
+  });
+  it.each(["{", '{"warp_events":{}}'])("returns the selected defect despite unrelated malformed JSON/events: %s", async (bad) => {
+    writeFileSync(join(root, "data/maps/Other/map.json"), bad);
+    const r = await fetch(`http://127.0.0.1:${server.port}/api/defects/Test`);
+    expect(r.status).toBe(200);
+    expect(await r.json()).toEqual({
+      defects: [expect.objectContaining({ kind: "size", file: "data/layouts/map.bin" })],
+      incomplete: [{ file: "data/maps/Other/map.json", reason: expect.any(String) }],
+    });
+  });
+  it.each([false, true])("reports a missing warp target only when the map index is complete: %s", async (complete) => {
+    const mapFile = join(root, "data/maps/Test/map.json");
+    const before = readFileSync(mapFile);
+    const otherFile = join(root, "data/maps/Other/map.json");
+    const otherBefore = readFileSync(otherFile);
+    try {
+      writeFileSync(join(root, "data/layouts/map.bin"), Buffer.alloc(8));
+      writeFileSync(otherFile, complete ? JSON.stringify({ id: "MAP_OTHER", name: "Other", layout: "L", warp_events: [], object_events: [] }) : "{");
+      writeFileSync(mapFile, JSON.stringify({ ...JSON.parse(before.toString()), warp_events: [{ dest_map: "MAP_UNKNOWN_X", dest_warp_id: "0" }] }));
+      const r = await fetch(`http://127.0.0.1:${server.port}/api/defects/Test`);
+      expect(r.status).toBe(200);
+      expect(await r.json()).toEqual({
+        defects: complete ? [expect.objectContaining({ kind: "build", message: expect.stringContaining("MAP_UNKNOWN_X") })] : [],
+        incomplete: complete ? [] : [{ file: "data/maps/Other/map.json", reason: expect.any(String) }],
+      });
+    } finally {
+      writeFileSync(mapFile, before);
+      writeFileSync(otherFile, otherBefore);
+      writeFileSync(join(root, "data/layouts/map.bin"), Buffer.alloc(10));
+    }
+  });
+  it("retains structural defects when the GBA index throws and retries the next request", async () => {
+    const isolated = await createServer({ projectPath: root, port: 0 });
+    const readDir = fs.readdirSync;
+    const spy = vi.spyOn(fs, "readdirSync").mockImplementation(((...args: Parameters<typeof readDir>) => {
+      if (String(args[0]).replace(/\\/g, "/") === root.replace(/\\/g, "/")) throw new Error("injected unreadable symbol directory");
+      return Reflect.apply(readDir, fs, args);
+    }) as typeof readDir);
+    syncBuiltinESMExports();
+    try {
+      const get = () => fetch(`http://127.0.0.1:${isolated.port}/api/defects/Test`);
+      const first = await get();
+      expect(first.status).toBe(200);
+      const partial = await first.json() as { defects: unknown[]; incomplete: { reason: string }[] };
+      expect(partial).toMatchObject({ defects: [expect.objectContaining({ kind: "size" })], incomplete: expect.arrayContaining([
+        expect.objectContaining({ reason: expect.stringContaining("C7-C9") }),
+      ]) });
+      spy.mockRestore(); syncBuiltinESMExports();
+      const second = await get();
+      expect(second.status).toBe(200);
+      const complete = await second.json() as { defects: unknown[]; incomplete: { reason: string }[] };
+      expect(complete.defects).toEqual(partial.defects);
+      expect(complete.incomplete.some((entry) => entry.reason.includes("C7-C9"))).toBe(false);
+    } finally {
+      spy.mockRestore(); syncBuiltinESMExports(); await isolated.close();
+    }
+  });
+  it("returns 500 with the selected map filename when it is malformed", async () => {
+    writeFileSync(join(root, "data/maps/Test/map.json"), "{");
+    const r = await fetch(`http://127.0.0.1:${server.port}/api/defects/Test`);
+    expect(r.status).toBe(500);
+    expect(await r.json()).toMatchObject({ error: expect.stringContaining("data/maps/Test/map.json") });
   });
 });

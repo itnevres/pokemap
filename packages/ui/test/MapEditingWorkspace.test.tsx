@@ -167,3 +167,44 @@ describe("MapEditingWorkspace", () => {
     expect(editing.setActiveToolKind).not.toHaveBeenCalled();
   });
 });
+
+describe("MapEditingWorkspace Duplicate (Plan 10b D6)", () => {
+  const obj = {
+    graphicsId: "G", x: 1, y: 0, elevation: 0, movementType: "M", movementRangeX: 1, movementRangeY: 1,
+    trainerType: "T", trainerSightOrBerryTreeId: "0", script: "S", flag: "0",
+  };
+  const selectedObj = { kind: "object" as const, index: 0, x: 1, y: 0, elevation: 0, graphicsId: "G", movementType: "M" };
+  const withMap = (objectEvents: typeof obj[]) => ({ ...DATA.map, objectEvents });
+
+  it("adds the full session-map event one tile right through editSession.addEvent", async () => {
+    const addEvent = vi.fn().mockResolvedValue(undefined);
+    const setEventOpError = vi.fn();
+    const session = { ...editSession, addEvent } as unknown as UseEditSessionResult;
+    const editing = makeEditing({ selectedEvent: selectedObj, currentMap: withMap([obj]), setEventOpError });
+    render(<MapEditingWorkspace mapName="Foo" data={DATA} editSession={session} editing={editing} />);
+    fireEvent.click(screen.getByRole("button", { name: "Duplicate" }));
+    expect(addEvent).toHaveBeenCalledWith("object", expect.objectContaining({ graphics_id: "G", x: 0, y: 0, script: "S", trainer_type: "T" }));
+    await vi.waitFor(() => expect(setEventOpError).toHaveBeenCalledWith(null));
+  });
+
+  it("an object on a 64-object map cannot be duplicated", () => {
+    const addEvent = vi.fn();
+    const session = { ...editSession, addEvent } as unknown as UseEditSessionResult;
+    const editing = makeEditing({ selectedEvent: selectedObj, currentMap: withMap(Array.from({ length: 64 }, () => obj)) });
+    render(<MapEditingWorkspace mapName="Foo" data={DATA} editSession={session} editing={editing} />);
+    const b = screen.getByRole("button", { name: "Duplicate" }) as HTMLButtonElement;
+    expect(b.disabled).toBe(true);
+    expect(b.title).toBe("The map already has 64 object events");
+    fireEvent.click(b);
+    expect(addEvent).not.toHaveBeenCalled();
+  });
+
+  it("a failed add surfaces through setEventOpError", async () => {
+    const addEvent = vi.fn().mockRejectedValue(new Error("boom"));
+    const setEventOpError = vi.fn();
+    const session = { ...editSession, addEvent } as unknown as UseEditSessionResult;
+    render(<MapEditingWorkspace mapName="Foo" data={DATA} editSession={session} editing={makeEditing({ selectedEvent: selectedObj, currentMap: withMap([obj]), setEventOpError })} />);
+    fireEvent.click(screen.getByRole("button", { name: "Duplicate" }));
+    await vi.waitFor(() => expect(setEventOpError).toHaveBeenCalledWith("boom"));
+  });
+});

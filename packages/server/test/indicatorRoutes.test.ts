@@ -286,6 +286,18 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("GBA Indicator and background sign ro
     expect(disk()).toBe(expected);
     expect(JSON.parse(readFileSync(json(), "utf8")).bg_events.at(-1)).toEqual({ type: "sign", x: 0, y: 0, elevation: 0, player_facing_dir: "BG_EVENT_PLAYER_FACING_ANY", script: label });
   });
+  it("SR3 invalidates the symbol index after saving a new sign without reload", async () => {
+    const defects = async () => {
+      const r = await fetch(`http://127.0.0.1:${server.port}/api/defects/${map}`);
+      expect(r.status).toBe(200);
+      return (await r.json() as { defects: { message: string }[] }).defects;
+    };
+    expect((await defects()).filter(d => d.message.includes(label))).toEqual([]); // Builds the index before the label exists.
+    expect((await put()).status).toBe(200);
+    expect((await commit()).status).toBe(200);
+    expect(JSON.parse(readFileSync(json(), "utf8")).bg_events.some((e: { script?: string }) => e.script === label)).toBe(true);
+    expect((await defects()).filter(d => d.message.includes(label))).toEqual([]); // The partial temp copy has unrelated C7 hits; only the new label matters.
+  });
   it("adopts an original sign without changing its body and supports undo/redo", async () => {
     const at = (await request("sign/at?x=5&y=9")).body;
     expect(at).toMatchObject({ kind: "sign", editable: true, mode: null, handEdited: false });

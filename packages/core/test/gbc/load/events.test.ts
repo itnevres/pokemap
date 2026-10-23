@@ -637,6 +637,8 @@ describe("outOfBoundsEventDefects", () => {
     const defects = outOfBoundsEventDefects(map, events);
     expect(defects).toEqual([{
       file: "maps/TestMap.asm",
+      kind: "gameplay",
+      fix: "Move the warp at index 0 inside the 10x8 step grid in maps/TestMap.asm.",
       message: "maps/TestMap.asm: warp[0] at (10,0) is outside the 10x8 step grid",
     }]);
   });
@@ -647,6 +649,8 @@ describe("outOfBoundsEventDefects", () => {
     const outOfBounds = emptyEvents({ coords: [{ x: 0, y: 8, sceneConst: "S", script: "Sc", lineIndex: 0 }] });
     expect(outOfBoundsEventDefects(map, outOfBounds)).toEqual([{
       file: "maps/TestMap.asm",
+      kind: "gameplay",
+      fix: "Move the coord at index 0 inside the 10x8 step grid in maps/TestMap.asm.",
       message: "maps/TestMap.asm: coord[0] at (0,8) is outside the 10x8 step grid",
     }]);
   });
@@ -655,6 +659,8 @@ describe("outOfBoundsEventDefects", () => {
     const events = emptyEvents({ bgs: [{ x: -1, y: 0, bgEventType: "B", script: "Sc", lineIndex: 0 }] });
     expect(outOfBoundsEventDefects(map, events)).toEqual([{
       file: "maps/TestMap.asm",
+      kind: "gameplay",
+      fix: "Move the bg at index 0 inside the 10x8 step grid in maps/TestMap.asm.",
       message: "maps/TestMap.asm: bg[0] at (-1,0) is outside the 10x8 step grid",
     }]);
   });
@@ -672,6 +678,8 @@ describe("outOfBoundsEventDefects", () => {
     });
     expect(outOfBoundsEventDefects(map, events)).toEqual([{
       file: "maps/TestMap.asm",
+      kind: "gameplay",
+      fix: "Move the object at index 0 inside the 10x8 step grid in maps/TestMap.asm.",
       message: "maps/TestMap.asm: object[0] at (0,-1) is outside the 10x8 step grid",
     }]);
   });
@@ -686,6 +694,8 @@ describe("outOfBoundsEventDefects", () => {
     const defects = outOfBoundsEventDefects(map, events);
     expect(defects).toEqual([{
       file: "maps/TestMap.asm",
+      kind: "gameplay",
+      fix: "Move the warp at index 1 inside the 10x8 step grid in maps/TestMap.asm.",
       message: "maps/TestMap.asm: warp[1] at (99,0) is outside the 10x8 step grid",
     }]);
   });

@@ -15,7 +15,7 @@ const DATA: GbcMapPayload = {
     name: "M", constName: "M", group: 1, number: 1, width: 3, height: 2, blkPath: "maps/M.blk", tileset: "T",
     environment: "E", landmark: "L", music: "X", phoneFlag: "0", palette: "P", fishGroup: "0", border: 1, connectionFlags: "0", connections: [],
   },
-  layout: { blkPath: "maps/M.blk", width: 3, height: 2, writable: true },
+  layout: { blkPath: "maps/M.blk", width: 3, height: 2 },
   blocks: BLOCKS,
   metatileCount: 6,
   tileset: { constName: "T", name: "T" },
@@ -23,7 +23,7 @@ const DATA: GbcMapPayload = {
   collisionInfo: { "0": { name: "COLL_FLOOR", category: "land", talk: false } },
   events: NO_EVENTS,
   defects: [],
-  paddingWidth: 3,
+  incomplete: [], paddingWidth: 3,
 };
 const STAMP = { width: 1, height: 1, cells: [{ metatileId: 9 }] };
 let log: string[];

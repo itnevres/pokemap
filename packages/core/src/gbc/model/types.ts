@@ -27,10 +27,8 @@ export interface Metatile {
  * throw for a defect and never silently drop it. The CLI is responsible for
  * surfacing them to the user.
  */
-export interface DataDefect {
-  file: string;
-  message: string;
-}
+export type { DataDefect } from "../../defects/types.js";
+import type { DataDefect } from "../../defects/types.js";
 
 /**
  * One `connection` line from `data/maps/attributes.asm`. The axis is the
@@ -145,16 +143,14 @@ export interface GbcTileset {
 /**
  * A `.blk` file's decoded blockdata, keyed by its own repo-relative path
  * rather than by map -- `.blk` <-> map is NOT 1:1 (GBC format findings
- * §3.6). `writable` is false when, at load time, the file's byte length
- * disagreed with its declared width x height; Plan 7 must refuse writes to
- * such a layout.
+ * §3.6). Only the declared width x height blocks are decoded; saves keep
+ * every trailing disk byte when the file is oversized (R2).
  */
 export interface Layout {
   blkPath: string;
   width: number;
   height: number;
   blocks: Block[];
-  writable: boolean;
 }
 
 /**

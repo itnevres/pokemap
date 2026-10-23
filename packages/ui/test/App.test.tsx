@@ -105,6 +105,7 @@ function makeFetchMock(opts: MockOpts = {}) {
     if (url.startsWith("/api/encounters/")) {
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ methods: [] }) } as Response);
     }
+    if (url.startsWith("/api/defects/")) return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ defects: [], incomplete: [] }) } as Response);
     return Promise.reject(new Error(`unexpected fetch ${url}`));
   });
 }
@@ -222,6 +223,7 @@ describe("App", () => {
       if (url.startsWith("/api/encounters/")) {
         return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ methods: [] }) } as Response);
       }
+      if (url.startsWith("/api/defects/")) return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ defects: [], incomplete: [] }) } as Response);
       return Promise.reject(new Error(`unexpected fetch ${url}`));
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -364,6 +366,7 @@ function makeEditFetchMock(paintApplyBodies?: unknown[], opts: { failEventAdd?: 
         json: () => Promise.resolve({ blocks: [], border: [], map: null, isDirty: false, canUndo: false, canRedo: false }),
       } as Response);
     }
+    if (url.startsWith("/api/defects/")) return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ defects: [], incomplete: [] }) } as Response);
     return Promise.reject(new Error(`unexpected fetch ${url}`));
   });
 }
@@ -725,7 +728,7 @@ describe("App -- metatile palette wiring", () => {
 });
 
 describe("App -- Plan 9 shell characterisation", () => {
-  it("characterisation (Plan 9): a dungeon rename refits the GBA dungeon canvas (no filter cache, App.tsx:136-149)", async () => {
+  it("Plan 10b: a dungeon rename keeps the GBA dungeon canvas pan (the filter cache is on for both families)", async () => {
     stubViewport(100);
     try {
       const world = {
@@ -762,10 +765,11 @@ describe("App -- Plan 9 shell characterisation", () => {
       fireEvent.mouseMove(stage, { clientX: 20, clientY: 10 });
       fireEvent.mouseUp(stage);
       expect(position()).not.toEqual(fitPosition);
+      const pannedPosition = position();
       fireEvent.change(screen.getByRole("textbox", { name: "Dungeon name" }), { target: { value: "New Tower" } });
       fireEvent.blur(screen.getByRole("textbox", { name: "Dungeon name" }));
       await waitFor(() => expect(screen.getByRole("button", { name: /New Tower/ })).toBeTruthy());
-      await waitFor(() => expect(position()).toEqual(fitPosition));
+      expect(position()).toEqual(pannedPosition);
       expect(container.querySelector(".world-canvas__zoom-readout")!.textContent).toBe(fitZoom);
       fireEvent.mouseDown(stage, { button: 0, clientX: 0, clientY: 0 });
       fireEvent.mouseMove(stage, { clientX: 20, clientY: 10 });

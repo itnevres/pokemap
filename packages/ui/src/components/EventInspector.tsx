@@ -55,6 +55,10 @@ export interface EventInspectorProps {
    *  wrong event once the second round trip resolved. */
   onDelete: (ref: { kind: SelectedEvent["kind"]; index: number }) => Promise<void>;
   onAdd: () => Promise<void>;
+  /** Copies the selected event (the host reads the full event, not this partial selection). Same in-flight guard as Add/Delete. */
+  onDuplicate?: () => Promise<void>;
+  /** When set, Duplicate is disabled and this is its tooltip (e.g. the 64-object cap). */
+  duplicateDisabledReason?: string;
 }
 
 const KIND_LABEL: Record<EventKind, string> = { object: "Object", warp: "Warp", coord: "Coord", bg: "Bg" };
@@ -86,7 +90,7 @@ function subtitleFor(e: SelectedEvent): string {
  * this effect does not fire on unrelated App re-renders and clobber an
  * in-progress, not-yet-blurred edit.
  */
-export function EventInspector({ indicatorSource, mapName, onEditIndicator, selected, onMove, onDelete, onAdd }: EventInspectorProps) {
+export function EventInspector({ indicatorSource, mapName, onEditIndicator, selected, onMove, onDelete, onAdd, onDuplicate, duplicateDisabledReason }: EventInspectorProps) {
   const indicator = useIndicatorBlock(mapName, selected?.kind === "object" ? selected.index : undefined, indicatorSource ?? selected);
   const [draft, setDraft] = useState(selected);
   useEffect(() => setDraft(selected), [selected]);
@@ -110,13 +114,26 @@ export function EventInspector({ indicatorSource, mapName, onEditIndicator, sele
     Promise.resolve(onAdd()).finally(() => setPending(false));
   };
 
+  const [duplicating, setDuplicating] = useState(false);
+  const handleDuplicate = () => {
+    setDuplicating(true);
+    Promise.resolve(onDuplicate?.()).finally(() => setDuplicating(false));
+  };
+  const duplicateBtn = (enabled: boolean) => (
+    <button type="button" className="map-canvas__btn event-inspector__add-btn" onClick={handleDuplicate}
+      disabled={!enabled || pending || duplicating || !onDuplicate || duplicateDisabledReason !== undefined} title={duplicateDisabledReason}>
+      Duplicate
+    </button>
+  );
+
   if (!selected || !draft) {
     return (
       <div className="event-inspector event-inspector--empty">
         <p className="event-inspector__empty-text">No event selected.</p>
-        <button type="button" className="map-canvas__btn event-inspector__add-btn" onClick={handleAdd} disabled={pending}>
+        <button type="button" className="map-canvas__btn event-inspector__add-btn" onClick={handleAdd} disabled={pending || duplicating}>
           {pending ? "Adding…" : "Add Event"}
         </button>
+        {duplicateBtn(false)}
       </div>
     );
   }
@@ -214,7 +231,8 @@ export function EventInspector({ indicatorSource, mapName, onEditIndicator, sele
         {!indicator.block.editable && <p>This Indicator's script was changed outside PokeMap: {indicator.block.reason ?? "unsupported script"}</p>}
       </>}
       <div className="event-inspector__actions">
-        <button type="button" className="map-canvas__btn event-inspector__delete-btn" onClick={handleDelete} disabled={pending}>
+        {duplicateBtn(true)}
+        <button type="button" className="map-canvas__btn event-inspector__delete-btn" onClick={handleDelete} disabled={pending || duplicating}>
           {pending ? "Deleting…" : "Delete"}
         </button>
       </div>

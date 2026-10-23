@@ -25,6 +25,7 @@ function fetchMock(add: ReturnType<typeof deferred>) {
     if (url === "/api/map/PalletTown") return Promise.resolve(response(true, PALLET));
     if (url === "/api/map/Route1") return Promise.resolve(response(true, ROUTE));
     if (url === "/api/edit/PalletTown/event/add" && init?.method === "POST") return add.promise;
+    if (url.startsWith("/api/defects/")) return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ defects: [], incomplete: [] }) } as Response);
     return Promise.reject(new Error(`unexpected fetch ${url}`));
   });
 }

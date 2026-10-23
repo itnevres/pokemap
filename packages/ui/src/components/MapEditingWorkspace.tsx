@@ -10,6 +10,7 @@ import type { useMapEditing } from "../hooks/useMapEditing.js";
 import { EditingWorkspace } from "../shared/EditingWorkspace.js";
 import { GBA_CAPABILITIES, toolsFor } from "../shell/adapter.js";
 import { SignEditor } from "../shared/SignEditor.js";
+import { MAX_OBJECT_EVENTS, duplicateEventValue } from "../gba/duplicateEvent.js";
 
 /** The props the workspace builds for the canvas it hosts -- exactly what
  *  `App` passed to `MapCanvas` before the extraction (the controlled
@@ -63,6 +64,18 @@ export function MapEditingWorkspace({ active = true, mapName, data, editSession,
     selectedEvent, currentMap, activeTool, handleDiscard, onSelectEvent, onCanvasMoveEvent, onMoveEventFromInspector,
     onDeleteEvent, onAddEvent,
   } = editing;
+  // Duplicate reads the FULL event from the session map (the inspector's selection is partial), see duplicateEventValue.
+  const duplicateKey = { object: "objectEvents", warp: "warpEvents", coord: "coordEvents", bg: "bgEvents" } as const;
+  const onDuplicate = (): Promise<void> => {
+    const full = selectedEvent && currentMap ? currentMap[duplicateKey[selectedEvent.kind]][selectedEvent.index] : undefined;
+    if (!selectedEvent || !full || !data) return Promise.resolve();
+    const value = duplicateEventValue(selectedEvent.kind, full as unknown as Record<string, unknown>, data.layout.width, data.layout.height);
+    return editSession.addEvent(selectedEvent.kind, value)
+      .then(() => setEventOpError(null))
+      .catch((e: unknown) => setEventOpError(e instanceof Error ? e.message : "Failed to update event."));
+  };
+  const duplicateDisabledReason = selectedEvent?.kind === "object" && (currentMap?.objectEvents.length ?? 0) >= MAX_OBJECT_EVENTS
+    ? `The map already has ${MAX_OBJECT_EVENTS} object events` : undefined;
   const canvasProps: MapEditingCanvasProps | null =
     mapName !== null && data !== null
       ? {
@@ -148,7 +161,7 @@ export function MapEditingWorkspace({ active = true, mapName, data, editSession,
           highlightId={hoveredMetatileId ?? null}
         />
       )}
-      <EventInspector indicatorSource={currentMap} mapName={mapName ?? undefined} onEditIndicator={(edit) => { editing.setIndicatorEdit(edit); setIndicatorOpen(true); }} selected={selectedEvent} onMove={onMoveEventFromInspector} onDelete={onDeleteEvent} onAdd={onAddEvent} />
+      <EventInspector indicatorSource={currentMap} mapName={mapName ?? undefined} onEditIndicator={(edit) => { editing.setIndicatorEdit(edit); setIndicatorOpen(true); }} selected={selectedEvent} onMove={onMoveEventFromInspector} onDelete={onDeleteEvent} onAdd={onAddEvent} onDuplicate={onDuplicate} duplicateDisabledReason={duplicateDisabledReason} />
     </>
   );
   return (

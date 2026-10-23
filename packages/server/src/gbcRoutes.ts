@@ -26,8 +26,11 @@
  * Task 2's five new routes should follow rather than growing this function
  * into one 400-line handler the way `index.ts` did.
  */
+import { checkGbcMapDefects } from "@pokemap/core/src/defects/gbc.js";
+import type { SymbolIndex } from "@pokemap/core/src/defects/symbols.js";
+import { createSymbolIndexCache } from "./projectSymbols.js";
 import { openGbcProject, type GbcProject } from "@pokemap/core/src/gbc/project.js";
-import { loadGbcMapEvents, outOfBoundsEventDefects } from "@pokemap/core/src/gbc/load/events.js";
+import { loadGbcMapEvents } from "@pokemap/core/src/gbc/load/events.js";
 import { renderGbcMap, renderGbcMapMetatile } from "@pokemap/core/src/gbc/render/map.js";
 import { buildGbcWorld, type GbcWorld } from "@pokemap/core/src/gbc/world/connections.js";
 import { placeNearWarps, type WarpLink } from "@pokemap/core/src/world/nearWarp.js";
@@ -66,10 +69,11 @@ import { createGbcEditRoutes } from "./gbcEditRoutes.js";
  * the fallthrough below, not by this list. `sign/` ends in a required next
  * segment (`sign/NAME/suggestions`), so its alternative doesn't need a
  * trailing `(/|$)`. `warps/` and `dungeons` left this list in D3;
+ * `world/dungeons` left in Plan 10b Task 7a;
  * `species/NAME/icon.png` left in Plan 6c B1; `edit/` left in Plan 7 Task 4
  * (`gbcEditRoutes.ts` serves it).
  */
-const GBA_ONLY_ROUTE_RE = /^\/api\/(world\/dungeons$|sign\/)/;
+const GBA_ONLY_ROUTE_RE = /^\/api\/sign\//;
 
 /**
  * `decodeURIComponent` throws a `URIError` on a malformed percent-escape
@@ -157,8 +161,8 @@ export function buildGbcGroupsPayload(proj: GbcProject): { groupOrder: string[];
  * be unit-tested directly against a stub `GbcProject`, without needing
  * `createGbcProjectHandler` restructured for dependency injection.
  */
-export function buildGbcMapPayload(proj: GbcProject, map: GbcMap): GbcMapPayload {
-  const { layout, defects: layoutDefects } = proj.layout(map);
+export function buildGbcMapPayload(proj: GbcProject, map: GbcMap, symbols?: SymbolIndex): GbcMapPayload {
+  const { layout } = proj.layout(map);
   const ts = proj.tileset(map.tileset);
 
   const usedValues = new Set<number>();
@@ -175,13 +179,13 @@ export function buildGbcMapPayload(proj: GbcProject, map: GbcMap): GbcMapPayload
     if (entry) collisionInfo[String(v)] = entry;
   }
 
-  const { events, defects: eventDefects } = loadGbcMapEvents(proj.root, map);
-  const defects = [...layoutDefects, ...eventDefects, ...outOfBoundsEventDefects(map, events)];
+  const { events } = loadGbcMapEvents(proj.root, map);
+  const { defects, incomplete } = checkGbcMapDefects(proj, map.name, { symbols });
 
   return {
     family: "gbc",
     map,
-    layout: { blkPath: layout.blkPath, width: layout.width, height: layout.height, writable: layout.writable },
+    layout: { blkPath: layout.blkPath, width: layout.width, height: layout.height },
     blocks: layout.blocks,
     metatileCount: ts.metatiles.length,
     tileset: { constName: ts.constName, name: ts.name },
@@ -189,6 +193,7 @@ export function buildGbcMapPayload(proj: GbcProject, map: GbcMap): GbcMapPayload
     collisionInfo,
     events,
     defects,
+    incomplete,
     paddingWidth: proj.paddingWidth(),
   } satisfies GbcMapPayload;
 }
@@ -214,11 +219,15 @@ export function buildGbcWorldPayload(proj: GbcProject, world: GbcWorld, sidecar:
   }));
   const hidden = new Set([...world.placements.keys()].filter((name) => !shown.has(name)));
   const sizes = new Map([...world.placements].map(([name, p]) => [name, { width: p.width, height: p.height }]));
+  const singletonNames = new Set(world.components.filter((c) => c.maps.length === 1).map((c) => c.maps[0]!));
   const automatic = placeNearWarps({ placements: world.placements, shown, hidden, warps, sizes, gap: 4,
-    singletons: new Set(world.components.filter((c) => c.maps.length === 1).map((c) => c.maps[0]!)),
+    singletons: singletonNames,
     manualPlacements: sidecar.manualPlacements });
+  // Off: singleton components without a manual placement leave the world (they show in the Unplaced rail), as GBA's resolveWorldPlacements does.
+  const keep = (name: string) =>
+    sidecar.dungeonAutoLayout || !singletonNames.has(name) || Object.hasOwn(sidecar.manualPlacements, name);
   const placements = Object.fromEntries(
-    [...applySidecar(automatic, sidecar)].map(([name, placement]) => [name, {
+    [...applySidecar(automatic, sidecar)].filter(([name]) => keep(name)).map(([name, placement]) => [name, {
       ...placement,
       mapType: mapTypeByName.get(name) ?? "",
       manual: name in sidecar.manualPlacements,
@@ -230,6 +239,7 @@ export function buildGbcWorldPayload(proj: GbcProject, world: GbcWorld, sidecar:
     placements,
     components: world.components,
     conflicts: wireConflicts(world.conflicts, sidecar.acceptedConflicts ?? []),
+    sidecar: { dungeonAutoLayout: sidecar.dungeonAutoLayout },
   } satisfies GbcWorldPayload;
 }
 
@@ -269,6 +279,7 @@ export function buildGbcWarpsPayload(proj: GbcProject, name: string) {
 }
 
 export function createGbcProjectHandler(root: string): ProjectHandler {
+  const symbols = createSymbolIndexCache(root, "gbc");
   const proj = openGbcProject(root);
 
   // Built once, not per-request: proj.maps is already fully loaded and
@@ -322,6 +333,7 @@ export function createGbcProjectHandler(root: string): ProjectHandler {
   // and metatile art), so they stay.
   const edit = createGbcEditRoutes(proj, {
     onCommit: () => {
+      symbols.invalidate();
       renderCache.clear();
       warpCache = undefined;
       coverageCache = undefined;
@@ -373,7 +385,7 @@ export function createGbcProjectHandler(root: string): ProjectHandler {
         const name = decodeMapName(rawName);
         if (name === undefined) return send(400, { error: `malformed map name ${rawName}` });
         if (!mapNames.has(name)) return send(404, { error: `no map ${name}` });
-        return send(200, buildGbcMapPayload(proj, proj.map(name)));
+        return send(200, symbols.check((index) => buildGbcMapPayload(proj, proj.map(name), index)));
       }
 
       // Both PNG routes below resolve the map name FIRST (404), then
@@ -497,6 +509,30 @@ export function createGbcProjectHandler(root: string): ProjectHandler {
           console.error(e);
           send(500, { error: e instanceof Error ? e.message : String(e) });
         });
+      }
+
+      // The world payload is rebuilt from the sidecar on every request, so no cache needs clearing.
+      if (url.pathname === "/api/world/dungeons" && req.method === "POST") {
+        return readBody(req)
+          .then((body) => {
+            let parsed: { enabled?: unknown };
+            try {
+              parsed = JSON.parse(body) as typeof parsed;
+            } catch (e) {
+              return send(400, { error: `invalid JSON body: ${(e as Error).message}` });
+            }
+            if (parsed === null || typeof parsed !== "object" || typeof parsed.enabled !== "boolean") {
+              return send(400, { error: `expected { enabled: boolean }, got ${body}` });
+            }
+            const sidecar = readSidecar(proj.root);
+            sidecar.dungeonAutoLayout = parsed.enabled;
+            writeSidecar(proj.root, sidecar);
+            return send(200, { dungeonAutoLayout: sidecar.dungeonAutoLayout });
+          })
+          .catch((e: unknown) => {
+            console.error(e);
+            send(500, { error: e instanceof Error ? e.message : String(e) });
+          });
       }
 
       if (url.pathname === "/api/world/placement" && req.method === "POST") {
@@ -698,6 +734,7 @@ export function createGbcProjectHandler(root: string): ProjectHandler {
     // The hub's unsaved-edits guard (409 on /api/hub/open) reads this.
     dirtyMaps: () => edit.dirtyMaps(),
     dispose: () => {
+      symbols.invalidate();
       disposed = true;
       edit.closeAll();
     },

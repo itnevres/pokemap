@@ -1,0 +1,9 @@
+- **F1 — ADDRESSED.** [gba.ts:52](</C:/Programming Projects/PokeMap/packages/core/src/defects/gba.ts:52>) reparses tileset declarations and reads metatile binaries per request.
+- **F2 — ADDRESSED.** [gba.ts:12](</C:/Programming Projects/PokeMap/packages/core/src/defects/gba.ts:12>) excludes `MAP_NONE` from special destinations; unresolved targets reach C4.
+- **F3 — ADDRESSED.** [gba.ts:33](</C:/Programming Projects/PokeMap/packages/core/src/defects/gba.ts:33>) names unreadable selected files; line 82 records unrelated failures while preserving checks. [useMapDefects.ts:24](</C:/Programming Projects/PokeMap/packages/ui/src/hooks/useMapDefects.ts:24>) propagates partial results, and [DefectsBanner.tsx:10](</C:/Programming Projects/PokeMap/packages/ui/src/shared/DefectsBanner.tsx:10>) visibly renders both failure states.
+
+**New breakage in fix diff**
+
+**Important — Unrecoverable IDs produce false C4/C11 diagnoses.** [gba.ts:106](</C:/Programming Projects/PokeMap/packages/core/src/defects/gba.ts:106>) guesses an unreadable map’s ID from its directory when no header entry is available. For directory `Dest` whose actual ID is `MAP_CUSTOM_TARGET`, malformed JSON plus an absent header exempts only `MAP_DEST`; lines 115/130 incorrectly declare references to `MAP_CUSTOM_TARGET` nonexistent. The partial warning does not correct that categorical diagnosis. Keep unresolved identities explicitly unknown, withhold unprovable missing-target claims, and add this custom-ID/no-header regression.
+
+Coordinator evidence accepted: **3,353 pass / 0 fail / 208 files**, typecheck and UI build pass. Suite not rerun; live Map/World banner behavior remains unverified.

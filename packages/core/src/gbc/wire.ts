@@ -22,6 +22,7 @@ import type { Block, Collision, DataDefect, GbcMap, GbcMapEvents } from "./model
 import type { Placement, Component } from "./world/connections.js";
 import type { WireConflict } from "../world/conflictAcceptance.js";
 import type { GbcEncounterSource } from "./analyse/atlas.js";
+import type { IncompleteDefectCheck } from "../defects/types.js";
 
 /** One of `Collision`'s three coarse buckets (`TileCollisionTable`'s low nybble, `load/tileset.ts`'s `loadGbcCollisionInfo`). */
 export type GbcCollisionCategory = "land" | "water" | "wall";
@@ -50,7 +51,7 @@ export interface GbcCollisionInfoEntry {
 export interface GbcMapPayload {
   family: "gbc";
   map: GbcMap;
-  layout: { blkPath: string; width: number; height: number; writable: boolean };
+  layout: { blkPath: string; width: number; height: number };
   /** Exactly `layout.width * layout.height` entries, raw ids (0 NOT substituted). */
   blocks: Block[];
   metatileCount: number;
@@ -62,6 +63,7 @@ export interface GbcMapPayload {
   events: GbcMapEvents;
   /** Layout defects, then event defects, then out-of-bounds-event defects, in that order. */
   defects: DataDefect[];
+  incomplete: IncompleteDefectCheck[];
   paddingWidth: number;
 }
 
@@ -81,6 +83,7 @@ export interface GbcWorldPayload {
   placements: Record<string, GbcWorldPlacement>;
   components: Component[];
   conflicts: WireConflict[];
+  sidecar: { dungeonAutoLayout: boolean };
 }
 
 export interface GbcWorldPlacement extends Placement {

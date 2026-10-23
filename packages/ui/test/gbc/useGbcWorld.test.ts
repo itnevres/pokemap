@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { useGbcWorld } from "../../src/gbc/hooks/useGbcWorld.js";
 
 afterEach(() => {
@@ -12,6 +12,7 @@ const VALID_BODY = {
   placements: { NewBarkTown: { map: "NewBarkTown", x: 175, y: 251, width: 10, height: 9, component: 0, mapType: "TOWN", manual: false } },
   components: [{ index: 0, maps: ["NewBarkTown"], bounds: { x: 175, y: 251, width: 10, height: 9 } }],
   conflicts: [],
+  sidecar: { dungeonAutoLayout: true },
 };
 
 describe("useGbcWorld", () => {
@@ -59,5 +60,18 @@ describe("useGbcWorld", () => {
     rerender();
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("reload() refetches in place and keeps the current data until the new answer lands (Plan 10b SR9)", async () => {
+    const second = { ...VALID_BODY, sidecar: { dungeonAutoLayout: false } };
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(fetchMock.mock.calls.length > 1 ? second : VALID_BODY) }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderHook(() => useGbcWorld());
+    await waitFor(() => expect(result.current.data).toEqual(VALID_BODY));
+    act(() => result.current.reload());
+    expect(result.current.data).toEqual(VALID_BODY);
+    await waitFor(() => expect(result.current.data).toEqual(second));
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 });

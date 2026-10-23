@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import type { Project } from "../project.js";
 import { parseBlocks } from "../load/blocks.js";
+import { sizeDefect } from "../defects/size.js";
 import { createRaster, blit, type Raster } from "./raster.js";
 import { renderMetatile, type MetatileRaster } from "./metatile.js";
 import type { Block } from "../model/types.js";
@@ -59,7 +60,8 @@ export function renderLayout(proj: Project, layoutName: string, opts: RenderLayo
   const secondary = proj.tileset(layout.secondaryTileset);
 
   const blockdataPath = `${proj.paths.root}/${layout.blockdataFilepath}`;
-  const blocks = opts.blocksOverride ?? parseBlocks(readFileSync(blockdataPath), proj.profile);
+  const blockdata = opts.blocksOverride ? undefined : readFileSync(blockdataPath);
+  const blocks = opts.blocksOverride ?? parseBlocks(blockdata!, proj.profile);
   const wantBlocks = layout.width * layout.height;
   // A short file (or a short override) is a guess wearing the shape of a
   // render: `blocks[i]` would come back `undefined` mid-grid and `!b` would
@@ -70,9 +72,10 @@ export function renderLayout(proj: Project, layoutName: string, opts: RenderLayo
   // exactly as capable of being wrong, so the same refusal applies to it.
   if (blocks.length < wantBlocks) {
     const source = opts.blocksOverride ? "the supplied blocksOverride" : blockdataPath;
+    const defect = sizeDefect(layout.blockdataFilepath, blockdata?.length ?? blocks.length * 2, wantBlocks * 2, "the width/height in data/layouts/layouts.json");
     throw new Error(
       `${source} holds ${blocks.length} blocks but ${layout.name} declares ` +
-      `${layout.width}x${layout.height} = ${wantBlocks}`,
+      `${layout.width}x${layout.height} = ${wantBlocks}. ${defect.message}. ${defect.fix}`,
     );
   }
 

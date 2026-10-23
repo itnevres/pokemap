@@ -15,7 +15,7 @@ const DATA: GbcMapPayload = {
     landmark: "LANDMARK_NONE", music: "MUSIC_NONE", phoneFlag: "0", palette: "PAL_MAP_TOWN",
     fishGroup: "0", border: 9, connectionFlags: "0", connections: [],
   },
-  layout: { blkPath: "maps/NewBarkTown.blk", width: 2, height: 1, writable: true },
+  layout: { blkPath: "maps/NewBarkTown.blk", width: 2, height: 1 },
   blocks: [{ metatileId: 0 }, { metatileId: 1 }],
   metatileCount: 2,
   tileset: { constName: "TILESET_JOHTO", name: "TilesetJohto" },
@@ -33,7 +33,7 @@ const DATA: GbcMapPayload = {
     coords: [], bgs: [], objects: [], sceneScripts: [], callbacks: [], objectConsts: [],
   },
   defects: [],
-  paddingWidth: 3,
+  incomplete: [], paddingWidth: 3,
 };
 
 const PIXEL_WIDTH = 128; // (2+2)*32

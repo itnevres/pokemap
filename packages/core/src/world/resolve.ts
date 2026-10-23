@@ -58,7 +58,7 @@ export function resolveWorldPlacements(
     const placed = placeNearWarps({ placements: base, shown, hidden, warps: gbaWarpLinks(proj), sizes, gap: 4, singletons: unplacedMapNames(world), manualPlacements: sidecar.manualPlacements });
     return applySidecar(placed, sidecar);
   } else {
-    for (const name of unplacedMapNames(world)) base.delete(name);
+    for (const name of unplacedMapNames(world)) if (!Object.hasOwn(sidecar.manualPlacements, name)) base.delete(name);
   }
 
   return applySidecar(base, sidecar);

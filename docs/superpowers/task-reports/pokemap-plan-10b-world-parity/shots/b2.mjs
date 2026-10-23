@@ -1,0 +1,24 @@
+import { open } from "./lib.mjs";
+const { browser, page, wait, shot } = await open();
+const net = [];
+page.on("response", async (r) => { if (/\/api\/edit\/.*\/(plan|commit)/.test(r.url())) net.push(r.request().method() + " " + r.url().replace(/^.*\/api/, "") + " " + r.status() + " " + (await r.text().catch(()=>"")).slice(0, 300)); });
+await page.goto("http://localhost:5183/"); await wait(3000);
+await page.locator(".map-tree").getByText("Route101", { exact: true }).first().click(); await wait(3500);
+await page.getByRole("button", { name: "Events", exact: true }).click(); await wait(500);
+const disc = page.getByRole("button", { name: "Discard Changes" }); if (await disc.isEnabled().catch(()=>false)) { page.once("dialog", d=>d.accept()); await disc.click(); await wait(2000); }
+const insp = () => page.locator(".event-inspector").first().innerText().then(t => t.replace(/\s+/g, " ").slice(0, 70));
+const log = [];
+await page.mouse.click(808, 499); await wait(800); log.push(await insp());
+await page.getByRole("button", { name: "Duplicate", exact: true }).click({ timeout: 5000 }); await wait(1800); log.push("after obj dup: " + await insp());
+await shot("gba-b-2a-after-object-dup");
+await page.mouse.click(632, 548); await wait(800); log.push("sign sel: " + await insp()); await shot("gba-b-2b-sign-sel");
+await page.getByRole("button", { name: "Duplicate", exact: true }).click({ timeout: 5000 }); await wait(1800); log.push("after sign dup: " + await insp());
+await shot("gba-b-2-duplicated");
+await page.locator('.toolbar__save button[aria-label="Save Changes"]').click(); await wait(2500);
+const sd = page.locator('[role="dialog"][aria-label="Save changes"]');
+const dlg = await sd.innerText().catch(() => "");
+await shot("gba-b-3-save-dialog");
+await sd.getByRole("button", { name: "Save Changes", exact: true }).click(); await wait(3500);
+await shot("gba-b-4-saved");
+console.log(JSON.stringify({ log, dlg: dlg.slice(0, 600), net }, null, 1));
+await browser.close();

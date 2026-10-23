@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Placement, Component as WorldComponentInfo, VerticalLink } from "@pokemap/core/src/world/connections.js";
 import type { WireConflict } from "@pokemap/core/src/world/conflictAcceptance.js";
 import type { SpeciesHit } from "@pokemap/core/src/analyse/coverage.js";
@@ -20,6 +20,8 @@ import type { MapView } from "./mapView.js";
 import { ContextMapFit, useWorldContext } from "../shared/useWorldContext.js";
 import { WorldContextOverlay } from "../shared/WorldContextOverlay.js";
 import { useFitShortcut } from "../shared/useFitShortcut.js";
+import { DungeonAutoLayoutSwitch } from "../world/DungeonAutoLayoutSwitch.js";
+import { UnplacedRail } from "../world/UnplacedRail.js";
 
 /** The pixel size a placement's PNG renders at natively (`renderLayout`,
  *  border 0): 16px per tile, same constant the CLI's `render-world --scale
@@ -337,6 +339,10 @@ export interface WorldCanvasProps {
   /** Per-map render bust: when a map's number changes, only that map's tile is dropped and re-requested as
    *  `/api/render/<map>.png?v=<n>`; later loads of it keep the `?v`. */
   tileVersions?: Record<string, number>;
+  /** A placement POST succeeded (a tree or rail drop, or a Shift-drag move). The app mirrors it into tree visibility. */
+  onPlacementSaved?: (name: string) => void;
+  /** The dungeon auto-layout toggle was saved. The app refreshes any world data it holds of its own. */
+  onLayoutChanged?: () => void;
 }
 
 export interface WorldCanvasContext {
@@ -358,13 +364,15 @@ export interface WorldCanvasContext {
  * packages/ui/DESIGN.md for the palette/type/spacing tokens this consumes,
  * and this file's own comments for the LOD and culling mechanics.
  */
-export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSelectMap, onOpenMap, onEditHere, context, tileVersions }: WorldCanvasProps = {}) {
+export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSelectMap, onOpenMap, onEditHere, context, tileVersions, onPlacementSaved, onLayoutChanged }: WorldCanvasProps = {}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageCacheRef = useRef<Map<string, ImageCacheEntry>>(new Map());
   const encounterCacheRef = useRef<Map<string, EncounterCacheEntry>>(new Map());
   const warpCacheRef = useRef<Map<string, WarpCacheEntry>>(new Map());
   const dragRef = useRef<DragState>(null);
+  const placementEdits = useRef(new Map<string, number>());
+  const savedPlacementEdits = useRef(new Map<string, number>());
   const conflictBadgesRef = useRef<Array<{ x: number; y: number; text: string; key: string; map: string; accepted: boolean }>>([]);
   // Review fix: whether real pointer movement happened during the
   // mousedown-to-mouseup cycle that is about to produce a `click`. The
@@ -526,16 +534,24 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
   // API completeness and packages/server/test/world.test.ts's coverage.
   useEffect(() => {
     let cancelled = false;
+    const savedAtRequest = new Map(savedPlacementEdits.current);
     setLoadError(null);
     fetchGuarded("/api/world", isWorldPayload)
       .then((d) => {
         if (cancelled) return;
-        setWorld({
-          placements: new Map(Object.entries(d.placements)),
+        setWorld((previous) => {
+          const placements = new Map(Object.entries(d.placements));
+          for (const [name, version] of placementEdits.current) {
+            const local = previous?.placements.get(name);
+            if (local && version > (savedAtRequest.get(name) ?? 0)) placements.set(name, local);
+          }
+          return {
+          placements,
           components: d.components,
           conflicts: d.conflicts,
           verticalLinks: d.verticalLinks,
           sidecarDungeonAutoLayout: d.sidecar.dungeonAutoLayout,
+          };
         });
         setCompositeVersion((v) => v + 1);
         // Review fix: the server's own truth has now landed -- stop
@@ -569,6 +585,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
       .then((r) => {
         if (!r.ok) throw new Error(`POST /api/world/dungeons -> ${r.status}`);
         setRefetchGen((g) => g + 1);
+        onLayoutChanged?.();
       })
       .catch((e: unknown) => {
         setDungeonsPending(null);
@@ -1492,8 +1509,17 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
     return null;
   }, [visible, sizeByMap]);
 
-  const postPlacement = (map: string, x: number, y: number) => {
-    fetch("/api/world/placement", {
+  // An edit version with nothing to save (a drag that ended on its start tile)
+  // or whose POST failed is settled: later /api/world reloads take the server
+  // position instead of pinning the stale local one.
+  const settlePlacementEdits = (names: Iterable<string>) => {
+    for (const name of names) savedPlacementEdits.current.set(name, Math.max(placementEdits.current.get(name) ?? 0, savedPlacementEdits.current.get(name) ?? 0));
+  };
+  const postPlacements = (placements: Array<{ map: string; x: number; y: number }>) => {
+    if (!placements.length) return;
+    void Promise.all(placements.map(({ map, x, y }) => {
+      const version = placementEdits.current.get(map) ?? 0;
+      return fetch("/api/world/placement", {
       method: "POST",
       body: JSON.stringify({ map, x, y }),
     })
@@ -1503,16 +1529,28 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
         // refusal on a corrupted world.json) resolves normally and landed
         // here silently discarded, with no banner and no console output.
         if (!r.ok) throw new Error(`POST /api/world/placement -> ${r.status}`);
+        savedPlacementEdits.current.set(map, Math.max(version, savedPlacementEdits.current.get(map) ?? 0));
+        return map;
       })
       .catch((e: unknown) => {
+        savedPlacementEdits.current.set(map, Math.max(version, savedPlacementEdits.current.get(map) ?? 0));
         // The optimistic local move already reflects the drag -- a failed
         // POST means it will not survive a reload, so this goes through
         // saveError (dismissible, does not disturb the canvas) rather than
         // loadError (which claims the whole world failed to load, over a
         // canvas that is working fine).
         setSaveError(e instanceof Error ? e.message : String(e));
+        return null;
+      });
+    })).then((saved) => {
+        const names = saved.filter((name): name is string => name !== null);
+        if (names.length) {
+          setRefetchGen((g) => g + 1);
+          names.forEach((name) => onPlacementSaved?.(name));
+        }
       });
   };
+  const postPlacement = (map: string, x: number, y: number) => postPlacements([{ map, x, y }]);
 
   // Review fix: a plain mousedown used to start a map-drag whenever the
   // cursor happened to be over a placement, with no way to tell that
@@ -1646,6 +1684,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
       const rect = e.currentTarget.getBoundingClientRect();
       const w = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
       const nx = Math.round(w.x - drag.grabDX), ny = Math.round(w.y - drag.grabDY);
+      placementEdits.current.set(drag.map, (placementEdits.current.get(drag.map) ?? 0) + 1);
       setWorld((prev) => {
         if (!prev) return prev;
         const existing = prev.placements.get(drag.map);
@@ -1663,6 +1702,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
       const anchorStart = drag.starts.get(drag.anchorMap)!;
       const rawX = w.x - drag.grabDX, rawY = w.y - drag.grabDY;
       const dx = Math.round(rawX) - anchorStart.x, dy = Math.round(rawY) - anchorStart.y;
+      for (const name of drag.starts.keys()) placementEdits.current.set(name, (placementEdits.current.get(name) ?? 0) + 1);
       setWorld((prev) => {
         if (!prev) return prev;
         // Review fix: mirrors the "map" branch's own no-op guard just above
@@ -1716,16 +1756,20 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
       // that rounds back to the same tile) must not silently POST an
       // unchanged position and spend a write for nothing.
       if (p && (p.x !== drag.startTileX || p.y !== drag.startTileY)) postPlacement(drag.map, p.x, p.y);
+      else settlePlacementEdits([drag.map]);
     }
   };
 
   const commitGroupDrag = () => {
     const drag = dragRef.current;
     if (drag?.kind !== "group") return;
+    const changed: Array<{ map: string; x: number; y: number }> = [];
     for (const [name, start] of drag.starts) {
       const p = world?.placements.get(name);
-      if (p && (p.x !== start.x || p.y !== start.y)) postPlacement(name, p.x, p.y);
+      if (p && (p.x !== start.x || p.y !== start.y)) changed.push({ map: name, x: p.x, y: p.y });
     }
+    settlePlacementEdits([...drag.starts.keys()].filter((name) => !changed.some((c) => c.map === name)));
+    postPlacements(changed);
   };
 
   const commitMarquee = () => {
@@ -1842,6 +1886,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
     const rect = e.currentTarget.getBoundingClientRect();
     const w = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
     const x = Math.round(w.x - size.width / 2), y = Math.round(w.y - size.height / 2);
+    placementEdits.current.set(map, (placementEdits.current.get(map) ?? 0) + 1);
     setWorld((prev) => {
       if (!prev) return prev;
       const next = new Map(prev.placements);
@@ -1857,19 +1902,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
   return (
     <section className="world-canvas" aria-label="World canvas">
       <div className="world-canvas__toolbar">
-        <div className="world-canvas__toolbar-group">
-          <button
-            type="button"
-            role="switch"
-            aria-checked={dungeonsOn}
-            aria-label="Dungeon auto-layout"
-            className="world-canvas__switch"
-            onClick={toggleDungeons}
-          >
-            <span className="world-canvas__switch-thumb" />
-          </button>
-          <span className="world-canvas__switch-label">Dungeon auto-layout {dungeonsOn ? "on" : "off"}</span>
-        </div>
+        <DungeonAutoLayoutSwitch on={dungeonsOn} onToggle={toggleDungeons} />
         <div className="world-canvas__toolbar-group">
           <button
             type="button"
@@ -2140,74 +2173,6 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
     </section>
   );
 }
-
-interface UnplacedRailProps {
-  unplacedNames: string[];
-  filter: string;
-  onFilterChange: (value: string) => void;
-}
-
-/**
- * Review fix: this used to be built inline inside WorldCanvas's own render,
- * so canvas-state churn that has nothing to do with the rail -- pan and
- * hover state, both updated at pointer frequency by onMouseMove -- forced a
- * full re-render and re-reconciliation of all 1,028 <li> rows (the live
- * corpus's unplaced-singleton count with the dungeon toggle off) on every
- * single frame. That defeats Task 25's own "panning stays smooth"
- * acceptance criterion in exactly the one mode (dungeons off) this rail
- * exists to serve -- likely missed by prior spec-review passes because the
- * default sidecar has dungeons ON, where the rail is empty.
- *
- * Wrapped in React.memo and given only the three props it actually needs
- * (the raw unplaced-names list, the current filter string, and a
- * filter-change callback -- NOT a pre-filtered list, so the filtering
- * itself also lives here, out of WorldCanvas's own per-render work), so a
- * pan or hover update -- which changes neither -- leaves this whole subtree
- * untouched. `onFilterChange` must stay a `useState` setter passed straight
- * through by its caller (never a fresh inline arrow function) for the memo
- * comparison to actually hold across those unrelated re-renders.
- */
-export const UnplacedRail = memo(function UnplacedRail({ unplacedNames, filter, onFilterChange }: UnplacedRailProps) {
-  const filtered = useMemo(() => {
-    const q = filter.trim().toLowerCase();
-    return q ? unplacedNames.filter((n) => n.toLowerCase().includes(q)) : unplacedNames;
-  }, [unplacedNames, filter]);
-
-  return (
-    <aside className="world-canvas__rail" aria-label="Unplaced maps">
-      <div className="world-canvas__rail-header">
-        <span className="world-canvas__rail-title">Unplaced</span>
-        <span className="world-canvas__rail-count">{unplacedNames.length}</span>
-      </div>
-      <input
-        className="world-canvas__rail-filter"
-        placeholder="Filter…"
-        value={filter}
-        onChange={(e) => onFilterChange(e.target.value)}
-      />
-      {filtered.length === 0 ? (
-        <p className="world-canvas__rail-empty">
-          {unplacedNames.length === 0 ? "Every map is placed." : `No matches for “${filter}”.`}
-        </p>
-      ) : (
-        <ul className="world-canvas__rail-list">
-          {filtered.map((name) => (
-            <li key={name}>
-              <button
-                type="button"
-                className="world-canvas__rail-item"
-                draggable
-                onDragStart={(e) => e.dataTransfer.setData("text/plain", name)}
-              >
-                {name}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-    </aside>
-  );
-});
 
 function drawTriangle(ctx: CanvasRenderingContext2D, cx: number, cy: number, size: number, pointDown: boolean, color: string): void {
   ctx.fillStyle = color;

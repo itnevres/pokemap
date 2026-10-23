@@ -55,4 +55,12 @@ describe("resolveWorldPlacements", () => {
     const result = resolveWorldPlacements(proj, world, sidecar(true, { NewBarkTown_Lab: { x: 42, y: 7 } }), { dungeons: false });
     expect(result.get("NewBarkTown_Lab")).toMatchObject({ x: 42, y: 7 });
   });
+
+  // SR9: the toggle must not change a manual entry's size or component.
+  itWithCorpus("a manually placed singleton keeps its real size and component when dungeons are off", () => {
+    const world = buildWorld(proj);
+    const off = resolveWorldPlacements(proj, world, sidecar(false, { NewBarkTown_Lab: { x: 42, y: 7 } }));
+    expect(off.get("NewBarkTown_Lab")).toEqual({ ...world.placements.get("NewBarkTown_Lab"), x: 42, y: 7 });
+    expect(off.get("NewBarkTown_Lab")!.width).toBeGreaterThan(0);
+  });
 });

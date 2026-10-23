@@ -53,6 +53,7 @@ function makeFetchMock() {
       return ok({ map: LAYOUT.map, isDirty: true, warpRenumberWarnings: [] });
     }
     // The two dialogs fetch on mount; their load-failure paths are not under test.
+    if (url.startsWith("/api/defects/")) return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ defects: [], incomplete: [] }) } as Response);
     return Promise.reject(new Error(`unexpected fetch ${url}`));
   });
 }
@@ -137,10 +138,10 @@ describe("App -- selection resets", () => {
 
 const GBC_LAYOUT = {
   family: "gbc", map: { name: "PalletTown", constName: "PALLET_TOWN", group: 1, number: 1, width: 2, height: 1, blkPath: "maps/PalletTown.blk", tileset: "T", environment: "E", landmark: "L", music: "X", phoneFlag: "0", palette: "P", fishGroup: "0", border: 1, connectionFlags: "0", connections: [] },
-  layout: { blkPath: "maps/PalletTown.blk", width: 2, height: 1, writable: true },
+  layout: { blkPath: "maps/PalletTown.blk", width: 2, height: 1 },
   blocks: [{ metatileId: 0 }, { metatileId: 1 }], metatileCount: 2, tileset: { constName: "T", name: "T" },
   collision: Array.from({ length: 2 }, () => ({ tl: 0, tr: 0, bl: 0, br: 0 })), collisionInfo: { "0": { name: "COLL_FLOOR", category: "land", talk: false } },
-  events: { warps: [], coords: [], bgs: [], objects: [], sceneScripts: [], callbacks: [], objectConsts: [] }, defects: [], paddingWidth: 3,
+  events: { warps: [], coords: [], bgs: [], objects: [], sceneScripts: [], callbacks: [], objectConsts: [] }, defects: [], incomplete: [], paddingWidth: 3,
 };
 const SUGGESTIONS = { species: [{ species: "RATTATA", name: "Rattata", percent: 40 }], placement: { x: 1, y: 0 } };
 const SCRIPT = "PalletTownPokemonIndicator1";
@@ -163,6 +164,7 @@ describe.each(["gba", "gbc"] as const)("%s Indicator adapter", family => {
       if (url === "/api/map/PalletTown") return ok(family === "gba" ? LAYOUT : GBC_LAYOUT);
       if (url === "/api/indicator/PalletTown/suggestions") return ok(SUGGESTIONS);
       if (url === "/api/edit/PalletTown/indicator/add") return ok(payload);
+      if (url.startsWith("/api/defects/")) return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ defects: [], incomplete: [] }) } as Response);
       return Promise.reject(new Error(`unexpected fetch ${url}`));
     }));
     render(<RuntimeHarness family={family} />);
@@ -188,6 +190,7 @@ describe.each(["gba", "gbc"] as const)("%s Indicator adapter", family => {
       if (url === "/api/map/PalletTown") return ok(family === "gba" ? LAYOUT : GBC_LAYOUT);
       if (url === "/api/indicator/PalletTown/suggestions") return ok(SUGGESTIONS);
       if (url === "/api/edit/PalletTown/indicator/add") return ok({ map: {}, events: {}, blocks: [], isDirty: true, scriptLabel: SCRIPT });
+      if (url.startsWith("/api/defects/")) return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ defects: [], incomplete: [] }) } as Response);
       return Promise.reject(new Error(`unexpected fetch ${url}`));
     }));
     render(<RuntimeHarness family={family} />);
@@ -209,6 +212,7 @@ describe.each(["gba", "gbc"] as const)("%s Indicator adapter", family => {
       if (url === "/api/map/PalletTown") return ok(family === "gba" ? LAYOUT : GBC_LAYOUT);
       if (url === "/api/indicator/PalletTown/suggestions") return ok(SUGGESTIONS);
       if (url === "/api/edit/PalletTown/indicator/add") return ok(payload);
+      if (url.startsWith("/api/defects/")) return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ defects: [], incomplete: [] }) } as Response);
       return Promise.reject(new Error(`unexpected fetch ${url}`));
     }));
     render(<RuntimeHarness family={family} />);
@@ -230,6 +234,7 @@ describe.each(["gba", "gbc"] as const)("%s Indicator adapter", family => {
       if (url === "/api/map/PalletTown") return ok(family === "gba" ? LAYOUT : GBC_LAYOUT);
       if (url === "/api/indicator/PalletTown/suggestions") return ok(SUGGESTIONS);
       if (url === "/api/edit/PalletTown/indicator/add") return ok(payload);
+      if (url.startsWith("/api/defects/")) return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ defects: [], incomplete: [] }) } as Response);
       return Promise.reject(new Error(`unexpected fetch ${url}`));
     }));
     render(<RuntimeHarness family={family} />);
@@ -252,6 +257,7 @@ describe.each(["gba", "gbc"] as const)("%s Indicator adapter", family => {
       if (url === "/api/map/PalletTown") return ok(family === "gba" ? LAYOUT : GBC_LAYOUT);
       if (url === "/api/indicator/PalletTown/suggestions") return ok(SUGGESTIONS);
       if (url === "/api/edit/PalletTown/indicator/add") return new Promise<Response>(r => { resolve = r; });
+      if (url.startsWith("/api/defects/")) return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ defects: [], incomplete: [] }) } as Response);
       return Promise.reject(new Error(`unexpected fetch ${url}`));
     }));
     render(<RuntimeHarness family={family} />);

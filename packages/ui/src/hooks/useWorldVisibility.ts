@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { MapVisibilityInfo } from "../world/visibility.js";
 
 export interface UseWorldVisibilityResult {
@@ -8,6 +8,8 @@ export interface UseWorldVisibilityResult {
    *  into one "greyed" state. Null while loading or disabled. */
   placed: Map<string, MapVisibilityInfo> | null;
   error: string | null;
+  /** Refetches /api/world in place (keeps `placed` until the new answer lands). No-op while disabled. */
+  refresh(): void;
 }
 
 /**
@@ -21,6 +23,8 @@ export interface UseWorldVisibilityResult {
 export function useWorldVisibility(enabled: boolean): UseWorldVisibilityResult {
   const [placed, setPlaced] = useState<Map<string, MapVisibilityInfo> | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [gen, setGen] = useState(0);
+  const refresh = useCallback(() => setGen((g) => g + 1), []);
 
   useEffect(() => {
     if (!enabled) {
@@ -39,6 +43,7 @@ export function useWorldVisibility(enabled: boolean): UseWorldVisibilityResult {
         const out = new Map<string, MapVisibilityInfo>();
         for (const [name, p] of Object.entries(d.placements)) out.set(name, { mapType: p.mapType, manual: p.manual });
         setPlaced(out);
+        setError(null);
       })
       .catch((e: unknown) => {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e));
@@ -46,7 +51,7 @@ export function useWorldVisibility(enabled: boolean): UseWorldVisibilityResult {
     return () => {
       cancelled = true;
     };
-  }, [enabled]);
+  }, [enabled, gen]);
 
-  return { placed, error };
+  return { placed, error, refresh };
 }
