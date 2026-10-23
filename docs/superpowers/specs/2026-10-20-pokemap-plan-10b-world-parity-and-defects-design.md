@@ -215,3 +215,52 @@ Report: `task-reports/pokemap-plan-10b-world-parity/spec-review.md`. Findings 1-
 - The exact fix-pointer wording (one sentence, names the file).
 - How the GBC session keeps the `.blk` tail (re-read at save vs. hold at load), provided the 10a3 fingerprint covers the
   file's on-disk bytes.
+
+## Deferred minors (after merge, #23 → `b18375d`)
+
+Copied from the SDD ledger, which was removed after the merge (2026-10-23). The final review (Codex gpt-6-astra) triaged each item as OK to defer. Three items the ledger first deferred were instead fixed as final-review F1, F2 and F4 in `6119515`, so they are not listed: the GBC destination parse error and its missing regressions, the symbol-index build throw, and the qualified local-label scope. None of these items blocks anyone.
+
+Final-review outcome: 4 Important (F1-F4) fixed in `6119515`. A scoped re-review then found N1 (a no-op drag or failed placement save pinned a stale position, in both canvases), fixed in `37a0dfc`. The re-review after that was clean.
+
+- **T1:** the comment at `core/src/gbc/wire.ts:63` still mentions event defects. SR4 excludes `object_const_def`.
+- **T4:**
+  - `GbcApp.test.tsx:471`: the multi-defect banner test lost its second defect. Replace it with a C3/C5 entry.
+  - The backup-warp citation in the task-4 report should be pret `home/map.asm:330-340`.
+- **T5:**
+  - The GBA index invalidate (`index.ts`) is not in `finally`, though the GBC one is. A failed commit that leaves `.inc` unrestored leaves a stale index.
+  - The GBA symbol index walks the whole root. Walk only `data/` and `include/constants` (759 ms today).
+  - Every commit rebuilds the index synchronously, adding 0.3-1 s to the next defects GET or GBC map open. This over-invalidation follows the ruling.
+  - `EQUS` and `X=1` forms are not indexed.
+  - Style: `gbc.ts:33` should reuse `escapeRegExp`; the `projectSymbols` import grouping.
+  - CRLF commented-label line skips that label's hiddenitem/trainer C9. Unconfirmed: the final review could not reproduce it.
+  - The GBA SR3 test filters to the new label because the harness temp copy is partial.
+  - The task-5 report's special values lack decomp file:line citations.
+- **T6 (Duplicate):**
+  - The add-error path after a map switch bypasses the visit guard.
+  - The copy is not auto-selected.
+  - Object keys missing from the normalized session map are not copied, so SR13's "full event" is only partly met.
+  - The error-fallback text is duplicated.
+- **T7a:**
+  - A GBA manual singleton's component index differs between auto-layout on and off. SR9's text does not cover this.
+  - The toggle test assumes the fixture has a conflict (`on.conflicts[0]!`).
+- **T7b:**
+  - No red-first run was captured. Mutations M1/M2 stand in for it.
+  - No test pins `onPlacementSaved` on a Shift-drag move, in either family.
+  - GBA `renderDungeon` (`gba/adapter.tsx:138`) passes neither `onPlacementSaved` nor `onLayoutChanged`. The GBC side passes them.
+  - Each group placement makes its own GET `/api/world`. Coalesce them.
+  - A failed GBC world reload blanks the canvas. Not confirmed: the hook keeps its data.
+  - A fast double toggle can flicker the switch.
+  - The `onLayoutChanged` wiring on the GBC dungeon canvas is dead.
+- **T8 (live acceptance):**
+  - O1: a GBA tree drop with auto-layout on un-greys after 1.7-2.3 s (about 0.3 s when off).
+  - O2: the toolbar wraps when the map is dirty. This only affects the test script's coordinates.
+- **Final fix:**
+  - The symbol-failure incomplete entry shows the absolute project root path.
+  - An earlier GBC reload can briefly show the pre-save position before a later save's reload.
+  - GBC reads a ref inside a state updater, which is impure under StrictMode.
+  - A persistent index failure is rebuilt on every request, with no backoff.
+  - GBC local positions from a failed save persist. This predates Plan 10b.
+- **N1:**
+  - A late GBC POST failure settles a newer in-flight edit, because no version is captured. It self-corrects.
+  - A same-tile commit during an in-flight POST settles the in-flight edit, in both families. It self-corrects.
+  - No tests cover the two races above or the settling of unchanged GBA group members.
