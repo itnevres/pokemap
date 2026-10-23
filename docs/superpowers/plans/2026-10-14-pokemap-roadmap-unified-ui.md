@@ -118,15 +118,25 @@ Both families already render the same `components/Toolbar.tsx`; the differences 
   zoom and status-strip JSX, the overlay toggles and legend bar, the lens overlay block, tile-version refetch, the
   small-tile cache, badge geometry. About 100-150 lines per pair.
 - **Order:** after Plan 10 (the flags settle which toggles exist per family).
-- **Risk:** low-medium. Pure extraction; the canvas tests must pass unchanged.
+- **Risk:** high (ruling P11-3). The extractions are pure; the canvas tests must pass unchanged except where a P11-3 or P11-4 fix changes them.
 - **Depends on:** D9.
 - **Carried from Plan 9 (user, 2026-10-15):** when the overlay toggles move out of the canvases, give GBA Map view's two
   "Collision" buttons distinct accessible names (the toolbar's Collision tool and the canvas's Collision overlay toggle,
   `MapCanvas.tsx` overlay group); tests currently scope by the "Tools" group to tell them apart. Plan 9 Task 8 ruling;
   final review minor m3 (`task-reports/pokemap-plan-9-family-shell/final-review.md`).
-- **Candidates from Plan 10b (2026-10-23, not yet agreed; the user decides at brainstorming):** the deferred canvas and
-  world minors in the Plan 10b spec, section "Deferred minors (after merge)" (T7b, Final fix, N1 groups), touch the code
-  this plan moves. Fold them in only if the user picks them.
+- **Brainstorming rulings (user, 2026-10-23; binding):**
+  - **P11-1 Scope = every shared run outside the draw path.** Re-measured at `fb78949` (same method as Plan 8 Task 8):
+    MapCanvas pair 263 aligned code lines in 37 runs, WorldCanvas pair 302 in 48. Plan 11 lifts zoom/pan (`applyZoom`,
+    controlled-view plumbing), zoom buttons and status strip, the lens overlay block and `lensOverlayEntries`, tile-version
+    refetch, small-tile cache, badge geometry, conflict-acceptance wiring and the context-overlay mount.
+  - **P11-2 D9 holds.** Composite-version and redraw effects, and the stroke handlers around `chain.start`, stay for
+    Plan 12.
+  - **P11-3 Plan 10b deferred minors folded in:** all of groups T7b, Final fix and N1 (Plan 10b spec, "Deferred minors
+    (after merge)"). These change behaviour and fix async races, so canvas tests may change for them (only for them).
+  - **P11-4 Collision names:** the toolbar button's accessible name becomes "Collision tool" and the canvas toggle's
+    "Show collision overlay"; visible text stays "Collision". Tests stop scoping by the "Tools" group.
+  - **Tier: High** (async-ordering trigger from P11-3). Full workflow: spec, plan, SDD, separate spec and quality
+    reviews.
 
 ### Plan 12: shared canvas core
 
