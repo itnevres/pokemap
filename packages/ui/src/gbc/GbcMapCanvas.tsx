@@ -13,6 +13,7 @@ import { useCanvasAutoFit, useCanvasView, useCanvasZoom } from "../shared/useCan
 import { CanvasZoomBar } from "../shared/CanvasZoomBar.js";
 import { OverlayToggleGroup } from "../shared/OverlayToggleGroup.js";
 import { EncountersLegendItem, EventsLegendItems, LegendBar } from "../shared/LegendBar.js";
+import { MapCanvasViewport } from "../shared/MapCanvasViewport.js";
 import type { SettledChain } from "../shared/useStrokeChain.js";
 import type { GbcTimeOfDay } from "./time.js";
 import { EncounterBorder, type EncounterBorderEntry } from "../components/EncounterBorder.js";
@@ -732,18 +733,9 @@ export function GbcMapCanvas({ mapName, data: payload, time, hoveredMetatile, ed
         </LegendBar>
       )}
 
-      <div className="map-canvas__viewport" ref={containerRef}>
-        <img ref={imgRef} src={imageUrl} onLoad={onImgLoad} alt="" className="map-canvas__source-image" />
-        <canvas
-          ref={canvasRef}
-          className="map-canvas__stage"
-          width={viewport.w || pixelWidth}
-          height={viewport.h || pixelHeight}
-          onMouseDown={onMouseDown}
-          onMouseMove={onMouseMove}
-          onMouseUp={onMouseUp}
-          onMouseLeave={onMouseLeave}
-        />
+      <MapCanvasViewport containerRef={containerRef} imgRef={imgRef} canvasRef={canvasRef} imageUrl={imageUrl} onImgLoad={onImgLoad}
+        width={viewport.w || pixelWidth} height={viewport.h || pixelHeight}
+        onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseLeave}>
         <EncounterBorder
           enabled={encountersOn}
           entries={borderEntries}
@@ -752,7 +744,7 @@ export function GbcMapCanvas({ mapName, data: payload, time, hoveredMetatile, ed
           band={BORDER_BAND.gbc}
           time={time}
         />
-      </div>
+      </MapCanvasViewport>
 
       {!chromeless && <div className="map-canvas__status">
         <span className="map-canvas__status-item">

@@ -513,7 +513,8 @@ Plan 11:
 | `shared/useCanvasView.ts` | controlled view state, zoom wheel plumbing and once-per-map auto-fit | `MapCanvas` | `GbcMapCanvas` |
 | `shared/CanvasZoomBar.tsx` | the map Zoom group | `MapCanvas` | `GbcMapCanvas` |
 | `shared/OverlayToggleGroup.tsx` | the map Overlays group | `MapCanvas` | `GbcMapCanvas` |
-| `shared/LegendBar.tsx` | the map legend frame | `MapCanvas` | `GbcMapCanvas` |
+| `shared/LegendBar.tsx` | the map legend frame, Events items and Encounters item | `MapCanvas` | `GbcMapCanvas` |
+| `shared/MapCanvasViewport.tsx` | the viewport mount: source image and stage canvas (family passes its handlers and EncounterBorder) | `MapCanvas` | `GbcMapCanvas` |
 
 Still per family, on purpose (Plan 8 Task 7 stop rule): the app shell is now one (`FamilyApp`), so per family means
 *behind the runtime or a capability* (switch policy in `runtime.leave`, `switchError`, time of day, defects banner, sign
