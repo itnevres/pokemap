@@ -9,13 +9,17 @@ import type { GbcPaintBody, UseGbcEditSessionResult } from "./hooks/useGbcEditSe
 import { useStrokeChain } from "../shared/useStrokeChain.js";
 import { useFitShortcut } from "../shared/useFitShortcut.js";
 import { useContextMapFit } from "../shared/useWorldContext.js";
+import { useCanvasAutoFit, useCanvasView, useCanvasZoom } from "../shared/useCanvasView.js";
+import { CanvasZoomBar } from "../shared/CanvasZoomBar.js";
+import { OverlayToggleGroup } from "../shared/OverlayToggleGroup.js";
+import { LegendBar } from "../shared/LegendBar.js";
 import type { SettledChain } from "../shared/useStrokeChain.js";
 import type { GbcTimeOfDay } from "./time.js";
 import { EncounterBorder, type EncounterBorderEntry } from "../components/EncounterBorder.js";
 import { BORDER_BAND, borderSideFromConnections } from "../encounters/borderSide.js";
 import { fitWithBand } from "../encounters/fit.js";
 import { useMapEncounterSummaries } from "../encounters/useMapEncounterSummaries.js";
-import { ZOOM_LEVELS, zoomAboutPivot, type MapView, type Zoom } from "../components/mapView.js";
+import { ZOOM_LEVELS, zoomAboutPivot, type MapView } from "../components/mapView.js";
 
 /**
  * The GBC map view (Plan 6b Task 4: read-only; Plan 7 Task 5 added the optional editing props, see below). Plan Q2 accepts this as a
@@ -330,23 +334,8 @@ export function GbcMapCanvas({ mapName, data: payload, time, hoveredMetatile, ed
   const encountersOn = encountersFor === mapName;
   // ONE view value (never a setter inside an updater). Controlled: `next` is computed OUTSIDE any updater from the
   // latest `view` prop and reported (a no-op result is not); uncontrolled: set state (MapCanvas.tsx's E1 pattern).
-  const [ownView, setOwnView] = useState<GbcView>({ zoom: 1, pan: { x: 0, y: 0 } });
-  const controlled = controlledView !== undefined;
-  const view = controlledView ?? ownView;
+  const { controlled, view, updateView } = useCanvasView(controlledView, onViewChange);
   const { zoom, pan } = view;
-  const viewRef = useRef(view);
-  viewRef.current = view;
-  // Through a ref so an inline callback never changes `updateView`'s identity (it would re-create `fit`).
-  const onViewChangeRef = useRef(onViewChange);
-  onViewChangeRef.current = onViewChange;
-  const updateView = useCallback(
-    (next: GbcView | ((v: GbcView) => GbcView)) => {
-      if (!controlled) return setOwnView(next);
-      const n = typeof next === "function" ? next(viewRef.current) : next;
-      if (n !== viewRef.current) onViewChangeRef.current?.(n);
-    },
-    [controlled],
-  );
   const [hover, setHover] = useState<GbcStepInfo | null>(null);
   const [compositeVersion, setCompositeVersion] = useState(0);
   const [viewport, setViewport] = useState({ w: 0, h: 0 });
@@ -449,20 +438,7 @@ export function GbcMapCanvas({ mapName, data: payload, time, hoveredMetatile, ed
   // Once per real map open -- NOT on a time switch, which reuses the same
   // imgLoaded false->true cycle (MapCanvas.tsx:401-416's own fittedForMapRef
   // pattern, keyed on mapName alone).
-  const fittedForMapRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (imgLoaded && fittedForMapRef.current !== mapName) {
-      if (!controlled) fit(); // controlled: the parent owns placement, no auto-fit
-      fittedForMapRef.current = mapName;
-    }
-    // `fit` is intentionally excluded: it is a NEW function identity on
-    // every render (a `useCallback` over `viewport`/`pixelWidth`/
-    // `pixelHeight`), and this effect must run only when `imgLoaded` or
-    // `mapName` actually change -- including `fit` would defeat the whole
-    // "once per real map open" guard this effect exists for (a later
-    // viewport resize would otherwise re-fit and reset the player's zoom).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [imgLoaded, mapName]);
+  useCanvasAutoFit(imgLoaded, mapName, controlled, fit);
 
   const onImgLoad = () => setLoadedImageUrl(imageUrl);
 
@@ -550,36 +526,7 @@ export function GbcMapCanvas({ mapName, data: payload, time, hoveredMetatile, ed
     [mapName, pan.x, pan.y, pixelWidth, pixelHeight, zoom, side, encounterSummaries],
   );
 
-  const applyZoom = (next: Zoom, pivotX: number, pivotY: number) => updateView((v) => zoomAboutPivot(v, next, pivotX, pivotY));
-
-  const centerPivot = (): [number, number] => {
-    const c = canvasRef.current;
-    return c ? [c.width / 2, c.height / 2] : [0, 0];
-  };
-
-  // Native, { passive: false } -- see the header comment.
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const handler = (e: WheelEvent) => {
-      e.preventDefault();
-      const rect = canvas.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-      const idx = ZOOM_LEVELS.indexOf(zoom);
-      const nextIdx = e.deltaY < 0 ? Math.min(ZOOM_LEVELS.length - 1, idx + 1) : Math.max(0, idx - 1);
-      applyZoom(ZOOM_LEVELS[nextIdx]!, x, y);
-    };
-    canvas.addEventListener("wheel", handler, { passive: false });
-    return () => canvas.removeEventListener("wheel", handler);
-    // `applyZoom` is intentionally excluded: it is a new function identity
-    // on every render (not memoised), but it always calls the latest
-    // `setView` updater regardless of when it was created, so re-running
-    // this effect only on a real `zoom` change (to keep `idx` current) is
-    // correct and avoids tearing down/re-attaching the native listener on
-    // every render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [zoom, updateView]);
+  const { applyZoom, centerPivot } = useCanvasZoom(canvasRef, zoom, updateView, ZOOM_LEVELS);
 
   const hoverAt = (clientX: number, clientY: number) => {
     const canvas = canvasRef.current;
@@ -754,34 +701,17 @@ export function GbcMapCanvas({ mapName, data: payload, time, hoveredMetatile, ed
   return (
     <section className={`map-canvas gbc-map-canvas${chromeless ? " map-canvas--chromeless" : ""}`} aria-label={`${mapName} canvas`}>
       {!chromeless && <div className="map-canvas__toolbar">
-        <div className="map-canvas__zoom" role="group" aria-label="Zoom">
-          {ZOOM_LEVELS.map((z) => (
-            <button key={z} type="button" className="map-canvas__btn" aria-pressed={zoom === z} onClick={() => applyZoom(z, ...centerPivot())}>
-              {z}×
-            </button>
-          ))}
-          <button type="button" className="map-canvas__btn" onClick={fit} title="Fit to screen (F)">
-            Fit
-          </button>
-        </div>
-        <div className="map-canvas__toggles" role="group" aria-label="Overlays">
-          <button type="button" className="map-canvas__btn" aria-pressed={toggles.grid} onClick={() => toggle("grid")}>
-            Grid
-          </button>
-          <button type="button" className="map-canvas__btn" aria-pressed={toggles.collision} onClick={() => toggle("collision")}>
-            Collision
-          </button>
-          <button type="button" className="map-canvas__btn" aria-pressed={toggles.events} onClick={() => toggle("events")}>
-            Events
-          </button>
-          <button type="button" className="map-canvas__btn" aria-pressed={encountersOn} onClick={() => setEncountersFor(encountersOn ? null : mapName)}>
-            Encounters
-          </button>
-        </div>
+        <CanvasZoomBar zoom={zoom} zoomLevels={ZOOM_LEVELS} applyZoom={applyZoom} centerPivot={centerPivot} fit={fit} />
+        <OverlayToggleGroup toggles={[
+          { key: "grid", label: "Grid", pressed: toggles.grid, onClick: () => toggle("grid") },
+          { key: "collision", label: "Collision", pressed: toggles.collision, onClick: () => toggle("collision") },
+          { key: "events", label: "Events", pressed: toggles.events, onClick: () => toggle("events") },
+          { key: "encounters", label: "Encounters", pressed: encountersOn, onClick: () => setEncountersFor(encountersOn ? null : mapName) },
+        ]} />
       </div>}
 
       {!chromeless && (anyOverlay || encountersOn) && (
-        <div className="map-canvas__legend">
+        <LegendBar>
           {toggles.grid && (
             <span className="map-canvas__legend-item">
               <i className="map-canvas__swatch map-canvas__swatch--grid" /> Grid
@@ -825,7 +755,7 @@ export function GbcMapCanvas({ mapName, data: payload, time, hoveredMetatile, ed
                   : `Encounters: hover or focus a sprite; dimmed = not at ${time}, + = level can roll up to 4 higher`}
               </span>
             ))}
-        </div>
+        </LegendBar>
       )}
 
       <div className="map-canvas__viewport" ref={containerRef}>

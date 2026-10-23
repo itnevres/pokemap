@@ -506,6 +506,15 @@ what really differs. Change a row's module, not its two consumers.
 | `shell/FamilyApp.tsx` + `shell/adapter.ts` | the one app shell; `EngineAdapter`, `Capabilities`, `FamilyRuntime`, `ShellSlots`; `toolsFor` | `gba/adapter.tsx` (`useGbaRuntime`) | `gbc/adapter.tsx` (`useGbcRuntime`) |
 | `shell/useDungeonFilter.ts` | the open dungeon's map filter (cached when `dungeonFilterCache`) | `FamilyApp` | `FamilyApp` |
 
+Plan 11:
+
+| Module | What it owns | GBA consumer | GBC consumer |
+|---|---|---|---|
+| `shared/useCanvasView.ts` | controlled view state, zoom wheel plumbing and once-per-map auto-fit | `MapCanvas` | `GbcMapCanvas` |
+| `shared/CanvasZoomBar.tsx` | the map Zoom group | `MapCanvas` | `GbcMapCanvas` |
+| `shared/OverlayToggleGroup.tsx` | the map Overlays group | `MapCanvas` | `GbcMapCanvas` |
+| `shared/LegendBar.tsx` | the map legend frame | `MapCanvas` | `GbcMapCanvas` |
+
 Still per family, on purpose (Plan 8 Task 7 stop rule): the app shell is now one (`FamilyApp`), so per family means
 *behind the runtime or a capability* (switch policy in `runtime.leave`, `switchError`, time of day, defects banner, sign
 composer, `useMapEditing` vs `GbcMapEditing` state lifetimes), with D1-D3/D6/D8 moving them in Plan 10. The canvases'
