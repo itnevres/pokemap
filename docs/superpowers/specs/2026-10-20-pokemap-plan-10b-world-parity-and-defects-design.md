@@ -222,7 +222,7 @@ Copied from the SDD ledger, which was removed after the merge (2026-10-23). The 
 
 Final-review outcome: 4 Important (F1-F4) fixed in `6119515`. A scoped re-review then found N1 (a no-op drag or failed placement save pinned a stale position, in both canvases), fixed in `37a0dfc`. The re-review after that was clean.
 
-Fixed after the merge in `17c5b04` (branch `plan-10b-minors`): the GBA commit route now invalidates the symbol index in `finally`, so a commit that throws still drops the stale index. GBA Duplicate drops a result that lands after a map switch and reuses `eventOpErrorMessage`. A failed symbol-index build now backs off, per the ruling below.
+Fixed after the merge in `17c5b04` (merged via #24): the GBA commit route now invalidates the symbol index in `finally`, so a commit that throws still drops the stale index. GBA Duplicate drops a result that lands after a map switch and reuses `eventOpErrorMessage`. A failed symbol-index build now backs off, per the ruling below.
 
 **Ruling (2026-10-23, supersedes the final-fix "failed index build not cached, retries the next request").** A failed symbol-index build is reused for 5 s (`FAILURE_BACKOFF_MS` in `server/src/projectSymbols.ts`) and then rebuilt. `invalidate()`, which every commit calls, clears it at once. An outside fix to the project shows up within 5 s. The cost if this is wrong is a 5 s delay before C7-C9 return.
 
