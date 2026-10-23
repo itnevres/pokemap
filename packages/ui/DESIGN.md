@@ -510,7 +510,7 @@ Plan 11:
 
 | Module | What it owns | GBA consumer | GBC consumer |
 |---|---|---|---|
-| `shared/useCanvasView.ts` | controlled view state, zoom wheel plumbing and once-per-map auto-fit | `MapCanvas` | `GbcMapCanvas` |
+| `shared/useCanvasView.ts` | controlled view state, zoom wheel plumbing, once-per-map auto-fit and the fit callback (F shortcut, context fit) | `MapCanvas` | `GbcMapCanvas` |
 | `shared/CanvasZoomBar.tsx` | the map Zoom group | `MapCanvas` | `GbcMapCanvas` |
 | `shared/OverlayToggleGroup.tsx` | the map Overlays group | `MapCanvas` | `GbcMapCanvas` |
 | `shared/LegendBar.tsx` | the map legend frame, Events items and Encounters item | `MapCanvas` | `GbcMapCanvas` |

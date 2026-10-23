@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { drawGrid, drawCollision, drawElevation, drawEvents, type EventMark } from "@pokemap/core/src/render/overlays.js";
 import type { LayoutRaster } from "@pokemap/core/src/render/layout.js";
 import type { MapData } from "@pokemap/core/src/load/maps.js";
@@ -6,9 +6,7 @@ import type { EventKind } from "@pokemap/core/src/edit/events.js";
 import type { MapLayoutData } from "../hooks/useMapLayout.js";
 import type { PaintApplyBody, UseEditSessionResult } from "../hooks/useEditSession.js";
 import { useStrokeChain } from "../shared/useStrokeChain.js";
-import { useFitShortcut } from "../shared/useFitShortcut.js";
-import { useContextMapFit } from "../shared/useWorldContext.js";
-import { useCanvasAutoFit, useCanvasView, useCanvasZoom } from "../shared/useCanvasView.js";
+import { useCanvasAutoFit, useCanvasFit, useCanvasView, useCanvasZoom } from "../shared/useCanvasView.js";
 import { CanvasZoomBar } from "../shared/CanvasZoomBar.js";
 import { OverlayToggleGroup } from "../shared/OverlayToggleGroup.js";
 import { EncountersLegendItem, EventsLegendItems, LegendBar } from "../shared/LegendBar.js";
@@ -18,7 +16,6 @@ import { readBlock, type Stamp } from "@pokemap/core/src/edit/paint.js";
 import type { CollisionElevation } from "./CollisionPalette.js";
 import { EncounterBorder, type EncounterBorderEntry } from "./EncounterBorder.js";
 import { BORDER_BAND, borderSideFromConnections, gbaDirToCompass, type CompassDir } from "../encounters/borderSide.js";
-import { fitWithBand } from "../encounters/fit.js";
 import { useMapEncounterSummaries } from "../encounters/useMapEncounterSummaries.js";
 import { ZOOM_LEVELS, type MapView } from "./mapView.js";
 
@@ -429,25 +426,8 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSignPick, 
     setImgLoaded(false);
   }, [imageUrl]);
 
-  const fit = useCallback(() => {
-    // Before the viewport is measured, use the composite's native dimensions.
-    const vw = viewport.w || pixelWidth;
-    const vh = viewport.h || pixelHeight;
-    // Encounters on: the content is the image plus one band on the border's side, so the sprites fit too.
-    const { zoom: z, pan: p } = fitWithBand({
-      pw: pixelWidth,
-      ph: pixelHeight,
-      vw,
-      vh,
-      levels: ZOOM_LEVELS,
-      // Chromeless in-context maps cannot show encounters, so their band is 0.
-      bandNative: encountersOn ? BORDER_BAND.gba * METATILE_PX : 0,
-      side,
-    });
-    updateView({ zoom: z, pan: p });
-  }, [pixelWidth, pixelHeight, viewport, encountersOn, side, updateView]);
-  useFitShortcut(fit, !chromeless);
-  useContextMapFit(fit, chromeless);
+  // Chromeless in-context maps cannot show encounters, so their band is 0.
+  const fit = useCanvasFit({ viewport, pixelWidth, pixelHeight, zoomLevels: ZOOM_LEVELS, bandNative: encountersOn ? BORDER_BAND.gba * METATILE_PX : 0, side, updateView, chromeless });
 
   // Only the FIRST successful image load for a given mapName triggers fit()
   // -- a same-map reload triggered by a paint (imgLoaded cycling false->true

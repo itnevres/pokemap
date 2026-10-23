@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { zoomAboutPivot, type MapView, type Zoom } from "../components/mapView.js";
+import { fitWithBand } from "../encounters/fit.js";
+import { useFitShortcut } from "./useFitShortcut.js";
+import { useContextMapFit } from "./useWorldContext.js";
 
 /**
  * ONE view value for a map canvas, controlled or not, so no setter is ever called inside another setter's
@@ -76,4 +79,29 @@ export function useCanvasAutoFit(imgLoaded: boolean, mapName: string, controlled
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [imgLoaded, mapName]);
+}
+
+/**
+ * Fit-to-screen for a map canvas, bound to the F shortcut (chrome on) or the world's context fit (chromeless).
+ * `bandNative` is the encounter band in native pixels on the border's `side` (0 when encounters are off or the
+ * canvas is chromeless), so the sprites fit too. Before the viewport is measured, the composite's native size is used.
+ */
+export function useCanvasFit<T extends MapView>(a: {
+  viewport: { w: number; h: number };
+  pixelWidth: number;
+  pixelHeight: number;
+  zoomLevels: readonly Zoom[];
+  bandNative: number;
+  side: Parameters<typeof fitWithBand>[0]["side"];
+  updateView: (next: T | ((v: T) => T)) => void;
+  chromeless?: boolean;
+}) {
+  const { viewport, pixelWidth, pixelHeight, zoomLevels, bandNative, side, updateView, chromeless } = a;
+  const fit = useCallback(() => {
+    const { zoom, pan } = fitWithBand({ pw: pixelWidth, ph: pixelHeight, vw: viewport.w || pixelWidth, vh: viewport.h || pixelHeight, levels: zoomLevels, bandNative, side });
+    updateView({ zoom, pan } as T);
+  }, [pixelWidth, pixelHeight, viewport, bandNative, side, updateView]);
+  useFitShortcut(fit, !chromeless);
+  useContextMapFit(fit, chromeless);
+  return fit;
 }

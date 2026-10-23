@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { RGBA } from "@pokemap/core/src/render/raster.js";
 import { drawGbcGrid, drawGbcCollision, drawGbcEvents, gbcStepInfo, type GbcQuadrantInfo, type GbcQuadrantKey, type GbcStepInfo } from "@pokemap/core/src/gbc/render/overlays.js";
 import type { GbcMapPayload } from "@pokemap/core/src/gbc/wire.js";
@@ -7,9 +7,7 @@ import type { GbcStamp } from "@pokemap/core/src/gbc/edit/paint.js";
 import type { GbcEventKind } from "@pokemap/core/src/gbc/edit/events.js";
 import type { GbcPaintBody, UseGbcEditSessionResult } from "./hooks/useGbcEditSession.js";
 import { useStrokeChain } from "../shared/useStrokeChain.js";
-import { useFitShortcut } from "../shared/useFitShortcut.js";
-import { useContextMapFit } from "../shared/useWorldContext.js";
-import { useCanvasAutoFit, useCanvasView, useCanvasZoom } from "../shared/useCanvasView.js";
+import { useCanvasAutoFit, useCanvasFit, useCanvasView, useCanvasZoom } from "../shared/useCanvasView.js";
 import { CanvasZoomBar } from "../shared/CanvasZoomBar.js";
 import { OverlayToggleGroup } from "../shared/OverlayToggleGroup.js";
 import { EncountersLegendItem, EventsLegendItems, LegendBar } from "../shared/LegendBar.js";
@@ -18,7 +16,6 @@ import type { SettledChain } from "../shared/useStrokeChain.js";
 import type { GbcTimeOfDay } from "./time.js";
 import { EncounterBorder, type EncounterBorderEntry } from "../components/EncounterBorder.js";
 import { BORDER_BAND, borderSideFromConnections } from "../encounters/borderSide.js";
-import { fitWithBand } from "../encounters/fit.js";
 import { useMapEncounterSummaries } from "../encounters/useMapEncounterSummaries.js";
 import { ZOOM_LEVELS, zoomAboutPivot, type MapView } from "../components/mapView.js";
 
@@ -415,26 +412,8 @@ export function GbcMapCanvas({ mapName, data: payload, time, hoveredMetatile, ed
     setLoadedImageUrl(img?.complete === true && img.naturalWidth > 0 ? imageUrl : null);
   }, [imageUrl]);
 
-  const fit = useCallback(() => {
-    // Before the viewport is measured, use the composite's native dimensions.
-    const vw = viewport.w || pixelWidth;
-    const vh = viewport.h || pixelHeight;
-    // Encounters on: the content is the image plus one band on the border's side, so the sprites fit too.
-    updateView(
-      fitWithBand({
-        pw: pixelWidth,
-        ph: pixelHeight,
-        vw,
-        vh,
-        levels: ZOOM_LEVELS,
-        // Chromeless in-context maps cannot show encounters, so their band is 0.
-        bandNative: encountersOn ? BORDER_BAND.gbc * BLOCK_PX : 0,
-        side,
-      }),
-    );
-  }, [pixelWidth, pixelHeight, viewport, encountersOn, side, updateView]);
-  useFitShortcut(fit, !chromeless);
-  useContextMapFit(fit, chromeless);
+  // Chromeless in-context maps cannot show encounters, so their band is 0.
+  const fit = useCanvasFit({ viewport, pixelWidth, pixelHeight, zoomLevels: ZOOM_LEVELS, bandNative: encountersOn ? BORDER_BAND.gbc * BLOCK_PX : 0, side, updateView, chromeless });
 
   // Once per real map open -- NOT on a time switch, which reuses the same
   // imgLoaded false->true cycle (MapCanvas.tsx:401-416's own fittedForMapRef
