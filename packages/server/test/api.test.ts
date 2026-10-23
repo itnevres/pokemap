@@ -443,7 +443,7 @@ describe("defects route parse failures (temporary project)", () => {
       writeFileSync(join(root, "data/layouts/map.bin"), Buffer.alloc(10));
     }
   });
-  it("retains structural defects when the GBA index throws and retries the next request", async () => {
+  it("retains structural defects when the GBA index throws and retries after the backoff", async () => {
     const isolated = await createServer({ projectPath: root, port: 0 });
     const readDir = fs.readdirSync;
     const spy = vi.spyOn(fs, "readdirSync").mockImplementation(((...args: Parameters<typeof readDir>) => {
@@ -460,13 +460,16 @@ describe("defects route parse failures (temporary project)", () => {
         expect.objectContaining({ reason: expect.stringContaining("C7-C9") }),
       ]) });
       spy.mockRestore(); syncBuiltinESMExports();
+      expect(JSON.stringify(await (await get()).json())).toContain("C7-C9"); // Within the 5 s backoff the failure is reused.
+      const later = Date.now() + 5_000;
+      vi.spyOn(Date, "now").mockReturnValue(later);
       const second = await get();
       expect(second.status).toBe(200);
       const complete = await second.json() as { defects: unknown[]; incomplete: { reason: string }[] };
       expect(complete.defects).toEqual(partial.defects);
       expect(complete.incomplete.some((entry) => entry.reason.includes("C7-C9"))).toBe(false);
     } finally {
-      spy.mockRestore(); syncBuiltinESMExports(); await isolated.close();
+      spy.mockRestore(); syncBuiltinESMExports(); vi.mocked(Date.now).mockRestore?.(); await isolated.close();
     }
   });
   it("returns 500 with the selected map filename when it is malformed", async () => {

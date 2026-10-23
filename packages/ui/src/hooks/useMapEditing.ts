@@ -49,7 +49,7 @@ function resolveEventRef(ref: EventRef | null, map: MapData | undefined): Select
  *  persisted, and nothing told the player. Turns whatever `fetch` threw
  *  (see useEditSession.ts's own `callEvent`) into one short, readable
  *  line for the banner in MapEditingWorkspace.tsx. */
-function eventOpErrorMessage(e: unknown): string {
+export function eventOpErrorMessage(e: unknown): string {
   return e instanceof Error ? e.message : "Failed to update event.";
 }
 
@@ -325,6 +325,8 @@ export function useMapEditing({ editSession, layoutData, mapName }: UseMapEditin
     onMoveEventFromInspector,
     onDeleteEvent,
     onAddEvent,
+    // Lets callers outside this hook (MapEditingWorkspace's Duplicate) drop a result that lands after a map switch.
+    isVisitCurrent: visit.isCurrent,
     activeToolKind,
     setActiveToolKind,
     collisionValue,

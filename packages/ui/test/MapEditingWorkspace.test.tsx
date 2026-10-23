@@ -60,6 +60,7 @@ function makeEditing(overrides: Partial<ReturnType<typeof useMapEditing>> = {}):
     setSignAddedMessage: vi.fn(),
     activeTool: null,
     handleDiscard: vi.fn(),
+    isVisitCurrent: () => true,
     ...overrides,
   };
 }
@@ -207,4 +208,17 @@ describe("MapEditingWorkspace Duplicate (Plan 10b D6)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Duplicate" }));
     await vi.waitFor(() => expect(setEventOpError).toHaveBeenCalledWith("boom"));
   });
+
+  it.each([["resolves", vi.fn().mockResolvedValue(undefined)], ["fails", vi.fn().mockRejectedValue(new Error("boom"))]])(
+    "an add that %s after a map switch leaves the error state alone", async (_, addEvent) => {
+      const setEventOpError = vi.fn();
+      let current = true;
+      const session = { ...editSession, addEvent } as unknown as UseEditSessionResult;
+      render(<MapEditingWorkspace mapName="Foo" data={DATA} editSession={session} editing={makeEditing({ selectedEvent: selectedObj, currentMap: withMap([obj]), setEventOpError, isVisitCurrent: () => current })} />);
+      fireEvent.click(screen.getByRole("button", { name: "Duplicate" }));
+      current = false;
+      await vi.waitFor(() => expect(addEvent).toHaveBeenCalled());
+      await new Promise((r) => setTimeout(r, 0));
+      expect(setEventOpError).not.toHaveBeenCalled();
+    });
 });

@@ -36,7 +36,7 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("GBC partial defect checks kee
     expect(response.status).toBe(200);
     expect((await response.json() as GbcMapPayload).incomplete).toEqual([]);
   });
-  it("returns structural defects when the symbol index throws and retries the next request", async () => {
+  it("returns structural defects when the symbol index throws and retries after the backoff", async () => {
     const readDir = fs.readdirSync;
     const spy = vi.spyOn(fs, "readdirSync").mockImplementation(((...args: Parameters<typeof readDir>) => {
       if (String(args[0]).replace(/\\/g, "/") === root.replace(/\\/g, "/")) throw new Error("injected unreadable symbol directory");
@@ -53,9 +53,12 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("GBC partial defect checks kee
       ]));
       expect(partial.incomplete).toEqual([{ file: expect.any(String), reason: expect.stringContaining("C7-C9") }]);
       spy.mockRestore(); syncBuiltinESMExports();
+      expect(JSON.stringify(await (await get()).json())).toContain("C7-C9"); // Within the 5 s backoff the failure is reused.
+      const later = Date.now() + 5_000;
+      vi.spyOn(Date, "now").mockReturnValue(later);
       const retry = await get();
       expect(retry.status).toBe(200);
       expect((await retry.json() as GbcMapPayload).incomplete).toEqual([]);
-    } finally { spy.mockRestore(); syncBuiltinESMExports(); }
+    } finally { spy.mockRestore(); syncBuiltinESMExports(); vi.mocked(Date.now).mockRestore?.(); }
   });
 });

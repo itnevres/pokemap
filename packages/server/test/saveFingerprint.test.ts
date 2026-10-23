@@ -1,4 +1,5 @@
 import * as saves from "@pokemap/core/src/write/save.js";
+import * as symbolIndex from "@pokemap/core/src/defects/symbols.js";
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -187,5 +188,16 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("GBA preview-bound saves (temporary s
     expect(result.body.notice.code).toBe("PLAN_CHANGED");
     expect(result.body.fingerprint).toMatch(/^[a-f0-9]{64}$/);
     expect(disk()).toEqual(before);
+  });
+  it("a commit that throws after writing still invalidates the symbol index", async () => {
+    const build = vi.spyOn(symbolIndex, "buildGbaSymbolIndex");
+    expect((await fetch(`${base}/api/defects/${map}`)).status).toBe(200);
+    expect(build).toHaveBeenCalledTimes(1);
+    expect((await put()).status).toBe(200);
+    const plan = await preview();
+    vi.spyOn(saves, "commitSave").mockImplementation(() => { throw new Error("injected commit failure"); });
+    expect((await request("commit", { fingerprint: plan.fingerprint })).status).toBe(500);
+    expect((await fetch(`${base}/api/defects/${map}`)).status).toBe(200);
+    expect(build).toHaveBeenCalledTimes(2);
   });
 });
