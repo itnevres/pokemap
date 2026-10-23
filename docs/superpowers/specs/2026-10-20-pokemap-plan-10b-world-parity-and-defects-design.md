@@ -222,12 +222,15 @@ Copied from the SDD ledger, which was removed after the merge (2026-10-23). The 
 
 Final-review outcome: 4 Important (F1-F4) fixed in `6119515`. A scoped re-review then found N1 (a no-op drag or failed placement save pinned a stale position, in both canvases), fixed in `37a0dfc`. The re-review after that was clean.
 
+Fixed after the merge in `17c5b04` (branch `plan-10b-minors`): the GBA commit route now invalidates the symbol index in `finally`, so a commit that throws still drops the stale index. GBA Duplicate drops a result that lands after a map switch and reuses `eventOpErrorMessage`. A failed symbol-index build now backs off, per the ruling below.
+
+**Ruling (2026-10-23, supersedes the final-fix "failed index build not cached, retries the next request").** A failed symbol-index build is reused for 5 s (`FAILURE_BACKOFF_MS` in `server/src/projectSymbols.ts`) and then rebuilt. `invalidate()`, which every commit calls, clears it at once. An outside fix to the project shows up within 5 s. The cost if this is wrong is a 5 s delay before C7-C9 return.
+
 - **T1:** the comment at `core/src/gbc/wire.ts:63` still mentions event defects. SR4 excludes `object_const_def`.
 - **T4:**
   - `GbcApp.test.tsx:471`: the multi-defect banner test lost its second defect. Replace it with a C3/C5 entry.
   - The backup-warp citation in the task-4 report should be pret `home/map.asm:330-340`.
 - **T5:**
-  - The GBA index invalidate (`index.ts`) is not in `finally`, though the GBC one is. A failed commit that leaves `.inc` unrestored leaves a stale index.
   - The GBA symbol index walks the whole root. Walk only `data/` and `include/constants` (759 ms today).
   - Every commit rebuilds the index synchronously, adding 0.3-1 s to the next defects GET or GBC map open. This over-invalidation follows the ruling.
   - `EQUS` and `X=1` forms are not indexed.
@@ -236,10 +239,8 @@ Final-review outcome: 4 Important (F1-F4) fixed in `6119515`. A scoped re-review
   - The GBA SR3 test filters to the new label because the harness temp copy is partial.
   - The task-5 report's special values lack decomp file:line citations.
 - **T6 (Duplicate):**
-  - The add-error path after a map switch bypasses the visit guard.
   - The copy is not auto-selected.
   - Object keys missing from the normalized session map are not copied, so SR13's "full event" is only partly met.
-  - The error-fallback text is duplicated.
 - **T7a:**
   - A GBA manual singleton's component index differs between auto-layout on and off. SR9's text does not cover this.
   - The toggle test assumes the fixture has a conflict (`on.conflicts[0]!`).
@@ -258,7 +259,6 @@ Final-review outcome: 4 Important (F1-F4) fixed in `6119515`. A scoped re-review
   - The symbol-failure incomplete entry shows the absolute project root path.
   - An earlier GBC reload can briefly show the pre-save position before a later save's reload.
   - GBC reads a ref inside a state updater, which is impure under StrictMode.
-  - A persistent index failure is rebuilt on every request, with no backoff.
   - GBC local positions from a failed save persist. This predates Plan 10b.
 - **N1:**
   - A late GBC POST failure settles a newer in-flight edit, because no version is captured. It self-corrects.

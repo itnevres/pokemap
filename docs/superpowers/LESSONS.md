@@ -293,6 +293,8 @@ Rerun in isolation before calling either a regression. (Plan 8)
 
 **`codex exec` run in the background can hang on stdin** (tell: the log holds only "Reading additional input from stdin..." and no `thread.started`; the run times out with no output). Append `< /dev/null`. (Plan 10b, twice)
 
+**A script that waits on a Codex log must not match `ERROR`.** Codex prints `ERROR rmcp::transport` lines at startup when an MCP server's OAuth token is missing, and those are not run failures. Tell: the waiter exits within seconds and the log has no answer yet. Wait for the final `tokens used` line instead. (Plan 10b minors, 2026-10-23)
+
 **A Codex implementer may run its own SDD loop and spend the quota on reviews** (tell: `docs/superpowers/task-reports/<new-slug>/` with its own ledger and spec/quality reviews in the worktree, then a usage-limit `turn.failed`). Say in the brief: no self-review, no sub-dispatch; write only the named report. (Plan 10b)
 
 **Codex `"You've hit your usage limit … try again at HH:MM"`** (turn.failed) is the user's OpenAI quota, unlike "at capacity". The partial diff stays in the tree; wait for the stated time, then `codex exec resume <thread> -m <model> "continue"` (Task 6 resumed cleanly). (Plan 8)
