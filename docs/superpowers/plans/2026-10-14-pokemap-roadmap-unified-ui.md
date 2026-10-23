@@ -101,7 +101,7 @@ Both families already render the same `components/Toolbar.tsx`; the differences 
 - **Split (user, 2026-10-16):** **10a** = D1 + a new Sign tool (spec
   `specs/2026-10-16-pokemap-plan-10a-switch-and-signs-design.md`, plan `plans/2026-10-16-pokemap-plan-10a-switch-and-signs.md`);
   **10a2** = Pokémon Indicator (done, merged via #21); **10a3** = save integrity: all-or-nothing save and
-  commit bound to the previewed plan (spec `specs/2026-10-19-pokemap-plan-10a3-save-integrity-design.md`; done, merged via #22); **10b** = D3 + F2, D6, D8 (done on `plan-10b-world-parity` at `37a0dfc`, unpushed).
+  commit bound to the previewed plan (spec `specs/2026-10-19-pokemap-plan-10a3-save-integrity-design.md`; done, merged via #22); **10b** = D3 + F2, D6, D8 (done; merged via #23 → `b18375d`, 2026-10-23; three deferred minors fixed via #24).
 - **D2 amended (user, 2026-10-16):** the GBA "sign composer" is not a sign: it adds an object event (a catchable
   species' sprite with cry + one line). It is renamed **Pokémon Indicator** and ported to GBC in 10a2. D2's "GBC sign
   composer" becomes a real **Sign tool** in both families (readable bg-event signs; free text or text linked to the map
@@ -124,6 +124,9 @@ Both families already render the same `components/Toolbar.tsx`; the differences 
   "Collision" buttons distinct accessible names (the toolbar's Collision tool and the canvas's Collision overlay toggle,
   `MapCanvas.tsx` overlay group); tests currently scope by the "Tools" group to tell them apart. Plan 9 Task 8 ruling;
   final review minor m3 (`task-reports/pokemap-plan-9-family-shell/final-review.md`).
+- **Candidates from Plan 10b (2026-10-23, not yet agreed; the user decides at brainstorming):** the deferred canvas and
+  world minors in the Plan 10b spec, section "Deferred minors (after merge)" (T7b, Final fix, N1 groups), touch the code
+  this plan moves. Fold them in only if the user picks them.
 
 ### Plan 12: shared canvas core
 
