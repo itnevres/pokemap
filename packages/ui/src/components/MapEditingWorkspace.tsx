@@ -6,7 +6,7 @@ import { MetatilePalette } from "./MetatilePalette.js";
 import { EventInspector } from "./EventInspector.js";
 import type { UseEditSessionResult } from "../hooks/useEditSession.js";
 import type { MapLayoutData } from "../hooks/useMapLayout.js";
-import type { useMapEditing } from "../hooks/useMapEditing.js";
+import { eventOpErrorMessage, type useMapEditing } from "../hooks/useMapEditing.js";
 import { EditingWorkspace } from "../shared/EditingWorkspace.js";
 import { GBA_CAPABILITIES, toolsFor } from "../shell/adapter.js";
 import { SignEditor } from "../shared/SignEditor.js";
@@ -62,7 +62,7 @@ export function MapEditingWorkspace({ active = true, mapName, data, editSession,
     activeToolKind, setActiveToolKind, collisionValue, setCollisionValue, currentStamp, setCurrentStamp,
     setSaveDialogOpen, setIndicatorOpen, signAddedMessage, setSignAddedMessage, eventOpError, setEventOpError,
     selectedEvent, currentMap, activeTool, handleDiscard, onSelectEvent, onCanvasMoveEvent, onMoveEventFromInspector,
-    onDeleteEvent, onAddEvent,
+    onDeleteEvent, onAddEvent, isVisitCurrent,
   } = editing;
   // Duplicate reads the FULL event from the session map (the inspector's selection is partial), see duplicateEventValue.
   const duplicateKey = { object: "objectEvents", warp: "warpEvents", coord: "coordEvents", bg: "bgEvents" } as const;
@@ -71,8 +71,8 @@ export function MapEditingWorkspace({ active = true, mapName, data, editSession,
     if (!selectedEvent || !full || !data) return Promise.resolve();
     const value = duplicateEventValue(selectedEvent.kind, full as unknown as Record<string, unknown>, data.layout.width, data.layout.height);
     return editSession.addEvent(selectedEvent.kind, value)
-      .then(() => setEventOpError(null))
-      .catch((e: unknown) => setEventOpError(e instanceof Error ? e.message : "Failed to update event."));
+      .then(() => { if (isVisitCurrent()) setEventOpError(null); })
+      .catch((e: unknown) => { if (isVisitCurrent()) setEventOpError(eventOpErrorMessage(e)); });
   };
   const duplicateDisabledReason = selectedEvent?.kind === "object" && (currentMap?.objectEvents.length ?? 0) >= MAX_OBJECT_EVENTS
     ? `The map already has ${MAX_OBJECT_EVENTS} object events` : undefined;

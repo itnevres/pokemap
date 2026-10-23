@@ -993,10 +993,12 @@ export function createProjectHandler(root: string): ProjectHandler {
           } });
           try {
             commitSave(project, plan, prepared);
-            symbols.invalidate();
           } catch (e) {
             console.error(e);
             return send(500, { error: e instanceof Error ? e.message : String(e) });
+          } finally {
+            // A failed commit may still have written (or failed to restore) a file, so the index is stale either way.
+            symbols.invalidate();
           }
           // The render route's pngCache (keyed `name:border`, no expiry) predates this write, and the session-bypass
           // above ends the moment the session closes below. Clear all of it: layouts can be shared by several maps and
