@@ -477,7 +477,7 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
   // The ledger snapshot taken as each world GET was issued, by generation. A response can land in the same batch as a
   // newer GET's issue, so its own snapshot must survive that issue; the reconcile effect prunes older generations.
   const issued = useRef(new Map<number, PlacementSnapshot>());
-  const { data: world, error, reload: reloadWorld, loadedGen } = useGbcWorld(true, (gen) => { issued.current.set(gen, ledger.current.snapshot()); });
+  const { data: world, error, reload: reloadWorld, loadedGen, dismissError } = useGbcWorld(true, (gen) => { issued.current.set(gen, ledger.current.snapshot()); });
   const { data: coverageData, error: coverageError } = useGbcCoverage();
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -526,8 +526,15 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
   const unplacedNames = useMemo(() => [...sizeByMap.keys()].filter((name) => !placements[name]).sort(), [sizeByMap, placements]);
   const [railFilter, setRailFilter] = useState("");
   const [dungeonsPending, setDungeonsPending] = useState<boolean | null>(null);
+  const toggleGeneration = useRef(0);
+  const toggleReloadGeneration = useRef<number | null>(null);
   const dungeonsOn = dungeonsPending ?? world?.sidecar?.dungeonAutoLayout ?? true;
-  useEffect(() => { setDungeonsPending(null); }, [world]);
+  useEffect(() => {
+    if (world && toggleReloadGeneration.current !== null && loadedGen >= toggleReloadGeneration.current) {
+      toggleReloadGeneration.current = null;
+      setDungeonsPending(null);
+    }
+  }, [world, loadedGen]);
   const [compositeVersion, setCompositeVersion] = useState(0);
   // Bumped whenever encounterCacheRef's own contents change (a per-map
   // fetch landing) -- the same "a ref never usefully appears in a
@@ -980,14 +987,18 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
   const [layoutError, setLayoutError] = useState<string | null>(null);
   const toggleDungeons = () => {
     const next = !dungeonsOn;
+    const generation = ++toggleGeneration.current;
+    toggleReloadGeneration.current = null;
     setDungeonsPending(next);
     fetchGuarded("/api/world/dungeons", isLayoutSaved, undefined, { method: "POST", body: JSON.stringify({ enabled: next }) })
       .then(() => {
+        if (generation !== toggleGeneration.current) return;
         setLayoutError(null);
-        reloadWorld();
+        toggleReloadGeneration.current = reloadWorld();
         onLayoutChanged?.();
       })
       .catch((e: unknown) => {
+        if (generation !== toggleGeneration.current) return;
         setDungeonsPending(null);
         setLayoutError(e instanceof Error ? e.message : String(e));
       });
@@ -1216,6 +1227,14 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
             <span className="world-canvas__toolbar-error" role="alert">Could not save placement: {saveError}</span>
           </div>
         )}
+        {world && error && (
+          <div className="world-canvas__toolbar-group world-canvas__toolbar-group--save-error">
+            <span className="world-canvas__toolbar-error" role="alert">
+              Could not reload the world: {error}
+              <button type="button" className="world-canvas__toast-dismiss" aria-label="Dismiss error" onClick={dismissError}>×</button>
+            </span>
+          </div>
+        )}
         {/* Species spotlight + coverage lenses (Plan 6b Task 6) -- reuses
             WorldCanvas.tsx's own themed grow group so this control cluster
             gets the same extra middle space there, not a bespoke width. */}
@@ -1240,7 +1259,7 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
 
       <div className="world-canvas__body">
         <div className="world-canvas__viewport" ref={containerRef}>
-          {error ? (
+          {!world && error ? (
             <p className="app__canvas-placeholder">Could not load the world: {error}</p>
           ) : !world ? (
             <p className="app__canvas-placeholder">Loading world…</p>

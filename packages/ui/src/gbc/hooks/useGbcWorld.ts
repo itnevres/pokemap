@@ -8,6 +8,8 @@ export interface UseGbcWorldResult extends UseGuardedFetchResult<GbcWorldPayload
   loadedGen: number;
   /** Refetches in place and returns the new generation synchronously; current `data` stays until success. */
   reload(): number;
+  /** Clears `error` (Plan 11 F11: the reload alert's Dismiss); a later failed GET sets it again. */
+  dismissError(): void;
 }
 
 /**
@@ -33,6 +35,7 @@ export function useGbcWorld(enabled: boolean = true, onIssue?: (gen: number) => 
     setGen(next);
     return next;
   }, []);
+  const dismissError = useCallback(() => setError(null), []);
   useEffect(() => {
     if (!enabled) { setData(null); setError(null); return; }
     let cancelled = false;
@@ -42,5 +45,5 @@ export function useGbcWorld(enabled: boolean = true, onIssue?: (gen: number) => 
       .catch((e: unknown) => { if (!cancelled) setError(e instanceof Error ? e.message : String(e)); });
     return () => { cancelled = true; };
   }, [enabled, gen]);
-  return { data, error, reload, loadedGen };
+  return { data, error, reload, loadedGen, dismissError };
 }

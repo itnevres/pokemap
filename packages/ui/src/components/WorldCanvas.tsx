@@ -429,7 +429,15 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
   // permanently shadow the server's value for the rest of the page
   // session -- see the /api/world effect's success handler below).
   const [dungeonsPending, setDungeonsPending] = useState<boolean | null>(null);
+  const toggleGeneration = useRef(0);
+  const toggleReloadGeneration = useRef<number | null>(null);
   const [refetchGen, setRefetchGen] = useState(0);
+  const refetchGeneration = useRef(0);
+  const reloadWorld = () => {
+    const next = ++refetchGeneration.current;
+    setRefetchGen(next);
+    return next;
+  };
   const [viewport, setViewport] = useState<Viewport>({ w: 0, h: 0 });
   const [pan, setPan] = useState<Pan>({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
@@ -513,9 +521,8 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
   // Fetch /api/world. No ?dungeons= override here -- the toggle now
   // persists to sidecar.dungeonAutoLayout (see toggleDungeons below), so a
   // plain fetch always reflects whatever was last saved, exactly like a
-  // real reload would. refetchGen exists only to give this effect a
-  // dependency to re-run on after a toggle succeeds or a placement commit settles; it carries no data
-  // of its own. `/api/world?dungeons=` itself is unchanged, but review fix:
+  // real reload would. refetchGen identifies the GET requested after a
+  // toggle succeeds or a placement commit settles. `/api/world?dungeons=` itself is unchanged, but review fix:
   // nothing in this app calls it that way any more -- the CLI's
   // --no-dungeons calls resolveWorldPlacements directly (no HTTP involved
   // at all), so the query param is kept only for the server route's own
@@ -523,7 +530,6 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
   useEffect(() => {
     let cancelled = false;
     const snap = ledger.current.snapshot();
-    setLoadError(null);
     fetchGuarded("/api/world", isWorldPayload)
       .then((d) => {
         if (cancelled) return;
@@ -545,13 +551,12 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
           };
         });
         setCompositeVersion((v) => v + 1);
-        // Review fix: the server's own truth has now landed -- stop
-        // shadowing it with a stale optimistic value. Harmless when this
-        // runs for a reason OTHER than a successful toggle (initial mount:
-        // already null; a failed toggle already nulled it before this
-        // effect could re-run at all). Placement commits also bump refetchGen
-        // after settling, so their reloads reach this handler too.
-        setDungeonsPending(null);
+        setLoadError(null);
+        // Only a GET issued at or after the latest successful toggle can replace its optimistic value.
+        if (toggleReloadGeneration.current !== null && refetchGen >= toggleReloadGeneration.current) {
+          toggleReloadGeneration.current = null;
+          setDungeonsPending(null);
+        }
       })
       .catch((e: unknown) => {
         if (!cancelled) setLoadError(e instanceof Error ? e.message : String(e));
@@ -571,14 +576,18 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
   // success, by the /api/world effect above once its own refetch lands).
   const toggleDungeons = () => {
     const next = !dungeonsOn;
+    const generation = ++toggleGeneration.current;
+    toggleReloadGeneration.current = null;
     setDungeonsPending(next);
     fetch("/api/world/dungeons", { method: "POST", body: JSON.stringify({ enabled: next }) })
       .then((r) => {
+        if (generation !== toggleGeneration.current) return;
         if (!r.ok) throw new Error(`POST /api/world/dungeons -> ${r.status}`);
-        setRefetchGen((g) => g + 1);
+        toggleReloadGeneration.current = reloadWorld();
         onLayoutChanged?.();
       })
       .catch((e: unknown) => {
+        if (generation !== toggleGeneration.current) return;
         setDungeonsPending(null);
         // Review fix: this used to write into loadError -- the same state
         // "the whole world failed to load" uses, which only resets at the
@@ -1484,7 +1493,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
     })).then((saved) => {
         const names = saved.filter((name): name is string => name !== null);
         // One reload after the whole commit settles, including failures, so failed local positions can roll back.
-        setRefetchGen((g) => g + 1);
+        reloadWorld();
         names.forEach((name) => onPlacementSaved?.(name));
       });
   };
@@ -1881,7 +1890,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
 
       <div className="world-canvas__body">
         <div className="world-canvas__viewport" ref={containerRef}>
-          {loadError ? (
+          {!world && loadError ? (
             <p className="app__canvas-placeholder">Could not load the world: {loadError}</p>
           ) : !world ? (
             <p className="app__canvas-placeholder">Loading world…</p>
@@ -1978,6 +1987,19 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
                 type="button"
                 className="world-canvas__toast-dismiss"
                 onClick={() => setSaveError(null)}
+                aria-label="Dismiss error"
+              >
+                ×
+              </button>
+            </div>
+          )}
+          {world && loadError && (
+            <div className="world-canvas__toast" role="alert">
+              <span className="world-canvas__toast-text">Could not reload the world: {loadError}</span>
+              <button
+                type="button"
+                className="world-canvas__toast-dismiss"
+                onClick={() => setLoadError(null)}
                 aria-label="Dismiss error"
               >
                 ×

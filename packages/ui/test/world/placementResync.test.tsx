@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { StrictMode } from "react";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { WorldCanvas } from "../../src/components/WorldCanvas.js";
 import { GbcWorldCanvas } from "../../src/gbc/GbcWorldCanvas.js";
 import { restoreViewport, stubViewport } from "../viewport.js";
@@ -143,7 +143,10 @@ it("GBA group save reloads once after all members save", async () => {
 
 // Plan 11 F6: every POST and every GET after the first is resolved by hand, so each ordering is forced.
 // A GET's body is the server state when it was issued; a POST changes the server state when it is resolved ok.
-function deferredServer(family: "gba" | "gbc") {
+// A dungeon toggle POST changes the server when it is received (the server answers in order); only its response is held.
+function deferredServer(family: "gba" | "gbc", { failFirstGet = false } = {}) {
+  let dungeons = false;
+  const toggles: Array<{ enabled: boolean; settle: (ok: boolean) => void }> = [];
   const state: Record<string, { x: number; y: number; component: number }> = { Source: { x: 0, y: 0, component: 0 }, Neighbour: { x: 10, y: 0, component: 0 } };
   const posts: Array<{ map: string; x: number; y: number; settle: (ok: boolean) => void }> = [];
   const gets: Array<{ release: () => void; fail: () => void }> = [];
@@ -159,11 +162,17 @@ function deferredServer(family: "gba" | "gbc") {
         resolve(good ? ok({ ok: true }) : failed);
       } }));
     }
+    if (url === "/api/world/dungeons") {
+      const { enabled } = JSON.parse(String(init?.body)) as { enabled: boolean };
+      dungeons = enabled;
+      return new Promise<Response>((resolve) => toggles.push({ enabled, settle: (good) => resolve(good ? ok({ dungeonAutoLayout: enabled }) : failed) }));
+    }
     if (url === "/api/world") {
+      if (failFirstGet) { failFirstGet = false; return Promise.resolve(failed); }
       const placements = Object.fromEntries(Object.entries(state).map(([map, at]) => [map, { map, ...at, width: 10, height: 10, mapType: family === "gba" ? "MAP_TYPE_TOWN" : "TOWN", manual: map !== "Neighbour" }]));
       const components = [{ index: 0, maps: ["Source", "Neighbour"], bounds: { x: 0, y: 0, width: 20, height: 10 } },
         { index: 1, maps: ["Unplaced"], bounds: { x: 0, y: 0, width: 10, height: 10 } }];
-      const body = ok({ ...(family === "gbc" ? { family, blockPx: 32 } : { verticalLinks: [] }), placements, components, conflicts: [], sidecar: { dungeonAutoLayout: false } });
+      const body = ok({ ...(family === "gbc" ? { family, blockPx: 32 } : { verticalLinks: [] }), placements, components, conflicts: [], sidecar: { dungeonAutoLayout: dungeons } });
       if (!holding) return Promise.resolve(body);
       return new Promise<Response>((resolve) => gets.push({ release: () => resolve(body), fail: () => resolve(failed) }));
     }
@@ -174,7 +183,7 @@ function deferredServer(family: "gba" | "gbc") {
     if (url.startsWith("/api/encounters/")) return Promise.resolve(ok(family === "gbc" ? { family, mapName: url.split("/").at(-1), sources: [], defects: [] } : { mapName: url.split("/").at(-1), mapId: 0, methods: [] }));
     return Promise.reject(new Error(`unexpected fetch ${url}`));
   });
-  return { fetcher, state, posts, gets, hold: () => { holding = true; } };
+  return { fetcher, state, posts, gets, toggles, hold: () => { holding = true; } };
 }
 
 describe.each(["gba", "gbc"] as const)("%s placement saves reconcile by version (Plan 11 F1-F6)", (family) => {
@@ -380,4 +389,149 @@ it("GBA unchanged group members during an in-flight save keep the local position
   await waitFor(() => expect(api.gets.length).toBe(2));
   await settle(() => api.gets[1]!.release());
   await expectNeighbourY(-1);
+});
+
+// Plan 11 Task 6 (F12 toggle generations, F11 failed reload keeps the canvas), both families, deferred fetches.
+describe.each(["gba", "gbc"] as const)("%s dungeon switch and reload alert (Plan 11 F11, F12)", (family) => {
+  let api: ReturnType<typeof deferredServer>;
+  let canvas: Element;
+  const settle = async (fn: () => void) => { await act(async () => { fn(); for (let i = 0; i < 10; i++) await Promise.resolve(); }); };
+  const sw = () => screen.getByRole("switch", { name: "Dungeon auto-layout" });
+  const shown = () => sw().getAttribute("aria-checked");
+  const reloadAlert = () => screen.queryAllByRole("alert").find((node) => node.textContent?.includes("Could not reload the world"));
+  const toggle = async (nth: number) => { await waitFor(() => expect(api.toggles.length).toBeGreaterThanOrEqual(nth)); return api.toggles[nth - 1]!; };
+  const getNumber = async (n: number) => { await waitFor(() => expect(api.gets.length).toBeGreaterThanOrEqual(n)); return api.gets[n - 1]!; };
+  const releaseAll = async () => { for (const g of [...api.gets]) await settle(() => g.release()); };
+  const dropUnplaced = () => {
+    const drop = new MouseEvent("drop", { bubbles: true, clientX: 50, clientY: 100 });
+    Object.defineProperty(drop, "dataTransfer", { value: { getData: () => "Unplaced" } });
+    fireEvent(canvas, drop);
+  };
+  const mount = async () => {
+    api = deferredServer(family); vi.stubGlobal("fetch", api.fetcher);
+    const { container } = render(family === "gba" ? <WorldCanvas /> : <GbcWorldCanvas time="day" />);
+    await waitFor(() => expect(shown()).toBe("false"));
+    fireEvent.click(screen.getByRole("button", { name: "Fit" }));
+    canvas = container.querySelector("canvas.world-canvas__stage")!;
+    api.hold();
+  };
+  // A world reload the switch did not ask for: a rail drop whose POST succeeds.
+  const unrelatedReload = async (n: number) => {
+    dropUnplaced();
+    await waitFor(() => expect(api.posts.length).toBeGreaterThanOrEqual(n));
+    await settle(() => api.posts[n - 1]!.settle(true));
+  };
+
+  it("two successes resolving in order never show the older value", async () => {
+    await mount();
+    fireEvent.click(sw()); fireEvent.click(sw());
+    expect(shown()).toBe("false");
+    const first = await toggle(1), second = await toggle(2);
+    await settle(() => first.settle(true));
+    await releaseAll();
+    expect(shown()).toBe("false");
+    await settle(() => second.settle(true));
+    await releaseAll();
+    expect(shown()).toBe("false");
+  });
+
+  it("two successes resolving reversed end on the latest value", async () => {
+    await mount();
+    fireEvent.click(sw()); fireEvent.click(sw()); fireEvent.click(sw());
+    const first = await toggle(1), third = await toggle(3);
+    await settle(() => third.settle(true));
+    await releaseAll();
+    expect(shown()).toBe("true");
+    await settle(() => first.settle(true));
+    await releaseAll();
+    expect(shown()).toBe("true");
+  });
+
+  it("an older failure with a newer toggle pending keeps the pending value and shows no error", async () => {
+    await mount();
+    fireEvent.click(sw()); fireEvent.click(sw()); fireEvent.click(sw());
+    expect(shown()).toBe("true");
+    const second = await toggle(2);
+    await toggle(3);
+    await settle(() => second.settle(false));
+    expect(shown()).toBe("true");
+    expect(screen.queryAllByRole("alert").map((node) => node.textContent)).toEqual([]);
+  });
+
+  it("the latest failure after an older success clears pending and shows the error", async () => {
+    await mount();
+    fireEvent.click(sw()); fireEvent.click(sw());
+    const first = await toggle(1), second = await toggle(2);
+    await settle(() => first.settle(true));
+    await settle(() => second.settle(false));
+    // The older success is ignored (no reload); pending cleared, so the switch shows the last loaded server value.
+    expect(api.gets.length).toBe(0);
+    expect(shown()).toBe("false");
+    expect(screen.queryAllByRole("alert").length).toBeGreaterThan(0);
+  });
+
+  it("a failed latest toggle drops its pending value at once", async () => {
+    await mount();
+    fireEvent.click(sw());
+    expect(shown()).toBe("true");
+    { const t = await toggle(1); await settle(() => t.settle(false)); }
+    expect(shown()).toBe("false");
+    expect(screen.queryAllByRole("alert").length).toBeGreaterThan(0);
+  });
+
+  it("an unrelated GET landing between the last success and its reload does not clear pending", async () => {
+    await mount();
+    await unrelatedReload(1);
+    const unrelated = await getNumber(1);
+    fireEvent.click(sw());
+    const post = await toggle(1);
+    // The unrelated GET (issued before the toggle, so it still says off) lands in the same tick as the success.
+    await settle(() => { post.settle(true); unrelated.release(); });
+    expect(shown()).toBe("true");
+    await releaseAll();
+    expect(shown()).toBe("true");
+  });
+
+  it("a failed reload after the latest success keeps pending and shows the reload alert", async () => {
+    await mount();
+    fireEvent.click(sw());
+    { const t = await toggle(1); await settle(() => t.settle(true)); }
+    { const g = await getNumber(1); await settle(() => g.fail()); }
+    await waitFor(() => expect(reloadAlert()).toBeTruthy());
+    expect(shown()).toBe("true");
+  });
+
+  it("a failed reload keeps the canvas working; Dismiss clears the alert", async () => {
+    await mount();
+    await unrelatedReload(1);
+    { const g = await getNumber(1); await settle(() => g.fail()); }
+    await waitFor(() => expect(reloadAlert()).toBeTruthy());
+    expect(screen.queryByText(/Could not load the world/)).toBeNull();
+    // Still interactive: hover finds Neighbour and a Shift-drag POSTs.
+    fireEvent.mouseMove(canvas, { clientX: 150, clientY: 75 });
+    expect(document.querySelector(".world-canvas__hover")?.textContent).toContain("Neighbour");
+    fireEvent.mouseDown(canvas, { clientX: 120, clientY: 55, button: 0, shiftKey: true });
+    fireEvent.mouseMove(canvas, { clientX: 120, clientY: 45, shiftKey: true });
+    fireEvent.mouseUp(canvas);
+    await waitFor(() => expect(api.posts.some((p) => p.map === "Neighbour")).toBe(true));
+    fireEvent.click(within(reloadAlert()! as HTMLElement).getByRole("button", { name: "Dismiss error" }));
+    expect(reloadAlert()).toBeUndefined();
+  });
+
+  it("a successful reload after a failed one clears the alert", async () => {
+    await mount();
+    await unrelatedReload(1);
+    { const g = await getNumber(1); await settle(() => g.fail()); }
+    await waitFor(() => expect(reloadAlert()).toBeTruthy());
+    await unrelatedReload(2);
+    { const g = await getNumber(2); await settle(() => g.release()); }
+    await waitFor(() => expect(reloadAlert()).toBeUndefined());
+  });
+
+  it("a failed first load still shows the placeholder, not the reload alert", async () => {
+    api = deferredServer(family, { failFirstGet: true }); vi.stubGlobal("fetch", api.fetcher);
+    render(family === "gba" ? <WorldCanvas /> : <GbcWorldCanvas time="day" />);
+    await waitFor(() => expect(screen.getByText(/Could not load the world/)).toBeTruthy());
+    expect(reloadAlert()).toBeUndefined();
+  });
 });
