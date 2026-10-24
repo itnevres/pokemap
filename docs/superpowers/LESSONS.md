@@ -19,6 +19,10 @@ Purpose: This document collects every reusable trap, rule, and convention discov
 
 ## Testing (Vitest / Testing Library / StrictMode / flakes / fixtures)
 
+**Never put a DOM-mutating probe inside `waitFor` when the probe can flip the DOM back and forth (Plan 11 T5).** A position check that hovers two points changes the hover text on every call; each change re-triggers `waitFor`'s MutationObserver, the microtasks starve its timeout, and the vitest worker spins at 100% CPU forever (one ran ~12 h overnight). Tell: a test file that never finishes, a `tinypool` node process with hours of CPU time, no failure output. Poll with a timer loop in `act` instead (see `expectNeighbourY` in `test/world/placementResync.test.tsx`). Run new async tests under `timeout` first, and kill leftover `tinypool`/`vitest` node processes after.
+
+**A stale-GET test must let the stale response reach reconciliation (Plan 11 T5 review).** The reload that an acknowledgement triggers cancels the earlier GET's effect, so releasing the stale GET after waiting for the fresh one tests cancellation, not ownership. Tell: a mutation that judges ownership against current state survives. Release the stale GET in the same `act` tick as the acknowledgement.
+
 **Viewport-helper leak (Plan 9 final review m1):** `withViewport`-style helpers save `Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth")`, but jsdom defines `clientWidth` on `Element.prototype`, so the saved value is `undefined` and the restore never runs: a fake 100 px viewport leaks into every later test in the file. Tell: a test passes alone (`-t`) and fails in the full-file run, and moving it to another describe "fixes" it. (Plan 9) **Fixed 2026-10-15:** use `test/viewport.ts` (`stubViewport`/`restoreViewport`/`withViewport`), never a new copy.
 
 **Use `copyGbcSubjectToTemp` (or equivalent temp copy) for every test a mutation could turn into a write.** A test that dry-runs against the real PerfPlus corpus can write under a "dry run commits" mutation; the write was restored byte-identical only by luck. (Plan 7)
@@ -280,6 +284,8 @@ Rerun in isolation before calling either a regression. (Plan 8)
 - **PowerShell `Out-File` mangles a patch.** It rewrites LF as CRLF, so `git apply` fails with "patch does not apply". Write patches from Git Bash (`git diff --cached --binary > file`), or strip CRs with `sed 's/$//'`.
 
 ## Delegation to Codex / Aider / Subagents
+
+**Codex usage limit mid-review (Plan 11 T6).** Tell: `turn.failed` "You've hit your usage limit ... try again at <time>" in the review's JSONL, and no `-o` file. The parallel review that started first may still finish. Fall back to a Claude Opus subagent for Opus-tier reviews (log the reason) instead of waiting.
 
 **Never `taskkill /IM codex.exe`:** it ends every Codex process on the machine, including the user's own sessions. Kill the background shell job or the one PID instead. Also, before resuming Codex on a worktree, check that `git checkout` didn't abort (tell: "Aborting" and HEAD unchanged; intent-to-add files from `git add -N` block it, `git reset` first). (Plan 9)
 
