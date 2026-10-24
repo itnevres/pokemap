@@ -14,8 +14,8 @@ muts=[
  # Review fix round 1: the stale GET reaches reconciliation; the GET-issue snapshot is wired.
  ("M5 GBA serverShows against current state", GBA, "!ledger.current.serverShows(name, snap) ||", "!ledger.current.serverShows(name, ledger.current.snapshot()) ||"),
  ("M6 GBC serverShows against current state", GBC, "!ledger.current.serverShows(name, snap) ||", "!ledger.current.serverShows(name, ledger.current.snapshot()) ||"),
- ("M7 GBC no snapshot at GET issue", 'packages/ui/src/gbc/hooks/useGbcWorld.ts', "    onIssueRef.current?.(gen);
-", ""),
+ ("M7 GBC no snapshot at GET issue", 'packages/ui/src/gbc/hooks/useGbcWorld.ts', "    onIssueRef.current?.(gen);\r\n", ""),
+ ("M8 GBC keeps only the latest snapshot", GBC, "    const snap = issued.current.get(loadedGen) ?? EMPTY_PLACEMENT_SNAPSHOT;", "    const snap = issued.current.get(Math.max(...issued.current.keys())) ?? EMPTY_PLACEMENT_SNAPSHOT;"),
 ]
 for name,p,a,b in muts:
   orig=open(p,'rb').read()

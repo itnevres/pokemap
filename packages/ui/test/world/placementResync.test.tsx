@@ -308,6 +308,20 @@ describe.each(["gba", "gbc"] as const)("%s placement saves reconcile by version 
     await expectNeighbourY(0);
   });
 
+  // A rollback GET landing in the same batch as another reload's issue still reconciles with its own snapshot.
+  it("a rollback lands in the same batch as a newer reload, which then fails", async () => {
+    await mount();
+    dragNeighbour(0, -1);
+    { const p = await postFor("Neighbour"); await settle(() => p.settle(false)); }
+    const rollback = await getNumber(1);
+    dropUnplaced();
+    const drop = await postFor("Unplaced");
+    await settle(() => { drop.settle(true); rollback.release(); });
+    await expectNeighbourY(0);
+    { const g = await getNumber(2); await settle(() => g.fail()); }
+    await expectNeighbourY(0);
+  });
+
   it("a failed rollback reload keeps the local position and the save error", async () => {
     await mount();
     dragNeighbour(0, -1);

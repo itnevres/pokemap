@@ -35,7 +35,6 @@ Harness note: the position probe polls on a timer, not `waitFor`. Each probe cha
 
 | Item | Ruling | Cost if wrong |
 |---|---|---|
-| GBC response without its snapshot | If a newer GET was issued before a response's reconcile effect runs, that response uses the empty snapshot (every edited map stays local) until the newer GET lands. | One reload's delay in showing a server position |
 | GBA `dungeonsPending` | Still cleared by any world landing, now including placement reloads; F12 (Task 6) replaces that rule. | Switch flicker until Task 6 |
 
 ## Gate
@@ -54,3 +53,14 @@ Spec (astra, thread `01a16f83-d6cd-7c92-a010-b4f57693fb14`) ❌ 0/3/0; quality (
 Mutations added (same harness): M5 GBA `serverShows` against current state → 2 failed (both stale-GET cases); M6 GBC same → 2 failed; M7 GBC no snapshot at GET issue → 6 failed. Unmutated: 39/39.
 
 Gate after fix round 1: 3,498 pass / 0 fail / 217 files; typecheck and UI build pass.
+
+## Review fix round 2
+
+Re-reviews (astra, resumed threads): spec ❌ 0/1/1, quality Changes requested 0/1/0. Verified; all accepted:
+
+- Spec I (new): with only the latest snapshot kept, a rollback GET landing in the same batch as a newer GET's issue lost its own snapshot to that issue and reconciled with the empty one, keeping the failed position; if the newer GET then failed, it stuck. Fix: snapshots kept per generation; the reconcile effect uses `loadedGen`'s and prunes older generations. New test (both families): failed save, rollback GET released in the same tick as another save's acknowledgement (which issues a newer GET), the newer GET fails; Neighbour shows the server position. M8 (keep only the latest snapshot) fails it.
+- Spec minor = quality I: M7 in `mut5.py` had a literal CRLF inside a string, so the harness did not parse; fixed.
+
+Mutations rerun, all eight, one at a time, byte-restored: M1 2, M2 7, M3 9, M4 7, M5 2, M6 2, M7 7, M8 2 failed. Unmutated: 41/41.
+
+Gate after fix round 2: 3,500 pass / 0 fail / 217 files; typecheck and UI build pass.

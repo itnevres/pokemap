@@ -474,9 +474,10 @@ function isLayoutSaved(x: unknown): x is { dungeonAutoLayout: boolean } {
  */
 export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelectMap, onOpenMap, onJumpToMap, onPlacementSaved, onLayoutChanged, onEditHere, context, tileVersions }: GbcWorldCanvasProps) {
   const ledger = useRef(createPlacementLedger());
-  // The ledger snapshot taken as the latest world GET was issued. Only the latest GET can land (older ones are cancelled).
-  const issued = useRef<{ gen: number; snap: PlacementSnapshot } | null>(null);
-  const { data: world, error, reload: reloadWorld, loadedGen } = useGbcWorld(true, (gen) => { issued.current = { gen, snap: ledger.current.snapshot() }; });
+  // The ledger snapshot taken as each world GET was issued, by generation. A response can land in the same batch as a
+  // newer GET's issue, so its own snapshot must survive that issue; the reconcile effect prunes older generations.
+  const issued = useRef(new Map<number, PlacementSnapshot>());
+  const { data: world, error, reload: reloadWorld, loadedGen } = useGbcWorld(true, (gen) => { issued.current.set(gen, ledger.current.snapshot()); });
   const { data: coverageData, error: coverageError } = useGbcCoverage();
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -496,10 +497,11 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
   const [view, setView] = useState<GbcWorldView>({ zoom: 1, pan: { x: 0, y: 0 }, fitted: false });
   const [placementOverrides, setPlacementOverrides] = useState<Record<string, { x: number; y: number }>>({});
   // Pair each world response with the ledger snapshot taken when its GET was issued, never with saved coordinates.
-  // A newer GET already issued means this response's snapshot is gone: the empty snapshot keeps every edited map local until that GET lands.
   useEffect(() => {
     if (!world) return;
-    const snap = issued.current?.gen === loadedGen ? issued.current.snap : EMPTY_PLACEMENT_SNAPSHOT;
+    const snap = issued.current.get(loadedGen) ?? EMPTY_PLACEMENT_SNAPSHOT;
+    // Older generations can never land now (their GETs were cancelled or superseded).
+    for (const gen of issued.current.keys()) if (gen < loadedGen) issued.current.delete(gen);
     // Capture ownership before the updater so React can replay it without reading mutable refs.
     const keep = new Set(ledger.current.versionedMaps().filter((name) =>
       !ledger.current.serverShows(name, snap) || (!(name in world.placements) && !ledger.current.dropAbsent(name, snap))));
