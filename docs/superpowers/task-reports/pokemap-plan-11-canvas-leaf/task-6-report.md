@@ -50,3 +50,7 @@ Quality (Codex gpt-6-astra, thread in ledger): Approved 0/0/2. Spec: the Codex a
 - Spec minor M2 (GBC Dismiss inside the alert span, borrowed toast class) and the live check: Task 9. Spec minor M3 (test location): already ruled above. Quality minor 2 (snapshot accumulation on failed reloads): accepted in Task 5.
 
 Gate after fix round 1: 3,522 pass / 0 fail / 217 files; typecheck and UI build pass. Mutations rerun (all ten, one at a time, byte-restored): M1 2, M2 2, M3 2, M4 2, M5 1, M6 1, M7 1, M8 1, M9 1, M10 1 failed.
+
+## Review close
+
+Spec re-review (Claude Opus subagent): ✅ 0/0/1. Minor N1: spec F12 did not record the reload on a latest failure; added to F12. Task 6 complete: `1470e92`, `6fdb778`, plus this docs commit.
