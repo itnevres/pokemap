@@ -89,4 +89,18 @@ describe("useGbcWorld", () => {
     expect(result.current.loadedGen).toBe(0);
     await waitFor(() => expect(result.current.loadedGen).toBe(2));
   });
+
+  // Plan 11 F3: the snapshot is taken when the GET is issued, not when reload() is called.
+  it("onIssue runs as each GET is issued, with that GET's generation", async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(VALID_BODY) }));
+    vi.stubGlobal("fetch", fetchMock);
+    const order: string[] = [];
+    fetchMock.mockImplementation(() => { order.push("fetch"); return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(VALID_BODY) }); });
+
+    const { result } = renderHook(() => useGbcWorld(true, (gen) => order.push(`issue ${gen}`)));
+    await waitFor(() => expect(result.current.data).not.toBeNull());
+    act(() => { result.current.reload(); result.current.reload(); });
+    await waitFor(() => expect(result.current.loadedGen).toBe(2));
+    expect(order).toEqual(["issue 0", "fetch", "issue 2", "fetch"]);
+  });
 });

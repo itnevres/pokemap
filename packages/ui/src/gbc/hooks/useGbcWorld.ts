@@ -19,12 +19,15 @@ export interface UseGbcWorldResult extends UseGuardedFetchResult<GbcWorldPayload
  * a network failure, or a shape that fails `isGbcWorldPayload` -- never a
  * silently-empty world.
  */
-export function useGbcWorld(enabled: boolean = true): UseGbcWorldResult {
+export function useGbcWorld(enabled: boolean = true, onIssue?: (gen: number) => void): UseGbcWorldResult {
   const [data, setData] = useState<GbcWorldPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [gen, setGen] = useState(0);
   const [loadedGen, setLoadedGen] = useState(0);
   const generation = useRef(0);
+  // Called as each GET is issued (Plan 11 F3: the canvas snapshots its placement ledger then); a ref so the effect never re-runs for a new callback.
+  const onIssueRef = useRef(onIssue);
+  onIssueRef.current = onIssue;
   const reload = useCallback(() => {
     const next = ++generation.current;
     setGen(next);
@@ -33,6 +36,7 @@ export function useGbcWorld(enabled: boolean = true): UseGbcWorldResult {
   useEffect(() => {
     if (!enabled) { setData(null); setError(null); return; }
     let cancelled = false;
+    onIssueRef.current?.(gen);
     fetchGuarded("/api/world", isGbcWorldPayload)
       .then((d) => { if (!cancelled) { setData(d); setLoadedGen(gen); setError(null); } })
       .catch((e: unknown) => { if (!cancelled) setError(e instanceof Error ? e.message : String(e)); });

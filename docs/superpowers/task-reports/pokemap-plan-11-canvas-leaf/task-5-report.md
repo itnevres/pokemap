@@ -35,10 +35,22 @@ Harness note: the position probe polls on a timer, not `waitFor`. Each probe cha
 
 | Item | Ruling | Cost if wrong |
 |---|---|---|
-| GBA failed rollback reload | Its test lands in Task 6: until F11 a failed GBA reload replaces the canvas with the load-error placeholder, so the local position cannot be probed. The GBA case is `skipIf`'d with that reason. | One missing GBA case until Task 6 |
-| GBC snapshot timing | Taken when `reloadWorld` is called, just before the effect issues the GET. Anything that changes in between only makes the snapshot older, which keeps local (conservative); every resolve also issues its own reload. | A one-reload delay in showing a server position |
+| GBC response without its snapshot | If a newer GET was issued before a response's reconcile effect runs, that response uses the empty snapshot (every edited map stays local) until the newer GET lands. | One reload's delay in showing a server position |
 | GBA `dungeonsPending` | Still cleared by any world landing, now including placement reloads; F12 (Task 6) replaces that rule. | Switch flicker until Task 6 |
 
 ## Gate
 
-3,496 pass / 0 fail / 1 skipped (the GBA failed-rollback case, Task 6) / 217 files; typecheck and UI build pass. `git diff --stat -- packages/ui/test`: placementResync, useGbcWorld, placementLedger (additions) and the one GbcWorldCanvas fixture above.
+First commit `2b3c8d2`: 3,496 pass / 0 fail / 1 skipped (the GBA failed-rollback case, unskipped in fix round 1) / 217 files; typecheck and UI build pass. `git diff --stat -- packages/ui/test`: placementResync, useGbcWorld, placementLedger (additions) and the one GbcWorldCanvas fixture above.
+
+## Review fix round 1
+
+Spec (astra, thread `01a16f83-d6cd-7c92-a010-b4f57693fb14`) ❌ 0/3/0; quality (astra, thread `01a16f83-d6cd-7ec2-b840-47c91f1e2149`) Changes requested 0/1/2. Each finding verified against the code; all accepted:
+
+- Spec I1, GBC snapshot taken at `reload()` call, not at GET issue: a gesture beginning in between and ending as a no-op stays pinned with no further reload. Fix: `useGbcWorld(enabled, onIssue)` calls `onIssue(gen)` as each GET is issued; the canvas keeps only the latest `{ gen, snap }` (quality minor 3, snapshot growth, closes with it). Hook test: two batched reloads issue once, for generation 2, before its fetch.
+- Spec I2 = quality I1, stale-GET tests never reached reconciliation (the reload after the acknowledgement cancels the stale GET): the stale GET is now released in the same tick as the acknowledgement, landing before the reload can cancel it.
+- Spec I3, GBA rollback case skipped without cause: the load-error placeholder sits above a still-rendered canvas, so the case runs; unskipped (both families).
+- Quality minor 2, the older failed-POST test expected 2 GETs: F5 adds the rollback GET, so it expects 3 for that case.
+
+Mutations added (same harness): M5 GBA `serverShows` against current state → 2 failed (both stale-GET cases); M6 GBC same → 2 failed; M7 GBC no snapshot at GET issue → 6 failed. Unmutated: 39/39.
+
+Gate after fix round 1: 3,498 pass / 0 fail / 217 files; typecheck and UI build pass.

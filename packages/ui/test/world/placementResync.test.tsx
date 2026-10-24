@@ -115,7 +115,8 @@ describe.each(["gba", "gbc"] as const)("%s unsaved edit does not pin a map again
     const drop = new MouseEvent("drop", { bubbles: true, clientX: 50, clientY: 100 });
     Object.defineProperty(drop, "dataTransfer", { value: { getData: () => "Unplaced" } });
     fireEvent(canvas, drop);
-    await waitFor(() => expect(api.gets()).toBe(2));
+    // Plan 11 F5: a failed POST reloads too, so that case sees the rollback GET before the drop's.
+    await waitFor(() => expect(api.gets()).toBe(failFirst ? 3 : 2));
     // The reload now has Neighbour at y=5 (screen y 100..200); (150,175) is inside it only once the server position shows.
     await waitFor(() => {
       fireEvent.mouseMove(canvas, { clientX: 150, clientY: 175 });
@@ -265,10 +266,10 @@ describe.each(["gba", "gbc"] as const)("%s placement saves reconcile by version 
     dropUnplaced();
     { const p = await postFor("Unplaced"); await settle(() => p.settle(true)); }
     const stale = await getNumber(1);
-    await settle(() => save.settle(true));
-    const fresh = await getNumber(2);
-    await settle(() => stale.release());
+    // Same tick: the acknowledgement lands first, then the stale GET, before the reload it requested can cancel it.
+    await settle(() => { save.settle(true); stale.release(); });
     await expectNeighbourY(-1);
+    const fresh = await getNumber(2);
     await settle(() => fresh.release());
     await expectNeighbourY(-1);
   });
@@ -307,8 +308,7 @@ describe.each(["gba", "gbc"] as const)("%s placement saves reconcile by version 
     await expectNeighbourY(0);
   });
 
-  // GBA's failed reload still replaces the canvas with the load-error placeholder until F11 (Task 6); its case lands there.
-  it.skipIf(family === "gba")("a failed rollback reload keeps the local position and the save error", async () => {
+  it("a failed rollback reload keeps the local position and the save error", async () => {
     await mount();
     dragNeighbour(0, -1);
     { const p = await postFor("Neighbour"); await settle(() => p.settle(false)); }
