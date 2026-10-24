@@ -2,8 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import type { Placement, Component, Conflict, Bounds } from "@pokemap/core/src/gbc/world/connections.js";
 import type { GbcWorldPayload, GbcWorldPlacement } from "@pokemap/core/src/gbc/wire.js";
 import type { GbcEncounterSource, GbcSpeciesHit } from "@pokemap/core/src/gbc/analyse/atlas.js";
-import { computeFit, drawDiamond, levelColorMap } from "../components/WorldCanvas.js";
-import { LensPanel, LensLegend, type LensId, type LensPanelSummary } from "../components/LensPanel.js";
+import { centredFit, computeFit, drawDiamond, singletonSizes, themedLevelColorMap } from "../components/WorldCanvas.js";
+import { type LensId, type LensPanelSummary } from "../components/LensPanel.js";
 import { SpeciesSpotlight } from "../components/SpeciesSpotlight.js";
 import { EncounterBorder, type EncounterBorderEntry } from "../components/EncounterBorder.js";
 import { BORDER_BAND, pickBorderSide, type BorderSide, type Rect } from "../encounters/borderSide.js";
@@ -16,15 +16,23 @@ import type { GbcWarpsPayload } from "./warps.js";
 import { GbcWarpDestinationModal } from "./GbcWarpDestinationModal.js";
 import { fetchGuarded } from "../hooks/useGuardedFetch.js";
 import { conflictBadgeOffsets } from "../world/conflictAcceptance.js";
-import { useConflictAcceptance } from "../world/useConflictAcceptance.js";
-import { WorldContextMenu, useWorldContextMenu } from "../components/WorldContextMenu.js";
+import { useConflictAcceptanceMenu } from "../world/useConflictAcceptance.js";
+import { WorldContextMenu } from "../components/WorldContextMenu.js";
 import type { MapView } from "../components/mapView.js";
-import { ContextMapFit, useWorldContext } from "../shared/useWorldContext.js";
-import { WorldContextOverlay } from "../shared/WorldContextOverlay.js";
+import { useWorldContext } from "../shared/useWorldContext.js";
+import { WorldContextOverlayMount } from "../shared/WorldContextOverlay.js";
 import type { GbcTimeOfDay } from "./time.js";
 import { useFitShortcut } from "../shared/useFitShortcut.js";
-import { DungeonAutoLayoutSwitch } from "../world/DungeonAutoLayoutSwitch.js";
+import { DungeonAutoLayoutSwitch, WorldToolbarSwitch } from "../world/DungeonAutoLayoutSwitch.js";
 import { UnplacedRail } from "../world/UnplacedRail.js";
+import { LensOverlay, useLensOverlayEntries } from "../shared/LensOverlay.js";
+import { useTileVersionRefetch } from "../shared/useTileVersionRefetch.js";
+import { buildSmallTile } from "../shared/worldTiles.js";
+import { BADGE_SIZE, conflictBadgeCenter } from "../shared/worldBadges.js";
+import { useViewportMeasure } from "../shared/useViewportMeasure.js";
+import { EncounterFetchAlert, WorldLensControl, WorldLensLegend } from "../shared/WorldLensControls.js";
+import { SpotlightOverlay } from "../shared/SpotlightOverlay.js";
+import { ConflictErrorToast, ConflictLegendItems, ConflictTooltip } from "../shared/WorldConflictOverlays.js";
 
 /**
  * The GBC world view (Plan 6b Task 5, D1 manual placement). Mirrors `WorldCanvas.tsx`'s
@@ -138,7 +146,6 @@ const LOD_SCALE = 0.25;
  *  than a second unexplained literal. */
 export const GBC_LOD_ZOOM_THRESHOLD = BLOCK_PX * LOD_SCALE; // 8
 
-const BADGE_SIZE = 10;
 const WARP_HIT_RADIUS = 8;
 const CONNECTION_COLORS = ["--connection-1", "--connection-2", "--connection-3", "--connection-4", "--connection-5", "--connection-6", "--connection-7", "--connection-8"];
 const CONNECTION_FALLBACK = ["#e879f9", "#34d399", "#fb923c", "#60a5fa", "#facc15", "#f472b6", "#2dd4bf", "#a78bfa"];
@@ -358,13 +365,7 @@ export function jumpFit(
   }
   const rawZoom = Math.min(viewport.w / bounds.width, viewport.h / bounds.height);
   const zoom = Math.min(zoomBounds.max, Math.max(zoomBounds.min, rawZoom * fraction));
-  return {
-    zoom,
-    pan: {
-      x: -bounds.x * zoom + (viewport.w - bounds.width * zoom) / 2,
-      y: -bounds.y * zoom + (viewport.h - bounds.height * zoom) / 2,
-    },
-  };
+  return centredFit(bounds, viewport, zoom);
 }
 
 interface ImageCacheEntry {
@@ -503,11 +504,7 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
   }, [world]);
   const { zoom, pan, fitted } = view;
   // Every singleton map's own size (its component's bounds): sizes a rail drop of a map absent from `placements`.
-  const sizeByMap = useMemo(() => {
-    const m = new Map<string, { width: number; height: number }>();
-    if (world) for (const c of world.components) if (c.maps.length === 1) m.set(c.maps[0]!, { width: c.bounds.width, height: c.bounds.height });
-    return m;
-  }, [world?.components]);
+  const sizeByMap = useMemo(() => singletonSizes(world?.components), [world?.components]);
   const placements = useMemo<Record<string, GbcWorldPlacement>>(() => {
     if (!world) return {};
     const out: Record<string, GbcWorldPlacement> = Object.fromEntries(Object.entries(world.placements).map(([name, placement]) => {
@@ -543,26 +540,9 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
   const [warpVersion, setWarpVersion] = useState(0);
   const [warpError, setWarpError] = useState<string | null>(null);
   const [warpPopup, setWarpPopup] = useState<string | null>(null);
-  const conflictAcceptance = useConflictAcceptance(world?.conflicts);
-  // The context menu (right-click or the ContextMenu key). "Edit here" calls the latest onEditHere through a ref: the
-  // menu stays open across GbcApp renders, and a GbcApp handler closes over state that can change.
-  const onEditHereRef = useRef(onEditHere);
-  onEditHereRef.current = onEditHere;
-  // Where the next in-context entry snaps the map's centre, in CLIENT px (the editing chrome mounts after the click and
-  // moves the canvas, so a canvas-relative point would go stale): the double-click point, or where the menu opened.
-  // Set just before onEditHere; read and cleared by the snap effect below.
-  const snapPointerRef = useRef<{ x: number; y: number } | null>(null);
-  const menuPointRef = useRef<{ x: number; y: number } | null>(null);
-  const requestEditHere = (map: string, point: { x: number; y: number } | null) => {
-    snapPointerRef.current = point;
-    onEditHereRef.current?.(map);
-  };
-  const contextMenu = useWorldContextMenu({
-    canvasRef,
-    onOpenMap,
-    editItem: onEditHere ? (map) => ({ label: "Edit here", onSelect: () => requestEditHere(map, menuPointRef.current) }) : undefined,
-    toggle: conflictAcceptance.toggle,
-  });
+  const { conflictAcceptance, contextMenu, snapPointerRef, menuPointRef, requestEditHere } = useConflictAcceptanceMenu({ conflicts: world?.conflicts, canvasRef, onOpenMap, onEditHere });
+  // The context menu (right-click or the ContextMenu key) and the "Edit here" snap point: see useConflictAcceptanceMenu.
+  // snapPointerRef is read and cleared by the snap effect below.
   const [selectedMap, setSelectedMap] = useState<string | null>(null);
   const [hover, setHover] = useState<HoverInfo | null>(null);
   const [tooltip, setTooltip] = useState<TooltipInfo | null>(null);
@@ -583,21 +563,8 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
   // this state's own identity.
   const [jumpHighlight, setJumpHighlight] = useState<{ map: string; token: number } | null>(null);
 
-  // Measure the viewport -- WorldCanvas.tsx's own "Measure the viewport"
-  // effect (same pattern, verbatim).
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const measure = () => setViewport({ w: el.clientWidth, h: el.clientHeight });
-    measure();
-    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
-    ro?.observe(el);
-    window.addEventListener("resize", measure);
-    return () => {
-      ro?.disconnect();
-      window.removeEventListener("resize", measure);
-    };
-  }, []);
+  // Measure the viewport (the redraw effect below depends on `viewport`; see useViewportMeasure).
+  useViewportMeasure(containerRef, setViewport);
 
   // Initial fit: once, as soon as the world AND a real viewport are both
   // available -- the multi-map-components-only bounds (Task 5 spec), not
@@ -726,13 +693,8 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
   // Plan 7 Task 5b: a map whose `tileVersions` number changed since it was last seen loses only its own cache entry
   // (and so is re-requested below with `&v=<n>`); every other tile stays cached. A stale in-flight load of the dropped
   // entry lands on the detached entry object, never the current one.
-  const seenTileVersionsRef = useRef<Record<string, number>>({});
+  useTileVersionRefetch(tileVersions, imageCacheRef);
   useEffect(() => {
-    for (const [map, n] of Object.entries(tileVersions ?? {})) {
-      if (seenTileVersionsRef.current[map] === n) continue;
-      seenTileVersionsRef.current[map] = n;
-      imageCacheRef.current.delete(map);
-    }
     for (const p of visible) {
       if (imageCacheRef.current.has(p.map)) continue;
       const entry: ImageCacheEntry = { loaded: false };
@@ -741,15 +703,7 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
       img.onload = () => {
         entry.loaded = true;
         entry.img = img;
-        const small = document.createElement("canvas");
-        small.width = Math.max(1, Math.round(p.width * BLOCK_PX * LOD_SCALE));
-        small.height = Math.max(1, Math.round(p.height * BLOCK_PX * LOD_SCALE));
-        const sctx = small.getContext("2d");
-        if (sctx) {
-          sctx.imageSmoothingEnabled = false;
-          sctx.drawImage(img, 0, 0, small.width, small.height);
-        }
-        entry.small = small;
+        entry.small = buildSmallTile(img, p.width, p.height, BLOCK_PX, LOD_SCALE);
         setCompositeVersion((v) => v + 1);
       };
       const version = tileVersions?.[p.map];
@@ -868,38 +822,16 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
   // OWN memo, keyed only on coverageData -- fetched once and never again
   // (GBC is read-only), so this runs once, not on every pan/zoom frame the
   // way lensOverlayEntries below necessarily does.
-  const levelColorByMap = useMemo(() => {
-    const entries = (coverageData?.levelByMap ?? []).filter((e) => !!e.mapName);
-    const style = typeof getComputedStyle === "function" ? getComputedStyle(document.documentElement) : null;
-    const low = style?.getPropertyValue("--overlay-elevation-low").trim() || "#3b82f6";
-    const high = style?.getPropertyValue("--danger").trim() || "#ef4444";
-    return levelColorMap(entries, low, high);
-  }, [coverageData]);
+  const levelColorByMap = useMemo(() => themedLevelColorMap(coverageData?.levelByMap ?? []), [coverageData]);
 
   // Map NAMES with no encounter table at all -- coverage()'s own
   // mapsWithoutEncounters is already keyed by name.
   const emptyMapNames = useMemo(() => new Set(coverageData?.mapsWithoutEncounters ?? []), [coverageData]);
 
-  // Per-map lens tint overlay -- mirrors WorldCanvas.tsx's own
-  // lensOverlayEntries memo exactly (level-curve/empty-maps/method; GBC has
-  // no "unused-species" per-map visual either, for the identical reason
-  // that lens documents on itself: it's a fact about species, not a place).
-  const lensOverlayEntries = useMemo(() => {
-    if (!lens) return [] as Array<{ map: string; rect: Rect; color: string }>;
-    const out: Array<{ map: string; rect: Rect; color: string }> = [];
-    for (const p of visible) {
-      let color: string | null = null;
-      if (lens === "level-curve") color = levelColorByMap.get(p.map) ?? null;
-      else if (lens === "empty-maps") color = emptyMapNames.has(p.map) ? "var(--warn)" : null;
-      else if (lens === "method") color = methodTintFor(p.map);
-      if (!color) continue;
-      out.push({ map: p.map, rect: rectByMap.get(p.map)!, color });
-    }
-    return out;
-    // encounterVersion, not encounterCacheRef itself -- the method lens
-    // reads that ref via methodTintFor; mirrors WorldCanvas.tsx's own
-    // identical comment on its own lensOverlayEntries memo.
-  }, [lens, visible, rectByMap, levelColorByMap, emptyMapNames, methodTintFor, encounterVersion]);
+  // Per-map lens tint overlay -- the shared useLensOverlayEntries (level-curve/empty-maps/method); GBC passes its
+  // rectByMap lookup as the rect function.
+  const lensRectFor = useCallback((p: GbcWorldPlacement): Rect => rectByMap.get(p.map)!, [rectByMap]);
+  const lensOverlayEntries = useLensOverlayEntries({ lens, visible, rectFor: lensRectFor, levelColorByMap, emptyMapNames, methodTintFor, encounterVersion });
 
   // mapName -> its best (highest-percent) hit -- gbcWhereSpecies already
   // sorts by percent descending, mirrors WorldCanvas.tsx's own
@@ -954,8 +886,7 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
       if (mapFilter && !mapFilter.has(conflict.map)) continue;
       const p = placements[conflict.map];
       if (!p || p.width <= 0 || p.height <= 0) continue;
-      const cx = p.x * zoom + pan.x + p.width * zoom - BADGE_SIZE - (badgeOffsets.get(conflict.key) ?? 0);
-      const cy = p.y * zoom + pan.y + BADGE_SIZE;
+      const { cx, cy } = conflictBadgeCenter(p, p, zoom, pan, badgeOffsets.get(conflict.key) ?? 0);
       const accepted = conflictAcceptance.isAccepted(conflict);
       drawDiamond(ctx, cx, cy, BADGE_SIZE, accepted ? acceptedColor : conflictColor);
       if (accepted) {
@@ -1264,31 +1195,15 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
             <span className="world-canvas__toolbar-error" role="alert">Could not save dungeon auto-layout: {layoutError}</span>
           </div>
         )}
-        <div className="world-canvas__toolbar-group">
-          <button type="button" role="switch" aria-checked={warpsOn} aria-label="Warps" className="world-canvas__switch" onClick={() => { if (!warpsOn) setWarpError(null); setWarpsOn((on) => !on); }}>
-            <span className="world-canvas__switch-thumb" />
-          </button>
-          <span className="world-canvas__switch-label">Warps {warpsOn ? "on" : "off"}</span>
-        </div>
-        {mapFilter && <div className="world-canvas__toolbar-group">
-          <button type="button" role="switch" aria-checked={linesOn} aria-label="Connection lines" className="world-canvas__switch" onClick={() => { if (!linesOn) setWarpError(null); setLinesOn((on) => !on); }}>
-            <span className="world-canvas__switch-thumb" />
-          </button>
-          <span className="world-canvas__switch-label">Connection lines {linesOn ? "on" : "off"}</span>
-        </div>}
+        <WorldToolbarSwitch label="Warps" on={warpsOn} onToggle={() => { if (!warpsOn) setWarpError(null); setWarpsOn((on) => !on); }} />
+        {mapFilter && <WorldToolbarSwitch label="Connection lines" on={linesOn} onToggle={() => { if (!linesOn) setWarpError(null); setLinesOn((on) => !on); }} />}
         {warpError && <div className="world-canvas__toolbar-group world-canvas__toolbar-group--save-error"><span className="world-canvas__toolbar-error" role="alert">Warp data unavailable: {warpError}</span></div>}
         {/* Fix round (spec review F4): a visible note, not a silent gap,
             for however many visible maps' own /api/encounters fetch failed
             (a 500, or a shape that fails isGbcEncountersPayload) -- reuses
             the same world-canvas__toolbar-error class/role="alert" the
             coverage-error slot below already uses. */}
-        {encounterFailedCount > 0 && (
-          <div className="world-canvas__toolbar-group">
-            <span className="world-canvas__toolbar-error" role="alert">
-              Encounter data unavailable for {encounterFailedCount} map{encounterFailedCount === 1 ? "" : "s"}
-            </span>
-          </div>
-        )}
+        <EncounterFetchAlert count={encounterFailedCount} />
         {saveError && (
           <div className="world-canvas__toolbar-group world-canvas__toolbar-group--save-error">
             <span className="world-canvas__toolbar-error" role="alert">Could not save placement: {saveError}</span>
@@ -1299,37 +1214,21 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
             gets the same extra middle space there, not a bespoke width. */}
         <div className="world-canvas__toolbar-group world-canvas__toolbar-group--grow">
           <SpeciesSpotlight<GbcSpeciesHit> onHits={setSpotlightHits} />
-          {coverageError ? (
-            <span className="world-canvas__toolbar-error" role="alert">
-              Coverage lenses unavailable: {coverageError}
-            </span>
-          ) : (
-            <LensPanel active={lens} onChange={setLens} />
-          )}
+          <WorldLensControl error={coverageError} lens={lens} onChange={setLens} />
         </div>
       </div>
 
-      {!coverageError && (
-        <LensLegend
-          active={lens}
-          summary={
-            coverageData
-              ? { emptyMapNames: coverageData.mapsWithoutEncounters, unusedSpeciesNames: coverageData.unusedSpecies }
-              : null
-          }
-          onJumpToMap={onJumpToMap}
-          methodKey={GBC_METHOD_LENS_KEY}
-          legendCopy={GBC_LEGEND_COPY}
-        />
-      )}
+      <WorldLensLegend
+        error={coverageError}
+        lens={lens}
+        coverage={coverageData}
+        onJumpToMap={onJumpToMap}
+        methodKey={GBC_METHOD_LENS_KEY}
+        legendCopy={GBC_LEGEND_COPY}
+      />
 
       <div className="world-canvas__legend">
-        <span className="world-canvas__legend-item">
-          <i className="world-canvas__swatch world-canvas__swatch--conflict" /> Conflict
-        </span>
-        <span className="world-canvas__legend-item">
-          <i className="world-canvas__swatch world-canvas__swatch--conflict world-canvas__swatch--accepted" /> Accepted
-        </span>
+        <ConflictLegendItems />
       </div>
 
       <div className="world-canvas__body">
@@ -1377,40 +1276,8 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
           {mapFilter && linesOn && connectionLines.length > 0 && <svg className="world-canvas__connections" aria-hidden="true">
             {connectionLines.map((line) => <line key={line.key} x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2} stroke={line.color} strokeWidth={2} />)}
           </svg>}
-          {lens && lensOverlayEntries.length > 0 && (
-            <div className="world-canvas__lens" aria-hidden="true">
-              {lensOverlayEntries.map((e) => (
-                <div
-                  key={e.map}
-                  className="world-canvas__lens-tint"
-                  style={{ left: e.rect.x, top: e.rect.y, width: e.rect.width, height: e.rect.height, background: e.color }}
-                />
-              ))}
-            </div>
-          )}
-          {spotlightHits !== null && (
-            <div className="world-canvas__spotlight" aria-hidden="true">
-              {spotlightOverlayEntries.map((e) =>
-                e.hit ? (
-                  <div
-                    key={e.map}
-                    className="world-canvas__spotlight-hit"
-                    style={{ left: e.rect.x, top: e.rect.y, width: e.rect.width, height: e.rect.height }}
-                  >
-                    <span className="world-canvas__spotlight-badge">
-                      {`${e.hit.percent.toFixed(0)}% Lv ${e.hit.minLevel}-${e.hit.maxLevel}`}
-                    </span>
-                  </div>
-                ) : (
-                  <div
-                    key={e.map}
-                    className="world-canvas__spotlight-dim"
-                    style={{ left: e.rect.x, top: e.rect.y, width: e.rect.width, height: e.rect.height }}
-                  />
-                ),
-              )}
-            </div>
-          )}
+          <LensOverlay lens={lens} entries={lensOverlayEntries} />
+          <SpotlightOverlay hits={spotlightHits} entries={spotlightOverlayEntries} />
           {selectedRect && (
             <div className="world-canvas__selection" aria-hidden="true">
               <div
@@ -1433,19 +1300,10 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
               />
             </div>
           )}
-          {context && <WorldContextOverlay map={context.map} ctx={worldContext} renderCanvas={(view, onViewChange) => <ContextMapFit.Provider value={worldContext.registerFit}>{context.renderCanvas(view, onViewChange)}</ContextMapFit.Provider>} onDone={() => context.onExitRequest()} />}
-          {tooltip && (
-            <div className="world-canvas__tooltip" style={{ left: tooltip.x + 12, top: tooltip.y + 12 }} role="tooltip">
-              {tooltip.text}
-            </div>
-          )}
+          <WorldContextOverlayMount context={context} ctx={worldContext} />
+          <ConflictTooltip tooltip={tooltip} />
           <WorldContextMenu menu={contextMenu.menu} viewport={viewport} onClose={contextMenu.close} />
-          {conflictAcceptance.error && (
-            <div className="world-canvas__toast" role="alert">
-              <span className="world-canvas__toast-text">Could not update conflict: {conflictAcceptance.error}</span>
-              <button type="button" className="world-canvas__toast-dismiss" onClick={() => conflictAcceptance.setError(null)} aria-label="Dismiss">×</button>
-            </div>
-          )}
+          <ConflictErrorToast error={conflictAcceptance.error} onDismiss={() => conflictAcceptance.setError(null)} />
         </div>
         <UnplacedRail unplacedNames={unplacedNames} filter={railFilter} onFilterChange={setRailFilter} />
       </div>

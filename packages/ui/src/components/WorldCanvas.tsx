@@ -9,19 +9,27 @@ import { isGbaEncountersPayload } from "../encounters/guards.js";
 import { summariseGba, type GbaEncounterRow, type SpeciesSummary } from "../encounters/summary.js";
 import { fetchGuarded } from "../hooks/useGuardedFetch.js";
 import { SpeciesSpotlight } from "./SpeciesSpotlight.js";
-import { LensPanel, LensLegend, type LensId } from "./LensPanel.js";
+import { type LensId } from "./LensPanel.js";
 import { WarpDestinationModal } from "./WarpDestinationModal.js";
 import { useCoverage } from "../hooks/useCoverage.js";
 import { isDrawnByDefault } from "../world/visibility.js";
 import { conflictBadgeOffsets, isRecord, isWireConflict } from "../world/conflictAcceptance.js";
-import { useConflictAcceptance } from "../world/useConflictAcceptance.js";
-import { WorldContextMenu, useWorldContextMenu } from "./WorldContextMenu.js";
+import { useConflictAcceptanceMenu } from "../world/useConflictAcceptance.js";
+import { WorldContextMenu } from "./WorldContextMenu.js";
 import type { MapView } from "./mapView.js";
-import { ContextMapFit, useWorldContext } from "../shared/useWorldContext.js";
-import { WorldContextOverlay } from "../shared/WorldContextOverlay.js";
+import { useWorldContext } from "../shared/useWorldContext.js";
+import { WorldContextOverlayMount } from "../shared/WorldContextOverlay.js";
 import { useFitShortcut } from "../shared/useFitShortcut.js";
-import { DungeonAutoLayoutSwitch } from "../world/DungeonAutoLayoutSwitch.js";
+import { DungeonAutoLayoutSwitch, WorldToolbarSwitch } from "../world/DungeonAutoLayoutSwitch.js";
 import { UnplacedRail } from "../world/UnplacedRail.js";
+import { LensOverlay, useLensOverlayEntries } from "../shared/LensOverlay.js";
+import { useTileVersionRefetch } from "../shared/useTileVersionRefetch.js";
+import { buildSmallTile } from "../shared/worldTiles.js";
+import { BADGE_SIZE, conflictBadgeCenter } from "../shared/worldBadges.js";
+import { useViewportMeasure } from "../shared/useViewportMeasure.js";
+import { EncounterFetchAlert, WorldLensControl, WorldLensLegend } from "../shared/WorldLensControls.js";
+import { SpotlightOverlay } from "../shared/SpotlightOverlay.js";
+import { ConflictErrorToast, ConflictLegendItems, ConflictTooltip } from "../shared/WorldConflictOverlays.js";
 
 /** The pixel size a placement's PNG renders at natively (`renderLayout`,
  *  border 0): 16px per tile, same constant the CLI's `render-world --scale
@@ -42,8 +50,6 @@ const WHEEL_FACTOR = 1.2;
 const LOD_ZOOM_THRESHOLD = 4;
 /** Fraction of native resolution the cached LOD buffer is rendered at. */
 const LOD_SCALE = 0.25;
-
-const BADGE_SIZE = 10;
 
 /** Feature C: dungeon connection-line palette -- CSS custom property names
  *  (read live via getComputedStyle, mirroring the conflict/dive/emerge
@@ -281,6 +287,11 @@ export function computeFit(
   const min = zoomBounds?.min ?? MIN_ZOOM;
   const max = zoomBounds?.max ?? MAX_ZOOM;
   const zoom = Math.min(max, Math.max(min, Math.min(viewport.w / bounds.width, viewport.h / bounds.height)));
+  return centredFit(bounds, viewport, zoom);
+}
+
+/** The pan that centres `bounds` in `viewport` at `zoom` (shared by `computeFit` and GBC's `jumpFit`). */
+export function centredFit(bounds: { x: number; y: number; width: number; height: number }, viewport: Viewport, zoom: number): FitResult {
   return {
     zoom,
     pan: {
@@ -288,6 +299,14 @@ export function computeFit(
       y: -bounds.y * zoom + (viewport.h - bounds.height * zoom) / 2,
     },
   };
+}
+
+/** Every singleton component's map -> its size (a singleton component's bounds ARE that map's rect). Both world
+ *  canvases' `sizeByMap` memos call this. */
+export function singletonSizes(components: readonly { maps: readonly string[]; bounds: { width: number; height: number } }[] | undefined): Map<string, { width: number; height: number }> {
+  const m = new Map<string, { width: number; height: number }>();
+  if (components) for (const c of components) if (c.maps.length === 1) m.set(c.maps[0]!, { width: c.bounds.width, height: c.bounds.height });
+  return m;
 }
 
 function worldBoundsOf(placements: Map<string, Placement>, sizeByMap: Map<string, { width: number; height: number }>) {
@@ -384,26 +403,9 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
   const dragMovedRef = useRef(false);
 
   const [world, setWorld] = useState<WorldState | null>(null);
-  const conflictAcceptance = useConflictAcceptance(world?.conflicts);
-  // The context menu (right-click or the ContextMenu key). "Edit here" calls the latest onEditHere through a
-  // ref: the menu stays open across App renders, and an App-level handler closes over state that can change.
-  const onEditHereRef = useRef(onEditHere);
-  onEditHereRef.current = onEditHere;
-  // Where the next in-context entry snaps the map's centre, in CLIENT px (the editing chrome mounts after the click and
-  // moves the canvas, so a canvas-relative point would go stale): the double-click point, or where the menu opened.
-  // Set just before onEditHere; read and cleared by the snap effect below.
-  const snapPointerRef = useRef<{ x: number; y: number } | null>(null);
-  const menuPointRef = useRef<{ x: number; y: number } | null>(null);
-  const requestEditHere = (map: string, point: { x: number; y: number } | null) => {
-    snapPointerRef.current = point;
-    onEditHereRef.current?.(map);
-  };
-  const contextMenu = useWorldContextMenu({
-    canvasRef,
-    onOpenMap,
-    editItem: onEditHere ? (map) => ({ label: "Edit here", onSelect: () => requestEditHere(map, menuPointRef.current) }) : undefined,
-    toggle: conflictAcceptance.toggle,
-  });
+  // The context menu (right-click or the ContextMenu key) and the "Edit here" snap point: see useConflictAcceptanceMenu.
+  // snapPointerRef is read and cleared by the snap effect below.
+  const { conflictAcceptance, contextMenu, snapPointerRef, menuPointRef, requestEditHere } = useConflictAcceptanceMenu({ conflicts: world?.conflicts, canvasRef, onOpenMap, onEditHere });
   const [loadError, setLoadError] = useState<string | null>(null);
   // Review fix: postPlacement's and toggleDungeons' own failures used to
   // either be silently discarded or written into loadError -- the same
@@ -505,22 +507,8 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
   // own review history already established for exactly this reason.
   const { data: coverageData, error: coverageError } = useCoverage();
 
-  // Measure the viewport, mirroring MapCanvas's established pattern exactly
-  // (Task 21's canvas-blanking postmortem: a redraw effect that does not
-  // depend on `viewport` leaves the canvas stale after any resize).
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const measure = () => setViewport({ w: el.clientWidth, h: el.clientHeight });
-    measure();
-    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
-    ro?.observe(el);
-    window.addEventListener("resize", measure);
-    return () => {
-      ro?.disconnect();
-      window.removeEventListener("resize", measure);
-    };
-  }, []);
+  // Measure the viewport (the redraw effect below depends on `viewport`; see useViewportMeasure).
+  useViewportMeasure(containerRef, setViewport);
 
   // Fetch /api/world. No ?dungeons= override here -- the toggle now
   // persists to sidecar.dungeonAutoLayout (see toggleDungeons below), so a
@@ -610,11 +598,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
   // calls setWorld every frame), which needlessly rebuilt this 1,209-entry
   // Map once per drag frame even though the component data driving it had
   // not changed. `world?.components` is the actual dependency.
-  const sizeByMap = useMemo(() => {
-    const m = new Map<string, { width: number; height: number }>();
-    if (world) for (const c of world.components) if (c.maps.length === 1) m.set(c.maps[0]!, { width: c.bounds.width, height: c.bounds.height });
-    return m;
-  }, [world?.components]);
+  const sizeByMap = useMemo(() => singletonSizes(world?.components), [world?.components]);
 
   // Singleton maps not currently in `placements` -- i.e. hidden by the
   // dungeon toggle being off (or not yet auto-placed). A map the user has
@@ -964,13 +948,8 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
   // Plan 6c E4: a map whose `tileVersions` number changed since it was last seen loses only its own cache entry
   // (and so is re-requested below, as `?v=<n>`); every other tile stays cached. A stale in-flight load of the
   // dropped entry lands on the detached entry object, never the current one.
-  const seenTileVersionsRef = useRef<Record<string, number>>({});
+  useTileVersionRefetch(tileVersions, imageCacheRef);
   useEffect(() => {
-    for (const [map, n] of Object.entries(tileVersions ?? {})) {
-      if (seenTileVersionsRef.current[map] === n) continue;
-      seenTileVersionsRef.current[map] = n;
-      imageCacheRef.current.delete(map);
-    }
     for (const p of visible) {
       if (imageCacheRef.current.has(p.map)) continue;
       const entry: ImageCacheEntry = { loaded: false };
@@ -980,15 +959,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
       img.onload = () => {
         entry.loaded = true;
         entry.img = img;
-        const small = document.createElement("canvas");
-        small.width = Math.max(1, Math.round(size.width * TILE_PX * LOD_SCALE));
-        small.height = Math.max(1, Math.round(size.height * TILE_PX * LOD_SCALE));
-        const sctx = small.getContext("2d");
-        if (sctx) {
-          sctx.imageSmoothingEnabled = false;
-          sctx.drawImage(img, 0, 0, small.width, small.height);
-        }
-        entry.small = small;
+        entry.small = buildSmallTile(img, size.width, size.height, TILE_PX, LOD_SCALE);
         setCompositeVersion((v) => v + 1);
       };
       const version = tileVersions?.[p.map];
@@ -1162,15 +1133,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
   // desktop tool not expected to flip theme mid-session, rather than
   // re-deriving 227 interpolated colours on every mouse-move frame for a
   // toggle nothing else in this file reacts to live either.
-  const levelColorByMap = useMemo(() => {
-    const entries = (coverageData?.levelByMap ?? []).filter(
-      (e): e is typeof e & { mapName: string } => !!e.mapName,
-    );
-    const style = typeof getComputedStyle === "function" ? getComputedStyle(document.documentElement) : null;
-    const low = style?.getPropertyValue("--overlay-elevation-low").trim() || "#3b82f6";
-    const high = style?.getPropertyValue("--danger").trim() || "#ef4444";
-    return levelColorMap(entries, low, high);
-  }, [coverageData]);
+  const levelColorByMap = useMemo(() => themedLevelColorMap(coverageData?.levelByMap ?? []), [coverageData]);
 
   // Which non-land method (if any) a visible map's already-fetched
   // encounter rows include, reusing encounterCacheRef -- populated by the
@@ -1188,32 +1151,11 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
     return null;
   }, []);
 
-  const lensOverlayEntries = useMemo(() => {
-    if (!lens) return [] as Array<{ map: string; rect: Rect; color: string }>;
-    const out: Array<{ map: string; rect: Rect; color: string }> = [];
-    for (const p of visible) {
-      let color: string | null = null;
-      if (lens === "level-curve") color = levelColorByMap.get(p.map) ?? null;
-      else if (lens === "empty-maps") color = emptyMapNames.has(p.map) ? "var(--warn)" : null;
-      else if (lens === "method") color = methodTintFor(p.map);
-      // "unused-species" has no per-map visual -- see LensLegend's own
-      // legend copy and species list for that lens: it is a fact about species, not about a
-      // place on the map, so there is nothing here to tint.
-      if (!color) continue;
-      const size = sizeOfPlacement(p, sizeByMap);
-      out.push({
-        map: p.map,
-        rect: { x: p.x * zoom + pan.x, y: p.y * zoom + pan.y, width: size.width * zoom, height: size.height * zoom },
-        color,
-      });
-    }
-    return out;
-    // encounterVersion, not encounterCacheRef itself (a ref, so it would
-    // never usefully appear in a dependency array) -- the method lens
-    // reads that ref via methodTintFor, and encounterVersion is exactly
-    // the signal the encounter-fetch effect above already bumps whenever
-    // that ref's contents change.
-  }, [lens, visible, sizeByMap, pan, zoom, levelColorByMap, emptyMapNames, methodTintFor, encounterVersion]);
+  const lensRectFor = useCallback((p: Placement): Rect => {
+    const size = sizeOfPlacement(p, sizeByMap);
+    return { x: p.x * zoom + pan.x, y: p.y * zoom + pan.y, width: size.width * zoom, height: size.height * zoom };
+  }, [sizeByMap, pan, zoom]);
+  const lensOverlayEntries = useLensOverlayEntries({ lens, visible, rectFor: lensRectFor, levelColorByMap, emptyMapNames, methodTintFor, encounterVersion });
 
   // mapName -> its best (highest-percent) hit -- whereSpecies already
   // sorts by percent descending, so "first hit seen per map" is already
@@ -1428,8 +1370,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
       if (!p) continue;
       const size = sizeOfPlacement(p, sizeByMap);
       if (size.width <= 0 || size.height <= 0) continue;
-      const cx = p.x * zoom + pan.x + size.width * zoom - BADGE_SIZE - (badgeOffsets.get(conflict.key) ?? 0);
-      const cy = p.y * zoom + pan.y + BADGE_SIZE;
+      const { cx, cy } = conflictBadgeCenter(p, size, zoom, pan, badgeOffsets.get(conflict.key) ?? 0);
       const accepted = conflictAcceptance.isAccepted(conflict);
       drawDiamond(ctx, cx, cy, BADGE_SIZE, accepted ? acceptedColor : conflictColor);
       if (accepted) {
@@ -1903,44 +1844,12 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
     <section className="world-canvas" aria-label="World canvas">
       <div className="world-canvas__toolbar">
         <DungeonAutoLayoutSwitch on={dungeonsOn} onToggle={toggleDungeons} />
-        <div className="world-canvas__toolbar-group">
-          <button
-            type="button"
-            role="switch"
-            aria-checked={warpsOn}
-            aria-label="Warps"
-            className="world-canvas__switch"
-            onClick={() => setWarpsOn((w) => !w)}
-          >
-            <span className="world-canvas__switch-thumb" />
-          </button>
-          <span className="world-canvas__switch-label">Warps {warpsOn ? "on" : "off"}</span>
-        </div>
-        {mapFilter && (
-          <div className="world-canvas__toolbar-group">
-            <button
-              type="button"
-              role="switch"
-              aria-checked={linesOn}
-              aria-label="Connection lines"
-              className="world-canvas__switch"
-              onClick={() => setLinesOn((l) => !l)}
-            >
-              <span className="world-canvas__switch-thumb" />
-            </button>
-            <span className="world-canvas__switch-label">Connection lines {linesOn ? "on" : "off"}</span>
-          </div>
-        )}
+        <WorldToolbarSwitch label="Warps" on={warpsOn} onToggle={() => setWarpsOn((w) => !w)} />
+        {mapFilter && <WorldToolbarSwitch label="Connection lines" on={linesOn} onToggle={() => setLinesOn((l) => !l)} />}
         {/* A visible note, not a silent gap, for however many maps' own
             /api/encounters fetch failed (a non-OK status, or a shape that fails
             isGbaEncountersPayload) -- same markup as GbcWorldCanvas's. */}
-        {encounterFailedCount > 0 && (
-          <div className="world-canvas__toolbar-group">
-            <span className="world-canvas__toolbar-error" role="alert">
-              Encounter data unavailable for {encounterFailedCount} map{encounterFailedCount === 1 ? "" : "s"}
-            </span>
-          </div>
-        )}
+        <EncounterFetchAlert count={encounterFailedCount} />
         <div className="world-canvas__toolbar-group world-canvas__toolbar-group--grow">
           <SpeciesSpotlight onHits={setSpotlightHits} />
           {/* Review fix: a failed /api/coverage fetch used to fall through
@@ -1950,13 +1859,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
               -- SpeciesSpotlight above is unaffected (it hits
               /api/where/:species directly, not /api/coverage), so a
               coverage failure degrades only the lenses, not the spotlight. */}
-          {coverageError ? (
-            <span className="world-canvas__toolbar-error" role="alert">
-              Coverage lenses unavailable: {coverageError}
-            </span>
-          ) : (
-            <LensPanel active={lens} onChange={setLens} />
-          )}
+          <WorldLensControl error={coverageError} lens={lens} onChange={setLens} />
         </div>
         <div className="world-canvas__toolbar-group">
           <span className="world-canvas__zoom-readout">{Math.round((zoom / TILE_PX) * 100)}%</span>
@@ -1966,25 +1869,10 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
         </div>
       </div>
 
-      {!coverageError && (
-        <LensLegend
-          active={lens}
-          summary={
-            coverageData
-              ? { emptyMapNames: coverageData.mapsWithoutEncounters, unusedSpeciesNames: coverageData.unusedSpecies }
-              : null
-          }
-          onJumpToMap={onJumpToMap}
-        />
-      )}
+      <WorldLensLegend error={coverageError} lens={lens} coverage={coverageData} onJumpToMap={onJumpToMap} />
 
       <div className="world-canvas__legend">
-        <span className="world-canvas__legend-item">
-          <i className="world-canvas__swatch world-canvas__swatch--conflict" /> Conflict
-        </span>
-        <span className="world-canvas__legend-item">
-          <i className="world-canvas__swatch world-canvas__swatch--conflict world-canvas__swatch--accepted" /> Accepted
-        </span>
+        <ConflictLegendItems />
         <span className="world-canvas__legend-item">
           <i className="world-canvas__swatch world-canvas__swatch--dive" /> Dive
         </span>
@@ -2079,53 +1967,12 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
               }}
             />
           )}
-          {lens && lensOverlayEntries.length > 0 && (
-            <div className="world-canvas__lens" aria-hidden="true">
-              {lensOverlayEntries.map((e) => (
-                <div
-                  key={e.map}
-                  className="world-canvas__lens-tint"
-                  style={{ left: e.rect.x, top: e.rect.y, width: e.rect.width, height: e.rect.height, background: e.color }}
-                />
-              ))}
-            </div>
-          )}
-          {spotlightHits !== null && (
-            <div className="world-canvas__spotlight" aria-hidden="true">
-              {spotlightOverlayEntries.map((e) =>
-                e.hit ? (
-                  <div
-                    key={e.map}
-                    className="world-canvas__spotlight-hit"
-                    style={{ left: e.rect.x, top: e.rect.y, width: e.rect.width, height: e.rect.height }}
-                  >
-                    <span className="world-canvas__spotlight-badge">
-                      {`${e.hit.percent.toFixed(0)}% Lv ${e.hit.minLevel}-${e.hit.maxLevel}`}
-                    </span>
-                  </div>
-                ) : (
-                  <div
-                    key={e.map}
-                    className="world-canvas__spotlight-dim"
-                    style={{ left: e.rect.x, top: e.rect.y, width: e.rect.width, height: e.rect.height }}
-                  />
-                ),
-              )}
-            </div>
-          )}
-          {context && <WorldContextOverlay map={context.map} ctx={worldContext} renderCanvas={(view, onViewChange) => <ContextMapFit.Provider value={worldContext.registerFit}>{context.renderCanvas(view, onViewChange)}</ContextMapFit.Provider>} onDone={() => context.onExitRequest()} />}
-          {tooltip && (
-            <div className="world-canvas__tooltip" style={{ left: tooltip.x + 12, top: tooltip.y + 12 }} role="tooltip">
-              {tooltip.text}
-            </div>
-          )}
+          <LensOverlay lens={lens} entries={lensOverlayEntries} />
+          <SpotlightOverlay hits={spotlightHits} entries={spotlightOverlayEntries} />
+          <WorldContextOverlayMount context={context} ctx={worldContext} />
+          <ConflictTooltip tooltip={tooltip} />
           <WorldContextMenu menu={contextMenu.menu} viewport={viewport} onClose={contextMenu.close} />
-          {conflictAcceptance.error && (
-            <div className="world-canvas__toast" role="alert">
-              <span className="world-canvas__toast-text">Could not update conflict: {conflictAcceptance.error}</span>
-              <button type="button" className="world-canvas__toast-dismiss" onClick={() => conflictAcceptance.setError(null)} aria-label="Dismiss">×</button>
-            </div>
-          )}
+          <ConflictErrorToast error={conflictAcceptance.error} onDismiss={() => conflictAcceptance.setError(null)} />
           {saveError && (
             <div className="world-canvas__toast" role="alert">
               <span className="world-canvas__toast-text">{saveError}</span>
@@ -2245,6 +2092,16 @@ function lerpColor(a: [number, number, number], b: [number, number, number], t: 
  * SAME computation `levelColorByMap` always ran, just factored out of the
  * `useMemo` so it can be called from outside a React component too.
  */
+/** `levelColorMap` over the entries that name a map, with the ramp ends read from the current theme
+ *  (`--overlay-elevation-low` to `--danger`). Both world canvases' `levelColorByMap` memos call this. */
+export function themedLevelColorMap(levelByMap: readonly { mapName?: string | null; averageLevel: number }[]): Map<string, string> {
+  const entries = levelByMap.filter((e): e is typeof e & { mapName: string } => !!e.mapName);
+  const style = typeof getComputedStyle === "function" ? getComputedStyle(document.documentElement) : null;
+  const low = style?.getPropertyValue("--overlay-elevation-low").trim() || "#3b82f6";
+  const high = style?.getPropertyValue("--danger").trim() || "#ef4444";
+  return levelColorMap(entries, low, high);
+}
+
 export function levelColorMap(entries: { mapName: string; averageLevel: number }[], low: string, high: string): Map<string, string> {
   const out = new Map<string, string>();
   if (entries.length === 0) return out;

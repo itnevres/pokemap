@@ -1,6 +1,6 @@
 import type React from "react";
 import { ZOOM_LEVELS, type MapView } from "../components/mapView.js";
-import type { WorldContext } from "./useWorldContext.js";
+import { ContextMapFit, type WorldContext } from "./useWorldContext.js";
 
 /** The in-context editing overlay, shared by both world canvases. It fills the world viewport box exactly, so the
  *  chromeless map canvas's stage box equals the world canvas box and the controlled view maps one to one (see
@@ -38,4 +38,12 @@ export function WorldContextOverlay({ map, ctx, renderCanvas, onDone }: {
       </div>
     </div>
   );
+}
+
+/** Keeps the conditional context mount (including the fit-provider boundary) identical in both world canvases. */
+export function WorldContextOverlayMount({ context, ctx }: {
+  context: { map: string; renderCanvas(view: MapView, onViewChange: (v: MapView) => void): React.ReactNode; onExitRequest(): void } | undefined;
+  ctx: WorldContext;
+}) {
+  return context && <WorldContextOverlay map={context.map} ctx={ctx} renderCanvas={(view, onViewChange) => <ContextMapFit.Provider value={ctx.registerFit}>{context.renderCanvas(view, onViewChange)}</ContextMapFit.Provider>} onDone={() => context.onExitRequest()} />;
 }
