@@ -237,3 +237,21 @@ describe("placementLedger (Plan 11 Task 4)", () => {
     expect(l.serverShows("A", snap)).toBe(false);
   });
 });
+
+it("versionedMaps returns every map with a version once, including resolved maps, as a fresh array", () => {
+  const l = createPlacementLedger();
+  expect(l.versionedMaps()).toEqual([]);
+  const a = l.begin("A");
+  l.moved("A", a);
+  l.resolve("A", a, true);
+  const b = l.begin("B");
+  l.noop("B", b);
+  const c = l.begin("C");
+  l.moved("C", c);
+  l.resolve("C", c, false);
+  l.begin("A");
+  const names = l.versionedMaps();
+  expect(names).toEqual(["A", "B", "C"]);
+  names.pop();
+  expect(l.versionedMaps()).toEqual(["A", "B", "C"]);
+});

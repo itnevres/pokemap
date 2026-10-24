@@ -30,6 +30,7 @@ import { useViewportMeasure } from "../shared/useViewportMeasure.js";
 import { EncounterFetchAlert, WorldLensControl, WorldLensLegend } from "../shared/WorldLensControls.js";
 import { SpotlightOverlay } from "../shared/SpotlightOverlay.js";
 import { ConflictErrorToast, ConflictLegendItems, ConflictTooltip } from "../shared/WorldConflictOverlays.js";
+import { createPlacementLedger, type PlacementVersion } from "../shared/placementLedger.js";
 
 /** The pixel size a placement's PNG renders at natively (`renderLayout`,
  *  border 0): 16px per tile, same constant the CLI's `render-world --scale
@@ -190,8 +191,8 @@ type DragState =
   // began, kept so commitMapDrag can tell "did this actually move to a
   // different tile" from "the user grabbed it and let go again" -- see
   // its own review-fix comment.
-  | { kind: "map"; map: string; grabDX: number; grabDY: number; startTileX: number; startTileY: number }
-  | { kind: "group"; anchorMap: string; grabDX: number; grabDY: number; starts: Map<string, { x: number; y: number }> }
+  | { kind: "map"; map: string; grabDX: number; grabDY: number; startTileX: number; startTileY: number; version?: PlacementVersion }
+  | { kind: "group"; anchorMap: string; grabDX: number; grabDY: number; starts: Map<string, { x: number; y: number }>; versions?: Map<string, PlacementVersion> }
   | { kind: "marquee"; startX: number; startY: number }
   | null;
 
@@ -390,8 +391,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
   const encounterCacheRef = useRef<Map<string, EncounterCacheEntry>>(new Map());
   const warpCacheRef = useRef<Map<string, WarpCacheEntry>>(new Map());
   const dragRef = useRef<DragState>(null);
-  const placementEdits = useRef(new Map<string, number>());
-  const savedPlacementEdits = useRef(new Map<string, number>());
+  const ledger = useRef(createPlacementLedger());
   const conflictBadgesRef = useRef<Array<{ x: number; y: number; text: string; key: string; map: string; accepted: boolean }>>([]);
   // Review fix: whether real pointer movement happened during the
   // mousedown-to-mouseup cycle that is about to produce a `click`. The
@@ -514,7 +514,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
   // persists to sidecar.dungeonAutoLayout (see toggleDungeons below), so a
   // plain fetch always reflects whatever was last saved, exactly like a
   // real reload would. refetchGen exists only to give this effect a
-  // dependency to re-run on after that POST succeeds; it carries no data
+  // dependency to re-run on after a toggle succeeds or a placement commit settles; it carries no data
   // of its own. `/api/world?dungeons=` itself is unchanged, but review fix:
   // nothing in this app calls it that way any more -- the CLI's
   // --no-dungeons calls resolveWorldPlacements directly (no HTTP involved
@@ -522,16 +522,19 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
   // API completeness and packages/server/test/world.test.ts's coverage.
   useEffect(() => {
     let cancelled = false;
-    const savedAtRequest = new Map(savedPlacementEdits.current);
+    const snap = ledger.current.snapshot();
     setLoadError(null);
     fetchGuarded("/api/world", isWorldPayload)
       .then((d) => {
         if (cancelled) return;
+        // Ownership depends on the version at GET issue and landing, never on coordinates. Capture it before React's updater.
+        const keep = new Set(ledger.current.versionedMaps().filter((name) =>
+          !ledger.current.serverShows(name, snap) || (!(name in d.placements) && !ledger.current.dropAbsent(name, snap))));
         setWorld((previous) => {
           const placements = new Map(Object.entries(d.placements));
-          for (const [name, version] of placementEdits.current) {
+          for (const name of keep) {
             const local = previous?.placements.get(name);
-            if (local && version > (savedAtRequest.get(name) ?? 0)) placements.set(name, local);
+            if (local) placements.set(name, local);
           }
           return {
           placements,
@@ -546,8 +549,8 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
         // shadowing it with a stale optimistic value. Harmless when this
         // runs for a reason OTHER than a successful toggle (initial mount:
         // already null; a failed toggle already nulled it before this
-        // effect could re-run at all, since only a SUCCESSFUL POST bumps
-        // refetchGen).
+        // effect could re-run at all). Placement commits also bump refetchGen
+        // after settling, so their reloads reach this handler too.
         setDungeonsPending(null);
       })
       .catch((e: unknown) => {
@@ -1450,16 +1453,11 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
     return null;
   }, [visible, sizeByMap]);
 
-  // An edit version with nothing to save (a drag that ended on its start tile)
-  // or whose POST failed is settled: later /api/world reloads take the server
-  // position instead of pinning the stale local one.
-  const settlePlacementEdits = (names: Iterable<string>) => {
-    for (const name of names) savedPlacementEdits.current.set(name, Math.max(placementEdits.current.get(name) ?? 0, savedPlacementEdits.current.get(name) ?? 0));
-  };
-  const postPlacements = (placements: Array<{ map: string; x: number; y: number }>) => {
+  // Each POST resolves only its gesture version; no-op gestures inherit an in-flight save's outcome through the ledger.
+  const postPlacements = (placements: Array<{ map: string; x: number; y: number; version: PlacementVersion }>) => {
     if (!placements.length) return;
-    void Promise.all(placements.map(({ map, x, y }) => {
-      const version = placementEdits.current.get(map) ?? 0;
+    void Promise.all(placements.map(({ map, x, y, version }) => {
+      ledger.current.moved(map, version);
       return fetch("/api/world/placement", {
       method: "POST",
       body: JSON.stringify({ map, x, y }),
@@ -1470,11 +1468,11 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
         // refusal on a corrupted world.json) resolves normally and landed
         // here silently discarded, with no banner and no console output.
         if (!r.ok) throw new Error(`POST /api/world/placement -> ${r.status}`);
-        savedPlacementEdits.current.set(map, Math.max(version, savedPlacementEdits.current.get(map) ?? 0));
+        ledger.current.resolve(map, version, true);
         return map;
       })
       .catch((e: unknown) => {
-        savedPlacementEdits.current.set(map, Math.max(version, savedPlacementEdits.current.get(map) ?? 0));
+        ledger.current.resolve(map, version, false);
         // The optimistic local move already reflects the drag -- a failed
         // POST means it will not survive a reload, so this goes through
         // saveError (dismissible, does not disturb the canvas) rather than
@@ -1485,13 +1483,12 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
       });
     })).then((saved) => {
         const names = saved.filter((name): name is string => name !== null);
-        if (names.length) {
-          setRefetchGen((g) => g + 1);
-          names.forEach((name) => onPlacementSaved?.(name));
-        }
+        // One reload after the whole commit settles, including failures, so failed local positions can roll back.
+        setRefetchGen((g) => g + 1);
+        names.forEach((name) => onPlacementSaved?.(name));
       });
   };
-  const postPlacement = (map: string, x: number, y: number) => postPlacements([{ map, x, y }]);
+  const postPlacement = (map: string, x: number, y: number, version: PlacementVersion) => postPlacements([{ map, x, y, version }]);
 
   // Review fix: a plain mousedown used to start a map-drag whenever the
   // cursor happened to be over a placement, with no way to tell that
@@ -1625,7 +1622,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
       const rect = e.currentTarget.getBoundingClientRect();
       const w = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
       const nx = Math.round(w.x - drag.grabDX), ny = Math.round(w.y - drag.grabDY);
-      placementEdits.current.set(drag.map, (placementEdits.current.get(drag.map) ?? 0) + 1);
+      drag.version ??= ledger.current.begin(drag.map);
       setWorld((prev) => {
         if (!prev) return prev;
         const existing = prev.placements.get(drag.map);
@@ -1643,7 +1640,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
       const anchorStart = drag.starts.get(drag.anchorMap)!;
       const rawX = w.x - drag.grabDX, rawY = w.y - drag.grabDY;
       const dx = Math.round(rawX) - anchorStart.x, dy = Math.round(rawY) - anchorStart.y;
-      for (const name of drag.starts.keys()) placementEdits.current.set(name, (placementEdits.current.get(name) ?? 0) + 1);
+      drag.versions ??= new Map([...drag.starts.keys()].map((name) => [name, ledger.current.begin(name)]));
       setWorld((prev) => {
         if (!prev) return prev;
         // Review fix: mirrors the "map" branch's own no-op guard just above
@@ -1690,26 +1687,27 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
   // mid-drag needs this too, not just mouseup.
   const commitMapDrag = () => {
     const drag = dragRef.current;
-    if (drag?.kind === "map") {
+    if (drag?.kind === "map" && drag.version !== undefined) {
       const p = world?.placements.get(drag.map);
       // Review fix: only write when the placement actually landed on a
       // different tile than it started on -- a Shift+click (or a Shift+drag
       // that rounds back to the same tile) must not silently POST an
       // unchanged position and spend a write for nothing.
-      if (p && (p.x !== drag.startTileX || p.y !== drag.startTileY)) postPlacement(drag.map, p.x, p.y);
-      else settlePlacementEdits([drag.map]);
+      if (p && (p.x !== drag.startTileX || p.y !== drag.startTileY)) postPlacement(drag.map, p.x, p.y, drag.version);
+      else ledger.current.noop(drag.map, drag.version);
     }
   };
 
   const commitGroupDrag = () => {
     const drag = dragRef.current;
-    if (drag?.kind !== "group") return;
-    const changed: Array<{ map: string; x: number; y: number }> = [];
+    if (drag?.kind !== "group" || !drag.versions) return;
+    const changed: Array<{ map: string; x: number; y: number; version: PlacementVersion }> = [];
     for (const [name, start] of drag.starts) {
       const p = world?.placements.get(name);
-      if (p && (p.x !== start.x || p.y !== start.y)) changed.push({ map: name, x: p.x, y: p.y });
+      const version = drag.versions.get(name)!;
+      if (p && (p.x !== start.x || p.y !== start.y)) changed.push({ map: name, x: p.x, y: p.y, version });
+      else ledger.current.noop(name, version);
     }
-    settlePlacementEdits([...drag.starts.keys()].filter((name) => !changed.some((c) => c.map === name)));
     postPlacements(changed);
   };
 
@@ -1827,7 +1825,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
     const rect = e.currentTarget.getBoundingClientRect();
     const w = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
     const x = Math.round(w.x - size.width / 2), y = Math.round(w.y - size.height / 2);
-    placementEdits.current.set(map, (placementEdits.current.get(map) ?? 0) + 1);
+    const version = ledger.current.begin(map);
     setWorld((prev) => {
       if (!prev) return prev;
       const next = new Map(prev.placements);
@@ -1835,7 +1833,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
       return { ...prev, placements: next };
     });
     setCompositeVersion((v) => v + 1);
-    postPlacement(map, x, y);
+    postPlacement(map, x, y, version);
   };
 
   const stageClassName = `world-canvas__stage${isDraggingMap ? " world-canvas__stage--dragging-map" : ""}`;

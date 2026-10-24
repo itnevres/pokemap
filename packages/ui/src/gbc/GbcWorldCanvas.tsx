@@ -33,6 +33,9 @@ import { useViewportMeasure } from "../shared/useViewportMeasure.js";
 import { EncounterFetchAlert, WorldLensControl, WorldLensLegend } from "../shared/WorldLensControls.js";
 import { SpotlightOverlay } from "../shared/SpotlightOverlay.js";
 import { ConflictErrorToast, ConflictLegendItems, ConflictTooltip } from "../shared/WorldConflictOverlays.js";
+import { createPlacementLedger, type PlacementSnapshot, type PlacementVersion } from "../shared/placementLedger.js";
+
+const EMPTY_PLACEMENT_SNAPSHOT: PlacementSnapshot = { mapStates: new Map() };
 
 /**
  * The GBC world view (Plan 6b Task 5, D1 manual placement). Mirrors `WorldCanvas.tsx`'s
@@ -407,7 +410,7 @@ interface TooltipInfo {
 
 type DragState =
   | { kind: "pan"; x: number; y: number; panX: number; panY: number }
-  | { kind: "map"; map: string; grabX: number; grabY: number; startX: number; startY: number; x: number; y: number }
+  | { kind: "map"; map: string; grabX: number; grabY: number; startX: number; startY: number; x: number; y: number; version?: PlacementVersion }
   | null;
 
 export interface GbcWorldCanvasProps {
@@ -470,7 +473,13 @@ function isLayoutSaved(x: unknown): x is { dungeonAutoLayout: boolean } {
  * `world-canvas__*` classes reused verbatim below.
  */
 export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelectMap, onOpenMap, onJumpToMap, onPlacementSaved, onLayoutChanged, onEditHere, context, tileVersions }: GbcWorldCanvasProps) {
-  const { data: world, error, reload: reloadWorld } = useGbcWorld();
+  const { data: world, error, reload, loadedGen } = useGbcWorld();
+  const ledger = useRef(createPlacementLedger());
+  const snapshots = useRef(new Map<number, PlacementSnapshot>());
+  const reloadWorld = () => {
+    const snap = ledger.current.snapshot();
+    snapshots.current.set(reload(), snap);
+  };
   const { data: coverageData, error: coverageError } = useGbcCoverage();
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -489,19 +498,15 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
   const [viewport, setViewport] = useState({ w: 0, h: 0 });
   const [view, setView] = useState<GbcWorldView>({ zoom: 1, pan: { x: 0, y: 0 }, fitted: false });
   const [placementOverrides, setPlacementOverrides] = useState<Record<string, { x: number; y: number }>>({});
-  const savedOverrides = useRef<Record<string, { x: number; y: number }>>({});
-  // Overrides with nothing to save (a drag that ended on its start tile) or whose POST failed: the next reload drops them.
-  const settledOverrides = useRef(new Set<string>());
+  // Pair each world response with the ledger snapshot from its reload request, never with saved coordinates.
   useEffect(() => {
     if (!world) return;
-    const settled = settledOverrides.current;
-    setPlacementOverrides((overrides) => Object.fromEntries(Object.entries(overrides).filter(([name, at]) => {
-      if (settled.has(name)) return false;
-      const saved = savedOverrides.current[name];
-      if (!saved || saved.x !== at.x || saved.y !== at.y || !world.placements[name]) return true;
-      return false;
-    })));
-  }, [world]);
+    const snap = snapshots.current.get(loadedGen) ?? EMPTY_PLACEMENT_SNAPSHOT;
+    // Capture ownership before the updater so React can replay it without reading mutable refs.
+    const keep = new Set(ledger.current.versionedMaps().filter((name) =>
+      !ledger.current.serverShows(name, snap) || (!(name in world.placements) && !ledger.current.dropAbsent(name, snap))));
+    setPlacementOverrides((overrides) => Object.fromEntries(Object.entries(overrides).filter(([name]) => keep.has(name))));
+  }, [world, loadedGen]);
   const { zoom, pan, fitted } = view;
   // Every singleton map's own size (its component's bounds): sizes a rail drop of a map absent from `placements`.
   const sizeByMap = useMemo(() => singletonSizes(world?.components), [world?.components]);
@@ -956,17 +961,19 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
   );
 
   const [saveError, setSaveError] = useState<string | null>(null);
-  const postPlacement = (map: string, x: number, y: number) => {
+  const postPlacement = (map: string, x: number, y: number, version: PlacementVersion) => {
+    ledger.current.moved(map, version);
     fetchGuarded("/api/world/placement", isPlacementSaved, undefined, { method: "POST", body: JSON.stringify({ map, x, y }) })
       .then(() => {
+        ledger.current.resolve(map, version, true);
         setSaveError(null);
-        savedOverrides.current[map] = { x, y };
         reloadWorld();
         onPlacementSaved?.(map);
       })
       .catch((e: unknown) => {
-        settledOverrides.current.add(map);
+        ledger.current.resolve(map, version, false);
         setSaveError(e instanceof Error ? e.message : String(e));
+        reloadWorld();
       });
   };
 
@@ -1011,7 +1018,7 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
       const x = Math.round(point.x - drag.grabX), y = Math.round(point.y - drag.grabY);
       drag.x = x;
       drag.y = y;
-      settledOverrides.current.delete(drag.map);
+      drag.version ??= ledger.current.begin(drag.map);
       setPlacementOverrides((overrides) => ({ ...overrides, [drag.map]: { x, y } }));
       return;
     }
@@ -1033,9 +1040,9 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
 
   const commitMapDrag = () => {
     const drag = dragRef.current;
-    if (drag?.kind !== "map") return;
-    if (drag.x !== drag.startX || drag.y !== drag.startY) postPlacement(drag.map, drag.x, drag.y);
-    else settledOverrides.current.add(drag.map);
+    if (drag?.kind !== "map" || drag.version === undefined) return;
+    if (drag.x !== drag.startX || drag.y !== drag.startY) postPlacement(drag.map, drag.x, drag.y, drag.version);
+    else ledger.current.noop(drag.map, drag.version);
   };
 
   const onMouseUp = () => {
@@ -1261,9 +1268,9 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
               const rect = e.currentTarget.getBoundingClientRect();
               const point = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
               const x = Math.round(point.x - placement.width / 2), y = Math.round(point.y - placement.height / 2);
-              settledOverrides.current.delete(map);
+              const version = ledger.current.begin(map);
               setPlacementOverrides((overrides) => ({ ...overrides, [map]: { x, y } }));
-              postPlacement(map, x, y);
+              postPlacement(map, x, y, version);
             }}
             onClick={onClick}
             onDoubleClick={onDoubleClick}

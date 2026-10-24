@@ -26,6 +26,8 @@ export interface PlacementLedger {
   resolve(map: string, v: PlacementVersion, ok: boolean): void;
   /** Taken when a world GET is issued. Returns an immutable value. */
   snapshot(): PlacementSnapshot;
+  /** Every map that has had a gesture version, including resolved versions. */
+  versionedMaps(): string[];
   /** At that GET's landing, whether that map shows the server's position. */
   serverShows(map: string, snap: PlacementSnapshot): boolean;
   /** At that GET's landing, for a map the server does not place, whether it leaves the world. */
@@ -132,6 +134,10 @@ export function createPlacementLedger(): PlacementLedger {
       }
       // A fresh Map per call, never handed back to the ledger: later changes cannot alter what it recorded.
       return { mapStates };
+    },
+
+    versionedMaps(): string[] {
+      return [...maps.keys()];
     },
 
     serverShows,

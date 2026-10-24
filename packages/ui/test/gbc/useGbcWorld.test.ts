@@ -74,4 +74,19 @@ describe("useGbcWorld", () => {
     await waitFor(() => expect(result.current.data).toEqual(second));
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
+
+  // Plan 11 F1/F3: the canvas snapshots its placement ledger per generation, so it must know which GET produced `data`.
+  it("reload() returns the new generation and loadedGen names the generation whose GET produced data", async () => {
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(VALID_BODY) }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderHook(() => useGbcWorld());
+    await waitFor(() => expect(result.current.data).not.toBeNull());
+    expect(result.current.loadedGen).toBe(0);
+    let first = -1, second = -1;
+    act(() => { first = result.current.reload(); second = result.current.reload(); });
+    expect([first, second]).toEqual([1, 2]);
+    expect(result.current.loadedGen).toBe(0);
+    await waitFor(() => expect(result.current.loadedGen).toBe(2));
+  });
 });
