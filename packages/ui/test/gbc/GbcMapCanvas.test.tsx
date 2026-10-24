@@ -354,10 +354,10 @@ describe("GbcMapCanvas", () => {
 
   it("every overlay toggle starts off, and Collision reveals a Wall AND a Water legend item", async () => {
     await mountReady();
-    for (const name of ["Grid", "Collision", "Events"]) {
+    for (const name of ["Grid", "Show collision overlay", "Events"]) {
       expect(screen.getByRole("button", { name }).getAttribute("aria-pressed")).toBe("false");
     }
-    fireEvent.click(screen.getByRole("button", { name: "Collision" }));
+    fireEvent.click(screen.getByRole("button", { name: "Show collision overlay" }));
     expect(screen.getByText("Wall", { selector: ".map-canvas__legend-item" })).toBeTruthy();
     expect(screen.getByText("Water", { selector: ".map-canvas__legend-item" })).toBeTruthy();
   });
@@ -455,7 +455,7 @@ describe("GbcMapCanvas", () => {
     // regardless of anything React does. The blit effect that repaints it
     // MUST depend on `viewport`, or nothing redraws it.
     const { canvas, stageCtx } = await mountReady();
-    fireEvent.click(screen.getByRole("button", { name: "Collision" }));
+    fireEvent.click(screen.getByRole("button", { name: "Show collision overlay" }));
     await waitFor(() => expect(screen.getByText("Wall", { selector: ".map-canvas__legend-item" })).toBeTruthy());
 
     const drawCallsBeforeResize = stageCtx.drawImage.mock.calls.length;
@@ -505,7 +505,7 @@ describe("GbcMapCanvas", () => {
     // Grid stays on; Collision also turns on -- anyOverlay is TRUE both
     // before and after this change, which is exactly the case the naive
     // `if (!anyOverlay)` guard gets wrong.
-    fireEvent.click(screen.getByRole("button", { name: "Collision" }));
+    fireEvent.click(screen.getByRole("button", { name: "Show collision overlay" }));
     await waitFor(() => expect(fromImgCallCount()).toBeGreaterThan(afterGrid));
   });
 });

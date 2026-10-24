@@ -16,7 +16,7 @@ describe("Toolbar for GBC (additive props)", () => {
     render(<Toolbar {...base} tools={GBC_TOOLS} availableTools={GBC_TOOLS} />);
     const group = screen.getByRole("group", { name: "Tools" });
     expect(Array.from(group.querySelectorAll("button")).map((b) => b.textContent)).toEqual(["Pencil", "Rect", "Bucket", "Dropper", "Shift", "Sign"]);
-    expect(screen.queryByRole("button", { name: "Collision" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Collision tool" })).toBeNull();
     expect(screen.getByRole("button", { name: "Sign" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Pok\u00e9mon Indicator" })).toBeNull();
   });
