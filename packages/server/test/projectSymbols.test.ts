@@ -17,8 +17,10 @@ it.each(["gba", "gbc"] as const)("%s preserves structural defects on index failu
   const run = () => cache.check((symbols) => ({ defects: [defect], incomplete: [{ file: "other.map", reason: "C5 unavailable" }], indexed: !!symbols?.labels.has("Script") }));
   expect(run()).toEqual({ defects: [defect], incomplete: [
     { file: "other.map", reason: "C5 unavailable" },
-    { file: root, reason: expect.stringContaining("C7-C9") },
+    { file: ".", reason: expect.stringContaining("C7-C9") },
   ], indexed: false });
+  // F13: the build error names the missing root; the banner gets the project-relative form only.
+  expect(run().incomplete[1]!.reason).toBe("C7-C9 symbol checks unavailable: ENOENT: no such file or directory, scandir '.'");
   mkdirSync(join(root, "data"), { recursive: true });
   writeFileSync(join(root, "data", family === "gba" ? "scripts.s" : "scripts.asm"), "Script:\n");
   now = 4_999;

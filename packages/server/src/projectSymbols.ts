@@ -26,9 +26,10 @@ export function createSymbolIndexCache(root: string, family: "gba" | "gbc", now:
       let index: SymbolIndex | undefined;
       let reason: string | undefined;
       try { index = get(); }
-      catch (error) { reason = `C7-C9 symbol checks unavailable: ${error instanceof Error ? error.message : String(error)}`; }
+      // F13: the banner names the project relative to its root, never by absolute path.
+      catch (error) { reason = `C7-C9 symbol checks unavailable: ${(error instanceof Error ? error.message : String(error)).split(root).join(".")}`; }
       const result = run(index);
-      return reason ? { ...result, incomplete: [...result.incomplete, { file: root, reason }] } : result;
+      return reason ? { ...result, incomplete: [...result.incomplete, { file: ".", reason }] } : result;
     },
     invalidate: () => { symbols = undefined; failure = undefined; },
   };
