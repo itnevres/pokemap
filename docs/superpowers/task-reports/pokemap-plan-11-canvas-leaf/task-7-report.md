@@ -28,3 +28,9 @@ Refresh per name (GBA adapter `names.forEach((n) => { mark(n); refreshVisibility
 ## Gate
 
 3,526 pass / 218 files (the run also picked up Task 8's uncommitted red test: 2 failed in `server/test/projectSymbols.test.ts`, nothing else). Typecheck and UI build pass.
+
+## Review
+
+Combined spec and quality review, by a Claude Sonnet subagent (the Anthropic floor, because Codex was at its usage limit until 17:44): Spec ✅, Quality Approved, 0/0/2. Both minors verified and fixed. The F8 test title claimed a refresh count it does not assert; it now names the two GETs it checks. The all-fail case waited on any alert; it now waits on the save error text. Review file: the ledger's `_archive/task-7-review.md`.
+
+Gate after the review fixes: 3,528 pass / 0 fail / 218 files; typecheck and UI build pass.

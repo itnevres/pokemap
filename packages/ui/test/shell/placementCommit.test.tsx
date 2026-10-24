@@ -113,7 +113,7 @@ describe("GBA group move marks acknowledged names with one visibility refresh (F
     const refreshesBefore = visibilityRefreshes.count;
     groupMove();
     if (expected.length) await waitFor(() => expect([...marked].sort()).toEqual(expected));
-    else await waitFor(() => expect(screen.queryAllByRole("alert").length).toBeGreaterThan(0));
+    else await waitFor(() => expect(screen.queryAllByRole("alert").map((a) => a.textContent).join()).toContain("POST /api/world/placement -> 500"));
     await settle();
     expect([...marked].sort()).toEqual(expected);
     expect(api.gets() - before).toBe(getsAfter);
@@ -122,7 +122,7 @@ describe("GBA group move marks acknowledged names with one visibility refresh (F
 });
 
 describe.each<Family>(["gba", "gbc"])("%s Shift-drag move marks the map (F8)", (family) => {
-  it("marks it once, with one visibility refresh", async () => {
+  it("marks it once; the commit makes two GETs (canvas reload, visibility)", async () => {
     const { api, marked } = await mount(family);
     const before = api.gets();
     fireEvent.mouseDown(canvas(), { clientX: 50, clientY: 100, button: 0, shiftKey: true });
