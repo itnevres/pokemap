@@ -114,6 +114,7 @@ Both families already render the same `components/Toolbar.tsx`; the differences 
 ### Plan 11: canvas leaf extractions
 
 - **Goal:** take the cheap shared runs out of the canvas pairs without touching rendering.
+- **Status (2026-10-24):** all 9 tasks done on `plan-11-canvas-leaf` (unpushed); final review ready to merge. Map pair 263 → 167 aligned lines, world pair 302 → 191 (every remaining run ruled in the task reports). Awaiting the user for push and merge.
 - **Scope:** per Plan 8 Task 8's measurement (`task-reports/pokemap-plan-8-ui-engine-adapter/_archive/task-8-measurement.md`):
   zoom and status-strip JSX, the overlay toggles and legend bar, the lens overlay block, tile-version refetch, the
   small-tile cache, badge geometry. About 100-150 lines per pair.

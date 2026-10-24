@@ -140,3 +140,12 @@ Both families implement one reconciliation model (spec review I1-I3). Versions d
 ## Review record
 
 - **Spec review (Codex gpt-6-astra, 2026-10-23):** 0 Critical, 6 Important, 4 Minor; every finding checked against the code and accepted. I1-I3 (placement settlement conflated, no-op inheritance, F5 timing) → the reconciliation model; I4 → F12 generations; I5 → E9/E10 limited to pure helpers; I6 → F11 exempted from the anti-goal and specified; M1 → whole-symbol units; M2 → E13 covers both pairs with named candidates; M3 → test inventory under P11-4; M4 → F7 adapter-level tests.
+
+## Deferred minors (after Plan 11)
+
+From the final review (`task-reports/pokemap-plan-11-canvas-leaf/final-review.md`); all judged OK to defer:
+
+- **M2.** GBA world toasts share one absolute spot, so the reload alert covers a save failure: with the server down, a failed placement and its failed rollback reload show only "Could not reload the world", and the move can read as saved. A toast stack fixes it. Plan 12 (shared world shell).
+- **M3.** No canvas-level test drops a rail map whose POST fails and checks that it leaves the world after the reload. Only the ledger unit test covers `dropAbsent`. Add it with the next placement change.
+- **M5 (pre-existing).** GBC clears the save error on any placement success, so another map's failure message can vanish (the rollback still reverts it). Plan 12.
+- **Load placeholder.** The `!world` placeholder is identical in both world canvases except for the error variable; kept per `task-9-live.md`, re-rule in Plan 12.
