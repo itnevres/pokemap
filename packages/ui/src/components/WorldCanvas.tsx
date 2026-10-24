@@ -359,8 +359,8 @@ export interface WorldCanvasProps {
   /** Per-map render bust: when a map's number changes, only that map's tile is dropped and re-requested as
    *  `/api/render/<map>.png?v=<n>`; later loads of it keep the `?v`. */
   tileVersions?: Record<string, number>;
-  /** A placement POST succeeded (a tree or rail drop, or a Shift-drag move). The app mirrors it into tree visibility. */
-  onPlacementSaved?: (name: string) => void;
+  /** Once per placement commit, with every acknowledged name (a tree or rail drop, a Shift-drag or group move); not called when none was acknowledged. The app mirrors them into tree visibility. */
+  onPlacementsSaved?: (names: string[]) => void;
   /** The dungeon auto-layout toggle was saved. The app refreshes any world data it holds of its own. */
   onLayoutChanged?: () => void;
 }
@@ -384,7 +384,7 @@ export interface WorldCanvasContext {
  * packages/ui/DESIGN.md for the palette/type/spacing tokens this consumes,
  * and this file's own comments for the LOD and culling mechanics.
  */
-export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSelectMap, onOpenMap, onEditHere, context, tileVersions, onPlacementSaved, onLayoutChanged }: WorldCanvasProps = {}) {
+export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSelectMap, onOpenMap, onEditHere, context, tileVersions, onPlacementsSaved, onLayoutChanged }: WorldCanvasProps = {}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const imageCacheRef = useRef<Map<string, ImageCacheEntry>>(new Map());
@@ -1497,7 +1497,7 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
         const names = saved.filter((name): name is string => name !== null);
         // One reload after the whole commit settles, including failures, so failed local positions can roll back.
         reloadWorld();
-        names.forEach((name) => onPlacementSaved?.(name));
+        if (names.length) onPlacementsSaved?.(names);
       });
   };
   const postPlacement = (map: string, x: number, y: number, version: PlacementVersion) => postPlacements([{ map, x, y, version }]);

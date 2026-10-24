@@ -95,7 +95,7 @@ export function useGbcRuntime({ selected, mode, requestPrompt }: RuntimeArgs): F
         onOpenMap={s.openMapFromWorld}
         onEditHere={s.enterContext}
         onJumpToMap={s.selectMap}
-        onPlacementSaved={(name) => { s.markManualPlacement(name); reloadWorld(); }}
+        onPlacementsSaved={(names) => { names.forEach(s.markManualPlacement); reloadWorld(); }}
         onLayoutChanged={reloadWorld}
         tileVersions={s.tileVersions}
         context={
@@ -143,7 +143,7 @@ export function useGbcRuntime({ selected, mode, requestPrompt }: RuntimeArgs): F
       ) : null,
     renderWorld,
     renderDungeon: (mapFilter, s) => (
-      <GbcWorldCanvas key="dungeon" time={time} mapFilter={mapFilter} onOpenMap={s.openMapFromWorld} onPlacementSaved={s.markManualPlacement} onLayoutChanged={reloadWorld} />
+      <GbcWorldCanvas key="dungeon" time={time} mapFilter={mapFilter} onOpenMap={s.openMapFromWorld} onPlacementsSaved={(names) => names.forEach(s.markManualPlacement)} />
     ),
     headerExtras: (
       <div className="app__mode gbc-app__time" role="group" aria-label="Time of day">

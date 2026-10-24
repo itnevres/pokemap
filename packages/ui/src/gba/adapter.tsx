@@ -87,7 +87,7 @@ export function useGbaRuntime({ selected, mode, requestPrompt }: RuntimeArgs): F
         onOpenMap={s.openMapFromWorld}
         onEditHere={s.enterContext}
         tileVersions={s.tileVersions}
-        onPlacementSaved={(name) => { s.markManualPlacement(name); refreshVisibility(); }}
+        onPlacementsSaved={(names) => { names.forEach(s.markManualPlacement); refreshVisibility(); }}
         onLayoutChanged={refreshVisibility}
         context={
           s.contextMap === null
@@ -135,7 +135,7 @@ export function useGbaRuntime({ selected, mode, requestPrompt }: RuntimeArgs): F
         </div>
       ) : null,
     renderWorld,
-    renderDungeon: (mapFilter, s) => <WorldCanvas key="dungeon" mapFilter={mapFilter} onOpenMap={s.openMapFromWorld} />,
+    renderDungeon: (mapFilter, s) => <WorldCanvas key="dungeon" mapFilter={mapFilter} onOpenMap={s.openMapFromWorld} onPlacementsSaved={(names) => names.forEach(s.markManualPlacement)} />,
     headerExtras: null,
     banners: switchError && (
       <div className="app__event-op-error" role="alert">

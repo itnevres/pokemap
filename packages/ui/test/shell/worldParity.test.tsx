@@ -174,20 +174,20 @@ describe.each<Family>(["gba", "gbc"])("world parity (Plan 10b SR8, SR9): %s", (f
   });
 });
 
-describe("onPlacementSaved (Plan 10b)", () => {
+describe("onPlacementsSaved (Plan 10b, Plan 11 F7)", () => {
   it("GBA WorldCanvas fires it after a rail drop", async () => {
     stubViewport(200);
     const server = makeServer("gba");
     vi.stubGlobal("fetch", server.fetcher);
-    const onPlacementSaved = vi.fn();
-    const { container } = render(<WorldCanvas onPlacementSaved={onPlacementSaved} />);
+    const onPlacementsSaved = vi.fn();
+    const { container } = render(<WorldCanvas onPlacementsSaved={onPlacementsSaved} />);
     await waitFor(() => expect(screen.getByRole("switch", { name: "Dungeon auto-layout" })).toBeTruthy());
     fireEvent.click(screen.getByRole("switch", { name: "Dungeon auto-layout" }));
     await waitFor(() => expect(railItems()).toEqual(["Cave", "Hut"]));
     const transfer = dt();
     fireEvent.dragStart(within(rail()).getByRole("button", { name: "Hut" }), { dataTransfer: transfer });
     drop(transfer);
-    await waitFor(() => expect(onPlacementSaved).toHaveBeenCalledWith("Hut"));
+    await waitFor(() => expect(onPlacementsSaved).toHaveBeenCalledWith(["Hut"]));
     expect(container.querySelector(".world-canvas__status")?.textContent).toContain("unplaced 1");
   });
 
@@ -195,15 +195,15 @@ describe("onPlacementSaved (Plan 10b)", () => {
     stubViewport(200);
     const server = makeServer("gbc");
     vi.stubGlobal("fetch", server.fetcher);
-    const onPlacementSaved = vi.fn();
-    render(<GbcWorldCanvas time="day" onPlacementSaved={onPlacementSaved} />);
+    const onPlacementsSaved = vi.fn();
+    render(<GbcWorldCanvas time="day" onPlacementsSaved={onPlacementsSaved} />);
     await waitFor(() => expect(screen.getByRole("switch", { name: "Dungeon auto-layout" })).toBeTruthy());
     fireEvent.click(screen.getByRole("switch", { name: "Dungeon auto-layout" }));
     await waitFor(() => expect(railItems()).toEqual(["Cave", "Hut"]));
     const transfer = dt();
     fireEvent.dragStart(within(rail()).getByRole("button", { name: "Hut" }), { dataTransfer: transfer });
     drop(transfer);
-    await waitFor(() => expect(onPlacementSaved).toHaveBeenCalledWith("Hut"));
+    await waitFor(() => expect(onPlacementsSaved).toHaveBeenCalledWith(["Hut"]));
     expect(server.calls).toContainEqual({ method: "POST", url: "/api/world/placement" });
     await waitFor(() => expect(railItems()).toEqual(["Cave"]));
   });

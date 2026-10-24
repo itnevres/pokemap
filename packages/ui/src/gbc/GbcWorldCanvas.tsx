@@ -431,8 +431,8 @@ export interface GbcWorldCanvasProps {
   /** A lens list entry (Empty maps) was clicked; the app selects the map and
    *  jumps there (the tree-click path). */
   onJumpToMap?: (name: string) => void;
-  /** A placement POST succeeded (tree drop, rail drop, or Shift-drag move). */
-  onPlacementSaved?: (name: string) => void;
+  /** A placement POST succeeded (tree drop, rail drop, or Shift-drag move), with the saved name. */
+  onPlacementsSaved?: (names: string[]) => void;
   /** The dungeon auto-layout toggle was saved; the app refreshes any world data it holds of its own. */
   onLayoutChanged?: () => void;
   /** Plan 7 Task 5b: a plain double-click on a map body (no modifier, no drag, not a warp marker) and the context
@@ -472,7 +472,7 @@ function isLayoutSaved(x: unknown): x is { dungeonAutoLayout: boolean } {
  * reproduced from `WorldCanvas.tsx`, and `packages/ui/DESIGN.md` for the
  * `world-canvas__*` classes reused verbatim below.
  */
-export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelectMap, onOpenMap, onJumpToMap, onPlacementSaved, onLayoutChanged, onEditHere, context, tileVersions }: GbcWorldCanvasProps) {
+export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelectMap, onOpenMap, onJumpToMap, onPlacementsSaved, onLayoutChanged, onEditHere, context, tileVersions }: GbcWorldCanvasProps) {
   const ledger = useRef(createPlacementLedger());
   // The ledger snapshot taken as each world GET was issued, by generation. A response can land in the same batch as a
   // newer GET's issue, so its own snapshot must survive that issue; the reconcile effect prunes older generations.
@@ -975,7 +975,7 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
         ledger.current.resolve(map, version, true);
         setSaveError(null);
         reloadWorld();
-        onPlacementSaved?.(map);
+        onPlacementsSaved?.([map]);
       })
       .catch((e: unknown) => {
         ledger.current.resolve(map, version, false);

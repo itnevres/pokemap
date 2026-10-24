@@ -73,7 +73,7 @@ describe.each(["gba", "gbc"] as const)("%s placement canvas resync", (family) =>
   it.each(["tree", "rail", "Shift-drag"])("%s save moves an automatic neighbour without a view switch", async (source) => {
     const api = server(family); vi.stubGlobal("fetch", api.fetcher);
     const saved = vi.fn();
-    const { container } = render(family === "gba" ? <WorldCanvas onPlacementSaved={saved} /> : <GbcWorldCanvas time="day" onPlacementSaved={saved} />);
+    const { container } = render(family === "gba" ? <WorldCanvas onPlacementsSaved={saved} /> : <GbcWorldCanvas time="day" onPlacementsSaved={saved} />);
     await waitFor(() => expect(screen.getByRole("switch", { name: "Dungeon auto-layout" }).getAttribute("aria-checked")).toBe("false"));
     fireEvent.click(screen.getByRole("button", { name: "Fit" }));
     const canvas = container.querySelector("canvas.world-canvas__stage")!;
@@ -90,6 +90,7 @@ describe.each(["gba", "gbc"] as const)("%s placement canvas resync", (family) =>
       fireEvent(canvas, drop);
     }
     await waitFor(() => expect(saved).toHaveBeenCalledTimes(1));
+    expect(saved).toHaveBeenCalledWith([source === "Shift-drag" ? "Source" : "Unplaced"]);
     await waitFor(() => {
       fireEvent.mouseMove(canvas, { clientX: 150, clientY: 175 });
       expect(container.querySelector(".world-canvas__hover")?.textContent).toContain("Neighbour");
