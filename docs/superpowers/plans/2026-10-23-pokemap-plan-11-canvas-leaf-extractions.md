@@ -1,6 +1,6 @@
 # Plan 11: canvas leaf extractions — Implementation Plan
 
-**STATUS (2026-10-24):** Task 1 done (`626427f`..`0916b7c`, reviews clean). Task 2 done (`f4e9301`, review clean). Next: Task 3.
+**STATUS (2026-10-24):** Task 1 done (`626427f`..`0916b7c`, reviews clean). Task 2 done (`f4e9301`, review clean). Task 3 done (`25b2a43`, review clean). Task 4 done (`a5a8cda`, `8d9c11c`, reviews clean). Next: Task 5.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

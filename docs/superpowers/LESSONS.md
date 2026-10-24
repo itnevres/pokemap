@@ -305,6 +305,15 @@ Rerun in isolation before calling either a regression. (Plan 8)
 
 **Extraction reviews ask for a ruling on every leftover duplicated run** (tell: re-review after re-review names one more run). Run `measure.py ... --all` up front and put a ruling for every run (draw path, hit-test, stroke, call-site input, declaration) in the task report before the first review. Plan 11 T1 took three review rounds without it. (Plan 11 T1)
 
+**Codex invents pass-through wrappers to tick an extraction box** (tell: a new `shared/` component whose body only forwards its props to an already-shared one, e.g. `WorldEncounterBorder` → `EncounterBorder`). Remove it and rule the call site instead. (Plan 11 T2)
+
+**A network outage looks like a Codex failure** (tell: `failed to refresh available models: request timed out`, then `turn.failed` "workspace routing discovery timed out"; a one-word probe also hangs; `curl -m 20 https://api.openai.com/v1/models` hangs instead of returning 401). Wait for the network and retry the same hop; it is not a model failure. (Plan 11 T2)
+
+**Never background a gate with `&` inside a Bash tool call.** It survives the call and overlaps the next gate (tell: the run file holds two summaries, one with a load-only flake). Use `run_in_background` only. (Plan 11 T2)
+
+**Python string edits on CRLF files must match `
+`** (tell: an assertion that the old text occurs once reports 0 on text you can see). Read with `newline=""` and convert the needle when the file has CRLF. (Plan 11 T2)
+
 **Codex tends to strip existing comments and reflow JSX when it restructures a component** (Task 6 `MapEditingWorkspace`): check `git diff` for deleted comments before review. (Plan 8)
 
 **Subagents hit rate limits mid fix-round.** The recipe held: `git status`/`log`/`diff`, the external-state hashes, stray node processes, then SendMessage the same agent with "verify first, then redo from the start". (Plan 6c Phase E)
