@@ -19,3 +19,7 @@ Related server tests pass: `projectSymbols`, `gbcDefectIsolation` and `api`, 43 
 ## Gate
 
 3,528 pass / 0 fail / 218 files; typecheck and UI build pass (run together with the Task 7 review fixes).
+
+## Final-review fix (M1)
+
+The strip also removes the normalized root with trailing separators trimmed, so a root given as `C:/…/` or with a trailing separator no longer leaks. New test; red on the code above (reason held `C:\…\project\`). Gate: 3,529 pass / 0 fail / 218 files; typecheck and UI build pass.

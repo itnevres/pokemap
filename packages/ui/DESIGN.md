@@ -526,6 +526,7 @@ Plan 11:
 | `world/DungeonAutoLayoutSwitch.tsx` `WorldToolbarSwitch` | the world toolbar switches (Dungeon auto-layout, Warps, Connection lines) | `WorldCanvas` | `GbcWorldCanvas` |
 | `components/WorldCanvas.tsx` `centredFit`, `singletonSizes`, `themedLevelColorMap` | fit centring, singleton map sizes, themed level-curve colours | `WorldCanvas` | `GbcWorldCanvas` |
 | `shared/SpotlightOverlay.tsx` | species spotlight overlay markup | `WorldCanvas` | `GbcWorldCanvas` |
+| `shared/placementLedger.ts` | per-map placement versions and GET-snapshot reconciliation (F1-F5) | `WorldCanvas` | `GbcWorldCanvas` |
 
 Still per family, on purpose (Plan 8 Task 7 stop rule): the app shell is now one (`FamilyApp`), so per family means
 *behind the runtime or a capability* (switch policy in `runtime.leave`, `switchError`, time of day, defects banner, sign

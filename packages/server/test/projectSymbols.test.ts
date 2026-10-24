@@ -1,7 +1,7 @@
 import { afterEach, expect, it } from "vitest";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import { createSymbolIndexCache } from "../src/projectSymbols.js";
 
 const roots: string[] = [];
@@ -40,4 +40,15 @@ it("invalidate drops a cached failure so the next check rebuilds at once", () =>
   writeFileSync(join(root, "data", "scripts.asm"), "Script:\n");
   cache.invalidate();
   expect(run().indexed).toBe(true);
+});
+
+it("F13 strips a root given with forward slashes or a trailing separator", () => {
+  const parent = mkdtempSync(join(tmpdir(), "pokemap-symbol-retry-"));
+  roots.push(parent);
+  const root = join(parent, "project");
+  for (const given of [`${root.replaceAll("\\", "/")}/`, `${root}${sep}`]) {
+    const { incomplete } = createSymbolIndexCache(given, "gba", () => 0).check(() => ({ defects: [], incomplete: [] }));
+    // join keeps a trailing separator, so the path reads ".\" or "./": relative either way.
+    expect(incomplete).toEqual([{ file: ".", reason: expect.stringMatching(/^C7-C9 symbol checks unavailable: ENOENT: no such file or directory, scandir '\.[\\/]?'$/) }]);
+  }
 });
