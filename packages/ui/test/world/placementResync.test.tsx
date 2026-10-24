@@ -144,9 +144,10 @@ it("GBA group save reloads once after all members save", async () => {
 // Plan 11 F6: every POST and every GET after the first is resolved by hand, so each ordering is forced.
 // A GET's body is the server state when it was issued; a POST changes the server state when it is resolved ok.
 // A dungeon toggle POST changes the server when it is received (the server answers in order); only its response is held.
+// A toggle answered with a failure never took effect: the server value is the latest toggle not failed.
 function deferredServer(family: "gba" | "gbc", { failFirstGet = false } = {}) {
-  let dungeons = false;
-  const toggles: Array<{ enabled: boolean; settle: (ok: boolean) => void }> = [];
+  const toggles: Array<{ enabled: boolean; failed: boolean; settle: (ok: boolean) => void }> = [];
+  const dungeons = () => [...toggles].reverse().find((t) => !t.failed)?.enabled ?? false;
   const state: Record<string, { x: number; y: number; component: number }> = { Source: { x: 0, y: 0, component: 0 }, Neighbour: { x: 10, y: 0, component: 0 } };
   const posts: Array<{ map: string; x: number; y: number; settle: (ok: boolean) => void }> = [];
   const gets: Array<{ release: () => void; fail: () => void }> = [];
@@ -164,15 +165,17 @@ function deferredServer(family: "gba" | "gbc", { failFirstGet = false } = {}) {
     }
     if (url === "/api/world/dungeons") {
       const { enabled } = JSON.parse(String(init?.body)) as { enabled: boolean };
-      dungeons = enabled;
-      return new Promise<Response>((resolve) => toggles.push({ enabled, settle: (good) => resolve(good ? ok({ dungeonAutoLayout: enabled }) : failed) }));
+      return new Promise<Response>((resolve) => {
+        const entry = { enabled, failed: false, settle: (good: boolean) => { entry.failed = !good; resolve(good ? ok({ dungeonAutoLayout: enabled }) : failed); } };
+        toggles.push(entry);
+      });
     }
     if (url === "/api/world") {
       if (failFirstGet) { failFirstGet = false; return Promise.resolve(failed); }
       const placements = Object.fromEntries(Object.entries(state).map(([map, at]) => [map, { map, ...at, width: 10, height: 10, mapType: family === "gba" ? "MAP_TYPE_TOWN" : "TOWN", manual: map !== "Neighbour" }]));
       const components = [{ index: 0, maps: ["Source", "Neighbour"], bounds: { x: 0, y: 0, width: 20, height: 10 } },
         { index: 1, maps: ["Unplaced"], bounds: { x: 0, y: 0, width: 10, height: 10 } }];
-      const body = ok({ ...(family === "gbc" ? { family, blockPx: 32 } : { verticalLinks: [] }), placements, components, conflicts: [], sidecar: { dungeonAutoLayout: dungeons } });
+      const body = ok({ ...(family === "gbc" ? { family, blockPx: 32 } : { verticalLinks: [] }), placements, components, conflicts: [], sidecar: { dungeonAutoLayout: dungeons() } });
       if (!holding) return Promise.resolve(body);
       return new Promise<Response>((resolve) => gets.push({ release: () => resolve(body), fail: () => resolve(failed) }));
     }
@@ -437,14 +440,16 @@ describe.each(["gba", "gbc"] as const)("%s dungeon switch and reload alert (Plan
 
   it("two successes resolving reversed end on the latest value", async () => {
     await mount();
-    fireEvent.click(sw()); fireEvent.click(sw()); fireEvent.click(sw());
-    const first = await toggle(1), third = await toggle(3);
-    await settle(() => third.settle(true));
+    fireEvent.click(sw()); fireEvent.click(sw());
+    const first = await toggle(1), second = await toggle(2);
+    await settle(() => second.settle(true));
     await releaseAll();
-    expect(shown()).toBe("true");
+    expect(shown()).toBe("false");
+    const gets = api.gets.length;
+    // The older success lands last: ignored, so no reload and the switch keeps the latest value.
     await settle(() => first.settle(true));
-    await releaseAll();
-    expect(shown()).toBe("true");
+    expect(api.gets.length).toBe(gets);
+    expect(shown()).toBe("false");
   });
 
   it("an older failure with a newer toggle pending keeps the pending value and shows no error", async () => {
@@ -458,16 +463,31 @@ describe.each(["gba", "gbc"] as const)("%s dungeon switch and reload alert (Plan
     expect(screen.queryAllByRole("alert").map((node) => node.textContent)).toEqual([]);
   });
 
-  it("the latest failure after an older success clears pending and shows the error", async () => {
+  it("the latest failure after an older success clears pending, shows the error and reloads the server value", async () => {
     await mount();
     fireEvent.click(sw()); fireEvent.click(sw());
     const first = await toggle(1), second = await toggle(2);
+    // The older success is ignored: no reload of its own.
     await settle(() => first.settle(true));
-    await settle(() => second.settle(false));
-    // The older success is ignored (no reload); pending cleared, so the switch shows the last loaded server value.
     expect(api.gets.length).toBe(0);
+    await settle(() => second.settle(false));
     expect(shown()).toBe("false");
     expect(screen.queryAllByRole("alert").length).toBeGreaterThan(0);
+    // The failure's reload shows what the server holds: the older toggle, on.
+    { const g = await getNumber(1); await settle(() => g.release()); }
+    await waitFor(() => expect(shown()).toBe("true"));
+  });
+
+  it("an older toggle's reload landing after a newer click keeps the newer pending value", async () => {
+    await mount();
+    fireEvent.click(sw());
+    { const t = await toggle(1); await settle(() => t.settle(true)); }
+    // This reload was issued while the server said on.
+    const older = await getNumber(1);
+    fireEvent.click(sw());
+    expect(shown()).toBe("false");
+    await settle(() => older.release());
+    expect(shown()).toBe("false");
   });
 
   it("a failed latest toggle drops its pending value at once", async () => {
@@ -507,7 +527,15 @@ describe.each(["gba", "gbc"] as const)("%s dungeon switch and reload alert (Plan
     { const g = await getNumber(1); await settle(() => g.fail()); }
     await waitFor(() => expect(reloadAlert()).toBeTruthy());
     expect(screen.queryByText(/Could not load the world/)).toBeNull();
-    // Still interactive: hover finds Neighbour and a Shift-drag POSTs.
+    // Still interactive: a plain drag on empty space pans (Neighbour moves 50 px left), hover finds it, a Shift-drag POSTs.
+    fireEvent.mouseDown(canvas, { clientX: 150, clientY: 180, button: 0 });
+    fireEvent.mouseMove(canvas, { clientX: 100, clientY: 180 });
+    fireEvent.mouseUp(canvas);
+    fireEvent.mouseMove(canvas, { clientX: 60, clientY: 75 });
+    expect(document.querySelector(".world-canvas__hover")?.textContent).toContain("Neighbour");
+    fireEvent.mouseDown(canvas, { clientX: 100, clientY: 180, button: 0 });
+    fireEvent.mouseMove(canvas, { clientX: 150, clientY: 180 });
+    fireEvent.mouseUp(canvas);
     fireEvent.mouseMove(canvas, { clientX: 150, clientY: 75 });
     expect(document.querySelector(".world-canvas__hover")?.textContent).toContain("Neighbour");
     fireEvent.mouseDown(canvas, { clientX: 120, clientY: 55, button: 0, shiftKey: true });

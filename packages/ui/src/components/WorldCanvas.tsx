@@ -589,6 +589,9 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
       .catch((e: unknown) => {
         if (generation !== toggleGeneration.current) return;
         setDungeonsPending(null);
+        // An ignored older success may have changed the server: reload so the switch shows its value (pending is
+        // already null, so this reload clears nothing).
+        reloadWorld();
         // Review fix: this used to write into loadError -- the same state
         // "the whole world failed to load" uses, which only resets at the
         // top of a SUCCESSFUL /api/world fetch. A failed toggle isn't that;

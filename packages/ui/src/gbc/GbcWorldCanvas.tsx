@@ -1001,6 +1001,8 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
         if (generation !== toggleGeneration.current) return;
         setDungeonsPending(null);
         setLayoutError(e instanceof Error ? e.message : String(e));
+        // An ignored older success may have changed the server: reload so the switch shows its value.
+        reloadWorld();
       });
   };
 

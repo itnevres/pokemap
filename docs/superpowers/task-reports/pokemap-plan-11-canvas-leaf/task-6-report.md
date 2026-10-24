@@ -31,9 +31,22 @@ Test location ruling: the Task 6 tests share `placementResync.test.tsx`'s deferr
 
 | Item | Ruling | Cost if wrong |
 |---|---|---|
-| Latest failure after an older success | The older success is ignored (F12), so no reload; the switch shows the last loaded value, which can lag the server until the next reload. Spec-literal. | A stale switch until the next reload |
+| Latest failure after an older success | Superseded in review fix round 1: a latest failure also reloads, so the switch shows the server value (F12 "the switch shows the server value"); pending is already null, so the rule that only a post-success GET clears pending is untouched. | One extra GET per failed toggle |
+| Live check | The switch double-toggle and both alerts are checked live in Task 9 (Acceptance 4), with the rest of the plan's UI. | A visual defect found later |
 | Toast stacking (GBA) | All world toasts share one absolute spot (`.world-canvas__toast`), so the conflict and save toasts already overlap today; the reload toast joins them. Restacking changes DOM beyond F11 (anti-goal); left. | Overlapping toasts when two errors coincide |
 
 ## Gate
 
 3,520 pass / 0 fail / 217 files; typecheck and UI build pass.
+
+## Review fix round 1
+
+Quality (Codex gpt-6-astra, thread in ledger): Approved 0/0/2. Spec: the Codex astra run hit the usage limit (resets 5:44 PM), so it fell to the Anthropic floor, a Claude Opus subagent: ❌ 0/2/3. Each finding verified; all accepted:
+
+- Spec I1: nothing forced an older toggle's reload landing after a newer click (deleting `toggleReloadGeneration.current = null` passed every test; the in-order test resolves no POST before the second click). New test per family: click, POST ok, its reload held, click again, release the reload: the newer pending value stays. Mutations M7/M8.
+- Spec I2: after an older success and a newer failure the switch showed the stale loaded value, and the test passed only because the fake server kept failed toggles. Fix: a latest failure also reloads (both families); the fake server's value is now the latest toggle not answered with a failure. The test now releases the failure's reload and expects the server's value (on). Mutations M9/M10.
+- Quality minor 1: the reversed test now resolves two opposite toggles in reverse and asserts the older success makes no reload.
+- Spec minor M1: the F11 test now pans (a plain drag on empty space moves Neighbour 50 px; the probe would hit Unplaced otherwise).
+- Spec minor M2 (GBC Dismiss inside the alert span, borrowed toast class) and the live check: Task 9. Spec minor M3 (test location): already ruled above. Quality minor 2 (snapshot accumulation on failed reloads): accepted in Task 5.
+
+Gate after fix round 1: 3,522 pass / 0 fail / 217 files; typecheck and UI build pass. Mutations rerun (all ten, one at a time, byte-restored): M1 2, M2 2, M3 2, M4 2, M5 1, M6 1, M7 1, M8 1, M9 1, M10 1 failed.
