@@ -1230,11 +1230,10 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
           </div>
         )}
         {world && error && (
-          <div className="world-canvas__toolbar-group world-canvas__toolbar-group--save-error">
-            <span className="world-canvas__toolbar-error" role="alert">
-              Could not reload the world: {error}
-              <button type="button" className="world-canvas__toast-dismiss" aria-label="Dismiss error" onClick={dismissError}>×</button>
-            </span>
+          // The button sits beside the text, not in it: the text truncates with an ellipsis, which would clip it.
+          <div className="world-canvas__toolbar-group world-canvas__toolbar-group--save-error" role="alert">
+            <span className="world-canvas__toolbar-error">Could not reload the world: {error}</span>
+            <button type="button" className="world-canvas__toast-dismiss" aria-label="Dismiss error" onClick={dismissError}>×</button>
           </div>
         )}
         {/* Species spotlight + coverage lenses (Plan 6b Task 6) -- reuses

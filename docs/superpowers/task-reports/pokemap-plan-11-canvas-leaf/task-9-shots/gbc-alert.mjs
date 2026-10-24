@@ -1,0 +1,13 @@
+import { open } from "./lib.mjs";
+const { browser, page, wait, shot } = await open();
+await page.goto("http://localhost:5183/"); await wait(3000);
+await page.getByRole("button", { name: "World", exact: true }).click(); await wait(6000);
+let fail = true;
+await page.route("**/api/world", (route) => { if (fail && route.request().method() === "GET") { fail = false; return route.fulfill({ status: 500, body: "boom" }); } return route.continue(); });
+const sw = page.getByRole("switch", { name: "Dungeon auto-layout" });
+await sw.click(); await wait(4000);
+const info = await page.evaluate(() => { const a = [...document.querySelectorAll('[role="alert"]')].find((n) => n.textContent.includes("Could not reload")); if (!a) return null; const b = a.querySelector("button"); const ra = a.getBoundingClientRect(), rb = b?.getBoundingClientRect(); const cs = getComputedStyle(a); return { alert: [ra.x, ra.width], button: b && [rb.x, rb.width, b.getAttribute("aria-label")], overflow: cs.overflow, ws: cs.whiteSpace, to: cs.textOverflow }; });
+console.log(JSON.stringify(info));
+await shot("gbc-w6b-reload-alert-fixed"); await page.getByRole("alert").filter({ hasText: "Could not reload the world" }).getByRole("button", { name: "Dismiss error" }).click(); await wait(400); console.log("after dismiss", await page.getByRole("alert").filter({ hasText: "Could not reload the world" }).count());
+await page.unroute("**/api/world"); await sw.click(); await wait(3000);
+await browser.close();
