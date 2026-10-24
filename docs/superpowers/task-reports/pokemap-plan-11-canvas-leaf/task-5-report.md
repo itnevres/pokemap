@@ -58,9 +58,18 @@ Gate after fix round 1: 3,498 pass / 0 fail / 217 files; typecheck and UI build 
 
 Re-reviews (astra, resumed threads): spec ❌ 0/1/1, quality Changes requested 0/1/0. Verified; all accepted:
 
-- Spec I (new): with only the latest snapshot kept, a rollback GET landing in the same batch as a newer GET's issue lost its own snapshot to that issue and reconciled with the empty one, keeping the failed position; if the newer GET then failed, it stuck. Fix: snapshots kept per generation; the reconcile effect uses `loadedGen`'s and prunes older generations. New test (both families): failed save, rollback GET released in the same tick as another save's acknowledgement (which issues a newer GET), the newer GET fails; Neighbour shows the server position. M8 (keep only the latest snapshot) fails it.
+- Spec I (new): with only the latest snapshot kept, a rollback GET landing in the same batch as a newer GET's issue lost its own snapshot to that issue and reconciled with the empty one, keeping the failed position; if the newer GET then failed, it stuck. Fix: snapshots kept per generation; the reconcile effect uses `loadedGen`'s and prunes older generations. New test (both families): failed save, rollback GET released in the same tick as another save's acknowledgement (which issues a newer GET), the newer GET fails; Neighbour shows the server position. M8 (round-1 behaviour: each issue clears older snapshots) fails it; see round 3 for the corrected M8.
 - Spec minor = quality I: M7 in `mut5.py` had a literal CRLF inside a string, so the harness did not parse; fixed.
 
 Mutations rerun, all eight, one at a time, byte-restored: M1 2, M2 7, M3 9, M4 7, M5 2, M6 2, M7 7, M8 2 failed. Unmutated: 41/41.
 
 Gate after fix round 2: 3,500 pass / 0 fail / 217 files; typecheck and UI build pass.
+
+## Review close (round 3)
+
+Re-reviews (astra): spec ✅ 0/0/1, quality Approved 0/0/2.
+
+- Spec minor = quality minor 1: M8 as first written (use the newest snapshot) failed only the two stale-GET tests, not the new same-batch rollback test. Redefined as the round-1 behaviour (`issued.current.clear()` before each `set`): 1 failed, exactly "a rollback lands in the same batch as a newer reload, which then fails". Byte-restored.
+- Quality minor 2, snapshots of failed or cancelled reloads stay until the next successful landing or unmount: accepted. They are bounded by the reloads issued since the last success, and the next success prunes them.
+
+Task 5 complete: `2b3c8d2`, `20cb764`, `f3c384b`, plus this report fix. Reviews clean.
