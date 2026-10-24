@@ -20,10 +20,16 @@ Red run: module missing ("Failed to resolve import"), no tests ran. Green: 20/20
 |---|---|
 | M1 no-op settles at once (plan step 3) | 3 failed |
 | M2 `serverShows` ignores the snapshot, reads current state (plan step 3) | 6 failed |
-| M3 ignore version identity: "resolved at issue" alone, as a same-position check would (plan step 3, coordinates variant: the ledger API holds no positions, so the version-identity check is what a coordinate comparison would replace; the coordinate case proper is pinned by Task 5's A→B→A component test) | 1 failed |
+| M3 ignore version identity: "resolved at issue" alone | 1 failed |
+| M3c coordinates instead of versions (plan step 3, after spec review I1): mutation-only position data, `moved(map, v, pos)` records the target tile and the snapshot records each map's last acknowledged tile; `serverShows` is true when that equals the latest local tile. Run against the new test "A -> B -> A after an acknowledged move to A" with positions passed (scratch copy; harness `task-reports/pokemap-plan-11-canvas-leaf/mut4c.py`; M1-M5 harness `mut4.py`) | unmutated 1/1 pass; mutated 1 failed |
 | M4 `dropAbsent` ignores state | 1 failed (survived first; the acknowledged-save test was added for it) |
 | M5 no-op waits on the oldest in-flight POST | 1 failed |
 
+## Reviews
+
+- Spec (Codex gpt-6-astra, thread `01a16cdb-82b0-77c1-8df4-0db13cc10d99`): ❌, 0/1/0. I1: the coordinate mutation was substituted by M3. Accepted: added the A→B→A-after-ack test (21 tests) and ran M3c above. Model and interface judged correct and sufficient for Task 5.
+- Quality (Codex gpt-6-astra, thread `01a16cdb-82b9-7f60-b877-e43da4a05c79`): Approved, 0/0/2. Minor 1 (records accumulate): kept, documented in the module (one record per gesture). Minor 2 (lifecycle preconditions implicit): documented in the module doc; no guards (caller bugs).
+
 ## Gate
 
-3,475 pass / 0 fail / 217 files; typecheck and UI build pass.
+First commit `a5a8cda`: 3,475 pass / 0 fail / 217 files. After the review fix: 3,476 pass / 0 fail / 217 files; typecheck and UI build pass.

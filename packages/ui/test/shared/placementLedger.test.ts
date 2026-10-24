@@ -65,6 +65,21 @@ describe("placementLedger (Plan 11 Task 4)", () => {
     expect(l.serverShows("A", l.snapshot())).toBe(true);
   });
 
+  it("A -> B -> A after an acknowledged move to A: a GET issued before B lands after the return to A keeps local", () => {
+    // The server says A and the canvas shows A, so a coordinate check would hand the map to the server here; the
+    // version check must not (v2 is unresolved: a later failure of v1 or v2 would still need the local position).
+    const l = createPlacementLedger();
+    const v0 = l.begin("A"); // moved to A
+    l.moved("A", v0);
+    l.resolve("A", v0, true);
+    const atA = l.snapshot(); // a GET issued now would report A
+    const v1 = l.begin("A"); // A -> B
+    l.moved("A", v1);
+    const v2 = l.begin("A"); // B -> A
+    l.moved("A", v2);
+    expect(l.serverShows("A", atA)).toBe(false);
+  });
+
   it("a late failure of v1 after v2 began changes nothing: v2 is still local", () => {
     const l = createPlacementLedger();
     const v1 = l.begin("A");

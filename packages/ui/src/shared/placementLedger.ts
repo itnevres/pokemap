@@ -2,6 +2,10 @@
  * Plan 11 Task 4: Placement-version ledger (pure TypeScript, no React).
  * Implements the spec's "Placement saves" reconciliation model (F1-F4).
  * The ledger tracks versions per map, never positions.
+ *
+ * Lifecycle per version: `begin`, then either `moved` and later `resolve`, or `noop`. Calls outside that order are
+ * caller bugs the ledger does not guard against. Version records are kept for the session (one per gesture); that is
+ * small next to the world data and is not pruned.
  */
 
 export type PlacementVersion = number;
