@@ -1,0 +1,201 @@
+{
+ "fam": "gbc",
+ "mapName": "Route29",
+ "blocked": [],
+ "zoom": {
+  "start": [
+   "1×"
+  ],
+  "two": [
+   "2×"
+  ],
+  "wheelIn": [
+   "4×"
+  ],
+  "wheelOut": [
+   "2×"
+  ],
+  "fit": [
+   "1×"
+  ],
+  "wheelAfterFit": [
+   "2×"
+  ]
+ },
+ "overlays": {
+  "before": [
+   "Grid=false",
+   "Collision=false",
+   "Events=false",
+   "Encounters=false"
+  ],
+  "on": [
+   "Grid=true",
+   "Collision=true",
+   "Events=true",
+   "Encounters=true"
+  ],
+  "legend": "Grid Wall Water Object Warp Coord Bg Encounters: hover or focus a sprite; dimmed = not at day, + = level can roll up to 4 higher",
+  "off": []
+ },
+ "hover": {
+  "centre": "(15, 4) step (30, 8) id 0x63 · TL FLOOR · TR FLOOR · BL CUT_TREE (wall, talk) · BR HEADBUTT_TREE (wall, talk)",
+  "status": "tileset TILESET_JOHTO · 128 metatiles · 30×9 (15, 4) step (30, 8) id 0x63 · TL FLOOR · TR FLOOR · BL CUT_TREE (wall, talk) · BR HEADBUTT_TREE (wall, talk)",
+  "cal": {
+   "x0": -1216,
+   "y0": -81.5,
+   "cell": 128
+  },
+  "afterLeave": "Hover the map…"
+ },
+ "calChecked": {
+  "x0": -1216,
+  "y0": -81.5,
+  "cell": 128,
+  "check": {
+   "bx": 15,
+   "by": 4,
+   "sx": 31,
+   "sy": 9
+  }
+ },
+ "eventDrag": {
+  "event": {
+   "i": 4,
+   "x": 25,
+   "y": 3
+  },
+  "movesDuringDrag": 0,
+  "movesAfterRelease": 1
+ },
+ "shifts": [
+  {
+   "x": 0,
+   "y": 0
+  },
+  {
+   "x": 0,
+   "y": 0
+  },
+  {
+   "x": 0,
+   "y": 0
+  },
+  {
+   "x": 0,
+   "y": 0
+  },
+  {
+   "x": 0,
+   "y": 0
+  },
+  {
+   "x": 0,
+   "y": 0
+  }
+ ],
+ "dropper": {
+  "postsAdded": [],
+  "appliesAdded": 0,
+  "selection": "Selection · 0x63"
+ },
+ "pencil": {
+  "startReadout": "(15, 5) step",
+  "begins": 1,
+  "applies": 3,
+  "ends": 1,
+  "bodies": [
+   "{\"tool\":\"pencil\",\"targets\":[{\"x\":15,\"y\":5}],\"stamp\":{\"width\":1,\"height",
+   "{\"tool\":\"pencil\",\"targets\":[{\"x\":16,\"y\":5}],\"stamp\":{\"width\":1,\"height",
+   "{\"tool\":\"pencil\",\"targets\":[{\"x\":17,\"y\":5}],\"stamp\":{\"width\":1,\"height"
+  ]
+ },
+ "rect": {
+  "applies": 1,
+  "body": "{\"tool\":\"rect\",\"x0\":15,\"y0\":6,\"x1\":17,\"y1\":7,\"stamp\":{\"width\":1,\"height\":1,\"cells\":[{\"meta"
+ },
+ "bucket": {
+  "applies": 1,
+  "body": "{\"tool\":\"bucket\",\"x\":14,\"y\":3,\"replacement\":{\"metatileId\":99}}"
+ },
+ "sign": {
+  "opened": true,
+  "text": "Sign Text mode Free text Map name Catchable species Text Place Cancel",
+  "closed": true
+ },
+ "releaseOutside": {
+  "applies": 7,
+  "ends": 1,
+  "appliesAfterReturn": 7,
+  "endsAfterReturn": 1,
+  "undoEnabled": true
+ },
+ "apply500": {
+  "forced": 1,
+  "alerts": [
+   "forced by live check ×"
+  ]
+ },
+ "timeSwitch": {
+  "times": [
+   "Morn",
+   "Day",
+   "Nite"
+  ],
+  "getsAfterOn": 0,
+  "rows": [
+   {
+    "time": "Morn",
+    "pressed": "true",
+    "dimmed": 0,
+    "sprites": 9,
+    "gets": 0
+   },
+   {
+    "time": "Day",
+    "pressed": "true",
+    "dimmed": 0,
+    "sprites": 9,
+    "gets": 0
+   },
+   {
+    "time": "Nite",
+    "pressed": "true",
+    "dimmed": 3,
+    "sprites": 9,
+    "gets": 0
+   }
+  ]
+ },
+ "dialogs": [
+  "Discard all unsaved changes on this map? This cannot be undone."
+ ],
+ "discard": {
+  "enabledBefore": true,
+  "dirtyAfter": 0
+ },
+ "errs": [],
+ "postSummary": [
+  [
+   "/edit/*/event/move",
+   1
+  ],
+  [
+   "/edit/*/paint/begin",
+   5
+  ],
+  [
+   "/edit/*/paint/apply",
+   13
+  ],
+  [
+   "/edit/*/paint/end",
+   5
+  ],
+  [
+   "/edit/*/discard",
+   1
+  ]
+ ],
+ "appliesTotal": 13
+}

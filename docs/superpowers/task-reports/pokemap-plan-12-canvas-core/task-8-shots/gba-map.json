@@ -1,0 +1,172 @@
+{
+ "fam": "gba",
+ "mapName": "Route29",
+ "blocked": [],
+ "zoom": {
+  "start": [
+   "1×"
+  ],
+  "two": [
+   "2×"
+  ],
+  "wheelIn": [
+   "4×"
+  ],
+  "wheelOut": [
+   "2×"
+  ],
+  "fit": [
+   "1×"
+  ],
+  "wheelAfterFit": [
+   "2×"
+  ]
+ },
+ "overlays": {
+  "before": [
+   "Grid=false",
+   "Collision=false",
+   "Elevation=false",
+   "Events=false",
+   "Encounters=false"
+  ],
+  "on": [
+   "Grid=true",
+   "Collision=true",
+   "Elevation=true",
+   "Events=true",
+   "Encounters=true"
+  ],
+  "legend": "Grid Collision Elevation (low → high) Object Warp Coord Bg Encounters: hover or focus a sprite",
+  "off": []
+ },
+ "hover": {
+  "centre": "(35, 15) id 0x9 · collision 0 · elevation 3 · behavior 0x0",
+  "status": "layout_version hns split metatiles 640 · tiles 640 · pals 7 (35, 15) id 0x9 · collision 0 · elevation 3 · behavior 0x0",
+  "cal": {
+   "x0": -1536,
+   "y0": -521.5,
+   "cell": 64
+  },
+  "afterLeave": "Hover the map…"
+ },
+ "calChecked": {
+  "x0": -1536,
+  "y0": -521.5,
+  "cell": 64,
+  "check": {
+   "bx": 35,
+   "by": 15,
+   "sx": null,
+   "sy": null
+  }
+ },
+ "eventDrag": {
+  "event": {
+   "i": 6,
+   "x": 37,
+   "y": 14
+  },
+  "movesDuringDrag": 0,
+  "movesAfterRelease": 1
+ },
+ "shifts": [
+  {
+   "x": 0,
+   "y": 33
+  },
+  {
+   "x": 0,
+   "y": 33
+  },
+  {
+   "x": 0,
+   "y": 33
+  },
+  {
+   "x": 0,
+   "y": 33
+  },
+  {
+   "x": 0,
+   "y": 33
+  },
+  {
+   "x": 0,
+   "y": 33
+  }
+ ],
+ "dropper": {
+  "postsAdded": [],
+  "appliesAdded": 0,
+  "selection": "Selection · 0x9"
+ },
+ "pencil": {
+  "startReadout": "(35, 16) id ",
+  "begins": 1,
+  "applies": 3,
+  "ends": 1,
+  "bodies": [
+   "{\"tool\":\"pencil\",\"targets\":[{\"x\":35,\"y\":16}],\"stamp\":{\"width\":1,\"heigh",
+   "{\"tool\":\"pencil\",\"targets\":[{\"x\":36,\"y\":16}],\"stamp\":{\"width\":1,\"heigh",
+   "{\"tool\":\"pencil\",\"targets\":[{\"x\":37,\"y\":16}],\"stamp\":{\"width\":1,\"heigh"
+  ]
+ },
+ "rect": {
+  "applies": 1,
+  "body": "{\"tool\":\"rect\",\"x0\":35,\"y0\":17,\"x1\":37,\"y1\":18,\"stamp\":{\"width\":1,\"height\":1,\"cells\":[{\"me"
+ },
+ "bucket": {
+  "applies": 1,
+  "body": "{\"tool\":\"bucket\",\"x\":34,\"y\":14,\"replacement\":{\"metatileId\":9,\"collision\":0,\"elevation\":3}}"
+ },
+ "sign": {
+  "opened": true,
+  "text": "Sign Text mode Free text Map name Catchable species Text Place Cancel",
+  "closed": true
+ },
+ "releaseOutside": {
+  "applies": 7,
+  "ends": 1,
+  "appliesAfterReturn": 7,
+  "endsAfterReturn": 1,
+  "undoEnabled": true
+ },
+ "apply500": {
+  "forced": 1,
+  "alerts": [
+   "POST /api/edit/Route29/paint/apply -> 500 ×"
+  ]
+ },
+ "dialogs": [
+  "Discard all unsaved changes on this map? This cannot be undone."
+ ],
+ "discard": {
+  "enabledBefore": true,
+  "dirtyAfter": 0
+ },
+ "errs": [],
+ "postSummary": [
+  [
+   "/edit/*/event/move",
+   1
+  ],
+  [
+   "/edit/*/paint/begin",
+   5
+  ],
+  [
+   "/edit/*/paint/apply",
+   13
+  ],
+  [
+   "/edit/*/paint/end",
+   5
+  ],
+  [
+   "/edit/*/discard",
+   1
+  ]
+ ],
+ "appliesTotal": 13
+}

@@ -1,0 +1,140 @@
+{
+ "fam": "gba",
+ "blocked": [],
+ "map": "Route114",
+ "chrome": {
+  "toolbarGroups": 0,
+  "status": 0
+ },
+ "zoom": {
+  "start": [
+   [
+    "1×"
+   ],
+   "100%"
+  ],
+  "four": [
+   [
+    "4×"
+   ],
+   "400%"
+  ],
+  "wheelOut": [
+   [
+    "2×"
+   ],
+   "200%"
+  ],
+  "fit": [
+   [
+    "1×"
+   ],
+   "100%"
+  ],
+  "wheelAfterFit": [
+   [
+    "2×"
+   ],
+   "200%"
+  ],
+  "final": [
+   [
+    "4×"
+   ],
+   "400%"
+  ]
+ },
+ "visible": {
+  "x0": 320,
+  "y0": 197.984375,
+  "x1": 848,
+  "y1": 832
+ },
+ "eventDrag": {
+  "at": {
+   "x": 576,
+   "y": 197.984375
+  },
+  "movesDuringDrag": 0,
+  "movesAfterRelease": 1,
+  "posts": [
+   "/edit/Route114/event/move"
+  ]
+ },
+ "dropper": {
+  "postsAdded": [],
+  "selection": "Selection · 0x1"
+ },
+ "pencil": {
+  "moves": 49,
+  "applies": 4,
+  "cells": [
+   "20,40",
+   "21,40",
+   "22,40",
+   "23,40"
+  ],
+  "consecutiveDupes": 0,
+  "distinct": 4,
+  "ends": 1
+ },
+ "rect": {
+  "applies": 1,
+  "body": "{\"tool\":\"rect\",\"x0\":18,\"y0\":37,\"x1\":19,\"y1\":38,\"stamp\":{\"width\":1,\"height\":1,\"ce"
+ },
+ "bucket": {
+  "applies": 1,
+  "body": "{\"tool\":\"bucket\",\"x\":21,\"y\":37,\"replacement\":{\"metatileId\":1,\"collision\":0,\"elev"
+ },
+ "sign": {
+  "opened": true,
+  "text": "Sign Text mode Free text Map name Catchable species Text Place Cancel",
+  "closed": true
+ },
+ "releaseOutside": {
+  "applies": 10,
+  "ends": 1,
+  "appliesAfterReturn": 10,
+  "endsAfterReturn": 1,
+  "undoEnabled": true
+ },
+ "apply500": {
+  "forced": 1,
+  "alerts": [
+   "POST /api/edit/Route114/paint/apply -> 500 ×"
+  ]
+ },
+ "dialogs": [
+  "Discard all unsaved changes on this map? This cannot be undone."
+ ],
+ "discard": {
+  "enabledBefore": true,
+  "dirtyAfter": 0,
+  "contextClosed": true,
+  "switchDialogs": 0
+ },
+ "errs": [],
+ "postSummary": [
+  [
+   "/edit/*/event/move",
+   1
+  ],
+  [
+   "/edit/*/paint/begin",
+   5
+  ],
+  [
+   "/edit/*/paint/apply",
+   17
+  ],
+  [
+   "/edit/*/paint/end",
+   5
+  ],
+  [
+   "/edit/*/discard",
+   1
+  ]
+ ],
+ "appliesTotal": 17
+}
