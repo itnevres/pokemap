@@ -293,6 +293,10 @@ Rerun in isolation before calling either a regression. (Plan 8)
 
 ## Delegation to Codex / Aider / Subagents
 
+**Codex adds `key={url}` to force a remount** (Plan 12a T4): tell: an `<img>` keyed by its URL in a shared viewport, and existing tests that hold the element across a URL change fail (10 map-canvas oracles). It is a DOM-identity change no ruling allows; remove it and pin stale loads with the old render's captured handler instead.
+
+**Codex usage limit hits both parallel reviews at once** (Plan 12a T6): fall back to two Claude Opus subagents with explicit `model`, each given the brief file path and an output path; fix rounds to a Claude Sonnet subagent in the scratch worktree (it can run vitest there, unlike Codex). Log each fallback in the task report.
+
 **Codex usage limit mid-review (Plan 11 T6).** Tell: `turn.failed` "You've hit your usage limit ... try again at <time>" in the review's JSONL, and no `-o` file. The parallel review that started first may still finish. Fall back to a Claude Opus subagent for Opus-tier reviews (log the reason) instead of waiting.
 
 **Never `taskkill /IM codex.exe`:** it ends every Codex process on the machine, including the user's own sessions. Kill the background shell job or the one PID instead. Also, before resuming Codex on a worktree, check that `git checkout` didn't abort (tell: "Aborting" and HEAD unchanged; intent-to-add files from `git add -N` block it, `git reset` first). (Plan 9)
@@ -352,5 +356,7 @@ The raw per-phase lessons this was distilled from, with the session narrative, a
 - **Codex leaves junctions it does not report.** Besides a root `node_modules` junction it created `packages/{server,ui}/node_modules/@pokemap/core` junctions (Plan 10b T3). Tell: `git worktree remove` fails with "Directory not empty". List reparse points (`Get-ChildItem -Recurse -Force -Attributes ReparsePoint`), `cmd /c rmdir` each (never follows the target), then delete the folder. Never `rm -rf` a worktree before that.
 - **Codex stalls on a literal file list.** "Touch only files the brief names" made it stop and ask twice when an interface change needed a support file. The ledger's `codex-rules.md` now allows strictly needed support files, listed in the report.
 - **Strict UI fetch mocks break on any new GET.** Adding a fetch to the GBA runtime (`/api/defects`) failed tests whose mocks throw "unexpected fetch". Tell: a new `role="alert"` in unrelated App/visit-guard tests. Add the route to every strict GBA mock.
+
+**Aider `--no-git` run from the repo root writes new files under a nested `packages/ui/packages/ui/...` path** while the named targets stay 0 bytes (tell: "Applied edit" in the log, empty targets, an untracked `packages/ui/packages/`). Run it with the cwd at `packages/ui` and paths relative to it, as the worktree lesson above says; it applies to the main checkout too. In Plan 12a Task 2 both free Opus-tier hops (Nemotron 3 Ultra, Dots3-note) ended this way. (Plan 12a T2)
 
 **Aider with Laguna on a ~2,000-line file rewrites the whole file and hits its output limit.** Tell: `Model … has hit a token limit!` at the end of the log, and `git diff` is empty. Use Codex for edits in the big canvas files; for a handful of one-line edits already written in the brief, edit inline and log the reason. (Plan 11 T7)

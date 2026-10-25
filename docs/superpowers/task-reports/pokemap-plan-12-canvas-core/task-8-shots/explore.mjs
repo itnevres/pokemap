@@ -1,0 +1,13 @@
+import { open } from "./lib.mjs";
+import { guard } from "./guard.mjs";
+const [mapName] = process.argv.slice(2);
+const { browser, page, wait, shot, errs } = await open();
+const out = {}; await guard(page, out);
+await page.goto("http://127.0.0.1:5183/"); await wait(3000);
+out.navs = await page.getByRole("navigation").evaluateAll((ns) => ns.map((n) => n.getAttribute("aria-label")));
+out.topButtons = await page.locator("header button, .app__header button, [role=tablist] button, [role=tab]").evaluateAll((bs) => bs.map((b) => b.getAttribute("aria-label") ?? b.textContent));
+await page.getByRole("navigation", { name: "Maps" }).getByRole("button", { name: mapName, exact: true }).click(); await wait(4000);
+out.buttons = await page.getByRole("button").evaluateAll((bs) => bs.map((b) => `${b.getAttribute("aria-label") ?? ""}|${b.textContent.trim().slice(0, 30)}|${b.title}|${b.disabled ? "dis" : ""}`));
+out.status = await page.locator(".map-canvas__status, .map-canvas__hover").allInnerTexts().catch(() => []);
+await shot("explore-map");
+out.errs = errs; console.log(JSON.stringify(out, null, 1)); await browser.close();

@@ -40,7 +40,7 @@ const EMPTY_PLACEMENT_SNAPSHOT: PlacementSnapshot = { mapStates: new Map() };
 /**
  * The GBC world view (Plan 6b Task 5, D1 manual placement). Mirrors `WorldCanvas.tsx`'s
  * own pan/zoom/viewport/culling/LOD mechanics, for the same reason
- * `GbcMapCanvas.tsx`'s own header comment does it for `MapCanvas.tsx` --
+ * the shared `canvas/` foundation (Plan 12a) does it for both map canvases --
  * these are this project's postmortems, not style preferences. Cited by a
  * grep-able anchor phrase rather than a line number (fix round, quality
  * review Important #1: every hand-counted line range here was wrong from
@@ -89,7 +89,7 @@ const EMPTY_PLACEMENT_SNAPSHOT: PlacementSnapshot = { mapStates: new Map() };
  * **Lessons from Task 4, applied here too (binding, `task-4-spec-review.md`
  * findings A/B):**
  * - **One `view: { zoom, pan }` state, updated by a single pure function.**
- *   GBA's own `MapCanvas.tsx:532-542` (and, before its own fix round,
+ *   GBA's own MapCanvas zoom handler (and, before its own fix round,
  *   `GbcMapCanvas.tsx`'s first draft) nested a `setPan` call inside a
  *   `setZoom` updater -- harmless outside `<StrictMode>`, but `main.tsx`
  *   wraps the whole app in it, and React double-invokes updater functions

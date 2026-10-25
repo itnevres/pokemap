@@ -510,11 +510,11 @@ Plan 11:
 
 | Module | What it owns | GBA consumer | GBC consumer |
 |---|---|---|---|
-| `shared/useCanvasView.ts` | controlled view state, zoom wheel plumbing, once-per-map auto-fit and the fit callback (F shortcut, context fit) | `MapCanvas` | `GbcMapCanvas` |
-| `shared/CanvasZoomBar.tsx` | the map Zoom group | `MapCanvas` | `GbcMapCanvas` |
-| `shared/OverlayToggleGroup.tsx` | the map Overlays group | `MapCanvas` | `GbcMapCanvas` |
-| `shared/LegendBar.tsx` | the map legend frame, Events items and Encounters item | `MapCanvas` | `GbcMapCanvas` |
-| `shared/MapCanvasViewport.tsx` | the viewport mount: source image and stage canvas (family passes its handlers and EncounterBorder) | `MapCanvas` | `GbcMapCanvas` |
+| `shared/useCanvasView.ts` | Plan 11 view hooks, now thin delegates to `canvas/useStage.ts` (Plan 12a); no production consumer left, kept for its tests until Plan 12b | none | none |
+| `shared/CanvasZoomBar.tsx` | the map Zoom group | `canvas/MapSurface` (both families) | `canvas/MapSurface` |
+| `shared/OverlayToggleGroup.tsx` | the map Overlays group | `canvas/MapSurface` | `canvas/MapSurface` |
+| `shared/LegendBar.tsx` | the map legend frame, Events items and Encounters item | `canvas/MapSurface`, `gba/mapSurface` legends | `canvas/MapSurface`, `gbc/mapSurface` legends |
+| `shared/MapCanvasViewport.tsx` | the viewport mount: source image and stage canvas (handlers, `onImgError`, EncounterBorder) | `canvas/MapSurface` | `canvas/MapSurface` |
 | `shared/LensOverlay.tsx` | per-map coverage lens entries and overlay markup | `WorldCanvas` | `GbcWorldCanvas` |
 | `shared/useTileVersionRefetch.ts` | per-map rendered-tile cache invalidation by version | `WorldCanvas` | `GbcWorldCanvas` |
 | `shared/worldTiles.ts` | pure low-detail rendered-tile image builder | `WorldCanvas` | `GbcWorldCanvas` |
@@ -528,7 +528,25 @@ Plan 11:
 | `shared/SpotlightOverlay.tsx` | species spotlight overlay markup | `WorldCanvas` | `GbcWorldCanvas` |
 | `shared/placementLedger.ts` | per-map placement versions and GET-snapshot reconciliation (F1-F5) | `WorldCanvas` | `GbcWorldCanvas` |
 
+Plan 12a (shared canvas core, map pair; spec `2026-10-24-pokemap-plan-12-shared-canvas-core-design.md`). `canvas/` holds
+no family branch: engine facts (cell sizes, origin, overlays, event lists, encounter band, `skipFirstBlocksChange`) come
+from the adapter. Each map canvas is now a thin wrapper (`MapCanvas`, `GbcMapCanvas`) plus a family adapter hook.
+
+| Module | What it owns | GBA consumer | GBC consumer |
+|---|---|---|---|
+| `canvas/view.ts` | pure view math: screen/source transforms, `zoomAboutPivot` (stepped or continuous policy), `fitView` | `components/mapView`, `canvas/useStage`, `canvas/MapSurface` | `canvas/useStage`, `canvas/MapSurface` |
+| `canvas/cells.ts` | pure cell math: `rawCell` (unbounded), `boundedCell` (`null` outside, never clamped), `cellRect` | `canvas/MapSurface` | `canvas/MapSurface` |
+| `canvas/useRasterComposite.ts` | source-image readiness keyed by URL (a stale load never composites, P12-4g), overlay raster and stage decoration | `canvas/MapSurface` | `canvas/MapSurface` |
+| `canvas/useStage.ts` | controlled view, wheel zoom, pan with pointer capture (P12-4a), once-per-map auto-fit, one fit entry | `canvas/MapSurface`, `shared/useCanvasView` | `canvas/MapSurface` |
+| `canvas/mapSurfaceAdapter.ts` | the `MapSurfaceAdapter` contract a family builds each render | `gba/mapSurface` | `gbc/mapSurface` |
+| `canvas/MapSurface.tsx` | the one map canvas: toolbar, legend, viewport, status strip; stroke chain (same-cell skip, P12-4b), event drag, sign/dropper picks, paint-version debounce (`v=` only when > 0, P12-4h), hover callback (P12-4l) | `components/MapCanvas` | `gbc/GbcMapCanvas` |
+| `canvas/events.ts` | ordered event lookup (`firstEventAt`, `eventAt`) over the adapter's `[kind, list]` tuples | `gba/mapSurface` | `gbc/mapSurface` |
+| `shared/MapStatusStrip.tsx` | the status strip's items, same classes, text and order (P12-4k) | `canvas/MapSurface` | `canvas/MapSurface` |
+| `gba/mapSurface.tsx` `useGbaMapSurface` | GBA engine facts: 16 px paint and event cells, border origin, overlays and legends, paint bodies, hover readout | `components/MapCanvas` | — |
+| `gbc/mapSurface.tsx` `useGbcMapSurface` | GBC engine facts: 32 px paint cell, 16 px event step, time-of-day encounter hint, overlays, paint bodies, quadrant readout | — | `gbc/GbcMapCanvas` |
+
 Still per family, on purpose (Plan 8 Task 7 stop rule): the app shell is now one (`FamilyApp`), so per family means
 *behind the runtime or a capability* (switch policy in `runtime.leave`, `switchError`, time of day, defects banner, sign
-composer, `useMapEditing` vs `GbcMapEditing` state lifetimes), with D1-D3/D6/D8 moving them in Plan 10. The canvases'
-rendering and hit-testing, and the dungeon and map-layout hooks, also stay per family.
+composer, `useMapEditing` vs `GbcMapEditing` state lifetimes), with D1-D3/D6/D8 moving them in Plan 10. The map canvases'
+engine facts live in their adapters (Plan 12a); the world canvases (Plan 12b), the dungeon and map-layout hooks stay per
+family.

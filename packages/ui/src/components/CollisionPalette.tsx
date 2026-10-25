@@ -17,8 +17,8 @@ const COLLISION_LABELS = ["collision 0", "collision 1 (impassable)", "collision 
  * plus a 16-swatch elevation strip (0-15, where 0 means "inherit" and 15
  * means "always on top"). Selecting either dimension keeps the other --
  * mirrors the click-to-select shape the rest of this app's palettes/toggles
- * already use (aria-pressed on the active swatch, see MapCanvas.tsx's own
- * overlay-toggle buttons) rather than inventing a new interaction pattern.
+ * already use (aria-pressed on the active swatch, see
+ * `shared/OverlayToggleGroup.tsx`) rather than inventing a new interaction pattern.
  */
 export function CollisionPalette({ selected, onSelect }: CollisionPaletteProps) {
   return (

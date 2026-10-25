@@ -1,0 +1,87 @@
+{
+ "fam": "gba",
+ "mapName": "Route29",
+ "blocked": [],
+ "zoom": {
+  "start": [],
+  "two": [
+   "2×"
+  ],
+  "wheelIn": [
+   "4×"
+  ],
+  "wheelOut": [
+   "2×"
+  ],
+  "fit": [
+   "1×"
+  ],
+  "wheelAfterFit": [
+   "2×"
+  ]
+ },
+ "overlays": {
+  "before": [
+   "Grid=false",
+   "Collision=false",
+   "Elevation=false",
+   "Events=false",
+   "Encounters=false"
+  ],
+  "on": [
+   "Grid=true",
+   "Collision=true",
+   "Elevation=true",
+   "Events=true",
+   "Encounters=true"
+  ],
+  "legend": "Grid Collision Elevation (low → high) Object Warp Coord Bg Encounters: hover or focus a sprite",
+  "off": []
+ },
+ "hover": {
+  "centre": "(35, 15) id 0x9 · collision 0 · elevation 3 · behavior 0x0",
+  "status": "layout_version hns split metatiles 640 · tiles 640 · pals 7 (35, 15) id 0x9 · collision 0 · elevation 3 · behavior 0x0",
+  "cal": {
+   "x0": -1536,
+   "y0": -521.5,
+   "cell": 64
+  },
+  "afterLeave": "Hover the map…"
+ },
+ "calChecked": {
+  "x0": -1536,
+  "y0": -521.5,
+  "cell": 64,
+  "check": {
+   "bx": 35,
+   "by": 15,
+   "sx": null,
+   "sy": null
+  }
+ },
+ "eventOutside": {
+  "event": {
+   "i": 6,
+   "x": 37,
+   "y": 14
+  },
+  "moves": 1,
+  "posts": [
+   "/edit/Route29/event/move"
+  ],
+  "order": "pointerdown/b1 mousedown/b1 pointerup/b0 mouseup/b0 lostpointercapture/b0 mouseleave/b0"
+ },
+ "rectOutside": {
+  "applies": 1,
+  "ends": 1,
+  "body": "{\"tool\":\"rect\",\"x0\":35,\"y0\":15,\"x1\":35,\"y1\":9,\"stamp\":{\"width\":1,\"height\":1,\"cel",
+  "order": "pointerdown/b1 mousedown/b1 pointerup/b0 mouseup/b0 lostpointercapture/b0 mouseleave/b0"
+ },
+ "dialogs": [
+  "Discard all unsaved changes on this map? This cannot be undone."
+ ],
+ "discard": {
+  "dirtyAfter": 0
+ },
+ "errs": []
+}

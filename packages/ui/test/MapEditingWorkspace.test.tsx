@@ -79,7 +79,7 @@ describe("MapEditingWorkspace", () => {
     expect(renderCanvas).toHaveBeenCalled();
     const p = renderCanvas.mock.calls[0]![0];
     expect(Object.keys(p).sort()).toEqual(
-      ["activeTool", "data", "editSession", "mapName", "onDropperPick", "onMoveEvent", "onSelectEvent", "onSignPick", "selectedEventRef"],
+      ["activeTool", "data", "editSession", "mapName", "onDropperPick", "onEditError", "onMoveEvent", "onSelectEvent", "onSignPick", "selectedEventRef"],
     );
     expect(p.mapName).toBe("Foo");
     expect(p.data).toBe(DATA);
@@ -88,6 +88,7 @@ describe("MapEditingWorkspace", () => {
     expect(p.selectedEventRef).toEqual({ kind: "warp", index: 2 });
     expect(p.onSelectEvent).toBe(editing.onSelectEvent);
     expect(p.onMoveEvent).toBe(editing.onCanvasMoveEvent);
+    expect(p.onEditError).toBe(editing.setEventOpError); // P12-4f: same dismissible banner in either host
     expect(p.onDropperPick).toBe(editing.setCurrentStamp);
 
     const body = container.querySelector(".app__map-editing-body")!;

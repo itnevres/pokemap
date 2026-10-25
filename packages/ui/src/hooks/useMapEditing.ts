@@ -15,7 +15,7 @@ import { useVisit } from "../shared/useVisit.js";
  *  unit) into EventInspector's richer `SelectedEvent`, by looking the event
  *  up in whichever `MapData` is currently live -- the caller always passes
  *  `editSession.map ?? layout.data?.map`, the same live/static precedence
- *  MapCanvas.tsx's own `map` local uses internally. Spreads the raw event
+ *  `gba/mapSurface.tsx`'s `map` local uses internally. Spreads the raw event
  *  FIRST, kind/index override second: coord/bg events are open-ended
  *  (`[k: string]: unknown`, see EventInspector.tsx's own SelectedEvent doc
  *  comment) and there is no guarantee a raw field named `kind` or `index`
@@ -41,8 +41,8 @@ function resolveEventRef(ref: EventRef | null, map: MapData | undefined): Select
 /** Review fix: every one of the four editSession.{move,add,delete}Event
  *  call sites below used to fire-and-forget (`void editSession.foo(...)`)
  *  with no `.catch` at all -- unlike every paint call site in
- *  MapCanvas.tsx (`.catch(() => {})` throughout, see that file's own
- *  `endActiveStroke`) and unlike SaveDialog.tsx's own error handling. A
+ *  the stroke chain (`shared/useStrokeChain.ts` catches each paint
+ *  call and reports it) and unlike SaveDialog.tsx's own error handling. A
  *  failed move/add/delete (stale index after a race, a 500, a network
  *  blip) was an unhandled promise rejection: the UI kept whatever
  *  optimistic local state it had already set, nothing was actually
@@ -87,7 +87,7 @@ export function useMapEditing({ editSession, layoutData, mapName }: UseMapEditin
   // a map visit change.
   const [eventOpError, setEventOpError] = useState<string | null>(null);
   // Whichever `map` is actually live right now -- same live/static
-  // precedence MapCanvas.tsx's own internal `map` local uses (editSession's
+  // precedence `gba/mapSurface.tsx`'s `map` local uses (editSession's
   // live copy once an edit session is open, layout.data's static fetch
   // otherwise). Read by every event handler below that needs to resolve a
   // ref or compute a default add-position.
