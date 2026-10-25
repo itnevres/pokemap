@@ -143,7 +143,7 @@ Both families implement one reconciliation model (spec review I1-I3). Versions d
 
 ## Deferred minors (after Plan 11)
 
-From the final review (`task-reports/pokemap-plan-11-canvas-leaf/final-review.md`); all judged OK to defer:
+From the final review (`task-reports/pokemap-plan-11-canvas-leaf/final-review.md`). M2, M3 and M5 were fixed on the branch at the user's request (see that file); only the placeholder ruling remains open:
 
 - **M2.** GBA world toasts share one absolute spot, so the reload alert covers a save failure: with the server down, a failed placement and its failed rollback reload show only "Could not reload the world", and the move can read as saved. A toast stack fixes it. Plan 12 (shared world shell).
 - **M3.** No canvas-level test drops a rail map whose POST fails and checks that it leaves the world after the reload. Only the ledger unit test covers `dropAbsent`. Add it with the next placement change.

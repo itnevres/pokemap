@@ -51,4 +51,8 @@ The spec Constraints say "Shared modules follow `packages/ui/DESIGN.md` 'Shared 
 Reviewer: a Claude Opus subagent, the Anthropic floor, because Codex `gpt-6-astra` was at its usage limit until 17:44. Each finding was checked against the code.
 - M1, fixed. The strip now removes the normalized root with its trailing separators trimmed, then the root as given. New test: a forward-slash root with a trailing slash, and a root with a trailing `sep`. Red on the Task 8 code: the reason leaked `C:\…\project\`. Green after.
 - M4, fixed: `shared/placementLedger.ts` row added to `packages/ui/DESIGN.md` (Plan 11 table).
-- M2, M3 and M5 are deferred, as the review advised. They are recorded in the spec's "Deferred minors (after Plan 11)".
+- M2, M3 and M5: first deferred, then fixed at the user's request (2026-10-24):
+  - M2: GBA wraps its conflict, save and reload toasts in one `.world-canvas__toasts` column group, so they stack. A CSS test was added. Live: forced POST and GET failures showed both toasts, at 774-813 and 821-860 px with no overlap (`task-9-shots/gba-w7-toast-stack.png`); the subject was unchanged.
+  - M3: a canvas test per family for a failed rail drop that leaves the world once its reload lands. Mutation `!dropAbsent(...)` → `true` fails it in each family. A first draft probed hover inside `waitFor`, which hung under the mutation (the known trap); it now uses a bounded `act` loop.
+  - M5: the GBC save error is keyed by map, and a success clears only its own map's error. New test; red before the fix.
+- Gate after these fixes: 3,533 pass / 0 fail / 218 files; typecheck and UI build pass.
