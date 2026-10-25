@@ -1,0 +1,12 @@
+# Task 5 report: GBC map canvas onto MapSurface (High)
+
+Hop: Codex `gpt-6.1-sol` (thread `01a17480-8b71-7541-bb17-ac9e3bab494a`), first try; one fix round on the same thread. Free Aider hops skipped: >3 files (delegate §2).
+Files: `gbc/GbcMapCanvas.tsx` (61-line wrapper: same export, same props, re-exports `GBC_COMPOSITE_ORIGIN`, `clientToStep`, `formatQuadrant`, `parseColorToken`, `zoomAboutPivot`); new `gbc/mapSurface.tsx` (`useGbcMapSurface` adapter); new `test/gbc/GbcMapSurface.test.tsx` (Step 3 a/b). Fix round: comment-only edits in `canvas/MapSurface.tsx`, `canvas/useRasterComposite.ts`, `canvas/useStage.ts`; `canvas/MapSurface.tsx` drops the `!chromeless` encounter gate (neither family had it).
+Oracle: all 12 GBC map/app files pass unchanged (233 tests), incl. `GbcMapCanvasEdit.test.tsx:206-215` and the time re-dim test. No existing GBC test changed. One Task-4 test renamed/adjusted (`MapSurface.test.tsx` "chromeless hides all chrome with encounters initially off") plus a new no-remount chromeless test, because the gate removal restores today's behaviour.
+`git diff --stat -- packages/ui/test`: `canvas/MapSurface.test.tsx` only (above); new `gbc/GbcMapSurface.test.tsx`.
+Removed comments: 55 `//` lines (and the long header blocks) from HEAD `GbcMapCanvas.tsx`; first pass parked them in the wrapper, the fix round moved each unique rationale beside its code in `MapSurface`, `useRasterComposite`, `useStage` or the adapter and dropped exact duplicates (inventory in `task-5-implementer.md`; re-review spot-checked fast-click/undo, reseed, hover, debounce, cache readiness, wheel).
+Mutations (coordinator, all RED): wrapper drops `onStrokeChain` (test b); auto-fit keyed by `imageUrl` (test a and `GbcMapCanvas.test.tsx`); `!chromeless` gate re-added (new chromeless test); `endStroke` not awaited in `useStrokeChain` (test b).
+Measurement (`measure.py`, `components/MapCanvas.tsx` vs concatenation `gbc/GbcMapCanvas.tsx` + `gbc/mapSurface.tsx`): 427 / 188 code lines, 4 aligned, 1 run (GBA:559-562 vs `clientToStep` compatibility export; GBA side goes in Task 6).
+Reviews (Codex astra): spec FAIL (Important: comments archived in the wrapper; Minor: stale adapter comments; Minor: unruled `!chromeless` encounter gate). Quality Approved (3 Minors: same comment issues; end-settle test did not defer `endStroke`). All fixed; re-review Approved with one Minor (stale "every effect below" wording), fixed inline (one comment line).
+Gate: 3,622 pass / 0 fail / 224 files; typecheck and UI build pass.
+Deferrals: none.

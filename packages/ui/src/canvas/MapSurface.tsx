@@ -43,6 +43,8 @@ export function MapSurface<Tool extends MapTool, Body, Event, Stamp, Hover exten
 }: MapSurfaceProps<Tool, Body, Event, Stamp, Hover>) {
   const g = adapter.geometry;
   const imgRef = useRef<HTMLImageElement>(null);
+  // One completion chain orders begin, every apply and end: even a fast click must not send end before
+  // begin/apply settles. Registration lets shell discard await the entire chain, including end.
   const chain = useStrokeChain<Body>(mapName, (message) => onEditError?.(message));
   useEffect(() => {
     onStrokeChain?.(chain, true);
@@ -52,15 +54,18 @@ export function MapSurface<Tool extends MapTool, Body, Event, Stamp, Hover exten
   // last cell: repeated mousemoves within it must not enqueue duplicate requests (GbcMapCanvas).
   const strokeStart = useRef<Point | null>(null);
   const lastCell = useRef<string | null>(null);
+  // Capture event identity and its starting event-grid cell; preview moves locally, commit only on release.
   const eventDrag = useRef<{ event: Event; start: Point } | null>(null);
   const panning = useRef(false);
   const [dragPreview, setDragPreview] = useState<Point | null>(null);
   const [toggleState, setToggleState] = useState<{ map: string; values: Record<string, boolean> }>({ map: mapName, values: {} });
   const toggles = toggleState.map === mapName ? toggleState.values : {};
   const enabled = Object.fromEntries(adapter.overlays.map((layer) => [layer.key, !!toggles[layer.key] || !!layer.forced]));
-  // Key by map so a switch renders encounters off immediately, without fetching for the new map.
+  // Encounters are DOM over the viewport, separate from destructive raster toggles. Key by map so a
+  // switch renders them off immediately, without fetching for the new map or briefly showing stale entries.
   const [encountersFor, setEncountersFor] = useState<string | null>(null);
-  const encountersOn = !chromeless && encountersFor === mapName;
+  // Chromeless hides toolbar/legend/status only; it does not revoke an already-enabled encounter border.
+  const encountersOn = encountersFor === mapName;
   const encounter = adapter.encounters;
   const { summaries, error: encounterError } = useMapEncounterSummaries(mapName, encounter.family, encountersOn);
   const [hoverState, setHover] = useState<{ map: string; value: Hover | null }>({ map: mapName, value: null });
@@ -68,7 +73,8 @@ export function MapSurface<Tool extends MapTool, Body, Event, Stamp, Hover exten
   const hoverId = hover?.metatileId ?? null;
   const hoverCallback = useRef(onHoverMetatile);
   useLayoutEffect(() => { hoverCallback.current = onHoverMetatile; });
-  // Callback identity is not hover state. Notify only id transitions, including leave and map switch.
+  // Callback identity is not hover state: fresh parent callbacks must not clear an in-progress hover.
+  // Notify only id transitions, including leave and map switch (P12-4l).
   useEffect(() => { hoverCallback.current?.(hoverId); }, [hoverId]);
 
   const [paintVersion, setPaintVersion] = useState(0);
@@ -96,6 +102,9 @@ export function MapSurface<Tool extends MapTool, Body, Event, Stamp, Hover exten
   // Never reset the version: revisiting a painted map must not reuse its initial, stale browser cache key.
   const imageUrl = adapter.imageUrl(mapName, editSession ? paintVersion : 0);
 
+  // End awaits every apply round trip, then a following stroke waits for end. With no capture, leave must
+  // also close the server stroke or two edits squash into one undo step. A missing end cell abandons
+  // rect/shift; pointer cancellation uses the same no-final-apply path (P12-4a).
   const finishStroke = (end: Point | null) => {
     const start = strokeStart.current;
     strokeStart.current = null;
@@ -133,6 +142,7 @@ export function MapSurface<Tool extends MapTool, Body, Event, Stamp, Hover exten
   // Raster readiness is available after stage construction. Sample the same stage.fit once per map only;
   // paint/time reloads must never snap the player's view. useStage's internal readiness stays false here.
   useStageAutoFit(raster.imgLoaded, mapName, stage.controlled, stage.fit);
+  // Real map switches clear local overlays/hover/drags; useStrokeChain retires the stroke itself.
   useLayoutEffect(() => {
     strokeStart.current = null;
     lastCell.current = null;
@@ -149,6 +159,8 @@ export function MapSurface<Tool extends MapTool, Body, Event, Stamp, Hover exten
     const rect = event.currentTarget.getBoundingClientRect();
     return { x: event.clientX - rect.left, y: event.clientY - rect.top };
   };
+  // Single-cell starts are bounded (outside means no edit); rect/shift ends stay raw because the server
+  // skips overshooting targets. Event selection/releases use their own raw grid, allowing outside deselect.
   const paintAt = (event: MouseEvent<HTMLCanvasElement>) => boundedCell(point(event), geometry(g.paintCellPx), g.width, g.height);
   const rawPaintAt = (event: MouseEvent<HTMLCanvasElement>) => rawCell(point(event), geometry(g.paintCellPx));
   const eventAt = (event: MouseEvent<HTMLCanvasElement>) => rawCell(point(event), geometry(g.eventCellPx));
@@ -187,7 +199,7 @@ export function MapSurface<Tool extends MapTool, Body, Event, Stamp, Hover exten
     stage.startPan(event);
   };
   const onMouseMove = (event: MouseEvent<HTMLCanvasElement>) => {
-    if (eventDrag.current) { setDragPreview(eventAt(event)); return; }
+    if (eventDrag.current) { setDragPreview(eventAt(event)); return; } // Candidate only; never a per-move write.
     if (editSession && (activeTool?.kind === "pencil" || activeTool?.kind === "collision") && chain.isOpen() && event.buttons === 1) {
       const cell = paintAt(event);
       if (cell && lastCell.current !== `${cell.x},${cell.y}`) {
@@ -209,14 +221,18 @@ export function MapSurface<Tool extends MapTool, Body, Event, Stamp, Hover exten
       setDragPreview(null);
       if (cell.x !== start.x || cell.y !== start.y) onMoveEvent?.({ ...selected, ...cell });
     }
+    // Dropper starts no chain, so finishStroke is a no-op for it.
     finishStroke(rawPaintAt(event)); // Unbounded rect/shift end: the server skips targets beyond the layout.
     panning.current = false;
     stage.endPan();
   };
   const onMouseLeave = () => {
     setHover({ map: mapName, value: null });
+    // Capture held: leave clears hover only. Missing/refused capture: abandon drag without a reliable
+    // final cell and finish the stroke without applying rect/shift (P12-4a no-capture fallback).
     if (!stage.hasCapture()) { abandon(); stage.endPan(); }
   };
+  // The composite rect includes border rings, so sprites never cover map/border-block pixels.
   // Memoised: EncounterBorder clears tooltips on entries changes; unrelated renders must not clear one.
   const entries = useMemo<EncounterBorderEntry[]>(() => [{ map: mapName,
     rect: { x: pan.x, y: pan.y, width: g.pixelWidth * zoom, height: g.pixelHeight * zoom }, side: encounter.side, summaries }],

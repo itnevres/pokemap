@@ -272,11 +272,25 @@ describe("presentation and map lifecycle", () => {
     expect(observations.encounters.mock.calls.length).toBeGreaterThan(0);
     expect(observations.encounters.mock.calls.every((args) => JSON.stringify(args) === JSON.stringify(["A", "gbc", true]))).toBe(true);
   });
-  it("chromeless hides all chrome and disables encounter presentation", () => {
+  it("chromeless hides all chrome with encounters initially off", () => {
     const host = mount({ chromeless: true });
     expect(host.container.querySelector(".map-canvas--chromeless")).toBeTruthy();
     expect(screen.queryByRole("button")).toBeNull(); expect(screen.queryByText("family readout")).toBeNull();
     expect(observations.border).toHaveBeenLastCalledWith(expect.objectContaining({ enabled: false }));
+  });
+  it("keeps encounters enabled when chromeless is turned on without remounting", () => {
+    const host = mount();
+    fireEvent.click(screen.getByRole("button", { name: "Encounters" }));
+    expect(observations.border).toHaveBeenLastCalledWith(expect.objectContaining({ enabled: true }));
+    observations.encounters.mockClear();
+    host.update({ chromeless: true });
+    expect(host.container.querySelector(".map-canvas--chromeless")).toBeTruthy();
+    expect(screen.queryByRole("button")).toBeNull();
+    expect(host.container.querySelector(".map-canvas__legend")).toBeNull();
+    expect(host.container.querySelector(".map-canvas__status")).toBeNull();
+    expect(observations.border).toHaveBeenLastCalledWith(expect.objectContaining({ enabled: true }));
+    expect(observations.encounters).toHaveBeenCalledWith("A", "gbc", true);
+    expect(observations.encounters.mock.calls.every((args) => args[2] === true)).toBe(true);
   });
   it.each([false, true])("debounces blocks with skipFirstBlocksChange=%s; map switch/unmount clear timers", (skip) => {
     vi.useFakeTimers(); let a = adapter({ skipFirstBlocksChange: skip }); const host = mount({ adapter: a });

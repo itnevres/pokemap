@@ -9,7 +9,10 @@ export type StageZoomPolicy = ZoomPolicy & ({ kind: "stepped" } | { kind: "conti
 const NO_FIT_LEVELS: readonly number[] = [];
 const NO_FIT = () => {};
 
-/** Compute controlled updates outside React updaters: StrictMode must never report a gesture twice. */
+/** One view value and pure zoomAboutPivot avoid nested pan setters inside zoom updaters. StrictMode
+ * double-invoked the old nested setter, applying pan twice and leaving a blank/off-centre canvas at 4x.
+ * Controlled updates compute next from the latest committed prop outside updaters, reporting only changes;
+ * uncontrolled updates use state. Neither path may report a gesture twice (Plan 6c E1). */
 export function useStageView<T extends View>(controlledView: T | undefined, onViewChange: ((next: T) => void) | undefined) {
   const [ownView, setOwnView] = useState<T>({ zoom: 1, pan: { x: 0, y: 0 } } as T);
   const controlled = controlledView !== undefined;
@@ -48,6 +51,7 @@ export function useStageZoom<T extends View>(canvasRef: RefObject<HTMLCanvasElem
           : Math.max(0, policy.levels.indexOf(zoom) - 1)]!;
       applyZoom(next as T["zoom"], event.clientX - rect.left, event.clientY - rect.top);
     };
+    // React wheel listeners are passive: preventDefault would silently fail and scroll the page underneath.
     canvas.addEventListener("wheel", handler, { passive: false });
     return () => canvas.removeEventListener("wheel", handler);
   }, [canvasRef, zoom, updateView, policy.kind, policy.kind === "stepped" ? policy.levels : policy.min,
@@ -62,6 +66,8 @@ export function useStageAutoFit(imgLoaded: boolean, mapName: string, controlled:
       if (!controlled) fit();
       fittedForMapRef.current = mapName;
     }
+    // Fit once per map, never per time/paint reload: readiness can cycle false -> true for the same map,
+    // and refitting then would discard the player's zoom/pan. Controlled views never auto-fit.
     // Fit is intentionally sampled at map readiness, never on overlay/paint changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [imgLoaded, mapName]);

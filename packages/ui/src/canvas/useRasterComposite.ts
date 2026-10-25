@@ -50,6 +50,7 @@ export function useRasterComposite({
     layersRef.current = layers;
     decorateRef.current = decorate;
   });
+  // Readiness belongs to this URL, not just this mount: time changes can replace an image within one map.
   const imgLoaded = loadedUrl === imageUrl;
 
   // Lengths preserve entry boundaries, even when arbitrary deps resemble layer keys.
@@ -60,7 +61,8 @@ export function useRasterComposite({
 
   useEffect(() => {
     const img = imgRef.current;
-    // Cached images may already be decoded before their load event is observed.
+    // Read THIS URL's mounted image: cached decoding may precede the observed load event.
+    // Unconditionally resetting false can overwrite an early onLoad and strand the composite.
     // naturalWidth excludes complete-but-broken images, including StrictMode re-entry.
     setLoadedUrl(img?.complete === true && img.naturalWidth > 0 ? imageUrl : null);
   }, [imageUrl]);
@@ -86,6 +88,7 @@ export function useRasterComposite({
     const ctx = base.getContext("2d");
     if (!ctx) return;
     ctx.imageSmoothingEnabled = false;
+    // Rebuild from the pristine image: overlay blending is destructive, so never blend into the old composite.
     ctx.clearRect(0, 0, width, height);
     ctx.drawImage(imgRef.current, 0, 0);
     const currentLayers = layersRef.current;
@@ -101,6 +104,7 @@ export function useRasterComposite({
     // imageUrl also covers cached URL changes whose ready flag stays true.
   }, [imgLoaded, imageUrl, width, height, layerInputs]);
 
+  // Pan/zoom only re-blits the separate composite; it never touches the overlay pixels again.
   useEffect(() => {
     const stage = stageRef.current;
     const base = baseRef.current;
@@ -111,7 +115,8 @@ export function useRasterComposite({
     ctx.clearRect(0, 0, stage.width, stage.height);
     ctx.drawImage(base, 0, 0, width, height, view.pan.x, view.pan.y, width * view.zoom, height * view.zoom);
     decorateRef.current?.(ctx);
-    // Viewport changes clear a resized canvas, so they must trigger a fresh blit.
+    // Task 21: toggling an overlay resizes the legend, then viewport, then canvas width/height attributes.
+    // HTML canvas resize clears its bitmap; viewport must trigger a fresh blit even when view is unchanged.
   }, [compositeVersion, view.zoom, view.pan.x, view.pan.y, viewport.w, viewport.h, width, height, decorationInputs]);
 
   return { imgLoaded, onImgLoad, onImgError, compositeVersion };
