@@ -6,6 +6,8 @@ import { useContextMapFit } from "../shared/useWorldContext.js";
 
 type UpdateView<T> = (next: T | ((view: T) => T)) => void;
 export type StageZoomPolicy = ZoomPolicy & ({ kind: "stepped" } | { kind: "continuous"; factor: number });
+const NO_FIT_LEVELS: readonly number[] = [];
+const NO_FIT = () => {};
 
 /** Compute controlled updates outside React updaters: StrictMode must never report a gesture twice. */
 export function useStageView<T extends View>(controlledView: T | undefined, onViewChange: ((next: T) => void) | undefined) {
@@ -74,11 +76,14 @@ export function useStageFit<T extends View>(a: {
   side: Parameters<typeof fitView>[0]["side"];
   updateView: UpdateView<T>;
   chromeless?: boolean;
+  /** Stage callers may override fit; legacy map hooks retain their stepped fit contract. */
+  fitOverride?: () => void;
 }) {
-  const { viewport, pixelWidth, pixelHeight, zoomLevels, bandNative, side, updateView, chromeless } = a;
+  const { viewport, pixelWidth, pixelHeight, zoomLevels, bandNative, side, updateView, chromeless, fitOverride } = a;
   const fit = useCallback(() => {
+    if (fitOverride) return fitOverride();
     updateView(fitView({ viewport, pixelWidth, pixelHeight, policy: { kind: "stepped", levels: zoomLevels }, bandNative, side }) as T);
-  }, [viewport, pixelWidth, pixelHeight, zoomLevels, bandNative, side, updateView]);
+  }, [viewport, pixelWidth, pixelHeight, zoomLevels, bandNative, side, updateView, fitOverride]);
   useFitShortcut(fit, !chromeless);
   useContextMapFit(fit, chromeless);
   return fit;
@@ -108,15 +113,10 @@ export function useStage<T extends View = View>(options: StageOptions<T>) {
   useViewportMeasure(containerRef, setViewport);
   const { view, controlled, updateView } = useStageView(options.view, options.onViewChange);
   const zoom = useStageZoom(canvasRef, view.zoom, updateView, options.zoomPolicy);
-  const fit = useCallback(() => {
-    if (options.fit) return options.fit();
-    if (options.zoomPolicy.kind === "stepped") {
-      updateView(fitView({ viewport, pixelWidth: options.pixelWidth, pixelHeight: options.pixelHeight,
-        policy: options.zoomPolicy, bandNative: options.bandNative, side: options.side }) as T);
-    }
-  }, [options.fit, options.zoomPolicy, viewport, options.pixelWidth, options.pixelHeight, options.bandNative, options.side, updateView]);
-  useFitShortcut(fit, !options.chromeless);
-  useContextMapFit(fit, options.chromeless);
+  const fit = useStageFit({ viewport, pixelWidth: options.pixelWidth, pixelHeight: options.pixelHeight,
+    zoomLevels: options.zoomPolicy.kind === "stepped" ? options.zoomPolicy.levels : NO_FIT_LEVELS,
+    bandNative: options.bandNative, side: options.side, updateView, chromeless: options.chromeless,
+    fitOverride: options.fit ?? (options.zoomPolicy.kind === "continuous" ? NO_FIT : undefined) });
   useStageAutoFit(options.imgLoaded, options.mapName, controlled, fit);
 
   const pan = useRef<{ start: Point; pan: Point } | null>(null);

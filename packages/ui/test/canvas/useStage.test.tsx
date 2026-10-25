@@ -122,13 +122,23 @@ describe("stage view and wheel", () => {
   it("installs a non-passive listener, prevents scrolling and cleans up", () => {
     const add = vi.spyOn(HTMLCanvasElement.prototype, "addEventListener");
     const remove = vi.spyOn(HTMLCanvasElement.prototype, "removeEventListener");
-    const host = mount();
+    const changed = vi.fn();
+    const host = mount({ view: { zoom: 1, pan: { x: 0, y: 0 } }, onViewChange: changed });
     expect(add.mock.calls.some(([type, , options]) => type === "wheel" && (options as AddEventListenerOptions)?.passive === false)).toBe(true);
     const event = new WheelEvent("wheel", { deltaY: -1, cancelable: true });
     act(() => { host.canvas.dispatchEvent(event); });
     expect(event.defaultPrevented).toBe(true);
+    expect(changed).toHaveBeenCalledTimes(1);
+    const handler = add.mock.calls.filter(([type]) => type === "wheel").at(-1)![1];
+    remove.mockClear(); // Earlier wheel-effect cleanups cannot stand in for unmount cleanup.
+    const view = host.stage.view;
     host.unmount();
-    expect(remove.mock.calls.some(([type]) => type === "wheel")).toBe(true);
+    expect(remove).toHaveBeenCalledWith("wheel", handler);
+    const after = new WheelEvent("wheel", { deltaY: -1, cancelable: true });
+    act(() => { host.canvas.dispatchEvent(after); });
+    expect(after.defaultPrevented).toBe(false);
+    expect(changed).toHaveBeenCalledTimes(1);
+    expect(host.stage.view).toBe(view);
   });
 
   it("measures the viewport and remeasures on resize", () => {
