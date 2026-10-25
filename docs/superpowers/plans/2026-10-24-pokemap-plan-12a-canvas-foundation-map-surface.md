@@ -1,6 +1,6 @@
 # Plan 12a: canvas foundation and MapSurface — Implementation Plan
 
-**STATUS (2026-10-24):** planned, not started.
+**STATUS (2026-10-24):** planned and approved by review (spec and plan: Codex astra, 3 rounds); not started. Awaiting the user's go-ahead.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

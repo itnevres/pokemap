@@ -158,3 +158,5 @@ Capability flags already in `shell/adapter.ts` (Collision tool, Elevation overla
 - PR-I5 layer reorder escaped invalidation → ordered keys invalidate.
 - PR-I6 the live check could write subjects → every commit and world write is intercepted; no save.
 - PR-M1 "clamped" leftovers → bounded. PR-M2 GBA `onEditError` call sites named (`MapEditingWorkspace.tsx` props `Pick` and `canvasProps`; `gba/adapter.tsx:99` spreads them in context). PR-M3 the family-branch check now uses `rg -i` over the folder.
+
+**Re-review (2026-10-24, Codex `gpt-6-astra`): all nine PR findings resolved, no new issues. Spec: Approved. Plan 12a: Approved.** Report: `task-reports/pokemap-plan-12-canvas-core/rereview.md`.
