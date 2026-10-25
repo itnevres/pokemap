@@ -1,0 +1,87 @@
+{
+ "fam": "gbc",
+ "mapName": "Route29",
+ "blocked": [],
+ "zoom": {
+  "start": [
+   "1×"
+  ],
+  "two": [
+   "2×"
+  ],
+  "wheelIn": [
+   "4×"
+  ],
+  "wheelOut": [
+   "2×"
+  ],
+  "fit": [
+   "1×"
+  ],
+  "wheelAfterFit": [
+   "2×"
+  ]
+ },
+ "overlays": {
+  "before": [
+   "Grid=false",
+   "Collision=false",
+   "Events=false",
+   "Encounters=false"
+  ],
+  "on": [
+   "Grid=true",
+   "Collision=true",
+   "Events=true",
+   "Encounters=true"
+  ],
+  "legend": "Grid Wall Water Object Warp Coord Bg Encounters: hover or focus a sprite; dimmed = not at day, + = level can roll up to 4 higher",
+  "off": []
+ },
+ "hover": {
+  "centre": "(15, 4) step (30, 8) id 0x63 · TL FLOOR · TR FLOOR · BL CUT_TREE (wall, talk) · BR HEADBUTT_TREE (wall, talk)",
+  "status": "tileset TILESET_JOHTO · 128 metatiles · 30×9 (15, 4) step (30, 8) id 0x63 · TL FLOOR · TR FLOOR · BL CUT_TREE (wall, talk) · BR HEADBUTT_TREE (wall, talk)",
+  "cal": {
+   "x0": -1216,
+   "y0": -81.5,
+   "cell": 128
+  },
+  "afterLeave": "Hover the map…"
+ },
+ "calChecked": {
+  "x0": -1216,
+  "y0": -81.5,
+  "cell": 128,
+  "check": {
+   "bx": 15,
+   "by": 4,
+   "sx": 31,
+   "sy": 9
+  }
+ },
+ "eventOutside": {
+  "event": {
+   "i": 4,
+   "x": 25,
+   "y": 3
+  },
+  "moves": 1,
+  "posts": [
+   "/edit/Route29/event/move"
+  ],
+  "order": "pointerdown/b1 mousedown/b1 pointerup/b0 mouseup/b0 lostpointercapture/b0 mouseleave/b0"
+ },
+ "rectOutside": {
+  "applies": 1,
+  "ends": 1,
+  "body": "{\"tool\":\"rect\",\"x0\":15,\"y0\":4,\"x1\":15,\"y1\":1,\"stamp\":{\"width\":1,\"height\":1,\"cell",
+  "order": "pointerdown/b1 mousedown/b1 pointerup/b0 mouseup/b0 lostpointercapture/b0 mouseleave/b0"
+ },
+ "dialogs": [
+  "Discard all unsaved changes on this map? This cannot be undone."
+ ],
+ "discard": {
+  "dirtyAfter": 0
+ },
+ "errs": []
+}

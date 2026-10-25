@@ -160,3 +160,11 @@ Capability flags already in `shell/adapter.ts` (Collision tool, Elevation overla
 - PR-M1 "clamped" leftovers → bounded. PR-M2 GBA `onEditError` call sites named (`MapEditingWorkspace.tsx` props `Pick` and `canvasProps`; `gba/adapter.tsx:99` spreads them in context). PR-M3 the family-branch check now uses `rg -i` over the folder.
 
 **Re-review (2026-10-24, Codex `gpt-6-astra`): all nine PR findings resolved, no new issues. Spec: Approved. Plan 12a: Approved.** Report: `task-reports/pokemap-plan-12-canvas-core/rereview.md`.
+
+**Plan 12a implementation notes under P12-8 (recorded at Task 9, 2026-10-25).**
+- MapSurface schedules no paint-version bump while there is no session. Base GBA bumped on any same-map `blocks` change but showed `v` only with a session, so the visible URL is unchanged; the trigger and both P12-8 oracles are unchanged (`task-6-report.md`).
+- GBA skip consumption: base GBA re-armed the skip in a `mapName` effect and consumed it in a separate `[blocks]` effect, so a `blocks` change in the same render as the switch used up the skip. MapSurface returns early on the switch render, so the next change (the reseed) is the one absorbed. This matches base's stated intent (the skip absorbs whichever reseed tick arrives) and the oracle; it is reachable only when `blocks` identity changes in the switch render, and costs at most one image reload (final review M2).
+
+**Plan 12a final whole-branch review (2026-10-25, Claude Opus subagent; Codex astra at its usage limit, fallback logged): Changes requested, 1 Important / 4 Minor.** Report: `task-reports/pokemap-plan-12-canvas-core/task-9-final-review.md`; dispositions in `task-9-report.md`.
+- I1 (a rect, shift or event drag released outside would apply nothing in Chromium): refuted live. Chromium's order is `pointerup mouseup lostpointercapture mouseleave` in both families; the rect applies with its raw outside end and the event moves once. A jsdom test now pins that order (mutation RED).
+- M1 dangling comment references outside the diff: fixed. M2: recorded above. M3 (the P12-4g guard defends only a retained handler; same as the GBC base) and M4 (`useStage`'s unused `captured` state): deferred to Plan 12b, with `shared/useCanvasView.ts` deletion and moving MapSurface's `components/` imports.

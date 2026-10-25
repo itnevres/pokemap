@@ -105,7 +105,7 @@ export interface UseEditSessionResult {
    *  reply as the other mutating methods do. The discard route's own
    *  response is the exact same "nothing open" shape undo/redo already
    *  return on a closed session (`blocks: []`, `map: null`) -- and
-   *  MapCanvas.tsx's own `blocks` local is `editSession ? editSession.blocks
+   *  `gba/mapSurface.tsx`'s `blocks` local is `editSession ? editSession.blocks
    *  : staticBlocks`. App.tsx ALWAYS passes a real (non-undefined)
    *  `editSession` object as a prop, so that ternary ALWAYS takes the
    *  `editSession.blocks` branch, even for an empty array. Routing a
@@ -185,7 +185,7 @@ interface EventOpResponse {
  * paint/undo/redo routes return a session snapshot, since those are the only
  * routes Task 8/9 needed) -- so without a seed, `blocks` would start `[]`
  * and MapCanvas's overlay compositing (which switches to `editSession.blocks`
- * the instant the prop is non-null, see MapCanvas.tsx's own `blocks` doc
+ * the instant the prop is non-null, see `gba/mapSurface.tsx`'s `blocks`
  * comment) would render every overlay as empty until the player's first
  * edit. Passing the map's already-fetched static blocks (`useMapLayout`'s
  * own `data.blocks`) here seeds the first paint with real data instead.

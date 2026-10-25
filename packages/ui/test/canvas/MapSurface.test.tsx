@@ -176,6 +176,21 @@ describe("adapter gesture dispatch", () => {
     pointer(host.canvas, "pointerup"); mouse(host.canvas, "mouseUp", 150, 36); mouse(host.canvas, "mouseUp", 150, 36);
     expect(move.mock.calls).toEqual([[{ kind: "object", index: 0, x: 8, y: 1 }]]);
   });
+  // Chromium's order for a release outside the canvas, measured live (Plan 12a Task 9, task-9-report.md):
+  // pointerup, mouseup, lostpointercapture, then mouseleave. The mouseup ends the gesture before the leave.
+  it("a release outside in Chromium's event order applies rect once and moves the event once", async () => {
+    const move = vi.fn();
+    const host = mount({ activeTool: { kind: "rect" }, onMoveEvent: move, onSelectEvent: vi.fn() });
+    capture(host.canvas); mouse(host.canvas, "mouseDown"); mouse(host.canvas, "mouseMove", 150, -20);
+    pointer(host.canvas, "pointerup"); mouse(host.canvas, "mouseUp", 150, -20);
+    pointer(host.canvas, "lostpointercapture"); fireEvent.mouseLeave(host.canvas);
+    await host.settled(); expect(host.session.endStroke).toHaveBeenCalledTimes(1);
+    expect(host.session.applyPaint.mock.calls).toEqual([[{ tool: "rect", start: { x: 0, y: 0 }, end: { x: 4, y: -2 } }]]);
+    host.update({ activeTool: null }); capture(host.canvas); mouse(host.canvas, "mouseDown", 36, 36);
+    mouse(host.canvas, "mouseMove", 150, 36); pointer(host.canvas, "pointerup"); mouse(host.canvas, "mouseUp", 150, 36);
+    pointer(host.canvas, "lostpointercapture"); fireEvent.mouseLeave(host.canvas);
+    expect(move.mock.calls).toEqual([[{ kind: "object", index: 0, x: 8, y: 1 }]]);
+  });
   it("map switch retires queued paint and drops an event drag", async () => {
     const move = vi.fn(); const host = mount({ onMoveEvent: move, onSelectEvent: vi.fn() });
     let resolve!: () => void;
