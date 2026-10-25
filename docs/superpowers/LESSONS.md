@@ -35,7 +35,7 @@ Purpose: This document collects every reusable trap, rule, and convention discov
 
 **Cached image readiness requires both decoded metadata and the current image URL.** A synthetic `load` event without natural dimensions can race the mounted-image readiness effect; do not weaken geometry assertions or inflate timeouts. (Plan 7)
 
-**Run `vitest` from the repo root.** From `packages/ui` the jsdom glob misses; tell: `document is not defined`. (Plan 8)
+**Run `vitest` from the repo root.** From `packages/ui` the jsdom glob misses; tell: `document is not defined` or `HTMLElement is not defined`. (Plan 8)
 
 **New load-only flake class (baseline gate at `3f9f8ce`):**
 - `WorldCanvasContext.test.tsx` "Escape that closes an open context menu…" — tell: `TestingLibraryElementError … role "menu"`
@@ -71,6 +71,8 @@ Rerun in isolation before calling either a regression. (Plan 8)
 **A `*/` inside a CSS comment is silent in the browser.** It closes the comment early, and the next rule is dropped as an invalid selector. Cost the spotlight its `position: relative` for four weeks; the only other symptom was a `vite build` failure recorded as cosmetic. `packages/ui/test/styles.test.ts` now parses the sheet strictly with lightningcss. (Plan 6b)
 
 ---
+
+**React batches same-tick refreshes into one GET, so a GET count cannot prove "one refresh per commit".** `useWorldVisibility.refresh()` bumps a state counter; three calls in one tick make one fetch. Tell: the count test passes on the old per-name code and under the "refresh per name" mutation. Count the calls instead: `vi.mock` the hook with a wrapper that delegates to the real one and counts `refresh()` (`test/shell/placementCommit.test.tsx`). (Plan 11 T7)
 
 ## Mutation Testing & Review Process
 
@@ -141,6 +143,8 @@ Rerun in isolation before calling either a regression. (Plan 8)
 **Snapping a view while chrome is mounting uses stale coordinates.** Record pointers in client coordinates and convert at snap time with `getBoundingClientRect()`, after the layout that moves the box has committed. (Plan 6c Phase E)
 
 ---
+
+**Never put a button inside an ellipsis-truncated span** (`.world-canvas__toolbar-error` is `nowrap; overflow: hidden; text-overflow: ellipsis`). A long message clips it. Tell: the button is in the DOM and the a11y tree, but its box extends past the span's right edge and the screenshot shows `…` where the × should be. Make the group the `role="alert"` and the button a flex sibling of the text. (Plan 11 T9)
 
 ## Canvas / World View Rendering
 
@@ -237,6 +241,10 @@ Rerun in isolation before calling either a regression. (Plan 8)
 **Restart the hub before a reload check after writing to disk.** The hub caches `project.map`, so after a commit or a hand restore a reload can show pre-write data (ledger M8). Stop by port, start again, then reload. Background hubs stopped by port report `exit 127` in the task notice; that is expected. (Plan 10a Task 8)
 
 ---
+
+**Wheel events go to whatever is under the mouse.** After clicking a toolbar button (Fit), `page.mouse.wheel` scrolls the button, not the canvas. Tell: the zoom readout does not move after a Fit. Move the mouse back over the canvas first. (Plan 11 T9)
+
+**Test error UI live without touching the subject:** `page.route` the POST and GET to `fulfill({ status: 500 })`. Nothing reaches the hub, so the subject stays byte-identical (`task-reports/pokemap-plan-11-canvas-leaf/task-9-shots/toasts.mjs`). (Plan 11 final review)
 
 ## Windows / Tooling / Git / Worktrees
 
@@ -344,3 +352,5 @@ The raw per-phase lessons this was distilled from, with the session narrative, a
 - **Codex leaves junctions it does not report.** Besides a root `node_modules` junction it created `packages/{server,ui}/node_modules/@pokemap/core` junctions (Plan 10b T3). Tell: `git worktree remove` fails with "Directory not empty". List reparse points (`Get-ChildItem -Recurse -Force -Attributes ReparsePoint`), `cmd /c rmdir` each (never follows the target), then delete the folder. Never `rm -rf` a worktree before that.
 - **Codex stalls on a literal file list.** "Touch only files the brief names" made it stop and ask twice when an interface change needed a support file. The ledger's `codex-rules.md` now allows strictly needed support files, listed in the report.
 - **Strict UI fetch mocks break on any new GET.** Adding a fetch to the GBA runtime (`/api/defects`) failed tests whose mocks throw "unexpected fetch". Tell: a new `role="alert"` in unrelated App/visit-guard tests. Add the route to every strict GBA mock.
+
+**Aider with Laguna on a ~2,000-line file rewrites the whole file and hits its output limit.** Tell: `Model … has hit a token limit!` at the end of the log, and `git diff` is empty. Use Codex for edits in the big canvas files; for a handful of one-line edits already written in the brief, edit inline and log the reason. (Plan 11 T7)

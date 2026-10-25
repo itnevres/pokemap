@@ -114,7 +114,7 @@ Both families already render the same `components/Toolbar.tsx`; the differences 
 ### Plan 11: canvas leaf extractions
 
 - **Goal:** take the cheap shared runs out of the canvas pairs without touching rendering.
-- **Status (2026-10-24):** all 9 tasks done on `plan-11-canvas-leaf` (unpushed); final review ready to merge. Map pair 263 → 167 aligned lines, world pair 302 → 191 (every remaining run ruled in the task reports). Awaiting the user for push and merge.
+- **Status:** done, merged via #26 (2026-10-24). Map pair 263 → 167 aligned lines, world pair 302 → 191; every remaining run is ruled in the task reports.
 - **Scope:** per Plan 8 Task 8's measurement (`task-reports/pokemap-plan-8-ui-engine-adapter/_archive/task-8-measurement.md`):
   zoom and status-strip JSX, the overlay toggles and legend bar, the lens overlay block, tile-version refetch, the
   small-tile cache, badge geometry. About 100-150 lines per pair.
@@ -147,6 +147,7 @@ Both families already render the same `components/Toolbar.tsx`; the differences 
   layers (warps, lines, encounters, events). Fold in the 6c deferrals that live in the canvases (cramped world toolbar in
   context mode, blank refreshed tile until load, encounter tooltip clipping, gutter overlap at mid zoom).
 - **Order:** after Plan 11.
+- **Starting point:** Plan 11's final measurement and rulings (`task-reports/pokemap-plan-11-canvas-leaf/task-9-live.md`): the remaining aligned runs are draw path, hit-test and view model, which is exactly this plan's scope. The identical `!world` load placeholder in both world canvases is re-ruled here.
 - **Risk:** high. Hit-testing, LOD caches and overlays (LESSONS: Canvas / World View Rendering). Needs live browser checks
   in both families (LESSONS: Live Browser Verification). Split into phases if the task count passes about 12.
 - **Depends on:** D9.
