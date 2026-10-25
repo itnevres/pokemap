@@ -1,4 +1,4 @@
-import type { MouseEventHandler, ReactNode, RefObject } from "react";
+import type { MouseEventHandler, PointerEventHandler, ReactEventHandler, ReactNode, RefObject } from "react";
 
 interface MapCanvasViewportProps {
   containerRef: RefObject<HTMLDivElement | null>;
@@ -6,6 +6,10 @@ interface MapCanvasViewportProps {
   canvasRef: RefObject<HTMLCanvasElement | null>;
   imageUrl: string;
   onImgLoad: () => void;
+  onImgError?: ReactEventHandler<HTMLImageElement>;
+  onPointerDown?: PointerEventHandler<HTMLCanvasElement>;
+  onPointerCancel?: PointerEventHandler<HTMLCanvasElement>;
+  onLostPointerCapture?: PointerEventHandler<HTMLCanvasElement>;
   width: number;
   height: number;
   onMouseDown: MouseEventHandler<HTMLCanvasElement>;
@@ -17,15 +21,18 @@ interface MapCanvasViewportProps {
 }
 
 /** The map canvas mount: hidden source image, the stage canvas, then the family's overlay children. */
-export function MapCanvasViewport({ containerRef, imgRef, canvasRef, imageUrl, onImgLoad, width, height, onMouseDown, onMouseMove, onMouseUp, onMouseLeave, children }: MapCanvasViewportProps) {
+export function MapCanvasViewport({ containerRef, imgRef, canvasRef, imageUrl, onImgLoad, onImgError, onPointerDown, onPointerCancel, onLostPointerCapture, width, height, onMouseDown, onMouseMove, onMouseUp, onMouseLeave, children }: MapCanvasViewportProps) {
   return (
     <div className="map-canvas__viewport" ref={containerRef}>
-      <img ref={imgRef} src={imageUrl} onLoad={onImgLoad} alt="" className="map-canvas__source-image" />
+      <img ref={imgRef} src={imageUrl} onLoad={onImgLoad} onError={onImgError} alt="" className="map-canvas__source-image" />
       <canvas
         ref={canvasRef}
         className="map-canvas__stage"
         width={width}
         height={height}
+        onPointerDown={onPointerDown}
+        onPointerCancel={onPointerCancel}
+        onLostPointerCapture={onLostPointerCapture}
         onMouseDown={onMouseDown}
         onMouseMove={onMouseMove}
         onMouseUp={onMouseUp}
