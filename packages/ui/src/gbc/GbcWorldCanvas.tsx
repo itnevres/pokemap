@@ -967,19 +967,20 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
     [visible],
   );
 
-  const [saveError, setSaveError] = useState<string | null>(null);
+  // Keyed by map: a success clears only its own map's failure, never one the user has not read yet (final review M5).
+  const [saveError, setSaveError] = useState<{ map: string; message: string } | null>(null);
   const postPlacement = (map: string, x: number, y: number, version: PlacementVersion) => {
     ledger.current.moved(map, version);
     fetchGuarded("/api/world/placement", isPlacementSaved, undefined, { method: "POST", body: JSON.stringify({ map, x, y }) })
       .then(() => {
         ledger.current.resolve(map, version, true);
-        setSaveError(null);
+        setSaveError((current) => (current?.map === map ? null : current));
         reloadWorld();
         onPlacementsSaved?.([map]);
       })
       .catch((e: unknown) => {
         ledger.current.resolve(map, version, false);
-        setSaveError(e instanceof Error ? e.message : String(e));
+        setSaveError({ map, message: e instanceof Error ? e.message : String(e) });
         reloadWorld();
       });
   };
@@ -1226,7 +1227,7 @@ export function GbcWorldCanvas({ time, mapFilter, jumpToMap, jumpToken, onSelect
         <EncounterFetchAlert count={encounterFailedCount} />
         {saveError && (
           <div className="world-canvas__toolbar-group world-canvas__toolbar-group--save-error">
-            <span className="world-canvas__toolbar-error" role="alert">Could not save placement: {saveError}</span>
+            <span className="world-canvas__toolbar-error" role="alert">Could not save placement: {saveError.message}</span>
           </div>
         )}
         {world && error && (

@@ -126,6 +126,29 @@ describe.each(["gba", "gbc"] as const)("%s unsaved edit does not pin a map again
   });
 });
 
+// Plan 11 final review M3: a map absent from the server whose drop failed leaves the world on the rollback reload.
+it.each(["gba", "gbc"] as const)("%s failed rail drop leaves the world once its reload lands", async (family) => {
+  const api = server(family, true); vi.stubGlobal("fetch", api.fetcher);
+  const { container } = render(family === "gba" ? <WorldCanvas /> : <GbcWorldCanvas time="day" />);
+  await waitFor(() => expect(screen.getByRole("switch", { name: "Dungeon auto-layout" }).getAttribute("aria-checked")).toBe("false"));
+  fireEvent.click(screen.getByRole("button", { name: "Fit" }));
+  const canvas = container.querySelector("canvas.world-canvas__stage")!;
+  const drop = new MouseEvent("drop", { bubbles: true, clientX: 50, clientY: 100 });
+  Object.defineProperty(drop, "dataTransfer", { value: { getData: () => "Unplaced" } });
+  fireEvent(canvas, drop);
+  await waitFor(() => expect(api.gets()).toBe(2));
+  // (50,100) is inside Source; the dropped map drew over it while its local position stood. A bounded timer loop,
+  // not waitFor: a hover probe inside waitFor can spin a worker forever when the assertion never holds.
+  let hovered = "";
+  for (let i = 0; i < 40 && !hovered.includes("Source"); i++) {
+    await act(async () => { await new Promise((r) => setTimeout(r, 10)); });
+    fireEvent.mouseMove(canvas, { clientX: 50, clientY: 100 });
+    hovered = container.querySelector(".world-canvas__hover")?.textContent ?? "";
+  }
+  expect(hovered).toContain("Source");
+  expect(api.posted).toEqual([]);
+});
+
 it("GBA group save reloads once after all members save", async () => {
   const api = server("gba"); vi.stubGlobal("fetch", api.fetcher);
   const { container } = render(<WorldCanvas />);

@@ -1982,33 +1982,36 @@ export function WorldCanvas({ jumpToMap, jumpToken, mapFilter, onJumpToMap, onSe
           <WorldContextOverlayMount context={context} ctx={worldContext} />
           <ConflictTooltip tooltip={tooltip} />
           <WorldContextMenu menu={contextMenu.menu} viewport={viewport} onClose={contextMenu.close} />
-          <ConflictErrorToast error={conflictAcceptance.error} onDismiss={() => conflictAcceptance.setError(null)} />
-          {saveError && (
-            <div className="world-canvas__toast" role="alert">
-              <span className="world-canvas__toast-text">{saveError}</span>
-              <button
-                type="button"
-                className="world-canvas__toast-dismiss"
-                onClick={() => setSaveError(null)}
-                aria-label="Dismiss error"
-              >
-                ×
-              </button>
-            </div>
-          )}
-          {world && loadError && (
-            <div className="world-canvas__toast" role="alert">
-              <span className="world-canvas__toast-text">Could not reload the world: {loadError}</span>
-              <button
-                type="button"
-                className="world-canvas__toast-dismiss"
-                onClick={() => setLoadError(null)}
-                aria-label="Dismiss error"
-              >
-                ×
-              </button>
-            </div>
-          )}
+          {/* Conflict, save and reload toasts can coincide (server down: a failed save, then its failed rollback); they stack. */}
+          <div className="world-canvas__toasts">
+            <ConflictErrorToast error={conflictAcceptance.error} onDismiss={() => conflictAcceptance.setError(null)} />
+            {saveError && (
+              <div className="world-canvas__toast" role="alert">
+                <span className="world-canvas__toast-text">{saveError}</span>
+                <button
+                  type="button"
+                  className="world-canvas__toast-dismiss"
+                  onClick={() => setSaveError(null)}
+                  aria-label="Dismiss error"
+                >
+                  ×
+                </button>
+              </div>
+            )}
+            {world && loadError && (
+              <div className="world-canvas__toast" role="alert">
+                <span className="world-canvas__toast-text">Could not reload the world: {loadError}</span>
+                <button
+                  type="button"
+                  className="world-canvas__toast-dismiss"
+                  onClick={() => setLoadError(null)}
+                  aria-label="Dismiss error"
+                >
+                  ×
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
         <UnplacedRail unplacedNames={unplacedNames} filter={railFilter} onFilterChange={setRailFilter} />
