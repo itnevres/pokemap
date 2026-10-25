@@ -293,6 +293,10 @@ Rerun in isolation before calling either a regression. (Plan 8)
 
 ## Delegation to Codex / Aider / Subagents
 
+**Codex adds `key={url}` to force a remount** (Plan 12a T4): tell: an `<img>` keyed by its URL in a shared viewport, and existing tests that hold the element across a URL change fail (10 map-canvas oracles). It is a DOM-identity change no ruling allows; remove it and pin stale loads with the old render's captured handler instead.
+
+**Codex usage limit hits both parallel reviews at once** (Plan 12a T6): fall back to two Claude Opus subagents with explicit `model`, each given the brief file path and an output path; fix rounds to a Claude Sonnet subagent in the scratch worktree (it can run vitest there, unlike Codex). Log each fallback in the task report.
+
 **Codex usage limit mid-review (Plan 11 T6).** Tell: `turn.failed` "You've hit your usage limit ... try again at <time>" in the review's JSONL, and no `-o` file. The parallel review that started first may still finish. Fall back to a Claude Opus subagent for Opus-tier reviews (log the reason) instead of waiting.
 
 **Never `taskkill /IM codex.exe`:** it ends every Codex process on the machine, including the user's own sessions. Kill the background shell job or the one PID instead. Also, before resuming Codex on a worktree, check that `git checkout` didn't abort (tell: "Aborting" and HEAD unchanged; intent-to-add files from `git add -N` block it, `git reset` first). (Plan 9)

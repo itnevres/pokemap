@@ -141,7 +141,7 @@ Both families already render the same `components/Toolbar.tsx`; the differences 
 
 ### Plan 12: shared canvas core
 
-- **Status (2026-10-25):** specced and split; 12a in progress (Tasks 1-3 of 9 done) on `plan-12-canvas-core`. Spec `specs/2026-10-24-pokemap-plan-12-shared-canvas-core-design.md` (rulings P12-1..P12-8), plan `plans/2026-10-24-pokemap-plan-12a-canvas-foundation-map-surface.md`; 12b planned after 12a merges.
+- **Status (2026-10-25):** specced and split; 12a in progress (Tasks 1-6 of 9 done) on `plan-12-canvas-core`. Spec `specs/2026-10-24-pokemap-plan-12-shared-canvas-core-design.md` (rulings P12-1..P12-8), plan `plans/2026-10-24-pokemap-plan-12a-canvas-foundation-map-surface.md`; 12b planned after 12a merges.
 - **Goal:** one render and interaction layer for map and world canvases; the adapter supplies tile drawing, geometry and
   family overlays.
 - **Scope:** render pipeline taking geometry plus family drawers; shared hit-testing, pan/zoom, LOD and tile caches, overlay
