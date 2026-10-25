@@ -115,6 +115,8 @@ export interface StageOptions<T extends View = View> {
 export function useStage<T extends View = View>(options: StageOptions<T>) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  // Reading the container ref during render sees the previous commit (null initially). Measurement
+  // state supplies one current size to both canvas attributes and Fit, instead of a permanent fallback.
   const [viewport, setViewport] = useState({ w: 0, h: 0 });
   useViewportMeasure(containerRef, setViewport);
   const { view, controlled, updateView } = useStageView(options.view, options.onViewChange);

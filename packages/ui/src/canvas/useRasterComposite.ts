@@ -51,6 +51,8 @@ export function useRasterComposite({
     decorateRef.current = decorate;
   });
   // Readiness belongs to this URL, not just this mount: time changes can replace an image within one map.
+  // A block change can arrive before the replacement PNG. Readiness must wait for that URL's
+  // decoded pixels, or overlays would composite stale art and the later load could leave it frozen.
   const imgLoaded = loadedUrl === imageUrl;
 
   // Lengths preserve entry boundaries, even when arbitrary deps resemble layer keys.
@@ -88,7 +90,9 @@ export function useRasterComposite({
     const ctx = base.getContext("2d");
     if (!ctx) return;
     ctx.imageSmoothingEnabled = false;
-    // Rebuild from the pristine image: overlay blending is destructive, so never blend into the old composite.
+    // Overlay blending is destructive and alpha blending is not invertible: no operation can un-tint a painted
+    // cell, so never blend into the old composite. Rebuild from the pristine decoded image; that is bounded by
+    // the layout size and avoids a server render on every toggle.
     ctx.clearRect(0, 0, width, height);
     ctx.drawImage(imgRef.current, 0, 0);
     const currentLayers = layersRef.current;

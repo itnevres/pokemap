@@ -18,7 +18,7 @@ import { MAX_OBJECT_EVENTS, duplicateEventValue } from "../gba/duplicateEvent.js
  *  wants it adds it in its own `renderCanvas`). */
 export type MapEditingCanvasProps = Pick<
   MapCanvasProps,
-  "onStrokeChain" | "mapName" | "data" | "editSession" | "activeTool" | "onSignPick" | "onSelectEvent" | "selectedEventRef" | "onMoveEvent" | "onDropperPick" | "onHoverMetatile"
+  "onEditError" | "onStrokeChain" | "mapName" | "data" | "editSession" | "activeTool" | "onSignPick" | "onSelectEvent" | "selectedEventRef" | "onMoveEvent" | "onDropperPick" | "onHoverMetatile"
 >;
 
 interface MapEditingWorkspaceBase {
@@ -88,6 +88,7 @@ export function MapEditingWorkspace({ active = true, mapName, data, editSession,
           onSelectEvent,
           selectedEventRef: selectedEvent ? { kind: selectedEvent.kind, index: selectedEvent.index } : null,
           onMoveEvent: onCanvasMoveEvent,
+          onEditError: setEventOpError,
           onDropperPick: setCurrentStamp,
           onSignPick: (x, y, anchor) => setSignPick({ x, y, anchor }),
         }

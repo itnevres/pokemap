@@ -9,6 +9,7 @@ import type { GbcPaintBody, UseGbcEditSessionResult } from "./hooks/useGbcEditSe
 import type { GbcActiveTool, GbcEventRef } from "./GbcMapCanvas.js";
 import type { GbcTimeOfDay } from "./time.js";
 import type { MapSurfaceAdapter } from "../canvas/mapSurfaceAdapter.js";
+import { eventAt, firstEventAt, type EventLists } from "../canvas/events.js";
 import { EventsLegendItems } from "../shared/LegendBar.js";
 import { BORDER_BAND, borderSideFromConnections } from "../encounters/borderSide.js";
 
@@ -19,22 +20,9 @@ const BLOCK_PX = 32;
  *  overlay aligns the composite by. Derived from the ring count, never a literal. */
 export const GBC_COMPOSITE_ORIGIN = BORDER_RINGS * BLOCK_PX;
 
-/** First event on step (sx,sy), scanning object, warp, coord, bg (the order and rationale of `MapCanvas.tsx:27-53`). */
-function findEventAt(events: GbcMapEvents, sx: number, sy: number): GbcEventRef | null {
-  const lists: [GbcEventKind, { x: number; y: number }[]][] = [["object", events.objects], ["warp", events.warps], ["coord", events.coords], ["bg", events.bgs]];
-  for (const [kind, list] of lists) {
-    const index = list.findIndex((e) => e.x === sx && e.y === sy);
-    if (index !== -1) return { kind, index };
-  }
-  return null;
-}
-
-function eventPosition(events: GbcMapEvents, ref: GbcEventRef | null | undefined): { x: number; y: number } | null {
-  if (!ref) return null;
-  const list = ref.kind === "object" ? events.objects : ref.kind === "warp" ? events.warps : ref.kind === "coord" ? events.coords : events.bgs;
-  const e = list[ref.index];
-  return e ? { x: e.x, y: e.y } : null;
-}
+/** Ordered object, warp, coord, bg lists (the scan order of `firstEventAt`). */
+const eventLists = (events: GbcMapEvents): EventLists<GbcEventKind> =>
+  [["object", events.objects], ["warp", events.warps], ["coord", events.coords], ["bg", events.bgs]];
 
 const hex = (n: number) => `0x${n.toString(16)}`;
 
@@ -102,7 +90,7 @@ export function clientToStep(
 
 /**
  * `getComputedStyle` at composite time, with the dark-mode literal as the
- * fallback (`MapCanvas.tsx:521`'s own pattern) -- `parseColorToken` below
+ * fallback (the same pattern as the selection ring in canvas/MapSurface.tsx) -- `parseColorToken` below
  * turns whichever string wins into an `RGBA` `blendRect` can use, since
  * canvas 2D APIs (unlike CSS) cannot take a raw `var(...)`/`rgba(...)`
  * string for compositing math.
@@ -158,10 +146,9 @@ export function parseColorToken(value: string): RGBA {
   return FALLBACK_COLOR;
 }
 
-
 export function useGbcMapSurface(payload: GbcMapPayload, time: GbcTimeOfDay, editSession?: UseGbcEditSessionResult): MapSurfaceAdapter<GbcActiveTool, GbcPaintBody, GbcEventRef, GbcStamp, GbcStepInfo> {
   // The session's live blocks/events win once a session exists; the adapter callbacks below read the merged `data` by name and
-  // never need to know which source it came from (the trick of `MapCanvas.tsx:215-228`).
+  // never need to know which source it came from (the same live/static split as `useGbaMapSurface`).
   const sessionBlocks = editSession?.blocks;
   const sessionEvents = editSession?.events;
   const data = useMemo<GbcMapPayload>(
@@ -242,8 +229,8 @@ export function useGbcMapSurface(payload: GbcMapPayload, time: GbcTimeOfDay, edi
       if (tool.kind === "rect" && tool.stamp) return { tool: "rect", x0: start.x, y0: start.y, x1: end.x, y1: end.y, stamp: tool.stamp, origin: start };
       return null;
     },
-    findEventAt: (cell) => findEventAt(data.events, cell.x, cell.y),
-    eventPosition: (event) => eventPosition(data.events, event),
+    findEventAt: (cell) => firstEventAt(eventLists(data.events), cell),
+    eventPosition: (event) => eventAt(eventLists(data.events), event),
     dropperStamp: (cell) => {
       const block = data.blocks[cell.y * layout.width + cell.x];
       return block ? { width: 1, height: 1, cells: [{ metatileId: block.metatileId }] } : null;

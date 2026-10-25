@@ -89,7 +89,7 @@ const EMPTY_PLACEMENT_SNAPSHOT: PlacementSnapshot = { mapStates: new Map() };
  * **Lessons from Task 4, applied here too (binding, `task-4-spec-review.md`
  * findings A/B):**
  * - **One `view: { zoom, pan }` state, updated by a single pure function.**
- *   GBA's own `MapCanvas.tsx:532-542` (and, before its own fix round,
+ *   GBA's own MapCanvas zoom handler (and, before its own fix round,
  *   `GbcMapCanvas.tsx`'s first draft) nested a `setPan` call inside a
  *   `setZoom` updater -- harmless outside `<StrictMode>`, but `main.tsx`
  *   wraps the whole app in it, and React double-invokes updater functions

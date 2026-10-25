@@ -15,7 +15,7 @@ import { useRasterComposite } from "./useRasterComposite.js";
 import type { MapHover, MapSurfaceAdapter, MapTool } from "./mapSurfaceAdapter.js";
 
 // begin/apply/end return fresh blocks even without a content change. Coalesce the gesture's cache-bypassing
-// renders into one trailing refresh; overlays still track live blocks immediately (MapCanvas's paint postmortem).
+// renders into one trailing refresh; overlays still track live blocks immediately.
 const PAINT_VERSION_DEBOUNCE_MS = 200;
 const ZOOM_POLICY = { kind: "stepped", levels: ZOOM_LEVELS } as const;
 
@@ -50,8 +50,9 @@ export function MapSurface<Tool extends MapTool, Body, Event, Stamp, Hover exten
     onStrokeChain?.(chain, true);
     return () => onStrokeChain?.(chain, false);
   }, [chain, onStrokeChain]);
-  // Rect/shift capture one start, then apply once after all queued work. Pencil/collision remember only the
-  // last cell: repeated mousemoves within it must not enqueue duplicate requests (GbcMapCanvas).
+  // Rect/shift capture one start and apply once after all queued work (they need just start/end, never a
+  // per-cell trail). Pencil/collision remember only the last cell: repeated mousemoves within it must not
+  // enqueue duplicate requests (GbcMapCanvas).
   const strokeStart = useRef<Point | null>(null);
   const lastCell = useRef<string | null>(null);
   // Capture event identity and its starting event-grid cell; preview moves locally, commit only on release.
@@ -80,6 +81,8 @@ export function MapSurface<Tool extends MapTool, Body, Event, Stamp, Hover exten
   const [paintVersion, setPaintVersion] = useState(0);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const previous = useRef({ map: mapName, blocks: adapter.blocks });
+  // A session can reseed in a later tick after the map-name effect already ran. Comparing only
+  // previous map names would mistake that second tick for paint; the adapter's explicit skip absorbs it.
   const skipNextBump = useRef(adapter.skipFirstBlocksChange);
   useEffect(() => {
     const prev = previous.current;
@@ -100,6 +103,8 @@ export function MapSurface<Tool extends MapTool, Body, Event, Stamp, Hover exten
   }, [mapName, adapter.blocks]);
   useEffect(() => () => { if (timer.current !== null) clearTimeout(timer.current); }, []);
   // Never reset the version: revisiting a painted map must not reuse its initial, stale browser cache key.
+  // The server renders live session pixels, but a same-URL image cannot pick up those pixels: the
+  // trailing version must change its src. Read-only consumers never need cache-bypassing requests.
   const imageUrl = adapter.imageUrl(mapName, editSession ? paintVersion : 0);
 
   // End awaits every apply round trip, then a following stroke waits for end. With no capture, leave must
@@ -131,7 +136,10 @@ export function MapSurface<Tool extends MapTool, Body, Event, Stamp, Hover exten
     decorate: (ctx) => {
       // Selection and the local drag candidate redraw only the stage, never the destructive overlay raster.
       // The candidate wins over the static ring; event geometry is in steps for GBC, not paint blocks.
+      // No ring when nothing is selected or dragged.
       if (!highlight) return;
+      // Canvas strokeStyle cannot resolve CSS var() itself. Read the live theme token at draw time;
+      // dark-mode fallback also serves tests with no stylesheet.
       const color = getComputedStyle(document.documentElement).getPropertyValue("--overlay-selection").trim() || "#22d3ee";
       ctx.save(); ctx.lineWidth = 2; ctx.strokeStyle = dragPreview ? "#ffffff" : color;
       ctx.strokeRect(pan.x + (g.origin.x + highlight.x * g.eventCellPx) * zoom + 1,
@@ -172,8 +180,9 @@ export function MapSurface<Tool extends MapTool, Body, Event, Stamp, Hover exten
         event.currentTarget.width, event.currentTarget.height, cell, geometry(g.eventCellPx)));
       return;
     }
-    // Event selection precedes paint only with no tool. Raw cells deliberately allow an outside deselect;
-    // a miss falls through to pan (MapCanvas's event-selection rationale).
+    // Event selection precedes paint only with no tool. Raw cells deliberately allow an outside deselect, and a
+    // miss falls through to pan rather than consuming the gesture. Selection is harmless without a session
+    // (read-only navigation); omitted callbacks leave previews unaffected.
     if (!activeTool && onSelectEvent) {
       const cell = eventAt(event);
       const hit = adapter.findEventAt(cell);
@@ -199,7 +208,11 @@ export function MapSurface<Tool extends MapTool, Body, Event, Stamp, Hover exten
     stage.startPan(event);
   };
   const onMouseMove = (event: MouseEvent<HTMLCanvasElement>) => {
-    if (eventDrag.current) { setDragPreview(eventAt(event)); return; } // Candidate only; never a per-move write.
+    // Event identity already owns this gesture until release/cancel, so unlike paint trails it needs
+    // no buttons===1 guard. Preview never posts: the candidate is local and event moves are single-shot (no paint lifecycle).
+    if (eventDrag.current) { setDragPreview(eventAt(event)); return; }
+    // Collision dragging follows pencil's trail. Synthetic mouse events must explicitly supply buttons;
+    // a hover (buttons:0) must never paint, even if a chain is still open.
     if (editSession && (activeTool?.kind === "pencil" || activeTool?.kind === "collision") && chain.isOpen() && event.buttons === 1) {
       const cell = paintAt(event);
       if (cell && lastCell.current !== `${cell.x},${cell.y}`) {
@@ -215,7 +228,8 @@ export function MapSurface<Tool extends MapTool, Body, Event, Stamp, Hover exten
   const onMouseUp = (event: MouseEvent<HTMLCanvasElement>) => {
     if (eventDrag.current) {
       const cell = eventAt(event);
-      // Capture locals BEFORE clearing ownership: only the release's raw cell is the final drop position.
+      // Capture locals BEFORE clearing ownership (the clear drops kind/index/start). The final drop position is
+      // the release's raw cell, not the last preview: mouseup carries the actual final position.
       const { event: selected, start } = eventDrag.current;
       eventDrag.current = null;
       setDragPreview(null);

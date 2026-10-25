@@ -418,11 +418,11 @@ describe("MapCanvas", () => {
   // swallowed with no bump at all, not just "the first real paint". This
   // test's shape mirrors that real timeline instead of bumping on every
   // single blocks change immediately.
-  it("includes a v= cache-bust param once editSession is present; the presumed reseed tick is swallowed, and a real paint bumps exactly once after debouncing, even across rapid changes", async () => {
+  it("P12-4h: includes a v= cache-bust param only after paint; the presumed reseed tick is swallowed, and a real paint bumps exactly once after debouncing, even across rapid changes", async () => {
     const session = makeEditSession({ blocks: DATA.blocks });
     const { img, rerender } = renderMapCanvas({ editSession: session });
     const versionOf = () => new URL(img.src).searchParams.get("v");
-    expect(versionOf()).toBe("0"); // present from the first render, not just after a paint
+    expect(versionOf()).toBeNull(); // P12-4h: a session alone does not reload the image
 
     // The FIRST blocks reference change after mount is presumed to be
     // useEditSession's own reseed tick, not a real user edit -- absorbed
@@ -430,21 +430,21 @@ describe("MapCanvas", () => {
     const session2 = { ...session, blocks: [...session.blocks] };
     rerender(<MapCanvas mapName="Foo" data={DATA} editSession={session2} />);
     // Code-review fix: reading versionOf() immediately here is NOT
-    // discriminating on its own -- under debouncing, "0" is what you'd see
+    // discriminating on its own -- under debouncing, no v is what you'd see
     // whether skipNextBumpRef actually swallowed this tick OR merely
-    // scheduled a bump that hasn't fired yet (both look like "0" right
+    // scheduled a bump that hasn't fired yet (both omit v right
     // after the rerender). Waiting out the full debounce window here is
     // what actually proves the tick was swallowed, not just delayed --
-    // reviewer confirmed this line reads "1" instead of "0" with
+    // reviewer confirmed this line reads "1" instead of null with
     // skipNextBumpRef's guard removed.
     await new Promise((r) => setTimeout(r, 300));
-    expect(versionOf()).toBe("0");
+    expect(versionOf()).toBeNull();
 
     // A REAL paint (the second blocks change) schedules a bump, but not
     // immediately -- right after this rerender the version has not moved.
     const session3 = { ...session2, blocks: [...session2.blocks] };
     rerender(<MapCanvas mapName="Foo" data={DATA} editSession={session3} />);
-    expect(versionOf()).toBe("0");
+    expect(versionOf()).toBeNull();
 
     // Real wait past PAINT_VERSION_DEBOUNCE_MS -- matches this file's own
     // established convention (WorldCanvas.test.tsx's fade-timer test,
