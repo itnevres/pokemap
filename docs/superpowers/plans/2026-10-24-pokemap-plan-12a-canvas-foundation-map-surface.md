@@ -1,6 +1,6 @@
 # Plan 12a: canvas foundation and MapSurface — Implementation Plan
 
-**STATUS (2026-10-24):** planned and approved by review (spec and plan: Codex astra, 3 rounds); not started. Awaiting the user's go-ahead.
+**STATUS (2026-10-25):** Tasks 1-3 done: T1 `9b97644`, T2 `bd4bc60`, T3 `f2cea0e` (reviews clean; reports `task-<N>-report.md`). Carried into Task 4: forward `onImgError` through `MapCanvasViewport` (prop exists since T3); keep one fit entry (T3 quality minor: `useStage`'s fit duplicates `useStageFit`); tighten the wheel-listener unmount test (T3 minor); cover the mounted `<img>` load/error/URL-change/unmount matrix through real-`<img>` MapSurface tests (T2 deferral). Next: Task 4.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
