@@ -12,7 +12,12 @@ One render and interaction layer for the map and world canvases. The core owns t
 - **P12-2 Phases.** **12a:** foundation plus MapSurface; both map canvases move onto it. **12b:** WorldSurface; both world canvases, overlay layers, LOD and tile caches, the 6c deferrals and the `!world` placeholder. Each phase gets its own plan, reviews and merge. This spec covers both; the 12b plan is written after 12a merges, from a fresh measurement.
 - **P12-3 GBC world multi-select.** In 12b GBC gets GBA's Ctrl/Cmd-click toggle, marquee selection and group move through the shared drag dispatcher. GBC keeps posting one placement per map (its route takes one map) and reloads once after all posts settle, as GBA does.
 - **P12-4 Unify everything that can be unified.** Per family only what is an engine fact (see "What stays per family"). Named unifications:
-  - a. Pointer capture on every canvas drag (GBA world has it; GBC world and both map canvases get it). Consequence: a drag or stroke continues outside the canvas until the button is released, instead of ending on `mouseleave`; leave then clears hover only. Tests that pin end-on-leave change under this ruling. jsdom lacks `setPointerCapture`, so the call is guarded as GBA world's is.
+  - a. Pointer capture on every canvas drag (GBA world has it; GBC world and both map canvases get it). Termination contract (SR-I2):
+    - Capture held: the drag or stroke continues outside the canvas and ends on pointer up, wherever it happens; leave clears hover only.
+    - `pointercancel` or an unexpected `lostpointercapture`: a stroke ends exactly once with no end cell (as today's leave: `chain.finish(null)`, so no rect or shift is applied); an event drag or map drag is cancelled with no commit.
+    - Capture refused or unavailable (`setPointerCapture` missing or throwing; jsdom lacks it): today's leave behaviour stays as the fallback (strokes end on leave; GBA world's commit-on-leave for a map drag stays as it is, `WorldCanvas.tsx:1775-1800`).
+    - Map switch or unmount: the stroke chain retires queued work as today (`useStrokeChain`); open drags are dropped.
+    - Tests that pin end-on-leave are replaced by tests of this contract (outside release ends once; cancel applies nothing; fallback path ends on leave), never just deleted. Live acceptance covers a release outside the canvas.
   - b. Pencil and collision strokes skip repeat moves within the same cell (GBC has `lastCellRef`; GBA queues every move).
   - c. World double-click with no Edit-here handler opens Map view (GBC today; GBA does nothing).
   - d. A failed warp-marker fetch shows an alert in both families (GBC today; GBA drops the error).
@@ -24,6 +29,9 @@ One render and interaction layer for the map and world canvases. The core owns t
   - i. One warp-marker hit radius in screen pixels (GBA 6, GBC 8): **8**.
   - j. One world zoom range expressed as scale (screen px per source px), with the in-context cap rule shared. Today GBA allows 1/64 to 16 px per 16 px tile (scale 1/1024 to 1) and GBC 1/64 to 32 px per 32 px block (scale 1/2048 to 1). Unified: scale 1/2048 to 1, and the shared in-context cap.
   - k. One map-canvas status strip and legend frame; each family supplies its readout items and legend items.
+  - l. One hover-notification policy (SR-I3): the palette's hovered-metatile callback fires when the hovered metatile id changes, including to `null` on leave and map switch (GBA today, `MapCanvas.tsx:352-360`). GBC today calls it on every move (`GbcMapCanvas.tsx:518`); a GBC test that counts per-move calls changes under this ruling.
+  - m. One world fit and jump policy (SR-I5; 12b). Manual Fit fits the clusters (singleton components excluded, GBA's rule, `WorldCanvas.tsx:667-719`); if no cluster qualifies it fits every scoped placement; an empty world is a no-op. The dungeon filter fits the filter's maps (GBA's rule). Jump-to-map fits the map to about 60% of the viewport (GBC's `jumpFit`; GBA fits 100% today). Tests pinning GBC's all-placement Fit (`GbcWorldCanvas.test.tsx:1323-1342`) and GBA's 100% jump change under this ruling.
+- **P12-8 Paint-version trigger stays a session-hook fact (design ruling, SR-I1).** GBA's `useEditSession` re-seeds `blocks` once after a map switch, so `MapCanvas` skips the first `blocks` change (`MapCanvas.tsx:296-338`; pinned by `MapCanvas.test.tsx:427-441`). GBC's session does not, and bumps on the first same-map change with a session (`GbcMapCanvas.tsx:373-386`; pinned by `GbcMapCanvasEdit.test.tsx:206-215`). Unifying the two edit-session hooks is outside Plan 12, so the adapter declares `skipFirstBlocksChange` (a fact about its session hook). Both existing oracles stay unchanged. Shared rules: the pending timer is cancelled on map switch and unmount; the version only grows within a map.
 - **P12-4e World load fit, measured.** Both families fit the clusters on first load (singleton components excluded, GBA's `fitWorld` rule; GBC's `fitted` gate keeps the "no render before fit" guarantee). GBA's code comment explains why it never did: fitting puts every non-singleton placement in view and fetches each one's image on first render. The 12b live check records GBA's render-request count and the time until the canvas settles. **If GBA load is visibly slow, 12b stops for the user before it ships.**
 - **P12-5 Load placeholder (re-ruled from Plan 11).** The identical `!world` error/loading `<p>` lives once, in WorldSurface.
 - **P12-6 DOM overlays stay DOM.** Warp markers, connection lines, selection outlines, lens, spotlight, tooltips, menus and toasts stay DOM elements (accessibility, and the tests read them). Canvas-drawn layers stay canvas-drawn. The core gives both one world-to-screen projection, so no overlay computes its own.
@@ -39,7 +47,7 @@ One render and interaction layer for the map and world canvases. The core owns t
 2. **MapSurface (12a).** One map canvas component. `MapCanvas` and `GbcMapCanvas` keep their export names and props and become thin wrappers that build their family adapter and render `MapSurface`. Callers (`MapEditingWorkspace`, `GbcMapEditing`, both in-context overlays) do not change, apart from P12-4f's error prop.
 3. **WorldSurface (12b).** Same for `WorldCanvas` and `GbcWorldCanvas`, plus P12-3 and P12-7.
 4. **Unifications.** Every P12-4 item is done and pinned by a test (or, for layout-only items, a live check).
-5. **Measurement.** `measure.py` on each family pair (wrapper plus adapter per family) shows at most 30 aligned code lines per pair, and every remaining run is ruled in a task report.
+5. **Measurement.** At most 30 aligned code lines per pair, every remaining run ruled in a task report. Procedure (SR-M3): `measure.py` takes two files, so each family's owned files (wrapper, then adapter module(s), in a fixed order listed in the report) are concatenated into one temporary file per family, with a `// FILE: <path>` line before each so runs can be attributed back. Because the script only finds aligned runs of 3+ identical normalised lines, the reviewer also reads both adapters side by side for renamed or reordered duplication; splitting code across files is not a way to pass.
 
 ## Non-goals
 
@@ -64,12 +72,14 @@ One render and interaction layer for the map and world canvases. The core owns t
 | Composite size and origin | `BORDER_RINGS` rings of the layout's border size; `compositeOrigin(layout)` | fixed rings of 32 px; `GBC_COMPOSITE_ORIGIN` |
 | Render URL | `?border=` | `?border=&time=` (time of day) |
 | Raster overlays | grid, collision, elevation, events; collision forced on with the Collision tool | grid, collision (wall/water quadrants), events |
-| Hover readout | metatile, collision, elevation, behaviour, event mark | metatile and four quadrant collisions |
+| Hover resolution and readout | 16 px cell: metatile, collision, elevation, behaviour, event mark | 16 px step (not the 32 px paint cell): step coordinates, metatile, four quadrant collisions with the active quadrant emphasised, border-substitution note, events at that step (`GbcMapCanvas.tsx:511-518`, `:734-740`) |
+| Encounter presentation | none time-dependent | time of day: legend suffix (`GbcMapCanvas.tsx:711`), `EncounterBorder` `time` (`:724`); a time switch re-dims sprites without refetching summaries or refitting (`GbcMapCanvas.test.tsx:613`) |
+| Paint-version trigger | skip the first `blocks` change after a map switch (P12-8) | bump on the first same-map change with a session |
 | Edit bodies | `PaintApplyBody` (pencil, bucket, rect, shift, collision) | `GbcPaintBody` (pencil, bucket, rect, shift) |
 | World native unit | 16 px tile | 32 px block |
 | World canvas layers | tiles, vertical-link (dive/emerge) triangles, conflict badges | tiles, conflict badges |
 | World warp projection | `(p.x + w.x)` tiles | `(p.x + w.x / 2)` blocks |
-| World data | `useWorld` family hooks, encounter payloads and summarisers | `useGbcWorld`, GBC payloads |
+| World data | fetch and reconciliation inline in `WorldCanvas.tsx:509-567` (moving it behind the adapter is 12b work; it must keep the snapshot capture before React state updaters, `:535-539`); GBA encounter payloads and summariser | `useGbcWorld` (`GbcWorldCanvas.tsx:480`); GBC payloads and summariser |
 
 Capability flags already in `shell/adapter.ts` (Collision tool, Elevation overlay) keep deciding which tools and toggles exist.
 
@@ -77,16 +87,16 @@ Capability flags already in `shell/adapter.ts` (Collision tool, Elevation overla
 
 ### Foundation (`packages/ui/src/canvas/`)
 
-- **`view.ts`** (pure): view `{ zoom, pan }`; `screenToSource`, `sourceToScreen`, `zoomAboutPivot` for a stepped level list or a continuous range; fit helpers (`fitWithBand` stays where it is and is called from here). Replaces `components/mapView.ts` `zoomAboutPivot`; `mapView.ts` keeps its exports as re-exports so imports elsewhere keep working.
+- **`view.ts`** (pure): view `{ zoom, pan }`; `screenToSource`, `sourceToScreen`, `zoomAboutPivot` for a stepped level list or a continuous range. Rounding contract (SR-I8): the stepped policy rounds pan to whole stage pixels (today's `mapView.ts:24-28`); the continuous policy keeps fractional pan (both world canvases today). A zoom to the current level returns the same view object (no-op identity, so controlled callers see no change). Fit helpers (`fitWithBand` stays where it is and is called from here). Replaces `components/mapView.ts` `zoomAboutPivot`; `mapView.ts` keeps its exports as re-exports so imports elsewhere keep working.
 - **`useStage.ts`**: the stage canvas, viewport measurement (`shared/useViewportMeasure.ts`), the non-passive wheel listener with a zoom policy (stepped or continuous), pan drag, pointer capture (P12-4a), leave handling. Absorbs `shared/useCanvasView.ts`'s controlled-view plumbing, auto-fit and fit callback (F shortcut, context fit); those exports stay as re-exports until 12b removes the last consumer.
-- **`useRasterComposite.ts`**: the base image tracked by URL (P12-4g), an ordered list of raster layers (each `draw(raster)`), the offscreen composite, `compositeVersion`, and the blit with stage decorations (selection ring, drag preview). This is the map pair's recomposite and blit effects, once.
-- **`cells.ts`** (pure): client point to cell for a given cell size and origin, clamped and raw; cell to client `DOMRect` (sign anchor).
+- **`useRasterComposite.ts`**: the base image tracked by URL (P12-4g), an ordered list of raster layers (each `draw(raster)`), the offscreen composite, `compositeVersion`, and the blit with stage decorations (selection ring, drag preview). This is the map pair's recomposite and blit effects, once. Invalidation is semantic (SR-I7): each layer declares its inputs (a `deps` list of the real raster inputs, e.g. blocks, layout, events, enabled flag), and the composite re-runs only when the image URL's load state, the size, or a layer's declared inputs change, never on adapter or closure identity. No recomposite for pan, zoom, hover, the encounter toggle, or an unchanged parent re-render (`MapCanvas.test.tsx:1089-1098` pins the encounter case). Readiness keeps GBC's rules: an image already `complete` with `naturalWidth > 0` on URL change counts as loaded (cached re-entry under StrictMode, `GbcMapCanvasView.test.tsx:199-232`); a failed image never counts as loaded; a load for an older URL is ignored.
+- **`cells.ts`** (pure), three distinct lookups (SR-I6): **raw** (unbounded cell, may be negative or past the edge), **bounded** (the cell, or `null` outside the layout; never clamped to an edge), and cell to client `DOMRect` (sign anchor). There is no numeric clamp: an outside pencil, bucket, dropper or sign click edits nothing (bounded → `null`), while rect and shift end cells and event-drag releases use the raw cell, as today (`MapCanvas.tsx:594-600`, `:729-770`; `GbcMapCanvas.tsx:529-532`, `:632-658`).
 
 ### MapSurface (12a)
 
 `canvas/MapSurface.tsx` renders the toolbar groups (shared `CanvasZoomBar`, `OverlayToggleGroup`, `LegendBar`), the viewport (`MapCanvasViewport`), the `EncounterBorder`, and the shared status strip (P12-4k). It owns: toggles state and its reset on map change, encounter toggle, hover state and the hover-metatile callback, paint-version debounce (`PAINT_VERSION_DEBOUNCE_MS`), the stroke chain (`useStrokeChain`) with its error report routed to a prop (P12-4f), same-cell skip (P12-4b), event select and drag, dropper, sign pick and pan.
 
-`MapSurfaceAdapter` (built per render by each wrapper; typed per family by generics) supplies: geometry (composite size, origin, paint cell, event cell), the image URL builder, the raster overlay list (key, label, legend items, `draw`), `hoverAt(cell)` and status items, `paintBody(tool, cell)` and `finishBody(tool, start, end)`, `findEventAt(eventCell)`, `eventPosition(selected)`, `dropperStamp(cell)`, the border side and encounter band, and the encounter-summary family key. The exact field list is the plan's call; the rule is that MapSurface contains no `family ===` branch.
+`MapSurfaceAdapter` (built per render by each wrapper; typed per family by generics) supplies: geometry (composite size, origin, paint cell, event cell), the image URL builder, `skipFirstBlocksChange` (P12-8), the raster overlay list (key, label, legend items, `deps`, `draw`), `hoverAt(sourcePoint)` (the source-pixel position, so each family resolves its own hover unit: GBA cell, GBC step) and status items, encounter presentation inputs (GBC `time`: legend suffix and `EncounterBorder` dimming), `paintBody(tool, cell)` and `finishBody(tool, start, end)`, `findEventAt(eventCell)`, `eventPosition(selected)`, `dropperStamp(cell)`, the border side and encounter band, and the encounter-summary family key. The exact field list is the plan's call; the rule is that MapSurface contains no `family ===` branch.
 
 ### WorldSurface (12b, outline; the 12b plan details it)
 
@@ -104,9 +114,9 @@ Capability flags already in `shell/adapter.ts` (Collision tool, Elevation overla
 ### 12a
 
 1. Foundation modules exist with unit tests: view math (stepped and continuous zoom about a pivot, screen/source round trip, fit), cell lookup (raw, clamped, both cell sizes, anchor rect), raster composite (layer order, recomposite on input change, no composite before the current URL has loaded, stale URL load ignored).
-2. `MapCanvas` and `GbcMapCanvas` render `MapSurface`; existing map-canvas tests pass unchanged except those changed by P12-4b/f/g/h, each named.
-3. New tests pin P12-4a (map pan and stroke keep pointer capture), P12-4b (GBA same-cell moves queue once), P12-4f (a GBA stroke rejection shows the banner), P12-4g (GBA stale image load does not composite), P12-4h (GBA URL has no `&v=` until a paint bump), P12-4k (both families' status strips render through one component).
-4. High-risk mutation checks: breaking the same-cell skip, the URL load guard, the stroke-error route and the cell math each fail at least one test.
+2. `MapCanvas` and `GbcMapCanvas` render `MapSurface`; existing map-canvas tests pass unchanged except those changed by P12-4a/b/f/g/h/k/l, each named, and each replaced by an assertion that keeps the guarantee it pinned (SR-M2). The P12-8 oracles (`MapCanvas.test.tsx:427-441`, `GbcMapCanvasEdit.test.tsx:206-215`) pass unchanged.
+3. New tests pin P12-4a (the termination contract: outside release ends once, cancel applies nothing, fallback ends on leave), P12-4b (GBA same-cell moves queue once), P12-4f (a GBA stroke rejection shows the banner), P12-4g (GBA stale image load does not composite; cached image counts as loaded), P12-4h (GBA URL has no `&v=` until a paint bump), P12-4k (both families' status strips render through one component), P12-4l (GBC hover callback fires on id change only), the raster invalidation rule (no recomposite on pan, hover, encounter toggle or parent re-render), the rounding contract (fractional pivot, stepped rounds, continuous keeps fractions, no-op identity, one controlled callback per gesture under StrictMode), and a GBC time switch that re-dims encounters without refetch or refit.
+4. High-risk mutation checks: breaking the same-cell skip, the URL load guard, the stroke-error route, the bounded-vs-raw cell choice, the termination contract and the raster invalidation each fail at least one test.
 5. Measurement: map pair at most 30 aligned code lines; remaining runs ruled.
 6. Live acceptance in both families (Map view and in-context editing): zoom buttons and wheel, Fit, each overlay toggle and legend, hover readout, pencil stroke (one POST per new cell), rect, bucket, dropper, event drag, sign pick, a forced stroke error (`page.route` 500) showing the banner. Subjects byte-identical after; manifests unchanged.
 7. Gate count not below 3,533; typecheck and UI build pass. `DESIGN.md` gains a Plan 12 table.
@@ -114,7 +124,7 @@ Capability flags already in `shell/adapter.ts` (Collision tool, Elevation overla
 ### 12b
 
 1. `WorldCanvas` and `GbcWorldCanvas` render `WorldSurface`; existing world tests pass unchanged except those a ruling changes, each named.
-2. Tests pin P12-3, P12-4a/c/d/e/i/j, P12-5 and P12-7 (refreshed tile keeps its old image; tooltip clamp).
+2. Tests pin P12-3, P12-4a/c/d/e/i/j/m, P12-5 and P12-7 (refreshed tile keeps its old image; tooltip clamp).
 3. Mutation checks on hit-testing, the drag dispatcher, LOD selection and image retention.
 4. Measurement: world pair at most 30 aligned code lines; remaining runs ruled.
 5. Live acceptance in both families: World and Dungeon modes, wheel and Fit, first-load fit with GBA request count and settle time recorded (P12-4e), Ctrl-click and marquee and group move in both, placement commit and reload count, warp markers and their forced-error alert, lens, spotlight, context menu, in-context editing at 1024 px wide (toolbar not cramped), border overlap re-check at mid zoom, tooltip at the left edge.
@@ -124,8 +134,17 @@ Capability flags already in `shell/adapter.ts` (Collision tool, Elevation overla
 
 - The adapter field list and generic shape, as long as the surfaces hold no family branch.
 - Whether a family adapter lives in the wrapper file or its own module (`gba/mapSurface.ts`, `gbc/mapSurface.ts`).
-- When to delete `shared/useCanvasView.ts` and `components/mapView.ts` re-exports (latest: end of 12b).
+- When to delete `shared/useCanvasView.ts` and `components/mapView.ts` re-exports (latest: end of 12b), but only after a source-and-test import inventory shows no consumer (SR-M4). Known consumers beyond the canvases: `world/contextView.ts`, `shared/useWorldContext.ts`, `shared/CanvasZoomBar.tsx`, and tests such as `MapCanvas.test.tsx`. Exported helpers and types keep their contracts.
 
 ## Review record
 
-(Filled by the spec review.)
+**Spec review 1 (2026-10-24, Codex `gpt-6-astra`, Opus tier): Needs rework, 0 Critical / 8 Important / 4 Minor.** Report: `task-reports/pokemap-plan-12-canvas-core/spec-review.md`. Every finding was checked against the code and accepted:
+- SR-I1 paint-version policies differ and are both pinned → new ruling P12-8 (adapter `skipFirstBlocksChange`; both oracles kept).
+- SR-I2 pointer capture needed a termination contract → P12-4a contract.
+- SR-I3 GBC hover resolves by 16 px step → `hoverAt(sourcePoint)`, readouts listed, P12-4l notification policy.
+- SR-I4 GBC time drives encounter presentation → engine-facts row, adapter input, acceptance test.
+- SR-I5 world manual Fit and jump differ beyond first load → P12-4m.
+- SR-I6 "clamped" was wrong (today's lookup returns `null` outside) → raw / bounded lookups, no clamp.
+- SR-I7 raster invalidation and cached-image readiness → semantic `deps`, readiness rules.
+- SR-I8 rounding differs (stepped rounds, continuous keeps fractions) → rounding contract.
+- SR-M1 GBA world data is inline, not `useWorld` → table fixed. SR-M2 exception list → P12-4a/k/l added. SR-M3 measurement of split files → concatenation procedure plus side-by-side read. SR-M4 re-export deletion → import inventory first.
