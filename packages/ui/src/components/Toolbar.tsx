@@ -8,6 +8,9 @@ export type ToolKind = "pencil" | "rect" | "bucket" | "dropper" | "shift" | "col
 const TOOLS: ToolKind[] = ["pencil", "rect", "bucket", "dropper", "shift", "collision", "sign"];
 
 export const TOOL_LABEL: Record<ToolKind, string> = { pencil: "Pencil", rect: "Rect", bucket: "Bucket", dropper: "Dropper", shift: "Shift", collision: "Collision", sign: "Sign" };
+/** Accessible names that differ from the visible label (P11-4): the Collision tool is "Collision tool", so it never
+ *  shares a name with the canvas's "Show collision overlay" toggle. Visible label and title stay `TOOL_LABEL`. */
+const TOOL_ACCESSIBLE_NAME: Partial<Record<ToolKind, string>> = { collision: "Collision tool" };
 /** Plan 9 (R1): the shortcut letter shown in each tool's tooltip; Toolbar's keydown listener reads the same table. */
 export const TOOL_KEY: Record<ToolKind, string> = { pencil: "P", rect: "R", bucket: "B", dropper: "I", shift: "S", collision: "C", sign: "G" };
 
@@ -95,6 +98,7 @@ export function Toolbar({ activeToolKind, onSelectTool, isDirty, onUndo, onRedo,
               key={kind}
               type="button"
               aria-pressed={activeToolKind === kind}
+              aria-label={TOOL_ACCESSIBLE_NAME[kind]}
               disabled={!available}
               title={available ? `${TOOL_LABEL[kind]} (${TOOL_KEY[kind]})` : unavailableTitle}
               className="map-canvas__btn toolbar__tool-btn"

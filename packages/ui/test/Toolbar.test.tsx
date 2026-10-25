@@ -33,7 +33,7 @@ describe("Toolbar", () => {
     render(<Toolbar {...baseProps} />);
     expect(screen.getByRole("button", { name: "Pencil" }).getAttribute("aria-pressed")).toBe("true");
     expect(screen.getByRole("button", { name: "Rect" }).getAttribute("aria-pressed")).toBe("false");
-    for (const name of ["Pencil", "Rect", "Bucket", "Dropper", "Shift", "Collision", "Sign"]) {
+    for (const name of ["Pencil", "Rect", "Bucket", "Dropper", "Shift", "Collision tool", "Sign"]) {
       expect(screen.getByRole("button", { name })).toBeTruthy();
     }
   });
@@ -118,7 +118,7 @@ describe("Toolbar", () => {
       for (const name of ["Pencil", "Rect", "Bucket", "Dropper", "Shift", "Sign"]) {
         expect((screen.getByRole("button", { name }) as HTMLButtonElement).disabled).toBe(true);
       }
-      expect((screen.getByRole("button", { name: "Collision" }) as HTMLButtonElement).disabled).toBe(false);
+      expect((screen.getByRole("button", { name: "Collision tool" }) as HTMLButtonElement).disabled).toBe(false);
     });
 
     it("clicking a disabled (unavailable) tool never calls onSelectTool", () => {
@@ -131,7 +131,7 @@ describe("Toolbar", () => {
     it("clicking an available tool still calls onSelectTool", () => {
       onSelectTool.mockClear();
       render(<Toolbar {...baseProps} activeToolKind={null} availableTools={["collision"]} onSelectTool={onSelectTool} />);
-      fireEvent.click(screen.getByRole("button", { name: "Collision" }));
+      fireEvent.click(screen.getByRole("button", { name: "Collision tool" }));
       expect(onSelectTool).toHaveBeenCalledWith("collision");
     });
   });
@@ -141,7 +141,8 @@ describe("Toolbar", () => {
       render(<Toolbar {...baseProps} availableTools={ALL_TOOLS} />);
       const expected = [["Pencil", "P"], ["Rect", "R"], ["Bucket", "B"], ["Dropper", "I"], ["Shift", "S"], ["Collision", "C"], ["Sign", "G"]];
       for (const [label, key] of expected) {
-        const btn = screen.getByRole("button", { name: label });
+        // P11-4: the Collision tool's accessible name is "Collision tool"; its visible label and title stay "Collision".
+        const btn = screen.getByRole("button", { name: label === "Collision" ? "Collision tool" : label });
         expect(btn.getAttribute("title")).toBe(`${label} (${key})`);
         expect(btn.textContent).toBe(label);
         const svg = btn.querySelector("svg")!;

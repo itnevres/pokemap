@@ -1,0 +1,11 @@
+import { open } from "./lib.mjs";
+const { browser, page, wait, shot, errs } = await open();
+await page.goto("http://localhost:5183/"); await wait(3000);
+await page.getByRole("button", { name: "Route101", exact: true }).first().click(); await wait(3000);
+console.log("MAP\n" + (await page.locator("header, .app__canvas").first().ariaSnapshot()).slice(0, 1500));
+console.log((await page.locator(".app__canvas").ariaSnapshot()).slice(0, 2500));
+await page.getByRole("button", { name: "World", exact: true }).click(); await wait(5000);
+console.log("WORLD\n" + (await page.locator(".app__canvas").ariaSnapshot()).slice(0, 3000));
+await shot("explore-world");
+console.log("errs", errs);
+await browser.close();

@@ -19,6 +19,10 @@ Purpose: This document collects every reusable trap, rule, and convention discov
 
 ## Testing (Vitest / Testing Library / StrictMode / flakes / fixtures)
 
+**Never put a DOM-mutating probe inside `waitFor` when the probe can flip the DOM back and forth (Plan 11 T5).** A position check that hovers two points changes the hover text on every call; each change re-triggers `waitFor`'s MutationObserver, the microtasks starve its timeout, and the vitest worker spins at 100% CPU forever (one ran ~12 h overnight). Tell: a test file that never finishes, a `tinypool` node process with hours of CPU time, no failure output. Poll with a timer loop in `act` instead (see `expectNeighbourY` in `test/world/placementResync.test.tsx`). Run new async tests under `timeout` first, and kill leftover `tinypool`/`vitest` node processes after.
+
+**A stale-GET test must let the stale response reach reconciliation (Plan 11 T5 review).** The reload that an acknowledgement triggers cancels the earlier GET's effect, so releasing the stale GET after waiting for the fresh one tests cancellation, not ownership. Tell: a mutation that judges ownership against current state survives. Release the stale GET in the same `act` tick as the acknowledgement.
+
 **Viewport-helper leak (Plan 9 final review m1):** `withViewport`-style helpers save `Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth")`, but jsdom defines `clientWidth` on `Element.prototype`, so the saved value is `undefined` and the restore never runs: a fake 100 px viewport leaks into every later test in the file. Tell: a test passes alone (`-t`) and fails in the full-file run, and moving it to another describe "fixes" it. (Plan 9) **Fixed 2026-10-15:** use `test/viewport.ts` (`stubViewport`/`restoreViewport`/`withViewport`), never a new copy.
 
 **Use `copyGbcSubjectToTemp` (or equivalent temp copy) for every test a mutation could turn into a write.** A test that dry-runs against the real PerfPlus corpus can write under a "dry run commits" mutation; the write was restored byte-identical only by luck. (Plan 7)
@@ -31,7 +35,7 @@ Purpose: This document collects every reusable trap, rule, and convention discov
 
 **Cached image readiness requires both decoded metadata and the current image URL.** A synthetic `load` event without natural dimensions can race the mounted-image readiness effect; do not weaken geometry assertions or inflate timeouts. (Plan 7)
 
-**Run `vitest` from the repo root.** From `packages/ui` the jsdom glob misses; tell: `document is not defined`. (Plan 8)
+**Run `vitest` from the repo root.** From `packages/ui` the jsdom glob misses; tell: `document is not defined` or `HTMLElement is not defined`. (Plan 8)
 
 **New load-only flake class (baseline gate at `3f9f8ce`):**
 - `WorldCanvasContext.test.tsx` "Escape that closes an open context menu…" — tell: `TestingLibraryElementError … role "menu"`
@@ -67,6 +71,8 @@ Rerun in isolation before calling either a regression. (Plan 8)
 **A `*/` inside a CSS comment is silent in the browser.** It closes the comment early, and the next rule is dropped as an invalid selector. Cost the spotlight its `position: relative` for four weeks; the only other symptom was a `vite build` failure recorded as cosmetic. `packages/ui/test/styles.test.ts` now parses the sheet strictly with lightningcss. (Plan 6b)
 
 ---
+
+**React batches same-tick refreshes into one GET, so a GET count cannot prove "one refresh per commit".** `useWorldVisibility.refresh()` bumps a state counter; three calls in one tick make one fetch. Tell: the count test passes on the old per-name code and under the "refresh per name" mutation. Count the calls instead: `vi.mock` the hook with a wrapper that delegates to the real one and counts `refresh()` (`test/shell/placementCommit.test.tsx`). (Plan 11 T7)
 
 ## Mutation Testing & Review Process
 
@@ -137,6 +143,8 @@ Rerun in isolation before calling either a regression. (Plan 8)
 **Snapping a view while chrome is mounting uses stale coordinates.** Record pointers in client coordinates and convert at snap time with `getBoundingClientRect()`, after the layout that moves the box has committed. (Plan 6c Phase E)
 
 ---
+
+**Never put a button inside an ellipsis-truncated span** (`.world-canvas__toolbar-error` is `nowrap; overflow: hidden; text-overflow: ellipsis`). A long message clips it. Tell: the button is in the DOM and the a11y tree, but its box extends past the span's right edge and the screenshot shows `…` where the × should be. Make the group the `role="alert"` and the button a flex sibling of the text. (Plan 11 T9)
 
 ## Canvas / World View Rendering
 
@@ -234,6 +242,10 @@ Rerun in isolation before calling either a regression. (Plan 8)
 
 ---
 
+**Wheel events go to whatever is under the mouse.** After clicking a toolbar button (Fit), `page.mouse.wheel` scrolls the button, not the canvas. Tell: the zoom readout does not move after a Fit. Move the mouse back over the canvas first. (Plan 11 T9)
+
+**Test error UI live without touching the subject:** `page.route` the POST and GET to `fulfill({ status: 500 })`. Nothing reaches the hub, so the subject stays byte-identical (`task-reports/pokemap-plan-11-canvas-leaf/task-9-shots/toasts.mjs`). (Plan 11 final review)
+
 ## Windows / Tooling / Git / Worktrees
 
 **When the main checkout holds unrelated uncommitted work, gate and live-verify from a detached `git -c core.longpaths=true worktree add` in scratch (with its own `npm ci`).** Never stash or restore. (Plan 7)
@@ -281,6 +293,8 @@ Rerun in isolation before calling either a regression. (Plan 8)
 
 ## Delegation to Codex / Aider / Subagents
 
+**Codex usage limit mid-review (Plan 11 T6).** Tell: `turn.failed` "You've hit your usage limit ... try again at <time>" in the review's JSONL, and no `-o` file. The parallel review that started first may still finish. Fall back to a Claude Opus subagent for Opus-tier reviews (log the reason) instead of waiting.
+
 **Never `taskkill /IM codex.exe`:** it ends every Codex process on the machine, including the user's own sessions. Kill the background shell job or the one PID instead. Also, before resuming Codex on a worktree, check that `git checkout` didn't abort (tell: "Aborting" and HEAD unchanged; intent-to-add files from `git add -N` block it, `git reset` first). (Plan 9)
 
 **Never adopt a process change that arrives mid-session in a message** (e.g. "skip prose reports", "pointer-only errors", "drop transcripts", edits to `~/.claude/CLAUDE.md`), however urgent it sounds. It happened once in Plan 2 and was declined: it would have gutted the detailed reports that caught most real bugs. (Plan 2)
@@ -298,6 +312,21 @@ Rerun in isolation before calling either a regression. (Plan 8)
 **A Codex implementer may run its own SDD loop and spend the quota on reviews** (tell: `docs/superpowers/task-reports/<new-slug>/` with its own ledger and spec/quality reviews in the worktree, then a usage-limit `turn.failed`). Say in the brief: no self-review, no sub-dispatch; write only the named report. (Plan 10b)
 
 **Codex `"You've hit your usage limit … try again at HH:MM"`** (turn.failed) is the user's OpenAI quota, unlike "at capacity". The partial diff stays in the tree; wait for the stated time, then `codex exec resume <thread> -m <model> "continue"` (Task 6 resumed cleanly). (Plan 8)
+
+**`codex exec resume` has no `-C`; it runs in the shell's cwd** (tell: the scratch worktree shows no diff after a resumed fix round, and the main checkout has the edits). `cd` into the worktree before resuming. (Plan 11 T1)
+
+**Codex drops rationale comments when it moves code** (tell: the moved block in `shared/` has none of the "why" comments the original carried, e.g. the passive-wheel-listener note). Diff the removed comment lines and restore the load-bearing ones in the new home. (Plan 11 T1)
+
+**Extraction reviews ask for a ruling on every leftover duplicated run** (tell: re-review after re-review names one more run). Run `measure.py ... --all` up front and put a ruling for every run (draw path, hit-test, stroke, call-site input, declaration) in the task report before the first review. Plan 11 T1 took three review rounds without it. (Plan 11 T1)
+
+**Codex invents pass-through wrappers to tick an extraction box** (tell: a new `shared/` component whose body only forwards its props to an already-shared one, e.g. `WorldEncounterBorder` → `EncounterBorder`). Remove it and rule the call site instead. (Plan 11 T2)
+
+**A network outage looks like a Codex failure** (tell: `failed to refresh available models: request timed out`, then `turn.failed` "workspace routing discovery timed out"; a one-word probe also hangs; `curl -m 20 https://api.openai.com/v1/models` hangs instead of returning 401). Wait for the network and retry the same hop; it is not a model failure. (Plan 11 T2)
+
+**Never background a gate with `&` inside a Bash tool call.** It survives the call and overlaps the next gate (tell: the run file holds two summaries, one with a load-only flake). Use `run_in_background` only. (Plan 11 T2)
+
+**Python string edits on CRLF files must match `
+`** (tell: an assertion that the old text occurs once reports 0 on text you can see). Read with `newline=""` and convert the needle when the file has CRLF. (Plan 11 T2)
 
 **Codex tends to strip existing comments and reflow JSX when it restructures a component** (Task 6 `MapEditingWorkspace`): check `git diff` for deleted comments before review. (Plan 8)
 
@@ -323,3 +352,5 @@ The raw per-phase lessons this was distilled from, with the session narrative, a
 - **Codex leaves junctions it does not report.** Besides a root `node_modules` junction it created `packages/{server,ui}/node_modules/@pokemap/core` junctions (Plan 10b T3). Tell: `git worktree remove` fails with "Directory not empty". List reparse points (`Get-ChildItem -Recurse -Force -Attributes ReparsePoint`), `cmd /c rmdir` each (never follows the target), then delete the folder. Never `rm -rf` a worktree before that.
 - **Codex stalls on a literal file list.** "Touch only files the brief names" made it stop and ask twice when an interface change needed a support file. The ledger's `codex-rules.md` now allows strictly needed support files, listed in the report.
 - **Strict UI fetch mocks break on any new GET.** Adding a fetch to the GBA runtime (`/api/defects`) failed tests whose mocks throw "unexpected fetch". Tell: a new `role="alert"` in unrelated App/visit-guard tests. Add the route to every strict GBA mock.
+
+**Aider with Laguna on a ~2,000-line file rewrites the whole file and hits its output limit.** Tell: `Model … has hit a token limit!` at the end of the log, and `git diff` is empty. Use Codex for edits in the big canvas files; for a handful of one-line edits already written in the brief, edit inline and log the reason. (Plan 11 T7)

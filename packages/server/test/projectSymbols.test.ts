@@ -1,7 +1,7 @@
 import { afterEach, expect, it } from "vitest";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import { createSymbolIndexCache } from "../src/projectSymbols.js";
 
 const roots: string[] = [];
@@ -17,8 +17,10 @@ it.each(["gba", "gbc"] as const)("%s preserves structural defects on index failu
   const run = () => cache.check((symbols) => ({ defects: [defect], incomplete: [{ file: "other.map", reason: "C5 unavailable" }], indexed: !!symbols?.labels.has("Script") }));
   expect(run()).toEqual({ defects: [defect], incomplete: [
     { file: "other.map", reason: "C5 unavailable" },
-    { file: root, reason: expect.stringContaining("C7-C9") },
+    { file: ".", reason: expect.stringContaining("C7-C9") },
   ], indexed: false });
+  // F13: the build error names the missing root; the banner gets the project-relative form only.
+  expect(run().incomplete[1]!.reason).toBe("C7-C9 symbol checks unavailable: ENOENT: no such file or directory, scandir '.'");
   mkdirSync(join(root, "data"), { recursive: true });
   writeFileSync(join(root, "data", family === "gba" ? "scripts.s" : "scripts.asm"), "Script:\n");
   now = 4_999;
@@ -38,4 +40,15 @@ it("invalidate drops a cached failure so the next check rebuilds at once", () =>
   writeFileSync(join(root, "data", "scripts.asm"), "Script:\n");
   cache.invalidate();
   expect(run().indexed).toBe(true);
+});
+
+it("F13 strips a root given with forward slashes or a trailing separator", () => {
+  const parent = mkdtempSync(join(tmpdir(), "pokemap-symbol-retry-"));
+  roots.push(parent);
+  const root = join(parent, "project");
+  for (const given of [`${root.replaceAll("\\", "/")}/`, `${root}${sep}`]) {
+    const { incomplete } = createSymbolIndexCache(given, "gba", () => 0).check(() => ({ defects: [], incomplete: [] }));
+    // join keeps a trailing separator, so the path reads ".\" or "./": relative either way.
+    expect(incomplete).toEqual([{ file: ".", reason: expect.stringMatching(/^C7-C9 symbol checks unavailable: ENOENT: no such file or directory, scandir '\.[\\/]?'$/) }]);
+  }
 });

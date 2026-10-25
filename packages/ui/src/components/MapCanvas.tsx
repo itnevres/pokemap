@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { drawGrid, drawCollision, drawElevation, drawEvents, type EventMark } from "@pokemap/core/src/render/overlays.js";
 import type { LayoutRaster } from "@pokemap/core/src/render/layout.js";
 import type { MapData } from "@pokemap/core/src/load/maps.js";
@@ -6,16 +6,18 @@ import type { EventKind } from "@pokemap/core/src/edit/events.js";
 import type { MapLayoutData } from "../hooks/useMapLayout.js";
 import type { PaintApplyBody, UseEditSessionResult } from "../hooks/useEditSession.js";
 import { useStrokeChain } from "../shared/useStrokeChain.js";
-import { useFitShortcut } from "../shared/useFitShortcut.js";
-import { useContextMapFit } from "../shared/useWorldContext.js";
+import { useCanvasAutoFit, useCanvasFit, useCanvasView, useCanvasZoom } from "../shared/useCanvasView.js";
+import { CanvasZoomBar } from "../shared/CanvasZoomBar.js";
+import { OverlayToggleGroup } from "../shared/OverlayToggleGroup.js";
+import { EncountersLegendItem, EventsLegendItems, LegendBar } from "../shared/LegendBar.js";
+import { MapCanvasViewport } from "../shared/MapCanvasViewport.js";
 import type { SettledChain } from "../shared/useStrokeChain.js";
 import { readBlock, type Stamp } from "@pokemap/core/src/edit/paint.js";
 import type { CollisionElevation } from "./CollisionPalette.js";
 import { EncounterBorder, type EncounterBorderEntry } from "./EncounterBorder.js";
 import { BORDER_BAND, borderSideFromConnections, gbaDirToCompass, type CompassDir } from "../encounters/borderSide.js";
-import { fitWithBand } from "../encounters/fit.js";
 import { useMapEncounterSummaries } from "../encounters/useMapEncounterSummaries.js";
-import { ZOOM_LEVELS, zoomAboutPivot, type MapView, type Zoom } from "./mapView.js";
+import { ZOOM_LEVELS, type MapView } from "./mapView.js";
 
 /** A bare {kind,index} pointer at one event, the unit MapCanvas's own
  *  selection/drag interaction deals in -- resolving it into a full event
@@ -346,26 +348,8 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSignPick, 
   const encountersOn = encountersFor === mapName;
   // ONE view value, so no setter is ever called inside another setter's updater (StrictMode double-invokes
   // updaters; the old nested setPan applied the zoom pivot twice -- Plan 6c E1, follow-up D1).
-  const [ownView, setOwnView] = useState<MapView>({ zoom: 1, pan: { x: 0, y: 0 } });
-  const controlled = controlledView !== undefined;
-  const view = controlledView ?? ownView;
+  const { controlled, view, updateView } = useCanvasView(controlledView, onViewChange);
   const { zoom, pan } = view;
-  // The single write path. Controlled: compute `next` from the latest props.view OUTSIDE any React updater and
-  // report it (a no-op result, e.g. zoomAboutPivot at the same zoom, is not reported). Uncontrolled: set state.
-  const viewRef = useRef(view);
-  viewRef.current = view;
-  // `onViewChange` goes through a ref so an inline callback never changes `updateView`'s identity (which would
-  // re-create `fit` and re-bind the wheel listener on every parent render).
-  const onViewChangeRef = useRef(onViewChange);
-  onViewChangeRef.current = onViewChange;
-  const updateView = useCallback(
-    (next: MapView | ((v: MapView) => MapView)) => {
-      if (!controlled) return setOwnView(next);
-      const n = typeof next === "function" ? next(viewRef.current) : next;
-      if (n !== viewRef.current) onViewChangeRef.current?.(n);
-    },
-    [controlled],
-  );
   const [hover, setHover] = useState<Hover | null>(null);
   // Driven by `hover` itself, so every path that sets or clears it (hoverAt, leave, a map switch) reports.
   const hoveredMetatileId = hover ? hover.metatileId : null;
@@ -442,42 +426,15 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSignPick, 
     setImgLoaded(false);
   }, [imageUrl]);
 
-  const fit = useCallback(() => {
-    // Before the viewport is measured, use the composite's native dimensions.
-    const vw = viewport.w || pixelWidth;
-    const vh = viewport.h || pixelHeight;
-    // Encounters on: the content is the image plus one band on the border's side, so the sprites fit too.
-    const { zoom: z, pan: p } = fitWithBand({
-      pw: pixelWidth,
-      ph: pixelHeight,
-      vw,
-      vh,
-      levels: ZOOM_LEVELS,
-      // Chromeless in-context maps cannot show encounters, so their band is 0.
-      bandNative: encountersOn ? BORDER_BAND.gba * METATILE_PX : 0,
-      side,
-    });
-    updateView({ zoom: z, pan: p });
-  }, [pixelWidth, pixelHeight, viewport, encountersOn, side, updateView]);
-  useFitShortcut(fit, !chromeless);
-  useContextMapFit(fit, chromeless);
+  // Chromeless in-context maps cannot show encounters, so their band is 0.
+  const fit = useCanvasFit({ viewport, pixelWidth, pixelHeight, zoomLevels: ZOOM_LEVELS, bandNative: encountersOn ? BORDER_BAND.gba * METATILE_PX : 0, side, updateView, chromeless });
 
   // Only the FIRST successful image load for a given mapName triggers fit()
   // -- a same-map reload triggered by a paint (imgLoaded cycling false->true
   // via the imageUrl-keyed effect above) must NOT also snap the player's
   // pan/zoom back to "fit," or every single paint would destroy whatever
   // view they'd zoomed/panned to mid-edit.
-  const fittedForMapRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (imgLoaded && fittedForMapRef.current !== mapName) {
-      if (!controlled) fit(); // controlled: the parent owns placement, no auto-fit
-      fittedForMapRef.current = mapName;
-    }
-    // Only re-fit once per real map open, not on every render -- the user's
-    // own zoom/pan must survive an overlay toggle OR a paint-triggered
-    // reload.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [imgLoaded, mapName]);
+  useCanvasAutoFit(imgLoaded, mapName, controlled, fit);
 
   const onImgLoad = () => setImgLoaded(true);
 
@@ -593,40 +550,7 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSignPick, 
 
   const toggle = (key: keyof Toggles) => setToggles((t) => ({ ...t, [key]: !t[key] }));
 
-  const applyZoom = (next: Zoom, pivotX: number, pivotY: number) => updateView((v) => zoomAboutPivot(v, next, pivotX, pivotY));
-
-  const centerPivot = (): [number, number] => {
-    const c = canvasRef.current;
-    return c ? [c.width / 2, c.height / 2] : [0, 0];
-  };
-
-  // A NATIVE listener with { passive: false }, not React's onWheel prop.
-  // React attaches wheel listeners as passive by default (for scroll
-  // performance), which makes e.preventDefault() inside a React onWheel
-  // handler a silent no-op -- confirmed against the real running app, not
-  // hypothetical: it logs "Unable to preventDefault inside passive event
-  // listener invocation" and, more importantly, the PAGE scrolls underneath
-  // the canvas at the same time the canvas is trying to zoom. Same defect,
-  // same fix, as WorldCanvas.tsx's own wheel handler (Task 25) -- this file
-  // predates that fix and carried the identical bug. No jsdom-based test
-  // catches this (jsdom does not enforce passive listener semantics the way
-  // a real browser does), which is exactly why this project's own
-  // test-design rules call for actually running the UI.
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const handler = (e: WheelEvent) => {
-      e.preventDefault();
-      const rect = canvas.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-      const idx = ZOOM_LEVELS.indexOf(zoom);
-      const nextIdx = e.deltaY < 0 ? Math.min(ZOOM_LEVELS.length - 1, idx + 1) : Math.max(0, idx - 1);
-      applyZoom(ZOOM_LEVELS[nextIdx]!, x, y);
-    };
-    canvas.addEventListener("wheel", handler, { passive: false });
-    return () => canvas.removeEventListener("wheel", handler);
-  }, [zoom, updateView]);
+  const { applyZoom, centerPivot } = useCanvasZoom(canvasRef, zoom, updateView, ZOOM_LEVELS);
 
   const hoverAt = (clientX: number, clientY: number) => {
     const canvas = canvasRef.current;
@@ -877,43 +801,18 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSignPick, 
   return (
     <section className={`map-canvas${chromeless ? " map-canvas--chromeless" : ""}`} aria-label={`${mapName} canvas`}>
       {!chromeless && <div className="map-canvas__toolbar">
-        <div className="map-canvas__zoom" role="group" aria-label="Zoom">
-          {ZOOM_LEVELS.map((z) => (
-            <button
-              key={z}
-              type="button"
-              className="map-canvas__btn"
-              aria-pressed={zoom === z}
-              onClick={() => applyZoom(z, ...centerPivot())}
-            >
-              {z}×
-            </button>
-          ))}
-          <button type="button" className="map-canvas__btn" onClick={fit} title="Fit to screen (F)">
-            Fit
-          </button>
-        </div>
-        <div className="map-canvas__toggles" role="group" aria-label="Overlays">
-          <button type="button" className="map-canvas__btn" aria-pressed={toggles.grid} onClick={() => toggle("grid")}>
-            Grid
-          </button>
-          <button type="button" className="map-canvas__btn" aria-pressed={toggles.collision} onClick={() => toggle("collision")}>
-            Collision
-          </button>
-          <button type="button" className="map-canvas__btn" aria-pressed={toggles.elevation} onClick={() => toggle("elevation")}>
-            Elevation
-          </button>
-          <button type="button" className="map-canvas__btn" aria-pressed={toggles.events} onClick={() => toggle("events")}>
-            Events
-          </button>
-          <button type="button" className="map-canvas__btn" aria-pressed={encountersOn} onClick={() => setEncountersFor(encountersOn ? null : mapName)}>
-            Encounters
-          </button>
-        </div>
+        <CanvasZoomBar zoom={zoom} zoomLevels={ZOOM_LEVELS} applyZoom={applyZoom} centerPivot={centerPivot} fit={fit} />
+        <OverlayToggleGroup toggles={[
+          { key: "grid", label: "Grid", pressed: toggles.grid, onClick: () => toggle("grid") },
+          { key: "collision", label: "Collision", pressed: toggles.collision, onClick: () => toggle("collision") },
+          { key: "elevation", label: "Elevation", pressed: toggles.elevation, onClick: () => toggle("elevation") },
+          { key: "events", label: "Events", pressed: toggles.events, onClick: () => toggle("events") },
+          { key: "encounters", label: "Encounters", pressed: encountersOn, onClick: () => setEncountersFor(encountersOn ? null : mapName) },
+        ]} />
       </div>}
 
       {!chromeless && (anyOverlay || encountersOn) && (
-        <div className="map-canvas__legend">
+        <LegendBar>
           {toggles.grid && (
             <span className="map-canvas__legend-item">
               <i className="map-canvas__swatch map-canvas__swatch--grid" /> Grid
@@ -929,47 +828,14 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSignPick, 
               <i className="map-canvas__swatch map-canvas__swatch--elevation" /> Elevation (low → high)
             </span>
           )}
-          {toggles.events && (
-            <>
-              <span className="map-canvas__legend-item">
-                <i className="map-canvas__swatch map-canvas__swatch--event-object" /> Object
-              </span>
-              <span className="map-canvas__legend-item">
-                <i className="map-canvas__swatch map-canvas__swatch--event-warp" /> Warp
-              </span>
-              <span className="map-canvas__legend-item">
-                <i className="map-canvas__swatch map-canvas__swatch--event-coord" /> Coord
-              </span>
-              <span className="map-canvas__legend-item">
-                <i className="map-canvas__swatch map-canvas__swatch--event-bg" /> Bg
-              </span>
-            </>
-          )}
-          {encountersOn &&
-            (encounterError ? (
-              <span className="map-canvas__legend-item" role="alert">
-                {encounterError}
-              </span>
-            ) : (
-              <span className="map-canvas__legend-item">
-                {encounterSummaries?.length === 0 ? "Encounters: none on this map" : "Encounters: hover or focus a sprite"}
-              </span>
-            ))}
-        </div>
+          {toggles.events && <EventsLegendItems />}
+          {encountersOn && <EncountersLegendItem error={encounterError} empty={encounterSummaries?.length === 0} hint="Encounters: hover or focus a sprite" />}
+        </LegendBar>
       )}
 
-      <div className="map-canvas__viewport" ref={containerRef}>
-        <img ref={imgRef} src={imageUrl} onLoad={onImgLoad} alt="" className="map-canvas__source-image" />
-        <canvas
-          ref={canvasRef}
-          className="map-canvas__stage"
-          width={viewport.w || pixelWidth}
-          height={viewport.h || pixelHeight}
-          onMouseDown={onMouseDown}
-          onMouseMove={onMouseMove}
-          onMouseUp={onMouseUp}
-          onMouseLeave={onMouseLeave}
-        />
+      <MapCanvasViewport containerRef={containerRef} imgRef={imgRef} canvasRef={canvasRef} imageUrl={imageUrl} onImgLoad={onImgLoad}
+        width={viewport.w || pixelWidth} height={viewport.h || pixelHeight}
+        onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseLeave}>
         <EncounterBorder
           enabled={encountersOn}
           entries={borderEntries}
@@ -977,7 +843,7 @@ export function MapCanvas({ mapName, data, editSession, activeTool, onSignPick, 
           lodZoom={0}
           band={BORDER_BAND.gba}
         />
-      </div>
+      </MapCanvasViewport>
 
       {!chromeless && <div className="map-canvas__status">
         <span className="map-canvas__status-item">

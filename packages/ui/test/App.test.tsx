@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor, act, within } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { FamilyApp } from "../src/shell/FamilyApp.js";
 import { gbaAdapter } from "../src/gba/adapter.js";
 import { restoreViewport, stubViewport, withViewport } from "./viewport.js";
@@ -385,8 +385,8 @@ async function renderAppInEditModeWithDirtySession() {
   await waitFor(() => expect(screen.getByRole("button", { name: "PalletTown" })).toBeTruthy());
   fireEvent.click(screen.getByRole("button", { name: "PalletTown" }));
 
-  await within(await screen.findByRole("group", { name: "Tools" })).findByRole("button", { name: "Collision" });
-  fireEvent.click(within(screen.getByRole("group", { name: "Tools" })).getByRole("button", { name: "Collision" }));
+  await screen.findByRole("button", { name: "Collision tool" });
+  fireEvent.click(screen.getByRole("button", { name: "Collision tool" }));
 
   const canvas = document.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
   await act(async () => {
@@ -447,7 +447,7 @@ describe("App -- Task 13 save flow", () => {
     render(<FamilyApp adapter={gbaAdapter} />);
     await waitFor(() => expect(screen.getByText("PalletTown")).toBeTruthy());
     fireEvent.click(screen.getByText("PalletTown"));
-    await within(await screen.findByRole("group", { name: "Tools" })).findByRole("button", { name: "Collision" }); // MapCanvas is mounted, nothing painted
+    await screen.findByRole("button", { name: "Collision tool" }); // MapCanvas is mounted, nothing painted
 
     expect(addSpy).not.toHaveBeenCalledWith("beforeunload", expect.any(Function));
 
@@ -956,8 +956,8 @@ describe("App -- discard flow", () => {
     await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
 
     // Dirty the session via a real paint so Discard Changes is enabled.
-    await within(await screen.findByRole("group", { name: "Tools" })).findByRole("button", { name: "Collision" });
-    fireEvent.click(within(screen.getByRole("group", { name: "Tools" })).getByRole("button", { name: "Collision" }));
+    await screen.findByRole("button", { name: "Collision tool" });
+    fireEvent.click(screen.getByRole("button", { name: "Collision tool" }));
     const canvas = document.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
     await act(async () => {
       fireEvent.mouseDown(canvas, { clientX: 20, clientY: 20, button: 0 });

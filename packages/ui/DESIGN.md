@@ -506,6 +506,28 @@ what really differs. Change a row's module, not its two consumers.
 | `shell/FamilyApp.tsx` + `shell/adapter.ts` | the one app shell; `EngineAdapter`, `Capabilities`, `FamilyRuntime`, `ShellSlots`; `toolsFor` | `gba/adapter.tsx` (`useGbaRuntime`) | `gbc/adapter.tsx` (`useGbcRuntime`) |
 | `shell/useDungeonFilter.ts` | the open dungeon's map filter (cached when `dungeonFilterCache`) | `FamilyApp` | `FamilyApp` |
 
+Plan 11:
+
+| Module | What it owns | GBA consumer | GBC consumer |
+|---|---|---|---|
+| `shared/useCanvasView.ts` | controlled view state, zoom wheel plumbing, once-per-map auto-fit and the fit callback (F shortcut, context fit) | `MapCanvas` | `GbcMapCanvas` |
+| `shared/CanvasZoomBar.tsx` | the map Zoom group | `MapCanvas` | `GbcMapCanvas` |
+| `shared/OverlayToggleGroup.tsx` | the map Overlays group | `MapCanvas` | `GbcMapCanvas` |
+| `shared/LegendBar.tsx` | the map legend frame, Events items and Encounters item | `MapCanvas` | `GbcMapCanvas` |
+| `shared/MapCanvasViewport.tsx` | the viewport mount: source image and stage canvas (family passes its handlers and EncounterBorder) | `MapCanvas` | `GbcMapCanvas` |
+| `shared/LensOverlay.tsx` | per-map coverage lens entries and overlay markup | `WorldCanvas` | `GbcWorldCanvas` |
+| `shared/useTileVersionRefetch.ts` | per-map rendered-tile cache invalidation by version | `WorldCanvas` | `GbcWorldCanvas` |
+| `shared/worldTiles.ts` | pure low-detail rendered-tile image builder | `WorldCanvas` | `GbcWorldCanvas` |
+| `shared/worldBadges.ts` | conflict badge size and centre geometry | `WorldCanvas` | `GbcWorldCanvas` |
+| `shared/useViewportMeasure.ts` | viewport resize measurement | `WorldCanvas` | `GbcWorldCanvas` |
+| `shared/WorldLensControls.tsx` | encounter-fetch alert, lens picker or its coverage error, lens legend | `WorldCanvas` | `GbcWorldCanvas` |
+| `shared/WorldConflictOverlays.tsx` | Conflict/Accepted legend items, conflict-badge tooltip, acceptance-error toast | `WorldCanvas` | `GbcWorldCanvas` |
+| `world/useConflictAcceptance.ts` `useConflictAcceptanceMenu` | acceptance state plus the context menu and "Edit here" snap point | `WorldCanvas` | `GbcWorldCanvas` |
+| `world/DungeonAutoLayoutSwitch.tsx` `WorldToolbarSwitch` | the world toolbar switches (Dungeon auto-layout, Warps, Connection lines) | `WorldCanvas` | `GbcWorldCanvas` |
+| `components/WorldCanvas.tsx` `centredFit`, `singletonSizes`, `themedLevelColorMap` | fit centring, singleton map sizes, themed level-curve colours | `WorldCanvas` | `GbcWorldCanvas` |
+| `shared/SpotlightOverlay.tsx` | species spotlight overlay markup | `WorldCanvas` | `GbcWorldCanvas` |
+| `shared/placementLedger.ts` | per-map placement versions and GET-snapshot reconciliation (F1-F5) | `WorldCanvas` | `GbcWorldCanvas` |
+
 Still per family, on purpose (Plan 8 Task 7 stop rule): the app shell is now one (`FamilyApp`), so per family means
 *behind the runtime or a capability* (switch policy in `runtime.leave`, `switchError`, time of day, defects banner, sign
 composer, `useMapEditing` vs `GbcMapEditing` state lifetimes), with D1-D3/D6/D8 moving them in Plan 10. The canvases'

@@ -292,14 +292,14 @@ describe("MapCanvas", () => {
 
   it("every overlay toggle starts off, and turning one on reveals its legend", async () => {
     await mountReady();
-    for (const name of ["Grid", "Collision", "Elevation", "Events"]) {
+    for (const name of ["Grid", "Show collision overlay", "Elevation", "Events"]) {
       expect(screen.getByRole("button", { name }).getAttribute("aria-pressed")).toBe("false");
     }
     expect(screen.queryByText(/legend/i, { exact: false })).toBeNull();
     expect(screen.queryByText("Collision", { selector: ".map-canvas__legend-item" })).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "Collision" }));
-    expect(screen.getByRole("button", { name: "Collision" }).getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(screen.getByRole("button", { name: "Show collision overlay" }));
+    expect(screen.getByRole("button", { name: "Show collision overlay" }).getAttribute("aria-pressed")).toBe("true");
     expect(screen.getByText("Collision", { selector: ".map-canvas__legend-item" })).toBeTruthy();
     // Only the enabled overlay's legend shows, not the others.
     expect(screen.queryByText("Grid", { selector: ".map-canvas__legend-item" })).toBeNull();
@@ -333,7 +333,7 @@ describe("MapCanvas", () => {
     // fired in isolation with no other state change, so only the
     // `viewport` dependency can be what rescues it.
     const { canvas, stageCtx } = await mountReady();
-    fireEvent.click(screen.getByRole("button", { name: "Collision" }));
+    fireEvent.click(screen.getByRole("button", { name: "Show collision overlay" }));
     await waitFor(() => expect(screen.getByText("Collision", { selector: ".map-canvas__legend-item" })).toBeTruthy());
 
     const drawCallsBeforeResize = stageCtx.drawImage.mock.calls.length;
@@ -710,7 +710,7 @@ describe("MapCanvas", () => {
     // Forced on even though nothing toggled "Collision" -- the manual
     // toggle button itself still reads its own state, unaffected.
     expect(getByTestId("collision-overlay").getAttribute("data-visible")).toBe("true");
-    expect(screen.getByRole("button", { name: "Collision" }).getAttribute("aria-pressed")).toBe("false");
+    expect(screen.getByRole("button", { name: "Show collision overlay" }).getAttribute("aria-pressed")).toBe("false");
   });
 
   it("switching away from the collision tool lets the manual Collision toggle govern the overlay again", () => {

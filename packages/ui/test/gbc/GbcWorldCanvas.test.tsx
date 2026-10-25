@@ -1023,9 +1023,15 @@ describe("GbcWorldCanvas", () => {
       ...WORLD,
       placements: { ...WORLD.placements, Interior: { ...WORLD.placements.Interior!, mapType: "INDOOR", manual: false } },
     };
+    // Plan 11 F3: the server applies the POST, so the reload after its acknowledgement places Interior where it was dropped.
+    let served = hiddenWorld;
     const fetchMock = vi.fn((url: string, init?: RequestInit) => {
-      if (url === "/api/world") return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(hiddenWorld) } as Response);
-      if (url === "/api/world/placement") return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ ok: true }) } as Response);
+      if (url === "/api/world") return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(served) } as Response);
+      if (url === "/api/world/placement") {
+        const { x, y } = JSON.parse(String(init?.body)) as { x: number; y: number };
+        served = { ...hiddenWorld, placements: { ...hiddenWorld.placements, Interior: { ...hiddenWorld.placements.Interior!, x, y, manual: true } } };
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ ok: true }) } as Response);
+      }
       return Promise.reject(new Error(`unexpected fetch ${url}`));
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -1109,6 +1115,32 @@ describe("GbcWorldCanvas", () => {
     await waitFor(() => expect(screen.getByText(/Could not save placement: POST \/api\/world\/placement -> 500/)).toBeTruthy());
     fireEvent.drop(canvas, { clientX: 100, clientY: 100, dataTransfer: { getData: () => "MapA" } });
     await waitFor(() => expect(screen.queryByText(/Could not save placement:/)).toBeNull());
+  });
+
+  // Plan 11 final review M5: another map's success does not clear a failure the user has not seen.
+  it("keeps one map's placement save alert when another map's save succeeds", async () => {
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (url === "/api/world") return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(WORLD) } as Response);
+      if (url === "/api/world/placement") {
+        const { map } = JSON.parse(String(init?.body)) as { map: string };
+        return Promise.resolve(map === "MapA"
+          ? { ok: false, status: 500, json: () => Promise.resolve({}) } as Response
+          : { ok: true, status: 200, json: () => Promise.resolve({ ok: true }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected fetch ${url}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const utils = render(<GbcWorldCanvas time="day" />);
+    const canvas = utils.container.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement;
+    await waitFor(() => expect(screen.getByText(/2 components/)).toBeTruthy());
+    await waitFor(() => expect(screen.queryByText(/zoom 3%/)).toBeNull());
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, right: 200, bottom: 200, width: 200, height: 200, x: 0, y: 0, toJSON() {} });
+    fireEvent.drop(canvas, { clientX: 100, clientY: 100, dataTransfer: { getData: () => "MapA" } });
+    await waitFor(() => expect(screen.getByText(/Could not save placement: POST \/api\/world\/placement -> 500/)).toBeTruthy());
+    fireEvent.drop(canvas, { clientX: 100, clientY: 100, dataTransfer: { getData: () => "MapB" } });
+    await waitFor(() => expect(fetchMock.mock.calls.filter(([url]) => url === "/api/world/placement")).toHaveLength(2));
+    await act(async () => { await new Promise((r) => setTimeout(r, 20)); });
+    expect(screen.getByText(/Could not save placement: POST \/api\/world\/placement -> 500/)).toBeTruthy();
   });
 
   it("surfaces status, network, JSON, and shape failures from guarded placement saves", async () => {

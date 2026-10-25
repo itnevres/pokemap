@@ -106,4 +106,12 @@ describe("styles.css", () => {
     expect(body).toMatch(/max-width\s*:\s*calc\(/);
     expect(ruleBody(".world-context-menu__hint")).toMatch(/color\s*:\s*var\(--text-secondary\)/);
   });
+
+  // Plan 11 final review M2: GBA's conflict, save and reload toasts stack in one group instead of covering each other.
+  it("stacks the world toasts in a column group, each toast in flow", () => {
+    const group = ruleBody(".world-canvas__toasts");
+    expect(group).toMatch(/position\s*:\s*absolute/);
+    expect(group).toMatch(/flex-direction\s*:\s*column/);
+    expect(ruleBody(".world-canvas__toasts > .world-canvas__toast")).toMatch(/position\s*:\s*static/);
+  });
 });
