@@ -1,6 +1,6 @@
 # Plan 12b: WorldSurface — Implementation Plan
 
-**STATUS (2026-10-26): plan written; review 1 (Codex `gpt-6-astra`) Needs rework, 8 Important / 4 Minor, all fixed (spec review record); re-review (Claude Opus fallback; Codex at its usage limit) Approved with fixes, 5 Important / 4 Minor, all fixed; not started.** Waits for the user's go-ahead after the plan review.
+**STATUS (2026-10-26): plan written; review 1 (Codex `gpt-6-astra`) Needs rework, 8 Important / 4 Minor, all fixed (spec review record); re-review (Claude Opus fallback; Codex at its usage limit) Approved with fixes, 5 Important / 4 Minor, all fixed. **User approved implementation 2026-10-26, including the P12-4j in-context cap reading (GBA gains wheel zoom to 64 px/tile in context).** Not started; next: Task 1.** Waits for the user's go-ahead after the plan review.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
