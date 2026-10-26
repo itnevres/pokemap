@@ -297,6 +297,8 @@ Rerun in isolation before calling either a regression. (Plan 8)
 
 ## Delegation to Codex / Aider / Subagents
 
+**Codex hangs on stdin when the prompt is an argument** (Plan 12b planning): tell: the stdout log ends at "Reading additional input from stdin..." and never grows; no `-o` file. A backgrounded run sat there overnight. Feed the brief on stdin (`codex exec ... - < brief.md`) or close stdin (`< /dev/null`), check the log about 30 s after launch, and arm a Monitor that reports finish, an error line, or 3 minutes of silence. Anchor its error patterns to Codex's own lines (`^ERROR: You've hit your usage limit`, `"type":"turn.failed"`): a bare "usage limit" also matches docs Codex reads aloud.
+
 **Codex adds `key={url}` to force a remount** (Plan 12a T4): tell: an `<img>` keyed by its URL in a shared viewport, and existing tests that hold the element across a URL change fail (10 map-canvas oracles). It is a DOM-identity change no ruling allows; remove it and pin stale loads with the old render's captured handler instead.
 
 **Codex usage limit hits both parallel reviews at once** (Plan 12a T6): fall back to two Claude Opus subagents with explicit `model`, each given the brief file path and an output path; fix rounds to a Claude Sonnet subagent in the scratch worktree (it can run vitest there, unlike Codex). Log each fallback in the task report.
