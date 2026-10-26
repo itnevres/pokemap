@@ -244,6 +244,10 @@ Rerun in isolation before calling either a regression. (Plan 8)
 
 **Wheel events go to whatever is under the mouse.** After clicking a toolbar button (Fit), `page.mouse.wheel` scrolls the button, not the canvas. Tell: the zoom readout does not move after a Fit. Move the mouse back over the canvas first. (Plan 11 T9)
 
+**A release outside a captured canvas: Chromium sends `mouseup` before `mouseleave`.** Measured order: `pointerdown mousedown pointerup mouseup lostpointercapture mouseleave`, so a leave handler that abandons a gesture without capture never pre-empts the release. Tell: a reviewer predicts the leave lands between pointerup and mouseup; capture-phase listeners on the stage canvas settle it (`task-reports/pokemap-plan-12-canvas-core/task-8-shots/outside.mjs`). Pinned in `MapSurface.test.tsx`. (Plan 12a T9)
+
+**Selecting an event moves the map canvas down (the event panel opens above it).** Driver cell positions computed before a selection then hit the row above. Tell: the hover readout at the computed point names a different row than intended. Re-read the canvas `boundingBox()` before each step (`task-8-shots/edit.mjs` `sync()`). (Plan 12a T8)
+
 **Test error UI live without touching the subject:** `page.route` the POST and GET to `fulfill({ status: 500 })`. Nothing reaches the hub, so the subject stays byte-identical (`task-reports/pokemap-plan-11-canvas-leaf/task-9-shots/toasts.mjs`). (Plan 11 final review)
 
 ## Windows / Tooling / Git / Worktrees
