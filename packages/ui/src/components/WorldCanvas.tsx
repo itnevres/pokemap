@@ -3,7 +3,7 @@ import type { Placement, Component as WorldComponentInfo, VerticalLink } from "@
 import type { WireConflict } from "@pokemap/core/src/world/conflictAcceptance.js";
 import type { SpeciesHit } from "@pokemap/core/src/analyse/coverage.js";
 import type { WarpEvent } from "@pokemap/core/src/load/maps.js";
-import { EncounterBorder, type EncounterBorderEntry } from "./EncounterBorder.js";
+import { EncounterBorder, type EncounterBorderEntry } from "../shared/EncounterBorder.js";
 import { BORDER_BAND, pickBorderSide, type BorderSide, type Rect } from "../encounters/borderSide.js";
 import { isGbaEncountersPayload } from "../encounters/guards.js";
 import { summariseGba, type GbaEncounterRow, type SpeciesSummary } from "../encounters/summary.js";

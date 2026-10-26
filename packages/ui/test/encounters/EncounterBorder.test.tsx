@@ -8,7 +8,7 @@ import {
   tooltipLines,
   type EncounterBorderEntry,
   type EncounterBorderProps,
-} from "../../src/components/EncounterBorder.js";
+} from "../../src/shared/EncounterBorder.js";
 import { summariseGba, summariseGbc, type SpeciesSummary } from "../../src/encounters/summary.js";
 import type { BorderSide } from "../../src/encounters/borderSide.js";
 

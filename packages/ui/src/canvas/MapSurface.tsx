@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent } from "react";
-import { ZOOM_LEVELS, type MapView } from "../components/mapView.js";
-import { EncounterBorder, type EncounterBorderEntry } from "../components/EncounterBorder.js";
+import { ZOOM_LEVELS, type MapView } from "./view.js";
+import { EncounterBorder, type EncounterBorderEntry } from "../shared/EncounterBorder.js";
 import { useMapEncounterSummaries } from "../encounters/useMapEncounterSummaries.js";
 import { CanvasZoomBar } from "../shared/CanvasZoomBar.js";
 import { OverlayToggleGroup } from "../shared/OverlayToggleGroup.js";

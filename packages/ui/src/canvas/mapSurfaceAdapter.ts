@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { EncounterBorderProps } from "../components/EncounterBorder.js";
+import type { EncounterBorderProps } from "../shared/EncounterBorder.js";
 import type { BorderSide } from "../encounters/borderSide.js";
 import type { MapStatusItem } from "../shared/MapStatusStrip.js";
 import type { RasterLayer } from "./useRasterComposite.js";

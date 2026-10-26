@@ -1,12 +1,6 @@
-import { zoomAboutPivot as canvasZoomAboutPivot, type View } from "../canvas/view.js";
+import { ZOOM_LEVELS, zoomAboutPivot as canvasZoomAboutPivot, type MapView, type Zoom } from "../canvas/view.js";
 
-/** Zoom steps shared by the GBA and GBC map canvases. */
-export const ZOOM_LEVELS = [1, 2, 4] as const;
-export type Zoom = (typeof ZOOM_LEVELS)[number];
-
-/** A map canvas's whole pan/zoom state, updated as ONE value so React's
- *  <StrictMode> double-invoked updaters stay harmless (see Plan 6c E1, D1). */
-export interface MapView extends View<Zoom> {}
+export { ZOOM_LEVELS, type Zoom, type MapView } from "../canvas/view.js";
 
 /**
  * Pure: given the current view, the next zoom level, and a pivot point in

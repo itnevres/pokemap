@@ -21,7 +21,7 @@ vi.mock("../../src/shared/MapCanvasViewport.js", async (original) => {
   } };
 });
 vi.mock("../../src/encounters/useMapEncounterSummaries.js", () => ({ useMapEncounterSummaries: observations.encounters }));
-vi.mock("../../src/components/EncounterBorder.js", () => ({ EncounterBorder: (props: unknown) => {
+vi.mock("../../src/shared/EncounterBorder.js", () => ({ EncounterBorder: (props: unknown) => {
   observations.border(props); return null;
 } }));
 vi.mock("../../src/canvas/useStage.js", async (original) => {

@@ -5,7 +5,7 @@ import type { GbcEncounterSource, GbcSpeciesHit } from "@pokemap/core/src/gbc/an
 import { centredFit, computeFit, drawDiamond, singletonSizes, themedLevelColorMap } from "../components/WorldCanvas.js";
 import { type LensId, type LensPanelSummary } from "../components/LensPanel.js";
 import { SpeciesSpotlight } from "../components/SpeciesSpotlight.js";
-import { EncounterBorder, type EncounterBorderEntry } from "../components/EncounterBorder.js";
+import { EncounterBorder, type EncounterBorderEntry } from "../shared/EncounterBorder.js";
 import { BORDER_BAND, pickBorderSide, type BorderSide, type Rect } from "../encounters/borderSide.js";
 import { summariseGbc, type SpeciesSummary } from "../encounters/summary.js";
 import { useGbcWorld } from "./hooks/useGbcWorld.js";
@@ -88,19 +88,13 @@ const EMPTY_PLACEMENT_SNAPSHOT: PlacementSnapshot = { mapStates: new Map() };
  *
  * **Lessons from Task 4, applied here too (binding, `task-4-spec-review.md`
  * findings A/B):**
- * - **One `view: { zoom, pan }` state, updated by a single pure function.**
- *   GBA's own MapCanvas zoom handler (and, before its own fix round,
- *   `GbcMapCanvas.tsx`'s first draft) nested a `setPan` call inside a
- *   `setZoom` updater -- harmless outside `<StrictMode>`, but `main.tsx`
- *   wraps the whole app in it, and React double-invokes updater functions
- *   there, applying the nested update twice (2x zoom lands off-centre, 4x
- *   goes fully off-canvas). Unlike `GbcMapCanvas`'s own STEPPED
- *   `zoomAboutPivot` (1x/2x/4x), the world's zoom is CONTINUOUS
- *   (`WHEEL_FACTOR`-multiplied, `WorldCanvas.tsx`'s own "React attaches
- *   wheel listeners as passive by default" comment area), so
- *   `zoomWorldAboutPivot` below mirrors that continuous math instead of
- *   copying `GbcMapCanvas.tsx`'s stepped version verbatim -- both are pure,
- *   single-state-returning functions for the identical StrictMode reason.
+ * - **One `view: { zoom, pan, fitted }` state, updated by a single pure
+ *   function.** `main.tsx` wraps the app in `<StrictMode>`, which
+ *   double-invokes updaters, so a setter nested inside another's updater
+ *   would apply twice. The world's zoom is continuous: `zoomWorldAboutPivot`
+ *   multiplies the latest view's zoom by `WHEEL_FACTOR` inside the one
+ *   updater, clamped to `zoomBoundsFor` (`maxWorldZoom` in context). The map
+ *   canvases use the stepped `canvas/view.ts` `zoomAboutPivot` instead.
  * - **`useGuardedFetch`'s per-URL reset doesn't matter here**: `useGbcWorld`
  *   fetches a single fixed URL (`/api/world` never changes), so there is no
  *   stale-payload-under-a-new-name risk `GbcMapCanvas`'s own `useGbcMap`

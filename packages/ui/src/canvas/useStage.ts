@@ -19,6 +19,8 @@ export function useStageView<T extends View>(controlledView: T | undefined, onVi
   const view = controlledView ?? ownView;
   const latest = useRef({ view, onViewChange });
   // Publish only committed props; a suspended render must not leak a speculative controlled view.
+  // onViewChange rides this ref so an inline callback never changes updateView's identity (which would
+  // re-create fit and re-bind the wheel listener on every parent render).
   useLayoutEffect(() => { latest.current = { view, onViewChange }; });
   const updateView = useCallback<UpdateView<T>>((next) => {
     if (!controlled) return setOwnView(next);
@@ -30,10 +32,11 @@ export function useStageView<T extends View>(controlledView: T | undefined, onVi
 }
 
 export function useStageZoom<T extends View>(canvasRef: RefObject<HTMLCanvasElement | null>, zoom: number, updateView: UpdateView<T>, policy: StageZoomPolicy) {
-  const applyZoom = (next: T["zoom"], pivotX: number, pivotY: number) => updateView((view) => {
-    const result = zoomAboutPivot(view, next, pivotX, pivotY, policy);
+  const zoomBy = (nextOf: (view: T) => T["zoom"], pivotX: number, pivotY: number) => updateView((view) => {
+    const result = zoomAboutPivot(view, nextOf(view), pivotX, pivotY, policy);
     return result === view ? view : { ...view, ...result };
   });
+  const applyZoom = (next: T["zoom"], pivotX: number, pivotY: number) => zoomBy(() => next, pivotX, pivotY);
   const centerPivot = (): [number, number] => {
     const canvas = canvasRef.current;
     return canvas ? [canvas.width / 2, canvas.height / 2] : [0, 0];
@@ -44,14 +47,22 @@ export function useStageZoom<T extends View>(canvasRef: RefObject<HTMLCanvasElem
     const handler = (event: WheelEvent) => {
       event.preventDefault();
       const rect = canvas.getBoundingClientRect();
-      const next = policy.kind === "continuous"
-        ? zoom * (event.deltaY < 0 ? policy.factor : 1 / policy.factor)
-        : policy.levels[event.deltaY < 0
+      const px = event.clientX - rect.left;
+      const py = event.clientY - rect.top;
+      if (policy.kind === "continuous") {
+        // Read the updater's view so batched wheel events compound when uncontrolled; controlled stages
+        // read the last committed prop (useStageView). 12b PR12b-I3.
+        const f = event.deltaY < 0 ? policy.factor : 1 / policy.factor;
+        zoomBy((view) => view.zoom * f, px, py);
+      } else {
+        const next = policy.levels[event.deltaY < 0
           ? Math.min(policy.levels.length - 1, policy.levels.indexOf(zoom) + 1)
           : Math.max(0, policy.levels.indexOf(zoom) - 1)]!;
-      applyZoom(next as T["zoom"], event.clientX - rect.left, event.clientY - rect.top);
+        applyZoom(next as T["zoom"], px, py);
+      }
     };
     // React wheel listeners are passive: preventDefault would silently fail and scroll the page underneath.
+    // jsdom does not enforce passive semantics, so no test catches a regression here.
     canvas.addEventListener("wheel", handler, { passive: false });
     return () => canvas.removeEventListener("wheel", handler);
   }, [canvasRef, zoom, updateView, policy.kind, policy.kind === "stepped" ? policy.levels : policy.min,
@@ -73,6 +84,9 @@ export function useStageAutoFit(imgLoaded: boolean, mapName: string, controlled:
   }, [imgLoaded, mapName]);
 }
 
+/** Fit-to-screen, bound to the F shortcut (chrome on) or the world's context fit (chromeless). `bandNative` is
+ * the encounter band in native px on the border's `side` (0 when encounters are off or chromeless), so the
+ * sprites fit too. Before the viewport is measured, the composite's native size is used. */
 export function useStageFit<T extends View>(a: {
   viewport: { w: number; h: number };
   pixelWidth: number;
@@ -129,14 +143,12 @@ export function useStage<T extends View = View>(options: StageOptions<T>) {
 
   const pan = useRef<{ start: Point; pan: Point } | null>(null);
   const capture = useRef<{ id: number; canvas: HTMLCanvasElement; captured: boolean } | null>(null);
-  const [captured, setCaptured] = useState(false);
   const onCancel = useRef(options.onCancel);
   useLayoutEffect(() => { onCancel.current = options.onCancel; });
   const releaseCapture = useCallback(() => {
     const active = capture.current;
     // Clear ownership BEFORE releasing: even a synchronous lost event is our release, not cancellation.
     capture.current = null;
-    setCaptured(false);
     if (active?.captured) {
       try { active.canvas.releasePointerCapture?.(active.id); } catch { /* Already released by the browser. */ }
     }
@@ -152,7 +164,6 @@ export function useStage<T extends View = View>(options: StageOptions<T>) {
       }
     } catch { /* Best effort: the surface retains its end-on-leave fallback. */ }
     capture.current = { id: event.pointerId, canvas, captured: held };
-    setCaptured(held);
     return held;
   };
   const cancelCapture = (event: { pointerId: number }) => {
@@ -189,6 +200,6 @@ export function useStage<T extends View = View>(options: StageOptions<T>) {
   // Hover is the surface's concern; only uncaptured drags terminate on leave.
   const leavePan = () => { if (!capture.current?.captured) endPan(); };
   return { canvasRef, containerRef, viewport, controlled, view, updateView, ...zoom, fit,
-    startPan, movePan, endPan, leavePan, captured, hasCapture: () => !!capture.current?.captured,
+    startPan, movePan, endPan, leavePan, hasCapture: () => !!capture.current?.captured,
     beginCapture, releaseCapture, onPointerDown: beginCapture, onPointerCancel: cancelCapture, onLostPointerCapture: cancelCapture };
 }
