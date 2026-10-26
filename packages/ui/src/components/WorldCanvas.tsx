@@ -4,6 +4,7 @@ import type { WireConflict } from "@pokemap/core/src/world/conflictAcceptance.js
 import type { SpeciesHit } from "@pokemap/core/src/analyse/coverage.js";
 import type { WarpEvent } from "@pokemap/core/src/load/maps.js";
 import { EncounterBorder, type EncounterBorderEntry } from "../shared/EncounterBorder.js";
+import { computeFit as computeWorldFit, singletonSizes } from "../canvas/worldView.js";
 import { BORDER_BAND, pickBorderSide, type BorderSide, type Rect } from "../encounters/borderSide.js";
 import { isGbaEncountersPayload } from "../encounters/guards.js";
 import { summariseGba, type GbaEncounterRow, type SpeciesSummary } from "../encounters/summary.js";
@@ -259,55 +260,14 @@ function contains(px: number, py: number, pw: number, ph: number, x0: number, y0
   return px >= x0 && py >= y0 && px + pw <= x1 && py + ph <= y1;
 }
 
-interface FitResult {
-  zoom: number;
-  pan: Pan;
-}
-
-/** Pure so a test can predict the result by hand, the same way MapCanvas's
- *  tests reason about `fit()`. Centres `bounds` in `viewport` at the
- *  largest zoom (clamped) that shows all of it.
- *
- *  `zoomBounds` (Plan 6b Task 5, additive): overrides the clamp range this
- *  file's own `MIN_ZOOM`/`MAX_ZOOM` otherwise apply. Left out, the default
- *  is exactly today's `MIN_ZOOM`/`MAX_ZOOM` -- every existing call site
- *  (`fitWorld`, the jump effect, the empty-maps lens) and this file's own
- *  `computeFit` tests are unaffected. GBC's world canvas passes
- *  `{ min: 1/64, max: 32 }`: its zoom is screen px per BLOCK (32 px native),
- *  not per tile (16 px native) -- this file's own `MAX_ZOOM` of 16 would cap
- *  a GBC fit at half native resolution, which is simply the wrong unit, not
- *  a deliberate limit. */
+/** GBA's default-bounds wrapper over `canvas/worldView.ts` `computeFit`: MIN_ZOOM/MAX_ZOOM are px per TILE
+ *  (1/64..16); GBC calls the shared one with its px-per-block bounds. */
 export function computeFit(
   bounds: { x: number; y: number; width: number; height: number },
   viewport: Viewport,
-  zoomBounds?: { min: number; max: number },
-): FitResult {
-  if (bounds.width <= 0 || bounds.height <= 0 || viewport.w <= 0 || viewport.h <= 0) {
-    return { zoom: 1, pan: { x: 0, y: 0 } };
-  }
-  const min = zoomBounds?.min ?? MIN_ZOOM;
-  const max = zoomBounds?.max ?? MAX_ZOOM;
-  const zoom = Math.min(max, Math.max(min, Math.min(viewport.w / bounds.width, viewport.h / bounds.height)));
-  return centredFit(bounds, viewport, zoom);
-}
-
-/** The pan that centres `bounds` in `viewport` at `zoom` (shared by `computeFit` and GBC's `jumpFit`). */
-export function centredFit(bounds: { x: number; y: number; width: number; height: number }, viewport: Viewport, zoom: number): FitResult {
-  return {
-    zoom,
-    pan: {
-      x: -bounds.x * zoom + (viewport.w - bounds.width * zoom) / 2,
-      y: -bounds.y * zoom + (viewport.h - bounds.height * zoom) / 2,
-    },
-  };
-}
-
-/** Every singleton component's map -> its size (a singleton component's bounds ARE that map's rect). Both world
- *  canvases' `sizeByMap` memos call this. */
-export function singletonSizes(components: readonly { maps: readonly string[]; bounds: { width: number; height: number } }[] | undefined): Map<string, { width: number; height: number }> {
-  const m = new Map<string, { width: number; height: number }>();
-  if (components) for (const c of components) if (c.maps.length === 1) m.set(c.maps[0]!, { width: c.bounds.width, height: c.bounds.height });
-  return m;
+  zoomBounds: { min: number; max: number } = { min: MIN_ZOOM, max: MAX_ZOOM },
+) {
+  return computeWorldFit(bounds, viewport, zoomBounds);
 }
 
 function worldBoundsOf(placements: Map<string, Placement>, sizeByMap: Map<string, { width: number; height: number }>) {

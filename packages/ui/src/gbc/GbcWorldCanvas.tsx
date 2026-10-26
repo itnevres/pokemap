@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import type { Placement, Component, Conflict, Bounds } from "@pokemap/core/src/gbc/world/connections.js";
 import type { GbcWorldPayload, GbcWorldPlacement } from "@pokemap/core/src/gbc/wire.js";
 import type { GbcEncounterSource, GbcSpeciesHit } from "@pokemap/core/src/gbc/analyse/atlas.js";
-import { centredFit, computeFit, drawDiamond, singletonSizes, themedLevelColorMap } from "../components/WorldCanvas.js";
+import { drawDiamond, themedLevelColorMap } from "../components/WorldCanvas.js";
+import { JUMP_FILL_FRACTION, computeFit, jumpFit as worldJumpFit, singletonSizes, zoomWorldAboutPivot as worldZoomAboutPivot } from "../canvas/worldView.js";
 import { type LensId, type LensPanelSummary } from "../components/LensPanel.js";
 import { SpeciesSpotlight } from "../components/SpeciesSpotlight.js";
 import { EncounterBorder, type EncounterBorderEntry } from "../shared/EncounterBorder.js";
@@ -111,9 +112,7 @@ const EMPTY_PLACEMENT_SNAPSHOT: PlacementSnapshot = { mapStates: new Map() };
  */
 
 /** Native block size, px (`GbcWorldPayload.blockPx`, always 32). Zoom here
- *  is screen px PER BLOCK, not per tile -- see `computeFit`'s own
- *  `zoomBounds` doc comment for why GBA's `MAX_ZOOM` (a px/tile cap) is the
- *  wrong unit for this canvas. */
+ *  is screen px PER BLOCK (32 px native), not per tile. */
 const BLOCK_PX = 32;
 
 const GBC_MIN_ZOOM = 1 / 64;
@@ -152,15 +151,6 @@ export function projectGbcWarpPoint(placement: { x: number; y: number }, event: 
   return { x: (placement.x + event.x / 2) * zoom + pan.x, y: (placement.y + event.y / 2) * zoom + pan.y };
 }
 
-/** "Fills about 60% of the viewport" (Task 5 spec's own jump wording) --
- *  distinct from `WorldCanvas.tsx`'s own map-list jump, which fits the
- *  target map at 100% via a bare `computeFit` call. A GBC map is usually
- *  much smaller relative to its neighbours than a GBA one is to the full
- *  1,209-map world, so landing at 100% would zoom in tight enough to lose
- *  all surrounding context (neighbouring maps, a conflict badge on an
- *  adjacent route); 60% leaves a visible margin. */
-const JUMP_FILL_FRACTION = 0.6;
-
 /** Same fade duration as `WorldCanvas.tsx`'s own jump highlight
  *  (`world-canvas-jump-fade`, `styles.css`). */
 const JUMP_HIGHLIGHT_MS = 2000;
@@ -177,18 +167,8 @@ export interface GbcWorldView {
   fitted: boolean;
 }
 
-/**
- * Pure: given the current view, a multiplicative zoom factor (`>1` in,
- * `<1` out), and a pivot point in stage-canvas pixels, returns the view
- * that keeps the world-space point under the pivot fixed on screen --
- * clamped to `bounds` (default `GBC_ZOOM_BOUNDS`) -- or the SAME `view`
- * object when the clamped result doesn't actually change the zoom, so a
- * caller can use reference equality to skip work. `fitted` is carried over
- * unchanged (spread from `view`): a wheel zoom or a keyboard zoom never
- * itself flips it. Exported and unit-tested with exact numbers, called from
- * exactly one `setView(v => zoomWorldAboutPivot(v, ...))` site per caller
- * (see the header comment's StrictMode reasoning).
- */
+/** Compatibility wrapper (GBC default bounds) over `canvas/worldView.ts` `zoomWorldAboutPivot`: continuous
+ *  zoom about a stage-pixel pivot, `fitted` carried over, the same object when the clamped zoom is unchanged. */
 export function zoomWorldAboutPivot(
   view: GbcWorldView,
   factor: number,
@@ -196,11 +176,7 @@ export function zoomWorldAboutPivot(
   pivotY: number,
   bounds: { min: number; max: number } = GBC_ZOOM_BOUNDS,
 ): GbcWorldView {
-  const next = Math.min(bounds.max, Math.max(bounds.min, view.zoom * factor));
-  if (next === view.zoom) return view;
-  const cx = (pivotX - view.pan.x) / view.zoom;
-  const cy = (pivotY - view.pan.y) / view.zoom;
-  return { ...view, zoom: next, pan: { x: pivotX - cx * next, y: pivotY - cy * next } };
+  return worldZoomAboutPivot(view, factor, pivotX, pivotY, bounds);
 }
 
 /** AABB test in world-block space -- copied from `WorldCanvas.tsx`'s own
@@ -330,39 +306,15 @@ const GBC_LEGEND_COPY: Partial<Record<LensId, (s: LensPanelSummary) => string>> 
   method: () => "Which maps reward surfing, fishing, headbutting trees or rock smash.",
 };
 
-interface FitResult {
-  zoom: number;
-  pan: { x: number; y: number };
-}
-
-/**
- * The map-list jump's own fit: the UNCLAMPED "fits entirely" zoom
- * (`min(viewport.w/bounds.width, viewport.h/bounds.height)`) is scaled down
- * by `fraction` (default `JUMP_FILL_FRACTION`) FIRST, and only THEN clamped
- * to `zoomBounds` -- "fills about 60% of the viewport", not "fits exactly".
- * Exported and unit-tested directly.
- *
- * Fix round (spec review F2): this used to clamp before scaling (`computeFit
- * (...).zoom * fraction`), which is wrong whenever the unclamped fit exceeds
- * `zoomBounds.max` -- most real GBC maps at a real viewport size. A 20x18
- * map (e.g. OlivineCity) in a 1000x668 viewport has an unclamped fit of
- * ~37.1 px/block; clamping that to 32 FIRST and then taking 60% lands at
- * 19.2 (a 0.52 fill, confirmed live), not the intended 0.6. Scaling first
- * (37.1 * 0.6 = 22.27, well under the 32 cap so the clamp is a no-op here)
- * gives the correct 0.6 fill.
- */
+/** Compatibility wrapper (GBC default bounds) over `canvas/worldView.ts` `jumpFit` (60% fill, scaled before
+ *  clamping; the rationale lives there). */
 export function jumpFit(
   bounds: Bounds,
   viewport: { w: number; h: number },
   zoomBounds: { min: number; max: number } = GBC_ZOOM_BOUNDS,
   fraction: number = JUMP_FILL_FRACTION,
-): FitResult {
-  if (bounds.width <= 0 || bounds.height <= 0 || viewport.w <= 0 || viewport.h <= 0) {
-    return { zoom: 1, pan: { x: 0, y: 0 } };
-  }
-  const rawZoom = Math.min(viewport.w / bounds.width, viewport.h / bounds.height);
-  const zoom = Math.min(zoomBounds.max, Math.max(zoomBounds.min, rawZoom * fraction));
-  return centredFit(bounds, viewport, zoom);
+) {
+  return worldJumpFit(bounds, viewport, zoomBounds, fraction);
 }
 
 interface ImageCacheEntry {
