@@ -1,0 +1,9 @@
+Spec: FAIL
+
+- **Important — Cache invalidation coverage does not prove “every entry.”** `packages/ui/test/canvas/useWorldTiles.test.tsx:170` keeps both maps visible during the cache-key change. An implementation that deletes only visible entries would pass while retaining off-screen images from the previous time of day. Add a loaded map that becomes off-screen before changing `cacheKey`; assert its lookup becomes empty and returning it requests the new image. The current implementation correctly replaces the entire map (`useWorldTiles.ts:38`).
+
+- **Important — Adapter geometry is implemented but insufficiently pinned.** `packages/ui/test/canvas/useWorldTiles.test.tsx:38` always supplies `nativePx: 16` and derives dimensions directly from placement fields. Hardcoding 16 or bypassing `sizeOf` for placement dimensions would pass every test, breaking GBC or GBA’s `sizeByMap` sizing respectively. Add a GBC case with 32-pixel units and a GBA case whose externally supplied dimensions differ from placement dimensions; assert the exact `buildSmallTile` arguments.
+
+The remaining named behaviors are implemented and covered: initial loading, map-specific version refresh, previous-image retention and replacement, superseded-URL rejection, error retention, small-tile reuse, and version increments. The hook supports both families without family branches. Its `{ url, tile? }` representation preserves the specified semantics; the additional cache-key version increment follows the brief.
+
+Review was read-only. No tests or npm commands were run; mutation results are conductor-reported, and the gate section remains pending.
