@@ -5,8 +5,10 @@ import type { SpeciesSummary } from "../encounters/summary.js";
 import type { EncounterBorderProps } from "../shared/EncounterBorder.js";
 import type { WorldLensLegend } from "../shared/WorldLensControls.js";
 import type { View } from "./view.js";
+import type { Point } from "./view.js";
 
 type LensLegendProps = ComponentProps<typeof WorldLensLegend>;
+export type WorldOverlay = "selection" | "jump" | "warps" | "connections" | "marquee" | "lens" | "spotlight";
 
 /** A placement as the surface sees it. Width/height are real (the adapter resolves zero-sized wire orphans);
  *  `component` indexes `components`, -1 for a manual orphan. */
@@ -42,6 +44,16 @@ export interface EncounterEntry {
   methodTint: string | null;
 }
 
+/** Normalised source coordinates in the adapter's warp unit. Endpoint lookup stays adapter-owned. */
+export interface SurfaceWarp {
+  point: Point;
+  /** Destination offered by the preview; unresolved destinations leave this unset. */
+  popupMap?: string;
+  destination?: { map: string; point: Point };
+  /** A closure can retain a wire warp ID and look up its exact endpoint after the destination fetch lands. */
+  resolveDestination?(cache: ReadonlyMap<string, readonly SurfaceWarp[] | null>): { map: string; point: Point } | null;
+}
+
 /** The world hook's result. The hook owns the GET, the optimistic positions and their reconciliation through the ledger.
  *  `W` lets a family carry extra world data (GBA's vertical links) typed through to its own adapter callbacks. */
 export interface WorldData<P extends SurfacePlacement, C extends WireConflict, W extends SurfaceWorld<P, C> = SurfaceWorld<P, C>> {
@@ -72,15 +84,43 @@ export interface WorldStatus<P extends SurfacePlacement, C extends WireConflict,
   unplacedCount: number;
   /** Accepted conflicts (conflictAcceptance.acceptedCount). */
   acceptedCount: number;
-  /** Task 6 widens this. */
-  hover: null;
+  /** Placement and component under the pointer; adapters retain their own status copy and native unit. */
+  hover: { map: string; placement: P; component: SurfaceComponent | null; width: number; height: number } | null;
 }
 
-export interface WorldSurfaceAdapter<P extends SurfacePlacement, C extends WireConflict, W extends SurfaceWorld<P, C> = SurfaceWorld<P, C>> {
+export interface WorldSurfaceAdapter<
+  P extends SurfacePlacement, C extends WireConflict, W extends SurfaceWorld<P, C> = SurfaceWorld<P, C>
+> {
   /** Native px per world unit (16 tile, 32 block): zoom range, LOD, context native, zoom %. */
   nativePx: number;
   /** Called once per render, unconditionally. */
   useWorld(ledger: PlacementLedger): WorldData<P, C, W>;
+  /** Request and response validation belong here. Rejection is a failed save, including a non-OK HTTP status. */
+  postPlacement?(move: { map: string; x: number; y: number }, world: W): Promise<void>;
+  postDungeons?(enabled: boolean, world: W): Promise<void>;
+  /** Persistent dismissible errors, or errors cleared only by a subsequent success for that same map. */
+  saveErrorPolicy?: "dismissible" | "per-map";
+  /** Filter changes prune selection only where the existing host did so. */
+  pruneSelectionOnFilter?: boolean;
+  /** Drop guards and size lookup retain the host's existing rail semantics. */
+  dropSize?(map: string, world: W, filter: ReadonlySet<string> | null): { width: number; height: number } | null;
+  /** Native units per warp coordinate. */
+  warpOffset?: number;
+  /** Owns request, payload validation (including map identity), and normalisation. */
+  fetchWarps?(map: string, world: W): Promise<readonly SurfaceWarp[]>;
+  /** Resolves cache-dependent endpoints without guessing a destination corner when its exact warp is absent. */
+  resolveWarp?(
+    warp: SurfaceWarp,
+    cache: ReadonlyMap<string, readonly SurfaceWarp[] | null>,
+    world: W,
+  ): { map: string; point: Point } | null;
+  renderWarpPopup?(map: string, onClose: () => void, world: W): ReactNode;
+  /** Unresolved preview behaviour is host-owned. */
+  unresolvedWarpError?: string;
+  /** Some hosts allow modified double-click previews and Map-view opens, while still guarding Edit-here. */
+  modifiedDoubleClick?: boolean;
+  /** Connection palette tokens and fallbacks, in stable source-map/warp-index order. */
+  connectionColors?: readonly { token: string; fallback: string }[];
   /** Image URL for a placement at a tile version. */
   imageUrl(p: P, version: number | undefined): string;
   /** A change drops every cached tile (time of day, or a constant). */
@@ -110,6 +150,14 @@ export interface WorldSurfaceAdapter<P extends SurfacePlacement, C extends WireC
   canvasLabel?: string;
   /** Toolbar groups preceding the shared encounter and lens groups. */
   toolbarExtras?: ReactNode;
+  /** Groups after the encounter alert (including the hosts' save/reload toolbar errors). */
+  toolbarAfterEncounter?: ReactNode;
+  /** Conflict/save/reload toasts stack in this wrapper where the host supplies it. */
+  wrapToasts?(children: ReactNode): ReactNode;
+  /** Host cursor modifier during map/group movement. */
+  draggingMapClass?: string;
+  /** Preserve the host's DOM stacking order; absent uses selection, jump, warps, connections, marquee, lenses. */
+  overlayOrder?: readonly WorldOverlay[];
   /** Items following the shared conflict legend. */
   legendExtras?: ReactNode;
   /** Fit leads the toolbar (no zoom readout) instead of sharing the trailing zoom group. */

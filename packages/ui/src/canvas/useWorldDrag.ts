@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect, type MouseEvent } from "react";
+import { useRef, useState, useEffect, useLayoutEffect, type MouseEvent } from "react";
 import type { PlacementLedger, PlacementVersion } from "../shared/placementLedger.js";
 
 export interface WorldDragMove { map: string; x: number; y: number; version: PlacementVersion }
@@ -273,7 +273,9 @@ export function useWorldDrag<P extends { map: string; x: number; y: number }>(o:
 
   // Unmount mid-gesture settles it like a cancel: begun maps revert and their versions noop, so none stays pending.
   const cancelRef = useRef(cancel);
-  cancelRef.current = cancel;
+  useLayoutEffect(() => {
+    cancelRef.current = cancel;
+  });
   useEffect(() => () => cancelRef.current(), []);
 
   return { onMouseDown, onMouseMove, onMouseUp, onMouseLeave, cancel,

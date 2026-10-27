@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import type { WireConflict } from "@pokemap/core/src/world/conflictAcceptance.js";
 import { drawDiamond, themedLevelColorMap } from "../components/WorldCanvas.js";
 import { SpeciesSpotlight } from "../components/SpeciesSpotlight.js";
@@ -19,7 +19,9 @@ import { BADGE_SIZE, conflictBadgeCenter } from "../shared/worldBadges.js";
 import { useConflictAcceptanceMenu } from "../world/useConflictAcceptance.js";
 import { conflictBadgeOffsets } from "../world/conflictAcceptance.js";
 import { UnplacedRail } from "../world/UnplacedRail.js";
+import { DungeonAutoLayoutSwitch, WorldToolbarSwitch } from "../world/DungeonAutoLayoutSwitch.js";
 import { useStage } from "./useStage.js";
+import { useWorldDrag, type WorldDragMove } from "./useWorldDrag.js";
 import { useWorldTiles } from "./useWorldTiles.js";
 import {
   LOD_SCALE,
@@ -33,9 +35,16 @@ import {
   smallTilesAt,
   worldZoomBounds,
   worldZoomRange,
+  screenToWorld,
+  worldToScreen,
+  warpPoint,
+  warpHit,
+  hitPlacement,
+  zoomWorldAboutPivot,
 } from "./worldView.js";
 import type { View } from "./view.js";
-import type { EncounterEntry, SurfacePlacement, SurfaceWorld, WorldSurfaceAdapter } from "./worldSurfaceAdapter.js";
+import type { EncounterEntry, SurfacePlacement, SurfaceWarp, SurfaceWorld, WorldSurfaceAdapter,
+  WorldStatus, WorldOverlay } from "./worldSurfaceAdapter.js";
 
 /** `fitted` lives in the one view value so a fit sets zoom, pan and `fitted` in one update. */
 interface WorldView extends View {
@@ -80,9 +89,10 @@ export interface WorldSurfaceProps<P extends SurfacePlacement, C extends WireCon
 export function WorldSurface<P extends SurfacePlacement, C extends WireConflict, W extends SurfaceWorld<P, C> = SurfaceWorld<P, C>>(
   props: WorldSurfaceProps<P, C, W>,
 ) {
-  const { adapter, mapFilter = null, jumpToMap, jumpToken, onOpenMap, onJumpToMap, onEditHere, context, tileVersions } = props;
+  const { adapter, mapFilter = null, jumpToMap, jumpToken, onOpenMap, onJumpToMap, onEditHere, context, tileVersions,
+    onSelectMap, onPlacementsSaved, onLayoutChanged } = props;
   const [ledger] = useState(createPlacementLedger);
-  const { world, error } = adapter.useWorld(ledger);
+  const { world, error, reload, loadedGen, dismissError, move } = adapter.useWorld(ledger);
   const coverage = adapter.useCoverage();
 
   const fitRef = useRef<() => void>(() => {});
@@ -94,7 +104,8 @@ export function WorldSurface<P extends SurfacePlacement, C extends WireConflict,
   // One view value updated by pure functions: StrictMode double-invokes updaters, so a setter nested in another's
   // updater would apply pan twice. `chromeless`: the surface binds F itself below; no ContextMapFit provider wraps a
   // world canvas, so the stage's context fit stays inert.
-  const { canvasRef, containerRef, viewport, view, updateView } = useStage<WorldView>({
+  const cancelDrag = useRef<() => void>(() => {});
+  const stage = useStage<WorldView>({
     zoomPolicy: { kind: "continuous", factor: WHEEL_FACTOR, ...worldZoomRange(adapter.nativePx), boundsFor },
     mapName: "world",
     imgLoaded: false,
@@ -104,8 +115,10 @@ export function WorldSurface<P extends SurfacePlacement, C extends WireConflict,
     side: "right",
     fit: stableFit,
     chromeless: true,
+    onCancel: () => cancelDrag.current(),
   });
-  const { conflictAcceptance, contextMenu, snapPointerRef } = useConflictAcceptanceMenu({
+  const { canvasRef, containerRef, viewport, view, updateView } = stage;
+  const { conflictAcceptance, contextMenu, snapPointerRef, menuPointRef, requestEditHere } = useConflictAcceptanceMenu({
     conflicts: world?.conflicts,
     canvasRef,
     onOpenMap,
@@ -170,7 +183,16 @@ export function WorldSurface<P extends SurfacePlacement, C extends WireConflict,
   }, [mapFilter, world, viewport, fitWorld]);
 
   const [revealed, setRevealed] = useState<Set<string>>(() => new Set());
-  const [selected] = useState<Set<string>>(() => new Set()); // Task 6: selection interaction sets this.
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const [hover, setHover] = useState<WorldStatus<P, C, W>["hover"]>(null);
+  const [tooltip, setTooltip] = useState<{ x: number; y: number; text: string } | null>(null);
+  useEffect(() => {
+    setHover(null);
+    setTooltip(null);
+    if (adapter.pruneSelectionOnFilter && mapFilter) {
+      setSelected((current) => new Set([...current].filter((name) => mapFilter.has(name))));
+    }
+  }, [mapFilter, adapter.pruneSelectionOnFilter]);
   // { map, token }: a fresh object per jump, so the fade effect restarts even on a same-map re-jump.
   const [jumpHighlight, setJumpHighlight] = useState<{ map: string; token: number } | null>(null);
 
@@ -221,7 +243,7 @@ export function WorldSurface<P extends SurfacePlacement, C extends WireConflict,
     tileVersions,
   });
 
-  // Task 6 reads these for the conflict tooltip.
+  // Draw records feed the conflict tooltip and context-menu hit tests.
   const badgesRef = useRef<Badge[]>([]);
   // Tiles, then the adapter's extra layers, then conflict badges.
   useEffect(() => {
@@ -334,7 +356,11 @@ export function WorldSurface<P extends SurfacePlacement, C extends WireConflict,
     }
     return out;
   }, [spotlightHits]);
-  const spotlightEntries = !spotlightHits ? [] : visible.map((p) => ({ map: p.map, rect: rectByMap.get(p.map)!, hit: spotlightByMap.get(p.map) ?? null }));
+  const spotlightEntries = !spotlightHits ? [] : visible.map((p) => ({
+    map: p.map,
+    rect: rectByMap.get(p.map)!,
+    hit: spotlightByMap.get(p.map) ?? null,
+  }));
 
   const unplacedNames = useMemo(
     () => [...singletonSizes(world?.components).keys()].filter((name) => !world?.placements.has(name)).sort(),
@@ -358,13 +384,398 @@ export function WorldSurface<P extends SurfacePlacement, C extends WireConflict,
     </button>
   );
 
-  // Task 6: drag, selection, keyboard, hover, menus, warps, layout, placement and rail-drop handlers.
+  const [saveError, setSaveError] = useState<{ map: string; message: string } | null>(null);
+  const [layoutError, setLayoutError] = useState<string | null>(null);
+  const perMapErrors = adapter.saveErrorPolicy === "per-map";
+  const messageOf = (cause: unknown) => cause instanceof Error ? cause.message : String(cause);
+  // Catch each outcome before joining: a first rejection must not reload over the other members' pending positions.
+  // Each POST resolves only its gesture version. A later gesture owns the position even if this POST lands last.
+  const commit = (moves: WorldDragMove[]) => {
+    if (!world || !adapter.postPlacement || !moves.length) return;
+    const post = adapter.postPlacement;
+    void Promise.all(moves.map(async ({ map, x, y, version }) => {
+      ledger.moved(map, version);
+      try {
+        await post({ map, x, y }, world);
+        ledger.resolve(map, version, true);
+        if (perMapErrors) setSaveError((current) => current?.map === map ? null : current);
+        return map;
+      } catch (cause) {
+        ledger.resolve(map, version, false);
+        // Save failures leave a working canvas in place. The next GET reconciles the failed optimistic position.
+        setSaveError({ map, message: messageOf(cause) });
+        return null;
+      }
+    })).then((saved) => {
+      reload();
+      const names = saved.filter((name): name is string => name !== null);
+      if (names.length) onPlacementsSaved?.(names);
+    });
+  };
+  const toWorld = (sx: number, sy: number) => screenToWorld({ x: sx, y: sy }, view);
+  const hitTest = (wx: number, wy: number) => hitPlacement(drawn, wx, wy);
+  const drag = useWorldDrag({
+    stage,
+    toWorld,
+    hitTest,
+    // Membership follows retained selection; only the gesture's hit test is restricted to drawn, in-scope maps.
+    placement: (map) => world?.placements.get(map),
+    selected,
+    setSelected: (update) => setSelected(update),
+    movePlacements: move,
+    marqueeCandidates: () => visible,
+    ledger,
+    commit,
+  });
+  useLayoutEffect(() => { cancelDrag.current = drag.cancel; });
+
+  const [dungeonsPending, setDungeonsPending] = useState<boolean | null>(null);
+  const toggleGeneration = useRef(0);
+  const toggleReloadGeneration = useRef<number | null>(null);
+  const dungeonsOn = dungeonsPending ?? world?.dungeonAutoLayout ?? true;
+  useEffect(() => {
+    if (world && toggleReloadGeneration.current !== null && loadedGen >= toggleReloadGeneration.current) {
+      toggleReloadGeneration.current = null;
+      setDungeonsPending(null);
+    }
+  }, [world, loadedGen]);
+  const toggleDungeons = async () => {
+    if (!world || !adapter.postDungeons) return;
+    const next = !dungeonsOn;
+    const generation = ++toggleGeneration.current;
+    toggleReloadGeneration.current = null;
+    setDungeonsPending(next);
+    try {
+      await adapter.postDungeons(next, world);
+      if (generation !== toggleGeneration.current) return;
+      if (perMapErrors) setLayoutError(null);
+      toggleReloadGeneration.current = reload();
+      onLayoutChanged?.();
+    } catch (cause) {
+      if (generation !== toggleGeneration.current) return;
+      setDungeonsPending(null);
+      // An ignored older success may have changed the server: reload even after a failed latest toggle.
+      reload();
+      if (perMapErrors) setLayoutError(messageOf(cause));
+      else setSaveError({ map: "", message: messageOf(cause) });
+    }
+  };
+
+  const [warpsOn, setWarpsOn] = useState(false);
+  const [linesOn, setLinesOn] = useState(false);
+  const [warpError, setWarpError] = useState<string | null>(null);
+  const [warpPopup, setWarpPopup] = useState<string | null>(null);
+  const [warpVersion, setWarpVersion] = useState(0);
+  const warpCache = useRef(new Map<string, readonly SurfaceWarp[] | null>());
+  const warpRequests = useRef(new Map<string, object>());
+  // Sample current adapter/world only when the scope or view changes. Error renders, new adapter objects and a
+  // cache-version bump are not retry triggers: deleting a failed entry must never create a fetch/error render loop.
+  const warpInputs = useRef({ adapter, world });
+  useLayoutEffect(() => { warpInputs.current = { adapter, world }; });
+  const warpNames = new Set<string>();
+  if (warpsOn && !smallTilesAt(view.zoom, adapter.nativePx)) visible.forEach((p) => warpNames.add(p.map));
+  if (mapFilter && linesOn) mapFilter.forEach((name) => {
+    if (world?.placements.has(name)) warpNames.add(name);
+  });
+  const warpScope = JSON.stringify([...warpNames].sort());
+  useEffect(() => {
+    const current = warpInputs.current;
+    if (!current.world || !current.adapter.fetchWarps) return;
+    const names = JSON.parse(warpScope) as string[];
+    for (const name of names) {
+      if (warpCache.current.has(name)) continue;
+      const request = {};
+      warpCache.current.set(name, null);
+      warpRequests.current.set(name, request);
+      // Promise.resolve also routes a synchronous adapter failure into the same observable alert and retry policy.
+      void Promise.resolve().then(() => {
+        if (warpRequests.current.get(name) !== request) return null;
+        return current.adapter.fetchWarps!(name, current.world!);
+      }).then((warps) => {
+        if (warpRequests.current.get(name) !== request || warps === null) return;
+        warpRequests.current.delete(name);
+        warpCache.current.set(name, warps);
+        setWarpVersion((v) => v + 1);
+      }).catch((cause: unknown) => {
+        if (warpRequests.current.get(name) !== request) return;
+        warpRequests.current.delete(name);
+        warpCache.current.delete(name);
+        setWarpError(messageOf(cause));
+      });
+    }
+  }, [warpScope, view, warpsOn, linesOn, mapFilter, viewport.w, viewport.h]);
+  useEffect(() => () => {
+    for (const name of warpRequests.current.keys()) warpCache.current.delete(name);
+    warpRequests.current.clear();
+  }, []);
+  const warpMarkerEntries = useMemo(() => {
+    if (!warpsOn || smallTilesAt(view.zoom, adapter.nativePx)) return [];
+    return visible.flatMap((p) => (warpCache.current.get(p.map) ?? []).map((warp, index) => {
+      const point = warpPoint(p, warp.point, adapter.warpOffset ?? 1, view);
+      return { key: `${p.map}:${index}`, sx: point.x, sy: point.y, warp };
+    }));
+  }, [warpsOn, visible, view, adapter.nativePx, adapter.warpOffset, warpVersion]);
+  const connectionLines = useMemo(() => {
+    if (!mapFilter || !linesOn || !world) return [];
+    const style = typeof getComputedStyle === "function" ? getComputedStyle(document.documentElement) : null;
+    const colors = adapter.connectionColors ?? [
+      { token: "--connection-1", fallback: "#e879f9" },
+      { token: "--connection-2", fallback: "#34d399" },
+      { token: "--connection-3", fallback: "#fb923c" },
+      { token: "--connection-4", fallback: "#60a5fa" },
+      { token: "--connection-5", fallback: "#facc15" },
+      { token: "--connection-6", fallback: "#f472b6" },
+      { token: "--connection-7", fallback: "#2dd4bf" },
+      { token: "--connection-8", fallback: "#a78bfa" },
+    ];
+    const palette = colors.map((c) => style?.getPropertyValue(c.token).trim() || c.fallback);
+    const lines: Array<{ key: string; x1: number; y1: number; x2: number; y2: number; color: string }> = [];
+    // Sort sources, keep warp order. Colours can shift while endpoints load; they settle in this stable order.
+    for (const source of [...mapFilter].sort()) {
+      const p = world.placements.get(source);
+      if (!p) continue;
+      (warpCache.current.get(source) ?? []).forEach((warp, index) => {
+        const destination = adapter.resolveWarp
+          ? adapter.resolveWarp(warp, warpCache.current, world)
+          : warp.resolveDestination ? warp.resolveDestination(warpCache.current) : warp.destination;
+        if (!destination || !mapFilter.has(destination.map)) return;
+        const dest = world.placements.get(destination.map);
+        if (!dest) return;
+        // Both exact points use the same projection as markers, tiles and outlines; no guessed map centres.
+        const a = warpPoint(p, warp.point, adapter.warpOffset ?? 1, view);
+        const b = warpPoint(dest, destination.point, adapter.warpOffset ?? 1, view);
+        lines.push({ key: `${source}:${index}`, x1: a.x, y1: a.y, x2: b.x, y2: b.y,
+          color: palette[lines.length % palette.length] ?? "#e879f9" });
+      });
+    }
+    return lines;
+  }, [mapFilter, linesOn, world, view, adapter, warpVersion]);
+
+  const localPoint = (e: MouseEvent<HTMLCanvasElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  };
+  const markerAt = (e: MouseEvent<HTMLCanvasElement>) => {
+    const s = localPoint(e);
+    return warpHit(warpMarkerEntries, s.x, s.y);
+  };
+  const onClick = (e: MouseEvent<HTMLCanvasElement>) => {
+    if (e.ctrlKey || e.metaKey || e.shiftKey || drag.dragMoved() || markerAt(e)) return;
+    const s = localPoint(e);
+    const w = toWorld(s.x, s.y);
+    const hit = hitTest(w.x, w.y);
+    setSelected(new Set(hit ? [hit.map] : []));
+    // The app can veto its own selection (dirty-session confirmation); this local outline still follows the click.
+    if (hit) onSelectMap?.(hit.map);
+  };
+  const onDoubleClick = (e: MouseEvent<HTMLCanvasElement>) => {
+    const modified = e.ctrlKey || e.metaKey;
+    if (drag.dragMoved() || (modified && !adapter.modifiedDoubleClick)) return;
+    const marker = !e.shiftKey && markerAt(e);
+    if (marker) {
+      if (marker.warp.popupMap) {
+        setWarpError(null);
+        setWarpPopup(marker.warp.popupMap);
+      } else if (adapter.unresolvedWarpError) setWarpError(adapter.unresolvedWarpError);
+      return;
+    }
+    const s = localPoint(e);
+    const w = toWorld(s.x, s.y);
+    const hit = hitTest(w.x, w.y);
+    if (!hit) return;
+    // Shift bypasses previews and opens Map view. Plain double-click edits here where the host provides it.
+    if (e.shiftKey || !onEditHere) onOpenMap?.(hit.map);
+    else if (!modified) requestEditHere(hit.map, { x: e.clientX, y: e.clientY });
+  };
+  const onMouseMove = (e: MouseEvent<HTMLCanvasElement>) => {
+    if (drag.onMouseMove(e)) return;
+    const s = localPoint(e);
+    const badge = badgesRef.current.find((b) => Math.hypot(b.x - s.x, b.y - s.y) <= BADGE_SIZE);
+    setTooltip(badge ? { ...s, text: badge.text } : null);
+    const w = toWorld(s.x, s.y);
+    const hit = hitTest(w.x, w.y);
+    const component = world?.components.find((c) => c.index === hit?.component) ?? null;
+    setHover(hit ? { map: hit.map, placement: hit, component, width: hit.width, height: hit.height } : null);
+  };
+  const onContextMenu = (e: MouseEvent<HTMLCanvasElement>) => contextMenu.onContextMenu(e, (sx, sy) => {
+    menuPointRef.current = { x: e.clientX, y: e.clientY };
+    const badge = badgesRef.current.find((b) => Math.hypot(b.x - sx, b.y - sy) <= BADGE_SIZE) ?? null;
+    const w = toWorld(sx, sy);
+    return { map: badge?.map ?? hitTest(w.x, w.y)?.map ?? null, badge };
+  });
+  const onKeyDown = (e: React.KeyboardEvent<HTMLCanvasElement>) => {
+    const name = selected.size === 1 ? [...selected][0]! : null;
+    const p = name && inScope(name) ? world?.placements.get(name) : undefined;
+    if (contextMenu.onMenuKey(e, () => {
+      if (!p) return null;
+      const at = worldToScreen({ x: p.x + p.width / 2, y: p.y + p.height / 2 }, view);
+      const box = canvasRef.current?.getBoundingClientRect();
+      menuPointRef.current = { x: (box?.left ?? 0) + at.x, y: (box?.top ?? 0) + at.y };
+      return { ...at, map: p.map };
+    })) return;
+    if (e.key === "Escape") setSelected(new Set());
+    if (e.key === "Enter" && p) onOpenMap?.(p.map);
+    if (!["+", "=", "-", "_"].includes(e.key)) return;
+    e.preventDefault();
+    const direction = e.key === "+" || e.key === "=" ? 1 : -1;
+    // Pending context payloads must not fall through into continuous World zoom.
+    if (worldContext.inContext) worldContext.stepZoom(direction);
+    else updateView((v) => zoomWorldAboutPivot(v, direction === 1 ? WHEEL_FACTOR : 1 / WHEEL_FACTOR,
+      viewport.w / 2, viewport.h / 2, boundsFor(v.zoom)));
+  };
+  const onDrop = (e: React.DragEvent<HTMLCanvasElement>) => {
+    e.preventDefault();
+    if (!world || !adapter.postPlacement) return;
+    const map = e.dataTransfer.getData("text/plain");
+    if (!map) return;
+    const size = adapter.dropSize
+      ? adapter.dropSize(map, world, mapFilter)
+      : singletonSizes(world.components).get(map);
+    if (!size) return;
+    const box = e.currentTarget.getBoundingClientRect();
+    const w = toWorld(e.clientX - box.left, e.clientY - box.top);
+    const x = Math.round(w.x - size.width / 2);
+    const y = Math.round(w.y - size.height / 2);
+    // Begin outside the state updater and before optimistic movement, just as the drag dispatcher does.
+    const version = ledger.begin(map);
+    move(new Map([[map, { x, y }]]));
+    commit([{ map, x, y, version }]);
+  };
+
+  // EncounterBorder owns tooltip state. Its DOM is observed only for new content, so clamping its measured box
+  // also works for keyboard focus without replacing the shared border or making attribute writes loop.
+  useLayoutEffect(() => {
+    const root = containerRef.current;
+    if (!root) return;
+    const clamp = () => {
+      const tip = root.querySelector<HTMLElement>(".encounter-border__tooltip");
+      if (!tip) return;
+      tip.style.maxWidth = `${viewport.w}px`;
+      tip.style.boxSizing = "border-box";
+      tip.style.whiteSpace = "normal";
+      tip.style.overflowWrap = "anywhere";
+      tip.style.translate = "0px";
+      const box = tip.getBoundingClientRect();
+      const frame = root.getBoundingClientRect();
+      const dx = Math.max(frame.left - box.left, Math.min(0, frame.left + viewport.w - box.right));
+      tip.style.translate = `${dx}px`;
+    };
+    const observer = new MutationObserver(clamp);
+    observer.observe(root, { childList: true, subtree: true, characterData: true });
+    clamp();
+    return () => observer.disconnect();
+  }, [containerRef, viewport.w]);
+
+  const reloadError = world && error ? `Could not reload the world: ${error}` : null;
+  const dismissibleToast = (text: string | null, dismiss: () => void) => text && (
+    <div className="world-canvas__toast" role="alert">
+      <span className="world-canvas__toast-text">{text}</span>
+      <button type="button" className="world-canvas__toast-dismiss" onClick={dismiss} aria-label="Dismiss error">
+        ×
+      </button>
+    </div>
+  );
+  const toolbarError = (text: string | null) => text && (
+    <div className="world-canvas__toolbar-group world-canvas__toolbar-group--save-error">
+      <span className="world-canvas__toolbar-error" role="alert">{text}</span>
+    </div>
+  );
+  const toasts = (
+    <>
+      <ConflictErrorToast error={conflictAcceptance.error} onDismiss={() => conflictAcceptance.setError(null)} />
+      {!perMapErrors && dismissibleToast(saveError?.message ?? null, () => setSaveError(null))}
+      {!perMapErrors && dismissibleToast(reloadError, dismissError)}
+    </>
+  );
+  const overlays: Record<WorldOverlay, ReactNode> = {
+    selection: selected.size > 0 && (
+      <div className="world-canvas__selection" aria-hidden="true">
+        {[...selected].map((map) => {
+          const r = outline(map);
+          return r && (
+            <div
+              key={map}
+              className="world-canvas__selection-outline"
+              data-map={map}
+              style={{ left: r.x, top: r.y, width: r.width, height: r.height }}
+            />
+          );
+        })}
+      </div>
+    ),
+    jump: jumpHighlight && jumpRect && (
+      <div className="world-canvas__selection" aria-hidden="true">
+        {/* Keyed on the token: a same-map re-jump would otherwise reuse the node whose `forwards` fade
+            animation already finished, so the flash would not restart (P12-4p). */}
+        <div
+          key={jumpHighlight.token}
+          className="world-canvas__selection-outline world-canvas__jump-highlight"
+          style={{ left: jumpRect.x, top: jumpRect.y, width: jumpRect.width, height: jumpRect.height }}
+        />
+      </div>
+    ),
+    warps: warpsOn && warpMarkerEntries.length > 0 && (
+      <div className="world-canvas__warps" aria-hidden="true">
+        {warpMarkerEntries.map((entry) => (
+          <div key={entry.key} className="world-canvas__warp-marker" style={{ left: entry.sx, top: entry.sy }} />
+        ))}
+      </div>
+    ),
+    connections: mapFilter && linesOn && connectionLines.length > 0 && (
+      <svg className="world-canvas__connections" aria-hidden="true">
+        {connectionLines.map((line) => (
+          <line key={line.key} x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2} stroke={line.color} strokeWidth={2} />
+        ))}
+      </svg>
+    ),
+    marquee: drag.marqueeRect && (
+      <div
+        className="world-canvas__marquee"
+        style={{
+          left: Math.min(drag.marqueeRect.x0, drag.marqueeRect.x1),
+          top: Math.min(drag.marqueeRect.y0, drag.marqueeRect.y1),
+          width: Math.abs(drag.marqueeRect.x1 - drag.marqueeRect.x0),
+          height: Math.abs(drag.marqueeRect.y1 - drag.marqueeRect.y0),
+        }}
+      />
+    ),
+    lens: (
+      <LensOverlay lens={lens} entries={lensEntries} />
+    ),
+    spotlight: (
+      <SpotlightOverlay hits={spotlightHits} entries={spotlightEntries} />
+    ),
+  };
+  const overlayOrder: readonly WorldOverlay[] = adapter.overlayOrder
+    ?? ["selection", "jump", "warps", "connections", "marquee", "lens", "spotlight"];
   return (
     <section className="world-canvas" aria-label="World canvas">
       <div className="world-canvas__toolbar">
         {adapter.fitFirst && <div className="world-canvas__toolbar-group">{fitButton}</div>}
         {adapter.toolbarExtras}
+        {adapter.postDungeons && <DungeonAutoLayoutSwitch on={dungeonsOn} onToggle={toggleDungeons} />}
+        {perMapErrors && toolbarError(layoutError ? `Could not save dungeon auto-layout: ${layoutError}` : null)}
+        <WorldToolbarSwitch label="Warps" on={warpsOn} onToggle={() => {
+          if (!warpsOn) setWarpError(null);
+          setWarpsOn((on) => !on);
+        }} />
+        {mapFilter && <WorldToolbarSwitch label="Connection lines" on={linesOn} onToggle={() => {
+          if (!linesOn) setWarpError(null);
+          setLinesOn((on) => !on);
+        }} />}
+        {toolbarError(warpError ? `Warp data unavailable: ${warpError}` : null)}
         <EncounterFetchAlert count={failedCount} />
+        {adapter.toolbarAfterEncounter}
+        {perMapErrors && toolbarError(saveError ? `Could not save placement: ${saveError.message}` : null)}
+        {perMapErrors && reloadError && (
+          // Text truncates independently; putting the button inside it would clip the dismiss control.
+          <div className="world-canvas__toolbar-group world-canvas__toolbar-group--save-error" role="alert">
+            <span className="world-canvas__toolbar-error">{reloadError}</span>
+            <button type="button" className="world-canvas__toast-dismiss" aria-label="Dismiss error" onClick={dismissError}>
+              ×
+            </button>
+          </div>
+        )}
         <div className="world-canvas__toolbar-group world-canvas__toolbar-group--grow">
           <SpeciesSpotlight<Hit> onHits={setSpotlightHits} />
           {/* A failed /api/coverage replaces the lenses with an error rather than claiming "0 maps have no
@@ -396,11 +807,34 @@ export function WorldSurface<P extends SurfacePlacement, C extends WireConflict,
           )}
           <canvas
             ref={canvasRef}
-            className="world-canvas__stage"
+            className={`world-canvas__stage${drag.draggingMap && adapter.draggingMapClass ? ` ${adapter.draggingMapClass}` : ""}`}
             width={viewport.w}
             height={viewport.h}
             tabIndex={0}
             aria-label={adapter.canvasLabel}
+            onMouseDown={(e) => {
+              // Plain marker downs still reset the trailing-drag guard and can pan; modified marker clicks never toggle.
+              if (!markerAt(e) || (!e.ctrlKey && !e.metaKey)) drag.onMouseDown(e);
+            }}
+            onMouseMove={onMouseMove}
+            onMouseUp={drag.onMouseUp}
+            onMouseLeave={() => {
+              drag.onMouseLeave();
+              setHover(null);
+              setTooltip(null);
+            }}
+            onPointerDown={(e) => {
+              contextMenu.onPointerDown();
+              if (e.button === 0) stage.onPointerDown(e);
+            }}
+            onPointerCancel={stage.onPointerCancel}
+            onLostPointerCapture={stage.onLostPointerCapture}
+            onClick={onClick}
+            onDoubleClick={onDoubleClick}
+            onKeyDown={onKeyDown}
+            onContextMenu={onContextMenu}
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={onDrop}
           />
           <EncounterBorder
             entries={borderEntries}
@@ -408,41 +842,18 @@ export function WorldSurface<P extends SurfacePlacement, C extends WireConflict,
             lodZoom={adapter.nativePx * LOD_SCALE}
             {...adapter.border}
           />
-          {selected.size > 0 && (
-            <div className="world-canvas__selection" aria-hidden="true">
-              {[...selected].map((map) => {
-                const r = outline(map);
-                return r && (
-                  <div
-                    key={map}
-                    className="world-canvas__selection-outline"
-                    data-map={map}
-                    style={{ left: r.x, top: r.y, width: r.width, height: r.height }}
-                  />
-                );
-              })}
-            </div>
-          )}
-          {jumpHighlight && jumpRect && (
-            <div className="world-canvas__selection" aria-hidden="true">
-              {/* Keyed on the token: a same-map re-jump would otherwise reuse the node whose `forwards` fade
-                  animation already finished, so the flash would not restart (P12-4p). */}
-              <div
-                key={jumpHighlight.token}
-                className="world-canvas__selection-outline world-canvas__jump-highlight"
-                style={{ left: jumpRect.x, top: jumpRect.y, width: jumpRect.width, height: jumpRect.height }}
-              />
-            </div>
-          )}
-          <LensOverlay lens={lens} entries={lensEntries} />
-          <SpotlightOverlay hits={spotlightHits} entries={spotlightEntries} />
+          {overlayOrder.map((key) => (
+            <Fragment key={key}>{overlays[key]}</Fragment>
+          ))}
           <WorldContextOverlayMount context={context} ctx={worldContext} />
-          <ConflictTooltip tooltip={null} />
+          <ConflictTooltip tooltip={tooltip} />
           <WorldContextMenu menu={contextMenu.menu} viewport={viewport} onClose={contextMenu.close} />
-          <ConflictErrorToast error={conflictAcceptance.error} onDismiss={() => conflictAcceptance.setError(null)} />
-          {/* Task 6: warp overlays and popup, save and reload alerts. */}
+          {/* Conflict, save and reload failures can coincide; the host's toast wrapper keeps them stacked. */}
+          {adapter.wrapToasts ? adapter.wrapToasts(toasts) : toasts}
         </div>
-        <UnplacedRail unplacedNames={unplacedNames} filter={railFilter} onFilterChange={setRailFilter} />
+        {!worldContext.inContext && (
+          <UnplacedRail unplacedNames={unplacedNames} filter={railFilter} onFilterChange={setRailFilter} />
+        )}
       </div>
       <div className="world-canvas__status">
         {adapter.statusItems({
@@ -452,9 +863,10 @@ export function WorldSurface<P extends SurfacePlacement, C extends WireConflict,
           hiddenCount,
           unplacedCount: unplacedNames.length,
           acceptedCount: conflictAcceptance.acceptedCount,
-          hover: null,
+          hover,
         })}
       </div>
+      {warpPopup && world && adapter.renderWarpPopup?.(warpPopup, () => setWarpPopup(null), world)}
     </section>
   );
 }
