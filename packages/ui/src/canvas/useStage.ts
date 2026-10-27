@@ -5,7 +5,7 @@ import { useFitShortcut } from "../shared/useFitShortcut.js";
 import { useContextMapFit } from "../shared/useWorldContext.js";
 
 type UpdateView<T> = (next: T | ((view: T) => T)) => void;
-export type StageZoomPolicy = ZoomPolicy & ({ kind: "stepped" } | { kind: "continuous"; factor: number });
+export type StageZoomPolicy = ZoomPolicy & ({ kind: "stepped" } | { kind: "continuous"; factor: number; boundsFor?: (zoom: number) => { min: number; max: number } });
 const NO_FIT_LEVELS: readonly number[] = [];
 const NO_FIT = () => {};
 
@@ -32,8 +32,15 @@ export function useStageView<T extends View>(controlledView: T | undefined, onVi
 }
 
 export function useStageZoom<T extends View>(canvasRef: RefObject<HTMLCanvasElement | null>, zoom: number, updateView: UpdateView<T>, policy: StageZoomPolicy) {
+  // Read through a ref published at commit: a new function identity never re-binds the wheel listener, and a
+  // suspended render never leaks its bounds into a wheel event on the committed canvas.
+  const boundsFor = useRef(policy.kind === "continuous" ? policy.boundsFor : undefined);
+  useLayoutEffect(() => {
+    boundsFor.current = policy.kind === "continuous" ? policy.boundsFor : undefined;
+  });
   const zoomBy = (nextOf: (view: T) => T["zoom"], pivotX: number, pivotY: number) => updateView((view) => {
-    const result = zoomAboutPivot(view, nextOf(view), pivotX, pivotY, policy);
+    const bounds = policy.kind === "continuous" ? boundsFor.current?.(view.zoom) : undefined;
+    const result = zoomAboutPivot(view, nextOf(view), pivotX, pivotY, bounds ? { kind: "continuous", ...bounds } : policy);
     return result === view ? view : { ...view, ...result };
   });
   const applyZoom = (next: T["zoom"], pivotX: number, pivotY: number) => zoomBy(() => next, pivotX, pivotY);
