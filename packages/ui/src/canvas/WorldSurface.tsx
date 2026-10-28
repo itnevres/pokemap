@@ -199,7 +199,7 @@ export function WorldSurface<P extends SurfacePlacement, C extends WireConflict,
 
   // Map-list jump (P12-4m/p/q/u). Until the world and a filter that includes the map both exist, the token stays
   // unstamped so the jump retries when they change (a tree click can precede the GET). The highlight and reveal land
-  // then; the 60% fit waits for a measured viewport (both source canvases highlighted with no viewport measured).
+  // then; the jump fit waits for a measured viewport (both source canvases highlighted with no viewport measured).
   // The pending fit keeps the map name and re-resolves it when it lands: a filter that excludes the map by then
   // drops the fit (the filter fit stands), and a moved placement fits where it is now.
   const appliedJump = useRef<number | undefined>(undefined);

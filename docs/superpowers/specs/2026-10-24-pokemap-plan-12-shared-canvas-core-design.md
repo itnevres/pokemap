@@ -200,3 +200,8 @@ Capability flags already in `shell/adapter.ts` (Collision tool, Elevation overla
 - N4 P12-4s retry could loop -> an always-rejecting route keeps one fetch until a view change; mutation.
 - N5 the in-context cap differs (GBA `max(16, current)` px/tile; GBC `maxWorldZoom`, x4 in context) -> P12-4j's shared cap is GBC's rule; GBA gains wheel zoom to 64 px/tile in context; GBA test added. The conductor's reading of P12-4j, reported to the user.
 - M-a cancel precondition and the P12-4a reading stated. M-b P12-4r narrows GBA's fetch (recorded under r). M-c sequential wheel product; world views uncontrolled. M-d `computeFit` requires bounds; the GBA default stays in the GBA wrapper.
+
+**Plan 12b Task 8 reviews (2026-10-27, Claude Opus `high-risk-reviewer` spec + quality; Codex at its usage limit, fallback logged): both Approved with fixes, fixed in the conductor 11 fix round (`task-8-report.md`).**
+- T8-I1 P12-4e made two unchanged GBA tests vacuous (mapFilter source restriction; badge-target right-click) -> fixtures rebased so each discriminates again; each mutation (filter scope dropped, `badge?.map` dropped) is green on the old test file and red on the new.
+- T8 ruling on N3 for fixture rebases: a rebase that changes the fixture so the fit is the old view is guarded by a mutation of the feature logic it pins, not by a fit mutation. Sampled: marquee `contains` -> `intersects` (1 red), culling disabled (6 red), stacked-badge offset dropped (2 red).
+- T8 minors (stale comments, `GbcApp` centring fixture overlap, explicit 0.6 scale-before-clamp pin in `worldView.test.ts`, `worldColours.ts` JSDoc placement, evidence bookkeeping) fixed; toggle-before-load no-op (surface since Task 6) kept as a fix.

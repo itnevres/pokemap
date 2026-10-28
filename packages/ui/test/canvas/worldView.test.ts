@@ -151,7 +151,7 @@ describe("bounds and fits (P12-4m)", () => {
     expect(centredFit({ x: 10, y: 20, width: 30, height: 40 }, { w: 200, h: 100 }, 2)).toEqual({ zoom: 2, pan: { x: 50, y: -30 } });
   });
 
-  it("jumpFit fills the limiting viewport dimension before clamping", () => {
+  it("jumpFit fills the limiting viewport dimension by default and scales by the fraction before clamping", () => {
     const gbc = { min: 1 / 64, max: 32 };
     // 20x18 at (10,20) in 1000x668: raw min(50,668/18)=37.111, clamped to 32.
     // Pan x=500-20*32=-140; y=334-29*32=-594.
@@ -159,6 +159,8 @@ describe("bounds and fits (P12-4m)", () => {
     expect(small.zoom).toBeCloseTo(32, 6);
     expect(small.pan.x).toBeCloseTo(-140, 3);
     expect(small.pan.y).toBeCloseTo(-594, 3);
+    // Explicit fraction 0.6, scale before clamp: 37.111*0.6 = 22.267 (clamping first would give 32*0.6 = 19.2).
+    expect(jumpFit({ x: 10, y: 20, width: 20, height: 18 }, { w: 1000, h: 668 }, gbc, 0.6).zoom).toBeCloseTo((668 / 18) * 0.6, 6);
     // 2000x1000 in 1000x500: raw 0.5; centred dimensions fill exactly, giving pan (0,0).
     expect(jumpFit({ x: 0, y: 0, width: 2000, height: 1000 }, { w: 1000, h: 500 }, gbc)).toEqual({ zoom: 0.5, pan: { x: 0, y: 0 } });
     // 2x2 in 1000x668: raw 334, clamped to 32; pan ((1000-64)/2,(668-64)/2)=(468,302).

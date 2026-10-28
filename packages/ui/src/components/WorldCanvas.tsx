@@ -4,6 +4,7 @@ import { WorldSurface } from "../canvas/WorldSurface.js";
 import { computeFit as computeWorldFit, worldZoomRange } from "../canvas/worldView.js";
 import { createGbaWorldSurface } from "../gba/worldSurface.js";
 
+// Compat re-exports (plan Task 8); Task 9's re-export inventory deletes any without a consumer.
 export { drawDiamond, levelColorMap, themedLevelColorMap } from "../canvas/worldColours.js";
 
 /** GBA's default-bounds wrapper over `canvas/worldView.ts` computeFit: screen px per 16px tile.

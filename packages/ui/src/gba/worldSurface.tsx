@@ -149,7 +149,7 @@ interface WireWarpEvent extends WarpEvent {
   destMapName?: string;
 }
 function isWarpsPayload(value: unknown): value is { warps: WireWarpEvent[] } {
-  // The existing route has no required map identity field; only the coordinates and destination fields are consumed.
+  // GBA does not validate the optional `mapName`, as before; only the coordinates and destination fields are consumed.
   return isRecord(value) && Array.isArray(value.warps) && value.warps.every((warp: unknown) =>
     isRecord(warp) && typeof warp.x === "number" && typeof warp.y === "number"
       && (warp.destMapName === undefined || typeof warp.destMapName === "string")
@@ -159,8 +159,10 @@ function useGbaSurfaceCoverage() {
   const { data, error } = useCoverage();
   // Coverage names need no id/name reconciliation; levels are coloured by rank in the shared surface.
   const emptyMapNames = useMemo(() => new Set(data?.mapsWithoutEncounters ?? []), [data]);
-  return { coverage: data, error, levelByMap: data?.levelByMap ?? [], emptyMapNames };
+  return { coverage: data, error, levelByMap: data?.levelByMap ?? NO_LEVELS, emptyMapNames };
 }
+// Stable while coverage loads or fails, so the level-colour memo does not rerun on every frame.
+const NO_LEVELS: never[] = [];
 
 export function createGbaWorldSurface(): WorldSurfaceAdapter<GbaWorldPlacement, WireConflict, GbaSurfaceWorld> {
   return {

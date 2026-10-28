@@ -135,7 +135,7 @@ P12-4c checks the missing no-handler callback at a point inside A under both old
 P12-4d rejects a real pending warp request and expects its named alert; old GBA discarded that error.
 P12-4e checks cluster fit at zoom5/pan0, B rect150,50,50,50 and31%, with Near visible only to the forbidden pre-fit view.
 The second P12-4e case loads the world before any measured viewport, requests no image, then measures and expects the fitted view.
-P12-4m derives B's 60% rect70,20,60,60 and38%; old GBA filled the entire limiting viewport dimension.
+P12-4m (after the 2026-10-27 amendment) derives B's full-fill jump: z10, pan (-250,-100), rect 50,0,100,100, 63%. It matches old GBA, so it passes on the old source; mutation M5 (fraction 0.6) turns it red.
 P12-4n covers Enter, all four zoom aliases, centre-pivot geometry, and a separate context1x/2x/1x stepped-key case.
 P12-4o first ensures old GBA can show its marker too, then clicks the real marker; old GBA selected the body through it.
 P12-4p checks a fresh node AND the full delayed re-jump lifetime. Old GBA already used key=jumpToken, so identity alone
@@ -359,23 +359,21 @@ Statically rebased all 96 inventory cases. Runtime confirmation remains with the
 | --- | --- | --- | --- |
 | `test/App.test.tsx:1110` | P12-4e | App literals | 30x10 -> 21%; 21x10 -> 60% |
 | `test/App.test.tsx:1181` | P12-4e | App literals | 30x10 -> 21%; 21x10 -> 60% |
-| `test/AppContextEdit.test.tsx:179` | P12-4e | Route1 hits | 21x10 -> z10,pan(95,0); B 255,50 |
-| `test/AppContextEdit.test.tsx:194` | P12-4e | Route1 hits | 21x10 -> z10,pan(95,0); B 255,50 |
-| `test/AppContextEdit.test.tsx:261` | P12-4e | Route1 hits | 21x10 -> z10,pan(95,0); B 255,50 |
-| `test/AppContextEdit.test.tsx:288` | P12-4e | Route1 hits | 21x10 -> z10,pan(95,0); B 255,50 |
-| `test/AppContextEdit.test.tsx:276` | P12-4e | Route1 hits | 21x10 -> z10,pan(95,0); B 255,50 |
-| `test/AppContextEdit.test.tsx:128` | P12-4e | Route1 hits | 21x10 -> z10,pan(95,0); B 255,50 |
-| `test/AppContextEdit.test.tsx:155` | P12-4e | Route1 hits | 21x10 -> z10,pan(95,0); B 255,50 |
-| `test/AppContextEdit.test.tsx:214` | P12-4e | Route1 hits | 21x10 -> z10,pan(95,0); B 255,50 |
-| `test/AppContextEdit.test.tsx:214` | P12-4e | Route1 hits | 21x10 -> z10,pan(95,0); B 255,50 |
-| `test/AppContextEdit.test.tsx:214` | P12-4e | Route1 hits | 21x10 -> z10,pan(95,0); B 255,50 |
-| `test/AppContextEdit.test.tsx:390` | P12-4e | Route1 hits | 21x10 -> z10,pan(95,0); B 255,50 |
-| `test/AppContextEdit.test.tsx:340` | P12-4e | Route1 hits | 21x10 -> z10,pan(95,0); B 255,50 |
-| `test/AppContextEdit.test.tsx:378` | P12-4e | Route1 hits | 21x10 -> z10,pan(95,0); B 255,50 |
-| `test/AppContextEdit.test.tsx:413` | P12-4e | Route1 hits | 21x10 -> z10,pan(95,0); B 255,50 |
-| `test/AppContextStroke.test.tsx:130` | P12-4e | Route1 hits | 21x10 -> z10,pan(95,0); B 255,50 |
-| `test/AppContextStroke.test.tsx:164` | P12-4e | Route1 hits | 21x10 -> z10,pan(95,0); B 255,50 |
-| `test/AppContextVisit.test.tsx:119` | P12-4e | Route1 hits | 21x10 -> z10,pan(95,0); B 255,50 |
+| `test/AppContextEdit.test.tsx:179` | P12-4e | Route1 hits | 21x10 -> z10,pan(95,0); Route1 255,50 |
+| `test/AppContextEdit.test.tsx:194` | P12-4e | Route1 hits | 21x10 -> z10,pan(95,0); Route1 255,50 |
+| `test/AppContextEdit.test.tsx:261` | P12-4e | Route1 hits | 21x10 -> z10,pan(95,0); Route1 255,50 |
+| `test/AppContextEdit.test.tsx:288` | P12-4e | Route1 hits | 21x10 -> z10,pan(95,0); Route1 255,50 |
+| `test/AppContextEdit.test.tsx:276` | P12-4e | Route1 hits | 21x10 -> z10,pan(95,0); Route1 255,50 |
+| `test/AppContextEdit.test.tsx:128` | P12-4e | Route1 hits | 21x10 -> z10,pan(95,0); Route1 255,50 |
+| `test/AppContextEdit.test.tsx:155` | P12-4e | Route1 hits | 21x10 -> z10,pan(95,0); Route1 255,50 |
+| `test/AppContextEdit.test.tsx:214` | P12-4e | Route1 hits | 21x10 -> z10,pan(95,0); Route1 255,50 |
+| `test/AppContextEdit.test.tsx:390` | P12-4e | Route1 hits | 21x10 -> z10,pan(95,0); Route1 255,50 |
+| `test/AppContextEdit.test.tsx:340` | P12-4e | Route1 hits | 21x10 -> z10,pan(95,0); Route1 255,50 |
+| `test/AppContextEdit.test.tsx:378` | P12-4e | Route1 hits | 21x10 -> z10,pan(95,0); Route1 255,50 |
+| `test/AppContextEdit.test.tsx:413` | P12-4e | Route1 hits | 21x10 -> z10,pan(95,0); Route1 255,50 |
+| `test/AppContextStroke.test.tsx:130` | P12-4e | Route1 hits | 21x10 -> z10,pan(95,0); Route1 255,50 |
+| `test/AppContextStroke.test.tsx:164` | P12-4e | Route1 hits | 21x10 -> z10,pan(95,0); Route1 255,50 |
+| `test/AppContextVisit.test.tsx:119` | P12-4e | Route1 hits | 21x10 -> z10,pan(95,0); Route1 255,50 |
 | `test/WorldCanvas.test.tsx:632` | P12-4e | pan fixture | Anchor extends bounds to 100x100 |
 | `test/WorldCanvas.test.tsx:419` | P12-4e | Solo fixture | Solo 100x100 -> z1,pan0 |
 | `test/WorldCanvas.test.tsx:477` | P12-4j | min bound | 16/2048=1/128 px/tile |
@@ -411,7 +409,6 @@ Statically rebased all 96 inventory cases. Runtime confirmation remains with the
 | `test/WorldCanvas.test.tsx:2740` | P12-4e | menu fixture | 100x100 fit -> z1,pan0 |
 | `test/WorldCanvas.test.tsx:2677` | P12-4e | menu fixture | 100x100 fit -> z1,pan0 |
 | `test/WorldCanvas.test.tsx:2721` | P12-4e | menu fixture | 100x100 fit -> z1,pan0 |
-| `test/WorldCanvas.test.tsx:2677` | P12-4e | menu fixture | 100x100 fit -> z1,pan0 |
 | `test/WorldCanvas.test.tsx:2304` | P12-4e | border fixture | hidden Anchor cluster -> z1,pan0 |
 | `test/WorldCanvas.test.tsx:2269` | P12-4e | border fixture | hidden Anchor cluster -> z1,pan0 |
 | `test/WorldCanvas.test.tsx:2286` | P12-4e | border fixture | hidden Anchor cluster -> z1,pan0 |
@@ -438,7 +435,6 @@ Statically rebased all 96 inventory cases. Runtime confirmation remains with the
 | `test/gbc/GbcApp.test.tsx:823` | P12-4m amended | full fill | z=clamp(min(vw/w,vh/h)); centre pan |
 | `test/gbc/GbcAppContext.test.tsx:395` | P12-4m amended | full fill | z=clamp(min(vw/w,vh/h)); centre pan |
 | `test/gbc/GbcAppContext.test.tsx:158` | P12-4m amended | full fill | z=clamp(min(vw/w,vh/h)); centre pan |
-| `test/gbc/GbcAppContext.test.tsx:477` | P12-4m amended | full fill | z=clamp(min(vw/w,vh/h)); centre pan |
 | `test/gbc/GbcAppContext.test.tsx:477` | P12-4m amended | full fill | z=clamp(min(vw/w,vh/h)); centre pan |
 | `test/gbc/GbcAppContext.test.tsx:500` | P12-4m amended | full fill | z=clamp(min(vw/w,vh/h)); centre pan |
 | `test/gbc/GbcAppContext.test.tsx:578` | P12-4m amended | full fill | z=clamp(min(vw/w,vh/h)); centre pan |

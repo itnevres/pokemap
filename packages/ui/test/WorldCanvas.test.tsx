@@ -497,15 +497,11 @@ describe("WorldCanvas", () => {
       FakeImage.instances[0]!.onload?.();
     });
     await waitFor(() => expect(stageCtx.drawImage).toHaveBeenCalled());
-    // At zoom=1, pan={0,0}, Solo (x=0,y=0) draws at destination (0,0).
+    // P12-4e: Solo alone fits at zoom 100/10 = 10, pan {0,0}, so it draws at destination (0,0) and fills the view.
     expect(stageCtx.drawImage.mock.calls.at(-1)!.slice(1, 3)).toEqual([0, 0]);
 
-    // Mousedown on empty space (50,50 is well outside Solo's 10x10 rect) so
-    // this pans rather than drags the map. Panning by a POSITIVE delta
-    // (toward the bottom-right) -- panning the other way would push Solo's
-    // world-tile rect out of the viewport entirely (it sits right at the
-    // world origin) and cull it, leaving no new drawImage call to observe
-    // and making this assertion pass or fail for the wrong reason.
+    // A plain (un-Shifted) drag pans even over a map body; only Shift+drag moves a map. The pan delta is in
+    // screen px, so (15,20) holds at any zoom.
     fireEvent.mouseDown(canvas, { clientX: 50, clientY: 50, button: 0 });
     fireEvent.mouseMove(canvas, { clientX: 65, clientY: 70 });
     await waitFor(() => expect(stageCtx.drawImage.mock.calls.at(-1)!.slice(1, 3)).toEqual([15, 20]));
@@ -526,9 +522,8 @@ describe("WorldCanvas", () => {
     });
     await waitFor(() => expect(stageCtx.drawImage).toHaveBeenCalled());
 
-    // Hand-computed: cursor at (50,50), zoom 1 -> 1.2. World point under the
-    // cursor before zooming is (50,50) (pan={0,0}); the new pan must keep
-    // that same world point under (50,50): newPan = 50 - 50*1.2 = -10.
+    // Hand-computed (P12-4e fit: zoom 10, pan {0,0}): cursor at (50,50), zoom 10 -> 12. The world point under the
+    // cursor is (5,5); keeping it under (50,50) gives newPan = 50 - 5*12 = -10.
     fireEvent.wheel(canvas, { clientX: 50, clientY: 50, deltaY: -100 });
     await waitFor(() => expect(stageCtx.drawImage.mock.calls.at(-1)!.slice(1, 3)).toEqual([-10, -10]));
 
@@ -1835,19 +1830,19 @@ describe("WorldCanvas", () => {
   // mapFilter (Feature C, dungeon mode -- Task 12)
   // -------------------------------------------------------------------
   describe("mapFilter (Feature C, dungeon mode)", () => {
-    function fourMapsWorld() {
+    function fourMapsWorld(outside = { x: 0, y: 20 }) {
       return makeWorld({
         placements: {
           InDungeon1: { map: "InDungeon1", x: 0, y: 0, width: 10, height: 10, component: 0 },
           InDungeon2: { map: "InDungeon2", x: 20, y: 0, width: 10, height: 10, component: 1 },
-          OutsideDungeon: { map: "OutsideDungeon", x: 0, y: 20, width: 10, height: 10, component: 2 },
+          OutsideDungeon: { map: "OutsideDungeon", ...outside, width: 10, height: 10, component: 2 },
           Far: { map: "Far", x: 500, y: 500, width: 10, height: 10, component: 3 },
         },
       });
     }
 
     it("draws and fetches art only for maps in mapFilter, ignoring viewport-only culling for the rest of the corpus", async () => {
-      const { impl } = makeFetchMock(fourMapsWorld());
+      const { impl } = makeFetchMock(fourMapsWorld({ x: 10, y: 0 }));
       vi.stubGlobal("fetch", impl);
       render(<WorldCanvas mapFilter={new Set(["InDungeon1", "InDungeon2"])} />);
       await waitFor(() => expect(screen.queryByText(/Loading world/)).toBeNull());
@@ -1855,14 +1850,9 @@ describe("WorldCanvas", () => {
       const srcs = FakeImage.instances.map((i) => i.src);
       expect(srcs.some((s) => s.includes("InDungeon1"))).toBe(true);
       expect(srcs.some((s) => s.includes("InDungeon2"))).toBe(true);
-      // OutsideDungeon sits at (0,20)-(10,30), inside the DEFAULT unscoped
-      // viewport ([0,100)x[0,100) at zoom=1,pan={0,0}) -- proving this
-      // requires the mapFilter source restriction itself, not merely
-      // "outside the viewport, so culled anyway" (which would pass even
-      // with mapFilter unimplemented, since ordinary culling would drop it
-      // for an unrelated reason). Without mapFilter actually gating the
-      // source list, this map fetches just like the culling tests above
-      // prove any in-viewport placement does.
+      // P12-4e: the filter fit is InDungeon1+2's 30x10 at zoom 10/3, pan {0,100/3}, so the view shows world
+      // [0,30)x[-10,20). OutsideDungeon is moved into the gap at (10,0)-(20,10), inside that view, so only the
+      // mapFilter source restriction keeps it unfetched (at the shared (0,20) it would be culled by the viewport).
       expect(srcs.some((s) => s.includes("OutsideDungeon"))).toBe(false);
       expect(srcs.some((s) => s.includes("Far"))).toBe(false);
     });
@@ -2586,9 +2576,13 @@ describe("WorldCanvas: context menu (Plan 6c E3)", () => {
 
   it("right-click on a badge whose map body is not under the pointer still targets the badge's map", async () => {
     const onOpenMap = vi.fn();
-    // Tiny map: the badge centre sits on the map's edge, outside its body.
+    // Tiny map: the badge centre sits on the map's edge, outside its body. P12-4e: the singleton Frame makes the
+    // all-placement fit [0,100)x[0,100), zoom 1, pan {0,0}, so the badge stays at (10-10, 0+10) = (0,10), off both bodies.
     const world = makeWorld({
-      placements: { Tiny: { map: "Tiny", x: 0, y: 0, width: 10, height: 10, component: 0 } },
+      placements: {
+        Tiny: { map: "Tiny", x: 0, y: 0, width: 10, height: 10, component: 0 },
+        Frame: { map: "Frame", x: 90, y: 90, width: 10, height: 10, component: 1 },
+      },
       conflicts: [{ map: "Tiny", viaA: { from: "X", x: 1, y: 2 }, viaB: { from: "Y", x: 3, y: 4 } }],
     });
     const { canvas } = await mountMenu({ onOpenMap }, makeFetchMock(world).impl);
@@ -2662,6 +2656,7 @@ describe("WorldCanvas: context menu (Plan 6c E3)", () => {
   it("Ctrl+double-click is suppressed and plain double-click opens Map view without Edit here", async () => {
     const onOpenMap = vi.fn();
     const { canvas } = await mountMenu({ onOpenMap });
+    // P12-4c: Ctrl+double-click is suppressed and a plain one opens Map view (no Edit here without onEditHere).
     // P12-4e fixture fits at z1/pan0; B spans x[60,100), y[40,100), so (70,50) targets it.
     fireEvent.doubleClick(canvas, { ctrlKey: true, clientX: 70, clientY: 50 });
     expect(onOpenMap).not.toHaveBeenCalled();
