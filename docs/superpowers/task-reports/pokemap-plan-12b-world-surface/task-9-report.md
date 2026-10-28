@@ -77,7 +77,7 @@ Both adapters read side by side: no renamed or reordered duplication beyond the 
 | 6 | commit-time refs: `cancelRef` published at render | unmount cancels with committed drag options after a later render suspends | `canvas/useWorldDrag.ts` |
 | 7 | P12-4i: `WARP_HIT_RADIUS` 8 → 6 | red: "P12-4i: eight pixels ... nine selects" | `canvas/worldView.ts` |
 | 7 | P12-3: surface posts only first moved map (selection in one request) | red: "P12-3: group movement posts one body per map ..." | `canvas/WorldSurface.tsx` / `gbc/worldSurface.tsx` |
-| 7 | `cacheKey` ignores time (`"day"`) | survived first run (existing time tests only check `?time=` URLs); test added, now red | `canvas/useWorldTiles.ts` |
+| 7 | `cacheKey` ignores time (`"day"`) | survived first run (existing time tests only check `?time=` URLs); test added, now red: `GbcWorldCanvasSurface.test.tsx` "a time switch drops the old time's tiles instead of keeping them on screen" | `canvas/useWorldTiles.ts` |
 | 7 | `borderNeighbours: "scoped"` removed | red: "a hidden indoor neighbour still blocks a border side" | `canvas/worldSurfaceAdapter.ts` |
 | 7 | Wheel effect deps include `zoom` again | red: "the wheel listener is registered with { passive: false }" | `canvas/useStage.ts` |
 | 7 | Context snap not gated on `view.fitted` | red: 4 `GbcWorldCanvasContext` tests (snap once, 1x/2x/4x, zoom clamp, exit requests) | `canvas/WorldSurface.tsx` |
@@ -96,7 +96,7 @@ Both adapters read side by side: no renamed or reordered duplication beyond the 
 | 8 | M7 no-handler double-click fallback removed (P12-4c) | red: 7 (P12-4c GBA/GBC/surface cases) | `canvas/WorldSurface.tsx` |
 | 8 | M8 first fit zoom x1.25 | red: 156 | `canvas/WorldSurface.tsx` |
 | 8 | M9 first fit pan +13/+7 | red: 122 | `canvas/WorldSurface.tsx` |
-| 8 | M10 first fit pan +60 | run hung (test wait loop never ends); killed at 30 min timeout, file restored. Dropped. | `canvas/WorldSurface.tsx` |
+| 8 | M10 first fit pan +60 | inconclusive: run hung (test wait loop never ends); killed at 30 min timeout, file restored. Not counted as killed. First-load fit stays covered by the Task 2 `worldView` fit rows and the Task 8 M4 row (first fit replaced: 197 red) | `canvas/WorldSurface.tsx` |
 | 8 | A `inScope(p.map) &&` dropped from `drawn` | red: 1 (mapFilter test; 157/157 before) | `canvas/WorldSurface.tsx` |
 | 8 | B `badge?.map ??` dropped from context-menu target | red: 1 (badge-body test; 157/157 before) | `canvas/WorldSurface.tsx` |
 | 8 | C marquee `contains` → `intersects` | red: 1 ("Ctrl+drag right selects only maps fully enclosed") | `canvas/useWorldDrag.ts` |
