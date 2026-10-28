@@ -210,6 +210,25 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("GBA warmUp", () => {
     syncBuiltinESMExports();
     freshHandler.dispose();
   });
+
+  // (h) warmUp() with no names builds the default list (drawn-by-default world maps): a world town is
+  // rendered and cached, so a later GET does not render it again.
+  it("h) no-argument warmUp warms the default world list", async () => {
+    const result = await handler.warmUp();
+    expect(result.rendered).toBeGreaterThan(10);
+    expect(result.failed).toBe(0);
+    const calls = gbaMocks.renderLayoutCalls;
+    expect(calls).toBe(result.rendered);
+    const srv = createHttpServer(handler.handle);
+    await new Promise<void>((resolve) => srv.listen(0, "127.0.0.1", resolve));
+    try {
+      const r = await fetch(`http://127.0.0.1:${(srv.address() as AddressInfo).port}/api/render/PetalburgCity.png`);
+      expect(r.status).toBe(200);
+      expect(gbaMocks.renderLayoutCalls).toBe(calls);
+    } finally {
+      await new Promise<void>((resolve) => srv.close(() => resolve()));
+    }
+  }, 60000);
 });
 
 // -----------------------------------------------------------------------------
@@ -406,4 +425,23 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("GBC warmUp", () => {
     syncBuiltinESMExports();
     freshHandler.dispose();
   });
+
+  // (h) warmUp() with no names builds the default list (drawn-by-default world maps): a world town is
+  // rendered and cached, so a later GET does not render it again.
+  it("h) no-argument warmUp warms the default world list", async () => {
+    const result = await handler.warmUp();
+    expect(result.rendered).toBeGreaterThan(10);
+    expect(result.failed).toBe(0);
+    const calls = gbcMocks.renderGbcMapCalls;
+    expect(calls).toBe(result.rendered);
+    const srv = createHttpServer(handler.handle);
+    await new Promise<void>((resolve) => srv.listen(0, "127.0.0.1", resolve));
+    try {
+      const r = await fetch(`http://127.0.0.1:${(srv.address() as AddressInfo).port}/api/render/NewBarkTown.png?time=day`);
+      expect(r.status).toBe(200);
+      expect(gbcMocks.renderGbcMapCalls).toBe(calls);
+    } finally {
+      await new Promise<void>((resolve) => srv.close(() => resolve()));
+    }
+  }, 60000);
 });

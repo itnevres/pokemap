@@ -1017,3 +1017,37 @@ it.each(["left", "right"])("clamps the encounter sprite tooltip at the %s edge o
   expect(rect.right).toBeLessThanOrEqual(200);
   expect(canvas(host)).toBeTruthy();
 });
+
+it("re-clamps the tooltip when it moves to a sprite with the same text (only left/top change)", async () => {
+  adapter.fetchEncounters = async () => ({
+    summaries: [{ species: "TEST", displayName: "Test species", iconUrl: "/icon.png", rows: [] }],
+    methodTint: null,
+  });
+  mount();
+  await settle();
+  fireEvent.click(screen.getByRole("button", { name: "Encounters" }));
+  const sprites = screen.getAllByRole("button", { name: "Test species" });
+  expect(sprites.length).toBeGreaterThanOrEqual(2);
+  const original = HTMLElement.prototype.getBoundingClientRect;
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+    // Sprite 0 anchors at x=0, sprite 1 at x=150. The 100px tooltip is centred on its anchor:
+    // at 0 it spans -50..50 (needs +50); at 150 it spans 100..200 and fits the 200px viewport (needs 0).
+    const at = (left: number, width: number) => ({ x: left, y: 0, left, right: left + width, top: 0, bottom: 20,
+      width, height: 20, toJSON: () => ({}) });
+    if (this === sprites[0]) return at(0, 0);
+    if (this === sprites[1]) return at(150, 0);
+    if (this.classList.contains("encounter-border__tooltip")) {
+      return at(parseFloat(this.style.left) - 50 + (parseFloat(this.style.translate) || 0), 100);
+    }
+    return original.call(this);
+  });
+  fireEvent.mouseEnter(sprites[0]!);
+  await settle();
+  const tip = screen.getByRole("tooltip");
+  expect(tip.style.translate).toBe("50px");
+  fireEvent.mouseEnter(sprites[1]!);
+  fireEvent.mouseLeave(sprites[0]!);
+  await settle();
+  expect(screen.getByRole("tooltip")).toBe(tip);
+  expect(tip.style.translate).toBe("0px");
+});

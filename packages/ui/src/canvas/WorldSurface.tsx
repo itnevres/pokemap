@@ -658,13 +658,19 @@ export function WorldSurface<P extends SurfacePlacement, C extends WireConflict,
     commit([{ map, x, y, version }]);
   };
 
-  // EncounterBorder owns tooltip state. Its DOM is observed only for new content, so clamping its measured box
-  // also works for keyboard focus without replacing the shared border or making attribute writes loop.
+  // EncounterBorder owns tooltip state. Its DOM is observed for new content and for style writes, so clamping its
+  // measured box also works for keyboard focus without replacing the shared border. A move between sprites with
+  // the same text changes only left/top, so the anchor (not the content alone) decides a re-clamp; our own
+  // translate writes leave the anchor unchanged and return early, so the attribute observer cannot loop.
   useLayoutEffect(() => {
     const root = containerRef.current;
     if (!root) return;
+    let clamped = "";
     const clamp = () => {
       const tip = root.querySelector<HTMLElement>(".encounter-border__tooltip");
+      const anchor = tip ? `${tip.style.left}|${tip.style.top}|${tip.textContent}` : "";
+      if (anchor === clamped) return;
+      clamped = anchor;
       if (!tip) return;
       tip.style.maxWidth = `${viewport.w}px`;
       tip.style.boxSizing = "border-box";
@@ -677,7 +683,7 @@ export function WorldSurface<P extends SurfacePlacement, C extends WireConflict,
       tip.style.translate = `${dx}px`;
     };
     const observer = new MutationObserver(clamp);
-    observer.observe(root, { childList: true, subtree: true, characterData: true });
+    observer.observe(root, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ["style"] });
     clamp();
     return () => observer.disconnect();
   }, [containerRef, viewport.w]);
