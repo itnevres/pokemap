@@ -67,7 +67,7 @@ async function main(): Promise<void> {
   // refusal a positional-root invocation always gave). No args at all ->
   // start with nothing open; the block below then tries the most recent
   // project as a convenience, tolerating failure.
-  const hub = await createHub({ port: 5174, open: openPath });
+  const hub = await createHub({ port: 5174, open: openPath, prewarm: true });
 
   if (!openPath) {
     const mostRecent = readRecent(recentHome())[0];
