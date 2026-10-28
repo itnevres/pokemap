@@ -107,6 +107,40 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("world api", () => {
     expect(Object.keys(on.placements).length).toBeGreaterThan(Object.keys(off.placements).length);
   }, 300_000);
 
+  it("includes indoor maps for scope=dungeon without changing the saved layout flag", async () => {
+    const sidecarPath = projectPaths(fixtureRoot).sidecar;
+    const before = readFileSync(sidecarPath);
+    const base = `http://127.0.0.1:${s.port}`;
+    type World = {
+      placements: Record<string, { mapType: string }>;
+      components: { maps: string[] }[];
+      sidecar: { dungeonAutoLayout: boolean };
+    };
+    try {
+      const post = await fetch(`${base}/api/world/dungeons`, {
+        method: "POST", body: JSON.stringify({ enabled: false }),
+      });
+      expect(post.status).toBe(200);
+      const saved = readFileSync(sidecarPath);
+      const normalResponse = await fetch(`${base}/api/world`);
+      const scopedResponse = await fetch(`${base}/api/world?scope=dungeon`);
+      expect(normalResponse.status).toBe(200);
+      expect(scopedResponse.status).toBe(200);
+      const normal = await normalResponse.json() as World;
+      const scoped = await scopedResponse.json() as World;
+      const indoor = "PetalburgCity_PokemonCenter_1F";
+      expect(normal.sidecar.dungeonAutoLayout).toBe(false);
+      expect(scoped.sidecar.dungeonAutoLayout).toBe(false);
+      expect(normal.components.some((c) => c.maps.length === 1 && c.maps[0] === indoor)).toBe(true);
+      expect(normal.placements[indoor]).toBeUndefined();
+      expect(Object.keys(scoped.placements).length).toBeGreaterThan(Object.keys(normal.placements).length);
+      expect(scoped.placements[indoor]?.mapType).toBe("MAP_TYPE_INDOOR");
+      expect(readFileSync(sidecarPath)).toEqual(saved);
+    } finally {
+      writeFileSync(sidecarPath, before);
+    }
+  }, 300_000);
+
   it("400s a malformed placement body instead of hanging the request", async () => {
     // readBody(req).then(...) runs after this route's try/catch has already
     // returned, so a throw inside it (bad JSON here) becomes an unhandled
