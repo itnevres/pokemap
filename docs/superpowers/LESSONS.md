@@ -336,6 +336,15 @@ Rerun in isolation before calling either a regression. (Plan 8)
 **Never background a gate with `&` inside a Bash tool call.** It survives the call and overlaps the next gate (tell: the run file holds two summaries, one with a load-only flake). Use `run_in_background` only. (Plan 11 T2)
 
 **Python string edits on CRLF files must match `
+- **Codex workspace-write in a scratch worktree cannot run vitest or git** (2026-10-28, Plan 13 T1/T2). Tell: its report says
+  `EPERM ... node_modules` with 0 tests collected, or `index.lock` permission denied. Its sandbox blocks the node_modules junctions
+  and the worktree's git dir (inside the main `.git`). Brief it to write tests + code and stop; the conductor runs red (stash src),
+  green, mutations, then commits. Its tsc check does work.
+- **`codex exec resume` takes no `-s`/`-m` after `resume`** (tell: `unexpected argument '-s'`, exit 2). Put options first:
+  `codex exec -m <model> -s <mode> -C <dir> -o <out> resume <session-id> - < brief.md`.
+- **Changing a world fetch URL breaks exact-URL mocks across the UI suite** (Plan 13 T2: 12 tests in App, GbcApp, GbcWorldCanvas,
+  placementCommit). Tell: dungeon-mode tests fail with load errors after a focused run was green. Run `npx vitest run packages/ui`
+  before review, not just the focused files.
 `** (tell: an assertion that the old text occurs once reports 0 on text you can see). Read with `newline=""` and convert the needle when the file has CRLF. (Plan 11 T2)
 
 **Codex tends to strip existing comments and reflow JSX when it restructures a component** (Task 6 `MapEditingWorkspace`): check `git diff` for deleted comments before review. (Plan 8)
