@@ -20,6 +20,8 @@ line by line (roadmap Plan 13). Its record: `task-reports/warp-dungeon-issues/co
   (`WarpDestinationModal`, `GbcWarpDestinationModal` as used by `adapter.renderWarpPopup`).
 - **P13-2 Close returns to the source map.** Opening the popup makes the destination the selected map (through the
   usual unsaved-changes guard). Closing it selects again the map that was selected before it opened.
+- **P13-3 Close issues #5 and #6 when the build is done** (user, 2026-10-28): once Plan 13 is merged with the gate
+  and live acceptance passed, close both issues with a short evidence comment (merge commit, live report path).
 - **P12-4x Warp alert lifecycle** (recorded in the Plan 12 spec): the "Warp data unavailable" alert counts the maps whose
   latest warp fetch failed and clears itself once none is failing. Built in this plan.
 
@@ -96,7 +98,6 @@ line by line (roadmap Plan 13). Its record: `task-reports/warp-dungeon-issues/co
 
 - Opening a warp from inside the popup (chained popups). Map view's own warp handling is unchanged.
 - New post-save Retry UI beyond what Map view has today (the popup shows the same error Map view shows).
-- Closing GitHub issues #5/#6 without the user's go-ahead (posting is an outward action).
 - Plan 14+ work (GBC Add Event, collision editor), RESUME's deferred lists.
 
 ## Anti-goals
