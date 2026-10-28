@@ -128,7 +128,9 @@ interface AllFetchOpts {
 function mockFetchAll(opts: AllFetchOpts) {
   const world = opts.world ?? WORLD;
   return vi.fn((url: string) => {
-    if (url === "/api/world") return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(world) } as Response);
+    if (url === "/api/world" || url === "/api/world?scope=dungeon") {
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(world) } as Response);
+    }
     const encMatch = /^\/api\/encounters\/(.+)$/.exec(url);
     if (encMatch) {
       const name = decodeURIComponent(encMatch[1]!);
@@ -210,7 +212,7 @@ async function mount(
   encounters?: AllFetchOpts["encounters"],
 ) {
   const base = mockFetchAll({ world, encounters });
-  vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => {
+  const fetchMock = vi.fn((url: string, init?: RequestInit) => {
     if (url === "/api/world/placement") {
       const outcome = deferred<Response>();
       posts.push({ body: JSON.parse(String(init?.body)), outcome });
@@ -223,7 +225,8 @@ async function mount(
       return Promise.resolve(response({ family: "gbc", mapName: decodeURIComponent(url.slice(11)), warps: [] }));
     }
     return base(url);
-  }));
+  });
+  vi.stubGlobal("fetch", fetchMock);
   const host = render(<GbcWorldCanvas time="day" {...props} />);
   await settle();
   // Cluster (0,0)-(20,10), 200x200 viewport: zoom=min(200/20,200/10)=10, pan=(0,50).
@@ -233,13 +236,24 @@ async function mount(
   canvas.getBoundingClientRect = () => ({
     left: 0, top: 0, right: 200, bottom: 200, width: 200, height: 200, x: 0, y: 0, toJSON() {},
   });
-  return { ...host, canvas };
+  return { ...host, canvas, fetchMock };
 }
 
 type Host = Awaited<ReturnType<typeof mount>>;
 const outlines = (host: Host) => host.container.querySelectorAll<HTMLElement>(
   ".world-canvas__selection-outline:not(.world-canvas__jump-highlight)",
 );
+
+it("requests dungeon-scoped placements and hides dungeon auto-layout in a filtered GBC surface", async () => {
+  const host = await mount();
+  expect(host.fetchMock).toHaveBeenCalledWith("/api/world");
+  expect(screen.getByRole("switch", { name: "Dungeon auto-layout" })).toBeTruthy();
+
+  host.rerender(<GbcWorldCanvas time="day" mapFilter={new Set(["MapA", "MapB"])} />);
+  await settle();
+  expect(host.fetchMock).toHaveBeenCalledWith("/api/world?scope=dungeon");
+  expect(screen.queryByRole("switch", { name: "Dungeon auto-layout" })).toBeNull();
+});
 function click(host: Host, x: number, y: number, modifiers = {}) {
   const at = { button: 0, clientX: x, clientY: y, ...modifiers };
   fireEvent.mouseDown(host.canvas, at);

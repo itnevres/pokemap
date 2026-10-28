@@ -92,7 +92,7 @@ export function WorldSurface<P extends SurfacePlacement, C extends WireConflict,
   const { adapter, mapFilter = null, jumpToMap, jumpToken, onOpenMap, onJumpToMap, onEditHere, context, tileVersions,
     onSelectMap, onPlacementsSaved, onLayoutChanged } = props;
   const [ledger] = useState(createPlacementLedger);
-  const { world, error, reload, loadedGen, dismissError, move } = adapter.useWorld(ledger);
+  const { world, error, reload, loadedGen, dismissError, move } = adapter.useWorld(ledger, mapFilter ? "dungeon" : "world");
   const coverage = adapter.useCoverage();
 
   const fitRef = useRef<() => void>(() => {});
@@ -775,7 +775,7 @@ export function WorldSurface<P extends SurfacePlacement, C extends WireConflict,
       <div className="world-canvas__toolbar">
         {adapter.fitFirst && <div className="world-canvas__toolbar-group">{fitButton}</div>}
         {adapter.toolbarExtras}
-        {adapter.postDungeons && <DungeonAutoLayoutSwitch on={dungeonsOn} onToggle={toggleDungeons} />}
+        {adapter.postDungeons && !mapFilter && <DungeonAutoLayoutSwitch on={dungeonsOn} onToggle={toggleDungeons} />}
         {perMapErrors && toolbarError(layoutError ? `Could not save dungeon auto-layout: ${layoutError}` : null)}
         <WorldToolbarSwitch label="Warps" on={warpsOn} onToggle={() => {
           if (!warpsOn) setWarpError(null);

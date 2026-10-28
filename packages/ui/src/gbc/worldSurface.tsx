@@ -5,7 +5,7 @@ import type { GbcWorldPlacement } from "@pokemap/core/src/gbc/wire.js";
 import type { GbcEncounterSource } from "@pokemap/core/src/gbc/analyse/atlas.js";
 import type { LensId, LensPanelSummary } from "../components/LensPanel.js";
 import type { PlacementLedger, PlacementSnapshot } from "../shared/placementLedger.js";
-import type { SurfaceWorld, WorldSurfaceAdapter } from "../canvas/worldSurfaceAdapter.js";
+import type { SurfaceWorld, WorldScope, WorldSurfaceAdapter } from "../canvas/worldSurfaceAdapter.js";
 import { JUMP_FILL_FRACTION, jumpFit as worldJumpFit, singletonSizes,
   zoomWorldAboutPivot as worldZoomAboutPivot } from "../canvas/worldView.js";
 import { BORDER_BAND } from "../encounters/borderSide.js";
@@ -216,13 +216,13 @@ function isLayoutSaved(x: unknown): x is { dungeonAutoLayout: boolean } {
   return isRecord(x) && typeof x.dungeonAutoLayout === "boolean";
 }
 
-function useGbcSurfaceWorld(ledger: PlacementLedger) {
+function useGbcSurfaceWorld(ledger: PlacementLedger, scope: WorldScope) {
   // The ledger snapshot taken as each world GET was issued, by generation. A response can land in the same batch as a
   // newer GET's issue, so its own snapshot must survive that issue; reconciliation prunes older generations.
   const issued = useRef(new Map<number, PlacementSnapshot>());
   const { data, error, reload, loadedGen, dismissError } = useGbcWorld(true, (gen) => {
     issued.current.set(gen, ledger.snapshot());
-  });
+  }, scope);
   const [overrides, setOverrides] = useState<Record<string, { x: number; y: number }>>({});
   // Pair each world response with the ledger snapshot taken when its GET was issued, never with saved coordinates.
   useEffect(() => {

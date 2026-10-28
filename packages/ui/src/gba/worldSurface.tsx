@@ -3,7 +3,7 @@ import type { Placement, Component as WorldComponentInfo, VerticalLink } from "@
 import type { WireConflict } from "@pokemap/core/src/world/conflictAcceptance.js";
 import type { WarpEvent } from "@pokemap/core/src/load/maps.js";
 import type { PlacementLedger } from "../shared/placementLedger.js";
-import type { SurfaceWorld, WorldSurfaceAdapter, SurfaceWarp } from "../canvas/worldSurfaceAdapter.js";
+import type { SurfaceWorld, WorldScope, WorldSurfaceAdapter, SurfaceWarp } from "../canvas/worldSurfaceAdapter.js";
 import { singletonSizes, rectOf } from "../canvas/worldView.js";
 import { BADGE_SIZE } from "../shared/worldBadges.js";
 import { BORDER_BAND } from "../encounters/borderSide.js";
@@ -56,7 +56,7 @@ interface RawWorld {
 
 /** Fetch and optimistic reconciliation remain one state transition. A GET owns the ledger snapshot from issue,
  *  while its keep set is captured at landing, before any React updater can be replayed. */
-export function useGbaWorld(ledger: PlacementLedger) {
+export function useGbaWorld(ledger: PlacementLedger, scope: WorldScope) {
   const [raw, setRaw] = useState<RawWorld | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refetchGen, setRefetchGen] = useState(0);
@@ -74,7 +74,7 @@ export function useGbaWorld(ledger: PlacementLedger) {
   useEffect(() => {
     let cancelled = false;
     const snap = ledger.snapshot();
-    fetchGuarded("/api/world", isWorldPayload)
+    fetchGuarded(scope === "dungeon" ? "/api/world?scope=dungeon" : "/api/world", isWorldPayload)
       .then((d) => {
         if (cancelled) return;
         // Ownership depends on the version at GET issue and landing, never on coordinates. Capture before React's updater.
@@ -104,7 +104,7 @@ export function useGbaWorld(ledger: PlacementLedger) {
     return () => {
       cancelled = true;
     };
-  }, [refetchGen, ledger]);
+  }, [refetchGen, ledger, scope]);
 
   // Every singleton's true size is independent of placement visibility. Memoise on components, not the world:
   // drag frames replace placements but must not rebuild this 1,209-map size table each time.

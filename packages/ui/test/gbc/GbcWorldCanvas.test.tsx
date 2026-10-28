@@ -1465,7 +1465,9 @@ interface AllFetchOpts {
 function mockFetchAll(opts: AllFetchOpts) {
   const world = opts.world ?? WORLD;
   return vi.fn((url: string) => {
-    if (url === "/api/world") return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(world) } as Response);
+    if (url === "/api/world" || url === "/api/world?scope=dungeon") {
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(world) } as Response);
+    }
     const encMatch = /^\/api\/encounters\/(.+)$/.exec(url);
     if (encMatch) {
       const name = decodeURIComponent(encMatch[1]!);

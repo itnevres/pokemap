@@ -9,6 +9,7 @@ import type { Point } from "./view.js";
 
 type LensLegendProps = ComponentProps<typeof WorldLensLegend>;
 export type WorldOverlay = "selection" | "jump" | "warps" | "connections" | "marquee" | "lens" | "spotlight";
+export type WorldScope = "world" | "dungeon";
 
 /** A placement as the surface sees it. Width/height are real (the adapter resolves zero-sized wire orphans);
  *  `component` indexes `components`, -1 for a manual orphan. */
@@ -94,7 +95,7 @@ export interface WorldSurfaceAdapter<
   /** Native px per world unit (16 tile, 32 block): zoom range, LOD, context native, zoom %. */
   nativePx: number;
   /** Called once per render, unconditionally. */
-  useWorld(ledger: PlacementLedger): WorldData<P, C, W>;
+  useWorld(ledger: PlacementLedger, scope: WorldScope): WorldData<P, C, W>;
   /** Request and response validation belong here. Rejection is a failed save, including a non-OK HTTP status. */
   postPlacement?(move: { map: string; x: number; y: number }, world: W): Promise<void>;
   postDungeons?(enabled: boolean, world: W): Promise<void>;

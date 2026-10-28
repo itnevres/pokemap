@@ -70,7 +70,7 @@ function makeFetchMock(initial: WorldFixture) {
   const world = deferred<Response>();
   const warps: Array<{ map: string; outcome: ReturnType<typeof deferred<Response>> }> = [];
   const impl = vi.fn((url: string, init?: RequestInit) => {
-    if (url === "/api/world") return world.promise;
+    if (url === "/api/world" || url === "/api/world?scope=dungeon") return world.promise;
     if (url.startsWith("/api/warps/")) {
       const outcome = deferred<Response>();
       warps.push({ map: decodeURIComponent(url.slice("/api/warps/".length)), outcome });
@@ -167,6 +167,17 @@ async function mount(props: WorldCanvasProps = {}, initial = fixture()) {
   await settle();
   return { ...host, fetches };
 }
+
+it("requests dungeon-scoped placements and hides dungeon auto-layout in a filtered GBA surface", async () => {
+  const host = await mount();
+  expect(host.fetches.impl).toHaveBeenCalledWith("/api/world");
+  expect(screen.getByRole("switch", { name: "Dungeon auto-layout" })).toBeTruthy();
+
+  host.rerender(<WorldCanvas mapFilter={new Set(["A", "B"])} />);
+  await settle();
+  expect(host.fetches.impl).toHaveBeenCalledWith("/api/world?scope=dungeon");
+  expect(screen.queryByRole("switch", { name: "Dungeon auto-layout" })).toBeNull();
+});
 async function finishWarps(fetches: ReturnType<typeof makeFetchMock>, entries: Record<string, unknown[]> = {}) {
   for (const request of fetches.warps) request.outcome.resolve(response({ mapName: request.map, warps: entries[request.map] ?? [] }));
   await settle();
