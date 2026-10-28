@@ -129,7 +129,8 @@ export function WorldSurface<P extends SurfacePlacement, C extends WireConflict,
   const worldContext = useWorldContext({
     native: adapter.nativePx,
     context: context ?? null,
-    placement: hasSize(contextPlacement) ? contextPlacement : null,
+    // The snap waits for the first fit: an earlier snap would be overwritten when the fit lands.
+    placement: view.fitted && hasSize(contextPlacement) ? contextPlacement : null,
     world: { pan: view.pan, zoom: view.zoom, setView: (v) => updateView((prev) => ({ ...prev, zoom: v.zoom, pan: v.pan })) },
     viewport,
     canvasRef,
@@ -196,19 +197,30 @@ export function WorldSurface<P extends SurfacePlacement, C extends WireConflict,
   // { map, token }: a fresh object per jump, so the fade effect restarts even on a same-map re-jump.
   const [jumpHighlight, setJumpHighlight] = useState<{ map: string; token: number } | null>(null);
 
-  // Map-list jump (P12-4m/p/q/u). Until the world, a measured viewport and a filter that includes the map all
-  // exist, the token stays unstamped so the jump retries when they change (a tree click can precede the GET).
+  // Map-list jump (P12-4m/p/q/u). Until the world and a filter that includes the map both exist, the token stays
+  // unstamped so the jump retries when they change (a tree click can precede the GET). The highlight and reveal land
+  // then; the 60% fit waits for a measured viewport (both source canvases highlighted with no viewport measured).
+  // The pending fit keeps the map name and re-resolves it when it lands: a filter that excludes the map by then
+  // drops the fit (the filter fit stands), and a moved placement fits where it is now.
   const appliedJump = useRef<number | undefined>(undefined);
+  const pendingJumpFit = useRef<string | null>(null);
   useEffect(() => {
-    if (jumpToken === undefined || jumpToken === appliedJump.current) return;
-    if (!jumpToMap || !world || viewport.w <= 0 || viewport.h <= 0 || !inScope(jumpToMap)) return;
-    appliedJump.current = jumpToken;
-    const p = world.placements.get(jumpToMap);
-    if (!hasSize(p)) return;
-    if (!mapFilter && !adapter.drawnByDefault(p)) setRevealed((old) => (old.has(p.map) ? old : new Set(old).add(p.map)));
+    if (jumpToken !== undefined && jumpToken !== appliedJump.current && jumpToMap && world && inScope(jumpToMap)) {
+      appliedJump.current = jumpToken;
+      const p = world.placements.get(jumpToMap);
+      pendingJumpFit.current = hasSize(p) ? p.map : null;
+      if (hasSize(p)) {
+        if (!mapFilter && !adapter.drawnByDefault(p)) setRevealed((old) => (old.has(p.map) ? old : new Set(old).add(p.map)));
+        setJumpHighlight({ map: p.map, token: jumpToken });
+      }
+    }
+    const name = pendingJumpFit.current;
+    if (!name || viewport.w <= 0 || viewport.h <= 0) return;
+    pendingJumpFit.current = null;
+    const p = world?.placements.get(name);
+    if (!hasSize(p) || !inScope(name)) return;
     initialFitDone.current = true;
     updateView({ ...jumpFit(p, viewport, worldZoomRange(adapter.nativePx)), fitted: true });
-    setJumpHighlight({ map: p.map, token: jumpToken });
   }, [jumpToken, jumpToMap, world, mapFilter, inScope, viewport, adapter, updateView]);
 
   // The fade has its own effect scoped to the highlight alone: the jump effect also depends on `viewport`, so a
@@ -318,11 +330,15 @@ export function WorldSurface<P extends SurfacePlacement, C extends WireConflict,
   // The one projection (P12-6): every overlay reads these rects.
   const rectByMap = useMemo(() => new Map(visible.map((p) => [p.map, screenRect(p, view)])), [visible, view]);
   // Border side over every drawn placement, not just visible ones: an off-screen neighbour still blocks a side.
+  // A "scoped" adapter also counts in-scope placements its visibility predicate hides (adapter fact).
   // ponytail: O(n^2) over ~391 maps, once per drawn set; a spatial index if n grows.
   const sideByMap = useMemo(() => {
-    const rects = drawn.map((p) => ({ x: p.x, y: p.y, width: p.width, height: p.height }));
-    return new Map(drawn.map((p, i) => [p.map, pickBorderSide(rects[i]!, rects, adapter.border.band)]));
-  }, [drawn, adapter.border.band]);
+    const neighbours = adapter.borderNeighbours === "scoped" && world
+      ? [...world.placements.values()].filter((p) => hasSize(p) && inScope(p.map))
+      : drawn;
+    const rects = neighbours.map((p) => ({ x: p.x, y: p.y, width: p.width, height: p.height }));
+    return new Map(neighbours.map((p, i) => [p.map, pickBorderSide(rects[i]!, rects, adapter.border.band)]));
+  }, [drawn, world, inScope, adapter.borderNeighbours, adapter.border.band]);
   // `summaries` is undefined while loading, [] once a fetch failed. `encounterVersion` is not read: it is the
   // cache-bust for `encounterCache`, a ref (the lens entries take it for the same reason).
   const borderEntries = useMemo(() => visible.map((p) => ({
@@ -560,7 +576,7 @@ export function WorldSurface<P extends SurfacePlacement, C extends WireConflict,
     return warpHit(warpMarkerEntries, s.x, s.y);
   };
   const onClick = (e: MouseEvent<HTMLCanvasElement>) => {
-    if (e.ctrlKey || e.metaKey || e.shiftKey || drag.dragMoved() || markerAt(e)) return;
+    if (e.ctrlKey || e.metaKey || (e.shiftKey && !adapter.shiftClickSelects) || drag.dragMoved() || markerAt(e)) return;
     const s = localPoint(e);
     const w = toWorld(s.x, s.y);
     const hit = hitTest(w.x, w.y);

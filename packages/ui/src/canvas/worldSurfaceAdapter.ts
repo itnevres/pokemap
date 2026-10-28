@@ -117,6 +117,8 @@ export interface WorldSurfaceAdapter<
   renderWarpPopup?(map: string, onClose: () => void, world: W): ReactNode;
   /** Unresolved preview behaviour is host-owned. */
   unresolvedWarpError?: string;
+  /** A stationary Shift-click selects (or clears on empty space) like a plain click; otherwise it is ignored. */
+  shiftClickSelects?: boolean;
   /** Some hosts allow modified double-click previews and Map-view opens, while still guarding Edit-here. */
   modifiedDoubleClick?: boolean;
   /** Connection palette tokens and fallbacks, in stable source-map/warp-index order. */
@@ -125,6 +127,8 @@ export interface WorldSurfaceAdapter<
   imageUrl(p: P, version: number | undefined): string;
   /** A change drops every cached tile (time of day, or a constant). */
   cacheKey: string | number;
+  /** Encounter-border neighbours: every in-scope placement, hidden ones included ("scoped"), or only drawn ones (default). */
+  borderNeighbours?: "drawn" | "scoped";
   /** Shown in the unfiltered world unless revealed by a jump. */
   drawnByDefault(p: P): boolean;
   /** Extra canvas layers drawn after tiles and before conflict badges. */

@@ -72,7 +72,9 @@ export function useStageZoom<T extends View>(canvasRef: RefObject<HTMLCanvasElem
     // jsdom does not enforce passive semantics, so no test catches a regression here.
     canvas.addEventListener("wheel", handler, { passive: false });
     return () => canvas.removeEventListener("wheel", handler);
-  }, [canvasRef, zoom, updateView, policy.kind, policy.kind === "stepped" ? policy.levels : policy.min,
+  // Only the stepped branch reads `zoom`; a continuous stage binds once (a wheel never re-attaches the listener).
+  }, [canvasRef, policy.kind === "stepped" ? zoom : undefined, updateView, policy.kind,
+    policy.kind === "stepped" ? policy.levels : policy.min,
     policy.kind === "continuous" ? policy.max : undefined, policy.kind === "continuous" ? policy.factor : undefined]);
   return { applyZoom, centerPivot };
 }
