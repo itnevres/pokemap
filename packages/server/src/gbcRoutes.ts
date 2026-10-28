@@ -212,7 +212,8 @@ export function buildGbcMapPayload(proj: GbcProject, map: GbcMap, symbols?: Symb
  * world untouched. Manual sidecar positions are fixed obstacles during
  * resolution (phase-D-review R1) and are applied again afterward.
  */
-export function buildGbcWorldPayload(proj: GbcProject, world: GbcWorld, sidecar: Sidecar, warps: readonly WarpLink[] = gbcWarpLinks(proj)): GbcWorldPayload {
+export function buildGbcWorldPayload(proj: GbcProject, world: GbcWorld, sidecar: Sidecar, warps: readonly WarpLink[] = gbcWarpLinks(proj),
+  opts: { scope?: "world" | "dungeon" } = {}): GbcWorldPayload {
   const mapTypeByName = new Map(proj.maps.map((map) => [map.name, map.environment]));
   const shown = new Set([...world.placements.keys()].filter((name) => {
     const type = mapTypeByName.get(name);
@@ -226,7 +227,8 @@ export function buildGbcWorldPayload(proj: GbcProject, world: GbcWorld, sidecar:
     manualPlacements: sidecar.manualPlacements });
   // Off: singleton components without a manual placement leave the world (they show in the Unplaced rail), as GBA's resolveWorldPlacements does.
   const keep = (name: string) =>
-    sidecar.dungeonAutoLayout || !singletonNames.has(name) || Object.hasOwn(sidecar.manualPlacements, name);
+    opts.scope === "dungeon" || sidecar.dungeonAutoLayout || !singletonNames.has(name)
+    || Object.hasOwn(sidecar.manualPlacements, name);
   const placements = Object.fromEntries(
     [...applySidecar(automatic, sidecar)].filter(([name]) => keep(name)).map(([name, placement]) => [name, {
       ...placement,
@@ -499,7 +501,8 @@ export function createGbcProjectHandler(root: string): ProjectHandler {
       // unconditionally -- there is no dungeons-on/off toggle to read a
       // query param for (`gbc/world/connections.ts`'s own doc comment).
       if (url.pathname === "/api/world") {
-        return send(200, buildGbcWorldPayload(proj, getWorld(), readSidecar(proj.root), getWarps()));
+        const scope = url.searchParams.get("scope") === "dungeon" ? "dungeon" : "world";
+        return send(200, buildGbcWorldPayload(proj, getWorld(), readSidecar(proj.root), getWarps(), { scope }));
       }
 
       if (url.pathname === "/api/world/conflicts/accept" && req.method === "POST") {
