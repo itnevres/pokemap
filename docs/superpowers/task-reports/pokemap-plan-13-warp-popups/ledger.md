@@ -25,3 +25,9 @@ Ruling: T4 tests open the popup by capturing `slots` through a test adapter that
 - Task 1: minor (deferred): stale comments gbcRoutes.ts:499 ("query params ignored") and :228 (no dungeon-scope exception).
 - Task 1: minor (deferred): gbcRoutes.test.ts:1361 unconditional unlinkSync in finally can mask the original failure (ENOENT).
 - Task 1: complete (commits 300fdf6..a38b147, review clean)
+- Task 2 hops: codex gpt-5.6-terra done (sandbox cannot run vitest/git: conductor verified + committed). Fix round 1 (same session): 12 other dungeon-mode tests mocked only "/api/world"; mocks widened, assertions unchanged. Focused 53/53; red 4 new fail with src reverted; mutation (always "world") kills 3; UI suite 123 files / 1996 passed; typecheck ok.
+- Task 2 reviews (Codex astra): spec FAIL (1 Important: full gate/build/live not yet run; 2 Minor docs CRLF/long lines); quality Approved with fixes (1 Minor).
+- Task 2: Ruling: spec "Important" (no full gate/build/live) rejected — plan puts the full gate in Task 5 and live in Task 6; Task 2's steps ask for focused tests + mutation, done — cost if wrong: a build break surfaces at Task 5 instead of now.
+- Task 2: minor (deferred): gba/worldSurface.tsx:72-73 comment says the GET reflects the saved layout; dungeon scope forces auto-layout.
+- Task 2: minor (deferred): task-2 brief LF / report lines >140 (docs only).
+- Task 2: complete (commits 4fd0860..efe87f6, review clean after ruling)
