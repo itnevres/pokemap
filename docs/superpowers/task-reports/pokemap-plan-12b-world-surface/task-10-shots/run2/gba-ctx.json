@@ -1,0 +1,172 @@
+{
+ "fam": "gba",
+ "applies": 3,
+ "leftoverDraftDiscarded": false,
+ "railBefore": true,
+ "railInContext": false,
+ "toolbars": [
+  {
+   "c": "app__toolbar",
+   "w": 1024,
+   "sw": 1024,
+   "h": 39,
+   "right": 1024
+  },
+  {
+   "c": "toolbar",
+   "w": 744,
+   "sw": 744,
+   "h": 76,
+   "right": 1024
+  },
+  {
+   "c": "toolbar__tools",
+   "w": 528,
+   "sw": 528,
+   "h": 26,
+   "right": 820
+  },
+  {
+   "c": "map-canvas__btn toolbar__tool-btn",
+   "w": 70,
+   "sw": 70,
+   "h": 24,
+   "right": 364
+  },
+  {
+   "c": "map-canvas__btn toolbar__tool-btn",
+   "w": 61,
+   "sw": 61,
+   "h": 24,
+   "right": 430
+  },
+  {
+   "c": "map-canvas__btn toolbar__tool-btn",
+   "w": 74,
+   "sw": 74,
+   "h": 24,
+   "right": 511
+  },
+  {
+   "c": "map-canvas__btn toolbar__tool-btn",
+   "w": 81,
+   "sw": 81,
+   "h": 24,
+   "right": 598
+  },
+  {
+   "c": "map-canvas__btn toolbar__tool-btn",
+   "w": 62,
+   "sw": 62,
+   "h": 24,
+   "right": 666
+  },
+  {
+   "c": "map-canvas__btn toolbar__tool-btn",
+   "w": 83,
+   "sw": 83,
+   "h": 24,
+   "right": 755
+  },
+  {
+   "c": "map-canvas__btn toolbar__tool-btn",
+   "w": 60,
+   "sw": 60,
+   "h": 24,
+   "right": 820
+  },
+  {
+   "c": "toolbar__history",
+   "w": 123,
+   "sw": 123,
+   "h": 26,
+   "right": 959
+  },
+  {
+   "c": "toolbar__sign",
+   "w": 143,
+   "sw": 143,
+   "h": 26,
+   "right": 435
+  },
+  {
+   "c": "map-canvas__btn toolbar__tool-btn",
+   "w": 141,
+   "sw": 141,
+   "h": 24,
+   "right": 435
+  },
+  {
+   "c": "toolbar__save",
+   "w": 44,
+   "sw": 44,
+   "h": 25,
+   "right": 886
+  },
+  {
+   "c": "map-canvas__btn toolbar__save-btn",
+   "w": 42,
+   "sw": 42,
+   "h": 23,
+   "right": 886
+  },
+  {
+   "c": "toolbar__discard",
+   "w": 110,
+   "sw": 110,
+   "h": 25,
+   "right": 1012
+  },
+  {
+   "c": "map-canvas__btn toolbar__discard-btn",
+   "w": 108,
+   "sw": 108,
+   "h": 23,
+   "right": 1012
+  },
+  {
+   "c": "world-canvas__toolbar",
+   "w": 472,
+   "sw": 472,
+   "h": 83,
+   "right": 752
+  }
+ ],
+ "pageOverflow": 0,
+ "doneDialog": "Save Changes data/layouts/NewBarkTown/map.bin -- 3 blocks changed Cancel Save Changes",
+ "refresh": {
+  "renderRequests": [
+   "/api/render/NewBarkTown.png"
+  ],
+  "frames": 236,
+  "distinct": [
+   "115,205,164,255"
+  ],
+  "blankFrames": 0
+ },
+ "dialogs": [
+  "Discard all unsaved changes on this map? This cannot be undone."
+ ],
+ "discarded": true,
+ "dirtyAfterDiscard": 0,
+ "errs": [],
+ "blockedTotal": 0,
+ "postSummary": [
+  [
+   "/edit/*/paint/begin",
+   1
+  ],
+  [
+   "/edit/*/paint/apply",
+   3
+  ],
+  [
+   "/edit/*/paint/end",
+   1
+  ],
+  [
+   "/edit/*/discard",
+   1
+  ]
+ ]
+}
