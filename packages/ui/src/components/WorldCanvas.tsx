@@ -4,8 +4,8 @@ import { WorldSurface } from "../canvas/WorldSurface.js";
 import { computeFit as computeWorldFit, worldZoomRange } from "../canvas/worldView.js";
 import { createGbaWorldSurface } from "../gba/worldSurface.js";
 
-// Compat re-exports (plan Task 8); Task 9's re-export inventory deletes any without a consumer.
-export { drawDiamond, levelColorMap, themedLevelColorMap } from "../canvas/worldColours.js";
+// Compat re-export: `test/WorldCanvas.test.tsx` imports it from here (Task 9 inventory).
+export { levelColorMap } from "../canvas/worldColours.js";
 
 /** GBA's default-bounds wrapper over `canvas/worldView.ts` computeFit: screen px per 16px tile.
  *  The shared P12-4j scale range is 1/2048..1; callers may still supply explicit native-unit bounds. */
