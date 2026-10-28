@@ -299,10 +299,11 @@ export function createGbcWorldSurface(time: GbcTimeOfDay): WorldSurfaceAdapter<G
       return payload.warps.map((warp) => ({
         point: { x: warp.x, y: warp.y },
         popupMap: warp.destEvent ? warp.destMapName : undefined,
-        destination: warp.destMapName && warp.destEvent ? {
-          map: warp.destMapName,
-          point: { x: warp.destEvent.x, y: warp.destEvent.y },
-        } : undefined,
+        resolveDestination: (cache) => {
+          if (!warp.destMapName) return null;
+          const target = cache.get(warp.destMapName)?.[warp.destWarp - 1];
+          return target ? { map: warp.destMapName, point: target.point } : null;
+        },
       }));
     },
     renderWarpPopup: (map, onClose) => (

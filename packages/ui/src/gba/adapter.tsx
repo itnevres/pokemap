@@ -135,7 +135,10 @@ export function useGbaRuntime({ selected, mode, requestPrompt }: RuntimeArgs): F
         </div>
       ) : null,
     renderWorld,
-    renderDungeon: (mapFilter, s) => <WorldCanvas key="dungeon" mapFilter={mapFilter} onOpenMap={s.openMapFromWorld} onPlacementsSaved={(names) => names.forEach(s.markManualPlacement)} />,
+    renderDungeon: (mapFilter, s) => (
+      <WorldCanvas key="dungeon" mapFilter={mapFilter} tileVersions={s.tileVersions} onOpenMap={s.openMapFromWorld}
+        onPlacementsSaved={(names) => names.forEach(s.markManualPlacement)} />
+    ),
     headerExtras: null,
     banners: switchError && (
       <div className="app__event-op-error" role="alert">

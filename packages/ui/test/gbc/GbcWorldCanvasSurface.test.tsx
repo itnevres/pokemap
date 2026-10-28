@@ -489,3 +489,52 @@ it("a pending jump fit is dropped when a filter excludes the map before the view
   await settle();
   expect(host.container.querySelector(".world-canvas__status")?.textContent).toContain("zoom 31%");
 });
+
+it.each([false, true])("an incoming line follows the destination's refreshed warp (source pending: %s)", async (pending) => {
+  const filter = new Set(["MapA", "MapB"]);
+  const base = mockFetchAll({});
+  const requests: Array<{ map: string; outcome: ReturnType<typeof deferred<Response>> }> = [];
+  vi.stubGlobal("fetch", vi.fn((url: string) => {
+    if (!url.startsWith("/api/warps/")) return base(url);
+    const outcome = deferred<Response>();
+    requests.push({ map: decodeURIComponent(url.slice("/api/warps/".length)), outcome });
+    return outcome.promise;
+  }));
+  const host = render(<GbcWorldCanvas time="day" mapFilter={filter} tileVersions={{ MapA: 0, MapB: 0 }} />);
+  await settle();
+  fireEvent.click(screen.getByRole("switch", { name: "Connection lines" }));
+  await settle();
+  const source = requests.find((request) => request.map === "MapA")!;
+  const destination = requests.find((request) => request.map === "MapB")!;
+  const oldTarget = { x: 4, y: 6, mapConst: "NONE", destWarp: 1, lineIndex: 1 };
+  const sourcePayload = response({ family: "gbc", mapName: "MapA", warps: [
+    { x: 2, y: 4, mapConst: "MAP_B", destWarp: 2, lineIndex: 1, destMapName: "MapB", destEvent: oldTarget },
+  ] });
+  const targetPayload = (target: typeof oldTarget) => response({ family: "gbc", mapName: "MapB", warps: [
+    { ...oldTarget, x: 0, y: 0 }, target,
+  ] });
+  destination.outcome.resolve(targetPayload(oldTarget));
+  if (!pending) source.outcome.resolve(sourcePayload);
+  await settle();
+  const endpoints = () => {
+    const line = host.container.querySelector(".world-canvas__connections line");
+    return line && ["x1", "y1", "x2", "y2"].map((name) => Number(line.getAttribute(name)));
+  };
+  // Bounds(0,0)-(20,10), zoom10, pan(0,50). Half-block warps: A+(1,2), B+(2,3).
+  // destWarp2 chooses index1, rather than the index0 decoy at the map corner.
+  expect(endpoints()).toEqual(pending ? null : [10, 70, 120, 80]);
+  host.rerender(<GbcWorldCanvas time="day" mapFilter={filter} tileVersions={{ MapA: 0, MapB: 1 }} />);
+  expect(endpoints()).toBeNull();
+  await settle();
+  expect(requests.map((request) => request.map)).toEqual(["MapA", "MapB", "MapB"]);
+  if (pending) {
+    source.outcome.resolve(sourcePayload);
+    await settle();
+    expect(endpoints()).toBeNull();
+  }
+  requests[2]!.outcome.resolve(targetPayload({ ...oldTarget, x: 8, y: 10 }));
+  await settle();
+  // Refreshed half-block destination B+(4,5)=(14,5)->(140,100), despite source's old destEvent.
+  expect(endpoints()).toEqual([10, 70, 140, 100]);
+  expect(requests.filter((request) => request.map === "MapA")).toHaveLength(1);
+});

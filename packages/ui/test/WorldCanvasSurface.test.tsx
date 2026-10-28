@@ -202,7 +202,7 @@ it("P12-4d: a rejected warp request shows the warp alert", async () => {
     else request.outcome.resolve(response({ mapName: request.map, warps: [] }));
   }
   await settle();
-  expect(screen.getByRole("alert").textContent).toContain("Warp data unavailable: warp offline");
+  expect(screen.getByRole("alert").textContent).toContain("Warp data unavailable for 1 map: warp offline");
 });
 
 it("P12-4e: first load fits clusters with hand-derived pan and never requests a pre-fit-only tile", async () => {
@@ -403,4 +403,43 @@ it("P12-4j: in context wheel-in at sixteen pixels per tile reaches nineteen poin
   await act(async () => image.onload?.());
   // Centre A(5,5) stays at(100,50): pan=(4,-46); A0,0 ->(4,-46), extent10*19.2=192.
   expect(draws.filter((draw) => draw.image === image).at(-1)?.rect).toEqual([4, -46, 192, 192]);
+});
+
+it.each([false, true])("an incoming line follows the destination's refreshed warp (source pending: %s)", async (pending) => {
+  const filter = new Set(["A", "B"]);
+  const host = await mount({ mapFilter: filter, tileVersions: { A: 0, B: 0 } });
+  fireEvent.click(screen.getByRole("switch", { name: "Connection lines" }));
+  await settle();
+  const source = host.fetches.warps.find((request) => request.map === "A")!;
+  const destination = host.fetches.warps.find((request) => request.map === "B")!;
+  const sourcePayload = response({ mapName: "A", warps: [
+    { x: 2, y: 3, elevation: 0, destMap: "MAP_B", destMapName: "B", destWarpId: "0" },
+  ] });
+  destination.outcome.resolve(response({ mapName: "B", warps: [
+    { x: 4, y: 5, elevation: 0, destMap: "MAP_NONE", destWarpId: "0" },
+  ] }));
+  if (!pending) source.outcome.resolve(sourcePayload);
+  await settle();
+  const endpoints = () => {
+    const line = host.container.querySelector(".world-canvas__connections line");
+    return line && ["x1", "y1", "x2", "y2"].map((name) => Number(line.getAttribute(name)));
+  };
+  // Bounds(0,0)-(40,20), zoom5, pan0: A+(2,3)->(10,15), B+(4,5)->(170,75).
+  expect(endpoints()).toEqual(pending ? null : [10, 15, 170, 75]);
+  host.rerender(<WorldCanvas mapFilter={filter} tileVersions={{ A: 0, B: 1 }} />);
+  expect(endpoints()).toBeNull();
+  await settle();
+  expect(host.fetches.warps.map((request) => request.map)).toEqual(["A", "B", "B"]);
+  if (pending) {
+    source.outcome.resolve(sourcePayload);
+    await settle();
+    expect(endpoints()).toBeNull();
+  }
+  host.fetches.warps[2]!.outcome.resolve(response({ mapName: "B", warps: [
+    { x: 8, y: 9, elevation: 0, destMap: "MAP_NONE", destWarpId: "0" },
+  ] }));
+  await settle();
+  // Refreshed B+(8,9)=(38,19)->(190,95); the cached source must use the new endpoint.
+  expect(endpoints()).toEqual([10, 15, 190, 95]);
+  expect(host.fetches.warps.filter((request) => request.map === "A")).toHaveLength(1);
 });

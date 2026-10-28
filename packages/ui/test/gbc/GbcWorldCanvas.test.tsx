@@ -47,7 +47,9 @@ describe("GBC dungeon warps (Plan 6c D3)", () => {
 
   it("scopes hidden members, excludes outsiders from images, warps, drop and lines, with independent toggles", async () => {
     const fetcher = scopedFetch({
-      Source: { family: "gbc", mapName: "Source", warps: [event(10, 9, "Hidden", { x: 10, y: 9 }), event(1, 1, "Outside", { x: 1, y: 1 }), event(2, 2, "Hidden")] },
+      Source: { family: "gbc", mapName: "Source", warps: [event(10, 9, "Hidden", { x: 10, y: 9 }), event(1, 1, "Outside", { x: 1, y: 1 }),
+        // Unresolved on the server (no destEvent): its destWarp names no warp of Hidden, so the cache resolves none either.
+        { ...event(2, 2, "Hidden"), destWarp: 2 }] },
       Hidden: { family: "gbc", mapName: "Hidden", warps: [event(10, 9, "Source", { x: 10, y: 9 })] },
     });
     vi.stubGlobal("fetch", fetcher);
@@ -85,8 +87,12 @@ describe("GBC dungeon warps (Plan 6c D3)", () => {
   it("shows malformed warp payload errors and permits retry after a later toggle", async () => {
     const base = mockFetchAll({ world: scopedWorld });
     let attempt = 0;
+    // Malformed until healed: a success clears the alert (P12-4x), so a view-change retry must not succeed early.
+    let healed = false;
+    const malformed = { family: "gba", mapName: "Source", warps: [], detail: "x".repeat(300) };
     const fetcher = vi.fn((url: string) => url === "/api/warps/Source"
-      ? Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(++attempt === 1 ? { family: "gba", mapName: "Source", warps: [], detail: "x".repeat(300) } : { family: "gbc", mapName: "Source", warps: [] }) } as Response)
+      ? Promise.resolve({ ok: true, status: 200,
+        json: () => Promise.resolve(++attempt && !healed ? malformed : { family: "gbc", mapName: "Source", warps: [] }) } as Response)
       : base(url));
     vi.stubGlobal("fetch", fetcher);
     render(<GbcWorldCanvas time="day" mapFilter={new Set(["Source"])} />);
@@ -95,9 +101,12 @@ describe("GBC dungeon warps (Plan 6c D3)", () => {
     const alert = screen.getByRole("alert");
     expect(alert.textContent!.length).toBeGreaterThan(150);
     expect(alert.parentElement?.classList.contains("world-canvas__toolbar-group--save-error")).toBe(true);
+    healed = true;
+    const before = attempt;
     fireEvent.click(screen.getByRole("switch", { name: "Connection lines" }));
     fireEvent.click(screen.getByRole("switch", { name: "Connection lines" }));
-    await waitFor(() => expect(attempt).toBe(2));
+    await waitFor(() => expect(attempt).toBe(before + 1));
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
   });
 
   it("opens a destination preview before body open and Escape keeps the world view", async () => {
@@ -209,7 +218,8 @@ describe("GBC dungeon warps (Plan 6c D3)", () => {
     };
     vi.stubGlobal("fetch", scopedFetch({
       BurnedTower1F: { family: "gbc", mapName: "BurnedTower1F", warps: [event(0, 0), event(1, 1), event(10, 9, "BurnedTowerB1F", { x: 10, y: 9 })] },
-      BurnedTowerB1F: { family: "gbc", mapName: "BurnedTowerB1F", warps: [] },
+      // Plan 13 T3: the line's B1F end is B1F's own warp 1 from its fetch (destWarp is 1-based).
+      BurnedTowerB1F: { family: "gbc", mapName: "BurnedTowerB1F", warps: [event(10, 9)] },
     }, world));
     const { container } = render(<GbcWorldCanvas time="day" mapFilter={new Set(["BurnedTowerB1F", "BurnedTower1F"])} />);
     const stage = container.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement;

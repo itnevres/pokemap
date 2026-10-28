@@ -596,7 +596,7 @@ it("warp fetch rejection alerts, never loops on alert renders, and retries exact
     else request.result.resolve([]);
   }
   await settle();
-  expect(screen.getByText("Warp data unavailable: always down")).toBeTruthy();
+  expect(screen.getByText("Warp data unavailable for 1 map: always down")).toBeTruthy();
   const countA = () => requests.filter((r) => r.map === "A").length;
   expect(countA()).toBe(1);
   for (let i = 0; i < 4; i++) {
@@ -625,7 +625,7 @@ it("an adapter rejects malformed warp map identity and the surface shows its ale
   await settle();
   response.resolve({ mapName: "Wrong" });
   await settle();
-  expect(screen.getByText("Warp data unavailable: returned the wrong map")).toBeTruthy();
+  expect(screen.getByText("Warp data unavailable for 4 maps: returned the wrong map")).toBeTruthy();
 });
 
 it.each(["resolve", "reject"])("ignores a warp fetch that %ss after unmount without state writes or errors", async (outcome) => {
@@ -1050,4 +1050,165 @@ it("re-clamps the tooltip when it moves to a sprite with the same text (only lef
   await settle();
   expect(screen.getByRole("tooltip")).toBe(tip);
   expect(tip.style.translate).toBe("0px");
+});
+
+function pendingWarps() {
+  const requests: Array<{ map: string; result: ReturnType<typeof deferred<readonly SurfaceWarp[]>> }> = [];
+  adapter.fetchWarps = vi.fn((map) => {
+    const result = deferred<readonly SurfaceWarp[]>();
+    requests.push({ map, result });
+    return result.promise;
+  });
+  const latest = (map: string) => requests.filter((request) => request.map === map).at(-1)!.result;
+  return { requests, latest };
+}
+
+it("warp alert counts failing maps and clears when every retry succeeds", async () => {
+  const { requests, latest } = pendingWarps();
+  const host = mount({ mapFilter: new Set(["A", "B"]) });
+  fireEvent.click(screen.getByRole("switch", { name: "Warps" }));
+  await settle();
+  latest("A").reject(new Error("A offline"));
+  await settle();
+  latest("B").reject(new Error("B offline"));
+  await settle();
+  expect(screen.getByText("Warp data unavailable for 2 maps: B offline")).toBeTruthy();
+  expect(requests).toHaveLength(2);
+  pan(host);
+  await settle();
+  expect(requests).toHaveLength(4);
+  latest("A").resolve([]);
+  await settle();
+  expect(screen.getByText("Warp data unavailable for 1 map: B offline")).toBeTruthy();
+  latest("B").resolve([]);
+  await settle();
+  expect(screen.queryByRole("alert")).toBeNull();
+});
+
+it("a success on one map keeps the alert while another still fails", async () => {
+  const { latest } = pendingWarps();
+  mount({ mapFilter: new Set(["A", "B"]) });
+  fireEvent.click(screen.getByRole("switch", { name: "Warps" }));
+  await settle();
+  latest("A").reject(new Error("A offline"));
+  await settle();
+  latest("B").resolve([]);
+  await settle();
+  expect(screen.getByText("Warp data unavailable for 1 map: A offline")).toBeTruthy();
+});
+
+it.each(["resolve", "reject"])(
+  "a stale failure response after a newer request never adds to the count (%s newer request)", async (newer) => {
+    const { requests, latest } = pendingWarps();
+    const filter = new Set(["A"]);
+    const host = mount({ mapFilter: filter, tileVersions: { A: 0 } });
+    fireEvent.click(screen.getByRole("switch", { name: "Warps" }));
+    await settle();
+    const old = latest("A");
+    host.rerender(<WorldSurface adapter={adapter} mapFilter={filter} tileVersions={{ A: 1 }} />);
+    await settle();
+    expect(requests.map((request) => request.map)).toEqual(["A", "A"]);
+    if (newer === "resolve") latest("A").resolve([]);
+    else latest("A").reject(new Error("current failure"));
+    await settle();
+    old.reject(new Error("stale failure"));
+    await settle();
+    expect(screen.queryByText(/stale failure/)).toBeNull();
+    if (newer === "resolve") expect(screen.queryByRole("alert")).toBeNull();
+    else expect(screen.getByText("Warp data unavailable for 1 map: current failure")).toBeTruthy();
+  },
+);
+
+it.each(["Warps", "Connection lines"])("Warps toggle / Lines toggle clear the count (%s)", async (label) => {
+  const { latest } = pendingWarps();
+  mount({ mapFilter: new Set(["A"]) });
+  fireEvent.click(screen.getByRole("switch", { name: label }));
+  await settle();
+  latest("A").reject(new Error("offline"));
+  await settle();
+  expect(screen.getByText("Warp data unavailable for 1 map: offline")).toBeTruthy();
+  fireEvent.click(screen.getByRole("switch", { name: label }));
+  expect(screen.getByText("Warp data unavailable for 1 map: offline")).toBeTruthy();
+  fireEvent.click(screen.getByRole("switch", { name: label }));
+  expect(screen.queryByRole("alert")).toBeNull();
+  await settle();
+});
+
+it.each(["resolve", "reject"])(
+  "a tileVersions bump re-fetches that map's warps over a stationary view (%s replacement)", async (outcome) => {
+    const { requests, latest } = pendingWarps();
+    const filter = new Set(["A", "B"]);
+    const host = mount({ mapFilter: filter, tileVersions: { A: 0, B: 0 } });
+    fireEvent.click(screen.getByRole("switch", { name: "Warps" }));
+    await settle();
+    latest("A").resolve([{ point: { x: 2, y: 3 } }]);
+    latest("B").resolve([{ point: { x: 4, y: 5 } }]);
+    await settle();
+    const positions = () => [...host.container.querySelectorAll<HTMLElement>(".world-canvas__warp-marker")]
+      .map((marker) => [marker.style.left, marker.style.top]);
+    // A/B bounds(10,10)-(30,20), zoom10, pan(-100,-100).
+    expect(positions()).toEqual([["20px", "30px"], ["140px", "50px"]]);
+    host.rerender(<WorldSurface adapter={adapter} mapFilter={filter} tileVersions={{ A: 1, B: 0 }} />);
+    expect(positions()).toEqual([["140px", "50px"]]);
+    await settle();
+    expect(requests.map((request) => request.map)).toEqual(["A", "B", "A"]);
+    if (outcome === "resolve") latest("A").resolve([{ point: { x: 6, y: 7 } }]);
+    else latest("A").reject(new Error("replacement offline"));
+    await settle();
+    if (outcome === "resolve") expect(positions()).toEqual([["60px", "70px"], ["140px", "50px"]]);
+    else {
+      expect(positions()).toEqual([["140px", "50px"]]);
+      expect(screen.getByText("Warp data unavailable for 1 map: replacement offline")).toBeTruthy();
+    }
+    expect(requests).toHaveLength(3);
+  },
+);
+
+it("a pre-bump in-flight warp success cannot restore stale markers or clear a current failure", async () => {
+  const { latest } = pendingWarps();
+  const filter = new Set(["A"]);
+  const host = mount({ mapFilter: filter, tileVersions: { A: 0 } });
+  fireEvent.click(screen.getByRole("switch", { name: "Warps" }));
+  await settle();
+  const old = latest("A");
+  host.rerender(<WorldSurface adapter={adapter} mapFilter={filter} tileVersions={{ A: 1 }} />);
+  await settle();
+  latest("A").reject(new Error("current failure"));
+  await settle();
+  old.resolve([{ point: { x: 5, y: 5 } }]);
+  await settle();
+  expect(host.container.querySelector(".world-canvas__warp-marker")).toBeNull();
+  expect(screen.getByText("Warp data unavailable for 1 map: current failure")).toBeTruthy();
+});
+
+it("first sight of a map's tile version does not evict its warps", async () => {
+  const { requests, latest } = pendingWarps();
+  const filter = new Set(["A"]);
+  const host = mount({ mapFilter: filter });
+  fireEvent.click(screen.getByRole("switch", { name: "Warps" }));
+  await settle();
+  latest("A").resolve([{ point: { x: 5, y: 5 } }]);
+  await settle();
+  host.rerender(<WorldSurface adapter={adapter} mapFilter={filter} tileVersions={{ A: 1 }} />);
+  await settle();
+  expect(requests).toHaveLength(1);
+  expect(host.container.querySelectorAll(".world-canvas__warp-marker")).toHaveLength(1);
+});
+
+it("an unresolved marker still shows its own alert", async () => {
+  const { latest } = pendingWarps();
+  adapter.unresolvedWarpError = "This warp destination could not be resolved";
+  const host = mount({ mapFilter: new Set(["A", "B"]) });
+  fireEvent.click(screen.getByRole("switch", { name: "Warps" }));
+  await settle();
+  latest("A").resolve([{ point: { x: 5, y: 5 } }, { point: { x: 8, y: 5 }, popupMap: "B" }]);
+  latest("B").reject(new Error("B offline"));
+  await settle();
+  fireEvent.doubleClick(canvas(host), { clientX: 50, clientY: 50 });
+  expect(screen.getByText("Warp data unavailable: This warp destination could not be resolved")).toBeTruthy();
+  expect(screen.getByText("Warp data unavailable for 1 map: B offline")).toBeTruthy();
+  // Opening a resolved marker clears both independent alerts.
+  fireEvent.doubleClick(canvas(host), { clientX: 80, clientY: 50 });
+  expect(screen.getByRole("dialog", { name: "Warp to B" })).toBeTruthy();
+  expect(screen.queryByRole("alert")).toBeNull();
 });
