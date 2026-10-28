@@ -165,6 +165,8 @@ Both families already render the same `components/Toolbar.tsx`; the differences 
 - **Risk:** medium. The branch is uncommitted in the main checkout; a lost working tree loses it (see open item below).
   Its gate never collected tests (EPERM), so none of it is verified yet.
 - **Depends on:** D11.
+- **Status (2026-10-28):** spec `specs/2026-10-28-pokemap-plan-13-warp-popups-design.md`, plan
+  `plans/2026-10-28-pokemap-plan-13-warp-popups.md` (7 tasks, High); risk re-rated High (shared shell/core). In progress.
 
 ### Plan 14: GBC editing gaps
 
