@@ -5,7 +5,8 @@ import type { MapView } from "../src/components/mapView.js";
 
 // Plan 6c E4: the GBA world canvas's in-context edit mode -- the "edit here" entry points, the overlay, the snap, the
 // zoom clamp, the exits and the per-map tile refresh. Fixtures are this file's own (WorldCanvas.test.tsx keeps its own
-// private). Viewport 100x100, zoom 1, pan 0: A [0,10)^2 and B [20,23)^2 in screen px.
+// private). P12-4e: 23x10 bounds in 100x100 fit at z=100/23, pan(0,650/23).
+// A projects to x[0,1000/23), y[650/23,1650/23); B to x[2000/23,100), y[650/23,950/23).
 
 const VIEWPORT_SIZE = 100;
 const WORLD = {
@@ -114,7 +115,8 @@ describe("WorldCanvas: onEditHere double-click (Plan 6c E4)", () => {
     const { canvas } = await mount({ onEditHere });
     fireEvent.doubleClick(canvas, { clientX: 95, clientY: 95 });
     expect(onEditHere).not.toHaveBeenCalled();
-    fireEvent.doubleClick(canvas, { clientX: 21, clientY: 1 });
+    // B's fitted screen rect is x[2000/23,100), y[650/23,950/23); (95,35) hits it.
+    fireEvent.doubleClick(canvas, { clientX: 95, clientY: 35 });
     expect(onEditHere).toHaveBeenCalledTimes(1);
     expect(onEditHere).toHaveBeenCalledWith("B");
   });
@@ -123,9 +125,10 @@ describe("WorldCanvas: onEditHere double-click (Plan 6c E4)", () => {
     const onEditHere = vi.fn();
     const onOpenMap = vi.fn();
     const { canvas } = await mount({ onEditHere, onOpenMap });
-    fireEvent.doubleClick(canvas, { clientX: 21, clientY: 1, ctrlKey: true });
-    fireEvent.doubleClick(canvas, { clientX: 21, clientY: 1, metaKey: true });
-    fireEvent.doubleClick(canvas, { clientX: 21, clientY: 1, shiftKey: true });
+    // B projects to x[86.96,100), y[28.26,41.30), so all three gestures target B at (95,35).
+    fireEvent.doubleClick(canvas, { clientX: 95, clientY: 35, ctrlKey: true });
+    fireEvent.doubleClick(canvas, { clientX: 95, clientY: 35, metaKey: true });
+    fireEvent.doubleClick(canvas, { clientX: 95, clientY: 35, shiftKey: true });
     expect(onEditHere).not.toHaveBeenCalled();
     expect(onOpenMap).toHaveBeenCalledTimes(1);
     expect(onOpenMap).toHaveBeenCalledWith("B");
@@ -152,7 +155,8 @@ describe("WorldCanvas: onEditHere double-click (Plan 6c E4)", () => {
     const impl = makeFetch({ A: [{ x: 2, y: 3, elevation: 0, destMap: "MAP_B", destWarpId: "0", destMapName: "B" }] });
     const { canvas } = await mount({ onEditHere }, impl);
     fireEvent.click(screen.getByRole("switch", { name: /warps/i }));
-    for (let i = 0; i < 8; i++) fireEvent.wheel(canvas, { clientX: 0, clientY: 0, deltaY: -100 }); // pan stays 0; zoom 1.2^8
+    // Pivot(0,50) fixes world(0,5); eight ticks reach z16, pan(0,-30), leaving A's warp at (32,18) visible.
+    for (let i = 0; i < 8; i++) fireEvent.wheel(canvas, { clientX: 0, clientY: 50, deltaY: -100 });
     await waitFor(() => expect(canvas.parentElement!.querySelectorAll(".world-canvas__warp-marker").length).toBe(1));
     const marker = canvas.parentElement!.querySelector(".world-canvas__warp-marker") as HTMLElement;
     const mx = parseFloat(marker.style.left), my = parseFloat(marker.style.top);
@@ -172,25 +176,28 @@ describe("WorldCanvas: onEditHere double-click (Plan 6c E4)", () => {
     const onEditHere = vi.fn();
     const p = probe();
     const { canvas, rerenderWith } = await mount({ onOpenMap: vi.fn(), onEditHere });
-    fireEvent.contextMenu(canvas, { clientX: 22, clientY: 2 });
+    // B at fit x[86.96,100), y[28.26,41.30); (95,35) records the menu point.
+    fireEvent.contextMenu(canvas, { clientX: 95, clientY: 35 });
     fireEvent.click(screen.getByRole("menuitem", { name: "Edit here" }));
     expect(onEditHere).toHaveBeenCalledWith("B");
     rerenderWith({ onEditHere, context: { map: "B", origin: { x: 16, y: 16 }, renderCanvas: p.renderCanvas, onExitRequest: vi.fn() } });
-    // B (20,0) 3x3 at 16 px/tile: centre (21.5, 1.5)*16 = (344, 24); pan = (22-344, 2-24) = (-322, -22).
-    // MapCanvas view = (20*16 + -322 - 16, 0 + -22 - 16) = (-18, -38).
-    await waitFor(() => expect(p.current()).toEqual({ zoom: 1, pan: { x: -18, y: -38 } }));
+    // B centre(21.5,1.5)*16=(344,24); pointer(95,35) gives world pan(-249,11).
+    // MapCanvas pan=(20*16-249-16,11-16)=(55,-5).
+    await waitFor(() => expect(p.current()).toEqual({ zoom: 1, pan: { x: 55, y: -5 } }));
   });
 
   it("the ContextMenu key's Edit here snaps at the selected map's screen centre", async () => {
     const onEditHere = vi.fn();
     const p = probe();
     const { canvas, rerenderWith } = await mount({ onOpenMap: vi.fn(), onEditHere });
-    fireEvent.mouseDown(canvas, { clientX: 21, clientY: 1, button: 0, ctrlKey: true }); // select B
+    // B's fitted rect contains (95,35), so Ctrl+press selects it.
+    fireEvent.mouseDown(canvas, { clientX: 95, clientY: 35, button: 0, ctrlKey: true });
     fireEvent.keyDown(canvas, { key: "ContextMenu" });
     fireEvent.click(screen.getByRole("menuitem", { name: "Edit here" }));
     rerenderWith({ onEditHere, context: { map: "B", origin: { x: 16, y: 16 }, renderCanvas: p.renderCanvas, onExitRequest: vi.fn() } });
-    // The menu opened at B's centre (21.5, 1.5); pan = round(21.5 - 344, 1.5 - 24) = (-322, -22) (-322.5 rounds up).
-    await waitFor(() => expect(p.current()).toEqual({ zoom: 1, pan: { x: -18, y: -38 } }));
+    // B's fitted centre is (21.5*100/23, 650/23+1.5*100/23)=(93.478,34.783).
+    // Snap pan=round(93.478-344,34.783-24)=(-251,11); MapCanvas pan=(53,-5).
+    await waitFor(() => expect(p.current()).toEqual({ zoom: 1, pan: { x: 53, y: -5 } }));
   });
 });
 
@@ -243,10 +250,11 @@ describe("WorldCanvas: in-context overlay (Plan 6c E4)", () => {
     const onEditHere = vi.fn();
     const p = probe();
     const { canvas, rerenderWith } = await mount({ onEditHere });
-    fireEvent.doubleClick(canvas, { clientX: 21, clientY: 1 });
+    // B at fit x[86.96,100), y[28.26,41.30); pointer(95,35) is inside.
+    fireEvent.doubleClick(canvas, { clientX: 95, clientY: 35 });
     rerenderWith({ onEditHere, context: ctx(p.renderCanvas) });
-    // pan = (21 - 344, 1 - 24) = (-323, -23); view pan = (320 - 323 - 16, -23 - 16) = (-19, -39).
-    await waitFor(() => expect(p.current()).toEqual({ zoom: 1, pan: { x: -19, y: -39 } }));
+    // Pointer(95,35)-B centre at native(344,24) gives pan(-249,11); MapCanvas pan=(320-249-16,11-16)=(55,-5).
+    await waitFor(() => expect(p.current()).toEqual({ zoom: 1, pan: { x: 55, y: -5 } }));
   });
 
   it("an overlay view change moves the world in lock-step: zoom 16*z, pan from worldViewFromMapView", async () => {
@@ -466,19 +474,20 @@ describe("WorldCanvas: in-context fix round (Plan 6c E4)", () => {
       const p = probe();
       const { canvas, container, rerenderWith } = await mount({ onEditHere });
       canvas.getBoundingClientRect = () => boxAt(58); // already shifted when the user double-clicks
-      fireEvent.doubleClick(canvas, { clientX: 21, clientY: 59 }); // canvas-relative (21, 1): inside B
+      // B's fitted screen point (95,35) is client (95,93) after the box moves down 58px.
+      fireEvent.doubleClick(canvas, { clientX: 95, clientY: 93 });
       expect(onEditHere).toHaveBeenCalledWith("B");
 
       rerenderWith({ onEditHere, context: ctx(p.renderCanvas, vi.fn(), null) }); // layout not loaded: no snap yet
       await act(async () => { await Promise.resolve(); });
       expect(p.views).toHaveLength(0);
-      expect(readout(container)).toBe("6%"); // zoom 1 unchanged: still the pre-snap world
+      expect(readout(container)).toBe("27%"); // Initial z=100/23; round(z/16*100)=27% before snap.
 
       canvas.getBoundingClientRect = () => boxAt(116); // the chrome mounted and moved the canvas down again
       rerenderWith({ onEditHere, context: ctx(p.renderCanvas) });
-      // pointer = client (21, 59) - box (0, 116) = (21, -57); B centre (344, 24) -> pan (21-344, -57-24) = (-323, -81);
-      // MapCanvas view = (20*16 - 323 - 16, -81 - 16) = (-19, -97).
-      await waitFor(() => expect(p.current()).toEqual({ zoom: 1, pan: { x: -19, y: -97 } }));
+      // Recorded client(95,93), shifted box top116 => pointer(95,-23); B native centre(344,24).
+      // World pan(-249,-47) yields MapCanvas pan=(320-249-16,-47-16)=(55,-63).
+      await waitFor(() => expect(p.current()).toEqual({ zoom: 1, pan: { x: 55, y: -63 } }));
     });
 
     it("the right-click menu's open point is recorded in client px too", async () => {
@@ -486,12 +495,13 @@ describe("WorldCanvas: in-context fix round (Plan 6c E4)", () => {
       const p = probe();
       const { canvas, rerenderWith } = await mount({ onOpenMap: vi.fn(), onEditHere });
       canvas.getBoundingClientRect = () => boxAt(58);
-      fireEvent.contextMenu(canvas, { clientX: 22, clientY: 60 }); // canvas-relative (22, 2)
+      // Fitted B contains canvas(95,35), client(95,93) with box top58.
+      fireEvent.contextMenu(canvas, { clientX: 95, clientY: 93 });
       fireEvent.click(screen.getByRole("menuitem", { name: "Edit here" }));
       canvas.getBoundingClientRect = () => boxAt(116);
       rerenderWith({ onEditHere, context: ctx(p.renderCanvas) });
-      // pointer (22, 60 - 116 = -56); pan = (22-344, -56-24) = (-322, -80); view = (320-322-16, -80-16) = (-18, -96).
-      await waitFor(() => expect(p.current()).toEqual({ zoom: 1, pan: { x: -18, y: -96 } }));
+      // At box top116, pointer(95,-23); pan=(95-344,-23-24)=(-249,-47); view=(55,-63).
+      await waitFor(() => expect(p.current()).toEqual({ zoom: 1, pan: { x: 55, y: -63 } }));
     });
 
     it("the ContextMenu key's open point (the selected map's centre) is recorded in client px too", async () => {
@@ -499,22 +509,25 @@ describe("WorldCanvas: in-context fix round (Plan 6c E4)", () => {
       const p = probe();
       const { canvas, rerenderWith } = await mount({ onOpenMap: vi.fn(), onEditHere });
       canvas.getBoundingClientRect = () => boxAt(58);
-      fireEvent.mouseDown(canvas, { clientX: 21, clientY: 59, button: 0, ctrlKey: true }); // select B
-      fireEvent.keyDown(canvas, { key: "ContextMenu" }); // opens at B's centre: canvas (21.5, 1.5) = client (21.5, 59.5)
+      // Ctrl+press at fitted B screen(95,35), client(95,93) with box top58, selects B.
+      fireEvent.mouseDown(canvas, { clientX: 95, clientY: 93, button: 0, ctrlKey: true });
+      fireEvent.keyDown(canvas, { key: "ContextMenu" }); // B centre: canvas(93.478,34.783), client y92.783.
       fireEvent.click(screen.getByRole("menuitem", { name: "Edit here" }));
       canvas.getBoundingClientRect = () => boxAt(116);
       rerenderWith({ onEditHere, context: ctx(p.renderCanvas) });
-      // pointer (21.5, 59.5 - 116 = -56.5); pan = (round(21.5-344), round(-56.5-24)) = (-322, -80); view (-18, -96).
-      await waitFor(() => expect(p.current()).toEqual({ zoom: 1, pan: { x: -18, y: -96 } }));
+      // New box top116: pointer(93.478,-23.217); native centre(344,24) => rounded pan(-251,-47), view(53,-63).
+      await waitFor(() => expect(p.current()).toEqual({ zoom: 1, pan: { x: 53, y: -63 } }));
     });
 
     it("a later entry does not reuse an earlier pointer: with none recorded the canvas centre is used", async () => {
       const onEditHere = vi.fn();
       const p = probe();
       const { canvas, rerenderWith } = await mount({ onEditHere });
-      fireEvent.doubleClick(canvas, { clientX: 21, clientY: 1 });
+      // B's fitted screen rect contains (95,35).
+      fireEvent.doubleClick(canvas, { clientX: 95, clientY: 35 });
       rerenderWith({ onEditHere, context: ctx(p.renderCanvas) });
-      await waitFor(() => expect(p.current()).toEqual({ zoom: 1, pan: { x: -19, y: -39 } })); // at the pointer (21, 1)
+      // Pointer(95,35) gives snap pan(-249,11) and overlay pan(55,-5).
+      await waitFor(() => expect(p.current()).toEqual({ zoom: 1, pan: { x: 55, y: -5 } }));
       rerenderWith({ onEditHere });
       rerenderWith({ onEditHere, context: ctx(p.renderCanvas) }); // entered some other way: nothing recorded
       // The world kept zoom 16 (snaps to 1x again); centre fallback (50, 50): pan (-294, 26); view (10, 10).

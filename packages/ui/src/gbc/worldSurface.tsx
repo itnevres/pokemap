@@ -193,7 +193,7 @@ const GBC_LEGEND_COPY: Partial<Record<LensId, (s: LensPanelSummary) => string>> 
   method: () => "Which maps reward surfing, fishing, headbutting trees or rock smash.",
 };
 
-/** Compatibility wrapper (GBC default bounds) over `canvas/worldView.ts` `jumpFit` (60% fill, scaled before
+/** Compatibility wrapper (GBC default bounds) over `canvas/worldView.ts` `jumpFit` (full fill, scaled before
  *  clamping; the rationale lives there). */
 export function jumpFit(
   bounds: Bounds,

@@ -368,15 +368,15 @@ describe("shouldUseLod (pure)", () => {
 });
 
 describe("jumpFit (pure)", () => {
-  it("fills about 60% of the viewport (not the full 100% computeFit alone would give)", () => {
+  it("fills the limiting viewport dimension like GBA's old jump", () => {
     const bounds = { x: 0, y: 0, width: 10, height: 10 };
     const viewport = { w: 100, h: 100 };
     const full = computeFit(bounds, viewport, { min: 1 / 64, max: 32 });
     expect(full.zoom).toBe(10); // fits entirely at zoom 10
     const jump = jumpFit(bounds, viewport);
-    expect(jump.zoom).toBeCloseTo(6, 10); // 60% of 10
-    // Still centred at the smaller zoom.
-    expect(jump.pan).toEqual({ x: (100 - 10 * 6) / 2, y: (100 - 10 * 6) / 2 });
+    expect(jump.zoom).toBeCloseTo(10, 10); // min(100/10,100/10)=10, below max 32.
+    // At zoom 10 the map fills both 100px dimensions, so centred pan is zero.
+    expect(jump.pan).toEqual({ x: (100 - 10 * 10) / 2, y: (100 - 10 * 10) / 2 });
   });
 
   it("respects a custom fraction and zoomBounds", () => {
@@ -392,7 +392,7 @@ describe("jumpFit (pure)", () => {
     // 37.111, which exceeds GBC_ZOOM_BOUNDS.max (32) -- exactly the spec
     // review's own F2 case, re-measured here as a pinned unit test rather
     // than only a live check.
-    const j = jumpFit({ x: 0, y: 0, width: 20, height: 18 }, { w: 1000, h: 668 });
+    const j = jumpFit({ x: 0, y: 0, width: 20, height: 18 }, { w: 1000, h: 668 }, { min: 1 / 64, max: 32 }, 0.6);
     expect(j.zoom).toBeCloseTo(37.111111 * 0.6, 3); // 22.267, well under the 32 cap
     const fill = Math.max((20 * j.zoom) / 1000, (18 * j.zoom) / 668);
     expect(fill).toBeCloseTo(0.6, 6);
@@ -1206,15 +1206,15 @@ describe("GbcWorldCanvas", () => {
   // -------------------------------------------------------------------
   // Map-list jump.
   // -------------------------------------------------------------------
-  it("jump: centres jumpToMap at ~60% of the viewport and flashes an outline that fades after 2s", async () => {
+  it("jump: centres jumpToMap at full limiting-dimension fill and flashes an outline that fades after 2s", async () => {
     const { rerender } = await mountReady();
 
     rerender(<GbcWorldCanvas time="day" jumpToMap="MapB" jumpToken={1} />);
     await waitFor(() => expect(document.querySelector(".world-canvas__jump-highlight")).toBeTruthy());
 
     // computeFit({10,0,10,10}, {200,200}, bounds).zoom = min(32,20) = 20;
-    // jumpFit's own 60% -> zoom 12. zoom% = round(12/32*100) = 38.
-    expect(screen.getByText(/zoom 38%/)).toBeTruthy();
+    // P12-4m full fill: zoom 20; zoom% = round(20/32*100) = 63.
+    expect(screen.getByText(/zoom 63%/)).toBeTruthy();
 
     await waitFor(() => expect(document.querySelector(".world-canvas__jump-highlight")).toBeNull(), { timeout: 3000 });
   }, 10000);
@@ -1222,15 +1222,16 @@ describe("GbcWorldCanvas", () => {
   it("jumping to a DIFFERENT map on a later token re-jumps (not stuck on the first jumpToMap)", async () => {
     const { rerender } = await mountReady();
     rerender(<GbcWorldCanvas time="day" jumpToMap="MapB" jumpToken={1} />);
-    await waitFor(() => expect(screen.getByText(/zoom 38%/)).toBeTruthy());
+    // MapB 10x10 in 200x200: z20, so round(20/32*100)=63%.
+    await waitFor(() => expect(screen.getByText(/zoom 63%/)).toBeTruthy());
 
     rerender(<GbcWorldCanvas time="day" jumpToMap="MapA" jumpToken={2} />);
-    // computeFit({0,0,10,10},{200,200}).zoom=20, jumpFit 60% -> 12 -> same 38%,
+    // computeFit({0,0,10,10},{200,200}).zoom=20, full jump -> same 63%,
     // but pan differs (MapA at x=0, not MapB's x=10) -- proves the SECOND
     // token actually re-ran the jump effect, not just held the first result.
     await waitFor(() => {
       const outline = document.querySelector(".world-canvas__jump-highlight") as HTMLElement | null;
-      expect(outline?.style.left).toBe("40px"); // MapA: -0*12+(200-120)/2 = 40
+      expect(outline?.style.left).toBe("0px"); // MapA: -0*20+(200-200)/2 = 0.
     });
   });
 

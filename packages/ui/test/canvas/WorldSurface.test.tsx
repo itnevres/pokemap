@@ -225,9 +225,9 @@ it("fits manually, fits anchored filter members and waits to jump outside the fi
   expect(log.filter((c) => c.name === "tile" && c.args[0] === imageFor("A")).at(-1)?.args.slice(1)).toEqual([50, 0, 100, 100]);
   expect(host.container.querySelector(".world-canvas__jump-highlight")).toBeNull();
   host.rerender(<WorldSurface adapter={adapter} mapFilter={new Set(["A", "B"])} jumpToMap="B" jumpToken={1} />);
-  // Jump B: min(200/10,100/10)*0.6=6; pan (100-25*6,50-15*6)=(-50,-40).
+  // P12-4m: B 10x10 fills height at z=min(20,10)=10; centre(25,15) gives pan(-150,-100).
   const node = host.container.querySelector<HTMLElement>(".world-canvas__jump-highlight")!;
-  expect([node.style.left, node.style.top, node.style.width, node.style.height]).toEqual(["70px", "20px", "60px", "60px"]);
+  expect([node.style.left, node.style.top, node.style.width, node.style.height]).toEqual(["50px", "0px", "100px", "100px"]);
   host.rerender(<WorldSurface adapter={adapter} mapFilter={new Set(["A", "B"])} jumpToMap="B" jumpToken={2} />);
   expect(host.container.querySelector(".world-canvas__jump-highlight")).not.toBe(node);
   await loadImages();
@@ -239,16 +239,16 @@ it("fits manually, fits anchored filter members and waits to jump outside the fi
   expect(lastDraw("A")).toEqual([0, 0, 100, 100]);
 });
 
-it("jump-fits at 60% with exact zoom and pan", async () => {
+it("jump-fits to the limiting viewport dimension with exact zoom and pan", async () => {
   const host = render(<WorldSurface adapter={adapter} jumpToMap="B" jumpToken={1} />);
   await loadImages();
-  // B (20,10,10,10): raw min(200/10, 100/10) = 10, x0.6 = 6 -> 6/16*100 = 37.5 -> 38%.
-  // Centre (25,15): pan (100-25*6, 50-15*6) = (-50,-40). B at (20*6-50, 10*6-40, 60, 60) = (70,20,60,60).
-  expect(host.container.querySelector(".world-canvas__zoom-readout")?.textContent).toBe("38%");
-  expect(lastDraw("B")).toEqual([70, 20, 60, 60]);
-  expect(jumpBox(host)).toEqual([70, 20, 60, 60]);
-  // A (10,10) at (10*6-50, 10*6-40) = (10,20).
-  expect(lastDraw("A")).toEqual([10, 20, 60, 60]);
+  // B 10x10: raw min(20,10)=10 -> 10/16*100=62.5 -> 63%; centre(25,15) gives pan(-150,-100).
+  // B at (20*10-150,10*10-100,100,100)=(50,0,100,100).
+  expect(host.container.querySelector(".world-canvas__zoom-readout")?.textContent).toBe("63%");
+  expect(lastDraw("B")).toEqual([50, 0, 100, 100]);
+  expect(jumpBox(host)).toEqual([50, 0, 100, 100]);
+  // A (10,10) at (10*10-150,10*10-100) = (-50,0).
+  expect(lastDraw("A")).toEqual([-50, 0, 100, 100]);
 });
 
 it("renders a new highlight node when the same map is re-jumped with a new token", () => {
@@ -263,31 +263,31 @@ it("renders a new highlight node when the same map is re-jumped with a new token
 
 it("lands an initial jump on a hidden map at its own fit, not the cluster fit", () => {
   const host = render(<WorldSurface adapter={adapter} jumpToMap="Hidden" jumpToken={1} />);
-  // Hidden (10,10,5,5): raw min(200/5, 100/5) = 20, x0.6 = 12; centre (12.5,12.5) -> pan (100-150, 50-150) =
-  // (-50,-100); rect (10*12-50, 10*12-100, 60, 60) = (70,20,60,60). The cluster fit would give (0,0,25,25).
-  expect(jumpBox(host)).toEqual([70, 20, 60, 60]);
+  // Hidden 5x5: raw min(40,20)=20, clamped at 16; centre(12.5,12.5) gives pan(-100,-150).
+  // Rect (10*16-100,10*16-150,80,80)=(60,10,80,80). The cluster fit differs.
+  expect(jumpBox(host)).toEqual([60, 10, 80, 80]);
   expect(imageFor("Hidden")).toBeTruthy();
-  expect(host.container.querySelector(".world-canvas__status")?.textContent).toBe("75% hidden 0 unplaced 1");
+  // Zoom 16 at nativePx 16 reads 16/16 = 100%.
+  expect(host.container.querySelector(".world-canvas__status")?.textContent).toBe("100% hidden 0 unplaced 1");
 });
 
 it("projects the jump outline onto the drawImage rect after a wheel zoom and after a re-jump's pan", async () => {
   const host = render(<WorldSurface adapter={adapter} jumpToMap="B" jumpToken={1} />);
   await loadImages();
-  // From zoom 6, pan (-50,-40), wheel in at (100,50): source (150/6, 90/6) = (25,15); zoom 7.2; pan (100-25*7.2,
-  // 50-15*7.2) = (-80,-58). B at (20*7.2-80, 10*7.2-58, 72, 72) = (64,14,72,72).
+  // From z10, pan(-150,-100), wheel at(100,50) fixes source(25,15); z12, pan(-200,-130).
+  // B projects to (20*12-200,10*12-130,120,120)=(40,-10,120,120).
   fireEvent.wheel(stageOf(host), { deltaY: -1, clientX: 100, clientY: 50 });
   const zoomed = lastDraw("B")!;
   expect(jumpBox(host)).toEqual(zoomed);
-  [64, 14, 72, 72].forEach((n, i) => expect(zoomed[i]).toBeCloseTo(n, 9));
-  // Pan: jump to D (40,20,10,10): zoom 6, centre (45,25) -> pan (100-270, 50-150) = (-170,-100); then wheel out at
-  // (100,50): source (270/6, 150/6) = (45,25); zoom 5; pan (100-225, 50-125) = (-125,-75).
-  // D at (40*5-125, 20*5-75, 50, 50) = (75,25,50,50).
+  [40, -10, 120, 120].forEach((n, i) => expect(zoomed[i]).toBeCloseTo(n, 9));
+  // D centre(45,25) at z10 gives pan(-350,-200); wheel out fixes that source and yields z=10/1.2.
+  // D remains centred: size 10*(10/1.2)=250/3; origin ((200-250/3)/2,(100-250/3)/2)=(175/3,25/3).
   host.rerender(<WorldSurface adapter={adapter} jumpToMap="D" jumpToken={2} />);
   await loadImages();
   fireEvent.wheel(stageOf(host), { deltaY: 1, clientX: 100, clientY: 50 });
   const panned = lastDraw("D")!;
   expect(jumpBox(host)).toEqual(panned);
-  [75, 25, 50, 50].forEach((n, i) => expect(panned[i]).toBeCloseTo(n, 9));
+  [175 / 3, 25 / 3, 250 / 3, 250 / 3].forEach((n, i) => expect(panned[i]).toBeCloseTo(n, 9));
 });
 
 it("hands the border [] for a map whose encounter fetch failed and undefined for one still loading", async () => {

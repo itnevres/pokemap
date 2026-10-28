@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import type { WireConflict } from "@pokemap/core/src/world/conflictAcceptance.js";
-import { drawDiamond, themedLevelColorMap } from "../components/WorldCanvas.js";
+import { drawDiamond, themedLevelColorMap } from "./worldColours.js";
 import { SpeciesSpotlight } from "../components/SpeciesSpotlight.js";
 import type { MapView } from "../components/mapView.js";
 import type { LensId } from "../components/LensPanel.js";

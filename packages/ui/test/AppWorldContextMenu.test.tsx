@@ -91,8 +91,11 @@ describe("App -- world context menu Open in Map view (Plan 6c E3)", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Route1" })).toBeTruthy());
     const canvas = await enterWorld();
     // Fresh World view (nothing selected): zoom 1, pan 0 -- PalletTown [0,10), Route1 [11,21).
-    await waitFor(() => expect(document.querySelector(".world-canvas__zoom-readout")).toBeTruthy());
-    fireEvent.contextMenu(canvas, { clientX: 16, clientY: 5 });
+    // P12-4e: both maps are singletons, so the first fit takes every placement: bounds x [0,21) y [0,10) in 400x100.
+    // zoom = min(400/21, 100/10) = 10 px/tile, readout round(10/16*100) = 63%; pan x = (400 - 210)/2 = 95, pan y = 0.
+    // Route1 (x 11..21) is then screen x [205,305), y [0,100): right-click its middle once the fit has landed.
+    await waitFor(() => expect(document.querySelector(".world-canvas__zoom-readout")?.textContent).toBe("63%"));
+    fireEvent.contextMenu(canvas, { clientX: 255, clientY: 50 });
     fireEvent.click(screen.getByRole("menuitem", { name: "Open in Map view" }));
 
     await waitFor(() => expect(document.querySelector("canvas.world-canvas__stage")).toBeNull()); // left World mode

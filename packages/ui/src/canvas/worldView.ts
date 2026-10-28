@@ -13,8 +13,8 @@ export const WHEEL_FACTOR = 1.2;
 /** Fraction of native resolution the cached LOD buffer renders at. */
 export const LOD_SCALE = 0.25;
 
-/** Jump fit fills this fraction of the viewport: 100% zooms in so tight it loses the surrounding context. */
-export const JUMP_FILL_FRACTION = 0.6;
+/** Jump fit fills the limiting viewport dimension (GBA's old jump; user amendment to P12-4m, 2026-10-27). */
+export const JUMP_FILL_FRACTION = 1;
 
 /** Screen px radius for warp marker hit-testing (P12-4i). */
 export const WARP_HIT_RADIUS = 8;
@@ -189,8 +189,8 @@ export function centredFit(
 
 /**
  * The map-list jump: the UNCLAMPED "fits entirely" zoom is scaled by `fraction` FIRST, then clamped, so the map
- * fills about 60% of the viewport with its neighbours in view. Clamping first was wrong whenever the raw fit
- * exceeds the max (most real GBC maps): a 20x18 map in 1000x668 landed at a 0.52 fill, not 0.6 (live).
+ * fills `fraction` of the viewport. Clamping first was wrong whenever the raw fit exceeds the max and the
+ * fraction is below 1: a 20x18 GBC map in 1000x668 landed at a 0.52 fill, not 0.6 (live).
  */
 export function jumpFit(
   bounds: WorldRect,

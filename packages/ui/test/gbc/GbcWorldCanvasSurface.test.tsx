@@ -387,10 +387,10 @@ it.each(["INDOOR", "GATE"])("P12-4q: an unfiltered jump reveals and draws a hidd
   expect(image).toBeDefined();
   await act(async () => image!.onload?.());
   const ctx = ctxByCanvas.get(host.canvas)!;
-  // Map size5x5, 200x200 viewport: 60% fill gives zoom=.6*40=24, pan=100-1002.5*24=-23960.
-  // Interior(1000,1000) projects to (40,40), with size 5*24=120 on each axis.
+  // Map 5x5 in 200x200: raw fit 40 clamps to GBC max 32; pan=100-1002.5*32=-31980.
+  // Interior(1000,1000) projects to (20,20), with size 5*32=160 on each axis.
   const draw = ctx.drawImage.mock.calls.filter(([source]) => source === image).at(-1);
-  expect(draw?.slice(1)).toEqual([40, 40, 120, 120]);
+  expect(draw?.slice(1)).toEqual([20, 20, 160, 160]);
 });
 
 // Adapter fact borderNeighbours "scoped": a hidden indoor map still blocks a border side (old GbcWorldCanvas.tsx:729-745).

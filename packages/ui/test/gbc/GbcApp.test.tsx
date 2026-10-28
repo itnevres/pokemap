@@ -757,18 +757,18 @@ describe("GbcApp -- GBC world visibility (Plan 6c D1)", () => {
 });
 
 describe("GbcApp -- entering World centres on the selection (Plan 6c C2 fix round)", () => {
-  // OlivineCity at world x 0, OlivinePort at x 11 (10x10 blocks each). In a 100x100 viewport the initial fit is
-  // zoom 100/21 ("15%"); a jump fills 60% (zoom 6, "19%"), centring the target at screen [20,80).
+  // P12-4m: both 10x10 maps jump at z10 in 100x100 (31%). Put Port at x9 so it remains clickable after City's jump:
+  // Port starts at screen x90 then; the initial fit is 100/19 (16%), placing Port at x47..100.
   const TWO = {
     family: "gbc" as const,
     blockPx: 32 as const,
     placements: {
       OlivineCity: { map: "OlivineCity", x: 0, y: 0, width: 10, height: 10, component: 0, mapType: "TOWN", manual: false },
-      OlivinePort: { map: "OlivinePort", x: 11, y: 0, width: 10, height: 10, component: 1, mapType: "TOWN", manual: false },
+      OlivinePort: { map: "OlivinePort", x: 9, y: 0, width: 10, height: 10, component: 1, mapType: "TOWN", manual: false },
     },
     components: [
       { index: 0, maps: ["OlivineCity"], bounds: { x: 0, y: 0, width: 10, height: 10 } },
-      { index: 1, maps: ["OlivinePort"], bounds: { x: 11, y: 0, width: 10, height: 10 } },
+      { index: 1, maps: ["OlivinePort"], bounds: { x: 9, y: 0, width: 10, height: 10 } },
     ],
     conflicts: [], sidecar: { dungeonAutoLayout: true },
   };
@@ -787,7 +787,8 @@ describe("GbcApp -- entering World centres on the selection (Plan 6c C2 fix roun
     render(<FamilyApp adapter={gbcAdapter} />);
     await waitFor(() => expect(screen.getByText("OlivineCity")).toBeTruthy());
     clickMode("World");
-    await waitFor(() => expect(zoomText()).toContain("2 components · 2 maps · zoom 15%"));
+    // Initial all-placement fit: 100/19/32*100 rounds to 16%.
+    await waitFor(() => expect(zoomText()).toContain("2 components · 2 maps · zoom 16%"));
     return stageCanvas();
   }
 
@@ -795,15 +796,15 @@ describe("GbcApp -- entering World centres on the selection (Plan 6c C2 fix roun
     await withViewport(async () => {
       const canvas = await mountInWorld();
       fireEvent.click(screen.getByText("OlivineCity")); // A: a tree click
-      await waitFor(() => expect(zoomText()).toContain("zoom 19%"));
-      fireEvent.click(canvas, { clientX: 95, clientY: 50 }); // B = OlivinePort, at screen [86,146) after the jump
+      await waitFor(() => expect(zoomText()).toContain("zoom 31%")); // 10/32*100 rounds to 31%.
+      fireEvent.click(canvas, { clientX: 95, clientY: 50 }); // Port [90,190) after City's z10 jump.
       await waitFor(() => expect(currentRow()?.textContent).toBe("OlivinePort"));
 
       clickMode("Map");
       clickMode("World");
 
       await waitFor(() => expect(jumpHighlight()).toBeTruthy());
-      await waitFor(() => expect(zoomText()).toContain("zoom 19%"));
+      await waitFor(() => expect(zoomText()).toContain("zoom 31%")); // Port's 10x10 full jump is z10.
       fireEvent.click(stageCanvas(), { clientX: 50, clientY: 50 }); // the centre: B if centred on B, A if jumped to the stale A
       await act(async () => {});
       expect(currentRow()?.textContent).toBe("OlivinePort");
@@ -813,14 +814,14 @@ describe("GbcApp -- entering World centres on the selection (Plan 6c C2 fix roun
   it("world-click B only (no tree click ever), Map, World: jumps to B", async () => {
     await withViewport(async () => {
       const canvas = await mountInWorld();
-      fireEvent.click(canvas, { clientX: 80, clientY: 50 }); // OlivinePort at the initial fit: screen x [52,100)
+      fireEvent.click(canvas, { clientX: 80, clientY: 50 }); // Port at initial 100/19 fit: screen x [47,100).
       await waitFor(() => expect(currentRow()?.textContent).toBe("OlivinePort"));
-      expect(zoomText()).toContain("zoom 15%");
+      expect(zoomText()).toContain("zoom 16%"); // (100/19)/32*100 rounds to 16%.
 
       clickMode("Map");
       clickMode("World");
 
-      await waitFor(() => expect(zoomText()).toContain("zoom 19%")); // jumped; before, jumpTarget was null and the view stayed at the fit
+      await waitFor(() => expect(zoomText()).toContain("zoom 31%")); // z10/32 rounds to 31%; initial fit is 16%.
       await waitFor(() => expect(jumpHighlight()).toBeTruthy());
     });
   });
@@ -829,7 +830,7 @@ describe("GbcApp -- entering World centres on the selection (Plan 6c C2 fix roun
     await withViewport(async () => {
       await mountInWorld();
       fireEvent.click(screen.getByText("OlivineCity"));
-      await waitFor(() => expect(zoomText()).toContain("zoom 19%"));
+      await waitFor(() => expect(zoomText()).toContain("zoom 31%")); // City's 10x10 full jump is z10.
       const first = jumpHighlight();
       expect(first).toBeTruthy();
 
@@ -838,7 +839,7 @@ describe("GbcApp -- entering World centres on the selection (Plan 6c C2 fix roun
 
       const now = jumpHighlight(); // a re-jump mounts a fresh node (keyed on jumpToken); the first may have faded
       expect(now === null || now === first).toBe(true);
-      expect(zoomText()).toContain("zoom 19%");
+      expect(zoomText()).toContain("zoom 31%"); // No second jump changes the z10 view.
     });
   });
 });

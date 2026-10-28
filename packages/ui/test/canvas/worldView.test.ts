@@ -15,7 +15,8 @@ describe("worldView constants", () => {
   it("pins the shared factors", () => {
     expect(WHEEL_FACTOR).toBe(1.2);
     expect(LOD_SCALE).toBe(0.25);
-    expect(JUMP_FILL_FRACTION).toBe(0.6);
+    // P12-4m: full limiting-dimension fill has fraction 1.
+    expect(JUMP_FILL_FRACTION).toBe(1);
     expect(WARP_HIT_RADIUS).toBe(8);
   });
 });
@@ -150,17 +151,17 @@ describe("bounds and fits (P12-4m)", () => {
     expect(centredFit({ x: 10, y: 20, width: 30, height: 40 }, { w: 200, h: 100 }, 2)).toEqual({ zoom: 2, pan: { x: 50, y: -30 } });
   });
 
-  it("jumpFit fills 60% of the viewport, scaling before clamping", () => {
+  it("jumpFit fills the limiting viewport dimension before clamping", () => {
     const gbc = { min: 1 / 64, max: 32 };
-    // 20x18 at (10, 20) in 1000x668: raw min(50, 37.111) = 37.111; x0.6 = 22.2667 (under 32).
-    // pan x = -10z + (1000 - 20z)/2 = 500 - 20z = 54.667; y = -20z + (668 - 18z)/2 = 334 - 29z = -311.733.
+    // 20x18 at (10,20) in 1000x668: raw min(50,668/18)=37.111, clamped to 32.
+    // Pan x=500-20*32=-140; y=334-29*32=-594.
     const small = jumpFit({ x: 10, y: 20, width: 20, height: 18 }, { w: 1000, h: 668 }, gbc);
-    expect(small.zoom).toBeCloseTo(668 / 18 * 0.6, 6);
-    expect(small.pan.x).toBeCloseTo(54.6667, 3);
-    expect(small.pan.y).toBeCloseTo(-311.7333, 3);
-    // 2000x1000 in 1000x500: raw 0.5 -> 0.3; pan ((1000-600)/2, (500-300)/2) = (200, 100).
-    expect(jumpFit({ x: 0, y: 0, width: 2000, height: 1000 }, { w: 1000, h: 500 }, gbc)).toEqual({ zoom: 0.3, pan: { x: 200, y: 100 } });
-    // 2x2 in 1000x668: raw 334 -> 200.4 -> clamp 32; pan ((1000-64)/2, (668-64)/2) = (468, 302).
+    expect(small.zoom).toBeCloseTo(32, 6);
+    expect(small.pan.x).toBeCloseTo(-140, 3);
+    expect(small.pan.y).toBeCloseTo(-594, 3);
+    // 2000x1000 in 1000x500: raw 0.5; centred dimensions fill exactly, giving pan (0,0).
+    expect(jumpFit({ x: 0, y: 0, width: 2000, height: 1000 }, { w: 1000, h: 500 }, gbc)).toEqual({ zoom: 0.5, pan: { x: 0, y: 0 } });
+    // 2x2 in 1000x668: raw 334, clamped to 32; pan ((1000-64)/2,(668-64)/2)=(468,302).
     expect(jumpFit({ x: 0, y: 0, width: 2, height: 2 }, { w: 1000, h: 668 }, gbc)).toEqual({ zoom: 32, pan: { x: 468, y: 302 } });
   });
 

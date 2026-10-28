@@ -32,7 +32,7 @@ const LAYOUT = {
 };
 const ROUTE1 = { ...LAYOUT, map: { ...LAYOUT.map, id: "MAP_ROUTE1", name: "Route1" } };
 const GROUPS = { groupOrder: ["Kanto"], groups: { Kanto: ["PalletTown", "Route1"] } };
-// PalletTown at world x 0, Route1 at x 11, both 10x10 tiles. Viewport 400x100, zoom 1: PalletTown [0,10), Route1 [11,21).
+// P12-4e: 21x10 bounds in 400x100 fit at z10, pan(95,0); Route1 projects to [205,305)x[0,100).
 const WORLD = {
   placements: {
     PalletTown: { map: "PalletTown", x: 0, y: 0, width: 10, height: 10, component: 0 },
@@ -107,8 +107,8 @@ async function startApp(fetchMock = makeFetchMock()) {
   return fetchMock;
 }
 
-/** Fresh World view: Route1's body is x in [11,21), so (16,5) is inside it. */
-const dblClickRoute1 = (canvas: HTMLCanvasElement) => fireEvent.doubleClick(canvas, { clientX: 16, clientY: 5 });
+/** Route1 centre after fit: (95+16*10,5*10)=(255,50). */
+const dblClickRoute1 = (canvas: HTMLCanvasElement) => fireEvent.doubleClick(canvas, { clientX: 255, clientY: 50 });
 const contextOverlay = () => document.querySelector(".world-canvas__context");
 const chrome = () => document.querySelector(".toolbar");
 
@@ -336,7 +336,7 @@ describe("App -- in-context editing, fix round (Plan 6c E4)", () => {
       url.startsWith("/api/edit/Route1/paint/") && init?.method === "POST" ? ok(session) : base(url, init));
     await startApp(fetchMock);
     const canvas = await enterWorld();
-    dblClickRoute1(canvas); // fresh World, zoom 1: Route1 is x in [11,21) px; the click is at (16, 5)
+    dblClickRoute1(canvas); // Fresh fit z10/pan95: Route1 centre is (255,50).
     await waitFor(() => expect(contextOverlay()!.querySelector("canvas.map-canvas__stage")).not.toBeNull());
     const stage = contextOverlay()!.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
 
@@ -346,12 +346,11 @@ describe("App -- in-context editing, fix round (Plan 6c E4)", () => {
     fireEvent.click(picked);
     await waitFor(() => expect(picked.getAttribute("aria-pressed")).toBe("true"));
 
-    // Snap: Route1 (11,0) 10x10, pointer (16,5), 1x: centre (16,5)*16 = (256,80), world pan (16-256, 5-80) = (-240,-75);
-    // overlay view pan = (11*16 - 240 - 16, 0 - 75 - 16) = (-80, -91), zoom 1 (origin = 1 border block * 16 px).
-    // With the stage box at (100,100), block (0,0) spans client x in [100 - 80 + 16, +16) = [36,52), y [100 - 91 + 16, +16) = [25,41).
+    // Snap: Route1 centre(16,5)*16=(256,80), pointer(255,50) gives world pan(-1,-30).
+    // Overlay pan=(11*16-1-16,-30-16)=(159,-46); with stage box(100,100), block(0,0) is x[275,291), y[70,86).
     stage.getBoundingClientRect = () => ({ left: 100, top: 100, right: 500, bottom: 200, width: 400, height: 100, x: 100, y: 100, toJSON() {} });
-    fireEvent.mouseDown(stage, { clientX: 44, clientY: 33, button: 0 });
-    fireEvent.mouseUp(stage, { clientX: 44, clientY: 33, button: 0 });
+    fireEvent.mouseDown(stage, { clientX: 283, clientY: 78, button: 0 });
+    fireEvent.mouseUp(stage, { clientX: 283, clientY: 78, button: 0 });
 
     const paintCalls = () => fetchMock.mock.calls.filter(([url]) => String(url).startsWith("/api/edit/Route1/paint/"));
     await waitFor(() => expect(paintCalls().map(([url]) => url)).toEqual([
@@ -365,15 +364,15 @@ describe("App -- in-context editing, fix round (Plan 6c E4)", () => {
   it("a selection change that nothing else clears leaves context (defence in depth: the overlay normally covers the canvas)", async () => {
     await startApp();
     const canvas = await enterWorld();
-    // Zoom the world to its native 16 px/tile about (0,0): pan stays 0, PalletTown [0,160) px, Route1 [176,336) px.
-    for (let i = 0; i < 20; i++) fireEvent.wheel(canvas, { clientX: 0, clientY: 0, deltaY: -100 });
+    // Wheel about (95,0), the fitted world origin: at z16 pan stays(95,0); PalletTown [95,255), Route1 [271,431).
+    for (let i = 0; i < 20; i++) fireEvent.wheel(canvas, { clientX: 95, clientY: 0, deltaY: -100 });
     await waitFor(() => expect(document.querySelector(".world-canvas__zoom-readout")!.textContent).toBe("100%"));
-    fireEvent.doubleClick(canvas, { clientX: 256, clientY: 80 }); // Route1's centre: the snap leaves the world where it is
+    fireEvent.doubleClick(canvas, { clientX: 351, clientY: 80 }); // Route1 centre: 95+16*16=351; snap keeps pan95.
     await waitFor(() => expect(chrome()).not.toBeNull());
     expect(contextOverlay()).not.toBeNull();
 
     // A click that reaches the world canvas itself (not possible with a real pointer: the overlay covers it) on PalletTown.
-    fireEvent.click(canvas, { clientX: 80, clientY: 80 });
+    fireEvent.click(canvas, { clientX: 175, clientY: 80 }); // PalletTown centre: 95+5*16=175.
 
     await waitFor(() => expect(contextOverlay()).toBeNull());
     expect(chrome()).toBeNull();

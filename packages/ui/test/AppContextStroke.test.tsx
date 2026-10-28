@@ -30,7 +30,7 @@ const LAYOUT = {
 };
 const ROUTE1 = { ...LAYOUT, map: { ...LAYOUT.map, id: "MAP_ROUTE1", name: "Route1" } };
 const GROUPS = { groupOrder: ["Kanto"], groups: { Kanto: ["PalletTown", "Route1"] } };
-// PalletTown at world x 0, Route1 at x 11, both 10x10 tiles. Viewport 400x100, zoom 1: PalletTown [0,10), Route1 [11,21).
+// P12-4e: 21x10 bounds in 400x100 fit at z10, pan(95,0); Route1 projects to [205,305)x[0,100).
 const WORLD = {
   placements: {
     PalletTown: { map: "PalletTown", x: 0, y: 0, width: 10, height: 10, component: 0 },
@@ -105,8 +105,8 @@ async function startApp(fetchMock = makeFetchMock()) {
   return fetchMock;
 }
 
-/** Fresh World view: Route1's body is x in [11,21), so (16,5) is inside it. */
-const dblClickRoute1 = (canvas: HTMLCanvasElement) => fireEvent.doubleClick(canvas, { clientX: 16, clientY: 5 });
+/** Route1 centre after fit: (95+16*10,5*10)=(255,50). */
+const dblClickRoute1 = (canvas: HTMLCanvasElement) => fireEvent.doubleClick(canvas, { clientX: 255, clientY: 50 });
 const contextOverlay = () => document.querySelector(".world-canvas__context");
 
 it("M5: Done waits for held paint/apply before deciding the dirty exit", async () => {
@@ -132,8 +132,9 @@ it("M5: Done waits for held paint/apply before deciding the dirty exit", async (
   stage.getBoundingClientRect = () => ({ ...RECT, left: 100, top: 100 });
   fireEvent.click(screen.getByRole("button", { name: "Pencil" }));
   fireEvent.click(await screen.findByRole("button", { name: /metatile 0x1\b/i }));
-  fireEvent.mouseDown(stage, { clientX: 44, clientY: 33, button: 0 });
-  fireEvent.mouseUp(stage, { clientX: 44, clientY: 33, button: 0 });
+  // Snap pan(-1,-30) and one-tile border give block(0,0) at client x[275,291), y[70,86).
+  fireEvent.mouseDown(stage, { clientX: 283, clientY: 78, button: 0 });
+  fireEvent.mouseUp(stage, { clientX: 283, clientY: 78, button: 0 });
   await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => url.endsWith("/paint/apply"))).toBe(true));
   expect(screen.queryByTestId("dirty-indicator")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Done editing Route1" }));
@@ -166,8 +167,9 @@ it("dirty Map and Dungeon mode switches leave context without prompting and pres
   stage.getBoundingClientRect = () => ({ ...RECT, left: 100, top: 100 });
   fireEvent.click(screen.getByRole("button", { name: "Pencil" }));
   fireEvent.click(await screen.findByRole("button", { name: /metatile 0x1\b/i }));
-  fireEvent.mouseDown(stage, { clientX: 44, clientY: 33, button: 0 });
-  fireEvent.mouseUp(stage, { clientX: 44, clientY: 33, button: 0 });
+  // Same fitted entry and snap: block(0,0) centre is (283,78) in the shifted stage box.
+  fireEvent.mouseDown(stage, { clientX: 283, clientY: 78, button: 0 });
+  fireEvent.mouseUp(stage, { clientX: 283, clientY: 78, button: 0 });
   await screen.findByTestId("dirty-indicator");
   await waitFor(() => expect(fetchMock.mock.calls.some(([url]) => url.endsWith("/paint/end"))).toBe(true));
 
