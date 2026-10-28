@@ -1,8 +1,7 @@
 import { StrictMode, useRef, type RefObject } from "react";
 import { act, cleanup, fireEvent, render, renderHook, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { useStage, useStageAutoFit, type StageOptions } from "../../src/canvas/useStage.js";
-import { useCanvasAutoFit, useCanvasFit, useCanvasView, useCanvasZoom } from "../../src/shared/useCanvasView.js";
+import { useStage, useStageAutoFit, useStageFit, useStageView, useStageZoom, type StageOptions } from "../../src/canvas/useStage.js";
 import { MapCanvasViewport } from "../../src/shared/MapCanvasViewport.js";
 import { ContextMapFit } from "../../src/shared/useWorldContext.js";
 
@@ -158,7 +157,7 @@ describe("pan and capture event boundary", () => {
     pointer(host.canvas, "pointerdown");
     expect(capture.set).toHaveBeenCalledTimes(1);
     expect(capture.set).toHaveBeenCalledWith(7);
-    expect(host.stage.captured).toBe(true);
+    expect(host.stage.hasCapture()).toBe(true);
     expect(host.starts).not.toHaveBeenCalled();
     expect(host.ends).not.toHaveBeenCalled();
     fireEvent.mouseDown(host.canvas, { clientX: 30, clientY: 40 });
@@ -188,7 +187,7 @@ describe("pan and capture event boundary", () => {
     let captured = true;
     act(() => { captured = host.stage.beginCapture({ pointerId: 7, currentTarget: host.canvas }); });
     expect(captured).toBe(false);
-    expect(host.stage.captured).toBe(false);
+    expect(host.stage.hasCapture()).toBe(false);
     fireEvent.mouseDown(host.canvas, { clientX: 10, clientY: 20 });
     fireEvent.mouseMove(host.canvas, { clientX: 20, clientY: 30 });
     fireEvent.mouseLeave(host.canvas);
@@ -208,7 +207,7 @@ describe("pan and capture event boundary", () => {
     pointer(host.canvas, "pointercancel");
     pointer(host.canvas, "lostpointercapture");
     expect(cancel).toHaveBeenCalledTimes(1);
-    expect(host.stage.captured).toBe(false);
+    expect(host.stage.hasCapture()).toBe(false);
     fireEvent.mouseMove(host.canvas, { clientX: 40, clientY: 50 });
     expect(host.stage.view.pan).toEqual({ x: 0, y: 0 });
     expect(host.ends).not.toHaveBeenCalled();
@@ -236,7 +235,7 @@ describe("pan and capture event boundary", () => {
     pointer(host.canvas, "lostpointercapture");
     expect(capture.release).toHaveBeenCalledTimes(1);
     expect(capture.release).toHaveBeenCalledWith(7);
-    expect(host.stage.captured).toBe(false);
+    expect(host.stage.hasCapture()).toBe(false);
     expect(cancel).not.toHaveBeenCalled();
   });
 
@@ -306,16 +305,16 @@ describe("fit and compatibility hooks", () => {
     expect(register).toHaveBeenLastCalledWith(null);
   });
 
-  it("retains the four legacy hooks and their stepped fit/wheel behavior", () => {
-    let state!: ReturnType<typeof useCanvasView>;
+  it("composes the four stage hooks with stepped fit/wheel behavior", () => {
+    let state!: ReturnType<typeof useStageView>;
     let fit!: () => void;
     function Legacy() {
       const canvasRef = useRef<HTMLCanvasElement>(null);
-      state = useCanvasView(undefined, undefined);
-      useCanvasZoom(canvasRef, state.view.zoom, state.updateView, [1, 2, 4]);
-      fit = useCanvasFit({ viewport: { w: 200, h: 160 }, pixelWidth: 100, pixelHeight: 80,
+      state = useStageView(undefined, undefined);
+      useStageZoom(canvasRef, state.view.zoom, state.updateView, { kind: "stepped", levels: [1, 2, 4] });
+      fit = useStageFit({ viewport: { w: 200, h: 160 }, pixelWidth: 100, pixelHeight: 80,
         zoomLevels: [1, 2, 4], bandNative: 0, side: "right", updateView: state.updateView });
-      useCanvasAutoFit(false, "A", state.controlled, fit);
+      useStageAutoFit(false, "A", state.controlled, fit);
       return <canvas ref={canvasRef} data-testid="legacy" />;
     }
     render(<Legacy />);
@@ -358,4 +357,48 @@ it("MapCanvasViewport forwards optional pointer and image-error handlers without
   expect(lost).toHaveBeenCalledTimes(1);
   expect(error).toHaveBeenCalledTimes(1);
   expect(mouse).toHaveBeenCalledTimes(1);
+});
+
+describe("Plan 12b Task 1 carry-overs", () => {
+  it("M4: capture and release cause no re-render; hasCapture still answers", () => {
+    let renders = 0;
+    let stage!: ReturnType<typeof useStage>;
+    function Counted() {
+      renders++;
+      stage = useStage(defaults);
+      return <canvas ref={stage.canvasRef} data-testid="c" onPointerDown={stage.onPointerDown} />;
+    }
+    render(<Counted />);
+    const canvas = screen.getByTestId("c") as HTMLCanvasElement;
+    captureCanvas(canvas);
+    const before = renders;
+    pointer(canvas, "pointerdown");
+    expect(renders).toBe(before);
+    expect(stage.hasCapture()).toBe(true);
+    pointer(canvas, "pointerup");
+    expect(renders).toBe(before);
+    expect(stage.hasCapture()).toBe(false);
+  });
+
+  it("continuous wheel events batched before a commit compound from the latest view", () => {
+    const host = mount({ zoomPolicy: { kind: "continuous", factor: 1.2, min: 0.01, max: 100 } });
+    act(() => {
+      host.canvas.dispatchEvent(new WheelEvent("wheel", { deltaY: -1, clientX: 0, clientY: 0, cancelable: true }));
+      host.canvas.dispatchEvent(new WheelEvent("wheel", { deltaY: -1, clientX: 0, clientY: 0, cancelable: true }));
+    });
+    expect(host.stage.view.zoom).toBeCloseTo(1.44);
+    // Rect (10, 20), client (0, 0): pivot (-10, -20). 1 -> 1.2: pan (-10 + 12, -20 + 24) = (2, 4).
+    // 1.2 -> 1.44 about the same source point (-10, -20): pan (-10 + 14.4, -20 + 28.8) = (4.4, 8.8).
+    expect(host.stage.view.pan.x).toBeCloseTo(4.4);
+    expect(host.stage.view.pan.y).toBeCloseTo(8.8);
+  });
+
+  it("a batched wheel in then out returns to the start zoom", () => {
+    const host = mount({ zoomPolicy: { kind: "continuous", factor: 1.2, min: 0.01, max: 100 } });
+    act(() => {
+      host.canvas.dispatchEvent(new WheelEvent("wheel", { deltaY: -1, clientX: 0, clientY: 0, cancelable: true }));
+      host.canvas.dispatchEvent(new WheelEvent("wheel", { deltaY: 1, clientX: 0, clientY: 0, cancelable: true }));
+    });
+    expect(host.stage.view.zoom).toBeCloseTo(1);
+  });
 });

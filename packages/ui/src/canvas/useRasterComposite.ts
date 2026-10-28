@@ -70,7 +70,8 @@ export function useRasterComposite({
   }, [imageUrl]);
 
   const onImgLoad = useCallback(() => {
-    // A retained handler from the previous URL must not unlock the current image.
+    // A retained handler from the previous URL must not unlock the current image. A fired load already
+    // means decoded and sized in a browser, so no naturalWidth check here (tests mock it 0 before load).
     if (imageUrl === currentUrlRef.current) setLoadedUrl(currentUrlRef.current);
   }, [imageUrl]);
 

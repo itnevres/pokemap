@@ -12,6 +12,14 @@ export interface View<Z extends number = number> {
   pan: Point;
 }
 
+/** Zoom steps shared by the GBA and GBC map canvases. */
+export const ZOOM_LEVELS = [1, 2, 4] as const;
+export type Zoom = (typeof ZOOM_LEVELS)[number];
+
+/** A map canvas's whole pan/zoom state, updated as ONE value so React's
+ *  <StrictMode> double-invoked updaters stay harmless (see Plan 6c E1, D1). */
+export interface MapView extends View<Zoom> {}
+
 export interface SteppedZoomPolicy<Z extends number = number> {
   kind: "stepped";
   levels: readonly Z[];

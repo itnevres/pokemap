@@ -60,6 +60,7 @@ import { parseBorder, parseTime, type TimeOfDay } from "@pokemap/cli/src/args.js
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { loadGbcFrontSprite, loadGbcPicFolders } from "@pokemap/core/src/gbc/load/sprites.js";
 import { readBody, type ProjectHandler } from "./index.js";
+import { warmEach, type WarmResult } from "./warmUp.js";
 import { createGbcEditRoutes } from "./gbcEditRoutes.js";
 
 /**
@@ -299,6 +300,20 @@ export function createGbcProjectHandler(root: string): ProjectHandler {
   const renderCache = new Map<string, Buffer>();
   const metatileCache = new Map<string, Buffer>();
 
+  // Shared render helper used by both the /api/render route and warmUp.
+  // Returns the cached PNG for `${name}:${border}:${time}`, or resolves the
+  // map, renders, caches, and returns it; undefined when the name resolves
+  // to no map (route answers 404 as today).
+  const cachedRender = (name: string, border: number, time: TimeOfDay): Buffer | undefined => {
+    const key = `${name}:${border}:${time}`;
+    let png = renderCache.get(key);
+    if (png) return png;
+    if (!mapNames.has(name)) return undefined;
+    png = encodePng(renderGbcMap(proj, name, { border, time }));
+    renderCache.set(key, png);
+    return png;
+  };
+
   // buildGbcWorld walks all 391 maps' connections -- measured ~1-7ms across
   // warm runs against the real corpus (cheap, unlike GBA's ~4s buildWorld
   // over 1,209 maps), but proj is read-only for the life of this process
@@ -435,12 +450,7 @@ export function createGbcProjectHandler(root: string): ProjectHandler {
           return res.end(live);
         }
 
-        const key = `${name}:${border}:${time}`;
-        let png = renderCache.get(key);
-        if (!png) {
-          png = encodePng(renderGbcMap(proj, name, { border, time }));
-          renderCache.set(key, png);
-        }
+        const png = cachedRender(name, border, time)!; // membership checked above (404)
         res.writeHead(200, { "content-type": "image/png", "cache-control": "no-cache" });
         return res.end(png);
       }
@@ -737,6 +747,36 @@ export function createGbcProjectHandler(root: string): ProjectHandler {
       symbols.invalidate();
       disposed = true;
       edit.closeAll();
+    },
+    warmUp: async (names?: string[]): Promise<WarmResult> => {
+      // Compute the default list inside the first yield so warmUp() returns at once.
+      const nameList = names ?? await new Promise<string[]>((resolve) => {
+        setImmediate(() => {
+          if (disposed) return resolve([]);
+          // A throw here (world build) must not become an unhandled rejection in the hub's fire-and-forget call.
+          try {
+            const payload = buildGbcWorldPayload(proj, getWorld(), readSidecar(proj.root), getWarps());
+            // The UI's isDrawnByDefault rule (packages/ui/src/gbc/worldSurface.tsx): the tiles a World open requests.
+            const result: string[] = [];
+            for (const [name, p] of Object.entries(payload.placements)) {
+              if (p.manual || (p.mapType !== "INDOOR" && p.mapType !== "GATE")) result.push(name);
+            }
+            resolve(result);
+          } catch (e) {
+            console.warn(`pokemap warm: world list: ${e instanceof Error ? e.message : String(e)}`);
+            resolve([]);
+          }
+        });
+      });
+
+      return warmEach(nameList, (name) => {
+        if (edit.openBlocks(name)) return "skipped";
+        const key = `${name}:0:day`;
+        if (renderCache.has(key)) return "skipped";
+        const png = cachedRender(name, 0, "day");
+        if (!png) throw new Error(`no map ${name}`);
+        return "rendered";
+      }, () => disposed);
     },
   };
 }

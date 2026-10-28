@@ -30,7 +30,7 @@ const LAYOUT = {
 };
 const ROUTE1 = { ...LAYOUT, map: { ...LAYOUT.map, id: "MAP_ROUTE1", name: "Route1" } };
 const GROUPS = { groupOrder: ["Kanto"], groups: { Kanto: ["PalletTown", "Route1"] } };
-// PalletTown at world x 0, Route1 at x 11, both 10x10 tiles. Viewport 400x100, zoom 1: PalletTown [0,10), Route1 [11,21).
+// P12-4e: 21x10 bounds in 400x100 fit at z10, pan(95,0); Route1 projects to [205,305)x[0,100).
 const WORLD = {
   placements: {
     PalletTown: { map: "PalletTown", x: 0, y: 0, width: 10, height: 10, component: 0 },
@@ -105,8 +105,8 @@ async function startApp(fetchMock = makeFetchMock()) {
   return fetchMock;
 }
 
-/** Fresh World view: Route1's body is x in [11,21), so (16,5) is inside it. */
-const dblClickRoute1 = (canvas: HTMLCanvasElement) => fireEvent.doubleClick(canvas, { clientX: 16, clientY: 5 });
+/** Route1 centre after fit: (95+16*10,5*10)=(255,50). */
+const dblClickRoute1 = (canvas: HTMLCanvasElement) => fireEvent.doubleClick(canvas, { clientX: 255, clientY: 50 });
 const contextOverlay = () => document.querySelector(".world-canvas__context");
 const chrome = () => document.querySelector(".toolbar");
 

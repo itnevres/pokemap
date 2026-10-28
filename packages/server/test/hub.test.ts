@@ -504,3 +504,29 @@ describe.skipIf(!hasProject(SUBJECT_ROOT) || !hasGbcProject(GBC_SUBJECT_ROOT))("
     }
   });
 });
+
+describe.skipIf(!hasProject(SUBJECT_ROOT))("hub prewarm", () => {
+  it("prewarm: true warms the opened project and logs the result; prewarm unset does not", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const warmed = () => log.mock.calls.filter((c) => /^pokemap hub: warmed \d+ world tiles in \d+ ms/.test(String(c[0])));
+    try {
+      const off = await createHub({ port: 0, home: makeHome(), open: SUBJECT_ROOT });
+      try {
+        await new Promise((r) => setTimeout(r, 300));
+        expect(warmed()).toHaveLength(0);
+      } finally {
+        await off.close();
+      }
+      const on = await createHub({ port: 0, home: makeHome(), open: SUBJECT_ROOT, prewarm: true });
+      try {
+        await vi.waitFor(() => expect(warmed()).toHaveLength(1), { timeout: 60000, interval: 100 });
+        expect(String(warmed()[0]![0])).toMatch(/warmed [1-9]\d* world tiles/);
+      } finally {
+        on.current()?.dispose();
+        await on.close();
+      }
+    } finally {
+      log.mockRestore();
+    }
+  }, 90000);
+});

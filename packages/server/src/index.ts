@@ -36,6 +36,8 @@ import { moveEvent, addEvent, deleteEvent, setObjectGraphics, findWarpsTargeting
 import { rankIndicatorSpecies, suggestIndicatorPlacement } from "@pokemap/core/src/signs/suggest.js";
 import { buildGbaIndicator, guardGbaIndicatorWrite, findGbaIndicator, updateGbaIndicator, gbaIndicatorGraphics } from "@pokemap/core/src/indicator/gba.js";
 
+import { warmEach, type WarmResult } from "./warmUp.js";
+
 /**
  * A discriminated union on `family` (Plan 6b task spec) -- the gbc branch's
  * `project` is a `GbcProject`, not the GBA `Project` every route below this
@@ -68,11 +70,13 @@ export type ProjectHandler =
       family: "gba"; project: Project; info: ProjectInfo;
       handle(req: IncomingMessage, res: ServerResponse): void;
       dirtyMaps(): string[]; dispose(): void;
+      warmUp(names?: string[]): Promise<WarmResult>;
     }
   | {
       family: "gbc"; project: GbcProject; info: ProjectInfo;
       handle(req: IncomingMessage, res: ServerResponse): void;
       dirtyMaps(): string[]; dispose(): void;
+      warmUp(names?: string[]): Promise<WarmResult>;
     };
 
 /**
@@ -132,6 +136,24 @@ export function createProjectHandler(root: string): ProjectHandler {
   // never touch /api/world (most of api.test.ts) don't pay for it.
   let worldCache: ReturnType<typeof buildWorld> | undefined;
   const getWorld = () => (worldCache ??= buildWorld(project));
+
+  // Shared render helper used by both the /api/render route and warmUp.
+  // Returns the cached PNG for `${name}:${border}`, or resolves the layout,
+  // renders, caches, and returns it; undefined when the name resolves to no
+  // layout (route answers 404 as today).
+  const cachedRender = (name: string, border: number): Buffer | undefined => {
+    const key = `${name}:${border}`;
+    let png = pngCache.get(key);
+    if (png) return png;
+    // Same resolution as the route's resolveLayoutName: a layout name, or a map's own layout; never throws.
+    const layoutName = project.layoutByName(name)
+      ? name
+      : project.mapNames().includes(name) ? project.layoutById(project.map(name).layout)?.name : undefined;
+    if (!layoutName) return undefined;
+    png = encodePng(renderLayout(project, layoutName, { border }));
+    pngCache.set(key, png);
+    return png;
+  };
 
   // Species icon PNGs, keyed by species+source+frame -- same reasoning and
   // the same "unbounded for now" ceiling as pngCache above, but with far less
@@ -395,14 +417,8 @@ export function createProjectHandler(root: string): ProjectHandler {
           return res.end(png);
         }
 
-        const key = `${name}:${border}`;
-        let png = pngCache.get(key);
-        if (!png) {
-          const layoutName = resolveLayoutName();
-          if (!layoutName) return send(404, { error: `no layout or map ${name}` });
-          png = encodePng(renderLayout(project, layoutName, { border }));
-          pngCache.set(key, png);
-        }
+        const png = cachedRender(name, border);
+        if (!png) return send(404, { error: `no layout or map ${name}` });
         res.writeHead(200, { "content-type": "image/png", "cache-control": "no-cache" });
         return res.end(png);
       }
@@ -1325,6 +1341,43 @@ export function createProjectHandler(root: string): ProjectHandler {
     }
   };
 
+  const warmUp = async (names?: string[]): Promise<WarmResult> => {
+    // Compute the default list inside the first yield so warmUp() returns at once.
+    const nameList = names ?? await new Promise<string[]>((resolve) => {
+      setImmediate(() => {
+        if (disposed) return resolve([]);
+        // A throw here (world build) must not become an unhandled rejection in the hub's fire-and-forget call.
+        try {
+          const world = getWorld();
+          const sidecar = readSidecar(project.paths.root);
+          const merged = resolveWorldPlacements(project, world, sidecar, { dungeons: true });
+          // The UI's isDrawnByDefault rule (packages/ui/src/world/visibility.ts HIDDEN_MAP_TYPES): the tiles a World open requests.
+          const HIDDEN = new Set(["MAP_TYPE_INDOOR", "MAP_TYPE_NONE"]);
+          const known = new Set(project.mapNames());
+          const result: string[] = [];
+          for (const name of merged.keys()) {
+            const manual = name in sidecar.manualPlacements;
+            const mapType = known.has(name) ? project.map(name).mapType : "MAP_TYPE_NONE";
+            if (manual || !HIDDEN.has(mapType)) result.push(name);
+          }
+          resolve(result);
+        } catch (e) {
+          console.warn(`pokemap warm: world list: ${e instanceof Error ? e.message : String(e)}`);
+          resolve([]);
+        }
+      });
+    });
+
+    return warmEach(nameList, (name) => {
+      if (editSessions.has(name)) return "skipped";
+      const key = `${name}:0`;
+      if (pngCache.has(key)) return "skipped";
+      const png = cachedRender(name, 0);
+      if (!png) throw new Error(`no layout or map ${name}`);
+      return "rendered";
+    }, () => disposed);
+  };
+
   return {
     family: "gba",
     project,
@@ -1336,6 +1389,7 @@ export function createProjectHandler(root: string): ProjectHandler {
       editSessions.closeAll();
       disposed = true;
     },
+    warmUp,
   };
 }
 

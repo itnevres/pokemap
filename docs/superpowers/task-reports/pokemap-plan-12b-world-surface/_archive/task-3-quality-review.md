@@ -1,0 +1,9 @@
+Needs rework
+
+- **Important — `packages/ui/src/canvas/useWorldTiles.ts:57–68`: pending loads remain active after unmount.** The effect has no cleanup, so an image completing after the world surface unmounts still passes the entry/URL checks, builds a canvas, mutates the retained cache and calls `setVersion`. With many visible maps, leaving the surface can still trigger substantial decoding/canvas work; React ignoring the state update does not prevent that work. Add lifecycle protection and an unmount regression asserting that late callbacks neither build tiles nor mutate the lookup. Preserve StrictMode behavior: effect replay must not invalidate the sole request permanently.
+
+- **Important — `packages/ui/test/canvas/useWorldTiles.test.tsx:170–192`: cache-generation ownership is not independently tested.** Every old-key callback in this test also has a different URL from the current request. Removing `mapRef.current.get(p.map) === entry` would therefore still pass the suite. The missing failure scenario is day → night → day with the first day's request pending: its URL matches again, but its entry belongs to a discarded cache. Without the identity guard, that callback builds a discarded tile and spuriously bumps `version`. Add this round trip, resolve both same-URL image instances separately, and assert lookup identity, build count and version before and after each callback. The helper at lines 45–48 currently prohibits multiple requests for the same URL and needs an instance-based alternative.
+
+The existing entry identity check correctly handles cache-key round trips by inspection. Ordinary version supersession and off-screen re-entry also appear sound. Comments are concise, and no dead code was identified.
+
+Read-only review; no tests or npm commands run.

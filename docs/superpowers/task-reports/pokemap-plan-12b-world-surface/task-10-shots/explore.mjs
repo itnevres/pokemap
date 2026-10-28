@@ -1,0 +1,22 @@
+// usage: node explore.mjs <fam>  -- dump World toolbar controls and timing of first-load fit
+import { open } from "./lib.mjs";
+import { guard } from "./guard.mjs";
+const [fam] = process.argv.slice(2);
+const { browser, page, wait, shot, errs } = await open();
+const out = {}; await guard(page, out);
+const t = { renders: [] };
+page.on("response", (r) => { const p = new URL(r.url()).pathname; if (p === "/api/world") t.world = Date.now(); if (p.startsWith("/api/render/")) t.renders.push(Date.now()); });
+await page.goto("http://127.0.0.1:5183/"); await wait(3000);
+await page.getByRole("group", { name: "View" }).getByRole("button", { name: "World" }).click();
+const t0 = Date.now();
+await page.locator(".world-canvas__zoom-readout").waitFor({ timeout: 30000 }); await wait(6000);
+out.readout = await page.locator(".world-canvas__zoom-readout").textContent();
+out.renderCount = t.renders.length;
+out.settleMs = t.world && t.renders.length ? Math.max(...t.renders) - t.world : null;
+out.worldAfterClickMs = t.world ? t.world - t0 : null;
+out.buttons = await page.locator(".world-canvas__toolbar button, .world-canvas__toolbar [role=switch], .world-canvas__toolbar select, .world-canvas__toolbar input, .world-canvas__legend *").evaluateAll((bs) => bs.map((b) => `${b.tagName}:${b.getAttribute("role") ?? ""}:${b.getAttribute("aria-label") ?? ""}:${b.textContent?.trim().slice(0, 30)}`));
+out.status = await page.locator(".world-canvas__status").innerText().catch(() => null);
+await shot(`${fam}-w0-first-load`);
+out.errs = errs;
+console.log(JSON.stringify(out, null, 1));
+await browser.close();

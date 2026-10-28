@@ -1,0 +1,176 @@
+{
+ "fam": "gba",
+ "first": {
+  "readout": "3%",
+  "status": "placed 186 · hidden 2 · unplaced 1023 · 19 conflicts · 1 accepted Hover the world…"
+ },
+ "wheelFit": {
+  "start": "3%",
+  "wheelIn": "8%",
+  "wheelChanged": true,
+  "fit": "3%",
+  "fitRestored": true
+ },
+ "jumpAnchor": {
+  "readout": "100%",
+  "jumpHighlights": 1
+ },
+ "scanReadout": "58%",
+ "hits": [
+  "Route46",
+  "Route27",
+  "Route29",
+  "NewBarkTown"
+ ],
+ "ctrlClick": {
+  "plainClick": 1,
+  "ctrlAdd": 2,
+  "ctrlToggleOff": 1
+ },
+ "marquee": {
+  "from": [
+   20,
+   20
+  ],
+  "to": [
+   860,
+   745.609375
+  ],
+  "marqueeShown": 1,
+  "selected": 171
+ },
+ "groupMove": {
+  "selected": 2,
+  "postAttempts": [
+   "/world/placement",
+   "/world/placement"
+  ],
+  "reloadGets": 1,
+  "alerts": [
+   "POST /api/world/placement -> 500 ×"
+  ],
+  "rolledBack": true,
+  "before": "NewBarkTown · 40-map component · Shift+drag to move"
+ },
+ "dragOutside": {
+  "map": "Route27",
+  "postAttempts": [
+   "/world/placement"
+  ],
+  "reloadGets": 1
+ },
+ "warps": {
+  "forced": 10,
+  "alertsForced": [
+   "Warp data unavailable: GET /api/warps/Route46 -> 500"
+  ],
+  "markersForced": 0,
+  "markersAfterPan": 16,
+  "alertsAfterPan": [
+   "Warp data unavailable: GET /api/warps/Route46 -> 500"
+  ],
+  "selAfterMarkerClick": 0,
+  "markerClickText": ""
+ },
+ "keys": {
+  "r0": "100%",
+  "plus": "100%",
+  "plusChanged": true,
+  "minus": "83%",
+  "minusChanged": true,
+  "modeAfterEnter": "Map",
+  "mapStatus": "NewBarkTown"
+ },
+ "jumpTwice": {
+  "first": {
+   "t": 1500,
+   "op": "0.740015"
+  },
+  "second": {
+   "t": 900,
+   "op": "1"
+  },
+  "restarted": true
+ },
+ "revealHidden": {
+  "before": "placed 186 · hidden 2 · unplaced 1023 · 19 conflicts · 1 accepted Hover the world…",
+  "after": "placed 186 · hidden 1 · unplaced 1023 · 19 conflicts · 1 accepted Hover the world…",
+  "highlight": 1,
+  "hover": "WorldHub · 2-map component · Shift+drag to move"
+ },
+ "lens": {
+  "label": "Level curve lens (level-curve)",
+  "pressed": "true",
+  "changed": true
+ },
+ "spotlight": {
+  "options": [
+   "Zigzagoon"
+  ],
+  "changed": true
+ },
+ "contextMenu": {
+  "items": [
+   "Open in Map view",
+   "Edit here"
+  ],
+  "closed": true
+ },
+ "borderMidZoom": {
+  "readout": "69%",
+  "borders": 4,
+  "overlaps": 0,
+  "sample": [
+   [
+    553,
+    228,
+    887,
+    273
+   ],
+   [
+    -224,
+    573,
+    553,
+    617
+   ],
+   [
+    887,
+    106,
+    2664,
+    151
+   ],
+   [
+    -2,
+    -294,
+    42,
+    217
+   ]
+  ]
+ },
+ "tooltipLeft": {
+  "iconLeft": 286,
+  "tip": [
+   280,
+   110
+  ],
+  "viewportLeft": 280,
+  "clamped": true
+ },
+ "dungeon": {
+  "dungeons": 2,
+  "name": "Kanto Safari Zone 20",
+  "lines": 36,
+  "status": "placed 186 · hidden 2 · unplaced 1023 · 19 conflicts · 1 accepted Hover the world…",
+  "wheelChanged": true,
+  "linesAfterPanOffscreen": 36,
+  "fitChanged": "same-as-initial"
+ },
+ "errs": [],
+ "blockedTotal": 3,
+ "postSummary": [
+  [
+   "/world/placement",
+   3
+  ]
+ ]
+}

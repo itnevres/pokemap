@@ -494,7 +494,7 @@ what really differs. Change a row's module, not its two consumers.
 | Module | What it owns | GBA consumer | GBC consumer |
 |---|---|---|---|
 | `shared/useStrokeChain.ts` | one ordered begin/apply/end chain per stroke, visit retirement; `useStrokeChainRegistry` (App-level `onStrokeChain` + `strokeSettled`) | `MapCanvas`, `FamilyApp` | `GbcMapCanvas`, `FamilyApp` |
-| `shared/useWorldContext.ts` + `WorldContextOverlay.tsx` | in-context view sync, exits, Escape, the overlay bar | `WorldCanvas` | `GbcWorldCanvas` |
+| `shared/useWorldContext.ts` + `WorldContextOverlay.tsx` | in-context view sync, exits, Escape, the overlay bar | `canvas/WorldSurface` (both families) | `canvas/WorldSurface` |
 | `shared/useContextEditing.ts` | context map, exit-with-save, tile versions after a save | `FamilyApp` | `FamilyApp` |
 | `shared/useEditSessionCore.ts` | session record keyed on map + seed, reply ordering (tickets), discard, markClean | `hooks/useEditSession` | `gbc/hooks/useGbcEditSession` |
 | `shared/EditingWorkspace.tsx` | the editing shell's slots (`top`, the `.edit-rail` contents, canvas) | `MapEditingWorkspace` | `GbcMapEditing` |
@@ -506,27 +506,25 @@ what really differs. Change a row's module, not its two consumers.
 | `shell/FamilyApp.tsx` + `shell/adapter.ts` | the one app shell; `EngineAdapter`, `Capabilities`, `FamilyRuntime`, `ShellSlots`; `toolsFor` | `gba/adapter.tsx` (`useGbaRuntime`) | `gbc/adapter.tsx` (`useGbcRuntime`) |
 | `shell/useDungeonFilter.ts` | the open dungeon's map filter (cached when `dungeonFilterCache`) | `FamilyApp` | `FamilyApp` |
 
-Plan 11:
+Plan 11 (consumers as of Plan 12b; `shared/useCanvasView.ts` and `shared/useTileVersionRefetch.ts` were deleted in Plan 12b):
 
 | Module | What it owns | GBA consumer | GBC consumer |
 |---|---|---|---|
-| `shared/useCanvasView.ts` | Plan 11 view hooks, now thin delegates to `canvas/useStage.ts` (Plan 12a); no production consumer left, kept for its tests until Plan 12b | none | none |
 | `shared/CanvasZoomBar.tsx` | the map Zoom group | `canvas/MapSurface` (both families) | `canvas/MapSurface` |
 | `shared/OverlayToggleGroup.tsx` | the map Overlays group | `canvas/MapSurface` | `canvas/MapSurface` |
 | `shared/LegendBar.tsx` | the map legend frame, Events items and Encounters item | `canvas/MapSurface`, `gba/mapSurface` legends | `canvas/MapSurface`, `gbc/mapSurface` legends |
 | `shared/MapCanvasViewport.tsx` | the viewport mount: source image and stage canvas (handlers, `onImgError`, EncounterBorder) | `canvas/MapSurface` | `canvas/MapSurface` |
-| `shared/LensOverlay.tsx` | per-map coverage lens entries and overlay markup | `WorldCanvas` | `GbcWorldCanvas` |
-| `shared/useTileVersionRefetch.ts` | per-map rendered-tile cache invalidation by version | `WorldCanvas` | `GbcWorldCanvas` |
-| `shared/worldTiles.ts` | pure low-detail rendered-tile image builder | `WorldCanvas` | `GbcWorldCanvas` |
-| `shared/worldBadges.ts` | conflict badge size and centre geometry | `WorldCanvas` | `GbcWorldCanvas` |
-| `shared/useViewportMeasure.ts` | viewport resize measurement | `WorldCanvas` | `GbcWorldCanvas` |
-| `shared/WorldLensControls.tsx` | encounter-fetch alert, lens picker or its coverage error, lens legend | `WorldCanvas` | `GbcWorldCanvas` |
-| `shared/WorldConflictOverlays.tsx` | Conflict/Accepted legend items, conflict-badge tooltip, acceptance-error toast | `WorldCanvas` | `GbcWorldCanvas` |
-| `world/useConflictAcceptance.ts` `useConflictAcceptanceMenu` | acceptance state plus the context menu and "Edit here" snap point | `WorldCanvas` | `GbcWorldCanvas` |
-| `world/DungeonAutoLayoutSwitch.tsx` `WorldToolbarSwitch` | the world toolbar switches (Dungeon auto-layout, Warps, Connection lines) | `WorldCanvas` | `GbcWorldCanvas` |
-| `components/WorldCanvas.tsx` `centredFit`, `singletonSizes`, `themedLevelColorMap` | fit centring, singleton map sizes, themed level-curve colours | `WorldCanvas` | `GbcWorldCanvas` |
-| `shared/SpotlightOverlay.tsx` | species spotlight overlay markup | `WorldCanvas` | `GbcWorldCanvas` |
-| `shared/placementLedger.ts` | per-map placement versions and GET-snapshot reconciliation (F1-F5) | `WorldCanvas` | `GbcWorldCanvas` |
+| `shared/LensOverlay.tsx` | per-map coverage lens entries and overlay markup | `canvas/WorldSurface` (both families) | `canvas/WorldSurface` |
+| `shared/worldTiles.ts` | pure low-detail rendered-tile image builder | `canvas/useWorldTiles` | `canvas/useWorldTiles` |
+| `shared/worldBadges.ts` | conflict badge size and centre geometry | `canvas/WorldSurface` (both families) | `canvas/WorldSurface` |
+| `shared/useViewportMeasure.ts` | viewport resize measurement | `canvas/useStage` | `canvas/useStage` |
+| `shared/WorldLensControls.tsx` | encounter-fetch alert, lens picker or its coverage error, lens legend | `canvas/WorldSurface` (both families) | `canvas/WorldSurface` |
+| `shared/WorldConflictOverlays.tsx` | Conflict/Accepted legend items, conflict-badge tooltip, acceptance-error toast | `canvas/WorldSurface` (both families) | `canvas/WorldSurface` |
+| `world/useConflictAcceptance.ts` `useConflictAcceptanceMenu` | acceptance state plus the context menu and "Edit here" snap point | `canvas/WorldSurface` (both families) | `canvas/WorldSurface` |
+| `world/DungeonAutoLayoutSwitch.tsx` `WorldToolbarSwitch` | the world toolbar switches (Dungeon auto-layout, Warps, Connection lines) | `canvas/WorldSurface` (both families) | `canvas/WorldSurface` |
+| `canvas/worldView.ts` `centredFit`, `singletonSizes`; `canvas/worldColours.ts` `themedLevelColorMap` | fit centring, singleton map sizes, themed level-curve colours (moved in Plan 12b) | `canvas/WorldSurface`, `gba/worldSurface` | `canvas/WorldSurface`, `gbc/worldSurface` |
+| `shared/SpotlightOverlay.tsx` | species spotlight overlay markup | `canvas/WorldSurface` (both families) | `canvas/WorldSurface` |
+| `shared/placementLedger.ts` | per-map placement versions and GET-snapshot reconciliation (F1-F5) | `canvas/WorldSurface` (both families) | `canvas/WorldSurface` |
 
 Plan 12a (shared canvas core, map pair; spec `2026-10-24-pokemap-plan-12-shared-canvas-core-design.md`). `canvas/` holds
 no family branch: engine facts (cell sizes, origin, overlays, event lists, encounter band, `skipFirstBlocksChange`) come
@@ -537,7 +535,7 @@ from the adapter. Each map canvas is now a thin wrapper (`MapCanvas`, `GbcMapCan
 | `canvas/view.ts` | pure view math: screen/source transforms, `zoomAboutPivot` (stepped or continuous policy), `fitView` | `components/mapView`, `canvas/useStage`, `canvas/MapSurface` | `canvas/useStage`, `canvas/MapSurface` |
 | `canvas/cells.ts` | pure cell math: `rawCell` (unbounded), `boundedCell` (`null` outside, never clamped), `cellRect` | `canvas/MapSurface` | `canvas/MapSurface` |
 | `canvas/useRasterComposite.ts` | source-image readiness keyed by URL (a stale load never composites, P12-4g), overlay raster and stage decoration | `canvas/MapSurface` | `canvas/MapSurface` |
-| `canvas/useStage.ts` | controlled view, wheel zoom, pan with pointer capture (P12-4a), once-per-map auto-fit, one fit entry | `canvas/MapSurface`, `shared/useCanvasView` | `canvas/MapSurface` |
+| `canvas/useStage.ts` | controlled view, wheel zoom, pan with pointer capture (P12-4a), once-per-map auto-fit, one fit entry | `canvas/MapSurface`, `canvas/WorldSurface` | `canvas/MapSurface`, `canvas/WorldSurface` |
 | `canvas/mapSurfaceAdapter.ts` | the `MapSurfaceAdapter` contract a family builds each render | `gba/mapSurface` | `gbc/mapSurface` |
 | `canvas/MapSurface.tsx` | the one map canvas: toolbar, legend, viewport, status strip; stroke chain (same-cell skip, P12-4b), event drag, sign/dropper picks, paint-version debounce (`v=` only when > 0, P12-4h), hover callback (P12-4l) | `components/MapCanvas` | `gbc/GbcMapCanvas` |
 | `canvas/events.ts` | ordered event lookup (`firstEventAt`, `eventAt`) over the adapter's `[kind, list]` tuples | `gba/mapSurface` | `gbc/mapSurface` |
@@ -545,8 +543,24 @@ from the adapter. Each map canvas is now a thin wrapper (`MapCanvas`, `GbcMapCan
 | `gba/mapSurface.tsx` `useGbaMapSurface` | GBA engine facts: 16 px paint and event cells, border origin, overlays and legends, paint bodies, hover readout | `components/MapCanvas` | — |
 | `gbc/mapSurface.tsx` `useGbcMapSurface` | GBC engine facts: 32 px paint cell, 16 px event step, time-of-day encounter hint, overlays, paint bodies, quadrant readout | — | `gbc/GbcMapCanvas` |
 
+Plan 12b (shared canvas core, world pair; same spec). Each world canvas is now a thin wrapper (`WorldCanvas`,
+`GbcWorldCanvas`) over `canvas/WorldSurface.tsx` plus a family adapter. `canvas/` still holds no family branch: per-family
+behaviour is a named adapter fact (`nativePx`, `warpOffset`, `borderNeighbours`, `shiftClickSelects`, `saveErrorPolicy`, ...).
+
+| Module | What it owns | GBA consumer | GBC consumer |
+|---|---|---|---|
+| `canvas/worldView.ts` | pure world view math: zoom range as scale x native px and the in-context cap (P12-4j), continuous zoom about a pivot, `fitClusters`/`fitFilter`/`jumpFit` (full fill, P12-4m amended), LOD, projection, `warpHit`, `hitPlacement` | `canvas/WorldSurface`, `gba/worldSurface`, `components/WorldCanvas` (`computeFit` GBA defaults) | `canvas/WorldSurface`, `gbc/worldSurface` |
+| `canvas/useWorldTiles.ts` | one rendered-tile entry per map, retention until the current URL decodes (P12-7), cache key drop, small LOD tile | `canvas/WorldSurface` | `canvas/WorldSurface` |
+| `canvas/useWorldDrag.ts` | the world drag dispatcher: pan, map move, group move, marquee; ledger begin/commit/noop per gesture; capture and leave | `canvas/WorldSurface` | `canvas/WorldSurface` |
+| `canvas/worldSurfaceAdapter.ts` | the `WorldSurfaceAdapter` contract (data hook, URLs, POSTs, fetchers, layers, facts) | `gba/worldSurface` | `gbc/worldSurface` |
+| `canvas/WorldSurface.tsx` | the one world canvas: first-load fit (P12-4e), toolbar, legend, overlays, culling, badges, warps and lines (P12-4r/s), keys (P12-4n), jump (P12-4m/p/q/u), menus, context editing | `components/WorldCanvas` | `gbc/GbcWorldCanvas` |
+| `canvas/worldColours.ts` | conflict diamond, percentile level ramp, themed ramp ends | `canvas/WorldSurface` | `canvas/WorldSurface` |
+| `shared/EncounterBorder.tsx` | encounter border bands, badges and sprite strips (moved from `components/` in Plan 12b) | `canvas/MapSurface`, `canvas/WorldSurface` | `canvas/MapSurface`, `canvas/WorldSurface` |
+| `gba/worldSurface.tsx` `useGbaWorld` | GBA facts: 16 px tiles, warp offset 1, world GET and ledger reconciliation, vertical-link triangles, `drawnByDefault` (indoor hidden), encounter summary | `components/WorldCanvas` | — |
+| `gbc/worldSurface.tsx` | GBC facts: 32 px blocks, warp offset 1/2, time-of-day cache key, scoped border neighbours, Shift-click selects, per-map save errors | — | `gbc/GbcWorldCanvas` |
+
 Still per family, on purpose (Plan 8 Task 7 stop rule): the app shell is now one (`FamilyApp`), so per family means
 *behind the runtime or a capability* (switch policy in `runtime.leave`, `switchError`, time of day, defects banner, sign
 composer, `useMapEditing` vs `GbcMapEditing` state lifetimes), with D1-D3/D6/D8 moving them in Plan 10. The map canvases'
-engine facts live in their adapters (Plan 12a); the world canvases (Plan 12b), the dungeon and map-layout hooks stay per
+and world canvases' engine facts live in their adapters (Plans 12a, 12b); the dungeon and map-layout hooks stay per
 family.

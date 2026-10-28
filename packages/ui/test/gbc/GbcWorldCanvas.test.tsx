@@ -368,15 +368,15 @@ describe("shouldUseLod (pure)", () => {
 });
 
 describe("jumpFit (pure)", () => {
-  it("fills about 60% of the viewport (not the full 100% computeFit alone would give)", () => {
+  it("fills the limiting viewport dimension like GBA's old jump", () => {
     const bounds = { x: 0, y: 0, width: 10, height: 10 };
     const viewport = { w: 100, h: 100 };
     const full = computeFit(bounds, viewport, { min: 1 / 64, max: 32 });
     expect(full.zoom).toBe(10); // fits entirely at zoom 10
     const jump = jumpFit(bounds, viewport);
-    expect(jump.zoom).toBeCloseTo(6, 10); // 60% of 10
-    // Still centred at the smaller zoom.
-    expect(jump.pan).toEqual({ x: (100 - 10 * 6) / 2, y: (100 - 10 * 6) / 2 });
+    expect(jump.zoom).toBeCloseTo(10, 10); // min(100/10,100/10)=10, below max 32.
+    // At zoom 10 the map fills both 100px dimensions, so centred pan is zero.
+    expect(jump.pan).toEqual({ x: (100 - 10 * 10) / 2, y: (100 - 10 * 10) / 2 });
   });
 
   it("respects a custom fraction and zoomBounds", () => {
@@ -392,7 +392,7 @@ describe("jumpFit (pure)", () => {
     // 37.111, which exceeds GBC_ZOOM_BOUNDS.max (32) -- exactly the spec
     // review's own F2 case, re-measured here as a pinned unit test rather
     // than only a live check.
-    const j = jumpFit({ x: 0, y: 0, width: 20, height: 18 }, { w: 1000, h: 668 });
+    const j = jumpFit({ x: 0, y: 0, width: 20, height: 18 }, { w: 1000, h: 668 }, { min: 1 / 64, max: 32 }, 0.6);
     expect(j.zoom).toBeCloseTo(37.111111 * 0.6, 3); // 22.267, well under the 32 cap
     const fill = Math.max((20 * j.zoom) / 1000, (18 * j.zoom) / 668);
     expect(fill).toBeCloseTo(0.6, 6);
@@ -682,16 +682,14 @@ describe("GbcWorldCanvas", () => {
     expect(srcs).toEqual(["/api/render/MapA.png?time=day", "/api/render/MapB.png?time=day"]);
   });
 
-  it("Fit all fits every placement, including the far-away interior", async () => {
+  it("Fit fits the multi-map cluster and excludes the far-away singleton (P12-4m)", async () => {
     await mountReady();
     fireEvent.click(screen.getByRole("button", { name: "Fit" }));
 
-    const expectedZoom = computeFit({ x: 0, y: 0, width: 1005, height: 1005 }, { w: VIEWPORT_SIZE, h: VIEWPORT_SIZE }, { min: 1 / 64, max: 32 }).zoom;
-    const expectedPercent = Math.round((expectedZoom / 32) * 100);
-    await waitFor(() => expect(screen.getByText(new RegExp(`zoom ${expectedPercent}%`))).toBeTruthy());
-
-    // At this much wider fit, the interior is now visible too.
-    await waitFor(() => expect(FakeImage.instances.some((i) => i.src.startsWith("/api/render/Interior.png"))).toBe(true));
+    // P12-4m: cluster union is (0,0)-(20,10), singleton Interior excluded.
+    // 200x200 viewport: zoom=min(200/20,200/10)=10; round(10/32*100)=31%.
+    await waitFor(() => expect(screen.getByText(/zoom 31%/)).toBeTruthy());
+    expect(FakeImage.instances.some((i) => i.src.startsWith("/api/render/Interior.png"))).toBe(false);
   });
 
   it("time change: URLs are rebuilt with the new time, and the whole image cache is dropped (mutation check #2)", async () => {
@@ -1208,15 +1206,15 @@ describe("GbcWorldCanvas", () => {
   // -------------------------------------------------------------------
   // Map-list jump.
   // -------------------------------------------------------------------
-  it("jump: centres jumpToMap at ~60% of the viewport and flashes an outline that fades after 2s", async () => {
+  it("jump: centres jumpToMap at full limiting-dimension fill and flashes an outline that fades after 2s", async () => {
     const { rerender } = await mountReady();
 
     rerender(<GbcWorldCanvas time="day" jumpToMap="MapB" jumpToken={1} />);
     await waitFor(() => expect(document.querySelector(".world-canvas__jump-highlight")).toBeTruthy());
 
     // computeFit({10,0,10,10}, {200,200}, bounds).zoom = min(32,20) = 20;
-    // jumpFit's own 60% -> zoom 12. zoom% = round(12/32*100) = 38.
-    expect(screen.getByText(/zoom 38%/)).toBeTruthy();
+    // P12-4m full fill: zoom 20; zoom% = round(20/32*100) = 63.
+    expect(screen.getByText(/zoom 63%/)).toBeTruthy();
 
     await waitFor(() => expect(document.querySelector(".world-canvas__jump-highlight")).toBeNull(), { timeout: 3000 });
   }, 10000);
@@ -1224,15 +1222,16 @@ describe("GbcWorldCanvas", () => {
   it("jumping to a DIFFERENT map on a later token re-jumps (not stuck on the first jumpToMap)", async () => {
     const { rerender } = await mountReady();
     rerender(<GbcWorldCanvas time="day" jumpToMap="MapB" jumpToken={1} />);
-    await waitFor(() => expect(screen.getByText(/zoom 38%/)).toBeTruthy());
+    // MapB 10x10 in 200x200: z20, so round(20/32*100)=63%.
+    await waitFor(() => expect(screen.getByText(/zoom 63%/)).toBeTruthy());
 
     rerender(<GbcWorldCanvas time="day" jumpToMap="MapA" jumpToken={2} />);
-    // computeFit({0,0,10,10},{200,200}).zoom=20, jumpFit 60% -> 12 -> same 38%,
+    // computeFit({0,0,10,10},{200,200}).zoom=20, full jump -> same 63%,
     // but pan differs (MapA at x=0, not MapB's x=10) -- proves the SECOND
     // token actually re-ran the jump effect, not just held the first result.
     await waitFor(() => {
       const outline = document.querySelector(".world-canvas__jump-highlight") as HTMLElement | null;
-      expect(outline?.style.left).toBe("40px"); // MapA: -0*12+(200-120)/2 = 40
+      expect(outline?.style.left).toBe("0px"); // MapA: -0*20+(200-200)/2 = 0.
     });
   });
 
@@ -1338,25 +1337,20 @@ describe("GbcWorldCanvas", () => {
     await waitFor(() => expect(screen.getByText(/zoom 38%/)).toBeTruthy());
 
     fireEvent.click(screen.getByRole("button", { name: "Fit" }));
-    const expected = computeFit({ x: 0, y: 0, width: 1005, height: 1005 }, { w: VIEWPORT_SIZE, h: VIEWPORT_SIZE }, { min: 1 / 64, max: 32 });
-    const expectedPercent = Math.round((expected.zoom / 32) * 100);
-    await waitFor(() => expect(screen.getByText(new RegExp(`zoom ${expectedPercent}%`))).toBeTruthy());
+    // P12-4m: cluster union (0,0)-(20,10), singleton excluded; zoom=min(200/20,200/10)=10.
+    // Centred pan=(0,(200-10*10)/2)=(0,50), percent=round(10/32*100)=31.
+    await waitFor(() => expect(screen.getByText(/zoom 31%/)).toBeTruthy());
 
-    // Pin the EXACT pan by selecting the far-away Interior (now visible
-    // after Fit all) and reading its own selection outline's screen rect --
-    // a StrictMode-doubled pan would still show the right zoom% (a pure
-    // zoom is unaffected) but Interior's own screen rect would be wrong.
-    // Interior is (1000,1000,5,5); click its own world-space CENTRE
-    // (1002.5,1002.5), not its corner, since at this zoom (~0.2) its whole
-    // screen footprint is under 1px wide and a corner click risks missing
-    // it to floating-point rounding.
-    const ix = 1000 * expected.zoom + expected.pan.x, iy = 1000 * expected.zoom + expected.pan.y;
-    const cx = 1002.5 * expected.zoom + expected.pan.x, cy = 1002.5 * expected.zoom + expected.pan.y;
-    fireEvent.click(canvas, { clientX: cx, clientY: cy });
-    const outline = () => document.querySelector(".world-canvas__selection-outline:not(.world-canvas__jump-highlight)") as HTMLElement;
+    // Pin the EXACT single-application pan with MapB, which remains in the fitted cluster.
+    // MapB(10,0,10,10) projects to (100,50,100,100); its centre is (150,100).
+    // A nested-updater double application after the wheel's pan(-20,40) would produce a different rect.
+    fireEvent.click(canvas, { clientX: 150, clientY: 100 });
+    const outline = () => document.querySelector(
+      ".world-canvas__selection-outline:not(.world-canvas__jump-highlight)",
+    ) as HTMLElement;
     await waitFor(() => expect(outline()).toBeTruthy());
-    expect(parseFloat(outline().style.left)).toBeCloseTo(ix, 6);
-    expect(parseFloat(outline().style.top)).toBeCloseTo(iy, 6);
+    expect(parseFloat(outline().style.left)).toBe(100);
+    expect(parseFloat(outline().style.top)).toBe(50);
   });
 
   it("the wheel listener is registered with { passive: false }", async () => {
@@ -1999,14 +1993,17 @@ describe("GbcWorldCanvas: context menu (Plan 6c E3)", () => {
   });
 
   it("F does what the Fit button does (Plan 9 R5)", async () => {
-    await mountReady();
+    const { canvas } = await mountReady();
     const fit = screen.getByRole("button", { name: "Fit" });
+    // Perturb first, so F has something to restore: one wheel-in at 10 px/block gives 12 -> round(12/32*100)=38%.
+    fireEvent.wheel(canvas, { clientX: 100, clientY: 100, deltaY: -100 });
+    await waitFor(() => expect(screen.getByText(/zoom 38%/)).toBeTruthy());
     fireEvent.keyDown(window, { key: "f" });
 
-    const expectedZoom = computeFit({ x: 0, y: 0, width: 1005, height: 1005 }, { w: VIEWPORT_SIZE, h: VIEWPORT_SIZE }, { min: 1 / 64, max: 32 }).zoom;
-    const expectedPercent = Math.round((expectedZoom / 32) * 100);
-    await waitFor(() => expect(screen.getByText(new RegExp(`zoom ${expectedPercent}%`))).toBeTruthy());
-    await waitFor(() => expect(FakeImage.instances.some((i) => i.src.startsWith("/api/render/Interior.png"))).toBe(true));
+    // P12-4m: Fit/F unions only the cluster (20x10 blocks), excluding the singleton Interior.
+    // zoom=min(200/20,200/10)=10; round(10/32*100)=31%.
+    await waitFor(() => expect(screen.getByText(/zoom 31%/)).toBeTruthy());
+    expect(FakeImage.instances.some((i) => i.src.startsWith("/api/render/Interior.png"))).toBe(false);
     expect(fit.getAttribute("title")).toBe("Fit to screen (F)");
   });
 });

@@ -139,23 +139,28 @@ async function dirtyCityInMapView() {
   await waitFor(() => expect(screen.getByTestId("dirty-indicator")).toBeTruthy());
 }
 
-/** Dirty OlivineCity in Map view, then enter World (it jumps to OlivineCity, 60% fill: zoom 12, pan (40,40)) and double-click
- *  the same map: no guard, because it is already selected. OlivineCity's body is then x,y in [40,160). */
+/** Dirty OlivineCity in Map view, then enter World (full jump in the 400x200 jump viewport: zoom 20, pan (100,0)) and
+ *  double-click the same map: no guard, because it is already selected. OlivineCity's body is then x in [100,300). */
 async function dirtyContextOnCity() {
   const mock = await startApp();
   await dirtyCityInMapView();
   const canvas = await enterWorldAfterJump();
-  fireEvent.doubleClick(canvas, { clientX: 100, clientY: 100 });
+  fireEvent.doubleClick(canvas, { clientX: 200, clientY: 100 });
   await waitFor(() => expect(contextOverlay()).not.toBeNull());
   await waitFor(() => expect(contextOverlay()!.querySelector("canvas.map-canvas__stage")).not.toBeNull());
   return { canvas, ...mock };
 }
+/** P12-4m amended (full jump): in 200x200 the jumped OlivineCity fills the view and OlivinePort leaves it, so the
+ *  jump runs in a 400x200 viewport. OlivineCity 10x10 blocks: zoom = min(400/10, 200/10) = 20 (63%), pan x =
+ *  (400 - 200) / 2 = 100, pan y = 0. OlivineCity is x [100,300), OlivinePort x [300,500), visible to 400; y [0,200). */
+const JUMP_RECT = { ...RECT, right: 400, width: 400 };
 async function enterWorldAfterJump() {
+  stubViewport(400, 200);
   fireEvent.click(screen.getByRole("button", { name: "World" }));
   await waitFor(() => expect(worldCanvas()).toBeTruthy());
   const canvas = worldCanvas()!;
-  canvas.getBoundingClientRect = () => RECT;
-  await waitFor(() => expect(status()).toMatch(/1 components · 2 maps · zoom 38%/)); // 12 / 32 = 37.5 -> 38%
+  canvas.getBoundingClientRect = () => JUMP_RECT;
+  await waitFor(() => expect(status()).toMatch(/1 components · 2 maps · zoom 63%/)); // 20/32*100 = 62.5 -> 63%.
   return canvas;
 }
 
@@ -402,8 +407,8 @@ describe("GbcApp -- in-context editing (Plan 7 Task 5b)", () => {
     });
     observer.observe(document.body, { childList: true, subtree: true });
 
-    const canvas = await enterWorldAfterJump(); // OlivineCity is selected: the world jumps to [40,160)^2; OlivinePort starts at x 160
-    fireEvent.doubleClick(canvas, { clientX: 180, clientY: 100 });
+    const canvas = await enterWorldAfterJump(); // OlivineCity is selected: the jump puts OlivinePort at x [300,400)
+    fireEvent.doubleClick(canvas, { clientX: 350, clientY: 100 });
 
     await act(async () => { await Promise.resolve(); }); // let the observer deliver
     observer.disconnect();
@@ -420,7 +425,7 @@ describe("GbcApp -- in-context editing (Plan 7 Task 5b)", () => {
     const { calls } = await startApp();
     await dirtyCityInMapView();
     const canvas = await enterWorldAfterJump();
-    fireEvent.doubleClick(canvas, { clientX: 180, clientY: 100 });
+    fireEvent.doubleClick(canvas, { clientX: 350, clientY: 100 });
     fireEvent.click(screen.getByRole("button", { name: "Discard" }));
     await waitFor(() => expect(contextOverlay()).not.toBeNull());
     expect(document.querySelector(".world-canvas__context-bar")!.textContent).toContain("OlivinePort");
@@ -497,7 +502,7 @@ describe("GbcApp -- in-context editing (Plan 7 Task 5b)", () => {
     expect(screen.queryByRole("alert")).toBeNull();
     f.mockImplementation(original);
     fireEvent.click(screen.getByRole("button", { name: "OlivineCity" }));
-    await waitFor(() => expect(status()).toContain("zoom 38%"));
+    await waitFor(() => expect(status()).toContain("zoom 63%")); // Full jump: 20/32 rounds to 63%.
     fireEvent.doubleClick(canvas, { clientX: 100, clientY: 100 });
     await overlayStage();
     expect(worldCanvas()).toBe(canvas);
@@ -575,13 +580,13 @@ describe("GbcApp -- in-context editing (Plan 7 Task 5b)", () => {
     expect(screen.getByLabelText("metatile 0x1").getAttribute("aria-current")).toBe("true"); // positive control
     fireEvent.click(screen.getByRole("button", { name: "OlivineCity" }));
     await waitFor(() => expect(contextOverlay()).toBeNull());
-    await waitFor(() => expect(status()).toContain("zoom 38%"));
+    await waitFor(() => expect(status()).toContain("zoom 63%")); // Full jump: 20/32 rounds to 63%.
     fireEvent.doubleClick(canvas, { clientX: 100, clientY: 100 });
     await overlayStage();
     expect(screen.getByLabelText("metatile 0x1").getAttribute("aria-current")).not.toBe("true");
     fireEvent.click(screen.getByRole("button", { name: "OlivinePort" }));
     await waitFor(() => expect(contextOverlay()).toBeNull());
-    await waitFor(() => expect(status()).toContain("zoom 38%"));
+    await waitFor(() => expect(status()).toContain("zoom 63%")); // Full jump: 20/32 rounds to 63%.
     fireEvent.doubleClick(canvas, { clientX: 100, clientY: 100 });
     await overlayStage();
     expect(screen.getByLabelText("metatile 0x1").getAttribute("aria-current")).not.toBe("true");

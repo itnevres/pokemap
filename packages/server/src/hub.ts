@@ -168,7 +168,15 @@ function isCrossOriginRequest(headers: { origin?: string; host?: string }): bool
   return false;
 }
 
-export async function createHub(opts: { port?: number; home?: string; open?: string }): Promise<Hub> {
+/** P12-4w: pre-warm the world tiles in the background; a swap disposes the old handler, which stops its loop. */
+function logWarmUp(handler: ProjectHandler): void {
+  void handler.warmUp()
+    .then((r) => console.log(
+      `pokemap hub: warmed ${r.rendered} world tiles in ${Math.round(r.ms)} ms (${r.skipped} skipped, ${r.failed} failed)`))
+    .catch((e: unknown) => console.error("pokemap hub: warm-up failed:", e));
+}
+
+export async function createHub(opts: { port?: number; home?: string; open?: string; prewarm?: boolean }): Promise<Hub> {
   const home = recentHome(opts.home);
   let current: ProjectHandler | null = null;
 
@@ -270,6 +278,9 @@ export async function createHub(opts: { port?: number; home?: string; open?: str
             } catch (e) {
               console.error("pokemap hub: failed to record recent project:", e);
             }
+            if (opts.prewarm) {
+              logWarmUp(next);
+            }
             return send(200, next.info);
           })
           .catch((e: unknown) => {
@@ -303,6 +314,9 @@ export async function createHub(opts: { port?: number; home?: string; open?: str
     detectEngineFamily(path); // throws its own named-marker message on refusal
     current = createProjectHandler(path);
     pushRecent(home, { path: current.info.root, family: current.family });
+    if (opts.prewarm) {
+      logWarmUp(current);
+    }
   }
 
   await new Promise<void>((r) => http.listen(opts.port ?? 5174, "127.0.0.1", r));

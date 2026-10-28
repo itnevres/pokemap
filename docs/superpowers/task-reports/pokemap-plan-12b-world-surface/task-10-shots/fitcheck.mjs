@@ -1,0 +1,13 @@
+import { open } from "./lib.mjs";
+import { guard } from "./guard.mjs";
+const { browser, page, wait, shot } = await open();
+const out = {}; await guard(page, out);
+await page.goto("http://127.0.0.1:5183/"); await wait(3000);
+await page.getByRole("group", { name: "View" }).getByRole("button", { name: "World" }).click(); await wait(4000);
+const vp = await page.locator(".world-canvas__viewport").boundingBox();
+const stage = await page.locator("canvas.world-canvas__stage").boundingBox();
+out.vp = vp; out.stage = stage; out.readout0 = await page.locator(".world-canvas__zoom-readout").textContent();
+await page.getByRole("button", { name: "Fit", exact: true }).click(); await wait(1500);
+out.readoutFit = await page.locator(".world-canvas__zoom-readout").textContent();
+await shot("gba-fit-manual");
+console.log(JSON.stringify(out)); await browser.close();

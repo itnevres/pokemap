@@ -355,22 +355,25 @@ describe("WorldCanvas", () => {
   // Culling
   // -------------------------------------------------------------------
   it("culls: fetches images only for placements intersecting the viewport, not every placement", async () => {
-    // Default view is zoom=1, pan={0,0} -- world-tile viewport is exactly
-    // [0,100)x[0,100) at VIEWPORT_SIZE=100. Three placements sit inside
-    // that box; nine more sit far outside it (x>=250), so a broken
+    // P12-4e: the A/B/C cluster spans [0,100)^2, so the initial fit is z1/pan0.
+    // All three intersect the viewport; nine singleton maps remain far outside (x>=250), so a broken
     // implementation that fetches unconditionally would create 12 images,
     // not 3 -- and one that fetches nothing would create 0. Either wrong
     // answer is distinguishable from the pinned one.
     const inView: Record<string, RawPlacement> = {
       InViewA: { map: "InViewA", x: 0, y: 0, width: 10, height: 10, component: 0 },
-      InViewB: { map: "InViewB", x: 20, y: 0, width: 10, height: 10, component: 1 },
-      InViewC: { map: "InViewC", x: 0, y: 20, width: 10, height: 10, component: 2 },
+      InViewB: { map: "InViewB", x: 20, y: 0, width: 80, height: 10, component: 0 },
+      InViewC: { map: "InViewC", x: 0, y: 20, width: 10, height: 80, component: 0 },
     };
     const farAway: Record<string, RawPlacement> = {};
     for (let i = 0; i < 9; i++) {
-      farAway[`Far${i}`] = { map: `Far${i}`, x: 250 + i * 40, y: 250, width: 10, height: 10, component: 3 + i };
+      farAway[`Far${i}`] = { map: `Far${i}`, x: 250 + i * 40, y: 250, width: 10, height: 10, component: 1 + i };
     }
-    const { impl } = makeFetchMock(makeWorld({ placements: { ...inView, ...farAway } }));
+    const components = [{ index: 0, maps: ["InViewA", "InViewB", "InViewC"], bounds: { x: 0, y: 0, width: 100, height: 100 } }];
+    for (let i = 0; i < 9; i++) {
+      components.push({ index: 1 + i, maps: [`Far${i}`], bounds: { x: 250 + i * 40, y: 250, width: 10, height: 10 } });
+    }
+    const { impl } = makeFetchMock(makeWorld({ placements: { ...inView, ...farAway }, components }));
     await mountReady(impl);
 
     await waitFor(() => expect(FakeImage.instances.length).toBe(3));
@@ -400,7 +403,8 @@ describe("WorldCanvas", () => {
   // -------------------------------------------------------------------
   it("below the LOD zoom threshold, draws the cached downscaled buffer, not the full-resolution image", async () => {
     const { impl } = makeFetchMock(
-      makeWorld({ placements: { Solo: { map: "Solo", x: 0, y: 0, width: 10, height: 10, component: 0 } } }),
+      // P12-4e: Solo's 100x100 bounds fit the 100x100 stage at z1, below the z4 LOD threshold.
+      makeWorld({ placements: { Solo: { map: "Solo", x: 0, y: 0, width: 100, height: 100, component: 0 } } }),
     );
     const { canvas, stageCtx } = await mountReady(impl);
     await waitFor(() => expect(FakeImage.instances.length).toBe(1));
@@ -410,7 +414,7 @@ describe("WorldCanvas", () => {
     });
     await waitFor(() => expect(stageCtx.drawImage).toHaveBeenCalled());
 
-    // Default zoom is 1, below LOD_ZOOM_THRESHOLD (4) -- the extra canvas
+    // Fitted zoom is 1, below LOD_ZOOM_THRESHOLD (4) -- the extra canvas
     // besides the stage is Solo's small LOD buffer, created synchronously
     // inside the same onload handler.
     const smallCanvas = [...ctxByCanvas.keys()].find((c) => c !== canvas)!;
@@ -473,8 +477,8 @@ describe("WorldCanvas", () => {
     expect(computeFit({ x: 0, y: 0, width: 1, height: 1 }, { w: 100, h: 100 }, { min: 1 / 64, max: 32 }).zoom).toBe(32);
 
     // Bounds so large the unclamped zoom would be tiny (10/10000 = 0.001):
-    // the default MIN_ZOOM (1/64 = 0.015625) floors it up...
-    expect(computeFit({ x: 0, y: 0, width: 10000, height: 10000 }, { w: 10, h: 10 }).zoom).toBeCloseTo(1 / 64, 10);
+    // P12-4j: the default scale floor is 1/2048 of a 16px tile = 1/128, above raw 0.001.
+    expect(computeFit({ x: 0, y: 0, width: 10000, height: 10000 }, { w: 10, h: 10 }).zoom).toBeCloseTo(1 / 128, 10);
     // ...but a lower custom min lets the true unclamped zoom (0.001) through
     // instead of flooring it up to 1/64.
     expect(computeFit({ x: 0, y: 0, width: 10000, height: 10000 }, { w: 10, h: 10 }, { min: 1 / 2000, max: 32 }).zoom).toBeCloseTo(0.001, 10);
@@ -493,15 +497,11 @@ describe("WorldCanvas", () => {
       FakeImage.instances[0]!.onload?.();
     });
     await waitFor(() => expect(stageCtx.drawImage).toHaveBeenCalled());
-    // At zoom=1, pan={0,0}, Solo (x=0,y=0) draws at destination (0,0).
+    // P12-4e: Solo alone fits at zoom 100/10 = 10, pan {0,0}, so it draws at destination (0,0) and fills the view.
     expect(stageCtx.drawImage.mock.calls.at(-1)!.slice(1, 3)).toEqual([0, 0]);
 
-    // Mousedown on empty space (50,50 is well outside Solo's 10x10 rect) so
-    // this pans rather than drags the map. Panning by a POSITIVE delta
-    // (toward the bottom-right) -- panning the other way would push Solo's
-    // world-tile rect out of the viewport entirely (it sits right at the
-    // world origin) and cull it, leaving no new drawImage call to observe
-    // and making this assertion pass or fail for the wrong reason.
+    // A plain (un-Shifted) drag pans even over a map body; only Shift+drag moves a map. The pan delta is in
+    // screen px, so (15,20) holds at any zoom.
     fireEvent.mouseDown(canvas, { clientX: 50, clientY: 50, button: 0 });
     fireEvent.mouseMove(canvas, { clientX: 65, clientY: 70 });
     await waitFor(() => expect(stageCtx.drawImage.mock.calls.at(-1)!.slice(1, 3)).toEqual([15, 20]));
@@ -522,9 +522,8 @@ describe("WorldCanvas", () => {
     });
     await waitFor(() => expect(stageCtx.drawImage).toHaveBeenCalled());
 
-    // Hand-computed: cursor at (50,50), zoom 1 -> 1.2. World point under the
-    // cursor before zooming is (50,50) (pan={0,0}); the new pan must keep
-    // that same world point under (50,50): newPan = 50 - 50*1.2 = -10.
+    // Hand-computed (P12-4e fit: zoom 10, pan {0,0}): cursor at (50,50), zoom 10 -> 12. The world point under the
+    // cursor is (5,5); keeping it under (50,50) gives newPan = 50 - 5*12 = -10.
     fireEvent.wheel(canvas, { clientX: 50, clientY: 50, deltaY: -100 });
     await waitFor(() => expect(stageCtx.drawImage.mock.calls.at(-1)!.slice(1, 3)).toEqual([-10, -10]));
 
@@ -572,7 +571,11 @@ describe("WorldCanvas", () => {
   // Drag to place
   // -------------------------------------------------------------------
   it("dragging a placed map posts its new position, and it survives a reload", async () => {
-    const fixture = makeWorld({ placements: { Solo: { map: "Solo", x: 0, y: 0, width: 10, height: 10, component: 0 } } });
+    const fixture = makeWorld({ placements: {
+      // P12-4e: Frame fixes 100x100 fit at z1/pan0 before and after Solo moves; Solo is last drawn and hit first.
+      Frame: { map: "Frame", x: 0, y: 0, width: 100, height: 100, component: 0 },
+      Solo: { map: "Solo", x: 0, y: 0, width: 10, height: 10, component: 1 },
+    } });
     const { impl, calls } = makeFetchMock(fixture);
     const { canvas, unmount } = await mountReady(impl);
 
@@ -597,7 +600,7 @@ describe("WorldCanvas", () => {
     for (const img of FakeImage.instances) act(() => img.onload?.());
     await waitFor(() => expect(after.stageCtx.drawImage).toHaveBeenCalled());
 
-    // At zoom=1, pan={0,0}: Solo at (15,15) draws at destination (15,15).
+    // Frame still fixes z1/pan0 after reload; Solo at (15,15) draws there.
     expect(after.stageCtx.drawImage.mock.calls.at(-1)!.slice(1, 3)).toEqual([15, 15]);
   });
 
@@ -620,6 +623,8 @@ describe("WorldCanvas", () => {
       placements: {
         Solo: { map: "Solo", x: 0, y: 0, width: 10, height: 10, component: 0 },
         Other: { map: "Other", x: 50, y: 0, width: 10, height: 10, component: 1 },
+        // P12-4e: corner Anchor extends bounds to 100x100; Solo/Other keep their 10px draw sizes and hit points.
+        Anchor: { map: "Anchor", x: 90, y: 90, width: 10, height: 10, component: 2 },
       },
     });
     const { impl, calls } = makeFetchMock(fixture);
@@ -672,7 +677,8 @@ describe("WorldCanvas", () => {
   // just outside the canvas) is a completely normal gesture that ends
   // exactly this way, with mouseleave firing instead of mouseup.
   it("releasing a Shift+drag by leaving the canvas (not mouseup) still posts the new position", async () => {
-    const fixture = makeWorld({ placements: { Solo: { map: "Solo", x: 0, y: 0, width: 10, height: 10, component: 0 } } });
+    // P12-4e: Solo's 100x100 bounds fit the 100x100 stage at z1/pan0; the 15px drag is still 15 world tiles.
+    const fixture = makeWorld({ placements: { Solo: { map: "Solo", x: 0, y: 0, width: 100, height: 100, component: 0 } } });
     const { impl, calls } = makeFetchMock(fixture);
     const { canvas } = await mountReady(impl);
 
@@ -757,9 +763,10 @@ describe("WorldCanvas", () => {
     // Simulates the dungeons-off server response: Hidden is a singleton
     // component but is NOT a key in `placements` -- Placed is both.
     const fixture = makeWorld({
-      placements: { Placed: { map: "Placed", x: 0, y: 0, width: 10, height: 10, component: 0 } },
+      // P12-4e: the only placed 100x100 map fits this stage at z1/pan0; Hidden stays absent from placements.
+      placements: { Placed: { map: "Placed", x: 0, y: 0, width: 100, height: 100, component: 0 } },
       components: [
-        { index: 0, maps: ["Placed"], bounds: { x: 0, y: 0, width: 10, height: 10 } },
+        { index: 0, maps: ["Placed"], bounds: { x: 0, y: 0, width: 100, height: 100 } },
         { index: 1, maps: ["Hidden"], bounds: { x: 999, y: 999, width: 8, height: 6 } },
       ],
       dungeonAutoLayout: false,
@@ -1015,9 +1022,8 @@ describe("WorldCanvas", () => {
     // "some colour changed").
     await waitFor(() => expect(stageCtx.fillLog).toContain("#ef4444"));
 
-    // Diamond centre: p.x=0,y=0,w=10,h=10 at zoom=1,pan={0,0} ->
-    // cx = 0+10-10 = 0, cy = 0+10 = 10.
-    fireEvent.mouseMove(canvas, { clientX: 0, clientY: 10 });
+    // P12-4e: Solo10x10 fits 100x100 at z10/pan0. Badge x=10*10-10=90, y=10.
+    fireEvent.mouseMove(canvas, { clientX: 90, clientY: 10 });
     const tooltip = await screen.findByRole("tooltip");
     expect(tooltip.textContent).toContain("RouteA");
     expect(tooltip.textContent).toContain("RouteB");
@@ -1028,7 +1034,11 @@ describe("WorldCanvas", () => {
 
   it("independently acknowledges two same-map badges by right-click, keeps placement, and survives remount", async () => {
     const initial = makeWorld({
-      placements: { Route111: { map: "Route111", x: 0, y: 0, width: 50, height: 30, component: 0 } },
+      placements: {
+        Route111: { map: "Route111", x: 0, y: 0, width: 50, height: 30, component: 0 },
+        // P12-4e: Anchor fills x[50,100), y[0,100), making fit z1/pan0; Route111's badges keep (40,10)/(18,10).
+        Anchor: { map: "Anchor", x: 50, y: 0, width: 50, height: 100, component: 1 },
+      },
       conflicts: ["Route112", "Route113"].map((from) => ({ map: "Route111", viaA: { from, x: 160, y: -230 }, viaB: { from: "MauvilleCity", x: 160, y: -232 } })),
     });
     const { impl, calls, currentWorld } = makeFetchMock(initial);
@@ -1064,7 +1074,11 @@ describe("WorldCanvas", () => {
 
   it("shows a malformed accept response without acknowledging the GBA badge", async () => {
     const world = makeWorld({
-      placements: { Solo: { map: "Solo", x: 0, y: 0, width: 50, height: 30, component: 0 } },
+      placements: {
+        Solo: { map: "Solo", x: 0, y: 0, width: 50, height: 30, component: 0 },
+        // P12-4e: x[50,100), y[0,100) Anchor makes the union 100x100; Solo's badge remains at (40,10).
+        Anchor: { map: "Anchor", x: 50, y: 0, width: 50, height: 100, component: 1 },
+      },
       conflicts: [{ map: "Solo", viaA: { from: "A", x: 1, y: 2 }, viaB: { from: "B", x: 3, y: 4 } }],
     });
     const { impl } = makeFetchMock(world);
@@ -1086,7 +1100,11 @@ describe("WorldCanvas", () => {
 
   it("redraws and updates hit actions when the accepted key changes but the count stays one", async () => {
     const fixture = makeWorld({
-      placements: { Route111: { map: "Route111", x: 0, y: 0, width: 50, height: 30, component: 0 } },
+      placements: {
+        Route111: { map: "Route111", x: 0, y: 0, width: 50, height: 30, component: 0 },
+        // P12-4e: x[50,100), y[0,100) Anchor makes fit z1/pan0; both Route111 badge positions remain fixed.
+        Anchor: { map: "Anchor", x: 50, y: 0, width: 50, height: 100, component: 1 },
+      },
       conflicts: ["Route112", "Route113"].map((from) => ({ map: "Route111", viaA: { from, x: 160, y: -230 }, viaB: { from: "MauvilleCity", x: 160, y: -232 } })),
     });
     fixture.conflicts[1]!.accepted = true;
@@ -1108,7 +1126,11 @@ describe("WorldCanvas", () => {
 
   it("keeps a near-edge badge action inside the viewport", async () => {
     const { impl } = makeFetchMock(makeWorld({
-      placements: { Edge: { map: "Edge", x: 0, y: 70, width: 95, height: 20, component: 0 } },
+      placements: {
+        Edge: { map: "Edge", x: 0, y: 70, width: 95, height: 20, component: 0 },
+        // P12-4e: Anchor gives the fixture [0,95)x[0,100) bounds; fit z=100/100=1, pan x=2.5, y=0.
+        Anchor: { map: "Anchor", x: 0, y: 0, width: 10, height: 100, component: 1 },
+      },
       conflicts: [{ map: "Edge", viaA: { from: "A", x: 1, y: 2 }, viaB: { from: "B", x: 3, y: 4 } }],
     }));
     const mounted = await mountReady(impl);
@@ -1174,7 +1196,8 @@ describe("WorldCanvas", () => {
 
     // If sizeOfPlacement did NOT recover the real size, Ghost's rect would
     // be zero-area and this hover would hit nothing.
-    fireEvent.mouseMove(canvas, { clientX: 7, clientY: 7 });
+    // Recovered 8x6 Ghost at (5,5): fit z=12.5, pan(-62.5,-50), rect [0,100)x[12.5,87.5).
+    fireEvent.mouseMove(canvas, { clientX: 50, clientY: 50 });
     const status = await screen.findByText(/Ghost/);
     // componentOfPlacement must not index components[-1] directly (that
     // would silently be undefined, and undefined.maps.length would throw,
@@ -1221,8 +1244,10 @@ describe("WorldCanvas", () => {
       return makeWorld({
         placements: {
           A: { map: "A", x: 0, y: 0, width: 10, height: 10, component: 0 },
-          B: { map: "B", x: 20, y: 0, width: 10, height: 10, component: 1 },
-          C: { map: "C", x: 0, y: 20, width: 10, height: 10, component: 2 },
+          // P12-4e: B reaches x100 and C reaches y100, so the 100x100 union fits at z1/pan0.
+          // Their original hit points remain inside; the (60,60) and (90,90) empty probes stay empty.
+          B: { map: "B", x: 20, y: 0, width: 80, height: 10, component: 1 },
+          C: { map: "C", x: 0, y: 20, width: 10, height: 80, component: 2 },
         },
       });
     }
@@ -1300,15 +1325,15 @@ describe("WorldCanvas", () => {
       const { impl } = makeFetchMock(threeMapsWorld());
       const { canvas } = await mountReady(impl);
 
-      // A is [0,10)x[0,10), B is [20,30)x[0,10), C is [0,10)x[20,30).
+      // A is [0,10)x[0,10), B is [20,100)x[0,10), C is [0,10)x[20,100).
       // Starting the drag AT (0,0) would land directly inside A's own
       // hit-box and take the plain Ctrl+click toggle path instead of ever
       // starting a marquee -- (-5,-5) is genuinely empty space, so this
       // actually exercises the marquee's containment test. A marquee from
       // (-5,-5) to (25,15) fully encloses A (C's top edge is at 20, out of
       // the y-span) but only PARTIALLY overlaps B (B's rect is
-      // [20,30)x[0,10) -- the marquee's x-span [-5,25] covers B's left
-      // portion, 20 to 25, but not its right portion, 25 to 30). B
+      // [20,100)x[0,10) -- the marquee's x-span [-5,25] covers B's left
+      // portion, 20 to 25, but not its right portion, 25 to 100). B
       // therefore intersects the marquee without being contained by it --
       // this is deliberate, not incidental: if a right-drag ever used the
       // crossing test (`intersects`) instead of the enclosure test
@@ -1331,9 +1356,9 @@ describe("WorldCanvas", () => {
       // A marquee from (25,-5) back to (5,15) (end.x < start.x: a
       // left-drag). Its world x-span is [5,25] (y-span [-5,15], covering
       // both A and B's own y-band). A's rect [0,10)x[0,10) sticks out
-      // past the marquee's left edge (0 < 5); B's rect [20,30)x[0,10)
-      // sticks out past its right edge (30 > 25) -- both merely crossed,
-      // neither fully enclosed, and C ([0,10)x[20,30)) sits entirely
+      // past the marquee's left edge (0 < 5); B's rect [20,100)x[0,10)
+      // sticks out past its right edge (100 > 25) -- both merely crossed,
+      // neither fully enclosed, and C ([0,10)x[20,100)) sits entirely
       // below the marquee's y-span and is untouched.
       fireEvent.mouseDown(canvas, { clientX: 25, clientY: -5, button: 0, ctrlKey: true });
       fireEvent.mouseMove(canvas, { clientX: 5, clientY: 15, ctrlKey: true });
@@ -1655,9 +1680,14 @@ describe("WorldCanvas", () => {
       return makeWorld({
         placements: {
           A: { map: "A", x: 0, y: 0, width: 10, height: 10, component: 0 },
-          B: { map: "B", x: 20, y: 0, width: 10, height: 10, component: 1 },
-          Far: { map: "Far", x: 500, y: 500, width: 10, height: 10, component: 2 },
+          // P12-4e: A+B cluster spans 100x100, giving z1/pan0; Far remains an off-screen singleton.
+          B: { map: "B", x: 20, y: 0, width: 80, height: 100, component: 0 },
+          Far: { map: "Far", x: 500, y: 500, width: 10, height: 10, component: 1 },
         },
+        components: [
+          { index: 0, maps: ["A", "B"], bounds: { x: 0, y: 0, width: 100, height: 100 } },
+          { index: 1, maps: ["Far"], bounds: { x: 500, y: 500, width: 10, height: 10 } },
+        ],
       });
     }
 
@@ -1800,19 +1830,19 @@ describe("WorldCanvas", () => {
   // mapFilter (Feature C, dungeon mode -- Task 12)
   // -------------------------------------------------------------------
   describe("mapFilter (Feature C, dungeon mode)", () => {
-    function fourMapsWorld() {
+    function fourMapsWorld(outside = { x: 0, y: 20 }) {
       return makeWorld({
         placements: {
           InDungeon1: { map: "InDungeon1", x: 0, y: 0, width: 10, height: 10, component: 0 },
           InDungeon2: { map: "InDungeon2", x: 20, y: 0, width: 10, height: 10, component: 1 },
-          OutsideDungeon: { map: "OutsideDungeon", x: 0, y: 20, width: 10, height: 10, component: 2 },
+          OutsideDungeon: { map: "OutsideDungeon", ...outside, width: 10, height: 10, component: 2 },
           Far: { map: "Far", x: 500, y: 500, width: 10, height: 10, component: 3 },
         },
       });
     }
 
     it("draws and fetches art only for maps in mapFilter, ignoring viewport-only culling for the rest of the corpus", async () => {
-      const { impl } = makeFetchMock(fourMapsWorld());
+      const { impl } = makeFetchMock(fourMapsWorld({ x: 10, y: 0 }));
       vi.stubGlobal("fetch", impl);
       render(<WorldCanvas mapFilter={new Set(["InDungeon1", "InDungeon2"])} />);
       await waitFor(() => expect(screen.queryByText(/Loading world/)).toBeNull());
@@ -1820,14 +1850,9 @@ describe("WorldCanvas", () => {
       const srcs = FakeImage.instances.map((i) => i.src);
       expect(srcs.some((s) => s.includes("InDungeon1"))).toBe(true);
       expect(srcs.some((s) => s.includes("InDungeon2"))).toBe(true);
-      // OutsideDungeon sits at (0,20)-(10,30), inside the DEFAULT unscoped
-      // viewport ([0,100)x[0,100) at zoom=1,pan={0,0}) -- proving this
-      // requires the mapFilter source restriction itself, not merely
-      // "outside the viewport, so culled anyway" (which would pass even
-      // with mapFilter unimplemented, since ordinary culling would drop it
-      // for an unrelated reason). Without mapFilter actually gating the
-      // source list, this map fetches just like the culling tests above
-      // prove any in-viewport placement does.
+      // P12-4e: the filter fit is InDungeon1+2's 30x10 at zoom 10/3, pan {0,100/3}, so the view shows world
+      // [0,30)x[-10,20). OutsideDungeon is moved into the gap at (10,0)-(20,10), inside that view, so only the
+      // mapFilter source restriction keeps it unfetched (at the shared (0,20) it would be culled by the viewport).
       expect(srcs.some((s) => s.includes("OutsideDungeon"))).toBe(false);
       expect(srcs.some((s) => s.includes("Far"))).toBe(false);
     });
@@ -2249,7 +2274,8 @@ describe("WorldCanvas: encounter border (Plan 6c B3)", () => {
   const espeon = { species: "SPECIES_ESPEON", percent: 37.5, minLevel: 2, maxLevel: 4, slots: [0, 1] };
   const rattata = { species: "SPECIES_RATTATA", percent: 12.5, minLevel: 3, maxLevel: 3, slots: [2] };
 
-  // Viewport is [0,100)^2 at zoom 1. Target sits at x=0, so its left band is
+  // P12-4e: Target, Free and a hidden Anchor form a 100x100 fit cluster, giving z1/pan0.
+  // Viewport is [0,100)^2. Target sits at x=0, so its left band is
   // [-4,0) -- and Blocker (flush at x -10..0) is entirely OFF-screen, culled
   // from `visible`. It must still block the left side: the side is chosen
   // over the drawn set, not the viewport-culled one.
@@ -2257,8 +2283,14 @@ describe("WorldCanvas: encounter border (Plan 6c B3)", () => {
     placements: {
       Target: { map: "Target", x: 0, y: 20, width: 10, height: 10, component: 0 },
       Blocker: { map: "Blocker", x: -10, y: 20, width: 10, height: 10, component: 1 },
-      Free: { map: "Free", x: 60, y: 60, width: 10, height: 10, component: 2 },
+      Free: { map: "Free", x: 60, y: 60, width: 10, height: 10, component: 0 },
+      // Hidden indoors still contributes to cluster fit, but draws no tile, border, or encounter.
+      Anchor: { map: "Anchor", x: 90, y: 0, width: 10, height: 100, component: 0, mapType: "MAP_TYPE_INDOOR" },
     },
+    components: [
+      { index: 0, maps: ["Target", "Free", "Anchor"], bounds: { x: 0, y: 0, width: 100, height: 100 } },
+      { index: 1, maps: ["Blocker"], bounds: { x: -10, y: 20, width: 10, height: 10 } },
+    ],
   });
 
   it("puts the border on the side pickBorderSide gives: Target's left is blocked by an off-screen neighbour -> top; Free stays left", async () => {
@@ -2425,11 +2457,12 @@ describe("WorldCanvas: lens legend row (Plan 6c C1)", () => {
 });
 
 describe("WorldCanvas: onSelectMap (Plan 6c C2)", () => {
-  // A is [0,10)x[0,10), B is [20,30)x[0,10) at the default zoom 1 / pan 0.
+  // P12-4e: A reaches y100 and B reaches x100, so their union fits 100x100 at z1/pan0.
+  // (5,5) and (25,5) remain hits; (90,90) stays empty.
   const TWO = makeWorld({
     placements: {
-      A: { map: "A", x: 0, y: 0, width: 10, height: 10, component: 0 },
-      B: { map: "B", x: 20, y: 0, width: 10, height: 10, component: 1 },
+      A: { map: "A", x: 0, y: 0, width: 10, height: 100, component: 0 },
+      B: { map: "B", x: 20, y: 0, width: 80, height: 10, component: 1 },
     },
   });
   async function mountSelect(onSelectMap: (n: string) => void) {
@@ -2488,11 +2521,12 @@ describe("WorldCanvas: onSelectMap (Plan 6c C2)", () => {
 });
 
 describe("WorldCanvas: context menu (Plan 6c E3)", () => {
-  // A [0,50)x[0,30) with a badge at (40,10); B [60,90)x[40,70). Zoom 1, pan 0.
+  // P12-4e: A [0,50)x[0,30), B [60,100)x[40,100): union 100x100 fits the 100x100 stage at z1, pan0.
+  // The A badge, B hit target, and empty-space probes retain their prior screen roles.
   const MENU_WORLD = makeWorld({
     placements: {
       A: { map: "A", x: 0, y: 0, width: 50, height: 30, component: 0 },
-      B: { map: "B", x: 60, y: 40, width: 30, height: 30, component: 1 },
+      B: { map: "B", x: 60, y: 40, width: 40, height: 60, component: 1 },
     },
     conflicts: [{ map: "A", viaA: { from: "X", x: 1, y: 2 }, viaB: { from: "Y", x: 3, y: 4 } }],
   });
@@ -2542,9 +2576,13 @@ describe("WorldCanvas: context menu (Plan 6c E3)", () => {
 
   it("right-click on a badge whose map body is not under the pointer still targets the badge's map", async () => {
     const onOpenMap = vi.fn();
-    // Tiny map: the badge centre sits on the map's edge, outside its body.
+    // Tiny map: the badge centre sits on the map's edge, outside its body. P12-4e: the singleton Frame makes the
+    // all-placement fit [0,100)x[0,100), zoom 1, pan {0,0}, so the badge stays at (10-10, 0+10) = (0,10), off both bodies.
     const world = makeWorld({
-      placements: { Tiny: { map: "Tiny", x: 0, y: 0, width: 10, height: 10, component: 0 } },
+      placements: {
+        Tiny: { map: "Tiny", x: 0, y: 0, width: 10, height: 10, component: 0 },
+        Frame: { map: "Frame", x: 90, y: 90, width: 10, height: 10, component: 1 },
+      },
       conflicts: [{ map: "Tiny", viaA: { from: "X", x: 1, y: 2 }, viaB: { from: "Y", x: 3, y: 4 } }],
     });
     const { canvas } = await mountMenu({ onOpenMap }, makeFetchMock(world).impl);
@@ -2583,7 +2621,8 @@ describe("WorldCanvas: context menu (Plan 6c E3)", () => {
     expect(fireEvent.keyDown(canvas, key)).toBe(false); // preventDefault
     expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Open in Map view", "Edit here"]);
     const menu = screen.getByRole("menu");
-    expect([menu.style.left, menu.style.top]).toEqual(["75px", "55px"]); // B's centre (60+15, 40+15)
+    // B's new centre is (60+40/2,40+60/2)=(80,70), inside the unchanged viewport.
+    expect([menu.style.left, menu.style.top]).toEqual(["80px", "70px"]);
   });
 
   it("the keyboard opens nothing with zero or two selected maps", async () => {
@@ -2614,12 +2653,16 @@ describe("WorldCanvas: context menu (Plan 6c E3)", () => {
     expect(calls.filter((call) => call.url === "/api/world/placement")).toHaveLength(0);
   });
 
-  it("Ctrl+double-click and a plain double-click on a map do not open it", async () => {
+  it("Ctrl+double-click is suppressed and plain double-click opens Map view without Edit here", async () => {
     const onOpenMap = vi.fn();
     const { canvas } = await mountMenu({ onOpenMap });
+    // P12-4c: Ctrl+double-click is suppressed and a plain one opens Map view (no Edit here without onEditHere).
+    // P12-4e fixture fits at z1/pan0; B spans x[60,100), y[40,100), so (70,50) targets it.
     fireEvent.doubleClick(canvas, { ctrlKey: true, clientX: 70, clientY: 50 });
-    fireEvent.doubleClick(canvas, { clientX: 70, clientY: 50 });
     expect(onOpenMap).not.toHaveBeenCalled();
+    fireEvent.doubleClick(canvas, { clientX: 70, clientY: 50 });
+    expect(onOpenMap).toHaveBeenCalledTimes(1);
+    expect(onOpenMap).toHaveBeenCalledWith("B");
   });
 
   it("a canvas mousedown (pan start) closes an open menu", async () => {
@@ -2690,7 +2733,7 @@ describe("WorldCanvas: context menu (Plan 6c E3)", () => {
     fireEvent.pointerDown(canvas, { clientX: 5, clientY: 5, button: 2 });
     fireEvent.contextMenu(canvas, { clientX: 5, clientY: 5, button: 2 });
     const menu = screen.getByRole("menu");
-    expect([menu.style.left, menu.style.top]).toEqual(["8px", "8px"]); // the right-click at (5,5) clamped by the 8px inset, not B's centre (75,55)
+    expect([menu.style.left, menu.style.top]).toEqual(["8px", "8px"]); // (5,5) clamps to the 8px inset, not B's (80,70) centre.
   });
 
   it("a keyboard open is one-shot: a second contextmenu is handled normally", async () => {

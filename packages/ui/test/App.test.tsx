@@ -1100,19 +1100,21 @@ describe("App -- world click selects the map in the tree (Plan 6c C2)", () => {
         vi.stubGlobal("fetch", makeFetchMock());
         render(<FamilyApp adapter={gbaAdapter} />);
         await waitFor(() => expect(screen.getByRole("button", { name: "Route1" })).toBeTruthy());
-        const canvas = await worldCanvasReady("6%");
+        // P12-4e: 30x10 world in 100x100 fits at z=100/30; round(z/16*100)=21%.
+        const canvas = await worldCanvasReady("21%");
         await waitFor(() => expect(screen.queryByText(/Loading world/)).toBeNull());
         expect(currentRow()).toBeNull();
         spy.mockClear();
 
-        clickAt(canvas, [5, 5]); // Route1 is [0,10)x[0,10): the very first selection, jumpToMap still null beforehand
+        // Route1 projects to x[0,100/3), y[(100-100/3)/2,(100+100/3)/2); (5,50) is inside.
+        clickAt(canvas, [5, 50]);
 
         await waitFor(() => expect(currentRow()?.textContent).toBe("Route1"));
         expect(spy.mock.contexts).toContain(currentRow());
         expect(spy).toHaveBeenCalledWith({ block: "nearest" });
         await act(async () => {});
         expect(document.querySelector(".world-canvas__jump-highlight")).toBeNull(); // no jump fired
-        expect(zoomReadout()).toBe("6%"); // view untouched
+        expect(zoomReadout()).toBe("21%"); // Fitted view remains untouched.
       });
     } finally {
       spy.mockRestore();
@@ -1175,16 +1177,18 @@ describe("App -- world click selects the map in the tree (Plan 6c C2)", () => {
       stubTwoMapWorld();
       render(<FamilyApp adapter={gbaAdapter} />);
       await waitFor(() => expect(screen.getByRole("button", { name: "Route1" })).toBeTruthy());
-      const canvas = await worldCanvasReady("6%", 200);
+      // P12-4e: 21x10 bounds in 200x100 fit at z=200/21; round(z/16*100)=60%.
+      const canvas = await worldCanvasReady("60%", 200);
       await waitFor(() => expect(screen.queryByText(/Loading world/)).toBeNull());
-      clickAt(canvas, [15, 5]); // Route2 at the default zoom-1 view is [11,21)x[0,10)
+      // Route2 at fit z=200/21 is x[11*z,21*z)=[104.76,200), y[2.38,97.62).
+      clickAt(canvas, [150, 50]);
       await waitFor(() => expect(currentRow()?.textContent).toBe("Route2"));
-      expect(zoomReadout()).toBe("6%");
+      expect(zoomReadout()).toBe("60%"); // Initial fitted view, before the selection jump.
 
       clickMode("Map");
       clickMode("World");
 
-      await waitFor(() => expect(zoomReadout()).toBe("63%")); // jumped; before, jumpTarget was null and the view stayed at 6%
+      await waitFor(() => expect(zoomReadout()).toBe("63%")); // Full jump z10; initial fit z=200/21 showed 60%.
       await waitFor(() => expect(jumpHighlight()).toBeTruthy());
     }, 200);
   });

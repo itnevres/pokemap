@@ -1,0 +1,174 @@
+{
+ "fam": "gbc",
+ "first": {
+  "readout": null,
+  "status": "326 components · 391 maps · zoom 8% · 2 conflicts · 0 accepted Hover the world…"
+ },
+ "wheelFit": {
+  "start": null,
+  "wheelIn": null,
+  "wheelChanged": true,
+  "fit": null,
+  "fitRestored": true
+ },
+ "jumpAnchor": {
+  "readout": null,
+  "jumpHighlights": 0
+ },
+ "scanReadout": null,
+ "hits": [
+  "Route46",
+  "Route45",
+  "TohjoFalls",
+  "Route29",
+  "NewBarkTown",
+  "Route27"
+ ],
+ "ctrlClick": {
+  "plainClick": 1,
+  "ctrlAdd": 2,
+  "ctrlToggleOff": 1
+ },
+ "marquee": {
+  "from": [
+   20,
+   20
+  ],
+  "to": [
+   860,
+   745.609375
+  ],
+  "marqueeShown": 1,
+  "selected": 139
+ },
+ "groupMove": {
+  "selected": 2,
+  "postAttempts": [
+   "/world/placement",
+   "/world/placement"
+  ],
+  "reloadGets": 1,
+  "alerts": [
+   "Could not save placement: POST /api/world/placement -> 500"
+  ],
+  "rolledBack": true,
+  "before": "NewBarkTown · component #0 (31 maps) · 10×9 blocks"
+ },
+ "dragOutside": {
+  "map": "Route45",
+  "postAttempts": [
+   "/world/placement"
+  ],
+  "reloadGets": 1
+ },
+ "warps": {
+  "forced": 6,
+  "alertsForced": [
+   "Warp data unavailable: GET /api/warps/TohjoFalls -> 500",
+   "Could not save placement: POST /api/world/placement -> 500"
+  ],
+  "markersForced": 0,
+  "markersAfterPan": 14,
+  "alertsAfterPan": [
+   "Warp data unavailable: GET /api/warps/TohjoFalls -> 500",
+   "Could not save placement: POST /api/world/placement -> 500"
+  ],
+  "selAfterMarkerClick": 0,
+  "markerClickText": ""
+ },
+ "keys": {
+  "r0": null,
+  "plus": null,
+  "plusChanged": true,
+  "minus": null,
+  "minusChanged": true,
+  "modeAfterEnter": "Map",
+  "mapStatus": "NewBarkTown"
+ },
+ "jumpTwice": {
+  "first": {
+   "t": 1500,
+   "op": "0.739733"
+  },
+  "second": {
+   "t": 900,
+   "op": "1"
+  },
+  "restarted": true
+ },
+ "revealHidden": {
+  "before": "326 components · 391 maps · zoom 100% · 2 conflicts · 0 accepted Hover the world…",
+  "after": "326 components · 391 maps · zoom 100% · 2 conflicts · 0 accepted Hover the world…",
+  "highlight": 1,
+  "hover": "RuinsOfAlphResearchCenter · component #34 (1 maps) · 4×4 blocks"
+ },
+ "lens": {
+  "label": "Level curve lens (level-curve)",
+  "pressed": "true",
+  "changed": true
+ },
+ "spotlight": {
+  "options": [
+   "Pidgey"
+  ],
+  "changed": true
+ },
+ "contextMenu": {
+  "items": [
+   "Open in Map view",
+   "Edit here"
+  ],
+  "closed": true
+ },
+ "borderMidZoom": {
+  "readout": null,
+  "borders": 6,
+  "overlaps": 0,
+  "sample": [
+   [
+    609,
+    345,
+    831,
+    389
+   ],
+   [
+    -58,
+    589,
+    609,
+    634
+   ],
+   [
+    831,
+    345,
+    1720,
+    389
+   ],
+   [
+    120,
+    -11,
+    164,
+    389
+   ]
+  ]
+ },
+ "tooltipLeft": {
+  "iconLeft": 286,
+  "tip": [
+   280,
+   315
+  ],
+  "viewportLeft": 280,
+  "clamped": true
+ },
+ "dungeon": {
+  "dungeons": 0
+ },
+ "errs": [],
+ "blockedTotal": 3,
+ "postSummary": [
+  [
+   "/world/placement",
+   3
+  ]
+ ]
+}
