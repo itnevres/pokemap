@@ -480,24 +480,23 @@ export function WorldSurface<P extends SurfacePlacement, C extends WireConflict,
   const [warpsOn, setWarpsOn] = useState(false);
   const [linesOn, setLinesOn] = useState(false);
   const [failedWarps, setFailedWarps] = useState<ReadonlyMap<string, string>>(() => new Map());
-  const [latestWarpError, setLatestWarpError] = useState<string | null>(null);
   const [unresolvedWarp, setUnresolvedWarp] = useState<string | null>(null);
   const [warpPopup, setWarpPopup] = useState<string | null>(null);
   const [warpVersion, setWarpVersion] = useState(0);
   const warpCache = useRef(new Map<string, readonly SurfaceWarp[] | null>());
   const warpRequests = useRef(new Map<string, object>());
-  const seenWarpTileVersions = useRef(new Map<string, number>());
+  // Seeded at mount: a keyed remount with saved versions evicts nothing, while a map's first save (absent -> 1) does.
+  const seenWarpTileVersions = useRef(new Map(Object.entries(tileVersions ?? {})));
   const [warpEpoch, setWarpEpoch] = useState(0);
   const clearWarpErrors = () => {
     setFailedWarps(new Map());
-    setLatestWarpError(null);
     setUnresolvedWarp(null);
   };
   useLayoutEffect(() => {
     let changed = false;
     for (const [name, version] of Object.entries(tileVersions ?? {})) {
       const seen = seenWarpTileVersions.current;
-      if (seen.has(name) && seen.get(name) !== version) {
+      if (seen.get(name) !== version) {
         warpCache.current.delete(name);
         warpRequests.current.delete(name);
         changed = true;
@@ -549,8 +548,12 @@ export function WorldSurface<P extends SurfacePlacement, C extends WireConflict,
         warpRequests.current.delete(name);
         warpCache.current.delete(name);
         const message = messageOf(cause);
-        setFailedWarps((previous) => new Map(previous).set(name, message));
-        setLatestWarpError(message);
+        // Re-insert so the map's latest failure is last: the alert names the newest failure still failing.
+        setFailedWarps((previous) => {
+          const next = new Map(previous);
+          next.delete(name);
+          return next.set(name, message);
+        });
       });
     }
   }, [warpScope, view, warpsOn, linesOn, mapFilter, viewport.w, viewport.h, warpEpoch]);
@@ -820,7 +823,7 @@ export function WorldSurface<P extends SurfacePlacement, C extends WireConflict,
           setLinesOn((on) => !on);
         }} />}
         {toolbarError(failedWarps.size > 0
-          ? `Warp data unavailable for ${failedWarps.size} map${failedWarps.size === 1 ? "" : "s"}: ${latestWarpError}`
+          ? `Warp data unavailable for ${failedWarps.size} map${failedWarps.size === 1 ? "" : "s"}: ${[...failedWarps.values()].at(-1)}`
           : null)}
         {toolbarError(unresolvedWarp ? `Warp data unavailable: ${unresolvedWarp}` : null)}
         <EncounterFetchAlert count={failedCount} />

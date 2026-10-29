@@ -1181,18 +1181,77 @@ it("a pre-bump in-flight warp success cannot restore stale markers or clear a cu
   expect(screen.getByText("Warp data unavailable for 1 map: current failure")).toBeTruthy();
 });
 
-it("first sight of a map's tile version does not evict its warps", async () => {
+it("a mount with saved tile versions does not evict or refetch its warps", async () => {
   const { requests, latest } = pendingWarps();
   const filter = new Set(["A"]);
-  const host = mount({ mapFilter: filter });
+  const host = mount({ mapFilter: filter, tileVersions: { A: 3 } });
+  fireEvent.click(screen.getByRole("switch", { name: "Warps" }));
+  await settle();
+  latest("A").resolve([{ point: { x: 5, y: 5 } }]);
+  await settle();
+  host.rerender(<WorldSurface adapter={adapter} mapFilter={filter} tileVersions={{ A: 3 }} />);
+  await settle();
+  expect(requests).toHaveLength(1);
+  expect(host.container.querySelectorAll(".world-canvas__warp-marker")).toHaveLength(1);
+});
+
+it("a map's first save (tile version absent -> 1) re-fetches its warps", async () => {
+  const { requests, latest } = pendingWarps();
+  const filter = new Set(["A"]);
+  // useContextEditing starts at {} and writes { A: 1 } on A's first commit.
+  const host = mount({ mapFilter: filter, tileVersions: {} });
   fireEvent.click(screen.getByRole("switch", { name: "Warps" }));
   await settle();
   latest("A").resolve([{ point: { x: 5, y: 5 } }]);
   await settle();
   host.rerender(<WorldSurface adapter={adapter} mapFilter={filter} tileVersions={{ A: 1 }} />);
+  expect(host.container.querySelector(".world-canvas__warp-marker")).toBeNull();
+  await settle();
+  expect(requests.map((request) => request.map)).toEqual(["A", "A"]);
+  latest("A").resolve([{ point: { x: 6, y: 7 } }]);
+  await settle();
+  expect(host.container.querySelectorAll(".world-canvas__warp-marker")).toHaveLength(1);
+});
+
+it("a bump while the map is out of scope drops its in-flight response; the map refetches when back", async () => {
+  const { requests, latest } = pendingWarps();
+  const filter = new Set(["A"]);
+  const host = mount({ mapFilter: filter, tileVersions: { A: 0 } });
+  fireEvent.click(screen.getByRole("switch", { name: "Warps" }));
+  await settle();
+  const old = latest("A");
+  // Warps off empties the demand scope, so the bump's refetch cannot replace the old token.
+  fireEvent.click(screen.getByRole("switch", { name: "Warps" }));
+  host.rerender(<WorldSurface adapter={adapter} mapFilter={filter} tileVersions={{ A: 1 }} />);
   await settle();
   expect(requests).toHaveLength(1);
+  old.resolve([{ point: { x: 5, y: 5 } }]);
+  await settle();
+  fireEvent.click(screen.getByRole("switch", { name: "Warps" }));
+  await settle();
+  expect(requests.map((request) => request.map)).toEqual(["A", "A"]);
+  expect(host.container.querySelector(".world-canvas__warp-marker")).toBeNull();
+  latest("A").resolve([{ point: { x: 6, y: 7 } }]);
+  await settle();
   expect(host.container.querySelectorAll(".world-canvas__warp-marker")).toHaveLength(1);
+});
+
+it("the alert names the newest failure that is still failing", async () => {
+  const { latest } = pendingWarps();
+  const filter = new Set(["A", "B"]);
+  const host = mount({ mapFilter: filter, tileVersions: { A: 0, B: 0 } });
+  fireEvent.click(screen.getByRole("switch", { name: "Warps" }));
+  await settle();
+  latest("A").reject(new Error("A offline"));
+  await settle();
+  latest("B").reject(new Error("B offline"));
+  await settle();
+  expect(screen.getByText("Warp data unavailable for 2 maps: B offline")).toBeTruthy();
+  host.rerender(<WorldSurface adapter={adapter} mapFilter={filter} tileVersions={{ A: 0, B: 1 }} />);
+  await settle();
+  latest("B").resolve([]);
+  await settle();
+  expect(screen.getByText("Warp data unavailable for 1 map: A offline")).toBeTruthy();
 });
 
 it("an unresolved marker still shows its own alert", async () => {
