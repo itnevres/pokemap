@@ -122,7 +122,7 @@ mutation checks. Reports: `docs/superpowers/task-reports/pokemap-plan-13-warp-po
   half of `warpError`; the alert renders the Global Constraints copy with `n = failedWarps.size` and `latestError` = the
   most recently recorded message. The unresolved-marker message (`adapter.unresolvedWarpError`, `WorldSurface.tsx:595`)
   moves to its own `unresolvedWarp: string | null` state with its own alert (today's text), cleared by the same triggers
-  as today (dismiss, Warps/Lines toggle, a resolved double-click); it never enters `failedWarps`.
+  as today (Warps/Lines toggle, a resolved double-click; no dismiss control exists); it never enters `failedWarps`.
   A change in `tileVersions[B]` deletes only B's `warpCache`/`warpRequests` entries (spec item 6). For that to refresh
   incoming lines, the GBC adapter stops embedding destination points (`gbc/worldSurface.tsx:302-306`, read from B's
   file server-side) and resolves them from the cache like GBA (`gba/worldSurface.tsx:197-202`):

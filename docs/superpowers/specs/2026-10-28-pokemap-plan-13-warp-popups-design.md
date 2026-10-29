@@ -83,9 +83,11 @@ line by line (roadmap Plan 13). Its record: `task-reports/warp-dungeon-issues/co
 
 10. WorldSurface keeps a set of maps whose latest warp fetch failed. A failure adds the map, a success removes it. The
     alert reads `Warp data unavailable for N map(s): <latest error>` while the set is non-empty and disappears when it
-    empties. Dismiss, the Warps or Lines toggle and opening a popup clear the set (today's triggers; the double-click handler
+    empties. The Warps or Lines toggle turning on and opening a popup clear the set (today's triggers; the double-click handler
     in WorldSurface clears it before calling the shell slot). Stale responses
     (the existing request tokens) never add or remove.
+    Ruling (Task 3 review, 2026-10-28): the alert has no dismiss control today and none is added; the alert names the
+    newest failure still failing. A map's first save (`tileVersions` key absent -> 1) counts as a change.
 
 ## Goals
 

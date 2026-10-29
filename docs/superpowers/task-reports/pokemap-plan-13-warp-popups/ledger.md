@@ -31,3 +31,9 @@ Ruling: T4 tests open the popup by capturing `slots` through a test adapter that
 - Task 2: minor (deferred): gba/worldSurface.tsx:72-73 comment says the GET reflects the saved layout; dungeon scope forces auto-layout.
 - Task 2: minor (deferred): task-2 brief LF / report lines >140 (docs only).
 - Task 2: complete (commits 4fd0860..efe87f6, review clean after ruling)
+- Task 3: tier Opus (async warp-fetch ordering). Hop: Codex gpt-6.1-sol direct (>3 files). Worktree <scratchpad>/wt3 branch p13-t3, base 3e3d504.
+- Task 3 hops: codex gpt-6.1-sol partial (code + tests written, then usage limit until 20:41, no report) -> conductor verified + finished inline (3 GBC fixture fixes found by the UI suite, report; reason: under ~10 min, Codex quota out, free models would re-do working code). Red 17 right reasons; UI suite 123 files / 2,011 passed; typecheck ok; mutations a-e 5/5 killed. Commit a538b15 (ff into plan-13-warp-popups).
+- Task 3: Ruling: spec item 10 "Dismiss" trigger has no control to attach to (none exists today); none added — cost if wrong: a later dismiss button must also clear failedWarps.
+- Task 3 reviews: Codex quota out -> Claude high-risk-reviewer (Opus) spec + quality, separate (CLAUDE.md High-tier fallback).
+- Task 3 reviews R1: spec FAIL (C1 first save never refreshes warps: tileVersions starts {}; M1 dismiss; M2 stale latest); quality Needs rework (same C1; I1 out-of-scope token test; M1-M3).
+- Task 3 fix round 1 (conductor inline, reason: ~15 lines, Codex quota out): 4ef4800. Ref seeded at mount; latest derived from failedWarps; +4 tests; mutations f-h killed. Spec item 10 "Dismiss" struck (ruling). Quality M2/M3 accepted as is.
