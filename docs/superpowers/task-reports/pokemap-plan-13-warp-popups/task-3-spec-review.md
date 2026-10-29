@@ -108,3 +108,32 @@ Existing tests changed (only expected text or fixtures, reasons consistent with 
   OK.
 - "malformed payload ... retry": the mock stays malformed until healed. The reason (a P12-4x success clears the alert
   early) holds. The retry assertion is kept as `before + 1`, and an assertion that the alert clears is added. OK.
+
+## Re-review: fix round 1 (a538b15..4ef4800 src and tests, c497162 docs)
+
+**Verdict: PASS** (0 Critical, 0 Important, 0 Minor open). Re-ran `npx vitest run
+packages/ui/test/canvas/WorldSurfaceInteraction.test.tsx`: 54/54 pass. No line in the diff is over 140 characters.
+
+- C1 resolved. `WorldSurface.tsx` seeds `seenWarpTileVersions` from the mount-time `tileVersions` and evicts on
+  `seen.get(name) !== version`, with no `has` guard. The production first save (`{}` -> `{A: 1}`, from
+  `useContextEditing.ts:23,67`) now evicts A, bumps `warpVersion` and `warpEpoch`, and refetches.
+  - The new test "a map's first save (tile version absent -> 1) re-fetches its warps" checks three things: the marker
+    is gone synchronously after the rerender, the requests are `["A","A"]`, and the replacement renders.
+  - Restoring the `has` guard leaves one request, so the test fails (matches the report's mutation f).
+  - The old "first sight" test, which asserted the bug, has been replaced and not just deleted. Its non-eviction case
+    is kept as "a mount with saved tile versions does not evict or refetch".
+- M1 resolved. Spec item 10 and the plan Task 3 Interfaces no longer list "Dismiss", and the ruling is recorded in
+  spec item 10 (c497162).
+- M2 resolved. `latestWarpError` is removed. A failure deletes its map and re-inserts it, so insertion order puts the
+  newest failure last, and the alert uses `[...failedWarps.values()].at(-1)`.
+  - Fixed scenario: A fails, B fails, B recovers. The alert now reads "for 1 map: A offline" (new test "the alert
+    names the newest failure that is still failing").
+  - The alert copy still matches the Global Constraints string exactly.
+- New I1 test (quality review): "a bump while the map is out of scope drops its in-flight response...". The bump
+  deletes the token, so the old success is ignored; when the map is back in scope it refetches once. This is
+  consistent with spec item 6 ("its in-flight request token").
+- No regressions found. `clearWarpErrors` still clears both alerts, the token guards are unchanged, and the GBC
+  resolver and adapters are untouched in this round.
+- Note (not a finding): no test kills removing only the mount-time seed. Without the seed, a mount with saved versions
+  evicts an empty cache and bumps `warpEpoch` once, before any fetch, which is harmless. The seed's comment
+  overstates what it buys, but behaviour is correct either way.

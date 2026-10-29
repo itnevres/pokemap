@@ -37,3 +37,6 @@ Ruling: T4 tests open the popup by capturing `slots` through a test adapter that
 - Task 3 reviews: Codex quota out -> Claude high-risk-reviewer (Opus) spec + quality, separate (CLAUDE.md High-tier fallback).
 - Task 3 reviews R1: spec FAIL (C1 first save never refreshes warps: tileVersions starts {}; M1 dismiss; M2 stale latest); quality Needs rework (same C1; I1 out-of-scope token test; M1-M3).
 - Task 3 fix round 1 (conductor inline, reason: ~15 lines, Codex quota out): 4ef4800. Ref seeded at mount; latest derived from failedWarps; +4 tests; mutations f-h killed. Spec item 10 "Dismiss" struck (ruling). Quality M2/M3 accepted as is.
+- Task 3 re-reviews: spec PASS (0 open); quality Approved (1 new Minor).
+- Task 3: minor (deferred): no test pins the delete-before-set re-insert when an already-failing map fails again (alert names an older message; low impact).
+- Task 3: complete (commits 3e3d504..4ef4800, review clean after fix round 1)

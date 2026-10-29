@@ -87,3 +87,38 @@ inline literal with equal values sets `changed = false`. This is acceptable as i
   in the report cover success-delete, whole-cache clear, failure token, GBC embedding and the epoch dependency.
 - Format: all 8 changed files are fully CRLF, there is no added line over 140 characters, and comment density matches
   the surrounding code.
+
+## Re-review: fix round 1 (`a538b15..4ef4800`)
+
+Verdict: **Approved**. Critical 0, Important 0, Minor 1. I read the diff and the code; I did not run vitest, per the
+coordinator.
+
+### Resolved
+- **C1: resolved.** `WorldSurface.tsx` now seeds `seenWarpTileVersions` from the mount-time `tileVersions` and evicts
+  on `seen.get(name) !== version`. The production path (`{}` to `{A:1}`) now evicts and refetches, and a keyed Dungeon
+  remount with `{A:3}` evicts nothing, because the seed equals the props. StrictMode is safe on both counts. The
+  doubled render computes the same seed from the same props, and the replayed layout effect sees equal versions, so
+  `changed` stays false. A later switch from `undefined` to `{A:1}` counts as a change, which is correct. The new test
+  "first save (absent -> 1)" asserts that the marker drops synchronously after `rerender` and that a second fetch
+  happens. Restoring the `has` guard leaves `requests` at `["A"]`, so the test fails; the report's mutation (f) agrees.
+- **I1: resolved.** In the new out-of-scope test, Warps off empties `warpNames`, so the bump's epoch run cannot
+  overwrite the token. The old response then lands. If the `warpRequests.delete` on a bump is removed, that response
+  holds the current token, fills `warpCache.A`, and Warps on skips the fetch via `has`. The test would then see
+  `requests` of length 1 and a stale marker, so it fails. Mutation (g) reports the same. The test waits on the asserted
+  things (it settles after each resolve and toggle).
+- **M1: resolved, with state removed.** The `latestWarpError` state is gone. On a failure the map is deleted and then
+  set again, so it moves to the end, and the alert reads `[...failedWarps.values()].at(-1)`. In the test, A fails,
+  then B fails, then a B bump. That bump also refetches A (M3), which stays pending. B then succeeds, so the alert shows
+  "for 1 map: A offline", and the old code would have shown "B offline". Mutation (h), which names the oldest failure,
+  is killed.
+
+### New Minor
+- **M4: no test covers the delete-before-set re-insert.** If a map that is already failing fails again, it must move
+  to the end. If `next.delete(name)` is dropped, it keeps its old position, and the M1 test still passes, because the
+  survivor (A) is already the only entry. Failure scenario: A fails, B fails, a pan retries both, and A fails again
+  while B is still pending. The alert says "B offline", but A's failure is the newest. This is low impact, because the
+  text is still a real current failure. An optional fix is to extend the M1 test with that sequence.
+
+### Format
+Both files are fully CRLF (934/934, 1273/1273), no added line is over 140 characters, and the new comments match the
+surrounding density.
