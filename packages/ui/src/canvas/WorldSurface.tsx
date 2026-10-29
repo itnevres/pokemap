@@ -160,7 +160,7 @@ export function WorldSurface<P extends SurfacePlacement, C extends WireConflict,
     fitRef.current = fit;
   });
   const fitEnabled = !worldContext.inContext || worldContext.fitEnabled;
-  useFitShortcut(fit, fitEnabled);
+  useFitShortcut(fit, fitEnabled, containerRef);
 
   // Initial fit, once, when the world and a measured viewport both exist. It sets `fitted` in the same update as
   // zoom and pan, and `visible` stays [] until then: culling against the mount default (zoom 1, pan 0) once

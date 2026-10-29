@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { trapDialogFocus } from "../shared/dialogFocus.js";
 import "../styles.css";
 
 interface PendingChange { path: string; kind: "json" | "binary" | "text"; summary: string }
@@ -146,7 +147,7 @@ export function SaveDialog({ mapName, onCommitted, onCancel }: SaveDialogProps) 
           WarpDestinationModal's own panel chrome (bg-panel-raised/
           border-strong/radius, Task 8 Feature B) for the dialog surface
           itself, rather than a second, independently-styled panel shape. */}
-      <div className="save-dialog warp-modal__panel" role="dialog" aria-modal="true" aria-label="Save changes">
+      <div className="save-dialog warp-modal__panel" role="dialog" aria-modal="true" aria-label="Save changes" onKeyDown={trapDialogFocus}>
         <h2 className="save-dialog__title">Save Changes</h2>
         {notice && (
           <div className="save-dialog__refusal" role="status">

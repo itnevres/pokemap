@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { IndicatorBlock, IndicatorSpecies } from "@pokemap/core/src/indicator/gba.js";
+import { trapDialogFocus } from "../shared/dialogFocus.js";
 import "../styles.css";
 
 
@@ -152,7 +153,8 @@ export function PokemonIndicatorDialog({ mapName, edit, onDone, onCancel }: Poke
           WarpDestinationModal's own panel chrome (bg-panel-raised/
           border-strong/radius), same as SaveDialog's own root className,
           rather than a second, independently-styled panel shape. */}
-      <div className="sign-composer warp-modal__panel" role="dialog" aria-modal="true" aria-label={"Pok\u00e9mon Indicator"}>
+      <div className="sign-composer warp-modal__panel" role="dialog" aria-modal="true" aria-label={"Pok\u00e9mon Indicator"}
+        onKeyDown={trapDialogFocus}>
         <h2 className="sign-composer__title">{"Pok\u00e9mon Indicator"}</h2>
         {loadError ? (
           <p className="save-dialog__load-error">Could not load suggestions: {loadError}</p>

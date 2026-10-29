@@ -107,13 +107,15 @@ export function useStageFit<T extends View>(a: {
   chromeless?: boolean;
   /** Stage callers may override fit; legacy map hooks retain their stepped fit contract. */
   fitOverride?: () => void;
+  /** The stage root, for shortcut ownership while a warp popup is open (Plan 13). */
+  owner?: RefObject<Element | null>;
 }) {
-  const { viewport, pixelWidth, pixelHeight, zoomLevels, bandNative, side, updateView, chromeless, fitOverride } = a;
+  const { viewport, pixelWidth, pixelHeight, zoomLevels, bandNative, side, updateView, chromeless, fitOverride, owner } = a;
   const fit = useCallback(() => {
     if (fitOverride) return fitOverride();
     updateView(fitView({ viewport, pixelWidth, pixelHeight, policy: { kind: "stepped", levels: zoomLevels }, bandNative, side }) as T);
   }, [viewport, pixelWidth, pixelHeight, zoomLevels, bandNative, side, updateView, fitOverride]);
-  useFitShortcut(fit, !chromeless);
+  useFitShortcut(fit, !chromeless, owner);
   useContextMapFit(fit, chromeless);
   return fit;
 }
@@ -147,7 +149,8 @@ export function useStage<T extends View = View>(options: StageOptions<T>) {
   const fit = useStageFit({ viewport, pixelWidth: options.pixelWidth, pixelHeight: options.pixelHeight,
     zoomLevels: options.zoomPolicy.kind === "stepped" ? options.zoomPolicy.levels : NO_FIT_LEVELS,
     bandNative: options.bandNative, side: options.side, updateView, chromeless: options.chromeless,
-    fitOverride: options.fit ?? (options.zoomPolicy.kind === "continuous" ? NO_FIT : undefined) });
+    fitOverride: options.fit ?? (options.zoomPolicy.kind === "continuous" ? NO_FIT : undefined),
+    owner: containerRef });
   useStageAutoFit(options.imgLoaded, options.mapName, controlled, fit);
 
   const pan = useRef<{ start: Point; pan: Point } | null>(null);
