@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { trapDialogFocus } from "../shared/dialogFocus.js";
+import { trapDialogFocus, useRestoreFocus } from "../shared/dialogFocus.js";
 import "../styles.css";
 
 interface PendingChange { path: string; kind: "json" | "binary" | "text"; summary: string }
@@ -56,6 +56,7 @@ function errorMessageFrom(body: unknown): string | null {
  * backdrop of its own.
  */
 export function SaveDialog({ mapName, onCommitted, onCancel }: SaveDialogProps) {
+  useRestoreFocus();
   const [plan, setPlan] = useState<DiffPlan | null>(null);
   const [refusals, setRefusals] = useState<Refusal[]>([]);
   const [saving, setSaving] = useState(false);

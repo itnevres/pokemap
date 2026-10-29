@@ -1,4 +1,4 @@
-import { trapDialogFocus } from "./dialogFocus.js";
+import { trapDialogFocus, useRestoreFocus } from "./dialogFocus.js";
 
 export interface SwitchPromptDialogProps {
   mapName: string;
@@ -9,6 +9,7 @@ export interface SwitchPromptDialogProps {
 }
 
 export function SwitchPromptDialog({ mapName, busy, onSave, onDiscard, onCancel }: SwitchPromptDialogProps) {
+  useRestoreFocus();
   return (
     <div className="warp-modal__backdrop" onKeyDown={(e) => {
       if (e.key === "Escape") { e.stopPropagation(); if (!busy) onCancel(); }

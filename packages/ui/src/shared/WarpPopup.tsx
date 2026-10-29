@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, type KeyboardEvent, type ReactNode } from "react";
-import { trapDialogFocus } from "./dialogFocus.js";
+import { trapDialogFocus, useRestoreFocus } from "./dialogFocus.js";
 import { isTextTarget } from "./shortcutGuard.js";
 import "../styles.css";
 
@@ -12,13 +12,10 @@ export interface WarpPopupProps {
 /** Plan 13 (P13-1): the shell's modal around the destination map's full workspace. Same chrome as
  *  WarpDestinationModal; a backdrop click never closes (edits must go through the close guard). */
 export function WarpPopup({ mapName, onClose, children }: WarpPopupProps) {
+  useRestoreFocus();
   const closeRef = useRef<HTMLButtonElement>(null);
   useLayoutEffect(() => {
-    const opener = document.activeElement;
     closeRef.current?.focus();
-    return () => {
-      if (opener instanceof HTMLElement && opener.isConnected) opener.focus();
-    };
   }, []);
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {

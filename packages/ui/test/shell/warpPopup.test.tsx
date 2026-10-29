@@ -191,6 +191,56 @@ async function setup(base: EngineAdapter, options: {
 }
 
 describe.each([gbaAdapter, gbcAdapter])("$family shell warp popup", (base) => {
+  it("prompt Cancel restores popup focus so Escape on the active control prompts again", async () => {
+    const h = await setup(base); await h.open(); await h.dirty();
+    fireEvent.click(within(popup()).getByRole("button", { name: "Close" })); await flush();
+    const prompt = screen.getByRole("dialog", { name: "Unsaved changes" });
+    expect(prompt.contains(document.activeElement)).toBe(true);
+    fireEvent.click(within(prompt).getByRole("button", { name: "Cancel" }));
+    expect(popup().contains(document.activeElement)).toBe(true);
+    fireEvent.keyDown(document.activeElement!, { key: "Escape" }); await flush();
+    expect(screen.getByRole("dialog", { name: "Unsaved changes" })).toBeTruthy();
+    expect(within(popup()).getByTestId("dirty-indicator")).toBeTruthy();
+  });
+
+  it("SaveDialog Escape restores popup focus without manually refocusing a control", async () => {
+    const h = await setup(base); await h.open(); await h.dirty();
+    fireEvent.click(within(popup()).getByRole("button", { name: "Save Changes" }));
+    const save = await screen.findByRole("dialog", { name: "Save changes" });
+    expect(save.contains(document.activeElement)).toBe(true);
+    fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Save changes" })).toBeNull();
+    expect(popup().contains(document.activeElement)).toBe(true);
+    fireEvent.keyDown(document.activeElement!, { key: "Escape" }); await flush();
+    expect(screen.getByRole("dialog", { name: "Unsaved changes" })).toBeTruthy();
+  });
+
+  it.each(["Discard", "Save"])("dirty open through %s restores the original canvas after popup close", async (action) => {
+    const h = await setup(base);
+    const opener = document.querySelector<HTMLCanvasElement>("canvas.world-canvas__stage")!;
+    act(() => h.slots().enterContext(h.names[0]!)); await flush();
+    act(() => h.slots().requestExitContext()); await flush();
+    expect(document.activeElement).toBe(opener);
+    act(() => h.slots().enterContext(h.names[0]!)); await flush();
+    if (base.family === "gba") click("Add Event");
+    else await h.paint(document.querySelector<HTMLElement>(".app__canvas")!);
+    await screen.findByTestId("dirty-indicator");
+    await h.open();
+    const prompt = screen.getByRole("dialog", { name: "Unsaved changes" });
+    expect(prompt.contains(document.activeElement)).toBe(true);
+    fireEvent.click(within(prompt).getByRole("button", { name: action }));
+    if (action === "Save") {
+      const save = await screen.findByRole("dialog", { name: "Save changes" });
+      await within(save).findByText("1 block changed");
+      fireEvent.click(save.querySelector(".save-dialog__btn--primary")!);
+    }
+    await waitFor(() => expect(maybePopup()).not.toBeNull());
+    expect(popup().contains(document.activeElement)).toBe(true);
+    fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+    await waitFor(() => expect(maybePopup()).toBeNull());
+    expect(document.activeElement).toBe(opener);
+  });
+
   it("opens the clean destination workspace and closes to the source with focus restored", async () => {
     const h = await setup(base);
     const opener = document.querySelector<HTMLCanvasElement>("canvas.world-canvas__stage")!;
@@ -270,6 +320,7 @@ describe.each([gbaAdapter, gbcAdapter])("$family shell warp popup", (base) => {
     cycle(sign); fireEvent.keyDown(text, { key: "Escape" });
     expect(maybePopup()).not.toBeNull();
     expect(screen.queryByRole("dialog", { name: "Sign editor" })).toBeNull();
+    expect(popup().contains(document.activeElement)).toBe(true);
   });
 
   it("waits for a close stroke and uses fresh dirty state; repeated close requests act once", async () => {
@@ -386,8 +437,11 @@ describe.each([gbaAdapter, gbcAdapter])("$family shell warp popup", (base) => {
     const worldCanvas = document.querySelector<HTMLCanvasElement>("canvas.world-canvas__stage")!;
     await waitFor(() => expect(document.querySelector(".world-canvas__status")?.textContent)
       .toContain(base.family === "gba" ? "placed 3" : "3 maps"));
-    fireEvent.contextMenu(worldCanvas, { clientX: 100, clientY: 100 });
-    const menu = await screen.findByRole("menu", { name: "Map actions" });
+    // The source map sits under (100, 100) only once World has centred on it: retry the right-click until it does.
+    const menu = await waitFor(() => {
+      fireEvent.contextMenu(worldCanvas, { clientX: 100, clientY: 100 });
+      return screen.getByRole("menu", { name: "Map actions" });
+    });
     await h.open();
     expect(menu.isConnected).toBe(true);
     const search = popup().querySelector<HTMLInputElement>(".palette__search")!;

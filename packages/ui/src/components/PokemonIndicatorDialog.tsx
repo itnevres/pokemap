@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { IndicatorBlock, IndicatorSpecies } from "@pokemap/core/src/indicator/gba.js";
-import { trapDialogFocus } from "../shared/dialogFocus.js";
+import { trapDialogFocus, useRestoreFocus } from "../shared/dialogFocus.js";
 import "../styles.css";
 
 
@@ -64,6 +64,7 @@ export interface PokemonIndicatorDialogProps {
  * conditionally renders `<PokemonIndicatorDialog>`, no wrapping backdrop of its own.
  */
 export function PokemonIndicatorDialog({ mapName, edit, onDone, onCancel }: PokemonIndicatorDialogProps) {
+  useRestoreFocus();
   const [suggestions, setSuggestions] = useState<IndicatorSuggestions | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [species, setSpecies] = useState<string | null>(edit?.block.species ?? null);

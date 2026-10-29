@@ -38,8 +38,8 @@ Unmount invalidates outstanding request tokens.
 
 ## Tests written
 
-35 parameter-expanded cases: 17 each for GBA/GBC, plus the GBC-only reload error case.
-The conductor verified the original 33; fix-round additions and tightened assertions await conductor verification.
+43 parameter-expanded cases: 21 each for GBA/GBC, plus the GBC-only reload error case.
+Fix round 2 adds eight cases to the 35 from fix round 1; the new edits await conductor verification.
 Tests capture shell slots through wrappers around the real runtime renderWorld/renderDungeon, per the preflight ruling.
 Fetch fixtures and Register follow switchPrompt.test.tsx; deferred responses hold destination loads and paint applies.
 The optional Register seam supplies an unsettled chain for pending-open cancellation cases.
@@ -63,6 +63,10 @@ Plain DOM assertions only; no jest-dom, existing assertion changes, or dependenc
 - GBA/GBC, Dungeon: same key/stroke assertions; tool/history/Fit keys do nothing under SaveDialog.
 - GBA/GBC, both modes: background canvas leaves a cancelable minus key unconsumed; World zoom remains unchanged.
 - GBA/GBC: popup text-field Escape preserves the background context menu and text-field focus.
+- GBA/GBC: prompt Cancel restores popup focus; Escape on the active control raises the dirty-close prompt again.
+- GBA/GBC: SaveDialog Escape restores popup focus; active-control Escape still reaches the dirty-close guard.
+- GBA/GBC: dirty-open Discard restores the original canvas when the clean destination popup closes.
+- GBA/GBC: dirty-open Save/commit restores the original canvas across both intervening dialogs.
 - GBC: post-save reload rejection is visible inside the popup, with destination tile version bumped.
 
 ## Review Focus 1 findings
@@ -150,3 +154,47 @@ These are source-based expectations, not observed run results.
 verify: not run (sandbox)
 No vitest, tsc, git, mutation, build or live-app commands attempted in this round, as instructed.
 Conductor must rerun verification and the surviving e/g mutations against these exact edits.
+
+## Fix round 2
+
+Quality findings I1 and M1 share missing focus restoration in secondary dialogs and capture timing on replacement.
+Tier remains High (shared modal focus ownership and commit ordering); same implementer, no helper dispatch.
+No verification commands attempted, per the sandbox instruction. No changes to other existing tests or fixtures.
+
+Files this round:
+- shared/dialogFocus.ts: useRestoreFocus, shared by all five modal components.
+- shared/WarpPopup.tsx: replace inline restoration with the helper; keep its close-button mount focus.
+- shared/SwitchPromptDialog.tsx: call the helper before rendering the autofocus control.
+- components/SaveDialog.tsx: same helper, before rendering its autofocus control.
+- components/PokemonIndicatorDialog.tsx: same helper, before rendering its autofocus control.
+- shared/SignEditor.tsx: same helper, before rendering its autofocus control.
+- test/shell/warpPopup.test.tsx: eight new family-expanded cases and a sign-editor return-focus assertion.
+- This report. All source/test paths above are relative to packages/ui/.
+
+Ordering checked in code:
+- SaveDialog, SwitchPromptDialog, SignEditor and PokemonIndicatorDialog use React autoFocus on child controls.
+- WarpPopup focuses closeRef in its own layout effect. Capturing only in a parent layout effect is too late for children.
+- useRestoreFocus captures document.activeElement with a useState initializer, before commit/autofocus.
+- Restoration runs in layout-effect cleanup, before replacement dialogs' mount layout effects.
+- A replacement dialog renders before the old dialog's cleanup: its render-time opener may be the old Cancel control.
+- The helper retains a link to the previously mounted dialog's return target, alongside the exact captured opener.
+- On cleanup it restores that exact opener if connected; if removed, it follows the retained return chain.
+- This covers prompt -> popup and prompt -> SaveDialog -> popup without capturing the replacement's autofocus target.
+- Mounted entries are removed during cleanup; previous entries remain reachable only through still-live dialog entries.
+- No event listener, timer, manual refocus in tests, additional dependency or per-family focus implementation was added.
+
+Regression cases, each GBA and GBC:
+- Dirty popup Close -> prompt Cancel restores focus inside popup; Escape on document.activeElement prompts again.
+- SaveDialog Escape dispatched on its focused control restores popup focus; another active-control Escape prompts.
+- Dirty open -> Discard -> popup -> active-control Escape closes the clean destination and focuses the original canvas.
+- Dirty open -> Save -> commit -> popup -> active-control Escape also returns focus to that canvas.
+The source-canvas focus in dirty-open tests is established by the real clean context-exit behavior, not focus().
+The existing sign-editor Escape test additionally checks focus returns inside the popup after the editor unmounts.
+The original clean-popup Escape/focus tests remain unchanged, covering clean close alongside the new dirty prompt path.
+
+Expected total: 43 cases (35 + 8). Runtime and mutation results for this round remain unverified.
+Suggested focused mutations: omit SwitchPromptDialog restoration; omit SaveDialog restoration; capture after autofocus;
+drop the return-chain fallback for a removed prompt control. The new cases are intended to expose these regressions.
+
+verify: not run (sandbox)
+Conductor must run the revised popup tests, existing suites, typecheck and focus mutations against these edits.

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { trapDialogFocus } from "./dialogFocus.js";
+import { trapDialogFocus, useRestoreFocus } from "./dialogFocus.js";
 import "../styles.css";
 
 type Mode = "free" | "name" | "species";
@@ -23,6 +23,7 @@ const refusals = (body: unknown): Refusal[] => body && typeof body === "object" 
 
 /** Small, anchored editor for server-validated sign text. The server remains the source of truth for wrapping and character validation. */
 export function SignEditor({ mapName, x, y, anchor, hasObjectEvent = false, onDone, onCancel, onSessionUpdated }: SignEditorProps) {
+  useRestoreFocus();
   const [reply, setReply] = useState<SignReply | null>(null);
   const [mode, setMode] = useState<Mode>("free");
   const [text, setText] = useState("");
