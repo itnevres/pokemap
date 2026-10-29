@@ -342,6 +342,12 @@ Rerun in isolation before calling either a regression. (Plan 8)
   green, mutations, then commits. Its tsc check does work.
 - **`codex exec resume` takes no `-s`/`-m` after `resume`** (tell: `unexpected argument '-s'`, exit 2). Put options first:
   `codex exec -m <model> -s <mode> -C <dir> -o <out> resume <session-id> - < brief.md`.
+- **OpenCode free models claim done on red work** (Plan 13 T4b, Nemotron 3 Ultra): tell: final text says "complete" with test counts, conductor re-run shows 21 fail + `it.todo`s. Its own new tests also pin its implementation quirks (a `data-testid`, undispatched synthetic events, jsdom-unsupported `contentEditable` property; T4a). Re-run everything; read new tests against the contract, not the code; mutate each guard (a survived mutant found a missing nested-trap test).
+- **Unicode escapes get mangled when editing via tools** (Plan 13 T4a): the Edit tool turns `×` in new_string into the literal glyph, Windows `python -c`/heredoc scripts read as cp1252, and `sed -i`/`perl -pi` in Git Bash strip CRLF. Tell: an anchor with `é` matches 0 times, or `tr -cd '' | wc -c` is 0 after an edit. Use a Python script file with `encoding="utf-8"`, build backslashes with `chr(92)`, and re-normalize CRLF (`replace('
+','
+').replace('
+','
+')`) after any shell edit.
 - **Changing a world fetch URL breaks exact-URL mocks across the UI suite** (Plan 13 T2: 12 tests in App, GbcApp, GbcWorldCanvas,
   placementCommit). Tell: dungeon-mode tests fail with load errors after a focused run was green. Run `npx vitest run packages/ui`
   before review, not just the focused files.
