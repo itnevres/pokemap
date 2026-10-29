@@ -657,6 +657,7 @@ export function WorldSurface<P extends SurfacePlacement, C extends WireConflict,
     return { map: badge?.map ?? hitTest(w.x, w.y)?.map ?? null, badge };
   });
   const onKeyDown = (e: React.KeyboardEvent<HTMLCanvasElement>) => {
+    if (e.defaultPrevented || document.querySelector('[aria-modal="true"]')) return;
     const name = selected.size === 1 ? [...selected][0]! : null;
     const p = name && inScope(name) ? world?.placements.get(name) : undefined;
     if (contextMenu.onMenuKey(e, () => {

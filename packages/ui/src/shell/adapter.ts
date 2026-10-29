@@ -46,6 +46,7 @@ export interface ShellSlots {
   selectMap(name: string): void;
   selectMapFromWorld(name: string): void;
   openMapFromWorld(name: string): void;
+  openWarpDestination(name: string): void;
   enterContext(name: string): void;
   requestExitContext(): void;
   contextMap: string | null;
@@ -70,7 +71,7 @@ export interface FamilyRuntime {
   hiddenMapTypes: ReadonlySet<string>;
   dungeons: UseDungeonsResult;
   /** Map view: error for `selected`, and whether its payload is ready to render. */
-  map: { error: string | null; ready: boolean };
+  map: { error: string | null; ready: boolean; name: string | null };
   renderMap(slots: ShellSlots): ReactNode;
   renderWorld(slots: ShellSlots): ReactNode;
   renderDungeon(mapFilter: Set<string>, slots: ShellSlots): ReactNode;

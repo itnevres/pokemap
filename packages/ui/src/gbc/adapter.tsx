@@ -133,7 +133,7 @@ export function useGbcRuntime({ selected, mode, requestPrompt }: RuntimeArgs): F
     visibility: { placed, error: worldError },
     hiddenMapTypes: GBC_HIDDEN_MAP_TYPES,
     dungeons,
-    map: { error: map.error, ready: ready !== null },
+    map: { error: map.error, ready: ready !== null, name: ready?.map.name ?? null },
     renderMap: (s) =>
       selected && ready ? (
         <div className="app__map-editing">

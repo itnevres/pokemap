@@ -126,7 +126,7 @@ export function useGbaRuntime({ selected, mode, requestPrompt }: RuntimeArgs): F
     visibility: { placed, error: visibilityError },
     hiddenMapTypes: HIDDEN_MAP_TYPES,
     dungeons,
-    map: { error: layout.error, ready: Boolean(layout.data) },
+    map: { error: layout.error, ready: Boolean(layout.data), name: layout.data?.map.name ?? null },
     renderMap: (s) =>
       selected && layout.data ? (
         <div className="app__map-editing">
