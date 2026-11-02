@@ -80,7 +80,7 @@ export function useWorldContext(args: UseWorldContextArgs): WorldContext {
   const [snappedFor, setSnappedFor] = useState<string | null>(null);
   useEffect(() => {
     if (contextName === null) {
-      if (snappedForRef.current !== null) canvasRef.current?.focus();
+      if (snappedForRef.current !== null && !document.querySelector('[aria-modal="true"]')) canvasRef.current?.focus();
       snappedForRef.current = null;
       setSnappedFor(null);
       return;

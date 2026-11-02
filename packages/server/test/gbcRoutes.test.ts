@@ -66,6 +66,22 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
   beforeAll(async () => { s = await createServer({ projectPath: GBC_SUBJECT_ROOT, port: 0 }); });
   afterAll(async () => { await s?.close(); });
 
+  it("keeps singleton indoor maps for scope=dungeon with auto-layout off", () => {
+    const proj = openGbcProject(GBC_SUBJECT_ROOT);
+    const world = buildGbcWorld(proj);
+    const sidecar: Sidecar = {
+      version: 1, dungeonAutoLayout: false, manualPlacements: {}, view: { x: 0, y: 0, zoom: 1 },
+    };
+    const saved = structuredClone(sidecar);
+    const normal = buildGbcWorldPayload(proj, world, sidecar, []);
+    const scoped = buildGbcWorldPayload(proj, world, sidecar, [], { scope: "dungeon" });
+    expect(world.components.some((c) => c.maps.length === 1 && c.maps[0] === "ElmsLab")).toBe(true);
+    expect(normal.placements.ElmsLab).toBeUndefined();
+    expect(scoped.placements.ElmsLab?.mapType).toBe("INDOOR");
+    expect(scoped.sidecar.dungeonAutoLayout).toBe(false);
+    expect(sidecar).toEqual(saved);
+  });
+
   it("GET /api/project reports the gbc family and the project's own root", async () => {
     const expectedRoot = openGbcProject(GBC_SUBJECT_ROOT).root; // computed independently of the server's own instance
     const r = await get("/api/project");
@@ -1322,6 +1338,29 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("POST /api/world/dungeons (GBC
     expect(off.conflicts.find((c) => c.key === conflictKey)?.accepted).toBe(true);
     expect((await toggle({ enabled: true })).status).toBe(200);
     expect((await world()).conflicts.find((c) => c.key === conflictKey)?.accepted).toBe(true);
+  });
+
+  it("forwards scope=dungeon through HTTP without changing the saved layout flag", async () => {
+    const sidecarPath = `${root}/.pokemap/world.json`;
+    const before = existsSync(sidecarPath) ? readFileSync(sidecarPath) : null;
+    try {
+      expect((await toggle({ enabled: false })).status).toBe(200);
+      const saved = readFileSync(sidecarPath);
+      const normal = await world();
+      const response = await fetch(`${base}/api/world?scope=dungeon`);
+      expect(response.status).toBe(200);
+      const scoped = await response.json() as GbcWorldPayload;
+      expect(normal.sidecar.dungeonAutoLayout).toBe(false);
+      expect(scoped.sidecar.dungeonAutoLayout).toBe(false);
+      expect(singletons(normal)).toContain("ElmsLab");
+      expect(normal.placements.ElmsLab).toBeUndefined();
+      expect(scoped.placements.ElmsLab?.mapType).toBe("INDOOR");
+      expect(Object.keys(scoped.placements).length).toBeGreaterThan(Object.keys(normal.placements).length);
+      expect(readFileSync(sidecarPath)).toEqual(saved);
+    } finally {
+      if (before === null) unlinkSync(sidecarPath);
+      else writeFileSync(sidecarPath, before);
+    }
   });
 
   it("toggle on restores the earlier payload exactly", async () => {

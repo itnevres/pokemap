@@ -7,6 +7,8 @@ import { useContextEditing } from "../shared/useContextEditing.js";
 import { useBeforeUnloadGuard } from "../shared/useBeforeUnloadGuard.js";
 import { useStrokeChainRegistry } from "../shared/useStrokeChain.js";
 import { useDungeonFilter } from "./useDungeonFilter.js";
+import { useWarpPopup } from "./useWarpPopup.js";
+import { WarpPopup } from "../shared/WarpPopup.js";
 import type { EngineAdapter, Mode, ShellSlots } from "./adapter.js";
 
 export interface FamilyAppProps {
@@ -84,6 +86,11 @@ export function FamilyApp({ adapter, switcher }: FamilyAppProps) {
     selected, session: runtime.session, leave, select,
     openSave: () => runtime.saveDialog.setOpen(true),
     strokeSettled,
+  });
+  const warp = useWarpPopup({
+    selected, leave, select, strokeSettled,
+    blocked: () => switchPending.current || runtime.saveDialog.open,
+    onOpen: ctx.leaveContext, mode,
   });
 
   // A tree click: GBA prompts even for the selected map; GBC does not (runtime.leave's sameMap).
@@ -188,6 +195,7 @@ export function FamilyApp({ adapter, switcher }: FamilyAppProps) {
     jumpTarget, jumpToken: selectVersion, selectMap, selectMapFromWorld, openMapFromWorld, enterContext,
     requestExitContext: ctx.requestExit, contextMap: ctx.contextMap, tileVersions: ctx.tileVersions,
     onStrokeChain, markManualPlacement,
+    openWarpDestination: warp.open,
   };
   const { error, data } = runtime.groups;
 
@@ -245,6 +253,16 @@ export function FamilyApp({ adapter, switcher }: FamilyAppProps) {
           ) : !selected ? <p className="app__canvas-placeholder">Select a map</p> : runtime.map.error ? (
             <p className="app__canvas-placeholder">Could not load {selected}: {runtime.map.error}</p>
           ) : runtime.map.ready ? runtime.renderMap(slots) : <p className="app__canvas-placeholder">Loading {selected}…</p>}
+          {warp.popup && (
+            <WarpPopup mapName={warp.popup.destination} onClose={warp.requestClose}>
+              {runtime.banners}
+              {runtime.map.error ? (
+                <p className="app__canvas-placeholder">Could not load {warp.popup.destination}: {runtime.map.error}</p>
+              ) : runtime.map.ready && runtime.map.name === warp.popup.destination ? runtime.renderMap(slots) : (
+                <p className="app__canvas-placeholder">Loading {warp.popup.destination}…</p>
+              )}
+            </WarpPopup>
+          )}
           {/* Task 13: SaveDialog owns its own modal shell (backdrop, Escape-
               to-cancel, autofocus -- mirrors WarpDestinationModal's own
               established pattern exactly, see that component's own "Review
@@ -258,6 +276,7 @@ export function FamilyApp({ adapter, switcher }: FamilyAppProps) {
               // markClean first (ctx.onCommitted): the dialog's commit closes the server session behind the hook's
               // back. Then the family's own follow-up (GBC re-reads the map).
               onCommitted={() => {
+                if (warp.popup) ctx.bumpTile(warp.popup.destination);
                 ctx.onCommitted(); runtime.saveDialog.setOpen(false); runtime.saveDialog.onCommitted();
                 const go = saveAfterSwitch.current;
                 clearSwitch();

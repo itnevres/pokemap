@@ -67,7 +67,7 @@ function makeFetchMock(opts: { groupsFail?: boolean; maps?: Record<string, GbcMa
       }
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(GROUPS) } as Response);
     }
-    if (url === "/api/world") {
+    if (url === "/api/world" || url === "/api/world?scope=dungeon") {
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(opts.world ?? EMPTY_WORLD) } as Response);
     }
     const mapMatch = /^\/api\/map\/(.+)$/.exec(url);

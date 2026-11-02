@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type RefObject } from "react";
 import { shortcutBlocked } from "./shortcutGuard.js";
 
 /**
@@ -6,14 +6,15 @@ import { shortcutBlocked } from "./shortcutGuard.js";
  * listener while `enabled`. Callers pass `enabled` = "my Fit button is shown and enabled", so the chromeless
  * in-context map canvas never listens and each view has at most one listener. Same ignore rules as the toolbar's
  * shortcuts (shortcutBlocked), and F with any modifier is left alone (Ctrl+F stays the browser's find).
+ * `owner` is the view's root, read at key time: while a warp popup is open only the view inside it fits (Plan 13).
  */
-export function useFitShortcut(fit: () => void, enabled: boolean): void {
+export function useFitShortcut(fit: () => void, enabled: boolean, owner?: RefObject<Element | null>): void {
   const latest = useRef(fit);
   latest.current = fit;
   useEffect(() => {
     if (!enabled) return;
     const onKeyDown = (e: KeyboardEvent) => {
-      if (shortcutBlocked(e) || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || e.key.toLowerCase() !== "f") return;
+      if (shortcutBlocked(e, owner?.current) || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || e.key.toLowerCase() !== "f") return;
       e.preventDefault();
       latest.current();
     };

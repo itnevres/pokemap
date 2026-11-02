@@ -2,6 +2,7 @@ import type { GbcWorldPayload } from "@pokemap/core/src/gbc/wire.js";
 import { isGbcWorldPayload } from "../guards.js";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { fetchGuarded, type UseGuardedFetchResult } from "../../hooks/useGuardedFetch.js";
+import type { WorldScope } from "../../canvas/worldSurfaceAdapter.js";
 
 export interface UseGbcWorldResult extends UseGuardedFetchResult<GbcWorldPayload> {
   /** The generation whose GET produced `data`; the first load is generation 0. */
@@ -21,7 +22,11 @@ export interface UseGbcWorldResult extends UseGuardedFetchResult<GbcWorldPayload
  * a network failure, or a shape that fails `isGbcWorldPayload` -- never a
  * silently-empty world.
  */
-export function useGbcWorld(enabled: boolean = true, onIssue?: (gen: number) => void): UseGbcWorldResult {
+export function useGbcWorld(
+  enabled: boolean = true,
+  onIssue?: (gen: number) => void,
+  scope: WorldScope = "world",
+): UseGbcWorldResult {
   const [data, setData] = useState<GbcWorldPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [gen, setGen] = useState(0);
@@ -40,10 +45,10 @@ export function useGbcWorld(enabled: boolean = true, onIssue?: (gen: number) => 
     if (!enabled) { setData(null); setError(null); return; }
     let cancelled = false;
     onIssueRef.current?.(gen);
-    fetchGuarded("/api/world", isGbcWorldPayload)
+    fetchGuarded(scope === "dungeon" ? "/api/world?scope=dungeon" : "/api/world", isGbcWorldPayload)
       .then((d) => { if (!cancelled) { setData(d); setLoadedGen(gen); setError(null); } })
       .catch((e: unknown) => { if (!cancelled) setError(e instanceof Error ? e.message : String(e)); });
     return () => { cancelled = true; };
-  }, [enabled, gen]);
+  }, [enabled, gen, scope]);
   return { data, error, reload, loadedGen, dismissError };
 }

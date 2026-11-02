@@ -86,6 +86,7 @@ export function useGbaRuntime({ selected, mode, requestPrompt }: RuntimeArgs): F
         onSelectMap={s.selectMapFromWorld}
         onOpenMap={s.openMapFromWorld}
         onEditHere={s.enterContext}
+        onOpenWarpDestination={s.openWarpDestination}
         tileVersions={s.tileVersions}
         onPlacementsSaved={(names) => { names.forEach(s.markManualPlacement); refreshVisibility(); }}
         onLayoutChanged={refreshVisibility}
@@ -126,7 +127,7 @@ export function useGbaRuntime({ selected, mode, requestPrompt }: RuntimeArgs): F
     visibility: { placed, error: visibilityError },
     hiddenMapTypes: HIDDEN_MAP_TYPES,
     dungeons,
-    map: { error: layout.error, ready: Boolean(layout.data) },
+    map: { error: layout.error, ready: Boolean(layout.data), name: layout.data?.map.name ?? null },
     renderMap: (s) =>
       selected && layout.data ? (
         <div className="app__map-editing">
@@ -135,7 +136,11 @@ export function useGbaRuntime({ selected, mode, requestPrompt }: RuntimeArgs): F
         </div>
       ) : null,
     renderWorld,
-    renderDungeon: (mapFilter, s) => <WorldCanvas key="dungeon" mapFilter={mapFilter} onOpenMap={s.openMapFromWorld} onPlacementsSaved={(names) => names.forEach(s.markManualPlacement)} />,
+    renderDungeon: (mapFilter, s) => (
+      <WorldCanvas key="dungeon" mapFilter={mapFilter} tileVersions={s.tileVersions} onOpenMap={s.openMapFromWorld}
+        onOpenWarpDestination={s.openWarpDestination}
+        onPlacementsSaved={(names) => names.forEach(s.markManualPlacement)} />
+    ),
     headerExtras: null,
     banners: switchError && (
       <div className="app__event-op-error" role="alert">

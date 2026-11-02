@@ -94,6 +94,7 @@ export function useGbcRuntime({ selected, mode, requestPrompt }: RuntimeArgs): F
         onSelectMap={s.selectMapFromWorld}
         onOpenMap={s.openMapFromWorld}
         onEditHere={s.enterContext}
+        onOpenWarpDestination={s.openWarpDestination}
         onJumpToMap={s.selectMap}
         onPlacementsSaved={(names) => { names.forEach(s.markManualPlacement); reloadWorld(); }}
         onLayoutChanged={reloadWorld}
@@ -133,7 +134,7 @@ export function useGbcRuntime({ selected, mode, requestPrompt }: RuntimeArgs): F
     visibility: { placed, error: worldError },
     hiddenMapTypes: GBC_HIDDEN_MAP_TYPES,
     dungeons,
-    map: { error: map.error, ready: ready !== null },
+    map: { error: map.error, ready: ready !== null, name: ready?.map.name ?? null },
     renderMap: (s) =>
       selected && ready ? (
         <div className="app__map-editing">
@@ -143,7 +144,9 @@ export function useGbcRuntime({ selected, mode, requestPrompt }: RuntimeArgs): F
       ) : null,
     renderWorld,
     renderDungeon: (mapFilter, s) => (
-      <GbcWorldCanvas key="dungeon" time={time} mapFilter={mapFilter} onOpenMap={s.openMapFromWorld} onPlacementsSaved={(names) => names.forEach(s.markManualPlacement)} />
+      <GbcWorldCanvas key="dungeon" time={time} mapFilter={mapFilter} tileVersions={s.tileVersions}
+        onOpenMap={s.openMapFromWorld} onOpenWarpDestination={s.openWarpDestination}
+        onPlacementsSaved={(names) => names.forEach(s.markManualPlacement)} />
     ),
     headerExtras: (
       <div className="app__mode gbc-app__time" role="group" aria-label="Time of day">

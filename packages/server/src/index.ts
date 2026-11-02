@@ -608,7 +608,10 @@ export function createProjectHandler(root: string): ProjectHandler {
         const dungeons = url.searchParams.get("dungeons") !== "0";
         const world = getWorld();
         const sidecar = readSidecar(project.paths.root);
-        const merged = resolveWorldPlacements(project, world, sidecar, { dungeons });
+        const scope = url.searchParams.get("scope");
+        // dungeon views need every member placed without changing the user's saved setting.
+        const resolveSidecar = scope === "dungeon" ? { ...sidecar, dungeonAutoLayout: true } : sidecar;
+        const merged = resolveWorldPlacements(project, world, resolveSidecar, { dungeons });
 
         // Feature A (dungeon-mode-and-warp-tools spec §3.2): the world
         // view's default-population filter needs each placement's own map

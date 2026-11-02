@@ -66,9 +66,10 @@ export function Toolbar({ activeToolKind, onSelectTool, isDirty, onUndo, onRedo,
   // in-context, so at most one exists). Subscribed once; reads the latest props through a ref.
   const latest = useRef({ tools, availableTools, onSelectTool, onUndo, onRedo, canUndo, canRedo });
   latest.current = { tools, availableTools, onSelectTool, onUndo, onRedo, canUndo, canRedo };
+  const rootRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (shortcutBlocked(e)) return;
+      if (shortcutBlocked(e, rootRef.current)) return;
       const p = latest.current;
       const key = e.key.toLowerCase();
       const mod = e.ctrlKey || e.metaKey;
@@ -89,7 +90,7 @@ export function Toolbar({ activeToolKind, onSelectTool, isDirty, onUndo, onRedo,
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
   return (
-    <div className="toolbar">
+    <div className="toolbar" ref={rootRef}>
       <div className="toolbar__tools" role="group" aria-label="Tools">
         {tools.map((kind) => {
           const available = availableTools.includes(kind);

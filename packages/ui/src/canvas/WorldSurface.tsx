@@ -77,6 +77,7 @@ export interface WorldSurfaceProps<P extends SurfacePlacement, C extends WireCon
   onPlacementsSaved?(names: string[]): void;
   onLayoutChanged?(): void;
   onEditHere?(name: string): void;
+  onOpenWarpDestination?(map: string): void;
   context?: {
     map: string;
     origin: { x: number; y: number } | null;
@@ -90,9 +91,9 @@ export function WorldSurface<P extends SurfacePlacement, C extends WireConflict,
   props: WorldSurfaceProps<P, C, W>,
 ) {
   const { adapter, mapFilter = null, jumpToMap, jumpToken, onOpenMap, onJumpToMap, onEditHere, context, tileVersions,
-    onSelectMap, onPlacementsSaved, onLayoutChanged } = props;
+    onSelectMap, onPlacementsSaved, onLayoutChanged, onOpenWarpDestination } = props;
   const [ledger] = useState(createPlacementLedger);
-  const { world, error, reload, loadedGen, dismissError, move } = adapter.useWorld(ledger);
+  const { world, error, reload, loadedGen, dismissError, move } = adapter.useWorld(ledger, mapFilter ? "dungeon" : "world");
   const coverage = adapter.useCoverage();
 
   const fitRef = useRef<() => void>(() => {});
@@ -160,7 +161,7 @@ export function WorldSurface<P extends SurfacePlacement, C extends WireConflict,
     fitRef.current = fit;
   });
   const fitEnabled = !worldContext.inContext || worldContext.fitEnabled;
-  useFitShortcut(fit, fitEnabled);
+  useFitShortcut(fit, fitEnabled, containerRef);
 
   // Initial fit, once, when the world and a measured viewport both exist. It sets `fitted` in the same update as
   // zoom and pan, and `visible` stays [] until then: culling against the mount default (zoom 1, pan 0) once
@@ -479,13 +480,37 @@ export function WorldSurface<P extends SurfacePlacement, C extends WireConflict,
 
   const [warpsOn, setWarpsOn] = useState(false);
   const [linesOn, setLinesOn] = useState(false);
-  const [warpError, setWarpError] = useState<string | null>(null);
-  const [warpPopup, setWarpPopup] = useState<string | null>(null);
+  const [failedWarps, setFailedWarps] = useState<ReadonlyMap<string, string>>(() => new Map());
+  const [unresolvedWarp, setUnresolvedWarp] = useState<string | null>(null);
   const [warpVersion, setWarpVersion] = useState(0);
   const warpCache = useRef(new Map<string, readonly SurfaceWarp[] | null>());
   const warpRequests = useRef(new Map<string, object>());
+  // Seeded at mount: a keyed remount with saved versions evicts nothing, while a map's first save (absent -> 1) does.
+  const seenWarpTileVersions = useRef(new Map(Object.entries(tileVersions ?? {})));
+  const [warpEpoch, setWarpEpoch] = useState(0);
+  const clearWarpErrors = () => {
+    setFailedWarps(new Map());
+    setUnresolvedWarp(null);
+  };
+  useLayoutEffect(() => {
+    let changed = false;
+    for (const [name, version] of Object.entries(tileVersions ?? {})) {
+      const seen = seenWarpTileVersions.current;
+      if (seen.get(name) !== version) {
+        warpCache.current.delete(name);
+        warpRequests.current.delete(name);
+        changed = true;
+      }
+      seen.set(name, version);
+    }
+    if (changed) {
+      // Drop graphics before paint and refetch even when the view is stationary. Other maps keep their cache/token.
+      setWarpVersion((v) => v + 1);
+      setWarpEpoch((v) => v + 1);
+    }
+  }, [tileVersions]);
   // Sample current adapter/world only when the scope or view changes. Error renders, new adapter objects and a
-  // cache-version bump are not retry triggers: deleting a failed entry must never create a fetch/error render loop.
+  // warpVersion bump are not retry triggers: deleting a failed entry must never create a fetch/error render loop.
   const warpInputs = useRef({ adapter, world });
   useLayoutEffect(() => { warpInputs.current = { adapter, world }; });
   const warpNames = new Set<string>();
@@ -511,15 +536,27 @@ export function WorldSurface<P extends SurfacePlacement, C extends WireConflict,
         if (warpRequests.current.get(name) !== request || warps === null) return;
         warpRequests.current.delete(name);
         warpCache.current.set(name, warps);
+        setFailedWarps((previous) => {
+          if (!previous.has(name)) return previous;
+          const next = new Map(previous);
+          next.delete(name);
+          return next;
+        });
         setWarpVersion((v) => v + 1);
       }).catch((cause: unknown) => {
         if (warpRequests.current.get(name) !== request) return;
         warpRequests.current.delete(name);
         warpCache.current.delete(name);
-        setWarpError(messageOf(cause));
+        const message = messageOf(cause);
+        // Re-insert so the map's latest failure is last: the alert names the newest failure still failing.
+        setFailedWarps((previous) => {
+          const next = new Map(previous);
+          next.delete(name);
+          return next.set(name, message);
+        });
       });
     }
-  }, [warpScope, view, warpsOn, linesOn, mapFilter, viewport.w, viewport.h]);
+  }, [warpScope, view, warpsOn, linesOn, mapFilter, viewport.w, viewport.h, warpEpoch]);
   useEffect(() => () => {
     for (const name of warpRequests.current.keys()) warpCache.current.delete(name);
     warpRequests.current.clear();
@@ -590,9 +627,9 @@ export function WorldSurface<P extends SurfacePlacement, C extends WireConflict,
     const marker = !e.shiftKey && markerAt(e);
     if (marker) {
       if (marker.warp.popupMap) {
-        setWarpError(null);
-        setWarpPopup(marker.warp.popupMap);
-      } else if (adapter.unresolvedWarpError) setWarpError(adapter.unresolvedWarpError);
+        clearWarpErrors();
+        onOpenWarpDestination?.(marker.warp.popupMap);
+      } else if (adapter.unresolvedWarpError) setUnresolvedWarp(adapter.unresolvedWarpError);
       return;
     }
     const s = localPoint(e);
@@ -620,6 +657,7 @@ export function WorldSurface<P extends SurfacePlacement, C extends WireConflict,
     return { map: badge?.map ?? hitTest(w.x, w.y)?.map ?? null, badge };
   });
   const onKeyDown = (e: React.KeyboardEvent<HTMLCanvasElement>) => {
+    if (e.defaultPrevented || document.querySelector('[aria-modal="true"]')) return;
     const name = selected.size === 1 ? [...selected][0]! : null;
     const p = name && inScope(name) ? world?.placements.get(name) : undefined;
     if (contextMenu.onMenuKey(e, () => {
@@ -775,17 +813,20 @@ export function WorldSurface<P extends SurfacePlacement, C extends WireConflict,
       <div className="world-canvas__toolbar">
         {adapter.fitFirst && <div className="world-canvas__toolbar-group">{fitButton}</div>}
         {adapter.toolbarExtras}
-        {adapter.postDungeons && <DungeonAutoLayoutSwitch on={dungeonsOn} onToggle={toggleDungeons} />}
+        {adapter.postDungeons && !mapFilter && <DungeonAutoLayoutSwitch on={dungeonsOn} onToggle={toggleDungeons} />}
         {perMapErrors && toolbarError(layoutError ? `Could not save dungeon auto-layout: ${layoutError}` : null)}
         <WorldToolbarSwitch label="Warps" on={warpsOn} onToggle={() => {
-          if (!warpsOn) setWarpError(null);
+          if (!warpsOn) clearWarpErrors();
           setWarpsOn((on) => !on);
         }} />
         {mapFilter && <WorldToolbarSwitch label="Connection lines" on={linesOn} onToggle={() => {
-          if (!linesOn) setWarpError(null);
+          if (!linesOn) clearWarpErrors();
           setLinesOn((on) => !on);
         }} />}
-        {toolbarError(warpError ? `Warp data unavailable: ${warpError}` : null)}
+        {toolbarError(failedWarps.size > 0
+          ? `Warp data unavailable for ${failedWarps.size} map${failedWarps.size === 1 ? "" : "s"}: ${[...failedWarps.values()].at(-1)}`
+          : null)}
+        {toolbarError(unresolvedWarp ? `Warp data unavailable: ${unresolvedWarp}` : null)}
         <EncounterFetchAlert count={failedCount} />
         {adapter.toolbarAfterEncounter}
         {perMapErrors && toolbarError(saveError ? `Could not save placement: ${saveError.message}` : null)}
@@ -888,7 +929,6 @@ export function WorldSurface<P extends SurfacePlacement, C extends WireConflict,
           hover,
         })}
       </div>
-      {warpPopup && world && adapter.renderWarpPopup?.(warpPopup, () => setWarpPopup(null), world)}
     </section>
   );
 }

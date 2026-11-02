@@ -7,7 +7,7 @@ import { useStage } from "../../src/canvas/useStage.js";
 import { WorldSurface } from "../../src/canvas/WorldSurface.js";
 import type { SurfacePlacement, SurfaceWorld, WorldSurfaceAdapter } from "../../src/canvas/worldSurfaceAdapter.js";
 
-const observations = vi.hoisted(() => ({ border: [] as unknown[] }));
+const observations = vi.hoisted(() => ({ border: [] as unknown[], scopes: [] as string[] }));
 vi.mock("../../src/shared/EncounterBorder.js", () => ({ EncounterBorder: (props: unknown) => {
   observations.border.push(props);
   return null;
@@ -73,6 +73,7 @@ beforeEach(() => {
   loadError = null;
   log = [];
   observations.border = [];
+  observations.scopes = [];
   FakeImage.instances = [];
   vi.stubGlobal("Image", FakeImage);
   vi.stubGlobal("fetch", vi.fn(() => Promise.resolve({ ok: true, json: () => Promise.resolve([]) })));
@@ -88,7 +89,10 @@ beforeEach(() => {
   } as never);
   adapter = {
     nativePx: 16,
-    useWorld: () => ({ world: data, error: loadError, reload: () => 1, loadedGen: 1, dismissError: () => {}, move: () => {} }),
+    useWorld: (_ledger, scope) => {
+      observations.scopes.push(scope);
+      return { world: data, error: loadError, reload: () => 1, loadedGen: 1, dismissError: () => {}, move: () => {} };
+    },
     imageUrl: (p, v) => `/t/${p.map}?v=${v ?? 0}`,
     cacheKey: 0,
     drawnByDefault: (p) => p.map !== "Hidden",
@@ -131,6 +135,17 @@ it("shows load and error placeholders", () => {
   data = world;
   host.rerender(<WorldSurface adapter={adapter} />);
   expect(screen.queryByText("Loading world…")).toBeNull();
+});
+
+it("passes the dungeon scope to its adapter and hides dungeon auto-layout there", () => {
+  adapter.postDungeons = async () => {};
+  const host = render(<WorldSurface adapter={adapter} />);
+  expect(observations.scopes.at(-1)).toBe("world");
+  expect(screen.getByRole("switch", { name: "Dungeon auto-layout" })).toBeTruthy();
+
+  host.rerender(<WorldSurface adapter={adapter} mapFilter={new Set(["A", "B"])} />);
+  expect(observations.scopes.at(-1)).toBe("dungeon");
+  expect(screen.queryByRole("switch", { name: "Dungeon auto-layout" })).toBeNull();
 });
 
 it("fits clusters under StrictMode, culls distant and hidden maps, and reports counts", async () => {

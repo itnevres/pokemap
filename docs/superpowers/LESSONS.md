@@ -250,6 +250,12 @@ Rerun in isolation before calling either a regression. (Plan 8)
 
 **Test error UI live without touching the subject:** `page.route` the POST and GET to `fulfill({ status: 500 })`. Nothing reaches the hub, so the subject stays byte-identical (`task-reports/pokemap-plan-11-canvas-leaf/task-9-shots/toasts.mjs`). (Plan 11 final review)
 
+**Live checks that must save: serve a scratch clone, not the subject.** `git clone` the subject into the scratchpad (copy the ignored `.pokemap/` too when the sidecar matters) and start the hub on the clone; commits can then be real and the subject's manifest stays unchanged with no POST guard. Seed missing sidecar state through the hub's own POSTs on the clone. (`task-reports/pokemap-plan-13-warp-popups/task-6-live.md`.)
+
+**A modal that reuses a preview's panel size clips a full workspace.** The Plan 13 popup inherited `.warp-modal__panel` (720x560) and cut the toolbar's Discard and the palette at 1400x900; no unit test can see it. Tell: the first live screenshot shows a wrapped toolbar. Screenshot every new modal at the harness size.
+
+**A GBC dungeon fit can open below the warp-marker zoom** (6% for a dungeon with shelved indoor members), so no markers render. Wheel in over the anchored member before looking for markers.
+
 ## Windows / Tooling / Git / Worktrees
 
 **When the main checkout holds unrelated uncommitted work, gate and live-verify from a detached `git -c core.longpaths=true worktree add` in scratch (with its own `npm ci`).** Never stash or restore. (Plan 7)
@@ -336,6 +342,21 @@ Rerun in isolation before calling either a regression. (Plan 8)
 **Never background a gate with `&` inside a Bash tool call.** It survives the call and overlaps the next gate (tell: the run file holds two summaries, one with a load-only flake). Use `run_in_background` only. (Plan 11 T2)
 
 **Python string edits on CRLF files must match `
+- **Codex workspace-write in a scratch worktree cannot run vitest or git** (2026-10-28, Plan 13 T1/T2). Tell: its report says
+  `EPERM ... node_modules` with 0 tests collected, or `index.lock` permission denied. Its sandbox blocks the node_modules junctions
+  and the worktree's git dir (inside the main `.git`). Brief it to write tests + code and stop; the conductor runs red (stash src),
+  green, mutations, then commits. Its tsc check does work.
+- **`codex exec resume` takes no `-s`/`-m` after `resume`** (tell: `unexpected argument '-s'`, exit 2). Put options first:
+  `codex exec -m <model> -s <mode> -C <dir> -o <out> resume <session-id> - < brief.md`.
+- **OpenCode free models claim done on red work** (Plan 13 T4b, Nemotron 3 Ultra): tell: final text says "complete" with test counts, conductor re-run shows 21 fail + `it.todo`s. Its own new tests also pin its implementation quirks (a `data-testid`, undispatched synthetic events, jsdom-unsupported `contentEditable` property; T4a). Re-run everything; read new tests against the contract, not the code; mutate each guard (a survived mutant found a missing nested-trap test).
+- **Unicode escapes get mangled when editing via tools** (Plan 13 T4a): the Edit tool turns `×` in new_string into the literal glyph, Windows `python -c`/heredoc scripts read as cp1252, and `sed -i`/`perl -pi` in Git Bash strip CRLF. Tell: an anchor with `é` matches 0 times, or `tr -cd '' | wc -c` is 0 after an edit. Use a Python script file with `encoding="utf-8"`, build backslashes with `chr(92)`, and re-normalize CRLF (`replace('
+','
+').replace('
+','
+')`) after any shell edit.
+- **Changing a world fetch URL breaks exact-URL mocks across the UI suite** (Plan 13 T2: 12 tests in App, GbcApp, GbcWorldCanvas,
+  placementCommit). Tell: dungeon-mode tests fail with load errors after a focused run was green. Run `npx vitest run packages/ui`
+  before review, not just the focused files.
 `** (tell: an assertion that the old text occurs once reports 0 on text you can see). Read with `newline=""` and convert the needle when the file has CRLF. (Plan 11 T2)
 
 **Codex tends to strip existing comments and reflow JSX when it restructures a component** (Task 6 `MapEditingWorkspace`): check `git diff` for deleted comments before review. (Plan 8)

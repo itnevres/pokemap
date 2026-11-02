@@ -165,6 +165,11 @@ Both families already render the same `components/Toolbar.tsx`; the differences 
 - **Risk:** medium. The branch is uncommitted in the main checkout; a lost working tree loses it (see open item below).
   Its gate never collected tests (EPERM), so none of it is verified yet.
 - **Depends on:** D11.
+- **Status (2026-10-28):** spec `specs/2026-10-28-pokemap-plan-13-warp-popups-design.md`, plan
+  `plans/2026-10-28-pokemap-plan-13-warp-popups.md` (7 tasks, High); risk re-rated High (shared shell/core).
+- **Status (2026-11-02):** Tasks 1-7 done on local branch `plan-13-warp-popups`; live acceptance passed in both families
+  (`task-reports/pokemap-plan-13-warp-popups/task-6-live.md`); final review (Codex astra) approved with one Minor, fixed.
+  Awaiting the user's push / PR / merge; then close #5 and #6 (P13-3).
 
 ### Plan 14: GBC editing gaps
 

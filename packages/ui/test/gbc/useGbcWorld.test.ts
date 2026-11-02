@@ -29,6 +29,16 @@ describe("useGbcWorld", () => {
     expect(result.current.error).toBeNull();
   });
 
+  it("fetches the dungeon-scoped world when requested", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve(VALID_BODY) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderHook(() => useGbcWorld(true, undefined, "dungeon"));
+    await waitFor(() => expect(result.current.data).not.toBeNull());
+
+    expect(fetchMock).toHaveBeenCalledWith("/api/world?scope=dungeon");
+  });
+
   it("a shape that fails isGbcWorldPayload becomes a visible error", async () => {
     const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200, json: () => Promise.resolve({ family: "gbc" }) });
     vi.stubGlobal("fetch", fetchMock);

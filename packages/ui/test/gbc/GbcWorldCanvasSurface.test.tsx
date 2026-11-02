@@ -128,7 +128,9 @@ interface AllFetchOpts {
 function mockFetchAll(opts: AllFetchOpts) {
   const world = opts.world ?? WORLD;
   return vi.fn((url: string) => {
-    if (url === "/api/world") return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(world) } as Response);
+    if (url === "/api/world" || url === "/api/world?scope=dungeon") {
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(world) } as Response);
+    }
     const encMatch = /^\/api\/encounters\/(.+)$/.exec(url);
     if (encMatch) {
       const name = decodeURIComponent(encMatch[1]!);
@@ -210,7 +212,7 @@ async function mount(
   encounters?: AllFetchOpts["encounters"],
 ) {
   const base = mockFetchAll({ world, encounters });
-  vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => {
+  const fetchMock = vi.fn((url: string, init?: RequestInit) => {
     if (url === "/api/world/placement") {
       const outcome = deferred<Response>();
       posts.push({ body: JSON.parse(String(init?.body)), outcome });
@@ -223,7 +225,8 @@ async function mount(
       return Promise.resolve(response({ family: "gbc", mapName: decodeURIComponent(url.slice(11)), warps: [] }));
     }
     return base(url);
-  }));
+  });
+  vi.stubGlobal("fetch", fetchMock);
   const host = render(<GbcWorldCanvas time="day" {...props} />);
   await settle();
   // Cluster (0,0)-(20,10), 200x200 viewport: zoom=min(200/20,200/10)=10, pan=(0,50).
@@ -233,13 +236,24 @@ async function mount(
   canvas.getBoundingClientRect = () => ({
     left: 0, top: 0, right: 200, bottom: 200, width: 200, height: 200, x: 0, y: 0, toJSON() {},
   });
-  return { ...host, canvas };
+  return { ...host, canvas, fetchMock };
 }
 
 type Host = Awaited<ReturnType<typeof mount>>;
 const outlines = (host: Host) => host.container.querySelectorAll<HTMLElement>(
   ".world-canvas__selection-outline:not(.world-canvas__jump-highlight)",
 );
+
+it("requests dungeon-scoped placements and hides dungeon auto-layout in a filtered GBC surface", async () => {
+  const host = await mount();
+  expect(host.fetchMock).toHaveBeenCalledWith("/api/world");
+  expect(screen.getByRole("switch", { name: "Dungeon auto-layout" })).toBeTruthy();
+
+  host.rerender(<GbcWorldCanvas time="day" mapFilter={new Set(["MapA", "MapB"])} />);
+  await settle();
+  expect(host.fetchMock).toHaveBeenCalledWith("/api/world?scope=dungeon");
+  expect(screen.queryByRole("switch", { name: "Dungeon auto-layout" })).toBeNull();
+});
 function click(host: Host, x: number, y: number, modifiers = {}) {
   const at = { button: 0, clientX: x, clientY: y, ...modifiers };
   fireEvent.mouseDown(host.canvas, at);
@@ -474,4 +488,53 @@ it("a pending jump fit is dropped when a filter excludes the map before the view
   });
   await settle();
   expect(host.container.querySelector(".world-canvas__status")?.textContent).toContain("zoom 31%");
+});
+
+it.each([false, true])("an incoming line follows the destination's refreshed warp (source pending: %s)", async (pending) => {
+  const filter = new Set(["MapA", "MapB"]);
+  const base = mockFetchAll({});
+  const requests: Array<{ map: string; outcome: ReturnType<typeof deferred<Response>> }> = [];
+  vi.stubGlobal("fetch", vi.fn((url: string) => {
+    if (!url.startsWith("/api/warps/")) return base(url);
+    const outcome = deferred<Response>();
+    requests.push({ map: decodeURIComponent(url.slice("/api/warps/".length)), outcome });
+    return outcome.promise;
+  }));
+  const host = render(<GbcWorldCanvas time="day" mapFilter={filter} tileVersions={{ MapA: 0, MapB: 0 }} />);
+  await settle();
+  fireEvent.click(screen.getByRole("switch", { name: "Connection lines" }));
+  await settle();
+  const source = requests.find((request) => request.map === "MapA")!;
+  const destination = requests.find((request) => request.map === "MapB")!;
+  const oldTarget = { x: 4, y: 6, mapConst: "NONE", destWarp: 1, lineIndex: 1 };
+  const sourcePayload = response({ family: "gbc", mapName: "MapA", warps: [
+    { x: 2, y: 4, mapConst: "MAP_B", destWarp: 2, lineIndex: 1, destMapName: "MapB", destEvent: oldTarget },
+  ] });
+  const targetPayload = (target: typeof oldTarget) => response({ family: "gbc", mapName: "MapB", warps: [
+    { ...oldTarget, x: 0, y: 0 }, target,
+  ] });
+  destination.outcome.resolve(targetPayload(oldTarget));
+  if (!pending) source.outcome.resolve(sourcePayload);
+  await settle();
+  const endpoints = () => {
+    const line = host.container.querySelector(".world-canvas__connections line");
+    return line && ["x1", "y1", "x2", "y2"].map((name) => Number(line.getAttribute(name)));
+  };
+  // Bounds(0,0)-(20,10), zoom10, pan(0,50). Half-block warps: A+(1,2), B+(2,3).
+  // destWarp2 chooses index1, rather than the index0 decoy at the map corner.
+  expect(endpoints()).toEqual(pending ? null : [10, 70, 120, 80]);
+  host.rerender(<GbcWorldCanvas time="day" mapFilter={filter} tileVersions={{ MapA: 0, MapB: 1 }} />);
+  expect(endpoints()).toBeNull();
+  await settle();
+  expect(requests.map((request) => request.map)).toEqual(["MapA", "MapB", "MapB"]);
+  if (pending) {
+    source.outcome.resolve(sourcePayload);
+    await settle();
+    expect(endpoints()).toBeNull();
+  }
+  requests[2]!.outcome.resolve(targetPayload({ ...oldTarget, x: 8, y: 10 }));
+  await settle();
+  // Refreshed half-block destination B+(4,5)=(14,5)->(140,100), despite source's old destEvent.
+  expect(endpoints()).toEqual([10, 70, 140, 100]);
+  expect(requests.filter((request) => request.map === "MapA")).toHaveLength(1);
 });

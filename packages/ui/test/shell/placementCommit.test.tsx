@@ -36,7 +36,7 @@ function server(family: Family, failing: ReadonlySet<string> = new Set()) {
       const { map } = JSON.parse(String(init!.body)) as { map: string };
       return failing.has(map) ? Promise.resolve({ ok: false, status: 500, json: async () => ({}) } as Response) : ok({ ok: true });
     }
-    if (url === "/api/world" && method === "GET") {
+    if ((url === "/api/world" || url === "/api/world?scope=dungeon") && method === "GET") {
       gets++;
       const p = (map: string, x: number, width: number) => ({ map, x, y: 0, width, height: 10, component: 0, mapType: family === "gba" ? "MAP_TYPE_TOWN" : "TOWN", manual: false });
       const placements = { A: p("A", 0, 10), B: p("B", 10, 5), C: p("C", 15, 5) };

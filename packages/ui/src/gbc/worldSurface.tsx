@@ -5,7 +5,7 @@ import type { GbcWorldPlacement } from "@pokemap/core/src/gbc/wire.js";
 import type { GbcEncounterSource } from "@pokemap/core/src/gbc/analyse/atlas.js";
 import type { LensId, LensPanelSummary } from "../components/LensPanel.js";
 import type { PlacementLedger, PlacementSnapshot } from "../shared/placementLedger.js";
-import type { SurfaceWorld, WorldSurfaceAdapter } from "../canvas/worldSurfaceAdapter.js";
+import type { SurfaceWorld, WorldScope, WorldSurfaceAdapter } from "../canvas/worldSurfaceAdapter.js";
 import { JUMP_FILL_FRACTION, jumpFit as worldJumpFit, singletonSizes,
   zoomWorldAboutPivot as worldZoomAboutPivot } from "../canvas/worldView.js";
 import { BORDER_BAND } from "../encounters/borderSide.js";
@@ -14,7 +14,6 @@ import { fetchGuarded } from "../hooks/useGuardedFetch.js";
 import { useGbcWorld } from "./hooks/useGbcWorld.js";
 import { useGbcCoverage } from "./hooks/useGbcCoverage.js";
 import { isGbcEncountersPayload, isGbcWarpsPayload, isRecord } from "./guards.js";
-import { GbcWarpDestinationModal } from "./GbcWarpDestinationModal.js";
 import type { GbcTimeOfDay } from "./time.js";
 
 /** Native block size, px (`GbcWorldPayload.blockPx`, always 32). Zoom here
@@ -216,13 +215,13 @@ function isLayoutSaved(x: unknown): x is { dungeonAutoLayout: boolean } {
   return isRecord(x) && typeof x.dungeonAutoLayout === "boolean";
 }
 
-function useGbcSurfaceWorld(ledger: PlacementLedger) {
+function useGbcSurfaceWorld(ledger: PlacementLedger, scope: WorldScope) {
   // The ledger snapshot taken as each world GET was issued, by generation. A response can land in the same batch as a
   // newer GET's issue, so its own snapshot must survive that issue; reconciliation prunes older generations.
   const issued = useRef(new Map<number, PlacementSnapshot>());
   const { data, error, reload, loadedGen, dismissError } = useGbcWorld(true, (gen) => {
     issued.current.set(gen, ledger.snapshot());
-  });
+  }, scope);
   const [overrides, setOverrides] = useState<Record<string, { x: number; y: number }>>({});
   // Pair each world response with the ledger snapshot taken when its GET was issued, never with saved coordinates.
   useEffect(() => {
@@ -299,15 +298,13 @@ export function createGbcWorldSurface(time: GbcTimeOfDay): WorldSurfaceAdapter<G
       return payload.warps.map((warp) => ({
         point: { x: warp.x, y: warp.y },
         popupMap: warp.destEvent ? warp.destMapName : undefined,
-        destination: warp.destMapName && warp.destEvent ? {
-          map: warp.destMapName,
-          point: { x: warp.destEvent.x, y: warp.destEvent.y },
-        } : undefined,
+        resolveDestination: (cache) => {
+          if (!warp.destMapName) return null;
+          const target = cache.get(warp.destMapName)?.[warp.destWarp - 1];
+          return target ? { map: warp.destMapName, point: target.point } : null;
+        },
       }));
     },
-    renderWarpPopup: (map, onClose) => (
-      <GbcWarpDestinationModal mapName={map} time={time} onClose={onClose} />
-    ),
     unresolvedWarpError: "This warp destination could not be resolved",
     modifiedDoubleClick: true,
     // A stationary Shift-click selects like a plain click (old GbcWorldCanvas onClick had no modifier guard).

@@ -309,9 +309,9 @@ afterEach(() => {
  * world…" placeholder to disappear is tied directly to `world !== null`,
  * which only happens after the fetch's `.then` has actually run.
  */
-async function mountReady(fetchMock: ReturnType<typeof vi.fn>) {
+async function mountReady(fetchMock: ReturnType<typeof vi.fn>, onOpenWarpDestination?: (map: string) => void) {
   vi.stubGlobal("fetch", fetchMock);
-  const utils = render(<WorldCanvas />);
+  const utils = render(<WorldCanvas onOpenWarpDestination={onOpenWarpDestination} />);
   await waitFor(() => expect(screen.queryByText(/Loading world/)).toBeNull());
   const canvas = utils.container.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement;
   canvas.getBoundingClientRect = () => ({
@@ -1764,7 +1764,7 @@ describe("WorldCanvas", () => {
       expect(canvas.parentElement!.querySelectorAll(".world-canvas__warp-marker").length).toBe(0);
     });
 
-    it("double-clicking a warp marker opens the destination popup; the × closes it without disturbing the canvas", async () => {
+    it("double-clicking a warp marker requests the destination popup without disturbing the canvas", async () => {
       const { impl } = makeFetchMock(warpWorld());
       const wrapped = withWarps(impl, { A: [{ x: 2, y: 3, elevation: 0, destMap: "MAP_B", destWarpId: "0", destMapName: "B" }] });
       const fullMock = vi.fn((url: string, init?: RequestInit) => {
@@ -1783,7 +1783,8 @@ describe("WorldCanvas", () => {
         }
         return wrapped(url, init);
       });
-      const { canvas } = await mountReady(fullMock);
+      const onOpenWarpDestination = vi.fn();
+      const { canvas } = await mountReady(fullMock, onOpenWarpDestination);
       fireEvent.click(screen.getByRole("switch", { name: /warps/i }));
       // Zoom in past LOD_ZOOM_THRESHOLD (4) the same way the other tests in
       // this describe block do: 8 wheel ticks anchored at screen (0,0),
@@ -1812,15 +1813,15 @@ describe("WorldCanvas", () => {
       fireEvent.doubleClick(canvas, { clientX: mx + 20, clientY: my });
       expect(screen.queryByRole("dialog")).toBeNull();
 
+      expect(onOpenWarpDestination).not.toHaveBeenCalled();
+
       // Then a hit within the radius but off-centre (+3px, not the exact
       // marker position) confirms the radius check is a real, bounded
       // circle, not merely re-testing distance 0.
-      fireEvent.doubleClick(canvas, { clientX: mx + 3, clientY: my });
-      await waitFor(() => expect(screen.getByRole("dialog")).toBeTruthy());
-      expect(screen.getByRole("dialog").getAttribute("aria-label")).toBe("B preview");
-
       const zoomBefore = screen.getByText(/%/).textContent;
-      fireEvent.click(screen.getByLabelText("Close"));
+      fireEvent.doubleClick(canvas, { clientX: mx + 3, clientY: my });
+      expect(onOpenWarpDestination).toHaveBeenCalledTimes(1);
+      expect(onOpenWarpDestination).toHaveBeenCalledWith("B");
       expect(screen.queryByRole("dialog")).toBeNull();
       expect(screen.getByText(/%/).textContent).toBe(zoomBefore); // pan/zoom untouched
     });

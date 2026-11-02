@@ -150,10 +150,10 @@ describe("WorldCanvas: onEditHere double-click (Plan 6c E4)", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("with warps on, a double-click on a warp marker opens the preview and does NOT call onEditHere; elsewhere on the map body it does", async () => {
-    const onEditHere = vi.fn();
+  it("warp marker double-click requests the shell popup without Edit here; elsewhere on the map body it edits", async () => {
+    const onEditHere = vi.fn(), onOpenWarpDestination = vi.fn();
     const impl = makeFetch({ A: [{ x: 2, y: 3, elevation: 0, destMap: "MAP_B", destWarpId: "0", destMapName: "B" }] });
-    const { canvas } = await mount({ onEditHere }, impl);
+    const { canvas } = await mount({ onEditHere, onOpenWarpDestination }, impl);
     fireEvent.click(screen.getByRole("switch", { name: /warps/i }));
     // Pivot(0,50) fixes world(0,5); eight ticks reach z16, pan(0,-30), leaving A's warp at (32,18) visible.
     for (let i = 0; i < 8; i++) fireEvent.wheel(canvas, { clientX: 0, clientY: 50, deltaY: -100 });
@@ -162,9 +162,10 @@ describe("WorldCanvas: onEditHere double-click (Plan 6c E4)", () => {
     const mx = parseFloat(marker.style.left), my = parseFloat(marker.style.top);
 
     fireEvent.doubleClick(canvas, { clientX: mx + 3, clientY: my }); // inside A's body AND within the marker radius
-    await waitFor(() => expect(screen.getByRole("dialog")).toBeTruthy());
+    expect(onOpenWarpDestination).toHaveBeenCalledTimes(1);
+    expect(onOpenWarpDestination).toHaveBeenCalledWith("B");
+    expect(screen.queryByRole("dialog")).toBeNull();
     expect(onEditHere).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByLabelText("Close"));
 
     fireEvent.doubleClick(canvas, { clientX: mx + 20, clientY: my }); // inside A's body, past the marker radius
     expect(screen.queryByRole("dialog")).toBeNull();

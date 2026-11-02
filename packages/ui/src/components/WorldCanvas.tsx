@@ -47,6 +47,8 @@ export interface WorldCanvasProps {
   /** A plain double-click on a map body (no modifier, no drag, not a warp marker) and the context menu's "Edit here".
    *  The app enters in-context editing and passes `context` below. Unset: double-click opens Map view (P12-4c). */
   onEditHere?: (name: string) => void;
+  /** Fired when a double-click hits a resolved warp marker. The shell opens the destination map in a popup. */
+  onOpenWarpDestination?: (name: string) => void;
   /** In-context editing (Plan 6c E4): while set, an overlay fills the viewport box with a dim layer, the host's
    *  controlled editing canvas and a small bar. The world snaps once to this map, at the pointer `onEditHere` recorded
    *  (or the viewport centre), and its zoom may reach 64 px per tile. */

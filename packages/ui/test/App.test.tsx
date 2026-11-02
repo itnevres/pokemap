@@ -78,7 +78,7 @@ function makeFetchMock(opts: MockOpts = {}) {
     if (url.startsWith("/api/world/dungeons") || url.startsWith("/api/world/placement")) {
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ ok: true }) } as Response);
     }
-    if (url === "/api/world") {
+    if (url === "/api/world" || url === "/api/world?scope=dungeon") {
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(world) } as Response);
     }
     if (url === "/api/coverage") {
@@ -746,7 +746,9 @@ describe("App -- Plan 9 shell characterisation", () => {
           dungeon = { ...dungeon, ...JSON.parse(String(init.body)) };
           return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(dungeon) } as Response);
         }
-        if (url === "/api/world") return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(world) } as Response);
+        if (url === "/api/world" || url === "/api/world?scope=dungeon") {
+          return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(world) } as Response);
+        }
         return base(url, init);
       }));
       const { container } = render(<FamilyApp adapter={gbaAdapter} />);

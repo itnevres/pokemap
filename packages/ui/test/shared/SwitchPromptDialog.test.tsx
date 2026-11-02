@@ -28,4 +28,13 @@ describe("SwitchPromptDialog", () => {
     expect(onDiscard).not.toHaveBeenCalled();
     expect(onCancel).not.toHaveBeenCalled();
   });
+  it("keeps focus and Tab in the prompt once busy disables every control", () => {
+    const props = { mapName: "Route1", onSave: vi.fn(), onDiscard: vi.fn(), onCancel: vi.fn() };
+    const view = render(<><button>Behind</button><SwitchPromptDialog busy={false} {...props} /></>);
+    screen.getByRole("button", { name: "Discard" }).focus();
+    view.rerender(<><button>Behind</button><SwitchPromptDialog busy {...props} /></>);
+    const dialog = screen.getByRole("dialog");
+    expect(document.activeElement).toBe(dialog);
+    for (const shiftKey of [false, true]) expect(fireEvent.keyDown(dialog, { key: "Tab", shiftKey })).toBe(false);
+  });
 });
