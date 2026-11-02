@@ -75,3 +75,19 @@ Ruling: T4 tests open the popup by capturing `slots` through a test adapter that
 - Merge: p13-t4 -> plan-13-warp-popups c52c03d (merge commit). Worktree wt4 removed (junctions unlinked first).
 - Task 5: tier Opus (canvas-core double-click, end-to-end both families). Worktree <scratchpad>/wt5 branch p13-t5, base c52c03d.
   Brief task-5-brief.md. Hop 1: OpenCode + Nemotron 3 Ultra.
+- Task 5 hop 1: Nemotron 3 Ultra FAILED verify (118 tool calls, claimed complete; re-run 11 fail, tsc error from a jest-dom
+  matcher; stubbed the files to delete, conductor git rm'd them). Retry (same session) hung with 0 output for 8 min -> killed.
+- Task 5 hop 2: Inkling on top of that diff stalled (48 tool calls, no growth 8 min, no progress: same 11 fail). Its orphan
+  opencode-cli processes could not be killed (classifier denied); next hop moved to a fresh worktree wt5b (branch p13-t5b,
+  base c52c03d + the stashed attempt) so two writers never share a tree. Stashes on p13-t5 hold both attempts.
+- Task 5 hop 3: Codex gpt-6.1-sol in wt5b.
+- Task 5 hop 3: Codex gpt-6.1-sol done (thread 01a19df6-d74c-7d90-bdd8-541f5f44a670). Conductor: focused 1,047/1,047; removed a
+  whitespace-only line it left in WorldSurface (inline, 1 line). UI 2,101 / 125 files; red (src reverted) 13 fail; mutation
+  (double-click calls nothing) 10 fail. Commit 776b441 on p13-t5b.
+- Gate at 776b441: 3,933 pass / 0 fail / 236 files; typecheck pass, UI build pass; subjects unchanged (GBA 9 user lines, PerfPlus clean).
+- Task 5 reviews: Codex gpt-6-astra spec + quality (separate), range c52c03d..776b441.
+- Task 5 reviews: spec PASS (0 findings); quality Approved (0 findings).
+- Task 5: complete (commit 776b441 on p13-t5b, review clean). Merged into plan-13-warp-popups (merge commit).
+- Open: wt5 (branch p13-t5) still holds the stalled Inkling attempt and two orphan opencode-cli processes (PIDs 22220, 12220;
+  kill denied by the auto-mode classifier). Both attempts are stashed on p13-t5. Remove wt5 once those processes are gone
+  (stash/clean it first; never --force).
