@@ -170,7 +170,8 @@ describe("GBA MapSurface integration", () => {
       const runtime = useGbaRuntime({ selected: "Foo", mode: "world", requestPrompt: () => {} });
       const slots: ShellSlots = { contextMap: "Foo", jumpTarget: null, jumpToken: 0, tileVersions: {},
         selectMap: () => {}, selectMapFromWorld: () => {}, openMapFromWorld: () => {}, enterContext: () => {},
-        requestExitContext: () => {}, onStrokeChain: () => {}, markManualPlacement: () => {} };
+        requestExitContext: () => {}, onStrokeChain: () => {}, markManualPlacement: () => {},
+        openWarpDestination: () => {} };
       return runtime.renderWorld(slots);
     }
     const { container } = render(context ? <ContextHost /> : <MapHost />);

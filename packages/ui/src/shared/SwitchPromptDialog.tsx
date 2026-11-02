@@ -1,3 +1,5 @@
+import { trapDialogFocus, useRestoreFocus } from "./dialogFocus.js";
+
 export interface SwitchPromptDialogProps {
   mapName: string;
   busy: boolean;
@@ -7,11 +9,12 @@ export interface SwitchPromptDialogProps {
 }
 
 export function SwitchPromptDialog({ mapName, busy, onSave, onDiscard, onCancel }: SwitchPromptDialogProps) {
+  useRestoreFocus();
   return (
     <div className="warp-modal__backdrop" onKeyDown={(e) => {
       if (e.key === "Escape") { e.stopPropagation(); if (!busy) onCancel(); }
     }}>
-      <div className="save-dialog warp-modal__panel" role="dialog" aria-modal="true" aria-label="Unsaved changes">
+      <div className="save-dialog warp-modal__panel" role="dialog" aria-modal="true" aria-label="Unsaved changes" onKeyDown={trapDialogFocus}>
         <p>You have unsaved changes on {mapName}.</p>
         <div className="save-dialog__actions">
           <button type="button" className="map-canvas__btn" disabled={busy} onClick={onSave}>Save</button>

@@ -15,12 +15,14 @@ export interface ContextEditing {
   enter(map: string): void;
   requestExit(): void;
   onCommitted(): void;
+  bumpTile(map: string): void;
   leaveContext(): void;
 }
 
 export function useContextEditing({ selected, session, leave, select, openSave, strokeSettled }: UseContextEditingArgs): ContextEditing {
   const [contextMap, setContextMap] = useState<string | null>(null);
   const [tileVersions, setTileVersions] = useState<Record<string, number>>({});
+  const bumpTile = (map: string) => setTileVersions((t) => ({ ...t, [map]: (t[map] ?? 0) + 1 }));
   const [exitPending, setExitPending] = useState(false);
   const exitRequested = useRef<object | null>(null);
   const leaveContext = () => {
@@ -64,9 +66,10 @@ export function useContextEditing({ selected, session, leave, select, openSave, 
     onCommitted() {
       session.markClean();
       if (contextMap !== null && contextMap === selected) {
-        setTileVersions((t) => ({ ...t, [contextMap]: (t[contextMap] ?? 0) + 1 }));
+        bumpTile(contextMap);
       }
     },
     leaveContext,
+    bumpTile,
   };
 }

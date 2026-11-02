@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { trapDialogFocus, useRestoreFocus } from "./dialogFocus.js";
 import "../styles.css";
 
 type Mode = "free" | "name" | "species";
@@ -22,6 +23,7 @@ const refusals = (body: unknown): Refusal[] => body && typeof body === "object" 
 
 /** Small, anchored editor for server-validated sign text. The server remains the source of truth for wrapping and character validation. */
 export function SignEditor({ mapName, x, y, anchor, hasObjectEvent = false, onDone, onCancel, onSessionUpdated }: SignEditorProps) {
+  useRestoreFocus();
   const [reply, setReply] = useState<SignReply | null>(null);
   const [mode, setMode] = useState<Mode>("free");
   const [text, setText] = useState("");
@@ -80,7 +82,8 @@ export function SignEditor({ mapName, x, y, anchor, hasObjectEvent = false, onDo
   };
   const canEdit = reply?.kind === "empty" || (reply?.kind === "sign" && reply.editable);
   const action = reply?.kind === "sign" ? "Update" : "Place";
-  return <div className="sign-editor" style={style} role="dialog" aria-modal="true" aria-label="Sign editor" onKeyDown={(e) => { if (e.key === "Escape") onCancel(); }}>
+  return <div className="sign-editor" style={style} role="dialog" aria-modal="true" aria-label="Sign editor"
+    onKeyDown={(e) => { trapDialogFocus(e); if (e.key === "Escape") onCancel(); }}>
     <h2 className="sign-composer__title">Sign</h2>
     {error && <p role="alert" className="save-dialog__refusal-message">{error}</p>}
     {hasObjectEvent && <p>An object event is on this tile.</p>}

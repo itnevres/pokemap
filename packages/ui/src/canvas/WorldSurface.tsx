@@ -160,7 +160,7 @@ export function WorldSurface<P extends SurfacePlacement, C extends WireConflict,
     fitRef.current = fit;
   });
   const fitEnabled = !worldContext.inContext || worldContext.fitEnabled;
-  useFitShortcut(fit, fitEnabled);
+  useFitShortcut(fit, fitEnabled, containerRef);
 
   // Initial fit, once, when the world and a measured viewport both exist. It sets `fitted` in the same update as
   // zoom and pan, and `visible` stays [] until then: culling against the mount default (zoom 1, pan 0) once
@@ -657,6 +657,7 @@ export function WorldSurface<P extends SurfacePlacement, C extends WireConflict,
     return { map: badge?.map ?? hitTest(w.x, w.y)?.map ?? null, badge };
   });
   const onKeyDown = (e: React.KeyboardEvent<HTMLCanvasElement>) => {
+    if (e.defaultPrevented || document.querySelector('[aria-modal="true"]')) return;
     const name = selected.size === 1 ? [...selected][0]! : null;
     const p = name && inScope(name) ? world?.placements.get(name) : undefined;
     if (contextMenu.onMenuKey(e, () => {
