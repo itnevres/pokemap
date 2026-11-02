@@ -45,3 +45,30 @@ Ruling: T4 tests open the popup by capturing `slots` through a test adapter that
 - Task 4b hop 1: OpenCode + Nemotron 3 Ultra, same worktree, base f1455e8.
 - Task 4b hop 1: OpenCode + Nemotron 3 Ultra FAILED verify (71 requests, 1 upstream idle timeout it retried past; claimed complete; conductor re-run of test/shell: 21 fail + 4 it.todo). Diff on target in shape (useWarpPopup, adapter/map.name, bumpTile, FamilyApp popup render) but useWarpPopup is wrong: close nulls `closeRequest` before its `.then` check so close never fires; close decides on the click-time `popup`/`leave` closure, not a pending-state effect after strokeSettled; FamilyApp passes a no-op onStrokeChain to renderWorld while the popup is open (check). Edited GbaMapSurface.test.tsx only to add `openWarpDestination` to a ShellSlots literal (type-required; acceptable). Stashed: stash@{0} "delegate: nemotron-ultra failed plan-13 task-4b ..." (on p13-t4, -u, includes test + report). JSONL kept at the old conductor's scratchpad oc4b-keep.jsonl.
 - Next hop per delegate rule 2: one retry on the same model (OpenCode `run --session ses_e79cbba55ffeANoT3koMLm6BrC`) with the failing output and the two hook bugs above; fails again -> Inkling (OpenCode) -> Codex gpt-6.1-sol.
+- Task 4b hop 2 (conductor 3): Nemotron 3 Ultra retry, same OpenCode session (resumed via a junction at the old worktree path;
+  the session is bound to its creation path) FAILED verify (claimed done; re-run 18 fail + 5 todo; nested it.todo left in place).
+  Stashed "delegate: nemotron-ultra retry failed ..." (-u). Next hop: Inkling (OpenCode), fresh from f1455e8 with the original
+  brief plus a pitfalls appendix (scratchpad t4b-inkling-brief.md).
+- Task 4b hop 3: Inkling (OpenCode) CRASHED (Transport ECONNRESET after 33 tool calls, no final text, hook file only). Stashed
+  "delegate: inkling crashed ...". Dots3-note skipped: the conductor brief routed Inkling -> Codex (free hops 2/3 failed on this hook).
+- Task 4b hop 4: Codex gpt-6.1-sol done (thread 01a1866c-2847-75d2-8d60-53827fb2ed43, sandbox: no vitest). Conductor: focused 33/33
+  first run; added `openWarpDestination` to the GbaMapSurface.test.tsx ShellSlots literal (type-required). Red (src reverted) 33/33
+  fail on the missing slot. Mutations 7/10 killed; survivors b (auto-close guard), e (WorldSurface modal guard), g (context-menu
+  modal guard) -> fix round 1 (same thread): destinationSeen deleted (both families select in the same batch), e/g tests added.
+  After: focused 35/35, mutations 9/9 killed, UI 2,083 / 125 files, typecheck pass. Commit 4e5c80f on p13-t4.
+- Task 4b: minor (deferred): "popup text-field Escape leaves the background context menu open" (gba) failed once in one of two
+  full UI runs, passes 3/3 alone and in the second full run (timing under load).
+- Task 4 reviews (Codex gpt-6-astra, separate, range 6e0bb75..4e5c80f): spec PASS (0 findings); quality Needs rework (I1 dialogs
+  never restore focus on unmount -> body after prompt Cancel, popup Escape/Tab trap dead; M1 dirty-open opener captured late).
+  Both verified against code. Ruling: one fix, shared restore-focus helper in dialogFocus.ts used by the four dialogs and WarpPopup.
+  Fix round 2 -> Codex thread 01a1866c.
+- Task 4 fix round 2 (Codex thread): bf9ee64 shared useRestoreFocus (render-time capture, layout cleanup, previous chain) in the four
+  dialogs + WarpPopup; conductor inline test fix (context-menu right-click retried until World centres; reason: 4 lines, test-only,
+  the Minor flake). Focused 43/43 x3, UI 2,091 / 125, typecheck pass, mutations 4/4 killed.
+- Task 4 quality re-review R1: Needs rework, both verified: R1 StrictMode replay (main.tsx uses StrictMode; autoFocus not
+  replayed) restores focus behind an open dialog; R2 an older dialog unmounting steals focus from a newer one. Ruling: restore
+  only when focus was lost (microtask after cleanup, activeElement body/null), keep render capture + previous chain. Fix round 3.
+- Task 4 fix round 3 (Codex thread): restore deferred to a microtask, only when focus fell to body; StrictMode + out-of-order tests,
+  new test/shared/dialogFocus.test.tsx. Focused 246/246 x2, UI 2,101 / 126, typecheck pass, mutations 4/4 killed. Re-review 2 next.
+- Task 4 quality re-review 2 (Codex astra): Approved, 0 findings. Spec PASS stands (fix rounds changed focus handling only).
+- Task 4: complete (4a f1455e8, 4b 4e5c80f, fixes bf9ee64 a3d6c9e on p13-t4; review clean after fix round 3).
