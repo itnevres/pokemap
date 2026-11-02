@@ -559,6 +559,16 @@ behaviour is a named adapter fact (`nativePx`, `warpOffset`, `borderNeighbours`,
 | `gba/worldSurface.tsx` `useGbaWorld` | GBA facts: 16 px tiles, warp offset 1, world GET and ledger reconciliation, vertical-link triangles, `drawnByDefault` (indoor hidden), encounter summary | `components/WorldCanvas` | — |
 | `gbc/worldSurface.tsx` | GBC facts: 32 px blocks, warp offset 1/2, time-of-day cache key, scoped border neighbours, Shift-click selects, per-map save errors | — | `gbc/GbcWorldCanvas` |
 
+Plan 13 (warp destination popups, dungeon scope; spec `2026-10-28-pokemap-plan-13-warp-popups-design.md`). A resolved
+warp marker's double-click (World and Dungeon, both families) opens the destination's full Map view workspace in a shell
+popup (P13-1); closing it returns to the source map through the family's `leave` guard (P13-2).
+
+| Module | What it owns | GBA consumer | GBC consumer |
+|---|---|---|---|
+| `shell/useWarpPopup.ts` | popup state `{ destination, source }`, open guard (switch prompt / Save dialog / popup open), close after `strokeSettled()` through `leave` back to the source, `ShellSlots.openWarpDestination` | `shell/FamilyApp` | `shell/FamilyApp` |
+| `shared/WarpPopup.tsx` | the popup modal around `runtime.renderMap`: workspace-sized panel (`warp-modal__panel--workspace`), Close button, Escape owned by any dialog above it or a text field first, no backdrop close | `shell/FamilyApp` | `shell/FamilyApp` |
+| `shared/dialogFocus.ts` | `trapDialogFocus` (Tab trap) and `useRestoreFocus` (render-time opener capture, restore only when focus fell to body, StrictMode-safe) | `SaveDialog`, `SwitchPromptDialog`, `SignEditor`, `PokemonIndicatorDialog`, `WarpPopup` | same |
+
 Still per family, on purpose (Plan 8 Task 7 stop rule): the app shell is now one (`FamilyApp`), so per family means
 *behind the runtime or a capability* (switch policy in `runtime.leave`, `switchError`, time of day, defects banner, sign
 composer, `useMapEditing` vs `GbcMapEditing` state lifetimes), with D1-D3/D6/D8 moving them in Plan 10. The map canvases'

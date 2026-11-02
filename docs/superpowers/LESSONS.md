@@ -250,6 +250,12 @@ Rerun in isolation before calling either a regression. (Plan 8)
 
 **Test error UI live without touching the subject:** `page.route` the POST and GET to `fulfill({ status: 500 })`. Nothing reaches the hub, so the subject stays byte-identical (`task-reports/pokemap-plan-11-canvas-leaf/task-9-shots/toasts.mjs`). (Plan 11 final review)
 
+**Live checks that must save: serve a scratch clone, not the subject.** `git clone` the subject into the scratchpad (copy the ignored `.pokemap/` too when the sidecar matters) and start the hub on the clone; commits can then be real and the subject's manifest stays unchanged with no POST guard. Seed missing sidecar state through the hub's own POSTs on the clone. (`task-reports/pokemap-plan-13-warp-popups/task-6-live.md`.)
+
+**A modal that reuses a preview's panel size clips a full workspace.** The Plan 13 popup inherited `.warp-modal__panel` (720x560) and cut the toolbar's Discard and the palette at 1400x900; no unit test can see it. Tell: the first live screenshot shows a wrapped toolbar. Screenshot every new modal at the harness size.
+
+**A GBC dungeon fit can open below the warp-marker zoom** (6% for a dungeon with shelved indoor members), so no markers render. Wheel in over the anchored member before looking for markers.
+
 ## Windows / Tooling / Git / Worktrees
 
 **When the main checkout holds unrelated uncommitted work, gate and live-verify from a detached `git -c core.longpaths=true worktree add` in scratch (with its own `npm ci`).** Never stash or restore. (Plan 7)

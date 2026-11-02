@@ -96,3 +96,7 @@ Ruling: T4 tests open the popup by capturing `slots` through a test adapter that
 - Task 6 finding F1: popup used the 720x560 preview panel, clipping the workspace toolbar/rail. Fixed inline (reason: 7 lines CSS + className): `warp-modal__panel--workspace` 96vw x 92vh. Live re-run green in both families.
 - Gate with F1: 3,933 pass / 0 fail / 236 files; typecheck pass, UI build pass; subjects unchanged (GBA 0e3237e6ade2, PerfPlus 13a31cb654ff).
 - Task 6: complete.
+- Task 7: final whole-branch review 0da6e5b..4d3e226, Codex gpt-6-astra (user chose Astra). Approved with fixes, 1 Minor (busy SwitchPromptDialog: all buttons disabled, focus to body, Tab escapes); verified against code.
+- Task 7 fix (conductor inline, reason: ~8 lines, exact fix named): 21a8dc4 panel focus when busy + trap consumes Tab with no enabled control; red first, guard mutation kills. No re-review (Minor; red/green + mutation shown).
+- Gate at 21a8dc4: 3,934 pass / 0 fail / 236 files; typecheck pass, UI build pass; subjects unchanged.
+- Task 7 docs: DESIGN.md Plan 13 rows, LESSONS (scratch clone live writes, modal size, GBC dungeon fit zoom), roadmap status, RESUME.
