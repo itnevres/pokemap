@@ -72,3 +72,6 @@ Ruling: T4 tests open the popup by capturing `slots` through a test adapter that
   new test/shared/dialogFocus.test.tsx. Focused 246/246 x2, UI 2,101 / 126, typecheck pass, mutations 4/4 killed. Re-review 2 next.
 - Task 4 quality re-review 2 (Codex astra): Approved, 0 findings. Spec PASS stands (fix rounds changed focus handling only).
 - Task 4: complete (4a f1455e8, 4b 4e5c80f, fixes bf9ee64 a3d6c9e on p13-t4; review clean after fix round 3).
+- Merge: p13-t4 -> plan-13-warp-popups c52c03d (merge commit). Worktree wt4 removed (junctions unlinked first).
+- Task 5: tier Opus (canvas-core double-click, end-to-end both families). Worktree <scratchpad>/wt5 branch p13-t5, base c52c03d.
+  Brief task-5-brief.md. Hop 1: OpenCode + Nemotron 3 Ultra.
