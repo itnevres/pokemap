@@ -34,6 +34,8 @@ export function trapDialogFocus(event: KeyboardEvent<HTMLElement>) {
   if (!(event.target instanceof Element) || event.target.closest('[aria-modal="true"]') !== panel) return;
   const controls = [...panel.querySelectorAll<HTMLElement>("button, input, select, textarea, [tabindex]")]
     .filter((element) => !element.matches(":disabled") && element.tabIndex >= 0 && !element.hidden);
+  // Every control disabled (a busy prompt): the panel itself holds focus, so Tab stays put.
+  if (controls.length === 0) { event.preventDefault(); return; }
   const first = controls[0]; const last = controls.at(-1);
   if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
   else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
