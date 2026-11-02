@@ -14,10 +14,14 @@ export function useRestoreFocus() {
     return () => {
       const index = focusReturns.indexOf(entry);
       if (index !== -1) focusReturns.splice(index, 1);
-      let target: FocusReturn | null = entry;
-      // A prompt control may have been removed before its replacement dialog mounted.
-      while (target && !(target.opener instanceof HTMLElement && target.opener.isConnected)) target = target.previous;
-      if (target?.opener instanceof HTMLElement) target.opener.focus();
+      // Real deletion removes the focused node after layout cleanup; replay and newer dialogs keep their focus.
+      queueMicrotask(() => {
+        if (document.activeElement !== null && document.activeElement !== document.body) return;
+        let target: FocusReturn | null = entry;
+        // A prompt control may have been removed before its replacement dialog mounted.
+        while (target && !(target.opener instanceof HTMLElement && target.opener.isConnected)) target = target.previous;
+        if (target?.opener instanceof HTMLElement) target.opener.focus();
+      });
     };
   }, [entry]);
 }

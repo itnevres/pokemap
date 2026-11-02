@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { StrictMode, useEffect } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { FamilyApp } from "../../src/shell/FamilyApp.js";
@@ -85,7 +85,7 @@ afterEach(() => { restoreViewport(); vi.unstubAllGlobals(); vi.restoreAllMocks()
 
 async function setup(base: EngineAdapter, options: {
   mode?: "World" | "Dungeon"; chain?: SettledChain; mapWait?: Promise<void>; paintWait?: Promise<void>;
-  reloadFails?: boolean;
+  reloadFails?: boolean; strict?: boolean;
 } = {}) {
   const gba = base.family === "gba";
   const names = gba ? ["PalletTown", "Route1", "Route2"] : ["OlivineCity", "OlivinePort", "Route2"];
@@ -160,7 +160,8 @@ async function setup(base: EngineAdapter, options: {
       renderDungeon: (f: Set<string>, s: ShellSlots) => runtime.renderDungeon(f, capture(s)),
     };
   } };
-  render(<FamilyApp adapter={adapter} />);
+  const app = <FamilyApp adapter={adapter} />;
+  render(options.strict ? <StrictMode>{app}</StrictMode> : app);
   await screen.findByRole("button", { name: names[0] });
   click(names[0]!);
   await screen.findByRole("button", { name: "Pencil" });
@@ -191,32 +192,35 @@ async function setup(base: EngineAdapter, options: {
 }
 
 describe.each([gbaAdapter, gbcAdapter])("$family shell warp popup", (base) => {
-  it("prompt Cancel restores popup focus so Escape on the active control prompts again", async () => {
-    const h = await setup(base); await h.open(); await h.dirty();
+  it.each([false, true])("prompt Cancel restores popup focus for active-control Escape (strict=%s)", async (strict) => {
+    const h = await setup(base, { strict }); await h.open(); await h.dirty();
     fireEvent.click(within(popup()).getByRole("button", { name: "Close" })); await flush();
     const prompt = screen.getByRole("dialog", { name: "Unsaved changes" });
     expect(prompt.contains(document.activeElement)).toBe(true);
-    fireEvent.click(within(prompt).getByRole("button", { name: "Cancel" }));
+    fireEvent.click(within(prompt).getByRole("button", { name: "Cancel" })); await flush();
     expect(popup().contains(document.activeElement)).toBe(true);
     fireEvent.keyDown(document.activeElement!, { key: "Escape" }); await flush();
     expect(screen.getByRole("dialog", { name: "Unsaved changes" })).toBeTruthy();
     expect(within(popup()).getByTestId("dirty-indicator")).toBeTruthy();
   });
 
-  it("SaveDialog Escape restores popup focus without manually refocusing a control", async () => {
-    const h = await setup(base); await h.open(); await h.dirty();
+  it.each([false, true])("SaveDialog Escape restores popup focus without refocusing (strict=%s)", async (strict) => {
+    const h = await setup(base, { strict }); await h.open(); await h.dirty();
     fireEvent.click(within(popup()).getByRole("button", { name: "Save Changes" }));
     const save = await screen.findByRole("dialog", { name: "Save changes" });
     expect(save.contains(document.activeElement)).toBe(true);
-    fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+    fireEvent.keyDown(document.activeElement!, { key: "Escape" }); await flush();
     expect(screen.queryByRole("dialog", { name: "Save changes" })).toBeNull();
     expect(popup().contains(document.activeElement)).toBe(true);
     fireEvent.keyDown(document.activeElement!, { key: "Escape" }); await flush();
     expect(screen.getByRole("dialog", { name: "Unsaved changes" })).toBeTruthy();
   });
 
-  it.each(["Discard", "Save"])("dirty open through %s restores the original canvas after popup close", async (action) => {
-    const h = await setup(base);
+  it.each([
+    { action: "Discard", strict: false }, { action: "Save", strict: false },
+    { action: "Discard", strict: true }, { action: "Save", strict: true },
+  ])("dirty open through $action restores the original canvas (strict=$strict)", async ({ action, strict }) => {
+    const h = await setup(base, { strict });
     const opener = document.querySelector<HTMLCanvasElement>("canvas.world-canvas__stage")!;
     act(() => h.slots().enterContext(h.names[0]!)); await flush();
     act(() => h.slots().requestExitContext()); await flush();
@@ -238,6 +242,7 @@ describe.each([gbaAdapter, gbcAdapter])("$family shell warp popup", (base) => {
     expect(popup().contains(document.activeElement)).toBe(true);
     fireEvent.keyDown(document.activeElement!, { key: "Escape" });
     await waitFor(() => expect(maybePopup()).toBeNull());
+    await flush();
     expect(document.activeElement).toBe(opener);
   });
 
@@ -318,6 +323,7 @@ describe.each([gbaAdapter, gbcAdapter])("$family shell warp popup", (base) => {
     const sign = await screen.findByRole("dialog", { name: "Sign editor" });
     const text = await within(sign).findByRole("textbox", { name: "Text" });
     cycle(sign); fireEvent.keyDown(text, { key: "Escape" });
+    await flush();
     expect(maybePopup()).not.toBeNull();
     expect(screen.queryByRole("dialog", { name: "Sign editor" })).toBeNull();
     expect(popup().contains(document.activeElement)).toBe(true);

@@ -38,8 +38,9 @@ Unmount invalidates outstanding request tokens.
 
 ## Tests written
 
-43 parameter-expanded cases: 21 each for GBA/GBC, plus the GBC-only reload error case.
-Fix round 2 adds eight cases to the 35 from fix round 1; the new edits await conductor verification.
+51 parameter-expanded shell cases: 25 each for GBA/GBC, plus the GBC-only reload error case.
+Fix round 3 repeats eight focus cases under StrictMode and adds two direct helper cases in shared/dialogFocus.test.tsx.
+These edits await conductor verification.
 Tests capture shell slots through wrappers around the real runtime renderWorld/renderDungeon, per the preflight ruling.
 Fetch fixtures and Register follow switchPrompt.test.tsx; deferred responses hold destination loads and paint applies.
 The optional Register seam supplies an unsettled chain for pending-open cancellation cases.
@@ -198,3 +199,49 @@ drop the return-chain fallback for a removed prompt control. The new cases are i
 
 verify: not run (sandbox)
 Conductor must run the revised popup tests, existing suites, typecheck and focus mutations against these edits.
+
+## Fix round 3
+
+Quality re-review findings R1/R2: synchronous cleanup steals focus during StrictMode replay and older-dialog deletion.
+Tier remains High (React commit ordering and shared focus ownership); same implementer, no helper dispatch.
+Scope this round: shared/dialogFocus.ts, test/shell/warpPopup.test.tsx, new test/shared/dialogFocus.test.tsx, this report.
+Source/test paths in this section are relative to packages/ui/. Other existing tests and files were not edited.
+
+Installed React source inspected, without running tests:
+- src/main.tsx wraps Root in StrictMode.
+- node_modules/react-dom/cjs/react-dom-client.development.js:14230, commitDeletionEffectsOnFiber.
+- Its function-component branch calls commitHookLayoutUnmountEffects before recursively deleting its children.
+- Its host-component branch traverses child deletion effects before removeChild/removeChildFromContainer.
+- The focused dialog control therefore still exists during the helper's layout cleanup on real deletion.
+- At :18697, doubleInvokeEffectsOnFiber uses disappearLayoutEffects and reappearLayoutEffects for StrictMode replay.
+- That replay runs layout cleanup/setup without host deletion, so the focused control remains connected and active.
+
+Change:
+- Stack removal remains synchronous in layout cleanup.
+- The cleanup queues a microtask that restores only when activeElement is null or document.body.
+- A real deletion has removed its focused DOM node by that check, allowing restoration.
+- StrictMode replay leaves its focused control active, so the queued check does nothing.
+- If newer dialog B retains focus while older A unmounts, A's queued check also does nothing.
+- Render-time capture and the previous chain remain intact, including dirty-open prompt -> Save -> popup transitions.
+- This supersedes fix round 2's synchronous restoration timing; the chain still recovers removed prompt controls.
+
+Tests:
+- Prompt Cancel over a dirty popup: original and StrictMode, GBA/GBC; restored active-control Escape prompts again.
+- SaveDialog Escape over a dirty popup: original and StrictMode, GBA/GBC; restored active-control Escape prompts again.
+- Both cases assert the secondary dialog contains activeElement while open, catching StrictMode replay focus theft.
+- Dirty open Discard -> popup close -> original canvas: original and StrictMode, GBA/GBC; no manual refocus.
+- Dirty open Save/commit -> popup close -> original canvas: original and StrictMode, GBA/GBC; no manual refocus.
+- Focus assertions now await the queued microtask, including the existing sign-editor return-focus assertion.
+- New direct helper test runs with and without StrictMode, since no normal shell path requires out-of-order deletion.
+- Its opener and dialog controls use autoFocus; opening Older and Newer must leave focus in each new dialog.
+- Removing Older while Newer stays mounted must preserve Newer's focused control.
+- Removing Newer afterward must follow the removed Older's previous chain back to the connected opener.
+- No focus() call, fake autofocus replay, timer, weakened assertion or other existing-test edit was added.
+
+Expected test counts: shell warpPopup 51 (43 + 8 StrictMode cases), new direct helper file 2 cases.
+Suggested mutations: restore synchronously again (StrictMode cases); remove the body/null guard while retaining the
+microtask (non-Strict out-of-order case); remove the previous fallback (dirty-open and final direct-test close).
+These are source-based expectations; no passing results or killed mutations are claimed for this round.
+
+verify: not run (sandbox)
+No vitest, tsc, git, mutation, UI build or live-app command attempted. Conductor verification remains required.
