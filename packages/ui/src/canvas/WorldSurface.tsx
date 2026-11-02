@@ -77,6 +77,7 @@ export interface WorldSurfaceProps<P extends SurfacePlacement, C extends WireCon
   onPlacementsSaved?(names: string[]): void;
   onLayoutChanged?(): void;
   onEditHere?(name: string): void;
+  onOpenWarpDestination?(map: string): void;
   context?: {
     map: string;
     origin: { x: number; y: number } | null;
@@ -90,7 +91,7 @@ export function WorldSurface<P extends SurfacePlacement, C extends WireConflict,
   props: WorldSurfaceProps<P, C, W>,
 ) {
   const { adapter, mapFilter = null, jumpToMap, jumpToken, onOpenMap, onJumpToMap, onEditHere, context, tileVersions,
-    onSelectMap, onPlacementsSaved, onLayoutChanged } = props;
+    onSelectMap, onPlacementsSaved, onLayoutChanged, onOpenWarpDestination } = props;
   const [ledger] = useState(createPlacementLedger);
   const { world, error, reload, loadedGen, dismissError, move } = adapter.useWorld(ledger, mapFilter ? "dungeon" : "world");
   const coverage = adapter.useCoverage();
@@ -481,7 +482,6 @@ export function WorldSurface<P extends SurfacePlacement, C extends WireConflict,
   const [linesOn, setLinesOn] = useState(false);
   const [failedWarps, setFailedWarps] = useState<ReadonlyMap<string, string>>(() => new Map());
   const [unresolvedWarp, setUnresolvedWarp] = useState<string | null>(null);
-  const [warpPopup, setWarpPopup] = useState<string | null>(null);
   const [warpVersion, setWarpVersion] = useState(0);
   const warpCache = useRef(new Map<string, readonly SurfaceWarp[] | null>());
   const warpRequests = useRef(new Map<string, object>());
@@ -628,7 +628,7 @@ export function WorldSurface<P extends SurfacePlacement, C extends WireConflict,
     if (marker) {
       if (marker.warp.popupMap) {
         clearWarpErrors();
-        setWarpPopup(marker.warp.popupMap);
+        onOpenWarpDestination?.(marker.warp.popupMap);
       } else if (adapter.unresolvedWarpError) setUnresolvedWarp(adapter.unresolvedWarpError);
       return;
     }
@@ -929,7 +929,6 @@ export function WorldSurface<P extends SurfacePlacement, C extends WireConflict,
           hover,
         })}
       </div>
-      {warpPopup && world && adapter.renderWarpPopup?.(warpPopup, () => setWarpPopup(null), world)}
     </section>
   );
 }

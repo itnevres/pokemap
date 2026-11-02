@@ -13,7 +13,6 @@ import { fetchGuarded } from "../hooks/useGuardedFetch.js";
 import { useCoverage } from "../hooks/useCoverage.js";
 import { isDrawnByDefault } from "../world/visibility.js";
 import { isRecord, isWireConflict } from "../world/conflictAcceptance.js";
-import { WarpDestinationModal } from "../components/WarpDestinationModal.js";
 
 /** The pixel size a placement's PNG renders at natively (`renderLayout`,
  *  border 0): 16px per tile, same constant the CLI's `render-world --scale
@@ -203,9 +202,6 @@ export function createGbaWorldSurface(): WorldSurfaceAdapter<GbaWorldPlacement, 
         },
       }));
     },
-    renderWarpPopup: (map, onClose) => (
-      <WarpDestinationModal mapName={map} onClose={onClose} />
-    ),
     imageUrl: (p, version) => `/api/render/${encodeURIComponent(p.map)}.png${version ? `?v=${version}` : ""}`,
     cacheKey: 0,
     drawnByDefault,

@@ -34,6 +34,8 @@ export interface GbcWorldCanvasProps {
    *  menu's "Edit here". The app enters in-context editing and passes `context`. Unset: a double-click opens the
    *  map in Map view instead (Dungeon mode), and the menu offers no "Edit here". */
   onEditHere?: (name: string) => void;
+  /** Fired when a double-click hits a resolved warp marker. The shell opens the destination map in a popup. */
+  onOpenWarpDestination?: (name: string) => void;
   /** In-context editing: while set, an overlay fills the viewport box with a dim layer, the host's controlled
    *  editing canvas and a small bar. The world snaps once to this map and its zoom may reach 128 px per block. */
   context?: GbcWorldCanvasContext;

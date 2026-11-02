@@ -85,7 +85,7 @@ afterEach(() => { restoreViewport(); vi.unstubAllGlobals(); vi.restoreAllMocks()
 
 async function setup(base: EngineAdapter, options: {
   mode?: "World" | "Dungeon"; chain?: SettledChain; mapWait?: Promise<void>; paintWait?: Promise<void>;
-  reloadFails?: boolean; strict?: boolean;
+  reloadFails?: boolean; strict?: boolean; marker?: boolean;
 } = {}) {
   const gba = base.family === "gba";
   const names = gba ? ["PalletTown", "Route1", "Route2"] : ["OlivineCity", "OlivinePort", "Route2"];
@@ -122,8 +122,16 @@ async function setup(base: EngineAdapter, options: {
     if (url.startsWith("/api/encounters/")) return ok(gba
       ? { mapName: url.split("/").at(-1), mapId: 0, methods: [] }
       : { family: "gbc", mapName: url.split("/").at(-1), sources: [], defects: [] });
-    if (url.startsWith("/api/warps/")) return ok(gba ? { mapName: url.split("/").at(-1), warps: [] }
-      : { family: "gbc", mapName: url.split("/").at(-1), warps: [] });
+    if (url.startsWith("/api/warps/")) {
+      const mapName = decodeURIComponent(url.split("/").at(-1)!);
+      const resolved = options.marker && mapName === names[0];
+      const destMapName = names[1]!;
+      return ok(gba ? { mapName, warps: resolved
+        ? [{ x: 1, y: 1, elevation: 0, destMap: "MAP_ROUTE1", destWarpId: "0", destMapName }] : [] }
+        : { family: "gbc", mapName, warps: resolved
+          ? [{ x: 2, y: 1, mapConst: "TARGET", destWarp: 1, lineIndex: 1, destMapName,
+            destEvent: { x: 2, y: 1, mapConst: "SOURCE", destWarp: 1, lineIndex: 1 } }] : [] });
+    }
     if (url.includes("/sign/at?")) return ok({ kind: "empty" });
     if (url.endsWith("/plan")) return ok({ changes: [{ path: "map.bin", kind: "binary", summary: "1 block changed" }],
       refusals: [] });
@@ -469,3 +477,37 @@ it("GBC displays a post-save reload error inside the open popup", async () => {
   expect(h.slots().tileVersions[h.names[1]!]).toBe(1);
 });
 
+describe.each([gbaAdapter, gbcAdapter])("$family warp marker double-click opens shell popup", (base) => {
+  it.each(["World", "Dungeon"] as const)(
+    "double-click a warp marker in %s mode opens the shell popup with destination workspace", async (mode) => {
+      const h = await setup(base, { mode, marker: true });
+      const canvas = document.querySelector<HTMLCanvasElement>("canvas.world-canvas__stage")!;
+      expect(maybePopup()).toBeNull();
+      const warps = screen.getByRole("switch", { name: "Warps" });
+      if (warps.getAttribute("aria-checked") !== "true") fireEvent.click(warps);
+      const marker = await waitFor(() => {
+        const markers = document.querySelectorAll<HTMLElement>(".world-canvas__warp-marker");
+        expect(markers).toHaveLength(1);
+        return markers[0]!;
+      });
+      // The marker belongs to the source map and sits inside its bounds in each family's native units.
+      const rect = canvas.getBoundingClientRect();
+      canvas.focus();
+      fireEvent.doubleClick(canvas, {
+        clientX: rect.left + parseFloat(marker.style.left),
+        clientY: rect.top + parseFloat(marker.style.top),
+      });
+      const dialog = await screen.findByRole("dialog", { name: `${h.names[1]} (warp destination)` });
+      expect(dialog.hasAttribute("data-warp-popup")).toBe(true);
+      const workspace = await within(dialog).findByRole("region", { name: `${h.names[1]} canvas` });
+      expect(workspace.querySelector("canvas.map-canvas__stage")).not.toBeNull();
+      expect(within(dialog).queryByRole("region", { name: `${h.names[0]} canvas` })).toBeNull();
+      expect(within(dialog).getByRole("button", { name: "Pencil" })).toBeTruthy();
+      expect(h.selected()).toBe(h.names[1]);
+      fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
+      await waitFor(() => expect(maybePopup()).toBeNull());
+      expect(h.selected()).toBe(h.names[0]);
+      await waitFor(() => expect(document.activeElement).toBe(canvas));
+    },
+  );
+});
