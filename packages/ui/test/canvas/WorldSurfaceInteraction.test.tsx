@@ -28,6 +28,8 @@ type World = SurfaceWorld<SurfacePlacement, WireConflict>;
 type Adapter = WorldSurfaceAdapter<SurfacePlacement, WireConflict>;
 type Props = Omit<WorldSurfaceProps<SurfacePlacement, WireConflict>, "adapter">;
 
+const openWarpMock = vi.fn();
+
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
   let reject!: (cause: unknown) => void;
@@ -172,11 +174,6 @@ beforeEach(() => {
     border: { band: 1 },
     fetchWarps: async () => [],
     warpOffset: 1,
-    renderWarpPopup: (map, close) => (
-      <div role="dialog" aria-label={`Warp to ${map}`}>
-        <button onClick={close}>Close preview</button>
-      </div>
-    ),
     useCoverage: () => ({ coverage: null, error: null, levelByMap: [], emptyMapNames: new Set() }),
     lensLegend: {},
     canvasLabel: "World map",
@@ -185,6 +182,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   lateState.active = false;
+  openWarpMock.mockClear();
   cleanup();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -197,7 +195,7 @@ async function settle() {
 }
 function mount(props: Props = {}) {
   return render(<WorldSurface adapter={adapter} onSelectMap={callbacks.select} onOpenMap={callbacks.open}
-    onPlacementsSaved={callbacks.saved} {...props} />);
+    onPlacementsSaved={callbacks.saved} onOpenWarpDestination={openWarpMock} {...props} />);
 }
 type Host = ReturnType<typeof mount>;
 const canvas = (host: Host) => host.container.querySelector<HTMLCanvasElement>(".world-canvas__stage")!;
@@ -526,7 +524,7 @@ it("rail drop begins before movement, posts once, then reloads and reports the s
   expect(callbacks.saved).toHaveBeenCalledWith(["Unplaced"]);
 });
 
-it("marker clicks within eight screen pixels select nothing; nine pixels selects the map and double-click previews", async () => {
+it("marker clicks within eight pixels select nothing; nine pixels selects the map; double-click requests the popup", async () => {
   adapter.fetchWarps = async (map) => map === "A"
     ? [{ point: { x: 5, y: 5 }, popupMap: "B" }] : [];
   const host = mount();
@@ -541,10 +539,10 @@ it("marker clicks within eight screen pixels select nothing; nine pixels selects
   click(host, 34, 25);
   expect(selection(host)).toEqual(["A"]);
   fireEvent.doubleClick(canvas(host), { clientX: 25, clientY: 25 });
-  expect(screen.getByRole("dialog", { name: "Warp to B" })).toBeTruthy();
-  expect(callbacks.open).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: "Close preview" }));
+  expect(openWarpMock).toHaveBeenCalledTimes(1);
+  expect(openWarpMock).toHaveBeenCalledWith("B");
   expect(screen.queryByRole("dialog")).toBeNull();
+  expect(callbacks.open).not.toHaveBeenCalled();
 });
 
 it("projects half-unit warp coordinates and resolved connection endpoints through the same view after pan/zoom", async () => {
@@ -654,6 +652,7 @@ it.each(["resolve", "reject"])("ignores a warp fetch that %ss after unmount with
 
 it("StrictMode fetches warps once per map and discards the previous mount's pending result", async () => {
   const requests: Array<ReturnType<typeof deferred<readonly SurfaceWarp[]>>> = [];
+  const openWarpMock = vi.fn();
   adapter.fetchWarps = vi.fn(() => {
     const result = deferred<readonly SurfaceWarp[]>();
     requests.push(result);
@@ -661,15 +660,17 @@ it("StrictMode fetches warps once per map and discards the previous mount's pend
   });
   const filter = new Set(["A"]);
   const errors = vi.spyOn(console, "error");
-  const first = render(<WorldSurface adapter={adapter} mapFilter={filter} />, { reactStrictMode: true });
+  const first = render(<WorldSurface adapter={adapter} mapFilter={filter} onOpenWarpDestination={openWarpMock} />,
+    { reactStrictMode: true });
   fireEvent.click(screen.getByRole("switch", { name: "Warps" }));
   await settle();
   expect(adapter.fetchWarps).toHaveBeenCalledTimes(1);
-  first.rerender(<WorldSurface adapter={{ ...adapter }} mapFilter={filter} />);
+  first.rerender(<WorldSurface adapter={{ ...adapter }} mapFilter={filter} onOpenWarpDestination={openWarpMock} />);
   await settle();
   expect(adapter.fetchWarps).toHaveBeenCalledTimes(1);
   first.unmount();
-  const second = render(<WorldSurface adapter={adapter} mapFilter={filter} />, { reactStrictMode: true });
+  const second = render(<WorldSurface adapter={adapter} mapFilter={filter} onOpenWarpDestination={openWarpMock} />,
+    { reactStrictMode: true });
   fireEvent.click(screen.getByRole("switch", { name: "Warps" }));
   await settle();
   expect(adapter.fetchWarps).toHaveBeenCalledTimes(2);
@@ -688,8 +689,9 @@ it("StrictMode fetches warps once per map and discards the previous mount's pend
   expect(markers).toHaveLength(1);
   expect([markers[0]!.style.left, markers[0]!.style.top]).toEqual(["100px", "50px"]);
   fireEvent.doubleClick(canvas(second), { clientX: 100, clientY: 50 });
-  expect(screen.getByRole("dialog", { name: "Warp to B" })).toBeTruthy();
-  expect(screen.queryByRole("dialog", { name: "Warp to Stale" })).toBeNull();
+  expect(openWarpMock).toHaveBeenCalledTimes(1);
+  expect(openWarpMock).toHaveBeenCalledWith("B");
+  expect(screen.queryByRole("dialog")).toBeNull();
   expect(adapter.fetchWarps).toHaveBeenCalledTimes(2);
   expect(screen.queryByRole("alert")).toBeNull();
   expect(errors).not.toHaveBeenCalled();
@@ -892,7 +894,7 @@ it.each(["dismissible", "per-map"] as const)("dungeon failure uses the %s error 
   expect(error.closest(policy === "per-map" ? ".world-canvas__toolbar" : ".world-canvas__viewport")).not.toBeNull();
 });
 
-it("adapter facts preserve modified double-click and unresolved warp preview behaviour", async () => {
+it("adapter facts preserve modified double-click and unresolved warp alert behaviour", async () => {
   adapter.modifiedDoubleClick = true;
   adapter.unresolvedWarpError = "This warp destination could not be resolved";
   adapter.fetchWarps = async (map) => map === "A" ? [{ point: { x: 5, y: 5 } }] : [];
@@ -903,12 +905,14 @@ it("adapter facts preserve modified double-click and unresolved warp preview beh
   await settle();
   fireEvent.doubleClick(canvas(host), { clientX: 25, clientY: 25 });
   expect(screen.getByText("Warp data unavailable: This warp destination could not be resolved")).toBeTruthy();
+  expect(openWarpMock).not.toHaveBeenCalled();
   adapter.unresolvedWarpError = undefined;
-  host.rerender(<WorldSurface adapter={adapter} />);
+  host.rerender(<WorldSurface adapter={adapter} onOpenWarpDestination={openWarpMock} />);
   fireEvent.click(screen.getByRole("switch", { name: "Warps" }));
   fireEvent.click(screen.getByRole("switch", { name: "Warps" }));
   fireEvent.doubleClick(canvas(host), { clientX: 25, clientY: 25 });
   expect(screen.queryByText("Warp data unavailable: This warp destination could not be resolved")).toBeNull();
+  expect(openWarpMock).not.toHaveBeenCalled();
 });
 
 it("keeps dismissible save errors across success, stacks toasts, and applies the dragging cursor only through its slot", async () => {
@@ -1266,8 +1270,10 @@ it("an unresolved marker still shows its own alert", async () => {
   fireEvent.doubleClick(canvas(host), { clientX: 50, clientY: 50 });
   expect(screen.getByText("Warp data unavailable: This warp destination could not be resolved")).toBeTruthy();
   expect(screen.getByText("Warp data unavailable for 1 map: B offline")).toBeTruthy();
-  // Opening a resolved marker clears both independent alerts.
+  expect(openWarpMock).not.toHaveBeenCalled();
+  // Opening a resolved marker clears both independent alerts and calls onOpenWarpDestination.
   fireEvent.doubleClick(canvas(host), { clientX: 80, clientY: 50 });
-  expect(screen.getByRole("dialog", { name: "Warp to B" })).toBeTruthy();
+  expect(openWarpMock).toHaveBeenCalledWith("B");
   expect(screen.queryByRole("alert")).toBeNull();
+  expect(screen.queryByRole("dialog")).toBeNull();
 });

@@ -86,6 +86,7 @@ export function useGbaRuntime({ selected, mode, requestPrompt }: RuntimeArgs): F
         onSelectMap={s.selectMapFromWorld}
         onOpenMap={s.openMapFromWorld}
         onEditHere={s.enterContext}
+        onOpenWarpDestination={s.openWarpDestination}
         tileVersions={s.tileVersions}
         onPlacementsSaved={(names) => { names.forEach(s.markManualPlacement); refreshVisibility(); }}
         onLayoutChanged={refreshVisibility}
@@ -137,6 +138,7 @@ export function useGbaRuntime({ selected, mode, requestPrompt }: RuntimeArgs): F
     renderWorld,
     renderDungeon: (mapFilter, s) => (
       <WorldCanvas key="dungeon" mapFilter={mapFilter} tileVersions={s.tileVersions} onOpenMap={s.openMapFromWorld}
+        onOpenWarpDestination={s.openWarpDestination}
         onPlacementsSaved={(names) => names.forEach(s.markManualPlacement)} />
     ),
     headerExtras: null,

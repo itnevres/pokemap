@@ -14,7 +14,6 @@ import { fetchGuarded } from "../hooks/useGuardedFetch.js";
 import { useGbcWorld } from "./hooks/useGbcWorld.js";
 import { useGbcCoverage } from "./hooks/useGbcCoverage.js";
 import { isGbcEncountersPayload, isGbcWarpsPayload, isRecord } from "./guards.js";
-import { GbcWarpDestinationModal } from "./GbcWarpDestinationModal.js";
 import type { GbcTimeOfDay } from "./time.js";
 
 /** Native block size, px (`GbcWorldPayload.blockPx`, always 32). Zoom here
@@ -306,9 +305,6 @@ export function createGbcWorldSurface(time: GbcTimeOfDay): WorldSurfaceAdapter<G
         },
       }));
     },
-    renderWarpPopup: (map, onClose) => (
-      <GbcWarpDestinationModal mapName={map} time={time} onClose={onClose} />
-    ),
     unresolvedWarpError: "This warp destination could not be resolved",
     modifiedDoubleClick: true,
     // A stationary Shift-click selects like a plain click (old GbcWorldCanvas onClick had no modifier guard).

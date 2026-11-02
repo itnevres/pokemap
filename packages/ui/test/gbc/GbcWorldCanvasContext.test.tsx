@@ -140,18 +140,19 @@ describe("GbcWorldCanvas: Edit here and double-click (Plan 7 Task 5b)", () => {
     expect(onOpenMap).toHaveBeenCalledWith("MapB");
   });
 
-  it("with warps on, a double-click on a warp marker previews and does NOT call onEditHere; elsewhere on the map body it does", async () => {
-    const onEditHere = vi.fn();
+  it("warp marker double-click requests the shell popup without Edit here; elsewhere on the map body it edits", async () => {
+    const onEditHere = vi.fn(), onOpenWarpDestination = vi.fn();
     const warp = { x: 2, y: 2, mapConst: "MAP_A", destWarp: 1, lineIndex: 1, destMapName: "MapA", destEvent: { x: 1, y: 1, mapConst: "MAP_B", destWarp: 1, lineIndex: 1 } };
-    const { canvas, container } = await mount({ onEditHere }, makeFetch({ MapB: [warp] }));
+    const { canvas, container } = await mount({ onEditHere, onOpenWarpDestination }, makeFetch({ MapB: [warp] }));
     fireEvent.click(screen.getByRole("switch", { name: "Warps" }));
     await waitFor(() => expect(container.querySelectorAll(".world-canvas__warp-marker").length).toBe(1));
     const marker = container.querySelector(".world-canvas__warp-marker") as HTMLElement;
     const mx = parseFloat(marker.style.left), my = parseFloat(marker.style.top);
     fireEvent.doubleClick(canvas, { clientX: mx + 2, clientY: my }); // inside MapB's body AND within the marker radius
-    expect(screen.getByRole("dialog", { name: "MapA preview" })).toBeTruthy();
+    expect(onOpenWarpDestination).toHaveBeenCalledTimes(1);
+    expect(onOpenWarpDestination).toHaveBeenCalledWith("MapA");
+    expect(screen.queryByRole("dialog")).toBeNull();
     expect(onEditHere).not.toHaveBeenCalled();
-    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
     expect(screen.queryByRole("dialog")).toBeNull();
     fireEvent.doubleClick(canvas, { clientX: mx + 40, clientY: my }); // inside MapB's body, past the marker radius
     expect(onEditHere).toHaveBeenCalledTimes(1);

@@ -115,7 +115,6 @@ export interface WorldSurfaceAdapter<
     cache: ReadonlyMap<string, readonly SurfaceWarp[] | null>,
     world: W,
   ): { map: string; point: Point } | null;
-  renderWarpPopup?(map: string, onClose: () => void, world: W): ReactNode;
   /** Unresolved preview behaviour is host-owned. */
   unresolvedWarpError?: string;
   /** A stationary Shift-click selects (or clears on empty space) like a plain click; otherwise it is ignored. */

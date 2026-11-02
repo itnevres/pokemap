@@ -109,7 +109,7 @@ describe("GBC dungeon warps (Plan 6c D3)", () => {
     await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
   });
 
-  it("opens a destination preview before body open and Escape keeps the world view", async () => {
+  it("requests a destination popup without loading a preview or changing the world view", async () => {
     const base = mockFetchAll({ world: scopedWorld });
     const fetcher = vi.fn((url: string) => {
       if (url === "/api/warps/Source") return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ family: "gbc", mapName: "Source", warps: [event(10, 9, "Hidden", { x: 10, y: 9 })] }) } as Response);
@@ -117,7 +117,9 @@ describe("GBC dungeon warps (Plan 6c D3)", () => {
       return base(url);
     });
     vi.stubGlobal("fetch", fetcher);
-    const { container } = render(<GbcWorldCanvas time="day" mapFilter={new Set(["Source"])} />);
+    const onOpenWarpDestination = vi.fn();
+    const { container } = render(<GbcWorldCanvas time="day" mapFilter={new Set(["Source"])}
+      onOpenWarpDestination={onOpenWarpDestination} />);
     const stage = container.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement;
     await waitFor(() => expect(container.querySelector(".world-canvas__status")?.textContent).toContain("zoom"));
     fireEvent.click(screen.getByRole("switch", { name: "Warps" }));
@@ -125,9 +127,9 @@ describe("GBC dungeon warps (Plan 6c D3)", () => {
     const marker = container.querySelector(".world-canvas__warp-marker") as HTMLElement;
     const before = container.querySelector(".world-canvas__status")?.textContent;
     fireEvent.doubleClick(stage, { clientX: parseFloat(marker.style.left), clientY: parseFloat(marker.style.top) });
-    expect(screen.getByRole("dialog", { name: "Hidden preview" })).toBeTruthy();
-    await waitFor(() => expect(screen.getByText(/Could not load Hidden/)).toBeTruthy());
-    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    expect(onOpenWarpDestination).toHaveBeenCalledTimes(1);
+    expect(onOpenWarpDestination).toHaveBeenCalledWith("Hidden");
+    expect(fetcher.mock.calls.some(([url]) => url.startsWith("/api/map/"))).toBe(false);
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(container.querySelector(".world-canvas__status")?.textContent).toBe(before);
   });
@@ -150,7 +152,7 @@ describe("GBC dungeon warps (Plan 6c D3)", () => {
     expect(container.querySelector(".world-canvas__hover")?.textContent).toContain("Hover the world");
   });
 
-  it("real click, click, dblclick on a warp marker opens preview without changing selection or view", async () => {
+  it("real click, click, dblclick on a warp marker opens shell popup without changing selection or view", async () => {
     const warps = {
       Source: { family: "gbc", mapName: "Source", warps: [event(10, 9, "Hidden", { x: 10, y: 9 })] },
       Hidden: { family: "gbc", mapName: "Hidden", warps: [event(10, 9, "Source", { x: 10, y: 9 })] },
@@ -159,8 +161,10 @@ describe("GBC dungeon warps (Plan 6c D3)", () => {
     vi.stubGlobal("fetch", vi.fn((url: string) => url.startsWith("/api/map/")
       ? Promise.resolve({ ok: false, status: 404, json: () => Promise.resolve({}) } as Response)
       : base(url)));
-    const onSelectMap = vi.fn(), onOpenMap = vi.fn();
-    const { container } = render(<GbcWorldCanvas time="day" mapFilter={new Set(["Source", "Hidden"])} onSelectMap={onSelectMap} onOpenMap={onOpenMap} />);
+    const onSelectMap = vi.fn(), onOpenMap = vi.fn(), onOpenWarpDestination = vi.fn();
+    const { container } = render(<GbcWorldCanvas time="day" mapFilter={new Set(["Source", "Hidden"])}
+      onSelectMap={onSelectMap} onOpenMap={onOpenMap}
+      onOpenWarpDestination={onOpenWarpDestination} />);
     const stage = container.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement;
     await waitFor(() => expect(container.querySelector(".world-canvas__status")?.textContent).toContain("zoom 21%"));
     fireEvent.click(stage, { clientX: 20, clientY: 20 });
@@ -176,20 +180,21 @@ describe("GBC dungeon warps (Plan 6c D3)", () => {
     fireEvent.click(stage, point);
     fireEvent.click(stage, point);
     fireEvent.doubleClick(stage, point);
-    expect(screen.getByRole("dialog", { name: "Source preview" })).toBeTruthy();
+    expect(onOpenWarpDestination).toHaveBeenCalledTimes(1);
+    expect(onOpenWarpDestination).toHaveBeenCalledWith("Source");
+    expect(screen.queryByRole("dialog")).toBeNull();
     expect(onSelectMap).toHaveBeenCalledTimes(1);
     expect(onOpenMap).not.toHaveBeenCalled();
-    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
-    expect(screen.queryByRole("dialog")).toBeNull();
     const after = container.querySelector(".world-canvas__selection-outline:not(.world-canvas__jump-highlight)") as HTMLElement;
     expect({ left: after.style.left, top: after.style.top, width: after.style.width }).toEqual(geometry);
   });
 
-  it("Shift+double-click on a warp marker opens the map under it instead of the preview (Plan 6c E3)", async () => {
+  it("Shift+double-click on a warp marker opens the map under it instead of the shell popup (Plan 6c E3)", async () => {
     const warps = { Source: { family: "gbc", mapName: "Source", warps: [event(10, 9, "Hidden", { x: 10, y: 9 })] } };
     vi.stubGlobal("fetch", scopedFetch(warps));
-    const onOpenMap = vi.fn();
-    const { container } = render(<GbcWorldCanvas time="day" mapFilter={new Set(["Source", "Hidden"])} onOpenMap={onOpenMap} />);
+    const onOpenMap = vi.fn(), onOpenWarpDestination = vi.fn();
+    const { container } = render(<GbcWorldCanvas time="day" mapFilter={new Set(["Source", "Hidden"])} onOpenMap={onOpenMap}
+      onOpenWarpDestination={onOpenWarpDestination} />);
     const stage = container.querySelector("canvas.world-canvas__stage") as HTMLCanvasElement;
     await waitFor(() => expect(container.querySelector(".world-canvas__status")?.textContent).toContain("zoom 21%"));
     fireEvent.keyDown(stage, { key: "+" });
@@ -198,13 +203,16 @@ describe("GBC dungeon warps (Plan 6c D3)", () => {
     await waitFor(() => expect(container.querySelectorAll(".world-canvas__warp-marker").length).toBe(1));
     const marker = container.querySelector<HTMLElement>(".world-canvas__warp-marker")!;
     const point = { clientX: parseFloat(marker.style.left), clientY: parseFloat(marker.style.top) };
-    // The marker sits on Source's body (a 10x9-block map at zoom > 4 covers it); a plain double-click previews, Shift opens.
+    // The marker sits on Source's body (a 10x9-block map at zoom > 4 covers it); a plain double-click opens shell popup, Shift opens.
     fireEvent.doubleClick(stage, { ...point, shiftKey: true });
     expect(onOpenMap).toHaveBeenCalledTimes(1);
     expect(onOpenMap).toHaveBeenCalledWith("Source");
     expect(screen.queryByRole("dialog")).toBeNull();
+    expect(onOpenWarpDestination).not.toHaveBeenCalled();
     fireEvent.doubleClick(stage, point);
-    expect(screen.getByRole("dialog", { name: "Hidden preview" })).toBeTruthy();
+    expect(onOpenWarpDestination).toHaveBeenCalledTimes(1);
+    expect(onOpenWarpDestination).toHaveBeenCalledWith("Hidden");
+    expect(screen.queryByRole("dialog")).toBeNull();
     expect(onOpenMap).toHaveBeenCalledTimes(1);
   });
 
