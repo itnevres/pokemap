@@ -28,7 +28,7 @@ export function WarpPopup({ mapName, onClose, children }: WarpPopupProps) {
 
   return (
     <div className="warp-modal__backdrop">
-      <div className="warp-modal__panel" role="dialog" aria-modal="true" data-warp-popup=""
+      <div className="warp-modal__panel warp-modal__panel--workspace" role="dialog" aria-modal="true" data-warp-popup=""
         aria-label={`${mapName} (warp destination)`} onKeyDown={onKeyDown}>
         <div className="warp-modal__header">
           <span className="warp-modal__title">{mapName}</span>

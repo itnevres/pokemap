@@ -91,3 +91,8 @@ Ruling: T4 tests open the popup by capturing `slots` through a test adapter that
 - Open: wt5 (branch p13-t5) still holds the stalled Inkling attempt and two orphan opencode-cli processes (PIDs 22220, 12220;
   kill denied by the auto-mode classifier). Both attempts are stashed on p13-t5. Remove wt5 once those processes are gone
   (stash/clean it first; never --force).
+- Cleanup: orphan opencode PIDs 22220/12220 gone; wt5 leftovers stashed on p13-t5 ("delegate: inkling stalled ... wt5 leftover"), junctions unlinked, wt5 removed.
+- Task 6: live acceptance, both families, scratch clones (conductor; verification is Claude's own work). All spec items pass. Report task-6-live.md.
+- Task 6 finding F1: popup used the 720x560 preview panel, clipping the workspace toolbar/rail. Fixed inline (reason: 7 lines CSS + className): `warp-modal__panel--workspace` 96vw x 92vh. Live re-run green in both families.
+- Gate with F1: 3,933 pass / 0 fail / 236 files; typecheck pass, UI build pass; subjects unchanged (GBA 0e3237e6ade2, PerfPlus 13a31cb654ff).
+- Task 6: complete.

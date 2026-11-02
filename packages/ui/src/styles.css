@@ -1908,6 +1908,12 @@ input {
   overflow: hidden;
 }
 
+/* Plan 13: the warp popup holds the full Map view workspace (P13-1); the preview size clipped its toolbar and rail. */
+.warp-modal__panel--workspace {
+  width: 96vw;
+  height: 92vh;
+}
+
 .warp-modal__header {
   display: flex;
   align-items: center;
