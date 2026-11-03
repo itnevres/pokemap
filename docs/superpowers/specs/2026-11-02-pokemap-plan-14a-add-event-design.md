@@ -126,8 +126,9 @@ same parser's accepted shape.
 - **Use existing:** dropdown of **event entry points only**: labels that some event in the project already uses as a
   script (object/bg/coord script fields, GBA `map.json` and GBC event macros), plus GBC `ObjectEvent` and GBA `0x0`
   for an NPC. No movement/text/data/MapScripts labels. GBC additionally restricts to labels in the same file as this map
-  or in `home/`-bank / far-callable common scripts already used as event scripts from other banks (the engine calls an
-  event script in the current map's bank, `engine/overworld/events.asm`); the list builder states the rule it applied.
+  or in ROM0 (`home/`, e.g. `ObjectEvent`) (the engine calls an event script in the current map's bank,
+  `engine/overworld/events.asm`). Plan review 3 narrowed this from "far-callable common scripts used from other
+  banks" to this safe subset: no label from another file is offered, even in the same ROM section.
 - **Copy from:** dropdown of entry points **defined in this map's own script file**. Supported grammar: the body runs
   from the label to its terminator (`end`, `return`, `jumptext*`, `itemball`/`hiddenitem` data, GBA `end`/`return`/
   `releaseall`+`end`) with no fall-through into the next top-level label; local labels (GBC `.Foo`, GBA none) and the
