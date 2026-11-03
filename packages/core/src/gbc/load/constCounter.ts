@@ -1,7 +1,7 @@
 import { codeLines, stripComment, parseNum } from "./asm.js";
 
 /** Line numbers are zero-based, matching codeLines and event splicing. */
-export function constCounter(text: string): { name: string; value: number; line: number }[] {
+export function constCounter(text: string, source = "<const input>"): { name: string; value: number; line: number }[] {
   const out: { name: string; value: number; line: number }[] = [];
   let value = 0;
   for (const l of codeLines(text)) {
@@ -10,6 +10,9 @@ export function constCounter(text: string): { name: string; value: number; line:
     if (command) {
       const [, op, arg] = command;
       const n = arg ? parseNum(arg) : op === "const_skip" ? 1 : 0;
+      if (op === "const_next" && n < value) {
+        throw new Error(`${source}:${l.lineIndex + 1}: const_next ${n} moves backwards from ${value}`);
+      }
       if (op === "const_skip") value += n;
       else value = n;
     } else {
@@ -20,8 +23,8 @@ export function constCounter(text: string): { name: string; value: number; line:
   return out;
 }
 
-export function gbcEventGap(text: string): { afterLine: number; remaining: number } | null {
-  const last = constCounter(text).filter(c => c.name.startsWith("EVENT_")).at(-1);
+export function gbcEventGap(text: string, source = "<const input>"): { afterLine: number; remaining: number } | null {
+  const last = constCounter(text, source).filter(c => c.name.startsWith("EVENT_")).at(-1);
   if (!last) return null;
   const next = codeLines(text).find(l => l.lineIndex > last.line && /^\s*const_next\b/.test(stripComment(l.text)));
   if (!next) return null;

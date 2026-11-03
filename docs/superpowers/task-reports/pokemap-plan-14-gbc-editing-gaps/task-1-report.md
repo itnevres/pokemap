@@ -273,3 +273,85 @@ Verification:
   are unmeasured here and require conductor confirmation. No pass or timing
   claim is made for the revised suites. No mutations, git, commits, self-review,
   extra review passes, or additional report files.
+
+## Fix round 2 (review round 1)
+
+Status: DONE_WITH_CONCERNS. All S1-S5 and Q1-Q4 findings addressed, including
+Minor findings, with regression assertions. TypeScript passes. Vitest and
+mutation execution remain with the conductor as explicitly instructed.
+The supplied spec/quality reports were read; no self-review or extra review
+passes, subagents, git, or vitest were run.
+
+Finding -> change -> regression test:
+
+- S1: GBA bgTypes now equals the supported map.json values in required order:
+  ["sign", "hidden_item", "secret_base"].
+  Test: "GBA bgTypes exactly matches map.json event type values" (exact equality).
+- S2 (items): parse only the item-ID definitions before ITEMS_COUNT in items.h,
+  rather than every ITEM_ prefix across constants. Refuse if that delimiter is
+  absent, naming the source file. Item-use categories after the boundary vanish.
+  Test: "GBA item options contain real IDs and exclude item-use categories"
+  pins ITEM_POTION present and ITEM_USE_MAIL / ITEM_B_USE_MEDICINE absent.
+- S2 (secret bases): only entrance-shaped *_<number> names from secret_bases.h
+  with plain numeric values or aliases resolving to such entrance IDs are offered.
+  Grouping expressions and base-type constants are excluded.
+  Test: "GBA secret-base options contain entrance IDs and exclude grouping constants"
+  pins SECRET_BASE_RED_CAVE1_1 present, SECRET_BASE_RED_CAVE1 and
+  SECRET_BASE_RED_CAVE absent.
+- S3 / Q2: recognize real add_tm/add_hm invocations after codeLines skips macro
+  definitions, emitting TM_<move> and HM_<move> item IDs. Deduplicate alongside
+  the ordinary const-based items. add_mt is not an item-producing macro.
+  Test: "GBC items include TM and HM macro-generated item-ball IDs"
+  pins TM_ROLLOUT, TM_ENDURE, HM_CUT, HM_WATERFALL all present.
+- S4: GBC entry references now come only from object_event, bg_event, coord_event;
+  scene_script and callback no longer add entry points. GBA already uses only
+  object/coord/bg events.
+  Test: "GBC entry points exclude scripts referenced only by scenes and callbacks"
+  pins Route29YoungsterScript present and Route29Noop1Scene /
+  Route29TuscanyCallback absent.
+- S5: GBC vars returns [] regardless of engine script-variable constants.
+  Test: "GBC vars is unsupported and empty" (exact equality).
+- Q1: distinguish local declarations from opcodes while preserving same-line
+  instructions on global or local labels. Bare local labels no longer become
+  the containing global label's first instruction.
+  Test: "local declarations cannot disguise data and same-line opcodes remain classified"
+  uses staged Route29Potion / .Local / itemball POTION, plus inline global and
+  local data bodies (all excluded) and inline script opcodes (both included).
+- Q3: reject const_next below the current counter, allowing equal targets.
+  Diagnostics include the supplied source filename and one-based line.
+  Test: "backwards const_next refuses with source filename and one-based line"
+  requires both constCounter and gbcEventGap to reject the backwards transition
+  with constants/fixture.asm:3; also pins an equal transition as valid.
+- Q4: wrap parsing at each source-file boundary, including GBC reference scans,
+  staged-map scans, home bodies, GBA map JSON and shared script bodies. Errors
+  include file paths; staged-only inputs include the map name and staged path.
+  Tests: "malformed staged GBC event text names its map and file" and
+  "malformed GBA map JSON names its source file".
+
+Files changed this round:
+- packages/core/src/addEvent/gbaOptions.ts
+- packages/core/src/addEvent/gbcOptions.ts
+- packages/core/src/addEvent/entryPoints.ts
+- packages/core/src/gbc/load/constCounter.ts
+- packages/core/test/addEvent/gbaOptions.test.ts
+- packages/core/test/addEvent/gbcOptions.test.ts
+- packages/core/test/gbc/load/constCounter.test.ts
+- This report, appended without replacing earlier evidence.
+
+No existing assertions were removed or relaxed. Ten new cases bring the written
+total to 30. Fixture tests use independent temp directories; corpus tests remain
+on subjectSnapshot() and reuse the per-file option setup from fix round 1.
+
+Exported signature extensions (one-argument calls remain compatible):
+- constCounter(text: string, source = "<const input>"):
+  { name: string; value: number; line: number }[]
+- gbcEventGap(text: string, source = "<const input>"):
+  { afterLine: number; remaining: number } | null
+GBC option-loader counter/gap calls now pass their actual constants file paths.
+No other exported signatures changed.
+
+Verification command: npx.cmd tsc --noEmit -p tsconfig.base.json
+Result: exit_code 0; output empty (no diagnostics).
+The .cmd shim invokes the requested compiler despite PowerShell's blocked npx.ps1.
+Vitest, red/green, mutation checks and suite performance remain unverified here;
+no runtime pass is claimed. No changes beyond the requested task fixes.

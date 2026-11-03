@@ -24,15 +24,20 @@ export function loadGbcEventOptions(root: string): EventOptions {
       const id = `${trainerClass},${t[1]!}`; trainers.push({ id, label: id });
     }
   }
-  const items = [...parseConstDefs(source("item_constants.asm")).keys()].filter(optionName);
-  const flags = constCounter(source("event_flags.asm")).map(c => c.name).filter(n => n.startsWith("EVENT_"));
+  const itemText = source("item_constants.asm");
+  const machineItems = codeLines(itemText).flatMap(l => {
+    const m = /^\s*add_(tm|hm)\s+(\w+)\s*$/.exec(stripComment(l.text));
+    return m ? [`${m[1]!.toUpperCase()}_${m[2]!}`] : [];
+  });
+  const items = [...new Set([...parseConstDefs(itemText).keys(), ...machineItems])].filter(optionName);
+  const flags = constCounter(source("event_flags.asm"), join(root, "constants/event_flags.asm")).map(c => c.name).filter(n => n.startsWith("EVENT_"));
   const maps = codeLines(source("map_constants.asm")).flatMap(l => {
     const m = /^\s*map_const\s+(\w+)/.exec(stripComment(l.text)); return m ? [m[1]!] : [];
   });
-  return { family: "gbc", sprites: constCounter(source("sprite_constants.asm")).map(c => c.name).filter(n => n.startsWith("SPRITE_") && optionName(n)), movements: withPrefix("SPRITEMOVEDATA_"), flags,
-    vars: withPrefix("VAR_"), items, trainers, bgTypes: withPrefix("BGEVENT_").filter(n => n !== "BGEVENT_COPY"),
+  return { family: "gbc", sprites: constCounter(source("sprite_constants.asm"), join(root, "constants/sprite_constants.asm")).map(c => c.name).filter(n => n.startsWith("SPRITE_") && optionName(n)), movements: withPrefix("SPRITEMOVEDATA_"), flags,
+    vars: [], items, trainers, bgTypes: withPrefix("BGEVENT_").filter(n => n !== "BGEVENT_COPY"),
     facings: [], secretBases: [], palettes: ["0", ...withPrefix("PAL_NPC_")], maps, objectCap: 15,
-    freeFlagSlots: gbcEventGap(source("event_flags.asm"))?.remaining ?? 0, freeVarSlots: 0 };
+    freeFlagSlots: gbcEventGap(source("event_flags.asm"), join(root, "constants/event_flags.asm"))?.remaining ?? 0, freeVarSlots: 0 };
 }
 
 /** home/map.asm:234-235 calls CheckWarpCollision; engine/overworld/tile_events.asm:1-16

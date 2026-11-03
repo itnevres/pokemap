@@ -70,3 +70,56 @@ corpus("GBC warp predicate accepts door and ladder but rejects floor", () => {
   expect(gbcWarpCapable(value("COLL_FLOOR"), names)).toBe(false);
   expect(gbcWarpCapable(value("COLL_LADDER"), names)).toBe(true);
 });
+
+corpus("GBC items include TM and HM macro-generated item-ball IDs", () => {
+  expect(options.items).toContain("TM_ROLLOUT");
+  expect(options.items).toContain("TM_ENDURE");
+  expect(options.items).toContain("HM_CUT");
+  expect(options.items).toContain("HM_WATERFALL");
+});
+corpus("GBC entry points exclude scripts referenced only by scenes and callbacks", () => {
+  const entries = entryPointsFor("gbc", gbc!, "Route29", read("maps/Route29.asm"));
+  expect(entries).toContain("Route29YoungsterScript");
+  expect(entries).not.toContain("Route29Noop1Scene");
+  expect(entries).not.toContain("Route29TuscanyCallback");
+});
+corpus("GBC vars is unsupported and empty", () => {
+  expect(options.vars).toEqual([]);
+});
+it("local declarations cannot disguise data and same-line opcodes remain classified", () => {
+  const root = mkdtempSync(join(tmpdir(), "pokemap-local-label-"));
+  try {
+    const text = [
+      "Route29Potion:", ".Local:", "\titemball POTION",
+      "InlineData: itemball POTION", "LocalInlineData:", ".Local: hiddenitem POTION, EVENT_POTION",
+      "InlineScript: faceplayer", "LocalInlineScript:", ".Local: end",
+      "\tbg_event 0, 0, BGEVENT_READ, Route29Potion",
+      "\tbg_event 1, 0, BGEVENT_READ, InlineData",
+      "\tbg_event 2, 0, BGEVENT_READ, LocalInlineData",
+      "\tbg_event 3, 0, BGEVENT_READ, InlineScript",
+      "\tbg_event 4, 0, BGEVENT_READ, LocalInlineScript",
+    ].join("\n");
+    const entries = entryPointsFor("gbc", root, "Route29", text);
+    expect(entries).not.toContain("Route29Potion");
+    expect(entries).not.toContain("InlineData");
+    expect(entries).not.toContain("LocalInlineData");
+    expect(entries).toContain("InlineScript");
+    expect(entries).toContain("LocalInlineScript");
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+it("malformed staged GBC event text names its map and file", () => {
+  const root = mkdtempSync(join(tmpdir(), "pokemap-bad-event-"));
+  try {
+    expect(() => entryPointsFor("gbc", root, "BrokenMap", "\tbg_event 0, , BGEVENT_READ, Script"))
+      .toThrow(/BrokenMap.*maps\/BrokenMap\.asm.*blank argument/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+it("malformed GBA map JSON names its source file", () => {
+  const root = mkdtempSync(join(tmpdir(), "pokemap-bad-json-"));
+  try {
+    mkdirSync(join(root, "data/maps/BrokenMap"), { recursive: true });
+    writeFileSync(join(root, "data/maps/BrokenMap/map.json"), "{");
+    expect(() => entryPointsFor("gba", root, "CurrentMap", ""))
+      .toThrow(/BrokenMap[\\/]map\.json:/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});

@@ -37,12 +37,29 @@ export function loadGbaEventOptions(root: string): EventOptions {
   // Reuse the configured event-object header path rather than a second path convention.
   const sprites = cDefines(read(projectPaths(root).eventObjectsH)).map(d => d.name)
     .filter(n => n.startsWith("OBJ_EVENT_GFX_") && optionName(n));
+  // Item IDs precede ITEMS_COUNT; later defines describe use categories.
+  const itemText = read(join(root, "include/constants/items.h"));
+  const itemEnd = itemText.search(/^\s*#define[ \t]+ITEMS_COUNT\b/m);
+  if (itemEnd < 0) throw new Error(`${root}: include/constants/items.h: missing ITEMS_COUNT`);
+  const items = cDefines(itemText.slice(0, itemEnd)).map(d => d.name)
+    .filter(n => n.startsWith("ITEM_") && optionName(n));
+  // Base types and SECRET_BASE_GROUP(...) entries are not entrance IDs.
+  const baseDefs = cDefines(read(join(root, "include/constants/secret_bases.h")))
+    .filter(d => /^SECRET_BASE_\w+_\d+$/.test(d.name));
+  const baseIds = new Set<string>();
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const d of baseDefs) if (!baseIds.has(d.name) && (/^(?:0x[\da-f]+|\d+)$/i.test(d.value) || baseIds.has(d.value))) {
+      baseIds.add(d.name); changed = true;
+    }
+  }
   return {
     family: "gba", sprites, movements: names("MOVEMENT_TYPE_"), flags: names("FLAG_"), vars: names("VAR_"),
-    items: names("ITEM_"), trainers: cDefines(read(join(root, "include/constants/opponents.h")))
+    items, trainers: cDefines(read(join(root, "include/constants/opponents.h")))
       .map(d => d.name).filter(n => n.startsWith("TRAINER_") && optionName(n)).map(id => ({ id, label: id })),
-    bgTypes: names("BG_EVENT_").filter(n => !n.startsWith("BG_EVENT_PLAYER_FACING_")), facings: names("BG_EVENT_PLAYER_FACING_"),
-    secretBases: names("SECRET_BASE_"), palettes: [], maps, objectCap: Number(cap.value),
+    bgTypes: ["sign", "hidden_item", "secret_base"], facings: names("BG_EVENT_PLAYER_FACING_"),
+    secretBases: baseDefs.filter(d => baseIds.has(d.name)).map(d => d.name), palettes: [], maps, objectCap: Number(cap.value),
     freeFlagSlots: slots.FLAG.length, freeVarSlots: slots.VAR.length,
   };
 }

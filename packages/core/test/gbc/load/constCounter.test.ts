@@ -26,3 +26,11 @@ it("gap uses the last event and reports zero-based insertion line", () => {
   expect(gbcEventGap("const_def 5\nconst EVENT_A\nconst_skip 2\nconst_next 10")).toEqual({ afterLine: 1, remaining: 4 });
   expect(gbcEventGap("const_def\nconst EVENT_A")).toBeNull();
 });
+
+it("backwards const_next refuses with source filename and one-based line", () => {
+  expect(() => constCounter("const_def 5\nconst EVENT_A\nconst_next 5\nconst EVENT_B", "constants/fixture.asm"))
+    .toThrow("constants/fixture.asm:3: const_next 5 moves backwards from 6");
+  expect(() => gbcEventGap("const_def 5\nconst EVENT_A\nconst_next 5", "constants/fixture.asm"))
+    .toThrow("constants/fixture.asm:3: const_next 5 moves backwards from 6");
+  expect(constCounter("const_def 5\nconst A\nconst_next 6\nconst B").map(c => c.value)).toEqual([5, 6]);
+});

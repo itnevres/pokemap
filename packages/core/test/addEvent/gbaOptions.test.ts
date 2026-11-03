@@ -86,3 +86,17 @@ corpus("GBA warp predicate accepts door, custom stair and arrow but rejects norm
   expect(gbaWarpBehavior(b.MB_UP_LEFT_STAIR_WARP!, b)).toBe(true);
   expect(gbaWarpBehavior(b.MB_EAST_ARROW_WARP!, b)).toBe(true);
 });
+
+corpus("GBA bgTypes exactly matches map.json event type values", () => {
+  expect(options.bgTypes).toEqual(["sign", "hidden_item", "secret_base"]);
+});
+corpus("GBA item options contain real IDs and exclude item-use categories", () => {
+  expect(options.items).toContain("ITEM_POTION");
+  expect(options.items).not.toContain("ITEM_USE_MAIL");
+  expect(options.items).not.toContain("ITEM_B_USE_MEDICINE");
+});
+corpus("GBA secret-base options contain entrance IDs and exclude grouping constants", () => {
+  expect(options.secretBases).toContain("SECRET_BASE_RED_CAVE1_1");
+  expect(options.secretBases).not.toContain("SECRET_BASE_RED_CAVE1");
+  expect(options.secretBases).not.toContain("SECRET_BASE_RED_CAVE");
+});
