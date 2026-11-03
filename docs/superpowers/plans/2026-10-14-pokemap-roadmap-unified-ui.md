@@ -40,6 +40,16 @@ Made 2026-10-16 (user-approved Reddit feature assessment):
 - D17. **Keep Plans 10-14 in order; insert 14A stamps, 14B terrain painting, then 14C adjacent-map creation before Plan 15.** Both families use the shared canvas and adapter. Plan 17 reuses 14C's destination-map creation machinery.
 - D18. **Plan 17A follows Plan 17:** a 2D collision-aware walking preview in both families. Plan 18 remains independent triage and may run any time.
 
+Made 2026-11-02 (Plan 14 interview; user):
+- D19. **Plan 14 splits into 14a Add Event and 14b Block editor, both families now.** One shared UI in the shell; each
+  engine supplies options and writers. 14a: four icon Add buttons (Object, Warp, Coord, BG), place on a tile, then a
+  popup with dropdowns / text boxes / a Use existing - Copy from - New toggle (spec
+  `specs/2026-11-02-pokemap-plan-14a-add-event-design.md`). Supersedes D6's "GBC Add Event" scope.
+- D20. **D7 widened: a Polished-Map-style block editor (14b) replaces the collision-only editor.** Popup over the map
+  showing the block as drawn; pick tiles from the tileset into the block; collision (GBC) or behavior/layer (GBA)
+  dropdowns; a warning of uses on this map, other maps and maps sharing the tileset; OK edits the block everywhere,
+  Save as new block appends a new block id. GBA per-square collision painting stays as it is.
+
 Execution order: **10 → 11 → 12 → 13 → 14 → 14A → 14B → 14C → 15 → 16 → 17 → 17A**; Plan 18 is independent. New entries are roadmap scope; each still needs its own spec and implementation plan.
 
 ## Issue map (all 7 open, reviewed 2026-10-14)
@@ -248,3 +258,5 @@ Both families already render the same `components/Toolbar.tsx`; the differences 
 - The #5/#6 work exists only as uncommitted changes in the main checkout. It waits until Plan 13. A WIP commit on
   `issues-5-6-warp-popups` (by the user, or on their say-so) would protect it from a lost working tree.
 - Plan 3 (GBA data editors) and GBA follow-ups A-C stay outside this roadmap; Plan 18 may feed Plan 3.
+- **Future plan (user, 2026-11-02): create new trainers and their parties** from the Add Object popup, both families.
+  Plan 14a (A8) only places trainers that already exist. Not yet numbered; schedule after Plan 14b.
