@@ -41,11 +41,11 @@ Made 2026-10-16 (user-approved Reddit feature assessment):
 - D18. **Plan 17A follows Plan 17:** a 2D collision-aware walking preview in both families. Plan 18 remains independent triage and may run any time.
 
 Made 2026-11-02 (Plan 14 interview; user):
-- D19. **Plan 14 splits into 14a Add Event and 14b Block editor, both families now.** One shared UI in the shell; each
-  engine supplies options and writers. 14a: four icon Add buttons (Object, Warp, Coord, BG), place on a tile, then a
+- D19. **Plan 14 splits into 14.1 Add Event and 14.2 Block editor, both families now.** One shared UI in the shell; each
+  engine supplies options and writers. 14.1: four icon Add buttons (Object, Warp, Coord, BG), place on a tile, then a
   popup with dropdowns / text boxes / a Use existing - Copy from - New toggle (spec
-  `specs/2026-11-02-pokemap-plan-14a-add-event-design.md`). Supersedes D6's "GBC Add Event" scope.
-- D20. **D7 widened: a Polished-Map-style block editor (14b) replaces the collision-only editor.** Popup over the map
+  `specs/2026-11-02-pokemap-plan-14-1-add-event-design.md`). Supersedes D6's "GBC Add Event" scope.
+- D20. **D7 widened: a Polished-Map-style block editor (14.2) replaces the collision-only editor.** Popup over the map
   showing the block as drawn; pick tiles from the tileset into the block; collision (GBC) or behavior/layer (GBA)
   dropdowns; a warning of uses on this map, other maps and maps sharing the tileset; OK edits the block everywhere,
   Save as new block appends a new block id. GBA per-square collision painting stays as it is.
@@ -188,6 +188,9 @@ Both families already render the same `components/Toolbar.tsx`; the differences 
   A collision editor in the rail for a metatile's collision data (D7); it edits tileset data, so the UI must say how many
   maps share the tileset before a save. Then drop the GBC flag-offs for Add Event and Collision.
 - **Order:** after Plan 13.
+- **Split (D19, D20; naming ruling, user 2026-11-02):** Plan 14 is split into **Plan 14.1 Add Event**
+  (spec `specs/2026-11-02-pokemap-plan-14-1-add-event-design.md`, plan `plans/2026-11-02-pokemap-plan-14-1-add-event.md`)
+  and **Plan 14.2 Block editor** (the widened collision editor, D20). The numbering keeps them apart from Plans 14A-14C.
 - **Risk:** medium-high. New `.asm` text and tileset-wide writes (LESSONS: GBC Format & Engine Quirks).
 - **Depends on:** D6, D7.
 
@@ -259,4 +262,4 @@ Both families already render the same `components/Toolbar.tsx`; the differences 
   `issues-5-6-warp-popups` (by the user, or on their say-so) would protect it from a lost working tree.
 - Plan 3 (GBA data editors) and GBA follow-ups A-C stay outside this roadmap; Plan 18 may feed Plan 3.
 - **Future plan (user, 2026-11-02): create new trainers and their parties** from the Add Object popup, both families.
-  Plan 14a (A8) only places trainers that already exist. Not yet numbered; schedule after Plan 14b.
+  Plan 14.1 (A8) only places trainers that already exist. Not yet numbered; schedule after Plan 14.2.

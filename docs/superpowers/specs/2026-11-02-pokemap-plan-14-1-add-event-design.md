@@ -1,4 +1,4 @@
-# Plan 14a: Add Event in both families (design)
+# Plan 14.1: Add Event in both families (design)
 
 Status: **approved by the user 2026-11-02** after builder check + Codex `gpt-6-astra` spec review. Tier: **High**
 (new `.asm` / `scripts.inc` / `map.json` / constants-header text through Save; parsing of decomp constants and script
@@ -8,8 +8,8 @@ bodies; async staging and visit identity; shared shell UI). Branch `plan-14-gbc-
 
 Roadmap Plan 14 (D6, D7) asked for GBC Add Event and a GBC collision editor. In the 2026-11-02 interview the user
 widened both into shared features (roadmap D19, D20): an Add Event flow that places a working event of any of the four
-kinds in **both** families, and (Plan 14b, separate spec) a Polished-Map-style block editor in both families. This spec
-covers 14a only.
+kinds in **both** families, and (Plan 14.2, separate spec) a Polished-Map-style block editor in both families. This spec
+covers 14.1 only.
 
 Today GBA's "Add Event" (`packages/ui/src/hooks/useMapEditing.ts` `onAddEvent`) drops a fixed object
 (`OBJ_EVENT_GFX_BOY_1`, script `NULL`) at the map centre; GBC has no Add Event in the UI (Duplicate reuses core
@@ -43,7 +43,7 @@ before save.
   `flags.h` to the user's name (subject has 9 and 134); GBC adds a `const EVENT_<NAME>` in `constants/event_flags.asm`
   inside the existing unused gap (see Flags below). No free slot → refusal naming the file. The constants file is
   written in the same all-or-nothing save.
-- **A7 No return warp in 14a.** After a warp is added, the popup (and the Save dialog's notes) say when the destination
+- **A7 No return warp in 14.1.** After a warp is added, the popup (and the Save dialog's notes) say when the destination
   map has no warp leading back to this map ("<Dest> has no warp back to <Map>; add one there"). Save is not blocked.
   The two-map version is built in Plan 14C.
 - **A8 Object types:** ordinary scripted NPC, item ball, and trainer **using an existing trainer** (dropdown) with new or

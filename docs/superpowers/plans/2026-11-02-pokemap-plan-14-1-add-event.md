@@ -1,4 +1,4 @@
-# Plan 14a: Add Event (both families) Implementation Plan
+# Plan 14.1: Add Event (both families) Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -15,7 +15,7 @@ shared `AddEventDialog` driven by per-family field specs.
 **Tech Stack:** TypeScript, Node hub (`packages/server`), React 19 + Vitest + Testing Library (no jest-dom), core
 parsers in `packages/core`.
 
-**Spec:** `docs/superpowers/specs/2026-11-02-pokemap-plan-14a-add-event-design.md` (rulings A1-A8; read it first).
+**Spec:** `docs/superpowers/specs/2026-11-02-pokemap-plan-14-1-add-event-design.md` (rulings A1-A8; read it first).
 
 ## Global Constraints
 
@@ -139,7 +139,7 @@ parsers in `packages/core`.
 - [ ] **Step 5: Conductor mutations:** drop the data-label exclusion → `Route29Potion` test red; drop the section
   check → bank-rule test red; drop the reference check in `freeGbaSlots` → VAR test red; ignore `const_skip` → counter
   test red; ignore parity → quarter test red.
-- [ ] **Step 6: Commit** `feat(plan-14a): add-event contracts and typed option sets`.
+- [ ] **Step 6: Commit** `feat(plan-14.1): add-event contracts and typed option sets`.
 
 ### Task 2: GBC builder and script copy (core) — Tier High (new .asm text)
 
@@ -184,7 +184,7 @@ parsers in `packages/core`.
 - [ ] **Step 2:** FAIL. **Step 3:** implement. **Step 4:** PASS.
 - [ ] **Step 5: Conductor mutations:** remove the fall-through check; skip `check()` for the object const; write
   `constEdits` outside the atomic set → each turns a named test red.
-- [ ] **Step 6: Commit** `feat(plan-14a): GBC add-event builder and script copy`.
+- [ ] **Step 6: Commit** `feat(plan-14.1): GBC add-event builder and script copy`.
 
 ### Task 3: GBA builder and script copy (core) — Tier High (new scripts.inc/header text)
 
@@ -224,7 +224,7 @@ parsers in `packages/core`.
 - [ ] **Step 2:** FAIL. **Step 3:** implement. **Step 4:** PASS.
 - [ ] **Step 5: Conductor mutations:** drop `check()`; drop the fall-through check; emit a hidden-item quantity →
   named tests red.
-- [ ] **Step 6: Commit** `feat(plan-14a): GBA add-event builder and script copy`.
+- [ ] **Step 6: Commit** `feat(plan-14.1): GBA add-event builder and script copy`.
 
 ### Task 4: Fresh name checks at plan and commit (core, both families) — Tier High (save safety)
 
@@ -247,7 +247,7 @@ parsers in `packages/core`.
   check.
 - [ ] **Step 2:** FAIL. **Step 3:** implement. **Step 4:** PASS.
 - [ ] **Step 5: Conductor mutation:** remove the commit-time call → (a) red.
-- [ ] **Step 6: Commit** `feat(plan-14a): fresh name checks at plan and commit`.
+- [ ] **Step 6: Commit** `feat(plan-14.1): fresh name checks at plan and commit`.
 
 ### Task 5: Hub routes and session snapshots (both families) — Tier High (hub I/O, undo atomicity)
 
@@ -300,7 +300,7 @@ parsers in `packages/core`.
 - [ ] **Step 4:** PASS; then `npx vitest run packages/server`.
 - [ ] **Step 5: Conductor mutations:** omit `newNames` from the snapshot → redo/undo test red; push the snapshot before
   validation → failure test red.
-- [ ] **Step 6: Commit** `feat(plan-14a): add-event routes and complete undo snapshots`.
+- [ ] **Step 6: Commit** `feat(plan-14.1): add-event routes and complete undo snapshots`.
 
 ### Task 6: AddEventBar and placement mode (UI, both families) — Tier High (shared canvas input)
 
@@ -329,7 +329,7 @@ parsers in `packages/core`.
 - [ ] **Step 2:** FAIL. **Step 3:** implement. **Step 4:** PASS + `npx vitest run packages/ui`.
 - [ ] **Step 5: Conductor mutations:** drop the origin offset → zoom/pan pick test red; let paint run while placing →
   strict-mock test red.
-- [ ] **Step 6: Commit** `feat(plan-14a): add-event bar and placement mode`.
+- [ ] **Step 6: Commit** `feat(plan-14.1): add-event bar and placement mode`.
 
 ### Task 7: Create path in the edit sessions and the options hook (UI) — Tier High (async ordering)
 
@@ -353,7 +353,7 @@ parsers in `packages/core`.
 - [ ] **Step 2:** FAIL. **Step 3:** implement. **Step 4:** PASS + `npx vitest run packages/ui`.
 - [ ] **Step 5: Conductor mutations:** remove the barrier await in Save → ordering test red; skip `invalidate` on undo →
   refetch test red.
-- [ ] **Step 6: Commit** `feat(plan-14a): create path, barriers and event options hook`.
+- [ ] **Step 6: Commit** `feat(plan-14.1): create path, barriers and event options hook`.
 
 ### Task 8: AddEventDialog and family field specs (UI) — Tier High (dialog stacking, visit identity)
 
@@ -392,7 +392,7 @@ parsers in `packages/core`.
 - [ ] **Step 2:** FAIL. **Step 3:** implement. **Step 4:** PASS + `npx vitest run packages/ui`.
 - [ ] **Step 5: Conductor mutations:** drop the visit check on success → selection test red; let Escape through while
   in flight → in-flight test red.
-- [ ] **Step 6: Commit** `feat(plan-14a): add-event dialog and family field specs`.
+- [ ] **Step 6: Commit** `feat(plan-14.1): add-event dialog and family field specs`.
 
 ### Task 9: Live acceptance and build check — Tier High (live, subject copies)
 
