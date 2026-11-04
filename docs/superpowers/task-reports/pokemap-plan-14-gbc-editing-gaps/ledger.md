@@ -30,7 +30,7 @@ Branch `plan-14-gbc-editing-gaps` from master `7c68fc1` (local only).
 |---|---|---|---|---|
 | 1 | High | done | DeepSeek✗ Nemotron✗ Inkling✗ Dots✗ Codex gpt-6.1-sol✓ | 6c858e6 |
 | 2 | High | done | DeepSeek✗ Nemotron✗ Inkling✗ Dots✗ Codex gpt-6.1-sol✓ | 6c1cc94 |
-| 3 | High | done | Inkling✗(429) Codex✗(quota) Claude Opus✓ | (merge) |
+| 3 | High | done | Inkling✗(429) Codex✗(quota) Claude Opus✓ | f0a381f |
 | 4 | High | pending | | |
 | 5 | High | pending | | |
 | 6 | High | pending | | |
@@ -92,6 +92,9 @@ Hops:
 - Task 3: scoped re-review (Opus): all ADDRESSED, no new Critical/Important (`task-3-rereview-1.md`).
 - Task 3: minor (deferred): N1 unedited copies of 2 corpus scripts whose text uses `{PAUSE ..}` / `{CLEAR_TO ..}` are refused (width/charmap check too strict for control codes); N2 `# ifdef` (space) refused.
 - Task 3: complete (commits bbeb725..HEAD of `p14-1-t3`, review clean after fix round 1/5).
+
+- Task 3 merged `f0a381f`. Gate at `f0a381f`: 4,037 pass / 1 fail / 243 files (environmental engine.test only); typecheck pass, UI build pass; subjects unchanged.
+- Session 2 handoff after Task 3 (session length). Next: Task 4 (fresh name checks); carry quality M7 note into its brief.
 
 ## Offload log
 
