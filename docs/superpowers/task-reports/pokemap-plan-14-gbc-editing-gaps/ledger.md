@@ -29,8 +29,8 @@ Branch `plan-14-gbc-editing-gaps` from master `7c68fc1` (local only).
 | # | Tier | State | Hops | Commit |
 |---|---|---|---|---|
 | 1 | High | done | DeepSeek✗ Nemotron✗ Inkling✗ Dots✗ Codex gpt-6.1-sol✓ | 6c858e6 |
-| 2 | High | pending | | |
-| 3 | High | pending | | |
+| 2 | High | done | DeepSeek✗ Nemotron✗ Inkling✗ Dots✗ Codex gpt-6.1-sol✓ | 6c1cc94 |
+| 3 | High | done | Inkling✗(429) Codex✗(quota) Claude Opus✓ | (merge) |
 | 4 | High | pending | | |
 | 5 | High | pending | | |
 | 6 | High | pending | | |
@@ -72,6 +72,26 @@ Hops:
 - Lesson candidate: OpenCode `run --standalone --session <id>` hung with zero output twice (T1, T2); resume via a fresh run with the findings instead.
 
 - Ruling: GBC commit refusals now read `save refused: <Map>: <code> (<file>)`; existing assertions in `gbc/write/guards.test.ts` (3) and `save.test.ts` (2) updated to the stricter text — spec: every refusal names map and file; no server/UI code parses the text (grep) — cost if wrong: an external log parser keyed on the old prefix
+
+- Task 2: fix round 1/5 → `2b4c080` (+ guards.test regexes): core+cli+gbcEditRoutes 1555/1 (env fail only), mutations M1-M3 red. Scoped re-review (astra): S1-S5, Q1, Q3 ADDRESSED, no new breakage (`task-2-rereview-1.md`).
+- Task 2: complete (commits 60aa650..352f37b, merged `6c1cc94`, review clean after fix round 1/5, 1 parked (Q4)).
+- Gate at `6c1cc94`: 4,004 pass / 1 fail / 241 files (same environmental engine.test fail); typecheck pass, UI build pass; subjects unchanged.
+- Task 3: hops: DeepSeek, Nemotron, Dots skipped (2 infra fails each this session) → Inkling failed (zero output 5 min, no session message rows: OpenRouter 429 pattern; killed by PID) → Codex `gpt-6.1-sol` failed (`turn.failed` usage limit, "try again at 8:08 PM"; no edits) → `gpt-6-sol` probe same limit (account-wide) → Claude Opus subagent done: `bbeb725` on `p14-1-t3`, focused 16/16, core 1443/1 (env), tsc clean, its own run of the 3 mutations red (conductor re-run pending). Reviews: astra unavailable until 8:08 PM → Claude Opus fallback (high-risk-reviewer) for High-tier reviews.
+
+- Ruling: GBA hidden-item flags (existing and new) must lie in the engine's hidden-item range (`asm/macros/map.inc:90-91` stores `flag - FLAG_HIDDEN_ITEMS_START`, start 0x1F4); New claims the first free `FLAG_UNUSED_*` in range (subject has some, e.g. `FLAG_UNUSED_0x296`), none → `NO_FLAG_SLOT`; existing out of range → `BAD_OPTION` — implementer flagged it; a low flag would encode negative and not work in game — cost if wrong: fewer offered flags
+- Task 3 reviews: Claude Opus (high-risk-reviewer) spec + quality running (astra quota out until 20:08).
+
+- Task 3 reviews round 1 (Claude Opus high-risk-reviewer, astra quota out): Spec FAIL (I1 hidden-item flag range; I2 `freeFlags[0]` = `FLAG_UNUSED_0x296` aliases `FLAG_SHINY_STARTER_3`, `0x91F`/`0x95F` define `DAILY_FLAGS_*`, daily range cleared each day; 4 Minor). Quality CHANGES REQUESTED (I1 preprocessor directives in edited copy bypass grammar; I2 untested discard/duplicate guards; 7 Minor).
+- Ruling: a GBA flag/var slot is free only if no reference outside its own `#define` (header included), no value alias with another define, not in daily or temp ranges; fixed in Task 1's `unusedSlots` — spec says "not referenced anywhere else"; aliasing and daily reset make a slot unusable — cost if wrong: fewer free slots offered
+- Task 3: minor (deferred to Task 4/5): quality M7 — `write/save.ts:140,188` describe every ScriptReplace as sign text (flags.h/vars.h replaces will show sign wording); two open sessions both pick `freeFlags[0]`, second save refused `script-changed-on-disk` (safe, confusing).
+- Task 3: fix round 1/5 dispatched to a FRESH Claude Opus implementer (prior implementer at ~190k context, global rule 2).
+
+- Task 3: fix round 1/5 → `0b0ae2d`: addEvent 96/96, core 1460/1 (env), tsc clean; conductor mutations (check(), fall-through, hidden-item quantity) red. Free GBA flags now 77 (first `FLAG_UNUSED_0x299`); names `FLAG_UNUSED_0x...` do not match values in this subject (trainer count shifts SYSTEM_FLAGS), tests compute values. Scoped Opus re-review running.
+- Task 3: minor (deferred, GBC parity): spec M2 (`existing` script `0x0`/`ObjectEvent` only for NPC) and quality M3 (charmap + width check on edited copied text) fixed for GBA only; Task 2's GBC builder still lacks both — carry to final review / a follow-up fix with a test.
+
+- Task 3: scoped re-review (Opus): all ADDRESSED, no new Critical/Important (`task-3-rereview-1.md`).
+- Task 3: minor (deferred): N1 unedited copies of 2 corpus scripts whose text uses `{PAUSE ..}` / `{CLEAR_TO ..}` are refused (width/charmap check too strict for control codes); N2 `# ifdef` (space) refused.
+- Task 3: complete (commits bbeb725..HEAD of `p14-1-t3`, review clean after fix round 1/5).
 
 ## Offload log
 
