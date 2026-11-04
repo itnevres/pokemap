@@ -1,7 +1,8 @@
 import { beforeAll, expect, it } from "vitest";
-import { readdirSync, readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, extname, normalize } from "node:path";
-import { loadGbaEventOptions, freeGbaSlots, gbaWarpBehavior } from "../../src/addEvent/gbaOptions.js";
+import { loadGbaEventOptions, freeGbaSlots, gbaDefineValues, gbaWarpBehavior } from "../../src/addEvent/gbaOptions.js";
 import { entryPointsFor } from "../../src/addEvent/entryPoints.js";
 import { subjectSnapshot } from "../helpers/subjectSnapshot.js";
 const { gba } = subjectSnapshot();
@@ -99,4 +100,82 @@ corpus("GBA secret-base options contain entrance IDs and exclude grouping consta
   expect(options.secretBases).toContain("SECRET_BASE_RED_CAVE1_1");
   expect(options.secretBases).not.toContain("SECRET_BASE_RED_CAVE1");
   expect(options.secretBases).not.toContain("SECRET_BASE_RED_CAVE");
+});
+
+// Conductor ruling R2: a slot is free only when unreferenced outside its own #define line (header included),
+// not aliasing another define's value, and outside the temp, daily and special (unsaved) ranges.
+it("R2: free slots on a hand-written project exclude header references, aliases, ranges and unevaluable values", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pokemap-gba-slots-"));
+  try {
+    mkdirSync(join(dir, "include/constants"), { recursive: true });
+    mkdirSync(join(dir, "src"), { recursive: true });
+    writeFileSync(join(dir, "include/constants/flags.h"), [
+      "#define TEMP_FLAGS_START 0x0",
+      "#define FLAG_UNUSED_0x1 0x1",
+      "#define TEMP_FLAGS_END 0x1F",
+      "#define FLAG_REAL 0x30",
+      "#define FLAG_UNUSED_0x30 0x30",
+      "#define FLAG_UNUSED_0x31 0x31",
+      "#define FLAG_UNUSED_0x32 0x32",
+      "#define FLAG_UNUSED_0x33 0x33",
+      "#define DAILY_FLAGS_START (FLAG_UNUSED_0x33 + (8 - FLAG_UNUSED_0x33 % 8))",
+      "#define FLAG_UNUSED_0x3A (DAILY_FLAGS_START + 0x2)",
+      "#define DAILY_FLAGS_END (DAILY_FLAGS_START + 0x7)",
+      "#define FLAG_UNUSED_0x40 (0x80 / 2)",
+      "#define FLAG_UNUSED_0x41 (FLAG_REAL + 0x11)",
+      "#define FLAG_UNUSED_0x42 042",
+      "#define SPECIAL_FLAGS_START 0x4000",
+      "#define FLAG_UNUSED_0x4001 (SPECIAL_FLAGS_START + 1)",
+      "#define SPECIAL_FLAGS_END (SPECIAL_FLAGS_START + 0x7F)", ""].join("\n"));
+    writeFileSync(join(dir, "include/constants/vars.h"), [
+      "#define TEMP_VARS_START 0x4000",
+      "#define VAR_UNUSED_0x4001 (TEMP_VARS_START + 0x1)",
+      "#define TEMP_VARS_END (TEMP_VARS_START + 0xF)",
+      "#define VAR_UNUSED_0x4050 0x4050",
+      "#define VAR_REAL 0x4051",
+      "#define VAR_UNUSED_0x4051 0x4051",
+      "#define SPECIAL_VARS_START 0x8000",
+      "#define VAR_UNUSED_0x8014 0x8014",
+      "#define SPECIAL_VARS_END 0x8015", ""].join("\n"));
+    writeFileSync(join(dir, "src/a.c"), "void f(void) { FlagSet(FLAG_UNUSED_0x32); }\n");
+    // 0x1 temp; 0x30 aliases FLAG_REAL; 0x32 used in src; 0x33 used by DAILY_FLAGS_START; 0x3A daily (0x38..0x3F);
+    // 0x40 uses division (not evaluated); 0x42 is an octal literal (not evaluated); 0x4001 special (unsaved).
+    expect(freeGbaSlots(dir, "FLAG")).toEqual(["FLAG_UNUSED_0x31", "FLAG_UNUSED_0x41"]);
+    // 0x4001 temp; 0x4051 aliases VAR_REAL; 0x8014 special.
+    expect(freeGbaSlots(dir, "VAR")).toEqual(["VAR_UNUSED_0x4050"]);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+it("gbaDefineValues evaluates + - * % arithmetic through included headers and refuses the rest", () => {
+  const dir = mkdtempSync(join(tmpdir(), "pokemap-gba-defs-"));
+  try {
+    mkdirSync(join(dir, "include/constants"), { recursive: true });
+    writeFileSync(join(dir, "include/constants/opponents.h"), "#define MAX_TRAINERS_COUNT 0x10\n");
+    const values = gbaDefineValues(dir, ["#include \"constants/opponents.h\"", "#define A 0x10", "#define B (A * 3 - 1) // c",
+      "#define C (B % 7)", "#define D (MAX_TRAINERS_COUNT + A)", "#define E (A / 2)", "#define F 010", "#define G H", "#define H G",
+      "#define I UNKNOWN_NAME", "#define J (A << 1)"].join("\n"));
+    expect(Object.fromEntries(["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"].map(n => [n, values.get(n)]))).toEqual({
+      A: 16, B: 47, C: 5, D: 32, E: undefined, F: undefined, G: undefined, H: undefined, I: undefined, J: undefined });
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+corpus("R2: subject FLAG slots skip the 0x296 alias, the DAILY_FLAGS_* sentinels' slots and the daily range", () => {
+  const free = freeGbaSlots(gba!, "FLAG");
+  expect(free.length).toBeGreaterThan(0);
+  // flags.h:706 FLAG_UNUSED_0x296 0x296 aliases flags.h:709 FLAG_SHINY_STARTER_3 0x296.
+  expect(read("include/constants/flags.h")).toMatch(/#define\s+FLAG_SHINY_STARTER_3\s+0x296\b/);
+  expect(free[0]).not.toBe("FLAG_UNUSED_0x296");
+  expect(free).not.toContain("FLAG_UNUSED_0x296");
+  // flags.h:1647 DAILY_FLAGS_START uses FLAG_UNUSED_0x91F; flags.h:1720 DAILY_FLAGS_END uses FLAG_UNUSED_0x95F.
+  expect(free).not.toContain("FLAG_UNUSED_0x91F");
+  expect(free).not.toContain("FLAG_UNUSED_0x95F");
+  // Daily flags are written as (DAILY_FLAGS_START + n) in flags.h:1648-1719; none may be offered.
+  const daily = [...read("include/constants/flags.h").matchAll(/^#define\s+(FLAG_\w+)\s+\(DAILY_FLAGS_START\s*\+\s*0x[\da-f]+\)/gmi)]
+    .map(m => m[1]!);
+  expect(daily.filter(n => n.startsWith("FLAG_UNUSED_")).length).toBeGreaterThan(0);
+  for (const name of daily) expect(free).not.toContain(name);
+  // Hand-derived (the slot names' hex is the vanilla numbering, not the value here): TRAINER_FLAGS_START 0x500 +
+  // MAX_TRAINERS_COUNT 1408 (opponents.h) - 1 = TRAINER_FLAGS_END 0xA7F, SYSTEM_FLAGS 0xA80, FLAG_UNUSED_0x91F 0xB3F,
+  // DAILY_FLAGS_START 0xB3F + (8 - 7) = 0xB40, FLAG_UNUSED_0x95F 0xB7F, DAILY_FLAGS_END 0xB7F + (7 - 7) = 0xB7F.
+  const values = gbaDefineValues(gba!, read("include/constants/flags.h"));
+  expect([values.get("DAILY_FLAGS_START"), values.get("DAILY_FLAGS_END"), values.get("FLAG_HIDDEN_ITEMS_START")]).toEqual([0xb40, 0xb7f, 0x1f4]);
+  for (const name of free) expect(values.get(name)! < 0xb40 || values.get(name)! > 0xb7f).toBe(true);
 });

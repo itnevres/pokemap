@@ -69,3 +69,44 @@ it("data, movement and text labels are not event scripts", () => {
   refused(source, "Route101_Text_TakeTiredPokemonToPokeCenter", "COPY_NOT_SCRIPT");
   refused(source, "Route101_EventScript_Missing", "COPY_NOT_SCRIPT");
 });
+const T = "Route101_Text_TakeTiredPokemonToPokeCenter";
+const BODY = `\tmsgbox ${T}, MSGBOX_NPC\n\tend\n`;
+function buildRefused(form: AddEventForm, code: string, message?: string) {
+  expect(() => buildGbaAddEvent(map, source, form, ctx)).toThrow(AddEventRefusal);
+  try { buildGbaAddEvent(map, source, form, ctx); } catch (e) {
+    expect(e).toMatchObject({ code, path: "data/maps/Route101/scripts.inc" });
+    expect((e as Error).message).toContain("Route101");
+    if (message) expect((e as Error).message).toContain(message);
+  }
+}
+it("an edited body with a #define, #undef or #include directive is refused", () => {
+  for (const line of ["#define Route102_EventScript_Other 1", "#undef FLAG_HIDE_MAP_NAME_POPUP", '#include "data/maps/Route102/scripts.inc"']) {
+    buildRefused(copyForm(`${line}\n${BODY}`, { [T]: copyGbaScriptBody(source, "Route101_EventScript_Youngster").texts[T]! }), "COPY_NOT_SCRIPT");
+  }
+});
+it("preprocessor conditionals stay copyable (subject MossdeepCity_SpaceCenter_1F uses #ifdef BUGFIX)", () => {
+  const inc = "Route101_MapScripts::\n\tend\nRoute101_EventScript_A::\n#ifdef BUGFIX\n\tlock\n#else\n\tlockall\n#endif\n\tend\n";
+  expect(copyGbaScriptBody(inc, "Route101_EventScript_A").body).toContain("#ifdef BUGFIX");
+});
+it("an edited body with a ; statement separator is refused", () => {
+  buildRefused(copyForm(`\tmsgbox ${T}, MSGBOX_NPC ; Helper::\n\tend\n`, copyGbaScriptBody(source, "Route101_EventScript_Youngster").texts),
+    "COPY_NOT_SCRIPT");
+  // A ; inside a string literal is text, not a separator.
+  const inc = 'Route101_MapScripts::\n\tend\nRoute101_EventScript_A::\n\tmsgbox Route101_Text_A, MSGBOX_NPC\n\tend\nRoute101_Text_A:\n\t.string "a;b$"\n';
+  expect(copyGbaScriptBody(inc, "Route101_EventScript_A").texts).toHaveProperty("Route101_Text_A");
+});
+it("string literals honour \\\" escapes", () => {
+  const inc = 'Route101_MapScripts::\n\tend\nRoute101_EventScript_A::\n\tmsgbox Route101_Text_A, MSGBOX_NPC\n\tend\n' +
+    'Route101_Text_A:\n\t.string "Say \\"hi\\" @ there$"\n';
+  expect(copyGbaScriptBody(inc, "Route101_EventScript_A").texts.Route101_Text_A).toBe('\t.string "Say \\"hi\\" @ there$"\n');
+});
+it("edited texts that are not dialogue or not referenced are refused, never dropped", () => {
+  buildRefused(copyForm(BODY, { [T]: '\t.string "a$"\n\t.byte 0\n' }), "COPY_UNBOUNDED");
+  buildRefused(copyForm(BODY, { [T]: '\t.string "a$"\n', Route101_Text_Extra: '\t.string "b$"\n' }), "COPY_UNBOUNDED");
+});
+it("edited copied text is checked against the charmap and the source text's width", () => {
+  buildRefused(copyForm(BODY, { [T]: '\t.string "\u4e2d\u6587$"\n' }), "BAD_OPTION", "not in the charmap");
+  buildRefused(copyForm(BODY, { [T]: `\t.string "${"a".repeat(60)}$"\n` }), "BAD_OPTION", "wider");
+  const ok = buildGbaAddEvent(map, source, copyForm(BODY, { [T]: '\t.string "Short line\\n"\n\t.string "{PLAYER} ok$"\n' }), ctx);
+  expect(ok.scriptAppends[0]!.text.replace(/\r\n/g, "\n")).toContain('Route101_Text_Copied:\n\t.string "Short line\\n"\n\t.string "{PLAYER} ok$"');
+});

@@ -1,13 +1,17 @@
 import { AddEventRefusal, type CopyPreview, type RefusalCode } from "./types.js";
 
+/** A string literal, honouring backslash escapes such as `\"`. */
+export const GBA_STRING = /"(?:[^"\\\r\n]|\\.)*"/g;
 // `@` starts a comment only outside a string literal.
-export function gbaCode(line: string): string {
-  return line.replace(/"[^"\r\n]*"|@.*$/g, value => value.startsWith("@") ? "" : value).trim();
+function gbaCode(line: string): string {
+  return line.replace(new RegExp(`${GBA_STRING.source}|@.*$`, "g"), value => value.startsWith("@") ? "" : value).trim();
 }
-export const GBA_LABEL = /^([A-Za-z_]\w*)::?\s*(.*)$/;
+const GBA_LABEL = /^([A-Za-z_]\w*)::?\s*(.*)$/;
 // GBA has no local labels, so the body ends at the next label of any kind.
 const TERMINAL = /^(?:end|return|goto\s+[A-Za-z_]\w*)$/;
-const DIALOGUE = /^\.string\s+"[^"\r\n]*"$/;
+const DIALOGUE = new RegExp(`^\\.string\\s+${GBA_STRING.source}$`);
+// cpp runs over scripts.inc: conditionals are live code, but a directive that defines, removes or pulls in names is not.
+const DEFINING_DIRECTIVE = /^#\s*(?!(?:if|ifdef|ifndef|elif|else|endif)\b)/;
 
 /** Top-level label declarations of a scripts.inc, as indexes into its lines. */
 function declarations(lines: string[]): { index: number; name: string; inline: string }[] {
@@ -41,12 +45,15 @@ export function copyGbaScriptBody(scriptsInc: string, label: string): CopyPrevie
   if (commands.some(c => /^\./.test(c) || /^(?:map_script(?:_2)?|step_end)\b/.test(c))) {
     fail("COPY_NOT_SCRIPT", "label is data, movement or text, not an event script");
   }
+  if (commands.some(c => DEFINING_DIRECTIVE.test(c))) fail("COPY_NOT_SCRIPT", "script contains a non-conditional # directive");
+  // gas treats `;` as a statement separator, which could hide a label or directive mid-line.
+  if (commands.some(c => c.replace(GBA_STRING, "").includes(";"))) fail("COPY_NOT_SCRIPT", "script contains a ; statement separator");
   if (!commands.length || !TERMINAL.test(commands.at(-1)!)) {
     fail(scope.next ? "COPY_FALLTHROUGH" : "COPY_UNBOUNDED", "script has no final terminator before the next label or end of file");
   }
   const texts: Record<string, string> = {};
   for (const command of commands) {
-    for (const ref of command.replace(/"[^"\r\n]*"/g, "").matchAll(/[A-Za-z_]\w*/g)) {
+    for (const ref of command.replace(GBA_STRING, "").matchAll(/[A-Za-z_]\w*/g)) {
       const target = ref[0];
       if (target === label || target in texts) continue;
       const t = scopeOf(target);

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { copyGbaAddEventProject, removeGbaTemp } from "../helpers/gbaTempProject.js";
 import { subjectSnapshot } from "../helpers/subjectSnapshot.js";
@@ -7,6 +7,7 @@ import { freeGbaSlots, loadGbaEventOptions } from "../../src/addEvent/gbaOptions
 import { buildGbaAddEvent, defaultGbaLabels, type GbaAddCtx } from "../../src/addEvent/gbaBuild.js";
 import { AddEventRefusal, type AddEventForm } from "../../src/addEvent/types.js";
 import { parseMap, type MapData } from "../../src/load/maps.js";
+import { addEvent } from "../../src/edit/events.js";
 import { parseGbaCharmap } from "../../src/signs/charmap.js";
 import { applyScriptAppend } from "../../src/write/save.js";
 
@@ -66,7 +67,7 @@ it("itemball", () => {
   const r = build(itemball());
   expect(r.value).toMatchObject({ graphics_id: "OBJ_EVENT_GFX_ITEM_BALL", flag: "FLAG_POKEMAP_POTION",
     script: "Route101_EventScript_PokemapObject1" });
-  // Subject data/maps/Route102/scripts.inc: Route102_EventScript_ItemPotion is `finditem ITEM_POTION` / `end`.
+  // Subject data/scripts/item_ball_scripts.inc:1-3: Route102_EventScript_ItemPotion is `finditem ITEM_POTION` / `end`.
   expect(lf(r.scriptAppends[0]!.text)).toContain("Route101_EventScript_PokemapObject1::\n\tfinditem ITEM_POTION\n\tend\n");
   expect(r.scriptReplaces).toHaveLength(1);
   const edit = r.scriptReplaces[0]!;
@@ -153,7 +154,7 @@ it("bg", () => {
 it("warp", () => {
   const r = build({ kind: "warp", x: 1, y: 2, fields: { destMap: "LittlerootTown", destWarp: "1" } });
   expect(r.value).toEqual({ x: 1, y: 2, elevation: 5, dest_map: "MAP_LITTLEROOT_TOWN", dest_warp_id: "1" });
-  expect(r.created).toEqual({ kind: "warp", index: 0 });
+  expect(r.created).toEqual({ kind: "warp", index: map.warpEvents.length });
   refuses("BAD_OPTION", () => build({ kind: "warp", x: 1, y: 2, fields: { destMap: "LittlerootTown", destWarp: "99" } }),
     "data/maps/Route101/map.json");
 });
@@ -185,4 +186,68 @@ it("NAME_INVALID and failed create leaves context byte-identical", () => {
   const f = itemball(); f.fields.label = "1abc";
   refuses("NAME_INVALID", () => build(f));
   expect(JSON.stringify(ctx)).toBe(before);
+});
+
+const hiddenNew = (name = "FLAG_POKEMAP_HIDDEN"): AddEventForm => ({ kind: "bg", x: 1, y: 2,
+  fields: { bgType: "hidden_item", item: "ITEM_POTION" }, flag: { mode: "new", name } });
+const hiddenExisting = (name: string): AddEventForm => ({ kind: "bg", x: 1, y: 2,
+  fields: { bgType: "hidden_item", item: "ITEM_POTION" }, flag: { mode: "existing", name } });
+// Engine: asm/macros/map.inc:90-91 stores (flag - FLAG_HIDDEN_ITEMS_START) as a .2byte; the flag must be saved,
+// so FLAG_HIDDEN_ITEMS_START (0x1F4, flags.h:545) <= value < FLAGS_COUNT (flags.h:3481).
+it("hidden_item flag range: a new flag takes the first in-range slot, NO_FLAG_SLOT when none", () => {
+  // flags.h:15 FLAG_TEMP_1 is 0x1 (below the range); flags.h:3485 FLAG_HIDE_MAP_NAME_POPUP is 0x4000 (unsaved).
+  const low = { ...ctx, freeFlags: ["FLAG_TEMP_1", "FLAG_HIDE_MAP_NAME_POPUP", ...ctx.freeFlags] };
+  const r = build(hiddenNew(), inc, low);
+  expect(r.value).toMatchObject({ type: "hidden_item", flag: "FLAG_POKEMAP_HIDDEN" });
+  expect(r.scriptReplaces[0]!.after).toBe(renamed(flagsDisk, ctx.freeFlags[0]!, "FLAG_POKEMAP_HIDDEN"));
+  refuses("NO_FLAG_SLOT", () => build(hiddenNew(), inc, { ...ctx, freeFlags: ["FLAG_TEMP_1", "FLAG_HIDE_MAP_NAME_POPUP"] }),
+    "include/constants/flags.h");
+  // An item ball has no range, so the same slot list still yields a slot.
+  expect(build(itemball(), inc, low).scriptReplaces[0]!.after).toBe(renamed(flagsDisk, "FLAG_TEMP_1", "FLAG_POKEMAP_POTION"));
+});
+it("hidden_item flag range: an existing flag outside the range is BAD_OPTION", () => {
+  refuses("BAD_OPTION", () => build(hiddenExisting("FLAG_TEMP_1")), "data/maps/Route101/map.json");
+  refuses("BAD_OPTION", () => build(hiddenExisting("FLAG_HIDE_MAP_NAME_POPUP")), "data/maps/Route101/map.json");
+  expect(build(hiddenExisting("FLAG_HIDDEN_ITEM_ROUTE_104_SUPER_POTION")).value.flag).toBe("FLAG_HIDDEN_ITEM_ROUTE_104_SUPER_POTION");
+});
+it("coord new script body is lockall / msgbox MSGBOX_DEFAULT / releaseall / end", () => {
+  const r = build({ kind: "coord", x: 1, y: 2, fields: { varValue: "1" }, varName: { mode: "existing", name: ctx.options.vars[0]! },
+    script: { mode: "new", label: "Route101_EventScript_PokemapCoord1", text: "Stop!" } });
+  expect(lf(r.scriptAppends[0]!.text)).toContain("Route101_EventScript_PokemapCoord1::\n\tlockall\n" +
+    "\tmsgbox Route101_Text_PokemapCoord1, MSGBOX_DEFAULT\n\treleaseall\n\tend\n");
+});
+it("existing script 0x0 is allowed only for an NPC", () => {
+  const zero = { mode: "existing", label: "0x0" } as const;
+  expect(build({ ...npc(), script: zero }).value.script).toBe("0x0");
+  refuses("BAD_OPTION", () => build({ kind: "coord", x: 1, y: 2, fields: {}, varName: { mode: "existing", name: ctx.options.vars[0]! },
+    script: zero }), "data/maps/Route101/map.json");
+  refuses("BAD_OPTION", () => build({ kind: "bg", x: 1, y: 2, fields: { bgType: "sign" }, script: zero }), "data/maps/Route101/map.json");
+});
+it("a new flag named after an existing flags.h define is LABEL_TAKEN even when check misses it", () => {
+  refuses("LABEL_TAKEN", () => build(itemball("FLAG_HIDE_MAP_NAME_POPUP")), "include/constants/flags.h");
+});
+it("an npc without a sprite is refused without inventing a default", () => {
+  const f = npc(); delete f.fields.sprite;
+  refuses("BAD_OPTION", () => build(f), "data/maps/Route101/map.json");
+  try { build(f); } catch (e) { expect((e as Error).message).toContain("invalid sprite: undefined"); }
+});
+it("warp destination: self-warp counts this map's in-memory warps; bad destination files are named", () => {
+  const withWarp = addEvent(map, "warp", { x: 0, y: 0, elevation: 0, dest_map: "MAP_ROUTE101", dest_warp_id: "0" }).map;
+  const r = buildGbaAddEvent(withWarp, inc, { kind: "warp", x: 1, y: 2, fields: { destMap: "Route101", destWarp: "0" } }, ctx);
+  expect(r.value).toMatchObject({ dest_map: "MAP_ROUTE101", dest_warp_id: "0" });
+  mkdirSync(join(root, "data/maps/Route102"), { recursive: true });
+  const warp = (): AddEventForm => ({ kind: "warp", x: 1, y: 2, fields: { destMap: "Route102", destWarp: "0" } });
+  writeFileSync(join(root, "data/maps/Route102/map.json"), "null");
+  refuses("BAD_OPTION", () => build(warp()), "data/maps/Route102/map.json");
+  writeFileSync(join(root, "data/maps/Route102/map.json"), JSON.stringify({ warp_events: [{}] }));
+  refuses("BAD_OPTION", () => build(warp()), "data/maps/Route102/map.json");
+  try { build(warp()); } catch (e) { expect((e as Error).message).toContain("has no map id"); }
+});
+it("a create that fails after staging a flag leaves the input entries untouched", () => {
+  const first = build(itemball("FLAG_POKEMAP_FIRST"));
+  const staged = JSON.stringify(first.scriptReplaces);
+  const f = trainer(); f.fields.trainer = "TRAINER_NOT_REAL"; f.flag = { mode: "new", name: "FLAG_POKEMAP_SECOND" };
+  refuses("BAD_OPTION", () => build(f, inc, { ...ctx, scriptReplaces: first.scriptReplaces }), "data/maps/Route101/map.json");
+  expect(JSON.stringify(first.scriptReplaces)).toBe(staged);
+  expect(first.scriptReplaces[0]!.after).not.toContain("FLAG_POKEMAP_SECOND");
 });

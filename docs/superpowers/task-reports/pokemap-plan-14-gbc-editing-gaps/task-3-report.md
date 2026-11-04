@@ -113,8 +113,45 @@ Conductor mutations (each applied, run, reverted; suite green again afterwards, 
 
 ## Concerns
 
-- Hidden items with a New flag: pokeemerald's `bg_hidden_item_event` stores `flag - FLAG_HIDDEN_ITEMS_START` in a byte,
+- Hidden items with a New flag: pokeemerald's `bg_hidden_item_event` stores `flag - FLAG_HIDDEN_ITEMS_START` in a `.2byte` (u16 `hiddenItemId`; corrected in fix round 1, spec M4),
   so a renamed `FLAG_UNUSED_*` outside the hidden-item range may not work in game. Not refused here; worth a ruling
   (restrict hidden_item flags to Existing, or to a hidden-range slot) before Task 4/acceptance build checks.
 - New FLAG_/VAR_ names are only checked against `flags.h`/`vars.h` text plus `ctx.check`; other headers rely on the
   injected NameCheck (as specified).
+
+## Fix round 1
+
+Base `bbeb725`. Rulings R1 (hidden-item flag range) and R2 (slot freedom) applied. Every new test was run red before
+its fix (or, for test-gap findings where the code was already correct, turned red by the named mutation below).
+
+| Finding | Change | Regression test |
+|---|---|---|
+| Spec I1 / R1 | `gbaBuild.ts`: `hiddenItemFlag()` evaluates `FLAG_HIDDEN_ITEMS_START <= value < FLAGS_COUNT` from the staged flags.h (+ its `constants/` includes). New hidden flag takes the first in-range free slot, none -> `NO_FLAG_SLOT` (names map + `include/constants/flags.h`); existing out of range -> `BAD_OPTION`. Temp project now also copies `include/constants/opponents.h` (FLAGS_COUNT needs MAX_TRAINERS_COUNT). | gbaBuild: "hidden_item flag range: a new flag takes the first in-range slot, NO_FLAG_SLOT when none"; "hidden_item flag range: an existing flag outside the range is BAD_OPTION" |
+| Spec I2 / R2 | `gbaOptions.ts` (Task 1): new exported `gbaDefineValues(root, header)` (integer `+ - * %` evaluator over the header and its included constants headers; octal, `/`, shifts, unknown names, cycles -> undefined). `unusedSlots`: free only if the name occurs exactly once in src/include/data (its own #define; header included), its value is evaluable and shared by no other define in the header, and it lies outside TEMP_FLAGS/DAILY_FLAGS/SPECIAL_FLAGS (flags) and TEMP_VARS/SPECIAL_VARS (vars) `_START.._END`. Subject: 77 free flags, first is now `FLAG_UNUSED_0x299`; vars unchanged (`VAR_UNUSED_0x40B8`, `0x40BB`), so the existing VAR oracle needed no change. | gbaOptions: "R2: free slots on a hand-written project exclude header references, aliases, ranges and unevaluable values"; "gbaDefineValues evaluates + - * % arithmetic through included headers and refuses the rest"; "R2: subject FLAG slots skip the 0x296 alias, the DAILY_FLAGS_* sentinels' slots and the daily range" (pins freeFlags[0] != 0x296, 0x91F/0x95F excluded, no `(DAILY_FLAGS_START + n)` flag, hand-derived DAILY range 0xB40..0xB7F) |
+| Spec M1 | none (code correct) | gbaBuild: "coord new script body is lockall / msgbox MSGBOX_DEFAULT / releaseall / end" (mutation MSGBOX_DEFAULT->MSGBOX_NPC: red) |
+| Spec M2 | `existing` script `0x0` refused unless kind is object (NPC). GBC sibling not touched (Task 2 file): same gap remains there, conductor to rule. | gbaBuild: "existing script 0x0 is allowed only for an NPC" |
+| Spec M3 | `gbaCopy.ts`: `GBA_STRING` honours `\"` escapes (comment strip, DIALOGUE, reference scan, builder rename); commands containing `;` outside strings refused (`COPY_NOT_SCRIPT`). | gbaCopy: "an edited body with a ; statement separator is refused"; "string literals honour \\\" escapes" |
+| Spec M4 | Report line corrected (`.2byte`/u16, not a byte). | n/a (doc) |
+| Quality I1 | `gbaCopy.ts`: any `#` directive other than if/ifdef/ifndef/elif/else/endif refused (`COPY_NOT_SCRIPT`). | gbaCopy: "an edited body with a #define, #undef or #include directive is refused"; "preprocessor conditionals stay copyable" |
+| Quality I2 | none (guards correct, tests added) | gbaCopy: "edited texts that are not dialogue or not referenced are refused, never dropped" (mutation drop count check: red); gbaBuild: "a new flag named after an existing flags.h define is LABEL_TAKEN even when check misses it" (mutation drop header clause: red) |
+| Quality M1 | `OBJ_EVENT_GFX_BOY_1` fallback removed. | gbaBuild: "an npc without a sprite is refused without inventing a default" |
+| Quality M2 | Item-ball citation -> `data/scripts/item_ball_scripts.inc:1-3` (code + test comment). | n/a (comment) |
+| Quality M3 | Edited copied texts tokenized with `ctx.charmap`; each displayed line (split at \n \l \p $) may be no wider than max(SIGN_WIDTH, widest line of the original texts) -> `BAD_OPTION` (ponytail note: character count, not pixels). GBC sibling unchanged. | gbaCopy: "edited copied text is checked against the charmap and the source text's width" |
+| Quality M4 | Destination map.json that is not an object / has no string id -> `BAD_OPTION` naming the destination file with an accurate message; self-warp counts the in-memory map's warps. Other open sessions' staged warps left for Task 4 (ponytail note). | gbaBuild: "warp destination: self-warp counts this map's in-memory warps; bad destination files are named" |
+| Quality M5 | `gbaCode` and `GBA_LABEL` no longer exported; `GBA_STRING` exported (used by gbaBuild). | n/a (no behaviour) |
+| Quality M6 | Warp test index = `map.warpEvents.length`; new failure-after-staging test. | gbaBuild: "a create that fails after staging a flag leaves the input entries untouched" (mutation no shallow copy: red) |
+| Quality M7 | Left for Task 4 per conductor. | - |
+
+Mutations (each restored after): drop header clause, drop text count check, coord body, no shallow copy, drop existing
+hidden range, drop new hidden range, allow 0x0, drop width/charmap check, self-warp from disk, drop directive refusal,
+drop `;` refusal, old DIALOGUE regex, drop check (claim), drop fall-through, hidden quantity: each turned its named test
+red (claim also turns "LABEL_TAKEN" red; fall-through "a body reached by fall-through -> COPY_FALLTHROUGH"; quantity "bg").
+
+Commands and results:
+- `npx vitest run packages/core/test/addEvent/gbaBuild.test.ts packages/core/test/addEvent/gbaCopy.test.ts packages/core/test/addEvent/gbaOptions.test.ts` -> Test Files 3 passed (3), Tests 44 passed (44)
+- `npx tsc --noEmit -p tsconfig.base.json` -> no output, exit 0
+- `npx vitest run packages/core` -> Test Files 1 failed | 91 passed (92), Tests 1 failed | 1460 passed (1461); the one failure is the known environmental `engineProfile > parses the subject repo's real porymap.project.cfg`.
+
+Files: `packages/core/src/addEvent/gbaBuild.ts`, `gbaCopy.ts`, `gbaOptions.ts` (CRLF kept),
+`packages/core/test/addEvent/gbaBuild.test.ts`, `gbaCopy.test.ts`, `gbaOptions.test.ts` (CRLF kept),
+`packages/core/test/helpers/gbaTempProject.ts`.

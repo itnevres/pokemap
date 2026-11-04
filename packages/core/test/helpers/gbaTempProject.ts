@@ -6,7 +6,7 @@ import { SUBJECT_ROOT } from "./corpus.js";
 /** The GBA subject files the add-event builder reads or writes, copied to a fresh temp root. */
 const FILES = [
   "data/maps/Route101", "data/maps/LittlerootTown/map.json",
-  "include/constants/flags.h", "include/constants/vars.h", "charmap.txt",
+  "include/constants/flags.h", "include/constants/vars.h", "include/constants/opponents.h", "charmap.txt",
 ];
 
 export function copyGbaAddEventProject(): string {
