@@ -1,4 +1,6 @@
 import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import type { FileReplace } from "../../addEvent/types.js";
 import { writeFilesAtomically, type AtomicEntry, type AtomicIo } from "../../write/atomic.js";
 import type { Refusal } from "../../write/guards.js";
 import type { PendingChange } from "../../write/save.js";
@@ -73,6 +75,8 @@ export interface GbcEditSession {
   /** A plain field, as in GBA. Task 4's command stack owns setting it; this
    *  module only ever initialises it to `false`. */
   isDirty: boolean;
+  /** Whole-file constant replacements; one per path, saved atomically with events. */
+  constEdits?: FileReplace[];
 }
 
 export interface GbcSavePlan {
@@ -91,7 +95,7 @@ export interface GbcSavePlan {
 /**
  * Opens a map for editing. An unknown map name throws inside `proj.map`
  * (G4: unknown map); that error is deliberately not caught or re-worded here.
- * Reads `maps/<mapName>.asm` (the fixed path, GBC findings §3.1) and parses it
+ * Reads `maps/<mapName>.asm` (the fixed path, GBC findings Â§3.1) and parses it
  * twice so `events` and `originalEvents` can never alias.
  */
 export function openGbcEditSession(proj: GbcProject, mapName: string): GbcEditSession {
@@ -139,6 +143,9 @@ export function planGbcSave(proj: GbcProject, session: GbcEditSession): GbcSaveP
       summary: `maps/${mapName}.asm -- event block edited`,
     });
   }
+  for (const edit of session.constEdits ?? []) {
+    if (edit.after !== edit.before) changes.push({ path: resolve(proj.root, edit.path), kind: "text", summary: `${edit.path} -- constants edited` });
+  }
   return { session, changes, refusals };
 }
 
@@ -157,6 +164,9 @@ export function prepareGbcSave(proj: GbcProject, session: GbcEditSession): Atomi
     const path = eventsFilePath(proj, session.mapName);
     entries.push({ path, before: readFileSync(path), after: Buffer.from(session.eventsText, "utf8") });
   }
+  for (const edit of session.constEdits ?? []) {
+    if (edit.after !== edit.before) entries.push({ path: resolve(proj.root, edit.path), before: Buffer.from(edit.before, "utf8"), after: Buffer.from(edit.after, "utf8") });
+  }
   return entries;
 }
 
@@ -172,7 +182,17 @@ export function commitGbcSave(proj: GbcProject, plan: GbcSavePlan, prepared?: At
   const { session } = plan;
   const refusals = guardGbcSave(proj, session);
   if (refusals.length > 0) {
-    throw new Error(`save refused: ${refusals.map((r) => `${r.code} (${r.subject})`).join(", ")}`);
+    throw new Error(`save refused: ${session.mapName}: ${refusals.map((r) => `${r.code} (${r.subject})`).join(", ")}`);
   }
-  writeFilesAtomically(prepared ?? prepareGbcSave(proj, session), io);
+  const entries = prepared ?? prepareGbcSave(proj, session);
+  for (const edit of session.constEdits ?? []) {
+    if (edit.before === edit.after) continue;
+    const target = resolve(proj.root, edit.path);
+    const matches = entries.filter(e => resolve(e.path) === target);
+    if (matches.length !== 1 || !matches[0]!.before?.equals(Buffer.from(edit.before, "utf8")) ||
+        !matches[0]!.after.equals(Buffer.from(edit.after, "utf8"))) {
+      throw new Error(`save refused: ${session.mapName}: ${edit.path}: constants replacement missing or stale in prepared save`);
+    }
+  }
+  writeFilesAtomically(entries, io);
 }
