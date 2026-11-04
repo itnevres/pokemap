@@ -1,25 +1,95 @@
+import { existsSync } from "node:fs";
 import { join, normalize } from "node:path";
 import { parseMapGroups } from "../load/maps.js";
 import { projectPaths } from "../config/paths.js";
 import { cDefines, optionName, read, textFiles } from "./sources.js";
 import type { EventOptions, GbaBehaviors } from "./types.js";
 
+/** Integer `+ - * %` with parentheses and unary signs; undefined for anything else. */
+function arithmetic(expr: string): number | undefined {
+  const tokens = expr.match(/\d+|[()+\-*%]/g) ?? [];
+  if (tokens.join("") !== expr.replace(/\s+/g, "")) return undefined;
+  let i = 0;
+  const atom = (): number => {
+    const t = tokens[i++];
+    if (t === "(") { const v = sum(); if (tokens[i++] !== ")") throw new Error("unbalanced"); return v; }
+    if (t === "-") return -atom();
+    if (t === "+") return atom();
+    if (t !== undefined && /^\d+$/.test(t)) return Number(t);
+    throw new Error("unexpected token");
+  };
+  const product = (): number => {
+    let v = atom();
+    while (tokens[i] === "*" || tokens[i] === "%") { const op = tokens[i++]; const r = atom(); v = op === "*" ? v * r : v % r; }
+    return v;
+  };
+  const sum = (): number => {
+    let v = product();
+    while (tokens[i] === "+" || tokens[i] === "-") { const op = tokens[i++]; const r = product(); v = op === "+" ? v + r : v - r; }
+    return v;
+  };
+  try { const v = sum(); return i === tokens.length ? v : undefined; } catch { return undefined; }
+}
+
+/** Integer value of every define in `header` and in the `constants/` headers it includes (one level, from `root`);
+ * undefined unless the value is decimal/hex literals, other evaluable defines and `+ - * %` (exact in JS as in C). */
+export function gbaDefineValues(root: string, header: string): Map<string, number | undefined> {
+  const raw = new Map<string, string>();
+  const included = [...header.matchAll(/^\s*#\s*include\s+"(constants\/[\w./]+)"/gm)].map(m => join(root, "include", m[1]!));
+  for (const text of [...included.filter(p => existsSync(p)).map(read), header]) for (const d of cDefines(text)) raw.set(d.name, d.value);
+  const values = new Map<string, number | undefined>();
+  const evaluating = new Set<string>();
+  const value = (name: string): number | undefined => {
+    if (values.has(name)) return values.get(name);
+    const text = raw.get(name);
+    if (text === undefined || evaluating.has(name)) return undefined;
+    evaluating.add(name);
+    let ok = true;
+    const expr = text.replace(/\b0x[\da-f]+\b|\b\d+\b|[A-Za-z_]\w*/gi, token => {
+      // A leading-zero literal is octal in C; refuse it rather than misread it.
+      const v = /^\d/.test(token) ? (/^0\d/.test(token) ? undefined : Number(token)) : value(token);
+      if (v === undefined) ok = false;
+      return `(${v})`;
+    });
+    const result = ok ? arithmetic(expr) : undefined;
+    evaluating.delete(name);
+    values.set(name, Number.isSafeInteger(result) ? result : undefined);
+    return values.get(name);
+  };
+  for (const name of raw.keys()) value(name);
+  return values;
+}
+
+/** Engine ranges a new persistent flag or var must avoid: temp, daily (cleared each day) and special (unsaved). */
+const RESERVED = { FLAG: ["TEMP_FLAGS", "DAILY_FLAGS", "SPECIAL_FLAGS"], VAR: ["TEMP_VARS", "SPECIAL_VARS"] } as const;
+
 function unusedSlots(root: string): Record<"FLAG" | "VAR", string[]> {
   const headers = {
     FLAG: normalize(join(root, "include/constants/flags.h")),
     VAR: normalize(join(root, "include/constants/vars.h")),
   };
-  const referenced = { FLAG: new Set<string>(), VAR: new Set<string>() };
+  // Every occurrence anywhere, the header included; a free slot's only occurrence is its own #define.
+  const uses = { FLAG: new Map<string, number>(), VAR: new Map<string, number>() };
   // One read and one combined token scan per text file, for both slot kinds.
   for (const dir of ["src", "include", "data"]) for (const file of textFiles(join(root, dir), [".c", ".h", ".inc", ".s", ".json"])) {
-    const path = normalize(file);
     for (const match of read(file).matchAll(/\b(FLAG|VAR)_UNUSED_\w+\b/g)) {
-      const kind = match[1] as "FLAG" | "VAR";
-      if (path !== headers[kind]) referenced[kind].add(match[0]);
+      const count = uses[match[1] as "FLAG" | "VAR"];
+      count.set(match[0], (count.get(match[0]) ?? 0) + 1);
     }
   }
-  const candidates = (kind: "FLAG" | "VAR") => cDefines(read(headers[kind]))
-    .map(d => d.name).filter(n => n.startsWith(`${kind}_UNUSED_`) && !referenced[kind].has(n));
+  const candidates = (kind: "FLAG" | "VAR") => {
+    const text = read(headers[kind]);
+    const defs = cDefines(text);
+    const values = gbaDefineValues(root, text);
+    const owners = new Map<number, number>();
+    for (const d of defs) { const v = values.get(d.name); if (v !== undefined) owners.set(v, (owners.get(v) ?? 0) + 1); }
+    const ranges = RESERVED[kind].filter(r => values.has(`${r}_START`)).map(r => [values.get(`${r}_START`), values.get(`${r}_END`)]);
+    return defs.map(d => d.name).filter(n => {
+      const v = values.get(n);
+      return n.startsWith(`${kind}_UNUSED_`) && uses[kind].get(n) === 1 && v !== undefined && owners.get(v) === 1 &&
+        ranges.every(([start, end]) => start !== undefined && end !== undefined && (v < start || v > end));
+    });
+  };
   return { FLAG: candidates("FLAG"), VAR: candidates("VAR") };
 }
 
