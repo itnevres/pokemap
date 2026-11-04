@@ -6,13 +6,13 @@ import type { GbcMapEvents } from "../gbc/model/types.js";
 import { insertLineAfter, replaceLines } from "../gbc/write/asmSplice.js";
 import { renderGbcBody } from "../gbc/signs.js";
 import { wrapSign, SIGN_WIDTH } from "../signs/wrap.js";
-import { parseGbcCharmap } from "../signs/charmap.js";
+import type { Charmap } from "../signs/charmap.js";
 import { copyGbcScriptBody } from "./gbcCopy.js";
 import { AddEventRefusal, type AddEventForm, type EventKind, type EventOptions, type FileReplace,
   type MapEventOptions, type NameCheck, type RefusalCode, type TextChoice } from "./types.js";
 
 export type GbcAddCtx = { options: EventOptions; mapOptions: MapEventOptions; mapConsts: Set<string>;
-  eventFlagsDisk: string; constEdits: FileReplace[]; check: NameCheck };
+  eventFlagsDisk: string; constEdits: FileReplace[]; check: NameCheck; charmap: Charmap };
 
 /** Lowest unused default, including generated companion labels. */
 export function defaultGbcLabel(mapName: string, kind: EventKind, check: NameCheck): string {
@@ -22,13 +22,6 @@ export function defaultGbcLabel(mapName: string, kind: EventKind, check: NameChe
     if (["", "Text", "SeenText", "BeatenText", "After", "AfterText", "Script"].every(s => !check(label + s).taken)) return label;
   }
 }
-
-// The pure builder has no project/charmap input. Accept only the common English
-// GBC alphabet; project-specific glyphs need a charmap added to the context.
-const glyphs = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 !?.,'-:;()/";
-const tokenWidths: Record<string, number> = { "<PLAYER>": 7, "<RIVAL>": 7, "<POKE>": 2, "<PKMN>": 2 };
-const charmap = parseGbcCharmap([...glyphs, ...Object.keys(tokenWidths)]
-  .map(token => `charmap "${token}", $80`).join("\n"));
 
 /** Build a complete candidate; never mutates context, text, or the session. */
 export function buildGbcAddEvent(text: string, mapName: string, form: AddEventForm, ctx: GbcAddCtx): {
@@ -71,7 +64,7 @@ export function buildGbcAddEvent(text: string, mapName: string, form: AddEventFo
       try { copyGbcScriptBody(`PokemapProbe:\n\tjumptext ${choice.from}\nPokemapProbeBoundary:\n\tend\n${text}`, "PokemapProbe"); }
       catch { fail("COPY_NOT_SCRIPT", `text ${choice.from} is not defined as dialogue in this map`); }
     }
-    const wrapped = wrapSign(choice.text, charmap, SIGN_WIDTH);
+    const wrapped = wrapSign(choice.text, ctx.charmap, SIGN_WIDTH);
     if ("refusal" in wrapped) fail("BAD_OPTION", wrapped.refusal);
     try { return renderGbcBody((wrapped as { paragraphs: string[][] }).paragraphs).join("\n"); }
     catch (error) { return fail("BAD_OPTION", error instanceof Error ? error.message : String(error)); }
@@ -110,13 +103,17 @@ export function buildGbcAddEvent(text: string, mapName: string, form: AddEventFo
     } else {
       if (!ctx.mapOptions.localScripts.includes(choice.from)) fail("COPY_NOT_SCRIPT", `script ${choice.from} is not local to this map`);
       copyGbcScriptBody(text, choice.from);
+      // One editable body owns one global scope; never silently discard helper definitions.
+      for (const body of [choice.body, ...Object.values(choice.texts)]) {
+        if (body.split(/\r?\n/).some(line => /^\s*[A-Za-z_]\w*::?/.test(line))) {
+          fail("COPY_UNBOUNDED", "edited copy contains an extra top-level definition");
+        }
+      }
       // Re-parse edited content with the identical grammar before renaming anything.
       const synthetic = `${choice.from}:\n${choice.body}\n` + Object.entries(choice.texts).map(([n, b]) => `${n}:\n${b}\n`).join("\n");
-      let preview: ReturnType<typeof copyGbcScriptBody>;
-      try { preview = copyGbcScriptBody(synthetic, choice.from); }
-      catch (error) {
-        if (error instanceof AddEventRefusal && error.code === "COPY_FALLTHROUGH") fail("COPY_UNBOUNDED", "edited script has lost its terminator");
-        throw error;
+      const preview = copyGbcScriptBody(synthetic, choice.from);
+      if (Object.keys(preview.texts).length !== Object.keys(choice.texts).length) {
+        fail("COPY_UNBOUNDED", "edited copy contains unused text definitions");
       }
       const renames = new Map<string, string>([[choice.from, label]]);
       for (const [i, name] of Object.keys(preview.texts).entries()) renames.set(name, claim(`${label}Text${i + 1}`));
@@ -194,7 +191,8 @@ export function buildGbcAddEvent(text: string, mapName: string, form: AddEventFo
       args = [...xy, sprite, movement, number(f.rangeX, "0", "range x", 0, 15), number(f.rangeY, "0", "range y", 0, 15),
         number(f.hourStart, "-1", "hour start", -1, 23), number(f.hourEnd, "-1", "hour end", -1, 23), palette,
         kind === "npc" ? "OBJECTTYPE_SCRIPT" : kind === "itemball" ? "OBJECTTYPE_ITEMBALL" : "OBJECTTYPE_TRAINER",
-        number(f.sightRange, "0", "sight range", 0, 255), target, event];
+        // Route30.asm:413-415: the trainer beaten flag belongs only in its header.
+        number(f.sightRange, "0", "sight range", 0, 255), target, kind === "trainer" ? "-1" : event];
     }
     let result = addGbcEvent(text, mapName, form.kind, args, { mapConsts: ctx.mapConsts, objectConst });
     if (blocks.length) {

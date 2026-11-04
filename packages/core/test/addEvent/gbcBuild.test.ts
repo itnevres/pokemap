@@ -8,6 +8,8 @@ import { AddEventRefusal, type AddEventForm } from "../../src/addEvent/types.js"
 import { gbcEventGap } from "../../src/gbc/load/constCounter.js";
 import { parseMapEvents } from "../../src/gbc/load/events.js";
 import { addGbcEvent } from "../../src/gbc/edit/events.js";
+import { parseGbcCharmap } from "../../src/signs/charmap.js";
+import { copyGbcScriptBody } from "../../src/addEvent/gbcCopy.js";
 
 let root: string, text: string, ctx: GbcAddCtx;
 beforeAll(() => {
@@ -18,7 +20,8 @@ beforeAll(() => {
     localScripts: ["Route29YoungsterScript"], localTexts: ["Route29YoungsterText"],
     scenes: ["SCENE_ROUTE29_NOOP", "SCENE_ROUTE29_CATCH_TUTORIAL"], warps: [] },
     mapConsts: new Set(options.maps), eventFlagsDisk: readFileSync(join(root, "constants/event_flags.asm"), "utf8"),
-    constEdits: [], check: () => ({ taken: false }) };
+    constEdits: [], check: () => ({ taken: false }),
+    charmap: parseGbcCharmap(readFileSync(join(root, "constants/charmap.asm"), "utf8")) };
 });
 afterAll(() => { if (root) removeTemp(root); });
 const npc = (): AddEventForm => ({ kind: "object", x: 3, y: 4, objectType: "npc",
@@ -50,6 +53,10 @@ it("itemball", () => {
   f.flag = { mode: "new", name: "POKEMAP_POTION" };
   const r = build(f);
   expect(r.text).toContain("OBJECTTYPE_ITEMBALL");
+  const added = r.events.objects[r.created.index]!;
+  expect(added.objectType).toBe("OBJECTTYPE_ITEMBALL");
+  expect(added.script).toBe("Route29PokemapObject1");
+  expect(added.eventFlag).toBe("EVENT_POKEMAP_POTION");
   expect(r.text).toMatch(/Route29PokemapObject1:\r?\n\titemball POTION/);
   expect(r.constEdits).toHaveLength(1);
   expect(r.constEdits[0]!.path).toBe("constants/event_flags.asm");
@@ -66,6 +73,7 @@ it("trainer existing", () => {
   f.texts = { seen: { mode: "new", text: "Seen!" }, beaten: { mode: "new", text: "Beaten!" }, after: { mode: "new", text: "After!" } };
   const r = build(f);
   expect(r.text).toContain("OBJECTTYPE_TRAINER");
+  expect(r.events.objects[r.created.index]!.eventFlag).toBe("-1");
   expect(r.text).toContain("trainer YOUNGSTER, JOEY1, EVENT_BEAT_YOUNGSTER_JOEY, Route29PokemapObject1SeenText, Route29PokemapObject1BeatenText, 0, Route29PokemapObject1After");
   for (const value of ["Seen!", "Beaten!", "After!"]) expect(r.text).toContain(`text "${value}"`);
   expect(r.text).toMatch(/Route29PokemapObject1After:\r?\n\tendifjustbattled\r?\n\tjumptext Route29PokemapObject1AfterText/);
@@ -158,4 +166,53 @@ it("failed create leaves context byte-identical", () => {
 });
 it("default label skips collisions in script and text namespaces", () => {
   expect(defaultGbcLabel("Route29", "object", name => ({ taken: name === "Route29PokemapObject1Text" }))).toBe("Route29PokemapObject2");
+});
+
+it("unchanged Route29 dialogue containing #MON copies with the project charmap", () => {
+  // PerfPlus maps/Route29.asm:294, preserved as plain dialogue for TextChoice.
+  const body = copyGbcScriptBody(text, "Route29YoungsterScript").texts.Route29YoungsterText!;
+  const commands = [...body.matchAll(/^\s*(text|line|cont|para)\s+"([^"]*)"/gm)];
+  const dialogue = commands.map(m => `${m[1] === "para" ? "\n" : ""}${m[2]}`).join("\n");
+  expect(dialogue).toContain("#MON");
+  const f = npc(); f.objectType = "trainer"; f.fields.trainer = "YOUNGSTER,JOEY1";
+  f.flag = { mode: "existing", name: "EVENT_BEAT_YOUNGSTER_JOEY" };
+  f.texts = { seen: { mode: "copy", from: "Route29YoungsterText", text: dialogue },
+    beaten: { mode: "new", text: "Bye" }, after: { mode: "new", text: "Bye" } };
+  const r = build(f);
+  const generated = r.text.slice(r.text.indexOf("Route29PokemapObject1SeenText:"), r.text.indexOf("Route29PokemapObject1BeatenText:"));
+  expect([...generated.matchAll(/^\s*(?:text|line|cont|para)\s+"([^"]*)"/gm)].map(m => m[1])).toEqual(commands.map(m => m[2]));
+});
+it("project charmap accepts #MON ampersand and TM tokens", () => {
+  const f = npc(); f.script = { mode: "new", label: "Route29ProjectGlyphs", text: "#MON & <TM>" };
+  expect(build(f).text).toContain('text "#MON & <TM>"');
+});
+it("project charmap refuses absent characters naming map and file", () => {
+  const f = npc(); f.script = { mode: "new", label: "Route29ProjectGlyphs", text: "Hello" };
+  refuses("BAD_OPTION", () => build(f, text, { ...ctx, charmap: parseGbcCharmap('charmap "H", $80') }));
+  expect(ctx.charmap.has("\u2603")).toBe(false);
+  f.script.text = "Hello\u2603";
+  refuses("BAD_OPTION", () => build(f));
+});
+it("edited copy with an empty trailing local block refuses COPY_FALLTHROUGH", () => {
+  const f = npc(); f.script = { mode: "copy", from: "Route29YoungsterScript", label: "CopiedScript",
+    body: "\tiftrue .Tail\n\tend\n.Tail:\n", texts: { Next: '\ttext "Next"\n\tdone\n' } };
+  refuses("COPY_FALLTHROUGH", () => build(f));
+});
+it("edited copy refuses extra top-level helper definitions without staging", () => {
+  const before = JSON.stringify(ctx);
+  const f = npc(); f.flag = { mode: "new", name: "PENDING_HELPER" };
+  f.script = { mode: "copy", from: "Route29YoungsterScript", label: "CopiedScript",
+    body: "\tscall AddedHelper\n\tend\nAddedHelper:\n\tfaceplayer\n\treturn\n", texts: {} };
+  refuses("COPY_UNBOUNDED", () => build(f));
+  expect(JSON.stringify(ctx)).toBe(before);
+  expect(ctx.constEdits).toEqual([]);
+});
+it("edited copy refuses macro definitions before extraction without staging", () => {
+  const before = JSON.stringify(ctx);
+  const f = npc(); f.flag = { mode: "new", name: "PENDING_MACRO" };
+  f.script = { mode: "copy", from: "Route29YoungsterScript", label: "CopiedScript",
+    body: "MACRO helper\n\tfaceplayer\nENDM\n\thelper\n\tend\n", texts: {} };
+  refuses("COPY_NOT_SCRIPT", () => build(f));
+  expect(JSON.stringify(ctx)).toBe(before);
+  expect(ctx.constEdits).toEqual([]);
 });

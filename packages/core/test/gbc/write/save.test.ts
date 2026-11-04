@@ -104,7 +104,7 @@ describe("planGbcSave / commitGbcSave", () => {
     writeFileSync(constants, "; external edit\n");
     const dirtyPlan = planGbcSave(f.proj, s);
     expect(dirtyPlan.refusals).toContainEqual(expect.objectContaining({ code: "file-changed-on-disk", subject: "constants/event_flags.asm", message: expect.stringContaining("Route29") }));
-    expect(() => commitGbcSave(f.proj, cleanPlan)).toThrow(/save refused.*constants\/event_flags.asm/);
+    expect(() => commitGbcSave(f.proj, cleanPlan)).toThrow(/save refused: Route29:.*constants\/event_flags.asm/);
     expect(readFileSync(constants, "utf8")).toBe("; external edit\n");
     expect(readFileSync(f.asm)).toEqual(asmBefore);
     expect(readFileSync(f.blk)).toEqual(blkBefore);
@@ -216,7 +216,7 @@ describe("planGbcSave / commitGbcSave", () => {
     const [blkBefore, asmBefore, before] = [readFileSync(f.blk), readFileSync(f.asm), stamp()];
     const s = openGbcEditSession(f.proj, "Testmap");
     s.blocks[0]!.metatileId = 9; // cap is 5 (valid ids 0-4)
-    expect(() => commitGbcSave(f.proj, planGbcSave(f.proj, s))).toThrow(new Error("save refused: metatile-out-of-range (maps/TestLayout.blk)"));
+    expect(() => commitGbcSave(f.proj, planGbcSave(f.proj, s))).toThrow(new Error("save refused: Testmap: metatile-out-of-range (maps/TestLayout.blk)"));
     expect(readFileSync(f.blk).equals(blkBefore)).toBe(true);
     expect(readFileSync(f.asm).equals(asmBefore)).toBe(true);
     expect(stamp()).toEqual(before);

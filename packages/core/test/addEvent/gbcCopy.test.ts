@@ -6,6 +6,7 @@ import { copyGbcScriptBody } from "../../src/addEvent/gbcCopy.js";
 import { buildGbcAddEvent } from "../../src/addEvent/gbcBuild.js";
 import { loadGbcEventOptions } from "../../src/addEvent/gbcOptions.js";
 import { AddEventRefusal } from "../../src/addEvent/types.js";
+import { parseGbcCharmap } from "../../src/signs/charmap.js";
 let root: string, source: string;
 beforeAll(() => { root = copyGbcSubjectToTemp(); source = readFileSync(join(root, "maps/Route29.asm"), "utf8"); });
 afterAll(() => { if (root) removeTemp(root); });
@@ -41,6 +42,7 @@ it("a staged copy renames self, local and text references consistently", () => {
   const r = buildGbcAddEvent(text, "Route29", { kind: "bg", x: 1, y: 2, fields: { bgType: "BGEVENT_READ" }, script: { mode: "copy", from: preview.label, label: "Route29Copied", body: preview.body, texts: preview.texts } }, {
     options, mapOptions: { entryPoints: [], localScripts: ["Route29CopySource"], localTexts: ["Route29CopyText"], scenes: [], warps: [] },
     mapConsts: new Set(options.maps), eventFlagsDisk: readFileSync(join(root, "constants/event_flags.asm"), "utf8"), constEdits: [], check: () => ({ taken: false }),
+    charmap: parseGbcCharmap(readFileSync(join(root, "constants/charmap.asm"), "utf8")),
   });
   const copied = copyGbcScriptBody(r.text, "Route29Copied");
   expect(copied.body).toContain("iftrue Route29Copied");
@@ -49,4 +51,16 @@ it("a staged copy renames self, local and text references consistently", () => {
   expect(copied.body).toContain("jumptext Route29CopiedText1");
   expect(copied.texts.Route29CopiedText1).toContain('text "Hello!"');
   expect(r.newNames).toContain("Route29Copied.Route29Copied_Foo");
+});
+it("empty trailing local block before Next refuses COPY_FALLTHROUGH", () => {
+  refused("Probe:\n\tiftrue .Tail\n\tend\n.Tail:\nNext:\n\tend\n", "Probe", "COPY_FALLTHROUGH");
+});
+it("empty trailing local block at EOF refuses COPY_FALLTHROUGH", () => {
+  refused("Probe:\n\tiftrue .Tail\n\tend\n.Tail:\n", "Probe", "COPY_FALLTHROUGH");
+});
+it("macro definitions in a preview body refuse before extraction", () => {
+  refused("Probe:\nMACRO helper\n\tfaceplayer\nENDM\n\thelper\n\tend\n", "Probe", "COPY_NOT_SCRIPT");
+});
+it("macro definitions hidden in copied dialogue refuse before extraction", () => {
+  refused('Probe:\n\tjumptext Words\nWords:\n\ttext "Hello"\nMACRO helper\n\tfaceplayer\nENDM\n\tdone\n', "Probe", "COPY_NOT_SCRIPT");
 });

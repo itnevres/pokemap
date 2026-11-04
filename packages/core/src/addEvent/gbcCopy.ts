@@ -17,6 +17,13 @@ export function copyGbcScriptBody(text: string, label: string): CopyPreview {
     throw new AddEventRefusal(code, `${map}: ${path}: ${label}: ${why}`, path);
   };
   const lines = codeLines(text).map(l => ({ ...l, code: code(l.text) }));
+  const rawLines = text.split(/\r?\n/);
+  const covered = new Set(lines.map(l => l.lineIndex));
+  const checkSkipped = (start: number, end: number) => {
+    for (let i = start; i < end; i++) {
+      if (!covered.has(i) && code(rawLines[i]!)) fail("COPY_NOT_SCRIPT", "unsupported skipped assembler block in copy");
+    }
+  };
   const declarations = lines.map((l, index) => ({ index, match: LABEL.exec(l.code) }))
     .filter(d => d.match && !d.match[1]!.startsWith("."));
   const matches = declarations.filter(d => d.match![1] === label);
@@ -24,6 +31,7 @@ export function copyGbcScriptBody(text: string, label: string): CopyPreview {
   const start = matches[0]!.index;
   const next = declarations.find(d => d.index > start)?.index;
   const scope = lines.slice(start + 1, next);
+  checkSkipped(lines[start]!.lineIndex + 1, next === undefined ? rawLines.length : lines[next]!.lineIndex);
   const inline = LABEL.exec(lines[start]!.code)![2]!;
   const commands = [inline, ...scope.map(l => l.code.replace(/^\.[A-Za-z_]\w*::?\s*/, ""))].filter(Boolean);
   if (!commands.length || DATA.test(commands[0]!)) fail("COPY_NOT_SCRIPT", "label is data or text, not an event script");
@@ -31,6 +39,10 @@ export function copyGbcScriptBody(text: string, label: string): CopyPreview {
     fail("COPY_NOT_SCRIPT", "unsupported data or assembler directive in script");
   }
   // Inspect the final branch, not just the first terminator: earlier branches can end before a local label.
+  const finalLine = scope.filter(l => l.code).at(-1);
+  if (finalLine && /^\.[A-Za-z_]\w*::?\s*$/.test(finalLine.code)) {
+    fail("COPY_FALLTHROUGH", "empty final local block falls through outside this script");
+  }
   if (!TERMINAL.test(commands.at(-1)!)) fail(next === undefined ? "COPY_UNBOUNDED" : "COPY_FALLTHROUGH", "script has no final terminator before the next label or end of file");
   const locals = new Set(scope.flatMap(l => { const m = LABEL.exec(l.code); return m?.[1]?.startsWith(".") ? [m[1]] : []; }));
   for (const command of commands) {
@@ -50,6 +62,7 @@ export function copyGbcScriptBody(text: string, label: string): CopyPreview {
     const def = defs[0]!;
     const end = declarations.find(d => d.index > def.index)?.index;
     const raw = lines.slice(def.index + 1, end);
+    checkSkipped(lines[def.index]!.lineIndex + 1, end === undefined ? rawLines.length : lines[end]!.lineIndex);
     const textCommands = [def.match![2]!, ...raw.map(l => l.code)].filter(Boolean);
     if (!/^(?:done|prompt)$/.test(textCommands.at(-1) ?? "") ||
       !/^text\s+"[^"\r\n]*"$/.test(textCommands[0] ?? "") ||

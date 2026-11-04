@@ -95,7 +95,7 @@ export interface GbcSavePlan {
 /**
  * Opens a map for editing. An unknown map name throws inside `proj.map`
  * (G4: unknown map); that error is deliberately not caught or re-worded here.
- * Reads `maps/<mapName>.asm` (the fixed path, GBC findings §3.1) and parses it
+ * Reads `maps/<mapName>.asm` (the fixed path, GBC findings Â§3.1) and parses it
  * twice so `events` and `originalEvents` can never alias.
  */
 export function openGbcEditSession(proj: GbcProject, mapName: string): GbcEditSession {
@@ -182,7 +182,7 @@ export function commitGbcSave(proj: GbcProject, plan: GbcSavePlan, prepared?: At
   const { session } = plan;
   const refusals = guardGbcSave(proj, session);
   if (refusals.length > 0) {
-    throw new Error(`save refused: ${refusals.map((r) => `${r.code} (${r.subject})`).join(", ")}`);
+    throw new Error(`save refused: ${session.mapName}: ${refusals.map((r) => `${r.code} (${r.subject})`).join(", ")}`);
   }
   const entries = prepared ?? prepareGbcSave(proj, session);
   for (const edit of session.constEdits ?? []) {
