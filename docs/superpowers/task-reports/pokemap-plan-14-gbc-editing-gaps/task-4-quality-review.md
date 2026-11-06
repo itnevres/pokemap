@@ -1,0 +1,11 @@
+VERDICT: CHANGES REQUESTED
+
+- **Important — `packages/core/src/addEvent/names.ts:8`**: GBA comment stripping treats every `/` as a line comment and does not track `/* … */`. Thus `/* note */ #define FLAG_X 1` loses a real definition, while `/*\n#define FLAG_X 1\n*/` incorrectly reserves a commented-out name. This can allow duplicate names or refuse valid saves. **Fix:** strip actual comments with block-comment state, preserving code after closing delimiters and line boundaries. Add both regression cases.
+
+- **Important — `packages/core/src/addEvent/names.ts:19`**: `GBA_DEFINE_RE` requires `#` at column zero. A valid header line such as `  #define FLAG_X 1` is omitted, allowing another session to select an already-defined name. **Fix:** accept leading horizontal whitespace before `#` and test indented directives.
+
+- **Important — `packages/core/src/write/save.ts:173` and `packages/core/src/gbc/write/save.ts:142`**: All four name-refusal construction sites return `{ code, subject, message, fix }`, omitting the required structured `path` and `name`. Commit then reduces these to a generic error containing only code/file; GBA’s formatter at `save.ts:315` also omits the map. For a collision in a shared constants file, callers cannot retrieve the conflicting name structurally, and the GBA error does not identify the affected map. **Fix:** preserve `path` and `name` in the refusal contract, include map context in refusal messages/GBA commit errors, and assert these details in tests while retaining the required GBC error format.
+
+- **Minor — `packages/core/test/write/save.test.ts:281`**: `makeCheck().calls` is permanently zero, never incremented, and destructured without use. The GBC collision test likewise destructures unused `wrapping` at `packages/core/test/gbc/write/save.test.ts:311`. **Fix:** remove these unused fields/bindings or use an actual spy for call assertions.
+
+Review was read-only. Tests were not rerun; the supplied 275/275 result, clean typecheck, and commit-check mutation evidence were considered.

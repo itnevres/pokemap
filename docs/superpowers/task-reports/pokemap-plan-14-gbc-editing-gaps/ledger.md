@@ -31,8 +31,8 @@ Branch `plan-14-gbc-editing-gaps` from master `7c68fc1` (local only).
 | 1 | High | done | DeepSeek✗ Nemotron✗ Inkling✗ Dots✗ Codex gpt-6.1-sol✓ | 6c858e6 |
 | 2 | High | done | DeepSeek✗ Nemotron✗ Inkling✗ Dots✗ Codex gpt-6.1-sol✓ | 6c1cc94 |
 | 3 | High | done | Inkling✗(429) Codex✗(quota) Claude Opus✓ | f0a381f |
-| 4 | High | pending | | |
-| 5 | High | pending | | |
+| 4 | High | done | DeepSeek✗ Nemotron✓ (fix 2 inline) | 17496c6 |
+| 5 | High | impl | | |
 | 6 | High | pending | | |
 | 7 | High | pending | | |
 | 8 | High | pending | | |
@@ -95,6 +95,15 @@ Hops:
 
 - Task 3 merged `f0a381f`. Gate at `f0a381f`: 4,037 pass / 1 fail / 243 files (environmental engine.test only); typecheck pass, UI build pass; subjects unchanged.
 - Session 2 handoff after Task 3 (session length). Next: Task 4 (fresh name checks); carry quality M7 note into its brief.
+
+## 14.1 execution (conductor session 3, 2026-11-06)
+
+- Task 4: DeepSeek V4.1 Flash (Zen) failed (`provider.free-limit`, 3rd time; skipped for the session) → Nemotron 3 Ultra (OpenCode, fresh run) done: `01b8c27` on `p14-1-t4`; conductor verify: focused 275/275 (18 files), tsc clean, no existing test lines removed, newline style kept. Mutation (commit-time check removed, GBA + GBC) → both commit tests red. Codex quota back (sol probe ok). Astra spec + quality running.
+- Task 4 reviews round 1 (astra `gpt-6-astra`): Spec FAIL (Important: LABEL_TAKEN refusal lacks structured `path`/`name`; messages and GBA commit error omit the map; `#define` must start at column 0; `/* */` blocks not stripped; Minor: GBC case (c) with an `EVENT_` const + constEdits missing). Quality CHANGES REQUESTED (same comment/define/shape findings; Minor: dead test helpers). Conductor checked names.ts:8,19 and save.ts refusal sites: confirmed.
+- Task 4: fix round 1/5 → Nemotron 3 Ultra, fresh OpenCode run with findings (no `--session` resume). → `91dd5ea`: focused 285/285, server+cli 475/475, tsc clean, no pre-task test lines removed; GBA commit error now `save refused: <Map>: ...` (no existing assertion changed). Mutations red: commit-time check (3), indented `#define` (2), block comments (1). Scoped astra re-review round 1: 7 ADDRESSED, 2 PARTIAL + 2 new Important in the hand-written scanner (block comment joined tokens `FLAG_/**/X`; escaped backslash `"\\"` kept the string open and a later `/*` ate definitions) (`task-4-rereview-1.md`).
+- Task 4: fix round 2/5 inline by conductor (Anthropic direct — under ~10 min, ~10 lines in one file; brief costs more) → `0f616d5`: two GBA tests red on old scanner, green now; focused 288/288; tsc clean. The added GBC escape test is a regression only, not a witness (GBC `;` comments are line-scoped; old scanner passes it). Scoped astra re-review round 2: ALL ADDRESSED (`task-4-rereview-2.md`).
+- Task 4: complete (01b8c27..0f616d5, merged `17496c6`, clean after fix round 2/5). Gate at `17496c6`: 4,092 pass / 1 fail / 244 files (env engine.test only); typecheck pass, UI build pass; subjects unchanged.
+- Task 5 ruling (M7 carry): free GBA flag/var slots passed to the builder exclude slots already renamed by any other open session's staged header replace; GBC other-session constEdits count as taken via nameCheckFor — two sessions never claim one slot — cost if wrong: fewer slots offered. Known limit: after A saves a header, B's staged replace of the same header is refused `script-changed-on-disk` until B is reopened (safe; follow-up).
 
 ## Offload log
 
