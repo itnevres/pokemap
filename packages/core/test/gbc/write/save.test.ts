@@ -9,6 +9,7 @@ import { openGbcProject } from "../../../src/gbc/project.js";
 import { gbcEventGap } from "../../../src/gbc/load/constCounter.js";
 import { GBC_SUBJECT_ROOT, itWithGbcCorpus, copyGbcSubjectToTemp, removeTemp } from "../helpers/corpus.js";
 import { cleanupFixtures, makeFixture, type Fixture } from "../helpers/saveFixture.js";
+import type { NameCheck } from "../../../src/addEvent/types.js";
 
 afterEach(cleanupFixtures);
 
@@ -261,6 +262,112 @@ describe("planGbcSave / commitGbcSave", () => {
     expect(() => commitGbcSave(f.proj, plan)).toThrow(/save refused/);
     expect(readFileSync(f.blk).equals(blkBefore)).toBe(true);
     expect(stamp()).toEqual(before);
+  });
+});
+
+describe("name checks (Task 4)", () => {
+  function makeCheck() {
+    let taken = false;
+    let where: string | undefined;
+    const check: NameCheck = (name) => ({ taken, where });
+    return {
+      check,
+      setTaken: (t: boolean, w?: string) => { taken = t; where = w; },
+      wrapping: check,
+    };
+  }
+
+  it("planGbcSave with newNames and clean check -> no LABEL_TAKEN refusal", () => {
+    const f = makeFixture();
+    const s = openGbcEditSession(f.proj, "Testmap");
+    s.newNames = ["NEW_LABEL"];
+    const { check, setTaken } = makeCheck();
+    setTaken(false);
+    const plan = planGbcSave(f.proj, s, { checkNames: check });
+    expect(plan.refusals).toEqual([]);
+  });
+
+  it("planGbcSave with newNames and taken check -> LABEL_TAKEN in refusals", () => {
+    const f = makeFixture();
+    const s = openGbcEditSession(f.proj, "Testmap");
+    s.newNames = ["EXISTING_LABEL"];
+    const { check, setTaken } = makeCheck();
+    setTaken(true, "constants/event_flags.asm");
+    const plan = planGbcSave(f.proj, s, { checkNames: check });
+    expect(plan.refusals).toContainEqual(expect.objectContaining({
+      code: "LABEL_TAKEN",
+      subject: "constants/event_flags.asm",
+      message: "EXISTING_LABEL is already defined in constants/event_flags.asm",
+      fix: "Pick another name and add the event again.",
+    }));
+  });
+
+  it("commitGbcSave with clean check at plan but taken at commit -> throws LABEL_TAKEN matching 'save refused: <Map>: LABEL_TAKEN', nothing written", () => {
+    const f = makeFixture();
+    const s = openGbcEditSession(f.proj, "Testmap");
+    s.blocks[0]!.metatileId = 0;
+    s.isDirty = true;
+    s.newNames = ["NEW_LABEL"];
+    const { check, setTaken, wrapping } = makeCheck();
+    setTaken(false);
+    const plan = planGbcSave(f.proj, s, { checkNames: check });
+    expect(plan.refusals).toEqual([]);
+    const asmBefore = readFileSync(f.asm);
+    const blkBefore = readFileSync(f.blk);
+    // Now make the check return taken at commit time
+    setTaken(true, "constants/event_flags.asm");
+    expect(() => commitGbcSave(f.proj, plan, undefined, undefined, { checkNames: check })).toThrow(/save refused: Testmap: LABEL_TAKEN/);
+    expect(readFileSync(f.asm)).toEqual(asmBefore);
+    expect(readFileSync(f.blk)).toEqual(blkBefore);
+  });
+
+  it("commitGbcSave with clean check at commit -> writes files", () => {
+    const f = makeFixture();
+    const s = openGbcEditSession(f.proj, "Testmap");
+    s.blocks[0]!.metatileId = 0;
+    s.isDirty = true;
+    s.newNames = ["NEW_LABEL"];
+    const { check, setTaken } = makeCheck();
+    setTaken(false);
+    const plan = planGbcSave(f.proj, s, { checkNames: check });
+    expect(plan.refusals).toEqual([]);
+    const blkBefore = readFileSync(f.blk);
+    commitGbcSave(f.proj, plan, undefined, undefined, { checkNames: check });
+    expect(readFileSync(f.blk)).not.toEqual(blkBefore); // actually changed
+  });
+
+  it("session without newNames never calls checkNames at plan", () => {
+    const f = makeFixture();
+    const s = openGbcEditSession(f.proj, "Testmap");
+    const { wrapping } = makeCheck();
+    let callCount = 0;
+    const countingCheck: NameCheck = (name) => { callCount++; return wrapping(name); };
+    planGbcSave(f.proj, s, { checkNames: countingCheck });
+    expect(callCount).toBe(0);
+  });
+
+  it("session without newNames never calls checkNames at commit", () => {
+    const f = makeFixture();
+    const s = openGbcEditSession(f.proj, "Testmap");
+    s.blocks[0]!.metatileId = 0;
+    s.isDirty = true;
+    const { wrapping } = makeCheck();
+    let callCount = 0;
+    const countingCheck: NameCheck = (name) => { callCount++; return wrapping(name); };
+    const plan = planGbcSave(f.proj, s, { checkNames: countingCheck });
+    commitGbcSave(f.proj, plan, undefined, undefined, { checkNames: countingCheck });
+    expect(callCount).toBe(0);
+  });
+
+  it("session with empty newNames never calls checkNames", () => {
+    const f = makeFixture();
+    const s = openGbcEditSession(f.proj, "Testmap");
+    s.newNames = [];
+    const { wrapping } = makeCheck();
+    let callCount = 0;
+    const countingCheck: NameCheck = (name) => { callCount++; return wrapping(name); };
+    planGbcSave(f.proj, s, { checkNames: countingCheck });
+    expect(callCount).toBe(0);
   });
 });
 

@@ -8,6 +8,7 @@ import type { GbcProject } from "../project.js";
 import type { Block, GbcMap, GbcMapEvents, Layout } from "../model/types.js";
 import { parseMapEvents } from "../load/events.js";
 import { blkFilePath, changedBlockIndices, eventsFilePath, guardGbcSave } from "./guards.js";
+import type { NameCheck } from "../../addEvent/types.js";
 
 // Public surface of the funnel; the definitions live in guards.ts so that file
 // needs only a type import from here (no runtime import cycle).
@@ -77,6 +78,9 @@ export interface GbcEditSession {
   isDirty: boolean;
   /** Whole-file constant replacements; one per path, saved atomically with events. */
   constEdits?: FileReplace[];
+  /** Names (labels, constants, defines) created by this session. Checked
+   *  at plan and commit time via the caller-supplied NameCheck. */
+  newNames?: string[];
 }
 
 export interface GbcSavePlan {
@@ -122,8 +126,28 @@ export function openGbcEditSession(proj: GbcProject, mapName: string): GbcEditSe
  * keystroke: this never writes; `commitGbcSave` is the only writer, always an
  * explicit, separate call. Blocks first, then text, nothing else.
  */
-export function planGbcSave(proj: GbcProject, session: GbcEditSession): GbcSavePlan {
+export function planGbcSave(
+  proj: GbcProject,
+  session: GbcEditSession,
+  opts?: { checkNames?: NameCheck }
+): GbcSavePlan {
   const refusals = guardGbcSave(proj, session);
+
+  // Fresh name checks at plan time
+  if (opts?.checkNames && session.newNames) {
+    for (const name of session.newNames) {
+      const result = opts.checkNames(name);
+      if (result.taken) {
+        refusals.push({
+          code: "LABEL_TAKEN",
+          subject: result.where ?? `maps/${session.mapName}.asm`,
+          message: `${name} is already defined in ${result.where ?? `maps/${session.mapName}.asm`}`,
+          fix: "Pick another name and add the event again.",
+        });
+      }
+    }
+  }
+
   const changes: PendingChange[] = [];
   const { layout, mapName } = session;
 
@@ -150,7 +174,7 @@ export function planGbcSave(proj: GbcProject, session: GbcEditSession): GbcSaveP
 }
 
 /** Computes complete final bytes without writing; patches only changed block ids. */
-export function prepareGbcSave(proj: GbcProject, session: GbcEditSession): AtomicEntry[] {
+export function prepareGbcSave(proj: GbcProject, session: GbcEditSession, _opts?: { checkNames?: NameCheck }): AtomicEntry[] {
   const entries: AtomicEntry[] = [];
   const changed = changedBlockIndices(session.originalBlocks, session.blocks);
   if (changed.length > 0) {
@@ -178,9 +202,31 @@ export function prepareGbcSave(proj: GbcProject, session: GbcEditSession): Atomi
  * A crash mid-swap or another program writing between check and rename is
  * outside this guarantee. Does not mutate the session.
  */
-export function commitGbcSave(proj: GbcProject, plan: GbcSavePlan, prepared?: AtomicEntry[], io?: AtomicIo): void {
+export function commitGbcSave(
+  proj: GbcProject,
+  plan: GbcSavePlan,
+  prepared?: AtomicEntry[],
+  io?: AtomicIo,
+  opts?: { checkNames?: NameCheck }
+): void {
   const { session } = plan;
   const refusals = guardGbcSave(proj, session);
+
+  // Fresh name checks at commit time (never reuse plan.refusals)
+  if (opts?.checkNames && session.newNames) {
+    for (const name of session.newNames) {
+      const result = opts.checkNames(name);
+      if (result.taken) {
+        refusals.push({
+          code: "LABEL_TAKEN",
+          subject: result.where ?? `maps/${session.mapName}.asm`,
+          message: `${name} is already defined in ${result.where ?? `maps/${session.mapName}.asm`}`,
+          fix: "Pick another name and add the event again.",
+        });
+      }
+    }
+  }
+
   if (refusals.length > 0) {
     throw new Error(`save refused: ${session.mapName}: ${refusals.map((r) => `${r.code} (${r.subject})`).join(", ")}`);
   }
