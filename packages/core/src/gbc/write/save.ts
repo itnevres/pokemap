@@ -14,6 +14,31 @@ import type { NameCheck } from "../../addEvent/types.js";
 // needs only a type import from here (no runtime import cycle).
 export { blkFilePath, changedBlockIndices, eventsFilePath };
 
+/** Shared name-check logic used by both planGbcSave and commitGbcSave. */
+function checkNewNamesGbc(
+  session: GbcEditSession,
+  checkNames: NameCheck,
+  mapName: string
+): Refusal[] {
+  const refusals: Refusal[] = [];
+  if (!session.newNames) return refusals;
+  for (const name of session.newNames) {
+    const result = checkNames(name);
+    if (result.taken) {
+      const where = result.where ?? `maps/${mapName}.asm`;
+      refusals.push({
+        code: "LABEL_TAKEN",
+        subject: where,
+        path: where,
+        name,
+        message: `${mapName}: ${name} is already defined in ${where}`,
+        fix: "Pick another name and add the event again.",
+      });
+    }
+  }
+  return refusals;
+}
+
 /**
  * The open GBC map's current, possibly-edited state, plus the exact state it
  * was opened with (the guards need both sides of every diff).
@@ -134,18 +159,8 @@ export function planGbcSave(
   const refusals = guardGbcSave(proj, session);
 
   // Fresh name checks at plan time
-  if (opts?.checkNames && session.newNames) {
-    for (const name of session.newNames) {
-      const result = opts.checkNames(name);
-      if (result.taken) {
-        refusals.push({
-          code: "LABEL_TAKEN",
-          subject: result.where ?? `maps/${session.mapName}.asm`,
-          message: `${name} is already defined in ${result.where ?? `maps/${session.mapName}.asm`}`,
-          fix: "Pick another name and add the event again.",
-        });
-      }
-    }
+  if (opts?.checkNames) {
+    refusals.push(...checkNewNamesGbc(session, opts.checkNames, session.mapName));
   }
 
   const changes: PendingChange[] = [];
@@ -213,18 +228,8 @@ export function commitGbcSave(
   const refusals = guardGbcSave(proj, session);
 
   // Fresh name checks at commit time (never reuse plan.refusals)
-  if (opts?.checkNames && session.newNames) {
-    for (const name of session.newNames) {
-      const result = opts.checkNames(name);
-      if (result.taken) {
-        refusals.push({
-          code: "LABEL_TAKEN",
-          subject: result.where ?? `maps/${session.mapName}.asm`,
-          message: `${name} is already defined in ${result.where ?? `maps/${session.mapName}.asm`}`,
-          fix: "Pick another name and add the event again.",
-        });
-      }
-    }
+  if (opts?.checkNames) {
+    refusals.push(...checkNewNamesGbc(session, opts.checkNames, session.mapName));
   }
 
   if (refusals.length > 0) {

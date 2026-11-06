@@ -32,6 +32,16 @@ describe("definedNames - GBA", () => {
     expect(definedNames(text, "gba")).toEqual(new Set(["VAR_TEST"]));
   });
 
+  it("extracts #define with leading spaces", () => {
+    const text = "  #define FLAG_X 1\n\t#define FLAG_Y 2";
+    expect(definedNames(text, "gba")).toEqual(new Set(["FLAG_X", "FLAG_Y"]));
+  });
+
+  it("extracts #define with leading tabs", () => {
+    const text = "\t#define FLAG_Z 3";
+    expect(definedNames(text, "gba")).toEqual(new Set(["FLAG_Z"]));
+  });
+
   it("ignores local labels (.foo)", () => {
     const text = ".local:\n\tend\n";
     expect(definedNames(text, "gba")).toEqual(new Set());
@@ -50,6 +60,31 @@ describe("definedNames - GBA", () => {
   it("ignores commented-out definitions", () => {
     const text = "@ #define COMMENTED 1\n// .set ALSO_COMMENTED, 2\n#define REAL 3\n";
     expect(definedNames(text, "gba")).toEqual(new Set(["REAL"]));
+  });
+
+  it("ignores block-commented definitions /* ... */", () => {
+    const text = "/* #define COMMENTED 1 */\n#define REAL 2\n";
+    expect(definedNames(text, "gba")).toEqual(new Set(["REAL"]));
+  });
+
+  it("ignores multi-line block comments with definitions inside", () => {
+    const text = `/*\n#define FLAG_X 1\n*/\n#define REAL 2\n`;
+    expect(definedNames(text, "gba")).toEqual(new Set(["REAL"]));
+  });
+
+  it("extracts definition right after closing block comment on next line", () => {
+    const text = `/* note */\n#define FLAG_X 1\n`;
+    expect(definedNames(text, "gba")).toEqual(new Set(["FLAG_X"]));
+  });
+
+  it("ignores @ inside double-quoted strings", () => {
+    const text = 'MyLabel:\n\t.string "not@comment"\n#define REAL 1\n';
+    expect(definedNames(text, "gba")).toEqual(new Set(["MyLabel", "REAL"]));
+  });
+
+  it("ignores @ inside single-quoted strings", () => {
+    const text = "MyLabel:\n\t.byte '@'\n#define REAL 1\n";
+    expect(definedNames(text, "gba")).toEqual(new Set(["MyLabel", "REAL"]));
   });
 
   it("handles mixed definitions", () => {

@@ -274,12 +274,11 @@ describe("name checks (Task 4)", () => {
   function makeCheck() {
     let taken = false;
     let where: string | undefined;
-    const check: NameCheck = (name) => ({ taken, where });
+    let takenFor: string | null = null; // only taken for this specific name
+    const check: NameCheck = (name) => ({ taken: taken && name === takenFor, where });
     return {
       check,
-      setTaken: (t: boolean, w?: string) => { taken = t; where = w; },
-      calls: 0,
-      wrapping: check,
+      setTaken: (t: boolean, w?: string, forName?: string) => { taken = t; where = w; takenFor = forName ?? null; },
     };
   }
 
@@ -298,12 +297,14 @@ describe("name checks (Task 4)", () => {
     const session = baseSession(root);
     session.newNames = ["EXISTING_LABEL"];
     const { check, setTaken } = makeCheck();
-    setTaken(true, "data/other.inc");
+    setTaken(true, "data/other.inc", "EXISTING_LABEL");
     const plan = planSave(proj, session, { checkNames: check });
     expect(plan.refusals).toContainEqual(expect.objectContaining({
       code: "LABEL_TAKEN",
       subject: "data/other.inc",
-      message: "EXISTING_LABEL is already defined in data/other.inc",
+      path: "data/other.inc",
+      name: "EXISTING_LABEL",
+      message: "Test: EXISTING_LABEL is already defined in data/other.inc",
       fix: "Pick another name and add the event again.",
     }));
   });
@@ -314,15 +315,15 @@ describe("name checks (Task 4)", () => {
     session.blocks = session.blocks.map((b, i) => (i === 0 ? { ...b, metatileId: 5 } : b));
     session.isDirty = true;
     session.newNames = ["NEW_LABEL"];
-    const { check, setTaken, calls } = makeCheck();
+    const { check, setTaken } = makeCheck();
     setTaken(false);
     const plan = planSave(proj, session, { checkNames: check });
     expect(plan.refusals).toEqual([]);
     const beforeMapBin = readFileSync(join(root, "map.bin"));
     const beforeMapJson = readFileSync(join(root, "Test.json"), "utf8");
     // Now make the check return taken at commit time
-    setTaken(true, "data/other.inc");
-    expect(() => commitSave(proj, plan, undefined, undefined, { checkNames: check })).toThrow(/LABEL_TAKEN/);
+    setTaken(true, "data/other.inc", "NEW_LABEL");
+    expect(() => commitSave(proj, plan, undefined, undefined, { checkNames: check })).toThrow(/Test: LABEL_TAKEN/);
     expect(readFileSync(join(root, "map.bin"))).toEqual(beforeMapBin);
     expect(readFileSync(join(root, "Test.json"), "utf8")).toBe(beforeMapJson);
   });
@@ -341,12 +342,21 @@ describe("name checks (Task 4)", () => {
     expect(readFileSync(join(root, "map.bin"))).toEqual(encodeBlocks(session.blocks, profile));
   });
 
+  it("checker is argument-sensitive: taken only for the session's name", () => {
+    const { root, proj } = tempProject();
+    const session = baseSession(root);
+    session.newNames = ["SESSION_NAME"];
+    const { check, setTaken } = makeCheck();
+    setTaken(true, "data/other.inc", "OTHER_NAME"); // taken for a different name
+    const plan = planSave(proj, session, { checkNames: check });
+    expect(plan.refusals).toEqual([]); // should not refuse for SESSION_NAME
+  });
+
   it("session without newNames never calls checkNames at plan", () => {
     const { root, proj } = tempProject();
     const session = baseSession(root);
-    const { check, calls, wrapping } = makeCheck();
     let callCount = 0;
-    const countingCheck: NameCheck = (name) => { callCount++; return wrapping(name); };
+    const countingCheck: NameCheck = (name) => { callCount++; return { taken: false, where: undefined }; };
     planSave(proj, session, { checkNames: countingCheck });
     expect(callCount).toBe(0);
   });
@@ -356,9 +366,8 @@ describe("name checks (Task 4)", () => {
     const session = baseSession(root);
     session.blocks = session.blocks.map((b, i) => (i === 0 ? { ...b, metatileId: 5 } : b));
     session.isDirty = true;
-    const { wrapping } = makeCheck();
     let callCount = 0;
-    const countingCheck: NameCheck = (name) => { callCount++; return wrapping(name); };
+    const countingCheck: NameCheck = (name) => { callCount++; return { taken: false, where: undefined }; };
     const plan = planSave(proj, session, { checkNames: countingCheck });
     commitSave(proj, plan, undefined, undefined, { checkNames: countingCheck });
     expect(callCount).toBe(0);
@@ -368,9 +377,8 @@ describe("name checks (Task 4)", () => {
     const { root, proj } = tempProject();
     const session = baseSession(root);
     session.newNames = [];
-    const { wrapping } = makeCheck();
     let callCount = 0;
-    const countingCheck: NameCheck = (name) => { callCount++; return wrapping(name); };
+    const countingCheck: NameCheck = (name) => { callCount++; return { taken: false, where: undefined }; };
     planSave(proj, session, { checkNames: countingCheck });
     expect(callCount).toBe(0);
   });

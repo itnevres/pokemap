@@ -3,20 +3,14 @@
  * Pure function, no I/O.
  */
 
-/** Comment characters to strip per family. */
-const COMMENT_RE = {
-  gba: /[@/].*/g,
-  gbc: /;.*/g,
-};
-
 /** GBA label: Name: or Name:: at line start (leading whitespace allowed). */
 const GBA_LABEL_RE = /^[ \t]*([A-Za-z_]\w*)::?/gm;
 
 /** GBA .set Name, / .equ Name, */
 const GBA_DOT_SET_EQU_RE = /^\s*\.(?:set|equ)\s+([A-Za-z_]\w*)\s*,/gmi;
 
-/** GBA #define Name (also #  define) */
-const GBA_DEFINE_RE = /^#\s*define\s+([A-Za-z_]\w*)/gmi;
+/** GBA #define Name (also #  define) - accepts leading whitespace before # */
+const GBA_DEFINE_RE = /^[ \t]*#\s*define\s+([A-Za-z_]\w*)/gmi;
 
 /** GBC label: Name: or Name:: at line start. */
 const GBC_LABEL_RE = /^[ \t]*([A-Za-z_]\w*)::?/gm;
@@ -31,10 +25,120 @@ const GBC_DEF_RE = /^\s*DEF\s+([A-Za-z_]\w*)\s+(?:EQU|EQUS|=)/gmi;
 const GBC_EQU_RE = /^[ \t]*([A-Za-z_]\w*)\s+(?:EQU|EQUS)\b/gmi;
 
 /**
- * Strips comments from text for the given family.
+ * Strips comments from GBA text.
+ * Handles:
+ *   - Block comments (multi-line, keeps newlines so line starts stay line starts)
+ *   - // to end of line
+ *   - @ to end of line ONLY outside double-quoted strings (GAS @ comments)
  */
+function stripGbaComments(text: string): string {
+  let result = "";
+  let i = 0;
+  const len = text.length;
+  let inBlockComment = false;
+  let inString = false;
+  let stringChar = "";
+
+  while (i < len) {
+    const ch = text[i];
+    const next = text[i + 1];
+
+    if (inBlockComment) {
+      if (ch === "*" && next === "/") {
+        inBlockComment = false;
+        i += 2;
+      } else {
+        // Keep newlines so line starts stay line starts
+        if (ch === "\n") result += "\n";
+        i++;
+      }
+      continue;
+    }
+
+    if (inString) {
+      result += ch;
+      if (ch === stringChar && (i === 0 || text[i - 1] !== "\\")) {
+        inString = false;
+      }
+      i++;
+      continue;
+    }
+
+    // Not in comment or string
+    if (ch === "/" && next === "*") {
+      inBlockComment = true;
+      i += 2;
+      continue;
+    }
+
+    if (ch === "/" && next === "/") {
+      // Skip to end of line
+      while (i < len && text[i] !== "\n") i++;
+      continue;
+    }
+
+    if (ch === "@") {
+      // @ comment only outside strings - skip to end of line
+      while (i < len && text[i] !== "\n") i++;
+      continue;
+    }
+
+    if (ch === '"' || ch === "'") {
+      inString = true;
+      stringChar = ch;
+    }
+
+    result += ch;
+    i++;
+  }
+
+  return result;
+}
+
+/**
+ * Strips comments from GBC text.
+ * Handles ; to end of line (outside strings, though GBC asm rarely uses strings in const context).
+ */
+function stripGbcComments(text: string): string {
+  let result = "";
+  let i = 0;
+  const len = text.length;
+  let inString = false;
+  let stringChar = "";
+
+  while (i < len) {
+    const ch = text[i];
+    const next = text[i + 1];
+
+    if (inString) {
+      result += ch;
+      if (ch === stringChar && (i === 0 || text[i - 1] !== "\\")) {
+        inString = false;
+      }
+      i++;
+      continue;
+    }
+
+    if (ch === ";") {
+      // Skip to end of line
+      while (i < len && text[i] !== "\n") i++;
+      continue;
+    }
+
+    if (ch === '"' || ch === "'") {
+      inString = true;
+      stringChar = ch;
+    }
+
+    result += ch;
+    i++;
+  }
+
+  return result;
+}
+
 function stripComments(text: string, family: "gba" | "gbc"): string {
-  return text.replace(COMMENT_RE[family], "");
+  return family === "gba" ? stripGbaComments(text) : stripGbcComments(text);
 }
 
 /**

@@ -8,6 +8,31 @@ import { planBlockdataWrite, planBorderWrite } from "./binary.js";
 import { editJson, insertArrayElement, removeArrayElement, type JsonEdit, type JsonPath } from "./jsonEdit.js";
 import type { NameCheck } from "../addEvent/types.js";
 
+/** Shared name-check logic used by both planSave and commitSave. */
+function checkNewNames(
+  session: EditSession,
+  checkNames: NameCheck,
+  mapName: string
+): Refusal[] {
+  const refusals: Refusal[] = [];
+  if (!session.newNames) return refusals;
+  for (const name of session.newNames) {
+    const result = checkNames(name);
+    if (result.taken) {
+      const where = result.where ?? `data/maps/${mapName}/map.json`;
+      refusals.push({
+        code: "LABEL_TAKEN",
+        subject: where,
+        path: where,
+        name,
+        message: `${mapName}: ${name} is already defined in ${where}`,
+        fix: "Pick another name and add the event again.",
+      });
+    }
+  }
+  return refusals;
+}
+
 export interface InsertOp { path: JsonPath; index: number; value: unknown; }
 export interface RemoveOp { path: JsonPath; index: number; }
 /** A plain-text append targeting a NON-json decomp file -- currently only
@@ -165,18 +190,8 @@ export function planSave(
   const refusals = collectRefusals(proj, session);
 
   // Fresh name checks at plan time
-  if (opts?.checkNames && session.newNames) {
-    for (const name of session.newNames) {
-      const result = opts.checkNames(name);
-      if (result.taken) {
-        refusals.push({
-          code: "LABEL_TAKEN",
-          subject: result.where ?? `data/maps/${session.mapName}/map.json`,
-          message: `${name} is already defined in ${result.where ?? `data/maps/${session.mapName}/map.json`}`,
-          fix: "Pick another name and add the event again.",
-        });
-      }
-    }
+  if (opts?.checkNames) {
+    refusals.push(...checkNewNames(session, opts.checkNames, session.mapName));
   }
 
   const changes: PendingChange[] = [];
@@ -297,22 +312,12 @@ export function commitSave(
   const refusals = collectRefusals(proj, session);
 
   // Fresh name checks at commit time (never reuse plan.refusals)
-  if (opts?.checkNames && session.newNames) {
-    for (const name of session.newNames) {
-      const result = opts.checkNames(name);
-      if (result.taken) {
-        refusals.push({
-          code: "LABEL_TAKEN",
-          subject: result.where ?? `data/maps/${session.mapName}/map.json`,
-          message: `${name} is already defined in ${result.where ?? `data/maps/${session.mapName}/map.json`}`,
-          fix: "Pick another name and add the event again.",
-        });
-      }
-    }
+  if (opts?.checkNames) {
+    refusals.push(...checkNewNames(session, opts.checkNames, session.mapName));
   }
 
   if (refusals.length > 0) {
-    throw new Error(`save refused: ${refusals.map((r) => `${r.code} (${r.subject})`).join(", ")}`);
+    throw new Error(`save refused: ${session.mapName}: ${refusals.map((r) => `${r.code} (${r.subject})`).join(", ")}`);
   }
   writeFilesAtomically(prepared ?? prepareSave(proj, session), io);
 }
