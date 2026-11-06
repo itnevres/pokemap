@@ -46,6 +46,7 @@ function stripGbaComments(text: string): string {
     if (inBlockComment) {
       if (ch === "*" && next === "/") {
         inBlockComment = false;
+        result += " "; // A comment separates tokens (C: FLAG_/**/X is FLAG_ then X).
         i += 2;
       } else {
         // Keep newlines so line starts stay line starts
@@ -56,10 +57,14 @@ function stripGbaComments(text: string): string {
     }
 
     if (inString) {
-      result += ch;
-      if (ch === stringChar && (i === 0 || text[i - 1] !== "\\")) {
-        inString = false;
+      if (ch === "\\" && i + 1 < len) {
+        // Escaped pair: consume both so an escaped backslash never escapes the closing quote.
+        result += ch + next;
+        i += 2;
+        continue;
       }
+      result += ch;
+      if (ch === stringChar) inString = false;
       i++;
       continue;
     }
@@ -111,10 +116,14 @@ function stripGbcComments(text: string): string {
     const next = text[i + 1];
 
     if (inString) {
-      result += ch;
-      if (ch === stringChar && (i === 0 || text[i - 1] !== "\\")) {
-        inString = false;
+      if (ch === "\\" && i + 1 < len) {
+        // Escaped pair: consume both so an escaped backslash never escapes the closing quote.
+        result += ch + next;
+        i += 2;
+        continue;
       }
+      result += ch;
+      if (ch === stringChar) inString = false;
       i++;
       continue;
     }

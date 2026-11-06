@@ -77,6 +77,20 @@ describe("definedNames - GBA", () => {
     expect(definedNames(text, "gba")).toEqual(new Set(["FLAG_X"]));
   });
 
+  it("treats a block comment as a token separator", () => {
+    expect(definedNames("#define FLAG_/**/X 1\n", "gba")).toEqual(new Set(["FLAG_"]));
+  });
+
+  it("an escaped backslash does not keep a string open", () => {
+    const text = '#define SLASH "\\\\"\n#define TEXT "/*"\n#define FLAG_REAL 1\n';
+    expect(definedNames(text, "gba")).toEqual(new Set(["SLASH", "TEXT", "FLAG_REAL"]));
+  });
+
+  it("GBC: an escaped backslash does not keep a string open", () => {
+    const text = 'db "\\\\" ; c\nREAL_ONE EQU 1\nDB2: db "x;"\nconst REAL_TWO\n';
+    expect(definedNames(text, "gbc")).toEqual(new Set(["REAL_ONE", "DB2", "REAL_TWO"]));
+  });
+
   it("ignores @ inside double-quoted strings", () => {
     const text = 'MyLabel:\n\t.string "not@comment"\n#define REAL 1\n';
     expect(definedNames(text, "gba")).toEqual(new Set(["MyLabel", "REAL"]));
