@@ -8,6 +8,7 @@ import { defaultProfile } from "../../src/config/engine.js";
 import type { Block, Layout } from "../../src/model/types.js";
 import { parseMap, type MapData } from "../../src/load/maps.js";
 import type { Project } from "../../src/project.js";
+import type { NameCheck } from "../../src/addEvent/types.js";
 
 const profile = defaultProfile("pokeemerald");
 const LAYOUT: Layout = {
@@ -266,5 +267,119 @@ describe("planSave / commitSave", () => {
     commitSave(proj, plan);
     const written = JSON.parse(readFileSync(join(root, "Test.json"), "utf8"));
     expect(written.object_events.map((o: { graphics_id: string }) => o.graphics_id)).toEqual(["OBJ_C"]);
+  });
+});
+
+describe("name checks (Task 4)", () => {
+  function makeCheck() {
+    let taken = false;
+    let where: string | undefined;
+    let takenFor: string | null = null; // only taken for this specific name
+    const check: NameCheck = (name) => ({ taken: taken && name === takenFor, where });
+    return {
+      check,
+      setTaken: (t: boolean, w?: string, forName?: string) => { taken = t; where = w; takenFor = forName ?? null; },
+    };
+  }
+
+  it("planSave with newNames and clean check -> no LABEL_TAKEN refusal", () => {
+    const { root, proj } = tempProject();
+    const session = baseSession(root);
+    session.newNames = ["NEW_LABEL"];
+    const { check, setTaken } = makeCheck();
+    setTaken(false);
+    const plan = planSave(proj, session, { checkNames: check });
+    expect(plan.refusals).toEqual([]);
+  });
+
+  it("planSave with newNames and taken check -> LABEL_TAKEN in refusals", () => {
+    const { root, proj } = tempProject();
+    const session = baseSession(root);
+    session.newNames = ["EXISTING_LABEL"];
+    const { check, setTaken } = makeCheck();
+    setTaken(true, "data/other.inc", "EXISTING_LABEL");
+    const plan = planSave(proj, session, { checkNames: check });
+    expect(plan.refusals).toContainEqual(expect.objectContaining({
+      code: "LABEL_TAKEN",
+      subject: "data/other.inc",
+      path: "data/other.inc",
+      name: "EXISTING_LABEL",
+      message: "Test: EXISTING_LABEL is already defined in data/other.inc",
+      fix: "Pick another name and add the event again.",
+    }));
+  });
+
+  it("commitSave with clean check at plan but taken at commit -> throws LABEL_TAKEN, nothing written", () => {
+    const { root, proj } = tempProject();
+    const session = baseSession(root);
+    session.blocks = session.blocks.map((b, i) => (i === 0 ? { ...b, metatileId: 5 } : b));
+    session.isDirty = true;
+    session.newNames = ["NEW_LABEL"];
+    const { check, setTaken } = makeCheck();
+    setTaken(false);
+    const plan = planSave(proj, session, { checkNames: check });
+    expect(plan.refusals).toEqual([]);
+    const beforeMapBin = readFileSync(join(root, "map.bin"));
+    const beforeMapJson = readFileSync(join(root, "Test.json"), "utf8");
+    // Now make the check return taken at commit time
+    setTaken(true, "data/other.inc", "NEW_LABEL");
+    expect(() => commitSave(proj, plan, undefined, undefined, { checkNames: check })).toThrow(/Test: LABEL_TAKEN/);
+    expect(readFileSync(join(root, "map.bin"))).toEqual(beforeMapBin);
+    expect(readFileSync(join(root, "Test.json"), "utf8")).toBe(beforeMapJson);
+  });
+
+  it("commitSave with clean check at commit -> writes files", () => {
+    const { root, proj } = tempProject();
+    const session = baseSession(root);
+    session.blocks = session.blocks.map((b, i) => (i === 0 ? { ...b, metatileId: 5 } : b));
+    session.isDirty = true;
+    session.newNames = ["NEW_LABEL"];
+    const { check, setTaken } = makeCheck();
+    setTaken(false);
+    const plan = planSave(proj, session, { checkNames: check });
+    expect(plan.refusals).toEqual([]);
+    commitSave(proj, plan, undefined, undefined, { checkNames: check });
+    expect(readFileSync(join(root, "map.bin"))).toEqual(encodeBlocks(session.blocks, profile));
+  });
+
+  it("checker is argument-sensitive: taken only for the session's name", () => {
+    const { root, proj } = tempProject();
+    const session = baseSession(root);
+    session.newNames = ["SESSION_NAME"];
+    const { check, setTaken } = makeCheck();
+    setTaken(true, "data/other.inc", "OTHER_NAME"); // taken for a different name
+    const plan = planSave(proj, session, { checkNames: check });
+    expect(plan.refusals).toEqual([]); // should not refuse for SESSION_NAME
+  });
+
+  it("session without newNames never calls checkNames at plan", () => {
+    const { root, proj } = tempProject();
+    const session = baseSession(root);
+    let callCount = 0;
+    const countingCheck: NameCheck = (name) => { callCount++; return { taken: false, where: undefined }; };
+    planSave(proj, session, { checkNames: countingCheck });
+    expect(callCount).toBe(0);
+  });
+
+  it("session without newNames never calls checkNames at commit", () => {
+    const { root, proj } = tempProject();
+    const session = baseSession(root);
+    session.blocks = session.blocks.map((b, i) => (i === 0 ? { ...b, metatileId: 5 } : b));
+    session.isDirty = true;
+    let callCount = 0;
+    const countingCheck: NameCheck = (name) => { callCount++; return { taken: false, where: undefined }; };
+    const plan = planSave(proj, session, { checkNames: countingCheck });
+    commitSave(proj, plan, undefined, undefined, { checkNames: countingCheck });
+    expect(callCount).toBe(0);
+  });
+
+  it("session with empty newNames never calls checkNames", () => {
+    const { root, proj } = tempProject();
+    const session = baseSession(root);
+    session.newNames = [];
+    let callCount = 0;
+    const countingCheck: NameCheck = (name) => { callCount++; return { taken: false, where: undefined }; };
+    planSave(proj, session, { checkNames: countingCheck });
+    expect(callCount).toBe(0);
   });
 });
