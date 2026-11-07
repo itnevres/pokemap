@@ -49,12 +49,17 @@ describe("App GBA visit guard", () => {
     fireEvent.mouseDown(canvas, { clientX: 24, clientY: 24, button: 0 });
     fireEvent.mouseUp(canvas, { clientX: 40, clientY: 24, button: 0 });
     await switchTo("Route1"); await switchTo("PalletTown");
+    // The new visit selects the same object (click, no drag) at its real position (0,0). Without the visit check
+    // the old (0,0)->(1,0) success would rewrite this selection to X 1.
+    const fresh = document.querySelector("canvas.map-canvas__stage")!;
+    fireEvent.mouseDown(fresh, { clientX: 24, clientY: 24, button: 0 });
+    fireEvent.mouseUp(fresh, { clientX: 24, clientY: 24, button: 0 });
+    const x = await screen.findByRole("spinbutton", { name: "X" }) as HTMLInputElement;
+    expect(x.value).toBe("0");
     await act(async () => move.resolve(response(true, { map: PALLET.map, isDirty: true })));
     await act(async () => {});
-    expect(screen.getByText("No event selected.")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
-    expect(screen.queryByRole("spinbutton", { name: "X" })).toBeNull();
-    expect(screen.queryByRole("spinbutton", { name: "Y" })).toBeNull();
+    expect((screen.getByRole("spinbutton", { name: "X" }) as HTMLInputElement).value).toBe("0");
+    expect((screen.getByRole("spinbutton", { name: "Y" }) as HTMLInputElement).value).toBe("0");
   });
 
   it("ignores a deferred A to B to A move failure", async () => {

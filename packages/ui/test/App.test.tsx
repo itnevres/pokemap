@@ -314,8 +314,9 @@ const PALLET_TOWN_LAYOUT = {
 /** Same shape, a different map -- the switch target for the map-switch
  *  guard test below. Never actually loaded (the guard is expected to block
  *  the switch), but /api/map/Route1 still needs a route in case the guard
- *  fails open and the test would otherwise hang on an unmocked fetch. */
-const ROUTE1_LAYOUT = { ...PALLET_TOWN_LAYOUT, map: { ...PALLET_TOWN_LAYOUT.map, id: "MAP_ROUTE1", name: "Route1" } };
+ *  fails open and the test would otherwise hang on an unmocked fetch. No object events: only PalletTown's
+ *  discard test needs one, and the inert-pencil click on Route1 must land on an empty cell. */
+const ROUTE1_LAYOUT = { ...PALLET_TOWN_LAYOUT, map: { ...PALLET_TOWN_LAYOUT.map, id: "MAP_ROUTE1", name: "Route1", objectEvents: [] } };
 
 const EDIT_GROUPS = { groupOrder: ["Kanto"], groups: { Kanto: ["PalletTown", "Route1"] } };
 

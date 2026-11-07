@@ -144,6 +144,19 @@ describe.each(["gba", "gbc"] as const)("%s placement", family => {
   });
 });
 
+// MapSurface is shared, so one family pins it: placing skips drag/paint but keeps the hover readout live.
+it("keeps the hover readout live while placing", () => {
+  const onHoverMetatile = vi.fn();
+  const placement = { placing: "object" as const, onEventPick: vi.fn() };
+  const host = render(<MapCanvas {...placement} mapName="M" data={GBA} onHoverMetatile={onHoverMetatile} view={{ zoom: 1, pan: { x: 0, y: 0 } }} />);
+  const canvas = host.container.querySelector("canvas")!;
+  vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue(new DOMRect(0, 0, canvas.width, canvas.height));
+  const origin = compositeOrigin(GBA.layout);
+  // Block (1,0) of the 4x3 layout holds metatile 0x11.
+  fireEvent.mouseMove(canvas, { clientX: origin.x + 16 + 8, clientY: origin.y + 8, buttons: 0 });
+  expect(onHoverMetatile).toHaveBeenLastCalledWith(0x11);
+});
+
 it("retains kind, coordinates and anchor for the dialog, then retires them on a new visit", () => {
   const { result, rerender } = renderHook(({ name }) => useEventPlacement(name, null, true), { initialProps: { name: "A" } });
   const anchor = new DOMRect(10, 20, 16, 16);

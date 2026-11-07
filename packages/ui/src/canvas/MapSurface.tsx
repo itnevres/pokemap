@@ -215,7 +215,8 @@ export function MapSurface<Tool extends MapTool, Body, Event, Stamp, Hover exten
     stage.startPan(event);
   };
   const onMouseMove = (event: MouseEvent<HTMLCanvasElement>) => {
-    if (placing) return;
+    // Placing owns the click, not the drag: keep the hover readout live, skip drag/paint/pan.
+    if (placing) { setHover({ map: mapName, value: adapter.hoverAt(screenToSource(point(event), stage.view), enabled) }); return; }
     // Event identity already owns this gesture until release/cancel, so unlike paint trails it needs
     // no buttons===1 guard. Preview never posts: the candidate is local and event moves are single-shot (no paint lifecycle).
     if (eventDrag.current) { setDragPreview(eventAt(event)); return; }
