@@ -160,6 +160,13 @@ same parser's accepted shape.
   `const_next` boundary, only while `const_value` stays below that boundary (the "Unused: next 48 events" gap in
   PerfPlus); refusal otherwise. Item balls and hidden items need a flag; their default is New with a generated name.
 - Flags have no "Copy from" (nothing to copy); their toggle is Existing / New.
+- One owner per constants header (conductor ruling, Task 5 review, 2026-11-06): GBA `flags.h` / `vars.h` and GBC
+  `event_flags.asm` may carry staged new constants from one open map at a time. A New flag/var on another map refuses
+  `NO_FLAG_SLOT` / `NO_VAR_SLOT` naming both maps and the file until the first map saves or undoes it. Existing flags
+  are unaffected. Reason: two sessions would allocate the same slot, and the second whole-file replace goes stale
+  the moment the first saves.
+- Free GBA slot (Task 3 ruling): no reference outside its own `#define` (header included), no value alias with another
+  define, not in the daily or temp ranges; hidden-item flags must lie in `[FLAG_HIDDEN_ITEMS_START, FLAGS_COUNT)`.
 
 ### Core and server
 

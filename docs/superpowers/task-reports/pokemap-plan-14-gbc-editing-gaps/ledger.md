@@ -32,7 +32,7 @@ Branch `plan-14-gbc-editing-gaps` from master `7c68fc1` (local only).
 | 2 | High | done | DeepSeek✗ Nemotron✗ Inkling✗ Dots✗ Codex gpt-6.1-sol✓ | 6c1cc94 |
 | 3 | High | done | Inkling✗(429) Codex✗(quota) Claude Opus✓ | f0a381f |
 | 4 | High | done | DeepSeek✗ Nemotron✓ (fix 2 inline) | 17496c6 |
-| 5 | High | impl | | |
+| 5 | High | done | Nemotron✗ Inkling✗(paid) Dots✗ Codex gpt-6.1-sol✓ | 9c891df |
 | 6 | High | pending | | |
 | 7 | High | pending | | |
 | 8 | High | pending | | |
@@ -104,6 +104,11 @@ Hops:
 - Task 4: fix round 2/5 inline by conductor (Anthropic direct — under ~10 min, ~10 lines in one file; brief costs more) → `0f616d5`: two GBA tests red on old scanner, green now; focused 288/288; tsc clean. The added GBC escape test is a regression only, not a witness (GBC `;` comments are line-scoped; old scanner passes it). Scoped astra re-review round 2: ALL ADDRESSED (`task-4-rereview-2.md`).
 - Task 4: complete (01b8c27..0f616d5, merged `17496c6`, clean after fix round 2/5). Gate at `17496c6`: 4,092 pass / 1 fail / 244 files (env engine.test only); typecheck pass, UI build pass; subjects unchanged.
 - Task 5 ruling (M7 carry): free GBA flag/var slots passed to the builder exclude slots already renamed by any other open session's staged header replace; GBC other-session constEdits count as taken via nameCheckFor — two sessions never claim one slot — cost if wrong: fewer slots offered. Known limit: after A saves a header, B's staged replace of the same header is refused `script-changed-on-disk` until B is reopened (safe; follow-up).
+- Task 5: Nemotron 3 Ultra failed (claimed done; conductor verify: 0 tests collected, esbuild transform error in index.ts, 8 tsc errors citing non-existent exports; stash "delegate: nemotron-3-ultra failed T5") → Inkling failed (404 "unavailable for free": paid-only now; removed from the delegate Opus chain) → Dots3-note failed (3.8 MB of reads, no final text, empty diff) → Codex `gpt-6.1-sol` (thread `01a1b354-8b6e-76f2-ab24-190e2514240b`): 38 tests, tsc clean; conductor run 34 pass / 4 fail, all 4 = vitest 5 s timeouts; files took 176 s wall, trivial tests 3-7 s each (per-test temp copies; `freeGbaSlots` full scan per create). Fix round 1/5 (same thread): shared beforeAll fixtures, cached free slots, explicit timeouts only where needed, target ≤40 s per file. Lesson: `codex exec resume` rejects `-s`; pass `-c sandbox_mode=workspace-write`. → 40/40 in 34 s, server+cli 515/515, tsc clean, no existing test lines removed; committed `309bd19` on `p14-1-t5`. Mutations red: newNames dropped from both snapshots (6), snapshot pushed before verify (4). Astra spec + quality running.
+- Task 5 reviews round 1 (astra): Spec FAIL (Important: GBC sessions allocate the same numeric event-flag slot; GET plan uses the cached create-time check, not fresh). Quality CHANGES REQUESTED (same slot bug; discard never invalidates add-event caches; text preview changes dialogue formatting). Conductor spot-checked addEventRoutes.ts:147,299 and index.ts:237: confirmed.
+- Ruling (supersedes the Task 5 free-slot exclusion ruling): a constants header (GBA `flags.h`/`vars.h`, GBC `event_flags.asm`) has one owning session at a time; a new-flag/var create while another open session has a staged edit of that header refuses `NO_FLAG_SLOT`/`NO_VAR_SLOT` naming both maps and the file — prevents same-slot allocation and the doomed second header replace (removes the post-save stale limit) — cost if wrong: user must save or undo map A before adding a new flag on map B.
+- Task 5: fix round 2/5 → Codex sol resume (same thread) → `15cf9dd`: server+cli 525/525, tsc clean; only the two superseded "reserve different free slots" tests (Task 5's own) removed. Mutations red: newNames dropped (8), snapshot before verify (5), cached check at plan (5). Ruling recorded in the spec ("Flags and vars"). Scoped astra re-review: ALL ADDRESSED (`task-5-rereview-1.md`).
+- Task 5: complete (309bd19..15cf9dd, merged `9c891df`, clean after fix round 2/5). Gate at `9c891df`: 4,142 pass / 1 fail / 246 files (env engine.test only); typecheck pass, UI build pass; subjects unchanged.
 
 ## Offload log
 

@@ -1,0 +1,9 @@
+VERDICT: CHANGES REQUESTED
+
+- **Important — `packages/server/src/addEventRoutes.ts:300–301`: GBC sessions reserve the same numeric flag slot.** Each builder receives disk flags and only its own `constEdits`. Two maps creating different new flags therefore both allocate immediately after the same last disk constant. Other sessions’ name checks prevent duplicate names, not duplicate slots or gap exhaustion. Fix allocation to account for other sessions’ reserved values. Strengthen `gbcAddEventRoutes.test.ts:179`: its current assertions check only different names; assert distinct counter values and refusal when other sessions exhaust the gap. This is separate from the accepted post-save header-conflict limitation.
+
+- **Important — `packages/server/src/addEventRoutes.ts:219,294`: discard never invokes cache invalidation.** Both discard handlers (`index.ts:983`, `gbcEditRoutes.ts:373`) only close the session. After options/symbols/free slots are cached, externally changing a header and discarding/reopening leaves those caches stale: removed options remain offered, newly defined names escape create-time checks, and GBA allocation uses old availability. Call `addEvents.invalidate()` on discard and test through the HTTP lifecycle; the current cache tests invoke invalidation directly and miss this integration gap.
+
+- **Important — `packages/server/src/addEventRoutes.ts:147–148`: text previews change dialogue formatting.** GBA `.string "FIRST\\n"` followed by `.string "SECOND$"` becomes `FIRST\n\nSECOND`, adding a paragraph break. GBC `text "FIRST"` followed by `para "SECOND"` becomes `FIRST\nSECOND`, losing the paragraph break. Copying that preview unchanged consequently emits different dialogue. Decode each family’s control syntax separately: concatenate GBA string fragments, and preserve GBC `para` versus `line`/`cont`. Add multiline and multiparagraph preview-to-create round-trip tests.
+
+Read-only review of `309bd19`; tests were not rerun.
