@@ -87,8 +87,7 @@ for (const base of [gbaAdapter, gbcAdapter]) describe(`${base.family} switch pro
     click(names[0]!);
     await screen.findByRole("button", { name: "Pencil" });
     async function dirty() {
-      if (gba) click("Add Event");
-      else {
+      {
         click("Pencil");
         fireEvent.click(screen.getByLabelText("metatile 0x1"));
         const canvas = document.querySelector("canvas.map-canvas__stage")!;

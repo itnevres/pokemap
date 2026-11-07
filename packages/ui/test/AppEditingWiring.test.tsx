@@ -17,7 +17,7 @@ const LAYOUT = {
   map: {
     id: "MAP_PALLET_TOWN", name: "PalletTown", layout: "LAYOUT_PALLET_TOWN",
     music: "MUS_DUMMY", regionMapSection: "MAPSEC_NONE", mapType: "MAP_TYPE_TOWN", weather: "WEATHER_NONE",
-    connections: [], objectEvents: [], warpEvents: [], coordEvents: [], bgEvents: [],
+    connections: [], objectEvents: [{ graphicsId: "OBJ_EVENT_GFX_BOY_1", movementType: "MOVEMENT_TYPE_FACE_DOWN", x: 0, y: 0, elevation: 0, script: "NULL", flag: "0", movementRangeX: 1, movementRangeY: 1, trainerType: "TRAINER_TYPE_NONE", trainerSightOrBerryTreeId: "0" }], warpEvents: [], coordEvents: [], bgEvents: [],
   },
   layout: {
     id: "LAYOUT_PALLET_TOWN", name: "PalletTown_Layout", width: 2, height: 2, borderWidth: 1, borderHeight: 1,
@@ -48,11 +48,12 @@ function makeFetchMock() {
     if (url === "/api/map/PalletTown") return ok(LAYOUT);
     if (url === "/api/map/Route1") return ok(ROUTE1);
     // add/delete both report a dirty session, like the real server.
-    if (url === "/api/edit/PalletTown/event/add" && method === "POST") return ok({ map: LAYOUT.map, isDirty: true });
+    if (url === "/api/edit/PalletTown/event/move" && method === "POST") return ok({ map: LAYOUT.map, isDirty: true });
     if (url === "/api/edit/PalletTown/event/delete" && method === "POST") {
       return ok({ map: LAYOUT.map, isDirty: true, warpRenumberWarnings: [] });
     }
     // The two dialogs fetch on mount; their load-failure paths are not under test.
+    if (url === "/api/edit/PalletTown/indicator/at?index=0") return ok({ indicator: null });
     if (url.startsWith("/api/defects/")) return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ defects: [], incomplete: [] }) } as Response);
     return Promise.reject(new Error(`unexpected fetch ${url}`));
   });
@@ -67,12 +68,19 @@ async function openPalletTown() {
   render(<FamilyApp adapter={gbaAdapter} />);
   await waitFor(() => expect(screen.getByRole("button", { name: "PalletTown" })).toBeTruthy());
   fireEvent.click(screen.getByRole("button", { name: "PalletTown" }));
-  await screen.findByRole("button", { name: "Add Event" });
+  await screen.findByRole("button", { name: "Pencil" });
 }
 
-/** Add Event selects the new event and (per the mock) dirties the session. */
-async function addEventAndWaitDirty() {
-  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Add Event" })); });
+/** Select and move an existing object; the move response dirties the session. */
+async function moveEventAndWaitDirty() {
+  const canvas = document.querySelector("canvas.map-canvas__stage")!;
+  fireEvent.mouseDown(canvas, { clientX: 24, clientY: 24, button: 0 });
+  fireEvent.mouseUp(canvas, { clientX: 24, clientY: 24, button: 0 });
+  const x = await screen.findByLabelText("X");
+  await act(async () => {
+    fireEvent.change(x, { target: { value: "1" } });
+    fireEvent.blur(x);
+  });
   await waitFor(() => expect(screen.getByTestId("dirty-indicator")).toBeTruthy());
   await waitFor(() => expect(screen.getByRole("button", { name: "Delete" })).toBeTruthy());
 }
@@ -81,7 +89,7 @@ describe("App -- editing dialogs wiring", () => {
   it("Toolbar Save opens SaveDialog and not PokemonIndicatorDialog", async () => {
     vi.stubGlobal("fetch", makeFetchMock());
     await openPalletTown();
-    await addEventAndWaitDirty();
+    await moveEventAndWaitDirty();
 
     fireEvent.click(screen.getByRole("button", { name: "Save Changes" }));
 
@@ -92,7 +100,7 @@ describe("App -- editing dialogs wiring", () => {
   it("Toolbar Pok\u00e9mon Indicator opens PokemonIndicatorDialog and not SaveDialog", async () => {
     vi.stubGlobal("fetch", makeFetchMock());
     await openPalletTown();
-    await addEventAndWaitDirty(); // dirty, so a wrongly-wired Save flag would be a live path too
+    await moveEventAndWaitDirty(); // dirty, so a wrongly-wired Save flag would be a live path too
 
     fireEvent.click(screen.getByRole("button", { name: "Pok\u00e9mon Indicator" }));
 
@@ -108,12 +116,12 @@ describe("App -- selection resets", () => {
     vi.stubGlobal("fetch", makeFetchMock());
     await openPalletTown();
 
+    await moveEventAndWaitDirty();
     fireEvent.click(screen.getByRole("button", { name: "Pencil" }));
     await waitFor(() => expect(screen.getByPlaceholderText(/search/i)).toBeTruthy());
     const picked = screen.getByRole("button", { name: /metatile 0x1\b/i }) as HTMLButtonElement;
     fireEvent.click(picked);
     await waitFor(() => expect(picked.getAttribute("aria-pressed")).toBe("true"));
-    await addEventAndWaitDirty();
 
     fireEvent.click(screen.getByRole("button", { name: "Route1" }));
 
@@ -127,7 +135,7 @@ describe("App -- selection resets", () => {
   it("deleting the selected event clears the selection", async () => {
     vi.stubGlobal("fetch", makeFetchMock());
     await openPalletTown();
-    await addEventAndWaitDirty();
+    await moveEventAndWaitDirty();
 
     await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Delete" })); });
 

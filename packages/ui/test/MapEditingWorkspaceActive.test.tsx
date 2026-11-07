@@ -22,7 +22,7 @@ const editSession = { blocks: [], border: [], map: undefined, isDirty: false, ca
 
 const editing = {
   selectedEvent: null, eventOpError: "boom", setEventOpError: vi.fn(), currentMap: undefined, onSelectEvent: vi.fn(),
-  onCanvasMoveEvent: vi.fn(), onMoveEventFromInspector: vi.fn(), onDeleteEvent: vi.fn(), onAddEvent: vi.fn(),
+  onCanvasMoveEvent: vi.fn(), onMoveEventFromInspector: vi.fn(), onDeleteEvent: vi.fn(),
   activeToolKind: "pencil", setActiveToolKind: vi.fn(), collisionValue: { collision: 0, elevation: 0 }, setCollisionValue: vi.fn(),
   currentStamp: null, setCurrentStamp: vi.fn(), saveDialogOpen: false, setSaveDialogOpen: vi.fn(), indicatorOpen: false, indicatorEdit: undefined, setIndicatorEdit: vi.fn(),
   setIndicatorOpen: vi.fn(), signAddedMessage: "Added", setSignAddedMessage: vi.fn(), activeTool: null, handleDiscard: vi.fn(),

@@ -45,7 +45,6 @@ function makeEditing(overrides: Partial<ReturnType<typeof useMapEditing>> = {}):
     onCanvasMoveEvent: vi.fn(),
     onMoveEventFromInspector: vi.fn(),
     onDeleteEvent: vi.fn().mockResolvedValue(undefined),
-    onAddEvent: vi.fn().mockResolvedValue(undefined),
     activeToolKind: null,
     setActiveToolKind: vi.fn(),
     collisionValue: { collision: 0, elevation: 0 },
@@ -79,7 +78,7 @@ describe("MapEditingWorkspace", () => {
     expect(renderCanvas).toHaveBeenCalled();
     const p = renderCanvas.mock.calls[0]![0];
     expect(Object.keys(p).sort()).toEqual(
-      ["activeTool", "data", "editSession", "mapName", "onDropperPick", "onEditError", "onMoveEvent", "onSelectEvent", "onSignPick", "selectedEventRef"],
+      ["activeTool", "data", "editSession", "mapName", "onDropperPick", "onEditError", "onEventPick", "onMoveEvent", "onSelectEvent", "onSignPick", "placing", "selectedEventRef"],
     );
     expect(p.mapName).toBe("Foo");
     expect(p.data).toBe(DATA);
@@ -155,9 +154,9 @@ describe("MapEditingWorkspace", () => {
     const { container, rerender } = render(
       <MapEditingWorkspace mapName="Foo" data={DATA} editSession={editSession} editing={makeEditing({ activeToolKind: "collision" })} />,
     );
-    expect(railOrder(container)).toEqual(["collision-palette", "metatile-palette", "event-inspector"]);
+    expect(railOrder(container)).toEqual(["collision-palette", "metatile-palette", "add-event-bar", "event-inspector"]);
     rerender(<MapEditingWorkspace mapName="Foo" data={DATA} editSession={editSession} editing={makeEditing({ activeToolKind: "shift" })} />);
-    expect(railOrder(container)).toEqual(["metatile-palette", "event-inspector"]);
+    expect(railOrder(container)).toEqual(["metatile-palette", "add-event-bar", "event-inspector"]);
     expect(container.querySelector(".app__metatile-strip, .app__collision-strip")).toBeNull();
   });
 

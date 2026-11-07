@@ -191,8 +191,7 @@ async function setup(base: EngineAdapter, options: {
     await flush();
   };
   const dirty = async () => {
-    if (gba) fireEvent.click(within(popup()).getByRole("button", { name: "Add Event" }));
-    else await paint(popup());
+    await paint(popup());
     await within(popup()).findByTestId("dirty-indicator");
   };
   return { names, open, dirty, paint, fetcher, registrations, slots: () => slots, selected: () => selected,
@@ -234,8 +233,7 @@ describe.each([gbaAdapter, gbcAdapter])("$family shell warp popup", (base) => {
     act(() => h.slots().requestExitContext()); await flush();
     expect(document.activeElement).toBe(opener);
     act(() => h.slots().enterContext(h.names[0]!)); await flush();
-    if (base.family === "gba") click("Add Event");
-    else await h.paint(document.querySelector<HTMLElement>(".app__canvas")!);
+    await h.paint(document.querySelector<HTMLElement>(".app__canvas")!);
     await screen.findByTestId("dirty-indicator");
     await h.open();
     const prompt = screen.getByRole("dialog", { name: "Unsaved changes" });
@@ -274,7 +272,7 @@ describe.each([gbaAdapter, gbcAdapter])("$family shell warp popup", (base) => {
     const h = await setup(base);
     act(() => h.slots().enterContext(h.names[0]!)); await flush();
     const host = document.querySelector<HTMLElement>(".app__canvas")!;
-    if (base.family === "gba") click("Add Event"); else await h.paint(host);
+    await h.paint(host);
     await screen.findByTestId("dirty-indicator");
     await h.open();
     expect(screen.getByText(`You have unsaved changes on ${h.names[0]}.`)).toBeTruthy();
@@ -366,8 +364,7 @@ describe.each([gbaAdapter, gbcAdapter])("$family shell warp popup", (base) => {
     const h = await setup(base);
     if (context) {
       act(() => h.slots().enterContext(h.names[0]!)); await flush();
-      if (base.family === "gba") click("Add Event");
-      else await h.paint(document.querySelector<HTMLElement>(".app__canvas")!);
+      await h.paint(document.querySelector<HTMLElement>(".app__canvas")!);
       await screen.findByTestId("dirty-indicator");
     }
     const opener = document.querySelector<HTMLCanvasElement>("canvas.world-canvas__stage")!;

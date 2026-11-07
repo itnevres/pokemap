@@ -3211,3 +3211,10 @@ input {
   background: var(--danger);
   color: var(--text-on-accent);
 }
+
+/* Add-event placement shares the event grid and stays visible in chromeless World editing. */
+.add-event-bar { display: flex; flex-wrap: nowrap; gap: var(--space-1); padding: var(--space-2); }
+.add-event-bar .map-canvas__btn { display: inline-flex; align-items: center; justify-content: center; }
+.add-event-bar [aria-pressed="true"] { background: var(--bg-selected); border-color: var(--accent); }
+.map-canvas--placing .map-canvas__stage { cursor: crosshair; }
+.map-canvas__placement-hint { position: absolute; top: var(--space-2); left: var(--space-2); padding: var(--space-1) var(--space-2); background: var(--bg-panel-raised); color: var(--text-primary); border: 1px solid var(--border); pointer-events: none; z-index: 1; }

@@ -13,6 +13,8 @@ import { useVisit } from "../shared/useVisit.js";
 import { GBC_CAPABILITIES, toolsFor } from "../shell/adapter.js";
 import type { IndicatorBlock } from "@pokemap/core/src/indicator/gba.js";
 import { SignEditor } from "../shared/SignEditor.js";
+import { AddEventBar, useEventPlacement } from "../shared/AddEventBar.js";
+import type { EventPlacementProps } from "../canvas/MapSurface.js";
 
 /** No collision button (Plan 7 Goal: GBC collision is per metatile, not per block) with the shared Indicator dialog. */
 export const GBC_TOOLS: ToolKind[] = toolsFor(GBC_CAPABILITIES);
@@ -25,7 +27,7 @@ const message = (e: unknown, fallback: string) => (e instanceof Error ? e.messag
 export type GbcMapEditingCanvasProps = Pick<
   GbcMapCanvasProps,
   "onStrokeChain" | "mapName" | "data" | "time" | "hoveredMetatile" | "editSession" | "activeTool" | "onSignPick" | "onDropperPick" | "selectedEvent" | "onSelectEvent" | "onMoveEvent" | "onEditError"
->;
+> & EventPlacementProps;
 
 export interface GbcMapEditingProps {
   onStrokeChain?: GbcMapCanvasProps["onStrokeChain"];
@@ -65,6 +67,7 @@ export interface GbcMapEditingProps {
  */
 export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId, onHoverMetatile, onOpenSave, onOpenIndicator, indicatorMessage, onDismissIndicatorMessage, onDiscarded, active = true, renderCanvas, onStrokeChain }: GbcMapEditingProps) {
   const [toolKind, setToolKind] = useState<ToolKind | null>(null);
+  const placement = useEventPlacement(mapName, toolKind, active);
   const [signPick, setSignPick] = useState<{ x: number; y: number; anchor: DOMRect } | null>(null);
   // `key` is never a real map name when there is no map, so nothing reads as "mine" until one is selected.
   const key = mapName ?? "";
@@ -127,6 +130,7 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
   };
 
   const onDiscard = () => {
+    placement.clear();
     if (!window.confirm("Discard all unsaved changes on this map? This cannot be undone.")) return;
     session.discard().then(() => { ok(); onDiscarded?.(); }).catch((e: unknown) => fail(e, "Failed to discard."));
   };
@@ -141,6 +145,8 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
           hoveredMetatile: onHoverMetatile,
           editSession: session,
           activeTool,
+          placing: placement.placing,
+          onEventPick: placement.onEventPick,
           onDropperPick: setStamp,
           onSignPick: (x, y, anchor) => setSignPick({ x, y, anchor }),
           selectedEvent,
@@ -152,7 +158,7 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
   const top = <>
       <Toolbar
         activeToolKind={toolKind}
-        onSelectTool={setToolKind}
+        onSelectTool={(kind) => { placement.clear(); setToolKind(kind); }}
         tools={GBC_TOOLS}
         availableTools={GBC_TOOLS}
         isDirty={session.isDirty}
@@ -160,7 +166,7 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
         onRedo={() => void session.redo().then(ok).catch((e: unknown) => fail(e, "Redo failed."))}
         canUndo={session.canUndo}
         canRedo={session.canRedo}
-        onOpenSave={onOpenSave}
+        onOpenSave={() => { placement.clear(); onOpenSave(); }}
         onDiscard={onDiscard}
         onOpenIndicator={GBC_CAPABILITIES.pokemonIndicator && onOpenIndicator ? () => onOpenIndicator() : undefined}
       />
@@ -186,6 +192,10 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
         onSelect={onPalettePick}
         selected={pickedId}
       />
+      <AddEventBar ref={placement.barRef} placing={placement.placing} onToggle={placement.onToggle} disabled={{
+        object: session.events.objects.length >= 15 ? "This map already has 15 object events" : undefined,
+        coord: session.events.sceneScripts.length === 0 ? "This map has no scenes" : undefined,
+      }} />
       <GbcEventInspector
         mapName={onOpenIndicator ? mapName : undefined}
         onEditIndicator={onOpenIndicator}
