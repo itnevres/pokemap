@@ -1,3 +1,5 @@
+import { constCounter } from "@pokemap/core/src/gbc/load/constCounter.js";
+import { copyGbcScriptBody } from "@pokemap/core/src/addEvent/gbcCopy.js";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { readFileSync, writeFileSync, cpSync, mkdtempSync } from "node:fs";
@@ -20,6 +22,9 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("GBC add-event routes over a t
   const diskTests = new Set([
     "two flags commit the exact accumulated bytes while preserving all other header lines",
     "commit rebuilds symbols after plan and refuses an unrelated-file collision without writes",
+    "saving the header owner lets another map allocate a new flag",
+    "plan rebuilds symbols and refuses a definition added after create",
+    "discard refreshes project options free slots and symbols after a disk header edit",
   ]);
   let store: ReturnType<typeof sessions.createGbcEditSessionStore>;
   const factory = sessions.createGbcEditSessionStore;
@@ -50,6 +55,15 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("GBC add-event routes over a t
     // This data label is a read-only preview fixture for every test; create it
     // once before the shared server starts, never in a test body.
     writeFileSync(source(), readFileSync(source(), "utf8") + "\nItemBallData:\n\titemball POTION\n");
+    for (const ending of ["done", "prompt"]) writeFileSync(source(), readFileSync(source(), "utf8") + `
+PreviewMulti${ending}Text:
+    text "FIRST"
+    line "SECOND"
+    cont "THIRD"
+    para "FOURTH"
+    line "FIFTH"
+    ${ending}
+`);
     vi.spyOn(sessions, "createGbcEditSessionStore").mockImplementation(proj => { store = factory(proj); return store; });
     await start({ verifyCandidate: (candidate: any) => verifyCandidate?.(candidate) });
     sharedServer = server; sharedBase = base; sharedStore = store;
@@ -86,9 +100,11 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("GBC add-event routes over a t
       routes.check(map); routes.freshCheck(map);
       expect(index).not.toHaveBeenCalled();
       routes.create(map, ball("EVENT_POKEMAP_CACHE_FIRST"));
+      isolatedStore.open(map).stack.undo(isolatedStore.open(map).session);
       routes.create(other, ball("EVENT_POKEMAP_CACHE_SECOND"));
       expect(index).toHaveBeenCalledTimes(1); expect(options).toHaveBeenCalledTimes(1);
       routes.invalidate();
+      isolatedStore.open(other).stack.undo(isolatedStore.open(other).session);
       routes.create(map, ball("EVENT_POKEMAP_CACHE_THIRD"));
       expect(index).toHaveBeenCalledTimes(2); expect(options).toHaveBeenCalledTimes(2);
     } finally { index.mockRestore(); options.mockRestore(); }
@@ -163,7 +179,7 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("GBC add-event routes over a t
   });
   it("other sessions reserve new constants from staged replacement text without name metadata", async () => {
     await create(ball("EVENT_POKEMAP_FIRST")); store.open(map).session.newNames = [];
-    const result = await edit("event/create", ball("EVENT_POKEMAP_FIRST"), other);
+    const result = await edit("event/create", npc("EVENT_POKEMAP_FIRST"), other);
     expect(result.status).toBe(400); expect(result.body.code).toBe("LABEL_TAKEN");
     expect(result.body.error).toContain(other);
   });
@@ -176,13 +192,37 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("GBC add-event routes over a t
     expect(result.status).toBe(400); expect(result.body.error).toContain(map);
     expect(state()).toEqual(before); expect(entry.stack.canUndo()).toBe(false);
   });
-  it("two maps creating new flags reserve different free slots", async () => {
+  it("a new flag header has one owner until undo while existing flags remain usable", async () => {
     await create(ball("EVENT_POKEMAP_FIRST"));
+    const entry = store.open(other), before = structuredClone(sessions.gbcSnapshotOf(entry.session));
+    const history = [entry.stack.canUndo(), entry.stack.canRedo(), entry.session.isDirty];
     const result = await edit("event/create", ball("EVENT_POKEMAP_SECOND"), other);
-    expect(result.status, JSON.stringify(result.body)).toBe(200);
-    const a = store.open(map).session.constEdits![0]!, b = store.open(other).session.constEdits![0]!;
-    expect(a.after).not.toContain("EVENT_POKEMAP_SECOND"); expect(b.after).not.toContain("EVENT_POKEMAP_FIRST");
+    expect(result.status).toBe(400); expect(result.body.code).toBe("NO_FLAG_SLOT");
+    expect(result.body.error).toBe(`${other}: constants/event_flags.asm: ${map} has an unsaved new constant in this file; save or undo it there first`);
+    expect(sessions.gbcSnapshotOf(entry.session)).toEqual(before);
+    expect([entry.stack.canUndo(), entry.stack.canRedo(), entry.session.isDirty]).toEqual(history);
+    const flags = (await req("/api/event-options")).body.flags as string[];
+    const existing = flags.find(name => name !== "EVENT_POKEMAP_FIRST" && !name.includes("UNUSED"))!;
+    expect(existing).toBeDefined();
+    const existingBall = { ...ball(existing), flag: { mode: "existing", name: existing } };
+    const allowed = await edit("event/create", existingBall, other);
+    expect(allowed.status, JSON.stringify(allowed.body)).toBe(200);
+    await edit("undo", {});
+    const released = await edit("event/create", ball("EVENT_POKEMAP_SECOND"), other);
+    expect(released.status, JSON.stringify(released.body)).toBe(200);
   });
+  it("saving the header owner lets another map allocate a new flag", async () => {
+    await create(ball("EVENT_POKEMAP_FIRST"));
+    const refused = await edit("event/create", ball("EVENT_POKEMAP_SECOND"), other);
+    expect(refused.status).toBe(400); expect(refused.body.code).toBe("NO_FLAG_SLOT");
+    const plan = (await edit("plan")).body; expect(plan.refusals).toEqual([]);
+    expect((await edit("commit", { fingerprint: plan.fingerprint })).status).toBe(200);
+    const released = await edit("event/create", ball("EVENT_POKEMAP_SECOND"), other);
+    expect(released.status, JSON.stringify(released.body)).toBe(200);
+    const a = constCounter(readFileSync(header(), "utf8")).find(c => c.name === "EVENT_POKEMAP_FIRST")!;
+    const b = constCounter(store.open(other).session.constEdits![0]!.after).find(c => c.name === "EVENT_POKEMAP_SECOND")!;
+    expect(a).toBeDefined(); expect(b).toBeDefined(); expect(b.value).not.toBe(a.value);
+  }, 8_000);
   it("map options and text previews read staged labels and one-way destination reports no return", async () => {
     await create();
     const options = await req(`/api/event-options/${map}?x=1&y=1&dest=Route31`);
@@ -200,6 +240,41 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("GBC add-event routes over a t
     const result = await req(`/api/event-options/${map}/copy?label=ItemBallData`);
     expect(result.status).toBe(400); expect(result.body.code).toBe("COPY_NOT_SCRIPT");
     expect(result.body.error).toContain(map); expect(result.body.error).toContain("maps/Route29.asm");
+  });
+  it("plan rebuilds symbols and refuses a definition added after create", async () => {
+    const before = [source(), mapFile(), header()].map(path => readFileSync(path, "utf8"));
+    await create();
+    writeFileSync(`${root}/maps/UnrelatedPlan.asm`, "Route29PokemapObject1:\n");
+    const plan = await edit("plan"); expect(plan.status).toBe(200);
+    expect(plan.body.refusals.some((r: any) => r.code === "LABEL_TAKEN")).toBe(true);
+    expect(plan.body.fingerprint).toBeNull();
+    expect([source(), mapFile(), header()].map(path => readFileSync(path, "utf8"))).toEqual(before);
+  }, 8_000);
+  it("discard refreshes project options free slots and symbols after a disk header edit", async () => {
+    state();
+    expect((await req("/api/event-options")).body.flags).not.toContain("EVENT_POKEMAP_EXTERNAL");
+    // Prime free slots as well as the create-time symbol and options caches.
+    await create(ball("EVENT_POKEMAP_PRIME")); await edit("undo", {});
+    const before = readFileSync(header(), "utf8"), last = constCounter(before).filter(c => c.name.startsWith("EVENT_")).at(-1)!;
+    const lines = before.split(/\r?\n/); lines.splice(last.line + 1, 0, "\tconst EVENT_POKEMAP_EXTERNAL");
+    writeFileSync(header(), lines.join(before.includes("\r\n") ? "\r\n" : "\n"));
+    await create(); await edit("discard", {});
+    expect((await req("/api/event-options")).body.flags).toContain("EVENT_POKEMAP_EXTERNAL");
+    const collision = await edit("event/create", npc("EVENT_POKEMAP_EXTERNAL"));
+    expect(collision.status).toBe(400); expect(collision.body.code).toBe("LABEL_TAKEN");
+
+  }, 8_000);
+  it.each(["done", "prompt"])("text preview round-trips GBC line cont and para structure ending in %s", async ending => {
+    const label = `PreviewMulti${ending}Text`;
+    const preview = await req(`/api/event-options/${map}/text?label=${label}`);
+    expect(preview.status).toBe(200); expect(preview.body.text).toBe("FIRST\nSECOND\nTHIRD\n\nFOURTH\nFIFTH");
+    const form = npc("PreviewRoundTrip"); form.script.text = preview.body.text;
+    await create(form);
+    const emitted = copyGbcScriptBody(store.open(map).session.eventsText, "PreviewRoundTrip").texts.PreviewRoundTripText!;
+    const rawSource = readFileSync(source(), "utf8").split(`${label}:`)[1]!.split(/\r?\n\s*(?:done|prompt)\s*(?:\r?\n|$)/)[0]!;
+    const structure = (raw: string) => raw.split(/\r?\n/).filter(line => /^\s*(?:text|line|cont|para)\s/.test(line)).map(line => line.trim());
+    expect(structure(emitted)).toEqual(structure(rawSource));
+    expect(structure(emitted)).toEqual(['text "FIRST"', 'line "SECOND"', 'cont "THIRD"', 'para "FOURTH"', 'line "FIFTH"']);
   });
   it("discard after create leaves all files byte-identical", async () => {
     const before = [source(), mapFile(), header()].map(p => readFileSync(p, "utf8"));

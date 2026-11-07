@@ -232,9 +232,9 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
     try { return gbaSignParagraphs(project, entry, "free", text); }
     catch (error) { throw new Error(`${indicatorCharmapPath}: ${error instanceof Error ? error.message : String(error)}. ${indicatorCharmapFix}`); }
   }
-  function signPlan(name: string, fresh = false) {
+  function signPlan(name: string) {
     const refreshed = refreshGbaLinkedSigns(project, editEntryFor(name));
-    const checkNames = fresh ? addEvents.freshCheck(name) : addEvents.check(name);
+    const checkNames = addEvents.freshCheck(name);
     const plan = planSave(project, refreshed.session, { checkNames });
     let prepared: AtomicEntry[] = [];
     let prepareError: unknown;
@@ -981,6 +981,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
         const name = decodeURIComponent(discardMatch[1]!);
         if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
         editSessions.close(name);
+        addEvents.invalidate();
         // Same "nothing open" shape the undo/redo routes already return when
         // editSessions.has(name) is false -- after a discard, that's exactly
         // true. Idempotent: discarding an already-clean or never-opened
@@ -1018,7 +1019,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
               message: "The Save request carried no plan fingerprint", fix: "Reopen Save and try again" }], signNotices: [],
           });
           let fresh: ReturnType<typeof signPlan>;
-          try { fresh = signPlan(name, true); }
+          try { fresh = signPlan(name); }
           catch (error) { return send(400, { changes: [], ...signFailure(name, error), signNotices: [] }); }
           const { plan, prepared, prepareError, body } = fresh;
           if (plan.refusals.length > 0) return send(400, body);

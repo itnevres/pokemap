@@ -215,9 +215,9 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void;
     if (text !== prev.eventsText) entry.stack.push(entry.session, snapshotCommand(label, prev, { ...prev, eventsText: text, events }));
     return asSession(entry);
   }
-  function signPlan(name: string, fresh = false) {
+  function signPlan(name: string) {
     const refreshed = refreshGbcLinkedSigns(proj, store.open(name));
-    const checkNames = fresh ? addEvents.freshCheck(name) : addEvents.check(name);
+    const checkNames = addEvents.freshCheck(name);
     const plan = planGbcSave(proj, refreshed.session, { checkNames });
     let prepared: AtomicEntry[] = [];
     let prepareError: unknown;
@@ -370,7 +370,7 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void;
       entry.stack.redo(entry.session);
       return asSession(entry);
     } },
-    "POST discard": { body: false, run: (name) => { store.close(name); return ok(NOTHING_OPEN); } },
+    "POST discard": { body: false, run: (name) => { store.close(name); addEvents.invalidate(); return ok(NOTHING_OPEN); } },
     "POST event/move": { body: true, run: (name, body) => {
       const [kind, index, x, y] = [kindOf(body), int(body, "index"), int(body, "x"), int(body, "y")];
       const entry = store.open(name);
@@ -403,7 +403,7 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void;
           message: "The Save request carried no plan fingerprint", fix: "Reopen Save and try again" }], signNotices: [],
       } };
       let fresh: ReturnType<typeof signPlan>;
-      try { fresh = signPlan(name, true); } catch (error) { return planFailure(name, error, 400); }
+      try { fresh = signPlan(name); } catch (error) { return planFailure(name, error, 400); }
       const { plan, prepared, prepareError, body } = fresh;
       if (plan.refusals.length > 0) return { code: 400, body };
       if (prepareError !== undefined) return { code: 500, body: { error: prepareError instanceof Error ? prepareError.message : String(prepareError) } };

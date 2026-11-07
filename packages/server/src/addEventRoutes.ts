@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join, relative, resolve } from "node:path";
 import type { Project } from "@pokemap/core/src/project.js";
 import type { GbcProject } from "@pokemap/core/src/gbc/project.js";
 import type { EditSession } from "@pokemap/core/src/write/save.js";
@@ -73,8 +73,22 @@ export function nameCheckFor(store: Store, family: "gba" | "gbc", mapName: strin
   };
 }
 
-/** Save paths without new names never need a project scan. A commit owns its
- * own lazy index; plan and commit consume that same freshly built check. */
+/** Whole-file constants edits have one owner. A second map must wait rather
+ * than stage an edit whose baseline or numeric slots will become stale. */
+function requireHeaderOwnership(store: Store, mapName: string, path: string, code: "NO_FLAG_SLOT" | "NO_VAR_SLOT") {
+  const target = resolve(store.root, path);
+  for (const [other, entry] of store.entries()) {
+    if (other === mapName) continue;
+    const s = entry.session;
+    const edits = "eventsText" in s ? s.constEdits ?? [] : s.scriptReplaces ?? [];
+    if (edits.some(edit => resolve(store.root, edit.path) === target)) {
+      throw new AddEventRefusal(code, `${other} has an unsaved new constant in this file; save or undo it there first`, path);
+    }
+  }
+}
+
+/** Save paths without new names never need a project scan. Each save plan
+ * owns a lazy index; a commit shares its fresh re-plan check with the write. */
 function projectNameCheck(store: Store, family: "gba" | "gbc", mapName: string, index: () => SymbolIndex): NameCheck {
   let check: NameCheck | undefined;
   return name => (check ??= nameCheckFor(store, family, mapName, index()))(name);
@@ -144,8 +158,18 @@ function textPreview(text: string, family: "gba" | "gbc", label: string) {
   const probe = family === "gba" ? `\n${probeName}::\n\tmsgbox ${label}, MSGBOX_DEFAULT\n\tend\n` : `\n${probeName}:\n\tjumptext ${label}\n`;
   const raw = copy(text + probe, probeName).texts[label];
   if (raw === undefined) throw new AddEventRefusal("COPY_NOT_SCRIPT", `${label} is not dialogue in this map`);
-  const lines = [...raw.matchAll(/(?:\.string|text|line|cont|para)\s+"((?:[^"\\]|\\.)*)"/g)];
-  const decoded = lines.map(m => m[1]!.replace(/\$$/, "").replace(/\\[nl]/g, "\n").replace(/\\p/g, "\n\n").replace(/\\"/g, '"').replace(/\\\\/g, "\\")).join("\n");
+  if (family === "gba") {
+    // .string fragments are consecutive bytes; only engine controls add breaks.
+    const fragments = [...raw.matchAll(/^\s*\.string\s+"((?:[^"\\\r\n]|\\.)*)"/gm)].map(m => m[1]!);
+    const text = fragments.join("").replace(/\$$/, "").replace(/\\([nlp"\\])/g, (_, control: string) =>
+      control === "p" ? "\n\n" : control === "n" || control === "l" ? "\n" : control);
+    return { label, text };
+  }
+  let decoded = "", first = true;
+  for (const command of raw.matchAll(/^\s*(text|line|cont|para)\s+"([^"\r\n]*)"/gm)) {
+    if (!first) decoded += command[1] === "para" ? "\n\n" : "\n";
+    decoded += command[2]!; first = false;
+  }
   return { label, text: decoded };
 }
 function checkCandidateNames(candidate: EditSession | GbcEditSession, check: NameCheck) {
@@ -221,25 +245,16 @@ export function createGbaAddEventRoutes(project: Project, store: GbaStore, hooks
     create(name: string, value: unknown) {
       const entry = store.open(name), prev = snapshotOf(entry.session), candidate = structuredClone(entry.session);
       const form = formOf(value, candidate.layout.width, candidate.layout.height), checkNames = check(name);
-      const available = (kind: "FLAG" | "VAR") => {
-        const claimed = new Set<string>();
-        for (const [other, e] of store.entries()) {
-          if (other === name) continue;
-          for (const r of e.session.scriptReplaces ?? []) {
-            if (!r.path.replace(/\\/g, "/").endsWith(`/include/constants/${kind === "FLAG" ? "flags" : "vars"}.h`)) continue;
-            // Parse each staged header once, rather than once for every free slot.
-            const before = definedNames(r.before, "gba"), after = definedNames(r.after, "gba");
-            for (const slot of before) if (slot.startsWith(`${kind}_UNUSED_`) && !after.has(slot)) claimed.add(slot);
-          }
-        }
-        return cache.slots(kind).filter(slot => !claimed.has(slot));
-      };
+      if (form.flag?.mode === "new" && (form.kind === "object" || form.kind === "bg" && form.fields.bgType === "hidden_item")) {
+        requireHeaderOwnership(store, name, "include/constants/flags.h", "NO_FLAG_SLOT");
+      }
+      if (form.varName?.mode === "new" && form.kind === "coord") requireHeaderOwnership(store, name, "include/constants/vars.h", "NO_VAR_SLOT");
       const path = project.paths.mapScriptsInc(name);
       const built = buildGbaAddEvent(candidate.map, existsSync(path) ? stagedText(name) : null, form, {
         options: cache.get(), mapOptions: mapOptions(name), root, mapName: name,
         tileElevation: candidate.blocks[form.y * candidate.layout.width + form.x]!.elevation,
-        freeFlags: form.flag?.mode === "new" ? available("FLAG") : [],
-        freeVars: form.varName?.mode === "new" ? available("VAR") : [], scriptReplaces: candidate.scriptReplaces ?? [], check: checkNames,
+        freeFlags: form.flag?.mode === "new" ? cache.slots("FLAG") : [],
+        freeVars: form.varName?.mode === "new" ? cache.slots("VAR") : [], scriptReplaces: candidate.scriptReplaces ?? [], check: checkNames,
         charmap: parseGbaCharmap(read(`${root}/charmap.txt`)),
       });
       const added = addEvent(candidate.map, form.kind, built.value);
@@ -296,6 +311,9 @@ export function createGbcAddEventRoutes(proj: GbcProject, store: GbcStore, hooks
     create(name: string, value: unknown) {
       const entry = store.open(name), prev = gbcSnapshotOf(entry.session), candidate = structuredClone(entry.session);
       const form = formOf(value, candidate.map.width * 2, candidate.map.height * 2);
+      if (form.flag?.mode === "new" && (form.kind === "object" || form.kind === "bg" && ["BGEVENT_ITEM", "BGEVENT_IFSET", "BGEVENT_IFNOTSET"].includes(form.fields.bgType!))) {
+        requireHeaderOwnership(store, name, "constants/event_flags.asm", "NO_FLAG_SLOT");
+      }
       const built = buildGbcAddEvent(candidate.eventsText, name, form, { options: cache.get(), mapOptions: mapOptions(name),
         mapConsts: new Set(proj.maps.map(m => m.constName)), eventFlagsDisk: read(`${root}/constants/event_flags.asm`),
         constEdits: candidate.constEdits ?? [], check: check(name), charmap: parseGbcCharmap(read(`${root}/constants/charmap.asm`)) });
