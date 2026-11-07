@@ -11,6 +11,8 @@ import { EditingWorkspace } from "../shared/EditingWorkspace.js";
 import { GBA_CAPABILITIES, toolsFor } from "../shell/adapter.js";
 import { SignEditor } from "../shared/SignEditor.js";
 import { MAX_OBJECT_EVENTS, duplicateEventValue } from "../gba/duplicateEvent.js";
+import { AddEventBar, useEventPlacement } from "../shared/AddEventBar.js";
+import type { EventPlacementProps } from "../canvas/MapSurface.js";
 
 /** The props the workspace builds for the canvas it hosts -- exactly what
  *  `App` passed to `MapCanvas` before the extraction (the controlled
@@ -19,7 +21,7 @@ import { MAX_OBJECT_EVENTS, duplicateEventValue } from "../gba/duplicateEvent.js
 export type MapEditingCanvasProps = Pick<
   MapCanvasProps,
   "onEditError" | "onStrokeChain" | "mapName" | "data" | "editSession" | "activeTool" | "onSignPick" | "onSelectEvent" | "selectedEventRef" | "onMoveEvent" | "onDropperPick" | "onHoverMetatile"
->;
+> & EventPlacementProps;
 
 interface MapEditingWorkspaceBase {
   onStrokeChain?: MapCanvasProps["onStrokeChain"];
@@ -62,8 +64,9 @@ export function MapEditingWorkspace({ active = true, mapName, data, editSession,
     activeToolKind, setActiveToolKind, collisionValue, setCollisionValue, currentStamp, setCurrentStamp,
     setSaveDialogOpen, setIndicatorOpen, signAddedMessage, setSignAddedMessage, eventOpError, setEventOpError,
     selectedEvent, currentMap, activeTool, handleDiscard, onSelectEvent, onCanvasMoveEvent, onMoveEventFromInspector,
-    onDeleteEvent, onAddEvent, isVisitCurrent,
+    onDeleteEvent, isVisitCurrent,
   } = editing;
+  const placement = useEventPlacement(mapName, activeToolKind, active);
   // Duplicate reads the FULL event from the session map (the inspector's selection is partial), see duplicateEventValue.
   const duplicateKey = { object: "objectEvents", warp: "warpEvents", coord: "coordEvents", bg: "bgEvents" } as const;
   const onDuplicate = (): Promise<void> => {
@@ -85,7 +88,10 @@ export function MapEditingWorkspace({ active = true, mapName, data, editSession,
           data,
           editSession,
           activeTool,
-          onSelectEvent,
+          placing: placement.placing,
+          onEventPick: placement.onEventPick,
+          // A selected tool without a stamp is inert, not event-selection mode.
+          onSelectEvent: activeToolKind === null ? onSelectEvent : undefined,
           selectedEventRef: selectedEvent ? { kind: selectedEvent.kind, index: selectedEvent.index } : null,
           onMoveEvent: onCanvasMoveEvent,
           onEditError: setEventOpError,
@@ -97,14 +103,14 @@ export function MapEditingWorkspace({ active = true, mapName, data, editSession,
     <>
       <Toolbar
         activeToolKind={activeToolKind}
-        onSelectTool={setActiveToolKind}
+        onSelectTool={(kind) => { placement.clear(); setActiveToolKind(kind); }}
         isDirty={editSession.isDirty}
         onUndo={() => void editSession.undo()}
         onRedo={() => void editSession.redo()}
         canUndo={editSession.canUndo}
         canRedo={editSession.canRedo}
-        onOpenSave={() => setSaveDialogOpen(true)}
-        onDiscard={handleDiscard}
+        onOpenSave={() => { placement.clear(); setSaveDialogOpen(true); }}
+        onDiscard={() => { placement.clear(); handleDiscard(); }}
         // Code-review fix: only tools actually wired to MapCanvas
         // may render enabled (see `activeTool`'s own doc comment in
         // useMapEditing.ts) -- everything else must render visibly disabled,
@@ -147,7 +153,7 @@ export function MapEditingWorkspace({ active = true, mapName, data, editSession,
   );
   /* Plan 9 (D4): one right-hand rail, as GBC has had since Plan 7 -- the collision palette while the Collision tool
      is active, the metatile palette always (a pick with another tool active only sets the stamp, as a dropper pick
-     does), then EventInspector (always mounted: its empty state carries Add Event). */
+     does), then the Add buttons and EventInspector. */
   const side = (
     <>
       {activeToolKind === "collision" && <CollisionPalette selected={collisionValue} onSelect={setCollisionValue} />}
@@ -162,7 +168,9 @@ export function MapEditingWorkspace({ active = true, mapName, data, editSession,
           highlightId={hoveredMetatileId ?? null}
         />
       )}
-      <EventInspector indicatorSource={currentMap} mapName={mapName ?? undefined} onEditIndicator={(edit) => { editing.setIndicatorEdit(edit); setIndicatorOpen(true); }} selected={selectedEvent} onMove={onMoveEventFromInspector} onDelete={onDeleteEvent} onAdd={onAddEvent} onDuplicate={onDuplicate} duplicateDisabledReason={duplicateDisabledReason} />
+      <AddEventBar ref={placement.barRef} placing={placement.placing} onToggle={placement.onToggle}
+        disabled={!data || !mapName ? { object: "No editable map", warp: "No editable map", coord: "No editable map", bg: "No editable map" } : {}} />
+      <EventInspector indicatorSource={currentMap} mapName={mapName ?? undefined} onEditIndicator={(edit) => { editing.setIndicatorEdit(edit); setIndicatorOpen(true); }} selected={selectedEvent} onMove={onMoveEventFromInspector} onDelete={onDeleteEvent} onDuplicate={onDuplicate} duplicateDisabledReason={duplicateDisabledReason} />
     </>
   );
   return (

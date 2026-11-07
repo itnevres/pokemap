@@ -290,7 +290,7 @@ const PALLET_TOWN_LAYOUT = {
   map: {
     id: "MAP_PALLET_TOWN", name: "PalletTown", layout: "LAYOUT_PALLET_TOWN",
     music: "MUS_DUMMY", regionMapSection: "MAPSEC_NONE", mapType: "MAP_TYPE_TOWN", weather: "WEATHER_NONE",
-    connections: [], objectEvents: [], warpEvents: [], coordEvents: [], bgEvents: [],
+    connections: [], objectEvents: [{ graphicsId: "OBJ_EVENT_GFX_BOY_1", movementType: "MOVEMENT_TYPE_FACE_DOWN", x: 0, y: 0, elevation: 0, script: "NULL", flag: "0", movementRangeX: 1, movementRangeY: 1, trainerType: "TRAINER_TYPE_NONE", trainerSightOrBerryTreeId: "0" }], warpEvents: [], coordEvents: [], bgEvents: [],
   },
   layout: {
     id: "LAYOUT_PALLET_TOWN", name: "PalletTown_Layout", width: 2, height: 2, borderWidth: 1, borderHeight: 1,
@@ -322,7 +322,7 @@ const EDIT_GROUPS = { groupOrder: ["Kanto"], groups: { Kanto: ["PalletTown", "Ro
 /** `paintApplyBodies`, when passed, gets every `/paint/apply` request body
  *  pushed onto it (parsed from JSON) -- lets a test inspect what stamp
  *  actually went over the wire without re-deriving it from DOM state. */
-function makeEditFetchMock(paintApplyBodies?: unknown[], opts: { failEventAdd?: boolean } = {}) {
+function makeEditFetchMock(paintApplyBodies?: unknown[], opts: { failEventMove?: boolean } = {}) {
   return vi.fn((url: string, init?: RequestInit) => {
     const method = init?.method ?? "GET";
     if (url === "/api/groups") {
@@ -337,8 +337,8 @@ function makeEditFetchMock(paintApplyBodies?: unknown[], opts: { failEventAdd?: 
     // Follow-up 5 fix-round: lets a test populate the eventOpError banner
     // (a failed event op) before exercising discard, to prove discard()
     // clears a STALE error left over from an earlier, unrelated failure.
-    if (url === "/api/edit/PalletTown/event/add" && method === "POST") {
-      if (opts.failEventAdd) {
+    if (url === "/api/edit/PalletTown/event/move" && method === "POST") {
+      if (opts.failEventMove) {
         return Promise.resolve({ ok: false, status: 500, json: () => Promise.resolve({ error: "boom" }) } as Response);
       }
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ map: PALLET_TOWN_LAYOUT.map, isDirty: true }) } as Response);
@@ -366,6 +366,7 @@ function makeEditFetchMock(paintApplyBodies?: unknown[], opts: { failEventAdd?: 
         json: () => Promise.resolve({ blocks: [], border: [], map: null, isDirty: false, canUndo: false, canRedo: false }),
       } as Response);
     }
+    if (url === "/api/edit/PalletTown/indicator/at?index=0") return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ indicator: null }) } as Response);
     if (url.startsWith("/api/defects/")) return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ defects: [], incomplete: [] }) } as Response);
     return Promise.reject(new Error(`unexpected fetch ${url}`));
   });
@@ -945,16 +946,20 @@ describe("App -- discard flow", () => {
   // later successful discard, describing a problem that no longer applies
   // to the just-reverted session.
   it("a successful discard clears a stale eventOpError banner left over from an earlier failed event op", async () => {
-    vi.stubGlobal("fetch", makeEditFetchMock(undefined, { failEventAdd: true }));
+    vi.stubGlobal("fetch", makeEditFetchMock(undefined, { failEventMove: true }));
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
 
     render(<FamilyApp adapter={gbaAdapter} />);
     await waitFor(() => expect(screen.getByRole("button", { name: "PalletTown" })).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: "PalletTown" }));
 
-    // Fail an event add first -- populates the eventOpError banner.
-    const addEventBtn = await screen.findByRole("button", { name: "Add Event" });
-    await act(async () => { fireEvent.click(addEventBtn); });
+    // Fail a move of an existing event first -- populates the same eventOpError banner.
+    await screen.findByRole("button", { name: "Pencil" });
+    const eventCanvas = document.querySelector("canvas.map-canvas__stage")!;
+    await act(async () => {
+      fireEvent.mouseDown(eventCanvas, { clientX: 24, clientY: 24, button: 0 });
+      fireEvent.mouseUp(eventCanvas, { clientX: 40, clientY: 24, button: 0 });
+    });
     await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
 
     // Dirty the session via a real paint so Discard Changes is enabled.

@@ -13,13 +13,19 @@ import { screenToSource, type Point } from "./view.js";
 import { useStage, useStageAutoFit } from "./useStage.js";
 import { useRasterComposite } from "./useRasterComposite.js";
 import type { MapHover, MapSurfaceAdapter, MapTool } from "./mapSurfaceAdapter.js";
+import type { EventKind } from "@pokemap/core/src/addEvent/types.js";
+
+export interface EventPlacementProps {
+  placing?: EventKind | null;
+  onEventPick?: (x: number, y: number, anchor: DOMRect) => void;
+}
 
 // begin/apply/end return fresh blocks even without a content change. Coalesce the gesture's cache-bypassing
 // renders into one trailing refresh; overlays still track live blocks immediately.
 const PAINT_VERSION_DEBOUNCE_MS = 200;
 const ZOOM_POLICY = { kind: "stepped", levels: ZOOM_LEVELS } as const;
 
-export interface MapSurfaceProps<Tool extends MapTool, Body, Event, Stamp, Hover extends MapHover> {
+export interface MapSurfaceProps<Tool extends MapTool, Body, Event, Stamp, Hover extends MapHover> extends EventPlacementProps {
   mapName: string;
   adapter: MapSurfaceAdapter<Tool, Body, Event, Stamp, Hover>;
   editSession?: StrokeSession<Body>;
@@ -38,7 +44,7 @@ export interface MapSurfaceProps<Tool extends MapTool, Body, Event, Stamp, Hover
 }
 
 export function MapSurface<Tool extends MapTool, Body, Event, Stamp, Hover extends MapHover>({
-  mapName, adapter, editSession, activeTool, selectedEvent, onSelectEvent, onMoveEvent, onSignPick,
+  mapName, adapter, editSession, activeTool, selectedEvent, onSelectEvent, onMoveEvent, onSignPick, placing, onEventPick,
   onDropperPick, onHoverMetatile, onEditError, onStrokeChain, view, onViewChange, chromeless,
 }: MapSurfaceProps<Tool, Body, Event, Stamp, Hover>) {
   const g = adapter.geometry;
@@ -174,9 +180,10 @@ export function MapSurface<Tool extends MapTool, Body, Event, Stamp, Hover exten
   const eventAt = (event: MouseEvent<HTMLCanvasElement>) => rawCell(point(event), geometry(g.eventCellPx));
   const onMouseDown = (event: MouseEvent<HTMLCanvasElement>) => {
     if (event.button !== 0) return;
-    if (activeTool?.kind === "sign") {
+    if (placing || activeTool?.kind === "sign") {
       const cell = boundedCell(point(event), geometry(g.eventCellPx), g.width * g.paintCellPx / g.eventCellPx, g.height * g.paintCellPx / g.eventCellPx);
-      if (cell) onSignPick?.(cell.x, cell.y, cellRect(event.currentTarget.getBoundingClientRect(),
+      const pick = placing ? onEventPick : onSignPick;
+      if (cell) pick?.(cell.x, cell.y, cellRect(event.currentTarget.getBoundingClientRect(),
         event.currentTarget.width, event.currentTarget.height, cell, geometry(g.eventCellPx)));
       return;
     }
@@ -208,6 +215,7 @@ export function MapSurface<Tool extends MapTool, Body, Event, Stamp, Hover exten
     stage.startPan(event);
   };
   const onMouseMove = (event: MouseEvent<HTMLCanvasElement>) => {
+    if (placing) return;
     // Event identity already owns this gesture until release/cancel, so unlike paint trails it needs
     // no buttons===1 guard. Preview never posts: the candidate is local and event moves are single-shot (no paint lifecycle).
     if (eventDrag.current) { setDragPreview(eventAt(event)); return; }
@@ -226,6 +234,7 @@ export function MapSurface<Tool extends MapTool, Body, Event, Stamp, Hover exten
     else setHover({ map: mapName, value: adapter.hoverAt(screenToSource(point(event), stage.view), enabled) });
   };
   const onMouseUp = (event: MouseEvent<HTMLCanvasElement>) => {
+    if (placing) return;
     if (eventDrag.current) {
       const cell = eventAt(event);
       // Capture locals BEFORE clearing ownership (the clear drops kind/index/start). The final drop position is
@@ -252,7 +261,7 @@ export function MapSurface<Tool extends MapTool, Body, Event, Stamp, Hover exten
     rect: { x: pan.x, y: pan.y, width: g.pixelWidth * zoom, height: g.pixelHeight * zoom }, side: encounter.side, summaries }],
   [mapName, pan.x, pan.y, g.pixelWidth, g.pixelHeight, zoom, encounter.side, summaries]);
   const anyOverlay = adapter.overlays.some((layer) => enabled[layer.key]);
-  return <section className={`map-canvas${adapter.className ? ` ${adapter.className}` : ""}${chromeless ? " map-canvas--chromeless" : ""}`} aria-label={`${mapName} canvas`}>
+  return <section className={`map-canvas${adapter.className ? ` ${adapter.className}` : ""}${chromeless ? " map-canvas--chromeless" : ""}${placing ? " map-canvas--placing" : ""}`} aria-label={`${mapName} canvas`}>
     {!chromeless && <div className="map-canvas__toolbar">
       <CanvasZoomBar zoom={zoom} zoomLevels={ZOOM_LEVELS} applyZoom={stage.applyZoom} centerPivot={stage.centerPivot} fit={stage.fit} />
       <OverlayToggleGroup toggles={[...adapter.overlays.map((layer) => ({ key: layer.key, label: layer.label,
@@ -269,6 +278,7 @@ export function MapSurface<Tool extends MapTool, Body, Event, Stamp, Hover exten
       onPointerDown={(event) => { if (event.button === 0) stage.onPointerDown(event); }}
       onPointerCancel={stage.onPointerCancel} onLostPointerCapture={stage.onLostPointerCapture}
       onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseLeave}>
+      {placing && <div className="map-canvas__placement-hint" role="status">Click a tile to place the event. Esc to cancel.</div>}
       <EncounterBorder enabled={encountersOn} entries={entries} zoom={zoom * encounter.unitPx} lodZoom={0}
         band={encounter.band} time={encounter.time} />
     </MapCanvasViewport>

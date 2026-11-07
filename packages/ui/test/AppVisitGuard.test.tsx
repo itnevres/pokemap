@@ -4,7 +4,7 @@ import { FamilyApp } from "../src/shell/FamilyApp.js";
 import { gbaAdapter } from "../src/gba/adapter.js";
 
 const PALLET = {
-  map: { id: "MAP_PALLET", name: "PalletTown", layout: "LAYOUT_PALLET", music: "MUS_DUMMY", regionMapSection: "MAPSEC_NONE", mapType: "MAP_TYPE_TOWN", weather: "WEATHER_NONE", connections: [], objectEvents: [], warpEvents: [], coordEvents: [], bgEvents: [] },
+  map: { id: "MAP_PALLET", name: "PalletTown", layout: "LAYOUT_PALLET", music: "MUS_DUMMY", regionMapSection: "MAPSEC_NONE", mapType: "MAP_TYPE_TOWN", weather: "WEATHER_NONE", connections: [], objectEvents: [{ graphicsId: "OBJ_EVENT_GFX_BOY_1", movementType: "MOVEMENT_TYPE_FACE_DOWN", x: 0, y: 0, elevation: 0, script: "NULL", flag: "0", movementRangeX: 1, movementRangeY: 1, trainerType: "TRAINER_TYPE_NONE", trainerSightOrBerryTreeId: "0" }], warpEvents: [], coordEvents: [], bgEvents: [] },
   layout: { id: "LAYOUT_PALLET", name: "Pallet_Layout", width: 2, height: 2, borderWidth: 1, borderHeight: 1, primaryTileset: "gTileset_General", secondaryTileset: "gTileset_Petalburg", borderFilepath: "data/layouts/Pallet/border.bin", blockdataFilepath: "data/layouts/Pallet/map.bin" },
   split: { version: "emerald", tiles: 512, metatiles: 512, pals: 6 }, blocks: [], primaryCount: 4, secondaryCount: 2,
 };
@@ -19,19 +19,20 @@ function deferred() {
 function response(ok: boolean, body: unknown) {
   return { ok, status: ok ? 200 : 500, json: () => Promise.resolve(body) } as Response;
 }
-function fetchMock(add: ReturnType<typeof deferred>) {
+function fetchMock(move: ReturnType<typeof deferred>) {
   return vi.fn((url: string, init?: RequestInit) => {
     if (url === "/api/groups") return Promise.resolve(response(true, GROUPS));
     if (url === "/api/map/PalletTown") return Promise.resolve(response(true, PALLET));
     if (url === "/api/map/Route1") return Promise.resolve(response(true, ROUTE));
-    if (url === "/api/edit/PalletTown/event/add" && init?.method === "POST") return add.promise;
+    if (url === "/api/edit/PalletTown/event/move" && init?.method === "POST") return move.promise;
+    if (url === "/api/edit/PalletTown/indicator/at?index=0") return Promise.resolve(response(true, { indicator: null }));
     if (url.startsWith("/api/defects/")) return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ defects: [], incomplete: [] }) } as Response);
     return Promise.reject(new Error(`unexpected fetch ${url}`));
   });
 }
 async function openPallet() {
   fireEvent.click(await screen.findByRole("button", { name: "PalletTown" }));
-  await screen.findByRole("button", { name: "Add Event" });
+  await screen.findByRole("button", { name: "Pencil" });
 }
 async function switchTo(name: "PalletTown" | "Route1") {
   fireEvent.click(screen.getByRole("button", { name }));
@@ -42,11 +43,13 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 beforeEach(() => { Element.prototype.scrollIntoView = vi.fn(); });
 
 describe("App GBA visit guard", () => {
-  it("ignores a deferred A to B to A add success", async () => {
-    const add = deferred(); vi.stubGlobal("fetch", fetchMock(add)); render(<FamilyApp adapter={gbaAdapter} />); await openPallet();
-    fireEvent.click(screen.getByRole("button", { name: "Add Event" }));
+  it("ignores a deferred A to B to A move success", async () => {
+    const move = deferred(); vi.stubGlobal("fetch", fetchMock(move)); render(<FamilyApp adapter={gbaAdapter} />); await openPallet();
+    const canvas = document.querySelector("canvas.map-canvas__stage")!;
+    fireEvent.mouseDown(canvas, { clientX: 24, clientY: 24, button: 0 });
+    fireEvent.mouseUp(canvas, { clientX: 40, clientY: 24, button: 0 });
     await switchTo("Route1"); await switchTo("PalletTown");
-    await act(async () => add.resolve(response(true, { map: PALLET.map, isDirty: true })));
+    await act(async () => move.resolve(response(true, { map: PALLET.map, isDirty: true })));
     await act(async () => {});
     expect(screen.getByText("No event selected.")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
@@ -54,19 +57,23 @@ describe("App GBA visit guard", () => {
     expect(screen.queryByRole("spinbutton", { name: "Y" })).toBeNull();
   });
 
-  it("ignores a deferred A to B to A add failure", async () => {
-    const add = deferred(); vi.stubGlobal("fetch", fetchMock(add)); render(<FamilyApp adapter={gbaAdapter} />); await openPallet();
-    fireEvent.click(screen.getByRole("button", { name: "Add Event" }));
+  it("ignores a deferred A to B to A move failure", async () => {
+    const move = deferred(); vi.stubGlobal("fetch", fetchMock(move)); render(<FamilyApp adapter={gbaAdapter} />); await openPallet();
+    const canvas = document.querySelector("canvas.map-canvas__stage")!;
+    fireEvent.mouseDown(canvas, { clientX: 24, clientY: 24, button: 0 });
+    fireEvent.mouseUp(canvas, { clientX: 40, clientY: 24, button: 0 });
     await switchTo("Route1"); await switchTo("PalletTown");
-    await act(async () => add.resolve(response(false, { error: "old failure" })));
+    await act(async () => move.resolve(response(false, { error: "old failure" })));
     await act(async () => {});
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("retires an event error when switching visits", async () => {
-    const add = deferred(); vi.stubGlobal("fetch", fetchMock(add)); render(<FamilyApp adapter={gbaAdapter} />); await openPallet();
-    fireEvent.click(screen.getByRole("button", { name: "Add Event" }));
-    await act(async () => add.resolve(response(false, { error: "old failure" })));
+    const move = deferred(); vi.stubGlobal("fetch", fetchMock(move)); render(<FamilyApp adapter={gbaAdapter} />); await openPallet();
+    const canvas = document.querySelector("canvas.map-canvas__stage")!;
+    fireEvent.mouseDown(canvas, { clientX: 24, clientY: 24, button: 0 });
+    fireEvent.mouseUp(canvas, { clientX: 40, clientY: 24, button: 0 });
+    await act(async () => move.resolve(response(false, { error: "old failure" })));
     await screen.findByRole("alert");
     await switchTo("Route1");
     expect(screen.queryByRole("alert")).toBeNull();

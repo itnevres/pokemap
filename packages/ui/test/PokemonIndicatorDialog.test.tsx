@@ -186,7 +186,7 @@ describe.each(["gba", "gbc"])("%s Indicator inspector", family => {
   const events = { warps: [], coords: [], bgs: [], objects: [0, 1].map(i => ({ x: i, y: 2, sprite: "SPRITE_MONSTER", moveData: "SPRITEMOVEDATA_POKEMON", radiusX: 0, radiusY: 0, hour1: "-1", hour2: "-1", palette: "0", objectType: "OBJECTTYPE_SCRIPT", sightRange: 0, script: "Indicator" + i, eventFlag: "-1", lineIndex: i })), sceneScripts: [], callbacks: [], objectConsts: [] };
   function inspector(index: number, onEditIndicator = vi.fn()) {
     return family === "gba"
-      ? <EventInspector mapName="Map" selected={{ ...object, index }} onEditIndicator={onEditIndicator} onMove={vi.fn()} onDelete={vi.fn()} onAdd={vi.fn()} />
+      ? <EventInspector mapName="Map" selected={{ ...object, index }} onEditIndicator={onEditIndicator} onMove={vi.fn()} onDelete={vi.fn()} />
       : <GbcEventInspector mapName="Map" selected={{ kind: "object", index }} events={events} stepsW={10} stepsH={10} onEditIndicator={onEditIndicator} onMove={vi.fn()} onDelete={vi.fn()} onDuplicate={vi.fn()} warnings={[]} onDismissWarnings={vi.fn()} />;
   }
   it("opens Edit Indicator with its block and index", async () => {

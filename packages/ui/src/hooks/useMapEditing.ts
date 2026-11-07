@@ -76,7 +76,7 @@ export function useMapEditing({ editSession, layoutData, mapName }: UseMapEditin
   // EventInspector's own draft-resync effect from firing on unrelated App
   // re-renders and clobbering an in-progress, not-yet-blurred edit (see
   // that component's own doc comment). `null` means nothing selected --
-  // EventInspector's own empty state ("Add Event") then applies.
+  // EventInspector's own empty state then applies.
   const [selectedEvent, setSelectedEvent] = useState<SelectedEvent | null>(null);
   // Review fix: surfaces a failed move/add/delete (see eventOpErrorMessage's
   // own doc comment above) -- cleared on the next successful op, or by the
@@ -164,48 +164,6 @@ export function useMapEditing({ editSession, layoutData, mapName }: UseMapEditin
               `These warps on OTHER maps now point at the wrong one and need fixing:\n${lines}`,
           );
         }
-      })
-      .catch((e: unknown) => { if (visit.isCurrent()) setEventOpError(eventOpErrorMessage(e)); });
-  };
-
-  // onAdd's exact shape is deliberately underspecified by the plan this
-  // task implements -- a reasonable, minimal, well-documented choice made
-  // here (see this task's own report): a default OBJECT event (the most
-  // common kind, and the only one with sensible placeholder graphics/
-  // movement values -- warp/coord/bg all need a real destination/script/
-  // trigger a placeholder can't invent), dropped at the current map's own
-  // centre (floor(width/2), floor(height/2)) so it always lands somewhere
-  // visible and on-map rather than off-canvas at (0,0). `value` is the RAW
-  // snake_case object literal addEvent (Task 7) splices verbatim into
-  // map.json -- see that function's own doc comment. The new event's index
-  // is computed from the CURRENT objectEvents length BEFORE the call
-  // (addEvent always appends, per its own doc comment), so the freshly
-  // added event can be selected immediately without waiting on -- or
-  // re-deriving from -- the server's round trip.
-  // Returns a Promise (never rejects, same shape as onDeleteEvent above) so
-  // EventInspector can disable Add Event while it's in flight -- review fix:
-  // without this, a rapid double-click computed the same stale `newIndex`
-  // twice (both read `currentMap.objectEvents.length` before either
-  // response had landed), so the second click's own optimistic selection
-  // pointed at the wrong event once both round trips resolved.
-  const onAddEvent = (): Promise<void> => {
-    if (!currentMap || !layoutData) return Promise.resolve();
-    const newIndex = currentMap.objectEvents.length;
-    const x = Math.floor(layoutData.layout.width / 2);
-    const y = Math.floor(layoutData.layout.height / 2);
-    const graphicsId = "OBJ_EVENT_GFX_BOY_1";
-    const movementType = "MOVEMENT_TYPE_FACE_DOWN";
-    const value = {
-      graphics_id: graphicsId, x, y, elevation: 0,
-      movement_type: movementType, movement_range_x: 1, movement_range_y: 1,
-      trainer_type: "TRAINER_TYPE_NONE", trainer_sight_or_berry_tree_id: "0", script: "NULL", flag: "0",
-    };
-    return editSession
-      .addEvent("object", value)
-      .then(() => {
-        if (!visit.isCurrent()) return;
-        setEventOpError(null);
-        setSelectedEvent({ kind: "object", index: newIndex, x, y, elevation: 0, graphicsId, movementType });
       })
       .catch((e: unknown) => { if (visit.isCurrent()) setEventOpError(eventOpErrorMessage(e)); });
   };
@@ -324,7 +282,6 @@ export function useMapEditing({ editSession, layoutData, mapName }: UseMapEditin
     onCanvasMoveEvent,
     onMoveEventFromInspector,
     onDeleteEvent,
-    onAddEvent,
     // Lets callers outside this hook (MapEditingWorkspace's Duplicate) drop a result that lands after a map switch.
     isVisitCurrent: visit.isCurrent,
     activeToolKind,

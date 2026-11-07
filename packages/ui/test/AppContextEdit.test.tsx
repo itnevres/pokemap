@@ -54,8 +54,8 @@ function makeFetchMock() {
     if (url === "/api/map/PalletTown") return ok(LAYOUT);
     if (url === "/api/map/Route1") return ok(ROUTE1);
     if (url === "/api/world") return ok(WORLD);
-    if (url === "/api/edit/PalletTown/event/add" && method === "POST") return ok({ map: LAYOUT.map, isDirty: true });
-    if (url === "/api/edit/PalletTown/plan") return ok({ changes: [{ path: "data/maps/PalletTown/map.json", kind: "json", summary: "map.json: 1 event added" }], refusals: [] });
+    if (url.startsWith("/api/edit/PalletTown/paint/") && method === "POST") return ok({ blocks: LAYOUT.blocks, border: [], isDirty: true, canUndo: true, canRedo: false });
+    if (url === "/api/edit/PalletTown/plan") return ok({ changes: [{ path: "data/maps/PalletTown/map.json", kind: "json", summary: "map.bin: 1 block changed" }], refusals: [] });
     if (url === "/api/edit/PalletTown/commit" && method === "POST") return ok({ changes: [], refusals: [] });
     if (url === "/api/coverage") {
       return ok({ mapsWithEncounters: 0, encounterTables: 0, mapsWithoutEncounters: [], levelByMap: [], unusedSpecies: [],
@@ -198,21 +198,29 @@ describe("App -- in-context editing (Plan 6c E4)", () => {
   });
 
   describe("with a dirty session", () => {
-    /** Enters context on Route1 and adds an event through the inspector, which dirties the (mocked) session. */
+    /** Enters context on Route1 and paints through the Collision tool, which dirties the (mocked) session. */
     async function dirtyRoute1() {
       const fetchMock = makeFetchMock();
-      // Route1's add-event route, like PalletTown's.
+      // Route1's paint routes, like PalletTown's.
       const base = fetchMock.getMockImplementation()!;
       fetchMock.mockImplementation((url: string, init?: RequestInit) =>
-        url === "/api/edit/Route1/event/add" ? ok({ map: ROUTE1.map, isDirty: true })
-          : url === "/api/edit/Route1/plan" ? ok({ changes: [{ path: "data/maps/Route1/map.json", kind: "json", summary: "map.json: 1 event added" }], refusals: [] })
+        url.startsWith("/api/edit/Route1/paint/") ? ok({ blocks: ROUTE1.blocks, border: [], isDirty: true, canUndo: true, canRedo: false })
+          : url === "/api/edit/Route1/plan" ? ok({ changes: [{ path: "data/maps/Route1/map.json", kind: "json", summary: "map.bin: 1 block changed" }], refusals: [] })
           : url === "/api/edit/Route1/commit" && init?.method === "POST" ? ok({ changes: [], refusals: [] })
           : base(url, init));
       await startApp(fetchMock);
       const canvas = await enterWorld();
       dblClickRoute1(canvas);
-      await screen.findByRole("button", { name: "Add Event" });
-      await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Add Event" })); });
+      await screen.findByRole("button", { name: "Collision tool" });
+      fireEvent.click(screen.getByRole("button", { name: "Collision tool" }));
+      await waitFor(() => expect(document.querySelector("canvas.map-canvas__stage")).not.toBeNull());
+      const paintCanvas = document.querySelector("canvas.map-canvas__stage")!;
+      // World fixture is 10x10; the 2x2 map's first cell projects from pointer (255,50) at native zoom.
+      const point = { clientX: 255 - 5 * 16 + 8, clientY: 50 - 5 * 16 + 8, button: 0 };
+      await act(async () => {
+        fireEvent.mouseDown(paintCanvas, point);
+        fireEvent.mouseUp(paintCanvas, point);
+      });
       await waitFor(() => expect(screen.getByTestId("dirty-indicator")).toBeTruthy());
       return { canvas, fetchMock };
     }
@@ -298,8 +306,15 @@ describe("App -- in-context editing (Plan 6c E4)", () => {
   it("a double-click on another map with a dirty session and a cancelled switch prompt does not enter context", async () => {
     await startApp();
     fireEvent.click(screen.getByRole("button", { name: "PalletTown" }));
-    await screen.findByRole("button", { name: "Add Event" });
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Add Event" })); });
+    await screen.findByRole("button", { name: "Collision tool" });
+    fireEvent.click(screen.getByRole("button", { name: "Collision tool" }));
+    const paintCanvas = document.querySelector("canvas.map-canvas__stage")!;
+    const px = paintCanvas.closest(".map-canvas--chromeless") ? 200 : 24;
+    const py = paintCanvas.closest(".map-canvas--chromeless") ? 50 : 24;
+    await act(async () => {
+      fireEvent.mouseDown(paintCanvas, { clientX: px, clientY: py, button: 0 });
+      fireEvent.mouseUp(paintCanvas, { clientX: px, clientY: py, button: 0 });
+    });
     await waitFor(() => expect(screen.getByTestId("dirty-indicator")).toBeTruthy());
     // The overlay must never mount, not even for a frame that a later effect then cleans up.
     let overlaysMounted = 0;
