@@ -20,12 +20,14 @@ export interface GbcSessionEntry {
  *  (GBA's `Snapshot` equivalent, `editSessions.ts`). `events` is always the
  *  parse of `eventsText`, so the two travel together. */
 export interface GbcSnapshot {
+  constEdits: NonNullable<GbcEditSession["constEdits"]>;
+  newNames: string[];
   blocks: Block[];
   eventsText: string;
   events: GbcMapEvents;
 }
 
-export const gbcSnapshotOf = (s: GbcEditSession): GbcSnapshot => ({ blocks: s.blocks, eventsText: s.eventsText, events: s.events });
+export const gbcSnapshotOf = (s: GbcEditSession): GbcSnapshot => ({ blocks: s.blocks, eventsText: s.eventsText, events: s.events, constEdits: s.constEdits ?? [], newNames: s.newNames ?? [] });
 
 /**
  * One `Map<mapName, GbcSessionEntry>` per GBC handler, the counterpart of
@@ -65,5 +67,5 @@ export function createGbcEditSessionStore(proj: GbcProject) {
   /** Drops every open session -- the handler's `dispose()`. */
   const closeAll = (): void => { sessions.clear(); };
 
-  return { open, close, has, dirty, closeAll };
+  return { open, close, has, dirty, closeAll, entries: () => [...sessions.entries()], root: proj.root };
 }
