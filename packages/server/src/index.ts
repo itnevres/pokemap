@@ -1,3 +1,4 @@
+import { createGbaAddEventRoutes, eventFailure, type AddEventHooks } from "./addEventRoutes.js";
 import { checkGbaMapDefects } from "@pokemap/core/src/defects/gba.js";
 import { createSymbolIndexCache } from "./projectSymbols.js";
 import { gbaSpeciesNames } from "@pokemap/core/src/signs/linked.js";
@@ -115,8 +116,8 @@ function validateStampAndOrigin(stamp: unknown, origin: unknown): string | undef
   return undefined;
 }
 
-export function createProjectHandler(root: string): ProjectHandler {
-  if (detectEngineFamily(root) === "gbc") return createGbcProjectHandler(root);
+export function createProjectHandler(root: string, hooks: AddEventHooks = {}): ProjectHandler {
+  if (detectEngineFamily(root) === "gbc") return createGbcProjectHandler(root, hooks);
 
   const project = openProject(root);
   const symbols = createSymbolIndexCache(root, "gba");
@@ -209,6 +210,8 @@ export function createProjectHandler(root: string): ProjectHandler {
     map: (name) => parseMap(readFileSync(project.paths.mapJson(name), "utf8")),
   });
 
+  const addEvents = createGbaAddEventRoutes(project, editSessions, hooks, symbols);
+
   const editEntryFor = (name: string) => editSessions.open(name);
 
   const signFailure = (name: string, error: unknown) => ({ refusals: [{
@@ -229,13 +232,14 @@ export function createProjectHandler(root: string): ProjectHandler {
     try { return gbaSignParagraphs(project, entry, "free", text); }
     catch (error) { throw new Error(`${indicatorCharmapPath}: ${error instanceof Error ? error.message : String(error)}. ${indicatorCharmapFix}`); }
   }
-  function signPlan(name: string) {
+  function signPlan(name: string, fresh = false) {
     const refreshed = refreshGbaLinkedSigns(project, editEntryFor(name));
-    const plan = planSave(project, refreshed.session);
+    const checkNames = fresh ? addEvents.freshCheck(name) : addEvents.check(name);
+    const plan = planSave(project, refreshed.session, { checkNames });
     let prepared: AtomicEntry[] = [];
     let prepareError: unknown;
     if (plan.refusals.length === 0) {
-      try { prepared = prepareSave(project, plan.session); }
+      try { prepared = prepareSave(project, plan.session, { checkNames }); }
       catch (error) { prepareError = error instanceof Error ? error : new Error(String(error)); }
     }
     // A prepare failure (a planned target unreadable) is shown in the plan as a located refusal, so the dialog says why Save is off.
@@ -243,7 +247,7 @@ export function createProjectHandler(root: string): ProjectHandler {
     const refusals = prepareError === undefined ? diff.refusals : [...diff.refusals, { code: "SAVE_PREPARE_FAILED", subject: name,
       message: `Could not read the files this save would write: ${(prepareError as Error).message}`,
       fix: "Close any program holding the file or fix its permissions, then reopen Save" }];
-    return { plan, prepared, prepareError, body: { ...diff, refusals, signNotices: refreshed.notices,
+    return { plan, prepared, prepareError, checkNames, body: { ...diff, refusals, signNotices: refreshed.notices,
       fingerprint: plan.refusals.length > 0 || prepareError !== undefined ? null : planFingerprint(prepared),
     } };
   }
@@ -316,6 +320,19 @@ export function createProjectHandler(root: string): ProjectHandler {
     };
 
     try {
+      if (req.method === "GET" && addEvents.handleOptions(url, send)) return;
+      const createEventMatch = /^\/api\/edit\/([^/]+)\/event\/create$/.exec(url.pathname);
+      if (createEventMatch && req.method === "POST") {
+        let name: string;
+        try { name = decodeURIComponent(createEventMatch[1]!); }
+        catch { return send(400, { error: "malformed map name", code: "BAD_OPTION" }); }
+        if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
+        return void readBody(req).then(text => {
+          if (disposed) return send(503, { error: "project closed" });
+          try { send(200, addEvents.create(name, JSON.parse(text))); }
+          catch (error) { send(400, eventFailure("gba", name, error)); }
+        }).catch(error => send(400, eventFailure("gba", name, error)));
+      }
       if (url.pathname === "/api/project") {
         return send(200, { family: "gba", root: project.paths.root } satisfies ProjectInfo);
       }
@@ -1001,7 +1018,7 @@ export function createProjectHandler(root: string): ProjectHandler {
               message: "The Save request carried no plan fingerprint", fix: "Reopen Save and try again" }], signNotices: [],
           });
           let fresh: ReturnType<typeof signPlan>;
-          try { fresh = signPlan(name); }
+          try { fresh = signPlan(name, true); }
           catch (error) { return send(400, { changes: [], ...signFailure(name, error), signNotices: [] }); }
           const { plan, prepared, prepareError, body } = fresh;
           if (plan.refusals.length > 0) return send(400, body);
@@ -1011,13 +1028,13 @@ export function createProjectHandler(root: string): ProjectHandler {
             fix: "Review the updated changes and save again",
           } });
           try {
-            commitSave(project, plan, prepared);
+            commitSave(project, plan, prepared, undefined, { checkNames: fresh.checkNames });
           } catch (e) {
             console.error(e);
             return send(500, { error: e instanceof Error ? e.message : String(e) });
           } finally {
             // A failed commit may still have written (or failed to restore) a file, so the index is stale either way.
-            symbols.invalidate();
+            symbols.invalidate(); addEvents.invalidate();
           }
           // The render route's pngCache (keyed `name:border`, no expiry) predates this write, and the session-bypass
           // above ends the moment the session closes below. Clear all of it: layouts can be shared by several maps and
@@ -1388,7 +1405,7 @@ export function createProjectHandler(root: string): ProjectHandler {
     handle,
     dirtyMaps: () => editSessions.dirty(),
     dispose: () => {
-      symbols.invalidate();
+      symbols.invalidate(); addEvents.invalidate();
       editSessions.closeAll();
       disposed = true;
     },

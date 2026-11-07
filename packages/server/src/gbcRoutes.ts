@@ -1,3 +1,4 @@
+import type { AddEventHooks } from "./addEventRoutes.js";
 /**
  * The GBC (pokecrystal-family) route handler -- the server-side counterpart
  * of `cli/src/gbcCommands.ts`, the same way `index.ts`'s GBA body is the
@@ -281,7 +282,7 @@ export function buildGbcWarpsPayload(proj: GbcProject, name: string) {
   return { family: "gbc" as const, mapName: name, warps };
 }
 
-export function createGbcProjectHandler(root: string): ProjectHandler {
+export function createGbcProjectHandler(root: string, hooks: AddEventHooks = {}): ProjectHandler {
   const symbols = createSymbolIndexCache(root, "gbc");
   const proj = openGbcProject(root);
 
@@ -349,8 +350,9 @@ export function createGbcProjectHandler(root: string): ProjectHandler {
   // coverage table. worldCache and metatileCache depend on neither (connections
   // and metatile art), so they stay.
   const edit = createGbcEditRoutes(proj, {
+    ...hooks, symbols,
     onCommit: () => {
-      symbols.invalidate();
+      symbols.invalidate(); edit.invalidateOptions();
       renderCache.clear();
       warpCache = undefined;
       coverageCache = undefined;
@@ -747,7 +749,7 @@ export function createGbcProjectHandler(root: string): ProjectHandler {
     // The hub's unsaved-edits guard (409 on /api/hub/open) reads this.
     dirtyMaps: () => edit.dirtyMaps(),
     dispose: () => {
-      symbols.invalidate();
+      symbols.invalidate(); edit.invalidateOptions();
       disposed = true;
       edit.closeAll();
     },
