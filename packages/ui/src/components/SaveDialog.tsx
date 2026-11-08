@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { useVisit } from "../shared/useVisit.js";
+import { eventCreateBarrier } from "../shared/useEditSessionCore.js";
 import { trapDialogFocus, useRestoreFocus } from "../shared/dialogFocus.js";
 import "../styles.css";
 
@@ -57,6 +59,7 @@ function errorMessageFrom(body: unknown): string | null {
  */
 export function SaveDialog({ mapName, onCommitted, onCancel }: SaveDialogProps) {
   useRestoreFocus();
+  const visit = useVisit(mapName);
   const [plan, setPlan] = useState<DiffPlan | null>(null);
   const [refusals, setRefusals] = useState<Refusal[]>([]);
   const [saving, setSaving] = useState(false);
@@ -66,8 +69,9 @@ export function SaveDialog({ mapName, onCommitted, onCancel }: SaveDialogProps) 
 
   const loadPlan = () => {
     let cancelled = false;
-    fetch(`/api/edit/${encodeURIComponent(mapName)}/plan`)
+    eventCreateBarrier(mapName).then(() => cancelled ? null : fetch(`/api/edit/${encodeURIComponent(mapName)}/plan`))
       .then(async (r) => {
+        if (!r) return;
         const body: unknown = await r.json().catch(() => null);
         if (cancelled) return;
         if (!r.ok || !isDiffPlan(body)) {
@@ -87,6 +91,8 @@ export function SaveDialog({ mapName, onCommitted, onCancel }: SaveDialogProps) 
   const resolveNotice = async (scriptLabel: string, action: "refresh" | "unlink") => {
     setSaving(true);
     try {
+      await eventCreateBarrier(mapName);
+      if (!visit.isCurrent()) return;
       const r = await fetch(`/api/edit/${encodeURIComponent(mapName)}/sign/resolve`, { method: "POST", body: JSON.stringify({ scriptLabel, action }) });
       if (!r.ok) { setSaveError("Could not update linked sign."); return; }
       const planResponse = await fetch(`/api/edit/${encodeURIComponent(mapName)}/plan`);
@@ -103,6 +109,8 @@ export function SaveDialog({ mapName, onCommitted, onCancel }: SaveDialogProps) 
     setRefusals([]);
     setNotice(null);
     try {
+      await eventCreateBarrier(mapName);
+      if (!visit.isCurrent()) return;
       const r = await fetch(`/api/edit/${encodeURIComponent(mapName)}/commit`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ fingerprint: plan?.fingerprint }) });
       const body: unknown = await r.json().catch(() => null);
       setSaving(false);
