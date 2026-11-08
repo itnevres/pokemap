@@ -1,3 +1,4 @@
+import { addEventFields, addEventDefaults } from "./addEventFields.js";
 import { useEffect, useMemo, useState } from "react";
 import { GbcMapEditing, type GbcMapEditingCanvasProps } from "./GbcMapEditing.js";
 import { GbcMapCanvas, GBC_COMPOSITE_ORIGIN } from "./GbcMapCanvas.js";
@@ -188,9 +189,10 @@ export function useGbcRuntime({ selected, mode, requestPrompt }: RuntimeArgs): F
   };
 }
 
-export const gbcAdapter: EngineAdapter = {
+export const gbcAdapter = {
+  addEventFields, addEventDefaults,
   family: "gbc",
   label: "Crystal",
   capabilities: GBC_CAPABILITIES,
   useRuntime: useGbcRuntime,
-};
+} satisfies EngineAdapter;

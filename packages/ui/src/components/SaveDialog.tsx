@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { loadReturnWarpNotes, subscribeReturnWarpSources } from "../shared/AddEventDialog.js";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useVisit } from "../shared/useVisit.js";
 import { eventCreateBarrier } from "../shared/useEditSessionCore.js";
 import { trapDialogFocus, useRestoreFocus } from "../shared/dialogFocus.js";
@@ -49,20 +50,31 @@ function errorMessageFrom(body: unknown): string | null {
  * explicitly landing here and clicking Save Changes.
  *
  * Owns its own modal shell (backdrop + Escape-to-cancel + autofocus),
- * mirroring WarpDestinationModal's own established pattern exactly (that
- * component's own "Review fix" comment is the precedent: without focus
- * moving INTO the dialog on mount, a keyboard Escape never reaches this
- * component's onKeyDown at all -- it keeps bubbling from whatever element
- * opened the dialog instead, which sits outside this subtree). The caller
- * (App.tsx) just conditionally renders `<SaveDialog>` -- no wrapping
- * backdrop of its own.
+ * with a document Escape listener owned only by the topmost modal. Escape
+ * remains available if browser focus falls back to body while a plan loads;
+ * focus and Tab trapping still keep ordinary keyboard navigation in the panel.
+ * The caller conditionally renders `<SaveDialog>` without another backdrop.
  */
 export function SaveDialog({ mapName, onCommitted, onCancel }: SaveDialogProps) {
   useRestoreFocus();
   const visit = useVisit(mapName);
+  const [returnNotes, setReturnNotes] = useState<string[]>([]);
+  const [returnNoteError, setReturnNoteError] = useState<string | null>(null);
   const [plan, setPlan] = useState<DiffPlan | null>(null);
   const [refusals, setRefusals] = useState<Refusal[]>([]);
   const [saving, setSaving] = useState(false);
+  const panel = useRef<HTMLDivElement>(null);
+  const escapeState = useRef({ onCancel, saving });
+  escapeState.current = { onCancel, saving };
+  useLayoutEffect(() => {
+    const escape = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented || [...document.querySelectorAll('[aria-modal="true"]')].at(-1) !== panel.current) return;
+      event.preventDefault(); event.stopPropagation();
+      if (!escapeState.current.saving) escapeState.current.onCancel();
+    };
+    document.addEventListener("keydown", escape);
+    return () => document.removeEventListener("keydown", escape);
+  }, []);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ code: string; subject: string; message: string; fix: string } | null>(null);
@@ -87,6 +99,22 @@ export function SaveDialog({ mapName, onCommitted, onCancel }: SaveDialogProps) 
   };
 
   useEffect(loadPlan, [mapName]);
+  useEffect(() => {
+    if (!plan) return;
+    let active = true;
+    let sequence = 0;
+    const refresh = () => {
+      const ticket = ++sequence;
+      void loadReturnWarpNotes(mapName).then(notes => {
+        if (active && ticket === sequence) { setReturnNotes(notes); setReturnNoteError(null); }
+      }).catch((e: unknown) => {
+        if (active && ticket === sequence) { setReturnNotes([]); setReturnNoteError(e instanceof Error ? e.message : "Could not check return warps."); }
+      });
+    };
+    const unsubscribe = subscribeReturnWarpSources(refresh);
+    refresh();
+    return () => { active = false; unsubscribe(); };
+  }, [mapName, plan]);
 
   const resolveNotice = async (scriptLabel: string, action: "refresh" | "unlink") => {
     setSaving(true);
@@ -148,15 +176,12 @@ export function SaveDialog({ mapName, onCommitted, onCancel }: SaveDialogProps) 
   return (
     <div
       className="warp-modal__backdrop"
-      onKeyDown={(e) => {
-        if (e.key === "Escape") onCancel();
-      }}
     >
       {/* `warp-modal__panel` alongside `save-dialog`: reuses
           WarpDestinationModal's own panel chrome (bg-panel-raised/
           border-strong/radius, Task 8 Feature B) for the dialog surface
           itself, rather than a second, independently-styled panel shape. */}
-      <div className="save-dialog warp-modal__panel" role="dialog" aria-modal="true" aria-label="Save changes" onKeyDown={trapDialogFocus}>
+      <div ref={panel} className="save-dialog warp-modal__panel" role="dialog" aria-modal="true" aria-label="Save changes" onKeyDown={trapDialogFocus}>
         <h2 className="save-dialog__title">Save Changes</h2>
         {notice && (
           <div className="save-dialog__refusal" role="status">
@@ -179,6 +204,8 @@ export function SaveDialog({ mapName, onCommitted, onCancel }: SaveDialogProps) 
             ))}
           </ul>
         )}
+        {returnNotes.map(note => <p key={note} className="save-dialog__notice" role="status">{note}</p>)}
+        {returnNoteError && <p role="status">{returnNoteError}</p>}
         {plan?.signNotices && plan.signNotices.length > 0 && (
           <section aria-label="Linked signs">
             <h3>Linked signs</h3>
@@ -201,9 +228,8 @@ export function SaveDialog({ mapName, onCommitted, onCancel }: SaveDialogProps) 
           </div>
         ))}
         <div className="save-dialog__actions">
-          {/* autoFocus: see this component's own doc comment -- required
-              for Escape (and a click on the backdrop's own onKeyDown path)
-              to ever reach onCancel at all. Labelled "Cancel", not
+          {/* autoFocus starts keyboard navigation at the safe action; document Escape
+              ownership also works when browser focus has fallen to body. Labelled "Cancel", not
               "Discard": this only closes the dialog client-side, keeping
               the edit session and any unsaved work fully intact -- ordinary,
               safe "not right now" semantics, the same as any app's Cancel

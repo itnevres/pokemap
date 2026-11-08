@@ -83,8 +83,19 @@ export interface FamilyRuntime {
   saveDialog: { open: boolean; setOpen(open: boolean): void; onCommitted(): void };
 }
 
+export type FieldSpec = { key: string; label: string; kind: "select" | "text" | "number" | "multiline" | "source";
+  options?: string[]; modes?: ("existing" | "copy" | "new")[]; showIf?: (v: Record<string, string>) => boolean };
+export interface AddEventContext { mapName: string; x: number; y: number; options: import("@pokemap/core/src/addEvent/types.js").EventOptions; map: import("@pokemap/core/src/addEvent/types.js").MapEventOptions }
+export interface AddEventFieldAdapter {
+  family: Family;
+  addEventFields(kind: import("@pokemap/core/src/addEvent/types.js").EventKind, objectType: import("@pokemap/core/src/addEvent/types.js").ObjectType, ctx: AddEventContext): FieldSpec[];
+  addEventDefaults(kind: import("@pokemap/core/src/addEvent/types.js").EventKind, objectType: import("@pokemap/core/src/addEvent/types.js").ObjectType, ctx: AddEventContext): Record<string, string>;
+}
+
 export interface EngineAdapter {
   family: Family;
+  addEventFields: AddEventFieldAdapter["addEventFields"];
+  addEventDefaults: AddEventFieldAdapter["addEventDefaults"];
   /** Shown after the title ("Crystal" for GBC); null renders nothing (GBA). */
   label: string | null;
   capabilities: Capabilities;

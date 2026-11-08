@@ -1,3 +1,4 @@
+import { addEventFields, addEventDefaults } from "./addEventFields.js";
 import { DefectsBanner } from "../shared/DefectsBanner.js";
 import { useMapDefects } from "../hooks/useMapDefects.js";
 import { useState } from "react";
@@ -171,9 +172,10 @@ export function useGbaRuntime({ selected, mode, requestPrompt }: RuntimeArgs): F
   };
 }
 
-export const gbaAdapter: EngineAdapter = {
+export const gbaAdapter = {
+  addEventFields, addEventDefaults,
   family: "gba",
   label: null,
   capabilities: GBA_CAPABILITIES,
   useRuntime: useGbaRuntime,
-};
+} satisfies EngineAdapter;

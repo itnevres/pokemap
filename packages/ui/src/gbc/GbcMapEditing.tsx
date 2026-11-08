@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { GbcMapPayload } from "@pokemap/core/src/gbc/wire.js";
 import type { GbcStamp } from "@pokemap/core/src/gbc/edit/paint.js";
 import type { GbcEventKind, GbcWarpRenumberWarning } from "@pokemap/core/src/gbc/edit/events.js";
@@ -15,6 +15,10 @@ import type { IndicatorBlock } from "@pokemap/core/src/indicator/gba.js";
 import { SignEditor } from "../shared/SignEditor.js";
 import { AddEventBar, useEventPlacement } from "../shared/AddEventBar.js";
 import type { EventPlacementProps } from "../canvas/MapSurface.js";
+import { AddEventDialog, registerReturnWarpSource } from "../shared/AddEventDialog.js";
+import * as addEventAdapter from "./addEventFields.js";
+import { useEventOptions } from "../shared/useEventOptions.js";
+import { hasPendingEventCreates, type EventCreateSession } from "../shared/useEditSessionCore.js";
 
 /** No collision button (Plan 7 Goal: GBC collision is per metatile, not per block) with the shared Indicator dialog. */
 export const GBC_TOOLS: ToolKind[] = toolsFor(GBC_CAPABILITIES);
@@ -74,9 +78,41 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
   const [pick, setPick] = useState<{ forMap: string; stamp: GbcStamp | null; event: GbcEventRef | null }>({ forMap: key, stamp: null, event: null });
   const [err, setErr] = useState<{ forMap: string; text: string } | null>(null);
   const [warn, setWarn] = useState<{ forMap: string; list: GbcWarpRenumberWarning[] } | null>(null);
-  const visit = useVisit(mapName);
+  const visit = useVisit(active ? mapName : null);
+  const options = useEventOptions(mapName, visit);
+  const [creating, setCreating] = useState(false);
+  const [editRequests, setEditRequests] = useState(0);
+  const trackEdit = async <T,>(operation: () => Promise<T>): Promise<T> => {
+    const isCurrent = visit.isCurrent;
+    if (isCurrent()) setEditRequests(n => n + 1);
+    try { return await operation(); } finally { if (isCurrent()) setEditRequests(n => n - 1); }
+  };
+  const requestSession: UseGbcEditSessionResult = { ...session,
+    beginStroke: () => trackEdit(() => session.beginStroke()),
+    applyPaint: body => trackEdit(() => session.applyPaint(body)),
+    endStroke: () => trackEdit(() => session.endStroke()),
+    moveEvent: (...args) => trackEdit(() => session.moveEvent(...args)),
+    addEvent: (...args) => trackEdit(() => session.addEvent(...args)),
+    deleteEvent: (...args) => trackEdit(() => session.deleteEvent(...args)),
+    undo: () => trackEdit(() => session.undo()),
+    redo: () => trackEdit(() => session.redo()),
+    discard: () => trackEdit(() => session.discard()),
+  };
+  const [returnFocus, setReturnFocus] = useState<GbcEventKind | null>(null);
+  useLayoutEffect(() => {
+    if (returnFocus) {
+      if (!document.querySelector('[aria-modal="true"]')) placement.barRef.current?.querySelector<HTMLButtonElement>(`button[aria-label^="Add ${returnFocus === "coord" ? "Coord" : returnFocus === "bg" ? "BG" : returnFocus === "warp" ? "Warp" : "Object"}:"]`)?.focus();
+      setReturnFocus(null);
+    }
+  }, [returnFocus]);
+  useEffect(() => { void options.load().catch(() => { /* The dialog displays option errors. */ }); }, [options.load, options.project, mapName]);
+  useLayoutEffect(() => {
+    if (mapName && active && session.isDirty) return registerReturnWarpSource(mapName, session.events.warps.map(w => ({ dest: w.mapConst, warp: String(w.destWarp), x: w.x, y: w.y })), (data?.events.warps ?? []).map(w => ({ dest: w.mapConst, warp: String(w.destWarp), x: w.x, y: w.y })), options.project?.maps ?? []);
+  }, [mapName, session.events, data, active, options.project, session.isDirty]);
   // Adjust this component's state during render: React retries it before rendering children, so no old pick is exposed.
   if (visit.changed) {
+    if (creating) setCreating(false); if (editRequests) setEditRequests(0);
+    if (returnFocus) setReturnFocus(null);
     setPick({ forMap: key, stamp: null, event: null });
     setErr(null);
     setWarn(null);
@@ -109,10 +145,10 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
   const pickedId = stamp && stamp.cells.length === 1 ? stamp.cells[0]!.metatileId : null;
 
   const onMove = (next: { kind: GbcEventKind; index: number; x: number; y: number }) => {
-    session.moveEvent(next.kind, next.index, next.x, next.y).then(ok).catch((e: unknown) => fail(e, "Failed to move event."));
+    requestSession.moveEvent(next.kind, next.index, next.x, next.y).then(ok).catch((e: unknown) => fail(e, "Failed to move event."));
   };
   const onDelete = (ref: GbcEventRef): Promise<void> =>
-    session.deleteEvent(ref.kind, ref.index).then(({ warpRenumberWarnings }) => {
+    requestSession.deleteEvent(ref.kind, ref.index).then(({ warpRenumberWarnings }) => {
       if (!isCurrent()) return;
       ok();
       setEvent(null);
@@ -122,7 +158,7 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
     // add always appends, so the copy's index is the list's length BEFORE the call.
     const list = kind === "object" ? session.events.objects : kind === "warp" ? session.events.warps : kind === "coord" ? session.events.coords : session.events.bgs;
     const newIndex = list.length;
-    return session.addEvent(kind, args).then(() => {
+    return requestSession.addEvent(kind, args).then(() => {
       if (!isCurrent()) return;
       ok();
       setEvent({ kind, index: newIndex });
@@ -132,7 +168,7 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
   const onDiscard = () => {
     placement.clear();
     if (!window.confirm("Discard all unsaved changes on this map? This cannot be undone.")) return;
-    session.discard().then(() => { ok(); onDiscarded?.(); }).catch((e: unknown) => fail(e, "Failed to discard."));
+    requestSession.discard().then(() => { ok(); onDiscarded?.(); }).catch((e: unknown) => fail(e, "Failed to discard."));
   };
 
   const canvasProps: GbcMapEditingCanvasProps | null =
@@ -143,7 +179,7 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
           data,
           time,
           hoveredMetatile: onHoverMetatile,
-          editSession: session,
+          editSession: requestSession,
           activeTool,
           placing: placement.placing,
           onEventPick: placement.onEventPick,
@@ -162,8 +198,8 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
         tools={GBC_TOOLS}
         availableTools={GBC_TOOLS}
         isDirty={session.isDirty}
-        onUndo={() => void session.undo().then(ok).catch((e: unknown) => fail(e, "Undo failed."))}
-        onRedo={() => void session.redo().then(ok).catch((e: unknown) => fail(e, "Redo failed."))}
+        onUndo={() => void requestSession.undo().then(ok).catch((e: unknown) => fail(e, "Undo failed."))}
+        onRedo={() => void requestSession.redo().then(ok).catch((e: unknown) => fail(e, "Redo failed."))}
         canUndo={session.canUndo}
         canRedo={session.canRedo}
         onOpenSave={() => { placement.clear(); onOpenSave(); }}
@@ -192,7 +228,9 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
         onSelect={onPalettePick}
         selected={pickedId}
       />
-      <AddEventBar ref={placement.barRef} placing={placement.placing} onToggle={placement.onToggle} disabled={{
+      <AddEventBar ref={placement.barRef} placing={placement.placing} onToggle={placement.onToggle} disabled={editRequests > 0 || creating || hasPendingEventCreates(mapName) ? {
+        object: "An edit request is in flight", warp: "An edit request is in flight", coord: "An edit request is in flight", bg: "An edit request is in flight",
+      } : {
         object: session.events.objects.length >= 15 ? "This map already has 15 object events" : undefined,
         coord: session.events.sceneScripts.length === 0 ? "This map has no scenes" : undefined,
       }} />
@@ -210,9 +248,18 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
         onDismissWarnings={() => { if (isCurrent()) setWarn(null); }}
       />
     </>
-  ) : null;
+  ) : <AddEventBar ref={placement.barRef} placing={null} onToggle={placement.onToggle} disabled={{ object: "No editable map", warp: "No editable map", coord: "No editable map", bg: "No editable map" }} />;
   return <>
     <EditingWorkspace active={active} top={top} side={side} canvasProps={canvasProps} Canvas={GbcMapCanvas} renderCanvas={renderCanvas} />
+    {placement.pick && mapName && <AddEventDialog adapter={addEventAdapter} mapName={mapName}
+      kind={placement.pick.kind} x={placement.pick.x} y={placement.pick.y}
+      createEvent={form => trackEdit(() => (session as UseGbcEditSessionResult & EventCreateSession).createEvent(form))}
+      onBusyChange={busy => { if (isCurrent()) setCreating(busy); }}
+      onCancel={() => { placement.clear(); placement.barRef.current?.querySelector<HTMLButtonElement>(`button[aria-label^="Add ${placement.pick?.kind === "coord" ? "Coord" : placement.pick?.kind === "bg" ? "BG" : placement.pick?.kind === "warp" ? "Warp" : "Object"}:"]`)?.focus(); }}
+      onCreated={created => {
+        if (!isCurrent()) return;
+        setEvent(created); placement.clear(); setCreating(false); setReturnFocus(created.kind); options.invalidate();
+      }} />}
     {signPick && mapName && <SignEditor mapName={mapName} x={signPick.x} y={signPick.y} anchor={signPick.anchor}
       hasObjectEvent={session.events.objects.some((event) => event.x === signPick.x && event.y === signPick.y)}
       onCancel={() => setSignPick(null)} onDone={() => setSignPick(null)} onSessionUpdated={(body) => session.applyExternalSession?.(body)} />}

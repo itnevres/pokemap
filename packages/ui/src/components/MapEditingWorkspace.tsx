@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { MapCanvas, type MapCanvasProps } from "./MapCanvas.js";
 import { Toolbar } from "./Toolbar.js";
 import { CollisionPalette } from "./CollisionPalette.js";
@@ -13,6 +13,12 @@ import { SignEditor } from "../shared/SignEditor.js";
 import { MAX_OBJECT_EVENTS, duplicateEventValue } from "../gba/duplicateEvent.js";
 import { AddEventBar, useEventPlacement } from "../shared/AddEventBar.js";
 import type { EventPlacementProps } from "../canvas/MapSurface.js";
+import { AddEventDialog, registerReturnWarpSource } from "../shared/AddEventDialog.js";
+import * as addEventAdapter from "../gba/addEventFields.js";
+import { useEventOptions } from "../shared/useEventOptions.js";
+import { useVisit } from "../shared/useVisit.js";
+import { hasPendingEventCreates, type EventCreateSession } from "../shared/useEditSessionCore.js";
+import type { EventKind } from "@pokemap/core/src/addEvent/types.js";
 
 /** The props the workspace builds for the canvas it hosts -- exactly what
  *  `App` passed to `MapCanvas` before the extraction (the controlled
@@ -67,13 +73,68 @@ export function MapEditingWorkspace({ active = true, mapName, data, editSession,
     onDeleteEvent, isVisitCurrent,
   } = editing;
   const placement = useEventPlacement(mapName, activeToolKind, active);
+  const visit = useVisit(active ? mapName : null);
+  const options = useEventOptions(mapName, visit);
+  const [creating, setCreating] = useState(false);
+  const [editRequests, setEditRequests] = useState(0);
+  const trackEdit = async <T,>(operation: () => Promise<T>): Promise<T> => {
+    const isCurrent = visit.isCurrent;
+    if (isCurrent()) setEditRequests(n => n + 1);
+    try { return await operation(); } finally { if (isCurrent()) setEditRequests(n => n - 1); }
+  };
+  const requestSession: UseEditSessionResult = "createEvent" in editSession ? { ...editSession,
+    beginStroke: () => trackEdit(() => editSession.beginStroke()),
+    applyPaint: body => trackEdit(() => editSession.applyPaint(body)),
+    endStroke: () => trackEdit(() => editSession.endStroke()),
+    moveEvent: (...args) => trackEdit(() => editSession.moveEvent(...args)),
+    addEvent: (...args) => trackEdit(() => editSession.addEvent(...args)),
+    deleteEvent: (...args) => trackEdit(() => editSession.deleteEvent(...args)),
+    undo: () => trackEdit(() => editSession.undo()),
+    redo: () => trackEdit(() => editSession.redo()),
+    discard: () => trackEdit(() => editSession.discard()),
+  } : editSession;
+  const [pendingSelection, setPendingSelection] = useState<{ kind: EventKind; index: number; returnFocus?: boolean; isCurrent(): boolean } | null>(null);
+  const latestSelect = useRef(onSelectEvent);
+  latestSelect.current = onSelectEvent;
+  if (visit.changed) { if (creating) setCreating(false); if (editRequests) setEditRequests(0); if (pendingSelection) setPendingSelection(null); }
+  useEffect(() => { void options.load().catch(() => { /* The dialog owns option-load errors; existing edit tools remain usable. */ }); }, [options.load, options.project, mapName]);
+  useLayoutEffect(() => {
+    if (pendingSelection && pendingSelection.isCurrent()) {
+      latestSelect.current(pendingSelection);
+      if (pendingSelection.returnFocus && !document.querySelector('[aria-modal="true"]')) placement.barRef.current?.querySelector<HTMLButtonElement>(`button[aria-label^="Add ${pendingSelection.kind === "coord" ? "Coord" : pendingSelection.kind === "bg" ? "BG" : pendingSelection.kind === "warp" ? "Warp" : "Object"}:"]`)?.focus();
+      setPendingSelection(null);
+    }
+  }, [pendingSelection, editSession.map]);
+  useLayoutEffect(() => {
+    if (mapName && active && editSession.isDirty) return registerReturnWarpSource(mapName, (currentMap?.warpEvents ?? []).map(w => ({ dest: w.destMap, warp: w.destWarpId, x: w.x, y: w.y })), (data?.map.warpEvents ?? []).map(w => ({ dest: w.destMap, warp: w.destWarpId, x: w.x, y: w.y })), options.project?.maps ?? []);
+  }, [mapName, currentMap, data, active, options.project, editSession.isDirty]);
+  const selectionRef = useRef(selectedEvent);
+  selectionRef.current = selectedEvent;
+  const onTrackedMove = (next: { kind: EventKind; index: number; x: number; y: number; elevation?: number }) => {
+    void requestSession.moveEvent(next.kind, next.index, next.x, next.y, next.elevation).then(() => {
+      if (!visit.isCurrent()) return;
+      setEventOpError(null);
+      const selection = selectionRef.current;
+      if (selection?.kind === next.kind && selection.index === next.index) setPendingSelection({ kind: next.kind, index: next.index, isCurrent: visit.isCurrent });
+    }).catch((error: unknown) => { if (visit.isCurrent()) setEventOpError(eventOpErrorMessage(error)); });
+  };
+  const onTrackedDiscard = () => {
+    if (!("createEvent" in editSession)) { handleDiscard(); return; }
+    if (!window.confirm("Discard all unsaved changes on this map? This cannot be undone.")) return;
+    void requestSession.discard().then(() => { if (visit.isCurrent()) setEventOpError(null); }).catch((error: unknown) => { if (visit.isCurrent()) setEventOpError(eventOpErrorMessage(error)); });
+  };
+  const requestBusy = editRequests > 0 || creating || hasPendingEventCreates(mapName);
+  const disabledReason = !active || !data || !mapName ? "No editable map" : requestBusy ? "An edit request is in flight" : undefined;
+  const addDisabled = disabledReason ? { object: disabledReason, warp: disabledReason, coord: disabledReason, bg: disabledReason } : {
+    object: options.project && (currentMap?.objectEvents.length ?? 0) >= options.project.objectCap ? `This map already has ${options.project.objectCap} object events` : undefined,
+  };
   // Duplicate reads the FULL event from the session map (the inspector's selection is partial), see duplicateEventValue.
   const duplicateKey = { object: "objectEvents", warp: "warpEvents", coord: "coordEvents", bg: "bgEvents" } as const;
   const onDuplicate = (): Promise<void> => {
     const full = selectedEvent && currentMap ? currentMap[duplicateKey[selectedEvent.kind]][selectedEvent.index] : undefined;
     if (!selectedEvent || !full || !data) return Promise.resolve();
     const value = duplicateEventValue(selectedEvent.kind, full as unknown as Record<string, unknown>, data.layout.width, data.layout.height);
-    return editSession.addEvent(selectedEvent.kind, value)
+    return requestSession.addEvent(selectedEvent.kind, value)
       .then(() => { if (isVisitCurrent()) setEventOpError(null); })
       .catch((e: unknown) => { if (isVisitCurrent()) setEventOpError(eventOpErrorMessage(e)); });
   };
@@ -86,13 +147,13 @@ export function MapEditingWorkspace({ active = true, mapName, data, editSession,
           ...(onHoverMetatile ? { onHoverMetatile } : {}),
           mapName,
           data,
-          editSession,
+          editSession: requestSession,
           activeTool,
           placing: placement.placing,
           onEventPick: placement.onEventPick,
           onSelectEvent,
           selectedEventRef: selectedEvent ? { kind: selectedEvent.kind, index: selectedEvent.index } : null,
-          onMoveEvent: onCanvasMoveEvent,
+          onMoveEvent: "createEvent" in editSession ? onTrackedMove : onCanvasMoveEvent,
           onEditError: setEventOpError,
           onDropperPick: setCurrentStamp,
           onSignPick: (x, y, anchor) => setSignPick({ x, y, anchor }),
@@ -104,12 +165,12 @@ export function MapEditingWorkspace({ active = true, mapName, data, editSession,
         activeToolKind={activeToolKind}
         onSelectTool={(kind) => { placement.clear(); setActiveToolKind(kind); }}
         isDirty={editSession.isDirty}
-        onUndo={() => void editSession.undo()}
-        onRedo={() => void editSession.redo()}
+        onUndo={() => void requestSession.undo().catch((error: unknown) => { if (visit.isCurrent()) setEventOpError(eventOpErrorMessage(error)); })}
+        onRedo={() => void requestSession.redo().catch((error: unknown) => { if (visit.isCurrent()) setEventOpError(eventOpErrorMessage(error)); })}
         canUndo={editSession.canUndo}
         canRedo={editSession.canRedo}
         onOpenSave={() => { placement.clear(); setSaveDialogOpen(true); }}
-        onDiscard={() => { placement.clear(); handleDiscard(); }}
+        onDiscard={() => { placement.clear(); onTrackedDiscard(); }}
         // Code-review fix: only tools actually wired to MapCanvas
         // may render enabled (see `activeTool`'s own doc comment in
         // useMapEditing.ts) -- everything else must render visibly disabled,
@@ -168,8 +229,8 @@ export function MapEditingWorkspace({ active = true, mapName, data, editSession,
         />
       )}
       <AddEventBar ref={placement.barRef} placing={placement.placing} onToggle={placement.onToggle}
-        disabled={!data || !mapName ? { object: "No editable map", warp: "No editable map", coord: "No editable map", bg: "No editable map" } : {}} />
-      <EventInspector indicatorSource={currentMap} mapName={mapName ?? undefined} onEditIndicator={(edit) => { editing.setIndicatorEdit(edit); setIndicatorOpen(true); }} selected={selectedEvent} onMove={onMoveEventFromInspector} onDelete={onDeleteEvent} onDuplicate={onDuplicate} duplicateDisabledReason={duplicateDisabledReason} />
+        disabled={addDisabled} />
+      <EventInspector indicatorSource={currentMap} mapName={mapName ?? undefined} onEditIndicator={(edit) => { editing.setIndicatorEdit(edit); setIndicatorOpen(true); }} selected={selectedEvent} onMove={"createEvent" in editSession ? onTrackedMove : onMoveEventFromInspector} onDelete={ref => trackEdit(() => onDeleteEvent(ref))} onDuplicate={onDuplicate} duplicateDisabledReason={duplicateDisabledReason} />
     </>
   );
   return (
@@ -182,6 +243,18 @@ export function MapEditingWorkspace({ active = true, mapName, data, editSession,
         Canvas={MapCanvas}
         renderCanvas={renderCanvas as ((p: MapEditingCanvasProps | null) => ReactNode) | undefined}
       />
+      {placement.pick && mapName && <AddEventDialog adapter={addEventAdapter} mapName={mapName}
+        kind={placement.pick.kind} x={placement.pick.x} y={placement.pick.y}
+        initialFields={data ? { elevation: String((editSession.blocks[placement.pick.y * data.layout.width + placement.pick.x] ?? data.blocks[placement.pick.y * data.layout.width + placement.pick.x])?.elevation ?? 0) } : undefined}
+        createEvent={form => trackEdit(() => (editSession as UseEditSessionResult & EventCreateSession).createEvent(form))}
+        onBusyChange={busy => { if (visit.isCurrent()) setCreating(busy); }}
+        onCancel={() => { placement.clear(); placement.barRef.current?.querySelector<HTMLButtonElement>(`button[aria-label^="Add ${placement.pick?.kind === "coord" ? "Coord" : placement.pick?.kind === "bg" ? "BG" : placement.pick?.kind === "warp" ? "Warp" : "Object"}:"]`)?.focus(); }}
+        onCreated={created => {
+          if (!visit.isCurrent()) return;
+          setPendingSelection({ ...created, returnFocus: true, isCurrent: visit.isCurrent });
+          placement.clear(); setCreating(false);
+          options.invalidate();
+        }} />}
       {signPick && mapName && <SignEditor mapName={mapName} x={signPick.x} y={signPick.y} anchor={signPick.anchor}
         hasObjectEvent={currentMap?.objectEvents.some((event) => event.x === signPick.x && event.y === signPick.y) ?? false}
         onCancel={() => setSignPick(null)} onDone={() => setSignPick(null)}
