@@ -84,12 +84,32 @@ export function AddEventDialog(props: AddEventDialogProps) {
   const [error, setError] = useState<string | null>(null);
   const panel = useRef<HTMLDivElement>(null);
   const busy = useRef(false);
+  const cancelRef = useRef(props.onCancel);
+  cancelRef.current = props.onCancel;
   useLayoutEffect(() => {
     const element = panel.current;
-    if (!element || [...document.querySelectorAll('[aria-modal="true"]')].at(-1) !== element) return;
-    const first = [...element.querySelectorAll<HTMLElement>("button,input,select,textarea,[tabindex]")].find(control => !control.matches(":disabled") && control.tabIndex >= 0 && !control.hidden);
-    (first ?? element).focus();
-  }, [Boolean(context)]);
+    let active = true;
+    const focus = (repairOnly: boolean) => {
+      if (!active || !element || !visit.isCurrent() || [...document.querySelectorAll('[aria-modal="true"]')].at(-1) !== element) return;
+      if (repairOnly && element.contains(document.activeElement)) return;
+      const first = [...element.querySelectorAll<HTMLElement>("button,input,select,textarea,[tabindex]")].find(control => !control.matches(":disabled") && control.tabIndex >= 0 && !control.hidden);
+      (first ?? element).focus();
+    };
+    focus(false);
+    // A canvas pointer event can apply its native focus after React's layout effect.
+    // Recheck after that event, and cancel the first StrictMode setup's queued work.
+    queueMicrotask(() => focus(true));
+    return () => { active = false; };
+  }, [Boolean(context), props.mapName, props.kind, props.x, props.y]);
+  useLayoutEffect(() => {
+    const escape = (event: globalThis.KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented || [...document.querySelectorAll('[aria-modal="true"]')].at(-1) !== panel.current) return;
+      event.preventDefault(); event.stopPropagation();
+      if (!busy.current) cancelRef.current();
+    };
+    document.addEventListener("keydown", escape);
+    return () => document.removeEventListener("keydown", escape);
+  }, []);
   useEffect(() => {
     if (api.project) return;
     let active = true;
@@ -99,13 +119,12 @@ export function AddEventDialog(props: AddEventDialogProps) {
   const topmost = () => [...document.querySelectorAll('[aria-modal="true"]')].at(-1) === panel.current;
   const cancel = () => { if (!busy.current && topmost()) props.onCancel(); };
   const keyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (!topmost()) return;
+    if (event.defaultPrevented || !topmost()) return;
     if (event.key === "Tab" && panel.current && event.target === panel.current) {
       const controls = [...panel.current.querySelectorAll<HTMLElement>("button,input,select,textarea,[tabindex]")].filter(control => !control.matches(":disabled") && control.tabIndex >= 0 && !control.hidden);
       event.preventDefault(); (event.shiftKey ? controls.at(-1) : controls[0])?.focus(); return;
     }
     trapDialogFocus(event);
-    if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); cancel(); }
   };
   return <div className="warp-modal__backdrop add-event-dialog__backdrop" onMouseDown={e => { if (e.target === e.currentTarget) cancel(); }}>
     <div ref={panel} className="warp-modal__panel add-event-dialog" role="dialog" aria-modal="true" aria-label={`Add ${titles[props.kind]} at (${props.x}, ${props.y})`} tabIndex={-1} onKeyDown={keyDown}>
@@ -264,7 +283,7 @@ function EventForm(props: AddEventDialogProps & { api: OptionsApi; ctx: AddEvent
     </fieldset>;
   };
   return <form onSubmit={e => { e.preventDefault(); void submit(); }}>
-    {kind === "object" && <label>Object type<select autoFocus aria-label="Object type" value={objectType} disabled={busy} onChange={e => changeType(e.target.value as ObjectType)}><option value="npc">NPC</option><option value="itemball">Item ball</option><option value="trainer">Existing trainer</option></select></label>}
+    {kind === "object" && <label>Object type<select aria-label="Object type" value={objectType} disabled={busy} onChange={e => changeType(e.target.value as ObjectType)}><option value="npc">NPC</option><option value="itemball">Item ball</option><option value="trainer">Existing trainer</option></select></label>}
     <div className="add-event-dialog__fields">{fields.map(f => f.kind === "source" ? source(f) : <div key={f.key}>
       {f.kind === "select" ? renderSelect(f) : f.kind === "multiline" ? textarea(f.key, f.label) : <label>{f.label}<input aria-label={f.label} type={f.kind === "number" ? "number" : "text"} value={values[f.key] ?? ""} disabled={busy} onChange={e => set(f.key, e.target.value)} /></label>}
     </div>)}</div>

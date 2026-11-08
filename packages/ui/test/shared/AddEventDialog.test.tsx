@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { StrictMode, useState } from "react";
 import { invalidateEventOptions } from "../../src/shared/useEventOptions.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
@@ -182,6 +182,77 @@ for (const family of ["gba", "gbc"] as const) describe(`${family} AddEventDialog
     await screen.findByLabelText("Script text"); change("Script text", "Keep me"); fireEvent.click(add());
     expect(await screen.findByRole("alert")).toHaveProperty("textContent", "A maps/A: name taken");
     expect((screen.getByLabelText("Script text") as HTMLTextAreaElement).value).toBe("Keep me"); expect(h.onCreated).not.toHaveBeenCalled();
+  });
+  it("StrictMode loading focus repairs the canvas default-focus steal and restores the Add opener", async () => {
+    const project = deferred<Response>(); const map = deferred<Response>();
+    network(url => url === "/api/event-options" ? project.promise : url.startsWith("/api/event-options/") ? map.promise : undefined);
+    const cancel = vi.fn();
+    function Host() {
+      const [open, setOpen] = useState(false);
+      return <><button onClick={() => setOpen(true)}>Add opener</button>
+        {open && <AddEventDialog adapter={family === "gba" ? gba : gbc} mapName="A" kind="warp" x={2} y={1} createEvent={vi.fn(async () => null)} onCreated={vi.fn()} onCancel={() => { cancel(); setOpen(false); }} />}
+      </>;
+    }
+    render(<StrictMode><Host /></StrictMode>, { reactStrictMode: true });
+    const opener = screen.getByRole("button", { name: "Add opener" }); opener.focus();
+    fireEvent.pointerDown(opener); fireEvent.mouseDown(opener); fireEvent.click(opener);
+    const dialog = screen.getByRole("dialog");
+    // The browser can focus the canvas/opener after React's synchronous layout focus.
+    opener.focus(); expect(document.activeElement).toBe(opener);
+    await tick();
+    expect(dialog.contains(document.activeElement)).toBe(true);
+    expect(document.activeElement).toBe(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(screen.getByText("Loading event options...")).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" })); await tick();
+    expect(cancel).toHaveBeenCalledTimes(1); expect(screen.queryByRole("dialog")).toBeNull(); expect(document.activeElement).toBe(opener);
+    await act(async () => { project.resolve(response(options(family))); map.resolve(response(mapOptions)); });
+  });
+  it("StrictMode loading Add owns document Escape from body and honors a child-consumed Escape", async () => {
+    const project = deferred<Response>(); const map = deferred<Response>();
+    network(url => url === "/api/event-options" ? project.promise : url.startsWith("/api/event-options/") ? map.promise : undefined);
+    const cancel = vi.fn();
+    render(<StrictMode><AddEventDialog adapter={family === "gba" ? gba : gbc} mapName="A" kind="warp" x={2} y={1} createEvent={vi.fn(async () => null)} onCreated={vi.fn()} onCancel={cancel} /></StrictMode>, { reactStrictMode: true });
+    await tick(); const dialog = screen.getByRole("dialog"); expect(dialog.contains(document.activeElement)).toBe(true);
+    const button = within(dialog).getByRole("button", { name: "Cancel" });
+    button.addEventListener("keydown", event => event.preventDefault(), { once: true });
+    fireEvent.keyDown(button, { key: "Escape" }); expect(cancel).not.toHaveBeenCalled();
+    (document.activeElement as HTMLElement).blur(); expect(document.activeElement).toBe(document.body);
+    expect(fireEvent.keyDown(document, { key: "Escape" })).toBe(false); expect(cancel).toHaveBeenCalledTimes(1);
+    await act(async () => { project.resolve(response(options(family))); map.resolve(response(mapOptions)); });
+  });
+  it("StrictMode stacked Save owns body Escape without closing the loading Add dialog", async () => {
+    const project = deferred<Response>(); const map = deferred<Response>();
+    network(url => url === "/api/event-options" ? project.promise : url.startsWith("/api/event-options/") ? map.promise : undefined);
+    const addCancel = vi.fn(); const saveCancel = vi.fn();
+    function Host() {
+      const [save, setSave] = useState(true);
+      return <><AddEventDialog adapter={family === "gba" ? gba : gbc} mapName="A" kind="warp" x={2} y={1} createEvent={vi.fn(async () => null)} onCreated={vi.fn()} onCancel={addCancel} />
+        {save && <SaveDialog mapName="A" onCommitted={vi.fn()} onCancel={() => { saveCancel(); setSave(false); }} />}
+      </>;
+    }
+    render(<StrictMode><Host /></StrictMode>, { reactStrictMode: true }); await tick();
+    const save = screen.getByRole("dialog", { name: "Save changes" });
+    const button = within(save).getByRole("button", { name: "Cancel" });
+    button.addEventListener("keydown", event => event.preventDefault(), { once: true });
+    fireEvent.keyDown(button, { key: "Escape" }); expect(saveCancel).not.toHaveBeenCalled(); expect(addCancel).not.toHaveBeenCalled();
+    (document.activeElement as HTMLElement).blur(); expect(document.activeElement).toBe(document.body);
+    expect(fireEvent.keyDown(document, { key: "Escape" })).toBe(false);
+    expect(saveCancel).toHaveBeenCalledTimes(1); expect(addCancel).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog", { name: "Save changes" })).toBeNull(); expect(screen.getByRole("dialog").getAttribute("aria-label")).toMatch(/^Add Warp/);
+    await act(async () => { project.resolve(response(options(family))); map.resolve(response({ ...mapOptions, warps: [{ n: family === "gba" ? 0 : 1, x: 3, y: 4 }] })); });
+  });
+  it("StrictMode creating Add consumes body Escape without canceling the deferred create", async () => {
+    const project = deferred<Response>(); const map = deferred<Response>(); const pending = deferred<{ kind: "object"; index: number }>();
+    network(url => url === "/api/event-options" ? project.promise : url.startsWith("/api/event-options/") ? map.promise : undefined);
+    const cancel = vi.fn(); const created = vi.fn(); const create = vi.fn((_form: AddEventForm) => pending.promise);
+    render(<StrictMode><AddEventDialog adapter={family === "gba" ? gba : gbc} mapName="A" kind="object" x={2} y={1} createEvent={create} onCreated={created} onCancel={cancel} /></StrictMode>, { reactStrictMode: true });
+    await tick(); expect(screen.getByRole("dialog").contains(document.activeElement)).toBe(true);
+    await act(async () => { project.resolve(response(options(family))); map.resolve(response(mapOptions)); });
+    await screen.findByLabelText("Script text"); change("Script text", "Hello"); fireEvent.click(add());
+    (document.activeElement as HTMLElement).blur();
+    expect(fireEvent.keyDown(document, { key: "Escape" })).toBe(false);
+    expect(cancel).not.toHaveBeenCalled(); expect(created).not.toHaveBeenCalled(); expect(create).toHaveBeenCalledTimes(1); expect(add().disabled).toBe(true);
+    await act(async () => { pending.resolve({ kind: "object", index: 0 }); }); expect(created).toHaveBeenCalledWith({ kind: "object", index: 0 });
   });
   it("Save stacks above Add: only topmost Escape closes and Tab is trapped; focus returns to Add button", async () => {
     network();
