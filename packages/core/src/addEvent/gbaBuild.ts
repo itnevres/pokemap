@@ -91,11 +91,12 @@ export function buildGbaAddEvent(map: MapData, scriptsInc: string | null, form: 
     catch (error) { return fail("BAD_OPTION", error instanceof Error ? error.message : String(error), inc); }
   };
   /** Charmap width of each displayed line of a `.string` text body (split at \n, \l, \p and $). */
-  const lineWidths = (body: string): number[] =>
+  const lineWidths = (body: string, strict = true): number[] =>
     [...body.matchAll(new RegExp(`\\.string\\s+(${GBA_STRING.source})`, "g"))].map(m => m[1]!.slice(1, -1)).join("")
       .split(/\\[nlp]|\$/).map(line => {
-        const tokens = tokenize(line, ctx.charmap);
-        if ("refusal" in tokens) return fail("BAD_OPTION", tokens.refusal, inc);
+        // ponytail: interpolated values and control codes are not measured; upgrade = expand per code.
+        const tokens = tokenize(line.replace(/\{[^}]*\}/g, ""), ctx.charmap);
+        if ("refusal" in tokens) return strict ? fail("BAD_OPTION", tokens.refusal, inc) : 0;
         return tokens.tokens.reduce((width, token) => width + ctx.charmap.widthOf(token), 0);
       });
   /** Engine bound for a hidden item's flag: asm/macros/map.inc:90-91 stores `flag - FLAG_HIDDEN_ITEMS_START`, and
@@ -169,9 +170,14 @@ export function buildGbaAddEvent(map: MapData, scriptsInc: string | null, form: 
     }
     // Edited texts use the project charmap; no displayed line may be wider than the widest line it was copied from.
     // ponytail: a character count, not the proportional font's pixels; upgrade = a per-glyph pixel width table.
-    const limit = Math.max(SIGN_WIDTH, ...Object.values(original.texts).flatMap(lineWidths));
-    for (const [name, body] of Object.entries(preview.texts)) {
-      if (lineWidths(body).some(w => w > limit)) fail("BAD_OPTION", `text ${name} has a line wider than ${limit} characters`, inc);
+    const editedTexts = Object.entries(preview.texts).filter(([name]) =>
+      choice.texts[name]!.replace(/\r\n/g, "\n") !== original.texts[name]?.replace(/\r\n/g, "\n"));
+    if (editedTexts.length) {
+      // Existing corpus text is a width reference, not user input to validate.
+      const limit = Math.max(SIGN_WIDTH, ...Object.values(original.texts).flatMap(body => lineWidths(body, false)));
+      for (const [name, body] of editedTexts) {
+        if (lineWidths(body).some(w => w > limit)) fail("BAD_OPTION", `text ${name} has a line wider than ${limit} characters`, inc);
+      }
     }
     const renames = new Map<string, string>([[choice.from, label]]);
     for (const [i, name] of Object.keys(preview.texts).entries()) renames.set(name, claim(`${textLabelOf(label)}${i ? i + 1 : ""}`));

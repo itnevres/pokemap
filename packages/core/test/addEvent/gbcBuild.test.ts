@@ -280,3 +280,32 @@ it("edited copy uses charmap token widths for original and edited lines", () => 
   refuses("BAD_OPTION", () => widthCopy(original, edited));
   expect(() => widthCopy(original, edited)).toThrow("text WidthText has a line wider than 21 characters");
 });
+
+it("unedited Buena corpus copy preserves RGBDS interpolation without measuring text", () => {
+  const source = readFileSync(join(root, "maps/RadioTower2F.asm"), "utf8");
+  const original = copyGbcScriptBody(source, "Buena");
+  expect(Object.values(original.texts).join("\n")).toContain("{d:BLUE_CARD_POINT_CAP}");
+  const context: GbcAddCtx = { ...ctx, mapOptions: { ...ctx.mapOptions, localScripts: ["Buena"] },
+    charmap: { family: "gbc", has: () => { throw new Error("unchanged text was tokenized"); },
+      widthOf: () => { throw new Error("unchanged text was measured"); } } };
+  const result = buildGbcAddEvent(source, "RadioTower2F", { kind: "bg", x: 1, y: 2, fields: {},
+    script: { mode: "copy", from: "Buena", label: "CopiedBuena", body: original.body,
+      texts: Object.fromEntries(Object.entries(original.texts).map(([name, body]) => [name, body.replace(/\r?\n/g, "\r\n")])) } }, context);
+  expect(result.text).toContain("CopiedBuena:");
+  expect(result.text).toContain("{d:BLUE_CARD_POINT_CAP}");
+});
+it("edited GBC copy ignores RGBDS interpolation in original and edited widths", () => {
+  const result = widthCopy({ WidthText: '\ttext "{d:BLUE_CARD_POINT_CAP} Hi"\n\tdone\n' },
+    { WidthText: '\ttext "{d:X} Hello"\n\tdone\n' });
+  expect(result.text).toContain('text "{d:X} Hello"');
+});
+it("edited GBC copy accepts a trailing @ string terminator", () => {
+  const result = widthCopy({ WidthText: '\ttext "Hello@"\n\tdone\n' },
+    { WidthText: '\ttext "Hi@"\n\tdone\n' });
+  expect(result.text).toContain('text "Hi@"');
+});
+it("edited GBC copy measures corpus originals without refusing unknown characters", () => {
+  const original = { WidthText: '\ttext "Hi\u2603"\n\tdone\n' };
+  expect(widthCopy(original, { WidthText: '\ttext "Hello"\n\tdone\n' }).text).toContain('text "Hello"');
+  refuses("BAD_OPTION", () => widthCopy(original, { WidthText: '\ttext "Hello\u2603"\n\tdone\n' }));
+});
