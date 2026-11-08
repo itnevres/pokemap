@@ -94,9 +94,8 @@ export interface AddEventFieldAdapter {
 
 export interface EngineAdapter {
   family: Family;
-  // Optional for structural legacy shell/test adapters; both concrete engine adapters implement these.
-  addEventFields?: AddEventFieldAdapter["addEventFields"];
-  addEventDefaults?: AddEventFieldAdapter["addEventDefaults"];
+  addEventFields: AddEventFieldAdapter["addEventFields"];
+  addEventDefaults: AddEventFieldAdapter["addEventDefaults"];
   /** Shown after the title ("Crystal" for GBC); null renders nothing (GBA). */
   label: string | null;
   capabilities: Capabilities;

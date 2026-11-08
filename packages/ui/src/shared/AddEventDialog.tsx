@@ -84,7 +84,12 @@ export function AddEventDialog(props: AddEventDialogProps) {
   const [error, setError] = useState<string | null>(null);
   const panel = useRef<HTMLDivElement>(null);
   const busy = useRef(false);
-  useLayoutEffect(() => { panel.current?.focus(); }, []);
+  useLayoutEffect(() => {
+    const element = panel.current;
+    if (!element || [...document.querySelectorAll('[aria-modal="true"]')].at(-1) !== element) return;
+    const first = [...element.querySelectorAll<HTMLElement>("button,input,select,textarea,[tabindex]")].find(control => !control.matches(":disabled") && control.tabIndex >= 0 && !control.hidden);
+    (first ?? element).focus();
+  }, [Boolean(context)]);
   useEffect(() => {
     if (api.project) return;
     let active = true;
@@ -95,6 +100,10 @@ export function AddEventDialog(props: AddEventDialogProps) {
   const cancel = () => { if (!busy.current && topmost()) props.onCancel(); };
   const keyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (!topmost()) return;
+    if (event.key === "Tab" && panel.current && event.target === panel.current) {
+      const controls = [...panel.current.querySelectorAll<HTMLElement>("button,input,select,textarea,[tabindex]")].filter(control => !control.matches(":disabled") && control.tabIndex >= 0 && !control.hidden);
+      event.preventDefault(); (event.shiftKey ? controls.at(-1) : controls[0])?.focus(); return;
+    }
     trapDialogFocus(event);
     if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); cancel(); }
   };
@@ -114,7 +123,10 @@ function SelectField({ label, options, value, onChange, disabled, optionLabel }:
   if (!options.length) return <label>{label}<input aria-label={label} disabled={disabled} value={value} onChange={e => onChange(e.target.value)} /></label>;
   const matches = options.filter(option => (optionLabel?.(option) ?? option).toLowerCase().includes(query.toLowerCase()));
   return <div className="add-event-dialog__select">
-    {options.length > 20 && <label>Search {label}<input aria-label={`Search ${label}`} value={query} disabled={disabled} onChange={e => setQuery(e.target.value)} /></label>}
+    {options.length > 20 && <label>Search {label}<input aria-label={`Search ${label}`} value={query} disabled={disabled} onChange={e => {
+      const next = e.target.value; setQuery(next);
+      if (value && !(optionLabel?.(value) ?? value).toLowerCase().includes(next.toLowerCase())) onChange("");
+    }} /></label>}
     <label>{label}<select aria-label={label} value={value} disabled={disabled} onChange={e => onChange(e.target.value)}>
       <option value="">Choose...</option>
       {matches.map(option => <option key={option} value={option}>{optionLabel?.(option) ?? option}</option>)}
@@ -144,7 +156,13 @@ function EventForm(props: AddEventDialogProps & { api: OptionsApi; ctx: AddEvent
     setPreviewing({}); setCopied(null); setObjectType(type); setValues({ ...adapter.addEventDefaults(kind, type, ctx), ...props.initialFields }); setError(null);
   };
   const retire = (key: string) => { sequence.current[key] = (sequence.current[key] ?? 0) + 1; setPreviewing(v => ({ ...v, [key]: false })); };
-  const changeMode = (key: string, mode: string) => { retire(key); setValues(v => ({ ...v, [`${key}Mode`]: mode, [`${key}From`]: "" })); setError(null); if (key === "script") setCopied(null); };
+  const changeMode = (key: string, mode: string) => {
+    retire(key);
+    setValues(v => ({ ...v, [`${key}Mode`]: mode, [`${key}From`]: "",
+      ...(mode === "new" && key !== "flag" && key !== "varName" ? { [`${key}Text`]: "", ...(key === "script" ? { scriptBody: "" } : {}) } : {}),
+    }));
+    setError(null); if (key === "script") setCopied(null);
+  };
   const preview = async (key: string, from: string) => {
     const ticket = (sequence.current[key] ?? 0) + 1; sequence.current[key] = ticket;
     set(`${key}From`, from); if (key === "script") setCopied(null); else set(`${key}Text`, "");
@@ -191,9 +209,9 @@ function EventForm(props: AddEventDialogProps & { api: OptionsApi; ctx: AddEvent
       return true;
     }
     const mode = values[`${key}Mode`] ?? "new";
-    if (key === "flag" || key === "varName") return mode === "new" ? identifier.test(values[`${key}Name`] ?? "") : !!value && (!field.options?.length || field.options.includes(value));
+    if (key === "flag" || key === "varName") return mode === "new" ? identifier.test(values[`${key}Name`] ?? "") : !!value && (field.options?.length ? field.options.includes(value) : identifier.test(value));
     if (key === "script") {
-      if (mode === "existing") return !!value && (!field.options?.length || field.options.includes(value));
+      if (mode === "existing") return !!value && (field.options?.length ? field.options.includes(value) : identifier.test(value));
       if (!identifier.test(values.scriptLabel ?? "")) return false;
       return mode === "new" ? !!values.scriptText?.trim() : !!values.scriptFrom && !!copied && !!values.scriptBody?.trim();
     }

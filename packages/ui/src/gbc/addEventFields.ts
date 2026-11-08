@@ -24,9 +24,21 @@ export function addEventFields(kind: EventKind, objectType: ObjectType, ctx: Add
 }
 export function addEventDefaults(kind: EventKind, objectType: ObjectType, ctx: AddEventContext): Record<string, string> {
   const o = ctx.options, cap = kind[0]!.toUpperCase() + kind.slice(1);
-  const taken = new Set([...ctx.map.entryPoints, ...ctx.map.localScripts, ...ctx.map.localTexts, ...o.flags]);
+  // Data labels and object constants are not enumerated by today's MapEventOptions. Use
+  // every exposed namespace (and an all-labels extension if supplied), then rely on server checks.
+  const labels = "labels" in ctx.map && Array.isArray(ctx.map.labels) ? ctx.map.labels.filter((name): name is string => typeof name === "string") : [];
+  const taken = new Set([...ctx.map.entryPoints, ...ctx.map.localScripts, ...ctx.map.localTexts, ...o.flags, ...o.vars, ...labels]);
+  const candidates = (n: number) => {
+    const label = `${ctx.mapName}Pokemap${cap}${n}`;
+    const names = kind === "warp" ? [] : [label];
+    if (kind !== "warp" && (kind !== "object" || objectType === "npc")) names.push(`${label}Text`);
+    if (kind === "bg") names.push(`${label}Wrapper`);
+    if (kind === "object" && objectType === "trainer") names.push(...["SeenText", "BeatenText", "After", "AfterText"].map(suffix => label + suffix));
+    if (kind === "object" || kind === "bg") names.push(`EVENT_${ctx.mapName.toUpperCase()}_POKEMAP_${cap.toUpperCase()}${n}`);
+    return names;
+  };
   let n = 1;
-  while (taken.has(`${ctx.mapName}Pokemap${cap}${n}`) || taken.has(`${ctx.mapName}Pokemap${cap}${n}Text`) || taken.has(`${ctx.mapName}Pokemap${cap}${n}Wrapper`)) n++;
+  while (candidates(n).some(name => taken.has(name))) n++;
   const label = `${ctx.mapName}Pokemap${cap}${n}`;
   return { sprite: o.sprites.includes("SPRITE_YOUNGSTER") ? "SPRITE_YOUNGSTER" : o.sprites[0] ?? "", movement: o.movements.includes("SPRITEMOVEDATA_STANDING_DOWN") ? "SPRITEMOVEDATA_STANDING_DOWN" : o.movements[0] ?? "", rangeX: "0", rangeY: "0", hourStart: "-1", hourEnd: "-1", palette: "0", objectConst: "", flagMode: objectType === "npc" && kind !== "bg" ? "existing" : "new", flag: "-1", flagName: `EVENT_${ctx.mapName.toUpperCase()}_POKEMAP_${cap.toUpperCase()}${n}`, scriptMode: "new", scriptLabel: label, script: ctx.map.entryPoints[0] ?? "", scriptText: "", label: kind === "bg" ? `${label}Wrapper` : label, item: o.items[0] ?? "", trainer: o.trainers[0]?.id ?? "", sightRange: "3", seenMode: "new", beatenMode: "new", afterMode: "new", seenText: "", beatenText: "", afterText: "", bgType: o.bgTypes.includes("BGEVENT_READ") ? "BGEVENT_READ" : o.bgTypes[0] ?? "", scene: ctx.map.scenes[0] ?? "-1", destMap: o.maps[0] ?? "", destWarp: String(ctx.map.warps[0]?.n ?? "") };
 }

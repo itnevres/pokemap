@@ -97,6 +97,8 @@ for (const family of ["gba", "gbc"] as const) {
       const dungeon = { id: "unused", name: "unused", maps: [] };
       const useSession = family === "gba" ? useEditSession : useGbcEditSession;
       const adapter: EngineAdapter = {
+        addEventFields: () => [],
+        addEventDefaults: () => ({}),
         family, label: null, capabilities: family === "gba" ? GBA_CAPABILITIES : GBC_CAPABILITIES,
         useRuntime({ selected, requestPrompt }) {
           const session = useSession(selected);

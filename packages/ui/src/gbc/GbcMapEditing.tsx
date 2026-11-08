@@ -87,6 +87,17 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
     if (isCurrent()) setEditRequests(n => n + 1);
     try { return await operation(); } finally { if (isCurrent()) setEditRequests(n => n - 1); }
   };
+  const requestSession: UseGbcEditSessionResult = { ...session,
+    beginStroke: () => trackEdit(() => session.beginStroke()),
+    applyPaint: body => trackEdit(() => session.applyPaint(body)),
+    endStroke: () => trackEdit(() => session.endStroke()),
+    moveEvent: (...args) => trackEdit(() => session.moveEvent(...args)),
+    addEvent: (...args) => trackEdit(() => session.addEvent(...args)),
+    deleteEvent: (...args) => trackEdit(() => session.deleteEvent(...args)),
+    undo: () => trackEdit(() => session.undo()),
+    redo: () => trackEdit(() => session.redo()),
+    discard: () => trackEdit(() => session.discard()),
+  };
   const [returnFocus, setReturnFocus] = useState<GbcEventKind | null>(null);
   useLayoutEffect(() => {
     if (returnFocus) {
@@ -134,10 +145,10 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
   const pickedId = stamp && stamp.cells.length === 1 ? stamp.cells[0]!.metatileId : null;
 
   const onMove = (next: { kind: GbcEventKind; index: number; x: number; y: number }) => {
-    session.moveEvent(next.kind, next.index, next.x, next.y).then(ok).catch((e: unknown) => fail(e, "Failed to move event."));
+    requestSession.moveEvent(next.kind, next.index, next.x, next.y).then(ok).catch((e: unknown) => fail(e, "Failed to move event."));
   };
   const onDelete = (ref: GbcEventRef): Promise<void> =>
-    session.deleteEvent(ref.kind, ref.index).then(({ warpRenumberWarnings }) => {
+    requestSession.deleteEvent(ref.kind, ref.index).then(({ warpRenumberWarnings }) => {
       if (!isCurrent()) return;
       ok();
       setEvent(null);
@@ -147,7 +158,7 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
     // add always appends, so the copy's index is the list's length BEFORE the call.
     const list = kind === "object" ? session.events.objects : kind === "warp" ? session.events.warps : kind === "coord" ? session.events.coords : session.events.bgs;
     const newIndex = list.length;
-    return session.addEvent(kind, args).then(() => {
+    return requestSession.addEvent(kind, args).then(() => {
       if (!isCurrent()) return;
       ok();
       setEvent({ kind, index: newIndex });
@@ -157,7 +168,7 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
   const onDiscard = () => {
     placement.clear();
     if (!window.confirm("Discard all unsaved changes on this map? This cannot be undone.")) return;
-    session.discard().then(() => { ok(); onDiscarded?.(); }).catch((e: unknown) => fail(e, "Failed to discard."));
+    requestSession.discard().then(() => { ok(); onDiscarded?.(); }).catch((e: unknown) => fail(e, "Failed to discard."));
   };
 
   const canvasProps: GbcMapEditingCanvasProps | null =
@@ -168,11 +179,7 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
           data,
           time,
           hoveredMetatile: onHoverMetatile,
-          editSession: { ...session,
-            beginStroke: () => trackEdit(() => session.beginStroke()),
-            applyPaint: body => trackEdit(() => session.applyPaint(body)),
-            endStroke: () => trackEdit(() => session.endStroke()),
-          },
+          editSession: requestSession,
           activeTool,
           placing: placement.placing,
           onEventPick: placement.onEventPick,
@@ -191,8 +198,8 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
         tools={GBC_TOOLS}
         availableTools={GBC_TOOLS}
         isDirty={session.isDirty}
-        onUndo={() => void session.undo().then(ok).catch((e: unknown) => fail(e, "Undo failed."))}
-        onRedo={() => void session.redo().then(ok).catch((e: unknown) => fail(e, "Redo failed."))}
+        onUndo={() => void requestSession.undo().then(ok).catch((e: unknown) => fail(e, "Undo failed."))}
+        onRedo={() => void requestSession.redo().then(ok).catch((e: unknown) => fail(e, "Redo failed."))}
         canUndo={session.canUndo}
         canRedo={session.canRedo}
         onOpenSave={() => { placement.clear(); onOpenSave(); }}
@@ -246,7 +253,7 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
     <EditingWorkspace active={active} top={top} side={side} canvasProps={canvasProps} Canvas={GbcMapCanvas} renderCanvas={renderCanvas} />
     {placement.pick && mapName && <AddEventDialog adapter={addEventAdapter} mapName={mapName}
       kind={placement.pick.kind} x={placement.pick.x} y={placement.pick.y}
-      createEvent={form => (session as UseGbcEditSessionResult & EventCreateSession).createEvent(form)}
+      createEvent={form => trackEdit(() => (session as UseGbcEditSessionResult & EventCreateSession).createEvent(form))}
       onBusyChange={busy => { if (isCurrent()) setCreating(busy); }}
       onCancel={() => { placement.clear(); placement.barRef.current?.querySelector<HTMLButtonElement>(`button[aria-label^="Add ${placement.pick?.kind === "coord" ? "Coord" : placement.pick?.kind === "bg" ? "BG" : placement.pick?.kind === "warp" ? "Warp" : "Object"}:"]`)?.focus(); }}
       onCreated={created => {

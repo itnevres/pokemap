@@ -6,7 +6,7 @@ const options: EventOptions = {
   family: "gbc", sprites: ["SPRITE_YOUNGSTER"],
   movements: ["SPRITEMOVEDATA_STANDING_DOWN"], flags: ["EVENT_FOUND"], vars: [],
   items: ["POTION"], trainers: [{ id: "YOUNGSTER,JOEY1", label: "Joey" }],
-  bgTypes: ["BGEVENT_READ", "BGEVENT_ITEM", "BGEVENT_IFSET", "BGEVENT_IFNOTSET"], facings: ["BG_EVENT_PLAYER_FACING_ANY"], secretBases: ["SECRET_BASE_RED_CAVE1"],
+  bgTypes: ["BGEVENT_COPY", "BGEVENT_READ", "BGEVENT_ITEM", "BGEVENT_IFSET", "BGEVENT_IFNOTSET"], facings: ["BG_EVENT_PLAYER_FACING_ANY"], secretBases: ["SECRET_BASE_RED_CAVE1"],
   palettes: ["0", "PAL_NPC_RED"], maps: ["ROUTE_29"], objectCap: 15, freeFlagSlots: 48, freeVarSlots: 9,
 };
 const map: MapEventOptions = { entryPoints: ["ObjectEvent", "Route29Npc"], localScripts: ["Route29Npc"], localTexts: ["Route29Text"], scenes: ["SCENE_ROUTE29_NOOP"], warps: [{ n: 1, x: 2, y: 3 }] };
@@ -55,6 +55,40 @@ describe("gbc add event field specs", () => {
     const values = addEventDefaults("bg", "npc", ctx);
     expect(values.label).toBe("Route29PokemapBg1Wrapper");
     expect(values.label).not.toBe(values.scriptLabel);
+  });
+  it.each([
+    ["localScripts", "Route29PokemapObject1"],
+    ["localTexts", "Route29PokemapObject1SeenText"],
+    ["entryPoints", "Route29PokemapObject1After"],
+    ["flags", "EVENT_ROUTE29_POKEMAP_OBJECT1"],
+  ] as const)("defaults skip a generated name exposed in %s, including data/companion labels and flags", (list, occupied) => {
+    const next = addEventDefaults("object", "trainer", { ...ctx,
+      map: list === "flags" ? map : { ...map, [list]: [...map[list], occupied] },
+      options: list === "flags" ? { ...options, flags: [...options.flags, occupied] } : options,
+    });
+    expect(next.label).toBe("Route29PokemapObject2");
+    expect(next.flagName).toBe("EVENT_ROUTE29_POKEMAP_OBJECT2");
+  });
+  it("BG defaults skip an occupied generated hidden-item wrapper and flag", () => {
+    const next = addEventDefaults("bg", "npc", { ...ctx, map: { ...map, localTexts: [...map.localTexts, "Route29PokemapBg1Wrapper"] }, options: { ...options, flags: [...options.flags, "EVENT_ROUTE29_POKEMAP_BG2"] } });
+    expect(next.label).toBe("Route29PokemapBg3Wrapper");
+    expect(next.scriptLabel).toBe("Route29PokemapBg3");
+  });
+  it("repeated item ball defaults advance from the staged generated flag even when its data label is unexposed", () => {
+    const next = addEventDefaults("object", "itemball", { ...ctx, options: { ...options, flags: [...options.flags, "EVENT_ROUTE29_POKEMAP_OBJECT1"] } });
+    expect(next.label).toBe("Route29PokemapObject2");
+  });
+  it.each(["Route29PokemapObject1SeenText", "Route29PokemapObject1BeatenText", "Route29PokemapObject1After", "Route29PokemapObject1AfterText"])("trainer defaults avoid generated companion %s", occupied => {
+    const next = addEventDefaults("object", "trainer", { ...ctx, map: { ...map, localTexts: [...map.localTexts, occupied] } });
+    expect(next.label).toBe("Route29PokemapObject2");
+  });
+  it("NPC defaults keep the lowest suffix when only a trainer-only name is occupied", () => {
+    const next = addEventDefaults("object", "npc", { ...ctx, map: { ...map, localTexts: [...map.localTexts, "Route29PokemapObject1SeenText"] } });
+    expect(next.scriptLabel).toBe("Route29PokemapObject1");
+  });
+  it("uses an all-labels extension if a caller can supply one", () => {
+    const withLabels = { ...ctx, map: { ...map, labels: ["Route29PokemapObject1"] } };
+    expect(addEventDefaults("object", "itemball", withLabels).label).toBe("Route29PokemapObject2");
   });
   it("defaults use project values and choose the lowest unused local script name", () => {
     const first = addEventDefaults("object", "npc", ctx);

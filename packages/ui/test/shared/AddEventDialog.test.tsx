@@ -76,6 +76,58 @@ for (const family of ["gba", "gbc"] as const) describe(`${family} AddEventDialog
     expect([...select.options].map(o => o.value).filter(Boolean)).toEqual(["SPRITE_24"]);
     expect(screen.getByLabelText("Movement").tagName).toBe("INPUT");
   });
+  it("filtering out the selected sprite clears its model value before Add can submit it", async () => {
+    network(undefined, { ...options(family), sprites: Array.from({ length: 25 }, (_, n) => `SPRITE_${n}`) });
+    const h = standalone(); await screen.findByLabelText("Script text"); change("Script text", "Hello"); expect(add().disabled).toBe(false);
+    change("Search Sprite", "SPRITE_24"); expect((screen.getByLabelText("Sprite") as HTMLSelectElement).value).toBe("");
+    expect(add().disabled).toBe(true); fireEvent.submit(add().closest("form")!); expect(h.createEvent).not.toHaveBeenCalled();
+    change("Sprite", "SPRITE_24"); expect(add().disabled).toBe(false); fireEvent.click(add()); await tick();
+    expect(h.createEvent.mock.calls[0]?.[0].fields.sprite).toBe("SPRITE_24");
+  });
+  it("empty existing script options validate identifier-shaped fallback text", async () => {
+    network(url => url.startsWith("/api/event-options/") ? Promise.resolve(response({ ...mapOptions, entryPoints: [] })) : undefined);
+    standalone(); await screen.findByLabelText("Script source"); change("Script source", "existing");
+    for (const invalid of ["1bad", "two words", " "]) { change("Script", invalid); expect(add().disabled).toBe(true); }
+    change("Script", "Valid_Script"); expect(add().disabled).toBe(false);
+  });
+  if (family === "gba") it("empty existing var options validate identifier-shaped fallback text", async () => {
+    network(undefined, { ...options(family), vars: [] }); standalone("coord"); await screen.findByLabelText("Script text"); change("Script text", "Hello");
+    for (const invalid of ["1bad", "two words", " "]) { change("Var", invalid); expect(add().disabled).toBe(true); }
+    change("Var", "VAR_VALID"); expect(add().disabled).toBe(false);
+  });
+  it("switching trainer Copy to New empties its text box and requires new content", async () => {
+    network(url => url.includes("/text?") ? Promise.resolve(response({ label: "OldText", text: "Copied words" })) : undefined);
+    standalone(); await screen.findByLabelText("Object type"); change("Object type", "trainer");
+    change("Seen source", "copy"); change("Seen copy from", "OldText"); await tick();
+    expect((screen.getByLabelText("Seen text") as HTMLTextAreaElement).value).toBe("Copied words");
+    change("Beaten text", "Beaten words"); change("After battle text", "After words"); expect(add().disabled).toBe(false);
+    change("Seen source", "new"); expect((screen.getByLabelText("Seen text") as HTMLTextAreaElement).value).toBe(""); expect(add().disabled).toBe(true);
+    change("Seen text", "New words"); expect(add().disabled).toBe(false);
+  });
+  it("switching back to a New NPC script empties the previous draft text", async () => {
+    network(); standalone(); await screen.findByLabelText("Script text"); change("Script text", "Previous draft");
+    change("Script source", "existing"); change("Script source", "new");
+    expect((screen.getByLabelText("Script text") as HTMLTextAreaElement).value).toBe(""); expect(add().disabled).toBe(true);
+  });
+  it.each(["warp", "coord", "bg"] as const)("%s traps keyboard traversal while options load and from the first enabled form control", async kind => {
+    const project = deferred<Response>(); const map = deferred<Response>();
+    network(url => url === "/api/event-options" ? project.promise : url.startsWith("/api/event-options/") ? map.promise : undefined);
+    standalone(kind); const loadingCancel = screen.getByRole("button", { name: "Cancel" });
+    expect(document.activeElement).toBe(loadingCancel); expect(fireEvent.keyDown(document.activeElement!, { key: "Tab", shiftKey: true })).toBe(false); expect(document.activeElement).toBe(loadingCancel);
+    await act(async () => { project.resolve(response(options(family))); map.resolve(response({ ...mapOptions, warps: [{ n: family === "gba" ? 0 : 1, x: 3, y: 4 }] })); });
+    const dialog = screen.getByRole("dialog"); const controls = [...dialog.querySelectorAll<HTMLElement>("button,input,select,textarea")].filter(c => !c.matches(":disabled") && c.tabIndex >= 0);
+    expect(document.activeElement).toBe(controls[0]);
+    expect(fireEvent.keyDown(document.activeElement!, { key: "Tab", shiftKey: true })).toBe(false); expect(document.activeElement).toBe(controls.at(-1));
+    expect(fireEvent.keyDown(document.activeElement!, { key: "Tab" })).toBe(false); expect(document.activeElement).toBe(controls[0]);
+  });
+  it("two form submits in one batch synchronously latch a single deferred create", async () => {
+    network(); const pending = deferred<{ kind: "object"; index: number }>(); const create = vi.fn((_form: AddEventForm) => pending.promise);
+    standalone("object", create); await screen.findByLabelText("Script text"); change("Script text", "Hello");
+    const form = add().closest("form")!;
+    act(() => { fireEvent.submit(form); fireEvent.submit(form); });
+    expect(create).toHaveBeenCalledTimes(1);
+    await act(async () => { pending.resolve({ kind: "object", index: 0 }); });
+  });
   it("copy fills editable script body, text bodies and a default new label", async () => {
     const fetcher = network(url => url.includes("/copy?") ? Promise.resolve(response({ label: "OldScript", body: "end", texts: { OldText: "text body" } })) : undefined);
     standalone(); await screen.findByLabelText("Script source"); change("Script source", "copy"); change("Script copy from", "OldScript");
@@ -154,7 +206,7 @@ for (const family of ["gba", "gbc"] as const) describe(`${family} AddEventDialog
 
   function workspace(name = "A", project = options(family), readOnly = false, count = 0, noScenes = false) {
     const pending = deferred<Response>();
-    const fetcher = network(url => url.endsWith("/event/create") || url.endsWith("/paint/begin") ? pending.promise : undefined, project);
+    const fetcher = network((_url, init) => init?.method === "POST" ? pending.promise : undefined, project);
     let canvas: MapEditingCanvasProps | GbcMapEditingCanvasProps | null = null;
     const data = { ...gbaData, map: { ...gbaData.map, objectEvents: Array.from({ length: count }, () => ({ x: 0, y: 0, elevation: 3, graphicsId: "OBJ_EVENT_GFX_YOUNGSTER", movementType: "MOVEMENT_TYPE_FACE_DOWN", movementRangeX: 0, movementRangeY: 0, trainerType: "TRAINER_TYPE_NONE", trainerSightOrBerryTreeId: "0", script: "0x0", flag: "0" })) } };
     const gbEvents = { ...events, sceneScripts: noScenes ? [] : events.sceneScripts, objects: Array.from({ length: count }, () => ({ x: 0, y: 0, sprite: "SPRITE_YOUNGSTER", moveData: "SPRITEMOVEDATA_STANDING_DOWN", radiusX: 0, radiusY: 0, hour1: "-1", hour2: "-1", palette: "0", objectType: "OBJECTTYPE_SCRIPT", sightRange: 0, script: "ObjectEvent", eventFlag: "-1", lineIndex: 1 })) };
@@ -209,6 +261,24 @@ for (const family of ["gba", "gbc"] as const) describe(`${family} AddEventDialog
     act(() => { paint = h.canvas!.editSession!.beginStroke(); }); await tick();
     for (const button of screen.getAllByRole("button", { name: /^Add (Object|Warp|Coord Event|BG Event):/ }) as HTMLButtonElement[]) { expect(button.disabled).toBe(true); expect(button.title).toMatch(/request.*in flight/i); }
     await act(async () => { h.pending.resolve(response(createdBody("object"))); await paint; });
+    expect((screen.getByRole("button", { name: /^Add Warp:/ }) as HTMLButtonElement).disabled).toBe(false);
+  });
+  it.each(["move", "delete", "duplicate", "undo", "redo"] as const)("real workspace pending %s disables all Add buttons until its POST settles", async action => {
+    const h = workspace("A", options(family), false, 1); await tick();
+    // Prime the real session flags so both toolbar history actions are available.
+    let prime!: Promise<void>; act(() => { prime = h.canvas!.editSession!.undo(); });
+    await act(async () => { h.pending.resolve(response({ ...createdBody("object"), canUndo: true, canRedo: true })); await prime; });
+    act(() => { h.canvas!.onSelectEvent?.({ kind: "object", index: 0 }); }); await tick();
+    const pending = deferred<Response>(); const previous = h.fetcher.getMockImplementation()!;
+    h.fetcher.mockImplementation((input, init) => init?.method === "POST" ? pending.promise : previous(input, init));
+    act(() => {
+      if (action === "move") h.canvas!.onMoveEvent?.({ kind: "object", index: 0, x: 3, y: 2 });
+      else fireEvent.click(screen.getByRole("button", { name: action === "delete" ? "Delete" : action === "duplicate" ? "Duplicate" : action === "undo" ? "Undo" : "Redo" }));
+    }); await tick();
+    const suffix = action === "move" ? "/event/move" : action === "delete" ? "/event/delete" : action === "duplicate" ? "/event/add" : `/${action}`;
+    expect(h.fetcher.mock.calls.some(([url]) => String(url).endsWith(suffix))).toBe(true);
+    for (const button of screen.getAllByRole("button", { name: /^Add (Object|Warp|Coord Event|BG Event):/ }) as HTMLButtonElement[]) { expect(button.disabled).toBe(true); expect(button.title).toMatch(/request.*in flight/i); }
+    await act(async () => { pending.resolve(response({ ...createdBody("object"), warpRenumberWarnings: [] })); });
     expect((screen.getByRole("button", { name: /^Add Warp:/ }) as HTMLButtonElement).disabled).toBe(false);
   });
   if (family === "gbc") it("real GBC workspace without scenes disables Coord with the reason", async () => {

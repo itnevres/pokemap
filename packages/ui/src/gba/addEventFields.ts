@@ -29,9 +29,21 @@ export function addEventFields(kind: EventKind, objectType: ObjectType, ctx: Add
 }
 export function addEventDefaults(kind: EventKind, objectType: ObjectType, ctx: AddEventContext): Record<string, string> {
   const o = ctx.options, cap = kind[0]!.toUpperCase() + kind.slice(1);
-  const taken = new Set([...ctx.map.entryPoints, ...ctx.map.localScripts, ...ctx.map.localTexts, ...o.flags, ...o.vars]);
+  // The options API exposes executable and text labels, plus staged flags/vars. An optional
+  // labels extension is consumed if a caller has one; the current hub does not expose all labels.
+  const labels = "labels" in ctx.map && Array.isArray(ctx.map.labels) ? ctx.map.labels.filter((name): name is string => typeof name === "string") : [];
+  const taken = new Set([...ctx.map.entryPoints, ...ctx.map.localScripts, ...ctx.map.localTexts, ...o.flags, ...o.vars, ...labels]);
+  const candidates = (n: number) => {
+    const script = `${ctx.mapName}_EventScript_Pokemap${cap}${n}`, text = `${ctx.mapName}_Text_Pokemap${cap}${n}`;
+    const names = kind === "warp" ? [] : [script];
+    if (kind !== "warp" && (kind !== "object" || objectType === "npc")) names.push(text);
+    if (kind === "object" && objectType === "trainer") names.push(...["Intro", "Defeated", "PostBattle"].map(suffix => text + suffix));
+    if (kind === "object" || kind === "bg") names.push(`FLAG_${ctx.mapName.toUpperCase()}_POKEMAP_${cap.toUpperCase()}${n}`);
+    if (kind === "coord") names.push(`VAR_${ctx.mapName.toUpperCase()}_POKEMAP${n}`);
+    return names;
+  };
   let n = 1;
-  while (taken.has(`${ctx.mapName}_EventScript_Pokemap${cap}${n}`) || taken.has(`${ctx.mapName}_Text_Pokemap${cap}${n}`)) n++;
+  while (candidates(n).some(name => taken.has(name))) n++;
   const label = `${ctx.mapName}_EventScript_Pokemap${cap}${n}`;
   return { sprite: o.sprites.includes("OBJ_EVENT_GFX_YOUNGSTER") ? "OBJ_EVENT_GFX_YOUNGSTER" : o.sprites[0] ?? "", movement: o.movements.includes("MOVEMENT_TYPE_FACE_DOWN") ? "MOVEMENT_TYPE_FACE_DOWN" : o.movements[0] ?? "", rangeX: "0", rangeY: "0", elevation: "", flagMode: objectType === "npc" && kind !== "bg" ? "existing" : "new", flag: "0", flagName: `FLAG_${ctx.mapName.toUpperCase()}_POKEMAP_${cap.toUpperCase()}${n}`, varNameMode: "existing", varName: o.vars[0] ?? "", varNameName: `VAR_${ctx.mapName.toUpperCase()}_POKEMAP${n}`, varValue: "0", scriptMode: "new", scriptLabel: label, script: ctx.map.entryPoints[0] ?? "", scriptText: "", label, item: o.items[0] ?? "", trainer: o.trainers[0]?.id ?? "", sightRange: "3", seenMode: "new", beatenMode: "new", afterMode: "new", seenText: "", beatenText: "", afterText: "", bgType: o.bgTypes.includes("sign") ? "sign" : o.bgTypes[0] ?? "", facing: o.facings[0] ?? "", secretBase: o.secretBases[0] ?? "", destMap: o.maps[0] ?? "", destWarp: String(ctx.map.warps[0]?.n ?? "") };
 }
