@@ -9,6 +9,7 @@ import { openGbcProject } from "@pokemap/core/src/gbc/project.js";
 import { createGbcAddEventRoutes } from "../src/addEventRoutes.js";
 import * as eventOptions from "@pokemap/core/src/addEvent/gbcOptions.js";
 import * as symbolBuilders from "@pokemap/core/src/defects/symbols.js";
+import * as entryPointBuilders from "@pokemap/core/src/addEvent/entryPoints.js";
 import { beforeAll, afterAll, beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { createGbcProjectHandler } from "../src/gbcRoutes.js";
 import * as sessions from "../src/gbcEditSessions.js";
@@ -20,6 +21,9 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("GBC add-event routes over a t
   let sharedStore: typeof store;
   let verifyCandidate: ((candidate: any) => void) | undefined;
   const diskTests = new Set([
+    "map options and create share one lazy entry-point index until discard",
+    "save rebuilds the entry-point index and exposes a newly saved reference",
+    "discard rebuilds the entry-point index after external map reference changes",
     "two flags commit the exact accumulated bytes while preserving all other header lines",
     "commit rebuilds symbols after plan and refuses an unrelated-file collision without writes",
     "saving the header owner lets another map allocate a new flag",
@@ -91,6 +95,66 @@ PreviewMulti${ending}Text:
     if (sharedServer) await new Promise<void>(resolve => sharedServer.close(() => resolve()));
     vi.restoreAllMocks(); if (sharedRoot) removeTemp(sharedRoot);
   });
+  it("map options and create share one lazy entry-point index until discard", async () => {
+    const builds = vi.spyOn(entryPointBuilders, "buildEntryPointIndex");
+    try {
+      // Every cache test gets its own handler, so earlier tests cannot prime it.
+      expect((await req("/api/event-options")).status).toBe(200);
+      expect(builds).not.toHaveBeenCalled();
+      expect((await req(`/api/event-options/${map}`)).status).toBe(200);
+      expect((await req(`/api/event-options/${other}`)).status).toBe(200);
+      expect(builds).toHaveBeenCalledTimes(1);
+      expect(builds).toHaveBeenLastCalledWith("gbc", root);
+      await create();
+      expect(builds).toHaveBeenCalledTimes(1);
+      expect((await edit("discard", {})).status).toBe(200);
+      expect(builds).toHaveBeenCalledTimes(1);
+      expect((await req(`/api/event-options/${map}`)).status).toBe(200);
+      expect(builds).toHaveBeenCalledTimes(2);
+    } finally { builds.mockRestore(); }
+  }, 30_000);
+  it("save rebuilds the entry-point index and exposes a newly saved reference", async () => {
+    const label = "PokemapIndexSavedOnly";
+    const definition = `${root}/home/pokemap_index.asm`;
+    writeFileSync(definition, `${label}::\n\tend\n`);
+    const builds = vi.spyOn(entryPointBuilders, "buildEntryPointIndex");
+    try {
+      const before = await req(`/api/event-options/${other}`);
+      expect(before.status).toBe(200); expect(before.body.entryPoints).not.toContain(label);
+      const added = await edit("event/add", { kind: "bg", args: ["1", "1", "BGEVENT_READ", label] });
+      expect(added.status, JSON.stringify(added.body)).toBe(200);
+      // Query another map to exclude the edited map's local staged overlay.
+      expect((await req(`/api/event-options/${other}`)).body.entryPoints).not.toContain(label);
+      expect(builds).toHaveBeenCalledTimes(1);
+      const plan = (await edit("plan")).body;
+      expect(plan.refusals).toEqual([]);
+      expect((await edit("commit", { fingerprint: plan.fingerprint })).status).toBe(200);
+      expect(builds).toHaveBeenCalledTimes(1);
+      const after = await req(`/api/event-options/${other}`);
+      expect(after.status).toBe(200); expect(after.body.entryPoints).toContain(label);
+      expect(builds).toHaveBeenCalledTimes(2);
+      expect((await req(`/api/event-options/${map}`)).status).toBe(200);
+      expect(builds).toHaveBeenCalledTimes(2);
+    } finally { builds.mockRestore(); }
+  }, 30_000);
+  it("discard rebuilds the entry-point index after external map reference changes", async () => {
+    const label = "PokemapIndexDiscardOnly";
+    const definition = `${root}/home/pokemap_index.asm`;
+    writeFileSync(definition, `${label}::\n\tend\n`);
+    const builds = vi.spyOn(entryPointBuilders, "buildEntryPointIndex");
+    try {
+      const before = await req(`/api/event-options/${map}`);
+      expect(before.status).toBe(200); expect(before.body.entryPoints).not.toContain(label);
+      const path = `${root}/maps/${other}.asm`;
+      writeFileSync(path, readFileSync(path, "utf8") + `\n\tbg_event 1, 1, BGEVENT_READ, ${label}\n`);
+      expect((await req(`/api/event-options/${map}`)).body.entryPoints).not.toContain(label);
+      expect(builds).toHaveBeenCalledTimes(1);
+      expect((await edit("discard", {})).status).toBe(200);
+      const after = await req(`/api/event-options/${map}`);
+      expect(after.status).toBe(200); expect(after.body.entryPoints).toContain(label);
+      expect(builds).toHaveBeenCalledTimes(2);
+    } finally { builds.mockRestore(); }
+  }, 30_000);
   it("create caches project scans and invalidation reloads them", () => {
     const index = vi.spyOn(symbolBuilders, "buildGbcSymbolIndex");
     const options = vi.spyOn(eventOptions, "loadGbcEventOptions");
