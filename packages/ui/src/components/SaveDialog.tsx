@@ -1,3 +1,4 @@
+import { loadReturnWarpNotes, subscribeReturnWarpSources } from "../shared/AddEventDialog.js";
 import { useEffect, useState } from "react";
 import { useVisit } from "../shared/useVisit.js";
 import { eventCreateBarrier } from "../shared/useEditSessionCore.js";
@@ -60,6 +61,8 @@ function errorMessageFrom(body: unknown): string | null {
 export function SaveDialog({ mapName, onCommitted, onCancel }: SaveDialogProps) {
   useRestoreFocus();
   const visit = useVisit(mapName);
+  const [returnNotes, setReturnNotes] = useState<string[]>([]);
+  const [returnNoteError, setReturnNoteError] = useState<string | null>(null);
   const [plan, setPlan] = useState<DiffPlan | null>(null);
   const [refusals, setRefusals] = useState<Refusal[]>([]);
   const [saving, setSaving] = useState(false);
@@ -87,6 +90,22 @@ export function SaveDialog({ mapName, onCommitted, onCancel }: SaveDialogProps) 
   };
 
   useEffect(loadPlan, [mapName]);
+  useEffect(() => {
+    if (!plan) return;
+    let active = true;
+    let sequence = 0;
+    const refresh = () => {
+      const ticket = ++sequence;
+      void loadReturnWarpNotes(mapName).then(notes => {
+        if (active && ticket === sequence) { setReturnNotes(notes); setReturnNoteError(null); }
+      }).catch((e: unknown) => {
+        if (active && ticket === sequence) { setReturnNotes([]); setReturnNoteError(e instanceof Error ? e.message : "Could not check return warps."); }
+      });
+    };
+    const unsubscribe = subscribeReturnWarpSources(refresh);
+    refresh();
+    return () => { active = false; unsubscribe(); };
+  }, [mapName, plan]);
 
   const resolveNotice = async (scriptLabel: string, action: "refresh" | "unlink") => {
     setSaving(true);
@@ -149,7 +168,9 @@ export function SaveDialog({ mapName, onCommitted, onCancel }: SaveDialogProps) 
     <div
       className="warp-modal__backdrop"
       onKeyDown={(e) => {
-        if (e.key === "Escape") onCancel();
+        if (e.key === "Escape" && [...document.querySelectorAll('[aria-modal="true"]')].at(-1) === e.currentTarget.querySelector('[aria-modal="true"]')) {
+          e.preventDefault(); e.stopPropagation(); if (!saving) onCancel();
+        }
       }}
     >
       {/* `warp-modal__panel` alongside `save-dialog`: reuses
@@ -179,6 +200,8 @@ export function SaveDialog({ mapName, onCommitted, onCancel }: SaveDialogProps) 
             ))}
           </ul>
         )}
+        {returnNotes.map(note => <p key={note} className="save-dialog__notice" role="status">{note}</p>)}
+        {returnNoteError && <p role="status">{returnNoteError}</p>}
         {plan?.signNotices && plan.signNotices.length > 0 && (
           <section aria-label="Linked signs">
             <h3>Linked signs</h3>
