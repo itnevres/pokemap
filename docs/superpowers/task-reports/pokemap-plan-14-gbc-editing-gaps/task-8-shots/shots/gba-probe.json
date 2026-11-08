@@ -1,0 +1,179 @@
+{
+  "family": "gba",
+  "map": "NewBarkTown",
+  "net": [
+    {
+      "m": "GET",
+      "u": "/event-options/NewBarkTown",
+      "s": 200,
+      "res": "{\"entryPoints\":[\"0x0\",\"AbandonedShip_CaptainsOffice_EventScript_CaptSternAide\",\"AbandonedShip_CaptainsOffice_EventScript_ItemStorageKey\",\"AbandonedShip_Corridors_1F_EventScript_Charlie\",\"AbandonedShip_Corridors_1F_EventScript_Youngster\",\"AbandonedShip_Corridors_B1F_EventScript_Duncan\",\"AbandonedShip"
+    },
+    {
+      "m": "GET",
+      "u": "/event-options",
+      "s": 200,
+      "res": "{\"family\":\"gba\",\"sprites\":[\"OBJ_EVENT_GFX_BRENDAN_NORMAL\",\"OBJ_EVENT_GFX_BRENDAN_MACH_BIKE\",\"OBJ_EVENT_GFX_BRENDAN_SURFING\",\"OBJ_EVENT_GFX_BRENDAN_FIELD_MOVE\",\"OBJ_EVENT_GFX_QUINTY_PLUMP\",\"OBJ_EVENT_GFX_NINJA_BOY\",\"OBJ_EVENT_GFX_TWIN\",\"OBJ_EVENT_GFX_MR_FUJI\",\"OBJ_EVENT_GFX_GIRL_1\",\"OBJ_EVENT_GFX_BOY"
+    },
+    {
+      "m": "GET",
+      "u": "/event-options/NewBarkTown",
+      "s": 200,
+      "res": "{\"entryPoints\":[\"0x0\",\"AbandonedShip_CaptainsOffice_EventScript_CaptSternAide\",\"AbandonedShip_CaptainsOffice_EventScript_ItemStorageKey\",\"AbandonedShip_Corridors_1F_EventScript_Charlie\",\"AbandonedShip_Corridors_1F_EventScript_Youngster\",\"AbandonedShip_Corridors_B1F_EventScript_Duncan\",\"AbandonedShip"
+    },
+    {
+      "m": "GET",
+      "u": "/event-options",
+      "s": 200,
+      "res": "{\"family\":\"gba\",\"sprites\":[\"OBJ_EVENT_GFX_BRENDAN_NORMAL\",\"OBJ_EVENT_GFX_BRENDAN_MACH_BIKE\",\"OBJ_EVENT_GFX_BRENDAN_SURFING\",\"OBJ_EVENT_GFX_BRENDAN_FIELD_MOVE\",\"OBJ_EVENT_GFX_QUINTY_PLUMP\",\"OBJ_EVENT_GFX_NINJA_BOY\",\"OBJ_EVENT_GFX_TWIN\",\"OBJ_EVENT_GFX_MR_FUJI\",\"OBJ_EVENT_GFX_GIRL_1\",\"OBJ_EVENT_GFX_BOY"
+    },
+    {
+      "m": "GET",
+      "u": "/event-options",
+      "s": 200,
+      "res": "{\"family\":\"gba\",\"sprites\":[\"OBJ_EVENT_GFX_BRENDAN_NORMAL\",\"OBJ_EVENT_GFX_BRENDAN_MACH_BIKE\",\"OBJ_EVENT_GFX_BRENDAN_SURFING\",\"OBJ_EVENT_GFX_BRENDAN_FIELD_MOVE\",\"OBJ_EVENT_GFX_QUINTY_PLUMP\",\"OBJ_EVENT_GFX_NINJA_BOY\",\"OBJ_EVENT_GFX_TWIN\",\"OBJ_EVENT_GFX_MR_FUJI\",\"OBJ_EVENT_GFX_GIRL_1\",\"OBJ_EVENT_GFX_BOY"
+    },
+    {
+      "m": "GET",
+      "u": "/event-options/NewBarkTown?x=15&y=19",
+      "s": 200,
+      "res": "{\"entryPoints\":[\"0x0\",\"AbandonedShip_CaptainsOffice_EventScript_CaptSternAide\",\"AbandonedShip_CaptainsOffice_EventScript_ItemStorageKey\",\"AbandonedShip_Corridors_1F_EventScript_Charlie\",\"AbandonedShip_Corridors_1F_EventScript_Youngster\",\"AbandonedShip_Corridors_B1F_EventScript_Duncan\",\"AbandonedShip"
+    },
+    {
+      "m": "GET",
+      "u": "/event-options",
+      "s": 200,
+      "res": "{\"family\":\"gba\",\"sprites\":[\"OBJ_EVENT_GFX_BRENDAN_NORMAL\",\"OBJ_EVENT_GFX_BRENDAN_MACH_BIKE\",\"OBJ_EVENT_GFX_BRENDAN_SURFING\",\"OBJ_EVENT_GFX_BRENDAN_FIELD_MOVE\",\"OBJ_EVENT_GFX_QUINTY_PLUMP\",\"OBJ_EVENT_GFX_NINJA_BOY\",\"OBJ_EVENT_GFX_TWIN\",\"OBJ_EVENT_GFX_MR_FUJI\",\"OBJ_EVENT_GFX_GIRL_1\",\"OBJ_EVENT_GFX_BOY"
+    },
+    {
+      "m": "GET",
+      "u": "/event-options/NewBarkTown?x=15&y=19",
+      "s": 200,
+      "res": "{\"entryPoints\":[\"0x0\",\"AbandonedShip_CaptainsOffice_EventScript_CaptSternAide\",\"AbandonedShip_CaptainsOffice_EventScript_ItemStorageKey\",\"AbandonedShip_Corridors_1F_EventScript_Charlie\",\"AbandonedShip_Corridors_1F_EventScript_Youngster\",\"AbandonedShip_Corridors_B1F_EventScript_Duncan\",\"AbandonedShip"
+    },
+    {
+      "m": "GET",
+      "u": "/event-options",
+      "s": 200,
+      "res": "{\"family\":\"gba\",\"sprites\":[\"OBJ_EVENT_GFX_BRENDAN_NORMAL\",\"OBJ_EVENT_GFX_BRENDAN_MACH_BIKE\",\"OBJ_EVENT_GFX_BRENDAN_SURFING\",\"OBJ_EVENT_GFX_BRENDAN_FIELD_MOVE\",\"OBJ_EVENT_GFX_QUINTY_PLUMP\",\"OBJ_EVENT_GFX_NINJA_BOY\",\"OBJ_EVENT_GFX_TWIN\",\"OBJ_EVENT_GFX_MR_FUJI\",\"OBJ_EVENT_GFX_GIRL_1\",\"OBJ_EVENT_GFX_BOY"
+    },
+    {
+      "m": "GET",
+      "u": "/event-options/NewBarkTown?x=9&y=24",
+      "s": 200,
+      "res": "{\"entryPoints\":[\"0x0\",\"AbandonedShip_CaptainsOffice_EventScript_CaptSternAide\",\"AbandonedShip_CaptainsOffice_EventScript_ItemStorageKey\",\"AbandonedShip_Corridors_1F_EventScript_Charlie\",\"AbandonedShip_Corridors_1F_EventScript_Youngster\",\"AbandonedShip_Corridors_B1F_EventScript_Duncan\",\"AbandonedShip"
+    },
+    {
+      "m": "GET",
+      "u": "/event-options",
+      "s": 200,
+      "res": "{\"family\":\"gba\",\"sprites\":[\"OBJ_EVENT_GFX_BRENDAN_NORMAL\",\"OBJ_EVENT_GFX_BRENDAN_MACH_BIKE\",\"OBJ_EVENT_GFX_BRENDAN_SURFING\",\"OBJ_EVENT_GFX_BRENDAN_FIELD_MOVE\",\"OBJ_EVENT_GFX_QUINTY_PLUMP\",\"OBJ_EVENT_GFX_NINJA_BOY\",\"OBJ_EVENT_GFX_TWIN\",\"OBJ_EVENT_GFX_MR_FUJI\",\"OBJ_EVENT_GFX_GIRL_1\",\"OBJ_EVENT_GFX_BOY"
+    },
+    {
+      "m": "GET",
+      "u": "/event-options/NewBarkTown?x=9&y=24",
+      "s": 200,
+      "res": "{\"entryPoints\":[\"0x0\",\"AbandonedShip_CaptainsOffice_EventScript_CaptSternAide\",\"AbandonedShip_CaptainsOffice_EventScript_ItemStorageKey\",\"AbandonedShip_Corridors_1F_EventScript_Charlie\",\"AbandonedShip_Corridors_1F_EventScript_Youngster\",\"AbandonedShip_Corridors_B1F_EventScript_Duncan\",\"AbandonedShip"
+    },
+    {
+      "m": "POST",
+      "u": "/edit/NewBarkTown/event/create",
+      "s": 200,
+      "req": "{\"kind\":\"bg\",\"x\":9,\"y\":24,\"fields\":{\"bgType\":\"sign\",\"elevation\":\"3\",\"facing\":\"BG_EVENT_PLAYER_FACING_ANY\"},\"script\":{\"mode\":\"new\",\"label\":\"NewBarkTown_EventScript_PokemapBg1\",\"text\":\"HELLO THERE\"}}",
+      "res": "{\"map\":{\"id\":\"MAP_NEW_BARK_TOWN\",\"name\":\"NewBarkTown\",\"layout\":\"LAYOUT_NEW_BARK_TOWN\",\"music\":\"MUS_HG_NEW_BARK\",\"regionMapSection\":\"MAPSEC_NEW_BARK_TOWN\",\"mapType\":\"MAP_TYPE_TOWN\",\"weather\":\"WEATHER_NONE\",\"connections\":[{\"map\":\"MAP_ROUTE29\",\"offset\":-5,\"direction\":\"left\"},{\"map\":\"MAP_ROUTE27\",\"offse"
+    },
+    {
+      "m": "GET",
+      "u": "/event-options",
+      "s": 200,
+      "res": "{\"family\":\"gba\",\"sprites\":[\"OBJ_EVENT_GFX_BRENDAN_NORMAL\",\"OBJ_EVENT_GFX_BRENDAN_MACH_BIKE\",\"OBJ_EVENT_GFX_BRENDAN_SURFING\",\"OBJ_EVENT_GFX_BRENDAN_FIELD_MOVE\",\"OBJ_EVENT_GFX_QUINTY_PLUMP\",\"OBJ_EVENT_GFX_NINJA_BOY\",\"OBJ_EVENT_GFX_TWIN\",\"OBJ_EVENT_GFX_MR_FUJI\",\"OBJ_EVENT_GFX_GIRL_1\",\"OBJ_EVENT_GFX_BOY"
+    },
+    {
+      "m": "GET",
+      "u": "/event-options/NewBarkTown",
+      "s": 200,
+      "res": "{\"entryPoints\":[\"0x0\",\"AbandonedShip_CaptainsOffice_EventScript_CaptSternAide\",\"AbandonedShip_CaptainsOffice_EventScript_ItemStorageKey\",\"AbandonedShip_Corridors_1F_EventScript_Charlie\",\"AbandonedShip_Corridors_1F_EventScript_Youngster\",\"AbandonedShip_Corridors_B1F_EventScript_Duncan\",\"AbandonedShip"
+    },
+    {
+      "m": "POST",
+      "u": "/edit/NewBarkTown/undo",
+      "s": 200,
+      "req": "{}",
+      "res": "{\"blocks\":[{\"metatileId\":20,\"collision\":1,\"elevation\":0},{\"metatileId\":21,\"collision\":1,\"elevation\":0},{\"metatileId\":20,\"collision\":1,\"elevation\":0},{\"metatileId\":19,\"collision\":1,\"elevation\":0},{\"metatileId\":120,\"collision\":0,\"elevation\":3},{\"metatileId\":121,\"collision\":0,\"elevation\":3},{\"metatileI"
+    },
+    {
+      "m": "GET",
+      "u": "/event-options",
+      "s": 200,
+      "res": "{\"family\":\"gba\",\"sprites\":[\"OBJ_EVENT_GFX_BRENDAN_NORMAL\",\"OBJ_EVENT_GFX_BRENDAN_MACH_BIKE\",\"OBJ_EVENT_GFX_BRENDAN_SURFING\",\"OBJ_EVENT_GFX_BRENDAN_FIELD_MOVE\",\"OBJ_EVENT_GFX_QUINTY_PLUMP\",\"OBJ_EVENT_GFX_NINJA_BOY\",\"OBJ_EVENT_GFX_TWIN\",\"OBJ_EVENT_GFX_MR_FUJI\",\"OBJ_EVENT_GFX_GIRL_1\",\"OBJ_EVENT_GFX_BOY"
+    },
+    {
+      "m": "GET",
+      "u": "/event-options/NewBarkTown",
+      "s": 200,
+      "res": "{\"entryPoints\":[\"0x0\",\"AbandonedShip_CaptainsOffice_EventScript_CaptSternAide\",\"AbandonedShip_CaptainsOffice_EventScript_ItemStorageKey\",\"AbandonedShip_Corridors_1F_EventScript_Charlie\",\"AbandonedShip_Corridors_1F_EventScript_Youngster\",\"AbandonedShip_Corridors_B1F_EventScript_Duncan\",\"AbandonedShip"
+    }
+  ],
+  "errs": [],
+  "bar": [
+    {
+      "label": "Add Object: click a tile, then fill in the details",
+      "pressed": "false",
+      "disabled": false,
+      "title": "Add Object: click a tile, then fill in the details"
+    },
+    {
+      "label": "Add Warp: click a tile, then pick the destination",
+      "pressed": "false",
+      "disabled": false,
+      "title": "Add Warp: click a tile, then pick the destination"
+    },
+    {
+      "label": "Add Coord Event: click a tile, then pick the trigger and script",
+      "pressed": "false",
+      "disabled": false,
+      "title": "Add Coord Event: click a tile, then pick the trigger and script"
+    },
+    {
+      "label": "Add BG Event: click a tile, then pick the sign or hidden item",
+      "pressed": "false",
+      "disabled": false,
+      "title": "Add BG Event: click a tile, then pick the sign or hidden item"
+    }
+  ],
+  "pressedAfterClick": "true",
+  "pressedAfterEsc": "false",
+  "pressedAfterReclick": "false",
+  "objectDialog": "Add Object at (15, 19)",
+  "objectFields": [
+    "Object type",
+    "Search Sprite",
+    "Sprite",
+    "Search Movement",
+    "Movement",
+    "Range X",
+    "Range Y",
+    "Elevation",
+    "Flag source",
+    "Search Flag",
+    "Flag",
+    "Script source",
+    "Script label",
+    "Script text"
+  ],
+  "objectDialogAfterEsc": 0,
+  "dirtyBefore": false,
+  "bgDialog": "Add BG Event at (9, 24)",
+  "bgFields": [
+    "SELECT:BG type=sign",
+    "INPUT:Elevation=3",
+    "SELECT:Facing=BG_EVENT_PLAYER_FACING_ANY",
+    "SELECT:Script source=new",
+    "INPUT:Script label=NewBarkTown_EventScript_PokemapBg1",
+    "TEXTAREA:Script text="
+  ],
+  "addEnabled": true,
+  "bgDialogAfterAdd": 0,
+  "bgError": null,
+  "dirtyAfterCreate": true,
+  "dirtyAfterUndo": false
+}

@@ -1,0 +1,179 @@
+{
+  "family": "gbc",
+  "map": "VioletCity",
+  "net": [
+    {
+      "m": "GET",
+      "u": "/event-options",
+      "s": 200,
+      "res": "{\"family\":\"gbc\",\"sprites\":[\"SPRITE_NONE\",\"SPRITE_CHRIS\",\"SPRITE_CHRIS_BIKE\",\"SPRITE_GAMEBOY_KID\",\"SPRITE_RIVAL\",\"SPRITE_OAK\",\"SPRITE_RED\",\"SPRITE_BLUE\",\"SPRITE_BILL\",\"SPRITE_ELDER\",\"SPRITE_JANINE\",\"SPRITE_KURT\",\"SPRITE_MOM\",\"SPRITE_BLAINE\",\"SPRITE_REDS_MOM\",\"SPRITE_DAISY\",\"SPRITE_ELM\",\"SPRITE_WILL\","
+    },
+    {
+      "m": "GET",
+      "u": "/event-options/VioletCity",
+      "s": 200,
+      "res": "{\"entryPoints\":[\"EarlsPokemonAcademySign\",\"ObjectEvent\",\"SproutTowerSign\",\"VioletCityEarlScript\",\"VioletCityFruitTree\",\"VioletCityGrampsScript\",\"VioletCityLassScript\",\"VioletCityMartSign\",\"VioletCityPokecenterSign\",\"VioletCitySign\",\"VioletCitySuperNerdScript\",\"VioletCityYoungsterScript\",\"VioletGymSi"
+    },
+    {
+      "m": "GET",
+      "u": "/event-options",
+      "s": 200,
+      "res": "{\"family\":\"gbc\",\"sprites\":[\"SPRITE_NONE\",\"SPRITE_CHRIS\",\"SPRITE_CHRIS_BIKE\",\"SPRITE_GAMEBOY_KID\",\"SPRITE_RIVAL\",\"SPRITE_OAK\",\"SPRITE_RED\",\"SPRITE_BLUE\",\"SPRITE_BILL\",\"SPRITE_ELDER\",\"SPRITE_JANINE\",\"SPRITE_KURT\",\"SPRITE_MOM\",\"SPRITE_BLAINE\",\"SPRITE_REDS_MOM\",\"SPRITE_DAISY\",\"SPRITE_ELM\",\"SPRITE_WILL\","
+    },
+    {
+      "m": "GET",
+      "u": "/event-options/VioletCity",
+      "s": 200,
+      "res": "{\"entryPoints\":[\"EarlsPokemonAcademySign\",\"ObjectEvent\",\"SproutTowerSign\",\"VioletCityEarlScript\",\"VioletCityFruitTree\",\"VioletCityGrampsScript\",\"VioletCityLassScript\",\"VioletCityMartSign\",\"VioletCityPokecenterSign\",\"VioletCitySign\",\"VioletCitySuperNerdScript\",\"VioletCityYoungsterScript\",\"VioletGymSi"
+    },
+    {
+      "m": "GET",
+      "u": "/event-options",
+      "s": 200,
+      "res": "{\"family\":\"gbc\",\"sprites\":[\"SPRITE_NONE\",\"SPRITE_CHRIS\",\"SPRITE_CHRIS_BIKE\",\"SPRITE_GAMEBOY_KID\",\"SPRITE_RIVAL\",\"SPRITE_OAK\",\"SPRITE_RED\",\"SPRITE_BLUE\",\"SPRITE_BILL\",\"SPRITE_ELDER\",\"SPRITE_JANINE\",\"SPRITE_KURT\",\"SPRITE_MOM\",\"SPRITE_BLAINE\",\"SPRITE_REDS_MOM\",\"SPRITE_DAISY\",\"SPRITE_ELM\",\"SPRITE_WILL\","
+    },
+    {
+      "m": "GET",
+      "u": "/event-options/VioletCity?x=20&y=17",
+      "s": 200,
+      "res": "{\"entryPoints\":[\"EarlsPokemonAcademySign\",\"ObjectEvent\",\"SproutTowerSign\",\"VioletCityEarlScript\",\"VioletCityFruitTree\",\"VioletCityGrampsScript\",\"VioletCityLassScript\",\"VioletCityMartSign\",\"VioletCityPokecenterSign\",\"VioletCitySign\",\"VioletCitySuperNerdScript\",\"VioletCityYoungsterScript\",\"VioletGymSi"
+    },
+    {
+      "m": "GET",
+      "u": "/event-options",
+      "s": 200,
+      "res": "{\"family\":\"gbc\",\"sprites\":[\"SPRITE_NONE\",\"SPRITE_CHRIS\",\"SPRITE_CHRIS_BIKE\",\"SPRITE_GAMEBOY_KID\",\"SPRITE_RIVAL\",\"SPRITE_OAK\",\"SPRITE_RED\",\"SPRITE_BLUE\",\"SPRITE_BILL\",\"SPRITE_ELDER\",\"SPRITE_JANINE\",\"SPRITE_KURT\",\"SPRITE_MOM\",\"SPRITE_BLAINE\",\"SPRITE_REDS_MOM\",\"SPRITE_DAISY\",\"SPRITE_ELM\",\"SPRITE_WILL\","
+    },
+    {
+      "m": "GET",
+      "u": "/event-options/VioletCity?x=20&y=17",
+      "s": 200,
+      "res": "{\"entryPoints\":[\"EarlsPokemonAcademySign\",\"ObjectEvent\",\"SproutTowerSign\",\"VioletCityEarlScript\",\"VioletCityFruitTree\",\"VioletCityGrampsScript\",\"VioletCityLassScript\",\"VioletCityMartSign\",\"VioletCityPokecenterSign\",\"VioletCitySign\",\"VioletCitySuperNerdScript\",\"VioletCityYoungsterScript\",\"VioletGymSi"
+    },
+    {
+      "m": "GET",
+      "u": "/event-options",
+      "s": 200,
+      "res": "{\"family\":\"gbc\",\"sprites\":[\"SPRITE_NONE\",\"SPRITE_CHRIS\",\"SPRITE_CHRIS_BIKE\",\"SPRITE_GAMEBOY_KID\",\"SPRITE_RIVAL\",\"SPRITE_OAK\",\"SPRITE_RED\",\"SPRITE_BLUE\",\"SPRITE_BILL\",\"SPRITE_ELDER\",\"SPRITE_JANINE\",\"SPRITE_KURT\",\"SPRITE_MOM\",\"SPRITE_BLAINE\",\"SPRITE_REDS_MOM\",\"SPRITE_DAISY\",\"SPRITE_ELM\",\"SPRITE_WILL\","
+    },
+    {
+      "m": "GET",
+      "u": "/event-options/VioletCity?x=14&y=22",
+      "s": 200,
+      "res": "{\"entryPoints\":[\"EarlsPokemonAcademySign\",\"ObjectEvent\",\"SproutTowerSign\",\"VioletCityEarlScript\",\"VioletCityFruitTree\",\"VioletCityGrampsScript\",\"VioletCityLassScript\",\"VioletCityMartSign\",\"VioletCityPokecenterSign\",\"VioletCitySign\",\"VioletCitySuperNerdScript\",\"VioletCityYoungsterScript\",\"VioletGymSi"
+    },
+    {
+      "m": "GET",
+      "u": "/event-options",
+      "s": 200,
+      "res": "{\"family\":\"gbc\",\"sprites\":[\"SPRITE_NONE\",\"SPRITE_CHRIS\",\"SPRITE_CHRIS_BIKE\",\"SPRITE_GAMEBOY_KID\",\"SPRITE_RIVAL\",\"SPRITE_OAK\",\"SPRITE_RED\",\"SPRITE_BLUE\",\"SPRITE_BILL\",\"SPRITE_ELDER\",\"SPRITE_JANINE\",\"SPRITE_KURT\",\"SPRITE_MOM\",\"SPRITE_BLAINE\",\"SPRITE_REDS_MOM\",\"SPRITE_DAISY\",\"SPRITE_ELM\",\"SPRITE_WILL\","
+    },
+    {
+      "m": "GET",
+      "u": "/event-options/VioletCity?x=14&y=22",
+      "s": 200,
+      "res": "{\"entryPoints\":[\"EarlsPokemonAcademySign\",\"ObjectEvent\",\"SproutTowerSign\",\"VioletCityEarlScript\",\"VioletCityFruitTree\",\"VioletCityGrampsScript\",\"VioletCityLassScript\",\"VioletCityMartSign\",\"VioletCityPokecenterSign\",\"VioletCitySign\",\"VioletCitySuperNerdScript\",\"VioletCityYoungsterScript\",\"VioletGymSi"
+    },
+    {
+      "m": "POST",
+      "u": "/edit/VioletCity/event/create",
+      "s": 200,
+      "req": "{\"kind\":\"bg\",\"x\":14,\"y\":22,\"fields\":{\"bgType\":\"BGEVENT_READ\"},\"script\":{\"mode\":\"new\",\"label\":\"VioletCityPokemapBg1\",\"text\":\"HELLO THERE\"}}",
+      "res": "{\"blocks\":[{\"metatileId\":5},{\"metatileId\":5},{\"metatileId\":2},{\"metatileId\":2},{\"metatileId\":5},{\"metatileId\":84},{\"metatileId\":118},{\"metatileId\":118},{\"metatileId\":85},{\"metatileId\":5},{\"metatileId\":5},{\"metatileId\":44},{\"metatileId\":45},{\"metatileId\":5},{\"metatileId\":5},{\"metatileId\":5},{\"metatil"
+    },
+    {
+      "m": "GET",
+      "u": "/event-options",
+      "s": 200,
+      "res": "{\"family\":\"gbc\",\"sprites\":[\"SPRITE_NONE\",\"SPRITE_CHRIS\",\"SPRITE_CHRIS_BIKE\",\"SPRITE_GAMEBOY_KID\",\"SPRITE_RIVAL\",\"SPRITE_OAK\",\"SPRITE_RED\",\"SPRITE_BLUE\",\"SPRITE_BILL\",\"SPRITE_ELDER\",\"SPRITE_JANINE\",\"SPRITE_KURT\",\"SPRITE_MOM\",\"SPRITE_BLAINE\",\"SPRITE_REDS_MOM\",\"SPRITE_DAISY\",\"SPRITE_ELM\",\"SPRITE_WILL\","
+    },
+    {
+      "m": "GET",
+      "u": "/event-options/VioletCity",
+      "s": 200,
+      "res": "{\"entryPoints\":[\"EarlsPokemonAcademySign\",\"ObjectEvent\",\"SproutTowerSign\",\"VioletCityEarlScript\",\"VioletCityFruitTree\",\"VioletCityGrampsScript\",\"VioletCityLassScript\",\"VioletCityMartSign\",\"VioletCityPokecenterSign\",\"VioletCityPokemapBg1\",\"VioletCitySign\",\"VioletCitySuperNerdScript\",\"VioletCityYoungs"
+    },
+    {
+      "m": "POST",
+      "u": "/edit/VioletCity/undo",
+      "s": 200,
+      "res": "{\"blocks\":[{\"metatileId\":5},{\"metatileId\":5},{\"metatileId\":2},{\"metatileId\":2},{\"metatileId\":5},{\"metatileId\":84},{\"metatileId\":118},{\"metatileId\":118},{\"metatileId\":85},{\"metatileId\":5},{\"metatileId\":5},{\"metatileId\":44},{\"metatileId\":45},{\"metatileId\":5},{\"metatileId\":5},{\"metatileId\":5},{\"metatil"
+    },
+    {
+      "m": "GET",
+      "u": "/event-options",
+      "s": 200,
+      "res": "{\"family\":\"gbc\",\"sprites\":[\"SPRITE_NONE\",\"SPRITE_CHRIS\",\"SPRITE_CHRIS_BIKE\",\"SPRITE_GAMEBOY_KID\",\"SPRITE_RIVAL\",\"SPRITE_OAK\",\"SPRITE_RED\",\"SPRITE_BLUE\",\"SPRITE_BILL\",\"SPRITE_ELDER\",\"SPRITE_JANINE\",\"SPRITE_KURT\",\"SPRITE_MOM\",\"SPRITE_BLAINE\",\"SPRITE_REDS_MOM\",\"SPRITE_DAISY\",\"SPRITE_ELM\",\"SPRITE_WILL\","
+    },
+    {
+      "m": "GET",
+      "u": "/event-options/VioletCity",
+      "s": 200,
+      "res": "{\"entryPoints\":[\"EarlsPokemonAcademySign\",\"ObjectEvent\",\"SproutTowerSign\",\"VioletCityEarlScript\",\"VioletCityFruitTree\",\"VioletCityGrampsScript\",\"VioletCityLassScript\",\"VioletCityMartSign\",\"VioletCityPokecenterSign\",\"VioletCitySign\",\"VioletCitySuperNerdScript\",\"VioletCityYoungsterScript\",\"VioletGymSi"
+    }
+  ],
+  "errs": [],
+  "bar": [
+    {
+      "label": "Add Object: click a tile, then fill in the details",
+      "pressed": "false",
+      "disabled": false,
+      "title": "Add Object: click a tile, then fill in the details"
+    },
+    {
+      "label": "Add Warp: click a tile, then pick the destination",
+      "pressed": "false",
+      "disabled": false,
+      "title": "Add Warp: click a tile, then pick the destination"
+    },
+    {
+      "label": "Add Coord Event: click a tile, then pick the trigger and script",
+      "pressed": "false",
+      "disabled": true,
+      "title": "This map has no scenes"
+    },
+    {
+      "label": "Add BG Event: click a tile, then pick the sign or hidden item",
+      "pressed": "false",
+      "disabled": false,
+      "title": "Add BG Event: click a tile, then pick the sign or hidden item"
+    }
+  ],
+  "pressedAfterClick": "true",
+  "pressedAfterEsc": "false",
+  "pressedAfterReclick": "false",
+  "objectDialog": "Add Object at (20, 17)",
+  "objectFields": [
+    "Object type",
+    "Search Sprite",
+    "Sprite",
+    "Search Movement",
+    "Movement",
+    "Range X",
+    "Range Y",
+    "Hour start",
+    "Hour end",
+    "Palette",
+    "Object constant (automatic if empty)",
+    "Flag source",
+    "Search Flag",
+    "Flag",
+    "Script source",
+    "Script label",
+    "Script text"
+  ],
+  "objectDialogAfterEsc": 0,
+  "dirtyBefore": false,
+  "bgDialog": "Add BG Event at (14, 22)",
+  "bgFields": [
+    "SELECT:BG type=BGEVENT_READ",
+    "SELECT:Script source=new",
+    "INPUT:Script label=VioletCityPokemapBg1",
+    "TEXTAREA:Script text="
+  ],
+  "addEnabled": true,
+  "bgDialogAfterAdd": 0,
+  "bgError": null,
+  "dirtyAfterCreate": true,
+  "dirtyAfterUndo": false
+}
