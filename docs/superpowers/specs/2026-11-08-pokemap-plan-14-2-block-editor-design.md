@@ -123,7 +123,26 @@ maps affected), and the game builds and shows the new block.
 - Usage line under the preview: "Used N times on this map (+ border), M times on K other maps; files shared by
   tilesets T1, T2; J maps affected" (P4), always visible, plus Q4's confirm step.
 
-## Open questions (need the user)
+## User answers (2026-11-08; binding)
+
+- **Q1:** allow GBA primary metatile edits, with the usage warning.
+- **Q2:** GBC tile palettes are editable, and the user picks the scope on each edit: **all** (edit the palette map
+  entry; every block using that tile changes) or **local** (duplicate the tile into a free tile slot with the new
+  palette and point only this block at the copy). Local refuses with a message naming the limit when the tileset has
+  no free tile slot; "all" stays offered.
+- **Q3:** one owner per tileset file, as drafted.
+- **Q4:** always-visible usage line **and** a confirm step on OK when other maps use the block.
+- **Q5:** both a right-click context menu ("Edit block") on a map cell and a new "Edit block" toolbar tool.
+- **Q6:** single-tile placement plus Polished Map's 2x2 / 4x4 placement modifiers.
+- **Q7:** new cross-half GBA dependencies are allowed with a warning naming the risk (not refused).
+- **Q8:** a cell whose raw GBC block is 0 edits the border block (what is drawn), and the popup says so.
+- **Q9:** Save as new from the block palette appends the block only; no placement.
+- **Q10:** Save as new changes only the one clicked cell on the edited map: no other map and no other cell. When the
+  cell's `.blk` is shared by several maps, placing it would change them all, so Save as new **refuses** there with a
+  message naming the sharing maps (conductor's reading of the answer; appending without placement is not offered
+  there unless the user asks).
+
+## Open questions (answered above; kept for the record)
 
 - **Q1 GBA primary tilesets.** Editing a primary metatile changes every map on every secondary that pairs with that
   primary (e.g. `gTileset_General`). Allow it with the usage warning, or limit edits to secondary metatiles?
