@@ -6,7 +6,7 @@ import type { GbcMapEvents } from "../gbc/model/types.js";
 import { insertLineAfter, replaceLines } from "../gbc/write/asmSplice.js";
 import { renderGbcBody } from "../gbc/signs.js";
 import { wrapSign, SIGN_WIDTH } from "../signs/wrap.js";
-import type { Charmap } from "../signs/charmap.js";
+import { tokenize, type Charmap } from "../signs/charmap.js";
 import { copyGbcScriptBody } from "./gbcCopy.js";
 import { AddEventRefusal, type AddEventForm, type EventKind, type EventOptions, type FileReplace,
   type MapEventOptions, type NameCheck, type RefusalCode, type TextChoice } from "./types.js";
@@ -69,6 +69,13 @@ export function buildGbcAddEvent(text: string, mapName: string, form: AddEventFo
     try { return renderGbcBody((wrapped as { paragraphs: string[][] }).paragraphs).join("\n"); }
     catch (error) { return fail("BAD_OPTION", error instanceof Error ? error.message : String(error)); }
   };
+  /** Charmap width of each quoted displayed line in a GBC text body. */
+  const lineWidths = (body: string): number[] =>
+    [...body.matchAll(/^[ \t]*(?:text|line|cont|para|next)\s+"([^"\r\n]*)"/gm)].map(m => {
+      const tokens = tokenize(m[1]!, ctx.charmap);
+      if ("refusal" in tokens) return fail("BAD_OPTION", tokens.refusal, path);
+      return tokens.tokens.reduce((width, token) => width + ctx.charmap.widthOf(token), 0);
+    });
   const flag = (required: boolean): string => {
     if (!form.flag) { if (required) fail("BAD_OPTION", "an event flag is required"); return "-1"; }
     if (form.flag.mode === "existing") return option(form.flag.name, [...(required ? [] : ["-1"]), ...ctx.options.flags], "flag");
@@ -92,6 +99,8 @@ export function buildGbcAddEvent(text: string, mapName: string, form: AddEventFo
     const choice = form.script;
     if (!choice) return fail("BAD_OPTION", "a script choice is required");
     if (choice.mode === "existing") {
+      // The spec allows the null script ObjectEvent for an NPC only.
+      if (choice.label === "ObjectEvent" && form.kind !== "object") fail("BAD_OPTION", "script ObjectEvent is only allowed for an NPC", path);
       if (!ctx.mapOptions.entryPoints.includes(choice.label)) fail("BAD_OPTION", `invalid script: ${choice.label}`);
       return option(choice.label, ctx.mapOptions.entryPoints, "script");
     }
@@ -102,7 +111,7 @@ export function buildGbcAddEvent(text: string, mapName: string, form: AddEventFo
       emit(textLabel, textBody({ mode: "new", text: choice.text }));
     } else {
       if (!ctx.mapOptions.localScripts.includes(choice.from)) fail("COPY_NOT_SCRIPT", `script ${choice.from} is not local to this map`);
-      copyGbcScriptBody(text, choice.from);
+      const original = copyGbcScriptBody(text, choice.from);
       // One editable body owns one global scope; never silently discard helper definitions.
       for (const body of [choice.body, ...Object.values(choice.texts)]) {
         if (body.split(/\r?\n/).some(line => /^\s*[A-Za-z_]\w*::?/.test(line))) {
@@ -114,6 +123,12 @@ export function buildGbcAddEvent(text: string, mapName: string, form: AddEventFo
       const preview = copyGbcScriptBody(synthetic, choice.from);
       if (Object.keys(preview.texts).length !== Object.keys(choice.texts).length) {
         fail("COPY_UNBOUNDED", "edited copy contains unused text definitions");
+      }
+      // Edited texts use the project charmap; no displayed line may be wider than the widest line it was copied from.
+      // ponytail: a character count, not the proportional font's pixels; upgrade = a per-glyph pixel width table.
+      const limit = Math.max(SIGN_WIDTH, ...Object.values(original.texts).flatMap(lineWidths));
+      for (const [name, body] of Object.entries(preview.texts)) {
+        if (lineWidths(body).some(w => w > limit)) fail("BAD_OPTION", `text ${name} has a line wider than ${limit} characters`, path);
       }
       const renames = new Map<string, string>([[choice.from, label]]);
       for (const [i, name] of Object.keys(preview.texts).entries()) renames.set(name, claim(`${label}Text${i + 1}`));

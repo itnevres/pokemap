@@ -93,11 +93,11 @@ it("coord", () => {
   expect(build(f).text).toContain("SCENE_ROUTE29_NOOP, Route29YoungsterScript");
 });
 it("coord scene -1 accepted", () => {
-  expect(build({ kind: "coord", x: 1, y: 2, fields: { scene: "-1" }, script: { mode: "existing", label: "ObjectEvent" } }).text).toContain("-1, ObjectEvent");
+  expect(build({ kind: "coord", x: 1, y: 2, fields: { scene: "-1" }, script: { mode: "existing", label: "Route29YoungsterScript" } }).text).toContain("-1, Route29YoungsterScript");
 });
 it("NO_SCENES on a map with no scene_script", () => {
   const noScenes = text.replace(/^\s*scene_script[^\n]*\n/gm, "");
-  refuses("NO_SCENES", () => build({ kind: "coord", x: 1, y: 2, fields: { scene: "-1" }, script: { mode: "existing", label: "ObjectEvent" } }, noScenes, { ...ctx, mapOptions: { ...ctx.mapOptions, scenes: [] } }));
+  refuses("NO_SCENES", () => build({ kind: "coord", x: 1, y: 2, fields: { scene: "-1" }, script: { mode: "existing", label: "Route29YoungsterScript" } }, noScenes, { ...ctx, mapOptions: { ...ctx.mapOptions, scenes: [] } }));
 });
 it("NAME_INVALID (1abc)", () => {
   const f = npc(); f.script = { mode: "new", label: "1abc", text: "Hi" };
@@ -215,4 +215,68 @@ it("edited copy refuses macro definitions before extraction without staging", ()
   refuses("COPY_NOT_SCRIPT", () => build(f));
   expect(JSON.stringify(ctx)).toBe(before);
   expect(ctx.constEdits).toEqual([]);
+});
+
+it("existing script ObjectEvent is allowed only for an NPC", () => {
+  const zero = { mode: "existing", label: "ObjectEvent" } as const;
+  const result = build({ ...npc(), script: zero });
+  expect(result.events.objects[result.created.index]!.script).toBe("ObjectEvent");
+  for (const kind of ["bg", "coord"] as const) {
+    const f: AddEventForm = { kind, x: 1, y: 2, fields: { scene: "-1" }, script: zero };
+    refuses("BAD_OPTION", () => build(f));
+    expect(() => build(f)).toThrow("script ObjectEvent is only allowed for an NPC");
+  }
+});
+it("unedited corpus script copy passes with the project charmap", () => {
+  const original = copyGbcScriptBody(text, "Route29YoungsterScript");
+  const result = build({ ...npc(), script: { mode: "copy", from: original.label, label: "CopiedScript",
+    body: original.body, texts: original.texts } });
+  expect(result.text).toContain("CopiedScript:");
+  expect(result.text).toContain("CopiedScriptText1:");
+  expect(result.events.objects[result.created.index]!.script).toBe("CopiedScript");
+});
+it.each(["text", "line", "cont", "para"])("edited copy refuses an absent charmap character in %s", command => {
+  const original = copyGbcScriptBody(text, "Route29YoungsterScript");
+  const f: AddEventForm = { ...npc(), script: { mode: "copy", from: original.label, label: "CopiedScript",
+    body: original.body, texts: { Route29YoungsterText: `${command === "text" ? "" : '\ttext "Hi"\n'}\t${command} "Hello\u2603"\n\tdone\n` } } };
+  refuses("BAD_OPTION", () => build(f));
+  expect(() => build(f)).toThrow('Character "\u2603" is not in the charmap.');
+});
+
+const widthCopy = (originalTexts: Record<string, string>, editedTexts: Record<string, string>) => {
+  const body = Object.keys(originalTexts).map(name => `\twritetext ${name}\n`).join("") + "\tend\n";
+  const source = text.replace("Route29_MapEvents:", "WidthScript:\n" + body +
+    Object.entries(originalTexts).map(([name, value]) => `${name}:\n${value}`).join("") + "Route29_MapEvents:");
+  const context = { ...ctx, mapOptions: { ...ctx.mapOptions, localScripts: [...ctx.mapOptions.localScripts, "WidthScript"] } };
+  return build({ ...npc(), script: { mode: "copy", from: "WidthScript", label: "CopiedWidthScript",
+    body, texts: editedTexts } }, source, context);
+};
+it.each(["text", "line", "cont", "para"])("edited copy refuses a %s line wider than SIGN_WIDTH", command => {
+  const original = { WidthText: '\ttext "Hi"\n\tdone\n' };
+  const edited = { WidthText: `${command === "text" ? "" : '\ttext "Hi"\n'}\t${command} "${"A".repeat(19)}"\n\tdone\n` };
+  refuses("BAD_OPTION", () => widthCopy(original, edited));
+  expect(() => widthCopy(original, edited)).toThrow("text WidthText has a line wider than 18 characters");
+});
+it("edited copy measures displayed lines separately and accepts SIGN_WIDTH", () => {
+  const result = widthCopy({ WidthText: '\ttext "Hi"\n\tdone\n' },
+    { WidthText: `\ttext "${"A".repeat(18)}"\n\tline "${"B".repeat(18)}"\n\tdone\n` });
+  expect(result.text).toContain(`text "${"A".repeat(18)}"`);
+  expect(result.text).toContain(`line "${"B".repeat(18)}"`);
+});
+it("edited copy uses the widest original line across copied texts as its limit", () => {
+  const original = { WidthText: '\ttext "Hi"\n\tdone\n', WideText: `\ttext "${"A".repeat(24)}"\n\tdone\n` };
+  const edited = { ...original, WidthText: `\ttext "${"B".repeat(24)}"\n\tdone\n` };
+  expect(widthCopy(original, edited).text).toContain(`text "${"B".repeat(24)}"`);
+  edited.WidthText = `\ttext "${"B".repeat(25)}"\n\tdone\n`;
+  refuses("BAD_OPTION", () => widthCopy(original, edited));
+  expect(() => widthCopy(original, edited)).toThrow("text WidthText has a line wider than 24 characters");
+});
+it("edited copy uses charmap token widths for original and edited lines", () => {
+  // Three player names occupy 21 characters; eleven TM tokens occupy 22.
+  const original = { WidthText: '\ttext "<PLAYER><PLAYER><PLAYER>"\n\tdone\n' };
+  expect(widthCopy(original, { WidthText: `\ttext "${"A".repeat(21)}"\n\tdone\n` }).text)
+    .toContain(`text "${"A".repeat(21)}"`);
+  const edited = { WidthText: `\ttext "${"<TM>".repeat(11)}"\n\tdone\n` };
+  refuses("BAD_OPTION", () => widthCopy(original, edited));
+  expect(() => widthCopy(original, edited)).toThrow("text WidthText has a line wider than 21 characters");
 });
