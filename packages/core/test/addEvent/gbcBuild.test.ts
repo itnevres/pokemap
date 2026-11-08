@@ -93,11 +93,11 @@ it("coord", () => {
   expect(build(f).text).toContain("SCENE_ROUTE29_NOOP, Route29YoungsterScript");
 });
 it("coord scene -1 accepted", () => {
-  expect(build({ kind: "coord", x: 1, y: 2, fields: { scene: "-1" }, script: { mode: "existing", label: "ObjectEvent" } }).text).toContain("-1, ObjectEvent");
+  expect(build({ kind: "coord", x: 1, y: 2, fields: { scene: "-1" }, script: { mode: "existing", label: "Route29YoungsterScript" } }).text).toContain("-1, Route29YoungsterScript");
 });
 it("NO_SCENES on a map with no scene_script", () => {
   const noScenes = text.replace(/^\s*scene_script[^\n]*\n/gm, "");
-  refuses("NO_SCENES", () => build({ kind: "coord", x: 1, y: 2, fields: { scene: "-1" }, script: { mode: "existing", label: "ObjectEvent" } }, noScenes, { ...ctx, mapOptions: { ...ctx.mapOptions, scenes: [] } }));
+  refuses("NO_SCENES", () => build({ kind: "coord", x: 1, y: 2, fields: { scene: "-1" }, script: { mode: "existing", label: "Route29YoungsterScript" } }, noScenes, { ...ctx, mapOptions: { ...ctx.mapOptions, scenes: [] } }));
 });
 it("NAME_INVALID (1abc)", () => {
   const f = npc(); f.script = { mode: "new", label: "1abc", text: "Hi" };
@@ -215,4 +215,97 @@ it("edited copy refuses macro definitions before extraction without staging", ()
   refuses("COPY_NOT_SCRIPT", () => build(f));
   expect(JSON.stringify(ctx)).toBe(before);
   expect(ctx.constEdits).toEqual([]);
+});
+
+it("existing script ObjectEvent is allowed only for an NPC", () => {
+  const zero = { mode: "existing", label: "ObjectEvent" } as const;
+  const result = build({ ...npc(), script: zero });
+  expect(result.events.objects[result.created.index]!.script).toBe("ObjectEvent");
+  for (const kind of ["bg", "coord"] as const) {
+    const f: AddEventForm = { kind, x: 1, y: 2, fields: { scene: "-1" }, script: zero };
+    refuses("BAD_OPTION", () => build(f));
+    expect(() => build(f)).toThrow("script ObjectEvent is only allowed for an NPC");
+  }
+});
+it("unedited corpus script copy passes with the project charmap", () => {
+  const original = copyGbcScriptBody(text, "Route29YoungsterScript");
+  const result = build({ ...npc(), script: { mode: "copy", from: original.label, label: "CopiedScript",
+    body: original.body, texts: original.texts } });
+  expect(result.text).toContain("CopiedScript:");
+  expect(result.text).toContain("CopiedScriptText1:");
+  expect(result.events.objects[result.created.index]!.script).toBe("CopiedScript");
+});
+it.each(["text", "line", "cont", "para"])("edited copy refuses an absent charmap character in %s", command => {
+  const original = copyGbcScriptBody(text, "Route29YoungsterScript");
+  const f: AddEventForm = { ...npc(), script: { mode: "copy", from: original.label, label: "CopiedScript",
+    body: original.body, texts: { Route29YoungsterText: `${command === "text" ? "" : '\ttext "Hi"\n'}\t${command} "Hello\u2603"\n\tdone\n` } } };
+  refuses("BAD_OPTION", () => build(f));
+  expect(() => build(f)).toThrow('Character "\u2603" is not in the charmap.');
+});
+
+const widthCopy = (originalTexts: Record<string, string>, editedTexts: Record<string, string>) => {
+  const body = Object.keys(originalTexts).map(name => `\twritetext ${name}\n`).join("") + "\tend\n";
+  const source = text.replace("Route29_MapEvents:", "WidthScript:\n" + body +
+    Object.entries(originalTexts).map(([name, value]) => `${name}:\n${value}`).join("") + "Route29_MapEvents:");
+  const context = { ...ctx, mapOptions: { ...ctx.mapOptions, localScripts: [...ctx.mapOptions.localScripts, "WidthScript"] } };
+  return build({ ...npc(), script: { mode: "copy", from: "WidthScript", label: "CopiedWidthScript",
+    body, texts: editedTexts } }, source, context);
+};
+it.each(["text", "line", "cont", "para"])("edited copy refuses a %s line wider than SIGN_WIDTH", command => {
+  const original = { WidthText: '\ttext "Hi"\n\tdone\n' };
+  const edited = { WidthText: `${command === "text" ? "" : '\ttext "Hi"\n'}\t${command} "${"A".repeat(19)}"\n\tdone\n` };
+  refuses("BAD_OPTION", () => widthCopy(original, edited));
+  expect(() => widthCopy(original, edited)).toThrow("text WidthText has a line wider than 18 characters");
+});
+it("edited copy measures displayed lines separately and accepts SIGN_WIDTH", () => {
+  const result = widthCopy({ WidthText: '\ttext "Hi"\n\tdone\n' },
+    { WidthText: `\ttext "${"A".repeat(18)}"\n\tline "${"B".repeat(18)}"\n\tdone\n` });
+  expect(result.text).toContain(`text "${"A".repeat(18)}"`);
+  expect(result.text).toContain(`line "${"B".repeat(18)}"`);
+});
+it("edited copy uses the widest original line across copied texts as its limit", () => {
+  const original = { WidthText: '\ttext "Hi"\n\tdone\n', WideText: `\ttext "${"A".repeat(24)}"\n\tdone\n` };
+  const edited = { ...original, WidthText: `\ttext "${"B".repeat(24)}"\n\tdone\n` };
+  expect(widthCopy(original, edited).text).toContain(`text "${"B".repeat(24)}"`);
+  edited.WidthText = `\ttext "${"B".repeat(25)}"\n\tdone\n`;
+  refuses("BAD_OPTION", () => widthCopy(original, edited));
+  expect(() => widthCopy(original, edited)).toThrow("text WidthText has a line wider than 24 characters");
+});
+it("edited copy uses charmap token widths for original and edited lines", () => {
+  // Three player names occupy 21 characters; eleven TM tokens occupy 22.
+  const original = { WidthText: '\ttext "<PLAYER><PLAYER><PLAYER>"\n\tdone\n' };
+  expect(widthCopy(original, { WidthText: `\ttext "${"A".repeat(21)}"\n\tdone\n` }).text)
+    .toContain(`text "${"A".repeat(21)}"`);
+  const edited = { WidthText: `\ttext "${"<TM>".repeat(11)}"\n\tdone\n` };
+  refuses("BAD_OPTION", () => widthCopy(original, edited));
+  expect(() => widthCopy(original, edited)).toThrow("text WidthText has a line wider than 21 characters");
+});
+
+it("unedited Buena corpus copy preserves RGBDS interpolation without measuring text", () => {
+  const source = readFileSync(join(root, "maps/RadioTower2F.asm"), "utf8");
+  const original = copyGbcScriptBody(source, "Buena");
+  expect(Object.values(original.texts).join("\n")).toContain("{d:BLUE_CARD_POINT_CAP}");
+  const context: GbcAddCtx = { ...ctx, mapOptions: { ...ctx.mapOptions, localScripts: ["Buena"] },
+    charmap: { family: "gbc", has: () => { throw new Error("unchanged text was tokenized"); },
+      widthOf: () => { throw new Error("unchanged text was measured"); } } };
+  const result = buildGbcAddEvent(source, "RadioTower2F", { kind: "bg", x: 1, y: 2, fields: {},
+    script: { mode: "copy", from: "Buena", label: "CopiedBuena", body: original.body,
+      texts: Object.fromEntries(Object.entries(original.texts).map(([name, body]) => [name, body.replace(/\r?\n/g, "\r\n")])) } }, context);
+  expect(result.text).toContain("CopiedBuena:");
+  expect(result.text).toContain("{d:BLUE_CARD_POINT_CAP}");
+});
+it("edited GBC copy ignores RGBDS interpolation in original and edited widths", () => {
+  const result = widthCopy({ WidthText: '\ttext "{d:BLUE_CARD_POINT_CAP} Hi"\n\tdone\n' },
+    { WidthText: '\ttext "{d:X} Hello"\n\tdone\n' });
+  expect(result.text).toContain('text "{d:X} Hello"');
+});
+it("edited GBC copy accepts a trailing @ string terminator", () => {
+  const result = widthCopy({ WidthText: '\ttext "Hello@"\n\tdone\n' },
+    { WidthText: '\ttext "Hi@"\n\tdone\n' });
+  expect(result.text).toContain('text "Hi@"');
+});
+it("edited GBC copy measures corpus originals without refusing unknown characters", () => {
+  const original = { WidthText: '\ttext "Hi\u2603"\n\tdone\n' };
+  expect(widthCopy(original, { WidthText: '\ttext "Hello"\n\tdone\n' }).text).toContain('text "Hello"');
+  refuses("BAD_OPTION", () => widthCopy(original, { WidthText: '\ttext "Hello\u2603"\n\tdone\n' }));
 });

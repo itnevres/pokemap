@@ -251,3 +251,36 @@ it("a create that fails after staging a flag leaves the input entries untouched"
   expect(JSON.stringify(first.scriptReplaces)).toBe(staged);
   expect(first.scriptReplaces[0]!.after).not.toContain("FLAG_POKEMAP_SECOND");
 });
+
+const controlCodeCopy = (originalText: string, editedText: string, context = ctx) => {
+  const body = "\tmsgbox ControlText, MSGBOX_DEFAULT\n\tend\n";
+  const source = inc + `\nControlScript::\n${body}ControlText:\n${originalText}ControlBoundary::\n\tend\n`;
+  return build({ ...npc(), script: { mode: "copy", from: "ControlScript", label: "CopiedControlScript",
+    body, texts: { ControlText: editedText } } }, source,
+    { ...context, mapOptions: { ...context.mapOptions, localScripts: [...context.mapOptions.localScripts, "ControlScript"] } });
+};
+it("unedited GBA copy preserves PAUSE control codes without measuring text", () => {
+  const original = '\t.string "Hi{PAUSE 16}$"\n';
+  const context: GbaAddCtx = { ...ctx,
+    charmap: { family: "gba", has: () => { throw new Error("unchanged text was tokenized"); },
+      widthOf: () => { throw new Error("unchanged text was measured"); } } };
+  const result = controlCodeCopy(original, original.replace(/\n/g, "\r\n"), context);
+  expect(lf(result.scriptAppends[0]!.text)).toContain('.string "Hi{PAUSE 16}$"');
+});
+it("edited GBA copy ignores brace control codes in original and edited widths", () => {
+  const result = controlCodeCopy('\t.string "Hi{PAUSE 16}$"\n',
+    '\t.string "Hello{CLEAR_TO 255}{PAUSE 16}$"\n');
+  expect(lf(result.scriptAppends[0]!.text)).toContain('.string "Hello{CLEAR_TO 255}{PAUSE 16}$"');
+});
+it("edited GBA copy still refuses unknown characters outside control codes", () => {
+  refuses("BAD_OPTION", () => controlCodeCopy('\t.string "Hi{PAUSE 16}$"\n',
+    '\t.string "Hello\u2603{PAUSE 16}$"\n'));
+});
+it("edited GBA copy measures corpus originals without refusing unknown characters", () => {
+  const result = controlCodeCopy('\t.string "Hi\u2603{PAUSE 16}$"\n', '\t.string "Hello$"\n');
+  expect(lf(result.scriptAppends[0]!.text)).toContain('.string "Hello$"');
+});
+it("edited GBA copy still refuses lines wider than the limit after removing control codes", () => {
+  refuses("BAD_OPTION", () => controlCodeCopy('\t.string "Hi{PAUSE 16}$"\n',
+    `\t.string "${"A".repeat(19)}{CLEAR_TO 255}$"\n`));
+});
