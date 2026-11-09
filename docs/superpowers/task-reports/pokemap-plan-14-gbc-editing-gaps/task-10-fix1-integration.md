@@ -1,0 +1,36 @@
+# Task 10 fix round 1: integration report
+
+Tier: High. The fixes touch cross-session constants ownership, snapshot application, and file parsing. Scope is the user's eight requested findings. All code and regression tests are written; execution, mutations, full gate, typecheck, UI build/live check, and commits remain with the conductor. No vitest or git commands were run.
+
+Delegation: explicit gpt-6.1-terra core/UI implementer (one dispatch plus same-handle static follow-up); parent integrated server code after that writer finished. Core/UI report is task-10-fix1-core-ui.md. Parent integration kept the approved interfaces connected across packages; no subject files were edited. No Anthropic provider was used.
+
+## Changes and regression names
+
+- I1: core/src/addEvent/gbaOptions.ts filters every _UNUSED_ flag/var option. core/src/addEvent/gbaBuild.ts skips disk-free slots referenced in the current map, effective scripts, non-header replacements or supplied staged texts. server/src/addEventRoutes.ts supplies every open GBA session's staged map/JSON operations, appends and replacements. Header definitions themselves are excluded from reference counting; RHS references remain. Tests in core/test/addEvent/gbaOptions.test.ts: `unused flag and var definitions are excluded from existing options`; core/test/addEvent/gbaBuild.test.ts: `refuses unused flags as existing options`, `new flag and var skip slots referenced in staged text`, `FLAG/VAR allocation skips its own staged events/scripts/replace references`; server/test/addEventRoutes.test.ts: `FLAG/VAR unused Existing names are refused before and after allocation`, `FLAG/VAR allocation skips another session's staged events/append/replace reference`.
+- I2: server/src/addEventRoutes.ts merges no staged names into project options; only the known requesting map's names enter create options and the per-map stagedFlags/stagedVars response. core/src/addEvent/types.ts carries those optional fields; ui/src/shared/useEventOptions.ts merges them into the visible options while retaining a disk-only project cache. Tests in both server test files: `FLAG/VAR unsaved Existing options belong only to their own session` (GBA) and `unsaved Existing flags belong only to their own session` (GBC), covering foreign BAD_OPTION and own-session success. ui/test/shared/useEventOptions.test.tsx: `merges only the current map staged constants into displayed options`.
+- M1: core/src/edit/commands.ts validates a cloned redo candidate before popping history. server/src/addEventRoutes.ts checks the candidate header edits with the same ownership function used by create; server/src/index.ts and server/src/gbcEditRoutes.ts pass that check and format refusal through eventFailure. Tests: core/test/edit/commands.test.ts `redo validation refusal preserves the session and redo history`; GBA server `FLAG/VAR redo checks header ownership without consuming history`; GBC server `redo checks header ownership without consuming history`. Server regressions compare create/redo error bodies, unchanged snapshots, retained redo and successful retry after the other owner undoes.
+- M2: core/src/addEvent/gbcBuild.ts validates positive destination indices against a nonnegative safe-integer count, failing closed if unavailable. Dynamic -1 remains valid. server/src/addEventRoutes.ts supplies counts parsed from the destination's current staged text (or disk when not open). Tests: core/test/addEvent/gbcBuild.test.ts `rejects a destination warp beyond the destination map count`, `destination warp count accepts the last warp and dynamic return but refuses invalid counts`; server/test/gbcAddEventRoutes.test.ts `warp create refuses an index beyond the staged destination warp count`, which adds a staged destination warp, accepts that new last index, then refuses the next one.
+- M3: ui/src/gba/addEventFields.ts uses Hide flag, offers 0, and defaults trainers to existing 0. Test: ui/test/gba/addEventFields.test.ts `trainer visibility flag defaults to none`. Existing assertions changed: NONE.
+- M4: ui/src/gbc/addEventFields.ts filters ObjectEvent for coord/bg scripts and avoids it in their default Existing value. Test: ui/test/gbc/addEventFields.test.ts `ObjectEvent is only offered as an object script`.
+- M5: server/src/index.ts and server/src/gbcEditRoutes.ts discard only close the session; save/commit and project reload invalidation remains. Tests: GBA server `discard preserves disk entry-point and free-slot caches` spies on the entry-point builder, free-slot scanner and project option loader across discard and reallocation; GBC server `discard preserves disk entry-point and project-options caches` spies on its disk-derived cache builders.
+- Task 1 minor: core/src/addEvent/entryPoints.ts wraps the entire GBA per-file parse and event iteration in inFile. Test: core/test/addEvent/entryPointIndex.test.ts `GBA malformed event collections report their map path: %s`, null root and non-array events, indexed and uncached.
+
+Paths above are relative to packages/.
+
+## Static evidence and pending work
+
+- Byte inspection: all 22 touched source/test files are CRLF-only with no UTF-8 BOM. Added text is ASCII. index.ts contains existing non-ASCII comment characters, preserved rather than rewritten.
+- Original bodies of both server test files were reconstructed by removing only the appended tests and new diskTests registration. SHA-256 matched their pre-edit bytes exactly: GBA 6565f11d396a6ddd493398928b4a960ecb8d10ddca80c6add9fb7500f0cbe445; GBC 87a89caafca46557446c4997a75d810ae2de03ddb9419e7b3d64764bf9d092aa. No old server assertion was changed or removed. Core/UI implementer reports no old assertion edits either.
+- Static follow-up findings about an object fixture assumption and an unmodified destination fixture were corrected. Positive destination count validation now rejects NaN/negative/fractional counts.
+- Tests are authored, not executed. Their red/green and mutation effectiveness is pending conductor validation. No completion/pass claim is made.
+
+## Preserved contradictory existing assertions
+
+The following tests in BOTH server/test/addEventRoutes.test.ts and server/test/gbcAddEventRoutes.test.ts conflict with the requested I2/M5 behavior. Their assertions remain byte-identical because the user explicitly prohibited editing them:
+
+1. `project options include an unsaved flag and remove it after undo` expects the project-wide unsaved name that I2 removes.
+2. `map options and create share one lazy entry-point index until discard` expects a rebuild after discard that M5 removes.
+3. `external map references refresh immediately and discard still invalidates the index` expects a rebuild after discard that M5 removes.
+4. `discard refreshes project options free slots and symbols after a disk header edit` expects disk-derived caches to reset on discard, contrary to M5.
+
+These eight existing test cases are expected to fail against the requested behavior until the conductor resolves the assertion-policy conflict with the user. They were not skipped, renamed, weakened, or deleted. All requested implementation items have changes and regression coverage; runtime validation and this pre-existing-test conflict remain unresolved.
