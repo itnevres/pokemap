@@ -1,0 +1,243 @@
+{
+  "family": "gbc",
+  "map": "VioletCity",
+  "ui": "http://127.0.0.1:5195/",
+  "initialStatus": "",
+  "scenarios": [
+    {
+      "name": "refusals",
+      "status": "pass",
+      "checks": [
+        {
+          "name": "(a) invalid identifier in New script name: Add disabled or error shown",
+          "status": "pass",
+          "detail": {
+            "disabled": true
+          }
+        },
+        {
+          "name": "(a) form kept (label still typed, dialog open)",
+          "status": "pass"
+        },
+        {
+          "name": "(b) duplicate label VioletCity_MapScripts: create refused (HTTP 400, code LABEL_TAKEN)",
+          "status": "pass",
+          "detail": {
+            "error": "VioletCity: maps/VioletCity.asm: VioletCity: maps/VioletCity.asm: name VioletCity_MapScripts is already taken",
+            "code": "LABEL_TAKEN"
+          }
+        },
+        {
+          "name": "(b) refusal text names the file maps/VioletCity.asm",
+          "status": "pass",
+          "detail": "VioletCity: maps/VioletCity.asm: VioletCity: maps/VioletCity.asm: name VioletCity_MapScripts is already taken"
+        },
+        {
+          "name": "(b) refusal text names the map VioletCity",
+          "status": "pass",
+          "detail": "VioletCity: maps/VioletCity.asm: VioletCity: maps/VioletCity.asm: name VioletCity_MapScripts is already taken"
+        },
+        {
+          "name": "(b) form kept (label still typed)",
+          "status": "pass"
+        },
+        {
+          "name": "(b) refused create staged nothing (map still clean)",
+          "status": "pass"
+        },
+        {
+          "name": "(c) NO_FLAG_SLOT",
+          "status": "n/a",
+          "detail": "n/a: --no-slot was not passed (needs the clone free range pre-filled)"
+        }
+      ],
+      "duplicate": {
+        "status": 400,
+        "body": {
+          "error": "VioletCity: maps/VioletCity.asm: VioletCity: maps/VioletCity.asm: name VioletCity_MapScripts is already taken",
+          "code": "LABEL_TAKEN"
+        },
+        "text": "VioletCity: maps/VioletCity.asm: VioletCity: maps/VioletCity.asm: name VioletCity_MapScripts is already taken"
+      },
+      "counts": {
+        "pass": 7,
+        "fail": 0,
+        "n/a": 1
+      },
+      "net": [
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity?x=11&y=9",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity?x=11&y=9",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity?x=12&y=6",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity?x=12&y=6",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "POST",
+          "url": "/api/edit/VioletCity/event/create",
+          "status": 400,
+          "code": "LABEL_TAKEN"
+        }
+      ]
+    }
+  ],
+  "network": [
+    {
+      "scenario": "",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "refusals",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "refusals",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "refusals",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity?x=11&y=9",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "refusals",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "refusals",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "refusals",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity?x=11&y=9",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "refusals",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "refusals",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "refusals",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity?x=12&y=6",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "refusals",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "refusals",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity?x=12&y=6",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "refusals",
+      "method": "POST",
+      "url": "/api/edit/VioletCity/event/create",
+      "status": 400,
+      "code": "LABEL_TAKEN",
+      "body": {
+        "error": "VioletCity: maps/VioletCity.asm: VioletCity: maps/VioletCity.asm: name VioletCity_MapScripts is already taken",
+        "code": "LABEL_TAKEN"
+      }
+    }
+  ],
+  "pageErrors": [],
+  "resets": [],
+  "finalStatus": ""
+}

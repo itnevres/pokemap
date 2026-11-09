@@ -1,0 +1,254 @@
+{
+  "family": "gba",
+  "map": "NewBarkTown",
+  "ui": "http://127.0.0.1:5193/",
+  "initialStatus": "",
+  "scenarios": [
+    {
+      "name": "refusals",
+      "status": "pass",
+      "checks": [
+        {
+          "name": "(a) invalid identifier in New script name: Add disabled or error shown",
+          "status": "pass",
+          "detail": {
+            "disabled": true
+          }
+        },
+        {
+          "name": "(a) form kept (label still typed, dialog open)",
+          "status": "pass"
+        },
+        {
+          "name": "(b) duplicate label NewBarkTown_MapScripts: create refused (HTTP 400, code LABEL_TAKEN)",
+          "status": "pass",
+          "detail": {
+            "error": "NewBarkTown: data/maps/NewBarkTown/scripts.inc: NewBarkTown: data/maps/NewBarkTown/scripts.inc: name NewBarkTown_MapScripts is already taken",
+            "code": "LABEL_TAKEN"
+          }
+        },
+        {
+          "name": "(b) refusal text names the file data/maps/NewBarkTown/scripts.inc",
+          "status": "pass",
+          "detail": "NewBarkTown: data/maps/NewBarkTown/scripts.inc: NewBarkTown: data/maps/NewBarkTown/scripts.inc: name NewBarkTown_MapScripts is already taken"
+        },
+        {
+          "name": "(b) refusal text names the map NewBarkTown",
+          "status": "pass",
+          "detail": "NewBarkTown: data/maps/NewBarkTown/scripts.inc: NewBarkTown: data/maps/NewBarkTown/scripts.inc: name NewBarkTown_MapScripts is already taken"
+        },
+        {
+          "name": "(b) form kept (label still typed)",
+          "status": "pass"
+        },
+        {
+          "name": "(b) refused create staged nothing (map still clean)",
+          "status": "pass"
+        },
+        {
+          "name": "(c) NO_FLAG_SLOT",
+          "status": "n/a",
+          "detail": "n/a: --no-slot was not passed (needs the clone free range pre-filled)"
+        },
+        {
+          "name": "(c) NO_VAR_SLOT",
+          "status": "n/a",
+          "detail": "n/a: --no-slot was not passed"
+        }
+      ],
+      "duplicate": {
+        "status": 400,
+        "body": {
+          "error": "NewBarkTown: data/maps/NewBarkTown/scripts.inc: NewBarkTown: data/maps/NewBarkTown/scripts.inc: name NewBarkTown_MapScripts is already taken",
+          "code": "LABEL_TAKEN"
+        },
+        "text": "NewBarkTown: data/maps/NewBarkTown/scripts.inc: NewBarkTown: data/maps/NewBarkTown/scripts.inc: name NewBarkTown_MapScripts is already taken"
+      },
+      "counts": {
+        "pass": 7,
+        "fail": 0,
+        "n/a": 2
+      },
+      "net": [
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/NewBarkTown",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/NewBarkTown?x=11&y=9",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/NewBarkTown",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/NewBarkTown?x=11&y=9",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/NewBarkTown?x=7&y=7",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/NewBarkTown?x=7&y=7",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "POST",
+          "url": "/api/edit/NewBarkTown/event/create",
+          "status": 400,
+          "code": "LABEL_TAKEN"
+        }
+      ]
+    }
+  ],
+  "network": [
+    {
+      "scenario": "refusals",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "refusals",
+      "method": "GET",
+      "url": "/api/event-options/NewBarkTown",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "refusals",
+      "method": "GET",
+      "url": "/api/event-options/NewBarkTown?x=11&y=9",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "refusals",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "refusals",
+      "method": "GET",
+      "url": "/api/event-options/NewBarkTown",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "refusals",
+      "method": "GET",
+      "url": "/api/event-options/NewBarkTown?x=11&y=9",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "refusals",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "refusals",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "refusals",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "refusals",
+      "method": "GET",
+      "url": "/api/event-options/NewBarkTown?x=7&y=7",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "refusals",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "refusals",
+      "method": "GET",
+      "url": "/api/event-options/NewBarkTown?x=7&y=7",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "refusals",
+      "method": "POST",
+      "url": "/api/edit/NewBarkTown/event/create",
+      "status": 400,
+      "code": "LABEL_TAKEN",
+      "body": {
+        "error": "NewBarkTown: data/maps/NewBarkTown/scripts.inc: NewBarkTown: data/maps/NewBarkTown/scripts.inc: name NewBarkTown_MapScripts is already taken",
+        "code": "LABEL_TAKEN"
+      }
+    }
+  ],
+  "pageErrors": [],
+  "resets": [],
+  "finalStatus": ""
+}

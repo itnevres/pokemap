@@ -1,0 +1,436 @@
+{
+  "family": "gba",
+  "map": "NewBarkTown",
+  "ui": "http://127.0.0.1:5193/",
+  "initialStatus": " M include/constants/flags.h\n M include/constants/vars.h\n",
+  "scenarios": [
+    {
+      "name": "refusals",
+      "status": "pass",
+      "checks": [
+        {
+          "name": "(a) invalid identifier in New script name: Add disabled or error shown",
+          "status": "pass",
+          "detail": {
+            "disabled": true
+          }
+        },
+        {
+          "name": "(a) form kept (label still typed, dialog open)",
+          "status": "pass"
+        },
+        {
+          "name": "(b) duplicate label NewBarkTown_MapScripts: create refused (HTTP 400, code LABEL_TAKEN)",
+          "status": "pass",
+          "detail": {
+            "error": "NewBarkTown: data/maps/NewBarkTown/scripts.inc: NewBarkTown: data/maps/NewBarkTown/scripts.inc: name NewBarkTown_MapScripts is already taken",
+            "code": "LABEL_TAKEN"
+          }
+        },
+        {
+          "name": "(b) refusal text names the file data/maps/NewBarkTown/scripts.inc",
+          "status": "pass",
+          "detail": "NewBarkTown: data/maps/NewBarkTown/scripts.inc: NewBarkTown: data/maps/NewBarkTown/scripts.inc: name NewBarkTown_MapScripts is already taken"
+        },
+        {
+          "name": "(b) refusal text names the map NewBarkTown",
+          "status": "pass",
+          "detail": "NewBarkTown: data/maps/NewBarkTown/scripts.inc: NewBarkTown: data/maps/NewBarkTown/scripts.inc: name NewBarkTown_MapScripts is already taken"
+        },
+        {
+          "name": "(b) form kept (label still typed)",
+          "status": "pass"
+        },
+        {
+          "name": "(b) refused create staged nothing (map still clean)",
+          "status": "pass"
+        },
+        {
+          "name": "(c) New flag with no free slot: refused (HTTP 400, code NO_FLAG_SLOT)",
+          "status": "pass",
+          "detail": {
+            "error": "NewBarkTown: include/constants/flags.h: NewBarkTown: include/constants/flags.h: no free FLAG_UNUSED_* slot remains",
+            "code": "NO_FLAG_SLOT"
+          }
+        },
+        {
+          "name": "(c) refusal text names the constants file",
+          "status": "pass",
+          "detail": "NewBarkTown: include/constants/flags.h: NewBarkTown: include/constants/flags.h: no free FLAG_UNUSED_* slot remains"
+        },
+        {
+          "name": "(c) form still filled (flag name kept, dialog open)",
+          "status": "pass"
+        },
+        {
+          "name": "(c) New var with no free slot: refused (HTTP 400, code NO_VAR_SLOT)",
+          "status": "pass",
+          "detail": {
+            "error": "NewBarkTown: include/constants/vars.h: NewBarkTown: include/constants/vars.h: no free VAR_UNUSED_* slot remains",
+            "code": "NO_VAR_SLOT"
+          }
+        },
+        {
+          "name": "(c) refusal text names vars.h",
+          "status": "pass",
+          "detail": "NewBarkTown: include/constants/vars.h: NewBarkTown: include/constants/vars.h: no free VAR_UNUSED_* slot remains"
+        },
+        {
+          "name": "(c) form still filled (var name kept)",
+          "status": "pass"
+        },
+        {
+          "name": "(c) refused creates staged nothing",
+          "status": "pass"
+        }
+      ],
+      "duplicate": {
+        "status": 400,
+        "body": {
+          "error": "NewBarkTown: data/maps/NewBarkTown/scripts.inc: NewBarkTown: data/maps/NewBarkTown/scripts.inc: name NewBarkTown_MapScripts is already taken",
+          "code": "LABEL_TAKEN"
+        },
+        "text": "NewBarkTown: data/maps/NewBarkTown/scripts.inc: NewBarkTown: data/maps/NewBarkTown/scripts.inc: name NewBarkTown_MapScripts is already taken"
+      },
+      "noFlagSlot": {
+        "status": 400,
+        "body": {
+          "error": "NewBarkTown: include/constants/flags.h: NewBarkTown: include/constants/flags.h: no free FLAG_UNUSED_* slot remains",
+          "code": "NO_FLAG_SLOT"
+        },
+        "text": "NewBarkTown: include/constants/flags.h: NewBarkTown: include/constants/flags.h: no free FLAG_UNUSED_* slot remains"
+      },
+      "noVarSlot": {
+        "status": 400,
+        "body": {
+          "error": "NewBarkTown: include/constants/vars.h: NewBarkTown: include/constants/vars.h: no free VAR_UNUSED_* slot remains",
+          "code": "NO_VAR_SLOT"
+        },
+        "text": "NewBarkTown: include/constants/vars.h: NewBarkTown: include/constants/vars.h: no free VAR_UNUSED_* slot remains"
+      },
+      "counts": {
+        "pass": 14,
+        "fail": 0,
+        "n/a": 0
+      },
+      "net": [
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/NewBarkTown",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/NewBarkTown?x=11&y=9",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/NewBarkTown",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/NewBarkTown?x=11&y=9",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/NewBarkTown?x=7&y=7",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/NewBarkTown?x=7&y=7",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "POST",
+          "url": "/api/edit/NewBarkTown/event/create",
+          "status": 400,
+          "code": "LABEL_TAKEN"
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/NewBarkTown?x=12&y=7",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/NewBarkTown?x=12&y=7",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "POST",
+          "url": "/api/edit/NewBarkTown/event/create",
+          "status": 400,
+          "code": "NO_FLAG_SLOT"
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/NewBarkTown?x=17&y=7",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/NewBarkTown?x=17&y=7",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "POST",
+          "url": "/api/edit/NewBarkTown/event/create",
+          "status": 400,
+          "code": "NO_VAR_SLOT"
+        }
+      ]
+    }
+  ],
+  "network": [
+    {
+      "scenario": "refusals",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "refusals",
+      "method": "GET",
+      "url": "/api/event-options/NewBarkTown",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "refusals",
+      "method": "GET",
+      "url": "/api/event-options/NewBarkTown?x=11&y=9",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "refusals",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "refusals",
+      "method": "GET",
+      "url": "/api/event-options/NewBarkTown",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "refusals",
+      "method": "GET",
+      "url": "/api/event-options/NewBarkTown?x=11&y=9",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "refusals",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "refusals",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "refusals",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "refusals",
+      "method": "GET",
+      "url": "/api/event-options/NewBarkTown?x=7&y=7",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "refusals",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "refusals",
+      "method": "GET",
+      "url": "/api/event-options/NewBarkTown?x=7&y=7",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "refusals",
+      "method": "POST",
+      "url": "/api/edit/NewBarkTown/event/create",
+      "status": 400,
+      "code": "LABEL_TAKEN",
+      "body": {
+        "error": "NewBarkTown: data/maps/NewBarkTown/scripts.inc: NewBarkTown: data/maps/NewBarkTown/scripts.inc: name NewBarkTown_MapScripts is already taken",
+        "code": "LABEL_TAKEN"
+      }
+    },
+    {
+      "scenario": "refusals",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "refusals",
+      "method": "GET",
+      "url": "/api/event-options/NewBarkTown?x=12&y=7",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "refusals",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "refusals",
+      "method": "GET",
+      "url": "/api/event-options/NewBarkTown?x=12&y=7",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "refusals",
+      "method": "POST",
+      "url": "/api/edit/NewBarkTown/event/create",
+      "status": 400,
+      "code": "NO_FLAG_SLOT",
+      "body": {
+        "error": "NewBarkTown: include/constants/flags.h: NewBarkTown: include/constants/flags.h: no free FLAG_UNUSED_* slot remains",
+        "code": "NO_FLAG_SLOT"
+      }
+    },
+    {
+      "scenario": "refusals",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "refusals",
+      "method": "GET",
+      "url": "/api/event-options/NewBarkTown?x=17&y=7",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "refusals",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "refusals",
+      "method": "GET",
+      "url": "/api/event-options/NewBarkTown?x=17&y=7",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "refusals",
+      "method": "POST",
+      "url": "/api/edit/NewBarkTown/event/create",
+      "status": 400,
+      "code": "NO_VAR_SLOT",
+      "body": {
+        "error": "NewBarkTown: include/constants/vars.h: NewBarkTown: include/constants/vars.h: no free VAR_UNUSED_* slot remains",
+        "code": "NO_VAR_SLOT"
+      }
+    }
+  ],
+  "pageErrors": [],
+  "resets": [],
+  "finalStatus": " M include/constants/flags.h\n M include/constants/vars.h\n"
+}

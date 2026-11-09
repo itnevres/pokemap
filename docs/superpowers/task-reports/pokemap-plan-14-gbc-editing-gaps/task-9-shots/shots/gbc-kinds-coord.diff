@@ -1,0 +1,31 @@
+diff --git a/maps/Route29.asm b/maps/Route29.asm
+index 9b883f652..b6713cf4c 100644
+--- a/maps/Route29.asm
++++ b/maps/Route29.asm
+@@ -412,6 +412,18 @@ Route29Sign2Text:
+ 	line "NEW BARK TOWN"
+ 	done
+ 
++Route29PokemapCoord1:
++	opentext
++	writetext Route29PokemapCoord1Text
++	waitbutton
++	closetext
++	end
++
++Route29PokemapCoord1Text:
++	text "POKEMAP ACCEPTANCE"
++	line "TEXT"
++	done
++
+ Route29_MapEvents:
+ 	db 0, 0 ; filler
+ 
+@@ -421,6 +433,7 @@ Route29_MapEvents:
+ 	def_coord_events
+ 	coord_event 53,  8, SCENE_ROUTE29_CATCH_TUTORIAL, Route29Tutorial1
+ 	coord_event 53,  9, SCENE_ROUTE29_CATCH_TUTORIAL, Route29Tutorial2
++	coord_event 27,  2, SCENE_ROUTE29_NOOP, Route29PokemapCoord1
+ 
+ 	def_bg_events
+ 	bg_event 51,  7, BGEVENT_READ, Route29Sign1
