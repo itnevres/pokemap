@@ -197,3 +197,18 @@ it("a later refresh parse failure preserves all three published maps and a repai
     expect(entryPointsFor("gba", root, "Own", "", index)).toEqual(entryPointsFor("gba", root, "Own", ""));
   } finally { reads.mockRestore(); rmSync(root, { recursive: true, force: true }); }
 });
+
+it("a transient read failure is retried on the next use, not cached", () => {
+  const root = mkdtempSync(join(tmpdir(), "pokemap-entry-transient-"));
+  const reads = vi.spyOn(sources, "read");
+  try {
+    mkdirSync(join(root, "data/maps/A"), { recursive: true });
+    writeFileSync(join(root, "data/maps/A/map.json"), JSON.stringify({ bg_events: [{ script: "OldScript" }] }));
+    const scripts = join(root, "data/scripts.inc");
+    writeFileSync(scripts, "OldScript::\n\tend\n");
+    reads.mockImplementationOnce(() => { throw new Error("EBUSY: resource busy"); });
+    const index = buildEntryPointIndex("gba", root);
+    expect(entryPointsFor("gba", root, "Own", "", index)).toEqual(entryPointsFor("gba", root, "Own", ""));
+    expect(entryPointsFor("gba", root, "Own", "", index)).toContain("OldScript");
+  } finally { reads.mockRestore(); rmSync(root, { recursive: true, force: true }); }
+});

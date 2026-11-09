@@ -84,12 +84,13 @@ function refreshEntryPointIndex(family: "gba" | "gbc", root: string, index: Entr
   };
   for (const path of files.references) {
     const previous = index.references.get(path);
-    references.set(path, fileResult(() => unchanged(path) && previous ? previous : family === "gbc"
+    // Errors are never reused: a failed read may be transient, so the file is retried on the next use.
+    references.set(path, fileResult(() => unchanged(path) && previous && !(previous instanceof Error) ? previous : family === "gbc"
       ? inFile(path, () => gbcReferences(read(path))) : gbaReferences(path)));
   }
   for (const path of files.definitions) {
     const previous = index.definitions.get(path);
-    definitions.set(path, fileResult(() => unchanged(path) && previous ? previous : inFile(path, () => bodies(read(path), family))));
+    definitions.set(path, fileResult(() => unchanged(path) && previous && !(previous instanceof Error) ? previous : inFile(path, () => bodies(read(path), family))));
   }
   // Re-listing supplies fresh source order, including insertions and removals.
   return { references, definitions, signatures };
