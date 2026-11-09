@@ -1,0 +1,76 @@
+diff --git a/maps/VioletCity.asm b/maps/VioletCity.asm
+index 58b93a306..9313e6878 100644
+--- a/maps/VioletCity.asm
++++ b/maps/VioletCity.asm
+@@ -7,6 +7,9 @@
+ 	const VIOLETCITY_FRUIT_TREE
+ 	const VIOLETCITY_POKE_BALL1
+ 	const VIOLETCITY_POKE_BALL2
++	const VIOLETCITY_YOUNGSTER2
++	const VIOLETCITY_YOUNGSTER3
++	const VIOLETCITY_YOUNGSTER4
+ 
+ VioletCity_MapScripts:
+ 	def_scene_scripts
+@@ -276,6 +279,44 @@ EarlsPokemonAcademySignText:
+ 	line "ACADEMY"
+ 	done
+ 
++VioletCityPokemapObject1:
++	jumptext VioletCityPokemapObject1Text1
++
++VioletCityPokemapObject1Text1:
++	text "VIOLET CITY"
++	line "#MON GYM"
++	cont "LEADER: FALKNER"
++
++	para "The Elegant Master"
++	line "of Flying #MON"
++	done
++
++VioletCityPokemapObject2:
++	jumptextfaceplayer VioletCityPokemapObject2Text
++
++VioletCityPokemapObject2Text:
++	text "HELLO FROM POKEMAP"
++	done
++
++VioletCityPokemapBg1:
++	jumptext VioletCityPokemapBg1Text1
++
++VioletCityPokemapBg1Text1:
++	text "VIOLET CITY"
++	line "#MON GYM"
++	cont "LEADER: FALKNER"
++
++	para "The Elegant Master"
++	line "of Flying #MON"
++	done
++
++VioletCityPokemapBg2:
++	jumptext VioletCityPokemapBg2Text
++
++VioletCityPokemapBg2Text:
++	text "HELLO FROM POKEMAP"
++	done
++
+ VioletCity_MapEvents:
+ 	db 0, 0 ; filler
+ 
+@@ -300,6 +341,9 @@ VioletCity_MapEvents:
+ 	bg_event 32, 25, BGEVENT_READ, VioletCityPokecenterSign
+ 	bg_event 10, 17, BGEVENT_READ, VioletCityMartSign
+ 	bg_event 37, 14, BGEVENT_ITEM, VioletCityHiddenHyperPotion
++	bg_event 22,  6, BGEVENT_READ, EarlsPokemonAcademySign
++	bg_event 27,  6, BGEVENT_READ, VioletCityPokemapBg1
++	bg_event  6, 11, BGEVENT_READ, VioletCityPokemapBg2
+ 
+ 	def_object_events
+ 	object_event 13, 16, SPRITE_FISHER, SPRITEMOVEDATA_SPINRANDOM_SLOW, 0, 0, -1, -1, PAL_NPC_GREEN, OBJECTTYPE_SCRIPT, 0, VioletCityEarlScript, EVENT_VIOLET_CITY_EARL
+@@ -310,3 +354,6 @@ VioletCity_MapEvents:
+ 	object_event 14, 29, SPRITE_FRUIT_TREE, SPRITEMOVEDATA_STILL, 0, 0, -1, -1, 0, OBJECTTYPE_SCRIPT, 0, VioletCityFruitTree, -1
+ 	object_event  4,  1, SPRITE_POKE_BALL, SPRITEMOVEDATA_STILL, 0, 0, -1, -1, 0, OBJECTTYPE_ITEMBALL, 0, VioletCityPPUp, EVENT_VIOLET_CITY_PP_UP
+ 	object_event 35,  5, SPRITE_POKE_BALL, SPRITEMOVEDATA_STILL, 0, 0, -1, -1, 0, OBJECTTYPE_ITEMBALL, 0, VioletCityRareCandy, EVENT_VIOLET_CITY_RARE_CANDY
++	object_event  6,  6, SPRITE_YOUNGSTER, SPRITEMOVEDATA_STANDING_DOWN, 0, 0, -1, -1, 0, OBJECTTYPE_SCRIPT, 0, EarlsPokemonAcademySign, -1
++	object_event 12,  6, SPRITE_YOUNGSTER, SPRITEMOVEDATA_STANDING_DOWN, 0, 0, -1, -1, 0, OBJECTTYPE_SCRIPT, 0, VioletCityPokemapObject1, -1
++	object_event 17,  6, SPRITE_YOUNGSTER, SPRITEMOVEDATA_STANDING_DOWN, 0, 0, -1, -1, 0, OBJECTTYPE_SCRIPT, 0, VioletCityPokemapObject2, -1

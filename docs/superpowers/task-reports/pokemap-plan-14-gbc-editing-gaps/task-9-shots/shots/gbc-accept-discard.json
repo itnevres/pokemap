@@ -1,0 +1,338 @@
+{
+  "family": "gbc",
+  "map": "VioletCity",
+  "ui": "http://127.0.0.1:5195/",
+  "initialStatus": "",
+  "scenarios": [
+    {
+      "name": "discard",
+      "status": "pass",
+      "checks": [
+        {
+          "name": "second add used a New flag",
+          "status": "pass",
+          "detail": {
+            "mode": "new",
+            "name": "EVENT_VIOLETCITY_POKEMAP_OBJECT2"
+          }
+        },
+        {
+          "name": "dirty indicator shown after two adds",
+          "status": "pass"
+        },
+        {
+          "name": "dirty indicator gone after Discard",
+          "status": "pass"
+        },
+        {
+          "name": "git status --porcelain of the clone equals the starting status (files untouched)",
+          "status": "pass",
+          "detail": ""
+        },
+        {
+          "name": "inspector back to empty after Discard",
+          "status": "pass",
+          "detail": {
+            "empty": true,
+            "title": null,
+            "subtitle": null
+          }
+        }
+      ],
+      "eventsBeforeDiscard": 37,
+      "counts": {
+        "pass": 5,
+        "fail": 0,
+        "n/a": 0
+      },
+      "net": [
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity?x=6&y=6",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity?x=6&y=6",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "POST",
+          "url": "/api/edit/VioletCity/event/create",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity?x=12&y=6",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity?x=12&y=6",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "POST",
+          "url": "/api/edit/VioletCity/event/create",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "POST",
+          "url": "/api/edit/VioletCity/discard",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        }
+      ]
+    }
+  ],
+  "network": [
+    {
+      "scenario": "",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "discard",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "discard",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "discard",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity?x=6&y=6",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "discard",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "discard",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity?x=6&y=6",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "discard",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "discard",
+      "method": "POST",
+      "url": "/api/edit/VioletCity/event/create",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "discard",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "discard",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "discard",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "discard",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity?x=12&y=6",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "discard",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "discard",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity?x=12&y=6",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "discard",
+      "method": "POST",
+      "url": "/api/edit/VioletCity/event/create",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "discard",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "discard",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "discard",
+      "method": "POST",
+      "url": "/api/edit/VioletCity/discard",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "discard",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "discard",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "discard",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "discard",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "discard",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity",
+      "status": 200,
+      "code": null
+    }
+  ],
+  "pageErrors": [],
+  "resets": [
+    {
+      "action": "git checkout of the tracked changed paths, then page reload (new visit; the hub re-reads disk)",
+      "paths": []
+    }
+  ],
+  "finalStatus": ""
+}

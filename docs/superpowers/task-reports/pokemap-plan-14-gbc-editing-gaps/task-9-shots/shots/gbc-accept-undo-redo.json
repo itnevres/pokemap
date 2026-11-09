@@ -1,0 +1,312 @@
+{
+  "family": "gbc",
+  "map": "VioletCity",
+  "ui": "http://127.0.0.1:5195/",
+  "initialStatus": "",
+  "scenarios": [
+    {
+      "name": "undo-redo",
+      "status": "pass",
+      "checks": [
+        {
+          "name": "inspector shows the added event",
+          "status": "pass",
+          "detail": {
+            "empty": false,
+            "title": "Bg event #7",
+            "subtitle": "BGEVENT_READ · VioletCityPokemapBg1"
+          }
+        },
+        {
+          "name": "after Undo: dirty indicator gone (response isDirty=false)",
+          "status": "pass",
+          "detail": {
+            "isDirty": false,
+            "canUndo": false,
+            "canRedo": true
+          }
+        },
+        {
+          "name": "after Undo: map clean (dirty indicator gone), inspector back to empty",
+          "status": "pass",
+          "detail": {
+            "empty": true,
+            "title": null,
+            "subtitle": null
+          }
+        },
+        {
+          "name": "after Undo: clone files untouched",
+          "status": "pass"
+        },
+        {
+          "name": "after Redo: dirty indicator back",
+          "status": "pass"
+        },
+        {
+          "name": "after second Undo: dirty indicator gone (isDirty=false)",
+          "status": "pass"
+        },
+        {
+          "name": "session event count: add 34 -> undo 33 -> redo 34 -> undo 33",
+          "status": "pass"
+        },
+        {
+          "name": "canvas marker count",
+          "status": "n/a",
+          "detail": "n/a: the event overlay is painted on a bitmap canvas; counted through the session events in the undo/redo responses and the inspector instead"
+        }
+      ],
+      "undoResponse": {
+        "isDirty": false,
+        "canUndo": false,
+        "canRedo": true
+      },
+      "eventCounts": {
+        "afterAdd": 34,
+        "afterUndo": 33,
+        "afterRedo": 34,
+        "afterSecondUndo": 33
+      },
+      "inspectorAfterRedo": {
+        "empty": false,
+        "title": "Bg event #7",
+        "subtitle": "BGEVENT_READ · VioletCityPokemapBg1"
+      },
+      "counts": {
+        "pass": 7,
+        "fail": 0,
+        "n/a": 1
+      },
+      "net": [
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity?x=6&y=6",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity?x=6&y=6",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "POST",
+          "url": "/api/edit/VioletCity/event/create",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "POST",
+          "url": "/api/edit/VioletCity/undo",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "POST",
+          "url": "/api/edit/VioletCity/redo",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "POST",
+          "url": "/api/edit/VioletCity/undo",
+          "status": 200,
+          "code": null
+        }
+      ]
+    }
+  ],
+  "network": [
+    {
+      "scenario": "",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "undo-redo",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "undo-redo",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "undo-redo",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity?x=6&y=6",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "undo-redo",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "undo-redo",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity?x=6&y=6",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "undo-redo",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "undo-redo",
+      "method": "POST",
+      "url": "/api/edit/VioletCity/event/create",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "undo-redo",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "undo-redo",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "undo-redo",
+      "method": "POST",
+      "url": "/api/edit/VioletCity/undo",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "undo-redo",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "undo-redo",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "undo-redo",
+      "method": "POST",
+      "url": "/api/edit/VioletCity/redo",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "undo-redo",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "undo-redo",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "undo-redo",
+      "method": "POST",
+      "url": "/api/edit/VioletCity/undo",
+      "status": 200,
+      "code": null
+    }
+  ],
+  "pageErrors": [],
+  "resets": [],
+  "finalStatus": ""
+}
