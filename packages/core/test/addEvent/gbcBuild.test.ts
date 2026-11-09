@@ -309,3 +309,19 @@ it("edited GBC copy measures corpus originals without refusing unknown character
   expect(widthCopy(original, { WidthText: '\ttext "Hello"\n\tdone\n' }).text).toContain('text "Hello"');
   refuses("BAD_OPTION", () => widthCopy(original, { WidthText: '\ttext "Hello\u2603"\n\tdone\n' }));
 });
+
+it("rejects a destination warp beyond the destination map count", () => {
+  const dest = [...ctx.mapConsts][0]!;
+  const form: AddEventForm = { kind: "warp", x: 1, y: 2, fields: { destMap: dest, destWarp: "3" } };
+  try { build(form, text, { ...ctx, destinationWarpCount: () => 2 }); throw new Error("expected refusal"); }
+  catch (error) { expect(error).toMatchObject({ code: "BAD_OPTION" }); expect((error as Error).message).toContain(dest); }
+});
+
+it("destination warp count accepts the last warp and dynamic return but refuses invalid counts", () => {
+  const dest = [...ctx.mapConsts][0]!;
+  const form: AddEventForm = { kind: "warp", x: 1, y: 2, fields: { destMap: dest, destWarp: "2" } };
+  expect(build(form, text, { ...ctx, destinationWarpCount: () => 2 }).events.warps.at(-1)?.destWarp).toBe(2);
+  for (const count of [0, -1, NaN, 1.5])
+    refuses("BAD_OPTION", () => build(form, text, { ...ctx, destinationWarpCount: () => count }));
+  expect(build({ ...form, fields: { destMap: dest, destWarp: "-1" } }).events.warps.at(-1)?.destWarp).toBe(-1);
+});

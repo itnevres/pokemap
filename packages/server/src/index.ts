@@ -965,7 +965,8 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
         const name = decodeURIComponent(redoMatch[1]!);
         if (!editSessions.has(name)) return send(200, { blocks: [], border: [], map: null, isDirty: false, canUndo: false, canRedo: false });
         const entry = editEntryFor(name);
-        entry.stack.redo(entry.session);
+        try { entry.stack.redo(entry.session, candidate => addEvents.checkHeaderOwnership(name, candidate)); }
+        catch (error) { return send(400, eventFailure("gba", name, error)); }
         return sendSession(send, 200, entry);
       }
 

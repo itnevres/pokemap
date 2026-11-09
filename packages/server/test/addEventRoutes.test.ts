@@ -315,11 +315,13 @@ PreviewMultiText:
     expect(result.body.refusals.some((r: any) => r.code === "LABEL_TAKEN")).toBe(true);
     expect([source(), mapFile(), header()].map(p => readFileSync(p, "utf8"))).toEqual(original);
   }, 8_000);
-  it("project options include an unsaved flag and remove it after undo", async () => {
+  it("unsaved flag options belong only to the owning map and disappear after undo", async () => {
     await create(ball("FLAG_POKEMAP_FIRST"));
-    expect((await req("/api/event-options")).body.flags).toContain("FLAG_POKEMAP_FIRST");
+    expect((await req("/api/event-options")).body.flags).not.toContain("FLAG_POKEMAP_FIRST");
+    expect((await req(`/api/event-options/${map}`)).body.stagedFlags).toContain("FLAG_POKEMAP_FIRST");
     await edit("undo", {});
     expect((await req("/api/event-options")).body.flags).not.toContain("FLAG_POKEMAP_FIRST");
+    expect((await req(`/api/event-options/${map}`)).body.stagedFlags).not.toContain("FLAG_POKEMAP_FIRST");
   });
   it("other dirty sessions reserve names including staged text without newNames metadata", async () => {
     await create(npc("SharedPokemapScript"));
@@ -452,4 +454,81 @@ PreviewMultiText:
     expect([source(), mapFile(), header()].map(p => readFileSync(p, "utf8"))).toEqual(before);
     expect((await req("/api/event-options")).body.flags).not.toContain("FLAG_POKEMAP_FIRST");
   });
+
+  it.each(["FLAG", "VAR"] as const)("%s unused Existing names are refused before and after allocation", async kind => {
+    const slots = eventOptions.freeGbaSlots(root, kind);
+    expect(slots.length).toBeGreaterThan(0);
+    const existing = kind === "FLAG"
+      ? { ...npc(), flag: { mode: "existing", name: slots[0] }, script: { mode: "existing", label: "0x0" } }
+      : { kind: "coord", x: 1, y: 1, fields: {}, varName: { mode: "existing", name: slots[0] }, script: { mode: "existing", label: "Route101_EventScript_Youngster" } };
+    const refused = await edit("event/create", existing);
+    expect(refused.status).toBe(400); expect(refused.body.code).toBe("BAD_OPTION");
+    const allocated = kind === "FLAG" ? ball("FLAG_POKEMAP_UNUSED_REFUSAL")
+      : { ...existing, varName: { mode: "new", name: "VAR_POKEMAP_UNUSED_REFUSAL" } };
+    await create(allocated);
+    const again = await edit("event/create", existing);
+    expect(again.status).toBe(400); expect(again.body.code).toBe("BAD_OPTION");
+  });
+  for (const kind of ["FLAG", "VAR"] as const) {
+    it.each(["events", "append", "replace"] as const)(`${kind} allocation skips another session's staged %s reference`, async sourceKind => {
+      const slots = eventOptions.freeGbaSlots(root, kind);
+      expect(slots.length).toBeGreaterThan(1);
+      const s = store.open(other).session;
+      if (sourceKind === "events") {
+        s.map = structuredClone(s.map);
+        if (kind === "FLAG") s.map.bgEvents = [...s.map.bgEvents, { type: "hidden_item", x: 1, y: 1, elevation: 0,
+          item: "ITEM_POTION", flag: slots[0]! }];
+        else s.map.coordEvents = [...s.map.coordEvents, { type: "trigger", x: 1, y: 1, elevation: 0,
+          var: slots[0]!, var_value: "1", script: "Route101_EventScript_Youngster" }];
+      } else {
+        const path = `${root}/data/maps/${other}/scripts.inc`;
+        const text = `\n\t${kind === "FLAG" ? "setflag" : "setvar"} ${slots[0]}${kind === "VAR" ? ", 1" : ""}\n`;
+        if (sourceKind === "append") s.scriptAppends = [{ path, text }];
+        else { const before = readFileSync(path, "utf8"); s.scriptReplaces = [{ path, before, after: before + text }]; }
+      }
+      const name = `${kind}_POKEMAP_CROSS_REFERENCE`;
+      await create(kind === "FLAG" ? ball(name) : { kind: "coord", x: 1, y: 1, fields: {},
+        varName: { mode: "new", name }, script: { mode: "existing", label: "Route101_EventScript_Youngster" } });
+      const replacement = state().scriptReplaces.find(edit => edit.path.endsWith(kind === "FLAG" ? "/flags.h" : "/vars.h"))!;
+      expect(replacement.after).toMatch(new RegExp(`^#define[ \\t]+${slots[0]}\\b`, "m"));
+      expect(replacement.after).not.toMatch(new RegExp(`^#define[ \\t]+${slots[1]}\\b`, "m"));
+      expect(replacement.after).toContain(name);
+    });
+    it(`${kind} unsaved Existing options belong only to their own session`, async () => {
+      const name = `${kind}_POKEMAP_LOCAL_OPTIONS`;
+      const form = kind === "FLAG" ? ball(name) : { kind: "coord", x: 1, y: 1, fields: {},
+        varName: { mode: "new", name }, script: { mode: "existing", label: "Route101_EventScript_Youngster" } };
+      await create(form);
+      const key = kind === "FLAG" ? "flags" : "vars", stagedKey = kind === "FLAG" ? "stagedFlags" : "stagedVars";
+      expect((await req("/api/event-options")).body[key]).not.toContain(name);
+      expect((await req(`/api/event-options/${map}`)).body[stagedKey]).toContain(name);
+      expect((await req(`/api/event-options/${other}`)).body[stagedKey]).not.toContain(name);
+      const existing = kind === "FLAG" ? { ...npc(), flag: { mode: "existing", name }, script: { mode: "existing", label: "0x0" } }
+        : { ...form, varName: { mode: "existing", name } };
+      const before = structuredClone(sessions.snapshotOf(store.open(other).session));
+      const refused = await edit("event/create", existing, other);
+      expect(refused.status).toBe(400); expect(refused.body.code).toBe("BAD_OPTION");
+      expect(sessions.snapshotOf(store.open(other).session)).toEqual(before);
+      const own = await edit("event/create", existing);
+      expect(own.status, JSON.stringify(own.body)).toBe(200);
+    });
+    it(`${kind} redo checks header ownership without consuming history`, async () => {
+      const form = (name: string) => kind === "FLAG" ? ball(name) : { kind: "coord", x: 1, y: 1, fields: {},
+        varName: { mode: "new", name }, script: { mode: "existing", label: "Route101_EventScript_Youngster" } };
+      await create(form(`${kind}_POKEMAP_REDO_A`)); const applied = state();
+      expect((await edit("undo", {})).status).toBe(200);
+      const before = state();
+      const b = await edit("event/create", form(`${kind}_POKEMAP_REDO_B`), other);
+      expect(b.status, JSON.stringify(b.body)).toBe(200);
+      const createRefusal = await edit("event/create", form(`${kind}_POKEMAP_REDO_C`));
+      const redoRefusal = await edit("redo", {});
+      expect(redoRefusal.status).toBe(400);
+      expect(redoRefusal.body).toEqual(createRefusal.body);
+      expect(redoRefusal.body.code).toBe(kind === "FLAG" ? "NO_FLAG_SLOT" : "NO_VAR_SLOT");
+      expect(state()).toEqual(before);
+      expect(store.open(map).stack.canRedo()).toBe(true); expect(store.open(map).stack.canUndo()).toBe(false);
+      expect((await edit("undo", {}, other)).status).toBe(200);
+      expect((await edit("redo", {})).status).toBe(200); expect(state()).toEqual(applied);
+    });
+  }
 });

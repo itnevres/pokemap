@@ -56,9 +56,16 @@ export class EditCommandStack<S extends { isDirty: boolean } = EditSession> {
     session.isDirty = this.isDirty();
   }
 
-  redo(session: S): void {
-    const command = this.redoStack.pop();
+  /** Validate the target snapshot before consuming redo history or changing the live session. */
+  redo(session: S, validate?: (candidate: S) => void): void {
+    const command = this.redoStack[this.redoStack.length - 1];
     if (!command) return;
+    if (validate) {
+      const candidate = structuredClone(session);
+      command.apply(candidate);
+      validate(candidate);
+    }
+    this.redoStack.pop();
     command.apply(session);
     this.undoStack.push(command);
     session.isDirty = this.isDirty();

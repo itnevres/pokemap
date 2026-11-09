@@ -91,3 +91,9 @@ describe("gba add event field specs", () => {
     expect(first.elevation).toBe(""); // Workspace supplies the picked tile elevation, core remains the fallback.
   });
 });
+
+it("trainer visibility flag defaults to none", () => {
+  expect(visible("object", "trainer").find(f => f.key === "flag")?.label).toBe("Hide flag");
+  expect(visible("object", "trainer").find(f => f.key === "flag")?.options).toContain("0");
+  expect(addEventDefaults("object", "trainer", ctx)).toMatchObject({ flagMode: "existing", flag: "0" });
+});

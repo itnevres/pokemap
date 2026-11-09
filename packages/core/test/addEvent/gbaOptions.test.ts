@@ -179,3 +179,8 @@ corpus("R2: subject FLAG slots skip the 0x296 alias, the DAILY_FLAGS_* sentinels
   expect([values.get("DAILY_FLAGS_START"), values.get("DAILY_FLAGS_END"), values.get("FLAG_HIDDEN_ITEMS_START")]).toEqual([0xb40, 0xb7f, 0x1f4]);
   for (const name of free) expect(values.get(name)! < 0xb40 || values.get(name)! > 0xb7f).toBe(true);
 });
+
+corpus("unused flag and var definitions are excluded from existing options", () => {
+  expect(options.flags.some(name => name.includes("_UNUSED_"))).toBe(false);
+  expect(options.vars.some(name => name.includes("_UNUSED_"))).toBe(false);
+});

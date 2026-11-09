@@ -124,6 +124,10 @@ function formOf(value: unknown, width: number, height: number): AddEventForm {
   return value as unknown as AddEventForm;
 }
 
+function ownNewNames(store: Store, mapName?: string): string[] {
+  return mapName && store.has(mapName) ? store.open(mapName).session.newNames ?? [] : [];
+}
+
 /** Cache belongs to one handler/project; callers invalidate beside the symbol index. */
 function optionsCache(root: string, family: "gba" | "gbc", store: Store) {
   let cached: EventOptions | undefined;
@@ -133,9 +137,9 @@ function optionsCache(root: string, family: "gba" | "gbc", store: Store) {
     invalidate: () => { cached = undefined; entryPoints = undefined; delete slots.FLAG; delete slots.VAR; },
     entryPoints: () => entryPoints ??= buildEntryPointIndex(family, root),
     slots: (kind: "FLAG" | "VAR") => slots[kind] ??= freeGbaSlots(root, kind),
-    get: (): EventOptions => {
+    get: (mapName?: string): EventOptions => {
       cached ??= family === "gba" ? loadGbaEventOptions(root) : loadGbcEventOptions(root);
-      const names = new Set(store.entries().flatMap(([, e]) => e.session.newNames ?? []));
+      const names = new Set(ownNewNames(store, mapName));
       return { ...cached, flags: [...new Set([...cached.flags, ...[...names].filter(n => n.startsWith(family === "gba" ? "FLAG_" : "EVENT_"))])],
         vars: [...new Set([...cached.vars, ...[...names].filter(n => n.startsWith("VAR_"))])] };
     },
@@ -174,6 +178,28 @@ function textPreview(text: string, family: "gba" | "gbc", label: string) {
   }
   return { label, text: decoded };
 }
+/** Staged references protect cached disk-free slots, including edits in other maps. */
+function stagedGbaTexts(store: GbaStore): string[] {
+  const headers = new Set(["flags.h", "vars.h"].map(file => resolve(store.root, "include/constants", file)));
+  return store.entries().flatMap(([, { session: s }]) => [
+    JSON.stringify([s.map, s.jsonEdits, s.insertOps]),
+    ...(s.scriptAppends ?? []).map(edit => edit.text),
+    ...(s.scriptReplaces ?? []).map(edit => headers.has(resolve(store.root, edit.path))
+      // A slot's own definition is not a reference; RHS/header references still reserve it.
+      ? edit.after.replace(/^([ \t]*#[ \t]*define[ \t]+)[A-Za-z_]\w*/gm, "$1") : edit.after),
+  ]);
+}
+
+function requireStagedHeaderOwnership(store: Store, mapName: string, candidate: EditSession | GbcEditSession) {
+  const headers: [string, "NO_FLAG_SLOT" | "NO_VAR_SLOT"][] = "eventsText" in candidate
+    ? [["constants/event_flags.asm", "NO_FLAG_SLOT"]]
+    : [["include/constants/flags.h", "NO_FLAG_SLOT"], ["include/constants/vars.h", "NO_VAR_SLOT"]];
+  const edits = "eventsText" in candidate ? candidate.constEdits ?? [] : candidate.scriptReplaces ?? [];
+  for (const [path, code] of headers) if (edits.some(edit => resolve(store.root, edit.path) === resolve(store.root, path))) {
+    requireHeaderOwnership(store, mapName, path, code);
+  }
+}
+
 function checkCandidateNames(candidate: EditSession | GbcEditSession, check: NameCheck) {
   for (const name of candidate.newNames ?? []) {
     const hit = check(name);
@@ -220,6 +246,9 @@ export function createGbaAddEventRoutes(project: Project, store: GbaStore, hooks
     const text = stagedText(name), local = locals(text, "gba"), map = mapFor(name);
     const result: MapEventOptions = { entryPoints: [...new Set([...entryPointsFor("gba", root, name, text, cache.entryPoints()), ...local.scripts.filter(label => [...map.objectEvents, ...map.bgEvents, ...map.coordEvents].some(e => e.script === label))])],
       localScripts: local.scripts, localTexts: local.texts, scenes: [], warps: map.warpEvents.map((w, n) => ({ n, x: w.x, y: w.y })) };
+    const names = ownNewNames(store, name);
+    result.stagedFlags = names.filter(name => name.startsWith("FLAG_"));
+    result.stagedVars = names.filter(name => name.startsWith("VAR_"));
     result.localScripts = result.entryPoints.filter(label => local.scripts.includes(label));
     const layout = project.layoutForMap(name), tile = tileQuery(query, layout.width, layout.height);
     if (tile) {
@@ -243,6 +272,7 @@ export function createGbaAddEventRoutes(project: Project, store: GbaStore, hooks
   const freshCheck = (name: string) => projectNameCheck(store, "gba", name, () => buildGbaSymbolIndex(root));
   return {
     invalidate: () => { cache.invalidate(); symbols.invalidate(); }, check, freshCheck,
+    checkHeaderOwnership: (name: string, candidate: EditSession) => requireStagedHeaderOwnership(store, name, candidate),
     handleOptions: optionsHandler("gba", name => project.mapNames().includes(name), cache.get, mapOptions, stagedText),
     create(name: string, value: unknown) {
       const entry = store.open(name), prev = snapshotOf(entry.session), candidate = structuredClone(entry.session);
@@ -253,7 +283,7 @@ export function createGbaAddEventRoutes(project: Project, store: GbaStore, hooks
       if (form.varName?.mode === "new" && form.kind === "coord") requireHeaderOwnership(store, name, "include/constants/vars.h", "NO_VAR_SLOT");
       const path = project.paths.mapScriptsInc(name);
       const built = buildGbaAddEvent(candidate.map, existsSync(path) ? stagedText(name) : null, form, {
-        options: cache.get(), mapOptions: mapOptions(name), root, mapName: name,
+        options: cache.get(name), mapOptions: mapOptions(name), root, mapName: name, stagedTexts: stagedGbaTexts(store),
         tileElevation: candidate.blocks[form.y * candidate.layout.width + form.x]!.elevation,
         freeFlags: form.flag?.mode === "new" ? cache.slots("FLAG") : [],
         freeVars: form.varName?.mode === "new" ? cache.slots("VAR") : [], scriptReplaces: candidate.scriptReplaces ?? [], check: checkNames,
@@ -288,6 +318,9 @@ export function createGbcAddEventRoutes(proj: GbcProject, store: GbcStore, hooks
     const result: MapEventOptions = { entryPoints: entryPointsFor("gbc", root, name, text, cache.entryPoints()), localScripts: local.scripts, localTexts: local.texts,
       scenes: scanCalls(text, "scene_script").map(c => c.args[1]?.text).filter((s): s is string => !!s),
       warps: events.warps.map((w, i) => ({ n: i + 1, x: w.x, y: w.y })) };
+    const names = ownNewNames(store, name);
+    result.stagedFlags = names.filter(name => name.startsWith("EVENT_"));
+    result.stagedVars = names.filter(name => name.startsWith("VAR_"));
     result.localScripts = result.entryPoints.filter(label => local.scripts.includes(label));
     const map = proj.map(name), tile = tileQuery(query, map.width * 2, map.height * 2);
     if (tile) {
@@ -309,6 +342,7 @@ export function createGbcAddEventRoutes(proj: GbcProject, store: GbcStore, hooks
   const freshCheck = (name: string) => projectNameCheck(store, "gbc", name, () => buildGbcSymbolIndex(root));
   return {
     invalidate: () => { cache.invalidate(); symbols.invalidate(); }, check, freshCheck,
+    checkHeaderOwnership: (name: string, candidate: GbcEditSession) => requireStagedHeaderOwnership(store, name, candidate),
     handleOptions: optionsHandler("gbc", name => proj.maps.some(m => m.name === name), cache.get, mapOptions, stagedText),
     create(name: string, value: unknown) {
       const entry = store.open(name), prev = gbcSnapshotOf(entry.session), candidate = structuredClone(entry.session);
@@ -316,7 +350,12 @@ export function createGbcAddEventRoutes(proj: GbcProject, store: GbcStore, hooks
       if (form.flag?.mode === "new" && (form.kind === "object" || form.kind === "bg" && ["BGEVENT_ITEM", "BGEVENT_IFSET", "BGEVENT_IFNOTSET"].includes(form.fields.bgType!))) {
         requireHeaderOwnership(store, name, "constants/event_flags.asm", "NO_FLAG_SLOT");
       }
-      const built = buildGbcAddEvent(candidate.eventsText, name, form, { options: cache.get(), mapOptions: mapOptions(name),
+      const built = buildGbcAddEvent(candidate.eventsText, name, form, { options: cache.get(name), mapOptions: mapOptions(name),
+        destinationWarpCount: mapConst => {
+          const target = proj.maps.find(map => map.constName === mapConst);
+          if (!target) throw new AddEventRefusal("BAD_OPTION", `unknown destination ${mapConst}`);
+          return parseMapEvents(stagedText(target.name), target.name).warps.length;
+        },
         mapConsts: new Set(proj.maps.map(m => m.constName)), eventFlagsDisk: read(`${root}/constants/event_flags.asm`),
         constEdits: candidate.constEdits ?? [], check: check(name), charmap: parseGbcCharmap(read(`${root}/constants/charmap.asm`)) });
       candidate.eventsText = built.text; candidate.events = parseMapEvents(built.text, name);

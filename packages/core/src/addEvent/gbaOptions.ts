@@ -125,7 +125,7 @@ export function loadGbaEventOptions(root: string): EventOptions {
     }
   }
   return {
-    family: "gba", sprites, movements: names("MOVEMENT_TYPE_"), flags: names("FLAG_"), vars: names("VAR_"),
+    family: "gba", sprites, movements: names("MOVEMENT_TYPE_"), flags: names("FLAG_").filter(n => !n.includes("_UNUSED_")), vars: names("VAR_").filter(n => !n.includes("_UNUSED_")),
     items, trainers: cDefines(read(join(root, "include/constants/opponents.h")))
       .map(d => d.name).filter(n => n.startsWith("TRAINER_") && optionName(n)).map(id => ({ id, label: id })),
     bgTypes: ["sign", "hidden_item", "secret_base"], facings: names("BG_EVENT_PLAYER_FACING_"),
