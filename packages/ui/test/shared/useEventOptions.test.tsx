@@ -127,3 +127,14 @@ it("merges only the current map staged constants into displayed options", async 
   expect(result.current.project?.flags).toEqual(["FLAG_DISK"]);
   expect(result.current.project?.vars).toEqual(["VAR_DISK"]);
 });
+
+it("keeps merged project identity across repeat loads while staged constants exist", async () => {
+  const base = { ...project, flags: ["FLAG_DISK"], vars: ["VAR_DISK"] };
+  vi.stubGlobal("fetch", vi.fn((url: string) => Promise.resolve(response(url === "/api/event-options" ? base : { ...mapOptions, stagedFlags: ["FLAG_A"] }))));
+  const { result } = renderHook(() => useEventOptions("A", useVisit("A")));
+  await act(() => result.current.load());
+  const first = result.current.project;
+  await act(() => result.current.load());
+  expect(first?.flags).toEqual(["FLAG_DISK", "FLAG_A"]);
+  expect(result.current.project).toBe(first);
+});

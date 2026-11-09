@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CopyPreview, EventOptions, MapEventOptions, TextPreview } from "@pokemap/core/src/addEvent/types.js";
 import type { Visit } from "./useVisit.js";
 
@@ -62,9 +62,7 @@ export function useEventOptions(mapName: string | null, visit: Visit) {
       if (!current()) return;
       cache.current.project = project;
       cache.current.maps.set(url, map);
-      if (sequence === latestLoad.current) setView({ forMap: name, project: map.stagedFlags?.length || map.stagedVars?.length ? { ...project,
-        flags: [...new Set([...project.flags, ...(map.stagedFlags ?? [])])],
-        vars: [...new Set([...project.vars, ...(map.stagedVars ?? [])])] } : project, map, isCurrent: ticket.isCurrent });
+      if (sequence === latestLoad.current) setView({ forMap: name, project, map, isCurrent: ticket.isCurrent });
     } catch (error) {
       if (current()) throw error;
     }
@@ -78,5 +76,10 @@ export function useEventOptions(mapName: string | null, visit: Visit) {
   }, [request]);
   const copy = useCallback((label: string) => preview<CopyPreview>("copy", label), [preview]);
   const text = useCallback((label: string) => preview<TextPreview>("text", label), [preview]);
-  return { project: view.isCurrent() ? view.project : undefined, map: view.isCurrent() ? view.map : undefined, load, copy, text, invalidate };
+  // Merged once per (project, map) pair: consumers re-run load() when project identity changes, so a fresh object per
+  // load would loop forever while the map has staged flags/vars.
+  const merged = useMemo(() => !view.project || !(view.map?.stagedFlags?.length || view.map?.stagedVars?.length) ? view.project : { ...view.project,
+    flags: [...new Set([...view.project.flags, ...(view.map.stagedFlags ?? [])])],
+    vars: [...new Set([...view.project.vars, ...(view.map.stagedVars ?? [])])] }, [view.project, view.map]);
+  return { project: view.isCurrent() ? merged : undefined, map: view.isCurrent() ? view.map : undefined, load, copy, text, invalidate };
 }
