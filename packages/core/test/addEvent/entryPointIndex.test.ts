@@ -18,20 +18,22 @@ for (const family of ["gba", "gbc"] as const) {
     it.each(maps)("indexed entries equal uncached entries for %s and staged reference additions/removals", map => {
       const path = family === "gba" ? `data/maps/${map}/scripts.inc` : `maps/${map}.asm`;
       const original = readFileSync(join(root!, path), "utf8");
+      const label = family === "gba"
+        ? entryPointsFor(family, root!, map, original, index).find(name => name !== "0x0") ?? ""
+        : "PokemapIndexStagedScript";
+      expect(label).not.toBe("");
       const added = original + (family === "gbc"
-        ? "\nPokemapIndexStagedScript:\n\tend\n\tbg_event 0, 0, BGEVENT_READ, PokemapIndexStagedScript\n"
-        : "\nPokemapIndexStagedScript::\n\tend\n\tcall PokemapIndexStagedScript\n");
-      const removed = added.replace(/^([ \t]*)(?:object_event|bg_event|coord_event|call)\b[^\r\n]*/gm, "$1; removed reference");
-      for (const text of [original, added, removed, original]) {
+        ? `\n${label}:\n\tend\n\tbg_event 0, 0, BGEVENT_READ, ${label}\n`
+        : `\n${label}::\n\tend\n`);
+      const removed = family === "gbc"
+        ? added.replace(/^([ \t]*)(?:object_event|bg_event|coord_event)\b[^\r\n]*/gm, "$1; removed reference")
+        : original + `\n${label}::\n\t.byte 0\n`;
+      for (const text of [original, removed, added, original]) {
         expect(entryPointsFor(family, root!, map, text, index)).toEqual(entryPointsFor(family, root!, map, text));
       }
-      if (family === "gbc") {
-        expect(entryPointsFor(family, root!, map, added, index)).toContain("PokemapIndexStagedScript");
-        expect(entryPointsFor(family, root!, map, removed, index)).not.toContain("PokemapIndexStagedScript");
-      } else {
-        // GBA references come from disk map.json, never from script call instructions.
-        expect(entryPointsFor(family, root!, map, added, index)).not.toContain("PokemapIndexStagedScript");
-      }
+      // GBA eligibility comes from a disk map.json reference plus the staged body.
+      expect(entryPointsFor(family, root!, map, added, index)).toContain(label);
+      expect(entryPointsFor(family, root!, map, removed, index)).not.toContain(label);
     }, 30_000);
   });
 }
@@ -126,5 +128,72 @@ it.each(["gba", "gbc"] as const)("%s refreshes removed renamed and added definit
     expect(reads).toHaveBeenCalledTimes(1); expect(reads).toHaveBeenCalledWith(added);
     expect(entries()).toEqual(fresh());
     reads.mockClear(); entries(); expect(reads).not.toHaveBeenCalled();
+  } finally { reads.mockRestore(); rmSync(root, { recursive: true, force: true }); }
+});
+
+it.each(["Own", "Other"] as const)("GBC deferred errors match uncached behavior for a malformed %s map file", brokenMap => {
+  const root = mkdtempSync(join(tmpdir(), "pokemap-entry-errors-"));
+  try {
+    mkdirSync(join(root, "maps"));
+    const staged = "Foo:\n\tend\n\tbg_event 0, 0, BGEVENT_READ, Foo\n";
+    writeFileSync(join(root, "maps/Own.asm"), staged);
+    writeFileSync(join(root, "maps/Other.asm"), "");
+    const index = buildEntryPointIndex("gbc", root);
+    const path = join(root, `maps/${brokenMap}.asm`);
+    const timestamp = new Date(statSync(path).mtimeMs + 2000);
+    writeFileSync(path, "\tbg_event 0,, BGEVENT_READ, Foo\n");
+    utimesSync(path, timestamp, timestamp);
+    const indexed = () => entryPointsFor("gbc", root, "Own", staged, index);
+    const uncached = () => entryPointsFor("gbc", root, "Own", staged);
+    if (brokenMap === "Own") {
+      expect(indexed).not.toThrow();
+      expect(indexed()).toEqual(uncached()); expect(indexed()).toContain("Foo");
+      expect(index.references.get(path)).toBeInstanceOf(Error);
+      // Initial builds defer the same errors, too.
+      expect(entryPointsFor("gbc", root, "Own", staged, buildEntryPointIndex("gbc", root))).toEqual(uncached());
+    } else {
+      const failure = (run: () => unknown): Error => {
+        try { run(); } catch (error) { if (error instanceof Error) return error; throw error; }
+        throw new Error("expected a malformed other-map error");
+      };
+      const expected = failure(uncached);
+      expect(expected.message).toContain(`${path}: `); expect(expected.message).toMatch(/blank argument/);
+      expect(failure(indexed).message).toBe(expected.message);
+      const fresh = buildEntryPointIndex("gbc", root);
+      expect(fresh.references.get(path)).toBeInstanceOf(Error);
+      expect(failure(() => entryPointsFor("gbc", root, "Own", staged, fresh)).message).toBe(expected.message);
+    }
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+it("a later refresh parse failure preserves all three published maps and a repaired retry succeeds", () => {
+  const root = mkdtempSync(join(tmpdir(), "pokemap-entry-atomic-"));
+  const reads = vi.spyOn(sources, "read");
+  try {
+    for (const name of ["A", "Z"]) mkdirSync(join(root, `data/maps/${name}`), { recursive: true });
+    const first = join(root, "data/maps/A/map.json"), later = join(root, "data/maps/Z/map.json");
+    const json = (label: string) => JSON.stringify({ bg_events: [{ script: label }] });
+    writeFileSync(first, json("OldScript")); writeFileSync(later, "{}");
+    writeFileSync(join(root, "data/scripts.inc"), "OldScript::\n\tend\nNewScript::\n\tend\n");
+    const index = buildEntryPointIndex("gba", root);
+    const previous = { references: index.references, definitions: index.definitions, signatures: index.signatures };
+    const before = { references: [...index.references], definitions: [...index.definitions], signatures: [...index.signatures] };
+    const writeChanged = (path: string, text: string) => {
+      const timestamp = new Date(statSync(path).mtimeMs + 2000);
+      writeFileSync(path, text); utimesSync(path, timestamp, timestamp);
+    };
+    writeChanged(first, json("NewScript")); writeChanged(later, "{");
+    reads.mockClear();
+    expect(() => entryPointsFor("gba", root, "Own", "", index)).toThrow(`${later}: `);
+    expect(reads.mock.calls.map(([path]) => path)).toEqual([first, later]);
+    expect(index.references).toBe(previous.references); expect([...index.references]).toEqual(before.references);
+    expect(index.definitions).toBe(previous.definitions); expect([...index.definitions]).toEqual(before.definitions);
+    expect(index.signatures).toBe(previous.signatures); expect([...index.signatures]).toEqual(before.signatures);
+    writeChanged(later, "{}");
+    reads.mockClear();
+    expect(entryPointsFor("gba", root, "Own", "", index)).toEqual(["0x0", "NewScript"]);
+    expect(reads.mock.calls.map(([path]) => path)).toEqual([first, later]);
+    expect(index.references).not.toBe(previous.references); expect(index.signatures).not.toBe(previous.signatures);
+    expect(entryPointsFor("gba", root, "Own", "", index)).toEqual(entryPointsFor("gba", root, "Own", ""));
   } finally { reads.mockRestore(); rmSync(root, { recursive: true, force: true }); }
 });
