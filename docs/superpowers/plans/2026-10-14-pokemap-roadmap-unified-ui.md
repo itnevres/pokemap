@@ -191,6 +191,7 @@ Both families already render the same `components/Toolbar.tsx`; the differences 
 - **Split (D19, D20; naming ruling, user 2026-11-02):** Plan 14 is split into **Plan 14.1 Add Event**
   (spec `specs/2026-11-02-pokemap-plan-14-1-add-event-design.md`, plan `plans/2026-11-02-pokemap-plan-14-1-add-event.md`)
   and **Plan 14.2 Block editor** (the widened collision editor, D20). The numbering keeps them apart from Plans 14A-14C.
+- **Status (2026-11-09):** 14.1 done on local branch `plan-14-gbc-editing-gaps` (Tasks 1-10, final review approved, gate 4,416 / 1 env fail / 254 files), not yet merged to `master`. 14.2 spec answered (Q1-Q10), plan not written.
 - **Risk:** medium-high. New `.asm` text and tileset-wide writes (LESSONS: GBC Format & Engine Quirks).
 - **Depends on:** D6, D7.
 
