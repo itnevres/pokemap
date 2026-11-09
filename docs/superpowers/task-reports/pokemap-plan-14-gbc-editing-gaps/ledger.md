@@ -158,3 +158,4 @@ Hops:
 - L2 fix round 3 scoped spec re-review (astra): PASS, ADDRESSED, no new issues (`live-l2-spec-rereview-3.md`). L2 complete; merged `--no-ff`.
 - Gate at `cd1ef6e` (L2 merged): 4,381 pass / 1 fail / 254 files (env engine.test only); typecheck pass, UI build pass; subjects unchanged (session-4 snapshot).
 - Task 9 driver fix round 1 (terra): still self-reported incomplete (225 lines) → hop failed (§4, verify) → Claude Sonnet subagent (Anthropic floor; needs to run hub/UI and iterate live) finishing + running both families on new ports 5194/5193 (draft committed `4fe5e04` on `p14-1-t9`). Note: the classifier denied stopping the session's own old scratch hub/Vite (PIDs 25544, 12664 on 5184/5183); left running for the user.
+- Task 10 reviewer: user chose **Claude Opus** (2026-11-09). Final review of `7c68fc19..5d92095` (packages) dispatched to the Opus high-risk-reviewer, in parallel with Task 9 (read-only).
