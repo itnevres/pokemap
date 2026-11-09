@@ -53,6 +53,11 @@ for (const family of ["gba", "gbc"] as const) {
       await expect(result.current.createEvent(form)).rejects.toMatchObject({ message: "A maps/A: name taken", code: "LABEL_TAKEN", stale: false });
       expect(result.current.isDirty).toBe(false);
     });
+    it("rejects a refused redo with the server error text and code", async () => {
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({ error: "B has an unsaved new constant in this file", code: "NO_FLAG_SLOT" }, 400)));
+      const { result } = mount();
+      await expect(result.current.redo()).rejects.toMatchObject({ message: "B has an unsaved new constant in this file", code: "NO_FLAG_SLOT" });
+    });
     it.each(["undo", "redo", "discard"] as const)("%s waits for pending create before its POST", async (action) => {
       const pending = deferred();
       const fetcher = vi.fn().mockReturnValueOnce(pending.promise).mockResolvedValue(response(body));

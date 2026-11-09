@@ -80,8 +80,8 @@ export function useEditSessionCore<State>(base: string, mapName: string | null, 
       const ticket: EditTicket = { map: mapName, seed, seq: ++seq.current.issued, isCurrent: owner.isCurrent };
       try {
         const r = await fetch(`${base}/${encodeURIComponent(mapName)}${path}`, body === undefined ? { method: "POST" } : { method: "POST", body: JSON.stringify(body) });
-        // Legacy callers can opt out of body reads on errors; create always needs refusal codes.
-        const structured = readServerError || path === "/event/create";
+        // Legacy callers can opt out of body reads on errors; create and redo (header ownership) always need refusal codes.
+        const structured = readServerError || path === "/event/create" || path === "/redo";
         const data: unknown = structured ? await r.json().catch(() => null) : r.ok ? await r.json() : undefined;
         if (!r.ok) {
           const error = data as { error?: unknown; code?: unknown } | null;
