@@ -1,8 +1,9 @@
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { buildEntryPointIndex, entryPointsFor, type EntryPointIndex } from "../../src/addEvent/entryPoints.js";
+import * as sources from "../../src/addEvent/sources.js";
 import { subjectSnapshot } from "../helpers/subjectSnapshot.js";
 
 const snapshot = subjectSnapshot();
@@ -35,7 +36,7 @@ for (const family of ["gba", "gbc"] as const) {
   });
 }
 
-it("GBC staged references replace only their own file and home definitions keep precedence without disk reads", () => {
+it("GBC staged references replace only their own file and home definitions keep precedence across disk changes", () => {
   const root = mkdtempSync(join(tmpdir(), "pokemap-entry-index-"));
   try {
     mkdirSync(join(root, "maps")); mkdirSync(join(root, "home"));
@@ -52,11 +53,12 @@ it("GBC staged references replace only their own file and home definitions keep 
     // No current-map file on disk is required for a staged-only map.
     expect(entryPointsFor("gbc", root, "Unsaved", staged, index)).toEqual(entryPointsFor("gbc", root, "Unsaved", staged));
     rmSync(join(root, "maps"), { recursive: true }); rmSync(join(root, "home"), { recursive: true });
-    expect(entryPointsFor("gbc", root, "Own", staged, index)).toEqual(expected);
+    expect(entryPointsFor("gbc", root, "Own", staged, index)).toEqual(["NewScript", "ObjectEvent", "Shadowed"]);
+    expect(entryPointsFor("gbc", root, "Own", staged, index)).toEqual(entryPointsFor("gbc", root, "Own", staged));
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-it("GBA staged definitions override ordered disk definitions while references stay in map.json without disk reads", () => {
+it("GBA staged definitions override ordered disk definitions while references follow map.json disk changes", () => {
   const root = mkdtempSync(join(tmpdir(), "pokemap-entry-index-"));
   try {
     mkdirSync(join(root, "data/maps/Own"), { recursive: true });
@@ -72,6 +74,57 @@ it("GBA staged definitions override ordered disk definitions while references st
     expect(entryPointsFor("gba", root, "Own", staged, index)).toEqual(expected);
     expect(entryPointsFor("gba", root, "Own", "", index)).toEqual(["0x0", "RemovedScript", "Shared"]);
     rmSync(join(root, "data"), { recursive: true });
-    expect(entryPointsFor("gba", root, "Own", staged, index)).toEqual(expected);
+    expect(entryPointsFor("gba", root, "Own", staged, index)).toEqual(["0x0"]);
+    expect(entryPointsFor("gba", root, "Own", staged, index)).toEqual(entryPointsFor("gba", root, "Own", staged));
   } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+it.each(["gba", "gbc"] as const)("%s refreshes removed renamed and added definitions without re-reading unchanged files", family => {
+  const root = mkdtempSync(join(tmpdir(), "pokemap-entry-freshness-"));
+  const reads = vi.spyOn(sources, "read");
+  try {
+    const dir = join(root, family === "gba" ? "data/maps/Other" : "home");
+    mkdirSync(dir, { recursive: true });
+    const labels = ["Removable", "OldLabel", "NewLabel", "AddedLabel"];
+    let staged = "";
+    if (family === "gba") {
+      mkdirSync(join(root, "data/maps/Own"), { recursive: true });
+      writeFileSync(join(root, "data/maps/Own/map.json"), JSON.stringify({ bg_events: labels.map(script => ({ script })) }));
+    } else {
+      mkdirSync(join(root, "maps"));
+      staged = labels.map(label => `\tbg_event 0, 0, BGEVENT_READ, ${label}\n`).join("");
+      writeFileSync(join(root, "maps/Own.asm"), staged);
+    }
+    const extension = family === "gba" ? ".inc" : ".asm";
+    const removed = join(dir, `remove${extension}`), renamed = join(dir, `rename${extension}`), added = join(dir, `added${extension}`);
+    const writeDefinition = (path: string, label: string) => {
+      const timestamp = new Date((existsSync(path) ? statSync(path).mtimeMs : Date.now()) + 2000);
+      writeFileSync(path, `${label}::\n\tend\n`);
+      utimesSync(path, timestamp, timestamp);
+    };
+    writeDefinition(removed, "Removable"); writeDefinition(renamed, "OldLabel");
+    const index = buildEntryPointIndex(family, root);
+    const entries = () => entryPointsFor(family, root, "Own", staged, index);
+    const fresh = () => entryPointsFor(family, root, "Own", staged);
+    expect(entries()).toEqual(fresh()); expect(entries()).toContain("Removable"); expect(entries()).toContain("OldLabel");
+    const previous = index.definitions.get(renamed);
+    reads.mockClear(); entries();
+    expect(reads).not.toHaveBeenCalled(); expect(index.definitions.get(renamed)).toBe(previous);
+    rmSync(removed);
+    reads.mockClear();
+    expect(entries()).not.toContain("Removable"); expect(reads).not.toHaveBeenCalled();
+    expect(index.signatures.has(removed)).toBe(false); expect(entries()).toEqual(fresh());
+    writeDefinition(renamed, "NewLabel");
+    reads.mockClear();
+    const afterRename = entries();
+    expect(afterRename).not.toContain("OldLabel"); expect(afterRename).toContain("NewLabel");
+    expect(reads).toHaveBeenCalledTimes(1); expect(reads).toHaveBeenCalledWith(renamed);
+    expect(entries()).toEqual(fresh());
+    writeDefinition(added, "AddedLabel");
+    reads.mockClear();
+    expect(entries()).toContain("AddedLabel");
+    expect(reads).toHaveBeenCalledTimes(1); expect(reads).toHaveBeenCalledWith(added);
+    expect(entries()).toEqual(fresh());
+    reads.mockClear(); entries(); expect(reads).not.toHaveBeenCalled();
+  } finally { reads.mockRestore(); rmSync(root, { recursive: true, force: true }); }
 });

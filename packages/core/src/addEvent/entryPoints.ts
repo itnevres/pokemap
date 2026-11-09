@@ -1,3 +1,4 @@
+import { statSync } from "node:fs";
 import { join } from "node:path";
 import { codeLines, scanCalls, stripComment } from "../gbc/load/asm.js";
 import { read, textFiles } from "./sources.js";
@@ -36,8 +37,9 @@ function inFile<T>(path: string, parse: () => T): T {
   catch (error) { throw new Error(`${path}: ${error instanceof Error ? error.message : String(error)}`, { cause: error }); }
 }
 export interface EntryPointIndex {
-  readonly references: ReadonlyMap<string, readonly string[]>;
-  readonly definitions: ReadonlyMap<string, ReadonlyMap<string, string>>;
+  references: ReadonlyMap<string, readonly string[]>;
+  definitions: ReadonlyMap<string, ReadonlyMap<string, string>>;
+  signatures: ReadonlyMap<string, { mtimeMs: number; size: number }>;
 }
 
 function gbaReferences(path: string): string[] {
@@ -49,32 +51,53 @@ function gbaReferences(path: string): string[] {
   return refs;
 }
 
-/** Disk-only results in source order; staged text is applied by entryPointsFor. */
-export function buildEntryPointIndex(family: "gba" | "gbc", root: string): EntryPointIndex {
-  const references = new Map<string, string[]>();
-  const definitions = new Map<string, Map<string, string>>();
-  if (family === "gbc") {
-    for (const p of textFiles(join(root, "maps"), [".asm"])) {
-      references.set(p, inFile(p, () => gbcReferences(read(p))));
-    }
-    for (const p of textFiles(join(root, "home"), [".asm"])) {
-      definitions.set(p, inFile(p, () => bodies(read(p), family)));
-    }
-  } else {
-    for (const p of textFiles(join(root, "data/maps"), [".json"])) {
-      if (/[\\/]map\.json$/.test(p)) references.set(p, gbaReferences(p));
-    }
-    for (const p of textFiles(join(root, "data"), [".inc", ".s"])) {
-      definitions.set(p, inFile(p, () => bodies(read(p), family)));
-    }
+function entryPointFiles(family: "gba" | "gbc", root: string) {
+  return family === "gbc" ? {
+    references: textFiles(join(root, "maps"), [".asm"]),
+    definitions: textFiles(join(root, "home"), [".asm"]),
+  } : {
+    references: textFiles(join(root, "data/maps"), [".json"]).filter(p => /[\\/]map\.json$/.test(p)),
+    definitions: textFiles(join(root, "data"), [".inc", ".s"]),
+  };
+}
+
+/** Publish together so a failed refresh never marks partially parsed data fresh. */
+function refreshEntryPointIndex(family: "gba" | "gbc", root: string, index: EntryPointIndex): void {
+  const files = entryPointFiles(family, root);
+  const signatures = new Map<string, { mtimeMs: number; size: number }>();
+  const references = new Map<string, readonly string[]>();
+  const definitions = new Map<string, ReadonlyMap<string, string>>();
+  const unchanged = (path: string): boolean => {
+    const { mtimeMs, size } = inFile(path, () => statSync(path));
+    signatures.set(path, { mtimeMs, size });
+    const previous = index.signatures.get(path);
+    return previous?.mtimeMs === mtimeMs && previous.size === size;
+  };
+  for (const path of files.references) {
+    const previous = index.references.get(path);
+    references.set(path, unchanged(path) && previous ? previous : family === "gbc"
+      ? inFile(path, () => gbcReferences(read(path))) : gbaReferences(path));
   }
-  return { references, definitions };
+  for (const path of files.definitions) {
+    const previous = index.definitions.get(path);
+    definitions.set(path, unchanged(path) && previous ? previous : inFile(path, () => bodies(read(path), family)));
+  }
+  // Re-listing supplies fresh source order, including insertions and removals.
+  index.references = references; index.definitions = definitions; index.signatures = signatures;
+}
+
+/** Disk-only results; each use checks signatures before applying staged text. */
+export function buildEntryPointIndex(family: "gba" | "gbc", root: string): EntryPointIndex {
+  const index: EntryPointIndex = { references: new Map(), definitions: new Map(), signatures: new Map() };
+  refreshEntryPointIndex(family, root, index);
+  return index;
 }
 
 export function entryPointsFor(family: "gba" | "gbc", root: string, mapName: string, mapText: string, index?: EntryPointIndex): string[] {
   const refs = new Set<string>();
   const definitions = new Map<string, string>();
   if (index) {
+    refreshEntryPointIndex(family, root, index);
     const ownPath = join(root, "maps", `${mapName}.asm`);
     for (const [path, references] of index.references) {
       if (family === "gbc" && path === ownPath) continue;
