@@ -112,3 +112,18 @@ describe("useEventOptions", () => {
     expect(next.result.current.project).toBeUndefined(); expect(next.result.current.map).toBeUndefined();
   });
 });
+
+it("merges only the current map staged constants into displayed options", async () => {
+  const base = { ...project, flags: ["FLAG_DISK"], vars: ["VAR_DISK"] };
+  const fetcher = vi.fn((url: string) => Promise.resolve(response(url === "/api/event-options" ? base :
+    url.endsWith("/A") ? { ...mapOptions, stagedFlags: ["FLAG_A"], stagedVars: ["VAR_A"] } : mapOptions)));
+  vi.stubGlobal("fetch", fetcher);
+  const { result, rerender } = renderHook(({ map }) => useEventOptions(map, useVisit(map)), { initialProps: { map: "A" } });
+  await act(() => result.current.load());
+  expect(result.current.project?.flags).toEqual(["FLAG_DISK", "FLAG_A"]);
+  expect(result.current.project?.vars).toEqual(["VAR_DISK", "VAR_A"]);
+  rerender({ map: "B" });
+  await act(() => result.current.load());
+  expect(result.current.project?.flags).toEqual(["FLAG_DISK"]);
+  expect(result.current.project?.vars).toEqual(["VAR_DISK"]);
+});

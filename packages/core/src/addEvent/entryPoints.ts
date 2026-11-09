@@ -52,12 +52,14 @@ export interface EntryPointIndex {
 }
 
 function gbaReferences(path: string): string[] {
-  const map = inFile(path, () => JSON.parse(read(path)) as Record<string, unknown>);
-  const refs: string[] = [];
-  for (const key of ["object_events", "coord_events", "bg_events"]) {
-    for (const e of (map[key] ?? []) as { script?: string }[]) if (e.script) refs.push(e.script);
-  }
-  return refs;
+  return inFile(path, () => {
+    const map = JSON.parse(read(path)) as Record<string, unknown>;
+    const refs: string[] = [];
+    for (const key of ["object_events", "coord_events", "bg_events"]) {
+      for (const e of (map[key] ?? []) as { script?: string }[]) if (e.script) refs.push(e.script);
+    }
+    return refs;
+  });
 }
 
 function entryPointFiles(family: "gba" | "gbc", root: string) {

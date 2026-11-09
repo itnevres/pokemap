@@ -284,3 +284,36 @@ it("edited GBA copy still refuses lines wider than the limit after removing cont
   refuses("BAD_OPTION", () => controlCodeCopy('\t.string "Hi{PAUSE 16}$"\n',
     `\t.string "${"A".repeat(19)}{CLEAR_TO 255}$"\n`));
 });
+
+it("refuses unused flags as existing options", () => {
+  const form = npc(); form.flag = { mode: "existing", name: ctx.freeFlags[0]! };
+  refuses("BAD_OPTION", () => build(form), "data/maps/Route101/map.json");
+});
+it("new flag and var skip slots referenced in staged text", () => {
+  const flag = build(itemball(), inc, { ...ctx, stagedTexts: [`setflag ${ctx.freeFlags[0]}`] });
+  expect(flag.scriptReplaces[0]!.after).toBe(renamed(flagsDisk, ctx.freeFlags[1]!, "FLAG_POKEMAP_POTION"));
+  const coord: AddEventForm = { kind: "coord", x: 1, y: 1, fields: {},
+    varName: { mode: "new", name: "VAR_POKEMAP_TEST" }, script: { mode: "existing", label: "Route101_EventScript_Youngster" } };
+  const variable = build(coord, inc, { ...ctx, stagedTexts: [`setvar ${ctx.freeVars[0]}, 1`] });
+  expect(variable.scriptReplaces[0]!.after).toBe(renamed(varsDisk, ctx.freeVars[1]!, "VAR_POKEMAP_TEST"));
+});
+
+for (const kind of ["FLAG", "VAR"] as const) {
+  it.each(["events", "scripts", "replace"] as const)(`${kind} allocation skips its own staged %s references`, sourceKind => {
+    const slot = (kind === "FLAG" ? ctx.freeFlags : ctx.freeVars)[0]!;
+    const next = (kind === "FLAG" ? ctx.freeFlags : ctx.freeVars)[1]!;
+    const stagedMap = structuredClone(map);
+    const reference = `\n\t${kind === "FLAG" ? "setflag" : "setvar"} ${slot}${kind === "VAR" ? ", 1" : ""}\n`;
+    if (sourceKind === "events") {
+      if (kind === "FLAG") stagedMap.bgEvents.push({ type: "hidden_item", x: 1, y: 1, elevation: 0, item: "ITEM_POTION", flag: slot });
+      else stagedMap.coordEvents.push({ type: "trigger", x: 1, y: 1, elevation: 0, var: slot, var_value: "1", script: "Route101_EventScript_Youngster" });
+    }
+    const context = { ...ctx, scriptReplaces: sourceKind === "replace" ? [{ path: "staged.inc", before: "", after: reference }] : [] };
+    const form: AddEventForm = kind === "FLAG" ? itemball() : { kind: "coord", x: 1, y: 1, fields: {},
+      varName: { mode: "new", name: "VAR_POKEMAP_OWN_REFERENCE" }, script: { mode: "existing", label: "Route101_EventScript_Youngster" } };
+    const built = buildGbaAddEvent(stagedMap, inc + (sourceKind === "scripts" ? reference : ""), form, context);
+    const replacement = built.scriptReplaces.find(edit => edit.path.endsWith(kind === "FLAG" ? "/flags.h" : "/vars.h"))!;
+    expect(replacement.after).toBe(renamed(kind === "FLAG" ? flagsDisk : varsDisk, next,
+      kind === "FLAG" ? "FLAG_POKEMAP_POTION" : "VAR_POKEMAP_OWN_REFERENCE"));
+  });
+}

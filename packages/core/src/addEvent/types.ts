@@ -12,6 +12,7 @@ export interface EventOptions {
 export interface MapEventOptions {
   entryPoints: string[]; localScripts: string[]; localTexts: string[]; scenes: string[];
   warps: { n: number; x: number; y: number }[];
+  stagedFlags?: string[]; stagedVars?: string[];
   tileInfo?: { x: number; y: number; warpCapable: boolean }; returnsTo?: boolean;
 }
 export interface CopyPreview { label: string; body: string; texts: Record<string, string> }

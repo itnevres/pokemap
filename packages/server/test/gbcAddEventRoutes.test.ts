@@ -275,11 +275,13 @@ PreviewMulti${ending}Text:
     expect(result.body.refusals.some((r: any) => r.code === "LABEL_TAKEN")).toBe(true);
     expect([source(), mapFile(), header()].map(p => readFileSync(p, "utf8"))).toEqual(original);
   }, 8_000);
-  it("project options include an unsaved flag and remove it after undo", async () => {
+  it("unsaved flag options belong only to the owning map and disappear after undo", async () => {
     await create(ball("EVENT_POKEMAP_FIRST"));
-    expect((await req("/api/event-options")).body.flags).toContain("EVENT_POKEMAP_FIRST");
+    expect((await req("/api/event-options")).body.flags).not.toContain("EVENT_POKEMAP_FIRST");
+    expect((await req(`/api/event-options/${map}`)).body.stagedFlags).toContain("EVENT_POKEMAP_FIRST");
     await edit("undo", {});
     expect((await req("/api/event-options")).body.flags).not.toContain("EVENT_POKEMAP_FIRST");
+    expect((await req(`/api/event-options/${map}`)).body.stagedFlags).not.toContain("EVENT_POKEMAP_FIRST");
   });
   it("other dirty sessions reserve names including staged text without newNames metadata", async () => {
     await create(npc("SharedPokemapScript"));
@@ -393,5 +395,48 @@ PreviewMulti${ending}Text:
     await create(ball("EVENT_POKEMAP_FIRST")); await edit("discard", {});
     expect([source(), mapFile(), header()].map(p => readFileSync(p, "utf8"))).toEqual(before);
     expect((await req("/api/event-options")).body.flags).not.toContain("EVENT_POKEMAP_FIRST");
+  });
+
+  it("unsaved Existing flags belong only to their own session", async () => {
+    const name = "EVENT_POKEMAP_LOCAL_OPTIONS";
+    await create(ball(name));
+    expect((await req("/api/event-options")).body.flags).not.toContain(name);
+    expect((await req(`/api/event-options/${map}`)).body.stagedFlags).toContain(name);
+    expect((await req(`/api/event-options/${other}`)).body.stagedFlags).not.toContain(name);
+    const existing = { ...npc(), flag: { mode: "existing", name }, script: { mode: "existing", label: "ObjectEvent" } };
+    const before = structuredClone(sessions.gbcSnapshotOf(store.open(other).session));
+    const refused = await edit("event/create", existing, other);
+    expect(refused.status).toBe(400); expect(refused.body.code).toBe("BAD_OPTION");
+    expect(sessions.gbcSnapshotOf(store.open(other).session)).toEqual(before);
+    const own = await edit("event/create", existing);
+    expect(own.status, JSON.stringify(own.body)).toBe(200);
+  });
+  it("redo checks header ownership without consuming history", async () => {
+    await create(ball("EVENT_POKEMAP_REDO_A")); const applied = state();
+    expect((await edit("undo", {})).status).toBe(200); const before = state();
+    const b = await edit("event/create", ball("EVENT_POKEMAP_REDO_B"), other);
+    expect(b.status, JSON.stringify(b.body)).toBe(200);
+    const createRefusal = await edit("event/create", ball("EVENT_POKEMAP_REDO_C"));
+    const redoRefusal = await edit("redo", {});
+    expect(redoRefusal.status).toBe(400); expect(redoRefusal.body).toEqual(createRefusal.body);
+    expect(redoRefusal.body.code).toBe("NO_FLAG_SLOT"); expect(state()).toEqual(before);
+    expect(store.open(map).stack.canRedo()).toBe(true); expect(store.open(map).stack.canUndo()).toBe(false);
+    expect((await edit("undo", {}, other)).status).toBe(200);
+    expect((await edit("redo", {})).status).toBe(200); expect(state()).toEqual(applied);
+  });
+  it("warp create refuses an index beyond the staged destination warp count", async () => {
+    const target = store.open(other).session;
+    const originalCount = target.events.warps.length;
+    const staged = await edit("event/add", { kind: "warp", args: ["1", "1", target.map.constName, "-1"] }, other);
+    expect(staged.status, JSON.stringify(staged.body)).toBe(200);
+    const count = target.events.warps.length;
+    expect(count).toBe(originalCount + 1);
+    const allowed = await edit("event/create", { kind: "warp", x: 1, y: 1, fields: { destMap: target.map.constName, destWarp: String(count) } });
+    expect(allowed.status, JSON.stringify(allowed.body)).toBe(200);
+    expect((await edit("undo", {})).status).toBe(200);
+    const before = state();
+    const result = await edit("event/create", { kind: "warp", x: 1, y: 1, fields: { destMap: target.map.constName, destWarp: String(count + 1) } });
+    expect(result.status).toBe(400); expect(result.body.code).toBe("BAD_OPTION");
+    expect(result.body.error).toContain(target.map.constName); expect(state()).toEqual(before);
   });
 });

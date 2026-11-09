@@ -62,7 +62,9 @@ export function useEventOptions(mapName: string | null, visit: Visit) {
       if (!current()) return;
       cache.current.project = project;
       cache.current.maps.set(url, map);
-      if (sequence === latestLoad.current) setView({ forMap: name, project, map, isCurrent: ticket.isCurrent });
+      if (sequence === latestLoad.current) setView({ forMap: name, project: map.stagedFlags?.length || map.stagedVars?.length ? { ...project,
+        flags: [...new Set([...project.flags, ...(map.stagedFlags ?? [])])],
+        vars: [...new Set([...project.vars, ...(map.stagedVars ?? [])])] } : project, map, isCurrent: ticket.isCurrent });
     } catch (error) {
       if (current()) throw error;
     }

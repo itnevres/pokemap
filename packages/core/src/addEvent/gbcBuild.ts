@@ -12,7 +12,8 @@ import { AddEventRefusal, type AddEventForm, type EventKind, type EventOptions, 
   type MapEventOptions, type NameCheck, type RefusalCode, type TextChoice } from "./types.js";
 
 export type GbcAddCtx = { options: EventOptions; mapOptions: MapEventOptions; mapConsts: Set<string>;
-  eventFlagsDisk: string; constEdits: FileReplace[]; check: NameCheck; charmap: Charmap };
+  eventFlagsDisk: string; constEdits: FileReplace[]; check: NameCheck; charmap: Charmap;
+  destinationWarpCount?: (mapConst: string) => number };
 
 /** Lowest unused default, including generated companion labels. */
 export function defaultGbcLabel(mapName: string, kind: EventKind, check: NameCheck): string {
@@ -163,6 +164,11 @@ export function buildGbcAddEvent(text: string, mapName: string, form: AddEventFo
     if (form.kind === "warp") {
       args = [...xy, option(f.destMap, [...ctx.mapConsts], "destination map"), number(f.destWarp, "1", "destination warp", -1, 255)];
       if (args[3] === "0") fail("BAD_OPTION", "destination warp must be positive or -1");
+      if (args[3] !== "-1") {
+        const count = ctx.destinationWarpCount?.(args[2]!);
+        if (count === undefined || !Number.isSafeInteger(count) || count < 0 || Number(args[3]) > count)
+          fail("BAD_OPTION", `invalid destination warp for ${args[2]}`);
+      }
     } else if (form.kind === "coord") {
       const scenes = scanCalls(text, "scene_script").map(c => c.args[1]?.text).filter((s): s is string => !!s);
       if (!scenes.length) fail("NO_SCENES", "map has no scene_script");

@@ -212,3 +212,14 @@ it("a transient read failure is retried on the next use, not cached", () => {
     expect(entryPointsFor("gba", root, "Own", "", index)).toContain("OldScript");
   } finally { reads.mockRestore(); rmSync(root, { recursive: true, force: true }); }
 });
+
+it.each(["null", '{"object_events":{}}'])("GBA malformed event collections report their map path: %s", json => {
+  const root = mkdtempSync(join(tmpdir(), "pokemap-entry-malformed-"));
+  const path = join(root, "data/maps/Bad/map.json");
+  try {
+    mkdirSync(join(root, "data/maps/Bad"), { recursive: true });
+    writeFileSync(path, json);
+    expect(() => entryPointsFor("gba", root, "Own", "")).toThrow(`${path}: `);
+    expect(() => entryPointsFor("gba", root, "Own", "", buildEntryPointIndex("gba", root))).toThrow(`${path}: `);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});

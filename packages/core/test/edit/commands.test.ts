@@ -138,3 +138,18 @@ describe("EditCommandStack", () => {
     expect(session.blocks).toEqual(start); // ALL 40 reverted by one undo call
   });
 });
+
+it("redo validation refusal preserves the session and redo history", () => {
+  const session = fakeSession([{ metatileId: 1, collision: 0, elevation: 0 }]);
+  const stack = new EditCommandStack();
+  const prev = session.blocks;
+  const next = [{ metatileId: 2, collision: 0, elevation: 0 }];
+  stack.push(session, setBlocksCommand(prev, next));
+  stack.undo(session);
+  expect(() => stack.redo(session, candidate => { expect(candidate.blocks).toEqual(next); throw new Error("owned"); })).toThrow("owned");
+  expect(session.blocks).toEqual(prev);
+  expect(stack.canRedo()).toBe(true);
+  stack.redo(session, candidate => expect(candidate.blocks).toEqual(next));
+  expect(session.blocks).toEqual(next);
+  expect(stack.canRedo()).toBe(false);
+});

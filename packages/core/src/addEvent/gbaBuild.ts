@@ -15,7 +15,7 @@ import { AddEventRefusal, type AddEventForm, type EventKind, type EventOptions, 
 /** `scriptReplaces` holds the session's current entries; the result's list replaces them. */
 export type GbaAddCtx = { options: EventOptions; mapOptions: MapEventOptions; root: string; mapName: string;
   tileElevation: number; freeFlags: string[]; freeVars: string[]; scriptReplaces: ScriptReplace[]; check: NameCheck;
-  charmap: Charmap };
+  charmap: Charmap; stagedTexts?: string[] };
 
 const KIND_NAME: Record<EventKind, string> = { object: "Object", warp: "Warp", coord: "Coord", bg: "Bg" };
 const TRAINER_TEXTS = ["Intro", "Defeated", "PostBattle"] as const;
@@ -116,7 +116,10 @@ export function buildGbaAddEvent(map: MapData, scriptsInc: string | null, form: 
     const current = headerText(rel);
     const defined = new Set(cDefines(current).map(d => d.name));
     const usable = hidden ? hiddenItemFlag(current) : () => true;
-    const free = (kind === "FLAG" ? ctx.freeFlags : ctx.freeVars).find(s => defined.has(s) && usable(s));
+    const staged = [JSON.stringify(map), scriptsInc ?? "", ...(ctx.stagedTexts ?? []),
+      ...scriptReplaces.filter(r => !Object.values(HEADERS).some(h => r.path === abs(h))).map(r => r.after)];
+    const free = (kind === "FLAG" ? ctx.freeFlags : ctx.freeVars).find(s =>
+      defined.has(s) && usable(s) && !staged.some(text => word(s).test(text)));
     if (!free) {
       fail(kind === "FLAG" ? "NO_FLAG_SLOT" : "NO_VAR_SLOT",
         `no free ${kind}_UNUSED_* slot remains${hidden ? " in the hidden-item range FLAG_HIDDEN_ITEMS_START..FLAGS_COUNT" : ""}`, rel);

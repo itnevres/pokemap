@@ -367,7 +367,8 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void;
     "POST redo": { body: false, run: (name) => {
       if (!store.has(name)) return ok(NOTHING_OPEN);
       const entry = store.open(name);
-      entry.stack.redo(entry.session);
+      try { entry.stack.redo(entry.session, candidate => addEvents.checkHeaderOwnership(name, candidate)); }
+      catch (error) { return { code: 400, body: eventFailure("gbc", name, error) }; }
       return asSession(entry);
     } },
     "POST discard": { body: false, run: (name) => { store.close(name); addEvents.invalidate(); return ok(NOTHING_OPEN); } },

@@ -100,3 +100,9 @@ describe("gbc add event field specs", () => {
     expect(first.palette).toBe("0"); expect(first.hourStart).toBe("-1"); expect(first.hourEnd).toBe("-1"); expect(keys("object", "npc")).toContain("objectConst");
   });
 });
+
+it("ObjectEvent is only offered as an object script", () => {
+  expect(visible("object", "npc").find(f => f.key === "script")?.options).toContain("ObjectEvent");
+  for (const kind of ["coord", "bg"] as const)
+    expect(visible(kind, "npc").find(f => f.key === "script")?.options).not.toContain("ObjectEvent");
+});
