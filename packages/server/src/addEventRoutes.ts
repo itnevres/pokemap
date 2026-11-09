@@ -10,7 +10,7 @@ import { definedNames } from "@pokemap/core/src/addEvent/names.js";
 import { AddEventRefusal, type AddEventForm, type EventOptions, type MapEventOptions, type NameCheck } from "@pokemap/core/src/addEvent/types.js";
 import { loadGbaEventOptions, freeGbaSlots, gbaDefineValues, gbaWarpBehavior } from "@pokemap/core/src/addEvent/gbaOptions.js";
 import { loadGbcEventOptions, gbcTileWarpCapable } from "@pokemap/core/src/addEvent/gbcOptions.js";
-import { entryPointsFor } from "@pokemap/core/src/addEvent/entryPoints.js";
+import { buildEntryPointIndex, entryPointsFor, type EntryPointIndex } from "@pokemap/core/src/addEvent/entryPoints.js";
 import { buildGbaAddEvent } from "@pokemap/core/src/addEvent/gbaBuild.js";
 import { buildGbcAddEvent } from "@pokemap/core/src/addEvent/gbcBuild.js";
 import { copyGbaScriptBody } from "@pokemap/core/src/addEvent/gbaCopy.js";
@@ -127,9 +127,11 @@ function formOf(value: unknown, width: number, height: number): AddEventForm {
 /** Cache belongs to one handler/project; callers invalidate beside the symbol index. */
 function optionsCache(root: string, family: "gba" | "gbc", store: Store) {
   let cached: EventOptions | undefined;
+  let entryPoints: EntryPointIndex | undefined;
   const slots: Partial<Record<"FLAG" | "VAR", string[]>> = {};
   return {
-    invalidate: () => { cached = undefined; delete slots.FLAG; delete slots.VAR; },
+    invalidate: () => { cached = undefined; entryPoints = undefined; delete slots.FLAG; delete slots.VAR; },
+    entryPoints: () => entryPoints ??= buildEntryPointIndex(family, root),
     slots: (kind: "FLAG" | "VAR") => slots[kind] ??= freeGbaSlots(root, kind),
     get: (): EventOptions => {
       cached ??= family === "gba" ? loadGbaEventOptions(root) : loadGbcEventOptions(root);
@@ -216,7 +218,7 @@ export function createGbaAddEventRoutes(project: Project, store: GbaStore, hooks
   const mapFor = (name: string) => store.has(name) ? store.open(name).session.map : parseMap(read(project.paths.mapJson(name)));
   const mapOptions = (name: string, query = new URLSearchParams()): MapEventOptions => {
     const text = stagedText(name), local = locals(text, "gba"), map = mapFor(name);
-    const result: MapEventOptions = { entryPoints: [...new Set([...entryPointsFor("gba", root, name, text), ...local.scripts.filter(label => [...map.objectEvents, ...map.bgEvents, ...map.coordEvents].some(e => e.script === label))])],
+    const result: MapEventOptions = { entryPoints: [...new Set([...entryPointsFor("gba", root, name, text, cache.entryPoints()), ...local.scripts.filter(label => [...map.objectEvents, ...map.bgEvents, ...map.coordEvents].some(e => e.script === label))])],
       localScripts: local.scripts, localTexts: local.texts, scenes: [], warps: map.warpEvents.map((w, n) => ({ n, x: w.x, y: w.y })) };
     result.localScripts = result.entryPoints.filter(label => local.scripts.includes(label));
     const layout = project.layoutForMap(name), tile = tileQuery(query, layout.width, layout.height);
@@ -283,7 +285,7 @@ export function createGbcAddEventRoutes(proj: GbcProject, store: GbcStore, hooks
   const stagedText = (name: string) => store.has(name) ? store.open(name).session.eventsText : read(`${root}/maps/${name}.asm`);
   const mapOptions = (name: string, query = new URLSearchParams()): MapEventOptions => {
     const text = stagedText(name), events = parseMapEvents(text, name), local = locals(text, "gbc");
-    const result: MapEventOptions = { entryPoints: entryPointsFor("gbc", root, name, text), localScripts: local.scripts, localTexts: local.texts,
+    const result: MapEventOptions = { entryPoints: entryPointsFor("gbc", root, name, text, cache.entryPoints()), localScripts: local.scripts, localTexts: local.texts,
       scenes: scanCalls(text, "scene_script").map(c => c.args[1]?.text).filter((s): s is string => !!s),
       warps: events.warps.map((w, i) => ({ n: i + 1, x: w.x, y: w.y })) };
     result.localScripts = result.entryPoints.filter(label => local.scripts.includes(label));

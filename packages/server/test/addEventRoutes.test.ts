@@ -1,7 +1,7 @@
 import { copyGbaScriptBody } from "@pokemap/core/src/addEvent/gbaCopy.js";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { readFileSync, writeFileSync, cpSync, mkdirSync, existsSync, mkdtempSync } from "node:fs";
+import { readFileSync, writeFileSync, rmSync, statSync, utimesSync, cpSync, mkdirSync, existsSync, mkdtempSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { beforeAll, afterAll, beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { tmpdir } from "node:os";
@@ -10,6 +10,8 @@ import { parseTilesetPaths } from "@pokemap/core/src/load/tilesets.js";
 import { createGbaAddEventRoutes } from "../src/addEventRoutes.js";
 import * as eventOptions from "@pokemap/core/src/addEvent/gbaOptions.js";
 import * as symbolBuilders from "@pokemap/core/src/defects/symbols.js";
+import * as entryPointBuilders from "@pokemap/core/src/addEvent/entryPoints.js";
+import * as entryPointSources from "@pokemap/core/src/addEvent/sources.js";
 import { createProjectHandler } from "../src/index.js";
 import * as sessions from "../src/editSessions.js";
 import { SUBJECT_ROOT, hasProject } from "@pokemap/core/test/helpers/corpus.js";
@@ -21,6 +23,10 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("GBA add-event routes over a temporar
   let sharedStore: typeof store;
   let verifyCandidate: ((candidate: any) => void) | undefined;
   const diskTests = new Set([
+    "external definition removal rename and addition refresh options and create without invalidation",
+    "map options and create share one lazy entry-point index until discard",
+    "save rebuilds the entry-point index and exposes a newly saved reference",
+    "external map references refresh immediately and discard still invalidates the index",
     "two flags commit the exact accumulated bytes while preserving all other header lines",
     "commit rebuilds symbols after plan and refuses an unrelated-file collision without writes",
     "saving the header owner lets another map allocate a new flag",
@@ -117,6 +123,119 @@ PreviewMultiText:
     if (sharedServer) await new Promise<void>(resolve => sharedServer.close(() => resolve()));
     vi.restoreAllMocks(); if (sharedRoot) removeGbaTemp(sharedRoot);
   });
+  it("map options and create share one lazy entry-point index until discard", async () => {
+    const builds = vi.spyOn(entryPointBuilders, "buildEntryPointIndex");
+    const reads = vi.spyOn(entryPointSources, "read");
+    try {
+      // Every cache test gets its own handler, so earlier tests cannot prime it.
+      expect((await req("/api/event-options")).status).toBe(200);
+      expect(builds).not.toHaveBeenCalled();
+      expect((await req(`/api/event-options/${map}`)).status).toBe(200);
+      reads.mockClear();
+      expect((await req(`/api/event-options/${other}`)).status).toBe(200);
+      expect(reads).not.toHaveBeenCalled();
+      expect(builds).toHaveBeenCalledTimes(1);
+      expect(builds).toHaveBeenLastCalledWith("gba", root);
+      await create();
+      expect(builds).toHaveBeenCalledTimes(1);
+      expect((await edit("discard", {})).status).toBe(200);
+      expect(builds).toHaveBeenCalledTimes(1);
+      expect((await req(`/api/event-options/${map}`)).status).toBe(200);
+      expect(builds).toHaveBeenCalledTimes(2);
+    } finally { builds.mockRestore(); reads.mockRestore(); }
+  }, 30_000);
+  it("save rebuilds the entry-point index and exposes a newly saved reference", async () => {
+    const label = "PokemapIndexSavedOnly";
+    const definition = `${root}/data/maps/${other}/scripts.inc`;
+    writeFileSync(definition, readFileSync(definition, "utf8") + `\n${label}::\n\tend\n`);
+    const builds = vi.spyOn(entryPointBuilders, "buildEntryPointIndex");
+    try {
+      const before = await req(`/api/event-options/${other}`);
+      expect(before.status).toBe(200); expect(before.body.entryPoints).not.toContain(label);
+      const added = await edit("event/add", { kind: "bg", value: {
+        type: "sign", x: 1, y: 1, elevation: 0, player_facing_dir: "BG_EVENT_PLAYER_FACING_ANY", script: label,
+      } });
+      expect(added.status, JSON.stringify(added.body)).toBe(200);
+      // Query another map to exclude the edited map's local staged overlay.
+      expect((await req(`/api/event-options/${other}`)).body.entryPoints).not.toContain(label);
+      expect(builds).toHaveBeenCalledTimes(1);
+      const plan = (await edit("plan")).body;
+      expect(plan.refusals).toEqual([]);
+      expect((await edit("commit", { fingerprint: plan.fingerprint })).status).toBe(200);
+      expect(builds).toHaveBeenCalledTimes(1);
+      const after = await req(`/api/event-options/${other}`);
+      expect(after.status).toBe(200); expect(after.body.entryPoints).toContain(label);
+      expect(builds).toHaveBeenCalledTimes(2);
+      expect((await req(`/api/event-options/${map}`)).status).toBe(200);
+      expect(builds).toHaveBeenCalledTimes(2);
+    } finally { builds.mockRestore(); }
+  }, 30_000);
+  it("external map references refresh immediately and discard still invalidates the index", async () => {
+    const label = "PokemapIndexDiscardOnly";
+    const definition = `${root}/data/maps/${other}/scripts.inc`;
+    writeFileSync(definition, readFileSync(definition, "utf8") + `\n${label}::\n\tend\n`);
+    const builds = vi.spyOn(entryPointBuilders, "buildEntryPointIndex");
+    try {
+      const before = await req(`/api/event-options/${map}`);
+      expect(before.status).toBe(200); expect(before.body.entryPoints).not.toContain(label);
+      const path = `${root}/data/maps/${other}/map.json`;
+      const timestamp = new Date(statSync(path).mtimeMs + 2000);
+      const json = JSON.parse(readFileSync(path, "utf8"));
+      json.bg_events ??= [];
+      json.bg_events.push({ type: "sign", x: 1, y: 1, elevation: 0, player_facing_dir: "BG_EVENT_PLAYER_FACING_ANY", script: label });
+      writeFileSync(path, JSON.stringify(json));
+      utimesSync(path, timestamp, timestamp);
+      expect((await req(`/api/event-options/${map}`)).body.entryPoints).toContain(label);
+      expect(builds).toHaveBeenCalledTimes(1);
+      expect((await edit("discard", {})).status).toBe(200);
+      const after = await req(`/api/event-options/${map}`);
+      expect(after.status).toBe(200); expect(after.body.entryPoints).toContain(label);
+      expect(builds).toHaveBeenCalledTimes(2);
+    } finally { builds.mockRestore(); }
+  }, 30_000);
+  it("external definition removal rename and addition refresh options and create without invalidation", async () => {
+    const labels = ["PokemapIndexRemoved", "PokemapIndexOld", "PokemapIndexNew", "PokemapIndexAdded"];
+    const refsPath = `${root}/data/maps/${other}/map.json`;
+    const json = JSON.parse(readFileSync(refsPath, "utf8"));
+    json.bg_events ??= [];
+    for (const script of labels) json.bg_events.push({ type: "sign", x: 1, y: 1, elevation: 0, player_facing_dir: "BG_EVENT_PLAYER_FACING_ANY", script });
+    const refsTimestamp = new Date(statSync(refsPath).mtimeMs + 2000);
+    writeFileSync(refsPath, JSON.stringify(json)); utimesSync(refsPath, refsTimestamp, refsTimestamp);
+    const dir = `${root}/data/maps/${other}`, extension = ".inc";
+    const removed = `${dir}/pokemap_remove${extension}`, renamed = `${dir}/pokemap_rename${extension}`, added = `${dir}/pokemap_added${extension}`;
+    let timestamp = Date.now() + 2000;
+    const writeDefinition = (path: string, label: string) => {
+      timestamp += 2000;
+      writeFileSync(path, `${label}::\n\tend\n`);
+      utimesSync(path, new Date(timestamp), new Date(timestamp));
+    };
+    const existing = (label: string) => ({ ...npc(), script: { mode: "existing", label } });
+    const entries = async () => {
+      const result = await req(`/api/event-options/${map}`);
+      expect(result.status, JSON.stringify(result.body)).toBe(200);
+      return result.body.entryPoints as string[];
+    };
+    writeDefinition(removed, labels[0]!); writeDefinition(renamed, labels[1]!);
+    const before = await entries();
+    expect(before).toContain(labels[0]); expect(before).toContain(labels[1]);
+    expect(before).not.toContain(labels[2]); expect(before).not.toContain(labels[3]);
+    rmSync(removed);
+    // Create is the first use after the external edit, so it must refresh too.
+    const removedCreate = await edit("event/create", existing(labels[0]!));
+    expect(removedCreate.status).toBe(400); expect(removedCreate.body.code).toBe("BAD_OPTION");
+    expect(await entries()).not.toContain(labels[0]);
+    writeDefinition(renamed, labels[2]!);
+    const renamedCreate = await edit("event/create", existing(labels[1]!));
+    expect(renamedCreate.status).toBe(400); expect(renamedCreate.body.code).toBe("BAD_OPTION");
+    const afterRename = await entries();
+    expect(afterRename).not.toContain(labels[1]); expect(afterRename).toContain(labels[2]);
+    writeDefinition(added, labels[3]!);
+    const addedCreate = await edit("event/create", existing(labels[3]!));
+    expect(addedCreate.status, JSON.stringify(addedCreate.body)).toBe(200);
+    expect((await edit("undo", {})).status).toBe(200);
+    const afterAdd = await entries();
+    expect(afterAdd).toContain(labels[3]); expect(afterAdd).not.toContain(labels[0]);
+  }, 30_000);
   it("create caches project scans and invalidation reloads them", () => {
     const index = vi.spyOn(symbolBuilders, "buildGbaSymbolIndex");
     const options = vi.spyOn(eventOptions, "loadGbaEventOptions");
