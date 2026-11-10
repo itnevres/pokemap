@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { contentManifest } from "@pokemap/core/test/helpers/testRoots.js";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { describe, it, expect, beforeAll, beforeEach, afterAll, vi } from "vitest";
@@ -58,11 +58,7 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbc edit routes (hermetic tem
   let srv: Server;
   let base: string;
   // The real checkout may have unrelated dirty files; assert it is unchanged by this run, not that it is clean.
-  const porcelain = () => {
-    const st = spawnSync("git", ["status", "--porcelain"], { cwd: GBC_SUBJECT_ROOT, encoding: "utf8" });
-    expect(st.status).toBe(0);
-    return st.stdout;
-  };
+  const porcelain = () => contentManifest(GBC_SUBJECT_ROOT);
   let porcelainBefore: string;
 
   beforeAll(async () => {

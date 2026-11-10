@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { execFileSync } from "node:child_process";
+import { contentManifest } from "../../helpers/testRoots.js";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { addGbcEvent, deleteGbcEvent, moveGbcEvent, type GbcEventEdit, type GbcEventKind } from "../../../src/gbc/edit/events.js";
 import { objectConstDefLine, scanObjectConsts } from "../../../src/gbc/load/events.js";
@@ -72,8 +72,8 @@ const PINS: Record<"subject" | "pret", Pins> = {
   },
 };
 
-/** Belt-and-braces guard on top of the temp-copy isolation: a real root's git status must not change. */
-const porcelain = (root: string): string => execFileSync("git", ["--no-optional-locks", "-C", root, "status", "--porcelain"], { encoding: "utf8" });
+/** Belt-and-braces guard on top of the temp-copy isolation: the corpus root's content must not change. */
+const porcelain = (root: string): string => contentManifest(root);
 
 /** Every file under `dir/sub` (relative to `dir`, "/"-separated); `.git` excluded. */
 function walk(dir: string, sub = ""): string[] {

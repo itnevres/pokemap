@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor, act } from "@testing-library/react"
 import { GbcEventInspector, duplicateArgs } from "../../src/gbc/GbcEventInspector.js";
 import type { GbcMapEvents } from "@pokemap/core/src/gbc/model/types.js";
 
-// Measured from pokecrystal-PerfPlus maps/NewBarkTown.asm (read only), line 302.
+// Measured from the GBC corpus maps/NewBarkTown.asm (read only), line 302.
 const TEACHER = { x: 6, y: 8, sprite: "SPRITE_TEACHER", moveData: "SPRITEMOVEDATA_SPINRANDOM_SLOW", radiusX: 1, radiusY: 0, hour1: "-1", hour2: "-1", palette: "0", objectType: "OBJECTTYPE_SCRIPT", sightRange: 0, script: "NewBarkTownTeacherScript", eventFlag: "-1", lineIndex: 0 };
 const TEACHER_ARGS = ["7", "8", "SPRITE_TEACHER", "SPRITEMOVEDATA_SPINRANDOM_SLOW", "1", "0", "-1", "-1", "0", "OBJECTTYPE_SCRIPT", "0", "NewBarkTownTeacherScript", "-1"];
 
