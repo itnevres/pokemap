@@ -24,6 +24,13 @@ Branch `plan-14-2-block-editor` from master `3f4a762` (Plan 14.1 merged via itne
 
 - Spec review 2: Codex `gpt-6-astra` read-only (thread `01a1c72a-617b-7c82-b9f3-83d0f2115d8a`): 9 Important, 2 Minor,
   all folded in (see the spec's Review record).
+- Plan review 1: Codex `gpt-6-astra` read-only, 2026-11-10: 1 Critical, 11 Important, 1 Minor. Restructured 13 → 16
+  tasks (contracts/overlay first; core save split from hub ownership; overlay lifecycle; UI transport task), revision
+  token for stale popups, ownership by history, prepared-entry match, `tilesetEffects` producer, version propagation
+  to map/world/palette URLs, deterministic GBA fixture, mixed multi-palette and reservation cases, named assertion per
+  mutation, `copyGbaTilesetProject` helper. **Declined: Critical #1** (full gate writes the real subject through old
+  restore-in-finally tests): pre-existing, the gate the user mandates, guarded by the 14.1 globalSetup snapshot and
+  the post-gate subject check; 14.2's own tests never write subjects (plan Global Constraints).
 
 ## Offload log
 
