@@ -1,0 +1,15 @@
+No Critical findings.
+
+1. **Important — `packages/core/src/addEvent/gbaOptions.ts:44`: GBA background types omit signs and use the wrong values.** Actual output is `["BG_EVENT_HIDDEN_ITEM", "BG_EVENT_SECRET_BASE"]`. The binding spec requires `sign`, `hidden_item`, and `secret_base`, matching the subject’s `map.json` format (for example, Route111). Consumers cannot offer a sign from this list. **Fix:** return those three supported types and assert exact equality in the snapshot test.
+
+2. **Important — `packages/core/src/addEvent/gbaOptions.ts:42,45`: raw prefix filters include non-option constants.** Verified output includes `ITEM_USE_MAIL`, `ITEM_B_USE_MEDICINE`, and `SECRET_BASE_RED_CAVE1`. The subject defines the first two as item-use categories (`items.h:522,529`) and the last as `SECRET_BASE_GROUP(0)` (`secret_bases.h:26`), not a real secret-base ID. These violate the spec’s explicit exclusion of grouping constants and can produce incorrect event values. **Fix:** parse the actual item-ID and secret-base-ID sets; add exclusions for these concrete examples alongside positive real-ID assertions.
+
+3. **Important — `packages/core/src/addEvent/gbcOptions.ts:27`: existing TM/HM items are missing.** `parseConstDefs` skips macro definitions and does not expand `add_tm`/`add_hm`. Verified loader output omits `TM_ROLLOUT` and `HM_CUT`; the subject defines them through these macros (`item_constants.asm:213,223,279,286`) and uses `itemball TM_ROLLOUT` in `maps/Route35.asm:259`. The required item dropdown therefore cannot select an existing item-ball item. **Fix:** recognize the item-producing macro invocations and test TM/HM entries from the snapshot.
+
+4. **Important — `packages/core/src/addEvent/entryPoints.ts:26`: scene/callback references expand the allowed script set.** The binding Scripts section limits eligibility to object/bg/coord script references. This implementation additionally offers `Route29Noop1Scene` and `Route29TuscanyCallback`, referenced only by `scene_script` and `callback` in the subject’s `Route29.asm:13,17`. **Fix:** collect references only from the three specified event macros; add negative assertions for these scene/callback-only labels.
+
+5. **Minor — `packages/core/src/addEvent/gbcOptions.ts:33`: GBC exposes an unsupported var option set.** Actual output contains script-engine variables such as `VAR_PARTYCOUNT`. The binding table marks GBC var as “n/a,” and the contract requires absent fields to be `[]`. **Fix:** return `vars: []` and pin that in the GBC test.
+
+The declared interfaces and enumerated Step 1 tests are present, and corpus tests use the globalSetup snapshot. Engine-source checks support the warp predicates, quarter parity, trainer argument order, and 48-slot boundary. No files edited or Vitest run; runtime test evidence remains conductor-supplied.
+
+Spec: FAIL

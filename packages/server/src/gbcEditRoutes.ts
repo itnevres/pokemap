@@ -1,3 +1,5 @@
+import type { createSymbolIndexCache } from "./projectSymbols.js";
+import { createGbcAddEventRoutes, eventFailure, type AddEventHooks } from "./addEventRoutes.js";
 import { findGbcIndicator, insertGbcIndicator, updateGbcIndicator } from "@pokemap/core/src/indicator/gbc.js";
 import { loadGbcOwnSprites, gbcIndicatorSprite, rankGbcIndicatorSpecies, suggestGbcIndicatorPlacement } from "@pokemap/core/src/indicator/gbcData.js";
 import { gbcSpeciesNames } from "@pokemap/core/src/signs/linked.js";
@@ -92,8 +94,9 @@ const sessionBody = (e: GbcSessionEntry) => ({
   canUndo: e.stack.canUndo(), canRedo: e.stack.canRedo(),
 });
 
-export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void }) {
+export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void; symbols?: ReturnType<typeof createSymbolIndexCache> } & AddEventHooks) {
   const store = createGbcEditSessionStore(proj);
+  const addEvents = createGbcAddEventRoutes(proj, store, hooks, hooks.symbols);
   const mapNames = new Set(proj.maps.map((m) => m.name));
   const mapConsts = new Set(proj.maps.map((m) => m.constName));
 
@@ -214,11 +217,12 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void 
   }
   function signPlan(name: string) {
     const refreshed = refreshGbcLinkedSigns(proj, store.open(name));
-    const plan = planGbcSave(proj, refreshed.session);
+    const checkNames = addEvents.freshCheck(name);
+    const plan = planGbcSave(proj, refreshed.session, { checkNames });
     let prepared: AtomicEntry[] = [];
     let prepareError: unknown;
     if (plan.refusals.length === 0) {
-      try { prepared = prepareGbcSave(proj, plan.session); }
+      try { prepared = prepareGbcSave(proj, plan.session, { checkNames }); }
       catch (error) { prepareError = error instanceof Error ? error : new Error(String(error)); }
     }
     // A prepare failure (a planned target unreadable) is shown in the plan as a located refusal, so the dialog says why Save is off.
@@ -226,13 +230,17 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void 
     const refusals = prepareError === undefined ? diff.refusals : [...diff.refusals, { code: "SAVE_PREPARE_FAILED", subject: name,
       message: `Could not read the files this save would write: ${(prepareError as Error).message}`,
       fix: "Close any program holding the file or fix its permissions, then reopen Save" }];
-    return { plan, prepared, prepareError, body: { ...diff, refusals, signNotices: refreshed.notices,
+    return { plan, prepared, prepareError, checkNames, body: { ...diff, refusals, signNotices: refreshed.notices,
       fingerprint: plan.refusals.length > 0 || prepareError !== undefined ? null : planFingerprint(prepared),
     } };
   }
 
   /** Route table keyed `METHOD sub-route`. `body: true` routes get the parsed JSON object. */
   const routes: Record<string, { body: boolean; run(name: string, body: Obj): Result }> = {
+    "POST event/create": { body: true, run: (name, body) => {
+      try { return ok(addEvents.create(name, body)); }
+      catch (error) { return { code: 400, body: eventFailure("gbc", name, error) }; }
+    } },
     "GET indicator/at": { body: false, run: (name, body) => {
       try {
         const index = int(body, "index");
@@ -359,10 +367,11 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void 
     "POST redo": { body: false, run: (name) => {
       if (!store.has(name)) return ok(NOTHING_OPEN);
       const entry = store.open(name);
-      entry.stack.redo(entry.session);
+      try { entry.stack.redo(entry.session, candidate => addEvents.checkHeaderOwnership(name, candidate)); }
+      catch (error) { return { code: 400, body: eventFailure("gbc", name, error) }; }
       return asSession(entry);
     } },
-    "POST discard": { body: false, run: (name) => { store.close(name); return ok(NOTHING_OPEN); } },
+    "POST discard": { body: false, run: (name) => { store.close(name); addEvents.invalidate(); return ok(NOTHING_OPEN); } },
     "POST event/move": { body: true, run: (name, body) => {
       const [kind, index, x, y] = [kindOf(body), int(body, "index"), int(body, "x"), int(body, "y")];
       const entry = store.open(name);
@@ -404,7 +413,7 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void 
         fix: "Review the updated changes and save again",
       } } };
       // Clear caches on writer failure as well as success; keep the session on failure.
-      try { commitGbcSave(proj, plan, prepared); } finally { hooks.onCommit(); }
+      try { commitGbcSave(proj, plan, prepared, undefined, { checkNames: fresh.checkNames }); } finally { hooks.onCommit(); }
       // Closed, not kept: the session's originals predate the write, and the
       // next open() re-reads the files. On a throw it stays open for a retry/discard.
       store.close(name);
@@ -418,6 +427,7 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void 
   return {
     /** Returns true when it claimed the request (the response is sent now or later); false means fall through. */
     handle(req: IncomingMessage, url: URL, send: Send): boolean {
+      if (req.method === "GET" && addEvents.handleOptions(url, send)) return true;
       const suggestion = /^\/api\/indicator\/([^/]+)\/suggestions$/.exec(url.pathname);
       if (suggestion && req.method === "GET") {
         const name = decodeMapName(suggestion[1]!);
@@ -446,8 +456,8 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void 
           const text = await readBody(req);
           let parsed: unknown;
           try { parsed = m[2] === "commit" && text.trim() === "" ? {} : JSON.parse(text); }
-          catch (e) { return { code: 400, body: { error: `invalid JSON body: ${(e as Error).message}` } }; }
-          if (!isObj(parsed)) return { code: 400, body: { error: `expected a JSON object body, got ${text}` } };
+          catch (e) { return { code: 400, body: m[2] === "event/create" ? eventFailure("gbc", name, e) : { error: `invalid JSON body: ${(e as Error).message}` } }; }
+          if (!isObj(parsed)) return { code: 400, body: m[2] === "event/create" ? eventFailure("gbc", name, new Error("expected a JSON object body")) : { error: `expected a JSON object body, got ${text}` } };
           body = parsed;
         }
         if (req.method === "GET" && (m[2] === "sign/at" || m[2] === "indicator/at")) {
@@ -468,6 +478,7 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void 
     },
     /** Current blocks of an open session for `name`, else undefined (the render route's override). */
     openBlocks: (name: string): Block[] | undefined => (store.has(name) ? store.open(name).session.blocks : undefined),
+    invalidateOptions: addEvents.invalidate,
     dirtyMaps: (): string[] => store.dirty(),
     closeAll: (): void => store.closeAll(),
   };

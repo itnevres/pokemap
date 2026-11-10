@@ -1,0 +1,1357 @@
+{
+  "family": "gba",
+  "map": "NewBarkTown",
+  "ui": "http://127.0.0.1:5193/",
+  "initialStatus": "",
+  "scenarios": [
+    {
+      "name": "kinds-defaults",
+      "status": "pass",
+      "forms": [
+        {
+          "kind": "object",
+          "x": 11,
+          "y": 9,
+          "objectType": "npc",
+          "fields": {
+            "sprite": "OBJ_EVENT_GFX_YOUNGSTER",
+            "movement": "MOVEMENT_TYPE_FACE_DOWN",
+            "rangeX": "0",
+            "rangeY": "0",
+            "elevation": "0"
+          },
+          "flag": {
+            "mode": "existing",
+            "name": "0"
+          },
+          "script": {
+            "mode": "new",
+            "label": "NewBarkTown_EventScript_PokemapObject1",
+            "text": "POKEMAP ACCEPTANCE TEXT"
+          }
+        },
+        {
+          "kind": "warp",
+          "x": 7,
+          "y": 7,
+          "fields": {
+            "destMap": "NewBarkTown",
+            "destWarp": "0",
+            "elevation": "3"
+          }
+        },
+        {
+          "kind": "coord",
+          "x": 12,
+          "y": 7,
+          "fields": {
+            "varValue": "0",
+            "elevation": "0"
+          },
+          "varName": {
+            "mode": "existing",
+            "name": "VAR_TEMP_0"
+          },
+          "script": {
+            "mode": "new",
+            "label": "NewBarkTown_EventScript_PokemapCoord1",
+            "text": "POKEMAP ACCEPTANCE TEXT"
+          }
+        },
+        {
+          "kind": "bg",
+          "x": 17,
+          "y": 7,
+          "fields": {
+            "bgType": "sign",
+            "elevation": "0",
+            "facing": "BG_EVENT_PLAYER_FACING_ANY"
+          },
+          "script": {
+            "mode": "new",
+            "label": "NewBarkTown_EventScript_PokemapBg1",
+            "text": "POKEMAP ACCEPTANCE TEXT"
+          }
+        },
+        {
+          "kind": "object",
+          "x": 22,
+          "y": 7,
+          "objectType": "itemball",
+          "fields": {
+            "movement": "MOVEMENT_TYPE_FACE_DOWN",
+            "rangeX": "0",
+            "rangeY": "0",
+            "elevation": "0",
+            "label": "NewBarkTown_EventScript_PokemapObject2",
+            "item": "ITEM_NONE"
+          },
+          "flag": {
+            "mode": "new",
+            "name": "FLAG_NEWBARKTOWN_POKEMAP_OBJECT2"
+          }
+        },
+        {
+          "kind": "object",
+          "x": 11,
+          "y": 14,
+          "objectType": "trainer",
+          "fields": {
+            "sprite": "OBJ_EVENT_GFX_YOUNGSTER",
+            "movement": "MOVEMENT_TYPE_FACE_DOWN",
+            "rangeX": "0",
+            "rangeY": "0",
+            "elevation": "3",
+            "label": "NewBarkTown_EventScript_PokemapObject3",
+            "trainer": "TRAINER_NONE",
+            "sightRange": "3"
+          },
+          "flag": {
+            "mode": "existing",
+            "name": "0"
+          },
+          "texts": {
+            "seen": {
+              "mode": "new",
+              "text": "POKEMAP ACCEPTANCE TEXT"
+            },
+            "beaten": {
+              "mode": "new",
+              "text": "POKEMAP ACCEPTANCE TEXT"
+            },
+            "after": {
+              "mode": "new",
+              "text": "POKEMAP ACCEPTANCE TEXT"
+            }
+          }
+        },
+        {
+          "kind": "bg",
+          "x": 7,
+          "y": 11,
+          "fields": {
+            "bgType": "hidden_item",
+            "elevation": "3",
+            "item": "ITEM_NONE"
+          },
+          "flag": {
+            "mode": "new",
+            "name": "FLAG_NEWBARKTOWN_POKEMAP_BG2"
+          }
+        }
+      ],
+      "saves": 2,
+      "checks": [
+        {
+          "name": "Warp dialog becomes ready and Add succeeds",
+          "status": "pass",
+          "detail": {
+            "destRequests": 2
+          }
+        },
+        {
+          "name": "inspector shows the new event right after each add",
+          "status": "pass",
+          "detail": [
+            {
+              "kind": "object",
+              "objectType": "npc",
+              "empty": false,
+              "title": "Object event #9",
+              "subtitle": "OBJ_EVENT_GFX_YOUNGSTER · MOVEMENT_TYPE_FACE_DOWN"
+            },
+            {
+              "kind": "warp",
+              "empty": false,
+              "title": "Warp event #8",
+              "subtitle": "→ MAP_NEW_BARK_TOWN #0"
+            },
+            {
+              "kind": "coord",
+              "empty": false,
+              "title": "Coord event #6",
+              "subtitle": "trigger"
+            },
+            {
+              "kind": "bg",
+              "empty": false,
+              "title": "Bg event #5",
+              "subtitle": "sign"
+            },
+            {
+              "kind": "object",
+              "objectType": "itemball",
+              "empty": false,
+              "title": "Object event #10",
+              "subtitle": "OBJ_EVENT_GFX_ITEM_BALL · MOVEMENT_TYPE_FACE_DOWN"
+            },
+            {
+              "kind": "object",
+              "objectType": "trainer",
+              "empty": false,
+              "title": "Object event #11",
+              "subtitle": "OBJ_EVENT_GFX_YOUNGSTER · MOVEMENT_TYPE_FACE_DOWN"
+            },
+            {
+              "kind": "bg",
+              "empty": false,
+              "title": "Bg event #6",
+              "subtitle": "hidden_item"
+            }
+          ]
+        },
+        {
+          "name": "changed paths within allowlist [data/maps/NewBarkTown/map.json, data/maps/NewBarkTown/scripts.inc, include/constants/flags.h, include/constants/vars.h]",
+          "status": "pass",
+          "detail": [
+            "data/maps/NewBarkTown/map.json",
+            "data/maps/NewBarkTown/scripts.inc",
+            "include/constants/flags.h"
+          ]
+        },
+        {
+          "name": "map events file and script file both changed",
+          "status": "pass"
+        },
+        {
+          "name": "map.json removed lines are only closing braces",
+          "status": "pass",
+          "detail": [
+            "    }",
+            "    }",
+            "    }",
+            "    }"
+          ]
+        },
+        {
+          "name": "scripts.inc: nothing removed",
+          "status": "pass"
+        },
+        {
+          "name": "#1 object/npc map.json event object is exactly {\"graphics_id\":\"OBJ_EVENT_GFX_YOUNGSTER\",\"x\":11,\"y\":9,\"elevation\":0,\"movement_type\":\"MOVEMENT_TYPE_FACE_DOWN\",\"movement_range_x\":0,\"movement_range_y\":0,\"trainer_type\":\"TRAINER_TYPE_NONE\",\"trainer_sight_or_berry_tree_id\":\"0\",\"script\":\"NewBarkTown_EventScript_PokemapObject1\",\"flag\":\"0\"}",
+          "status": "pass",
+          "detail": [
+            {
+              "graphics_id": "OBJ_EVENT_GFX_YOUNGSTER",
+              "x": 11,
+              "y": 9,
+              "elevation": 0,
+              "movement_type": "MOVEMENT_TYPE_FACE_DOWN",
+              "movement_range_x": 0,
+              "movement_range_y": 0,
+              "trainer_type": "TRAINER_TYPE_NONE",
+              "trainer_sight_or_berry_tree_id": "0",
+              "script": "NewBarkTown_EventScript_PokemapObject1",
+              "flag": "0"
+            }
+          ]
+        },
+        {
+          "name": "#1 object/npc script block exact",
+          "status": "pass",
+          "detail": "^NewBarkTown_EventScript_PokemapObject1::\\n\\tmsgbox (NewBarkTown_Text_PokemapObject\\d+), MSGBOX_NPC\\n\\tend\\n\\n\\1:\\n\\t\\.s"
+        },
+        {
+          "name": "#2 warp map.json event object is exactly {\"x\":7,\"y\":7,\"elevation\":3,\"dest_map\":\"MAP_NEW_BARK_TOWN\",\"dest_warp_id\":\"0\"}",
+          "status": "pass",
+          "detail": [
+            {
+              "x": 7,
+              "y": 7,
+              "elevation": 3,
+              "dest_map": "MAP_NEW_BARK_TOWN",
+              "dest_warp_id": "0"
+            }
+          ]
+        },
+        {
+          "name": "#3 coord map.json event object is exactly {\"type\":\"trigger\",\"x\":12,\"y\":7,\"elevation\":0,\"var\":\"VAR_TEMP_0\",\"var_value\":\"0\",\"script\":\"NewBarkTown_EventScript_PokemapCoord1\"}",
+          "status": "pass",
+          "detail": [
+            {
+              "type": "trigger",
+              "x": 12,
+              "y": 7,
+              "elevation": 0,
+              "var": "VAR_TEMP_0",
+              "var_value": "0",
+              "script": "NewBarkTown_EventScript_PokemapCoord1"
+            }
+          ]
+        },
+        {
+          "name": "#3 coord script block exact",
+          "status": "pass",
+          "detail": "^NewBarkTown_EventScript_PokemapCoord1::\\n\\tlockall\\n\\tmsgbox (NewBarkTown_Text_PokemapCoord\\d+), MSGBOX_DEFAULT\\n\\trele"
+        },
+        {
+          "name": "#4 bg/sign map.json event object is exactly {\"type\":\"sign\",\"x\":17,\"y\":7,\"elevation\":0,\"player_facing_dir\":\"BG_EVENT_PLAYER_FACING_ANY\",\"script\":\"NewBarkTown_EventScript_PokemapBg1\"}",
+          "status": "pass",
+          "detail": [
+            {
+              "type": "sign",
+              "x": 17,
+              "y": 7,
+              "elevation": 0,
+              "player_facing_dir": "BG_EVENT_PLAYER_FACING_ANY",
+              "script": "NewBarkTown_EventScript_PokemapBg1"
+            }
+          ]
+        },
+        {
+          "name": "#4 bg/sign script block exact",
+          "status": "pass",
+          "detail": "^NewBarkTown_EventScript_PokemapBg1::\\n\\tmsgbox (NewBarkTown_Text_PokemapBg\\d+), MSGBOX_SIGN\\n\\tend\\n\\n\\1:\\n\\t\\.string \""
+        },
+        {
+          "name": "#5 object/itemball map.json event object is exactly {\"graphics_id\":\"OBJ_EVENT_GFX_ITEM_BALL\",\"x\":22,\"y\":7,\"elevation\":0,\"movement_type\":\"MOVEMENT_TYPE_FACE_DOWN\",\"movement_range_x\":0,\"movement_range_y\":0,\"trainer_type\":\"TRAINER_TYPE_NONE\",\"trainer_sight_or_berry_tree_id\":\"0\",\"script\":\"NewBarkTown_EventScript_PokemapObject2\",\"flag\":\"FLAG_NEWBARKTOWN_POKEMAP_OBJECT2\"}",
+          "status": "pass",
+          "detail": [
+            {
+              "graphics_id": "OBJ_EVENT_GFX_ITEM_BALL",
+              "x": 22,
+              "y": 7,
+              "elevation": 0,
+              "movement_type": "MOVEMENT_TYPE_FACE_DOWN",
+              "movement_range_x": 0,
+              "movement_range_y": 0,
+              "trainer_type": "TRAINER_TYPE_NONE",
+              "trainer_sight_or_berry_tree_id": "0",
+              "script": "NewBarkTown_EventScript_PokemapObject2",
+              "flag": "FLAG_NEWBARKTOWN_POKEMAP_OBJECT2"
+            }
+          ]
+        },
+        {
+          "name": "#5 object/itemball script block exact",
+          "status": "pass",
+          "detail": "^NewBarkTown_EventScript_PokemapObject2::\\n\\tfinditem ITEM_NONE\\n\\tend$"
+        },
+        {
+          "name": "#6 object/trainer script: trainerbattle_single TRAINER_NONE, Seen, Beaten + after-battle msgbox",
+          "status": "pass",
+          "detail": "NewBarkTown_EventScript_PokemapObject3::\n\ttrainerbattle_single TRAINER_NONE, NewBarkTown_Text_PokemapObject3Intro, NewBarkTown_Text_PokemapObject3Defeated\n\tmsgbox NewBarkTown_Text_PokemapObject3PostBattle, MSGBOX_AUTOCLOSE\n\tend"
+        },
+        {
+          "name": "#6 object/trainer text NewBarkTown_Text_PokemapObject3Intro defined with the generated text",
+          "status": "pass"
+        },
+        {
+          "name": "#6 object/trainer text NewBarkTown_Text_PokemapObject3Defeated defined with the generated text",
+          "status": "pass"
+        },
+        {
+          "name": "#6 object/trainer text NewBarkTown_Text_PokemapObject3PostBattle defined with the generated text",
+          "status": "pass"
+        },
+        {
+          "name": "#6 object/trainer map.json event object is exactly {\"graphics_id\":\"OBJ_EVENT_GFX_YOUNGSTER\",\"x\":11,\"y\":14,\"elevation\":3,\"movement_type\":\"MOVEMENT_TYPE_FACE_DOWN\",\"movement_range_x\":0,\"movement_range_y\":0,\"trainer_type\":\"TRAINER_TYPE_NORMAL\",\"trainer_sight_or_berry_tree_id\":\"3\",\"script\":\"NewBarkTown_EventScript_PokemapObject3\",\"flag\":\"0\"}",
+          "status": "pass",
+          "detail": [
+            {
+              "graphics_id": "OBJ_EVENT_GFX_YOUNGSTER",
+              "x": 11,
+              "y": 14,
+              "elevation": 3,
+              "movement_type": "MOVEMENT_TYPE_FACE_DOWN",
+              "movement_range_x": 0,
+              "movement_range_y": 0,
+              "trainer_type": "TRAINER_TYPE_NORMAL",
+              "trainer_sight_or_berry_tree_id": "3",
+              "script": "NewBarkTown_EventScript_PokemapObject3",
+              "flag": "0"
+            }
+          ]
+        },
+        {
+          "name": "#7 bg/hidden_item map.json event object is exactly {\"type\":\"hidden_item\",\"x\":7,\"y\":11,\"elevation\":3,\"item\":\"ITEM_NONE\",\"flag\":\"FLAG_NEWBARKTOWN_POKEMAP_BG2\"}",
+          "status": "pass",
+          "detail": [
+            {
+              "type": "hidden_item",
+              "x": 7,
+              "y": 11,
+              "elevation": 3,
+              "item": "ITEM_NONE",
+              "flag": "FLAG_NEWBARKTOWN_POKEMAP_BG2"
+            }
+          ]
+        },
+        {
+          "name": "constants: exactly one added line for FLAG_NEWBARKTOWN_POKEMAP_OBJECT2",
+          "status": "pass",
+          "detail": [
+            "#define FLAG_NEWBARKTOWN_POKEMAP_OBJECT2  0x299"
+          ]
+        },
+        {
+          "name": "constants: FLAG_NEWBARKTOWN_POKEMAP_OBJECT2 renamed an unused define with value 0x299",
+          "status": "pass"
+        },
+        {
+          "name": "FLAG_NEWBARKTOWN_POKEMAP_OBJECT2 is not defined in data/maps/NewBarkTown/map.json",
+          "status": "pass"
+        },
+        {
+          "name": "FLAG_NEWBARKTOWN_POKEMAP_OBJECT2 is not defined in data/maps/NewBarkTown/scripts.inc",
+          "status": "pass"
+        },
+        {
+          "name": "constants: exactly one added line for FLAG_NEWBARKTOWN_POKEMAP_BG2",
+          "status": "pass",
+          "detail": [
+            "#define FLAG_NEWBARKTOWN_POKEMAP_BG2  0x29A"
+          ]
+        },
+        {
+          "name": "constants: FLAG_NEWBARKTOWN_POKEMAP_BG2 renamed an unused define with value 0x29A",
+          "status": "pass"
+        },
+        {
+          "name": "FLAG_NEWBARKTOWN_POKEMAP_BG2 is not defined in data/maps/NewBarkTown/map.json",
+          "status": "pass"
+        },
+        {
+          "name": "FLAG_NEWBARKTOWN_POKEMAP_BG2 is not defined in data/maps/NewBarkTown/scripts.inc",
+          "status": "pass"
+        },
+        {
+          "name": "constants: added-line count == New flag/var count (2)",
+          "status": "pass",
+          "detail": 2
+        },
+        {
+          "name": "constants: removed FLAG_/VAR_UNUSED define count == 2",
+          "status": "pass"
+        }
+      ],
+      "inspectorAfterAdd": [
+        {
+          "kind": "object",
+          "objectType": "npc",
+          "empty": false,
+          "title": "Object event #9",
+          "subtitle": "OBJ_EVENT_GFX_YOUNGSTER · MOVEMENT_TYPE_FACE_DOWN"
+        },
+        {
+          "kind": "warp",
+          "empty": false,
+          "title": "Warp event #8",
+          "subtitle": "→ MAP_NEW_BARK_TOWN #0"
+        },
+        {
+          "kind": "coord",
+          "empty": false,
+          "title": "Coord event #6",
+          "subtitle": "trigger"
+        },
+        {
+          "kind": "bg",
+          "empty": false,
+          "title": "Bg event #5",
+          "subtitle": "sign"
+        },
+        {
+          "kind": "object",
+          "objectType": "itemball",
+          "empty": false,
+          "title": "Object event #10",
+          "subtitle": "OBJ_EVENT_GFX_ITEM_BALL · MOVEMENT_TYPE_FACE_DOWN"
+        },
+        {
+          "kind": "object",
+          "objectType": "trainer",
+          "empty": false,
+          "title": "Object event #11",
+          "subtitle": "OBJ_EVENT_GFX_YOUNGSTER · MOVEMENT_TYPE_FACE_DOWN"
+        },
+        {
+          "kind": "bg",
+          "empty": false,
+          "title": "Bg event #6",
+          "subtitle": "hidden_item"
+        }
+      ],
+      "saveDialog": "Save Changes\nNewBarkTown.json -- 2 field edits\nflags.h -- constants edited\nC:/Users/Serve/AppData/Local/Temp/claude/8fd0350c313cb955/993ac9d7-524f-4b4e-9080-1ab84ebb3d9f/scratchpad/live/gba/data/maps/NewBarkTown/scripts.inc -- append 16 lines\nCancel\nSave Changes",
+      "paths": [
+        "data/maps/NewBarkTown/map.json",
+        "data/maps/NewBarkTown/scripts.inc",
+        "include/constants/flags.h"
+      ],
+      "counts": {
+        "pass": 31,
+        "fail": 0,
+        "n/a": 0
+      },
+      "net": [
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/NewBarkTown",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/NewBarkTown?x=11&y=9",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/NewBarkTown",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/NewBarkTown?x=11&y=9",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "POST",
+          "url": "/api/edit/NewBarkTown/event/create",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/NewBarkTown",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/NewBarkTown?x=7&y=7",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/NewBarkTown?x=7&y=7",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/NewBarkTown?x=7&y=7&dest=NewBarkTown",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/NewBarkTown?x=7&y=7&dest=NewBarkTown",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "POST",
+          "url": "/api/edit/NewBarkTown/event/create",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/NewBarkTown",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/NewBarkTown?x=12&y=7",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/NewBarkTown?x=12&y=7",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "POST",
+          "url": "/api/edit/NewBarkTown/event/create",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/NewBarkTown",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/NewBarkTown?x=17&y=7",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/NewBarkTown?x=17&y=7",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "POST",
+          "url": "/api/edit/NewBarkTown/event/create",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/NewBarkTown",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/NewBarkTown?x=22&y=7",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/NewBarkTown?x=22&y=7",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "POST",
+          "url": "/api/edit/NewBarkTown/event/create",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/NewBarkTown",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/NewBarkTown?dest=NewBarkTown",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "POST",
+          "url": "/api/edit/NewBarkTown/commit",
+          "status": 200,
+          "code": []
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/NewBarkTown",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/NewBarkTown?x=11&y=14",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/NewBarkTown",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/NewBarkTown?x=11&y=14",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "POST",
+          "url": "/api/edit/NewBarkTown/event/create",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/NewBarkTown",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/NewBarkTown?x=7&y=11",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/NewBarkTown?x=7&y=11",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "POST",
+          "url": "/api/edit/NewBarkTown/event/create",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/NewBarkTown",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/NewBarkTown?dest=NewBarkTown",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "POST",
+          "url": "/api/edit/NewBarkTown/commit",
+          "status": 200,
+          "code": []
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        }
+      ]
+    }
+  ],
+  "network": [
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/NewBarkTown",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/NewBarkTown?x=11&y=9",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/NewBarkTown",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/NewBarkTown?x=11&y=9",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "POST",
+      "url": "/api/edit/NewBarkTown/event/create",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/NewBarkTown",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/NewBarkTown?x=7&y=7",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/NewBarkTown?x=7&y=7",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/NewBarkTown?x=7&y=7&dest=NewBarkTown",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/NewBarkTown?x=7&y=7&dest=NewBarkTown",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "POST",
+      "url": "/api/edit/NewBarkTown/event/create",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/NewBarkTown",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/NewBarkTown?x=12&y=7",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/NewBarkTown?x=12&y=7",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "POST",
+      "url": "/api/edit/NewBarkTown/event/create",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/NewBarkTown",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/NewBarkTown?x=17&y=7",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/NewBarkTown?x=17&y=7",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "POST",
+      "url": "/api/edit/NewBarkTown/event/create",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/NewBarkTown",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/NewBarkTown?x=22&y=7",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/NewBarkTown?x=22&y=7",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "POST",
+      "url": "/api/edit/NewBarkTown/event/create",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/NewBarkTown",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/NewBarkTown?dest=NewBarkTown",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "POST",
+      "url": "/api/edit/NewBarkTown/commit",
+      "status": 200,
+      "code": []
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/NewBarkTown",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/NewBarkTown?x=11&y=14",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/NewBarkTown",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/NewBarkTown?x=11&y=14",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "POST",
+      "url": "/api/edit/NewBarkTown/event/create",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/NewBarkTown",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/NewBarkTown?x=7&y=11",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/NewBarkTown?x=7&y=11",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "POST",
+      "url": "/api/edit/NewBarkTown/event/create",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/NewBarkTown",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/NewBarkTown?dest=NewBarkTown",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "POST",
+      "url": "/api/edit/NewBarkTown/commit",
+      "status": 200,
+      "code": []
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/NewBarkTown",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    }
+  ],
+  "pageErrors": [],
+  "resets": [
+    {
+      "action": "git checkout of the tracked changed paths, then page reload (new visit; the hub re-reads disk)",
+      "paths": [
+        "data/maps/NewBarkTown/map.json",
+        "data/maps/NewBarkTown/scripts.inc",
+        "include/constants/flags.h"
+      ]
+    }
+  ],
+  "finalStatus": ""
+}

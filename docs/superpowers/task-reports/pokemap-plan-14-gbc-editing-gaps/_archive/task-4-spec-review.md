@@ -1,0 +1,13 @@
+VERDICT: FAIL
+
+1. **Important — `packages/core/src/write/save.ts:172`, `packages/core/src/gbc/write/save.ts:141` (also both commit implementations).** Collision refusals contain `{ code, subject, message, fix }`, but omit the required structured `path` and `name`. A caller inspecting a `LABEL_TAKEN` refusal cannot retrieve those fields without parsing prose. **Fix:** retain compatibility fields while adding typed `path` and `name`; assert both in refusal tests.
+
+2. **Important — `packages/core/src/write/save.ts:315`; plan messages at `write/save.ts:175` and `gbc/write/save.ts:144`.** When `Testmap` collides with a definition in `constants/event_flags.asm`, the plan refusal names only the symbol and file. GBA commit likewise emits `save refused: LABEL_TAKEN (<file>)`, omitting the map. This violates “every refusal names map and file.” **Fix:** include `session.mapName` in both families’ collision messages and the GBA commit error; test collisions in unrelated files. Preserve the required GBC commit format.
+
+3. **Important — `packages/core/src/addEvent/names.ts:20`.** `GBA_DEFINE_RE` requires `#` at column zero. Valid source such as `  #define FLAG_TEST 1` yields no definition, allowing a check built from staged text to miss an existing name. **Fix:** accept leading horizontal whitespace before `#` and add an indented-definition regression test.
+
+4. **Important — `packages/core/src/addEvent/names.ts:8`.** GBA comment stripping removes only the remainder of lines containing `/`; it does not track multiline C comments. Consequently, `/*\n#define FLAG_UNUSED 1\n*/` reports `FLAG_UNUSED` as defined, causing a false collision refusal. **Fix:** exclude complete block comments while preserving line boundaries, with regression coverage for commented definitions and adjacent real definitions.
+
+5. **Minor — `packages/core/test/gbc/write/save.test.ts:305`.** Required case (c) is absent: both new GBC commit tests use `NEW_LABEL`, modify blocks, and stage no `EVENT_` constant. Their checker also ignores its argument, so checking the wrong name would still pass. **Fix:** add the specified `EVENT_` constant scenario with a staged constants replacement, an argument-sensitive checker, byte-identical assertions for every affected file on refusal, and successful constant-write assertions with a clean check.
+
+Review was read-only. Execution evidence is the conductor-reported 275/275 focused tests, clean typecheck, and commit-check mutation failures; tests were not rerun.

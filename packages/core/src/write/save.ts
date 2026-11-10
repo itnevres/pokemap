@@ -6,6 +6,32 @@ import type { MapData } from "../load/maps.js";
 import { guardLayoutSave, guardMapSave, type Refusal } from "./guards.js";
 import { planBlockdataWrite, planBorderWrite } from "./binary.js";
 import { editJson, insertArrayElement, removeArrayElement, type JsonEdit, type JsonPath } from "./jsonEdit.js";
+import type { NameCheck } from "../addEvent/types.js";
+
+/** Shared name-check logic used by both planSave and commitSave. */
+function checkNewNames(
+  session: EditSession,
+  checkNames: NameCheck,
+  mapName: string
+): Refusal[] {
+  const refusals: Refusal[] = [];
+  if (!session.newNames) return refusals;
+  for (const name of session.newNames) {
+    const result = checkNames(name);
+    if (result.taken) {
+      const where = result.where ?? `data/maps/${mapName}/map.json`;
+      refusals.push({
+        code: "LABEL_TAKEN",
+        subject: where,
+        path: where,
+        name,
+        message: `${mapName}: ${name} is already defined in ${where}`,
+        fix: "Pick another name and add the event again.",
+      });
+    }
+  }
+  return refusals;
+}
 
 export interface InsertOp { path: JsonPath; index: number; value: unknown; }
 export interface RemoveOp { path: JsonPath; index: number; }
@@ -103,6 +129,9 @@ export interface EditSession {
    *  appends, currently only ever populated by Task 17's sign write path. */
   scriptAppends?: ScriptAppend[];
   scriptReplaces?: ScriptReplace[];
+  /** Names (labels, constants, defines) created by this session. Checked
+   *  at plan and commit time via the caller-supplied NameCheck. */
+  newNames?: string[];
   isDirty: boolean;
 }
 
@@ -138,12 +167,12 @@ function collectRefusals(proj: Project, session: EditSession): Refusal[] {
         if (readFileSync(replace.path).equals(Buffer.from(replace.before, "utf8"))) return [];
       } catch { /* Missing or unreadable source must also refuse before any write. */ }
       return [{ code: "script-changed-on-disk", subject: replace.path,
-        message: `${replace.path} changed on disk or cannot be read.`, fix: "Reopen the map before editing its signs." }];
+        message: `${replace.path} changed on disk or cannot be read.`, fix: "Reopen the map before saving." }];
     }),
     // One replace per path (ruling R-e): a second entry would silently overwrite the first at commit.
     ...(session.scriptReplaces ?? []).filter((replace, i, all) => all.findIndex((r) => r.path === replace.path) !== i)
       .map((replace): Refusal => ({ code: "script-replace-duplicate", subject: replace.path,
-        message: `${replace.path} has more than one staged sign-text replacement.`, fix: "Reopen the map before editing its signs." })),
+        message: `${replace.path} has more than one staged replacement.`, fix: "Reopen the map before saving." })),
   ];
 }
 
@@ -153,8 +182,17 @@ function collectRefusals(proj: Project, session: EditSession): Refusal[] {
  * that writes; `commitSave` is the only writer, and it is always an
  * explicit, separate call).
  */
-export function planSave(proj: Project, session: EditSession): SavePlan {
+export function planSave(
+  proj: Project,
+  session: EditSession,
+  opts?: { checkNames?: NameCheck }
+): SavePlan {
   const refusals = collectRefusals(proj, session);
+
+  // Fresh name checks at plan time
+  if (opts?.checkNames) {
+    refusals.push(...checkNewNames(session, opts.checkNames, session.mapName));
+  }
 
   const changes: PendingChange[] = [];
 
@@ -184,7 +222,11 @@ export function planSave(proj: Project, session: EditSession): SavePlan {
   }
 
   for (const path of new Set((session.scriptReplaces ?? []).map((replace) => replace.path))) {
-    changes.push({ path, kind: "text", summary: "Update sign text in scripts.inc" });
+    const basename = path.split(/[\\/]/).pop() ?? path;
+    const summary = basename === "scripts.inc"
+      ? "Update sign text in scripts.inc"
+      : `${basename} -- constants edited`;
+    changes.push({ path, kind: "text", summary });
   }
 
   // Every entry here was placed by an explicit, already-guarded write (e.g.
@@ -221,7 +263,7 @@ function lineCount(text: string): number {
 }
 
 /** Computes complete final bytes without writing, in the commit's stable file order. */
-export function prepareSave(proj: Project, session: EditSession): AtomicEntry[] {
+export function prepareSave(proj: Project, session: EditSession, _opts?: { checkNames?: NameCheck }): AtomicEntry[] {
   const entries: AtomicEntry[] = [];
   const add = (path: string, after: Buffer): void => {
     entries.push({ path, before: existsSync(path) ? readFileSync(path) : null, after });
@@ -259,11 +301,23 @@ export function prepareSave(proj: Project, session: EditSession): AtomicEntry[] 
  * A crash mid-swap or another program writing between check and rename is
  * outside this guarantee. Does not mutate the session.
  */
-export function commitSave(proj: Project, plan: SavePlan, prepared?: AtomicEntry[], io?: AtomicIo): void {
+export function commitSave(
+  proj: Project,
+  plan: SavePlan,
+  prepared?: AtomicEntry[],
+  io?: AtomicIo,
+  opts?: { checkNames?: NameCheck }
+): void {
   const { session } = plan;
   const refusals = collectRefusals(proj, session);
+
+  // Fresh name checks at commit time (never reuse plan.refusals)
+  if (opts?.checkNames) {
+    refusals.push(...checkNewNames(session, opts.checkNames, session.mapName));
+  }
+
   if (refusals.length > 0) {
-    throw new Error(`save refused: ${refusals.map((r) => `${r.code} (${r.subject})`).join(", ")}`);
+    throw new Error(`save refused: ${session.mapName}: ${refusals.map((r) => `${r.code} (${r.subject})`).join(", ")}`);
   }
   writeFilesAtomically(prepared ?? prepareSave(proj, session), io);
 }

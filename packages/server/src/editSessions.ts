@@ -96,7 +96,7 @@ export function createEditSessionStore(project: Project) {
     sessions.clear();
   }
 
-  return { open, close, has, dirty, closeAll };
+  return { open, close, has, dirty, closeAll, entries: () => [...sessions.entries()], root: project.paths.root };
 }
 
 /** A snapshot-diff command: `apply`/`revert` just assign the session's own
@@ -107,6 +107,7 @@ export function createEditSessionStore(project: Project) {
  *  works identically for a paint stroke, an event move, an event add, and
  *  an event delete without this file needing to know the difference. */
 export interface Snapshot {
+  newNames: string[];
   blocks: EditSession["blocks"];
   border: EditSession["border"];
   map: EditSession["map"];
@@ -125,6 +126,7 @@ export interface Snapshot {
 
 export function snapshotOf(session: EditSession): Snapshot {
   return {
+    newNames: session.newNames ?? [],
     blocks: session.blocks, border: session.border, map: session.map,
     jsonEdits: session.jsonEdits, insertOps: session.insertOps, removeOps: session.removeOps,
     scriptAppends: session.scriptAppends ?? [],

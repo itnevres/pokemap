@@ -81,4 +81,17 @@ describe("scriptReplaces", () => {
     commitSave(proj, planSave(proj, session));
     expect(readFileSync(path, "utf8")).toBe("new\n\nfirst\n\nsecond\n");
   });
+
+  itWithCorpus("M7: scriptReplace on flags.h summarizes as 'flags.h -- constants edited'", () => {
+    const { proj, session, root } = fixture("old");
+    const flagsPath = join(root, "flags.h");
+    writeFileSync(flagsPath, "old");
+    session.scriptReplaces = [{ path: flagsPath, before: "old", after: "new" }];
+    const plan = planSave(proj, session);
+    expect(plan.changes).toContainEqual(expect.objectContaining({
+      path: flagsPath,
+      kind: "text",
+      summary: "flags.h -- constants edited",
+    }));
+  });
 });

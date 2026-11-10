@@ -55,7 +55,7 @@ function makeFetchMock() {
     if (url === "/api/map/PalletTown") return ok(LAYOUT);
     if (url === "/api/map/Route1") return ok(ROUTE1);
     if (url === "/api/world") return ok(WORLD);
-    if (url === "/api/edit/PalletTown/event/add" && method === "POST") return ok({ map: LAYOUT.map, isDirty: true });
+    if (url.startsWith("/api/edit/PalletTown/paint/") && method === "POST") return ok({ blocks: LAYOUT.blocks, border: [], isDirty: true, canUndo: true, canRedo: false });
     if (url === "/api/coverage") {
       return ok({ mapsWithEncounters: 0, encounterTables: 0, mapsWithoutEncounters: [], levelByMap: [], unusedSpecies: [],
         byMethod: { land_mons: 0, water_mons: 0, rock_smash_mons: 0, fishing_mons: 0 } });
@@ -109,8 +109,15 @@ describe("App -- world context menu Open in Map view (Plan 6c E3)", () => {
     render(<FamilyApp adapter={gbaAdapter} />);
     await waitFor(() => expect(screen.getByRole("button", { name: "PalletTown" })).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: "PalletTown" }));
-    await screen.findByRole("button", { name: "Add Event" });
-    await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Add Event" })); });
+    await screen.findByRole("button", { name: "Collision tool" });
+    fireEvent.click(screen.getByRole("button", { name: "Collision tool" }));
+    const paintCanvas = document.querySelector("canvas.map-canvas__stage")!;
+    const px = paintCanvas.closest(".map-canvas--chromeless") ? 200 : 24;
+    const py = paintCanvas.closest(".map-canvas--chromeless") ? 50 : 24;
+    await act(async () => {
+      fireEvent.mouseDown(paintCanvas, { clientX: px, clientY: py, button: 0 });
+      fireEvent.mouseUp(paintCanvas, { clientX: px, clientY: py, button: 0 });
+    });
     await waitFor(() => expect(screen.getByTestId("dirty-indicator")).toBeTruthy());
 
     const canvas = await enterWorld(); // entering World with PalletTown selected jumps to it

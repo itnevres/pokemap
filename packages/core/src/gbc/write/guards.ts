@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { isAbsolute, relative, resolve } from "node:path";
 import type { Refusal } from "../../write/guards.js";
 import type { GbcProject } from "../project.js";
 import { encodeBlk } from "../load/blocks.js";
@@ -130,5 +131,20 @@ export function guardGbcSave(proj: GbcProject, session: GbcEditSession): Refusal
     });
   }
 
+  const targets = new Set([resolve(eventsFilePath(proj, session.mapName)), resolve(blkFilePath(proj, layout))]);
+  for (const edit of session.constEdits ?? []) {
+    const target = resolve(proj.root, edit.path);
+    const rel = relative(resolve(proj.root), target);
+    if (!rel || rel === ".." || rel.startsWith("../") || rel.startsWith("..\\") || isAbsolute(rel) || targets.has(target)) {
+      out.push({ code: "invalid-const-edit", message: `${session.mapName}: ${edit.path}: duplicate or unsafe constants replacement path.`,
+        fix: "Keep one replacement per project file, separate from the map and layout targets.", subject: edit.path });
+      continue;
+    }
+    targets.add(target);
+    if (tryRead(target)?.toString("utf8") !== edit.before) {
+      out.push({ code: "file-changed-on-disk", message: `${session.mapName}: ${edit.path} changed on disk since staging.`,
+        fix: "Reopen the map to pick up the new contents, then redo your edit.", subject: edit.path });
+    }
+  }
   return out;
 }

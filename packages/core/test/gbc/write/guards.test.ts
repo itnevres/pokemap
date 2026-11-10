@@ -145,7 +145,7 @@ describe("guardGbcSave", () => {
       const plan = planGbcSave(f.proj, s);
       expect(codes(plan.refusals)).toEqual(["file-changed-on-disk"]);
       expect(plan.refusals[0]!.subject).toBe("maps/TestLayout.blk");
-      expect(() => commitGbcSave(f.proj, plan)).toThrow(/save refused: file-changed-on-disk/);
+      expect(() => commitGbcSave(f.proj, plan)).toThrow(/save refused: Testmap: file-changed-on-disk/);
       expect([...readFileSync(f.blk)]).toEqual([4, 4, 4, 4]);
     });
 
@@ -157,7 +157,7 @@ describe("guardGbcSave", () => {
       const plan = planGbcSave(f.proj, s);
       expect(codes(plan.refusals)).toEqual(["file-changed-on-disk"]);
       expect(plan.refusals[0]!.subject).toBe("maps/Testmap.asm");
-      expect(() => commitGbcSave(f.proj, plan)).toThrow(/save refused: file-changed-on-disk/);
+      expect(() => commitGbcSave(f.proj, plan)).toThrow(/save refused: Testmap: file-changed-on-disk/);
       expect(readFileSync(f.asm, "utf8")).toBe(TESTMAP_ASM + "; someone else was here\n");
     });
 
@@ -179,7 +179,7 @@ describe("guardGbcSave", () => {
       rmSync(f.blk);
       const plan = planGbcSave(f.proj, s);
       expect(codes(plan.refusals)).toEqual(["file-changed-on-disk"]);
-      expect(() => commitGbcSave(f.proj, plan)).toThrow(/save refused: file-changed-on-disk/);
+      expect(() => commitGbcSave(f.proj, plan)).toThrow(/save refused: Testmap: file-changed-on-disk/);
       expect(() => readFileSync(f.blk)).toThrow(/ENOENT/);
     });
 

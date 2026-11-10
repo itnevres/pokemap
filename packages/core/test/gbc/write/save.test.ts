@@ -1,11 +1,15 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { existsSync, readFileSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import { afterAll, afterEach, describe, expect, it } from "vitest";
+import { existsSync, readFileSync, statSync, utimesSync, writeFileSync, renameSync, unlinkSync } from "node:fs";
+import { resolve } from "node:path";
+import type { AtomicIo } from "../../../src/write/atomic.js";
 import { commitGbcSave, openGbcEditSession, planGbcSave } from "../../../src/gbc/write/save.js";
-import { locateEventCall, spliceArg } from "../../../src/gbc/write/asmSplice.js";
+import { locateEventCall, spliceArg, replaceLines } from "../../../src/gbc/write/asmSplice.js";
 import { loadGbcMapEvents, parseMapEvents } from "../../../src/gbc/load/events.js";
 import { openGbcProject } from "../../../src/gbc/project.js";
-import { GBC_SUBJECT_ROOT, itWithGbcCorpus } from "../helpers/corpus.js";
+import { gbcEventGap } from "../../../src/gbc/load/constCounter.js";
+import { GBC_SUBJECT_ROOT, itWithGbcCorpus, copyGbcSubjectToTemp, removeTemp } from "../helpers/corpus.js";
 import { cleanupFixtures, makeFixture, type Fixture } from "../helpers/saveFixture.js";
+import type { NameCheck } from "../../../src/addEvent/types.js";
 
 afterEach(cleanupFixtures);
 
@@ -57,6 +61,75 @@ function pinMtimes(f: Fixture): () => { blk: number; asm: number } {
 const bytes = (p: string) => [...readFileSync(p)];
 
 describe("planGbcSave / commitGbcSave", () => {
+  const constantTestRoots: string[] = [];
+  afterAll(() => { for (const root of constantTestRoots) removeTemp(root); });
+  function withConstants() {
+    const tmp = copyGbcSubjectToTemp().replace(/\\/g, "/");
+    constantTestRoots.push(tmp);
+    const proj = openGbcProject(tmp);
+    const s = openGbcEditSession(proj, "Route29");
+    const f = { tmp, proj, asm: `${tmp}/maps/Route29.asm`, blk: `${tmp}/${s.layout.blkPath}` };
+    const constants = `${tmp}/constants/event_flags.asm`;
+    const before = readFileSync(constants, "utf8");
+    s.eventsText += "; staged map change\n";
+    const gap = gbcEventGap(before)!;
+    s.constEdits = [{ path: "constants/event_flags.asm", before, after: replaceLines(before, gap.afterLine + 1, gap.afterLine + 1, ["\tconst EVENT_POKEMAP_TEST_SAVE"]) }];
+    return { f, s, constants, before };
+  }
+
+  it("constEdits + .asm written together", () => {
+    const { f, s, constants } = withConstants();
+    const plan = planGbcSave(f.proj, s);
+    expect(plan.refusals).toEqual([]);
+    expect(plan.changes.map(c => resolve(c.path))).toEqual([resolve(f.asm), resolve(constants)]);
+    const staged: string[] = [];
+    const swapped: string[] = [];
+    const io: AtomicIo = { existsSync, readFileSync, unlinkSync,
+      writeFileSync: (path, data, options) => { staged.push(path); writeFileSync(path, data, options); },
+      renameSync: (from, to) => {
+        // Every file must be staged before the FIRST target is changed.
+        expect(staged).toHaveLength(2);
+        swapped.push(to); renameSync(from, to);
+      } };
+    commitGbcSave(f.proj, plan, undefined, io);
+    expect(swapped.map(p => resolve(p))).toEqual([resolve(f.asm), resolve(constants)]);
+    expect(readFileSync(f.asm, "utf8")).toBe(s.eventsText);
+    expect(readFileSync(constants, "utf8")).toBe(s.constEdits![0]!.after);
+  });
+
+  it("constEdits disk != before -> refusal, nothing written", () => {
+    const { f, s, constants } = withConstants();
+    const asmBefore = readFileSync(f.asm);
+    const blkBefore = readFileSync(f.blk);
+    const cleanPlan = planGbcSave(f.proj, s);
+    writeFileSync(constants, "; external edit\n");
+    const dirtyPlan = planGbcSave(f.proj, s);
+    expect(dirtyPlan.refusals).toContainEqual(expect.objectContaining({ code: "file-changed-on-disk", subject: "constants/event_flags.asm", message: expect.stringContaining("Route29") }));
+    expect(() => commitGbcSave(f.proj, cleanPlan)).toThrow(/save refused: Route29:.*constants\/event_flags.asm/);
+    expect(readFileSync(constants, "utf8")).toBe("; external edit\n");
+    expect(readFileSync(f.asm)).toEqual(asmBefore);
+    expect(readFileSync(f.blk)).toEqual(blkBefore);
+  });
+
+  it("constEdits atomic rename failure rolls back .asm and constants", () => {
+    const { f, s, constants, before } = withConstants();
+    const asmBefore = readFileSync(f.asm);
+    const io: AtomicIo = { existsSync, readFileSync, writeFileSync, unlinkSync,
+      renameSync: (from, to) => { if (resolve(to) === resolve(constants)) throw new Error("injected constants rename failure"); renameSync(from, to); } };
+    expect(() => commitGbcSave(f.proj, planGbcSave(f.proj, s), undefined, io)).toThrow(/injected constants rename failure/);
+    expect(readFileSync(f.asm)).toEqual(asmBefore);
+    expect(readFileSync(constants, "utf8")).toBe(before);
+  });
+
+  it("duplicate constEdits paths refuse without writing", () => {
+    const { f, s, constants, before } = withConstants();
+    s.constEdits!.push({ ...s.constEdits![0]! });
+    expect(planGbcSave(f.proj, s).refusals).toContainEqual(expect.objectContaining({ code: "invalid-const-edit" }));
+    expect(() => commitGbcSave(f.proj, planGbcSave(f.proj, s))).toThrow(/save refused/);
+    expect(readFileSync(f.asm, "utf8")).toBe(s.originalEventsText);
+    expect(readFileSync(constants, "utf8")).toBe(before);
+  });
+
   it("4. an unedited session plans nothing, and commit writes nothing (mtime proves it)", () => {
     const f = makeFixture();
     const stamp = pinMtimes(f);
@@ -144,7 +217,7 @@ describe("planGbcSave / commitGbcSave", () => {
     const [blkBefore, asmBefore, before] = [readFileSync(f.blk), readFileSync(f.asm), stamp()];
     const s = openGbcEditSession(f.proj, "Testmap");
     s.blocks[0]!.metatileId = 9; // cap is 5 (valid ids 0-4)
-    expect(() => commitGbcSave(f.proj, planGbcSave(f.proj, s))).toThrow(new Error("save refused: metatile-out-of-range (maps/TestLayout.blk)"));
+    expect(() => commitGbcSave(f.proj, planGbcSave(f.proj, s))).toThrow(new Error("save refused: Testmap: metatile-out-of-range (maps/TestLayout.blk)"));
     expect(readFileSync(f.blk).equals(blkBefore)).toBe(true);
     expect(readFileSync(f.asm).equals(asmBefore)).toBe(true);
     expect(stamp()).toEqual(before);
@@ -189,6 +262,179 @@ describe("planGbcSave / commitGbcSave", () => {
     expect(() => commitGbcSave(f.proj, plan)).toThrow(/save refused/);
     expect(readFileSync(f.blk).equals(blkBefore)).toBe(true);
     expect(stamp()).toEqual(before);
+  });
+});
+
+describe("name checks (Task 4)", () => {
+  function makeCheck() {
+    let taken = false;
+    let where: string | undefined;
+    let takenFor: string | null = null; // only taken for this specific name
+    const check: NameCheck = (name) => ({ taken: taken && name === takenFor, where });
+    return {
+      check,
+      setTaken: (t: boolean, w?: string, forName?: string) => { taken = t; where = w; takenFor = forName ?? null; },
+    };
+  }
+
+  it("planGbcSave with newNames and clean check -> no LABEL_TAKEN refusal", () => {
+    const f = makeFixture();
+    const s = openGbcEditSession(f.proj, "Testmap");
+    s.newNames = ["NEW_LABEL"];
+    const { check, setTaken } = makeCheck();
+    setTaken(false);
+    const plan = planGbcSave(f.proj, s, { checkNames: check });
+    expect(plan.refusals).toEqual([]);
+  });
+
+  it("planGbcSave with newNames and taken check -> LABEL_TAKEN in refusals", () => {
+    const f = makeFixture();
+    const s = openGbcEditSession(f.proj, "Testmap");
+    s.newNames = ["EXISTING_LABEL"];
+    const { check, setTaken } = makeCheck();
+    setTaken(true, "constants/event_flags.asm", "EXISTING_LABEL");
+    const plan = planGbcSave(f.proj, s, { checkNames: check });
+    expect(plan.refusals).toContainEqual(expect.objectContaining({
+      code: "LABEL_TAKEN",
+      subject: "constants/event_flags.asm",
+      path: "constants/event_flags.asm",
+      name: "EXISTING_LABEL",
+      message: "Testmap: EXISTING_LABEL is already defined in constants/event_flags.asm",
+      fix: "Pick another name and add the event again.",
+    }));
+  });
+
+  it("commitGbcSave with clean check at plan but taken at commit -> throws LABEL_TAKEN matching 'save refused: <Map>: LABEL_TAKEN', nothing written", () => {
+    const f = makeFixture();
+    const s = openGbcEditSession(f.proj, "Testmap");
+    s.blocks[0]!.metatileId = 0;
+    s.isDirty = true;
+    s.newNames = ["NEW_LABEL"];
+    const { check, setTaken } = makeCheck();
+    setTaken(false);
+    const plan = planGbcSave(f.proj, s, { checkNames: check });
+    expect(plan.refusals).toEqual([]);
+    const asmBefore = readFileSync(f.asm);
+    const blkBefore = readFileSync(f.blk);
+    // Now make the check return taken at commit time
+    setTaken(true, "constants/event_flags.asm", "NEW_LABEL");
+    expect(() => commitGbcSave(f.proj, plan, undefined, undefined, { checkNames: check })).toThrow(/save refused: Testmap: LABEL_TAKEN/);
+    expect(readFileSync(f.asm)).toEqual(asmBefore);
+    expect(readFileSync(f.blk)).toEqual(blkBefore);
+  });
+
+  it("commitGbcSave with clean check at commit -> writes files", () => {
+    const f = makeFixture();
+    const s = openGbcEditSession(f.proj, "Testmap");
+    s.blocks[0]!.metatileId = 0;
+    s.isDirty = true;
+    s.newNames = ["NEW_LABEL"];
+    const { check, setTaken } = makeCheck();
+    setTaken(false);
+    const plan = planGbcSave(f.proj, s, { checkNames: check });
+    expect(plan.refusals).toEqual([]);
+    const blkBefore = readFileSync(f.blk);
+    commitGbcSave(f.proj, plan, undefined, undefined, { checkNames: check });
+    expect(readFileSync(f.blk)).not.toEqual(blkBefore); // actually changed
+  });
+
+  it("checker is argument-sensitive: taken only for the session's name", () => {
+    const f = makeFixture();
+    const s = openGbcEditSession(f.proj, "Testmap");
+    s.newNames = ["SESSION_NAME"];
+    const { check, setTaken } = makeCheck();
+    setTaken(true, "constants/event_flags.asm", "OTHER_NAME"); // taken for a different name
+    const plan = planGbcSave(f.proj, s, { checkNames: check });
+    expect(plan.refusals).toEqual([]); // should not refuse for SESSION_NAME
+  });
+
+  it("session without newNames never calls checkNames at plan", () => {
+    const f = makeFixture();
+    const s = openGbcEditSession(f.proj, "Testmap");
+    let callCount = 0;
+    const countingCheck: NameCheck = (name) => { callCount++; return { taken: false, where: undefined }; };
+    planGbcSave(f.proj, s, { checkNames: countingCheck });
+    expect(callCount).toBe(0);
+  });
+
+  it("session without newNames never calls checkNames at commit", () => {
+    const f = makeFixture();
+    const s = openGbcEditSession(f.proj, "Testmap");
+    s.blocks[0]!.metatileId = 0;
+    s.isDirty = true;
+    let callCount = 0;
+    const countingCheck: NameCheck = (name) => { callCount++; return { taken: false, where: undefined }; };
+    const plan = planGbcSave(f.proj, s, { checkNames: countingCheck });
+    commitGbcSave(f.proj, plan, undefined, undefined, { checkNames: countingCheck });
+    expect(callCount).toBe(0);
+  });
+
+  it("session with empty newNames never calls checkNames", () => {
+    const f = makeFixture();
+    const s = openGbcEditSession(f.proj, "Testmap");
+    s.newNames = [];
+    let callCount = 0;
+    const countingCheck: NameCheck = (name) => { callCount++; return { taken: false, where: undefined }; };
+    planGbcSave(f.proj, s, { checkNames: countingCheck });
+    expect(callCount).toBe(0);
+  });
+
+  it("(c) constEdits + newNames: plan clean -> check flips to taken -> commit throws LABEL_TAKEN, both files byte-identical; clean check commits the const", () => {
+    const tmp = copyGbcSubjectToTemp().replace(/\\/g, "/");
+    const proj = openGbcProject(tmp);
+    const s = openGbcEditSession(proj, "Route29");
+    const constantsPath = "constants/event_flags.asm";
+    const constantsFull = `${tmp}/${constantsPath}`;
+    const beforeConstants = readFileSync(constantsFull, "utf8");
+    const beforeAsm = readFileSync(`${tmp}/maps/Route29.asm`, "utf8");
+    const beforeBlk = readFileSync(`${tmp}/${s.layout.blkPath}`);
+
+    // Stage a real constEdits entry adding const EVENT_POKEMAP_TEST
+    const gap = gbcEventGap(beforeConstants)!;
+    s.constEdits = [{
+      path: constantsPath,
+      before: beforeConstants,
+      after: replaceLines(beforeConstants, gap.afterLine + 1, gap.afterLine + 1, ["\tconst EVENT_POKEMAP_TEST"]),
+    }];
+    s.newNames = ["EVENT_POKEMAP_TEST"];
+    s.eventsText += "; staged map change\n"; // make the session dirty so commit does something
+    s.isDirty = true;
+
+    const { check, setTaken } = makeCheck();
+    setTaken(false); // clean at plan time
+    const plan = planGbcSave(proj, s, { checkNames: check });
+    expect(plan.refusals).toEqual([]);
+
+    // Flip check to taken at commit time
+    setTaken(true, constantsPath, "EVENT_POKEMAP_TEST");
+    expect(() => commitGbcSave(proj, plan, undefined, undefined, { checkNames: check }))
+      .toThrow(/save refused: Route29: LABEL_TAKEN/);
+
+    // Both files must be byte-identical to before
+    expect(readFileSync(constantsFull, "utf8")).toBe(beforeConstants);
+    expect(readFileSync(`${tmp}/maps/Route29.asm`, "utf8")).toBe(beforeAsm);
+    expect(readFileSync(`${tmp}/${s.layout.blkPath}`)).toEqual(beforeBlk);
+
+    // With a clean check, commit writes the const into event_flags.asm
+    const s2 = openGbcEditSession(proj, "Route29");
+    const beforeConstants2 = readFileSync(constantsFull, "utf8");
+    const gap2 = gbcEventGap(beforeConstants2)!;
+    s2.constEdits = [{
+      path: constantsPath,
+      before: beforeConstants2,
+      after: replaceLines(beforeConstants2, gap2.afterLine + 1, gap2.afterLine + 1, ["\tconst EVENT_POKEMAP_TEST"]),
+    }];
+    s2.newNames = ["EVENT_POKEMAP_TEST"];
+    s2.eventsText += "; staged map change\n";
+    s2.isDirty = true;
+
+    const { check: check2, setTaken: setTaken2 } = makeCheck();
+    setTaken2(false);
+    const plan2 = planGbcSave(proj, s2, { checkNames: check2 });
+    expect(plan2.refusals).toEqual([]);
+    commitGbcSave(proj, plan2, undefined, undefined, { checkNames: check2 });
+    const afterConstants = readFileSync(constantsFull, "utf8");
+    expect(afterConstants).toContain("const EVENT_POKEMAP_TEST");
   });
 });
 

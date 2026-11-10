@@ -1,0 +1,1702 @@
+{
+  "family": "gbc",
+  "map": "VioletCity",
+  "ui": "http://127.0.0.1:5195/",
+  "initialStatus": "",
+  "scenarios": [
+    {
+      "name": "kinds-defaults",
+      "status": "pass",
+      "forms": [
+        {
+          "kind": "object",
+          "x": 11,
+          "y": 9,
+          "objectType": "npc",
+          "fields": {
+            "sprite": "SPRITE_YOUNGSTER",
+            "movement": "SPRITEMOVEDATA_STANDING_DOWN",
+            "rangeX": "0",
+            "rangeY": "0",
+            "hourStart": "-1",
+            "hourEnd": "-1",
+            "palette": "0"
+          },
+          "flag": {
+            "mode": "existing",
+            "name": "-1"
+          },
+          "script": {
+            "mode": "new",
+            "label": "VioletCityPokemapObject1",
+            "text": "POKEMAP ACCEPTANCE TEXT"
+          }
+        },
+        {
+          "kind": "warp",
+          "x": 12,
+          "y": 6,
+          "fields": {
+            "destMap": "OLIVINE_POKECENTER_1F",
+            "destWarp": "1"
+          }
+        },
+        {
+          "kind": "bg",
+          "x": 17,
+          "y": 6,
+          "fields": {
+            "bgType": "BGEVENT_READ"
+          },
+          "script": {
+            "mode": "new",
+            "label": "VioletCityPokemapBg1",
+            "text": "POKEMAP ACCEPTANCE TEXT"
+          }
+        },
+        {
+          "kind": "object",
+          "x": 22,
+          "y": 6,
+          "objectType": "itemball",
+          "fields": {
+            "sprite": "SPRITE_YOUNGSTER",
+            "movement": "SPRITEMOVEDATA_STANDING_DOWN",
+            "rangeX": "0",
+            "rangeY": "0",
+            "hourStart": "-1",
+            "hourEnd": "-1",
+            "palette": "0",
+            "label": "VioletCityPokemapObject2",
+            "item": "NO_ITEM"
+          },
+          "flag": {
+            "mode": "new",
+            "name": "EVENT_VIOLETCITY_POKEMAP_OBJECT2"
+          }
+        },
+        {
+          "kind": "object",
+          "x": 32,
+          "y": 9,
+          "objectType": "trainer",
+          "fields": {
+            "sprite": "SPRITE_YOUNGSTER",
+            "movement": "SPRITEMOVEDATA_STANDING_DOWN",
+            "rangeX": "0",
+            "rangeY": "0",
+            "hourStart": "-1",
+            "hourEnd": "-1",
+            "palette": "0",
+            "label": "VioletCityPokemapObject3",
+            "trainer": "FALKNER,FALKNER1",
+            "sightRange": "3"
+          },
+          "flag": {
+            "mode": "new",
+            "name": "EVENT_VIOLETCITY_POKEMAP_OBJECT3"
+          },
+          "texts": {
+            "seen": {
+              "mode": "new",
+              "text": "POKEMAP ACCEPTANCE TEXT"
+            },
+            "beaten": {
+              "mode": "new",
+              "text": "POKEMAP ACCEPTANCE TEXT"
+            },
+            "after": {
+              "mode": "new",
+              "text": "POKEMAP ACCEPTANCE TEXT"
+            }
+          }
+        },
+        {
+          "kind": "bg",
+          "x": 6,
+          "y": 11,
+          "fields": {
+            "bgType": "BGEVENT_ITEM",
+            "label": "VioletCityPokemapBg2Wrapper",
+            "item": "NO_ITEM"
+          },
+          "flag": {
+            "mode": "new",
+            "name": "EVENT_VIOLETCITY_POKEMAP_BG2"
+          }
+        },
+        {
+          "kind": "bg",
+          "x": 12,
+          "y": 11,
+          "fields": {
+            "bgType": "BGEVENT_IFSET",
+            "label": "VioletCityPokemapBg3Wrapper"
+          },
+          "flag": {
+            "mode": "new",
+            "name": "EVENT_VIOLETCITY_POKEMAP_BG3"
+          },
+          "script": {
+            "mode": "new",
+            "label": "VioletCityPokemapBg3",
+            "text": "POKEMAP ACCEPTANCE TEXT"
+          }
+        }
+      ],
+      "saves": 4,
+      "checks": [
+        {
+          "name": "Warp dialog becomes ready and Add succeeds",
+          "status": "pass",
+          "detail": {
+            "destRequests": 2
+          }
+        },
+        {
+          "name": "coord event on VioletCity",
+          "status": "n/a",
+          "detail": "n/a: no scenes on VioletCity (Coord disabled); asserted on Route29 below"
+        },
+        {
+          "name": "inspector shows the new event right after each add",
+          "status": "pass",
+          "detail": [
+            {
+              "kind": "object",
+              "objectType": "npc",
+              "empty": false,
+              "title": "Object event #8",
+              "subtitle": "SPRITE_YOUNGSTER"
+            },
+            {
+              "kind": "warp",
+              "empty": false,
+              "title": "Warp event #9",
+              "subtitle": "→ OLIVINE_POKECENTER_1F #1"
+            },
+            {
+              "kind": "bg",
+              "empty": false,
+              "title": "Bg event #7",
+              "subtitle": "BGEVENT_READ · VioletCityPokemapBg1"
+            },
+            {
+              "kind": "object",
+              "objectType": "itemball",
+              "empty": false,
+              "title": "Object event #9",
+              "subtitle": "SPRITE_YOUNGSTER"
+            },
+            {
+              "kind": "object",
+              "objectType": "trainer",
+              "empty": false,
+              "title": "Object event #10",
+              "subtitle": "SPRITE_YOUNGSTER"
+            },
+            {
+              "kind": "bg",
+              "empty": false,
+              "title": "Bg event #8",
+              "subtitle": "BGEVENT_ITEM · VioletCityPokemapBg2Wrapper"
+            },
+            {
+              "kind": "bg",
+              "empty": false,
+              "title": "Bg event #9",
+              "subtitle": "BGEVENT_IFSET · VioletCityPokemapBg3Wrapper"
+            }
+          ]
+        },
+        {
+          "name": "changed paths within allowlist [maps/VioletCity.asm, constants/event_flags.asm]",
+          "status": "pass",
+          "detail": [
+            "constants/event_flags.asm",
+            "maps/VioletCity.asm"
+          ]
+        },
+        {
+          "name": "map events file and script file both changed",
+          "status": "pass"
+        },
+        {
+          "name": "map asm: nothing removed",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "name": "#1 object/npc object_event line (OBJECTTYPE_SCRIPT, 0, VioletCityPokemapObject1, -1)",
+          "status": "pass"
+        },
+        {
+          "name": "#1 object/npc script jumptextfaceplayer",
+          "status": "pass"
+        },
+        {
+          "name": "#2 warp warp_event OLIVINE_POKECENTER_1F, 1",
+          "status": "pass"
+        },
+        {
+          "name": "#3 bg/BGEVENT_READ bg_event READ",
+          "status": "pass"
+        },
+        {
+          "name": "#3 bg/BGEVENT_READ script jumptext",
+          "status": "pass"
+        },
+        {
+          "name": "#4 object/itemball object_event line (OBJECTTYPE_ITEMBALL, 0, VioletCityPokemapObject2, EVENT_VIOLETCITY_POKEMAP_OBJECT2)",
+          "status": "pass"
+        },
+        {
+          "name": "#4 object/itemball data label itemball NO_ITEM",
+          "status": "pass"
+        },
+        {
+          "name": "#5 object/trainer object_event line (OBJECTTYPE_TRAINER, 3, VioletCityPokemapObject3, -1)",
+          "status": "pass"
+        },
+        {
+          "name": "#5 object/trainer trainer header with seen/beaten/after labels and flag EVENT_VIOLETCITY_POKEMAP_OBJECT3",
+          "status": "pass"
+        },
+        {
+          "name": "#5 object/trainer after-battle script",
+          "status": "pass"
+        },
+        {
+          "name": "#5 object/trainer text block VioletCityPokemapObject3SeenText: text/line/done",
+          "status": "pass"
+        },
+        {
+          "name": "#5 object/trainer text block VioletCityPokemapObject3BeatenText: text/line/done",
+          "status": "pass"
+        },
+        {
+          "name": "#5 object/trainer text block VioletCityPokemapObject3AfterText: text/line/done",
+          "status": "pass"
+        },
+        {
+          "name": "#6 bg/BGEVENT_ITEM bg_event ITEM -> wrapper",
+          "status": "pass"
+        },
+        {
+          "name": "#6 bg/BGEVENT_ITEM hiddenitem NO_ITEM, EVENT_VIOLETCITY_POKEMAP_BG2",
+          "status": "pass"
+        },
+        {
+          "name": "#7 bg/BGEVENT_IFSET bg_event BGEVENT_IFSET -> wrapper",
+          "status": "pass"
+        },
+        {
+          "name": "#7 bg/BGEVENT_IFSET conditional_event EVENT_VIOLETCITY_POKEMAP_BG3, VioletCityPokemapBg3",
+          "status": "pass"
+        },
+        {
+          "name": "#7 bg/BGEVENT_IFSET script jumptext",
+          "status": "pass"
+        },
+        {
+          "name": "object constants added == object count",
+          "status": "pass"
+        },
+        {
+          "name": "constants: exactly one added line for EVENT_VIOLETCITY_POKEMAP_OBJECT2",
+          "status": "pass",
+          "detail": [
+            "\tconst EVENT_VIOLETCITY_POKEMAP_OBJECT2"
+          ]
+        },
+        {
+          "name": "EVENT_VIOLETCITY_POKEMAP_OBJECT2 is not defined in maps/VioletCity.asm",
+          "status": "pass"
+        },
+        {
+          "name": "constants: exactly one added line for EVENT_VIOLETCITY_POKEMAP_OBJECT3",
+          "status": "pass",
+          "detail": [
+            "\tconst EVENT_VIOLETCITY_POKEMAP_OBJECT3"
+          ]
+        },
+        {
+          "name": "EVENT_VIOLETCITY_POKEMAP_OBJECT3 is not defined in maps/VioletCity.asm",
+          "status": "pass"
+        },
+        {
+          "name": "constants: exactly one added line for EVENT_VIOLETCITY_POKEMAP_BG2",
+          "status": "pass",
+          "detail": [
+            "\tconst EVENT_VIOLETCITY_POKEMAP_BG2"
+          ]
+        },
+        {
+          "name": "EVENT_VIOLETCITY_POKEMAP_BG2 is not defined in maps/VioletCity.asm",
+          "status": "pass"
+        },
+        {
+          "name": "constants: exactly one added line for EVENT_VIOLETCITY_POKEMAP_BG3",
+          "status": "pass",
+          "detail": [
+            "\tconst EVENT_VIOLETCITY_POKEMAP_BG3"
+          ]
+        },
+        {
+          "name": "EVENT_VIOLETCITY_POKEMAP_BG3 is not defined in maps/VioletCity.asm",
+          "status": "pass"
+        },
+        {
+          "name": "constants: added-line count == New flag/var count (4)",
+          "status": "pass",
+          "detail": 4
+        },
+        {
+          "name": "constants: nothing removed from constants/event_flags.asm",
+          "status": "pass"
+        },
+        {
+          "name": "new EVENT_ consts sit inside the unused gap (before the final const_next)",
+          "status": "pass"
+        },
+        {
+          "name": "Route29: Coord button enabled (map has scenes)",
+          "status": "pass"
+        },
+        {
+          "name": "Route29: inspector shows the new coord event",
+          "status": "pass",
+          "detail": {
+            "empty": false,
+            "title": "Coord event #2",
+            "subtitle": "SCENE_ROUTE29_NOOP · Route29PokemapCoord1"
+          }
+        },
+        {
+          "name": "[Route29] changed paths within allowlist [maps/Route29.asm, constants/event_flags.asm]",
+          "status": "pass",
+          "detail": [
+            "maps/Route29.asm"
+          ]
+        },
+        {
+          "name": "[Route29] map events file and script file both changed",
+          "status": "pass"
+        },
+        {
+          "name": "[Route29] map asm: nothing removed",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "name": "[Route29] #1 coord coord_event scene SCENE_ROUTE29_NOOP",
+          "status": "pass"
+        },
+        {
+          "name": "[Route29] #1 coord coord script opentext/writetext/waitbutton/closetext/end",
+          "status": "pass"
+        },
+        {
+          "name": "[Route29] object constants added == object count",
+          "status": "pass"
+        },
+        {
+          "name": "[Route29] constants: added-line count == New flag/var count (0)",
+          "status": "pass",
+          "detail": 0
+        },
+        {
+          "name": "[Route29] constants: nothing removed from constants/event_flags.asm",
+          "status": "pass"
+        }
+      ],
+      "inspectorAfterAdd": [
+        {
+          "kind": "object",
+          "objectType": "npc",
+          "empty": false,
+          "title": "Object event #8",
+          "subtitle": "SPRITE_YOUNGSTER"
+        },
+        {
+          "kind": "warp",
+          "empty": false,
+          "title": "Warp event #9",
+          "subtitle": "→ OLIVINE_POKECENTER_1F #1"
+        },
+        {
+          "kind": "bg",
+          "empty": false,
+          "title": "Bg event #7",
+          "subtitle": "BGEVENT_READ · VioletCityPokemapBg1"
+        },
+        {
+          "kind": "object",
+          "objectType": "itemball",
+          "empty": false,
+          "title": "Object event #9",
+          "subtitle": "SPRITE_YOUNGSTER"
+        },
+        {
+          "kind": "object",
+          "objectType": "trainer",
+          "empty": false,
+          "title": "Object event #10",
+          "subtitle": "SPRITE_YOUNGSTER"
+        },
+        {
+          "kind": "bg",
+          "empty": false,
+          "title": "Bg event #8",
+          "subtitle": "BGEVENT_ITEM · VioletCityPokemapBg2Wrapper"
+        },
+        {
+          "kind": "bg",
+          "empty": false,
+          "title": "Bg event #9",
+          "subtitle": "BGEVENT_IFSET · VioletCityPokemapBg3Wrapper"
+        }
+      ],
+      "saveDialog": "Save Changes\nmaps/VioletCity.asm -- event block edited\nconstants/event_flags.asm -- constants edited\nCancel\nSave Changes",
+      "paths": [
+        "maps/Route29.asm"
+      ],
+      "coordForm": {
+        "kind": "coord",
+        "x": 27,
+        "y": 2,
+        "fields": {
+          "scene": "SCENE_ROUTE29_NOOP"
+        },
+        "script": {
+          "mode": "new",
+          "label": "Route29PokemapCoord1",
+          "text": "POKEMAP ACCEPTANCE TEXT"
+        }
+      },
+      "counts": {
+        "pass": 45,
+        "fail": 0,
+        "n/a": 1
+      },
+      "net": [
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity?x=11&y=9",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity?x=11&y=9",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "POST",
+          "url": "/api/edit/VioletCity/event/create",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity?x=12&y=6",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity?x=12&y=6",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity?x=12&y=6&dest=OLIVINE_POKECENT",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity?x=12&y=6&dest=OLIVINE_POKECENT",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "POST",
+          "url": "/api/edit/VioletCity/event/create",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity?x=17&y=6",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity?x=17&y=6",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "POST",
+          "url": "/api/edit/VioletCity/event/create",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity?x=22&y=6",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity?x=22&y=6",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "POST",
+          "url": "/api/edit/VioletCity/event/create",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity?dest=OLIVINE_POKECENTER_1F",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "POST",
+          "url": "/api/edit/VioletCity/commit",
+          "status": 200,
+          "code": []
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity?dest=OLIVINE_POKECENTER_1F",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity?x=32&y=9",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity?x=32&y=9",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "POST",
+          "url": "/api/edit/VioletCity/event/create",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "POST",
+          "url": "/api/edit/VioletCity/commit",
+          "status": 200,
+          "code": []
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity?x=6&y=11",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity?x=6&y=11",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "POST",
+          "url": "/api/edit/VioletCity/event/create",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "POST",
+          "url": "/api/edit/VioletCity/commit",
+          "status": 200,
+          "code": []
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity?x=12&y=11",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity?x=12&y=11",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "POST",
+          "url": "/api/edit/VioletCity/event/create",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "POST",
+          "url": "/api/edit/VioletCity/commit",
+          "status": 200,
+          "code": []
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/Route29",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/Route29",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/Route29?x=27&y=2",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/Route29?x=27&y=2",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "POST",
+          "url": "/api/edit/Route29/event/create",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/Route29",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "POST",
+          "url": "/api/edit/Route29/commit",
+          "status": 200,
+          "code": []
+        }
+      ]
+    }
+  ],
+  "network": [
+    {
+      "scenario": "",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity?x=11&y=9",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity?x=11&y=9",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "POST",
+      "url": "/api/edit/VioletCity/event/create",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity?x=12&y=6",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity?x=12&y=6",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity?x=12&y=6&dest=OLIVINE_POKECENTER_1F",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity?x=12&y=6&dest=OLIVINE_POKECENTER_1F",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "POST",
+      "url": "/api/edit/VioletCity/event/create",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity?x=17&y=6",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity?x=17&y=6",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "POST",
+      "url": "/api/edit/VioletCity/event/create",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity?x=22&y=6",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity?x=22&y=6",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "POST",
+      "url": "/api/edit/VioletCity/event/create",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity?dest=OLIVINE_POKECENTER_1F",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "POST",
+      "url": "/api/edit/VioletCity/commit",
+      "status": 200,
+      "code": []
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity?dest=OLIVINE_POKECENTER_1F",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity?x=32&y=9",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity?x=32&y=9",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "POST",
+      "url": "/api/edit/VioletCity/event/create",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "POST",
+      "url": "/api/edit/VioletCity/commit",
+      "status": 200,
+      "code": []
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity?x=6&y=11",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity?x=6&y=11",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "POST",
+      "url": "/api/edit/VioletCity/event/create",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "POST",
+      "url": "/api/edit/VioletCity/commit",
+      "status": 200,
+      "code": []
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity?x=12&y=11",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity?x=12&y=11",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "POST",
+      "url": "/api/edit/VioletCity/event/create",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "POST",
+      "url": "/api/edit/VioletCity/commit",
+      "status": 200,
+      "code": []
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/Route29",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/Route29",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/Route29?x=27&y=2",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/Route29?x=27&y=2",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "POST",
+      "url": "/api/edit/Route29/event/create",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options/Route29",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "POST",
+      "url": "/api/edit/Route29/commit",
+      "status": 200,
+      "code": []
+    },
+    {
+      "scenario": "kinds-defaults",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    }
+  ],
+  "pageErrors": [],
+  "resets": [
+    {
+      "action": "git checkout of the tracked changed paths, then page reload (new visit; the hub re-reads disk)",
+      "paths": [
+        "constants/event_flags.asm",
+        "maps/VioletCity.asm"
+      ]
+    },
+    {
+      "action": "git checkout of the tracked changed paths, then page reload (new visit; the hub re-reads disk)",
+      "paths": [
+        "maps/Route29.asm"
+      ]
+    }
+  ],
+  "finalStatus": ""
+}

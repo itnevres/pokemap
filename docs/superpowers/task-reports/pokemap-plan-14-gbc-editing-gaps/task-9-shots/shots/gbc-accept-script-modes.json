@@ -1,0 +1,1137 @@
+{
+  "family": "gbc",
+  "map": "VioletCity",
+  "ui": "http://127.0.0.1:5195/",
+  "initialStatus": "",
+  "scenarios": [
+    {
+      "name": "script-modes",
+      "status": "pass",
+      "modes": [
+        {
+          "tag": "Object/npc",
+          "mode": "existing",
+          "offered": [
+            "EarlsPokemonAcademySign",
+            "ObjectEvent",
+            "SproutTowerSign",
+            "VioletCityEarlScript",
+            "VioletCityFruitTree",
+            "VioletCityGrampsScript",
+            "VioletCityLassScript",
+            "VioletCityMartSign",
+            "VioletCityPokecenterSign",
+            "VioletCitySign",
+            "VioletCitySuperNerdScript",
+            "VioletCityYoungsterScript",
+            "VioletGymSign"
+          ],
+          "choice": "EarlsPokemonAcademySign",
+          "stagedLabelsInList": [],
+          "form": {
+            "kind": "object",
+            "x": 6,
+            "y": 6,
+            "objectType": "npc",
+            "fields": {
+              "sprite": "SPRITE_YOUNGSTER",
+              "movement": "SPRITEMOVEDATA_STANDING_DOWN",
+              "rangeX": "0",
+              "rangeY": "0",
+              "hourStart": "-1",
+              "hourEnd": "-1",
+              "palette": "0"
+            },
+            "flag": {
+              "mode": "existing",
+              "name": "-1"
+            },
+            "script": {
+              "mode": "existing",
+              "label": "EarlsPokemonAcademySign"
+            }
+          }
+        },
+        {
+          "tag": "Object/npc",
+          "mode": "copy",
+          "copy": {
+            "from": "VioletGymSign",
+            "body": "\tjumptext VioletGymSignText\n",
+            "texts": [
+              {
+                "label": "VioletGymSignText",
+                "value": "\ttext \"VIOLET CITY\"\n\tline \"#MON GYM\"\n\tcont \"LEADER: FALKNER\"\n\n\tpara \"The Elegant Master\"\n\tline \"of Flying #MON\"\n\tdone\n"
+              }
+            ],
+            "tried": [],
+            "label": "VioletCityPokemapObject1"
+          },
+          "sourceBlock": "VioletGymSign:\n\tjumptext VioletGymSignText\n",
+          "sameFileRefs": [
+            "VioletGymSignText"
+          ],
+          "form": {
+            "kind": "object",
+            "x": 12,
+            "y": 6,
+            "objectType": "npc",
+            "fields": {
+              "sprite": "SPRITE_YOUNGSTER",
+              "movement": "SPRITEMOVEDATA_STANDING_DOWN",
+              "rangeX": "0",
+              "rangeY": "0",
+              "hourStart": "-1",
+              "hourEnd": "-1",
+              "palette": "0"
+            },
+            "flag": {
+              "mode": "existing",
+              "name": "-1"
+            },
+            "script": {
+              "mode": "copy",
+              "from": "VioletGymSign",
+              "label": "VioletCityPokemapObject1",
+              "body": "\tjumptext VioletGymSignText\n",
+              "texts": {
+                "VioletGymSignText": "\ttext \"VIOLET CITY\"\n\tline \"#MON GYM\"\n\tcont \"LEADER: FALKNER\"\n\n\tpara \"The Elegant Master\"\n\tline \"of Flying #MON\"\n\tdone\n"
+              }
+            }
+          }
+        },
+        {
+          "tag": "Object/npc",
+          "mode": "new",
+          "text": "HELLO FROM POKEMAP",
+          "form": {
+            "kind": "object",
+            "x": 17,
+            "y": 6,
+            "objectType": "npc",
+            "fields": {
+              "sprite": "SPRITE_YOUNGSTER",
+              "movement": "SPRITEMOVEDATA_STANDING_DOWN",
+              "rangeX": "0",
+              "rangeY": "0",
+              "hourStart": "-1",
+              "hourEnd": "-1",
+              "palette": "0"
+            },
+            "flag": {
+              "mode": "existing",
+              "name": "-1"
+            },
+            "script": {
+              "mode": "new",
+              "label": "VioletCityPokemapObject2",
+              "text": "HELLO FROM POKEMAP"
+            }
+          }
+        },
+        {
+          "tag": "BG/BGEVENT_READ",
+          "mode": "existing",
+          "offered": [
+            "EarlsPokemonAcademySign",
+            "SproutTowerSign",
+            "VioletCityEarlScript",
+            "VioletCityFruitTree",
+            "VioletCityGrampsScript",
+            "VioletCityLassScript",
+            "VioletCityMartSign",
+            "VioletCityPokecenterSign",
+            "VioletCityPokemapObject1",
+            "VioletCityPokemapObject2",
+            "VioletCitySign",
+            "VioletCitySuperNerdScript",
+            "VioletCityYoungsterScript",
+            "VioletGymSign"
+          ],
+          "choice": "EarlsPokemonAcademySign",
+          "stagedLabelsInList": [
+            "EarlsPokemonAcademySign",
+            "VioletCityPokemapObject1",
+            "VioletCityPokemapObject2"
+          ],
+          "form": {
+            "kind": "bg",
+            "x": 22,
+            "y": 6,
+            "fields": {
+              "bgType": "BGEVENT_READ"
+            },
+            "script": {
+              "mode": "existing",
+              "label": "EarlsPokemonAcademySign"
+            }
+          }
+        },
+        {
+          "tag": "BG/BGEVENT_READ",
+          "mode": "copy",
+          "copy": {
+            "from": "VioletGymSign",
+            "body": "\tjumptext VioletGymSignText\n",
+            "texts": [
+              {
+                "label": "VioletGymSignText",
+                "value": "\ttext \"VIOLET CITY\"\n\tline \"#MON GYM\"\n\tcont \"LEADER: FALKNER\"\n\n\tpara \"The Elegant Master\"\n\tline \"of Flying #MON\"\n\tdone\n"
+              }
+            ],
+            "tried": [],
+            "label": "VioletCityPokemapBg1"
+          },
+          "sourceBlock": "VioletGymSign:\n\tjumptext VioletGymSignText\n",
+          "sameFileRefs": [
+            "VioletGymSignText"
+          ],
+          "form": {
+            "kind": "bg",
+            "x": 27,
+            "y": 6,
+            "fields": {
+              "bgType": "BGEVENT_READ"
+            },
+            "script": {
+              "mode": "copy",
+              "from": "VioletGymSign",
+              "label": "VioletCityPokemapBg1",
+              "body": "\tjumptext VioletGymSignText\n",
+              "texts": {
+                "VioletGymSignText": "\ttext \"VIOLET CITY\"\n\tline \"#MON GYM\"\n\tcont \"LEADER: FALKNER\"\n\n\tpara \"The Elegant Master\"\n\tline \"of Flying #MON\"\n\tdone\n"
+              }
+            }
+          }
+        },
+        {
+          "tag": "BG/BGEVENT_READ",
+          "mode": "new",
+          "text": "HELLO FROM POKEMAP",
+          "form": {
+            "kind": "bg",
+            "x": 6,
+            "y": 11,
+            "fields": {
+              "bgType": "BGEVENT_READ"
+            },
+            "script": {
+              "mode": "new",
+              "label": "VioletCityPokemapBg2",
+              "text": "HELLO FROM POKEMAP"
+            }
+          }
+        }
+      ],
+      "nonEntryLabels": [
+        "VioletCity_MapScripts",
+        "VioletCityFollowEarl_MovementData",
+        "VioletCityFinishFollowEarl_MovementData",
+        "VioletCitySpinningEarl_MovementData",
+        "Text_EarlAsksIfYouBeatFalkner",
+        "Text_VeryNiceIndeed",
+        "Text_FollowEarl",
+        "Text_HereTeacherIAm",
+        "VioletCityLassText",
+        "VioletCitySuperNerdText",
+        "VioletCityGrampsText",
+        "VioletCityYoungsterText",
+        "VioletCitySignText",
+        "VioletGymSignText",
+        "SproutTowerSignText",
+        "EarlsPokemonAcademySignText",
+        "VioletCity_MapEvents"
+      ],
+      "checks": [
+        {
+          "name": "parsed 17 movement/text/map-script labels from maps/VioletCity.asm (need >0)",
+          "status": "pass",
+          "detail": [
+            "VioletCity_MapScripts",
+            "VioletCityFollowEarl_MovementData",
+            "VioletCityFinishFollowEarl_MovementData",
+            "VioletCitySpinningEarl_MovementData",
+            "Text_EarlAsksIfYouBeatFalkner",
+            "Text_VeryNiceIndeed"
+          ]
+        },
+        {
+          "name": "Object/npc existing: list is non-empty (13 entries)",
+          "status": "pass",
+          "detail": [
+            "EarlsPokemonAcademySign",
+            "ObjectEvent",
+            "SproutTowerSign",
+            "VioletCityEarlScript",
+            "VioletCityFruitTree",
+            "VioletCityGrampsScript",
+            "VioletCityLassScript",
+            "VioletCityMartSign",
+            "VioletCityPokecenterSign",
+            "VioletCitySign",
+            "VioletCitySuperNerdScript",
+            "VioletCityYoungsterScript"
+          ]
+        },
+        {
+          "name": "Object/npc existing: none of 17 movement/text/map-script labels offered (e.g. VioletCity_MapScripts, VioletCityFollowEarl_MovementData)",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "name": "Object/npc existing: the first 12 offered labels (staged ones from this session excepted: spec says staged text is visible) are defined in this map file or ROM0 (home/)",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "name": "Object/npc copy refusals shown before the first copyable: 0",
+          "status": "n/a",
+          "detail": "none refused"
+        },
+        {
+          "name": "Object/npc copy: preview label VioletCityPokemapObject1 differs from source VioletGymSign",
+          "status": "pass"
+        },
+        {
+          "name": "Object/npc copy: preview body never mentions the source label",
+          "status": "pass",
+          "detail": "\tjumptext VioletGymSignText\n"
+        },
+        {
+          "name": "Object/npc copy preview shows the ORIGINAL names (renaming happens at create, checked in the diff below)",
+          "status": "n/a",
+          "detail": "{\"source\":\"VioletGymSign\",\"newLabel\":\"VioletCityPokemapObject1\",\"sameFileRefs\":[\"VioletGymSignText\"],\"previewTexts\":[\"VioletGymSignText\"]}"
+        },
+        {
+          "name": "BG/BGEVENT_READ existing: list is non-empty (14 entries)",
+          "status": "pass",
+          "detail": [
+            "EarlsPokemonAcademySign",
+            "SproutTowerSign",
+            "VioletCityEarlScript",
+            "VioletCityFruitTree",
+            "VioletCityGrampsScript",
+            "VioletCityLassScript",
+            "VioletCityMartSign",
+            "VioletCityPokecenterSign",
+            "VioletCityPokemapObject1",
+            "VioletCityPokemapObject2",
+            "VioletCitySign",
+            "VioletCitySuperNerdScript"
+          ]
+        },
+        {
+          "name": "BG/BGEVENT_READ existing: none of 17 movement/text/map-script labels offered (e.g. VioletCity_MapScripts, VioletCityFollowEarl_MovementData)",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "name": "BG/BGEVENT_READ existing: the first 12 offered labels (staged ones from this session excepted: spec says staged text is visible) are defined in this map file or ROM0 (home/)",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "name": "BG/BGEVENT_READ copy refusals shown before the first copyable: 0",
+          "status": "n/a",
+          "detail": "none refused"
+        },
+        {
+          "name": "BG/BGEVENT_READ copy: preview label VioletCityPokemapBg1 differs from source VioletGymSign",
+          "status": "pass"
+        },
+        {
+          "name": "BG/BGEVENT_READ copy: preview body never mentions the source label",
+          "status": "pass",
+          "detail": "\tjumptext VioletGymSignText\n"
+        },
+        {
+          "name": "BG/BGEVENT_READ copy preview shows the ORIGINAL names (renaming happens at create, checked in the diff below)",
+          "status": "n/a",
+          "detail": "{\"source\":\"VioletGymSign\",\"newLabel\":\"VioletCityPokemapBg1\",\"sameFileRefs\":[\"VioletGymSignText\"],\"previewTexts\":[\"VioletGymSignText\"]}"
+        },
+        {
+          "name": "changed paths within [maps/VioletCity.asm] (no constants file: existing flags only)",
+          "status": "pass",
+          "detail": [
+            "maps/VioletCity.asm"
+          ]
+        },
+        {
+          "name": "script file: nothing removed (originals untouched)",
+          "status": "pass",
+          "detail": []
+        },
+        {
+          "name": "Object/npc existing: event line references EarlsPokemonAcademySign",
+          "status": "pass"
+        },
+        {
+          "name": "Object/npc existing: no new definition added for EarlsPokemonAcademySign",
+          "status": "pass"
+        },
+        {
+          "name": "Object/npc copy: copy defined under new label VioletCityPokemapObject1 and source VioletGymSign not redefined",
+          "status": "pass"
+        },
+        {
+          "name": "Object/npc copy: new block has the same number of body lines as the preview (1)",
+          "status": "pass",
+          "detail": [
+            "\tjumptext VioletCityPokemapObject1Text1"
+          ]
+        },
+        {
+          "name": "Object/npc copy: body differs from the preview only by consistent label renames {\"VioletGymSignText\":\"VioletCityPokemapObject1Text1\"}",
+          "status": "pass"
+        },
+        {
+          "name": "Object/npc copy: renamed labels are exactly the source's self/text/local references",
+          "status": "pass",
+          "detail": [
+            "VioletGymSignText"
+          ]
+        },
+        {
+          "name": "Object/npc copy: no original label (VioletGymSign, VioletGymSignText) appears in the added text",
+          "status": "pass"
+        },
+        {
+          "name": "Object/npc copy: copied text VioletGymSignText -> VioletCityPokemapObject1Text1 defined once with the previewed text",
+          "status": "pass",
+          "detail": "VioletCityPokemapObject1Text1:\n\ttext \"VIOLET CITY\"\n\tline \"#MON GYM\"\n\tcont \"LEADER: FALKNER\"\n\n\tpara \"The Elegant Master\"\n\tline \"of Flying #MON\"\n\tdone\n"
+        },
+        {
+          "name": "Object/npc copy: event line references VioletCityPokemapObject1",
+          "status": "pass"
+        },
+        {
+          "name": "Object/npc new: exact generated body for VioletCityPokemapObject2 with custom text \"HELLO FROM POKEMAP\"",
+          "status": "pass",
+          "detail": [
+            "VioletCityPokemapObject2:",
+            "\tjumptextfaceplayer VioletCityPokemapObject2Text",
+            "VioletCityPokemapObject2Text:",
+            "\tobject_event 17,  6, SPRITE_YOUNGSTER, SPRITEMOVEDATA_STANDING_DOWN, 0, 0, -1, -1, 0, OBJECTTYPE_SCRIPT, 0, VioletCityPokemapObject2, -1"
+          ]
+        },
+        {
+          "name": "Object/npc new: event line references VioletCityPokemapObject2",
+          "status": "pass"
+        },
+        {
+          "name": "BG/BGEVENT_READ existing: event line references EarlsPokemonAcademySign",
+          "status": "pass"
+        },
+        {
+          "name": "BG/BGEVENT_READ existing: no new definition added for EarlsPokemonAcademySign",
+          "status": "pass"
+        },
+        {
+          "name": "BG/BGEVENT_READ copy: copy defined under new label VioletCityPokemapBg1 and source VioletGymSign not redefined",
+          "status": "pass"
+        },
+        {
+          "name": "BG/BGEVENT_READ copy: new block has the same number of body lines as the preview (1)",
+          "status": "pass",
+          "detail": [
+            "\tjumptext VioletCityPokemapBg1Text1"
+          ]
+        },
+        {
+          "name": "BG/BGEVENT_READ copy: body differs from the preview only by consistent label renames {\"VioletGymSignText\":\"VioletCityPokemapBg1Text1\"}",
+          "status": "pass"
+        },
+        {
+          "name": "BG/BGEVENT_READ copy: renamed labels are exactly the source's self/text/local references",
+          "status": "pass",
+          "detail": [
+            "VioletGymSignText"
+          ]
+        },
+        {
+          "name": "BG/BGEVENT_READ copy: no original label (VioletGymSign, VioletGymSignText) appears in the added text",
+          "status": "pass"
+        },
+        {
+          "name": "BG/BGEVENT_READ copy: copied text VioletGymSignText -> VioletCityPokemapBg1Text1 defined once with the previewed text",
+          "status": "pass",
+          "detail": "VioletCityPokemapBg1Text1:\n\ttext \"VIOLET CITY\"\n\tline \"#MON GYM\"\n\tcont \"LEADER: FALKNER\"\n\n\tpara \"The Elegant Master\"\n\tline \"of Flying #MON\"\n\tdone\n"
+        },
+        {
+          "name": "BG/BGEVENT_READ copy: event line references VioletCityPokemapBg1",
+          "status": "pass"
+        },
+        {
+          "name": "BG/BGEVENT_READ new: exact generated body for VioletCityPokemapBg2 with custom text \"HELLO FROM POKEMAP\"",
+          "status": "pass",
+          "detail": [
+            "VioletCityPokemapBg2:",
+            "\tjumptext VioletCityPokemapBg2Text",
+            "VioletCityPokemapBg2Text:",
+            "\tbg_event  6, 11, BGEVENT_READ, VioletCityPokemapBg2"
+          ]
+        },
+        {
+          "name": "BG/BGEVENT_READ new: event line references VioletCityPokemapBg2",
+          "status": "pass"
+        }
+      ],
+      "saveDialog": "Save Changes\nmaps/VioletCity.asm -- event block edited\nCancel\nSave Changes",
+      "paths": [
+        "maps/VioletCity.asm"
+      ],
+      "renames": {
+        "Object/npc copy": {
+          "VioletGymSignText": "VioletCityPokemapObject1Text1"
+        },
+        "BG/BGEVENT_READ copy": {
+          "VioletGymSignText": "VioletCityPokemapBg1Text1"
+        }
+      },
+      "counts": {
+        "pass": 35,
+        "fail": 0,
+        "n/a": 4
+      },
+      "net": [
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity?x=6&y=6",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity?x=6&y=6",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "POST",
+          "url": "/api/edit/VioletCity/event/create",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity?x=12&y=6",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity?x=12&y=6",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity/copy?label=VioletGymSign",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "POST",
+          "url": "/api/edit/VioletCity/event/create",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity?x=17&y=6",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity?x=17&y=6",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "POST",
+          "url": "/api/edit/VioletCity/event/create",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity?x=22&y=6",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity?x=22&y=6",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "POST",
+          "url": "/api/edit/VioletCity/event/create",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity?x=27&y=6",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity?x=27&y=6",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity/copy?label=VioletGymSign",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "POST",
+          "url": "/api/edit/VioletCity/event/create",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity?x=6&y=11",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity?x=6&y=11",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "POST",
+          "url": "/api/edit/VioletCity/event/create",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "GET",
+          "url": "/api/event-options/VioletCity",
+          "status": 200,
+          "code": null
+        },
+        {
+          "method": "POST",
+          "url": "/api/edit/VioletCity/commit",
+          "status": 200,
+          "code": []
+        }
+      ]
+    }
+  ],
+  "network": [
+    {
+      "scenario": "",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "script-modes",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "script-modes",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "script-modes",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "script-modes",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity?x=6&y=6",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "script-modes",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "script-modes",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity?x=6&y=6",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "script-modes",
+      "method": "POST",
+      "url": "/api/edit/VioletCity/event/create",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "script-modes",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "script-modes",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "script-modes",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "script-modes",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity?x=12&y=6",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "script-modes",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "script-modes",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity?x=12&y=6",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "script-modes",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity/copy?label=VioletGymSign",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "script-modes",
+      "method": "POST",
+      "url": "/api/edit/VioletCity/event/create",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "script-modes",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "script-modes",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "script-modes",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "script-modes",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity?x=17&y=6",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "script-modes",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "script-modes",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity?x=17&y=6",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "script-modes",
+      "method": "POST",
+      "url": "/api/edit/VioletCity/event/create",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "script-modes",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "script-modes",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "script-modes",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "script-modes",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity?x=22&y=6",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "script-modes",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "script-modes",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity?x=22&y=6",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "script-modes",
+      "method": "POST",
+      "url": "/api/edit/VioletCity/event/create",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "script-modes",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "script-modes",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "script-modes",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "script-modes",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity?x=27&y=6",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "script-modes",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "script-modes",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity?x=27&y=6",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "script-modes",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity/copy?label=VioletGymSign",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "script-modes",
+      "method": "POST",
+      "url": "/api/edit/VioletCity/event/create",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "script-modes",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "script-modes",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "script-modes",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "script-modes",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity?x=6&y=11",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "script-modes",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "script-modes",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity?x=6&y=11",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "script-modes",
+      "method": "POST",
+      "url": "/api/edit/VioletCity/event/create",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "script-modes",
+      "method": "GET",
+      "url": "/api/event-options",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "script-modes",
+      "method": "GET",
+      "url": "/api/event-options/VioletCity",
+      "status": 200,
+      "code": null
+    },
+    {
+      "scenario": "script-modes",
+      "method": "POST",
+      "url": "/api/edit/VioletCity/commit",
+      "status": 200,
+      "code": []
+    }
+  ],
+  "pageErrors": [],
+  "resets": [
+    {
+      "action": "git checkout of the tracked changed paths, then page reload (new visit; the hub re-reads disk)",
+      "paths": [
+        "maps/VioletCity.asm"
+      ]
+    }
+  ],
+  "finalStatus": ""
+}

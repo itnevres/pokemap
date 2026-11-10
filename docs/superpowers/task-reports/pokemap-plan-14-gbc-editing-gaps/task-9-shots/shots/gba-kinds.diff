@@ -1,0 +1,116 @@
+diff --git a/data/maps/NewBarkTown/map.json b/data/maps/NewBarkTown/map.json
+index 968b01716..a27852cd8 100644
+--- a/data/maps/NewBarkTown/map.json
++++ b/data/maps/NewBarkTown/map.json
+@@ -141,7 +141,10 @@
+       "trainer_sight_or_berry_tree_id": "0",
+       "script": "NULL",
+       "flag": "0"
+-    }
++    },
++    {"graphics_id":"OBJ_EVENT_GFX_YOUNGSTER","x":11,"y":9,"elevation":0,"movement_type":"MOVEMENT_TYPE_FACE_DOWN","movement_range_x":0,"movement_range_y":0,"trainer_type":"TRAINER_TYPE_NONE","trainer_sight_or_berry_tree_id":"0","script":"NewBarkTown_EventScript_PokemapObject1","flag":"0"},
++    {"graphics_id":"OBJ_EVENT_GFX_ITEM_BALL","x":22,"y":7,"elevation":0,"movement_type":"MOVEMENT_TYPE_FACE_DOWN","movement_range_x":0,"movement_range_y":0,"trainer_type":"TRAINER_TYPE_NONE","trainer_sight_or_berry_tree_id":"0","script":"NewBarkTown_EventScript_PokemapObject2","flag":"FLAG_NEWBARKTOWN_POKEMAP_OBJECT2"},
++    {"graphics_id":"OBJ_EVENT_GFX_YOUNGSTER","x":11,"y":14,"elevation":3,"movement_type":"MOVEMENT_TYPE_FACE_DOWN","movement_range_x":0,"movement_range_y":0,"trainer_type":"TRAINER_TYPE_NORMAL","trainer_sight_or_berry_tree_id":"3","script":"NewBarkTown_EventScript_PokemapObject3","flag":"0"}
+   ],
+   "warp_events": [
+     {
+@@ -199,7 +202,8 @@
+       "elevation": 0,
+       "dest_map": "MAP_WORLD_HUB",
+       "dest_warp_id": "0"
+-    }
++    },
++    {"x":7,"y":7,"elevation":3,"dest_map":"MAP_NEW_BARK_TOWN","dest_warp_id":"0"}
+   ],
+   "coord_events": [
+     {
+@@ -255,7 +259,8 @@
+       "var": "VAR_NEWBARK_TOWN_STATE",
+       "var_value": "4",
+       "script": "NewBarkTown_EventScript_LeaveTrigger"
+-    }
++    },
++    {"type":"trigger","x":12,"y":7,"elevation":0,"var":"VAR_TEMP_0","var_value":"0","script":"NewBarkTown_EventScript_PokemapCoord1"}
+   ],
+   "bg_events": [
+     {
+@@ -297,6 +302,8 @@
+       "elevation": 0,
+       "player_facing_dir": "BG_EVENT_PLAYER_FACING_ANY",
+       "script": "NewBarkTown_EventScript_LabSign"
+-    }
++    },
++    {"type":"sign","x":17,"y":7,"elevation":0,"player_facing_dir":"BG_EVENT_PLAYER_FACING_ANY","script":"NewBarkTown_EventScript_PokemapBg1"},
++    {"type":"hidden_item","x":7,"y":11,"elevation":3,"item":"ITEM_NONE","flag":"FLAG_NEWBARKTOWN_POKEMAP_BG2"}
+   ]
+ }
+diff --git a/data/maps/NewBarkTown/scripts.inc b/data/maps/NewBarkTown/scripts.inc
+index a4d20453d..fc5b24ce6 100644
+--- a/data/maps/NewBarkTown/scripts.inc
++++ b/data/maps/NewBarkTown/scripts.inc
+@@ -282,3 +282,50 @@ NewBarkTown_Text_PlayersHouse:
+ 
+ NewBarkTown_Text_ElmsHouse:
+ 	.string "PROF.ELM'S HOUSE$"
++
++NewBarkTown_EventScript_PokemapObject1::
++	msgbox NewBarkTown_Text_PokemapObject1, MSGBOX_NPC
++	end
++
++NewBarkTown_Text_PokemapObject1:
++	.string "POKEMAP ACCEPTANCE\n"
++	.string "TEXT$"
++
++NewBarkTown_EventScript_PokemapCoord1::
++	lockall
++	msgbox NewBarkTown_Text_PokemapCoord1, MSGBOX_DEFAULT
++	releaseall
++	end
++
++NewBarkTown_Text_PokemapCoord1:
++	.string "POKEMAP ACCEPTANCE\n"
++	.string "TEXT$"
++
++NewBarkTown_EventScript_PokemapBg1::
++	msgbox NewBarkTown_Text_PokemapBg1, MSGBOX_SIGN
++	end
++
++NewBarkTown_Text_PokemapBg1:
++	.string "POKEMAP ACCEPTANCE\n"
++	.string "TEXT$"
++
++NewBarkTown_EventScript_PokemapObject2::
++	finditem ITEM_NONE
++	end
++
++NewBarkTown_EventScript_PokemapObject3::
++	trainerbattle_single TRAINER_NONE, NewBarkTown_Text_PokemapObject3Intro, NewBarkTown_Text_PokemapObject3Defeated
++	msgbox NewBarkTown_Text_PokemapObject3PostBattle, MSGBOX_AUTOCLOSE
++	end
++
++NewBarkTown_Text_PokemapObject3Intro:
++	.string "POKEMAP ACCEPTANCE\n"
++	.string "TEXT$"
++
++NewBarkTown_Text_PokemapObject3Defeated:
++	.string "POKEMAP ACCEPTANCE\n"
++	.string "TEXT$"
++
++NewBarkTown_Text_PokemapObject3PostBattle:
++	.string "POKEMAP ACCEPTANCE\n"
++	.string "TEXT$"
+diff --git a/include/constants/flags.h b/include/constants/flags.h
+index dbba78923..db3d8469b 100755
+--- a/include/constants/flags.h
++++ b/include/constants/flags.h
+@@ -709,8 +709,8 @@
+ #define FLAG_SHINY_STARTER_3  0x296 // Flag for shiny starters, Totodile
+ #define FLAG_FORCE_SHINY   0x297 // Needed for shiny starters, not used anywhere else
+ #define FLAG_TEMPORALY_DISABLE_STATIC_RANDOMIZER  0x298
+-#define FLAG_UNUSED_0x299  0x299 // Unused Flag
+-#define FLAG_UNUSED_0x29A  0x29A // Unused Flag
++#define FLAG_NEWBARKTOWN_POKEMAP_OBJECT2  0x299 // Unused Flag
++#define FLAG_NEWBARKTOWN_POKEMAP_BG2  0x29A // Unused Flag
+ #define FLAG_UNUSED_0x29B  0x29B // Unused Flag
+ #define FLAG_UNUSED_0x29C  0x29C // Unused Flag
+ #define FLAG_UNUSED_0x29D  0x29D // Unused Flag

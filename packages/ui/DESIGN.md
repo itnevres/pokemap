@@ -526,6 +526,16 @@ Plan 11 (consumers as of Plan 12b; `shared/useCanvasView.ts` and `shared/useTile
 | `shared/SpotlightOverlay.tsx` | species spotlight overlay markup | `canvas/WorldSurface` (both families) | `canvas/WorldSurface` |
 | `shared/placementLedger.ts` | per-map placement versions and GET-snapshot reconciliation (F1-F5) | `canvas/WorldSurface` (both families) | `canvas/WorldSurface` |
 
+Plan 14.1 (Add Event, both families; spec `2026-11-02-pokemap-plan-14-1-add-event-design.md`):
+
+| Module | What it owns | GBA consumer | GBC consumer |
+|---|---|---|---|
+| `shared/AddEventBar.tsx` | the four Add buttons (Object, Warp, Coord, BG): labels = tooltips, disabled reasons, `aria-pressed` placement toggle; placement cancels on Escape, re-click, tool change and map switch | `MapEditingWorkspace` | `GbcMapEditing` |
+| placement mode (`placing` prop of `canvas/MapSurface.tsx`) | while placing, a canvas click picks the event cell (origin-aware) and opens the dialog instead of painting | `MapEditingWorkspace` | `GbcMapEditing` |
+| `shared/AddEventDialog.tsx` | the Add dialog: family fields from `gba/addEventFields.ts` / `gbc/addEventFields.ts` (adapter `addEventFields`), Existing / Copy / New script and flag/var toggles, client identifier checks, modal focus trap, document-level topmost Escape, in-flight lock | `MapEditingWorkspace` | `GbcMapEditing` |
+| `shared/useEventOptions.ts` | project options plus per-map options (entry points, copyable scripts, this map's own staged flags/vars), invalidated after create/undo/redo | `MapEditingWorkspace` | `GbcMapEditing` |
+| `shared/useEditSessionCore.ts` `createEvent` + `eventCreateBarrier` | one create request at a time; Save, Discard, undo, redo and map switch wait on it; refusal codes read from the body (create and redo) | `hooks/useEditSession`, `FamilyApp`, `SaveDialog` | `gbc/hooks/useGbcEditSession`, `FamilyApp`, `SaveDialog` |
+
 Plan 12a (shared canvas core, map pair; spec `2026-10-24-pokemap-plan-12-shared-canvas-core-design.md`). `canvas/` holds
 no family branch: engine facts (cell sizes, origin, overlays, event lists, encounter band, `skipFirstBlocksChange`) come
 from the adapter. Each map canvas is now a thin wrapper (`MapCanvas`, `GbcMapCanvas`) plus a family adapter hook.

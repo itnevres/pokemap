@@ -1,0 +1,129 @@
+{
+  "family": "gba",
+  "map": "NewBarkTown",
+  "ui": "http://127.0.0.1:5193/",
+  "initialStatus": "",
+  "scenarios": [
+    {
+      "name": "bar",
+      "status": "pass",
+      "checks": [
+        {
+          "name": "four buttons",
+          "status": "pass"
+        },
+        {
+          "name": "every enabled button has a tooltip equal to its aria-label; a disabled button shows its reason as the tooltip",
+          "status": "pass",
+          "detail": [
+            {
+              "label": "Add Object: click a tile, then fill in the details",
+              "title": "Add Object: click a tile, then fill in the details",
+              "disabled": false,
+              "pressed": "false"
+            },
+            {
+              "label": "Add Warp: click a tile, then pick the destination",
+              "title": "Add Warp: click a tile, then pick the destination",
+              "disabled": false,
+              "pressed": "false"
+            },
+            {
+              "label": "Add Coord Event: click a tile, then pick the trigger and script",
+              "title": "Add Coord Event: click a tile, then pick the trigger and script",
+              "disabled": false,
+              "pressed": "false"
+            },
+            {
+              "label": "Add BG Event: click a tile, then pick the sign or hidden item",
+              "title": "Add BG Event: click a tile, then pick the sign or hidden item",
+              "disabled": false,
+              "pressed": "false"
+            }
+          ]
+        },
+        {
+          "name": "buttons are Object, Warp, Coord, BG with icons only (no text content)",
+          "status": "pass"
+        },
+        {
+          "name": "disabled reasons",
+          "status": "n/a",
+          "detail": "n/a: GBA has no scene gating; the object-cap and read-only reasons need a full or read-only map"
+        },
+        {
+          "name": "click starts placement (aria-pressed true)",
+          "status": "pass"
+        },
+        {
+          "name": "Escape cancels (aria-pressed false)",
+          "status": "pass"
+        },
+        {
+          "name": "same-button re-click cancels",
+          "status": "pass"
+        },
+        {
+          "name": "an alternate tool exists",
+          "status": "pass"
+        },
+        {
+          "name": "tool change cancels",
+          "status": "pass"
+        },
+        {
+          "name": "placement restarted before map switch",
+          "status": "pass"
+        },
+        {
+          "name": "an alternate map exists in the tree",
+          "status": "pass"
+        },
+        {
+          "name": "switching to CherrygroveCity cancels (aria-pressed false)",
+          "status": "pass"
+        },
+        {
+          "name": "placement does not return on switching back",
+          "status": "pass"
+        }
+      ],
+      "buttons": [
+        {
+          "label": "Add Object: click a tile, then fill in the details",
+          "title": "Add Object: click a tile, then fill in the details",
+          "disabled": false,
+          "pressed": "false"
+        },
+        {
+          "label": "Add Warp: click a tile, then pick the destination",
+          "title": "Add Warp: click a tile, then pick the destination",
+          "disabled": false,
+          "pressed": "false"
+        },
+        {
+          "label": "Add Coord Event: click a tile, then pick the trigger and script",
+          "title": "Add Coord Event: click a tile, then pick the trigger and script",
+          "disabled": false,
+          "pressed": "false"
+        },
+        {
+          "label": "Add BG Event: click a tile, then pick the sign or hidden item",
+          "title": "Add BG Event: click a tile, then pick the sign or hidden item",
+          "disabled": false,
+          "pressed": "false"
+        }
+      ],
+      "counts": {
+        "pass": 12,
+        "fail": 0,
+        "n/a": 1
+      },
+      "net": []
+    }
+  ],
+  "network": [],
+  "pageErrors": [],
+  "resets": [],
+  "finalStatus": ""
+}

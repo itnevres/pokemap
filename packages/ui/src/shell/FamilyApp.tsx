@@ -1,4 +1,5 @@
-import { useCallback, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { eventCreateBarrier, hasPendingEventCreates } from "../shared/useEditSessionCore.js";
 import { MapTree } from "../components/MapTree.js";
 import { DungeonSidebar } from "../components/DungeonSidebar.js";
 import { SwitchPromptDialog } from "../shared/SwitchPromptDialog.js";
@@ -67,8 +68,25 @@ export function FamilyApp({ adapter, switcher }: FamilyAppProps) {
     setSwitchBusy(false);
   };
   const runtime = adapter.useRuntime({ selected, mode, requestPrompt });
+  const waitingForCreate = useRef(false);
+  const [settledLeave, setSettledLeave] = useState<{ map: string | null; go: () => void; opts: { sameMap: boolean } } | null>(null);
+  // Decide dirty ownership on the render after the create settles, using the fresh session flags.
+  useEffect(() => {
+    if (!settledLeave) return;
+    setSettledLeave(null);
+    if (hasPendingEventCreates(selected)) {
+      void eventCreateBarrier(selected).then(() => setSettledLeave(settledLeave));
+      return;
+    }
+    waitingForCreate.current = false;
+    if (selected === settledLeave.map && !switchPending.current) runtime.leave(settledLeave.go, settledLeave.opts);
+  }, [settledLeave, selected, runtime]);
   const guardedLeave = (go: () => void, opts: { sameMap: boolean }) => {
-    if (!switchPending.current) runtime.leave(go, opts);
+    if (switchPending.current || waitingForCreate.current) return;
+    if (hasPendingEventCreates(selected)) {
+      waitingForCreate.current = true;
+      void eventCreateBarrier(selected).then(() => setSettledLeave({ map: selected, go, opts }));
+    } else runtime.leave(go, opts);
   };
 
   // Shared browser-level half of I6's dirty-session guard; the in-app guard is runtime.leave.

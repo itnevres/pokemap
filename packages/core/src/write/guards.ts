@@ -2,7 +2,7 @@ import type { Project } from "../project.js";
 import type { Block, Layout } from "../model/types.js";
 import type { MapData } from "../load/maps.js";
 
-export interface Refusal { code: string; message: string; fix: string; subject: string; }
+export interface Refusal { code: string; message: string; fix: string; subject: string; path?: string; name?: string; }
 
 /** id-in-range check, split-aware -- the identical predicate
  *  validate/metatileRange.ts's own `bad()` closure computes, extracted here
