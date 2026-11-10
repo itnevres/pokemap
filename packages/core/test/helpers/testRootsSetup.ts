@@ -32,21 +32,20 @@ export function setupTestRoots(real: TestConfig, scratch = createScratchDir()): 
     return () => {
       const teardownStart = performance.now();
       const failures: unknown[] = [];
-      try {
-        for (const root of roots) {
-          try { assertManifestUnchanged(root.path, root.before, rootManifest(root.path, root.family)); }
-          catch (error) { failures.push(error); }
-        }
-      } finally {
-        try { removeScratchDir(scratch); } finally {
-          restoreEnv();
-          console.log(`Test roots teardown: ${(performance.now() - teardownStart).toFixed(1)} ms`);
-        }
+      for (const root of roots) {
+        try { assertManifestUnchanged(root.path, root.before, rootManifest(root.path, root.family)); }
+        catch (error) { failures.push(error); }
       }
+      // A cleanup failure is reported alongside, never instead of, a real-root change.
+      try { removeScratchDir(scratch); } catch (error) { failures.push(error); }
+      restoreEnv();
+      console.log(`Test roots teardown: ${(performance.now() - teardownStart).toFixed(1)} ms`);
       if (failures.length) throw new AggregateError(failures, `Real subject/reference roots changed during tests:\n${failures.map(String).join("\n")}`);
     };
   } catch (error) {
-    try { removeScratchDir(scratch); } finally { restoreEnv(); }
-    throw error;
+    const failures: unknown[] = [error];
+    try { removeScratchDir(scratch); } catch (cleanup) { failures.push(cleanup); }
+    restoreEnv();
+    throw failures.length > 1 ? new AggregateError(failures, failures.map(String).join("\n")) : error;
   }
 }

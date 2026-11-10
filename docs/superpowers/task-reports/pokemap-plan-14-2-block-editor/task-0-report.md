@@ -94,3 +94,18 @@ Per the sandbox note, no `.cmd` wrapper, execution-policy override, direct compi
 `packages/core/test/gbc/write/writeGate.test.ts:76` also invokes `git -C <corpus root> status --porcelain`, with a before/after comparison at lines 249/255. This was not among the two allowed assertion exceptions. A corpus root in the new OS-temp scratch tree has no `.git` and no enclosing repository, so that test's command will fail rather than produce a status string. I asked whether to convert this third check to the same before/after content manifest; no approval was available when preparing this report, so the file is unchanged. The conductor must authorize/perform this narrow conversion before expecting a full gate pass. Do not copy `.git` or point it back at a real repo as a workaround.
 
 The work is uncommitted and cannot be reported as verified. The conductor must run the permitted focused test and typecheck, address any failures, settle the third git check, and then perform the full gate/build/source-integrity evidence and timing required by the parent task.
+
+## Conductor addendum (s2, 2026-11-10) — supersedes "BLOCKED" above
+
+- Third git check settled: `packages/core/test/gbc/write/writeGate.test.ts` now compares `contentManifest` (same
+  intent as the two named exceptions). `packages/ui/test/gbc/Root.test.tsx` reverted to unchanged: its root string is
+  a fake mock path, not a real root.
+- `testConfig()` checks root containment only (`assertScratchRoots(..., false)`); the deep link walk runs once in setup
+  (copies are dereferenced; a per-file walk cost ~5 s).
+- Astra review fixes: copy filter applies to the path relative to each root (an ancestor folder named `build` emptied
+  the copy); teardown and setup failure paths collect cleanup errors alongside, never instead of, a real-root change.
+  Two sentinel tests added (13 total).
+- Measured: focused `testRoots.test.ts` 13/13; setup 87,246 files / 273,113,194 bytes / 87-114 s; teardown 33-45 s;
+  typecheck pass. Mutations (sentinel roots): containment check off, teardown manifest check off, `testConfig`
+  fallback, absolute-path filter, cleanup masking — results in the ledger.
+- Full gate, UI build and real-root HEAD/porcelain are run by the conductor after merge (ledger).

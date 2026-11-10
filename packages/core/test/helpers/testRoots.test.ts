@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync, unlinkSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync, unlinkSync } from "node:fs";
 import { join, basename } from "node:path";
 import {
   assertScratchRoots, createScratchDir, removeScratchDir, copyTestRoots,
@@ -56,6 +56,15 @@ describe("test root isolation (disposable sentinel roots)", () => {
     expect(copied.bytes).toBe(34);
   });
 
+  it("copies a checkout that lives under an ancestor folder named build", () => {
+    const real = fresh(), scratch = fresh();
+    const source = join(real, "build", "game");
+    put(source, "data/maps/sentinel.bin");
+    const copied = copyTestRoots(config(source), scratch);
+    expect(readFileSync(join(copied.config.projectPath, "data/maps/sentinel.bin"), "utf8")).toBe("original");
+    expect(copied.files).toBe(1);
+  });
+
   it("rejects outside roots, case aliases, sibling-prefix paths and escaping junctions", () => {
     const real = fresh(), scratch = fresh();
     expect(() => assertScratchRoots(config(real), scratch)).toThrow(real);
@@ -99,6 +108,14 @@ describe("test root isolation (disposable sentinel roots)", () => {
     expect(existsSync(scratch)).toBe(false);
     expect(process.env.POKEMAP_TEST_CONFIG).toBe(savedConfig);
     expect(process.env.POKEMAP_HOME).toBe(savedHome);
+  });
+
+  it("reports a real-root change even when scratch cleanup also fails", () => {
+    const real = fresh(), scratch = fresh(); put(real, "data/sentinel.bin");
+    const teardown = setupTestRoots(config(real), scratch);
+    put(real, "data/sentinel.bin", "changed sentinel bytes");
+    rmSync(scratch, { recursive: true, force: true }); // makes removeScratchDir throw
+    expect(teardown).toThrow(/changed data\/sentinel\.bin/);
   });
 
   it("cleans a partial scratch tree on copy failure without touching the sentinel", () => {

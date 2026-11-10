@@ -4,7 +4,7 @@ import {
 } from "node:fs";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 
 export interface TestConfig {
   projectPath: string;
@@ -127,7 +127,8 @@ export function copyTestRoots(config: TestConfig, scratchDir: string): { config:
       const to = join(target, entry);
       mkdirSync(dirname(to), { recursive: true });
       cpSync(from, to, { recursive: true, dereference: true, filter: path => {
-        if (!copyAllowed(path)) return false;
+        // Relative to the root: an ancestor folder named `build` must not exclude everything.
+        if (!copyAllowed(relative(source, path))) return false;
         const stat = statSync(path);
         if (stat.isFile()) { files++; bytes += stat.size; }
         return true;
