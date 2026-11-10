@@ -31,8 +31,8 @@ folder (global rule 7).
 - **New tests never write the real subjects** (GBA `C:\Programming Projects\Pokemon Game\game`, PerfPlus
   `C:\Programming Projects\pokecrystal-PerfPlus`). Write tests use temp copies: GBC `copyGbcSubjectToTemp`
   (`packages/core/test/gbc/helpers/corpus.ts`); GBA `copyGbaTilesetProject` from Task 1 (the 14.1
-  `gbaTempProject.ts` copies only add-event inputs). Read-only corpus tests are fine. (The existing suite's few
-  restore-in-`finally` writers predate 14.2; the gate's globalSetup snapshot and post-gate subject check cover them.)
+  `gbaTempProject.ts` copies only add-event inputs). Read-only corpus tests are fine. After Task 0 every
+  test root is a scratch copy, so this holds for the whole suite, not only 14.2's tests.
 - No new npm dependencies. PNG via `node:zlib` and the existing decoders.
 - Identity is the resolved repo-relative **file path** (forward slashes), never a tileset name.
 - Every patcher is lossless: unchanged input returns identical bytes; an edit changes only its target span (text:
@@ -77,12 +77,77 @@ UI: `shared/useEditSessionCore.ts`, `components/SaveDialog.tsx`, URL builders (T
 
 ## Task tiers
 
-All implementation tasks are **High** (CLAUDE.md triggers: silent-corruption formats in 2-4 and 8; oracle counts in 5;
+Task 0 is **High** (writes to subject repos). All implementation tasks are **High** (CLAUDE.md triggers: silent-corruption formats in 2-4 and 8; oracle counts in 5;
 refusal/error boundaries in 6, 7, 11; save/discard ownership and async ordering in 9, 12; shared render caches in 10;
 shared shell UI over save/undo in 13; canvas-core pointer behavior in 14; any case a test would not catch in 1, 15).
 Separate spec and quality reviews (Codex astra → Claude Opus) for every task.
 
 ---
+
+### Task 0: Redirect every test root to scratch copies
+
+**Ruling (user, 2026-11-10, relayed by the master session; overrides the conductor's decline of plan review 1
+Critical #1):** "make the fix in 14.2. redirect at the source as recommended". Old tests such as
+`packages/cli/test/writeCommands.test.ts`, `packages/core/test/write/corpus.test.ts` and
+`packages/server/test/saveRoutes.test.ts` write the real subjects and restore in `finally`; a crash in that window
+corrupted `AzaleaTown/map.bin` once (LESSONS, Testing). The fix redirects the roots at the source so no test can reach
+a real root, whatever it does. Text revised after a scoped astra review (6 Important, 1 Minor, folded in).
+
+**Files:**
+- Create: `packages/core/test/helpers/testRoots.ts`, `packages/core/test/helpers/testRootsSetup.ts` (registered in
+  `vitest.config.ts` `globalSetup` **before** `subjectSnapshotSetup.ts`), `packages/core/test/helpers/testRoots.test.ts`
+- Modify: `vitest.config.ts`, `packages/core/test/helpers/corpus.ts`, `packages/core/test/gbc/helpers/corpus.ts`,
+  `packages/core/test/family.test.ts` (optional `pokeyellow` root), and every test file that reads
+  `pokemap.config.json` or names a real root itself (`grep -rlnE "pokemap.config.json|Pokemon Game|pokecrystal-PerfPlus|pokeyellow" packages/*/test`),
+  switched to the helper. Path plumbing only, with two named exceptions: `packages/cli/test/gbcCommands.test.ts:512`
+  and `packages/server/test/gbcEditRoutes.test.ts:62-63` require a git repository at the subject; their git-status
+  integrity checks become before/after **content manifests** of the scratch root (same intent: nothing else changed).
+
+**Interfaces:**
+- **Roots.** `testRootsSetup` reads the real `pokemap.config.json` and enumerates every root the suite can reach: GBA
+  `projectPath`, each `referenceProjects` entry, `gbc.projectPath`, each `gbc.referenceProjects` entry, and the
+  optional Yellow checkout `family.test.ts` reads (today: GBA subject, five GBA refs, PerfPlus, pret pokecrystal,
+  pokeyellow if present). Each is copied to `<scratch>/<n>/<basename>` (basename kept: `corpus.ts:32` selects refs by
+  basename, `gbc/helpers/corpus.ts:54` matches `/pokecrystal$`). A root that does not exist maps to a nonexistent
+  scratch path, never to the original path, so its tests skip as today.
+- **Copy.** Independent bytes only (`fs.cpSync` with `dereference: true`, no hard links, no junctions), from an
+  explicit per-family allow-list of folders and files the suite reads (never `.git`, never build outputs; sidecars
+  such as `.pokemap/` and gitignored `porymap.project.cfg` included). A failure mid-copy deletes the partial scratch
+  dir and fails the run. Teardown deletes the scratch dir.
+- **Config.** Writes `<scratch>/pokemap.config.json` naming the copies and sets `process.env.POKEMAP_TEST_CONFIG`.
+  `testConfig(): TestConfig` (`{ projectPath; referenceProjects; gbc?: { projectPath; referenceProjects? };
+  yellowPath? }`) reads it and throws when unset (no fallback). `SUBJECT_ROOT`, `REFERENCE_ROOTS`, `GBC_SUBJECT_ROOT`,
+  `GBC_REFERENCE_ROOTS` come from it.
+- **Containment.** `assertScratchRoots(test: TestConfig, scratchDir: string): void`: every test root's
+  `realpathSync.native` lies inside `realpathSync.native(scratchDir)` (case-insensitive, separator-normalized), and no
+  reparse point / symlink under a copied root resolves outside it; throws naming the root otherwise. Called at the end
+  of setup and inside `testConfig()`.
+- **Real-root manifests.** Setup records, for every real root, a manifest of all files under its allow-listed
+  folders plus the root's top level (relative path, size, mtimeMs; additions and deletions count); teardown recomputes
+  and **fails the run** naming any changed, added or removed file. `subjectSnapshotSetup.ts` stays as immutable test
+  input (it compares nothing); HEAD / porcelain checks stay as supplementary gate evidence.
+- **Production readers.** Code that reads `pokemap.config.json` from the cwd (`packages/cli/src/context.ts:32`,
+  `packages/server/src/serve.ts:27-47`) must never see the real config in a test: CLI child processes get explicit
+  `--project` scratch roots (today's calls already do; assert it); any test of the cwd-config fallback or `--gbc`
+  runs with a scratch cwd holding a scratch `pokemap.config.json`; the server's recent-project history is pointed at a
+  scratch location in tests (find where it is stored; report it).
+
+- [ ] **Step 1: Write failing tests** (all against disposable sentinel "real" roots made in `os.tmpdir()`, never the
+  actual subjects): `testConfig` throws when the env is unset; roots lie inside the scratch dir; `assertScratchRoots`
+  throws for an outside root, a real-root alias with different case, and a scratch junction targeting the sentinel;
+  a manifest pass detects a changed, an added and a removed sentinel file; reference basenames survive the copy; an
+  absent root maps to a nonexistent scratch path; a worker smoke test sees `POKEMAP_TEST_CONFIG`; the scratch GBA copy
+  loads with `loadProject` and renders one layout, the scratch PerfPlus copy loads and renders one map.
+- [ ] **Step 2: Run** `npx vitest run packages/core/test/helpers/testRoots.test.ts` → FAIL.
+- [ ] **Step 3: Implement**, then switch every root reader. Report the allow-lists, copied file count, bytes, setup and
+  teardown time, and the full-gate time against the baseline run.
+- [ ] **Step 4: Verify**: full gate green with the baseline counts (4,416 pass / 1 env fail / 254 files) plus the new
+  tests; teardown manifest check passes; HEAD and porcelain of every real root unchanged. **Mutations** (conductor,
+  sentinel roots only): a test root pointed at the sentinel "real" root → `assertScratchRoots` fails before any test
+  runs; a write to a sentinel real file during a run → teardown fails the run. **Grep proof:** outside an allow-list
+  of reviewed readers (`testRoots*.ts`, `subjectSnapshotSetup.ts`, `context.test.ts`'s temp-config fixtures), no test
+  file reads `pokemap.config.json` or names a real root.
+- [ ] **Step 5: Commit** `test(plan-14.2): redirect every test root to scratch copies (Task 0)`.
 
 ### Task 1: Contracts, readers and file overlay
 
