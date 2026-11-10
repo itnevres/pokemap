@@ -1,8 +1,9 @@
 import { describe, it, expect, afterAll } from "vitest";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync, readFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { detectEngineFamily, probeEngineFamily } from "../src/family.js";
+import { testConfig } from "./helpers/testRoots.js";
 
 const roots: string[] = [];
 function makeRoot(): string {
@@ -71,10 +72,7 @@ describe("detectEngineFamily", () => {
   });
 
   // Real roots, guarded so this suite still passes on a machine without them checked out.
-  const cfg = JSON.parse(readFileSync("pokemap.config.json", "utf8")) as {
-    projectPath: string;
-    gbc?: { projectPath: string };
-  };
+  const cfg = testConfig();
 
   it("real gba root from config.projectPath -> gba", () => {
     if (!existsSync(`${cfg.projectPath}/include/fieldmap.h`)) return;
@@ -88,7 +86,8 @@ describe("detectEngineFamily", () => {
   });
 
   it("real pokeyellow root throws the Yellow message", () => {
-    const yellowRoot = "C:/Programming Projects/Pokemon Game/refs/pokeyellow";
+    const yellowRoot = cfg.yellowPath;
+    if (!yellowRoot) return;
     if (!existsSync(`${yellowRoot}/data/maps/headers`)) return;
     expect(() => detectEngineFamily(yellowRoot)).toThrow(/pokeyellow/i);
   });

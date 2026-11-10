@@ -11,10 +11,9 @@ import { paintCells } from "../../src/edit/paint.js";
 import { planSave, commitSave, type EditSession } from "../../src/write/save.js";
 import type { Project } from "../../src/project.js";
 import { stubProject, stubTileset } from "../helpers/stubProject.js";
+import { testConfig } from "../helpers/testRoots.js";
 
-const cfg = JSON.parse(readFileSync("pokemap.config.json", "utf8")) as {
-  projectPath: string; referenceProjects: string[];
-};
+const cfg = testConfig();
 const roots = [cfg.projectPath, ...cfg.referenceProjects].filter((r) => existsSync(`${r}/data/layouts/layouts.json`));
 
 // This is the JSON identity gate, not the project loader. It needs map names

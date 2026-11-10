@@ -2,7 +2,7 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
-    globalSetup: ["packages/core/test/helpers/subjectSnapshotSetup.ts"],
+    globalSetup: ["packages/core/test/helpers/testRootsSetup.ts", "packages/core/test/helpers/subjectSnapshotSetup.ts"],
     globals: false,
     environment: "node",
     environmentMatchGlobs: [["packages/ui/**", "jsdom"]],

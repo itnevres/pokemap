@@ -14,7 +14,7 @@ import { runGbcRender, runGbcQuery, runGbcRenderWorld, runGbcEncounters, runGbcW
 import { gbcEncounterSources } from "@pokemap/core/src/gbc/analyse/atlas.js";
 import { beforeAll } from "vitest";
 import { existsSync } from "node:fs";
-import { execFileSync } from "node:child_process";
+import { contentManifest, testConfig } from "../../core/test/helpers/testRoots.js";
 import { hasGbcProject, copyGbcSubjectToTemp, removeTemp } from "../../core/test/gbc/helpers/corpus.js";
 import { runGbcPaint, runGbcDiff, runGbcEventMove, runGbcEventAdd, runGbcEventDelete } from "../src/gbcCommands.js";
 import { paintCells as paintGbcCells, floodFill as gbcFloodFill } from "@pokemap/core/src/gbc/edit/paint.js";
@@ -80,6 +80,9 @@ const REPO_ROOT = process.cwd();
  *  `spawnSync` reports both streams and the exit code unconditionally. */
 function spawnCli(args: string[]): { status: number; stdout: string; stderr: string } {
   // `node --import tsx`, not `npx tsx`: Windows can't spawn `npx` (a .cmd shim) without a shell.
+  const projectIndex = args.indexOf("--project");
+  expect(projectIndex).toBeGreaterThanOrEqual(0);
+  expect(args[projectIndex + 1]).toBeTruthy();
   const result = spawnSync(process.execPath, ["--import", "tsx", CLI_ENTRY, ...args], { cwd: REPO_ROOT, encoding: "utf8" });
   return { status: result.status ?? 1, stdout: result.stdout, stderr: result.stderr };
 }
@@ -497,19 +500,23 @@ describe("GBC write commands (Plan 7 Task 6)", () => {
   // "" on any error (no config / wrong cwd) so collection never throws; test 10 then skips.
   const gbaRoot = ((): string => {
     try {
-      return (JSON.parse(readFileSync("pokemap.config.json", "utf8")) as { projectPath: string }).projectPath ?? "";
+      return testConfig().projectPath;
     } catch {
       return "";
     }
   })();
 
+  let subjectBefore = "";
   beforeAll(() => {
-    if (hasGbcProject(GBC_SUBJECT_ROOT)) copy = copyGbcSubjectToTemp();
+    if (hasGbcProject(GBC_SUBJECT_ROOT)) {
+      subjectBefore = contentManifest(GBC_SUBJECT_ROOT);
+      copy = copyGbcSubjectToTemp();
+    }
   }, 60_000);
   afterAll(() => {
     if (copy) removeTemp(copy);
     if (hasGbcProject(GBC_SUBJECT_ROOT)) {
-      expect(execFileSync("git", ["-C", GBC_SUBJECT_ROOT, "status", "--porcelain"], { encoding: "utf8" })).toBe("");
+      expect(contentManifest(GBC_SUBJECT_ROOT)).toBe(subjectBefore);
     }
   });
 
