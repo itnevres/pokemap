@@ -111,3 +111,18 @@ the recovery map; reports go next to it.
 - Grep proof: config/real-root names remain only in `testRoots*.ts`, `subjectSnapshotSetup.ts`, `context.test.ts`
   temp-config fixtures, and `ui/test/gbc/Root.test.tsx` (fake mock root string `/root/pokemap-corpus/...`, no fs).
 - Task 0 closed. Redirect verified → normal per-task flow (and whole-package vitest) allowed from Task 1 on.
+
+### Task 1 (High): contracts, readers, overlay — s2
+
+- BASE `3671411`; worktree `s2-scratchpad/wt-t1`, branch `p14-2-t1`. Dispatch regenerated on the current plan (Global Constraints post-Task 0; `vitest run packages/core` now allowed). Hop 1: OpenCode `opencode/deepseek-v4.1-flash-free` started.
+- Hop 1 DeepSeek: hit the 40-min timeout (exit 124; one ECONNRESET; no report). Diff checked by conductor and found complete against Task 1 (all Files/Interfaces/Step-1 cases; stub additions in stubProject/stubGbcProject/warpGraph/save tests are interface-required, no removed lines). Typecheck pass; focused 45/46 (known env fail). Accepted as hop output rather than re-running a hop on the same work; `packages/core` + 4 mutations running.
+- Committed `5aa29f5` (core 1,593/1 known env/96; mutations GBA/GBC PNG-bypass and cache-not-cleared all KILLED). Astra review 1: spec Needs changes (Important: 1-pixel render asserts; Minor: tilesetPaths test not tied to loader reads; Minor: stub edits outside named files → **conductor ruling: interface-only stub additions in stubProject/stubGbcProject/warpGraph/save tests are allowed, required by typecheck**); quality Needs changes (Important: overlay keys not canonical; Minor: 1-pixel asserts). Fix round 1 → Codex `gpt-6.1-sol` (DeepSeek not resumable per rule; timed out).
+- Scoped re-reviews (astra): spec Approved, quality Approved. Merged `--no-ff` as `7a834b9`.
+- Gate at 7a834b9: 4,441 pass / 1 fail / 256 files (known env fail only); UI build pass; **typecheck failed**:
+  `packages/cli/test/context.test.ts` has its own `Project` stub. The worktree typecheck passed because the worktree's
+  `node_modules/@pokemap/core` junction resolves to the MAIN checkout's core, so cli/server/ui were checked against
+  the old interface. Fixed on the branch (interface-only stub addition, ruling above); typecheck pass, that file 5/5.
+  **Lesson for later tasks:** a core interface change needs `packages/{cli,server}/node_modules/@pokemap/core` →
+  worktree core junctions in the worktree (cli/server have no node_modules in main); UI resolves through the root
+  junction, so the post-merge typecheck is the backstop for UI.
+  Real roots unchanged. Wall 1,782 s.
