@@ -81,3 +81,33 @@ the recovery map; reports go next to it.
 - Task 0 text scoped review: Codex `gpt-6-astra` read-only: 6 Important (canonical containment + junctions; git-status
   tests need manifests; Yellow root + basenames + absent roots; real-root manifest at teardown; production cwd-config
   readers; proof via sentinel roots, not real subjects), 1 Minor (copy cost measurement). All folded into Task 0.
+
+## Execution (conductor s2, 2026-11-10)
+
+### Task 0 (High): redirect test roots
+
+- BASE `f651851`; worktree `s2-scratchpad/wt-t0`, branch `p14-2-t0`.
+- Hop 1: OpenCode `opencode/deepseek-v4.1-flash-free` failed (`provider.invalid-output` "stream ended without
+  finish_reason" ×2; stopped half-done, no report). Stashed `delegate: deepseek failed task0`. Hop 2: Codex
+  `gpt-6.1-sol` workspace-write started.
+- Hop 2 Codex `gpt-6.1-sol`: code done, report BLOCKED (sandbox: npx/npm blocked by PowerShell policy; flagged a
+  third git dependency `core/test/gbc/write/writeGate.test.ts:76`). Conductor verified: focused testRoots 11/11
+  (setup 87,246 files / 273 MB / 114 s; teardown 45 s), typecheck pass.
+- Conductor inline edits (tiny, ≤20 lines): writeGate git-status → `contentManifest` (same intent as the two named
+  exceptions; ruling: in scope); `testConfig()` checks root containment only, deep link walk only in setup (copies
+  are dereferenced; per-file walk cost ~5 s × every corpus importer); reverted Codex's `ui/test/gbc/Root.test.tsx`
+  edit (string was a fake mock root, not a real path; the UI import of a core test helper resolved to the main
+  checkout from the worktree).
+- Worktree note: server tests import `@pokemap/core/test/...`; added `packages/server/node_modules/@pokemap/core`
+  junction → worktree core, else they load main's helpers (real config).
+- Mutations (sentinel roots): M1 containment check off → KILLED (2 tests); M2 teardown manifest check off → KILLED; M3 testConfig fallback when env unset → KILLED. Committed `c00e1ad` on `p14-2-t0`. Astra `gpt-6-astra` spec + quality reviews (separate runs) started.
+- Astra review 1: spec Needs changes (Important: gate evidence pending → deferred to merge; Minor: stale report → addendum); quality Needs changes (Important: copy filter on absolute path, `build` ancestor empties copy; Important: cleanup error masks real-root change). Fixed inline (conductor, ~25 lines, fix round cheaper than a Codex resume); +2 sentinel tests (13). Mutations M4 absolute filter → KILLED, M5 cleanup masking → KILLED. Fix commit on `p14-2-t0`; scoped re-reviews running.
+- Scoped re-reviews (astra): spec Approved, quality Approved. Merged `--no-ff` as `1d6c07d`.
+- **Gate at 1d6c07d: 4,429 pass / 1 fail / 255 files; typecheck pass, UI build pass; all 9 real roots (subjects,
+  5 GBA refs, pret pokecrystal, pokeyellow) HEAD + porcelain unchanged; teardown manifest check passed.** The 1 fail is
+  the known env fail `core/test/config/engine.test.ts` "parses the subject repo's real porymap.project.cfg" (96 vs 98;
+  ledger Baseline), now reading the scratch copy. Wall time 2,027 s (no baseline duration on record); setup 86 s,
+  teardown 55 s.
+- Grep proof: config/real-root names remain only in `testRoots*.ts`, `subjectSnapshotSetup.ts`, `context.test.ts`
+  temp-config fixtures, and `ui/test/gbc/Root.test.tsx` (fake mock root string `/root/pokemap-corpus/...`, no fs).
+- Task 0 closed. Redirect verified → normal per-task flow (and whole-package vitest) allowed from Task 1 on.
