@@ -139,3 +139,34 @@ the recovery map; reports go next to it.
 - **Gate at 0b24484: 4,460 pass / 1 fail / 257 files; typecheck pass, UI build pass; all 9 real roots unchanged.**
   The 1 fail is the known env fail (engine.test porymap.project.cfg). Wall 1,679 s. Task 2 closed.
 - Task 3 dispatch prepared (`.superpowers/sdd/.../task-3-dispatch.md`); not started (handoff at ~165 calls, s2 end).
+
+## Execution (conductor s3, 2026-11-10)
+
+### Task 3 (High): GBC sheet PNG and reservations — s3
+
+- BASE `924ff1b`; worktree `s3-scratchpad/wt-t3`, branch `p14-2-t3`. Hop 1 DeepSeek: `provider.free-limit` 429 at once
+  (no edits). Hop 2: OpenCode `openrouter/nvidia/nemotron-3-ultra-550b-a55b:free` started.
+- Hop 2 Nemotron 3 Ultra: timeout (exit 124, ECONNRESET), no report; diff read `ROOF_LENGTH` from
+  `mapgroup_roofs.asm` (it is in `constants/tileset_constants.asm`) and loosened the PerfPlus corpus test to accept a
+  throw → failed. Stashed `delegate: nemotron-ultra failed task3`. Dots3-note skipped: OpenRouter timeout treated as a
+  429 per delegate §4, no Zen Opus-tier model left. Hop 3: Codex `gpt-6.1-sol` with binding clarifications (ROOF_LENGTH
+  file, roof destination parsed from `ld de, vTiles2 tile $0a`, keep ancillary PNG chunks, IHDR-first check).
+- Hop 3 Codex `gpt-6.1-sol`: BLOCKED as expected (sandbox; no tests run). Conductor: inline type fix (`Buffer[]`,
+  1 line); typecheck pass; gbcSheet 11/11 + gbcPatch 19/19; mutations gray-not-inverted, copy stride, vTiles5 offset,
+  ancillary chunks dropped → all KILLED. Committed `f0bb6bd`. Astra `gpt-6-astra` spec + quality reviews running.
+- Astra review 1: spec Needs changes (Important: distinct-slot identical-pixel copy re-encodes; Important:
+  `findDefEqu` takes first token, `9 + 1` under-reserves); quality Needs changes (Important: anim destinations only on
+  `dw`-first lines, misses PerfPlus `ld hl, vTiles2 tile $5b/$38/$0c...` and labeled `dw` lines; Important: same
+  ROOF_LENGTH expression; Important: copy fixture repeats every 4 rows, constant `sourceY` survives). All verified
+  against code/corpus. Fix round 1 → Codex `gpt-6.1-sol` (fresh run, findings brief).
+- Fix round 1 Codex `gpt-6.1-sol` (`7a1edf7`): conductor typecheck pass, 14/14; mutations M1-M4 + M5 constant
+  sourceY, M6 identical shortcut removed, M7 anims dw-only, M8 literal check off → all KILLED. Re-review 1 (astra):
+  prior findings resolved; spec + quality both Needs changes on one new Important (anim operand regex truncated
+  `$20 + 1` at whitespace). Fix round 2 conductor inline (tiny: regex + trim + 1 test; cheaper than a hop brief)
+  `d3f731a`: 15/15, M9 KILLED. Re-review 2: quality (astra) Approved; spec astra hit **Codex usage limit (account-wide,
+  until 2026-11-12 17:11)** → Claude Opus high-risk-reviewer fallback.
+- **Codex unavailable until 2026-11-12 17:11** (implementation sol and reviews astra). DeepSeek Zen free-limited today.
+- Spec re-review 2 (Claude Opus high-risk-reviewer): Approved. Merged `--no-ff` as `dba63a3`.
+- **Gate at dba63a3: 4,475 pass / 1 fail / 258 files; typecheck pass, UI build pass; all 9 real roots HEAD +
+  porcelain unchanged.** The 1 fail is the known env fail (engine.test porymap.project.cfg). Wall 1,336 s. Task 3 closed.
+- Task 4 dispatch prepared (`.superpowers/sdd/.../task-4-dispatch.md`).

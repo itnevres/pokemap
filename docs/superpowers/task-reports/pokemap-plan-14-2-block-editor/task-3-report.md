@@ -150,3 +150,4 @@ No mutations or reviews claimed passed. Preserve existing reviews in place until
   Fix: capture to the comma and `parseNum` the trimmed whole operand, so expressions refuse with
   `RESERVATIONS_UNREADABLE` (tileset_anims.asm). Regression test for `dw` and `ld hl` forms.
 - Typecheck pass; gbcSheet.test.ts 15/15 (PerfPlus corpus still parses). M9 regex back to `[^,\s]+` → KILLED.
+- Gate at dba63a3: 4,475 pass / 1 fail (known env, engine.test) / 258 files; typecheck pass, UI build pass; subjects unchanged.
