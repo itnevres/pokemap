@@ -27,20 +27,33 @@ export interface Tileset {
 
 const TILES_PER_METATILE = 8;
 
-export function loadTileset(paths: ProjectPaths, tp: TilesetPaths, profile: EngineProfile): Tileset {
-  const abs = (rel: string) => `${paths.root}/${rel}`;
+/**
+ * Reads a resolved repo-relative path. `openProject` injects one that consults
+ * the project's staged overlay first; omitting it reads from disk, which is
+ * what the parse/edit unit tests want.
+ */
+export type TilesetFileRead = (path: string) => Buffer;
 
-  const metatilesBuf = readFileSync(abs(tp.metatilesBin));
+export function loadTileset(
+  paths: ProjectPaths,
+  tp: TilesetPaths,
+  profile: EngineProfile,
+  read?: TilesetFileRead,
+): Tileset {
+  const abs = (rel: string) => `${paths.root}/${rel}`;
+  const readFile = read ?? ((rel: string) => readFileSync(abs(rel)));
+
+  const metatilesBuf = readFile(tp.metatilesBin);
   const metatileCount = metatilesBuf.length / (TILES_PER_METATILE * 2);
 
-  const attrBuf = readFileSync(abs(tp.attributesBin));
+  const attrBuf = readFile(tp.attributesBin);
   const size = profile.metatileAttributesSize;
   const attributes: number[] = [];
   for (let i = 0; i + size <= attrBuf.length; i += size) {
     attributes.push(size === 2 ? attrBuf.readUInt16LE(i) : attrBuf.readUInt32LE(i));
   }
 
-  const tiles = readIndexedPng(readFileSync(abs(tp.tilesPng)));
+  const tiles = readIndexedPng(readFile(tp.tilesPng));
 
   // I3: read the committed .pal, not the gitignored .gbapal that graphics.h INCBINs.
   //
@@ -52,7 +65,7 @@ export function loadTileset(paths: ProjectPaths, tp: TilesetPaths, profile: Engi
   // without padding, palette[idx] is undefined for the missing indices and
   // drawTile skips the pixel, punching holes in the map rather than erroring.
   const palettes = tp.palettes.map((g) => {
-    const pal = parseJascPal(readFileSync(abs(g.replace(/\.gbapal$/, ".pal")), "utf8"));
+    const pal = parseJascPal(readFile(g.replace(/\.gbapal$/, ".pal")).toString("utf8"));
     while (pal.length < 16) pal.push({ r: 0, g: 0, b: 0 });
     return pal;
   });

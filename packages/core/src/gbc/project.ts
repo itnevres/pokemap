@@ -8,6 +8,8 @@ import { loadGbcWildData } from "./load/encounters.js";
 import { findDefEqu } from "./load/asm.js";
 import type { GbcMap, GbcTileset, Layout, DataDefect, GbcWildData } from "./model/types.js";
 import type { GbcCollisionInfoEntry } from "./wire.js";
+import type { FileOverlay } from "../blockEdit/types.js";
+import { canonicalTilesetPath } from "../blockEdit/canonicalTilesetPath.js";
 
 /**
  * `constants/gfx_constants.asm`'s `DEF MAP_CONNECTION_PADDING_WIDTH EQU 3`
@@ -43,6 +45,13 @@ export interface GbcProject {
   /** Cached per `TILESET_*` const (`loadGbcTileset` is deliberately
    *  uncached -- see its own doc comment). 391 maps share 37 tilesets. */
   tileset(tilesetConst: string): GbcTileset;
+  /** Replace every tileset file read with these staged bytes (empty map =
+   *  disk state). Clears the tileset cache and bumps `tilesetGeneration`;
+   *  the loader resolves files through the overlay, so aliases see it too. */
+  setTilesetOverlay(o: FileOverlay): void;
+  /** Bumped by each `setTilesetOverlay`; Task 5's usage-relation cache keys on
+   *  it rather than registering callbacks. */
+  readonly tilesetGeneration: number;
   /** Lazy, cached once per root: every shared palette table
    *  (`loadPaletteTables`'s own cost is per-root, not per-map). */
   paletteTables(): PaletteTables;
@@ -85,6 +94,12 @@ export function openGbcProject(root: string): GbcProject {
   let waterCollisionValuesCache: Set<number> | undefined;
   let groupNamesCache: string[] | undefined;
   let collisionInfoCache: Map<number, GbcCollisionInfoEntry> | undefined;
+  let overlay: FileOverlay = new Map();
+  let tilesetGeneration = 0;
+
+  // Only the tileset loader goes through this reader. Map/layout/palette
+  // caching stays disk-backed; a block edit stages tileset files only.
+  const readTilesetFile = (rel: string): Buffer => overlay.get(canonicalTilesetPath(rel)) ?? readFileSync(`${r}/${canonicalTilesetPath(rel)}`);
 
   return {
     root: r,
@@ -93,11 +108,17 @@ export function openGbcProject(root: string): GbcProject {
     tileset: (tilesetConst: string): GbcTileset => {
       let t = tilesetCache.get(tilesetConst);
       if (!t) {
-        t = loadGbcTileset(r, tilesetConst);
+        t = loadGbcTileset(r, tilesetConst, readTilesetFile);
         tilesetCache.set(tilesetConst, t);
       }
       return t;
     },
+    setTilesetOverlay: (o) => {
+      overlay = new Map([...o].map(([path, bytes]) => [canonicalTilesetPath(path), bytes]));
+      tilesetCache.clear();
+      tilesetGeneration++;
+    },
+    get tilesetGeneration() { return tilesetGeneration; },
     paletteTables: (): PaletteTables => {
       if (!paletteTablesCache) paletteTablesCache = loadPaletteTables(r);
       return paletteTablesCache;

@@ -23,6 +23,8 @@ export function stubGbcProject(overrides: Partial<GbcProject> = {}): GbcProject 
     maps: [],
     map: unused("map"),
     tileset: unused("tileset"),
+    setTilesetOverlay: unused("setTilesetOverlay"),
+    tilesetGeneration: 0,
     paletteTables: unused("paletteTables"),
     roofs: unused("roofs"),
     layout: unused("layout"),
