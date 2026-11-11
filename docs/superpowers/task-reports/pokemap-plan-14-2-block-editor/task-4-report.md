@@ -74,3 +74,18 @@ Evidence: typecheck pass; `gbaPatch.test.ts` 25/25 (corpus tests run, none skipp
 order swapped → KILLED (no-op corpus + 16-byte + append); M2 mask without shift → KILLED (corpus attributes, width
 2/4 layerType, shifted behavior); M3 append ignores `cloneFrom` → KILLED (append clones). Support file:
 `src/blockEdit/index.ts` re-exports `gbaPatch.js` (same as `gbcPatch.js`).
+
+## Fix round 1 (conductor inline, s3)
+
+Reviews 1 (Claude Opus): spec Approved (5 Minor); quality Needs changes (I1 + 6 Minor).
+- **I1 / ruling:** field units follow the reader (`load/tilesetData.ts`): behavior = `word & mask` unshifted,
+  layerType shifted down. The conductor's earlier shifted-behavior change was wrong and is reverted; changing the
+  reader is out of Task 4 scope. Corpus no-op now decodes behavior the reader's way.
+- Validation: a value must survive `((v << shift) & mask) >>> shift` (non-contiguous masks, quality M3 / spec 2); a
+  2-byte word with a mask above bit 15 refuses BAD_VALUE instead of a RangeError (M2); empty-file append says
+  "no attribute word to clone" (M4 / spec 4); the stale blockset-cap doc comment fixed (M5 / spec 1).
+- Tests: input immutability on an attribute replace (M1); width-2 behavior test uses all bits set (spec 3);
+  hand-written metatile packing fixture with flips and palette (M6). Spec 5 (`cloneFrom` same buffer) is per the
+  interface: noted for the Save-as-new task.
+- Typecheck pass; 28/28. Mutations: byte order, apply without shift, ignore cloneFrom, attribute input mutated,
+  behavior shifted (reader mismatch), range-only check, wide mask on 2-byte allowed → all 7 KILLED.

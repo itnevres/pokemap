@@ -17,8 +17,8 @@ const BYTES_PER_METATILE = TILES_PER_METATILE * 2;
 /**
  * Replaces metatile `localIndex`'s 8 tile entries, or appends a metatile when
  * `localIndex` is the current count. `localIndex > count` is a bad value (a
- * caller must not silently create gaps), and appending past the blockset cap
- * is the blockset cap. The input buffer is never mutated; an unchanged record
+ * caller must not silently create gaps). The blockset cap is the caller's check
+ * (not enforced here). The input buffer is never mutated; an unchanged record
  * returns an identical buffer.
  *
  * Each entry is a u16: tile (10 bits), xFlip (bit 10), yFlip (bit 11), palette (4 bits at 12-15).
@@ -111,21 +111,27 @@ export function patchGbaAttribute(
     throw new BlockEditRefusal("BAD_VALUE", `${path}: attribute index ${localIndex} is outside the editable range 0-${count}`);
   }
 
-  // Both fields go through the same shifted mask: a value is the field's own units, placed at the mask's low bit.
-  const fieldMasks = { behavior: profile.metatileBehaviorMask, layerType: profile.metatileLayerTypeMask } as const;
-  for (const key of ["behavior", "layerType"] as const) {
+  // Field units match the reader (load/tilesetData.ts): behavior is `word & mask` unshifted, layerType is shifted
+  // down to the mask's low bit. A value must survive its own mask exactly (also rejects non-contiguous overflow).
+  const specs = [
+    { key: "behavior", mask: profile.metatileBehaviorMask >>> 0, shift: 0 },
+    { key: "layerType", mask: profile.metatileLayerTypeMask >>> 0, shift: maskShift(profile.metatileLayerTypeMask) },
+  ] as const;
+  for (const { key, mask, shift } of specs) {
     const value = fields[key];
-    const mask = fieldMasks[key];
-    if (value !== undefined && (!Number.isInteger(value) || value < 0 || value > mask >>> maskShift(mask))) {
+    if (value === undefined) continue;
+    if (size === 2 && mask > 0xffff) {
+      throw new BlockEditRefusal("BAD_VALUE", `${path}: ${key} mask 0x${mask.toString(16)} does not fit a 2-byte attribute`);
+    }
+    if (!Number.isInteger(value) || value < 0 || ((value << shift) & mask) >>> shift !== value) {
       throw new BlockEditRefusal("BAD_VALUE", `${path}: ${key} ${value} exceeds mask 0x${mask.toString(16)}`);
     }
   }
 
   function applyFields(word: number): number {
-    for (const key of ["behavior", "layerType"] as const) {
+    for (const { key, mask, shift } of specs) {
       const value = fields[key];
-      const mask = fieldMasks[key];
-      if (value !== undefined) word = ((word & ~mask) | ((value << maskShift(mask)) & mask)) >>> 0;
+      if (value !== undefined) word = ((word & ~mask) | ((value << shift) & mask)) >>> 0;
     }
     return word;
   }
@@ -134,7 +140,9 @@ export function patchGbaAttribute(
     // Append: clone from cloneFrom (default 0)
     const cloneIndex = cloneFrom ?? 0;
     if (!Number.isInteger(cloneIndex) || cloneIndex < 0 || cloneIndex >= count) {
-      throw new BlockEditRefusal("BAD_VALUE", `${path}: cloneFrom ${cloneIndex} is outside the valid range 0-${count - 1}`);
+      throw new BlockEditRefusal("BAD_VALUE", count === 0
+        ? `${path}: no attribute word to clone`
+        : `${path}: cloneFrom ${cloneIndex} is outside the valid range 0-${count - 1}`);
     }
 
     let word: number;

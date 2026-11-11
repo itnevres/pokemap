@@ -121,14 +121,16 @@ describe("patchGbaAttribute", () => {
   profile4.metatileAttributesSize = 4;
 
   it("keeps other bits when editing behavior (width 2)", () => {
-    const buf = Buffer.from([0xff, 0xff, 0xaa, 0xaa]); // 2 metatiles, all bits set (0xffff each)
+    const buf = Buffer.from([0xff, 0xff, 0xff, 0xff]); // 2 metatiles, all bits set (0xffff each)
+    const before = Buffer.from(buf);
     const patched = patchGbaAttribute(buf, 1, profile2, { behavior: 0x12 }, ATTRIBUTES_PATH);
+    expect(buf).toEqual(before); // input never mutated
 
     expect(patched.length).toBe(4);
     expect(patched.readUInt16LE(0)).toBe(0xffff); // metatile 0 unchanged
     // behavior mask for emerald is 0xff (low 8 bits), layer type in bits 12-15 (mask 0xf000)
     expect(patched.readUInt16LE(2) & 0xff).toBe(0x12); // behavior changed
-    expect(patched.readUInt16LE(2) & 0xff00).toBe(0xaa00); // other bits preserved (original had 0xaaaa)
+    expect(patched.readUInt16LE(2) & 0xff00).toBe(0xff00); // every non-behavior bit preserved
   });
 
   it("keeps other bits when editing layerType (width 2)", () => {
@@ -261,12 +263,36 @@ describe("assertNotTripleLayer", () => {
   });
 });
 
-describe("patchGbaAttribute with a shifted behavior mask", () => {
-  it("places behavior at the mask's low bit and keeps other bits", () => {
+describe("patchGbaAttribute field units match the reader", () => {
+  it("behavior is the unshifted masked value (tilesetData.ts), layerType is shifted", () => {
     const profile: EngineProfile = { ...defaultProfile("pokeemerald"), metatileBehaviorMask: 0x0ff0, metatileLayerTypeMask: 0xf000 };
-    const patched = patchGbaAttribute(Buffer.from([0xff, 0xff]), 0, profile, { behavior: 0x12 }, ATTRIBUTES_PATH);
-    expect(patched.readUInt16LE(0)).toBe(0xf12f);
-    expect(refusal(() => patchGbaAttribute(Buffer.alloc(2), 0, profile, { behavior: 0x100 }, ATTRIBUTES_PATH)).code).toBe("BAD_VALUE");
+    expect(patchGbaAttribute(Buffer.from([0xff, 0xff]), 0, profile, { behavior: 0x120 }, ATTRIBUTES_PATH).readUInt16LE(0)).toBe(0xf12f);
+    expect(refusal(() => patchGbaAttribute(Buffer.alloc(2), 0, profile, { behavior: 0x12 }, ATTRIBUTES_PATH)).code).toBe("BAD_VALUE");
+  });
+
+  it("refuses a value a non-contiguous mask would drop, and a 2-byte word with a mask above bit 15", () => {
+    const gappy: EngineProfile = { ...defaultProfile("pokeemerald"), metatileLayerTypeMask: 0x0500 };
+    expect(refusal(() => patchGbaAttribute(Buffer.alloc(2), 0, gappy, { layerType: 2 }, ATTRIBUTES_PATH)).code).toBe("BAD_VALUE");
+    const wide: EngineProfile = { ...defaultProfile("pokefirered"), metatileAttributesSize: 2 };
+    const bad = refusal(() => patchGbaAttribute(Buffer.alloc(2), 0, wide, { layerType: 1 }, ATTRIBUTES_PATH));
+    expect(bad.code).toBe("BAD_VALUE");
+    expect(bad.message.startsWith(ATTRIBUTES_PATH)).toBe(true);
+  });
+
+  it("names the empty-file case when there is no word to clone", () => {
+    expect(refusal(() => patchGbaAttribute(Buffer.alloc(0), 0, defaultProfile("pokeemerald"), { behavior: 1 }, ATTRIBUTES_PATH)).message)
+      .toBe(`${ATTRIBUTES_PATH}: no attribute word to clone`);
+  });
+});
+
+describe("patchGbaMetatile hand-written encoding", () => {
+  it("packs tile, flips and palette into the little-endian u16 the reader decodes", () => {
+    const entries = Array.from({ length: 8 }, (_, i) => i === 3
+      ? { tile: 0x2a5, xFlip: true, yFlip: false, palette: 0xb }
+      : { tile: 0x001, xFlip: false, yFlip: true, palette: 0x2 });
+    const out = patchGbaMetatile(Buffer.alloc(16), 0, entries, METATILES_PATH);
+    expect([...out.subarray(6, 8)]).toEqual([0xa5, 0xb6]);
+    expect([...out.subarray(0, 2)]).toEqual([0x01, 0x28]);
   });
 });
 
@@ -311,7 +337,7 @@ describe("no-op over every GBA tileset", () => {
       expect(buf.length % size, file).toBe(0);
       for (let id = 0; id < buf.length / size; id++) {
         const word = size === 2 ? buf.readUInt16LE(id * 2) : buf.readUInt32LE(id * 4);
-        const fields = { behavior: field(word, profile.metatileBehaviorMask), layerType: field(word, profile.metatileLayerTypeMask) };
+        const fields = { behavior: (word & profile.metatileBehaviorMask) >>> 0, layerType: field(word, profile.metatileLayerTypeMask) }; // reader convention
         if (!patchGbaAttribute(buf, id, profile, fields, relative(SUBJECT_ROOT, file)).equals(buf)) failures.push(`${file}:${id}`);
       }
     }
