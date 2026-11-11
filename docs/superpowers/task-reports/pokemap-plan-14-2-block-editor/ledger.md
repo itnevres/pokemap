@@ -126,3 +126,16 @@ the recovery map; reports go next to it.
   worktree core junctions in the worktree (cli/server have no node_modules in main); UI resolves through the root
   junction, so the post-merge typecheck is the backstop for UI.
   Real roots unchanged. Wall 1,782 s.
+
+### Task 2 (High): GBC lossless patchers — s2
+
+- BASE `e5080a3`; worktree `s2-scratchpad/wt-t2`, branch `p14-2-t2`. Hop 1: OpenCode `opencode/deepseek-v4.1-flash-free` started.
+- Hop 1 DeepSeek: DONE (git denied by harness; conductor committed). Conductor: typecheck pass; gbcPatch+contracts 25/25. Mutations: record off-by-one KILLED; LF-only append KILLED; collision line re-serialize KILLED; **palette line re-serialize SURVIVED** (no non-canonical tilepal test; sent to reviews); metatiles re-encode SURVIVED (equivalent: fixed 16-byte records). Astra spec + quality running.
+- Committed `d81a928`. Astra review 1: spec Needs changes (Important: fixed 8-name whitelist also rejects untouched names → **conductor ruling: the NEW name stays restricted to the spec 8 (spec line 63-64); untouched names are not checked**; Important: BLOCK_CAP not enforced on an over-cap buffer; Important: canonical-only palette losslessness test; Minor: report claims); quality Needs changes (Important: same losslessness gap; Minor: collision append loses keyword/separator style; Minor: doc comments contradict code). Fix round 1 → DeepSeek fresh run (author; OpenCode sessions not resumed per rule).
+- Fix round 1 DeepSeek: `provider.free-limit` 429 (Zen free cap) → stashed partial `delegate: deepseek free-limit task2 fix1`; DeepSeek skipped for the rest of 2026-11-10. Fix round 1 → Codex `gpt-6.1-sol`.
+- Fix round 1 Codex `gpt-6.1-sol` (`14407a9`): conductor typecheck pass, 30/30; mutations palette re-serialize,
+  append separator fallback, over-cap allowed, untouched names rejected → all KILLED. Scoped re-reviews: spec
+  Approved, quality Approved. Merged `--no-ff` as `0b24484`.
+- **Gate at 0b24484: 4,460 pass / 1 fail / 257 files; typecheck pass, UI build pass; all 9 real roots unchanged.**
+  The 1 fail is the known env fail (engine.test porymap.project.cfg). Wall 1,679 s. Task 2 closed.
+- Task 3 dispatch prepared (`.superpowers/sdd/.../task-3-dispatch.md`); not started (handoff at ~165 calls, s2 end).
