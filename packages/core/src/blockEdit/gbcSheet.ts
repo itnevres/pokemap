@@ -120,10 +120,11 @@ function destinations(text: string, file: string, roof: boolean): number[] {
     if (roof && !roofPrefix.test(code)) continue;
     // Roof copies use ld de; animations conservatively reserve every live operand.
     const operands = roof ? code.replace(roofPrefix, "").split(",")[0]!.trim() : code;
-    const pattern = roof ? /^vTiles([25])\s+tile\s+(.+)$/gi : /\bvTiles([25])\s+tile\s+([^,\s]+)/gi;
+    const pattern = roof ? /^vTiles([25])\s+tile\s+(.+)$/gi : /\bvTiles([25])\s+tile\s+([^,]+)/gi;
     for (const match of operands.matchAll(pattern)) {
       try {
-        const index = parseNum(match[2]!);
+        // The whole operand must be one literal: `$14 + 1` is refused, never truncated to `$14`.
+        const index = parseNum(match[2]!.trim());
         if (!Number.isInteger(index) || index < 0 || index > 0x7f) throw new Error("tile index outside bank");
         found.push(index + (match[1] === "5" ? 0x80 : 0));
       } catch (e) {

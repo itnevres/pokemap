@@ -136,6 +136,12 @@ describe("GBC runtime tile reservations", () => {
     expect(parseGbcReservedTiles(roofs, operands, 9)).toEqual(new Set([...range(0x0a, 9), 0x5b, 0x2d, 0x83, 0x38]));
   });
 
+  it("refuses an animation destination expression instead of truncating it", () => {
+    for (const expr of ["dw vTiles2 tile $20 + 1, Frame", "ld hl, vTiles2 tile $20 + 1"]) {
+      expect(() => parseGbcReservedTiles(roofs, expr, 9)).toThrowError(expect.objectContaining({ code: "RESERVATIONS_UNREADABLE", message: expect.stringContaining("tileset_anims.asm") }));
+    }
+  });
+
   it("ignores commented destinations and refuses missing live destinations", () => {
     expect(parseGbcReservedTiles(roofs, `${anims}; dw vTiles2 tile $00, Comment\n`, 9).has(0)).toBe(false);
     expect(() => parseGbcReservedTiles("; ld de, vTiles2 tile $0a", anims, 9)).toThrowError(expect.objectContaining({ code: "RESERVATIONS_UNREADABLE", message: expect.stringContaining("mapgroup_roofs.asm") }));

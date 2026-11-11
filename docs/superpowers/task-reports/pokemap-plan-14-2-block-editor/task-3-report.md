@@ -143,3 +143,10 @@ No mutations or reviews claimed passed. Preserve existing reviews in place until
 - Mutations: M1-M4 (round 0) still KILLED; M5 constant `sourceY` → KILLED (copy from source 20); M6 identical-pixel
   shortcut removed → KILLED (split IDAT bytes preserved); M7 anims `dw`-only → KILLED (PerfPlus corpus + instruction
   operands test); M8 ROOF_LENGTH single-literal check off → KILLED (refusal test).
+
+## Fix round 2 (conductor inline, s3)
+
+- Re-review 1 (spec + quality, same finding): animation operand regex `[^,\s]+` truncated `$20 + 1` to `$20`.
+  Fix: capture to the comma and `parseNum` the trimmed whole operand, so expressions refuse with
+  `RESERVATIONS_UNREADABLE` (tileset_anims.asm). Regression test for `dw` and `ld hl` forms.
+- Typecheck pass; gbcSheet.test.ts 15/15 (PerfPlus corpus still parses). M9 regex back to `[^,\s]+` → KILLED.
