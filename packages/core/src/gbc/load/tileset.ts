@@ -463,15 +463,22 @@ function labelMap(entries: { labels: string[]; path: string }[]): Map<string, st
  * is stored as given (or `name` when omitted) -- Tileset0 has no matching
  * `TILESET_*` constant, since `const_def 1` starts at 1.
  */
-export function loadGbcTilesetByName(root: string, name: string, constName: string = name): GbcTileset {
+export function loadGbcTilesetByName(
+  root: string,
+  name: string,
+  constName: string = name,
+  read?: (path: string) => Buffer,
+): GbcTileset {
   const r = norm(root);
+  const readFile = read ?? ((rel: string) => readFileSync(`${r}/${rel}`));
+  const readText = (rel: string) => readFile(rel).toString("utf8");
 
   // Code-quality review Issue I3: read+scan gfx/tilesets.asm once, not
   // twice -- cheap to avoid, and this function is called per-map by Task 9/10.
-  const tilesetsAsmText = readFileSync(`${r}/gfx/tilesets.asm`, "utf8");
+  const tilesetsAsmText = readText("gfx/tilesets.asm");
   const gfxIncbins = parseIncbins(tilesetsAsmText);
   const collIncludes = parseIncludes(tilesetsAsmText);
-  const palMapIncludes = parseIncludes(readFileSync(`${r}/gfx/tileset_palette_maps.asm`, "utf8"));
+  const palMapIncludes = parseIncludes(readText("gfx/tileset_palette_maps.asm"));
 
   const gfxByLabel = labelMap(gfxIncbins);
   const collByLabel = labelMap(collIncludes);
@@ -493,12 +500,12 @@ export function loadGbcTilesetByName(root: string, name: string, constName: stri
     throw new Error(`loadGbcTilesetByName: no INCLUDE label "${palMapLabel}" found in gfx/tileset_palette_maps.asm`);
   }
 
-  const tilesetConstants = parseConstDefs(readFileSync(`${r}/constants/tileset_constants.asm`, "utf8"));
-  const collisionConstants = parseCollisionConstants(readFileSync(`${r}/constants/collision_constants.asm`, "utf8"));
+  const tilesetConstants = parseConstDefs(readText("constants/tileset_constants.asm"));
+  const collisionConstants = parseCollisionConstants(readText("constants/collision_constants.asm"));
 
-  const metatiles = parseMetatiles(readFileSync(`${r}/${metatilesPath}`), metatilesPath);
-  const palMap = parsePaletteMap(readFileSync(`${r}/${palMapPath}`, "utf8"), tilesetConstants, palMapPath);
-  const collisionAll = parseCollision(readFileSync(`${r}/${collisionPath}`, "utf8"), collisionConstants, collisionPath);
+  const metatiles = parseMetatiles(readFile(metatilesPath), metatilesPath);
+  const palMap = parsePaletteMap(readText(palMapPath), tilesetConstants, palMapPath);
+  const collisionAll = parseCollision(readText(collisionPath), collisionConstants, collisionPath);
 
   if (collisionAll.length < metatiles.length) {
     throw new Error(
@@ -512,7 +519,7 @@ export function loadGbcTilesetByName(root: string, name: string, constName: stri
   const gfxPath = pngPathFor(gfxIncbinPath);
   let png;
   try {
-    png = readShadesPng(readFileSync(`${r}/${gfxPath}`));
+    png = readShadesPng(readFile(gfxPath));
   } catch (e) {
     // Spec review note: readShadesPng's own errors name the pixel but not
     // the file, so a corpus-level failure among 36+ PNGs wouldn't say which
@@ -539,7 +546,11 @@ export function loadGbcTilesetByName(root: string, name: string, constName: stri
  * this module's own placed-tile corpus test already does, rather than this
  * module re-reading/re-parsing the shared table files per map.
  */
-export function loadGbcTileset(root: string, tilesetConst: string): GbcTileset {
+export function loadGbcTileset(
+  root: string,
+  tilesetConst: string,
+  read?: (path: string) => Buffer,
+): GbcTileset {
   // Spec review Issue 2: constants/tileset_constants.asm also defines the
   // unrelated PAL_BG_* enum, and parseConstDefs deliberately merges both
   // (see its own doc comment) since a real caller only ever passes a
@@ -551,17 +562,18 @@ export function loadGbcTileset(root: string, tilesetConst: string): GbcTileset {
   }
 
   const r = norm(root);
-  const tilesetConstants = parseConstDefs(readFileSync(`${r}/constants/tileset_constants.asm`, "utf8"));
+  const readFile = read ?? ((rel: string) => readFileSync(`${r}/${rel}`));
+  const tilesetConstants = parseConstDefs(readFile("constants/tileset_constants.asm").toString("utf8"));
   const index = tilesetConstants.get(tilesetConst);
   if (index === undefined) throw new Error(`loadGbcTileset: unknown tileset constant "${tilesetConst}"`);
 
-  const table = parseTilesetsTable(readFileSync(`${r}/data/tilesets.asm`, "utf8"));
+  const table = parseTilesetsTable(readFile("data/tilesets.asm").toString("utf8"));
   const name = table[index];
   if (name === undefined) {
     throw new Error(`loadGbcTileset: ${tilesetConst} resolves to table index ${index}, but Tilesets:: has only ${table.length} entries`);
   }
 
-  return loadGbcTilesetByName(r, name, tilesetConst);
+  return loadGbcTilesetByName(r, name, tilesetConst, read);
 }
 
 /**
