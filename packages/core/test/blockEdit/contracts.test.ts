@@ -6,7 +6,8 @@ import { openProject as loadProject } from "../../src/project.js";
 import { openGbcProject } from "../../src/gbc/project.js";
 import { renderLayout } from "../../src/render/layout.js";
 import { renderGbcMap } from "../../src/gbc/render/map.js";
-import { parseTilesetPaths } from "../../src/load/tilesets.js";
+import { loadTileset } from "../../src/load/tilesetData.js";
+import { canonicalTilesetPath } from "../../src/blockEdit/canonicalTilesetPath.js";
 import { readIndexedPng } from "../../src/load/png.js";
 import { readShadesPng } from "../../src/gbc/load/png.js";
 import { parseConstDefs } from "../../src/gbc/load/asm.js";
@@ -22,32 +23,29 @@ import { copyGbaTilesetProject, removeGbaTemp } from "../helpers/gbaTilesetProje
 // The corpus is read-only here: GBA writes go to a temp copy made by
 // `copyGbaTilesetProject`; the GBC tests only set in-memory overlays.
 
-type Rgba = [number, number, number, number];
-
-function pixelAt(r: { width: number; data: Uint8ClampedArray }, x: number, y: number): Rgba {
-  const i = (y * r.width + x) * 4;
-  return [r.data[i]!, r.data[i + 1]!, r.data[i + 2]!, r.data[i + 3]!];
-}
-
-/** Center pixel of GBA block `index` (16x16 blocks, no border). */
-function gbaBlockPixel(r: { width: number; data: Uint8ClampedArray }, index: number, blockWidth: number): Rgba {
-  return pixelAt(r, (index % blockWidth) * 16 + 8, Math.floor(index / blockWidth) * 16 + 8);
-}
-
-/** Center pixel of GBC block `index` (32x32 blocks, no border). */
-function gbcBlockPixel(r: { width: number; data: Uint8ClampedArray }, index: number, blockWidth: number): Rgba {
-  return pixelAt(r, (index % blockWidth) * 32 + 16, Math.floor(index / blockWidth) * 32 + 16);
+/** All RGBA bytes of a block (borderless render), in row-major order. */
+function blockRaster(
+  r: { width: number; data: Uint8ClampedArray }, index: number, blockWidth: number, size: number,
+): Uint8ClampedArray {
+  const x = (index % blockWidth) * size;
+  const y = Math.floor(index / blockWidth) * size;
+  const out = new Uint8ClampedArray(size * size * 4);
+  for (let row = 0; row < size; row++) {
+    const offset = ((y + row) * r.width + x) * 4;
+    out.set(r.data.subarray(offset, offset + size * 4), row * size * 4);
+  }
+  return out;
 }
 
 /**
  * The first pair of cells whose metatile ids differ, are both valid and (for
- * GBA) both inside the primary half, and that render a different center
- * pixel. Without the pixel difference a swap test could pass on two
+ * GBA) both inside the primary half, and that render different block rasters.
+ * Without the raster difference a swap test could pass on two
  * metatiles that happen to look identical.
  */
 function findSwappablePair(
   ids: readonly number[],
-  pixel: (index: number) => Rgba,
+  raster: (index: number) => Uint8ClampedArray,
   valid: (id: number) => boolean,
   limit = 400,
 ): [number, number] {
@@ -58,7 +56,9 @@ function findSwappablePair(
     for (let j = 0; j < n; j++) {
       const b = ids[j]!;
       if (b === a || !valid(b)) continue;
-      if (pixel(i).join() !== pixel(j).join()) return [i, j];
+      const left = raster(i);
+      const right = raster(j);
+      if (left.some((byte, k) => byte !== right[k])) return [i, j];
     }
   }
   throw new Error("test fixture: no swappable metatile pair found");
@@ -69,6 +69,13 @@ function findSwappablePair(
 // ---------------------------------------------------------------------------
 
 describe("block-edit contracts", () => {
+  it("canonicalTilesetPath normalizes separators, dot segments and leading ./", () => {
+    expect(canonicalTilesetPath("./gfx\\tilesets\\.\\cave_metatiles.bin"))
+      .toBe("gfx/tilesets/cave_metatiles.bin");
+    expect(canonicalTilesetPath("gfx/tilesets/../tilesets/cave_metatiles.bin"))
+      .toBe("gfx/tilesets/cave_metatiles.bin");
+  });
+
   it("BlockEditRefusal carries a BlockEditCode, the message, and a distinct name", () => {
     const e = new BlockEditRefusal("BLOCK_CAP", "forest_metatiles.bin: block cap 256 reached");
     expect(e).toBeInstanceOf(Error);
@@ -119,30 +126,36 @@ describe("GBA tileset overlay", () => {
     expect(raster.outOfRangeCount).toBe(0);
   });
 
-  itWithCorpus("tilesetPaths returns the paths parseTilesetPaths resolved", () => {
+  itWithCorpus("tilesetPaths returns the same paths loadTileset reads", () => {
     const project = loadProject(gbaProjectRoot());
-    const readText = (p: string) => readFileSync(p, "utf8");
-    const expected = parseTilesetPaths(
-      readText(project.paths.tilesetHeadersH),
-      readText(project.paths.tilesetMetatilesH),
-      [readText(project.paths.tilesetGraphicsH), readText(project.paths.tilesetGraphicsC)],
-    );
     const symbols = project.tilesetSymbols();
     expect(symbols.length).toBeGreaterThan(0);
-    for (const symbol of symbols) expect(project.tilesetPaths(symbol)).toEqual(expected.get(symbol));
+    for (const symbol of symbols) {
+      const tp = project.tilesetPaths(symbol);
+      const recorded: string[] = [];
+      loadTileset(project.paths, tp, project.profile, (path) => {
+        recorded.push(path);
+        return readFileSync(`${project.paths.root}/${path}`);
+      });
+      expect(recorded).toEqual([
+        tp.metatilesBin, tp.attributesBin, tp.tilesPng,
+        ...tp.palettes.map((path) => path.replace(/\.gbapal$/, ".pal")),
+      ]);
+    }
     expect(() => project.tilesetPaths("gTileset_Nope")).toThrow(/gTileset_Nope/);
   });
 
-  itWithCorpus("overlay changes a GBA metatile and clearing it restores the layout", () => {
+  itWithCorpus("non-canonical overlay changes a GBA metatile and clearing it restores the layout", () => {
     const project = loadProject(gbaProjectRoot());
     const layout = project.layoutByName("PetalburgCity_Layout")!;
     const before = renderLayout(project, layout.name);
     const split = project.splitFor(layout);
     const ids = before.blocks.slice(0, layout.width * layout.height).map((b) => b.metatileId);
-    const pixel = (i: number) => gbaBlockPixel(before, i, layout.width);
+    const raster = (i: number) => blockRaster(before, i, layout.width, 16);
     // Both ids must live in the primary half: the overlay below patches only
     // the primary tileset's metatiles file.
-    const [i, j] = findSwappablePair(ids, pixel, (id) => id < split.metatiles);
+    const [i, j] = findSwappablePair(ids, raster, (id) => id < split.metatiles);
+    expect(raster(i)).not.toEqual(raster(j));
     const tp = project.tilesetPaths(layout.primaryTileset);
     const patched = Buffer.from(readFileSync(`${gbaProjectRoot()}/${tp.metatilesBin}`));
     // 8 u16 tile entries = 16 bytes per metatile.
@@ -150,17 +163,18 @@ describe("GBA tileset overlay", () => {
     source.copy(patched, ids[i]! * 16);
 
     expect(project.tilesetGeneration).toBe(0);
-    project.setTilesetOverlay(new Map([[tp.metatilesBin, patched]]));
+    project.setTilesetOverlay(new Map([[`./${tp.metatilesBin.replaceAll("/", "\\.\\")}`, patched]]));
     expect(project.tilesetGeneration).toBe(1);
 
     const after = renderLayout(project, layout.name);
-    expect(gbaBlockPixel(after, i, layout.width)).toEqual(gbaBlockPixel(before, j, layout.width));
-    expect(gbaBlockPixel(after, i, layout.width)).not.toEqual(gbaBlockPixel(before, i, layout.width));
+    expect(blockRaster(after, i, layout.width, 16)).toEqual(blockRaster(before, j, layout.width, 16));
+    expect(blockRaster(after, i, layout.width, 16)).not.toEqual(blockRaster(before, i, layout.width, 16));
 
     project.setTilesetOverlay(new Map());
     expect(project.tilesetGeneration).toBe(2);
     const restored = renderLayout(project, layout.name);
-    expect(gbaBlockPixel(restored, i, layout.width)).toEqual(gbaBlockPixel(before, i, layout.width));
+    expect({ width: restored.width, height: restored.height, data: restored.data })
+      .toEqual({ width: before.width, height: before.height, data: before.data });
   });
 
   itWithCorpus("overlay is consulted for the GBA sheet PNG and .pal palette", () => {
@@ -190,7 +204,7 @@ describe("GBA tileset overlay", () => {
 // ---------------------------------------------------------------------------
 
 describe("GBC tileset overlay", () => {
-  itWithGbcCorpus("overlay changes a GBC render and clearing it restores the map", () => {
+  itWithGbcCorpus("non-canonical overlay changes a GBC render and clearing it restores the map", () => {
     const proj = openGbcProject(GBC_SUBJECT_ROOT);
     const mapName = "NewBarkTown";
     const map = proj.map(mapName);
@@ -198,27 +212,29 @@ describe("GBC tileset overlay", () => {
     const ts = proj.tileset(map.tileset);
     const blocks = proj.layout(map).layout.blocks;
     const ids = blocks.map((b) => b.metatileId);
-    const pixel = (i: number) => gbcBlockPixel(before, i, map.width);
+    const raster = (i: number) => blockRaster(before, i, map.width, 32);
     // Block 0 is drawn as the map's border metatile; never choose it.
-    const [i, j] = findSwappablePair(ids, pixel, (id) => id !== 0 && id < ts.metatiles.length);
+    const [i, j] = findSwappablePair(ids, raster, (id) => id !== 0 && id < ts.metatiles.length);
 
+    expect(raster(i)).not.toEqual(raster(j));
     const path = ts.metatilesPath;
     const patched = Buffer.from(readFileSync(`${GBC_SUBJECT_ROOT}/${path}`));
     const source = Buffer.from(patched.subarray(ids[j]! * 16, ids[j]! * 16 + 16));
     source.copy(patched, ids[i]! * 16);
 
     expect(proj.tilesetGeneration).toBe(0);
-    proj.setTilesetOverlay(new Map([[path, patched]]));
+    proj.setTilesetOverlay(new Map([[`./${path.replaceAll("/", "\\.\\")}`, patched]]));
     expect(proj.tilesetGeneration).toBe(1);
 
     const after = renderGbcMap(proj, mapName);
-    expect(gbcBlockPixel(after, i, map.width)).toEqual(gbcBlockPixel(before, j, map.width));
-    expect(gbcBlockPixel(after, i, map.width)).not.toEqual(gbcBlockPixel(before, i, map.width));
+    expect(blockRaster(after, i, map.width, 32)).toEqual(blockRaster(before, j, map.width, 32));
+    expect(blockRaster(after, i, map.width, 32)).not.toEqual(blockRaster(before, i, map.width, 32));
 
     proj.setTilesetOverlay(new Map());
     expect(proj.tilesetGeneration).toBe(2);
     const restored = renderGbcMap(proj, mapName);
-    expect(gbcBlockPixel(restored, i, map.width)).toEqual(gbcBlockPixel(before, i, map.width));
+    expect({ width: restored.width, height: restored.height, data: restored.data })
+      .toEqual({ width: before.width, height: before.height, data: before.data });
   });
 
   itWithGbcCorpus("overlay is consulted for the GBC sheet PNG and palette map", () => {

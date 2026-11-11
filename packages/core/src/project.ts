@@ -8,6 +8,7 @@ import { parseTilesetPaths, type TilesetPaths } from "./load/tilesets.js";
 import { loadTileset, type Tileset } from "./load/tilesetData.js";
 import { parseEncounters, type Encounters } from "./load/encounters.js";
 import type { FileOverlay } from "./blockEdit/types.js";
+import { canonicalTilesetPath } from "./blockEdit/canonicalTilesetPath.js";
 import type { Layout, Split } from "./model/types.js";
 
 export interface Project {
@@ -141,7 +142,7 @@ export function openProject(root: string): Project {
 
   // One reader for every tileset file: staged bytes win over disk, and only
   // `setTilesetOverlay` replaces the map (never mutated in place).
-  const readTilesetFile = (rel: string): Buffer => overlay.get(rel) ?? readFileSync(`${paths.root}/${rel}`);
+  const readTilesetFile = (rel: string): Buffer => overlay.get(canonicalTilesetPath(rel)) ?? readFileSync(`${paths.root}/${canonicalTilesetPath(rel)}`);
 
   const getMap = (name: string): MapData => {
     let m = mapCache.get(name);
@@ -173,7 +174,14 @@ export function openProject(root: string): Project {
     if (!tp) {
       throw new Error(`unknown tileset symbol ${symbol}: no "const struct Tileset ${symbol}" resolved from ${paths.tilesetHeadersH}`);
     }
-    return tp;
+    return {
+      ...tp,
+      dir: canonicalTilesetPath(tp.dir),
+      metatilesBin: canonicalTilesetPath(tp.metatilesBin),
+      attributesBin: canonicalTilesetPath(tp.attributesBin),
+      tilesPng: canonicalTilesetPath(tp.tilesPng),
+      palettes: tp.palettes.map(canonicalTilesetPath),
+    };
   };
 
   const layoutForMap = (mapName: string): Layout => {
@@ -197,7 +205,7 @@ export function openProject(root: string): Project {
     tileset: getTileset,
     tilesetPaths: getTilesetPaths,
     setTilesetOverlay: (o) => {
-      overlay = o;
+      overlay = new Map([...o].map(([path, bytes]) => [canonicalTilesetPath(path), bytes]));
       tilesetCache.clear();
       tilesetGeneration++;
     },

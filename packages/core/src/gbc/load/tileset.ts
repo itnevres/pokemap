@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { canonicalTilesetPath } from "../../blockEdit/canonicalTilesetPath.js";
 import type { Collision, GbcTileset, Metatile, PaletteMapEntry } from "../model/types.js";
 import type { GbcCollisionInfoEntry } from "../wire.js";
 import { norm } from "../../config/paths.js";
@@ -528,7 +529,14 @@ export function loadGbcTilesetByName(
   }
   const tiles = sliceTiles(png, gfxPath);
 
-  return { constName, name, gfxPath, metatilesPath, collisionPath, palMapPath, metatiles, collision, palMap, tiles };
+  return {
+    constName, name,
+    gfxPath: canonicalTilesetPath(gfxPath),
+    metatilesPath: canonicalTilesetPath(metatilesPath),
+    collisionPath: canonicalTilesetPath(collisionPath),
+    palMapPath: canonicalTilesetPath(palMapPath),
+    metatiles, collision, palMap, tiles,
+  };
 }
 
 /**

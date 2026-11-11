@@ -9,6 +9,7 @@ import { findDefEqu } from "./load/asm.js";
 import type { GbcMap, GbcTileset, Layout, DataDefect, GbcWildData } from "./model/types.js";
 import type { GbcCollisionInfoEntry } from "./wire.js";
 import type { FileOverlay } from "../blockEdit/types.js";
+import { canonicalTilesetPath } from "../blockEdit/canonicalTilesetPath.js";
 
 /**
  * `constants/gfx_constants.asm`'s `DEF MAP_CONNECTION_PADDING_WIDTH EQU 3`
@@ -98,7 +99,7 @@ export function openGbcProject(root: string): GbcProject {
 
   // Only the tileset loader goes through this reader. Map/layout/palette
   // caching stays disk-backed; a block edit stages tileset files only.
-  const readTilesetFile = (rel: string): Buffer => overlay.get(rel) ?? readFileSync(`${r}/${rel}`);
+  const readTilesetFile = (rel: string): Buffer => overlay.get(canonicalTilesetPath(rel)) ?? readFileSync(`${r}/${canonicalTilesetPath(rel)}`);
 
   return {
     root: r,
@@ -113,7 +114,7 @@ export function openGbcProject(root: string): GbcProject {
       return t;
     },
     setTilesetOverlay: (o) => {
-      overlay = o;
+      overlay = new Map([...o].map(([path, bytes]) => [canonicalTilesetPath(path), bytes]));
       tilesetCache.clear();
       tilesetGeneration++;
     },
