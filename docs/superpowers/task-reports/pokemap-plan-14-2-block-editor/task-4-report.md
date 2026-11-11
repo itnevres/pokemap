@@ -89,3 +89,4 @@ Reviews 1 (Claude Opus): spec Approved (5 Minor); quality Needs changes (I1 + 6 
   interface: noted for the Save-as-new task.
 - Typecheck pass; 28/28. Mutations: byte order, apply without shift, ignore cloneFrom, attribute input mutated,
   behavior shifted (reader mismatch), range-only check, wide mask on 2-byte allowed → all 7 KILLED.
+- Gate at 51225cf: 4,503 pass / 1 fail (known env, engine.test) / 259 files; typecheck pass, UI build pass; subjects unchanged.

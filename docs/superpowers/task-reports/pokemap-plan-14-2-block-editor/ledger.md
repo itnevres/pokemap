@@ -170,3 +170,29 @@ the recovery map; reports go next to it.
 - **Gate at dba63a3: 4,475 pass / 1 fail / 258 files; typecheck pass, UI build pass; all 9 real roots HEAD +
   porcelain unchanged.** The 1 fail is the known env fail (engine.test porymap.project.cfg). Wall 1,336 s. Task 3 closed.
 - Task 4 dispatch prepared (`.superpowers/sdd/.../task-4-dispatch.md`).
+- **Ruling (user, 2026-11-10, Codex out):** "Continue with free open router models and on Claude use sonnet or haiku
+  for Claude implementers". Implementer chain until Codex returns: free OpenRouter models (Nemotron 3 Ultra, Dots3)
+  → Claude Sonnet (Haiku for transcription). Reviews unchanged by the ruling: astra unavailable → Claude Opus
+  high-risk-reviewer (separate spec + quality).
+
+### Task 4 (High): GBA lossless patchers — s3
+
+- BASE `380b5e9`; worktree `s3-scratchpad/wt-t4`, branch `p14-2-t4`. Hop 1: OpenCode
+  `openrouter/nvidia/nemotron-3-ultra-550b-a55b:free` (DeepSeek Zen free-limited today; skipped).
+- Hop 1 Nemotron 3 Ultra: finished (55 steps), claimed DONE "22 passed, 2 skipped" — corpus tests always skipped
+  (duplicate helper with a nonexistent marker `tilesets.h`, GBC incbin parser, width guessing); behavior written
+  without `maskShift`; append test blind to `cloneFrom`. Accepted as hop output with conductor inline fixes (corpus
+  rewrite on existing `test/helpers/corpus.ts` + subject profile, one shifted-mask path, clone-from-1 case; reason:
+  fixes smaller than a fix-round brief, and the next free hop is the same pool). Typecheck pass; 25/25 (corpus runs);
+  mutations byte order, mask without shift, append ignores cloneFrom → all KILLED. Committed `7fcc184`. Reviews:
+  Claude Opus high-risk-reviewer spec + quality (astra out of quota) running.
+- Review 1 (Claude Opus): spec Approved (5 Minor); quality Needs changes (I1: behavior units diverged from the reader
+  `tilesetData.ts:97` after the conductor's shifted-mask change; 6 Minor). **Ruling: patcher fields follow the reader
+  (behavior unshifted, layerType shifted); reader change out of Task 4 scope.** Fix round 1 conductor inline
+  `1cad519` (I1 + all Minors except spec 5, which is per interface, noted for Save-as-new): 28/28, 7 mutations KILLED.
+  Scoped quality re-review (same Opus reviewer) running.
+- Quality re-review (same Opus reviewer): Approved (informational Minor: a bit-31 behavior mask makes the reader's
+  `attr & mask` negative; reader-side, out of scope). Merged `--no-ff` as `51225cf`.
+- **Gate at 51225cf: 4,503 pass / 1 fail / 259 files; typecheck pass, UI build pass; all 9 real roots HEAD +
+  porcelain unchanged.** The 1 fail is the known env fail (engine.test porymap.project.cfg). Wall 999 s. Task 4 closed.
+- Task 5 dispatch prepared (`.superpowers/sdd/.../task-5-dispatch.md`, incl. the `tilesetGeneration` ruling).
