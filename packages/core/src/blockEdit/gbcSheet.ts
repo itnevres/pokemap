@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { crc32, deflateSync } from "node:zlib";
-import { codeLines, findDefEqu, parseNum, stripComment } from "../gbc/load/asm.js";
+import { codeLines, findDefEquLine, parseNum, stripComment } from "../gbc/load/asm.js";
 import { readShadesPng, type ShadeImage } from "../gbc/load/png.js";
 import { BlockEditRefusal } from "./types.js";
 
@@ -85,6 +85,12 @@ export function copySheetTile(png: Buffer, fromIndex: number, toIndex: number, p
     const sourceY = Math.floor(fromIndex / 16) * 8;
     const targetX = toIndex % 16 * 8;
     const targetY = Math.floor(toIndex / 16) * 8;
+    let identical = true;
+    for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
+      if (image.shades[(sourceY + y) * image.width + sourceX + x] !==
+          image.shades[(targetY + y) * image.width + targetX + x]) identical = false;
+    }
+    if (identical) return png;
     for (let y = 0; y < 8; y++) {
       const source = (sourceY + y) * image.width + sourceX;
       image.shades.copyWithin((targetY + y) * image.width + targetX, source, source + 8);
@@ -110,17 +116,19 @@ function destinations(text: string, file: string, roof: boolean): number[] {
   const found: number[] = [];
   for (const line of codeLines(text)) {
     const code = stripComment(line.text);
-    const prefix = roof ? /^\s*ld\s+de\s*,\s*/i : /^\s*dw\s+/i;
-    if (!prefix.test(code)) continue;
-    const destination = code.replace(prefix, "").split(",")[0]!.trim();
-    const match = /^vTiles([25])\s+tile\s+(.+)$/.exec(destination);
-    if (!match) continue;
-    try {
-      const index = parseNum(match[2]!);
-      if (!Number.isInteger(index) || index < 0 || index > 0x7f) throw new Error("tile index outside bank");
-      found.push(index + (match[1] === "5" ? 0x80 : 0));
-    } catch (e) {
-      throw new BlockEditRefusal("RESERVATIONS_UNREADABLE", `${file}: ${(e as Error).message}`);
+    const roofPrefix = /^\s*ld\s+de\s*,\s*/i;
+    if (roof && !roofPrefix.test(code)) continue;
+    // Roof copies use ld de; animations conservatively reserve every live operand.
+    const operands = roof ? code.replace(roofPrefix, "").split(",")[0]!.trim() : code;
+    const pattern = roof ? /^vTiles([25])\s+tile\s+(.+)$/gi : /\bvTiles([25])\s+tile\s+([^,\s]+)/gi;
+    for (const match of operands.matchAll(pattern)) {
+      try {
+        const index = parseNum(match[2]!);
+        if (!Number.isInteger(index) || index < 0 || index > 0x7f) throw new Error("tile index outside bank");
+        found.push(index + (match[1] === "5" ? 0x80 : 0));
+      } catch (e) {
+        throw new BlockEditRefusal("RESERVATIONS_UNREADABLE", `${file}: ${(e as Error).message}`);
+      }
     }
   }
   if (found.length === 0) throw new BlockEditRefusal("RESERVATIONS_UNREADABLE", `${file}: no tile destination found`);
@@ -150,7 +158,10 @@ export function loadGbcReservedTiles(root: string): Set<number> {
   const constants = read(CONSTANTS);
   let roofLength: number;
   try {
-    roofLength = findDefEqu(constants, "ROOF_LENGTH", CONSTANTS);
+    const line = findDefEquLine(constants, "ROOF_LENGTH", CONSTANTS);
+    const value = stripComment(line).match(/^\s*DEF\s+ROOF_LENGTH\s+EQU\s+(\S+)\s*$/);
+    if (!value) throw new Error("ROOF_LENGTH must be a single plain literal");
+    roofLength = parseNum(value[1]!);
   } catch (e) {
     throw new BlockEditRefusal("RESERVATIONS_UNREADABLE", `${CONSTANTS}: ${(e as Error).message}`);
   }

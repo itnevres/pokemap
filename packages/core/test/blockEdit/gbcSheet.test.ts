@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { crc32, deflateSync } from "node:zlib";
+import { crc32, deflateSync, inflateSync } from "node:zlib";
 import { copySheetTile, encodeGrayPng, loadGbcReservedTiles, parseGbcReservedTiles } from "../../src/blockEdit/gbcSheet.js";
 import { readShadesPng, type ShadeImage } from "../../src/gbc/load/png.js";
 import { findDefEqu } from "../../src/gbc/load/asm.js";
@@ -34,7 +34,7 @@ function chunks(png: Buffer): Buffer[] {
 
 function sheet(): ShadeImage {
   return { width: 128, height: 24, shades: Uint8Array.from({ length: 128 * 24 }, (_, i) =>
-    ((i % 128) * 3 + Math.floor(i / 128) + Math.floor((i % 128) / 8)) % 4) };
+    ((i % 128) * 3 + Math.floor(i / 128) + Math.floor(i / (128 * 8)) * (i % 8 === 0 ? 1 : 0) + Math.floor((i % 128) / 8)) % 4) };
 }
 
 describe("GBC sheet PNG", () => {
@@ -63,13 +63,13 @@ describe("GBC sheet PNG", () => {
     for (const c of chunks(png)) expect(c.readUInt32BE(c.length - 4)).toBe(crc32(c.subarray(4, -4)));
   });
 
-  it("copy changes only the target tile (all tiles compared)", () => {
+  it.each([15, 20])("copy changes only the target tile (all tiles compared), source %i", (from) => {
     const image = sheet();
     const png = encodeGrayPng(image);
     const before = Buffer.from(png);
-    const copied = readShadesPng(copySheetTile(png, 15, 33, path));
+    const copied = readShadesPng(copySheetTile(png, from, 33, path));
     for (let tile = 0; tile < 48; tile++) {
-      const source = tile === 33 ? 15 : tile;
+      const source = tile === 33 ? from : tile;
       for (let y = 0; y < 8; y++) for (let x = 0; x < 8; x++) {
         expect(copied.shades[(Math.floor(tile / 16) * 8 + y) * 128 + tile % 16 * 8 + x]).toBe(
           image.shades[(Math.floor(source / 16) * 8 + y) * 128 + source % 16 * 8 + x]);
@@ -82,6 +82,16 @@ describe("GBC sheet PNG", () => {
   it("no-op copy returns identical bytes", () => {
     const png = encodeGrayPng(sheet());
     expect(copySheetTile(png, 17, 17, path)).toBe(png);
+  });
+
+  it("identical distinct tiles preserve split IDAT bytes at a different compression level", () => {
+    const png = encodeGrayPng({ width: 128, height: 8, shades: new Uint8Array(128 * 8) });
+    const [ihdr, idat, iend] = chunks(png);
+    const compressed = deflateSync(inflateSync(idat!.subarray(8, -4)), { level: 0 });
+    const middle = Math.floor(compressed.length / 2);
+    const split = Buffer.concat([png.subarray(0, 8), ihdr!, chunk("IDAT", compressed.subarray(0, middle)),
+      chunk("IDAT", compressed.subarray(middle)), iend!]);
+    expect(copySheetTile(split, 0, 1, path)).toBe(split);
   });
 
   it("preserves every non-IDAT chunk byte-for-byte", () => {
@@ -121,6 +131,11 @@ describe("GBC runtime tile reservations", () => {
     expect(parseGbcReservedTiles("ld de, vTiles2 tile $20", anims, 2)).toEqual(new Set([0x20, 0x21, 0x14, 0x83]));
   });
 
+  it("reserves instruction operands and every labeled animation destination", () => {
+    const operands = "ld hl, vTiles2 tile $5b\nTowerPillarTilePointer1: dw vTiles2 tile $2d, vTiles5 tile $03\nld hl, vTiles2 tile $38 ; vTiles2 tile $00\n";
+    expect(parseGbcReservedTiles(roofs, operands, 9)).toEqual(new Set([...range(0x0a, 9), 0x5b, 0x2d, 0x83, 0x38]));
+  });
+
   it("ignores commented destinations and refuses missing live destinations", () => {
     expect(parseGbcReservedTiles(roofs, `${anims}; dw vTiles2 tile $00, Comment\n`, 9).has(0)).toBe(false);
     expect(() => parseGbcReservedTiles("; ld de, vTiles2 tile $0a", anims, 9)).toThrowError(expect.objectContaining({ code: "RESERVATIONS_UNREADABLE", message: expect.stringContaining("mapgroup_roofs.asm") }));
@@ -131,7 +146,7 @@ describe("GBC runtime tile reservations", () => {
     const length = findDefEqu(readFileSync(join(GBC_SUBJECT_ROOT, "constants/tileset_constants.asm"), "utf8"), "ROOF_LENGTH", "constants/tileset_constants.asm");
     const reserved = loadGbcReservedTiles(GBC_SUBJECT_ROOT);
     for (const tile of range(0x0a, length)) expect(reserved.has(tile)).toBe(true);
-    expect(reserved.has(0x14)).toBe(true);
+    for (const tile of [0x14, 0x5b, 0x38, 0x2d]) expect(reserved.has(tile)).toBe(true);
     expect(reserved.has(0)).toBe(false);
   });
 
@@ -148,6 +163,10 @@ describe("GBC runtime tile reservations", () => {
       expect(() => loadGbcReservedTiles(root)).toThrowError(expect.objectContaining({ code: "RESERVATIONS_UNREADABLE", message: expect.stringContaining("constants/tileset_constants.asm") }));
       writeFileSync(join(root, "constants/tileset_constants.asm"), "; missing definition\n");
       expect(() => loadGbcReservedTiles(root)).toThrowError(expect.objectContaining({ code: "RESERVATIONS_UNREADABLE", message: expect.stringContaining("constants/tileset_constants.asm") }));
+      writeFileSync(join(root, "constants/tileset_constants.asm"), "DEF ROOF_LENGTH EQU 9 + 1\n");
+      expect(() => loadGbcReservedTiles(root)).toThrowError(expect.objectContaining({ code: "RESERVATIONS_UNREADABLE", message: expect.stringContaining("constants/tileset_constants.asm") }));
+      writeFileSync(join(root, "constants/tileset_constants.asm"), "DEF ROOF_LENGTH EQU $09 ; plain literal\n");
+      expect(loadGbcReservedTiles(root)).toEqual(new Set([...range(0x0a, 9), 0x14, 0x83]));
       rmSync(join(root, "engine/tilesets/mapgroup_roofs.asm"));
       expect(() => loadGbcReservedTiles(root)).toThrowError(expect.objectContaining({ code: "RESERVATIONS_UNREADABLE", message: expect.stringContaining("mapgroup_roofs.asm") }));
     } finally {

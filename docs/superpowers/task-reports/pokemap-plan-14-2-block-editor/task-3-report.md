@@ -92,3 +92,54 @@ No mutations executed here; all remain pending green verification.
   offset → KILLED (synthetic $83); M4 ancillary chunks dropped → KILLED (preserves every non-IDAT chunk).
 - Deviation: the round-trip test compares depth/colour type only for grayscale originals (an RGBA sheet is normalized
   to 2-bit gray); width/height always compared.
+
+
+## Fix round 1
+
+Status: implementation and regression tests written; verification BLOCKED by PowerShell execution policy. No commit created.
+
+### Scope and routing ledger
+
+- Baseline: `f0bb6bd8ffa56ef21fb77303ed28d12578e205da`, branch `p14-2-t3` per brief. Initial status contained only the two untracked task-3 review reports; preserved unchanged.
+- High risk: PNG losslessness and assembly parsing/error boundaries. Continued the existing Codex implementer fix round under the explicit user brief, without dispatching a fresh implementer or taking over conductor review work. Read delegate, TDD and verification-before-completion skills. No helpers or offload calls; no Anthropic usage.
+- Only `gbcSheet.ts`, its named test file, and this required report were edited. Existing CRLF endings preserved. No shared helpers, asm.ts, launch files, or subject repositories edited. Test writes remain under a fresh temp root.
+
+### Findings addressed
+
+1. Compare all 64 decoded source/target pixels before copying. Identical distinct tiles return the original Buffer before IDAT encoding. Regression constructs a valid grayscale PNG with level-0 compression and two IDAT chunks, then asserts Buffer identity for 0 -> 1.
+2. Use `findDefEquLine`, strip comments, require the complete EQU value to match one token, then parse that full token with `parseNum`. `9 + 1` refuses with RESERVATIONS_UNREADABLE naming constants/tileset_constants.asm. Regression also accepts a plain hex literal with a trailing comment.
+3. Scan every live animation operand occurrence, including instructions, labels and multiple bank references on one line. Roof start remains restricted to the ld de copy destination, retaining whole roof-operand validation. Synthetic exact-set assertion includes $5b, labeled $2d, a second vTiles5 operand ($83), $38 and a commented $00 exclusion. PerfPlus assertions now require $5b/$38/$2d alongside $14 and the roof range.
+4. Sheet tile rows now differ at each tile's first pixel column by their tile-row number (0, 1, 2), so row zero cannot substitute for row one. Parameterized copies 15 -> 33 and 20 -> 33 compare every pixel of all 48 tiles, assert a visible change and assert source bytes unchanged.
+
+### Verification evidence and remaining work
+
+Tests were edited before production code. Attempted:
+
+`npx vitest run packages/core/test/blockEdit/gbcSheet.test.ts --maxWorkers=4 --minWorkers=1`
+
+Exit 1 before collection or execution:
+
+```text
+npx : File C:\Program Files\nodejs\npx.ps1 cannot be loaded because running scripts is disabled on this system.
+CategoryInfo : SecurityError: (:) [], PSSecurityException
+FullyQualifiedErrorId : UnauthorizedAccess
+```
+
+Per the explicit sandbox note, did not bypass the policy or commit. No behavioral red/green result is claimed. Typecheck, UI build, full gate (pass/fail/file counts), subject HEAD/porcelain/manifest check and mutations were not run; conductor must execute them. No UI change requires a live check. `git diff --check` passed after code/test edits; final scope status is recorded by the final read-only check.
+
+Mutation assertions for conductor after green:
+
+- Remove identical-pixel early return: split-IDAT/different-compression regression's `toBe(split)` must fail.
+- Revert to first-token ROOF_LENGTH parsing: the temp-root `9 + 1` refusal must fail.
+- Restrict animations to leading dw or first operand: synthetic exact-set assertion and real PerfPlus $5b/$38/$2d assertions must fail.
+- Force sourceY = 0: source-20 all-tiles comparison must fail at target tile 33's first pixel column (expected row-one increment 1; mutant row-zero increment 0).
+- Existing gray inversion, target stride, bank offset and ancillary preservation mutations remain required.
+
+No mutations or reviews claimed passed. Preserve existing reviews in place until the conductor's follow-up reviews pass.
+
+## Conductor verification, fix round 1 (s3)
+
+- Typecheck pass. gbcSheet.test.ts 14/14 (unmutated baseline).
+- Mutations: M1-M4 (round 0) still KILLED; M5 constant `sourceY` → KILLED (copy from source 20); M6 identical-pixel
+  shortcut removed → KILLED (split IDAT bytes preserved); M7 anims `dw`-only → KILLED (PerfPlus corpus + instruction
+  operands test); M8 ROOF_LENGTH single-literal check off → KILLED (refusal test).
