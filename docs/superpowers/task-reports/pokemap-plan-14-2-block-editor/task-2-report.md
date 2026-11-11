@@ -101,3 +101,72 @@ palette tile `$80` with its own value returns byte-identical input for all of th
    records-only, so this is unobservable today.
 4. `patchGbcMetatiles` allocates the parsed metatile array just to get the count
    (`parseMetatiles` is the one validated reader); fine at GBC sizes (≤ 256 records).
+
+
+## Fix round 1
+
+Scope: only `gbcPatch.ts`, `gbcPatch.test.ts`, and this report; no commit.
+Baseline: `d81a9284d6d70c32d714a1c31d400d4c7ef2ef69`; working tree initially clean.
+Risk: high, because this changes source-format parsing/patching boundaries. This is
+continuation of the same implementer's fix round, as explicitly requested; no fresh
+implementer or reviewer was dispatched. The delegate skill was read before the
+implementation. This round remains with the current Codex implementer to preserve
+context and the user's exact three-file scope.
+
+Changes by review finding:
+
+1. **Palette names:** kept the eight-name whitelist for the NEW `palName`, removed
+   rejection of nonstandard untouched entries, and retained `parsePaletteMap` shape
+   validation. Its synthesized `palBg` includes every source name plus `palName`.
+   Both contract comments now explain this. Added a test that leaves `PURPLE`
+   untouched while changing tile 0 to `GREEN`, and refuses `PURPLE` as the new name
+   with `BAD_VALUE` and the path. The existing unknown-new-name assertion remains.
+2. **BLOCK_CAP:** counts above 256 now refuse before id validation or encoding,
+   including attempts to edit an existing record. Added oversized-input checks for
+   ids -1, 0, 255, 256, 257 and 258. Added a full-buffer equality check for editing
+   record 255 at exactly 256 records, including input immutability; retained the
+   original cap/append checks.
+3. **Losslessness:** added full-output equality for a noncanonical target `tilepal`
+   line with mixed spaces/tabs, spaces around commas, a trailing comment, CRLF and
+   no final newline. Only `RED` becomes `GREEN`. Strengthened the forest surplus
+   test with exact edited-line equality, preserving the prefix, all three source
+   separators and suffix/comment while substituting the four names. No existing
+   assertion was removed or loosened.
+4. **Collision append style:** copies the last record's complete prefix through the
+   first argument start and each of its three exact separators independently,
+   preserving keyword whitespace and spaces before commas. Added literal exact
+   output coverage with unequal separators, mixed spaces/tabs, CRLF, a preserved
+   existing comment and no final newline.
+5. **Correction of earlier mutation claims:** palette re-serialization was NOT
+   caught before this round; the prior report overstated that coverage. The new
+   noncanonical edited-line equality is designed to catch normalization on an
+   actual palette edit. Re-encoding the whole metatile buffer through
+   `parseMetatiles`/`encodeMetatiles` is an equivalent mutation for fixed 16-byte
+   records, including edited records; the byte-span test does NOT distinguish it.
+   This correction supersedes the earlier claims under Mutations. No mutation
+   execution or mutation kill is claimed for this fix round.
+
+Test-first sequence and actual command results:
+
+- Added all five new tests and strengthened the forest assertion before editing
+  production code (19 test declarations total, including corpus tests).
+- Red attempt: `npx vitest run packages/core/test/blockEdit/gbcPatch.test.ts`
+  exited 1 before Vitest started. PowerShell refused to load
+  `C:\Program Files\nodejs\npx.ps1` because running scripts is disabled:
+  `PSSecurityException`, `FullyQualifiedErrorId: UnauthorizedAccess`.
+  No tests were collected or run; an expected behavioral red was not observed.
+- After the production changes, the same focused Vitest command exited 1 with
+  the same execution-policy error before running tests.
+- `npx tsc --noEmit -p tsconfig.base.json` also exited 1 with that same
+  execution-policy error before TypeScript started.
+- No policy bypass, alternate invocation, or other sandbox workaround was used,
+  per the user's sandbox instruction. The conductor must run the focused suite
+  and typecheck and establish red/green and mutation evidence. The full gate
+  and UI build were not run in this scoped fix round. There is no UI change.
+
+Verification status: code/tests/report updated; runtime verification blocked by
+PowerShell execution policy. Original line endings are retained (these three
+working-copy files were LF; CRLF test input strings remain explicit escapes).
+
+Static verification: `git diff --check` passed; final status lists exactly the
+three authorized modified files. No commit was created.

@@ -90,6 +90,22 @@ describe("patchGbcMetatiles", () => {
     expect(patchGbcMetatiles(full, 255, new Array(16).fill(9), METATILES_PATH).length).toBe(full.length);
   });
 
+  it("refuses BLOCK_CAP for every id when the input already exceeds 256 records", () => {
+    const oversized = Buffer.alloc(257 * 16, 2);
+    for (const id of [-1, 0, 255, 256, 257, 258]) {
+      const bad = refusal(() => patchGbcMetatiles(oversized, id, new Array(16).fill(9), METATILES_PATH));
+      expect({ id, code: bad.code }).toEqual({ id, code: "BLOCK_CAP" });
+      expect(bad.message.startsWith(METATILES_PATH)).toBe(true);
+    }
+  });
+
+  it("edits an existing record at exactly 256 records without changing other bytes", () => {
+    const full = Buffer.alloc(256 * 16, 2);
+    const patched = patchGbcMetatiles(full, 255, new Array(16).fill(9), METATILES_PATH);
+    expect(patched).toEqual(Buffer.concat([Buffer.alloc(255 * 16, 2), Buffer.alloc(16, 9)]));
+    expect(full).toEqual(Buffer.alloc(256 * 16, 2));
+  });
+
   it("refuses a record that is not 16 tile ids, naming the path", () => {
     const bad = refusal(() => patchGbcMetatiles(Buffer.alloc(16), 0, new Array(15).fill(0), METATILES_PATH));
     expect(bad.code).toBe("BAD_VALUE");
@@ -139,6 +155,13 @@ describe("patchGbcCollision", () => {
     expect(bad.message.startsWith(COLLISION_PATH)).toBe(true);
   });
 
+  it("appends with the last record's exact keyword spacing and individual separators without a final newline", () => {
+    const text = "; header\r\n \ttilecoll\t  FLOOR \t,\tWALL,  WATER  , FLOOR ; last";
+    expect(patchGbcCollision(text, 1, ["WALL", "WATER", "FLOOR", "WALL"], COLLISION_PATH)).toBe(
+      `${text}\r\n \ttilecoll\t  WALL \t,\tWATER,  FLOOR  , WALL`,
+    );
+  });
+
   it("appends at id === records.length using the file's EOL and indentation", () => {
     for (const eol of ["\r\n", "\n"]) {
       const text = [
@@ -155,6 +178,23 @@ describe("patchGbcCollision", () => {
 });
 
 describe("patchGbcPaletteMap", () => {
+  it("allows nonstandard untouched names while restricting the new name to the eight palettes", () => {
+    const text = paletteMapText({ bank: 1, line: 2, index: 3, name: "PURPLE" });
+    expect(patchGbcPaletteMap(text, 0, "GREEN", PALETTE_PATH)).toBe(
+      text.replace("tilepal 0, GRAY", "tilepal 0, GREEN"),
+    );
+    const bad = refusal(() => patchGbcPaletteMap(text, 0, "PURPLE", PALETTE_PATH));
+    expect(bad.code).toBe("BAD_VALUE");
+    expect(bad.message.startsWith(PALETTE_PATH)).toBe(true);
+    expect(bad.message).toContain("PURPLE");
+  });
+
+  it("preserves a noncanonical target line, CRLF and no final newline when replacing one palette name", () => {
+    const line = " \ttilepal\t 1 , GRAY,\tGRAY ,  GRAY, GRAY ,\tGRAY,  RED  , GRAY,\tGRAY \t; comment";
+    const text = paletteMapText().replace(tilepalLine(1, gray), line).replaceAll("\n", "\r\n");
+    expect(patchGbcPaletteMap(text, 0x85, "GREEN", PALETTE_PATH)).toBe(text.replace("RED", "GREEN"));
+  });
+
   it("changes only the $85 name on a bank-1 tilepal line", () => {
     const text = paletteMapText({ bank: 1, line: 0, index: 5, name: "RED" });
     const patched = patchGbcPaletteMap(text, 0x85, "GREEN", PALETTE_PATH);
@@ -258,5 +298,13 @@ describe("no-op over the corpus", () => {
     expect(differing).toHaveLength(1);
     expect(beforeLines[differing[0]!]).toContain("tilecoll");
     expect(afterLines[differing[0]!]).toContain(replacement.join(", "));
+    // Derive the expected line from its four source names, retaining all
+    // captured whitespace, separators and the untouched trailing comment.
+    const expectedLine = beforeLines[differing[0]!]!.replace(
+      /^(.*?\btilecoll[ \t]+)\w+([ \t]*,[ \t]*)\w+([ \t]*,[ \t]*)\w+([ \t]*,[ \t]*)\w+([^\n]*)$/,
+      (_match, prefix, sep1, sep2, sep3, suffix) =>
+        `${prefix}${replacement[0]}${sep1}${replacement[1]}${sep2}${replacement[2]}${sep3}${replacement[3]}${suffix}`,
+    );
+    expect(afterLines[differing[0]!]).toBe(expectedLine);
   });
 });

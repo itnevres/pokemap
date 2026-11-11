@@ -53,6 +53,9 @@ export function patchGbcMetatiles(buf: Buffer, id: number, tiles: readonly numbe
   } catch (e) {
     throw new BlockEditRefusal("BAD_VALUE", `${path}: ${(e as Error).message}`);
   }
+  if (count > BLOCK_CAP) {
+    throw new BlockEditRefusal("BLOCK_CAP", `${path}: block cap ${BLOCK_CAP} exceeded (${count} records)`);
+  }
   if (!Number.isInteger(id) || id < 0 || id > count) {
     throw new BlockEditRefusal("BAD_VALUE", `${path}: block id ${id} is outside the editable range 0-${count}`);
   }
@@ -142,11 +145,16 @@ export function patchGbcCollision(
     const line = `\ttilecoll ${names.join(", ")}`;
     return text === "" ? `${line}${eol}` : text.endsWith("\n") ? `${text}${line}${eol}` : `${text}${eol}${line}`;
   }
-  // The file's own style: the last record's indentation and comma spacing.
+  // Copy the keyword-to-argument whitespace and each separator independently,
+  // including whitespace before commas. A new record has no copied comment.
   const indent = /^[ \t]*/.exec(text.slice(last.lineStart, last.lineEnd))![0];
-  const spacing = last.args.length >= 2 ? text.slice(last.args[0]!.end, last.args[1]!.start) : ", ";
-  const sep = /^,[ \t]*$/.test(spacing) ? spacing : ", ";
-  return insertLineAfter(text, last.lineEnd, `${indent}tilecoll ${names.join(sep)}`);
+  const prefix = last.args.length > 0 ? text.slice(last.lineStart, last.args[0]!.start) : `${indent}tilecoll `;
+  let line = `${prefix}${names[0]}`;
+  for (let i = 1; i < names.length; i++) {
+    const sep = last.args[i - 1] && last.args[i] ? text.slice(last.args[i - 1]!.end, last.args[i]!.start) : ", ";
+    line += `${sep}${names[i]}`;
+  }
+  return insertLineAfter(text, last.lineEnd, line);
 }
 
 /**
@@ -156,10 +164,11 @@ export function patchGbcCollision(
  * by `parsePaletteMap` (the loader's own strict phase machine), so a file
  * whose 12/rept-16/12 shape is off cannot be patched at the wrong tile.
  *
- * `palName` must be one of the palette names this file already uses: without
- * the tileset constants a new name cannot be verified, and silently writing
- * an undefined `PAL_BG_*` would break the build. Tiles 0x60-0x7F (the filler
- * gap) and 0xE0+ have no palette-map entry at all.
+ * The new `palName` must be one of GRAY, RED, GREEN, WATER, YELLOW, BROWN,
+ * ROOF or TEXT; it need not already occur in the file. Untouched entries may
+ * use other names, which are included alongside `palName` in the synthesized
+ * `palBg` map used for shape validation. Tiles 0x60-0x7F (the filler gap) and
+ * 0xE0+ have no palette-map entry at all.
  */
 export function patchGbcPaletteMap(text: string, tileId: number, palName: string, path: string): string {
   if (!Number.isInteger(tileId) || tileId < 0 || (tileId >= 0x60 && tileId < PALETTE_BANK1_START) || tileId >= PALETTE_MAP_END) {
@@ -175,16 +184,12 @@ export function patchGbcPaletteMap(text: string, tileId: number, palName: string
   }
   const known = new Set<string>();
   for (const call of calls) for (const arg of call.args.slice(1)) known.add(arg.text);
-  for (const name of known) {
-    if (!PALETTE_NAMES.has(name)) {
-      throw new BlockEditRefusal("BAD_VALUE", `${path}: unknown palette name "${name}"`);
-    }
-  }
+  known.add(palName);
 
   // Reuse the loader's strict phase machine for shape (bank sequence, 12
   // lines per half, the rept-16 filler, no trailing content). The synthesized
-  // `palBg` accepts the names this file actually uses; any name it lacks would
-  // already have been refused above.
+  // `palBg` includes every name used by the file plus the validated new name;
+  // untouched nonstandard names do not prevent an otherwise valid patch.
   const palBg = new Map<string, number>();
   for (const name of known) palBg.set(`PAL_BG_${name}`, palBg.size);
   try {
