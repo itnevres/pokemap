@@ -76,6 +76,8 @@ Rerun in isolation before calling either a regression. (Plan 8)
 
 **React batches same-tick refreshes into one GET, so a GET count cannot prove "one refresh per commit".** `useWorldVisibility.refresh()` bumps a state counter; three calls in one tick make one fetch. Tell: the count test passes on the old per-name code and under the "refresh per name" mutation. Count the calls instead: `vi.mock` the hook with a wrapper that delegates to the real one and counts `refresh()` (`test/shell/placementCommit.test.tsx`). (Plan 11 T7)
 
+- **Test roots are scratch copies (Plan 14.2 Task 0, 2026-11-10).** `vitest.config.ts` globalSetup `testRootsSetup.ts` copies every configured root (allow-listed folders only) into `%TEMP%/pokemap-test-roots-*` and sets `POKEMAP_TEST_CONFIG` and `POKEMAP_HOME`; tests get roots only through `testConfig()` (`core/test/helpers/testRoots.ts`), never `pokemap.config.json`. Teardown fails the run if any real root's allow-listed files changed (size+mtime manifest). Cost: ~90 s copy + ~45 s check on EVERY vitest run, even one file; batch files into one run. Tell of a new real-root reader: it reads `pokemap.config.json` or names a real path in a test (grep).
+
 ## Mutation Testing & Review Process
 
 **Retaining a ref to the latest request does not make a stroke completion barrier.** Return the first `apply` promise, queue every move, `await end`, and capture visit identity plus start/end cleanup. (Plan 7)
@@ -306,6 +308,8 @@ Rerun in isolation before calling either a regression. (Plan 8)
 - **The full gate at default workers crashed this PC three times (2026-10-20/21, Kernel-Power 41), each time mid-suite.** Each crash zeroed the same 7-8 GBA subject files (Route35 `map.json`, Johto `map.bin`s); back up, restore those paths from subject HEAD, keep the user's own porcelain lines. Run the gate as `npm test -- --maxWorkers=4 --minWorkers=1` (Vitest refuses `--maxWorkers` alone: "options.minThreads and options.maxThreads must not conflict", and runs 0 tests); same pass count, no crash since. (Plan 10b)
 - **A power cut during the gate zeroes subject files.** Several corpus tests edit the real GBA subject in place and restore it (`core/test/write/corpus.test.ts`, `cli/test/writeCommands.test.ts`). An unclean shutdown mid-run (2026-10-20, Kernel-Power 41) left 8 subject files all-NUL at their old size; the next gate then re-wrote the zeros. Tell: a burst of unrelated corpus failures ("Unexpected token" on a map.json, world/coverage tests) and new subject porcelain lines with fresh mtimes. Check `tr -d ' ' < f | wc -c` = 0, back up, restore only files outside the user's own baseline lines from the subject's HEAD, then re-check the manifest hashes.
 - **PowerShell `Out-File` mangles a patch.** It rewrites LF as CRLF, so `git apply` fails with "patch does not apply". Write patches from Git Bash (`git diff --cached --binary > file`), or strip CRs with `sed 's/$//'`.
+
+- **A worktree typechecks other packages against the MAIN checkout's core.** The worktree's `node_modules` junction resolves `@pokemap/core` to the main repo, so a core interface change typechecks green in the worktree while cli/server/ui stubs break after merge (Plan 14.2 T1: `cli/test/context.test.ts` Project stub). Tell: post-merge `npm run typecheck` fails in a file the task never touched. Fix: for core-interface tasks add `packages/{cli,server}/node_modules/@pokemap/core` → worktree core junctions; the post-merge typecheck is the backstop for UI.
 
 ## Delegation to Codex / Aider / Subagents
 
