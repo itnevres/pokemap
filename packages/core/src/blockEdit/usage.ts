@@ -26,32 +26,7 @@ import type { Project } from "../project.js";
 import type { Layout, Split } from "../model/types.js";
 import { parseBlocks } from "../load/blocks.js";
 import { canonicalTilesetPath } from "./canonicalTilesetPath.js";
-import type { StagedGrids } from "./types.js";
-
-/** One grid file's use of the queried block, from the file's representative map. */
-export interface MapUse {
-  /** The alphabetically first map backed by this grid file (among consuming maps). */
-  map: string;
-  /** Cells of the effective grid whose raw id equals the queried id. */
-  interior: number;
-  /** GBC: 1 when the representative map's border is the queried id. GBA: border-bin cells matching it. */
-  border: number;
-  /**
-   * GBC only: raw-0 interior cells, when the queried id is the map's border and
-   * is not 0 itself (the engine draws a raw 0 as the border). Always 0 for GBA.
-   */
-  block0AsBorder: number;
-}
-
-export interface BlockUsage {
-  /** Resolved files the block lives in / is described by (metatiles + collision, or metatiles + attributes). */
-  files: string[];
-  /** Tileset consts (GBC) or the one symbol (GBA) that consume the queried file. */
-  tilesets: string[];
-  maps: MapUse[];
-  /** Grid files backing two or more maps, with every map name they back. */
-  sharedGrids: { file: string; maps: string[] }[];
-}
+import type { StagedGrids, MapUse, BlockUsage } from "./types.js";
 
 const compare = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
@@ -126,6 +101,7 @@ export function gbcTilesetsForFile(proj: GbcProject, path: string): string[] {
  * R3: for a grid file, the staged grid of the alphabetically first of its maps
  * present in `grids` wins; otherwise the disk `.blk` grid of `map` (which is
  * read through the project, as before, and limited to its declared w*h).
+ * Cache keyed by grid file (blkPath), not map name.
  */
 function gbcEffectiveGrid(
   proj: GbcProject,
@@ -138,14 +114,14 @@ function gbcEffectiveGrid(
   const staged = names.find((name) => grids.has(name));
   if (staged !== undefined) return grids.get(staged)!;
 
-  const cached = diskCache.get(map.name);
+  const cached = diskCache.get(map.blkPath);
   if (cached !== undefined) return cached;
   const grid = proj.layout(map).layout.blocks.map((b) => b.metatileId);
-  diskCache.set(map.name, grid);
+  diskCache.set(map.blkPath, grid);
   return grid;
 }
 
-/** R6 plus R1/R2: usage for one GBC metatiles file, one entry per `.blk`. */
+/** R6 plus R1/R2/R2a: usage for one GBC metatiles file, one entry per `.blk`. */
 export function gbcBlockUsage(
   proj: GbcProject,
   metatilesPath: string,
@@ -157,6 +133,12 @@ export function gbcBlockUsage(
   const tilesets = (relations.tilesetsByPath.get(key) ?? []).filter(
     (constName) => canonicalTilesetPath(relations.tilesets.get(constName)!.metatilesPath) === key,
   );
+
+  // R6a: unknown/unconsumed path -> empty usage
+  if (tilesets.length === 0) {
+    return { files: [], tilesets: [], maps: [], sharedGrids: [] };
+  }
+
   const consuming = new Set(tilesets);
 
   const byFile = new Map<string, GbcMap[]>();
@@ -167,8 +149,9 @@ export function gbcBlockUsage(
     byFile.set(map.blkPath, group);
   }
 
+  // R6a: files uses canonical paths
   const files = sorted([
-    metatilesPath,
+    key,
     ...tilesets.map((constName) => relations.tilesets.get(constName)!.collisionPath),
   ]);
 
@@ -179,16 +162,31 @@ export function gbcBlockUsage(
   for (const file of [...byFile.keys()].sort(compare)) {
     const group = byFile.get(file)!.sort((a, b) => compare(a.name, b.name));
     const representative = group[0]!;
-    const grid = gbcEffectiveGrid(proj, relations, representative, grids, diskCache);
 
+    // Interior: use the effective grid of the representative (per R3, one grid per file)
+    const repGrid = gbcEffectiveGrid(proj, relations, representative, grids, diskCache);
     let interior = 0;
-    let zeros = 0;
-    for (const cell of grid) {
+    for (const cell of repGrid) {
       if (cell === blockId) interior++;
-      if (cell === 0) zeros++;
     }
-    const border = representative.border === blockId ? 1 : 0;
-    const block0AsBorder = border === 1 && blockId !== 0 ? zeros : 0;
+
+    // R2a: border and block0AsBorder summed over EVERY consuming map of the grid file
+    let border = 0;
+    let block0AsBorder = 0;
+
+    for (const map of group) {
+      if (map.border === blockId) {
+        border++;
+        if (blockId !== 0) {
+          // Count raw-0 cells in this map's effective grid
+          const grid = gbcEffectiveGrid(proj, relations, map, grids, diskCache);
+          for (const cell of grid) {
+            if (cell === 0) block0AsBorder++;
+          }
+        }
+      }
+    }
+
     if (interior + border + block0AsBorder === 0) continue;
 
     maps.push({ map: representative.name, interior, border, block0AsBorder });
@@ -216,11 +214,12 @@ export function gbcTileUsage(
   grids: StagedGrids,
 ): { blocks: { metatilesPath: string; ids: number[] }[]; maps: string[] } {
   const relations = gbcRelations(proj);
-  const tilesets = relations.tilesetsByPath.get(canonicalTilesetPath(palMapPath)) ?? [];
+  const canonicalPalMap = canonicalTilesetPath(palMapPath);
+
+  const tilesets = relations.tilesetsByPath.get(canonicalPalMap) ?? [];
   const withPalMap = tilesets.filter(
     (constName) =>
-      canonicalTilesetPath(relations.tilesets.get(constName)!.palMapPath) ===
-      canonicalTilesetPath(palMapPath),
+      canonicalTilesetPath(relations.tilesets.get(constName)!.palMapPath) === canonicalPalMap,
   );
 
   const constsByMetatiles = new Map<string, string[]>();
@@ -287,12 +286,7 @@ function buildGbaRelations(proj: Project): GbaRelations {
   };
 
   for (const layout of proj.layouts) {
-    if (layout.primaryTileset === layout.secondaryTileset) {
-      // A layout naming one tileset in both slots still has a primary role;
-      // the engine treats the second slot as the paired one.
-      add(layout.primaryTileset, { layout, role: "primary", pairedWith: layout.secondaryTileset });
-      continue;
-    }
+    // R8a: layout with primary == secondary yields TWO uses (primary then secondary)
     add(layout.primaryTileset, { layout, role: "primary", pairedWith: layout.secondaryTileset });
     add(layout.secondaryTileset, { layout, role: "secondary", pairedWith: layout.primaryTileset });
   }
@@ -329,6 +323,7 @@ function gbaMapsByLayout(proj: Project, relations: GbaRelations): Map<string, st
 /**
  * R8: every layout consuming `tilesetSymbol`, with its role, its split and the
  * tileset it is paired with, sorted by layout id. `layout` is the layout id.
+ * R8a: layout with primary == secondary yields two uses (primary then secondary).
  */
 export function gbaConsumingLayouts(
   proj: Project,
@@ -353,7 +348,7 @@ function gbaCells(proj: Project, path: string, cache: Map<string, readonly numbe
 }
 
 /**
- * R9 plus R1/R2: usage for one GBA tileset-local block id, one entry per
+ * R9 plus R1/R2/R9a: usage for one GBA tileset-local block id, one entry per
  * blockdata file. A primary layout counts `localIndex`; a secondary layout
  * counts `split.metatiles + localIndex`, because its ids sit above that
  * layout's own primary boundary.
@@ -364,11 +359,26 @@ export function gbaBlockUsage(
   localIndex: number,
   grids: StagedGrids,
 ): BlockUsage {
+  // R9b: unknown symbol -> empty usage (no throw)
+  if (!proj.tilesetSymbols().includes(tilesetSymbol)) {
+    return { files: [], tilesets: [], maps: [], sharedGrids: [] };
+  }
+
   const relations = gbaRelations(proj);
   const consuming = relations.consumingBySymbol.get(tilesetSymbol) ?? [];
   const mapsByLayout = gbaMapsByLayout(proj, relations);
 
-  const byFile = new Map<string, { layout: Layout; target: number; names: string[] }>();
+  // R9a: per-file counting - collect every consuming use (layout, role) on each file
+  // with its target id. Then sum over distinct targets for interior,
+  // and distinct (borderFilepath, target) for border.
+  const byFile = new Map<string, {
+    targets: Set<number>;
+    borderTargets: Map<string, Set<number>>; // borderFilepath -> set of targets
+    layouts: Layout[];
+    allMapNames: string[]; // ALL maps of ALL layouts on this file (for sharedGrids)
+    consumingMapNames: string[]; // maps of consuming layouts (for representative)
+  }>();
+
   for (const use of consuming) {
     const names = mapsByLayout.get(use.layout.id) ?? [];
     if (names.length === 0) continue;
@@ -376,14 +386,36 @@ export function gbaBlockUsage(
     const file = use.layout.blockdataFilepath;
     const existing = byFile.get(file);
     if (existing === undefined) {
-      byFile.set(file, { layout: use.layout, target, names: [...names] });
+      // Gather all maps of ALL layouts on this file for sharedGrids
+      const allLayoutsOnFile = proj.layouts.filter(l => l.blockdataFilepath === file);
+      const allMapNames: string[] = [];
+      for (const l of allLayoutsOnFile) {
+        const maps = mapsByLayout.get(l.id) ?? [];
+        allMapNames.push(...maps);
+      }
+      allMapNames.sort(compare);
+
+      // Consuming map names for representative
+      const consumingMapNames = [...names].sort(compare);
+
+      byFile.set(file, {
+        targets: new Set([target]),
+        borderTargets: new Map([[use.layout.borderFilepath, new Set([target])]]),
+        layouts: [use.layout],
+        allMapNames,
+        consumingMapNames,
+      });
     } else {
-      // R2: one entry per grid file. Layouts sharing a file normally agree on
-      // the target; the first (lowest layout id) supplies it and the border.
-      existing.names = sorted([...existing.names, ...names]);
+      existing.targets.add(target);
+      const borderSet = existing.borderTargets.get(use.layout.borderFilepath) ?? new Set<number>();
+      borderSet.add(target);
+      existing.borderTargets.set(use.layout.borderFilepath, borderSet);
+      existing.layouts.push(use.layout);
+      existing.consumingMapNames = sorted([...existing.consumingMapNames, ...names]);
     }
   }
 
+  // R6a: files from canonical paths (proj.tilesetPaths returns canonical paths)
   const paths = proj.tilesetPaths(tilesetSymbol);
   const files = sorted([paths.metatilesBin, paths.attributesBin]);
 
@@ -393,18 +425,41 @@ export function gbaBlockUsage(
 
   for (const file of [...byFile.keys()].sort(compare)) {
     const group = byFile.get(file)!;
-    const staged = group.names.find((name) => grids.has(name));
-    const grid = staged !== undefined ? grids.get(staged)! : gbaCells(proj, file, cellCache);
-    const border = gbaCells(proj, group.layout.borderFilepath, cellCache);
 
+    // Staged grid: use alphabetically first consuming map present in grids
+    // R3: any map backed by the file (consuming or not) may carry the staged grid.
+    const stagedName = group.allMapNames.find((name) => grids.has(name));
+    const grid = stagedName !== undefined ? grids.get(stagedName)! : gbaCells(proj, file, cellCache);
+
+    // Interior: sum over DISTINCT targets
     let interior = 0;
-    for (const cell of grid) if (cell === group.target) interior++;
-    let borderCount = 0;
-    for (const cell of border) if (cell === group.target) borderCount++;
-    if (interior + borderCount === 0) continue;
+    for (const target of group.targets) {
+      for (const cell of grid) {
+        if (cell === target) interior++;
+      }
+    }
 
-    maps.push({ map: group.names[0]!, interior, border: borderCount, block0AsBorder: 0 });
-    if (group.names.length >= 2) sharedGrids.push({ file, maps: [...group.names] });
+    // Border: sum over DISTINCT (borderFilepath, target) pairs
+    let border = 0;
+    for (const [borderFile, targets] of group.borderTargets) {
+      const borderCells = gbaCells(proj, borderFile, cellCache);
+      for (const target of targets) {
+        for (const cell of borderCells) {
+          if (cell === target) border++;
+        }
+      }
+    }
+
+    if (interior + border === 0) continue;
+
+    // Representative map = alphabetically first consuming map
+    const representative = group.consumingMapNames[0]!;
+    maps.push({ map: representative, interior, border, block0AsBorder: 0 });
+
+    // R9a: sharedGrids = maps of ALL layouts on the file (consuming or not), when 2+
+    if (group.allMapNames.length >= 2) {
+      sharedGrids.push({ file, maps: [...group.allMapNames] });
+    }
   }
 
   maps.sort((a, b) => compare(a.map, b.map));

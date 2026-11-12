@@ -19,7 +19,7 @@
  * cells, so the whole file would disagree on exactly those maps.
  */
 
-import { describe, expect } from "vitest";
+import { describe, expect, it } from "vitest";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { openGbcProject } from "../../src/gbc/project.js";
@@ -321,7 +321,7 @@ function effectiveGrid(o: OracleGbc, map: OracleGbcMap, grids: StagedGrids): rea
 
 // ---------------------------------------------------------------------------
 // GBC usage oracle: R1-R3 (entries per grid file), R6 (files/tilesets) and R7
-// (tile usage).
+// (tile usage). Updated for R2a.
 // ---------------------------------------------------------------------------
 
 interface TileUsage {
@@ -352,6 +352,7 @@ interface GbaLayoutUse {
   pairedWith: string;
 }
 
+/** R2a: interior from representative's effective grid; border/block0AsBorder summed over ALL consuming maps. */
 function gbcUsageOracle(o: OracleGbc, metatilesPath: string, id: number, grids: StagedGrids): Usage {
   const tilesets = [...o.tilesets.values()]
     .filter((ts) => ts.metatilesPath === metatilesPath)
@@ -371,18 +372,29 @@ function gbcUsageOracle(o: OracleGbc, metatilesPath: string, id: number, grids: 
   const sharedGrids: { file: string; maps: string[] }[] = [];
   for (const [file, group] of byFile) {
     group.sort((a, b) => compare(a.name, b.name));
-    // One entry per file uses the representative (alphabetically first) map's
-    // header for both `map` and the border, per R2.
     const rep = group[0]!;
-    const grid = effectiveGrid(o, rep, grids);
+
+    // Interior: use representative's effective grid only (per R3, one grid per file)
+    const repGrid = effectiveGrid(o, rep, grids);
     let interior = 0;
-    let zeros = 0;
-    for (const cell of grid) {
+    for (const cell of repGrid) {
       if (cell === id) interior++;
-      if (cell === 0) zeros++;
     }
-    const border = rep.border === id ? 1 : 0;
-    const block0AsBorder = border === 1 && id !== 0 ? zeros : 0;
+
+    // R2a: border and block0AsBorder summed over EVERY consuming map of the grid file
+    let border = 0;
+    let block0AsBorder = 0;
+    for (const map of group) {
+      if (map.border === id) {
+        border++;
+        if (id !== 0) {
+          const grid = effectiveGrid(o, map, grids);
+          for (const cell of grid) {
+            if (cell === 0) block0AsBorder++;
+          }
+        }
+      }
+    }
     if (interior + border + block0AsBorder === 0) continue;
     maps.push({ map: rep.name, interior, border, block0AsBorder });
 
@@ -592,10 +604,12 @@ let gbaOracleCache: OracleGba | undefined;
 const gbaOracle = (): OracleGba => (gbaOracleCache ??= buildGbaOracle(SUBJECT_ROOT));
 
 /**
- * R8/R9: every consuming layout, with its role; the per-layout target id is
+ * R8a/R9a: every consuming layout, with its role; the per-layout target id is
  * `localIndex` for a primary and `split.metatiles + localIndex` for a
  * secondary. Splits are taken from the project (`proj.splitFor`), which the
  * brief excludes from the oracle.
+ * R9a: per-file counting with distinct targets and distinct (border file, target) pairs.
+ * sharedGrids: maps of ALL layouts on the file (consuming or not), when 2+.
  */
 function gbaUsageOracle(
   proj: Project,
@@ -604,7 +618,13 @@ function gbaUsageOracle(
   localIndex: number,
   grids: StagedGrids,
 ): Usage {
-  const byFile = new Map<string, { target: number; layout: OracleGbaLayout; names: string[] }>();
+  const byFile = new Map<string, {
+    targets: Set<number>;
+    borderTargets: Map<string, Set<number>>;
+    allMapNames: string[];
+    consumingMapNames: string[];
+  }>();
+
   for (const layout of o.layouts) {
     const role = layout.primaryTileset === symbol ? "primary" : layout.secondaryTileset === symbol ? "secondary" : undefined;
     if (role === undefined) continue;
@@ -615,33 +635,100 @@ function gbaUsageOracle(
     const split = proj.splitFor(loaded);
     const target = role === "primary" ? localIndex : split.metatiles + localIndex;
 
+    // Gather all maps of ALL layouts on this file for sharedGrids
+    const allLayoutsOnFile = o.layouts.filter(l => l.blockdataFilepath === layout.blockdataFilepath);
+    const allMapNames: string[] = [];
+    for (const l of allLayoutsOnFile) {
+      const maps = o.maps.filter(m => m.layout === l.id).map(m => m.name);
+      allMapNames.push(...maps);
+    }
+    allMapNames.sort(compare);
+
     const existing = byFile.get(layout.blockdataFilepath);
     if (existing === undefined) {
-      byFile.set(layout.blockdataFilepath, { target, layout, names });
+      byFile.set(layout.blockdataFilepath, {
+        targets: new Set([target]),
+        borderTargets: new Map([[layout.borderFilepath, new Set([target])]]),
+        allMapNames,
+        consumingMapNames: [...names],
+      });
     } else {
-      // Layouts sharing one blockdata file would need one target; refuse to
-      // guess instead of silently picking the first.
-      if (existing.target !== target) {
-        throw new Error(`oracle: shared blockdata ${layout.blockdataFilepath} has two target ids`);
-      }
-      existing.names = [...new Set([...existing.names, ...names])].sort(compare);
+      existing.targets.add(target);
+      const borderSet = existing.borderTargets.get(layout.borderFilepath) ?? new Set<number>();
+      borderSet.add(target);
+      existing.borderTargets.set(layout.borderFilepath, borderSet);
+      existing.consumingMapNames = [...new Set([...existing.consumingMapNames, ...names])].sort(compare);
     }
   }
 
   const maps: UsageMap[] = [];
+  const sharedGrids: { file: string; maps: string[] }[] = [];
   for (const [file, group] of byFile) {
-    const stagedName = grids.size > 0 ? group.names.find((name) => grids.has(name)) : undefined;
+    const stagedName = grids.size > 0 ? group.allMapNames.find((name) => grids.has(name)) : undefined;
     const grid = stagedName === undefined ? o.cells(file) : grids.get(stagedName)!;
-    const border = o.cells(group.layout.borderFilepath);
+
+    // Interior: sum over DISTINCT targets
     let interior = 0;
-    for (const cell of grid) if (cell === group.target) interior++;
-    let borderCount = 0;
-    for (const cell of border) if (cell === group.target) borderCount++;
-    if (interior + borderCount === 0) continue;
-    maps.push({ map: group.names[0]!, interior, border: borderCount, block0AsBorder: 0 });
+    for (const target of group.targets) {
+      for (const cell of grid) if (cell === target) interior++;
+    }
+
+    // Border: sum over DISTINCT (borderFilepath, target) pairs
+    let border = 0;
+    for (const [borderFile, targets] of group.borderTargets) {
+      const borderCells = o.cells(borderFile);
+      for (const target of targets) {
+        for (const cell of borderCells) if (cell === target) border++;
+      }
+    }
+
+    if (interior + border === 0) continue;
+    const representative = group.consumingMapNames[0]!;
+    maps.push({ map: representative, interior, border, block0AsBorder: 0 });
+
+    // R9a: sharedGrids = ALL maps of ALL layouts on the file, when 2+
+    if (group.allMapNames.length >= 2) {
+      sharedGrids.push({ file, maps: [...group.allMapNames] });
+    }
   }
   maps.sort((a, b) => compare(a.map, b.map));
-  return { files: [], tilesets: [symbol], maps, sharedGrids: [] };
+  sharedGrids.sort((a, b) => compare(a.file, b.file));
+
+  // Parse headers.h and metatiles.h to get the two paths for this symbol
+  const files = parseGbaTilesetFiles(o.root, symbol);
+  return { files, tilesets: [symbol], maps, sharedGrids };
+}
+
+/** Parse GBA tileset files from headers.h and metatiles.h */
+function parseGbaTilesetFiles(root: string, symbol: string): string[] {
+  const headersPath = join(root, "src/data/tilesets/headers.h");
+  const metatilesPath = join(root, "src/data/tilesets/metatiles.h");
+  
+
+  const headersText = readFileSync(headersPath, "utf8");
+  const metatilesText = readFileSync(metatilesPath, "utf8");
+
+  // Find the tileset struct for this symbol in headers.h
+  // Pattern: const struct Tileset gTileset_General = { ... .metatiles = gMetatiles_X, .metatileAttributes = gMetatileAttributes_X ... }
+  const tilesetRegex = new RegExp(`const\\s+struct\\s+Tileset\\s+${symbol}\\s*=\\s*\\{[^}]*\\.metatiles\\s*=\\s*([^,]+),[^}]*\\.metatileAttributes\\s*=\\s*([^,}]+)`, 's');
+  const headersMatch = headersText.match(tilesetRegex);
+  if (!headersMatch) throw new Error(`oracle: no Tileset struct for ${symbol} in headers.h`);
+
+  const metatilesSymbol = headersMatch[1]!.trim();
+  const attributesSymbol = headersMatch[2]!.trim();
+
+  // Find the INCBIN paths in metatiles.h
+  // Pattern: const u16 gMetatiles_X[] = INCBIN_U16("path");
+  const metatilesRegex = new RegExp(`const\\s+u16\\s+${metatilesSymbol}\\s*\\[\\]\\s*=\\s*INCBIN_U16\\("([^"]+)"\\)`);
+  const attributesRegex = new RegExp(`const\\s+u16\\s+${attributesSymbol}\\s*\\[\\]\\s*=\\s*INCBIN_U16\\("([^"]+)"\\)`);
+
+  const metatilesMatch = metatilesText.match(metatilesRegex);
+  const attributesMatch = metatilesText.match(attributesRegex);
+
+  if (!metatilesMatch || !attributesMatch) throw new Error(`oracle: no INCBIN for ${symbol}'s metatiles/attributes`);
+
+  const paths = [metatilesMatch[1]!, attributesMatch[1]!].sort(compare);
+  return paths;
 }
 
 /**
@@ -681,6 +768,47 @@ function chooseGbaId(
     }
   }
   throw new Error(`oracle: ${symbol} has no partially drawn local id in any consuming layout`);
+}
+
+/** Picks a local id that appears in a border bin of a consuming layout. */
+function chooseGbaBorderId(
+  o: OracleGba,
+  proj: Project,
+  symbol: string,
+): { localIndex: number; layout: OracleGbaLayout; map: string; borderCount: number } | undefined {
+  for (const layout of o.layouts) {
+    const role = layout.primaryTileset === symbol ? "primary" : layout.secondaryTileset === symbol ? "secondary" : undefined;
+    if (role === undefined) continue;
+    const names = o.maps
+      .filter((map) => map.layout === layout.id)
+      .map((map) => map.name)
+      .sort(compare);
+    if (names.length === 0) continue;
+
+    const loaded = proj.layoutById(layout.id);
+    if (!loaded) continue;
+    const split = proj.splitFor(loaded);
+    const base = role === "primary" ? 0 : split.metatiles;
+    const limit = role === "primary" ? split.metatiles : Number.POSITIVE_INFINITY;
+
+    const gridCells = o.cells(layout.blockdataFilepath);
+    const borderCells = o.cells(layout.borderFilepath);
+
+    const gridCounts = new Map<number, number>();
+    for (const cell of gridCells) gridCounts.set(cell, (gridCounts.get(cell) ?? 0) + 1);
+    const borderCounts = new Map<number, number>();
+    for (const cell of borderCells) borderCounts.set(cell, (borderCounts.get(cell) ?? 0) + 1);
+
+    for (const [cell, count] of gridCounts) {
+      if (cell >= base && cell < limit && count < gridCells.length) {
+        const borderCount = borderCounts.get(cell) ?? 0;
+        if (borderCount > 0) {
+          return { localIndex: cell - base, layout, map: names[0]!, borderCount };
+        }
+      }
+    }
+  }
+  return undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -733,6 +861,7 @@ describe("GBC block usage", () => {
     expect(usage.files).toEqual(expected.files);
     expect(usage.maps).toEqual(expected.maps);
     expect(usage.maps.length).toBeGreaterThan(0);
+    expect(usage.sharedGrids).toEqual(expected.sharedGrids); // R9: assert sharedGrids
 
     const listed = new Set(usage.maps.map((entry) => entry.map));
     expect([...listed].some((name) => caveMaps.some((map) => map.name === name)), "a Cave map is listed").toBe(true);
@@ -790,6 +919,7 @@ describe("GBC block usage", () => {
     const borderUsage: Usage = gbcBlockUsage(proj, ts.metatilesPath, map.border, staged);
     const borderExpected = gbcUsageOracle(o, ts.metatilesPath, map.border, staged);
     expect(borderUsage.maps).toEqual(borderExpected.maps);
+    expect(borderUsage.sharedGrids).toEqual(borderExpected.sharedGrids);
     const borderEntry = borderUsage.maps.find((entry: UsageMap) => entry.map === map.name);
     expect(borderEntry, `an entry for ${map.name}`).toBeDefined();
     expect(borderEntry!.interior).toBe(0);
@@ -799,6 +929,7 @@ describe("GBC block usage", () => {
     const zeroUsage: Usage = gbcBlockUsage(proj, ts.metatilesPath, 0, staged);
     const zeroExpected = gbcUsageOracle(o, ts.metatilesPath, 0, staged);
     expect(zeroUsage.maps).toEqual(zeroExpected.maps);
+    expect(zeroUsage.sharedGrids).toEqual(zeroExpected.sharedGrids);
     const zeroEntry = zeroUsage.maps.find((entry: UsageMap) => entry.map === map.name);
     expect(zeroEntry, `an entry for ${map.name} at id 0`).toBeDefined();
     expect(zeroEntry!.interior).toBe(area);
@@ -829,6 +960,7 @@ describe("GBC block usage", () => {
     expect(usage.files).toEqual(expected.files);
     expect(usage.tilesets).toEqual(expected.tilesets);
     expect(usage.maps).toEqual(expected.maps);
+    expect(usage.sharedGrids).toEqual(expected.sharedGrids); // R9: assert sharedGrids
     expect(usage.maps.length).toBeGreaterThan(0);
   });
 
@@ -847,6 +979,7 @@ describe("GBC block usage", () => {
 
     const usage: Usage = gbcBlockUsage(proj, ts.metatilesPath, id, staged);
     expect(usage.maps).toEqual(gbcUsageOracle(o, ts.metatilesPath, id, staged).maps);
+    expect(usage.sharedGrids).toEqual(gbcUsageOracle(o, ts.metatilesPath, id, staged).sharedGrids);
     const entry = usage.maps.find((e: UsageMap) => e.map === own.name);
     expect(entry, `an entry for ${own.name}`).toBeDefined();
     expect(entry!.interior).toBe(area);
@@ -865,6 +998,7 @@ describe("GBC block usage", () => {
 
     const aliasUsage: Usage = gbcBlockUsage(proj, secondTs.metatilesPath, secondId, aliasStaged);
     expect(aliasUsage.maps).toEqual(gbcUsageOracle(o, secondTs.metatilesPath, secondId, aliasStaged).maps);
+    expect(aliasUsage.sharedGrids).toEqual(gbcUsageOracle(o, secondTs.metatilesPath, secondId, aliasStaged).sharedGrids);
     const aliasEntry = aliasUsage.maps.find((e: UsageMap) => e.map === "OlivinePortPassage");
     expect(aliasEntry, "the shared file's entry is named after the first alias").toBeDefined();
     expect(aliasEntry!.interior).toBe(secondArea);
@@ -906,7 +1040,9 @@ describe("GBC block usage", () => {
     const u3: Usage = gbcBlockUsage(proj, ts.metatilesPath, rare.id, new Map());
 
     expect(u1.maps).toEqual(gbcUsageOracle(o, ts.metatilesPath, rare.id, gridsA).maps);
+    expect(u1.sharedGrids).toEqual(gbcUsageOracle(o, ts.metatilesPath, rare.id, gridsA).sharedGrids);
     expect(u2.maps).toEqual(gbcUsageOracle(o, ts.metatilesPath, rare.id, gridsB).maps);
+    expect(u2.sharedGrids).toEqual(gbcUsageOracle(o, ts.metatilesPath, rare.id, gridsB).sharedGrids);
 
     const a1 = u1.maps.find((e: UsageMap) => e.map === a.name);
     const a2 = u2.maps.find((e: UsageMap) => e.map === a.name);
@@ -921,6 +1057,7 @@ describe("GBC block usage", () => {
     expect(b2!.interior).toBe(areaB);
 
     expect(u3.maps).toEqual(disk.maps);
+    expect(u3.sharedGrids).toEqual(disk.sharedGrids);
   });
 
   itWithGbcCorpus("gbcTileUsage lists block ids per file and removes a map whose staged grid no longer draws one", () => {
@@ -949,22 +1086,148 @@ describe("GBC block usage", () => {
     expect(gbcTilesetsForFile(proj, "nope/missing.bin")).toEqual([]);
   });
 
+  itWithGbcCorpus("unknown metatiles path returns empty usage (R6a)", () => {
+    const proj = openGbcProject(GBC_SUBJECT_ROOT);
+    const usage = gbcBlockUsage(proj, "nope/missing.bin", 1, new Map());
+    expect(usage).toEqual({ files: [], tilesets: [], maps: [], sharedGrids: [] });
+    // R6a: a backslash spelling of a real file answers with canonical paths.
+    const cave = gbcOracle().tilesets.get("TILESET_CAVE")!.metatilesPath;
+    const spelled = gbcBlockUsage(proj, cave.replace(/\//g, "\\"), 1, new Map());
+    expect(spelled.files).toEqual(gbcBlockUsage(proj, cave, 1, new Map()).files);
+    expect(spelled.files.every((f) => !f.includes("\\"))).toBe(true);
+  });
+
+  // R11b: Border hit test - GBC gbcTileUsage: map's BORDER block contains the tile;
+  // stage that map's grid to a non-containing id; the map must still be in `maps`.
+  itWithGbcCorpus("gbcTileUsage keeps a map whose border block contains the tile even when staged grid does not", () => {
+    const o = gbcOracle();
+    const proj = openGbcProject(GBC_SUBJECT_ROOT);
+
+    // Find a map where the border block contains a specific tile, and that tile
+    // appears in some block in the metatiles file.
+    const byPalMap = new Map<string, OracleGbcTileset[]>();
+    for (const ts of o.tilesets.values()) {
+      const list = byPalMap.get(ts.palMapPath) ?? [];
+      list.push(ts);
+      byPalMap.set(ts.palMapPath, list);
+    }
+
+    let fixture: { palMapPath: string; tileId: number; map: OracleGbcMap; nonContainingId: number } | undefined;
+    for (const [palMapPath, tilesets] of byPalMap) {
+      const maps = o.maps.filter((map) => tilesets.some((ts) => ts.constName === map.tileset));
+      for (const map of maps) {
+        const ts = o.tilesets.get(map.tileset)!;
+        const containingBlocks = tileBlockIds(o.root, ts.metatilesPath, map.border);
+        if (containingBlocks.length === 0) continue;
+        // Find a tile that's in the border block
+        const borderBlockBytes = readFileSync(join(o.root, ts.metatilesPath)).subarray(map.border * 16, map.border * 16 + 16);
+        for (const tileId of borderBlockBytes) {
+          // Find a block id that does NOT contain this tile and is not the border
+          const allContaining = new Set(tileBlockIds(o.root, ts.metatilesPath, tileId));
+          const nonContainingId = Array.from({ length: 256 }, (_, i) => i)
+            .find((id) => !allContaining.has(id) && id !== map.border);
+          if (nonContainingId !== undefined) {
+            fixture = { palMapPath, tileId, map, nonContainingId };
+            break;
+          }
+        }
+        if (fixture) break;
+      }
+      if (fixture) break;
+    }
+
+    expect(fixture, "a map whose border block contains a tile, with a non-containing block id").toBeDefined();
+    if (!fixture) return;
+
+    const area = fixture.map.width * fixture.map.height;
+    const staged = new Map<string, number[]>([
+      [fixture.map.name, Array.from({ length: area }, () => fixture.nonContainingId)],
+    ]);
+
+    const usage = gbcTileUsage(proj, fixture.palMapPath, fixture.tileId, staged);
+    // The map should still be in maps because its border block contains the tile
+    expect(usage.maps).toContain(fixture.map.name);
+  });
+
+  // R12: Overlay test - no disk write
+  itWithGbcCorpus("gbcTileUsage honours tileset overlay (proj.setTilesetOverlay)", () => {
+    const o = gbcOracle();
+    const proj = openGbcProject(GBC_SUBJECT_ROOT);
+    const fixture = chooseGbcTileFixture(o);
+
+    // Get the metatiles file path for this map's tileset
+    const ts = o.tilesets.get(fixture.map.tileset)!;
+    const metatilesPath = ts.metatilesPath;
+
+    // Get the block ids containing the tile before overlay
+    const before = gbcTileUsage(proj, fixture.palMapPath, fixture.tileId, new Map());
+    const beforeBlocks = before.blocks.find(b => b.metatilesPath === metatilesPath);
+    expect(beforeBlocks).toBeDefined();
+    const beforeIds = [...beforeBlocks!.ids].sort((a, b) => a - b);
+
+    // Read the metatiles file and modify one block that did NOT contain the tile
+    // to have its first byte = tileId
+    const originalBytes = readFileSync(join(GBC_SUBJECT_ROOT, metatilesPath));
+    const modifiedBytes = Buffer.from(originalBytes);
+    let modified = false;
+    for (let offset = 0; offset + 16 <= modifiedBytes.length; offset += 16) {
+      const blockId = offset / 16;
+      if (!beforeBlocks!.ids.includes(blockId)) {
+        modifiedBytes[offset] = fixture.tileId;
+        modified = true;
+        break;
+      }
+    }
+    expect(modified, "a block that does not contain the tile").toBe(true);
+
+    // Apply overlay
+    const generationBefore = proj.tilesetGeneration;
+    const overlay = new Map([[metatilesPath, modifiedBytes]]);
+    proj.setTilesetOverlay(overlay);
+
+    // Check that tilesetGeneration increased
+    expect(proj.tilesetGeneration).toBeGreaterThan(generationBefore);
+
+    // Check that the new block id now appears in blocks
+    const after = gbcTileUsage(proj, fixture.palMapPath, fixture.tileId, new Map());
+    const afterBlocks = after.blocks.find(b => b.metatilesPath === metatilesPath);
+    expect(afterBlocks).toBeDefined();
+    const afterIds = [...afterBlocks!.ids].sort((a, b) => a - b);
+    const newId = afterIds.find(id => !beforeIds.includes(id));
+    expect(newId).toBeDefined();
+
+    // Clear overlay
+    proj.setTilesetOverlay(new Map());
+
+    // Check that the new id is gone
+    const cleared = gbcTileUsage(proj, fixture.palMapPath, fixture.tileId, new Map());
+    const clearedBlocks = cleared.blocks.find(b => b.metatilesPath === metatilesPath);
+    expect(clearedBlocks).toBeDefined();
+    const clearedIds = [...clearedBlocks!.ids].sort((a, b) => a - b);
+    expect(clearedIds).toEqual(beforeIds);
+  });
 });
 
 describe("GBA block usage", () => {
-  itWithCorpus("gbaConsumingLayouts lists both roles, and gbaBlockUsage counts every consuming layout", () => {
+  itWithCorpus("gbaConsumingLayouts lists both roles (R8a: primary==secondary yields two), and gbaBlockUsage counts every consuming layout", () => {
     const o = gbaOracle();
     const proj = openProject(SUBJECT_ROOT);
     const symbol = "gTileset_General";
 
     const consuming: GbaLayoutUse[] = gbaConsumingLayouts(proj, symbol);
+    // R8a: oracle must match - layout with primary==secondary yields TWO entries (primary then secondary)
+    // pairedWith from project's loaded layout (source of truth)
     const expected = o.layouts
-      .map((layout) => {
-        const role: "primary" | "secondary" | undefined =
-          layout.primaryTileset === symbol ? "primary" : layout.secondaryTileset === symbol ? "secondary" : undefined;
-        return role === undefined ? undefined : { layout, role };
+      .flatMap((layout) => {
+        const entries: { layout: OracleGbaLayout; role: "primary" | "secondary" }[] = [];
+        if (layout.primaryTileset === symbol) {
+          entries.push({ layout, role: "primary" });
+        }
+        if (layout.secondaryTileset === symbol) {
+          entries.push({ layout, role: "secondary" });
+        }
+        return entries;
       })
-      .filter((entry): entry is { layout: OracleGbaLayout; role: "primary" | "secondary" } => entry !== undefined)
       .sort((a, b) => compare(a.layout.id, b.layout.id));
 
     expect(consuming.map((e) => e.layout)).toEqual(expected.map((e) => e.layout.id));
@@ -974,9 +1237,8 @@ describe("GBA block usage", () => {
       const loaded = proj.layoutById(want.layout.id);
       expect(loaded, `layout ${want.layout.id}`).toBeDefined();
       expect(entry.split).toEqual(proj.splitFor(loaded!));
-      expect(entry.pairedWith).toBe(
-        want.role === "primary" ? want.layout.secondaryTileset : want.layout.primaryTileset,
-      );
+      const expectedPaired = want.role === "primary" ? want.layout.secondaryTileset : want.layout.primaryTileset;
+      expect(entry.pairedWith).toBe(expectedPaired);
     }
     // The subject holds layouts under both metatile splits (Emerald 512 vs
     // FRLG/HNS 640), so the same local id means two different global ids.
@@ -988,11 +1250,10 @@ describe("GBA block usage", () => {
     const usage: Usage = gbaBlockUsage(proj, symbol, localIndex, new Map());
     expect(usage.tilesets).toEqual([symbol]);
     expect(usage.maps).toEqual(expectedUsage.maps);
-    // R9: the two per-symbol binaries, by resolved path, sorted.
-    expect(usage.files).toHaveLength(2);
-    expect([...usage.files].sort(compare)).toEqual(usage.files);
-    expect(usage.files.some((f) => /metatiles\.bin$/.test(f))).toBe(true);
-    expect(usage.files.some((f) => /metatile_attributes\.bin$/.test(f))).toBe(true);
+    expect(usage.sharedGrids).toEqual(expectedUsage.sharedGrids); // R9a: assert sharedGrids
+    // R9: the two per-symbol binaries, from the headers.h / metatiles.h oracle.
+    expect(expectedUsage.files).toHaveLength(2);
+    expect(usage.files).toEqual(expectedUsage.files);
     for (const f of usage.files) expect(existsSync(join(SUBJECT_ROOT, f)), f).toBe(true);
 
     // Staging every cell of the picked layout's grid to the target id raises
@@ -1004,6 +1265,7 @@ describe("GBA block usage", () => {
 
     const stagedUsage: Usage = gbaBlockUsage(proj, symbol, localIndex, grids);
     expect(stagedUsage.maps).toEqual(gbaUsageOracle(proj, o, symbol, localIndex, grids).maps);
+    expect(stagedUsage.sharedGrids).toEqual(gbaUsageOracle(proj, o, symbol, localIndex, grids).sharedGrids);
     const entry = stagedUsage.maps.find((e) => e.map === pick.map);
     expect(entry, `the staged entry for ${pick.map}`).toBeDefined();
     expect(entry!.interior).toBe(area);
@@ -1027,30 +1289,119 @@ describe("GBA block usage", () => {
     const localIndex = chosen!.pick.localIndex;
 
     const consuming: GbaLayoutUse[] = gbaConsumingLayouts(proj, secondary);
+    // R8a: oracle must match - all layouts where this symbol is primary or secondary (no map filtering)
     const expected = o.layouts
-      .map((layout) => {
-        const role: "primary" | "secondary" | undefined =
-          layout.primaryTileset === secondary ? "primary" : layout.secondaryTileset === secondary ? "secondary" : undefined;
-        return role === undefined ? undefined : { layout, role };
+      .flatMap((layout) => {
+        const entries: { layout: OracleGbaLayout; role: "primary" | "secondary" }[] = [];
+        if (layout.primaryTileset === secondary) {
+          entries.push({ layout, role: "primary" });
+        }
+        if (layout.secondaryTileset === secondary) {
+          entries.push({ layout, role: "secondary" });
+        }
+        return entries;
       })
-      .filter((entry): entry is { layout: OracleGbaLayout; role: "primary" | "secondary" } => entry !== undefined)
       .sort((a, b) => compare(a.layout.id, b.layout.id));
 
     expect(consuming.map((e) => e.layout)).toEqual(expected.map((e) => e.layout.id));
     for (const [i, entry] of consuming.entries()) {
       const want = expected[i]!;
       expect(entry.role).toBe(want.role);
-      if (want.role === "secondary") {
-        expect(entry.pairedWith).toBe(want.layout.primaryTileset);
-      }
-      expect(entry.split).toEqual(proj.splitFor(proj.layoutById(want.layout.id)!));
+      const loaded = proj.layoutById(want.layout.id);
+      expect(loaded, `layout ${want.layout.id}`).toBeDefined();
+      const expectedPaired = want.role === "primary" ? want.layout.secondaryTileset : want.layout.primaryTileset;
+      expect(entry.pairedWith).toBe(expectedPaired);
+      expect(entry.split).toEqual(proj.splitFor(loaded!));
     }
 
     const expectedUsage = gbaUsageOracle(proj, o, secondary, localIndex, new Map());
     const usage: Usage = gbaBlockUsage(proj, secondary, localIndex, new Map());
     expect(usage.tilesets).toEqual([secondary]);
     expect(expectedUsage.maps.length, "a scanned id that a consuming grid actually draws").toBeGreaterThan(0);
+    expect(usage.files).toEqual(expectedUsage.files);
+    expect(usage.sharedGrids).toEqual(expectedUsage.sharedGrids); // R9a: assert sharedGrids
     expect(usage.maps).toEqual(expectedUsage.maps);
   });
-});
 
+  // R9b: unknown symbol returns empty usage
+  itWithCorpus("unknown GBA symbol returns empty usage (R9b)", () => {
+    const proj = openProject(SUBJECT_ROOT);
+    const usage = gbaBlockUsage(proj, "gTileset_Nope", 0, new Map());
+    expect(usage).toEqual({ files: [], tilesets: [], maps: [], sharedGrids: [] });
+  });
+
+  // R10a: Border hit test - GBA: pick a gTileset_General local id that appears in some
+  // consuming layout's border bin, assert border > 0 and maps equal oracle
+  itWithCorpus("gbaBlockUsage counts border hits for a local id appearing in a border bin", () => {
+    const o = gbaOracle();
+    const proj = openProject(SUBJECT_ROOT);
+    const symbol = "gTileset_General";
+
+    const borderFixture = chooseGbaBorderId(o, proj, symbol);
+    expect(borderFixture, "a gTileset_General id drawn in a consuming layout's border bin").toBeDefined();
+    if (!borderFixture) return;
+
+    const localIndex = borderFixture.localIndex;
+    const usage: Usage = gbaBlockUsage(proj, symbol, localIndex, new Map());
+    const expectedUsage = gbaUsageOracle(proj, o, symbol, localIndex, new Map());
+
+    // Find the entry for this layout's file
+    const entry = usage.maps.find(e => e.map === borderFixture.map);
+    expect(entry, `entry for ${borderFixture.map}`).toBeDefined();
+    expect(entry!.border).toBeGreaterThan(0);
+    expect(entry!.border).toBe(expectedUsage.maps.find(e => e.map === borderFixture.map)!.border);
+    expect(usage.maps).toEqual(expectedUsage.maps);
+    expect(usage.sharedGrids).toEqual(expectedUsage.sharedGrids);
+  });
+
+  // Ensure at least one GBA test has non-empty sharedGrids
+  itWithCorpus("at least one GBA tileset has non-empty sharedGrids (multi-map layout)", () => {
+    const o = gbaOracle();
+    const proj = openProject(SUBJECT_ROOT);
+    const symbol = "gTileset_General";
+
+    // Find a local id that gives us sharedGrids (2+ maps on same blockdata file)
+    let foundShared = false;
+    let workingLocalIndex: number | undefined;
+
+    for (const layout of o.layouts) {
+      const role = layout.primaryTileset === symbol ? "primary" : layout.secondaryTileset === symbol ? "secondary" : undefined;
+      if (role === undefined) continue;
+      
+      const names = o.maps.filter(m => m.layout === layout.id).map(m => m.name).sort(compare);
+      if (names.length === 0) continue;
+
+      const loaded = proj.layoutById(layout.id);
+      if (!loaded) continue;
+      const split = proj.splitFor(loaded);
+      const base = role === "primary" ? 0 : split.metatiles;
+      const limit = role === "primary" ? split.metatiles : Number.POSITIVE_INFINITY;
+
+      const cells = o.cells(layout.blockdataFilepath);
+      const counts = new Map<number, number>();
+      for (const cell of cells) counts.set(cell, (counts.get(cell) ?? 0) + 1);
+
+      for (const [cell, count] of counts) {
+        if (cell >= base && cell < limit && count < cells.length) {
+          const localIndex = cell - base;
+          // Fixture chosen by the oracle, never by the function under test.
+          if (gbaUsageOracle(proj, o, symbol, localIndex, new Map()).sharedGrids.length > 0) {
+            foundShared = true;
+            workingLocalIndex = localIndex;
+            break;
+          }
+        }
+      }
+      if (foundShared) break;
+    }
+
+    expect(foundShared, "gTileset_General should have a local id producing sharedGrids").toBe(true);
+    expect(workingLocalIndex).toBeDefined();
+
+    const usage: Usage = gbaBlockUsage(proj, symbol, workingLocalIndex!, new Map());
+    const expectedShared = gbaUsageOracle(proj, o, symbol, workingLocalIndex!, new Map());
+    expect(usage.sharedGrids.length).toBeGreaterThan(0);
+    expect(usage.sharedGrids).toEqual(expectedShared.sharedGrids);
+    expect(usage.maps).toEqual(expectedShared.maps);
+  });
+});

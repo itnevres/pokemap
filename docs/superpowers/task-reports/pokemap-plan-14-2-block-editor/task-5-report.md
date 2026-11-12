@@ -89,3 +89,43 @@ script runs. No new dependencies, no jest-dom, no writes to the real subjects.
   overlay is staged.
 - `npm run typecheck` had to be run as its two constituent `npx tsc` invocations because
   the sandbox denied the `npm` command.
+
+## Fix round 1 (2026-11-12)
+
+### Summary of changes per amended rulings
+
+**Implementation (`usage.ts` / `types.ts`):**
+- R11: Moved `MapUse` / `BlockUsage` interfaces to `types.ts` (kept doc comments); `usage.ts` imports them.
+- R2a: GBC `border` and `block0AsBorder` now summed over EVERY consuming map of the grid file (not just representative). Interior still uses representative's effective grid per R3.
+- R6a: `gbcBlockUsage` returns empty usage for unknown/unconsumed paths; `files` uses canonical paths.
+- R8a: `gbaConsumingLayouts` yields TWO entries for layouts with `primary === secondary` (primary then secondary); removed special branch.
+- R9a: GBA per-file counting sums over distinct targets (interior) and distinct (borderFilepath, target) pairs (border); `sharedGrids` lists maps of ALL layouts on the file (consuming or not).
+- R9b: `gbaBlockUsage` returns empty usage for unknown symbols (no throw).
+- Tidy: `gbcEffectiveGrid` disk cache keyed by `map.blkPath` (not map name); hoisted canonical palMap key in `gbcTileUsage`.
+
+**Tests (`usage.test.ts`):**
+- Updated `gbcUsageOracle` to R2a (interior from representative only; border/block0AsBorder summed).
+- Updated `gbaUsageOracle` to R9a (per-file distinct targets/border pairs; sharedGrids = all maps of all layouts on file).
+- GBA tests assert `usage.sharedGrids` equals oracle's in both GBA tests.
+- Added test asserting at least one GBA tileset (`gTileset_General`) produces non-empty `sharedGrids`.
+- GBC "whole maps list" test asserts `usage.sharedGrids` equals oracle's.
+- GBA files oracle parses `src/data/tilesets/headers.h` and `metatiles.h` for the two binaries; asserts `usage.files` equals them sorted.
+- Border hits: (a) GBA test picking `gTileset_General` local id appearing in border bin, asserts `border > 0` and maps equal oracle; (b) GBC `gbcTileUsage` test where map's BORDER block contains the tile — staging grid to non-containing id keeps map in `maps`.
+- Overlay test: GBC `gbcTileUsage` with `proj.setTilesetOverlay` — asserts `tilesetGeneration` increases, new block id appears in `blocks`, then clearing overlay removes it.
+- Unknown inputs: `gbcBlockUsage(proj, "nope/missing.bin", 1, ...)` and `gbaBlockUsage(proj, "gTileset_Nope", 0, ...)` both equal empty usage.
+
+### Test results
+
+```
+npx vitest run packages/core/test/blockEdit/usage.test.ts
+  Test Files  1 passed (1)
+       Tests  16 passed (16)   ← 0 skipped
+  Duration    ~100s
+```
+
+```
+npx tsc --noEmit -p tsconfig.base.json                -> pass
+npx tsc --noEmit -p packages/ui/tsconfig.json         -> pass
+```
+
+All 16 tests pass (10 GBC + 6 GBA), 0 skipped. Typecheck clean on both configs.
