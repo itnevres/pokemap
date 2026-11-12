@@ -273,6 +273,8 @@ interface GbaRelations {
   consumingBySymbol: Map<string, GbaLayoutUse[]>;
   /** Layout id -> every map name using it, sorted; built on first need. */
   mapsByLayout?: Map<string, string[]>;
+  /** Blockdata file -> every map name of every layout on it, sorted; built on first need. */
+  mapsByGridFile?: Map<string, string[]>;
 }
 
 const gbaCache = new WeakMap<Project, GbaRelations>();
@@ -318,6 +320,21 @@ function gbaMapsByLayout(proj: Project, relations: GbaRelations): Map<string, st
   for (const list of byLayout.values()) list.sort(compare);
   relations.mapsByLayout = byLayout;
   return byLayout;
+}
+
+/** Blockdata file -> every map backed by it (consuming or not), for R3 and sharedGrids. */
+function gbaMapsByGridFile(proj: Project, relations: GbaRelations): Map<string, string[]> {
+  if (relations.mapsByGridFile !== undefined) return relations.mapsByGridFile;
+  const mapsByLayout = gbaMapsByLayout(proj, relations);
+  const byFile = new Map<string, string[]>();
+  for (const layout of proj.layouts) {
+    const list = byFile.get(layout.blockdataFilepath) ?? [];
+    list.push(...(mapsByLayout.get(layout.id) ?? []));
+    byFile.set(layout.blockdataFilepath, list);
+  }
+  for (const list of byFile.values()) list.sort(compare);
+  relations.mapsByGridFile = byFile;
+  return byFile;
 }
 
 /**
@@ -367,6 +384,7 @@ export function gbaBlockUsage(
   const relations = gbaRelations(proj);
   const consuming = relations.consumingBySymbol.get(tilesetSymbol) ?? [];
   const mapsByLayout = gbaMapsByLayout(proj, relations);
+  const mapsByGridFile = gbaMapsByGridFile(proj, relations);
 
   // R9a: per-file counting - collect every consuming use (layout, role) on each file
   // with its target id. Then sum over distinct targets for interior,
@@ -374,7 +392,6 @@ export function gbaBlockUsage(
   const byFile = new Map<string, {
     targets: Set<number>;
     borderTargets: Map<string, Set<number>>; // borderFilepath -> set of targets
-    layouts: Layout[];
     allMapNames: string[]; // ALL maps of ALL layouts on this file (for sharedGrids)
     consumingMapNames: string[]; // maps of consuming layouts (for representative)
   }>();
@@ -386,14 +403,7 @@ export function gbaBlockUsage(
     const file = use.layout.blockdataFilepath;
     const existing = byFile.get(file);
     if (existing === undefined) {
-      // Gather all maps of ALL layouts on this file for sharedGrids
-      const allLayoutsOnFile = proj.layouts.filter(l => l.blockdataFilepath === file);
-      const allMapNames: string[] = [];
-      for (const l of allLayoutsOnFile) {
-        const maps = mapsByLayout.get(l.id) ?? [];
-        allMapNames.push(...maps);
-      }
-      allMapNames.sort(compare);
+      const allMapNames = mapsByGridFile.get(file) ?? [];
 
       // Consuming map names for representative
       const consumingMapNames = [...names].sort(compare);
@@ -401,7 +411,6 @@ export function gbaBlockUsage(
       byFile.set(file, {
         targets: new Set([target]),
         borderTargets: new Map([[use.layout.borderFilepath, new Set([target])]]),
-        layouts: [use.layout],
         allMapNames,
         consumingMapNames,
       });
@@ -410,7 +419,6 @@ export function gbaBlockUsage(
       const borderSet = existing.borderTargets.get(use.layout.borderFilepath) ?? new Set<number>();
       borderSet.add(target);
       existing.borderTargets.set(use.layout.borderFilepath, borderSet);
-      existing.layouts.push(use.layout);
       existing.consumingMapNames = sorted([...existing.consumingMapNames, ...names]);
     }
   }
@@ -426,7 +434,6 @@ export function gbaBlockUsage(
   for (const file of [...byFile.keys()].sort(compare)) {
     const group = byFile.get(file)!;
 
-    // Staged grid: use alphabetically first consuming map present in grids
     // R3: any map backed by the file (consuming or not) may carry the staged grid.
     const stagedName = group.allMapNames.find((name) => grids.has(name));
     const grid = stagedName !== undefined ? grids.get(stagedName)! : gbaCells(proj, file, cellCache);

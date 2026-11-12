@@ -899,6 +899,16 @@ describe("GBC block usage", () => {
       file,
       maps: ["OlivinePortPassage", "VermilionPortPassage"],
     });
+
+    // R2a: both aliases have border $00 in attributes.asm, so block 0 has two
+    // border references on the one PortPassage entry (summed per map, not per file).
+    expect(olivine.border).toBe(0);
+    expect(vermilion.border).toBe(0);
+    const zero: Usage = gbcBlockUsage(proj, ts.metatilesPath, 0, new Map());
+    const zeroEntry = zero.maps.find((entry: UsageMap) => entry.map === "OlivinePortPassage");
+    expect(zeroEntry).toEqual(gbcUsageOracle(o, ts.metatilesPath, 0, new Map()).maps.find((e) => e.map === "OlivinePortPassage"));
+    expect(zeroEntry!.border).toBe(2);
+    expect(zeroEntry!.block0AsBorder).toBe(0);
   });
 
   itWithGbcCorpus("a staged raw block 0 is interior for id 0 and block-0-as-border for the border block", () => {
@@ -1117,8 +1127,7 @@ describe("GBC block usage", () => {
       const maps = o.maps.filter((map) => tilesets.some((ts) => ts.constName === map.tileset));
       for (const map of maps) {
         const ts = o.tilesets.get(map.tileset)!;
-        const containingBlocks = tileBlockIds(o.root, ts.metatilesPath, map.border);
-        if (containingBlocks.length === 0) continue;
+        if ((map.border + 1) * 16 > readFileSync(join(o.root, ts.metatilesPath)).length) continue;
         // Find a tile that's in the border block
         const borderBlockBytes = readFileSync(join(o.root, ts.metatilesPath)).subarray(map.border * 16, map.border * 16 + 16);
         for (const tileId of borderBlockBytes) {
@@ -1403,5 +1412,42 @@ describe("GBA block usage", () => {
     expect(usage.sharedGrids.length).toBeGreaterThan(0);
     expect(usage.sharedGrids).toEqual(expectedShared.sharedGrids);
     expect(usage.maps).toEqual(expectedShared.maps);
+  });
+});
+
+describe("GBA multi-target grid files (synthetic layouts, no corpus shape has them)", () => {
+  // No corpus has a layout with primary == secondary or two layouts on one
+  // blockdata file, so this stubs the layout table over the real project.
+  // Expected counts come from the staged grid and the raw border bin, by hand.
+  itWithCorpus("R8a/R9a: every distinct target on a shared file is counted, and every map is named", () => {
+    const o = gbaOracle();
+    const real = openProject(SUBJECT_ROOT);
+    const symbol = "gTileset_General";
+    const base = o.layouts.find((l) => l.primaryTileset === symbol && o.maps.some((m) => m.layout === l.id))!;
+    expect(base, "a gTileset_General primary layout with a map").toBeDefined();
+    const baseLayout = real.layoutById(base.id)!;
+    const realMap = o.maps.find((m) => m.layout === base.id)!.name;
+    const s = real.splitFor(baseLayout).metatiles;
+    const k = 3;
+
+    const same = { ...baseLayout, id: "LAYOUT_T5_SAME", primaryTileset: symbol, secondaryTileset: symbol };
+    const other = { ...baseLayout, id: "LAYOUT_T5_OTHER", primaryTileset: "gTileset_T5Stub", secondaryTileset: symbol };
+    const mapLayout: Record<string, string> = { MapT5A: same.id, MapT5B: other.id };
+    const fake = Object.create(real) as Project;
+    Object.defineProperty(fake, "layouts", { value: [same, other] });
+    Object.defineProperty(fake, "mapNames", { value: () => Object.keys(mapLayout) });
+    Object.defineProperty(fake, "map", { value: (n: string) => ({ ...real.map(realMap), layout: mapLayout[n]! }) });
+
+    // R8a: the same-symbol layout gives a primary and a secondary use.
+    const uses = gbaConsumingLayouts(fake, symbol).map((u) => `${u.layout}:${u.role}`);
+    expect(uses).toEqual(["LAYOUT_T5_OTHER:secondary", "LAYOUT_T5_SAME:primary", "LAYOUT_T5_SAME:secondary"]);
+
+    // Targets k (primary) and s + k (both secondary uses) on one file.
+    const grid = [k, s + k, s + k, k + 1];
+    const usage = gbaBlockUsage(fake, symbol, k, new Map([["MapT5B", grid]]));
+    const borderCells = o.cells(base.borderFilepath);
+    const borderHits = borderCells.filter((c) => c === k || c === s + k).length;
+    expect(usage.maps).toEqual([{ map: "MapT5A", interior: 3, border: borderHits, block0AsBorder: 0 }]);
+    expect(usage.sharedGrids).toEqual([{ file: base.blockdataFilepath, maps: ["MapT5A", "MapT5B"] }]);
   });
 });
