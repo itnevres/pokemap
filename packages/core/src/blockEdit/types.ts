@@ -70,3 +70,31 @@ export type FileOverlay = ReadonlyMap<string, Buffer>;
 export type GridIds = readonly number[];
 
 export type StagedGrids = ReadonlyMap<string, GridIds>;
+
+/** One grid file's use of the queried block (one entry per file, not per map). */
+export interface MapUse {
+  /** The alphabetically first consuming map backed by this grid file. */
+  map: string;
+  /** Cells of the file's effective grid whose raw id equals the queried id
+   *  (GBA: summed over each distinct target id of the layouts on the file). */
+  interior: number;
+  /** GBC: number of consuming maps on the file whose header border is the
+   *  queried id. GBA: border-bin cells matching it, per distinct border file. */
+  border: number;
+  /**
+   * GBC only: for each consuming map whose border is the queried id (and the id
+   * is not 0), the raw-0 cells of the grid (the engine draws a raw 0 as the
+   * border), summed. Always 0 for GBA.
+   */
+  block0AsBorder: number;
+}
+
+export interface BlockUsage {
+  /** Resolved files the block lives in / is described by (metatiles + collision, or metatiles + attributes). */
+  files: string[];
+  /** Tileset consts (GBC) or the one symbol (GBA) that consume the queried file. */
+  tilesets: string[];
+  maps: MapUse[];
+  /** Grid files backing two or more maps, with every map name they back. */
+  sharedGrids: { file: string; maps: string[] }[];
+}
