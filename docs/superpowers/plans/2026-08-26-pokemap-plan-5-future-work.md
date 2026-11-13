@@ -28,7 +28,9 @@
 
 ---
 
-## 2. Prefabs
+## 2. Prefabs (MOVED to roadmap Plan 14A, D22)
+
+**Moved 2026-11-13.** Roadmap Plan 14A (shared stamps and saved patterns, both families) owns this item. The text below is the input for that plan's spec; the file-format trade-off is its first decision.
 
 **What it is:** Named, reusable multi-block stamps — a house, a tree cluster, a pond — that can be placed as a unit. Porymap stores them in a JSON file named by `prefabs_filepath`.
 
@@ -105,8 +107,8 @@ Two mechanisms exist — the older `LIGHT_PAL` macro and the newer `.pla` files 
 | **`tRNS` and non-zero transparent indices** | The PNG reader ignores `tRNS` and treats index 0 as transparent. Verified safe for everything Plan 1 reads (zero violations across 245 tileset sheets, 1,059 icons, 960 overworld sprites). But two battle sprites — `graphics/pokemon/togedemaru/front.png` and `anim_front.png` — use index **15** as transparent and index 0 as opaque. Any feature that widens scope to `graphics/pokemon/*/front.png` must read `tRNS` rather than assuming index 0, or those two render inverted. |
 | **Multi-user editing** | Explicitly out of scope. PokeMap is a single-user desktop tool. |
 | **ROM building / emulator integration** | Out of scope. PokeMap's answer to "does this look right" is `render`, which is faster than a build and does not need one. |
-| **`region_map_sections.json.txt` template editing** | The Inja template drives what keys the build requires. Plan 3 Task 4 *reads* it to derive the contract; editing it is a build-system change and does not belong in a map editor. |
-| **Johto region map second file** | `src/data/region_map/region_map_sections_johto.json` is handled by Plan 3 Task 4's globbing. Listed here only so a future reader knows it was noticed rather than missed. |
+| **`region_map_sections.json.txt` template editing** | The Inja template drives what keys the build requires. Plan 3 Task 4 (now roadmap Plan 15) *reads* it to derive the contract; editing it is a build-system change and does not belong in a map editor. |
+| **Johto region map second file** | `src/data/region_map/region_map_sections_johto.json` is handled by Plan 3 Task 4's globbing (now roadmap Plan 15). Listed here only so a future reader knows it was noticed rather than missed. |
 
 ---
 
@@ -114,6 +116,6 @@ Two mechanisms exist — the older `LIGHT_PAL` macro and the newer `.pla` files 
 
 Recorded because "why doesn't PokeMap do X" deserves an answer better than silence:
 
-- **Automatic connection repair.** Plan 1 Task 22 reports conflicts and Plan 3 Task 1 warns about one-way connections, but neither fixes them. Connection geometry encodes design intent, and a tool that silently "corrects" it would be making map-design decisions.
+- **Automatic connection repair.** Plan 1 Task 22 reports conflicts and Plan 3 Task 1 (now roadmap Plan 14C) warns about one-way connections, but neither fixes them. Connection geometry encodes design intent, and a tool that silently "corrects" it would be making map-design decisions.
 - **Automatic `layout_version` assignment.** The subject repo already has `tools/donors/classify_layout_versions.py`, which does this with domain knowledge PokeMap does not have. PokeMap's job is to refuse and point at that tool, not to duplicate it.
 - **Editing `include/fieldmap.h`.** Invariant **I8**. The constant-swapping workaround is the thing this tool exists to eliminate, not to automate.

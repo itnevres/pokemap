@@ -57,6 +57,23 @@ folder (global rule 7).
 5. **Stale thumbnails, map canvas and world tiles** after edit, undo, redo, discard, save: an unchanged URL is a stale
    image. Pinned in Task 10 and the live check (Task 15).
 
+## Review addendum (2026-11-13)
+
+From the 2026-11-12 code review (roadmap D21-D23; backlog `plans/2026-09-23-pokemap-followups-remaining.md`, "Plan H").
+Tiers, task order, gate cadence and reviewers are unchanged. Tasks 0-5 are not affected.
+
+1. **Task 11, new routes are born guarded.** The older GBA routes answer 500 on a malformed `%` escape and on a `null`
+   body (Plan H Task E fixes those after this plan merges). The block-editor routes decode `<map>` with the guarded
+   decoder (`decodeMapName`, `packages/server/src/gbcRoutes.ts:92`, imported for the GBA mount too) and answer 400 for
+   a malformed escape and for a `null` or array body. Two cases are added to Task 11's test list below.
+2. **Task 12, keep `sessionMutationBarrier` exported.** Plan H Task C (discard and save against in-flight paint strokes)
+   builds on it after this plan merges. No change to Task 12's scope.
+3. **Task 8, no change.** `TilesetFileEdit` paths are repo-relative. Plan H Task F adds the root-containment guard
+   inside `writeFilesAtomically` after this plan merges, which covers these entries.
+4. **Files in flight (D23e).** Plan H lists the existing files this plan modifies and starts none of its batches on
+   them before this plan merges to `master`. If a task here starts to modify a file outside the File map, add it to that
+   list in the same commit.
+
 ---
 
 ## File map
@@ -510,14 +527,16 @@ Test `packages/server/test/tilesetOverlay.test.ts`; new cases in the palette and
   - `POST <edit base>/<map>/block/preview` `{ request }` → PNG of the draft with the map's context
   - `POST <edit base>/<map>/block/apply` `{ request, revision }` → session payload via `stageTilesetPlan`; `STALE`
     (409) when the current `blockEditRevision` differs from `revision`
-  - 404 unknown map; 400 malformed body naming the field
+  - 404 unknown map; 400 malformed body naming the field; 400 for a malformed `%` escape in `<map>` and for a `null`
+    or array body (review addendum 1)
 
 - [ ] **Step 1: Write failing tests** (temp copies, both families): happy paths; `check` and `preview` leave the
   session JSON and history length byte-identical; `check.confirm` per the Task 6 predicate; GBA cross-half warning
   surfaces; `apply` saveAsNew places on the cell, one undo reverts tileset + grid; `apply` from a non-owner → 409
   `NOT_OWNER`; `apply` after an external file change or a paint since GET → 409 `STALE` and nothing staged; malformed
   draft (15 tiles, unknown collision name, value over mask) → 400 naming the field; `preview` of an unchanged draft
-  equals the canvas render of that block for the map's context; `block-sheet` cell count equals `tileCount`.
+  equals the canvas render of that block for the map's context; `block-sheet` cell count equals `tileCount`; a
+  malformed `%` escape in `<map>` and a `null` or array body each answer 400, not 500 (review addendum 1).
 - [ ] **Step 2: Run** → FAIL.
 - [ ] **Step 3: Implement.**
 - [ ] **Step 4: Run** → PASS. Mutations: apply skips ownership (`NOT_OWNER`); revision check skipped (`STALE`);

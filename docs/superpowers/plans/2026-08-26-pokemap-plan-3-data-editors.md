@@ -4,6 +4,8 @@
 >
 > **RE-GRANULARISE BEFORE EXECUTING.** Task level only; expand to Plan 1's step shape against the code Plans 1–2 actually produced.
 
+> **Reduced 2026-11-13 (roadmap D22).** Still in this plan: Task 2 (map header), Task 3 (wild encounters) and the reduced Tasks 6-8. Moved: Task 1, Task 9 and the create-layout part of Task 8 to roadmap Plan 14C; Tasks 4-5 to roadmap Plan 15. Deleted: Task 10. The moved task texts stay below as requirements for the receiving plan's spec. Success criteria 1 and 3, and the checklist lines for moved tasks, travel with them. When this plan starts, run `superpowers:brainstorming` first: the unified-UI goal (roadmap) wants each editor behind the engine adapter in both families, which this 2026-08 text predates. The `packages/ui/src/components/` paths in the File Structure table are the old layout.
+
 **Goal:** Complete Porymap parity — editors for connections, map headers, wild encounters, tilesets and the region map — with special care around `region_map_sections.json`, the file whose rewrite broke the build on 2026-08-18.
 
 **Architecture:** Every editor is a UI over the Plan 2 save funnel. No editor writes directly. New guards are added to `write/guards.ts`, never bypassed.
@@ -35,7 +37,7 @@
 
 ---
 
-## Task 1: Connection editing
+## Task 1 (MOVED to roadmap Plan 14C, D22): Connection editing
 
 **Files:** `packages/core/src/edit/connections.ts` + test
 
@@ -85,7 +87,7 @@ export function removeConnection(session: EditSession, mapName: string, index: n
 
 ---
 
-## Task 4: Region map loading — schema-preserving
+## Task 4 (MOVED to roadmap Plan 15, D22): Region map loading — schema-preserving
 
 The file that broke the build. Handled with more care than anything else in this plan.
 
@@ -119,7 +121,7 @@ it("cannot reproduce the 2026-08-18 porymap 6 failure", () => {
 
 ---
 
-## Task 5: Region map editing
+## Task 5 (MOVED to roadmap Plan 15, D22): Region map editing
 
 **Files:** `packages/core/src/edit/regionMap.ts`, `packages/ui/src/components/RegionMapEditor.tsx` + tests
 
@@ -134,6 +136,8 @@ it("cannot reproduce the 2026-08-18 porymap 6 failure", () => {
 
 ## Task 6: Tileset binary writing
 
+**Reduced 2026-11-13 (D22).** Plan 14.2 writes `metatiles.bin` and `metatile_attributes.bin` through lossless patchers (`packages/core/src/blockEdit/gbaPatch.ts`). What remains here: the indexed `tiles.png` writer at the source depth and palette, and the `.pal` writer. Invariant I3 below still binds.
+
 **Files:** `packages/core/src/write/tilesetBinary.ts` + test
 
 **Requirements:**
@@ -146,6 +150,8 @@ it("cannot reproduce the 2026-08-18 porymap 6 failure", () => {
 ---
 
 ## Task 7: Tileset editor
+
+**Reduced 2026-11-13 (D22).** Plan 14.2's block editor covers metatile composition (two layers, per-tile palette and flips), behaviour and layer type, the usage warning before a save, and cache invalidation after an edit. What remains here: tile pixel editing, palette editing with BGR555 quantisation, the FireRed terrain and encounter-type attribute fields, and the by-tileset invalidation test if Plan 14.2's whole-cache clear measures as a stall.
 
 **Files:** `packages/core/src/edit/tileset.ts`, `packages/ui/src/components/TilesetEditor.tsx` + tests
 
@@ -161,6 +167,8 @@ it("cannot reproduce the 2026-08-18 porymap 6 failure", () => {
 
 ## Task 8: Layout management
 
+**Reduced 2026-11-13 (D22).** Creating a layout moves to roadmap Plan 14C with Task 9. Resize, border size and delete stay here.
+
 **Files:** `packages/core/src/edit/layouts.ts` + test
 
 **Requirements:**
@@ -172,7 +180,7 @@ it("cannot reproduce the 2026-08-18 porymap 6 failure", () => {
 
 ---
 
-## Task 9: New map creation
+## Task 9 (MOVED to roadmap Plan 14C, D22): New map creation
 
 **Files:** `packages/core/src/edit/newMap.ts` + test
 
@@ -184,7 +192,9 @@ it("cannot reproduce the 2026-08-18 porymap 6 failure", () => {
 
 ---
 
-## Task 10: Extend the corpus gate
+## Task 10 (DELETED, D22): Extend the corpus gate
+
+**Deleted 2026-11-13.** Each plan that adds a writer extends the corpus gate for its own file types (roadmap D22). The text below is kept for the record.
 
 **Files:** Modify `packages/core/test/write/corpus.test.ts`
 

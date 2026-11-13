@@ -2,7 +2,8 @@
 
 Written 2026-10-14 from master `741132d`, after a GitHub issue review and a user interview. This is an outline, not an
 implementation plan: each plan below gets its own spec and plan (superpowers:writing-plans) when it starts. Plan numbers
-after 10 are provisional.
+after 10 are provisional. In-flight status lives in `RESUME.md` only; an entry here records status once, when its plan
+merges (D23d).
 
 **Goal (user, 2026-10-13):** GBA and GBC get the same UI/UX: the same buttons, layout, colouring and features. A feature
 added once shows up in both; engine differences sit behind an adapter with capability flags.
@@ -50,7 +51,27 @@ Made 2026-11-02 (Plan 14 interview; user):
   dropdowns; a warning of uses on this map, other maps and maps sharing the tileset; OK edits the block everywhere,
   Save as new block appends a new block id. GBA per-square collision painting stays as it is.
 
-Execution order: **10 → 11 → 12 → 13 → 14 → 14A → 14B → 14C → 15 → 16 → 17 → 17A**; Plan 18 is independent. New entries are roadmap scope; each still needs its own spec and implementation plan.
+Made 2026-11-13 (after the 2026-11-12 code review; the user asked for its gaps to be added to the existing plans and
+allowed plan adjustments for build flow; these three are Claude's calls under that instruction, not confirmed one by one, except D21's order of H1-H3 before
+Plan 14A, which the user confirmed the same day):
+- D21. **The review backlog is Plan H** and lives in `plans/2026-09-23-pokemap-followups-remaining.md` (Tasks A-P, with
+  tiers, batches and acceptance). It starts when Plan 14.2 merges, because 14.2 holds the server and UI files in flight;
+  three small tasks (L1, M2, K5) may run beside 14.2. Batches H1-H3 (request boundary, path containment, save and
+  session correctness, route modules) finish before Plan 14A. The remaining tasks run between later plans, one at a
+  time; Task N (layout and keyboard access) finishes before Plan 15.
+- D22. **Plan 3 and Plan 5 overlap is folded into this roadmap.** Plan 3 Tasks 4-5 (region map) move to Plan 15. Plan 3
+  Tasks 1 and 9 and the create-layout part of Task 8 move to Plan 14C. Plan 3 Tasks 6-7 are covered by Plan 14.2 except
+  GBA tile pixels, palettes and the FireRed attribute fields, which stay in Plan 3. Plan 3 Task 10 is deleted: each plan
+  that adds a writer extends the corpus gate itself. Plan 5 §2 (prefabs) moves to Plan 14A. Plan 3 keeps Tasks 2 and 3
+  and the reduced 6-8. The moved task texts stay in those files as requirements for the receiving plan's spec.
+- D23. **Build rules for every later plan.** (a) A hub route with no family-specific logic is written once as a route
+  module and mounted by both handlers (Plan H Task H sets the shape). (b) New routes decode path segments with the
+  guarded decoder and read bodies through the shared JSON helper (Plan H Task E). (c) Every write to a subject repo goes
+  through `writeFilesAtomically`, which refuses a path outside the project root (Plan H Task F). (d) In-flight status
+  lives in `RESUME.md` only; an entry here records status once, when its plan merges. (e) A plan names the existing
+  files it will modify, so work that runs beside it can avoid them.
+
+Execution order: **10 → 11 → 12 → 13 → 14 (14.1, 14.2) → H (batches H1-H3) → 14A → 14B → 14C → 15 → 16 → 17 → 17A**; Plan 18 and the rest of Plan H are independent. New entries are roadmap scope; each still needs its own spec and implementation plan.
 
 ## Issue map (all 7 open, reviewed 2026-10-14)
 
@@ -191,14 +212,31 @@ Both families already render the same `components/Toolbar.tsx`; the differences 
 - **Split (D19, D20; naming ruling, user 2026-11-02):** Plan 14 is split into **Plan 14.1 Add Event**
   (spec `specs/2026-11-02-pokemap-plan-14-1-add-event-design.md`, plan `plans/2026-11-02-pokemap-plan-14-1-add-event.md`)
   and **Plan 14.2 Block editor** (the widened collision editor, D20). The numbering keeps them apart from Plans 14A-14C.
-- **Status (2026-11-09):** 14.1 done on local branch `plan-14-gbc-editing-gaps` (Tasks 1-10, final review approved, gate 4,416 / 1 env fail / 254 files), not yet merged to `master`. 14.2 spec answered (Q1-Q10), plan not written.
+- **Status:** 14.1 done (Tasks 1-10, final review approved, gate 4,416 / 1 env fail / 254 files) and merged via #31 → `3f4a762`. 14.2: spec approved 2026-11-10, plan `plans/2026-11-10-pokemap-plan-14-2-block-editor.md` (Tasks 0-16), in progress on local branch `plan-14-2-block-editor`; its task status is in RESUME (D23d).
 - **Risk:** medium-high. New `.asm` text and tileset-wide writes (LESSONS: GBC Format & Engine Quirks).
 - **Depends on:** D6, D7.
+
+### Plan H: hardening and structure pass (review backlog)
+
+- **Goal:** close the gaps the 2026-11-12 code review found, and leave one route shape, one session store and a
+  contained write path for Plans 14A-17 to build on (D21, D23).
+- **Scope:** `plans/2026-09-23-pokemap-followups-remaining.md`, Tasks A-P. Security: species-route path traversal, a
+  body size cap, GBA route guards, path containment for decomp-sourced paths, JSON content type, dependency advisories,
+  self-hosted fonts. Correctness: the render-cache bypass, the `applyJsonOps` order, discard against in-flight strokes,
+  a suspected stale GBA map cache. Structure: shared sidecar routes, route modules in place of the 1,065-line GBA
+  handler, one session store, small dedupes. UI: reduced motion, labels, responsive layout, keyboard access to the map
+  canvas, stylesheet tokens. Tooling: lint, CI, a public core surface.
+- **Order:** batches H1-H3 after Plan 14.2 merges and before Plan 14A; the rest between later plans; Task N before
+  Plan 15.
+- **Risk:** high for the batches that touch write paths, sessions and the request boundary (each task carries its
+  tier). The structure tasks are behaviour-preserving moves with the existing route tests as the oracle.
+- **Depends on:** D21, D23; Plan 14.2 merged (shared files).
 
 ### Plan 14A: shared stamps and saved patterns
 
 - **Goal/scope:** after Plan 14, rectangular selection in both families, capture a map area, preview/place exact arrangements, and save named patterns tied to compatible tilesets. Reuse existing stamp painting; keep pattern management small. Acceptance: both families can capture, save, reselect and place a pattern, reject incompatible tilesets, and undo a placement.
 - **Risk/dependencies:** high (shared canvas interactions and edit-session behavior); depends on Plans 12/14 and D17. Stamps place exact arrangements; terrain brushes remain a separate tool.
+- **Absorbed (D22, 2026-11-13):** Plan 5 §2 Prefabs is this plan's saved-pattern scope. Its first decision (a PokeMap-native file under `.pokemap/` or Porymap's prefab format) and its rule that collision and elevation travel with the pattern go to this plan's spec. First task: one generic `paintCells`/`floodFill` for both families (Plan H, "Folded into other plans", R4).
 
 ### Plan 14B: terrain painting
 
@@ -209,6 +247,7 @@ Both families already render the same `components/Toolbar.tsx`; the differences 
 
 - **Goal/scope:** after 14B, select an existing map edge, choose dimensions/tileset and a blank fill or compatible template, slide a ghost preview to set offset, then create the map and validated reciprocal game connections. Acceptance: save/reload preserves the new map and connections in both families; failure leaves no partially created map or one-sided connection. Editor-only world placement is distinct from game connectivity.
 - **Risk/dependencies:** high (multi-file subject-source writes and save ownership); depends on Plans 10/12/14B and D17. Bring reusable destination-map creation forward from Plan 17; no dependency on town-map editing/minimap. Verify writes on scratch projects.
+- **Absorbed (D22, 2026-11-13):** the GBA side takes its requirements from Plan 3 Task 1 (connection offset from placement, round trip over the subject's 374 planar connections, one-way warning, `dive`/`emerge` kept apart), Task 9 (new map: the sibling key set, the golden `.inc` test, name refusals) and the create-layout part of Task 8 (`layout_version` chosen explicitly; only the keys siblings carry). Editing and removing an existing connection use the same machinery; whether they are in this plan is a spec question.
 
 ### Plan 15: town map editor (#9)
 
@@ -220,6 +259,11 @@ Both families already render the same `components/Toolbar.tsx`; the differences 
 - **Risk:** high. Two unfamiliar formats; graphics writes. Spec must first measure both formats in the subject decomp and
   pokecrystal-PerfPlus.
 - **Depends on:** D14.
+- **Absorbed (D22, 2026-11-13):** Plan 3 Tasks 4-5 are the GBA requirements: the key-preserving loader (`map_section`
+  or `id`, whichever the file has), the glob over `region_map_sections*.json`, the Inja-template contract, the
+  regression test named for the 2026-08-18 build failure, and a successful `make` after an edit as acceptance.
+- **Before it starts (D21):** Plan H Task N (layout and keyboard access), so the new view is built on the finished
+  layout rules.
 
 ### Plan 16: town-map minimap (#8)
 
@@ -230,6 +274,8 @@ Both families already render the same `components/Toolbar.tsx`; the differences 
 - **Risk:** medium. The world-to-region mapping is approximate (the world layout is PokeMap's, the town map is the
   game's); the spec decides how a map with no section renders.
 - **Depends on:** D13.
+- **First task (D21, 2026-11-13):** extract the warp fetch, the encounter fetch and the lens overlays from
+  `canvas/WorldSurface.tsx` (934 lines) as hooks, before the minimap is added to that surface.
 
 ### Plan 17: copy maps between games (#10)
 
@@ -259,8 +305,13 @@ Both families already render the same `components/Toolbar.tsx`; the differences 
 
 ## Open items for the user
 
-- The #5/#6 work exists only as uncommitted changes in the main checkout. It waits until Plan 13. A WIP commit on
-  `issues-5-6-warp-popups` (by the user, or on their say-so) would protect it from a lost working tree.
-- Plan 3 (GBA data editors) and GBA follow-ups A-C stay outside this roadmap; Plan 18 may feed Plan 3.
+- Closed: the #5/#6 work landed as Plan 13, merged via #30 (2026-11-02).
+- Plan 3 (GBA data editors) stays outside this roadmap in its reduced form (D22: Tasks 2 and 3 and the reduced 6-8);
+  Plan 18 may feed it. The GBA follow-ups A-C are now part of Plan H (D21).
+- **Confirmed by the user (2026-11-13):** Plan H's batches H1-H3 run before Plan 14A (D21's order). This part of D21 is
+  now binding.
+- **For the user to confirm or overrule (2026-11-13):** the rest of D21-D23 were made by Claude under the instruction
+  to add the review gaps and adjust the plans. The one with the most effect: Plan 3's region-map, connection and
+  new-map tasks now belong to Plans 15 and 14C (D22).
 - **Future plan (user, 2026-11-02): create new trainers and their parties** from the Add Object popup, both families.
   Plan 14.1 (A8) only places trainers that already exist. Not yet numbered; schedule after Plan 14.2.
