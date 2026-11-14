@@ -7,6 +7,7 @@ import { guardLayoutSave, guardMapSave, type Refusal } from "./guards.js";
 import { planBlockdataWrite, planBorderWrite } from "./binary.js";
 import { editJson, insertArrayElement, removeArrayElement, type JsonEdit, type JsonPath } from "./jsonEdit.js";
 import type { NameCheck } from "../addEvent/types.js";
+import type { TilesetFileEdit } from "../blockEdit/types.js";
 
 /** Shared name-check logic used by both planSave and commitSave. */
 function checkNewNames(
@@ -66,6 +67,7 @@ export function applyScriptAppend(text: string, append: ScriptAppend): string {
  * projection the server sends back after each edit op.
  */
 export interface EditSession {
+  tilesetEdits?: TilesetFileEdit[];
   mapName: string;
   layout: Layout;
   /** Current, possibly-edited interior blocks (parseBlocks's own full
@@ -142,6 +144,7 @@ export interface PendingChange {
 }
 
 export interface SavePlan {
+  tilesetEffects: { path: string; maps: string[] }[];
   session: EditSession;
   changes: PendingChange[];
   /** Refusals as of `planSave`'s own snapshot of `session` -- **informational
@@ -241,7 +244,7 @@ export function planSave(
     });
   }
 
-  return { session, changes, refusals };
+  return { session, changes, refusals, tilesetEffects: [] }; // Task 8 stub
 }
 
 /** `${n} ${word}` / `${n} ${word}s` -- the one pluralisation rule every
