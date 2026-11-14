@@ -28,10 +28,12 @@ export interface GbaBlockEditRequest {
 const compare = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 const bad = (message: string): never => { throw new BlockEditRefusal("BAD_VALUE", message); };
 const METATILE_BYTES = 16;
+const NUM_PALS_TOTAL = 13;
 
 /** One layout that consumes a tileset symbol, with both halves named. */
 interface ConsumingUse {
   layout: string;
+  layoutObject: Layout;
   role: "primary" | "secondary";
   split: Split;
   primary: string;
@@ -39,9 +41,11 @@ interface ConsumingUse {
 }
 
 function consumingUses(proj: Project, symbol: string): ConsumingUse[] {
+  const layoutById = new Map(proj.layouts.map((layout) => [layout.id, layout]));
   return gbaConsumingLayouts(proj, symbol)
     .map((use) => ({
       layout: use.layout,
+      layoutObject: layoutById.get(use.layout)!,
       role: use.role,
       split: use.split,
       primary: use.role === "primary" ? symbol : use.pairedWith,
@@ -58,7 +62,7 @@ function effectiveBytes(proj: Project, staged: FileOverlay, path: string): Buffe
   try {
     return readFileSync(join(proj.paths.root, key));
   } catch (error) {
-    return bad(`${key}: ${(error as Error).message}`);
+    return bad(`${key}: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
@@ -94,7 +98,7 @@ function cells(proj: Project, path: string, cache: Map<string, readonly number[]
   try {
     buf = readFileSync(join(proj.paths.root, path));
   } catch (error) {
-    return bad(`${path}: ${(error as Error).message}`);
+    return bad(`${path}: ${error instanceof Error ? error.message : String(error)}`);
   }
   const ids = parseBlocks(buf, proj.profile).map((block) => block.metatileId);
   cache.set(path, ids);
@@ -148,7 +152,6 @@ function tileCount(proj: Project, symbol: string): number {
 }
 
 interface TileSource { symbol: string; local: number }
-interface PaletteSource { symbol: string; local: number }
 
 function tileSource(use: ConsumingUse, tile: number): TileSource {
   return tile < use.split.tiles
@@ -156,7 +159,7 @@ function tileSource(use: ConsumingUse, tile: number): TileSource {
     : { symbol: use.secondary, local: tile - use.split.tiles };
 }
 
-function paletteSource(use: ConsumingUse, palette: number): PaletteSource {
+function paletteSource(use: ConsumingUse, palette: number): TileSource {
   return palette < use.split.pals
     ? { symbol: use.primary, local: palette }
     : { symbol: use.secondary, local: palette };
@@ -173,7 +176,6 @@ function describeSources(sources: readonly { layout: string; symbol: string; loc
 export function gbaCrossHalfWarnings(proj: Project, tilesetSymbol: string, draft: GbaBlockDraft, original: readonly TileEntry[]): string[] {
   const uses = consumingUses(proj, tilesetSymbol);
   const warnings: string[] = [];
-  const seen = new Set<string>();
   for (let i = 0; i < draft.entries.length; i++) {
     const entry = draft.entries[i];
     const before = original[i];
@@ -181,14 +183,12 @@ export function gbaCrossHalfWarnings(proj: Project, tilesetSymbol: string, draft
 
     const tiles = uses.map((use) => ({ layout: use.layout, ...tileSource(use, entry.tile) }));
     if (sourcesDiffer(tiles)) {
-      const warning = `entry ${i} tile differs: ${describeSources(tiles)}`;
-      if (!seen.has(warning)) { seen.add(warning); warnings.push(warning); }
+      warnings.push(`entry ${i} tile differs: ${describeSources(tiles)}`);
     }
 
     const palettes = uses.map((use) => ({ layout: use.layout, ...paletteSource(use, entry.palette) }));
     if (sourcesDiffer(palettes)) {
-      const warning = `entry ${i} palette differs: ${describeSources(palettes)}`;
-      if (!seen.has(warning)) { seen.add(warning); warnings.push(warning); }
+      warnings.push(`entry ${i} palette differs: ${describeSources(palettes)}`);
     }
   }
   return warnings;
@@ -211,7 +211,7 @@ function assertStructural(
       const palettes = entry.palette < use.split.pals
         ? proj.tileset(use.primary).palettes
         : proj.tileset(use.secondary).palettes;
-      const paletteOk = entry.palette < 13 && palettes[entry.palette] !== undefined;
+      const paletteOk = entry.palette < NUM_PALS_TOTAL && palettes[entry.palette] !== undefined;
       if (!tileOk || !paletteOk) {
         throw new BlockEditRefusal(
           "SPLIT_LIMIT",
@@ -231,17 +231,17 @@ function usedElsewhere(
   uses: readonly ConsumingUse[],
   byFile: Map<string, string[]>,
   byLayout: Map<string, string[]>,
+  cache: Map<string, readonly number[]>,
 ): boolean {
-  const cache = new Map<string, readonly number[]>();
   for (const use of uses) {
     const target = use.role === "primary" ? local : use.split.metatiles + local;
-    const layout = proj.layoutById(use.layout);
+    const layout = use.layoutObject;
     const names = byLayout.get(use.layout) ?? [];
-    if (layout === undefined || names.length === 0) continue;
+    if (names.length === 0) continue;
     const border = cells(proj, layout.borderFilepath, cache);
     for (const name of names) {
       if (name === mapName) continue;
-      if (effectiveGrid(proj, proj.layoutForMap(name), grids, byFile, cache).includes(target) || border.includes(target)) {
+      if (effectiveGrid(proj, layout, grids, byFile, cache).includes(target) || border.includes(target)) {
         return true;
       }
     }
@@ -250,14 +250,27 @@ function usedElsewhere(
 }
 
 export function planGbaBlockEdit(proj: Project, req: GbaBlockEditRequest, staged: FileOverlay, grids: StagedGrids): BlockEditPlan {
+  try {
+    return planGbaBlockEditInner(proj, req, staged, grids);
+  } catch (error) {
+    if (error instanceof BlockEditRefusal) throw error;
+    throw new BlockEditRefusal(
+      "BAD_VALUE",
+      `${req.map}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
+function planGbaBlockEditInner(proj: Project, req: GbaBlockEditRequest, staged: FileOverlay, grids: StagedGrids): BlockEditPlan {
   assertNotTripleLayer(proj.profile, proj.paths.porymapCfg);
+
+  if (!Number.isInteger(req.metatileId) || req.metatileId < 0) bad(`${req.map}: invalid metatile id ${req.metatileId}`);
 
   const layout = proj.layoutForMap(req.map);
   const split = proj.splitFor(layout);
   const primaryRole = req.metatileId < split.metatiles;
   const symbol = primaryRole ? layout.primaryTileset : layout.secondaryTileset;
   const local = primaryRole ? req.metatileId : req.metatileId - split.metatiles;
-  if (!Number.isInteger(req.metatileId) || req.metatileId < 0) bad(`${req.map}: invalid metatile id ${req.metatileId}`);
 
   const paths = proj.tilesetPaths(symbol);
   const metaPath = canonicalTilesetPath(paths.metatilesBin);
@@ -269,24 +282,43 @@ export function planGbaBlockEdit(proj: Project, req: GbaBlockEditRequest, staged
     bad(`${metaPath}: buffer length ${metaBuf.length} is not a multiple of ${METATILE_BYTES}`);
   }
   const count = metaBuf.length / METATILE_BYTES;
+  const attributesSize = proj.profile.metatileAttributesSize;
+  if (attrBuf.length !== count * attributesSize) {
+    bad(`${attrPath}: ${attrBuf.length / attributesSize} attribute words for ${count} metatiles`);
+  }
   if (local >= count) bad(`${metaPath}: metatile index ${local} is outside the editable range 0-${count - 1}`);
 
   const draft = req.draft;
-  if (draft.entries.length !== 8) bad(`${metaPath}: expected 8 tile entries, got ${draft.entries.length}`);
+  if (draft === null || draft === undefined
+    || !Array.isArray(draft.entries)
+    || draft.entries.length !== 8
+    || draft.entries.some((entry) => entry === null || typeof entry !== "object")) {
+    const got = draft !== null && draft !== undefined && Array.isArray(draft.entries) ? `, got ${draft.entries.length}` : "";
+    bad(`${metaPath}: expected 8 tile entries${got}`);
+  }
+  if (!Number.isInteger(draft.behavior)) bad(`${attrPath}: behavior ${String(draft.behavior)} is not an integer`);
+  if (!Number.isInteger(draft.layerType)) bad(`${attrPath}: layerType ${String(draft.layerType)} is not an integer`);
   for (let i = 0; i < 8; i++) {
     const entry = draft.entries[i]!;
     if (typeof entry.xFlip !== "boolean" || typeof entry.yFlip !== "boolean") {
       bad(`${metaPath}: entry ${i} flips must be boolean`);
     }
   }
-  // The shared patchers own the tile/palette and behavior/layerType masks.
-  patchGbaMetatile(metaBuf, local, draft.entries, metaPath);
-  patchGbaAttribute(attrBuf, local, proj.profile, { behavior: draft.behavior, layerType: draft.layerType }, attrPath);
+
+  // The shared patchers own the tile/palette and behavior/layerType masks. One
+  // call per file; the BAD_VALUE stage still precedes SHARED_GRID and the append
+  // limit, so save-as-new validates through its append at the effective count.
+  const fields = { behavior: draft.behavior, layerType: draft.layerType };
+  const append = req.mode === "saveAsNew";
+  const target = append ? count : local;
+  const metaAfter = patchGbaMetatile(metaBuf, target, draft.entries, metaPath);
+  const attrAfter = patchGbaAttribute(attrBuf, target, proj.profile, fields, attrPath, append ? local : undefined);
 
   if (req.mode === "saveAsNew" && req.from === "map") {
     const cell = req.cell;
-    if (cell === undefined || !Number.isInteger(cell.x) || !Number.isInteger(cell.y) || cell.x < 0 || cell.y < 0) {
-      bad(`${req.map}: cell is missing or invalid`);
+    if (cell === undefined || !Number.isInteger(cell.x) || !Number.isInteger(cell.y)
+      || cell.x < 0 || cell.y < 0 || cell.x >= layout.width || cell.y >= layout.height) {
+      bad(`${req.map}: cell is outside the map`);
     }
   }
 
@@ -302,13 +334,13 @@ export function planGbaBlockEdit(proj: Project, req: GbaBlockEditRequest, staged
   const original = readEntries(metaBuf, local);
   if (req.mode === "saveAsNew") {
     for (const use of uses) {
-      const fits = use.role === "primary"
-        ? count < use.split.metatiles
-        : use.split.metatiles + count < proj.constants.metatilesTotal;
-      if (!fits) {
+      const limit = use.role === "primary"
+        ? use.split.metatiles
+        : proj.constants.metatilesTotal - use.split.metatiles;
+      if (!(count < limit)) {
         throw new BlockEditRefusal(
           "SPLIT_LIMIT",
-          `${symbol}: cannot append metatile ${count}: layout ${use.layout} (${use.role}) has no room within its split`,
+          `${metaPath}: layout ${use.layout} (${use.role}) allows ${limit} metatiles; cannot append metatile ${count}`,
         );
       }
     }
@@ -317,14 +349,7 @@ export function planGbaBlockEdit(proj: Project, req: GbaBlockEditRequest, staged
   const changed = changedIndices(draft.entries, original);
   assertStructural(proj, symbol, draft.entries, changed, uses);
 
-  const fields = { behavior: draft.behavior, layerType: draft.layerType };
-  const metaAfter = req.mode === "saveAsNew"
-    ? patchGbaMetatile(metaBuf, count, draft.entries, metaPath)
-    : patchGbaMetatile(metaBuf, local, draft.entries, metaPath);
-  const attrAfter = req.mode === "saveAsNew"
-    ? patchGbaAttribute(attrBuf, count, proj.profile, fields, attrPath, local)
-    : patchGbaAttribute(attrBuf, local, proj.profile, fields, attrPath);
-
+  const cellsCache = new Map<string, readonly number[]>();
   const candidates = new Map<string, Buffer>([[metaPath, metaAfter], [attrPath, attrAfter]]);
   const edits = [...candidates]
     .filter(([path, after]) => !(path === metaPath ? metaBuf : attrBuf).equals(after))
@@ -332,11 +357,11 @@ export function planGbaBlockEdit(proj: Project, req: GbaBlockEditRequest, staged
     .sort((a, b) => compare(a.path, b.path));
 
   const confirm = req.mode !== "saveAsNew" && edits.length > 0
-    && usedElsewhere(proj, req.map, local, grids, uses, byFile, mapsByLayout(proj));
+    && usedElsewhere(proj, req.map, local, grids, uses, byFile, mapsByLayout(proj), cellsCache);
 
   const revision = blockEditRevision(
     new Map([[metaPath, metaBuf], [attrPath, attrBuf]]),
-    effectiveGrid(proj, layout, grids, byFile, new Map()),
+    effectiveGrid(proj, layout, grids, byFile, cellsCache),
   );
 
   const newBlockId = req.mode === "saveAsNew"
