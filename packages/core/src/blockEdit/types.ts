@@ -98,3 +98,13 @@ export interface BlockUsage {
   /** Grid files backing two or more maps, with every map name they back. */
   sharedGrids: { file: string; maps: string[] }[];
 }
+
+export interface BlockEditPlan {
+  edits: TilesetFileEdit[];
+  newBlockId?: number;
+  placement?: { x: number; y: number; blockId: number };
+  warnings: string[];
+  usage: BlockUsage;
+  confirm: boolean;
+  revision: string;
+}
