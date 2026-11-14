@@ -340,13 +340,16 @@ it("a failed border read inside usage is a BAD_VALUE naming the map", () => {
 it("BAD_VALUE: a null draft entry", () => {
   const p = fixture(), r = request(p);
   r.draft.entries[0] = null as unknown as TileEntry;
-  refusal(() => plan(p, r), "BAD_VALUE");
+  // The explicit shape check names the metatiles file; the R1b wrapper alone would name the map.
+  const e = refusal(() => plan(p, r), "BAD_VALUE");
+  expect(e.message.startsWith(p.tilesetPaths("gTileset_A").metatilesBin)).toBe(true);
 });
 
 it("BAD_VALUE: behavior missing", () => {
   const p = fixture(), r = request(p);
   r.draft.behavior = undefined as unknown as number;
-  refusal(() => plan(p, r), "BAD_VALUE");
+  const e = refusal(() => plan(p, r), "BAD_VALUE");
+  expect(e.message.startsWith(p.tilesetPaths("gTileset_A").attributesBin)).toBe(true);
 });
 
 it.each([["ok", false], ["saveAsNew", true]] as const)("BAD_VALUE: one surplus attribute word (%s)", (_mode, saveAsNew) => {
