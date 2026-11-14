@@ -553,6 +553,10 @@ describe("GBC block edit planner", () => {
       refusal(() => planGbcBlockEdit(p, request(map, 1, d), new Map(), new Map()), "BAD_VALUE", [], ts.collisionPath);
     } finally { removeTemp(temp); }
   }, timeout);
+  itWithGbcCorpus("an unknown map refuses BAD_VALUE naming the map (R1b)", () => {
+    const {p, ts, map} = forest();
+    refusal(() => planGbcBlockEdit(p, {...request(map, 1, draft(p, ts, 1)), map: "Task6NoSuchMap"}, new Map(), new Map()), "BAD_VALUE", ["Task6NoSuchMap"], "Task6NoSuchMap");
+  }, timeout);
   itWithGbcCorpus("All + saveAsNew refuses ALL_WITH_SAVE_AS_NEW offering Local or OK", () => {
     const f = localFixture(); const d = localDraft(f); d.palettes[0]!.scope = "all";
     refusal(() => planGbcBlockEdit(f.p, request(f.map, f.id, d, "saveAsNew"), new Map(), new Map()), "ALL_WITH_SAVE_AS_NEW", ["Local", "OK"]);
