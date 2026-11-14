@@ -374,7 +374,9 @@ a real root, whatever it does. Text revised after a scoped astra review (6 Impor
 ### Task 7: GBA edit planner
 
 **Files:** Create `packages/core/src/blockEdit/gbaOps.ts`; Test `packages/core/test/blockEdit/gbaOps.test.ts` plus a
-synthetic fixture project under `packages/core/test/fixtures/blockEdit/gba/` (mark `-text` in `.gitattributes`)
+synthetic fixture project (as built 2026-11-13, ruling G9 amended: a runtime builder
+`packages/core/test/blockEdit/gbaFixture.ts` writing a fresh tmpdir project per case, so no binary fixture files and no
+`.gitattributes` entry)
 
 **Interfaces:**
 - Consumes: Tasks 1, 4, 5, `placeGroup`, `blockEditRevision`, `BlockEditPlan` (Task 6), split resolution as in

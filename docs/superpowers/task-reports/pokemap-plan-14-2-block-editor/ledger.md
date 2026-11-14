@@ -209,3 +209,125 @@ the recovery map; reports go next to it.
 - Fix round 1 Nemotron 3 Ultra: finished (~33 min), claimed 16/16. Diff read: impl mostly per R2a/R8a/R9a/R9b/R11 but R6a not applied to GBC `files`, stale MapUse docs, redundant R8a branch; tests had 3 silent `return` skips on missing fixtures, secondary test hard-coded `gTileset_Building`/id 0 and dropped its non-empty check, pairedWith oracle read from the project, generation check `>0`, GBA files oracle computed but never compared, shared-grid fixture chosen through the function under test. Conductor inline fixes (reason: tightening asserts is smaller than a fix brief; next free hop same pool): all of the above, plus staged lookup over every map on a GBA file (R3) and a backslash-path `files` test. Typecheck pass. Mutations M1-M11 running.
 - Conductor baseline found 2 GBA fails: Nemotron had renamed the oracle key `raw.secondary_tileset` → `raw.secondaryTileset` (always "undefined") and hid it by reading pairedWith from the project. Fixed. Baseline 16/16, 0 skipped; mutations M1-M11 (M6 GBA sharedGrids dropped, M7 overlay/generation ignored, M8 GBA border uncounted, M9 R7 border branch, M10 raw files path, M11 unknown symbol throws) all KILLED by their target tests. Not coverable on corpus: R2a differing borders on one .blk; R8a/R9a multi-target files. Committed `37a1524`. Scoped re-reviews (same Opus reviewers) running.
 - Re-review 1 (same Opus reviewers): spec Approved (3 Minor: pin R2a, stale comment, no-op fixture filter); quality Approved (4 Minor: dead field, stale comment, per-call layouts filter, no guard for R2a/R8a/R9a; noted the first mutation log had a red baseline). Conductor inline minors `3c96d8d` (tiny each; PortPassage border-0 assertion pins R2a, synthetic stub layouts pin R8a/R9a, static blockdata→maps relation). Final mutation run (scratchpad `mut_t5c.out`): baseline 17/17 green; M1-M14 all KILLED (M12 R2a representative-only, M13 R9a first target only, M14 R8a primary-only added). Merged `--no-ff` as `b0b697e`.
+
+## Execution (conductor s5, 2026-11-13)
+
+- s4 conductor files committed `e2dfa27`.
+- **Gate at e2dfa27 (= Task 5 merge `b0b697e` + docs): 4,520 pass / 1 fail / 260 files; typecheck pass, UI build
+  pass; subjects unchanged.** The 1 fail is the known env fail (engine.test porymap.project.cfg, "expected 96 to be
+  98", same tell as the Task 0 gate). Wall 1,040 s.
+- GBA subject HEAD is now `97ac21d4b` with 10 porcelain lines (user's own: adds `M .claude/agents/donor-scout.md`
+  to the 9 known); taken as the new subject baseline. PerfPlus `81ededbe3` clean.
+
+### Task 6 (High): GBC edit planner and group placement — s5
+
+- BASE `e2dfa27`; worktree `s5-scratchpad/wt-t6`, branch `p14-2-t6`. Conductor rulings R1-R12
+  (`.superpowers/sdd/.../task-6-rulings.md`): effective bytes from `staged` then disk, never the project overlay;
+  `req.blockId` is the target, cell only for placement; check order; Local reuse before free slot; free-slot scan over
+  map-used tilesets sharing the sheet; confirm per map (not per grid file), false for saveAsNew / no edits; revision
+  hash layout; `placeGroup` / `gbcSheetToTileId` edge rules; `BlockEditPlan` in types.ts.
+- Delegate (new `chain.py` lane): oracle split. Hop A tests + typed stubs via `chain.py --tier opus` (Codex sol; the
+  tests are the oracle, Opus-tier per CLAUDE.md, so not the Haiku test lane), verify `npm run typecheck`. Hop B
+  implementation via `chain.py --tier opus` with the tests protected.
+- Hop A (tests + stubs): `RESULT done | gpt-6.1-sol done` → `d301a41` (2 test files, 43 tests; stubs; `BlockEditPlan` in
+  types.ts; report `task-6-tests-report.md`). Conductor read every line: independent byte/text oracle, all fixtures
+  scanned with failing `expect` messages, precedence/confirm/overlay cases present; one interpretation pinned and
+  ruled R13 (the palette conflict check runs before no-op entries are dropped). Red run: 43/43 fail, every failure
+  "not implemented (Task 6)", every fixture scan found its fixture (89 s).
+- Hop B (implementation): `chain.py --tier opus`, tests protected, verify = both files (min 43) + typecheck. Running.
+
+### Task 7 (High): GBA edit planner — s5
+
+- Rulings G1-G9 (`.superpowers/sdd/.../task-7-rulings.md`): target/split resolution, check order, changed entries
+  only, structural range per consuming layout (tile sheet bounds, palette < 13 and present), cross-half warning =
+  sources differ across consuming layouts, append limits per role, confirm per map, fixture shape; Task 6 R1/R3/R9
+  carry over. Smoke cases: an unchanged draft → `edits` `[]` (R1), not "after equals before" as the plan words it.
+- Worktree `s5-scratchpad/wt-t7`, branch `p14-2-t7` from `d301a41` (Task 6 tests + stubs: needs `BlockEditPlan`);
+  hop A tests + fixture + stubs via `chain.py --tier opus`, running beside Task 6 hop B (no vitest in hop A).
+- Task 6 hop B: `RESULT done | gpt-6.1-sol done` → `c4600c7` (gbcOps.ts, placement.ts, report `task-6-report.md`; no
+  test edits). Conductor re-ran verify: 43/43 pass, 0 skipped; read the code against R1-R13. Mutations M1-M19
+  (scratchpad `mut_t6.py` / `mut_t6.out`) running in `wt-t6`; reviews run in a separate detached checkout `wt-t6r`
+  at `c4600c7` so no reviewer reads a mutant. Reviews: Codex `gpt-6-astra` read-only, spec + quality (separate runs).
+- Task 7 hop A: `RESULT done | gpt-6.1-sol done` → `4632ed0` (builder fixture `test/blockEdit/gbaFixture.ts` writing
+  a tmpdir project — no binary files, no `.gitattributes` change; `gbaOps.test.ts`; stub `gbaOps.ts`; report
+  `task-7-tests-report.md`). Conductor hand-checked the expectations: split ids, append limits (F tighter at 20+12),
+  structural ranges, cross-half sources per layout, attribute masks (0x0a12 → 0x2a34; clone → 0x3a45), R3 winner.
+  Planner must pass `proj.paths.porymapCfg` to `assertNotTripleLayer` (test pins the prefix). Red run pending (waits
+  for the Task 6 mutation run: one vitest at a time).
+- Review 1 (Codex `gpt-6-astra`, read-only, `wt-t6r`): spec Needs changes (3 Important: Local reuse recoloured by a
+  later All entry; mixed-draft expectations built with the production patchers; collision checks parse records only,
+  no losslessness; 1 Minor: ALL_WITH_SAVE_AS_NEW message lacks "Local or OK"; coverage gaps: block-0-as-border
+  confirm, two Local allocations, reuse vs lower free slot, Local during Save as new, untouched tile without palette
+  entry); quality Needs changes (2 Important: the same All/Local bug; native fs errors escape `read()`). All verified
+  against the code. Rulings R5a (All before Local), R1a (read failure → BAD_VALUE naming the path), R6a (message).
+  Note: the mixed-draft patcher use was allowed by the conductor's tests brief; tightened anyway (cheap).
+- Fix round 1 plan: hop A tests (Codex, tests file only) then hop B implementation (Codex, tests protected), after the
+  mutation run finishes (it edits `gbcOps.ts` in `wt-t6`).
+- **Ruling (user, 2026-11-13, in this session):** "codex limit is hit continue with either free models or anthropic
+  modesl". `chain_state.json` shows the Codex cooldown. Implementers from here: `chain.py --tier sonnet --no-codex`
+  (free Zen/OpenRouter models) → Claude Sonnet floor; reviews: Claude Opus `high-risk-reviewer`, separate spec and
+  quality (as the 2026-11-10 ruling).
+- Mutations so far (`mut_t6.out`): M1-M4, M6 KILLED; M5 reuse disabled, M7 free slot ignores reservations, M8 free slot
+  ignores draft tiles SURVIVED → fix-round tests items 3, 11, 12.
+- Mutation run stopped after M9 (KILLED) on the user's "go": the fix round changes `gbcOps.ts`, so M1-M19 re-run on the
+  fixed commit. Worktree restored clean.
+- Task 7 red run (`wt-t7` at `4632ed0`): 40/40 fail, every stack at the stub lines (`gbaOps.ts:11/14`) or the test's
+  `refusal()` catching the stub error; the fixture builds and opens. `wt-t7` merged `c4600c7` (`cf74410`) so the
+  implementation can call `blockEditRevision`.
+- Launched in parallel (free lane, `chain.py --tier sonnet --no-codex`): Task 6 fix-round tests hop (`wt-t6`, verify
+  typecheck only) and Task 7 implementation hop (`wt-t7`, verify gbaOps.test.ts min 40 + typecheck, tests protected).
+- Task 7 hop B: `RESULT done | opencode/deepseek-v4.1-flash-free done` → `4629ca8` (free model; first try). Conductor
+  re-ran verify: 40/40, 0 skipped; read the code against G1-G9 (gap noted for review: Save-as-new cell not checked
+  against map width/height). Mutations M1-M16 (`mut_t7.py` / `mut_t7.out`) running in `wt-t7`. Reviews: Claude Opus
+  `high-risk-reviewer` spec + quality (Codex out) on detached `wt-t7r` at `4629ca8`, no vitest.
+- Task 6 fix-round tests: `RESULT done | opencode/deepseek-v4.1-flash-free done` → `e6cd1f2` (+309/−10 in
+  gbcOps.test.ts; collision line-level losslessness, All/Local regression both orders, reuse above a lower free
+  slot, two Local allocations, Local in Save as new, reserved/draft-referenced slots skipped, read failure,
+  ALL_WITH message, untouched tile without palette entry, raw-zero border confirm; mixed draft no longer uses the
+  patchers for expectations). Conductor read the diff; inline fix `4154265` (≤10 lines, cheaper than a hop): the
+  draft-reference case had the slots swapped (could not kill M8) and compared against a baseline that ignored the
+  draft's changed square (would always fail). Typecheck pass.
+- Task 6: conductor inline test `57affd8` (unknown map → BAD_VALUE, R1b; 4 lines). Fix-round implementation hop
+  launched (`chain.py --tier sonnet --no-codex`, `wt-t6`, verify both files min 53 + typecheck; tests protected;
+  brief `task-6-fix1-impl-brief.final.md`; log `s5-scratchpad/chain-T6-fix1-impl.log`).
+- Task 7 review 1 (Claude Opus): spec Needs changes (3 Important: Save-as-new cell not bounded; append-limit message
+  names neither file nor limit and the tests' regexes match the count; no structural case valid in the edited layout
+  but invalid in another; 6 Minor) → `task-7-spec-review.md`; quality Needs changes (1 Important: same cell bounds;
+  8 Minor: attribute/metatile count mismatch, native errors from dependencies, per-call cost ~200-360 ms on the real
+  subject from duplicate grid reads, limit not stated, surviving hand-traced mutants for secondary confirm target,
+  secondary-half tile check and usage index, dead code) → `task-7-quality-review.md`. All verified on read. Rulings
+  G2a, G2b, G6a, R1b (both planners), G9 amended (runtime builder), quality items; deferred: primary local index past a
+  consuming layout's split.metatiles (usage.ts + confirm; not in the subject) → Task 16.
+- Task 7 mutations (`mut_t7.out`): baseline 40/40; M1-M5 KILLED (the four plan-listed + structural removed); run
+  stopped after M5 because the fix round rewrites `gbaOps.ts` (M1-M16 re-run on the fixed commit). Fix-round tests hop
+  launched (`chain.py --tier sonnet --no-codex`, `wt-t7`, typecheck only; brief `task-7-fix1-tests-brief.final.md`; log
+  `s5-scratchpad/chain-T7-fix1-tests.log`).
+- Task 6 fix-round implementation: `RESULT done | opencode/deepseek-v4.1-flash-free done` → `891361d` (gbcOps.ts
+  +31/−7: R1b wrapper around the planner, R1a guarded `read`, R5a All loop before the Local loop, R6a message; report
+  `task-6-fix1-report.md`). Conductor read the diff: matches the rulings. Full mutation rerun M1-M19 on `891361d`
+  running → `s5-scratchpad/mut_t6b.out` (its baseline line is the re-verify).
+- Task 7 fix-round tests: `RESULT done | opencode/deepseek-v4.1-flash-free done` → `aa0413c` (+258/−12 in
+  gbaOps.test.ts; report `task-7-fix1-tests-report.md`). **Not yet vetted by a conductor.**
+
+### Handoff s5 → s6 (2026-11-13, session-length rule)
+
+State (all scratch worktrees under `C:\Users\Serve\AppData\Local\Temp\claude\8fd0350c313cb955\fd52805f-2f40-4daa-9fe0-26bda39faaf2\scratchpad\`, "s5-scratchpad"):
+- `wt-t6` branch `p14-2-t6` HEAD `891361d`: Task 6 tests (`d301a41`, fix tests `e6cd1f2`, conductor `4154265`,
+  `57affd8`) + implementation (`c4600c7`, fix `891361d`). Mutation rerun M1-M19 was running at handoff →
+  `mut_t6b.out` (harness `mut_t6.py`; anchors may report SKIPPED if the fix moved code: re-anchor, never drop).
+- `wt-t7` branch `p14-2-t7` HEAD `aa0413c`: Task 7 tests (`4632ed0`) + merge of `c4600c7` (`cf74410`) + implementation
+  (`4629ca8`) + fix-round tests (`aa0413c`, unvetted). Fix-round implementation not started; brief to write from
+  `task-7-rulings.md` "Fix round 1 rulings" (pattern: `task-6-fix1-impl-brief.md`).
+- Review checkouts `wt-t6r` (detached `c4600c7`), `wt-t7r` (detached `4629ca8`): stale; remove or re-point
+  (`git worktree remove` without `--force`; they have no node_modules junction).
+- Main checkout `plan-14-2-block-editor`: docs only since `e2dfa27`.
+
+Next, in order (one vitest process at a time):
+1. Read `mut_t6b.out`: baseline must be green (that is the re-verify of `891361d`); every mutant KILLED or recorded.
+2. Task 6 scoped re-reviews (Claude Opus `high-risk-reviewer`, spec + quality, the reviewers' prior findings in
+   `task-6-spec-review.md` / `task-6-quality-review.md`) on a fresh detached checkout of `891361d`.
+3. On approval: merge `p14-2-t6` `--no-ff` into `plan-14-2-block-editor`, gate, record.
+4. Task 7: vet `aa0413c` (oracle: hand-check new expectations against the fixture facts in the tests brief), red run,
+   fix-round implementation hop (`chain.py --tier sonnet --no-codex`, tests protected), mutation rerun `mut_t7.py`,
+   scoped Opus re-reviews, merge after Task 6, gate.
+5. Task 8 onward.
