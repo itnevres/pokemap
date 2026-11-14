@@ -524,9 +524,12 @@ describe("GBC block edit planner", () => {
     const f = localFixture(); const d = localDraft(f);
     const square = [0,1,2,3,4,6,7,8,9,10,11,12,13,14,15].find(s => d.tiles[s] !== f.source);
     expect(square, "a non-source square in the block").toBeDefined();
-    const first = f.free[1]!; const slot = f.free[0]!; d.tiles[square!] = first;
+    // The draft takes the lowest free tile, so the copy must skip it and land on the next one.
+    const first = f.free[0]!; const slot = f.free[1]!; d.tiles[square!] = first;
     const plan = planGbcBlockEdit(f.p, request(f.map, f.id, d), new Map(), new Map());
-    checkLocal(f, plan, slot, d);
+    const expectedMeta = Buffer.from(bytes(f.p, f.ts.metatilesPath));
+    d.tiles.forEach((tile, s) => { expectedMeta[f.id * 16 + s] = tile === f.source ? slot : tile; });
+    expect(edit(plan, f.ts.metatilesPath).after).toEqual(expectedMeta);
     expect(edit(plan, f.ts.metatilesPath).after[f.id * 16 + square!]).toBe(first);
     const png = edit(plan, f.ts.gfxPath); const before = pixels(png.before); const after = pixels(png.after);
     after.forEach((tile, index) => expect(equalPixels(tile, index === indexOf(slot) ? before[indexOf(f.source)]! : before[index]!), `sheet tile ${index}`).toBe(true));
