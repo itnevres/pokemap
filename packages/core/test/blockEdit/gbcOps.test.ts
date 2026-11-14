@@ -181,7 +181,8 @@ function stagedCopy(f: LocalFixture, from: number, to: number, pal: string): Fil
 }
 /** The 0-based line of the `tilepal` entry holding `tile`, from the text's own order. */
 function paletteLineHolding(text: string, tile: number): number {
-  const lines = text.split("\n");
+  // Keep CRLF terminators out of the match; line indices are unaffected.
+  const lines = text.split("\n").map(line => (line.endsWith("\r") ? line.slice(0, -1) : line));
   let count = 0;
   for (let index = 0; index < lines.length; index++) {
     const match = lines[index]!.replace(/;.*/, "").match(/^\s*tilepal\s+[01]\s*,\s*(.*)$/);
@@ -227,6 +228,31 @@ function expectOnlyCollisionRecordChanged(beforeText: string, afterText: string,
   expect(now.body, "collision record content").not.toBe(was.body);
   const outside = (lines: SourceLine[]): string => lines.filter((_, index) => index !== target).map(line => line.text).join("");
   expect(outside(after), "bytes outside record N").toBe(outside(before));
+}
+/** How many times `byte` occurs in `buffer`. */
+const countByte = (buffer: Buffer, byte: number): number =>
+  buffer.reduce((total, value) => total + (value === byte ? 1 : 0), 0);
+/** CRLF everywhere: `\r\n` collapses to `\n` first, so a lone-CR file cannot end up mixed. */
+const toCrlf = (text: string): string => text.replace(/\r\n/g, "\n").replace(/\n/g, "\r\n");
+/**
+ * Add the byte 0xE9 in a `;` comment on each `touch` line. A line that already
+ * has a comment grows it; any other line gets a trailing ` ; caf\u00E9` comment.
+ */
+function markLatin1Comments(text: string, touch: readonly number[]): { text: string; buffer: Buffer } {
+  const lines = sourceLines(text);
+  const edited = lines.map((line, index) => {
+    if (!touch.includes(index)) return line;
+    const body = line.body.includes(";") ? `${line.body} caf\u00E9` : `${line.body} ; caf\u00E9`;
+    return { ...line, body, text: body + line.end };
+  });
+  const out = edited.map(line => line.text).join("");
+  return { text: out, buffer: Buffer.from(out, "latin1") };
+}
+/** The first line index other than `target`, or a failure when there is none. */
+function otherLineIndex(lines: readonly SourceLine[], target: number): number {
+  const index = lines.findIndex((_, index) => index !== target);
+  expect(index, "another line to mark").toBeGreaterThanOrEqual(0);
+  return index;
 }
 interface DoubleLocalFixture {
   p: GbcProject; map: GbcMap; ts: GbcTileset; id: number;
@@ -309,6 +335,31 @@ function expectLocalSurvivesAllRename(order: "localFirst" | "allFirst"): void {
   expect(afterNames.get(b)).toBe(other); expect(afterNames.get(slot)).toBe(f.pal);
 }
 
+/**
+ * R5a: an All entry whose tile has no palette-map entry refuses BAD_VALUE
+ * before a Local entry is resolved, whichever order the entries are listed.
+ */
+function expectAllBadValueBeforeLocalRefusal(order: "localFirst" | "allFirst"): void {
+  const f = localFixture(); const reserved = loadGbcReservedTiles(f.p.root);
+  const palNames = names(bytes(f.p, f.ts.palMapPath).toString("latin1"));
+  const source = f.sheet.map((_, i) => tileId(i)).find(t => reserved.has(t) && palNames.has(t));
+  expect(source, "mapped reserved source in the sheet").toBeDefined();
+  const meta = Buffer.from(bytes(f.p, f.ts.metatilesPath));
+  meta[f.id * 16 + 0] = source!;
+  meta[f.id * 16 + 2] = 0x60;
+  const staged = new Map([[canon(f.ts.metatilesPath), meta]]);
+  const d = draft(f.p, f.ts, f.id, staged);
+  expect(d.tiles[0], "reserved source staged in square 0").toBe(source);
+  expect(d.tiles[2], "staged filler tile in square 2").toBe(0x60);
+  const local = { square: 0, palName: alternate(palNames.get(source!)!), scope: "local" as const };
+  const all = { square: 2, palName: "RED", scope: "all" as const };
+  const both = { ...d, palettes: order === "localFirst" ? [local, all] : [all, local] };
+  refusal(() => planGbcBlockEdit(f.p, request(f.map, f.id, both), staged, new Map()), "BAD_VALUE", [f.ts.palMapPath]);
+  const localOnly = { ...d, palettes: [local] };
+  const reservedMessage = `tile $${source!.toString(16).padStart(2, "0")}:`;
+  refusal(() => planGbcBlockEdit(f.p, request(f.map, f.id, localOnly), staged, new Map()), "RESERVED_TILE", [reservedMessage], reservedMessage);
+}
+
 describe("GBC block edit planner", () => {
   itWithGbcCorpus("OK edits only block N's 16 bytes and collision record N", () => {
     const {p, ts, map} = forest(); const id = 1; const d = changedDraft(p, ts, id);
@@ -323,6 +374,73 @@ describe("GBC block edit planner", () => {
     expect(plan.warnings).toEqual([]);
     expect(plan.usage).toEqual(usageOracle(p, ts, id));
     expect(bytes(p, ts.metatilesPath)).toEqual(m.before); expect(bytes(p, ts.collisionPath)).toEqual(c.before);
+  }, timeout);
+  itWithGbcCorpus("staged CRLF and latin1 text survives the planner byte for byte", () => {
+    const {p, ts, map} = forest();
+    const meta = bytes(p, ts.metatilesPath);
+    const palNames = names(bytes(p, ts.palMapPath).toString("latin1"));
+    const foundId = Array.from({ length: meta.length / 16 }, (_, n) => n)
+      .find(n => [...meta.subarray(n * 16, n * 16 + 16)].some(t => palNames.has(t)));
+    expect(foundId, "a block containing a palette-mapped tile").toBeDefined();
+    const id = foundId!;
+    const tiles = [...meta.subarray(id * 16, id * 16 + 16)];
+    const foundTile = tiles.find(t => palNames.has(t));
+    expect(foundTile, "block N contains a palette-mapped tile").toBeDefined();
+    const tile = foundTile!;
+    const square = tiles.indexOf(tile);
+    const palName = alternate(palNames.get(tile)!);
+
+    const collText = toCrlf(bytes(p, ts.collisionPath).toString("latin1"));
+    const collRecordLines = sourceLines(collText)
+      .map((line, index) => ({ index, code: lineCode(line.body) }))
+      .filter(item => /^\s*tilecoll\b/.test(item.code))
+      .map(item => item.index);
+    expect(collRecordLines.length, `collision text holds record ${id}`).toBeGreaterThan(id);
+    const collEditLine = collRecordLines[id]!;
+    const collStaged = markLatin1Comments(collText, [collEditLine, otherLineIndex(sourceLines(collText), collEditLine)]);
+
+    const palText = toCrlf(bytes(p, ts.palMapPath).toString("latin1"));
+    const tileLine = paletteLineHolding(palText, tile);
+    const palStaged = markLatin1Comments(palText, [tileLine, otherLineIndex(sourceLines(palText), tileLine)]);
+
+    expect(collStaged.buffer.includes(0x0d), "staged collision has CR bytes").toBe(true);
+    expect(collStaged.buffer.includes(0xe9), "staged collision has 0xE9 bytes").toBe(true);
+    expect(palStaged.buffer.includes(0x0d), "staged palette map has CR bytes").toBe(true);
+    expect(palStaged.buffer.includes(0xe9), "staged palette map has 0xE9 bytes").toBe(true);
+
+    const collRecords = readGbcCollisionRecords(collStaged.text);
+    const baseCollision = [...collRecords[id]!] as GbcBlockDraft["collision"];
+    const collisionName = [...new Set(collRecords.flat())].find(name => name !== baseCollision[0]);
+    expect(collisionName, "another collision name used in the file").toBeDefined();
+    const collision: GbcBlockDraft["collision"] = [collisionName!, baseCollision[1]!, baseCollision[2]!, baseCollision[3]!];
+    const d: GbcBlockDraft = { tiles, collision, palettes: [{ square, palName, scope: "all" }] };
+    const staged = new Map([[canon(ts.collisionPath), collStaged.buffer], [canon(ts.palMapPath), palStaged.buffer]]);
+    const plan = planGbcBlockEdit(p, request(map, id, d), staged, new Map());
+
+    const c = edit(plan, ts.collisionPath);
+    expect(c.before, "collision edit reads the staged buffer").toEqual(collStaged.buffer);
+    const collAfter = c.after.toString("latin1");
+    expectOnlyCollisionRecordChanged(collStaged.text, collAfter, id);
+    expect(countByte(c.after, 0x0d), "CR count survives").toBe(countByte(collStaged.buffer, 0x0d));
+    expect(countByte(c.after, 0xe9), "0xE9 count survives").toBe(countByte(collStaged.buffer, 0xe9));
+    expect(c.after.includes(Buffer.from([0xef, 0xbf, 0xbd])), "no replacement characters").toBe(false);
+    expect(countByte(c.after, 0xfd), "no new 0xFD bytes").toBe(countByte(collStaged.buffer, 0xfd));
+    expect(readGbcCollisionRecords(collAfter)[id], "record N keeps the draft names").toEqual(d.collision);
+
+    const pl = edit(plan, ts.palMapPath);
+    expect(pl.before, "palette edit reads the staged buffer").toEqual(palStaged.buffer);
+    const palAfter = pl.after.toString("latin1");
+    expectOnlyPaletteTilesChanged(palStaged.text, palAfter, [tile]);
+    expect(countByte(pl.after, 0x0d), "CR count survives").toBe(countByte(palStaged.buffer, 0x0d));
+    expect(countByte(pl.after, 0xe9), "0xE9 count survives").toBe(countByte(palStaged.buffer, 0xe9));
+    expect(pl.after.includes(Buffer.from([0xef, 0xbf, 0xbd])), "no replacement characters").toBe(false);
+    expect(countByte(pl.after, 0xfd), "no new 0xFD bytes").toBe(countByte(palStaged.buffer, 0xfd));
+    const expectedNames = new Map(names(palStaged.text));
+    expectedNames.set(tile, palName);
+    expect(names(palAfter), "only the renamed tile differs").toEqual(expectedNames);
+    const changedLine = palAfter.split("\n")[tileLine]!;
+    expect(changedLine.slice(changedLine.indexOf(";")), "changed line keeps its comment").toContain("caf\u00E9");
+    expect(changedLine.endsWith("\r"), "changed line keeps its CRLF").toBe(true);
   }, timeout);
   itWithGbcCorpus("saveAsNew on forest replaces surplus record 40", () => {
     const {p, ts, map} = forest(); const d = changedDraft(p, ts, 1); const orig = bytes(p, ts.metatilesPath);
@@ -398,6 +516,12 @@ describe("GBC block edit planner", () => {
     const source = f.sheet.map((_,i) => tileId(i)).find(t => reserved.has(t)); expect(source, "mapped reserved source").toBeDefined();
     const d = draft(f.p, f.ts, f.id); d.tiles[0] = source!; d.palettes = [{square:0, palName:alternate(names(bytes(f.p, f.ts.palMapPath).toString()).get(source!)!), scope:"local"}];
     refusal(() => planGbcBlockEdit(f.p, request(f.map, f.id, d), new Map(), new Map()), "RESERVED_TILE", [`tile $${source!.toString(16).padStart(2,"0")}:`], `tile $${source!.toString(16).padStart(2,"0")}:`);
+  }, timeout);
+  itWithGbcCorpus("an All BAD_VALUE comes before a Local refusal (Local listed first)", () => {
+    expectAllBadValueBeforeLocalRefusal("localFirst");
+  }, timeout);
+  itWithGbcCorpus("an All BAD_VALUE comes before a Local refusal (All listed first)", () => {
+    expectAllBadValueBeforeLocalRefusal("allFirst");
   }, timeout);
   itWithGbcCorpus("Local with no free slot refuses NO_FREE_TILE naming the sheet", () => {
     const f = localFixture(); const d = localDraft(f); const ids = f.sheet.map((_,i) => tileId(i));
@@ -656,6 +780,24 @@ describe("GBC block edit planner", () => {
     d.palettes = [{ square, palName: "RED", scope: "all" }];
     refusal(() => planGbcBlockEdit(f.p, request(f.map, f.id, d), staged, new Map()), "BAD_VALUE", [f.ts.palMapPath]);
   }, timeout);
+  itWithGbcCorpus("Local palette entry on an untouched tile with no palette-map entry refuses BAD_VALUE", () => {
+    const f = localFixture(); const meta = Buffer.from(bytes(f.p, f.ts.metatilesPath)); const square = 2;
+    meta[f.id * 16 + square] = 0x60;
+    const staged = new Map([[canon(f.ts.metatilesPath), meta]]); const d = draft(f.p, f.ts, f.id, staged);
+    expect(d.tiles[square], "staged filler tile").toBe(0x60);
+    d.palettes = [{ square, palName: "RED", scope: "local" }];
+    let caught: unknown;
+    try {
+      planGbcBlockEdit(f.p, request(f.map, f.id, d), staged, new Map());
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught, "expected BAD_VALUE").toBeInstanceOf(BlockEditRefusal);
+    const err = caught as BlockEditRefusal;
+    expect(err.code).toBe("BAD_VALUE");
+    expect(err.message.toLowerCase(), "message names the palette-map path").toContain(f.ts.palMapPath.toLowerCase());
+    expect(err.message.toLowerCase().startsWith(f.ts.gfxPath.toLowerCase()), "message does not start with the gfx path").toBe(false);
+  }, timeout);
   itWithGbcCorpus("same block staged bytes are the draft baseline", () => {
     const {p,ts,map} = forest(); const meta = Buffer.from(bytes(p,ts.metatilesPath));
     meta[16] = meta[16] === 1 ? 2 : 1; const staged = new Map([[canon(ts.metatilesPath),meta]]);
@@ -750,8 +892,14 @@ describe("confirmation per map", () => {
         canon(p.tileset(m.tileset).metatilesPath) === canon(ts.metatilesPath));
       if (!other) continue;
       const id = other.border; const zeroGrid = Array(other.width * other.height).fill(0) as number[];
-      expect(zeroGrid, "no interior use of the block").not.toContain(id);
-      const plan = planGbcBlockEdit(p, request(map, id, changedDraft(p, ts, id)), new Map(), new Map([[other.name, zeroGrid]]));
+      // Every map gets a staged filler grid that never names `id`, so no staged grid contains it;
+      // only `other.border === id` can make `confirm` true.
+      const grids = gridsFor(p, id); grids.set(other.name, zeroGrid);
+      for (const [name, grid] of grids) {
+        expect(grid.includes(id), `staged grid for ${name} names block ${id}`).toBe(false);
+      }
+      expect(other.border, "the other map reaches the block only as its border").toBe(id);
+      const plan = planGbcBlockEdit(p, request(map, id, changedDraft(p, ts, id)), new Map(), grids);
       expect(plan.edits.length).toBeGreaterThan(0);
       expect(plan.confirm).toBe(true);
       return;
