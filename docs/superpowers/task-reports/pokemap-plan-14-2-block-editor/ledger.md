@@ -331,3 +331,130 @@ Next, in order (one vitest process at a time):
    fix-round implementation hop (`chain.py --tier sonnet --no-codex`, tests protected), mutation rerun `mut_t7.py`,
    scoped Opus re-reviews, merge after Task 6, gate.
 5. Task 8 onward.
+
+## Execution (conductor s6, 2026-11-14)
+
+- Start check (s5 was cut off by a usage limit after its handoff): main checkout `7219c95`, `wt-t6` `891361d`,
+  `wt-t7` `aa0413c`, all clean; no vitest / mutation / chain process alive. The repo matches the s5 handoff; nothing
+  to reconcile. Stale review checkouts `wt-t6r` / `wt-t7r` removed (plain `git worktree remove`).
+- s6 scratchpad: `C:\Users\Serve\AppData\Local\Temp\claude\8fd0350c313cb955\4f1ff73b-d02e-498f-9436-66e49bb10d5a\scratchpad\`
+  ("s6-scratchpad"). `wt-t6` / `wt-t7` stay in the s5 scratchpad.
+- Codex cooldown (`chain_state.json`) ran until 2026-11-14 ~09:33 PST; reviews stayed on Claude Opus
+  `high-risk-reviewer` (user ruling 2026-11-13).
+
+### Task 6 (High) — s6
+
+- Mutation rerun on `891361d` (`s5-scratchpad/mut_t6b.out`): baseline 53/53 (the re-verify of the fix commit); M1-M19
+  plus M2b = 20 mutants, **all KILLED**, none SKIPPED.
+- Re-review 1 (Claude Opus `high-risk-reviewer`, detached checkout `s6-scratchpad/rv-t6` at `891361d`, static only):
+  - quality: **Approved**, 0 Critical / 0 Important / 3 Minor → `task-6-quality-rereview.md`. Both review-1 findings
+    closed. Minors: (1) the R1b wrapper and the guarded reads use `(error as Error).message` (garbles a non-Error
+    throw); (2) the new "raw-zero border cells" confirm test passes with the border clause removed (M18 is killed
+    only by the older test); (3) the All-loop no-palette-entry guard duplicates the patcher's and prints the tile in
+    decimal where the patcher prints `$XX`.
+  - spec: **Needs changes**, 0 Critical / 1 Important / 3 Minor → `task-6-spec-rereview.md`. Findings 1, 2, 4 closed;
+    finding 3 partly. I1: the planner's own latin1 decode/encode of the collision and palette-map text has no test
+    (the corpus has no CR byte and no byte above 0x7F in those files, so a utf8 regression would pass every test and
+    corrupt a subject file). M1 = quality Minor 2. M2: R5a refusal precedence (All `BAD_VALUE` before a Local
+    refusal) not pinned. M3: the Local-scope no-palette-entry guard is untested.
+  - All findings checked against the code at `891361d` (latin1 at `gbcOps.ts:134/137/237/238`; test `:743-760`
+    stages only `other`'s grid). Accepted.
+- Fix round 2 = tests only (the code already behaves; no implementation finding above Minor): brief
+  `task-6-fix2-tests-brief.md` (I1 CRLF + 0xE9 round trip through the planner, M1 rewrite, M2 both entry orders, M3
+  Local variant). Hop: `chain.py --tier sonnet --no-codex`, `wt-t6`, verify typecheck only, log
+  `s6-scratchpad/chain-T6-fix2-tests.log`.
+- Quality Minor 3 (the All-loop no-palette-entry guard duplicates the patcher's; tile printed in decimal there and as
+  `$XX` elsewhere) deferred: cosmetic, no behaviour. Candidate for Task 16.
+- Fix round 2 tests: `RESULT done | openrouter/thinkingmachines/inkling-2-small:free done` → `b127bb1` (+151/−3 in
+  gbcOps.test.ts; report `task-6-fix2-tests-report.md`; the OpenCode pool was capped, so the chain skipped to
+  OpenRouter). Conductor read every added line: the I1 test stages CRLF + `0xE9` collision and palette-map text built
+  by the test's own string work, asserts `before` = the staged buffer, only record N / the one tile's line changed,
+  CR / `0xE9` / `0xFD` byte counts and no `EF BF BD`; M1 now stages a filler grid for every map; M2 runs both entry
+  orders and checks the Local-only precondition (`RESERVED_TILE`); M3 is the Local variant. No wrong expectation.
+- Conductor inline fix `6287878` (quality Minor 1): `errorText` helper for the R1b wrapper and the two guarded reads
+  (+5/−3 in gbcOps.ts; inline because a brief costs more than the edit). Typecheck pass.
+- Mutation run on `6287878` (`s6-scratchpad/mut_t6c.py` → `mut_t6c.out`): M1-M19, M2b plus M20-M23 (utf8 decode /
+  encode of the collision and palette-map text), M24 (R1a guard removed), M25 (R1b wrapper removed), M26 (R6a
+  wording), M27 (Local no-entry guard removed), M28 (Local reuse judged by the pre-All palette), M29 (All loop after
+  the Local loop). **Result: baseline 57/57 (the re-verify of `6287878`); 30 mutants, all KILLED, none SKIPPED.**
+- Spec re-review 2 (same Opus reviewer, continued; scope `891361d..6287878`, checkout `rv-t6` at `6287878`): started,
+  then killed by the Claude 5-hour usage limit (reset 13:30 PST) before it wrote anything. **No
+  `task-6-spec-rereview2.md` exists. Open.** A brief for a fresh reviewer is ready: `task-6-rereview2-brief.md`.
+
+### Task 7 (High) — s6
+
+- Fix-round tests `aa0413c` vetted line by line against the fixture facts (`gbaFixture.ts`: splits 8/8/2 vs 12/12/3,
+  total 32; A/B 4 blocks 13 palettes, S 3 blocks 5 palettes, T 3 blocks 13 palettes; 16-tile sheets; layouts E, F, O,
+  X, H; grids `[1,1,9|13,0]`, borders `[1,0,0,0]`). Every new expectation re-derived by hand: cell bounds; append
+  limits (S staged 20/21 → F limit 20 = 32 − 12; A staged 9 → E limit 8); structural cases (tile 25 valid in F,
+  invalid in E; palette 5 valid in X/T, invalid in E/S; tile 20 accepted everywhere); SHARED_GRID only from the map;
+  boundary ids 8 / 12; read failure; unknown map; border read inside usage; draft shape; secondary confirm (13 only
+  in Frlg); secondary usage (targets 9 / 13); warning pairs; R3 winner deciding confirm. No wrong expectation found.
+  One weakness: the null-entry and missing-behavior cases would pass through the R1b wrapper alone → conductor
+  inline edit `ecbfc14` pins the message prefix (ruling G2c added to `task-7-rulings.md`; 4 lines, inline because
+  cheaper than a hop).
+- Red run at `aa0413c` (`s6-scratchpad/t7-fix1-red.out`): 61 tests, 14 fail / 47 pass; every failure is the intended
+  one (cell bounds ×2, append-limit message ×4, unknown map, border read, null entry, missing behavior, attribute
+  word count ×4). The 11 new passing cases pin behaviour the reviews found untested.
+- Fix-round implementation brief `task-7-fix1-impl-brief.final.md` (G2a, G2b + G2c, G6a exact, R1b wrapper, quality
+  items). Hop: `chain.py --tier sonnet --no-codex`, `wt-t7`, verify `gbaOps.test.ts` min 61 + typecheck, tests
+  protected, log `s6-scratchpad/chain-T7-fix1-impl.log`.
+- **OpenCode Zen free pool capped 2026-11-14 08:42 PST** ("Free usage limit reached", retry after ~7.7 h; chain
+  cooldown until ~20:42 PST). Both chains fell through to OpenRouter `inkling-2-small`, and both hops succeeded.
+- Fix-round implementation: `RESULT done | opencode/deepseek-v4.1-flash-free failed (cap: no diff) ->
+  openrouter/thinkingmachines/inkling-2-small:free done` → `ecf0eb4` (gbaOps.ts +61/−36; report
+  `task-7-fix1-report.md`). Conductor read the diff against G2a/G2b/G2c/G6a/R1b and the quality items: wrapper
+  re-throws refusals; id validated before `local`; attribute-count and shape checks in the BAD_VALUE stage; one
+  patcher call per file (Save as new validates through its append; the patchers throw `BAD_VALUE` only); cell bounds;
+  exact append-limit message; one `cells` cache; layout objects from `proj.layouts`. Re-verify: 61/61, typecheck
+  pass (`s6-scratchpad/t7-fix1-green.out`, `t7-fix1-tc.out`).
+- Conductor inline test `a27eafc`: missing `layerType` → `BAD_VALUE` naming the attributes file (G2b had a test for
+  `behavior` only; 7 lines). Typecheck pass.
+  Re-verify at `a27eafc`: 62/62 (`s6-scratchpad/t7-a27eafc-green.out`).
+- Scoped re-reviews (Claude Opus `high-risk-reviewer`, fresh, separate spec and quality; detached `rv-t7` at
+  `a27eafc`; brief `task-7-rereview-brief.final.md`): started, then killed by the same usage limit before either
+  wrote a report. **No `task-7-spec-rereview.md` / `task-7-quality-rereview.md` exists. Open.**
+- Mutation harness for the fixed code: `s6-scratchpad/mut_t7b.py`, 33 mutants (M1-M16 re-anchored; M17-M33 from
+  the reviews' hand-traced survivors and the fix-round rulings); all 33 anchors match the code at `ecf0eb4` once.
+  **Not run yet. Open.**
+
+### Task 8 (High) — s6
+
+- Tier High (silent-corruption save path; plan "Task tiers"). Independent of Tasks 6-7 (consumes Task 1 types and
+  Task 5 relations only), so it runs beside their fix rounds. BASE `7219c95`; worktree `s6-scratchpad/wt-t8`, branch
+  `p14-2-t8` (node_modules junction to the main checkout).
+- Rulings S1-S11 (`.superpowers/sdd/.../task-8-rulings.md`): canonical repo-relative paths resolved against the root;
+  "changed" = `after` differs from `before` (a restored edit stays in the session but is no change); merge keeps the
+  first baseline; baseline check throws `FILE_CHANGED` at commit and is a `file-changed-on-disk` refusal at plan time;
+  effects per family; prepare uses the session baseline as `before`; commit order (fresh refusals → prepared-entry
+  match → baseline re-check → atomic write); shared helpers live in `blockEdit/save.ts`.
+- Tests brief `task-8-tests-brief.final.md` (oracle split: tests + typed stubs first, verify typecheck).
+- Tests hop **not launched**: it waited for the Codex cooldown (ended 09:33 PST) so `gpt-6.1-sol` could write the
+  oracle, and the session stopped first. `wt-t8` is at BASE with no change.
+
+### Handoff s6 → s7 (2026-11-14, user: "prepare for next session instead of finishing work")
+
+No full gate ran in s6 (nothing merged); the baseline is still s5's gate at `e2dfa27`. Subjects re-measured
+2026-11-14 13:32 PST: GBA `97ac21d4b`, 10 porcelain lines; PerfPlus `81ededbe3`, clean. No vitest, mutation or chain
+process is alive.
+
+State. Both scratchpads sit under `C:\Users\Serve\AppData\Local\Temp\claude\8fd0350c313cb955\`: "s5-scratchpad" =
+`fd52805f-2f40-4daa-9fe0-26bda39faaf2\scratchpad\`, "s6-scratchpad" = `4f1ff73b-d02e-498f-9436-66e49bb10d5a\scratchpad\`.
+- `s5-scratchpad/wt-t6`, branch `p14-2-t6`, HEAD `6287878`, clean. 57 focused tests; 30/30 mutants killed.
+  Open: spec re-review 2.
+- `s5-scratchpad/wt-t7`, branch `p14-2-t7`, HEAD `a27eafc`, clean. 62 focused tests green. Contains Task 6 only up to
+  `c4600c7` (merge `cf74410`). Open: mutation run, spec and quality re-reviews.
+- `s6-scratchpad/wt-t8`, branch `p14-2-t8`, HEAD `7219c95` (BASE), clean. Open: everything from the tests hop.
+- `s6-scratchpad/rv-t6` (detached `6287878`), `rv-t7` (detached `a27eafc`): review checkouts, no junction.
+- `wt-t6`, `wt-t7`, `wt-t8` each hold a `node_modules` junction to the main checkout's.
+
+Next, in order (one vitest process at a time):
+1. Task 6 spec re-review 2: fresh Claude Opus `high-risk-reviewer` with `task-6-rereview2-brief.md` → on approval
+   merge `p14-2-t6` `--no-ff` into `plan-14-2-block-editor`, gate, record.
+2. Task 7: `python -I s6-scratchpad/mut_t7b.py s5-scratchpad/wt-t7 > s6-scratchpad/mut_t7b.out` (~55 min); both
+   re-reviews with `task-7-rereview-brief.final.md` (static, may run during the mutation run); fix what they find;
+   merge the final `p14-2-t6` into `p14-2-t7`, then `p14-2-t7` `--no-ff` into the plan branch, gate, record.
+3. Task 8: tests hop with `task-8-tests-brief.final.md` in `wt-t8`, conductor vets every line, red run, implementation
+   hop with the tests protected, mutations (the plan's three plus the conductor's), separate spec and quality
+   reviews, merge, gate.
+4. Task 9 onward.
