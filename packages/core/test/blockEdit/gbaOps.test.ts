@@ -35,6 +35,13 @@ function revision(p: Project, symbol: string, ids: readonly number[], staged: Fi
 }
 function plan(p: Project, r: GbaBlockEditRequest, staged: FileOverlay = empty, grids: StagedGrids = noGrids) { return planGbaBlockEdit(p, r, staged, grids); }
 function changed(r: GbaBlockEditRequest) { r.draft.entries[7] = { ...r.draft.entries[7]!, xFlip: true }; return r; }
+/** The text from `id` up to the next layout id, so a source cannot be borrowed from another layout. */
+function segment(message: string, id: string, ids: readonly string[]): string {
+  const at = message.search(new RegExp(`\\b${id}\\b`));
+  expect(at).toBeGreaterThanOrEqual(0);
+  const later = ids.map(other => message.search(new RegExp(`\\b${other}\\b`))).filter(pos => pos > at);
+  return message.slice(at, later.length === 0 ? undefined : Math.min(...later));
+}
 
 describe("GBA block edit planner", () => {
   it("OK edits entry N and attribute word N only", () => {
@@ -70,23 +77,146 @@ describe("GBA block edit planner", () => {
     expect(before.readUInt16LE(2)).toBe(0x0a12); expect(after.subarray(0, before.length)).toEqual(before); expect(after.readUInt16LE(before.length)).toBe(0x3a45);
     expect(Object.keys(out.placement!).sort()).toEqual(["blockId", "x", "y"]); expect(out.placement).toEqual({ x: 0, y: 1, blockId: split + 3 }); expect(bytes(p, gridPath)).toEqual(grid); expect(bytes(p, path)).toEqual(before);
   });
-  it("saveAsNew from palette appends only", () => { const p = fixture(), r = request(p); r.mode = "saveAsNew"; r.from = "palette"; delete r.cell; const out = plan(p, r); expect(out.newBlockId).toBe(4); expect(out.placement).toBeUndefined(); expect(out.confirm).toBe(false); expect(out.edits).toHaveLength(2); });
+  for (const cell of [{ x: 2, y: 0 }, { x: 0, y: 2 }]) {
+    it(`saveAsNew from the map refuses a cell outside the layout: ${cell.x},${cell.y}`, () => {
+      const p = fixture(), r = request(p, "Emerald");
+      r.mode = "saveAsNew";
+      r.cell = cell;
+      const e = refusal(() => plan(p, r), "BAD_VALUE");
+      expect(e.message.startsWith("Emerald")).toBe(true);
+    });
+  }
+  it("saveAsNew from palette appends only", () => {
+    const p = fixture(), r = request(p);
+    r.mode = "saveAsNew";
+    r.from = "palette";
+    delete r.cell;
+    const out = plan(p, r);
+    expect(out.newBlockId).toBe(4);
+    expect(out.placement).toBeUndefined();
+    expect(out.confirm).toBe(false);
+    expect(out.edits).toHaveLength(2);
+  });
+  it("saveAsNew from the palette on a shared grid plans a new block without SHARED_GRID", () => {
+    const p = fixture(), r = request(p, "SharedA");
+    r.mode = "saveAsNew";
+    r.from = "palette";
+    delete r.cell;
+    const out = plan(p, r);
+    expect(out.newBlockId).toBe(4);
+    expect(out.placement).toBeUndefined();
+    expect(out.confirm).toBe(false);
+    expect(out.edits).toHaveLength(2);
+  });
   it("saveAsNew on the shared grid refuses SHARED_GRID", () => { const p = fixture(), r = request(p, "SharedB"); r.mode = "saveAsNew"; const e = refusal(() => plan(p, r), "SHARED_GRID"); expect(e.message.startsWith("SharedB")).toBe(true); expect(e.message).toMatch(/SharedA.*SharedB/); });
   it("append limit refuses SPLIT_LIMIT under the tighter split", () => {
-    const p = fixture(), r = request(p, "Emerald", 9, "gTileset_S"); r.mode = "saveAsNew"; const paths = p.tilesetPaths("gTileset_S");
-    const m = Buffer.alloc(20 * 16), a = Buffer.alloc(20 * 2); bytes(p, paths.metatilesBin).copy(m); bytes(p, paths.attributesBin).copy(a);
-    const e = refusal(() => plan(p, r, new Map([[paths.metatilesBin, m], [paths.attributesBin, a]])), "SPLIT_LIMIT"); expect(e.message).toMatch(/\bF\b/); expect(e.message).toMatch(/20|32/);
+    const p = fixture(), r = request(p, "Emerald", 9, "gTileset_S");
+    r.mode = "saveAsNew";
+    const paths = p.tilesetPaths("gTileset_S");
+    const m = Buffer.alloc(20 * 16), a = Buffer.alloc(20 * 2);
+    bytes(p, paths.metatilesBin).copy(m);
+    bytes(p, paths.attributesBin).copy(a);
+    const e = refusal(() => plan(p, r, new Map([[paths.metatilesBin, m], [paths.attributesBin, a]])), "SPLIT_LIMIT");
+    expect(e.message.startsWith(paths.metatilesBin)).toBe(true);
+    expect(e.message).toMatch(/\bF\b/);
+    expect(e.message).toContain("20 metatiles");
+  });
+  it("append limit names S's metatiles file, layout F and its 20-metatile limit", () => {
+    const p = fixture(), r = request(p, "Emerald", 9, "gTileset_S");
+    r.mode = "saveAsNew";
+    r.cell = { x: 0, y: 1 };
+    const paths = p.tilesetPaths("gTileset_S");
+    const m = Buffer.alloc(21 * 16), a = Buffer.alloc(21 * 2);
+    bytes(p, paths.metatilesBin).copy(m);
+    bytes(p, paths.attributesBin).copy(a);
+    const e = refusal(() => plan(p, r, new Map([[paths.metatilesBin, m], [paths.attributesBin, a]])), "SPLIT_LIMIT");
+    expect(e.message.startsWith(paths.metatilesBin)).toBe(true);
+    expect(e.message).toMatch(/\bF\b/);
+    expect(e.message).toContain("20 metatiles");
+    // The staged count is 21, so a message that only echoed the count cannot satisfy the limit.
+    expect(e.message).toContain("cannot append metatile 21");
+  });
+  it("append limit for a primary names A's metatiles file, layout E and its 8-metatile limit", () => {
+    const p = fixture(), r = request(p, "Frlg");
+    r.mode = "saveAsNew";
+    r.cell = { x: 0, y: 0 };
+    const paths = p.tilesetPaths("gTileset_A");
+    const m = Buffer.alloc(9 * 16), a = Buffer.alloc(9 * 2);
+    bytes(p, paths.metatilesBin).copy(m);
+    bytes(p, paths.attributesBin).copy(a);
+    const e = refusal(() => plan(p, r, new Map([[paths.metatilesBin, m], [paths.attributesBin, a]])), "SPLIT_LIMIT");
+    expect(e.message.startsWith(paths.metatilesBin)).toBe(true);
+    expect(e.message).toMatch(/\bE\b/);
+    expect(e.message).toContain("8 metatiles");
+    expect(e.message).toContain("cannot append metatile 9");
   });
   it.each([["tile", 25], ["palette", 6], ["palette", 13]] as const)("structural refusal: changed %s %i", (field, value) => {
     const p = fixture(), r = request(p); r.draft.entries[0] = { ...r.draft.entries[0]!, [field]: value };
     const e = refusal(() => plan(p, r), "SPLIT_LIMIT"); expect(e.message.startsWith("gTileset_A")).toBe(true); expect(e.message).toMatch(/\bE\b/);
   });
-  it.each([["primary secondary-range tile", "gTileset_A", "Emerald", 1, 1, { tile: 8 }, ["E", "F", "H", "X"], "tile"], ["primary secondary-range palette only", "gTileset_A", "Emerald", 1, 1, { palette: 2 }, ["E", "F", "H", "X"], "palette"], ["secondary primary-range tile", "gTileset_S", "Emerald", 9, 1, { tile: 0 }, ["E", "F", "O"], "tile"]] as const)("cross-half warnings: %s", (_name, symbol, map, id, local, fields, layouts, kind) => {
-    const p = fixture(), r = request(p, map, id, symbol, local), original = r.draft.entries.map(e => ({ ...e })); r.draft.entries[0] = { ...r.draft.entries[0]!, ...fields };
-    const direct = gbaCrossHalfWarnings(p, symbol, r.draft, original), warnings = plan(p, r).warnings;
-    expect(warnings).toEqual(direct); const relevant = warnings.filter(w => new RegExp(`\\b${kind}\\b`, "i").test(w)); expect(relevant).toHaveLength(1); const message = relevant[0]!; expect(message).toMatch(/\b0\b/); for (const l of layouts) expect(message).toMatch(new RegExp(`\\b${l}\\b`)); expect(new Set(warnings).size).toBe(warnings.length);
-    for (const source of symbol === "gTileset_A" ? ["gTileset_A", "gTileset_S", "gTileset_T"] : ["gTileset_A", "gTileset_B"]) expect(message).toContain(source);
+  it("structural check uses every consuming layout: tile 25 from F is invalid in E", () => {
+    const p = fixture(), r = request(p, "Frlg");
+    // F's split tiles are 12, so 25 - 12 = 13 is a valid F-local tile, but E's split is 8 and S has 16 tiles.
+    r.draft.entries[0] = { ...r.draft.entries[0]!, tile: 25 };
+    const e = refusal(() => plan(p, r), "SPLIT_LIMIT");
+    expect(e.message.startsWith("gTileset_A")).toBe(true);
+    expect(e.message).toMatch(/\bE\b/);
   });
+  it("structural check uses every consuming layout: palette 5 from X is invalid in E", () => {
+    const p = fixture(), r = request(p, "Extra");
+    // T has 13 palettes and passes in X, but E resolves palette 5 in S, which has only 5.
+    r.draft.entries[0] = { ...r.draft.entries[0]!, palette: 5 };
+    const e = refusal(() => plan(p, r), "SPLIT_LIMIT");
+    expect(e.message.startsWith("gTileset_A")).toBe(true);
+    expect(e.message).toMatch(/\bE\b/);
+  });
+  it("structural check accepts tile 20 from every consuming layout", () => {
+    const p = fixture(), r = request(p, "Emerald");
+    // E: 20 - 8 = 12 < 16, F: 20 - 12 = 8 < 16, H/X: 20 - 8 = 12 < 16 (T).
+    r.draft.entries[0] = { ...r.draft.entries[0]!, tile: 20 };
+    const out = plan(p, r);
+    expect(out.edits.length).toBeGreaterThan(0);
+  });
+  const crossHalfCases: {
+    name: string; symbol: string; map: string; id: number; local: number;
+    fields: Partial<TileEntry>; kind: string; pairs: readonly (readonly [string, string])[];
+  }[] = [
+    {
+      name: "primary secondary-range tile", symbol: "gTileset_A", map: "Emerald", id: 1, local: 1,
+      fields: { tile: 8 }, kind: "tile",
+      // A tile above 8 is in S under E, but still primary A under F, and in T under H/X.
+      pairs: [["E", "gTileset_S"], ["F", "gTileset_A"], ["H", "gTileset_T"], ["X", "gTileset_T"]],
+    },
+    {
+      name: "primary secondary-range palette only", symbol: "gTileset_A", map: "Emerald", id: 1, local: 1,
+      fields: { palette: 2 }, kind: "palette",
+      pairs: [["E", "gTileset_S"], ["F", "gTileset_A"], ["H", "gTileset_T"], ["X", "gTileset_T"]],
+    },
+    {
+      name: "secondary primary-range tile", symbol: "gTileset_S", map: "Emerald", id: 9, local: 1,
+      fields: { tile: 0 }, kind: "tile",
+      // Tile 0 is primary A under E/F and primary B under O.
+      pairs: [["E", "gTileset_A"], ["F", "gTileset_A"], ["O", "gTileset_B"]],
+    },
+  ];
+  for (const c of crossHalfCases) {
+    it(`cross-half warnings: ${c.name}`, () => {
+      const p = fixture(), r = request(p, c.map, c.id, c.symbol, c.local);
+      const original = r.draft.entries.map(e => ({ ...e }));
+      r.draft.entries[0] = { ...r.draft.entries[0]!, ...c.fields } as TileEntry;
+      const direct = gbaCrossHalfWarnings(p, c.symbol, r.draft, original), warnings = plan(p, r).warnings;
+      expect(warnings).toEqual(direct);
+      const relevant = warnings.filter(w => new RegExp(`\\b${c.kind}\\b`, "i").test(w));
+      expect(relevant).toHaveLength(1);
+      const message = relevant[0]!;
+      expect(message).toMatch(/\b0\b/);
+      expect(new Set(warnings).size).toBe(warnings.length);
+      const ids = c.pairs.map(([id]) => id);
+      for (const [id, source] of c.pairs) {
+        expect(segment(message, id, ids)).toContain(source);
+      }
+    });
+  }
   it("cross-half warnings: no warning when every source is identical", () => { const p = fixture(), r = request(p), original = r.draft.entries.map(e => ({ ...e })); r.draft.entries[0] = { ...r.draft.entries[0]!, tile: 3 }; expect(gbaCrossHalfWarnings(p, "gTileset_A", r.draft, original)).toEqual([]); expect(plan(p, r).warnings).toEqual([]); });
   it("existing palette 13-15 / cross-half entries untouched keep their bytes and warn nothing", () => { const p = fixture(), r = changed(request(p, "Emerald", 2, "gTileset_A", 2)), path = p.tilesetPaths("gTileset_A").metatilesBin, before = bytes(p, path), out = plan(p, r); expect(out.warnings).toEqual([]); expect(out.edits.find(e => e.path === path)!.after.subarray(32, 38)).toEqual(before.subarray(32, 38)); });
   it("triple-layer project refuses TRIPLE_LAYER", () => { const p = fixture(true), r = request(p); r.draft.entries = []; const e = refusal(() => plan(p, r), "TRIPLE_LAYER"); expect(e.message.startsWith(p.paths.porymapCfg)).toBe(true); });
@@ -125,10 +255,17 @@ it("staged original determines changed entries and unchanged edits", () => {
 
 it("shared grid uses the alphabetically first staged map for usage and confirmation", () => {
   const p = fixture(), r = changed(request(p, "Emerald"));
-  const grids = new Map([["SharedB", [1, 1, 1]], ["SharedA", [0, 0, 0]]]);
+  const grids = new Map([["SharedB", [1, 1, 1]], ["SharedA", [0, 0, 0]], ["Frlg", [0]], ["Extra", [0]]]);
   const out = plan(p, r, empty, grids); const shared = out.usage.maps.find(m => m.map === "SharedA");
   expect(shared?.interior).toBe(0); expect(shared?.border).toBe(1);
   expect(out.usage.sharedGrids).toContainEqual({ file: "data/layouts/H/map.bin", maps: ["SharedA", "SharedB"] });
+  // A local 1's target id 1 is also every border's cell, so use local 2 for the
+  // case where only the R3 winner can confirm.
+  const r2 = changed(request(p, "Emerald", 2, "gTileset_A", 2));
+  const both = new Map([["SharedA", [0, 0, 0]], ["SharedB", [2, 0, 0]], ["Frlg", [0]], ["Extra", [0]]]);
+  expect(plan(p, r2, empty, both).confirm).toBe(false);
+  const onlyB = new Map([["SharedB", [2, 0, 0]], ["Frlg", [0]], ["Extra", [0]]]);
+  expect(plan(p, r2, empty, onlyB).confirm).toBe(true);
 });
 
 it("cross-half warnings distinguish different local tiles within the same source tileset", () => {
@@ -160,11 +297,108 @@ it("planner staged bytes override the project's separate overlay", () => {
 });
 
 it("append limit precedes structural refusal and applies to every primary split", () => {
-  const p = fixture(), r = request(p, "Frlg"); r.mode = "saveAsNew"; r.draft.entries[0] = { ...r.draft.entries[0]!, tile: 25 };
+  const p = fixture(), r = request(p, "Frlg");
+  r.mode = "saveAsNew";
+  r.draft.entries[0] = { ...r.draft.entries[0]!, tile: 25 };
   const paths = p.tilesetPaths("gTileset_A"), m = Buffer.alloc(8 * 16), a = Buffer.alloc(8 * 2);
   bytes(p, paths.metatilesBin).copy(m); bytes(p, paths.attributesBin).copy(a);
   const e = refusal(() => plan(p, r, new Map([[paths.metatilesBin, m], [paths.attributesBin, a]])), "SPLIT_LIMIT");
-  expect(e.message).toMatch(/\bE\b/); expect(e.message).toMatch(/8/);
+  expect(e.message.startsWith(paths.metatilesBin)).toBe(true);
+  expect(e.message).toMatch(/\bE\b/);
+  expect(e.message).toContain("8 metatiles");
+});
+
+it.each([["Emerald", 8], ["Frlg", 12]] as const)("unchanged S local 0 at the primary/secondary boundary is a valid secondary block (%s)", (map, split) => {
+  const p = fixture(), out = plan(p, request(p, map, split, "gTileset_S", 0));
+  expect(out.edits).toEqual([]);
+  expect(out.usage.tilesets).toEqual(["gTileset_S"]);
+});
+
+it("a failed tileset read is BAD_VALUE naming the path", () => {
+  const p = fixture(), r = request(p), path = p.tilesetPaths("gTileset_A").attributesBin;
+  rmSync(join(p.paths.root, path));
+  const e = refusal(() => plan(p, r), "BAD_VALUE");
+  expect(e.message.startsWith(path)).toBe(true);
+});
+
+it("an unknown map is a BAD_VALUE naming the map", () => {
+  const p = fixture();
+  const e = refusal(() => plan(p, request(p, "Nope")), "BAD_VALUE");
+  expect(e.message.startsWith("Nope")).toBe(true);
+});
+
+it("a failed border read inside usage is a BAD_VALUE naming the map", () => {
+  const p = fixture(), r = request(p, "Emerald", 9, "gTileset_S", 1);
+  r.mode = "saveAsNew";
+  r.from = "palette";
+  delete r.cell;
+  rmSync(join(p.paths.root, "data/layouts/O/border.bin"));
+  const e = refusal(() => plan(p, r), "BAD_VALUE");
+  expect(e.message.startsWith("Emerald")).toBe(true);
+});
+
+it("BAD_VALUE: a null draft entry", () => {
+  const p = fixture(), r = request(p);
+  r.draft.entries[0] = null as unknown as TileEntry;
+  refusal(() => plan(p, r), "BAD_VALUE");
+});
+
+it("BAD_VALUE: behavior missing", () => {
+  const p = fixture(), r = request(p);
+  r.draft.behavior = undefined as unknown as number;
+  refusal(() => plan(p, r), "BAD_VALUE");
+});
+
+it.each([["ok", false], ["saveAsNew", true]] as const)("BAD_VALUE: one surplus attribute word (%s)", (_mode, saveAsNew) => {
+  const p = fixture(), r = request(p, "Emerald");
+  if (saveAsNew) r.mode = "saveAsNew";
+  const path = p.tilesetPaths("gTileset_A").attributesBin;
+  const staged = new Map([[path, Buffer.concat([bytes(p, path), Buffer.alloc(2)])]]);
+  const e = refusal(() => plan(p, r, staged), "BAD_VALUE");
+  expect(e.message.startsWith(path)).toBe(true);
+  expect(e.message).toContain("5 attribute words for 4 metatiles");
+});
+
+it.each([["ok", false], ["saveAsNew", true]] as const)("BAD_VALUE: one attribute word short (%s)", (_mode, saveAsNew) => {
+  const p = fixture(), r = request(p, "Emerald");
+  if (saveAsNew) r.mode = "saveAsNew";
+  const path = p.tilesetPaths("gTileset_A").attributesBin;
+  const staged = new Map([[path, bytes(p, path).subarray(0, 6)]]);
+  const e = refusal(() => plan(p, r, staged), "BAD_VALUE");
+  expect(e.message.startsWith(path)).toBe(true);
+  expect(e.message).toContain("3 attribute words for 4 metatiles");
+});
+
+it("confirmation for a secondary-role edit uses each layout's own target id", () => {
+  const p = fixture(), r = changed(request(p, "Emerald", 9, "gTileset_S", 1));
+  // S local 1 is id 9 under E/O and id 13 under F. Only F's staged grid draws 13.
+  const withFrlg = new Map([["Frlg", [13]], ["Other", [0]]]);
+  expect(plan(p, r, empty, withFrlg).confirm).toBe(true);
+  const withoutFrlg = new Map([["Frlg", [0]], ["Other", [0]]]);
+  expect(plan(p, r, empty, withoutFrlg).confirm).toBe(false);
+});
+
+it("usage for a secondary block counts each layout's map-visible id", () => {
+  const p = fixture(), out = plan(p, request(p, "Emerald", 9, "gTileset_S", 1));
+  const paths = p.tilesetPaths("gTileset_S");
+  const count = (path: string, target: number) => {
+    const b = bytes(p, path);
+    let n = 0;
+    for (let i = 0; i < b.length; i += 2) if ((b.readUInt16LE(i) & 0x3ff) === target) n++;
+    return n;
+  };
+  const use = (map: string, layout: string, target: number) => ({
+    map,
+    interior: count(`data/layouts/${layout}/map.bin`, target),
+    border: count(`data/layouts/${layout}/border.bin`, target),
+    block0AsBorder: 0,
+  });
+  expect(out.usage).toEqual({
+    files: [paths.metatilesBin, paths.attributesBin].sort(),
+    tilesets: ["gTileset_S"],
+    maps: [use("Emerald", "E", 9), use("Frlg", "F", 13), use("Other", "O", 9)],
+    sharedGrids: [],
+  });
 });
 
 it.each([["Emerald", 8], ["Frlg", 12]] as const)("BAD_VALUE: secondary index exactly equals effective count (%s)", (map, split) => {
