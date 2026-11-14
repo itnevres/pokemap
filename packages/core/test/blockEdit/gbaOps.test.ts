@@ -352,6 +352,13 @@ it("BAD_VALUE: behavior missing", () => {
   expect(e.message.startsWith(p.tilesetPaths("gTileset_A").attributesBin)).toBe(true);
 });
 
+it("BAD_VALUE: layerType missing", () => {
+  const p = fixture(), r = request(p);
+  r.draft.layerType = undefined as unknown as number;
+  const e = refusal(() => plan(p, r), "BAD_VALUE");
+  expect(e.message.startsWith(p.tilesetPaths("gTileset_A").attributesBin)).toBe(true);
+});
+
 it.each([["ok", false], ["saveAsNew", true]] as const)("BAD_VALUE: one surplus attribute word (%s)", (_mode, saveAsNew) => {
   const p = fixture(), r = request(p, "Emerald");
   if (saveAsNew) r.mode = "saveAsNew";
