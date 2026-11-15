@@ -10,6 +10,10 @@ import { parseMapEvents } from "../load/events.js";
 import { blkFilePath, changedBlockIndices, eventsFilePath, guardGbcSave } from "./guards.js";
 import type { NameCheck } from "../../addEvent/types.js";
 import type { TilesetFileEdit } from "../../blockEdit/types.js";
+import {
+  assertPreparedTilesetEdits, checkTilesetBaselines, gbcTilesetEffects, prepareTilesetEdits,
+  tilesetBaselineRefusals, tilesetSaveChanges,
+} from "../../blockEdit/save.js";
 
 // Public surface of the funnel; the definitions live in guards.ts so that file
 // needs only a type import from here (no runtime import cycle).
@@ -188,7 +192,10 @@ export function planGbcSave(
   for (const edit of session.constEdits ?? []) {
     if (edit.after !== edit.before) changes.push({ path: resolve(proj.root, edit.path), kind: "text", summary: `${edit.path} -- constants edited` });
   }
-  return { session, changes, refusals, tilesetEffects: [] }; // Task 8 stub
+  const tilesetEffects = gbcTilesetEffects(proj, session.tilesetEdits ?? []);
+  changes.push(...tilesetSaveChanges(proj.root, tilesetEffects));
+  refusals.push(...tilesetBaselineRefusals(proj.root, session.tilesetEdits ?? []));
+  return { session, changes, refusals, tilesetEffects };
 }
 
 /** Computes complete final bytes without writing; patches only changed block ids. */
@@ -209,6 +216,7 @@ export function prepareGbcSave(proj: GbcProject, session: GbcEditSession, _opts?
   for (const edit of session.constEdits ?? []) {
     if (edit.after !== edit.before) entries.push({ path: resolve(proj.root, edit.path), before: Buffer.from(edit.before, "utf8"), after: Buffer.from(edit.after, "utf8") });
   }
+  entries.push(...prepareTilesetEdits(proj.root, session.tilesetEdits ?? []));
   return entries;
 }
 
@@ -248,5 +256,7 @@ export function commitGbcSave(
       throw new Error(`save refused: ${session.mapName}: ${edit.path}: constants replacement missing or stale in prepared save`);
     }
   }
+  assertPreparedTilesetEdits(proj.root, session.mapName, session.tilesetEdits ?? [], entries);
+  checkTilesetBaselines(proj.root, session.tilesetEdits ?? []);
   writeFilesAtomically(entries, io);
 }
