@@ -94,8 +94,12 @@ for (const family of ["gba", "gbc"] as const) {
     const render = (name: string) => png(`/api/render/${encodeURIComponent(name)}.png`);
     const metatile = (subject: Subject, id = subject.id) =>
       png(`/api/metatile/${encodeURIComponent(subject.metatileName)}/${id}.png`);
-    // A no-op paint begin is the existing HTTP payload builder, not a second stage.
-    const stagedPayload = (name: string) => edit(name, "paint/begin", {});
+    // An empty stroke (begin + end, no apply) answers through the existing HTTP payload
+    // builder without staging anything or leaving a stroke open across undo/redo.
+    const stagedPayload = async (name: string) => {
+      await edit(name, "paint/begin", {});
+      return edit(name, "paint/end", {});
+    };
     const stage = (candidate: VisibleEdit, owner = candidate.name) =>
       stageTilesetPlan(store, owner, candidate.plan, "overlay oracle edit");
 
