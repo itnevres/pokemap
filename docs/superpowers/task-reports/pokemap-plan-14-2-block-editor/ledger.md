@@ -526,3 +526,39 @@ known environmental `engine.test.ts` "parses the subject repo's real porymap.pro
   ("not implemented", and `snapshotOf` lacking `tilesetEdits`).
 - Next: impl hop with `task-9-impl-brief.final.md`, tests protected; branch `p14-2-t9` in the s7 scratchpad `wt-t9`
   (based on Task 8 `fde9ec5`; merge the plan branch in before the final verify).
+
+### Handoff s7 → s8 (2026-11-15, session-length rule)
+
+State. Main checkout `plan-14-2-block-editor`, Tasks 0-8 merged; gate at `025b8e5` (above). Not pushed. No vitest,
+mutation or chain process alive. The s7 scratchpad is
+`C:\Users\Serve\AppData\Local\Temp\claude\8fd0350c313cb955\02bf074c-094f-4bee-97c2-f86eeb7dc935\scratchpad\`.
+- `<s7>/wt-t9`, branch `p14-2-t9`, HEAD `a402bd1`, clean, `node_modules` junction to the main checkout's. Based on
+  Task 8 `fde9ec5` (does not contain the Task 8 fix `1cc405b` nor Tasks 6-7; merge the plan branch into it before the
+  final verify and before merging back).
+- Removed: `wt-t6`, `wt-t7`, `wt-t8`, `rv-t6`, `rv-t7`, `rv-t8`. Old `wt-t5` (s4) is still registered; leave it.
+- Harnesses for reuse: `<s7>/mut_t8.py` (pattern: name, file, exact old, new; `--anchors` checks anchors only).
+
+Next, in order (one vitest process at a time):
+1. Task 9 impl hop in `wt-t9`: `chain.py --tier opus` (Codex; its 2026-11-14 limit reset 20:28 PST) with
+   `task-9-impl-brief.final.md`, `--protect "packages/server/test/**"`, `--allow` the five files the brief names,
+   verify = the brief's command. Codex parked → `--tier sonnet --no-codex` → Claude Sonnet.
+2. Vet the diff against O1-O10 (O5 Buffer rebuild, O6 409 mapping, O8 GBA split arithmetic), merge the plan branch
+   into `p14-2-t9`, rerun the brief's verify.
+3. Mutations: the plan's three (ownership by bytes; redo skips baseline check; paint guard in one family only) plus
+   your own (sorted-path order, owner check skipped on redo, 409 vs 400, shift guarded, Buffer rebuild removed).
+4. Separate spec and quality reviews (Codex astra if it answers, else Claude Opus `high-risk-reviewer`, at most two at
+   once, static on a detached `rv-t9`), fix round, merge `--no-ff`, gate, ledger.
+5. Task 10 onward, same loop. Deferred to Task 16 so far: Task 6 quality Minor 3; Task 7 spec N1, quality N2-N4; Task 8
+   quality M2, M4, M6 (all in this ledger above).
+
+Traps seen in s7:
+- Codex at its usage limit returns `cap: no diff` per hop and chain.py ends `RESULT parked`; `codex exec` reviews end
+  "You've hit your usage limit" with an empty report. Tell: the log's last lines.
+- A background mutation run can die without a notice (session teardown). Tell: no `vitest`/`mut_` process and the
+  `.out` file stops growing; the working tree is left mutated (`git status` shows the mutated source). Restore with
+  `git checkout -- <file>` and rerun only the missing mutants.
+- `structuredClone` turns Buffers into `Uint8Array` (no `.equals`): any redo validator over tileset edits must rebuild
+  Buffers (Task 9 O5).
+- Python heredoc edits: a `\` in a TS string written from a non-raw Python string becomes `\t`/`\a`; use raw strings
+  or avoid backslashes in test literals.
+- The save-test file copies whole corpora per test: a Task 8 mutant run takes ~5-7 min; budget mutation runs by count.
