@@ -458,3 +458,40 @@ Next, in order (one vitest process at a time):
    hop with the tests protected, mutations (the plan's three plus the conductor's), separate spec and quality
    reviews, merge, gate.
 4. Task 9 onward.
+
+## Execution (conductor s7, 2026-11-14)
+
+### Task 6 (High) — s7: closed, merged
+- Spec re-review 2 (Claude Opus `high-risk-reviewer`, static on `rv-t6` at `6287878`): **Approved 0/0/0**, I1 and
+  M1-M3 closed, 3 non-blocking notes (`task-6-spec-rereview2.md`). Quality was already Approved (re-review 1).
+- Merged `p14-2-t6` `--no-ff` → `57f4908`. Deferred (Task 16 candidates): quality Minor 3 (cosmetic), spec-rereview2
+  notes 1-3.
+
+### Task 7 (High) — s7: closed, merged
+- Mutation run `mut_t7b.py` on `a27eafc` (s6 harness): baseline 62/62, **32 of 33 KILLED**, M11 (`palette < 13`
+  guard removed) SURVIVED: every fixture tileset held ≤13 palettes, so `palettes[13]` was undefined anyway.
+- Re-reviews (Claude Opus `high-risk-reviewer`, static on `rv-t7`): spec **Approved 0/0/2** (N1 first-layout-only
+  structural mutant survives, fixture's E is always strictest; N2 G6a role label unpinned); quality **Approved 0/0/4**
+  (N1 fractional attribute-word count in the G2b message; N2 R1b wrapper drops `cause` and planner-local
+  `mapsByGridFile` blames the edited map for any other map's missing layout; N3 readability residuals; N4 test residuals).
+- Conductor fix `87b4b39` (inline, tiny: 3 files, +25/-1; reason: smaller than a brief): fixture T gets 16 palettes and
+  a test "palette 13 is refused even when every consuming secondary holds 16 palettes" (kills M11); spec N2 pinned
+  (`layout F (secondary) allows 20 metatiles; cannot append metatile 21`, `layout E (primary) ...`); quality N1:
+  non-whole `attributes.bin` → BAD_VALUE `<path>: N bytes is not a whole number of K-byte attribute words` (G2b's
+  wording kept for the whole-word case; ruling addendum) + test. Focused 64/64. Mutants M11, M34 (role label
+  hard-coded), M35 (non-whole check removed): all KILLED (`mut_t7c.py`, s7 scratchpad).
+- Merged final `p14-2-t6` into `p14-2-t7` (`ac38c02`), then `p14-2-t7` `--no-ff` → `7901772`.
+- Deferred to Task 16: spec N1 (accepted residual risk, code correct), quality N2 (pass `cause`; reuse usage.ts's
+  cached GBA grid index instead of the planner-local `mapsByGridFile`), N3, N4.
+
+Gate at 7901772: 4641 pass / 1 fail / 263 files; typecheck pass, UI build pass; subjects unchanged. The 1 fail is the
+known environmental `core/test/config/engine.test.ts` "parses the subject repo's real porymap.project.cfg"
+("expected 96 to be 98"). Wall 925 s.
+
+### Task 8 (High) — s7
+- Tests hop: `chain.py --tier opus` → Codex `gpt-6.1-sol` done first hop (`9ca5f2f`, 42 tests + typed stubs,
+  typecheck pass). Conductor vetted every case against S1-S11: expectations come from independent scans
+  (map → tileset → canonical file) and raw-word grid patches, never from the code under test; atomic IO order matches
+  `writeFilesAtomically` (all temps, then renames). Red run: 40 failed / 2 passed (the two absent/`[]` compat cases,
+  expected to pass on the stub).
+- Impl hop: `chain.py --tier opus` with `task-8-impl-brief.final.md`, tests protected.
