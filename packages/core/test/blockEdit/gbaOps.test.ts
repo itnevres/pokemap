@@ -135,6 +135,7 @@ describe("GBA block edit planner", () => {
     expect(e.message).toContain("20 metatiles");
     // The staged count is 21, so a message that only echoed the count cannot satisfy the limit.
     expect(e.message).toContain("cannot append metatile 21");
+    expect(e.message).toContain("layout F (secondary) allows 20 metatiles; cannot append metatile 21");
   });
   it("append limit for a primary names A's metatiles file, layout E and its 8-metatile limit", () => {
     const p = fixture(), r = request(p, "Frlg");
@@ -149,6 +150,7 @@ describe("GBA block edit planner", () => {
     expect(e.message).toMatch(/\bE\b/);
     expect(e.message).toContain("8 metatiles");
     expect(e.message).toContain("cannot append metatile 9");
+    expect(e.message).toContain("layout E (primary) allows 8 metatiles; cannot append metatile 9");
   });
   it.each([["tile", 25], ["palette", 6], ["palette", 13]] as const)("structural refusal: changed %s %i", (field, value) => {
     const p = fixture(), r = request(p); r.draft.entries[0] = { ...r.draft.entries[0]!, [field]: value };
@@ -367,6 +369,25 @@ it.each([["ok", false], ["saveAsNew", true]] as const)("BAD_VALUE: one surplus a
   const e = refusal(() => plan(p, r, staged), "BAD_VALUE");
   expect(e.message.startsWith(path)).toBe(true);
   expect(e.message).toContain("5 attribute words for 4 metatiles");
+});
+
+it("BAD_VALUE: attributes.bin that is not a whole number of words names the byte count", () => {
+  const p = fixture(), r = request(p, "Emerald");
+  const path = p.tilesetPaths("gTileset_A").attributesBin;
+  const staged = new Map([[path, Buffer.concat([bytes(p, path), Buffer.alloc(1)])]]);
+  const e = refusal(() => plan(p, r, staged), "BAD_VALUE");
+  expect(e.message.startsWith(path)).toBe(true);
+  expect(e.message).toContain("9 bytes is not a whole number of 2-byte attribute words");
+});
+
+it("palette 13 is refused even when every consuming secondary holds 16 palettes (NUM_PALS_TOTAL)", () => {
+  // T has 16 palettes and is consumed only by X and H (Emerald split: 8 metatiles, 2 palettes),
+  // so palettes[13] exists in every consumer and only the NUM_PALS_TOTAL bound refuses it.
+  const p = fixture(), r = request(p, "Extra", 8, "gTileset_T", 0);
+  r.draft.entries[0] = { ...r.draft.entries[0]!, palette: 13 };
+  const e = refusal(() => plan(p, r), "SPLIT_LIMIT");
+  expect(e.message.startsWith("gTileset_T")).toBe(true);
+  expect(e.message).toContain("palette 13 is invalid");
 });
 
 it.each([["ok", false], ["saveAsNew", true]] as const)("BAD_VALUE: one attribute word short (%s)", (_mode, saveAsNew) => {

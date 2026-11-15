@@ -18,7 +18,7 @@ export function makeGbaFixture(triple = false): string {
   put("include/fieldmap.h", `#define NUM_TILES_IN_PRIMARY 12\n#define NUM_TILES_IN_PRIMARY_EMERALD 8\n#define NUM_METATILES_IN_PRIMARY 12\n#define NUM_METATILES_IN_PRIMARY_EMERALD 8\n#define NUM_PALS_IN_PRIMARY 3\n#define NUM_PALS_IN_PRIMARY_EMERALD 2\n#define NUM_METATILES_TOTAL 32\n`);
   put("porymap.project.cfg", `base_game_version=pokeemerald\nenable_triple_layer_metatiles=${triple ? 1 : 0}\n`);
   let headers = "", metas = "", graphics = "";
-  for (const [name, count, pals] of [["A", 4, 13], ["B", 4, 13], ["S", 3, 5], ["T", 3, 13]] as const) {
+  for (const [name, count, pals] of [["A", 4, 13], ["B", 4, 13], ["S", 3, 5], ["T", 3, 16]] as const) {
     const dir = `data/tilesets/${name}`; const art = `graphics/tilesets/${name}`;
     headers += `const struct Tileset gTileset_${name} = {\n.isSecondary = ${name === "S" || name === "T" ? "TRUE" : "FALSE"},\n.metatiles = gMeta${name},\n.metatileAttributes = gAttr${name},\n.tiles = gTiles${name},\n.palettes = gPals${name},\n};\n`;
     metas += `const u16 gMeta${name}[] = INCBIN_U16("${dir}/metatiles.bin");\nconst u16 gAttr${name}[] = INCBIN_U16("${dir}/attributes.bin");\n`;

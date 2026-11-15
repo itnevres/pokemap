@@ -283,6 +283,9 @@ function planGbaBlockEditInner(proj: Project, req: GbaBlockEditRequest, staged: 
   }
   const count = metaBuf.length / METATILE_BYTES;
   const attributesSize = proj.profile.metatileAttributesSize;
+  if (attrBuf.length % attributesSize !== 0) {
+    bad(`${attrPath}: ${attrBuf.length} bytes is not a whole number of ${attributesSize}-byte attribute words`);
+  }
   if (attrBuf.length !== count * attributesSize) {
     bad(`${attrPath}: ${attrBuf.length / attributesSize} attribute words for ${count} metatiles`);
   }
