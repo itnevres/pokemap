@@ -670,6 +670,65 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("GBA block-edit ownership (Plan 14.2 
     refuseUnsavedBlockRefs(store.entries(), mapA, shared.path, savedCountLocal, [savedCountLocal]);
     refuseUnsavedBlockRefs(store.entries(), mapB, "tilesets/blockedit_unowned.bin", savedCountLocal, [savedCountLocal]);
   });
+  it("keeps grid, edits, history and disk intact when Save fails mid-history, then undoes and redoes", async () => {
+    const disk = readBytes(shared.path);
+    const grid = readFileSync(gridOf(mapA));
+    const appended = Buffer.concat([disk, NEW_METATILE]);
+    const changed = flipByte(appended);
+    const appendEdits = [{ path: shared.path, before: disk, after: appended }];
+    const changedEdits = [{ path: shared.path, before: disk, after: changed }];
+    const external = Buffer.concat([disk, Buffer.alloc(16, 0x11)]);
+    const originalId = diskBlocks(mapA)[0]!.metatileId;
+    const paintedId = originalId === 0 ? 1 : 0;
+    expect(paintedId).toBeLessThan(savedCount(shared.path));
+    const restore = restoreBytes([sharedAbs(), gridOf(mapA)]);
+    const assertState = (expected: TilesetFileEdit[], id: number) => {
+      expect(editsOf(store.open(mapA).session)).toEqual(expected);
+      expect(store.open(mapA).session.blocks[0]!.metatileId).toBe(id);
+      if (expected.length) {
+        expectRefusal(() => requireTilesetOwnership(store.entries(), mapB, [shared.path]), "NOT_OWNER");
+      } else {
+        expect(() => requireTilesetOwnership(store.entries(), mapB, [shared.path])).not.toThrow();
+      }
+      expect(readBytes(shared.path)).toEqual(disk);
+      expect(readFileSync(gridOf(mapA))).toEqual(grid);
+    };
+    try {
+      stage(mapA);
+      expect((await edit("paint/begin", {})).status).toBe(200);
+      expect((await edit("paint/apply", {
+        tool: "pencil", targets: [{ x: 0, y: 0 }],
+        stamp: { width: 1, height: 1, cells: [{ metatileId: paintedId }] }, origin: { x: 0, y: 0 },
+      })).status).toBe(200);
+      expect((await edit("paint/end", {})).status).toBe(200);
+      stageTilesetPlan(store, mapA, buildPlan([{ path: shared.path, before: appended, after: changed }]), "second edit");
+      const plan = await req(`/api/edit/${mapA}/plan`);
+      expect(plan.status).toBe(200);
+      expect(plan.body.fingerprint).toBeTruthy();
+      writeFileSync(sharedAbs(), external);
+      const result = await edit("commit", { fingerprint: plan.body.fingerprint });
+      expect(result.status).not.toBe(200);
+      expect(JSON.stringify(result.body)).toContain(shared.path);
+      expect(store.has(mapA)).toBe(true);
+      expect(editsOf(store.open(mapA).session)).toEqual(changedEdits);
+      expect(store.open(mapA).session.blocks[0]!.metatileId).toBe(paintedId);
+      expect(readFileSync(gridOf(mapA))).toEqual(grid);
+      expect(readBytes(shared.path)).toEqual(external);
+      expectRefusal(() => requireTilesetOwnership(store.entries(), mapB, [shared.path]), "NOT_OWNER");
+      writeFileSync(sharedAbs(), disk);
+      for (const [route, expected, id] of [
+        ["undo", appendEdits, paintedId], ["undo", appendEdits, originalId], ["undo", [], originalId],
+        ["redo", appendEdits, originalId], ["redo", appendEdits, paintedId], ["redo", changedEdits, paintedId],
+      ] as const) {
+        expect((await edit(route, {})).status).toBe(200);
+        assertState([...expected], id);
+      }
+      expect(store.open(mapA).stack.canRedo()).toBe(false);
+    } finally {
+      restore();
+    }
+  });
+
 });
 
 describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("GBC block-edit ownership (Plan 14.2 Task 9)", () => {
@@ -1121,4 +1180,63 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("GBC block-edit ownership (Pla
     refuseUnsavedBlockRefs(store.entries(), mapA, shared.path, savedCountLocal, [savedCountLocal]);
     refuseUnsavedBlockRefs(store.entries(), mapB, "tilesets/blockedit_unowned.bin", savedCountLocal, [savedCountLocal]);
   });
+  it("keeps grid, edits, history and disk intact when Save fails mid-history, then undoes and redoes", async () => {
+    const disk = readBytes(shared.path);
+    const grid = readFileSync(gridOf(mapA));
+    const appended = Buffer.concat([disk, NEW_METATILE]);
+    const changed = flipByte(appended);
+    const appendEdits = [{ path: shared.path, before: disk, after: appended }];
+    const changedEdits = [{ path: shared.path, before: disk, after: changed }];
+    const external = Buffer.concat([disk, Buffer.alloc(16, 0x11)]);
+    const originalId = diskBlocks(mapA)[0]!.metatileId;
+    const paintedId = originalId === 0 ? 1 : 0;
+    expect(paintedId).toBeLessThan(savedCount(shared.path));
+    const restore = restoreBytes([sharedAbs(), gridOf(mapA)]);
+    const assertState = (expected: TilesetFileEdit[], id: number) => {
+      expect(editsOf(store.open(mapA).session)).toEqual(expected);
+      expect(store.open(mapA).session.blocks[0]!.metatileId).toBe(id);
+      if (expected.length) {
+        expectRefusal(() => requireTilesetOwnership(store.entries(), mapB, [shared.path]), "NOT_OWNER");
+      } else {
+        expect(() => requireTilesetOwnership(store.entries(), mapB, [shared.path])).not.toThrow();
+      }
+      expect(readBytes(shared.path)).toEqual(disk);
+      expect(readFileSync(gridOf(mapA))).toEqual(grid);
+    };
+    try {
+      stage(mapA);
+      expect((await edit("paint/begin", {})).status).toBe(200);
+      expect((await edit("paint/apply", {
+        tool: "pencil", targets: [{ x: 0, y: 0 }],
+        stamp: { width: 1, height: 1, cells: [{ metatileId: paintedId }] }, origin: { x: 0, y: 0 },
+      })).status).toBe(200);
+      expect((await edit("paint/end", {})).status).toBe(200);
+      stageTilesetPlan(store, mapA, buildPlan([{ path: shared.path, before: appended, after: changed }]), "second edit");
+      const plan = await req(`/api/edit/${mapA}/plan`);
+      expect(plan.status).toBe(200);
+      expect(plan.body.fingerprint).toBeTruthy();
+      writeFileSync(sharedAbs(), external);
+      const result = await edit("commit", { fingerprint: plan.body.fingerprint });
+      expect(result.status).not.toBe(200);
+      expect(JSON.stringify(result.body)).toContain(shared.path);
+      expect(store.has(mapA)).toBe(true);
+      expect(editsOf(store.open(mapA).session)).toEqual(changedEdits);
+      expect(store.open(mapA).session.blocks[0]!.metatileId).toBe(paintedId);
+      expect(readFileSync(gridOf(mapA))).toEqual(grid);
+      expect(readBytes(shared.path)).toEqual(external);
+      expectRefusal(() => requireTilesetOwnership(store.entries(), mapB, [shared.path]), "NOT_OWNER");
+      writeFileSync(sharedAbs(), disk);
+      for (const [route, expected, id] of [
+        ["undo", appendEdits, paintedId], ["undo", appendEdits, originalId], ["undo", [], originalId],
+        ["redo", appendEdits, originalId], ["redo", appendEdits, paintedId], ["redo", changedEdits, paintedId],
+      ] as const) {
+        expect((await edit(route, {})).status).toBe(200);
+        assertState([...expected], id);
+      }
+      expect(store.open(mapA).stack.canRedo()).toBe(false);
+    } finally {
+      restore();
+    }
+  });
+
 });
