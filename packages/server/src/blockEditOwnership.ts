@@ -35,30 +35,11 @@ import type { EditSession } from "@pokemap/core/src/write/save.js";
 import type { GbcEditSession } from "@pokemap/core/src/gbc/write/save.js";
 import type { GbcMapEvents } from "@pokemap/core/src/gbc/model/types.js";
 import type { EditCommandStack } from "@pokemap/core/src/edit/commands.js";
-import type { BlockUsage, TilesetFileEdit } from "@pokemap/core/src/blockEdit/types.js";
+import type { BlockEditPlan, TilesetFileEdit } from "@pokemap/core/src/blockEdit/types.js";
 import type { createEditSessionStore } from "./editSessions.js";
 import type { createGbcEditSessionStore } from "./gbcEditSessions.js";
 
-/**
- * The planner's output for one block edit — one undo step's worth. Task 6's
- * `gbcOps.ts` / Task 7's `gbaOps.ts` produce the real thing in core; it is
- * declared here so the hub contract typechecks before core exports it.
- * Replace this with an imported type when Task 6 lands.
- */
-export interface BlockEditPlan {
-  /** `before` = baseline bytes when the path was first staged; `after` = the staged bytes. */
-  edits: TilesetFileEdit[];
-  /** Save-as-new only: the appended block's file-local id. */
-  newBlockId?: number;
-  /** Save-as-new only: the one grid cell the new block is placed on. */
-  placement?: { x: number; y: number; blockId: number };
-  warnings: string[];
-  usage: BlockUsage;
-  /** True exactly when another map draws something this draft changes. */
-  confirm: boolean;
-  /** The baseline token the popup was opened with (`blockEditRevision`). */
-  revision: string;
-}
+export type { BlockEditPlan } from "@pokemap/core/src/blockEdit/types.js";
 
 /** The one entry shape a staged-tileset check needs from either session store. */
 export interface OwnershipEntry {
