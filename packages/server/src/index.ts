@@ -1,3 +1,4 @@
+import { syncTilesetOverlay, type OverlayState } from "./tilesetOverlay.js";
 import { requireTilesetOwnership, refuseUnsavedBlockRefs } from "./blockEditOwnership.js";
 import { checkTilesetBaselines } from "@pokemap/core/src/blockEdit/save.js";
 import { canonicalTilesetPath } from "@pokemap/core/src/blockEdit/canonicalTilesetPath.js";
@@ -148,6 +149,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
   // renders, caches, and returns it; undefined when the name resolves to no
   // layout (route answers 404 as today).
   const cachedRender = (name: string, border: number): Buffer | undefined => {
+    syncOverlay();
     const key = `${name}:${border}`;
     let png = pngCache.get(key);
     if (png) return png;
@@ -215,6 +217,9 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
     map: (name) => parseMap(readFileSync(project.paths.mapJson(name), "utf8")),
   });
 
+  const overlayState: OverlayState = { version: 0, applied: new Map(), clearCaches: () => pngCache.clear() };
+  const syncOverlay = () => syncTilesetOverlay(editSessions.entries(), project, overlayState);
+
   const addEvents = createGbaAddEventRoutes(project, editSessions, hooks, symbols);
 
   const editEntryFor = (name: string) => editSessions.open(name);
@@ -272,6 +277,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
   // this one shared response shape.
   const sendSession = (send: (code: number, body: unknown) => void, code: number, entry: ReturnType<typeof editEntryFor>) =>
     send(code, {
+      tilesetVersion: syncOverlay(),
       blocks: entry.session.blocks, border: entry.session.border, map: entry.session.map, isDirty: entry.session.isDirty,
       canUndo: entry.stack.canUndo(), canRedo: entry.stack.canRedo(),
     });
@@ -325,7 +331,11 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
     };
 
     try {
-      if (req.method === "GET" && addEvents.handleOptions(url, send)) return;
+      if (req.method === "GET") {
+        // Options and indicator suggestions also read tileset behavior/collision.
+        syncOverlay();
+        if (addEvents.handleOptions(url, send)) return;
+      }
       const createEventMatch = /^\/api\/edit\/([^/]+)\/event\/create$/.exec(url.pathname);
       if (createEventMatch && req.method === "POST") {
         let name: string;
@@ -334,7 +344,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
         if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
         return void readBody(req).then(text => {
           if (disposed) return send(503, { error: "project closed" });
-          try { send(200, addEvents.create(name, JSON.parse(text))); }
+          try { const body = addEvents.create(name, JSON.parse(text)); send(200, { ...body, tilesetVersion: syncOverlay() }); }
           catch (error) { send(400, eventFailure("gba", name, error)); }
         }).catch(error => send(400, eventFailure("gba", name, error)));
       }
@@ -355,6 +365,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
 
       const mapMatch = /^\/api\/map\/(.+)$/.exec(url.pathname);
       if (mapMatch) {
+        const tilesetVersion = syncOverlay();
         const name = decodeURIComponent(mapMatch[1]!);
         if (!project.mapNames().includes(name)) return send(404, { error: `no map ${name}` });
         const map = project.map(name);
@@ -396,11 +407,12 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
         // MetatilePalette's primaryCount/secondaryCount props need to size
         // its grid; returning them here means the UI doesn't have to guess
         // or fetch tileset data separately.
-        return send(200, { map, layout, split, blocks, primaryCount: primary.metatileCount, secondaryCount: secondary.metatileCount });
+        return send(200, { tilesetVersion, map, layout, split, blocks, primaryCount: primary.metatileCount, secondaryCount: secondary.metatileCount });
       }
 
       const renderMatch = /^\/api\/render\/(.+)\.png$/.exec(url.pathname);
       if (renderMatch) {
+        syncOverlay();
         const name = decodeURIComponent(renderMatch[1]!);
 
         // Same parser the CLI uses, so `?border=abc` and `?border=1.5` are
@@ -460,6 +472,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
       // test against a first draft using `\d+` here.
       const metatileMatch = /^\/api\/metatile\/(.+)\/([^/]+)\.png$/.exec(url.pathname);
       if (metatileMatch) {
+        syncOverlay();
         const layoutName = decodeURIComponent(metatileMatch[1]!);
         const id = Number(metatileMatch[2]);
         const layout = project.layoutByName(layoutName);
@@ -627,6 +640,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
       }
 
       if (url.pathname === "/api/world") {
+        syncOverlay();
         const dungeons = url.searchParams.get("dungeons") !== "0";
         const world = getWorld();
         const sidecar = readSidecar(project.paths.root);
@@ -976,7 +990,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
       const undoMatch = /^\/api\/edit\/(.+)\/undo$/.exec(url.pathname);
       if (undoMatch && req.method === "POST") {
         const name = decodeURIComponent(undoMatch[1]!);
-        if (!editSessions.has(name)) return send(200, { blocks: [], border: [], map: null, isDirty: false, canUndo: false, canRedo: false }); // nothing open -- a no-op, not a 500
+        if (!editSessions.has(name)) return send(200, { tilesetVersion: syncOverlay(), blocks: [], border: [], map: null, isDirty: false, canUndo: false, canRedo: false }); // nothing open -- a no-op, not a 500
         const entry = editEntryFor(name);
         entry.stack.undo(entry.session);
         return sendSession(send, 200, entry);
@@ -985,7 +999,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
       const redoMatch = /^\/api\/edit\/(.+)\/redo$/.exec(url.pathname);
       if (redoMatch && req.method === "POST") {
         const name = decodeURIComponent(redoMatch[1]!);
-        if (!editSessions.has(name)) return send(200, { blocks: [], border: [], map: null, isDirty: false, canUndo: false, canRedo: false });
+        if (!editSessions.has(name)) return send(200, { tilesetVersion: syncOverlay(), blocks: [], border: [], map: null, isDirty: false, canUndo: false, canRedo: false });
         const entry = editEntryFor(name);
         try { entry.stack.redo(entry.session, candidate => {
           addEvents.checkHeaderOwnership(name, candidate);
@@ -1018,7 +1032,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
         // true. Idempotent: discarding an already-clean or never-opened
         // session is a harmless no-op with the same response, matching
         // close()'s own "always safe to drop" doc comment.
-        return send(200, { blocks: [], border: [], map: null, isDirty: false, canUndo: false, canRedo: false });
+        return send(200, { tilesetVersion: syncOverlay(), blocks: [], border: [], map: null, isDirty: false, canUndo: false, canRedo: false });
       }
 
       // Task 9: save/commit. planSave/commitSave both live in core (I8's
@@ -1060,28 +1074,23 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
             fix: "Review the updated changes and save again",
           } });
           try {
-            commitSave(project, plan, prepared, undefined, { checkNames: fresh.checkNames });
+            try {
+              commitSave(project, plan, prepared, undefined, { checkNames: fresh.checkNames });
+              // Only successful writes close the session; sync in finally sees the new union.
+              editSessions.close(name);
+            } finally {
+              // A failed commit may still have written (or failed to restore) a file.
+              syncOverlay();
+              symbols.invalidate(); addEvents.invalidate();
+            }
           } catch (e) {
             console.error(e);
             return send(500, { error: e instanceof Error ? e.message : String(e) });
-          } finally {
-            // A failed commit may still have written (or failed to restore) a file, so the index is stale either way.
-            symbols.invalidate(); addEvents.invalidate();
           }
           // The render route's pngCache (keyed `name:border`, no expiry) predates this write, and the session-bypass
-          // above ends the moment the session closes below. Clear all of it: layouts can be shared by several maps and
+          // above ends the moment the session closes above. Clear all of it: layouts can be shared by several maps and
           // one map serves both the border=0 and border=1 keys.
           pngCache.clear();
-          // Close, not markSaved()-and-keep-open: the session's own `map`/
-          // `blocks` reflect what was JUST written, but the world/coverage/
-          // encounters caches above this route do NOT (I8's read-only-
-          // project assumption is now stale for this one map) -- Task 15's
-          // corpus gate is what actually proves writes round-trip; this
-          // route's own job ends at "committed successfully," and the
-          // simplest correct thing is forcing the NEXT open() to re-read
-          // real disk state fresh rather than trusting an in-memory session
-          // that predates caches it can no longer invalidate.
-          editSessions.close(name);
           return send(200, body);
         }).catch(error => send(400, { error: error instanceof Error ? error.message : String(error) }));
       }
@@ -1118,7 +1127,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
               } else entry.session.jsonEdits = [...entry.session.jsonEdits, ...jsonEdits];
               return { map: nextMap };
             });
-            return send(200, { map: result.map, isDirty: result.isDirty });
+            return send(200, { tilesetVersion: syncOverlay(), map: result.map, isDirty: result.isDirty });
           })
           .catch((e: unknown) => { console.error(e); send(500, { error: e instanceof Error ? e.message : String(e) }); });
       }
@@ -1140,7 +1149,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
               entry.session.insertOps = [...entry.session.insertOps, insertOp];
               return { map: nextMap };
             });
-            return send(200, { map: result.map, isDirty: result.isDirty });
+            return send(200, { tilesetVersion: syncOverlay(), map: result.map, isDirty: result.isDirty });
           })
           .catch((e: unknown) => { console.error(e); send(500, { error: e instanceof Error ? e.message : String(e) }); });
       }
@@ -1165,7 +1174,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
                 : [];
               return { map: nextMap, extra: warpRenumberWarnings };
             });
-            return send(200, { map: result.map, isDirty: result.isDirty, warpRenumberWarnings: result.extra });
+            return send(200, { tilesetVersion: syncOverlay(), map: result.map, isDirty: result.isDirty, warpRenumberWarnings: result.extra });
           })
           .catch((e: unknown) => { console.error(e); send(500, { error: e instanceof Error ? e.message : String(e) }); });
       }
@@ -1381,7 +1390,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
             }
             const next = snapshotOf(session);
             if (JSON.stringify(prev) !== JSON.stringify(next)) entry.stack.push(entry.session, snapshotCommand(update ? "update Indicator" : "place Indicator", prev, next));
-            return send(200, { map: entry.session.map, isDirty: entry.session.isDirty, ...(update ? {} : { scriptLabel }) });
+            return send(200, { tilesetVersion: syncOverlay(), map: entry.session.map, isDirty: entry.session.isDirty, ...(update ? {} : { scriptLabel }) });
           } catch (error) { return send(400, indicatorFailure(name, error)); }
         }).catch(error => send(400, indicatorFailure(name, error)));
       }

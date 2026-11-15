@@ -1,3 +1,4 @@
+import { syncTilesetOverlay, type OverlayState } from "./tilesetOverlay.js";
 import { statSync } from "node:fs";
 import { requireTilesetOwnership, refuseUnsavedBlockRefs } from "./blockEditOwnership.js";
 import { checkTilesetBaselines } from "@pokemap/core/src/blockEdit/save.js";
@@ -93,15 +94,20 @@ const KINDS: readonly string[] = ["warp", "coord", "bg", "object"];
 const kindOf = (o: Obj): GbcEventKind =>
   KINDS.includes(o.kind as string) ? (o.kind as GbcEventKind) : bad(`"kind" must be one of ${KINDS.join(", ")}, got ${show(o.kind)}`);
 
-const NOTHING_OPEN = { blocks: [], events: null, isDirty: false, canUndo: false, canRedo: false };
-
-const sessionBody = (e: GbcSessionEntry) => ({
-  blocks: e.session.blocks, events: e.session.events, isDirty: e.session.isDirty,
-  canUndo: e.stack.canUndo(), canRedo: e.stack.canRedo(),
-});
-
-export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void; symbols?: ReturnType<typeof createSymbolIndexCache> } & AddEventHooks) {
+export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void; clearTilesetCaches?(): void; symbols?: ReturnType<typeof createSymbolIndexCache> } & AddEventHooks) {
   const store = createGbcEditSessionStore(proj);
+  const overlayState: OverlayState = {
+    version: 0, applied: new Map(), clearCaches: () => hooks.clearTilesetCaches?.(),
+  };
+  const syncOverlay = () => syncTilesetOverlay(store.entries(), proj, overlayState);
+  const NOTHING_OPEN = () => ({
+    tilesetVersion: syncOverlay(), blocks: [], events: null, isDirty: false, canUndo: false, canRedo: false,
+  });
+  const sessionBody = (e: GbcSessionEntry) => ({
+    tilesetVersion: syncOverlay(),
+    blocks: e.session.blocks, events: e.session.events, isDirty: e.session.isDirty,
+    canUndo: e.stack.canUndo(), canRedo: e.stack.canRedo(),
+  });
   const addEvents = createGbcAddEventRoutes(proj, store, hooks, hooks.symbols);
   const mapNames = new Set(proj.maps.map((m) => m.name));
   const mapConsts = new Set(proj.maps.map((m) => m.constName));
@@ -253,7 +259,7 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void;
   /** Route table keyed `METHOD sub-route`. `body: true` routes get the parsed JSON object. */
   const routes: Record<string, { body: boolean; run(name: string, body: Obj): Result }> = {
     "POST event/create": { body: true, run: (name, body) => {
-      try { return ok(addEvents.create(name, body)); }
+      try { const result = addEvents.create(name, body); return ok({ ...result, tilesetVersion: syncOverlay() }); }
       catch (error) { return { code: 400, body: eventFailure("gbc", name, error) }; }
     } },
     "GET indicator/at": { body: false, run: (name, body) => {
@@ -374,13 +380,13 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void;
       return asSession(entry);
     } },
     "POST undo": { body: false, run: (name) => {
-      if (!store.has(name)) return ok(NOTHING_OPEN); // nothing open -- a no-op, never opens a session
+      if (!store.has(name)) return ok(NOTHING_OPEN()); // nothing open -- a no-op, never opens a session
       const entry = store.open(name);
       entry.stack.undo(entry.session);
       return asSession(entry);
     } },
     "POST redo": { body: false, run: (name) => {
-      if (!store.has(name)) return ok(NOTHING_OPEN);
+      if (!store.has(name)) return ok(NOTHING_OPEN());
       const entry = store.open(name);
       try { entry.stack.redo(entry.session, candidate => {
         addEvents.checkHeaderOwnership(name, candidate);
@@ -394,7 +400,7 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void;
       }
       return asSession(entry);
     } },
-    "POST discard": { body: false, run: (name) => { store.close(name); addEvents.invalidate(); return ok(NOTHING_OPEN); } },
+    "POST discard": { body: false, run: (name) => { store.close(name); addEvents.invalidate(); return ok(NOTHING_OPEN()); } },
     "POST event/move": { body: true, run: (name, body) => {
       const [kind, index, x, y] = [kindOf(body), int(body, "index"), int(body, "x"), int(body, "y")];
       const entry = store.open(name);
@@ -436,10 +442,14 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void;
         fix: "Review the updated changes and save again",
       } } };
       // Clear caches on writer failure as well as success; keep the session on failure.
-      try { commitGbcSave(proj, plan, prepared, undefined, { checkNames: fresh.checkNames }); } finally { hooks.onCommit(); }
-      // Closed, not kept: the session's originals predate the write, and the
-      // next open() re-reads the files. On a throw it stays open for a retry/discard.
-      store.close(name);
+      try {
+        commitGbcSave(proj, plan, prepared, undefined, { checkNames: fresh.checkNames });
+        // On a throw the session stays open for a retry/discard.
+        store.close(name);
+      } finally {
+        syncOverlay();
+        hooks.onCommit();
+      }
       return ok(body);
     } },
     "GET plan": { body: false, run: (name) => {
@@ -450,7 +460,11 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void;
   return {
     /** Returns true when it claimed the request (the response is sent now or later); false means fall through. */
     handle(req: IncomingMessage, url: URL, send: Send): boolean {
-      if (req.method === "GET" && addEvents.handleOptions(url, send)) return true;
+      if (req.method === "GET") {
+        // Options and indicator suggestions also read tileset behavior/collision.
+        syncOverlay();
+        if (addEvents.handleOptions(url, send)) return true;
+      }
       const suggestion = /^\/api\/indicator\/([^/]+)\/suggestions$/.exec(url.pathname);
       if (suggestion && req.method === "GET") {
         const name = decodeMapName(suggestion[1]!);
@@ -502,6 +516,7 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void;
     },
     /** Current blocks of an open session for `name`, else undefined (the render route's override). */
     openBlocks: (name: string): Block[] | undefined => (store.has(name) ? store.open(name).session.blocks : undefined),
+    syncOverlay,
     invalidateOptions: addEvents.invalidate,
     dirtyMaps: (): string[] => store.dirty(),
     closeAll: (): void => store.closeAll(),

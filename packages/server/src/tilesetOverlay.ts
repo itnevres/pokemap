@@ -12,5 +12,18 @@ export function syncTilesetOverlay(
   project: { setTilesetOverlay(o: FileOverlay): void },
   state: OverlayState,
 ): number {
-  throw new Error("not implemented (Task 10)");
+  const union = new Map<string, Buffer>();
+  // Stable ownership fallback even if a caller supplies overlapping sessions.
+  for (const [, entry] of [...entries].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)) {
+    for (const edit of entry.session.tilesetEdits ?? []) {
+      if (!union.has(edit.path)) union.set(edit.path, edit.after);
+    }
+  }
+  if (union.size === state.applied.size
+    && [...union].every(([path, bytes]) => state.applied.get(path) === bytes)) return state.version;
+  project.setTilesetOverlay(union);
+  state.clearCaches();
+  state.applied = union;
+  state.version += 1;
+  return state.version;
 }

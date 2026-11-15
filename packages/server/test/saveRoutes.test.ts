@@ -123,7 +123,7 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("save/commit routes", () => {
   it("POST /discard on a map with no open session at all is a harmless 200 no-op, same response shape as a closed session", async () => {
     const discardRes = await post("/api/edit/AzaleaTown_Mart/discard");
     expect(discardRes.status).toBe(200);
-    expect(await discardRes.json()).toEqual({ blocks: [], border: [], map: null, isDirty: false, canUndo: false, canRedo: false });
+    expect(await discardRes.json()).toEqual({ blocks: [], border: [], map: null, isDirty: false, canUndo: false, canRedo: false, tilesetVersion: expect.any(Number) });
   }, 300_000);
 
   it("POST /discard closes a real, dirty session -- matches the undo/redo 'nothing open' shape, a later GET /plan shows a genuinely FRESH session re-read from disk (not a canned response over a still-open one), and disk is never touched", async () => {
@@ -145,7 +145,7 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("save/commit routes", () => {
 
     const discardRes = await post("/api/edit/AzaleaTown/discard");
     expect(discardRes.status).toBe(200);
-    expect(await discardRes.json()).toEqual({ blocks: [], border: [], map: null, isDirty: false, canUndo: false, canRedo: false });
+    expect(await discardRes.json()).toEqual({ blocks: [], border: [], map: null, isDirty: false, canUndo: false, canRedo: false, tilesetVersion: expect.any(Number) });
 
     // The real proof: a SUBSEQUENT /plan for the same map shows zero
     // pending changes, i.e. the server genuinely re-opened from disk on the
