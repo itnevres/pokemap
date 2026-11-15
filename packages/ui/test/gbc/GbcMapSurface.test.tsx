@@ -5,6 +5,7 @@ import type { UseGbcEditSessionResult } from "../../src/gbc/hooks/useGbcEditSess
 import type { GbcMapPayload } from "@pokemap/core/src/gbc/wire.js";
 import type { GbcMapEvents } from "@pokemap/core/src/gbc/model/types.js";
 import { useStrokeChainRegistry } from "../../src/shared/useStrokeChain.js";
+import { noteTilesetVersion, resetTilesetVersion } from "../../src/shared/tilesetVersion.js";
 
 const { fitCalls } = vi.hoisted(() => ({ fitCalls: vi.fn() }));
 vi.mock("../../src/canvas/useStage.js", async (importOriginal) => {
@@ -136,5 +137,23 @@ describe("GbcMapCanvas on MapSurface", () => {
     }
     expect(settled).toBe(true);
     expect(session.endStroke).toHaveBeenCalledTimes(1);
+  });
+});
+
+// Task 10b: the render URL carries the hub's tileset version so an already-open map cannot keep a stale image.
+describe("GBC map surface tileset version (Task 10b)", () => {
+  afterEach(() => { resetTilesetVersion(); });
+
+  it("keeps today's URL at version 0 and appends tv= after time on the same mounted canvas", () => {
+    const { container } = render(<GbcMapCanvas mapName="M" data={DATA} time="day" />);
+    const src = () => container.querySelector("img")!.getAttribute("src");
+
+    // Version 0 keeps the border ring and the time of day, exactly as before.
+    expect(src()).toBe("/api/render/M.png?border=1&time=day");
+
+    act(() => noteTilesetVersion(5));
+
+    // Same mounted canvas: both existing parameters survive and tv is appended last.
+    expect(src()).toBe("/api/render/M.png?border=1&time=day&tv=5");
   });
 });

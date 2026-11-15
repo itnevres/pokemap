@@ -1,8 +1,9 @@
 import { useCallback } from "react";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { GbcWorldPayload } from "@pokemap/core/src/gbc/wire.js";
 import { GbcWorldCanvas, type GbcWorldCanvasProps } from "../../src/gbc/GbcWorldCanvas.js";
+import { noteTilesetVersion, resetTilesetVersion } from "../../src/shared/tilesetVersion.js";
 
 const observations = vi.hoisted(() => ({ reload: vi.fn() }));
 
@@ -537,4 +538,30 @@ it.each([false, true])("an incoming line follows the destination's refreshed war
   // Refreshed half-block destination B+(4,5)=(14,5)->(140,100), despite source's old destEvent.
   expect(endpoints()).toEqual([10, 70, 140, 100]);
   expect(requests.filter((request) => request.map === "MapA")).toHaveLength(1);
+});
+
+// Task 10b: world tile URLs carry the hub's tileset version, so a staged tileset edit re-requests the map.
+describe("GBC world surface tileset version (Task 10b)", () => {
+  afterEach(() => { resetTilesetVersion(); });
+  const imageUrls = () => FakeImage.instances.map((image) => image.src);
+
+  it("keeps today's URL at version 0 and re-requests a visible tile with tv=", async () => {
+    await mount();
+    expect(imageUrls()).toContain("/api/render/MapA.png?time=day");
+
+    act(() => noteTilesetVersion(5));
+    await settle();
+
+    expect(imageUrls()).toContain("/api/render/MapA.png?time=day&tv=5");
+  });
+
+  it("keeps a per-map v parameter alongside time and tv", async () => {
+    await mount({ tileVersions: { MapA: 1 } });
+    expect(imageUrls()).toContain("/api/render/MapA.png?time=day&v=1");
+
+    act(() => noteTilesetVersion(5));
+    await settle();
+
+    expect(imageUrls()).toContain("/api/render/MapA.png?time=day&v=1&tv=5");
+  });
 });

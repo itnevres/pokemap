@@ -1,9 +1,10 @@
 import { StrictMode } from "react";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WorldCanvas, type WorldCanvasProps } from "../src/components/WorldCanvas.js";
 import type { MapView } from "../src/components/mapView.js";
 import { conflictKey } from "@pokemap/core/src/world/conflictAcceptance.js";
+import { noteTilesetVersion, resetTilesetVersion } from "../src/shared/tilesetVersion.js";
 
 // Copied from WorldCanvas.test.tsx: fixtures and fetch routes stay local to this real-wrapper suite.
 interface RawPlacement {
@@ -442,4 +443,30 @@ it.each([false, true])("an incoming line follows the destination's refreshed war
   // Refreshed B+(8,9)=(38,19)->(190,95); the cached source must use the new endpoint.
   expect(endpoints()).toEqual([10, 15, 190, 95]);
   expect(host.fetches.warps.filter((request) => request.map === "A")).toHaveLength(1);
+});
+
+// Task 10b: world tile URLs carry the hub's tileset version, so a staged tileset edit re-requests the map.
+describe("GBA world surface tileset version (Task 10b)", () => {
+  afterEach(() => { resetTilesetVersion(); });
+  const requests = () => FakeImage.instances.map((image) => image.src);
+
+  it("keeps today's URL at version 0 and re-requests a visible tile with tv=", async () => {
+    await mount();
+    expect(requests()).toContain("/api/render/A.png");
+
+    act(() => noteTilesetVersion(5));
+    await settle();
+
+    expect(requests()).toContain("/api/render/A.png?tv=5");
+  });
+
+  it("keeps a per-map v parameter alongside tv", async () => {
+    await mount({ tileVersions: { A: 3 } });
+    expect(requests()).toContain("/api/render/A.png?v=3");
+
+    act(() => noteTilesetVersion(5));
+    await settle();
+
+    expect(requests()).toContain("/api/render/A.png?v=3&tv=5");
+  });
 });

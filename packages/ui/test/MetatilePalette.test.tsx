@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, act, waitFor } from "@testing-library/react";
 import { MetatilePalette } from "../src/components/MetatilePalette.js";
 import type { ThumbSignature } from "../src/shared/useUniformRows.js";
+import { noteTilesetVersion, resetTilesetVersion } from "../src/shared/tilesetVersion.js";
 
 let originalScrollIntoView: typeof Element.prototype.scrollIntoView;
 
@@ -299,5 +300,32 @@ describe("MetatilePalette", () => {
     const cls = screen.getByRole("button", { name: "metatile 0x2" }).className;
     expect(cls).toContain("metatile-palette__cell--selected");
     expect(cls).toContain("metatile-palette__cell--hovered");
+  });
+});
+
+// Task 10b: the thumbnail URL carries the hub's tileset version so a staged edit cannot stay on screen.
+describe("MetatilePalette tileset version (Task 10b)", () => {
+  afterEach(() => { resetTilesetVersion(); });
+
+  it("keeps today's URL at version 0 and appends tv= to the same mounted palette", () => {
+    const { container } = render(
+      <MetatilePalette layoutName="Test_Layout" split={SPLIT} primaryCount={2} secondaryCount={1} onSelect={() => {}} />,
+    );
+    // Ids render in order: primary 0, 1, then the single secondary id at the split (640).
+    const thumbs = () => [...container.querySelectorAll(".metatile-palette__thumb")];
+    const srcAt = (index: number) => thumbs()[index]!.getAttribute("src");
+    expect(thumbs()).toHaveLength(3);
+
+    // Version 0 is today's exact URL: no tv parameter at all.
+    expect(srcAt(0)).toBe("/api/metatile/Test_Layout/0.png");
+    expect(srcAt(1)).toBe("/api/metatile/Test_Layout/1.png");
+    expect(srcAt(2)).toBe("/api/metatile/Test_Layout/640.png");
+
+    act(() => noteTilesetVersion(5));
+
+    expect(srcAt(0)).toBe("/api/metatile/Test_Layout/0.png?tv=5");
+    expect(srcAt(1)).toBe("/api/metatile/Test_Layout/1.png?tv=5");
+    // The secondary id proves the version is added to every thumbnail, not just the first.
+    expect(srcAt(2)).toBe("/api/metatile/Test_Layout/640.png?tv=5");
   });
 });
