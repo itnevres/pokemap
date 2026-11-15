@@ -7,6 +7,11 @@ import { guardLayoutSave, guardMapSave, type Refusal } from "./guards.js";
 import { planBlockdataWrite, planBorderWrite } from "./binary.js";
 import { editJson, insertArrayElement, removeArrayElement, type JsonEdit, type JsonPath } from "./jsonEdit.js";
 import type { NameCheck } from "../addEvent/types.js";
+import type { TilesetFileEdit } from "../blockEdit/types.js";
+import {
+  assertPreparedTilesetEdits, checkTilesetBaselines, gbaTilesetEffects, prepareTilesetEdits,
+  tilesetBaselineRefusals, tilesetSaveChanges,
+} from "../blockEdit/save.js";
 
 /** Shared name-check logic used by both planSave and commitSave. */
 function checkNewNames(
@@ -66,6 +71,7 @@ export function applyScriptAppend(text: string, append: ScriptAppend): string {
  * projection the server sends back after each edit op.
  */
 export interface EditSession {
+  tilesetEdits?: TilesetFileEdit[];
   mapName: string;
   layout: Layout;
   /** Current, possibly-edited interior blocks (parseBlocks's own full
@@ -142,6 +148,7 @@ export interface PendingChange {
 }
 
 export interface SavePlan {
+  tilesetEffects: { path: string; maps: string[] }[];
   session: EditSession;
   changes: PendingChange[];
   /** Refusals as of `planSave`'s own snapshot of `session` -- **informational
@@ -241,7 +248,10 @@ export function planSave(
     });
   }
 
-  return { session, changes, refusals };
+  const tilesetEffects = gbaTilesetEffects(proj, session.tilesetEdits ?? []);
+  changes.push(...tilesetSaveChanges(proj.paths.root, tilesetEffects));
+  refusals.push(...tilesetBaselineRefusals(proj.paths.root, session.tilesetEdits ?? []));
+  return { session, changes, refusals, tilesetEffects };
 }
 
 /** `${n} ${word}` / `${n} ${word}s` -- the one pluralisation rule every
@@ -290,6 +300,7 @@ export function prepareSave(proj: Project, session: EditSession, _opts?: { check
     entry.after = Buffer.from(applyScriptAppend(entry.after.toString("utf8"), append), "utf8");
   }
   entries.push(...scripts.values());
+  entries.push(...prepareTilesetEdits(proj.paths.root, session.tilesetEdits ?? []));
   return entries;
 }
 
@@ -319,7 +330,10 @@ export function commitSave(
   if (refusals.length > 0) {
     throw new Error(`save refused: ${session.mapName}: ${refusals.map((r) => `${r.code} (${r.subject})`).join(", ")}`);
   }
-  writeFilesAtomically(prepared ?? prepareSave(proj, session), io);
+  const entries = prepared ?? prepareSave(proj, session);
+  assertPreparedTilesetEdits(proj.paths.root, session.mapName, session.tilesetEdits ?? [], entries);
+  checkTilesetBaselines(proj.paths.root, session.tilesetEdits ?? []);
+  writeFilesAtomically(entries, io);
 }
 
 /** jsonEdits (scalar replace) first, then insertOps, then removeOps --
