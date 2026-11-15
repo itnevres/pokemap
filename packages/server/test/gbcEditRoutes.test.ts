@@ -119,7 +119,7 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbc edit routes (hermetic tem
     expect(during.equals(before)).toBe(false);
 
     const gone = await post(`${NBT}/discard`);
-    expect(await gone.json()).toEqual({ blocks: [], events: null, isDirty: false, canUndo: false, canRedo: false });
+    expect(await gone.json()).toEqual({ blocks: [], events: null, isDirty: false, canUndo: false, canRedo: false, tilesetVersion: expect.any(Number) });
     expect(h.dirtyMaps()).toEqual([]);
     expect((await png("NewBarkTown")).equals(before)).toBe(true);
   });
@@ -225,7 +225,9 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbc edit routes (hermetic tem
   });
 
   it("6. undo/redo round-trip blocks; undo/redo on a never-opened map is the nothing-open shape", async () => {
-    const nothing = { blocks: [], events: null, isDirty: false, canUndo: false, canRedo: false };
+    const nothing = {
+      blocks: [], events: null, isDirty: false, canUndo: false, canRedo: false, tilesetVersion: expect.any(Number),
+    };
     expect(await (await post("/api/edit/ElmsLab/undo")).json()).toEqual(nothing);
     expect(await (await post("/api/edit/ElmsLab/redo")).json()).toEqual(nothing);
     expect(h.dirtyMaps()).toEqual([]); // undo must not have opened a session

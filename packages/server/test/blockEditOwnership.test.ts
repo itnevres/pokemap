@@ -510,6 +510,19 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("GBC block-edit ownership (Pla
     project = openGbcProject(root);
     const found = gbcSharedPair(project);
     expect(found, "two maps sharing a metatiles file").toBeDefined();
+    // Task 10 (conductor): staged bytes become the live overlay, and the GBC loader refuses a tileset with fewer
+    // collision records than metatiles. Real repos carry surplus records (forest: 40 blocks, 64 records); give the
+    // temp copy four surplus records under every const that uses the shared file, so appended metatiles load.
+    const collisions = new Set(project.maps
+      .map((map) => project.tileset(map.tileset))
+      .filter((tileset) => canonicalTilesetPath(tileset.metatilesPath) === found!.path)
+      .map((tileset) => resolve(root, tileset.collisionPath)));
+    for (const collision of collisions) {
+      const text = readFileSync(collision, "utf8");
+      const last = text.match(/^[ \t]*tilecoll\b.*$/gm)!.at(-1)!;
+      writeFileSync(collision, `${text.replace(/\s*$/, "\n")}${`${last}\n`.repeat(4)}`);
+    }
+    project = openGbcProject(root);
     shared = found!;
     mapA = shared.a;
     mapB = shared.b;
