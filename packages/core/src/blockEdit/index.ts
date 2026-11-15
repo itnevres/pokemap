@@ -4,4 +4,7 @@ export * from "./canonicalTilesetPath.js";
 export * from "./gbcPatch.js";
 export * from "./gbaPatch.js";
 export * from "./usage.js";
+export * from "./placement.js";
+export * from "./gbcOps.js";
+export * from "./gbaOps.js";
 export * from "./save.js";

@@ -6,7 +6,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import {
-  checkTilesetBaselines, gbaTilesetEffects, gbcTilesetEffects, mergeTilesetEdits,
+  checkTilesetBaselines, gbaTilesetEffects, gbcTilesetEffects, mergeTilesetEdits, tilesetSaveChanges,
 } from "../../src/blockEdit/save.js";
 import { canonicalTilesetPath } from "../../src/blockEdit/canonicalTilesetPath.js";
 import { BlockEditRefusal, type TilesetFileEdit } from "../../src/blockEdit/types.js";
@@ -139,6 +139,13 @@ describe("Task 8 mergeTilesetEdits", () => {
     expect(inverse[0]!.after).toEqual(z.before);
   });
 
+  it("refuses a non-canonical path with BAD_VALUE", () => {
+    const error = caught(() => mergeTilesetEdits(undefined, [fileEdit("./data/tilesets/a.bin")]));
+    expect(error).toBeInstanceOf(BlockEditRefusal);
+    expect((error as BlockEditRefusal).code).toBe("BAD_VALUE");
+    expect(error.message).toBe("./data/tilesets/a.bin: not a canonical repo-relative tileset path");
+  });
+
   for (const duplicateIn of ["prior", "next"] as const) {
     it(`refuses a duplicate path inside ${duplicateIn} with BAD_VALUE`, () => {
       const edit = fileEdit("data/tilesets/duplicate.bin");
@@ -152,6 +159,19 @@ describe("Task 8 mergeTilesetEdits", () => {
       expect(error.message).toBe(`${edit.path}: more than one staged edit`);
     });
   }
+});
+
+describe("Task 8 tilesetSaveChanges", () => {
+  it("states the map count with a singular for one map and a plural otherwise", () => {
+    const root = resolve("/repo");
+    expect(tilesetSaveChanges(root, [
+      { path: "a.bin", maps: [] }, { path: "b.bin", maps: ["X"] }, { path: "c.asm", maps: ["X", "Y"] },
+    ])).toEqual([
+      { path: resolve(root, "a.bin"), kind: "binary", summary: "a.bin -- tileset file edited (0 maps)" },
+      { path: resolve(root, "b.bin"), kind: "binary", summary: "b.bin -- tileset file edited (1 map)" },
+      { path: resolve(root, "c.asm"), kind: "text", summary: "c.asm -- tileset file edited (2 maps)" },
+    ]);
+  });
 });
 
 describe("Task 8 checkTilesetBaselines", () => {
@@ -454,11 +474,11 @@ for (const family of families) {
       const before = diskSnapshot(f);
       let plan: ContractPlan | undefined;
       expect(() => { plan = f.plan(); }).not.toThrow();
-      expect(plan!.refusals).toContainEqual({
+      expect(plan!.refusals.filter((refusal) => refusal.code === "file-changed-on-disk")).toEqual([{
         code: "file-changed-on-disk", subject: edit.path, path: edit.path,
         message: `${edit.path} changed on disk since the block edit was staged.`,
         fix: "Reopen the map before saving.",
-      });
+      }]);
       // S8: prepare must retain the owner's baseline even if disk has drifted.
       // A fresh-read `before` would silently fingerprint the outside edit.
       const target = resolve(f.root, edit.path);
@@ -577,6 +597,26 @@ for (const family of families) {
         expectNoTemps(f);
       }, 120_000);
     }
+
+    family.test("a stale prepared entry is reported before an external edit (S9 order)", () => {
+      const f = family.fixture();
+      const plan = f.plan();
+      expect(plan.refusals).toEqual([]);
+      const entries = f.prepare();
+      const edit = f.edits[0]!;
+      f.session.tilesetEdits = mergeTilesetEdits(f.session.tilesetEdits, [{
+        path: edit.path, before: edit.before, after: Buffer.concat([edit.after, Buffer.from([7])]),
+      }]);
+      writeFileSync(resolve(f.root, edit.path), Buffer.from("external bytes"));
+      const before = diskSnapshot(f);
+      const error = caught(() => f.commit(plan, entries));
+      expect(error).not.toBeInstanceOf(BlockEditRefusal);
+      expect(error.message).toBe(
+        `save refused: ${f.mapName}: ${edit.path}: tileset edit missing or stale in prepared save`,
+      );
+      expectDiskUnchanged(before);
+      expectNoTemps(f);
+    }, 120_000);
 
     family.test("a failed atomic write rolls back the second rename and keeps disk and session intact", () => {
       const f = family.fixture();
