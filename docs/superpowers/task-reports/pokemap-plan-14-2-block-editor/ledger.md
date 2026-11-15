@@ -607,3 +607,24 @@ Traps seen in s7:
   Fix-2 hop: Codex `gpt-6.1-sol` done first hop (`e8b6aa5`, +118 test lines, one case per family: three-command
   history, failed Save, grid/tileset disk checks, restore, undo×3/redo×3, `canRedo()` false). Vetted (oracles from disk
   and literals). Conductor run: **44/44**. Spec re-review 2 → astra at `e8b6aa5`.
+- Task 9 merged `d0082d0` (`--no-ff`, no conflict: `b1cc25e` had already merged the plan branch); reports archived
+  `6656148`. Gate at `6656148`: see the next entry.
+- 10a impl hop 2 (`--tier opus`, Codex): RESULT failed: gpt-6.1-sol (verify, labelled infra) → gpt-6-sol (verify).
+  Both failed on the same two causes, both the conductor's: (1) the Task 9 GBC fixture stages an appended metatile
+  with no collision record; once staged bytes are the live overlay, `loadGbcTilesetByName` refuses the tileset (64
+  collision records < 65 metatiles), so 3 GBC ownership tests answered 500; (2) the brief allowed only the
+  nothing-open assertion near `gbcEditRoutes.test.ts:122`, but case 6 at :228 compares the whole body too.
+  gpt-6-sol's own report named both. Conductor took gpt-6.1-sol's stash (the fuller diff), committed it as
+  `948556d`, and fixed the fixtures in `fd0b83d`: `beforeAll` gives the GBC temp copy four surplus `tilecoll` records
+  under every const that uses the shared file (real repos carry surplus records: forest 40 blocks / 64 records), and
+  case 6's `nothing` gains `tilesetVersion: expect.any(Number)`. Inline reason: fixture rulings, 17 lines. Verify at
+  `fd0b83d`: typecheck pass, **272/272** (9 files). Diff vetted against V1-V6 (identity union with sorted map-name
+  precedence; GBA `pngCache` and GBC render/metatile/warp/coverage caches cleared; sync in both commits' `finally`;
+  `tilesetVersion` in every session payload, nothing-open bodies and both map GETs; extra: event-route replies carry it
+  too, harmless). Six failed-hop stashes remain in the shared stash list (`delegate: ... T10a-impl*`).
+  Open: V8 mutations, spec + quality reviews (astra), merge. wt-t10 lacks the Task 9 fix-2 tests (`e8b6aa5`): merge
+  the plan branch into `p14-2-t10` first and re-run, since the fix-2 GBC case also stages an append.
+- Gate at `6656148` (Task 9 merged): 4,731 pass / 1 fail / 265 files; typecheck pass, UI build pass; subjects
+  unchanged. The 1 fail is the known environmental `core/test/config/engine.test.ts` (baseline).
+- `p14-2-t10` merged the plan branch (`b9b74f2`, clean). 10a verify at `b9b74f2`: typecheck pass, **290/290** (9 files;
+  +16 fix-1 and +2 fix-2 Task 9 cases, all green under the live overlay).
