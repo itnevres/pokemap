@@ -495,3 +495,34 @@ known environmental `core/test/config/engine.test.ts` "parses the subject repo's
   `writeFilesAtomically` (all temps, then renames). Red run: 40 failed / 2 passed (the two absent/`[]` compat cases,
   expected to pass on the stub).
 - Impl hop: `chain.py --tier opus` with `task-8-impl-brief.final.md`, tests protected.
+- Impl hop: `chain.py --tier opus` → Codex `gpt-6.1-sol` done first hop (`fde9ec5`). Conductor re-ran the verify:
+  293/293 (`save.test.ts` 42 + `core/test/write` + `core/test/gbc/write`).
+- Reviews: Codex astra hit its usage limit (both runs, 0 output) → Claude Opus `high-risk-reviewer`, separate runs on
+  detached `rv-t8`. Spec **Approved 0/0/4** (`task-8-spec-review.md`); quality **Needs changes 0/1/6**
+  (`task-8-quality-review.md`; I1: the GBC effects cold-alias fallback is reached by no test and pre-empted by
+  Task 10's overlay).
+- Mutations (`mut_t8.py`, s7 scratchpad): run 1 on `fde9ec5` died after M16 (process gone, `save.ts` left mutated;
+  restored). M1-M12, M14, M15 KILLED; **M13** (summary always plural) and **M16** (fallback removed) SURVIVED.
+- Fix round 1, conductor inline `1cc405b` (+52/-43, 2 files; reason: smaller than a brief, Codex capped): fallback
+  deleted (rulings addendum S7a), canonical-path check in `mergeTilesetEdits` (S3a), aliasing comment, tests:
+  `tilesetSaveChanges` singular/plural unit test, exact `file-changed-on-disk` filter, S9 order test (stale entry
+  reported before an external edit), non-canonical merge test. 297/297 green. Mutation rerun: M13, M17-M21 and new
+  M22 (canonical check removed), M23/M24 (baseline check before prepared match, per family): **all KILLED**.
+- Quality re-review (Claude Opus): **Approved 0/0/1** (`task-8-quality-rereview.md`); N1 = absolute or `../` edit paths
+  pass S3a: covered by Plan H Task F's root-containment guard in `writeFilesAtomically` (plan Review addendum 3).
+- Deferred to Task 16: quality M2 (GBA effects throw on a dangling layout id; reuse usage.ts relations), M4, M6.
+- Merged `p14-2-t8` `--no-ff` → `025b8e5` (conflict in `blockEdit/index.ts`: both sides added exports; kept all).
+
+Gate at 025b8e5: 4687 pass / 1 fail / 264 files; typecheck pass, UI build pass; subjects unchanged. The 1 fail is the
+known environmental `engine.test.ts` "parses the subject repo's real porymap.project.cfg" ("expected 96 to be 98"). Wall 1,236 s.
+
+### Task 9 (High) — s7
+- Rulings O1-O10 written (`task-9-rulings.md`; O5 records the `structuredClone` trap: redo candidates hold
+  `Uint8Array`s, not Buffers). Tests brief `task-9-tests-brief.final.md`, impl brief `task-9-impl-brief.final.md`.
+- Tests hop: `chain.py --tier opus` parked (Codex usage limit) → `--tier sonnet --no-codex` → OpenRouter
+  `inkling-2-small` done (`185d512`, 26 tests, typecheck pass). Conductor vetted every case against O1-O10 (store spy
+  pattern = `addEventRoutes.test.ts`; redo FILE_CHANGED case also pins the Buffer trap) and fixed the stub to re-export
+  core's `BlockEditPlan` instead of redeclaring it (`a402bd1`). Red run: 26/26 failed for the right reasons
+  ("not implemented", and `snapshotOf` lacking `tilesetEdits`).
+- Next: impl hop with `task-9-impl-brief.final.md`, tests protected; branch `p14-2-t9` in the s7 scratchpad `wt-t9`
+  (based on Task 8 `fde9ec5`; merge the plan branch in before the final verify).
