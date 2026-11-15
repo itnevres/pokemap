@@ -628,3 +628,23 @@ Traps seen in s7:
   unchanged. The 1 fail is the known environmental `core/test/config/engine.test.ts` (baseline).
 - `p14-2-t10` merged the plan branch (`b9b74f2`, clean). 10a verify at `b9b74f2`: typecheck pass, **290/290** (9 files;
   +16 fix-1 and +2 fix-2 Task 9 cases, all green under the live overlay).
+
+### Handoff s8 → s9 (2026-11-15)
+
+- Plan branch `plan-14-2-block-editor` at the s8 close-out commit: Tasks 0-9 merged. Gate at `6656148`: 4,731 / 1 /
+  265 (env fail only).
+- 10a: branch `p14-2-t10`, worktree `wt-t10` in the s8 scratchpad
+  (`C:\Users\Serve\AppData\Local\Temp\claude\8fd0350c313cb955\691846b3-528e-43d8-8d84-a3f55fae3e93\scratchpad\wt-t10`),
+  HEAD `b9b74f2`, clean, 290/290 on the brief's verify list. Next: V8 mutations (rulings file), astra spec + quality
+  reviews on a detached `rv-*` checkout at `b9b74f2` (diff base `3676b08`, plus fixture commit `fd0b83d`), fix round,
+  merge `--no-ff`, gate.
+- 10b: branch `p14-2-t10b`, worktree `wt-t10b` (same scratchpad), `4f2a37c`, red 12/12 on the stub. Brief ready:
+  `.superpowers/sdd/2026-11-10-pokemap-plan-14-2-block-editor/task-10b-impl-brief.md`. Starts after 10a merges (merge
+  the plan branch into `p14-2-t10b` first). Gap for a mutation: map GET loaders noting the version have no test.
+- Trap (tell: GBC 500 "collision ... has 64 entries, fewer than its 65 metatiles"): a GBC staged plan that appends a
+  metatile without a collision record breaks every GBC load once the overlay is live. Real plans (Task 11 saveAsNew)
+  append or reuse a surplus record; test fixtures must too (see `fd0b83d`).
+- Trap: Task 11's GBC tests must stage complete plans (metatiles + collision), for the same reason.
+- `rv-t9` (s8 scratchpad, detached `e8b6aa5`) and `wt-t9` (s7 scratchpad, `p14-2-t9`, merged) can be removed: unlink
+  `node_modules` junctions first with `[System.IO.Directory]::Delete`, never `git worktree remove --force`.
+- Deferred to Task 16 (added s8): Task 9 quality m3 (`statSync` on a missing metatiles file answers 500).
