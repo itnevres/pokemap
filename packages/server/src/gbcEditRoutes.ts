@@ -1,3 +1,9 @@
+import { statSync } from "node:fs";
+import { requireTilesetOwnership, refuseUnsavedBlockRefs } from "./blockEditOwnership.js";
+import { checkTilesetBaselines } from "@pokemap/core/src/blockEdit/save.js";
+import { canonicalTilesetPath } from "@pokemap/core/src/blockEdit/canonicalTilesetPath.js";
+import { BlockEditRefusal } from "@pokemap/core/src/blockEdit/types.js";
+import { resolve } from "node:path";
 import type { createSymbolIndexCache } from "./projectSymbols.js";
 import { createGbcAddEventRoutes, eventFailure, type AddEventHooks } from "./addEventRoutes.js";
 import { findGbcIndicator, insertGbcIndicator, updateGbcIndicator } from "@pokemap/core/src/indicator/gbc.js";
@@ -142,15 +148,18 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void;
   /** Applies a paint tool's request body to the session's blocks. Validates everything before touching the session. */
   function paintApply(name: string, body: Obj): void {
     const tool = body.tool;
+    let ids: number[] = [];
     let paint: (blocks: Block[], w: number, h: number) => Block[];
     if (tool === "pencil") {
       const targets = points(body.targets, "targets");
       const stamp = stampOf(body.stamp);
+      ids = stamp.cells.map(cell => cell.metatileId);
       const origin = point(body.origin, "origin");
       paint = (b, w, h) => paintCells(b, w, h, targets, stamp, origin.x, origin.y);
     } else if (tool === "rect") {
       const [x0, y0, x1, y1] = [int(body, "x0"), int(body, "y0"), int(body, "x1"), int(body, "y1")];
       const stamp = stampOf(body.stamp);
+      ids = stamp.cells.map(cell => cell.metatileId);
       const origin = point(body.origin, "origin");
       paint = (b, w, h) => {
         // Expanded server-side like GBA, but clamped to the grid first:
@@ -168,6 +177,7 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void;
         bad(`"replacement" must be { metatileId: integer }, got ${show(body.replacement)}`);
       }
       const id = (body.replacement as Obj).metatileId as number;
+      ids = [id];
       paint = (b, w, h) => floodFill(b, w, h, x, y, id);
     } else if (tool === "shift") {
       const [dx, dy] = [int(body, "dx"), int(body, "dy")];
@@ -177,6 +187,11 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void;
     }
     const entry = store.open(name);
     const { width: w, height: h } = entry.session.layout;
+    if (ids.length > 0) {
+      const path = canonicalTilesetPath(proj.tileset(entry.session.map.tileset).metatilesPath);
+      const savedCount = Math.floor(statSync(resolve(proj.root, path)).size / 16);
+      refuseUnsavedBlockRefs(store.entries(), name, path, savedCount, ids);
+    }
     entry.session.blocks = paint(entry.session.blocks, w, h);
   }
 
@@ -367,8 +382,16 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void;
     "POST redo": { body: false, run: (name) => {
       if (!store.has(name)) return ok(NOTHING_OPEN);
       const entry = store.open(name);
-      try { entry.stack.redo(entry.session, candidate => addEvents.checkHeaderOwnership(name, candidate)); }
-      catch (error) { return { code: 400, body: eventFailure("gbc", name, error) }; }
+      try { entry.stack.redo(entry.session, candidate => {
+        addEvents.checkHeaderOwnership(name, candidate);
+        const edits = (candidate.tilesetEdits ?? []).map(edit => ({ path: edit.path, before: Buffer.from(edit.before), after: Buffer.from(edit.after) }));
+        requireTilesetOwnership(store.entries(), name, edits.map(edit => edit.path));
+        checkTilesetBaselines(proj.root, edits);
+      }); }
+      catch (error) {
+        if (error instanceof BlockEditRefusal) return { code: 409, body: { error: `${name}: ${error.message}`, code: error.code } };
+        return { code: 400, body: eventFailure("gbc", name, error) };
+      }
       return asSession(entry);
     } },
     "POST discard": { body: false, run: (name) => { store.close(name); addEvents.invalidate(); return ok(NOTHING_OPEN); } },
@@ -470,6 +493,7 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void;
         return route.run(name, body);
       };
       run().then((r) => send(r.code, r.body)).catch((e: unknown) => {
+        if (e instanceof BlockEditRefusal) return send(409, { error: `${name}: ${e.message}`, code: e.code });
         if (e instanceof BadRequest) return send(400, { error: e.message });
         console.error(e);
         send(500, { error: e instanceof Error ? e.message : String(e) });

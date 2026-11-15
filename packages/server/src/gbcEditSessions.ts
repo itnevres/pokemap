@@ -28,12 +28,11 @@ export interface GbcSnapshot {
   events: GbcMapEvents;
   /** Task 9: the staged tileset edits (one per path, `after` = staged bytes)
    *  this snapshot carries, so undo/redo can restore them together with the
-   *  grid. `[]` when the session has none. Optional so this stays a types-only
-   *  change; the implementation populates it in `gbcSnapshotOf`. */
-  tilesetEdits?: TilesetFileEdit[];
+   *  grid. `[]` when the session has none. */
+  tilesetEdits: TilesetFileEdit[];
 }
 
-export const gbcSnapshotOf = (s: GbcEditSession): GbcSnapshot => ({ blocks: s.blocks, eventsText: s.eventsText, events: s.events, constEdits: s.constEdits ?? [], newNames: s.newNames ?? [] });
+export const gbcSnapshotOf = (s: GbcEditSession): GbcSnapshot => ({ tilesetEdits: s.tilesetEdits ?? [], blocks: s.blocks, eventsText: s.eventsText, events: s.events, constEdits: s.constEdits ?? [], newNames: s.newNames ?? [] });
 
 /**
  * One `Map<mapName, GbcSessionEntry>` per GBC handler, the counterpart of

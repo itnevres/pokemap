@@ -125,14 +125,14 @@ export interface Snapshot {
   scriptReplaces: NonNullable<EditSession["scriptReplaces"]>;
   /** Task 9: the staged tileset edits (one per path, `after` = staged bytes)
    *  this snapshot carries, so undo/redo can restore them together with the
-   *  grid. `[]` when the session has none. Optional so this stays a types-only
-   *  change; the implementation populates it in `snapshotOf`. */
-  tilesetEdits?: TilesetFileEdit[];
+   *  grid. `[]` when the session has none. */
+  tilesetEdits: TilesetFileEdit[];
 }
 
 export function snapshotOf(session: EditSession): Snapshot {
   return {
     newNames: session.newNames ?? [],
+    tilesetEdits: session.tilesetEdits ?? [],
     blocks: session.blocks, border: session.border, map: session.map,
     jsonEdits: session.jsonEdits, insertOps: session.insertOps, removeOps: session.removeOps,
     scriptAppends: session.scriptAppends ?? [],

@@ -35,9 +35,12 @@ import type { EditSession } from "@pokemap/core/src/write/save.js";
 import type { GbcEditSession } from "@pokemap/core/src/gbc/write/save.js";
 import type { GbcMapEvents } from "@pokemap/core/src/gbc/model/types.js";
 import type { EditCommandStack } from "@pokemap/core/src/edit/commands.js";
-import type { BlockEditPlan, TilesetFileEdit } from "@pokemap/core/src/blockEdit/types.js";
+import { BlockEditRefusal, type BlockEditPlan, type TilesetFileEdit } from "@pokemap/core/src/blockEdit/types.js";
 import type { createEditSessionStore } from "./editSessions.js";
 import type { createGbcEditSessionStore } from "./gbcEditSessions.js";
+
+import { mergeTilesetEdits } from "@pokemap/core/src/blockEdit/save.js";
+import { snapshotCommand } from "./editSessions.js";
 
 export type { BlockEditPlan } from "@pokemap/core/src/blockEdit/types.js";
 
@@ -78,7 +81,7 @@ export interface SessionPayload {
  * not bytes.
  */
 export function ownedTilesetPaths(entry: OwnershipEntry): Set<string> {
-  throw new Error("not implemented (Task 9)");
+  return new Set((entry.session.tilesetEdits ?? []).map(edit => edit.path));
 }
 
 /**
@@ -89,7 +92,11 @@ export function ownedTilesetPaths(entry: OwnershipEntry): Set<string> {
  * alphabetically first offender.
  */
 export function requireTilesetOwnership(entries: Iterable<[string, OwnershipEntry]>, mapName: string, paths: readonly string[]): void {
-  throw new Error("not implemented (Task 9)");
+  const owners = [...entries].filter(([name]) => name !== mapName).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0);
+  for (const path of [...paths].sort()) {
+    const owner = owners.find(([, entry]) => ownedTilesetPaths(entry).has(path));
+    if (owner) throw new BlockEditRefusal("NOT_OWNER", `${path}: ${owner[0]} has unsaved block edits to this file; save, undo or discard them there first`);
+  }
 }
 
 /**
@@ -98,7 +105,30 @@ export function requireTilesetOwnership(entries: Iterable<[string, OwnershipEntr
  * undo command. Used by Task 11's routes and by Task 10's tests.
  */
 export function stageTilesetPlan(store: BlockEditStore, mapName: string, plan: BlockEditPlan, label: string): SessionPayload {
-  throw new Error("not implemented (Task 9)");
+  const entry: OwnershipEntry = store.open(mapName);
+  const session = entry.session;
+  requireTilesetOwnership(store.entries(), mapName, plan.edits.map(edit => edit.path));
+  const merged = mergeTilesetEdits(session.tilesetEdits, plan.edits);
+  const prevBlocks = session.blocks.map(block => ({ ...block }));
+  const nextBlocks = session.blocks.map(block => ({ ...block }));
+  if (plan.placement) {
+    const { x, y, blockId } = plan.placement;
+    const { width, height } = session.layout;
+    if (!Number.isInteger(x) || !Number.isInteger(y) || x < 0 || y < 0 || x >= width || y >= height) {
+      throw new BlockEditRefusal("BAD_VALUE", `${mapName}: placement (${x}, ${y}) is outside the map`);
+    }
+    const index = y * width + x;
+    nextBlocks[index] = { ...nextBlocks[index]!, metatileId: blockId };
+  }
+  entry.stack.push(session, snapshotCommand<EditSession | GbcEditSession>(label,
+    { tilesetEdits: [...(session.tilesetEdits ?? [])], blocks: prevBlocks },
+    { tilesetEdits: merged, blocks: nextBlocks }));
+  return {
+    blocks: session.blocks,
+    ...("border" in session ? { border: session.border, map: session.map } : { events: session.events }),
+    isDirty: session.isDirty, canUndo: entry.stack.canUndo(), canRedo: entry.stack.canRedo(),
+    tilesetEdits: session.tilesetEdits ?? [],
+  };
 }
 
 /**
@@ -108,5 +138,11 @@ export function stageTilesetPlan(store: BlockEditStore, mapName: string, plan: B
  * both families' paint/fill/stamp routes.
  */
 export function refuseUnsavedBlockRefs(entries: Iterable<[string, OwnershipEntry]>, mapName: string, metatilesPath: string, savedCount: number, ids: Iterable<number>): void {
-  throw new Error("not implemented (Task 9)");
+  const owner = [...entries].filter(([name, entry]) => name !== mapName && ownedTilesetPaths(entry).has(metatilesPath))
+    .sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)[0];
+  if (!owner) return;
+  const unsaved = [...ids].filter(id => id >= savedCount).sort((a, b) => a - b)[0];
+  if (unsaved !== undefined) {
+    throw new BlockEditRefusal("UNSAVED_BLOCK", `${metatilesPath}: block ${unsaved} is an unsaved addition of ${owner[0]}; save it there first`);
+  }
 }
