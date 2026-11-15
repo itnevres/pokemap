@@ -3,6 +3,7 @@ import { signHash } from "@pokemap/core/src/signs/marker.js";
 import { gbcSignLabels } from "./signRefresh.js";
 import type { GbcProject } from "@pokemap/core/src/gbc/project.js";
 import type { Block, GbcMapEvents } from "@pokemap/core/src/gbc/model/types.js";
+import type { TilesetFileEdit } from "@pokemap/core/src/blockEdit/types.js";
 import { EditCommandStack } from "@pokemap/core/src/edit/commands.js";
 import { openGbcEditSession, type GbcEditSession } from "@pokemap/core/src/gbc/write/save.js";
 
@@ -25,9 +26,13 @@ export interface GbcSnapshot {
   blocks: Block[];
   eventsText: string;
   events: GbcMapEvents;
+  /** Task 9: the staged tileset edits (one per path, `after` = staged bytes)
+   *  this snapshot carries, so undo/redo can restore them together with the
+   *  grid. `[]` when the session has none. */
+  tilesetEdits: TilesetFileEdit[];
 }
 
-export const gbcSnapshotOf = (s: GbcEditSession): GbcSnapshot => ({ blocks: s.blocks, eventsText: s.eventsText, events: s.events, constEdits: s.constEdits ?? [], newNames: s.newNames ?? [] });
+export const gbcSnapshotOf = (s: GbcEditSession): GbcSnapshot => ({ tilesetEdits: s.tilesetEdits ?? [], blocks: s.blocks, eventsText: s.eventsText, events: s.events, constEdits: s.constEdits ?? [], newNames: s.newNames ?? [] });
 
 /**
  * One `Map<mapName, GbcSessionEntry>` per GBC handler, the counterpart of

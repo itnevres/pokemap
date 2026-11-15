@@ -1,3 +1,8 @@
+import { requireTilesetOwnership, refuseUnsavedBlockRefs } from "./blockEditOwnership.js";
+import { checkTilesetBaselines } from "@pokemap/core/src/blockEdit/save.js";
+import { canonicalTilesetPath } from "@pokemap/core/src/blockEdit/canonicalTilesetPath.js";
+import { BlockEditRefusal } from "@pokemap/core/src/blockEdit/types.js";
+import { resolve } from "node:path";
 import { createGbaAddEventRoutes, eventFailure, type AddEventHooks } from "./addEventRoutes.js";
 import { checkGbaMapDefects } from "@pokemap/core/src/defects/gba.js";
 import { createSymbolIndexCache } from "./projectSymbols.js";
@@ -6,7 +11,7 @@ import { parseMap } from "@pokemap/core/src/load/maps.js";
 import { findGbaSign, gbaSignScript, gbaSignText, nextGbaSignNumber, updateGbaSign } from "@pokemap/core/src/signs/gbaSign.js";
 import { formatMarker, signHash, type SignMode } from "@pokemap/core/src/signs/marker.js";
 import { effectiveGbaScripts, gbaSignLabels, gbaSignParagraphs, refreshGbaLinkedSigns, replaceGbaScripts } from "./signRefresh.js";
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { createServer as createHttp, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { openProject, type Project } from "@pokemap/core/src/project.js";
 import { detectEngineFamily } from "@pokemap/core/src/family.js";
@@ -884,6 +889,19 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
             // this is a known, accepted gap, not a guarantee against it.
             const entry = editEntryFor(name);
             const w = entry.session.layout.width, h = entry.session.layout.height;
+            const guardIds = (ids: number[]) => {
+              const layout = entry.session.layout;
+              const split = project.splitFor(layout).metatiles;
+              for (const [symbol, localIds] of [
+                [layout.primaryTileset, ids.filter(id => id < split)],
+                [layout.secondaryTileset, ids.filter(id => id >= split).map(id => id - split)],
+              ] as const) {
+                if (localIds.length === 0) continue;
+                const path = canonicalTilesetPath(project.tilesetPaths(symbol).metatilesBin);
+                const savedCount = Math.floor(statSync(resolve(project.paths.root, path)).size / 16);
+                refuseUnsavedBlockRefs(editSessions.entries(), name, path, savedCount, localIds);
+              }
+            };
 
             if (parsed.tool === "pencil") {
               const { targets, stamp, origin } = parsed;
@@ -892,6 +910,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
               }
               const stampErr = validateStampAndOrigin(stamp, origin);
               if (stampErr) return send(400, { error: stampErr });
+              guardIds(stamp!.cells.flatMap(cell => cell.metatileId === undefined ? [] : [cell.metatileId]));
               entry.session.blocks = paintCells(entry.session.blocks, w, h, targets, stamp!, origin!.x, origin!.y);
             } else if (parsed.tool === "rect") {
               // Task 11: takes the two corners and expands server-side,
@@ -908,6 +927,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
               for (let y = Math.min(y0, y1); y <= Math.max(y0, y1); y++) {
                 for (let x = Math.min(x0, x1); x <= Math.max(x0, x1); x++) targets.push({ x, y });
               }
+              guardIds(stamp!.cells.flatMap(cell => cell.metatileId === undefined ? [] : [cell.metatileId]));
               entry.session.blocks = paintCells(entry.session.blocks, w, h, targets, stamp!, origin!.x, origin!.y);
             } else if (parsed.tool === "bucket") {
               const { x, y, replacement } = parsed;
@@ -917,6 +937,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
               if (typeof replacement?.metatileId !== "number") {
                 return send(400, { error: `"replacement" must be { metatileId: number, ... }, got ${JSON.stringify(replacement)}` });
               }
+              guardIds([replacement.metatileId]);
               entry.session.blocks = floodFill(entry.session.blocks, w, h, x, y, replacement);
             } else if (parsed.tool === "shift") {
               const { dx, dy } = parsed;
@@ -930,6 +951,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
             return sendSession(send, 200, entry);
           })
           .catch((e: unknown) => {
+            if (e instanceof BlockEditRefusal) return send(409, { error: `${name}: ${e.message}`, code: e.code });
             console.error(e);
             send(500, { error: e instanceof Error ? e.message : String(e) });
           });
@@ -965,8 +987,16 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
         const name = decodeURIComponent(redoMatch[1]!);
         if (!editSessions.has(name)) return send(200, { blocks: [], border: [], map: null, isDirty: false, canUndo: false, canRedo: false });
         const entry = editEntryFor(name);
-        try { entry.stack.redo(entry.session, candidate => addEvents.checkHeaderOwnership(name, candidate)); }
-        catch (error) { return send(400, eventFailure("gba", name, error)); }
+        try { entry.stack.redo(entry.session, candidate => {
+          addEvents.checkHeaderOwnership(name, candidate);
+          const edits = (candidate.tilesetEdits ?? []).map(edit => ({ path: edit.path, before: Buffer.from(edit.before), after: Buffer.from(edit.after) }));
+          requireTilesetOwnership(editSessions.entries(), name, edits.map(edit => edit.path));
+          checkTilesetBaselines(project.paths.root, edits);
+        }); }
+        catch (error) {
+          if (error instanceof BlockEditRefusal) return send(409, { error: `${name}: ${error.message}`, code: error.code });
+          return send(400, eventFailure("gba", name, error));
+        }
         return sendSession(send, 200, entry);
       }
 
