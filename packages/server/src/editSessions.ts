@@ -4,6 +4,7 @@ import { signHash } from "@pokemap/core/src/signs/marker.js";
 import { gbaSignLabels } from "./signRefresh.js";
 import type { Project } from "@pokemap/core/src/project.js";
 import type { EditSession } from "@pokemap/core/src/write/save.js";
+import type { TilesetFileEdit } from "@pokemap/core/src/blockEdit/types.js";
 import { EditCommandStack, type EditCommand } from "@pokemap/core/src/edit/commands.js";
 import { parseBlocks } from "@pokemap/core/src/load/blocks.js";
 
@@ -122,6 +123,11 @@ export interface Snapshot {
    *  a complete, unambiguous state to revert TO. */
   scriptAppends: NonNullable<EditSession["scriptAppends"]>;
   scriptReplaces: NonNullable<EditSession["scriptReplaces"]>;
+  /** Task 9: the staged tileset edits (one per path, `after` = staged bytes)
+   *  this snapshot carries, so undo/redo can restore them together with the
+   *  grid. `[]` when the session has none. Optional so this stays a types-only
+   *  change; the implementation populates it in `snapshotOf`. */
+  tilesetEdits?: TilesetFileEdit[];
 }
 
 export function snapshotOf(session: EditSession): Snapshot {
