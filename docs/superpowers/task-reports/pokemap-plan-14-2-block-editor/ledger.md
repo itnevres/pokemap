@@ -562,3 +562,48 @@ Traps seen in s7:
 - Python heredoc edits: a `\` in a TS string written from a non-raw Python string becomes `\t`/`\a`; use raw strings
   or avoid backslashes in test literals.
 - The save-test file copies whole corpora per test: a Task 8 mutant run takes ~5-7 min; budget mutation runs by count.
+
+## Execution (conductor s8, 2026-11-15)
+
+### Task 9 (High) — s8
+- Codex chain cooldown in `chain_state.json` was set before Codex's 20:28 reset; cleared by hand.
+- Impl hop: `chain.py --tier opus` → Codex `gpt-6.1-sol`. RESULT failed: try 1 and 2 verify exit 1, but the only red
+  was a pre-existing `gbcAddEventRoutes` case timing out at 8 s (load flake), and the ownership file was 26/26. Conductor
+  popped the stash and re-ran the verify: **157/157**. Committed `a34df03`. Merged the plan branch in (`b1cc25e`):
+  157/157 again.
+- Vet vs O1-O10: matches (O5 validator order + Buffer rebuild, O6 409 on redo and paint, O8 split arithmetic, shift exempt).
+- Mutations (`mut_t9.py`, s8 scratchpad, ownership file only): **17 of 21 KILLED**, incl. the plan's three (M1 ownership
+  by bytes, M2/M3 redo skips baseline, M4/M5 paint guard per family). Survivors: M11 (shift guarded) equivalent in
+  practice (a non-owner grid cannot hold an unsaved id); M12/M13 (Buffer rebuild removed) equivalent: every hub command
+  is a full snapshot, so `apply` puts real Buffers back on the candidate; the rebuild stays as the O5 defence;
+  M19 (smallest id not chosen) → test added in fix round 1.
+- Reviews (Codex astra `gpt-6-astra`, static on `rv-t9` at `a34df03`): spec **Needs changes 0/2/1** (I1 no interleaved
+  tileset/paint history or failed-Save case; I2 paint refusal atomicity and both GBA file roles unpinned; m1 stage
+  payload carried raw `tilesetEdits` Buffers, not the family body); quality **Approved 0/0/3** (m1 refused stage
+  leaves a newly opened session; m2 = spec m1; m3 `statSync` on a missing metatiles file → 500, deferred to Task 16).
+- Fix round 1: conductor inline `ebdb375` (1 file, tiny; reason: smaller than a brief): payload = family body
+  (interface field dropped), refused stage closes a session it opened. Tests hop `task-9-fix1-tests-brief.md`
+  (cases 1-8: interleaved history, failed Save, mid-stroke refusal, smallest id, no session left, payload keys,
+  placement BAD_VALUE, GBA primary role + split file selection).
+- Tests hop: `chain.py --tier opus` → Codex `gpt-6.1-sol` wrote 352 lines, then hit the Codex usage limit (reset
+  12:32 PST); RESULT parked, the diff stashed. Conductor popped it, ran it (41/42: the GBC mid-stroke case needed a
+  5-wide map, the shared GBC map is 4 wide; the brief's fault), moved the stamp to (2,0)-(3,0), vetted every case
+  (oracles: disk bytes, literal appends, raw grid decode; expected edit lists built by hand). **42/42**, `ad025c6`.
+- Task 10 rulings V1-V8 + U1-U5 written (`task-10-rulings.md`): Task 10 split into **10a server** (overlay sync,
+  caches, `tilesetVersion`) and **10b UI** (`tv=` URLs) per delegate §7; sync is lazy and idempotent (identity union).
+  10a tests hop (`task-10a-tests-brief.md`): Codex `gpt-6.1-sol` done first hop (`b67400e`, branch `p14-2-t10` in
+  the s8 scratchpad `wt-t10`, based on `ebdb375`); conductor vet fix `3676b08` (payload probe = paint begin + end, so
+  no stroke stays open across undo/redo).
+  10a red run: 10/10 fail for the right reasons. 10a impl hop 1 (`--tier sonnet --no-codex`, free lane): RESULT
+  failed: deepseek-v4.1-flash-free (verify) → inkling-2-small-free (wrote a report outside --allow) → openrouter
+  inkling-2-small (verify) → ling-3.2-flash (verify); four stashes left in the shared stash list. Hop 2: `--tier opus`
+  (Codex) after the 12:32 reset, beside the Task 9 spec re-review (astra, `rv-t9` at `ad025c6`).
+- 10b tests hop: deepseek-v4.1-flash-free (`4f2a37c`, branch `p14-2-t10b`, based on `ebdb375`); vetted (literal URLs;
+  gap: map GET loaders noting the version have no test, covered by a conductor mutation). Red run: 12 new tests fail,
+  all with `not implemented (Task 10b)` from the stub; 82 existing pass.
+- Task 9 spec re-review (astra, `ad025c6`): Needs changes 0/1/0. I2, m3 and the refused-stage finding closed; I1
+  still open in part (failed Save checked only with a one-command history and `canUndo()`, no grid-on-disk check).
+  Fix round 2, tests only (`task-9-fix2-tests-brief.md`): Codex `--tier opus`, typecheck-only verify.
+  Fix-2 hop: Codex `gpt-6.1-sol` done first hop (`e8b6aa5`, +118 test lines, one case per family: three-command
+  history, failed Save, grid/tileset disk checks, restore, undo×3/redo×3, `canRedo()` false). Vetted (oracles from disk
+  and literals). Conductor run: **44/44**. Spec re-review 2 → astra at `e8b6aa5`.
