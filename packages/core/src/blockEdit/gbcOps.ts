@@ -16,6 +16,8 @@ import { gbcBlockUsage, gbcTileUsage, gbcTilesetsForFile } from "./usage.js";
 const paletteNames = new Set(["GRAY", "RED", "GREEN", "WATER", "YELLOW", "BROWN", "ROOF", "TEXT"]);
 const compare = (a: string, b: string): number => a < b ? -1 : a > b ? 1 : 0;
 const bad = (message: string): never => { throw new BlockEditRefusal("BAD_VALUE", message); };
+/** A caught value's message; a non-Error throw (string, object) still reads as text. */
+const errorText = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 function effectiveGrid(proj: GbcProject, map: GbcMap, grids: StagedGrids): GridIds {
   const winner = proj.maps.filter(m => m.blkPath === map.blkPath && grids.has(m.name))
@@ -81,6 +83,15 @@ export function blockEditRevision(files: ReadonlyMap<string, Buffer>, grid: Grid
   return hash.digest("hex");
 }
 export function planGbcBlockEdit(proj: GbcProject, req: GbcBlockEditRequest, staged: FileOverlay, grids: StagedGrids): BlockEditPlan {
+  try {
+    return planGbcBlockEditInner(proj, req, staged, grids);
+  } catch (error) {
+    if (error instanceof BlockEditRefusal) throw error;
+    // R1b: no native or plain Error escapes the planner.
+    return bad(`${req.map}: ${errorText(error)}`);
+  }
+}
+function planGbcBlockEditInner(proj: GbcProject, req: GbcBlockEditRequest, staged: FileOverlay, grids: StagedGrids): BlockEditPlan {
   const map = proj.map(req.map);
   const ts = proj.tileset(map.tileset);
   const metaPath = canon(ts.metatilesPath);
@@ -92,7 +103,12 @@ export function planGbcBlockEdit(proj: GbcProject, req: GbcBlockEditRequest, sta
     const key = canon(path);
     let bytes = before.get(key);
     if (bytes === undefined) {
-      bytes = staged.get(key) ?? readFileSync(join(proj.root, path));
+      try {
+        bytes = staged.get(key) ?? readFileSync(join(proj.root, path));
+      } catch (error) {
+        // R1a: a missing or unreadable effective file is a value refusal.
+        return bad(`${key}: ${errorText(error)}`);
+      }
       before.set(key, bytes);
     }
     return bytes;
@@ -100,7 +116,7 @@ export function planGbcBlockEdit(proj: GbcProject, req: GbcBlockEditRequest, sta
   const parse = <T>(path: string, fn: () => T): T => {
     try { return fn(); } catch (error) {
       if (error instanceof BlockEditRefusal) throw error;
-      return bad(`${path}: ${(error as Error).message}`);
+      return bad(`${path}: ${errorText(error)}`);
     }
   };
   const blocks = parse(metaPath, () => parseMetatiles(read(metaPath), metaPath));
@@ -141,8 +157,9 @@ export function planGbcBlockEdit(proj: GbcProject, req: GbcBlockEditRequest, sta
   }
   const changes = [...entries].filter(([tile, entry]) => initialPalette.names[tile] !== entry.palName);
   const all = changes.filter(([, entry]) => entry.scope === "all");
+  const local = changes.filter(([, entry]) => entry.scope === "local");
   if (req.mode === "saveAsNew" && all.length) {
-    throw new BlockEditRefusal("ALL_WITH_SAVE_AS_NEW", `${metaPath}: All palette edits cannot be saved as new`);
+    throw new BlockEditRefusal("ALL_WITH_SAVE_AS_NEW", `${metaPath}: an All palette change cannot be saved as new; use Local or OK`);
   }
   const sharingMaps = proj.maps.filter(m => m.blkPath === map.blkPath).map(m => m.name).sort(compare);
   if (req.mode === "saveAsNew" && req.from === "map" && sharingMaps.length >= 2) {
@@ -156,12 +173,14 @@ export function planGbcBlockEdit(proj: GbcProject, req: GbcBlockEditRequest, sta
   let reserved: Set<number> | undefined;
   let used: Set<number> | undefined;
   const sheetToTile = gbcSheetToTileId(effectiveTs);
-  for (const [tile, entry] of changes) {
+  // R5a: every All rename lands before any Local entry is resolved, so a Local
+  // result always shows the palette it asked for -- whatever the entry order.
+  for (const [tile, entry] of all) {
     if (initialPalette.names[tile] == null) bad(`${palPath}: tile ${tile} has no palette-map entry`);
-    if (entry.scope === "all") {
-      paletteText = patchGbcPaletteMap(paletteText, tile, entry.palName, palPath);
-      continue;
-    }
+    paletteText = patchGbcPaletteMap(paletteText, tile, entry.palName, palPath);
+  }
+  for (const [tile, entry] of local) {
+    if (initialPalette.names[tile] == null) bad(`${palPath}: tile ${tile} has no palette-map entry`);
     const sharing = gbcTilesetsForFile(proj, metaPath).map(c => proj.tileset(c))
       .filter(t => canon(t.metatilesPath) === metaPath);
     if (sharing.some(t => canon(t.gfxPath) !== gfxPath || canon(t.palMapPath) !== palPath)) {

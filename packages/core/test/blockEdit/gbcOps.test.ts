@@ -152,6 +152,213 @@ function checkLocal(f: LocalFixture, plan: ReturnType<typeof planGbcBlockEdit>, 
   original.tiles.forEach((t, i) => { if (t === f.source) expected[f.id * 16 + i] = slot; });
   expect(m.after).toEqual(expected);
 }
+const PALETTE_NAMES = ["GRAY", "RED", "GREEN", "WATER", "YELLOW", "BROWN", "ROOF", "TEXT"] as const;
+/** Every tile id referenced by a metatiles file that shares this tileset's sheet. */
+function usedOnSheet(p: GbcProject, ts: GbcTileset, staged: FileOverlay = new Map()): Set<number> {
+  const used = new Set<number>();
+  for (const constName of new Set(p.maps.map(m => m.tileset))) {
+    const other = p.tileset(constName);
+    if (canon(other.gfxPath) !== canon(ts.gfxPath)) continue;
+    for (const id of bytes(p, other.metatilesPath, staged)) used.add(id);
+  }
+  return used;
+}
+/** The test's own free-slot oracle, mirroring Q11's allocation scan. */
+function freeSlots(p: GbcProject, ts: GbcTileset, sheet: readonly Uint8Array[], draftTiles: readonly number[], staged: FileOverlay = new Map()): number[] {
+  const reserved = loadGbcReservedTiles(p.root);
+  const palNames = names((staged.get(canon(ts.palMapPath)) ?? bytes(p, ts.palMapPath)).toString());
+  const used = usedOnSheet(p, ts, staged);
+  return sheet.map((_, i) => tileId(i)).filter(t => palNames.has(t) && !reserved.has(t) && !used.has(t) && !draftTiles.includes(t));
+}
+/** Stage a copy of `from` at `to` with the requested palette, for reuse/allocation fixtures. */
+function stagedCopy(f: LocalFixture, from: number, to: number, pal: string): FileOverlay {
+  const png = copySheetTile(bytes(f.p, f.ts.gfxPath), indexOf(from), indexOf(to), f.ts.gfxPath);
+  const text = bytes(f.p, f.ts.palMapPath).toString("latin1");
+  return new Map([
+    [canon(f.ts.gfxPath), png],
+    [canon(f.ts.palMapPath), Buffer.from(patchGbcPaletteMap(text, to, pal, f.ts.palMapPath), "latin1")],
+  ]);
+}
+/** The 0-based line of the `tilepal` entry holding `tile`, from the text's own order. */
+function paletteLineHolding(text: string, tile: number): number {
+  // Keep CRLF terminators out of the match; line indices are unaffected.
+  const lines = text.split("\n").map(line => (line.endsWith("\r") ? line.slice(0, -1) : line));
+  let count = 0;
+  for (let index = 0; index < lines.length; index++) {
+    const match = lines[index]!.replace(/;.*/, "").match(/^\s*tilepal\s+[01]\s*,\s*(.*)$/);
+    if (!match) continue;
+    const lineNames = match[1]!.split(",");
+    for (let name = 0; name < lineNames.length; name++) if (tileId(count++) === tile) return index;
+  }
+  expect.fail(`palette text has no tilepal entry for tile $${tile.toString(16)}`);
+}
+function expectOnlyPaletteTilesChanged(beforeText: string, afterText: string, tiles: readonly number[]): void {
+  const before = beforeText.split("\n"); const after = afterText.split("\n");
+  expect(after, "palette-map line count").toHaveLength(before.length);
+  const changed = before.map((line, index) => line === after[index] ? -1 : index).filter(index => index >= 0);
+  const expected = [...new Set(tiles.map(tile => paletteLineHolding(beforeText, tile)))].sort((a, b) => a - b);
+  expect(changed, "changed palette-map lines").toEqual(expected);
+}
+interface SourceLine { text: string; body: string; end: string }
+/** Lines with their original endings kept, so a byte-level lossless check can compare them. */
+function sourceLines(text: string): SourceLine[] {
+  const parts = text.split("\n");
+  return parts.map((part, index) => {
+    if (index === parts.length - 1) return { text: part, body: part, end: "" };
+    const cr = part.endsWith("\r");
+    return { text: part + "\n", body: cr ? part.slice(0, -1) : part, end: cr ? "\r\n" : "\n" };
+  });
+}
+const lineCode = (body: string): string => body.replace(/;.*/, "");
+const lineComment = (body: string): string => body.includes(";") ? body.slice(body.indexOf(";")) : "";
+/** R2b: only collision record `id`'s line changes, keeping its indentation, comment and ending. */
+function expectOnlyCollisionRecordChanged(beforeText: string, afterText: string, id: number): void {
+  const before = sourceLines(beforeText); const after = sourceLines(afterText);
+  expect(after, "collision line count").toHaveLength(before.length);
+  const records = before.map((line, index) => ({ index, code: lineCode(line.body) }))
+    .filter(item => /^\s*tilecoll\b/.test(item.code)).map(item => item.index);
+  expect(records.length, `collision text holds record ${id}`).toBeGreaterThan(id);
+  const target = records[id]!;
+  const changed = before.map((line, index) => line.text === after[index]!.text ? -1 : index).filter(index => index >= 0);
+  expect(changed, "only collision record N differs").toEqual([target]);
+  const was = before[target]!; const now = after[target]!;
+  expect(/^[ \t]*/.exec(now.body)![0], "collision indentation").toBe(/^[ \t]*/.exec(was.body)![0]);
+  expect(lineComment(now.body), "collision comment").toBe(lineComment(was.body));
+  expect(now.end, "collision line ending").toBe(was.end);
+  expect(now.body, "collision record content").not.toBe(was.body);
+  const outside = (lines: SourceLine[]): string => lines.filter((_, index) => index !== target).map(line => line.text).join("");
+  expect(outside(after), "bytes outside record N").toBe(outside(before));
+}
+/** How many times `byte` occurs in `buffer`. */
+const countByte = (buffer: Buffer, byte: number): number =>
+  buffer.reduce((total, value) => total + (value === byte ? 1 : 0), 0);
+/** CRLF everywhere: `\r\n` collapses to `\n` first, so a lone-CR file cannot end up mixed. */
+const toCrlf = (text: string): string => text.replace(/\r\n/g, "\n").replace(/\n/g, "\r\n");
+/**
+ * Add the byte 0xE9 in a `;` comment on each `touch` line. A line that already
+ * has a comment grows it; any other line gets a trailing ` ; caf\u00E9` comment.
+ */
+function markLatin1Comments(text: string, touch: readonly number[]): { text: string; buffer: Buffer } {
+  const lines = sourceLines(text);
+  const edited = lines.map((line, index) => {
+    if (!touch.includes(index)) return line;
+    const body = line.body.includes(";") ? `${line.body} caf\u00E9` : `${line.body} ; caf\u00E9`;
+    return { ...line, body, text: body + line.end };
+  });
+  const out = edited.map(line => line.text).join("");
+  return { text: out, buffer: Buffer.from(out, "latin1") };
+}
+/** The first line index other than `target`, or a failure when there is none. */
+function otherLineIndex(lines: readonly SourceLine[], target: number): number {
+  const index = lines.findIndex((_, index) => index !== target);
+  expect(index, "another line to mark").toBeGreaterThanOrEqual(0);
+  return index;
+}
+interface DoubleLocalFixture {
+  p: GbcProject; map: GbcMap; ts: GbcTileset; id: number;
+  sources: [number, number]; squares: [number, number]; pals: [string, string]; slots: [number, number];
+  sheet: Uint8Array[];
+}
+/** Two distinct Local sources in one block, each impossible to reuse, with two free slots. */
+function doubleLocalFixture(): DoubleLocalFixture {
+  const p = proj();
+  const reserved = loadGbcReservedTiles(p.root);
+  const tilesets = [...new Set(p.maps.map(m => m.tileset))].map(c => p.tileset(c));
+  for (const ts of tilesets) {
+    if (tilesets.some(t => canon(t.metatilesPath) === canon(ts.metatilesPath) &&
+        (canon(t.gfxPath) !== canon(ts.gfxPath) || canon(t.palMapPath) !== canon(ts.palMapPath)))) continue;
+    const map = p.maps.find(m => m.tileset === ts.constName && p.maps.filter(n => n.blkPath === m.blkPath).length === 1);
+    if (!map) continue;
+    const sheet = pixels(bytes(p, ts.gfxPath));
+    const palNames = names(bytes(p, ts.palMapPath).toString());
+    const used = usedOnSheet(p, ts);
+    const meta = bytes(p, ts.metatilesPath);
+    for (let id = 0; id < meta.length / 16; id++) {
+      const tiles = [...meta.subarray(id * 16, id * 16 + 16)];
+      const slots = sheet.map((_, index) => tileId(index))
+        .filter(t => palNames.has(t) && !reserved.has(t) && !used.has(t) && !tiles.includes(t));
+      const slot1 = slots[0], slot2 = slots[1];
+      if (slot1 === undefined || slot2 === undefined) continue;
+      const firstSlot = indexOf(slot1), secondSlot = indexOf(slot2);
+      if (firstSlot < 0 || secondSlot < 0) continue;
+      const options: { square: number; source: number; index: number }[] = [];
+      for (let square = 0; square < 16; square++) {
+        const source = tiles[square]!; const si = indexOf(source);
+        if (si < 0 || si >= sheet.length || reserved.has(source) || !palNames.has(source)) continue;
+        if (options.some(option => option.source === source)) continue;
+        if (equalPixels(sheet[si]!, sheet[firstSlot]!) || equalPixels(sheet[si]!, sheet[secondSlot]!)) continue;
+        options.push({ square, source, index: si });
+      }
+      const palsFor = (option: { source: number; index: number }): string[] =>
+        PALETTE_NAMES.filter(pal => pal !== palNames.get(option.source) && pal !== palNames.get(slot1) && pal !== palNames.get(slot2) &&
+          !sheet.some((pix, i) => {
+            const t = tileId(i);
+            return t !== option.source && !reserved.has(t) && palNames.get(t) === pal && equalPixels(pix, sheet[option.index]!);
+          }));
+      for (let first = 0; first < options.length; first++) {
+        for (let second = first + 1; second < options.length; second++) {
+          const a = options[first]!, b = options[second]!;
+          const firstPal = palsFor(a)[0];
+          const secondPal = palsFor(b).find(pal => pal !== firstPal);
+          if (firstPal === undefined || secondPal === undefined) continue;
+          return { p, map, ts, id, sources: [a.source, b.source], squares: [a.square, b.square], pals: [firstPal, secondPal], slots: [slot1, slot2], sheet };
+        }
+      }
+    }
+  }
+  expect.fail("scan found no block with two eligible Local source tiles and two free slots");
+}
+/** R5a: every All rename lands before any Local reuse decision, whatever the entry order. */
+function expectLocalSurvivesAllRename(order: "localFirst" | "allFirst"): void {
+  const f = localFixture(); const b = f.free[1]!; const staged = stagedCopy(f, f.source, b, f.pal);
+  const palText = staged.get(canon(f.ts.palMapPath))!.toString("latin1");
+  const other = PALETTE_NAMES.find(name => name !== f.pal)!;
+  const d = draft(f.p, f.ts, f.id);
+  const bSquare = [0,1,2,3,4,6,7,8,9,10,11,12,13,14,15].find(s => d.tiles[s] !== f.source);
+  expect(bSquare, "a non-source square in the block").toBeDefined();
+  d.tiles[bSquare!] = b;
+  const local = { square: f.square, palName: f.pal, scope: "local" as const };
+  const all = { square: bSquare!, palName: other, scope: "all" as const };
+  d.palettes = order === "localFirst" ? [local, all] : [all, local];
+  const plan = planGbcBlockEdit(f.p, request(f.map, f.id, d), staged, new Map());
+  expect(plan.edits.map(e => e.path)).toEqual([f.ts.gfxPath, f.ts.metatilesPath, f.ts.palMapPath].map(canon).sort());
+  const slot = freeSlots(f.p, f.ts, f.sheet, d.tiles, staged)[0]!; expect(slot).not.toBe(b);
+  const base = bytes(f.p, f.ts.metatilesPath); const expectedMeta = Buffer.from(base);
+  d.tiles.forEach((tile, square) => { expectedMeta[f.id * 16 + square] = tile === f.source ? slot : tile; });
+  expect(edit(plan, f.ts.metatilesPath).after).toEqual(expectedMeta);
+  expect(expectedMeta[f.id * 16 + bSquare!], "the All tile's square keeps that tile").toBe(b);
+  const png = edit(plan, f.ts.gfxPath); const before = pixels(png.before); const after = pixels(png.after);
+  after.forEach((tile, index) => expect(equalPixels(tile, index === indexOf(slot) ? before[indexOf(f.source)]! : before[index]!), `sheet tile ${index}`).toBe(true));
+  const afterNames = names(edit(plan, f.ts.palMapPath).after.toString());
+  const expectedNames = new Map(names(palText)); expectedNames.set(b, other); expectedNames.set(slot, f.pal);
+  expect(afterNames, "All rename plus Local copy").toEqual(expectedNames);
+  expect(afterNames.get(b)).toBe(other); expect(afterNames.get(slot)).toBe(f.pal);
+}
+
+/**
+ * R5a: an All entry whose tile has no palette-map entry refuses BAD_VALUE
+ * before a Local entry is resolved, whichever order the entries are listed.
+ */
+function expectAllBadValueBeforeLocalRefusal(order: "localFirst" | "allFirst"): void {
+  const f = localFixture(); const reserved = loadGbcReservedTiles(f.p.root);
+  const palNames = names(bytes(f.p, f.ts.palMapPath).toString("latin1"));
+  const source = f.sheet.map((_, i) => tileId(i)).find(t => reserved.has(t) && palNames.has(t));
+  expect(source, "mapped reserved source in the sheet").toBeDefined();
+  const meta = Buffer.from(bytes(f.p, f.ts.metatilesPath));
+  meta[f.id * 16 + 0] = source!;
+  meta[f.id * 16 + 2] = 0x60;
+  const staged = new Map([[canon(f.ts.metatilesPath), meta]]);
+  const d = draft(f.p, f.ts, f.id, staged);
+  expect(d.tiles[0], "reserved source staged in square 0").toBe(source);
+  expect(d.tiles[2], "staged filler tile in square 2").toBe(0x60);
+  const local = { square: 0, palName: alternate(palNames.get(source!)!), scope: "local" as const };
+  const all = { square: 2, palName: "RED", scope: "all" as const };
+  const both = { ...d, palettes: order === "localFirst" ? [local, all] : [all, local] };
+  refusal(() => planGbcBlockEdit(f.p, request(f.map, f.id, both), staged, new Map()), "BAD_VALUE", [f.ts.palMapPath]);
+  const localOnly = { ...d, palettes: [local] };
+  const reservedMessage = `tile $${source!.toString(16).padStart(2, "0")}:`;
+  refusal(() => planGbcBlockEdit(f.p, request(f.map, f.id, localOnly), staged, new Map()), "RESERVED_TILE", [reservedMessage], reservedMessage);
+}
 
 describe("GBC block edit planner", () => {
   itWithGbcCorpus("OK edits only block N's 16 bytes and collision record N", () => {
@@ -163,9 +370,77 @@ describe("GBC block edit planner", () => {
     const expected = Buffer.from(m.before); Buffer.from(d.tiles).copy(expected, id * 16); expect(m.after).toEqual(expected);
     const before = readGbcCollisionRecords(c.before.toString()); const after = readGbcCollisionRecords(c.after.toString());
     expect(after).toEqual(before.map((r, n) => n === id ? d.collision : r));
+    expectOnlyCollisionRecordChanged(c.before.toString("latin1"), c.after.toString("latin1"), id);
     expect(plan.warnings).toEqual([]);
     expect(plan.usage).toEqual(usageOracle(p, ts, id));
     expect(bytes(p, ts.metatilesPath)).toEqual(m.before); expect(bytes(p, ts.collisionPath)).toEqual(c.before);
+  }, timeout);
+  itWithGbcCorpus("staged CRLF and latin1 text survives the planner byte for byte", () => {
+    const {p, ts, map} = forest();
+    const meta = bytes(p, ts.metatilesPath);
+    const palNames = names(bytes(p, ts.palMapPath).toString("latin1"));
+    const foundId = Array.from({ length: meta.length / 16 }, (_, n) => n)
+      .find(n => [...meta.subarray(n * 16, n * 16 + 16)].some(t => palNames.has(t)));
+    expect(foundId, "a block containing a palette-mapped tile").toBeDefined();
+    const id = foundId!;
+    const tiles = [...meta.subarray(id * 16, id * 16 + 16)];
+    const foundTile = tiles.find(t => palNames.has(t));
+    expect(foundTile, "block N contains a palette-mapped tile").toBeDefined();
+    const tile = foundTile!;
+    const square = tiles.indexOf(tile);
+    const palName = alternate(palNames.get(tile)!);
+
+    const collText = toCrlf(bytes(p, ts.collisionPath).toString("latin1"));
+    const collRecordLines = sourceLines(collText)
+      .map((line, index) => ({ index, code: lineCode(line.body) }))
+      .filter(item => /^\s*tilecoll\b/.test(item.code))
+      .map(item => item.index);
+    expect(collRecordLines.length, `collision text holds record ${id}`).toBeGreaterThan(id);
+    const collEditLine = collRecordLines[id]!;
+    const collStaged = markLatin1Comments(collText, [collEditLine, otherLineIndex(sourceLines(collText), collEditLine)]);
+
+    const palText = toCrlf(bytes(p, ts.palMapPath).toString("latin1"));
+    const tileLine = paletteLineHolding(palText, tile);
+    const palStaged = markLatin1Comments(palText, [tileLine, otherLineIndex(sourceLines(palText), tileLine)]);
+
+    expect(collStaged.buffer.includes(0x0d), "staged collision has CR bytes").toBe(true);
+    expect(collStaged.buffer.includes(0xe9), "staged collision has 0xE9 bytes").toBe(true);
+    expect(palStaged.buffer.includes(0x0d), "staged palette map has CR bytes").toBe(true);
+    expect(palStaged.buffer.includes(0xe9), "staged palette map has 0xE9 bytes").toBe(true);
+
+    const collRecords = readGbcCollisionRecords(collStaged.text);
+    const baseCollision = [...collRecords[id]!] as GbcBlockDraft["collision"];
+    const collisionName = [...new Set(collRecords.flat())].find(name => name !== baseCollision[0]);
+    expect(collisionName, "another collision name used in the file").toBeDefined();
+    const collision: GbcBlockDraft["collision"] = [collisionName!, baseCollision[1]!, baseCollision[2]!, baseCollision[3]!];
+    const d: GbcBlockDraft = { tiles, collision, palettes: [{ square, palName, scope: "all" }] };
+    const staged = new Map([[canon(ts.collisionPath), collStaged.buffer], [canon(ts.palMapPath), palStaged.buffer]]);
+    const plan = planGbcBlockEdit(p, request(map, id, d), staged, new Map());
+
+    const c = edit(plan, ts.collisionPath);
+    expect(c.before, "collision edit reads the staged buffer").toEqual(collStaged.buffer);
+    const collAfter = c.after.toString("latin1");
+    expectOnlyCollisionRecordChanged(collStaged.text, collAfter, id);
+    expect(countByte(c.after, 0x0d), "CR count survives").toBe(countByte(collStaged.buffer, 0x0d));
+    expect(countByte(c.after, 0xe9), "0xE9 count survives").toBe(countByte(collStaged.buffer, 0xe9));
+    expect(c.after.includes(Buffer.from([0xef, 0xbf, 0xbd])), "no replacement characters").toBe(false);
+    expect(countByte(c.after, 0xfd), "no new 0xFD bytes").toBe(countByte(collStaged.buffer, 0xfd));
+    expect(readGbcCollisionRecords(collAfter)[id], "record N keeps the draft names").toEqual(d.collision);
+
+    const pl = edit(plan, ts.palMapPath);
+    expect(pl.before, "palette edit reads the staged buffer").toEqual(palStaged.buffer);
+    const palAfter = pl.after.toString("latin1");
+    expectOnlyPaletteTilesChanged(palStaged.text, palAfter, [tile]);
+    expect(countByte(pl.after, 0x0d), "CR count survives").toBe(countByte(palStaged.buffer, 0x0d));
+    expect(countByte(pl.after, 0xe9), "0xE9 count survives").toBe(countByte(palStaged.buffer, 0xe9));
+    expect(pl.after.includes(Buffer.from([0xef, 0xbf, 0xbd])), "no replacement characters").toBe(false);
+    expect(countByte(pl.after, 0xfd), "no new 0xFD bytes").toBe(countByte(palStaged.buffer, 0xfd));
+    const expectedNames = new Map(names(palStaged.text));
+    expectedNames.set(tile, palName);
+    expect(names(palAfter), "only the renamed tile differs").toEqual(expectedNames);
+    const changedLine = palAfter.split("\n")[tileLine]!;
+    expect(changedLine.slice(changedLine.indexOf(";")), "changed line keeps its comment").toContain("caf\u00E9");
+    expect(changedLine.endsWith("\r"), "changed line keeps its CRLF").toBe(true);
   }, timeout);
   itWithGbcCorpus("saveAsNew on forest replaces surplus record 40", () => {
     const {p, ts, map} = forest(); const d = changedDraft(p, ts, 1); const orig = bytes(p, ts.metatilesPath);
@@ -175,6 +450,7 @@ describe("GBC block edit planner", () => {
     expect(plan.newBlockId).toBe(40); expect(edit(plan, ts.metatilesPath).after).toEqual(Buffer.concat([orig, Buffer.from(d.tiles)]));
     const c = edit(plan, ts.collisionPath); const before = readGbcCollisionRecords(c.before.toString()); const after = readGbcCollisionRecords(c.after.toString());
     expect(before).toHaveLength(64); expect(after).toHaveLength(64); expect(after).toEqual(before.map((r, i) => i === 40 ? d.collision : r));
+    expectOnlyCollisionRecordChanged(c.before.toString("latin1"), c.after.toString("latin1"), 40);
   }, timeout);
   itWithGbcCorpus("saveAsNew from palette has no placement", () => {
     const {p, ts, map} = forest(); const plan = planGbcBlockEdit(p, request(map, 1, draft(p, ts, 1), "saveAsNew"), new Map(), new Map());
@@ -212,8 +488,8 @@ describe("GBC block edit planner", () => {
     after.forEach((tile, i) => expect(equalPixels(tile, i === indexOf(slot) ? before[indexOf(f.source)]! : before[i]!), `sheet tile ${i}`).toBe(true));
     expect(names(edit(plan, f.ts.palMapPath).after.toString()).get(slot)).toBe(f.pal);
   }, timeout);
-  itWithGbcCorpus("Local reuses an identical non-reserved copy", () => {
-    const f = localFixture(); const slot = f.free[0]!; const png = copySheetTile(bytes(f.p, f.ts.gfxPath), indexOf(f.source), indexOf(slot), f.ts.gfxPath);
+  itWithGbcCorpus("Local reuses an identical non-reserved copy above a lower free slot", () => {
+    const f = localFixture(); const slot = f.free[1]!; const png = copySheetTile(bytes(f.p, f.ts.gfxPath), indexOf(f.source), indexOf(slot), f.ts.gfxPath);
     const pal = patchGbcPaletteMap(bytes(f.p, f.ts.palMapPath).toString(), slot, f.pal, f.ts.palMapPath);
     const staged = new Map([[canon(f.ts.gfxPath), png], [canon(f.ts.palMapPath), Buffer.from(pal)]]);
     const d = localDraft(f); const plan = planGbcBlockEdit(f.p, request(f.map, f.id, d), staged, new Map());
@@ -229,11 +505,23 @@ describe("GBC block edit planner", () => {
     const d = localDraft(f); const plan = planGbcBlockEdit(f.p, request(f.map, f.id, d), staged, new Map());
     checkLocal(f, plan, f.free[0]!, d); expect(edit(plan, f.ts.gfxPath).before).toEqual(png);
   }, timeout);
+  itWithGbcCorpus("All entries apply before Local entries (Local listed first)", () => {
+    expectLocalSurvivesAllRename("localFirst");
+  }, timeout);
+  itWithGbcCorpus("All entries apply before Local entries (All listed first)", () => {
+    expectLocalSurvivesAllRename("allFirst");
+  }, timeout);
   itWithGbcCorpus("Local on reserved source refuses RESERVED_TILE", () => {
     const f = localFixture(); const reserved = loadGbcReservedTiles(f.p.root);
     const source = f.sheet.map((_,i) => tileId(i)).find(t => reserved.has(t)); expect(source, "mapped reserved source").toBeDefined();
     const d = draft(f.p, f.ts, f.id); d.tiles[0] = source!; d.palettes = [{square:0, palName:alternate(names(bytes(f.p, f.ts.palMapPath).toString()).get(source!)!), scope:"local"}];
     refusal(() => planGbcBlockEdit(f.p, request(f.map, f.id, d), new Map(), new Map()), "RESERVED_TILE", [`tile $${source!.toString(16).padStart(2,"0")}:`], `tile $${source!.toString(16).padStart(2,"0")}:`);
+  }, timeout);
+  itWithGbcCorpus("an All BAD_VALUE comes before a Local refusal (Local listed first)", () => {
+    expectAllBadValueBeforeLocalRefusal("localFirst");
+  }, timeout);
+  itWithGbcCorpus("an All BAD_VALUE comes before a Local refusal (All listed first)", () => {
+    expectAllBadValueBeforeLocalRefusal("allFirst");
   }, timeout);
   itWithGbcCorpus("Local with no free slot refuses NO_FREE_TILE naming the sheet", () => {
     const f = localFixture(); const d = localDraft(f); const ids = f.sheet.map((_,i) => tileId(i));
@@ -242,6 +530,45 @@ describe("GBC block edit planner", () => {
     Buffer.from(d.tiles).copy(full, f.id * 16);
     const staged = new Map([[canon(f.ts.metatilesPath), full]]);
     refusal(() => planGbcBlockEdit(f.p, request(f.map, f.id, d), staged, new Map()), "NO_FREE_TILE", [canon(f.ts.gfxPath), String(f.sheet.length)], canon(f.ts.gfxPath));
+  }, timeout);
+  itWithGbcCorpus("two Local source tiles in one draft take the lowest two slots in order", () => {
+    const f = doubleLocalFixture(); const d = draft(f.p, f.ts, f.id);
+    d.palettes = [
+      { square: f.squares[0], palName: f.pals[0], scope: "local" },
+      { square: f.squares[1], palName: f.pals[1], scope: "local" },
+    ];
+    expect(d.tiles[f.squares[0]], "first source square").toBe(f.sources[0]);
+    expect(d.tiles[f.squares[1]], "second source square").toBe(f.sources[1]);
+    const plan = planGbcBlockEdit(f.p, request(f.map, f.id, d), new Map(), new Map());
+    expect(plan.edits.map(e => e.path)).toEqual([f.ts.gfxPath, f.ts.metatilesPath, f.ts.palMapPath].map(canon).sort());
+    const base = bytes(f.p, f.ts.metatilesPath); const expected = Buffer.from(base);
+    d.tiles.forEach((tile, square) => { expected[f.id * 16 + square] = tile === f.sources[0] ? f.slots[0] : tile === f.sources[1] ? f.slots[1] : tile; });
+    expect(edit(plan, f.ts.metatilesPath).after).toEqual(expected);
+    const png = edit(plan, f.ts.gfxPath); const before = pixels(png.before); const after = pixels(png.after);
+    after.forEach((tile, index) => {
+      const source = index === indexOf(f.slots[0]) ? f.sources[0] : index === indexOf(f.slots[1]) ? f.sources[1] : undefined;
+      expect(equalPixels(tile, source === undefined ? before[index]! : before[indexOf(source)]!), `sheet tile ${index}`).toBe(true);
+    });
+    const palText = bytes(f.p, f.ts.palMapPath).toString("latin1");
+    const afterText = edit(plan, f.ts.palMapPath).after.toString("latin1");
+    const expectedNames = new Map(names(palText));
+    expectedNames.set(f.slots[0], f.pals[0]); expectedNames.set(f.slots[1], f.pals[1]);
+    expect(names(afterText), "palette names").toEqual(expectedNames);
+    expectOnlyPaletteTilesChanged(palText, afterText, f.slots);
+  }, timeout);
+  itWithGbcCorpus("saveAsNew with a Local entry appends the repointed block and leaves block N alone", () => {
+    const f = localFixture(); const d = localDraft(f); const slot = f.free[0]!;
+    const base = bytes(f.p, f.ts.metatilesPath); const n = base.length / 16;
+    const plan = planGbcBlockEdit(f.p, request(f.map, f.id, d, "saveAsNew", "palette"), new Map(), new Map());
+    expect(plan.newBlockId).toBe(n); expect(plan.placement).toBeUndefined();
+    const m = edit(plan, f.ts.metatilesPath); expect(m.before).toEqual(base);
+    const expected = Buffer.concat([Buffer.from(base), Buffer.from(d.tiles)]);
+    d.tiles.forEach((tile, square) => { if (tile === f.source) expected[n * 16 + square] = slot; });
+    expect(m.after).toEqual(expected);
+    expect(m.after.subarray(f.id * 16, f.id * 16 + 16)).toEqual(base.subarray(f.id * 16, f.id * 16 + 16));
+    const png = edit(plan, f.ts.gfxPath); const before = pixels(png.before); const after = pixels(png.after);
+    after.forEach((tile, index) => expect(equalPixels(tile, index === indexOf(slot) ? before[indexOf(f.source)]! : before[index]!), `sheet tile ${index}`).toBe(true));
+    expect(names(edit(plan, f.ts.palMapPath).after.toString()).get(slot)).toBe(f.pal);
   }, timeout);
   itWithGbcCorpus("Local on Cave metatiles refuses LOCAL_SHEET_MISMATCH naming TilesetCave and TilesetDarkCave", () => {
     const p = proj(); const map = mapFor(p, "TILESET_CAVE"); const ts = p.tileset(map.tileset); const other = p.tileset("TILESET_DARK_CAVE");
@@ -282,6 +609,56 @@ describe("GBC block edit planner", () => {
     expect(expected).not.toBe(f.free[0]);
     const plan = planGbcBlockEdit(p, request(f.map, f.id, d), staged, new Map()); checkLocal(f, plan, expected!, d);
   }, timeout);
+  itWithGbcCorpus("free-slot scan skips an unreferenced reserved tile before the chosen slot", () => {
+    const f = localFixture(); const d = localDraft(f);
+    const palNames = names(bytes(f.p, f.ts.palMapPath).toString()); const reserved = loadGbcReservedTiles(f.p.root);
+    const ids = f.sheet.map((_, index) => tileId(index)); const diskUsed = usedOnSheet(f.p, f.ts);
+    const free = ids.filter(t => !reserved.has(t) && palNames.has(t) && !diskUsed.has(t) && !d.tiles.includes(t));
+    const slotAbove = (index: number): number | undefined => free.find(t => ids.indexOf(t) > index);
+    const reservedIndex = ids.findIndex((t, index) => {
+      const above = slotAbove(index);
+      return reserved.has(t) && palNames.has(t) && !diskUsed.has(t) && !d.tiles.includes(t) &&
+        above !== undefined && palNames.get(above) !== f.pal;
+    });
+    expect(reservedIndex, "an unreferenced mapped reserved tile before a free slot").toBeGreaterThanOrEqual(0);
+    const reservedTile = ids[reservedIndex]!;
+    const fillers = free.filter(t => ids.indexOf(t) < reservedIndex);
+    const base = bytes(f.p, f.ts.metatilesPath); const appended: Buffer[] = [];
+    for (let start = 0; start < fillers.length; start += 16) {
+      const record = Buffer.alloc(16, d.tiles[0]!);
+      fillers.slice(start, start + 16).forEach((t, offset) => { record[offset] = t; });
+      appended.push(record);
+    }
+    const stagedMeta = appended.length ? Buffer.concat([base, ...appended]) : base;
+    const staged = new Map([[canon(f.ts.metatilesPath), stagedMeta]]);
+    const used = usedOnSheet(f.p, f.ts, staged);
+    const slotIndex = ids.findIndex(t => !reserved.has(t) && !used.has(t) && !d.tiles.includes(t) && palNames.has(t));
+    expect(slotIndex, "first free slot above the reserved tile").toBeGreaterThan(reservedIndex);
+    const slot = ids[slotIndex]!; expect(slot).toBe(slotAbove(reservedIndex)); expect(slot).not.toBe(reservedTile);
+    const plan = planGbcBlockEdit(f.p, request(f.map, f.id, d), staged, new Map());
+    const m = edit(plan, f.ts.metatilesPath); expect(m.before).toEqual(stagedMeta);
+    const expected = Buffer.from(stagedMeta);
+    d.tiles.forEach((tile, square) => { if (tile === f.source) expected[f.id * 16 + square] = slot; });
+    expect(m.after).toEqual(expected);
+    const png = edit(plan, f.ts.gfxPath); const before = pixels(png.before); const after = pixels(png.after);
+    after.forEach((tile, index) => expect(equalPixels(tile, index === indexOf(slot) ? before[indexOf(f.source)]! : before[index]!), `sheet tile ${index}`).toBe(true));
+    expect(names(edit(plan, f.ts.palMapPath).after.toString()).get(slot)).toBe(f.pal);
+  }, timeout);
+  itWithGbcCorpus("free-slot scan skips a tile the draft itself references", () => {
+    const f = localFixture(); const d = localDraft(f);
+    const square = [0,1,2,3,4,6,7,8,9,10,11,12,13,14,15].find(s => d.tiles[s] !== f.source);
+    expect(square, "a non-source square in the block").toBeDefined();
+    // The draft takes the lowest free tile, so the copy must skip it and land on the next one.
+    const first = f.free[0]!; const slot = f.free[1]!; d.tiles[square!] = first;
+    const plan = planGbcBlockEdit(f.p, request(f.map, f.id, d), new Map(), new Map());
+    const expectedMeta = Buffer.from(bytes(f.p, f.ts.metatilesPath));
+    d.tiles.forEach((tile, s) => { expectedMeta[f.id * 16 + s] = tile === f.source ? slot : tile; });
+    expect(edit(plan, f.ts.metatilesPath).after).toEqual(expectedMeta);
+    expect(edit(plan, f.ts.metatilesPath).after[f.id * 16 + square!]).toBe(first);
+    const png = edit(plan, f.ts.gfxPath); const before = pixels(png.before); const after = pixels(png.after);
+    after.forEach((tile, index) => expect(equalPixels(tile, index === indexOf(slot) ? before[indexOf(f.source)]! : before[index]!), `sheet tile ${index}`).toBe(true));
+    expect(names(edit(plan, f.ts.palMapPath).after.toString()).get(slot)).toBe(f.pal);
+  }, timeout);
   itWithGbcCorpus("reservations unreadable: Local refuses RESERVATIONS_UNREADABLE, All still plans", () => {
     const f = localFixture(); const temp = copyGbcSubjectToTemp();
     try {
@@ -291,22 +668,39 @@ describe("GBC block edit planner", () => {
       d.palettes[0]!.scope = "all"; expect(planGbcBlockEdit(p, req, new Map(), new Map()).edits.length).toBeGreaterThan(0);
     } finally { removeTemp(temp); }
   }, timeout);
-  itWithGbcCorpus("All + saveAsNew refuses ALL_WITH_SAVE_AS_NEW", () => {
+  itWithGbcCorpus("a failed effective-file read refuses BAD_VALUE naming the file", () => {
+    const temp = copyGbcSubjectToTemp();
+    try {
+      const p = openGbcProject(temp); const ts = p.tileset("TILESET_FOREST");
+      const map = mapFor(p, ts.constName, true); const d = changedDraft(p, ts, 1);
+      unlinkSync(join(temp, ts.collisionPath));
+      refusal(() => planGbcBlockEdit(p, request(map, 1, d), new Map(), new Map()), "BAD_VALUE", [], ts.collisionPath);
+    } finally { removeTemp(temp); }
+  }, timeout);
+  itWithGbcCorpus("an unknown map refuses BAD_VALUE naming the map (R1b)", () => {
+    const {p, ts, map} = forest();
+    refusal(() => planGbcBlockEdit(p, {...request(map, 1, draft(p, ts, 1)), map: "Task6NoSuchMap"}, new Map(), new Map()), "BAD_VALUE", ["Task6NoSuchMap"], "Task6NoSuchMap");
+  }, timeout);
+  itWithGbcCorpus("All + saveAsNew refuses ALL_WITH_SAVE_AS_NEW offering Local or OK", () => {
     const f = localFixture(); const d = localDraft(f); d.palettes[0]!.scope = "all";
-    refusal(() => planGbcBlockEdit(f.p, request(f.map, f.id, d, "saveAsNew"), new Map(), new Map()), "ALL_WITH_SAVE_AS_NEW", []);
+    refusal(() => planGbcBlockEdit(f.p, request(f.map, f.id, d, "saveAsNew"), new Map(), new Map()), "ALL_WITH_SAVE_AS_NEW", ["Local", "OK"]);
   }, timeout);
   itWithGbcCorpus("mixed draft", () => {
-    const f = localFixture(); const d = localDraft(f); const palText = bytes(f.p, f.ts.palMapPath).toString(); const pn = names(palText);
-    const allSquare = 0; expect(allSquare, "distinct mapped tile in chosen block").toBeGreaterThanOrEqual(0);
+    const f = localFixture(); const d = localDraft(f); const palText = bytes(f.p, f.ts.palMapPath).toString("latin1"); const pn = names(palText);
+    const allSquare = d.tiles.findIndex((tile, square) => square !== f.square && tile !== f.source && pn.has(tile));
+    expect(allSquare, "distinct mapped tile in chosen block").toBeGreaterThanOrEqual(0);
     const allTile = d.tiles[allSquare]!; const allName = alternate(pn.get(allTile)!);
     expect(allTile).not.toBe(f.source); expect(f.square).toBe(5); d.palettes.unshift({square:allSquare, palName:allName, scope:"all"});
     const plan = planGbcBlockEdit(f.p, request(f.map, f.id, d), new Map(), new Map()); const slot = f.free[0]!;
     checkLocal(f, plan, slot, d);
     expect(plan.edits.map(e => e.path)).toEqual([f.ts.gfxPath, f.ts.metatilesPath, f.ts.palMapPath].map(canon).sort());
-    const expectedPng = copySheetTile(bytes(f.p, f.ts.gfxPath), indexOf(f.source), indexOf(slot), f.ts.gfxPath);
-    expect(pixels(edit(plan, f.ts.gfxPath).after)).toEqual(pixels(expectedPng));
-    const expectedPal = patchGbcPaletteMap(patchGbcPaletteMap(palText, allTile, allName, f.ts.palMapPath), slot, f.pal, f.ts.palMapPath);
-    expect(edit(plan, f.ts.palMapPath).after.toString()).toBe(expectedPal);
+    const beforePixels = pixels(bytes(f.p, f.ts.gfxPath)); const afterPixels = pixels(edit(plan, f.ts.gfxPath).after);
+    expect(afterPixels).toHaveLength(beforePixels.length);
+    afterPixels.forEach((tile, index) => expect(equalPixels(tile, index === indexOf(slot) ? beforePixels[indexOf(f.source)]! : beforePixels[index]!), `sheet tile ${index}`).toBe(true));
+    const afterText = edit(plan, f.ts.palMapPath).after.toString("latin1");
+    const expectedNames = new Map(pn); expectedNames.set(allTile, allName); expectedNames.set(slot, f.pal);
+    expect(names(afterText), "palette names").toEqual(expectedNames);
+    expectOnlyPaletteTilesChanged(palText, afterText, [allTile, slot]);
   }, timeout);
   itWithGbcCorpus("painted cell targets its staged block", () => {
     const p = proj(); const a = p.map("OlivinePortPassage"); const b = p.map("VermilionPortPassage"); expect(a.blkPath).toBe(b.blkPath);
@@ -377,6 +771,32 @@ describe("GBC block edit planner", () => {
     const plan = planGbcBlockEdit(p,request(map,1,d),staged,new Map());
     const expected = Buffer.from(meta); Buffer.from(d.tiles).copy(expected,16);
     expect(edit(plan,ts.metatilesPath).after).toEqual(expected); expect(expected[16]).toBe(0x60);
+  }, timeout);
+  itWithGbcCorpus("palette entry on an untouched tile with no palette-map entry refuses BAD_VALUE", () => {
+    const f = localFixture(); const meta = Buffer.from(bytes(f.p, f.ts.metatilesPath)); const square = 2;
+    meta[f.id * 16 + square] = 0x60;
+    const staged = new Map([[canon(f.ts.metatilesPath), meta]]); const d = draft(f.p, f.ts, f.id, staged);
+    expect(d.tiles[square], "staged filler tile").toBe(0x60);
+    d.palettes = [{ square, palName: "RED", scope: "all" }];
+    refusal(() => planGbcBlockEdit(f.p, request(f.map, f.id, d), staged, new Map()), "BAD_VALUE", [f.ts.palMapPath]);
+  }, timeout);
+  itWithGbcCorpus("Local palette entry on an untouched tile with no palette-map entry refuses BAD_VALUE", () => {
+    const f = localFixture(); const meta = Buffer.from(bytes(f.p, f.ts.metatilesPath)); const square = 2;
+    meta[f.id * 16 + square] = 0x60;
+    const staged = new Map([[canon(f.ts.metatilesPath), meta]]); const d = draft(f.p, f.ts, f.id, staged);
+    expect(d.tiles[square], "staged filler tile").toBe(0x60);
+    d.palettes = [{ square, palName: "RED", scope: "local" }];
+    let caught: unknown;
+    try {
+      planGbcBlockEdit(f.p, request(f.map, f.id, d), staged, new Map());
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught, "expected BAD_VALUE").toBeInstanceOf(BlockEditRefusal);
+    const err = caught as BlockEditRefusal;
+    expect(err.code).toBe("BAD_VALUE");
+    expect(err.message.toLowerCase(), "message names the palette-map path").toContain(f.ts.palMapPath.toLowerCase());
+    expect(err.message.toLowerCase().startsWith(f.ts.gfxPath.toLowerCase()), "message does not start with the gfx path").toBe(false);
   }, timeout);
   itWithGbcCorpus("same block staged bytes are the draft baseline", () => {
     const {p,ts,map} = forest(); const meta = Buffer.from(bytes(p,ts.metatilesPath));
@@ -461,6 +881,30 @@ describe("confirmation per map", () => {
     const f = fixture(); const id = f.other.border; const grids = gridsFor(f.p,id); const d = changedDraft(f.p,f.ts,id);
     expect(grids.get(f.other.name)!.includes(id)).toBe(false);
     expect(planGbcBlockEdit(f.p,request(f.map,id,d),new Map(),grids).confirm).toBe(true);
+  }, timeout);
+  itWithGbcCorpus("confirm true when another map reaches the block only through raw-zero border cells", () => {
+    const p = proj();
+    for (const map of p.maps) {
+      if (p.maps.filter(m => m.blkPath === map.blkPath).length !== 1) continue;
+      const ts = p.tileset(map.tileset); const count = bytes(p, ts.metatilesPath).length / 16;
+      const other = p.maps.find(m => m.name !== map.name && m.border > 0 && m.border < count &&
+        p.maps.filter(n => n.blkPath === m.blkPath).length === 1 &&
+        canon(p.tileset(m.tileset).metatilesPath) === canon(ts.metatilesPath));
+      if (!other) continue;
+      const id = other.border; const zeroGrid = Array(other.width * other.height).fill(0) as number[];
+      // Every map gets a staged filler grid that never names `id`, so no staged grid contains it;
+      // only `other.border === id` can make `confirm` true.
+      const grids = gridsFor(p, id); grids.set(other.name, zeroGrid);
+      for (const [name, grid] of grids) {
+        expect(grid.includes(id), `staged grid for ${name} names block ${id}`).toBe(false);
+      }
+      expect(other.border, "the other map reaches the block only as its border").toBe(id);
+      const plan = planGbcBlockEdit(p, request(map, id, changedDraft(p, ts, id)), new Map(), grids);
+      expect(plan.edits.length).toBeGreaterThan(0);
+      expect(plan.confirm).toBe(true);
+      return;
+    }
+    expect.fail("scan found no unshared map pair with a non-zero border block on a shared metatiles file");
   }, timeout);
   itWithGbcCorpus("confirm false for same-map-only uses", () => {
     const f = fixture(); const grids = gridsFor(f.p,f.id,{map:f.map,id:f.id}); const d = changedDraft(f.p,f.ts,f.id);
