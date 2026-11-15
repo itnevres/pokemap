@@ -7,7 +7,6 @@ import type { Refusal } from "../write/guards.js";
 import { BlockEditRefusal, type TilesetFileEdit } from "./types.js";
 import { canonicalTilesetPath } from "./canonicalTilesetPath.js";
 import { gbcTilesetsForFile } from "./usage.js";
-import { loadGbcTileset } from "../gbc/load/tileset.js";
 
 export function mergeTilesetEdits(
   prior: readonly TilesetFileEdit[] | undefined,
@@ -21,6 +20,9 @@ export function mergeTilesetEdits(
         throw new BlockEditRefusal("BAD_VALUE", `${edit.path}: more than one staged edit`);
       }
       seen.add(edit.path);
+      if (canonicalTilesetPath(edit.path) !== edit.path) {
+        throw new BlockEditRefusal("BAD_VALUE", `${edit.path}: not a canonical repo-relative tileset path`);
+      }
       const first = merged.get(edit.path);
       merged.set(edit.path, first ? { path: edit.path, before: first.before, after: edit.after } : edit);
     }
@@ -66,47 +68,13 @@ export function gbcTilesetEffects(
   edits: readonly TilesetFileEdit[],
 ): { path: string; maps: string[] }[] {
   const changed = changedTilesetEdits(edits);
-  const effects = (source: GbcProject) => changed.map(({ path }) => {
-    const tilesets = new Set(gbcTilesetsForFile(source, path));
-    return { path, maps: [...new Set(source.maps.filter((map) => tilesets.has(map.tileset))
+  // A staged file corrupted on disk can make a cold alias tileset fail to load and this scan
+  // throw; accepted until Task 10's overlay serves staged bytes (task-8-rulings S7 addendum).
+  return changed.map(({ path }) => {
+    const tilesets = new Set(gbcTilesetsForFile(proj, path));
+    return { path, maps: [...new Set(proj.maps.filter((map) => tilesets.has(map.tileset))
       .map((map) => map.name))].sort() };
   });
-  try {
-    return effects(proj);
-  } catch (error) {
-    const baselines = new Map(changed.filter((edit) => !tilesetBaselineMatches(proj.root, edit))
-      .map((edit) => [edit.path, edit.before]));
-    if (baselines.size === 0) throw error;
-
-    // A cold alias may fail to load after external corruption. Recover only
-    // its staged baseline for this read-only relation scan, leaving the real
-    // project's overlay, cached successful loads and generation untouched.
-    const source: GbcProject = {
-      ...proj,
-      tileset(tilesetConst) {
-        try {
-          return proj.tileset(tilesetConst);
-        } catch (loadError) {
-          let usedBaseline = false;
-          try {
-            const tileset = loadGbcTileset(proj.root, tilesetConst, (path) => {
-              const baseline = baselines.get(canonicalTilesetPath(path));
-              if (baseline !== undefined) {
-                usedBaseline = true;
-                return baseline;
-              }
-              return readFileSync(resolve(proj.root, path));
-            });
-            if (!usedBaseline) throw loadError;
-            return tileset;
-          } catch (retryError) {
-            throw usedBaseline ? retryError : loadError;
-          }
-        }
-      },
-    };
-    return effects(source);
-  }
 }
 
 function comparePaths(a: { path: string }, b: { path: string }): number {
@@ -143,6 +111,7 @@ export function tilesetSaveChanges(root: string, effects: readonly { path: strin
   }));
 }
 
+/** Entries share the session's Buffers (S8): never mutate `entry.before` / `entry.after` in place. */
 export function prepareTilesetEdits(root: string, edits: readonly TilesetFileEdit[]): AtomicEntry[] {
   return changedTilesetEdits(edits).map((edit) => ({
     path: resolve(root, edit.path), before: edit.before, after: edit.after,
