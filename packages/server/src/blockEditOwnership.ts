@@ -55,9 +55,9 @@ export interface OwnershipEntry {
 export type BlockEditStore = ReturnType<typeof createEditSessionStore> | ReturnType<typeof createGbcEditSessionStore>;
 
 /**
- * What the hub answers after a staged block edit: the union of the two
- * families' existing session bodies, plus the staged tileset edits so the
- * client can disable Save / show the owning file.
+ * What the hub answers after a staged block edit: exactly the family's
+ * existing session body (GBA `sendSession`, GBC `sessionBody`), the same body
+ * undo/redo answer. Staged tileset bytes are never sent to the client (O4).
  */
 export interface SessionPayload {
   blocks: EditSession["blocks"] | GbcEditSession["blocks"];
@@ -70,8 +70,6 @@ export interface SessionPayload {
   isDirty: boolean;
   canUndo: boolean;
   canRedo: boolean;
-  /** The merged staged edits, one per path, after this command. */
-  tilesetEdits: TilesetFileEdit[];
 }
 
 /**
@@ -105,7 +103,18 @@ export function requireTilesetOwnership(entries: Iterable<[string, OwnershipEntr
  * undo command. Used by Task 11's routes and by Task 10's tests.
  */
 export function stageTilesetPlan(store: BlockEditStore, mapName: string, plan: BlockEditPlan, label: string): SessionPayload {
+  // A refusal closes a session this call opened, so a refused stage leaves the store as it found it.
+  const wasOpen = store.has(mapName);
   const entry: OwnershipEntry = store.open(mapName);
+  try {
+    return stageInto(store, entry, mapName, plan, label);
+  } catch (error) {
+    if (!wasOpen) store.close(mapName);
+    throw error;
+  }
+}
+
+function stageInto(store: BlockEditStore, entry: OwnershipEntry, mapName: string, plan: BlockEditPlan, label: string): SessionPayload {
   const session = entry.session;
   requireTilesetOwnership(store.entries(), mapName, plan.edits.map(edit => edit.path));
   const merged = mergeTilesetEdits(session.tilesetEdits, plan.edits);
@@ -127,7 +136,6 @@ export function stageTilesetPlan(store: BlockEditStore, mapName: string, plan: B
     blocks: session.blocks,
     ...("border" in session ? { border: session.border, map: session.map } : { events: session.events }),
     isDirty: session.isDirty, canUndo: entry.stack.canUndo(), canRedo: entry.stack.canRedo(),
-    tilesetEdits: session.tilesetEdits ?? [],
   };
 }
 
