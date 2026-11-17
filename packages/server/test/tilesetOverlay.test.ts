@@ -1,7 +1,7 @@
 /** Task 10a oracle: expectations are earlier HTTP PNGs, response versions and disk bytes. */
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { openProject, type Project } from "@pokemap/core/src/project.js";
@@ -365,6 +365,8 @@ for (const family of ["gba", "gbc"] as const) {
         resolve(root, eventSource),
         ...(family === "gba" ? [resolve(root, gba.paths.mapJson(candidate.name))] : []),
       ]);
+      // The tileset temp copy carries no charmap; script text needs it (temp copy only).
+      if (family === "gba") copyFileSync(resolve(SUBJECT_ROOT, "charmap.txt"), resolve(root, "charmap.txt"));
       try {
         stage(candidate);
         const staged = await render(candidate.name);
