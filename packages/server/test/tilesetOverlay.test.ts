@@ -328,13 +328,10 @@ for (const family of ["gba", "gbc"] as const) {
         const staged = await render(candidate.name);
         const plan = await edit(candidate.name, "plan");
         expect(plan.refusals).toEqual([]);
-        if (family === "gba") {
-          vi.spyOn(saves, "commitSave")
-            .mockImplementationOnce(() => { throw new Error("injected writer failure"); });
-        } else {
-          vi.spyOn(gbcSaves, "commitGbcSave")
-            .mockImplementationOnce(() => { throw new Error("injected writer failure"); });
-        }
+        const fail = () => { throw new Error("injected writer failure"); };
+        const writer: { mock: { results: { type: string }[] } } = family === "gba"
+          ? vi.spyOn(saves, "commitSave").mockImplementationOnce(fail)
+          : vi.spyOn(gbcSaves, "commitGbcSave").mockImplementationOnce(fail);
         const syncSpy = vi.spyOn(overlay, "syncTilesetOverlay");
         syncSpy.mockClear();
         const committed = await req(`/api/edit/${encodeURIComponent(candidate.name)}/commit`, {
@@ -343,6 +340,9 @@ for (const family of ["gba", "gbc"] as const) {
         // Read the spy before any later request, which would sync again.
         const synced = syncSpy.mock.results.map(result => result.value);
         expect(committed.status, JSON.stringify(committed.body)).not.toBe(200);
+        // The writer itself ran and threw: the refusal is the injected failure, not an earlier check.
+        expect(writer.mock.results.map(result => result.type)).toEqual(["throw"]);
+        expect(JSON.stringify(committed.body)).toContain("injected writer failure");
         expect(synced.length).toBeGreaterThan(0);
         expect(synced.at(-1)!).toBe(beforeCommit);
         expect(store.has(candidate.name)).toBe(true);
