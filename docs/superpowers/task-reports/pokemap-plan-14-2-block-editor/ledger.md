@@ -648,3 +648,42 @@ Traps seen in s7:
 - `rv-t9` (s8 scratchpad, detached `e8b6aa5`) and `wt-t9` (s7 scratchpad, `p14-2-t9`, merged) can be removed: unlink
   `node_modules` junctions first with `[System.IO.Directory]::Delete`, never `git worktree remove --force`.
 - Deferred to Task 16 (added s8): Task 9 quality m3 (`statSync` on a missing metatiles file answers 500).
+## Review session (Fable, 2026-11-15; no code, no gate)
+
+- Scope: review of the unfinished plans for an implementer below Fable. Plans read inline (delegate skip: the review
+  judgment is the task itself). Second opinion: `ask.py gemini` as a cold implementer, on this plan (it agreed on the
+  Task 11/13/14 splits) and on Plan H, the roadmap and Plans 3-4 (its line numbers were off by 5-10; its claims were
+  checked against the plan text only).
+- Findings, checked against `plan-14-2-block-editor` at `21bf0b9`: the Save plan body drops `tilesetEffects`
+  (`index.ts:255`, `gbcEditRoutes.ts:248`); `post` parses JSON only, so a PNG preview cannot go through it; the dialog
+  had no path to the session's `post` (the family session hooks were in no task); no hub code builds `StagedGrids`
+  (keyed by map name); a GBA tile has no palette for the sheet route; `MetatilePalette.tsx:207` starts a drag on a
+  right press.
+- Written: `task-11-rulings.md` (B1-B13, traps T1-T5), `task-12-rulings.md` (M1-M8), `task-13-rulings.md` (D1-D12),
+  `task-14-rulings.md` (N1-N10) in `.superpowers/sdd/2026-11-10-pokemap-plan-14-2-block-editor/`; the plan's "Rulings
+  addendum (2026-11-15)"; Plan H edits (in-flight list, verify lines, Tasks A, C, E, F, I); one RESUME line.
+- Not checked: branch `p14-2-t10` beyond its overlay API; every item marked "confirm at vet" in the rulings.
+- These rulings are Claude's calls. The user approved writing them, not each one: B8 preview as base64 JSON, B7
+  `tileIds` and GBA `?pal=`, M5 `BlockEditSession`, D1 constant spec, N1 reuse of `WorldContextMenu`, Plan H Task C's
+  barrier design, Plan H Task F's `DataDefect` recommendation (still the user's to confirm).
+
+## Execution (conductor s9, 2026-11-17)
+
+- Launch mismatch: the master started this session as "conductor s7" with `s7-launch-prompt.md` and an s6-era state
+  (Tasks 6-8 open). The repo was ahead: Tasks 0-9 merged, handoff s8 → s9 above, `a533694` on top (docs: plan
+  granularization, roadmap D24-D33). Repo taken as truth; this session is **s9**. Checked at start: no vitest,
+  mutation or chain process alive; main checkout clean apart from the review session's uncommitted ledger entry and
+  plan "Rulings addendum (2026-11-15)" (committed with this entry) and `.claude/settings.json` (not ours, left).
+  s9 scratchpad: `C:\Users\Serve\AppData\Local\Temp\claude\8fd0350c313cb955\009f4107-2463-46ca-a327-683443f8da86\scratchpad\`.
+
+### Task 10a (High) — s9
+- V8 mutations: `<s9>/mut_t10a.py` on `wt-t10` (s8 scratchpad) at `b9b74f2`, 18 mutants (V8's six plus own), test
+  file `tilesetOverlay.test.ts` only (~2 min a mutant). Anchors checked (each matches once).
+- Reviews: Codex `gpt-6-astra`, spec and quality as separate runs, static on detached `<s9>/rv-t10` at `b9b74f2`,
+  brief `task-10a-review-brief.md` (scope `6656148..b9b74f2`), reports `task-10a-{spec,quality}-review.md`.
+
+### Task 11a (High) — s9
+- Worktree `<s9>/wt-t11`, branch `p14-2-t11` from `b9b74f2` (10a head; merge the plan branch in after 10a merges).
+- Confirmed at vet before the brief: B3 GBA mask = `project.profile.blockMetatileIdMask` (`core/src/config/engine.ts`,
+  used by `load/blocks.ts`); B10 `stageTilesetPlan` calls `requireTilesetOwnership` (`blockEditOwnership.ts:119`).
+- Tests hop: `chain.py --tier opus`, brief `task-11a-tests-brief.md`, verify typecheck only.
