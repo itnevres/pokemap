@@ -322,10 +322,14 @@ export function suite(family: "gba" | "gbc") {
       let reference: Buffer | undefined;
       if (family === "gba") {
         const map = await mapGet(name);
-        const metatiles = readFileSync(resolve(root, pair.path));
-        for (let candidate = 0; candidate < map.primaryCount; candidate++) {
-          // A block drawn with a nonzero palette, so a preview that ignores the map's palettes differs.
-          const entries = metatiles.subarray(candidate * 16, candidate * 16 + 16);
+        // Secondary blocks: primary `building` draws everything with palette 0. A block drawn with a nonzero
+        // palette makes a preview that ignores the map's palettes differ.
+        const layout = gba.layoutForMap(name);
+        const split = gba.splitFor(layout).metatiles;
+        const metatiles = readFileSync(resolve(root, gba.tilesetPaths(layout.secondaryTileset).metatilesBin));
+        for (let local = 0; local < metatiles.length / 16; local++) {
+          const candidate = split + local;
+          const entries = metatiles.subarray(local * 16, local * 16 + 16);
           let paletted = false;
           for (let k = 0; k < 16; k += 2) if (entries.readUInt16LE(k) >> 12 !== 0) paletted = true;
           if (!paletted) continue;
