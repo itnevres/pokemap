@@ -11,10 +11,11 @@
 - **One branch per batch from `master`, merged with a merge commit.** No push, PR or merge to `master` without the user.
 - **Gate once per batch** for Low and Medium batches (`gate` skill: full suite, typecheck, UI build, subjects unchanged). A High task gates at its own merge. Never run two vitest processes at once.
 - **Re-confirm every file:line before writing step code.** The references in Tasks E-P were checked on 2026-11-13 against `plan-14-2-block-editor` at `b0b697e`.
+- **Every brief carries one verify line and real test paths** (added 2026-11-15). Server: `npm run typecheck && npx vitest run packages/server`; UI and core the same with their package. Paths the tasks below name loosely: `packages/server/test/api.test.ts`, `packages/core/test/write/corpus.test.ts`, `packages/ui/test/styles.test.ts`, `packages/ui/test/MapCanvas.test.tsx`; the scratch-root test setup from Plan 14.2 Task 0 is found from the root `vitest.config.ts`. Counts to compare against are the latest gate line in RESUME. Never two vitest processes at once.
 - **Do not start a batch whose files Plan 14.2 has in flight.** Until Plan 14.2 merges to `master`, leave these alone:
   - server: `packages/server/src/{index,gbcRoutes,gbcEditRoutes,editSessions,gbcEditSessions}.ts`;
   - core: `packages/core/src/{index,project}.ts`, `gbc/project.ts`, `config/engine.ts`, `write/save.ts`, `gbc/write/save.ts`, `load/tilesetData.ts`, `gbc/load/tileset.ts`, everything under `blockEdit/`;
-  - UI: `packages/ui/src/styles.css`, `shared/{useEditSessionCore.ts,MapCanvasViewport.tsx}`, `shell/{FamilyApp.tsx,adapter.ts}`, `canvas/MapSurface.tsx`, `components/{SaveDialog,MetatilePalette,Toolbar,toolIcons}.tsx`, `hooks/useMapEditing.ts`, `gba/{adapter,mapSurface,worldSurface}.tsx`, `gbc/{adapter,mapSurface,worldSurface,GbcMetatilePalette,GbcMapEditing}.tsx`.
+  - UI: `packages/ui/src/styles.css`, `shared/{useEditSessionCore.ts,MapCanvasViewport.tsx}`, `shell/{FamilyApp.tsx,adapter.ts}`, `canvas/MapSurface.tsx`, `components/{SaveDialog,MetatilePalette,Toolbar,toolIcons,MapEditingWorkspace}.tsx`, `hooks/{useMapEditing,useEditSession,useMapLayout}.ts`, `gba/{adapter,mapSurface,worldSurface}.tsx`, `gbc/{adapter,mapSurface,worldSurface,GbcMetatilePalette,GbcMapEditing}.tsx`, `gbc/hooks/{useGbcEditSession,useGbcMap}.ts` (`MapEditingWorkspace`, `useEditSession`, `useMapLayout` and the two GBC hooks were added 2026-11-15 from the Plan 14.2 rulings addendum and the Task 10b brief).
 
 ## Batches and order
 
@@ -29,6 +30,147 @@
 | Before Plan 15 | N, with O | High | after a brainstorming session | Plan 15 adds a whole new view; build it on the finished layout rules |
 
 **Batches H1-H3 finish before roadmap Plan 14A starts** (roadmap D21; order confirmed by the user 2026-11-13): Plans 14A, 14C, 15 and 17 each add hub routes and file writers in both families, and they are cheaper to build on one route shape, one session store and a contained write path. H4 and the "between plans" tasks may slip behind later plans.
+
+## Traps and pitfalls (2026-11-15)
+
+From the plan review of 2026-11-15, checked against `plan-14-2-block-editor` at `21bf0b9`. Line numbers move when Plan 14.2 merges; the facts do not. Each brief for a task below carries that task's traps.
+
+**Task A**
+1. **GBC has the same permanent bypass, so "check GBC" means "fix GBC".** `gbcRoutes.ts:447-455` renders live whenever `edit.openBlocks(name)` returns blocks, and `openBlocks` (`gbcEditRoutes.ts:504`) returns them for any open session, dirty or not. A2 below repeats the three tests on `packages/server/test/gbcRoutes.test.ts`.
+2. **The pre-warm uses the same "session exists" test** (`index.ts:1424`, `gbcRoutes.ts:778`). Leave it: a skipped warm-up costs one late tile, and changing it widens the task.
+
+**Task B**
+3. **Step 1 passes at the hub and fails in core.** Plan 10a2 made the move route rewrite a pending insert in place (`server/src/index.ts:1114-1116`; the Indicator route does the same at `:1360-1362`), so no hub request sends a `jsonEdit` against a pending index; `applyJsonOps` (`core/src/write/save.ts:346-349`) still applies edits first and its comment (`:339-345`) calls that order intended. B1 writes the repro at both levels and the ruling is made from the core result.
+3b. **A neighbouring case is reachable from the app and writes the wrong event (added 2026-11-16, from reading; not yet run).** The move route appends a `jsonEdit` with the index the UI sent (`server/src/index.ts:1111-1118`), which is an index into the session's current event list, while `applyJsonOps` applies edits to the original file text before the removals. After a pending delete of an earlier event the two index spaces differ by one, so "delete event 2, move the event now shown as 4, save" changes original event 4, not the one the user dragged. The Indicator update route refuses exactly this (`index.ts:1343`); the plain move route has no such guard. RESUME lists it as a known limit ("GBA moves after a pending deletion target the wrong original index"). B1 adds this repro as a third test at the hub; B3 fixes it (roadmap D30). GBA only: the GBC routes edit the current text (`gbcEditRoutes.ts:398-401`), so GBC has one index space.
+4. **A second copy replays insert ops.** `server/src/addEventRoutes.ts:293-298` applies `insertOps` itself for the add-event preview. If B2 reorders `applyJsonOps`, that copy is checked in the same commit (the architecture audit `docs/HANDOFF.md`, finding 3, found the same duplication for script edits at `signRefresh.ts:55-60` against `save.ts:288-302`; that one is not scheduled).
+
+**Task C**
+5. **"Inside its existing loop" skips the common case.** The barrier loops `while (hasPendingEventCreates(map))` (`shared/useEditSessionCore.ts:17-21`), so a source awaited inside the loop is never awaited when no event create is pending, which is every paint-only session. The barrier awaits the registered sources unconditionally, then re-checks creates and sources until both are quiet.
+6. **One registry serves every mounted surface.** `useStrokeChainRegistry` lives in `FamilyApp` (`shell/FamilyApp.tsx:102`) and GBA mounts a context workspace and a plain one on it (`gba/adapter.tsx:113-136`). Registering it under `selected` is right only because in-context editing selects the map first (`shared/useContextEditing.ts:57`); C1 adds a test for a stroke made in World-view context editing.
+7. **`settled()` never rejects** (`shared/useStrokeChain.ts:70-75,113`), so acceptance 6 is a pin, not new code. The three callers that already await `strokeSettled()` (`useContextEditing.ts:62`, `shell/useWarpPopup.ts:80,88`, `FamilyApp.tsx:319`) stay as they are.
+
+**Task E**
+8. **`sendJson(res, status, body)` must not change the `send` the route modules receive.** There are three `send` closures (`index.ts:322`, `gbcRoutes.ts:387`, `hub.ts:185`) and three modules that take the caller's `(code, body)` (`addEventRoutes.ts`, `gbcEditRoutes.ts`, Plan 14.2's `blockEditRoutes.ts`). Each handler keeps a `send` closure over `sendJson`; the `Send` type does not change.
+9. **A 413 needs one place to be answered.** `readBody` is called at about 25 sites whose `.catch` answers 400 or 500 (the commit route answers 400 for any error, `index.ts:1087`), so a rejected `BodyTooLarge` becomes the wrong status. Refuse by `content-length` at the top of both `handle` functions and of the hub; the streaming cap in `readBody` is the backstop for a chunked body and closes the socket.
+10. **`event-options` is not in `index.ts`.** It is `addEventRoutes.ts:214-226`, shared by both families, and it already answers 400 through its own catch (`:226`). Acceptance 2's event-options case pins that; the E2 grep of `index.ts` will not list it and E2 does not edit it.
+11. **`readBody` moves out of `index.ts:94`,** which `hub.ts:7`, `gbcRoutes.ts:63` and `gbcEditRoutes.ts:56` import. E1 updates those three imports; `decodeMapName` is imported by `gbcEditRoutes.ts:55` and, after Plan 14.2 Task 11, by `blockEditRoutes.ts`.
+
+**Task F**
+12. **Layout paths are not the only decomp-sourced write targets.** Tileset file paths come from the C tileset headers on GBA (`core/src/project.ts:131-135,180-181`) and from `INCBIN`/`INCLUDE` lines on GBC (`gbc/load/tileset.ts:495-520`), and Plan 14.2 writes to both. The finding's "GBC has the same gap for reads" is out of date. F2's root check covers the writes; F1b and F3 add the load-time guards.
+13. **Plan 14.2 left a hole for F2 by name.** `mergeTilesetEdits` lets an absolute or `../` `TilesetFileEdit` path through (Plan 14.2 ledger, Task 8 quality re-review N1; plan Review addendum 3). F2's acceptance gains that case for both families.
+14. **`insideRoot` inside `parseLayouts` fails the whole GBA project,** because the layouts are parsed once at open (`project.ts:115`). That is what acceptance 1 said. **Ruled out by the user 2026-11-16 (roadmap D25):** the project opens and the layout is marked broken. The code snippet under "Change" that makes `insideRoot` throw from `layouts.ts` is no longer the design; a brief must not quote it.
+15. **D23c is not true for sidecars.** `.pokemap/world.json` and `dungeons.json` are written by plain `writeFileSync` (`core/src/world/sidecar.ts:90-93`, `world/dungeons.ts:61-64`), outside `writeFilesAtomically`. Their paths are a constant under the root, so they need no containment; F2's report must not claim every write is covered.
+
+**Task G**
+16. **This is confirmed by reading, not a suspicion.** `GET /api/map/<name>` serves `project.map(name)` (`index.ts:360`), `mapCache` has no invalidation (`core/src/project.ts:138,147-160`), the code says so itself (`index.ts:194-207`, `:1075-1083`), and LESSONS records it live ("Restart the hub before a reload check after writing to disk", Plan 10a Task 8). Expect step 1 red; budget the fix.
+17. **`forgetMap` alone is not the fix.** The commit route clears `symbols`, `addEvents` and `pngCache` and nothing else (`index.ts:1069-1084`): `allMapsCache` (`:208`), `worldCache`, `encountersCache`, `coverageCache`, `speciesCache` and the project's own `encountersCache` (`project.ts:139`) keep pre-save data. G2 starts with a written inventory of which cache depends on which file (also asked for by `docs/HANDOFF.md`, finding 1) and clears only those.
+18. **GBC is safe today and stops being safe later.** `loadGbcMaps` reads `constants/map_constants.asm`, `data/maps/attributes.asm`, `maps.asm` and `blocks.asm` once at open (`core/src/gbc/load/map.ts:254-257`), and `onCommit` clears render, warp and coverage caches only (`gbcRoutes.ts:352-359`). No GBC save writes those four files yet; roadmap Plan 14C and Plan 3 Tasks 2 and 8 will. G3 pins today's behaviour and records the limit.
+
+**Task H**
+19. **Two of the seven routes are not family-free.** `POST /api/dungeons` checks the seed against the project and expands it with a family function (`index.ts:784-787` `warpConnectedMapsFrom`; `gbcRoutes.ts:620` `gbcWarpConnectedMapsFrom` over the cached warps), and conflict acceptance reads `getWorld()` (`index.ts:685`). The module takes `{ root, getWorld, knownMap, expandSeed }`; the "bare temp root" test injects stubs.
+20. **`GET /api/world` stays out.** GBA returns the whole sidecar (`index.ts:675`) and GBC only `{ dungeonAutoLayout }` (`gbcRoutes.ts:246`).
+21. **"No test edited" can fail on wording.** The two families' 400 texts were never compared, and Task E changes the GBA placement guard first. The step plan diffs the two bodies' error strings and names any test that pins one.
+
+**Task I**
+22. **Both route lists miss routes.** I1 omits `/api/project` (`index.ts:341`), `/api/groups` (`:345`), `/api/warps/<name>` (`:576`), `/api/coverage` (`:598`), `/api/species` (`:612`) and `/api/where/<species>` (`:623`). I2 omits the three Indicator routes (`:1173`, `:1193`, `:1318`). `index.ts` is 1,467 lines now.
+23. **GBC already has the target shape.** `gbcEditRoutes.ts:255-445` is a route table dispatched at `:473`. `gbaEditRoutes.ts` copies that shape; it does not invent a third.
+24. **The store hides one behaviour in its construction.** The GBA store gets a project whose `map` re-parses from disk (`index.ts:213-216`), so a reopened session sees the last commit. `createSessionStore` keeps it, and I2's mutation list adds "use the cached map".
+25. **Files outside the list.** `blockEditOwnership.ts:55` types `BlockEditStore` as a union of both stores and reads `entries()` (`index.ts:902,993`; `gbcEditRoutes.ts:193,388`); `gbcEditRoutes.ts:54` imports `snapshotCommand` from `editSessions.ts`. Both follow the store in I2a.
+26. **A move loses comments and gains wrappers when a cheaper model does it** (LESSONS, Delegation: "Codex drops rationale comments when it moves code", "Codex invents pass-through wrappers"). The route bodies carry rulings in comments (`index.ts:194-207`); each move commit is checked with `git diff -M --stat` and a comment-line count before and after.
+
+**Task J**
+27. **The 415 breaks the server suite, not the UI suite.** Node `fetch` sends a string body as `text/plain`, and the 21 server test files post that way. J2 changes the test helpers before J3 turns the check on; the acceptance line "mocks changed only for the header" covers the UI only.
+28. **`post` is the main body sender and sets no header** (`shared/useEditSessionCore.ts:74-85`; `gbc/hooks/useGbcEditSession.ts:100` wraps it). Three other sites already set one, in two spellings (`components/PokemonIndicatorDialog.tsx:121`, `components/SaveDialog.tsx:142`, `hub/guards.ts:79`).
+29. **`isCrossOriginRequest` is private to `hub.ts:161`.** Step 4 needs it exported; move it to `http.ts` in E1 so J does not reopen `hub.ts`.
+
+**Task K**
+30. **`errorMessage` cannot be exported from `write/atomic.ts`.** That file imports `node:fs` and `node:crypto` (`atomic.ts:1-2`) and the UI imports core by deep path (87 import lines in 47 files), so a UI import of it breaks the Vite build. K1a creates `packages/core/src/errorMessage.ts` with no imports.
+31. **`globalSetup` cannot call `setImmutableRoot`.** Vitest runs `globalSetup` (`vitest.config.ts:5`) in another process than the tests, which is why `addEvent/sources.ts:4-16` reads an environment variable. K3 calls it from a `setupFiles` entry (today the list holds only `packages/ui/test/setup.ts`).
+32. **K2 covers the four named `hex` copies only.** Plan 14.2 shows GBC tile ids as `$XX` (spec, "Shell and UI"); those strings are not `0x` ids and stay.
+
+**Tasks L, O, P**
+33. **`vite` is declared nowhere** (root `package.json` has `vitest ^2.1.0`; `packages/ui/vite.config.ts:1` imports `vite` as a transitive dependency). L2 declares it in `packages/ui/package.json`, and checks `environmentMatchGlobs` (`vitest.config.ts:8`), `globalSetup` and the worker flags against the migration notes of each major version it crosses.
+34. **Task O's counts are unverified.** A grep finds 25 `z-index:` matches in `styles.css`, comments included, against the 34 the task states; recount on the day. The split changes what `packages/ui/test/styles.test.ts` parses, so that test changes with it.
+35. **CI without the corpora passes by skipping.** Most server suites are `describe.skipIf(!hasProject(...))` (for example `api.test.ts`, `hub.test.ts`), and LESSONS records a skipped corpus test read as a pass. P2 fetches the public corpora the way `.claude/hooks/session-start.sh` does and pins the skipped count.
+36. **No import goes through the core package root on purpose.** `packages/core/src/index.ts` re-exports node-only modules. P3's `exports` map needs subpaths the UI can bundle; a single root entry breaks the UI build.
+
+**Task N**
+37. **The keyboard model is designed against keys already taken.** Tools use P R B I S C G (`components/Toolbar.tsx:15`) and K (Plan 14.2 ruling N7); F fits (`shared/useFitShortcut.ts:17`); Ctrl+Z/Y undo and redo (`Toolbar.tsx:76-81`); `+ = - _`, Enter and Escape belong to the world canvas (`canvas/WorldSurface.tsx:659-677`); Escape has capture-phase listeners (`shared/AddEventBar.tsx:50`, `shared/useWorldContext.ts:123`; LESSONS, Live Browser Verification). There is no Ctrl+S and no map-canvas selection today.
+
+**Not scheduled, for the user:** `docs/HANDOFF.md` (architecture audit, 2026-11-15, untracked) proposes moving the module-level registries in `useEditSessionCore.ts` and `AddEventDialog.tsx` to a shell-owned instance (finding 2) and one script-edit function for preview and save (finding 3). Task C adds a third module-level registry in the same style. Recommendation: do Task C as designed, and take findings 2 and 3 only if the user asks; neither fixes a reproduced defect.
+
+## Subtasks (2026-11-15)
+
+One row is one implementer dispatch: one verify target, one subsystem, about five files. Run every verify command from the repo root (LESSONS, Testing: "Run `vitest` from the repo root"), after `npm run typecheck`. Tiers follow `CLAUDE.md`; the trigger is in brackets. "S" means `packages/server`, "C" `packages/core`, "U" `packages/ui`.
+
+| Id | What | Files | Tier | Verify (`npx vitest run …`) | After |
+|---|---|---|---|---|---|
+| L1 | `npm audit fix`, no `--force` | `package-lock.json` | Low | the `gate` skill | - |
+| M2 | Palette search label | U `src/shared/PaletteFrame.tsx`; the test that renders it (`git grep -l PaletteFrame packages/ui/test`) | Low | that test file | - |
+| K5 | One instruction body | `AGENTS.md`, `CLAUDE.md` | Low | a new session shows the rules | - |
+| E1 | `http.ts` and its users on the hub and GBC side | create S `src/http.ts`, S `test/http.test.ts`; modify S `src/{hub,gbcRoutes,gbcEditRoutes,blockEditRoutes}.ts` | High (hub I/O) | S `test/{http,hub,gbcRoutes,gbcEditRoutes}.test.ts` | Plan 14.2 merged |
+| E2 | GBA handler: 27 decode sites, species check, placement guard, 413 | S `src/index.ts`; S `test/{api,world}.test.ts` | High (hub I/O) | S `test/{api,world,eventRoutes,paintRoutes,saveRoutes}.test.ts` | E1 |
+| A1 | GBA render bypass keyed on `isDirty`, four tests | S `src/index.ts`; S `test/api.test.ts` | Medium | S `test/api.test.ts` | E2 (same file, own commit) |
+| A2 | GBC twin of A1 | S `src/{gbcRoutes,gbcEditRoutes}.ts`; S `test/gbcRoutes.test.ts` | Medium | S `test/{gbcRoutes,gbcEditRoutes}.test.ts` | A1 |
+| F1 | `insideRoot` as a check that reports, and `parseLayouts` marking a layout with an escaping path as broken instead of throwing (D25) | C `src/config/paths.ts`, C `src/load/layouts.ts`, the `Layout` type; C `test/config/paths.test.ts`, a layouts test under C `test/load/` | High (parsing boundary) | C `test/config` C `test/load` | - |
+| F1b | GBA tileset header paths: the same mark on a tileset | C `src/project.ts`, C `src/load/tilesetData.ts`; C `test/load/` | High (parsing boundary) | C `test/load` | F1; Plan 14.2 merged |
+| F1c | GBA consumers refuse a broken layout or tileset and the defect reaches the banner: render, edit-session open, save, the defects check | C `src/defects/gba.ts`, C `src/render/layout.ts`, S `src/editSessions.ts`, S `src/index.ts` (render and map routes); tests in C `test/defects/` and S `test/api.test.ts` | High (parsing boundary, save ownership) | C `test/defects` S `test/{api,editSessions}.test.ts` | F1b; E2 |
+| F2 | Root check in `writeFilesAtomically`, both callers, the tileset-edit case | C `src/write/{atomic,save}.ts`, C `src/gbc/write/save.ts`; C `test/write/{atomic,preparedSave}.test.ts`, one case under C `test/blockEdit/` | High (subject writes) | C `test/write` C `test/blockEdit` | Plan 14.2 merged |
+| F3 | GBC `INCBIN` paths, per the ruling | C `src/gbc/load/{map,tileset,palette,roofs,sprites}.ts`; tests under C `test/gbc/load/` | High (parsing boundary) | C `test/gbc` | F1 (ruled 2026-11-16: a defect, roadmap D25) |
+| G1 | Pin test: commit, then read through every cached consumer (expect red) | new S `test/mapCacheAfterSave.test.ts` on a temp copy | High (save ownership) | that file | H1 merged |
+| G2 | Cache inventory, `forgetMap`, post-commit invalidation | C `src/project.ts`, S `src/{index,signRefresh}.ts`; G1's test | High (save ownership) | S `test/{mapCacheAfterSave,saveRoutes,api}.test.ts` | G1 |
+| G3 | GBC pin and recorded limit | S `test/gbcRoutes.test.ts` (one case) | High | S `test/gbcRoutes.test.ts` | G1 |
+| B1 | Add-then-move repro in core and at the hub, and delete-then-move at the hub (trap 3b) | C `test/write/save.test.ts`, S `test/eventRoutes.test.ts` | High (core write path) | those two files | H1 merged |
+| B2 | The reorder (roadmap D30), its comment, and the copy in the add-event preview; the full corpus gate | C `src/write/save.ts`, S `src/addEventRoutes.ts`; C `test/write/save.test.ts` | High (core write path) | C `test/write`, then the `gate` skill | B1 |
+| B3 | GBA delete-then-move: translate the current index to the original one in the move route, and in the Indicator update route in place of its refusal (`index.ts:1343`); GBC needs nothing, its routes edit the current text (`gbcEditRoutes.ts:398-401`) | S `src/index.ts` (or the route module Plan H Task I leaves); S `test/{eventRoutes,indicatorRoutes}.test.ts` | High (save correctness) | S `test/{eventRoutes,indicatorRoutes,saveRoutes}.test.ts` | B1 |
+| C1 | Barrier awaits stroke sources; registration in the shell | U `src/shared/useEditSessionCore.ts`, U `src/shell/FamilyApp.tsx`; U `test/shared/` and U `test/shell/` cases | High (async ordering) | U `test/shared` U `test/shell` | Plan 14.2 merged |
+| C2 | Live check on scratch clones, both families, with the hub's session list read after Discard | report only | High | live report | C1 |
+| K1a | `errorMessage.ts`, core and CLI call sites (17) | create C `src/errorMessage.ts`; C and CLI sources | Low | `packages/core packages/cli` | H2 merged, no other branch open |
+| K1b | Server call sites (36) | S sources | Low | `packages/server` | K1a |
+| K1c | UI call sites (33) | U sources | Low | `packages/ui`, UI build | K1a |
+| K2 | One `hex`, one `isRecord` | create U `src/shared/format.ts`; the seven named files | Low | `packages/ui` | K1c |
+| K3 | `setImmutableRoot` from a `setupFiles` entry | C `src/addEvent/sources.ts`, new C `test/helpers/immutableRootSetup.ts`, `vitest.config.ts` | Low | full suite, wall time before and after | K1a |
+| K4 | Delete `VERSION` | C `src/index.ts` | Low | typecheck | - |
+| H-a | `jsonBody` in `http.ts` | S `src/http.ts`, S `test/http.test.ts` | Medium | S `test/http.test.ts` | E1 |
+| H-b | `sidecarRoutes.ts`, mounted by both handlers (seven routes: conflict accept, placement, auto-layout switch, dungeons list, create, patch, delete) | create S `src/sidecarRoutes.ts`, S `test/sidecarRoutes.test.ts`; modify S `src/{index,gbcRoutes}.ts` | Medium | S `test/{sidecarRoutes,world,dungeons,gbcRoutes}.test.ts` | H-a |
+| I1 | `GbaRouteContext` and the read routes (the list in the task plus trap 22) | create S `src/{gbaRouteContext,gbaReadRoutes}.ts`; modify S `src/index.ts` | Medium | `packages/server` | H-b |
+| I2a | `createSessionStore` in place of both stores | create S `src/sessionStore.ts`; modify S `src/{editSessions,gbcEditSessions,blockEditOwnership,gbcEditRoutes}.ts` | High (save and discard ownership) | S `test/{editSessions,blockEditOwnership,gbcEditRoutes,saveRoutes}.test.ts` | I1 |
+| I2b | Edit, Indicator and sign routes to `gbaEditRoutes.ts`, as a route table | create S `src/gbaEditRoutes.ts`; modify S `src/index.ts` | High | `packages/server` | I2a |
+| J1a | `postJson`; session `post`, Save, Sign and Indicator dialogs | U `src/hooks/useGuardedFetch.ts`, `shared/{useEditSessionCore,SignEditor}.ts(x)`, `components/{SaveDialog,PokemonIndicatorDialog}.tsx` | Medium | `packages/ui` | H3 merged |
+| J1b | World and dungeon posts in both families; one dungeons hook | U `src/gba/worldSurface.tsx`, `gbc/worldSurface.tsx`, `hooks/useDungeons.ts`, `gbc/hooks/useGbcDungeons.ts`, `hub/guards.ts` | Medium | `packages/ui` | J1a |
+| J2 | Server test helpers send `application/json` | S `test/*.test.ts` (mechanical) | Low | `packages/server` | - |
+| J3 | 415 in the hub and both handlers; `createServer` runs the cross-origin check | S `src/{http,hub,index}.ts`; S `test/{hub,api}.test.ts` | Medium | `packages/server` | J1b, J2 |
+| J4 | Live check, both families | report only | - | live report | J3 |
+| L2 | `vitest` and `vite` upgrade | root `package.json`, `package-lock.json`, `vitest.config.ts`, U `package.json`; the `gate` skill text if the flags change | Medium | the `gate` skill, counts equal to RESUME's | nothing else in flight |
+| M1 | Reduced-motion rule | U `src/styles.css`, U `test/styles.test.ts` | Low | U `test/styles.test.ts`, live | Plan 14.2 merged |
+| M3 | Self-hosted fonts | U `public/fonts/*`, U `src/styles.css`, U `test/styles.test.ts` | Low | UI build, live with the network blocked | Plan 14.2 merged |
+| O1 | Shadow token and z-index scale | U `src/styles.css`, U `test/styles.test.ts` | Low | U `test/styles.test.ts`, live | with Task N |
+| O2 | Split the sheet by area | U `src/styles/*.css`, the import site, U `test/styles.test.ts` | Medium | U `test/styles.test.ts`, UI build, live | O1 |
+| P1 | ESLint, current code passing | `eslint.config.js`, root `package.json`, lockfile | Medium | `npx eslint .` clean | idle repository |
+| P2 | CI: typecheck, UI build, tests with the public corpora | `.github/workflows/ci.yml` | Medium | a green run with the skipped count printed | P1 |
+| P3a | `exports` map with bundle-safe subpaths | C `package.json`, the tsconfig and Vite or vitest resolution files | Medium | typecheck, UI build, the `gate` skill | idle repository |
+| P3b | Import rewrite, one package per dispatch (ui, server, cli) | sources of that package (mechanical) | Low | typecheck, that package's tests | P3a |
+| P3c | GBA-only folders under `gba/` | C and U folders (moves only) | Medium | typecheck, the `gate` skill | P3b |
+
+**Handoff points for a conductor (delegate skill, section 7):** after H1 merges; after H2 merges; after I1; after I2b.
+
+**Decisions that are the user's.**
+- **F, escaping paths. RULED by the user 2026-11-16 (roadmap D25): the project always opens, in both families.** "I don't want to ship a tool that will refuse to open a project. Let's give the operator a chance to change the breaking bug. GBA should open, but force a fix to the broken component first." So: a layout, tileset or `INCBIN` whose path leaves the project is a `DataDefect` that names the file, the key or line, the bad path and what to change. That component cannot be rendered, opened for editing or saved until it is fixed, and every map that uses it shows the defect in the banner (`core/src/defects/gba.ts`, the Plan 10b model). Nothing else in the project is blocked. This replaces acceptance 1's "refused at load" and the 2026-11-15 recommendation to accept a GBA refusal. Rows F1, F1b and F1c in the table carry it; `writeFilesAtomically`'s root check (F2) stays a hard refusal of the write.
+- **B. RULED by the user 2026-11-16 (roadmap D30): fix both.** B1 still writes the three repros first, so each fix is shown red before it is green. B2 always runs: reorder `applyJsonOps` to inserts, then edits, then removals (and update its comment at `save.ts:339-345` and the copy at `addEventRoutes.ts:293-298`). B3 fixes the delete-then-move index (trap 3b) by translating the index the UI sends into the original file's index; it does not refuse the move. The Task B text below that says Step 1 may close the task without the reorder no longer applies.
+- **J3, tier.** The task says Medium; a content-type refusal sits on the request boundary, which is a High trigger. Recommendation: keep Medium, because every wrong answer fails a route test once J2 is in.
+
+**Task N cannot be broken down before its brainstorming session.** Questions that session must settle:
+1. The smallest supported window width, and what gives way first below it (tree, rail, or canvas minimum). Recommendation: 1,024 px; the tree collapses to a toggle first.
+2. Whether `DESIGN.md` (260 px tree, resizable 240-420) or the CSS (280 px, fixed) is right. Recommendation: the CSS; delete the resize claim unless the user wants it built.
+3. The map-canvas keyboard model: a cell cursor on the arrow keys, which key applies the tool, how Rect and Shift take a second point, how pan works. Decide it with roadmap Plan 14A's capture gesture, in one interview (trap 37; roadmap "Order and overlap review").
+4. Whether events can be selected and moved from the keyboard in this task. Recommendation: no; canvas painting only.
+5. Whether the world canvas gains arrow-key panning to match.
+6. Light theme: a toggle or deletion. Recommendation: delete the block and the `DESIGN.md:33` claim.
+7. Whether the dialogs opened from the canvas (Add Event placement, Plan 14.2 Edit block) need the same cell cursor to be reachable without a mouse.
+
+**Answered by the user 2026-11-16:** question 1, 1,024 px, the tree collapses to a toggle first; question 2, the CSS is right, delete the resize claim from `DESIGN.md`; question 6, delete the light theme block and the `DESIGN.md:33` claim. Question 3 is decided in one interview with roadmap Plan 14A and the map-canvas keyboard work is built with or just before Plan 14A (roadmap D24a); the layout and theme parts stay before Plan 15. Questions 4, 5 and 7 go to that interview.
+
+**`docs/HANDOFF.md` (user, 2026-11-16):** its findings stay in that document and are not scheduled.
 
 ## Review findings and where each one went
 
@@ -67,7 +209,7 @@ Ids match the 2026-11-12 review report (S security, R refactor, U UI, P plans). 
 
 ## Task A: `GET /plan` permanently disabling the PNG render cache
 
-**Re-checked 2026-11-13: still open. Tier Medium** (the three tests below catch a wrong answer). The bypass is `if (editSessions.has(name))` at `packages/server/src/index.ts:429`. Run it in batch H1 on Task E's branch (same file) as its own commit. Check the GBC render route (`gbcRoutes.ts`, `renderCache`) for the same condition, and fix both or record why GBC differs.
+**Re-checked 2026-11-13: still open. Tier Medium** (the three tests below catch a wrong answer). The bypass is `if (editSessions.has(name))` at `packages/server/src/index.ts:429`. Run it in batch H1 on Task E's branch (same file) as its own commit. Check the GBC render route (`gbcRoutes.ts`, `renderCache`) for the same condition, and fix both or record why GBC differs. **Note 2026-11-15:** on `plan-14-2-block-editor` the bypass is at `index.ts:434`, and Plan 14.2 Task 10a changes this route: it syncs the staged tileset overlay before both the bypass and the cached path, and a change in that sync clears `pngCache`. Re-derive the snippet below after Plan 14.2 merges. Add a fourth test: a session whose only change is a staged block edit (tileset bytes, grid untouched) still renders the staged pixels. Check first whether such a session reports `isDirty`; if it does not, the fix sends it down the cached path, which is right only because the overlay sync cleared the cache.
 
 **Root cause:** `packages/server/src/index.ts`'s `/api/edit/:name/plan` route (`planMatch`, hit by `SaveDialog.tsx`'s own `useEffect` fetch on mount) unconditionally calls `editEntryFor(name)`, opening an edit session as a side effect of a read. Sessions close only on a successful commit (`commitMatch`'s own `editSessions.close(name)`). The live-render follow-up (2026-09-22, commit `2359ecb`) made `/api/render/:name.png` bypass its own `pngCache` entirely whenever `editSessions.has(name)` is true — correct for an actually-dirty session, but the two conditions aren't the same: once a player has EVER opened the Save dialog for a map (even cancelling immediately, never editing, or undoing back to clean), that map's render cache stays bypassed for the rest of the server process's life. Measured on a real large map (Route110): 2.8ms cached vs. 40-77ms bypassed, permanently, with zero edits ever made.
 
@@ -135,46 +277,11 @@ function applyJsonOps(session: EditSession): string {
 
 ## Task C: discard/save vs. in-flight-paint race
 
-**Re-scoped 2026-11-13: still open. Tier High** (async ordering; save and discard ownership). The files named below no longer exist in that form. Today `discard` in `packages/ui/src/shared/useEditSessionCore.ts` (line 131) awaits only `eventCreateBarrier`. Paint strokes are tracked apart from it by `shared/useStrokeChain.ts` (`strokeSettled`): the map-switch path awaits it (`shell/FamilyApp.tsx:319`); the toolbar Discard and the Save dialog do not. The server side is unchanged, so a late paint POST still reopens a fresh session. Plan 14.2 Task 12 turns the barrier into `sessionMutationBarrier(mapName)` for undo, redo, Discard, Save and map switch. **Run Task C after Plan 14.2 merges, on top of that barrier:** register stroke chains in it, or have the toolbar Discard, the Save plan and the Save commit await `strokeSettled()`, in both families. The `pendingRef` design below is superseded. The accepted ceiling and the controlled-delay test technique still apply. This task also closes RESUME's Plan 8 deferred item (a discard does not wait for queued stroke links).
+**Re-scoped 2026-11-13: still open. Tier High** (async ordering; save and discard ownership). The files named below no longer exist in that form. Today `discard` in `packages/ui/src/shared/useEditSessionCore.ts` (line 131) awaits only `eventCreateBarrier`. Paint strokes are tracked apart from it by `shared/useStrokeChain.ts` (`strokeSettled`): the map-switch path awaits it (`shell/FamilyApp.tsx:319`); the toolbar Discard and the Save dialog do not. The server side is unchanged, so a late paint POST still reopens a fresh session. Plan 14.2 Task 12 turns the barrier into `sessionMutationBarrier(mapName)` for undo, redo, Discard, Save and map switch. **Run Task C after Plan 14.2 merges, on top of that barrier. Design (ruled 2026-11-15): the barrier awaits the stroke chains.** `shared/useEditSessionCore.ts` exports `registerSettledSource(map, settled: () => Promise<void>): () => void` (it returns the unregister function), and `sessionMutationBarrier(map)` awaits every registered source for that map inside its existing loop. `shell/FamilyApp.tsx` registers `strokeSettled` (`shared/useStrokeChain.ts:28`) for the selected map in an effect and unregisters on change. Discard, the Save plan, both Save commits, undo, redo and the map switch already await the barrier, so no call site changes and both families are covered. Awaiting `strokeSettled()` at each site was the other option; it needs new plumbing into `SaveDialog` and both toolbars and was not chosen. The older `pendingRef` design has been removed from this document: it named files that no longer hold this code. The accepted ceiling and the controlled-delay test technique still apply. This task also closes RESUME's Plan 8 deferred item (a discard does not wait for queued stroke links).
 
 **Root cause:** `editSessions.ts`'s `close()` (`sessions.delete(mapName)`, used by both the discard follow-up's new route and the pre-existing commit route) has no generation/version tag, and `open()` silently creates a fresh session from disk if none exists. `MapCanvas.tsx`'s paint-stroke lifecycle has at least one fire-and-forget chain (`onMouseLeave`'s own cleanup, `void pendingPaintRef.current.catch(() => {}).then(...)`, not awaited before the handler returns) — if a player's cursor leaves the canvas mid-stroke and they then click Discard (or Save) before that in-flight `/paint/apply`/`/paint/end` actually lands server-side, the session-closing call can beat it there. The late-arriving paint request then finds no session, silently reopens a FRESH one from disk, and applies the stroke to it — a new dirty server-side session the just-cleaned client UI has no idea exists. Self-recoverable (discard again) but a real data-integrity footgun. Pre-existing (Save had the identical gap already; the discard follow-up, 2026-09-22, just inherited it, didn't introduce it).
 
-**Fix, worked out already (this is the part needing real design care, not just a conditional):** centralize "the latest pending mutating call" tracking inside `useEditSession.ts` itself, since that's where BOTH `discard()` and (once wired) `SaveDialog`'s own commit flow can reach it — `MapCanvas`'s own `pendingPaintRef` is the wrong place, since `SaveDialog` has no access to a MapCanvas-internal ref.
-
-```ts
-// packages/ui/src/hooks/useEditSession.ts
-const pendingRef = useRef<Promise<unknown>>(Promise.resolve());
-
-// Wrap every mutating call (beginStroke, applyPaint, endStroke, undo, redo,
-// moveEvent, addEvent, deleteEvent) so it registers itself here -- e.g. the
-// existing `call` helper becomes:
-const call = useCallback(async (path: string, body: unknown = {}) => {
-  if (!mapName) return;
-  const p = (async () => {
-    const r = await fetch(`/api/edit/${encodeURIComponent(mapName)}${path}`, { method: "POST", body: JSON.stringify(body) });
-    if (!r.ok) throw new Error(`POST /api/edit/${mapName}${path} -> ${r.status}`);
-    applyResponse((await r.json()) as SessionResponse);
-  })();
-  pendingRef.current = p;
-  return p;
-}, [mapName]);
-// callEvent gets the identical treatment.
-
-// New, exposed on UseEditSessionResult:
-const waitForPending = useCallback(() => pendingRef.current.catch(() => {}), []);
-
-// discard() awaits it FIRST:
-const discard = useCallback(async () => {
-  if (!mapName) return;
-  await waitForPending();
-  const r = await fetch(`/api/edit/${encodeURIComponent(mapName)}/discard`, { method: "POST" });
-  if (!r.ok) throw new Error(`POST /api/edit/${mapName}/discard -> ${r.status}`);
-  setBlocks(initialBlocks ?? []); setBorder([]); setMap(initialMap);
-  setIsDirty(false); setCanUndo(false); setCanRedo(false);
-}, [mapName, initialBlocks, initialMap, waitForPending]);
-```
-
-`SaveDialog.tsx`'s own commit call is currently a raw `fetch` bypassing this hook entirely (per its own existing doc comment) — this fix should either (a) have `App.tsx` call `editSession.waitForPending()` before rendering/allowing `SaveDialog`'s save button to actually fire its own commit fetch, or (b) pass `waitForPending` down as a prop `SaveDialog` awaits before its own `fetch`. Pick whichever reads cleaner against the real current `SaveDialog`/`App.tsx` code — both close the race for commit, not just discard, which is the actual complete fix (closing it for discard alone while leaving Save's own identical exposure open would be half a fix to a bug that affects both equally).
+**Acceptance (2026-11-15; the older `pendingRef` code was removed from this document, see the design ruling above).** With a stroke link held open by a deferred fetch: (1) the toolbar Discard sends no `/discard` until the link settles; (2) the Save dialog sends neither `/plan` nor `/commit` until it settles; (3) undo and redo wait the same way; (4) after a Discard that waited, the server holds no session for the map (no late paint reopened one); (5) all of it in both families; (6) a stroke link that fails does not block the barrier forever. Mutation check: drop the source registration in `FamilyApp` and cases 1-3 turn red.
 
 **Explicitly accepted, not fixed by this design:** this closes the race for a SINGLE client tab's own out-of-order fire-and-forget chains. It does NOT close a much rarer network-reordering case (a slower FIRST request arriving after a faster SECOND one, independent of any client-side fire-and-forget gap). Name this as an accepted ceiling in the final code's own doc comment, matching this project's own established `ponytail`-style "name the ceiling" convention — do not silently pretend the fix is airtight, and do not scope-creep into the much larger server-side generation-counter alternative (every paint/event route would need to check a generation tag) unless live-verify or a future incident shows the client-side fix is insufficient in practice.
 
@@ -263,6 +370,8 @@ if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)
 
 **Files:** create `packages/server/src/http.ts`, `packages/server/test/http.test.ts`; modify `index.ts`, `gbcRoutes.ts`, `gbcEditRoutes.ts`, `hub.ts`; new cases in the existing route tests.
 
+**Split and additions (2026-11-15).** Two dispatches. **E1:** `http.ts` with its unit tests, and the hub and the GBC handlers switched to it. `decodeSegment` replaces `decodeMapName`; `blockEditRoutes.ts` (Plan 14.2 Task 11) imports `decodeMapName` and follows. **E2:** the GBA handler: the decode sites, the species check, the placement guard, and acceptance 1-5. The E2 brief lists the decode sites from `git grep -n decodeURIComponent packages/server/src/index.ts` on the day; the line numbers above predate Plan 14.2 Tasks 9-11.
+
 ---
 
 ## Task F: path containment for decomp-sourced paths (S2)
@@ -293,6 +402,8 @@ export function insideRoot(rel: string): string {
 A second guard sits at the one write choke point: `writeFilesAtomically` (`packages/core/src/write/atomic.ts:26`) takes the project root and refuses any entry outside it before it writes a temp file. That covers every writer, including Plan 14.2's tileset entries. `addEvent/sources.ts` already has the containment idiom (`relative(resolve(root), resolve(path))` must not start with `..`).
 
 **Spec question to settle first:** GBC data defects never throw (GBC roadmap invariants). Decide whether an escaping `INCBIN` path is a refusal at project open or a `DataDefect` that marks the map unreadable.
+
+**Recommendation and split (2026-11-15).** Recommended answer, for the user to confirm before the spec is written: a `DataDefect` that marks the map unreadable, never a throw at project open. It keeps the GBC rule that data defects never throw, and one bad `INCBIN` in a cloned project then costs one map, not the whole project. Three dispatches. **F1:** `insideRoot` and the GBA `layouts.json` guard (acceptance 1 and 4). **F2:** the root check in `writeFilesAtomically`, which gains a root parameter at its two call sites (`write/save.ts:336`, `gbc/write/save.ts:261`) (acceptance 3 and 5). **F3:** the GBC `INCBIN` paths, after the ruling (acceptance 2). F1 and F2 do not wait on the spec question.
 
 **Acceptance (temp projects only).**
 1. `blockdata_filepath` of `../../outside.bin`, an absolute path, a drive-letter path and a backslash variant are each refused at load, naming the layout id and the path.
@@ -354,6 +465,8 @@ const routes = [addEvents.handleOptions, gbaReadRoutes(ctx), gbaEditRoutes(ctx),
 for (const route of routes) if (route(req, url, send)) return;
 return send(404, { error: "not found" });
 ```
+
+**`ctx` (2026-11-15).** The snippet's `ctx` is not defined anywhere yet. Define it once, in the I1 move commit, as `GbaRouteContext` in `packages/server/src/gbaRouteContext.ts`: the values the route bodies close over today (the project, the root, the caches, `editSessions`, `symbols`, `addEvents`, the overlay sync). List the fields from the closure; do not design new ones, and leave out a field no moved route reads.
 
 **Acceptance.** The test count is unchanged and no test is edited. `git diff --stat -M` shows moves. `index.ts` holds context construction and the loop. For I2, a mutation spot check: make the store's `has` always false, and the existing session tests fail in both families.
 
