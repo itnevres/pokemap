@@ -18,6 +18,65 @@
 
 ---
 
+## Traps and pitfalls (2026-11-15)
+
+From the plan review of 2026-11-15, checked against `plan-14-2-block-editor` at `21bf0b9` and the two subjects. Tasks 1, 4, 5 and 9 have their traps in the roadmap, under Plans 14C and 15.
+
+1. **The task bodies still ask for work that moved or is done.** Task 6 lists the two `.bin` writers, Task 7 the composition and attribute editing, Task 8 layout creation, each under a heading that says otherwise. An implementer given the bullets rebuilds Plan 14.2. Those bullets are marked in place below; a brief quotes only unmarked bullets.
+2. **The File Structure table is the 2026-08 layout and GBA only.** Editors since Plan 9 are one shared component with family data through the adapter (`ui/src/shared/AddEventDialog.tsx` with `gba/addEventFields.ts` and `gbc/addEventFields.ts`; Plan 14.2's `shared/BlockEditorDialog.tsx`). The unified-UI goal wants each editor here in both families, and no task names a GBC file.
+3. **Task 2, GBA: the edit exists, the route does not.** `editJson` already replaces a top-level scalar such as `music`, and refuses a key that is absent (`core/src/write/jsonEdit.ts:16-37`, `:91`); only the event operations build paths today (`core/src/edit/events.ts:17-42`). The work is an operation, a route and the panel.
+4. **Task 2, `layout` is not a scalar edit.** The session holds the old layout's `layout`, `blocks` and `border` (`core/src/write/save.ts:76-82`), so changing it with painted cells pending has no defined meaning. It is its own subtask with its own ruling, or it is dropped.
+5. **Task 2, GBC: the header is one line in a file shared by every map.** `map NewBarkTown, TILESET_JOHTO, TOWN, LANDMARK_NEW_BARK_TOWN, MUSIC_NEW_BARK_TOWN, FALSE, PALETTE_AUTO, FISHGROUP_OCEAN` in `data/maps/maps.asm`, read once at project open (`core/src/gbc/load/map.ts:256`). There is no writer, the file needs the one-owner rule, and the project must be refreshed after the save (Plan H Task G; roadmap Plan 14C builds the refresh).
+6. **Task 2, dropdown lists.** Plan 14.1 already parses project constants and caches them per entry point (`core/src/addEvent/sources.ts:43` `cDefines`; fix L2, `cd1ef6e`). Reuse it; do not add a second constants reader.
+7. **Task 3, GBA: `wild_encounters.json` is a build input with a template,** the same arrangement that broke the region map on 2026-08-18 (`json_data_rules.mk:4-5`, `wild_encounters.json.txt`). Edits are spliced in place, never re-serialised. Slot weights come from the file's own `fields[].encounter_rates`, and 14 maps hold more `mons` than weights (RESUME, open items): the editor shows that and does not repair it.
+8. **Task 3: one file, many maps, per-map sessions.** Two maps' sessions would both hold `wild_encounters.json`. It needs the one-owner rule Plan 14.2 built for tileset files (`server/src/blockEditOwnership.ts`). GBC is the same with `data/wild/*.asm`, and a fishing group (`maps.asm`, eighth argument) is shared by many maps, so editing one needs the "used by N maps" warning.
+9. **Task 3: the caches outlive the save.** The project caches encounters (`core/src/project.ts:139,216-221`), the hub caches encounters, coverage and species, and the commit route clears none of them (`server/src/index.ts:1069-1084`); `core/src/analyse/coverage.ts:34` reads the file again on its own. "Immediately updates the atlas" depends on Plan H Task G.
+10. **Task 3: a linked sign can end up one save behind.** Species-linked signs are refreshed at save from the project (`server/src/signRefresh.ts:89`), and the project's encounters are the cached, pre-edit ones. The spec says the refresh reads the staged table.
+11. **Task 3, GBC: three tables per map and a known defect.** Grass has morn, day and nite slot lists and three rates (`data/wild/johto_grass.asm:5-14`); `kanto_grass.asm` has no terminator and loads anyway (RESUME, GBC facts). The patcher preserves both.
+12. **Task 6: "zero bytes changed" cannot hold for a PNG.** A re-encoded PNG differs from the original in its compressed stream even when every pixel is equal. The rule becomes: a sheet whose pixels and palette did not change is not written, and a written one decodes to exactly the intended pixels and palette at the source depth. Core has no indexed encoder to start from, only a 2-bit grey one (`core/src/blockEdit/gbcSheet.ts:23`) and the reader (`core/src/load/png.ts:52`).
+13. **Task 7's FireRed fields have no subject.** Plan 14.2 patches attributes through masks (`core/src/blockEdit/gbaPatch.ts:89`); terrain and encounter type would be two more fields in its field spec. Neither subject is FireRed, so only the reference corpus would exercise them and no live check is possible.
+14. **Task 8: a half-done resize still loads.** Since Plan 10b a size mismatch is never read-only (ruling R2; `e827cdc`), so the loader accepts a `map.bin` that disagrees with `layouts.json`. Resize tests assert exact sizes in every file and on a reload. Resize also strands events outside the new bounds and shifts connection offsets.
+15. **Task 8, GBC: the size lives in a constants file.** `map_const` dimensions in `constants/map_constants.asm`, read once at open (`core/src/gbc/load/map.ts:254`), plus the `.blk` length. Text replacement in constants files exists (`core/src/gbc/write/save.ts:216-218`); the project refresh after the save does not.
+16. **The build checks in the checklist cannot be run on this machine** (no `make` or compiler, checked 2026-11-15).
+
+## Subtasks (2026-11-15)
+
+**Run `superpowers:brainstorming` first** (the header already says so). The table is the breakdown that interview starts from; a row may be deleted by an answer. Both families are named in every row. Verify lines run from the repo root after `npm run typecheck`. The interview's questions, with recommendations:
+
+1. Whether Tasks 2 and 3 run as one plan after roadmap Plan 14C (roadmap, "Order and overlap review", proposal 6). Recommendation: yes.
+2. Task 2: whether changing a map's `layout` is in scope (trap 4). Recommendation: no.
+3. Task 3: whether GBC fishing groups, swarms and headbutt trees are editable in the first version. Recommendation: grass and water only; fishing shown read-only with its "shared by N maps" count.
+4. Tasks 6 and 7: whether PokeMap edits tile pixels and palette colours, or opens the file in the user's editor and reloads. Recommendation: the external editor. Plan 14.2 ruled pixel and palette editing out of scope, and a paint program does it better. That answer deletes rows 6a, 7a and 7b.
+5. Task 7: whether the FireRed fields are built (trap 13). Recommendation: no, until a FireRed project is a subject.
+6. Task 8: on a resize, which edge grows, what fills the new cells, and what happens to events left outside. Recommendation: a chosen anchor, the layout's most used block, and a refusal that lists the events.
+7. Task 8: whether deleting a layout is wanted while maps cannot be deleted. Recommendation: drop it.
+
+**Answered by the user 2026-11-16 (roadmap D24f, D27):** question 1 yes, Tasks 2 and 3 run after roadmap Plan 14C as one plan for both families. Question 4: inside PokeMap, so rows 6a, 7a and 7b are built; the pixel editor and the two writers are shared with roadmap Plan 15, which needs them for the town map (D26), so they are built once, by whichever of the two plans starts first. Question 5: the FireRed fields are built (row 7c); with no FireRed subject, their acceptance runs on a scratch copy of the pokefirered reference engine. Question 7: layout deletion is built (row 8e). Questions 2, 3 and 6 are still open.
+
+| Id | What | Files | Tier | Verify (`npx vitest run …`) | After |
+|---|---|---|---|---|---|
+| 2a | Header option lists from project constants, both families | new `packages/core/src/header/{gbaOptions,gbcOptions}.ts` and tests, reusing `addEvent/sources.ts` | Medium | `packages/core/test/header` | - |
+| 2b | GBA header edit: operation, route, undo snapshot | new `packages/core/src/edit/header.ts`; the GBA edit-route module Plan H Task I leaves; tests | High (session and save) | `packages/core/test/edit packages/server` | Plan H H3 |
+| 2c | GBC header: lossless `maps.asm` line patcher, save entry under the owner rule, project refresh | new `packages/core/src/gbc/write/mapsPatch.ts`; `packages/core/src/gbc/write/save.ts`, `packages/server/src/gbcEditRoutes.ts`; tests | High (subject writes) | `packages/core/test/gbc packages/server` | roadmap Plan 14C |
+| 2d | Header panel, shared, with family field specs | new `packages/ui/src/shared/HeaderPanel.tsx`, `gba/headerFields.ts`, `gbc/headerFields.ts`; `shell/adapter.ts` | Medium | `packages/ui/test/shared` | 2b, 2c |
+| 3a | GBA encounter edits as splices into `wild_encounters.json`, under the owner rule | new `packages/core/src/edit/encounters.ts`; `packages/core/src/write/save.ts`; tests | High (subject writes) | `packages/core/test/edit packages/core/test/write` | Plan H H2 |
+| 3b | GBC grass and water patchers, lossless | new `packages/core/src/gbc/write/wildPatch.ts`; `packages/core/src/gbc/write/save.ts`; tests | High (subject writes) | `packages/core/test/gbc` | Plan H H2 |
+| 3c | Routes, ownership and cache invalidation, both hubs | the two edit-route modules, `packages/server/src/blockEditOwnership.ts` or a sibling; tests | High (save ownership) | `packages/server` | 3a, 3b |
+| 3d | Linked signs and the Indicator read the staged table | `packages/server/src/signRefresh.ts`; tests | High (save ownership) | `packages/server` | 3c |
+| 3e | Encounter editor, shared: variants, rods, live percentages from `speciesChances` and the GBC atlas | new `packages/ui/src/shared/EncounterEditor.tsx` with family specs; `shell/adapter.ts` | Medium | `packages/ui/test/shared` | 3c |
+| 6a | Indexed PNG writer at the source depth (4-bit tile sheets, and the 8-bit town-map art for roadmap Plan 15) and JASC `.pal` writer; rule per trap 12 | new `packages/core/src/write/{indexedPng,pal}.ts` and tests | High (subject writes) | `packages/core/test/write` | - |
+| 7a, 7b | Tile-pixel editor; palette editor with 5-bit quantising, both shared with roadmap Plan 15's town-map art and offered in both families | needs its own spec and interview (tools, undo, how a sheet edit is staged and owned, GBC's 2-bit sheets and palette files) | High (subject writes, save ownership) | - | 6a |
+| 7c | FireRed terrain and encounter-type fields in the block editor's field spec, from the profile masks | `packages/core/src/config/engine.ts`, `packages/core/src/blockEdit/gbaPatch.ts`, the GBA block-editor spec in `packages/ui/src/gba/`; tests on a scratch copy of the pokefirered reference | High (subject writes) | `packages/core/test/blockEdit` | Plan 14.2 merged |
+| 8a | GBA resize: operation, the `layouts.json` splice, both `.bin` files, the events and connections refusals | new `packages/core/src/edit/layouts.ts`; `packages/core/src/write/save.ts`; tests | High (subject writes) | `packages/core/test/edit packages/core/test/write` | Plan H H2 |
+| 8b | GBC resize: `.blk`, `map_const` replacement, project refresh | new `packages/core/src/gbc/edit/layouts.ts`; `packages/core/src/gbc/write/save.ts`; tests | High (subject writes) | `packages/core/test/gbc` | roadmap Plan 14C |
+| 8c | GBA border size, on engines whose layouts carry the border keys | `packages/core/src/edit/layouts.ts`; tests | High | `packages/core/test/edit` | 8a |
+| 8d | Resize dialog, shared | new `packages/ui/src/shared/ResizeDialog.tsx`; `shell/adapter.ts` | Medium | `packages/ui/test/shared` | 8a, 8b |
+| 8e | GBA delete layout: refuse while any map uses it, naming the maps (reuse `gbaConsumingLayouts`, `packages/core/src/blockEdit/usage.ts:345`); remove the `layouts.json` entry and its two `.bin` files in one atomic set. GBC has no separate layout entity, so the spec says what delete means there or flags it GBA only | `packages/core/src/edit/layouts.ts`, `packages/core/src/write/{atomic,save}.ts` (file removal in the atomic set); tests | High (subject writes) | `packages/core/test/edit packages/core/test/write` | 8a |
+
+Each of Tasks 2, 3 and 8 ends with a live check on scratch clones in both families and extends the corpus gate for the file kinds it writes (roadmap D22).
+
+---
+
 ## File Structure
 
 | File | Responsibility |
@@ -141,7 +200,7 @@ it("cannot reproduce the 2026-08-18 porymap 6 failure", () => {
 **Files:** `packages/core/src/write/tilesetBinary.ts` + test
 
 **Requirements:**
-- Write `metatiles.bin` (16 bytes per metatile) and `metatile_attributes.bin` (2 or 4 bytes per the engine profile).
+- **SUPERSEDED 2026-11-15, do not build:** done by Plan 14.2 Tasks 4 and 8 (`51225cf`, `025b8e5`; `packages/core/src/blockEdit/gbaPatch.ts`, `blockEdit/save.ts`). Original text: Write `metatiles.bin` (16 bytes per metatile) and `metatile_attributes.bin` (2 or 4 bytes per the engine profile).
 - Write `tiles.png` as an **indexed** PNG at the source file's original bit depth and palette — re-encoding a depth-4 sheet as depth-8 would work but produces a gratuitous diff, and `gbagfx` cares about the format.
 - Write `.pal` files as JASC-PAL with the same header and line endings as the original.
 - **Never write `.4bpp`, `.gbapal` or `.lz`** — invariant **I3**. Those are build outputs; writing them creates files that `.gitignore` hides and that `make` will overwrite, which is exactly the kind of ghost that costs a day.
@@ -154,6 +213,8 @@ it("cannot reproduce the 2026-08-18 porymap 6 failure", () => {
 **Reduced 2026-11-13 (D22).** Plan 14.2's block editor covers metatile composition (two layers, per-tile palette and flips), behaviour and layer type, the usage warning before a save, and cache invalidation after an edit. What remains here: tile pixel editing, palette editing with BGR555 quantisation, the FireRed terrain and encounter-type attribute fields, and the by-tileset invalidation test if Plan 14.2's whole-cache clear measures as a stall.
 
 **Files:** `packages/core/src/edit/tileset.ts`, `packages/ui/src/components/TilesetEditor.tsx` + tests
+
+**Marked 2026-11-15.** Bullets 1, 4, 5 and 6 below and the behaviour and layer-type half of bullet 2 belong to Plan 14.2 and are not built here: its core and hub parts are merged on `plan-14-2-block-editor` (usage index `b0b697e`, GBA planner `7901772`, ownership `d0082d0`) and its UI is Tasks 11-14, in flight. What is left for this task: the FireRed half of bullet 2, bullet 3 (palettes) and tile pixels, each subject to the interview questions under "Subtasks (2026-11-15)".
 
 **Requirements:**
 - Compose a metatile from an 8×8 tile picker: two layers, per-tile palette and flips.
@@ -170,6 +231,8 @@ it("cannot reproduce the 2026-08-18 porymap 6 failure", () => {
 **Reduced 2026-11-13 (D22).** Creating a layout moves to roadmap Plan 14C with Task 9. Resize, border size and delete stay here.
 
 **Files:** `packages/core/src/edit/layouts.ts` + test
+
+**Marked 2026-11-15.** The first and last bullets below (create a layout; new `layouts.json` entries) are roadmap Plan 14C's and are not built here. This task builds the resize, border-size and delete bullets only.
 
 **Requirements:**
 - Create a new layout: writes the `layouts.json` entry, creates `map.bin` and `border.bin` at the right size, and **requires a `layout_version`** on engines that support it — chosen explicitly by the user, never defaulted silently, because a wrong choice here produces exactly `open-bugs.md` #41.
