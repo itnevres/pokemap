@@ -696,6 +696,17 @@ Traps seen in s7:
   commit request + injected writer failure, C stage → event create → render/undo/redo/save with Buffers kept, D GBC
   coverage after a staged collision edit, E owner precedence unit), `chain.py --tier opus`. Then the conductor fixes
   `addEventRoutes.ts` (outside the File map → added to Plan H's in-flight list in the same commit).
+- Fix-1 tests hop: `chain.py --tier opus` RESULT **parked** (Codex usage limit; message "try again at 5:14 AM";
+  chain.py had set a 12 h cooldown, corrected by hand to 05:15). Per the user ruling of 2026-11-13 (free models or
+  Anthropic while Codex is out) → `--tier sonnet --no-codex`: deepseek-v4.1-flash-free done first hop (`f611c9f`,
+  +240 lines). Vetted (oracles: hub bytes before staging, disk, literals; spy results read before any later request).
+  Red run: 14/16, both 4c red; GBA 4c first failed on a fixture gap (the tileset temp copy has no `charmap.txt`, BAD_OPTION
+  on script text) → test copies it into the temp root, then both 4c red on `Buffer.isBuffer`.
+- Fix `42fbf39` (inline, 4 lines + 1 test line; reason: smaller than a brief): `addEventRoutes.ts` create (both
+  families) sets `candidate.tilesetEdits = entry.session.tilesetEdits` after `structuredClone`. Verify at `42fbf39`:
+  typecheck pass, **296/296** (9 files). Plan H in-flight list gains `addEventRoutes.ts` at merge time (editing Plan H
+  on the task branch would conflict with `a533694`).
+- Re-reviews (astra, same reviewer): `task-10a-rereview-brief.md`, static on `<s9>/rv-t10` at `42fbf39`.
 
 ### Task 11a (High) — s9
 - Worktree `<s9>/wt-t11`, branch `p14-2-t11` from `b9b74f2` (10a head; merge the plan branch in after 10a merges).
