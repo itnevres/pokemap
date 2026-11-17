@@ -94,7 +94,7 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbc edit routes (hermetic tem
   it("1. plan on an untouched map is empty", async () => {
     const r = await get(`${NBT}/plan`);
     expect(r.status).toBe(200);
-    expect(await r.json()).toEqual({ changes: [], refusals: [], signNotices: [], fingerprint: expect.any(String) });
+    expect(await r.json()).toEqual({ changes: [], refusals: [], signNotices: [], tilesetEffects: [], fingerprint: expect.any(String) });
     await post(`${NBT}/discard`);
   });
 
@@ -288,7 +288,7 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbc edit routes (hermetic tem
     expect(back.isDirty).toBe(false);
     expect(back.canUndo).toBe(false);
     expect(back.canRedo).toBe(true);
-    expect(await plan()).toEqual({ changes: [], refusals: [], signNotices: [], fingerprint: expect.any(String) });
+    expect(await plan()).toEqual({ changes: [], refusals: [], signNotices: [], tilesetEffects: [], fingerprint: expect.any(String) });
     await post(`${NBT}/discard`);
   });
 
@@ -328,7 +328,7 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbc edit routes (hermetic tem
     const after = await snapshot();
     expect(after.session.isDirty).toBe(false);
     expect(after.session.canUndo).toBe(false);
-    expect(after.plan).toEqual({ changes: [], refusals: [], signNotices: [], fingerprint: expect.any(String) });
+    expect(after.plan).toEqual({ changes: [], refusals: [], signNotices: [], tilesetEffects: [], fingerprint: expect.any(String) });
     expect(h.dirtyMaps()).toEqual([]);
     await post(`${NBT}/discard`);
   });
@@ -446,7 +446,7 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbc edit routes (hermetic tem
     expect(read("maps/NewBarkTown.asm").toString("utf8")).toBe(moveGbcEvent(asmBefore, "NewBarkTown", "warp", 0, 7, 3).text);
 
     expect(h.dirtyMaps()).toEqual([]);
-    expect(await plan()).toEqual({ changes: [], refusals: [], signNotices: [], fingerprint: expect.any(String) }); // a fresh session opened on the committed files
+    expect(await plan()).toEqual({ changes: [], refusals: [], signNotices: [], tilesetEffects: [], fingerprint: expect.any(String) }); // a fresh session opened on the committed files
     await post(`${NBT}/discard`);
 
     const pngAfter = await png("NewBarkTown");
