@@ -681,9 +681,33 @@ Traps seen in s7:
   file `tilesetOverlay.test.ts` only (~2 min a mutant). Anchors checked (each matches once).
 - Reviews: Codex `gpt-6-astra`, spec and quality as separate runs, static on detached `<s9>/rv-t10` at `b9b74f2`,
   brief `task-10a-review-brief.md` (scope `6656148..b9b74f2`), reports `task-10a-{spec,quality}-review.md`.
+- Mutations: **13 of 18 KILLED** (`<s9>/mut_t10a.out`), incl. V8's skip `metatileCache.clear()` (M1), payload
+  version without sync (M2/M3), one owner only (M4), always changed (M7), GBA `pngCache` (M8). Survivors: M5/M6
+  (commit `finally` sync removed; every read route syncs first, so only a spy inside the commit request sees it →
+  fix-1 B), M10 (GBC `coverageCache` not cleared: no coverage case → fix-1 D), M13 (last owner wins: no
+  same-path unit → fix-1 E), M18 (GBC `warpCache` not cleared): **equivalent**, `gbcWarpLinks`
+  (`core/src/world/nearWarpAdapters.ts`) reads map events only, no tileset file; V3 lists it, clearing it is harmless.
+- Reviews (astra): spec **Needs changes 0/2/0** (I1 case 4 does not pin commit-time sync, writer failure never
+  reached; I2 cases 3-4 use staged output as expected pixels); quality **Needs changes 0/2/0** (I1 **real defect**:
+  event create `structuredClone`s the session (`addEventRoutes.ts:278,348`), the pushed snapshot replaces the
+  session's `tilesetEdits` with `Uint8Array`s, the next sync installs them in the overlay and GBA rendering throws
+  (`readUInt16LE`); I2 = spec I1). Checked against the code: all four hold. V1-V6 otherwise implemented exactly.
+- Fix round 1: tests hop `task-10a-fix1-tests-brief.md` (A independent `replacementPng` oracle, B sync spy inside the
+  commit request + injected writer failure, C stage → event create → render/undo/redo/save with Buffers kept, D GBC
+  coverage after a staged collision edit, E owner precedence unit), `chain.py --tier opus`. Then the conductor fixes
+  `addEventRoutes.ts` (outside the File map → added to Plan H's in-flight list in the same commit).
 
 ### Task 11a (High) — s9
 - Worktree `<s9>/wt-t11`, branch `p14-2-t11` from `b9b74f2` (10a head; merge the plan branch in after 10a merges).
 - Confirmed at vet before the brief: B3 GBA mask = `project.profile.blockMetatileIdMask` (`core/src/config/engine.ts`,
   used by `load/blocks.ts`); B10 `stageTilesetPlan` calls `requireTilesetOwnership` (`blockEditOwnership.ts:119`).
 - Tests hop: `chain.py --tier opus`, brief `task-11a-tests-brief.md`, verify typecheck only.
+- Tests hop: Codex `gpt-6.1-sol` done first hop (`f2065c6`; it ran its own spec/quality sub-reviews and fixed
+  most findings). Conductor vet `5ab718c` (inline: oracle rulings, a brief would cost more): the two 410-line family
+  files were duplicates → one module `test/helpers/blockEditRoutesSuite.ts` + two 4-line test files; GBC fixture
+  chosen by disk sheet size (was chosen by the route's own `tileCount`); sheet `tileCount` checked against the tile
+  PNGs on disk; GBA invalid tile derived from disk (was from the route's `tileIds`); GBA preview block must use a
+  nonzero palette (from disk bytes), so "preview ignores map palettes" can fail. **Ruling B7a (s9):** GBA
+  `tileCount = split.tiles + secondary tile count`; `tileIds[i] = i` for primary tiles and for `i >= split.tiles`,
+  `null` for the gap between the primary tiles and the split. GBC `tileCount` = tiles in the tileset PNG.
+  Stub `blockEditRoutes.ts` starts with a BOM (cosmetic; the impl replaces it).
