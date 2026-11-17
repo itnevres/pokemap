@@ -74,6 +74,40 @@ Tiers, task order, gate cadence and reviewers are unchanged. Tasks 0-5 are not a
    them before this plan merges to `master`. If a task here starts to modify a file outside the File map, add it to that
    list in the same commit.
 
+## Rulings addendum (2026-11-15)
+
+From the plan review of 2026-11-15 (ledger "Review session"). Tiers, reviewers and gate cadence are unchanged. Tasks
+0-10 are not affected. The rulings files are in `.superpowers/sdd/2026-11-10-pokemap-plan-14-2-block-editor/`. Where a task's text below differs from its rulings file,
+the rulings win.
+
+1. **Splits (delegate §7: one verify target, about five files).** Task 11 → 11a read routes, 11b check and apply
+   (`task-11-rulings.md`, B1-B13). Task 12 stays one dispatch (`task-12-rulings.md`, M1-M8). Task 13 → 13a hook and
+   specs, 13b view (`task-13-rulings.md`, D1-D12). Task 14 → 14a context menu and dialog mount, 14b tool and palettes
+   (`task-14-rulings.md`, N1-N10).
+2. **Holes closed.** (a) The Save plan body never carried `tilesetEffects`: core returns it and both hubs drop it, so
+   Task 12's dialog rows would pass on mocks and be empty in the app. Task 11 adds it (B12). (b) Task 11 answered the
+   preview as a PNG while Task 12 sends it through `post`, which parses JSON only: the preview is JSON base64 (B8).
+   (c) The dialog had no path to the session's `post`: both family session hooks expose `BlockEditSession` (M5) and
+   the dialog takes `session` (D2). (d) A GBA tile has no palette of its own: the sheet route takes `?pal=`, and
+   `sheet.tileIds` replaces `validTiles` (B7). (e) No hub code builds the planner's `grids` yet; it is keyed by map
+   name (B3).
+3. **Open choices closed.** The barrier is renamed with no alias (M1). The tool key is K (N7). `blockEditorSpec` is a
+   constant field (D1). The map context menu renders the existing `WorldContextMenu` (N1). The stale-check case moves
+   from Task 12 to 13a (M6, D3).
+4. **Files added to the File map.** UI: `hooks/useEditSession.ts`, `gbc/hooks/useGbcEditSession.ts` (Task 12);
+   `components/MapEditingWorkspace.tsx` (Task 14). They are added to Plan H's in-flight list in the same change
+   (Review addendum 4).
+5. **Known traps.** T1-T5 in `task-11-rulings.md` go into every Task 11 brief (complete GBC staged plans, the
+   4-wide test map, whole-body assertions, the `gbcAddEventRoutes` 8 s flake, oracles). UI: the dialog must fit a
+   720x560 viewport (D6); the GBA palette's `onMouseDown` has no button check (N9).
+6. **Handoff points (delegate §7).** A conductor session hands off after 11b merges, after 13b merges, and after
+   Task 15.
+7. **Task 15.** Start the driver from
+   `docs/superpowers/task-reports/pokemap-plan-10a3-save-integrity/shots/live.mjs`. The report has one row per spec
+   Acceptance item (spec "## Acceptance", items 1-6 and 3a-3e) per family, marked pass, fail or n-a, like Plan 14.1's
+   `task-9-live.md`. Two added rows: one pass of the dialog at 720x560 (D6), and the Save dialog shows an "affects"
+   row from real data (B12, M7).
+
 ---
 
 ## File map
@@ -510,6 +544,8 @@ Test `packages/server/test/tilesetOverlay.test.ts`; new cases in the palette and
 
 ### Task 11: Hub block-editor routes
 
+> **Rulings (2026-11-15):** split into 11a and 11b. `task-11-rulings.md` (B1-B13, traps T1-T5) binds and wins over the text below: the preview answers JSON base64, the sheet gains `tileIds` and GBA `?pal=`, and the Save plan body gains `tilesetEffects`. See "Rulings addendum (2026-11-15)".
+
 **Files:** Create `packages/server/src/blockEditRoutes.ts`; Modify `packages/server/src/index.ts`,
 `packages/server/src/gbcEditRoutes.ts` (mount under each family's edit base); Test
 `packages/server/test/blockEditRoutes.test.ts`, `packages/server/test/gbcBlockEditRoutes.test.ts`
@@ -547,6 +583,8 @@ Test `packages/server/test/tilesetOverlay.test.ts`; new cases in the palette and
 
 ### Task 12: UI mutation transport and Save dialog effects
 
+> **Rulings (2026-11-15):** `task-12-rulings.md` (M1-M8) binds and wins over the text below: rename with no alias, `BlockEditSession` on both family session hooks (two files added), and the stale-check case moves to 13a. See "Rulings addendum (2026-11-15)".
+
 **Files:** Modify `packages/ui/src/shared/useEditSessionCore.ts`, `packages/ui/src/shell/FamilyApp.tsx` (switch
 wait), `packages/ui/src/components/SaveDialog.tsx`; Test `packages/ui/test/shared/useEditSessionCore.blockEdit.test.tsx`,
 one new case in `packages/ui/test/SaveDialog.test.tsx`
@@ -572,6 +610,8 @@ one new case in `packages/ui/test/SaveDialog.test.tsx`
 - [ ] **Step 5: Commit** `feat(plan-14.2): block-edit mutation barrier and Save dialog effects (Task 12)`.
 
 ### Task 13: BlockEditorDialog and family specs
+
+> **Rulings (2026-11-15):** split into 13a and 13b. `task-13-rulings.md` (D1-D12) binds and wins over the text below: the spec is a constant field, the dialog takes `session`, and the panel must fit 720x560. See "Rulings addendum (2026-11-15)".
 
 **Files:** Create `packages/ui/src/shared/BlockEditorDialog.tsx`, `packages/ui/src/shared/blockEditor/TilePicker.tsx`,
 `packages/ui/src/shared/blockEditor/BlockGrid.tsx`, `packages/ui/src/shared/blockEditor/useBlockEditor.ts`; Modify
@@ -610,6 +650,8 @@ one new case in `packages/ui/test/SaveDialog.test.tsx`
 
 ### Task 14: Entry points: map context menu, Edit block tool, palette
 
+> **Rulings (2026-11-15):** split into 14a and 14b. `task-14-rulings.md` (N1-N10) binds and wins over the text below: the menu reuses `WorldContextMenu`, the key is K, and the dialog mounts in `MapEditingWorkspace.tsx` and `GbcMapEditing.tsx`. See "Rulings addendum (2026-11-15)".
+
 **Files:** Create `packages/ui/src/shared/MapContextMenu.tsx` (reuse `WorldContextMenu`'s clamping, Escape, aria-modal
 and keyboard-echo rules; extract a shared helper only if both callers use it unchanged); Modify
 `packages/ui/src/canvas/MapSurface.tsx`, the `MapCanvasViewport` it renders (new `onContextMenu` prop),
@@ -633,6 +675,8 @@ and keyboard-echo rules; extract a shared helper only if both callers use it unc
 - [ ] **Step 5: Commit** `feat(plan-14.2): Edit block entry points in both families (Task 14)`.
 
 ### Task 15: Live acceptance on scratch copies
+
+> **Rulings (2026-11-15):** driver template and two added rows are in "Rulings addendum (2026-11-15)", item 7.
 
 **Files:** Create `docs/superpowers/task-reports/pokemap-plan-14-2-block-editor/task-15-live.md` and a driver script
 there; Modify `packages/ui/DESIGN.md` (shared-module rows), `docs/superpowers/RESUME.md` (status)

@@ -276,6 +276,8 @@ export function createGbaAddEventRoutes(project: Project, store: GbaStore, hooks
     handleOptions: optionsHandler("gba", name => project.mapNames().includes(name), cache.get, mapOptions, stagedText),
     create(name: string, value: unknown) {
       const entry = store.open(name), prev = snapshotOf(entry.session), candidate = structuredClone(entry.session);
+      // structuredClone turns the staged tileset Buffers into Uint8Arrays; event creation never changes them, so keep the session's own.
+      candidate.tilesetEdits = entry.session.tilesetEdits;
       const form = formOf(value, candidate.layout.width, candidate.layout.height), checkNames = check(name);
       if (form.flag?.mode === "new" && (form.kind === "object" || form.kind === "bg" && form.fields.bgType === "hidden_item")) {
         requireHeaderOwnership(store, name, "include/constants/flags.h", "NO_FLAG_SLOT");
@@ -346,6 +348,8 @@ export function createGbcAddEventRoutes(proj: GbcProject, store: GbcStore, hooks
     handleOptions: optionsHandler("gbc", name => proj.maps.some(m => m.name === name), cache.get, mapOptions, stagedText),
     create(name: string, value: unknown) {
       const entry = store.open(name), prev = gbcSnapshotOf(entry.session), candidate = structuredClone(entry.session);
+      // structuredClone turns the staged tileset Buffers into Uint8Arrays; event creation never changes them, so keep the session's own.
+      candidate.tilesetEdits = entry.session.tilesetEdits;
       const form = formOf(value, candidate.map.width * 2, candidate.map.height * 2);
       if (form.flag?.mode === "new" && (form.kind === "object" || form.kind === "bg" && ["BGEVENT_ITEM", "BGEVENT_IFSET", "BGEVENT_IFNOTSET"].includes(form.fields.bgType!))) {
         requireHeaderOwnership(store, name, "constants/event_flags.asm", "NO_FLAG_SLOT");

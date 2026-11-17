@@ -143,6 +143,21 @@ const gbaSharedPair = (proj: Project): GbaSharedPair | undefined => {
   })[0];
 };
 
+/** A primary-only pair, independently scanned so the preferred secondary fixture stays unchanged. */
+const gbaPrimarySharedPair = (proj: Project): GbaSharedPair | undefined => {
+  const byFile = new Map<string, string[]>();
+  for (const name of proj.mapNames()) {
+    const layout = proj.layoutForMap(name);
+    const path = canonicalTilesetPath(proj.tilesetPaths(layout.primaryTileset).metatilesBin);
+    byFile.set(path, [...(byFile.get(path) ?? []), name]);
+  }
+  for (const [path, maps] of [...byFile].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)) {
+    const names = [...maps].sort();
+    if (names.length >= 2) return { a: names[0]!, b: names[1]!, path, role: "primary", splitMetatiles: 0 };
+  }
+  return undefined;
+};
+
 const gbcSharedPair = (proj: GbcProject): GbcSharedPair | undefined => {
   const byFile = new Map<string, string[]>();
   for (const map of proj.maps) {
@@ -228,6 +243,195 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("GBA block-edit ownership (Plan 14.2 
     if (sharedServer) await new Promise<void>((r) => sharedServer.close(() => r()));
     vi.restoreAllMocks();
     if (sharedRoot) removeGbaTemp(sharedRoot);
+  });
+
+  // Decode the fixture's 10-bit id, 2-bit collision and 4-bit elevation directly from disk.
+  const diskBlocks = (name: string) => {
+    const bytes = readFileSync(gridOf(name));
+    return Array.from({ length: bytes.length / 2 }, (_, index) => {
+      const word = bytes.readUInt16LE(index * 2);
+      return { metatileId: word & 0x3ff, collision: (word >>> 10) & 3, elevation: (word >>> 12) & 15 };
+    });
+  };
+
+  it("keeps staged bytes, paint and ownership aligned through interleaved undo and redo", async () => {
+    const disk = readBytes(shared.path);
+    const appended = Buffer.concat([disk, NEW_METATILE]);
+    const changed = flipByte(appended);
+    const appendEdits = [{ path: shared.path, before: disk, after: appended }];
+    const changedEdits = [{ path: shared.path, before: disk, after: changed }];
+    const originalId = diskBlocks(mapA)[0]!.metatileId;
+    const paintedId = originalId === 0 ? 1 : 0;
+    expect(paintedId).toBeLessThan(savedCount(shared.path));
+    const assertState = (expected: TilesetFileEdit[], id: number) => {
+      expect(editsOf(store.open(mapA).session)).toEqual(expected);
+      expect(store.open(mapA).session.blocks[0]!.metatileId).toBe(id);
+      if (expected.length) {
+        expectRefusal(() => requireTilesetOwnership(store.entries(), mapB, [shared.path]), "NOT_OWNER");
+      } else {
+        expect(() => requireTilesetOwnership(store.entries(), mapB, [shared.path])).not.toThrow();
+      }
+      expect(readBytes(shared.path)).toEqual(disk);
+    };
+    stage(mapA);
+    assertState(appendEdits, originalId);
+    expect((await edit("paint/begin", {})).status).toBe(200);
+    expect((await edit("paint/apply", {
+      tool: "pencil", targets: [{ x: 0, y: 0 }],
+      stamp: { width: 1, height: 1, cells: [{ metatileId: paintedId }] }, origin: { x: 0, y: 0 },
+    })).status).toBe(200);
+    expect((await edit("paint/end", {})).status).toBe(200);
+    assertState(appendEdits, paintedId);
+    stageTilesetPlan(store, mapA, buildPlan([{ path: shared.path, before: appended, after: changed }]), "second edit");
+    assertState(changedEdits, paintedId);
+    for (const [route, expected, id] of [
+      ["undo", appendEdits, paintedId], ["undo", appendEdits, originalId], ["undo", [], originalId],
+      ["redo", appendEdits, originalId], ["redo", appendEdits, paintedId], ["redo", changedEdits, paintedId],
+    ] as const) {
+      expect((await edit(route, {})).status).toBe(200);
+      assertState([...expected], id);
+    }
+  });
+
+  it("keeps the staged edit, history and ownership when Save fails after an external file change", async () => {
+    const disk = readBytes(shared.path);
+    const expected = [{ path: shared.path, before: disk, after: Buffer.concat([disk, NEW_METATILE]) }];
+    const external = Buffer.concat([disk, Buffer.alloc(16, 0x11)]);
+    const restore = restoreBytes([sharedAbs(), gridOf(mapA)]);
+    try {
+      stage(mapA);
+      expect(editsOf(store.open(mapA).session)).toEqual(expected);
+      const plan = await req(`/api/edit/${mapA}/plan`);
+      expect(plan.status).toBe(200);
+      expect(plan.body.fingerprint).toBeTruthy();
+      writeFileSync(sharedAbs(), external);
+      const result = await edit("commit", { fingerprint: plan.body.fingerprint });
+      expect(result.status).not.toBe(200);
+      expect(JSON.stringify(result.body)).toContain(shared.path);
+      expect(readBytes(shared.path)).toEqual(external);
+      expect(editsOf(store.open(mapA).session)).toEqual(expected);
+      expect(store.has(mapA)).toBe(true);
+      expect(store.open(mapA).stack.canUndo()).toBe(true);
+      expectRefusal(() => stage(mapB), "NOT_OWNER");
+    } finally {
+      restore();
+    }
+  });
+
+  it("keeps a live stroke and earlier history intact after pencil and mixed-stamp refusals", async () => {
+    stage(mapA);
+    const width = layoutOf(mapB).width;
+    expect(width, "the shared map must fit the 2x1 stamp at (3, 0)").toBeGreaterThanOrEqual(5);
+    const original = diskBlocks(mapB);
+    const firstIndex = width + 1;
+    const firstId = original[firstIndex]!.metatileId === 0 ? 1 : 0;
+    const nextId = original[0]!.metatileId === 0 ? 1 : 0;
+    const stampId = original[3]!.metatileId === 0 ? 1 : 0;
+    expect(stampId).toBeLessThan(savedCount(shared.path));
+    expect(Math.max(firstId, nextId)).toBeLessThan(savedCount(shared.path));
+    const priorStroke = original.map((block, index) => index === firstIndex ? { ...block, metatileId: firstId } : { ...block });
+    const acceptedApply = priorStroke.map((block, index) => index === 0 ? { ...block, metatileId: nextId } : { ...block });
+    const pencil = (x: number, y: number, id: number) => edit("paint/apply", {
+      tool: "pencil", targets: [{ x, y }],
+      stamp: { width: 1, height: 1, cells: [{ metatileId: id }] }, origin: { x, y },
+    }, mapB);
+    expect((await edit("paint/begin", {}, mapB)).status).toBe(200);
+    expect((await pencil(1, 1, firstId)).status).toBe(200);
+    expect((await edit("paint/end", {}, mapB)).status).toBe(200);
+    expect(store.open(mapB).session.blocks).toEqual(priorStroke);
+    expect((await edit("paint/begin", {}, mapB)).status).toBe(200);
+    expect((await pencil(0, 0, nextId)).status).toBe(200);
+    expect(store.open(mapB).session.blocks).toEqual(acceptedApply);
+    const refusedPencil = await pencil(2, 0, newVisibleId());
+    expect(refusedPencil.status).toBe(409);
+    expect(refusedPencil.body.code).toBe("UNSAVED_BLOCK");
+    expect(store.open(mapB).session.blocks).toEqual(acceptedApply);
+    const refusedStamp = await edit("paint/apply", {
+      tool: "pencil", targets: [{ x: 3, y: 0 }, { x: 4, y: 0 }],
+      stamp: { width: 2, height: 1, cells: [{ metatileId: stampId }, { metatileId: newVisibleId() }] },
+      origin: { x: 3, y: 0 },
+    }, mapB);
+    expect(refusedStamp.status).toBe(409);
+    expect(refusedStamp.body.code).toBe("UNSAVED_BLOCK");
+    expect(store.open(mapB).session.blocks).toEqual(acceptedApply);
+    expect((await edit("paint/end", {}, mapB)).status).toBe(200);
+    expect((await edit("undo", {}, mapB)).status).toBe(200);
+    expect(store.open(mapB).session.blocks).toEqual(priorStroke);
+    expect(store.open(mapB).stack.canUndo()).toBe(true);
+    expect((await edit("undo", {}, mapB)).status).toBe(200);
+    expect(store.open(mapB).session.blocks).toEqual(original);
+  });
+
+  it("names the smallest unsaved id even when ids arrive in descending order", () => {
+    stage(mapA);
+    const count = savedCount(shared.path);
+    const refusal = expectRefusal(
+      () => refuseUnsavedBlockRefs(store.entries(), mapB, shared.path, count, [count + 1, count]), "UNSAVED_BLOCK");
+    expect(refusal.message).toBe(`${shared.path}: block ${count} is an unsaved addition of ${mapA}; save it there first`);
+  });
+
+  it("leaves no new session behind when another map's stage is refused", () => {
+    stage(mapA);
+    expect(store.has(mapB)).toBe(false);
+    expectRefusal(() => stage(mapB), "NOT_OWNER");
+    expect(store.has(mapB)).toBe(false);
+  });
+
+  it("returns exactly the family's session body without staged binary edits", () => {
+    const result = stage(mapA);
+    const expected = payloadOf(mapA);
+    expect(Object.keys(result).sort()).toEqual(["blocks", "border", "map", "isDirty", "canUndo", "canRedo"].sort());
+    expect(result).toEqual(expected);
+    expect(result).not.toHaveProperty("tilesetEdits");
+  });
+
+  it("refuses placement at the layout width without changing staged edits or undo history", () => {
+    const disk = readBytes(shared.path);
+    const expected = [{ path: shared.path, before: disk, after: Buffer.concat([disk, NEW_METATILE]) }];
+    stage(mapA);
+    const canUndo = store.open(mapA).stack.canUndo();
+    const width = layoutOf(mapA).width;
+    const refusal = expectRefusal(() => stage(mapA, { x: width, y: 0, blockId: 0 }), "BAD_VALUE");
+    expect(refusal.message).toBe(`${mapA}: placement (${width}, 0) is outside the map`);
+    expect(editsOf(store.open(mapA).session)).toEqual(expected);
+    expect(store.open(mapA).stack.canUndo()).toBe(canUndo);
+    expect(readBytes(shared.path)).toEqual(disk);
+  });
+
+  it("guards primary-file additions at offset zero while allowing saved primary ids", async () => {
+    const found = gbaPrimarySharedPair(project);
+    expect(found, "two maps sharing a PRIMARY metatiles file are required").toBeDefined();
+    const pair = found!;
+    const disk = readBytes(pair.path);
+    const count = savedCount(pair.path);
+    expect(count, "the appended primary id must still select the primary file").toBeLessThan(
+      project.splitFor(layoutOf(pair.b)).metatiles);
+    stageTilesetPlan(store, pair.a,
+      buildPlan([{ path: pair.path, before: disk, after: Buffer.concat([disk, NEW_METATILE]) }]), "primary append");
+    const pencil = (id: number) => edit("paint/apply", {
+      tool: "pencil", targets: [{ x: 0, y: 0 }],
+      stamp: { width: 1, height: 1, cells: [{ metatileId: id }] }, origin: { x: 0, y: 0 },
+    }, pair.b);
+    const refused = await pencil(count);
+    expect(refused.status).toBe(409);
+    expect(refused.body.code).toBe("UNSAVED_BLOCK");
+    expect(refused.body.error).toBe(`${pair.b}: ${pair.path}: block ${count} is an unsaved addition of ${pair.a}; save it there first`);
+    expect((await pencil(count - 1)).status).toBe(200);
+    expect(readBytes(pair.path)).toEqual(disk);
+  });
+
+  it("selects the primary file for an id numerically equal to a secondary file's saved count", async () => {
+    expect(shared.role, "the preferred fixture must exercise a secondary file").toBe("secondary");
+    stage(mapA);
+    const count = savedCount(shared.path);
+    if (count < shared.splitMetatiles) {
+      const result = await edit("paint/apply", {
+        tool: "pencil", targets: [{ x: 0, y: 0 }],
+        stamp: { width: 1, height: 1, cells: [{ metatileId: count }] }, origin: { x: 0, y: 0 },
+      }, mapB);
+      expect(result.status, JSON.stringify(result.body)).toBe(200);
+    }
+    // At or above the split this numeric id selects the secondary file, so the primary assertion does not apply.
   });
 
   it("refuses another map's stage while one map owns the file (NOT_OWNER, O2)", () => {
@@ -466,6 +670,65 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("GBA block-edit ownership (Plan 14.2 
     refuseUnsavedBlockRefs(store.entries(), mapA, shared.path, savedCountLocal, [savedCountLocal]);
     refuseUnsavedBlockRefs(store.entries(), mapB, "tilesets/blockedit_unowned.bin", savedCountLocal, [savedCountLocal]);
   });
+  it("keeps grid, edits, history and disk intact when Save fails mid-history, then undoes and redoes", async () => {
+    const disk = readBytes(shared.path);
+    const grid = readFileSync(gridOf(mapA));
+    const appended = Buffer.concat([disk, NEW_METATILE]);
+    const changed = flipByte(appended);
+    const appendEdits = [{ path: shared.path, before: disk, after: appended }];
+    const changedEdits = [{ path: shared.path, before: disk, after: changed }];
+    const external = Buffer.concat([disk, Buffer.alloc(16, 0x11)]);
+    const originalId = diskBlocks(mapA)[0]!.metatileId;
+    const paintedId = originalId === 0 ? 1 : 0;
+    expect(paintedId).toBeLessThan(savedCount(shared.path));
+    const restore = restoreBytes([sharedAbs(), gridOf(mapA)]);
+    const assertState = (expected: TilesetFileEdit[], id: number) => {
+      expect(editsOf(store.open(mapA).session)).toEqual(expected);
+      expect(store.open(mapA).session.blocks[0]!.metatileId).toBe(id);
+      if (expected.length) {
+        expectRefusal(() => requireTilesetOwnership(store.entries(), mapB, [shared.path]), "NOT_OWNER");
+      } else {
+        expect(() => requireTilesetOwnership(store.entries(), mapB, [shared.path])).not.toThrow();
+      }
+      expect(readBytes(shared.path)).toEqual(disk);
+      expect(readFileSync(gridOf(mapA))).toEqual(grid);
+    };
+    try {
+      stage(mapA);
+      expect((await edit("paint/begin", {})).status).toBe(200);
+      expect((await edit("paint/apply", {
+        tool: "pencil", targets: [{ x: 0, y: 0 }],
+        stamp: { width: 1, height: 1, cells: [{ metatileId: paintedId }] }, origin: { x: 0, y: 0 },
+      })).status).toBe(200);
+      expect((await edit("paint/end", {})).status).toBe(200);
+      stageTilesetPlan(store, mapA, buildPlan([{ path: shared.path, before: appended, after: changed }]), "second edit");
+      const plan = await req(`/api/edit/${mapA}/plan`);
+      expect(plan.status).toBe(200);
+      expect(plan.body.fingerprint).toBeTruthy();
+      writeFileSync(sharedAbs(), external);
+      const result = await edit("commit", { fingerprint: plan.body.fingerprint });
+      expect(result.status).not.toBe(200);
+      expect(JSON.stringify(result.body)).toContain(shared.path);
+      expect(store.has(mapA)).toBe(true);
+      expect(editsOf(store.open(mapA).session)).toEqual(changedEdits);
+      expect(store.open(mapA).session.blocks[0]!.metatileId).toBe(paintedId);
+      expect(readFileSync(gridOf(mapA))).toEqual(grid);
+      expect(readBytes(shared.path)).toEqual(external);
+      expectRefusal(() => requireTilesetOwnership(store.entries(), mapB, [shared.path]), "NOT_OWNER");
+      writeFileSync(sharedAbs(), disk);
+      for (const [route, expected, id] of [
+        ["undo", appendEdits, paintedId], ["undo", appendEdits, originalId], ["undo", [], originalId],
+        ["redo", appendEdits, originalId], ["redo", appendEdits, paintedId], ["redo", changedEdits, paintedId],
+      ] as const) {
+        expect((await edit(route, {})).status).toBe(200);
+        assertState([...expected], id);
+      }
+      expect(store.open(mapA).stack.canRedo()).toBe(false);
+    } finally {
+      restore();
+    }
+  });
+
 });
 
 describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("GBC block-edit ownership (Plan 14.2 Task 9)", () => {
@@ -510,6 +773,19 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("GBC block-edit ownership (Pla
     project = openGbcProject(root);
     const found = gbcSharedPair(project);
     expect(found, "two maps sharing a metatiles file").toBeDefined();
+    // Task 10 (conductor): staged bytes become the live overlay, and the GBC loader refuses a tileset with fewer
+    // collision records than metatiles. Real repos carry surplus records (forest: 40 blocks, 64 records); give the
+    // temp copy four surplus records under every const that uses the shared file, so appended metatiles load.
+    const collisions = new Set(project.maps
+      .map((map) => project.tileset(map.tileset))
+      .filter((tileset) => canonicalTilesetPath(tileset.metatilesPath) === found!.path)
+      .map((tileset) => resolve(root, tileset.collisionPath)));
+    for (const collision of collisions) {
+      const text = readFileSync(collision, "utf8");
+      const last = text.match(/^[ \t]*tilecoll\b.*$/gm)!.at(-1)!;
+      writeFileSync(collision, `${text.replace(/\s*$/, "\n")}${`${last}\n`.repeat(4)}`);
+    }
+    project = openGbcProject(root);
     shared = found!;
     mapA = shared.a;
     mapB = shared.b;
@@ -535,6 +811,154 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("GBC block-edit ownership (Pla
     if (sharedServer) await new Promise<void>((r) => sharedServer.close(() => r()));
     vi.restoreAllMocks();
     if (sharedRoot) removeTemp(sharedRoot);
+  });
+
+  const diskBlocks = (name: string) => [...readFileSync(gridOf(name))].map((metatileId) => ({ metatileId }));
+
+  it("keeps staged bytes, paint and ownership aligned through interleaved undo and redo", async () => {
+    const disk = readBytes(shared.path);
+    const appended = Buffer.concat([disk, NEW_METATILE]);
+    const changed = flipByte(appended);
+    const appendEdits = [{ path: shared.path, before: disk, after: appended }];
+    const changedEdits = [{ path: shared.path, before: disk, after: changed }];
+    const originalId = diskBlocks(mapA)[0]!.metatileId;
+    const paintedId = originalId === 0 ? 1 : 0;
+    expect(paintedId).toBeLessThan(savedCount(shared.path));
+    const assertState = (expected: TilesetFileEdit[], id: number) => {
+      expect(editsOf(store.open(mapA).session)).toEqual(expected);
+      expect(store.open(mapA).session.blocks[0]!.metatileId).toBe(id);
+      if (expected.length) {
+        expectRefusal(() => requireTilesetOwnership(store.entries(), mapB, [shared.path]), "NOT_OWNER");
+      } else {
+        expect(() => requireTilesetOwnership(store.entries(), mapB, [shared.path])).not.toThrow();
+      }
+      expect(readBytes(shared.path)).toEqual(disk);
+    };
+    stage(mapA);
+    assertState(appendEdits, originalId);
+    expect((await edit("paint/begin", {})).status).toBe(200);
+    expect((await edit("paint/apply", {
+      tool: "pencil", targets: [{ x: 0, y: 0 }],
+      stamp: { width: 1, height: 1, cells: [{ metatileId: paintedId }] }, origin: { x: 0, y: 0 },
+    })).status).toBe(200);
+    expect((await edit("paint/end", {})).status).toBe(200);
+    assertState(appendEdits, paintedId);
+    stageTilesetPlan(store, mapA, buildPlan([{ path: shared.path, before: appended, after: changed }]), "second edit");
+    assertState(changedEdits, paintedId);
+    for (const [route, expected, id] of [
+      ["undo", appendEdits, paintedId], ["undo", appendEdits, originalId], ["undo", [], originalId],
+      ["redo", appendEdits, originalId], ["redo", appendEdits, paintedId], ["redo", changedEdits, paintedId],
+    ] as const) {
+      expect((await edit(route, {})).status).toBe(200);
+      assertState([...expected], id);
+    }
+  });
+
+  it("keeps the staged edit, history and ownership when Save fails after an external file change", async () => {
+    const disk = readBytes(shared.path);
+    const expected = [{ path: shared.path, before: disk, after: Buffer.concat([disk, NEW_METATILE]) }];
+    const external = Buffer.concat([disk, Buffer.alloc(16, 0x11)]);
+    const restore = restoreBytes([sharedAbs(), gridOf(mapA)]);
+    try {
+      stage(mapA);
+      expect(editsOf(store.open(mapA).session)).toEqual(expected);
+      const plan = await req(`/api/edit/${mapA}/plan`);
+      expect(plan.status).toBe(200);
+      expect(plan.body.fingerprint).toBeTruthy();
+      writeFileSync(sharedAbs(), external);
+      const result = await edit("commit", { fingerprint: plan.body.fingerprint });
+      expect(result.status).not.toBe(200);
+      expect(JSON.stringify(result.body)).toContain(shared.path);
+      expect(readBytes(shared.path)).toEqual(external);
+      expect(editsOf(store.open(mapA).session)).toEqual(expected);
+      expect(store.has(mapA)).toBe(true);
+      expect(store.open(mapA).stack.canUndo()).toBe(true);
+      expectRefusal(() => stage(mapB), "NOT_OWNER");
+    } finally {
+      restore();
+    }
+  });
+
+  it("keeps a live stroke and earlier history intact after pencil and mixed-stamp refusals", async () => {
+    stage(mapA);
+    const width = project.map(mapB).width;
+    expect(width, "the shared map must fit the 2x1 stamp at (2, 0)").toBeGreaterThanOrEqual(4);
+    const original = diskBlocks(mapB);
+    const firstIndex = width + 1;
+    const firstId = original[firstIndex]!.metatileId === 0 ? 1 : 0;
+    const nextId = original[0]!.metatileId === 0 ? 1 : 0;
+    const stampId = original[2]!.metatileId === 0 ? 1 : 0;
+    expect(stampId).toBeLessThan(savedCount(shared.path));
+    expect(Math.max(firstId, nextId)).toBeLessThan(savedCount(shared.path));
+    const priorStroke = original.map((block, index) => index === firstIndex ? { ...block, metatileId: firstId } : { ...block });
+    const acceptedApply = priorStroke.map((block, index) => index === 0 ? { ...block, metatileId: nextId } : { ...block });
+    const pencil = (x: number, y: number, id: number) => edit("paint/apply", {
+      tool: "pencil", targets: [{ x, y }],
+      stamp: { width: 1, height: 1, cells: [{ metatileId: id }] }, origin: { x, y },
+    }, mapB);
+    expect((await edit("paint/begin", {}, mapB)).status).toBe(200);
+    expect((await pencil(1, 1, firstId)).status).toBe(200);
+    expect((await edit("paint/end", {}, mapB)).status).toBe(200);
+    expect(store.open(mapB).session.blocks).toEqual(priorStroke);
+    expect((await edit("paint/begin", {}, mapB)).status).toBe(200);
+    expect((await pencil(0, 0, nextId)).status).toBe(200);
+    expect(store.open(mapB).session.blocks).toEqual(acceptedApply);
+    const refusedPencil = await pencil(2, 0, newVisibleId());
+    expect(refusedPencil.status).toBe(409);
+    expect(refusedPencil.body.code).toBe("UNSAVED_BLOCK");
+    expect(store.open(mapB).session.blocks).toEqual(acceptedApply);
+    const refusedStamp = await edit("paint/apply", {
+      tool: "pencil", targets: [{ x: 2, y: 0 }, { x: 3, y: 0 }],
+      stamp: { width: 2, height: 1, cells: [{ metatileId: stampId }, { metatileId: newVisibleId() }] },
+      origin: { x: 2, y: 0 },
+    }, mapB);
+    expect(refusedStamp.status).toBe(409);
+    expect(refusedStamp.body.code).toBe("UNSAVED_BLOCK");
+    expect(store.open(mapB).session.blocks).toEqual(acceptedApply);
+    expect((await edit("paint/end", {}, mapB)).status).toBe(200);
+    expect((await edit("undo", {}, mapB)).status).toBe(200);
+    expect(store.open(mapB).session.blocks).toEqual(priorStroke);
+    expect(store.open(mapB).stack.canUndo()).toBe(true);
+    expect((await edit("undo", {}, mapB)).status).toBe(200);
+    expect(store.open(mapB).session.blocks).toEqual(original);
+  });
+
+  it("names the smallest unsaved id even when ids arrive in descending order", () => {
+    stage(mapA);
+    const count = savedCount(shared.path);
+    const refusal = expectRefusal(
+      () => refuseUnsavedBlockRefs(store.entries(), mapB, shared.path, count, [count + 1, count]), "UNSAVED_BLOCK");
+    expect(refusal.message).toBe(`${shared.path}: block ${count} is an unsaved addition of ${mapA}; save it there first`);
+  });
+
+  it("leaves no new session behind when another map's stage is refused", () => {
+    stage(mapA);
+    expect(store.has(mapB)).toBe(false);
+    expectRefusal(() => stage(mapB), "NOT_OWNER");
+    expect(store.has(mapB)).toBe(false);
+  });
+
+  it("returns exactly the family's session body without staged binary edits", () => {
+    const result = stage(mapA);
+    const entry = store.open(mapA);
+    const { eventsText: _eventsText, ...body } = payloadOf(mapA);
+    const expected = { ...body, events: structuredClone(entry.session.events) };
+    expect(Object.keys(result).sort()).toEqual(["blocks", "events", "isDirty", "canUndo", "canRedo"].sort());
+    expect(result).toEqual(expected);
+    expect(result).not.toHaveProperty("tilesetEdits");
+  });
+
+  it("refuses placement at the layout width without changing staged edits or undo history", () => {
+    const disk = readBytes(shared.path);
+    const expected = [{ path: shared.path, before: disk, after: Buffer.concat([disk, NEW_METATILE]) }];
+    stage(mapA);
+    const canUndo = store.open(mapA).stack.canUndo();
+    const width = project.map(mapA).width;
+    const refusal = expectRefusal(() => stage(mapA, { x: width, y: 0, blockId: 0 }), "BAD_VALUE");
+    expect(refusal.message).toBe(`${mapA}: placement (${width}, 0) is outside the map`);
+    expect(editsOf(store.open(mapA).session)).toEqual(expected);
+    expect(store.open(mapA).stack.canUndo()).toBe(canUndo);
+    expect(readBytes(shared.path)).toEqual(disk);
   });
 
   it("refuses another map's stage while one map owns the file (NOT_OWNER, O2)", () => {
@@ -769,4 +1193,63 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("GBC block-edit ownership (Pla
     refuseUnsavedBlockRefs(store.entries(), mapA, shared.path, savedCountLocal, [savedCountLocal]);
     refuseUnsavedBlockRefs(store.entries(), mapB, "tilesets/blockedit_unowned.bin", savedCountLocal, [savedCountLocal]);
   });
+  it("keeps grid, edits, history and disk intact when Save fails mid-history, then undoes and redoes", async () => {
+    const disk = readBytes(shared.path);
+    const grid = readFileSync(gridOf(mapA));
+    const appended = Buffer.concat([disk, NEW_METATILE]);
+    const changed = flipByte(appended);
+    const appendEdits = [{ path: shared.path, before: disk, after: appended }];
+    const changedEdits = [{ path: shared.path, before: disk, after: changed }];
+    const external = Buffer.concat([disk, Buffer.alloc(16, 0x11)]);
+    const originalId = diskBlocks(mapA)[0]!.metatileId;
+    const paintedId = originalId === 0 ? 1 : 0;
+    expect(paintedId).toBeLessThan(savedCount(shared.path));
+    const restore = restoreBytes([sharedAbs(), gridOf(mapA)]);
+    const assertState = (expected: TilesetFileEdit[], id: number) => {
+      expect(editsOf(store.open(mapA).session)).toEqual(expected);
+      expect(store.open(mapA).session.blocks[0]!.metatileId).toBe(id);
+      if (expected.length) {
+        expectRefusal(() => requireTilesetOwnership(store.entries(), mapB, [shared.path]), "NOT_OWNER");
+      } else {
+        expect(() => requireTilesetOwnership(store.entries(), mapB, [shared.path])).not.toThrow();
+      }
+      expect(readBytes(shared.path)).toEqual(disk);
+      expect(readFileSync(gridOf(mapA))).toEqual(grid);
+    };
+    try {
+      stage(mapA);
+      expect((await edit("paint/begin", {})).status).toBe(200);
+      expect((await edit("paint/apply", {
+        tool: "pencil", targets: [{ x: 0, y: 0 }],
+        stamp: { width: 1, height: 1, cells: [{ metatileId: paintedId }] }, origin: { x: 0, y: 0 },
+      })).status).toBe(200);
+      expect((await edit("paint/end", {})).status).toBe(200);
+      stageTilesetPlan(store, mapA, buildPlan([{ path: shared.path, before: appended, after: changed }]), "second edit");
+      const plan = await req(`/api/edit/${mapA}/plan`);
+      expect(plan.status).toBe(200);
+      expect(plan.body.fingerprint).toBeTruthy();
+      writeFileSync(sharedAbs(), external);
+      const result = await edit("commit", { fingerprint: plan.body.fingerprint });
+      expect(result.status).not.toBe(200);
+      expect(JSON.stringify(result.body)).toContain(shared.path);
+      expect(store.has(mapA)).toBe(true);
+      expect(editsOf(store.open(mapA).session)).toEqual(changedEdits);
+      expect(store.open(mapA).session.blocks[0]!.metatileId).toBe(paintedId);
+      expect(readFileSync(gridOf(mapA))).toEqual(grid);
+      expect(readBytes(shared.path)).toEqual(external);
+      expectRefusal(() => requireTilesetOwnership(store.entries(), mapB, [shared.path]), "NOT_OWNER");
+      writeFileSync(sharedAbs(), disk);
+      for (const [route, expected, id] of [
+        ["undo", appendEdits, paintedId], ["undo", appendEdits, originalId], ["undo", [], originalId],
+        ["redo", appendEdits, originalId], ["redo", appendEdits, paintedId], ["redo", changedEdits, paintedId],
+      ] as const) {
+        expect((await edit(route, {})).status).toBe(200);
+        assertState([...expected], id);
+      }
+      expect(store.open(mapA).stack.canRedo()).toBe(false);
+    } finally {
+      restore();
+    }
+  });
+
 });

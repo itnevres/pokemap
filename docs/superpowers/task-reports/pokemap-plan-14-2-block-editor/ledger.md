@@ -562,3 +562,163 @@ Traps seen in s7:
 - Python heredoc edits: a `\` in a TS string written from a non-raw Python string becomes `\t`/`\a`; use raw strings
   or avoid backslashes in test literals.
 - The save-test file copies whole corpora per test: a Task 8 mutant run takes ~5-7 min; budget mutation runs by count.
+
+## Execution (conductor s8, 2026-11-15)
+
+### Task 9 (High) — s8
+- Codex chain cooldown in `chain_state.json` was set before Codex's 20:28 reset; cleared by hand.
+- Impl hop: `chain.py --tier opus` → Codex `gpt-6.1-sol`. RESULT failed: try 1 and 2 verify exit 1, but the only red
+  was a pre-existing `gbcAddEventRoutes` case timing out at 8 s (load flake), and the ownership file was 26/26. Conductor
+  popped the stash and re-ran the verify: **157/157**. Committed `a34df03`. Merged the plan branch in (`b1cc25e`):
+  157/157 again.
+- Vet vs O1-O10: matches (O5 validator order + Buffer rebuild, O6 409 on redo and paint, O8 split arithmetic, shift exempt).
+- Mutations (`mut_t9.py`, s8 scratchpad, ownership file only): **17 of 21 KILLED**, incl. the plan's three (M1 ownership
+  by bytes, M2/M3 redo skips baseline, M4/M5 paint guard per family). Survivors: M11 (shift guarded) equivalent in
+  practice (a non-owner grid cannot hold an unsaved id); M12/M13 (Buffer rebuild removed) equivalent: every hub command
+  is a full snapshot, so `apply` puts real Buffers back on the candidate; the rebuild stays as the O5 defence;
+  M19 (smallest id not chosen) → test added in fix round 1.
+- Reviews (Codex astra `gpt-6-astra`, static on `rv-t9` at `a34df03`): spec **Needs changes 0/2/1** (I1 no interleaved
+  tileset/paint history or failed-Save case; I2 paint refusal atomicity and both GBA file roles unpinned; m1 stage
+  payload carried raw `tilesetEdits` Buffers, not the family body); quality **Approved 0/0/3** (m1 refused stage
+  leaves a newly opened session; m2 = spec m1; m3 `statSync` on a missing metatiles file → 500, deferred to Task 16).
+- Fix round 1: conductor inline `ebdb375` (1 file, tiny; reason: smaller than a brief): payload = family body
+  (interface field dropped), refused stage closes a session it opened. Tests hop `task-9-fix1-tests-brief.md`
+  (cases 1-8: interleaved history, failed Save, mid-stroke refusal, smallest id, no session left, payload keys,
+  placement BAD_VALUE, GBA primary role + split file selection).
+- Tests hop: `chain.py --tier opus` → Codex `gpt-6.1-sol` wrote 352 lines, then hit the Codex usage limit (reset
+  12:32 PST); RESULT parked, the diff stashed. Conductor popped it, ran it (41/42: the GBC mid-stroke case needed a
+  5-wide map, the shared GBC map is 4 wide; the brief's fault), moved the stamp to (2,0)-(3,0), vetted every case
+  (oracles: disk bytes, literal appends, raw grid decode; expected edit lists built by hand). **42/42**, `ad025c6`.
+- Task 10 rulings V1-V8 + U1-U5 written (`task-10-rulings.md`): Task 10 split into **10a server** (overlay sync,
+  caches, `tilesetVersion`) and **10b UI** (`tv=` URLs) per delegate §7; sync is lazy and idempotent (identity union).
+  10a tests hop (`task-10a-tests-brief.md`): Codex `gpt-6.1-sol` done first hop (`b67400e`, branch `p14-2-t10` in
+  the s8 scratchpad `wt-t10`, based on `ebdb375`); conductor vet fix `3676b08` (payload probe = paint begin + end, so
+  no stroke stays open across undo/redo).
+  10a red run: 10/10 fail for the right reasons. 10a impl hop 1 (`--tier sonnet --no-codex`, free lane): RESULT
+  failed: deepseek-v4.1-flash-free (verify) → inkling-2-small-free (wrote a report outside --allow) → openrouter
+  inkling-2-small (verify) → ling-3.2-flash (verify); four stashes left in the shared stash list. Hop 2: `--tier opus`
+  (Codex) after the 12:32 reset, beside the Task 9 spec re-review (astra, `rv-t9` at `ad025c6`).
+- 10b tests hop: deepseek-v4.1-flash-free (`4f2a37c`, branch `p14-2-t10b`, based on `ebdb375`); vetted (literal URLs;
+  gap: map GET loaders noting the version have no test, covered by a conductor mutation). Red run: 12 new tests fail,
+  all with `not implemented (Task 10b)` from the stub; 82 existing pass.
+- Task 9 spec re-review (astra, `ad025c6`): Needs changes 0/1/0. I2, m3 and the refused-stage finding closed; I1
+  still open in part (failed Save checked only with a one-command history and `canUndo()`, no grid-on-disk check).
+  Fix round 2, tests only (`task-9-fix2-tests-brief.md`): Codex `--tier opus`, typecheck-only verify.
+  Fix-2 hop: Codex `gpt-6.1-sol` done first hop (`e8b6aa5`, +118 test lines, one case per family: three-command
+  history, failed Save, grid/tileset disk checks, restore, undo×3/redo×3, `canRedo()` false). Vetted (oracles from disk
+  and literals). Conductor run: **44/44**. Spec re-review 2 → astra at `e8b6aa5`.
+- Task 9 merged `d0082d0` (`--no-ff`, no conflict: `b1cc25e` had already merged the plan branch); reports archived
+  `6656148`. Gate at `6656148`: see the next entry.
+- 10a impl hop 2 (`--tier opus`, Codex): RESULT failed: gpt-6.1-sol (verify, labelled infra) → gpt-6-sol (verify).
+  Both failed on the same two causes, both the conductor's: (1) the Task 9 GBC fixture stages an appended metatile
+  with no collision record; once staged bytes are the live overlay, `loadGbcTilesetByName` refuses the tileset (64
+  collision records < 65 metatiles), so 3 GBC ownership tests answered 500; (2) the brief allowed only the
+  nothing-open assertion near `gbcEditRoutes.test.ts:122`, but case 6 at :228 compares the whole body too.
+  gpt-6-sol's own report named both. Conductor took gpt-6.1-sol's stash (the fuller diff), committed it as
+  `948556d`, and fixed the fixtures in `fd0b83d`: `beforeAll` gives the GBC temp copy four surplus `tilecoll` records
+  under every const that uses the shared file (real repos carry surplus records: forest 40 blocks / 64 records), and
+  case 6's `nothing` gains `tilesetVersion: expect.any(Number)`. Inline reason: fixture rulings, 17 lines. Verify at
+  `fd0b83d`: typecheck pass, **272/272** (9 files). Diff vetted against V1-V6 (identity union with sorted map-name
+  precedence; GBA `pngCache` and GBC render/metatile/warp/coverage caches cleared; sync in both commits' `finally`;
+  `tilesetVersion` in every session payload, nothing-open bodies and both map GETs; extra: event-route replies carry it
+  too, harmless). Six failed-hop stashes remain in the shared stash list (`delegate: ... T10a-impl*`).
+  Open: V8 mutations, spec + quality reviews (astra), merge. wt-t10 lacks the Task 9 fix-2 tests (`e8b6aa5`): merge
+  the plan branch into `p14-2-t10` first and re-run, since the fix-2 GBC case also stages an append.
+- Gate at `6656148` (Task 9 merged): 4,731 pass / 1 fail / 265 files; typecheck pass, UI build pass; subjects
+  unchanged. The 1 fail is the known environmental `core/test/config/engine.test.ts` (baseline).
+- `p14-2-t10` merged the plan branch (`b9b74f2`, clean). 10a verify at `b9b74f2`: typecheck pass, **290/290** (9 files;
+  +16 fix-1 and +2 fix-2 Task 9 cases, all green under the live overlay).
+
+### Handoff s8 → s9 (2026-11-15)
+
+- Plan branch `plan-14-2-block-editor` at the s8 close-out commit: Tasks 0-9 merged. Gate at `6656148`: 4,731 / 1 /
+  265 (env fail only).
+- 10a: branch `p14-2-t10`, worktree `wt-t10` in the s8 scratchpad
+  (`C:\Users\Serve\AppData\Local\Temp\claude\8fd0350c313cb955\691846b3-528e-43d8-8d84-a3f55fae3e93\scratchpad\wt-t10`),
+  HEAD `b9b74f2`, clean, 290/290 on the brief's verify list. Next: V8 mutations (rulings file), astra spec + quality
+  reviews on a detached `rv-*` checkout at `b9b74f2` (diff base `3676b08`, plus fixture commit `fd0b83d`), fix round,
+  merge `--no-ff`, gate.
+- 10b: branch `p14-2-t10b`, worktree `wt-t10b` (same scratchpad), `4f2a37c`, red 12/12 on the stub. Brief ready:
+  `.superpowers/sdd/2026-11-10-pokemap-plan-14-2-block-editor/task-10b-impl-brief.md`. Starts after 10a merges (merge
+  the plan branch into `p14-2-t10b` first). Gap for a mutation: map GET loaders noting the version have no test.
+- Trap (tell: GBC 500 "collision ... has 64 entries, fewer than its 65 metatiles"): a GBC staged plan that appends a
+  metatile without a collision record breaks every GBC load once the overlay is live. Real plans (Task 11 saveAsNew)
+  append or reuse a surplus record; test fixtures must too (see `fd0b83d`).
+- Trap: Task 11's GBC tests must stage complete plans (metatiles + collision), for the same reason.
+- `rv-t9` (s8 scratchpad, detached `e8b6aa5`) and `wt-t9` (s7 scratchpad, `p14-2-t9`, merged) can be removed: unlink
+  `node_modules` junctions first with `[System.IO.Directory]::Delete`, never `git worktree remove --force`.
+- Deferred to Task 16 (added s8): Task 9 quality m3 (`statSync` on a missing metatiles file answers 500).
+## Review session (Fable, 2026-11-15; no code, no gate)
+
+- Scope: review of the unfinished plans for an implementer below Fable. Plans read inline (delegate skip: the review
+  judgment is the task itself). Second opinion: `ask.py gemini` as a cold implementer, on this plan (it agreed on the
+  Task 11/13/14 splits) and on Plan H, the roadmap and Plans 3-4 (its line numbers were off by 5-10; its claims were
+  checked against the plan text only).
+- Findings, checked against `plan-14-2-block-editor` at `21bf0b9`: the Save plan body drops `tilesetEffects`
+  (`index.ts:255`, `gbcEditRoutes.ts:248`); `post` parses JSON only, so a PNG preview cannot go through it; the dialog
+  had no path to the session's `post` (the family session hooks were in no task); no hub code builds `StagedGrids`
+  (keyed by map name); a GBA tile has no palette for the sheet route; `MetatilePalette.tsx:207` starts a drag on a
+  right press.
+- Written: `task-11-rulings.md` (B1-B13, traps T1-T5), `task-12-rulings.md` (M1-M8), `task-13-rulings.md` (D1-D12),
+  `task-14-rulings.md` (N1-N10) in `.superpowers/sdd/2026-11-10-pokemap-plan-14-2-block-editor/`; the plan's "Rulings
+  addendum (2026-11-15)"; Plan H edits (in-flight list, verify lines, Tasks A, C, E, F, I); one RESUME line.
+- Not checked: branch `p14-2-t10` beyond its overlay API; every item marked "confirm at vet" in the rulings.
+- These rulings are Claude's calls. The user approved writing them, not each one: B8 preview as base64 JSON, B7
+  `tileIds` and GBA `?pal=`, M5 `BlockEditSession`, D1 constant spec, N1 reuse of `WorldContextMenu`, Plan H Task C's
+  barrier design, Plan H Task F's `DataDefect` recommendation (still the user's to confirm).
+
+## Execution (conductor s9, 2026-11-17)
+
+- Launch mismatch: the master started this session as "conductor s7" with `s7-launch-prompt.md` and an s6-era state
+  (Tasks 6-8 open). The repo was ahead: Tasks 0-9 merged, handoff s8 → s9 above, `a533694` on top (docs: plan
+  granularization, roadmap D24-D33). Repo taken as truth; this session is **s9**. Checked at start: no vitest,
+  mutation or chain process alive; main checkout clean apart from the review session's uncommitted ledger entry and
+  plan "Rulings addendum (2026-11-15)" (committed with this entry) and `.claude/settings.json` (not ours, left).
+  s9 scratchpad: `C:\Users\Serve\AppData\Local\Temp\claude\8fd0350c313cb955\009f4107-2463-46ca-a327-683443f8da86\scratchpad\`.
+
+### Task 10a (High) — s9
+- V8 mutations: `<s9>/mut_t10a.py` on `wt-t10` (s8 scratchpad) at `b9b74f2`, 18 mutants (V8's six plus own), test
+  file `tilesetOverlay.test.ts` only (~2 min a mutant). Anchors checked (each matches once).
+- Reviews: Codex `gpt-6-astra`, spec and quality as separate runs, static on detached `<s9>/rv-t10` at `b9b74f2`,
+  brief `task-10a-review-brief.md` (scope `6656148..b9b74f2`), reports `task-10a-{spec,quality}-review.md`.
+- Mutations: **13 of 18 KILLED** (`<s9>/mut_t10a.out`), incl. V8's skip `metatileCache.clear()` (M1), payload
+  version without sync (M2/M3), one owner only (M4), always changed (M7), GBA `pngCache` (M8). Survivors: M5/M6
+  (commit `finally` sync removed; every read route syncs first, so only a spy inside the commit request sees it →
+  fix-1 B), M10 (GBC `coverageCache` not cleared: no coverage case → fix-1 D), M13 (last owner wins: no
+  same-path unit → fix-1 E), M18 (GBC `warpCache` not cleared): **equivalent**, `gbcWarpLinks`
+  (`core/src/world/nearWarpAdapters.ts`) reads map events only, no tileset file; V3 lists it, clearing it is harmless.
+- Reviews (astra): spec **Needs changes 0/2/0** (I1 case 4 does not pin commit-time sync, writer failure never
+  reached; I2 cases 3-4 use staged output as expected pixels); quality **Needs changes 0/2/0** (I1 **real defect**:
+  event create `structuredClone`s the session (`addEventRoutes.ts:278,348`), the pushed snapshot replaces the
+  session's `tilesetEdits` with `Uint8Array`s, the next sync installs them in the overlay and GBA rendering throws
+  (`readUInt16LE`); I2 = spec I1). Checked against the code: all four hold. V1-V6 otherwise implemented exactly.
+- Fix round 1: tests hop `task-10a-fix1-tests-brief.md` (A independent `replacementPng` oracle, B sync spy inside the
+  commit request + injected writer failure, C stage → event create → render/undo/redo/save with Buffers kept, D GBC
+  coverage after a staged collision edit, E owner precedence unit), `chain.py --tier opus`. Then the conductor fixes
+  `addEventRoutes.ts` (outside the File map → added to Plan H's in-flight list in the same commit).
+- Fix-1 tests hop: `chain.py --tier opus` RESULT **parked** (Codex usage limit; message "try again at 5:14 AM";
+  chain.py had set a 12 h cooldown, corrected by hand to 05:15). Per the user ruling of 2026-11-13 (free models or
+  Anthropic while Codex is out) → `--tier sonnet --no-codex`: deepseek-v4.1-flash-free done first hop (`f611c9f`,
+  +240 lines). Vetted (oracles: hub bytes before staging, disk, literals; spy results read before any later request).
+  Red run: 14/16, both 4c red; GBA 4c first failed on a fixture gap (the tileset temp copy has no `charmap.txt`, BAD_OPTION
+  on script text) → test copies it into the temp root, then both 4c red on `Buffer.isBuffer`.
+- Fix `42fbf39` (inline, 4 lines + 1 test line; reason: smaller than a brief): `addEventRoutes.ts` create (both
+  families) sets `candidate.tilesetEdits = entry.session.tilesetEdits` after `structuredClone`. Verify at `42fbf39`:
+  typecheck pass, **296/296** (9 files). Plan H in-flight list gains `addEventRoutes.ts` at merge time (editing Plan H
+  on the task branch would conflict with `a533694`).
+- Re-reviews (astra, same reviewer): `task-10a-rereview-brief.md`, static on `<s9>/rv-t10` at `42fbf39`.
+
+### Task 11a (High) — s9
+- Worktree `<s9>/wt-t11`, branch `p14-2-t11` from `b9b74f2` (10a head; merge the plan branch in after 10a merges).
+- Confirmed at vet before the brief: B3 GBA mask = `project.profile.blockMetatileIdMask` (`core/src/config/engine.ts`,
+  used by `load/blocks.ts`); B10 `stageTilesetPlan` calls `requireTilesetOwnership` (`blockEditOwnership.ts:119`).
+- Tests hop: `chain.py --tier opus`, brief `task-11a-tests-brief.md`, verify typecheck only.
+- Tests hop: Codex `gpt-6.1-sol` done first hop (`f2065c6`; it ran its own spec/quality sub-reviews and fixed
+  most findings). Conductor vet `5ab718c` (inline: oracle rulings, a brief would cost more): the two 410-line family
+  files were duplicates → one module `test/helpers/blockEditRoutesSuite.ts` + two 4-line test files; GBC fixture
+  chosen by disk sheet size (was chosen by the route's own `tileCount`); sheet `tileCount` checked against the tile
+  PNGs on disk; GBA invalid tile derived from disk (was from the route's `tileIds`); GBA preview block must use a
+  nonzero palette (from disk bytes), so "preview ignores map palettes" can fail. **Ruling B7a (s9):** GBA
+  `tileCount = split.tiles + secondary tile count`; `tileIds[i] = i` for primary tiles and for `i >= split.tiles`,
+  `null` for the gap between the primary tiles and the split. GBC `tileCount` = tiles in the tileset PNG.
+  Stub `blockEditRoutes.ts` starts with a BOM (cosmetic; the impl replaces it).
