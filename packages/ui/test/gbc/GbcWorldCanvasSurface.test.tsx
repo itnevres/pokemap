@@ -574,9 +574,11 @@ describe("GBC world surface tileset version (Task 10b)", () => {
     const host = await mount();
     const original = tileCalls.imageUrls.at(-1);
     expect(original).toBeTypeOf("function");
+    const callsBefore = tileCalls.imageUrls.length;
     // No version bump and no view change: the function identity reaching useWorldTiles must not churn.
     host.rerender(<GbcWorldCanvas time="day" />);
     await settle();
+    expect(tileCalls.imageUrls.length, "the rerender must reach useWorldTiles").toBeGreaterThan(callsBefore);
     expect(tileCalls.imageUrls.at(-1)).toBe(original);
   });
 
