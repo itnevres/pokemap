@@ -627,6 +627,35 @@ export function suite(family: "gba" | "gbc") {
         expect(layers.length).toBeGreaterThan(0);
         expect(data.options.layerTypes).toEqual(layers.sort((a, b) => a.value - b.value));
       });
+
+      // Derived from the fix-2 brief's naming example (the rest of the brief is unreadable from this worktree: reads of
+      // the .superpowers SDD folder are permission-denied). Assumes B15a: a layer-type enum member whose initializer the
+      // parser cannot read is skipped, and the block GET still answers 200. The header written here is the source of
+      // every expectation; the original header is restored in finally.
+      it("B15a: unreadable layer member is skipped, GET stays 200", async () => {
+        const headerPath = resolve(root, "include/global.fieldmap.h");
+        const restore = restoreBytes([headerPath]);
+        const id = await idFor();
+        try {
+          writeFileSync(headerPath, [
+            "#ifndef GUARD_GLOBAL_FIELDMAP_H",
+            "#define GUARD_GLOBAL_FIELDMAP_H",
+            "enum MetatileLayerType {",
+            "    METATILE_LAYER_TYPE_NORMAL = 0,",
+            "    METATILE_LAYER_TYPE_COVERED,",
+            "    METATILE_LAYER_TYPE_SPLIT = 1 << 3,",
+            "};",
+            "#endif // GUARD_GLOBAL_FIELDMAP_H",
+            "",
+          ].join("\n"));
+          const result = await request(`/api/edit/${encoded(pair.a)}/block?block=${id}`);
+          expect(result.status, JSON.stringify(result.body)).toBe(200);
+          expect(result.body.options.layerTypes).toEqual([
+            { name: "NORMAL", value: 0 },
+            { name: "COVERED", value: 1 },
+          ]);
+        } finally { restore(); }
+      });
     } else {
       it("10: rejects a short tile draft", async () => {
         const data = await block(pair.a, `block=${await idFor()}`);
