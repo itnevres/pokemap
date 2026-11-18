@@ -106,6 +106,27 @@ describe("useEditSessionCore announces the tileset version", () => {
     expect(getByAltText("metatile").getAttribute("src")).toBe("/api/metatile/Route101/0.png?tv=6");
   });
 
+  it("U7b: a 200 discard whose body is not JSON still resets local state (store unchanged)", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("not json", { status: 200 })));
+    let discard: (() => Promise<void>) | null = null;
+    let markDirty: (() => void) | null = null;
+    function CoreProbe() {
+      const core = useEditSessionCore("/api/edit", "Route101", seed);
+      const { apply } = core;
+      discard = core.discard;
+      markDirty = () => { apply({ state: () => ({ n: 9 }), isDirty: true }); };
+      return <output data-testid="dirty">{String(core.isDirty)}</output>;
+    }
+    noteTilesetVersion(3);
+    const container = render(<CoreProbe />).container;
+    const dirtyOf = () => container.querySelector('[data-testid="dirty"]')!.textContent;
+    act(() => { markDirty!(); });
+    expect(dirtyOf()).toBe("true");
+    await act(async () => { await discard!(); });
+    expect(dirtyOf()).toBe("false");
+    expect(currentTilesetVersion()).toBe(3);
+  });
+
   it.each(["post", "discard"])("ignores a late %s response from before reset", async (operation) => {
     let resolveOld!: (response: Response) => void;
     const oldReply = new Promise<Response>((resolve) => { resolveOld = resolve; });

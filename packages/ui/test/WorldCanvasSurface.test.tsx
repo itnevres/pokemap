@@ -474,6 +474,17 @@ describe("GBA world surface tileset version (Task 10b)", () => {
     expect(requests()).toContain("/api/render/A.png?tv=5");
   });
 
+  it("spec m2: a re-render without a version bump keeps the imageUrl passed to useWorldTiles identical", async () => {
+    tileCalls.imageUrls.length = 0;
+    const host = await mount();
+    const original = tileCalls.imageUrls.at(-1);
+    expect(original).toBeTypeOf("function");
+    // No version bump and no view change: the function identity reaching useWorldTiles must not churn.
+    host.rerender(<WorldCanvas />);
+    await settle();
+    expect(tileCalls.imageUrls.at(-1)).toBe(original);
+  });
+
   afterEach(() => { resetTilesetVersion(); });
   const requests = () => FakeImage.instances.map((image) => image.src);
 
