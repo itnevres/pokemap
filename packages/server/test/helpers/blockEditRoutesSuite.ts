@@ -364,16 +364,25 @@ export function suite(family: "gba" | "gbc") {
       const preview = await edit(name, `block/preview${family === "gbc" ? "?time=nite" : ""}`, body);
       expect(typeof preview.png).toBe("string");
       expect(Buffer.from(preview.png, "base64")).toEqual(reference);
+      let invalidName = name;
+      let invalidBody = body;
       if (family === "gba") {
-        const { primary, secondary, split } = gbaSheetTiles(name);
-        const missing = primary < split ? primary : split + secondary;
-        if (missing > 0x3ff) throw new Error("fixture needs a representable GBA tile id outside the sheet");
-        body.request.draft.entries[0].tile = missing;
+        // A layout whose tiles fill all 1024 ids has no representable tile outside its sheet: use the first map (by
+        // name) whose sheet has a gap, from the tile PNGs on disk.
+        const gap = (map: string) => {
+          const { primary, secondary, split } = gbaSheetTiles(map);
+          const missing = primary < split ? primary : split + secondary;
+          return missing <= 0x3ff ? missing : undefined;
+        };
+        invalidName = [...gba.mapNames()].sort().find(map => gap(map) !== undefined)!;
+        if (invalidName === undefined) throw new Error("fixture needs a representable GBA tile id outside the sheet");
+        invalidBody = identity(0, await block(invalidName, "block=0"));
+        invalidBody.request.draft.entries[0].tile = gap(invalidName)!;
       } else {
         expect(data.sheet.tileIds).not.toContain(0x60);
         body.request.draft.tiles[0] = 0x60;
       }
-      const invalid = await request(`/api/edit/${encoded(name)}/block/preview`, body);
+      const invalid = await request(`/api/edit/${encoded(invalidName)}/block/preview`, invalidBody);
       expect(invalid.status).toBe(400);
       expect(invalid.body.error).toContain(family === "gba" ? "entries" : "tiles");
       expect(typeof invalid.body.code).toBe("string");
