@@ -1006,3 +1006,17 @@ Traps seen in s7:
   of Minors covered by `297439b`. 10b spec **Approved** (0/0/0), quality **Approved** (0/0/1: identity tests do not
   prove a rerender happened) → conductor `0cb5e3d` (inline, 2 lines per file: assert `useWorldTiles` saw a new call);
   the two files 40/40.
+
+### Task 10b merged; handoff s11 → s12 — s11
+- Merged `p14-2-t10b` (`0cb5e3d`) `--no-ff` → **`ed3b657`**. **Gate at `ed3b657`: 4,776 pass / 1 fail / 267 files;
+  typecheck pass, UI build pass; subjects unchanged** (fail: the known `engine.test.ts` env fail). 10b reports archived
+  to `_archive/`.
+- 10b live check: not run. The hub bumps `tilesetVersion` only when a session's `tilesetEdits` change
+  (`server/src/tilesetOverlay.ts`), and no HTTP route stages tileset edits until 11b's `apply`, so the staged-edit
+  `tv=` path cannot be driven from the real app yet. s12 runs the smoke (both families, no `tv=` at version 0, project
+  switch) and folds the staged-edit half into 11b's live check.
+- 11a (`p14-2-t11` `297439b`) approved, **not merged** (user asked for a handoff at the context limit).
+- Delegation: user reset the OpenAI usage on 2026-11-18; s11 cleared `cooldown.codex` and checked `gpt-6-astra`
+  answers. OpenRouter free lane did all four s11 hops. OpenCode Zen pool rests to ~21:39 2026-11-18.
+- Handoff: `.superpowers/sdd/2026-11-10-pokemap-plan-14-2-block-editor/s12-launch-prompt.md` (scope: merge 11a + gate,
+  10b live smoke, Task 11b).
