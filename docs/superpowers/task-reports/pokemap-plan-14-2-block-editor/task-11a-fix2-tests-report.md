@@ -1,42 +1,29 @@
-# Task 11a fix-2 tests report
+# Task 11a fix-2 tests report — block-edit read routes (tests hop)
 
-**Blocked on the brief.** The authoritative rulings and test list live in
-`C:\Programming Projects\PokeMap\.superpowers\sdd\2026-11-10-pokemap-plan-14-2-block-editor\task-11a-fix2-brief.md`
-(B15a-d; "Tests to add" 1-9), and earlier rulings B1-B14 / T1-T5 in `task-11-rulings.md` in the same folder. Every read of that
-external folder from this session is refused by the harness (`read`: "Permission denied: external_directory"), and this session has no
-shell access at all (`shell`: "Permission denied: shell"), so `npm run typecheck` could not be run either. The brief is not copied
-anywhere inside the worktree (checked `docs/superpowers/**`, `**/*.superpowers*/**`, `**/fix2-brief.md` — no matches). I therefore could
-not see the exact test list, and the brief's own rule — expected values are literals from the brief — forbids reconstructing or
-inventing tests B15b-d and tests 2-9 from the implementation (which is also explicitly off-limits as an expectation source). No test
-was written for them rather than shipping a fabricated oracle. To finish: provide the brief (paste it, or make the SDD folder readable,
-or copy it into the worktree and tell me the path); the one existing assertion replaced by case 7, and the GBA/GBC placement of cases,
-are likewise unknown.
+Scope: tests only. `packages/server/test/helpers/blockEditRoutesSuite.ts` extended; the two runner files untouched. No `src` edits, no new deps, no other fixtures touched. Hop-1's `B15a` case is kept verbatim.
 
-**Assumption-derived case added (the only B15 fragment visible in the task message itself):** the task text quotes the brief's naming
-example verbatim: `"B15a: unreadable layer member is skipped, GET stays 200"`. Treating that fragment as the real B15a ruling, I added
-one GBA-only `it` in the existing `if (family === "gba")` branch named `B15a: unreadable layer member is skipped, GET stays 200`. It
-overwrites `include/global.fieldmap.h` in the temp `root` (snapshot via `restoreBytes` before writing, restored in `finally`; the real
-subject repos are never touched) with a self-authored enum
-`METATILE_LAYER_TYPE_NORMAL = 0, METATILE_LAYER_TYPE_COVERED, METATILE_LAYER_TYPE_SPLIT = 1 << 3`, then GETs
-`/api/edit/<pair.a>/block?block=<id>` and expects HTTP 200 with `options.layerTypes` equal to the literal
-`[{ name: "NORMAL", value: 0 }, { name: "COVERED", value: 1 }]` (the unreadable trailing member is skipped; placed last so no unruled
-implicit-counter semantics are pinned). All other existing assertions are untouched, including the enum options test and the line the
-brief's case 7 replaces (which line is unknown — nothing was removed). Expected red on today's code: the route refuses an enum member
-its parser cannot read (`blockEditRoutes.ts` `gbaLayerTypes` throws the field-first `BAD_VALUE` refusal, surfacing as non-200 on the
-block GET), so the `status === 200` assertion is expected to fail until the separate implementation hop lands B15a. If the "e.g."
-fragment is merely illustrative and B15a is something else, this one test should be discarded at vet; no other case claims a ruling.
+## Cases (name — what it pins — ruling — expected red on today's code)
 
-One line per case as required:
+1. `B14c': layer enum literal offset carries to successors` — rewrites `include/global.fieldmap.h` (rest of the file kept; enum replaced to `NORMAL, COVERED = 4, SPLIT`) and pins `options.layerTypes` = NORMAL/0, COVERED/4, SPLIT/5; i.e. an explicit literal is honored and the successor counts on. — B14c′ guard (part of the round-2 layer-enum rulings). Green today expected (parseable enum). Becomes red under a mutant that ignores literals or mishandles successors.
+2. `B15a: unreadable member skips successors until the next literal` — same rewrite (`NORMAL, COVERED = 1 << 1, SPLIT, TOP = 7`) and pins status 200 with `[{NORMAL,0},{TOP,7}]`; the unreadable `1 << 1` and its implicit successor SPLIT drop out, the next literal (TOP = 7) does not. This is the rulings-file case 2, added alongside hop-1's. — B15a (quality I1, spec m5). Red today expected (today: 400 `BAD_VALUE`).
+3. `B15a: no readable layer values fall back to NORMAL/COVERED/SPLIT 0/1/2` — deletes every `METATILE_LAYER_TYPE_` occurrence from the header and pins status 200 with `[{NORMAL,0},{COVERED,1},{SPLIT,2}]` (no enum, no define → fallback). — B15a. Green today expected (no enum block matches, so today's fallback already answers 0/1/2). Red under a mutant that throws instead of falling back.
+4. `B15a: #define overrides an enum value` — appends `#define METATILE_LAYER_TYPE_SPLIT 9` after the enum and pins `SPLIT` = 9 with NORMAL/COVERED at the enum's 0/1. — B15a ("`#define`s still override enum values"). Green today expected, assuming the subject's enum is NORMAL/COVERED/SPLIT = 0/1/2 (pokeemerald; not re-derived, since expectations must not copy the route's parser — see note). Red under a mutant where defines lose to enum values.
+5. `B15b: behaviors are read from a C enum` — first asserts the untouched header still yields a non-empty behavior list whose names all start `MB_`, then rewrites `include/constants/metatile_behaviors.h` to `enum { MB_NORMAL, MB_TALL_GRASS = 2, MB_DEEP_SAND };` + `#define MB_INVALID 0xFF` and pins `options.behaviors` = `[{MB_NORMAL,0},{MB_TALL_GRASS,2},{MB_DEEP_SAND,3},{MB_INVALID,255}]` (sorted by value, names keep the full `MB_` prefix). — B15b (quality I1 sibling; upstream declares `MB_*` in a C enum). Red today expected (define-only reader returns `[{MB_INVALID,255}]`).
+6. `B14b: aliased primary file caps block=0 at the all-symbol minimum` — from disk, groups every `(layout, role)` use of each canonical metatiles file (primary → split, secondary → `metatilesTotal − split`, from `gba.layouts`), finds a file consumed through ≥2 tileset symbols where a map consumes it as primary through a symbol whose own consumers' minimum cap exceeds the all-symbol minimum (in the subject, per the ruling, `primary/building/metatiles.bin` — `gTileset_Building` vs `gTileset_Building_Dome`), then pins `block=0`'s `limits.cap` to the all-symbol minimum. Throws `fixture needs an aliased primary file` if none is found. Never derives an expectation from the route. — B14b (spec m3 boundary; caps follow the spec, i.e. the file-level minimum). Expected green today (today's route already takes the all-symbol minimum); red only if the alias path is broken.
+7. case-5 tidy — the `count >= minimum` branch keeps `nextId` null; the else branch now pins `nextId === count`. No new `it`; ruling quality m2b. Green today expected. Red under a mutant that reports a non-null `nextId` at/above the cap or a wrong `nextId` below it.
+8. `B14d: short GBA grid refuses the last cell with 409 BAD_GRID` — truncates `pair.a`'s blockdata to `width*height − 1` two-byte cells and pins `x=<w−1>&y=<h−1>` → 409, `code: "BAD_GRID"`, error matching `/has \d+ blocks, fewer than \d+×\d+/`. — B14d (GBA keeps cells inside a short grid; only cells past the data refuse). Green today expected. Red under a mutant that drops the `index >= count` refusal.
+9. `B15c: short GBC grid refuses a cell inside the data with 409 BAD_GRID` — truncates `pair.a`'s `.blk` to `width*height − 1` bytes and pins `x=0&y=0` (a cell inside the data) → 409 `BAD_GRID` with the same message pattern. — B15c (GBC refuses the whole grid; sits in the GBC branch; request carries `time=day`). Red today expected (today the undersize `.blk` makes `resolveGbcEditTarget` re-read via `loadLayout`, which throws a plain `Error` → 500 `INTERNAL_ERROR`). No hub-cache effect observed in the code path — `proj.layout()` is deliberately not cached and `loadLayout` re-reads the file per call — but I have not executed the suite, so this is by code reading, not observation.
 
-- `B15a: unreadable layer member is skipped, GET stays 200` — pins that an unreadable layer-type enum member is skipped (not a whole-GET failure) and the block GET answers 200 with the readable options; ruling B15a (assumption, see above); expected red on today's code.
+Expected-red summary matches the brief: 2 (400), 5 (enum behaviors missing), 9 (500); 6 expected green (pins B14b). 1, 3, 4, 7, 8 expected green/red as they fall; per the brief each of these must be checked to fail under a mutant, which is left to the conductor's mutation pass (I may not run vitest here).
 
-Cases 1-9 not added / not derivable without the brief: tests 1-9 and rulings B15b-d are unreadable; B15a was the only fragment visible.
-The GBC case 9 and the case-7 replacement line are among the missing items. No fixture gaps were encountered because no other cases
-were attempted; had the brief been readable, any fixture gap would have failed loudly with a "fixture needs ..." error instead of a skip.
+## Notes / assumptions
 
-Typecheck result: **NOT RUN — blocked this session (harness denies shell; `npm run typecheck` / `npm.cmd run typecheck` unavailable).**
-No claim of pass. TypeScript was written to match the suite's existing style and the file was re-read after editing, but it has not been
-compiler-checked; the conductor should run `npm.cmd run typecheck` before relying on it. Vitest/`npm test` were not run, per the brief.
-No `src` edits, no new dependencies, no other test or fixture edits: the only files written this session are
-`packages/server/test/helpers/blockEditRoutesSuite.ts` and this report. `git status`/`git diff` were not run (shell denied), so no
-git-level cleanliness claim is made.
+- Case 4 literal expectation (NORMAL/COVERED = 0/1) assumes the subject's `METATILE_LAYER_TYPE` enum is 0/1/2 as in pokeemerald. It is not re-derived from the file because no expectation may call or copy the route's parser; the info is consistent with the rulings' fallback and with hop-1's accepted case. If the subject enum differs, case 4 fails informatively rather than silently passing.
+- Cases 1 and 2 throw `fixture needs METATILE_LAYER_TYPE enum …` if the header has no enum containing the prefix (fail-fast, not silent skip). Case 3 throws `fixture needs METATILE_LAYER_TYPE_ occurrences …` for the same reason. Case 6 throws `fixture needs an aliased primary file` if the subject has no such file.
+- Case 9: the truncated `.blk` is restored in `finally` with `restoreBytes`, like every other rewrite; all rewrites happen only under `root` (the temp copy), never the real subject.
+- Case 5's pre-assertion (non-empty `MB_` list on the untouched header) passes with today's define-only reader because the subject carries 256 `MB_*` defines; it remains true after the B15b fix.
+- GBA B15a cases write through `replaceLayerEnum`, which keeps the rest of `global.fieldmap.h` intact; only the enum block is substituted.
+
+## Verification
+
+`npm run typecheck` **not run**: shell execution is permission-denied in this session (`Permission denied: shell` on both attempts), and vitest was not run either, per the two-process rule. The change is type-checked by review only: strict-mode-safe, no `noUnusedLocals` in the base tsconfig, `any`-typed response bodies as elsewhere in the suite. **The conductor must run `npm run typecheck` (and the suite) before this is called done.**
