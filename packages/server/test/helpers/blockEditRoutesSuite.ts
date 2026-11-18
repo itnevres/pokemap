@@ -492,16 +492,18 @@ export function suite(family: "gba" | "gbc") {
       revision: data.revision as string,
     });
     // Copying another block: same request shape, the source's content, the subject's revision.
+    // `source` is a `findChangedSource` result: `{ id, data: <GET body of the source block>, png }`.
     const copiedRequest = (data: any, source: any): any => {
       const body = draftRequest(data);
+      const from = source.data.block;
       if (family === "gba") {
         body.request.draft = {
-          entries: source.block.entries.map((entry: Record<string, unknown>) => ({ ...entry })),
-          behavior: source.block.behavior, layerType: source.block.layerType,
+          entries: from.entries.map((entry: Record<string, unknown>) => ({ ...entry })),
+          behavior: from.behavior, layerType: from.layerType,
         };
       } else {
         body.request.draft = {
-          tiles: [...source.block.tiles], collision: [...source.block.collision], palettes: [],
+          tiles: [...from.tiles], collision: [...from.collision], palettes: [],
         };
       }
       return body;
@@ -1224,8 +1226,10 @@ export function suite(family: "gba" | "gbc") {
       const first = await blockApply(pair.a, checkBody(data));
       expect(first.status, JSON.stringify(first.body)).toBe(200);
       expectSessionBody(first.body);
-      // The body may open a session (both injected sessionBody helpers do), but the
-      // no-op plan stages no file bytes and pushes no undo command.
+      // Ruling B10a (s10): the body may open a session (both injected sessionBody helpers do), but the
+      // no-op plan stages no file bytes, pushes no undo command and leaves the map clean.
+      expect(first.body.isDirty).toBe(false);
+      expect(first.body.canUndo).toBe(false);
       expect(undoDepth(pair.a)).toBe(0);
       expect(changedStaged(pair.a)).toEqual([]);
       const map = await mapGet(pair.a);
