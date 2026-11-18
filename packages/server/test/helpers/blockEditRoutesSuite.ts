@@ -570,6 +570,9 @@ export function suite(family: "gba" | "gbc") {
         vi.spyOn(gbcSessions, "createGbcEditSessionStore").mockImplementation(project => (store = factory(project)));
         server = createServer(createGbcProjectHandler(root).handle);
       }
+      // 11b fixture scans run seconds of synchronous disk work between requests; Node's default 5 s keep-alive
+      // closes the idle socket while fetch reuses it (ECONNRESET seen in s10's red run).
+      server.keepAliveTimeout = 120_000;
       await new Promise<void>(done => server.listen(0, "127.0.0.1", done));
       base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
     }, 120_000);
