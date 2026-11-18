@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import type { GbcMapPayload } from "@pokemap/core/src/gbc/wire.js";
 import { isGbcMapPayload } from "../guards.js";
-import { fetchGuarded, useGuardedFetch, type UseGuardedFetchResult } from "../../hooks/useGuardedFetch.js";
-import { noteTilesetVersion } from "../../shared/tilesetVersion.js";
+import { fetchGuarded, type UseGuardedFetchResult } from "../../hooks/useGuardedFetch.js";
+import { noteTilesetVersion, tilesetGeneration } from "../../shared/tilesetVersion.js";
 
 export interface UseGbcMapResult extends UseGuardedFetchResult<GbcMapPayload> {
   /** Plan 7 Task 5: re-reads the payload in place (after a save committed). Unlike a URL change this never
@@ -27,17 +27,31 @@ export interface UseGbcMapResult extends UseGuardedFetchResult<GbcMapPayload> {
 export function useGbcMap(name: string | null): UseGbcMapResult {
   const url = name === null ? null : `/api/map/${encodeURIComponent(name)}`;
   const label = name === null ? undefined : `/api/map/${name}`;
-  const base = useGuardedFetch(url, isGbcMapPayload, label);
+  const [base, setBase] = useState<UseGuardedFetchResult<GbcMapPayload>>({ data: null, error: null });
+  useEffect(() => {
+    setBase({ data: null, error: null });
+    if (url === null) return;
+    let cancelled = false;
+    const generation = tilesetGeneration();
+    fetchGuarded(url, isGbcMapPayload, label).then((data) => {
+      if (!cancelled) {
+        noteTilesetVersion((data as { tilesetVersion?: unknown }).tilesetVersion, generation);
+        setBase({ data, error: null });
+      }
+    }).catch((error: unknown) => {
+      if (!cancelled) setBase({ data: null, error: error instanceof Error ? error.message : String(error) });
+    });
+    return () => { cancelled = true; };
+  }, [url, label]);
   const [fresh, setFresh] = useState<{ url: string; forBase: GbcMapPayload; data: GbcMapPayload } | null>(null);
   const baseData = base.data;
   const reload = useCallback(async () => {
     if (url === null || baseData === null) return;
+    const generation = tilesetGeneration();
     const data = await fetchGuarded(url, isGbcMapPayload, label);
+    noteTilesetVersion((data as { tilesetVersion?: unknown }).tilesetVersion, generation);
     setFresh({ url, forBase: baseData, data });
   }, [url, label, baseData]);
   const data = fresh && fresh.url === url && fresh.forBase === baseData ? fresh.data : baseData;
-  useEffect(() => {
-    noteTilesetVersion((data as { tilesetVersion?: unknown } | null)?.tilesetVersion);
-  }, [data]);
   return { data, error: base.error, reload };
 }

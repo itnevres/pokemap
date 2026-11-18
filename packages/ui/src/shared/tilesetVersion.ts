@@ -4,6 +4,7 @@
 import { useSyncExternalStore } from "react";
 
 let version = 0;
+let currentGeneration = 0;
 const listeners = new Set<() => void>();
 
 const subscribe = (listener: () => void): (() => void) => {
@@ -21,12 +22,14 @@ function setVersion(next: number): void {
 
 /** Records a tileset version announced by a session or map reply. Lower values never lower the store. */
 export function noteTilesetVersion(v: unknown, generation?: number): void {
+  if (generation !== undefined && generation !== currentGeneration) return;
   if (typeof v !== "number" || !Number.isFinite(v)) return;
   if (v > version) setVersion(v);
 }
 
 /** Drops the recorded version back to 0 (test isolation). */
 export function resetTilesetVersion(): void {
+  currentGeneration++;
   setVersion(0);
 }
 
@@ -40,4 +43,4 @@ export function currentTilesetVersion(): number {
   return version;
 }
 
-export function tilesetGeneration(): number { return 0; }
+export function tilesetGeneration(): number { return currentGeneration; }

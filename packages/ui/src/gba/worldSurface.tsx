@@ -13,7 +13,7 @@ import { fetchGuarded } from "../hooks/useGuardedFetch.js";
 import { useCoverage } from "../hooks/useCoverage.js";
 import { isDrawnByDefault } from "../world/visibility.js";
 import { isRecord, isWireConflict } from "../world/conflictAcceptance.js";
-import { currentTilesetVersion, useTilesetVersion } from "../shared/tilesetVersion.js";
+import { useTilesetVersion } from "../shared/tilesetVersion.js";
 
 /** The pixel size a placement's PNG renders at natively (`renderLayout`,
  *  border 0): 16px per tile, same constant the CLI's `render-world --scale
@@ -166,13 +166,6 @@ function useGbaSurfaceCoverage() {
 const NO_LEVELS: never[] = [];
 
 export function createGbaWorldSurface(): WorldSurfaceAdapter<GbaWorldPlacement, WireConflict, GbaSurfaceWorld> {
-  // Read the store at call time: the adapter object is memoised, but a tileset bump re-renders the surface and re-runs
-  // useWorldTiles, which then asks for this URL. At version 0 the URL is exactly today's.
-  const renderUrl = (p: GbaWorldPlacement, version: number | undefined): string => {
-    const tv = currentTilesetVersion();
-    const query = [version ? `v=${version}` : "", tv > 0 ? `tv=${tv}` : ""].filter(Boolean).join("&");
-    return `/api/render/${encodeURIComponent(p.map)}.png${query ? `?${query}` : ""}`;
-  };
   return {
     nativePx: TILE_PX,
     useWorld: useGbaWorld,
@@ -211,7 +204,13 @@ export function createGbaWorldSurface(): WorldSurfaceAdapter<GbaWorldPlacement, 
         },
       }));
     },
-    imageUrl: renderUrl,
+    get imageUrl() {
+      const tv = useTilesetVersion();
+      return useCallback((p: GbaWorldPlacement, version: number | undefined): string => {
+        const query = [version ? `v=${version}` : "", tv > 0 ? `tv=${tv}` : ""].filter(Boolean).join("&");
+        return `/api/render/${encodeURIComponent(p.map)}.png${query ? `?${query}` : ""}`;
+      }, [tv]);
+    },
     cacheKey: 0,
     drawnByDefault,
     drawExtraLayers: (ctx, { world, view }) => {
