@@ -1,11 +1,13 @@
 import type { IncomingMessage } from "node:http";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import type { Project } from "@pokemap/core/src/project.js";
 import type { GbcProject } from "@pokemap/core/src/gbc/project.js";
 import { BlockEditRefusal, type BlockEditPlan, type FileOverlay, type StagedGrids } from "@pokemap/core/src/blockEdit/types.js";
 import { planGbaBlockEdit, type GbaBlockDraft, type GbaBlockEditRequest } from "@pokemap/core/src/blockEdit/gbaOps.js";
 import { gbcSheetToTileId, planGbcBlockEdit, resolveGbcEditTarget, type GbcBlockDraft, type GbcBlockEditRequest } from "@pokemap/core/src/blockEdit/gbcOps.js";
 import { gbaGridIds, gbcGridIds } from "@pokemap/core/src/blockEdit/grids.js";
+import { canonicalTilesetPath } from "@pokemap/core/src/blockEdit/canonicalTilesetPath.js";
+import { gbaConsumingLayouts } from "@pokemap/core/src/blockEdit/usage.js";
 import { loadGbcReservedTiles } from "@pokemap/core/src/blockEdit/gbcSheet.js";
 import { gbaDefineValues } from "@pokemap/core/src/addEvent/gbaOptions.js";
 import { parseConstDefs } from "@pokemap/core/src/gbc/load/asm.js";
@@ -78,6 +80,41 @@ function time(url: URL) {
   if ("error" in parsed) return bad(`time: ${parsed.error}`);
   return parsed.time;
 }
+function requireGridCell(path: string, count: number, width: number, height: number, index: number): void {
+  if (index >= count) {
+    throw new BadGrid(`${path}: has ${count} blocks, fewer than ${width}×${height}`);
+  }
+}
+class BadGrid extends Error {}
+function gbaLayerTypes(project: Project): { name: string; value: number }[] {
+  const prefix = "METATILE_LAYER_TYPE_", path = `${project.paths.root}/include/global.fieldmap.h`;
+  const header = existsSync(path) ? readFileSync(path, "utf8").replace(/\/\*[\s\S]*?\*\/|\/\/[^\r\n]*/g, "") : "";
+  const values = new Map<string, number>();
+  for (const match of header.matchAll(/\benum\s*(?:\w+\s*)?\{([^}]*)\}/g)) {
+    if (!match[1]!.includes(prefix)) continue;
+    let next = 0;
+    for (const part of match[1]!.split(",")) {
+      if (!part.trim()) continue;
+      const member = part.trim().match(/^(\w+)(?:\s*=\s*([+-]?(?:0x[\da-f]+|\d+))(?:u(?:ll?)?|ll?u?)?)?$/i);
+      if (!member) return bad("options.layerTypes: expected enum members with integer values");
+      if (member[2] !== undefined) {
+        const literal = member[2], sign = literal.startsWith("-") ? -1 : 1;
+        const digits = literal.replace(/^[+-]/, "");
+        const radix = /^0x/i.test(digits) ? 16 : /^0\d/.test(digits) ? 8 : 10;
+        if (radix === 8 && /[89]/.test(digits)) return bad("options.layerTypes: invalid octal enum value");
+        next = sign * Number.parseInt(digits, radix);
+      }
+      if (!Number.isSafeInteger(next)) return bad("options.layerTypes: expected safe integer values");
+      if (member[1]!.startsWith(prefix)) values.set(member[1]!.slice(prefix.length), next);
+      next++;
+    }
+  }
+  for (const [name, value] of gbaDefineValues(project.paths.root, header)) {
+    if (name.startsWith(prefix) && value !== undefined) values.set(name.slice(prefix.length), value);
+  }
+  return values.size > 0 ? [...values].map(([name, value]) => ({ name, value })).sort((a, b) => a.value - b.value)
+    : ["NORMAL", "COVERED", "SPLIT"].map((name, value) => ({ name, value }));
+}
 // Binary bodies are passed to the hub's PNG-aware send adapter; JSON uses the same callback.
 function routes(deps: CommonDeps, read: (name: string, url: URL, version: number) => unknown,
   sheet: (name: string, url: URL) => Raster, preview: (name: string, url: URL, body: unknown) => Raster): Routes {
@@ -88,6 +125,7 @@ function routes(deps: CommonDeps, read: (name: string, url: URL, version: number
     const match = req.method === "GET" ? block ?? image : req.method === "POST" ? draft : null;
     if (!match) return false;
     const fail = (error: unknown, planner = false) => {
+      if (error instanceof BadGrid) { send(409, { error: error.message, code: "BAD_GRID" }); return; }
       const refusal = error instanceof BlockEditRefusal;
       send(refusal ? (planner || error instanceof GetConflict || error.code !== "BAD_VALUE" ? 409 : 400) : 500,
         { error: error instanceof Error ? error.message : String(error), code: refusal ? error.code : "INTERNAL_ERROR" });
@@ -133,7 +171,7 @@ export function createGbaBlockEditRoutes(
       readFileSync(`${project.paths.root}/include/constants/metatile_behaviors.h`, "utf8"))]
       .filter((entry): entry is [string, number] => entry[0].startsWith("MB_") && entry[1] !== undefined)
       .map(([name, value]) => ({ name, value })),
-    layerTypes: ["NORMAL", "COVERED", "SPLIT"].map((name, value) => ({ name, value })),
+    layerTypes: gbaLayerTypes(project),
   });
   return routes(deps, (name, url, version) => {
     const c = context(name), selection = selector(url), stagedGrids = grids();
@@ -144,6 +182,7 @@ export function createGbaBlockEditRoutes(
       const sharing = project.mapNames().filter(map => project.layoutForMap(map).blockdataFilepath === c.layout.blockdataFilepath)
         .sort().find(map => stagedGrids.has(map));
       const ids = sharing === undefined ? gbaGridIds(parseBlocks(readFileSync(`${project.paths.root}/${c.layout.blockdataFilepath}`), project.profile), project.profile.blockMetatileIdMask) : stagedGrids.get(sharing)!;
+      requireGridCell(c.layout.blockdataFilepath, ids.length, c.layout.width, c.layout.height, selection.y * c.layout.width + selection.x);
       id = ids[selection.y * c.layout.width + selection.x]!;
     }
     const secondary = id >= c.split.metatiles, ts = secondary ? c.secondary : c.primary;
@@ -151,6 +190,12 @@ export function createGbaBlockEditRoutes(
     if (local >= ts.metatileCount) return bad(`block: invalid metatile id ${id}`);
     const block: GbaBlockDraft = { entries: ts.metatile(local), behavior: ts.behavior(local), layerType: ts.layerType(local) };
     const req: GbaBlockEditRequest = { map: name, metatileId: id, mode: "ok", from: "palette", draft: block };
+    const symbol = secondary ? c.layout.secondaryTileset : c.layout.primaryTileset;
+    const file = canonicalTilesetPath(project.tilesetPaths(symbol).metatilesBin);
+    const cap = Math.min(...project.tilesetSymbols()
+      .filter(alias => canonicalTilesetPath(project.tilesetPaths(alias).metatilesBin) === file)
+      .flatMap(alias => gbaConsumingLayouts(project, alias))
+      .map(use => use.role === "primary" ? use.split.metatiles : project.constants.metatilesTotal - use.split.metatiles));
     let plan: BlockEditPlan;
     try { plan = planGbaBlockEdit(project, req, deps.overlay(), stagedGrids); }
     catch (error) {
@@ -161,8 +206,8 @@ export function createGbaBlockEditRoutes(
     return { blockId: id, viaBorder: false, revision: plan.revision, block,
       sheet: { url: `/api/block-sheet/${encodeURIComponent(name)}.png?tv=${version}`, tileCount: c.tileCount, tileIds: c.tileIds },
       options: options(), usage: plan.usage, owner: owner(store.entries(), plan),
-      limits: { nextId: nextId(() => planGbaBlockEdit(project, { ...req, mode: "saveAsNew" }, deps.overlay(), stagedGrids)),
-        cap: secondary ? project.constants.metatilesTotal - c.split.metatiles : c.split.metatiles } };
+      limits: { nextId: ts.metatileCount >= cap ? null : nextId(() => planGbaBlockEdit(project, { ...req, mode: "saveAsNew" }, deps.overlay(), stagedGrids)),
+        cap } };
   }, (name, url) => {
     const c = context(name), pal = url.searchParams.has("pal") ? queryInteger(url, "pal") : 0;
     if (pal > 12) return bad("pal: expected an integer from 0 to 12");
@@ -185,9 +230,9 @@ export function createGbaBlockEditRoutes(
       return { tile, palette, xFlip: entry.xFlip, yFlip: entry.yFlip };
     });
     const behavior = integer(d.behavior, "draft.behavior"), layer = integer(d.layerType, "draft.layerType");
-    if ((behavior & ~project.profile.metatileBehaviorMask) !== 0) return bad("draft.behavior: value exceeds mask");
+    if (behavior > project.profile.metatileBehaviorMask || (behavior & ~project.profile.metatileBehaviorMask) !== 0) return bad("draft.behavior: value exceeds mask");
     const layerMask = project.profile.metatileLayerTypeMask >>> maskShift(project.profile.metatileLayerTypeMask);
-    if ((layer & ~layerMask) !== 0) return bad("draft.layerType: value exceeds mask");
+    if (layer > layerMask || (layer & ~layerMask) !== 0) return bad("draft.layerType: value exceeds mask");
     const image = renderMetatile(id, c.primary, c.secondary, c.split, project.profile, { overrideEntries: entries });
     if (image.outOfRange) return bad(`request.metatileId: invalid metatile ${id}`);
     return image;
@@ -214,6 +259,13 @@ export function createGbcBlockEditRoutes(
   };
   return routes(deps, (name, url, version) => {
     const c = context(name), selection = selector(url), stagedGrids = grids();
+    if (!("id" in selection)) {
+      if (selection.x >= c.map.width || selection.y >= c.map.height) return bad("cell: outside the map");
+      const sharing = project.maps.filter(map => map.blkPath === c.map.blkPath && stagedGrids.has(map.name))
+        .map(map => map.name).sort()[0];
+      const count = sharing === undefined ? readFileSync(`${project.root}/${c.map.blkPath}`).length : stagedGrids.get(sharing)!.length;
+      requireGridCell(c.map.blkPath, count, c.map.width, c.map.height, selection.y * c.map.width + selection.x);
+    }
     const target = "id" in selection ? { blockId: selection.id, viaBorder: false } : resolveGbcEditTarget(project, name, selection, stagedGrids);
     const source = c.ts.metatiles[target.blockId], collision = c.ts.collision[target.blockId];
     if (!source || !collision) return bad(`block: invalid block id ${target.blockId}`);
