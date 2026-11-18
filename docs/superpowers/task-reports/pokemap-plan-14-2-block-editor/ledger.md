@@ -707,6 +707,45 @@ Traps seen in s7:
   typecheck pass, **296/296** (9 files). Plan H in-flight list gains `addEventRoutes.ts` at merge time (editing Plan H
   on the task branch would conflict with `a533694`).
 - Re-reviews (astra, same reviewer): `task-10a-rereview-brief.md`, static on `<s9>/rv-t10` at `42fbf39`.
+- Round-2 mutations (`<s9>/mut_t10a_r2.out`, 16 tests): **6 of 6 KILLED** (M5, M6 by cases 4/4b; M10 by 2b; M13 by
+  the precedence unit; M19/M20, the fix removed per family, by 4c). Task 10a total: 19 of 20 KILLED, M18 equivalent.
+- Re-reviews (astra): spec **Approved 0/0/1** (minor: 4b did not assert the writer ran) → `6310725` (4b asserts the
+  writer's single result is a throw and the reply carries the injected message; 2/2 green); quality **Approved 0/0/0**.
+- Task 10a merged **`d1b7eee`** (`--no-ff`, clean). Plan H in-flight list gains `addEventRoutes.ts` (main checkout).
+
+### Power outage (2026-11-17 ~08:30) — s9
+- The PC lost power during the first gate at `d1b7eee`, with the 11a impl hop (Codex, `--tier opus`) and the 10b impl
+  hop (`--tier sonnet`, deepseek-v4.1-flash-free) both waiting behind a vitest lock (`<s9>/lockrun.py`: a directory lock
+  every verify takes, so two chains never run vitest at once). All six background jobs died; no completion records.
+- Recovery (master's checklist): no vitest/tinypool/chain/codex/opencode process left; stale `<s9>/vitest.lock`
+  removed; 14 `%LOCALAPPDATA%\Temp\pokemap-test-roots-*` folders (11-10 to 11-17) deleted. Main checkout clean at
+  `d1b7eee` (docs edits only). `wt-t11` and `wt-t10b`: each hop had written a complete, uncommitted diff (stubs
+  replaced, mounts and B12 in place; 10b: store + URL builders + loaders + reset) and died waiting on the lock for its
+  verify. Kept, read against B1-B13 / U1-U5, and verified by the conductor instead of re-hopping (cheaper than a rerun).
+- Reran: full gate at `d1b7eee`, then the 11a and 10b verify lists on the leftover diffs, one vitest at a time.
+- **Gate at `d1b7eee`: 4,746 pass / 2 fail / 266 files; typecheck pass, UI build pass; subjects unchanged.** Fails:
+  the known environmental `core/test/config/engine.test.ts` (RESUME) and `packages/ui/test/WorldCanvas.test.tsx`
+  "drag pans the world by the mouse delta" (`FakeImage.instances[0]` undefined at :497 under full-suite load; the file
+  passes alone, 103/103; not on a known-flake list: recorded here as a load flake, 10a changed no UI code).
+- Leftover verifies: 10b typecheck pass, `packages/ui` **2311/2311** → committed as the hop's output `f6cedeb`
+  (deepseek-v4.1-flash-free). 11a 310/311: the GBA case 7 invalid-tile fixture was the conductor's (pair.a's layout
+  fills all 1024 tile ids, so no representable id lies outside its sheet) → vet `9a51768` takes the first map whose
+  sheet has a gap; case 7 green. Impl committed as the hop's output `e1d84aa` (Codex gpt-6.1-sol).
+- 10a reports archived to `_archive/`.
+
+### Task 11a (High) — s9, after the outage
+- Impl vetted against B1-B13: B13 reads `store.entries()`/`has()` only; GET planner refusals → 409 (`GetConflict`),
+  structural/`BAD_VALUE` → 400; sheet per B7/B7a; preview through the family renderer (GBA `renderMetatile` with
+  `overrideEntries`, GBC `renderGbcMapMetatile` with a patched tileset); B12 in both `signPlan` bodies. Noted for the
+  quality review: `blockEditRoutes.ts` imports `readBody` from `index.ts` (cycle).
+- Mutations `<s9>/mut_t11a.py` (16: the rulings' six per family plus own) and reviews (astra spec + quality on
+  `<s9>/rv-t11` at `9a51768`, brief `task-11a-review-brief.md`) running.
+
+### Task 10b (High) — s9, after the outage
+- Impl vetted against U1-U5. Mutations `<s9>/mut_t10b.py` (12, incl. the map GET loader gap N1/N2) and reviews (astra
+  spec + quality on `<s9>/rv-t10b` at `f6cedeb`, brief `task-10b-review-brief.md`) running.
+- Subjects at the gate: GBA HEAD moved to `590fdf303` with a clean tree since s8 (`97ac21d4b`, 10 porcelain lines): the
+  user's own change, not touched.
 
 ### Task 11a (High) — s9
 - Worktree `<s9>/wt-t11`, branch `p14-2-t11` from `b9b74f2` (10a head; merge the plan branch in after 10a merges).
