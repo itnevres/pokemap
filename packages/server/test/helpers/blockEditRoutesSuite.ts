@@ -9,7 +9,9 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest
 import { openProject, type Project } from "@pokemap/core/src/project.js";
 import { openGbcProject, type GbcProject } from "@pokemap/core/src/gbc/project.js";
 import { canonicalTilesetPath } from "@pokemap/core/src/blockEdit/canonicalTilesetPath.js";
+import { gbaConsumingLayouts } from "@pokemap/core/src/blockEdit/usage.js";
 import type { TilesetFileEdit } from "@pokemap/core/src/blockEdit/types.js";
+import { parseBlocks } from "@pokemap/core/src/load/blocks.js";
 import { stageTilesetPlan, type BlockEditPlan } from "../../src/blockEditOwnership.js";
 import { createProjectHandler } from "../../src/index.js";
 import { createGbcProjectHandler } from "../../src/gbcRoutes.js";
@@ -142,6 +144,206 @@ export function suite(family: "gba" | "gbc") {
     };
     const historyLength = (name: string) =>
       (store.open(name).stack as unknown as { undoStack: unknown[] }).undoStack.length;
+    // Task 11b: check and apply take `{ request, revision }`. Expected values below come from an
+    // earlier GET block reply, from disk, or from literals; never from the route being exercised.
+    const blockCheck = (name: string, body: unknown) =>
+      request(`/api/edit/${encoded(name)}/block/check`, body);
+    const blockApply = (name: string, body: unknown) =>
+      request(`/api/edit/${encoded(name)}/block/apply`, body);
+    const checkBody = (data: any) => ({ request: identity(data.blockId, data).request, revision: data.revision });
+    // One planner-visible field changes, so a plan has edits and (for saveAsNew) no placement.
+    const changedDraft = (data: any) => {
+      const body = identity(data.blockId, data);
+      if (family === "gba") {
+        const mask = gba.profile.metatileBehaviorMask;
+        const next = (body.request.draft.behavior ^ 1) & mask;
+        if (next === body.request.draft.behavior) throw new Error("fixture needs a behavior mask with bit 0");
+        body.request.draft.behavior = next;
+      } else {
+        const other = (data.options.collision as string[]).find(name => name !== data.block.collision[0]);
+        if (other === undefined) throw new Error("fixture needs two GBC collision names");
+        body.request.draft.collision[0] = other;
+      }
+      return body.request;
+    };
+    const stagedEdits = (name: string): TilesetFileEdit[] =>
+      ((store.open(name).session.tilesetEdits ?? []) as TilesetFileEdit[]);
+    const gbaTilesetFile = (symbol: string) =>
+      canonicalTilesetPath(gba.tilesetPaths(symbol).metatilesBin);
+    const gbaFileCount = (symbol: string) => readFileSync(resolve(root, gbaTilesetFile(symbol))).length / 16;
+    const gbaCandidates = (name: string): number[] => {
+      const layout = gba.layoutForMap(name), split = gba.splitFor(layout);
+      const ids: number[] = [];
+      for (let id = 0; id < Math.min(gbaFileCount(layout.primaryTileset), split.metatiles); id++) ids.push(id);
+      for (let local = 0; local < gbaFileCount(layout.secondaryTileset); local++) ids.push(split.metatiles + local);
+      return ids;
+    };
+    const gbaGridCache = new Map<string, readonly number[]>();
+    const gbaCells = (path: string): readonly number[] => {
+      const cached = gbaGridCache.get(path);
+      if (cached) return cached;
+      const ids = parseBlocks(readFileSync(resolve(root, path)), gba.profile).map(block => block.metatileId);
+      gbaGridCache.set(path, ids);
+      return ids;
+    };
+    // The planner's own confirm predicate (gbaOps.ts `usedElsewhere`), recomputed from disk:
+    // another map on a consuming layout draws the layout's target id, in its grid or border.
+    const gbaDrawnCache = new Map<string, Set<number>>();
+    const gbaDrawnLocals = (name: string, symbol: string): Set<number> => {
+      const key = `${name}\0${symbol}`;
+      const cached = gbaDrawnCache.get(key);
+      if (cached) return cached;
+      const layoutById = new Map(gba.layouts.map(layout => [layout.id, layout]));
+      const locals = new Set<number>();
+      for (const use of gbaConsumingLayouts(gba, symbol)) {
+        if (!gba.mapNames().some(other => other !== name && gba.layoutForMap(other).id === use.layout)) continue;
+        const layout = layoutById.get(use.layout)!;
+        for (const id of [...gbaCells(layout.blockdataFilepath), ...gbaCells(layout.borderFilepath)]) {
+          const local = use.role === "primary" ? id : id - use.split.metatiles;
+          if (local >= 0) locals.add(local);
+        }
+      }
+      gbaDrawnCache.set(key, locals);
+      return locals;
+    };
+    const gbaConfirm = (name: string, id: number): boolean => {
+      const layout = gba.layoutForMap(name), split = gba.splitFor(layout);
+      const primary = id < split.metatiles;
+      const local = primary ? id : id - split.metatiles;
+      return gbaDrawnLocals(name, primary ? layout.primaryTileset : layout.secondaryTileset).has(local);
+    };
+    const findGbaConfirm = async (want: boolean) => {
+      for (const name of [...gba.mapNames()].sort()) {
+        for (const id of gbaCandidates(name)) {
+          if (gbaConfirm(name, id) !== want) continue;
+          const data = await request(`/api/edit/${encoded(name)}/block?block=${id}`);
+          if (data.status !== 200 || data.body.blockId !== id) continue;
+          return { name, id, data: data.body };
+        }
+      }
+      return undefined;
+    };
+    const gbcMetaCache = new Map<string, string>();
+    const gbcMetaFile = (name: string): string => {
+      const cached = gbcMetaCache.get(name);
+      if (cached) return cached;
+      const path = canonicalTilesetPath(gbc.tileset(gbc.map(name).tileset).metatilesPath);
+      gbcMetaCache.set(name, path);
+      return path;
+    };
+    const gbcDrawnCache = new Map<string, Set<number>>();
+    const gbcDrawn = (name: string): Set<number> => {
+      const cached = gbcDrawnCache.get(name);
+      if (cached) return cached;
+      const map = gbc.map(name), bytes = readFileSync(resolve(root, map.blkPath));
+      const ids = new Set<number>([map.border]);
+      for (let i = 0; i < Math.min(bytes.length, map.width * map.height); i++) ids.add(bytes[i]!);
+      gbcDrawnCache.set(name, ids);
+      return ids;
+    };
+    const gbcOtherDrawn = (name: string, id: number): boolean =>
+      gbc.maps.some(other => other.name !== name && gbcMetaFile(other.name) === gbcMetaFile(name)
+        && gbcDrawn(other.name).has(id));
+    const findGbcConfirm = async (want: boolean) => {
+      const count = readFileSync(resolve(root, gbcMetaFile(pair.a))).length / 16;
+      for (let id = 0; id < count; id++) {
+        if (gbcOtherDrawn(pair.a, id) !== want) continue;
+        const data = await request(`/api/edit/${encoded(pair.a)}/block?block=${id}`);
+        if (data.status !== 200 || data.body.blockId !== id) continue;
+        return { name: pair.a, id, data: data.body };
+      }
+      return undefined;
+    };
+    const findGbaSaveAsNew = async () => {
+      for (const name of [...gba.mapNames()].sort()) {
+        const layout = gba.layoutForMap(name);
+        if (gba.mapNames().filter(other =>
+          gba.layoutForMap(other).blockdataFilepath === layout.blockdataFilepath).length > 1) continue;
+        const map = await mapGet(name);
+        const id = map.blocks[0]?.metatileId;
+        if (typeof id !== "number") continue;
+        const data = await request(`/api/edit/${encoded(name)}/block?x=0&y=0`);
+        if (data.status !== 200 || data.body.blockId !== id || data.body.limits.nextId == null) continue;
+        const split = gba.splitFor(layout), primary = id < split.metatiles;
+        const symbol = primary ? layout.primaryTileset : layout.secondaryTileset;
+        const count = gbaFileCount(symbol);
+        const expected = primary ? count : split.metatiles + count;
+        if (data.body.limits.nextId !== expected) continue;
+        return { name, cell: { x: 0, y: 0 }, data: data.body, expected, width: map.layout.width as number,
+          files: [gbaTilesetFile(symbol), canonicalTilesetPath(gba.tilesetPaths(symbol).attributesBin),
+            layout.blockdataFilepath] };
+      }
+      return undefined;
+    };
+    const findGbcSaveAsNew = async () => {
+      for (const name of [...gbc.maps.map(map => map.name)].sort()) {
+        const map = gbc.map(name);
+        if (gbc.maps.filter(other => other.blkPath === map.blkPath).length > 1) continue;
+        const metaPath = gbcMetaFile(name);
+        const count = readFileSync(resolve(root, metaPath)).length / 16;
+        if (count >= 256) continue;
+        const collisionPath = canonicalTilesetPath(gbc.tileset(map.tileset).collisionPath);
+        const records = readFileSync(resolve(root, collisionPath), "utf8")
+          .match(/^[ \t]*tilecoll\b.*$/gm)?.length ?? 0;
+        if (records < count) continue;
+        const payload = await mapGet(name), width = payload.layout.width as number;
+        const index = payload.blocks.findIndex((cell: { metatileId: number }) => cell.metatileId !== 0);
+        if (index < 0) continue;
+        const cell = { x: index % width, y: Math.floor(index / width) };
+        const data = await request(`/api/edit/${encoded(name)}/block?x=${cell.x}&y=${cell.y}`);
+        if (data.status !== 200 || data.body.limits.nextId !== count) continue;
+        return { name, cell, data: data.body, expected: count, width, files: [metaPath, collisionPath, map.blkPath] };
+      }
+      return undefined;
+    };
+    // The changed (not merely restored) entries a failed apply must leave untouched.
+    const changedStaged = (name: string): TilesetFileEdit[] =>
+      store.has(name) ? stagedEdits(name).filter(edit => !edit.after.equals(edit.before)) : [];
+    const undoDepth = (name: string): number => store.has(name) ? historyLength(name) : 0;
+    // The planner's G5 predicate: a changed entry whose tile resolves to a different
+    // (symbol, local) in at least two layouts consuming the target tileset. Recomputed
+    // from layout splits and tile PNG sizes on disk; the target id's own entry is changed.
+    const findGbaCrossHalf = async () => {
+      const layouts = new Map(gba.layouts.map(layout => [layout.id, layout]));
+      const tiles = (layoutId: string, role: "primary" | "secondary"): number => {
+        const layout = layouts.get(layoutId);
+        if (!layout) throw new Error(`unknown layout ${layoutId}`);
+        return pngTiles(gba.tilesetPaths(role === "primary" ? layout.primaryTileset : layout.secondaryTileset).tilesPng);
+      };
+      for (const symbol of [...gba.tilesetSymbols()].sort()) {
+        const uses = gbaConsumingLayouts(gba, symbol);
+        if (uses.length < 2) continue;
+        const source = (use: (typeof uses)[number], tile: number) => tile < use.split.tiles
+          ? { symbol: use.role === "primary" ? symbol : use.pairedWith, local: tile }
+          : { symbol: use.role === "secondary" ? symbol : use.pairedWith, local: tile - use.split.tiles };
+        const valid = (use: (typeof uses)[number], tile: number) => tile < use.split.tiles
+          ? tile < tiles(use.layout, "primary")
+          : tile - use.split.tiles < tiles(use.layout, "secondary");
+        for (let tile = 0; tile <= 0x3ff; tile++) {
+          if (!uses.every(use => valid(use, tile))) continue;
+          const sources = uses.map(use => source(use, tile));
+          if (!sources.some(item => item.symbol !== sources[0]!.symbol || item.local !== sources[0]!.local)) continue;
+          for (const use of uses) {
+            const layout = layouts.get(use.layout);
+            if (!layout) continue;
+            const name = [...gba.mapNames()].sort()
+              .find(map => gba.layoutForMap(map).id === use.layout);
+            if (name === undefined) continue;
+            const split = gba.splitFor(layout);
+            const id = use.role === "primary"
+              ? (tile < split.metatiles ? tile : undefined)
+              : split.metatiles + tile - split.tiles;
+            if (id === undefined || id < 0) continue;
+            const data = await request(`/api/edit/${encoded(name)}/block?block=${id}`);
+            if (data.status !== 200 || data.body.blockId !== id) continue;
+            const index = (data.body.block.entries as { tile: number }[]).findIndex(entry => entry.tile !== tile);
+            if (index < 0) continue;
+            return { name, id, data: data.body, tile, index };
+          }
+        }
+      }
+      return undefined;
+    };
 
     beforeAll(async () => {
       root = (family === "gba" ? copyGbaTilesetProject() : copyGbcSubjectToTemp()).replace(/\\/g, "/");
