@@ -1,8 +1,21 @@
 import { useCallback } from "react";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { GbcWorldPayload } from "@pokemap/core/src/gbc/wire.js";
 import { GbcWorldCanvas, type GbcWorldCanvasProps } from "../../src/gbc/GbcWorldCanvas.js";
+import { noteTilesetVersion, resetTilesetVersion } from "../../src/shared/tilesetVersion.js";
+
+const tileCalls = vi.hoisted(() => ({ imageUrls: [] as Array<unknown> }));
+vi.mock("../../src/canvas/useWorldTiles.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/canvas/useWorldTiles.js")>();
+  return {
+    ...actual,
+    useWorldTiles: (...args: Parameters<typeof actual.useWorldTiles>) => {
+      tileCalls.imageUrls.push(args[0].imageUrl);
+      return actual.useWorldTiles(...args);
+    },
+  };
+});
 
 const observations = vi.hoisted(() => ({ reload: vi.fn() }));
 
@@ -170,6 +183,7 @@ const response = (payload: unknown) => ({
 let posts: Array<{ body: unknown; outcome: ReturnType<typeof deferred<Response>> }>;
 
 beforeEach(() => {
+  resetTilesetVersion();
   FakeImage.instances = [];
   FakeResizeObserver.instances = [];
   posts = [];
@@ -191,6 +205,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  resetTilesetVersion();
   ctxByCanvas.clear();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -537,4 +552,56 @@ it.each([false, true])("an incoming line follows the destination's refreshed war
   // Refreshed half-block destination B+(4,5)=(14,5)->(140,100), despite source's old destEvent.
   expect(endpoints()).toEqual([10, 70, 140, 100]);
   expect(requests.filter((request) => request.map === "MapA")).toHaveLength(1);
+});
+
+// Task 10b: world tile URLs carry the hub's tileset version, so a staged tileset edit re-requests the map.
+describe("GBC world surface tileset version (Task 10b)", () => {
+
+  it("passes a new imageUrl function and requests the bumped version", async () => {
+    resetTilesetVersion();
+    tileCalls.imageUrls.length = 0;
+    await mount();
+    const original = tileCalls.imageUrls.at(-1);
+    expect(original).toBeTypeOf("function");
+    act(() => noteTilesetVersion(5));
+    await settle();
+    expect(tileCalls.imageUrls.at(-1)).not.toBe(original);
+    expect(imageUrls()).toContain("/api/render/MapA.png?time=day&tv=5");
+  });
+
+  it("spec m2: a re-render without a version bump keeps the imageUrl passed to useWorldTiles identical", async () => {
+    tileCalls.imageUrls.length = 0;
+    const host = await mount();
+    const original = tileCalls.imageUrls.at(-1);
+    expect(original).toBeTypeOf("function");
+    const callsBefore = tileCalls.imageUrls.length;
+    // No version bump and no view change: the function identity reaching useWorldTiles must not churn.
+    host.rerender(<GbcWorldCanvas time="day" />);
+    await settle();
+    expect(tileCalls.imageUrls.length, "the rerender must reach useWorldTiles").toBeGreaterThan(callsBefore);
+    expect(tileCalls.imageUrls.at(-1)).toBe(original);
+  });
+
+  afterEach(() => { resetTilesetVersion(); });
+  const imageUrls = () => FakeImage.instances.map((image) => image.src);
+
+  it("keeps today's URL at version 0 and re-requests a visible tile with tv=", async () => {
+    await mount();
+    expect(imageUrls()).toContain("/api/render/MapA.png?time=day");
+
+    act(() => noteTilesetVersion(5));
+    await settle();
+
+    expect(imageUrls()).toContain("/api/render/MapA.png?time=day&tv=5");
+  });
+
+  it("keeps a per-map v parameter alongside time and tv", async () => {
+    await mount({ tileVersions: { MapA: 1 } });
+    expect(imageUrls()).toContain("/api/render/MapA.png?time=day&v=1");
+
+    act(() => noteTilesetVersion(5));
+    await settle();
+
+    expect(imageUrls()).toContain("/api/render/MapA.png?time=day&v=1&tv=5");
+  });
 });

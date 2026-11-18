@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { AddEventForm, EventKind } from "@pokemap/core/src/addEvent/types.js";
 import { useVisit } from "./useVisit.js";
 import { invalidateEventOptions } from "./useEventOptions.js";
+import { noteTilesetVersion, tilesetGeneration } from "./tilesetVersion.js";
 
 /** Refusals keep their server code; callers suppress failures belonging to a retired visit. */
 export class EditSessionError extends Error {
@@ -79,6 +80,7 @@ export function useEditSessionCore<State>(base: string, mapName: string | null, 
       if (!owner.isCurrent()) return null;
       const ticket: EditTicket = { map: mapName, seed, seq: ++seq.current.issued, isCurrent: owner.isCurrent };
       try {
+        const generation = tilesetGeneration();
         const r = await fetch(`${base}/${encodeURIComponent(mapName)}${path}`, body === undefined ? { method: "POST" } : { method: "POST", body: JSON.stringify(body) });
         // Legacy callers can opt out of body reads on errors; create and redo (header ownership) always need refusal codes.
         const structured = readServerError || path === "/event/create" || path === "/redo";
@@ -88,6 +90,7 @@ export function useEditSessionCore<State>(base: string, mapName: string | null, 
           throw new EditSessionError(typeof error?.error === "string" ? error.error : `POST ${base}/${mapName}${path} -> ${r.status}`,
             typeof error?.code === "string" ? error.code : undefined, !owner.isCurrent());
         }
+        noteTilesetVersion((data as { tilesetVersion?: unknown } | null)?.tilesetVersion, generation);
         if (owner.isCurrent() && (path === "/undo" || path === "/redo" || path === "/event/create")) invalidateEventOptions();
         return { data: data as R, ticket };
       } catch (error) {
@@ -133,8 +136,12 @@ export function useEditSessionCore<State>(base: string, mapName: string | null, 
     const owner = visitRef.current;
     await barrier();
     if (!owner.isCurrent()) return;
+    const generation = tilesetGeneration();
     const r = await fetch(`${base}/${encodeURIComponent(mapName)}/discard`, { method: "POST" });
     if (!r.ok) throw new Error(`POST ${base}/${mapName}/discard -> ${r.status}`);
+    // A 2xx whose body is not JSON still ran the discard server-side; reset locally and note a version only if it is a number.
+    const data: unknown = await r.json().catch(() => null);
+    noteTilesetVersion((data as { tilesetVersion?: unknown } | null)?.tilesetVersion, generation);
     if (!owner.isCurrent()) return;
     invalidateEventOptions();
     seq.current.applied = seq.current.issued; // in-flight edits cannot resurrect a discarded session

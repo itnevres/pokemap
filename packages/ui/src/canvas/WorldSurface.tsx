@@ -95,6 +95,7 @@ export function WorldSurface<P extends SurfacePlacement, C extends WireConflict,
   const [ledger] = useState(createPlacementLedger);
   const { world, error, reload, loadedGen, dismissError, move } = adapter.useWorld(ledger, mapFilter ? "dungeon" : "world");
   const coverage = adapter.useCoverage();
+  const imageUrl = adapter.useImageUrl();
 
   const fitRef = useRef<() => void>(() => {});
   const stableFit = useCallback(() => fitRef.current(), []);
@@ -249,7 +250,7 @@ export function WorldSurface<P extends SurfacePlacement, C extends WireConflict,
   }, [drawn, view, viewport]);
   const tiles = useWorldTiles({
     visible,
-    imageUrl: adapter.imageUrl,
+    imageUrl,
     sizeOf,
     nativePx: adapter.nativePx,
     cacheKey: adapter.cacheKey,

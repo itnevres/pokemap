@@ -63,21 +63,20 @@ export function fetchGuarded<T>(url: string, guard: (x: unknown) => x is T, labe
  * family-agnostic primitive under a family-specific directory would force
  * a GBA-agnostic hook to import from GBC's own tree, which is exactly
  * backwards -- specific code may depend on generic code, never the other
- * way round. GBC-specific hooks (`useGbcGroups`, and Task 4-6's
- * `useGbcMap`/`useGbcWorld`/`useGbcCoverage`) import this from
- * `../../hooks/useGuardedFetch.js`, which is the correct direction.
+ * way round. GBC-specific hooks (`useGbcGroups`, `useGbcCoverage`) import
+ * this from `../../hooks/useGuardedFetch.js`, which is the correct direction.
  *
  * `label` defaults to `url` and only needs to differ once a caller's fetch
  * URL and its human-readable name diverge (e.g. an encoded path segment) --
  * none of Task 3's hooks need that yet, but the parameter costs nothing to
  * have ready for Task 4+.
  *
- * `url === null` (Task 4's `useGbcMap`: "nothing selected yet") fetches
- * nothing at all and resets to the idle `{ data: null, error: null }` state
- * -- the same "null name -> idle, no request" shape `useMapLayout.ts`
- * already established, extended into this shared helper rather than
- * `useGbcMap` hand-rolling its own fetch+guard+error block around it (the
- * Task 3 fix-round convention this file itself exists to enforce).
+ * `url === null` ("nothing selected yet") fetches nothing at all and resets
+ * to the idle `{ data: null, error: null }` state -- the same "null name ->
+ * idle, no request" shape `useMapLayout.ts` already established, extended
+ * into this shared helper rather than every nullable-URL caller hand-rolling
+ * its own fetch+guard+error block around it (the Task 3 fix-round convention
+ * this file itself exists to enforce).
  *
  * A non-OK status, a thrown fetch, or a response that fails `guard` all set
  * `error` to a real, visible message -- never a silent `.catch`, never an
@@ -89,8 +88,8 @@ export function fetchGuarded<T>(url: string, guard: (x: unknown) => x is T, labe
  * fetch even starts** (fix round, spec review finding 3) -- this hook was
  * originally written for Task 3's fixed-URL hooks (`Root`'s own `/api/hub`
  * fetch / `useGbcGroups`), which never change `url` after mount, so the gap was
- * invisible there. Task 4's `useGbcMap` DOES change `url` (one call per
- * selected map), and without this reset: an `error` from a failed map stuck
+ * invisible there. A caller whose `url` DOES change (one call per
+ * selected map) would, without this reset: an `error` from a failed map stuck
  * around forever after selecting a good one afterward (`error` is checked
  * first, and nothing ever cleared it), and a slow map's fetch left the
  * PREVIOUS map's `data` on screen under the new map's name while the new
