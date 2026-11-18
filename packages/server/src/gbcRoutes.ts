@@ -748,7 +748,7 @@ export function createGbcProjectHandler(root: string, hooks: AddEventHooks = {})
         return send(200, getSpecies());
       }
 
-      if (edit.handle(req, url, send)) return;
+      if (edit.handle(req, url, (code, body) => { if (Buffer.isBuffer(body)) { res.writeHead(code, { "content-type": "image/png", "cache-control": "no-cache" }); res.end(body); } else send(code, body); })) return;
 
       if (GBA_ONLY_ROUTE_RE.test(url.pathname)) {
         return send(501, { error: `${url.pathname} is not supported for gbc (pokecrystal-family) projects yet` });
