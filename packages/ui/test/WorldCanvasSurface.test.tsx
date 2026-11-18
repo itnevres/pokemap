@@ -1,9 +1,22 @@
 import { StrictMode } from "react";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WorldCanvas, type WorldCanvasProps } from "../src/components/WorldCanvas.js";
 import type { MapView } from "../src/components/mapView.js";
 import { conflictKey } from "@pokemap/core/src/world/conflictAcceptance.js";
+import { noteTilesetVersion, resetTilesetVersion } from "../src/shared/tilesetVersion.js";
+
+const tileCalls = vi.hoisted(() => ({ imageUrls: [] as Array<unknown> }));
+vi.mock("../src/canvas/useWorldTiles.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/canvas/useWorldTiles.js")>();
+  return {
+    ...actual,
+    useWorldTiles: (...args: Parameters<typeof actual.useWorldTiles>) => {
+      tileCalls.imageUrls.push(args[0].imageUrl);
+      return actual.useWorldTiles(...args);
+    },
+  };
+});
 
 // Copied from WorldCanvas.test.tsx: fixtures and fetch routes stay local to this real-wrapper suite.
 interface RawPlacement {
@@ -118,6 +131,7 @@ let height = 100;
 let draws: Array<{ image: unknown; rect: unknown[] }>;
 let fills: string[];
 beforeEach(() => {
+  resetTilesetVersion();
   width = 200;
   height = 100;
   draws = [];
@@ -145,6 +159,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  resetTilesetVersion();
   vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -442,4 +457,56 @@ it.each([false, true])("an incoming line follows the destination's refreshed war
   // Refreshed B+(8,9)=(38,19)->(190,95); the cached source must use the new endpoint.
   expect(endpoints()).toEqual([10, 15, 190, 95]);
   expect(host.fetches.warps.filter((request) => request.map === "A")).toHaveLength(1);
+});
+
+// Task 10b: world tile URLs carry the hub's tileset version, so a staged tileset edit re-requests the map.
+describe("GBA world surface tileset version (Task 10b)", () => {
+
+  it("passes a new imageUrl function and requests the bumped version", async () => {
+    resetTilesetVersion();
+    tileCalls.imageUrls.length = 0;
+    await mount();
+    const original = tileCalls.imageUrls.at(-1);
+    expect(original).toBeTypeOf("function");
+    act(() => noteTilesetVersion(5));
+    await settle();
+    expect(tileCalls.imageUrls.at(-1)).not.toBe(original);
+    expect(requests()).toContain("/api/render/A.png?tv=5");
+  });
+
+  it("spec m2: a re-render without a version bump keeps the imageUrl passed to useWorldTiles identical", async () => {
+    tileCalls.imageUrls.length = 0;
+    const host = await mount();
+    const original = tileCalls.imageUrls.at(-1);
+    expect(original).toBeTypeOf("function");
+    const callsBefore = tileCalls.imageUrls.length;
+    // No version bump and no view change: the function identity reaching useWorldTiles must not churn.
+    host.rerender(<WorldCanvas />);
+    await settle();
+    expect(tileCalls.imageUrls.length, "the rerender must reach useWorldTiles").toBeGreaterThan(callsBefore);
+    expect(tileCalls.imageUrls.at(-1)).toBe(original);
+  });
+
+  afterEach(() => { resetTilesetVersion(); });
+  const requests = () => FakeImage.instances.map((image) => image.src);
+
+  it("keeps today's URL at version 0 and re-requests a visible tile with tv=", async () => {
+    await mount();
+    expect(requests()).toContain("/api/render/A.png");
+
+    act(() => noteTilesetVersion(5));
+    await settle();
+
+    expect(requests()).toContain("/api/render/A.png?tv=5");
+  });
+
+  it("keeps a per-map v parameter alongside tv", async () => {
+    await mount({ tileVersions: { A: 3 } });
+    expect(requests()).toContain("/api/render/A.png?v=3");
+
+    act(() => noteTilesetVersion(5));
+    await settle();
+
+    expect(requests()).toContain("/api/render/A.png?v=3&tv=5");
+  });
 });

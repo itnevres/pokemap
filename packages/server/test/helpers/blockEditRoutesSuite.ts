@@ -713,6 +713,7 @@ export function suite(family: "gba" | "gbc") {
         expect(result.limits.cap).toBe(minimum);
         const count = readFileSync(resolve(root, path)).length / 16;
         if (count >= minimum) expect(result.limits.nextId).toBeNull();
+        else expect(result.limits.nextId).toBe(count);
       } else {
         const before = readFileSync(resolve(root, pair.path));
         const count = before.length / 16;
@@ -996,6 +997,244 @@ export function suite(family: "gba" | "gbc") {
         expect(layers.length).toBeGreaterThan(0);
         expect(data.options.layerTypes).toEqual(layers.sort((a, b) => a.value - b.value));
       });
+
+      // B15a: a layer-type enum member whose initializer cannot be read is skipped and the GET stays 200. The header
+      // written here is the source of every expectation; the original header is restored in finally.
+      it("B15a: unreadable layer member is skipped, GET stays 200", async () => {
+        const headerPath = resolve(root, "include/global.fieldmap.h");
+        const restore = restoreBytes([headerPath]);
+        const id = await idFor();
+        try {
+          writeFileSync(headerPath, [
+            "#ifndef GUARD_GLOBAL_FIELDMAP_H",
+            "#define GUARD_GLOBAL_FIELDMAP_H",
+            "enum MetatileLayerType {",
+            "    METATILE_LAYER_TYPE_NORMAL = 0,",
+            "    METATILE_LAYER_TYPE_COVERED,",
+            "    METATILE_LAYER_TYPE_SPLIT = 1 << 3,",
+            "};",
+            "#endif // GUARD_GLOBAL_FIELDMAP_H",
+            "",
+          ].join("\n"));
+          const result = await request(`/api/edit/${encoded(pair.a)}/block?block=${id}`);
+          expect(result.status, JSON.stringify(result.body)).toBe(200);
+          expect(result.body.options.layerTypes).toEqual([
+            { name: "NORMAL", value: 0 },
+            { name: "COVERED", value: 1 },
+          ]);
+        } finally { restore(); }
+      });
+
+      // Replaces the enum block in the header with `enumBlock`; everything else in the file is kept.
+      const replaceLayerEnum = (header: string, enumBlock: string) => {
+        const pattern = /enum\s*(?:\w+\s*)?\{[^}]*METATILE_LAYER_TYPE_[^}]*\}/s;
+        if (!pattern.test(header)) throw new Error("fixture needs METATILE_LAYER_TYPE enum in include/global.fieldmap.h");
+        return header.replace(pattern, enumBlock);
+      };
+      const layerHeader = (rootPath: string, enumBlock: string) => {
+        const headerPath = resolve(rootPath, "include/global.fieldmap.h");
+        const header = readFileSync(headerPath, "utf8");
+        return { headerPath, next: replaceLayerEnum(header, enumBlock) };
+      };
+
+      // The rewritten enum keeps the rest of the header; literals only, no route parsing.
+      it("B14c': layer enum literal offset carries to successors", async () => {
+        const { headerPath, next } = layerHeader(root, [
+          "enum MetatileLayerType {",
+          "    METATILE_LAYER_TYPE_NORMAL,",
+          "    METATILE_LAYER_TYPE_COVERED = 4,",
+          "    METATILE_LAYER_TYPE_SPLIT,",
+          "};",
+        ].join("\n"));
+        const restore = restoreBytes([headerPath]);
+        const id = await idFor();
+        try {
+          writeFileSync(headerPath, next);
+          const result = await request(`/api/edit/${encoded(pair.a)}/block?block=${id}`);
+          expect(result.status, JSON.stringify(result.body)).toBe(200);
+          expect(result.body.options.layerTypes).toEqual([
+            { name: "NORMAL", value: 0 },
+            { name: "COVERED", value: 4 },
+            { name: "SPLIT", value: 5 },
+          ]);
+        } finally { restore(); }
+      });
+
+      // An unreadable initializer drops its member and every implicit successor up to the next literal.
+      it("B15a: unreadable member skips successors until the next literal", async () => {
+        const { headerPath, next } = layerHeader(root, [
+          "enum MetatileLayerType {",
+          "    METATILE_LAYER_TYPE_NORMAL,",
+          "    METATILE_LAYER_TYPE_COVERED = 1 << 1,",
+          "    METATILE_LAYER_TYPE_SPLIT,",
+          "    METATILE_LAYER_TYPE_TOP = 7,",
+          "};",
+        ].join("\n"));
+        const restore = restoreBytes([headerPath]);
+        const id = await idFor();
+        try {
+          writeFileSync(headerPath, next);
+          const result = await request(`/api/edit/${encoded(pair.a)}/block?block=${id}`);
+          expect(result.status, JSON.stringify(result.body)).toBe(200);
+          expect(result.body.options.layerTypes).toEqual([
+            { name: "NORMAL", value: 0 },
+            { name: "TOP", value: 7 },
+          ]);
+        } finally { restore(); }
+      });
+
+      // No enum member and no define leaves nothing readable: fall back to 0/1/2.
+      it("B15a: no readable layer values fall back to NORMAL/COVERED/SPLIT 0/1/2", async () => {
+        const headerPath = resolve(root, "include/global.fieldmap.h");
+        const header = readFileSync(headerPath, "utf8");
+        if (!header.includes("METATILE_LAYER_TYPE_")) {
+          throw new Error("fixture needs METATILE_LAYER_TYPE_ occurrences in include/global.fieldmap.h");
+        }
+        const restore = restoreBytes([headerPath]);
+        const id = await idFor();
+        try {
+          writeFileSync(headerPath, header.split("METATILE_LAYER_TYPE_").join(""));
+          const result = await request(`/api/edit/${encoded(pair.a)}/block?block=${id}`);
+          expect(result.status, JSON.stringify(result.body)).toBe(200);
+          expect(result.body.options.layerTypes).toEqual([
+            { name: "NORMAL", value: 0 },
+            { name: "COVERED", value: 1 },
+            { name: "SPLIT", value: 2 },
+          ]);
+        } finally { restore(); }
+      });
+
+      // A define still wins over the enum value for the same member.
+      it("B15a: #define overrides an enum value", async () => {
+        const headerPath = resolve(root, "include/global.fieldmap.h");
+        const header = readFileSync(headerPath, "utf8");
+        const restore = restoreBytes([headerPath]);
+        const id = await idFor();
+        try {
+          writeFileSync(headerPath, `${header}\n#define METATILE_LAYER_TYPE_SPLIT 9\n`);
+          const result = await request(`/api/edit/${encoded(pair.a)}/block?block=${id}`);
+          expect(result.status, JSON.stringify(result.body)).toBe(200);
+          expect(result.body.options.layerTypes).toEqual([
+            { name: "NORMAL", value: 0 },
+            { name: "COVERED", value: 1 },
+            { name: "SPLIT", value: 9 },
+          ]);
+        } finally { restore(); }
+      });
+
+      // Names keep the full MB_ prefix; the define after the enum is read as well.
+      it("B15b: behaviors are read from a C enum", async () => {
+        const behaviorsPath = resolve(root, "include/constants/metatile_behaviors.h");
+        const restore = restoreBytes([behaviorsPath]);
+        const id = await idFor();
+        try {
+          const before = await block(pair.a, `block=${id}`);
+          expect(before.options.behaviors.length, "untouched behaviors must be non-empty").toBeGreaterThan(0);
+          for (const behavior of before.options.behaviors) {
+            expect(behavior.name.startsWith("MB_"), JSON.stringify(behavior)).toBe(true);
+          }
+          writeFileSync(behaviorsPath, [
+            "enum {",
+            "    MB_NORMAL,",
+            "    MB_TALL_GRASS = 2,",
+            "    MB_DEEP_SAND,",
+            "};",
+            "#define MB_INVALID 0xFF",
+            "",
+          ].join("\n"));
+          const result = await request(`/api/edit/${encoded(pair.a)}/block?block=${id}`);
+          expect(result.status, JSON.stringify(result.body)).toBe(200);
+          expect(result.body.options.behaviors).toEqual([
+            { name: "MB_NORMAL", value: 0 },
+            { name: "MB_TALL_GRASS", value: 2 },
+            { name: "MB_DEEP_SAND", value: 3 },
+            { name: "MB_INVALID", value: 255 },
+          ]);
+        } finally { restore(); }
+      });
+
+      // B15a/B15b literal forms: hex, octal, suffix and sign are read; a bad octal or unsafe value skips its member and
+      // the implicit successors; a later literal ends the skip. The untouched subject header gives exactly its own
+      // literal defines, in value order (stable for equal values).
+      it("B15a/B15b: enum literal forms, skips ended by a literal, and the subject's exact behavior list", async () => {
+        const behaviorsPath = resolve(root, "include/constants/metatile_behaviors.h");
+        const original = readFileSync(behaviorsPath, "utf8").replace(/\/\*[\s\S]*?\*\/|\/\/[^\r\n]*/g, "");
+        const own = [...original.matchAll(/^[ \t]*#define[ \t]+(MB_\w+)[ \t]+(0x[\da-f]+|\d+)[ \t]*$/gim)]
+          .map(([, name, value]) => ({ name: name!, value: Number(value) }))
+          .sort((a, b) => a.value - b.value);
+        expect(own.length).toBeGreaterThan(0);
+        const id = await idFor();
+        expect((await block(pair.a, `block=${id}`)).options.behaviors).toEqual(own);
+        const restore = restoreBytes([behaviorsPath]);
+        try {
+          writeFileSync(behaviorsPath, [
+            "enum {",
+            "    MB_HEX = 0x10,", "    MB_OCT = 010,", "    MB_SUF = 3u,",
+            "    MB_BAD_OCT = 09,", "    MB_AFTER_BAD,",
+            "    MB_BIG = 0x20000000000000,", "    MB_AFTER_BIG,",
+            "    MB_NEG = -1,", "    MB_NEXT,",
+            "};", "",
+          ].join("\n"));
+          const result = await request(`/api/edit/${encoded(pair.a)}/block?block=${id}`);
+          expect(result.status, JSON.stringify(result.body)).toBe(200);
+          expect(result.body.options.behaviors).toEqual([
+            { name: "MB_NEG", value: -1 },
+            { name: "MB_NEXT", value: 0 },
+            { name: "MB_SUF", value: 3 },
+            { name: "MB_OCT", value: 8 },
+            { name: "MB_HEX", value: 16 },
+          ]);
+        } finally { restore(); }
+      });
+
+      // Cap is the minimum over every consumer of the file, across all tileset symbols of it (B14b).
+      it("B14b: aliased primary file caps block=0 at the all-symbol minimum", async () => {
+        const uses = new Map<string, { symbol: string; cap: number }[]>();
+        for (const layout of gba.layouts) {
+          const split = gba.splitFor(layout).metatiles;
+          for (const [symbol, cap] of [
+            [layout.primaryTileset, split],
+            [layout.secondaryTileset, gba.constants.metatilesTotal - split],
+          ] as const) {
+            const path = canonicalTilesetPath(gba.tilesetPaths(symbol).metatilesBin);
+            uses.set(path, [...(uses.get(path) ?? []), { symbol, cap }]);
+          }
+        }
+        let alias: { name: string; minimum: number } | undefined;
+        for (const [path, entries] of uses) {
+          const symbols = new Map<string, number[]>();
+          for (const entry of entries) symbols.set(entry.symbol, [...(symbols.get(entry.symbol) ?? []), entry.cap]);
+          if (symbols.size < 2) continue;
+          const symbolMin = new Map([...symbols].map(([symbol, caps]) => [symbol, Math.min(...caps)]));
+          const allMin = Math.min(...symbolMin.values());
+          for (const name of gba.mapNames()) {
+            const layout = gba.layoutForMap(name);
+            const symbol = layout.primaryTileset;
+            if (canonicalTilesetPath(gba.tilesetPaths(symbol).metatilesBin) !== path) continue;
+            if ((symbolMin.get(symbol) ?? 0) > allMin) { alias = { name, minimum: allMin }; break; }
+          }
+          if (alias) break;
+        }
+        if (!alias) throw new Error("fixture needs an aliased primary file");
+        const result = await block(alias.name, "block=0");
+        expect(result.limits.cap).toBe(alias.minimum);
+      });
+
+      // A short blockdata refuses the cells past the data, with the 409 body of B14d.
+      it("B14d: short GBA grid refuses the last cell with 409 BAD_GRID", async () => {
+        const layout = gba.layoutForMap(pair.a);
+        const width = layout.width, height = layout.height;
+        const gridPath = resolve(root, layout.blockdataFilepath);
+        const restore = restoreBytes([gridPath]);
+        try {
+          const bytes = readFileSync(gridPath);
+          writeFileSync(gridPath, bytes.subarray(0, (width * height - 1) * 2));
+          const result = await request(`/api/edit/${encoded(pair.a)}/block?x=${width - 1}&y=${height - 1}`);
+          expect(result.status, JSON.stringify(result.body)).toBe(409);
+          expect(result.body.code).toBe("BAD_GRID");
+          expect(result.body.error).toMatch(/has \d+ blocks, fewer than \d+×\d+/);
+        } finally { restore(); }
+      });
     } else {
       it("10: rejects a short tile draft", async () => {
         const data = await block(pair.a, `block=${await idFor()}`);
@@ -1004,6 +1243,20 @@ export function suite(family: "gba" | "gbc") {
       it("10: rejects an unknown collision", async () => {
         const data = await block(pair.a, `block=${await idFor()}`);
         await checkDraft("collision", ["NO_SUCH_COLLISION", ...data.block.collision.slice(1)]);
+      });
+      // The whole grid is refused when the .blk is undersize, even for a cell inside the data.
+      it("B15c: short GBC grid refuses a cell inside the data with 409 BAD_GRID", async () => {
+        const map = gbc.map(pair.a);
+        const blkPath = resolve(root, map.blkPath);
+        const restore = restoreBytes([blkPath]);
+        try {
+          const bytes = readFileSync(blkPath);
+          writeFileSync(blkPath, bytes.subarray(0, map.width * map.height - 1));
+          const result = await request(`/api/edit/${encoded(pair.a)}/block?x=0&y=0&time=day`);
+          expect(result.status, JSON.stringify(result.body)).toBe(409);
+          expect(result.body.code).toBe("BAD_GRID");
+          expect(result.body.error).toMatch(/has \d+ blocks, fewer than \d+×\d+/);
+        } finally { restore(); }
       });
     }
 

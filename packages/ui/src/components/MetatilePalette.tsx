@@ -2,6 +2,7 @@ import { Fragment, memo, useEffect, useMemo, useRef, useState } from "react";
 import type { Split } from "@pokemap/core/src/model/types.js";
 import type { Stamp, StampCell } from "@pokemap/core/src/edit/paint.js";
 import { useFollowHover } from "../shared/useFollowHover.js";
+import { useTilesetVersion } from "../shared/tilesetVersion.js";
 import { chunkRows, pickFold } from "../shared/paletteFold.js";
 import { useUniformRows, type ThumbSignature } from "../shared/useUniformRows.js";
 import { PaletteFrame, PaletteSelection } from "../shared/PaletteFrame.js";
@@ -62,6 +63,7 @@ export const MetatilePalette = memo(function MetatilePalette({
   const [dragStart, setDragStart] = useState<number | null>(null);
   const cellRefs = useRef(new Map<number, HTMLButtonElement>());
   const [follow, setFollow] = useFollowHover();
+  const tilesetVersion = useTilesetVersion();
 
   useEffect(() => {
     if (!follow || highlightId === null) return;
@@ -97,7 +99,7 @@ export const MetatilePalette = memo(function MetatilePalette({
 
   const searching = normalizedQuery !== "";
   const rows = useMemo(() => chunkRows(visible, columns), [visible, columns]);
-  const src = (id: number) => `/api/metatile/${encodeURIComponent(layoutName)}/${id}.png`;
+  const src = (id: number) => `/api/metatile/${encodeURIComponent(layoutName)}/${id}.png${tilesetVersion > 0 ? `?tv=${tilesetVersion}` : ""}`;
   const { uniformRows, onThumbLoad, onThumbError } = useUniformRows(searching ? [] : rows, layoutName, thumbSignature);
   // The primary/secondary boundary is a safe cut only when secondary starts a fresh row in the index order.
   const boundaryRow = visibleCount === undefined && secondaryCount > 0 && primaryCount % columns === 0 ? primaryCount / columns : undefined;

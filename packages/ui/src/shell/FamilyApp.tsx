@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { eventCreateBarrier, hasPendingEventCreates } from "../shared/useEditSessionCore.js";
+import { resetTilesetVersion } from "../shared/tilesetVersion.js";
 import { MapTree } from "../components/MapTree.js";
 import { DungeonSidebar } from "../components/DungeonSidebar.js";
 import { SwitchPromptDialog } from "../shared/SwitchPromptDialog.js";
@@ -27,6 +28,9 @@ export interface FamilyAppProps {
  */
 export function FamilyApp({ adapter, switcher }: FamilyAppProps) {
   const caps = adapter.capabilities;
+  // Root keys this component on family:root:gen, so every project switch unmounts it. Drop the old project's tileset
+  // version here; a new project starts at 0 and never inherits a stale URL.
+  useEffect(() => () => resetTilesetVersion(), []);
   const [mode, setMode] = useState<Mode>("map");
   const [selected, setSelected] = useState<string | null>(null);
   // Bumped on every sidebar click, even a re-click of the same map name --

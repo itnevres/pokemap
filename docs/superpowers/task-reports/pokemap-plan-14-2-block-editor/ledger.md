@@ -707,6 +707,45 @@ Traps seen in s7:
   typecheck pass, **296/296** (9 files). Plan H in-flight list gains `addEventRoutes.ts` at merge time (editing Plan H
   on the task branch would conflict with `a533694`).
 - Re-reviews (astra, same reviewer): `task-10a-rereview-brief.md`, static on `<s9>/rv-t10` at `42fbf39`.
+- Round-2 mutations (`<s9>/mut_t10a_r2.out`, 16 tests): **6 of 6 KILLED** (M5, M6 by cases 4/4b; M10 by 2b; M13 by
+  the precedence unit; M19/M20, the fix removed per family, by 4c). Task 10a total: 19 of 20 KILLED, M18 equivalent.
+- Re-reviews (astra): spec **Approved 0/0/1** (minor: 4b did not assert the writer ran) → `6310725` (4b asserts the
+  writer's single result is a throw and the reply carries the injected message; 2/2 green); quality **Approved 0/0/0**.
+- Task 10a merged **`d1b7eee`** (`--no-ff`, clean). Plan H in-flight list gains `addEventRoutes.ts` (main checkout).
+
+### Power outage (2026-11-17 ~08:30) — s9
+- The PC lost power during the first gate at `d1b7eee`, with the 11a impl hop (Codex, `--tier opus`) and the 10b impl
+  hop (`--tier sonnet`, deepseek-v4.1-flash-free) both waiting behind a vitest lock (`<s9>/lockrun.py`: a directory lock
+  every verify takes, so two chains never run vitest at once). All six background jobs died; no completion records.
+- Recovery (master's checklist): no vitest/tinypool/chain/codex/opencode process left; stale `<s9>/vitest.lock`
+  removed; 14 `%LOCALAPPDATA%\Temp\pokemap-test-roots-*` folders (11-10 to 11-17) deleted. Main checkout clean at
+  `d1b7eee` (docs edits only). `wt-t11` and `wt-t10b`: each hop had written a complete, uncommitted diff (stubs
+  replaced, mounts and B12 in place; 10b: store + URL builders + loaders + reset) and died waiting on the lock for its
+  verify. Kept, read against B1-B13 / U1-U5, and verified by the conductor instead of re-hopping (cheaper than a rerun).
+- Reran: full gate at `d1b7eee`, then the 11a and 10b verify lists on the leftover diffs, one vitest at a time.
+- **Gate at `d1b7eee`: 4,746 pass / 2 fail / 266 files; typecheck pass, UI build pass; subjects unchanged.** Fails:
+  the known environmental `core/test/config/engine.test.ts` (RESUME) and `packages/ui/test/WorldCanvas.test.tsx`
+  "drag pans the world by the mouse delta" (`FakeImage.instances[0]` undefined at :497 under full-suite load; the file
+  passes alone, 103/103; not on a known-flake list: recorded here as a load flake, 10a changed no UI code).
+- Leftover verifies: 10b typecheck pass, `packages/ui` **2311/2311** → committed as the hop's output `f6cedeb`
+  (deepseek-v4.1-flash-free). 11a 310/311: the GBA case 7 invalid-tile fixture was the conductor's (pair.a's layout
+  fills all 1024 tile ids, so no representable id lies outside its sheet) → vet `9a51768` takes the first map whose
+  sheet has a gap; case 7 green. Impl committed as the hop's output `e1d84aa` (Codex gpt-6.1-sol).
+- 10a reports archived to `_archive/`.
+
+### Task 11a (High) — s9, after the outage
+- Impl vetted against B1-B13: B13 reads `store.entries()`/`has()` only; GET planner refusals → 409 (`GetConflict`),
+  structural/`BAD_VALUE` → 400; sheet per B7/B7a; preview through the family renderer (GBA `renderMetatile` with
+  `overrideEntries`, GBC `renderGbcMapMetatile` with a patched tileset); B12 in both `signPlan` bodies. Noted for the
+  quality review: `blockEditRoutes.ts` imports `readBody` from `index.ts` (cycle).
+- Mutations `<s9>/mut_t11a.py` (16: the rulings' six per family plus own) and reviews (astra spec + quality on
+  `<s9>/rv-t11` at `9a51768`, brief `task-11a-review-brief.md`) running.
+
+### Task 10b (High) — s9, after the outage
+- Impl vetted against U1-U5. Mutations `<s9>/mut_t10b.py` (12, incl. the map GET loader gap N1/N2) and reviews (astra
+  spec + quality on `<s9>/rv-t10b` at `f6cedeb`, brief `task-10b-review-brief.md`) running.
+- Subjects at the gate: GBA HEAD moved to `590fdf303` with a clean tree since s8 (`97ac21d4b`, 10 porcelain lines): the
+  user's own change, not touched.
 
 ### Task 11a (High) — s9
 - Worktree `<s9>/wt-t11`, branch `p14-2-t11` from `b9b74f2` (10a head; merge the plan branch in after 10a merges).
@@ -722,3 +761,262 @@ Traps seen in s7:
   `tileCount = split.tiles + secondary tile count`; `tileIds[i] = i` for primary tiles and for `i >= split.tiles`,
   `null` for the gap between the primary tiles and the split. GBC `tileCount` = tiles in the tileset PNG.
   Stub `blockEditRoutes.ts` starts with a BOM (cosmetic; the impl replaces it).
+- Reviews (astra, 2026-11-17): **11a** spec Needs changes 0/3/1 (I1 GBA preview mask checks use 32-bit `&`, so
+  `2**32` passes; I2 GBA `limits.cap` from the current layout only, not the file's minimum over consumers; I3 contract
+  coverage gaps: staged content in GET, cap refusal, `tv`/`time` values, changed-draft preview, malformed drafts; m1
+  layer options hardcoded) and quality Needs changes 0/1/1 (= spec I1; m1 short grid → 500 with no diagnostic; trailing
+  blank line in the suite). **10b** spec Needs changes 0/2/1 and quality Needs changes 0/2/0 (I1 discard never notes
+  the version; I2 a late reply after a project switch pushes an old, higher version past the reset (max-only); m1 world
+  `imageUrl` identity does not change on a bump; works through `visible`). All checked against the code: they hold.
+  Rulings written: **B14a-d** in `task-11a-fix1-brief.md`, **U6a-d** in `task-10b-fix1-brief.md` (same folder as the
+  rulings), each with a tests list and the impl files.
+
+### Handoff s9 → s10 (2026-11-17, session-length rule)
+- Plan branch at the s9 close-out commit: Tasks 0-10a merged (`d1b7eee`); gate above. Not pushed.
+- `<s9>/wt-t11` (branch `p14-2-t11`, `9a51768`, contains `d1b7eee`): 11a impl + tests. `<s9>/rv-t11` detached `9a51768`.
+- `<s8>/wt-t10b` (branch `p14-2-t10b`, `f6cedeb`, contains `d1b7eee`): 10b impl + tests. `<s9>/rv-t10b` detached `f6cedeb`.
+- Mutation runs started 18:34 in the background, 11a then 10b (`<s9>/mut_t11a.out`, `<s9>/mut_t10b.out`, lines
+  `MUT EXIT` at the end); they hold `<s9>/vitest.lock` and remove it at the end. A run left without `MUT EXIT`, no
+  `mut_t1` python process and a dirty worktree = died: `git checkout -- <file>` and rerun only the missing mutants.
+  Expected survivors: 11a M14 (pair.a's layout has no tile gap), M16 (an array body fails on `request` anyway); 10b N1/N2
+  (no loader test; the fix round's late-reply tests cover the loaders).
+- Removable: `wt-t10`, `rv-t10` (merged), `rv-t9`, `wt-t9`, `wt-t5` (unlink `node_modules` junctions first).
+
+## Execution (conductor s10, 2026-11-17)
+
+- Start (19:00): repo matched the s10 launch prompt (`1c9d253` on `d1b7eee`; `wt-t11` `9a51768`, `wt-t10b` `f6cedeb`).
+  s9's chained mutation job was alive (11a at M10 of 16, 10b queued behind it in the same shell, holding
+  `<s9>/vitest.lock`); left running. s10 scratchpad:
+  `C:\Users\Serve\AppData\Local\Temp\claude\8fd0350c313cb955\3d225916-0a42-4209-a3b3-8f4afc71a35c\scratchpad\`.
+- **Ruling B14c′ (s10):** GBA `METATILE_LAYER_TYPE_*` are C `enum` members in `include/global.fieldmap.h`, not
+  `#define`s, so the define reader cannot see them. Read the enum (implicit increment, explicit `= n`) or defines from
+  that header; fallback NORMAL/COVERED/SPLIT = 0/1/2. Added to `task-11a-fix1-brief.md`.
+- Hop briefs written: `task-11a-fix1-tests-hop-brief.md`, `task-10b-fix1-tests-hop-brief.md` (10b allows one stub
+  edit in `tilesetVersion.ts`: `tilesetGeneration()` returning 0 and an unused `generation?` parameter, so the
+  typecheck-only verify can pass). Both chains (`--tier opus`, verify typecheck) wait in the background for their
+  task's `MUT EXIT` and a clean worktree.
+
+### Task 11a (High) — s10
+- s9's mutations (`<s9>/mut_t11a.out`, MUT EXIT 0): **13 of 16 KILLED**. Survivors: M14 (GBA `tileIds` no gap:
+  expected, pair.a's layout has no gap), M16 (array preview body accepted: expected, an array fails on `request`
+  anyway), and **M15 (GBC sheet draws every tile in palette 0 instead of its palette-map palette): a real gap**, not
+  on s9's expected list; no case checks sheet pixels. Fix: a test that crops the sheet cell of a block's square-0 tile
+  whose palette-map palette is not 0 and compares it with the top-left 8×8 of the hub's metatile image of that block
+  (same time). Added to the fix round after the tests hop.
+- Tests hop 1: `chain.py --tier opus` RESULT failed, `gpt-6.2-sol failed (no diff)`: Codex answered
+  `model_not_found` ("not supported when using Codex with a ChatGPT account"); chain.py's DEAD regex matched only
+  "model not found", so it took this for a real failure and stopped before `gpt-6.1-sol`. Fixed in
+  `~/.claude/skills/offload/chain.py` (DEAD gains `model_not_found|not supported when using Codex`; `classify` of the
+  message now says `dead`). Rerun launched.
+- Tests hop rerun: RESULT done, `gpt-6.1-sol done` → `99f0ac5` (+202 suite lines, report
+  `task-11a-fix1-tests-report.md`). Vetted line by line: case 3 content (GBA entries decoded from the staged 16 bytes,
+  GBC tiles from the staged buffer; replacement = first different disk block); cap (GBA consumers and roles from the
+  core project + the planner rule, file minimum; GBC staged appends to 256 with collision lines); sheet `tv` from the
+  map payload before/after a stage; GBC day/nite sheets on the first map whose `/api/render` differs by time; changed
+  draft preview vs the hub metatile PNG of B (same primary file, same layer bits); B14a guards with masks from the
+  profile; B14c′ enum parsed from disk. No expectation reads the route under test. B14d short grid not tested (hop
+  deferred it; optional in the brief). Conductor `3c12b60` (inline, one test, smaller than a brief): GBC sheet cells
+  vs the top-left 8×8 of the hub metatile image for blocks whose top-left tile has palette-map palette ≠ 0 (M15).
+  Typecheck pass.
+- Mutation results (finished after the handoff note, 2026-11-17 ~19:30): **11a 13/16 KILLED** (M1-M13: revision from
+  disk, grids empty, sheet `pal`, preview palettes/time, `tilesetEffects` per family, GET opens a session, owner, 404 on
+  a malformed name); survivors M14, M16 equivalent, **M15 GBC sheet ignores the palette map: test gap** → added to
+  `task-11a-fix1-brief.md` item 7. **10b 10/12 KILLED** (N2-N10, N12); survivors **N1** (GBA loader note, no test) and
+  **N11** (no reset on unmount, no test) → added to `task-10b-fix1-brief.md` item 5. Both worktrees clean after the
+  runs; `s9\vitest.lock` removed.
+- s10 note on s9's post-handoff overlaps (s9's message 19:5x): s9 deleted and recreated `<s9>/vitest.lock` at 19:46
+  while s10's red-run lockrun held it; no other vitest ran in that minute (the 10b tests chain verifies typecheck
+  only). s9's commit `e897a93` swept in this section unchanged. Brief item 7 (M15) is covered by `3c12b60`.
+- Red run (`<s9>/t11a-fix1-red.out`, the two block-edit suites): **3 failed / 27 passed (30)**, all GBA, right reasons:
+  cap `640` vs file minimum `512` (B14b), behavior and layerType at `2**32` answer 200 (B14a). Every other new case
+  green on today's code, incl. the M15 sheet test.
+- Impl hop: `chain.py --tier opus`, brief `task-11a-fix1-impl-hop-brief.md`, verify = typecheck + the 11-file 11a list
+  through `<s9>/lockrun.py`, `--min-tests 320`, `--protect "packages/server/test/**"`.
+
+### Task 10b (High) — s10
+- s9's mutations (`<s9>/mut_t10b.out`): **10 of 12 KILLED**; survivors N1 (GBA map GET loader does not note) and N11
+  (FamilyApp does not reset on unmount): test gaps (s9's brief item 5).
+- Tests hop: `chain.py --tier opus` RESULT done, `gpt-6.2-sol failed (dead: no diff) -> gpt-6.1-sol done` → `cac902f`
+  (+231 lines over 6 test files + the authorised `tilesetVersion.ts` stub; report `task-10b-fix1-tests-report.md`).
+  Vetted: literals and mocked replies only; discard notes into a mounted URL builder; late post/discard reply after a
+  reset ignored, a new-generation reply noted; both map loaders keep the first hook mounted across the reset (so
+  cancellation cannot hide a missing guard) and then note a new-generation reply (pins N1); GBA cancelled same-generation
+  reply not noted; store unit for generations and the max rule; both world surfaces pass a new `imageUrl` after a bump
+  (`useWorldTiles` spied through `vi.mock` that delegates to the real hook). Conductor `4d8991b` (inline, one test):
+  `App.test.tsx` FamilyApp unmount resets the store (N11). Typecheck pass.
+- Red run (`<s9>/t10b-fix1-red.out`, 7 files): **9 failed / 98 passed (107)**, right reasons (late replies note 20
+  after a reset; discard leaves `tv=5`; generation never changes; `imageUrl` identity unchanged after a bump). N11 test
+  green (kills a mutant, not a fix). Impl hop: `chain.py --tier opus`, `task-10b-fix1-impl-hop-brief.md`, verify
+  typecheck + `packages/ui` through lockrun, `--min-tests 2320`, `--protect "packages/ui/test/**"`.
+
+### Task 11a fix round (cont.) — s10
+- Impl hop: RESULT done, `gpt-6.2-sol failed (dead: no diff) -> gpt-6.1-sol done` → `e2658b1` (+58/-6 in
+  `blockEditRoutes.ts` only; `gbaConsumingLayouts` imported from `usage.ts` unchanged, no core edit). Vetted: B14a `>`
+  before `&`; B14b cap = minimum over every consuming layout of every symbol aliasing the canonical metatile file,
+  `nextId` null at that cap; B14c′ enum/define parser with fallback; B14d `BadGrid` → 409 `BAD_GRID` (both families)
+  plus a new GBC cell bound check (400). Codex's sandbox could not start vitest (esbuild access), so it ran none.
+- Re-reviews (astra) launched on `<s9>/rv-t11` at `e2658b1` (brief `task-11a-rereview-brief.md`): both died on the
+  **Codex usage limit** ("try again at 10:41 PM"). `chain_state.json` codex cooldown set to 22:42. Ruling (s10, cost):
+  wait for the reset and keep the same reviewer rather than fall back to Claude Opus; meanwhile verify and other work.
+- 11a verify at `e2658b1` (conductor, lockrun): **326/326, 11 files**; typecheck pass. Round-2 mutants
+  `<s9>/mut_t11a_r2.py` (M15 again; R1/R2 drop the `>` checks; R3 cap from the current layout; R4 `nextId` ignores the
+  file cap) running.
+
+### Task 10b fix round (cont.) — s10
+- Impl hop: RESULT done, `gpt-6.1-sol failed (infra: verify exit 1) -> gpt-6-sol done` → `94ddb40` (+68/-29 over the
+  six allowed files). Vetted against U6a-c: generation counter, reset bumps it; capture before `fetch` in `post`,
+  `discard` (reads JSON; both hubs answer JSON with `tilesetVersion`), both map loaders (`useMapLayout` notes inside
+  `!cancelled`; `useGbcMap` inlines `useGuardedFetch`'s effect to capture per request; `reload` captures too). U6c
+  done as a **getter on the world adapters that calls `useTilesetVersion()` + `useCallback`**; works because
+  WorldSurface reads `adapter.imageUrl` exactly once per render (`WorldSurface.tsx:252`), but a hook inside a getter
+  is fragile: asked the quality re-review to judge it.
+- Verify (typecheck + `packages/ui`) and round-2 mutants `<s9>/mut_t10b_r2.py` (N11; G1 loader no note; G2 no guard;
+  G3 discard no note; G4/G5 loader generation read at reply; G6 world deps `[]`; G7 post generation at reply) queued
+  behind the lock. Re-reviews (astra, `task-10b-rereview-brief.md`, `<s9>/rv-t10b` at `94ddb40`) queued after 11a's.
+- 11a round-2 mutants (`<s9>/mut_t11a_r2.out`, baseline 30/30): **4 of 5 KILLED** (M15 by the sheet-cell test; R1, R2
+  by the `2**32` guards; R3 by the file-cap case). R4 (`nextId` skips the route's file-cap shortcut) survives:
+  **equivalent for this subject**: the planner already refuses `BLOCK_CAP` at 512 for `gTileset_General` (all its
+  consumers share one symbol); the shortcut only matters when another symbol aliases the same metatile file. Task 11a
+  total: 17 of 20 mutants killed, M14/M16/R4 equivalent, none open.
+- 10b verify at `94ddb40` (conductor, lockrun): typecheck pass, **`packages/ui` 2321/2321, 133 files**. Round-2
+  mutants first run died on a POSIX worktree path given to Windows Python (`NotADirectoryError`); rerun with `C:/`.
+
+### Task 11b (High) — s10
+- Started early to use the Codex outage: worktree `<s10>/wt-t11b`, branch `p14-2-t11b` from `e2658b1` (11a fix head;
+  rebase/merge onto the plan branch after 11a merges; if the 11a re-review changes the suite, merge `p14-2-t11` in).
+  s10 scratchpad = `C:\Users\Serve\AppData\Local\Temp\claude\8fd0350c313cb955\3d225916-0a42-4209-a3b3-8f4afc71a35c\scratchpad\`.
+- Tests hop: brief `task-11b-tests-brief.md` (11 cases: check happy/confirm/cross-half/STALE/read-only; apply
+  saveAsNew-on-cell + undo, in place + undo, NOT_OWNER, STALE after disk change and after paint, no-op, 400 guards),
+  `chain.py --tier sonnet --no-codex` (user ruling 2026-11-13: free models while Codex is out), verify typecheck.
+- 10b round-2 mutants (`<s9>/mut_t10b_r2.out`, baseline 2321/2321): **8 of 8 KILLED** (N11, G1-G7). Task 10b total:
+  all 18 distinct mutants killed (N2-N10, N12 in round 1; N11, G1 = N1 on the new code, G2-G7 in round 2); none open.
+- 11b tests hop 1: RESULT done `opencode/deepseek-v4.1-flash-free` → `aab8353`, but the hop **timed out** (1200 s)
+  after adding only helpers (+202 lines, 0 `it(` cases); chain.py counted it done because typecheck passed (gap:
+  chain.py does not treat a TIMEOUT hop with a passing verify as failed). Hop 2 continues on top
+  (`task-11b-tests-hop2-brief.md`, `--timeout 3000`).
+- 11b tests hop 2: RESULT done `opencode/deepseek-v4.1-flash-free` → `0fd00bf` (11 cases, +474/-56 over hop 1's
+  helpers; pure additions vs 11a). The hop hit the OpenCode free usage cap at the end (no report; the pool now rests).
+  Vetted: oracles from GET bodies captured before the action, disk recomputation of both `confirm` predicates, the
+  planner's warning text, literals. **Defect found:** `copiedRequest` read `source.block` while `findChangedSource`
+  returns `{ id, data, png }` (runtime TypeError; typecheck passed through `any`) → fixed in `9ff58fc`.
+- **Ruling B10a (s10):** a no-op apply answers `deps.sessionBody(map)`; both builders open a session, so "no session
+  opened" in B10 is read as: no undo entry, no staged bytes, `isDirty` and `canUndo` false. 11b.10 asserts that.
+  **B9 vs B11:** check answers 400 for structural and `BAD_VALUE` drafts (B11), 200 + `refusal` for every other
+  planner refusal (B9). Conductor wrote `task-11b-tests-report.md`; commit `9ff58fc`. Red run queued.
+- 11b red run (`<s10>/t11b-red.out`): **23 failed / 30 passed (53)**: every 11b case red, every 11a case green. All
+  on the missing routes (404) except GBA 11b.2: `fetch failed` / ECONNRESET. Probe (`<s10>/probe-11b2.mts`, tsx, temp
+  copy): GET `block=0` on all 1,209 GBA maps answers 200, so no route crash; cause = fetch reusing a keep-alive socket
+  the server closed after Node's 5 s `keepAliveTimeout` during long synchronous fixture scans. `00cbc23`: suite server
+  `keepAliveTimeout = 120_000`; GBA 11b.2 alone now red on the 404.
+- Impl brief `task-11b-impl-hop-brief.md` written. Impl hop waits for Codex (reset 22:42; OpenCode free pool capped
+  ~19 h after hop 2) and goes after the 11a/10b re-reviews.
+
+### Power loss (2026-11-17 night) and handoff s10 → s11 — s10
+- The PC lost power between ~21:35 and 22:43 (before the queued re-reviews started). Died, never ran: the 11a
+  re-reviews (`<s10>/t11a_rereview_after_reset.sh`), the 10b re-reviews (`t10b_rereview_after_11a.sh`) and the 11b
+  impl chain (`t11b_impl_after_reviews.sh`). No completion records; no `codex-t10b-re-*.log`, no
+  `chain-T11b-impl.log`; `codex-t11a-re-*.log` are the 20:06 usage-limit runs. Inventory 2026-11-18 09:26: no vitest,
+  tinypool, chain, codex or opencode process; no `<s9>/vitest.lock`; no uncommitted hop output anywhere.
+- Committed state: `<s8>/wt-t10b` `94ddb40` (10b fix round complete: tests `cac902f` + `4d8991b`, impl `94ddb40`,
+  verify 2321/2321, 18/18 mutants killed; re-review pending). `<s9>/wt-t11` `e2658b1` (11a fix round complete: tests
+  `99f0ac5` + `3c12b60`, impl `e2658b1`, verify 326/326, M15 + R1-R3 killed; re-review pending).
+  `<s10>/wt-t11b` `00cbc23` (branch `p14-2-t11b` from `e2658b1`: 11b tests vetted, red 23/30 on the missing routes;
+  impl not started). Review checkouts `<s9>/rv-t11` at `e2658b1`, `<s9>/rv-t10b` at `94ddb40`. Main checkout: this
+  ledger only (committed with this entry).
+- Delegation state: Codex cooldown in `chain_state.json` expired (22:42); `gpt-6.2-sol` marked dead (ChatGPT account);
+  OpenCode free pool capped by Zen ~21:00 (`retryAfterMs` ≈ 19 h → about 16:00 on 11-18). chain.py fixed this session
+  (DEAD regex). Known chain.py gap: a TIMEOUT hop whose verify passes counts as done (11b hop 1).
+- **User ruling (2026-11-18, via the master):** conductor sessions stay at 200k-250k context. Hand off at about 200k
+  context or after two task merges, whichever comes first; the next prompt names only the next one or two tasks.
+
+## Execution (conductor s11, 2026-11-18)
+
+- Start (~09:30): repo matched the s11 launch prompt (`2367541`; `p14-2-t10b` `94ddb40`, `p14-2-t11` `e2658b1`,
+  `p14-2-t11b` `00cbc23`). Inventory: no vitest/tinypool/chain process; running `codex.exe` are the Codex desktop
+  app's (started 07:39), not ours; no `<s9>/vitest.lock`. Deleted 188 `%LOCALAPPDATA%\Temp\pokemap-*` roots.
+  s11 scratchpad: `C:\Users\Serve\AppData\Local\Temp\claude\8fd0350c313cb955\83bae35f-190d-441b-9341-b76d1bc8f31d\scratchpad\`.
+- 11a astra re-reviews (`<s9>/codex-t11a-re2-*.log`): both died at once on the **Codex usage limit, "try again at Nov
+  20th, 2026 3:45 PM"**. `chain_state.json` codex cooldown set to 2026-11-20 15:46. Per the launch prompt's fallback,
+  re-reviews go to Claude Opus `high-risk-reviewer` (two at once), each told to read astra's round-1 report and judge
+  every finding itself (a 2-day wait would block the plan).
+
+### Task 11a re-review (Claude Opus fallback) — s11
+- Spec `task-11a-spec-rereview.md`: **Approved** (0/0/5 Minor + escalation E1). Quality `task-11a-quality-rereview.md`:
+  **Needs changes** (0/2/2). Conductor checked each against `e2658b1`:
+  - quality I1 / spec m5 **real**: `gbaLayerTypes` throws `bad()` on an unreadable enum member; `options()` runs in every
+    GBA block GET → 400 on every map of such a project (not hit by the six corpora).
+  - quality I2 / spec m1 **real**: the layer test equals the old literals (red run had no layer failure).
+  - quality m1 / spec m4b **real**: B14d untested; GBC short `.blk` gives 500 for cells inside the data (loader refuses
+    the whole grid).
+  - spec m2 **real**: alias cap untested (the case-5 fixture's 512 consumer shares the symbol).
+  - Out of fix scope but cheap: `options.behaviors` is define-only, empty on upstream pokeemerald (enum).
+- **E1 (escalation, confirmed):** GBA usage/planner are keyed by tileset *symbol* (`core/src/blockEdit/usage.ts:349`
+  `consumingBySymbol`; `gbaOps.ts` cap loop), but spec §Identity requires the resolved file path. The subject has real
+  aliases: 10 `gTileset_Building*` headers share `gMetatiles_InsideBuilding` (`primary/building/metatiles.bin`), 6
+  SecretBase secondaries share `gMetatiles_SecretBaseSecondary`. An edit through a `gTileset_Building_Dome` map misses
+  the `gTileset_Building` maps in `usage.maps` (wrong `confirm`). Not caught by any test. Ruling: a separate High
+  core fix (Tasks 5-7 code, file-keyed GBA consumers/usage/structural/cap), scheduled before Task 12 (the UI that
+  shows `confirm`); 11b must not copy the symbol scope.
+- Fix round 2 rulings **B15a-d** in `.superpowers/sdd/.../task-11a-fix2-brief.md` (options never refuse; behaviors read
+  the enum too; GBC short `.blk` → 409 for every cell; route cap follows the file, planner side is E1). Deferred to
+  Task 16: spec m4a, quality m2a, m2c.
+- Delegation: Codex out → tests hop `chain.py --tier sonnet --no-codex` (free lane; user ruling 2026-11-13).
+
+### Task 10b re-review (Claude Opus fallback) — s11
+- Spec `task-10b-spec-rereview.md`: **Approved** (0/0/2: `useGbcMap.reload` generation unpinned; world `imageUrl`
+  identity stability between bumps unpinned). Quality `task-10b-quality-rereview.md`: **Needs changes** (0/1/3).
+  I-1 **real**: `get imageUrl()` calls `useTilesetVersion()` + `useCallback` behind an interface typed as a plain
+  method; any read outside render (effect, spread, event) is an invalid hook call, and a fake→real adapter swap changes
+  WorldSurface's hook count. m-1 (inline guarded fetch lost its URL-switch coverage), m-2 (`await r.json()` on a 2xx
+  non-JSON discard leaves the client dirty), m-3 (stale docs) all real and small.
+- Fix round 2 rulings **U7a-c** in `.superpowers/sdd/.../task-10b-fix2-brief.md` (adapter hook member `useImageUrl()`
+  called at WorldSurface top level; best-effort discard body; docs) and 4 test cases.
+- **Delegation lesson:** OpenCode hops cannot read `.superpowers/` (outside the worktree: permission-denied), so a hop
+  brief that points there gets a guess. 11a tests hop 1 (`603aa2b`, OpenRouter inkling-2-small) added 1 of 9 cases;
+  the 10b hop was stopped before it produced anything. Both relaunched with the rulings inlined into the hop brief
+  (`task-11a-fix2-tests-hop2-brief.md`, `task-10b-fix2-tests-hop-brief.md`). Hop briefs must be self-contained.
+
+### Fix round 2 tests (both tasks) — s11
+- 11a tests hop 2 (inlined brief): RESULT done, OpenRouter `inkling-2-small:free` → `2acdce9` (+192 over `603aa2b`;
+  9 cases + hop 1's B15a case + case-5 else branch). Vetted: every expectation a literal or a file the test writes
+  (temp root, `restoreBytes` in `finally`); alias case finds the aliased primary file on disk with the literal role
+  rule. Red run (`<s9>/t11a-fix2-red.out`): **4 failed / 35 passed (39)**, right reasons (two B15a 400s, B15b only
+  `MB_INVALID`, GBC short `.blk` 500 `INTERNAL_ERROR`). B14c′ offset, fallback, define override, alias cap, GBA
+  short grid green on today's code (pin existing behaviour; mutants to follow).
+- 10b tests hop (inlined brief): RESULT done, OpenRouter `inkling-2-small:free` → `7721a21` (+140 over 4 files: reload
+  late reply, URL-switch sticky error / stale payload / cancelled same-generation, identity stable without a bump in
+  both world surfaces, non-JSON discard). Vetted: literals and mocked replies. Red run (`<s9>/t10b-fix2-red.out`):
+  **1 failed / 58 passed (59)**: only U7b, as expected.
+- Impl hops: both `chain.py --tier sonnet --no-codex` (free lane; Codex out), verify through `<s9>/lockrun.py`
+  (11a: typecheck + the 11-file list, `--min-tests 335`; 10b: typecheck + `packages/ui`, `--min-tests 2328`).
+
+### Fix round 2 impl, mutants, re-review 2 — s11
+- 11a impl hop: RESULT done, OpenRouter `inkling-2-small:free` → `e28bf13` (+28/-17 `blockEditRoutes.ts`): one
+  `cPrefixedValues(root, path, prefix)` enum-or-define reader (skip rule, defines override, sorted by value, never
+  throws) for layer types (fallback 0/1/2) and behaviors; GBC `requireWholeGrid`. Conductor verify (lockrun): 11-file
+  list **335/335**. Round-3 mutants (`<s9>/mut_t11a_r3.out`): 7 of 8 killed; **R6** (a literal never ends the skip)
+  survived → conductor test `297439b` (inline, one test: hex/octal/suffix/sign, bad octal and unsafe skip, skip ended
+  by a literal, exact subject behaviors list parsed from the header; stale hop comment dropped; covers both 11a r2
+  Minors) → R6 KILLED, two suites 40/40. Task 11a round 3: 8 of 8 killed.
+- 10b impl hop: RESULT done, OpenRouter `inkling-2-small:free` → `041c362` (+24/-20 over 9 files; test edits only the
+  fake-adapter `useImageUrl: () => fakeImageUrl` swap). Conductor verify: typecheck pass, **`packages/ui` 2328/2328
+  (133 files)**. Round-3 mutants (`<s9>/mut_t10b_r3.out`): **6 of 6 killed** (H1 reload without generation, H2 note
+  before cancelled, H3 no reset on URL change, H4/H5 URL builder fresh per render, H6 strict discard JSON).
+- Re-review 2 (same Opus reviewers, resumed): 11a spec **Approved** (0/0/2), quality **Approved** (0/0/2) — both pairs
+  of Minors covered by `297439b`. 10b spec **Approved** (0/0/0), quality **Approved** (0/0/1: identity tests do not
+  prove a rerender happened) → conductor `0cb5e3d` (inline, 2 lines per file: assert `useWorldTiles` saw a new call);
+  the two files 40/40.
+
+### Task 10b merged; handoff s11 → s12 — s11
+- Merged `p14-2-t10b` (`0cb5e3d`) `--no-ff` → **`ed3b657`**. **Gate at `ed3b657`: 4,776 pass / 1 fail / 267 files;
+  typecheck pass, UI build pass; subjects unchanged** (fail: the known `engine.test.ts` env fail). 10b reports archived
+  to `_archive/`.
+- 10b live check: not run. The hub bumps `tilesetVersion` only when a session's `tilesetEdits` change
+  (`server/src/tilesetOverlay.ts`), and no HTTP route stages tileset edits until 11b's `apply`, so the staged-edit
+  `tv=` path cannot be driven from the real app yet. s12 runs the smoke (both families, no `tv=` at version 0, project
+  switch) and folds the staged-edit half into 11b's live check.
+- 11a (`p14-2-t11` `297439b`) approved, **not merged** (user asked for a handoff at the context limit).
+- Delegation: user reset the OpenAI usage on 2026-11-18; s11 cleared `cooldown.codex` and checked `gpt-6-astra`
+  answers. OpenRouter free lane did all four s11 hops. OpenCode Zen pool rests to ~21:39 2026-11-18.
+- Handoff: `.superpowers/sdd/2026-11-10-pokemap-plan-14-2-block-editor/s12-launch-prompt.md` (scope: merge 11a + gate,
+  10b live smoke, Task 11b).

@@ -9,6 +9,7 @@ import type { ShellSlots } from "../../src/shell/adapter.js";
 import type { MapLayoutData } from "../../src/hooks/useMapLayout.js";
 import type { UseEditSessionResult } from "../../src/hooks/useEditSession.js";
 import { useStrokeChainRegistry } from "../../src/shared/useStrokeChain.js";
+import { noteTilesetVersion, resetTilesetVersion } from "../../src/shared/tilesetVersion.js";
 
 const observed = vi.hoisted(() => ({ loads: [] as (() => void)[], session: null as UseEditSessionResult | null,
   data: null as MapLayoutData | null }));
@@ -292,5 +293,23 @@ describe("GBA MapSurface integration", () => {
       apply.resolve(); end.resolve();
       await act(async () => { await settlement; });
     }
+  });
+});
+
+// Task 10b: the render URL carries the hub's tileset version so an already-open map cannot keep a stale image.
+describe("GBA map surface tileset version (Task 10b)", () => {
+  afterEach(() => { resetTilesetVersion(); });
+
+  it("keeps today's URL at version 0 and appends tv= to the same mounted canvas", () => {
+    const { container } = mount();
+    const src = () => container.querySelector("img")!.getAttribute("src");
+
+    // Version 0 keeps the border ring and omits tv, exactly as before.
+    expect(src()).toBe("/api/render/Foo.png?border=1");
+
+    act(() => noteTilesetVersion(5));
+
+    // Same mounted canvas: the border parameter survives and tv is appended after it.
+    expect(src()).toBe("/api/render/Foo.png?border=1&tv=5");
   });
 });

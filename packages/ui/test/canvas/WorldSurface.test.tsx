@@ -7,6 +7,7 @@ import { useStage } from "../../src/canvas/useStage.js";
 import { WorldSurface } from "../../src/canvas/WorldSurface.js";
 import type { SurfacePlacement, SurfaceWorld, WorldSurfaceAdapter } from "../../src/canvas/worldSurfaceAdapter.js";
 
+const fakeImageUrl = (p: SurfacePlacement, v: number | undefined) => `/t/${p.map}?v=${v ?? 0}`;
 const observations = vi.hoisted(() => ({ border: [] as unknown[], scopes: [] as string[] }));
 vi.mock("../../src/shared/EncounterBorder.js", () => ({ EncounterBorder: (props: unknown) => {
   observations.border.push(props);
@@ -93,7 +94,7 @@ beforeEach(() => {
       observations.scopes.push(scope);
       return { world: data, error: loadError, reload: () => 1, loadedGen: 1, dismissError: () => {}, move: () => {} };
     },
-    imageUrl: (p, v) => `/t/${p.map}?v=${v ?? 0}`,
+    useImageUrl: () => fakeImageUrl,
     cacheKey: 0,
     drawnByDefault: (p) => p.map !== "Hidden",
     drawExtraLayers: () => record("extra")(),
