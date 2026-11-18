@@ -85,34 +85,47 @@ function requireGridCell(path: string, count: number, width: number, height: num
     throw new BadGrid(`${path}: has ${count} blocks, fewer than ${width}×${height}`);
   }
 }
+function requireWholeGrid(path: string, count: number, width: number, height: number): void {
+  if (count < width * height) {
+    throw new BadGrid(`${path}: has ${count} blocks, fewer than ${width}×${height}`);
+  }
+}
 class BadGrid extends Error {}
-function gbaLayerTypes(project: Project): { name: string; value: number }[] {
-  const prefix = "METATILE_LAYER_TYPE_", path = `${project.paths.root}/include/global.fieldmap.h`;
+// Shared enum-or-define reader. Unreadable enum members (and every implicit successor until the next
+// member with a readable literal `= n`) are skipped; #defines still override enum values. Never throws.
+function cPrefixedValues(root: string, path: string, prefix: string): { name: string; value: number }[] {
   const header = existsSync(path) ? readFileSync(path, "utf8").replace(/\/\*[\s\S]*?\*\/|\/\/[^\r\n]*/g, "") : "";
   const values = new Map<string, number>();
   for (const match of header.matchAll(/\benum\s*(?:\w+\s*)?\{([^}]*)\}/g)) {
     if (!match[1]!.includes(prefix)) continue;
-    let next = 0;
+    let next = 0, skipping = false;
     for (const part of match[1]!.split(",")) {
       if (!part.trim()) continue;
       const member = part.trim().match(/^(\w+)(?:\s*=\s*([+-]?(?:0x[\da-f]+|\d+))(?:u(?:ll?)?|ll?u?)?)?$/i);
-      if (!member) return bad("options.layerTypes: expected enum members with integer values");
+      if (!member) { skipping = true; continue; }
       if (member[2] !== undefined) {
         const literal = member[2], sign = literal.startsWith("-") ? -1 : 1;
         const digits = literal.replace(/^[+-]/, "");
         const radix = /^0x/i.test(digits) ? 16 : /^0\d/.test(digits) ? 8 : 10;
-        if (radix === 8 && /[89]/.test(digits)) return bad("options.layerTypes: invalid octal enum value");
-        next = sign * Number.parseInt(digits, radix);
-      }
-      if (!Number.isSafeInteger(next)) return bad("options.layerTypes: expected safe integer values");
-      if (member[1]!.startsWith(prefix)) values.set(member[1]!.slice(prefix.length), next);
+        const parsed = radix === 8 && /[89]/.test(digits) ? NaN : sign * Number.parseInt(digits, radix);
+        if (!Number.isSafeInteger(parsed)) { skipping = true; continue; }
+        next = parsed;
+        skipping = false;
+      } else if (skipping) continue;
+      if (member[1]!.startsWith(prefix)) values.set(member[1]!, next);
       next++;
     }
   }
-  for (const [name, value] of gbaDefineValues(project.paths.root, header)) {
-    if (name.startsWith(prefix) && value !== undefined) values.set(name.slice(prefix.length), value);
+  for (const [name, value] of gbaDefineValues(root, header)) {
+    if (name.startsWith(prefix) && value !== undefined) values.set(name, value);
   }
-  return values.size > 0 ? [...values].map(([name, value]) => ({ name, value })).sort((a, b) => a.value - b.value)
+  return [...values].map(([name, value]) => ({ name, value })).sort((a, b) => a.value - b.value);
+}
+function gbaLayerTypes(project: Project): { name: string; value: number }[] {
+  const prefix = "METATILE_LAYER_TYPE_";
+  const values = cPrefixedValues(project.paths.root, `${project.paths.root}/include/global.fieldmap.h`, prefix)
+    .map(({ name, value }) => ({ name: name.slice(prefix.length), value }));
+  return values.length > 0 ? values
     : ["NORMAL", "COVERED", "SPLIT"].map((name, value) => ({ name, value }));
 }
 // Binary bodies are passed to the hub's PNG-aware send adapter; JSON uses the same callback.
@@ -167,10 +180,8 @@ export function createGbaBlockEditRoutes(
     return { layout, split, primary, secondary, tileCount, tileIds };
   };
   const options = () => ({
-    behaviors: [...gbaDefineValues(project.paths.root,
-      readFileSync(`${project.paths.root}/include/constants/metatile_behaviors.h`, "utf8"))]
-      .filter((entry): entry is [string, number] => entry[0].startsWith("MB_") && entry[1] !== undefined)
-      .map(([name, value]) => ({ name, value })),
+    behaviors: cPrefixedValues(project.paths.root,
+      `${project.paths.root}/include/constants/metatile_behaviors.h`, "MB_"),
     layerTypes: gbaLayerTypes(project),
   });
   return routes(deps, (name, url, version) => {
@@ -264,7 +275,7 @@ export function createGbcBlockEditRoutes(
       const sharing = project.maps.filter(map => map.blkPath === c.map.blkPath && stagedGrids.has(map.name))
         .map(map => map.name).sort()[0];
       const count = sharing === undefined ? readFileSync(`${project.root}/${c.map.blkPath}`).length : stagedGrids.get(sharing)!.length;
-      requireGridCell(c.map.blkPath, count, c.map.width, c.map.height, selection.y * c.map.width + selection.x);
+      requireWholeGrid(c.map.blkPath, count, c.map.width, c.map.height);
     }
     const target = "id" in selection ? { blockId: selection.id, viaBorder: false } : resolveGbcEditTarget(project, name, selection, stagedGrids);
     const source = c.ts.metatiles[target.blockId], collision = c.ts.collision[target.blockId];
