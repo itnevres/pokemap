@@ -437,6 +437,35 @@ export function suite(family: "gba" | "gbc") {
       expect(await png(day.sheet.url)).not.toEqual(await png(night.sheet.url));
     }, 120_000);
 
+    // Conductor s10 (mutation M15): each sheet cell is drawn in its tile's palette-map palette. Oracle: the top-left
+    // 8x8 of the hub's metatile image (same map, same time); the palette map only selects blocks whose tile is not
+    // palette 0, so a sheet drawn in one palette cannot pass.
+    if (family === "gbc") it("6: sheet cells use each tile's palette-map palette", async () => {
+      const ts = gbc.tileset(gbc.map(pair.a).tileset);
+      const data = await block(pair.a, `block=${await idFor()}`);
+      const sheetPng = await png(data.sheet.url);
+      const sheet = pixels(sheetPng);
+      const sheetWidth = dimensions(sheetPng).width;
+      const blocks = readFileSync(resolve(root, pair.path));
+      let checked = 0;
+      for (let id = 0; id < blocks.length / 16 && checked < 3; id++) {
+        const tile = blocks[id * 16]!;
+        if (!ts.palMap[tile] || ts.palMap[tile]!.pal === 0) continue;
+        const index = data.sheet.tileIds.indexOf(tile);
+        if (index < 0) continue;
+        const metaPng = await png(`/api/metatile/${encoded(pair.a)}/${id}.png?time=day`);
+        expect(dimensions(metaPng)).toEqual({ width: 32, height: 32 });
+        const meta = pixels(metaPng);
+        const x0 = (index % 16) * 8, y0 = Math.floor(index / 16) * 8;
+        for (let y = 0; y < 8; y++) {
+          const cell = sheet.subarray(((y0 + y) * sheetWidth + x0) * 4, ((y0 + y) * sheetWidth + x0 + 8) * 4);
+          expect(cell, `block ${id} tile ${tile} row ${y}`).toEqual(meta.subarray(y * 32 * 4, (y * 32 + 8) * 4));
+        }
+        checked++;
+      }
+      if (checked === 0) throw new Error("fixture needs a block whose top-left tile uses a palette other than 0");
+    }, 120_000);
+
     it("7: changed draft renders the other metatile", async () => {
       const name = pair.a;
       const map = await mapGet(name);
