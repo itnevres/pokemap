@@ -629,10 +629,8 @@ export function suite(family: "gba" | "gbc") {
         expect(data.options.layerTypes).toEqual(layers.sort((a, b) => a.value - b.value));
       });
 
-      // Derived from the fix-2 brief's naming example (the rest of the brief is unreadable from this worktree: reads of
-      // the .superpowers SDD folder are permission-denied). Assumes B15a: a layer-type enum member whose initializer the
-      // parser cannot read is skipped, and the block GET still answers 200. The header written here is the source of
-      // every expectation; the original header is restored in finally.
+      // B15a: a layer-type enum member whose initializer cannot be read is skipped and the GET stays 200. The header
+      // written here is the source of every expectation; the original header is restored in finally.
       it("B15a: unreadable layer member is skipped, GET stays 200", async () => {
         const headerPath = resolve(root, "include/global.fieldmap.h");
         const restore = restoreBytes([headerPath]);
@@ -782,6 +780,40 @@ export function suite(family: "gba" | "gbc") {
             { name: "MB_TALL_GRASS", value: 2 },
             { name: "MB_DEEP_SAND", value: 3 },
             { name: "MB_INVALID", value: 255 },
+          ]);
+        } finally { restore(); }
+      });
+
+      // B15a/B15b literal forms: hex, octal, suffix and sign are read; a bad octal or unsafe value skips its member and
+      // the implicit successors; a later literal ends the skip. The untouched subject header gives exactly its own
+      // literal defines, in value order (stable for equal values).
+      it("B15a/B15b: enum literal forms, skips ended by a literal, and the subject's exact behavior list", async () => {
+        const behaviorsPath = resolve(root, "include/constants/metatile_behaviors.h");
+        const original = readFileSync(behaviorsPath, "utf8").replace(/\/\*[\s\S]*?\*\/|\/\/[^\r\n]*/g, "");
+        const own = [...original.matchAll(/^[ \t]*#define[ \t]+(MB_\w+)[ \t]+(0x[\da-f]+|\d+)[ \t]*$/gim)]
+          .map(([, name, value]) => ({ name: name!, value: Number(value) }))
+          .sort((a, b) => a.value - b.value);
+        expect(own.length).toBeGreaterThan(0);
+        const id = await idFor();
+        expect((await block(pair.a, `block=${id}`)).options.behaviors).toEqual(own);
+        const restore = restoreBytes([behaviorsPath]);
+        try {
+          writeFileSync(behaviorsPath, [
+            "enum {",
+            "    MB_HEX = 0x10,", "    MB_OCT = 010,", "    MB_SUF = 3u,",
+            "    MB_BAD_OCT = 09,", "    MB_AFTER_BAD,",
+            "    MB_BIG = 0x20000000000000,", "    MB_AFTER_BIG,",
+            "    MB_NEG = -1,", "    MB_NEXT,",
+            "};", "",
+          ].join("\n"));
+          const result = await request(`/api/edit/${encoded(pair.a)}/block?block=${id}`);
+          expect(result.status, JSON.stringify(result.body)).toBe(200);
+          expect(result.body.options.behaviors).toEqual([
+            { name: "MB_NEG", value: -1 },
+            { name: "MB_NEXT", value: 0 },
+            { name: "MB_SUF", value: 3 },
+            { name: "MB_OCT", value: 8 },
+            { name: "MB_HEX", value: 16 },
           ]);
         } finally { restore(); }
       });
