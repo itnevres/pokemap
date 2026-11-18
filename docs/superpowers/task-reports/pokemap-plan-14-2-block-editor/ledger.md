@@ -1032,3 +1032,43 @@ Traps seen in s7:
   `engine.test.ts` env fail, "expected 96 to be 98"). 11a reports archived to `_archive/`.
 - 11b worktree: merged the plan branch in (`a54941c`); auto-merged, no conflict in `blockEditRoutesSuite.ts`.
 - 11b impl hop brief rewritten self-contained (rulings B1-B15d inlined): `.superpowers/sdd/.../task-11b-impl-hop2-brief.md`.
+- **10b live smoke (built-in browser, `server` + `ui` at `2eaeffc`): pass.** GBA (`Pokemon Game/game`): map
+  NewBarkTown render `/api/render/NewBarkTown.png?border=1` and palette `/api/metatile/NewBarkTown_Layout/<n>.png`
+  load, world view draws `/api/render/<map>.png` (NewBarkTown, Route29, Route27, …); project switch to PerfPlus: map
+  OlivineGym `/api/render/OlivineGym.png?border=1&time=day`, palette `/api/metatile/OlivineGym/<n>.png?time=day`, world
+  renders; switch back to GBA. **No request in the session carried `tv=`** (network log filter), no console errors. The
+  staged-edit `tv=` half runs in 11b's live check.
+- 11b red run after the merge (`<s12>/t11b-red2.out`, 11-file list): **23 failed / 336 passed (359)**; every 11b case
+  red with 404 (`{"error":"not found"}`, missing routes), every 11a case green.
+- 11b impl: `chain.py --tier opus` (Codex lane), brief `task-11b-impl-hop2-brief.md`, verify through `<s9>/lockrun.py`
+  (typecheck + 11-file list, `--min-tests 359`), `--protect "packages/server/test/**"`. Hop 1 `gpt-6.2-sol`: dead (no
+  diff), as expected.
+- Impl chain: `RESULT failed` — `gpt-6.2-sol` dead (no diff); `gpt-6.1-sol` rejected "touched files outside --allow"
+  for `blockEditRoutes.ts`. **Conductor error, not the hop's:** chain.py's `--allow`/`--protect` are `nargs="*"`, so
+  repeating `--allow` keeps only the last value (the report path). Pass every glob after one `--allow`. Conductor
+  popped the stash and verified: typecheck pass; 11-file list **355 pass / 4 fail** (11b.6, 11b.7 both families:
+  the suite's `edit(name, "undo")` sent GET without a body, undo is POST-only → 404; a test bug the red run could not
+  show). Conductor test fix `35049c1` (2 lines, inline: tiny) → two block-edit suites **63/63**; impl committed as
+  `4c56e75` (`delegate(gpt-6.1-sol)`, +73/-26 `blockEditRoutes.ts`: shared `validate` per family for preview and
+  writes, `write` planner callback, check/apply in the shared POST path).
+- Reviews (Codex `gpt-6-astra`, brief `task-11b-review-brief.md`): quality **Approved** (0/0/0); spec **Needs
+  changes** (0/1/3). Conductor checked each: I1 **real** (GBA `cell: null` → `gbaOps.ts:322` checks only `undefined`,
+  reads `cell.x` → TypeError → 500); m2 (no real planner refusal in check), m3 (no planner-thrown `BAD_VALUE`, no B14a
+  ranges in check/apply), m4 (11b.6 append oracle against a staged "before") real and cheap. Rulings **B16a-d** in
+  `.superpowers/sdd/.../task-11b-fix1-tests-brief.md`. Fix round 1: tests hop `chain.py --tier opus` (Codex), then
+  the route guard inline (B16a, a few lines in `request()`).
+- Mutants round 1 (`<s12>/mut_t11b.out`, two block-edit suites, on `4c56e75` in a separate detached worktree
+  `<s12>/mut-t11b` so reviewers read an unchanged tree): K1-K8, K10 killed; **K9** (check planner refusal → 409),
+  **K11** (body `map` wins), **K12** (no overlay resync after the body arrives) survived.
+- Fix round 1: tests hop `chain.py --tier opus`: `gpt-6.2-sol` dead → **`gpt-6.1-sol` done `a768f07`** (11b.12
+  malformed cell ×5 shapes, 11b.13 outside-map planner BAD_VALUE, 11b.14 real planner refusal (GBC
+  `ALL_WITH_SAVE_AS_NEW`, GBA `SHARED_GRID` from a disk-shared layout), 11b.15 GBA attribute ranges incl. `2**32`,
+  11b.6 append oracles from disk). Vetted: literals, disk reads, earlier GETs. Red run (`<s12>/t11b-fix1-red.out`):
+  **10 failed / 71 passed (81)**, only 11b.12 (GBA `cell: null` TypeError, planner message prefix). Conductor (inline,
+  tiny): test `b515a8c` 11b.16 (body `map` ignored, for K11); fix `177bb21` (`request()` guard, B16a, 4 lines).
+  Verify: typecheck pass, 11-file list **379/379**.
+- Mutants round 2 (`<s12>/mut_t11b_r2.out`, on `177bb21`): K9, K11, K13 (null cell passes the guard), K14 (no guard)
+  **killed**. Task 11b total 13 of 14 killed; **K12 accepted** (the route also syncs before reading the body; only a
+  race during upload tells them apart).
+- Spec re-review (astra, `task-11b-spec-rereview.md`): **Approved** (0/0/0); I1, m2, m3, m4 resolved. Quality round 1
+  was already Approved; the round changed 4 route lines (a guard), no quality re-review.
