@@ -1,3 +1,4 @@
+import { createGbcBlockEditRoutes } from "./blockEditRoutes.js";
 import { syncTilesetOverlay, type OverlayState } from "./tilesetOverlay.js";
 import { statSync } from "node:fs";
 import { requireTilesetOwnership, refuseUnsavedBlockRefs } from "./blockEditOwnership.js";
@@ -110,6 +111,10 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void;
   });
   const addEvents = createGbcAddEventRoutes(proj, store, hooks, hooks.symbols);
   const mapNames = new Set(proj.maps.map((m) => m.name));
+  const blockEdits = createGbcBlockEditRoutes({
+    project: proj, store, syncOverlay, overlay: () => overlayState.applied,
+    sessionBody: name => sessionBody(store.open(name)), hasMap: name => mapNames.has(name),
+  });
   const mapConsts = new Set(proj.maps.map((m) => m.constName));
 
   /**
@@ -251,7 +256,7 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void;
     const refusals = prepareError === undefined ? diff.refusals : [...diff.refusals, { code: "SAVE_PREPARE_FAILED", subject: name,
       message: `Could not read the files this save would write: ${(prepareError as Error).message}`,
       fix: "Close any program holding the file or fix its permissions, then reopen Save" }];
-    return { plan, prepared, prepareError, checkNames, body: { ...diff, refusals, signNotices: refreshed.notices,
+    return { plan, prepared, prepareError, checkNames, body: { ...diff, tilesetEffects: plan.tilesetEffects, refusals, signNotices: refreshed.notices,
       fingerprint: plan.refusals.length > 0 || prepareError !== undefined ? null : planFingerprint(prepared),
     } };
   }
@@ -460,6 +465,7 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void;
   return {
     /** Returns true when it claimed the request (the response is sent now or later); false means fall through. */
     handle(req: IncomingMessage, url: URL, send: Send): boolean {
+      if (blockEdits.handle(req, url, send)) return true;
       if (req.method === "GET") {
         // Options and indicator suggestions also read tileset behavior/collision.
         syncOverlay();

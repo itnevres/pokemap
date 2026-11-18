@@ -1,3 +1,4 @@
+import { createGbaBlockEditRoutes } from "./blockEditRoutes.js";
 import { syncTilesetOverlay, type OverlayState } from "./tilesetOverlay.js";
 import { requireTilesetOwnership, refuseUnsavedBlockRefs } from "./blockEditOwnership.js";
 import { checkTilesetBaselines } from "@pokemap/core/src/blockEdit/save.js";
@@ -257,7 +258,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
     const refusals = prepareError === undefined ? diff.refusals : [...diff.refusals, { code: "SAVE_PREPARE_FAILED", subject: name,
       message: `Could not read the files this save would write: ${(prepareError as Error).message}`,
       fix: "Close any program holding the file or fix its permissions, then reopen Save" }];
-    return { plan, prepared, prepareError, checkNames, body: { ...diff, refusals, signNotices: refreshed.notices,
+    return { plan, prepared, prepareError, checkNames, body: { ...diff, tilesetEffects: plan.tilesetEffects, refusals, signNotices: refreshed.notices,
       fingerprint: plan.refusals.length > 0 || prepareError !== undefined ? null : planFingerprint(prepared),
     } };
   }
@@ -281,6 +282,16 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
       blocks: entry.session.blocks, border: entry.session.border, map: entry.session.map, isDirty: entry.session.isDirty,
       canUndo: entry.stack.canUndo(), canRedo: entry.stack.canRedo(),
     });
+
+  const blockEdits = createGbaBlockEditRoutes({
+    project, store: editSessions, syncOverlay, overlay: () => overlayState.applied,
+    hasMap: name => project.mapNames().includes(name),
+    sessionBody: name => {
+      let body: unknown;
+      sendSession((_code, payload) => { body = payload; }, 200, editEntryFor(name));
+      return body;
+    },
+  });
 
   // Shared by all three event routes below: the prev-snapshot / mutate /
   // push-undo-command sequence is identical across move/add/delete, only
@@ -331,6 +342,12 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
     };
 
     try {
+      if (blockEdits.handle(req, url, (code, body) => {
+        if (Buffer.isBuffer(body)) {
+          res.writeHead(code, { "content-type": "image/png", "cache-control": "no-cache" });
+          res.end(body);
+        } else send(code, body);
+      })) return;
       if (req.method === "GET") {
         // Options and indicator suggestions also read tileset behavior/collision.
         syncOverlay();
