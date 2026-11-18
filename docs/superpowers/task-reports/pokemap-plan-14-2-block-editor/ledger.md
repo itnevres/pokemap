@@ -928,3 +928,81 @@ Traps seen in s7:
   (DEAD regex). Known chain.py gap: a TIMEOUT hop whose verify passes counts as done (11b hop 1).
 - **User ruling (2026-11-18, via the master):** conductor sessions stay at 200k-250k context. Hand off at about 200k
   context or after two task merges, whichever comes first; the next prompt names only the next one or two tasks.
+
+## Execution (conductor s11, 2026-11-18)
+
+- Start (~09:30): repo matched the s11 launch prompt (`2367541`; `p14-2-t10b` `94ddb40`, `p14-2-t11` `e2658b1`,
+  `p14-2-t11b` `00cbc23`). Inventory: no vitest/tinypool/chain process; running `codex.exe` are the Codex desktop
+  app's (started 07:39), not ours; no `<s9>/vitest.lock`. Deleted 188 `%LOCALAPPDATA%\Temp\pokemap-*` roots.
+  s11 scratchpad: `C:\Users\Serve\AppData\Local\Temp\claude\8fd0350c313cb955\83bae35f-190d-441b-9341-b76d1bc8f31d\scratchpad\`.
+- 11a astra re-reviews (`<s9>/codex-t11a-re2-*.log`): both died at once on the **Codex usage limit, "try again at Nov
+  20th, 2026 3:45 PM"**. `chain_state.json` codex cooldown set to 2026-11-20 15:46. Per the launch prompt's fallback,
+  re-reviews go to Claude Opus `high-risk-reviewer` (two at once), each told to read astra's round-1 report and judge
+  every finding itself (a 2-day wait would block the plan).
+
+### Task 11a re-review (Claude Opus fallback) — s11
+- Spec `task-11a-spec-rereview.md`: **Approved** (0/0/5 Minor + escalation E1). Quality `task-11a-quality-rereview.md`:
+  **Needs changes** (0/2/2). Conductor checked each against `e2658b1`:
+  - quality I1 / spec m5 **real**: `gbaLayerTypes` throws `bad()` on an unreadable enum member; `options()` runs in every
+    GBA block GET → 400 on every map of such a project (not hit by the six corpora).
+  - quality I2 / spec m1 **real**: the layer test equals the old literals (red run had no layer failure).
+  - quality m1 / spec m4b **real**: B14d untested; GBC short `.blk` gives 500 for cells inside the data (loader refuses
+    the whole grid).
+  - spec m2 **real**: alias cap untested (the case-5 fixture's 512 consumer shares the symbol).
+  - Out of fix scope but cheap: `options.behaviors` is define-only, empty on upstream pokeemerald (enum).
+- **E1 (escalation, confirmed):** GBA usage/planner are keyed by tileset *symbol* (`core/src/blockEdit/usage.ts:349`
+  `consumingBySymbol`; `gbaOps.ts` cap loop), but spec §Identity requires the resolved file path. The subject has real
+  aliases: 10 `gTileset_Building*` headers share `gMetatiles_InsideBuilding` (`primary/building/metatiles.bin`), 6
+  SecretBase secondaries share `gMetatiles_SecretBaseSecondary`. An edit through a `gTileset_Building_Dome` map misses
+  the `gTileset_Building` maps in `usage.maps` (wrong `confirm`). Not caught by any test. Ruling: a separate High
+  core fix (Tasks 5-7 code, file-keyed GBA consumers/usage/structural/cap), scheduled before Task 12 (the UI that
+  shows `confirm`); 11b must not copy the symbol scope.
+- Fix round 2 rulings **B15a-d** in `.superpowers/sdd/.../task-11a-fix2-brief.md` (options never refuse; behaviors read
+  the enum too; GBC short `.blk` → 409 for every cell; route cap follows the file, planner side is E1). Deferred to
+  Task 16: spec m4a, quality m2a, m2c.
+- Delegation: Codex out → tests hop `chain.py --tier sonnet --no-codex` (free lane; user ruling 2026-11-13).
+
+### Task 10b re-review (Claude Opus fallback) — s11
+- Spec `task-10b-spec-rereview.md`: **Approved** (0/0/2: `useGbcMap.reload` generation unpinned; world `imageUrl`
+  identity stability between bumps unpinned). Quality `task-10b-quality-rereview.md`: **Needs changes** (0/1/3).
+  I-1 **real**: `get imageUrl()` calls `useTilesetVersion()` + `useCallback` behind an interface typed as a plain
+  method; any read outside render (effect, spread, event) is an invalid hook call, and a fake→real adapter swap changes
+  WorldSurface's hook count. m-1 (inline guarded fetch lost its URL-switch coverage), m-2 (`await r.json()` on a 2xx
+  non-JSON discard leaves the client dirty), m-3 (stale docs) all real and small.
+- Fix round 2 rulings **U7a-c** in `.superpowers/sdd/.../task-10b-fix2-brief.md` (adapter hook member `useImageUrl()`
+  called at WorldSurface top level; best-effort discard body; docs) and 4 test cases.
+- **Delegation lesson:** OpenCode hops cannot read `.superpowers/` (outside the worktree: permission-denied), so a hop
+  brief that points there gets a guess. 11a tests hop 1 (`603aa2b`, OpenRouter inkling-2-small) added 1 of 9 cases;
+  the 10b hop was stopped before it produced anything. Both relaunched with the rulings inlined into the hop brief
+  (`task-11a-fix2-tests-hop2-brief.md`, `task-10b-fix2-tests-hop-brief.md`). Hop briefs must be self-contained.
+
+### Fix round 2 tests (both tasks) — s11
+- 11a tests hop 2 (inlined brief): RESULT done, OpenRouter `inkling-2-small:free` → `2acdce9` (+192 over `603aa2b`;
+  9 cases + hop 1's B15a case + case-5 else branch). Vetted: every expectation a literal or a file the test writes
+  (temp root, `restoreBytes` in `finally`); alias case finds the aliased primary file on disk with the literal role
+  rule. Red run (`<s9>/t11a-fix2-red.out`): **4 failed / 35 passed (39)**, right reasons (two B15a 400s, B15b only
+  `MB_INVALID`, GBC short `.blk` 500 `INTERNAL_ERROR`). B14c′ offset, fallback, define override, alias cap, GBA
+  short grid green on today's code (pin existing behaviour; mutants to follow).
+- 10b tests hop (inlined brief): RESULT done, OpenRouter `inkling-2-small:free` → `7721a21` (+140 over 4 files: reload
+  late reply, URL-switch sticky error / stale payload / cancelled same-generation, identity stable without a bump in
+  both world surfaces, non-JSON discard). Vetted: literals and mocked replies. Red run (`<s9>/t10b-fix2-red.out`):
+  **1 failed / 58 passed (59)**: only U7b, as expected.
+- Impl hops: both `chain.py --tier sonnet --no-codex` (free lane; Codex out), verify through `<s9>/lockrun.py`
+  (11a: typecheck + the 11-file list, `--min-tests 335`; 10b: typecheck + `packages/ui`, `--min-tests 2328`).
+
+### Fix round 2 impl, mutants, re-review 2 — s11
+- 11a impl hop: RESULT done, OpenRouter `inkling-2-small:free` → `e28bf13` (+28/-17 `blockEditRoutes.ts`): one
+  `cPrefixedValues(root, path, prefix)` enum-or-define reader (skip rule, defines override, sorted by value, never
+  throws) for layer types (fallback 0/1/2) and behaviors; GBC `requireWholeGrid`. Conductor verify (lockrun): 11-file
+  list **335/335**. Round-3 mutants (`<s9>/mut_t11a_r3.out`): 7 of 8 killed; **R6** (a literal never ends the skip)
+  survived → conductor test `297439b` (inline, one test: hex/octal/suffix/sign, bad octal and unsafe skip, skip ended
+  by a literal, exact subject behaviors list parsed from the header; stale hop comment dropped; covers both 11a r2
+  Minors) → R6 KILLED, two suites 40/40. Task 11a round 3: 8 of 8 killed.
+- 10b impl hop: RESULT done, OpenRouter `inkling-2-small:free` → `041c362` (+24/-20 over 9 files; test edits only the
+  fake-adapter `useImageUrl: () => fakeImageUrl` swap). Conductor verify: typecheck pass, **`packages/ui` 2328/2328
+  (133 files)**. Round-3 mutants (`<s9>/mut_t10b_r3.out`): **6 of 6 killed** (H1 reload without generation, H2 note
+  before cancelled, H3 no reset on URL change, H4/H5 URL builder fresh per render, H6 strict discard JSON).
+- Re-review 2 (same Opus reviewers, resumed): 11a spec **Approved** (0/0/2), quality **Approved** (0/0/2) — both pairs
+  of Minors covered by `297439b`. 10b spec **Approved** (0/0/0), quality **Approved** (0/0/1: identity tests do not
+  prove a rerender happened) → conductor `0cb5e3d` (inline, 2 lines per file: assert `useWorldTiles` saw a new call);
+  the two files 40/40.
