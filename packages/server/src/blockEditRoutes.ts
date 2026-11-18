@@ -59,6 +59,10 @@ function request(body: unknown): Obj {
   if (req.mode !== "ok" && req.mode !== "saveAsNew") return bad("request.mode: expected ok or saveAsNew");
   if (req.from !== "map" && req.from !== "palette") return bad("request.from: expected map or palette");
   if (!object(req.draft)) return bad("draft: expected an object");
+  // B16a: a present cell must be { x, y } integers; the planners read cell.x unguarded.
+  if (req.cell !== undefined && (!object(req.cell) || !Number.isInteger(req.cell.x) || !Number.isInteger(req.cell.y))) {
+    return bad("request.cell: expected { x, y } integers");
+  }
   return req;
 }
 function owner(entries: Iterable<[string, OwnershipEntry]>, plan: BlockEditPlan): string | null {
