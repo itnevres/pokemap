@@ -781,3 +781,46 @@ Traps seen in s7:
   Expected survivors: 11a M14 (pair.a's layout has no tile gap), M16 (an array body fails on `request` anyway); 10b N1/N2
   (no loader test; the fix round's late-reply tests cover the loaders).
 - Removable: `wt-t10`, `rv-t10` (merged), `rv-t9`, `wt-t9`, `wt-t5` (unlink `node_modules` junctions first).
+
+## Execution (conductor s10, 2026-11-17)
+
+- Start (19:00): repo matched the s10 launch prompt (`1c9d253` on `d1b7eee`; `wt-t11` `9a51768`, `wt-t10b` `f6cedeb`).
+  s9's chained mutation job was alive (11a at M10 of 16, 10b queued behind it in the same shell, holding
+  `<s9>/vitest.lock`); left running. s10 scratchpad:
+  `C:\Users\Serve\AppData\Local\Temp\claude\8fd0350c313cb955\3d225916-0a42-4209-a3b3-8f4afc71a35c\scratchpad\`.
+- **Ruling B14c′ (s10):** GBA `METATILE_LAYER_TYPE_*` are C `enum` members in `include/global.fieldmap.h`, not
+  `#define`s, so the define reader cannot see them. Read the enum (implicit increment, explicit `= n`) or defines from
+  that header; fallback NORMAL/COVERED/SPLIT = 0/1/2. Added to `task-11a-fix1-brief.md`.
+- Hop briefs written: `task-11a-fix1-tests-hop-brief.md`, `task-10b-fix1-tests-hop-brief.md` (10b allows one stub
+  edit in `tilesetVersion.ts`: `tilesetGeneration()` returning 0 and an unused `generation?` parameter, so the
+  typecheck-only verify can pass). Both chains (`--tier opus`, verify typecheck) wait in the background for their
+  task's `MUT EXIT` and a clean worktree.
+
+### Task 11a (High) — s10
+- s9's mutations (`<s9>/mut_t11a.out`, MUT EXIT 0): **13 of 16 KILLED**. Survivors: M14 (GBA `tileIds` no gap:
+  expected, pair.a's layout has no gap), M16 (array preview body accepted: expected, an array fails on `request`
+  anyway), and **M15 (GBC sheet draws every tile in palette 0 instead of its palette-map palette): a real gap**, not
+  on s9's expected list; no case checks sheet pixels. Fix: a test that crops the sheet cell of a block's square-0 tile
+  whose palette-map palette is not 0 and compares it with the top-left 8×8 of the hub's metatile image of that block
+  (same time). Added to the fix round after the tests hop.
+- Tests hop 1: `chain.py --tier opus` RESULT failed, `gpt-6.2-sol failed (no diff)`: Codex answered
+  `model_not_found` ("not supported when using Codex with a ChatGPT account"); chain.py's DEAD regex matched only
+  "model not found", so it took this for a real failure and stopped before `gpt-6.1-sol`. Fixed in
+  `~/.claude/skills/offload/chain.py` (DEAD gains `model_not_found|not supported when using Codex`; `classify` of the
+  message now says `dead`). Rerun launched.
+- Tests hop rerun: RESULT done, `gpt-6.1-sol done` → `99f0ac5` (+202 suite lines, report
+  `task-11a-fix1-tests-report.md`). Vetted line by line: case 3 content (GBA entries decoded from the staged 16 bytes,
+  GBC tiles from the staged buffer; replacement = first different disk block); cap (GBA consumers and roles from the
+  core project + the planner rule, file minimum; GBC staged appends to 256 with collision lines); sheet `tv` from the
+  map payload before/after a stage; GBC day/nite sheets on the first map whose `/api/render` differs by time; changed
+  draft preview vs the hub metatile PNG of B (same primary file, same layer bits); B14a guards with masks from the
+  profile; B14c′ enum parsed from disk. No expectation reads the route under test. B14d short grid not tested (hop
+  deferred it; optional in the brief). Conductor `3c12b60` (inline, one test, smaller than a brief): GBC sheet cells
+  vs the top-left 8×8 of the hub metatile image for blocks whose top-left tile has palette-map palette ≠ 0 (M15).
+  Typecheck pass.
+- Mutation results (finished after the handoff note, 2026-11-17 ~19:30): **11a 13/16 KILLED** (M1-M13: revision from
+  disk, grids empty, sheet `pal`, preview palettes/time, `tilesetEffects` per family, GET opens a session, owner, 404 on
+  a malformed name); survivors M14, M16 equivalent, **M15 GBC sheet ignores the palette map: test gap** → added to
+  `task-11a-fix1-brief.md` item 7. **10b 10/12 KILLED** (N2-N10, N12); survivors **N1** (GBA loader note, no test) and
+  **N11** (no reset on unmount, no test) → added to `task-10b-fix1-brief.md` item 5. Both worktrees clean after the
+  runs; `s9\vitest.lock` removed.
