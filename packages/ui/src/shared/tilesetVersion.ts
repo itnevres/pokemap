@@ -27,7 +27,7 @@ export function noteTilesetVersion(v: unknown, generation?: number): void {
   if (v > version) setVersion(v);
 }
 
-/** Drops the recorded version back to 0 (test isolation). */
+/** Production role: the FamilyApp unmount resets it, retiring the generation so late replies from the old project are dropped. Also used for test isolation. */
 export function resetTilesetVersion(): void {
   currentGeneration++;
   setVersion(0);
@@ -43,4 +43,5 @@ export function currentTilesetVersion(): number {
   return version;
 }
 
+/** Bumped by `resetTilesetVersion`; `noteTilesetVersion` drops replies stamped with an older generation. */
 export function tilesetGeneration(): number { return currentGeneration; }

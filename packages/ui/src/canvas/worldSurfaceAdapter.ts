@@ -123,8 +123,8 @@ export interface WorldSurfaceAdapter<
   modifiedDoubleClick?: boolean;
   /** Connection palette tokens and fallbacks, in stable source-map/warp-index order. */
   connectionColors?: readonly { token: string; fallback: string }[];
-  /** Image URL for a placement at a tile version. */
-  imageUrl(p: P, version: number | undefined): string;
+  /** Hook: called once per render, unconditionally. Returns the URL builder for a placement at a tile version. */
+  useImageUrl(): (p: P, version: number | undefined) => string;
   /** A change drops every cached tile (time of day, or a constant). */
   cacheKey: string | number;
   /** Encounter-border neighbours: every in-scope placement, hidden ones included ("scoped"), or only drawn ones (default). */

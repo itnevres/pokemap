@@ -139,7 +139,8 @@ export function useEditSessionCore<State>(base: string, mapName: string | null, 
     const generation = tilesetGeneration();
     const r = await fetch(`${base}/${encodeURIComponent(mapName)}/discard`, { method: "POST" });
     if (!r.ok) throw new Error(`POST ${base}/${mapName}/discard -> ${r.status}`);
-    const data: unknown = await r.json();
+    // A 2xx whose body is not JSON still ran the discard server-side; reset locally and note a version only if it is a number.
+    const data: unknown = await r.json().catch(() => null);
     noteTilesetVersion((data as { tilesetVersion?: unknown } | null)?.tilesetVersion, generation);
     if (!owner.isCurrent()) return;
     invalidateEventOptions();

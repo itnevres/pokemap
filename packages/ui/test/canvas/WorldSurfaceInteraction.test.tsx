@@ -7,6 +7,7 @@ import type { PlacementLedger } from "../../src/shared/placementLedger.js";
 import type { SurfacePlacement, SurfaceWarp, SurfaceWorld, WorldSurfaceAdapter } from "../../src/canvas/worldSurfaceAdapter.js";
 
 const lateState = vi.hoisted(() => ({ active: false, writes: vi.fn() }));
+const fakeImageUrl = (p: SurfacePlacement, version: number | undefined) => `/t/${p.map}?v=${version ?? 0}`;
 
 // React silently ignores setters after unmount. Observe their invocation as well as DOM and console output.
 vi.mock("react", async (importOriginal) => {
@@ -166,7 +167,7 @@ beforeEach(() => {
       return outcome.promise;
     },
     postDungeons: async () => {},
-    imageUrl: (p, version) => `/t/${p.map}?v=${version ?? 0}`,
+    useImageUrl: () => fakeImageUrl,
     cacheKey: 0,
     drawnByDefault: (p) => p.map !== "Hidden",
     conflictTooltip: () => "conflict",

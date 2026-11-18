@@ -311,7 +311,7 @@ export function createGbcWorldSurface(time: GbcTimeOfDay): WorldSurfaceAdapter<G
     modifiedDoubleClick: true,
     // A stationary Shift-click selects like a plain click (old GbcWorldCanvas onClick had no modifier guard).
     shiftClickSelects: true,
-    get imageUrl() {
+    useImageUrl: () => {
       const tv = useTilesetVersion();
       return useCallback((p: GbcWorldPlacement, version: number | undefined): string => {
         const query = [`time=${time}`, version ? `v=${version}` : "", tv > 0 ? `tv=${tv}` : ""].filter(Boolean).join("&");

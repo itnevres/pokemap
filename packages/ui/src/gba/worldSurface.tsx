@@ -204,7 +204,7 @@ export function createGbaWorldSurface(): WorldSurfaceAdapter<GbaWorldPlacement, 
         },
       }));
     },
-    get imageUrl() {
+    useImageUrl: () => {
       const tv = useTilesetVersion();
       return useCallback((p: GbaWorldPlacement, version: number | undefined): string => {
         const query = [version ? `v=${version}` : "", tv > 0 ? `tv=${tv}` : ""].filter(Boolean).join("&");
