@@ -22,7 +22,7 @@ import { parseBlocks } from "@pokemap/core/src/load/blocks.js";
 import { encodePng } from "@pokemap/cli/src/png.js";
 import type { createEditSessionStore } from "./editSessions.js";
 import type { createGbcEditSessionStore } from "./gbcEditSessions.js";
-import { ownedTilesetPaths, type OwnershipEntry } from "./blockEditOwnership.js";
+import { ownedTilesetPaths, stageTilesetPlan, type BlockEditStore, type OwnershipEntry } from "./blockEditOwnership.js";
 import { decodeMapName, parseTimeParam } from "./gbcRoutes.js";
 import { readBody } from "./index.js";
 
@@ -59,6 +59,10 @@ function request(body: unknown): Obj {
   if (req.mode !== "ok" && req.mode !== "saveAsNew") return bad("request.mode: expected ok or saveAsNew");
   if (req.from !== "map" && req.from !== "palette") return bad("request.from: expected map or palette");
   if (!object(req.draft)) return bad("draft: expected an object");
+  // B16a: a present cell must be { x, y } integers; the planners read cell.x unguarded.
+  if (req.cell !== undefined && (!object(req.cell) || !Number.isInteger(req.cell.x) || !Number.isInteger(req.cell.y))) {
+    return bad("request.cell: expected { x, y } integers");
+  }
   return req;
 }
 function owner(entries: Iterable<[string, OwnershipEntry]>, plan: BlockEditPlan): string | null {
@@ -130,12 +134,14 @@ function gbaLayerTypes(project: Project): { name: string; value: number }[] {
 }
 // Binary bodies are passed to the hub's PNG-aware send adapter; JSON uses the same callback.
 function routes(deps: CommonDeps, read: (name: string, url: URL, version: number) => unknown,
-  sheet: (name: string, url: URL) => Raster, preview: (name: string, url: URL, body: unknown) => Raster): Routes {
+  sheet: (name: string, url: URL) => Raster, preview: (name: string, url: URL, body: unknown) => Raster,
+  write: (name: string, body: unknown) => { plan: BlockEditPlan; id: number; mode: string }, store: BlockEditStore): Routes {
   return { handle(req, url, send) {
     const block = /^\/api\/edit\/([^/]+)\/block$/.exec(url.pathname);
     const image = /^\/api\/block-sheet\/([^/]+)\.png$/.exec(url.pathname);
     const draft = /^\/api\/edit\/([^/]+)\/block\/preview$/.exec(url.pathname);
-    const match = req.method === "GET" ? block ?? image : req.method === "POST" ? draft : null;
+    const action = /^\/api\/edit\/([^/]+)\/block\/(check|apply)$/.exec(url.pathname);
+    const match = req.method === "GET" ? block ?? image : req.method === "POST" ? draft ?? action : null;
     if (!match) return false;
     const fail = (error: unknown, planner = false) => {
       if (error instanceof BadGrid) { send(409, { error: error.message, code: "BAD_GRID" }); return; }
@@ -148,14 +154,40 @@ function routes(deps: CommonDeps, read: (name: string, url: URL, version: number
       const name = decodeMapName(match[1]!);
       if (name === undefined) { send(400, { error: `malformed map name ${match[1]}`, code: "BAD_VALUE" }); return true; }
       if (!deps.hasMap(name)) { send(404, { error: `no map ${name}`, code: "NOT_FOUND" }); return true; }
-      if (draft && req.method === "POST") {
+      if ((draft || action) && req.method === "POST") {
         void readBody(req).then(text => {
           let body: unknown;
           try { body = JSON.parse(text); }
           catch { return bad("body: invalid JSON"); }
           // The overlay may change while the body is arriving. Render the current view.
           deps.syncOverlay();
-          send(200, { png: encodePng(preview(name, url, body)).toString("base64") });
+          if (draft) { send(200, { png: encodePng(preview(name, url, body)).toString("base64") }); return; }
+          if (!object(body)) return bad("body: expected a JSON object");
+          if (typeof body.revision !== "string") return bad("revision: expected a string");
+          const check = action![2] === "check";
+          let result: { plan: BlockEditPlan; id: number; mode: string };
+          try { result = write(name, body); }
+          catch (error) {
+            if (check && error instanceof BlockEditRefusal && error.code !== "BAD_VALUE") {
+              send(200, { usage: null, confirm: false, warnings: [], refusal: { code: error.code, error: error.message } });
+              return;
+            }
+            throw error;
+          }
+          const { plan, id, mode } = result;
+          if (plan.revision !== body.revision) {
+            const error = "revision: block edit is stale";
+            if (check) send(200, { usage: plan.usage, confirm: false, warnings: plan.warnings, refusal: { code: "STALE", error } });
+            else send(409, { error, code: "STALE" });
+            return;
+          }
+          if (check) { send(200, { usage: plan.usage, confirm: plan.confirm, warnings: plan.warnings }); return; }
+          if (plan.edits.length || plan.placement) {
+            const labelId = mode === "saveAsNew" ? plan.newBlockId! : id;
+            const label = `${mode === "saveAsNew" ? "New" : "Edit"} block $${labelId.toString(16).toUpperCase().padStart(2, "0")}`;
+            stageTilesetPlan(store, name, plan, label);
+          }
+          send(200, deps.sessionBody(name));
         }).catch(error => fail(error));
       } else if (image) send(200, encodePng(sheet(name, url)));
       else send(200, read(name, url, version));
@@ -184,6 +216,22 @@ export function createGbaBlockEditRoutes(
       `${project.paths.root}/include/constants/metatile_behaviors.h`, "MB_"),
     layerTypes: gbaLayerTypes(project),
   });
+  const validate = (name: string, body: unknown) => {
+    const req = request(body), c = context(name), id = integer(req.metatileId, "request.metatileId");
+    const d = req.draft as Obj;
+    if (!Array.isArray(d.entries) || d.entries.length !== 8 || d.entries.some(entry => !object(entry))) return bad("draft.entries: expected 8 tile entries");
+    const entries = d.entries.map((entry: Obj) => {
+      const tile = integer(entry.tile, "draft.entries"), palette = integer(entry.palette, "draft.entries");
+      if (tile > 0x3ff || c.tileIds[tile] == null) return bad(`draft.entries: tile ${tile} is outside the sheet`);
+      if (palette > 15 || typeof entry.xFlip !== "boolean" || typeof entry.yFlip !== "boolean") return bad("draft.entries: invalid palette or flip");
+      return { tile, palette, xFlip: entry.xFlip, yFlip: entry.yFlip };
+    });
+    const behavior = integer(d.behavior, "draft.behavior"), layer = integer(d.layerType, "draft.layerType");
+    if (behavior > project.profile.metatileBehaviorMask || (behavior & ~project.profile.metatileBehaviorMask) !== 0) return bad("draft.behavior: value exceeds mask");
+    const layerMask = project.profile.metatileLayerTypeMask >>> maskShift(project.profile.metatileLayerTypeMask);
+    if (layer > layerMask || (layer & ~layerMask) !== 0) return bad("draft.layerType: value exceeds mask");
+    return { req, c, id, entries };
+  };
   return routes(deps, (name, url, version) => {
     const c = context(name), selection = selector(url), stagedGrids = grids();
     let id: number;
@@ -231,23 +279,15 @@ export function createGbaBlockEditRoutes(
     }
     return raster;
   }, (name, _url, body) => {
-    const req = request(body), c = context(name), id = integer(req.metatileId, "request.metatileId");
-    const d = req.draft as Obj;
-    if (!Array.isArray(d.entries) || d.entries.length !== 8 || d.entries.some(entry => !object(entry))) return bad("draft.entries: expected 8 tile entries");
-    const entries = d.entries.map((entry: Obj) => {
-      const tile = integer(entry.tile, "draft.entries"), palette = integer(entry.palette, "draft.entries");
-      if (tile > 0x3ff || c.tileIds[tile] == null) return bad(`draft.entries: tile ${tile} is outside the sheet`);
-      if (palette > 15 || typeof entry.xFlip !== "boolean" || typeof entry.yFlip !== "boolean") return bad("draft.entries: invalid palette or flip");
-      return { tile, palette, xFlip: entry.xFlip, yFlip: entry.yFlip };
-    });
-    const behavior = integer(d.behavior, "draft.behavior"), layer = integer(d.layerType, "draft.layerType");
-    if (behavior > project.profile.metatileBehaviorMask || (behavior & ~project.profile.metatileBehaviorMask) !== 0) return bad("draft.behavior: value exceeds mask");
-    const layerMask = project.profile.metatileLayerTypeMask >>> maskShift(project.profile.metatileLayerTypeMask);
-    if (layer > layerMask || (layer & ~layerMask) !== 0) return bad("draft.layerType: value exceeds mask");
+    const { c, id, entries } = validate(name, body);
     const image = renderMetatile(id, c.primary, c.secondary, c.split, project.profile, { overrideEntries: entries });
     if (image.outOfRange) return bad(`request.metatileId: invalid metatile ${id}`);
     return image;
-  });
+  }, (name, body) => {
+    const { req, id } = validate(name, body);
+    const input = { ...req, map: name } as unknown as GbaBlockEditRequest;
+    return { plan: planGbaBlockEdit(project, input, deps.overlay(), grids()), id, mode: input.mode };
+  }, store);
 }
 
 // Preserve the planner's GET status without changing the shared refusal type.
@@ -267,6 +307,17 @@ export function createGbcBlockEditRoutes(
   const context = (name: string) => {
     const map = project.map(name), ts = project.tileset(map.tileset), sheetToId = gbcSheetToTileId(ts);
     return { map, ts, tileIds: ts.tiles.map((_, i) => sheetToId(i)) };
+  };
+  const validate = (body: unknown) => {
+    const req = request(body), id = integer(req.blockId, "request.blockId"), d = req.draft as Obj;
+    if (!Array.isArray(d.tiles) || d.tiles.length !== 16 || d.tiles.some(tile => !Number.isInteger(tile))) return bad("draft.tiles: expected 16 integers");
+    const collisionNames = new Set(collisions().map(entry => entry.name));
+    if (!Array.isArray(d.collision) || d.collision.length !== 4 || d.collision.some(name => typeof name !== "string" || !collisionNames.has(name))) return bad("draft.collision: expected four collision names");
+    if (!Array.isArray(d.palettes)) return bad("draft.palettes: expected an array");
+    for (const entry of d.palettes) {
+      if (!object(entry) || !Number.isSafeInteger(entry.square) || typeof entry.palName !== "string" || (entry.scope !== "all" && entry.scope !== "local")) return bad("draft.palettes: invalid palette entry");
+    }
+    return { req, id, d };
   };
   return routes(deps, (name, url, version) => {
     const c = context(name), selection = selector(url), stagedGrids = grids();
@@ -312,18 +363,14 @@ export function createGbcBlockEditRoutes(
     }
     return raster;
   }, (name, url, body) => {
-    const req = request(body), c = context(name), id = integer(req.blockId, "request.blockId"), d = req.draft as Obj;
+    const { id, d } = validate(body), c = context(name);
     if (!c.ts.metatiles[id]) return bad(`request.blockId: invalid block ${id}`);
-    if (!Array.isArray(d.tiles) || d.tiles.length !== 16 || d.tiles.some(tile => !Number.isInteger(tile))) return bad("draft.tiles: expected 16 integers");
     const tiles = d.tiles as number[];
     for (const tile of tiles) if (pngTileIndex(c.ts, tile) === null) return bad(`draft.tiles: tile ${tile} is outside the sheet`);
-    const collisionNames = new Set(collisions().map(entry => entry.name));
-    if (!Array.isArray(d.collision) || d.collision.length !== 4 || d.collision.some(name => typeof name !== "string" || !collisionNames.has(name))) return bad("draft.collision: expected four collision names");
-    if (!Array.isArray(d.palettes)) return bad("draft.palettes: expected an array");
     const palNames = new Map(palettes().map(({ name, value }) => [name, value]));
     const palMap = c.ts.palMap.map(entry => entry === null ? null : { ...entry });
     const changed = new Map<number, number>();
-    for (const entry of d.palettes) {
+    for (const entry of d.palettes as unknown[]) {
       if (!object(entry)) return bad("draft.palettes: expected palette entries");
       const square = integer(entry.square, "draft.palettes"), palette = typeof entry.palName === "string" ? palNames.get(entry.palName) : undefined;
       if (square >= 16 || palette === undefined || (entry.scope !== "all" && entry.scope !== "local")) return bad("draft.palettes: invalid palette entry");
@@ -335,5 +382,9 @@ export function createGbcBlockEditRoutes(
     const ts = { ...c.ts, palMap, metatiles: c.ts.metatiles.map((block, index) => index === id ? { tiles } : block) };
     // Reuse the map renderer so time palettes and per-group roof pixels stay identical.
     return renderGbcMapMetatile({ ...project, tileset: symbol => symbol === c.map.tileset ? ts : project.tileset(symbol) }, name, id, { time: time(url) });
-  });
+  }, (name, body) => {
+    const { req, id } = validate(body);
+    const input = { ...req, map: name } as unknown as GbcBlockEditRequest;
+    return { plan: planGbcBlockEdit(project, input, deps.overlay(), grids()), id, mode: input.mode };
+  }, store);
 }
