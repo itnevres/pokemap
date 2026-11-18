@@ -15,6 +15,7 @@ import { useGbcWorld } from "./hooks/useGbcWorld.js";
 import { useGbcCoverage } from "./hooks/useGbcCoverage.js";
 import { isGbcEncountersPayload, isGbcWarpsPayload, isRecord } from "./guards.js";
 import type { GbcTimeOfDay } from "./time.js";
+import { currentTilesetVersion, useTilesetVersion } from "../shared/tilesetVersion.js";
 
 /** Native block size, px (`GbcWorldPayload.blockPx`, always 32). Zoom here
  *  is screen px PER BLOCK (32 px native), not per tile. */
@@ -216,6 +217,7 @@ function isLayoutSaved(x: unknown): x is { dungeonAutoLayout: boolean } {
 }
 
 function useGbcSurfaceWorld(ledger: PlacementLedger, scope: WorldScope) {
+  const tilesetVersion = useTilesetVersion();
   // The ledger snapshot taken as each world GET was issued, by generation. A response can land in the same batch as a
   // newer GET's issue, so its own snapshot must survive that issue; reconciliation prunes older generations.
   const issued = useRef(new Map<number, PlacementSnapshot>());
@@ -253,7 +255,7 @@ function useGbcSurfaceWorld(ledger: PlacementLedger, scope: WorldScope) {
     }
     return { placements, components: data.components, conflicts: data.conflicts,
       dungeonAutoLayout: data.sidecar.dungeonAutoLayout };
-  }, [data, overrides, sizes]);
+  }, [data, overrides, sizes, tilesetVersion]);
   const move = useCallback((positions: ReadonlyMap<string, { x: number; y: number }>) => {
     setOverrides((previous) => ({ ...previous, ...Object.fromEntries(positions) }));
   }, []);
@@ -268,6 +270,13 @@ function useGbcSurfaceCoverage() {
 }
 
 export function createGbcWorldSurface(time: GbcTimeOfDay): WorldSurfaceAdapter<GbcWorldPlacement, WireConflict> {
+  // Read the store at call time: the adapter object is memoised per time of day, but a tileset bump re-renders the
+  // surface and re-runs useWorldTiles, which then asks for this URL. At version 0 the URL is exactly today's.
+  const renderUrl = (p: GbcWorldPlacement, version: number | undefined): string => {
+    const tv = currentTilesetVersion();
+    const query = [`time=${time}`, version ? `v=${version}` : "", tv > 0 ? `tv=${tv}` : ""].filter(Boolean).join("&");
+    return `/api/render/${encodeURIComponent(p.map)}.png?${query}`;
+  };
   return {
     // Native block size, px: zoom is screen px PER BLOCK, rather than per 16px event step.
     nativePx: BLOCK_PX,
@@ -309,8 +318,7 @@ export function createGbcWorldSurface(time: GbcTimeOfDay): WorldSurfaceAdapter<G
     modifiedDoubleClick: true,
     // A stationary Shift-click selects like a plain click (old GbcWorldCanvas onClick had no modifier guard).
     shiftClickSelects: true,
-    imageUrl: (p, version) =>
-      `/api/render/${encodeURIComponent(p.map)}.png?time=${time}${version ? `&v=${version}` : ""}`,
+    imageUrl: renderUrl,
     // A time switch drops the WHOLE image cache: decoded renders are ~153MB PER TIME OF DAY at native size.
     // Keep at most one time's worth, and never draw a stale day/nite image under the new time.
     cacheKey: time,

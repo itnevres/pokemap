@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { AddEventForm, EventKind } from "@pokemap/core/src/addEvent/types.js";
 import { useVisit } from "./useVisit.js";
 import { invalidateEventOptions } from "./useEventOptions.js";
+import { noteTilesetVersion } from "./tilesetVersion.js";
 
 /** Refusals keep their server code; callers suppress failures belonging to a retired visit. */
 export class EditSessionError extends Error {
@@ -88,6 +89,7 @@ export function useEditSessionCore<State>(base: string, mapName: string | null, 
           throw new EditSessionError(typeof error?.error === "string" ? error.error : `POST ${base}/${mapName}${path} -> ${r.status}`,
             typeof error?.code === "string" ? error.code : undefined, !owner.isCurrent());
         }
+        noteTilesetVersion((data as { tilesetVersion?: unknown } | null)?.tilesetVersion);
         if (owner.isCurrent() && (path === "/undo" || path === "/redo" || path === "/event/create")) invalidateEventOptions();
         return { data: data as R, ticket };
       } catch (error) {

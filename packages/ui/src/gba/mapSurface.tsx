@@ -9,6 +9,7 @@ import type { MapCanvasProps, EventRef } from "../components/MapCanvas.js";
 import type { MapSurfaceAdapter } from "../canvas/mapSurfaceAdapter.js";
 import { eventAt, firstEventAt, type EventLists } from "../canvas/events.js";
 import { EventsLegendItems } from "../shared/LegendBar.js";
+import { useTilesetVersion } from "../shared/tilesetVersion.js";
 import { BORDER_BAND, borderSideFromConnections, gbaDirToCompass, type CompassDir } from "../encounters/borderSide.js";
 
 /** Ordered object, warp, coord, bg lists (the scan order of `firstEventAt`). */
@@ -42,6 +43,7 @@ interface Hover {
 }
 
 export function useGbaMapSurface({ data, editSession, activeTool }: Pick<MapCanvasProps, "data" | "editSession" | "activeTool">): MapSurfaceAdapter<NonNullable<MapCanvasProps["activeTool"]>, PaintApplyBody, EventRef, Stamp, Hover> {
+  const tilesetVersion = useTilesetVersion();
   const { layout, split, map: staticMap, blocks: staticBlocks } = data;
   // Live blocks/map while an edit session is open for this map, the static `data` otherwise; the callbacks below
   // read them by name. Event move/add/delete mutate `session.map`, so event marks must read the live map too.
@@ -88,7 +90,7 @@ export function useGbaMapSurface({ data, editSession, activeTool }: Pick<MapCanv
     // useEditSession reseeds blocks after map switches; that first change is not paint (P12-8).
     skipFirstBlocksChange: true,
     // A session alone must not reload the unpainted image (P12-4h). The surface passes zero read-only.
-    imageUrl: (name, version) => `/api/render/${encodeURIComponent(name)}.png?border=${BORDER_RINGS}${version > 0 ? `&v=${version}` : ""}`,
+    imageUrl: (name, version) => `/api/render/${encodeURIComponent(name)}.png?border=${BORDER_RINGS}${version > 0 ? `&v=${version}` : ""}${tilesetVersion > 0 ? `&tv=${tilesetVersion}` : ""}`,
     // Every layer captures layout/blocks via withLayout. Encounters never invalidate the raster.
     overlays: [
       { key: "grid", label: "Grid", deps: [layout, blocks], draw: (raster) => drawGrid(withLayout(raster)),

@@ -1,7 +1,8 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { GbcMapPayload } from "@pokemap/core/src/gbc/wire.js";
 import { isGbcMapPayload } from "../guards.js";
 import { fetchGuarded, useGuardedFetch, type UseGuardedFetchResult } from "../../hooks/useGuardedFetch.js";
+import { noteTilesetVersion } from "../../shared/tilesetVersion.js";
 
 export interface UseGbcMapResult extends UseGuardedFetchResult<GbcMapPayload> {
   /** Plan 7 Task 5: re-reads the payload in place (after a save committed). Unlike a URL change this never
@@ -35,5 +36,8 @@ export function useGbcMap(name: string | null): UseGbcMapResult {
     setFresh({ url, forBase: baseData, data });
   }, [url, label, baseData]);
   const data = fresh && fresh.url === url && fresh.forBase === baseData ? fresh.data : baseData;
+  useEffect(() => {
+    noteTilesetVersion((data as { tilesetVersion?: unknown } | null)?.tilesetVersion);
+  }, [data]);
   return { data, error: base.error, reload };
 }

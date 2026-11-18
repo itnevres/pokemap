@@ -2,6 +2,7 @@ import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { GbcStamp } from "@pokemap/core/src/gbc/edit/paint.js";
 import type { GbcTimeOfDay } from "./time.js";
 import { useFollowHover } from "../shared/useFollowHover.js";
+import { useTilesetVersion } from "../shared/tilesetVersion.js";
 import { chunkRows, pickFold } from "../shared/paletteFold.js";
 import { useUniformRows, type ThumbSignature } from "../shared/useUniformRows.js";
 import { PaletteFrame, PaletteSelection } from "../shared/PaletteFrame.js";
@@ -60,6 +61,7 @@ export const GbcMetatilePalette = memo(function GbcMetatilePalette({ mapName, ti
   const cellRefs = useRef(new Map<number, HTMLButtonElement>());
   const [follow, setFollow] = useFollowHover();
   const [query, setQuery] = useState("");
+  const tilesetVersion = useTilesetVersion();
 
   useEffect(() => {
     if (!follow || highlightId === null) return;
@@ -73,7 +75,7 @@ export const GbcMetatilePalette = memo(function GbcMetatilePalette({ mapName, ti
     return searching ? all.filter((id) => hex(id).includes(q)) : all;
   }, [metatileCount, searching, q]);
   const rows = useMemo(() => chunkRows(visible, GBC_ROW), [visible]);
-  const src = (id: number) => `/api/metatile/${encodeURIComponent(mapName)}/${id}.png?time=${time}`;
+  const src = (id: number) => `/api/metatile/${encodeURIComponent(mapName)}/${id}.png?time=${time}${tilesetVersion > 0 ? `&tv=${tilesetVersion}` : ""}`;
   const { uniformRows, onThumbLoad, onThumbError } = useUniformRows(searching ? [] : rows, `${mapName}:${time}`, thumbSignature);
   const fold = searching ? rows.length : pickFold(rows.length, uniformRows);
 

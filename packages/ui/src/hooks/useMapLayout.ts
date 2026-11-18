@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { MapData } from "@pokemap/core/src/load/maps.js";
 import type { Layout, Split } from "@pokemap/core/src/model/types.js";
+import { noteTilesetVersion } from "../shared/tilesetVersion.js";
 
 /** Mirrors `packages/core/src/model/types.ts`'s `Block`, plus the resolved
  *  tile behaviour the server computes per block (see `/api/map/:name`). */
@@ -18,6 +19,8 @@ export interface MapLayoutData {
   blocks: MapBlock[];
   primaryCount: number;
   secondaryCount: number;
+  /** The hub's current tileset version at the time of this reply (Task 10b). */
+  tilesetVersion?: number;
 }
 
 export interface UseMapLayoutResult {
@@ -57,6 +60,7 @@ export function useMapLayout(name: string | null): UseMapLayoutResult {
         return r.json() as Promise<MapLayoutData>;
       })
       .then((d) => {
+        noteTilesetVersion(d.tilesetVersion);
         if (!cancelled) {
           setData(d);
           setLoading(false);
