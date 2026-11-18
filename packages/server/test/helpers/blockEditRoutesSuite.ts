@@ -1294,6 +1294,25 @@ export function suite(family: "gba" | "gbc") {
       expect(Object.keys(result.body).sort()).toEqual(["confirm", "usage", "warnings"]);
     }, 120_000);
 
+    it("11b.16: check and apply plan the URL's map and ignore a map in the body (B5)", async () => {
+      try {
+        const data = await block(pair.a, `block=${await idFor()}`);
+        const source = await findChangedSource(pair.a, data);
+        if (!source) throw new Error("fixture needs another visible block in the same metatile file");
+        const body = copiedRequest(data, source);
+        body.request.map = other;
+        const checked = await blockCheck(pair.a, body);
+        expect(checked.status, JSON.stringify(checked.body)).toBe(200);
+        expect(checked.body.refusal).toBeUndefined();
+        expect(checked.body.usage).toEqual(data.usage);
+        const depth = undoDepth(pair.a);
+        const applied = await blockApply(pair.a, body);
+        expect(applied.status, JSON.stringify(applied.body)).toBe(200);
+        expect(undoDepth(pair.a)).toBe(depth + 1);
+        expect(store.has(other)).toBe(false);
+      } finally { store.closeAll(); }
+    }, 120_000);
+
     it("11b.2: check.confirm follows the other maps that draw the block", async () => {
       const used = await (family === "gba" ? findGbaConfirm(true) : findGbcConfirm(true));
       const own = await (family === "gba" ? findGbaConfirm(false) : findGbcConfirm(false));
