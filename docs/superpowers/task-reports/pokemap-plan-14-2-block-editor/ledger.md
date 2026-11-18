@@ -1020,3 +1020,15 @@ Traps seen in s7:
   answers. OpenRouter free lane did all four s11 hops. OpenCode Zen pool rests to ~21:39 2026-11-18.
 - Handoff: `.superpowers/sdd/2026-11-10-pokemap-plan-14-2-block-editor/s12-launch-prompt.md` (scope: merge 11a + gate,
   10b live smoke, Task 11b).
+
+## Execution (conductor s12, 2026-11-18)
+
+- Start: repo matched the s12 launch prompt (`6df2eac`; `p14-2-t11` `297439b`, `p14-2-t11b` `00cbc23`). Inventory: no
+  vitest/chain process (node = Playwright MCP; `codex.exe` and OpenCode = the desktop apps); no `<s9>/vitest.lock`;
+  1 `%LOCALAPPDATA%\Temp\pokemap-*` root deleted. s12 scratchpad:
+  `C:\Users\Serve\AppData\Local\Temp\claude\8fd0350c313cb955\354aaab1-e129-40c0-ba11-94ff97ca4c7a\scratchpad\`.
+- **Task 11a merged:** `p14-2-t11` (`297439b`) `--no-ff` → **`59d630f`** (merge-tree clean). **Gate at `59d630f`:
+  4,816 pass / 1 fail / 269 files; typecheck pass, UI build pass; subjects unchanged** (fail: the known
+  `engine.test.ts` env fail, "expected 96 to be 98"). 11a reports archived to `_archive/`.
+- 11b worktree: merged the plan branch in (`a54941c`); auto-merged, no conflict in `blockEditRoutesSuite.ts`.
+- 11b impl hop brief rewritten self-contained (rulings B1-B15d inlined): `.superpowers/sdd/.../task-11b-impl-hop2-brief.md`.
