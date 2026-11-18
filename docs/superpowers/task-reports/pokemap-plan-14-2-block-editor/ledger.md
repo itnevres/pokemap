@@ -824,3 +824,107 @@ Traps seen in s7:
   `task-11a-fix1-brief.md` item 7. **10b 10/12 KILLED** (N2-N10, N12); survivors **N1** (GBA loader note, no test) and
   **N11** (no reset on unmount, no test) → added to `task-10b-fix1-brief.md` item 5. Both worktrees clean after the
   runs; `s9\vitest.lock` removed.
+- s10 note on s9's post-handoff overlaps (s9's message 19:5x): s9 deleted and recreated `<s9>/vitest.lock` at 19:46
+  while s10's red-run lockrun held it; no other vitest ran in that minute (the 10b tests chain verifies typecheck
+  only). s9's commit `e897a93` swept in this section unchanged. Brief item 7 (M15) is covered by `3c12b60`.
+- Red run (`<s9>/t11a-fix1-red.out`, the two block-edit suites): **3 failed / 27 passed (30)**, all GBA, right reasons:
+  cap `640` vs file minimum `512` (B14b), behavior and layerType at `2**32` answer 200 (B14a). Every other new case
+  green on today's code, incl. the M15 sheet test.
+- Impl hop: `chain.py --tier opus`, brief `task-11a-fix1-impl-hop-brief.md`, verify = typecheck + the 11-file 11a list
+  through `<s9>/lockrun.py`, `--min-tests 320`, `--protect "packages/server/test/**"`.
+
+### Task 10b (High) — s10
+- s9's mutations (`<s9>/mut_t10b.out`): **10 of 12 KILLED**; survivors N1 (GBA map GET loader does not note) and N11
+  (FamilyApp does not reset on unmount): test gaps (s9's brief item 5).
+- Tests hop: `chain.py --tier opus` RESULT done, `gpt-6.2-sol failed (dead: no diff) -> gpt-6.1-sol done` → `cac902f`
+  (+231 lines over 6 test files + the authorised `tilesetVersion.ts` stub; report `task-10b-fix1-tests-report.md`).
+  Vetted: literals and mocked replies only; discard notes into a mounted URL builder; late post/discard reply after a
+  reset ignored, a new-generation reply noted; both map loaders keep the first hook mounted across the reset (so
+  cancellation cannot hide a missing guard) and then note a new-generation reply (pins N1); GBA cancelled same-generation
+  reply not noted; store unit for generations and the max rule; both world surfaces pass a new `imageUrl` after a bump
+  (`useWorldTiles` spied through `vi.mock` that delegates to the real hook). Conductor `4d8991b` (inline, one test):
+  `App.test.tsx` FamilyApp unmount resets the store (N11). Typecheck pass.
+- Red run (`<s9>/t10b-fix1-red.out`, 7 files): **9 failed / 98 passed (107)**, right reasons (late replies note 20
+  after a reset; discard leaves `tv=5`; generation never changes; `imageUrl` identity unchanged after a bump). N11 test
+  green (kills a mutant, not a fix). Impl hop: `chain.py --tier opus`, `task-10b-fix1-impl-hop-brief.md`, verify
+  typecheck + `packages/ui` through lockrun, `--min-tests 2320`, `--protect "packages/ui/test/**"`.
+
+### Task 11a fix round (cont.) — s10
+- Impl hop: RESULT done, `gpt-6.2-sol failed (dead: no diff) -> gpt-6.1-sol done` → `e2658b1` (+58/-6 in
+  `blockEditRoutes.ts` only; `gbaConsumingLayouts` imported from `usage.ts` unchanged, no core edit). Vetted: B14a `>`
+  before `&`; B14b cap = minimum over every consuming layout of every symbol aliasing the canonical metatile file,
+  `nextId` null at that cap; B14c′ enum/define parser with fallback; B14d `BadGrid` → 409 `BAD_GRID` (both families)
+  plus a new GBC cell bound check (400). Codex's sandbox could not start vitest (esbuild access), so it ran none.
+- Re-reviews (astra) launched on `<s9>/rv-t11` at `e2658b1` (brief `task-11a-rereview-brief.md`): both died on the
+  **Codex usage limit** ("try again at 10:41 PM"). `chain_state.json` codex cooldown set to 22:42. Ruling (s10, cost):
+  wait for the reset and keep the same reviewer rather than fall back to Claude Opus; meanwhile verify and other work.
+- 11a verify at `e2658b1` (conductor, lockrun): **326/326, 11 files**; typecheck pass. Round-2 mutants
+  `<s9>/mut_t11a_r2.py` (M15 again; R1/R2 drop the `>` checks; R3 cap from the current layout; R4 `nextId` ignores the
+  file cap) running.
+
+### Task 10b fix round (cont.) — s10
+- Impl hop: RESULT done, `gpt-6.1-sol failed (infra: verify exit 1) -> gpt-6-sol done` → `94ddb40` (+68/-29 over the
+  six allowed files). Vetted against U6a-c: generation counter, reset bumps it; capture before `fetch` in `post`,
+  `discard` (reads JSON; both hubs answer JSON with `tilesetVersion`), both map loaders (`useMapLayout` notes inside
+  `!cancelled`; `useGbcMap` inlines `useGuardedFetch`'s effect to capture per request; `reload` captures too). U6c
+  done as a **getter on the world adapters that calls `useTilesetVersion()` + `useCallback`**; works because
+  WorldSurface reads `adapter.imageUrl` exactly once per render (`WorldSurface.tsx:252`), but a hook inside a getter
+  is fragile: asked the quality re-review to judge it.
+- Verify (typecheck + `packages/ui`) and round-2 mutants `<s9>/mut_t10b_r2.py` (N11; G1 loader no note; G2 no guard;
+  G3 discard no note; G4/G5 loader generation read at reply; G6 world deps `[]`; G7 post generation at reply) queued
+  behind the lock. Re-reviews (astra, `task-10b-rereview-brief.md`, `<s9>/rv-t10b` at `94ddb40`) queued after 11a's.
+- 11a round-2 mutants (`<s9>/mut_t11a_r2.out`, baseline 30/30): **4 of 5 KILLED** (M15 by the sheet-cell test; R1, R2
+  by the `2**32` guards; R3 by the file-cap case). R4 (`nextId` skips the route's file-cap shortcut) survives:
+  **equivalent for this subject**: the planner already refuses `BLOCK_CAP` at 512 for `gTileset_General` (all its
+  consumers share one symbol); the shortcut only matters when another symbol aliases the same metatile file. Task 11a
+  total: 17 of 20 mutants killed, M14/M16/R4 equivalent, none open.
+- 10b verify at `94ddb40` (conductor, lockrun): typecheck pass, **`packages/ui` 2321/2321, 133 files**. Round-2
+  mutants first run died on a POSIX worktree path given to Windows Python (`NotADirectoryError`); rerun with `C:/`.
+
+### Task 11b (High) — s10
+- Started early to use the Codex outage: worktree `<s10>/wt-t11b`, branch `p14-2-t11b` from `e2658b1` (11a fix head;
+  rebase/merge onto the plan branch after 11a merges; if the 11a re-review changes the suite, merge `p14-2-t11` in).
+  s10 scratchpad = `C:\Users\Serve\AppData\Local\Temp\claude\8fd0350c313cb955\3d225916-0a42-4209-a3b3-8f4afc71a35c\scratchpad\`.
+- Tests hop: brief `task-11b-tests-brief.md` (11 cases: check happy/confirm/cross-half/STALE/read-only; apply
+  saveAsNew-on-cell + undo, in place + undo, NOT_OWNER, STALE after disk change and after paint, no-op, 400 guards),
+  `chain.py --tier sonnet --no-codex` (user ruling 2026-11-13: free models while Codex is out), verify typecheck.
+- 10b round-2 mutants (`<s9>/mut_t10b_r2.out`, baseline 2321/2321): **8 of 8 KILLED** (N11, G1-G7). Task 10b total:
+  all 18 distinct mutants killed (N2-N10, N12 in round 1; N11, G1 = N1 on the new code, G2-G7 in round 2); none open.
+- 11b tests hop 1: RESULT done `opencode/deepseek-v4.1-flash-free` → `aab8353`, but the hop **timed out** (1200 s)
+  after adding only helpers (+202 lines, 0 `it(` cases); chain.py counted it done because typecheck passed (gap:
+  chain.py does not treat a TIMEOUT hop with a passing verify as failed). Hop 2 continues on top
+  (`task-11b-tests-hop2-brief.md`, `--timeout 3000`).
+- 11b tests hop 2: RESULT done `opencode/deepseek-v4.1-flash-free` → `0fd00bf` (11 cases, +474/-56 over hop 1's
+  helpers; pure additions vs 11a). The hop hit the OpenCode free usage cap at the end (no report; the pool now rests).
+  Vetted: oracles from GET bodies captured before the action, disk recomputation of both `confirm` predicates, the
+  planner's warning text, literals. **Defect found:** `copiedRequest` read `source.block` while `findChangedSource`
+  returns `{ id, data, png }` (runtime TypeError; typecheck passed through `any`) → fixed in `9ff58fc`.
+- **Ruling B10a (s10):** a no-op apply answers `deps.sessionBody(map)`; both builders open a session, so "no session
+  opened" in B10 is read as: no undo entry, no staged bytes, `isDirty` and `canUndo` false. 11b.10 asserts that.
+  **B9 vs B11:** check answers 400 for structural and `BAD_VALUE` drafts (B11), 200 + `refusal` for every other
+  planner refusal (B9). Conductor wrote `task-11b-tests-report.md`; commit `9ff58fc`. Red run queued.
+- 11b red run (`<s10>/t11b-red.out`): **23 failed / 30 passed (53)**: every 11b case red, every 11a case green. All
+  on the missing routes (404) except GBA 11b.2: `fetch failed` / ECONNRESET. Probe (`<s10>/probe-11b2.mts`, tsx, temp
+  copy): GET `block=0` on all 1,209 GBA maps answers 200, so no route crash; cause = fetch reusing a keep-alive socket
+  the server closed after Node's 5 s `keepAliveTimeout` during long synchronous fixture scans. `00cbc23`: suite server
+  `keepAliveTimeout = 120_000`; GBA 11b.2 alone now red on the 404.
+- Impl brief `task-11b-impl-hop-brief.md` written. Impl hop waits for Codex (reset 22:42; OpenCode free pool capped
+  ~19 h after hop 2) and goes after the 11a/10b re-reviews.
+
+### Power loss (2026-11-17 night) and handoff s10 → s11 — s10
+- The PC lost power between ~21:35 and 22:43 (before the queued re-reviews started). Died, never ran: the 11a
+  re-reviews (`<s10>/t11a_rereview_after_reset.sh`), the 10b re-reviews (`t10b_rereview_after_11a.sh`) and the 11b
+  impl chain (`t11b_impl_after_reviews.sh`). No completion records; no `codex-t10b-re-*.log`, no
+  `chain-T11b-impl.log`; `codex-t11a-re-*.log` are the 20:06 usage-limit runs. Inventory 2026-11-18 09:26: no vitest,
+  tinypool, chain, codex or opencode process; no `<s9>/vitest.lock`; no uncommitted hop output anywhere.
+- Committed state: `<s8>/wt-t10b` `94ddb40` (10b fix round complete: tests `cac902f` + `4d8991b`, impl `94ddb40`,
+  verify 2321/2321, 18/18 mutants killed; re-review pending). `<s9>/wt-t11` `e2658b1` (11a fix round complete: tests
+  `99f0ac5` + `3c12b60`, impl `e2658b1`, verify 326/326, M15 + R1-R3 killed; re-review pending).
+  `<s10>/wt-t11b` `00cbc23` (branch `p14-2-t11b` from `e2658b1`: 11b tests vetted, red 23/30 on the missing routes;
+  impl not started). Review checkouts `<s9>/rv-t11` at `e2658b1`, `<s9>/rv-t10b` at `94ddb40`. Main checkout: this
+  ledger only (committed with this entry).
+- Delegation state: Codex cooldown in `chain_state.json` expired (22:42); `gpt-6.2-sol` marked dead (ChatGPT account);
+  OpenCode free pool capped by Zen ~21:00 (`retryAfterMs` ≈ 19 h → about 16:00 on 11-18). chain.py fixed this session
+  (DEAD regex). Known chain.py gap: a TIMEOUT hop whose verify passes counts as done (11b hop 1).
+- **User ruling (2026-11-18, via the master):** conductor sessions stay at 200k-250k context. Hand off at about 200k
+  context or after two task merges, whichever comes first; the next prompt names only the next one or two tasks.
