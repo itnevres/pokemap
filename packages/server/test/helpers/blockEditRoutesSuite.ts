@@ -277,6 +277,99 @@ export function suite(family: "gba" | "gbc") {
       expect((await block(pair.a, `block=${id}`)).revision).not.toBe(painted.revision);
     });
 
+    it("3: staged replacement is returned as block content", async () => {
+      const id = await idFor();
+      const before = readFileSync(resolve(root, pair.path));
+      const original = before.subarray(id * 16, id * 16 + 16);
+      const otherId = Array.from({ length: before.length / 16 }, (_, i) => i)
+        .find(i => !before.subarray(i * 16, i * 16 + 16).equals(original));
+      if (otherId === undefined) throw new Error("fixture needs two different metatiles");
+      const replacement = Buffer.from(before.subarray(otherId * 16, otherId * 16 + 16));
+      const after = Buffer.from(before);
+      replacement.copy(after, id * 16);
+      const edits: TilesetFileEdit[] = [{ path: pair.path, before, after }];
+      if (family === "gbc") {
+        const paths = new Set(gbc.maps.map(map => gbc.tileset(map.tileset))
+          .filter(ts => canonicalTilesetPath(ts.metatilesPath) === pair.path)
+          .map(ts => canonicalTilesetPath(ts.collisionPath)));
+        for (const path of paths) {
+          const collision = readFileSync(resolve(root, path));
+          edits.push({ path, before: collision, after: Buffer.from(collision) });
+        }
+      }
+      try {
+        stageTilesetPlan(store, pair.a, buildPlan(edits), "content oracle");
+        const result = await block(pair.a, `block=${id}`);
+        if (family === "gba") {
+          const entries = Array.from({ length: 8 }, (_, i) => {
+            const value = replacement.readUInt16LE(i * 2);
+            return {
+              tile: value & 0x3ff, xFlip: !!(value & 0x400),
+              yFlip: !!(value & 0x800), palette: value >>> 12,
+            };
+          });
+          expect(result.block.entries).toEqual(entries);
+        } else {
+          expect(result.block.tiles).toEqual([...replacement]);
+        }
+      } finally { store.closeAll(); }
+    });
+
+    it("5: file cap reflects every consumer and rejects an append at capacity", async () => {
+      if (family === "gba") {
+        const uses = new Map<string, { name: string; cap: number }[]>();
+        for (const layout of gba.layouts) {
+          const split = gba.splitFor(layout).metatiles;
+          for (const [symbol, cap] of [
+            [layout.primaryTileset, split],
+            [layout.secondaryTileset, gba.constants.metatilesTotal - split],
+          ] as const) {
+            const path = canonicalTilesetPath(gba.tilesetPaths(symbol).metatilesBin);
+            uses.set(path, [...(uses.get(path) ?? []), { name: layout.id, cap }]);
+          }
+        }
+        const candidate = [...uses].flatMap(([path, consumers]) => {
+          const minimum = Math.min(...consumers.map(use => use.cap));
+          return gba.mapNames().flatMap(name => {
+            const layout = gba.layoutForMap(name);
+            const primary = canonicalTilesetPath(gba.tilesetPaths(layout.primaryTileset).metatilesBin);
+            return primary === path && gba.splitFor(layout).metatiles > minimum
+              ? [{ path, name, minimum }] : [];
+          });
+        })[0];
+        const name = candidate?.name ?? pair.a;
+        const path = candidate?.path ?? pair.path;
+        const minimum = candidate?.minimum ?? Math.min(...uses.get(path)!.map(use => use.cap));
+        const result = await block(name, "block=0");
+        expect(result.limits.cap).toBe(minimum);
+        const count = readFileSync(resolve(root, path)).length / 16;
+        if (count >= minimum) expect(result.limits.nextId).toBeNull();
+      } else {
+        const before = readFileSync(resolve(root, pair.path));
+        const count = before.length / 16;
+        if (count > 256) throw new Error("fixture exceeds GBC block cap");
+        const after = Buffer.concat([before, ...Array.from({ length: 256 - count }, () => before.subarray(0, 16))]);
+        const edits: TilesetFileEdit[] = [{ path: pair.path, before, after }];
+        const paths = new Set(gbc.maps.map(map => gbc.tileset(map.tileset))
+          .filter(ts => canonicalTilesetPath(ts.metatilesPath) === pair.path)
+          .map(ts => canonicalTilesetPath(ts.collisionPath)));
+        for (const path of paths) {
+          const bytes = readFileSync(resolve(root, path));
+          const text = bytes.toString("utf8");
+          const lines = text.match(/^[ \t]*tilecoll\b.*$/gm) ?? [];
+          const last = lines.at(-1);
+          if (!last) throw new Error(`no tilecoll in ${path}`);
+          edits.push({ path, before: bytes, after: Buffer.from(
+            `${text.replace(/\s*$/, "\n")}${`${last}\n`.repeat(Math.max(0, 256 - lines.length))}`,
+          ) });
+        }
+        try {
+          stageTilesetPlan(store, pair.a, buildPlan(edits), "cap oracle");
+          expect((await block(pair.a, "block=0")).limits).toEqual({ nextId: null, cap: 256 });
+        } finally { store.closeAll(); }
+      }
+    });
+
     it("4 and 9: reports ownership and Save effects for the staged file", async () => {
       const id = await idFor();
       expect((await block(pair.a, `block=${id}`)).owner).toBeNull();
@@ -296,9 +389,14 @@ export function suite(family: "gba" | "gbc") {
 
     it("6: sheet dimensions, tile ids, palette/time parameters and cache version", async () => {
       const id = await idFor();
+      const versionBefore = (await mapGet(pair.a)).tilesetVersion;
       const sheet = (await block(pair.a, `block=${id}`)).sheet;
+      expect(new URL(sheet.url, base).searchParams.get("tv")).toBe(String(versionBefore));
       expect(sheet.url).toContain("tv=");
-      if (family === "gbc") expect(sheet.url).toContain("time=");
+      if (family === "gbc") {
+        expect(sheet.url).toContain("time=");
+        expect(new URL(sheet.url, base).searchParams.get("time")).toBe("day");
+      }
       expect(sheet.tileIds).toHaveLength(sheet.tileCount);
       const first = await png(sheet.url + (family === "gba" ? "&pal=0" : ""));
       expect(dimensions(first)).toEqual({ width: 128, height: 8 * Math.ceil(sheet.tileCount / 16) });
@@ -314,7 +412,57 @@ export function suite(family: "gba" | "gbc") {
         expect(sheet.tileCount, "sheet must include index 0x60").toBeGreaterThan(0x60);
         expect(sheet.tileIds[0x60]).toBe(0x80);
       }
+      try {
+        stage(pair.a);
+        const versionAfter = (await mapGet(pair.a)).tilesetVersion;
+        const stagedSheet = (await block(pair.a, `block=${id}`)).sheet;
+        expect(versionAfter).not.toBe(versionBefore);
+        expect(new URL(stagedSheet.url, base).searchParams.get("tv")).toBe(String(versionAfter));
+      } finally { store.closeAll(); }
     });
+
+    if (family === "gbc") it("6: sheet follows the requested time palette", async () => {
+      let selected: string | undefined;
+      for (const map of gbc.maps) {
+        const path = `/api/render/${encoded(map.name)}.png`;
+        const day = await png(`${path}?time=day`);
+        const night = await png(`${path}?time=nite`);
+        if (!day.equals(night)) { selected = map.name; break; }
+      }
+      if (!selected) throw new Error("fixture needs a GBC map with different day and nite renders");
+      const day = await ok(`/api/edit/${encoded(selected)}/block?block=0&time=day`);
+      const night = await ok(`/api/edit/${encoded(selected)}/block?block=0&time=nite`);
+      expect(new URL(day.sheet.url, base).searchParams.get("time")).toBe("day");
+      expect(new URL(night.sheet.url, base).searchParams.get("time")).toBe("nite");
+      expect(await png(day.sheet.url)).not.toEqual(await png(night.sheet.url));
+    }, 120_000);
+
+    it("7: changed draft renders the other metatile", async () => {
+      const name = pair.a;
+      const map = await mapGet(name);
+      const before = readFileSync(resolve(root, pair.path));
+      const a = await idFor();
+      const referenceName = family === "gba" ? map.layout.name : name;
+      const suffix = family === "gbc" ? "?time=day" : "";
+      const imageA = await png(`/api/metatile/${encoded(referenceName)}/${a}.png${suffix}`);
+      const attributes = family === "gba" ? readFileSync(resolve(root,
+        gba.tilesetPaths(gba.layoutForMap(name).primaryTileset).attributesBin)) : undefined;
+      const attributeSize = family === "gba" ? gba.profile.metatileAttributesSize : 0;
+      const layer = (index: number) => attributes!.readUIntLE(index * attributeSize, attributeSize)
+        & gba.profile.metatileLayerTypeMask;
+      let b = -1;
+      let reference: Buffer | undefined;
+      for (let candidate = 0; candidate < before.length / 16; candidate++) {
+        if (candidate === a) continue;
+        if (attributes && layer(candidate) !== layer(a)) continue;
+        const image = await png(`/api/metatile/${encoded(referenceName)}/${candidate}.png${suffix}`);
+        if (!image.equals(imageA)) { b = candidate; reference = image; break; }
+      }
+      if (b < 0) throw new Error("fixture needs two visibly different metatiles in the same tileset");
+      const draft = await block(name, `block=${b}`);
+      const preview = await edit(name, `block/preview${suffix}`, identity(a, draft));
+      expect(Buffer.from(preview.png, "base64")).toEqual(reference);
+    }, 120_000);
 
     it("7: identity preview matches a context-sensitive hub image and rejects an invalid tile", async () => {
       let name = pair.a;
@@ -408,6 +556,59 @@ export function suite(family: "gba" | "gbc") {
       expect(historyLength(pair.a)).toBe(depth);
     });
 
+    const checkDraft = async (field: string, value: unknown) => {
+      const id = await idFor();
+      const data = await block(pair.a, `block=${id}`);
+      const body = identity(id, data);
+      body.request.draft = { ...body.request.draft, [field]: value };
+      const result = await request(`/api/edit/${encoded(pair.a)}/block/preview`, body);
+      expect(result.status).toBe(400);
+      expect(result.body.code).toBe("BAD_VALUE");
+      expect(result.body.error).toMatch(new RegExp(`^draft\\.${field}`));
+    };
+
+    if (family === "gba") {
+      it.each([
+        ["behavior", "overflow"], ["behavior", "above mask"],
+        ["layerType", "overflow"], ["layerType", "above mask"],
+      ])("10: rejects draft.%s %s", async (field, boundary) => {
+        const mask = gba.profile.metatileLayerTypeMask >>> 0;
+        const shift = 31 - Math.clz32((mask & -mask) >>> 0);
+        const limit = field === "behavior" ? gba.profile.metatileBehaviorMask : mask >>> shift;
+        await checkDraft(field, boundary === "overflow" ? 2 ** 32 : limit + 1);
+      });
+
+      it("10: layer options match the project's C enum", async () => {
+        const data = await block(pair.a, `block=${await idFor()}`);
+        const header = readFileSync(resolve(root, "include/global.fieldmap.h"), "utf8");
+        const enumBody = header.match(/enum\s*(?:\w+\s*)?\{([^}]*METATILE_LAYER_TYPE_[^}]*)\}/s)?.[1];
+        if (!enumBody) throw new Error("fixture needs METATILE_LAYER_TYPE enum");
+        let next = 0;
+        const layers: { name: string; value: number }[] = [];
+        const withoutComments = enumBody.replace(/\/\*[\s\S]*?\*\/|\/\/[^\r\n]*/g, "");
+        for (const part of withoutComments.split(",")) {
+          const member = part.trim().match(/^(\w+)(?:\s*=\s*(0x[\da-f]+|\d+))?/i);
+          if (!member) continue;
+          if (member[2] !== undefined) next = Number(member[2]);
+          if (member[1]!.startsWith("METATILE_LAYER_TYPE_")) {
+            layers.push({ name: member[1]!.slice("METATILE_LAYER_TYPE_".length), value: next });
+          }
+          next++;
+        }
+        expect(layers.length).toBeGreaterThan(0);
+        expect(data.options.layerTypes).toEqual(layers.sort((a, b) => a.value - b.value));
+      });
+    } else {
+      it("10: rejects a short tile draft", async () => {
+        const data = await block(pair.a, `block=${await idFor()}`);
+        await checkDraft("tiles", data.block.tiles.slice(0, 15));
+      });
+      it("10: rejects an unknown collision", async () => {
+        const data = await block(pair.a, `block=${await idFor()}`);
+        await checkDraft("collision", ["NO_SUCH_COLLISION", ...data.block.collision.slice(1)]);
+      });
+    }
+
     it("10: malformed names, unknown maps, ambiguous selectors and bad preview bodies are guarded", async () => {
       const valid = encoded(pair.a);
       const id = await idFor();
@@ -431,5 +632,3 @@ export function suite(family: "gba" | "gbc") {
     });
   });
 }
-
-
