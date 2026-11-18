@@ -1,8 +1,12 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
-import { renderHook, waitFor } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { act, renderHook, waitFor } from "@testing-library/react";
+import { currentTilesetVersion, resetTilesetVersion } from "../../src/shared/tilesetVersion.js";
 import { useGbcMap } from "../../src/gbc/hooks/useGbcMap.js";
 
+beforeEach(() => { resetTilesetVersion(); });
+
 afterEach(() => {
+  resetTilesetVersion();
   vi.unstubAllGlobals();
 });
 
@@ -21,6 +25,30 @@ const VALID_BODY = {
 };
 
 describe("useGbcMap", () => {
+
+  it("ignores a response from before reset and accepts a new-generation response", async () => {
+    resetTilesetVersion();
+    let resolveOld!: (response: Response) => void;
+    const oldReply = new Promise<Response>((resolve) => { resolveOld = resolve; });
+    const fetchMock = vi.fn().mockReturnValueOnce(oldReply).mockResolvedValueOnce({
+      ok: true, status: 200, json: async () => ({ ...VALID_BODY, tilesetVersion: 1 }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const first = renderHook(() => useGbcMap("NewBarkTown"));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    act(() => resetTilesetVersion());
+    await act(async () => {
+      resolveOld({ ok: true, status: 200, json: async () => ({ ...VALID_BODY, tilesetVersion: 20 }) } as Response);
+      await oldReply;
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(first.result.current.data).not.toBeNull());
+    expect(currentTilesetVersion()).toBe(0);
+    const second = renderHook(() => useGbcMap("NewBarkTown"));
+    await waitFor(() => expect(second.result.current.data).not.toBeNull());
+    await waitFor(() => expect(currentTilesetVersion()).toBe(1));
+  });
+
   it("name === null fetches nothing and idles", () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);

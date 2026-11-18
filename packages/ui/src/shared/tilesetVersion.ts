@@ -20,7 +20,7 @@ function setVersion(next: number): void {
 }
 
 /** Records a tileset version announced by a session or map reply. Lower values never lower the store. */
-export function noteTilesetVersion(v: unknown): void {
+export function noteTilesetVersion(v: unknown, generation?: number): void {
   if (typeof v !== "number" || !Number.isFinite(v)) return;
   if (v > version) setVersion(v);
 }
@@ -39,3 +39,5 @@ export function useTilesetVersion(): number {
 export function currentTilesetVersion(): number {
   return version;
 }
+
+export function tilesetGeneration(): number { return 0; }

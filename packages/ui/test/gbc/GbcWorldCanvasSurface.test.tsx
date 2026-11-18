@@ -5,6 +5,18 @@ import type { GbcWorldPayload } from "@pokemap/core/src/gbc/wire.js";
 import { GbcWorldCanvas, type GbcWorldCanvasProps } from "../../src/gbc/GbcWorldCanvas.js";
 import { noteTilesetVersion, resetTilesetVersion } from "../../src/shared/tilesetVersion.js";
 
+const tileCalls = vi.hoisted(() => ({ imageUrls: [] as Array<unknown> }));
+vi.mock("../../src/canvas/useWorldTiles.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/canvas/useWorldTiles.js")>();
+  return {
+    ...actual,
+    useWorldTiles: (...args: Parameters<typeof actual.useWorldTiles>) => {
+      tileCalls.imageUrls.push(args[0].imageUrl);
+      return actual.useWorldTiles(...args);
+    },
+  };
+});
+
 const observations = vi.hoisted(() => ({ reload: vi.fn() }));
 
 // Count the actual hook boundary. GET counts can be batched and cannot prove one reload per gesture.
@@ -171,6 +183,7 @@ const response = (payload: unknown) => ({
 let posts: Array<{ body: unknown; outcome: ReturnType<typeof deferred<Response>> }>;
 
 beforeEach(() => {
+  resetTilesetVersion();
   FakeImage.instances = [];
   FakeResizeObserver.instances = [];
   posts = [];
@@ -192,6 +205,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  resetTilesetVersion();
   ctxByCanvas.clear();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -542,6 +556,19 @@ it.each([false, true])("an incoming line follows the destination's refreshed war
 
 // Task 10b: world tile URLs carry the hub's tileset version, so a staged tileset edit re-requests the map.
 describe("GBC world surface tileset version (Task 10b)", () => {
+
+  it("passes a new imageUrl function and requests the bumped version", async () => {
+    resetTilesetVersion();
+    tileCalls.imageUrls.length = 0;
+    await mount();
+    const original = tileCalls.imageUrls.at(-1);
+    expect(original).toBeTypeOf("function");
+    act(() => noteTilesetVersion(5));
+    await settle();
+    expect(tileCalls.imageUrls.at(-1)).not.toBe(original);
+    expect(imageUrls()).toContain("/api/render/MapA.png?time=day&tv=5");
+  });
+
   afterEach(() => { resetTilesetVersion(); });
   const imageUrls = () => FakeImage.instances.map((image) => image.src);
 

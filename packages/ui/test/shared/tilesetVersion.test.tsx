@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, render } from "@testing-library/react";
+import { act, render, waitFor } from "@testing-library/react";
 import {
+  currentTilesetVersion,
+  tilesetGeneration,
   noteTilesetVersion,
   resetTilesetVersion,
   useTilesetVersion,
@@ -42,6 +44,20 @@ describe("tileset version store", () => {
     expect(versionOf(container)).toBe(0);
   });
 
+
+  it("ignores stale generations while unguarded notes retain the max rule", () => {
+    const oldGeneration = tilesetGeneration();
+    resetTilesetVersion();
+    expect(tilesetGeneration()).not.toBe(oldGeneration);
+    noteTilesetVersion(20, oldGeneration);
+    expect(currentTilesetVersion()).toBe(0);
+    noteTilesetVersion(3);
+    noteTilesetVersion(2);
+    expect(currentTilesetVersion()).toBe(3);
+    noteTilesetVersion(4);
+    expect(currentTilesetVersion()).toBe(4);
+  });
+
   it("ignores strings, NaN, undefined, null and Infinity", () => {
     const container = mountProbe();
     act(() => noteTilesetVersion(3));
@@ -73,6 +89,50 @@ const reply = (data: unknown) => ({
 const seed = { n: 1 };
 
 describe("useEditSessionCore announces the tileset version", () => {
+
+  it("discard announces the reverted version to a mounted URL builder", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(reply({ blocks: [], tilesetVersion: 6 })));
+    let discard: (() => Promise<void>) | null = null;
+    function PaletteProbe() {
+      const core = useEditSessionCore("/api/edit", "Route101", seed);
+      const version = useTilesetVersion();
+      discard = core.discard;
+      return <img alt="metatile" src={`/api/metatile/Route101/0.png?tv=${version}`} />;
+    }
+    noteTilesetVersion(5);
+    const { getByAltText } = render(<PaletteProbe />);
+    expect(getByAltText("metatile").getAttribute("src")).toBe("/api/metatile/Route101/0.png?tv=5");
+    await act(async () => { await discard!(); });
+    expect(getByAltText("metatile").getAttribute("src")).toBe("/api/metatile/Route101/0.png?tv=6");
+  });
+
+  it.each(["post", "discard"])("ignores a late %s response from before reset", async (operation) => {
+    let resolveOld!: (response: Response) => void;
+    const oldReply = new Promise<Response>((resolve) => { resolveOld = resolve; });
+    const fetchMock = vi.fn()
+      .mockReturnValueOnce(oldReply)
+      .mockResolvedValueOnce(reply({ tilesetVersion: 1 }));
+    vi.stubGlobal("fetch", fetchMock);
+    let send: (() => Promise<unknown>) | null = null;
+    function CoreProbe() {
+      const core = useEditSessionCore("/api/edit", "Route101", seed);
+      send = operation === "post" ? () => core.post("/paint/apply", {}) : core.discard;
+      return <output data-testid="version">{useTilesetVersion()}</output>;
+    }
+    const container = render(<CoreProbe />).container;
+    let oldRequest!: Promise<unknown>;
+    await act(async () => {
+      oldRequest = send!();
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    act(() => resetTilesetVersion());
+    await act(async () => { resolveOld(reply({ tilesetVersion: 20 })); await oldRequest; });
+    expect(versionOf(container)).toBe(0);
+    await act(async () => { await send!(); });
+    expect(versionOf(container)).toBe(1);
+  });
+
   it("a session reply carrying tilesetVersion 4 sets the store to 4", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(reply({ blocks: [], tilesetVersion: 4 })));
 
