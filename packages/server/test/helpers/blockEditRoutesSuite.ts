@@ -1371,6 +1371,10 @@ export function suite(family: "gba" | "gbc") {
       const renderPath = `/api/render/${encoded(name)}.png${family === "gbc" ? "?time=day" : ""}`;
       const beforeRender = await png(renderPath);
       const request = { ...copiedRequest(data, source).request, mode: "saveAsNew", from: "map", cell };
+      const records = (bytes: Buffer) => bytes.toString("latin1").match(/^[ \t]*tilecoll\b.*$/gm)?.length ?? 0;
+      const diskMetaLength = readFileSync(resolve(root, files[0]!)).length;
+      const diskCompanion = readFileSync(resolve(root, files[1]!));
+      const diskCollisionCount = family === "gbc" ? records(diskCompanion) : 0;
       const applied = await blockApply(name, { request, revision: data.revision });
       expect(applied.status, JSON.stringify(applied.body)).toBe(200);
       expectSessionBody(applied.body);
@@ -1380,12 +1384,15 @@ export function suite(family: "gba" | "gbc") {
       expect(lastLabel(name)).toBe(`New block $${expected.toString(16).toUpperCase().padStart(2, "0")}`);
       const meta = stagedEdits(name).find(edit => edit.path === files[0]);
       expect(meta).toBeDefined();
-      expect(meta!.after.length).toBe(meta!.before.length + 16);
-      const records = (bytes: Buffer) => bytes.toString("latin1").match(/^[ \t]*tilecoll\b.*$/gm)?.length ?? 0;
+      expect(meta!.after.length).toBe(diskMetaLength + 16);
       if (family === "gbc") {
         const collision = stagedEdits(name).find(edit => edit.path === files[1]);
         expect(collision).toBeDefined();
-        expect(records(collision!.after)).toBe(records(collision!.before) + 1);
+        expect(records(collision!.after)).toBe(diskCollisionCount + 1);
+      } else {
+        const attributes = stagedEdits(name).find(edit => edit.path === files[1]);
+        expect(attributes).toBeDefined();
+        expect(attributes!.after.length).toBe(diskCompanion.length + 2);
       }
       const atCell = await block(name, cellQuery(cell));
       expect(atCell.blockId).toBe(expected);
@@ -1538,6 +1545,102 @@ export function suite(family: "gba" | "gbc") {
         expect(result.status, path).toBe(status);
         expect(result.body).toEqual({ error: expect.any(String), code: expect.any(String) });
       }
+    }, 120_000);
+
+    it.each([
+      ["null", null], ["array", []], ["missing y", { x: 1 }],
+      ["string x", { x: "1", y: 0 }], ["fractional x", { x: 0.5, y: 0 }],
+    ])("11b.12: check and apply reject a malformed cell (%s) before planning", async (_label, cell) => {
+      try {
+        const data = await block(pair.a, `block=${await idFor()}`);
+        const body = { request: { ...changedDraft(data), mode: "saveAsNew", from: "map", cell },
+          revision: data.revision };
+        const hadSession = store.has(pair.a), depth = undoDepth(pair.a);
+        for (const action of [blockCheck, blockApply]) {
+          const result = await action(pair.a, body);
+          expect(result.status, JSON.stringify(result.body)).toBe(400);
+          expect(result.body).toEqual({ error: expect.any(String), code: "BAD_VALUE" });
+          expect(result.body.error).toMatch(/^request\.cell/);
+        }
+        expect(store.has(pair.a)).toBe(hadSession);
+        expect(undoDepth(pair.a)).toBe(depth);
+      } finally { store.closeAll(); }
+    }, 120_000);
+
+    it("11b.13: check and apply surface the planner's outside-map BAD_VALUE", async () => {
+      try {
+        const map = await mapGet(pair.a);
+        const data = await block(pair.a, `block=${await idFor()}`);
+        const body = { request: { ...changedDraft(data), mode: "saveAsNew", from: "map",
+          cell: { x: map.layout.width, y: 0 } }, revision: data.revision };
+        for (const action of [blockCheck, blockApply]) {
+          const result = await action(pair.a, body);
+          expect(result.status, JSON.stringify(result.body)).toBe(400);
+          expect(result.body).toEqual({ error: expect.any(String), code: "BAD_VALUE" });
+          expect(result.body.error).toMatch(/cell is outside the map/);
+        }
+      } finally { store.closeAll(); }
+    }, 120_000);
+
+    it("11b.14: check returns a real planner refusal as 200 and apply returns 409 without staging", async () => {
+      try {
+        let name = pair.a;
+        if (family === "gba") {
+          // layoutForMap resolves map headers against the disk-loaded layouts. The planner
+          // counts all maps sharing this path, whether or not they have open sessions.
+          const names = [...gba.mapNames()].sort();
+          const shared = names.find(candidate => {
+            const path = gba.layoutForMap(candidate).blockdataFilepath;
+            return names.filter(other => gba.layoutForMap(other).blockdataFilepath === path).length >= 2;
+          });
+          if (shared === undefined) throw new Error("fixture needs a shared GBA grid");
+          name = shared;
+        }
+        const data = await block(name, family === "gba" ? "x=0&y=0" : `block=${await idFor()}`);
+        const request = { ...changedDraft(data), mode: "saveAsNew", from: family === "gba" ? "map" : "palette",
+          ...(family === "gba" ? { cell: { x: 0, y: 0 } } : {}) };
+        if (family === "gbc") {
+          const palName = (data.options.palettes as string[]).find(value => value !== data.block.tilePalettes[0]);
+          if (palName === undefined) throw new Error("fixture needs another GBC palette name for square 0");
+          request.draft.palettes = [{ square: 0, palName, scope: "all" }];
+        }
+        const body = { request, revision: data.revision };
+        const code = family === "gba" ? "SHARED_GRID" : "ALL_WITH_SAVE_AS_NEW";
+        const hadSession = store.has(name), depth = undoDepth(name);
+        const checked = await blockCheck(name, body);
+        expect(checked.status, `${name}: ${JSON.stringify(checked.body)}`).toBe(200);
+        expect(checked.body.refusal).toEqual({ code, error: expect.any(String) });
+        expect(checked.body.confirm).toBe(false);
+        expect(store.has(name)).toBe(hadSession);
+        expect(undoDepth(name)).toBe(depth);
+        expect(changedStaged(name)).toEqual([]);
+        const applied = await blockApply(name, body);
+        expect(applied.status, `${name}: ${JSON.stringify(applied.body)}`).toBe(409);
+        expect(applied.body).toEqual({ code, error: expect.any(String) });
+        expect(store.has(name)).toBe(hadSession);
+        expect(undoDepth(name)).toBe(depth);
+        expect(changedStaged(name)).toEqual([]);
+      } finally { store.closeAll(); }
+    }, 120_000);
+
+    if (family === "gba") it.each([
+      ["behavior", "above mask"], ["behavior", "overflow"],
+      ["layerType", "above mask"], ["layerType", "overflow"],
+    ])("11b.15: check and apply reject draft.%s %s without 32-bit wrap", async (field, boundary) => {
+      try {
+        const data = await block(pair.a, `block=${await idFor()}`);
+        const mask = gba.profile.metatileLayerTypeMask >>> 0;
+        const shift = 31 - Math.clz32((mask & -mask) >>> 0);
+        const limit = field === "behavior" ? gba.profile.metatileBehaviorMask : mask >>> shift;
+        const request = changedDraft(data);
+        request.draft = { ...request.draft, [field]: boundary === "overflow" ? 2 ** 32 : limit + 1 };
+        for (const action of [blockCheck, blockApply]) {
+          const result = await action(pair.a, { request, revision: data.revision });
+          expect(result.status, JSON.stringify(result.body)).toBe(400);
+          expect(result.body).toEqual({ error: expect.any(String), code: "BAD_VALUE" });
+          expect(result.body.error.startsWith(`draft.${field}`)).toBe(true);
+        }
+      } finally { store.closeAll(); }
     }, 120_000);
   });
 }
