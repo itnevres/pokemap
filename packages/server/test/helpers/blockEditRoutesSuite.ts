@@ -1398,7 +1398,7 @@ export function suite(family: "gba" | "gbc") {
         expect(atCell.block.tiles).toEqual(source.data.block.tiles);
         expect(atCell.block.collision).toEqual(source.data.block.collision);
       }
-      await edit(name, "undo");
+      await edit(name, "undo", {});
       const reverted = await block(name, cellQuery(cell));
       expect(reverted.blockId).toBe(beforeCell.blockId);
       expect(reverted.limits.nextId).toBe(beforeCell.limits.nextId);
@@ -1427,7 +1427,7 @@ export function suite(family: "gba" | "gbc") {
         expect(after.block.collision).toEqual(source.data.block.collision);
       }
       expect(await image(data.blockId)).toEqual(source.png);
-      await edit(pair.a, "undo");
+      await edit(pair.a, "undo", {});
       expect(await image(data.blockId)).toEqual(before);
     }, 120_000);
 
