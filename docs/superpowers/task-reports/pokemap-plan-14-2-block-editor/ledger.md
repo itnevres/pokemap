@@ -761,3 +761,23 @@ Traps seen in s7:
   `tileCount = split.tiles + secondary tile count`; `tileIds[i] = i` for primary tiles and for `i >= split.tiles`,
   `null` for the gap between the primary tiles and the split. GBC `tileCount` = tiles in the tileset PNG.
   Stub `blockEditRoutes.ts` starts with a BOM (cosmetic; the impl replaces it).
+- Reviews (astra, 2026-11-17): **11a** spec Needs changes 0/3/1 (I1 GBA preview mask checks use 32-bit `&`, so
+  `2**32` passes; I2 GBA `limits.cap` from the current layout only, not the file's minimum over consumers; I3 contract
+  coverage gaps: staged content in GET, cap refusal, `tv`/`time` values, changed-draft preview, malformed drafts; m1
+  layer options hardcoded) and quality Needs changes 0/1/1 (= spec I1; m1 short grid → 500 with no diagnostic; trailing
+  blank line in the suite). **10b** spec Needs changes 0/2/1 and quality Needs changes 0/2/0 (I1 discard never notes
+  the version; I2 a late reply after a project switch pushes an old, higher version past the reset (max-only); m1 world
+  `imageUrl` identity does not change on a bump; works through `visible`). All checked against the code: they hold.
+  Rulings written: **B14a-d** in `task-11a-fix1-brief.md`, **U6a-d** in `task-10b-fix1-brief.md` (same folder as the
+  rulings), each with a tests list and the impl files.
+
+### Handoff s9 → s10 (2026-11-17, session-length rule)
+- Plan branch at the s9 close-out commit: Tasks 0-10a merged (`d1b7eee`); gate above. Not pushed.
+- `<s9>/wt-t11` (branch `p14-2-t11`, `9a51768`, contains `d1b7eee`): 11a impl + tests. `<s9>/rv-t11` detached `9a51768`.
+- `<s8>/wt-t10b` (branch `p14-2-t10b`, `f6cedeb`, contains `d1b7eee`): 10b impl + tests. `<s9>/rv-t10b` detached `f6cedeb`.
+- Mutation runs started 18:34 in the background, 11a then 10b (`<s9>/mut_t11a.out`, `<s9>/mut_t10b.out`, lines
+  `MUT EXIT` at the end); they hold `<s9>/vitest.lock` and remove it at the end. A run left without `MUT EXIT`, no
+  `mut_t1` python process and a dirty worktree = died: `git checkout -- <file>` and rerun only the missing mutants.
+  Expected survivors: 11a M14 (pair.a's layout has no tile gap), M16 (an array body fails on `request` anyway); 10b N1/N2
+  (no loader test; the fix round's late-reply tests cover the loaders).
+- Removable: `wt-t10`, `rv-t10` (merged), `rv-t9`, `wt-t9`, `wt-t5` (unlink `node_modules` junctions first).
