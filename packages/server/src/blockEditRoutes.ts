@@ -6,7 +6,6 @@ import { BlockEditRefusal, type BlockEditPlan, type FileOverlay, type StagedGrid
 import { planGbaBlockEdit, type GbaBlockDraft, type GbaBlockEditRequest } from "@pokemap/core/src/blockEdit/gbaOps.js";
 import { gbcSheetToTileId, planGbcBlockEdit, resolveGbcEditTarget, type GbcBlockDraft, type GbcBlockEditRequest } from "@pokemap/core/src/blockEdit/gbcOps.js";
 import { gbaGridIds, gbcGridIds } from "@pokemap/core/src/blockEdit/grids.js";
-import { canonicalTilesetPath } from "@pokemap/core/src/blockEdit/canonicalTilesetPath.js";
 import { gbaConsumingLayouts } from "@pokemap/core/src/blockEdit/usage.js";
 import { loadGbcReservedTiles } from "@pokemap/core/src/blockEdit/gbcSheet.js";
 import { gbaDefineValues } from "@pokemap/core/src/addEvent/gbaOptions.js";
