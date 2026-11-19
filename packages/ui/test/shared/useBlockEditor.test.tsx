@@ -792,6 +792,117 @@ for (const family of ["gba", "gbc"] as const) {
       await act(async () => { vi.advanceTimersByTime(200); });
       expect(session.blockPreview).toHaveBeenCalledTimes(0);
     });
+
+    it("a GET reply after unmount changes nothing", async () => {
+      vi.useFakeTimers();
+      const loaded = deferred<Response>();
+      const fetcher = vi.fn().mockReturnValue(loaded.promise);
+      const { result, session, unmount } = await mount({}, makeSession(), fetcher);
+      expect(fetcher).toHaveBeenCalledTimes(1);
+      expect(result.current.status).toBe("loading");
+      act(() => { unmount(); });
+      await act(async () => { loaded.resolve(response(bodies[family])); await loaded.promise; });
+      await act(async () => { vi.advanceTimersByTime(200); });
+      expect(result.current.status).toBe("loading");
+      expect(session.blockPreview).not.toHaveBeenCalled();
+    });
+
+    it("a pending check after unmount neither applies nor calls back", async () => {
+      const checked = deferred<BlockCheckReply | null>();
+      const session = makeSession();
+      session.blockCheck.mockReturnValue(checked.promise);
+      const { result, unmount, onApplied, onClose } = await mount({}, session);
+      expect(result.current.status).toBe("ready");
+      act(() => { result.current.ok(); });
+      expect(result.current.status).toBe("checking");
+      expect(session.blockCheck).toHaveBeenCalledTimes(1);
+      expect(session.blockCheck).toHaveBeenCalledWith(requests[family].ok, "r1");
+      expect(session.blockApply).not.toHaveBeenCalled();
+      act(() => { unmount(); });
+      await act(async () => { checked.resolve({ usage: null, confirm: false, warnings: [] }); await checked.promise; });
+      expect(session.blockApply).not.toHaveBeenCalled();
+      expect(onApplied).not.toHaveBeenCalled();
+      expect(onClose).not.toHaveBeenCalled();
+    });
+
+    it("a pending preview reply after unmount is ignored", async () => {
+      vi.useFakeTimers();
+      const previewed = deferred<{ png: string } | null>();
+      const session = makeSession();
+      session.blockPreview.mockReturnValue(previewed.promise);
+      const { result, unmount } = await mount({}, session);
+      expect(result.current.previewSrc).toBeNull();
+      await act(async () => { vi.advanceTimersByTime(150); });
+      expect(session.blockPreview).toHaveBeenCalledTimes(1);
+      expect(session.blockPreview).toHaveBeenCalledWith(requests[family].ok);
+      expect(result.current.previewSrc).toBeNull();
+      act(() => { unmount(); });
+      await act(async () => { previewed.resolve({ png: "QUJD" }); await previewed.promise; });
+      expect(result.current.previewSrc).toBeNull();
+    });
+
+    it("a pending check after a map change is dropped", async () => {
+      const checked = deferred<BlockCheckReply | null>();
+      const session = makeSession();
+      session.blockCheck.mockReturnValue(checked.promise);
+      const { result, rerender, args, fetcher } = await mount({}, session);
+      act(() => { result.current.ok(); });
+      expect(result.current.status).toBe("checking");
+      expect(session.blockCheck).toHaveBeenCalledTimes(1);
+      expect(session.blockApply).not.toHaveBeenCalled();
+      await act(async () => { rerender({ ...args, map: "B" }); });
+      expect(fetcher).toHaveBeenCalledTimes(2);
+      expect(fetcher.mock.calls[1]?.[0]).toBe("/api/edit/B/block?block=5");
+      expect(result.current.info).toEqual(bodies[family]);
+      expect(result.current.status).toBe("ready");
+      await act(async () => { checked.resolve({ usage: null, confirm: false, warnings: [] }); await checked.promise; });
+      expect(session.blockApply).not.toHaveBeenCalled();
+      expect(result.current.status).toBe("ready");
+    });
+
+    it("a pending apply after a map change does not call back", async () => {
+      const applied = deferred<boolean>();
+      const session = makeSession();
+      session.blockApply.mockReturnValue(applied.promise);
+      const { result, rerender, args, fetcher, onApplied, onClose } = await mount({}, session);
+      await act(async () => { result.current.ok(); });
+      expect(session.blockCheck).toHaveBeenCalledTimes(1);
+      expect(session.blockApply).toHaveBeenCalledTimes(1);
+      expect(session.blockApply).toHaveBeenCalledWith(requests[family].ok, "r1");
+      expect(result.current.status).toBe("applying");
+      expect(onApplied).not.toHaveBeenCalled();
+      expect(onClose).not.toHaveBeenCalled();
+      await act(async () => { rerender({ ...args, map: "B" }); });
+      expect(fetcher).toHaveBeenCalledTimes(2);
+      expect(fetcher.mock.calls[1]?.[0]).toBe("/api/edit/B/block?block=5");
+      expect(result.current.info).toEqual(bodies[family]);
+      expect(result.current.status).toBe("ready");
+      await act(async () => { applied.resolve(true); await applied.promise; });
+      expect(onApplied).not.toHaveBeenCalled();
+      expect(onClose).not.toHaveBeenCalled();
+    });
+
+    if (family === "gbc") {
+      it("a pending check after a time change is dropped", async () => {
+        const checked = deferred<BlockCheckReply | null>();
+        const session = makeSession();
+        session.blockCheck.mockReturnValue(checked.promise);
+        const { result, rerender, args, fetcher } = await mount({ time: "day" }, session);
+        expect(fetcher.mock.calls[0]?.[0]).toBe("/api/edit/A/block?block=5&time=day");
+        act(() => { result.current.ok(); });
+        expect(result.current.status).toBe("checking");
+        expect(session.blockCheck).toHaveBeenCalledTimes(1);
+        expect(session.blockApply).not.toHaveBeenCalled();
+        await act(async () => { rerender({ ...args, time: "nite" }); });
+        expect(fetcher).toHaveBeenCalledTimes(2);
+        expect(fetcher.mock.calls[1]?.[0]).toBe("/api/edit/A/block?block=5&time=nite");
+        expect(result.current.info).toEqual(bodies[family]);
+        expect(result.current.status).toBe("ready");
+        await act(async () => { checked.resolve({ usage: null, confirm: false, warnings: [] }); await checked.promise; });
+        expect(session.blockApply).not.toHaveBeenCalled();
+        expect(result.current.status).toBe("ready");
+      });
+    }
   });
 }
 
