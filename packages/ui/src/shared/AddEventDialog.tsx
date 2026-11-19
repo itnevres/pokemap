@@ -137,7 +137,7 @@ export function AddEventDialog(props: AddEventDialogProps) {
   </div>;
 }
 
-function SelectField({ label, options, value, onChange, disabled, optionLabel }: { label: string; options: string[]; value: string; onChange(value: string): void; disabled: boolean; optionLabel?(value: string): string }) {
+export function SelectField({ label, options, value, onChange, disabled, optionLabel }: { label: string; options: string[]; value: string; onChange(value: string): void; disabled: boolean; optionLabel?(value: string): string }) {
   const [query, setQuery] = useState("");
   if (!options.length) return <label>{label}<input aria-label={label} disabled={disabled} value={value} onChange={e => onChange(e.target.value)} /></label>;
   const matches = options.filter(option => (optionLabel?.(option) ?? option).toLowerCase().includes(query.toLowerCase()));
