@@ -1072,3 +1072,23 @@ Traps seen in s7:
   race during upload tells them apart).
 - Spec re-review (astra, `task-11b-spec-rereview.md`): **Approved** (0/0/0); I1, m2, m3, m4 resolved. Quality round 1
   was already Approved; the round changed 4 route lines (a guard), no quality re-review.
+
+### Task 11b merged; handoff s12 → s13 — s12
+- Merged `p14-2-t11b` (`177bb21`) `--no-ff` → **`ff08190`** (merge-tree clean). **Gate at `ff08190`: 4,858 pass /
+  2 fail / 269 files; typecheck pass, UI build pass; subjects unchanged.** Fails: the known `engine.test.ts` env fail,
+  and **new load flake** `packages/ui/test/WorldCanvasContext.test.tsx` "a plain double-click on a map body calls
+  onEditHere…" (spy called 0 times under the 4-worker run; passes alone 3/3, 37/37; 11b's diff is server-only).
+  Added to RESUME's known-flake list.
+- **11b live check (built-in browser, `server` + `ui` at `ff08190`, GBA subject; staged only, never saved): pass.**
+  `POST /api/edit/NewBarkTown/block/apply` (metatile 1, mode `ok`, entry 0 `xFlip` toggled, GET revision) → 200
+  session body, `tilesetVersion: 1`, `isDirty`/`canUndo` true. After a page reload the map render, all palette images
+  (785) and the world renders carry `tv=1` (`/api/render/NewBarkTown.png?border=1&tv=1`,
+  `/api/metatile/NewBarkTown_Layout/1.png?tv=1`, world `/api/render/Route29.png?tv=1`). This closes **10b's staged-edit
+  `tv=` half**. Undo → `tilesetVersion: 2`, metatile 1 PNG bytes changed back; discard → clean; block 1 back to its
+  original entry; subject `git status` clean. Limit: the edit was staged by a fetch outside the UI, so the UI picked
+  up the new version on reload, not live (no UI calls apply until Task 12).
+- 11b reports archived to `_archive/`. Task 11b done.
+- Worktrees: `<s12>/mut-t11b` (detached, mutants) and `<s10>/wt-t11b`, `<s9>/wt-t11`, `<s8>/wt-t10b` are on merged
+  work and can be removed (unlink `node_modules` junctions first; never `--force`).
+- Handoff: `.superpowers/sdd/2026-11-10-pokemap-plan-14-2-block-editor/s13-launch-prompt.md` (scope: E1 core fix
+  plan + implementation; then Task 12 if room).
