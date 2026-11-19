@@ -43,6 +43,7 @@ export function useBlockEditor(args: EditorArgs): {
   const checkCounter = useRef(0);
   const previewCounter = useRef(0);
   const generation = useRef(0);
+  const checkedRequest = useRef<{ payload: ReturnType<typeof request>; revision: string } | null>(null);
   const changeStatus = (next: BlockEditorStatus) => { busy.current = next; setStatus(next); };
   const target = "block" in args.target ? `block=${args.target.block}` : `x=${args.target.x}&y=${args.target.y}`;
   const url = `/api/edit/${encodeURIComponent(args.map)}/block?${target}${args.time === undefined ? "" : `&time=${encodeURIComponent(args.time)}`}`;
@@ -79,7 +80,7 @@ export function useBlockEditor(args: EditorArgs): {
         if (!cancelled) { setMessage(error instanceof Error ? error.message : String(error)); changeStatus("error"); }
       }
     })();
-    return () => { cancelled = true; generation.current++; checkCounter.current++; previewCounter.current++; };
+    return () => { cancelled = true; generation.current++; checkCounter.current++; previewCounter.current++; checkedRequest.current = null; };
   }, [url]);
 
   function request(mode: Mode) {
@@ -105,11 +106,12 @@ export function useBlockEditor(args: EditorArgs): {
     return () => { clearTimeout(timer); previewCounter.current++; };
   }, [draft, info, url]);
 
-  async function apply(mode: Mode) {
+  async function apply(snapshot: { payload: ReturnType<typeof request>; revision: string }) {
     const owner = generation.current;
+    checkedRequest.current = null;
     changeStatus("applying");
     try {
-      const applied = await latest.current.args.session.blockApply(request(mode), latest.current.info!.revision);
+      const applied = await latest.current.args.session.blockApply(snapshot.payload, snapshot.revision);
       if (owner !== generation.current) return;
       if (applied) {
         latest.current.args.onApplied();
@@ -127,11 +129,14 @@ export function useBlockEditor(args: EditorArgs): {
     changeStatus("checking");
     setMessage(null);
     const call = ++checkCounter.current;
+    const snapshot = { payload: request(mode), revision: latest.current.info!.revision };
+    checkedRequest.current = snapshot;
     try {
-      const reply = await latest.current.args.session.blockCheck(request(mode), latest.current.info!.revision);
+      const reply = await latest.current.args.session.blockCheck(snapshot.payload, snapshot.revision);
       if (call !== checkCounter.current) return;
-      if (reply === null) changeStatus("ready");
+      if (reply === null) { checkedRequest.current = null; changeStatus("ready"); }
       else if (reply.refusal) {
+        checkedRequest.current = null;
         const refusal = reply.refusal.code === "STALE" ? STALE : reply.refusal.error;
         if (mode === "saveAsNew") setSaveAsNewRefusal(refusal);
         else setMessage(refusal);
@@ -139,20 +144,28 @@ export function useBlockEditor(args: EditorArgs): {
       } else if (mode === "ok" && reply.confirm) {
         setCheck(reply);
         changeStatus("confirming");
-      } else await apply(mode);
+      } else await apply(snapshot);
     } catch (error) {
       if (call !== checkCounter.current) return;
+      checkedRequest.current = null;
       setMessage(errorMessage(error));
       changeStatus("ready");
     }
   }
 
+  function cancelConfirm() {
+    if (busy.current !== "checking" && busy.current !== "confirming") return;
+    checkCounter.current++;
+    checkedRequest.current = null;
+    changeStatus("ready");
+  }
+
   return {
     status, info, draft, previewSrc, check, message, saveAsNewRefusal,
-    setDraft(next) { latest.current.draft = next; updateDraft(next); setSaveAsNewRefusal(null); },
+    setDraft(next) { latest.current.draft = next; updateDraft(next); setSaveAsNewRefusal(null); cancelConfirm(); },
     ok() { void runCheck("ok"); },
-    confirm() { if (busy.current === "confirming") void apply("ok"); },
-    cancelConfirm() { checkCounter.current++; changeStatus("ready"); },
+    confirm() { if (busy.current === "confirming" && checkedRequest.current !== null) void apply(checkedRequest.current); },
+    cancelConfirm,
     saveAsNew() { void runCheck("saveAsNew"); },
   };
 }

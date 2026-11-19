@@ -499,6 +499,286 @@ for (const family of ["gba", "gbc"] as const) {
         expect("tilePalettes" in sent.request.draft).toBe(false);
       });
     }
+    it("guards two ok calls in the same tick", async () => {
+      const checked = deferred<BlockCheckReply | null>();
+      const session = makeSession();
+      session.blockCheck.mockReturnValue(checked.promise);
+      const { result } = await mount({}, session);
+      act(() => { result.current.ok(); result.current.ok(); });
+      expect(session.blockCheck).toHaveBeenCalledTimes(1);
+      await act(async () => { checked.resolve(null); await checked.promise; });
+    });
+
+    it("guards two confirm calls in the same tick and applies the checked request object", async () => {
+      const applied = deferred<boolean>();
+      const session = makeSession();
+      session.blockCheck.mockResolvedValue({ usage: null, confirm: true, warnings: [] });
+      session.blockApply.mockReturnValue(applied.promise);
+      const { result } = await mount({}, session);
+      await act(async () => { result.current.ok(); });
+      expect(result.current.status).toBe("confirming");
+      act(() => { result.current.confirm(); result.current.confirm(); });
+      expect(session.blockApply).toHaveBeenCalledTimes(1);
+      expect(session.blockApply).toHaveBeenCalledWith(requests[family].ok, "r1");
+      expect(session.blockApply.mock.calls[0]?.[0]).toBe(session.blockCheck.mock.calls[0]?.[0]);
+      await act(async () => { applied.resolve(true); await applied.promise; });
+    });
+
+    it("ignores ok and saveAsNew while confirming", async () => {
+      const session = makeSession();
+      session.blockCheck.mockResolvedValue({ usage: null, confirm: true, warnings: [] });
+      const { result } = await mount({}, session);
+      await act(async () => { result.current.ok(); });
+      expect(result.current.status).toBe("confirming");
+      act(() => { result.current.ok(); result.current.saveAsNew(); });
+      expect(result.current.status).toBe("confirming");
+      expect(session.blockCheck).toHaveBeenCalledTimes(1);
+      expect(session.blockApply).not.toHaveBeenCalled();
+    });
+
+    it("ignores cancelConfirm followed by ok in the same tick while applying", async () => {
+      const applied = deferred<boolean>();
+      const session = makeSession();
+      session.blockApply.mockReturnValue(applied.promise);
+      const { result, onApplied, onClose } = await mount({}, session);
+      await act(async () => { result.current.ok(); });
+      expect(result.current.status).toBe("applying");
+      act(() => { result.current.cancelConfirm(); result.current.ok(); });
+      expect(result.current.status).toBe("applying");
+      expect(session.blockCheck).toHaveBeenCalledTimes(1);
+      expect(session.blockApply).toHaveBeenCalledTimes(1);
+      await act(async () => { applied.resolve(true); await applied.promise; });
+      expect(onApplied).toHaveBeenCalledTimes(1);
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it("invalidates a pending check when the draft changes", async () => {
+      const checked = deferred<BlockCheckReply | null>();
+      const session = makeSession();
+      session.blockCheck.mockReturnValue(checked.promise);
+      const { result } = await mount({}, session);
+      act(() => { result.current.ok(); });
+      expect(result.current.status).toBe("checking");
+      act(() => { result.current.setDraft(editedDrafts[family]); });
+      expect(result.current.status).toBe("ready");
+      expect(result.current.draft).toEqual(editedDrafts[family]);
+      await act(async () => { checked.resolve({ usage: null, confirm: false, warnings: [] }); await checked.promise; });
+      expect(result.current.status).toBe("ready");
+      expect(session.blockApply).not.toHaveBeenCalled();
+    });
+
+    it("invalidates confirmation when the draft changes", async () => {
+      const session = makeSession();
+      session.blockCheck.mockResolvedValue({ usage: null, confirm: true, warnings: [] });
+      const { result } = await mount({}, session);
+      await act(async () => { result.current.ok(); });
+      expect(result.current.status).toBe("confirming");
+      act(() => { result.current.setDraft(editedDrafts[family]); });
+      expect(result.current.status).toBe("ready");
+      act(() => { result.current.confirm(); });
+      expect(session.blockApply).not.toHaveBeenCalled();
+    });
+
+    it("keeps an applying request at its checked draft when the editor draft changes", async () => {
+      const applied = deferred<boolean>();
+      const session = makeSession();
+      session.blockApply.mockReturnValue(applied.promise);
+      const { result } = await mount({}, session);
+      await act(async () => { result.current.ok(); });
+      expect(result.current.status).toBe("applying");
+      act(() => { result.current.setDraft(editedDrafts[family]); });
+      expect(result.current.status).toBe("applying");
+      expect(result.current.draft).toEqual(editedDrafts[family]);
+      expect(session.blockApply).toHaveBeenCalledTimes(1);
+      expect(session.blockApply).toHaveBeenCalledWith(requests[family].ok, "r1");
+      expect(session.blockApply.mock.calls[0]?.[0]).toBe(session.blockCheck.mock.calls[0]?.[0]);
+      await act(async () => { applied.resolve(true); await applied.promise; });
+    });
+
+    it("drops a pending check after the target changes", async () => {
+      const checked = deferred<BlockCheckReply | null>();
+      const session = makeSession();
+      session.blockCheck.mockReturnValue(checked.promise);
+      const fetcher = vi.fn().mockResolvedValueOnce(response(bodies[family]))
+        .mockResolvedValueOnce(response({ ...bodies[family], blockId: 6 }));
+      const { result, rerender, args } = await mount({}, session, fetcher);
+      act(() => { result.current.ok(); });
+      expect(result.current.status).toBe("checking");
+      await act(async () => { rerender({ ...args, target: { block: 6 } }); });
+      expect(result.current.info.blockId).toBe(6);
+      expect(result.current.status).toBe("ready");
+      await act(async () => { checked.resolve({ usage: null, confirm: false, warnings: [] }); await checked.promise; });
+      expect(session.blockApply).not.toHaveBeenCalled();
+    });
+
+    it("drops successful apply callbacks after the target changes", async () => {
+      const applied = deferred<boolean>();
+      const session = makeSession();
+      session.blockApply.mockReturnValue(applied.promise);
+      const fetcher = vi.fn().mockResolvedValueOnce(response(bodies[family]))
+        .mockResolvedValueOnce(response({ ...bodies[family], blockId: 6 }));
+      const { result, rerender, args, onApplied, onClose } = await mount({}, session, fetcher);
+      await act(async () => { result.current.ok(); });
+      expect(result.current.status).toBe("applying");
+      await act(async () => { rerender({ ...args, target: { block: 6 } }); });
+      expect(result.current.info.blockId).toBe(6);
+      await act(async () => { applied.resolve(true); await applied.promise; });
+      expect(onApplied).not.toHaveBeenCalled();
+      expect(onClose).not.toHaveBeenCalled();
+    });
+
+    it("drops successful apply callbacks after unmount", async () => {
+      const applied = deferred<boolean>();
+      const session = makeSession();
+      session.blockApply.mockReturnValue(applied.promise);
+      const { result, unmount, onApplied, onClose } = await mount({}, session);
+      await act(async () => { result.current.ok(); });
+      expect(result.current.status).toBe("applying");
+      act(() => { unmount(); });
+      await act(async () => { applied.resolve(true); await applied.promise; });
+      expect(onApplied).not.toHaveBeenCalled();
+      expect(onClose).not.toHaveBeenCalled();
+    });
+
+    it("drops a rejected apply after the target changes", async () => {
+      const applied = deferred<boolean>();
+      const session = makeSession();
+      session.blockApply.mockReturnValue(applied.promise);
+      const fetcher = vi.fn().mockResolvedValueOnce(response(bodies[family]))
+        .mockResolvedValueOnce(response({ ...bodies[family], blockId: 6 }));
+      const { result, rerender, args } = await mount({}, session, fetcher);
+      await act(async () => { result.current.ok(); });
+      expect(result.current.status).toBe("applying");
+      await act(async () => { rerender({ ...args, target: { block: 6 } }); });
+      await act(async () => { applied.reject(new EditSessionError("x", "BAD_VALUE")); await applied.promise.catch(() => undefined); });
+      expect(result.current.message).not.toBe("x");
+      expect(result.current.status).toBe("ready");
+      expect(result.current.info.blockId).toBe(6);
+    });
+
+    it("drops a GET reply for the previous map", async () => {
+      const old = deferred<Response>();
+      const newer = deferred<Response>();
+      const fetcher = vi.fn().mockReturnValueOnce(old.promise).mockReturnValueOnce(newer.promise);
+      const { result, rerender, args } = await mount({}, makeSession(), fetcher);
+      act(() => { rerender({ ...args, map: "B" }); });
+      expect(fetcher).toHaveBeenCalledTimes(2);
+      expect(fetcher.mock.calls[1]?.[0]).toBe("/api/edit/B/block?block=5");
+      await act(async () => { newer.resolve(response({ ...bodies[family], blockId: 6 })); await newer.promise; });
+      expect(result.current.status).toBe("ready");
+      expect(result.current.info.blockId).toBe(6);
+      await act(async () => { old.resolve(response(bodies[family])); await old.promise; });
+      expect(result.current.status).toBe("ready");
+      expect(result.current.info.blockId).toBe(6);
+    });
+
+    if (family === "gbc") {
+      it("drops a GET reply for the previous time", async () => {
+        const old = deferred<Response>();
+        const newer = deferred<Response>();
+        const fetcher = vi.fn().mockReturnValueOnce(old.promise).mockReturnValueOnce(newer.promise);
+        const { result, rerender, args } = await mount({ time: "day" }, makeSession(), fetcher);
+        expect(fetcher.mock.calls[0]?.[0]).toBe("/api/edit/A/block?block=5&time=day");
+        act(() => { rerender({ ...args, time: "nite" }); });
+        expect(fetcher).toHaveBeenCalledTimes(2);
+        expect(fetcher.mock.calls[1]?.[0]).toBe("/api/edit/A/block?block=5&time=nite");
+        await act(async () => { newer.resolve(response({ ...bodies[family], blockId: 6 })); await newer.promise; });
+        expect(result.current.status).toBe("ready");
+        expect(result.current.info.blockId).toBe(6);
+        await act(async () => { old.resolve(response(bodies[family])); await old.promise; });
+        expect(result.current.status).toBe("ready");
+        expect(result.current.info.blockId).toBe(6);
+      });
+    }
+
+    it("does not reload for an equal new target object", async () => {
+      const { result, fetcher, rerender, args } = await mount();
+      await act(async () => { rerender({ ...args, target: { block: 5 } }); });
+      expect(fetcher).toHaveBeenCalledTimes(1);
+      expect(result.current.status).toBe("ready");
+    });
+
+    it("uses the GET status fallback when an error response has invalid JSON", async () => {
+      const fetcher = vi.fn().mockResolvedValue({
+        ...response(null, 500), json: async () => { throw new SyntaxError("bad"); },
+      });
+      const { result } = await mount({}, makeSession(), fetcher);
+      expect(result.current.status).toBe("error");
+      expect(result.current.message).toBe("GET /api/edit/A/block?block=5 -> 500");
+    });
+
+    it("reports a GET network rejection", async () => {
+      const fetcher = vi.fn().mockRejectedValue(new Error("socket hang up"));
+      const { result } = await mount({}, makeSession(), fetcher);
+      expect(result.current.status).toBe("error");
+      expect(result.current.message).toBe("socket hang up");
+    });
+
+    it("reports a plain apply error and keeps the edited draft", async () => {
+      const session = makeSession();
+      session.blockApply.mockRejectedValue(new Error("boom"));
+      const { result } = await mount({}, session);
+      act(() => { result.current.setDraft(editedDrafts[family]); });
+      await act(async () => { result.current.ok(); });
+      expect(result.current.message).toBe("boom");
+      expect(result.current.status).toBe("ready");
+      expect(result.current.draft).toEqual(editedDrafts[family]);
+    });
+
+    it("restarts the preview debounce when edited 100 ms after load", async () => {
+      vi.useFakeTimers();
+      const { result, session } = await mount();
+      await act(async () => { vi.advanceTimersByTime(100); });
+      act(() => { result.current.setDraft(editedDrafts[family]); });
+      await act(async () => { vi.advanceTimersByTime(100); });
+      expect(session.blockPreview).not.toHaveBeenCalled();
+      await act(async () => { vi.advanceTimersByTime(50); });
+      expect(session.blockPreview).toHaveBeenCalledTimes(1);
+      if (family === "gba") {
+        expect(session.blockPreview).toHaveBeenCalledWith({
+          request: { metatileId: 0x21, mode: "ok", from: "palette", draft: {
+            entries: [
+              { tile: 1, palette: 0, xFlip: false, yFlip: false },
+              { tile: 2, palette: 0, xFlip: true, yFlip: false },
+              { tile: 3, palette: 1, xFlip: false, yFlip: true },
+              { tile: 4, palette: 1, xFlip: true, yFlip: true },
+              { tile: 5, palette: 0, xFlip: false, yFlip: false },
+              { tile: 6, palette: 0, xFlip: true, yFlip: false },
+              { tile: 7, palette: 1, xFlip: false, yFlip: true },
+              { tile: 8, palette: 1, xFlip: true, yFlip: true },
+            ], behavior: 2, layerType: 1,
+          } },
+        });
+      } else {
+        expect(session.blockPreview).toHaveBeenCalledWith({
+          request: { blockId: 5, mode: "ok", from: "palette", draft: {
+            tiles: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+            collision: ["WALL", "WALL", "FLOOR", "WATER"], palettes: [],
+          } },
+        });
+      }
+    });
+
+    it("keeps the previous preview image when a later preview resolves null", async () => {
+      vi.useFakeTimers();
+      const session = makeSession();
+      session.blockPreview.mockResolvedValueOnce({ png: "QUJD" }).mockResolvedValueOnce(null);
+      const { result } = await mount({}, session);
+      await act(async () => { vi.advanceTimersByTime(150); });
+      expect(result.current.previewSrc).toBe("data:image/png;base64,QUJD");
+      act(() => { result.current.setDraft(editedDrafts[family]); });
+      await act(async () => { vi.advanceTimersByTime(150); });
+      expect(session.blockPreview).toHaveBeenCalledTimes(2);
+      expect(result.current.previewSrc).toBe("data:image/png;base64,QUJD");
+    });
+
+    it("clears the pending preview timer on unmount", async () => {
+      vi.useFakeTimers();
+      const { session, unmount } = await mount();
+      act(() => { unmount(); });
+      await act(async () => { vi.advanceTimersByTime(200); });
+      expect(session.blockPreview).toHaveBeenCalledTimes(0);
+    });
   });
 }
 
@@ -520,5 +800,21 @@ describe("block editor family specs", () => {
     expect(gbcAdapter.blockEditorSpec.blockFields).toHaveLength(4);
     expect(gbcAdapter.blockEditorSpec.blockFields.map((field: BlockEditorSpec["blockFields"][number]) => field.optionsKey)).toEqual(["collision", "collision", "collision", "collision"]);
     expect(gbcAdapter.blockEditorSpec.modes).toEqual(["1x1", "2x2", "4x4"]);
+  });
+
+  it("declares the exact GBC collision field keys and labels", () => {
+    expect(gbcAdapter.blockEditorSpec.blockFields).toEqual([
+      { key: "collision0", label: "Collision (top left)", optionsKey: "collision" },
+      { key: "collision1", label: "Collision (top right)", optionsKey: "collision" },
+      { key: "collision2", label: "Collision (bottom left)", optionsKey: "collision" },
+      { key: "collision3", label: "Collision (bottom right)", optionsKey: "collision" },
+    ]);
+  });
+
+  it("declares the exact GBA behavior and layer fields", () => {
+    expect(gbaAdapter.blockEditorSpec.blockFields).toEqual([
+      { key: "behavior", label: "Behavior", optionsKey: "behaviors" },
+      { key: "layerType", label: "Layer type", optionsKey: "layerTypes" },
+    ]);
   });
 });
