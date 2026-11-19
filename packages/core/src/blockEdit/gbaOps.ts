@@ -48,8 +48,8 @@ function consumingUses(proj: Project, symbol: string): ConsumingUse[] {
       layoutObject: layoutById.get(use.layout)!,
       role: use.role,
       split: use.split,
-      primary: use.role === "primary" ? symbol : use.pairedWith,
-      secondary: use.role === "secondary" ? symbol : use.pairedWith,
+      primary: layoutById.get(use.layout)!.primaryTileset,
+      secondary: layoutById.get(use.layout)!.secondaryTileset,
     }))
     .sort((a, b) => compare(a.layout, b.layout));
 }
