@@ -1597,9 +1597,10 @@ describe("E1 file-keyed consumers", () => {
     };
     interface Pick { symbol: string; local: number; source: Use; map: string; other: Use }
     let exclusive: Pick | undefined;
-    const candidates = [...groups.values()].filter(group => group.length >= 2).sort((a, b) =>
-      Number(b.some(name => name.startsWith("gTileset_Building"))) - Number(a.some(name => name.startsWith("gTileset_Building"))) || compare(a[0]!, b[0]!),
-    );
+    // Plan Task E1.8: the smoke case is the gTileset_Building* alias group; no other group may satisfy it.
+    const candidates = [...groups.values()]
+      .filter(group => group.length >= 2 && group.some(name => name.startsWith("gTileset_Building")))
+      .sort((a, b) => compare(a[0]!, b[0]!));
     const searched: string[] = [];
     for (const group of candidates) {
       searched.push(group.join(", "));
