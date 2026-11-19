@@ -262,7 +262,10 @@ for (const family of ["gba", "gbc"] as const) {
     });
 
     it("a non-JSON error reply on block apply rejects with the status message", async () => {
-      vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 500, json: async () => { throw new SyntaxError("bad json"); } }));
+      const fetcher = vi.fn()
+        .mockResolvedValueOnce({ ok: false, status: 500, json: async () => { throw new SyntaxError("bad json"); } })
+        .mockResolvedValue(response(body));
+      vi.stubGlobal("fetch", fetcher);
       const { result } = mount();
       await act(async () => {
         const apply = result.current.blockApply({ mode: "ok" }, "rev1");
@@ -271,6 +274,9 @@ for (const family of ["gba", "gbc"] as const) {
       });
       expect(hasPendingSessionMutations("A")).toBe(false);
       expect(result.current.isDirty).toBe(false);
+      expect(result.current.blocks).toEqual(initialBlocks);
+      await act(async () => { await result.current.undo(); });
+      expect(fetcher.mock.calls.map(([url]) => url)).toEqual(["/api/edit/A/block/apply", "/api/edit/A/undo"]);
     });
 
     it("a pending block check delays neither Save nor the map switch: Save", async () => {
@@ -375,7 +381,8 @@ for (const family of ["gba", "gbc"] as const) {
 
 describe("GBC block apply replies", () => {
   it("gbc blockApply rejects a malformed success reply and leaves state", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({ blocks: "nope" })));
+    const fetcher = vi.fn().mockResolvedValueOnce(response({ blocks: "nope" })).mockResolvedValue(response(body));
+    vi.stubGlobal("fetch", fetcher);
     const { result } = renderHook(() => useGbcEditSession("A", initialBlocks));
     await act(async () => {
       const apply = result.current.blockApply({ mode: "ok" }, "rev1");
@@ -385,6 +392,8 @@ describe("GBC block apply replies", () => {
     expect(hasPendingSessionMutations("A")).toBe(false);
     expect(result.current.blocks).toEqual(initialBlocks);
     expect(result.current.isDirty).toBe(false);
+    await act(async () => { await result.current.undo(); });
+    expect(fetcher.mock.calls.map(([url]) => url)).toEqual(["/api/edit/A/block/apply", "/api/edit/A/undo"]);
   });
 
   it("gbc blockApply resolves false when the server has no open session", async () => {
