@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from "react";
 import type { AddEventForm, EventKind as CreatedEventKind } from "@pokemap/core/src/addEvent/types.js";
-import { useEditSessionCore, type EventCreateSession } from "../shared/useEditSessionCore.js";
+import { useEditSessionCore, type BlockCheckReply, type BlockEditSession, type EventCreateSession } from "../shared/useEditSessionCore.js";
 import type { Block } from "@pokemap/core/src/model/types.js";
 import type { Stamp } from "@pokemap/core/src/edit/paint.js";
 import type { MapData } from "@pokemap/core/src/load/maps.js";
@@ -200,24 +200,32 @@ interface EventOpResponse {
  * live/static switch in MapCanvas is invisible to the player from the very
  * first render, not just after their first edit.
  */
-export function useEditSession(mapName: string | null, initialBlocks?: Block[], initialMap?: MapData): UseEditSessionResult & EventCreateSession {
+export function useEditSession(mapName: string | null, initialBlocks?: Block[], initialMap?: MapData): UseEditSessionResult & EventCreateSession & BlockEditSession {
   const seed = useMemo(() => ({ blocks: initialBlocks ?? [], border: [] as Block[], map: initialMap }), [initialBlocks, initialMap]);
   const { state, isDirty, canUndo, canRedo, post, apply, barrier, discard, markClean } = useEditSessionCore("/api/edit", mapName, seed);
   const { blocks, border, map } = state;
 
   // The core derives the live view from map/seed identity and guards every reply with its issue ticket.
-  const call = useCallback(
+  const callSession = useCallback(
     async (path: string, body: unknown = {}) => {
       const reply = await post<SessionResponse>(path, body);
-      if (!reply) return;
+      if (!reply) return false;
       const d = reply.data;
-      apply({
+      return apply({
         state: (prev) => ({ blocks: d.blocks, border: d.border, map: d.map === undefined ? prev.map : d.map ?? undefined }),
         isDirty: d.isDirty, canUndo: d.canUndo ?? false, canRedo: d.canRedo ?? false,
       }, reply.ticket);
     },
     [post, apply],
   );
+
+  const call = useCallback((path: string, body: unknown = {}) => callSession(path, body).then(() => {}), [callSession]);
+  const blockCheck = useCallback((request: unknown, revision: string) =>
+    post<BlockCheckReply>("/block/check", { ...(request as object), revision }).then((reply) => reply?.data ?? null), [post]);
+  const blockPreview = useCallback((request: unknown) =>
+    post<{ png: string }>("/block/preview", request).then((reply) => reply?.data ?? null), [post]);
+  const blockApply = useCallback((request: unknown, revision: string) =>
+    callSession("/block/apply", { ...(request as object), revision }), [callSession]);
 
   const createEvent = useCallback(async (form: AddEventForm) => {
     const reply = await post<EventOpResponse & { canUndo: boolean; canRedo: boolean; created: { kind: CreatedEventKind; index: number } }>("/event/create", form);
@@ -263,7 +271,7 @@ export function useEditSession(mapName: string | null, initialBlocks?: Block[], 
     apply({ state: (prev) => ({ ...prev, map: nextMap }), isDirty: nextIsDirty, canUndo: true, canRedo: false });
   }, [apply]);
 
-  return { blocks, border, map, isDirty, canUndo, canRedo, beginStroke, applyPaint, endStroke, undo, redo, markClean, createEvent, barrier, moveEvent, addEvent, deleteEvent, applyExternalMapUpdate, discard };
+  return { blocks, border, map, isDirty, canUndo, canRedo, beginStroke, applyPaint, endStroke, undo, redo, markClean, createEvent, barrier, blockCheck, blockPreview, blockApply, moveEvent, addEvent, deleteEvent, applyExternalMapUpdate, discard };
 }
 
 /** Indicator responses use the same map/dirty payload as event operations. */

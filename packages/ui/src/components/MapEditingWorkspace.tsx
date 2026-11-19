@@ -17,7 +17,7 @@ import { AddEventDialog, registerReturnWarpSource } from "../shared/AddEventDial
 import * as addEventAdapter from "../gba/addEventFields.js";
 import { useEventOptions } from "../shared/useEventOptions.js";
 import { useVisit } from "../shared/useVisit.js";
-import { hasPendingEventCreates, type EventCreateSession } from "../shared/useEditSessionCore.js";
+import { hasPendingSessionMutations, type EventCreateSession } from "../shared/useEditSessionCore.js";
 import type { EventKind } from "@pokemap/core/src/addEvent/types.js";
 
 /** The props the workspace builds for the canvas it hosts -- exactly what
@@ -123,7 +123,7 @@ export function MapEditingWorkspace({ active = true, mapName, data, editSession,
     if (!window.confirm("Discard all unsaved changes on this map? This cannot be undone.")) return;
     void requestSession.discard().then(() => { if (visit.isCurrent()) setEventOpError(null); }).catch((error: unknown) => { if (visit.isCurrent()) setEventOpError(eventOpErrorMessage(error)); });
   };
-  const requestBusy = editRequests > 0 || creating || hasPendingEventCreates(mapName);
+  const requestBusy = editRequests > 0 || creating || hasPendingSessionMutations(mapName);
   const disabledReason = !active || !data || !mapName ? "No editable map" : requestBusy ? "An edit request is in flight" : undefined;
   const addDisabled = disabledReason ? { object: disabledReason, warp: disabledReason, coord: disabledReason, bg: disabledReason } : {
     object: options.project && (currentMap?.objectEvents.length ?? 0) >= options.project.objectCap ? `This map already has ${options.project.objectCap} object events` : undefined,

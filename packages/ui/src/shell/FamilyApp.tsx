@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { eventCreateBarrier, hasPendingEventCreates } from "../shared/useEditSessionCore.js";
+import { sessionMutationBarrier, hasPendingSessionMutations } from "../shared/useEditSessionCore.js";
 import { resetTilesetVersion } from "../shared/tilesetVersion.js";
 import { MapTree } from "../components/MapTree.js";
 import { DungeonSidebar } from "../components/DungeonSidebar.js";
@@ -72,24 +72,24 @@ export function FamilyApp({ adapter, switcher }: FamilyAppProps) {
     setSwitchBusy(false);
   };
   const runtime = adapter.useRuntime({ selected, mode, requestPrompt });
-  const waitingForCreate = useRef(false);
+  const waitingForMutation = useRef(false);
   const [settledLeave, setSettledLeave] = useState<{ map: string | null; go: () => void; opts: { sameMap: boolean } } | null>(null);
-  // Decide dirty ownership on the render after the create settles, using the fresh session flags.
+  // Decide dirty ownership on the render after session mutations settle, using the fresh session flags.
   useEffect(() => {
     if (!settledLeave) return;
     setSettledLeave(null);
-    if (hasPendingEventCreates(selected)) {
-      void eventCreateBarrier(selected).then(() => setSettledLeave(settledLeave));
+    if (hasPendingSessionMutations(selected)) {
+      void sessionMutationBarrier(selected).then(() => setSettledLeave(settledLeave));
       return;
     }
-    waitingForCreate.current = false;
+    waitingForMutation.current = false;
     if (selected === settledLeave.map && !switchPending.current) runtime.leave(settledLeave.go, settledLeave.opts);
   }, [settledLeave, selected, runtime]);
   const guardedLeave = (go: () => void, opts: { sameMap: boolean }) => {
-    if (switchPending.current || waitingForCreate.current) return;
-    if (hasPendingEventCreates(selected)) {
-      waitingForCreate.current = true;
-      void eventCreateBarrier(selected).then(() => setSettledLeave({ map: selected, go, opts }));
+    if (switchPending.current || waitingForMutation.current) return;
+    if (hasPendingSessionMutations(selected)) {
+      waitingForMutation.current = true;
+      void sessionMutationBarrier(selected).then(() => setSettledLeave({ map: selected, go, opts }));
     } else runtime.leave(go, opts);
   };
 

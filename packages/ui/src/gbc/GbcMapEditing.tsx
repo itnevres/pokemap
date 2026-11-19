@@ -18,7 +18,7 @@ import type { EventPlacementProps } from "../canvas/MapSurface.js";
 import { AddEventDialog, registerReturnWarpSource } from "../shared/AddEventDialog.js";
 import * as addEventAdapter from "./addEventFields.js";
 import { useEventOptions } from "../shared/useEventOptions.js";
-import { hasPendingEventCreates, type EventCreateSession } from "../shared/useEditSessionCore.js";
+import { hasPendingSessionMutations, type EventCreateSession } from "../shared/useEditSessionCore.js";
 
 /** No collision button (Plan 7 Goal: GBC collision is per metatile, not per block) with the shared Indicator dialog. */
 export const GBC_TOOLS: ToolKind[] = toolsFor(GBC_CAPABILITIES);
@@ -228,7 +228,7 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
         onSelect={onPalettePick}
         selected={pickedId}
       />
-      <AddEventBar ref={placement.barRef} placing={placement.placing} onToggle={placement.onToggle} disabled={editRequests > 0 || creating || hasPendingEventCreates(mapName) ? {
+      <AddEventBar ref={placement.barRef} placing={placement.placing} onToggle={placement.onToggle} disabled={editRequests > 0 || creating || hasPendingSessionMutations(mapName) ? {
         object: "An edit request is in flight", warp: "An edit request is in flight", coord: "An edit request is in flight", bg: "An edit request is in flight",
       } : {
         object: session.events.objects.length >= 15 ? "This map already has 15 object events" : undefined,

@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from "react";
 import type { AddEventForm, EventKind as CreatedEventKind } from "@pokemap/core/src/addEvent/types.js";
-import { useEditSessionCore, type EventCreateSession } from "../../shared/useEditSessionCore.js";
+import { useEditSessionCore, type BlockCheckReply, type BlockEditSession, type EventCreateSession } from "../../shared/useEditSessionCore.js";
 import type { Block, GbcMapEvents } from "@pokemap/core/src/gbc/model/types.js";
 import type { GbcStamp } from "@pokemap/core/src/gbc/edit/paint.js";
 import type { GbcEventKind, GbcWarpRenumberWarning } from "@pokemap/core/src/gbc/edit/events.js";
@@ -92,21 +92,29 @@ const NO_EVENTS: GbcMapEvents = { warps: [], coords: [], bgs: [], objects: [], s
  * Lives in `GbcApp`, always mounted, so a World/Dungeon round trip never loses the client's view of a session
  * the server still holds dirty (the reasoning at `App.tsx:50-62`).
  */
-export function useGbcEditSession(mapName: string | null, initialBlocks?: Block[], initialEvents?: GbcMapEvents): UseGbcEditSessionResult & EventCreateSession {
+export function useGbcEditSession(mapName: string | null, initialBlocks?: Block[], initialEvents?: GbcMapEvents): UseGbcEditSessionResult & EventCreateSession & BlockEditSession {
   const seed = useMemo(() => ({ blocks: initialBlocks ?? [], events: initialEvents ?? NO_EVENTS }), [initialBlocks, initialEvents]);
   const { state, isDirty, canUndo, canRedo, post: corePost, apply, barrier, discard, markClean } = useEditSessionCore("/api/edit", mapName, seed, { readServerError: true });
   const { blocks, events } = state;
 
-  const post = useCallback(async (path: string, body?: unknown): Promise<SessionBody | null> => {
+  const postSession = useCallback(async (path: string, body?: unknown): Promise<{ data: SessionBody; applied: boolean } | null> => {
     const reply = await corePost<unknown>(path, body);
     if (!reply) return null;
     const d = reply.data;
     if (!isSessionBody(d)) throw new Error(`POST /api/edit/${mapName}${path} returned an unexpected shape`);
     if (d.events === null) return null; // nothing open server-side (undo/redo no-op): leave the client as it is
     const nextEvents = d.events;
-    apply({ state: () => ({ blocks: d.blocks, events: nextEvents }), isDirty: d.isDirty, canUndo: d.canUndo, canRedo: d.canRedo }, reply.ticket);
-    return d;
+    const applied = apply({ state: () => ({ blocks: d.blocks, events: nextEvents }), isDirty: d.isDirty, canUndo: d.canUndo, canRedo: d.canRedo }, reply.ticket);
+    return { data: d, applied };
   }, [corePost, apply, mapName]);
+
+  const post = useCallback((path: string, body?: unknown) => postSession(path, body).then((reply) => reply?.data ?? null), [postSession]);
+  const blockCheck = useCallback((request: unknown, revision: string) =>
+    corePost<BlockCheckReply>("/block/check", { ...(request as object), revision }).then((reply) => reply?.data ?? null), [corePost]);
+  const blockPreview = useCallback((request: unknown) =>
+    corePost<{ png: string }>("/block/preview", request).then((reply) => reply?.data ?? null), [corePost]);
+  const blockApply = useCallback((request: unknown, revision: string) =>
+    postSession("/block/apply", { ...(request as object), revision }).then((reply) => reply?.applied ?? false), [postSession]);
 
   const createEvent = useCallback(async (form: AddEventForm) => {
     const reply = await corePost<SessionBody & { created: { kind: CreatedEventKind; index: number } }>("/event/create", form);
@@ -138,6 +146,6 @@ export function useGbcEditSession(mapName: string | null, initialBlocks?: Block[
 
   return {
     blocks, events, isDirty, canUndo, canRedo,
-    beginStroke, applyPaint, endStroke, undo, redo, discard, markClean, createEvent, barrier, moveEvent, addEvent, deleteEvent, applyExternalSession,
+    beginStroke, applyPaint, endStroke, undo, redo, discard, markClean, createEvent, barrier, blockCheck, blockPreview, blockApply, moveEvent, addEvent, deleteEvent, applyExternalSession,
   };
 }
