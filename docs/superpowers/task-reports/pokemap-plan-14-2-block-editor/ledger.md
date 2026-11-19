@@ -1302,3 +1302,86 @@ Traps seen in s7:
   check them in the first task that can open the dialog in the real app (13b if it adds a reachable entry, else 14):
   stage a block edit, see the Save dialog rows, then Discard; never Save. Also check whether the server fills
   `tilesetEffects` in the plan body at all (Task 12 only renders it).
+
+## Execution (conductor s15, 2026-11-19)
+
+- Start: main checkout `df34830`, matches the s15 prompt. No vitest running; no `<s9>/vitest.lock`. s15 scratchpad:
+  `C:\Users\Serve\AppData\Local\Temp\claude\8fd0350c313cb955\0da2723a-e065-46ad-b457-d3b406734ff5\scratchpad\`.
+- **Task 13b: High** (modal focus/Escape layering, modifier placement through `placeGroup`, All/Local scope prompt,
+  720x560 fit). Worktree `<s15>/wt-t13b` branch `p14-2-t13b` from `df34830`.
+- **Conductor rulings for 13b (D19-D24, binding; full text in `<s15>/t13b-behaviour.md`, inlined in both briefs):**
+  - **D19 Current square.** Square controls (palette, flips) act on the last clicked square (starts 0). A square click
+    with no picker cell selected only selects the square; clicking the selected picker cell again deselects it.
+    Placement writes `tile` only (GBA palette/flip unchanged). GBA picker `&pal=` = the current square's palette.
+  - **D20 GBA layers.** Tabs `Bottom` (entries 0-3) and `Top` (4-7); Ctrl+Shift on GBA places 2x2 (no 4x4).
+  - **D21 Usage line.** Pure `usageLine(usage, map)`: own entry by `map` or by a `sharedGrids` group; N interior,
+    `(+ border)` when border + block0AsBorder > 0; M/K over other non-zero entries; tilesets clause only when two or
+    more; J = distinct maps (shared-grid groups expanded). Confirm list: `MAP: I interior, B border` per non-zero
+    entry of `check.usage.maps`.
+  - **D22 Escape.** prompt → confirm (`cancelConfirm`) → nothing while applying → `onClose`; ignored when the topmost
+    `aria-modal` is not ours.
+  - **D23 Fields.** `collisionN` → `draft.collision[N]` (names); GBA `behavior`/`layerType` numbers; fallback text box
+    when the value is not in the options (GBA accepts `/^\d+$/` only). `SelectField` exported from `AddEventDialog`.
+  - **D24 Shell.** Panel `warp-modal__panel block-editor`, `.block-editor { width: min(720px, calc(100vw - 32px));
+    height: auto; max-height: calc(100vh - 32px); overflow: auto }`. Footer hidden while confirming.
+  - Open (Task 14/16): the GBC palette select shows `tilePalettes[square]` of the loaded block, so after a placement it
+    shows the old tile's palette until a draft palette entry exists (the preview is the truth).
+- Tests hop `chain.py --tier opus`, brief `<s15>/t13b-tests-brief.md`, verify `node -e 0`: `gpt-6.2-sol` dead →
+  **`gpt-6.1-sol` done `ac43614`** (+511, test file only, 26 cases). Vetted: placement/usage oracles re-derived by
+  hand (4x4 at origin skips null source 3; GBA Top 2x2 = 4, 5, 20, 21; usage `Missing` = 0 / 6 on 2 / 2 maps); each
+  planned mutant has a killer. Red (`<s15>/t13b-red.out`): module missing (right reason).
+- Impl hop `chain.py --tier opus`, brief `<s15>/t13b-impl-brief.md`, verify typecheck + lockrun `vitest run
+  packages/ui`, `--allow` the four files + `blockEditor/*` + `AddEventDialog.tsx`, `--protect packages/ui/test/**`.
+- Impl hop 1: **`RESULT parked`** (Codex usage limit, "try again at 11:36 AM"; every Codex model "cap: no diff").
+  Waited for the reset (no Anthropic fallback, delegate rule). Impl hop 2 (`--no-free`): `gpt-6.2-sol` dead →
+  **`gpt-6.1-sol` done `0c3243f`** (+260/-1: dialog, `TilePicker`, `BlockGrid`, `.block-editor*` CSS, `SelectField`
+  exported). Conductor verify (`<s15>/t13b-green.out`): typecheck pass, **packages/ui 136 files / 2,504 pass / 0 fail**.
+  Conductor read: no raw `fetch`; overlays `pointer-events: none`; found `var(--space-12)` undefined.
+- Mutants round 1 (`<s15>/mut_t13b.py` on `0c3243f`, detached `<s15>/mut-t13b`, baseline 28 pass): K1-K14 + K3b,
+  K4a-c, K5b: **17 of 18 KILLED**. **K5b (4x4 not gated by `spec.modes`) SURVIVED: equivalent** — a GBA layer is 2x2,
+  so a 4x4 group clips to the same 2x2 result from any anchor; the heading's own gate is tested ("Place 2x2" on GBA).
+  Accepted.
+- Reviews (astra, `task-13b-{spec,quality}-review.md`): both **Needs changes**; conductor checked each, all real.
+  Quality I1 focus lost on entering/leaving the confirm step (focused button removed, `activeElement` = body);
+  I2 the text-box fallback is recomputed per keystroke (typing `2` on the way to `20` swaps the input for a select);
+  m3/spec m1 `--space-12` undefined (tokens stop at `--space-6`); m4/spec 4 picker scaling/offset/deselect untested.
+  Spec 2 applying-Escape, prevented Escape, disabled buttons while pending, initial focus untested; 3 preview
+  rendering untested; 5 per-square controls (non-zero square, Y flip, layer type, `Choose...`, invalid digits); 6
+  usage `block0AsBorder`, zero-use maps in the confirm list, exact-map precedence.
+  - **D25 (conductor)** the text-box fallback is decided once per field from the LOADED value and stays a text box
+    for the dialog's life; a field that starts as a select stays a select.
+- Fix round 1 (impl F1-F3 + tests T1-T17 appended), brief `<s15>/t13b-fix1-brief.md`, `--no-free`: `gpt-6.2-sol`
+  dead → **`gpt-6.1-sol` done `0567a41`** (+256/-6: focus to Apply on confirm, back to OK on cancel, panel when the
+  focused node is removed; sticky fallback from `info.block`; `calc(var(--space-6) * 2)`; 20 cases appended).
+  Vetted: offset click → index 18 (0x22); usage sums re-derived by hand.
+- Re-reviews (astra, `task-13b-{spec,quality}-rereview.md`) on `0567a41`: every round-1 finding **Resolved**, no new
+  issue. Open: spec 2 opener-focus restoration untested (real gap) → conductor inline test-only commit **`efc8c99`**
+  (tiny-edit rule, ~13 lines: focused opener, mount, unmount, focus returns); quality 4 real-browser fit and picker
+  geometry → the live check below.
+- Runner incident (s15): a verify+mutant pipeline launched with a trailing `&` inside a background Bash survived
+  as an orphan while a relaunch ran; the two shared `<s9>/vitest.lock` and `mut_t13b_r2.out` (relaunch verify
+  timed out on the lock; interleaved output). Only one mutant runner was ever active per worktree; the orphan's own
+  results are valid. Lesson: never end a background command with `&`; one foreground chain per background call.
+- Mutants round 2 (K1-K14 on `0567a41`, 48 pass baseline): all KILLED except equivalent K5b. Round 3 (K15-K23 on
+  `efc8c99`, 49 pass baseline; K15 sticky fallback, K16/K17 confirm focus, K18 Escape while applying, K19 prevented
+  Escape, K20 preview hidden, K21 picker offset, K22 deselect, K23 `useRestoreFocus` removed): **all 9 KILLED**.
+- Merged `p14-2-t13b` → **`3c3ecb3`** (`--no-ff`). Worktrees `wt-t13b`, `mut-t13b` removed (junctions unlinked first,
+  no `--force`); branch deleted.
+- **Live check (13b, real app, 2026-11-19):** UI + hub via `preview_start`, GBA subject. No shell entry point yet
+  (Task 14), so the dialog was mounted from the running Vite page (dynamic import of `/src/shared/BlockEditorDialog.tsx`
+  with the app's own React) against the real hub: `LittlerootTown`, palette target block 1, a session object posting
+  the real `/block/preview` and `/block/check`, `blockApply` stubbed to `false` (never sent). Viewport 720x560:
+  panel 688 wide, height capped and scrolling internally (content 1,081 px), no horizontal scroll, OK reachable;
+  sheet 128x336 rendered 256x672 pixelated; preview 200; real-geometry click on sheet index 17 → `Tile: $011`
+  hover, selected, placed on Square 0; `/block/check` 200 → confirm step with the 49-map list (scrolls inside the
+  panel), focus on Apply; Escape → confirm closed, focus OK; Escape → `onClose`. **PASS.** Note for Task 16: the
+  confirm list for a primary-tileset block is long (49 maps); consider capping it with "and N more" like the Save
+  dialog.
+- **Still deferred to Task 14 (no reachable entry until shell wiring):** Task 12's Save dialog `tilesetEffects` rows
+  and the first UI `/block/apply` through the real session barrier (13b's harness cannot reach the family session).
+  Stage, see the rows, Discard; never Save.
+- **Gate at `3c3ecb3`: 5,069 pass / 1 fail / 272 files; typecheck pass, UI build pass; subjects unchanged** (known
+  `engine.test` env fail, "expected 96 to be 98"; one server block-edit test ran 87 s, no hang). Temp roots cleared
+  first (1). Review reports archived to `_archive/`. **Task 13b closed.**
+- Handoff s15 → s16 (plan handoff point: after 13b). Next: Task 14a (context menu and dialog mount) and 14b (tool and
+  palettes), per `task-14-rulings.md` N1-N10. Prompt: `.superpowers/sdd/2026-11-10-pokemap-plan-14-2-block-editor/s16-launch-prompt.md`.
