@@ -1160,3 +1160,78 @@ Traps seen in s7:
   large). Worktrees `<s13>/wt-e1` (branch `p14-2-e1`, merged; holds untracked `vitest.wt.config.ts`) and
   `<s13>/mut-e1` (detached) can be removed (unlink junctions first). Launch prompt:
   `.superpowers/sdd/2026-11-10-pokemap-plan-14-2-block-editor/s14-launch-prompt.md`.
+
+## Execution (conductor s14, 2026-11-18)
+
+- Start: main checkout `6dd0d05`, matches the s14 prompt. No vitest/chain running; no `<s9>/vitest.lock`. s14
+  scratchpad: `C:\Users\Serve\AppData\Local\Temp\claude\8fd0350c313cb955\0e716cf9-2a9c-4d44-9406-eedcc0369ad8\scratchpad\`.
+- **Task 12: High** (async ordering: the mutation barrier undo/redo/Discard/Save/switch await). Rulings M1-M8.
+  Conductor findings before the hop: M1's caller list misses `MapEditingWorkspace.tsx:20,126` and
+  `GbcMapEditing.tsx:21,231` (`hasPendingEventCreates`): rename there too (no alias). **Ruling M9 (conductor):**
+  wire format `blockCheck`/`blockApply` body = `{ ...request, revision }`, `blockPreview` body = `request`
+  (server reads `body.revision`, `blockEditRoutes.ts:165`); `/block/apply` 200 = `deps.sessionBody` (same as undo).
+  UI imports of `@pokemap/*` in the touched files are type-only: the s13 worktree-alias trap does not apply.
+- Worktree `<s14>/wt-t12` branch `p14-2-t12` from `6dd0d05`. Tests hop: `chain.py --tier opus`, brief
+  `<s14>/t12-tests-brief.md` (self-contained), verify `node -e 0` (new API names make typecheck red until impl; the
+  conductor vets red with vitest).
+- Tests hop: `RESULT done` `gpt-6.2-sol` dead → **`gpt-6.1-sol` done `c9aa623`** (+386/-6; the -6 are `cleanup`
+  added to `afterEach` in three files, no case edited). New `useEditSessionCore.blockEdit.test.tsx`: per family,
+  undo/redo/discard/Save plan+commit (second apply after plan load)/map switch wait for a pending `blockApply`
+  (request order); a pending `blockCheck` delays none and never registers; 409/400 → `EditSessionError` code+error
+  (apply, check, preview); reply after switch not applied (false, B seed kept); refused apply releases undo and the
+  registry; M9 bodies; core: check seq increasing, check/preview never register, old names gone. One `blockApply`
+  case per family hook, two SaveDialog cases (rows, `and 2 more`, absent → none). Vetted: literals only; each planned
+  mutant has a killer. Red (`<s14>/t12-red.out`): **27 failed / 46 passed (73)**, all missing API
+  (`blockApply`/`blockCheck`/`blockPreview`/`hasPendingSessionMutations` not a function), old name present, or no
+  tileset row.
+- Impl hop: `chain.py --tier opus`, brief `<s14>/t12-impl-brief.md`, verify typecheck + `vitest run packages/ui`
+  via lockrun, `--protect packages/ui/test/**`.
+- Impl hop: `RESULT done` `gpt-6.2-sol` dead → **`gpt-6.1-sol` done `c27f3a9`** (+88/-51, 7 files: M1 rename incl.
+  `MapEditingWorkspace`/`GbcMapEditing`; registry `sessionMutations`; `/block/apply` registered; structured for the
+  three block paths; GBA `callSession` / GBC `postSession` return `apply`'s boolean, shared by undo and `blockApply`;
+  SaveDialog `tilesetEffects` rows). Conductor verify (`<s14>/t12-green.out`): typecheck pass, **packages/ui 134
+  files / 2,357 pass / 0 fail**.
+- Reviews (astra) first launch: Codex usage limit ("try again at 9:47 PM"). `cooldown.codex` set to 21:47; waited
+  (9 min) rather than the Opus fallback; relaunched after reset.
+- Mutants (`<s14>/mut_t12.py` on `c27f3a9`, detached `<s14>/mut-t12`, lockrun): K1-K14 (Discard/switch/commit/plan/
+  undo skip the barrier; apply not registered; check registered; apply not structured; GBA/GBC apply without
+  ticket; revision dropped; no settle on rejection; no 8-map truncation; GBC ignores `applied`; barrier single pass).
+- Reviews (astra, `task-12-{spec,quality}-review.md`): both **Needs changes**, all test-coverage, no impl defect.
+  Conductor checked each: quality **I1 real** (barrier `while`→`if` survives: no mutation started while a barrier
+  waits; = K13), **m real** (no network-rejection / non-JSON / GBC bad-shape cases). Spec **I1 real** (pending check
+  shown not to delay undo/redo/Discard only, not Save/commit/switch), **m1 real** (paint not shown unregistered; no
+  invalidation check on block paths), **m2 real** (GBC `events: null` → false and null-map returns unpinned).
+  Spec also notes the impl commit message is the chain's (`delegate(...)`), not the plan's: the merge commit names
+  the task instead (no history rewrite). Fix round 1 tests hop: `<s14>/t12-fix1-tests-brief.md` (cases 1-9),
+  verify typecheck; cases expected green on `c27f3a9`.
+- Fix round 1 tests hop: **`gpt-6.1-sol` done `b717571`** (+171/-2 in the blockEdit file only: re-entry case
+  (apply B issued while undo waits), network rejection, non-JSON 500, check delays neither Save/commit nor the
+  switch prompt, null map, GBC bad shape and `events: null`, paint never registers, block paths never invalidate
+  (spy wraps the real `invalidateEventOptions`; `/undo` control called once)). Vetted. File green **41/41**.
+  Re-reviews (astra) launched on `b717571`.
+- Re-reviews (astra, `task-12-{spec,quality}-rereview.md`): spec **Approved**. Quality: all prior findings resolved
+  but one Minor: the non-JSON 500 and GBC malformed cases did not show undo still proceeds and blocks stay unchanged.
+  Conductor inline fix (test-only, ~10 lines, tiny-edit rule): `mockResolvedValueOnce(fail).mockResolvedValue(...)`,
+  then assert a following `undo()` fetches `[apply, undo]` and `blocks` equal `initialBlocks`. File green **41/41**,
+  typecheck pass; committed `56745e9`.
+- Mutants round 1 (on `c27f3a9`, old tests): K1-K9 **KILLED**. K10 hung vitest ~14 h (unsettled registry → barrier
+  waits forever; no completion notice, master check-in caught it). Conductor killed only its own vitest/lockrun
+  tree, removed the stale `<s9>/vitest.lock` (owner = the killed pid), added a 600 s per-mutant timeout that
+  kills the process tree to `mut_t12.py`.
+- Mutants round 2 (on `56745e9`, baseline 113 pass): **K10 KILLED (timeout/hang), K11-K14 KILLED**. K13 (barrier
+  single pass) killed by the re-entry case (gba+gbc). All 15 mutants (K1-K14, K6a/b) killed.
+- Merged `p14-2-t12` → `bd9799e` (`--no-ff`). Worktrees `wt-t12`, `mut-t12` removed (junctions unlinked first, no
+  `--force`); branch deleted.
+- **Gate at `bd9799e`: 4,917 pass / 1 fail / 270 files; typecheck pass, UI build pass; subjects unchanged** (fail:
+  the known `engine.test` env fail, "expected 96 to be 98"). Temp roots cleared first (7). **Task 12 closed.**
+- Task 13a prep (s14): read `task-13-rulings.md` D1-D12 and the server GET/POST handlers. Conductor rulings for 13a
+  (binding, recorded here and in the 13a brief):
+  - **D13 wire wrapper.** The server reads `body.request` (`blockEditRoutes.ts` `request()`), so the object the hook
+    hands to the session is `{ request: R }` (R = D5 fields; the server fills `map`). Check/apply then send
+    `{ request: R, revision }` and preview `{ request: R }`, consistent with Task 12 M9 (`{ ...request, revision }`).
+  - **D14** `blockApply` resolving `false` → `ready`, no callbacks, no message. A `null` check reply → `ready`.
+  - **D15** the first preview fires 150 ms after load (the initial draft counts as a draft change).
+  - **D16** `cancelConfirm()` while `checking` returns to `ready` and invalidates the pending check (pins the stale-
+    check counter).
+  - Open for 13b/live: `BlockEditSession.blockPreview` has no `time` argument, so the GBC preview renders at the
+    server's default time; the sheet URL carries `time`. Not a 13a change.
