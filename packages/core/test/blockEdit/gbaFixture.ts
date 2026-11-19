@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { deflateSync } from "node:zlib";
 
 // A complete, deterministic project. Every call owns a fresh directory.
-export function makeGbaFixture(triple = false): string {
+export function makeGbaFixture(triple = false, aliases = false): string {
   const root = mkdtempSync(join(tmpdir(), "pokemap-gba-block-"));
   const put = (p: string, data: string | Buffer) => { const f = join(root, p); mkdirSync(dirname(f), { recursive: true }); writeFileSync(f, data); };
   const chunk = (type: string, data: Buffer) => {
@@ -30,17 +30,35 @@ export function makeGbaFixture(triple = false): string {
     if (name === "A") { blocks.writeUInt16LE(0xd009, 2 * 16); blocks.writeUInt16LE(0xe00a, 2 * 16 + 2); blocks.writeUInt16LE(0xf00b, 2 * 16 + 4); }
     put(`${dir}/metatiles.bin`, blocks); put(`${dir}/attributes.bin`, attrs);
   }
+  if (aliases) {
+    for (const name of ["A2", "A3"] as const) {
+      const dir = `data/tilesets/${name}`, art = `graphics/tilesets/${name}`;
+      headers += `const struct Tileset gTileset_${name} = {\n.isSecondary = FALSE,\n.metatiles = gMeta${name},\n.metatileAttributes = gAttr${name},\n.tiles = gTiles${name},\n.palettes = gPals${name},\n};\n`;
+      metas += `const u16 gMeta${name}[] = INCBIN_U16("data/tilesets/${name === "A2" ? "A" : name}/metatiles.bin");\nconst u16 gAttr${name}[] = INCBIN_U16("data/tilesets/A/attributes.bin");\n`;
+      graphics += `const u16 gTiles${name}[] = INCBIN_U16("${art}/tiles.4bpp.lz");\nconst u16 gPals${name}[][16] = { ${Array.from({ length: 13 }, (_, i) => `INCBIN_U16("${dir}/${i}.gbapal")`).join(", ")} };\n`;
+      const header = Buffer.from(ihdr); header.writeUInt32BE(name === "A2" ? 64 : 128, 0);
+      put(`${art}/tiles.png`, Buffer.concat([Buffer.from("89504e470d0a1a0a", "hex"), chunk("IHDR", header), chunk("PLTE", Buffer.from([8, 0, 0])), chunk("IDAT", deflateSync(Buffer.alloc((name === "A2" ? 65 : 129) * 8))), chunk("IEND", Buffer.alloc(0))]));
+      for (let i = 0; i < 13; i++) put(`${dir}/${i}.pal`, `JASC-PAL\n0100\n1\n8 0 0\n`);
+      if (name === "A3") {
+        const blocks = Buffer.alloc(4 * 16);
+        for (let i = 0; i < 4; i++) for (let j = 0; j < 8; j++) blocks.writeUInt16LE((i + j) % 4, i * 16 + j * 2);
+        put(`${dir}/metatiles.bin`, blocks);
+      }
+    }
+  }
   put("src/data/tilesets/headers.h", headers); put("src/data/tilesets/metatiles.h", metas); put("src/data/tilesets/graphics.h", graphics); put("src/graphics.c", "");
-  const layouts = [
+  const layouts: (readonly [string, string, string, string, string])[] = [
     ["E", "emerald", "A", "S", "Emerald"], ["F", "frlg", "A", "S", "Frlg"],
     ["O", "emerald", "B", "S", "Other"], ["X", "emerald", "A", "T", "Extra"],
     ["H", "emerald", "A", "T", "Shared"],
-  ] as const;
+  ];
+  if (aliases) layouts.push(["J", "frlg", "A2", "B", "AliasTwo"], ["K", "emerald", "A3", "B", "AliasThree"]);
   put("data/layouts/layouts.json", JSON.stringify({ layouts_table_label: "gLayouts", layouts: layouts.map(([id, version, primary, secondary]) => ({ id, name: id, width: 2, height: 2, layout_version: version, primary_tileset: `gTileset_${primary}`, secondary_tileset: `gTileset_${secondary}`, blockdata_filepath: `data/layouts/${id}/map.bin`, border_filepath: `data/layouts/${id}/border.bin` })) }));
   const maps: string[] = [];
   for (const [id, , , , map] of layouts) {
-    const cells = Buffer.alloc(8); [1, 1, id === "F" ? 13 : 9, 0].forEach((v, i) => cells.writeUInt16LE(v | (i === 0 || i === 2 ? 0x5800 : 0), i * 2));
-    const border = Buffer.alloc(8); [1, 0, 0, 0].forEach((v, i) => border.writeUInt16LE(v, i * 2));
+    const values = id === "J" ? [3, 3, 0, 0] : id === "K" ? [2, 2, 0, 0] : [1, 1, id === "F" ? 13 : 9, 0];
+    const cells = Buffer.alloc(8); values.forEach((v, i) => cells.writeUInt16LE(v | (i === 0 || i === 2 ? 0x5800 : 0), i * 2));
+    const border = Buffer.alloc(8); [id === "J" || id === "K" ? 0 : 1, 0, 0, 0].forEach((v, i) => border.writeUInt16LE(v, i * 2));
     put(`data/layouts/${id}/map.bin`, cells); put(`data/layouts/${id}/border.bin`, border);
     for (const n of id === "H" ? ["SharedA", "SharedB"] : [map]) { maps.push(n); put(`data/maps/${n}/map.json`, JSON.stringify({ id: n, name: n, layout: id })); }
   }

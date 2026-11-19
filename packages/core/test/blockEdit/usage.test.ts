@@ -19,13 +19,14 @@
  * cells, so the whole file would disagree on exactly those maps.
  */
 
-import { describe, expect, it } from "vitest";
-import { existsSync, readFileSync } from "node:fs";
+import { afterEach, describe, expect, it } from "vitest";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { openGbcProject } from "../../src/gbc/project.js";
 import { openProject, type Project } from "../../src/project.js";
 import type { StagedGrids } from "../../src/blockEdit/types.js";
-import type { Split } from "../../src/model/types.js";
+import type { Layout, Split } from "../../src/model/types.js";
+import { planGbaBlockEdit, type GbaBlockDraft } from "../../src/blockEdit/gbaOps.js";
 import {
   gbaBlockUsage,
   gbaConsumingLayouts,
@@ -35,6 +36,7 @@ import {
 } from "../../src/blockEdit/usage.js";
 import { GBC_SUBJECT_ROOT, itWithGbcCorpus } from "../gbc/helpers/corpus.js";
 import { SUBJECT_ROOT, itWithCorpus } from "../helpers/corpus.js";
+import { makeGbaFixture } from "./gbaFixture.js";
 
 // ---------------------------------------------------------------------------
 // Shared text helpers (plain RGBDS-line parsing; deliberately not `src/gbc/load`).
@@ -1449,5 +1451,165 @@ describe("GBA multi-target grid files (synthetic layouts, no corpus shape has th
     const borderHits = borderCells.filter((c) => c === k || c === s + k).length;
     expect(usage.maps).toEqual([{ map: "MapT5A", interior: 3, border: borderHits, block0AsBorder: 0 }]);
     expect(usage.sharedGrids).toEqual([{ file: base.blockdataFilepath, maps: ["MapT5A", "MapT5B"] }]);
+  });
+});
+
+describe("E1 file-keyed consumers", () => {
+  const roots: string[] = [];
+  afterEach(() => {
+    for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+  });
+  function fixture(): Project {
+    const root = makeGbaFixture(false, true); roots.push(root); return openProject(root);
+  }
+  interface Use {
+    layout: Layout;
+    role: "primary" | "secondary";
+    tileset: string;
+    pairedWith: string;
+  }
+  // E1a is a direct OR against the edited symbol's two canonical paths.
+  function consumers(p: Project, symbol: string): Use[] {
+    if (!p.tilesetSymbols().includes(symbol)) return [];
+    const paths = p.tilesetPaths(symbol);
+    const aliases = new Set(p.tilesetSymbols().filter(name => {
+      const other = p.tilesetPaths(name);
+      return other.metatilesBin === paths.metatilesBin || other.attributesBin === paths.attributesBin;
+    }));
+    const uses: Use[] = [];
+    for (const layout of p.layouts) {
+      if (aliases.has(layout.primaryTileset)) uses.push({ layout, role: "primary", tileset: layout.primaryTileset, pairedWith: layout.secondaryTileset });
+      if (aliases.has(layout.secondaryTileset)) uses.push({ layout, role: "secondary", tileset: layout.secondaryTileset, pairedWith: layout.primaryTileset });
+    }
+    return uses.sort((a, b) => compare(a.layout.id, b.layout.id) || (a.role === b.role ? 0 : a.role === "primary" ? -1 : 1));
+  }
+  function disk(p: Project, file: string): number[] {
+    const raw = readFileSync(join(p.paths.root, file));
+    return Array.from({ length: raw.length / 2 }, (_, i) => raw.readUInt16LE(i * 2) & 0x3ff);
+  }
+  function target(p: Project, use: Use, local: number): number {
+    return use.role === "primary" ? local : p.splitFor(use.layout).metatiles + local;
+  }
+  function names(p: Project, layout: Layout): string[] {
+    return p.mapNames().filter(name => p.map(name).layout === layout.id).sort(compare);
+  }
+  // Independent R9a oracle: distinct interior targets and border-file/target pairs.
+  function usage(p: Project, symbol: string, local: number): Usage {
+    const uses = consumers(p, symbol), byFile = new Map<string, Use[]>();
+    for (const use of uses) {
+      if (names(p, use.layout).length === 0) continue;
+      const file = use.layout.blockdataFilepath, group = byFile.get(file) ?? [];
+      group.push(use); byFile.set(file, group);
+    }
+    const maps: UsageMap[] = [], sharedGrids: Usage["sharedGrids"] = [];
+    for (const [file, group] of byFile) {
+      const targets = new Set(group.map(use => target(p, use, local)));
+      const interior = disk(p, file).filter(cell => targets.has(cell)).length;
+      const pairs = new Map<string, Set<number>>();
+      for (const use of group) {
+        const border = use.layout.borderFilepath, ids = pairs.get(border) ?? new Set<number>();
+        ids.add(target(p, use, local)); pairs.set(border, ids);
+      }
+      let border = 0;
+      for (const [path, ids] of pairs) border += disk(p, path).filter(cell => ids.has(cell)).length;
+      if (interior + border === 0) continue;
+      const consumingNames = [...new Set(group.flatMap(use => names(p, use.layout)))].sort(compare);
+      maps.push({ map: consumingNames[0]!, interior, border, block0AsBorder: 0 });
+      const allNames = p.mapNames().filter(name => p.layoutForMap(name).blockdataFilepath === file).sort(compare);
+      if (allNames.length >= 2) sharedGrids.push({ file, maps: allNames });
+    }
+    const paths = p.tilesetPaths(symbol);
+    return {
+      files: [...new Set([paths.metatilesBin, paths.attributesBin])].sort(compare),
+      tilesets: [...new Set([symbol, ...uses.map(use => use.tileset)])].sort(compare),
+      maps: maps.sort((a, b) => compare(a.map, b.map)),
+      sharedGrids: sharedGrids.sort((a, b) => compare(a.file, b.file)),
+    };
+  }
+
+  it.each(["gTileset_A", "gTileset_A2"])("E1.1: %s exposes every alias consumer and each role's own tileset", symbol => {
+    const p = fixture();
+    const expected = consumers(p, "gTileset_A").map(use => ({ layout: use.layout.id, role: use.role, tileset: use.tileset, pairedWith: use.pairedWith, split: p.splitFor(use.layout) }));
+    expect(expected.map(use => use.layout)).toEqual(["E", "F", "H", "J", "K", "X"]);
+    // Red today: symbol-keyed relations omit J/K and do not expose the role's tileset.
+    expect(gbaConsumingLayouts(p, symbol)).toEqual(expected);
+  });
+
+  it("E1.2: an A edit sees the local id drawn only by the A2 map", () => {
+    const p = fixture(), local = 3, expected = usage(p, "gTileset_A", local);
+    expect(expected.maps.map(entry => entry.map)).toEqual(["AliasTwo"]);
+    expect(expected.maps[0]!.interior).toBe(disk(p, p.layoutForMap("AliasTwo").blockdataFilepath).filter(id => id === local).length);
+    expect(expected.maps[0]!.interior).toBeGreaterThan(0);
+    // Red today: A's symbol-only consumers cannot see AliasTwo's disk hits.
+    expect.soft(gbaBlockUsage(p, "gTileset_A", local, new Map())).toEqual(expected);
+    expect(gbaBlockUsage(p, "gTileset_A", local, new Map()).tilesets).toEqual(["gTileset_A", "gTileset_A2", "gTileset_A3"]);
+  });
+
+  it("E1.7: sharing only attributes is enough to consume an A edit", () => {
+    const p = fixture(), local = 2, a = p.tilesetPaths("gTileset_A"), a3 = p.tilesetPaths("gTileset_A3");
+    expect(a3.metatilesBin).not.toBe(a.metatilesBin); expect(a3.attributesBin).toBe(a.attributesBin);
+    const expected = usage(p, "gTileset_A", local);
+    expect(expected.maps.map(entry => entry.map)).toEqual(["AliasThree"]);
+    // Red today: the attributes-only alias K is absent from A's symbol index.
+    expect.soft(gbaConsumingLayouts(p, "gTileset_A").map(use => `${use.layout}:${use.role}`)).toContain("K:primary");
+    expect(gbaBlockUsage(p, "gTileset_A", local, new Map())).toEqual(expected);
+  });
+
+  itWithCorpus("E1.8: real aliases contribute disk usage and confirmation across headers", () => {
+    const p = openProject(SUBJECT_ROOT), groups = new Map<string, string[]>();
+    for (const symbol of p.tilesetSymbols()) {
+      const path = p.tilesetPaths(symbol).metatilesBin, group = groups.get(path) ?? [];
+      group.push(symbol); groups.set(path, group);
+    }
+    const diskCache = new Map<string, readonly number[]>();
+    const cells = (path: string): readonly number[] => {
+      const cached = diskCache.get(path); if (cached) return cached;
+      const ids = disk(p, path); diskCache.set(path, ids); return ids;
+    };
+    interface Pick { symbol: string; local: number; source: Use; map: string; other: Use }
+    let exclusive: Pick | undefined, common: Pick | undefined;
+    for (const group of groups.values()) {
+      if (group.length < 2) continue;
+      for (const symbol of group.sort(compare)) {
+        const own = consumers(p, symbol).filter(use => use.tileset === symbol && names(p, use.layout).length > 0);
+        const others = consumers(p, symbol).filter(use => use.tileset !== symbol && group.includes(use.tileset) && names(p, use.layout).length > 0);
+        const count = readFileSync(join(SUBJECT_ROOT, p.tilesetPaths(symbol).metatilesBin)).length / 16;
+        for (const other of others) {
+          for (const drawn of new Set(cells(other.layout.blockdataFilepath))) {
+            const local = drawn - (other.role === "primary" ? 0 : p.splitFor(other.layout).metatiles);
+            if (local < 0 || local >= count || (other.role === "primary" && local >= p.splitFor(other.layout).metatiles)) continue;
+            const source = own.find(use => use.role === "secondary" || local < p.splitFor(use.layout).metatiles);
+            if (!source) continue;
+            const pick: Pick = { symbol, local, source, map: names(p, source.layout)[0]!, other };
+            const ownDraws = own.some(use => cells(use.layout.blockdataFilepath).includes(target(p, use, local)) || cells(use.layout.borderFilepath).includes(target(p, use, local)));
+            if (!ownDraws) { exclusive = pick; break; }
+            // A foreign file guarantees the usage-only fallback exposes the missing alias.
+            if (own.every(use => use.layout.blockdataFilepath !== other.layout.blockdataFilepath)) common ??= pick;
+          }
+          if (exclusive) break;
+        }
+        if (exclusive) break;
+      }
+      if (exclusive) break;
+    }
+    const pick = exclusive ?? common;
+    expect(pick, "a shared metatiles file drawn by a consuming map").toBeDefined();
+    if (!pick) throw new Error("E1 oracle found no shared metatiles usage");
+    const expected = usage(p, pick.symbol, pick.local);
+    const otherFile = pick.other.layout.blockdataFilepath;
+    const representative = consumers(p, pick.symbol).filter(use => use.layout.blockdataFilepath === otherFile).flatMap(use => names(p, use.layout)).sort(compare)[0]!;
+    const expectedEntry = expected.maps.find(entry => entry.map === representative);
+    expect(expectedEntry, `disk usage entry for ${otherFile}`).toBeDefined();
+    if (!expectedEntry) throw new Error(`E1 oracle found no usage entry for ${otherFile}`);
+    expect(expectedEntry.interior).toBeGreaterThan(0);
+    // Red today: real headers sharing a binary are excluded from the edited symbol's usage/confirmation.
+    expect.soft(gbaBlockUsage(p, pick.symbol, pick.local, new Map()).maps).toContainEqual(expectedEntry);
+    if (exclusive) {
+      const tileset = p.tileset(pick.symbol);
+      const changed: GbaBlockDraft = { entries: tileset.metatile(pick.local), behavior: tileset.behavior(pick.local) ^ 1, layerType: tileset.layerType(pick.local) };
+      const result = planGbaBlockEdit(p, { map: pick.map, metatileId: target(p, pick.source, pick.local), mode: "ok", from: "palette", draft: changed }, new Map(), new Map());
+      expect(result.edits.length).toBeGreaterThan(0);
+      expect(result.confirm).toBe(true);
+    }
   });
 });
