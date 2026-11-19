@@ -525,4 +525,14 @@ describe("E1 file-keyed consumers", () => {
     expect(warnings.filter(message => /\btile\b/.test(message))).toHaveLength(1);
     expect(warnings.join(" ")).toContain("J -> gTileset_A2[3]");
   });
+
+  it("E1c: an alias in the secondary slot resolves secondary-range tiles from the layout's own secondary", () => {
+    // Layout M = primary gTileset_A, secondary gTileset_A2 (emerald: split.tiles 8), so tile 9 is A2-local 1 in
+    // both of M's uses. Taking the secondary half from the edited symbol would print "M -> gTileset_A[1]".
+    const p = aliasFixture(), original = draft(p).entries.map(entry => ({ ...entry })), edited = draft(p);
+    edited.entries[0] = { ...edited.entries[0]!, tile: 9 };
+    const tile = gbaCrossHalfWarnings(p, "gTileset_A", edited, original).filter(message => /\btile\b/.test(message)).join(" ");
+    expect(tile).toContain("M -> gTileset_A2[1]");
+    expect(tile).not.toContain("M -> gTileset_A[1]");
+  });
 });
