@@ -739,4 +739,16 @@ describe("BlockEditorDialog", () => {
     expect(document.activeElement).toBe(within(confirmation()).getByRole("button", { name: "Apply" }));
   });
 
+  it("returns focus to the opener when the dialog closes", async () => {
+    const opener = document.createElement("button");
+    opener.textContent = "Open block editor";
+    document.body.append(opener);
+    try {
+      opener.focus();
+      const host = await mount();
+      expect(document.activeElement).not.toBe(opener);
+      host.unmount();
+      await waitFor(() => expect(document.activeElement).toBe(opener));
+    } finally { opener.remove(); }
+  });
 });
