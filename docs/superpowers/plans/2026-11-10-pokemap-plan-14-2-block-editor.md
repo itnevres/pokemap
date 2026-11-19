@@ -581,6 +581,33 @@ Test `packages/server/test/tilesetOverlay.test.ts`; new cases in the palette and
   check stages (`check ... byte-identical`); preview ignores map palettes (`preview ... equals the canvas`).
 - [ ] **Step 5: Commit** `feat(plan-14.2): block editor hub routes (Task 11)`.
 
+### Task E1: GBA file-keyed consumers (escalation, High; added 2026-11-18, conductor s13)
+
+**Why High:** a wrong consumer set gives a silently wrong `confirm`, usage and append limit; no earlier test caught it.
+Rulings E1a-E1f in the spec (§Identity).
+
+**Files:** Modify `packages/core/src/blockEdit/usage.ts` (GBA relations keyed by canonical file),
+`packages/core/src/blockEdit/gbaOps.ts` (`consumingUses` halves from the layout, E1c); optionally simplify
+`packages/server/src/blockEditRoutes.ts` cap (result unchanged). Test `packages/core/test/blockEdit/usage.test.ts`,
+`packages/core/test/blockEdit/gbaOps.test.ts`, fixture `packages/core/test/blockEdit/gbaFixture.ts` (alias option).
+
+- [ ] **Step 1: Write failing tests.** Fixture gains aliases: `gTileset_A2` sharing A's metatiles and attributes files
+  but its own tiles and palettes (fewer tiles), on its own layout and map under the tighter split and paired with a
+  different secondary; `gTileset_A3` sharing only A's attributes file. Oracles from disk, never from the code under
+  test: the test lists consumers itself from `proj.layouts` + `proj.tilesetPaths` (canonical paths) with the literal
+  role rule (primary → `local`, secondary → `split.metatiles + local`) and counts cells from blockdata bytes
+  (`u16 & 0x3ff`). Cases: E1.1 `gbaConsumingLayouts` from A and from A2 list the same uses, with `tileset`; E1.2 usage
+  through A counts the A2 map, `tilesets` lists both; E1.3 `confirm` true when only an alias map draws the block (both
+  directions); E1.4 save-as-new `SPLIT_LIMIT` from the alias's tighter split; E1.5 structural refusal naming the alias
+  layout for a tile valid in A but past A2's tiles; E1.6 cross-half warning across alias consumers; E1.7 attributes-only
+  alias A3 counts as a consumer; E1.8 subject smoke (scratch copy, read-only): a `gTileset_Building*` alias block drawn
+  by a map of another alias appears in `usage.maps` with disk counts, and `confirm` is true.
+- [ ] **Step 2: Run** → FAIL for the right reason (missing alias maps, not a test bug).
+- [ ] **Step 3: Implement.**
+- [ ] **Step 4: Run** → PASS. Mutations: key by symbol again; halves from S not the layout (E1c); metatiles-only alias
+  set (E1a); `tilesets` = `[S]`; `confirm` over S's own uses only.
+- [ ] **Step 5: Commit** `fix(plan-14.2): GBA consumers keyed by tileset file (E1)`.
+
 ### Task 12: UI mutation transport and Save dialog effects
 
 > **Rulings (2026-11-15):** `task-12-rulings.md` (M1-M8) binds and wins over the text below: rename with no alias, `BlockEditSession` on both family session hooks (two files added), and the stale-check case moves to 13a. See "Rulings addendum (2026-11-15)".

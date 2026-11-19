@@ -49,6 +49,29 @@ maps affected), and the game builds and shows the new block.
   labels over one `INCLUDE`; `gfx/tilesets.asm` puts `Tileset0GFX::` and `TilesetJohtoGFX::` over one
   `johto.2bpp.lz`, built from `gfx/tilesets/johto.png`). A GBC block edit's file set is therefore up to four files:
   metatiles `.bin`, collision `.asm`, palette map `.asm` (Q2 "all" or "local"), tile sheet `.png` (Q2 "local" only).
+- **E1 rulings (conductor s13, 2026-11-18; GBA file-keyed consumers).** Tasks 5/7 keyed GBA consumers by tileset
+  symbol; the subject has real aliases (10 `gTileset_Building*` headers share `gMetatiles_InsideBuilding`, 6 SecretBase
+  secondaries share `gMetatiles_SecretBaseSecondary`; metatiles and attributes alias together in every case).
+  - **E1a alias set.** For an edited symbol S, the alias set is every symbol in `proj.tilesetSymbols()` whose
+    canonical `metatilesBin` equals S's **or** whose canonical `attributesBin` equals S's (union: conservative if a
+    project aliases one file without the other).
+  - **E1b consumers.** Every (layout, role) whose `primaryTileset` (role primary) or `secondaryTileset` (role
+    secondary) is in the alias set. R8a holds: a layout whose two slots are both in the set yields two uses.
+    `gbaConsumingLayouts(proj, S)` returns this set (sorted by layout id, primary before secondary), each use naming
+    `tileset` (the layout's own symbol in that role) and `pairedWith` (the layout's other slot).
+  - **E1c per-consumer data.** Each use's primary/secondary halves are the layout's own `primaryTileset` /
+    `secondaryTileset`, never S, so the structural check (tile counts, palettes) and the cross-half warnings judge
+    each consumer by the tiles and palettes it really loads.
+  - **E1d usage.** `gbaBlockUsage(proj, S, local, grids)` counts every E1b consumer (target `local` for primary,
+    `split.metatiles + local` for secondary, per layout); `maps` include maps reached through every alias;
+    `tilesets` = sorted distinct alias symbols that some layout consumes, plus S; `files` unchanged (S's canonical
+    metatiles and attributes); unknown S still gives empty usage (R9b).
+  - **E1e planner.** `confirm` (another map draws the target), the save-as-new append limit (`SPLIT_LIMIT` under the
+    tightest consumer) and the structural refusal run over the E1b consumers. This matches the route's `limits.cap`
+    (B14b/B15d: minimum over every consumer of the file).
+  - **E1f unchanged.** `revision` inputs (the edited files' effective bytes and the request map's effective grid) are
+    already file-keyed. Hub ownership and the overlay key by canonical path already. GBC is already file-keyed
+    (`tilesetsByPath`) and is out of E1's scope.
 
 ### Data (per family, core)
 
