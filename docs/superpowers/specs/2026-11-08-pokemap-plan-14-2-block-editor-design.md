@@ -72,6 +72,10 @@ maps affected), and the game builds and shows the new block.
   - **E1f unchanged.** `revision` inputs (the edited files' effective bytes and the request map's effective grid) are
     already file-keyed. Hub ownership and the overlay key by canonical path already. GBC is already file-keyed
     (`tilesetsByPath`) and is out of E1's scope.
+  - **E1g direct, not transitive (fix round 1).** The alias set is never closed transitively: C sharing a file with
+    alias B but neither file with S is not S's consumer. The route's `limits.cap` is the minimum over
+    `gbaConsumingLayouts(project, S)` itself (an earlier loop re-expanded each alias and pulled in such C). The
+    partial-chain case is pinned in core tests (the subject has no partial alias for a route test).
 
 ### Data (per family, core)
 

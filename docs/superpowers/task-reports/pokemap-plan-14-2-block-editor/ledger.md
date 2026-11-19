@@ -1092,3 +1092,71 @@ Traps seen in s7:
   work and can be removed (unlink `node_modules` junctions first; never `--force`).
 - Handoff: `.superpowers/sdd/2026-11-10-pokemap-plan-14-2-block-editor/s13-launch-prompt.md` (scope: E1 core fix
   plan + implementation; then Task 12 if room).
+
+## Execution (conductor s13, 2026-11-18)
+
+- Start: main checkout `cabb5bb`, matches the s13 prompt. No vitest/chain running; no `<s9>/vitest.lock`; one
+  `%LOCALAPPDATA%\Temp\pokemap-gbc-*` root left (delete before the gate). s13 scratchpad:
+  `C:\Users\Serve\AppData\Local\Temp\claude\d93d7db49a2946f0\1a87ccae-990c-4c99-9b8b-c7ccba2eb307\scratchpad\`.
+- **E1 ruled (conductor, no user question needed):** spec §Identity "E1 rulings" E1a-E1f, plan "Task E1"
+  (`bdbf4d8`). Consumers of the symbol-keyed index checked: `gbaConsumingLayouts` / `gbaBlockUsage` (usage.ts),
+  planner `consumingUses` → append limit, `assertStructural`, `gbaCrossHalfWarnings`, `usedElsewhere` (`confirm`):
+  all change. `consumingUses` also took the halves from S (`primary: symbol`), so an alias consumer would be judged by
+  S's tiles: E1c. Unchanged: `revision` inputs, hub ownership/overlay (canonical path), route cap (already file-keyed,
+  `blockEditRoutes.ts:253`), GBC (`tilesetsByPath`). Subject check: metatiles and attributes alias together in every
+  header (9× InsideBuilding, 6× SecretBaseSecondary); E1a still takes the union.
+- Worktree `<s13>/wt-e1` branch `p14-2-e1` from `bdbf4d8`. Tests hop: `chain.py --tier opus`, brief
+  `<s13>/e1-tests-brief.md` (self-contained), verify typecheck only.
+- Tests hop: `RESULT done` `gpt-6.2-sol` dead → **`gpt-6.1-sol` done `34f77fa`** (+269/-8: fixture `aliases` opt-in
+  adds `gTileset_A2` (A's metatiles+attributes, own 8-tile sheet, layout J frlg / B) and `gTileset_A3` (A's
+  attributes only, layout K emerald / B); E1.1-E1.8). Vetted: fixture unchanged with `aliases` false; oracles list
+  consumers from `proj.layouts` + `tilesetPaths` and count `u16 & 0x3ff` from disk; E1.4 message from the literal
+  limit (layout E, 8); E1.5 tile 9 checked against each sheet's PNG size; E1.8 searches the real subject for a
+  shared-file block drawn only through another alias. Red run (`<s13>/e1-red.out`): **10 failed / 81 passed (91)**,
+  every failure a missing alias consumer (confirm false, no SPLIT_LIMIT, no warning, symbol-only lists).
+- Impl hop: `chain.py --tier opus`, brief `<s13>/e1-impl-brief.md`, verify `<s13>/e1-verify.txt` (typecheck + core
+  `blockEdit` dir + 4 server block-edit suites), `--protect` core and server tests.
+- Impl hop 1: `gpt-6.1-sol` "no diff" (Codex "Selected model is at capacity", transient). Hop 2 (`TE1-impl2`):
+  **`gpt-6.1-sol` done `e3f0799`** (verify failed try 1, passed on retry). +52/-24: usage.ts relations keyed by
+  canonical metatiles and attributes files (`pathsBySymbol`, `consumingByMetatiles`, `consumingByAttributes`,
+  `gbaConsumingUses` = direct union, de-duped, sorted id then role), `tileset` field, `tilesets` from consumers;
+  gbaOps `consumingUses` halves from the layout (E1c). Conductor verify: typecheck pass, core `blockEdit` + 4 server
+  block-edit suites **410/410**.
+- Reviews (Codex `gpt-6-astra`, `task-e1-spec-review.md`, `task-e1-quality-review.md`): both **Needs changes**.
+  Conductor checked each: **I1 real (both reviewers):** the route cap looped every metatiles alias and called the
+  now alias-complete `gbaConsumingLayouts` per alias → transitive expansion (A~B by metatiles, B~C by attributes pulls
+  C into A's cap). Fixed inline (tiny, 3 lines): cap = min over `gbaConsumingLayouts(project, symbol)` `2d446c4`,
+  unused import dropped `70b7173`. Ruling **E1g**: E1a is direct, never transitive; the route-level partial-chain
+  regression is pinned at core level (consumer set) because route tests use the real subject, which has no partial
+  alias. **m1 real:** E1.8 `common` fallback skips `confirm`. **m2 real:** no layout with two distinct alias slots.
+  Fix round 1 tests hop (`<s13>/e1-fix1-tests-brief.md`, `chain.py --tier opus`, typecheck verify).
+- Mutants round 1 (`<s13>/mut_e1.py` on `e3f0799` in detached `<s13>/mut-e1`): N1-N10 (symbol key, halves from S
+  ×2, metatiles-only set, `tilesets` = [S], confirm / append / structural over own uses, primary slot only, usage
+  over own uses).
+- Mutants round 1 result (`<s13>/mut_e1.out`): **9 of 10 killed**; **N3 survived** (secondary half from S): no
+  fixture alias sat in a secondary slot. Fix round 1 tests hop: **`gpt-6.1-sol` done `5207f0a`** (fixture A4 =
+  A3's metatiles + own attributes on layout L; layout M = A primary + A2 secondary; E1a direct-only case, E1b two
+  distinct slots (border literal 4 = four zero cells), E1.8 requires an exclusive candidate, Building groups first,
+  confirm unconditional). Vetted. Conductor (inline, tiny): E1c case on layout M (tile 9 → `M -> gTileset_A2[1]`,
+  never `gTileset_A[1]`) for N3.
+- **Trap found (new):** worktree `node_modules` is a junction to the main checkout, and
+  `node_modules/@pokemap/core` links to the **main checkout's** `packages/core`. Server suites run in a worktree
+  therefore import main's core, not the worktree's. Tell: 11a's B14b ("aliased primary file caps block=0 at the
+  all-symbol minimum") failed 640 vs 512 after the route fix, while the worktree core gave 512 via tsx. Earlier
+  tasks were server-only or core-only, so no earlier result is affected that a merge gate did not re-check. Fix:
+  untracked `vitest.wt.config.ts` in the worktree aliasing `@pokemap/core` / `@pokemap/server` to the worktree's
+  packages (`<s13>/e1-verify2.txt`). Carry into later prompts.
+- Verify fix round 1 (worktree core aliased, `<s13>/e1-verify2.txt`): typecheck pass, **413/413**.
+- Re-reviews (astra): quality **Approved** (I1 and m resolved, no new); spec **Needs changes** (I1, m2 resolved; m1
+  partly: E1.8 preferred but did not require the Building group). Conductor fix (inline, tiny, test filter only)
+  `0b76ed0`: E1.8 searches only `gTileset_Building*` groups; E1.8 passes on the subject. No third spec pass: a
+  one-line test filter that closes the only open Minor (precedent: s12 11b quality).
+- Mutants round 2 (`<s13>/mut_e1_r2.out`, on `d1f2fb5`): N2, N3 **killed**. **Task E1 total: 10 of 10 killed.**
+- **Merged** `p14-2-e1` (`0b76ed0`) `--no-ff` → **`6c185bf`**. Spec ruling E1g added (direct, not transitive).
+- **Gate at `6c185bf`: 4,872 pass / 1 fail / 269 files; typecheck pass, UI build pass; subjects unchanged** (GBA
+  `590fdf303`, PerfPlus `81ededbe3`, both clean). Fail: the known `engine.test.ts` env fail ("expected 96 to be
+  98"). E1 reports archived to `_archive/` (`task-e1-{spec,quality}-{review,rereview}.md`). **Task E1 done.**
+- Handoff s13 → s14 (size rule: E1 was one merge, but Task 12 is a full High UI task and this session's context is
+  large). Worktrees `<s13>/wt-e1` (branch `p14-2-e1`, merged; holds untracked `vitest.wt.config.ts`) and
+  `<s13>/mut-e1` (detached) can be removed (unlink junctions first). Launch prompt:
+  `.superpowers/sdd/2026-11-10-pokemap-plan-14-2-block-editor/s14-launch-prompt.md`.
