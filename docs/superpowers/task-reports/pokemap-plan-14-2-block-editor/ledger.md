@@ -1297,3 +1297,8 @@ Traps seen in s7:
     (known `engine.test` env fail, "expected 96 to be 98"). **Task 13a closed.**
 - Handoff s14 → s15 (size rule: two task merges, 12 and 13a). Next: Task 13b only (the plan's handoff point is after
   13b). Prompt: `.superpowers/sdd/2026-11-10-pokemap-plan-14-2-block-editor/s15-launch-prompt.md`.
+- **Deferred live checks (s14, deliberate):** Task 12's Save dialog `tilesetEffects` rows and the first UI call of
+  `/block/apply`, and Task 13a's hook, have no UI entry point yet (the dialog is 13b, its shell wiring Task 14). Live
+  check them in the first task that can open the dialog in the real app (13b if it adds a reachable entry, else 14):
+  stage a block edit, see the Save dialog rows, then Discard; never Save. Also check whether the server fills
+  `tilesetEffects` in the plan body at all (Task 12 only renders it).
