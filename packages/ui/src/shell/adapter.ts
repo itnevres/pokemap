@@ -92,7 +92,17 @@ export interface AddEventFieldAdapter {
   addEventDefaults(kind: import("@pokemap/core/src/addEvent/types.js").EventKind, objectType: import("@pokemap/core/src/addEvent/types.js").ObjectType, ctx: AddEventContext): Record<string, string>;
 }
 
+export interface BlockEditorSpec {
+  family: "gba" | "gbc";
+  width: 4 | 2;
+  layers: 1 | 2;
+  squareControls: ("palette" | "flip")[];
+  blockFields: { key: string; label: string; optionsKey: "collision" | "behaviors" | "layerTypes" }[];
+  modes: ("1x1" | "2x2" | "4x4")[];
+}
+
 export interface EngineAdapter {
+  blockEditorSpec?: BlockEditorSpec;
   family: Family;
   addEventFields: AddEventFieldAdapter["addEventFields"];
   addEventDefaults: AddEventFieldAdapter["addEventDefaults"];
