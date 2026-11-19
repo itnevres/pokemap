@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, waitFor, act } from "@testing-library/react";
+import { render, waitFor, act, cleanup } from "@testing-library/react";
 import { useEditSession } from "../src/hooks/useEditSession.js";
 import type { Block } from "@pokemap/core/src/model/types.js";
 import type { MapData } from "@pokemap/core/src/load/maps.js";
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 function Host({
   mapName, initialBlocks, initialMap, onResult,
@@ -312,5 +312,31 @@ describe("useEditSession", () => {
     // must be left exactly as it was, not silently reset to the seed.
     expect(last!.blocks).toEqual([{ metatileId: 99, collision: 0, elevation: 0 }]);
     expect(last!.isDirty).toBe(true);
+  });
+  it("blockApply applies the reply's blocks, border and map and resolves true", async () => {
+    const served = {
+      blocks: [{ metatileId: 42, collision: 1, elevation: 2 }],
+      border: [{ metatileId: 43, collision: 3, elevation: 4 }],
+      map: {
+        id: "MAP_A", name: "A", layout: "LAYOUT_A", music: "MUS_TEST",
+        regionMapSection: "MAPSEC_TEST", mapType: "MAP_TYPE_TOWN", weather: "WEATHER_NONE",
+        connections: [], objectEvents: [], warpEvents: [], coordEvents: [], bgEvents: [],
+      },
+      isDirty: true, canUndo: true, canRedo: false,
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => served }));
+    let last: ReturnType<typeof useEditSession> | undefined;
+    render(<Host mapName="A" initialBlocks={[{ metatileId: 7, collision: 0, elevation: 0 }]} onResult={(r) => { last = r; }} />);
+    await act(async () => { expect(await last!.blockApply({ mode: "ok" }, "rev1")).toBe(true); });
+    expect(last!.blocks).toEqual([{ metatileId: 42, collision: 1, elevation: 2 }]);
+    expect(last!.border).toEqual([{ metatileId: 43, collision: 3, elevation: 4 }]);
+    expect(last!.map).toEqual({
+      id: "MAP_A", name: "A", layout: "LAYOUT_A", music: "MUS_TEST",
+      regionMapSection: "MAPSEC_TEST", mapType: "MAP_TYPE_TOWN", weather: "WEATHER_NONE",
+      connections: [], objectEvents: [], warpEvents: [], coordEvents: [], bgEvents: [],
+    });
+    expect(last!.isDirty).toBe(true);
+    expect(last!.canUndo).toBe(true);
+    expect(last!.canRedo).toBe(false);
   });
 });

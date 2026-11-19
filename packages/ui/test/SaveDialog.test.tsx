@@ -1,6 +1,8 @@
-import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { afterEach, describe, it, expect, vi } from "vitest";
+import { cleanup, render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { SaveDialog } from "../src/components/SaveDialog.js";
+
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 // No @testing-library/jest-dom in this repo -- confirmed by CollisionPalette
 // .test.tsx's own comment on this, and by every other test file under
@@ -198,5 +200,43 @@ describe("SaveDialog", () => {
     await waitFor(() => expect(screen.getByText("a changed")).toBeTruthy());
     expect((screen.getByRole("button", { name: "Save Changes" }) as HTMLButtonElement).disabled).toBe(true);
     vi.unstubAllGlobals();
+  });
+  it("renders one tileset effects row per entry with its maps", async () => {
+    const plan = {
+      changes: [{ path: "data/layouts/A/blocks.bin", kind: "binary", summary: "A blocks changed" }],
+      refusals: [],
+      tilesetEffects: [
+        { path: "data/tilesets/primary/general/metatiles.bin", maps: ["A", "B", "C"] },
+        { path: "data/tilesets/secondary/x/metatiles.bin", maps: ["M1", "M2", "M3", "M4", "M5", "M6", "M7", "M8", "M9", "M10"] },
+      ],
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => plan }));
+    render(<SaveDialog mapName="A" onCommitted={vi.fn()} onCancel={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText("data/tilesets/primary/general/metatiles.bin")).toBeTruthy());
+    expect(screen.getByText("data/tilesets/secondary/x/metatiles.bin")).toBeTruthy();
+    expect(screen.getByText("affects: A, B, C")).toBeTruthy();
+    expect(screen.getByText("affects: M1, M2, M3, M4, M5, M6, M7, M8 and 2 more")).toBeTruthy();
+    function effectContainer(path: string): HTMLElement {
+      let element: HTMLElement | null = screen.getByText(path);
+      while (element && !element.textContent?.includes("affects:")) element = element.parentElement;
+      expect(element).not.toBeNull();
+      return element!;
+    }
+    const primary = effectContainer("data/tilesets/primary/general/metatiles.bin");
+    const secondary = effectContainer("data/tilesets/secondary/x/metatiles.bin");
+    expect(primary.textContent).toContain("affects: A, B, C");
+    expect(primary.textContent).not.toContain("data/tilesets/secondary/x/metatiles.bin");
+    expect(secondary.textContent).toContain("affects: M1, M2, M3, M4, M5, M6, M7, M8 and 2 more");
+    expect(secondary.textContent).not.toContain("data/tilesets/primary/general/metatiles.bin");
+    expect(screen.getAllByText(/^affects:/)).toHaveLength(2);
+    expect(screen.queryByText(/\bM9\b/)).toBeNull();
+  });
+
+  it("renders no tileset effects row when the field is absent", async () => {
+    const plan = { changes: [{ path: "data/layouts/A/blocks.bin", kind: "binary", summary: "A blocks changed" }], refusals: [] };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => plan }));
+    render(<SaveDialog mapName="A" onCommitted={vi.fn()} onCancel={vi.fn()} />);
+    await waitFor(() => expect(screen.getByText("A blocks changed")).toBeTruthy());
+    expect(screen.queryByText(/affects:/)).toBeNull();
   });
 });

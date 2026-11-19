@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { renderHook, act, waitFor } from "@testing-library/react";
+import { renderHook, act, waitFor, cleanup } from "@testing-library/react";
 import { useGbcEditSession } from "../../src/gbc/hooks/useGbcEditSession.js";
 import type { GbcMapEvents } from "@pokemap/core/src/gbc/model/types.js";
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 const EV: GbcMapEvents = { warps: [], coords: [], bgs: [], objects: [], sceneScripts: [], callbacks: [], objectConsts: [] };
 const SEED_A = [{ metatileId: 1 }, { metatileId: 2 }];
@@ -175,5 +175,25 @@ describe("useGbcEditSession", () => {
     expect(result.current.blocks[0]).toEqual({ metatileId: 22 });
     await act(async () => { resolvers[0]!(res(11)); await p1; });
     expect(result.current.blocks[0]).toEqual({ metatileId: 22 });
+  });
+  it("blockApply applies the reply's blocks and events and resolves true", async () => {
+    stub({
+      blocks: [{ metatileId: 42 }],
+      events: {
+        warps: [{ x: 2, y: 3, mapConst: "MAP_B", destWarp: 1, lineIndex: 4 }],
+        coords: [], bgs: [], objects: [], sceneScripts: [], callbacks: [], objectConsts: [],
+      },
+      isDirty: true, canUndo: true, canRedo: false,
+    });
+    const { result } = renderHook(() => useGbcEditSession("A", SEED_A, EV));
+    await act(async () => { expect(await result.current.blockApply({ mode: "ok" }, "rev1")).toBe(true); });
+    expect(result.current.blocks).toEqual([{ metatileId: 42 }]);
+    expect(result.current.events).toEqual({
+      warps: [{ x: 2, y: 3, mapConst: "MAP_B", destWarp: 1, lineIndex: 4 }],
+      coords: [], bgs: [], objects: [], sceneScripts: [], callbacks: [], objectConsts: [],
+    });
+    expect(result.current.isDirty).toBe(true);
+    expect(result.current.canUndo).toBe(true);
+    expect(result.current.canRedo).toBe(false);
   });
 });
