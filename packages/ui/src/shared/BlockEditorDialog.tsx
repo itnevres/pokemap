@@ -44,6 +44,9 @@ export function BlockEditorDialog(props: {
   const info = editor.info as Info | null, draft = editor.draft as Draft | null;
   const panel = useRef<HTMLDivElement>(null), prompt = useRef<HTMLDivElement>(null);
   const paletteControl = useRef<HTMLSelectElement>(null);
+  const applyButton = useRef<HTMLButtonElement>(null), okButton = useRef<HTMLButtonElement>(null);
+  const previousStatus = useRef(editor.status);
+  const lastFocused = useRef<Element | null>(null);
   const [pending, setPending] = useState<{ square: number; palName: string } | null>(null);
   const promptWasOpen = useRef(false);
   const [selected, setSelected] = useState<number | null>(null);
@@ -52,6 +55,21 @@ export function BlockEditorDialog(props: {
   const latest = useRef({ editor, pending, onClose: props.onClose });
   latest.current = { editor, pending, onClose: props.onClose };
   const topmost = () => [...document.querySelectorAll('[aria-modal="true"]')].at(-1);
+  useLayoutEffect(() => {
+    const rememberFocus = (event: FocusEvent) => {
+      if (panel.current?.contains(event.target as Node)) lastFocused.current = event.target as Element;
+    };
+    document.addEventListener("focusin", rememberFocus);
+    return () => document.removeEventListener("focusin", rememberFocus);
+  }, []);
+  useLayoutEffect(() => {
+    const previous = previousStatus.current;
+    if (pending || topmost() !== panel.current) return;
+    previousStatus.current = editor.status;
+    if (editor.status === "confirming" && previous !== "confirming") applyButton.current?.focus();
+    else if (previous === "confirming" && editor.status === "ready") okButton.current?.focus();
+    else if (lastFocused.current && !lastFocused.current.isConnected) panel.current?.focus();
+  }, [editor.status, pending]);
   useLayoutEffect(() => {
     const element = panel.current;
     let active = true;
@@ -64,8 +82,8 @@ export function BlockEditorDialog(props: {
     return () => { active = false; };
   }, [Boolean(info), editor.status === "error"]);
   useLayoutEffect(() => {
-    if (pending) prompt.current?.querySelector<HTMLButtonElement>("button")?.focus();
-    else if (promptWasOpen.current && topmost() === panel.current) paletteControl.current?.focus();
+    if (pending && topmost() === prompt.current) prompt.current?.querySelector<HTMLButtonElement>("button")?.focus();
+    else if (promptWasOpen.current && editor.status !== "confirming" && topmost() === panel.current) paletteControl.current?.focus();
     promptWasOpen.current = pending !== null;
   }, [pending]);
   const dismissPrompt = () => { setPending(null); };
@@ -138,20 +156,21 @@ export function BlockEditorDialog(props: {
           const value = gbc ? draft.collision[collisionIndex]! : draft[field.key] as number;
           const options = info.options[field.optionsKey]!;
           const values = gbc ? options as string[] : (options as { name: string; value: number }[]).map(option => String(option.value));
+          const initialValue = gbc ? info.block.collision[collisionIndex]! : info.block[field.key] as number;
           const change = (text: string, raw = false) => {
             if (!text && !raw) return;
             editor.setDraft(gbc ? { ...draft, collision: draft.collision.map((item, index) => index === collisionIndex ? text : item) } : { ...draft, [field.key]: Number(text) });
           };
-          return <div key={field.key}>{values.includes(String(value)) ? <SelectField label={field.label} options={values} value={String(value)} disabled={false} onChange={change} optionLabel={gbc ? undefined : text => (options as { name: string; value: number }[]).find(option => String(option.value) === text)?.name ?? text} /> : <RawField label={field.label} value={String(value)} numeric={!gbc} onChange={text => change(text, true)} />}</div>;
+          return <div key={field.key}>{values.includes(String(initialValue)) ? <SelectField label={field.label} options={values} value={String(value)} disabled={false} onChange={change} optionLabel={gbc ? undefined : text => (options as { name: string; value: number }[]).find(option => String(option.value) === text)?.name ?? text} /> : <RawField label={field.label} value={String(value)} numeric={!gbc} onChange={text => change(text, true)} />}</div>;
         })}</div>
         </fieldset>
         {editor.message && <p role="alert">{editor.message}</p>}
         {editor.status === "confirming" && checkUsage ? <section aria-label="Confirm edit">
           <p className="block-editor__usage">{usageLine(checkUsage, props.map)}</p>
           <ul className="block-editor__usage">{checkUsage.maps.filter(item => total(item) > 0).map(item => <li key={item.map}>{item.map}: {item.interior} interior, {item.border + item.block0AsBorder} border</li>)}</ul>
-          <button type="button" onClick={editor.confirm}>Apply</button><button type="button" onClick={editor.cancelConfirm}>Cancel</button>
+          <button ref={applyButton} type="button" onClick={editor.confirm}>Apply</button><button type="button" onClick={editor.cancelConfirm}>Cancel</button>
         </section> : <div className="block-editor__actions">
-          <button type="button" disabled={editor.status !== "ready"} onClick={editor.ok}>OK</button>
+          <button ref={okButton} type="button" disabled={editor.status !== "ready"} onClick={editor.ok}>OK</button>
           <button type="button" disabled={editor.status !== "ready" || editor.saveAsNewRefusal !== null} onClick={editor.saveAsNew}>Save as new</button>
           {editor.saveAsNewRefusal !== null && <span data-testid="block-editor-refusal">{editor.saveAsNewRefusal}</span>}
           <button type="button" onClick={props.onClose}>Cancel</button>

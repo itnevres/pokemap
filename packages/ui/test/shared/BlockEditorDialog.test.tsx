@@ -508,4 +508,235 @@ describe("BlockEditorDialog", () => {
     host.unmount();
     expect(shortcutBlocked(new KeyboardEvent("keydown", { key: "k" }))).toBe(false);
   });
+
+  it("focus follows confirmation and returns after Cancel or Escape", async () => {
+    const session = makeSession(confirmReply());
+    await mount("gbc", bodies.gbc, session);
+    await submit(session);
+    expect(document.activeElement).toBe(within(confirmation()).getByRole("button", { name: "Apply" }));
+    fireEvent.click(within(confirmation()).getByRole("button", { name: "Cancel" }));
+    expect(document.activeElement).toBe(button("OK"));
+    await submit(session);
+    expect(document.activeElement).toBe(within(confirmation()).getByRole("button", { name: "Apply" }));
+    escape();
+    expect(document.activeElement).toBe(button("OK"));
+  });
+
+  it("initial focus is on a control inside the loaded panel", async () => {
+    await mount();
+    const panel = screen.getByRole("dialog", { name: "Edit block $05" });
+    expect(panel.contains(document.activeElement)).toBe(true);
+    expect(document.activeElement).not.toBe(panel);
+  });
+
+  it("consumes Escape without closing while applying", async () => {
+    const session = makeSession();
+    session.blockApply.mockReturnValue(new Promise(() => {}));
+    const host = await mount("gbc", bodies.gbc, session);
+    await submit(session);
+    const event = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+    document.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+    expect(host.onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog", { name: "Edit block $05" })).toBeTruthy();
+  });
+
+  it("ignores an Escape prevented during window capture", async () => {
+    const prevent = (event: KeyboardEvent) => event.preventDefault();
+    window.addEventListener("keydown", prevent, true);
+    try {
+      const host = await mount();
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+      expect(host.onClose).not.toHaveBeenCalled();
+    } finally { window.removeEventListener("keydown", prevent, true); }
+  });
+
+  it("disables actions throughout checking and applying", async () => {
+    const session = makeSession();
+    let resolveCheck!: (value: BlockCheckReply) => void;
+    session.blockCheck.mockReturnValue(new Promise(resolve => { resolveCheck = resolve; }));
+    session.blockApply.mockReturnValue(new Promise(() => {}));
+    await mount("gbc", bodies.gbc, session);
+    fireEvent.click(button("OK"));
+    expect(button("OK").disabled).toBe(true);
+    expect(button("Save as new").disabled).toBe(true);
+    await act(async () => { resolveCheck({ usage, confirm: false, warnings: [] }); });
+    expect(session.blockApply).toHaveBeenCalledTimes(1);
+    expect(button("OK").disabled).toBe(true);
+    expect(button("Save as new").disabled).toBe(true);
+  });
+
+  it("renders a preview only for a png reply", async () => {
+    const session = makeSession();
+    session.blockPreview.mockResolvedValue({ png: "AAA" });
+    const host = await mount("gbc", bodies.gbc, session);
+    expect((await screen.findByRole("img", { name: "Block preview" })).getAttribute("src")).toBe("data:image/png;base64,AAA");
+    host.unmount();
+    const empty = makeSession();
+    await mount("gbc", bodies.gbc, empty);
+    await waitFor(() => expect(empty.blockPreview).toHaveBeenCalled());
+    expect(screen.queryByRole("img", { name: "Block preview" })).toBeNull();
+  });
+
+  it("uses the sheet image offset for picker coordinates", async () => {
+    const { session } = await mount();
+    const img = screen.getByRole("img", { name: "Tile sheet" });
+    vi.spyOn(img, "getBoundingClientRect").mockReturnValue({ left: 100, top: 50, x: 100, y: 50, width: 256, height: 256, right: 356, bottom: 306, toJSON() {} } as DOMRect);
+    fireEvent.click(img, { clientX: 140, clientY: 74 });
+    fireEvent.click(square(0));
+    expect((await submit(session)).request.draft.tiles).toEqual([0x22, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
+  });
+
+  it("deselects a picker cell clicked twice", async () => {
+    const { session, container } = await mount();
+    pick(0);
+    expect(container.querySelector(".block-editor__selected")).not.toBeNull();
+    pick(0);
+    expect(container.querySelector(".block-editor__selected")).toBeNull();
+    fireEvent.click(square(0));
+    expect((await submit(session)).request.draft.tiles).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
+  });
+
+  it("sizes the picker image at twice its natural dimensions", async () => {
+    await mount();
+    const img = screen.getByRole("img", { name: "Tile sheet" }) as HTMLImageElement;
+    Object.defineProperty(img, "naturalWidth", { value: 128 });
+    Object.defineProperty(img, "naturalHeight", { value: 64 });
+    fireEvent.load(img);
+    expect(img.style.width).toBe("256px");
+    expect(img.style.height).toBe("128px");
+  });
+
+  it("ignores picker clicks below the sheet", async () => {
+    const { session } = await mount();
+    fireEvent.click(picker(), point(64));
+    fireEvent.click(square(0));
+    expect((await submit(session)).request.draft.tiles).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]);
+  });
+
+  it("uses the current GBA square palette for the picker URL", async () => {
+    await mount("gba");
+    fireEvent.click(square(2));
+    expect(screen.getByRole("img", { name: "Tile sheet" }).getAttribute("src")).toMatch(/&pal=1$/);
+    fireEvent.click(screen.getByRole("tab", { name: "Top" }));
+    expect(select("Palette").value).toBe("1");
+    expect(screen.getByRole("img", { name: "Tile sheet" }).getAttribute("src")).toMatch(/&pal=1$/);
+    change("Palette", "3");
+    expect(screen.getByRole("img", { name: "Tile sheet" }).getAttribute("src")).toMatch(/&pal=3$/);
+  });
+
+  it("applies a GBC palette locally to a nonzero square", async () => {
+    const body = structuredClone(bodies.gbc);
+    body.block.tilePalettes[5] = "RED";
+    const { session } = await mount("gbc", body);
+    fireEvent.click(square(5));
+    expect(select("Palette").value).toBe("RED");
+    change("Palette", "GRAY");
+    fireEvent.click(within(screen.getByRole("dialog", { name: "Palette scope" })).getByRole("button", { name: "Local" }));
+    expect((await submit(session)).request.draft.palettes).toEqual([{ square: 5, palName: "GRAY", scope: "local" }]);
+  });
+
+  it("edits GBA top-layer Y flip and layer type", async () => {
+    const { session } = await mount("gba");
+    fireEvent.click(screen.getByRole("tab", { name: "Top" }));
+    fireEvent.click(square(3));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Y flip" }));
+    change(gbaAdapter.blockEditorSpec.blockFields[1]!.label, "0");
+    const draft = (await submit(session)).request.draft;
+    expect(draft.entries).toEqual([
+      { tile: 1, palette: 0, xFlip: false, yFlip: false }, { tile: 2, palette: 0, xFlip: true, yFlip: false },
+      { tile: 3, palette: 1, xFlip: false, yFlip: true }, { tile: 4, palette: 1, xFlip: true, yFlip: true },
+      { tile: 5, palette: 0, xFlip: false, yFlip: false }, { tile: 6, palette: 0, xFlip: true, yFlip: false },
+      { tile: 7, palette: 1, xFlip: false, yFlip: true }, { tile: 8, palette: 1, xFlip: true, yFlip: false },
+    ]);
+    expect(draft.layerType).toBe(0);
+  });
+
+  it("leaves collision unchanged when Choose is selected", async () => {
+    const { session } = await mount();
+    change(gbcAdapter.blockEditorSpec.blockFields[0]!.label, "");
+    expect((await submit(session)).request.draft.collision).toEqual(["FLOOR", "WALL", "FLOOR", "WATER"]);
+  });
+
+  it("keeps invalid numeric text visible without sending it", async () => {
+    const body = structuredClone(bodies.gba); body.block.behavior = 7;
+    const { session } = await mount("gba", body);
+    const input = screen.getByRole("textbox", { name: gbaAdapter.blockEditorSpec.blockFields[0]!.label }) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "9x" } });
+    expect(input.value).toBe("9x");
+    expect((await submit(session)).request.draft.behavior).toBe(7);
+  });
+
+  it("keeps the fallback textbox while typing through a known value", async () => {
+    const body = structuredClone(bodies.gba); body.block.behavior = 7;
+    const { session } = await mount("gba", body);
+    const label = gbaAdapter.blockEditorSpec.blockFields[0]!.label;
+    fireEvent.change(screen.getByRole("textbox", { name: label }), { target: { value: "2" } });
+    expect((screen.getByRole("textbox", { name: label }) as HTMLInputElement).value).toBe("2");
+    fireEvent.change(screen.getByRole("textbox", { name: label }), { target: { value: "20" } });
+    expect((screen.getByRole("textbox", { name: label }) as HTMLInputElement).value).toBe("20");
+    expect((await submit(session)).request.draft.behavior).toBe(20);
+  });
+
+  it("counts block zero borders, prefers exact map names and filters confirmation usage", async () => {
+    expect(usageLine({ files: [], tilesets: ["A"], sharedGrids: [{ file: "f", maps: ["W", "X"] }], maps: [
+      { map: "W", interior: 1, border: 0, block0AsBorder: 0 }, { map: "X", interior: 2, border: 0, block0AsBorder: 3 },
+      { map: "B", interior: 0, border: 0, block0AsBorder: 4 },
+    ] }, "X")).toBe("Used 2 times on this map (+ border), 5 times on 2 other maps; 3 maps affected");
+    expect(usageLine({ files: [], tilesets: ["A"], sharedGrids: [], maps: [
+      { map: "X", interior: 2, border: 0, block0AsBorder: 3 }, { map: "B", interior: 0, border: 0, block0AsBorder: 4 },
+    ] }, "X")).toBe("Used 2 times on this map (+ border), 4 times on 1 other maps; 2 maps affected");
+    const checkUsage = { files: [], tilesets: ["A"], sharedGrids: [], maps: [
+      { map: "X", interior: 3, border: 1, block0AsBorder: 0 }, { map: "Other", interior: 2, border: 0, block0AsBorder: 0 },
+      { map: "Zero", interior: 0, border: 0, block0AsBorder: 0 }, { map: "B0", interior: 0, border: 0, block0AsBorder: 2 },
+    ] };
+    const session = makeSession({ usage: checkUsage, confirm: true, warnings: [] });
+    await mount("gbc", bodies.gbc, session);
+    await submit(session);
+    const region = within(confirmation());
+    expect(region.getAllByRole("listitem").map(item => item.textContent)).toEqual(["X: 3 interior, 1 border", "Other: 2 interior, 0 border", "B0: 0 interior, 2 border"]);
+    expect(region.getByText("Used 3 times on this map (+ border), 4 times on 2 other maps; 3 maps affected")).toBeTruthy();
+  });
+
+  it("returns focus to the panel when Apply disappears", async () => {
+    const session = makeSession(confirmReply());
+    session.blockApply.mockReturnValue(new Promise(() => {}));
+    await mount("gbc", bodies.gbc, session);
+    await submit(session);
+    const apply = within(confirmation()).getByRole("button", { name: "Apply" });
+    apply.focus();
+    fireEvent.click(apply);
+    expect(document.activeElement).toBe(screen.getByRole("dialog", { name: "Edit block $05" }));
+  });
+
+  it("does not steal focus from a later modal during confirmation", async () => {
+    const session = makeSession();
+    let resolveCheck!: (value: BlockCheckReply) => void;
+    session.blockCheck.mockReturnValue(new Promise(resolve => { resolveCheck = resolve; }));
+    await mount("gbc", bodies.gbc, session);
+    fireEvent.click(button("OK"));
+    const modal = document.createElement("div"); modal.setAttribute("aria-modal", "true");
+    const control = document.createElement("button"); modal.append(control); document.body.append(modal); control.focus();
+    try {
+      await act(async () => { resolveCheck(confirmReply()); });
+      expect(document.activeElement).toBe(control);
+    } finally { modal.remove(); }
+  });
+
+  it("focuses Apply after a palette prompt outlasts the confirmation check", async () => {
+    const session = makeSession();
+    let resolveCheck!: (value: BlockCheckReply) => void;
+    session.blockCheck.mockReturnValue(new Promise(resolve => { resolveCheck = resolve; }));
+    await mount("gbc", bodies.gbc, session);
+    fireEvent.click(button("OK"));
+    change("Palette", "RED");
+    const prompt = screen.getByRole("dialog", { name: "Palette scope" });
+    const all = within(prompt).getByRole("button", { name: "All" });
+    expect(document.activeElement).toBe(all);
+    await act(async () => { resolveCheck(confirmReply()); });
+    expect(document.activeElement).toBe(all);
+    fireEvent.click(within(prompt).getByRole("button", { name: "Cancel" }));
+    expect(document.activeElement).toBe(within(confirmation()).getByRole("button", { name: "Apply" }));
+  });
+
 });
