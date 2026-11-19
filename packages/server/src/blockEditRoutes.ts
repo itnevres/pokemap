@@ -6,7 +6,6 @@ import { BlockEditRefusal, type BlockEditPlan, type FileOverlay, type StagedGrid
 import { planGbaBlockEdit, type GbaBlockDraft, type GbaBlockEditRequest } from "@pokemap/core/src/blockEdit/gbaOps.js";
 import { gbcSheetToTileId, planGbcBlockEdit, resolveGbcEditTarget, type GbcBlockDraft, type GbcBlockEditRequest } from "@pokemap/core/src/blockEdit/gbcOps.js";
 import { gbaGridIds, gbcGridIds } from "@pokemap/core/src/blockEdit/grids.js";
-import { canonicalTilesetPath } from "@pokemap/core/src/blockEdit/canonicalTilesetPath.js";
 import { gbaConsumingLayouts } from "@pokemap/core/src/blockEdit/usage.js";
 import { loadGbcReservedTiles } from "@pokemap/core/src/blockEdit/gbcSheet.js";
 import { gbaDefineValues } from "@pokemap/core/src/addEvent/gbaOptions.js";
@@ -250,10 +249,8 @@ export function createGbaBlockEditRoutes(
     const block: GbaBlockDraft = { entries: ts.metatile(local), behavior: ts.behavior(local), layerType: ts.layerType(local) };
     const req: GbaBlockEditRequest = { map: name, metatileId: id, mode: "ok", from: "palette", draft: block };
     const symbol = secondary ? c.layout.secondaryTileset : c.layout.primaryTileset;
-    const file = canonicalTilesetPath(project.tilesetPaths(symbol).metatilesBin);
-    const cap = Math.min(...project.tilesetSymbols()
-      .filter(alias => canonicalTilesetPath(project.tilesetPaths(alias).metatilesBin) === file)
-      .flatMap(alias => gbaConsumingLayouts(project, alias))
+    // E1e: the planner's consumer set (direct aliases of either file), never re-expanded per alias.
+    const cap = Math.min(...gbaConsumingLayouts(project, symbol)
       .map(use => use.role === "primary" ? use.split.metatiles : project.constants.metatilesTotal - use.split.metatiles));
     let plan: BlockEditPlan;
     try { plan = planGbaBlockEdit(project, req, deps.overlay(), stagedGrids); }

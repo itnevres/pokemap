@@ -445,3 +445,94 @@ it.each([["Emerald", 8], ["Frlg", 12]] as const)("staged extension makes its new
   const r = request(p, map, split + 3, "gTileset_S", 1); r.draft = { entries, behavior: 0x22, layerType: 0 };
   expect(plan(p, r, staged).edits).toEqual([]);
 });
+
+describe("E1 file-keyed consumers", () => {
+  function aliasFixture(): Project {
+    const root = makeGbaFixture(false, true); roots.push(root); return openProject(root);
+  }
+  function diskIds(p: Project, path: string): number[] {
+    const raw = readFileSync(join(p.paths.root, path));
+    return Array.from({ length: raw.length / 2 }, (_, i) => raw.readUInt16LE(i * 2) & 0x3ff);
+  }
+  function draws(p: Project, map: string, local: number): boolean {
+    const layout = p.layoutForMap(map);
+    return diskIds(p, layout.blockdataFilepath).includes(local) || diskIds(p, layout.borderFilepath).includes(local);
+  }
+
+  it("E1.3: an OK edit through A confirms when only the A2 map draws its local id", () => {
+    const p = aliasFixture(), local = 3;
+    expect(draws(p, "AliasTwo", local)).toBe(true);
+    for (const map of ["Emerald", "Frlg", "Extra", "SharedA", "SharedB", "AliasThree"]) expect(draws(p, map, local)).toBe(false);
+    const out = plan(p, changed(request(p, "Emerald", local, "gTileset_A", local)));
+    expect(out.edits.length).toBeGreaterThan(0);
+    // Red today: usedElsewhere excludes the A2 consumer when editing through A.
+    expect(out.confirm).toBe(true);
+  });
+
+  it("E1.3: an OK edit through A2 confirms when only A's maps draw its local id", () => {
+    const p = aliasFixture(), local = 1;
+    expect(draws(p, "Emerald", local)).toBe(true);
+    expect(draws(p, "AliasTwo", local)).toBe(false); expect(draws(p, "AliasThree", local)).toBe(false);
+    const out = plan(p, changed(request(p, "AliasTwo", local, "gTileset_A2", local)));
+    expect(out.edits.length).toBeGreaterThan(0);
+    // Red today: the A2 symbol has no other map, so A's consumers cannot confirm.
+    expect(out.confirm).toBe(true);
+  });
+
+  it("E1.4: append through A2 respects A's tighter primary split", () => {
+    const p = aliasFixture(), r = request(p, "AliasTwo", 1, "gTileset_A2", 1);
+    r.mode = "saveAsNew";
+    const paths = p.tilesetPaths("gTileset_A"), count = 8;
+    expect(p.splitFor(p.layoutForMap("AliasTwo")).metatiles).toBeGreaterThan(count);
+    expect(p.splitFor(p.layoutForMap("Emerald")).metatiles).toBe(count);
+    const metatiles = Buffer.alloc(count * 16), attributes = Buffer.alloc(count * 2);
+    bytes(p, paths.metatilesBin).copy(metatiles); bytes(p, paths.attributesBin).copy(attributes);
+    const staged: FileOverlay = new Map([[paths.metatilesBin, metatiles], [paths.attributesBin, attributes]]);
+    // Red today: append checks only J's 12-entry split, omitting A's 8-entry layouts.
+    const e = refusal(() => plan(p, r, staged), "SPLIT_LIMIT");
+    expect(e.message.startsWith(paths.metatilesBin)).toBe(true);
+    expect(e.message).toContain("layout E (primary) allows 8 metatiles; cannot append metatile 8");
+  });
+
+  it("E1.5: structural validation reads A2's own shorter primary tile sheet", () => {
+    const p = aliasFixture(), r = request(p);
+    // Tile 9 is S/T-local 1 in E/H/X and A-local 9 in F, all within 16 tiles.
+    // J's FRLG split keeps 9 primary, beyond A2's disk PNG width 64 = 8 tiles.
+    for (const id of ["E", "F", "H", "X", "J"]) {
+      const layout = p.layoutById(id)!;
+      const symbol = 9 < p.splitFor(layout).tiles ? layout.primaryTileset : layout.secondaryTileset;
+      const tile = 9 < p.splitFor(layout).tiles ? 9 : 9 - p.splitFor(layout).tiles;
+      const png = bytes(p, p.tilesetPaths(symbol).tilesPng);
+      const count = (png.readUInt32BE(16) / 8) * (png.readUInt32BE(20) / 8);
+      expect(tile < count).toBe(id !== "J");
+    }
+    r.draft.entries[0] = { ...r.draft.entries[0]!, tile: 9 };
+    // Red today: structural uses omit J (and substituting edited A for A2 would also pass).
+    const e = refusal(() => plan(p, r), "SPLIT_LIMIT");
+    expect(e.message).toContain("tile 9 is invalid in layout J");
+  });
+
+  it("E1.6: cross-half warnings include the alias layout's own primary data", () => {
+    const p = aliasFixture(), original = draft(p).entries.map(entry => ({ ...entry })), edited = draft(p);
+    edited.entries[0] = { ...edited.entries[0]!, tile: 3 };
+    // Below every split: A's own E/F/H/X all resolve A[3], hence no warning alone.
+    const plain = fixture(), plainDraft = draft(plain);
+    plainDraft.entries[0] = { ...plainDraft.entries[0]!, tile: 3 };
+    expect(gbaCrossHalfWarnings(plain, "gTileset_A", plainDraft, draft(plain).entries)).toEqual([]);
+    expect(bytes(p, p.tilesetPaths("gTileset_A2").tilesPng)).not.toEqual(bytes(p, p.tilesetPaths("gTileset_A").tilesPng));
+    const warnings = gbaCrossHalfWarnings(p, "gTileset_A", edited, original);
+    // Red today: J is omitted; replacing its own A2 half with edited A would hide the difference.
+    expect(warnings.filter(message => /\btile\b/.test(message))).toHaveLength(1);
+    expect(warnings.join(" ")).toContain("J -> gTileset_A2[3]");
+  });
+
+  it("E1c: an alias in the secondary slot resolves secondary-range tiles from the layout's own secondary", () => {
+    // Layout M = primary gTileset_A, secondary gTileset_A2 (emerald: split.tiles 8), so tile 9 is A2-local 1 in
+    // both of M's uses. Taking the secondary half from the edited symbol would print "M -> gTileset_A[1]".
+    const p = aliasFixture(), original = draft(p).entries.map(entry => ({ ...entry })), edited = draft(p);
+    edited.entries[0] = { ...edited.entries[0]!, tile: 9 };
+    const tile = gbaCrossHalfWarnings(p, "gTileset_A", edited, original).filter(message => /\btile\b/.test(message)).join(" ");
+    expect(tile).toContain("M -> gTileset_A2[1]");
+    expect(tile).not.toContain("M -> gTileset_A[1]");
+  });
+});

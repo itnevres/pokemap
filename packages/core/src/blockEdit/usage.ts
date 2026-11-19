@@ -6,8 +6,8 @@
  * `cave_metatiles.bin`), so a name-keyed index would split or merge usage that
  * belongs to one file.
  *
- * Only **static relations** are cached: file -> tilesets, tileset -> maps /
- * layouts, and grid file -> maps. Counts are recomputed on every call from the
+ * Only **static relations** are cached: file -> tilesets / layout roles,
+ * layout -> maps, and grid file -> maps. Counts are recomputed on every call from the
  * disk grids overridden by the caller's staged `grids`, so paint, fill, stamp,
  * undo/redo, discard and save need no invalidation hook. The relation cache
  * lives on the project object (a module-level `WeakMap`) and is rebuilt
@@ -264,13 +264,17 @@ export function gbcTileUsage(
 interface GbaLayoutUse {
   layout: Layout;
   role: "primary" | "secondary";
+  tileset: string;
   pairedWith: string;
 }
 
 interface GbaRelations {
   generation: number;
-  /** Tileset symbol -> every layout consuming it, sorted by layout id. */
-  consumingBySymbol: Map<string, GbaLayoutUse[]>;
+  /** Resolved identities for every header, including unconsumed symbols. */
+  pathsBySymbol: Map<string, { metatiles: string; attributes: string }>;
+  /** Canonical file -> every layout role consuming that kind of file. */
+  consumingByMetatiles: Map<string, GbaLayoutUse[]>;
+  consumingByAttributes: Map<string, GbaLayoutUse[]>;
   /** Layout id -> every map name using it, sorted; built on first need. */
   mapsByLayout?: Map<string, string[]>;
   /** Blockdata file -> every map name of every layout on it, sorted; built on first need. */
@@ -280,23 +284,36 @@ interface GbaRelations {
 const gbaCache = new WeakMap<Project, GbaRelations>();
 
 function buildGbaRelations(proj: Project): GbaRelations {
-  const consumingBySymbol = new Map<string, GbaLayoutUse[]>();
-  const add = (symbol: string, use: GbaLayoutUse): void => {
-    const list = consumingBySymbol.get(symbol) ?? [];
+  const pathsBySymbol = new Map<string, { metatiles: string; attributes: string }>();
+  for (const symbol of proj.tilesetSymbols()) {
+    const paths = proj.tilesetPaths(symbol);
+    pathsBySymbol.set(symbol, {
+      metatiles: canonicalTilesetPath(paths.metatilesBin),
+      attributes: canonicalTilesetPath(paths.attributesBin),
+    });
+  }
+  const consumingByMetatiles = new Map<string, GbaLayoutUse[]>();
+  const consumingByAttributes = new Map<string, GbaLayoutUse[]>();
+  const add = (index: Map<string, GbaLayoutUse[]>, path: string, use: GbaLayoutUse): void => {
+    const list = index.get(path) ?? [];
     list.push(use);
-    consumingBySymbol.set(symbol, list);
+    index.set(path, list);
   };
 
   for (const layout of proj.layouts) {
-    // R8a: layout with primary == secondary yields TWO uses (primary then secondary)
-    add(layout.primaryTileset, { layout, role: "primary", pairedWith: layout.secondaryTileset });
-    add(layout.secondaryTileset, { layout, role: "secondary", pairedWith: layout.primaryTileset });
-  }
-  for (const list of consumingBySymbol.values()) {
-    list.sort((a, b) => compare(a.layout.id, b.layout.id));
+    // R8a: each slot has its own use, even when both slots alias the same files.
+    for (const role of ["primary", "secondary"] as const) {
+      const tileset = role === "primary" ? layout.primaryTileset : layout.secondaryTileset;
+      const paths = pathsBySymbol.get(tileset);
+      if (paths === undefined) continue;
+      const pairedWith = role === "primary" ? layout.secondaryTileset : layout.primaryTileset;
+      const use = { layout, role, tileset, pairedWith };
+      add(consumingByMetatiles, paths.metatiles, use);
+      add(consumingByAttributes, paths.attributes, use);
+    }
   }
 
-  return { generation: proj.tilesetGeneration, consumingBySymbol };
+  return { generation: proj.tilesetGeneration, pathsBySymbol, consumingByMetatiles, consumingByAttributes };
 }
 
 function gbaRelations(proj: Project): GbaRelations {
@@ -305,6 +322,16 @@ function gbaRelations(proj: Project): GbaRelations {
   const built = buildGbaRelations(proj);
   gbaCache.set(proj, built);
   return built;
+}
+
+/** E1a: direct matches to either edited file, with each layout role counted once. */
+function gbaConsumingUses(relations: GbaRelations, symbol: string): GbaLayoutUse[] {
+  const paths = relations.pathsBySymbol.get(symbol);
+  if (paths === undefined) return [];
+  return [...new Set([
+    ...(relations.consumingByMetatiles.get(paths.metatiles) ?? []),
+    ...(relations.consumingByAttributes.get(paths.attributes) ?? []),
+  ])].sort((a, b) => compare(a.layout.id, b.layout.id) || (a.role === b.role ? 0 : a.role === "primary" ? -1 : 1));
 }
 
 /** R9's layout -> maps half, deferred so `gbaConsumingLayouts` does not read every map.json. */
@@ -338,20 +365,21 @@ function gbaMapsByGridFile(proj: Project, relations: GbaRelations): Map<string, 
 }
 
 /**
- * R8: every layout consuming `tilesetSymbol`, with its role, its split and the
- * tileset it is paired with, sorted by layout id. `layout` is the layout id.
- * R8a: layout with primary == secondary yields two uses (primary then secondary).
+ * R8/E1: every layout role sharing either identity file with `tilesetSymbol`,
+ * with its own tileset, split and paired tileset, sorted by layout id.
+ * A layout with both slots in the alias set yields primary then secondary.
  */
 export function gbaConsumingLayouts(
   proj: Project,
   tilesetSymbol: string,
-): { layout: string; role: "primary" | "secondary"; split: Split; pairedWith: string }[] {
-  const uses = gbaRelations(proj).consumingBySymbol.get(tilesetSymbol) ?? [];
+): { layout: string; role: "primary" | "secondary"; split: Split; pairedWith: string; tileset: string }[] {
+  const uses = gbaConsumingUses(gbaRelations(proj), tilesetSymbol);
   return uses.map((use) => ({
     layout: use.layout.id,
     role: use.role,
     split: proj.splitFor(use.layout),
     pairedWith: use.pairedWith,
+    tileset: use.tileset,
   }));
 }
 
@@ -382,7 +410,7 @@ export function gbaBlockUsage(
   }
 
   const relations = gbaRelations(proj);
-  const consuming = relations.consumingBySymbol.get(tilesetSymbol) ?? [];
+  const consuming = gbaConsumingUses(relations, tilesetSymbol);
   const mapsByLayout = gbaMapsByLayout(proj, relations);
   const mapsByGridFile = gbaMapsByGridFile(proj, relations);
 
@@ -472,5 +500,5 @@ export function gbaBlockUsage(
   maps.sort((a, b) => compare(a.map, b.map));
   sharedGrids.sort((a, b) => compare(a.file, b.file));
 
-  return { files, tilesets: [tilesetSymbol], maps, sharedGrids };
+  return { files, tilesets: sorted([tilesetSymbol, ...consuming.map((use) => use.tileset)]), maps, sharedGrids };
 }
