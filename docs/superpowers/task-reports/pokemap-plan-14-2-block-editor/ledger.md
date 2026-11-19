@@ -1235,3 +1235,65 @@ Traps seen in s7:
     check counter).
   - Open for 13b/live: `BlockEditSession.blockPreview` has no `time` argument, so the GBC preview renders at the
     server's default time; the sheet URL carries `time`. Not a 13a change.
+- **Task 13a** (High: async ordering of GET/preview/check/apply replies, stale-reply guards). Worktree
+  `<s14>/wt-t13a` branch `p14-2-t13a` from `131ff22`. Tests hop `chain.py --tier opus`, brief
+  `<s14>/t13a-tests-brief.md`, verify `node -e 0`: `gpt-6.2-sol` dead → **`gpt-6.1-sol` done `841ee14`** (+524,
+  `packages/ui/test/shared/useBlockEditor.test.tsx` only). Vetted: literals only; every brief case present; the five
+  planned 13a mutants each have a killer (confirm skipped → cancelConfirm/no apply; revision → `"r1"` asserted;
+  stale-check → cancelConfirm-invalidates case; double submit → "no additional action"; cell → palette/map-block
+  cases). Red (`<s14>/t13a-red.out`): module missing (right reason).
+  - **D17 (conductor)** `EngineAdapter.blockEditorSpec?` is optional: three test files build `EngineAdapter`
+    literals (createEvent, blockEdit ×2) and a required field would fail typecheck there. Both real adapters set
+    it; `satisfies` keeps it present on `gbaAdapter`/`gbcAdapter`. Task 14's consumer treats undefined as "no block
+    editor".
+  - Impl hop `chain.py --tier opus`, brief `<s14>/t13a-impl-brief.md`, verify typecheck + `vitest run packages/ui`
+    via lockrun, `--protect packages/ui/test/**`. First launch stopped before any hop: repeated `--allow` flags (the
+    chain's `nargs="*"` keeps only the last); relaunched with one `--allow` listing all four files.
+  - Impl hop: `gpt-6.1-sol` and `gpt-6-sol` both "failed" on the chain's allow guard (it lists the new untracked
+    directory `packages/ui/src/shared/blockEditor/`, not the file) before verify. Conductor applied
+    `gpt-6.1-sol`'s stash (+192/-2, 4 allowed files), ran the verify: typecheck pass, packages/ui 2,420 pass / 2
+    fail (135 files); the 2 fails (`WorldCanvas` near-edge badge, `WorldCanvasContext` Escape/context menu) are
+    load flakes: those files + the new file pass alone 189/189. Committed `86bee21`; the two T13a stashes dropped.
+    Chain note for later: a new directory needs its dir path (or a `dir/*` glob) in `--allow`.
+  - Reviews (astra, `task-13a-{spec,quality}-review.md`): both **Needs changes**. Conductor checked each, all real:
+    quality I1 `cancelConfirm()` while applying resets the busy ref (cancel + ok → second check/apply); I2 apply
+    rebuilds the request from the latest draft (edit during check/confirm applies an unchecked draft); I3/spec I1
+    guard tests only retry after a render (same-tick `ok(); ok();` unpinned); I4/spec m1 no lifecycle cases for a
+    pending check/apply after target/map/time change or unmount, no equal-target case; spec m2 GET fallback text,
+    network reject, plain apply error unpinned; m3 debounce reset, `null` preview, unmount with pending timer; m4
+    spec keys/labels unpinned.
+  - **D18 (conductor)** apply sends the request snapshot taken when its check started; `setDraft` while checking or
+    confirming invalidates that check (like `cancelConfirm`) and returns to `ready`; while applying it only updates
+    the draft. `cancelConfirm()` acts only while checking or confirming.
+  - Fix round 1: one hop (impl fixes + appended cases A-F), brief `<s14>/t13a-fix1-brief.md`, `--no-free`.
+  - Mutants round 1 (`<s14>/mut_t13a.py` N1-N13 on `86bee21`, detached `<s14>/mut-t13a`, baseline 49 pass): 13 of
+    14 **KILLED**; **N11 (`cancelConfirm` keeps the pending check) SURVIVED**: the D16 case calls `ok()` again,
+    whose own counter bump hides the missing one. Missing case: cancel while checking, then the old check resolves
+    with no new `ok()` → no apply, `ready`. To add after the fix hop.
+  - Fix round 1 hop: `gpt-6.2-sol` dead → **`gpt-6.1-sol` done `85bb9c2`** (+318/-9: `checkedRequest` snapshot sent by
+    the apply that follows its check; `cancelConfirm` guarded to checking/confirming; `setDraft` calls it; cases A-F
+    appended). Conductor inline test-only commit **`e1e2e1a`** (N11 killer: check cancelled while pending, then
+    resolves → no apply, `ready`). File green **92/92**, typecheck pass.
+  - Mutants round 2 (on `e1e2e1a`, baseline 92 pass): N1-N17 (adds N14 cancelConfirm unguarded, N15 apply rebuilds
+    request, N16 setDraft keeps check, N17 apply ignores generation) **all 18 KILLED**.
+  - Re-reviews (astra) launched on `e1e2e1a`.
+  - Re-reviews (astra, `task-13a-{spec,quality}-rereview.md`) on `e1e2e1a`: impl findings and D18 all **Resolved**,
+    no new issue; both still **Needs changes** for lifecycle coverage only (GET/check/preview reply after unmount;
+    pending check/apply after a map or time change). Conductor: real gaps in coverage, behaviour already correct
+    (generation/cancel guards; N7, N17 killed). Fix round 2: tests-only hop, brief `<s14>/t13a-fix2-brief.md`.
+  - Fix round 2 hop (tests only): `gpt-6.1-sol` "failed" on the allow guard (it also wrote a report folder
+    `docs/superpowers/task-reports/task-13a-round-2/`) → `gpt-6-sol` verify exit 1 (both tries). Conductor took
+    only `useBlockEditor.test.tsx` from `gpt-6.1-sol`'s stash: file **103/103**, typecheck pass; vetted (6 cases:
+    GET/check/preview after unmount, check and apply after a map change, GBC check after a time change).
+    Committed `f3029cb`; both stashes dropped.
+  - Round-2 re-reviews (astra, `task-13a-{spec,quality}-rereview2.md`): every behaviour item resolved; the only open
+    point is that the post-unmount GET and preview cases assert a frozen `result.current`, so they cannot see the
+    guard. **Conductor ruling: accepted as unobservable** (React 18 drops `setState` after unmount silently, no
+    warning, and nothing else can observe it; the same guards on a live hook are pinned by the target/map/time
+    cases and mutants N7, N17). No other open finding.
+  - Merged `p14-2-t13a` → **`a460495`** (`--no-ff`). Worktrees `wt-t13a`, `mut-t13a` removed (junctions unlinked
+    first, no `--force`); branch deleted.
+  - **Gate at `a460495`: 5,020 pass / 1 fail / 271 files; typecheck pass, UI build pass; subjects unchanged**
+    (known `engine.test` env fail, "expected 96 to be 98"). **Task 13a closed.**
+- Handoff s14 → s15 (size rule: two task merges, 12 and 13a). Next: Task 13b only (the plan's handoff point is after
+  13b). Prompt: `.superpowers/sdd/2026-11-10-pokemap-plan-14-2-block-editor/s15-launch-prompt.md`.
