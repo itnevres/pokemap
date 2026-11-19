@@ -250,10 +250,8 @@ export function createGbaBlockEditRoutes(
     const block: GbaBlockDraft = { entries: ts.metatile(local), behavior: ts.behavior(local), layerType: ts.layerType(local) };
     const req: GbaBlockEditRequest = { map: name, metatileId: id, mode: "ok", from: "palette", draft: block };
     const symbol = secondary ? c.layout.secondaryTileset : c.layout.primaryTileset;
-    const file = canonicalTilesetPath(project.tilesetPaths(symbol).metatilesBin);
-    const cap = Math.min(...project.tilesetSymbols()
-      .filter(alias => canonicalTilesetPath(project.tilesetPaths(alias).metatilesBin) === file)
-      .flatMap(alias => gbaConsumingLayouts(project, alias))
+    // E1e: the planner's consumer set (direct aliases of either file), never re-expanded per alias.
+    const cap = Math.min(...gbaConsumingLayouts(project, symbol)
       .map(use => use.role === "primary" ? use.split.metatiles : project.constants.metatilesTotal - use.split.metatiles));
     let plan: BlockEditPlan;
     try { plan = planGbaBlockEdit(project, req, deps.overlay(), stagedGrids); }
