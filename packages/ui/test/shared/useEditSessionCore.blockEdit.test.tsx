@@ -7,6 +7,12 @@ import { FamilyApp } from "../../src/shell/FamilyApp.js";
 import { GBA_CAPABILITIES, GBC_CAPABILITIES, type EngineAdapter } from "../../src/shell/adapter.js";
 import { EditSessionError, hasPendingSessionMutations, sessionMutationBarrier, useEditSessionCore } from "../../src/shared/useEditSessionCore.js";
 import * as core from "../../src/shared/useEditSessionCore.js";
+import { invalidateEventOptions } from "../../src/shared/useEventOptions.js";
+
+vi.mock("../../src/shared/useEventOptions.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/shared/useEventOptions.js")>();
+  return { ...actual, invalidateEventOptions: vi.fn(actual.invalidateEventOptions) };
+});
 
 const initialBlocks = [{ metatileId: 7, collision: 0, elevation: 0 }];
 const events = { warps: [], coords: [], bgs: [], objects: [], sceneScripts: [], callbacks: [], objectConsts: [] };
@@ -22,8 +28,9 @@ const body = {
 const response = (data: unknown, status = 200) => ({ ok: status < 400, status, json: async () => data }) as Response;
 function deferred() {
   let resolve!: (value: Response) => void;
-  const promise = new Promise<Response>((yes) => { resolve = yes; });
-  return { promise, resolve };
+  let reject!: (reason: Error) => void;
+  const promise = new Promise<Response>((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
 }
 
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
@@ -217,6 +224,119 @@ for (const family of ["gba", "gbc"] as const) {
       }
     });
 
+    it("a block apply started while undo is already waiting also holds undo", async () => {
+      const a = deferred();
+      const b = deferred();
+      const fetcher = vi.fn().mockReturnValueOnce(a.promise).mockReturnValueOnce(b.promise).mockResolvedValue(response(body));
+      vi.stubGlobal("fetch", fetcher);
+      const { result } = mount();
+      const first = result.current.blockApply({ mode: "ok" }, "rev1");
+      const undo = result.current.undo();
+      await act(async () => { await Promise.resolve(); });
+      const second = result.current.blockApply({ mode: "ok" }, "rev1");
+      await act(async () => {
+        a.resolve(response(body)); await first;
+        for (let i = 0; i < 5; i++) await Promise.resolve();
+      });
+      expect(fetcher.mock.calls.map(([url]) => url)).toEqual(["/api/edit/A/block/apply", "/api/edit/A/block/apply"]);
+      await act(async () => { b.resolve(response(body)); await second; await undo; });
+      expect(fetcher.mock.calls.map(([url]) => url)).toEqual(["/api/edit/A/block/apply", "/api/edit/A/block/apply", "/api/edit/A/undo"]);
+    });
+
+    it("a block apply that fails on the network releases the registry and undo", async () => {
+      const pending = deferred();
+      const fetcher = vi.fn().mockReturnValueOnce(pending.promise).mockResolvedValue(response(body));
+      vi.stubGlobal("fetch", fetcher);
+      const { result } = mount();
+      const apply = result.current.blockApply({ mode: "ok" }, "rev1");
+      await act(async () => {
+        pending.reject(new Error("socket hang up"));
+        await expect(apply).rejects.toBeInstanceOf(EditSessionError);
+        await expect(apply).rejects.toMatchObject({ message: "socket hang up" });
+      });
+      expect(hasPendingSessionMutations("A")).toBe(false);
+      expect(result.current.isDirty).toBe(false);
+      expect(result.current.blocks).toEqual(initialBlocks);
+      await act(async () => { await result.current.undo(); });
+      expect(fetcher.mock.calls.map(([url]) => url)).toEqual(["/api/edit/A/block/apply", "/api/edit/A/undo"]);
+    });
+
+    it("a non-JSON error reply on block apply rejects with the status message", async () => {
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 500, json: async () => { throw new SyntaxError("bad json"); } }));
+      const { result } = mount();
+      await act(async () => {
+        const apply = result.current.blockApply({ mode: "ok" }, "rev1");
+        await expect(apply).rejects.toBeInstanceOf(EditSessionError);
+        await expect(apply).rejects.toMatchObject({ code: undefined, message: "POST /api/edit/A/block/apply -> 500" });
+      });
+      expect(hasPendingSessionMutations("A")).toBe(false);
+      expect(result.current.isDirty).toBe(false);
+    });
+
+    it("a pending block check delays neither Save nor the map switch: Save", async () => {
+      const pending = deferred();
+      const plan = { changes: [{ path: "A", kind: "text", summary: "block edited" }], refusals: [], fingerprint: "fresh" };
+      const fetcher = vi.fn((url: string) => url.endsWith("/block/check") ? pending.promise : Promise.resolve(response(plan)));
+      vi.stubGlobal("fetch", fetcher);
+      const { result } = mount();
+      const check = result.current.blockCheck({ mode: "ok" }, "rev1");
+      render(<SaveDialog mapName="A" onCommitted={vi.fn()} onCancel={vi.fn()} />);
+      await act(async () => { await Promise.resolve(); });
+      expect(fetcher.mock.calls.map(([url]) => url)).toContain("/api/edit/A/plan");
+      await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Save Changes" })); });
+      expect(fetcher.mock.calls.map(([url]) => url)).toContain("/api/edit/A/commit");
+      await act(async () => { pending.resolve(response({ usage: {}, confirm: false, warnings: [] })); await check; });
+    });
+
+    it("a pending block check delays neither Save nor the map switch: map switch", async () => {
+      const pending = deferred();
+      const fetcher = vi.fn((url: string) => url.endsWith("/block/check") ? pending.promise : Promise.resolve(response(body)));
+      vi.stubGlobal("fetch", fetcher);
+      let apply!: Promise<boolean>;
+      let check!: ReturnType<ReturnType<typeof useEditSession>["blockCheck"]>;
+      const dungeon = { id: "unused", name: "unused", maps: [] };
+      const useSession = family === "gba" ? useEditSession : useGbcEditSession;
+      const adapter: EngineAdapter = {
+        addEventFields: () => [], addEventDefaults: () => ({}),
+        family, label: null, capabilities: family === "gba" ? GBA_CAPABILITIES : GBC_CAPABILITIES,
+        useRuntime({ selected, requestPrompt }) {
+          const session = useSession(selected);
+          return {
+            session,
+            groups: { data: { groupOrder: ["Maps"], groups: { Maps: ["A", "B"] } }, error: null },
+            leave: (go, { sameMap }) => { if (sameMap || !session.isDirty) go(); else requestPrompt(go); },
+            setSwitchError: vi.fn(), onSelected: vi.fn(), onEnterContext: vi.fn(),
+            visibility: { placed: null, error: null }, hiddenMapTypes: new Set<string>(),
+            dungeons: { data: [], error: null, create: async () => dungeon, rename: async () => dungeon, setMaps: async () => dungeon, remove: async () => {} },
+            map: { error: null, ready: true, name: selected },
+            renderMap: () => <><button onClick={() => { apply = session.blockApply({ mode: "ok" }, "rev1"); }}>Start apply</button><button onClick={() => { check = session.blockCheck({ mode: "ok" }, "rev1"); }}>Start check</button></>,
+            renderWorld: () => null, renderDungeon: () => null, headerExtras: null, banners: null, modals: null,
+            saveDialog: { open: false, setOpen: vi.fn(), onCommitted: vi.fn() },
+          };
+        },
+      };
+      render(<FamilyApp adapter={adapter} />);
+      fireEvent.click(screen.getByRole("button", { name: "A" }));
+      await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Start apply" })); await apply; });
+      fireEvent.click(screen.getByRole("button", { name: "Start check" }));
+      await act(async () => { fireEvent.click(screen.getByRole("button", { name: "B" })); await Promise.resolve(); });
+      expect(screen.getByText("You have unsaved changes on A.")).toBeTruthy();
+      await act(async () => { pending.resolve(response({ usage: {}, confirm: false, warnings: [] })); await check; });
+    });
+
+    it("block calls with no map do nothing", async () => {
+      const fetcher = vi.fn();
+      vi.stubGlobal("fetch", fetcher);
+      const useSession = family === "gba" ? useEditSession : useGbcEditSession;
+      const { result } = renderHook(() => useSession(null, initialBlocks));
+      await act(async () => {
+        expect(await result.current.blockCheck({ mode: "ok" }, "rev1")).toBeNull();
+        expect(await result.current.blockPreview({ mode: "ok" })).toBeNull();
+        expect(await result.current.blockApply({ mode: "ok" }, "rev1")).toBe(false);
+      });
+      expect(fetcher).not.toHaveBeenCalled();
+    });
+
     it("blockApply posts the revision in the body", async () => {
       const fetcher = vi.fn((url: string) => Promise.resolve(response(
         url.endsWith("/block/check") ? { usage: { blocks: 1 }, confirm: false, warnings: [] }
@@ -253,6 +373,28 @@ for (const family of ["gba", "gbc"] as const) {
   });
 }
 
+describe("GBC block apply replies", () => {
+  it("gbc blockApply rejects a malformed success reply and leaves state", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({ blocks: "nope" })));
+    const { result } = renderHook(() => useGbcEditSession("A", initialBlocks));
+    await act(async () => {
+      const apply = result.current.blockApply({ mode: "ok" }, "rev1");
+      await expect(apply).rejects.toBeInstanceOf(Error);
+      await expect(apply).rejects.toThrow("unexpected shape");
+    });
+    expect(hasPendingSessionMutations("A")).toBe(false);
+    expect(result.current.blocks).toEqual(initialBlocks);
+    expect(result.current.isDirty).toBe(false);
+  });
+
+  it("gbc blockApply resolves false when the server has no open session", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({ blocks: [], events: null, isDirty: false, canUndo: false, canRedo: false })));
+    const { result } = renderHook(() => useGbcEditSession("A", initialBlocks));
+    await act(async () => { expect(await result.current.blockApply({ mode: "ok" }, "rev1")).toBe(false); });
+    expect(result.current.blocks).toEqual(initialBlocks);
+  });
+});
+
 describe("block edit core registry and tickets", () => {
   it("two block checks get increasing ticket seq", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({ usage: {}, confirm: false, warnings: [] })));
@@ -284,6 +426,33 @@ describe("block edit core registry and tickets", () => {
       preview.resolve(response({ png: "data:image/png;base64,AAAA" }));
       await checked; await previewed; await barrier;
     });
+  });
+
+  it("paint requests never register", async () => {
+    const begin = deferred();
+    const apply = deferred();
+    vi.stubGlobal("fetch", vi.fn().mockReturnValueOnce(begin.promise).mockReturnValueOnce(apply.promise));
+    const seed = { n: 1 };
+    const { result } = renderHook(() => useEditSessionCore("/api/edit", "A", seed));
+    const started = result.current.post("/paint/begin");
+    const painted = result.current.post("/paint/apply", {});
+    expect(hasPendingSessionMutations("A")).toBe(false);
+    await act(async () => { begin.resolve(response({})); apply.resolve(response({})); await started; await painted; });
+  });
+
+  it("block requests never invalidate event options", async () => {
+    vi.mocked(invalidateEventOptions).mockClear();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({})));
+    const seed = { n: 1 };
+    const { result } = renderHook(() => useEditSessionCore("/api/edit", "A", seed));
+    await act(async () => {
+      await result.current.post("/block/check", {});
+      await result.current.post("/block/preview", {});
+      await result.current.post("/block/apply", {});
+    });
+    expect(invalidateEventOptions).not.toHaveBeenCalled();
+    await act(async () => { await result.current.post("/undo"); });
+    expect(invalidateEventOptions).toHaveBeenCalledTimes(1);
   });
 
   it("the old names are gone", () => {
