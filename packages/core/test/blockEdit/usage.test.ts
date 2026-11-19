@@ -1530,9 +1530,38 @@ describe("E1 file-keyed consumers", () => {
   it.each(["gTileset_A", "gTileset_A2"])("E1.1: %s exposes every alias consumer and each role's own tileset", symbol => {
     const p = fixture();
     const expected = consumers(p, "gTileset_A").map(use => ({ layout: use.layout.id, role: use.role, tileset: use.tileset, pairedWith: use.pairedWith, split: p.splitFor(use.layout) }));
-    expect(expected.map(use => use.layout)).toEqual(["E", "F", "H", "J", "K", "X"]);
+    expect(expected.map(use => use.layout)).toEqual(["E", "F", "H", "J", "K", "M", "M", "X"]);
     // Red today: symbol-keyed relations omit J/K and do not expose the role's tileset.
     expect(gbaConsumingLayouts(p, symbol)).toEqual(expected);
+  });
+
+  it("E1a: aliases are direct, not the transitive closure of shared files", () => {
+    const p = fixture();
+    const a = p.tilesetPaths("gTileset_A"), a3 = p.tilesetPaths("gTileset_A3"), a4 = p.tilesetPaths("gTileset_A4");
+    expect(a4.metatilesBin).toBe(a3.metatilesBin);
+    expect(a4.metatilesBin).not.toBe(a.metatilesBin);
+    expect(a4.attributesBin).not.toBe(a.attributesBin);
+    for (const symbol of ["gTileset_A", "gTileset_A3"]) {
+      const expected = consumers(p, symbol).map(use => ({ layout: use.layout.id, role: use.role, tileset: use.tileset, pairedWith: use.pairedWith, split: p.splitFor(use.layout) }));
+      expect(gbaConsumingLayouts(p, symbol)).toEqual(expected);
+      expect(expected.some(use => use.layout === "L")).toBe(symbol === "gTileset_A3");
+    }
+  });
+
+  it("E1b: distinct aliases in both layout slots count both disk targets", () => {
+    const p = fixture(), local = 0, layout = p.layoutById("M")!;
+    expect(p.splitFor(layout).metatiles).toBe(8);
+    const expectedUses = consumers(p, "gTileset_A").filter(use => use.layout.id === "M");
+    expect(expectedUses.map(use => [use.role, use.tileset, use.pairedWith])).toEqual([
+      ["primary", "gTileset_A", "gTileset_A2"], ["secondary", "gTileset_A2", "gTileset_A"],
+    ]);
+    expect(gbaConsumingLayouts(p, "gTileset_A").filter(use => use.layout === "M").map(use => [use.role, use.tileset, use.pairedWith])).toEqual(
+      expectedUses.map(use => [use.role, use.tileset, use.pairedWith]),
+    );
+    const cells = disk(p, layout.blockdataFilepath);
+    expect(cells).toContain(local); expect(cells).toContain(8 + local);
+    const interior = cells.filter(cell => cell === local || cell === 8 + local).length;
+    expect(gbaBlockUsage(p, "gTileset_A", local, new Map()).maps).toContainEqual({ map: "AliasBoth", interior, border: 4, block0AsBorder: 0 });
   });
 
   it("E1.2: an A edit sees the local id drawn only by the A2 map", () => {
@@ -1567,9 +1596,13 @@ describe("E1 file-keyed consumers", () => {
       const ids = disk(p, path); diskCache.set(path, ids); return ids;
     };
     interface Pick { symbol: string; local: number; source: Use; map: string; other: Use }
-    let exclusive: Pick | undefined, common: Pick | undefined;
-    for (const group of groups.values()) {
-      if (group.length < 2) continue;
+    let exclusive: Pick | undefined;
+    const candidates = [...groups.values()].filter(group => group.length >= 2).sort((a, b) =>
+      Number(b.some(name => name.startsWith("gTileset_Building"))) - Number(a.some(name => name.startsWith("gTileset_Building"))) || compare(a[0]!, b[0]!),
+    );
+    const searched: string[] = [];
+    for (const group of candidates) {
+      searched.push(group.join(", "));
       for (const symbol of group.sort(compare)) {
         const own = consumers(p, symbol).filter(use => use.tileset === symbol && names(p, use.layout).length > 0);
         const others = consumers(p, symbol).filter(use => use.tileset !== symbol && group.includes(use.tileset) && names(p, use.layout).length > 0);
@@ -1583,8 +1616,6 @@ describe("E1 file-keyed consumers", () => {
             const pick: Pick = { symbol, local, source, map: names(p, source.layout)[0]!, other };
             const ownDraws = own.some(use => cells(use.layout.blockdataFilepath).includes(target(p, use, local)) || cells(use.layout.borderFilepath).includes(target(p, use, local)));
             if (!ownDraws) { exclusive = pick; break; }
-            // A foreign file guarantees the usage-only fallback exposes the missing alias.
-            if (own.every(use => use.layout.blockdataFilepath !== other.layout.blockdataFilepath)) common ??= pick;
           }
           if (exclusive) break;
         }
@@ -1592,9 +1623,9 @@ describe("E1 file-keyed consumers", () => {
       }
       if (exclusive) break;
     }
-    const pick = exclusive ?? common;
-    expect(pick, "a shared metatiles file drawn by a consuming map").toBeDefined();
-    if (!pick) throw new Error("E1 oracle found no shared metatiles usage");
+    const pick = exclusive;
+    expect(pick, `no exclusive alias usage; searched groups: ${searched.join("; ")}`).toBeDefined();
+    if (!pick) throw new Error(`E1 oracle found no exclusive alias usage; searched groups: ${searched.join("; ")}`);
     const expected = usage(p, pick.symbol, pick.local);
     const otherFile = pick.other.layout.blockdataFilepath;
     const representative = consumers(p, pick.symbol).filter(use => use.layout.blockdataFilepath === otherFile).flatMap(use => names(p, use.layout)).sort(compare)[0]!;
@@ -1604,12 +1635,10 @@ describe("E1 file-keyed consumers", () => {
     expect(expectedEntry.interior).toBeGreaterThan(0);
     // Red today: real headers sharing a binary are excluded from the edited symbol's usage/confirmation.
     expect.soft(gbaBlockUsage(p, pick.symbol, pick.local, new Map()).maps).toContainEqual(expectedEntry);
-    if (exclusive) {
-      const tileset = p.tileset(pick.symbol);
-      const changed: GbaBlockDraft = { entries: tileset.metatile(pick.local), behavior: tileset.behavior(pick.local) ^ 1, layerType: tileset.layerType(pick.local) };
-      const result = planGbaBlockEdit(p, { map: pick.map, metatileId: target(p, pick.source, pick.local), mode: "ok", from: "palette", draft: changed }, new Map(), new Map());
-      expect(result.edits.length).toBeGreaterThan(0);
-      expect(result.confirm).toBe(true);
-    }
+    const tileset = p.tileset(pick.symbol);
+    const changed: GbaBlockDraft = { entries: tileset.metatile(pick.local), behavior: tileset.behavior(pick.local) ^ 1, layerType: tileset.layerType(pick.local) };
+    const result = planGbaBlockEdit(p, { map: pick.map, metatileId: target(p, pick.source, pick.local), mode: "ok", from: "palette", draft: changed }, new Map(), new Map());
+    expect(result.edits.length).toBeGreaterThan(0);
+    expect(result.confirm).toBe(true);
   });
 });
