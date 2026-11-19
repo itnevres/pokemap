@@ -424,6 +424,19 @@ for (const family of ["gba", "gbc"] as const) {
       expect(result.current.check).toEqual({ usage: { thisMap: 3 }, confirm: true, warnings: ["newer check"] });
     });
 
+    it("a check cancelled while pending neither applies nor confirms when it resolves", async () => {
+      const pending = deferred<BlockCheckReply | null>();
+      const session = makeSession();
+      session.blockCheck.mockReturnValueOnce(pending.promise);
+      const { result } = await mount({}, session);
+      act(() => { result.current.ok(); });
+      expect(result.current.status).toBe("checking");
+      act(() => { result.current.cancelConfirm(); });
+      await act(async () => { pending.resolve({ usage: null, confirm: false, warnings: [] }); await pending.promise; });
+      expect(session.blockApply).not.toHaveBeenCalled();
+      expect(result.current.status).toBe("ready");
+    });
+
     it("returns to ready for a null check without applying", async () => {
       const session = makeSession();
       session.blockCheck.mockResolvedValue(null);
