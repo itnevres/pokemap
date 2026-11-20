@@ -121,8 +121,6 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
     setErr(null);
     setWarn(null);
   }
-  // The dialog is gated on `active`, so an active=false -> true flip on the same map would re-mount it (F3).
-  if (!active && blockEdit) setBlockEdit(null);
   const isCurrent = visit.isCurrent;
 
   const mine = pick.forMap === key;

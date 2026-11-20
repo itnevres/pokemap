@@ -100,8 +100,6 @@ export function MapEditingWorkspace({ active = true, mapName, data, editSession,
   const latestSelect = useRef(onSelectEvent);
   latestSelect.current = onSelectEvent;
   if (visit.changed) { if (blockEdit) setBlockEdit(null); if (creating) setCreating(false); if (editRequests) setEditRequests(0); if (pendingSelection) setPendingSelection(null); }
-  // The dialog is gated on `active`, so an active=false -> true flip on the same map would re-mount it (F3).
-  if (!active && blockEdit) setBlockEdit(null);
   useEffect(() => { void options.load().catch(() => { /* The dialog owns option-load errors; existing edit tools remain usable. */ }); }, [options.load, options.project, mapName]);
   useLayoutEffect(() => {
     if (pendingSelection && pendingSelection.isCurrent()) {
