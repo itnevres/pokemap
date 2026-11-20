@@ -313,3 +313,102 @@ describe("GBA map surface tileset version (Task 10b)", () => {
     expect(src()).toBe("/api/render/Foo.png?border=1&tv=5");
   });
 });
+
+describe("map context menu (Task 14a)", () => {
+  beforeEach(() => {
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(400);
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(300);
+  });
+  function stage(container: HTMLElement) {
+    const canvas = container.querySelector("canvas.map-canvas__stage")! as HTMLCanvasElement;
+    const { width: w, height: h } = canvas;
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: w, height: h, right: w, bottom: h, x: 0, y: 0, toJSON() {} });
+    return canvas;
+  }
+  function open(canvas: HTMLCanvasElement) {
+    // Origin=(1 border *16,1 border *16)=(16,16); zoom=1, pan=(0,0).
+    // source=(40,24); cell=(floor((40-16)/16),floor((24-16)/16))=(1,0), its centre.
+    return fireEvent.contextMenu(canvas, { clientX: 40, clientY: 24, button: 2 });
+  }
+
+  it("zoom 1 opens the menu for an interior cell", () => {
+    const onEditBlock = vi.fn();
+    const host = mount({ onEditBlock });
+    expect(open(stage(host.container))).toBe(false);
+    expect(screen.getByRole("menu")).toBeTruthy();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Edit block" }));
+    expect(onEditBlock).toHaveBeenCalledExactlyOnceWith({ x: 1, y: 0 });
+  });
+
+  it("zoom 3 after a pan maps to the paint cell", () => {
+    const onEditBlock = vi.fn(), onViewChange = vi.fn();
+    const host = mount({ onEditBlock, view: { zoom: 3, pan: { x: -20, y: -11 } }, onViewChange });
+    // p=(100,61): source=((100+20)/3,(61+11)/3)=(40,24).
+    // Origin=(16,16), cellPx=16 => cell=(1,0), centre. At zoom 1 with the same pan,
+    // source=(120,72) => cell=(floor(104/16),floor(56/16))=(6,3), a different/outside cell.
+    expect(fireEvent.contextMenu(stage(host.container), { clientX: 100, clientY: 61, button: 2 })).toBe(false);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Edit block" }));
+    expect(onEditBlock).toHaveBeenCalledExactlyOnceWith({ x: 1, y: 0 });
+    expect(onViewChange).not.toHaveBeenCalled();
+  });
+
+  it.each(["pencil", "select", "sign", "placing"] as const)("right-button %s gesture never paints, selects, places or pans", async (mode) => {
+    const session = observed.session!;
+    const onSelectEvent = vi.fn(), onViewChange = vi.fn(), onEventPick = vi.fn(), onSignPick = vi.fn();
+    const host = mount({ editSession: session, onEditBlock: vi.fn(), onSelectEvent, onViewChange, onEventPick, onSignPick,
+      activeTool: mode === "pencil" ? { kind: "pencil", stamp: STAMP } : mode === "sign" ? { kind: "sign" } : null,
+      placing: mode === "placing" ? "object" : null });
+    const canvas = stage(host.container);
+    // Origin=(16,16), zoom=1, pan=0: p=(24,24) -> source=(24,24) -> cell=(0,0) centre (the object).
+    fireEvent.pointerDown(canvas, { clientX: 24, clientY: 24, button: 2 });
+    fireEvent.mouseDown(canvas, { clientX: 24, clientY: 24, button: 2, buttons: 2 });
+    // p=(40,24) -> source=(40,24) -> cell=(1,0) centre; right drag crosses a paint cell.
+    fireEvent.mouseMove(canvas, { clientX: 40, clientY: 24, buttons: 2 });
+    fireEvent.mouseUp(canvas, { clientX: 40, clientY: 24, button: 2 });
+    expect(open(canvas)).toBe(false);
+    await flush();
+    expect(session.beginStroke).not.toHaveBeenCalled();
+    expect(session.applyPaint).not.toHaveBeenCalled();
+    expect(vi.mocked(fetch).mock.calls.some(([, init]) => init?.method === "POST")).toBe(false);
+    expect(onSelectEvent).not.toHaveBeenCalled();
+    expect(onEventPick).not.toHaveBeenCalled();
+    expect(onSignPick).not.toHaveBeenCalled();
+    expect(onViewChange).not.toHaveBeenCalled();
+    if (mode === "placing") expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("outside the interior in the border ring disables the item", () => {
+    const host = mount({ onEditBlock: vi.fn() });
+    // Origin=(16,16), zoom=1, pan=0: source=(8,24); floor((8-16)/16)=-1,
+    // floor((24-16)/16)=0: centre of the left border-ring cell, outside the 2x2 interior.
+    expect(fireEvent.contextMenu(stage(host.container), { clientX: 8, clientY: 24, button: 2 })).toBe(false);
+    expect((screen.getByRole("menuitem", { name: /Not a map cell/ }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("editBlockDisabledReason disables the item with its hint", () => {
+    const host = mount({ onEditBlock: vi.fn(), editBlockDisabledReason: () => "Wait for the current change to finish" });
+    open(stage(host.container));
+    expect((screen.getByRole("menuitem", { name: /Wait for the current change to finish/ }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("a map switch closes the menu", () => {
+    const onEditBlock = vi.fn();
+    const host = mount({ onEditBlock });
+    open(stage(host.container));
+    expect(screen.getByRole("menu")).toBeTruthy();
+    host.rerender(<MapCanvas mapName="Bar" data={DATA} view={VIEW} onEditBlock={onEditBlock} />);
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("without onEditBlock leaves the browser context menu untouched", () => {
+    const host = mount();
+    expect(open(stage(host.container))).toBe(true);
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("while placing an event prevents the browser menu but opens no menu (R7)", () => {
+    const host = mount({ onEditBlock: vi.fn(), placing: "object", onEventPick: vi.fn() });
+    expect(open(stage(host.container))).toBe(false);
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+});
