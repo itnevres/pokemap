@@ -36,6 +36,17 @@ describe("Toolbar for GBC (additive props)", () => {
   });
 });
 
+// Task 14b (N7): GBC gains the same Edit block tool, and keeps its no-Collision rule.
+describe("Toolbar for GBC -- Edit block tool (Task 14b)", () => {
+  it("shows Edit block (K) and no Collision tool", () => {
+    render(<Toolbar {...base} tools={GBC_TOOLS} availableTools={GBC_TOOLS} />);
+    const edit = screen.getByRole("button", { name: "Edit block" });
+    expect(edit.getAttribute("title")).toBe("Edit block (K)");
+    expect(edit.querySelector("svg")).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "Collision tool" })).toBeNull();
+  });
+});
+
 describe("SaveDialog with a GBC text change", () => {
   it("lists a kind: text change's summary", async () => {
     const plan = { changes: [{ path: "maps/NewBarkTown.asm", kind: "text", summary: "maps/NewBarkTown.asm -- 1 event moved" }], refusals: [] };

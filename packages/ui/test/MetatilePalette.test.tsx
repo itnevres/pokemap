@@ -329,3 +329,41 @@ describe("MetatilePalette tileset version (Task 10b)", () => {
     expect(srcAt(2)).toBe("/api/metatile/Test_Layout/640.png?tv=5");
   });
 });
+
+// Task 14b (N9): a right-click on a palette cell opens the block editor for that metatile and never
+// changes the palette selection. The cell's onMouseDown has no button check today, so a right press
+// would start a drag selection -- these cases pin the `event.button === 0` guard.
+describe("MetatilePalette block editor (Task 14b)", () => {
+  it("right-click opens the editor for that metatile and prevents the browser menu", () => {
+    const onEditBlock = vi.fn();
+    render(<MetatilePalette layoutName="Test_Layout" split={SPLIT} primaryCount={8} secondaryCount={0}
+      onSelect={() => {}} onEditBlock={onEditBlock} />);
+    // fireEvent returns false only when preventDefault() ran: the browser menu must stay suppressed.
+    expect(fireEvent.contextMenu(screen.getByRole("button", { name: "metatile 0x5" }), { button: 2 })).toBe(false);
+    expect(onEditBlock).toHaveBeenCalledTimes(1);
+    expect(onEditBlock).toHaveBeenCalledWith(5);
+  });
+
+  it("a right press never changes the selection", () => {
+    const onSelect = vi.fn(), onEditBlock = vi.fn();
+    render(<MetatilePalette layoutName="Test_Layout" split={SPLIT} primaryCount={32} secondaryCount={0}
+      onSelect={onSelect} onEditBlock={onEditBlock} />);
+    // 32 ids over the default 8 columns = 4 rows, folded at row 2. 0x1 (index 1, row 0) and
+    // 0x9 (index 9, row 1) are BOTH in the left column (row < fold), so a LEFT drag 0x1 -> 0x9
+    // would call selectRect and select a 1x2 rectangle -- exactly what the existing
+    // "a drag from the left column into the right one selects nothing" case pins for that column.
+    const a = screen.getByRole("button", { name: "metatile 0x1" });
+    const b = screen.getByRole("button", { name: "metatile 0x9" });
+    fireEvent.mouseDown(a, { button: 2 });
+    fireEvent.mouseUp(b, { button: 2 });
+    fireEvent.contextMenu(b, { button: 2 });
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(onEditBlock).toHaveBeenCalledWith(9);
+  });
+
+  it("no onEditBlock, no handler", () => {
+    render(<MetatilePalette layoutName="Test_Layout" split={SPLIT} primaryCount={8} secondaryCount={0} onSelect={() => {}} />);
+    // No onContextMenu prop at all: the browser's own menu is untouched.
+    expect(fireEvent.contextMenu(screen.getByRole("button", { name: "metatile 0x5" }), { button: 2 })).toBe(true);
+  });
+});

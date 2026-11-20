@@ -387,4 +387,74 @@ describe("MapEditingWorkspace block editor mount (Plan 14.2 Task 14a)", () => {
     }
     expect(hasPendingSessionMutations("Foo")).toBe(false);
   });
+
+  // Task 14b: the same dialog is reachable from the palette (right-click, `from: "palette"`) and from
+  // the Edit block tool on the canvas. Both reuse the canvas' existing `onEditBlock` wiring.
+  describe("palette and tool entry points (Plan 14.2 Task 14b)", () => {
+    function blockSession() {
+      return {
+        ...editSession,
+        beginStroke: vi.fn(() => Promise.resolve()),
+        applyPaint: vi.fn(() => Promise.resolve()),
+        endStroke: vi.fn(() => Promise.resolve()),
+        blockCheck: vi.fn<BlockEditSession["blockCheck"]>().mockResolvedValue(null),
+        blockPreview: vi.fn<BlockEditSession["blockPreview"]>().mockResolvedValue(null),
+        blockApply: vi.fn<BlockEditSession["blockApply"]>().mockResolvedValue(true),
+      };
+    }
+    const blockLoads = () => fetchMock.mock.calls.map(([input]) => new URL(String(input), "http://localhost"))
+      .filter(url => url.pathname === "/api/edit/Foo/block");
+
+    it("a palette right-click opens the dialog for that block with from: palette", async () => {
+      const session = blockSession();
+      const editing = makeEditing();
+      const { container } = render(<MapEditingWorkspace mapName="Foo" data={DATA} editSession={session}
+        editing={editing} blockEditorSpec={gbaAdapter.blockEditorSpec} />);
+      const cell = screen.getByRole("button", { name: "metatile 0x1" });
+      expect(fireEvent.contextMenu(cell, { button: 2 })).toBe(false);
+      await waitFor(() => {
+        const panel = document.querySelector(".block-editor");
+        expect(panel).not.toBeNull();
+        expect(panel?.getAttribute("role")).toBe("dialog");
+      });
+      // A `{ block }` target loads by block id, with no x/y at all.
+      const loads = blockLoads();
+      expect(loads).toHaveLength(1);
+      expect(loads[0]!.searchParams.get("block")).toBe("1");
+      expect(loads[0]!.searchParams.get("x")).toBeNull();
+      // The right-click never picks a stamp.
+      expect(editing.setCurrentStamp).not.toHaveBeenCalled();
+      expect(cell.getAttribute("aria-pressed")).toBe("false");
+
+      fireEvent.click(screen.getByRole("button", { name: "OK" }));
+      await waitFor(() => expect(session.blockCheck).toHaveBeenCalled());
+      // `from` is only observable in the check/apply request body.
+      const sent = session.blockCheck.mock.calls[0]![0] as { request: { from: string } };
+      expect(sent.request.from).toBe("palette");
+    });
+
+    it("the Edit block tool opens the dialog for the clicked cell", async () => {
+      const session = blockSession();
+      const editing = makeEditing({ activeTool: { kind: "editBlock" } });
+      const { container } = render(<MapEditingWorkspace mapName="Foo" data={DATA} editSession={session}
+        editing={editing} blockEditorSpec={gbaAdapter.blockEditorSpec} />);
+      fireEvent.click(screen.getByRole("button", { name: "Edit block" }));
+      expect(editing.setActiveToolKind).toHaveBeenCalledWith("editBlock");
+
+      // GBA origin (16,16), paintCellPx 16, a 2x2 map, zoom 1, pan 0:
+      // source = ((40-0)/1,(40-0)/1) = (40,40); cell = floor((source-16)/16) = (1,1).
+      const canvas = stage(container);
+      fireEvent.mouseDown(canvas, { button: 0, clientX: 40, clientY: 40 });
+      fireEvent.mouseUp(canvas, { button: 0, clientX: 40, clientY: 40 });
+      await waitFor(() => expect(document.querySelector(".block-editor")).not.toBeNull());
+      const loads = blockLoads();
+      expect(loads).toHaveLength(1);
+      expect(loads[0]!.searchParams.get("x")).toBe("1");
+      expect(loads[0]!.searchParams.get("y")).toBe("1");
+      // "No paint": no stroke and no POST.
+      expect(session.beginStroke).not.toHaveBeenCalled();
+      expect(session.applyPaint).not.toHaveBeenCalled();
+      expect(fetchMock.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false);
+    });
+  });
 });
