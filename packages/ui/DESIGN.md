@@ -447,6 +447,18 @@ reserves one band on that side.
   bypasses the warp-marker preview).
 - **Tokens:** `--bg-panel-raised`, `--border-strong`, `--bg-hover`, `--text-muted` (disabled label), `--text-secondary` (hint).
 
+## Map context menu (Plan 14.2 Task 14a)
+
+- Right-clicking the editable map canvas (Map view and the in-context overlay, both families) opens the shared
+  `WorldContextMenu` (`.world-context-menu`) with the single item "Edit block".
+- It always suppresses the browser menu when the block editor is available; while an event is being placed it
+  suppresses the browser menu but opens nothing.
+- Disabled with the hint "Not a map cell" outside the map interior and "Wait for the current change to finish" while a
+  session mutation is pending (checked when the menu opens and again when the item is chosen). A map switch closes it.
+- Escape on it never exits in-context editing (any open context menu blocks the world's exit request).
+- Choosing it opens the block editor dialog for that cell (`from: "map"`).
+- Known gap: focus falls to the page after the menu or the dialog closes (the map canvas is not focusable); Task 16.
+
 ## In-context editing (GBA, Plan 6c E4)
 
 - Double-clicking a map body on the GBA World view (or the context menu's "Edit here")

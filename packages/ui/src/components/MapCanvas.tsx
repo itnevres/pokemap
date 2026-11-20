@@ -5,7 +5,7 @@ import type { UseEditSessionResult } from "../hooks/useEditSession.js";
 import type { SettledChain } from "../shared/useStrokeChain.js";
 import type { CollisionElevation } from "./CollisionPalette.js";
 import type { MapView } from "./mapView.js";
-import { MapSurface } from "../canvas/MapSurface.js";
+import { MapSurface, type EventPlacementProps } from "../canvas/MapSurface.js";
 import { useGbaMapSurface } from "../gba/mapSurface.js";
 export { compositeOrigin } from "../gba/mapSurface.js";
 
@@ -20,7 +20,7 @@ export interface EventRef {
   index: number;
 }
 
-export interface MapCanvasProps {
+export interface MapCanvasProps extends EventPlacementProps {
   onStrokeChain?: (chain: SettledChain, mounted: boolean) => void;
   /** Failed stroke requests reach the workspace dismissible banner (P12-4f). */
   onEditError?: (message: string) => void;
@@ -39,6 +39,8 @@ export interface MapCanvasProps {
     | { kind: "dropper" }
     | { kind: "sign" }
     | null;
+  onEditBlock?: (cell: { x: number; y: number }) => void;
+  editBlockDisabledReason?: () => string | null;
   onSignPick?: (x: number, y: number, anchor: DOMRect) => void;
   /** With no paint tool, select the event at the click, or deselect on a miss (also read-only). */
   onSelectEvent?: (ref: EventRef | null) => void;

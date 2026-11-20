@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, fireEvent, act, cleanup } from "@testing-library/react";
+import { render, screen, fireEvent, act, cleanup } from "@testing-library/react";
 import { GbcMapCanvas } from "../../src/gbc/GbcMapCanvas.js";
 import type { UseGbcEditSessionResult } from "../../src/gbc/hooks/useGbcEditSession.js";
 import type { GbcMapPayload } from "@pokemap/core/src/gbc/wire.js";
@@ -155,5 +155,99 @@ describe("GBC map surface tileset version (Task 10b)", () => {
 
     // Same mounted canvas: both existing parameters survive and tv is appended last.
     expect(src()).toBe("/api/render/M.png?border=1&time=day&tv=5");
+  });
+});
+
+describe("map context menu (Task 14a)", () => {
+  beforeEach(() => {
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(400);
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(300);
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => [] })));
+  });
+  const view = { zoom: 1 as const, pan: { x: 0, y: 0 } };
+  function stage(container: HTMLElement) {
+    const canvas = container.querySelector("canvas.map-canvas__stage")! as HTMLCanvasElement;
+    const { width: w, height: h } = canvas;
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: w, height: h, right: w, bottom: h, x: 0, y: 0, toJSON() {} });
+    return canvas;
+  }
+  function openQuadrant(canvas: HTMLCanvasElement) {
+    // Origin=(32,32), zoom=1, pan=0: source=(88,56), block=floor((source-32)/32)=(1,0).
+    // The bottom-right event-quadrant centre is (32+1*32+24,32+0*32+24).
+    // Event cellPx=16 would yield (floor(56/16),floor(24/16))=(3,1), which is NOT the block.
+    return fireEvent.contextMenu(canvas, { clientX: 88, clientY: 56, button: 2 });
+  }
+
+  it("an event-quadrant click maps to its block", () => {
+    const onEditBlock = vi.fn();
+    const host = render(<GbcMapCanvas mapName="M" data={DATA} time="day" view={view} onViewChange={vi.fn()} onEditBlock={onEditBlock} />);
+    expect(openQuadrant(stage(host.container))).toBe(false);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Edit block" }));
+    expect(onEditBlock).toHaveBeenCalledTimes(1);
+    expect(onEditBlock).toHaveBeenCalledWith({ x: 1, y: 0 });
+  });
+
+  it("over an event overlay still edits its block without selecting the event", async () => {
+    const object = { x: 3, y: 1, sprite: "SPRITE_TEACHER", moveData: "M", radiusX: 0, radiusY: 0,
+      hour1: "-1", hour2: "-1", palette: "0", objectType: "OBJECTTYPE_SCRIPT", sightRange: 0,
+      script: "S", eventFlag: "-1", lineIndex: 0 };
+    const data = { ...DATA, events: { ...NO_EVENTS, objects: [object] } };
+    const onEditBlock = vi.fn(), onSelectEvent = vi.fn();
+    const host = render(<GbcMapCanvas mapName="M" data={data} time="day" view={view} onViewChange={vi.fn()}
+      onEditBlock={onEditBlock} onSelectEvent={onSelectEvent} />);
+    fireEvent.click(screen.getByRole("button", { name: "Events" }));
+    fireEvent.load(host.container.querySelector("img")!);
+    await flushMicrotasks();
+    expect(openQuadrant(stage(host.container))).toBe(false);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Edit block" }));
+    expect(onEditBlock).toHaveBeenCalledTimes(1);
+    expect(onEditBlock).toHaveBeenCalledWith({ x: 1, y: 0 });
+    expect(onSelectEvent).not.toHaveBeenCalled();
+  });
+
+  it("zoom 4 after a pan maps to the block paint cell", () => {
+    const onEditBlock = vi.fn(), onViewChange = vi.fn();
+    const host = render(<GbcMapCanvas mapName="M" data={DATA} time="day"
+      view={{ zoom: 4, pan: { x: -20, y: -11 } }} onViewChange={onViewChange} onEditBlock={onEditBlock} />);
+    // p=(300,181): source=((300+20)/4,(181+11)/4)=(80,48), the centre of block (1,0).
+    // Origin=32, cellPx=32 => (floor(48/32),floor(16/32))=(1,0).
+    // With zoom 1 and the same pan, source=(320,192) => (floor(288/32),floor(160/32))=(9,5), different/outside.
+    expect(fireEvent.contextMenu(stage(host.container), { clientX: 300, clientY: 181, button: 2 })).toBe(false);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Edit block" }));
+    expect(onEditBlock).toHaveBeenCalledTimes(1);
+    expect(onEditBlock).toHaveBeenCalledWith({ x: 1, y: 0 });
+    expect(onViewChange).not.toHaveBeenCalled();
+  });
+
+  it.each(["pencil", "select", "sign", "placing"] as const)("the right %s gesture never paints, selects, places or pans", async (mode) => {
+    const done = vi.fn(() => Promise.resolve());
+    const session: UseGbcEditSessionResult = {
+      blocks: BLOCKS, events: NO_EVENTS, isDirty: false, canUndo: false, canRedo: false,
+      beginStroke: vi.fn(() => Promise.resolve()), applyPaint: vi.fn(() => Promise.resolve()), endStroke: done,
+      undo: done, redo: done, discard: done, markClean: vi.fn(), moveEvent: done, addEvent: done,
+      deleteEvent: vi.fn(() => Promise.resolve({ warpRenumberWarnings: [] })),
+    };
+    const onSelectEvent = vi.fn(), onViewChange = vi.fn(), onSignPick = vi.fn(), onEventPick = vi.fn();
+    const host = render(<GbcMapCanvas mapName="M" data={DATA} time="day" view={view} editSession={session}
+      activeTool={mode === "pencil" ? { kind: "pencil", stamp: STAMP } : mode === "sign" ? { kind: "sign" } : null}
+      placing={mode === "placing" ? "object" : null} onEventPick={onEventPick}
+      onEditBlock={vi.fn()} onSelectEvent={onSelectEvent} onViewChange={onViewChange} onSignPick={onSignPick} />);
+    const canvas = stage(host.container);
+    // Origin=32, zoom=1, pan=0: p=(48,48) -> source=(48,48) -> floor((source-32)/32)=(0,0), centre.
+    fireEvent.pointerDown(canvas, { clientX: 48, clientY: 48, button: 2 });
+    fireEvent.mouseDown(canvas, { clientX: 48, clientY: 48, button: 2, buttons: 2 });
+    // p=(80,48) -> source=(80,48) -> floor((source-32)/32)=(1,0), the next block's centre.
+    fireEvent.mouseMove(canvas, { clientX: 80, clientY: 48, buttons: 2 });
+    fireEvent.mouseUp(canvas, { clientX: 80, clientY: 48, button: 2 });
+    expect(fireEvent.contextMenu(canvas, { clientX: 80, clientY: 48, button: 2 })).toBe(false);
+    await flushMicrotasks();
+    expect(session.beginStroke).not.toHaveBeenCalled();
+    expect(session.applyPaint).not.toHaveBeenCalled();
+    expect(vi.mocked(fetch).mock.calls.some(([, init]) => init?.method === "POST")).toBe(false);
+    expect(onSelectEvent).not.toHaveBeenCalled();
+    expect(onSignPick).not.toHaveBeenCalled();
+    expect(onEventPick).not.toHaveBeenCalled();
+    expect(onViewChange).not.toHaveBeenCalled();
+    if (mode === "placing") expect(screen.queryByRole("menu")).toBeNull();
   });
 });

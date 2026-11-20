@@ -6,6 +6,7 @@ import { CanvasZoomBar } from "../shared/CanvasZoomBar.js";
 import { OverlayToggleGroup } from "../shared/OverlayToggleGroup.js";
 import { EncountersLegendItem, LegendBar } from "../shared/LegendBar.js";
 import { MapStatusStrip } from "../shared/MapStatusStrip.js";
+import { useMapContextMenu } from "../shared/MapContextMenu.js";
 import { MapCanvasViewport } from "../shared/MapCanvasViewport.js";
 import { useStrokeChain, type SettledChain, type StrokeSession } from "../shared/useStrokeChain.js";
 import { boundedCell, cellRect, rawCell } from "./cells.js";
@@ -33,6 +34,8 @@ export interface MapSurfaceProps<Tool extends MapTool, Body, Event, Stamp, Hover
   selectedEvent?: Event | null;
   onSelectEvent?: (event: Event | null) => void;
   onMoveEvent?: (event: Event & Point) => void;
+  onEditBlock?: (cell: Point) => void;
+  editBlockDisabledReason?: () => string | null;
   onSignPick?: (x: number, y: number, anchor: DOMRect) => void;
   onDropperPick?: (stamp: Stamp) => void;
   onHoverMetatile?: (id: number | null) => void;
@@ -45,7 +48,7 @@ export interface MapSurfaceProps<Tool extends MapTool, Body, Event, Stamp, Hover
 
 export function MapSurface<Tool extends MapTool, Body, Event, Stamp, Hover extends MapHover>({
   mapName, adapter, editSession, activeTool, selectedEvent, onSelectEvent, onMoveEvent, onSignPick, placing, onEventPick,
-  onDropperPick, onHoverMetatile, onEditError, onStrokeChain, view, onViewChange, chromeless,
+  onEditBlock, editBlockDisabledReason, onDropperPick, onHoverMetatile, onEditError, onStrokeChain, view, onViewChange, chromeless,
 }: MapSurfaceProps<Tool, Body, Event, Stamp, Hover>) {
   const g = adapter.geometry;
   const imgRef = useRef<HTMLImageElement>(null);
@@ -176,6 +179,8 @@ export function MapSurface<Tool extends MapTool, Body, Event, Stamp, Hover exten
   // Single-cell starts are bounded (outside means no edit); rect/shift ends stay raw because the server
   // skips overshooting targets. Event selection/releases use their own raw grid, allowing outside deselect.
   const paintAt = (event: MouseEvent<HTMLCanvasElement>) => boundedCell(point(event), geometry(g.paintCellPx), g.width, g.height);
+  const contextMenu = useMapContextMenu({ cellAt: paintAt, disabledReason: editBlockDisabledReason ?? (() => null),
+    onEditBlock: cell => onEditBlock?.(cell), resetKey: mapName, viewport: stage.viewport, suppressed: !!placing });
   const rawPaintAt = (event: MouseEvent<HTMLCanvasElement>) => rawCell(point(event), geometry(g.paintCellPx));
   const eventAt = (event: MouseEvent<HTMLCanvasElement>) => rawCell(point(event), geometry(g.eventCellPx));
   const onMouseDown = (event: MouseEvent<HTMLCanvasElement>) => {
@@ -278,7 +283,9 @@ export function MapSurface<Tool extends MapTool, Body, Event, Stamp, Hover exten
       width={stage.viewport.w || g.pixelWidth} height={stage.viewport.h || g.pixelHeight}
       onPointerDown={(event) => { if (event.button === 0) stage.onPointerDown(event); }}
       onPointerCancel={stage.onPointerCancel} onLostPointerCapture={stage.onLostPointerCapture}
+      onContextMenu={onEditBlock ? contextMenu.onContextMenu : undefined}
       onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseLeave}>
+      {onEditBlock && contextMenu.element}
       {placing && <div className="map-canvas__placement-hint" role="status">Click a tile to place the event. Esc to cancel.</div>}
       <EncounterBorder enabled={encountersOn} entries={entries} zoom={zoom * encounter.unitPx} lodZoom={0}
         band={encounter.band} time={encounter.time} />

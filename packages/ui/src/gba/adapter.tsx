@@ -110,9 +110,9 @@ export function useGbaRuntime({ selected, mode, requestPrompt }: RuntimeArgs): F
       <div className="app__map-editing" key="world-host">
         {contextLayout && defectsBanner}
         {contextLayout ? (
-          <MapEditingWorkspace onStrokeChain={s.onStrokeChain} hoveredMetatileId={hoveredMetatileId} onHoverMetatile={setHoveredMetatileId} mapName={contextLayout.map.name} data={contextLayout} editSession={editSession} editing={editing} renderCanvas={world} />
+          <MapEditingWorkspace blockEditorSpec={blockEditorSpec} onStrokeChain={s.onStrokeChain} hoveredMetatileId={hoveredMetatileId} onHoverMetatile={setHoveredMetatileId} mapName={contextLayout.map.name} data={contextLayout} editSession={editSession} editing={editing} renderCanvas={world} />
         ) : (
-          <MapEditingWorkspace onStrokeChain={s.onStrokeChain} hoveredMetatileId={hoveredMetatileId} onHoverMetatile={setHoveredMetatileId} active={false} mapName={selected} data={layout.data} editSession={editSession} editing={editing} renderCanvas={world} />
+          <MapEditingWorkspace blockEditorSpec={blockEditorSpec} onStrokeChain={s.onStrokeChain} hoveredMetatileId={hoveredMetatileId} onHoverMetatile={setHoveredMetatileId} active={false} mapName={selected} data={layout.data} editSession={editSession} editing={editing} renderCanvas={world} />
         )}
       </div>
     );
@@ -133,7 +133,7 @@ export function useGbaRuntime({ selected, mode, requestPrompt }: RuntimeArgs): F
       selected && layout.data ? (
         <div className="app__map-editing">
           {defectsBanner}
-          <MapEditingWorkspace onStrokeChain={s.onStrokeChain} hoveredMetatileId={hoveredMetatileId} onHoverMetatile={setHoveredMetatileId} mapName={selected} data={layout.data} editSession={editSession} editing={editing} />
+          <MapEditingWorkspace blockEditorSpec={blockEditorSpec} onStrokeChain={s.onStrokeChain} hoveredMetatileId={hoveredMetatileId} onHoverMetatile={setHoveredMetatileId} mapName={selected} data={layout.data} editSession={editSession} editing={editing} />
         </div>
       ) : null,
     renderWorld,

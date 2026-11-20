@@ -8,7 +8,8 @@ import type { UseEditSessionResult } from "../hooks/useEditSession.js";
 import type { MapLayoutData } from "../hooks/useMapLayout.js";
 import { eventOpErrorMessage, type useMapEditing } from "../hooks/useMapEditing.js";
 import { EditingWorkspace } from "../shared/EditingWorkspace.js";
-import { GBA_CAPABILITIES, toolsFor } from "../shell/adapter.js";
+import { GBA_CAPABILITIES, toolsFor, type BlockEditorSpec } from "../shell/adapter.js";
+import { BlockEditorDialog } from "../shared/BlockEditorDialog.js";
 import { SignEditor } from "../shared/SignEditor.js";
 import { MAX_OBJECT_EVENTS, duplicateEventValue } from "../gba/duplicateEvent.js";
 import { AddEventBar, useEventPlacement } from "../shared/AddEventBar.js";
@@ -17,7 +18,7 @@ import { AddEventDialog, registerReturnWarpSource } from "../shared/AddEventDial
 import * as addEventAdapter from "../gba/addEventFields.js";
 import { useEventOptions } from "../shared/useEventOptions.js";
 import { useVisit } from "../shared/useVisit.js";
-import { hasPendingSessionMutations, type EventCreateSession } from "../shared/useEditSessionCore.js";
+import { hasPendingSessionMutations, type EventCreateSession, type BlockEditSession } from "../shared/useEditSessionCore.js";
 import type { EventKind } from "@pokemap/core/src/addEvent/types.js";
 
 /** The props the workspace builds for the canvas it hosts -- exactly what
@@ -26,10 +27,11 @@ import type { EventKind } from "@pokemap/core/src/addEvent/types.js";
  *  wants it adds it in its own `renderCanvas`). */
 export type MapEditingCanvasProps = Pick<
   MapCanvasProps,
-  "onEditError" | "onStrokeChain" | "mapName" | "data" | "editSession" | "activeTool" | "onSignPick" | "onSelectEvent" | "selectedEventRef" | "onMoveEvent" | "onDropperPick" | "onHoverMetatile"
+  "onEditError" | "onStrokeChain" | "mapName" | "data" | "editSession" | "activeTool" | "onEditBlock" | "editBlockDisabledReason" | "onSignPick" | "onSelectEvent" | "selectedEventRef" | "onMoveEvent" | "onDropperPick" | "onHoverMetatile"
 > & EventPlacementProps;
 
 interface MapEditingWorkspaceBase {
+  blockEditorSpec?: BlockEditorSpec;
   onStrokeChain?: MapCanvasProps["onStrokeChain"];
   hoveredMetatileId?: number | null;
   onHoverMetatile?: (id: number | null) => void;
@@ -64,7 +66,8 @@ export type MapEditingWorkspaceProps = ActiveMapEditingWorkspaceProps | Inactive
  *  lifted verbatim out of `App.tsx`. State lives
  *  in `useMapEditing`; the edit session in `App`; `SaveDialog`/`PokemonIndicatorDialog`
  *  stay siblings at `<main>` level in `App` for stacking reasons. */
-export function MapEditingWorkspace({ active = true, mapName, data, editSession, editing, renderCanvas, onStrokeChain, hoveredMetatileId, onHoverMetatile }: MapEditingWorkspaceProps) {
+export function MapEditingWorkspace({ active = true, mapName, data, editSession, editing, renderCanvas, blockEditorSpec, onStrokeChain, hoveredMetatileId, onHoverMetatile }: MapEditingWorkspaceProps) {
+  const [blockEdit, setBlockEdit] = useState<{ forMap: string; target: { x: number; y: number } } | null>(null);
   const [signPick, setSignPick] = useState<{ x: number; y: number; anchor: DOMRect } | null>(null);
   const {
     activeToolKind, setActiveToolKind, collisionValue, setCollisionValue, currentStamp, setCurrentStamp,
@@ -96,7 +99,7 @@ export function MapEditingWorkspace({ active = true, mapName, data, editSession,
   const [pendingSelection, setPendingSelection] = useState<{ kind: EventKind; index: number; returnFocus?: boolean; isCurrent(): boolean } | null>(null);
   const latestSelect = useRef(onSelectEvent);
   latestSelect.current = onSelectEvent;
-  if (visit.changed) { if (creating) setCreating(false); if (editRequests) setEditRequests(0); if (pendingSelection) setPendingSelection(null); }
+  if (visit.changed) { if (blockEdit) setBlockEdit(null); if (creating) setCreating(false); if (editRequests) setEditRequests(0); if (pendingSelection) setPendingSelection(null); }
   useEffect(() => { void options.load().catch(() => { /* The dialog owns option-load errors; existing edit tools remain usable. */ }); }, [options.load, options.project, mapName]);
   useLayoutEffect(() => {
     if (pendingSelection && pendingSelection.isCurrent()) {
@@ -148,6 +151,10 @@ export function MapEditingWorkspace({ active = true, mapName, data, editSession,
           mapName,
           data,
           editSession: requestSession,
+          ...(blockEditorSpec && "blockCheck" in editSession ? {
+            onEditBlock: (cell: { x: number; y: number }) => setBlockEdit({ forMap: mapName, target: cell }),
+            editBlockDisabledReason: () => hasPendingSessionMutations(mapName) ? "Wait for the current change to finish" : null,
+          } : {}),
           activeTool,
           placing: placement.placing,
           onEventPick: placement.onEventPick,
@@ -243,6 +250,9 @@ export function MapEditingWorkspace({ active = true, mapName, data, editSession,
         Canvas={MapCanvas}
         renderCanvas={renderCanvas as ((p: MapEditingCanvasProps | null) => ReactNode) | undefined}
       />
+      {blockEdit && mapName && blockEdit.forMap === mapName && active && blockEditorSpec && "blockCheck" in editSession && <BlockEditorDialog
+        map={mapName} target={blockEdit.target} from="map" spec={blockEditorSpec} session={editSession as UseEditSessionResult & BlockEditSession}
+        onClose={() => setBlockEdit(null)} onApplied={() => {}} />}
       {placement.pick && mapName && <AddEventDialog adapter={addEventAdapter} mapName={mapName}
         kind={placement.pick.kind} x={placement.pick.x} y={placement.pick.y}
         initialFields={data ? { elevation: String((editSession.blocks[placement.pick.y * data.layout.width + placement.pick.x] ?? data.blocks[placement.pick.y * data.layout.width + placement.pick.x])?.elevation ?? 0) } : undefined}
