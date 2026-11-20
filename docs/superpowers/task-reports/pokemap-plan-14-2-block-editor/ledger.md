@@ -1385,3 +1385,104 @@ Traps seen in s7:
   first (1). Review reports archived to `_archive/`. **Task 13b closed.**
 - Handoff s15 → s16 (plan handoff point: after 13b). Next: Task 14a (context menu and dialog mount) and 14b (tool and
   palettes), per `task-14-rulings.md` N1-N10. Prompt: `.superpowers/sdd/2026-11-10-pokemap-plan-14-2-block-editor/s16-launch-prompt.md`.
+
+## Execution (conductor s16, 2026-11-19)
+
+- Start: main checkout `f013b50`, matches the s16 prompt. No vitest running; no `<s9>/vitest.lock`. s16 scratchpad:
+  `C:\Users\Serve\AppData\Local\Temp\claude\8fd0350c313cb955\e9394a18-c551-441a-8f17-40913cb15afb\scratchpad\`.
+- **Task 14a: High** (canvas-core pointer behaviour, context-menu gesture safety, dialog mount through the family
+  session). Worktree `<s16>/wt-t14a` branch `p14-2-t14a` from `f013b50`. Behaviour spec `<s16>/t14a-behaviour.md`
+  (inlined in every 14a brief).
+- **Conductor rulings for 14a (R1-R7, binding):**
+  - R1 The workspaces take `blockEditorSpec?` as a prop from the family adapter (`gba/adapter.tsx` imports
+    `MapEditingWorkspace`; importing the adapter back would be a cycle). No spec → no menu (D17).
+  - R2 Session = the family edit session (`"blockCheck" in editSession` on GBA). R3 dialog state keyed by map: a map
+    switch closes it. R4 the menu/dialog do not clear the active tool or placement.
+  - R5 The `blockEditor` capability moves to 14b (`test/shell/adapter.test.ts` pins the capability objects; 14b owns
+    `toolsFor` and that test).
+  - R6 No change to `BlockEditorDialog.tsx`, `WorldContextMenu.tsx`, core or server.
+  - R7 While placing an event, the canvas right-click prevents the browser menu but opens no map menu
+    (`useEventPlacement`'s capture-phase Escape would cancel the placement instead of closing the topmost menu).
+- Tests hop `chain.py --tier opus`, brief `<s16>/t14a-tests-brief.md`: **`RESULT parked`** (Codex usage limit, "try
+  again at 4:38 PM"; `gpt-6.2-sol` dead, others "cap: no diff"). Waiting for the reset (no Anthropic fallback);
+  relaunch `--no-free` at 16:40 as `T14a-tests2`.
+- Tests hop 2 (`--no-free`, 16:40): `gpt-6.2-sol` dead → **`gpt-6.1-sol` done `87d4be2`** (unit + both surface
+  files, 31 cases; it skipped the workspace cases). Vetted by hand: GBA origin 16, (40,24) → (1,0); zoom 3 pan
+  (-20,-11) p (100,61) → (1,0) (zoom-1 formula gives (6,3)); GBC origin 32, quadrant (88,56) → block (1,0) not event
+  step (3,1); GBC zoom 3 p (220,133) → (1,0). Red (`<s16>/t14a-red.out`): 17 fail, all right reasons (module
+  missing, `contextMenu` not prevented, no menu).
+- Tests hop 3 (workspace cases 20-24, brief `<s16>/t14a-tests2b-brief.md`): **`gpt-6.1-sol` done `de3d845`**
+  (+243: dialog for the cell in both families, map switch closes it, no spec → no menu, pending mutation through the
+  real `useEditSessionCore.post`, GBC `time=nite` on the dialog GET). Vetted: GBA (40,24) → (1,0); GBC (112,80) →
+  (2,1) (event step would be (5,3)). Red (`<s16>/t14a-red2.out`): 6 fail, `contextMenu` not prevented.
+- Worktree cleanup: removed `<s9>/{rv-t10b,rv-t11,wt-t11}`, `mut-t11b`, `wt-t11b`, `mut-e1` (junctions unlinked, no
+  `--force`). Left: `wt-t10`, `wt-t9`, `wt-t10b`, `wt-perf`, `wt-t8`, `wt-e1` (half-deleted trees; git sees every
+  tracked file deleted, so `remove` without `--force` refuses; needs the user's say or `git worktree prune` after the
+  dirs are deleted by hand).
+- Impl hop `chain.py --tier opus --no-free`, brief `<s16>/t14a-impl-brief.md`, verify typecheck + lockrun `vitest
+  run packages/ui`, `--allow` the nine src files, `--protect packages/ui/test/**`.
+- Impl hop: `gpt-6.2-sol` dead → `gpt-6.1-sol` **`RESULT failed` (verify exit 2 twice; try 2 cut by "model at
+  capacity")**, work stashed. Conductor recovered the stash (delegate §10): the src was complete; the red was in
+  the tests: `toHaveBeenCalledExactlyOnceWith` (not in vitest 2.1.9), `zoom: 3` (levels are 1/2/4, `ZOOM_LEVELS`),
+  and `placing`/`onEventPick` not on `MapCanvasProps`/`GbcMapCanvasProps` (runtime already passed them). Inline
+  fixes (tiny-edit rule): `toHaveBeenCalledTimes(1)` + `toHaveBeenCalledWith`; zoom 4 with re-derived oracles (GBA
+  p (140,85) → source (40,24) → (1,0), zoom-1 (9,5); GBC p (300,181) → (80,48) → (1,0), zoom-1 (9,5)); both canvas
+  prop interfaces extend `EventPlacementProps`. Conductor read of the src: `preventDefault` first, choose-time
+  recheck, `paintAt` reused, map-keyed dialog, family session, no raw fetch, no adapter import cycle.
+  Verify (`<s16>/t14a-green.out`): typecheck pass, **packages/ui 137 files / 2,557 pass / 0 fail**. Commit
+  **`a10f729`**.
+- Mutants (`<s16>/mut_t14a.py` on `a10f729`, detached `<s16>/mut-t14a`, baseline 94 pass): K1-K14: **12 KILLED**.
+  K11 (`from="palette"`) SURVIVED: `from` and the cell only reach the check/apply request → conductor test-only
+  commit **`7c55aba`** (OK → `blockCheck` request `from: "map"`, `cell {1,0}`). K14 (GBA menu offered when the
+  session lacks `blockCheck`) SURVIVED: **equivalent in the app** (both family sessions always implement
+  `BlockEditSession`; the guard only narrows the type, and the dialog keeps its own guard). Accepted.
+- Reviews: astra spec + quality launched; both died on the Codex usage limit ("try again at 9:40 PM"). **User chose
+  Claude Opus now** (`high-risk-reviewer`, the delegate §5 fallback) over waiting ~4.5 h.
+- K11 re-run on `7c55aba` (95 pass baseline): **KILLED**.
+- Reviews (Claude Opus `high-risk-reviewer`, reports `<s16>/task-14a-{spec,quality}-review.md`): spec **Approved**
+  (8 Minor: GBC pending and no-spec untested, K14, R4 untested, stale menu after placing, dialog survives an
+  `active` flip, no focus restore, second right-click untested); quality **Needs changes**: **I1 (real, checked at
+  `useWorldContext.ts:119` / `WorldSurface.tsx:140`)**: in-context editing renders the overlay `MapCanvas` with
+  `canvasProps` (now carrying `onEditBlock`); the capture-phase Escape exit listener only sees the WORLD menu, so
+  Escape on the map menu also requests the context exit. M1/M2 stale menu after placing (R7 tests cannot see it),
+  M3 focus to `<body>` after menu/dialog close, M4 vacuous `from` assertion, M5 DESIGN.md has no entry.
+  - **R8 (conductor):** `WorldSurface` `isBlocked` also returns true while any `.world-context-menu` is in the DOM.
+  - **R9 (conductor, replaces R7's mechanism):** `useMapContextMenu({ suppressed })`; while suppressed the handler
+    prevents the browser menu and opens nothing, and an open menu closes during render. `MapSurface` passes
+    `suppressed: !!placing`.
+  - Deferred to Task 16: focus restore after the menu/dialog closes (map canvas not focusable; 14b's K tool gives
+    a keyboard route), and the K14 test.
+- Fix round 1 (brief `<s16>/t14a-fix1-brief.md`: F1 R8 + context Escape tests both families, F2 R9 + tests, F3
+  clear the dialog when inactive, F4 GBC pending / GBC no-spec / R4 tests, F5 drop vacuous lines, F6 DESIGN.md
+  section): `chain.py --tier sonnet` (free models first; Codex limited until 21:40).
+- Fix round 1: `opencode/deepseek-v4.1-flash-free` failed (touched `.vitest-ui.json` outside `--allow`) →
+  **`openrouter/baidu/ernie-5.5-flash-preview:free` done `f68a5ca`** (+158/-11; first free-model success in 14.2).
+  Conductor read: R8/R9 as ruled, DESIGN.md "Map context menu" section, both context-Escape tests, R9 unit + GBA
+  surface tests, GBC pending/no-spec tests, R4 test, vacuous lines gone. Verify (`<s16>/t14a-fix1-green.out`):
+  typecheck pass, **packages/ui 137 files / 2,567 pass / 0 fail**.
+- Mutants round 3 (`<s16>/mut_t14a_r3.out`, 177 pass baseline): K15 (R8 removed) and K16 (render-phase close
+  removed) **KILLED**; K17 (handler's suppressed return removed) **equivalent** (K16's render-phase close retires
+  the menu in the same render); K18/K19 (inactive-dialog clear removed) **equivalent**: `useVisit(active ? mapName
+  : null)` already clears `blockEdit` on an `active` flip → conductor inline commit **`b69360d`** drops the
+  redundant lines (F3 test still passes, 61/61 in the two workspace files).
+- Quality re-review: same Opus reviewer, range `7c55aba..b69360d`.
+- Quality re-review (Opus, `task-14a-quality-rereview.md`): **Approved** (I1, M1, M2, M4, M5 resolved; M3 deferred to
+  Task 16 by ruling).
+- Merged `p14-2-t14a` → **`3f2508e`** (`--no-ff`). Worktrees `wt-t14a`, `mut-t14a` removed (junctions unlinked, no
+  `--force`); branch deleted. Review reports in `_archive/`.
+- **Live check (14a, real app, 2026-11-19, viewport 720x560, UI + hub via `preview_start`):** GBA subject,
+  `NewBarkTown`: right-click (dispatched `contextmenu` at the canvas centre) → `defaultPrevented`, menu
+  "Map actions" at the pointer with "Edit block" focused; choose → dialog "Edit metatile $2E3", panel 688x528
+  (fits), usage "Used 2 times on this map, 0 times on 0 other maps; 1 maps affected". Toggled X flip on square 0 →
+  OK → no confirm (single-map block) → **the first UI `/block/apply` through the session barrier**: dialog closed,
+  toolbar "Unsaved changes". Save dialog: `data/tilesets/secondary/new_bark_town/metatiles.bin -- tileset file
+  edited (3 maps)`, **"affects: NewBarkTown, Route27, Route29" (real `tilesetEffects` from the hub, B12/M7)**.
+  Cancel → **Discard** (never Saved): "Unsaved changes" gone. Escape on an open menu closes it. GBC subject
+  (`server-gbc`), `NewBarkTown`: menu → dialog "Edit block $01", panel 688x528, closes on Escape, nothing staged.
+  **PASS.** Subjects: GBA `590fdf303`, PerfPlus `81ededbe3`, both clean after the check.
+  - Found (pre-existing, not 14a): at 720 wide the GBC editing toolbar overflows (page `scrollWidth` 760; the fixed
+    backdrop follows it, so the dialog centres in 760). 14b adds one more tool button: check the GBC toolbar fit
+    there; else Task 16.
+- **Gate at `3f2508e`: 5,111 pass / 1 fail / 273 files; typecheck pass, UI build pass; subjects unchanged** (known
+  `engine.test` env fail, "expected 96 to be 98", listed in the s16 prompt; no load flake this run). Temp roots
+  cleared first (2). **Task 14a closed.**
