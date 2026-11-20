@@ -15,7 +15,7 @@ describe("Toolbar for GBC (additive props)", () => {
   it("renders the GBC Sign tool through the GBC tool wiring", () => {
     render(<Toolbar {...base} tools={GBC_TOOLS} availableTools={GBC_TOOLS} />);
     const group = screen.getByRole("group", { name: "Tools" });
-    expect(Array.from(group.querySelectorAll("button")).map((b) => b.textContent)).toEqual(["Pencil", "Rect", "Bucket", "Dropper", "Shift", "Sign"]);
+    expect(Array.from(group.querySelectorAll("button")).map((b) => b.textContent)).toEqual(["Pencil", "Rect", "Bucket", "Dropper", "Shift", "Sign", "Edit block"]);
     expect(screen.queryByRole("button", { name: "Collision tool" })).toBeNull();
     expect(screen.getByRole("button", { name: "Sign" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Pok\u00e9mon Indicator" })).toBeNull();
@@ -28,11 +28,29 @@ describe("Toolbar for GBC (additive props)", () => {
     expect(b.title).toBe("this map's .blk is flagged non-writable: oversize");
   });
 
-  it("GBA default (no tools prop) still has six tools plus the sign button", () => {
+  it("GBA default (no tools prop) still has six tools plus the sign and Edit block buttons (Task 14b)", () => {
     render(<Toolbar {...base} onOpenIndicator={vi.fn()} availableTools={[]} />);
-    expect(screen.getByRole("group", { name: "Tools" }).querySelectorAll("button").length).toBe(7);
+    expect(screen.getByRole("group", { name: "Tools" }).querySelectorAll("button").length).toBe(8);
     expect(screen.getByRole("button", { name: "Pok\u00e9mon Indicator" })).toBeTruthy();
     expect((screen.getByRole("button", { name: "Pencil" }) as HTMLButtonElement).title).toBe("Not yet available");
+  });
+});
+
+// Task 14b (N7): GBC gains the same Edit block tool, and keeps its no-Collision rule.
+describe("Toolbar for GBC -- Edit block tool (Task 14b)", () => {
+  it("selects Edit block with K", () => {
+    const onSelectTool = vi.fn();
+    render(<Toolbar {...base} onSelectTool={onSelectTool} tools={GBC_TOOLS} availableTools={GBC_TOOLS} />);
+    fireEvent.keyDown(window, { key: "k" });
+    expect(onSelectTool).toHaveBeenCalledWith("editBlock");
+  });
+
+  it("shows Edit block (K) and no Collision tool", () => {
+    render(<Toolbar {...base} tools={GBC_TOOLS} availableTools={GBC_TOOLS} />);
+    const edit = screen.getByRole("button", { name: "Edit block" });
+    expect(edit.getAttribute("title")).toBe("Edit block (K)");
+    expect(edit.querySelector("svg")).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "Collision tool" })).toBeNull();
   });
 });
 

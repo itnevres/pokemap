@@ -38,6 +38,7 @@ export interface MapCanvasProps extends EventPlacementProps {
     | { kind: "shift" }
     | { kind: "dropper" }
     | { kind: "sign" }
+    | { kind: "editBlock" }
     | null;
   onEditBlock?: (cell: { x: number; y: number }) => void;
   editBlockDisabledReason?: () => string | null;

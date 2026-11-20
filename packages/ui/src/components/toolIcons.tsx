@@ -18,6 +18,9 @@ export const TOOL_ICONS: Record<ToolKind, ReactElement> = {
   shift: svg(<path d="M8 1.5v13M1.5 8h13M6 3.5l2-2 2 2M6 12.5l2 2 2-2M3.5 6l-2 2 2 2M12.5 6l2 2-2 2" />),
   collision: svg([<rect key="a" x="2.5" y="2.5" width="11" height="11" />, <path key="b" d="M2.5 13.5l11-11" />]),
   sign: svg([<path key="a" d="M3 2.5h10v8H7l-3 3v-11z" />, <path key="b" d="M5.5 5.5h5M5.5 7.5h3" />]),
+  // Plan 14.2 (N7): a 2x2 block grid with a pencil stroke over its lower-right cell.
+  editBlock: svg([<rect key="a" x="2.5" y="2.5" width="4.5" height="4.5" />, <rect key="b" x="9" y="2.5" width="4.5" height="4.5" />,
+    <rect key="c" x="2.5" y="9" width="4.5" height="4.5" />, <path key="d" d="M9.5 13.5l4-4 1.5 1.5-4 4h-1.5z" />]),
 };
 
 export const ADD_EVENT_ICONS: Record<EventKind, ReactElement> = {

@@ -251,3 +251,70 @@ describe("map context menu (Task 14a)", () => {
     if (mode === "placing") expect(screen.queryByRole("menu")).toBeNull();
   });
 });
+
+// Task 14b (N7, N10): the Edit block tool maps a click to the 32px BLOCK (never the 16px event step)
+// and never paints. Geometry from `useGbcMapSurface`: origin (32,32), paintCellPx 32, eventCellPx 16.
+//   source = (p - pan) / zoom;  block = floor((source - 32) / 32);  event step = floor((source - 32) / 16)
+describe("edit block tool (Task 14b)", () => {
+  beforeEach(() => {
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(400);
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(300);
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, json: async () => [] })));
+  });
+  const view = { zoom: 1 as const, pan: { x: 0, y: 0 } };
+  function stage(container: HTMLElement) {
+    const canvas = container.querySelector("canvas.map-canvas__stage")! as HTMLCanvasElement;
+    const { width: w, height: h } = canvas;
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: w, height: h, right: w, bottom: h, x: 0, y: 0, toJSON() {} });
+    return canvas;
+  }
+  const click = (canvas: HTMLCanvasElement, x: number, y: number) => {
+    fireEvent.mouseDown(canvas, { button: 0, clientX: x, clientY: y });
+    fireEvent.mouseUp(canvas, { button: 0, clientX: x, clientY: y });
+  };
+  const posted = () => vi.mocked(fetch).mock.calls.some(([, init]) => init?.method === "POST");
+
+  it("does not pan when dragging with the Edit block tool", () => {
+    const onEditBlock = vi.fn(), onViewChange = vi.fn();
+    const host = render(<GbcMapCanvas mapName="M" data={DATA} time="day" view={view} onViewChange={onViewChange}
+      activeTool={{ kind: "editBlock" }} onEditBlock={onEditBlock} />);
+    const canvas = stage(host.container);
+    // Origin (32,32), zoom 1: floor((88-32)/32), floor((56-32)/32) = (1,0).
+    fireEvent.mouseDown(canvas, { button: 0, buttons: 1, clientX: 88, clientY: 56 });
+    fireEvent.mouseMove(canvas, { buttons: 1, clientX: 150, clientY: 120 });
+    fireEvent.mouseUp(canvas, { button: 0, clientX: 150, clientY: 120 });
+    expect(onViewChange).not.toHaveBeenCalled();
+    expect(onEditBlock).toHaveBeenCalledTimes(1);
+    expect(onEditBlock).toHaveBeenCalledWith({ x: 1, y: 0 });
+  });
+
+  it("GBC tool click in an event quadrant maps to its block", () => {
+    const onEditBlock = vi.fn(), onSelectEvent = vi.fn();
+    const host = render(<GbcMapCanvas mapName="M" data={DATA} time="day" view={view} onViewChange={vi.fn()}
+      activeTool={{ kind: "editBlock" }} onEditBlock={onEditBlock} onSelectEvent={onSelectEvent} />);
+    // Origin=(32,32), zoom=1, pan=0: source=(88,56), block=floor((source-32)/32)=(1,0).
+    // (88,56) is the centre of block (1,0)'s bottom-right 16px quadrant: (32+1*32+24, 32+0*32+24).
+    // The 16px event step would give (floor(56/16),floor(24/16))=(3,1), which is NOT the block.
+    click(stage(host.container), 88, 56);
+    expect(onEditBlock).toHaveBeenCalledTimes(1);
+    expect(onEditBlock).toHaveBeenCalledWith({ x: 1, y: 0 });
+    expect(onSelectEvent).not.toHaveBeenCalled();
+    expect(posted()).toBe(false);
+  });
+
+  it("GBC tool click at zoom 4 after a pan maps to the block paint cell", () => {
+    const onEditBlock = vi.fn(), onViewChange = vi.fn();
+    const host = render(<GbcMapCanvas mapName="M" data={DATA} time="day"
+      view={{ zoom: 4, pan: { x: -20, y: -11 } }} onViewChange={onViewChange}
+      activeTool={{ kind: "editBlock" }} onEditBlock={onEditBlock} />);
+    // p=(300,181): source=((300+20)/4,(181+11)/4)=(80,48), the centre of block (1,0):
+    // origin 32, cellPx 32 => (floor((80-32)/32),floor((48-32)/32))=(1,0).
+    // With the zoom-1 formula on the same point: source=(320,192) => (floor(288/32),floor(160/32))=(9,5),
+    // a DIFFERENT block (and outside this 3x2 map) -- so the zoom must be honoured.
+    click(stage(host.container), 300, 181);
+    expect(onEditBlock).toHaveBeenCalledTimes(1);
+    expect(onEditBlock).toHaveBeenCalledWith({ x: 1, y: 0 });
+    expect(onViewChange).not.toHaveBeenCalled();
+    expect(posted()).toBe(false);
+  });
+});

@@ -381,4 +381,70 @@ describe("GbcMapEditing block editor mount (Plan 14.2 Task 14a)", () => {
     }
     expect(hasPendingSessionMutations("M")).toBe(false);
   });
+
+  // Task 14b: the GBC workspace's same dialog is reachable from the palette (right-click) and from
+  // the Edit block tool on the canvas.
+  describe("palette and tool entry points (Plan 14.2 Task 14b)", () => {
+    it("suppresses the palette menu while a session mutation is pending", async () => {
+      mutationReply = new Promise<Response>(resolve => { finishMutation = () => resolve(new Response("{}", { status: 200 })); });
+      const { result } = renderHook(() => useEditSessionCore("/api/edit", "M", DATA.blocks));
+      let pending!: ReturnType<typeof result.current.post>;
+      act(() => { pending = result.current.post("/block/apply", {}); });
+      expect(hasPendingSessionMutations("M")).toBe(true);
+      render(workspace(sessionWithBlockEditor()));
+      try {
+        expect(fireEvent.contextMenu(screen.getByRole("button", { name: "metatile 0x3" }), { button: 2 })).toBe(false);
+        expect(document.querySelector(".block-editor")).toBeNull();
+      } finally {
+        await act(async () => { finishMutation!(); await pending; await sessionMutationBarrier("M"); });
+      }
+      expect(hasPendingSessionMutations("M")).toBe(false);
+    });
+
+    it("leaves the palette browser menu untouched without a block editor spec", () => {
+      render(<GbcMapEditing mapName="M" data={DATA} time="day" session={sessionWithBlockEditor()}
+        hoveredMetatileId={null} onHoverMetatile={() => {}} onOpenSave={() => {}} />);
+      expect(fireEvent.contextMenu(screen.getByRole("button", { name: "metatile 0x3" }), { button: 2 })).toBe(true);
+      expect(document.querySelector(".block-editor")).toBeNull();
+    });
+
+    it("a palette right-click opens the dialog for that block with from: palette", async () => {
+      const session = sessionWithBlockEditor();
+      render(workspace(session));
+      const cell = screen.getByRole("button", { name: "metatile 0x3" });
+      expect(fireEvent.contextMenu(cell, { button: 2 })).toBe(false);
+      await waitFor(() => expect(document.querySelector(".block-editor")).not.toBeNull());
+      // A `{ block }` target loads by block id (plus the GBC time), with no x/y at all.
+      const loads = blockRequests();
+      expect(loads).toHaveLength(1);
+      expect(loads[0]!.searchParams.get("block")).toBe("3");
+      expect(loads[0]!.searchParams.get("x")).toBeNull();
+      expect(loads[0]!.searchParams.get("time")).toBe("day");
+      fireEvent.click(await screen.findByRole("button", { name: "OK" }));
+      await waitFor(() => expect(session.blockCheck).toHaveBeenCalled());
+      const sent = session.blockCheck.mock.calls[0]![0] as { request: { from: string } };
+      expect(sent.request.from).toBe("palette");
+      expect(session.beginStroke).not.toHaveBeenCalled();
+    });
+
+    it("the Edit block tool opens the dialog for the clicked block cell", async () => {
+      const session = sessionWithBlockEditor();
+      const { container } = render(workspace(session));
+      fireEvent.click(screen.getByRole("button", { name: "Edit block" }));
+
+      // GBC origin (32,32), 32px blocks, zoom 1, pan 0: the bottom-right event quadrant centre of
+      // block (1,0) is (32+1*32+24, 32+0*32+24) = (88,56); block = floor((source-32)/32) = (1,0).
+      // The 16px event step would give (floor(56/16),floor(24/16)) = (3,1) -- NOT the block.
+      const canvas = stage(container);
+      fireEvent.mouseDown(canvas, { button: 0, clientX: 88, clientY: 56 });
+      fireEvent.mouseUp(canvas, { button: 0, clientX: 88, clientY: 56 });
+      await waitFor(() => expect(document.querySelector(".block-editor")).not.toBeNull());
+      const loads = blockRequests();
+      expect(loads).toHaveLength(1);
+      expect(loads[0]!.searchParams.get("x")).toBe("1");
+      expect(loads[0]!.searchParams.get("y")).toBe("0");
+      expect(session.beginStroke).not.toHaveBeenCalled();
+      expect(session.applyPaint).not.toHaveBeenCalled();
+    });
+  });
 });

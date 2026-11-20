@@ -206,3 +206,22 @@ describe("GbcMetatilePalette tileset version (Task 10b)", () => {
     expect(srcAt(2)).toBe("/api/metatile/NewBarkTown/2.png?time=day&tv=5");
   });
 });
+
+// Task 14b (N9): the GBC palette's right-click opens the editor for that block; it never selects.
+describe("GbcMetatilePalette block editor (Task 14b)", () => {
+  it("right-click opens the editor for that block", () => {
+    const onSelect = vi.fn(), onEditBlock = vi.fn();
+    render(<GbcMetatilePalette mapName="M" time="day" tilesetName="T" metatileCount={8}
+      onSelect={onSelect} onEditBlock={onEditBlock} />);
+    // fireEvent returns false only when preventDefault() ran.
+    expect(fireEvent.contextMenu(screen.getByRole("button", { name: "metatile 0x3" }), { button: 2 })).toBe(false);
+    expect(onEditBlock).toHaveBeenCalledTimes(1);
+    expect(onEditBlock).toHaveBeenCalledWith(3);
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("no onEditBlock, no handler", () => {
+    render(<GbcMetatilePalette mapName="M" time="day" tilesetName="T" metatileCount={8} onSelect={() => {}} />);
+    expect(fireEvent.contextMenu(screen.getByRole("button", { name: "metatile 0x3" }), { button: 2 })).toBe(true);
+  });
+});

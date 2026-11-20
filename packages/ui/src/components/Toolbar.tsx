@@ -3,16 +3,16 @@ import { useEffect, useRef } from "react";
 import { TOOL_ICONS } from "./toolIcons.js";
 import { shortcutBlocked } from "../shared/shortcutGuard.js";
 
-export type ToolKind = "pencil" | "rect" | "bucket" | "dropper" | "shift" | "collision" | "sign";
+export type ToolKind = "pencil" | "rect" | "bucket" | "dropper" | "shift" | "collision" | "sign" | "editBlock";
 
-const TOOLS: ToolKind[] = ["pencil", "rect", "bucket", "dropper", "shift", "collision", "sign"];
+const TOOLS: ToolKind[] = ["pencil", "rect", "bucket", "dropper", "shift", "collision", "sign", "editBlock"];
 
-export const TOOL_LABEL: Record<ToolKind, string> = { pencil: "Pencil", rect: "Rect", bucket: "Bucket", dropper: "Dropper", shift: "Shift", collision: "Collision", sign: "Sign" };
+export const TOOL_LABEL: Record<ToolKind, string> = { pencil: "Pencil", rect: "Rect", bucket: "Bucket", dropper: "Dropper", shift: "Shift", collision: "Collision", sign: "Sign", editBlock: "Edit block" };
 /** Accessible names that differ from the visible label (P11-4): the Collision tool is "Collision tool", so it never
  *  shares a name with the canvas's "Show collision overlay" toggle. Visible label and title stay `TOOL_LABEL`. */
 const TOOL_ACCESSIBLE_NAME: Partial<Record<ToolKind, string>> = { collision: "Collision tool" };
 /** Plan 9 (R1): the shortcut letter shown in each tool's tooltip; Toolbar's keydown listener reads the same table. */
-export const TOOL_KEY: Record<ToolKind, string> = { pencil: "P", rect: "R", bucket: "B", dropper: "I", shift: "S", collision: "C", sign: "G" };
+export const TOOL_KEY: Record<ToolKind, string> = { pencil: "P", rect: "R", bucket: "B", dropper: "I", shift: "S", collision: "C", sign: "G", editBlock: "K" };
 
 export interface ToolbarProps {
   activeToolKind: ToolKind | null;

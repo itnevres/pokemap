@@ -192,6 +192,14 @@ export function MapSurface<Tool extends MapTool, Body, Event, Stamp, Hover exten
         event.currentTarget.width, event.currentTarget.height, cell, geometry(g.eventCellPx)));
       return;
     }
+    // Plan 14.2 (N7, N10): the Edit block tool opens the editor for the SAME paint cell the map context
+    // menu uses (GBA 16px metatile, GBC 32px block) and nothing else -- no stroke, no event selection, no
+    // pan. Event placement above still wins.
+    if (activeTool?.kind === "editBlock") {
+      const cell = paintAt(event);
+      if (cell && !editBlockDisabledReason?.()) onEditBlock?.(cell);
+      return;
+    }
     // Event selection precedes paint only with no tool. Raw cells deliberately allow an outside deselect, and a
     // miss falls through to pan rather than consuming the gesture. Selection is harmless without a session
     // (read-only navigation); omitted callbacks leave previews unaffected.

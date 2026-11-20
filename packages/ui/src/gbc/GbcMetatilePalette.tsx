@@ -26,6 +26,9 @@ export interface GbcMetatilePaletteProps {
   selected?: number | null;
   /** Test seam for the fold's uniform-row check (Plan 9F); production uses the canvas pixel signature. */
   thumbSignature?: ThumbSignature;
+  /** Plan 14.2 (N9): right-clicking a cell opens the block editor for that block. Absent: no
+   *  `onContextMenu` handler at all, so the browser's own menu is untouched. */
+  onEditBlock?: (id: number) => void;
 }
 
 const hex = (n: number) => `0x${n.toString(16)}`;
@@ -57,7 +60,7 @@ const hex = (n: number) => `0x${n.toString(16)}`;
 const GBC_ROW = 4;
 
 // Memoised like MapTree (Plan 9 follow-up O2); GbcMapEditing passes a stable onSelect.
-export const GbcMetatilePalette = memo(function GbcMetatilePalette({ mapName, time, tilesetName, metatileCount, highlightId = null, onSelect, selected = null, thumbSignature }: GbcMetatilePaletteProps) {
+export const GbcMetatilePalette = memo(function GbcMetatilePalette({ mapName, time, tilesetName, metatileCount, highlightId = null, onSelect, selected = null, thumbSignature, onEditBlock }: GbcMetatilePaletteProps) {
   const cellRefs = useRef(new Map<number, HTMLButtonElement>());
   const [follow, setFollow] = useFollowHover();
   const [query, setQuery] = useState("");
@@ -119,6 +122,7 @@ export const GbcMetatilePalette = memo(function GbcMetatilePalette({ mapName, ti
               aria-current={picked ? "true" : undefined}
               disabled={!onSelect}
               onClick={pick}
+              onContextMenu={onEditBlock ? (event) => { event.preventDefault(); onEditBlock(id); } : undefined}
             >
               <img
                 className="gbc-metatile-palette__thumb"

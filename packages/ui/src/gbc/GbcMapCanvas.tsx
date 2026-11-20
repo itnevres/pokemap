@@ -19,7 +19,7 @@ export interface GbcEventRef {
   index: number;
 }
 
-export type GbcActiveTool = { kind: "pencil" | "rect" | "bucket" | "shift" | "dropper" | "sign"; stamp?: GbcStamp };
+export type GbcActiveTool = { kind: "pencil" | "rect" | "bucket" | "shift" | "dropper" | "sign" | "editBlock"; stamp?: GbcStamp };
 
 export interface GbcMapCanvasProps extends EventPlacementProps {
   onStrokeChain?: (chain: SettledChain, mounted: boolean) => void;

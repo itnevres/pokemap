@@ -74,7 +74,9 @@ export interface GbcMapEditingProps {
 export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId, onHoverMetatile, onOpenSave, onOpenIndicator, indicatorMessage, onDismissIndicatorMessage, onDiscarded, active = true, renderCanvas, blockEditorSpec, onStrokeChain }: GbcMapEditingProps) {
   const [toolKind, setToolKind] = useState<ToolKind | null>(null);
   const placement = useEventPlacement(mapName, toolKind, active);
-  const [blockEdit, setBlockEdit] = useState<{ forMap: string; target: { x: number; y: number } } | null>(null);
+  // Plan 14.2 (Task 14a/14b): a map cell (`from: "map"`, canvas or Edit block tool) or a palette block
+  // (`from: "palette"`, right-click). Retired on a map visit change below.
+  const [blockEdit, setBlockEdit] = useState<{ forMap: string; target: { x: number; y: number } | { block: number }; from: "map" | "palette" } | null>(null);
   const [signPick, setSignPick] = useState<{ x: number; y: number; anchor: DOMRect } | null>(null);
   // `key` is never a real map name when there is no map, so nothing reads as "mine" until one is selected.
   const key = mapName ?? "";
@@ -141,7 +143,7 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
 
   const activeTool = useMemo<GbcActiveTool | null>(() => {
     if (toolKind === null) return null;
-    if (toolKind === "shift" || toolKind === "dropper" || toolKind === "sign") return { kind: toolKind };
+    if (toolKind === "shift" || toolKind === "dropper" || toolKind === "sign" || toolKind === "editBlock") return { kind: toolKind };
     if (toolKind === "pencil" || toolKind === "rect" || toolKind === "bucket") return stamp ? { kind: toolKind, stamp } : null; // inert until a cell is picked
     return null;
   }, [toolKind, stamp]);
@@ -175,6 +177,15 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
     requestSession.discard().then(() => { ok(); onDiscarded?.(); }).catch((e: unknown) => fail(e, "Failed to discard."));
   };
 
+  // Plan 14.2 (N9): a palette right-click opens the same dialog for a block id. Stable identity so the memoised
+  // palette is not re-rendered on every workspace render.
+  const onPaletteEditBlock = useCallback(
+    (id: number) => {
+      if (mapName !== null && !hasPendingSessionMutations(mapName)) setBlockEdit({ forMap: mapName, target: { block: id }, from: "palette" });
+    },
+    [mapName],
+  );
+
   const canvasProps: GbcMapEditingCanvasProps | null =
     mapName !== null && data !== null
       ? {
@@ -185,7 +196,7 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
           hoveredMetatile: onHoverMetatile,
           editSession: requestSession,
           ...(blockEditorSpec && "blockCheck" in session ? {
-            onEditBlock: (cell: { x: number; y: number }) => setBlockEdit({ forMap: mapName, target: cell }),
+            onEditBlock: (cell: { x: number; y: number }) => setBlockEdit({ forMap: mapName, target: cell, from: "map" }),
             editBlockDisabledReason: () => hasPendingSessionMutations(mapName) ? "Wait for the current change to finish" : null,
           } : {}),
           activeTool,
@@ -235,6 +246,7 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
         highlightId={hoveredMetatileId}
         onSelect={onPalettePick}
         selected={pickedId}
+        onEditBlock={blockEditorSpec && "blockCheck" in session ? onPaletteEditBlock : undefined}
       />
       <AddEventBar ref={placement.barRef} placing={placement.placing} onToggle={placement.onToggle} disabled={editRequests > 0 || creating || hasPendingSessionMutations(mapName) ? {
         object: "An edit request is in flight", warp: "An edit request is in flight", coord: "An edit request is in flight", bg: "An edit request is in flight",
@@ -260,7 +272,7 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
   return <>
     <EditingWorkspace active={active} top={top} side={side} canvasProps={canvasProps} Canvas={GbcMapCanvas} renderCanvas={renderCanvas} />
     {blockEdit && mapName && blockEdit.forMap === mapName && active && blockEditorSpec && "blockCheck" in session && <BlockEditorDialog
-      map={mapName} target={blockEdit.target} from="map" spec={blockEditorSpec} session={session as UseGbcEditSessionResult & BlockEditSession} time={time}
+      map={mapName} target={blockEdit.target} from={blockEdit.from} spec={blockEditorSpec} session={session as UseGbcEditSessionResult & BlockEditSession} time={time}
       onClose={() => setBlockEdit(null)} onApplied={() => {}} />}
     {placement.pick && mapName && <AddEventDialog adapter={addEventAdapter} mapName={mapName}
       kind={placement.pick.kind} x={placement.pick.x} y={placement.pick.y}
