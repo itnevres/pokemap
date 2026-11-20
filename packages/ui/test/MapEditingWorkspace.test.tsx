@@ -316,6 +316,18 @@ describe("MapEditingWorkspace block editor mount (Plan 14.2 Task 14a)", () => {
     if (requests[0]!.searchParams.has("from")) expect(requests[0]!.searchParams.get("from")).toBe("map");
   });
 
+  it("the dialog's check request names the map source and the cell", async () => {
+    const session = sessionWithBlockEditor();
+    const { container } = render(<MapEditingWorkspace mapName="Foo" data={DATA} editSession={session}
+      editing={makeEditing()} blockEditorSpec={gbaAdapter.blockEditorSpec} />);
+    await openDialog(container);
+    fireEvent.click(screen.getByRole("button", { name: "OK" }));
+    await waitFor(() => expect(session.blockCheck).toHaveBeenCalled());
+    const sent = session.blockCheck.mock.calls[0]![0] as { request: { from: string; cell?: { x: number; y: number } } };
+    expect(sent.request.from).toBe("map");
+    expect(sent.request.cell).toEqual({ x: 1, y: 0 }); // (40,24) → (1,0), as openDialog derives
+  });
+
   it("a map switch closes the dialog", async () => {
     const session = sessionWithBlockEditor();
     const editing = makeEditing();
