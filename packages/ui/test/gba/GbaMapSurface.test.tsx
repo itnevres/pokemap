@@ -413,4 +413,24 @@ describe("map context menu (Task 14a)", () => {
     expect(open(stage(host.container))).toBe(false);
     expect(screen.queryByRole("menu")).toBeNull();
   });
+
+  it("while placing a right-click opens nothing and ending placement does not resurrect a menu (R9)", () => {
+    const onEditBlock = vi.fn();
+    const host = mount({ onEditBlock, placing: "object", onEventPick: vi.fn() });
+    expect(open(stage(host.container))).toBe(false);
+    expect(screen.queryByRole("menu")).toBeNull();
+    host.rerender(<MapCanvas mapName="Foo" data={DATA} view={VIEW} onEditBlock={onEditBlock} />);
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("a menu opened before placing closes when placing starts and stays closed when it ends (R9)", () => {
+    const onEditBlock = vi.fn();
+    const host = mount({ onEditBlock });
+    open(stage(host.container));
+    expect(screen.getByRole("menu")).toBeTruthy();
+    host.rerender(<MapCanvas mapName="Foo" data={DATA} view={VIEW} onEditBlock={onEditBlock} placing="object" onEventPick={vi.fn()} />);
+    expect(screen.queryByRole("menu")).toBeNull();
+    host.rerender(<MapCanvas mapName="Foo" data={DATA} view={VIEW} onEditBlock={onEditBlock} />);
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
 });

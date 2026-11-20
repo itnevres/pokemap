@@ -312,8 +312,6 @@ describe("MapEditingWorkspace block editor mount (Plan 14.2 Task 14a)", () => {
     expect(requests).toHaveLength(1);
     expect(requests[0]!.searchParams.get("x")).toBe("1");
     expect(requests[0]!.searchParams.get("y")).toBe("0");
-    // The GET identifies the map through its path; this API carries `from` in session requests only.
-    if (requests[0]!.searchParams.has("from")) expect(requests[0]!.searchParams.get("from")).toBe("map");
   });
 
   it("the dialog's check request names the map source and the cell", async () => {
@@ -337,6 +335,29 @@ describe("MapEditingWorkspace block editor mount (Plan 14.2 Task 14a)", () => {
     await openDialog(container);
     rerender(view("Bar"));
     expect(document.querySelector(".block-editor")).toBeNull();
+  });
+
+  it("an active flip does not re-mount the dialog (F3)", async () => {
+    const session = sessionWithBlockEditor();
+    const editing = makeEditing();
+    const active = <MapEditingWorkspace mapName="Foo" data={DATA} editSession={session} editing={editing}
+      blockEditorSpec={gbaAdapter.blockEditorSpec} />;
+    const inactive = <MapEditingWorkspace active={false} mapName="Foo" data={DATA} editSession={session} editing={editing}
+      blockEditorSpec={gbaAdapter.blockEditorSpec} renderCanvas={() => null} />;
+    const { container, rerender } = render(active);
+    await openDialog(container);
+    rerender(inactive);
+    expect(document.querySelector(".block-editor")).toBeNull();
+    rerender(active);
+    expect(document.querySelector(".block-editor")).toBeNull();
+  });
+
+  it("opening the menu or the dialog keeps the active tool (R4)", async () => {
+    const editing = makeEditing({ activeToolKind: "pencil" });
+    const { container } = render(<MapEditingWorkspace mapName="Foo" data={DATA} editSession={sessionWithBlockEditor()}
+      editing={editing} blockEditorSpec={gbaAdapter.blockEditorSpec} />);
+    await openDialog(container);
+    expect(editing.setActiveToolKind).not.toHaveBeenCalled();
   });
 
   it("without blockEditorSpec leaves the browser menu untouched", () => {

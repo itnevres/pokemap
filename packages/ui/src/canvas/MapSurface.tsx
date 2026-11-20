@@ -180,7 +180,7 @@ export function MapSurface<Tool extends MapTool, Body, Event, Stamp, Hover exten
   // skips overshooting targets. Event selection/releases use their own raw grid, allowing outside deselect.
   const paintAt = (event: MouseEvent<HTMLCanvasElement>) => boundedCell(point(event), geometry(g.paintCellPx), g.width, g.height);
   const contextMenu = useMapContextMenu({ cellAt: paintAt, disabledReason: editBlockDisabledReason ?? (() => null),
-    onEditBlock: cell => onEditBlock?.(cell), resetKey: mapName, viewport: stage.viewport });
+    onEditBlock: cell => onEditBlock?.(cell), resetKey: mapName, viewport: stage.viewport, suppressed: !!placing });
   const rawPaintAt = (event: MouseEvent<HTMLCanvasElement>) => rawCell(point(event), geometry(g.paintCellPx));
   const eventAt = (event: MouseEvent<HTMLCanvasElement>) => rawCell(point(event), geometry(g.eventCellPx));
   const onMouseDown = (event: MouseEvent<HTMLCanvasElement>) => {
@@ -283,9 +283,9 @@ export function MapSurface<Tool extends MapTool, Body, Event, Stamp, Hover exten
       width={stage.viewport.w || g.pixelWidth} height={stage.viewport.h || g.pixelHeight}
       onPointerDown={(event) => { if (event.button === 0) stage.onPointerDown(event); }}
       onPointerCancel={stage.onPointerCancel} onLostPointerCapture={stage.onLostPointerCapture}
-      onContextMenu={onEditBlock ? (placing ? event => event.preventDefault() : contextMenu.onContextMenu) : undefined}
+      onContextMenu={onEditBlock ? contextMenu.onContextMenu : undefined}
       onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseLeave}>
-      {onEditBlock && !placing && contextMenu.element}
+      {onEditBlock && contextMenu.element}
       {placing && <div className="map-canvas__placement-hint" role="status">Click a tile to place the event. Esc to cancel.</div>}
       <EncounterBorder enabled={encountersOn} entries={entries} zoom={zoom * encounter.unitPx} lodZoom={0}
         band={encounter.band} time={encounter.time} />

@@ -97,4 +97,18 @@ describe("useMapContextMenu (Task 14a)", () => {
       expect(screen.queryByRole("menu")).toBeNull();
     } finally { window.removeEventListener("keydown", listener); }
   });
+
+  it("while suppressed an open menu closes, stays closed, and a right-click is prevented without opening one", () => {
+    const { open, options, rerender } = mount();
+    open();
+    expect(screen.getByRole("menu")).toBeTruthy();
+    rerender(<Harness {...options} suppressed />);
+    expect(screen.queryByRole("menu")).toBeNull();
+    rerender(<Harness {...options} suppressed={false} />);
+    expect(screen.queryByRole("menu")).toBeNull();
+    rerender(<Harness {...options} suppressed />);
+    expect(open()).toBe(false);
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(options.onEditBlock).not.toHaveBeenCalled();
+  });
 });

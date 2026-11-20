@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
+import { render, renderHook, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { GbcMapEditing, type GbcMapEditingCanvasProps } from "../../src/gbc/GbcMapEditing.js";
 import type { UseGbcEditSessionResult } from "../../src/gbc/hooks/useGbcEditSession.js";
 import type { GbcMapPayload } from "@pokemap/core/src/gbc/wire.js";
 import type { GbcMapEvents } from "@pokemap/core/src/gbc/model/types.js";
 import { gbcAdapter } from "../../src/gbc/adapter.js";
-import type { BlockEditSession } from "../../src/shared/useEditSessionCore.js";
+import { hasPendingSessionMutations, sessionMutationBarrier, useEditSessionCore, type BlockEditSession } from "../../src/shared/useEditSessionCore.js";
 
 beforeEach(() => {
   Element.prototype.scrollIntoView = vi.fn();
@@ -251,6 +251,8 @@ describe("GbcMapEditing block editor mount (Plan 14.2 Task 14a)", () => {
     owner: null, limits: { nextId: 6, cap: 256 },
   };
   let fetchMock: ReturnType<typeof vi.fn<typeof fetch>>;
+  let finishMutation: (() => void) | undefined;
+  let mutationReply: Promise<Response> | undefined;
 
   beforeEach(() => {
     vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(400);
@@ -261,12 +263,20 @@ describe("GbcMapEditing block editor mount (Plan 14.2 Task 14a)", () => {
       if (url.pathname === "/api/edit/M/block" && (init?.method ?? "GET") === "GET") {
         return new Response(JSON.stringify(body), { status: 200 });
       }
+      if (url.pathname === "/api/edit/M/block/apply" && init?.method === "POST" && mutationReply) return mutationReply;
       return previousFetch(input, init);
     });
     vi.stubGlobal("fetch", fetchMock);
   });
 
-  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+  afterEach(async () => {
+    finishMutation?.();
+    await sessionMutationBarrier("M");
+    finishMutation = undefined;
+    mutationReply = undefined;
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
 
   function sessionWithBlockEditor() {
     return {
@@ -314,8 +324,6 @@ describe("GbcMapEditing block editor mount (Plan 14.2 Task 14a)", () => {
     expect(requests).toHaveLength(1);
     expect(requests[0]!.searchParams.get("x")).toBe("2");
     expect(requests[0]!.searchParams.get("y")).toBe("1");
-    // The GET identifies the map through its path; this API carries `from` in session requests only.
-    if (requests[0]!.searchParams.has("from")) expect(requests[0]!.searchParams.get("from")).toBe("map");
   });
 
   it("a map switch closes the dialog", async () => {
@@ -333,5 +341,44 @@ describe("GbcMapEditing block editor mount (Plan 14.2 Task 14a)", () => {
     expect(requests).toHaveLength(1);
     // useBlockEditor puts time on the GET that supplies preview sheet data, rather than blockPreview's body.
     expect(requests[0]!.searchParams.get("time")).toBe("nite");
+  });
+
+  function stage(container: HTMLElement) {
+    const canvas = container.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
+    expect(canvas).not.toBeNull();
+    const { width, height } = canvas;
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+      left: 0, top: 0, width, height, right: width, bottom: height, x: 0, y: 0, toJSON() {},
+    });
+    return canvas;
+  }
+
+  it("without blockEditorSpec leaves the browser menu untouched", () => {
+    const { container } = render(<GbcMapEditing mapName="M" data={DATA} time="day" session={sessionWithBlockEditor()}
+      hoveredMetatileId={null} onHoverMetatile={() => {}} onOpenSave={() => {}} />);
+    // Origin=(32,32), zoom=1, pan=0: source=(112,80) -> block (2,1), as openDialog derives.
+    expect(fireEvent.contextMenu(stage(container), { clientX: 112, clientY: 80, button: 2 })).toBe(true);
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(document.querySelector(".block-editor")).toBeNull();
+  });
+
+  it("disables Edit block while a real session mutation is pending for the current map", async () => {
+    mutationReply = new Promise<Response>(resolve => { finishMutation = () => resolve(new Response("{}", { status: 200 })); });
+    const { result } = renderHook(() => useEditSessionCore("/api/edit", "M", DATA.blocks));
+    let pending!: ReturnType<typeof result.current.post>;
+    act(() => { pending = result.current.post("/block/apply", {}); });
+    expect(hasPendingSessionMutations("M")).toBe(true);
+    const { container } = render(workspace(sessionWithBlockEditor()));
+    // The same (112,80) centre is block (2,1): floor(((p-0)/1-32)/32).
+    try {
+      expect(fireEvent.contextMenu(stage(container), { clientX: 112, clientY: 80, button: 2 })).toBe(false);
+      const item = screen.getByRole("menuitem", { name: /Edit block.*Wait for the current change to finish/ });
+      expect((item as HTMLButtonElement).disabled).toBe(true);
+      fireEvent.click(item);
+      expect(document.querySelector(".block-editor")).toBeNull();
+    } finally {
+      await act(async () => { finishMutation!(); await pending; await sessionMutationBarrier("M"); });
+    }
+    expect(hasPendingSessionMutations("M")).toBe(false);
   });
 });
