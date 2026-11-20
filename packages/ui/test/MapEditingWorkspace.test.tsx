@@ -405,10 +405,33 @@ describe("MapEditingWorkspace block editor mount (Plan 14.2 Task 14a)", () => {
     const blockLoads = () => fetchMock.mock.calls.map(([input]) => new URL(String(input), "http://localhost"))
       .filter(url => url.pathname === "/api/edit/Foo/block");
 
+    it("suppresses the palette menu while a session mutation is pending", async () => {
+      mutationReply = new Promise<Response>(resolve => { finishMutation = () => resolve(new Response("{}", { status: 200 })); });
+      const { result } = renderHook(() => useEditSessionCore("/api/edit", "Foo", DATA.blocks));
+      let pending!: ReturnType<typeof result.current.post>;
+      act(() => { pending = result.current.post("/block/apply", {}); });
+      expect(hasPendingSessionMutations("Foo")).toBe(true);
+      render(<MapEditingWorkspace mapName="Foo" data={DATA} editSession={blockSession()}
+        editing={makeEditing()} blockEditorSpec={gbaAdapter.blockEditorSpec} />);
+      try {
+        expect(fireEvent.contextMenu(screen.getByRole("button", { name: "metatile 0x1" }), { button: 2 })).toBe(false);
+        expect(document.querySelector(".block-editor")).toBeNull();
+      } finally {
+        await act(async () => { finishMutation!(); await pending; await sessionMutationBarrier("Foo"); });
+      }
+      expect(hasPendingSessionMutations("Foo")).toBe(false);
+    });
+
+    it("leaves the palette browser menu untouched without a block editor spec", () => {
+      render(<MapEditingWorkspace mapName="Foo" data={DATA} editSession={blockSession()} editing={makeEditing()} />);
+      expect(fireEvent.contextMenu(screen.getByRole("button", { name: "metatile 0x1" }), { button: 2 })).toBe(true);
+      expect(document.querySelector(".block-editor")).toBeNull();
+    });
+
     it("a palette right-click opens the dialog for that block with from: palette", async () => {
       const session = blockSession();
       const editing = makeEditing();
-      const { container } = render(<MapEditingWorkspace mapName="Foo" data={DATA} editSession={session}
+      render(<MapEditingWorkspace mapName="Foo" data={DATA} editSession={session}
         editing={editing} blockEditorSpec={gbaAdapter.blockEditorSpec} />);
       const cell = screen.getByRole("button", { name: "metatile 0x1" });
       expect(fireEvent.contextMenu(cell, { button: 2 })).toBe(false);
@@ -426,7 +449,7 @@ describe("MapEditingWorkspace block editor mount (Plan 14.2 Task 14a)", () => {
       expect(editing.setCurrentStamp).not.toHaveBeenCalled();
       expect(cell.getAttribute("aria-pressed")).toBe("false");
 
-      fireEvent.click(screen.getByRole("button", { name: "OK" }));
+      fireEvent.click(await screen.findByRole("button", { name: "OK" }));
       await waitFor(() => expect(session.blockCheck).toHaveBeenCalled());
       // `from` is only observable in the check/apply request body.
       const sent = session.blockCheck.mock.calls[0]![0] as { request: { from: string } };

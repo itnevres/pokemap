@@ -385,6 +385,29 @@ describe("GbcMapEditing block editor mount (Plan 14.2 Task 14a)", () => {
   // Task 14b: the GBC workspace's same dialog is reachable from the palette (right-click) and from
   // the Edit block tool on the canvas.
   describe("palette and tool entry points (Plan 14.2 Task 14b)", () => {
+    it("suppresses the palette menu while a session mutation is pending", async () => {
+      mutationReply = new Promise<Response>(resolve => { finishMutation = () => resolve(new Response("{}", { status: 200 })); });
+      const { result } = renderHook(() => useEditSessionCore("/api/edit", "M", DATA.blocks));
+      let pending!: ReturnType<typeof result.current.post>;
+      act(() => { pending = result.current.post("/block/apply", {}); });
+      expect(hasPendingSessionMutations("M")).toBe(true);
+      render(workspace(sessionWithBlockEditor()));
+      try {
+        expect(fireEvent.contextMenu(screen.getByRole("button", { name: "metatile 0x3" }), { button: 2 })).toBe(false);
+        expect(document.querySelector(".block-editor")).toBeNull();
+      } finally {
+        await act(async () => { finishMutation!(); await pending; await sessionMutationBarrier("M"); });
+      }
+      expect(hasPendingSessionMutations("M")).toBe(false);
+    });
+
+    it("leaves the palette browser menu untouched without a block editor spec", () => {
+      render(<GbcMapEditing mapName="M" data={DATA} time="day" session={sessionWithBlockEditor()}
+        hoveredMetatileId={null} onHoverMetatile={() => {}} onOpenSave={() => {}} />);
+      expect(fireEvent.contextMenu(screen.getByRole("button", { name: "metatile 0x3" }), { button: 2 })).toBe(true);
+      expect(document.querySelector(".block-editor")).toBeNull();
+    });
+
     it("a palette right-click opens the dialog for that block with from: palette", async () => {
       const session = sessionWithBlockEditor();
       render(workspace(session));
@@ -397,7 +420,7 @@ describe("GbcMapEditing block editor mount (Plan 14.2 Task 14a)", () => {
       expect(loads[0]!.searchParams.get("block")).toBe("3");
       expect(loads[0]!.searchParams.get("x")).toBeNull();
       expect(loads[0]!.searchParams.get("time")).toBe("day");
-      fireEvent.click(screen.getByRole("button", { name: "OK" }));
+      fireEvent.click(await screen.findByRole("button", { name: "OK" }));
       await waitFor(() => expect(session.blockCheck).toHaveBeenCalled());
       const sent = session.blockCheck.mock.calls[0]![0] as { request: { from: string } };
       expect(sent.request.from).toBe("palette");

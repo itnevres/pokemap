@@ -361,6 +361,18 @@ describe("MetatilePalette block editor (Task 14b)", () => {
     expect(onEditBlock).toHaveBeenCalledWith(9);
   });
 
+  it("a right release after a stale drag never changes the selection", () => {
+    const onSelect = vi.fn();
+    render(<MetatilePalette layoutName="Test_Layout" split={SPLIT} primaryCount={32} secondaryCount={0}
+      onSelect={onSelect} onEditBlock={vi.fn()} />);
+    // 0x1 and 0x9 are in the same folded column (rows 0 and 1).
+    fireEvent.mouseDown(screen.getByRole("button", { name: "metatile 0x1" }), { button: 0 });
+    const cell = screen.getByRole("button", { name: "metatile 0x9" });
+    fireEvent.mouseUp(cell, { button: 2 });
+    fireEvent.contextMenu(cell, { button: 2 });
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
   it("no onEditBlock, no handler", () => {
     render(<MetatilePalette layoutName="Test_Layout" split={SPLIT} primaryCount={8} secondaryCount={0} onSelect={() => {}} />);
     // No onContextMenu prop at all: the browser's own menu is untouched.

@@ -212,7 +212,8 @@ export const MetatilePalette = memo(function MetatilePalette({
                 // Plan 14.2 (N9): only the primary button starts a drag selection -- a right press belongs
                 // to the contextmenu handler below, and must leave the selection untouched.
                 onMouseDown={(event) => { if (event.button === 0) setDragStart(id); }}
-                onMouseUp={() => {
+                onMouseUp={(event) => {
+                  if (event.button !== 0) return;
                   if (dragStart !== null && dragStart !== id && sameColumn(dragStart, id)) selectRect(dragStart, id);
                   setDragStart(null);
                 }}

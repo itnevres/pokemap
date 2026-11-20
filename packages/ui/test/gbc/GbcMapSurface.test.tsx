@@ -274,6 +274,20 @@ describe("edit block tool (Task 14b)", () => {
   };
   const posted = () => vi.mocked(fetch).mock.calls.some(([, init]) => init?.method === "POST");
 
+  it("does not pan when dragging with the Edit block tool", () => {
+    const onEditBlock = vi.fn(), onViewChange = vi.fn();
+    const host = render(<GbcMapCanvas mapName="M" data={DATA} time="day" view={view} onViewChange={onViewChange}
+      activeTool={{ kind: "editBlock" }} onEditBlock={onEditBlock} />);
+    const canvas = stage(host.container);
+    // Origin (32,32), zoom 1: floor((88-32)/32), floor((56-32)/32) = (1,0).
+    fireEvent.mouseDown(canvas, { button: 0, buttons: 1, clientX: 88, clientY: 56 });
+    fireEvent.mouseMove(canvas, { buttons: 1, clientX: 150, clientY: 120 });
+    fireEvent.mouseUp(canvas, { button: 0, clientX: 150, clientY: 120 });
+    expect(onViewChange).not.toHaveBeenCalled();
+    expect(onEditBlock).toHaveBeenCalledTimes(1);
+    expect(onEditBlock).toHaveBeenCalledWith({ x: 1, y: 0 });
+  });
+
   it("GBC tool click in an event quadrant maps to its block", () => {
     const onEditBlock = vi.fn(), onSelectEvent = vi.fn();
     const host = render(<GbcMapCanvas mapName="M" data={DATA} time="day" view={view} onViewChange={vi.fn()}

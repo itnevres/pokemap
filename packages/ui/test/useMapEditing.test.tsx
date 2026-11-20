@@ -16,6 +16,12 @@ const MAP: MapData = {
 const editSession = { map: MAP } as unknown as UseEditSessionResult;
 
 describe("useMapEditing", () => {
+  it("maps the Edit block tool without a stamp (Task 14b)", () => {
+    const { result } = renderHook(() => useMapEditing({ editSession, layoutData: null, mapName: "A" }));
+    act(() => result.current.setActiveToolKind("editBlock"));
+    expect(result.current.activeTool).toEqual({ kind: "editBlock" });
+  });
+
   it("a map change clears selectedEvent and currentStamp but keeps activeToolKind and collisionValue", () => {
     const { result, rerender } = renderHook((p) => useMapEditing({ editSession, layoutData: null, mapName: p.mapName }), { initialProps: { mapName: "A" } });
     const stamp = { width: 1, height: 1, cells: [{ metatileId: 9 }] };

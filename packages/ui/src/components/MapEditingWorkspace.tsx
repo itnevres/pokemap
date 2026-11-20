@@ -226,7 +226,9 @@ export function MapEditingWorkspace({ active = true, mapName, data, editSession,
   // Plan 14.2 (N9): a palette right-click opens the same dialog for a block id. Stable identity so the memoised
   // palette is not re-rendered on every workspace render.
   const onPaletteEditBlock = useCallback(
-    (id: number) => setBlockEdit({ forMap: mapName ?? "", target: { block: id }, from: "palette" }),
+    (id: number) => {
+      if (mapName !== null && !hasPendingSessionMutations(mapName)) setBlockEdit({ forMap: mapName, target: { block: id }, from: "palette" });
+    },
     [mapName],
   );
   const side = (
