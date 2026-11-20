@@ -5,7 +5,7 @@ import type { UseGbcEditSessionResult } from "./hooks/useGbcEditSession.js";
 import type { SettledChain } from "../shared/useStrokeChain.js";
 import type { GbcTimeOfDay } from "./time.js";
 import type { MapView } from "../components/mapView.js";
-import { MapSurface } from "../canvas/MapSurface.js";
+import { MapSurface, type EventPlacementProps } from "../canvas/MapSurface.js";
 import { useGbcMapSurface } from "./mapSurface.js";
 export { GBC_COMPOSITE_ORIGIN, clientToStep, formatQuadrant, parseColorToken } from "./mapSurface.js";
 export { zoomAboutPivot } from "../components/mapView.js";
@@ -21,7 +21,7 @@ export interface GbcEventRef {
 
 export type GbcActiveTool = { kind: "pencil" | "rect" | "bucket" | "shift" | "dropper" | "sign"; stamp?: GbcStamp };
 
-export interface GbcMapCanvasProps {
+export interface GbcMapCanvasProps extends EventPlacementProps {
   onStrokeChain?: (chain: SettledChain, mounted: boolean) => void;
   mapName: string;
   data: GbcMapPayload;
@@ -30,6 +30,8 @@ export interface GbcMapCanvasProps {
    *  and the dropper. Absent: the read-only view. */
   editSession?: UseGbcEditSessionResult;
   activeTool?: GbcActiveTool | null;
+  onEditBlock?: (cell: { x: number; y: number }) => void;
+  editBlockDisabledReason?: () => string | null;
   onSignPick?: (x: number, y: number, anchor: DOMRect) => void;
   /** Dropper: fired with the clicked block's id as a 1x1 stamp. */
   onDropperPick?: (stamp: GbcStamp) => void;

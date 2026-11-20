@@ -205,14 +205,14 @@ describe("map context menu (Task 14a)", () => {
     expect(onSelectEvent).not.toHaveBeenCalled();
   });
 
-  it("zoom 3 after a pan maps to the block paint cell", () => {
+  it("zoom 4 after a pan maps to the block paint cell", () => {
     const onEditBlock = vi.fn(), onViewChange = vi.fn();
     const host = render(<GbcMapCanvas mapName="M" data={DATA} time="day"
-      view={{ zoom: 3, pan: { x: -20, y: -11 } }} onViewChange={onViewChange} onEditBlock={onEditBlock} />);
-    // p=(220,133): source=((220+20)/3,(133+11)/3)=(80,48), the centre of block (1,0).
+      view={{ zoom: 4, pan: { x: -20, y: -11 } }} onViewChange={onViewChange} onEditBlock={onEditBlock} />);
+    // p=(300,181): source=((300+20)/4,(181+11)/4)=(80,48), the centre of block (1,0).
     // Origin=32, cellPx=32 => (floor(48/32),floor(16/32))=(1,0).
-    // With zoom 1 and the same pan, source=(240,144) => (floor(208/32),floor(112/32))=(6,3), different/outside.
-    expect(fireEvent.contextMenu(stage(host.container), { clientX: 220, clientY: 133, button: 2 })).toBe(false);
+    // With zoom 1 and the same pan, source=(320,192) => (floor(288/32),floor(160/32))=(9,5), different/outside.
+    expect(fireEvent.contextMenu(stage(host.container), { clientX: 300, clientY: 181, button: 2 })).toBe(false);
     fireEvent.click(screen.getByRole("menuitem", { name: "Edit block" }));
     expect(onEditBlock).toHaveBeenCalledTimes(1);
     expect(onEditBlock).toHaveBeenCalledWith({ x: 1, y: 0 });

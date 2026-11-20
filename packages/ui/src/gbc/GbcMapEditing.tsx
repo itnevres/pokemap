@@ -10,15 +10,16 @@ import type { UseGbcEditSessionResult } from "./hooks/useGbcEditSession.js";
 import type { GbcTimeOfDay } from "./time.js";
 import { EditingWorkspace } from "../shared/EditingWorkspace.js";
 import { useVisit } from "../shared/useVisit.js";
-import { GBC_CAPABILITIES, toolsFor } from "../shell/adapter.js";
+import { GBC_CAPABILITIES, toolsFor, type BlockEditorSpec } from "../shell/adapter.js";
 import type { IndicatorBlock } from "@pokemap/core/src/indicator/gba.js";
+import { BlockEditorDialog } from "../shared/BlockEditorDialog.js";
 import { SignEditor } from "../shared/SignEditor.js";
 import { AddEventBar, useEventPlacement } from "../shared/AddEventBar.js";
 import type { EventPlacementProps } from "../canvas/MapSurface.js";
 import { AddEventDialog, registerReturnWarpSource } from "../shared/AddEventDialog.js";
 import * as addEventAdapter from "./addEventFields.js";
 import { useEventOptions } from "../shared/useEventOptions.js";
-import { hasPendingSessionMutations, type EventCreateSession } from "../shared/useEditSessionCore.js";
+import { hasPendingSessionMutations, type EventCreateSession, type BlockEditSession } from "../shared/useEditSessionCore.js";
 
 /** No collision button (Plan 7 Goal: GBC collision is per metatile, not per block) with the shared Indicator dialog. */
 export const GBC_TOOLS: ToolKind[] = toolsFor(GBC_CAPABILITIES);
@@ -30,10 +31,11 @@ const message = (e: unknown, fallback: string) => (e instanceof Error ? e.messag
  *  through `renderCanvas`, so the prop assembly lives in one place. */
 export type GbcMapEditingCanvasProps = Pick<
   GbcMapCanvasProps,
-  "onStrokeChain" | "mapName" | "data" | "time" | "hoveredMetatile" | "editSession" | "activeTool" | "onSignPick" | "onDropperPick" | "selectedEvent" | "onSelectEvent" | "onMoveEvent" | "onEditError"
+  "onStrokeChain" | "mapName" | "data" | "time" | "hoveredMetatile" | "editSession" | "activeTool" | "onEditBlock" | "editBlockDisabledReason" | "onSignPick" | "onDropperPick" | "selectedEvent" | "onSelectEvent" | "onMoveEvent" | "onEditError"
 > & EventPlacementProps;
 
 export interface GbcMapEditingProps {
+  blockEditorSpec?: BlockEditorSpec;
   onStrokeChain?: GbcMapCanvasProps["onStrokeChain"];
   /** Null only while `active` is false and no map is selected yet. */
   mapName: string | null;
@@ -69,9 +71,10 @@ export interface GbcMapEditingProps {
  * callbacks, including A -> B -> A. The chosen TOOL deliberately survives; tileset picks must not.
 
  */
-export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId, onHoverMetatile, onOpenSave, onOpenIndicator, indicatorMessage, onDismissIndicatorMessage, onDiscarded, active = true, renderCanvas, onStrokeChain }: GbcMapEditingProps) {
+export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId, onHoverMetatile, onOpenSave, onOpenIndicator, indicatorMessage, onDismissIndicatorMessage, onDiscarded, active = true, renderCanvas, blockEditorSpec, onStrokeChain }: GbcMapEditingProps) {
   const [toolKind, setToolKind] = useState<ToolKind | null>(null);
   const placement = useEventPlacement(mapName, toolKind, active);
+  const [blockEdit, setBlockEdit] = useState<{ forMap: string; target: { x: number; y: number } } | null>(null);
   const [signPick, setSignPick] = useState<{ x: number; y: number; anchor: DOMRect } | null>(null);
   // `key` is never a real map name when there is no map, so nothing reads as "mine" until one is selected.
   const key = mapName ?? "";
@@ -111,6 +114,7 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
   }, [mapName, session.events, data, active, options.project, session.isDirty]);
   // Adjust this component's state during render: React retries it before rendering children, so no old pick is exposed.
   if (visit.changed) {
+    if (blockEdit) setBlockEdit(null);
     if (creating) setCreating(false); if (editRequests) setEditRequests(0);
     if (returnFocus) setReturnFocus(null);
     setPick({ forMap: key, stamp: null, event: null });
@@ -180,6 +184,10 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
           time,
           hoveredMetatile: onHoverMetatile,
           editSession: requestSession,
+          ...(blockEditorSpec && "blockCheck" in session ? {
+            onEditBlock: (cell: { x: number; y: number }) => setBlockEdit({ forMap: mapName, target: cell }),
+            editBlockDisabledReason: () => hasPendingSessionMutations(mapName) ? "Wait for the current change to finish" : null,
+          } : {}),
           activeTool,
           placing: placement.placing,
           onEventPick: placement.onEventPick,
@@ -251,6 +259,9 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
   ) : <AddEventBar ref={placement.barRef} placing={null} onToggle={placement.onToggle} disabled={{ object: "No editable map", warp: "No editable map", coord: "No editable map", bg: "No editable map" }} />;
   return <>
     <EditingWorkspace active={active} top={top} side={side} canvasProps={canvasProps} Canvas={GbcMapCanvas} renderCanvas={renderCanvas} />
+    {blockEdit && mapName && blockEdit.forMap === mapName && active && blockEditorSpec && "blockCheck" in session && <BlockEditorDialog
+      map={mapName} target={blockEdit.target} from="map" spec={blockEditorSpec} session={session as UseGbcEditSessionResult & BlockEditSession} time={time}
+      onClose={() => setBlockEdit(null)} onApplied={() => {}} />}
     {placement.pick && mapName && <AddEventDialog adapter={addEventAdapter} mapName={mapName}
       kind={placement.pick.kind} x={placement.pick.x} y={placement.pick.y}
       createEvent={form => trackEdit(() => (session as UseGbcEditSessionResult & EventCreateSession).createEvent(form))}

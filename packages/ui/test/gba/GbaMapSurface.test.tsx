@@ -337,18 +337,20 @@ describe("map context menu (Task 14a)", () => {
     expect(open(stage(host.container))).toBe(false);
     expect(screen.getByRole("menu")).toBeTruthy();
     fireEvent.click(screen.getByRole("menuitem", { name: "Edit block" }));
-    expect(onEditBlock).toHaveBeenCalledExactlyOnceWith({ x: 1, y: 0 });
+    expect(onEditBlock).toHaveBeenCalledTimes(1);
+    expect(onEditBlock).toHaveBeenCalledWith({ x: 1, y: 0 });
   });
 
-  it("zoom 3 after a pan maps to the paint cell", () => {
+  it("zoom 4 after a pan maps to the paint cell", () => {
     const onEditBlock = vi.fn(), onViewChange = vi.fn();
-    const host = mount({ onEditBlock, view: { zoom: 3, pan: { x: -20, y: -11 } }, onViewChange });
-    // p=(100,61): source=((100+20)/3,(61+11)/3)=(40,24).
+    const host = mount({ onEditBlock, view: { zoom: 4, pan: { x: -20, y: -11 } }, onViewChange });
+    // p=(140,85): source=((140+20)/4,(85+11)/4)=(40,24).
     // Origin=(16,16), cellPx=16 => cell=(1,0), centre. At zoom 1 with the same pan,
-    // source=(120,72) => cell=(floor(104/16),floor(56/16))=(6,3), a different/outside cell.
-    expect(fireEvent.contextMenu(stage(host.container), { clientX: 100, clientY: 61, button: 2 })).toBe(false);
+    // source=(160,96) => cell=(floor(144/16),floor(80/16))=(9,5), a different/outside cell.
+    expect(fireEvent.contextMenu(stage(host.container), { clientX: 140, clientY: 85, button: 2 })).toBe(false);
     fireEvent.click(screen.getByRole("menuitem", { name: "Edit block" }));
-    expect(onEditBlock).toHaveBeenCalledExactlyOnceWith({ x: 1, y: 0 });
+    expect(onEditBlock).toHaveBeenCalledTimes(1);
+    expect(onEditBlock).toHaveBeenCalledWith({ x: 1, y: 0 });
     expect(onViewChange).not.toHaveBeenCalled();
   });
 

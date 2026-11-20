@@ -120,7 +120,7 @@ export function useGbcRuntime({ selected, mode, requestPrompt }: RuntimeArgs): F
           map.error ? <p className="app__event-op-error" role="alert">Could not load {s.contextMap}: {map.error}</p>
             : <p className="app__canvas-placeholder" role="status">Loading {s.contextMap}…</p>
         )}
-        <GbcMapEditing onStrokeChain={s.onStrokeChain} active={contextActive} mapName={selected} data={ready} {...editingProps} renderCanvas={world} />
+        <GbcMapEditing blockEditorSpec={blockEditorSpec} onStrokeChain={s.onStrokeChain} active={contextActive} mapName={selected} data={ready} {...editingProps} renderCanvas={world} />
       </div>
     );
   };
@@ -140,7 +140,7 @@ export function useGbcRuntime({ selected, mode, requestPrompt }: RuntimeArgs): F
       selected && ready ? (
         <div className="app__map-editing">
           {defectsBanner}
-          <GbcMapEditing onStrokeChain={s.onStrokeChain} mapName={selected} data={ready} {...editingProps} />
+          <GbcMapEditing blockEditorSpec={blockEditorSpec} onStrokeChain={s.onStrokeChain} mapName={selected} data={ready} {...editingProps} />
         </div>
       ) : null,
     renderWorld,

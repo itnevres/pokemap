@@ -38,7 +38,8 @@ describe("useMapContextMenu (Task 14a)", () => {
     const { open, options } = mount();
     open();
     fireEvent.click(screen.getByRole("menuitem", { name: "Edit block" }));
-    expect(options.onEditBlock).toHaveBeenCalledExactlyOnceWith({ x: 2, y: 1 });
+    expect(options.onEditBlock).toHaveBeenCalledTimes(1);
+    expect(options.onEditBlock).toHaveBeenCalledWith({ x: 2, y: 1 });
     expect(screen.queryByRole("menu")).toBeNull();
   });
 
@@ -91,7 +92,8 @@ describe("useMapContextMenu (Task 14a)", () => {
     window.addEventListener("keydown", listener);
     try {
       fireEvent.keyDown(window, { key: "Escape" });
-      expect(prevented).toHaveBeenCalledExactlyOnceWith(true);
+      expect(prevented).toHaveBeenCalledTimes(1);
+    expect(prevented).toHaveBeenCalledWith(true);
       expect(screen.queryByRole("menu")).toBeNull();
     } finally { window.removeEventListener("keydown", listener); }
   });
