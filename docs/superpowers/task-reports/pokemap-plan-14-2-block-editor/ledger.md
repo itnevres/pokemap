@@ -1581,3 +1581,25 @@ Traps seen in s7:
   `engine.test` env fail, "expected 96 to be 98"; no load flake this run). Temp roots cleared first (5). Review
   reports moved to `_archive/`. **Task 14b closed.** Deferred to Task 16 from 14b: tool enabled when unwired (spec
   M6 / quality M4), GBC toolbar overflow now 803 px at 720 wide.
+
+## Execution (Task 15 live acceptance, sessions t15a / t15b / t15c, 2026-11-19 to 2026-11-20)
+
+- Tier High (live acceptance; a wrong answer is not caught by any test). Run in the main checkout on scratch clones of
+  both subjects, no product code touched, no vitest during the live runs. Report: `task-15-live.md` (harness, three
+  session sections, results per spec Acceptance row and family, findings F1-F5, not run). Drivers and evidence:
+  `task-15-shots/` (`t15-live.mjs`, `t15-group.mjs`, `t15-menu.mjs`, `usage-scan.mjs`, `pngdiff.mjs`, `ownprobe.mjs`,
+  trimmed `out/*.json`). Delegate skip (all three sessions): live browser driving and judging rows needs this
+  conversation's harness state; bulk reads were small.
+- t15c rows: Ctrl / Ctrl+Shift placement and 3c edges / sheet end / GBC `$5F`/`$80` gap (both pass); GBA stale +
+  failed save (pass); GBA ownership with partial undo, release and redo refusal (pass; refusal wording F3); cap and
+  shared-grid Save-as-new refusals both families (pass; refusal shows on press); GBC Local refusals reserved and
+  Cave/DarkCave (pass), Cave/DarkCave alias data (pass), All + Local in one OK with Save and byte checks (pass), block-0
+  notice (pass), appended-id paint refusal + Discard (pass); 3e menu (pass except the pending-undo barrier: **F5**).
+- Not run: GBC Local "no free slot" (needs a full sheet); GBC `make` (no `rgbasm`). GBA `make modern` on a copy of the
+  clone in WSL (devkitARM r65): exit 0.
+- Findings for Task 16 / the user: F1 fresh page hides hub-staged edits; F2 duplicate React key 162 (GBA Behavior); F3
+  ownership refusal omits the requesting map; F4 GBC groups place run-time reserved tiles (spec silent); **F5 map
+  context menu "Edit block" enabled during a pending undo (only `/event/create` and `/block/apply` count as pending).**
+- Real subjects unchanged after all runs (GBA `590fdf303` / 0 / `f31f440ec431`; PerfPlus `81ededbe3` / 0 /
+  `9fdc463ffc33`).
+- **Gate at `d0e31ff` (+ uncommitted Task 15 docs/harness only): 5,138 pass / 2 fail / 273 files; typecheck pass, UI build pass; subjects unchanged.** Fails: `packages/core/test/config/engine.test.ts` "parses the subject repo's real porymap.project.cfg" (known env fail, RESUME); `packages/ui/test/WorldCanvasContext.test.tsx` "snap uses the canvas box … shifted box" (load flake: RESUME lists a `WorldCanvasContext` load flake, a different test in the same file; rerun alone 38/38 pass). **Task 15 closed.**
