@@ -459,6 +459,23 @@ reserves one band on that side.
 - Choosing it opens the block editor dialog for that cell (`from: "map"`).
 - Known gap: focus falls to the page after the menu or the dialog closes (the map canvas is not focusable); Task 16.
 
+## Edit block tool and palette (Plan 14.2 Task 14b)
+
+- A new toolbar tool, **"Edit block"** (key **K**), appended LAST in the toolbar order after Sign, in both
+  families. It carries the usual inline-SVG tool icon and the `Label (Key)` tooltip. Its availability is gated by
+  the `blockEditor` capability (`shell/adapter.ts`): `toolsFor` drops it when a family reports `blockEditor: false`,
+  exactly as it drops Collision and Sign.
+- The canvas tool shape is `{ kind: "editBlock" }`. A tool click maps to the SAME paint cell the map context menu
+  uses (GBA 16 px metatile, GBC 32 px block -- never GBC's 16 px event step) and opens the block editor for it
+  (`from: "map"`); it begins no stroke, paints nothing, posts nothing, selects and drags no event, and never pans.
+- Nothing opens while a session mutation is pending ("Wait for the current change to finish") or outside the map
+  interior; event placement still wins over the tool, so while placing an event a click picks the event cell.
+- Right-clicking a palette cell opens the same dialog for that block (`from: "palette"`) and never changes the
+  palette selection (the GBA drag-select starts on the primary button only). With no `onEditBlock` wired, the
+  palette cells carry no `onContextMenu` handler and the browser's own menu is untouched.
+- The `from` value is only sent in the dialog's check/apply request body; a `{ block }` target loads by `block=<id>`
+  instead of `x`/`y`.
+
 ## In-context editing (GBA, Plan 6c E4)
 
 - Double-clicking a map body on the GBA World view (or the context menu's "Edit here")

@@ -42,6 +42,9 @@ export interface MetatilePaletteProps {
   columns?: number;
   /** Test seam for the fold's uniform-row check (Plan 9F); production uses the canvas pixel signature. */
   thumbSignature?: ThumbSignature;
+  /** Plan 14.2 (N9): right-clicking a cell opens the block editor for that metatile. Absent: no
+   *  `onContextMenu` handler at all, so the browser's own menu is untouched. */
+  onEditBlock?: (id: number) => void;
 }
 
 const hex = (n: number) => `0x${n.toString(16).toUpperCase()}`;
@@ -57,7 +60,7 @@ const hex = (n: number) => `0x${n.toString(16).toUpperCase()}`;
  */
 // Memoised like MapTree (Plan 9 follow-up O2): up to 1,024 cells, and every prop is stable across edit-session replies.
 export const MetatilePalette = memo(function MetatilePalette({
-  layoutName, split, primaryCount, secondaryCount, onSelect, selected, highlightId = null, visibleCount, columns = 8, thumbSignature,
+  layoutName, split, primaryCount, secondaryCount, onSelect, selected, highlightId = null, visibleCount, columns = 8, thumbSignature, onEditBlock,
 }: MetatilePaletteProps) {
   const [query, setQuery] = useState("");
   const [dragStart, setDragStart] = useState<number | null>(null);
@@ -206,12 +209,15 @@ export const MetatilePalette = memo(function MetatilePalette({
                 // cross-cell drag reaches `onMouseUp` only, and a keyboard
                 // press reaches `onClick` only, having triggered no mouse
                 // events at all.
-                onMouseDown={() => setDragStart(id)}
+                // Plan 14.2 (N9): only the primary button starts a drag selection -- a right press belongs
+                // to the contextmenu handler below, and must leave the selection untouched.
+                onMouseDown={(event) => { if (event.button === 0) setDragStart(id); }}
                 onMouseUp={() => {
                   if (dragStart !== null && dragStart !== id && sameColumn(dragStart, id)) selectRect(dragStart, id);
                   setDragStart(null);
                 }}
                 onClick={() => selectSingle(id)}
+                onContextMenu={onEditBlock ? (event) => { event.preventDefault(); onEditBlock(id); } : undefined}
               >
                 {/* draggable={false}: confirmed live -- an <img> is natively
                     draggable by default, so a real mouse-drag starting on

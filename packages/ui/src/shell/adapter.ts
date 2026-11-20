@@ -16,21 +16,22 @@ export interface Capabilities {
   addEvent: boolean;            // descriptive (the inspector is per family); read from Plan 10
   pokemonIndicator: boolean;             // read: toolbar "Pok\u00e9mon Indicator"
   signTool: boolean;            // read: toolbar Sign tool
+  blockEditor: boolean;         // read: toolbar Edit block tool (toolsFor)
   timeOfDay: boolean;           // read: header slot
 }
 
 export const GBA_CAPABILITIES: Capabilities = {
-  collisionTool: true, elevationOverlay: true, addEvent: true, pokemonIndicator: true, signTool: true, timeOfDay: false,
+  collisionTool: true, elevationOverlay: true, addEvent: true, pokemonIndicator: true, signTool: true, blockEditor: true, timeOfDay: false,
 };
 
 export const GBC_CAPABILITIES: Capabilities = {
-  collisionTool: false, elevationOverlay: false, addEvent: false, pokemonIndicator: true, signTool: true, timeOfDay: true,
+  collisionTool: false, elevationOverlay: false, addEvent: false, pokemonIndicator: true, signTool: true, blockEditor: true, timeOfDay: true,
 };
 
-export const ALL_TOOLS: ToolKind[] = ["pencil", "rect", "bucket", "dropper", "shift", "collision", "sign"];
+export const ALL_TOOLS: ToolKind[] = ["pencil", "rect", "bucket", "dropper", "shift", "collision", "sign", "editBlock"];
 
 /** The toolbar's tool list for a family, in toolbar order. */
-export const toolsFor = (caps: Capabilities): ToolKind[] => ALL_TOOLS.filter((k) => (k !== "collision" || caps.collisionTool) && (k !== "sign" || caps.signTool));
+export const toolsFor = (caps: Capabilities): ToolKind[] => ALL_TOOLS.filter((k) => (k !== "collision" || caps.collisionTool) && (k !== "sign" || caps.signTool) && (k !== "editBlock" || caps.blockEditor));
 
 /** The runtime hook's only inputs. Everything else reaches the render slots as ShellSlots. */
 export interface RuntimeArgs {

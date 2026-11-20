@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { MapCanvas, type MapCanvasProps } from "./MapCanvas.js";
 import { Toolbar } from "./Toolbar.js";
 import { CollisionPalette } from "./CollisionPalette.js";
@@ -67,7 +67,9 @@ export type MapEditingWorkspaceProps = ActiveMapEditingWorkspaceProps | Inactive
  *  in `useMapEditing`; the edit session in `App`; `SaveDialog`/`PokemonIndicatorDialog`
  *  stay siblings at `<main>` level in `App` for stacking reasons. */
 export function MapEditingWorkspace({ active = true, mapName, data, editSession, editing, renderCanvas, blockEditorSpec, onStrokeChain, hoveredMetatileId, onHoverMetatile }: MapEditingWorkspaceProps) {
-  const [blockEdit, setBlockEdit] = useState<{ forMap: string; target: { x: number; y: number } } | null>(null);
+  // Plan 14.2 (Task 14a/14b): the block editor's own state -- a map cell (`from: "map"`, canvas or Edit
+  // block tool) or a palette block (`from: "palette"`, right-click). Retired on a map visit change below.
+  const [blockEdit, setBlockEdit] = useState<{ forMap: string; target: { x: number; y: number } | { block: number }; from: "map" | "palette" } | null>(null);
   const [signPick, setSignPick] = useState<{ x: number; y: number; anchor: DOMRect } | null>(null);
   const {
     activeToolKind, setActiveToolKind, collisionValue, setCollisionValue, currentStamp, setCurrentStamp,
@@ -152,7 +154,7 @@ export function MapEditingWorkspace({ active = true, mapName, data, editSession,
           data,
           editSession: requestSession,
           ...(blockEditorSpec && "blockCheck" in editSession ? {
-            onEditBlock: (cell: { x: number; y: number }) => setBlockEdit({ forMap: mapName, target: cell }),
+            onEditBlock: (cell: { x: number; y: number }) => setBlockEdit({ forMap: mapName, target: cell, from: "map" }),
             editBlockDisabledReason: () => hasPendingSessionMutations(mapName) ? "Wait for the current change to finish" : null,
           } : {}),
           activeTool,
@@ -221,6 +223,12 @@ export function MapEditingWorkspace({ active = true, mapName, data, editSession,
   /* Plan 9 (D4): one right-hand rail, as GBC has had since Plan 7 -- the collision palette while the Collision tool
      is active, the metatile palette always (a pick with another tool active only sets the stamp, as a dropper pick
      does), then the Add buttons and EventInspector. */
+  // Plan 14.2 (N9): a palette right-click opens the same dialog for a block id. Stable identity so the memoised
+  // palette is not re-rendered on every workspace render.
+  const onPaletteEditBlock = useCallback(
+    (id: number) => setBlockEdit({ forMap: mapName ?? "", target: { block: id }, from: "palette" }),
+    [mapName],
+  );
   const side = (
     <>
       {activeToolKind === "collision" && <CollisionPalette selected={collisionValue} onSelect={setCollisionValue} />}
@@ -233,6 +241,7 @@ export function MapEditingWorkspace({ active = true, mapName, data, editSession,
           onSelect={setCurrentStamp}
           selected={currentStamp}
           highlightId={hoveredMetatileId ?? null}
+          onEditBlock={blockEditorSpec && mapName !== null && "blockCheck" in editSession ? onPaletteEditBlock : undefined}
         />
       )}
       <AddEventBar ref={placement.barRef} placing={placement.placing} onToggle={placement.onToggle}
@@ -251,7 +260,7 @@ export function MapEditingWorkspace({ active = true, mapName, data, editSession,
         renderCanvas={renderCanvas as ((p: MapEditingCanvasProps | null) => ReactNode) | undefined}
       />
       {blockEdit && mapName && blockEdit.forMap === mapName && active && blockEditorSpec && "blockCheck" in editSession && <BlockEditorDialog
-        map={mapName} target={blockEdit.target} from="map" spec={blockEditorSpec} session={editSession as UseEditSessionResult & BlockEditSession}
+        map={mapName} target={blockEdit.target} from={blockEdit.from} spec={blockEditorSpec} session={editSession as UseEditSessionResult & BlockEditSession}
         onClose={() => setBlockEdit(null)} onApplied={() => {}} />}
       {placement.pick && mapName && <AddEventDialog adapter={addEventAdapter} mapName={mapName}
         kind={placement.pick.kind} x={placement.pick.x} y={placement.pick.y}

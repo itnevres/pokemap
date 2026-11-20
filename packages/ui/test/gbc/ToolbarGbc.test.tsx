@@ -15,7 +15,7 @@ describe("Toolbar for GBC (additive props)", () => {
   it("renders the GBC Sign tool through the GBC tool wiring", () => {
     render(<Toolbar {...base} tools={GBC_TOOLS} availableTools={GBC_TOOLS} />);
     const group = screen.getByRole("group", { name: "Tools" });
-    expect(Array.from(group.querySelectorAll("button")).map((b) => b.textContent)).toEqual(["Pencil", "Rect", "Bucket", "Dropper", "Shift", "Sign"]);
+    expect(Array.from(group.querySelectorAll("button")).map((b) => b.textContent)).toEqual(["Pencil", "Rect", "Bucket", "Dropper", "Shift", "Sign", "Edit block"]);
     expect(screen.queryByRole("button", { name: "Collision tool" })).toBeNull();
     expect(screen.getByRole("button", { name: "Sign" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Pok\u00e9mon Indicator" })).toBeNull();
@@ -28,9 +28,9 @@ describe("Toolbar for GBC (additive props)", () => {
     expect(b.title).toBe("this map's .blk is flagged non-writable: oversize");
   });
 
-  it("GBA default (no tools prop) still has six tools plus the sign button", () => {
+  it("GBA default (no tools prop) still has six tools plus the sign and Edit block buttons (Task 14b)", () => {
     render(<Toolbar {...base} onOpenIndicator={vi.fn()} availableTools={[]} />);
-    expect(screen.getByRole("group", { name: "Tools" }).querySelectorAll("button").length).toBe(7);
+    expect(screen.getByRole("group", { name: "Tools" }).querySelectorAll("button").length).toBe(8);
     expect(screen.getByRole("button", { name: "Pok\u00e9mon Indicator" })).toBeTruthy();
     expect((screen.getByRole("button", { name: "Pencil" }) as HTMLButtonElement).title).toBe("Not yet available");
   });
