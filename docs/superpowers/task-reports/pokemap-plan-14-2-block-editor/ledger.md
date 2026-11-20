@@ -1486,3 +1486,98 @@ Traps seen in s7:
 - **Gate at `3f2508e`: 5,111 pass / 1 fail / 273 files; typecheck pass, UI build pass; subjects unchanged** (known
   `engine.test` env fail, "expected 96 to be 98", listed in the s16 prompt; no load flake this run). Temp roots
   cleared first (2). **Task 14a closed.**
+
+## Execution (conductor s17, 2026-11-19)
+
+- Start: main checkout `824680f`, matches the s17 prompt. No vitest running; no `<s9>/vitest.lock`. s17 scratchpad:
+  `C:\Users\Serve\AppData\Local\Temp\claude\8fd0350c313cb955\93b1312e-80d6-4e40-9d3f-1c991bc53aff\scratchpad\`.
+  `chain_state.json`: Codex pool cooling down to 2026-11-20 03:47 (chain's 12 h rest after the 21:40 limit).
+- **Task 14b: High** (tool path through the canvas core, palette right-click gesture safety, capability filter).
+  Not split: tests brief 15k characters. Worktree `<s17>/wt-t14b` branch `p14-2-t14b` from `824680f`. Behaviour
+  spec `<s17>/t14b-behaviour.md` (inlined in every brief).
+- **Conductor rulings for 14b (S1-S4, binding):**
+  - S1 The tool click runs after the `placing || sign` branch (event placement wins), maps with `paintAt` (paint
+    cell; GBC block, never the event step), opens nothing outside the interior or while `editBlockDisabledReason()`
+    is non-null (N6 applied to the tool), and returns in every case (no stroke, select, drag or pan).
+  - S2 Tool order: `"editBlock"` last in `ALL_TOOLS` and the toolbar, after `"sign"`.
+  - S3 Palette prop `onEditBlock?: (id) => void` on both palettes, passed under the same condition as the canvas
+    `onEditBlock`; absent → no `onContextMenu` handler. Palette right-click is not gated on a pending mutation (the
+    dialog's load is a GET; apply passes the session barrier).
+  - S4 Dialog state widens to `{ forMap, target: {x,y} | {block}, from }`; the dialog renders `from={blockEdit.from}`.
+- Tier routing: tests hop `chain.py --tier sonnet` (tests from a described behaviour; Codex cooling down anyway).
+- Tests hop (`chain.py --tier sonnet`, brief `<s17>/t14b-tests-brief.md`): `opencode/deepseek-v4.1-flash-free` failed
+  (cap: no diff) → **`openrouter/baidu/ernie-5.5-flash-preview:free` done `2183216`** (+340/-4, 9 test files, pins
+  updated). Vetted by hand: MapSurface harness origin 16 / paint 32 / event 16, (64,64) → (1,1), placing (64,64) →
+  event step (3,3); GBC (88,56) → block (1,0) (event step (3,1)); GBC zoom 4 pan (-20,-11) p (300,181) → (80,48) →
+  (1,0), zoom-1 (9,5); GBA workspace origin 16 / 16 px, (40,40) → (1,1). Red (`<s17>/t14b-red.out`): **19 fail, all
+  right reasons** (missing kind, prop, capability; GBA right press selects a rectangle; unknown tool reaches
+  `beginStroke`).
+- Impl hop (`chain.py --tier sonnet`, brief `<s17>/t14b-impl-brief.md`, verify typecheck + lockrun `vitest run
+  packages/ui`, `--protect packages/ui/test/**`): **`RESULT parked`**: ernie (verify exit 1 ×2) → inkling dead →
+  nemotron-3-ultra (verify exit 1 ×2) → ling (infra) → `gpt-6.1-terra` / `gpt-5.6-terra` cap. Conductor recovered
+  ernie's stash (delegate §10): src complete and as specified (typecheck pass); the only red was two stale pins in
+  `test/gbc/ToolbarGbc.test.tsx` (tool labels list, button count 7) that the tests brief did not name (conductor
+  gap). Inline fix (tiny-edit rule): pins gain "Edit block" / 8. Verify (`<s17>/t14b-green.out` + rerun):
+  typecheck pass, **packages/ui 137 files / 2,587 pass / 0 fail**. Commit **`f035574`**.
+- Mutants J1-J16 (`<s17>/mut_t14b.py` on `f035574`, detached `<s17>/mut-t14b`): running.
+- Mutants: first run "baseline red" once (transient; the 11-file baseline then passed 209/209 run directly);
+  rerun in progress.
+- Reviews: Codex at its limit; **user chose Claude Opus now** (`high-risk-reviewer`, model opus) for 14b. Reports
+  `task-14b-{spec,quality}-review.md`. Both **Needs changes**, same Important **I1**: nothing pins the GBA mapping
+  `useMapEditing.ts` `"editBlock"` → `{ kind: "editBlock" }` (the workspace test mocks `editing.activeTool`).
+  Minors: spec M1 no-spec palette untested, M2 S3 unpinned, M3 GBC K untested, M5 stale `dragStart` + right release
+  selects (real, pre-existing state reached by the new path), M6 tool selectable when unwired; quality M1 DESIGN.md
+  toolbar/R1 lists stale, M2 palette not gated on pending (inconsistent with N6), M3 GBC "never pans" vacuous, M4 =
+  spec M6, M5 unused destructure.
+  - **S5 (conductor, replaces S3's "not gated"):** the palette right-click opens nothing while
+    `hasPendingSessionMutations(map)` (still prevents the browser menu), matching the map entry points.
+  - Deferred to Task 16: spec M6 / quality M4 (tool enabled when the adapter passes no spec or the session lacks
+    `blockCheck`; unreachable today, both adapters pass a spec and both sessions implement `BlockEditSession`).
+- Fix round 1 (brief `<s17>/t14b-fix1-brief.md`: F1 I1 test, F2 S5 + tests, F3 no-spec palette tests, F4 GBC K,
+  F5 `onMouseUp` primary-button guard + test, F6 DESIGN.md lists, F7 GBC drag never pans, F8 cosmetic):
+  `chain.py --tier sonnet` (Codex cooling down).
+- Mutants J1-J16 (`<s17>/mut_t14b.out`, baseline 209 pass, 11 files): **14 KILLED** (J1 tool reaches paint path,
+  J2 right press drags, J3 capability filter, J4 event step, J5 pending ignored, J6 tool before placement, J7/J8
+  palette `from` map, J9 dialog literal `from`, J10/J11 no `preventDefault`, J12 target swapped, J14 GBC mapping,
+  J15 key). **J13 (`useMapEditing` drops editBlock) SURVIVED** = review I1 → F1. **J16 (GBC palette wired without
+  spec) SURVIVED** → F3.
+- Fix round 1, hop trail: ernie try 1 verify timeout (waited on the mutant run's lock), try 2 verify exit 1 →
+  nemotron try 1 verify exit 1. User: "codex has no limit currently" → conductor stopped the chain (nemotron try 2
+  stashed), cleared the stale `codex` cooldown in `chain_state.json`, relaunched `--no-free --verify-timeout 1800`:
+  **`gpt-6.1-terra` wrote F1-F8** but its sandbox could not run vitest (EPERM on `node_modules/.vite`), so the chain
+  classed it `infra`; conductor stopped the chain and recovered the stash. Src exactly as briefed; typecheck pass.
+  Full suite: 1 fail, the 14b GBC palette dialog case ("Unable to find ... OK"), passing alone 2/2: the test clicked
+  OK right after the panel appeared, racing the dialog load under full-suite load. Inline (tiny-edit rule): both 14b
+  palette dialog cases `await screen.findByRole("button", { name: "OK" })`. Verify (`<s17>/t14b-fix1-green.out`):
+  typecheck pass, **packages/ui 137 files / 2,595 pass / 0 fail**. Commit **`161c219`**.
+- Mutants round 2 on `161c219` (J13, J16, new J17/J18 palette ignores pending, J19 right release finishes drag):
+  running. Re-reviews: same Opus reviewers, range `f035574..161c219`.
+- Mutants round 2 (`<s17>/mut_t14b_r2.out`, 217 pass baseline): J13, J16, J17, J18, J19 **all KILLED**. Total
+  J1-J19 killed.
+- Re-reviews (same Opus reviewers, `task-14b-{spec,quality}-rereview.md`): spec **Approved** (I1, M1-M3, M5
+  resolved; each new test kills its mutant on a hand trace), quality **Approved** (I1, M1-M3, M5 resolved; M4
+  deferred by ruling; no new findings).
+- Merged `p14-2-t14b` → **`e72313c`** (`--no-ff`). Worktrees `wt-t14b`, `mut-t14b` removed (junctions unlinked, no
+  `--force`); branch deleted. Master note mid-task: **Task 15 runs in a parallel session (`task15-live`) in this
+  checkout**; s17 scope is 14b only.
+- **Live check (14b, real app, 2026-11-19, viewport 720x560, UI + hub via `preview_start`; task15-live told the
+  ports were in use and then freed):** the plain `server` hub reopened the most recent project (PerfPlus, GBC), so
+  GBC ran first, then the hub was switched to the GBA subject in the UI ("Switch project").
+  - GBC `NewBarkTown`: toolbar Pencil Rect Bucket Dropper Shift Sign **"Edit block (K)"** last; real `k` key →
+    `aria-pressed="true"`; real left click on the canvas → `GET /api/edit/NewBarkTown/block?x=6&y=6&time=day`,
+    dialog open (688x528), nothing staged. Real right-click (by element ref) on palette `metatile 0x5` → event
+    trace pointerdown/mousedown/mouseup/contextmenu all button 2 on that cell → dialog **"Edit block $05"**
+    (`GET ...block?block=5&time=day`), palette pick unchanged (none), nothing staged. Real right-click on the map
+    still opens the 14a "Edit block" menu.
+  - GBA `NewBarkTown`: toolbar 8 tools with Collision, "Edit block (K)" last; `k` → pressed; real click on the
+    canvas → dialog **"Edit metatile $2E3"** (688x528). Left-click palette `0x1` (selected), then real right-click on
+    `0x5` → dialog **"Edit metatile $005"**, selection still `metatile 0x1`. Escape closes; nothing staged.
+  - **PASS.** Never Saved; no Discard needed. Subjects: GBA `590fdf303`, PerfPlus `81ededbe3`, both clean.
+  - Tooling note: a coordinate right-click in the browser pane at 720 wide landed on "Add Coord Event" (the page is
+    wider than the viewport, so the pane's coordinate frame is offset); element-ref clicks are reliable.
+  - **GBC toolbar overflow got worse: page `scrollWidth` 803 at 720 wide (760 before 14b; GBA 760).** Recorded for
+    Task 16 (do not redesign in 14b).
+- **Gate at `e72313c`: 5,139 pass / 1 fail / 273 files; typecheck pass, UI build pass; subjects unchanged** (known
+  `engine.test` env fail, "expected 96 to be 98"; no load flake this run). Temp roots cleared first (5). Review
+  reports moved to `_archive/`. **Task 14b closed.** Deferred to Task 16 from 14b: tool enabled when unwired (spec
+  M6 / quality M4), GBC toolbar overflow now 803 px at 720 wide.
