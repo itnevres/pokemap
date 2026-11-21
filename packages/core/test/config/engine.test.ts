@@ -72,6 +72,12 @@ describe("engineProfile", () => {
     expect(p.metatileLayerTypeMask).toBe(0x0f00);
   });
 
+  it("reads enable_triple_layer_metatiles, defaulting to false", () => {
+    expect(engineProfile(parseCfg("enable_triple_layer_metatiles=1")).tripleLayerMetatiles).toBe(true);
+    expect(engineProfile(parseCfg("base_game_version=pokeemerald")).tripleLayerMetatiles).toBe(false);
+    expect(defaultProfile("pokeemerald").tripleLayerMetatiles).toBe(false);
+  });
+
   itWithCorpus("parses the subject repo's real porymap.project.cfg", () => {
     const p = projectPaths(SUBJECT_ROOT);
     const cfg = parseCfg(readFileSync(p.porymapCfg, "utf8"));

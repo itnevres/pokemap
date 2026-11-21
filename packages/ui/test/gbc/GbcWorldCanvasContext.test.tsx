@@ -390,6 +390,17 @@ describe("GbcWorldCanvas: in-context overlay (Plan 7 Task 5b)", () => {
       expect(onExitRequest).toHaveBeenCalledTimes(1);
     });
 
+    it("Escape on an open map context menu on the overlay does not also request an exit (F1)", async () => {
+      const onExitRequest = vi.fn();
+      // The harness's overlay canvas is a probe, so the map menu is this double: no Escape listener of its own,
+      // so only the world's capture-phase exit listener sees the key.
+      const renderCanvas = () => <div className="world-context-menu" role="menu"><button role="menuitem">Edit block</button></div>;
+      const { container } = await mount({ context: ctxOf(renderCanvas, onExitRequest) });
+      await waitFor(() => expect(container.querySelector(".world-context-menu")).not.toBeNull());
+      fireEvent.keyDown(screen.getByRole("menuitem", { name: "Edit block" }), { key: "Escape" });
+      expect(onExitRequest).not.toHaveBeenCalled();
+    });
+
     it.each(["input", "textarea", "select"])("from a <%s> does not request an exit", async (tag) => {
       const onExitRequest = vi.fn();
       const p = probe();

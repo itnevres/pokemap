@@ -14,6 +14,11 @@ export interface EngineProfile {
   /** Whether layouts.json may carry a per-layout `layout_version` key. */
   supportsLayoutVersion: boolean;
   supportsFloorNumber: boolean;
+  /**
+   * Porymap's `enable_triple_layer_metatiles`: metatiles carry a third layer,
+   * which the block editor refuses (not modelled) rather than mis-editing.
+   */
+  tripleLayerMetatiles: boolean;
 }
 
 export function parseCfg(text: string): Record<string, string> {
@@ -69,6 +74,7 @@ export function defaultProfile(version: string): EngineProfile {
     warpBehaviors: [],
     supportsLayoutVersion: version === "pokeemerald-expansion",
     supportsFloorNumber: frlg,
+    tripleLayerMetatiles: false,
   };
 }
 
@@ -93,5 +99,6 @@ export function engineProfile(cfg: Record<string, string>): EngineProfile {
     metatileTerrainTypeMask: num(cfg.metatile_terrain_type_mask, base.metatileTerrainTypeMask),
     metatileEncounterTypeMask: num(cfg.metatile_encounter_type_mask, base.metatileEncounterTypeMask),
     warpBehaviors: (cfg.warp_behaviors ?? "").split(",").map((s) => s.trim()).filter(Boolean).map(Number),
+    tripleLayerMetatiles: num(cfg.enable_triple_layer_metatiles, 0) !== 0,
   };
 }

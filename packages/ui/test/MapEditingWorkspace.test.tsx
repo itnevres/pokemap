@@ -1,9 +1,11 @@
-import { describe, it, expect, vi } from "vitest";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { render, renderHook, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { MapEditingWorkspace, type MapEditingCanvasProps } from "../src/components/MapEditingWorkspace.js";
 import type { useMapEditing } from "../src/hooks/useMapEditing.js";
 import type { UseEditSessionResult } from "../src/hooks/useEditSession.js";
 import type { MapLayoutData } from "../src/hooks/useMapLayout.js";
+import { gbaAdapter } from "../src/gba/adapter.js";
+import { hasPendingSessionMutations, sessionMutationBarrier, useEditSessionCore, type BlockEditSession } from "../src/shared/useEditSessionCore.js";
 
 // Plan 6c E2: the workspace is the extracted `.app__map-editing` chrome. App's
 // own tests prove the default (no renderCanvas) path end to end; these pin the
@@ -221,4 +223,332 @@ describe("MapEditingWorkspace Duplicate (Plan 10b D6)", () => {
       await new Promise((r) => setTimeout(r, 0));
       expect(setEventOpError).not.toHaveBeenCalled();
     });
+});
+
+describe("MapEditingWorkspace block editor mount (Plan 14.2 Task 14a)", () => {
+  const body = {
+    blockId: 0x11, viaBorder: false, revision: "r1",
+    block: {
+      entries: Array.from({ length: 8 }, (_, tile) => ({ tile, palette: 0, xFlip: false, yFlip: false })),
+      behavior: 0, layerType: 1,
+    },
+    sheet: { url: "/api/block-sheet/A.png?tv=1", tileCount: 64, tileIds: Array.from({ length: 64 }, (_, i) => i) },
+    options: {
+      behaviors: [{ name: "NORMAL", value: 0 }],
+      layerTypes: [{ name: "COVERED", value: 1 }],
+    },
+    usage: {
+      files: ["blocks.bin"], tilesets: ["A"],
+      maps: [{ map: "Foo", interior: 1, border: 0, block0AsBorder: 0 }], sharedGrids: [],
+    },
+    owner: null, limits: { nextId: 0x22, cap: 1024 },
+  };
+  let fetchMock: ReturnType<typeof vi.fn<typeof fetch>>;
+  let finishMutation: (() => void) | undefined;
+  let mutationReply: Promise<Response> | undefined;
+
+  beforeEach(() => {
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(400);
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(300);
+    const previousFetch = globalThis.fetch;
+    fetchMock = vi.fn<typeof fetch>(async (input, init) => {
+      const url = new URL(String(input), "http://localhost");
+      if (url.pathname === "/api/edit/Foo/block" && (init?.method ?? "GET") === "GET") {
+        return new Response(JSON.stringify(body), { status: 200 });
+      }
+      if (url.pathname === "/api/edit/Foo/block/apply" && init?.method === "POST" && mutationReply) return mutationReply;
+      return previousFetch(input, init);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(async () => {
+    finishMutation?.();
+    await sessionMutationBarrier("Foo");
+    finishMutation = undefined;
+    mutationReply = undefined;
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  function sessionWithBlockEditor() {
+    return {
+      ...editSession,
+      blockCheck: vi.fn<BlockEditSession["blockCheck"]>().mockResolvedValue(null),
+      blockPreview: vi.fn<BlockEditSession["blockPreview"]>().mockResolvedValue(null),
+      blockApply: vi.fn<BlockEditSession["blockApply"]>().mockResolvedValue(true),
+    };
+  }
+
+  function stage(container: HTMLElement) {
+    const canvas = container.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
+    expect(canvas).not.toBeNull();
+    const { width, height } = canvas;
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+      left: 0, top: 0, width, height, right: width, bottom: height, x: 0, y: 0, toJSON() {},
+    });
+    return canvas;
+  }
+
+  async function openDialog(container: HTMLElement) {
+    // Default zoom 1, pan (0,0); one 1-block border ring gives origin (16,16).
+    // source = ((40-0)/1,(24-0)/1) = (40,24); cell = floor((source-origin)/16) = (1,0).
+    expect(fireEvent.contextMenu(stage(container), { clientX: 40, clientY: 24, button: 2 })).toBe(false);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Edit block" }));
+    await waitFor(() => {
+      const panel = document.querySelector(".block-editor");
+      expect(panel).not.toBeNull();
+      expect(panel?.getAttribute("role")).toBe("dialog");
+    });
+    await screen.findByRole("button", { name: "OK" });
+  }
+
+  it("choosing Edit block renders the dialog for that cell", async () => {
+    const { container } = render(<MapEditingWorkspace mapName="Foo" data={DATA} editSession={sessionWithBlockEditor()}
+      editing={makeEditing()} blockEditorSpec={gbaAdapter.blockEditorSpec} />);
+    await openDialog(container);
+    const requests = fetchMock.mock.calls.map(([input]) => new URL(String(input), "http://localhost"))
+      .filter(url => url.pathname === "/api/edit/Foo/block");
+    expect(requests).toHaveLength(1);
+    expect(requests[0]!.searchParams.get("x")).toBe("1");
+    expect(requests[0]!.searchParams.get("y")).toBe("0");
+  });
+
+  it("the dialog's check request names the map source and the cell", async () => {
+    const session = sessionWithBlockEditor();
+    const { container } = render(<MapEditingWorkspace mapName="Foo" data={DATA} editSession={session}
+      editing={makeEditing()} blockEditorSpec={gbaAdapter.blockEditorSpec} />);
+    await openDialog(container);
+    fireEvent.click(screen.getByRole("button", { name: "OK" }));
+    await waitFor(() => expect(session.blockCheck).toHaveBeenCalled());
+    const sent = session.blockCheck.mock.calls[0]![0] as { request: { from: string; cell?: { x: number; y: number } } };
+    expect(sent.request.from).toBe("map");
+    expect(sent.request.cell).toEqual({ x: 1, y: 0 }); // (40,24) → (1,0), as openDialog derives
+  });
+
+  it("a map switch closes the dialog", async () => {
+    const session = sessionWithBlockEditor();
+    const editing = makeEditing();
+    const view = (mapName: string) => <MapEditingWorkspace mapName={mapName} data={DATA} editSession={session}
+      editing={editing} blockEditorSpec={gbaAdapter.blockEditorSpec} />;
+    const { container, rerender } = render(view("Foo"));
+    await openDialog(container);
+    rerender(view("Bar"));
+    expect(document.querySelector(".block-editor")).toBeNull();
+  });
+
+  it("an active flip does not re-mount the dialog (F3)", async () => {
+    const session = sessionWithBlockEditor();
+    const editing = makeEditing();
+    const active = <MapEditingWorkspace mapName="Foo" data={DATA} editSession={session} editing={editing}
+      blockEditorSpec={gbaAdapter.blockEditorSpec} />;
+    const inactive = <MapEditingWorkspace active={false} mapName="Foo" data={DATA} editSession={session} editing={editing}
+      blockEditorSpec={gbaAdapter.blockEditorSpec} renderCanvas={() => null} />;
+    const { container, rerender } = render(active);
+    await openDialog(container);
+    rerender(inactive);
+    expect(document.querySelector(".block-editor")).toBeNull();
+    rerender(active);
+    expect(document.querySelector(".block-editor")).toBeNull();
+  });
+
+  it("opening the menu or the dialog keeps the active tool (R4)", async () => {
+    const editing = makeEditing({ activeToolKind: "pencil" });
+    const { container } = render(<MapEditingWorkspace mapName="Foo" data={DATA} editSession={sessionWithBlockEditor()}
+      editing={editing} blockEditorSpec={gbaAdapter.blockEditorSpec} />);
+    await openDialog(container);
+    expect(editing.setActiveToolKind).not.toHaveBeenCalled();
+  });
+
+  it("without blockEditorSpec leaves the browser menu untouched", () => {
+    const { container } = render(<MapEditingWorkspace mapName="Foo" data={DATA} editSession={sessionWithBlockEditor()} editing={makeEditing()} />);
+    expect(fireEvent.contextMenu(stage(container), { clientX: 40, clientY: 24, button: 2 })).toBe(true);
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(document.querySelector(".block-editor")).toBeNull();
+  });
+
+  it("disables Edit block while a real session mutation is pending for the current map", async () => {
+    mutationReply = new Promise<Response>(resolve => { finishMutation = () => resolve(new Response("{}", { status: 200 })); });
+    const { result } = renderHook(() => useEditSessionCore("/api/edit", "Foo", DATA.blocks));
+    let pending!: ReturnType<typeof result.current.post>;
+    act(() => { pending = result.current.post("/block/apply", {}); });
+    expect(hasPendingSessionMutations("Foo")).toBe(true);
+    const { container } = render(<MapEditingWorkspace mapName="Foo" data={DATA} editSession={sessionWithBlockEditor()}
+      editing={makeEditing()} blockEditorSpec={gbaAdapter.blockEditorSpec} />);
+    // The same (40,24) centre is cell (1,0): floor(((p-0)/1-16)/16).
+    try {
+      expect(fireEvent.contextMenu(stage(container), { clientX: 40, clientY: 24, button: 2 })).toBe(false);
+      const item = screen.getByRole("menuitem", { name: /Edit block.*Wait for the current change to finish/ });
+      expect((item as HTMLButtonElement).disabled).toBe(true);
+      fireEvent.click(item);
+      expect(document.querySelector(".block-editor")).toBeNull();
+    } finally {
+      await act(async () => { finishMutation!(); await pending; await sessionMutationBarrier("Foo"); });
+    }
+    expect(hasPendingSessionMutations("Foo")).toBe(false);
+  });
+
+  // Plan 14.2 fix hop A: the palette is sized from the map payload (`useMapLayout`), which only refetches
+  // when the map changes -- so a block the editor appended ("Save as new") would be invisible until a
+  // reload. Every session reply now carries the map's effective counts and the workspace prefers them.
+  it("Plan 14.2 I1: the palette follows the session's counts, and shrinks again on the undo reply", () => {
+    const editing = makeEditing();
+    const view = (session: UseEditSessionResult) => <MapEditingWorkspace mapName="Foo" data={DATA} editSession={session} editing={editing} />;
+    const { rerender } = render(view(editSession));
+    // DATA's counts are 512 primary + 144 secondary: ids 0..511 and 512..655 exist, so 656 (0x290) is
+    // not offered yet. (A secondary append is the realistic case: a primary count can never pass the
+    // 512-block split, where the secondary ids already start.)
+    expect(screen.queryByRole("button", { name: "metatile 0x28F" })).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "metatile 0x290" })).toBeNull();
+    // The reply after a saveAsNew append reports secondaryCount 144 -> 145, so the palette grows a cell.
+    rerender(view({ ...editSession, secondaryCount: 145 }));
+    expect(screen.getByRole("button", { name: "metatile 0x290" })).not.toBeNull();
+    // The reply after undoing that append reports 144 again, so the cell that no longer exists is gone.
+    rerender(view(editSession));
+    expect(screen.queryByRole("button", { name: "metatile 0x290" })).toBeNull();
+  });
+
+  // Plan 14.2 fix hop A (F5, spec 3e): the Edit block entry points wait on EVERY action barrier, not only
+  // the two routes the shared core tracks (`/event/create`, `/block/apply`). The workspace's own
+  // `editRequests` counter is what sees an undo in flight.
+  it("Plan 14.2 F5: Edit block is disabled while an undo is in flight, and re-enables when it settles", async () => {
+    let finishUndo!: () => void;
+    const undo = new Promise<void>(resolve => { finishUndo = resolve; });
+    const session = {
+      ...editSession,
+      canUndo: true,
+      createEvent: vi.fn(() => Promise.resolve(null)),
+      beginStroke: vi.fn(() => Promise.resolve()),
+      applyPaint: vi.fn(() => Promise.resolve()),
+      endStroke: vi.fn(() => Promise.resolve()),
+      moveEvent: vi.fn(() => Promise.resolve()),
+      addEvent: vi.fn(() => Promise.resolve()),
+      deleteEvent: vi.fn(() => Promise.resolve([])),
+      undo: vi.fn(() => undo),
+      redo: vi.fn(() => Promise.resolve()),
+      discard: vi.fn(() => Promise.resolve()),
+      blockCheck: vi.fn<BlockEditSession["blockCheck"]>().mockResolvedValue(null),
+      blockPreview: vi.fn<BlockEditSession["blockPreview"]>().mockResolvedValue(null),
+      blockApply: vi.fn<BlockEditSession["blockApply"]>().mockResolvedValue(true),
+    } as unknown as UseEditSessionResult;
+    const { container } = render(<MapEditingWorkspace mapName="Foo" data={DATA} editSession={session}
+      editing={makeEditing()} blockEditorSpec={gbaAdapter.blockEditorSpec} />);
+    const canvas = stage(container);
+
+    // Start the undo and hold it open: the request is in flight, the session mutation registry never saw it.
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    expect(session.undo).toHaveBeenCalled();
+    expect(hasPendingSessionMutations("Foo")).toBe(false);
+
+    // The context menu's Edit block item is disabled, with the shared message (same (40,24) -> cell (1,0)).
+    expect(fireEvent.contextMenu(canvas, { clientX: 40, clientY: 24, button: 2 })).toBe(false);
+    const item = screen.getByRole("menuitem", { name: /Edit block.*Wait for the current change to finish/ });
+    expect((item as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(item);
+    expect(document.querySelector(".block-editor")).toBeNull();
+    // The palette's right-click entry point is gated by the same barrier.
+    expect(fireEvent.contextMenu(screen.getByRole("button", { name: "metatile 0x1" }), { button: 2 })).toBe(false);
+    expect(document.querySelector(".block-editor")).toBeNull();
+
+    // Settle the undo: the barrier clears and Edit block works again.
+    await act(async () => { finishUndo(); await undo; });
+    fireEvent.contextMenu(canvas, { clientX: 40, clientY: 24, button: 2 });
+    const enabled = screen.getByRole("menuitem", { name: "Edit block" });
+    expect((enabled as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(enabled);
+    await waitFor(() => expect(document.querySelector(".block-editor")).not.toBeNull());
+  });
+
+  // Task 14b: the same dialog is reachable from the palette (right-click, `from: "palette"`) and from
+  // the Edit block tool on the canvas. Both reuse the canvas' existing `onEditBlock` wiring.
+  describe("palette and tool entry points (Plan 14.2 Task 14b)", () => {
+    function blockSession() {
+      return {
+        ...editSession,
+        beginStroke: vi.fn(() => Promise.resolve()),
+        applyPaint: vi.fn(() => Promise.resolve()),
+        endStroke: vi.fn(() => Promise.resolve()),
+        blockCheck: vi.fn<BlockEditSession["blockCheck"]>().mockResolvedValue(null),
+        blockPreview: vi.fn<BlockEditSession["blockPreview"]>().mockResolvedValue(null),
+        blockApply: vi.fn<BlockEditSession["blockApply"]>().mockResolvedValue(true),
+      };
+    }
+    const blockLoads = () => fetchMock.mock.calls.map(([input]) => new URL(String(input), "http://localhost"))
+      .filter(url => url.pathname === "/api/edit/Foo/block");
+
+    it("suppresses the palette menu while a session mutation is pending", async () => {
+      mutationReply = new Promise<Response>(resolve => { finishMutation = () => resolve(new Response("{}", { status: 200 })); });
+      const { result } = renderHook(() => useEditSessionCore("/api/edit", "Foo", DATA.blocks));
+      let pending!: ReturnType<typeof result.current.post>;
+      act(() => { pending = result.current.post("/block/apply", {}); });
+      expect(hasPendingSessionMutations("Foo")).toBe(true);
+      render(<MapEditingWorkspace mapName="Foo" data={DATA} editSession={blockSession()}
+        editing={makeEditing()} blockEditorSpec={gbaAdapter.blockEditorSpec} />);
+      try {
+        expect(fireEvent.contextMenu(screen.getByRole("button", { name: "metatile 0x1" }), { button: 2 })).toBe(false);
+        expect(document.querySelector(".block-editor")).toBeNull();
+      } finally {
+        await act(async () => { finishMutation!(); await pending; await sessionMutationBarrier("Foo"); });
+      }
+      expect(hasPendingSessionMutations("Foo")).toBe(false);
+    });
+
+    it("leaves the palette browser menu untouched without a block editor spec", () => {
+      render(<MapEditingWorkspace mapName="Foo" data={DATA} editSession={blockSession()} editing={makeEditing()} />);
+      expect(fireEvent.contextMenu(screen.getByRole("button", { name: "metatile 0x1" }), { button: 2 })).toBe(true);
+      expect(document.querySelector(".block-editor")).toBeNull();
+    });
+
+    it("a palette right-click opens the dialog for that block with from: palette", async () => {
+      const session = blockSession();
+      const editing = makeEditing();
+      render(<MapEditingWorkspace mapName="Foo" data={DATA} editSession={session}
+        editing={editing} blockEditorSpec={gbaAdapter.blockEditorSpec} />);
+      const cell = screen.getByRole("button", { name: "metatile 0x1" });
+      expect(fireEvent.contextMenu(cell, { button: 2 })).toBe(false);
+      await waitFor(() => {
+        const panel = document.querySelector(".block-editor");
+        expect(panel).not.toBeNull();
+        expect(panel?.getAttribute("role")).toBe("dialog");
+      });
+      // A `{ block }` target loads by block id, with no x/y at all.
+      const loads = blockLoads();
+      expect(loads).toHaveLength(1);
+      expect(loads[0]!.searchParams.get("block")).toBe("1");
+      expect(loads[0]!.searchParams.get("x")).toBeNull();
+      // The right-click never picks a stamp.
+      expect(editing.setCurrentStamp).not.toHaveBeenCalled();
+      expect(cell.getAttribute("aria-pressed")).toBe("false");
+
+      fireEvent.click(await screen.findByRole("button", { name: "OK" }));
+      await waitFor(() => expect(session.blockCheck).toHaveBeenCalled());
+      // `from` is only observable in the check/apply request body.
+      const sent = session.blockCheck.mock.calls[0]![0] as { request: { from: string } };
+      expect(sent.request.from).toBe("palette");
+    });
+
+    it("the Edit block tool opens the dialog for the clicked cell", async () => {
+      const session = blockSession();
+      const editing = makeEditing({ activeTool: { kind: "editBlock" } });
+      const { container } = render(<MapEditingWorkspace mapName="Foo" data={DATA} editSession={session}
+        editing={editing} blockEditorSpec={gbaAdapter.blockEditorSpec} />);
+      fireEvent.click(screen.getByRole("button", { name: "Edit block" }));
+      expect(editing.setActiveToolKind).toHaveBeenCalledWith("editBlock");
+
+      // GBA origin (16,16), paintCellPx 16, a 2x2 map, zoom 1, pan 0:
+      // source = ((40-0)/1,(40-0)/1) = (40,40); cell = floor((source-16)/16) = (1,1).
+      const canvas = stage(container);
+      fireEvent.mouseDown(canvas, { button: 0, clientX: 40, clientY: 40 });
+      fireEvent.mouseUp(canvas, { button: 0, clientX: 40, clientY: 40 });
+      await waitFor(() => expect(document.querySelector(".block-editor")).not.toBeNull());
+      const loads = blockLoads();
+      expect(loads).toHaveLength(1);
+      expect(loads[0]!.searchParams.get("x")).toBe("1");
+      expect(loads[0]!.searchParams.get("y")).toBe("1");
+      // "No paint": no stroke and no POST.
+      expect(session.beginStroke).not.toHaveBeenCalled();
+      expect(session.applyPaint).not.toHaveBeenCalled();
+      expect(fetchMock.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false);
+    });
+  });
 });

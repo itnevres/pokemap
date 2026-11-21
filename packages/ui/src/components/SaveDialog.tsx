@@ -1,14 +1,14 @@
 import { loadReturnWarpNotes, subscribeReturnWarpSources } from "../shared/AddEventDialog.js";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useVisit } from "../shared/useVisit.js";
-import { eventCreateBarrier } from "../shared/useEditSessionCore.js";
+import { sessionMutationBarrier } from "../shared/useEditSessionCore.js";
 import { trapDialogFocus, useRestoreFocus } from "../shared/dialogFocus.js";
 import "../styles.css";
 
 interface PendingChange { path: string; kind: "json" | "binary" | "text"; summary: string }
 interface Refusal { code: string; message: string; fix: string; subject: string }
 interface SignNotice { scriptLabel: string; message: string }
-interface DiffPlan { changes: PendingChange[]; refusals: Refusal[]; signNotices?: SignNotice[]; fingerprint?: string | null; notice?: { code: string; subject: string; message: string; fix: string } }
+interface DiffPlan { changes: PendingChange[]; refusals: Refusal[]; signNotices?: SignNotice[]; tilesetEffects?: { path: string; maps: string[] }[]; fingerprint?: string | null; notice?: { code: string; subject: string; message: string; fix: string } }
 
 export interface SaveDialogProps {
   mapName: string;
@@ -81,7 +81,7 @@ export function SaveDialog({ mapName, onCommitted, onCancel }: SaveDialogProps) 
 
   const loadPlan = () => {
     let cancelled = false;
-    eventCreateBarrier(mapName).then(() => cancelled ? null : fetch(`/api/edit/${encodeURIComponent(mapName)}/plan`))
+    sessionMutationBarrier(mapName).then(() => cancelled ? null : fetch(`/api/edit/${encodeURIComponent(mapName)}/plan`))
       .then(async (r) => {
         if (!r) return;
         const body: unknown = await r.json().catch(() => null);
@@ -119,7 +119,7 @@ export function SaveDialog({ mapName, onCommitted, onCancel }: SaveDialogProps) 
   const resolveNotice = async (scriptLabel: string, action: "refresh" | "unlink") => {
     setSaving(true);
     try {
-      await eventCreateBarrier(mapName);
+      await sessionMutationBarrier(mapName);
       if (!visit.isCurrent()) return;
       const r = await fetch(`/api/edit/${encodeURIComponent(mapName)}/sign/resolve`, { method: "POST", body: JSON.stringify({ scriptLabel, action }) });
       if (!r.ok) { setSaveError("Could not update linked sign."); return; }
@@ -137,7 +137,7 @@ export function SaveDialog({ mapName, onCommitted, onCancel }: SaveDialogProps) 
     setRefusals([]);
     setNotice(null);
     try {
-      await eventCreateBarrier(mapName);
+      await sessionMutationBarrier(mapName);
       if (!visit.isCurrent()) return;
       const r = await fetch(`/api/edit/${encodeURIComponent(mapName)}/commit`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ fingerprint: plan?.fingerprint }) });
       const body: unknown = await r.json().catch(() => null);
@@ -204,6 +204,13 @@ export function SaveDialog({ mapName, onCommitted, onCancel }: SaveDialogProps) 
             ))}
           </ul>
         )}
+        {plan?.tilesetEffects?.map((effect) => (
+          <div key={effect.path} className="save-dialog__file">
+            <span className="save-dialog__file-summary">{effect.path}</span>
+            <br />
+            <span className="save-dialog__file-summary">affects: {effect.maps.slice(0, 8).join(", ")}{effect.maps.length > 8 ? ` and ${effect.maps.length - 8} more` : ""}</span>
+          </div>
+        ))}
         {returnNotes.map(note => <p key={note} className="save-dialog__notice" role="status">{note}</p>)}
         {returnNoteError && <p role="status">{returnNoteError}</p>}
         {plan?.signNotices && plan.signNotices.length > 0 && (

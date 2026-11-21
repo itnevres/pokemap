@@ -1,16 +1,11 @@
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { it } from "vitest";
+import { testConfig } from "../../helpers/testRoots.js";
 
-// Mirrors packages/core/test/helpers/corpus.ts, for the gbc config block
-// instead of the top-level one. An absent `gbc` block (not yet configured on
-// this machine) must skip rather than error, so SUBJECT_ROOT falls back to
-// "" -- hasGbcProject("") is false, so itWithGbcCorpus skips every test that
-// uses it instead of throwing during module load.
-const config = JSON.parse(readFileSync("pokemap.config.json", "utf8")) as {
-  gbc?: { projectPath: string; referenceProjects?: string[] };
-};
+// An absent GBC block continues to skip the GBC corpus.
+const config = testConfig();
 
 export const GBC_SUBJECT_ROOT = config.gbc?.projectPath ?? "";
 export const GBC_REFERENCE_ROOTS = config.gbc?.referenceProjects ?? [];

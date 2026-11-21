@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { MapCanvas, type MapCanvasProps } from "./MapCanvas.js";
 import { Toolbar } from "./Toolbar.js";
 import { CollisionPalette } from "./CollisionPalette.js";
@@ -8,7 +8,8 @@ import type { UseEditSessionResult } from "../hooks/useEditSession.js";
 import type { MapLayoutData } from "../hooks/useMapLayout.js";
 import { eventOpErrorMessage, type useMapEditing } from "../hooks/useMapEditing.js";
 import { EditingWorkspace } from "../shared/EditingWorkspace.js";
-import { GBA_CAPABILITIES, toolsFor } from "../shell/adapter.js";
+import { GBA_CAPABILITIES, toolsFor, type BlockEditorSpec } from "../shell/adapter.js";
+import { BlockEditorDialog } from "../shared/BlockEditorDialog.js";
 import { SignEditor } from "../shared/SignEditor.js";
 import { MAX_OBJECT_EVENTS, duplicateEventValue } from "../gba/duplicateEvent.js";
 import { AddEventBar, useEventPlacement } from "../shared/AddEventBar.js";
@@ -17,7 +18,7 @@ import { AddEventDialog, registerReturnWarpSource } from "../shared/AddEventDial
 import * as addEventAdapter from "../gba/addEventFields.js";
 import { useEventOptions } from "../shared/useEventOptions.js";
 import { useVisit } from "../shared/useVisit.js";
-import { hasPendingEventCreates, type EventCreateSession } from "../shared/useEditSessionCore.js";
+import { hasPendingSessionMutations, type EventCreateSession, type BlockEditSession } from "../shared/useEditSessionCore.js";
 import type { EventKind } from "@pokemap/core/src/addEvent/types.js";
 
 /** The props the workspace builds for the canvas it hosts -- exactly what
@@ -26,10 +27,11 @@ import type { EventKind } from "@pokemap/core/src/addEvent/types.js";
  *  wants it adds it in its own `renderCanvas`). */
 export type MapEditingCanvasProps = Pick<
   MapCanvasProps,
-  "onEditError" | "onStrokeChain" | "mapName" | "data" | "editSession" | "activeTool" | "onSignPick" | "onSelectEvent" | "selectedEventRef" | "onMoveEvent" | "onDropperPick" | "onHoverMetatile"
+  "onEditError" | "onStrokeChain" | "mapName" | "data" | "editSession" | "activeTool" | "onEditBlock" | "editBlockDisabledReason" | "onSignPick" | "onSelectEvent" | "selectedEventRef" | "onMoveEvent" | "onDropperPick" | "onHoverMetatile"
 > & EventPlacementProps;
 
 interface MapEditingWorkspaceBase {
+  blockEditorSpec?: BlockEditorSpec;
   onStrokeChain?: MapCanvasProps["onStrokeChain"];
   hoveredMetatileId?: number | null;
   onHoverMetatile?: (id: number | null) => void;
@@ -64,7 +66,10 @@ export type MapEditingWorkspaceProps = ActiveMapEditingWorkspaceProps | Inactive
  *  lifted verbatim out of `App.tsx`. State lives
  *  in `useMapEditing`; the edit session in `App`; `SaveDialog`/`PokemonIndicatorDialog`
  *  stay siblings at `<main>` level in `App` for stacking reasons. */
-export function MapEditingWorkspace({ active = true, mapName, data, editSession, editing, renderCanvas, onStrokeChain, hoveredMetatileId, onHoverMetatile }: MapEditingWorkspaceProps) {
+export function MapEditingWorkspace({ active = true, mapName, data, editSession, editing, renderCanvas, blockEditorSpec, onStrokeChain, hoveredMetatileId, onHoverMetatile }: MapEditingWorkspaceProps) {
+  // Plan 14.2 (Task 14a/14b): the block editor's own state -- a map cell (`from: "map"`, canvas or Edit
+  // block tool) or a palette block (`from: "palette"`, right-click). Retired on a map visit change below.
+  const [blockEdit, setBlockEdit] = useState<{ forMap: string; target: { x: number; y: number } | { block: number }; from: "map" | "palette" } | null>(null);
   const [signPick, setSignPick] = useState<{ x: number; y: number; anchor: DOMRect } | null>(null);
   const {
     activeToolKind, setActiveToolKind, collisionValue, setCollisionValue, currentStamp, setCurrentStamp,
@@ -96,7 +101,7 @@ export function MapEditingWorkspace({ active = true, mapName, data, editSession,
   const [pendingSelection, setPendingSelection] = useState<{ kind: EventKind; index: number; returnFocus?: boolean; isCurrent(): boolean } | null>(null);
   const latestSelect = useRef(onSelectEvent);
   latestSelect.current = onSelectEvent;
-  if (visit.changed) { if (creating) setCreating(false); if (editRequests) setEditRequests(0); if (pendingSelection) setPendingSelection(null); }
+  if (visit.changed) { if (blockEdit) setBlockEdit(null); if (creating) setCreating(false); if (editRequests) setEditRequests(0); if (pendingSelection) setPendingSelection(null); }
   useEffect(() => { void options.load().catch(() => { /* The dialog owns option-load errors; existing edit tools remain usable. */ }); }, [options.load, options.project, mapName]);
   useLayoutEffect(() => {
     if (pendingSelection && pendingSelection.isCurrent()) {
@@ -123,8 +128,16 @@ export function MapEditingWorkspace({ active = true, mapName, data, editSession,
     if (!window.confirm("Discard all unsaved changes on this map? This cannot be undone.")) return;
     void requestSession.discard().then(() => { if (visit.isCurrent()) setEventOpError(null); }).catch((error: unknown) => { if (visit.isCurrent()) setEventOpError(eventOpErrorMessage(error)); });
   };
-  const requestBusy = editRequests > 0 || creating || hasPendingEventCreates(mapName);
-  const disabledReason = !active || !data || !mapName ? "No editable map" : requestBusy ? "An edit request is in flight" : undefined;
+  // Plan 14.2 fix hop A / F5: one "an action is in flight" signal for the whole workspace. `editRequests`
+  // counts every tracked session call (paint, undo, redo, discard, event ops) and `creating` the Add
+  // dialog's own POST; `hasPendingSessionMutations` covers the two routes the shared core tracks
+  // (`/event/create`, `/block/apply`) for callers that reach the session without this wrapper.
+  const busy = editRequests > 0 || creating || hasPendingSessionMutations(mapName);
+  // Read through a ref from the palette's stable callback (below): adding `busy` to that
+  // `useCallback`'s deps would re-render the memoised palette on every request.
+  const busyRef = useRef(busy);
+  busyRef.current = busy;
+  const disabledReason = !active || !data || !mapName ? "No editable map" : busy ? "An edit request is in flight" : undefined;
   const addDisabled = disabledReason ? { object: disabledReason, warp: disabledReason, coord: disabledReason, bg: disabledReason } : {
     object: options.project && (currentMap?.objectEvents.length ?? 0) >= options.project.objectCap ? `This map already has ${options.project.objectCap} object events` : undefined,
   };
@@ -148,6 +161,14 @@ export function MapEditingWorkspace({ active = true, mapName, data, editSession,
           mapName,
           data,
           editSession: requestSession,
+          ...(blockEditorSpec && "blockCheck" in editSession ? {
+            onEditBlock: (cell: { x: number; y: number }) => setBlockEdit({ forMap: mapName, target: cell, from: "map" }),
+            // F5: disabled for EVERY action barrier, not just the two the shared core tracks. This is
+            // also the Edit block tool (K) gate -- `MapSurface`'s tool branch consults it before
+            // calling `onEditBlock`. `busyRef` is the render-time snapshot (the tracked counters);
+            // the registry is read live because a `/block/apply` can land without a workspace render.
+            editBlockDisabledReason: () => busyRef.current || hasPendingSessionMutations(mapName) ? "Wait for the current change to finish" : null,
+          } : {}),
           activeTool,
           placing: placement.placing,
           onEventPick: placement.onEventPick,
@@ -214,6 +235,18 @@ export function MapEditingWorkspace({ active = true, mapName, data, editSession,
   /* Plan 9 (D4): one right-hand rail, as GBC has had since Plan 7 -- the collision palette while the Collision tool
      is active, the metatile palette always (a pick with another tool active only sets the stamp, as a dropper pick
      does), then the Add buttons and EventInspector. */
+  // Plan 14.2 (N9): a palette right-click opens the same dialog for a block id. Stable identity so the memoised
+  // palette is not re-rendered on every workspace render.
+  const onPaletteEditBlock = useCallback(
+    (id: number) => {
+      // F5: any pending action (save, discard, undo, redo, map switch, paint, event create, block
+      // apply) blocks the entry point, not only the two the shared core tracks. `busyRef` keeps this
+      // callback's identity stable for the memoised palette; the registry is read live for the same
+      // reason as `editBlockDisabledReason` above.
+      if (mapName !== null && !busyRef.current && !hasPendingSessionMutations(mapName)) setBlockEdit({ forMap: mapName, target: { block: id }, from: "palette" });
+    },
+    [mapName],
+  );
   const side = (
     <>
       {activeToolKind === "collision" && <CollisionPalette selected={collisionValue} onSelect={setCollisionValue} />}
@@ -221,11 +254,12 @@ export function MapEditingWorkspace({ active = true, mapName, data, editSession,
         <MetatilePalette
           layoutName={data.layout.name}
           split={data.split}
-          primaryCount={data.primaryCount}
-          secondaryCount={data.secondaryCount}
+          primaryCount={editSession.primaryCount ?? data.primaryCount}
+          secondaryCount={editSession.secondaryCount ?? data.secondaryCount}
           onSelect={setCurrentStamp}
           selected={currentStamp}
           highlightId={hoveredMetatileId ?? null}
+          onEditBlock={blockEditorSpec && mapName !== null && "blockCheck" in editSession ? onPaletteEditBlock : undefined}
         />
       )}
       <AddEventBar ref={placement.barRef} placing={placement.placing} onToggle={placement.onToggle}
@@ -243,6 +277,9 @@ export function MapEditingWorkspace({ active = true, mapName, data, editSession,
         Canvas={MapCanvas}
         renderCanvas={renderCanvas as ((p: MapEditingCanvasProps | null) => ReactNode) | undefined}
       />
+      {blockEdit && mapName && blockEdit.forMap === mapName && active && blockEditorSpec && "blockCheck" in editSession && <BlockEditorDialog
+        map={mapName} target={blockEdit.target} from={blockEdit.from} spec={blockEditorSpec} session={editSession as UseEditSessionResult & BlockEditSession}
+        onClose={() => setBlockEdit(null)} onApplied={() => {}} />}
       {placement.pick && mapName && <AddEventDialog adapter={addEventAdapter} mapName={mapName}
         kind={placement.pick.kind} x={placement.pick.x} y={placement.pick.y}
         initialFields={data ? { elevation: String((editSession.blocks[placement.pick.y * data.layout.width + placement.pick.x] ?? data.blocks[placement.pick.y * data.layout.width + placement.pick.x])?.elevation ?? 0) } : undefined}

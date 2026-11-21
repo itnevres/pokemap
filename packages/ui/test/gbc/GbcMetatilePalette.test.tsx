@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, act, waitFor } from "@testing-library/react";
 import { GbcMetatilePalette } from "../../src/gbc/GbcMetatilePalette.js";
 import type { ThumbSignature } from "../../src/shared/useUniformRows.js";
+import { noteTilesetVersion, resetTilesetVersion } from "../../src/shared/tilesetVersion.js";
 
 let originalScrollIntoView: typeof Element.prototype.scrollIntoView;
 
@@ -180,5 +181,47 @@ describe("GbcMetatilePalette", () => {
     const cls = screen.getByRole("button", { name: "metatile 0x2" }).className;
     expect(cls).toContain("gbc-metatile-palette__cell--picked");
     expect(cls).toContain("gbc-metatile-palette__cell--selected");
+  });
+});
+
+// Task 10b: the thumbnail URL carries the hub's tileset version so a staged edit cannot stay on screen.
+describe("GbcMetatilePalette tileset version (Task 10b)", () => {
+  afterEach(() => { resetTilesetVersion(); });
+
+  it("keeps today's URL at version 0 and appends tv= after time on the same mounted palette", () => {
+    const { container } = render(
+      <GbcMetatilePalette mapName="NewBarkTown" time="day" tilesetName="TilesetJohto" metatileCount={3} />,
+    );
+    const thumbs = () => [...container.querySelectorAll(".gbc-metatile-palette__thumb")];
+    const srcAt = (index: number) => thumbs()[index]!.getAttribute("src");
+    expect(thumbs()).toHaveLength(3);
+
+    // Version 0 is today's exact URL: border-free render plus the time of day.
+    expect(srcAt(0)).toBe("/api/metatile/NewBarkTown/0.png?time=day");
+    expect(srcAt(2)).toBe("/api/metatile/NewBarkTown/2.png?time=day");
+
+    act(() => noteTilesetVersion(5));
+
+    expect(srcAt(0)).toBe("/api/metatile/NewBarkTown/0.png?time=day&tv=5");
+    expect(srcAt(2)).toBe("/api/metatile/NewBarkTown/2.png?time=day&tv=5");
+  });
+});
+
+// Task 14b (N9): the GBC palette's right-click opens the editor for that block; it never selects.
+describe("GbcMetatilePalette block editor (Task 14b)", () => {
+  it("right-click opens the editor for that block", () => {
+    const onSelect = vi.fn(), onEditBlock = vi.fn();
+    render(<GbcMetatilePalette mapName="M" time="day" tilesetName="T" metatileCount={8}
+      onSelect={onSelect} onEditBlock={onEditBlock} />);
+    // fireEvent returns false only when preventDefault() ran.
+    expect(fireEvent.contextMenu(screen.getByRole("button", { name: "metatile 0x3" }), { button: 2 })).toBe(false);
+    expect(onEditBlock).toHaveBeenCalledTimes(1);
+    expect(onEditBlock).toHaveBeenCalledWith(3);
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("no onEditBlock, no handler", () => {
+    render(<GbcMetatilePalette mapName="M" time="day" tilesetName="T" metatileCount={8} onSelect={() => {}} />);
+    expect(fireEvent.contextMenu(screen.getByRole("button", { name: "metatile 0x3" }), { button: 2 })).toBe(true);
   });
 });

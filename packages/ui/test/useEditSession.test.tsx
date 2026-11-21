@@ -1,10 +1,10 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { render, waitFor, act } from "@testing-library/react";
+import { render, waitFor, act, cleanup } from "@testing-library/react";
 import { useEditSession } from "../src/hooks/useEditSession.js";
 import type { Block } from "@pokemap/core/src/model/types.js";
 import type { MapData } from "@pokemap/core/src/load/maps.js";
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 function Host({
   mapName, initialBlocks, initialMap, onResult,
@@ -312,5 +312,61 @@ describe("useEditSession", () => {
     // must be left exactly as it was, not silently reset to the seed.
     expect(last!.blocks).toEqual([{ metatileId: 99, collision: 0, elevation: 0 }]);
     expect(last!.isDirty).toBe(true);
+  });
+  it("blockApply applies the reply's blocks, border and map and resolves true", async () => {
+    const served = {
+      blocks: [{ metatileId: 42, collision: 1, elevation: 2 }],
+      border: [{ metatileId: 43, collision: 3, elevation: 4 }],
+      map: {
+        id: "MAP_A", name: "A", layout: "LAYOUT_A", music: "MUS_TEST",
+        regionMapSection: "MAPSEC_TEST", mapType: "MAP_TYPE_TOWN", weather: "WEATHER_NONE",
+        connections: [], objectEvents: [], warpEvents: [], coordEvents: [], bgEvents: [],
+      },
+      isDirty: true, canUndo: true, canRedo: false,
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, status: 200, json: async () => served }));
+    let last: ReturnType<typeof useEditSession> | undefined;
+    render(<Host mapName="A" initialBlocks={[{ metatileId: 7, collision: 0, elevation: 0 }]} onResult={(r) => { last = r; }} />);
+    await act(async () => { expect(await last!.blockApply({ mode: "ok" }, "rev1")).toBe(true); });
+    expect(last!.blocks).toEqual([{ metatileId: 42, collision: 1, elevation: 2 }]);
+    expect(last!.border).toEqual([{ metatileId: 43, collision: 3, elevation: 4 }]);
+    expect(last!.map).toEqual({
+      id: "MAP_A", name: "A", layout: "LAYOUT_A", music: "MUS_TEST",
+      regionMapSection: "MAPSEC_TEST", mapType: "MAP_TYPE_TOWN", weather: "WEATHER_NONE",
+      connections: [], objectEvents: [], warpEvents: [], coordEvents: [], bgEvents: [],
+    });
+    expect(last!.isDirty).toBe(true);
+    expect(last!.canUndo).toBe(true);
+    expect(last!.canRedo).toBe(false);
+  });
+});
+
+
+describe("effective block counts (Plan 14.2 Task 16)", () => {
+  it("copies counts from session replies and retains them across event replies", async () => {
+    const session = { blocks: [], border: [], map: MAP_BEFORE, isDirty: true, canUndo: true, canRedo: false };
+    const fetchMock = vi.fn((url: string) => {
+      const served = url.endsWith("/block/apply")
+        ? { ...session, primaryCount: 512, secondaryCount: 41 }
+        : url.endsWith("/undo")
+          ? { ...session, primaryCount: 512, secondaryCount: 40 }
+          : { map: MAP_AFTER, isDirty: true };
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(served) } as Response);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    let last: ReturnType<typeof useEditSession> | undefined;
+    render(<Host mapName="Test" initialMap={MAP_BEFORE} onResult={(r) => { last = r; }} />);
+    expect(last!.primaryCount).toBeUndefined();
+    expect(last!.secondaryCount).toBeUndefined();
+
+    await act(async () => { await last!.blockApply({ mode: "ok" }, "rev1"); });
+    expect(last!.primaryCount).toBe(512);
+    expect(last!.secondaryCount).toBe(41);
+    await act(async () => { await last!.moveEvent("object", 0, 5, 5); });
+    expect(last!.primaryCount).toBe(512);
+    expect(last!.secondaryCount).toBe(41);
+    await act(async () => { await last!.undo(); });
+    expect(last!.primaryCount).toBe(512);
+    expect(last!.secondaryCount).toBe(40);
   });
 });

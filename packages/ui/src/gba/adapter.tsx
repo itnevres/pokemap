@@ -13,7 +13,7 @@ import { useDungeons } from "../hooks/useDungeons.js";
 import { useEditSession, isIndicatorMapUpdate } from "../hooks/useEditSession.js";
 import { useMapEditing } from "../hooks/useMapEditing.js";
 import { HIDDEN_MAP_TYPES } from "../world/visibility.js";
-import { GBA_CAPABILITIES, type EngineAdapter, type FamilyRuntime, type RuntimeArgs, type ShellSlots } from "../shell/adapter.js";
+import { GBA_CAPABILITIES, type BlockEditorSpec, type EngineAdapter, type FamilyRuntime, type RuntimeArgs, type ShellSlots } from "../shell/adapter.js";
 
 /** The GBA-only half of the shell (was App.tsx): data hooks, edit session, map editing state, switch policy, canvases. */
 export function useGbaRuntime({ selected, mode, requestPrompt }: RuntimeArgs): FamilyRuntime {
@@ -110,9 +110,9 @@ export function useGbaRuntime({ selected, mode, requestPrompt }: RuntimeArgs): F
       <div className="app__map-editing" key="world-host">
         {contextLayout && defectsBanner}
         {contextLayout ? (
-          <MapEditingWorkspace onStrokeChain={s.onStrokeChain} hoveredMetatileId={hoveredMetatileId} onHoverMetatile={setHoveredMetatileId} mapName={contextLayout.map.name} data={contextLayout} editSession={editSession} editing={editing} renderCanvas={world} />
+          <MapEditingWorkspace blockEditorSpec={blockEditorSpec} onStrokeChain={s.onStrokeChain} hoveredMetatileId={hoveredMetatileId} onHoverMetatile={setHoveredMetatileId} mapName={contextLayout.map.name} data={contextLayout} editSession={editSession} editing={editing} renderCanvas={world} />
         ) : (
-          <MapEditingWorkspace onStrokeChain={s.onStrokeChain} hoveredMetatileId={hoveredMetatileId} onHoverMetatile={setHoveredMetatileId} active={false} mapName={selected} data={layout.data} editSession={editSession} editing={editing} renderCanvas={world} />
+          <MapEditingWorkspace blockEditorSpec={blockEditorSpec} onStrokeChain={s.onStrokeChain} hoveredMetatileId={hoveredMetatileId} onHoverMetatile={setHoveredMetatileId} active={false} mapName={selected} data={layout.data} editSession={editSession} editing={editing} renderCanvas={world} />
         )}
       </div>
     );
@@ -133,7 +133,7 @@ export function useGbaRuntime({ selected, mode, requestPrompt }: RuntimeArgs): F
       selected && layout.data ? (
         <div className="app__map-editing">
           {defectsBanner}
-          <MapEditingWorkspace onStrokeChain={s.onStrokeChain} hoveredMetatileId={hoveredMetatileId} onHoverMetatile={setHoveredMetatileId} mapName={selected} data={layout.data} editSession={editSession} editing={editing} />
+          <MapEditingWorkspace blockEditorSpec={blockEditorSpec} onStrokeChain={s.onStrokeChain} hoveredMetatileId={hoveredMetatileId} onHoverMetatile={setHoveredMetatileId} mapName={selected} data={layout.data} editSession={editSession} editing={editing} />
         </div>
       ) : null,
     renderWorld,
@@ -172,7 +172,17 @@ export function useGbaRuntime({ selected, mode, requestPrompt }: RuntimeArgs): F
   };
 }
 
+const blockEditorSpec: BlockEditorSpec = {
+  family: "gba", width: 2, layers: 2, squareControls: ["palette", "flip"],
+  blockFields: [
+    { key: "behavior", label: "Behavior", optionsKey: "behaviors" },
+    { key: "layerType", label: "Layer type", optionsKey: "layerTypes" },
+  ],
+  modes: ["1x1", "2x2"],
+};
+
 export const gbaAdapter = {
+  blockEditorSpec,
   addEventFields, addEventDefaults,
   family: "gba",
   label: null,

@@ -1,15 +1,9 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { it } from "vitest";
+import { testConfig } from "./testRoots.js";
 import { projectPaths } from "../../src/config/paths.js";
 
-// Read at module load, resolved against the process cwd: run vitest from the
-// repo root. Roughly fifteen test files import this, so a missing or malformed
-// pokemap.config.json surfaces as one collection error per importing file
-// rather than a single one — noisy, but each message names the real cause.
-const config = JSON.parse(readFileSync("pokemap.config.json", "utf8")) as {
-  projectPath: string;
-  referenceProjects: string[];
-};
+const config = testConfig();
 
 export const SUBJECT_ROOT = config.projectPath;
 export const REFERENCE_ROOTS = config.referenceProjects;

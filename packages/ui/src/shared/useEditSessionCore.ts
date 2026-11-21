@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { AddEventForm, EventKind } from "@pokemap/core/src/addEvent/types.js";
 import { useVisit } from "./useVisit.js";
 import { invalidateEventOptions } from "./useEventOptions.js";
+import { noteTilesetVersion, tilesetGeneration } from "./tilesetVersion.js";
 
 /** Refusals keep their server code; callers suppress failures belonging to a retired visit. */
 export class EditSessionError extends Error {
@@ -9,14 +10,14 @@ export class EditSessionError extends Error {
 }
 
 // SaveDialog and the switch shell share this registry with the owning session hook.
-// Entries live until the request has settled, including failed requests.
-const creates = new Map<string, Set<Promise<unknown>>>();
-export function hasPendingEventCreates(map: string | null): boolean {
-  return map !== null && (creates.get(map)?.size ?? 0) > 0;
+// Session mutations live until the request has settled, including failed requests.
+const sessionMutations = new Map<string, Set<Promise<unknown>>>();
+export function hasPendingSessionMutations(map: string | null): boolean {
+  return map !== null && (sessionMutations.get(map)?.size ?? 0) > 0;
 }
-export async function eventCreateBarrier(map: string | null): Promise<void> {
-  while (map !== null && hasPendingEventCreates(map)) {
-    await Promise.all([...creates.get(map)!].map((pending) => pending.catch(() => undefined)));
+export async function sessionMutationBarrier(map: string | null): Promise<void> {
+  while (map !== null && hasPendingSessionMutations(map)) {
+    await Promise.all([...sessionMutations.get(map)!].map((pending) => pending.catch(() => undefined)));
   }
 }
 
@@ -24,6 +25,19 @@ export async function eventCreateBarrier(map: string | null): Promise<void> {
 export interface EventCreateSession {
   createEvent(form: AddEventForm): Promise<{ kind: EventKind; index: number } | null>;
   barrier(): Promise<void>;
+}
+
+export interface BlockCheckReply {
+  usage: unknown;
+  confirm: boolean;
+  warnings: string[];
+  refusal?: { code: string; error: string };
+}
+export interface BlockEditSession {
+  blockCheck(request: unknown, revision: string): Promise<BlockCheckReply | null>;
+  blockPreview(request: unknown): Promise<{ png: string } | null>;
+  /** Posts /block/apply and applies the reply exactly like undo. Resolves true when applied. Throws EditSessionError on a refusal. */
+  blockApply(request: unknown, revision: string): Promise<boolean>;
 }
 
 export interface EditFlags { isDirty: boolean; canUndo: boolean; canRedo: boolean }
@@ -56,16 +70,16 @@ export function useEditSessionCore<State>(base: string, mapName: string | null, 
   const visitRef = useRef(visit);
   visitRef.current = visit;
   if (visit.changed && stored !== null) setStored(null);
-  const ownedCreates = useRef(new Map<Promise<unknown>, string>());
+  const ownedSessionMutations = useRef(new Map<Promise<unknown>, string>());
   useEffect(() => () => {
-    for (const [pending, name] of ownedCreates.current) {
-      const active = creates.get(name);
+    for (const [pending, name] of ownedSessionMutations.current) {
+      const active = sessionMutations.get(name);
       active?.delete(pending);
-      if (active?.size === 0) creates.delete(name);
+      if (active?.size === 0) sessionMutations.delete(name);
     }
-    ownedCreates.current.clear();
+    ownedSessionMutations.current.clear();
   }, []);
-  const barrier = useCallback(() => eventCreateBarrier(mapName), [mapName]);
+  const barrier = useCallback(() => sessionMutationBarrier(mapName), [mapName]);
   // A seed change resets the view. GBA's useMapLayout keeps the previous map data until B's fetch lands, so a
   // paint in that window is shown then wiped when B's seed arrives while the server session stays dirty: a
   // pre-existing gap, kept as before Plan 8.
@@ -79,15 +93,18 @@ export function useEditSessionCore<State>(base: string, mapName: string | null, 
       if (!owner.isCurrent()) return null;
       const ticket: EditTicket = { map: mapName, seed, seq: ++seq.current.issued, isCurrent: owner.isCurrent };
       try {
+        const generation = tilesetGeneration();
         const r = await fetch(`${base}/${encodeURIComponent(mapName)}${path}`, body === undefined ? { method: "POST" } : { method: "POST", body: JSON.stringify(body) });
-        // Legacy callers can opt out of body reads on errors; create and redo (header ownership) always need refusal codes.
-        const structured = readServerError || path === "/event/create" || path === "/redo";
+        // Legacy callers can opt out of body reads on errors; session mutations, block reads and redo always need refusal codes.
+        const structured = readServerError || path === "/event/create" || path === "/redo"
+          || path === "/block/apply" || path === "/block/check" || path === "/block/preview";
         const data: unknown = structured ? await r.json().catch(() => null) : r.ok ? await r.json() : undefined;
         if (!r.ok) {
           const error = data as { error?: unknown; code?: unknown } | null;
           throw new EditSessionError(typeof error?.error === "string" ? error.error : `POST ${base}/${mapName}${path} -> ${r.status}`,
             typeof error?.code === "string" ? error.code : undefined, !owner.isCurrent());
         }
+        noteTilesetVersion((data as { tilesetVersion?: unknown } | null)?.tilesetVersion, generation);
         if (owner.isCurrent() && (path === "/undo" || path === "/redo" || path === "/event/create")) invalidateEventOptions();
         return { data: data as R, ticket };
       } catch (error) {
@@ -96,12 +113,12 @@ export function useEditSessionCore<State>(base: string, mapName: string | null, 
       }
     };
     const pending = run();
-    if (path === "/event/create") {
-      const active = creates.get(mapName) ?? new Set<Promise<unknown>>();
-      creates.set(mapName, active);
+    if (path === "/event/create" || path === "/block/apply") {
+      const active = sessionMutations.get(mapName) ?? new Set<Promise<unknown>>();
+      sessionMutations.set(mapName, active);
       active.add(pending);
-      ownedCreates.current.set(pending, mapName);
-      const settled = () => { ownedCreates.current.delete(pending); active.delete(pending); if (active.size === 0 && creates.get(mapName) === active) creates.delete(mapName); };
+      ownedSessionMutations.current.set(pending, mapName);
+      const settled = () => { ownedSessionMutations.current.delete(pending); active.delete(pending); if (active.size === 0 && sessionMutations.get(mapName) === active) sessionMutations.delete(mapName); };
       void pending.then(settled, settled);
     }
     return pending;
@@ -133,8 +150,12 @@ export function useEditSessionCore<State>(base: string, mapName: string | null, 
     const owner = visitRef.current;
     await barrier();
     if (!owner.isCurrent()) return;
+    const generation = tilesetGeneration();
     const r = await fetch(`${base}/${encodeURIComponent(mapName)}/discard`, { method: "POST" });
     if (!r.ok) throw new Error(`POST ${base}/${mapName}/discard -> ${r.status}`);
+    // A 2xx whose body is not JSON still ran the discard server-side; reset locally and note a version only if it is a number.
+    const data: unknown = await r.json().catch(() => null);
+    noteTilesetVersion((data as { tilesetVersion?: unknown } | null)?.tilesetVersion, generation);
     if (!owner.isCurrent()) return;
     invalidateEventOptions();
     seq.current.applied = seq.current.issued; // in-flight edits cannot resurrect a discarded session

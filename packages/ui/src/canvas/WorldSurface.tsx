@@ -95,6 +95,7 @@ export function WorldSurface<P extends SurfacePlacement, C extends WireConflict,
   const [ledger] = useState(createPlacementLedger);
   const { world, error, reload, loadedGen, dismissError, move } = adapter.useWorld(ledger, mapFilter ? "dungeon" : "world");
   const coverage = adapter.useCoverage();
+  const imageUrl = adapter.useImageUrl();
 
   const fitRef = useRef<() => void>(() => {});
   const stableFit = useCallback(() => fitRef.current(), []);
@@ -136,7 +137,9 @@ export function WorldSurface<P extends SurfacePlacement, C extends WireConflict,
     viewport,
     canvasRef,
     snapPointerRef,
-    isBlocked: () => contextMenu.menu !== null,
+    // Any open context menu (the world's own or the map overlay's) blocks the exit, matching DESIGN.md: Escape
+    // closes the topmost menu and is not also an exit request (F1).
+    isBlocked: () => contextMenu.menu !== null || document.querySelector(".world-context-menu") !== null,
   });
 
   // Set by the first fit that lands (any fit or a jump), not the first attempt: a world or filter with nothing
@@ -249,7 +252,7 @@ export function WorldSurface<P extends SurfacePlacement, C extends WireConflict,
   }, [drawn, view, viewport]);
   const tiles = useWorldTiles({
     visible,
-    imageUrl: adapter.imageUrl,
+    imageUrl,
     sizeOf,
     nativePx: adapter.nativePx,
     cacheKey: adapter.cacheKey,

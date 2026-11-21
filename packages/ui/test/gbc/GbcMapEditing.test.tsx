@@ -1,9 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { render, renderHook, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { GbcMapEditing, type GbcMapEditingCanvasProps } from "../../src/gbc/GbcMapEditing.js";
 import type { UseGbcEditSessionResult } from "../../src/gbc/hooks/useGbcEditSession.js";
 import type { GbcMapPayload } from "@pokemap/core/src/gbc/wire.js";
 import type { GbcMapEvents } from "@pokemap/core/src/gbc/model/types.js";
+import { gbcAdapter } from "../../src/gbc/adapter.js";
+import { hasPendingSessionMutations, sessionMutationBarrier, useEditSessionCore, type BlockEditSession } from "../../src/shared/useEditSessionCore.js";
 
 beforeEach(() => {
   Element.prototype.scrollIntoView = vi.fn();
@@ -226,5 +228,279 @@ describe("GbcMapEditing per-visit local state", () => {
     act(() => host.current().onEditError?.("current visit error"));
     act(() => old("stale canvas error"));
     expect(screen.getByRole("alert").textContent).toContain("current visit error");
+  });
+});
+
+describe("GbcMapEditing block editor mount (Plan 14.2 Task 14a)", () => {
+  const body = {
+    blockId: 5, viaBorder: false, revision: "r1",
+    block: {
+      tiles: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16],
+      collision: ["FLOOR", "WALL", "FLOOR", "WATER"],
+      tilePalettes: Array.from({ length: 16 }, () => "GRAY"),
+    },
+    sheet: {
+      url: "/api/block-sheet/A.png?tv=1&time=nite", tileCount: 64,
+      tileIds: Array.from({ length: 64 }, (_, i) => 0x10 + i), reservedTiles: [],
+    },
+    options: { collision: ["FLOOR", "WALL", "WATER"], palettes: ["GRAY", "RED"] },
+    usage: {
+      files: ["blocks.bin"], tilesets: ["A"],
+      maps: [{ map: "M", interior: 1, border: 0, block0AsBorder: 0 }], sharedGrids: [],
+    },
+    owner: null, limits: { nextId: 6, cap: 256 },
+  };
+  let fetchMock: ReturnType<typeof vi.fn<typeof fetch>>;
+  let finishMutation: (() => void) | undefined;
+  let mutationReply: Promise<Response> | undefined;
+
+  beforeEach(() => {
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(400);
+    vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(300);
+    const previousFetch = globalThis.fetch;
+    fetchMock = vi.fn<typeof fetch>(async (input, init) => {
+      const url = new URL(String(input), "http://localhost");
+      if (url.pathname === "/api/edit/M/block" && (init?.method ?? "GET") === "GET") {
+        return new Response(JSON.stringify(body), { status: 200 });
+      }
+      if (url.pathname === "/api/edit/M/block/apply" && init?.method === "POST" && mutationReply) return mutationReply;
+      return previousFetch(input, init);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+  });
+
+  afterEach(async () => {
+    finishMutation?.();
+    await sessionMutationBarrier("M");
+    finishMutation = undefined;
+    mutationReply = undefined;
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  function sessionWithBlockEditor() {
+    return {
+      ...stub(),
+      blockCheck: vi.fn<BlockEditSession["blockCheck"]>().mockResolvedValue(null),
+      blockPreview: vi.fn<BlockEditSession["blockPreview"]>().mockResolvedValue(null),
+      blockApply: vi.fn<BlockEditSession["blockApply"]>().mockResolvedValue(true),
+    };
+  }
+
+  function workspace(session: ReturnType<typeof sessionWithBlockEditor>, mapName = "M", time: "day" | "nite" = "day") {
+    return <GbcMapEditing mapName={mapName} data={DATA} time={time} session={session}
+      hoveredMetatileId={null} onHoverMetatile={() => {}} onOpenSave={() => {}} blockEditorSpec={gbcAdapter.blockEditorSpec} />;
+  }
+
+  async function openDialog(container: HTMLElement) {
+    const canvas = container.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
+    expect(canvas).not.toBeNull();
+    const { width, height } = canvas;
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+      left: 0, top: 0, width, height, right: width, bottom: height, x: 0, y: 0, toJSON() {},
+    });
+    // Default zoom 1, pan (0,0); one 32px border ring gives origin (32,32).
+    // source = ((112-0)/1,(80-0)/1) = (112,80); cell = floor((source-origin)/32) = (2,1).
+    // A 16px event-step lookup would wrongly return (5,3), outside this 3x2 block map.
+    expect(fireEvent.contextMenu(canvas, { clientX: 112, clientY: 80, button: 2 })).toBe(false);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Edit block" }));
+    await waitFor(() => {
+      const panel = document.querySelector(".block-editor");
+      expect(panel).not.toBeNull();
+      expect(panel?.getAttribute("role")).toBe("dialog");
+    });
+    await screen.findByRole("button", { name: "OK" });
+  }
+
+  function blockRequests() {
+    return fetchMock.mock.calls.map(([input]) => new URL(String(input), "http://localhost"))
+      .filter(url => url.pathname === "/api/edit/M/block");
+  }
+
+  it("choosing Edit block renders the dialog for that block cell", async () => {
+    const { container } = render(workspace(sessionWithBlockEditor()));
+    await openDialog(container);
+    const requests = blockRequests();
+    expect(requests).toHaveLength(1);
+    expect(requests[0]!.searchParams.get("x")).toBe("2");
+    expect(requests[0]!.searchParams.get("y")).toBe("1");
+  });
+
+  it("a map switch closes the dialog", async () => {
+    const session = sessionWithBlockEditor();
+    const { container, rerender } = render(workspace(session));
+    await openDialog(container);
+    rerender(workspace(session, "N"));
+    expect(document.querySelector(".block-editor")).toBeNull();
+  });
+
+  it("passes the current night time to the dialog's block request", async () => {
+    const { container } = render(workspace(sessionWithBlockEditor(), "M", "nite"));
+    await openDialog(container);
+    const requests = blockRequests();
+    expect(requests).toHaveLength(1);
+    // useBlockEditor puts time on the GET that supplies preview sheet data, rather than blockPreview's body.
+    expect(requests[0]!.searchParams.get("time")).toBe("nite");
+  });
+
+  function stage(container: HTMLElement) {
+    const canvas = container.querySelector("canvas.map-canvas__stage") as HTMLCanvasElement;
+    expect(canvas).not.toBeNull();
+    const { width, height } = canvas;
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+      left: 0, top: 0, width, height, right: width, bottom: height, x: 0, y: 0, toJSON() {},
+    });
+    return canvas;
+  }
+
+  it("without blockEditorSpec leaves the browser menu untouched", () => {
+    const { container } = render(<GbcMapEditing mapName="M" data={DATA} time="day" session={sessionWithBlockEditor()}
+      hoveredMetatileId={null} onHoverMetatile={() => {}} onOpenSave={() => {}} />);
+    // Origin=(32,32), zoom=1, pan=0: source=(112,80) -> block (2,1), as openDialog derives.
+    expect(fireEvent.contextMenu(stage(container), { clientX: 112, clientY: 80, button: 2 })).toBe(true);
+    expect(screen.queryByRole("menu")).toBeNull();
+    expect(document.querySelector(".block-editor")).toBeNull();
+  });
+
+  it("disables Edit block while a real session mutation is pending for the current map", async () => {
+    mutationReply = new Promise<Response>(resolve => { finishMutation = () => resolve(new Response("{}", { status: 200 })); });
+    const { result } = renderHook(() => useEditSessionCore("/api/edit", "M", DATA.blocks));
+    let pending!: ReturnType<typeof result.current.post>;
+    act(() => { pending = result.current.post("/block/apply", {}); });
+    expect(hasPendingSessionMutations("M")).toBe(true);
+    const { container } = render(workspace(sessionWithBlockEditor()));
+    // The same (112,80) centre is block (2,1): floor(((p-0)/1-32)/32).
+    try {
+      expect(fireEvent.contextMenu(stage(container), { clientX: 112, clientY: 80, button: 2 })).toBe(false);
+      const item = screen.getByRole("menuitem", { name: /Edit block.*Wait for the current change to finish/ });
+      expect((item as HTMLButtonElement).disabled).toBe(true);
+      fireEvent.click(item);
+      expect(document.querySelector(".block-editor")).toBeNull();
+    } finally {
+      await act(async () => { finishMutation!(); await pending; await sessionMutationBarrier("M"); });
+    }
+    expect(hasPendingSessionMutations("M")).toBe(false);
+  });
+
+  // Plan 14.2 fix hop A: the palette is sized from the map payload, which only refetches when the map
+  // changes -- so a block the editor appended ("Save as new") would stay invisible until a reload.
+  // Every session reply now carries the map's effective metatile count and the workspace prefers it.
+  it("Plan 14.2 I1: the palette follows the session's metatileCount, and shrinks again on the undo reply", () => {
+    const session = sessionWithBlockEditor();
+    const { rerender } = render(workspace(session));
+    // DATA.metatileCount is 6: ids 0x0..0x5 exist, 0x6 is not offered yet.
+    expect(screen.queryByRole("button", { name: "metatile 0x5" })).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "metatile 0x6" })).toBeNull();
+    // The reply after a saveAsNew append reports metatileCount 6 -> 7, so the palette grows a cell.
+    rerender(workspace({ ...session, metatileCount: 7 }));
+    expect(screen.getByRole("button", { name: "metatile 0x6" })).not.toBeNull();
+    // The reply after undoing that append reports 6 again, so the cell that no longer exists is gone.
+    rerender(workspace(session));
+    expect(screen.queryByRole("button", { name: "metatile 0x6" })).toBeNull();
+  });
+
+  // Plan 14.2 fix hop A (F5, spec 3e): the Edit block entry points wait on EVERY action barrier, not only
+  // the two routes the shared core tracks (`/event/create`, `/block/apply`). The workspace's own
+  // `editRequests` counter is what sees an undo in flight.
+  it("Plan 14.2 F5: Edit block is disabled while an undo is in flight, and re-enables when it settles", async () => {
+    let finishUndo!: () => void;
+    const undo = new Promise<void>(resolve => { finishUndo = resolve; });
+    const session = {
+      ...stub({ canUndo: true, undo: vi.fn(() => undo) }),
+      blockCheck: vi.fn<BlockEditSession["blockCheck"]>().mockResolvedValue(null),
+      blockPreview: vi.fn<BlockEditSession["blockPreview"]>().mockResolvedValue(null),
+      blockApply: vi.fn<BlockEditSession["blockApply"]>().mockResolvedValue(true),
+    };
+    const { container } = render(workspace(session));
+    const canvas = stage(container);
+
+    // Start the undo and hold it open: the request is in flight, the session mutation registry never saw it.
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    expect(session.undo).toHaveBeenCalled();
+    expect(hasPendingSessionMutations("M")).toBe(false);
+
+    // The context menu's Edit block item is disabled, with the shared message (same (112,80) -> block (2,1)).
+    expect(fireEvent.contextMenu(canvas, { clientX: 112, clientY: 80, button: 2 })).toBe(false);
+    const item = screen.getByRole("menuitem", { name: /Edit block.*Wait for the current change to finish/ });
+    expect((item as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(item);
+    expect(document.querySelector(".block-editor")).toBeNull();
+    // The palette's right-click entry point is gated by the same barrier.
+    expect(fireEvent.contextMenu(screen.getByRole("button", { name: "metatile 0x3" }), { button: 2 })).toBe(false);
+    expect(document.querySelector(".block-editor")).toBeNull();
+
+    // Settle the undo: the barrier clears and Edit block works again.
+    await act(async () => { finishUndo(); await undo; });
+    fireEvent.contextMenu(canvas, { clientX: 112, clientY: 80, button: 2 });
+    const enabled = screen.getByRole("menuitem", { name: "Edit block" });
+    expect((enabled as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(enabled);
+    await waitFor(() => expect(document.querySelector(".block-editor")).not.toBeNull());
+  });
+
+  // Task 14b: the GBC workspace's same dialog is reachable from the palette (right-click) and from
+  // the Edit block tool on the canvas.
+  describe("palette and tool entry points (Plan 14.2 Task 14b)", () => {
+    it("suppresses the palette menu while a session mutation is pending", async () => {
+      mutationReply = new Promise<Response>(resolve => { finishMutation = () => resolve(new Response("{}", { status: 200 })); });
+      const { result } = renderHook(() => useEditSessionCore("/api/edit", "M", DATA.blocks));
+      let pending!: ReturnType<typeof result.current.post>;
+      act(() => { pending = result.current.post("/block/apply", {}); });
+      expect(hasPendingSessionMutations("M")).toBe(true);
+      render(workspace(sessionWithBlockEditor()));
+      try {
+        expect(fireEvent.contextMenu(screen.getByRole("button", { name: "metatile 0x3" }), { button: 2 })).toBe(false);
+        expect(document.querySelector(".block-editor")).toBeNull();
+      } finally {
+        await act(async () => { finishMutation!(); await pending; await sessionMutationBarrier("M"); });
+      }
+      expect(hasPendingSessionMutations("M")).toBe(false);
+    });
+
+    it("leaves the palette browser menu untouched without a block editor spec", () => {
+      render(<GbcMapEditing mapName="M" data={DATA} time="day" session={sessionWithBlockEditor()}
+        hoveredMetatileId={null} onHoverMetatile={() => {}} onOpenSave={() => {}} />);
+      expect(fireEvent.contextMenu(screen.getByRole("button", { name: "metatile 0x3" }), { button: 2 })).toBe(true);
+      expect(document.querySelector(".block-editor")).toBeNull();
+    });
+
+    it("a palette right-click opens the dialog for that block with from: palette", async () => {
+      const session = sessionWithBlockEditor();
+      render(workspace(session));
+      const cell = screen.getByRole("button", { name: "metatile 0x3" });
+      expect(fireEvent.contextMenu(cell, { button: 2 })).toBe(false);
+      await waitFor(() => expect(document.querySelector(".block-editor")).not.toBeNull());
+      // A `{ block }` target loads by block id (plus the GBC time), with no x/y at all.
+      const loads = blockRequests();
+      expect(loads).toHaveLength(1);
+      expect(loads[0]!.searchParams.get("block")).toBe("3");
+      expect(loads[0]!.searchParams.get("x")).toBeNull();
+      expect(loads[0]!.searchParams.get("time")).toBe("day");
+      fireEvent.click(await screen.findByRole("button", { name: "OK" }));
+      await waitFor(() => expect(session.blockCheck).toHaveBeenCalled());
+      const sent = session.blockCheck.mock.calls[0]![0] as { request: { from: string } };
+      expect(sent.request.from).toBe("palette");
+      expect(session.beginStroke).not.toHaveBeenCalled();
+    });
+
+    it("the Edit block tool opens the dialog for the clicked block cell", async () => {
+      const session = sessionWithBlockEditor();
+      const { container } = render(workspace(session));
+      fireEvent.click(screen.getByRole("button", { name: "Edit block" }));
+
+      // GBC origin (32,32), 32px blocks, zoom 1, pan 0: the bottom-right event quadrant centre of
+      // block (1,0) is (32+1*32+24, 32+0*32+24) = (88,56); block = floor((source-32)/32) = (1,0).
+      // The 16px event step would give (floor(56/16),floor(24/16)) = (3,1) -- NOT the block.
+      const canvas = stage(container);
+      fireEvent.mouseDown(canvas, { button: 0, clientX: 88, clientY: 56 });
+      fireEvent.mouseUp(canvas, { button: 0, clientX: 88, clientY: 56 });
+      await waitFor(() => expect(document.querySelector(".block-editor")).not.toBeNull());
+      const loads = blockRequests();
+      expect(loads).toHaveLength(1);
+      expect(loads[0]!.searchParams.get("x")).toBe("1");
+      expect(loads[0]!.searchParams.get("y")).toBe("0");
+      expect(session.beginStroke).not.toHaveBeenCalled();
+      expect(session.applyPaint).not.toHaveBeenCalled();
+    });
   });
 });

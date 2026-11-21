@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { Toolbar, type ToolKind } from "../src/components/Toolbar.js";
 
-const ALL_TOOLS: ToolKind[] = ["pencil", "rect", "bucket", "dropper", "shift", "collision", "sign"];
+const ALL_TOOLS: ToolKind[] = ["pencil", "rect", "bucket", "dropper", "shift", "collision", "sign", "editBlock"];
 
 // No @testing-library/jest-dom in this repo (confirmed: no matcher
 // extension anywhere under packages/ui/test) -- toHaveAttribute/
@@ -157,6 +157,28 @@ describe("Toolbar", () => {
       render(<Toolbar {...baseProps} />);
       expect(screen.getByRole("button", { name: "Undo" }).getAttribute("title")).toBe("Undo (Ctrl+Z)");
       expect(screen.getByRole("button", { name: "Redo" }).getAttribute("title")).toBe("Redo (Ctrl+Y)");
+    });
+  });
+
+  // Task 14b (N7): the Edit block tool is appended LAST to the toolbar order, titled with the K shortcut,
+  // and carries the same inline-SVG icon as every other tool.
+  describe("Edit block tool (Task 14b)", () => {
+    it("shows Edit block (K) last", () => {
+      render(<Toolbar {...baseProps} tools={ALL_TOOLS} availableTools={ALL_TOOLS} />);
+      const buttons = Array.from(screen.getByRole("group", { name: "Tools" }).querySelectorAll("button"));
+      const last = buttons.at(-1)!;
+      expect(last.getAttribute("title")).toBe("Edit block (K)");
+      expect(last.textContent).toBe("Edit block");
+      expect(last.querySelector("svg")).not.toBeNull();
+      // The accessible name follows the toolbar's usual rule for a tool.
+      expect(screen.getByRole("button", { name: /Edit block/ })).toBe(last);
+    });
+
+    it("K selects Edit block", () => {
+      const onSelectTool = vi.fn();
+      render(<Toolbar {...baseProps} activeToolKind={null} onSelectTool={onSelectTool} />);
+      fireEvent.keyDown(window, { key: "k" });
+      expect(onSelectTool).toHaveBeenCalledWith("editBlock");
     });
   });
 });

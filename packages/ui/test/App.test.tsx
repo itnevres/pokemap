@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor, act } from "@testing-library/react";
 import { FamilyApp } from "../src/shell/FamilyApp.js";
 import { gbaAdapter } from "../src/gba/adapter.js";
+import { currentTilesetVersion, noteTilesetVersion, resetTilesetVersion } from "../src/shared/tilesetVersion.js";
 import { restoreViewport, stubViewport, withViewport } from "./viewport.js";
 
 /**
@@ -252,6 +253,18 @@ describe("App", () => {
     // B must still be open -- not cleared by A's now-resolved delete.
     expect(screen.getByText("Safari Zone").closest("button")!.getAttribute("aria-current")).toBe("true");
     expect(screen.queryByText("Select or create a dungeon")).toBeNull();
+  });
+
+  // Conductor s10 (Task 10b mutation N11): a project switch unmounts FamilyApp, and the unmount drops the old
+  // project's tileset version so the next project starts at 0.
+  it("resets the tileset version when the app unmounts", async () => {
+    vi.stubGlobal("fetch", makeFetchMock({}));
+    resetTilesetVersion();
+    const { unmount } = render(<FamilyApp adapter={gbaAdapter} />);
+    act(() => noteTilesetVersion(7));
+    expect(currentTilesetVersion()).toBe(7);
+    unmount();
+    expect(currentTilesetVersion()).toBe(0);
   });
 
   it("surfaces a groups-load failure in Dungeon mode too", async () => {

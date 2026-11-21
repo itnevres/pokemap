@@ -163,7 +163,7 @@ export function buildGbcGroupsPayload(proj: GbcProject): { groupOrder: string[];
  * be unit-tested directly against a stub `GbcProject`, without needing
  * `createGbcProjectHandler` restructured for dependency injection.
  */
-export function buildGbcMapPayload(proj: GbcProject, map: GbcMap, symbols?: SymbolIndex): GbcMapPayload {
+export function buildGbcMapPayload(proj: GbcProject, map: GbcMap, symbols?: SymbolIndex, tilesetVersion = 0): GbcMapPayload & { tilesetVersion: number } {
   const { layout } = proj.layout(map);
   const ts = proj.tileset(map.tileset);
 
@@ -186,6 +186,7 @@ export function buildGbcMapPayload(proj: GbcProject, map: GbcMap, symbols?: Symb
 
   return {
     family: "gbc",
+    tilesetVersion,
     map,
     layout: { blkPath: layout.blkPath, width: layout.width, height: layout.height },
     blocks: layout.blocks,
@@ -197,7 +198,7 @@ export function buildGbcMapPayload(proj: GbcProject, map: GbcMap, symbols?: Symb
     defects,
     incomplete,
     paddingWidth: proj.paddingWidth(),
-  } satisfies GbcMapPayload;
+  } satisfies GbcMapPayload & { tilesetVersion: number };
 }
 
 /**
@@ -308,6 +309,7 @@ export function createGbcProjectHandler(root: string, hooks: AddEventHooks = {})
   // map, renders, caches, and returns it; undefined when the name resolves
   // to no map (route answers 404 as today).
   const cachedRender = (name: string, border: number, time: TimeOfDay): Buffer | undefined => {
+    edit.syncOverlay();
     const key = `${name}:${border}:${time}`;
     let png = renderCache.get(key);
     if (png) return png;
@@ -326,9 +328,12 @@ export function createGbcProjectHandler(root: string, hooks: AddEventHooks = {})
   let worldCache: GbcWorld | undefined;
   const getWorld = () => (worldCache ??= buildGbcWorld(proj));
   let warpCache: readonly WarpLink[] | undefined;
-  const getWarps = () => (warpCache ??= Object.freeze(gbcWarpLinks(proj).map((link) => Object.freeze({
-    ...link, source: Object.freeze(link.source), arrival: link.arrival && Object.freeze(link.arrival),
-  }))));
+  const getWarps = () => {
+    edit.syncOverlay();
+    return (warpCache ??= Object.freeze(gbcWarpLinks(proj).map((link) => Object.freeze({
+      ...link, source: Object.freeze(link.source), arrival: link.arrival && Object.freeze(link.arrival),
+    }))));
+  };
 
   // gbcCoverage walks every one of the 391 maps' wild-data tables -- warm,
   // measured ~13-19ms against the real corpus, close to the plan review's
@@ -342,7 +347,10 @@ export function createGbcProjectHandler(root: string, hooks: AddEventHooks = {})
   // itself). Same "read-only project, compute once" reasoning as
   // worldCache above and GBA's own coverageCache.
   let coverageCache: GbcCoverage | undefined;
-  const getCoverage = () => (coverageCache ??= gbcCoverage(proj));
+  const getCoverage = () => {
+    edit.syncOverlay();
+    return (coverageCache ??= gbcCoverage(proj));
+  };
 
   // Plan 7 Task 4: the edit routes and their session store. A commit writes
   // blocks and events to disk, so everything derived from either goes stale:
@@ -351,6 +359,12 @@ export function createGbcProjectHandler(root: string, hooks: AddEventHooks = {})
   // and metatile art), so they stay.
   const edit = createGbcEditRoutes(proj, {
     ...hooks, symbols,
+    clearTilesetCaches: () => {
+      renderCache.clear();
+      metatileCache.clear();
+      warpCache = undefined;
+      coverageCache = undefined;
+    },
     onCommit: () => {
       symbols.invalidate(); edit.invalidateOptions();
       renderCache.clear();
@@ -400,11 +414,12 @@ export function createGbcProjectHandler(root: string, hooks: AddEventHooks = {})
 
       const mapMatch = /^\/api\/map\/(.+)$/.exec(url.pathname);
       if (mapMatch) {
+        const tilesetVersion = edit.syncOverlay();
         const rawName = mapMatch[1]!;
         const name = decodeMapName(rawName);
         if (name === undefined) return send(400, { error: `malformed map name ${rawName}` });
         if (!mapNames.has(name)) return send(404, { error: `no map ${name}` });
-        return send(200, symbols.check((index) => buildGbcMapPayload(proj, proj.map(name), index)));
+        return send(200, symbols.check((index) => buildGbcMapPayload(proj, proj.map(name), index, tilesetVersion)));
       }
 
       // Both PNG routes below resolve the map name FIRST (404), then
@@ -422,6 +437,7 @@ export function createGbcProjectHandler(root: string, hooks: AddEventHooks = {})
       // that incidental GBA split.
       const renderMatch = /^\/api\/render\/(.+)\.png$/.exec(url.pathname);
       if (renderMatch) {
+        edit.syncOverlay();
         const rawName = renderMatch[1]!;
         const name = decodeMapName(rawName);
         if (name === undefined) return send(400, { error: `malformed map name ${rawName}` });
@@ -466,6 +482,7 @@ export function createGbcProjectHandler(root: string, hooks: AddEventHooks = {})
       // to the generic 404 instead of the named 400 the spec asks for.
       const metatileMatch = /^\/api\/metatile\/(.+)\/([^/]+)\.png$/.exec(url.pathname);
       if (metatileMatch) {
+        edit.syncOverlay();
         const rawName = metatileMatch[1]!;
         const rawId = metatileMatch[2]!;
         const name = decodeMapName(rawName);
@@ -503,6 +520,7 @@ export function createGbcProjectHandler(root: string, hooks: AddEventHooks = {})
       // unconditionally -- there is no dungeons-on/off toggle to read a
       // query param for (`gbc/world/connections.ts`'s own doc comment).
       if (url.pathname === "/api/world") {
+        edit.syncOverlay();
         const scope = url.searchParams.get("scope") === "dungeon" ? "dungeon" : "world";
         return send(200, buildGbcWorldPayload(proj, getWorld(), readSidecar(proj.root), getWarps(), { scope }));
       }
@@ -673,6 +691,7 @@ export function createGbcProjectHandler(root: string, hooks: AddEventHooks = {})
 
       const encountersMatch = /^\/api\/encounters\/(.+)$/.exec(url.pathname);
       if (encountersMatch) {
+        edit.syncOverlay();
         const rawName = encountersMatch[1]!;
         const name = decodeMapName(rawName);
         if (name === undefined) return send(400, { error: `malformed map name ${rawName}` });
@@ -690,6 +709,7 @@ export function createGbcProjectHandler(root: string, hooks: AddEventHooks = {})
       // species with no hits, it just returns nothing to iterate.
       const whereMatch = /^\/api\/where\/([^/]+)$/.exec(url.pathname);
       if (whereMatch) {
+        edit.syncOverlay();
         const raw = whereMatch[1]!;
         const species = decodeMapName(raw);
         if (species === undefined) return send(400, { error: `malformed species ${raw}` });
@@ -728,7 +748,7 @@ export function createGbcProjectHandler(root: string, hooks: AddEventHooks = {})
         return send(200, getSpecies());
       }
 
-      if (edit.handle(req, url, send)) return;
+      if (edit.handle(req, url, (code, body) => { if (Buffer.isBuffer(body)) { res.writeHead(code, { "content-type": "image/png", "cache-control": "no-cache" }); res.end(body); } else send(code, body); })) return;
 
       if (GBA_ONLY_ROUTE_RE.test(url.pathname)) {
         return send(501, { error: `${url.pathname} is not supported for gbc (pokecrystal-family) projects yet` });

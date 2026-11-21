@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, act, waitFor } from "@testing-library/react";
 import { MetatilePalette } from "../src/components/MetatilePalette.js";
 import type { ThumbSignature } from "../src/shared/useUniformRows.js";
+import { noteTilesetVersion, resetTilesetVersion } from "../src/shared/tilesetVersion.js";
 
 let originalScrollIntoView: typeof Element.prototype.scrollIntoView;
 
@@ -299,5 +300,82 @@ describe("MetatilePalette", () => {
     const cls = screen.getByRole("button", { name: "metatile 0x2" }).className;
     expect(cls).toContain("metatile-palette__cell--selected");
     expect(cls).toContain("metatile-palette__cell--hovered");
+  });
+});
+
+// Task 10b: the thumbnail URL carries the hub's tileset version so a staged edit cannot stay on screen.
+describe("MetatilePalette tileset version (Task 10b)", () => {
+  afterEach(() => { resetTilesetVersion(); });
+
+  it("keeps today's URL at version 0 and appends tv= to the same mounted palette", () => {
+    const { container } = render(
+      <MetatilePalette layoutName="Test_Layout" split={SPLIT} primaryCount={2} secondaryCount={1} onSelect={() => {}} />,
+    );
+    // Ids render in order: primary 0, 1, then the single secondary id at the split (640).
+    const thumbs = () => [...container.querySelectorAll(".metatile-palette__thumb")];
+    const srcAt = (index: number) => thumbs()[index]!.getAttribute("src");
+    expect(thumbs()).toHaveLength(3);
+
+    // Version 0 is today's exact URL: no tv parameter at all.
+    expect(srcAt(0)).toBe("/api/metatile/Test_Layout/0.png");
+    expect(srcAt(1)).toBe("/api/metatile/Test_Layout/1.png");
+    expect(srcAt(2)).toBe("/api/metatile/Test_Layout/640.png");
+
+    act(() => noteTilesetVersion(5));
+
+    expect(srcAt(0)).toBe("/api/metatile/Test_Layout/0.png?tv=5");
+    expect(srcAt(1)).toBe("/api/metatile/Test_Layout/1.png?tv=5");
+    // The secondary id proves the version is added to every thumbnail, not just the first.
+    expect(srcAt(2)).toBe("/api/metatile/Test_Layout/640.png?tv=5");
+  });
+});
+
+// Task 14b (N9): a right-click on a palette cell opens the block editor for that metatile and never
+// changes the palette selection. The cell's onMouseDown has no button check today, so a right press
+// would start a drag selection -- these cases pin the `event.button === 0` guard.
+describe("MetatilePalette block editor (Task 14b)", () => {
+  it("right-click opens the editor for that metatile and prevents the browser menu", () => {
+    const onEditBlock = vi.fn();
+    render(<MetatilePalette layoutName="Test_Layout" split={SPLIT} primaryCount={8} secondaryCount={0}
+      onSelect={() => {}} onEditBlock={onEditBlock} />);
+    // fireEvent returns false only when preventDefault() ran: the browser menu must stay suppressed.
+    expect(fireEvent.contextMenu(screen.getByRole("button", { name: "metatile 0x5" }), { button: 2 })).toBe(false);
+    expect(onEditBlock).toHaveBeenCalledTimes(1);
+    expect(onEditBlock).toHaveBeenCalledWith(5);
+  });
+
+  it("a right press never changes the selection", () => {
+    const onSelect = vi.fn(), onEditBlock = vi.fn();
+    render(<MetatilePalette layoutName="Test_Layout" split={SPLIT} primaryCount={32} secondaryCount={0}
+      onSelect={onSelect} onEditBlock={onEditBlock} />);
+    // 32 ids over the default 8 columns = 4 rows, folded at row 2. 0x1 (index 1, row 0) and
+    // 0x9 (index 9, row 1) are BOTH in the left column (row < fold), so a LEFT drag 0x1 -> 0x9
+    // would call selectRect and select a 1x2 rectangle -- exactly what the existing
+    // "a drag from the left column into the right one selects nothing" case pins for that column.
+    const a = screen.getByRole("button", { name: "metatile 0x1" });
+    const b = screen.getByRole("button", { name: "metatile 0x9" });
+    fireEvent.mouseDown(a, { button: 2 });
+    fireEvent.mouseUp(b, { button: 2 });
+    fireEvent.contextMenu(b, { button: 2 });
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(onEditBlock).toHaveBeenCalledWith(9);
+  });
+
+  it("a right release after a stale drag never changes the selection", () => {
+    const onSelect = vi.fn();
+    render(<MetatilePalette layoutName="Test_Layout" split={SPLIT} primaryCount={32} secondaryCount={0}
+      onSelect={onSelect} onEditBlock={vi.fn()} />);
+    // 0x1 and 0x9 are in the same folded column (rows 0 and 1).
+    fireEvent.mouseDown(screen.getByRole("button", { name: "metatile 0x1" }), { button: 0 });
+    const cell = screen.getByRole("button", { name: "metatile 0x9" });
+    fireEvent.mouseUp(cell, { button: 2 });
+    fireEvent.contextMenu(cell, { button: 2 });
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("no onEditBlock, no handler", () => {
+    render(<MetatilePalette layoutName="Test_Layout" split={SPLIT} primaryCount={8} secondaryCount={0} onSelect={() => {}} />);
+    // No onContextMenu prop at all: the browser's own menu is untouched.
+    expect(fireEvent.contextMenu(screen.getByRole("button", { name: "metatile 0x5" }), { button: 2 })).toBe(true);
   });
 });

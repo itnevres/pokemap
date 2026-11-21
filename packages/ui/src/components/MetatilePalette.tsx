@@ -2,6 +2,7 @@ import { Fragment, memo, useEffect, useMemo, useRef, useState } from "react";
 import type { Split } from "@pokemap/core/src/model/types.js";
 import type { Stamp, StampCell } from "@pokemap/core/src/edit/paint.js";
 import { useFollowHover } from "../shared/useFollowHover.js";
+import { useTilesetVersion } from "../shared/tilesetVersion.js";
 import { chunkRows, pickFold } from "../shared/paletteFold.js";
 import { useUniformRows, type ThumbSignature } from "../shared/useUniformRows.js";
 import { PaletteFrame, PaletteSelection } from "../shared/PaletteFrame.js";
@@ -41,6 +42,9 @@ export interface MetatilePaletteProps {
   columns?: number;
   /** Test seam for the fold's uniform-row check (Plan 9F); production uses the canvas pixel signature. */
   thumbSignature?: ThumbSignature;
+  /** Plan 14.2 (N9): right-clicking a cell opens the block editor for that metatile. Absent: no
+   *  `onContextMenu` handler at all, so the browser's own menu is untouched. */
+  onEditBlock?: (id: number) => void;
 }
 
 const hex = (n: number) => `0x${n.toString(16).toUpperCase()}`;
@@ -56,12 +60,13 @@ const hex = (n: number) => `0x${n.toString(16).toUpperCase()}`;
  */
 // Memoised like MapTree (Plan 9 follow-up O2): up to 1,024 cells, and every prop is stable across edit-session replies.
 export const MetatilePalette = memo(function MetatilePalette({
-  layoutName, split, primaryCount, secondaryCount, onSelect, selected, highlightId = null, visibleCount, columns = 8, thumbSignature,
+  layoutName, split, primaryCount, secondaryCount, onSelect, selected, highlightId = null, visibleCount, columns = 8, thumbSignature, onEditBlock,
 }: MetatilePaletteProps) {
   const [query, setQuery] = useState("");
   const [dragStart, setDragStart] = useState<number | null>(null);
   const cellRefs = useRef(new Map<number, HTMLButtonElement>());
   const [follow, setFollow] = useFollowHover();
+  const tilesetVersion = useTilesetVersion();
 
   useEffect(() => {
     if (!follow || highlightId === null) return;
@@ -97,7 +102,7 @@ export const MetatilePalette = memo(function MetatilePalette({
 
   const searching = normalizedQuery !== "";
   const rows = useMemo(() => chunkRows(visible, columns), [visible, columns]);
-  const src = (id: number) => `/api/metatile/${encodeURIComponent(layoutName)}/${id}.png`;
+  const src = (id: number) => `/api/metatile/${encodeURIComponent(layoutName)}/${id}.png${tilesetVersion > 0 ? `?tv=${tilesetVersion}` : ""}`;
   const { uniformRows, onThumbLoad, onThumbError } = useUniformRows(searching ? [] : rows, layoutName, thumbSignature);
   // The primary/secondary boundary is a safe cut only when secondary starts a fresh row in the index order.
   const boundaryRow = visibleCount === undefined && secondaryCount > 0 && primaryCount % columns === 0 ? primaryCount / columns : undefined;
@@ -204,12 +209,16 @@ export const MetatilePalette = memo(function MetatilePalette({
                 // cross-cell drag reaches `onMouseUp` only, and a keyboard
                 // press reaches `onClick` only, having triggered no mouse
                 // events at all.
-                onMouseDown={() => setDragStart(id)}
-                onMouseUp={() => {
+                // Plan 14.2 (N9): only the primary button starts a drag selection -- a right press belongs
+                // to the contextmenu handler below, and must leave the selection untouched.
+                onMouseDown={(event) => { if (event.button === 0) setDragStart(id); }}
+                onMouseUp={(event) => {
+                  if (event.button !== 0) return;
                   if (dragStart !== null && dragStart !== id && sameColumn(dragStart, id)) selectRect(dragStart, id);
                   setDragStart(null);
                 }}
                 onClick={() => selectSingle(id)}
+                onContextMenu={onEditBlock ? (event) => { event.preventDefault(); onEditBlock(id); } : undefined}
               >
                 {/* draggable={false}: confirmed live -- an <img> is natively
                     draggable by default, so a real mouse-drag starting on

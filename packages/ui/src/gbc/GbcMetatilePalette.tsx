@@ -2,6 +2,7 @@ import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { GbcStamp } from "@pokemap/core/src/gbc/edit/paint.js";
 import type { GbcTimeOfDay } from "./time.js";
 import { useFollowHover } from "../shared/useFollowHover.js";
+import { useTilesetVersion } from "../shared/tilesetVersion.js";
 import { chunkRows, pickFold } from "../shared/paletteFold.js";
 import { useUniformRows, type ThumbSignature } from "../shared/useUniformRows.js";
 import { PaletteFrame, PaletteSelection } from "../shared/PaletteFrame.js";
@@ -25,6 +26,9 @@ export interface GbcMetatilePaletteProps {
   selected?: number | null;
   /** Test seam for the fold's uniform-row check (Plan 9F); production uses the canvas pixel signature. */
   thumbSignature?: ThumbSignature;
+  /** Plan 14.2 (N9): right-clicking a cell opens the block editor for that block. Absent: no
+   *  `onContextMenu` handler at all, so the browser's own menu is untouched. */
+  onEditBlock?: (id: number) => void;
 }
 
 const hex = (n: number) => `0x${n.toString(16)}`;
@@ -56,10 +60,11 @@ const hex = (n: number) => `0x${n.toString(16)}`;
 const GBC_ROW = 4;
 
 // Memoised like MapTree (Plan 9 follow-up O2); GbcMapEditing passes a stable onSelect.
-export const GbcMetatilePalette = memo(function GbcMetatilePalette({ mapName, time, tilesetName, metatileCount, highlightId = null, onSelect, selected = null, thumbSignature }: GbcMetatilePaletteProps) {
+export const GbcMetatilePalette = memo(function GbcMetatilePalette({ mapName, time, tilesetName, metatileCount, highlightId = null, onSelect, selected = null, thumbSignature, onEditBlock }: GbcMetatilePaletteProps) {
   const cellRefs = useRef(new Map<number, HTMLButtonElement>());
   const [follow, setFollow] = useFollowHover();
   const [query, setQuery] = useState("");
+  const tilesetVersion = useTilesetVersion();
 
   useEffect(() => {
     if (!follow || highlightId === null) return;
@@ -73,7 +78,7 @@ export const GbcMetatilePalette = memo(function GbcMetatilePalette({ mapName, ti
     return searching ? all.filter((id) => hex(id).includes(q)) : all;
   }, [metatileCount, searching, q]);
   const rows = useMemo(() => chunkRows(visible, GBC_ROW), [visible]);
-  const src = (id: number) => `/api/metatile/${encodeURIComponent(mapName)}/${id}.png?time=${time}`;
+  const src = (id: number) => `/api/metatile/${encodeURIComponent(mapName)}/${id}.png?time=${time}${tilesetVersion > 0 ? `&tv=${tilesetVersion}` : ""}`;
   const { uniformRows, onThumbLoad, onThumbError } = useUniformRows(searching ? [] : rows, `${mapName}:${time}`, thumbSignature);
   const fold = searching ? rows.length : pickFold(rows.length, uniformRows);
 
@@ -117,6 +122,7 @@ export const GbcMetatilePalette = memo(function GbcMetatilePalette({ mapName, ti
               aria-current={picked ? "true" : undefined}
               disabled={!onSelect}
               onClick={pick}
+              onContextMenu={onEditBlock ? (event) => { event.preventDefault(); onEditBlock(id); } : undefined}
             >
               <img
                 className="gbc-metatile-palette__thumb"

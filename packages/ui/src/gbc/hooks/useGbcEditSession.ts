@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from "react";
 import type { AddEventForm, EventKind as CreatedEventKind } from "@pokemap/core/src/addEvent/types.js";
-import { useEditSessionCore, type EventCreateSession } from "../../shared/useEditSessionCore.js";
+import { useEditSessionCore, type BlockCheckReply, type BlockEditSession, type EventCreateSession } from "../../shared/useEditSessionCore.js";
 import type { Block, GbcMapEvents } from "@pokemap/core/src/gbc/model/types.js";
 import type { GbcStamp } from "@pokemap/core/src/gbc/edit/paint.js";
 import type { GbcEventKind, GbcWarpRenumberWarning } from "@pokemap/core/src/gbc/edit/events.js";
@@ -18,6 +18,13 @@ export type GbcPaintBody =
 export interface UseGbcEditSessionResult {
   blocks: Block[];
   events: GbcMapEvents;
+  /** Plan 14.2 fix hop A: the map's EFFECTIVE metatile count as of the latest session reply (the
+   *  server's `sessionBody`, `gbcEditRoutes.ts`) -- the same `ts.metatiles.length` the map payload
+   *  reports, but recomputed after the tileset overlay is applied, so a block appended by the
+   *  block editor's "Save as new" shows up here immediately and disappears again on the undo of
+   *  that append. `undefined` until a reply arrives (and after a discard, which closes the
+   *  session), so callers fall back to the map payload's own `data.metatileCount`. */
+  metatileCount?: number;
   isDirty: boolean;
   canUndo: boolean;
   canRedo: boolean;
@@ -49,6 +56,8 @@ interface SessionBody {
   isDirty: boolean;
   canUndo: boolean;
   canRedo: boolean;
+  /** Plan 14.2 fix hop A: present on every real session body. */
+  metatileCount?: number;
   warpRenumberWarnings?: GbcWarpRenumberWarning[];
 }
 
@@ -68,6 +77,8 @@ export function isSessionBody(x: unknown): x is SessionBody {
       || !eventList(x.events.bgs, ["bgEventType", "script"], ["lineIndex"])) return false;
   }
   if (typeof x.isDirty !== "boolean" || typeof x.canUndo !== "boolean" || typeof x.canRedo !== "boolean") return false;
+  // Plan 14.2 fix hop A: the effective metatile count, when the server sends one, is a count.
+  if (x.metatileCount !== undefined && !Number.isInteger(x.metatileCount)) return false;
   if (x.warpRenumberWarnings !== undefined) {
     const w = x.warpRenumberWarnings;
     if (!Array.isArray(w) || !w.every((e) => isRecord(e) && typeof e.fromMap === "string" && Number.isInteger(e.warpIndex) && Number.isInteger(e.destWarp))) return false;
@@ -76,6 +87,20 @@ export function isSessionBody(x: unknown): x is SessionBody {
 }
 
 const NO_EVENTS: GbcMapEvents = { warps: [], coords: [], bgs: [], objects: [], sceneScripts: [], callbacks: [], objectConsts: [] };
+
+/** Plan 14.2 fix hop A: the session state's own shape. The effective metatile count rides along with
+ *  blocks/events so the shared core's reset rules cover it for free -- a map or seed change re-seeds
+ *  from `seed` (count undefined) and `discard` drops the stored state. */
+interface GbcSessionState {
+  blocks: Block[];
+  events: GbcMapEvents;
+  metatileCount?: number;
+}
+
+/** The state a real session body implies; a body without a count keeps the one already reported. */
+const stateFrom = (d: SessionBody, events: GbcMapEvents, prev: GbcSessionState): GbcSessionState => ({
+  blocks: d.blocks, events, metatileCount: d.metatileCount ?? prev.metatileCount,
+});
 
 /**
  * The client face of `gbcEditRoutes.ts` (`/api/edit/:map/*`), mirroring `useEditSession.ts` for GBA with the
@@ -92,21 +117,29 @@ const NO_EVENTS: GbcMapEvents = { warps: [], coords: [], bgs: [], objects: [], s
  * Lives in `GbcApp`, always mounted, so a World/Dungeon round trip never loses the client's view of a session
  * the server still holds dirty (the reasoning at `App.tsx:50-62`).
  */
-export function useGbcEditSession(mapName: string | null, initialBlocks?: Block[], initialEvents?: GbcMapEvents): UseGbcEditSessionResult & EventCreateSession {
-  const seed = useMemo(() => ({ blocks: initialBlocks ?? [], events: initialEvents ?? NO_EVENTS }), [initialBlocks, initialEvents]);
+export function useGbcEditSession(mapName: string | null, initialBlocks?: Block[], initialEvents?: GbcMapEvents): UseGbcEditSessionResult & EventCreateSession & BlockEditSession {
+  const seed = useMemo<GbcSessionState>(() => ({ blocks: initialBlocks ?? [], events: initialEvents ?? NO_EVENTS }), [initialBlocks, initialEvents]);
   const { state, isDirty, canUndo, canRedo, post: corePost, apply, barrier, discard, markClean } = useEditSessionCore("/api/edit", mapName, seed, { readServerError: true });
-  const { blocks, events } = state;
+  const { blocks, events, metatileCount } = state;
 
-  const post = useCallback(async (path: string, body?: unknown): Promise<SessionBody | null> => {
+  const postSession = useCallback(async (path: string, body?: unknown): Promise<{ data: SessionBody; applied: boolean } | null> => {
     const reply = await corePost<unknown>(path, body);
     if (!reply) return null;
     const d = reply.data;
     if (!isSessionBody(d)) throw new Error(`POST /api/edit/${mapName}${path} returned an unexpected shape`);
     if (d.events === null) return null; // nothing open server-side (undo/redo no-op): leave the client as it is
     const nextEvents = d.events;
-    apply({ state: () => ({ blocks: d.blocks, events: nextEvents }), isDirty: d.isDirty, canUndo: d.canUndo, canRedo: d.canRedo }, reply.ticket);
-    return d;
+    const applied = apply({ state: (prev) => stateFrom(d, nextEvents, prev), isDirty: d.isDirty, canUndo: d.canUndo, canRedo: d.canRedo }, reply.ticket);
+    return { data: d, applied };
   }, [corePost, apply, mapName]);
+
+  const post = useCallback((path: string, body?: unknown) => postSession(path, body).then((reply) => reply?.data ?? null), [postSession]);
+  const blockCheck = useCallback((request: unknown, revision: string) =>
+    corePost<BlockCheckReply>("/block/check", { ...(request as object), revision }).then((reply) => reply?.data ?? null), [corePost]);
+  const blockPreview = useCallback((request: unknown) =>
+    corePost<{ png: string }>("/block/preview", request).then((reply) => reply?.data ?? null), [corePost]);
+  const blockApply = useCallback((request: unknown, revision: string) =>
+    postSession("/block/apply", { ...(request as object), revision }).then((reply) => reply?.applied ?? false), [postSession]);
 
   const createEvent = useCallback(async (form: AddEventForm) => {
     const reply = await corePost<SessionBody & { created: { kind: CreatedEventKind; index: number } }>("/event/create", form);
@@ -114,7 +147,7 @@ export function useGbcEditSession(mapName: string | null, initialBlocks?: Block[
     const d = reply.data;
     if (!isSessionBody(d) || d.events === null) throw new Error(`POST /api/edit/${mapName}/event/create returned an unexpected shape`);
     const nextEvents = d.events;
-    return apply({ state: () => ({ blocks: d.blocks, events: nextEvents }), isDirty: d.isDirty, canUndo: d.canUndo, canRedo: d.canRedo }, reply.ticket) ? d.created : null;
+    return apply({ state: (prev) => stateFrom(d, nextEvents, prev), isDirty: d.isDirty, canUndo: d.canUndo, canRedo: d.canRedo }, reply.ticket) ? d.created : null;
   }, [corePost, apply, mapName]);
 
   const beginStroke = useCallback(() => post("/paint/begin").then(() => {}), [post]);
@@ -133,11 +166,12 @@ export function useGbcEditSession(mapName: string | null, initialBlocks?: Block[
   );
   const applyExternalSession = useCallback((body: unknown) => {
     if (!isSessionBody(body) || body.events === null) return;
-    apply({ state: () => ({ blocks: body.blocks, events: body.events! }), isDirty: body.isDirty, canUndo: body.canUndo, canRedo: body.canRedo });
+    const nextEvents = body.events;
+    apply({ state: (prev) => stateFrom(body, nextEvents, prev), isDirty: body.isDirty, canUndo: body.canUndo, canRedo: body.canRedo });
   }, [apply]);
 
   return {
-    blocks, events, isDirty, canUndo, canRedo,
-    beginStroke, applyPaint, endStroke, undo, redo, discard, markClean, createEvent, barrier, moveEvent, addEvent, deleteEvent, applyExternalSession,
+    blocks, events, metatileCount, isDirty, canUndo, canRedo,
+    beginStroke, applyPaint, endStroke, undo, redo, discard, markClean, createEvent, barrier, blockCheck, blockPreview, blockApply, moveEvent, addEvent, deleteEvent, applyExternalSession,
   };
 }

@@ -33,7 +33,7 @@ vi.mock("../../src/canvas/useStage.js", async (original) => {
   } };
 });
 
-type Tool = { kind: "pencil" | "collision" | "rect" | "shift" | "bucket" | "dropper" | "sign" };
+type Tool = { kind: "pencil" | "collision" | "rect" | "shift" | "bucket" | "dropper" | "sign" | "editBlock" };
 type Cell = { x: number; y: number };
 type Body = { tool: string; start?: Cell; end?: Cell; cell?: Cell };
 type EventRef = { kind: "object"; index: number };
@@ -369,5 +369,76 @@ describe("real mounted image readiness", () => {
     let resolve!: () => void; const deferred = new Promise<void>((done) => { resolve = done; });
     const late = deferred.then(() => { fireEvent.load(img); onLoad(); }); host.unmount();
     await act(async () => { resolve(); await late; }); expect(baseDraws()).toBe(0);
+  });
+});
+
+// Task 14b (N7, N10): the Edit block tool maps a click to the SAME paint cell the map context menu uses
+// (GBA 16px metatile here), opens the editor for it, and never paints, selects or posts.
+describe("Edit block tool (Task 14b)", () => {
+  // This file's own adapter geometry (see `adapter()` above): origin (16,16), paintCellPx 32,
+  // eventCellPx 16, a 3x3 block map, default zoom 1 and pan (0,0) in `mount`.
+  //   source = (p - pan) / zoom = p
+  //   paint cell = floor((source - origin) / 32);  event step = floor((source - origin) / 16)
+  // (64,64) is the centre of paint cell (1,1): floor((64-16)/32) = 1.
+
+  it("a tool click on an interior cell opens the editor for that paint cell", async () => {
+    const onEditBlock = vi.fn(), onSelectEvent = vi.fn();
+    const host = mount({ activeTool: { kind: "editBlock" }, onEditBlock, onSelectEvent });
+    // source = ((64-0)/1,(64-0)/1) = (64,64); cell = (floor((64-16)/32),floor((64-16)/32)) = (1,1).
+    mouse(host.canvas, "mouseDown", 64, 64); mouse(host.canvas, "mouseUp", 64, 64);
+    await host.settled();
+    expect(onEditBlock).toHaveBeenCalledTimes(1);
+    expect(onEditBlock).toHaveBeenCalledWith({ x: 1, y: 1 });
+    // "No paint": no stroke is begun and no paint body is applied.
+    expect(host.session.beginStroke).not.toHaveBeenCalled();
+    expect(host.session.applyPaint).not.toHaveBeenCalled();
+    expect(onSelectEvent).not.toHaveBeenCalled();
+  });
+
+  it("a drag with the tool paints nothing", async () => {
+    const onEditBlock = vi.fn();
+    const host = mount({ activeTool: { kind: "editBlock" }, onEditBlock });
+    // (64,64) -> (1,1); (96,64) -> (floor((96-16)/32),1) = (2,1); (96,96) -> (2,2).
+    mouse(host.canvas, "mouseDown", 64, 64);
+    mouse(host.canvas, "mouseMove", 96, 64);
+    mouse(host.canvas, "mouseMove", 96, 96);
+    mouse(host.canvas, "mouseUp", 96, 96);
+    await host.settled();
+    // Only the press cell opens the editor, exactly once.
+    expect(onEditBlock).toHaveBeenCalledTimes(1);
+    expect(onEditBlock).toHaveBeenCalledWith({ x: 1, y: 1 });
+    expect(host.session.beginStroke).not.toHaveBeenCalled();
+    expect(host.session.applyPaint).not.toHaveBeenCalled();
+  });
+
+  it("outside the interior nothing happens", () => {
+    const onEditBlock = vi.fn();
+    const host = mount({ activeTool: { kind: "editBlock" }, onEditBlock });
+    // source = (0,0); cell = (floor((0-16)/32),floor((0-16)/32)) = (-1,-1), outside the 3x3 interior.
+    mouse(host.canvas, "mouseDown", 0, 0);
+    expect(onEditBlock).not.toHaveBeenCalled();
+    expect(host.session.beginStroke).not.toHaveBeenCalled();
+  });
+
+  it("pending mutation: nothing opens", async () => {
+    const onEditBlock = vi.fn();
+    const host = mount({ activeTool: { kind: "editBlock" }, onEditBlock,
+      editBlockDisabledReason: () => "Wait for the current change to finish" });
+    // (64,64) is the centre of interior cell (1,1) -- the same click as the first case.
+    mouse(host.canvas, "mouseDown", 64, 64);
+    await host.settled();
+    expect(onEditBlock).not.toHaveBeenCalled();
+    expect(host.session.beginStroke).not.toHaveBeenCalled();
+  });
+
+  it("event placement takes precedence", () => {
+    const onEditBlock = vi.fn(), onEventPick = vi.fn();
+    const host = mount({ activeTool: { kind: "editBlock" }, onEditBlock, placing: "object", onEventPick });
+    // Placing uses the 16px event grid: cell = (floor((64-16)/16),floor((64-16)/16)) = (3,3).
+    mouse(host.canvas, "mouseDown", 64, 64);
+    expect(onEventPick).toHaveBeenCalledTimes(1);
+    expect(onEventPick).toHaveBeenCalledWith(3, 3, expect.any(DOMRect));
+    expect(onEditBlock).not.toHaveBeenCalled();
+    expect(host.session.beginStroke).not.toHaveBeenCalled();
   });
 });

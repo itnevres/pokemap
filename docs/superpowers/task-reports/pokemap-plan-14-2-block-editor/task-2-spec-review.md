@@ -1,0 +1,11 @@
+- Important — packages/core/src/blockEdit/gbcPatch.ts:173 — Palette validation imposes a fixed eight-name whitelist, including on untouched entries. The spec describes names the palette map uses; it does not authorize rejecting project-defined names solely because they differ from the listed names. This can refuse even an unchanged rewrite of an otherwise loader-valid map. Resolve the name-validation contract explicitly, use project-derived names/constants, and test a valid nonstandard name alongside an unknown-name refusal.
+
+- Important — packages/core/src/blockEdit/gbcPatch.ts:65 — `BLOCK_CAP` is checked only when appending. An existing 257-record buffer can be edited successfully, including record 256, despite Task 2’s “count past 256 throws `BLOCK_CAP`” contract. Reject an already-over-cap count and add coverage, while retaining edits to existing records at exactly 256.
+
+- Important — packages/core/test/blockEdit/gbcPatch.test.ts:158 — The palette losslessness test uses canonical formatting, so it cannot distinguish argument splicing from line reserialization; the conductor’s surviving mutation confirms this gap. The forest test at line 253 likewise checks other lines but does not fully assert preservation of non-argument bytes on the edited line. Add noncanonical spacing, comments and CRLF fixtures with exact whole-string expectations, then kill the palette reserialization mutation.
+
+- Minor — docs/superpowers/task-reports/pokemap-plan-14-2-block-editor/task-2-report.md:81 — The report claims text reserialization is caught and that the metatile span test catches whole-buffer re-encoding. Conductor evidence contradicts both claims: palette reserialization survived, and fixed-record binary re-encoding is equivalent. Update the report to distinguish the missing text regression from the equivalent binary mutation.
+
+All four exported signatures match Task 2. The listed Step-1 scenarios are present, with the losslessness coverage limitations above. Bank-1 `$85` selection, gap refusal, surplus-record replacement, and append-at-256 refusal match the requested behavior. No files edited or tests run; execution evidence is conductor-supplied.
+
+Needs changes

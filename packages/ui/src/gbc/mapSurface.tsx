@@ -11,6 +11,7 @@ import type { GbcTimeOfDay } from "./time.js";
 import type { MapSurfaceAdapter } from "../canvas/mapSurfaceAdapter.js";
 import { eventAt, firstEventAt, type EventLists } from "../canvas/events.js";
 import { EventsLegendItems } from "../shared/LegendBar.js";
+import { useTilesetVersion } from "../shared/tilesetVersion.js";
 import { BORDER_BAND, borderSideFromConnections } from "../encounters/borderSide.js";
 
 const BORDER_RINGS = 1;
@@ -147,6 +148,7 @@ export function parseColorToken(value: string): RGBA {
 }
 
 export function useGbcMapSurface(payload: GbcMapPayload, time: GbcTimeOfDay, editSession?: UseGbcEditSessionResult): MapSurfaceAdapter<GbcActiveTool, GbcPaintBody, GbcEventRef, GbcStamp, GbcStepInfo> {
+  const tilesetVersion = useTilesetVersion();
   // The session's live blocks/events win once a session exists; the adapter callbacks below read the merged `data` by name and
   // never need to know which source it came from (the same live/static split as `useGbaMapSurface`).
   const sessionBlocks = editSession?.blocks;
@@ -175,7 +177,7 @@ export function useGbcMapSurface(payload: GbcMapPayload, time: GbcTimeOfDay, edi
     skipFirstBlocksChange: false,
     // MapSurface debounces same-map block changes and retains a monotonic cache version across visits.
     // It passes zero without a session; omitting v at zero preserves the exact unpainted/read-only URL.
-    imageUrl: (mapName, paintVersion) => `/api/render/${encodeURIComponent(mapName)}.png?border=${BORDER_RINGS}&time=${time}${paintVersion > 0 ? `&v=${paintVersion}` : ""}`,
+    imageUrl: (mapName, paintVersion) => `/api/render/${encodeURIComponent(mapName)}.png?border=${BORDER_RINGS}&time=${time}${paintVersion > 0 ? `&v=${paintVersion}` : ""}${tilesetVersion > 0 ? `&tv=${tilesetVersion}` : ""}`,
     // Each layer declares every captured changing raster input; origins are module constants.
     // useRasterComposite compares deps by value, not fresh closure/array identity. DOM-only encounters
     // are absent from these deps so toggling them cannot destructively recomposite overlay pixels.

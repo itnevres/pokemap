@@ -13,6 +13,7 @@ import { fetchGuarded } from "../hooks/useGuardedFetch.js";
 import { useCoverage } from "../hooks/useCoverage.js";
 import { isDrawnByDefault } from "../world/visibility.js";
 import { isRecord, isWireConflict } from "../world/conflictAcceptance.js";
+import { useTilesetVersion } from "../shared/tilesetVersion.js";
 
 /** The pixel size a placement's PNG renders at natively (`renderLayout`,
  *  border 0): 16px per tile, same constant the CLI's `render-world --scale
@@ -56,6 +57,7 @@ interface RawWorld {
 /** Fetch and optimistic reconciliation remain one state transition. A GET owns the ledger snapshot from issue,
  *  while its keep set is captured at landing, before any React updater can be replayed. */
 export function useGbaWorld(ledger: PlacementLedger, scope: WorldScope) {
+  const tilesetVersion = useTilesetVersion();
   const [raw, setRaw] = useState<RawWorld | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refetchGen, setRefetchGen] = useState(0);
@@ -117,7 +119,7 @@ export function useGbaWorld(ledger: PlacementLedger, scope: WorldScope) {
       return [name, size ? { ...p, ...size } : p] as const;
     }));
     return { ...raw, placements };
-  }, [raw, sizes]);
+  }, [raw, sizes, tilesetVersion]);
   const move = useCallback((positions: ReadonlyMap<string, { x: number; y: number }>) => {
     setRaw((previous) => {
       if (!previous) return previous;
@@ -202,7 +204,13 @@ export function createGbaWorldSurface(): WorldSurfaceAdapter<GbaWorldPlacement, 
         },
       }));
     },
-    imageUrl: (p, version) => `/api/render/${encodeURIComponent(p.map)}.png${version ? `?v=${version}` : ""}`,
+    useImageUrl: () => {
+      const tv = useTilesetVersion();
+      return useCallback((p: GbaWorldPlacement, version: number | undefined): string => {
+        const query = [version ? `v=${version}` : "", tv > 0 ? `tv=${tv}` : ""].filter(Boolean).join("&");
+        return `/api/render/${encodeURIComponent(p.map)}.png${query ? `?${query}` : ""}`;
+      }, [tv]);
+    },
     cacheKey: 0,
     drawnByDefault,
     drawExtraLayers: (ctx, { world, view }) => {
