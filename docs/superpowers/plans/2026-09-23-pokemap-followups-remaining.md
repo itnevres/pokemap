@@ -24,8 +24,9 @@
 | H2 | G, B, C, Q5, Q6, Q7 | High | after H1 | G and B open with a repro that may close them. C builds on the barrier from Plan 14.2 Task 12. Q6 and Q7 are the UI cache and count fixes after a save; Q5 is core-only |
 | H3 | K, H, I1, I2 | Low, Medium, Medium, High | after H2 | K first, with no other branch open (it touches about 90 sites). H and I use `http.ts` from Task E |
 | H4 | J | Medium | after H3 | it edits the route files that Task I moves |
-| Between plans | L2, M1, M3, O, P, Q8 | Low to Medium | any time, one at a time | L2 and P3 each need an otherwise idle repository |
-| Before Plan 15 | N, with O | High | after a brainstorming session | Plan 15 adds a whole new view; build it on the finished layout rules |
+| Between plans | L2, M1, M3, P, Q8 | Low to Medium | any time, one at a time | L2 and P3 each need an otherwise idle repository. (Task O left this row 2026-11-21: it runs with Task N's layout part, below, per D24a.) |
+| With Plan 14A | N: the map-canvas keyboard model (U3) | High | after one interview with roadmap Plan 14A (D24a) | Plan 14A's capture gesture and the keyboard model share the map canvas; built with or just before Plan 14A |
+| Before Plan 15 | N: layout and theme (U1, U4), with O | High | after Task N's questions 1, 2 and 6 (answered 2026-11-16) | Plan 15 adds a whole new view; build it on the finished layout rules |
 
 **Batches H1-H3 finish before roadmap Plan 14A starts** (roadmap D21; order confirmed by the user 2026-11-13): Plans 14A, 14C, 15 and 17 each add hub routes and file writers in both families, and they are cheaper to build on one route shape, one session store and a contained write path. H4 and the "between plans" tasks may slip behind later plans.
 
@@ -165,16 +166,14 @@ One row is one implementer dispatch: one verify target, one subsystem, about fiv
 - **B. RULED by the user 2026-11-16 (roadmap D30): fix both.** B1 still writes the three repros first, so each fix is shown red before it is green. B2 always runs: reorder `applyJsonOps` to inserts, then edits, then removals (and update its comment at `save.ts:339-345` and the copy at `addEventRoutes.ts:295-300`). B3 fixes the delete-then-move index (trap 3b) by translating the index the UI sends into the original file's index; it does not refuse the move. The Task B text below that says Step 1 may close the task without the reorder no longer applies.
 - **J3, tier.** The task says Medium; a content-type refusal sits on the request boundary, which is a High trigger. Recommendation: keep Medium, because every wrong answer fails a route test once J2 is in.
 
-**Task N cannot be broken down before its brainstorming session.** Questions that session must settle:
-1. The smallest supported window width, and what gives way first below it (tree, rail, or canvas minimum). Recommendation: 1,024 px; the tree collapses to a toggle first.
-2. Whether `DESIGN.md` (260 px tree, resizable 240-420) or the CSS (280 px, fixed) is right. Recommendation: the CSS; delete the resize claim unless the user wants it built.
-3. The map-canvas keyboard model: a cell cursor on the arrow keys, which key applies the tool, how Rect and Shift take a second point, how pan works. Decide it with roadmap Plan 14A's capture gesture, in one interview (trap 37; roadmap "Order and overlap review").
+**Task N cannot be broken down before its brainstorming session.** Its questions; questions 1, 2 and 6 were answered by the user 2026-11-16, and their recommendations were replaced by the answers on 2026-11-21. Questions 3, 4, 5 and 7 go to one interview with roadmap Plan 14A (D24a); the map-canvas keyboard work is built with or just before Plan 14A, and the layout and theme parts stay before Plan 15.
+1. The smallest supported window width, and what gives way first below it. **Answered: 1,024 px; the tree collapses to a toggle first.**
+2. Whether `DESIGN.md` (260 px tree, resizable 240-420) or the CSS (280 px, fixed) is right. **Answered: the CSS; delete the resize claim from `DESIGN.md`.**
+3. The map-canvas keyboard model: a cell cursor on the arrow keys, which key applies the tool, how Rect and Shift take a second point, how pan works. Decided with roadmap Plan 14A's capture gesture, in one interview (trap 37; D24a).
 4. Whether events can be selected and moved from the keyboard in this task. Recommendation: no; canvas painting only.
 5. Whether the world canvas gains arrow-key panning to match.
-6. Light theme: a toggle or deletion. Recommendation: delete the block and the `DESIGN.md:33` claim.
+6. Light theme: a toggle or deletion. **Answered: delete the block and the `DESIGN.md:33` claim.**
 7. Whether the dialogs opened from the canvas (Add Event placement, Plan 14.2 Edit block) need the same cell cursor to be reachable without a mouse.
-
-**Answered by the user 2026-11-16:** question 1, 1,024 px, the tree collapses to a toggle first; question 2, the CSS is right, delete the resize claim from `DESIGN.md`; question 6, delete the light theme block and the `DESIGN.md:33` claim. Question 3 is decided in one interview with roadmap Plan 14A and the map-canvas keyboard work is built with or just before Plan 14A (roadmap D24a); the layout and theme parts stay before Plan 15. Questions 4, 5 and 7 go to that interview.
 
 **`docs/HANDOFF.md` (user, 2026-11-16):** its findings stay in that document and are not scheduled.
 
@@ -208,7 +207,7 @@ Ids match the 2026-11-12 review report (S security, R refactor, U UI, P plans). 
 | 22 | No lint, no CI | P1, P2 |
 | - | P6 discard waits for strokes (Task C and RESUME's Plan 8 item) | C |
 | - | R9 test-only cache in production code | K3 |
-| - | U7 `WorldSurface.tsx` 934 lines | roadmap Plan 16 |
+| - | U7 `WorldSurface.tsx` 934 lines | roadmap Plan 14C, first UI task (D24c) |
 | - | U8 no request cancellation | not planned (see the end of this document) |
 | - | Plan 14.2 final review carry-over (2026-11-20) | Q |
 
@@ -233,7 +232,7 @@ Ids match the 2026-11-12 review report (S security, R refactor, U UI, P plans). 
 
 ## Task A: `GET /plan` permanently disabling the PNG render cache
 
-**Re-checked 2026-11-13: still open. Tier Medium** (the three tests below catch a wrong answer). The bypass is `if (editSessions.has(name))` at `packages/server/src/index.ts:477`. Run it in batch H1 on Task E's branch (same file) as its own commit. Check the GBC render route (`gbcRoutes.ts`, `renderCache`) for the same condition, and fix both or record why GBC differs. **Note 2026-11-15:** on `plan-14-2-block-editor` the bypass is at `index.ts:477`, and Plan 14.2 Task 10a changes this route: it syncs the staged tileset overlay before both the bypass and the cached path, and a change in that sync clears `pngCache`. Re-derive the snippet below after Plan 14.2 merges. Add a fourth test: a session whose only change is a staged block edit (tileset bytes, grid untouched) still renders the staged pixels. Check first whether such a session reports `isDirty`; if it does not, the fix sends it down the cached path, which is right only because the overlay sync cleared the cache.
+**Re-checked 2026-11-13: still open. Tier Medium** (the three tests below catch a wrong answer). The bypass is `if (editSessions.has(name))` at `packages/server/src/index.ts:477`. Run it in batch H1 on Task E's branch (same file) as its own commit. Check the GBC render route (`gbcRoutes.ts`, `renderCache`) for the same condition, and fix both or record why GBC differs. **Note 2026-11-15, updated 2026-11-21:** Plan 14.2 Task 10a changed this route (merged via #32): it syncs the staged tileset overlay before both the bypass and the cached path, and a change in that sync clears `pngCache`. The snippet below predates that; re-derive it from `master`. Add a fourth test: a session whose only change is a staged block edit (tileset bytes, grid untouched) still renders the staged pixels. Check first whether such a session reports `isDirty`; if it does not, the fix sends it down the cached path, which is right only because the overlay sync cleared the cache.
 
 **Root cause:** `packages/server/src/index.ts`'s `/api/edit/:name/plan` route (`planMatch`, hit by `SaveDialog.tsx`'s own `useEffect` fetch on mount) unconditionally calls `editEntryFor(name)`, opening an edit session as a side effect of a read. Sessions close only on a successful commit (`commitMatch`'s own `editSessions.close(name)`). The live-render follow-up (2026-09-22, commit `2359ecb`) made `/api/render/:name.png` bypass its own `pngCache` entirely whenever `editSessions.has(name)` is true — correct for an actually-dirty session, but the two conditions aren't the same: once a player has EVER opened the Save dialog for a map (even cancelling immediately, never editing, or undoing back to clean), that map's render cache stays bypassed for the rest of the server process's life. Measured on a real large map (Route110): 2.8ms cached vs. 40-77ms bypassed, permanently, with zero edits ever made.
 
@@ -262,7 +261,7 @@ This is correct, not just a perf hack: nothing is ever written to disk until a r
 
 ## Task B: `jsonEdits`-before-`insertOps` ordering bug in `applyJsonOps`
 
-**Re-checked 2026-11-13: starts with a repro. Tier High** (core write path; every mutating route funnels through it). `applyJsonOps` (`packages/core/src/write/save.ts:346-360`) still applies `jsonEdits` (line 334) before `insertOps` (line 335). RESUME records that Plan 10a2 Task 6 fixed "moving an unsaved (pending-insert) event broke the GBA save plan" another way. Step 1 of the test list below therefore decides the task. If add-then-move in one session now passes at plan and at commit, keep the test as a pin, record why the order no longer matters, and close the task without the reorder. If it fails, continue as written.
+**Re-checked 2026-11-13: starts with a repro. Tier High** (core write path; every mutating route funnels through it). `applyJsonOps` (`packages/core/src/write/save.ts:346-360`) still applies `jsonEdits` (line 348) before `insertOps` (line 349). RESUME records that Plan 10a2 Task 6 fixed "moving an unsaved (pending-insert) event broke the GBA save plan" another way. Step 1's repro still runs first, but the reorder always follows: the "pin and close" exit was deleted 2026-11-21, because D30 rules that Task B fixes both cases (rows B1-B3).
 
 **Root cause:** `packages/core/src/write/save.ts`'s `applyJsonOps` applies `session.jsonEdits` (scalar field edits — `moveEvent`'s x/y/elevation) BEFORE `session.insertOps` (array insertions — `addEvent`'s new element). Adding an event (insertOp targeting index N, appended, doesn't exist in the original array text yet) and then moving it in the SAME session (jsonEdit targeting `[arrayKey, N, "x"]`) throws `index N is not present` — the jsonEdit is applied first, against text where index N genuinely doesn't exist yet. Found live during the event-elevation follow-up's own live-verify (2026-09-22), reproduced against the real subject decomp, confirmed NOT elevation-specific (any move — x/y alone included — on a same-session freshly-added event hits this).
 
@@ -317,28 +316,15 @@ function applyJsonOps(session: EditSession): string {
 
 ## Task D: GBA `MapCanvas` StrictMode zoom, hover overflow, and `vite build` CSS comment (DONE: D1/D2 in Plan 6c E1, D3 in Plan 6b)
 
-**Origin:** Plan 6b Task 4's spec review (`docs/superpowers/task-reports/pokemap-plan-6b-gbc-app-layer/_archive/task-4-spec-review.md`, sections A and B plus its "Side note"; branch `plan-6b-gbc-app-layer` until it merges). The review found the first two bugs in `GbcMapCanvas.tsx`, which was copied from GBA `MapCanvas.tsx`, and reproduced both on GBA live. Task 4 fixed only the GBC copy and deliberately left GBA's `MapCanvas.tsx`, `App.tsx` and the shared `.map-canvas` rule untouched, deferring GBA to this follow-up. The fixed `packages/ui/src/gbc/GbcMapCanvas.tsx` is the reference implementation for D1 and D2.
+**Origin:** Plan 6b Task 4's spec review (`docs/superpowers/task-reports/pokemap-plan-6b-gbc-app-layer/_archive/task-4-spec-review.md`, sections A and B plus its "Side note"). The review found the first two bugs in `GbcMapCanvas.tsx`, which was copied from GBA `MapCanvas.tsx`, and reproduced both on GBA live.
 
-**D1: DONE in Plan 6c E1 (`a13a308`, 2026-10-05).** `MapCanvas` now holds one `view` state with a shared pure `zoomAboutPivot` (`components/mapView.ts`), pinned by a `<StrictMode>` test. The original text follows for the record.
+**D1 (StrictMode zoom bug): DONE in Plan 6c E1 (`a13a308`, 2026-10-05).** `MapCanvas` now holds one `view` state with a shared pure `zoomAboutPivot` (`components/mapView.ts`), pinned by a `<StrictMode>` test.
 
-**D1. StrictMode zoom bug.** `packages/ui/src/components/MapCanvas.tsx`, `applyZoom` (lines 532-542 on `master`), calls `setPan(...)` inside the `setZoom` updater. `packages/ui/src/main.tsx` renders under `<StrictMode>`, which runs updaters twice in development, so the pan is applied twice. In `npm run dev --workspace=@pokemap/ui`, clicking 2× or 4× moves the map off-canvas, and 4× looks blank. A production build is correct (measured: prod pan (−78, −59) vs. a double-applied pan in dev on PalletTown / KantoRoute23).
-- **Fix:** a single `{ zoom, pan }` view state with a pure updater. Extract the zoom-about-pivot math into an exported, unit-tested pure function (mirror `GbcMapCanvas`'s `GbcView` + `zoomAboutPivot`).
-- **Test:** render `<StrictMode><MapCanvas …/></StrictMode>`, click 2× from Fit, then 4×, and pin the exact pan `pivot − (pivot − pan0)·k` from the last draw call. It must fail on the old code (show the red run in the report). jsdom tests do not use StrictMode by default, which is why nothing caught this.
-- **Also:** confirm `WorldCanvas.tsx` has no nested-updater pattern (the review's `grep "setZoom(("` matched only `MapCanvas`; re-run it).
+**D2 (hover overflow): DONE in Plan 6c E1 (`dd50d43`, 2026-10-05).** `min-width: 0` and an ellipsising hover now sit on the shared `.map-canvas` rules. GBA keeps its 28 px single-row status strip, and the 44 px two-row strip stays GBC-only (E1 fix round `a1a59e0`). All three are pinned in `styles.test.ts`.
 
-**D2: DONE in Plan 6c E1 (`dd50d43`, 2026-10-05).** `min-width: 0` and an ellipsising hover now sit on the shared `.map-canvas` rules. GBA keeps its 28 px single-row status strip, and the 44 px two-row strip stays GBC-only (E1 fix round `a1a59e0`). All three are pinned in `styles.test.ts`. The original text follows for the record.
+**D3 (`vite build` CSS comment): DONE in Plan 6b (`5629602`, 2026-09-28).** Browsers had also silently dropped the next rule, `.species-spotlight { position: relative }`, so the spotlight dropdown rendered off-screen in both families. The fix rewords the comment. `packages/ui/test/styles.test.ts` parses the sheet strictly with lightningcss and pins the rule, and `vite build` passes.
 
-**D2. Hover overflow.** `.map-canvas` (`packages/ui/src/styles.css`, about line 501) is a flex item of `.app__map-editing-body` with the default `min-width: auto`, which resolves to its min-content width. The `white-space: nowrap` hover text in `.map-canvas__status` therefore widens the row, pushes `EventInspector` past the viewport, and the page scrolls horizontally on hover. Measured: PalletTown at a 1280-px window, `document.documentElement.scrollWidth` 1280 → 1384. `overflow: hidden` on the status bar does not help, because the status bar is not the row flex item whose minimum is being resolved.
-- **Fix:** `min-width: 0` on the shared `.map-canvas` rule. That alone clips the end of the hover text, so also keep it legible: truncate with an ellipsis or wrap into a fixed-height strip (mirror the `.gbc-map-canvas` status-strip rules Task 4 added).
-- **Check:** with Playwright, hover the longest realistic status line and assert `document.documentElement.scrollWidth === clientWidth` at 1280×800 and 1024×768. Read the numbers from a script, not from a screenshot.
-
-**D3: DONE in Plan 6b (`5629602`, 2026-09-28).** It was worse than described below. Browsers silently dropped the next rule, `.species-spotlight { position: relative }`, so the spotlight dropdown rendered off-screen in both families. The fix rewords the comment. `packages/ui/test/styles.test.ts` parses the sheet strictly with lightningcss and pins the rule, and `vite build` passes. The original text follows for the record.
-
-**D3. `vite build` fails.** lightningcss (default minify) rejects the `*/` inside a CSS comment in `packages/ui/src/styles.css` (line 1272 on `master`, about 1296 on `plan-6b-gbc-app-layer`: `world-canvas__spotlight-*/world-canvas__lens-tint`), which ends the comment early. Reword it (for example `world-canvas__spotlight-* and world-canvas__lens-tint`) so `npm run build --workspace=@pokemap/ui` succeeds.
-
-**Constraints:** GBA behaviour must otherwise stay identical. `npm test` must keep RESUME's "Git state" baseline, with only new tests added. `npm run typecheck` must be clean. Live-verify in the Vite dev server (StrictMode on) against a GBA project (`npx tsx packages/server/src/serve.ts`, with `pokemap.config.json` pointing at a GBA decomp), and take screenshots of Fit/2×/4× and of the hover. Never commit `pokemap.config.json`. If `plan-6b-gbc-app-layer` has merged by then, branch from `master` and reuse the merged `GbcMapCanvas.tsx`. Otherwise read it from that branch.
-
-**Risk:** low. Three small, independent diffs in two files (`MapCanvas.tsx`, `styles.css`), each with a fix already proven on the GBC sibling.
+The original task text (bug descriptions, fixes, tests, constraints) was deleted 2026-11-21 because all three parts are done; it is in this file's history before that date.
 
 ---
 
@@ -404,7 +390,7 @@ if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)
 
 **Finding.** `packages/core/src/load/layouts.ts:20-21` copies `border_filepath` and `blockdata_filepath` from `layouts.json` unchecked. They are joined to the root for reads and for **writes**: `write/binary.ts:57,76`, `server/src/editSessions.ts:45-46`, `server/src/index.ts:428`, `render/layout.ts:62,108`, `defects/gba.ts:63`, `signs/suggest.ts:79`, `cli/src/writeCommands.ts:25-26`. A project whose `layouts.json` holds `"../../x"` makes Save write outside the project. GBC paths taken from `INCBIN` lines have the same gap for reads: `gbc/load/map.ts:346`, `gbc/load/tileset.ts:506-509`, `gbc/load/palette.ts:470-471,591,598`, `gbc/load/roofs.ts:218`, `gbc/load/sprites.ts:76`. This matters for a project cloned from someone else.
 
-**Change.**
+**Change.** The code below is the 2026-11-13 design. D25 (2026-11-16) changed its first half: `insideRoot` becomes a check that reports, and `parseLayouts` marks a layout with an escaping path as broken instead of throwing (row F1). The `writeFilesAtomically` guard is unchanged.
 
 ```ts
 // before  packages/core/src/load/layouts.ts:20
@@ -425,13 +411,13 @@ export function insideRoot(rel: string): string {
 
 A second guard sits at the one write choke point: `writeFilesAtomically` (`packages/core/src/write/atomic.ts:26`) takes the project root and refuses any entry outside it before it writes a temp file. That covers every writer, including Plan 14.2's tileset entries. `addEvent/sources.ts` already has the containment idiom (`relative(resolve(root), resolve(path))` must not start with `..`).
 
-**Spec question to settle first:** GBC data defects never throw (GBC roadmap invariants). Decide whether an escaping `INCBIN` path is a refusal at project open or a `DataDefect` that marks the map unreadable.
+**Ruled 2026-11-16 (D25; "Decisions that are the user's" above):** the project always opens, in both families. A layout, tileset or `INCBIN` whose path leaves the project is a `DataDefect` on that component; the component cannot be rendered, opened for editing or saved until it is fixed, and nothing else is blocked. The 2026-11-15 spec question and recommendation were deleted 2026-11-21.
 
-**Recommendation and split (2026-11-15).** Recommended answer, for the user to confirm before the spec is written: a `DataDefect` that marks the map unreadable, never a throw at project open. It keeps the GBC rule that data defects never throw, and one bad `INCBIN` in a cloned project then costs one map, not the whole project. Three dispatches. **F1:** `insideRoot` and the GBA `layouts.json` guard (acceptance 1 and 4). **F2:** the root check in `writeFilesAtomically`, which gains a root parameter at its two call sites (`write/save.ts:336`, `gbc/write/save.ts:261`) (acceptance 3 and 5). **F3:** the GBC `INCBIN` paths, after the ruling (acceptance 2). F1 and F2 do not wait on the spec question.
+**Split.** Rows F1 (GBA layouts; acceptance 1 and 4), F1b and F1c (GBA tileset headers, and the consumers that refuse a broken component), F2 (the root check in `writeFilesAtomically`, which gains a root parameter at its two call sites, `write/save.ts:336` and `gbc/write/save.ts:261`; acceptance 3 and 5) and F3 (the GBC `INCBIN` paths; acceptance 2).
 
-**Acceptance (temp projects only).**
-1. `blockdata_filepath` of `../../outside.bin`, an absolute path, a drive-letter path and a backslash variant are each refused at load, naming the layout id and the path.
-2. A GBC `INCBIN` path with `..` is handled as the spec question rules, with file and line context.
+**Acceptance (temp projects only; 1 and 2 restated 2026-11-21 per D25).**
+1. `blockdata_filepath` of `../../outside.bin`, an absolute path, a drive-letter path and a backslash variant each mark that layout broken with a `DataDefect` naming the layout id and the path. The project still opens, and a map on that layout cannot be rendered, edited or saved.
+2. A GBC `INCBIN` path with `..` is a `DataDefect` on that component, with file and line context; the project still opens.
 3. `writeFilesAtomically` with one entry outside the root throws before any write; every file is byte-identical afterwards.
 4. Every real root still loads and the corpus counts are unchanged, which shows that no real project uses such a path.
 5. Mutation checks: remove the guard in `atomic.ts` (test 3 red); remove `insideRoot` in `layouts.ts` (test 1 red).
@@ -559,11 +545,11 @@ await postJson("/api/world/placement", { map, x, y });
 
 ## Task N: layout and keyboard access (U1, U3, U4)
 
-**Tier: High** (canvas-core pointer and keyboard behaviour). Run `superpowers:brainstorming` first; these are open design decisions.
+**Tier: High** (canvas-core pointer and keyboard behaviour). Run `superpowers:brainstorming` first for what is still open ("Task N cannot be broken down before its brainstorming session", above). Two parts with two slots (D24a): U3 with roadmap Plan 14A; U1 and U4, with Task O, before Plan 15.
 
-- **U1.** `styles.css` has no `@media` rule. The sidebar (280 px, lines 229-230), the rail (272 px, line 2831) and the canvas minimum (`min-width: 480px`, line 239) overflow below 1,032 px. `DESIGN.md:226-236` specifies a 260 px tree that resizes between 240 and 420 px; neither exists. Decide the smallest supported width, how the tree and rail collapse, and whether DESIGN.md or the CSS is right about 260 and 280.
-- **U3.** The map editor canvas (`shared/MapCanvasViewport.tsx:29`) has no `tabIndex`, accessible name or key handler. The world canvas has all three (`canvas/WorldSurface.tsx:874-900`). Decide the keyboard model (cell cursor, paint key, pan keys) together with Plan 14A's rectangular selection.
-- **U4.** `[data-theme="light"]` (`styles.css:132-169`) cannot be reached; no code sets `data-theme`. Either add a toggle (stored like `shared/useFollowHover.ts` stores its setting) or delete the block and the claim at `DESIGN.md:33`.
+- **U1.** `styles.css` has no `@media` rule. The sidebar (280 px, lines 229-230), the rail (272 px, line 2831) and the canvas minimum (`min-width: 480px`, line 239) overflow below 1,032 px. `DESIGN.md:226-236` specifies a 260 px tree that resizes between 240 and 420 px; neither exists. **Answered 2026-11-16:** the smallest supported width is 1,024 px and the tree collapses to a toggle first; the CSS (280 px, fixed) is right, so the resize claim leaves `DESIGN.md`.
+- **U3.** The map editor canvas (`shared/MapCanvasViewport.tsx:29`) has no `tabIndex`, accessible name or key handler. The world canvas has all three (`canvas/WorldSurface.tsx:874-900`). The keyboard model (cell cursor, paint key, pan keys) is decided in one interview with Plan 14A's capture gesture (D24a).
+- **U4.** `[data-theme="light"]` (`styles.css:132-169`) cannot be reached; no code sets `data-theme`. **Answered 2026-11-16:** delete the block and the claim at `DESIGN.md:33`.
 
 ---
 
@@ -604,6 +590,6 @@ import { textFiles } from "@pokemap/core/shared/sources";
 ## Folded into other plans, or not planned
 
 - **R4, `paintCells` and `floodFill` written twice** (`packages/core/src/edit/paint.ts:36-87`, `packages/core/src/gbc/edit/paint.ts:23-72`): the first task of roadmap Plan 14A, which builds stamps on painting in both families. One generic version copies only the keys the existing block already has; the GBC file re-exports it, as it already does for `readBlock` and `shiftGrid`.
-- **U7, `canvas/WorldSurface.tsx` is 934 lines:** the first task of roadmap Plan 16, which adds the minimap to that surface. Extract the warp fetch, the encounter fetch and the lens overlays as hooks.
+- **U7, `canvas/WorldSurface.tsx` is 934 lines** (937 on 2026-11-21): roadmap Plan 14C's first UI task (D24c), since its ghost preview is the first later feature drawn on that surface; Plan 16's row 16-1 describes it. Extract the warp fetch, the encounter fetch and the lens overlays as hooks.
 - **U8, no `AbortController`:** not planned. The hooks already drop late results and the server is local.
-- **P1-P5, Plan 3 and Plan 5 overlap the roadmap:** resolved by roadmap D22; the moved tasks are marked in those plans.
+- **P1-P5, Plan 3 and Plan 5 overlap the roadmap:** resolved by roadmap D22 (amended by D27 for Plan 3's tileset work). The moved task texts stay in those plans, labelled as moved, as requirements for the receiving roadmap plans.

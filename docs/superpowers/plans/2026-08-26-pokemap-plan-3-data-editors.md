@@ -1,29 +1,29 @@
-# PokeMap Plan 3 — Connections, Headers, Encounters, Tilesets, Region Map
+# PokeMap Plan 3 — Map Headers, Encounters, Tilesets, Layouts (reduced; connections and region map moved)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` or `superpowers:executing-plans`. Read [Plan 0](2026-08-26-pokemap-plan-0-roadmap.md) first — invariants I1–I8 bind every task.
 >
-> **RE-GRANULARISE BEFORE EXECUTING.** Task level only; expand to Plan 1's step shape against the code Plans 1–2 actually produced.
+> **Work from the Subtasks table (2026-11-15)** after the brainstorming interview below. The Task sections are the original 2026-08 requirements; where a trap or a ruling disagrees with them, the trap or ruling wins, and their **Files** lines are the 2026-08 layout (`packages/ui/src/components/`, GBA only). The table names the real files.
 
-> **Reduced 2026-11-13 (roadmap D22).** Still in this plan: Task 2 (map header), Task 3 (wild encounters) and the reduced Tasks 6-8. Moved: Task 1, Task 9 and the create-layout part of Task 8 to roadmap Plan 14C; Tasks 4-5 to roadmap Plan 15. Deleted: Task 10. The moved task texts stay below as requirements for the receiving plan's spec. Success criteria 1 and 3, and the checklist lines for moved tasks, travel with them. When this plan starts, run `superpowers:brainstorming` first: the unified-UI goal (roadmap) wants each editor behind the engine adapter in both families, which this 2026-08 text predates. The `packages/ui/src/components/` paths in the File Structure table are the old layout.
+> **Reduced 2026-11-13 (roadmap D22), amended 2026-11-16 (D27).** Still in this plan: Task 2 (map header), Task 3 (wild encounters), Task 6 (the indexed PNG and `.pal` writers), Task 7 (pixel and palette editing, FireRed fields) and Task 8 (resize, border size, delete). Moved: Task 1, Task 9 and the create-layout part of Task 8 to roadmap Plan 14C; Tasks 4-5 to roadmap Plan 15. Deleted: Task 10. The moved task texts stay below as requirements for the receiving plan's spec; success criteria 1 and 3 and their checklist lines are marked as moved with them. Tasks 2 and 3 run after roadmap Plan 14C as one plan for both families (D24f). When this plan starts, run `superpowers:brainstorming` first: the unified-UI goal (roadmap) wants each editor behind the engine adapter in both families, which this 2026-08 text predates.
 
-**Goal:** Complete Porymap parity — editors for connections, map headers, wild encounters, tilesets and the region map — with special care around `region_map_sections.json`, the file whose rewrite broke the build on 2026-08-18.
+**Goal (reduced, D22 and D27):** map header, wild encounter, tileset-pixel, palette and layout editors in both families, through the save funnel. The 2026-08 goal also named connections and the region map, with special care around `region_map_sections.json` (the file whose rewrite broke the build on 2026-08-18); those moved to roadmap Plans 14C and 15.
 
 **Architecture:** Every editor is a UI over the Plan 2 save funnel. No editor writes directly. New guards are added to `write/guards.ts`, never bypassed.
 
 **Success criteria — demonstrated, not asserted:**
-1. Drag a map in the stitched world view and have it write a correct connection `offset`.
+1. *(Moved with Task 1 to roadmap Plan 14C.)* Drag a map in the stitched world view and have it write a correct connection `offset`.
 2. Edit a tile's pixels or a palette colour and see every map that uses that tileset change. (Metatile edits already do this through Plan 14.2's block editor.)
-3. Edit a region map entry, run `make`, and get a successful build — the direct rebuttal of the 2026-08-18 failure.
+3. *(Moved with Tasks 4-5 to roadmap Plan 15.)* Edit a region map entry, run `make`, and get a successful build — the direct rebuttal of the 2026-08-18 failure.
 4. The 5-engine write corpus still passes at zero bytes changed.
 
 ---
 
 ## Traps and pitfalls (2026-11-15)
 
-From the plan review of 2026-11-15, checked against `plan-14-2-block-editor` at `21bf0b9` and the two subjects. Tasks 1, 4, 5 and 9 have their traps in the roadmap, under Plans 14C and 15.
+From the plan review of 2026-11-15, checked against `plan-14-2-block-editor` at `21bf0b9` and the two subjects. Line numbers in PokeMap were moved to `master` at `9d14637` on 2026-11-21; the facts were not re-derived. Tasks 1, 4, 5 and 9 have their traps in the roadmap, under Plans 14C and 15.
 
-1. **Task 8 still lists work that moved.** Its create-a-layout bullets belong to roadmap Plan 14C and are marked in place; a brief quotes only unmarked bullets. The bullets Plan 14.2 built (Task 6's two `.bin` writers; Task 7's composition, behaviour, layer type, split labels, save warning and cache invalidation) were deleted on 2026-11-21 after Plan 14.2 merged.
-2. **The File Structure table is the 2026-08 layout and GBA only.** Editors since Plan 9 are one shared component with family data through the adapter (`ui/src/shared/AddEventDialog.tsx` with `gba/addEventFields.ts` and `gbc/addEventFields.ts`; Plan 14.2's `shared/BlockEditorDialog.tsx`). The unified-UI goal wants each editor here in both families, and no task names a GBC file.
+1. **Task 8 still holds work that moved.** Its create-a-layout bullets belong to roadmap Plan 14C and sit in their own "Moved" list under Task 8; a brief quotes only the bullets above that list. The bullets Plan 14.2 built (Task 6's two `.bin` writers; Task 7's composition, behaviour, layer type, split labels, save warning and cache invalidation) were deleted on 2026-11-21 after Plan 14.2 merged.
+2. **The 2026-08 File Structure table was GBA only, in the old `components/` layout;** it was rebuilt from the Subtasks table on 2026-11-21. Editors since Plan 9 are one shared component with family data through the adapter (`ui/src/shared/AddEventDialog.tsx` with `gba/addEventFields.ts` and `gbc/addEventFields.ts`; Plan 14.2's `shared/BlockEditorDialog.tsx`). The unified-UI goal wants each editor here in both families, and no task names a GBC file.
 3. **Task 2, GBA: the edit exists, the route does not.** `editJson` already replaces a top-level scalar such as `music`, and refuses a key that is absent (`core/src/write/jsonEdit.ts:16-37`, `:91`); only the event operations build paths today (`core/src/edit/events.ts:17-42`). The work is an operation, a route and the panel.
 4. **Task 2, `layout` is not a scalar edit.** The session holds the old layout's `layout`, `blocks` and `border` (`core/src/write/save.ts:76-82`), so changing it with painted cells pending has no defined meaning. It is its own subtask with its own ruling, or it is dropped.
 5. **Task 2, GBC: the header is one line in a file shared by every map.** `map NewBarkTown, TILESET_JOHTO, TOWN, LANDMARK_NEW_BARK_TOWN, MUSIC_NEW_BARK_TOWN, FALSE, PALETTE_AUTO, FISHGROUP_OCEAN` in `data/maps/maps.asm`, read once at project open (`core/src/gbc/load/map.ts:256`). There is no writer, the file needs the one-owner rule, and the project must be refreshed after the save (Plan H Task G; roadmap Plan 14C builds the refresh).
@@ -37,21 +37,19 @@ From the plan review of 2026-11-15, checked against `plan-14-2-block-editor` at 
 13. **Task 7's FireRed fields have no subject.** Plan 14.2 patches attributes through masks (`core/src/blockEdit/gbaPatch.ts:89`); terrain and encounter type would be two more fields in its field spec. Neither subject is FireRed, so only the reference corpus would exercise them and no live check is possible.
 14. **Task 8: a half-done resize still loads.** Since Plan 10b a size mismatch is never read-only (ruling R2; `e827cdc`), so the loader accepts a `map.bin` that disagrees with `layouts.json`. Resize tests assert exact sizes in every file and on a reload. Resize also strands events outside the new bounds and shifts connection offsets.
 15. **Task 8, GBC: the size lives in a constants file.** `map_const` dimensions in `constants/map_constants.asm`, read once at open (`core/src/gbc/load/map.ts:254`), plus the `.blk` length. Text replacement in constants files exists (`core/src/gbc/write/save.ts:216-218`); the project refresh after the save does not.
-16. **The build checks in the checklist cannot be run on this machine** (no `make` or compiler, checked 2026-11-15).
+16. **The build checks run in WSL.** The toolchain was installed 2026-11-17 (roadmap D29; RESUME, Environments): GBC builds with `make`, the GBA subject with `make modern`, on a scratch copy.
 
 ## Subtasks (2026-11-15)
 
-**Run `superpowers:brainstorming` first** (the header already says so). The table is the breakdown that interview starts from; a row may be deleted by an answer. Both families are named in every row. Verify lines run from the repo root after `npm run typecheck`. The interview's questions, with recommendations:
+**Run `superpowers:brainstorming` first** (the header already says so). The table is the breakdown that interview starts from; a row may be deleted by an answer. Both families are named in every row. Verify lines run from the repo root after `npm run typecheck`. The interview's questions. Questions 1, 4, 5 and 7 were answered by the user 2026-11-16 (roadmap D24f, D27); their recommendations were replaced by the answers on 2026-11-21.
 
-1. Whether Tasks 2 and 3 run as one plan after roadmap Plan 14C (roadmap, "Order and overlap review", proposal 6). Recommendation: yes.
-2. Task 2: whether changing a map's `layout` is in scope (trap 4). Recommendation: no.
-3. Task 3: whether GBC fishing groups, swarms and headbutt trees are editable in the first version. Recommendation: grass and water only; fishing shown read-only with its "shared by N maps" count.
-4. Tasks 6 and 7: whether PokeMap edits tile pixels and palette colours, or opens the file in the user's editor and reloads. Recommendation: the external editor. Plan 14.2 ruled pixel and palette editing out of scope, and a paint program does it better. That answer deletes rows 6a, 7a and 7b.
-5. Task 7: whether the FireRed fields are built (trap 13). Recommendation: no, until a FireRed project is a subject.
-6. Task 8: on a resize, which edge grows, what fills the new cells, and what happens to events left outside. Recommendation: a chosen anchor, the layout's most used block, and a refusal that lists the events.
-7. Task 8: whether deleting a layout is wanted while maps cannot be deleted. Recommendation: drop it.
-
-**Answered by the user 2026-11-16 (roadmap D24f, D27):** question 1 yes, Tasks 2 and 3 run after roadmap Plan 14C as one plan for both families. Question 4: inside PokeMap, so rows 6a, 7a and 7b are built; the pixel editor and the two writers are shared with roadmap Plan 15, which needs them for the town map (D26), so they are built once, by whichever of the two plans starts first. Question 5: the FireRed fields are built (row 7c); with no FireRed subject, their acceptance runs on a scratch copy of the pokefirered reference engine. Question 7: layout deletion is built (row 8e). Questions 2, 3 and 6 are still open.
+1. Whether Tasks 2 and 3 run as one plan after roadmap Plan 14C. **Answered: yes,** as one plan for both families (D24f).
+2. Task 2: whether changing a map's `layout` is in scope (trap 4). Recommendation: no. Open.
+3. Task 3: whether GBC fishing groups, swarms and headbutt trees are editable in the first version. Recommendation: grass and water only; fishing shown read-only with its "shared by N maps" count. Open.
+4. Tasks 6 and 7: whether PokeMap edits tile pixels and palette colours, or opens the file in the user's editor. **Answered: inside PokeMap** (D27), so rows 6a, 7a and 7b are built. The pixel editor and the two writers are shared with roadmap Plan 15, which needs them for the town map (D26); whichever of the two plans starts first builds them.
+5. Task 7: whether the FireRed fields are built (trap 13). **Answered: yes** (row 7c). With no FireRed subject, their acceptance runs on a scratch copy of the pokefirered reference engine.
+6. Task 8: on a resize, which edge grows, what fills the new cells, and what happens to events left outside. Recommendation: a chosen anchor, the layout's most used block, and a refusal that lists the events. Open.
+7. Task 8: whether deleting a layout is wanted while maps cannot be deleted. **Answered: yes** (D27; row 8e).
 
 | Id | What | Files | Tier | Verify (`npx vitest run --no-file-parallelism …`) | After |
 |---|---|---|---|---|---|
@@ -79,20 +77,22 @@ Each of Tasks 2, 3 and 8 ends with a live check on scratch clones in both famili
 
 ## File Structure
 
-| File | Responsibility |
-|---|---|
-| `packages/core/src/edit/connections.ts` | Connection add/remove/offset, with geometry from drag |
-| `packages/core/src/edit/header.ts` | Map header field editing, engine-aware |
-| `packages/core/src/edit/encounters.ts` | Wild encounter table editing |
-| `packages/core/src/load/regionMap.ts` | `region_map_sections*.json` loading, schema-preserving |
-| `packages/core/src/edit/regionMap.ts` | Region map entry editing |
-| `packages/core/src/edit/tileset.ts` | Tile-pixel and palette edits (rows 7a, 7b; their spec names the final files). Metatile composition and attributes are Plan 14.2's `core/src/blockEdit/` |
-| `packages/core/src/write/{indexedPng,pal}.ts` | Indexed `tiles.png` and JASC `.pal` writing (row 6a). The `.bin` writers are Plan 14.2's `core/src/blockEdit/gbaPatch.ts` |
-| `packages/ui/src/components/ConnectionEditor.tsx` | |
-| `packages/ui/src/components/HeaderInspector.tsx` | |
-| `packages/ui/src/components/EncounterEditor.tsx` | |
-| `packages/ui/src/components/TilesetEditor.tsx` | |
-| `packages/ui/src/components/RegionMapEditor.tsx` | |
+Rebuilt 2026-11-21 from the Subtasks table: new files only; the files each row modifies are in its row. The moved tasks' files (connections, region map, new map) belong to roadmap Plans 14C and 15.
+
+| File | Responsibility | Row |
+|---|---|---|
+| `packages/core/src/header/{gbaOptions,gbcOptions}.ts` | Header option lists from project constants, reusing `addEvent/sources.ts` | 2a |
+| `packages/core/src/edit/header.ts` | GBA header edit operation and undo snapshot | 2b |
+| `packages/core/src/gbc/write/mapsPatch.ts` | Lossless GBC `maps.asm` line patcher | 2c |
+| `packages/ui/src/shared/HeaderPanel.tsx`, `packages/ui/src/gba/headerFields.ts`, `packages/ui/src/gbc/headerFields.ts` | Shared header panel and its family field specs | 2d |
+| `packages/core/src/edit/encounters.ts` | GBA encounter edits as splices into `wild_encounters.json` | 3a |
+| `packages/core/src/gbc/write/wildPatch.ts` | Lossless GBC grass and water patchers | 3b |
+| `packages/ui/src/shared/EncounterEditor.tsx` | Shared encounter editor with family specs | 3e |
+| `packages/core/src/write/{indexedPng,pal}.ts` | Indexed `tiles.png` and JASC `.pal` writing. The `.bin` writers are Plan 14.2's `core/src/blockEdit/gbaPatch.ts` | 6a |
+| `packages/core/src/edit/tileset.ts` (provisional) | Tile-pixel and palette edits; their own spec names the final files. Metatile composition and attributes are Plan 14.2's `core/src/blockEdit/` | 7a, 7b |
+| `packages/core/src/edit/layouts.ts` | GBA resize, border size and layout delete | 8a, 8c, 8e |
+| `packages/core/src/gbc/edit/layouts.ts` | GBC resize | 8b |
+| `packages/ui/src/shared/ResizeDialog.tsx` | Shared resize dialog | 8d |
 
 ---
 
@@ -227,13 +227,13 @@ it("cannot reproduce the 2026-08-18 porymap 6 failure", () => {
 
 **Files:** `packages/core/src/edit/layouts.ts` + test
 
-**Marked 2026-11-15.** The first and last bullets below (create a layout; new `layouts.json` entries) are roadmap Plan 14C's and are not built here. This task builds the resize, border-size and delete bullets only.
-
-**Requirements:**
-- Create a new layout: writes the `layouts.json` entry, creates `map.bin` and `border.bin` at the right size, and **requires a `layout_version`** on engines that support it — chosen explicitly by the user, never defaulted silently, because a wrong choice here produces exactly `open-bugs.md` #41.
+**Requirements (built here, rows 8a-8e):**
 - Resize a layout, preserving overlapping blockdata and filling new area with the default metatile from the engine profile.
 - Change border size, honouring the 3×2 case.
 - Delete a layout, refusing when any map still references it and naming those maps.
+
+**Moved to roadmap Plan 14C (D22); kept as requirements for its spec, not built here:**
+- Create a new layout: writes the `layouts.json` entry, creates `map.bin` and `border.bin` at the right size, and **requires a `layout_version`** on engines that support it — chosen explicitly by the user, never defaulted silently, because a wrong choice here produces exactly `open-bugs.md` #41.
 - New entries are added to `layouts.json` with `insertArrayElement`, matching the file's existing indentation, and carry **only** the keys their siblings carry — a pokeemerald project's new layout does not sprout `border_width`.
 
 ---
@@ -252,21 +252,20 @@ it("cannot reproduce the 2026-08-18 porymap 6 failure", () => {
 
 ## Task 10 (DELETED, D22): Extend the corpus gate
 
-**Deleted 2026-11-13.** Each plan that adds a writer extends the corpus gate for its own file types (roadmap D22). The text below is kept for the record.
-
-**Files:** Modify `packages/core/test/write/corpus.test.ts`
-
-Add to the existing gate: region map files, tileset binaries, `layouts.json`, and `map_groups.json` — load and re-save every one across all reference engines, zero bytes changed.
-
-By the end of this plan the gate covers every file type PokeMap can write. That is the point at which "it cannot rewrite your schema" stops being a design intention and becomes a tested property.
+**Deleted 2026-11-13 (D22):** each plan that adds a writer extends the corpus gate (`packages/core/test/write/corpus.test.ts`) for its own file types. The task's original text was removed 2026-11-21; it is in this file's history before that date.
 
 ---
 
 ## Plan 3 completion checklist
 
-- [ ] `npm test` green, including the extended corpus across every writable file type
-- [ ] Drag a map in the world view; the connection `offset` in `map.json` changes and nothing else does
-- [ ] Edit a tile's pixels or a palette colour; every map using that tileset updates, and the save dialog named them beforehand
-- [ ] Edit a region map entry, then run `make` in the decomp — **the build succeeds.** This is the direct rebuttal of the 2026-08-18 failure and must be demonstrated, not assumed
-- [ ] `git diff` in the decomp after a region map edit shows one changed value and no renamed keys
-- [ ] Create a new layout without a `layout_version` — refused, by name, with the fix
+Updated 2026-11-21 to the Subtasks table. The lines for moved tasks are listed last, marked with the plan they moved to.
+
+- [ ] The `gate` skill passes, and the corpus gate covers each file kind this plan writes (D22)
+- [ ] Tasks 2, 3 and 8 (rows 2a-2d, 3a-3e, 8a-8e): each ends with a live check on scratch clones in both families
+- [ ] Row 6a: an unchanged `tiles.png` or `.pal` is not written; a written one decodes to exactly the intended pixels and palette at the source depth (trap 12)
+- [ ] Rows 7a, 7b: edit a tile's pixels or a palette colour; every map using that tileset updates, and the save dialog named them beforehand
+- [ ] Row 7c: the FireRed fields' acceptance passes on a scratch copy of the pokefirered reference (question 5)
+- [ ] *(Moved to roadmap Plan 14C.)* Drag a map in the world view; the connection `offset` in `map.json` changes and nothing else does
+- [ ] *(Moved to roadmap Plan 14C.)* Create a new layout without a `layout_version` — refused, by name, with the fix
+- [ ] *(Moved to roadmap Plan 15.)* Edit a region map entry, then build the decomp (`make modern` for the GBA subject; RESUME, Environments) — **the build succeeds.** This is the direct rebuttal of the 2026-08-18 failure and must be demonstrated, not assumed
+- [ ] *(Moved to roadmap Plan 15.)* `git diff` in the decomp after a region map edit shows one changed value and no renamed keys

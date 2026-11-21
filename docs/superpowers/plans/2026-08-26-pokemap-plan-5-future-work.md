@@ -1,6 +1,6 @@
 # PokeMap Plan 5 — Future Work (Unmapped)
 
-> **This plan contains no tasks and is not executed.** It is a parking lot with enough detail to pick each item up later without re-deriving the research. Everything here was deliberately excluded from Plans 1–4 as YAGNI, not forgotten.
+> **This plan is not executed as a whole.** Only the Breakdown (2026-11-15) lists subtasks, for sections 1, 3 and 5. It is a parking lot with enough detail to pick each item up later without re-deriving the research. Everything here was deliberately excluded from Plans 1–4 as YAGNI, not forgotten.
 >
 > When one of these is wanted, run `superpowers:brainstorming` on it, then `superpowers:writing-plans`. Do not bolt any of them onto an existing plan mid-execution.
 
@@ -10,16 +10,16 @@
 
 ## Traps and pitfalls (2026-11-15)
 
-From the plan review of 2026-11-15, checked against `plan-14-2-block-editor` at `21bf0b9` and the GBA subject at `97ac21d4b`. This file predates the GBC family; every item below that becomes a feature has to say what it means for Crystal, or carry a capability flag. Section 2 moved to roadmap Plan 14A and has its traps there.
+From the plan review of 2026-11-15, checked against `plan-14-2-block-editor` at `21bf0b9` and the GBA subject at `97ac21d4b`. Line numbers in PokeMap were moved to `master` at `9d14637` on 2026-11-21; the facts were not re-derived. This file predates the GBC family; every item below that becomes a feature has to say what it means for Crystal, or carry a capability flag. Section 2 moved to roadmap Plan 14A and has its traps there.
 
 **Section 1, Poryscript**
-1. **The "link out" option is mostly built.** The project symbol index maps a script label to its file (Plan 10b Task 5, `d8ac3d0`; `packages/server/src/projectSymbols.ts`), and Add Event already creates and copies scripts (Plan 14.1, `3f4a762`; `packages/core/src/addEvent/gbaBuild.ts`, `gbcBuild.ts`). The section's "exactly one script template" and "symbol indexing across all `scripts.inc`" lines are out of date. What is missing is the line number and the link.
+1. **The "link out" option is mostly built.** The project symbol index maps a script label to its file (Plan 10b Task 5, `d8ac3d0`; `packages/server/src/projectSymbols.ts`), and Add Event already creates and copies scripts (Plan 14.1, `3f4a762`; `packages/core/src/addEvent/gbaBuild.ts`, `gbcBuild.ts`). The section's "exactly one script template" and "symbol indexing across all `scripts.inc`" lines were out of date and were replaced 2026-11-21. What is missing is the line number and the link.
 2. **The hub must not start an editor from a request.** Opening a file from an HTTP route is running a program on the user's machine with a path from the network. A `vscode://file/<path>:<line>` link rendered by the UI needs no hub code; use that, or rule the hub route as High tier with a fixed command and a path taken from the index only.
 3. **Poryscript itself is GBA only and unused here.** The subject has `use_poryscript=0` (`porymap.project.cfg:39`) and Crystal has no such language. Full support would be a one-family feature behind a capability flag.
 
 **Section 3, day/night**
 4. **The control and the GBC half exist.** Morn/Day/Nite sits in the header behind `capabilities.timeOfDay` (`packages/ui/src/shell/adapter.ts:20`, GBC true and GBA false; `gbc/adapter.tsx:152-160`), and `time` runs through the GBC renderer and its cache (`packages/core/src/gbc/render/map.ts:310`; `packages/server/src/gbcRoutes.ts:473`). "A time-of-day control in the renderer" is GBA work only: the selected time is state inside the GBC adapter (`gbc/adapter.tsx:24`) and must move to the shell or be mirrored.
-5. **Every GBA cache key lacks the mode.** `pngCache` is keyed `name:border` (`packages/server/src/index.ts:137`), the pre-warm tests `name:0` (`index.ts:1466`), and the metatile and world-tile URLs carry no time; Plan 14.2 adds a tileset version to those URLs. A mode added to the renderer and not to each of these shows the wrong palette from cache, and unit tests with a mocked image will not see it (LESSONS, Server / Routes: "The server's `pngCache` was never invalidated on commit").
+5. **Every GBA cache key lacks the mode.** `pngCache` is keyed `name:border` (`packages/server/src/index.ts:137`), the pre-warm tests `name:0` (`index.ts:1466`), and the metatile and world-tile URLs carry no time; Plan 14.2 added a tileset version (`tv`) to the metatile and map-render URLs. A mode added to the renderer and not to each of these shows the wrong palette from cache, and unit tests with a mocked image will not see it (LESSONS, Server / Routes: "The server's `pngCache` was never invalidated on commit").
 6. **The section's "current state" is stale.** Four tilesets in the subject now have `.swapPalettes` active and seven have it commented out (`src/data/tilesets/headers.h:55,123,176,182`). The type `"morn" | "day" | "nite"` is Crystal's; how many periods the subject's GBA engine has is unmeasured.
 
 **Section 4, `.pla` lights**
@@ -32,12 +32,12 @@ From the plan review of 2026-11-15, checked against `plan-14-2-block-editor` at 
 
 ## Breakdown (2026-11-15)
 
-Sections 1, 3 and 4 need an interview before they can be planned; section 5 needs two small checks. Nothing here is scheduled (roadmap, "Order and overlap review").
+Section 1 is ruled (D28, below) and has its two subtasks. Sections 3 and 4 need an interview before they can be planned; section 5 needs two small checks. Nothing here is scheduled (roadmap, "Order and overlap review"); Plan 18's table comes before section 1 is specced (D24d).
 
 **Answered by the user 2026-11-16 (roadmap D28).** Section 1: link out; subtasks 1a and 1b below are the whole of it and Poryscript support is closed until a project uses it. Section 3: a palette swap is enough, and the time-of-day control must also show what else changes with the time: "day/night event triggers/wild pokemon change". Claude's reading, to confirm in the interview: with a time selected, the map shows only the events active at that time, and the encounter panel shows that time's table. Crystal has both in its data already (object events carry a time-of-day field; grass tables are per morn, day and nite, `packages/core/src/gbc/model/types.ts:284-285`); on GBA the subject keeps several encounter tables per map told apart by `base_label` (Plan 3 Task 3), and how its events depend on the time is unmeasured. This adds two subtasks after 3c: (3e) the encounter panel follows the selected time in both families; (3f) events filtered or dimmed by the selected time in both families. Both wait on step 0's measurement.
 
-- **Section 1.** Question: edit scripts in PokeMap, or link out. Recommendation: link out, in both families, and close the Poryscript question until a project uses it. If so, two subtasks: (1a) the symbol index returns file and line for a label, both families: `packages/server/src/projectSymbols.ts` and its test, Medium, `npx vitest run --no-file-parallelism packages/server/test/projectSymbols.test.ts`; (1b) a link beside each script label in the event inspectors: `packages/ui/src/components/EventInspector.tsx`, `packages/ui/src/gbc/GbcEventInspector.tsx`, Low, `npx vitest run --no-file-parallelism packages/ui`, live check. Full Poryscript support stays a plan of its own and is not broken down.
-- **Sections 3 and 4.** Step 0 is a measurement written into the spec: how the subject's engine applies the swap, whether it blends, how many periods it has, what a `.pla` file holds. Questions: is a plain palette swap, labelled approximate, enough for the first version (recommendation: yes); are lights wanted in the preview (recommendation: after the swap ships). Provisional subtasks after the spec: (3a) palette mode in the GBA tileset load and renderer, resolved per layout split (invariant I1): `packages/core/src/load/tilesetData.ts`, `packages/core/src/render/`, fixtures; High (render core, numeric fixtures). (3b) the mode in every GBA render route, cache key and the pre-warm: `packages/server/src/` read routes; High (hub). (3c) the time control lifted to the shell and the GBA capability turned on: `packages/ui/src/shell/{adapter.ts,FamilyApp.tsx}`, `gba/adapter.tsx`, `gbc/adapter.tsx`; Medium. (3d) live acceptance in both families, with one GBA tileset that swaps and one that does not.
+- **Section 1 (ruled D28: link out, in both families; Poryscript closed until a project uses it).** Two subtasks: (1a) the symbol index returns file and line for a label, both families: `packages/server/src/projectSymbols.ts` and its test, Medium, `npx vitest run --no-file-parallelism packages/server/test/projectSymbols.test.ts`; (1b) a link beside each script label in the event inspectors: `packages/ui/src/components/EventInspector.tsx`, `packages/ui/src/gbc/GbcEventInspector.tsx`, Low, `npx vitest run --no-file-parallelism packages/ui`, live check. Full Poryscript support stays a plan of its own and is not broken down.
+- **Sections 3 and 4.** Step 0 is a measurement written into the spec: how the subject's engine applies the swap, whether it blends, how many periods it has, what a `.pla` file holds. A plain palette swap is enough for the first version (D28). Open question: are lights wanted in the preview (recommendation: after the swap ships). Provisional subtasks after the spec: (3a) palette mode in the GBA tileset load and renderer, resolved per layout split (invariant I1): `packages/core/src/load/tilesetData.ts`, `packages/core/src/render/`, fixtures; High (render core, numeric fixtures). (3b) the mode in every GBA render route, cache key and the pre-warm: `packages/server/src/` read routes; High (hub). (3c) the time control lifted to the shell and the GBA capability turned on: `packages/ui/src/shell/{adapter.ts,FamilyApp.tsx}`, `gba/adapter.tsx`, `gbc/adapter.tsx`; Medium. (3d) live acceptance in both families, with one GBA tileset that swaps and one that does not.
 - **Section 5.** (5a) A pin test that a map with weather-trigger coord events and a secret-base bg event saves byte-identically after an unrelated edit, on a scratch copy: `packages/core/test/write/corpus.test.ts` or a sibling; Low. (5b) Fold the heal-locations measurement into roadmap Plan 15's step 15-0. The other rows need no work.
 
 ---
@@ -48,17 +48,16 @@ Sections 1, 3 and 4 need an interview before they can be planned; section 5 need
 
 **Current state in the subject repo:** `porymap.project.cfg` has `use_poryscript=0`. The tree uses raw `.inc` scripts throughout.
 
-**What Plans 1–4 do instead:** Plan 2 Task 12 generates exactly one script template — the wild sign — as a targeted `.inc` append, verified byte-for-byte against the existing `CeladonCity_EventScript_Poliwrath`. That is templated generation, deliberately not general script editing.
+**What PokeMap does instead (updated 2026-11-21, trap 1):** templated script generation, not general script editing. Add Event creates and copies scripts in both families (Plan 14.1), and the project symbol index maps a script label to its file (Plan 10b Task 5).
 
-**What real support would need:**
+**What full Poryscript support would need** (closed by D28 until a project uses it):
 - A Poryscript parser and compiler, or shelling out to the real `poryscript` binary.
 - Round-trip fidelity for `.pory` → `.inc`, which is genuinely hard: the compiler is not injective, so PokeMap could not reliably edit a `.inc` that a `.pory` produced.
 - A script editor with syntax highlighting, and jump-to-definition from an event to its script.
-- Symbol indexing across all 1,209 `scripts.inc` files.
 
-**Open question to settle first:** whether PokeMap should edit scripts at all, or link out to the user's editor with the right file and line. The second is a fraction of the work and might be the better product. The subject repo's own `docs/human-porymap.md` draws a hard line — scripts and JSON are "an agent's job", tiles are the human's — which argues that a script editor inside a *map* tool may be solving the wrong problem.
+**Settled 2026-11-16 (D28):** PokeMap links out to the user's editor with the right file and line; it does not edit scripts. Subtasks 1a and 1b in the Breakdown are the whole of it.
 
-**Estimated scope:** Large. A plan of its own, at least Plan 1's size.
+**Estimated scope of full support:** Large. A plan of its own, at least Plan 1's size.
 
 ---
 
@@ -84,6 +83,8 @@ Sections 1, 3 and 4 need an interview before they can be planned; section 5 need
 
 ## 3. Day/night palette preview
 
+**Ruled 2026-11-16 (D28):** a palette swap, plus the event triggers and wild Pokémon that change with the time of day (subtasks 3a-3f in the Breakdown).
+
 **What it is:** The subject repo blends alternate palettes by time of day. From `src/data/tilesets/headers.h`:
 
 ```c
@@ -93,12 +94,12 @@ Sections 1, 3 and 4 need an interview before they can be planned; section 5 need
 
 So palette *n* has a night variant at `((n + 9) % 16).pal`. Note the macro is **already `NUM_PALS_IN_PRIMARY`-aware**, which means a correct implementation must resolve the split per layout exactly as the renderer does — invariant **I1** applies here too. A day/night preview that assumed one global palette boundary would be wrong on 389 layouts in the same way Porymap is.
 
-**Current state:** `.swapPalettes` is commented out on `gTileset_General` in the subject repo, so not every tileset uses it yet.
+**Current state:** not every tileset uses `.swapPalettes`; trap 6 has the 2026-11-15 count (four active, seven commented out, `gTileset_General` among the latter).
 
-**What Plans 1–4 do:** Render base palettes only, always.
+**What PokeMap does today:** GBA renders base palettes only, always; GBC renders the selected Morn/Day/Nite palettes (trap 4).
 
 **What real support would need:**
-- A time-of-day control in the renderer and a palette-resolution mode threaded through `renderMetatile`. **(Marked 2026-11-15: the control is SUPERSEDED, it exists in the shared header for GBC since Plans 6b and 9, `packages/ui/src/gbc/adapter.tsx:152-160`; the GBA palette mode is still to do. See trap 4.)**
+- A palette-resolution mode threaded through the GBA `renderMetatile`. (The time-of-day control half of this bullet was deleted 2026-11-21: the control exists in the shared header for GBC since Plans 6b and 9; see trap 4.)
 - Cache keys extended with the palette mode — the existing key is `(layout, primary, secondary, split)` and would need a fifth component.
 - Understanding how the engine blends, not just swaps: check `src/palette.c` and whatever the day/night system does at runtime before assuming a straight substitution.
 - A visual regression baseline per mode, which doubles the fixture set.

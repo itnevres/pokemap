@@ -99,7 +99,7 @@ This single rule is what makes agent rendering and UI rendering **the same code 
 
 ### 4.2 Development vs. shipping
 
-Developed and tested as a web app plus a local Node server. Shipped as an Electron desktop app (Plan 4). Because `server` is a thin shim over `core`, the Electron wrap is configuration, not a rewrite.
+Developed and tested as a web app plus a local Node server. Shipped as an Electron desktop app (Plan 4). Because `server` is a thin shim over `core`, the Electron wrap is configuration, not a rewrite. *(2026-11-21: Plan 4 ships a one-double-click launcher first; the Electron app is deferred, roadmap D32.)*
 
 ---
 
@@ -224,7 +224,7 @@ This is simultaneously the portability proof and the safety proof. A regression 
 - **Refuse to save** a block whose metatile id falls outside its tileset's real range for that layout's split — the `check_metatile_range.py` invariant, enforced at write time rather than discovered at build time.
 - Border dimensions always honoured from `layouts.json`; no `use_custom_border_size` equivalent exists.
 
-Opt-in git integration (refuse to save into a dirty tree; auto-commit each save) is deferred to Plan 4 as a setting, default off.
+Opt-in git integration (refuse to save into a dirty tree; auto-commit each save) was deferred to Plan 4, then cancelled 2026-11-16 (roadmap D33): PokeMap never relies on git.
 
 ---
 
@@ -377,15 +377,15 @@ All UI work invokes the `frontend-design` and `ui-ux-pro-max` skills. This is wr
 | **0** | Overarching roadmap — repo conventions, package layout, invariants binding all plans |
 | **1** | `core` loaders, per-layout renderer, `cli`, map list, single-map view, stitched world, encounter atlas |
 | **2** | Painting, collision/elevation, event editing, wild sign authoring — the first write path |
-| **3** | Connections/headers/wild-encounter editors, tileset editor, region map editor |
-| **4** | Electron packaging, MCP server, opt-in git integration |
-| **5** | Future work, unmapped: poryscript, prefabs, day/night palette preview, `.pla` lights |
+| **3** | Connections/headers/wild-encounter editors, tileset editor, region map editor. *Reduced (roadmap D22, D27): connections and new maps moved to roadmap Plan 14C, the region map to Plan 15.* |
+| **4** | Electron packaging, MCP server, opt-in git integration. *A launcher first, Electron deferred (D32); git integration cancelled (D33).* |
+| **5** | Future work, unmapped: poryscript, prefabs, day/night palette preview, `.pla` lights. *Prefabs moved to roadmap Plan 14A (D22); scripts are linked out and day/night is a palette swap plus time-of-day events and encounters (D28).* |
 
 ---
 
 ## 15. Out of scope
 
-Deliberately excluded, each recorded in Plan 5 rather than forgotten: poryscript support, prefabs, day/night palette preview (`SWAP_PAL`, `((x+9)%16).pal`), `.pla` lights, ROM building, emulator integration, multi-user editing.
+Deliberately excluded, each recorded in Plan 5 rather than forgotten: poryscript support, prefabs, day/night palette preview (`SWAP_PAL`, `((x+9)%16).pal`), `.pla` lights, ROM building, emulator integration, multi-user editing. *(2026-11-21: prefabs and the day/night preview have since been planned, in roadmap Plan 14A and Plan 5 §3; see §14.)*
 
 ---
 

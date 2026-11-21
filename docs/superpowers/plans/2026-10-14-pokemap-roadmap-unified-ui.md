@@ -55,8 +55,8 @@ Made 2026-11-13 (after the 2026-11-12 code review; the user asked for its gaps t
 allowed plan adjustments for build flow; these three are Claude's calls under that instruction, not confirmed one by one, except D21's order of H1-H3 before
 Plan 14A, which the user confirmed the same day):
 - D21. **The review backlog is Plan H** and lives in `plans/2026-09-23-pokemap-followups-remaining.md` (Tasks A-P, with
-  tiers, batches and acceptance). It starts when Plan 14.2 merges, because 14.2 holds the server and UI files in flight;
-  three small tasks (L1, M2, K5) may run beside 14.2. Batches H1-H3 (request boundary, path containment, save and
+  tiers, batches and acceptance; Task Q was added 2026-11-21). It starts after Plan 14.2, which merged 2026-11-21 (#32).
+  Batches H1-H3 (request boundary, path containment, save and
   session correctness, route modules) finish before Plan 14A. The remaining tasks run between later plans, one at a
   time; Task N (layout and keyboard access) finishes before Plan 15.
 - D22. **Plan 3 and Plan 5 overlap is folded into this roadmap.** Plan 3 Tasks 4-5 (region map) move to Plan 15. Plan 3
@@ -93,7 +93,10 @@ Made 2026-11-16 (user, answering the 2026-11-15 plan review; these are binding):
 - D28. **Plan 5:** scripts are linked out to the user's editor, not edited in PokeMap. The day/night work is a palette
   swap plus the things that change with the time of day: event triggers and wild Pokémon.
 - D29. **The build toolchain is installed on the Windows machine** (`make`, `arm-none-eabi-gcc`, `rgbasm`), so "the game
-  still builds" becomes an acceptance check in Plans 14C, 15, 17 and the trainers plan. Not yet installed.
+  still builds" becomes an acceptance check in Plans 14C, 15, 17 and the trainers plan. Installed 2026-11-17, in WSL2
+  Ubuntu on that machine: devkitARM r65, rgbds 0.6.1 and agbcc. Both subjects build from clean clones: GBC with `make`,
+  the GBA subject with `make modern` (plain `make`, through agbcc, fails on the game's own code; not PokeMap's).
+  Setup and the check command: RESUME, Environments.
 - D30. **Plan H Task B fixes both cases** (user, 2026-11-16: "fix both"): the core `applyJsonOps` order (add then move
   in one session) and the GBA hub's delete-then-move index (Plan H trap 3b). Step 1's "pin and close" exit is removed.
 - D31. **Plan 17 copies GBA tilesets** (user, 2026-11-16), refusing only two cases, each with its reason: a tileset
@@ -111,6 +114,8 @@ Made 2026-11-16 (user, answering the 2026-11-15 plan review; these are binding):
 Execution order (amended by D24, 2026-11-16): **10 → 11 → 12 → 13 → 14 (14.1, 14.2) → H (batches H1-H3) → 14A (with Plan H Task N's keyboard model) → trainers plan → 14B → 14C → Plan 3 Tasks 2-3 → 15a → 16 → 15b → 17 → 17A**; Plan 18 runs early, before the trainers plan is specced; Plan 17A may move up to any point after 14C; the rest of Plan H is independent. The trainers plan's exact slot after 14A is Claude's reading of D24f ("after Plan 14A"). Each entry still needs its own spec and implementation plan.
 
 ## Issue map (all 7 open, reviewed 2026-10-14)
+
+Snapshot of 2026-10-14; the "State on master" column is not updated. Since then #4 closed (2026-10-16) and #5 and #6 closed with Plan 13 (#30, 2026-11-02); #7-#10 are open.
 
 | # | Title (short) | Category | State on master | Where it goes |
 |---|---|---|---|---|
@@ -209,7 +214,7 @@ Both families already render the same `components/Toolbar.tsx`; the differences 
 
 ### Plan 12: shared canvas core
 
-- **Status (2026-10-25):** specced and split; 12a merged via #27 (`58f7213`); housekeeping (handoff docs + `.claude` tooling) via #28 (`935d981`); 12b (WorldSurface) plan written 2026-10-26 (`plans/2026-10-26-pokemap-plan-12b-world-surface.md`, 11 tasks, one plan per user; new rulings P12-4n..q in the spec), reviewed and approved by the user 2026-10-26; **implemented and reviewed 2026-10-28, merged via #29 (Plan 12 complete): one `WorldSurface` core for both families, hub world-tile pre-warm (P12-4w), live acceptance in both families, final review Codex `gpt-6-astra` Approved with fixes (2 Minor, fixed).** The 6c deferrals folded in here are closed: cramped world toolbar in context mode (toolbar wraps), refreshed tile kept until the new one loads, encounter tooltip clamped, no gutter overlap at mid zoom (P12-7). Spec `specs/2026-10-24-pokemap-plan-12-shared-canvas-core-design.md` (rulings P12-1..P12-8), plan `plans/2026-10-24-pokemap-plan-12a-canvas-foundation-map-surface.md`; 12b planned after 12a merges.
+- **Status (2026-10-25):** specced and split; 12a merged via #27 (`58f7213`); housekeeping (handoff docs + `.claude` tooling) via #28 (`935d981`); 12b (WorldSurface) plan written 2026-10-26 (`plans/2026-10-26-pokemap-plan-12b-world-surface.md`, 11 tasks, one plan per user; new rulings P12-4n..q in the spec), reviewed and approved by the user 2026-10-26; **implemented and reviewed 2026-10-28, merged via #29 (Plan 12 complete): one `WorldSurface` core for both families, hub world-tile pre-warm (P12-4w), live acceptance in both families, final review Codex `gpt-6-astra` Approved with fixes (2 Minor, fixed).** The 6c deferrals folded in here are closed: cramped world toolbar in context mode (toolbar wraps), refreshed tile kept until the new one loads, encounter tooltip clamped, no gutter overlap at mid zoom (P12-7). Spec `specs/2026-10-24-pokemap-plan-12-shared-canvas-core-design.md` (rulings P12-1..P12-8), plans `plans/2026-10-24-pokemap-plan-12a-canvas-foundation-map-surface.md` and `plans/2026-10-26-pokemap-plan-12b-world-surface.md`.
 - **Goal:** one render and interaction layer for map and world canvases; the adapter supplies tile drawing, geometry and
   family overlays.
 - **Scope:** render pipeline taking geometry plus family drawers; shared hit-testing, pan/zoom, LOD and tile caches, overlay
@@ -257,14 +262,14 @@ Both families already render the same `components/Toolbar.tsx`; the differences 
 
 - **Goal:** close the gaps the 2026-11-12 code review found, and leave one route shape, one session store and a
   contained write path for Plans 14A-17 to build on (D21, D23).
-- **Scope:** `plans/2026-09-23-pokemap-followups-remaining.md`, Tasks A-P. Security: species-route path traversal, a
+- **Scope:** `plans/2026-09-23-pokemap-followups-remaining.md`, Tasks A-Q (Q: the 15 items Plan 14.2's final review moved here). Security: species-route path traversal, a
   body size cap, GBA route guards, path containment for decomp-sourced paths, JSON content type, dependency advisories,
   self-hosted fonts. Correctness: the render-cache bypass, the `applyJsonOps` order, discard against in-flight strokes,
   a suspected stale GBA map cache. Structure: shared sidecar routes, route modules in place of the 1,065-line GBA
   handler, one session store, small dedupes. UI: reduced motion, labels, responsive layout, keyboard access to the map
   canvas, stylesheet tokens. Tooling: lint, CI, a public core surface.
-- **Order:** batch H0 (Task Q1), then H1-H3, before Plan 14A (Plan 14.2 merged 2026-11-21, so H0 may start); the rest between later plans; Task N before
-  Plan 15.
+- **Order:** batch H0 (Task Q1), then H1-H3, before Plan 14A; the rest between later plans. Task N's map-canvas
+  keyboard model comes with Plan 14A, and its layout and theme parts before Plan 15 (D24a).
 - **Risk:** high for the batches that touch write paths, sessions and the request boundary (each task carries its
   tier). The structure tasks are behaviour-preserving moves with the existing route tests as the oracle.
 - **Depends on:** D21, D23; Plan 14.2 merged (done, #32).
@@ -345,7 +350,7 @@ Both families already render the same `components/Toolbar.tsx`; the differences 
   8. **Plan 14.1 sent return warps here and this section never said so.** Its spec, ruling A7: "The two-map version is built in Plan 14C". The dialog only warns today (`ui/src/shared/AddEventDialog.tsx:15-52`). The spec rules it in or out.
   9. **Existing conflicts are real data.** The GBA subject has 19 connection conflicts and Crystal has 2 (RESUME). "Validated reciprocal connections" validates the new pair; it does not refuse a project that already has conflicts.
   10. **`layout_version` is chosen, never defaulted,** and Porymap strips it on save (Plan 3 Task 8; LESSONS, Editing Sessions). A new layout entry carries only the keys its siblings carry.
-  11. **Nothing here can be built on this machine.** `make`, `arm-none-eabi-gcc` and `rgbasm` are not installed (checked 2026-11-15; Plan 14.1 Task 9 says the same). "The game still builds" is the user's check, or the toolchain is installed first.
+  11. **The build check runs in WSL.** The toolchain was installed 2026-11-17 (D29; RESUME, Environments), so "the game still builds" is a check this plan runs itself, on a scratch copy: `make` for GBC, `make modern` for the GBA subject.
   12. **Byte-exact fixtures need `-text`** in `.gitattributes` (LESSONS, Delegation: "Golden fixtures need `-text`"), and every write test runs on a scratch copy (Plan 14.2 Task 0).
 - **Breakdown (2026-11-15): needs a spec first.** Questions for the interview:
   1. Whether moving or removing an existing connection is in this plan. Recommendation: creating and connecting first; dragging an existing connection's offset as a second phase; removal later.
@@ -368,7 +373,7 @@ Both families already render the same `components/Toolbar.tsx`; the differences 
   | 14C-5 | GBA new-map planner (trap 1's file set, sibling key set, name refusals) | new `packages/core/src/edit/newMap.ts` and test | High (subject writes) | `npx vitest run --no-file-parallelism packages/core/test/edit` | 14C-1, 14C-3 |
   | 14C-6 | GBC new-map planner (trap 4's file set) | new `packages/core/src/gbc/edit/newMap.ts` and test | High (subject writes) | `npx vitest run --no-file-parallelism packages/core/test/gbc` | 14C-1, 14C-4 |
   | 14C-7 | Create routes: plan and commit with a fingerprint, one module for both families | new `packages/server/src/mapCreateRoutes.ts` and test; `packages/server/src/{index,gbcRoutes}.ts` | High (hub I/O, save ownership) | `npx vitest run --no-file-parallelism packages/server` | 14C-2, 14C-5, 14C-6 |
-  | 14C-8 | Edge pick and ghost preview on the world surface | `packages/ui/src/canvas/{WorldSurface.tsx,worldSurfaceAdapter.ts}`, `gba/worldSurface.tsx`, `gbc/worldSurface.tsx`, `packages/ui/test/canvas/` | High (canvas core) | `npx vitest run --no-file-parallelism packages/ui/test/canvas` | the WorldSurface hook extraction (see "Order and overlap review") |
+  | 14C-8 | Edge pick and ghost preview on the world surface | `packages/ui/src/canvas/{WorldSurface.tsx,worldSurfaceAdapter.ts}`, `gba/worldSurface.tsx`, `gbc/worldSurface.tsx`, `packages/ui/test/canvas/` | High (canvas core) | `npx vitest run --no-file-parallelism packages/ui/test/canvas` | the WorldSurface hook extraction, Plan 16 row 16-1, built here first (D24c) |
   | 14C-9 | Create dialog, shared, with family field specs | new `packages/ui/src/shared/CreateMapDialog.tsx`, `gba/createMapFields.ts`, `gbc/createMapFields.ts`, `shell/adapter.ts` | Medium | `npx vitest run --no-file-parallelism packages/ui/test/shared` | 14C-7 |
   | 14C-10 | Live acceptance on scratch clones, both families | report | - | live report | all |
   | 14C-11 | Final review | - | - | reviewer per the `delegate` skill | 14C-10 |
@@ -388,8 +393,8 @@ Both families already render the same `components/Toolbar.tsx`; the differences 
 - **Absorbed (D22, 2026-11-13):** Plan 3 Tasks 4-5 are the GBA requirements: the key-preserving loader (`map_section`
   or `id`, whichever the file has), the glob over `region_map_sections*.json`, the Inja-template contract, the
   regression test named for the 2026-08-18 build failure, and a successful `make` after an edit as acceptance.
-- **Before it starts (D21):** Plan H Task N (layout and keyboard access), so the new view is built on the finished
-  layout rules.
+- **Before it starts (D21, amended by D24a):** Plan H Task N's layout and theme parts, so the new view is built on the
+  finished layout rules. Task N's keyboard model comes earlier, with Plan 14A.
 - **Traps and pitfalls (2026-11-15).**
   1. **The GBA region map is five kinds of file, and the JSON is the smallest part.** In the subject: `region_map_sections.json` with its template (build input, `json_data_rules.mk:10-11`); the per-cell section grids as C arrays in `region_map_layout.h`, `_hoenn.h`, `_johto.h` and `_jk.h`; hand-written entry headers `region_map_entries_johto.h` and `_jk.h`; and the art in `graphics/pokedex/` (`region_map.png`, `.pal`, the tilemap `region_map.bin`, `johto_region_map.*`, `region_map_affine.*`). The path `graphics/pokenav/region_map*` named elsewhere does not exist there. "Section boundaries" means writing a C array, and PokeMap's only C writer splices `#define` lines (`core/src/addEvent/gbaBuild.ts:38,112-129`).
   2. **`region_map_sections_johto.json` has no build rule.** No makefile, C file or template in the subject names it. Plan 3 Task 4's glob would build an editor for a file the game may never read; the measurement step settles whether it is live.
@@ -399,7 +404,7 @@ Both families already render the same `components/Toolbar.tsx`; the differences 
   6. **A fourth view compiles without being handled.** `Mode` is `"map" | "world" | "dungeon"` (`ui/src/shell/adapter.ts:10`) and the shell switches on it with ternaries (`shell/FamilyApp.tsx:257-273`), so a new mode falls into the dungeon branch silently. The adapters gate their hooks on it (`gba/adapter.tsx:30-31`, `gbc/adapter.tsx:30-32`) and `FamilyRuntime` has one render slot per mode (`adapter.ts:76-78`). The first UI task adds an exhaustive check.
   7. **Edits here belong to no map session.** The save-or-discard prompt (D1) is wired to the selected map's session (`FamilyApp.tsx:79-93`). Region-map edits need their own staged state, plan, fingerprinted commit and leave prompt, the same shape Plan 14C builds for map creation.
   8. **A name change reaches the signs.** Linked signs take their text from these names and a sign that cannot refresh blocks every save of its map (Plan 10a ruling S10a). Names are limited by the game's charmap and a length the measurement step records for each engine.
-  9. **The acceptance "a successful `make`" cannot be run on this machine** (no toolchain, checked 2026-11-15).
+  9. **The acceptance "a successful `make`" runs in WSL** (D29, installed 2026-11-17). On the GBA subject the build is `make modern`; plain `make` fails on the game's own code (RESUME, Environments).
 - **Breakdown (2026-11-15): needs a measurement step and a spec first.** Questions for the interview:
   1. Whether "tile graphics" (D14) is tilemap arrangement or pixel editing. Recommendation: arrangement, plus opening the PNG in the user's editor.
   2. GBA: which of Hoenn, Johto and JK are live in the subject's game, and which file wins when the layout grid and the JSON entry disagree.
@@ -416,12 +421,13 @@ Both families already render the same `components/Toolbar.tsx`; the differences 
 - **Goal:** a minimap in the lower-right of the world view, drawn from the town map art, highlighting the area in view.
 - **Scope:** map world coordinates to region-map squares through map sections; viewport highlight that follows pan and
   zoom; both families through the canvas core.
-- **Order:** after Plan 15 (needs its loaders, D13).
+- **Order:** after Plan 15a (needs its loaders, D13; D24b).
 - **Risk:** medium. The world-to-region mapping is approximate (the world layout is PokeMap's, the town map is the
   game's); the spec decides how a map with no section renders.
 - **Depends on:** D13.
-- **First task (D21, 2026-11-13):** extract the warp fetch, the encounter fetch and the lens overlays from
-  `canvas/WorldSurface.tsx` (934 lines) as hooks, before the minimap is added to that surface.
+- **Hook extraction (D21, 2026-11-13; moved by D24c):** extracting the warp fetch, the encounter fetch and the lens
+  overlays from `canvas/WorldSurface.tsx` as hooks is Plan 14C's first UI task, not this plan's. Row 16-1 and trap 1
+  below stay as that task's description.
 - **Traps and pitfalls (2026-11-15).**
   1. **The extraction is a canvas-core change.** The warp fetch is `canvas/WorldSurface.tsx:484-608`, the encounter fetch `:313-353`, the lens overlays `:355-367` and `:805-863`. It is High tier, moves no behaviour, and its oracle is the existing `packages/ui/test/canvas/` tests with none edited.
   2. **Never remount the world canvas to add the minimap** (LESSONS, React: "Never remount a heavy canvas to add chrome around it"). The minimap is mounted in every state and drawn on its own canvas from a view ref; a highlight held in React state re-renders the surface on every pan frame (Plan 6c deferral: "an open lens list re-renders with every pan frame").
@@ -432,7 +438,7 @@ Both families already render the same `components/Toolbar.tsx`; the differences 
 
   | Id | What | Files | Tier | Verify | After |
   |---|---|---|---|---|---|
-  | 16-1 | Warp fetch, encounter fetch and lens overlays as hooks | new `packages/ui/src/canvas/{useWorldWarps,useWorldEncounters,useLensOverlays}.ts`; `canvas/WorldSurface.tsx` | High (canvas core) | `npx vitest run --no-file-parallelism packages/ui/test/canvas` | nothing else holding `WorldSurface.tsx` |
+  | 16-1 | Warp fetch, encounter fetch and lens overlays as hooks. Built as Plan 14C's first UI task (D24c) | new `packages/ui/src/canvas/{useWorldWarps,useWorldEncounters,useLensOverlays}.ts`; `canvas/WorldSurface.tsx` | High (canvas core) | `npx vitest run --no-file-parallelism packages/ui/test/canvas` | nothing else holding `WorldSurface.tsx` |
   | 16-2 | World-to-town-map mapping, one pure function per family | new `packages/core/src/world/regionView.ts`, `packages/core/src/gbc/world/regionView.ts` and tests | High (numeric oracle) | `npx vitest run --no-file-parallelism packages/core/test/world packages/core/test/gbc` | Plan 15 loaders |
   | 16-3 | Minimap component and its adapter members | new `packages/ui/src/canvas/Minimap.tsx`; `canvas/{WorldSurface.tsx,worldSurfaceAdapter.ts}`, `gba/worldSurface.tsx`, `gbc/worldSurface.tsx` | High (canvas core) | `npx vitest run --no-file-parallelism packages/ui/test/canvas` | 16-1, 16-2 |
   | 16-4 | Live acceptance, both families | report | - | live report | 16-3 |
@@ -498,7 +504,7 @@ Both families already render the same `components/Toolbar.tsx`; the differences 
 
 ### Future plan (unnumbered): create new trainers
 
-Scope from the open item below (user, 2026-11-02): create a trainer and its party from the Add Object popup, in both families. Plan 14.1 (ruling A8) places existing trainers only. It is not yet placed in the execution order.
+Scope from the user (2026-11-02): create a trainer and its party from the Add Object popup, in both families. Plan 14.1 (ruling A8) places existing trainers only. In the execution order it runs after Plan 14A and after Plan 18's table (D24d, D24f).
 
 - **Traps and pitfalls (2026-11-15).**
   1. **The GBA subject keeps trainers in three C files.** `src/data/trainers.h` (one struct per `[TRAINER_X]`), `src/data/trainer_parties.h` and `include/constants/opponents.h`; there is no `trainers.party`. PokeMap's only C writer splices `#define` lines (`core/src/addEvent/gbaBuild.ts:38,112-129`), so struct and array insertion is new, and a new id also moves the trainer count and the trainer flags that follow from it. The spec measures how ids are allocated before any writer is planned.
@@ -507,7 +513,7 @@ Scope from the open item below (user, 2026-11-02): create a trainer and its part
   4. **The dialog already has the seam.** The trainer field is a plain select (`ui/src/gba/addEventFields.ts:27`, `gbc/addEventFields.ts:22`); flags, scripts and texts use the "Use existing / Copy from / New" modes (`shared/AddEventDialog.tsx:266-273`). "New trainer" adds modes to that field and a party editor under it; it is not a second dialog.
   5. **A party editor needs lists the options payload lacks.** Moves and items are parsed nowhere yet; trainers come from `opponents.h` (`core/src/addEvent/gbaOptions.ts:129-130`) and `trainer_constants.asm` (`gbcOptions.ts:16-24`). The payload grows, and it is cached per entry point (Plan 14.1 fix L2), which the new lists must respect.
   6. **These are shared files with one owner at a time** (Plan 14.1's rule for constants headers; Plan 14.2's for tileset files, `server/src/blockEditOwnership.ts`). A staged new name must not rebuild the merged options on every load: that froze the page once (Plan 14.1, W1).
-  7. **Generated C and asm cannot be assembled on this machine** (no toolchain; Plan 14.1 deferred "no assembly in tests" as M8). A struct with a syntax error passes every test here.
+  7. **The tests do not assemble generated C and asm** (Plan 14.1 deferred "no assembly in tests" as M8), so a struct with a syntax error passes every test. The build check in WSL (D29, installed 2026-11-17) is what catches it.
 - **Breakdown (2026-11-15): needs a measurement step and a spec first.** Questions for the interview:
   1. Create only, or also edit an existing trainer's party (issue #7 lists trainer editing). Recommendation: create by copying an existing trainer and editing the copy; editing existing trainers as a later phase.
   2. Whether a new trainer class can be made. Recommendation: no.
@@ -515,7 +521,7 @@ Scope from the open item below (user, 2026-11-02): create a trainer and its part
   4. GBA: which party features the form offers (held items, custom moves). Recommendation: what the copied trainer's own struct uses.
   5. Rematch sets (`JOEY1` to `JOEY5`). Recommendation: out of scope.
   6. Who runs the build check.
-  **Answered by the user 2026-11-16:** questions 1-3 as recommended (create by copying an existing trainer; no new class; one fixed party on PerfPlus); question 6 the toolchain is installed here (D29), which also closes trap 7 once it is installed. It runs after Plan 14A (D24f) and after Plan 18's table (D24d). Questions 4 and 5 are still open.
+  **Answered by the user 2026-11-16:** questions 1-3 as recommended (create by copying an existing trainer; no new class; one fixed party on PerfPlus); question 6 the toolchain is installed here (D29; done 2026-11-17), which covers trap 7. It runs after Plan 14A (D24f) and after Plan 18's table (D24d). Questions 4 and 5 are still open.
 - **Provisional phases:** T-0 measure both subjects and the reference engines (docs); T-1 GBA readers for the three files, lossless (High, parsing); T-2 GBA id allocation and patchers (High, subject writes); T-3 GBC readers (High); T-4 GBC patchers (High); T-5 moves and items in the options payload, both families (Medium); T-6 the new files in the save set under the owner rule (High, save ownership); T-7 the dialog field and party editor (Medium); T-8 live acceptance; T-9 final review.
 
 ## Order and overlap review (2026-11-15)
@@ -534,9 +540,9 @@ From the plan review of 2026-11-15. **Status 2026-11-16: the user confirmed all 
 
 **Overlaps checked, and what to do about each.**
 - **Plan 3 Tasks 6-8 against Plan 14.2's block editor: resolved 2026-11-21.** Plan 14.2 (merged via [#32](https://github.com/itnevres/pokemap/pull/32) → `9d14637`) built the two `.bin` writers (Tasks 4 and 8, `51225cf`, `025b8e5`), composition, behaviour, layer type, the usage warning and cache invalidation; Plan 3's bullets for them are deleted. The rest stays in PokeMap (D27): the indexed PNG and `.pal` writers and the pixel editor, built once and shared with Plan 15 (D26; Plan 3 rows 6a, 7a), palette editing (7b), and the FireRed attribute fields (7c), whose acceptance runs on a scratch copy of the pokefirered reference.
-- **Plan 5 section 3 (day/night) against GBC time of day.** The control and the whole GBC path exist: Morn/Day/Nite behind `capabilities.timeOfDay` (`ui/src/gbc/adapter.tsx:152-160`, `shell/adapter.ts:20`), `time` through the GBC renderer (`core/src/gbc/render/map.ts:310`) and the render cache. What is left is the GBA side: a palette mode in the GBA renderer and in every GBA cache key (`pngCache` is keyed `name:border`, `server/src/index.ts:137`), and the capability switched on. The section's "what Plans 1-4 do" and its "time-of-day control" bullet are out of date; marked in Plan 5.
-- **Plan 4 Task 4 (git) against Plan 10a3 and Plan H Task F.** No conflict with Task F. Against 10a3: the fingerprint covers file entries (`core/src/write/atomic.ts:97`), not refusals, so a tree that turns dirty between preview and commit is not caught by it; the dirty check runs again at commit, in both hubs. "Extend `save.ts`" names one of two save modules and neither commit route. And `refuseDirtyTree` as written refuses every save for this user: the GBA subject always carries the user's own uncommitted lines (RESUME, External baselines) and PerfPlus does not ignore `.pokemap/`. Proposed rewrite in Plan 4. **Ruled 2026-11-16: Plan 4 Task 4 is cancelled (D33).**
-- **Plan 4 Task 3 (MCP) and Task 1 (Electron) against the two-family hub.** Task 1's project picker and recent list exist in the hub (Plan 6c Phase A, `a16b604`; `server/src/recent.ts`, `ui/src/hub/`). The hub serves no static files and its port is fixed (`server/src/serve.ts:70`), so Electron needs a hub change first. Task 3's tool table names commands that were renamed or exist in one family only (`cli/src/index.ts`: `validate` and `indicator` are GBA only, `event` is GBC only, `sign` is gone), and MCP writes go around the hub's sessions and caches. Both marked in Plan 4. **Ruled 2026-11-16 (D32): the launcher first; Electron deferred.**
+- **Plan 5 section 3 (day/night) against GBC time of day.** The control and the whole GBC path exist: Morn/Day/Nite behind `capabilities.timeOfDay` (`ui/src/gbc/adapter.tsx:152-160`, `shell/adapter.ts:20`), `time` through the GBC renderer (`core/src/gbc/render/map.ts:310`) and the render cache. What is left is the GBA side: a palette mode in the GBA renderer and in every GBA cache key (`pngCache` is keyed `name:border`, `server/src/index.ts:137`), and the capability switched on. Plan 5's out-of-date "what Plans 1-4 do" line and the control half of its "time-of-day control" bullet were corrected there on 2026-11-21.
+- **Plan 4 Task 4 (git): cancelled 2026-11-16 (D33).** The overlap notes against Plan 10a3 and Plan H Task F were deleted 2026-11-21 with the task.
+- **Plan 4 Task 3 (MCP) and Task 1 (Electron) against the two-family hub.** Task 1's project picker and recent list exist in the hub (Plan 6c Phase A, `a16b604`; `server/src/recent.ts`, `ui/src/hub/`). The hub serves no static files and its port is fixed (`server/src/serve.ts:70`), so the launcher and Electron need a hub change first (Plan 4 row 1a). Task 3's tool table named commands that were renamed or exist in one family only (`cli/src/index.ts`: `validate` and `indicator` are GBA only, `event` is GBC only, `sign` is gone), and MCP writes go around the hub's sessions and caches. On 2026-11-21 Plan 4's superseded picker bullet was deleted and its tool table corrected. **Ruled 2026-11-16 (D32): the launcher first; Electron deferred.**
 - **Plan H Task N against Plans 14A and 15.** Proposal 1 above.
 - **Plan H Tasks H and I against the routes Plans 14A-17 add.** Holds: H3 finishes before 14A. One rule to add to D23a when the user confirms: a new route module takes only the values it reads, as `(req, url, send) => boolean`, and is not handed the whole `GbaRouteContext`; otherwise that context becomes the new 1,065-line dependency.
 - **Plan H Task G against Plans 14C, 15, 3 and 4.** Holds by order (H2). Every plan that writes a file read once at project open (map groups, layouts, GBC `maps.asm` and `map_constants.asm`, encounters, region map) depends on Task G's invalidation; each such plan's spec lists the caches it must clear.
@@ -544,21 +550,22 @@ From the plan review of 2026-11-15. **Status 2026-11-16: the user confirmed all 
 - **Plan 16's first task against Plan H.** Proposal 3 above.
 - **The trainers plan against Plan 14.1's dialog.** An extension of the same field mechanism, not a new dialog (its trap 4). It overlaps issue #7's trainer editing; proposal 4.
 - **Plan 4 Task 2 (CI) against Plan H Task P2.** Same folder, `.github/workflows/`, which does not exist yet. P2 first; the release job is added to it.
-- **Plan 4 Task 6's render cache against the gate.** A cache under the project's `.pokemap/cache/` adds files to both subjects on every render, which the gate reads as damage ("subjects unchanged") and Task 4 reads as a dirty tree. Proposed: `~/.pokemap/cache/<project>` beside `recent.json`.
+- **Plan 4 Task 6's render cache against the gate.** A cache under the project's `.pokemap/cache/` adds files to both subjects on every render, which the gate reads as damage ("subjects unchanged"). Proposed: `~/.pokemap/cache/<project>` beside `recent.json`.
 - **Plan 5 section 5 against Plan 14.1.** Secret-base bg events can be created (`core/src/addEvent/gbaOptions.ts:131`; Plan 14.1, `3f4a762`). Weather triggers cannot: they are not an event kind, and the subject has them (`data/maps/Route119/map.json` has 21). Marked in Plan 5.
 
 ## Open items for the user
 
-- Closed: the #5/#6 work landed as Plan 13, merged via #30 (2026-11-02).
-- Plan 3 (GBA data editors) stays outside this roadmap in its reduced form (D22: Tasks 2 and 3 and the reduced 6-8);
-  Plan 18 may feed it. The GBA follow-ups A-C are now part of Plan H (D21).
+Closed items were deleted 2026-11-21: #5/#6 (Plan 13, #30), the 2026-11-15 order proposals (confirmed as D24), and the
+trainers plan's slot (D24f).
+
+- Plan 3 keeps its own file in its reduced form (D22, amended by D27: Tasks 2 and 3, the tileset writers, pixel and
+  palette editing, the FireRed fields, resize and layout delete). Its Tasks 2-3 have a slot in the execution order
+  after Plan 14C (D24f); Plan 18 may feed it. The GBA follow-ups A-C are now part of Plan H (D21).
 - **Confirmed by the user (2026-11-13):** Plan H's batches H1-H3 run before Plan 14A (D21's order). This part of D21 is
   now binding.
 - **For the user to confirm or overrule (2026-11-13):** the rest of D21-D23 were made by Claude under the instruction
   to add the review gaps and adjust the plans. The one with the most effect: Plan 3's region-map, connection and
   new-map tasks now belong to Plans 15 and 14C (D22).
 - **Future plan (user, 2026-11-02): create new trainers and their parties** from the Add Object popup, both families.
-  Plan 14.1 (A8) only places trainers that already exist. Not yet numbered; schedule after Plan 14.2. Its traps,
-  interview questions and phases are under "Future plan (unnumbered): create new trainers" above (2026-11-15).
-- **For the user (2026-11-15):** the "Order and overlap review" above holds six proposed order changes and the overlap
-  rulings; none is applied to D1-D23 or to the execution-order line until confirmed.
+  Not yet numbered. Its slot, traps, interview questions and phases are under "Future plan (unnumbered): create new
+  trainers" above.
