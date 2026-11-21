@@ -1603,3 +1603,54 @@ Traps seen in s7:
 - Real subjects unchanged after all runs (GBA `590fdf303` / 0 / `f31f440ec431`; PerfPlus `81ededbe3` / 0 /
   `9fdc463ffc33`).
 - **Gate at `d0e31ff` (+ uncommitted Task 15 docs/harness only): 5,138 pass / 2 fail / 273 files; typecheck pass, UI build pass; subjects unchanged.** Fails: `packages/core/test/config/engine.test.ts` "parses the subject repo's real porymap.project.cfg" (known env fail, RESUME); `packages/ui/test/WorldCanvasContext.test.tsx` "snap uses the canvas box … shifted box" (load flake: RESUME lists a `WorldCanvasContext` load flake, a different test in the same file; rerun alone 38/38 pass). **Task 15 closed.**
+
+## Execution (conductor s18, 2026-11-20): Task 16 final review
+
+- Task 15 landed `f0ba2f0`. User: reviewer **Claude Opus** (`high-risk-reviewer`, `model: "opus"`); Task 15 screenshots
+  under `task-15-shots/out/` stay **untracked**. Brief `_archive/task-16-review-brief.md`; report `_archive/task-16-final-review.md`
+  (64 calls, read-only, no vitest). **Verdict: APPROVE WITH FIXES, 0 Critical.** New: I1 (Important, palette count
+  stale after Save as new, both families), m1-m5 (Minor). Known: F5 confirmed Important, F1 confirmed Important
+  (pre-14.2 mechanism).
+- Triage (user chose the recommended set): **fix now** I1, F5, m2 (Cancel/backdrop close while applying), F2
+  (duplicate key 162: dedupe values, join names), F3 (NOT_OWNER on apply prefixed with the requesting map, route
+  level; `requireTilesetOwnership` text unchanged). **Ruling (user): F4 accepted as is** (GBC placement groups may
+  place run-time reserved tiles; matches spec §Shell and UI). **Plan H:** F1 (first item: fetch session flags on map
+  open), m4 (check-mode ownership), m5 (tileset version reset across hub restart), Task 7 N2 + Task 8 M2 (reuse
+  usage.ts relations), Task 9 m3 (`statSync` → 409), Task 11a m4a (GET planner refusal tests), Task 13b long confirm
+  list cap, D19 GBC palette select fallback, Task 14a focus restore, GBC toolbar overflow at 720, m3 (GBC block 0
+  over-count), m1 (stale ownership comments), Task 6 Minor 3 (decimal vs `$XX`). **Accept:** Task 7 N1, N3, N4;
+  Task 8 M4, M6; Task 11a m2a, m2c; Task 14b tool enabled when unwired (unreachable); 11b K12, 13a, 13b K5b stay
+  accepted.
+- Fix hops (worktrees `<s18>/wt-t16a` branch `p14-2-t16a`, `<s18>/wt-t16b` branch `p14-2-t16b`, both from `f0ba2f0`;
+  disjoint files): hop A (I1 + F5; server `index.ts`, `gbcEditRoutes.ts`, UI session hooks, both workspaces) and
+  hop B (m2, F2 in `BlockEditorDialog.tsx`; F3 in `blockEditRoutes.ts`), both `chain.py --tier sonnet`.
+- Four machine outages (power loss / crash) during the fix hops; master relayed each. Stale `<s9>\vitest.lock` removed
+  each time after checking its owner pid was gone. **User (via master): every vitest run now uses
+  `--no-file-parallelism`** (hop verifies, mutants, gate in place of `--maxWorkers=4 --minWorkers=1`); WIP checkpoints
+  after each green step.
+- Hop A trail: deepseek pool capped → ernie-5.5-flash wrote I1 + F5 + tests (its shell was denied, so no run), chain
+  cut by outage during verify; conductor checkpointed `b0c7328`. Serial run `packages/ui packages/server`: 3,201 pass /
+  1 fail / 162 files; the fail (`server/test/gbcAddEventRoutes.test.ts` timeout) also times out on base `f0ba2f0` run
+  alone (2 timeouts each), so env slowness, not hop A. Typecheck pass.
+- Hop B trail: deepseek capped → ernie (verify exit 1) → inkling dead → nemotron (touched a helper outside
+  `--allow`) → outage; relaunch `--no-free`: Codex wrote m2/F2/F3 src + dialog tests (cut by outage; checkpoint
+  `f567e5a`), relaunch: Codex added the F3 shared-suite route test (cut by outage; kept, `cf79483`). Conductor
+  verify: typecheck pass, 4/4 files pass.
+- Scoped re-review (same reviewer, Claude Opus; brief `_archive/task-16-rereview-brief.md`, report
+  `_archive/task-16-final-rereview.md`): **APPROVE WITH FIXES**: I1, F5, m2, F2, F3 pass both families. N1 (Important, test
+  gap: I1 hook step untested) → fix round 2 (tests only, chain `--no-free`). N2 (Minor: F3 catch rewrote every
+  refusal, 409 + double prefix for BAD_VALUE) → inline (one line, tiny-edit rule) `2d3b868`. Concerns (a) GBA discard
+  after a saved append falls back to load-time count (GBC reloads after save) and (b) another map's append does not
+  update this map's palette count → **Plan H** (re-fetch GBA map after commit; count refresh on `tilesetVersion`).
+- Fix round 2: N1 hook tests, `chain.py --no-free`: **`gpt-6.1-terra` done** `24f4a1b` (chain verify pass). Conductor
+  mutants on the new tests, all killed: M1 GBC `stateFrom` keeps only `prev.metatileCount` (1 fail), M2 GBA drops the
+  `secondaryCount` spread (1 fail), M3 GBA hook stops returning the counts (1 fail). N1 closed on mutation evidence
+  (tests only; no further re-review).
+- Merged `p14-2-t16a` → `7e66726`, `p14-2-t16b` → **`e4993ad`** (`--no-ff`).
+- **Gate at `e4993ad` (`npm test -- --no-file-parallelism`): 5,148 pass / 4 fail / 273 files; typecheck pass, UI build
+  pass; subjects unchanged** (GBA `590fdf303` 0 porcelain; PerfPlus `81ededbe3` 0). Fails: `core/test/config/engine.test.ts`
+  (known env fail, RESUME); `server/test/api.test.ts` "GET /api/defects …" (5 s timeout; alone 37/37 pass);
+  `server/test/gbcAddEventRoutes.test.ts` "commit rebuilds symbols …" and "plan rebuilds symbols …" (8 s timeouts;
+  the same file times out 2 tests on base `f0ba2f0` alone, so machine slowness after the outages, not 14.2's fix
+  round; not yet in the LESSONS flake list). **Task 16 closed.** Plan 14.2 Tasks 0-16 done; not pushed; PR / merge
+  to master waits for the user.
