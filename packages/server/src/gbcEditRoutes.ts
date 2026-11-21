@@ -101,14 +101,26 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void;
     version: 0, applied: new Map(), clearCaches: () => hooks.clearTilesetCaches?.(),
   };
   const syncOverlay = () => syncTilesetOverlay(store.entries(), proj, overlayState);
+  // `NOTHING_OPEN` deliberately carries NO `metatileCount` (Plan 14.2 fix hop A): it answers a
+  // closed session (discard, or undo/redo with nothing open), where nothing about the tileset
+  // changed, so the client's last count is still the right one -- and its own `discard` resets
+  // the count anyway. Adding a field here would only churn the exact-shape tests that pin this
+  // "nothing open" body.
   const NOTHING_OPEN = () => ({
     tilesetVersion: syncOverlay(), blocks: [], events: null, isDirty: false, canUndo: false, canRedo: false,
   });
-  const sessionBody = (e: GbcSessionEntry) => ({
-    tilesetVersion: syncOverlay(),
-    blocks: e.session.blocks, events: e.session.events, isDirty: e.session.isDirty,
-    canUndo: e.stack.canUndo(), canRedo: e.stack.canRedo(),
-  });
+  const sessionBody = (e: GbcSessionEntry) => {
+    // `syncOverlay()` first, then the count: `proj.tileset` is what the overlay replaces, so this
+    // is the map's EFFECTIVE metatile count -- the same `ts.metatiles.length` the map payload
+    // reports (`gbcRoutes.ts` `buildGbcMapPayload`) -- grown by a block the editor appended.
+    const tilesetVersion = syncOverlay();
+    return {
+      tilesetVersion,
+      blocks: e.session.blocks, events: e.session.events, isDirty: e.session.isDirty,
+      canUndo: e.stack.canUndo(), canRedo: e.stack.canRedo(),
+      metatileCount: proj.tileset(e.session.map.tileset).metatiles.length,
+    };
+  };
   const addEvents = createGbcAddEventRoutes(proj, store, hooks, hooks.symbols);
   const mapNames = new Set(proj.maps.map((m) => m.name));
   const blockEdits = createGbcBlockEditRoutes({

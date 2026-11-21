@@ -177,11 +177,23 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
     requestSession.discard().then(() => { ok(); onDiscarded?.(); }).catch((e: unknown) => fail(e, "Failed to discard."));
   };
 
+  // Plan 14.2 fix hop A / F5: one "an action is in flight" signal for the whole workspace -- every
+  // tracked session call (paint, undo, redo, discard, event ops) plus the Add dialog's own POST,
+  // plus the two routes the shared core tracks (`/event/create`, `/block/apply`).
+  const busy = editRequests > 0 || creating || hasPendingSessionMutations(mapName);
+  // Read through a ref from the palette's stable callback (below): adding `busy` to that
+  // `useCallback`'s deps would re-render the memoised palette on every request.
+  const busyRef = useRef(busy);
+  busyRef.current = busy;
   // Plan 14.2 (N9): a palette right-click opens the same dialog for a block id. Stable identity so the memoised
   // palette is not re-rendered on every workspace render.
   const onPaletteEditBlock = useCallback(
     (id: number) => {
-      if (mapName !== null && !hasPendingSessionMutations(mapName)) setBlockEdit({ forMap: mapName, target: { block: id }, from: "palette" });
+      // F5: any pending action (save, discard, undo, redo, map switch, paint, event create, block
+      // apply) blocks the entry point, not only the two the shared core tracks. `busyRef` keeps this
+      // callback's identity stable for the memoised palette; the registry is read live for the same
+      // reason as `editBlockDisabledReason` above.
+      if (mapName !== null && !busyRef.current && !hasPendingSessionMutations(mapName)) setBlockEdit({ forMap: mapName, target: { block: id }, from: "palette" });
     },
     [mapName],
   );
@@ -197,7 +209,11 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
           editSession: requestSession,
           ...(blockEditorSpec && "blockCheck" in session ? {
             onEditBlock: (cell: { x: number; y: number }) => setBlockEdit({ forMap: mapName, target: cell, from: "map" }),
-            editBlockDisabledReason: () => hasPendingSessionMutations(mapName) ? "Wait for the current change to finish" : null,
+            // F5: disabled for EVERY action barrier, not just the two the shared core tracks. This is
+            // also the Edit block tool (K) gate -- `MapSurface`'s tool branch consults it before
+            // calling `onEditBlock`. `busyRef` is the render-time snapshot (the tracked counters);
+            // the registry is read live because a `/block/apply` can land without a workspace render.
+            editBlockDisabledReason: () => busyRef.current || hasPendingSessionMutations(mapName) ? "Wait for the current change to finish" : null,
           } : {}),
           activeTool,
           placing: placement.placing,
@@ -242,13 +258,13 @@ export function GbcMapEditing({ mapName, data, time, session, hoveredMetatileId,
         mapName={mapName}
         time={time}
         tilesetName={data.tileset.constName}
-        metatileCount={data.metatileCount}
+        metatileCount={session.metatileCount ?? data.metatileCount}
         highlightId={hoveredMetatileId}
         onSelect={onPalettePick}
         selected={pickedId}
         onEditBlock={blockEditorSpec && "blockCheck" in session ? onPaletteEditBlock : undefined}
       />
-      <AddEventBar ref={placement.barRef} placing={placement.placing} onToggle={placement.onToggle} disabled={editRequests > 0 || creating || hasPendingSessionMutations(mapName) ? {
+      <AddEventBar ref={placement.barRef} placing={placement.placing} onToggle={placement.onToggle} disabled={busy ? {
         object: "An edit request is in flight", warp: "An edit request is in flight", coord: "An edit request is in flight", bg: "An edit request is in flight",
       } : {
         object: session.events.objects.length >= 15 ? "This map already has 15 object events" : undefined,

@@ -276,12 +276,26 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
   // canUndo()/canRedo()), so every route that touches the stack (paint end,
   // undo, redo, and the event-op routes below) reports it for free through
   // this one shared response shape.
-  const sendSession = (send: (code: number, body: unknown) => void, code: number, entry: ReturnType<typeof editEntryFor>) =>
-    send(code, {
-      tilesetVersion: syncOverlay(),
+  const sendSession = (send: (code: number, body: unknown) => void, code: number, entry: ReturnType<typeof editEntryFor>) => {
+    // `syncOverlay()` first, then the counts: `project.tileset` is what the overlay replaces, so
+    // a session with a staged tileset edit reports the GROWN count here (see the /api/map route).
+    const tilesetVersion = syncOverlay();
+    // Plan 14.2 fix hop A: the map payload's own `primaryCount`/`secondaryCount`, recomputed on
+    // every session reply (`/api/map` lines above are the same computation) so the client's
+    // MetatilePalette follows a block appended by the block editor's "Save as new" without a map
+    // refetch -- and shrinks back on the undo of that append. Omitted when the layout is missing.
+    const layout = project.layoutById(entry.session.map.layout);
+    const counts = layout
+      ? { primaryCount: project.tileset(layout.primaryTileset).metatileCount,
+          secondaryCount: project.tileset(layout.secondaryTileset).metatileCount }
+      : {};
+    return send(code, {
+      tilesetVersion,
       blocks: entry.session.blocks, border: entry.session.border, map: entry.session.map, isDirty: entry.session.isDirty,
       canUndo: entry.stack.canUndo(), canRedo: entry.stack.canRedo(),
+      ...counts,
     });
+  };
 
   const blockEdits = createGbaBlockEditRoutes({
     project, store: editSessions, syncOverlay, overlay: () => overlayState.applied,

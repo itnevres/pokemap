@@ -15,6 +15,15 @@ export type PaintApplyBody =
 export interface UseEditSessionResult {
   blocks: Block[];
   border: Block[];
+  /** Plan 14.2 fix hop A: the map's EFFECTIVE primary/secondary metatile counts as of the latest
+   *  session reply (the server's `sendSession`, `packages/server/src/index.ts`) -- the same
+   *  numbers `/api/map` reports, but recomputed after the tileset overlay is applied, so a block
+   *  appended by the block editor's "Save as new" shows up here immediately and disappears again
+   *  on the undo of that append. `undefined` until a reply arrives (and after a discard, which
+   *  closes the session), so callers fall back to the map payload's own `data.primaryCount` /
+   *  `data.secondaryCount`. */
+  primaryCount?: number;
+  secondaryCount?: number;
   /** Task 14: live-edited map data (object/warp/coord/bg events) -- the
    *  SAME live/static split `blocks` already has (Task 11), for the same
    *  reason: moveEvent/addEvent/deleteEvent below mutate `session.map`
@@ -142,6 +151,21 @@ interface SessionResponse {
   isDirty: boolean;
   canUndo?: boolean;
   canRedo?: boolean;
+  /** Plan 14.2 fix hop A: present on every `sendSession` reply (so every route that merges
+   *  through `callSession`). Omitted only when the session's layout cannot be resolved. */
+  primaryCount?: number;
+  secondaryCount?: number;
+}
+
+/** The session state's own shape (Plan 14.2 fix hop A): the counts ride along with
+ *  blocks/border/map so the shared core's reset rules cover them for free -- a map or seed
+ *  change re-seeds from `seed` (counts undefined) and `discard` drops the stored state. */
+interface GbaSessionState {
+  blocks: Block[];
+  border: Block[];
+  map: MapData | undefined;
+  primaryCount?: number;
+  secondaryCount?: number;
 }
 
 /** The `/event/move|add|delete` routes' own response shape -- deliberately
@@ -201,9 +225,9 @@ interface EventOpResponse {
  * first render, not just after their first edit.
  */
 export function useEditSession(mapName: string | null, initialBlocks?: Block[], initialMap?: MapData): UseEditSessionResult & EventCreateSession & BlockEditSession {
-  const seed = useMemo(() => ({ blocks: initialBlocks ?? [], border: [] as Block[], map: initialMap }), [initialBlocks, initialMap]);
+  const seed = useMemo<GbaSessionState>(() => ({ blocks: initialBlocks ?? [], border: [] as Block[], map: initialMap }), [initialBlocks, initialMap]);
   const { state, isDirty, canUndo, canRedo, post, apply, barrier, discard, markClean } = useEditSessionCore("/api/edit", mapName, seed);
-  const { blocks, border, map } = state;
+  const { blocks, border, map, primaryCount, secondaryCount } = state;
 
   // The core derives the live view from map/seed identity and guards every reply with its issue ticket.
   const callSession = useCallback(
@@ -212,7 +236,14 @@ export function useEditSession(mapName: string | null, initialBlocks?: Block[], 
       if (!reply) return false;
       const d = reply.data;
       return apply({
-        state: (prev) => ({ blocks: d.blocks, border: d.border, map: d.map === undefined ? prev.map : d.map ?? undefined }),
+        // A reply without counts (an older server, or a route that does not route through
+        // sendSession) keeps whatever the last reply reported rather than blanking the palette.
+        state: (prev) => ({
+          ...prev,
+          blocks: d.blocks, border: d.border, map: d.map === undefined ? prev.map : d.map ?? undefined,
+          ...(d.primaryCount === undefined ? {} : { primaryCount: d.primaryCount }),
+          ...(d.secondaryCount === undefined ? {} : { secondaryCount: d.secondaryCount }),
+        }),
         isDirty: d.isDirty, canUndo: d.canUndo ?? false, canRedo: d.canRedo ?? false,
       }, reply.ticket);
     },
@@ -271,7 +302,7 @@ export function useEditSession(mapName: string | null, initialBlocks?: Block[], 
     apply({ state: (prev) => ({ ...prev, map: nextMap }), isDirty: nextIsDirty, canUndo: true, canRedo: false });
   }, [apply]);
 
-  return { blocks, border, map, isDirty, canUndo, canRedo, beginStroke, applyPaint, endStroke, undo, redo, markClean, createEvent, barrier, blockCheck, blockPreview, blockApply, moveEvent, addEvent, deleteEvent, applyExternalMapUpdate, discard };
+  return { blocks, border, map, primaryCount, secondaryCount, isDirty, canUndo, canRedo, beginStroke, applyPaint, endStroke, undo, redo, markClean, createEvent, barrier, blockCheck, blockPreview, blockApply, moveEvent, addEvent, deleteEvent, applyExternalMapUpdate, discard };
 }
 
 /** Indicator responses use the same map/dirty payload as event operations. */
