@@ -186,7 +186,7 @@ function routes(deps: CommonDeps, read: (name: string, url: URL, version: number
             const label = `${mode === "saveAsNew" ? "New" : "Edit"} block $${labelId.toString(16).toUpperCase().padStart(2, "0")}`;
             try { stageTilesetPlan(store, name, plan, label); }
             catch (error) {
-              if (!(error instanceof BlockEditRefusal)) throw error;
+              if (!(error instanceof BlockEditRefusal) || error.code !== "NOT_OWNER") throw error;
               send(409, { error: `${name}: ${error.message}`, code: error.code });
               return;
             }
