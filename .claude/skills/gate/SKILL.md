@@ -13,11 +13,11 @@ CLAUDE.md requires the full gate result (pass / fail / file count) plus passing 
    ```bash
    for d in "$(node -p 'require("./pokemap.config.json").projectPath')" "$(node -p 'require("./pokemap.config.json").gbc.projectPath')"; do echo "== $d"; git -C "$d" status --porcelain; done
    ```
-2. Run the suite in the background (it takes minutes). Never run it at default workers:
+2. Run the suite in the background (it takes minutes). Never run test files in parallel (user, 2026-11-20: parallel runs crashed the machine):
    ```bash
-   npm test -- --maxWorkers=4 --minWorkers=1
+   npm test -- --no-file-parallelism
    ```
-   Vitest rejects `--maxWorkers` on its own and runs 0 tests. A run that collects 0 tests is a failure, not a pass.
+   A run that collects 0 tests is a failure, not a pass. Every other vitest command carries the same flag.
 3. Run `npm run typecheck`.
 4. Run `npm run build -w packages/ui`.
 5. Snapshot the subjects again and compare with step 1. Any new porcelain line is damage the run caused. Restore only those paths from subject HEAD and keep the user's own lines.

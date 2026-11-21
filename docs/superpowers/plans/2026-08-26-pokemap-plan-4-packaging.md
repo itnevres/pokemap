@@ -23,7 +23,7 @@ From the plan review of 2026-11-15, checked against `plan-14-2-block-editor` at 
 1. **Half of Task 1 is built, in the hub.** The project picker, the recent list and the in-app switcher exist (Plan 6c Phase A, merged via #11, `a16b604`): `packages/server/src/recent.ts` keeps `~/.pokemap/recent.json`, and the UI is `packages/ui/src/hub/`. The "native project picker" and "recent list in Electron's userData" bullets are marked superseded below.
 2. **The hub cannot host the UI yet.** It serves no static files, and `serve.ts:70` hardcodes port 5174. The built UI calls relative `/api/...` paths, which work today only through the Vite proxy (`packages/ui/vite.config.ts`). A page loaded from disk sends an `Origin` the hub rejects with 403 (`server/src/hub.ts:161-169`; any localhost port passes, a file origin does not). The hub gains "serve `packages/ui/dist`" and "port 0" first; `createHub` already takes a port (`hub.ts:322`).
 3. **"No new logic" hides a build that does not exist.** The server runs from TypeScript through `tsx` and imports core by `src/` paths; nothing compiles it. A packaged app needs a server bundle, and Plan H Task P3 changes how core is resolved, so the bundle is built after P3.
-4. **There is no Ctrl+S.** The only save entry is the Save button (`ui/src/shell/FamilyApp.tsx:308`), and the selected map is React state with no URL (`FamilyApp.tsx:30`). The menu's Save, Ctrl+S and the `pokemap://map/<Name>` link each need a new bridge into the UI.
+4. **There is no Ctrl+S.** The only save entry is the Save button (`ui/src/shell/FamilyApp.tsx:312`), and the selected map is React state with no URL (`FamilyApp.tsx:34`). The menu's Save, Ctrl+S and the `pokemap://map/<Name>` link each need a new bridge into the UI.
 5. **The app is not offline until Plan H Task M3.** `styles.css:1` loads its fonts from Google.
 6. **The smoke test as written breaks two rules.** It opens "the subject repo" (every test runs on a scratch copy since Plan 14.2 Task 0) and selects `NewBarkTown`, a Crystal map, without saying which family it opened. "`git status` clean" fails on the GBA subject, which always carries the user's own lines; compare before and after, as the `gate` skill does.
 
@@ -38,9 +38,9 @@ From the plan review of 2026-11-15, checked against `plan-14-2-block-editor` at 
 **Task 4 (git)**
 11. **`refuseDirtyTree` as written refuses every save for this user.** The GBA subject always has the user's own uncommitted lines (RESUME, External baselines); PerfPlus does not ignore `.pokemap/`, so the first placement makes the tree dirty; and a crash leaves `*.pokemap-tmp-*` files (LESSONS, Testing: "A power loss mid-gate").
 12. **The save fingerprint does not cover it.** The fingerprint hashes file entries (`core/src/write/atomic.ts:97`), not refusals, so a tree that turns dirty after the preview passes the commit. The check runs at plan and again at commit.
-13. **"Extend `save.ts`" names one file of four.** There are two save modules (`core/src/write/save.ts`, `core/src/gbc/write/save.ts`) and two commit routes (`server/src/index.ts:1036`, `server/src/gbcEditRoutes.ts:424`). The header's "no task changes core" also contradicts this task.
+13. **"Extend `save.ts`" names one file of four.** There are two save modules (`core/src/write/save.ts`, `core/src/gbc/write/save.ts`) and two commit routes (`server/src/index.ts:1081`, `server/src/gbcEditRoutes.ts:447`). The header's "no task changes core" also contradicts this task.
 14. **A failed commit after a successful write is not a failed save.** The files are on disk. The result is a notice, as Plan 10a3 does for `PLAN_CHANGED`.
-15. **The settings have no route on GBC.** The GBC world payload returns only `{ dungeonAutoLayout }` of the sidecar (`server/src/gbcRoutes.ts:246`), and the sidecar's shape guard is hand-written (`core/src/world/sidecar.ts:33`). Settings get their own route in the shared sidecar module (Plan H Task H).
+15. **The settings have no route on GBC.** The GBC world payload returns only `{ dungeonAutoLayout }` of the sidecar (`server/src/gbcRoutes.ts:247`), and the sidecar's shape guard is hand-written (`core/src/world/sidecar.ts:33`). Settings get their own route in the shared sidecar module (Plan H Task H).
 
 **Tasks 5 and 6**
 16. **There is no root `README.md`;** `LAUNCH.md` holds the launch steps. "Wild signs" are the Pokémon Indicator since Plan 10a2, and the guide covers two families.
@@ -65,20 +65,20 @@ Each task here is independent of the others; this is not one plan to run top to 
 
 | Id | What | Files | Tier | Verify | After |
 |---|---|---|---|---|---|
-| 1a | Hub serves the built UI and takes port 0 | `packages/server/src/{hub,serve}.ts`, `packages/server/test/hub.test.ts` | High (hub I/O: file paths from a URL) | `npx vitest run packages/server/test/hub.test.ts` | Plan H Task E |
+| 1a | Hub serves the built UI and takes port 0 | `packages/server/src/{hub,serve}.ts`, `packages/server/test/hub.test.ts` | High (hub I/O: file paths from a URL) | `npx vitest run --no-file-parallelism packages/server/test/hub.test.ts` | Plan H Task E |
 | 1b | Launcher per the ruling above: one double-click file at the repo root (`PokeMap.cmd`) that runs `scripts/launch.mjs`; `LAUNCH.md` updated to put it first | new `PokeMap.cmd`, `scripts/launch.mjs`; `LAUNCH.md` | Medium (process start and stop; a wrong answer is visible but not tested automatically) | double-click it with the hub stopped, then again with it running, then with `packages/ui/dist` deleted; each time the app opens on the last project | 1a; Plan H Task M3 |
 | 1c | Server bundle for packaging | new `packages/electron/build.mjs`, `packages/electron/package.json` | Medium | the bundle starts and answers `GET /api/hub` | Plan H Task P3 |
 | 1d | Electron main and preload, window state | new `packages/electron/src/{main,preload}.ts` | Medium | manual launch | 1c |
-| 1e | Save from the menu and Ctrl+S open the Save dialog | `packages/ui/src/components/Toolbar.tsx` or the shell key handler, its test; `packages/electron/src/main.ts` | Medium | `npx vitest run packages/ui/test/shell` | 1d |
+| 1e | Save from the menu and Ctrl+S open the Save dialog | `packages/ui/src/components/Toolbar.tsx` or the shell key handler, its test; `packages/electron/src/main.ts` | Medium | `npx vitest run --no-file-parallelism packages/ui/test/shell` | 1d |
 | 1f | Smoke test on scratch copies, one per family | new `packages/electron/test/smoke.spec.ts` | Medium | that test | 1e |
 | 2a | Installer and portable build | new `packages/electron/electron-builder.yml` | Low | the installer runs on this machine | 1f |
 | 2b | Release job | `.github/workflows/` | Low | a tagged dry run | 2a; Plan H Task P2 |
-| 3a | MCP package with the read tools, both families, from the corrected table | new `packages/mcp/package.json`, `packages/mcp/src/index.ts`, tests | Medium | `npx vitest run packages/mcp` | trap 8's table |
-| 3b | `pokemap_render` returns image content | `packages/mcp/src/index.ts`, test | Low | `npx vitest run packages/mcp` | 3a |
-| 3c | Write tools behind `--allow-writes`, per the ruling on trap 10 | `packages/mcp/src/index.ts`, tests on scratch roots | High (subject writes) | `npx vitest run packages/mcp` | 3a; decision 2 |
-| 4a | Git module: porcelain parse, stage by path, commit; tests on temporary repositories only | new `packages/core/src/write/git.ts` and test | High (parsing, subject repo writes) | `npx vitest run packages/core/test/write` | decision 3 |
-| 4b | Settings: storage, route in the shared sidecar module, first-run prompt | `packages/core/src/world/sidecar.ts`, `packages/server/src/sidecarRoutes.ts`, a shared UI prompt | Medium | `npx vitest run packages/server packages/ui/test/shared` | Plan H Task H |
-| 4c | Both commit routes: the check at plan and commit, the commit after the write, notices | `packages/server/src/{index,gbcEditRoutes}.ts` or the route modules Plan H Task I leaves; tests | High (save ownership) | `npx vitest run packages/server` | 4a, 4b |
+| 3a | MCP package with the read tools, both families, from the corrected table | new `packages/mcp/package.json`, `packages/mcp/src/index.ts`, tests | Medium | `npx vitest run --no-file-parallelism packages/mcp` | trap 8's table |
+| 3b | `pokemap_render` returns image content | `packages/mcp/src/index.ts`, test | Low | `npx vitest run --no-file-parallelism packages/mcp` | 3a |
+| 3c | Write tools behind `--allow-writes`, per the ruling on trap 10 | `packages/mcp/src/index.ts`, tests on scratch roots | High (subject writes) | `npx vitest run --no-file-parallelism packages/mcp` | 3a; decision 2 |
+| 4a | Git module: porcelain parse, stage by path, commit; tests on temporary repositories only | new `packages/core/src/write/git.ts` and test | High (parsing, subject repo writes) | `npx vitest run --no-file-parallelism packages/core/test/write` | decision 3 |
+| 4b | Settings: storage, route in the shared sidecar module, first-run prompt | `packages/core/src/world/sidecar.ts`, `packages/server/src/sidecarRoutes.ts`, a shared UI prompt | Medium | `npx vitest run --no-file-parallelism packages/server packages/ui/test/shared` | Plan H Task H |
+| 4c | Both commit routes: the check at plan and commit, the commit after the write, notices | `packages/server/src/{index,gbcEditRoutes}.ts` or the route modules Plan H Task I leaves; tests | High (save ownership) | `npx vitest run --no-file-parallelism packages/server` | 4a, 4b |
 | 5 | README, user guide, agent guide, for both families | `README.md`, `docs/user-guide.md`, `docs/agent-guide.md` | Low | a reader follows the guide on a scratch project | the features it describes |
 | 6a | Benchmarks and a measured baseline for both families | new `packages/core/bench/*.mjs`; numbers in the task report | Low | the scripts print the four numbers | - |
 | 6b | Only what 6a shows to be slow | per finding | per finding | 6a rerun | 6a |
