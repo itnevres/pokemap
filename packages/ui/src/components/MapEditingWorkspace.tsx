@@ -128,8 +128,16 @@ export function MapEditingWorkspace({ active = true, mapName, data, editSession,
     if (!window.confirm("Discard all unsaved changes on this map? This cannot be undone.")) return;
     void requestSession.discard().then(() => { if (visit.isCurrent()) setEventOpError(null); }).catch((error: unknown) => { if (visit.isCurrent()) setEventOpError(eventOpErrorMessage(error)); });
   };
-  const requestBusy = editRequests > 0 || creating || hasPendingSessionMutations(mapName);
-  const disabledReason = !active || !data || !mapName ? "No editable map" : requestBusy ? "An edit request is in flight" : undefined;
+  // Plan 14.2 fix hop A / F5: one "an action is in flight" signal for the whole workspace. `editRequests`
+  // counts every tracked session call (paint, undo, redo, discard, event ops) and `creating` the Add
+  // dialog's own POST; `hasPendingSessionMutations` covers the two routes the shared core tracks
+  // (`/event/create`, `/block/apply`) for callers that reach the session without this wrapper.
+  const busy = editRequests > 0 || creating || hasPendingSessionMutations(mapName);
+  // Read through a ref from the palette's stable callback (below): adding `busy` to that
+  // `useCallback`'s deps would re-render the memoised palette on every request.
+  const busyRef = useRef(busy);
+  busyRef.current = busy;
+  const disabledReason = !active || !data || !mapName ? "No editable map" : busy ? "An edit request is in flight" : undefined;
   const addDisabled = disabledReason ? { object: disabledReason, warp: disabledReason, coord: disabledReason, bg: disabledReason } : {
     object: options.project && (currentMap?.objectEvents.length ?? 0) >= options.project.objectCap ? `This map already has ${options.project.objectCap} object events` : undefined,
   };
@@ -155,7 +163,11 @@ export function MapEditingWorkspace({ active = true, mapName, data, editSession,
           editSession: requestSession,
           ...(blockEditorSpec && "blockCheck" in editSession ? {
             onEditBlock: (cell: { x: number; y: number }) => setBlockEdit({ forMap: mapName, target: cell, from: "map" }),
-            editBlockDisabledReason: () => hasPendingSessionMutations(mapName) ? "Wait for the current change to finish" : null,
+            // F5: disabled for EVERY action barrier, not just the two the shared core tracks. This is
+            // also the Edit block tool (K) gate -- `MapSurface`'s tool branch consults it before
+            // calling `onEditBlock`. `busyRef` is the render-time snapshot (the tracked counters);
+            // the registry is read live because a `/block/apply` can land without a workspace render.
+            editBlockDisabledReason: () => busyRef.current || hasPendingSessionMutations(mapName) ? "Wait for the current change to finish" : null,
           } : {}),
           activeTool,
           placing: placement.placing,
@@ -227,7 +239,11 @@ export function MapEditingWorkspace({ active = true, mapName, data, editSession,
   // palette is not re-rendered on every workspace render.
   const onPaletteEditBlock = useCallback(
     (id: number) => {
-      if (mapName !== null && !hasPendingSessionMutations(mapName)) setBlockEdit({ forMap: mapName, target: { block: id }, from: "palette" });
+      // F5: any pending action (save, discard, undo, redo, map switch, paint, event create, block
+      // apply) blocks the entry point, not only the two the shared core tracks. `busyRef` keeps this
+      // callback's identity stable for the memoised palette; the registry is read live for the same
+      // reason as `editBlockDisabledReason` above.
+      if (mapName !== null && !busyRef.current && !hasPendingSessionMutations(mapName)) setBlockEdit({ forMap: mapName, target: { block: id }, from: "palette" });
     },
     [mapName],
   );
@@ -238,8 +254,8 @@ export function MapEditingWorkspace({ active = true, mapName, data, editSession,
         <MetatilePalette
           layoutName={data.layout.name}
           split={data.split}
-          primaryCount={data.primaryCount}
-          secondaryCount={data.secondaryCount}
+          primaryCount={editSession.primaryCount ?? data.primaryCount}
+          secondaryCount={editSession.secondaryCount ?? data.secondaryCount}
           onSelect={setCurrentStamp}
           selected={currentStamp}
           highlightId={hoveredMetatileId ?? null}

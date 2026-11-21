@@ -462,10 +462,13 @@ export function suite(family: "gba" | "gbc") {
     };
     const lastLabel = (name: string): string =>
       (store.open(name).stack as unknown as { undoStack: { label: string }[] }).undoStack.at(-1)!.label;
+    // Plan 14.2 fix hop A: every session reply now also carries the map's effective metatile counts
+    // (`sendSession`'s `primaryCount`/`secondaryCount`, `sessionBody`'s `metatileCount`), so the
+    // palette follows a block the editor appended. The key list stays EXACT -- it just grew by them.
     const expectSessionBody = (body: any) => {
       expect(Object.keys(body).sort()).toEqual((family === "gba"
-        ? ["blocks", "border", "canRedo", "canUndo", "isDirty", "map", "tilesetVersion"]
-        : ["blocks", "canRedo", "canUndo", "events", "isDirty", "tilesetVersion"]));
+        ? ["blocks", "border", "canRedo", "canUndo", "isDirty", "map", "primaryCount", "secondaryCount", "tilesetVersion"]
+        : ["blocks", "canRedo", "canUndo", "events", "isDirty", "metatileCount", "tilesetVersion"]));
       expect(typeof body.tilesetVersion).toBe("number");
       expect(Array.isArray(body.blocks)).toBe(true);
       expect(typeof body.isDirty).toBe("boolean");
@@ -474,8 +477,11 @@ export function suite(family: "gba" | "gbc") {
       if (family === "gba") {
         expect(Array.isArray(body.border)).toBe(true);
         expect(body.map).toBeTruthy();
+        expect(Number.isInteger(body.primaryCount)).toBe(true);
+        expect(Number.isInteger(body.secondaryCount)).toBe(true);
       } else {
         expect(body.events === null || typeof body.events === "object").toBe(true);
+        expect(Number.isInteger(body.metatileCount)).toBe(true);
       }
     };
     const cellQuery = (cell: { x: number; y: number }) => `x=${cell.x}&y=${cell.y}`;
@@ -1429,6 +1435,40 @@ export function suite(family: "gba" | "gbc") {
       expect(reverted.blockId).toBe(beforeCell.blockId);
       expect(reverted.limits.nextId).toBe(beforeCell.limits.nextId);
       expect(await png(renderPath)).toEqual(beforeRender);
+    }, 120_000);
+
+    it("11b.6a (Plan 14.2 I1): a saveAsNew apply reports the grown count and one undo restores the old one", async () => {
+      const subject = family === "gba" ? await findGbaSaveAsNew() : await findGbcSaveAsNew();
+      if (!subject) throw new Error("fixture needs a map with a private grid and room to append a block");
+      const { name, cell, data } = subject;
+      const source = await findChangedSource(name, data);
+      if (!source) throw new Error("fixture needs a visibly different block in the same metatile file");
+      const request = { ...copiedRequest(data, source).request, mode: "saveAsNew", from: "map", cell };
+      // The palette's starting point: the map payload's own counts, read before anything is staged.
+      const before = await mapGet(name);
+      // GBA splits the counts by half; the appended id's own half is the one that grows.
+      const inPrimary = family === "gba"
+        ? (data.limits.nextId as number) < gba.splitFor(gba.layoutForMap(name)).metatiles
+        : true;
+      const applied = await blockApply(name, { request, revision: data.revision });
+      expect(applied.status, JSON.stringify(applied.body)).toBe(200);
+      if (family === "gba") {
+        // e.g. primary 512 -> 513 with secondary unchanged (0 or 1 added to exactly one half).
+        expect(applied.body.primaryCount).toBe(before.primaryCount + (inPrimary ? 1 : 0));
+        expect(applied.body.secondaryCount).toBe(before.secondaryCount + (inPrimary ? 0 : 1));
+      } else {
+        // e.g. 40 -> 41 metatiles.
+        expect(applied.body.metatileCount).toBe(before.metatileCount + 1);
+      }
+      // One undo drops the staged append, so the very next reply reports the original counts again --
+      // a palette that had grown must shrink back instead of offering a block that no longer exists.
+      const undone = await edit(name, "undo", {});
+      if (family === "gba") {
+        expect(undone.primaryCount).toBe(before.primaryCount);
+        expect(undone.secondaryCount).toBe(before.secondaryCount);
+      } else {
+        expect(undone.metatileCount).toBe(before.metatileCount);
+      }
     }, 120_000);
 
     it("11b.7: apply ok rewrites block A in place and one undo restores its PNG", async () => {

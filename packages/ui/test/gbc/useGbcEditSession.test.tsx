@@ -197,3 +197,24 @@ describe("useGbcEditSession", () => {
     expect(result.current.canRedo).toBe(false);
   });
 });
+
+
+describe("effective block counts (Plan 14.2 Task 16)", () => {
+  it("copies counts from session replies and retains them across event replies", async () => {
+    const fetchMock = vi.fn((url: string) => reply(
+      url.endsWith("/block/apply") ? body({ metatileCount: 41 })
+        : url.endsWith("/undo") ? body({ metatileCount: 40 })
+          : body(),
+    ));
+    vi.stubGlobal("fetch", fetchMock);
+    const { result } = renderHook(() => useGbcEditSession("A", SEED_A, EV));
+    expect(result.current.metatileCount).toBeUndefined();
+
+    await act(async () => { await result.current.blockApply({ mode: "ok" }, "rev1"); });
+    expect(result.current.metatileCount).toBe(41);
+    await act(async () => { await result.current.moveEvent("object", 0, 5, 5); });
+    expect(result.current.metatileCount).toBe(41);
+    await act(async () => { await result.current.undo(); });
+    expect(result.current.metatileCount).toBe(40);
+  });
+});

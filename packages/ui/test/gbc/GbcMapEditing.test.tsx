@@ -382,6 +382,62 @@ describe("GbcMapEditing block editor mount (Plan 14.2 Task 14a)", () => {
     expect(hasPendingSessionMutations("M")).toBe(false);
   });
 
+  // Plan 14.2 fix hop A: the palette is sized from the map payload, which only refetches when the map
+  // changes -- so a block the editor appended ("Save as new") would stay invisible until a reload.
+  // Every session reply now carries the map's effective metatile count and the workspace prefers it.
+  it("Plan 14.2 I1: the palette follows the session's metatileCount, and shrinks again on the undo reply", () => {
+    const session = sessionWithBlockEditor();
+    const { rerender } = render(workspace(session));
+    // DATA.metatileCount is 6: ids 0x0..0x5 exist, 0x6 is not offered yet.
+    expect(screen.queryByRole("button", { name: "metatile 0x5" })).not.toBeNull();
+    expect(screen.queryByRole("button", { name: "metatile 0x6" })).toBeNull();
+    // The reply after a saveAsNew append reports metatileCount 6 -> 7, so the palette grows a cell.
+    rerender(workspace({ ...session, metatileCount: 7 }));
+    expect(screen.getByRole("button", { name: "metatile 0x6" })).not.toBeNull();
+    // The reply after undoing that append reports 6 again, so the cell that no longer exists is gone.
+    rerender(workspace(session));
+    expect(screen.queryByRole("button", { name: "metatile 0x6" })).toBeNull();
+  });
+
+  // Plan 14.2 fix hop A (F5, spec 3e): the Edit block entry points wait on EVERY action barrier, not only
+  // the two routes the shared core tracks (`/event/create`, `/block/apply`). The workspace's own
+  // `editRequests` counter is what sees an undo in flight.
+  it("Plan 14.2 F5: Edit block is disabled while an undo is in flight, and re-enables when it settles", async () => {
+    let finishUndo!: () => void;
+    const undo = new Promise<void>(resolve => { finishUndo = resolve; });
+    const session = {
+      ...stub({ canUndo: true, undo: vi.fn(() => undo) }),
+      blockCheck: vi.fn<BlockEditSession["blockCheck"]>().mockResolvedValue(null),
+      blockPreview: vi.fn<BlockEditSession["blockPreview"]>().mockResolvedValue(null),
+      blockApply: vi.fn<BlockEditSession["blockApply"]>().mockResolvedValue(true),
+    };
+    const { container } = render(workspace(session));
+    const canvas = stage(container);
+
+    // Start the undo and hold it open: the request is in flight, the session mutation registry never saw it.
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    expect(session.undo).toHaveBeenCalled();
+    expect(hasPendingSessionMutations("M")).toBe(false);
+
+    // The context menu's Edit block item is disabled, with the shared message (same (112,80) -> block (2,1)).
+    expect(fireEvent.contextMenu(canvas, { clientX: 112, clientY: 80, button: 2 })).toBe(false);
+    const item = screen.getByRole("menuitem", { name: /Edit block.*Wait for the current change to finish/ });
+    expect((item as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(item);
+    expect(document.querySelector(".block-editor")).toBeNull();
+    // The palette's right-click entry point is gated by the same barrier.
+    expect(fireEvent.contextMenu(screen.getByRole("button", { name: "metatile 0x3" }), { button: 2 })).toBe(false);
+    expect(document.querySelector(".block-editor")).toBeNull();
+
+    // Settle the undo: the barrier clears and Edit block works again.
+    await act(async () => { finishUndo(); await undo; });
+    fireEvent.contextMenu(canvas, { clientX: 112, clientY: 80, button: 2 });
+    const enabled = screen.getByRole("menuitem", { name: "Edit block" });
+    expect((enabled as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(enabled);
+    await waitFor(() => expect(document.querySelector(".block-editor")).not.toBeNull());
+  });
+
   // Task 14b: the GBC workspace's same dialog is reachable from the palette (right-click) and from
   // the Edit block tool on the canvas.
   describe("palette and tool entry points (Plan 14.2 Task 14b)", () => {

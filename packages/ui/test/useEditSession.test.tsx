@@ -340,3 +340,33 @@ describe("useEditSession", () => {
     expect(last!.canRedo).toBe(false);
   });
 });
+
+
+describe("effective block counts (Plan 14.2 Task 16)", () => {
+  it("copies counts from session replies and retains them across event replies", async () => {
+    const session = { blocks: [], border: [], map: MAP_BEFORE, isDirty: true, canUndo: true, canRedo: false };
+    const fetchMock = vi.fn((url: string) => {
+      const served = url.endsWith("/block/apply")
+        ? { ...session, primaryCount: 512, secondaryCount: 41 }
+        : url.endsWith("/undo")
+          ? { ...session, primaryCount: 512, secondaryCount: 40 }
+          : { map: MAP_AFTER, isDirty: true };
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(served) } as Response);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    let last: ReturnType<typeof useEditSession> | undefined;
+    render(<Host mapName="Test" initialMap={MAP_BEFORE} onResult={(r) => { last = r; }} />);
+    expect(last!.primaryCount).toBeUndefined();
+    expect(last!.secondaryCount).toBeUndefined();
+
+    await act(async () => { await last!.blockApply({ mode: "ok" }, "rev1"); });
+    expect(last!.primaryCount).toBe(512);
+    expect(last!.secondaryCount).toBe(41);
+    await act(async () => { await last!.moveEvent("object", 0, 5, 5); });
+    expect(last!.primaryCount).toBe(512);
+    expect(last!.secondaryCount).toBe(41);
+    await act(async () => { await last!.undo(); });
+    expect(last!.primaryCount).toBe(512);
+    expect(last!.secondaryCount).toBe(40);
+  });
+});
