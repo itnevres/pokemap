@@ -12,7 +12,7 @@
 
 **Success criteria — demonstrated, not asserted:**
 1. Drag a map in the stitched world view and have it write a correct connection `offset`.
-2. Edit a metatile in the tileset editor and see it change across every map that uses it.
+2. Edit a tile's pixels or a palette colour and see every map that uses that tileset change. (Metatile edits already do this through Plan 14.2's block editor.)
 3. Edit a region map entry, run `make`, and get a successful build — the direct rebuttal of the 2026-08-18 failure.
 4. The 5-engine write corpus still passes at zero bytes changed.
 
@@ -22,7 +22,7 @@
 
 From the plan review of 2026-11-15, checked against `plan-14-2-block-editor` at `21bf0b9` and the two subjects. Tasks 1, 4, 5 and 9 have their traps in the roadmap, under Plans 14C and 15.
 
-1. **The task bodies still ask for work that moved or is done.** Task 6 lists the two `.bin` writers, Task 7 the composition and attribute editing, Task 8 layout creation, each under a heading that says otherwise. An implementer given the bullets rebuilds Plan 14.2. Those bullets are marked in place below; a brief quotes only unmarked bullets.
+1. **Task 8 still lists work that moved.** Its create-a-layout bullets belong to roadmap Plan 14C and are marked in place; a brief quotes only unmarked bullets. The bullets Plan 14.2 built (Task 6's two `.bin` writers; Task 7's composition, behaviour, layer type, split labels, save warning and cache invalidation) were deleted on 2026-11-21 after Plan 14.2 merged.
 2. **The File Structure table is the 2026-08 layout and GBA only.** Editors since Plan 9 are one shared component with family data through the adapter (`ui/src/shared/AddEventDialog.tsx` with `gba/addEventFields.ts` and `gbc/addEventFields.ts`; Plan 14.2's `shared/BlockEditorDialog.tsx`). The unified-UI goal wants each editor here in both families, and no task names a GBC file.
 3. **Task 2, GBA: the edit exists, the route does not.** `editJson` already replaces a top-level scalar such as `music`, and refuses a key that is absent (`core/src/write/jsonEdit.ts:16-37`, `:91`); only the event operations build paths today (`core/src/edit/events.ts:17-42`). The work is an operation, a route and the panel.
 4. **Task 2, `layout` is not a scalar edit.** The session holds the old layout's `layout`, `blocks` and `border` (`core/src/write/save.ts:76-82`), so changing it with painted cells pending has no defined meaning. It is its own subtask with its own ruling, or it is dropped.
@@ -66,7 +66,7 @@ From the plan review of 2026-11-15, checked against `plan-14-2-block-editor` at 
 | 3e | Encounter editor, shared: variants, rods, live percentages from `speciesChances` and the GBC atlas | new `packages/ui/src/shared/EncounterEditor.tsx` with family specs; `shell/adapter.ts` | Medium | `packages/ui/test/shared` | 3c |
 | 6a | Indexed PNG writer at the source depth (4-bit tile sheets, and the 8-bit town-map art for roadmap Plan 15) and JASC `.pal` writer; rule per trap 12 | new `packages/core/src/write/{indexedPng,pal}.ts` and tests | High (subject writes) | `packages/core/test/write` | - |
 | 7a, 7b | Tile-pixel editor; palette editor with 5-bit quantising, both shared with roadmap Plan 15's town-map art and offered in both families | needs its own spec and interview (tools, undo, how a sheet edit is staged and owned, GBC's 2-bit sheets and palette files) | High (subject writes, save ownership) | - | 6a |
-| 7c | FireRed terrain and encounter-type fields in the block editor's field spec, from the profile masks | `packages/core/src/config/engine.ts`, `packages/core/src/blockEdit/gbaPatch.ts`, the GBA block-editor spec in `packages/ui/src/gba/`; tests on a scratch copy of the pokefirered reference | High (subject writes) | `packages/core/test/blockEdit` | Plan 14.2 merged |
+| 7c | FireRed terrain and encounter-type fields in the block editor's field spec, from the profile masks | `packages/core/src/config/engine.ts`, `packages/core/src/blockEdit/gbaPatch.ts`, the GBA block-editor spec in `packages/ui/src/gba/`; tests on a scratch copy of the pokefirered reference | High (subject writes) | `packages/core/test/blockEdit` | - |
 | 8a | GBA resize: operation, the `layouts.json` splice, both `.bin` files, the events and connections refusals | new `packages/core/src/edit/layouts.ts`; `packages/core/src/write/save.ts`; tests | High (subject writes) | `packages/core/test/edit packages/core/test/write` | Plan H H2 |
 | 8b | GBC resize: `.blk`, `map_const` replacement, project refresh | new `packages/core/src/gbc/edit/layouts.ts`; `packages/core/src/gbc/write/save.ts`; tests | High (subject writes) | `packages/core/test/gbc` | roadmap Plan 14C |
 | 8c | GBA border size, on engines whose layouts carry the border keys | `packages/core/src/edit/layouts.ts`; tests | High | `packages/core/test/edit` | 8a |
@@ -86,8 +86,8 @@ Each of Tasks 2, 3 and 8 ends with a live check on scratch clones in both famili
 | `packages/core/src/edit/encounters.ts` | Wild encounter table editing |
 | `packages/core/src/load/regionMap.ts` | `region_map_sections*.json` loading, schema-preserving |
 | `packages/core/src/edit/regionMap.ts` | Region map entry editing |
-| `packages/core/src/edit/tileset.ts` | Metatile composition, attributes, palettes |
-| `packages/core/src/write/tilesetBinary.ts` | `metatiles.bin`, `metatile_attributes.bin`, `tiles.png`, `.pal` writing |
+| `packages/core/src/edit/tileset.ts` | Tile-pixel and palette edits (rows 7a, 7b; their spec names the final files). Metatile composition and attributes are Plan 14.2's `core/src/blockEdit/` |
+| `packages/core/src/write/{indexedPng,pal}.ts` | Indexed `tiles.png` and JASC `.pal` writing (row 6a). The `.bin` writers are Plan 14.2's `core/src/blockEdit/gbaPatch.ts` |
 | `packages/ui/src/components/ConnectionEditor.tsx` | |
 | `packages/ui/src/components/HeaderInspector.tsx` | |
 | `packages/ui/src/components/EncounterEditor.tsx` | |
@@ -195,34 +195,29 @@ it("cannot reproduce the 2026-08-18 porymap 6 failure", () => {
 
 ## Task 6: Tileset binary writing
 
-**Reduced 2026-11-13 (D22).** Plan 14.2 writes `metatiles.bin` and `metatile_attributes.bin` through lossless patchers (`packages/core/src/blockEdit/gbaPatch.ts`). What remains here: the indexed `tiles.png` writer at the source depth and palette, and the `.pal` writer. Invariant I3 below still binds.
+**Reduced 2026-11-13 (D22); shared with roadmap Plan 15 (D26, D27).** Plan 14.2 writes `metatiles.bin` and `metatile_attributes.bin` through lossless patchers (`packages/core/src/blockEdit/gbaPatch.ts`). This task is the indexed `tiles.png` writer and the `.pal` writer, built once by whichever of Plan 3 and Plan 15 starts first. Invariant I3 below still binds.
 
-**Files:** `packages/core/src/write/tilesetBinary.ts` + test
+**Files:** `packages/core/src/write/indexedPng.ts`, `packages/core/src/write/pal.ts` + tests (row 6a)
 
 **Requirements:**
-- **SUPERSEDED 2026-11-15, do not build:** done by Plan 14.2 Tasks 4 and 8 (`51225cf`, `025b8e5`; `packages/core/src/blockEdit/gbaPatch.ts`, `blockEdit/save.ts`). Original text: Write `metatiles.bin` (16 bytes per metatile) and `metatile_attributes.bin` (2 or 4 bytes per the engine profile).
 - Write `tiles.png` as an **indexed** PNG at the source file's original bit depth and palette — re-encoding a depth-4 sheet as depth-8 would work but produces a gratuitous diff, and `gbagfx` cares about the format.
 - Write `.pal` files as JASC-PAL with the same header and line endings as the original.
 - **Never write `.4bpp`, `.gbapal` or `.lz`** — invariant **I3**. Those are build outputs; writing them creates files that `.gitignore` hides and that `make` will overwrite, which is exactly the kind of ghost that costs a day.
-- Round-trip test: load and re-save every tileset in every reference engine, zero bytes changed. Note this requires an indexed-PNG *encoder*, the counterpart to Plan 1 Task 9's reader; write it here with the same "no dependency, ~120 lines" approach.
+- Round-trip test, per trap 12: load and re-save every tileset in every reference engine. An unchanged `tiles.png` or `.pal` is not written; a written `tiles.png` decodes to exactly the intended pixels and palette at the source depth. Note this requires an indexed-PNG *encoder*, the counterpart to Plan 1 Task 9's reader; write it here with the same "no dependency, ~120 lines" approach.
 
 ---
 
 ## Task 7: Tileset editor
 
-**Reduced 2026-11-13 (D22).** Plan 14.2's block editor covers metatile composition (two layers, per-tile palette and flips), behaviour and layer type, the usage warning before a save, and cache invalidation after an edit. What remains here: tile pixel editing, palette editing with BGR555 quantisation, the FireRed terrain and encounter-type attribute fields, and the by-tileset invalidation test if Plan 14.2's whole-cache clear measures as a stall.
+**Reduced 2026-11-13 (D22) and 2026-11-21.** Plan 14.2's block editor (merged via [#32](https://github.com/itnevres/pokemap/pull/32) → `9d14637`) covers metatile composition (two layers, per-tile palette and flips), behaviour and layer type, the split labels, the usage warning before a save, and cache invalidation; their bullets were deleted here on 2026-11-21. D27 keeps the rest inside PokeMap: tile pixel editing and palette editing (rows 7a and 7b, shared with roadmap Plan 15 per D26) and the FireRed attribute fields (row 7c).
 
 **Files:** `packages/core/src/edit/tileset.ts`, `packages/ui/src/components/TilesetEditor.tsx` + tests
 
-**Marked 2026-11-15.** Bullets 1, 4, 5 and 6 below and the behaviour and layer-type half of bullet 2 belong to Plan 14.2 and are not built here: it is merged to `master` via [#32](https://github.com/itnevres/pokemap/pull/32) → `9d14637` (2026-11-21; usage index `b0b697e`, GBA planner `7901772`, ownership `d0082d0`, UI Tasks 11-14). What is left for this task: the FireRed half of bullet 2, bullet 3 (palettes) and tile pixels, each subject to the interview questions under "Subtasks (2026-11-15)".
-
 **Requirements:**
-- Compose a metatile from an 8×8 tile picker: two layers, per-tile palette and flips.
-- Edit metatile attributes: behaviour, layer type, and on FireRed the terrain and encounter types — read from the profile masks, never hardcoded.
+- Edit tile pixels (row 7a). Its own spec and interview settle the tools, undo, how a sheet edit is staged and owned, and GBC's 2-bit sheets.
 - Edit palettes as 16 colours; colours are GBA BGR555, so the editor must quantise to 5 bits per channel and show the quantised value. A colour picker offering 24-bit precision that silently rounds is a lie about what the hardware will show.
-- **The tile picker and metatile list respect the current layout's split**, with the boundary labelled — same rule as Plan 2 Task 7.
-- Changing a metatile invalidates the render cache for every layout using that tileset, and the world view updates. There is a test asserting the invalidation is by tileset, not global — with 1,020 layouts, invalidating everything is a several-second stall.
-- **Warn loudly before saving a tileset**: a metatile edit changes every map using it. The dialog names how many layouts are affected and lists them. Porymap gives no such warning and this is a real way to break many maps at once.
+- On FireRed, edit the terrain and encounter-type attributes in the block editor's field spec, read from the profile masks, never hardcoded (row 7c).
+- Only if Plan 14.2's whole-cache clear (`pngCache.clear()` on every overlay change, `server/src/index.ts:221`) measures as a stall after a tileset edit: invalidate by tileset instead, with a test that a layout on another tileset keeps its cached image. With 1,020 layouts, re-rendering everything is a several-second stall.
 
 ---
 
@@ -271,7 +266,7 @@ By the end of this plan the gate covers every file type PokeMap can write. That 
 
 - [ ] `npm test` green, including the extended corpus across every writable file type
 - [ ] Drag a map in the world view; the connection `offset` in `map.json` changes and nothing else does
-- [ ] Edit a metatile; every map using that tileset updates, and the save dialog named them beforehand
+- [ ] Edit a tile's pixels or a palette colour; every map using that tileset updates, and the save dialog named them beforehand
 - [ ] Edit a region map entry, then run `make` in the decomp — **the build succeeds.** This is the direct rebuttal of the 2026-08-18 failure and must be demonstrated, not assumed
 - [ ] `git diff` in the decomp after a region map edit shows one changed value and no renamed keys
 - [ ] Create a new layout without a `layout_version` — refused, by name, with the fix
