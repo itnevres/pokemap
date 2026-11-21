@@ -1509,6 +1509,16 @@ export function suite(family: "gba" | "gbc") {
       expect(changedStaged(pair.a)).toEqual([]);
     }, 120_000);
 
+    it("names the requesting map when another map owns the applied file", async () => {
+      stage(pair.a);
+      const data = await block(pair.b, `block=${await idFor()}`);
+      const result = await blockApply(pair.b, { request: changedDraft(data), revision: data.revision });
+      expect(result.status).toBe(409);
+      expect(result.body.code).toBe("NOT_OWNER");
+      expect(result.body.error.startsWith(`${pair.b}: `)).toBe(true);
+      expect(result.body.error).toContain(`${pair.a} has unsaved block edits`);
+    }, 120_000);
+
     it("11b.9a: apply refuses a file changed on disk since the GET", async () => {
       const data = await block(pair.a, `block=${await idFor()}`);
       const unused = await findUnusedBlock(pair.a);
