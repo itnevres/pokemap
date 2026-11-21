@@ -121,6 +121,33 @@ const escape = () => fireEvent.keyDown(document, { key: "Escape" });
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe("BlockEditorDialog", () => {
+  it("prevents closing through Cancel or the backdrop while applying", async () => {
+    const session = makeSession();
+    let resolveApply!: (value: boolean) => void;
+    session.blockApply.mockReturnValue(new Promise(resolve => { resolveApply = resolve; }));
+    const host = await mount("gbc", bodies.gbc, session);
+    fireEvent.click(await screen.findByRole("button", { name: "OK" }));
+    await waitFor(() => expect(session.blockApply).toHaveBeenCalledTimes(1));
+    expect((await screen.findByRole("button", { name: "Cancel" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.mouseDown(host.container.querySelector(".warp-modal__backdrop")!);
+    expect(host.onClose).not.toHaveBeenCalled();
+    await act(async () => { resolveApply(true); });
+    expect(host.onApplied).toHaveBeenCalledTimes(1);
+    expect(host.onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("combines GBA behavior names that share a value", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const body = structuredClone(bodies.gba);
+    body.block.behavior = 162;
+    body.options.behaviors = [{ name: "MB_A", value: 162 }, { name: "MB_B", value: 162 }];
+    await mount("gba", body);
+    const behavior = await screen.findByRole("combobox", { name: "Behavior" });
+    const options = within(behavior).getAllByRole("option").filter(option => (option as HTMLOptionElement).value === "162");
+    expect(options).toHaveLength(1);
+    expect(options[0]!.textContent).toBe("MB_A / MB_B");
+    expect(error.mock.calls.some(args => args.some(arg => String(arg).includes("same key")))).toBe(false);
+  });
   it("gbc renders four collision dropdowns and a palette control", async () => {
     await mount();
     const labels = gbcAdapter.blockEditorSpec.blockFields.map(field => field.label);

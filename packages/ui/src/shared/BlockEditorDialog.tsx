@@ -115,7 +115,7 @@ export function BlockEditorDialog(props: {
   };
   const checkUsage = editor.check?.usage as Usage | undefined;
   return <div className="warp-modal__backdrop" onMouseDown={event => {
-    if (event.target === event.currentTarget && topmost() === panel.current) props.onClose();
+    if (event.target === event.currentTarget && topmost() === panel.current && editor.status !== "applying") props.onClose();
   }}>
     <div ref={panel} className="warp-modal__panel block-editor" role="dialog" aria-modal="true" aria-label={info ? `Edit ${gbc ? "block" : "metatile"} $${hex(info.blockId)}` : "Edit block"} tabIndex={-1} onKeyDown={event => {
       if (topmost() !== panel.current) return;
@@ -155,13 +155,13 @@ export function BlockEditorDialog(props: {
           const collisionIndex = Number(field.key.slice("collision".length));
           const value = gbc ? draft.collision[collisionIndex]! : draft[field.key] as number;
           const options = info.options[field.optionsKey]!;
-          const values = gbc ? options as string[] : (options as { name: string; value: number }[]).map(option => String(option.value));
+          const values = gbc ? options as string[] : [...new Set((options as { name: string; value: number }[]).map(option => String(option.value)))];
           const initialValue = gbc ? info.block.collision[collisionIndex]! : info.block[field.key] as number;
           const change = (text: string, raw = false) => {
             if (!text && !raw) return;
             editor.setDraft(gbc ? { ...draft, collision: draft.collision.map((item, index) => index === collisionIndex ? text : item) } : { ...draft, [field.key]: Number(text) });
           };
-          return <div key={field.key}>{values.includes(String(initialValue)) ? <SelectField label={field.label} options={values} value={String(value)} disabled={false} onChange={change} optionLabel={gbc ? undefined : text => (options as { name: string; value: number }[]).find(option => String(option.value) === text)?.name ?? text} /> : <RawField label={field.label} value={String(value)} numeric={!gbc} onChange={text => change(text, true)} />}</div>;
+          return <div key={field.key}>{values.includes(String(initialValue)) ? <SelectField label={field.label} options={values} value={String(value)} disabled={false} onChange={change} optionLabel={gbc ? undefined : text => (options as { name: string; value: number }[]).filter(option => String(option.value) === text).map(option => option.name).join(" / ") || text} /> : <RawField label={field.label} value={String(value)} numeric={!gbc} onChange={text => change(text, true)} />}</div>;
         })}</div>
         </fieldset>
         {editor.message && <p role="alert">{editor.message}</p>}
@@ -173,7 +173,7 @@ export function BlockEditorDialog(props: {
           <button ref={okButton} type="button" disabled={editor.status !== "ready"} onClick={editor.ok}>OK</button>
           <button type="button" disabled={editor.status !== "ready" || editor.saveAsNewRefusal !== null} onClick={editor.saveAsNew}>Save as new</button>
           {editor.saveAsNewRefusal !== null && <span data-testid="block-editor-refusal">{editor.saveAsNewRefusal}</span>}
-          <button type="button" onClick={props.onClose}>Cancel</button>
+          <button type="button" disabled={editor.status === "applying"} onClick={props.onClose}>Cancel</button>
         </div>}
         </fieldset>
         {pending && <div ref={prompt} className="block-editor__prompt" role="dialog" aria-modal="true" aria-label="Palette scope" tabIndex={-1} onKeyDown={trapDialogFocus}>

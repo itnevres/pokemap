@@ -184,7 +184,12 @@ function routes(deps: CommonDeps, read: (name: string, url: URL, version: number
           if (plan.edits.length || plan.placement) {
             const labelId = mode === "saveAsNew" ? plan.newBlockId! : id;
             const label = `${mode === "saveAsNew" ? "New" : "Edit"} block $${labelId.toString(16).toUpperCase().padStart(2, "0")}`;
-            stageTilesetPlan(store, name, plan, label);
+            try { stageTilesetPlan(store, name, plan, label); }
+            catch (error) {
+              if (!(error instanceof BlockEditRefusal)) throw error;
+              send(409, { error: `${name}: ${error.message}`, code: error.code });
+              return;
+            }
           }
           send(200, deps.sessionBody(name));
         }).catch(error => fail(error));
