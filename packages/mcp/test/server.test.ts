@@ -12,6 +12,7 @@ import { createPokemapServer } from "../src/server.js";
 // copies via globalSetup; render tools write into a private temp dir).
 const outDir = mkdtempSync(join(tmpdir(), "pokemap-mcp-test-"));
 afterAll(() => rmSync(outDir, { recursive: true, force: true }));
+const PNG_SIGNATURE = "89504e470d0a1a0a";
 
 async function connect(project: string): Promise<Client> {
   const server = createPokemapServer({ project, outDir });
@@ -24,8 +25,12 @@ async function connect(project: string): Promise<Client> {
 
 async function call(client: Client, name: string, args: Record<string, unknown> = {}) {
   const r = await client.callTool({ name, arguments: args });
-  const content = r.content as { type: string; text: string }[];
-  return { isError: !!r.isError, text: content.map((c) => c.text).join("\n") };
+  const content = r.content as { type: string; text?: string; data?: string; mimeType?: string }[];
+  return {
+    isError: !!r.isError,
+    text: content.filter((c) => c.type === "text").map((c) => c.text).join("\n"),
+    images: content.filter((c) => c.type === "image"),
+  };
 }
 
 const READ_TOOLS = [
@@ -70,6 +75,9 @@ describe("GBA", () => {
   itWithCorpus("render writes a PNG and reports its size", async () => {
     const r = await call(client, "pokemap_render", { target: "PetalburgCity" });
     expect(r.isError).toBe(false);
+    expect(r.images).toHaveLength(1);
+    expect(r.images[0]!.mimeType).toBe("image/png");
+    expect(Buffer.from(r.images[0]!.data!, "base64").subarray(0, 8).toString("hex")).toBe(PNG_SIGNATURE);
     const m = /^(.+\.png) (\d+)x(\d+) outOfRange=\d+/.exec(r.text.trim());
     expect(m).not.toBeNull();
     expect(readFileSync(m![1]!).subarray(1, 4).toString()).toBe("PNG");
@@ -78,6 +86,8 @@ describe("GBA", () => {
   itWithCorpus("render_world writes a PNG for a bbox", async () => {
     const r = await call(client, "pokemap_render_world", { x: 0, y: 0, w: 40, h: 30, scale: 2 });
     expect(r.isError).toBe(false);
+    expect(r.images).toHaveLength(1);
+    expect(Buffer.from(r.images[0]!.data!, "base64").subarray(0, 8).toString("hex")).toBe(PNG_SIGNATURE);
     const m = /^(.+\.png) 80x60 maps=\d+/.exec(r.text.trim());
     expect(m).not.toBeNull();
     expect(existsSync(m![1]!)).toBe(true);
@@ -133,6 +143,7 @@ describe("GBC", () => {
     expect(j).toBeTypeOf("object");
     const r = await call(client, "pokemap_render", { target: "NewBarkTown", time: "nite" });
     expect(r.isError).toBe(false);
+    expect(r.images[0]?.mimeType).toBe("image/png");
     expect(r.text).toMatch(/\.png/);
   });
 
