@@ -85,3 +85,43 @@ describe("parseLayouts", () => {
     expect(zero.every((l) => l.borderHeight === 0)).toBe(true);
   });
 });
+
+describe("parseLayouts: paths that leave the project (D25)", () => {
+  const layoutsJson = (l: Record<string, unknown>) => JSON.stringify({
+    layouts_table_label: "gMapLayouts",
+    layouts: [{ id: "LAYOUT_A", name: "A_Layout", width: 2, height: 2, primary_tileset: "gTileset_General", secondary_tileset: "gTileset_Petalburg",
+      border_filepath: "data/layouts/A/border.bin", blockdata_filepath: "data/layouts/A/map.bin", ...l },
+    { id: "LAYOUT_B", name: "B_Layout", width: 2, height: 2, primary_tileset: "gTileset_General", secondary_tileset: "gTileset_Petalburg",
+      border_filepath: "data/layouts/B/border.bin", blockdata_filepath: "data/layouts/B/map.bin" }],
+  });
+
+  it("leaves a layout with inside paths unmarked", () => {
+    const { layouts } = parseLayouts(layoutsJson({}));
+    expect(layouts[0]!.brokenPaths).toBeUndefined();
+    expect(layouts[0]!.blockdataFilepath).toBe("data/layouts/A/map.bin");
+  });
+
+  for (const bad of ["../../outside.bin", "/abs/outside.bin", "C:/outside.bin", "C:\outside.bin", "..\..\outside.bin", "data/../../outside.bin"]) {
+    it(`marks blockdata_filepath ${JSON.stringify(bad)} broken without throwing`, () => {
+      const { layouts } = parseLayouts(layoutsJson({ blockdata_filepath: bad }));
+      const broken = layouts[0]!.brokenPaths!;
+      expect(broken).toHaveLength(1);
+      expect(broken[0]!.key).toBe("blockdata_filepath");
+      expect(broken[0]!.path).toBe(bad);
+      expect(broken[0]!.file).toBe("data/layouts/layouts.json");
+      expect(broken[0]!.message).toContain("LAYOUT_A");
+      expect(broken[0]!.message).toContain(bad);
+      expect(broken[0]!.fix).toContain("blockdata_filepath");
+      // nothing else is blocked: the next layout parses clean
+      expect(layouts[1]!.brokenPaths).toBeUndefined();
+      expect(layouts[1]!.id).toBe("LAYOUT_B");
+    });
+  }
+
+  it("marks border_filepath, and both keys when both leave", () => {
+    const one = parseLayouts(layoutsJson({ border_filepath: "../b.bin" })).layouts[0]!;
+    expect(one.brokenPaths!.map((b) => b.key)).toEqual(["border_filepath"]);
+    const both = parseLayouts(layoutsJson({ border_filepath: "../b.bin", blockdata_filepath: "/m.bin" })).layouts[0]!;
+    expect(both.brokenPaths!.map((b) => b.key)).toEqual(["border_filepath", "blockdata_filepath"]);
+  });
+});

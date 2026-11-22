@@ -119,3 +119,37 @@ describe("parseTilesetPaths", () => {
     expect(missing).toEqual([]);
   });
 });
+
+describe("parseTilesetPaths: paths that leave the project (D25)", () => {
+  const headers = (sym: string) => `const struct Tileset gTileset_${sym} =\n{\n    .isCompressed = TRUE,\n    .isSecondary = FALSE,\n    .tiles = gTilesetTiles_${sym},\n    .palettes = gTilesetPalettes_${sym},\n    .metatiles = gMetatiles_${sym},\n    .metatileAttributes = gMetatileAttributes_${sym},\n};\n`;
+  const meta = (sym: string, m: string, a: string) =>
+    `const u16 gMetatiles_${sym}[] = INCBIN_U16("${m}");\nconst u16 gMetatileAttributes_${sym}[] = INCBIN_U16("${a}");\n`;
+  const gfx = (sym: string, t: string, p: string) =>
+    `const u32 gTilesetTiles_${sym}[] = INCBIN_U32("${t}");\nconst u16 gTilesetPalettes_${sym}[][16] =\n{\n    INCBIN_U16("${p}"),\n};\n`;
+  const ok = { m: "data/tilesets/a/metatiles.bin", a: "data/tilesets/a/metatile_attributes.bin", t: "data/tilesets/a/tiles.4bpp.lz", p: "data/tilesets/a/palettes/00.gbapal" };
+  const parse = (o: Partial<typeof ok>) => {
+    const v = { ...ok, ...o };
+    return parseTilesetPaths(headers("A"), meta("A", v.m, v.a), gfx("A", v.t, v.p)).get("gTileset_A")!;
+  };
+
+  it("leaves an inside tileset unmarked", () => {
+    expect(parse({}).brokenPaths).toBeUndefined();
+  });
+
+  it("marks each escaping INCBIN path broken, naming the symbol and the path", () => {
+    const cases: [Partial<typeof ok>, string][] = [
+      [{ m: "../../x/metatiles.bin" }, "../../x/metatiles.bin"],
+      [{ a: "/abs/attr.bin" }, "/abs/attr.bin"],
+      [{ t: "../../x/tiles.4bpp.lz" }, "../../x"],
+      [{ p: "C:/x/00.gbapal" }, "C:/x/00.gbapal"],
+      [{ p: "..\x\00.gbapal" }, "..\x\00.gbapal"],
+    ];
+    for (const [over, needle] of cases) {
+      const t = parse(over);
+      expect(t.brokenPaths, JSON.stringify(over)).toHaveLength(1);
+      expect(t.brokenPaths![0]!.message).toContain("gTileset_A");
+      expect(t.brokenPaths![0]!.message).toContain(needle);
+      expect(t.brokenPaths![0]!.file).toBe("src/data/tilesets/headers.h");
+    }
+  });
+});
