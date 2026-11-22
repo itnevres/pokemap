@@ -120,4 +120,98 @@ describe("useMapLayout", () => {
     expect(result.current.error).toMatch(/404/);
     expect(result.current.data).toBeNull();
   });
+
+  // Plan H Q7: `reload` is the in-place re-read the GBA commit path and the tileset-version
+  // follow-up need (GBC's `useGbcMap.reload` equivalent), so the palette can follow an append
+  // without a map switch.
+
+  it("reload() refetches in place, keeping the old data and leaving loading alone until the reply lands", async () => {
+    let resolveReload!: (response: Response) => void;
+    const reloadReply = new Promise<Response>((resolve) => { resolveReload = resolve; });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ ...BODY, primaryCount: 4 }) })
+      .mockReturnValueOnce(reloadReply);
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderHook(() => useMapLayout("Foo"));
+    await waitFor(() => expect(result.current.data?.primaryCount).toBe(4));
+
+    let reload!: Promise<void>;
+    await act(async () => { reload = result.current.reload(); await Promise.resolve(); });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(fetchMock).toHaveBeenLastCalledWith("/api/map/Foo");
+    // In place: the old payload is still there (never nulled) and no loading flag was raised.
+    expect(result.current.data?.primaryCount).toBe(4);
+    expect(result.current.loading).toBe(false);
+
+    await act(async () => {
+      resolveReload({ ok: true, json: async () => ({ ...BODY, primaryCount: 9 }) } as Response);
+      await reload;
+    });
+    expect(result.current.data?.primaryCount).toBe(9);
+    expect(result.current.loading).toBe(false);
+    expect(result.current.error).toBeNull();
+  });
+
+  it("reload() drops a reply for a map that is no longer selected", async () => {
+    let resolveReload!: (response: Response) => void;
+    const reloadReply = new Promise<Response>((resolve) => { resolveReload = resolve; });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ ...BODY, primaryCount: 4 }) })
+      .mockReturnValueOnce(reloadReply)
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ ...BODY, map: { id: "MAP_BAR", name: "Bar" }, primaryCount: 2 }) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result, rerender } = renderHook(({ name }) => useMapLayout(name), { initialProps: { name: "Foo" as string | null } });
+    await waitFor(() => expect(result.current.data?.primaryCount).toBe(4));
+
+    let reload!: Promise<void>;
+    await act(async () => { reload = result.current.reload(); await Promise.resolve(); });
+    rerender({ name: "Bar" });
+    await waitFor(() => expect(result.current.data?.map.name).toBe("Bar"));
+
+    await act(async () => {
+      resolveReload({ ok: true, json: async () => ({ ...BODY, primaryCount: 9 }) } as Response);
+      await reload;
+    });
+    expect(result.current.data?.map.name).toBe("Bar");
+    expect(result.current.data?.primaryCount).toBe(2);
+  });
+
+  it("reload() resolves without throwing when the reply lands after unmount", async () => {
+    let resolveReload!: (response: Response) => void;
+    const reloadReply = new Promise<Response>((resolve) => { resolveReload = resolve; });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ ...BODY, primaryCount: 4 }) })
+      .mockReturnValueOnce(reloadReply);
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result, unmount } = renderHook(() => useMapLayout("Foo"));
+    await waitFor(() => expect(result.current.data?.primaryCount).toBe(4));
+    let reload!: Promise<void>;
+    await act(async () => { reload = result.current.reload(); await Promise.resolve(); });
+
+    unmount();
+    await act(async () => {
+      resolveReload({ ok: true, json: async () => ({ ...BODY, primaryCount: 9 }) } as Response);
+      await reload; // a dropped reply must not reject at the caller
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("reload() rejects on a failed fetch and leaves the current data untouched", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ ...BODY, primaryCount: 4 }) })
+      .mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({}) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { result } = renderHook(() => useMapLayout("Foo"));
+    await waitFor(() => expect(result.current.data?.primaryCount).toBe(4));
+
+    await act(async () => {
+      await expect(result.current.reload()).rejects.toThrow(/500/);
+    });
+    expect(result.current.data?.primaryCount).toBe(4);
+    expect(result.current.error).toBeNull();
+  });
 });

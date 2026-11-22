@@ -1,5 +1,5 @@
 import { addEventFields, addEventDefaults } from "./addEventFields.js";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { GbcMapEditing, type GbcMapEditingCanvasProps } from "./GbcMapEditing.js";
 import { GbcMapCanvas, GBC_COMPOSITE_ORIGIN } from "./GbcMapCanvas.js";
 import { GbcWorldCanvas } from "./GbcWorldCanvas.js";
@@ -13,6 +13,7 @@ import { useGbcWorld } from "./hooks/useGbcWorld.js";
 import { useGbcDungeons } from "./hooks/useGbcDungeons.js";
 import type { GbcTimeOfDay } from "./time.js";
 import { GBC_HIDDEN_MAP_TYPES } from "../world/visibility.js";
+import { useTilesetVersion } from "../shared/tilesetVersion.js";
 import { GBC_CAPABILITIES, type BlockEditorSpec, type EngineAdapter, type FamilyRuntime, type RuntimeArgs, type ShellSlots } from "../shell/adapter.js";
 
 const TIME_ORDER: readonly GbcTimeOfDay[] = ["morn", "day", "nite"];
@@ -36,6 +37,19 @@ export function useGbcRuntime({ selected, mode, requestPrompt }: RuntimeArgs): F
     [world],
   );
   const map = useGbcMap(selected);
+  // Q7 (b): another map's append/undo on a SHARED tileset changes this map's effective metatile count, and
+  // the hub announces it only through `tilesetVersion`. Re-read this map's payload when that moves so the
+  // palette is right even with no session open here -- passive, so a failure is swallowed; the first
+  // version this hook sees is its mount value, not a change. `reloadMap`'s identity moves with the base
+  // payload, and the guard above is what keeps that from costing an extra read.
+  const tilesetVersion = useTilesetVersion();
+  const seenTilesetVersion = useRef(tilesetVersion);
+  const reloadMap = map.reload;
+  useEffect(() => {
+    if (seenTilesetVersion.current === tilesetVersion) return;
+    seenTilesetVersion.current = tilesetVersion;
+    void reloadMap().catch(() => {});
+  }, [tilesetVersion, reloadMap]);
   // Fix round (spec review finding 3): `useGuardedFetch` now resets
   // `data`/`error` on every URL change, but there is still one render tick
   // between `selected` changing and that reset effect actually running

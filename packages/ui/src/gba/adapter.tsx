@@ -1,7 +1,7 @@
 import { addEventFields, addEventDefaults } from "./addEventFields.js";
 import { DefectsBanner } from "../shared/DefectsBanner.js";
 import { useMapDefects } from "../hooks/useMapDefects.js";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { MapEditingWorkspace, type MapEditingCanvasProps } from "../components/MapEditingWorkspace.js";
 import { MapCanvas, compositeOrigin } from "../components/MapCanvas.js";
 import { WorldCanvas } from "../components/WorldCanvas.js";
@@ -12,6 +12,7 @@ import { useWorldVisibility } from "../hooks/useWorldVisibility.js";
 import { useDungeons } from "../hooks/useDungeons.js";
 import { useEditSession, isIndicatorMapUpdate } from "../hooks/useEditSession.js";
 import { useMapEditing } from "../hooks/useMapEditing.js";
+import { useTilesetVersion } from "../shared/tilesetVersion.js";
 import { HIDDEN_MAP_TYPES } from "../world/visibility.js";
 import { GBA_CAPABILITIES, type BlockEditorSpec, type EngineAdapter, type FamilyRuntime, type RuntimeArgs, type ShellSlots } from "../shell/adapter.js";
 
@@ -22,6 +23,19 @@ export function useGbaRuntime({ selected, mode, requestPrompt }: RuntimeArgs): F
   const defectsBanner = <DefectsBanner key={selected} defects={defects} incomplete={incomplete} error={defectsError} />;
   const groups = useMapGroups();
   const layout = useMapLayout(selected);
+  // Q7 (b): another map's block-editor append/undo on a SHARED tileset changes this map's effective
+  // metatile counts, and the hub announces it only through `tilesetVersion` (the map payload's own
+  // counts are recomputed server-side). Re-read this map's payload when that moves so the palette is
+  // right even with no session open here -- passive, so a failure is swallowed; the first version this
+  // hook sees is its mount value, not a change.
+  const tilesetVersion = useTilesetVersion();
+  const seenTilesetVersion = useRef(tilesetVersion);
+  const reloadLayout = layout.reload;
+  useEffect(() => {
+    if (seenTilesetVersion.current === tilesetVersion) return;
+    seenTilesetVersion.current = tilesetVersion;
+    void reloadLayout().catch(() => {});
+  }, [tilesetVersion, reloadLayout]);
   // Known limitation, accepted for now (predates this task): this is a
   // snapshot taken once per World-mode entry, not a live subscription -- it
   // can go stale within the session after a drag or a jump-reveal on
@@ -168,7 +182,20 @@ export function useGbaRuntime({ selected, mode, requestPrompt }: RuntimeArgs): F
           onCancel={() => editing.setIndicatorOpen(false)}
         />
       ) : null,
-    saveDialog: { open: editing.saveDialogOpen, setOpen: editing.setSaveDialogOpen, onCommitted: () => setSaveToken((token) => token + 1) },
+    saveDialog: {
+      open: editing.saveDialogOpen, setOpen: editing.setSaveDialogOpen,
+      // A commit closes the server session and writes the map to disk, which can change the effective
+      // metatile count (a block appended by the block editor's "Save as new"). Re-read the payload so
+      // the canvas and palette show what is on disk, the same follow-up the GBC adapter does -- and
+      // without it the palette falls back to the load-time count after the Discard that follows a
+      // "save as new, then save", since Discard drops the session counts (MapEditingWorkspace's
+      // `editSession.primaryCount ?? data.primaryCount`). The failure is surfaced like GBC's reload
+      // failure, never thrown into the dialog.
+      onCommitted: () => {
+        setSaveToken((token) => token + 1);
+        layout.reload().catch((e: unknown) => setSwitchError(`Saved, but could not reload the map: ${e instanceof Error ? e.message : String(e)}`));
+      },
+    },
   };
 }
 
