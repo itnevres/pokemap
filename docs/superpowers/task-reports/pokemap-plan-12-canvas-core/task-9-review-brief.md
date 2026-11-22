@@ -4,7 +4,7 @@ Repo: C:\Programming Projects\PokeMap. Branch `plan-12-canvas-core`; code range 
 
 Read first:
 - Spec: `docs/superpowers/specs/2026-10-24-pokemap-plan-12-shared-canvas-core-design.md` (rulings P12-1..P12-8 are binding; 12a acceptance; review record).
-- Plan: `docs/superpowers/plans/2026-10-24-pokemap-plan-12a-canvas-foundation-map-surface.md` (Global Constraints, Review Focus 1-6).
+- Plan: `docs/superpowers/plans/archive/plan-12a-canvas-foundation-map-surface.md` (Global Constraints, Review Focus 1-6).
 - Task reports `docs/superpowers/task-reports/pokemap-plan-12-canvas-core/task-{1..8}-report.md` / `task-8-live.md` (the behaviour-difference ledger is in `task-6-report.md`; Task 7 lists two items for this review: `shared/useCanvasView.ts` has no production consumer; `canvas/MapSurface.tsx` imports from `components/`).
 
 Review the whole branch as one change, adversarially:

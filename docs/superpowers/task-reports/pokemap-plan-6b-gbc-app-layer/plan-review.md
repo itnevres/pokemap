@@ -1,6 +1,6 @@
 # Plan 6b review: GBC app layer (Opus, read-only)
 
-Reviewed: `docs/superpowers/plans/2026-09-25-pokemap-plan-6b-gbc-app-layer.md` at `fe7e8cd`. Every claim below was re-derived against the code and the PerfPlus corpus, using `npx tsx` probes run from the scratchpad with the real loaders. No repo file was changed except this report.
+Reviewed: `docs/superpowers/plans/archive/plan-06b-gbc-app-layer.md` at `fe7e8cd`. Every claim below was re-derived against the code and the PerfPlus corpus, using `npx tsx` probes run from the scratchpad with the real loaders. No repo file was changed except this report.
 
 ## Verdict: **approve-with-changes**
 

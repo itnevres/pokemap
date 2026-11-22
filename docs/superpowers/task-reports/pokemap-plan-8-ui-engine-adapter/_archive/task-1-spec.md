@@ -1,6 +1,6 @@
 # Plan 8 Task 1: executed spec (shared stroke chain)
 
-Plan: `docs/superpowers/plans/2026-10-12-pokemap-plan-8-ui-engine-adapter.md`, section "Task 1". The plan's interface block is binding; this file adds anchors and coordinator rulings. Base: branch `plan-8-ui-engine-adapter` (record BASE in the report).
+Plan: `docs/superpowers/plans/archive/plan-08-ui-engine-adapter.md`, section "Task 1". The plan's interface block is binding; this file adds anchors and coordinator rulings. Base: branch `plan-8-ui-engine-adapter` (record BASE in the report).
 
 ## Anchors (at master `3f9f8ce`)
 

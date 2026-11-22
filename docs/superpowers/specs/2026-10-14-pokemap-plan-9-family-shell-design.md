@@ -1,6 +1,6 @@
 # Plan 9 design: one shell (FamilyApp + EngineAdapter) and the unified edit layout
 
-Written 2026-10-14 from master `4305376` (PR #18's merge). Roadmap: `plans/2026-10-14-pokemap-roadmap-unified-ui.md`;
+Written 2026-10-14 from master `4305376` (PR #18's merge). Roadmap: `plans/background/roadmap-unified-ui.md`;
 decisions D1-D16 there are binding. This spec covers Plan 9 only.
 
 ## Goal

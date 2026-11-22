@@ -1,7 +1,7 @@
 **Needs rework**
 
 1. **PR12b-I1 — The changed-test allowlist is incomplete.**  
-   **Evidence:** `2026-10-26-pokemap-plan-12b-world-surface.md:20,146,160`; `WorldCanvas.test.tsx:401-420,574-601`; `WorldCanvasContext.test.tsx:112-119,464-481`; `gbc/GbcWorldCanvas.test.tsx:2001-2009`.  
+   **Evidence:** `plans/archive/plan-12b-world-surface.md:20,146,160`; `WorldCanvas.test.tsx:401-420,574-601`; `WorldCanvasContext.test.tsx:112-119,464-481`; `gbc/GbcWorldCanvas.test.tsx:2001-2009`.  
    **Problem:** P12-4e changes Solo’s initial zoom from 1 to 10, breaking the unlisted LOD and placement-drag expectations. Context fixtures’ old coordinates miss after fitting. GBC’s F-shortcut test still expects all-placement Fit, contrary to P12-4m. The plan prohibits these necessary edits. Additional affected cases include marquee, warp projection and border fixtures at `WorldCanvas.test.tsx:1299,1664,2264,2301`.  
    **Fix:** Complete the authorized test-rebase inventory under P12-4e/m, preserving each behavioral assertion rather than weakening it.
 

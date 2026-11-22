@@ -20,7 +20,7 @@ Fix round (this pass): the conductor ran `npm run typecheck` and it failed with 
 
 ## The rulings file is not readable from this worktree
 
-`task-9-rulings.md` (O1–O10) lives at `C:\Programming Projects\PokeMap\.superpowers\sdd\2026-11-10-pokemap-plan-14-2-block-editor\task-9-rulings.md` — outside this worktree. The harness denied read and search access to that directory, and a delegated subagent was denied the same. The only ruling text available in-worktree is the plan's Task 9 interface list (`docs/superpowers/plans/2026-11-10-pokemap-plan-14-2-block-editor.md`, "Task 9") and the spec's "Session ownership, Save and undo" section (`docs/superpowers/specs/2026-11-08-pokemap-plan-14-2-block-editor-design.md`). Every interpretation below quotes one of those or states explicitly that the ruling is silent on the point. Items 1, 4, 5 and 7 are the ones most likely to need adjustment against the real O-rulings.
+`task-9-rulings.md` (O1–O10) lives at `C:\Programming Projects\PokeMap\.superpowers\sdd\2026-11-10-pokemap-plan-14-2-block-editor\task-9-rulings.md` — outside this worktree. The harness denied read and search access to that directory, and a delegated subagent was denied the same. The only ruling text available in-worktree is the plan's Task 9 interface list (`docs/superpowers/plans/archive/plan-14-2-block-editor.md`, "Task 9") and the spec's "Session ownership, Save and undo" section (`docs/superpowers/specs/2026-11-08-pokemap-plan-14-2-block-editor-design.md`). Every interpretation below quotes one of those or states explicitly that the ruling is silent on the point. Items 1, 4, 5 and 7 are the ones most likely to need adjustment against the real O-rulings.
 
 ## Numbered coverage
 

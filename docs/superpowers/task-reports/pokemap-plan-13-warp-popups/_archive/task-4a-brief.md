@@ -2,7 +2,7 @@
 
 Repo: PokeMap, a React 19 + TypeScript map editor (two engine families, GBA and GBC, sharing one UI). You work in this
 git worktree only. Binding docs (read first):
-- Plan `docs/superpowers/plans/2026-10-28-pokemap-plan-13-warp-popups.md`, section "Task 4" (Interfaces, bullets on
+- Plan `docs/superpowers/plans/archive/plan-13-warp-popups.md`, section "Task 4" (Interfaces, bullets on
   `WarpPopup`, `trapDialogFocus`, shortcut ownership) and "Review Focus" 1-2.
 - Spec `docs/superpowers/specs/2026-10-28-pokemap-plan-13-warp-popups-design.md`, design item 5.
 

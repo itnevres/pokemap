@@ -2,7 +2,7 @@
 
 PokeMap, Plan 12b (unified GBA/GBC world canvas). Two world canvases exist today: GBA `packages/ui/src/components/WorldCanvas.tsx` (2,114 lines) and GBC `packages/ui/src/gbc/GbcWorldCanvas.tsx` (1,301 lines). This task builds the shared `WorldSurface` they will both become thin wrappers over (Tasks 7-8). **Neither family canvas is touched in this task; WorldSurface is tested only against a fake adapter.**
 
-Read first: the plan `docs/superpowers/plans/2026-10-26-pokemap-plan-12b-world-surface.md` (Global Constraints, Task 5, and Task 6 so you know what NOT to build), the spec `docs/superpowers/specs/2026-10-24-pokemap-plan-12-shared-canvas-core-design.md` (rulings P12-3..P12-8, P12-4a..u), and the already-built shared pieces: `packages/ui/src/canvas/{view.ts,useStage.ts,worldView.ts,useWorldTiles.ts,useWorldDrag.ts}`.
+Read first: the plan `docs/superpowers/plans/archive/plan-12b-world-surface.md` (Global Constraints, Task 5, and Task 6 so you know what NOT to build), the spec `docs/superpowers/specs/2026-10-24-pokemap-plan-12-shared-canvas-core-design.md` (rulings P12-3..P12-8, P12-4a..u), and the already-built shared pieces: `packages/ui/src/canvas/{view.ts,useStage.ts,worldView.ts,useWorldTiles.ts,useWorldDrag.ts}`.
 
 ## Files (create/modify exactly these)
 

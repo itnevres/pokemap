@@ -4,7 +4,7 @@
  * This file is the Task 9 **oracle** stage: it carries the type contract the
  * tests and the two session stores compile against, with every body stubbed
  * to `throw new Error("not implemented (Task 9)")`. The behaviour is the
- * implementer's job (Task 9, plan `docs/superpowers/plans/2026-11-10-pokemap-plan-14-2-block-editor.md`).
+ * implementer's job (Task 9, plan `docs/superpowers/plans/archive/plan-14-2-block-editor.md`).
  *
  * Contract highlights (binding, from the plan's Task 9 interface list and the
  * design spec, "Session ownership, Save and undo"):

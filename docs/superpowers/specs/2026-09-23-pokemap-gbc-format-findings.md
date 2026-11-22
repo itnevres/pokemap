@@ -2,7 +2,7 @@
 
 **Subject:** `C:\Programming Projects\pokecrystal-PerfPlus` at HEAD `81ededbe3` (read-only; `git status --porcelain` empty before and after this research).
 **Method:** direct reads of the real macro definitions and engine routines, plus throwaway Node scripts that measured the **whole corpus** (every `map_const`, every `map_attributes`, every `.blk`, every tileset, every `maps/*.asm`). Every excerpt below is pasted from the real repo. Nothing is invented.
-**Answers:** roadmap `2026-09-23-pokemap-plan-6-gbc-roadmap.md` §3, items 1-6. Also covers the config and family-selection decision (roadmap §5, Plan 6 Task 1).
+**Answers:** roadmap `plans/archive/plan-06-gbc-roadmap.md` §3, items 1-6. Also covers the config and family-selection decision (roadmap §5, Plan 6 Task 1).
 **Status (2026-09-25):** Plan 6 is complete. This document is still the binding format truth for Plan 7. The corrections found during Plan 6's reviews are inline and dated:
 - the metatile-bin count is 36 distinct files, not 37;
 - 32 of the 37 collision files are INCLUDEd;
@@ -646,7 +646,7 @@ Shape:
   - Grass differs by morn/day/nite. Fishing differs day vs nite through `time_group`.
   - `where`/`coverage` report per-source chances: grass per time slot (slot % × rate), water, fishing per rod, and headbutt common/rare/rock. (The binding Task 12 spec, `docs/superpowers/task-reports/pokemap-plan-6-gbc-foundation/task-12-spec.md`, reports the encounter rate alongside the slot %, NOT multiplied into it -- the implementation follows the spec, not the "×" shorthand here.)
   - Scope grows (Decision 5).
-- **Roadmap edits.** Applied in the same commit as this revision (`docs/superpowers/plans/2026-09-23-pokemap-plan-6-gbc-roadmap.md`):
+- **Roadmap edits.** Applied in the same commit as this revision (`docs/superpowers/plans/archive/plan-06-gbc-roadmap.md`):
   - §0 I7 bullet: the cap is per tileset (40/64/128).
   - §1: `Map`/`Layout` split.
   - G1: cap wording.

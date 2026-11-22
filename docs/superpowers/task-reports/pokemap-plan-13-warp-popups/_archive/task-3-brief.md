@@ -1,7 +1,7 @@
 # Plan 13 Task 3 brief (Codex implementer)
 
 Repo: PokeMap (React 19 + TS map editor, two families GBA/GBC sharing `packages/ui/src/canvas/WorldSurface.tsx`).
-You work in this worktree only. Plan: `docs/superpowers/plans/2026-10-28-pokemap-plan-13-warp-popups.md`, section
+You work in this worktree only. Plan: `docs/superpowers/plans/archive/plan-13-warp-popups.md`, section
 "Task 3" (read it whole; it is binding). Spec: `docs/superpowers/specs/2026-10-28-pokemap-plan-13-warp-popups-design.md`
 items 6 and 10.
 

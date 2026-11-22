@@ -15,7 +15,7 @@
 - NEW `packages/ui/src/components/mapView.ts`
 - `packages/ui/src/components/MapCanvas.tsx`, `packages/ui/src/gbc/GbcMapCanvas.tsx`, `packages/ui/src/styles.css`
 - `packages/ui/test/MapCanvas.test.tsx` (+90, additions only; adds `StrictMode` + `mapView` imports), `packages/ui/test/styles.test.ts` (+9)
-- `docs/superpowers/plans/2026-09-23-pokemap-followups-remaining.md`
+- `docs/superpowers/plans/plan-h-hardening.md`
 
 ## Design (MapCanvas)
 - `ownView` state; `view = controlledView ?? ownView`; `const { zoom, pan } = view` kept for readers.

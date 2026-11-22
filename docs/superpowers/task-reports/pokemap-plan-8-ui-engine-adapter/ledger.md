@@ -1,4 +1,4 @@
-# SDD ledger — plan: docs/superpowers/plans/2026-10-12-pokemap-plan-8-ui-engine-adapter.md
+# SDD ledger — plan: docs/superpowers/plans/archive/plan-08-ui-engine-adapter.md
 
 Worktree: scratchpad `p8` (session 74282ac3), branch `plan-8-ui-engine-adapter` from master `3f9f8ce`. Main checkout stays on `issues-5-6-warp-popups` with its uncommitted work untouched.
 Spec: none separate (plan says so); design rationale = Plan 7 audit `_archive/task-5b-claude-audit-coordinator.md`. Rulings are provisional against the plan text.

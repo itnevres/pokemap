@@ -1,6 +1,6 @@
 # Plan 8 Task 2: executed spec (shared world context mode)
 
-Plan: `docs/superpowers/plans/2026-10-12-pokemap-plan-8-ui-engine-adapter.md`, section "Task 2". The plan's interface block is binding in intent; where it disagrees with the real code, the rulings below adapt it (R1). Base: `dc33490` on `plan-8-ui-engine-adapter`.
+Plan: `docs/superpowers/plans/archive/plan-08-ui-engine-adapter.md`, section "Task 2". The plan's interface block is binding in intent; where it disagrees with the real code, the rulings below adapt it (R1). Base: `dc33490` on `plan-8-ui-engine-adapter`.
 
 ## Anchors (at `dc33490`)
 

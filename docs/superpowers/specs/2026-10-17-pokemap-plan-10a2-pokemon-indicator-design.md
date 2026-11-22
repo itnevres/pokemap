@@ -1,7 +1,7 @@
 # Plan 10a2 design: Pokémon Indicator (rename + GBC port + species edit)
 
 Written 2026-10-17 from master `48ac476`, after a brainstorm with the user. Roadmap: Plan 10 split and D2 amended
-(2026-10-16) in `plans/2026-10-14-pokemap-roadmap-unified-ui.md`. Branch `plan-10a2-pokemon-indicator`. Builds next to
+(2026-10-16) in `plans/background/roadmap-unified-ui.md`. Branch `plan-10a2-pokemon-indicator`. Builds next to
 the Sign tool (Plan 10a spec `specs/2026-10-16-pokemap-plan-10a-switch-and-signs-design.md`, S1-S11).
 
 ## Intent

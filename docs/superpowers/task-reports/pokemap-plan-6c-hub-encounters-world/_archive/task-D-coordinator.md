@@ -1,6 +1,6 @@
 # Phase D coordinator ledger
 
-Plan: docs/superpowers/plans/2026-09-28-pokemap-plan-6c-hub-encounters-world.md
+Plan: docs/superpowers/plans/archive/plan-06c-hub-encounters-world.md
 
 D1 complete: implementation/fixes 15b8368, 79685e0; independent reviews approved; coordinator surviving mutations SR-M1-PREFIT, SR-M2-WORLD-X, SR-M3-DROP-X, SR-M4-NO-SHIFT-COMMIT killed on final fix; detailed records archived.
 
