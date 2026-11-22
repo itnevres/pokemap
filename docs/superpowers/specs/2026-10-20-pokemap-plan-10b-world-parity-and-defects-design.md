@@ -1,6 +1,6 @@
 # Plan 10b: world parity, Duplicate, and the defects banner (design)
 
-Written 2026-10-20 from `master` `63bd844`. Roadmap: `plans/2026-10-14-pokemap-roadmap-unified-ui.md`, Plan 10, split
+Written 2026-10-20 from `master` `63bd844`. Roadmap: `plans/background/roadmap-unified-ui.md`, Plan 10, split
 "10b = D3 + F2, D6, D8". Decisions D1-D18 are binding and are not re-opened here.
 
 ## Intent

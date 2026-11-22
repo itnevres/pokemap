@@ -2,7 +2,7 @@
 
 Repo: C:\Programming Projects\PokeMap, branch plan-12-canvas-core, uncommitted working-tree changes. Read only; edit nothing except your output file.
 
-Task (plan `docs/superpowers/plans/2026-10-24-pokemap-plan-12a-canvas-foundation-map-surface.md`, "Task 7"): DESIGN.md "Shared modules" Plan 12 table; measurement per spec Goal 5; mutation table from Tasks 1-6; family-branch check of `packages/ui/src/canvas`.
+Task (plan `docs/superpowers/plans/archive/plan-12a-canvas-foundation-map-surface.md`, "Task 7"): DESIGN.md "Shared modules" Plan 12 table; measurement per spec Goal 5; mutation table from Tasks 1-6; family-branch check of `packages/ui/src/canvas`.
 
 Review:
 1. `git diff -- packages/ui/DESIGN.md`. Every row accurate against the code (`packages/ui/src/canvas/*`, `shared/MapStatusStrip.tsx`, `gba/mapSurface.tsx`, `gbc/mapSurface.tsx`, wrappers `components/MapCanvas.tsx`, `gbc/GbcMapCanvas.tsx`)? Consumers right (grep imports)? Ruling citations (P12-4a/b/g/h/k/l, P12-8) match the spec `docs/superpowers/specs/2026-10-24-pokemap-plan-12-shared-canvas-core-design.md`? Repointed Plan 11 rows correct?

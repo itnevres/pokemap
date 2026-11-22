@@ -21,7 +21,7 @@ None.
    **Change:** define toggle generations, ownership of pending state, and reconciliation after all outstanding writes settle. Specify older-failure/newer-pending, latest-failure/older-success, reverse completion, and failed final GET outcomes. Mutation tests must cover failures and the interval after POST completion, not just two successful toggles.
 
 5. **E10’s listed run crosses the protected draw-path boundary.**  
-   Evidence: spec `:60` lists GBA `1432–1439` / GBC `958–965`; those ranges include `drawDiamond`, canvas styling, and `fillText` inside redraw effects (`packages/ui/src/components/WorldCanvas.tsx:1434`; `packages/ui/src/gbc/GbcWorldCanvas.tsx:960`). They omit the x-coordinate calculation and `BADGE_SIZE` declarations (`WorldCanvas.tsx:1431`, `:46`; `GbcWorldCanvas.tsx:957`, `:141`). Binding P11-2 leaves redraw effects in place (`docs/superpowers/plans/2026-10-14-pokemap-roadmap-unified-ui.md:132`).  
+   Evidence: spec `:60` lists GBA `1432–1439` / GBC `958–965`; those ranges include `drawDiamond`, canvas styling, and `fillText` inside redraw effects (`packages/ui/src/components/WorldCanvas.tsx:1434`; `packages/ui/src/gbc/GbcWorldCanvas.tsx:960`). They omit the x-coordinate calculation and `BADGE_SIZE` declarations (`WorldCanvas.tsx:1431`, `:46`; `GbcWorldCanvas.tsx:957`, `:141`). Binding P11-2 leaves redraw effects in place (`docs/superpowers/plans/background/roadmap-unified-ui.md:132`).  
    **Change:** explicitly extract only the constant and pure centre calculation; leave drawing, badge iteration, filtering, and hit-target recording in each canvas. Likewise limit E9 to small-image construction, excluding the composite-version bump.
 
 6. **F11 contradicts the unconditional DOM anti-goal.**  

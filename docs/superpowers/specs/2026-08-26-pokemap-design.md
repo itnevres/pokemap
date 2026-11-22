@@ -99,7 +99,7 @@ This single rule is what makes agent rendering and UI rendering **the same code 
 
 ### 4.2 Development vs. shipping
 
-Developed and tested as a web app plus a local Node server. Shipped as an Electron desktop app (Plan 4). Because `server` is a thin shim over `core`, the Electron wrap is configuration, not a rewrite.
+Developed and tested as a web app plus a local Node server. Started by a one-double-click launcher (Plan 4); an Electron desktop app comes later (D32). Because `server` is a thin shim over `core`, the Electron wrap is configuration, not a rewrite.
 
 ---
 
@@ -224,7 +224,7 @@ This is simultaneously the portability proof and the safety proof. A regression 
 - **Refuse to save** a block whose metatile id falls outside its tileset's real range for that layout's split — the `check_metatile_range.py` invariant, enforced at write time rather than discovered at build time.
 - Border dimensions always honoured from `layouts.json`; no `use_custom_border_size` equivalent exists.
 
-Opt-in git integration (refuse to save into a dirty tree; auto-commit each save) is deferred to Plan 4 as a setting, default off.
+PokeMap never relies on git (D33): no product feature requires git or a git repository.
 
 ---
 
@@ -377,15 +377,16 @@ All UI work invokes the `frontend-design` and `ui-ux-pro-max` skills. This is wr
 | **0** | Overarching roadmap — repo conventions, package layout, invariants binding all plans |
 | **1** | `core` loaders, per-layout renderer, `cli`, map list, single-map view, stitched world, encounter atlas |
 | **2** | Painting, collision/elevation, event editing, wild sign authoring — the first write path |
-| **3** | Connections/headers/wild-encounter editors, tileset editor, region map editor |
-| **4** | Electron packaging, MCP server, opt-in git integration |
-| **5** | Future work, unmapped: poryscript, prefabs, day/night palette preview, `.pla` lights |
+| **3** | Map header and wild encounter editors, tile pixel and palette editing, the FireRed attribute fields, layout resize and delete (D22, D27). Connections and new maps are Plan 14C; the region map is Plans 15a and 15b. |
+| **4** | One-double-click launcher, MCP server, documentation, performance pass (D32). The Electron app and its installer come later; no git integration (D33). |
+| **5** | Future work: scripts linked out to the user's editor, a day/night palette preview with the events and encounters that change with the time (D28), `.pla` lights. Prefabs are Plan 14A (D22). |
+| **6 onward, H** | The GBC family and every later plan, in execution order: [`plans/README.md`](../plans/README.md). |
 
 ---
 
 ## 15. Out of scope
 
-Deliberately excluded, each recorded in Plan 5 rather than forgotten: poryscript support, prefabs, day/night palette preview (`SWAP_PAL`, `((x+9)%16).pal`), `.pla` lights, ROM building, emulator integration, multi-user editing.
+Deliberately excluded, each recorded in Plan 5 rather than forgotten: poryscript support, ROM building, emulator integration, multi-user editing. The day/night palette preview (`SWAP_PAL`, `((x+9)%16).pal`) and `.pla` lights are Plan 5 sections 3 and 4; prefabs are Plan 14A.
 
 ---
 

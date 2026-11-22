@@ -1,6 +1,6 @@
 # Plan 8 Task 3: executed spec (shared app-level context controller, M5)
 
-Plan: `docs/superpowers/plans/2026-10-12-pokemap-plan-8-ui-engine-adapter.md`, section "Task 3". The plan's interface is binding in intent; R1 adapts it to the real code. Base: the branch HEAD when you start (record it in the report).
+Plan: `docs/superpowers/plans/archive/plan-08-ui-engine-adapter.md`, section "Task 3". The plan's interface is binding in intent; R1 adapts it to the real code. Base: the branch HEAD when you start (record it in the report).
 
 ## Anchors (at `722d90e`)
 

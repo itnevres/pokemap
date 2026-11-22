@@ -4,7 +4,7 @@ You are the implementer. Work only in this worktree. Do not run vitest, npm, or 
 
 ## Read first (in this order)
 
-1. `docs/superpowers/plans/2026-10-26-pokemap-plan-12b-world-surface.md`: Global Constraints, Review Focus, and **Task 7** (your spec). Task 6's paragraph explains the surface you plug into.
+1. `docs/superpowers/plans/archive/plan-12b-world-surface.md`: Global Constraints, Review Focus, and **Task 7** (your spec). Task 6's paragraph explains the surface you plug into.
 2. `docs/superpowers/specs/2026-10-24-pokemap-plan-12-shared-canvas-core-design.md`: rulings P12-3, P12-4a, e, i, j, m, q, t, u, P12-5, P12-6, P12-7, and "What stays per family".
 3. `docs/superpowers/task-reports/pokemap-plan-12b-world-surface/_archive/task-6-impl-notes.md`: every adapter field Task 6 added, the family differences kept as adapter facts (GBC is "the block-based canvas": `saveErrorPolicy: "per-map"`, `pruneSelectionOnFilter: true`, guarded `dropSize`, `modifiedDoubleClick`, `overlayOrder` warps/connections/lens/spotlight/selection/jump/marquee, `toolbarAfterEncounter`, no `wrapToasts`, no `draggingMapClass`, `unresolvedWarpError` where GBC had one).
 4. `packages/ui/src/canvas/WorldSurface.tsx`, `canvas/worldSurfaceAdapter.ts` (the contract), and `test/canvas/WorldSurface*.test.tsx` (fake adapters showing how fields are used).

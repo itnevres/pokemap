@@ -10,7 +10,7 @@ Sample tests only to judge whether a risky path is covered.
 
 Read for requirements:
 1. Spec `docs/superpowers/specs/2026-11-08-pokemap-plan-14-2-block-editor-design.md` (binding).
-2. Plan `docs/superpowers/plans/2026-11-10-pokemap-plan-14-2-block-editor.md`, especially "Rulings addendum (2026-11-15)".
+2. Plan `docs/superpowers/plans/archive/plan-14-2-block-editor.md`, especially "Rulings addendum (2026-11-15)".
 3. Ledger rulings: `docs/superpowers/task-reports/pokemap-plan-14-2-block-editor/ledger.md` (grep `ruling`, `Ruling`,
    `S1`-`S5`, `D19`). Rulings there override the spec where they conflict.
 4. `packages/ui/DESIGN.md` binds UI changes.

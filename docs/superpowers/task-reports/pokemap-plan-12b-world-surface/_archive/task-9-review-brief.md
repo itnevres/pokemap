@@ -3,7 +3,7 @@ Plan 12b Task 9 review (Medium, combined spec + quality). Read-only: run no vite
 Repo: C:\Programming Projects\PokeMap, branch plan-12b-world-surface. Diff under review: `git diff 9e29a87..dd87f7f`.
 
 Inputs:
-- Plan: `docs/superpowers/plans/2026-10-26-pokemap-plan-12b-world-surface.md`, section "Task 9" (line ~171) and Global Constraints.
+- Plan: `docs/superpowers/plans/archive/plan-12b-world-surface.md`, section "Task 9" (line ~171) and Global Constraints.
 - Conductor's report: `docs/superpowers/task-reports/pokemap-plan-12b-world-surface/task-9-report.md` (measurement, rulings, mutation table, deletions).
 - Spec: `docs/superpowers/specs/2026-10-24-pokemap-plan-12-shared-canvas-core-design.md` (Plan 12b rulings).
 

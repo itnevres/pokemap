@@ -2,7 +2,7 @@
 
 Repo: PokeMap, a React 19 + TypeScript map editor (GBA and GBC families share one shell, `shell/FamilyApp.tsx`). You
 work in this git worktree only. Binding docs (read first, whole sections):
-- Plan `docs/superpowers/plans/2026-10-28-pokemap-plan-13-warp-popups.md`: "Review Focus" 1-4 and "Task 4"
+- Plan `docs/superpowers/plans/archive/plan-13-warp-popups.md`: "Review Focus" 1-4 and "Task 4"
   (Interfaces and Step 1 test list are the contract).
 - Spec `docs/superpowers/specs/2026-10-28-pokemap-plan-13-warp-popups-design.md`: rulings P13-1, P13-2; items 1-7.
 - Ledger ruling (`docs/superpowers/task-reports/pokemap-plan-13-warp-popups/ledger.md`, "Preflight scan"): Task 4 tests

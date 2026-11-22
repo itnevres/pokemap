@@ -2,7 +2,7 @@
 
 Core additions, server family branch, `/api/project`, GBC refusals, `serve.ts --gbc`.
 
-This task was re-granularised against the code at `plan-6b-gbc-app-layer` HEAD. The plan is `docs/superpowers/plans/2026-09-25-pokemap-plan-6b-gbc-app-layer.md`; read its "Resolved design questions" section first. The plan review is `plan-review.md` in this directory.
+This task was re-granularised against the code at `plan-6b-gbc-app-layer` HEAD. The plan is `docs/superpowers/plans/archive/plan-06b-gbc-app-layer.md`; read its "Resolved design questions" section first. The plan review is `plan-review.md` in this directory.
 
 Task 1b (the groups/map/render/metatile routes) comes next. **Don't build any of it here.**
 

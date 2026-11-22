@@ -16,8 +16,8 @@ Pre-existing changes were present in `.claude/settings.json`, RESUME, the follow
 
 - [Project workflow](../AGENTS.md), including its delegate chain and risk-based review rules.
 - [Current status](superpowers/RESUME.md) and [lessons](superpowers/LESSONS.md).
-- [Follow-ups / roadmap Plan H](superpowers/plans/2026-09-23-pokemap-followups-remaining.md), especially Task G.
-- [Active Plan 14.2](superpowers/plans/2026-11-10-pokemap-plan-14-2-block-editor.md) and its [ledger](superpowers/task-reports/pokemap-plan-14-2-block-editor/ledger.md).
+- [Follow-ups / roadmap Plan H](superpowers/plans/plan-h-hardening.md), especially Task G.
+- [Active Plan 14.2](superpowers/plans/archive/plan-14-2-block-editor.md) and its [ledger](superpowers/task-reports/pokemap-plan-14-2-block-editor/ledger.md).
 
 RESUME currently places Plan H after Plan 14.2 merges. Finding 1 overlaps Task G, already classified High and recorded as suspected pending reproduction. Reconcile evidence there rather than creating a duplicate task or promoting it to a runtime-confirmed defect. Findings 2 and 3 also need a backlog overlap check before scheduling.
 

@@ -26,7 +26,7 @@ location and duplicated fetch/guard plumbing.
    lives at `packages/ui/src/hooks/useProjectInfo.ts` (top-level, alongside
    `useMapGroups.ts`/`useMapLayout.ts`), while `useGbcGroups.ts` lives flat at
    `packages/ui/src/gbc/useGbcGroups.ts`. The plan's own file-structure table
-   (`docs/superpowers/plans/2026-09-25-pokemap-plan-6b-gbc-app-layer.md:167`)
+   (`docs/superpowers/plans/archive/plan-06b-gbc-app-layer.md:167`)
    puts *all four* — `useProjectInfo`, `useGbcMap`, `useGbcWorld`,
    `useGbcCoverage` — under a third location, `packages/ui/src/gbc/hooks/`.
    If Task 4 follows the plan table literally for its two new hooks, the repo
@@ -44,7 +44,7 @@ location and duplicated fetch/guard plumbing.
    (and its test alongside) as a first, mechanical step, before adding the
    next two hooks in the same directory.
    Files: `packages/ui/src/gbc/useGbcGroups.ts` (whole file, wrong directory);
-   `docs/superpowers/plans/2026-09-25-pokemap-plan-6b-gbc-app-layer.md:167`.
+   `docs/superpowers/plans/archive/plan-06b-gbc-app-layer.md:167`.
 
 2. **`describeReceived` is duplicated verbatim between the two new hooks**,
    `packages/ui/src/hooks/useProjectInfo.ts:13-21` and

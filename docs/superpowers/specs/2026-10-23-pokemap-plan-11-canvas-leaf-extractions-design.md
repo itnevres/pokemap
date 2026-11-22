@@ -1,6 +1,6 @@
 # Plan 11: canvas leaf extractions (design)
 
-Written 2026-10-23 from `master` `fb78949`, on branch `plan-11-canvas-leaf`. Roadmap: `plans/2026-10-14-pokemap-roadmap-unified-ui.md`, "Plan 11: canvas leaf extractions", brainstorming rulings P11-1 to P11-4. Decisions D1-D18 are binding and are not re-opened here. **Tier: High** (P11-3 brings in async-ordering fixes).
+Written 2026-10-23 from `master` `fb78949`, on branch `plan-11-canvas-leaf`. Roadmap: `plans/background/roadmap-unified-ui.md`, "Plan 11: canvas leaf extractions", brainstorming rulings P11-1 to P11-4. Decisions D1-D18 are binding and are not re-opened here. **Tier: High** (P11-3 brings in async-ordering fixes).
 
 ## Intent
 

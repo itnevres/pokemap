@@ -2,7 +2,7 @@
 
 UI family bootstrap and the GBC shell.
 
-Read the plan first, `docs/superpowers/plans/2026-09-25-pokemap-plan-6b-gbc-app-layer.md`: Q2 (a `Root.tsx` wrapping an untouched `App`), Q3 (app-level time of day), and the Task 3 row.
+Read the plan first, `docs/superpowers/plans/archive/plan-06b-gbc-app-layer.md`: Q2 (a `Root.tsx` wrapping an untouched `App`), Q3 (app-level time of day), and the Task 3 row.
 
 The server side is done:
 - `GET /api/project` returns `{ family, root }`;

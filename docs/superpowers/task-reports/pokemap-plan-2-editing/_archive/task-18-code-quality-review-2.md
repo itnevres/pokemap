@@ -61,7 +61,7 @@ Targeted re-review of the one Important issue (I1 in the prior review) from
 5. **Commit scope clean.** `git show --stat ead9a6c` touches exactly
    `packages/cli/src/writeCommands.ts` (+4/-2 net, 2 lines each way) and
    `packages/cli/test/writeCommands.test.ts` (+36). The modified plan doc
-   (`docs/superpowers/plans/2026-08-26-pokemap-plan-2-editing.md`) and the untracked
+   (`docs/superpowers/plans/archive/plan-02-editing.md`) and the untracked
    `docs/superpowers/task-reports/` directory are confirmed absent from this commit (visible only
    as separate working-tree state in `git status`).
 

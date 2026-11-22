@@ -4,7 +4,7 @@ You are the implementer. Work only in this worktree. Do not run vitest, npm, or 
 
 ## Read first (in this order)
 
-1. `docs/superpowers/plans/2026-10-26-pokemap-plan-12b-world-surface.md`: Global Constraints, Review Focus, and **Task 6** (the behaviour paragraph and the Step 1 test list are your spec; Step 3's mutation matrix tells you what each test must catch).
+1. `docs/superpowers/plans/archive/plan-12b-world-surface.md`: Global Constraints, Review Focus, and **Task 6** (the behaviour paragraph and the Step 1 test list are your spec; Step 3's mutation matrix tells you what each test must catch).
 2. `docs/superpowers/specs/2026-10-24-pokemap-plan-12-shared-canvas-core-design.md`: rulings P12-3, P12-4a, c, d, i, n, o, p, q, r, s, t, u, P12-6, P12-7, and "What stays per family".
 3. `docs/superpowers/task-reports/pokemap-plan-12b-world-surface/ledger.md` sections 1-2 (where each behaviour lives in both canvases today).
 4. The Task 5 code you extend: `packages/ui/src/canvas/WorldSurface.tsx`, `canvas/worldSurfaceAdapter.ts`, `test/canvas/WorldSurface.test.tsx` (fixture and fake adapter style to copy).

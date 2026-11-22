@@ -2,7 +2,7 @@
 
 Branch `plan-6c-hub-encounters-world`. Base: the HEAD at dispatch. Gate baseline: `npm test` gives 2,042 pass / 2 fail. Both failures are the known `packages/server/test/world.test.ts` pair, caused by the GBA subject's persisted `dungeonAutoLayout:false`, so don't chase them.
 
-This retires the follow-ups plan's Task D1 and D2 (`docs/superpowers/plans/2026-09-23-pokemap-followups-remaining.md`, "Task D"). `packages/ui/src/gbc/GbcMapCanvas.tsx` is the proven reference implementation.
+This retires the follow-ups plan's Task D1 and D2 (`docs/superpowers/plans/plan-h-hardening.md`, "Task D"). `packages/ui/src/gbc/GbcMapCanvas.tsx` is the proven reference implementation.
 
 ## Grounding (measured at dispatch)
 
@@ -49,7 +49,7 @@ This retires the follow-ups plan's Task D1 and D2 (`docs/superpowers/plans/2026-
    - Move the three `.gbc-map-canvas` rules onto the shared `.map-canvas` selectors: `.map-canvas` gets `min-width: 0`, plus `.map-canvas .map-canvas__status { ... }` and `.map-canvas .map-canvas__hover { ... }` with the same declarations.
    - Then delete the now-redundant `.gbc-map-canvas` rules and keep their explanatory comments. GBC renders identically, because its root also carries `map-canvas`.
    - Add a `styles.test.ts` pin that parses the sheet and asserts that `.map-canvas` declares `min-width: 0`. Follow the file's existing parse helpers.
-5. **Docs.** In `docs/superpowers/plans/2026-09-23-pokemap-followups-remaining.md` Task D, mark D1 and D2 **DONE in Plan 6c E1 (`<sha>`)**, like D3's existing DONE line.
+5. **Docs.** In `docs/superpowers/plans/plan-h-hardening.md` Task D, mark D1 and D2 **DONE in Plan 6c E1 (`<sha>`)**, like D3's existing DONE line.
 6. **Nested-updater check.** Re-run the follow-up's check for nested setters in `WorldCanvas.tsx` (`grep -n "setZoom((" packages/ui/src/components/WorldCanvas.tsx`, and look for any setter inside a setter's updater). Report the result; don't change WorldCanvas.
 
 ## Tests (test first; record each red run in your report)

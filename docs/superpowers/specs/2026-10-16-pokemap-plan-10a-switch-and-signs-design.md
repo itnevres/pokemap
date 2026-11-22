@@ -1,7 +1,7 @@
 # Plan 10a design: save-or-discard on map switch (D1) and the Sign tool (D2 amended)
 
 Written 2026-10-16 from master `18b7d7c`, after a brainstorm with the user. Roadmap: Plan 10 in
-`plans/2026-10-14-pokemap-roadmap-unified-ui.md`. Branch `plan-10a-switch-and-signs`.
+`plans/background/roadmap-unified-ui.md`. Branch `plan-10a-switch-and-signs`.
 
 ## Plan 10 split (user, 2026-10-16)
 

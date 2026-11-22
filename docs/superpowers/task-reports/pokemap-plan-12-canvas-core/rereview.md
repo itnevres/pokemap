@@ -1,6 +1,6 @@
 All nine findings are **resolved in the revised design/plan**.
 
-References: [Spec](</C:/Programming Projects/PokeMap/docs/superpowers/specs/2026-10-24-pokemap-plan-12-shared-canvas-core-design.md>) (S), [Plan](</C:/Programming Projects/PokeMap/docs/superpowers/plans/2026-10-24-pokemap-plan-12a-canvas-foundation-map-surface.md>) (P). Code paths below are relative to `packages/ui/`.
+References: [Spec](</C:/Programming Projects/PokeMap/docs/superpowers/specs/2026-10-24-pokemap-plan-12-shared-canvas-core-design.md>) (S), [Plan](</C:/Programming Projects/PokeMap/docs/superpowers/plans/archive/plan-12a-canvas-foundation-map-surface.md>) (P). Code paths below are relative to `packages/ui/`.
 
 | Finding | Status | Evidence |
 |---|---|---|

@@ -2,7 +2,7 @@
 
 Repo: PokeMap, React 19 + TypeScript map editor; GBA and GBC families share one shell (`shell/FamilyApp.tsx`) and one
 world canvas core (`canvas/WorldSurface.tsx`). You work in this git worktree only. Binding docs (read these sections):
-- Plan `docs/superpowers/plans/2026-10-28-pokemap-plan-13-warp-popups.md`: "Global Constraints", "Review Focus", "Task 5"
+- Plan `docs/superpowers/plans/archive/plan-13-warp-popups.md`: "Global Constraints", "Review Focus", "Task 5"
   (Files, Interfaces, Step 1 are the contract).
 - Spec `docs/superpowers/specs/2026-10-28-pokemap-plan-13-warp-popups-design.md`: items 1-2 and 10.
 Task 4 already built the popup: `ShellSlots.openWarpDestination(name)` (shell/adapter.ts), `useWarpPopup`, `WarpPopup`,

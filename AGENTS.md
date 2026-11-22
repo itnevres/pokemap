@@ -33,5 +33,5 @@ State the tier and give a one-line reason in the plan or the task ledger.
 ## Planning interviews
 
 - Interview the user only about unresolved decisions. Use `superpowers:brainstorming`. Do not re-ask settled requirements.
-- Settled decisions are binding: roadmap decisions D1-D16 in `docs/superpowers/plans/2026-10-14-pokemap-roadmap-unified-ui.md`, rulings in each spec, and the status in `docs/superpowers/RESUME.md`.
-- Record new binding decisions and acceptance criteria in those documents: the spec for rulings and criteria, the roadmap for cross-plan decisions, and RESUME for status. Do not create new files for them.
+- Settled decisions are binding: decisions D1-D35 in `docs/superpowers/plans/decisions.md`, rulings in each spec, and the status in `docs/superpowers/RESUME.md`. The plan index, in execution order, is `docs/superpowers/plans/README.md`.
+- Record new binding decisions and acceptance criteria in those documents: the spec for rulings and criteria, `plans/decisions.md` for cross-plan decisions (and the plan's own file for its scope), and RESUME for status. Do not create new files for them.

@@ -1,6 +1,6 @@
 # Task A1 executed spec: server hub, handler split, browse/open, recent list
 
-Plan: `docs/superpowers/plans/2026-09-28-pokemap-plan-6c-hub-encounters-world.md` §A1. Decisions U1-U4
+Plan: `docs/superpowers/plans/archive/plan-06c-hub-encounters-world.md` §A1. Decisions U1-U4
 binding (none bites A1 directly; A1 is server-only). Baseline: 1,679 pass / 0 fail, typecheck clean,
 `vite build` passes (`baseline.md`).
 
