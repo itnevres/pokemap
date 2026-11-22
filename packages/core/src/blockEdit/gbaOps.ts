@@ -16,7 +16,7 @@ import { parseBlocks } from "../load/blocks.js";
 import { canonicalTilesetPath } from "./canonicalTilesetPath.js";
 import { assertNotTripleLayer, patchGbaAttribute, patchGbaMetatile } from "./gbaPatch.js";
 import { blockEditRevision } from "./gbcOps.js";
-import { gbaBlockUsage, gbaConsumingLayouts } from "./usage.js";
+import { gbaBlockUsage, gbaConsumingLayouts, gbaMapsByGridFile, gbaMapsByLayout } from "./usage.js";
 import { BlockEditRefusal, type BlockEditPlan, type FileOverlay, type GridIds, type StagedGrids } from "./types.js";
 
 export interface GbaBlockDraft { entries: TileEntry[]; behavior: number; layerType: number }
@@ -64,31 +64,6 @@ function effectiveBytes(proj: Project, staged: FileOverlay, path: string): Buffe
   } catch (error) {
     return bad(`${key}: ${error instanceof Error ? error.message : String(error)}`);
   }
-}
-
-/** Blockdata file -> every map backed by it, sorted (R3's candidate set). */
-function mapsByGridFile(proj: Project): Map<string, string[]> {
-  const out = new Map<string, string[]>();
-  for (const name of proj.mapNames()) {
-    const file = proj.layoutForMap(name).blockdataFilepath;
-    const list = out.get(file) ?? [];
-    list.push(name);
-    out.set(file, list);
-  }
-  for (const list of out.values()) list.sort(compare);
-  return out;
-}
-
-function mapsByLayout(proj: Project): Map<string, string[]> {
-  const out = new Map<string, string[]>();
-  for (const name of proj.mapNames()) {
-    const layout = proj.layoutForMap(name).id;
-    const list = out.get(layout) ?? [];
-    list.push(name);
-    out.set(layout, list);
-  }
-  for (const list of out.values()) list.sort(compare);
-  return out;
 }
 
 function cells(proj: Project, path: string, cache: Map<string, readonly number[]>): readonly number[] {
@@ -257,6 +232,7 @@ export function planGbaBlockEdit(proj: Project, req: GbaBlockEditRequest, staged
     throw new BlockEditRefusal(
       "BAD_VALUE",
       `${req.map}: ${error instanceof Error ? error.message : String(error)}`,
+      { cause: error },
     );
   }
 }
@@ -325,7 +301,7 @@ function planGbaBlockEditInner(proj: Project, req: GbaBlockEditRequest, staged: 
     }
   }
 
-  const byFile = mapsByGridFile(proj);
+  const byFile = gbaMapsByGridFile(proj);
   if (req.mode === "saveAsNew" && req.from === "map") {
     const sharing = byFile.get(layout.blockdataFilepath) ?? [];
     if (sharing.length >= 2) {
@@ -360,7 +336,7 @@ function planGbaBlockEditInner(proj: Project, req: GbaBlockEditRequest, staged: 
     .sort((a, b) => compare(a.path, b.path));
 
   const confirm = req.mode !== "saveAsNew" && edits.length > 0
-    && usedElsewhere(proj, req.map, local, grids, uses, byFile, mapsByLayout(proj), cellsCache);
+    && usedElsewhere(proj, req.map, local, grids, uses, byFile, gbaMapsByLayout(proj), cellsCache);
 
   const revision = blockEditRevision(
     new Map([[metaPath, metaBuf], [attrPath, attrBuf]]),

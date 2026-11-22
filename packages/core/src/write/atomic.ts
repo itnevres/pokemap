@@ -1,5 +1,6 @@
 import { existsSync, readFileSync, writeFileSync, renameSync, unlinkSync } from "node:fs";
 import { createHash, randomBytes } from "node:crypto";
+import { isAbsolute, relative, resolve, sep } from "node:path";
 
 export interface AtomicEntry {
   path: string;
@@ -22,9 +23,18 @@ const errorMessage = (error: unknown) => error instanceof Error ? error.message 
 /**
  * Stages and checks all bytes before swapping; on failure, restores swapped targets and cleans temps best effort.
  * A crash or another program writing between the check and rename is outside this guarantee.
+ * Every entry must lie inside `root`; otherwise it throws before any IO, so nothing is written (D25, S2).
  */
-export function writeFilesAtomically(entries: AtomicEntry[], io: AtomicIo = defaultIo): void {
+export function writeFilesAtomically(entries: AtomicEntry[], root: string, io: AtomicIo = defaultIo): void {
   if (entries.length === 0) return;
+
+  // S2 / D25: the one write choke point refuses anything outside the project before any IO.
+  for (const entry of entries) {
+    const rel = relative(resolve(root), resolve(entry.path));
+    if (rel === "" || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
+      throw new Error(`Refusing to write ${entry.path}: outside the project (${root})`);
+    }
+  }
 
   const ownedTemps = new Set<string>();
   const staged: { temp: string; entry: AtomicEntry }[] = [];

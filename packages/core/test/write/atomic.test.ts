@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync, renameSync, unlinkSync, existsSync, readFileSync, readdirSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync, renameSync, unlinkSync, existsSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { writeFilesAtomically, type AtomicEntry, type AtomicIo } from "../../src/write/atomic.js";
 
 describe("writeFilesAtomically", () => {
@@ -60,14 +60,14 @@ describe("writeFilesAtomically", () => {
     files[0].after = Buffer.from("one\r\ntwo\r\n");
     files[1].after = Buffer.from([0, 255, 128, 13, 10]);
     files[2].after = Buffer.from("no final newline");
-    writeFilesAtomically(files);
+    writeFilesAtomically(files, dir);
     for (const file of files) expect(readFileSync(file.path)).toEqual(file.after);
     expect(temps()).toEqual([]);
   });
 
   it("does no IO for an empty list", () => {
     const unexpected = () => { throw new Error("unexpected IO"); };
-    writeFilesAtomically([], {
+    writeFilesAtomically([], dir, {
       existsSync: unexpected, readFileSync: unexpected, writeFileSync: unexpected,
       renameSync: unexpected, unlinkSync: unexpected,
     });
@@ -79,7 +79,7 @@ describe("writeFilesAtomically", () => {
       it(`cleans up stage write ${nth} failure (partial=${partial}) without changing three targets`, () => {
         const files = entries();
         const { io, swapped } = failingIo("writeFileSync", nth, partial);
-        const error = message(() => writeFilesAtomically(files, io));
+        const error = message(() => writeFilesAtomically(files, dir, io));
         expect(error).toContain("injected write failure");
         expect(error).toContain(files[nth - 1]!.path);
         expect(error).not.toContain("temp not removed:");
@@ -106,7 +106,7 @@ describe("writeFilesAtomically", () => {
         }
         rename(from, to);
       };
-      const error = message(() => writeFilesAtomically(files, io));
+      const error = message(() => writeFilesAtomically(files, dir, io));
       expect(error).toContain("injected rename failure");
       expect(error).toContain(files[nth - 1]!.path);
       expect(swapped).toEqual(files.slice(0, nth - 1).map(file => file.path));
@@ -128,7 +128,7 @@ describe("writeFilesAtomically", () => {
       if (change === "deleted") unlinkSync(changed.path);
       else writeFileSync(changed.path, Buffer.from("outside edit"));
       const { io, swapped } = failingIo("renameSync", 99);
-      expect(() => writeFilesAtomically(files, io)).toThrow(
+      expect(() => writeFilesAtomically(files, dir, io)).toThrow(
         `${changed.path} changed on disk since the save was previewed; reopen Save to review`,
       );
       expect(swapped).toEqual([]);
@@ -144,7 +144,7 @@ describe("writeFilesAtomically", () => {
       const files = entries();
       const { io, swapped } = failingIo("renameSync", 99);
       io[method] = () => { throw new Error("check IO failure"); };
-      const error = message(() => writeFilesAtomically(files, io));
+      const error = message(() => writeFilesAtomically(files, dir, io));
       expect(error).toContain("check IO failure");
       expect(error).toContain(files[0].path);
       unchanged(files);
@@ -168,7 +168,7 @@ describe("writeFilesAtomically", () => {
       // The first call really throws EEXIST from the exclusive filesystem create.
       writeFileSync(path, data, options);
     };
-    expect(() => writeFilesAtomically(files, io)).toThrow("injected rename failure");
+    expect(() => writeFilesAtomically(files, dir, io)).toThrow("injected rename failure");
     expect(attempts).toBe(4);
     unchanged(files);
     expect(readFileSync(foreign)).toEqual(Buffer.from("foreign"));
@@ -180,7 +180,7 @@ describe("writeFilesAtomically", () => {
     const foreign = join(dir, "first.pokemap-tmp-9999-abcdef");
     writeFileSync(foreign, Buffer.from("foreign"));
     const { io } = failingIo("writeFileSync", 3, true);
-    expect(() => writeFilesAtomically(files, io)).toThrow("injected write failure");
+    expect(() => writeFilesAtomically(files, dir, io)).toThrow("injected write failure");
     unchanged(files);
     expect(readFileSync(foreign)).toEqual(Buffer.from("foreign"));
     expect(temps()).toEqual(["first.pokemap-tmp-9999-abcdef"]);
@@ -201,7 +201,7 @@ describe("writeFilesAtomically", () => {
       }
       unlinkSync(path);
     };
-    const error = message(() => writeFilesAtomically(files, io));
+    const error = message(() => writeFilesAtomically(files, dir, io));
     const restored = `restored: ${files[1].path}`;
     const notRestored = `not restored: ${files[0].path} (restore it from version control or your editor's copy)`;
     expect(error).toContain(restored);
@@ -226,7 +226,7 @@ describe("writeFilesAtomically", () => {
       if (path === files[0].path) throw new Error("delete restore failure");
       unlinkSync(path);
     };
-    const error = message(() => writeFilesAtomically(files, io));
+    const error = message(() => writeFilesAtomically(files, dir, io));
     expect(error).toContain(`not restored: ${files[0].path} (restore it from version control or your editor's copy)`);
     expect(error).toContain(`restored: ${files[1].path}`);
     expect(readFileSync(files[0].path)).toEqual(files[0].after);
@@ -243,12 +243,65 @@ describe("writeFilesAtomically", () => {
       if (unlinks.length === 1) throw new Error("cleanup failure");
       unlinkSync(path);
     };
-    const error = message(() => writeFilesAtomically(files, io));
+    const error = message(() => writeFilesAtomically(files, dir, io));
     expect(unlinks).toHaveLength(3);
     expect(unlinks.every(path => path.includes(".pokemap-tmp-"))).toBe(true);
     expect(error).toContain(`temp not removed: ${unlinks[0]} (delete it)`);
     expect(error.indexOf("temp not removed:")).toBeGreaterThan(error.indexOf("injected rename failure"));
     expect(temps()).toHaveLength(1);
     unchanged(files);
+  });
+
+  describe("root containment (S2)", () => {
+    const outsideDir = () => { const d = mkdtempSync(join(tmpdir(), "pokemap-atomic-out-")); return d; };
+
+    it("throws before any write when one entry is outside the root; every file is byte-identical", () => {
+      const out = outsideDir();
+      try {
+        const files = entries();
+        const stray: AtomicEntry = { path: join(out, "stray.bin"), before: null, after: Buffer.from("x") };
+        const error = message(() => writeFilesAtomically([...files, stray], dir));
+        expect(error).toContain("outside the project");
+        expect(error).toContain(stray.path);
+        unchanged(files);
+        expect(existsSync(stray.path)).toBe(false);
+        expect(temps()).toEqual([]);
+        expect(readdirSync(out)).toEqual([]);
+      } finally { rmSync(out, { recursive: true, force: true }); }
+    });
+
+    it("refuses a ../ climb out of the root, an entry that is the root itself, and a sibling that shares the root as a name prefix", () => {
+      const files = entries();
+      for (const path of [join(dir, "..", "pokemap-escape.bin"), dir, `${dir}-evil/x.bin`]) {
+        const error = message(() => writeFilesAtomically([...files, { path, before: null, after: Buffer.from("x") }], dir));
+        expect(error, path).toContain("outside the project");
+        unchanged(files);
+      }
+    });
+
+    it("accepts files in nested directories under the root", () => {
+      mkdirSync(join(dir, "a", "b"), { recursive: true });
+      const nested: AtomicEntry = { path: join(dir, "a", "b", "c.bin"), before: null, after: Buffer.from("nested") };
+      writeFilesAtomically([nested], dir);
+      expect(readFileSync(nested.path)).toEqual(nested.after);
+    });
+
+    // An io that throws on any call pins "before any IO": a guard moved into the staging loop would reach the io first.
+    const noIo = () => {
+      const unexpected = () => { throw new Error("unexpected IO"); };
+      return { existsSync: unexpected, readFileSync: unexpected, writeFileSync: unexpected, renameSync: unexpected, unlinkSync: unexpected } as AtomicIo;
+    };
+    const refuses = (path: string) => {
+      const entry: AtomicEntry = { path, before: null, after: Buffer.from("x") };
+      expect(() => writeFilesAtomically([entry], dir, noIo())).toThrow(/outside the project/);
+    };
+
+    it("refuses before any IO: the root's parent directory", () => { refuses(dirname(dir)); });
+    it("refuses before any IO: a climb out of the root", () => { refuses(join(dir, "..", "stray.bin")); });
+    it.runIf(process.platform === "win32")("refuses before any IO: a path on another drive", () => {
+      const other = dir[0]!.toUpperCase() === "Z" ? "Y" : "Z";
+      refuses(`${other}:\\stray.bin`);
+      refuses("\\\\host\\share\\stray.bin");
+    });
   });
 });
