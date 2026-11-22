@@ -1,12 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { createGbcBlockEditRoutes } from "./blockEditRoutes.js";
 import { syncTilesetOverlay, type OverlayState } from "./tilesetOverlay.js";
-import { statSync } from "node:fs";
-import { requireTilesetOwnership, refuseUnsavedBlockRefs } from "./blockEditOwnership.js";
+import { requireTilesetOwnership, refuseUnsavedBlockRefs, savedMetatileCount } from "./blockEditOwnership.js";
 import { checkTilesetBaselines } from "@pokemap/core/src/blockEdit/save.js";
 import { canonicalTilesetPath } from "@pokemap/core/src/blockEdit/canonicalTilesetPath.js";
 import { BlockEditRefusal } from "@pokemap/core/src/blockEdit/types.js";
-import { resolve } from "node:path";
 import type { createSymbolIndexCache } from "./projectSymbols.js";
 import { createGbcAddEventRoutes, eventFailure, type AddEventHooks } from "./addEventRoutes.js";
 import { findGbcIndicator, insertGbcIndicator, updateGbcIndicator } from "@pokemap/core/src/indicator/gbc.js";
@@ -214,7 +212,7 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void;
     const { width: w, height: h } = entry.session.layout;
     if (ids.length > 0) {
       const path = canonicalTilesetPath(proj.tileset(entry.session.map.tileset).metatilesPath);
-      const savedCount = Math.floor(statSync(resolve(proj.root, path)).size / 16);
+      const savedCount = savedMetatileCount(proj.root, path);
       refuseUnsavedBlockRefs(store.entries(), name, path, savedCount, ids);
     }
     entry.session.blocks = paint(entry.session.blocks, w, h);

@@ -1,11 +1,10 @@
 import { BodyTooLarge, decodeSegment, readBody, refuseOversize, sendJson } from "./http.js";
 import { createGbaBlockEditRoutes } from "./blockEditRoutes.js";
 import { syncTilesetOverlay, type OverlayState } from "./tilesetOverlay.js";
-import { requireTilesetOwnership, refuseUnsavedBlockRefs } from "./blockEditOwnership.js";
+import { requireTilesetOwnership, refuseUnsavedBlockRefs, savedMetatileCount } from "./blockEditOwnership.js";
 import { checkTilesetBaselines } from "@pokemap/core/src/blockEdit/save.js";
 import { canonicalTilesetPath } from "@pokemap/core/src/blockEdit/canonicalTilesetPath.js";
 import { BlockEditRefusal } from "@pokemap/core/src/blockEdit/types.js";
-import { resolve } from "node:path";
 import { createGbaAddEventRoutes, eventFailure, type AddEventHooks } from "./addEventRoutes.js";
 import { checkGbaMapDefects } from "@pokemap/core/src/defects/gba.js";
 import { createSymbolIndexCache } from "./projectSymbols.js";
@@ -14,7 +13,7 @@ import { parseMap } from "@pokemap/core/src/load/maps.js";
 import { findGbaSign, gbaSignScript, gbaSignText, nextGbaSignNumber, updateGbaSign } from "@pokemap/core/src/signs/gbaSign.js";
 import { formatMarker, signHash, type SignMode } from "@pokemap/core/src/signs/marker.js";
 import { effectiveGbaScripts, gbaSignLabels, gbaSignParagraphs, refreshGbaLinkedSigns, replaceGbaScripts } from "./signRefresh.js";
-import { readFileSync, statSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { createServer as createHttp, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { openProject, type Project } from "@pokemap/core/src/project.js";
 import { detectEngineFamily } from "@pokemap/core/src/family.js";
@@ -986,7 +985,7 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
               ] as const) {
                 if (localIds.length === 0) continue;
                 const path = canonicalTilesetPath(project.tilesetPaths(symbol).metatilesBin);
-                const savedCount = Math.floor(statSync(resolve(project.paths.root, path)).size / 16);
+                const savedCount = savedMetatileCount(project.paths.root, path);
                 refuseUnsavedBlockRefs(editSessions.entries(), name, path, savedCount, localIds);
               }
             };
