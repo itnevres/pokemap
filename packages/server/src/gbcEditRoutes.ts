@@ -54,8 +54,7 @@ import { planFingerprint, type AtomicEntry } from "@pokemap/core/src/write/atomi
 import { formatDiffJson } from "@pokemap/core/src/write/diff.js";
 import { createGbcEditSessionStore, gbcSnapshotOf, type GbcSessionEntry } from "./gbcEditSessions.js";
 import { snapshotCommand } from "./editSessions.js";
-import { decodeMapName } from "./gbcRoutes.js";
-import { readBody } from "./index.js";
+import { BodyTooLarge, decodeSegment, readBody } from "./http.js";
 
 type Send = (code: number, body: unknown) => void;
 type Obj = Record<string, unknown>;
@@ -486,7 +485,7 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void;
       }
       const suggestion = /^\/api\/indicator\/([^/]+)\/suggestions$/.exec(url.pathname);
       if (suggestion && req.method === "GET") {
-        const name = decodeMapName(suggestion[1]!);
+        const name = decodeSegment(suggestion[1]!);
         if (name === undefined || !mapNames.has(name)) { send(404, { error: "no such map" }); return true; }
         try {
           const occupied = store.has(name)
@@ -500,7 +499,7 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void;
       const m = /^\/api\/edit\/([^/]+)\/(.+)$/.exec(url.pathname);
       if (!m) { send(404, { error: "not found" }); return true; }
       const rawName = m[1]!;
-      const name = decodeMapName(rawName);
+      const name = decodeSegment(rawName);
       if (name === undefined) { send(400, { error: `malformed map name ${rawName}` }); return true; }
       if (!mapNames.has(name)) { send(404, { error: `no map ${name}` }); return true; }
       const route = routes[`${req.method} ${m[2]}`];
@@ -526,6 +525,7 @@ export function createGbcEditRoutes(proj: GbcProject, hooks: { onCommit(): void;
         return route.run(name, body);
       };
       run().then((r) => send(r.code, r.body)).catch((e: unknown) => {
+        if (e instanceof BodyTooLarge) return send(413, { error: "request body too large" });
         if (e instanceof BlockEditRefusal) return send(409, { error: `${name}: ${e.message}`, code: e.code });
         if (e instanceof BadRequest) return send(400, { error: e.message });
         console.error(e);

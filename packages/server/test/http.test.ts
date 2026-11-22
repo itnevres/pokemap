@@ -1,0 +1,149 @@
+import { createServer, request, type IncomingMessage, type RequestListener, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
+import { PassThrough } from "node:stream";
+import { afterEach, describe, expect, it } from "vitest";
+import { BodyTooLarge, MAX_BODY_BYTES, declaresOversizeBody, decodeSegment, isCrossOriginRequest, readBody, refuseOversize, sendJson } from "../src/http.js";
+
+let server: Server | undefined;
+async function listen(handler: RequestListener): Promise<number> {
+  server = createServer(handler);
+  await new Promise<void>((resolve) => server!.listen(0, "127.0.0.1", resolve));
+  return (server.address() as AddressInfo).port;
+}
+
+afterEach(async () => {
+  if (server) await new Promise<void>((resolve) => server!.close(() => resolve()));
+  server = undefined;
+});
+
+function post(port: number, chunks: string[], headers: Record<string, string> = {}) {
+  return new Promise<{ status: number; headers: IncomingMessage["headers"]; body: string }>((resolve, reject) => {
+    const req = request({ host: "127.0.0.1", port, method: "POST", headers }, (res) => {
+      let body = "";
+      res.setEncoding("utf8");
+      res.on("data", (chunk: string) => { body += chunk; });
+      res.on("end", () => resolve({ status: res.statusCode!, headers: res.headers, body }));
+      res.on("error", reject);
+    });
+    req.on("error", reject);
+    for (const chunk of chunks) req.write(chunk);
+    req.end();
+  });
+}
+
+describe("shared HTTP boundary (no corpus)", () => {
+  it("decodes valid segments and returns undefined for malformed escapes", () => {
+    expect(decodeSegment("New%42arkTown")).toBe("NewBarkTown");
+    expect(decodeSegment("%E0%A4%A")).toBeUndefined();
+  });
+
+  it("sendJson sets the status, JSON and nosniff headers, and serialized body", async () => {
+    const port = await listen((_req, res) => sendJson(res, 201, { ok: true }));
+    const response = await post(port, []);
+    expect(response.status).toBe(201);
+    expect(response.headers["content-type"]).toBe("application/json");
+    expect(response.headers["x-content-type-options"]).toBe("nosniff");
+    expect(response.body).toBe('{"ok":true}');
+  });
+
+  it("readBody returns a small UTF-8 request body", async () => {
+    const port = await listen((req, res) => {
+      void readBody(req).then((body) => sendJson(res, 200, { body }));
+    });
+    const response = await post(port, ["hello ", "世界"]);
+    expect(JSON.parse(response.body)).toEqual({ body: "hello 世界" });
+  });
+
+  it.each([
+    { chunks: ["1234", "5678"], bytes: 8, status: 200 },
+    { chunks: ["1234", "56789"], bytes: 9, status: 413 },
+    { chunks: ["€€€"], bytes: 9, status: 413 },
+  ])("readBody applies an 8-byte cap to a $bytes-byte chunked body ($status)", async ({ chunks, status }) => {
+    let caught: unknown;
+    let transferEncoding: string | undefined;
+    let contentLength: string | undefined;
+    const port = await listen((req, res) => {
+      transferEncoding = req.headers["transfer-encoding"];
+      contentLength = req.headers["content-length"];
+      void readBody(req, 8).then(
+        (body) => sendJson(res, 200, { body }),
+        (error: unknown) => { caught = error; sendJson(res, 413, { error: "request body too large" }); },
+      );
+    });
+    const response = await post(port, chunks, { "transfer-encoding": "chunked" });
+    expect(transferEncoding).toBe("chunked");
+    expect(contentLength).toBeUndefined();
+    expect(response.status).toBe(status);
+    if (status === 413) {
+      expect(caught).toBeInstanceOf(BodyTooLarge);
+      expect((caught as Error).name).toBe("BodyTooLarge");
+      expect(JSON.parse(response.body)).toEqual({ error: "request body too large" });
+    } else {
+      expect(caught).toBeUndefined();
+      expect(JSON.parse(response.body)).toEqual({ body: chunks.join("") });
+    }
+  });
+
+  it("readBody removes only its own listeners after exceeding the cap", async () => {
+    const stream = new PassThrough();
+    const external = () => {};
+    for (const event of ["data", "end", "error"]) stream.on(event, external);
+    const result = readBody(stream as unknown as IncomingMessage, 8);
+    const rejected = expect(result).rejects.toBeInstanceOf(BodyTooLarge);
+    stream.write(Buffer.from("1234"));
+    stream.write(Buffer.from("56789"));
+    await rejected;
+    for (const event of ["data", "end", "error"]) expect(stream.listeners(event)).toEqual([external]);
+    stream.end();
+  });
+
+  it.each([
+    [String(MAX_BODY_BYTES + 1), true],
+    [String(MAX_BODY_BYTES), false],
+    [undefined, false],
+    ["abc", false],
+    ["-5", false],
+  ])("declaresOversizeBody checks content-length %s", (length, expected) => {
+    const req = { headers: { "content-length": length } } as IncomingMessage;
+    expect(declaresOversizeBody(req)).toBe(expected);
+  });
+
+  it("refuseOversize answers 413 and closes without reading a declared oversized body", async () => {
+    let read = false;
+    let refused = false;
+    const port = await listen((req, res) => {
+      refused = refuseOversize(req, res);
+      if (refused) return;
+      read = true;
+      sendJson(res, 200, {});
+    });
+    const response = await post(port, [], { "content-length": String(MAX_BODY_BYTES + 1) });
+    expect(response.status).toBe(413);
+    expect(response.headers.connection).toBe("close");
+    expect(JSON.parse(response.body)).toEqual({ error: "request body too large" });
+    expect(refused).toBe(true);
+    expect(read).toBe(false);
+  });
+
+  it("refuseOversize leaves a small request available to its caller", async () => {
+    const port = await listen((req, res) => {
+      if (refuseOversize(req, res)) return;
+      void readBody(req).then((body) => sendJson(res, 200, { body }));
+    });
+    expect(JSON.parse((await post(port, ["ok"], { "content-length": "2" })).body)).toEqual({ body: "ok" });
+  });
+
+  it.each([
+    [{ origin: "http://evil.example", host: "127.0.0.1:5174" }, true],
+    [{ host: "evil.example" }, true],
+    [{ origin: "http://localhost:5173", host: "localhost:5174" }, false],
+    [{ host: "127.0.0.1:5174" }, false],
+    [{ origin: "http://[::1]:5173", host: "[::1]:5174" }, false],
+    [{ origin: "null", host: "localhost:5174" }, true],
+    [{ origin: "%", host: "localhost:5174" }, true],
+    [{ host: "[" }, true],
+    [{}, true],
+  ])("isCrossOriginRequest preserves the local-only guard for %j", (headers, expected) => {
+    expect(isCrossOriginRequest(headers)).toBe(expected);
+  });
+});

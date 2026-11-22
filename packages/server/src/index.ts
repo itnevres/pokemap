@@ -1,3 +1,4 @@
+import { readBody } from "./http.js";
 import { createGbaBlockEditRoutes } from "./blockEditRoutes.js";
 import { syncTilesetOverlay, type OverlayState } from "./tilesetOverlay.js";
 import { requireTilesetOwnership, refuseUnsavedBlockRefs } from "./blockEditOwnership.js";
@@ -86,21 +87,6 @@ export type ProjectHandler =
       dirtyMaps(): string[]; dispose(): void;
       warmUp(names?: string[]): Promise<WarmResult>;
     };
-
-/**
- * Buffers a request body to a string. `/api/world/placement` is the first
- * POST route this server has ever needed -- every route before it only ever
- * reads. Exported (Plan 6c A1) so `hub.ts`'s own `POST /api/hub/open` reuses
- * this instead of a second copy.
- */
-export function readBody(req: IncomingMessage): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    req.on("data", (c: Buffer) => chunks.push(c));
-    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
-    req.on("error", reject);
-  });
-}
 
 /**
  * Shared by `/paint/apply`'s pencil and rect branches -- both need a
