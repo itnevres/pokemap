@@ -256,7 +256,8 @@ export function gbcTileUsage(
     const ids = idsByFile.get(relations.tilesets.get(map.tileset)!.metatilesPath);
     if (ids === undefined) continue;
     const grid = gbcEffectiveGrid(proj, relations, map, grids, diskCache);
-    if (grid.some((cell) => ids.has(cell)) || ids.has(map.border)) found.push(map.name);
+    // Q5: a raw-0 cell draws the map's border block, never block 0 itself; `ids.has(map.border)` covers it.
+    if (grid.some((cell) => cell !== 0 && ids.has(cell)) || ids.has(map.border)) found.push(map.name);
   }
 
   return { blocks, maps: sorted(found) };

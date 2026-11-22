@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync, renameSync, unlinkSync, existsSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { writeFilesAtomically, type AtomicEntry, type AtomicIo } from "../../src/write/atomic.js";
 
 describe("writeFilesAtomically", () => {
@@ -284,6 +284,24 @@ describe("writeFilesAtomically", () => {
       const nested: AtomicEntry = { path: join(dir, "a", "b", "c.bin"), before: null, after: Buffer.from("nested") };
       writeFilesAtomically([nested], dir);
       expect(readFileSync(nested.path)).toEqual(nested.after);
+    });
+
+    // An io that throws on any call pins "before any IO": a guard moved into the staging loop would reach the io first.
+    const noIo = () => {
+      const unexpected = () => { throw new Error("unexpected IO"); };
+      return { existsSync: unexpected, readFileSync: unexpected, writeFileSync: unexpected, renameSync: unexpected, unlinkSync: unexpected } as AtomicIo;
+    };
+    const refuses = (path: string) => {
+      const entry: AtomicEntry = { path, before: null, after: Buffer.from("x") };
+      expect(() => writeFilesAtomically([entry], dir, noIo())).toThrow(/outside the project/);
+    };
+
+    it("refuses before any IO: the root's parent directory", () => { refuses(dirname(dir)); });
+    it("refuses before any IO: a climb out of the root", () => { refuses(join(dir, "..", "stray.bin")); });
+    it.runIf(process.platform === "win32")("refuses before any IO: a path on another drive", () => {
+      const other = dir[0]!.toUpperCase() === "Z" ? "Y" : "Z";
+      refuses(`${other}:\\stray.bin`);
+      refuses("\\\\host\\share\\stray.bin");
     });
   });
 });

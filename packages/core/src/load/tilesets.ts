@@ -84,12 +84,16 @@ export function parseTilesetPaths(
 
     const dirOf = (p: string) => p.slice(0, p.lastIndexOf("/"));
     const dir = dirOf(metatilesBin);
+    // From `.tiles`, not from `dir`. They differ for 15 tilesets, and eight
+    // of those have a tiles.png at the wrong path too, so getting this wrong
+    // renders another tileset's art with no error at all.
     const tilesPng = `${tilesBin ? dirOf(tilesBin) : dir}/tiles.png`;
     const brokenPaths: BrokenPath[] = [];
     const resolvedPaths: [string, string][] = [
       [".metatiles", metatilesBin],
       [".metatileAttributes", attributesBin],
-      [".tiles", tilesPng],
+      // Without a `.tiles` field tilesPng shares the `.metatiles` directory, already checked.
+      ...(tilesBin ? [[".tiles", tilesPng] as [string, string]] : []),
       ...palettes.map((path): [string, string] => [".palettes", path]),
     ];
     for (const [key, path] of resolvedPaths) {
@@ -98,8 +102,9 @@ export function parseTilesetPaths(
           file: "src/data/tilesets/headers.h",
           key,
           path,
-          message: `tileset ${symbol}: ${key} path "${path}" leaves the project.`,
-          fix: `Change the INCBIN path behind ${key} of ${symbol} so it points inside the project.`,
+          // `.tiles` is checked as the derived tiles.png (the file read); show the INCBIN text the user must edit.
+          message: `tileset ${symbol}: ${key} path "${key === ".tiles" && tilesBin ? tilesBin : path}" leaves the project.`,
+          fix: `Change the INCBIN path behind ${key} of ${symbol} (headers.h names the data symbol; the INCBIN line is in the tileset's metatiles.h or graphics.h) so it points inside the project.`,
         });
       }
     }
@@ -107,9 +112,6 @@ export function parseTilesetPaths(
       symbol, dir,
       isSecondary: /\.isSecondary\s*=\s*TRUE/.test(body),
       metatilesBin, attributesBin,
-      // From `.tiles`, not from `dir`. They differ for 15 tilesets, and eight
-      // of those have a tiles.png at the wrong path too, so getting this wrong
-      // renders another tileset's art with no error at all.
       tilesPng,
       palettes,
       ...(brokenPaths.length ? { brokenPaths } : {}),

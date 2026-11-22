@@ -10,7 +10,7 @@ import { GBC_SUBJECT_ROOT, copyGbcSubjectToTemp, itWithGbcCorpus, removeTemp } f
 // project is a DataDefect on that component, with file and line context.
 // The project still opens; nothing else is blocked.
 
-const ESCAPING = ["../../outside.bin", "/abs/outside.bin", "C:/outside.bin", "..\\outside.bin", "gfx/../../outside.bin"];
+const ESCAPING = ["../../outside.bin", "/abs/outside.bin", "C:/outside.bin", "..\\outside.bin", "gfx/../../outside.bin", "C:\\outside.bin", "\\\\server\\share\\outside.bin"];
 
 describe("incbin line numbers", () => {
   it("parseIncbins and parseIncludes report the 1-based line of the directive", () => {

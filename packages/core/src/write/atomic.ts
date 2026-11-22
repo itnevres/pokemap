@@ -23,6 +23,7 @@ const errorMessage = (error: unknown) => error instanceof Error ? error.message 
 /**
  * Stages and checks all bytes before swapping; on failure, restores swapped targets and cleans temps best effort.
  * A crash or another program writing between the check and rename is outside this guarantee.
+ * Every entry must lie inside `root`; otherwise it throws before any IO, so nothing is written (D25, S2).
  */
 export function writeFilesAtomically(entries: AtomicEntry[], root: string, io: AtomicIo = defaultIo): void {
   if (entries.length === 0) return;

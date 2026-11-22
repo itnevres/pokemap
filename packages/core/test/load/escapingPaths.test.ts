@@ -40,7 +40,7 @@ describe("openProject with paths that leave the project", () => {
   itWithCorpus("marks the tileset broken, refuses to load it, and loads the others", () => {
     const p = openProject(root);
     expect(p.tilesetPaths("gTileset_Petalburg").brokenPaths).toHaveLength(1);
-    expect(() => p.tileset("gTileset_Petalburg")).toThrow(/outside\/metatiles\.bin/);
+    expect(() => p.tileset("gTileset_Petalburg")).toThrow(p.tilesetPaths("gTileset_Petalburg").brokenPaths![0]!.message);
     expect(p.tilesetPaths("gTileset_General").brokenPaths).toBeUndefined();
     expect(p.tileset("gTileset_General").metatileCount).toBeGreaterThan(0);
   });
