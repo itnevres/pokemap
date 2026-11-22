@@ -288,6 +288,47 @@ describe("hub (non-corpus)", () => {
     }
   });
 
+  it("E1b: an oversize content-length POST /api/hub/open is refused 413 without changing the current project", async () => {
+    const hub = await createHub({ port: 0, home: makeHome() });
+    try {
+      const before = await getJson(hub.port, "/api/hub");
+      const r = await rawRequest(hub.port, "/api/hub/open", {
+        method: "POST",
+        headers: { "content-length": String(16777217), "content-type": "application/json" },
+      });
+      expect(r.status).toBe(413);
+      expect(JSON.parse(r.body)).toEqual({ error: "request body too large" });
+      expect(await getJson(hub.port, "/api/hub")).toEqual(before);
+    } finally {
+      await hub.close();
+    }
+  });
+
+  it("E1b: GET /api/hub JSON carries x-content-type-options: nosniff", async () => {
+    const hub = await createHub({ port: 0, home: makeHome() });
+    try {
+      const r = await fetch(`http://127.0.0.1:${hub.port}/api/hub`);
+      expect(r.status).toBe(200);
+      expect(r.headers.get("x-content-type-options")).toBe("nosniff");
+    } finally {
+      await hub.close();
+    }
+  });
+
+  it("E1b: a cross-origin request answers 403 (not 413) even with the oversize content-length header", async () => {
+    const hub = await createHub({ port: 0, home: makeHome() });
+    try {
+      const r = await rawRequest(hub.port, "/api/hub/open", {
+        method: "POST",
+        headers: { Origin: "http://evil.example", Host: `127.0.0.1:${hub.port}`, "content-length": String(16777217) },
+      });
+      expect(r.status).toBe(403);
+      expect(JSON.parse(r.body)).toEqual({ error: "cross-origin request refused" });
+    } finally {
+      await hub.close();
+    }
+  });
+
   // SR-F10: an unlistable directory (EPERM/EACCES) must be a named 403, not
   // an opaque 500 -- verified on this machine (see fix-round report) that
   // "C:/System Volume Information" really does raise EPERM; the skip guards

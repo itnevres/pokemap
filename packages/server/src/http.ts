@@ -13,9 +13,9 @@ export class BodyTooLarge extends Error {
  * Buffers a request body to a string. `/api/world/placement` is the first
  * POST route this server has ever needed -- every route before it only ever
  * reads. Exported (Plan 6c A1) so `hub.ts`'s own `POST /api/hub/open` reuses
- * this instead of a second copy.
+ * this instead of a second copy. Reads UTF-8, rejecting before buffering more
+ * than `max` bytes; the caller answers 413.
  */
-/** Reads UTF-8, rejecting before buffering more than `max` bytes. The caller answers 413. */
 export function readBody(req: IncomingMessage, max = MAX_BODY_BYTES): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
@@ -57,10 +57,8 @@ export function readBody(req: IncomingMessage, max = MAX_BODY_BYTES): Promise<st
  * would surface as a 500 naming only "URI malformed", not the offending
  * segment (Task 1b fix round 1, spec review finding 7). Every `:name`-style
  * route below calls this instead of `decodeURIComponent` directly, and
- * answers 400 naming the raw (still-encoded) segment on `undefined` --
- * `index.ts`'s GBA routes keep their own pre-existing 500-on-malformed-
- * escape behaviour unchanged, since this fix is GBC-only (spec ground rule:
- * "index.ts is not touched in this task").
+ * answers 400 naming the raw (still-encoded) segment on `undefined`. The
+ * GBA handler in index.ts moves to this in Plan H task E2.
  */
 export function decodeSegment(raw: string): string | undefined {
   try {

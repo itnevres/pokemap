@@ -1,11 +1,12 @@
 import { existsSync, mkdirSync, readFileSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
-import { createServer as createHttpServer, type Server } from "node:http";
+import { createServer as createHttpServer, request as httpRequest, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from "vitest";
 import { createServer, type PokemapServer } from "../src/index.js";
 import { createGbcProjectHandler } from "../src/gbcRoutes.js";
 import type { GbcWorldPayload } from "@pokemap/core/src/gbc/wire.js";
-import { buildGbcMapPayload, buildGbcWorldPayload, buildGbcEncountersPayload, buildGbcWarpsPayload, decodeMapName, parseTimeParam } from "../src/gbcRoutes.js";
+import { buildGbcMapPayload, buildGbcWorldPayload, buildGbcEncountersPayload, buildGbcWarpsPayload, parseTimeParam } from "../src/gbcRoutes.js";
+import { decodeSegment } from "../src/http.js";
 import { openGbcProject } from "@pokemap/core/src/gbc/project.js";
 import { renderGbcMap, renderGbcMapMetatile } from "@pokemap/core/src/gbc/render/map.js";
 import { loadGbcMapEvents } from "@pokemap/core/src/gbc/load/events.js";
@@ -24,7 +25,7 @@ import { stubGbcProject } from "@pokemap/core/test/gbc/helpers/stubGbcProject.js
 // Pure functions -- no server, no corpus needed, so these run unconditionally
 // (not gated by describe.skipIf) rather than only when PerfPlus happens to be
 // checked out.
-describe("parseTimeParam / decodeMapName (pure helpers, fix round 1)", () => {
+describe("parseTimeParam / decodeSegment (pure helpers, fix round 1)", () => {
   it("parseTimeParam: absent -> day; morn/day/nite -> themselves; anything else -> an error, never a throw", () => {
     expect(parseTimeParam(new URL("http://x/"))).toEqual({ time: "day" });
     expect(parseTimeParam(new URL("http://x/?time=morn"))).toEqual({ time: "morn" });
@@ -33,9 +34,9 @@ describe("parseTimeParam / decodeMapName (pure helpers, fix round 1)", () => {
     expect("error" in bad).toBe(true);
   });
 
-  it("decodeMapName: a well-formed escape decodes; a malformed one returns undefined instead of throwing", () => {
-    expect(decodeMapName("New%42arkTown")).toBe("NewBarkTown");
-    expect(decodeMapName("%E0%A4%A")).toBeUndefined();
+  it("decodeSegment: a well-formed escape decodes; a malformed one returns undefined instead of throwing", () => {
+    expect(decodeSegment("New%42arkTown")).toBe("NewBarkTown");
+    expect(decodeSegment("%E0%A4%A")).toBeUndefined();
   });
 });
 
@@ -944,6 +945,44 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
           if (!sidecarDirExisted) try { rmdirSync(sidecarDir); } catch {}
         }
       }
+    });
+  });
+
+  describe("E1b: an oversize content-length is refused before any route runs, and JSON replies are nosniff", () => {
+    const sidecarPath = `${GBC_SUBJECT_ROOT}/.pokemap/world.json`;
+
+    // `fetch` forbids setting its own `content-length`, so this goes through
+    // `node:http`'s own `request` -- same reason hub.test.ts's SR-F9 tests do.
+    const oversizePost = (path: string): Promise<number> =>
+      new Promise((resolve, reject) => {
+        const req = httpRequest(
+          { host: "127.0.0.1", port: s.port, path, method: "POST", headers: { "content-length": String(16777217) } },
+          (res) => {
+            res.resume();
+            res.on("end", () => resolve(res.statusCode ?? 0));
+            res.on("error", reject);
+          },
+        );
+        req.on("error", reject);
+        req.end(); // nothing written: the declared length alone must trigger the 413
+      });
+
+    it("POST /api/world/placement with content-length 16777217 answers 413 and writes no sidecar", async () => {
+      const before = existsSync(sidecarPath) ? readFileSync(sidecarPath) : null;
+      expect(await oversizePost("/api/world/placement")).toBe(413);
+      const after = existsSync(sidecarPath) ? readFileSync(sidecarPath) : null;
+      if (before) expect(after).toEqual(before);
+      else expect(after).toBeNull();
+    });
+
+    it("JSON responses -- a 200 and a 400 -- carry x-content-type-options: nosniff", async () => {
+      const ok = await get("/api/project");
+      expect(ok.status).toBe(200);
+      expect(ok.headers.get("x-content-type-options")).toBe("nosniff");
+
+      const bad = await get("/api/map/%E0%A4%A");
+      expect(bad.status).toBe(400);
+      expect(bad.headers.get("x-content-type-options")).toBe("nosniff");
     });
   });
 
