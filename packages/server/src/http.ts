@@ -69,6 +69,35 @@ export function decodeSegment(raw: string): string | undefined {
 }
 
 
+/**
+ * Plan H task H-a: the JSON-body preamble every POST route wrote out by hand
+ * (read, parse, 400 on bad JSON, shape check, 413 on an oversize body, 500
+ * on a throw). Messages match the hand-written copies exactly. An empty body
+ * is invalid JSON (400); the one route that treats it as `{}` keeps its own
+ * code. No content-type check: the routes never made one.
+ */
+export function jsonBody<T>(
+  req: IncomingMessage,
+  send: (status: number, body: unknown) => unknown,
+  guard: (parsed: unknown) => parsed is T,
+  shapeText: string,
+  handler: (body: T) => unknown,
+): Promise<void> {
+  return readBody(req)
+    .then((text) => {
+      let parsed: unknown;
+      try { parsed = JSON.parse(text); }
+      catch (e) { send(400, { error: `invalid JSON body: ${(e as Error).message}` }); return; }
+      if (!guard(parsed)) { send(400, { error: `expected ${shapeText}, got ${text}` }); return; }
+      return handler(parsed);
+    })
+    .then(() => undefined)
+    .catch((e: unknown) => {
+      if (e instanceof BodyTooLarge) { send(413, { error: "request body too large" }); return; }
+      console.error(e);
+      send(500, { error: e instanceof Error ? e.message : String(e) });
+    });
+}
 /** JSON replies always declare their type and disable content sniffing. */
 export function sendJson(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, { "content-type": "application/json", "x-content-type-options": "nosniff" });

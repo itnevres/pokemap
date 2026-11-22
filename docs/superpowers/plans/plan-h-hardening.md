@@ -390,6 +390,8 @@ if (url.pathname === "/api/world/conflicts/accept" && req.method === "POST")
   return jsonBody(req, send, isAcceptConflictBody, "{ key: string, accepted: boolean }", (body) => { /* ... */ });
 ```
 
+**Requirement (review finding on E2).** The GBC `POST /api/world/placement` route needs the same known-map check the GBA route got in E2 (reject a placement for a map name the project does not have, same status and message). Add it when the route moves, with a test in `gbcRoutes.test.ts`; this is the one allowed behaviour change in H-b.
+
 **Acceptance.** Both families' sidecar tests pass with no test edited. A new test mounts `sidecarRoutes` on a bare temp root, which pins that it has no family dependency. The report gives the line count removed from each handler.
 
 ---
