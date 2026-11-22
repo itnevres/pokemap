@@ -15,8 +15,38 @@ const sessionMutations = new Map<string, Set<Promise<unknown>>>();
 export function hasPendingSessionMutations(map: string | null): boolean {
   return map !== null && (sessionMutations.get(map)?.size ?? 0) > 0;
 }
+// Stroke chains (shared/useStrokeChain.ts) are tracked apart from session mutations. The shell registers
+// the selected map's `strokeSettled` here, so every barrier caller (Discard, Save plan and commits, undo,
+// redo, map switch) also waits for a paint request still in flight.
+// Accepted ceiling: this orders ONE tab's own fire-and-forget chains. It does not close a network
+// reordering (a slower first request landing after a faster second one); that needs a server-side
+// generation tag on every paint/event route, which is deliberately not built.
+const settledSources = new Map<string, Set<() => Promise<void>>>();
+export function registerSettledSource(map: string, settled: () => Promise<void>): () => void {
+  let set = settledSources.get(map);
+  if (!set) settledSources.set(map, (set = new Set()));
+  // A fresh wrapper per registration, so two registrations of one function unregister independently.
+  const entry = () => settled();
+  set.add(entry);
+  return () => {
+    const current = settledSources.get(map);
+    current?.delete(entry);
+    if (current?.size === 0) settledSources.delete(map);
+  };
+}
+async function sourcesSettled(map: string): Promise<void> {
+  // A source that rejects or throws counts as settled: the barrier must never deadlock on it.
+  await Promise.all([...(settledSources.get(map) ?? [])].map(async (source) => {
+    try { await source(); } catch { /* settled */ }
+  }));
+}
 export async function sessionMutationBarrier(map: string | null): Promise<void> {
-  while (map !== null && hasPendingSessionMutations(map)) {
+  if (map === null) return;
+  // Sources are awaited unconditionally (a paint-only session has no pending mutation), then creates and
+  // sources are re-checked until a pass finds no mutation pending after the sources settled.
+  for (;;) {
+    await sourcesSettled(map);
+    if (!hasPendingSessionMutations(map)) return;
     await Promise.all([...sessionMutations.get(map)!].map((pending) => pending.catch(() => undefined)));
   }
 }

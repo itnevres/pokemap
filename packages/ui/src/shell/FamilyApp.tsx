@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { sessionMutationBarrier, hasPendingSessionMutations } from "../shared/useEditSessionCore.js";
+import { sessionMutationBarrier, hasPendingSessionMutations, registerSettledSource } from "../shared/useEditSessionCore.js";
 import { resetTilesetVersion } from "../shared/tilesetVersion.js";
 import { MapTree } from "../components/MapTree.js";
 import { DungeonSidebar } from "../components/DungeonSidebar.js";
@@ -104,6 +104,9 @@ export function FamilyApp({ adapter, switcher }: FamilyAppProps) {
     runtime.onSelected(name);
   };
   const { onStrokeChain, strokeSettled } = useStrokeChainRegistry();
+  // The session barrier (Discard, Save, undo, redo) waits for the selected map's in-flight paint links.
+  // In-context editing selects the map first (useContextEditing), so one registration covers every surface.
+  useEffect(() => (selected ? registerSettledSource(selected, strokeSettled) : undefined), [selected, strokeSettled]);
   const ctx = useContextEditing({
     selected, session: runtime.session, leave, select,
     openSave: () => runtime.saveDialog.setOpen(true),
