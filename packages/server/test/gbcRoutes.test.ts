@@ -7,6 +7,7 @@ import { createGbcProjectHandler } from "../src/gbcRoutes.js";
 import type { GbcWorldPayload } from "@pokemap/core/src/gbc/wire.js";
 import { buildGbcMapPayload, buildGbcWorldPayload, buildGbcEncountersPayload, buildGbcWarpsPayload, parseTimeParam } from "../src/gbcRoutes.js";
 import { decodeSegment } from "../src/http.js";
+import { postChunked } from "./helpers/oversizeBody.js";
 import { openGbcProject } from "@pokemap/core/src/gbc/project.js";
 import { renderGbcMap, renderGbcMapMetatile } from "@pokemap/core/src/gbc/render/map.js";
 import { loadGbcMapEvents } from "@pokemap/core/src/gbc/load/events.js";
@@ -963,6 +964,8 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
             res.on("error", reject);
           },
         );
+        // Without `refuseOversize` the route would wait for the declared body forever: fail in 2 s, not at the suite timeout.
+        req.setTimeout(2000, () => req.destroy(new Error("no response within 2 s")));
         req.on("error", reject);
         req.end(); // nothing written: the declared length alone must trigger the 413
       });
@@ -974,6 +977,17 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbcRoutes", () => {
       if (before) expect(after).toEqual(before);
       else expect(after).toBeNull();
     });
+
+    // Review round 1 (quality I2): the route-level `BodyTooLarge` -> 413 branch, with a body that is really uploaded.
+    it("POST /api/world/placement with a chunked MAX_BODY_BYTES + 1 body answers 413 and writes no sidecar", async () => {
+      const before = existsSync(sidecarPath) ? readFileSync(sidecarPath) : null;
+      const r = await postChunked(s.port, "/api/world/placement");
+      expect(r.status).toBe(413);
+      expect(JSON.parse(r.body)).toEqual({ error: "request body too large" });
+      const after = existsSync(sidecarPath) ? readFileSync(sidecarPath) : null;
+      if (before) expect(after).toEqual(before);
+      else expect(after).toBeNull();
+    }, 60_000);
 
     it("JSON responses -- a 200 and a 400 -- carry x-content-type-options: nosniff", async () => {
       const ok = await get("/api/project");

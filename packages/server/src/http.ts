@@ -10,10 +10,11 @@ export class BodyTooLarge extends Error {
 }
 
 /**
- * Buffers a request body to a string. `/api/world/placement` is the first
- * POST route this server has ever needed -- every route before it only ever
- * reads. Exported (Plan 6c A1) so `hub.ts`'s own `POST /api/hub/open` reuses
- * this instead of a second copy. Reads UTF-8, rejecting before buffering more
+ * Buffers a request body to a string. Moved here from index.ts in Plan H
+ * task E1. In index.ts, `/api/world/placement` was the first POST route this
+ * server ever needed -- every route before it only ever read -- and it was
+ * exported (Plan 6c A1) so `hub.ts`'s own `POST /api/hub/open` reuses this
+ * instead of a second copy. Reads UTF-8, rejecting before buffering more
  * than `max` bytes; the caller answers 413.
  */
 export function readBody(req: IncomingMessage, max = MAX_BODY_BYTES): Promise<string> {
@@ -56,9 +57,8 @@ export function readBody(req: IncomingMessage, max = MAX_BODY_BYTES): Promise<st
  * `%E0%A4%A`) -- letting that throw reach a route's own try/catch-free body
  * would surface as a 500 naming only "URI malformed", not the offending
  * segment (Task 1b fix round 1, spec review finding 7). Every `:name`-style
- * route below calls this instead of `decodeURIComponent` directly, and
- * answers 400 naming the raw (still-encoded) segment on `undefined`. The
- * GBA handler in index.ts moves to this in Plan H task E2.
+ * route calls this instead of `decodeURIComponent` directly, and
+ * answers 400 naming the raw (still-encoded) segment on `undefined`.
  */
 export function decodeSegment(raw: string): string | undefined {
   try {
@@ -80,11 +80,14 @@ export function declaresOversizeBody(req: IncomingMessage): boolean {
   return Number(req.headers["content-length"]) > MAX_BODY_BYTES;
 }
 
-/** Refuse before reading; close only once the response has been sent. */
+/**
+ * Replies 413 before any route runs when the declared `content-length`
+ * exceeds the cap. The connection is kept: closing it while the client is
+ * still uploading would reset it and hide the 413 from the client. Node
+ * discards the unread body, so memory stays bounded.
+ */
 export function refuseOversize(req: IncomingMessage, res: ServerResponse): boolean {
   if (!declaresOversizeBody(req)) return false;
-  res.setHeader("connection", "close");
-  res.once("finish", () => req.destroy());
   sendJson(res, 413, { error: "request body too large" });
   return true;
 }

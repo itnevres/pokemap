@@ -1,4 +1,4 @@
-import { createServer, request, type IncomingMessage, type RequestListener, type Server } from "node:http";
+import { Agent, createServer, request, type IncomingMessage, type RequestListener, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { PassThrough } from "node:stream";
 import { afterEach, describe, expect, it } from "vitest";
@@ -16,15 +16,17 @@ afterEach(async () => {
   server = undefined;
 });
 
-function post(port: number, chunks: string[], headers: Record<string, string> = {}) {
+function post(port: number, chunks: string[], headers: Record<string, string> = {}, agent?: Agent) {
   return new Promise<{ status: number; headers: IncomingMessage["headers"]; body: string }>((resolve, reject) => {
-    const req = request({ host: "127.0.0.1", port, method: "POST", headers }, (res) => {
+    const req = request({ host: "127.0.0.1", port, method: "POST", headers, agent }, (res) => {
       let body = "";
       res.setEncoding("utf8");
       res.on("data", (chunk: string) => { body += chunk; });
       res.on("end", () => resolve({ status: res.statusCode!, headers: res.headers, body }));
       res.on("error", reject);
     });
+    // A server that never answers (e.g. `refuseOversize` removed, so the declared body is awaited) fails in 2 s, not at the suite timeout.
+    req.setTimeout(2000, () => req.destroy(new Error("no response within 2 s")));
     req.on("error", reject);
     for (const chunk of chunks) req.write(chunk);
     req.end();
@@ -108,7 +110,7 @@ describe("shared HTTP boundary (no corpus)", () => {
     expect(declaresOversizeBody(req)).toBe(expected);
   });
 
-  it("refuseOversize answers 413 and closes without reading a declared oversized body", async () => {
+  it("refuseOversize answers 413 JSON without reading a declared oversized body", async () => {
     let read = false;
     let refused = false;
     const port = await listen((req, res) => {
@@ -119,11 +121,46 @@ describe("shared HTTP boundary (no corpus)", () => {
     });
     const response = await post(port, [], { "content-length": String(MAX_BODY_BYTES + 1) });
     expect(response.status).toBe(413);
-    expect(response.headers.connection).toBe("close");
+    expect(response.headers["content-type"]).toBe("application/json");
     expect(JSON.parse(response.body)).toEqual({ error: "request body too large" });
     expect(refused).toBe(true);
     expect(read).toBe(false);
   });
+
+  it("refuseOversize keeps the connection: a real oversize upload gets its 413, and the same keep-alive socket then serves a small request", async () => {
+    const sockets: unknown[] = [];
+    const port = await listen((req, res) => {
+      sockets.push(req.socket);
+      if (refuseOversize(req, res)) return;
+      void readBody(req).then((body) => sendJson(res, 200, { body }));
+    });
+    const agent = new Agent({ keepAlive: true, maxSockets: 1 });
+    const upload = (body: Buffer) => new Promise<{ status: number; connection: string | undefined; body: string }>((resolve, reject) => {
+      const req = request({ host: "127.0.0.1", port, method: "POST", agent, headers: { "content-length": String(body.length) } }, (res) => {
+        let text = "";
+        res.setEncoding("utf8");
+        res.on("data", (chunk: string) => { text += chunk; });
+        res.on("end", () => resolve({ status: res.statusCode!, connection: res.headers.connection, body: text }));
+        res.on("error", reject);
+      });
+      req.setTimeout(10_000, () => req.destroy(new Error("no response within 10 s")));
+      req.on("error", reject);
+      req.end(body);
+    });
+    try {
+      const first = await upload(Buffer.alloc(MAX_BODY_BYTES + 1, 0x61));
+      expect(first.status).toBe(413);
+      expect(first.connection).not.toBe("close");
+      expect(JSON.parse(first.body)).toEqual({ error: "request body too large" });
+      const second = await upload(Buffer.from("ok"));
+      expect(second.status).toBe(200);
+      expect(JSON.parse(second.body)).toEqual({ body: "ok" });
+      expect(sockets).toHaveLength(2);
+      expect(sockets[1]).toBe(sockets[0]);
+    } finally {
+      agent.destroy();
+    }
+  }, 60_000);
 
   it("refuseOversize leaves a small request available to its caller", async () => {
     const port = await listen((req, res) => {

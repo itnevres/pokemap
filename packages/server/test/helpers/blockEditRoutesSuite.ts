@@ -13,6 +13,7 @@ import { gbaConsumingLayouts } from "@pokemap/core/src/blockEdit/usage.js";
 import type { TilesetFileEdit } from "@pokemap/core/src/blockEdit/types.js";
 import { parseBlocks } from "@pokemap/core/src/load/blocks.js";
 import { stageTilesetPlan, type BlockEditPlan } from "../../src/blockEditOwnership.js";
+import { postChunked } from "./oversizeBody.js";
 import { createProjectHandler } from "../../src/index.js";
 import { createGbcProjectHandler } from "../../src/gbcRoutes.js";
 import * as gbaSessions from "../../src/editSessions.js";
@@ -1395,6 +1396,17 @@ export function suite(family: "gba" | "gbc") {
       expect(JSON.stringify(store.open(pair.a).session)).toBe(before);
       expect(historyLength(pair.a)).toBe(depth);
     }, 120_000);
+
+    // Review round 1 (quality I2): the route's `.catch(fail)` -> 413 branch, for a body that is really uploaded.
+    it("11b.5b: a chunked MAX_BODY_BYTES + 1 body on check and apply answers 413 and opens no session", async () => {
+      const port = Number(new URL(base).port);
+      for (const action of ["check", "apply"]) {
+        const result = await postChunked(port, `/api/edit/${encoded(pair.a)}/block/${action}`);
+        expect(result.status, action).toBe(413);
+        expect(JSON.parse(result.body), action).toEqual({ error: "request body too large" });
+        expect(store.has(pair.a), action).toBe(false);
+      }
+    }, 60_000);
 
     it("11b.6: apply saveAsNew stages a block at the cell and one undo reverts it", async () => {
       const subject = family === "gba" ? await findGbaSaveAsNew() : await findGbcSaveAsNew();

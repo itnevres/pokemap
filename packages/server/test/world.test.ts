@@ -4,6 +4,8 @@ import { request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { createServer, type PokemapServer } from "../src/index.js";
+import { MAX_BODY_BYTES } from "../src/http.js";
+import { postChunked, postDeclared } from "./helpers/oversizeBody.js";
 import { SUBJECT_ROOT, hasProject } from "@pokemap/core/test/helpers/corpus.js";
 import { projectPaths } from "@pokemap/core/src/config/paths.js";
 import { writeSidecar } from "@pokemap/core/src/world/sidecar.js";
@@ -283,18 +285,54 @@ describe.skipIf(!hasProject(SUBJECT_ROOT))("world api", () => {
           res.on("error", reject);
         },
       );
+      // Without `refuseOversize` the route would wait for the declared body forever: fail in 2 s, not at the suite timeout.
+      req.setTimeout(2000, () => req.destroy(new Error("no response within 2 s")));
       req.on("error", reject);
       req.end(); // nothing written: the declared length alone must trigger the 413
     });
 
-  it("413s a body declaring MAX_BODY_BYTES + 1 without creating or changing world.json", async () => {
+  const sidecarBytes = () => {
     const sidecarPath = projectPaths(fixtureRoot).sidecar;
-    const before = existsSync(sidecarPath) ? readFileSync(sidecarPath) : null;
+    return existsSync(sidecarPath) ? readFileSync(sidecarPath) : null;
+  };
+
+  it("413s a body declaring MAX_BODY_BYTES + 1 without creating or changing world.json", async () => {
+    const before = sidecarBytes();
     expect(await oversizePost("/api/world/placement")).toBe(413);
-    const after = existsSync(sidecarPath) ? readFileSync(sidecarPath) : null;
-    if (before) expect(after).toEqual(before);
-    else expect(after).toBeNull();
-  }, 300_000);
+    expect(sidecarBytes()).toEqual(before);
+  }, 60_000);
+
+  // Review round 1 (quality I1/I2): the route-level `BodyTooLarge` -> 413
+  // branches and a body that really is uploaded, not just declared.
+  it("413s a chunked MAX_BODY_BYTES + 1 body on /api/world/placement and leaves world.json unchanged", async () => {
+    const before = sidecarBytes();
+    const r = await postChunked(s.port, "/api/world/placement");
+    expect(r.status).toBe(413);
+    expect(JSON.parse(r.body)).toEqual({ error: "request body too large" });
+    expect(sidecarBytes()).toEqual(before);
+  }, 60_000);
+
+  it("413s a chunked MAX_BODY_BYTES + 1 body on POST /api/edit/<map>/commit and leaves the map untouched", async () => {
+    const mapJson = join(SUBJECT_ROOT, "data/maps/Route101/map.json");
+    const before = readFileSync(mapJson);
+    const r = await postChunked(s.port, "/api/edit/Route101/commit");
+    expect(r.status).toBe(413);
+    expect(JSON.parse(r.body)).toEqual({ error: "request body too large" });
+    expect(readFileSync(mapJson)).toEqual(before);
+  }, 60_000);
+
+  it("413s a really uploaded MAX_BODY_BYTES + 1 body (content-length, via fetch) instead of resetting the connection", async () => {
+    const before = sidecarBytes();
+    const r = await fetch(`http://127.0.0.1:${s.port}/api/world/placement`, {
+      method: "POST",
+      body: new Uint8Array(MAX_BODY_BYTES + 1),
+    });
+    expect(r.status).toBe(413);
+    expect(await r.json()).toEqual({ error: "request body too large" });
+    expect(sidecarBytes()).toEqual(before);
+    const real = await postDeclared(s.port, "/api/world/placement");
+    expect(real.status).toBe(413);
+  }, 60_000);
 
   // E2 acceptance 4: the placement guard the GBC twin already has, plus GBA's
   // known-map check. Each body is refused with 400 and the sidecar's bytes are

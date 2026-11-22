@@ -337,9 +337,10 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
     //
     // S3: refuse a body that already declares itself oversize before any
     // route runs -- the cheap half of the cap. `readBody`'s own streaming
-    // limit is the backstop for a chunked body that declares no length, and
-    // every `readBody` rejection path below answers 413 for `BodyTooLarge`
-    // so a chunked oversize body gets the same answer.
+    // limit is the backstop for a chunked body that declares no length: every
+    // `readBody` rejection path below answers 413 for `BodyTooLarge`, so a
+    // chunked oversize body gets the same 413. The connection is kept (see
+    // `refuseOversize`).
     if (refuseOversize(req, res)) return;
     const url = new URL(req.url ?? "/", "http://localhost");
     // One-line over `sendJson` so the `Send` type the route modules
@@ -762,8 +763,9 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
             // `1e999` JSON.parse turns into Infinity. The known-map check is
             // GBA's addition -- without it `__proto__` (and any other unknown
             // name) would be written as a `manualPlacements` key, and
-            // `manualPlacements["__proto__"] = ...` mutates Object.prototype
-            // instead of storing an entry.
+            // `manualPlacements["__proto__"] = ...` replaces only that object's
+            // own prototype and persists nothing, yet would answer a silent
+            // 200 `{ ok: true }`.
             if (
               parsed === null || typeof parsed !== "object" || Array.isArray(parsed)
               || typeof placement.map !== "string"
