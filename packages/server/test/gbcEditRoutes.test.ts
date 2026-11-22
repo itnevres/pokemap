@@ -275,6 +275,17 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbc edit routes (hermetic tem
     await post(`${NBT}/discard`);
   });
 
+  it("Q6: map payload and session replies carry the same stable tilesetInstance", async () => {
+    const map = await (await get("/api/map/NewBarkTown")).json() as { tilesetVersion: number; tilesetInstance?: string };
+    expect(map.tilesetInstance).toEqual(expect.any(String));
+    const nothingOpen = await (await get(`${NBT}/session`)).json() as { tilesetInstance?: string };
+    expect(nothingOpen.tilesetInstance).toBe(map.tilesetInstance);
+    await post(`${NBT}/paint/begin`);
+    const open = await (await get(`${NBT}/session`)).json() as { tilesetInstance?: string };
+    expect(open.tilesetInstance).toBe(map.tilesetInstance);
+    await post(`${NBT}/discard`);
+  });
+
   it("Q1: discarded map returns nothing-open again", async () => {
     const before = await session(await post(`${NBT}/paint/begin`));
     const metatileId = before.blocks[0]!.metatileId === 40 ? 41 : 40;
