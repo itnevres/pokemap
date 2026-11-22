@@ -4,6 +4,7 @@
 import { useSyncExternalStore } from "react";
 
 let version = 0;
+let instance: string | null = null;
 let currentGeneration = 0;
 const listeners = new Set<() => void>();
 
@@ -27,9 +28,26 @@ export function noteTilesetVersion(v: unknown, generation?: number): void {
   if (v > version) setVersion(v);
 }
 
+/** Records a reply stamp, accepting a restarted handler's lower version. */
+export function noteTilesetStamp(body: unknown, generation?: number): void {
+  if (generation !== undefined && generation !== currentGeneration) return;
+  if (typeof body !== "object" || body === null) return;
+  const { tilesetVersion: next, tilesetInstance: nextInstance } = body as {
+    tilesetVersion?: unknown; tilesetInstance?: unknown;
+  };
+  if (typeof next !== "number" || !Number.isFinite(next)) return;
+  if (typeof nextInstance === "string") {
+    const changed = instance !== null && instance !== nextInstance;
+    instance = nextInstance;
+    if (changed) { setVersion(next); return; }
+  }
+  noteTilesetVersion(next, generation);
+}
+
 /** Production role: the FamilyApp unmount resets it, retiring the generation so late replies from the old project are dropped. Also used for test isolation. */
 export function resetTilesetVersion(): void {
   currentGeneration++;
+  instance = null;
   setVersion(0);
 }
 

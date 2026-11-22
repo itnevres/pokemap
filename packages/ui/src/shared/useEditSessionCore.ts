@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { AddEventForm, EventKind } from "@pokemap/core/src/addEvent/types.js";
 import { useVisit } from "./useVisit.js";
 import { invalidateEventOptions } from "./useEventOptions.js";
-import { noteTilesetVersion, tilesetGeneration } from "./tilesetVersion.js";
+import { noteTilesetStamp, tilesetGeneration } from "./tilesetVersion.js";
 
 /** Refusals keep their server code; callers suppress failures belonging to a retired visit. */
 export class EditSessionError extends Error {
@@ -105,7 +105,7 @@ export function useEditSessionCore<State>(base: string, mapName: string | null, 
           throw new EditSessionError(typeof error?.error === "string" ? error.error : `POST ${base}/${mapName}${path} -> ${r.status}`,
             typeof error?.code === "string" ? error.code : undefined, !owner.isCurrent());
         }
-        noteTilesetVersion((data as { tilesetVersion?: unknown } | null)?.tilesetVersion, generation);
+        noteTilesetStamp(data, generation);
         if (owner.isCurrent() && (path === "/undo" || path === "/redo" || path === "/event/create")) invalidateEventOptions();
         return { data: data as R, ticket };
       } catch (error) {
@@ -135,7 +135,7 @@ export function useEditSessionCore<State>(base: string, mapName: string | null, 
       const r = await fetch(`${base}/${encodeURIComponent(mapName)}/session`);
       if (!r.ok) return null;
       const data: unknown = await r.json();
-      noteTilesetVersion((data as { tilesetVersion?: unknown } | null)?.tilesetVersion, generation);
+      noteTilesetStamp(data, generation);
       if (!owner.isCurrent()) return null;
       return { data: data as R, ticket };
     } catch {
@@ -174,7 +174,7 @@ export function useEditSessionCore<State>(base: string, mapName: string | null, 
     if (!r.ok) throw new Error(`POST ${base}/${mapName}/discard -> ${r.status}`);
     // A 2xx whose body is not JSON still ran the discard server-side; reset locally and note a version only if it is a number.
     const data: unknown = await r.json().catch(() => null);
-    noteTilesetVersion((data as { tilesetVersion?: unknown } | null)?.tilesetVersion, generation);
+    noteTilesetStamp(data, generation);
     if (!owner.isCurrent()) return;
     invalidateEventOptions();
     seq.current.applied = seq.current.issued; // in-flight edits cannot resurrect a discarded session

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { act, renderHook, waitFor } from "@testing-library/react";
-import { currentTilesetVersion, resetTilesetVersion } from "../src/shared/tilesetVersion.js";
+import { currentTilesetVersion, noteTilesetStamp, resetTilesetVersion, useTilesetVersion } from "../src/shared/tilesetVersion.js";
 import { useMapLayout } from "../src/hooks/useMapLayout.js";
 
 beforeEach(() => { resetTilesetVersion(); });
@@ -23,6 +23,18 @@ const BODY = {
 };
 
 describe("useMapLayout", () => {
+
+  it("accepts a restarted map handler's lower version and updates subscribers", async () => {
+    noteTilesetStamp({ tilesetVersion: 9, tilesetInstance: "old" });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true, json: async () => ({ ...BODY, tilesetVersion: 1, tilesetInstance: "new" }),
+    }));
+    const probe = renderHook(() => useTilesetVersion());
+    expect(probe.result.current).toBe(9);
+    const map = renderHook(() => useMapLayout("Foo"));
+    await waitFor(() => expect(map.result.current.data).not.toBeNull());
+    await waitFor(() => expect(probe.result.current).toBe(1));
+  });
 
   it("ignores a response from before reset and accepts a new-generation response", async () => {
     resetTilesetVersion();

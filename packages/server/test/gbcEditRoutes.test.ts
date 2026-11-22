@@ -119,7 +119,7 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbc edit routes (hermetic tem
     expect(during.equals(before)).toBe(false);
 
     const gone = await post(`${NBT}/discard`);
-    expect(await gone.json()).toEqual({ blocks: [], events: null, isDirty: false, canUndo: false, canRedo: false, tilesetVersion: expect.any(Number) });
+    expect(await gone.json()).toEqual({ blocks: [], events: null, isDirty: false, canUndo: false, canRedo: false, tilesetVersion: expect.any(Number), tilesetInstance: expect.any(String) });
     expect(h.dirtyMaps()).toEqual([]);
     expect((await png("NewBarkTown")).equals(before)).toBe(true);
   });
@@ -226,7 +226,7 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbc edit routes (hermetic tem
 
   it("6. undo/redo round-trip blocks; undo/redo on a never-opened map is the nothing-open shape", async () => {
     const nothing = {
-      blocks: [], events: null, isDirty: false, canUndo: false, canRedo: false, tilesetVersion: expect.any(Number),
+      blocks: [], events: null, isDirty: false, canUndo: false, canRedo: false, tilesetVersion: expect.any(Number), tilesetInstance: expect.any(String),
     };
     expect(await (await post("/api/edit/ElmsLab/undo")).json()).toEqual(nothing);
     expect(await (await post("/api/edit/ElmsLab/redo")).json()).toEqual(nothing);
@@ -249,7 +249,7 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbc edit routes (hermetic tem
 
   it("Q1: never-opened map returns nothing-open without opening a session", async () => {
     const nothing = {
-      blocks: [], events: null, isDirty: false, canUndo: false, canRedo: false, tilesetVersion: expect.any(Number),
+      blocks: [], events: null, isDirty: false, canUndo: false, canRedo: false, tilesetVersion: expect.any(Number), tilesetInstance: expect.any(String),
     };
     const response = await get("/api/edit/ElmsLab/session");
     expect(response.status).toBe(200);
@@ -282,7 +282,7 @@ describe.skipIf(!hasGbcProject(GBC_SUBJECT_ROOT))("gbc edit routes (hermetic tem
     expect((await post(`${NBT}/paint/end`)).status).toBe(200);
     expect((await post(`${NBT}/discard`)).status).toBe(200);
     const nothing = {
-      blocks: [], events: null, isDirty: false, canUndo: false, canRedo: false, tilesetVersion: expect.any(Number),
+      blocks: [], events: null, isDirty: false, canUndo: false, canRedo: false, tilesetVersion: expect.any(Number), tilesetInstance: expect.any(String),
     };
     const response = await get(`${NBT}/session`);
     expect(response.status).toBe(200);
