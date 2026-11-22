@@ -356,7 +356,8 @@ export function createGbcBlockEditRoutes(
     return { ...target, revision: plan.revision,
       block: { tiles: draft.tiles, collision: draft.collision, tilePalettes: draft.tiles.map(tile => palNames.get(c.ts.palMap[tile]?.pal ?? -1) ?? "") },
       sheet: { url: `/api/block-sheet/${encodeURIComponent(name)}.png?tv=${version}&time=${time(url)}`,
-        tileCount: c.ts.tiles.length, tileIds: c.tileIds, reservedTiles: [...loadGbcReservedTiles(project.root)].sort((a, b) => a - b) },
+        tileCount: c.ts.tiles.length, tileIds: c.tileIds, reservedTiles: [...loadGbcReservedTiles(project.root)].sort((a, b) => a - b),
+        tilePalettes: c.ts.palMap.map(entry => palNames.get(entry?.pal ?? -1) ?? "") },
       options: { collision: collisionOptions.map(entry => entry.name), palettes: paletteOptions.map(entry => entry.name) },
       usage: plan.usage, owner: owner(store.entries(), plan), limits: { nextId: nextId(() => planGbcBlockEdit(project, { ...req, mode: "saveAsNew" }, deps.overlay(), stagedGrids)), cap: 256 } };
   }, (name, url) => {

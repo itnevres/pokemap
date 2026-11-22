@@ -24,7 +24,7 @@ export function usageLine(usage: Usage, map: string): string {
 type Entry = { tile: number; palette: number; xFlip: boolean; yFlip: boolean };
 type Palette = { square: number; palName: string; scope: "all" | "local" };
 interface Draft extends Record<string, unknown> { tiles: number[]; collision: string[]; tilePalettes: string[]; palettes: Palette[]; entries: Entry[]; behavior: number; layerType: number }
-interface Info { blockId: number; viaBorder: boolean; block: Draft; sheet: { url: string; tileIds: (number | null)[]; reservedTiles?: number[] }; options: Record<string, string[] | { name: string; value: number }[]>; usage: Usage }
+interface Info { blockId: number; viaBorder: boolean; block: Draft; sheet: { url: string; tileIds: (number | null)[]; reservedTiles?: number[]; tilePalettes?: string[] }; options: Record<string, string[] | { name: string; value: number }[]>; usage: Usage }
 
 function RawField({ label, value, numeric, onChange }: { label: string; value: string; numeric: boolean; onChange(value: string): void }) {
   const [text, setText] = useState(value);
@@ -109,11 +109,15 @@ export function BlockEditorDialog(props: {
   const hex = (value: number, count = digits) => value.toString(16).toUpperCase().padStart(count, "0");
   const entryIndex = layer * 4 + square;
   const entry = draft?.entries?.[entryIndex];
+  // Placed tile's sheet palette first, then the palette the loaded block had for this square.
+  const paletteName = (index: number) => draft?.palettes.find(item => item.square === index)?.palName
+    ?? (info?.sheet.tilePalettes?.[draft?.tiles[index] ?? -1] || info?.block.tilePalettes[index]);
   const tiles = draft ? gbc ? draft.tiles : draft.entries.slice(layer * 4, layer * 4 + 4).map(item => item.tile) : [];
   const updateEntry = (change: Partial<Entry>) => {
     if (draft) editor.setDraft({ ...draft, entries: draft.entries.map((item, index) => index === entryIndex ? { ...item, ...change } : item) });
   };
   const checkUsage = editor.check?.usage as Usage | undefined;
+  const affected = checkUsage?.maps.filter(item => total(item) > 0) ?? [];
   return <div className="warp-modal__backdrop" onMouseDown={event => {
     if (event.target === event.currentTarget && topmost() === panel.current && editor.status !== "applying") props.onClose();
   }}>
@@ -143,9 +147,9 @@ export function BlockEditorDialog(props: {
             editor.setDraft(gbc ? { ...draft, tiles: next } : { ...draft, entries: draft.entries.map((item, i) => i >= layer * 4 && i < layer * 4 + 4 ? { ...item, tile: next[i - layer * 4]! } : item) });
           }} />
           <div className="block-editor__controls">
-            {props.spec.squareControls.includes("palette") && <label>Palette<select ref={paletteControl} aria-label="Palette" value={gbc ? draft.palettes.find(item => item.square === square)?.palName ?? info.block.tilePalettes[square] : entry?.palette} onChange={event => {
+            {props.spec.squareControls.includes("palette") && <label>Palette<select ref={paletteControl} aria-label="Palette" value={gbc ? paletteName(square) : entry?.palette} onChange={event => {
               const value = event.target.value;
-              if (gbc) { if (value !== (draft.palettes.find(item => item.square === square)?.palName ?? info.block.tilePalettes[square])) setPending({ square, palName: value }); }
+              if (gbc) { if (value !== paletteName(square)) setPending({ square, palName: value }); }
               else updateEntry({ palette: Number(value) });
             }}>{(gbc ? info.options.palettes as string[] : Array.from({ length: 13 }, (_, i) => String(i))).map(value => <option key={value} value={value}>{value}</option>)}</select></label>}
             {props.spec.squareControls.includes("flip") && <>{(["xFlip", "yFlip"] as const).map((key, index) => <label key={key}><input type="checkbox" aria-label={index === 0 ? "X flip" : "Y flip"} checked={entry?.[key] ?? false} onChange={event => updateEntry({ [key]: event.target.checked })} />{index === 0 ? "X flip" : "Y flip"}</label>)}</>}
@@ -167,7 +171,7 @@ export function BlockEditorDialog(props: {
         {editor.message && <p role="alert">{editor.message}</p>}
         {editor.status === "confirming" && checkUsage ? <section aria-label="Confirm edit">
           <p className="block-editor__usage">{usageLine(checkUsage, props.map)}</p>
-          <ul className="block-editor__usage">{checkUsage.maps.filter(item => total(item) > 0).map(item => <li key={item.map}>{item.map}: {item.interior} interior, {item.border + item.block0AsBorder} border</li>)}</ul>
+          <ul className="block-editor__usage">{affected.slice(0, 8).map(item => <li key={item.map}>{item.map}: {item.interior} interior, {item.border + item.block0AsBorder} border</li>)}{affected.length > 8 && <li>and {affected.length - 8} more</li>}</ul>
           <button ref={applyButton} type="button" onClick={editor.confirm}>Apply</button><button type="button" onClick={editor.cancelConfirm}>Cancel</button>
         </section> : <div className="block-editor__actions">
           <button ref={okButton} type="button" disabled={editor.status !== "ready"} onClick={editor.ok}>OK</button>

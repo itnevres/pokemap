@@ -627,6 +627,19 @@ export function suite(family: "gba" | "gbc") {
       }
     });
 
+    if (family === "gbc") it("1b: sheet tile palettes name every tile's palette by id", async () => {
+      const ts = gbc.tileset(gbc.map(pair.a).tileset);
+      const data = await block(pair.a, `block=${await idFor()}`);
+      expect(data.sheet.tilePalettes).toHaveLength(ts.palMap.length);
+      expect(data.sheet.tilePalettes.every((value: unknown) => typeof value === "string")).toBe(true);
+      for (let i = 0; i < data.block.tiles.length; i++) {
+        const name = data.block.tilePalettes[i];
+        if (name === "") continue;
+        expect(data.sheet.tilePalettes[data.block.tiles[i]]).toBe(name);
+      }
+      expect(new Set(data.sheet.tilePalettes).size).toBeGreaterThan(1);
+    }, 120_000);
+
     if (family === "gbc") it("2: a raw zero cell resolves to the map border", async () => {
       const map = await mapGet(pair.a);
       const painted = await paint(pair.a, 0);
