@@ -18,6 +18,10 @@
  *   `after === before`, entries included). Undo/redo restore `tilesetEdits`
  *   through the snapshot command, so ownership reflects the restored state;
  *   history is not scanned.
+ * - **Redo reacquires, in the routes.** Both families' redo routes
+ *   (`index.ts`, `gbcEditRoutes.ts`) call `requireTilesetOwnership` and core's
+ *   `checkTilesetBaselines` on the candidate snapshot's edits before it is
+ *   restored; this file only supplies the check.
  * - `refuseUnsavedBlockRefs` refuses (`UNSAVED_BLOCK` naming the owner) any
  *   block id at or past a metatiles file's saved count while another map owns
  *   that file; it is wired into both families' paint/fill/stamp routes.
