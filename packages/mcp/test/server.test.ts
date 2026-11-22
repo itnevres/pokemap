@@ -42,9 +42,10 @@ describe("tool list", () => {
   let client: Client;
   beforeAll(async () => { client = await connect(SUBJECT_ROOT); });
 
-  it("exposes exactly the read tools and no write tool", async () => {
+  it("exposes the read tools plus the five write tools (which refuse without --allow-writes)", async () => {
     const names = (await client.listTools()).tools.map((t) => t.name).sort();
-    expect(names).toEqual([...READ_TOOLS].sort());
+    const writes = ["pokemap_paint", "pokemap_indicator_add", "pokemap_event_move", "pokemap_event_add", "pokemap_event_delete"];
+    expect(names).toEqual([...READ_TOOLS, ...writes].sort());
   });
 
   it("refuses a dash-leading argument before the CLI runs", async () => {
