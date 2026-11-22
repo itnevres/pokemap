@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import fs from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
-import { createServer, type PokemapServer } from "../src/index.js";
+import { createServer, createProjectHandler, type PokemapServer } from "../src/index.js";
 import { SUBJECT_ROOT, hasProject } from "@pokemap/core/test/helpers/corpus.js";
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -12,7 +12,6 @@ import type { AddressInfo } from "node:net";
 import { openProject, type Project } from "@pokemap/core/src/project.js";
 import { canonicalTilesetPath } from "@pokemap/core/src/blockEdit/canonicalTilesetPath.js";
 import { copyGbaTilesetProject, removeGbaTemp } from "@pokemap/core/test/helpers/gbaTilesetProject.js";
-import { createProjectHandler } from "../src/index.js";
 import * as gbaSessions from "../src/editSessions.js";
 import { stageTilesetPlan } from "../src/blockEditOwnership.js";
 

@@ -465,8 +465,8 @@ export function createProjectHandler(root: string, hooks: AddEventHooks = {}): P
               ? project.layoutById(project.map(name).layout)?.name
               : undefined;
 
-        // A live edit session for this exact map name means disk state is
-        // stale (an edit never touches disk until a real commit, per I6) --
+        // A DIRTY (or mid-stroke) edit session for this exact map name means disk
+        // state is stale (an edit never touches disk until a real commit, per I6) --
         // render straight from the session's own in-memory blocks and skip
         // pngCache entirely. pngCache is keyed only on `name:border` with no
         // expiry of its own; writing a live render into it would serve that
